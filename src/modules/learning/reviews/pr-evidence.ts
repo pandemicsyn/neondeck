@@ -6,7 +6,7 @@ import { nonEmptyStringSchema, type PrBatchReviewInput } from './schemas';
 export const humanReviewSubmittedEvidenceSchema = v.object({
   origin: v.picklist(['submission', 'reconciliation']),
   repoId: v.optional(v.nullable(nonEmptyStringSchema)),
-  repoFullName: nonEmptyStringSchema,
+  repoFullName: v.pipe(v.string(), v.trim(), v.toLowerCase(), v.minLength(1)),
   prNumber: v.pipe(v.number(), v.integer(), v.minValue(1)),
   headSha: nonEmptyStringSchema,
   reviewId: nonEmptyStringSchema,

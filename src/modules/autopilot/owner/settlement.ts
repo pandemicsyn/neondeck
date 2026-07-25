@@ -133,26 +133,21 @@ export async function settleAutopilotOwnerObservation(
         },
       });
     }
-    const settled = await applyOwnerSettlementDecision(
-      decision,
-      watch,
-      worktree,
-      paths,
-    );
+    await applyOwnerSettlementEffects(decision, watch, worktree, paths);
     if (decision.outcome) await recordOutcome(decision.outcome);
-    return settled;
+    return commitOwnerSettlementDecision(decision, watch, paths);
   } catch (error) {
-    const blocked = await blockOwnerTurn(
-      watch.id,
-      `${watch.repoFullName}#${watch.prNumber} could not be settled safely: ${errorMessage(error)}`,
-      paths,
-    );
+    const message = `${watch.repoFullName}#${watch.prNumber} could not be settled safely: ${errorMessage(error)}`;
     await recordOutcome({
       eventType: 'autopilot-owner-settlement-failed',
       outcome: 'failed',
       summary: 'The continuing Autopilot owner could not be settled safely.',
     });
-    return blocked;
+    await addOwnerBlockNotificationQuietly(watch.id, message, paths);
+    return transitionWatchAutopilot(paths, watch.id, {
+      from: ['working', 'waiting'],
+      to: 'blocked',
+    });
   } finally {
     if (pending) {
       clearPendingAutopilotTurnIfMatches(
@@ -198,18 +193,16 @@ export async function recoverInterruptedAutopilotOwners(paths: RuntimePaths) {
   return interrupted.length;
 }
 
-async function applyOwnerSettlementDecision(
+async function applyOwnerSettlementEffects(
   decision: OwnerSettlementDecision,
   watch: NonNullable<ReturnType<typeof readWatchByOwnerInstanceId>>,
   worktree: WorktreeRecord | null,
   paths: RuntimePaths,
 ) {
   if (decision.blockMessage) {
-    return blockOwnerTurn(watch.id, decision.blockMessage, paths);
+    await addOwnerBlockNotification(watch.id, decision.blockMessage, paths);
+    return;
   }
-  const settled = decision.transition
-    ? transitionWatchAutopilot(paths, watch.id, decision.transition)
-    : watch;
   if (decision.worktreePushBlocked) {
     if (!worktree) {
       throw new Error(
@@ -225,19 +218,30 @@ async function applyOwnerSettlementDecision(
   if (decision.notification) {
     await addNotification(decision.notification, paths);
   }
-  return settled;
 }
 
-async function blockOwnerTurn(
+function commitOwnerSettlementDecision(
+  decision: OwnerSettlementDecision,
+  watch: NonNullable<ReturnType<typeof readWatchByOwnerInstanceId>>,
+  paths: RuntimePaths,
+) {
+  if (decision.blockMessage) {
+    return transitionWatchAutopilot(paths, watch.id, {
+      from: ['working', 'waiting'],
+      to: 'blocked',
+    });
+  }
+  return decision.transition
+    ? transitionWatchAutopilot(paths, watch.id, decision.transition)
+    : watch;
+}
+
+function addOwnerBlockNotification(
   watchId: string,
   message: string,
   paths: RuntimePaths,
 ) {
-  const blocked = transitionWatchAutopilot(paths, watchId, {
-    from: ['working', 'waiting'],
-    to: 'blocked',
-  });
-  await addNotification(
+  return addNotification(
     {
       level: 'attention',
       title: 'Autopilot needs human inspection',
@@ -248,7 +252,21 @@ async function blockOwnerTurn(
     },
     paths,
   );
-  return blocked;
+}
+
+async function addOwnerBlockNotificationQuietly(
+  watchId: string,
+  message: string,
+  paths: RuntimePaths,
+) {
+  try {
+    await addOwnerBlockNotification(watchId, message, paths);
+  } catch (error) {
+    console.error(
+      '[neondeck] failed to record Autopilot owner block notification',
+      error,
+    );
+  }
 }
 
 function errorMessage(error: unknown) {

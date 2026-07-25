@@ -367,7 +367,6 @@ describe('Flue learning hooks', () => {
     const paths = runtimePaths(home);
     await ensureRuntimeHome(paths);
     const evidence = {
-      repoFullName: 'pandemicsyn/neondeck',
       prNumber: 123,
       headSha: 'head-123',
       reviewId: '9001',
@@ -377,11 +376,19 @@ describe('Flue learning hooks', () => {
     };
 
     await recordHumanReviewSubmittedEvidence(
-      { ...evidence, origin: 'submission' },
+      {
+        ...evidence,
+        origin: 'submission',
+        repoFullName: 'PandemicSyn/NeonDeck',
+      },
       paths,
     );
     await recordHumanReviewSubmittedEvidence(
-      { ...evidence, origin: 'reconciliation' },
+      {
+        ...evidence,
+        origin: 'reconciliation',
+        repoFullName: 'pandemicsyn/neondeck',
+      },
       paths,
     );
 

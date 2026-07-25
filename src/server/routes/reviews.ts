@@ -192,7 +192,10 @@ export function createReviewRoutes(
       const result = await (
         dependencies.reconcilePrReviewSubmission ?? reconcilePrReviewSubmission
       )({ reviewId: c.req.param('id') }, paths);
-      if (result.outcome === 'submitted') {
+      const submitted =
+        result.outcome === 'submitted' ||
+        result.outcome === 'submitted-existing';
+      if (submitted) {
         const verdict = result.review.verdict;
         if (!verdict) {
           throw new Error(
@@ -215,11 +218,13 @@ export function createReviewRoutes(
       const message =
         result.outcome === 'submitted'
           ? 'Recovered the submitted review from GitHub.'
-          : result.outcome === 'ready'
-            ? 'GitHub has no matching review; the local draft is ready to submit again.'
-            : result.outcome === 'pending'
-              ? 'GitHub has not reported the review yet. Wait a moment, then check again.'
-              : `The review is already ${result.review.status}.`;
+          : result.outcome === 'submitted-existing'
+            ? 'Confirmed the submitted review and reconciled its learning evidence.'
+            : result.outcome === 'ready'
+              ? 'GitHub has no matching review; the local draft is ready to submit again.'
+              : result.outcome === 'pending'
+                ? 'GitHub has not reported the review yet. Wait a moment, then check again.'
+                : `The review is already ${result.review.status}.`;
       return c.json(
         {
           ok: true,

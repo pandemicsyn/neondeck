@@ -383,6 +383,10 @@ export function createGitHubRoutes(
           githubAccepted = true;
           const submittedVerdict =
             prReviewVerdict(acceptedReview.draft.verdict) ?? verdict;
+          await recordSubmittedReviewEvidence(
+            submittedVerdict,
+            acceptedReview.review,
+          );
           const submitted = reserved
             ? submitPrReview(
                 {
@@ -396,10 +400,6 @@ export function createGitHubRoutes(
                 paths,
               )
             : null;
-          await recordSubmittedReviewEvidence(
-            submittedVerdict,
-            acceptedReview.review,
-          );
           return c.json(
             reserved && !submitted
               ? {
@@ -420,6 +420,7 @@ export function createGitHubRoutes(
       const draft = objectField(data.draft);
       const review = objectField(data.review);
       const submittedVerdict = prReviewVerdict(draft.verdict) ?? verdict;
+      await recordSubmittedReviewEvidence(submittedVerdict, review);
       const submitted = reserved
         ? submitPrReview(
             {
@@ -431,7 +432,6 @@ export function createGitHubRoutes(
             paths,
           )
         : null;
-      await recordSubmittedReviewEvidence(submittedVerdict, review);
       if (reserved && !submitted) {
         return c.json(
           {

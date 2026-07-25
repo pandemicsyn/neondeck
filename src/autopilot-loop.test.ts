@@ -428,7 +428,7 @@ describe('minimal Autopilot watch loop', () => {
     );
   });
 
-  it('does not clear a newly registered owner turn after deferred settlement learning', async () => {
+  it('keeps the old owner turn claimed until settlement evidence is durable', async () => {
     const { paths } = await gitFixturePaths();
     await configurePrAutopilot(
       {
@@ -472,6 +472,12 @@ describe('minimal Autopilot watch loop', () => {
       },
     );
     await recording.promise;
+    expect(readWatch(paths, 'pandemicsyn/neondeck#123')?.autopilotStatus).toBe(
+      'working',
+    );
+    expect(
+      claimWatchAutopilotTurn(paths, 'pandemicsyn/neondeck#123', 'new-event'),
+    ).toBeUndefined();
     const next = registerPendingAutopilotTurn(
       paths.home,
       instanceId,
@@ -485,6 +491,9 @@ describe('minimal Autopilot watch loop', () => {
 
     expect(readPendingAutopilotTurn(paths.home, instanceId)?.turnId).toBe(
       next.turnId,
+    );
+    expect(readWatch(paths, 'pandemicsyn/neondeck#123')?.autopilotStatus).toBe(
+      'watching',
     );
   });
 
