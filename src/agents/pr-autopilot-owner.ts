@@ -152,6 +152,7 @@ export async function buildPrAutopilotOwnerRuntime(
     turnWatch && shouldLoadLearningMemory
       ? pending?.learningMemoryLoaded
         ? {
+            available: pending.learningMemoryAvailable,
             memoryIds: pending.learningMemoryIds,
             text: pending.learningMemoryText ?? '',
           }
@@ -166,6 +167,7 @@ export async function buildPrAutopilotOwnerRuntime(
       id,
       learningMemoryContext.memoryIds,
       learningMemoryContext.text,
+      learningMemoryContext.available,
     );
   }
   const instructions =

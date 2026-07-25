@@ -27,6 +27,7 @@ import {
   linkPrReviewRunObservation,
   settlePrReviewObservation,
 } from './server/learning-hooks';
+import { createGitHubRoutes } from './server/routes/github';
 import { createReviewRoutes } from './server/routes/reviews';
 
 const roots: string[] = [];
@@ -917,6 +918,74 @@ describe('durable PR reviews', () => {
             number: 42,
           },
           review: expect.objectContaining({ id: '9001' }),
+        }),
+      }),
+    );
+  });
+
+  it('settles and records a GitHub-accepted review when delivery verification is ambiguous', async () => {
+    const paths = await tempPaths();
+    const started = await startReadyReview(paths, 'review-run-ambiguous');
+    const recordHandled = vi.fn(async () => ({ recorded: true }));
+    const routes = createGitHubRoutes(paths, {
+      putGitHubPrReviewDraft: vi.fn(async () => ({
+        ok: true,
+        action: 'github_pr_review_draft_put',
+        changed: true,
+        message: 'Saved review draft.',
+        data: {
+          draft: {
+            id: 'draft-ambiguous',
+            headSha: 'head-1',
+            verdict: 'approve',
+          },
+        },
+      })) as never,
+      postGitHubPrReview: vi.fn(async () => ({
+        ok: false,
+        action: 'github_pr_review_post',
+        changed: true,
+        message:
+          'Submitted PR review but could not uniquely verify its durable delivery identity.',
+        data: {
+          target: { repoFullName: 'other/project', number: 42 },
+          draft: {
+            id: 'draft-ambiguous',
+            headSha: 'head-1',
+            verdict: 'approve',
+          },
+          review: {
+            id: 9001,
+            url: 'https://github.com/other/project/pull/42#pullrequestreview-9001',
+          },
+          deliveryIdentityVerified: false,
+        },
+        requires: ['deliveryIdentity'],
+      })) as never,
+      recordHandledPrApiResult: recordHandled as never,
+    });
+
+    const response = await routes.request('/prs/other/project/42/reviews', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ headSha: 'head-1', verdict: 'approve' }),
+    });
+
+    expect(response.status).toBe(409);
+    expect(readPrReviewForTarget('other/project', 42, paths)).toMatchObject({
+      id: started.reviewId,
+      status: 'submitted',
+      verdict: 'approve',
+      githubReviewUrl:
+        'https://github.com/other/project/pull/42#pullrequestreview-9001',
+    });
+    expect(recordHandled).toHaveBeenCalledWith(
+      paths,
+      'api:github_pr_review_post',
+      expect.objectContaining({
+        ok: true,
+        data: expect.objectContaining({
+          review: expect.objectContaining({ id: 9001 }),
         }),
       }),
     );

@@ -6,6 +6,7 @@ export type AutopilotOwnerTurnSource = 'watch-event' | 'direct-human';
 type PendingAutopilotTurn = {
   correlationId?: string;
   eventFingerprint?: string;
+  learningMemoryAvailable: boolean;
   learningMemoryLoaded: boolean;
   learningMemoryIds: string[];
   learningMemoryText: string | null;
@@ -30,6 +31,7 @@ export function registerPendingAutopilotTurn(
 ) {
   const pending = {
     eventFingerprint,
+    learningMemoryAvailable: false,
     learningMemoryLoaded: false,
     learningMemoryIds: [],
     learningMemoryText: null,
@@ -51,10 +53,12 @@ export function recordPendingAutopilotTurnLearningMemoryContext(
   instanceId: string,
   learningMemoryIds: string[],
   learningMemoryText: string,
+  learningMemoryAvailable: boolean,
 ) {
   const pending = readPendingAutopilotTurn(home, instanceId);
   if (!pending) return null;
   if (pending.learningMemoryLoaded) return pending;
+  pending.learningMemoryAvailable = learningMemoryAvailable;
   pending.learningMemoryLoaded = true;
   pending.learningMemoryIds = [...new Set(learningMemoryIds)];
   pending.learningMemoryText = learningMemoryText;

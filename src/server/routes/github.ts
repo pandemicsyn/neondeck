@@ -32,7 +32,14 @@ import {
 import { queryNumber, safeJsonBody } from '../http';
 import { recordHandledPrApiResult } from '../learning-hooks';
 
-export function createGitHubRoutes(paths: RuntimePaths) {
+export function createGitHubRoutes(
+  paths: RuntimePaths,
+  dependencies: {
+    postGitHubPrReview?: typeof postGitHubPrReview;
+    putGitHubPrReviewDraft?: typeof putGitHubPrReviewDraft;
+    recordHandledPrApiResult?: typeof recordHandledPrApiResult;
+  } = {},
+) {
   const routes = new Hono();
 
   routes.get('/prs', (c) => {
@@ -306,7 +313,9 @@ export function createGitHubRoutes(paths: RuntimePaths) {
 
     let githubAccepted = false;
     try {
-      const savedDraftResult = await putGitHubPrReviewDraft(
+      const savedDraftResult = await (
+        dependencies.putGitHubPrReviewDraft ?? putGitHubPrReviewDraft
+      )(
         target.input,
         {
           headSha: requestedHeadSha ?? '',
@@ -337,7 +346,9 @@ export function createGitHubRoutes(paths: RuntimePaths) {
         );
       }
 
-      const result = await postGitHubPrReview(
+      const result = await (
+        dependencies.postGitHubPrReview ?? postGitHubPrReview
+      )(
         target.input,
         {
           draftId: savedDraft.id,
@@ -351,6 +362,38 @@ export function createGitHubRoutes(paths: RuntimePaths) {
         paths,
       );
       if (!result.ok) {
+        const acceptedReview = unverifiedAcceptedReview(result);
+        if (acceptedReview) {
+          githubAccepted = true;
+          const submittedVerdict =
+            prReviewVerdict(acceptedReview.draft.verdict) ?? verdict;
+          const submitted = reserved
+            ? submitPrReview(
+                {
+                  reviewId: reserved.id,
+                  verdict: submittedVerdict,
+                  githubReviewUrl:
+                    typeof acceptedReview.review.url === 'string'
+                      ? acceptedReview.review.url
+                      : null,
+                },
+                paths,
+              )
+            : null;
+          await (
+            dependencies.recordHandledPrApiResult ?? recordHandledPrApiResult
+          )(paths, 'api:github_pr_review_post', acceptedReview.learningResult);
+          return c.json(
+            reserved && !submitted
+              ? {
+                  ...result,
+                  message:
+                    'GitHub accepted the review, but Neondeck could not verify its delivery identity or settle its durable review record.',
+                }
+              : result,
+            409,
+          );
+        }
         releaseReservation();
         return c.json(result, 400);
       }
@@ -372,11 +415,9 @@ export function createGitHubRoutes(paths: RuntimePaths) {
           )
         : null;
       if (reserved && !submitted) {
-        await recordHandledPrApiResult(
-          paths,
-          'api:github_pr_review_post',
-          result,
-        );
+        await (
+          dependencies.recordHandledPrApiResult ?? recordHandledPrApiResult
+        )(paths, 'api:github_pr_review_post', result);
         return c.json(
           {
             ok: false,
@@ -389,7 +430,7 @@ export function createGitHubRoutes(paths: RuntimePaths) {
           409,
         );
       }
-      await recordHandledPrApiResult(
+      await (dependencies.recordHandledPrApiResult ?? recordHandledPrApiResult)(
         paths,
         'api:github_pr_review_post',
         result,
@@ -509,6 +550,43 @@ export function createGitHubRoutes(paths: RuntimePaths) {
   });
 
   return routes;
+}
+
+function unverifiedAcceptedReview(result: {
+  ok: boolean;
+  action: string;
+  changed: boolean;
+  message: string;
+  data?: unknown;
+  requires?: string[];
+  errors?: string[];
+}) {
+  if (
+    result.ok ||
+    !result.changed ||
+    !result.requires?.includes('deliveryIdentity')
+  ) {
+    return null;
+  }
+  const data = objectField(result.data);
+  const draft = objectField(data.draft);
+  const review = objectField(data.review);
+  if (
+    (typeof review.id !== 'string' && typeof review.id !== 'number') ||
+    (typeof draft.verdict !== 'string' && draft.verdict !== null)
+  ) {
+    return null;
+  }
+  return {
+    draft,
+    review,
+    learningResult: {
+      ...result,
+      ok: true,
+      message:
+        'GitHub accepted the PR review; delivery identity verification requires inspection.',
+    },
+  };
 }
 
 function objectField(value: unknown): Record<string, unknown> {

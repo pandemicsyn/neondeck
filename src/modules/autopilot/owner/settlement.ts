@@ -59,10 +59,8 @@ export async function settleAutopilotOwnerObservation(
   ) {
     return null;
   }
-  if (
-    event.type === 'operation' &&
-    (event.operationKind !== 'prompt' || !event.isError)
-  ) {
+  if (event.type === 'agent_end') return null;
+  if (event.type === 'operation' && event.operationKind !== 'prompt') {
     return null;
   }
   const observation = event as unknown as Record<string, unknown>;
@@ -78,7 +76,7 @@ export async function settleAutopilotOwnerObservation(
     event.instanceId,
   );
   if (registeredPending && !pending) return null;
-  if (!pending && event.type !== 'submission_settled') return null;
+  if (!pending && !strongObservationCorrelation(event)) return null;
   const settlementContext: OwnerSettlementContext = pending
     ? {
         correlationKind: pending.correlationId
@@ -88,10 +86,13 @@ export async function settleAutopilotOwnerObservation(
             : 'process-turn',
         eventFingerprint: pending.eventFingerprint,
         learningMemoryIds: pending.learningMemoryIds,
-        memorySnapshotAvailable: pending.learningMemoryLoaded,
-        memorySnapshotReason: pending.learningMemoryLoaded
-          ? 'loaded-for-owner-turn'
-          : 'owner-runtime-memory-context-was-not-loaded',
+        memorySnapshotAvailable:
+          pending.learningMemoryLoaded && pending.learningMemoryAvailable,
+        memorySnapshotReason: !pending.learningMemoryLoaded
+          ? 'owner-runtime-memory-context-was-not-loaded'
+          : pending.learningMemoryAvailable
+            ? 'loaded-for-owner-turn'
+            : 'owner-runtime-memory-context-was-unavailable',
         mode: pending.mode,
         source: pending.source,
         turnId:
@@ -196,14 +197,18 @@ export async function settleAutopilotOwnerObservation(
     }
     if (watch.autopilotStatus === 'blocked') {
       await recordOutcome({
-        eventType: prepared
-          ? 'autopilot-owner-escalated'
-          : 'autopilot-owner-blocked',
-        outcome: prepared ? 'escalated' : 'blocked',
+        eventType: pushed
+          ? 'autopilot-owner-pushed'
+          : prepared
+            ? 'autopilot-owner-escalated'
+            : 'autopilot-owner-blocked',
+        outcome: pushed ? 'pushed' : prepared ? 'escalated' : 'blocked',
         commitSha: currentSha,
-        summary: prepared
-          ? 'The continuing Autopilot owner retained a committed change after delivery was blocked.'
-          : 'The continuing Autopilot owner requires human inspection.',
+        summary: pushed
+          ? 'The continuing Autopilot owner pushed a focused change before restart recovery blocked the watch for inspection.'
+          : prepared
+            ? 'The continuing Autopilot owner retained a committed change after delivery was blocked.'
+            : 'The continuing Autopilot owner requires human inspection.',
       });
       return watch;
     }
