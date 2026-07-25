@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.0.0-beta.18
+
+### Patch Changes
+
+- [#196](https://github.com/pandemicsyn/neondeck/pull/196) [`1d266ed`](https://github.com/pandemicsyn/neondeck/commit/1d266ed8366ad6261cd49bd09279b50da140f745) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Run the TypeScript setup entrypoint through the project loader and add a
+  repeatable QA check for releases installed from the npm registry.
+
 ## 1.0.0-beta.17
 
 ### Patch Changes
