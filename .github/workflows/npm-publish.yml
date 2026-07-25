@@ -136,7 +136,7 @@ jobs:
           echo "already_published=false" >> "$GITHUB_OUTPUT"
 
       - name: Configure temporary npm token
-        if: steps.release.outputs.dry_run != 'true'
+        if: steps.release.outputs.dry_run != 'true' && steps.registry.outputs.already_published != 'true'
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
@@ -185,10 +185,3 @@ jobs:
             echo "Registry propagation is still pending (attempt ${attempt}/12); retrying in 5 seconds."
             sleep 5
           done
-
-      - name: Apply npm distribution tag
-        if: steps.release.outputs.dry_run != 'true'
-        env:
-          RELEASE_VERSION: ${{ steps.release.outputs.version }}
-          NPM_TAG: ${{ steps.release.outputs.npm_tag }}
-        run: npm dist-tag add "neondeck@${RELEASE_VERSION}" "${NPM_TAG}"
