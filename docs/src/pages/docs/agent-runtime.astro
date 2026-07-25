@@ -20,6 +20,15 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
           keeps deterministic facts and mutations in actions while using the
           model for synthesis, triage, and next-step reasoning.
         </p>
+        <p>
+          A normal conversation starts in a virtual scratch workspace rather
+          than a mounted host checkout. Explicit Neondeck capabilities bridge
+          that workspace to registered repos, local state, GitHub, connected
+          services, and approved command execution. The workspace limits direct
+          access; the capability supplied for a turn determines what effects are
+          possible. See <a href="/docs/execution/">safety and sandboxes</a> for the
+          boundary of chat, schedules, watches, Autopilot, and PR review.
+        </p>
 
         <h2>Flue agent</h2>
         <p>
@@ -113,7 +122,10 @@ watch-pr</code></pre>
         <p>
           Scheduled tasks cover PR watches, briefings, and bounded agent
           instructions. Their validated triggers are persisted locally, while
-          Flue owns each admitted workflow run.
+          Flue owns each admitted workflow run. A requested repo or working
+          directory is task context, not a mounted shell workspace. General
+          instructions can still use allowed typed capabilities, so scheduled
+          work is not automatically read-only.
         </p>
 
         <h2>Reports and busywork</h2>
@@ -153,11 +165,15 @@ watch-pr</code></pre>
           Scheduled tasks are validated local records with a typed spec and an
           interval, one-shot, or timezone-aware cron trigger. The scheduler
           claims each due occurrence before dispatching a bounded Flue workflow;
-          approval-gated actions remain approval-gated. Morning briefings use a
-          typed profile and a persistent, non-active briefing session so a
-          background run never replaces the dashboard's active conversation. The
-          scheduled-task API also creates agent instructions and can pause,
-          resume, or delete existing tasks.
+          approval-gated actions remain approval-gated, and workflow-originated
+          runs cannot use the ordinary interactive commit or push path. Other
+          typed mutations remain available when the task asks for them. An
+          instruction deliberately targeted at an existing agent session
+          inherits that session's interactive context instead of the default
+          workflow restriction. Morning briefings use a typed profile and a
+          persistent, non-active briefing session so a background run never
+          replaces the dashboard's active conversation. General instruction
+          tasks can be paused, resumed, or deleted.
         </p>
         <p>
           Briefing orchestration persists deterministic grounding separately

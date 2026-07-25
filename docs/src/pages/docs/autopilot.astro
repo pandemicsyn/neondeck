@@ -222,15 +222,16 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
           approval-mode turns never receive push capability.
         </p>
 
-        <h2>Product guarantees</h2>
+        <h2>Product boundaries</h2>
         <p>
-          These are enforced behavior of the current loop, independent of how
+          These are the core boundaries of the current loop, independent of how
           you configure a particular repository:
         </p>
         <ul>
           <li>
-            The primary checkout is not modified. Autopilot works in the one
-            managed worktree bound to the watched PR.
+            Neondeck creates, binds, reviews, commits, and delivers through the
+            one managed worktree assigned to the watched PR. The owner is
+            instructed not to use the primary checkout.
           </li>
           <li>
             Every fixing mode receives the same trusted coding workspace. Mode
@@ -257,6 +258,17 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
             policy or guessing about an external effect.
           </li>
         </ul>
+        <p>
+          The coding shell is trusted local execution, not OS-level containment.
+          It starts in the managed worktree with common credential paths
+          removed, but it runs as the Neondeck server user and can see more of
+          the host filesystem than the bound repo tools expose. The managed
+          worktree is a strong task and delivery boundary; it is not a container
+          or virtual machine boundary. See <a href="/docs/execution/"
+            >safety and sandboxes</a
+          >
+          before enabling a fixing mode.
+        </p>
 
         <h2>Autonomous judgment and validation</h2>
         <p>
