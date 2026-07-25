@@ -314,12 +314,12 @@ describe('session actions', () => {
 
   it('lists historical notifications and watch events for a linked session', async () => {
     const paths = runtimePaths(await tempDir());
-    const watchId = 'Kilo-Org/cloud#4480';
+    const watchId = 'Acme-Org/widgets#4480';
     const created = await createChatSession(
       {
         title: 'Watch cloud#4480',
         kind: 'watch',
-        linkedRepoId: 'Kilo-Org/cloud',
+        linkedRepoId: 'Acme-Org/widgets',
         linkedWatchId: watchId,
       },
       paths,
@@ -386,7 +386,7 @@ describe('session actions', () => {
       {
         title: 'Watch cloud#4480',
         kind: 'watch',
-        linkedWatchId: 'Kilo-Org/cloud#4480',
+        linkedWatchId: 'Acme-Org/widgets#4480',
       },
       paths,
     );

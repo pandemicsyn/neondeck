@@ -6,8 +6,8 @@ describe('watch notification copy', () => {
     expect(
       watchNotificationCopy(
         {
-          id: 'Kilo-Org/cloud#4480',
-          repoFullName: 'Kilo-Org/cloud',
+          id: 'Acme-Org/widgets#4480',
+          repoFullName: 'Acme-Org/widgets',
           prNumber: 4480,
           status: 'attention-needed',
           prState: 'closed',
@@ -16,11 +16,11 @@ describe('watch notification copy', () => {
             checks: { status: 'failure', total: 50, failed: 1, pending: 0 },
           },
         },
-        'Updated watch "Kilo-Org/cloud#4480".',
+        'Updated watch "Acme-Org/widgets#4480".',
       ),
     ).toEqual({
       title: 'PR 4480 needs attention',
-      message: 'Kilo-Org/cloud#4480 is merged, but 1 of 50 checks failed.',
+      message: 'Acme-Org/widgets#4480 is merged, but 1 of 50 checks failed.',
     });
   });
 
@@ -28,8 +28,8 @@ describe('watch notification copy', () => {
     expect(
       watchNotificationCopy(
         {
-          id: 'Kilo-Org/cloud#4722',
-          repoFullName: 'Kilo-Org/cloud',
+          id: 'Acme-Org/widgets#4722',
+          repoFullName: 'Acme-Org/widgets',
           prNumber: 4722,
           status: 'ready',
           prState: 'open',
@@ -39,11 +39,11 @@ describe('watch notification copy', () => {
             checks: null,
           },
         },
-        'Updated watch "Kilo-Org/cloud#4722".',
+        'Updated watch "Acme-Org/widgets#4722".',
       ),
     ).toEqual({
       title: 'PR 4722 approved',
-      message: 'Kilo-Org/cloud#4722: required reviews approved.',
+      message: 'Acme-Org/widgets#4722: required reviews approved.',
     });
   });
 });

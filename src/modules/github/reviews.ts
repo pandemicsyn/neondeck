@@ -217,7 +217,7 @@ export function readLivePrReviewDraft(options: {
         `
         SELECT *
         FROM pr_review_drafts
-        WHERE repo = ?
+        WHERE repo = ? COLLATE NOCASE
           AND pr_number = ?
           AND status = 'draft'
         ORDER BY updated_at DESC
@@ -280,7 +280,7 @@ export function upsertPrReviewDraft(options: {
         `
         SELECT *
         FROM pr_review_drafts
-        WHERE repo = ?
+        WHERE repo = ? COLLATE NOCASE
           AND pr_number = ?
           AND status = 'draft'
         LIMIT 1;
@@ -328,7 +328,7 @@ export function upsertPrReviewDraft(options: {
           `
           SELECT *
           FROM pr_review_drafts
-          WHERE repo = ?
+          WHERE repo = ? COLLATE NOCASE
             AND pr_number = ?
             AND status = 'draft'
           LIMIT 1;
@@ -357,7 +357,7 @@ export function discardPrReviewDraft(options: {
         `
         SELECT *
         FROM pr_review_drafts
-        WHERE repo = ?
+        WHERE repo = ? COLLATE NOCASE
           AND pr_number = ?
           AND status = 'draft'
         LIMIT 1;

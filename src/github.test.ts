@@ -1404,6 +1404,57 @@ describe('github foundation', () => {
     ).toBe(first.id);
   });
 
+  it('finds and reuses live review drafts across repository casing', async () => {
+    const paths = runtimePaths(await tempHome());
+    await ensureRuntimeHome(paths);
+
+    const draft = upsertPrReviewDraft({
+      databasePath: paths.neondeckDatabase,
+      repo: 'Acme-Org/widgets',
+      prNumber: 4763,
+      headSha: 'head4763',
+    });
+    const withComment = addPrReviewDraftComment({
+      databasePath: paths.neondeckDatabase,
+      draftId: draft.id,
+      path: 'src/app.ts',
+      side: 'RIGHT',
+      line: 12,
+      origin: 'neon',
+      body: 'Keep this branch explicit.',
+    });
+
+    expect(
+      readLivePrReviewDraft({
+        databasePath: paths.neondeckDatabase,
+        repo: 'acme-org/widgets',
+        prNumber: 4763,
+      }),
+    ).toMatchObject({
+      id: draft.id,
+      comments: [
+        {
+          id: withComment.comments[0]?.id,
+          path: 'src/app.ts',
+          line: 12,
+          body: 'Keep this branch explicit.',
+        },
+      ],
+    });
+    expect(
+      upsertPrReviewDraft({
+        databasePath: paths.neondeckDatabase,
+        repo: 'acme-org/widgets',
+        prNumber: 4763,
+        headSha: 'head4763',
+        verdict: 'comment',
+      }),
+    ).toMatchObject({
+      id: draft.id,
+      verdict: 'comment',
+    });
+  });
+
   it('removes legacy generator attribution from unsent generated comments', async () => {
     const paths = runtimePaths(await tempHome());
     await ensureRuntimeHome(paths);

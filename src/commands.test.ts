@@ -983,12 +983,12 @@ describe('Neon commands', () => {
     const paths = runtimePaths(home);
     const session = await createChatSession(
       {
-        title: 'PR Kilo-Org/cloud#4443',
+        title: 'PR Acme-Org/widgets#4443',
         kind: 'task',
-        linkedTaskId: 'github-pr:Kilo-Org/cloud#4443',
+        linkedTaskId: 'github-pr:Acme-Org/widgets#4443',
         uiMetadata: {
           source: 'github-pr',
-          repo: 'Kilo-Org/cloud',
+          repo: 'Acme-Org/widgets',
           prNumber: 4443,
         },
       },
@@ -1021,8 +1021,8 @@ describe('Neon commands', () => {
         'Current feedback was baselined; only later changes will run.',
       ),
       data: {
-        inferredRef: 'Kilo-Org/cloud#4443',
-        watch: { id: 'Kilo-Org/cloud#4443' },
+        inferredRef: 'Acme-Org/widgets#4443',
+        watch: { id: 'Acme-Org/widgets#4443' },
       },
     });
   });
@@ -1035,11 +1035,11 @@ describe('Neon commands', () => {
         summary: null,
         uiMetadata: {
           source: 'github-pr',
-          repo: 'Kilo-Org/cloud',
+          repo: 'Acme-Org/widgets',
           prNumber: '4443',
         },
       }),
-    ).toBe('Kilo-Org/cloud#4443');
+    ).toBe('Acme-Org/widgets#4443');
 
     expect(
       inferWatchPrReferenceFromSession({
@@ -1048,11 +1048,11 @@ describe('Neon commands', () => {
         summary: null,
         uiMetadata: {
           source: 'pr-watch',
-          repoFullName: 'Kilo-Org/cloud',
+          repoFullName: 'Acme-Org/widgets',
           prNumber: 4443,
         },
       }),
-    ).toBe('Kilo-Org/cloud#4443');
+    ).toBe('Acme-Org/widgets#4443');
   });
 
   it('does not infer watch-pr refs from free session title text', () => {

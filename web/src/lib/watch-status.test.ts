@@ -7,7 +7,7 @@ import {
 } from './watch-status';
 
 const watch = {
-  id: 'Kilo-Org/cloud#4480',
+  id: 'Acme-Org/widgets#4480',
   status: 'attention-needed',
   prState: 'closed',
   lastSnapshot: {
@@ -23,7 +23,7 @@ const watch = {
       checkedAt: '2026-07-14T08:02:35.301Z',
     },
     title: 'Direct ingest',
-    url: 'https://github.com/Kilo-Org/cloud/pull/4480',
+    url: 'https://github.com/Acme-Org/widgets/pull/4480',
     updatedAt: '2026-07-13T21:26:02Z',
     headSha: 'def',
     baseRef: 'main',
@@ -48,7 +48,7 @@ describe('PR watch status presentation', () => {
         id: 'notification-1',
         level: 'attention',
         title: 'PR watch needs attention',
-        message: 'Updated watch "Kilo-Org/cloud#4480".',
+        message: 'Updated watch "Acme-Org/widgets#4480".',
         source: 'watch-pr',
         sourceId: watch.id,
         data: watch,
@@ -58,6 +58,6 @@ describe('PR watch status presentation', () => {
         createdAt: '2026-07-14T08:02:35.301Z',
         updatedAt: '2026-07-14T08:02:35.301Z',
       } satisfies NotificationRecord),
-    ).toBe('Kilo-Org/cloud#4480: Merged, but 1 of 50 checks failed.');
+    ).toBe('Acme-Org/widgets#4480: Merged, but 1 of 50 checks failed.');
   });
 });

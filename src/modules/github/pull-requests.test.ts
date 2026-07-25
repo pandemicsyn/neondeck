@@ -50,7 +50,7 @@ describe('GitHub pull request review decision', () => {
     await expect(
       fetchPullRequestReviewDecision({
         token: 'github-token',
-        owner: 'Kilo-Org',
+        owner: 'Acme-Org',
         repo: 'cloud',
         number: 4722,
       }),
