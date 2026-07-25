@@ -119,6 +119,8 @@ neondeck open sidebar
 - [neondeck.dev](https://neondeck.dev): public site and product docs.
 - [Getting started](https://neondeck.dev/docs/getting-started/): install,
   secrets, runtime home, dashboard launch, and local app install.
+- [`QA.md`](./QA.md): install and validate published npm releases on a
+  persistent Linux QA host.
 - [Configuration](https://neondeck.dev/docs/configuration/): runtime config,
   models, providers, repos, schedules, SOUL, and skills.
 - [Agent runtime](https://neondeck.dev/docs/agent-runtime/): Flue agents,
