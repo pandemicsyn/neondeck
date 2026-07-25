@@ -238,8 +238,14 @@ neondeck open xeneon --kiosk</code></pre>
         <h2 id="execution-approvals">Execution approvals</h2>
         <p>
           Neondeck keeps host execution action-mediated. The default execution
-          backend is <code>local</code>; <code>exe.dev</code> runs through the Flue
-          sandbox adapter against an existing VM.
+          backend is local.
+        </p>
+        <p>
+          <strong>Work in progress:</strong> an experimental exe.dev command backend
+          is present, but it does not move Neondeck, scheduled work, PR review, managed
+          worktrees, or watched-PR Autopilot onto the remote VM. Do not enable it
+          expecting a complete remote workspace or a transparent replacement for local
+          execution.
         </p>
         <pre><code>&#123;
   "version": 1,
@@ -248,12 +254,6 @@ neondeck open xeneon --kiosk</code></pre>
     "enabledBackends": ["local"],
     "approvalMode": "manual",
     "unattended": "deny",
-    "exeDev": &#123;
-      "lifecycle": "existing-vm",
-      "vmHostEnv": "EXE_VM_HOST",
-      "sshKeyEnv": "EXE_SSH_KEY",
-      "apiTokenEnv": "EXE_API_TOKEN"
-    &#125;,
     "preapprovedCommands": [
       &#123;
         "id": "test",
@@ -286,19 +286,16 @@ neondeck open xeneon --kiosk</code></pre>
         </p>
         <p>
           Trusted-local execution runs on your machine and is best for local git
-          or developer commands you already trust. <code>exe.dev</code> is the isolated
-          sandbox option; enable it explicitly by adding <code>"exe.dev"</code> to
-          <code>enabledBackends</code> after <code>EXE_VM_HOST</code> points at an
-          existing VM and SSH auth is configured.
+          or developer commands you already trust. Keep local as the configured
+          backend unless you are deliberately testing the experimental exe.dev
+          command path.
         </p>
         <p>
-          Repo-scoped <code>exe.dev</code> work should first call
-          <code>neondeck_exedev_checkout_sync</code> for a configured
-          <code>repoId</code> or managed <code>worktreeId</code>. Subsequent
-          <code>neondeck_execution_run</code> calls can pass the same target so the
-          remote cwd and explicitly enabled env forwarding apply. Env audit metadata
-          records source ids and keys, not values, and Neondeck does not filter env
-          vars by heuristic name.
+          The experimental path can connect to an existing VM, synchronize a
+          GitHub-reachable checkout, and run an explicitly approved command over
+          SSH. It does not transfer uncommitted local changes, relocate the
+          agent's workspace, or make Autopilot remote. See
+          <a href="/docs/execution/"> safety and sandboxes</a> for its current limitations.
         </p>
 
         <h2 id="verify">Verify locally</h2>
