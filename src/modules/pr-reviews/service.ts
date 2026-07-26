@@ -361,6 +361,17 @@ export async function reconcilePrReviewSubmission(
   await ensureRuntimeHome(paths);
   const current = readPrReview(input.reviewId, paths);
   if (!current) throw new Error('PR review not found.');
+  const submittedReviewId =
+    current.status === 'submitted'
+      ? githubReviewIdFromUrl(current.githubReviewUrl)
+      : null;
+  if (submittedReviewId && current.verdict) {
+    return {
+      outcome: 'submitted-existing' as const,
+      review: current,
+      githubReviewId: submittedReviewId,
+    };
+  }
   if (current.status !== 'submitting') {
     return { outcome: 'unchanged' as const, review: current };
   }
@@ -411,11 +422,19 @@ async function reconcileInactivePrReviewSubmission(
       paths,
     );
     if (submitted) {
-      return { outcome: 'submitted' as const, review: submitted };
+      return {
+        outcome: 'submitted' as const,
+        review: submitted,
+        githubReviewId: String(submittedReview.id),
+      };
     }
     const settled = readPrReview(current.id, paths);
     if (settled?.status === 'submitted') {
-      return { outcome: 'submitted' as const, review: settled };
+      return {
+        outcome: 'submitted' as const,
+        review: settled,
+        githubReviewId: String(submittedReview.id),
+      };
     }
     throw new Error('Could not settle the recovered GitHub review locally.');
   }
@@ -666,6 +685,10 @@ function splitRepoFullName(repoFullName: string): [string, string] {
     throw new Error(`Invalid GitHub repository name: ${repoFullName}`);
   }
   return [owner, repo];
+}
+
+function githubReviewIdFromUrl(url: string | null) {
+  return url?.match(/[#/]pullrequestreview-(\d+)(?:$|[/?#])/i)?.[1] ?? null;
 }
 
 function latestReviewerVerdict(

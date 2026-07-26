@@ -383,6 +383,21 @@ export function extractHandledPrEvent(input: {
   const task = objectRecord(result.task) ?? objectRecord(data.task);
   const resultState =
     objectRecord(result.resultState) ?? objectRecord(data.resultState);
+  const target =
+    objectRecord(result.target) ??
+    objectRecord(data.target) ??
+    objectRecord(nestedResult?.target) ??
+    objectRecord(nestedData.target);
+  const review =
+    objectRecord(result.review) ??
+    objectRecord(data.review) ??
+    objectRecord(nestedResult?.review) ??
+    objectRecord(nestedData.review);
+  const draft =
+    objectRecord(result.draft) ??
+    objectRecord(data.draft) ??
+    objectRecord(nestedResult?.draft) ??
+    objectRecord(nestedData.draft);
   const preparedDiff =
     objectRecord(result.preparedDiff) ??
     objectRecord(data.preparedDiff) ??
@@ -406,6 +421,7 @@ export function extractHandledPrEvent(input: {
     preparedDiff?.repoId,
     worktree?.repoId,
     task?.repoId,
+    target?.repoId,
   );
   const repoFullName = firstString(
     result.repoFullName,
@@ -417,6 +433,8 @@ export function extractHandledPrEvent(input: {
     preparedDiff?.repoFullName,
     worktree?.repoFullName,
     task?.repoFullName,
+    target?.repoFullName,
+    target?.repo,
   );
   const prNumber = firstNumber(
     result.prNumber,
@@ -426,6 +444,8 @@ export function extractHandledPrEvent(input: {
     dossier?.prNumber,
     preparedDiff?.prNumber,
     worktree?.prNumber,
+    target?.prNumber,
+    target?.number,
   );
   if ((!repoId && !repoFullName) || !prNumber) return null;
 
@@ -452,6 +472,24 @@ export function extractHandledPrEvent(input: {
     nestedData.kiloTaskId,
     task?.id,
     resultState?.taskId,
+  );
+  const headSha = firstString(
+    result.headSha,
+    data.headSha,
+    nestedResult?.headSha,
+    nestedData.headSha,
+    dossier?.headSha,
+    preparedDiff?.headSha,
+    worktree?.headSha,
+    target?.headSha,
+    draft?.headSha,
+  );
+  const reviewId = firstIdentifier(
+    result.reviewId,
+    data.reviewId,
+    nestedResult?.reviewId,
+    nestedData.reviewId,
+    review?.id,
   );
   const resultOk = firstBoolean(
     result.ok,
@@ -493,6 +531,8 @@ export function extractHandledPrEvent(input: {
       preparedDiffId ??
         taskId ??
         worktreeId ??
+        reviewId ??
+        headSha ??
         firstString(result.id, data.id) ??
         input.runId ??
         'unknown',
@@ -516,6 +556,9 @@ export function extractHandledPrEvent(input: {
       preparedDiffId: preparedDiffId ?? null,
       worktreeId: worktreeId ?? null,
       taskId: taskId ?? null,
+      headSha: headSha ?? null,
+      reviewId: reviewId ?? null,
+      verdict: firstString(result.verdict, data.verdict, draft?.verdict),
       ok: resultOk,
       changed,
       blocked,
@@ -633,6 +676,20 @@ export function handledEventType(
       'kilo-result-verification-failed',
     );
   }
+  if (value.includes('pr_review_assist')) {
+    return outcomeLabel(
+      'pr-review-assist-completed',
+      'pr-review-assist-blocked',
+      'pr-review-assist-failed',
+    );
+  }
+  if (value.includes('github_pr_review_post')) {
+    return outcomeLabel(
+      'human-review-submitted',
+      'human-review-submission-blocked',
+      'human-review-submission-failed',
+    );
+  }
   const status =
     typeof preparedDiff?.status === 'string' ? preparedDiff.status : null;
   if (status === 'abandoned') return 'prepared-diff-abandoned';
@@ -731,6 +788,15 @@ export function firstNumber(...values: unknown[]) {
     (value): value is number =>
       typeof value === 'number' && Number.isFinite(value),
   );
+}
+
+export function firstIdentifier(...values: unknown[]) {
+  const value = values.find(
+    (item) =>
+      (typeof item === 'string' && item.length > 0) ||
+      (typeof item === 'number' && Number.isFinite(item)),
+  );
+  return value === undefined ? undefined : String(value);
 }
 
 export function firstBoolean(...values: unknown[]) {

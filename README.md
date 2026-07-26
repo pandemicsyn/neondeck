@@ -48,8 +48,10 @@ Neon watches your PRs, prepares fixes, and keeps the busywork moving.
   trusted Autopilot coding owner a repository-native workspace with a
   credential-free default environment, or run mediated work on an `exe.dev`
   sandbox VM.
-- **Memory that learns from your work.** Let Neon remember approved preferences
-  and repo conventions from conversations and PR feedback.
+- **Memory that learns from your work.** Neon turns conversations and PR
+  outcomes into typed, validated, audited, reversible memory and skill
+  improvements. Safe writes apply automatically by default; explicit
+  `review` and `off` modes keep autonomy operator-controlled.
 - **Ask Neon to set up the deck.** Configure repos, models, schedules, layout,
   and display behavior through typed actions instead of hand-editing every file.
 

@@ -16,8 +16,15 @@ import {
 } from '../../modules/pr-reviews';
 import type { RuntimePaths } from '../../runtime-home';
 import { safeJsonBody } from '../http';
+import { recordHumanReviewSubmittedApiEvidence } from '../learning-hooks';
 
-export function createReviewRoutes(paths: RuntimePaths) {
+export function createReviewRoutes(
+  paths: RuntimePaths,
+  dependencies: {
+    reconcilePrReviewSubmission?: typeof reconcilePrReviewSubmission;
+    recordHumanReviewSubmittedApiEvidence?: typeof recordHumanReviewSubmittedApiEvidence;
+  } = {},
+) {
   const routes = new Hono();
 
   routes.get('/reviews', async (c) => {
@@ -182,18 +189,42 @@ export function createReviewRoutes(paths: RuntimePaths) {
 
   routes.post('/reviews/:id/reconcile', async (c) => {
     try {
-      const result = await reconcilePrReviewSubmission(
-        { reviewId: c.req.param('id') },
-        paths,
-      );
+      const result = await (
+        dependencies.reconcilePrReviewSubmission ?? reconcilePrReviewSubmission
+      )({ reviewId: c.req.param('id') }, paths);
+      const submitted =
+        result.outcome === 'submitted' ||
+        result.outcome === 'submitted-existing';
+      if (submitted) {
+        const verdict = result.review.verdict;
+        if (!verdict) {
+          throw new Error(
+            'Recovered submitted review is missing its submitted verdict.',
+          );
+        }
+        await (
+          dependencies.recordHumanReviewSubmittedApiEvidence ??
+          recordHumanReviewSubmittedApiEvidence
+        )(paths, {
+          origin: 'reconciliation',
+          repoFullName: result.review.repoFullName,
+          prNumber: result.review.prNumber,
+          headSha: result.review.headSha,
+          reviewId: result.githubReviewId,
+          reviewUrl: result.review.githubReviewUrl,
+          verdict,
+        });
+      }
       const message =
         result.outcome === 'submitted'
           ? 'Recovered the submitted review from GitHub.'
-          : result.outcome === 'ready'
-            ? 'GitHub has no matching review; the local draft is ready to submit again.'
-            : result.outcome === 'pending'
-              ? 'GitHub has not reported the review yet. Wait a moment, then check again.'
-              : `The review is already ${result.review.status}.`;
+          : result.outcome === 'submitted-existing'
+            ? 'Confirmed the submitted review and reconciled its learning evidence.'
+            : result.outcome === 'ready'
+              ? 'GitHub has no matching review; the local draft is ready to submit again.'
+              : result.outcome === 'pending'
+                ? 'GitHub has not reported the review yet. Wait a moment, then check again.'
+                : `The review is already ${result.review.status}.`;
       return c.json(
         {
           ok: true,

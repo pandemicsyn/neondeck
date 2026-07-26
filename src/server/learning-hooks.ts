@@ -10,8 +10,10 @@ import { addNotification, setWorkflowSummaryRunId } from '../modules/app-state';
 import { settleScheduledTaskWorkflowRun } from '../modules/scheduled-tasks';
 import {
   attachLearningReviewRunId,
+  recordHumanReviewSubmittedEvidence,
   recordConversationTurnAndMaybeQueueLearning,
   recordHandledPrFromWorkflowResult,
+  type HumanReviewSubmittedEvidenceInput,
 } from '../modules/learning/reviews';
 import type { RuntimePaths } from '../runtime-home';
 import { recordFlueObservation } from '../modules/learning';
@@ -159,7 +161,11 @@ export function installFlueObservationHandlers(
       event.type === 'operation' ||
       event.type === 'submission_settled'
     ) {
-      void settleAutopilotOwnerObservation(event, paths).catch((error) => {
+      void settleAutopilotOwnerObservation(event, paths, {
+        async invokePrBatchReview(input) {
+          return invoke(reviewPrBatchForLearningWorkflow, { input });
+        },
+      }).catch((error) => {
         console.error(
           '[neondeck] failed to settle Autopilot owner turn',
           error,
@@ -242,10 +248,13 @@ export function recordHandledPrApiResult(
   paths: RuntimePaths,
   workflow: string,
   result: unknown,
+  dependencies: {
+    recordHandledPr?: typeof recordHandledPrFromWorkflowResult;
+  } = {},
 ) {
-  void Promise.resolve()
+  return Promise.resolve()
     .then(() =>
-      recordHandledPrFromWorkflowResult(
+      (dependencies.recordHandledPr ?? recordHandledPrFromWorkflowResult)(
         {
           workflow,
           result,
@@ -263,6 +272,35 @@ export function recordHandledPrApiResult(
         '[neondeck] failed to record handled PR learning event',
         error,
       );
+      return null;
+    });
+}
+
+export function recordHumanReviewSubmittedApiEvidence(
+  paths: RuntimePaths,
+  evidence: HumanReviewSubmittedEvidenceInput,
+  dependencies: {
+    recordEvidence?: typeof recordHumanReviewSubmittedEvidence;
+  } = {},
+) {
+  return Promise.resolve()
+    .then(() =>
+      (dependencies.recordEvidence ?? recordHumanReviewSubmittedEvidence)(
+        evidence,
+        paths,
+        {
+          async invokePrBatchReview(input) {
+            return invoke(reviewPrBatchForLearningWorkflow, { input });
+          },
+        },
+      ),
+    )
+    .catch((error) => {
+      console.error(
+        '[neondeck] failed to record submitted-review learning evidence',
+        error,
+      );
+      return null;
     });
 }
 
@@ -340,6 +378,18 @@ function learningReviewResultId(event: FlueObservation) {
 }
 
 function workflowLabel(event: FlueObservation) {
+  if ('workflowName' in event && typeof event.workflowName === 'string') {
+    return event.workflowName;
+  }
+  if ('result' in event) {
+    const result = event.result;
+    if (result && typeof result === 'object') {
+      const direct = stringField(result, 'workflow');
+      const data = objectStringField(result, 'data', 'workflow');
+      const summary = objectStringField(result, 'workflowSummary', 'workflow');
+      if (direct || data || summary) return direct ?? data ?? summary!;
+    }
+  }
   if ('workflow' in event && typeof event.workflow === 'string') {
     return event.workflow;
   }

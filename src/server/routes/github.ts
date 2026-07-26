@@ -30,8 +30,16 @@ import {
   submitPrReview,
 } from '../../modules/pr-reviews';
 import { queryNumber, safeJsonBody } from '../http';
+import { recordHumanReviewSubmittedApiEvidence } from '../learning-hooks';
 
-export function createGitHubRoutes(paths: RuntimePaths) {
+export function createGitHubRoutes(
+  paths: RuntimePaths,
+  dependencies: {
+    postGitHubPrReview?: typeof postGitHubPrReview;
+    putGitHubPrReviewDraft?: typeof putGitHubPrReviewDraft;
+    recordHumanReviewSubmittedApiEvidence?: typeof recordHumanReviewSubmittedApiEvidence;
+  } = {},
+) {
   const routes = new Hono();
 
   routes.get('/prs', (c) => {
@@ -302,10 +310,28 @@ export function createGitHubRoutes(paths: RuntimePaths) {
     const endSubmissionAttempt = reserved
       ? beginPrReviewSubmissionAttempt(reserved.id)
       : () => {};
+    const recordSubmittedReviewEvidence = (
+      submittedVerdict: 'comment' | 'approve' | 'request-changes',
+      review: Record<string, unknown>,
+    ) =>
+      (
+        dependencies.recordHumanReviewSubmittedApiEvidence ??
+        recordHumanReviewSubmittedApiEvidence
+      )(paths, {
+        origin: 'submission',
+        repoFullName: target.input.repo,
+        prNumber: target.input.prNumber,
+        headSha: requestedHeadSha ?? '',
+        reviewId: identifier(review.id),
+        reviewUrl: typeof review.url === 'string' ? review.url : null,
+        verdict: submittedVerdict,
+      });
 
     let githubAccepted = false;
     try {
-      const savedDraftResult = await putGitHubPrReviewDraft(
+      const savedDraftResult = await (
+        dependencies.putGitHubPrReviewDraft ?? putGitHubPrReviewDraft
+      )(
         target.input,
         {
           headSha: requestedHeadSha ?? '',
@@ -336,7 +362,9 @@ export function createGitHubRoutes(paths: RuntimePaths) {
         );
       }
 
-      const result = await postGitHubPrReview(
+      const result = await (
+        dependencies.postGitHubPrReview ?? postGitHubPrReview
+      )(
         target.input,
         {
           draftId: savedDraft.id,
@@ -350,6 +378,39 @@ export function createGitHubRoutes(paths: RuntimePaths) {
         paths,
       );
       if (!result.ok) {
+        const acceptedReview = unverifiedAcceptedReview(result);
+        if (acceptedReview) {
+          githubAccepted = true;
+          const submittedVerdict =
+            prReviewVerdict(acceptedReview.draft.verdict) ?? verdict;
+          await recordSubmittedReviewEvidence(
+            submittedVerdict,
+            acceptedReview.review,
+          );
+          const submitted = reserved
+            ? submitPrReview(
+                {
+                  reviewId: reserved.id,
+                  verdict: submittedVerdict,
+                  githubReviewUrl:
+                    typeof acceptedReview.review.url === 'string'
+                      ? acceptedReview.review.url
+                      : null,
+                },
+                paths,
+              )
+            : null;
+          return c.json(
+            reserved && !submitted
+              ? {
+                  ...result,
+                  message:
+                    'GitHub accepted the review, but Neondeck could not verify its delivery identity or settle its durable review record.',
+                }
+              : result,
+            409,
+          );
+        }
         releaseReservation();
         return c.json(result, 400);
       }
@@ -359,6 +420,7 @@ export function createGitHubRoutes(paths: RuntimePaths) {
       const draft = objectField(data.draft);
       const review = objectField(data.review);
       const submittedVerdict = prReviewVerdict(draft.verdict) ?? verdict;
+      await recordSubmittedReviewEvidence(submittedVerdict, review);
       const submitted = reserved
         ? submitPrReview(
             {
@@ -500,6 +562,37 @@ export function createGitHubRoutes(paths: RuntimePaths) {
   return routes;
 }
 
+function unverifiedAcceptedReview(result: {
+  ok: boolean;
+  action: string;
+  changed: boolean;
+  message: string;
+  data?: unknown;
+  requires?: string[];
+  errors?: string[];
+}) {
+  if (
+    result.ok ||
+    !result.changed ||
+    !result.requires?.includes('deliveryIdentity')
+  ) {
+    return null;
+  }
+  const data = objectField(result.data);
+  const draft = objectField(data.draft);
+  const review = objectField(data.review);
+  if (
+    (typeof review.id !== 'string' && typeof review.id !== 'number') ||
+    (typeof draft.verdict !== 'string' && draft.verdict !== null)
+  ) {
+    return null;
+  }
+  return {
+    draft,
+    review,
+  };
+}
+
 function objectField(value: unknown): Record<string, unknown> {
   return value && typeof value === 'object' && !Array.isArray(value)
     ? (value as Record<string, unknown>)
@@ -512,6 +605,14 @@ function prReviewVerdict(value: unknown) {
     value === 'request-changes'
     ? value
     : null;
+}
+
+function identifier(value: unknown) {
+  return typeof value === 'string' && value
+    ? value
+    : typeof value === 'number' && Number.isFinite(value)
+      ? String(value)
+      : '';
 }
 
 function prTargetFromParams(owner: string, repo: string, numberText: string) {

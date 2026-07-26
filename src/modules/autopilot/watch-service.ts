@@ -23,7 +23,8 @@ import { completeAutopilotWatchIfTerminal } from './owner/lifecycle';
 import { gitCurrentSha, gitStatus } from '../../repo-edit/git';
 import { readManagedWorktree } from '../worktrees';
 import {
-  clearPendingAutopilotTurn,
+  clearPendingAutopilotTurnIfMatches,
+  recordPendingAutopilotTurnCorrelationId,
   registerPendingAutopilotTurn,
 } from './owner/pending';
 
@@ -320,7 +321,7 @@ export async function messagePrAutopilotOwner(
       `Watch "${watch.id}" changed before the human turn could be claimed.`,
     );
   }
-  registerPendingAutopilotTurn(
+  const pendingTurn = registerPendingAutopilotTurn(
     paths.home,
     watch.ownerInstanceId,
     undefined,
@@ -335,7 +336,11 @@ export async function messagePrAutopilotOwner(
       input: parsed.output.message,
     });
   } catch (error) {
-    clearPendingAutopilotTurn(paths.home, watch.ownerInstanceId);
+    clearPendingAutopilotTurnIfMatches(
+      paths.home,
+      watch.ownerInstanceId,
+      pendingTurn.turnId,
+    );
     transitionWatchAutopilot(paths, watch.id, {
       from: 'working',
       to: 'blocked',
@@ -345,6 +350,12 @@ export async function messagePrAutopilotOwner(
       `The human owner turn could not be dispatched: ${error instanceof Error ? error.message : String(error)}`,
     );
   }
+  recordPendingAutopilotTurnCorrelationId(
+    paths.home,
+    watch.ownerInstanceId,
+    pendingTurn.turnId,
+    receipt.dispatchId,
+  );
   return {
     ok: true,
     action: 'autopilot_owner_message',

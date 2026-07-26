@@ -1240,20 +1240,19 @@ describe('PR event state watermarks', () => {
             draft: { ...submittedDraft, id: 'draft-2' },
             review: { ...review, id: 9002, nodeId: 'review-node-9002' },
           }),
-          fetchPullRequestReviewComments: async () => [
-            {
-              ...deliveredComment,
-              id: 'review-comment-node-113',
-              databaseId: 113,
-              reviewId: 9002,
-              startSide: 'LEFT',
-            },
-          ],
+          fetchPullRequestReviewComments: async () => {
+            throw new Error('GitHub comment verification timed out.');
+          },
         },
       ),
     ).resolves.toMatchObject({
       ok: false,
       action: 'github_pr_review_post',
+      changed: true,
+      data: {
+        review: { id: 9002 },
+        deliveryIdentityVerified: false,
+      },
       requires: ['deliveryIdentity'],
     });
     expect(
@@ -1291,6 +1290,11 @@ describe('PR event state watermarks', () => {
       ),
     ).resolves.toMatchObject({
       ok: false,
+      changed: true,
+      data: {
+        review: { id: 9003 },
+        deliveryIdentityVerified: false,
+      },
       requires: ['deliveryIdentity'],
     });
     expect(

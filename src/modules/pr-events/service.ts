@@ -930,29 +930,35 @@ export async function postGitHubPrReview(
       (comment) =>
         selectedCommentIds === null || selectedCommentIds.has(comment.id),
     );
-    const deliveredComments = await (
-      dependencies.fetchPullRequestReviewComments ??
-      fetchPullRequestReviewComments
-    )({
-      token,
-      owner: resolved.target.owner,
-      repo: resolved.target.repo,
-      number: resolved.target.number,
-      reviewId: result.review.id,
-    });
+    let deliveredComments: GitHubPullRequestReviewThreadComment[];
+    try {
+      deliveredComments = await (
+        dependencies.fetchPullRequestReviewComments ??
+        fetchPullRequestReviewComments
+      )({
+        token,
+        owner: resolved.target.owner,
+        repo: resolved.target.repo,
+        number: resolved.target.number,
+        reviewId: result.review.id,
+      });
+    } catch (error) {
+      return unverifiedSubmittedReviewResult(
+        resolved.target,
+        result,
+        `Could not fetch the submitted review comments: ${errorMessage(error)}`,
+      );
+    }
     const deliveryIdentityError = submittedReviewDeliveryIdentityError(
       result.review.id,
       submittedDraftComments,
       deliveredComments,
     );
     if (deliveryIdentityError) {
-      return failResult(
-        'github_pr_review_post',
-        'Submitted PR review but could not uniquely verify its durable delivery identity.',
-        {
-          requires: ['deliveryIdentity'],
-          errors: [deliveryIdentityError],
-        },
+      return unverifiedSubmittedReviewResult(
+        resolved.target,
+        result,
+        deliveryIdentityError,
       );
     }
     recordNeondeckPrDeliveries(
@@ -1004,6 +1010,28 @@ export async function postGitHubPrReview(
       errors: [errorMessage(error)],
     });
   }
+}
+
+function unverifiedSubmittedReviewResult(
+  target: PullRequestTarget,
+  result: Awaited<ReturnType<typeof submitPullRequestReview>>,
+  deliveryIdentityError: string,
+): PrEventActionResult {
+  return {
+    ok: false,
+    action: 'github_pr_review_post',
+    changed: true,
+    message:
+      'Submitted PR review but could not uniquely verify its durable delivery identity.',
+    data: {
+      target: eventTargetJson(target),
+      draft: result.draft as unknown as JsonValue,
+      review: result.review as unknown as JsonValue,
+      deliveryIdentityVerified: false,
+    },
+    requires: ['deliveryIdentity'],
+    errors: [deliveryIdentityError],
+  };
 }
 
 function submittedReviewDeliveryIdentityError(

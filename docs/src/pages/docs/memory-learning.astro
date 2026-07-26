@@ -88,18 +88,30 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
             <code>memoryMaxActiveItems</code> with rewrites, merges, and archives.
           </li>
         </ul>
+        <p>
+          Each active Autopilot owner turn also receives a small, bounded memory
+          snapshot: matching project guidance first, followed by local and user
+          guidance. It is read-only background and cannot expand the turn's
+          mode, tools, or delivery authority; current PR facts and workflow
+          boundaries always win. If memory is temporarily unavailable, the turn
+          continues without it and the learning audit records that no snapshot
+          was available.
+        </p>
 
         <h2>Write modes</h2>
-        <p>You pick the autonomy level per write path:</p>
+        <p>
+          Safe typed memory and append-only skill improvements apply
+          automatically by default. You can lower the autonomy level separately
+          for each write path:
+        </p>
         <ul>
           <li><code>off</code> — reviews may run, nothing is written.</li>
           <li>
             <code>review</code> — proposals queue as candidates for your approval.
-            This is the default posture.
           </li>
           <li>
             <code>auto</code> — the workflow applies allowed changes itself, still
-            through typed actions, still audited.
+            through typed actions, still audited and reversible.
           </li>
         </ul>
         <p>
@@ -159,14 +171,14 @@ POST /api/skills/patches/:id/apply | reject | restore</code></pre>
         <pre><code>&#123;
   "learning": &#123;
     "conversationReviewTurnInterval": 10,
-    "memoryWriteMode": "review",
+    "memoryWriteMode": "auto",
     "memoryCurationEnabled": true,
     "memoryCurationMode": "review",
     "memoryCurationTurnInterval": 200,
     "memoryMaxActiveItems": 200,
     "prRetrospectiveThreshold": 5,
     "maxPrBatchItems": 8,
-    "skillWriteMode": "review"
+    "skillWriteMode": "auto"
   &#125;
 &#125;</code></pre>
         <p>

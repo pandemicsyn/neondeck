@@ -17,6 +17,7 @@ import {
 } from './store';
 import { markPrRetrospectiveAdmitted, prRetrospectiveDue } from './pr-cadence';
 import { extractHandledPrEvent } from './pr-context';
+import { readRepoRegistrySnapshot, repoFullName } from '../../repos';
 
 export async function recordConversationTurnAndMaybeQueueLearning(
   sessionId: string,
@@ -171,11 +172,16 @@ export async function recordHandledPrEventAndMaybeQueueLearning(
       message: 'Learning is disabled.',
     };
   }
+  const repoId =
+    input.repoId ??
+    (input.repoFullName
+      ? await registeredRepoId(input.repoFullName, paths)
+      : null);
   const prKey =
     input.repoFullName && input.prNumber
       ? `${input.repoFullName}#${input.prNumber}`
-      : input.prNumber && input.repoId
-        ? `${input.repoId}#${input.prNumber}`
+      : input.prNumber && repoId
+        ? `${repoId}#${input.prNumber}`
         : null;
   const now = new Date().toISOString();
   const database = openDb(paths.neondeckDatabase);
@@ -220,7 +226,7 @@ export async function recordHandledPrEventAndMaybeQueueLearning(
         randomUUID(),
         input.source,
         input.sourceId,
-        input.repoId ?? null,
+        repoId,
         prKey,
         JSON.stringify(
           compactJson({
@@ -260,7 +266,7 @@ export async function recordHandledPrEventAndMaybeQueueLearning(
       recordLearningEvent(paths, {
         type: 'pr_retrospective_failed',
         source: 'workflow',
-        repoId: input.repoId ?? null,
+        repoId,
         data: { admissionError: errorMessage(error), threshold: due.count },
       });
     }
@@ -278,6 +284,22 @@ export async function recordHandledPrEventAndMaybeQueueLearning(
         ? 'Recorded handled PR event and queued PR retrospective.'
         : 'Recorded handled PR event.',
   };
+}
+
+async function registeredRepoId(
+  fullName: string,
+  paths: Parameters<typeof readRepoRegistrySnapshot>[0],
+) {
+  try {
+    const registry = await readRepoRegistrySnapshot(paths);
+    return (
+      registry.repos.find(
+        (repo) => repoFullName(repo).toLowerCase() === fullName.toLowerCase(),
+      )?.id ?? null
+    );
+  } catch {
+    return null;
+  }
 }
 
 export async function recordHandledPrFromWorkflowResult(

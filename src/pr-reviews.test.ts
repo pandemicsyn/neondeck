@@ -1,7 +1,7 @@
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   archivePrReview,
   beginPrReviewSubmissionAttempt,
@@ -27,6 +27,8 @@ import {
   linkPrReviewRunObservation,
   settlePrReviewObservation,
 } from './server/learning-hooks';
+import { createGitHubRoutes } from './server/routes/github';
+import { createReviewRoutes } from './server/routes/reviews';
 
 const roots: string[] = [];
 
@@ -753,11 +755,33 @@ describe('durable PR reviews', () => {
     );
     expect(recovered).toMatchObject({
       outcome: 'submitted',
+      githubReviewId: '7',
       review: {
         status: 'submitted',
         verdict: 'approve',
         githubReviewUrl:
           'https://github.com/other/project/pull/42#pullrequestreview-7',
+      },
+    });
+    await expect(
+      reconcilePrReviewSubmission({ reviewId: started.reviewId }, paths, {
+        fetchLogin: async () => {
+          throw new Error(
+            'Already-submitted reconciliation must not query GitHub.',
+          );
+        },
+        fetchReviews: async () => {
+          throw new Error(
+            'Already-submitted reconciliation must not query GitHub.',
+          );
+        },
+      }),
+    ).resolves.toMatchObject({
+      outcome: 'submitted-existing',
+      githubReviewId: '7',
+      review: {
+        status: 'submitted',
+        verdict: 'approve',
       },
     });
 
@@ -859,6 +883,184 @@ describe('durable PR reviews', () => {
     expect(released).toMatchObject({
       outcome: 'ready',
       review: { status: 'ready', verdict: null },
+    });
+  });
+
+  it('awaits handled verdict backfill when reconciliation recovers GitHub acceptance', async () => {
+    const paths = await tempPaths();
+    const recording = Promise.withResolvers<void>();
+    const release = Promise.withResolvers<void>();
+    const recordHandled = vi.fn(async () => {
+      recording.resolve();
+      await release.promise;
+      return { recorded: true };
+    });
+    const routes = createReviewRoutes(paths, {
+      reconcilePrReviewSubmission: vi.fn(async () => ({
+        outcome: 'submitted' as const,
+        githubReviewId: '9001',
+        review: {
+          id: 'review-local-1',
+          repoFullName: 'other/project',
+          prNumber: 42,
+          headSha: 'head-1',
+          verdict: 'request-changes' as const,
+          githubReviewUrl:
+            'https://github.com/other/project/pull/42#pullrequestreview-9001',
+          status: 'submitted' as const,
+          runId: 'review-run-1',
+        },
+      })) as never,
+      recordHumanReviewSubmittedApiEvidence: recordHandled as never,
+    });
+
+    let responseSettled = false;
+    const responsePromise = Promise.resolve(
+      routes.request('/reviews/review-local-1/reconcile', { method: 'POST' }),
+    ).then((response) => {
+      responseSettled = true;
+      return response;
+    });
+    await recording.promise;
+    await Promise.resolve();
+    expect(responseSettled).toBe(false);
+    release.resolve();
+    const response = await responsePromise;
+
+    expect(response.status).toBe(200);
+    expect(recordHandled).toHaveBeenCalledWith(paths, {
+      origin: 'reconciliation',
+      repoFullName: 'other/project',
+      prNumber: 42,
+      headSha: 'head-1',
+      reviewId: '9001',
+      reviewUrl:
+        'https://github.com/other/project/pull/42#pullrequestreview-9001',
+      verdict: 'request-changes',
+    });
+  });
+
+  it('backfills handled verdict evidence for an already-submitted review', async () => {
+    const paths = await tempPaths();
+    const recordHandled = vi.fn(async () => ({ recorded: true }));
+    const routes = createReviewRoutes(paths, {
+      reconcilePrReviewSubmission: vi.fn(async () => ({
+        outcome: 'submitted-existing' as const,
+        githubReviewId: '9001',
+        review: {
+          id: 'review-local-1',
+          repoFullName: 'other/project',
+          prNumber: 42,
+          headSha: 'head-1',
+          verdict: 'approve' as const,
+          githubReviewUrl:
+            'https://github.com/other/project/pull/42#pullrequestreview-9001',
+          status: 'submitted' as const,
+          runId: 'review-run-1',
+        },
+      })) as never,
+      recordHumanReviewSubmittedApiEvidence: recordHandled as never,
+    });
+
+    const response = await routes.request('/reviews/review-local-1/reconcile', {
+      method: 'POST',
+    });
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      changed: false,
+      message:
+        'Confirmed the submitted review and reconciled its learning evidence.',
+    });
+    expect(recordHandled).toHaveBeenCalledWith(paths, {
+      origin: 'reconciliation',
+      repoFullName: 'other/project',
+      prNumber: 42,
+      headSha: 'head-1',
+      reviewId: '9001',
+      reviewUrl:
+        'https://github.com/other/project/pull/42#pullrequestreview-9001',
+      verdict: 'approve',
+    });
+  });
+
+  it('settles and records a GitHub-accepted review when delivery verification is ambiguous', async () => {
+    const paths = await tempPaths();
+    const started = await startReadyReview(paths, 'review-run-ambiguous');
+    const recording = Promise.withResolvers<void>();
+    const release = Promise.withResolvers<void>();
+    const recordHandled = vi.fn(async () => {
+      recording.resolve();
+      await release.promise;
+      return { recorded: true };
+    });
+    const routes = createGitHubRoutes(paths, {
+      putGitHubPrReviewDraft: vi.fn(async () => ({
+        ok: true,
+        action: 'github_pr_review_draft_put',
+        changed: true,
+        message: 'Saved review draft.',
+        data: {
+          draft: {
+            id: 'draft-ambiguous',
+            headSha: 'head-1',
+            verdict: 'approve',
+          },
+        },
+      })) as never,
+      postGitHubPrReview: vi.fn(async () => ({
+        ok: false,
+        action: 'github_pr_review_post',
+        changed: true,
+        message:
+          'Submitted PR review but could not uniquely verify its durable delivery identity.',
+        data: {
+          target: { repoFullName: 'other/project', number: 42 },
+          draft: {
+            id: 'draft-ambiguous',
+            headSha: 'head-1',
+            verdict: 'approve',
+          },
+          review: {
+            id: 9001,
+            url: 'https://github.com/other/project/pull/42#pullrequestreview-9001',
+          },
+          deliveryIdentityVerified: false,
+        },
+        requires: ['deliveryIdentity'],
+      })) as never,
+      recordHumanReviewSubmittedApiEvidence: recordHandled as never,
+    });
+
+    const responsePromise = routes.request('/prs/other/project/42/reviews', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ headSha: 'head-1', verdict: 'approve' }),
+    });
+    await recording.promise;
+    expect(readPrReviewForTarget('other/project', 42, paths)?.status).toBe(
+      'submitting',
+    );
+    release.resolve();
+    const response = await responsePromise;
+
+    expect(response.status).toBe(409);
+    expect(readPrReviewForTarget('other/project', 42, paths)).toMatchObject({
+      id: started.reviewId,
+      status: 'submitted',
+      verdict: 'approve',
+      githubReviewUrl:
+        'https://github.com/other/project/pull/42#pullrequestreview-9001',
+    });
+    expect(recordHandled).toHaveBeenCalledWith(paths, {
+      origin: 'submission',
+      repoFullName: 'other/project',
+      prNumber: 42,
+      headSha: 'head-1',
+      reviewId: '9001',
+      reviewUrl:
+        'https://github.com/other/project/pull/42#pullrequestreview-9001',
+      verdict: 'approve',
     });
   });
 });

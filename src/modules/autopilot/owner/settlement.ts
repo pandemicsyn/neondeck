@@ -11,9 +11,25 @@ import {
 import {
   readManagedWorktree,
   recordWorktreePushBlocked,
+  type WorktreeRecord,
 } from '../../worktrees';
-import { clearPendingAutopilotTurn, readPendingAutopilotTurn } from './pending';
+import {
+  claimPendingAutopilotTurnSettlement,
+  clearPendingAutopilotTurnIfMatches,
+  readPendingAutopilotTurn,
+} from './pending';
 import { reconcileTransientAutopilotRuntimeBlocks } from './runtime-recovery';
+import {
+  deriveOwnerSettlementDecision,
+  failedOwnerSettlementDecision,
+  type OwnerSettlementDecision,
+  type OwnerSettlementOutcome,
+} from './settlement-decision';
+import {
+  recordOwnerOutcomeQuietly,
+  type OwnerSettlementContext,
+  type OwnerSettlementLearningDependencies,
+} from './settlement-learning';
 
 type OwnerTerminalObservation = Extract<
   FlueObservation,
@@ -23,6 +39,7 @@ type OwnerTerminalObservation = Extract<
 export async function settleAutopilotOwnerObservation(
   event: OwnerTerminalObservation,
   paths: RuntimePaths,
+  dependencies: OwnerSettlementLearningDependencies = {},
 ) {
   if (
     (event.agentName && event.agentName !== 'pr-autopilot-owner') ||
@@ -30,18 +47,66 @@ export async function settleAutopilotOwnerObservation(
   ) {
     return null;
   }
-  if (
-    event.type === 'operation' &&
-    (event.operationKind !== 'prompt' || !event.isError)
-  ) {
+  if (event.type === 'agent_end') return null;
+  if (event.type === 'operation' && event.operationKind !== 'prompt') {
     return null;
   }
   const observation = event as unknown as Record<string, unknown>;
   if (observation.taskId || observation.parentSession) return null;
   const watch = readWatchByOwnerInstanceId(paths, event.instanceId);
   if (!watch || !watch.worktreeId) return null;
-  const pending = readPendingAutopilotTurn(paths.home, event.instanceId);
-  const fingerprint = pending?.eventFingerprint;
+  const registeredPending = readPendingAutopilotTurn(
+    paths.home,
+    event.instanceId,
+  );
+  const observationCorrelation = strongObservationCorrelation(event);
+  if (
+    registeredPending &&
+    (event.dispatchId || registeredPending.correlationId) &&
+    event.dispatchId !== registeredPending.correlationId
+  ) {
+    return null;
+  }
+  const pending = claimPendingAutopilotTurnSettlement(
+    paths.home,
+    event.instanceId,
+  );
+  if (registeredPending && !pending) return null;
+  if (!pending && !observationCorrelation) return null;
+  const settlementContext: OwnerSettlementContext = pending
+    ? {
+        correlationKind: pending.correlationId
+          ? 'dispatch-or-submission'
+          : pending.eventFingerprint
+            ? 'watch-event'
+            : 'process-turn',
+        eventFingerprint: pending.eventFingerprint,
+        learningMemoryIds: pending.learningMemoryIds,
+        memorySnapshotAvailable:
+          pending.learningMemoryLoaded && pending.learningMemoryAvailable,
+        memorySnapshotReason: !pending.learningMemoryLoaded
+          ? 'owner-runtime-memory-context-was-not-loaded'
+          : pending.learningMemoryAvailable
+            ? 'loaded-for-owner-turn'
+            : 'owner-runtime-memory-context-was-unavailable',
+        mode: pending.mode,
+        source: pending.source,
+        turnId:
+          pending.correlationId ??
+          observationCorrelation?.id ??
+          pending.eventFingerprint ??
+          pending.turnId,
+      }
+    : recoveredSettlementContext(event, watch.autopilotMode);
+  const fingerprint = settlementContext.eventFingerprint;
+  const recordOutcome = (outcome: OwnerSettlementOutcome) =>
+    recordOwnerOutcomeQuietly(
+      watch,
+      settlementContext,
+      outcome,
+      paths,
+      dependencies,
+    );
   const failed =
     event.type === 'operation'
       ? event.isError
@@ -50,124 +115,55 @@ export async function settleAutopilotOwnerObservation(
         : false;
 
   try {
+    let worktree: WorktreeRecord | null = null;
+    let decision: OwnerSettlementDecision;
     if (failed) {
-      return await blockOwnerTurn(
-        watch.id,
-        `${watch.repoFullName}#${watch.prNumber} owner turn failed. Human inspection is required before retry.`,
+      decision = failedOwnerSettlementDecision(watch);
+    } else {
+      worktree = await readManagedWorktree(
+        watch.worktreeId,
+        watch.repoId,
         paths,
       );
-    }
-
-    const worktree = await readManagedWorktree(
-      watch.worktreeId,
-      watch.repoId,
-      paths,
-    );
-    const [status, currentSha] = await Promise.all([
-      gitStatus(worktree.localPath),
-      gitCurrentSha(worktree.localPath),
-    ]);
-    const pushed =
-      Boolean(worktree.lastPushedSha) && currentSha === worktree.lastPushedSha;
-    const prepared =
-      status.clean &&
-      currentSha !== worktree.headSha &&
-      currentSha !== worktree.lastPushedSha;
-
-    if (watch.autopilotStatus === 'waiting') {
-      if (pushed || (status.clean && currentSha === worktree.headSha)) {
-        return transitionWatchAutopilot(paths, watch.id, {
-          from: 'waiting',
-          to: 'watching',
-        });
-      }
-      if (prepared || !status.clean) return watch;
-      return watch;
-    }
-    if (watch.autopilotStatus === 'blocked') return watch;
-    if (watch.autopilotStatus !== 'working') return watch;
-
-    if (pushed) {
-      const settled = transitionWatchAutopilot(paths, watch.id, {
-        from: 'working',
-        to: 'watching',
-        ...(fingerprint ? { eventFingerprint: fingerprint } : {}),
+      const [status, currentSha] = await Promise.all([
+        gitStatus(worktree.localPath),
+        gitCurrentSha(worktree.localPath),
+      ]);
+      decision = deriveOwnerSettlementDecision({
+        currentSha,
+        eventFingerprint: fingerprint,
+        statusClean: status.clean,
+        watch,
+        worktree: {
+          headSha: worktree.headSha,
+          id: worktree.id,
+          lastPushedSha: worktree.lastPushedSha,
+        },
       });
-      await addNotification(
-        {
-          level: 'ready',
-          title: 'Autopilot pushed a focused change',
-          message: `${watch.repoFullName}#${watch.prNumber} was pushed and remains watched for later feedback.`,
-          source: 'autopilot-owner',
-          sourceId: `${watch.id}:pushed:${currentSha}`,
-          data: { watchId: watch.id, worktreeId: worktree.id, currentSha },
-        },
-        paths,
-      );
-      return settled;
     }
-
-    if (prepared) {
-      const waiting =
-        watch.autopilotMode === 'prepare-only' ||
-        watch.autopilotMode === 'autofix-with-approval';
-      const settled = transitionWatchAutopilot(paths, watch.id, {
-        from: 'working',
-        to: waiting ? 'waiting' : 'blocked',
-        ...(waiting && fingerprint ? { eventFingerprint: fingerprint } : {}),
-      });
-      await recordWorktreePushBlocked(
-        worktree.id,
-        {
-          message: waiting
-            ? 'Autopilot prepared a committed change for human review.'
-            : 'The autonomous owner retained a committed change for human review after deciding not to deliver it.',
-          data: { watchId: watch.id, commitSha: currentSha },
-        },
-        paths,
-      );
-      await addNotification(
-        {
-          level: 'attention',
-          title: waiting
-            ? 'Autopilot change is ready for review'
-            : 'Autopilot escalated a committed change for review',
-          message: `${watch.repoFullName}#${watch.prNumber} has a committed change held in managed worktree ${worktree.id}.`,
-          source: 'autopilot-owner',
-          sourceId: `${watch.id}:prepared:${currentSha}`,
-          data: {
-            watchId: watch.id,
-            ownerInstanceId: watch.ownerInstanceId,
-            worktreeId: worktree.id,
-            commitSha: currentSha,
-          },
-        },
-        paths,
-      );
-      return settled;
-    }
-
-    if (!status.clean) {
-      return await blockOwnerTurn(
-        watch.id,
-        `${watch.repoFullName}#${watch.prNumber} owner turn ended with uncommitted work.`,
-        paths,
-      );
-    }
-
-    return transitionWatchAutopilot(paths, watch.id, {
-      from: 'working',
-      to: 'watching',
-      ...(fingerprint ? { eventFingerprint: fingerprint } : {}),
-    });
+    await applyOwnerSettlementEffects(decision, watch, worktree, paths);
+    if (decision.outcome) await recordOutcome(decision.outcome);
+    return commitOwnerSettlementDecision(decision, watch, paths);
   } catch (error) {
-    return blockOwnerTurn(
-      watch.id,
-      `${watch.repoFullName}#${watch.prNumber} could not be settled safely: ${errorMessage(error)}`,
-      paths,
-    );
+    const message = `${watch.repoFullName}#${watch.prNumber} could not be settled safely: ${errorMessage(error)}`;
+    await recordOutcome({
+      eventType: 'autopilot-owner-settlement-failed',
+      outcome: 'failed',
+      summary: 'The continuing Autopilot owner could not be settled safely.',
+    });
+    await addOwnerBlockNotificationQuietly(watch.id, message, paths);
+    return transitionWatchAutopilot(paths, watch.id, {
+      from: ['working', 'waiting'],
+      to: 'blocked',
+    });
   } finally {
-    clearPendingAutopilotTurn(paths.home, event.instanceId);
+    if (pending) {
+      clearPendingAutopilotTurnIfMatches(
+        paths.home,
+        event.instanceId,
+        pending.turnId,
+      );
+    }
   }
 }
 
@@ -205,16 +201,55 @@ export async function recoverInterruptedAutopilotOwners(paths: RuntimePaths) {
   return interrupted.length;
 }
 
-async function blockOwnerTurn(
+async function applyOwnerSettlementEffects(
+  decision: OwnerSettlementDecision,
+  watch: NonNullable<ReturnType<typeof readWatchByOwnerInstanceId>>,
+  worktree: WorktreeRecord | null,
+  paths: RuntimePaths,
+) {
+  if (decision.blockMessage) {
+    await addOwnerBlockNotification(watch.id, decision.blockMessage, paths);
+    return;
+  }
+  if (decision.worktreePushBlocked) {
+    if (!worktree) {
+      throw new Error(
+        'Owner settlement requires a worktree for blocked-push evidence.',
+      );
+    }
+    await recordWorktreePushBlocked(
+      worktree.id,
+      decision.worktreePushBlocked,
+      paths,
+    );
+  }
+  if (decision.notification) {
+    await addNotification(decision.notification, paths);
+  }
+}
+
+function commitOwnerSettlementDecision(
+  decision: OwnerSettlementDecision,
+  watch: NonNullable<ReturnType<typeof readWatchByOwnerInstanceId>>,
+  paths: RuntimePaths,
+) {
+  if (decision.blockMessage) {
+    return transitionWatchAutopilot(paths, watch.id, {
+      from: ['working', 'waiting'],
+      to: 'blocked',
+    });
+  }
+  return decision.transition
+    ? transitionWatchAutopilot(paths, watch.id, decision.transition)
+    : watch;
+}
+
+function addOwnerBlockNotification(
   watchId: string,
   message: string,
   paths: RuntimePaths,
 ) {
-  const blocked = transitionWatchAutopilot(paths, watchId, {
-    from: ['working', 'waiting'],
-    to: 'blocked',
-  });
-  await addNotification(
+  return addNotification(
     {
       level: 'attention',
       title: 'Autopilot needs human inspection',
@@ -225,9 +260,55 @@ async function blockOwnerTurn(
     },
     paths,
   );
-  return blocked;
+}
+
+async function addOwnerBlockNotificationQuietly(
+  watchId: string,
+  message: string,
+  paths: RuntimePaths,
+) {
+  try {
+    await addOwnerBlockNotification(watchId, message, paths);
+  } catch (error) {
+    console.error(
+      '[neondeck] failed to record Autopilot owner block notification',
+      error,
+    );
+  }
 }
 
 function errorMessage(error: unknown) {
   return error instanceof Error ? error.message : String(error);
+}
+
+function recoveredSettlementContext(
+  event: OwnerTerminalObservation,
+  mode: OwnerSettlementContext['mode'],
+): OwnerSettlementContext {
+  const correlation = strongObservationCorrelation(event) ?? {
+    kind: 'observation-envelope',
+    id: `${event.type}:${event.eventIndex}:${event.timestamp}`,
+  };
+  return {
+    correlationKind: correlation.kind,
+    learningMemoryIds: [],
+    memorySnapshotAvailable: false,
+    memorySnapshotReason:
+      'process-restarted-before-owner-memory-audit-correlation-could-be-recovered',
+    mode,
+    source: 'recovered-flue-observation',
+    turnId: correlation.id,
+  };
+}
+
+function strongObservationCorrelation(event: OwnerTerminalObservation) {
+  for (const [kind, value] of [
+    ['dispatch', event.dispatchId],
+    ['submission', event.submissionId],
+    ['operation', event.operationId],
+    ['turn', event.turnId],
+  ] as const) {
+    if (typeof value === 'string' && value) return { kind, id: value };
+  }
+  return null;
 }

@@ -15,6 +15,13 @@ Use this format:
 - Follow-up: What remains, who/what should handle it, or `None`.
 ```
 
+## 2026-07-25 - PR Learning Evidence Boundaries
+
+- Roadmap item: Wrap Up the Learning Flywheel / handled PR evidence
+- Decision: Reverse the earlier deferral for `/review-pr` preparation and count completed `review-pr-for-human` assistance once per exact PR head as a distinct `pr_handled` signal. Count the later human-submitted verdict separately by durable GitHub review identity, including submission reconciliation after interruption.
+- Reason: Review preparation and human submission are different high-signal outcomes. Separating them preserves that distinction while reconnecting both paths to the existing idempotent retrospective cadence without treating draft edits, dismissals, or finding promotions as terminal evidence.
+- Follow-up: Draft edits, dismissals, and finding promotions remain future evidence signals unless they can be wired through an existing typed durable result without broadening the review event model.
+
 ## 2026-07-20 - Autopilot Trusted Coding Workspace And Semantic Safety
 
 - Roadmap item: Phase 19 / PR Event Autopilot and Phase 20 / Autopilot Policy And UX Hardening
