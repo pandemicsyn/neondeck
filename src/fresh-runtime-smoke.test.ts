@@ -157,6 +157,7 @@ describe('fresh runtime smoke test', () => {
       kilo: true,
       openai: false,
       anthropic: false,
+      openaiCodex: false,
       github: true,
     });
   });

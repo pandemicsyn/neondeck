@@ -5,6 +5,7 @@ import {
   RuntimeConfigControls,
   activeModelProviderIds,
   providerCredentialConfigured,
+  providerCredentialLabel,
   providerStatusSummary,
 } from './config-controls';
 import { Metric, MiniEmpty, StatusPill } from './atoms';
@@ -558,11 +559,7 @@ function RuntimeHome({
             key={providerId}
             ok={providerCredentialConfigured(status, providerId)}
             label={providerId}
-            value={
-              providerCredentialConfigured(status, providerId)
-                ? 'key'
-                : 'missing'
-            }
+            value={providerCredentialLabel(status, providerId)}
           />
         ))}
         <StatusPill

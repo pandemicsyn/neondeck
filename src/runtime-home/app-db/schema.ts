@@ -1220,6 +1220,19 @@ export const mcpOauthTokens = sqliteTable('mcp_oauth_tokens', {
   updatedAt: text('updated_at').notNull(),
 });
 
+export const providerOauthCredentials = sqliteTable(
+  'provider_oauth_credentials',
+  {
+    providerId: text('provider_id').primaryKey(),
+    accessToken: text('access_token').notNull(),
+    refreshToken: text('refresh_token').notNull(),
+    expiresAt: integer('expires_at').notNull(),
+    lastError: text('last_error'),
+    createdAt: text('created_at').notNull(),
+    updatedAt: text('updated_at').notNull(),
+  },
+);
+
 export const mcpOauthLogins = sqliteTable('mcp_oauth_logins', {
   id: text('id').primaryKey(),
   serverId: text('server_id').notNull(),

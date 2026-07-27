@@ -77,9 +77,15 @@ npm run dev
 
 Open `http://127.0.0.1:5173/`.
 
-The setup wizard prepares a runtime home, configures provider secrets, adds
-local repositories, applies a dashboard preset, and can create initial schedules
-and command preapprovals.
+The setup wizard prepares a runtime home, configures KiloCode, OpenAI API-key,
+Anthropic, ChatGPT subscription, or generic OpenAI-compatible model access,
+adds local repositories, applies a dashboard preset, and can create initial
+schedules and command preapprovals.
+
+ChatGPT login/logout and provider registration changes made with the standalone
+CLI apply after Neondeck restarts. Generic endpoint URLs are user-owned setup:
+configure them with `neondeck init` or the authenticated local dashboard/API,
+not through model-callable actions.
 
 ## Runtime home
 
@@ -101,6 +107,7 @@ and Flue runtime state.
 ```sh
 npm run dev              # local backend + dashboard
 npm run cli -- status    # runtime readiness and configured paths
+npm run cli -- auth status openai-codex # ChatGPT subscription status
 npm run cli -- doctor    # local diagnostics
 npm run check            # fast local verification
 npm run test:integration # slower workflow coverage

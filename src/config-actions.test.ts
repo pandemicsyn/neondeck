@@ -790,7 +790,7 @@ describe('config actions', () => {
       ok: false,
       changed: false,
       action: 'config_update_agent_models',
-      message: 'Invalid action input.',
+      message: 'Model strings reference unconfigured providers: ollama.',
     });
 
     await expect(
@@ -968,7 +968,7 @@ describe('config actions', () => {
     ).resolves.toMatchObject({
       ok: false,
       changed: false,
-      message: 'anthropic provider does not support organizationIdEnv.',
+      message: 'Invalid action input.',
     });
 
     config = parseAppConfig(
@@ -1030,6 +1030,106 @@ describe('config actions', () => {
     });
 
     expect(readHistory(paths.neondeckDatabase)).toEqual([]);
+  });
+
+  it('adds and removes validated OpenAI-compatible providers', async () => {
+    const home = await tempDir('neondeck-home-');
+    const paths = runtimePaths(home);
+
+    await expect(
+      updateProviderConfig(
+        {
+          provider: 'openai-compatible',
+          id: 'openrouter',
+          enabled: true,
+          baseUrl: 'https://openrouter.ai/api/v1',
+          apiKeyEnv: 'OPENROUTER_API_KEY',
+          api: 'openai-completions',
+        },
+        paths,
+      ),
+    ).resolves.toMatchObject({
+      ok: true,
+      changed: true,
+      data: {
+        providers: {
+          openaiCompatible: [
+            {
+              id: 'openrouter',
+              baseUrl: 'https://openrouter.ai/api/v1',
+              apiKeyEnv: 'OPENROUTER_API_KEY',
+            },
+          ],
+        },
+      },
+    });
+
+    await expect(
+      updateAgentModels(
+        { displayAssistant: 'openrouter/openai/gpt-5.5' },
+        paths,
+      ),
+    ).resolves.toMatchObject({ ok: true, changed: true });
+
+    await expect(
+      updateProviderConfig(
+        {
+          provider: 'openai-compatible',
+          id: 'openrouter',
+          remove: true,
+        },
+        paths,
+      ),
+    ).resolves.toMatchObject({ ok: true, changed: true });
+  });
+
+  it('rejects unsafe compatible endpoints and reserved provider ids', async () => {
+    const home = await tempDir('neondeck-home-');
+    const paths = runtimePaths(home);
+
+    for (const input of [
+      {
+        provider: 'openai-compatible' as const,
+        id: 'openrouter',
+        baseUrl: 'http://openrouter.ai/api/v1',
+      },
+      {
+        provider: 'openai-compatible' as const,
+        id: 'openrouter',
+        baseUrl: 'https://user:secret@example.com/v1',
+      },
+      {
+        provider: 'openai-compatible' as const,
+        id: 'openai',
+        baseUrl: 'https://example.com/v1',
+      },
+    ]) {
+      await expect(updateProviderConfig(input, paths)).resolves.toMatchObject({
+        ok: false,
+        changed: false,
+        message: 'Invalid action input.',
+      });
+    }
+  });
+
+  it('rejects provider-specific fields on the wrong provider variant', async () => {
+    const home = await tempDir('neondeck-home-');
+    const paths = runtimePaths(home);
+
+    for (const input of [
+      { provider: 'openai', organizationIdEnv: 'OPENAI_ORG' },
+      { provider: 'openai-codex', apiKeyEnv: 'OPENAI_API_KEY' },
+      {
+        provider: 'kilocode',
+        baseUrl: 'https://example.com/v1',
+      },
+    ]) {
+      await expect(updateProviderConfig(input, paths)).resolves.toMatchObject({
+        ok: false,
+        changed: false,
+        message: 'Invalid action input.',
+      });
+    }
   });
 
   it('updates execution approval policy through audited config', async () => {

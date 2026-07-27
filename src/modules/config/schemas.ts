@@ -7,8 +7,9 @@ import {
   prReviewPromptTemplateSchema,
   prReviewTimeoutMsSchema,
   thinkingLevelSchema,
+  openAiCompatibleBaseUrlSchema,
+  openAiCompatibleProviderIdSchema,
 } from '../../runtime-home';
-import { isRegisteredProvider } from '../repos';
 import {
   autopilotConcurrencySchema,
   repoGuardrailsSchema,
@@ -43,8 +44,8 @@ export const providerQualifiedModelSchema = v.pipe(
   v.check((value) => {
     const slash = value.indexOf('/');
     if (slash <= 0 || slash === value.length - 1) return false;
-    return isRegisteredProvider(value.slice(0, slash));
-  }, 'Expected a provider-qualified model string using a registered provider.'),
+    return /^[a-z][a-z0-9-]{0,62}$/.test(value.slice(0, slash));
+  }, 'Expected a provider-qualified model string using a valid provider id.'),
 );
 
 export const addRepoInputSchema = v.object({
@@ -180,8 +181,51 @@ export const envVarNameSchema = v.pipe(
   v.string(),
   v.regex(/^[A-Z_][A-Z0-9_]*$/, 'Expected an environment variable name.'),
 );
-export const updateProviderInputSchema = v.object({
-  provider: v.picklist(['kilocode', 'openai', 'anthropic']),
+const builtInProviderFields = {
+  enabled: v.optional(v.boolean()),
+  apiKeyEnv: v.optional(v.nullable(envVarNameSchema)),
+};
+
+export const updateProviderInputSchema = v.variant('provider', [
+  v.strictObject({
+    provider: v.literal('kilocode'),
+    ...builtInProviderFields,
+    organizationIdEnv: v.optional(v.nullable(envVarNameSchema)),
+  }),
+  v.strictObject({
+    provider: v.literal('openai'),
+    ...builtInProviderFields,
+  }),
+  v.strictObject({
+    provider: v.literal('anthropic'),
+    ...builtInProviderFields,
+  }),
+  v.strictObject({
+    provider: v.literal('openai-codex'),
+    enabled: v.optional(v.boolean()),
+  }),
+  v.strictObject({
+    provider: v.literal('openai-compatible'),
+    id: openAiCompatibleProviderIdSchema,
+    enabled: v.optional(v.boolean()),
+    baseUrl: v.optional(openAiCompatibleBaseUrlSchema),
+    apiKeyEnv: v.optional(v.nullable(envVarNameSchema)),
+    api: v.optional(v.picklist(['openai-completions', 'openai-responses'])),
+    contextWindow: v.optional(
+      v.nullable(v.pipe(v.number(), v.integer(), v.minValue(1))),
+    ),
+    maxTokens: v.optional(
+      v.nullable(v.pipe(v.number(), v.integer(), v.minValue(1))),
+    ),
+    remove: v.optional(v.boolean()),
+  }),
+]);
+
+// Flue actions currently require a top-level object schema. Keep the
+// model-callable surface deliberately narrower than the local API/CLI schema:
+// arbitrary endpoints must be configured directly by the user.
+export const updateProviderActionInputSchema = v.strictObject({
+  provider: v.picklist(['kilocode', 'openai', 'anthropic', 'openai-codex']),
   enabled: v.optional(v.boolean()),
   apiKeyEnv: v.optional(v.nullable(envVarNameSchema)),
   organizationIdEnv: v.optional(v.nullable(envVarNameSchema)),

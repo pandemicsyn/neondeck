@@ -11,6 +11,9 @@ import { loadNeondeckEnv } from '../modules/runtime';
 import {
   providerRuntimeRegistrations,
   readProviderConfigSync,
+  resolveOpenAiCodexAccessToken,
+  resolveOpenAiCodexProviderStatus,
+  startOpenAiCodexTokenRefresh,
 } from '../modules/repos';
 import {
   ensureRuntimeHome,
@@ -82,6 +85,22 @@ export async function createApp(options: CreateAppOptions = {}) {
     providerConfig,
   )) {
     registerProvider(provider.id, provider.registration);
+  }
+  if (resolveOpenAiCodexProviderStatus(providerConfig).enabled) {
+    let accessToken = '';
+    try {
+      accessToken =
+        (await resolveOpenAiCodexAccessTokenForStartup(paths)) ?? '';
+    } catch (error) {
+      console.warn(
+        '[neondeck] ChatGPT subscription authentication needs attention',
+        error,
+      );
+    }
+    registerProvider('openai-codex', { apiKey: accessToken });
+    startOpenAiCodexTokenRefresh(paths, (token) => {
+      registerProvider('openai-codex', { apiKey: token });
+    });
   }
 
   const app = new Hono();
@@ -164,6 +183,30 @@ export async function createApp(options: CreateAppOptions = {}) {
   app.get('*', serveStatic({ root: staticRoot, path: 'index.html' }));
 
   return app;
+}
+
+export async function resolveOpenAiCodexAccessTokenForStartup(
+  paths: RuntimePaths,
+  timeoutMs = 5_000,
+) {
+  let timer: NodeJS.Timeout | undefined;
+  try {
+    return await Promise.race([
+      resolveOpenAiCodexAccessToken(paths),
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => {
+          reject(
+            new Error(
+              `ChatGPT subscription token refresh exceeded the ${timeoutMs}ms startup budget; Neondeck will retry in the background.`,
+            ),
+          );
+        }, timeoutMs);
+        timer.unref();
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
 }
 
 export function resolveStaticRoot(env = process.env) {

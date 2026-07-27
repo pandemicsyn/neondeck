@@ -1,9 +1,12 @@
 import { resolveAgentModelSelection } from './agent-config';
 import {
+  configuredProviderIds,
   isRegisteredProvider,
-  registeredProviderIds,
+  openAiCodexAuthStatus,
   resolveAnthropicProviderStatus,
   resolveKilocodeProviderStatus,
+  resolveOpenAiCodexProviderStatus,
+  resolveOpenAiCompatibleProviderStatuses,
   resolveOpenAiProviderStatus,
 } from '../repos';
 import {
@@ -67,6 +70,14 @@ export async function readRuntimeStatus(
     config.ok ? { providers: config.value.providers } : undefined,
     env,
   );
+  const openaiCodexProvider = resolveOpenAiCodexProviderStatus(
+    config.ok ? { providers: config.value.providers } : undefined,
+  );
+  const openaiCodexAuth = openAiCodexAuthStatus(paths);
+  const openaiCompatibleProviders = resolveOpenAiCompatibleProviderStatuses(
+    config.ok ? { providers: config.value.providers } : undefined,
+    env,
+  );
   const executionPolicy = executionPolicyFromConfig({
     execution: config.ok ? config.value.execution : undefined,
   });
@@ -80,15 +91,33 @@ export async function readRuntimeStatus(
     ? skills.value.skills.filter((skill) => skill.status === 'active')
     : [];
   const providerIssues = modelProviders.filter(
-    (provider) => !isRegisteredProvider(provider),
-  );
-  const disabledProviderIssues = modelProviders.filter(
     (provider) =>
-      providerEnabled(provider, {
-        kilocode: kilocodeProvider.enabled,
-        openai: openaiProvider.enabled,
-        anthropic: anthropicProvider.enabled,
-      }) === false,
+      !isRegisteredProvider(
+        provider,
+        config.ok ? { providers: config.value.providers } : undefined,
+      ),
+  );
+  const providerEnabledStatuses = {
+    kilocode: kilocodeProvider.enabled,
+    openai: openaiProvider.enabled,
+    anthropic: anthropicProvider.enabled,
+    'openai-codex': openaiCodexProvider.enabled,
+    ...Object.fromEntries(
+      openaiCompatibleProviders.map((provider) => [
+        provider.id,
+        provider.enabled,
+      ]),
+    ),
+  };
+  const disabledProviderIssues = modelProviders.filter(
+    (provider) => providerEnabled(provider, providerEnabledStatuses) === false,
+  );
+  const customCredentialIssues = openaiCompatibleProviders.filter(
+    (provider) =>
+      modelProviders.includes(provider.id) &&
+      provider.enabled &&
+      provider.apiKeyEnv &&
+      !provider.apiKeyPresent,
   );
   const checks = [
     configCheck('config', 'Runtime config', paths.config, config),
@@ -138,6 +167,36 @@ export async function readRuntimeStatus(
         : anthropicProvider.enabled
           ? `${anthropicProvider.apiKeyEnv} is not configured.`
           : 'Anthropic provider is disabled in config.json.',
+    ),
+    check(
+      'openai-codex-auth',
+      'ChatGPT sign-in',
+      !modelProviders.includes('openai-codex') ||
+        (openaiCodexProvider.enabled && openaiCodexAuth.usable),
+      'needs-config',
+      openaiCodexAuth.usable
+        ? 'ChatGPT subscription credentials are valid and usable.'
+        : openaiCodexAuth.state === 'error'
+          ? `Stored ChatGPT credentials cannot be used: ${openaiCodexAuth.lastError ?? 'refresh failed'}. Run "neondeck auth login openai-codex" to sign in again.`
+          : openaiCodexAuth.state === 'refresh-needed'
+            ? 'Stored ChatGPT credentials need refresh. Restart Neondeck to retry, then sign in again if the issue persists.'
+            : openaiCodexProvider.enabled
+              ? 'Run "neondeck auth login openai-codex" to sign in.'
+              : 'ChatGPT subscription provider is disabled in config.json.',
+    ),
+    check(
+      'openai-compatible-keys',
+      'Compatible provider keys',
+      customCredentialIssues.length === 0,
+      'needs-config',
+      customCredentialIssues.length === 0
+        ? 'Configured OpenAI-compatible provider credentials are present.'
+        : customCredentialIssues
+            .map(
+              (provider) =>
+                `${provider.id} needs ${provider.apiKeyEnv ?? 'an API key'}`,
+            )
+            .join('; '),
     ),
     check(
       'github-token',
@@ -296,11 +355,14 @@ export async function readRuntimeStatus(
     },
     uptimeSeconds: Math.round(process.uptime()),
     providers: {
-      registered: [...registeredProviderIds],
+      registered: configuredProviderIds(
+        config.ok ? { providers: config.value.providers } : undefined,
+      ),
       credentials: {
         kilo: kiloKey,
         openai: openaiKey,
         anthropic: anthropicKey,
+        openaiCodex: openaiCodexAuth.usable,
         github: githubToken,
       },
       configs: {
@@ -321,6 +383,16 @@ export async function readRuntimeStatus(
           apiKeyEnv: anthropicProvider.apiKeyEnv,
           apiKeyPresent: anthropicProvider.apiKeyPresent,
         },
+        openaiCodex: {
+          enabled: openaiCodexProvider.enabled,
+          state: openaiCodexAuth.state,
+          authenticated: openaiCodexAuth.authenticated,
+          usable: openaiCodexAuth.usable,
+          expiresAt: openaiCodexAuth.expiresAt,
+          needsRefresh: openaiCodexAuth.needsRefresh,
+          lastError: openaiCodexAuth.lastError,
+        },
+        openaiCompatible: openaiCompatibleProviders,
       },
     },
     models: {

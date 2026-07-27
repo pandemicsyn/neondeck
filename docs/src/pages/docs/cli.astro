@@ -39,6 +39,18 @@ neondeck init --home .neondeck-test</code></pre>
           schedules and command preapprovals.
         </p>
 
+        <h2>Provider authentication</h2>
+        <pre><code>neondeck auth login openai-codex
+neondeck auth status openai-codex
+neondeck --json auth status openai-codex
+neondeck auth logout openai-codex</code></pre>
+        <p>
+          ChatGPT subscription login supports a local browser callback or a
+          device code. Neondeck stores and refreshes the OAuth credentials in
+          its local app database. Restart Neondeck after standalone CLI login or
+          logout so the running process picks up the new credential state.
+        </p>
+
         <h2>Status</h2>
         <pre><code>neondeck status</code></pre>
         <p>

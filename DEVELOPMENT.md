@@ -7,8 +7,8 @@ under `docs/` carries the detailed user-facing guides.
 ## Requirements
 
 - Node 26.4.0 or newer
-- A KiloCode, OpenAI, or Anthropic API key for the configured Flue model
-  provider
+- A KiloCode, OpenAI, Anthropic, or OpenAI-compatible API key, or a ChatGPT
+  subscription login, for the configured Flue model provider
 - A GitHub token for GitHub-backed panels and workflows
 
 Use any Node installer or version manager. With `fnm`, that looks like:
@@ -41,6 +41,8 @@ The CLI is also the base for direct command-and-control surfaces:
 
 ```sh
 npm run cli -- status
+npm run cli -- auth login openai-codex
+npm run cli -- auth status openai-codex
 npm run cli -- doctor
 npm run cli -- db status
 npm run cli -- repo add ~/dev/neondeck

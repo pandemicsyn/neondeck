@@ -13,7 +13,7 @@ import {
   updatePrReviewPromptInputSchema,
   updateHandoffConfigInputSchema,
   updateLearningConfigInputSchema,
-  updateProviderInputSchema,
+  updateProviderActionInputSchema,
   updateRepoAutopilotPolicyInputSchema,
   updateRepoInputSchema,
   updateSkillRootsInputSchema,
@@ -190,7 +190,7 @@ export const updateWorktreePolicyAction = defineAction({
 export const readProvidersAction = defineAction({
   name: 'neondeck_config_read_providers',
   description:
-    'Read validated allowlisted provider configuration without exposing secret values.',
+    'Read validated provider configuration without exposing secret values.',
   input: v.object({}),
   output: configActionOutputSchema,
   async run() {
@@ -201,8 +201,8 @@ export const readProvidersAction = defineAction({
 export const updateProviderAction = defineAction({
   name: 'neondeck_config_update_provider',
   description:
-    'Update allowlisted provider configuration in config.json using secret environment variable references only. Does not accept raw secrets or arbitrary base URLs.',
-  input: updateProviderInputSchema,
+    'Update built-in provider configuration in config.json using secret environment variable references only. Arbitrary OpenAI-compatible endpoints are user-owned configuration and cannot be changed by this action. Does not accept raw secrets.',
+  input: updateProviderActionInputSchema,
   output: configActionOutputSchema,
   async run({ input }) {
     return updateProviderConfig(input);

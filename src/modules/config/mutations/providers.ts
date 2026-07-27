@@ -13,6 +13,8 @@ import {
 import {
   resolveAnthropicProviderStatus,
   resolveKilocodeProviderStatus,
+  resolveOpenAiCodexProviderStatus,
+  resolveOpenAiCompatibleProviderStatuses,
   resolveOpenAiProviderStatus,
 } from '../../repos';
 import { updateProviderInputSchema, type ConfigActionResult } from '../schemas';
@@ -25,17 +27,17 @@ export async function readProviderConfig(
   const config = await readRuntimeJson(paths.config, parseAppConfig);
 
   return okResult('config_read_providers', false, paths, [paths.config], {
-    message: 'Read allowlisted provider configuration.',
+    message: 'Read validated provider configuration.',
     data: {
       providers: effectiveProviderConfig(config.providers, env),
       policy:
-        'Provider config is limited to allowlisted provider ids and environment variable secret references.',
+        'Provider config is limited to built-ins and validated OpenAI-compatible definitions with environment variable secret references.',
     },
   });
 }
 
 export async function updateProviderConfig(
-  rawInput: v.InferInput<typeof updateProviderInputSchema>,
+  rawInput: unknown,
   paths = runtimePaths(),
 ): Promise<ConfigActionResult> {
   await ensureRuntimeHome(paths);
@@ -49,17 +51,16 @@ export async function updateProviderConfig(
   if (!parsed.ok) return parsed.result;
 
   const input = parsed.input;
-  if (input.provider !== 'kilocode' && input.organizationIdEnv !== undefined) {
-    return failResult('config_update_provider', paths, [paths.config], {
-      message: `${input.provider} provider does not support organizationIdEnv.`,
-      requires: ['enabled', 'apiKeyEnv'],
-    });
-  }
-
   if (
     input.enabled === undefined &&
-    input.apiKeyEnv === undefined &&
-    input.organizationIdEnv === undefined
+    (input.provider === 'openai-codex' || input.apiKeyEnv === undefined) &&
+    (input.provider !== 'kilocode' || input.organizationIdEnv === undefined) &&
+    (input.provider !== 'openai-compatible' ||
+      (input.baseUrl === undefined &&
+        input.api === undefined &&
+        input.contextWindow === undefined &&
+        input.maxTokens === undefined &&
+        input.remove === undefined))
   ) {
     return failResult('config_update_provider', paths, [paths.config], {
       message: 'At least one provider setting is required.',
@@ -68,6 +69,19 @@ export async function updateProviderConfig(
   }
 
   const config = await readRuntimeJson(paths.config, parseAppConfig);
+  if (
+    input.provider === 'openai-compatible' &&
+    !input.remove &&
+    !input.baseUrl &&
+    !config.providers?.openaiCompatible?.some(
+      (provider) => provider.id === input.id,
+    )
+  ) {
+    return failResult('config_update_provider', paths, [paths.config], {
+      message: `A baseUrl is required when creating custom provider "${input.id}".`,
+      requires: ['baseUrl'],
+    });
+  }
   const nextProviders = mergeProviderConfig(config.providers, input);
   const next = parseAppConfig(
     {
@@ -85,7 +99,10 @@ export async function updateProviderConfig(
     recordConfigChange(paths, {
       action: 'config_update_provider',
       file: paths.config,
-      target: `providers.${input.provider}`,
+      target:
+        input.provider === 'openai-compatible'
+          ? `providers.openaiCompatible.${input.id}`
+          : `providers.${input.provider}`,
       before: config,
       after: next,
     });
@@ -99,7 +116,7 @@ export async function updateProviderConfig(
       providers: effectiveProviderConfig(next.providers),
       appliesAfter: 'server-restart',
       policy:
-        'Only allowlisted provider ids and environment variable secret references are configurable.',
+        'Only built-in or validated OpenAI-compatible providers and environment variable secret references are configurable.',
     },
   });
 }
@@ -108,11 +125,49 @@ function mergeProviderConfig(
   current: AppConfig['providers'] | undefined,
   input: v.InferOutput<typeof updateProviderInputSchema>,
 ): ProviderConfig {
-  const existing = current?.[input.provider] ?? {};
+  if (input.provider === 'openai-compatible') {
+    const id = input.id;
+    const existing = current?.openaiCompatible ?? [];
+    if (input.remove) {
+      return {
+        ...current,
+        openaiCompatible: existing.filter((provider) => provider.id !== id),
+      };
+    }
+    const currentProvider = existing.find((provider) => provider.id === id);
+    const provider = {
+      ...currentProvider,
+      id,
+      baseUrl: input.baseUrl ?? currentProvider?.baseUrl ?? '',
+      ...(input.enabled !== undefined ? { enabled: input.enabled } : {}),
+      ...(input.apiKeyEnv ? { apiKeyEnv: input.apiKeyEnv } : {}),
+      ...(input.api !== undefined ? { api: input.api } : {}),
+      ...(input.contextWindow !== undefined && input.contextWindow !== null
+        ? { contextWindow: input.contextWindow }
+        : {}),
+      ...(input.maxTokens !== undefined && input.maxTokens !== null
+        ? { maxTokens: input.maxTokens }
+        : {}),
+    };
+    if (input.apiKeyEnv === null) delete provider.apiKeyEnv;
+    if (input.contextWindow === null) delete provider.contextWindow;
+    if (input.maxTokens === null) delete provider.maxTokens;
+    return {
+      ...current,
+      openaiCompatible: [
+        ...existing.filter((candidate) => candidate.id !== id),
+        provider,
+      ],
+    };
+  }
+
+  const configKey =
+    input.provider === 'openai-codex' ? 'openaiCodex' : input.provider;
+  const existing = current?.[configKey] ?? {};
   const provider = {
     ...existing,
     ...(input.enabled !== undefined ? { enabled: input.enabled } : {}),
-    ...(input.apiKeyEnv !== undefined
+    ...(input.provider !== 'openai-codex' && input.apiKeyEnv !== undefined
       ? input.apiKeyEnv === null
         ? {}
         : { apiKeyEnv: input.apiKeyEnv }
@@ -124,7 +179,7 @@ function mergeProviderConfig(
       : {}),
   };
 
-  if (input.apiKeyEnv === null) {
+  if (input.provider !== 'openai-codex' && input.apiKeyEnv === null) {
     delete provider.apiKeyEnv;
   }
   if (input.provider === 'kilocode' && input.organizationIdEnv === null) {
@@ -133,7 +188,7 @@ function mergeProviderConfig(
 
   return {
     ...current,
-    [input.provider]: provider,
+    [configKey]: provider,
   };
 }
 
@@ -144,6 +199,13 @@ export function effectiveProviderConfig(
   const kilocode = resolveKilocodeProviderStatus({ providers: current }, env);
   const openai = resolveOpenAiProviderStatus({ providers: current }, env);
   const anthropic = resolveAnthropicProviderStatus({ providers: current }, env);
+  const openaiCodex = resolveOpenAiCodexProviderStatus({
+    providers: current,
+  });
+  const openaiCompatible = resolveOpenAiCompatibleProviderStatuses(
+    { providers: current },
+    env,
+  );
 
   return {
     kilocode: {
@@ -159,5 +221,18 @@ export function effectiveProviderConfig(
       enabled: anthropic.enabled,
       apiKeyEnv: anthropic.apiKeyEnv,
     },
+    openaiCodex: {
+      enabled: openaiCodex.enabled,
+    },
+    openaiCompatible: openaiCompatible.map((provider) => ({
+      id: provider.id,
+      enabled: provider.enabled,
+      baseUrl: provider.baseUrl,
+      apiKeyEnv: provider.apiKeyEnv,
+      apiKeyPresent: provider.apiKeyPresent,
+      api: provider.api,
+      contextWindow: provider.contextWindow,
+      maxTokens: provider.maxTokens,
+    })),
   };
 }

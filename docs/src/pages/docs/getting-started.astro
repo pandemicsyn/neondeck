@@ -17,7 +17,8 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
         <h1>Getting started</h1>
         <p>
           Use Node 26.4.0 with fnm. The setup wizard can configure KiloCode,
-          OpenAI, or Anthropic as the Flue model provider.
+          OpenAI API billing, Anthropic, a ChatGPT subscription, or a generic
+          OpenAI-compatible endpoint such as OpenRouter.
         </p>
 
         <h2>Install from npm</h2>
@@ -38,7 +39,8 @@ npm install --global neondeck@next</code></pre>
           writes local secrets to the runtime home, configures the agent model,
           adds repositories, applies a dashboard preset, and can create initial
           schedules. When KiloCode is selected, init can discover and search
-          available KiloCode models before writing model config.
+          available KiloCode models before writing model config. ChatGPT
+          subscription setup supports browser and device-code login.
         </p>
         <pre><code>neondeck init</code></pre>
         <p>
@@ -46,6 +48,7 @@ npm install --global neondeck@next</code></pre>
           the future OpenTUI client.
         </p>
         <pre><code>neondeck status
+neondeck auth status openai-codex
 neondeck repo add ~/dev/neondeck
 neondeck watch-pr pandemicsyn/neondeck#123
 neondeck tui</code></pre>
@@ -82,16 +85,23 @@ GITHUB_LOGIN=...</code></pre>
         <p>
           Flue model strings use provider-qualified names such as
           <code>kilocode/kilo-auto/balanced</code>, <code>openai/gpt-5.5</code>,
-          or <code>anthropic/claude-sonnet-4-6</code>. Hosted providers use
-          their normal API credentials or a platform binding. A ChatGPT or Codex
-          subscription login is not a documented Flue provider credential path.
+          <code>openai-codex/gpt-5.5</code>, or
+          <code>anthropic/claude-sonnet-4-6</code>. The
+          <code>openai-codex</code> provider uses ChatGPT OAuth credentials stored
+          in Neondeck's local app database and refreshed automatically.
         </p>
+        <pre><code>neondeck auth login openai-codex
+neondeck auth status openai-codex
+neondeck auth logout openai-codex</code></pre>
         <p>
-          Neondeck allowlists KiloCode, OpenAI, and Anthropic provider
-          configuration in runtime
-          <code>config.json</code>. Provider settings store environment variable
-          names, not raw secrets or arbitrary base URLs. Provider registration
-          changes require a server restart. See
+          Generic OpenAI-compatible providers use validated IDs, HTTPS base URLs
+          (or loopback HTTP), a selected Chat Completions or Responses protocol,
+          and environment-variable key references. Raw API keys are never stored
+          in <code>config.json</code>. Endpoint definitions are user-owned setup
+          through <code>neondeck init</code> or the authenticated local dashboard/API;
+          model-callable config actions cannot change arbitrary endpoints. Provider
+          registration and standalone CLI login/logout changes require a server restart.
+          See
           <a href="/docs/configuration/">configuration</a> for the full runtime file
           model.
         </p>

@@ -13,6 +13,8 @@ import { initializeAppDatabase } from './runtime-home/app-db/index.ts';
 import {
   ConfigValidationError,
   ensureRuntimeHome,
+  openAiCompatibleBaseUrlIssue,
+  openAiCompatibleProviderIdIssue,
   parseAppConfig,
   parseDashboardConfig,
   parseRepoRegistry,
@@ -33,6 +35,26 @@ afterEach(async () => {
 });
 
 describe('runtime home', () => {
+  it('shares compatible endpoint validation with onboarding', () => {
+    expect(openAiCompatibleProviderIdIssue('openrouter')).toBeUndefined();
+    expect(openAiCompatibleProviderIdIssue('openai')).toContain('reserved');
+    expect(openAiCompatibleProviderIdIssue('OpenRouter')).toContain(
+      'lowercase',
+    );
+    expect(
+      openAiCompatibleBaseUrlIssue('https://openrouter.ai/api/v1'),
+    ).toBeUndefined();
+    expect(
+      openAiCompatibleBaseUrlIssue('http://localhost:11434/v1'),
+    ).toBeUndefined();
+    expect(openAiCompatibleBaseUrlIssue('http://example.com/v1')).toContain(
+      'HTTPS',
+    );
+    expect(
+      openAiCompatibleBaseUrlIssue('https://user:secret@example.com/v1'),
+    ).toContain('without credentials');
+  });
+
   it('resolves NEONDECK_HOME before XDG and HOME defaults', () => {
     expect(
       resolveRuntimeHome({

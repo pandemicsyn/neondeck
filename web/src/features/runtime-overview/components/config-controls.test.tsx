@@ -5,6 +5,8 @@ import { createRoot } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   AutopilotPromptControls,
+  compatibleProviderUpdate,
+  optionalPositiveInteger,
   PrReviewPromptControls,
 } from './config-controls';
 
@@ -13,6 +15,51 @@ const prompts = {
   'autofix-with-approval': 'Approval default {{mode}}',
   'autofix-push-when-safe': 'Autonomous default {{mode}}',
 };
+
+describe('compatible provider controls', () => {
+  it('builds complete create and edit requests', () => {
+    expect(
+      compatibleProviderUpdate({
+        id: ' openrouter ',
+        enabled: true,
+        baseUrl: ' https://openrouter.ai/api/v1 ',
+        apiKeyEnv: ' OPENROUTER_API_KEY ',
+        api: 'openai-responses',
+        contextWindow: '200000',
+        maxTokens: '8192',
+      }),
+    ).toEqual({
+      provider: 'openai-compatible',
+      input: {
+        id: 'openrouter',
+        enabled: true,
+        baseUrl: 'https://openrouter.ai/api/v1',
+        apiKeyEnv: 'OPENROUTER_API_KEY',
+        api: 'openai-responses',
+        contextWindow: 200000,
+        maxTokens: 8192,
+      },
+    });
+  });
+
+  it('keeps optional compatible-provider values explicit and validated', () => {
+    expect(optionalPositiveInteger('', 'Context window')).toBeNull();
+    expect(() => optionalPositiveInteger('1.5', 'Context window')).toThrow(
+      'Context window must be a positive whole number.',
+    );
+    expect(() =>
+      compatibleProviderUpdate({
+        id: '',
+        enabled: true,
+        baseUrl: '',
+        apiKeyEnv: '',
+        api: 'openai-completions',
+        contextWindow: '',
+        maxTokens: '',
+      }),
+    ).toThrow('Provider id is required.');
+  });
+});
 
 describe('AutopilotPromptControls', () => {
   let container: HTMLDivElement;

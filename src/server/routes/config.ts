@@ -77,7 +77,7 @@ export function createConfigRoutes(paths: RuntimePaths) {
   routes.post('/providers/:provider', async (c) => {
     const input = (await safeJsonObject(c)) as Record<string, unknown>;
     const provider = c.req.param('provider');
-    if (!isRegisteredProvider(provider)) {
+    if (provider !== 'openai-compatible' && !isRegisteredProvider(provider)) {
       return c.json(
         {
           ok: false,
@@ -94,7 +94,7 @@ export function createConfigRoutes(paths: RuntimePaths) {
         {
           ...input,
           provider,
-        },
+        } as Parameters<typeof updateProviderConfig>[0],
         paths,
       ),
     );

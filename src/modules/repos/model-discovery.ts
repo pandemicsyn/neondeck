@@ -80,6 +80,14 @@ export function suggestedModels(
     ];
   }
 
+  if (provider === 'openai-codex') {
+    return [
+      suggestedModel('openai-codex', 'gpt-5.5', 'GPT-5.5', true, 0),
+      suggestedModel('openai-codex', 'gpt-5.4', 'GPT-5.4', true, 1),
+      suggestedModel('openai-codex', 'gpt-5.4-mini', 'GPT-5.4 Mini', true, 2),
+    ];
+  }
+
   return [
     suggestedModel(
       'kilocode',

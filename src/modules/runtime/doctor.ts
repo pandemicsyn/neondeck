@@ -11,8 +11,8 @@ import {
   isRegisteredProvider,
   resolveAnthropicProviderStatus,
   resolveKilocodeProviderStatus,
+  resolveOpenAiCompatibleProviderStatuses,
   resolveOpenAiProviderStatus,
-  type RegisteredProviderId,
 } from '../repos';
 import {
   readGitRepoStatus,
@@ -409,8 +409,12 @@ function envRequirements(
     config ? { models: config.models } : undefined,
     env,
   );
-  const modelProviders =
-    requiredModelProviders(models).filter(isRegisteredProvider);
+  const modelProviders = requiredModelProviders(models).filter((provider) =>
+    isRegisteredProvider(
+      provider,
+      config ? { providers: config.providers } : undefined,
+    ),
+  );
   const requirements = new Map<string, EnvRequirement>();
 
   for (const provider of modelProviders) {
@@ -424,7 +428,7 @@ function envRequirements(
 }
 
 function providerEnvRequirement(
-  provider: RegisteredProviderId,
+  provider: string,
   config: AppConfig | undefined,
   env: NodeJS.ProcessEnv,
 ): EnvRequirement | undefined {
@@ -447,11 +451,22 @@ function providerEnvRequirement(
     return status.enabled ? { id: status.apiKeyEnv } : undefined;
   }
 
-  const status = resolveAnthropicProviderStatus(
+  if (provider === 'anthropic') {
+    const status = resolveAnthropicProviderStatus(
+      config ? { providers: config.providers } : undefined,
+      env,
+    );
+    return status.enabled ? { id: status.apiKeyEnv } : undefined;
+  }
+
+  if (provider === 'openai-codex') return undefined;
+  const status = resolveOpenAiCompatibleProviderStatuses(
     config ? { providers: config.providers } : undefined,
     env,
-  );
-  return status.enabled ? { id: status.apiKeyEnv } : undefined;
+  ).find((candidate) => candidate.id === provider);
+  return status?.enabled && status.apiKeyEnv
+    ? { id: status.apiKeyEnv }
+    : undefined;
 }
 
 function mergedEnv(localEnv: Map<string, string>): NodeJS.ProcessEnv {
