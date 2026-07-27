@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from 'node:fs/promises';
+import { chmod, mkdtemp, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   logoutOpenAiCodexSubscription,
   openAiCodexAuthStatus,
+  protectOpenAiCodexCredentialStore,
   resolveOpenAiCodexAccessToken,
 } from './modules/repos';
 import { ensureRuntimeHome, runtimePaths } from './runtime-home';
@@ -188,6 +189,28 @@ describe('ChatGPT subscription authentication', () => {
     await expect(
       resolveOpenAiCodexAccessTokenForStartup(paths, 5),
     ).rejects.toThrow('startup budget');
+  });
+
+  it('protects the database directory and existing SQLite sidecars', async () => {
+    const home = await mkdtemp(join(tmpdir(), 'neondeck-openai-codex-'));
+    tempRoots.push(home);
+    const paths = runtimePaths(home);
+    await ensureRuntimeHome(paths);
+    const wal = `${paths.neondeckDatabase}-wal`;
+    const shm = `${paths.neondeckDatabase}-shm`;
+    await Promise.all([
+      writeFile(wal, ''),
+      writeFile(shm, ''),
+      chmod(paths.data, 0o755),
+    ]);
+    await Promise.all([chmod(wal, 0o644), chmod(shm, 0o644)]);
+
+    await protectOpenAiCodexCredentialStore(paths);
+
+    expect((await stat(paths.data)).mode & 0o777).toBe(0o700);
+    expect((await stat(paths.neondeckDatabase)).mode & 0o777).toBe(0o600);
+    expect((await stat(wal)).mode & 0o777).toBe(0o600);
+    expect((await stat(shm)).mode & 0o777).toBe(0o600);
   });
 });
 

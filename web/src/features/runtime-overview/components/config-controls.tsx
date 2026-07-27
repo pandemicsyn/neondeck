@@ -71,6 +71,21 @@ export function RuntimeConfigControls({
     status.providers.configs.openaiCompatible.find(
       (provider) => provider.id === providerId,
     );
+  const [creatingCompatibleProvider, setCreatingCompatibleProvider] =
+    useState(false);
+  const [compatibleProviderId, setCompatibleProviderId] = useState('');
+  const [compatibleBaseUrl, setCompatibleBaseUrl] = useState(
+    selectedCompatibleProvider?.baseUrl ?? '',
+  );
+  const [compatibleApi, setCompatibleApi] = useState<
+    'openai-completions' | 'openai-responses'
+  >(selectedCompatibleProvider?.api ?? 'openai-completions');
+  const [compatibleContextWindow, setCompatibleContextWindow] = useState(
+    selectedCompatibleProvider?.contextWindow?.toString() ?? '',
+  );
+  const [compatibleMaxTokens, setCompatibleMaxTokens] = useState(
+    selectedCompatibleProvider?.maxTokens?.toString() ?? '',
+  );
   const [providerEnabled, setProviderEnabled] = useState(
     selectedProvider.enabled,
   );
@@ -128,12 +143,26 @@ export function RuntimeConfigControls({
   useEffect(() => {
     if (skipProviderSyncForStatus.current === status.fetchedAt) return;
     skipProviderSyncForStatus.current = null;
-    if (providerDirty || savingProvider) return;
+    if (providerDirty || savingProvider || creatingCompatibleProvider) return;
     const provider = providerStatusSummary(status, providerId);
+    const compatible = status.providers.configs.openaiCompatible.find(
+      (candidate) => candidate.id === providerId,
+    );
     setProviderEnabled(provider.enabled);
     setApiKeyEnv(provider.apiKeyEnv);
     setOrganizationIdEnv(provider.organizationIdEnv ?? '');
-  }, [providerDirty, providerId, savingProvider, status]);
+    setCompatibleProviderId(compatible?.id ?? '');
+    setCompatibleBaseUrl(compatible?.baseUrl ?? '');
+    setCompatibleApi(compatible?.api ?? 'openai-completions');
+    setCompatibleContextWindow(compatible?.contextWindow?.toString() ?? '');
+    setCompatibleMaxTokens(compatible?.maxTokens?.toString() ?? '');
+  }, [
+    creatingCompatibleProvider,
+    providerDirty,
+    providerId,
+    savingProvider,
+    status,
+  ]);
 
   async function saveModels(event: FormEvent) {
     event.preventDefault();
@@ -218,17 +247,57 @@ export function RuntimeConfigControls({
                   provider: 'openai-codex',
                   input: { enabled: providerEnabled },
                 }
-              : {
-                  provider: 'openai-compatible',
-                  input: {
-                    id: providerId,
-                    enabled: providerEnabled,
-                    apiKeyEnv: apiKeyEnv.trim() || null,
-                  },
-                };
+              : compatibleProviderUpdate({
+                  id: creatingCompatibleProvider
+                    ? compatibleProviderId
+                    : providerId,
+                  enabled: providerEnabled,
+                  baseUrl: compatibleBaseUrl,
+                  apiKeyEnv,
+                  api: compatibleApi,
+                  contextWindow: compatibleContextWindow,
+                  maxTokens: compatibleMaxTokens,
+                });
       const result = await updateProvider(update);
       setProviderMessage(result.message);
+      if (update.provider === 'openai-compatible') {
+        setProviderId(update.input.id);
+        setCompatibleProviderId(update.input.id);
+        setCreatingCompatibleProvider(false);
+      }
       skipProviderSyncForStatus.current = status.fetchedAt;
+      setProviderDirty(false);
+      onRefresh();
+    } catch (cause) {
+      setProviderMessageIsError(true);
+      setProviderMessage(
+        cause instanceof Error ? cause.message : String(cause),
+      );
+    } finally {
+      setSavingProvider(false);
+    }
+  }
+
+  async function removeCompatibleProvider() {
+    if (
+      !selectedCompatibleProvider ||
+      !window.confirm(
+        `Remove the "${selectedCompatibleProvider.id}" provider definition?`,
+      )
+    ) {
+      return;
+    }
+
+    setSavingProvider(true);
+    setProviderMessage(null);
+    setProviderMessageIsError(false);
+    try {
+      const result = await updateProvider({
+        provider: 'openai-compatible',
+        input: { id: selectedCompatibleProvider.id, remove: true },
+      });
+      setProviderMessage(result.message);
+      setProviderId('kilocode');
       setProviderDirty(false);
       onRefresh();
     } catch (cause) {
@@ -416,15 +485,36 @@ export function RuntimeConfigControls({
             onChange={(event) => {
               skipProviderSyncForStatus.current = null;
               setProviderDirty(false);
+              if (event.target.value === newCompatibleProviderOption) {
+                setCreatingCompatibleProvider(true);
+                setProviderId('');
+                setProviderEnabled(true);
+                setCompatibleProviderId('');
+                setCompatibleBaseUrl('');
+                setCompatibleApi('openai-completions');
+                setCompatibleContextWindow('');
+                setCompatibleMaxTokens('');
+                setApiKeyEnv('');
+                setOrganizationIdEnv('');
+                return;
+              }
+              setCreatingCompatibleProvider(false);
               setProviderId(modelProviderId(event.target.value));
             }}
-            value={providerId}
+            value={
+              creatingCompatibleProvider
+                ? newCompatibleProviderOption
+                : providerId
+            }
           >
             {status.providers.registered.map((provider) => (
               <option key={provider} value={provider}>
                 {provider === 'openai-codex' ? 'ChatGPT' : provider}
               </option>
             ))}
+            <option value={newCompatibleProviderOption}>
+              + compatible endpoint
+            </option>
           </select>
           <button
             className="border border-violet px-2 py-1 font-mono text-[10px] text-violet disabled:opacity-50"
@@ -434,7 +524,7 @@ export function RuntimeConfigControls({
             {savingProvider ? 'saving' : 'save'}
           </button>
         </div>
-        {providerId === 'openai-codex' ? (
+        {providerId === 'openai-codex' && !creatingCompatibleProvider ? (
           <div className="space-y-1 border border-line bg-field px-2 py-1.5 font-mono text-[10px] text-muted">
             <p>
               OAuth state:{' '}
@@ -461,6 +551,71 @@ export function RuntimeConfigControls({
               restart Neondeck.
             </p>
           </div>
+        ) : creatingCompatibleProvider || selectedCompatibleProvider ? (
+          <>
+            {creatingCompatibleProvider ? (
+              <ConfigInput
+                label="provider id"
+                onChange={(value) => {
+                  setProviderDirty(true);
+                  setCompatibleProviderId(value);
+                }}
+                placeholder="openrouter"
+                value={compatibleProviderId}
+              />
+            ) : null}
+            <ConfigInput
+              label="endpoint"
+              onChange={(value) => {
+                setProviderDirty(true);
+                setCompatibleBaseUrl(value);
+              }}
+              placeholder="https://openrouter.ai/api/v1"
+              value={compatibleBaseUrl}
+            />
+            <ConfigSelect
+              label="protocol"
+              onChange={(value) => {
+                setProviderDirty(true);
+                setCompatibleApi(
+                  value as 'openai-completions' | 'openai-responses',
+                );
+              }}
+              options={['openai-completions', 'openai-responses']}
+              value={compatibleApi}
+            />
+            <ConfigInput
+              label="key env"
+              onChange={(value) => {
+                setProviderDirty(true);
+                setApiKeyEnv(value);
+              }}
+              placeholder="optional"
+              value={apiKeyEnv}
+            />
+            <ConfigInput
+              label="context"
+              min={1}
+              onChange={(value) => {
+                setProviderDirty(true);
+                setCompatibleContextWindow(value);
+              }}
+              placeholder="provider default"
+              type="number"
+              value={compatibleContextWindow}
+            />
+            <ConfigInput
+              label="output"
+              min={1}
+              onChange={(value) => {
+                setProviderDirty(true);
+                setCompatibleMaxTokens(value);
+              }}
+              placeholder="provider default"
+              type="number"
+              value={compatibleMaxTokens}
+            />
+          </>
         ) : (
           <ConfigInput
             label="key env"
@@ -472,21 +627,6 @@ export function RuntimeConfigControls({
             value={apiKeyEnv}
           />
         )}
-        {selectedCompatibleProvider ? (
-          <div className="grid grid-cols-[4.5rem_1fr] gap-x-2 gap-y-0.5 border border-line bg-field px-2 py-1.5 font-mono text-[10px] text-muted">
-            <span>endpoint</span>
-            <span className="truncate text-ink">
-              {selectedCompatibleProvider.baseUrl}
-            </span>
-            <span>protocol</span>
-            <span className="text-ink">{selectedCompatibleProvider.api}</span>
-            <span>limits</span>
-            <span className="text-ink">
-              context {selectedCompatibleProvider.contextWindow ?? 'default'} ·
-              output {selectedCompatibleProvider.maxTokens ?? 'default'}
-            </span>
-          </div>
-        ) : null}
         {providerId === 'kilocode' ? (
           <ConfigInput
             label="org env"
@@ -503,6 +643,16 @@ export function RuntimeConfigControls({
           Environment variable references only. Provider registration changes
           apply after server restart.
         </p>
+        {selectedCompatibleProvider && !creatingCompatibleProvider ? (
+          <button
+            className="border border-line px-2 py-1 font-mono text-[10px] text-accent disabled:opacity-50"
+            disabled={savingProvider}
+            onClick={() => void removeCompatibleProvider()}
+            type="button"
+          >
+            remove provider
+          </button>
+        ) : null}
         {providerMessage ? (
           <ConfigMessage
             error={providerMessageIsError}
@@ -963,8 +1113,48 @@ const thinkingLevelOptions = [
   'high',
   'xhigh',
 ];
+const newCompatibleProviderOption = '__new-compatible-provider__';
 const minPrReviewTimeoutSeconds = 10;
 const maxPrReviewTimeoutSeconds = 30 * 60;
+
+export function optionalPositiveInteger(value: string, label: string) {
+  if (!value.trim()) return null;
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed < 1) {
+    throw new Error(`${label} must be a positive whole number.`);
+  }
+  return parsed;
+}
+
+export function compatibleProviderUpdate(input: {
+  id: string;
+  enabled: boolean;
+  baseUrl: string;
+  apiKeyEnv: string;
+  api: 'openai-completions' | 'openai-responses';
+  contextWindow: string;
+  maxTokens: string;
+}): Extract<ProviderUpdate, { provider: 'openai-compatible' }> {
+  const id = input.id.trim();
+  const baseUrl = input.baseUrl.trim();
+  if (!id) throw new Error('Provider id is required.');
+  if (!baseUrl) throw new Error('Endpoint URL is required.');
+  return {
+    provider: 'openai-compatible',
+    input: {
+      id,
+      enabled: input.enabled,
+      baseUrl,
+      apiKeyEnv: input.apiKeyEnv.trim() || null,
+      api: input.api,
+      contextWindow: optionalPositiveInteger(
+        input.contextWindow,
+        'Context window',
+      ),
+      maxTokens: optionalPositiveInteger(input.maxTokens, 'Output token limit'),
+    },
+  };
+}
 
 function modelProviderId(value: string): ModelProviderId {
   return /^[a-z][a-z0-9-]{0,62}$/.test(value) ? value : 'kilocode';

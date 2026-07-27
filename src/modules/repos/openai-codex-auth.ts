@@ -50,7 +50,7 @@ export async function loginOpenAiCodexSubscription(
   paths: RuntimePaths = runtimePaths(),
 ) {
   await ensureRuntimeHome(paths);
-  await protectCredentialStore(paths);
+  await protectOpenAiCodexCredentialStore(paths);
   const credentials =
     method === 'device-code'
       ? await loginOpenAICodexDeviceCode({
@@ -75,7 +75,7 @@ export async function resolveOpenAiCodexAccessToken(
   paths: RuntimePaths = runtimePaths(),
 ) {
   await ensureRuntimeHome(paths);
-  await protectCredentialStore(paths);
+  await protectOpenAiCodexCredentialStore(paths);
   const credential = readCredential(paths);
   if (!credential) return undefined;
   if (credential.expires > Date.now() + refreshSkewMs) {
@@ -169,7 +169,7 @@ export async function logoutOpenAiCodexSubscription(
   paths: RuntimePaths = runtimePaths(),
 ) {
   await ensureRuntimeHome(paths);
-  await protectCredentialStore(paths);
+  await protectOpenAiCodexCredentialStore(paths);
   const key = paths.neondeckDatabase;
   const timer = refreshTimers.get(key);
   if (timer) {
@@ -362,6 +362,32 @@ function errorMessage(error: unknown) {
   return error instanceof Error ? error.message : String(error);
 }
 
-async function protectCredentialStore(paths: RuntimePaths) {
-  await chmod(paths.neondeckDatabase, 0o600);
+export async function protectOpenAiCodexCredentialStore(paths: RuntimePaths) {
+  // The access and refresh tokens may live in SQLite's WAL rather than the
+  // main database. Make the containing directory private first so sidecars
+  // created after this point are also inaccessible to other local users.
+  await chmod(paths.data, 0o700);
+  await Promise.all(
+    [
+      paths.neondeckDatabase,
+      `${paths.neondeckDatabase}-wal`,
+      `${paths.neondeckDatabase}-shm`,
+    ].map((path) => chmodIfPresent(path, 0o600)),
+  );
+}
+
+async function chmodIfPresent(path: string, mode: number) {
+  try {
+    await chmod(path, mode);
+  } catch (error) {
+    if (
+      error &&
+      typeof error === 'object' &&
+      'code' in error &&
+      error.code === 'ENOENT'
+    ) {
+      return;
+    }
+    throw error;
+  }
 }
