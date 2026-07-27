@@ -1,5 +1,21 @@
 # Changelog
 
+## 1.0.0-beta.19
+
+### Minor Changes
+
+- [#203](https://github.com/pandemicsyn/neondeck/pull/203) [`d6e2cd7`](https://github.com/pandemicsyn/neondeck/commit/d6e2cd7ecb582569df6494bfa4a46b04b9930390) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Add ChatGPT subscription OAuth and validated generic OpenAI-compatible model providers to setup, runtime registration, status, and provider controls.
+
+### Patch Changes
+
+- [`619883a`](https://github.com/pandemicsyn/neondeck/commit/619883a20d200ca646f22a0ef752f3ae3acc524d) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Load seeded draft comments into reviewer conversations even when GitHub repository casing differs between review and draft records.
+
+- [`e42f0ef`](https://github.com/pandemicsyn/neondeck/commit/e42f0ef771637c6237a980637c899dd73b984dbf) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Align draft and published PR review comment actions, and distinguish editable
+  drafts with explicit state labels and violet-tinted surfaces. Avoid briefly
+  showing the stale-draft warning while the current PR head is still loading.
+
+- [#202](https://github.com/pandemicsyn/neondeck/pull/202) [`435d0d0`](https://github.com/pandemicsyn/neondeck/commit/435d0d0dc107e4504dd051d7b204918dc571eca8) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Reconnect continuing Autopilot owners and human PR reviews to bounded learning memory and idempotent handled-PR retrospective evidence.
+
 ## 1.0.0-beta.18
 
 ### Patch Changes
