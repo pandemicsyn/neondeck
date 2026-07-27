@@ -41,10 +41,14 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
         <p>
           <code>data/neondeck.db</code> stores app state: watches, scheduled tasks,
           notifications, memories, workflow summaries, config history, and execution
-          approvals. <code>data/flue.db</code> stores Flue runtime state. Neondeck
-          app database migrations are shipped with the package and apply automatically
-          before the app opens <code>data/neondeck.db</code>. Pre-migration
-          backups are retained in <code>data/backups/</code>.
+          approvals, and ChatGPT OAuth credentials.
+          <code>data/flue.db</code> stores Flue runtime state. On POSIX systems, Neondeck
+          protects the <code>data/</code> directory and the Neondeck database, including
+          existing WAL and shared-memory sidecars, before accessing OAuth credentials.
+          Neondeck app database migrations are shipped with the package and apply
+          automatically before the app opens
+          <code>data/neondeck.db</code>. Pre-migration backups are retained in
+          <code>data/backups/</code>.
         </p>
 
         <h2>Secrets</h2>
@@ -115,17 +119,22 @@ GITHUB_LOGIN=...</code></pre>
         "enabled": true,
         "baseUrl": "https://openrouter.ai/api/v1",
         "apiKeyEnv": "OPENROUTER_API_KEY",
-        "api": "openai-completions"
+        "api": "openai-completions",
+        "contextWindow": 200000,
+        "maxTokens": 8192
       &#125;
     ]
   &#125;
 &#125;</code></pre>
         <p>
           Provider config stores environment variable names, not raw secrets.
-          Compatible endpoints require HTTPS except for loopback development
-          servers and reject URL credentials, query strings, fragments, reserved
-          ids, and duplicate ids. ChatGPT OAuth tokens live in the local app
-          database and are managed with
+          <code>apiKeyEnv</code> is optional for compatible endpoints, including keyless
+          loopback development servers. <code>contextWindow</code> and
+          <code>maxTokens</code> are optional positive-integer limits used to describe
+          the selected service and model. Compatible endpoints require HTTPS except
+          for loopback HTTP and reject URL credentials, query strings, fragments,
+          reserved ids, and duplicate ids. ChatGPT OAuth tokens live in the local
+          app database and are managed with
           <code>neondeck auth ... openai-codex</code>. Generic endpoint
           definitions are user-owned and may be changed only through setup or
           the authenticated local dashboard/API, not a model-callable config

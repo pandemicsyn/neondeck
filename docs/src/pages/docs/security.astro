@@ -54,6 +54,13 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
           the underlying provider or GitHub credential.
         </p>
         <p>
+          ChatGPT OAuth credentials are stored in
+          <code>data/neondeck.db</code>. Before credential access, Neondeck
+          restricts the runtime <code>data/</code> directory to the current user and
+          protects the database plus existing WAL and shared-memory sidecars on POSIX
+          systems. OAuth tokens are never sent to the browser.
+        </p>
+        <p>
           Do not place secrets in agent personality text, runtime skills,
           prompts, memories, scheduled instructions, or dashboard settings.
           Those surfaces can enter model context or appear in audit and

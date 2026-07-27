@@ -49,6 +49,10 @@ neondeck auth logout openai-codex</code></pre>
           device code. Neondeck stores and refreshes the OAuth credentials in
           its local app database. Restart Neondeck after standalone CLI login or
           logout so the running process picks up the new credential state.
+          Status reports <code>missing</code>, <code>valid</code>,
+          <code>refresh-needed</code>, or <code>error</code>, along with whether
+          credentials are stored and currently usable. Expiry and the latest
+          refresh error are included when available.
         </p>
 
         <h2>Status</h2>

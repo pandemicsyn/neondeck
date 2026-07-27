@@ -95,13 +95,15 @@ neondeck auth status openai-codex
 neondeck auth logout openai-codex</code></pre>
         <p>
           Generic OpenAI-compatible providers use validated IDs, HTTPS base URLs
-          (or loopback HTTP), a selected Chat Completions or Responses protocol,
-          and environment-variable key references. Raw API keys are never stored
-          in <code>config.json</code>. Endpoint definitions are user-owned setup
-          through <code>neondeck init</code> or the authenticated local dashboard/API;
-          model-callable config actions cannot change arbitrary endpoints. Provider
-          registration and standalone CLI login/logout changes require a server restart.
-          See
+          (or loopback HTTP), and a selected Chat Completions or Responses
+          protocol. An environment-variable key reference is optional, so
+          keyless local endpoints are supported. Raw API keys are never stored
+          in
+          <code>config.json</code>. Endpoint definitions are user-owned setup
+          through
+          <code>neondeck init</code> or the authenticated local dashboard/API; model-callable
+          config actions cannot change arbitrary endpoints. Provider registration
+          and standalone CLI login/logout changes require a server restart. See
           <a href="/docs/configuration/">configuration</a> for the full runtime file
           model.
         </p>
@@ -221,7 +223,8 @@ neondeck open xeneon --kiosk</code></pre>
         <p>
           The chat agent can update these fields through the typed
           <code>neondeck_config_update_agent_models</code> action. Model strings must
-          reference allowlisted providers. Thinking levels use Flue's
+          reference built-in or explicitly configured providers. Thinking levels use
+          Flue's
           <code>thinkingLevel</code> values such as <code>low</code>,
           <code>medium</code>, and <code>high</code>. The PR review model is
           optional and falls back to the display assistant. PR review calls
