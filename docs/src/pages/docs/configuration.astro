@@ -64,8 +64,10 @@ GITHUB_LOGIN=...</code></pre>
         <h2>Models and providers</h2>
         <p>
           Agent model choices live in <code>config.json</code>. Model strings
-          must be provider-qualified and use allowlisted providers:
-          <code>kilocode</code>, <code>openai</code>, or <code>anthropic</code>.
+          must be provider-qualified and use a built-in or explicitly configured
+          provider: <code>kilocode</code>, <code>openai</code>,
+          <code>anthropic</code>, <code>openai-codex</code>, or a validated
+          OpenAI-compatible provider id.
         </p>
         <pre><code>&#123;
   "version": 1,
@@ -103,14 +105,34 @@ GITHUB_LOGIN=...</code></pre>
     "anthropic": &#123;
       "enabled": true,
       "apiKeyEnv": "ANTHROPIC_API_KEY"
-    &#125;
+    &#125;,
+    "openaiCodex": &#123;
+      "enabled": false
+    &#125;,
+    "openaiCompatible": [
+      &#123;
+        "id": "openrouter",
+        "enabled": true,
+        "baseUrl": "https://openrouter.ai/api/v1",
+        "apiKeyEnv": "OPENROUTER_API_KEY",
+        "api": "openai-completions"
+      &#125;
+    ]
   &#125;
 &#125;</code></pre>
         <p>
-          Provider config stores environment variable names, not raw secrets or
-          arbitrary endpoints. <code>thinkingLevel</code> values use Flue's exposed
-          reasoning tiers. The PR review model is optional and falls back to the display
-          assistant when omitted; it is used by the bounded
+          Provider config stores environment variable names, not raw secrets.
+          Compatible endpoints require HTTPS except for loopback development
+          servers and reject URL credentials, query strings, fragments, reserved
+          ids, and duplicate ids. ChatGPT OAuth tokens live in the local app
+          database and are managed with
+          <code>neondeck auth ... openai-codex</code>. Generic endpoint
+          definitions are user-owned and may be changed only through setup or
+          the authenticated local dashboard/API, not a model-callable config
+          action.
+          <code>thinkingLevel</code> values use Flue's exposed reasoning tiers. The
+          PR review model is optional and falls back to the display assistant when
+          omitted; it is used by the bounded
           <code>review-pr-for-human</code> workflow and its read-only follow-up reviewer
           conversation. Its timeout defaults to 180,000 milliseconds and may be configured
           from 10,000 through 1,800,000 with <code>prReviewTimeoutMs</code>. The
@@ -123,7 +145,8 @@ GITHUB_LOGIN=...</code></pre>
           levels are
           <code>off</code>, <code>minimal</code>, <code>low</code>,
           <code>medium</code>, <code>high</code>, or <code>xhigh</code>.
-          Provider registration changes require a server restart.
+          Provider registration and standalone CLI ChatGPT login/logout changes
+          require a server restart.
         </p>
         <p>
           The current watched-PR Autopilot owner deliberately reuses

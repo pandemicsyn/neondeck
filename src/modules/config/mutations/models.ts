@@ -13,6 +13,7 @@ import {
   readRuntimeJson,
   runtimePaths,
 } from '../../../runtime-home';
+import { isRegisteredProvider } from '../../repos';
 import {
   updateAgentModelsInputSchema,
   updateHandoffConfigInputSchema,
@@ -45,6 +46,24 @@ export async function updateAgentModels(
   }
 
   const config = await readRuntimeJson(paths.config, parseAppConfig);
+  const unknownProviders = Array.from(
+    new Set(
+      modelValues(input)
+        .map((model) => model.slice(0, model.indexOf('/')))
+        .filter(
+          (provider) =>
+            !isRegisteredProvider(provider, {
+              providers: config.providers,
+            }),
+        ),
+    ),
+  );
+  if (unknownProviders.length > 0) {
+    return failResult('config_update_agent_models', paths, [paths.config], {
+      message: `Model strings reference unconfigured providers: ${unknownProviders.join(', ')}.`,
+      requires: ['registered-provider'],
+    });
+  }
   const nextModels = mergeAgentModelConfig(config.models, input);
   const next = parseAppConfig(
     {
@@ -83,6 +102,16 @@ export async function updateAgentModels(
           'Model strings must reference providers already registered by Neondeck or Flue runtime configuration.',
       },
     },
+  );
+}
+
+function modelValues(value: unknown): string[] {
+  if (typeof value === 'string') return [value];
+  if (!value || typeof value !== 'object') return [];
+  return Object.entries(value).flatMap(([key, nested]) =>
+    key.toLowerCase().includes('think') || key.endsWith('TimeoutMs')
+      ? []
+      : modelValues(nested),
   );
 }
 

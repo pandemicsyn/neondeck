@@ -38,6 +38,7 @@ describe('runtime status', () => {
       kilo: false,
       openai: false,
       anthropic: false,
+      openaiCodex: false,
       github: false,
     });
     expect(status.providers.configs.kilocode).toMatchObject({
@@ -363,6 +364,7 @@ describe('runtime status', () => {
       kilo: true,
       openai: false,
       anthropic: false,
+      openaiCodex: false,
       github: true,
     });
     expect(status.models.displayAssistant).toBe('kilocode/kilo-auto/balanced');

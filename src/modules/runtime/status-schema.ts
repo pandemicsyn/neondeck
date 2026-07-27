@@ -40,6 +40,7 @@ export const runtimeStatusSchema = v.looseObject({
       kilo: v.boolean(),
       openai: v.boolean(),
       anthropic: v.boolean(),
+      openaiCodex: v.boolean(),
       github: v.boolean(),
     }),
     configs: v.object({
@@ -60,6 +61,27 @@ export const runtimeStatusSchema = v.looseObject({
         apiKeyEnv: v.string(),
         apiKeyPresent: v.boolean(),
       }),
+      openaiCodex: v.object({
+        enabled: v.boolean(),
+        state: v.picklist(['missing', 'valid', 'refresh-needed', 'error']),
+        authenticated: v.boolean(),
+        usable: v.boolean(),
+        expiresAt: v.nullable(v.string()),
+        needsRefresh: v.boolean(),
+        lastError: v.nullable(v.string()),
+      }),
+      openaiCompatible: v.array(
+        v.object({
+          id: v.string(),
+          enabled: v.boolean(),
+          baseUrl: v.string(),
+          apiKeyEnv: v.nullable(v.string()),
+          apiKeyPresent: v.boolean(),
+          api: v.picklist(['openai-completions', 'openai-responses']),
+          contextWindow: v.nullable(v.number()),
+          maxTokens: v.nullable(v.number()),
+        }),
+      ),
     }),
   }),
   models: v.object({

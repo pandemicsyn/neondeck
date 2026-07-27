@@ -379,6 +379,9 @@ export function printStatus(status: RuntimeStatus) {
     `openai    ${status.providers.credentials.openai ? 'configured' : 'missing'}`,
   );
   console.log(
+    `chatgpt   ${status.providers.credentials.openaiCodex ? 'configured' : 'missing'}`,
+  );
+  console.log(
     `anthropic ${status.providers.credentials.anthropic ? 'configured' : 'missing'}`,
   );
   console.log(`repos     ${status.counts.repos}`);

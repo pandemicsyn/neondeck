@@ -112,6 +112,67 @@ export const handoffConfigSchema = v.looseObject({
   allowExternalReviewQueue: v.optional(v.boolean()),
 });
 
+const reservedProviderIds = [
+  'kilocode',
+  'openai',
+  'anthropic',
+  'openai-codex',
+  'openai-compatible',
+];
+
+export function openAiCompatibleProviderIdIssue(value: string | undefined) {
+  if (!/^[a-z][a-z0-9-]{0,62}$/.test(value ?? '')) {
+    return 'Use lowercase letters, numbers, and hyphens.';
+  }
+  if (reservedProviderIds.includes(value ?? '')) {
+    return 'That id is reserved by a built-in provider.';
+  }
+  return undefined;
+}
+
+export function openAiCompatibleBaseUrlIssue(value: string | undefined) {
+  try {
+    const url = new URL(value ?? '');
+    const loopback = ['127.0.0.1', 'localhost', '[::1]'].includes(url.hostname);
+    if (
+      (url.protocol !== 'https:' && !(url.protocol === 'http:' && loopback)) ||
+      url.username ||
+      url.password ||
+      url.search ||
+      url.hash
+    ) {
+      return 'Use HTTPS (or loopback HTTP) without credentials, query, or fragment.';
+    }
+    return undefined;
+  } catch {
+    return 'Enter a valid endpoint URL.';
+  }
+}
+
+export const openAiCompatibleProviderIdSchema = v.pipe(
+  v.string(),
+  v.check(
+    (value) => openAiCompatibleProviderIdIssue(value) === undefined,
+    'Expected a unique lowercase provider id using letters, numbers, and hyphens.',
+  ),
+);
+export const openAiCompatibleBaseUrlSchema = v.pipe(
+  nonEmptyStringSchema,
+  v.check(
+    (value) => openAiCompatibleBaseUrlIssue(value) === undefined,
+    'Expected an HTTPS endpoint URL (HTTP is allowed only for loopback hosts) without credentials, query, or fragment.',
+  ),
+);
+const openAiCompatibleProviderSchema = v.strictObject({
+  id: openAiCompatibleProviderIdSchema,
+  enabled: v.optional(v.boolean()),
+  baseUrl: openAiCompatibleBaseUrlSchema,
+  apiKeyEnv: v.optional(envVarNameSchema),
+  api: v.optional(v.picklist(['openai-completions', 'openai-responses'])),
+  contextWindow: v.optional(positiveIntegerSchema),
+  maxTokens: v.optional(positiveIntegerSchema),
+});
+
 export const providerConfigSchema = v.strictObject({
   kilocode: v.optional(
     v.strictObject({
@@ -131,6 +192,22 @@ export const providerConfigSchema = v.strictObject({
       enabled: v.optional(v.boolean()),
       apiKeyEnv: v.optional(envVarNameSchema),
     }),
+  ),
+  openaiCodex: v.optional(
+    v.strictObject({
+      enabled: v.optional(v.boolean()),
+    }),
+  ),
+  openaiCompatible: v.optional(
+    v.pipe(
+      v.array(openAiCompatibleProviderSchema),
+      v.check(
+        (providers) =>
+          new Set(providers.map((provider) => provider.id)).size ===
+          providers.length,
+        'Custom provider ids must be unique.',
+      ),
+    ),
   ),
 });
 

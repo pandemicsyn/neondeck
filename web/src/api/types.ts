@@ -624,6 +624,7 @@ export type RuntimeStatus = {
       kilo: boolean;
       openai: boolean;
       anthropic: boolean;
+      openaiCodex: boolean;
       github: boolean;
     };
     configs: {
@@ -644,6 +645,25 @@ export type RuntimeStatus = {
         apiKeyEnv: string;
         apiKeyPresent: boolean;
       };
+      openaiCodex: {
+        enabled: boolean;
+        state: 'missing' | 'valid' | 'refresh-needed' | 'error';
+        authenticated: boolean;
+        usable: boolean;
+        expiresAt: string | null;
+        needsRefresh: boolean;
+        lastError: string | null;
+      };
+      openaiCompatible: Array<{
+        id: string;
+        enabled: boolean;
+        baseUrl: string;
+        apiKeyEnv: string | null;
+        apiKeyPresent: boolean;
+        api: 'openai-completions' | 'openai-responses';
+        contextWindow: number | null;
+        maxTokens: number | null;
+      }>;
     };
   };
   models: {
@@ -1201,11 +1221,41 @@ export type AgentModelUpdate = {
   };
 };
 
-export type ProviderUpdate = {
-  enabled?: boolean;
-  apiKeyEnv?: string | null;
-  organizationIdEnv?: string | null;
-};
+export type ProviderUpdate =
+  | {
+      provider: 'kilocode';
+      input: {
+        enabled?: boolean;
+        apiKeyEnv?: string | null;
+        organizationIdEnv?: string | null;
+      };
+    }
+  | {
+      provider: 'openai' | 'anthropic';
+      input: {
+        enabled?: boolean;
+        apiKeyEnv?: string | null;
+      };
+    }
+  | {
+      provider: 'openai-codex';
+      input: {
+        enabled?: boolean;
+      };
+    }
+  | {
+      provider: 'openai-compatible';
+      input: {
+        id: string;
+        enabled?: boolean;
+        baseUrl?: string;
+        apiKeyEnv?: string | null;
+        api?: 'openai-completions' | 'openai-responses';
+        contextWindow?: number | null;
+        maxTokens?: number | null;
+        remove?: boolean;
+      };
+    };
 
 export type ChatSessionKind =
   'main' | 'scratch' | 'general' | 'repo' | 'watch' | 'task' | 'briefing';

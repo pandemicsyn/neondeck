@@ -107,4 +107,59 @@ describe('provider runtime registrations', () => {
       ]),
     );
   });
+
+  it('registers configured OpenAI-compatible endpoints with env-backed keys', () => {
+    const registrations = providerRuntimeRegistrations(
+      { OPENROUTER_API_KEY: 'router-key' } as NodeJS.ProcessEnv,
+      {
+        providers: {
+          openaiCompatible: [
+            {
+              id: 'openrouter',
+              baseUrl: 'https://openrouter.ai/api/v1/',
+              apiKeyEnv: 'OPENROUTER_API_KEY',
+            },
+          ],
+        },
+      },
+    );
+
+    expect(registrations).toEqual(
+      expect.arrayContaining([
+        {
+          id: 'openrouter',
+          registration: expect.objectContaining({
+            api: 'openai-completions',
+            baseUrl: 'https://openrouter.ai/api/v1',
+            apiKey: 'router-key',
+          }),
+        },
+      ]),
+    );
+  });
+
+  it('uses a non-secret placeholder for compatible endpoints without auth', () => {
+    const registrations = providerRuntimeRegistrations(
+      {} as NodeJS.ProcessEnv,
+      {
+        providers: {
+          openaiCompatible: [
+            {
+              id: 'local-models',
+              baseUrl: 'http://localhost:11434/v1',
+            },
+          ],
+        },
+      },
+    );
+
+    expect(registrations).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: 'local-models',
+          registration: expect.objectContaining({ apiKey: 'unused' }),
+        }),
+      ]),
+    );
+  });
 });

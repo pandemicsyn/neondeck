@@ -10,6 +10,7 @@ import {
   type AutopilotPromptConfigData,
   type PrReviewPromptConfigData,
   type PrReviewPromptKind,
+  type ProviderUpdate,
   type RuntimeStatus,
 } from '../../../api';
 
@@ -66,6 +67,10 @@ export function RuntimeConfigControls({
     modelProviderId(status.models.displayAssistantProvider),
   );
   const selectedProvider = providerStatusSummary(status, providerId);
+  const selectedCompatibleProvider =
+    status.providers.configs.openaiCompatible.find(
+      (provider) => provider.id === providerId,
+    );
   const [providerEnabled, setProviderEnabled] = useState(
     selectedProvider.enabled,
   );
@@ -190,13 +195,38 @@ export function RuntimeConfigControls({
     setProviderMessageIsError(false);
 
     try {
-      const result = await updateProvider(providerId, {
-        enabled: providerEnabled,
-        apiKeyEnv: apiKeyEnv.trim() || null,
-        ...(providerId === 'kilocode'
-          ? { organizationIdEnv: organizationIdEnv.trim() || null }
-          : {}),
-      });
+      const update: ProviderUpdate =
+        providerId === 'kilocode'
+          ? {
+              provider: 'kilocode',
+              input: {
+                enabled: providerEnabled,
+                apiKeyEnv: apiKeyEnv.trim() || null,
+                organizationIdEnv: organizationIdEnv.trim() || null,
+              },
+            }
+          : providerId === 'openai' || providerId === 'anthropic'
+            ? {
+                provider: providerId,
+                input: {
+                  enabled: providerEnabled,
+                  apiKeyEnv: apiKeyEnv.trim() || null,
+                },
+              }
+            : providerId === 'openai-codex'
+              ? {
+                  provider: 'openai-codex',
+                  input: { enabled: providerEnabled },
+                }
+              : {
+                  provider: 'openai-compatible',
+                  input: {
+                    id: providerId,
+                    enabled: providerEnabled,
+                    apiKeyEnv: apiKeyEnv.trim() || null,
+                  },
+                };
+      const result = await updateProvider(update);
       setProviderMessage(result.message);
       skipProviderSyncForStatus.current = status.fetchedAt;
       setProviderDirty(false);
@@ -390,9 +420,11 @@ export function RuntimeConfigControls({
             }}
             value={providerId}
           >
-            <option value="kilocode">KiloCode</option>
-            <option value="openai">OpenAI</option>
-            <option value="anthropic">Anthropic</option>
+            {status.providers.registered.map((provider) => (
+              <option key={provider} value={provider}>
+                {provider === 'openai-codex' ? 'ChatGPT' : provider}
+              </option>
+            ))}
           </select>
           <button
             className="border border-violet px-2 py-1 font-mono text-[10px] text-violet disabled:opacity-50"
@@ -402,15 +434,59 @@ export function RuntimeConfigControls({
             {savingProvider ? 'saving' : 'save'}
           </button>
         </div>
-        <ConfigInput
-          label="key env"
-          onChange={(value) => {
-            skipProviderSyncForStatus.current = null;
-            setProviderDirty(true);
-            setApiKeyEnv(value);
-          }}
-          value={apiKeyEnv}
-        />
+        {providerId === 'openai-codex' ? (
+          <div className="space-y-1 border border-line bg-field px-2 py-1.5 font-mono text-[10px] text-muted">
+            <p>
+              OAuth state:{' '}
+              <span
+                className={
+                  status.providers.configs.openaiCodex.usable
+                    ? 'text-cyan'
+                    : 'text-accent'
+                }
+              >
+                {status.providers.configs.openaiCodex.state}
+              </span>
+            </p>
+            {status.providers.configs.openaiCodex.expiresAt ? (
+              <p>Expires {status.providers.configs.openaiCodex.expiresAt}</p>
+            ) : null}
+            {status.providers.configs.openaiCodex.lastError ? (
+              <p className="text-accent">
+                {status.providers.configs.openaiCodex.lastError}
+              </p>
+            ) : null}
+            <p>
+              Manage with <code>neondeck auth login openai-codex</code>, then
+              restart Neondeck.
+            </p>
+          </div>
+        ) : (
+          <ConfigInput
+            label="key env"
+            onChange={(value) => {
+              skipProviderSyncForStatus.current = null;
+              setProviderDirty(true);
+              setApiKeyEnv(value);
+            }}
+            value={apiKeyEnv}
+          />
+        )}
+        {selectedCompatibleProvider ? (
+          <div className="grid grid-cols-[4.5rem_1fr] gap-x-2 gap-y-0.5 border border-line bg-field px-2 py-1.5 font-mono text-[10px] text-muted">
+            <span>endpoint</span>
+            <span className="truncate text-ink">
+              {selectedCompatibleProvider.baseUrl}
+            </span>
+            <span>protocol</span>
+            <span className="text-ink">{selectedCompatibleProvider.api}</span>
+            <span>limits</span>
+            <span className="text-ink">
+              context {selectedCompatibleProvider.contextWindow ?? 'default'} ·
+              output {selectedCompatibleProvider.maxTokens ?? 'default'}
+            </span>
+          </div>
+        ) : null}
         {providerId === 'kilocode' ? (
           <ConfigInput
             label="org env"
@@ -877,7 +953,7 @@ function ConfigSelect({
   );
 }
 
-export type ModelProviderId = 'kilocode' | 'openai' | 'anthropic';
+export type ModelProviderId = string;
 
 const thinkingLevelOptions = [
   'off',
@@ -891,8 +967,7 @@ const minPrReviewTimeoutSeconds = 10;
 const maxPrReviewTimeoutSeconds = 30 * 60;
 
 function modelProviderId(value: string): ModelProviderId {
-  if (value === 'openai' || value === 'anthropic') return value;
-  return 'kilocode';
+  return /^[a-z][a-z0-9-]{0,62}$/.test(value) ? value : 'kilocode';
 }
 
 export function activeModelProviderIds(
@@ -916,7 +991,27 @@ export function providerCredentialConfigured(
   provider: ModelProviderId,
 ) {
   if (provider === 'kilocode') return status.providers.credentials.kilo;
-  return status.providers.credentials[provider];
+  if (provider === 'openai') return status.providers.credentials.openai;
+  if (provider === 'anthropic') return status.providers.credentials.anthropic;
+  if (provider === 'openai-codex')
+    return status.providers.credentials.openaiCodex;
+  const custom = status.providers.configs.openaiCompatible.find(
+    (candidate) => candidate.id === provider,
+  );
+  return custom ? !custom.apiKeyEnv || custom.apiKeyPresent : false;
+}
+
+export function providerCredentialLabel(
+  status: RuntimeStatus,
+  provider: ModelProviderId,
+) {
+  if (!providerCredentialConfigured(status, provider)) return 'missing';
+  if (provider === 'openai-codex') return 'oauth';
+  const custom = status.providers.configs.openaiCompatible.find(
+    (candidate) => candidate.id === provider,
+  );
+  if (custom && !custom.apiKeyEnv) return 'ready';
+  return 'key';
 }
 
 export function providerStatusSummary(status: RuntimeStatus, provider: string) {
@@ -935,6 +1030,27 @@ export function providerStatusSummary(status: RuntimeStatus, provider: string) {
       label: 'ANTHROPIC',
       enabled: status.providers.configs.anthropic.enabled,
       apiKeyEnv: status.providers.configs.anthropic.apiKeyEnv,
+      organizationIdEnv: null,
+    };
+  }
+
+  if (id === 'openai-codex') {
+    return {
+      label: 'CHATGPT',
+      enabled: status.providers.configs.openaiCodex.enabled,
+      apiKeyEnv: '',
+      organizationIdEnv: null,
+    };
+  }
+
+  const custom = status.providers.configs.openaiCompatible.find(
+    (provider) => provider.id === id,
+  );
+  if (custom) {
+    return {
+      label: custom.id.toUpperCase(),
+      enabled: custom.enabled,
+      apiKeyEnv: custom.apiKeyEnv ?? '',
       organizationIdEnv: null,
     };
   }

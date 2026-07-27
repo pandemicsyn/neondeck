@@ -15,6 +15,13 @@ Use this format:
 - Follow-up: What remains, who/what should handle it, or `None`.
 ```
 
+## 2026-07-27 - ChatGPT OAuth And OpenAI-Compatible Providers
+
+- Roadmap item: Phase 13 / provider configuration and safety
+- Decision: Expanded the provider boundary with first-class `openai-codex` ChatGPT subscription OAuth and a typed list of generic OpenAI-compatible endpoints. OAuth credentials are stored in the Neondeck app database, refreshed ahead of expiry, and never exposed through status. Refresh persistence uses refresh-token compare-and-swap so logout or a newer login cannot be overwritten by stale in-flight work; startup waits at most five seconds before continuing with background refresh. Status separates stored credentials from valid, usable credentials. Compatible endpoints use validated non-reserved ids, HTTPS or loopback HTTP URLs without embedded credentials/query/fragment, an explicit Chat Completions or Responses protocol, and environment-variable key references. Arbitrary endpoint creation, URL/key-reference changes, enabling, and removal are user-owned through setup or the authenticated local dashboard/API and are intentionally excluded from model-callable actions. Setup, CLI auth lifecycle commands, runtime registration, readiness, dashboard provider selection, tests, and docs use the same configuration model.
+- Reason: ChatGPT subscriptions should not be treated as OpenAI API keys, and users need providers such as OpenRouter and local compatible servers without opening config to unvalidated provider fields or raw secrets.
+- Follow-up: Add dashboard-owned ChatGPT login/logout controls if a signed user-intent OAuth surface is introduced; the current login lifecycle intentionally remains user-owned CLI state.
+
 ## 2026-07-25 - PR Learning Evidence Boundaries
 
 - Roadmap item: Wrap Up the Learning Flywheel / handled PR evidence

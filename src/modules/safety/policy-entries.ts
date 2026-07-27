@@ -384,7 +384,7 @@ export const entries: SafetyPolicyEntry[] = [
     'neondeck_config_read_providers',
     'Read provider config',
     readOnly,
-    'Reads allowlisted provider config without exposing secret values.',
+    'Reads validated provider config without exposing secret values.',
   ),
   action(
     'neondeck_config_read_autopilot_prompts',
@@ -697,12 +697,12 @@ export const entries: SafetyPolicyEntry[] = [
   ),
   action(
     'neondeck_config_update_provider',
-    'Update allowlisted provider config',
+    'Update validated provider config',
     {
       ...safeMutation,
       auditTarget: 'config_history',
     },
-    'Updates allowlisted provider settings using environment variable references only; server restart is required.',
+    'Updates built-in provider settings using environment variable references only; arbitrary compatible endpoints remain user-owned and server restart is required.',
   ),
   action(
     'neondeck_config_update_autopilot_prompt',
@@ -2174,7 +2174,7 @@ export const entries: SafetyPolicyEntry[] = [
       ...safeMutation,
       auditTarget: 'config_history',
     },
-    'Updates allowlisted provider environment variable references.',
+    'Updates validated provider settings and environment variable references.',
   ),
   route(
     '/api/autopilot/prompts',

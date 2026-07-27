@@ -29,8 +29,11 @@ export async function updateAgentModels(input: AgentModelUpdate) {
   return postJson<ConfigActionResult>('/api/models', input);
 }
 
-export async function updateProvider(provider: string, input: ProviderUpdate) {
-  return postJson<ConfigActionResult>(`/api/providers/${provider}`, input);
+export async function updateProvider(update: ProviderUpdate) {
+  return postJson<ConfigActionResult>(
+    `/api/providers/${update.provider}`,
+    update.input,
+  );
 }
 
 export async function getAutopilotPrompts(options: ApiRequestOptions = {}) {

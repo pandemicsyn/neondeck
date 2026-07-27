@@ -12,9 +12,11 @@ export const registeredProviderIds = [
   'kilocode',
   'openai',
   'anthropic',
+  'openai-codex',
 ] as const;
 
 export type RegisteredProviderId = (typeof registeredProviderIds)[number];
+export type ProviderId = RegisteredProviderId | string;
 
 export type KilocodeProviderStatus = {
   id: 'kilocode';
@@ -34,8 +36,26 @@ export type ApiKeyProviderStatus = {
   apiKeyPresent: boolean;
 };
 
+export type OpenAiCodexProviderStatus = {
+  id: 'openai-codex';
+  allowed: true;
+  enabled: boolean;
+};
+
+export type OpenAiCompatibleProviderStatus = {
+  id: string;
+  allowed: true;
+  enabled: boolean;
+  baseUrl: string;
+  apiKeyEnv: string | null;
+  apiKeyPresent: boolean;
+  api: 'openai-completions' | 'openai-responses';
+  contextWindow: number | null;
+  maxTokens: number | null;
+};
+
 export type ProviderRuntimeRegistration = {
-  id: RegisteredProviderId;
+  id: ProviderId;
   registration: ProviderRegistration;
 };
 
@@ -106,6 +126,22 @@ export function providerRuntimeRegistrations(
     ),
   );
 
+  for (const provider of resolveOpenAiCompatibleProviderStatuses(config, env)) {
+    if (!provider.enabled) continue;
+    registrations.push({
+      id: provider.id,
+      registration: {
+        api: provider.api,
+        baseUrl: provider.baseUrl,
+        // Pi's OpenAI transports require a truthy auth value even for local
+        // or otherwise unauthenticated compatible endpoints.
+        apiKey: provider.apiKeyEnv ? (env[provider.apiKeyEnv] ?? '') : 'unused',
+        contextWindow: provider.contextWindow ?? undefined,
+        maxTokens: provider.maxTokens ?? undefined,
+      },
+    });
+  }
+
   return registrations;
 }
 
@@ -158,10 +194,56 @@ export function resolveAnthropicProviderStatus(
   );
 }
 
+export function resolveOpenAiCodexProviderStatus(
+  config?: Pick<AppConfig, 'providers'>,
+): OpenAiCodexProviderStatus {
+  return {
+    id: 'openai-codex',
+    allowed: true,
+    enabled: config?.providers?.openaiCodex?.enabled ?? false,
+  };
+}
+
+export function resolveOpenAiCompatibleProviderStatuses(
+  config?: Pick<AppConfig, 'providers'>,
+  env: NodeJS.ProcessEnv = process.env,
+): OpenAiCompatibleProviderStatus[] {
+  return (config?.providers?.openaiCompatible ?? []).map((provider) => ({
+    id: provider.id,
+    allowed: true,
+    enabled: provider.enabled ?? true,
+    baseUrl: provider.baseUrl.replace(/\/+$/, ''),
+    apiKeyEnv: provider.apiKeyEnv ?? null,
+    apiKeyPresent: provider.apiKeyEnv
+      ? Boolean(env[provider.apiKeyEnv])
+      : false,
+    api: provider.api ?? 'openai-completions',
+    contextWindow: provider.contextWindow ?? null,
+    maxTokens: provider.maxTokens ?? null,
+  }));
+}
+
 export function isRegisteredProvider(
   provider: string,
-): provider is RegisteredProviderId {
-  return registeredProviderIds.includes(provider as RegisteredProviderId);
+  config?: Pick<AppConfig, 'providers'>,
+): boolean {
+  return (
+    registeredProviderIds.includes(provider as RegisteredProviderId) ||
+    resolveOpenAiCompatibleProviderStatuses(config).some(
+      (candidate) => candidate.id === provider,
+    )
+  );
+}
+
+export function configuredProviderIds(
+  config?: Pick<AppConfig, 'providers'>,
+): string[] {
+  return [
+    ...registeredProviderIds,
+    ...resolveOpenAiCompatibleProviderStatuses(config).map(
+      (provider) => provider.id,
+    ),
+  ];
 }
 
 function resolveApiKeyProviderStatus(
