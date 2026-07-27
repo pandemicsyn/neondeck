@@ -41,12 +41,20 @@ import {
   clearCompletedEditor,
   githubPrReviewRefreshSafety,
   isCurrentReviewOperation,
+  prReviewDraftHeadIsStale,
   refreshOrientationTargetSettled,
   selectionAnchorMatchesPatch,
 } from './review-ui-helpers';
 import capturedReviewPatch from './fixtures/captured-review.patch?raw';
 
 describe('GitHubPrReview helpers', () => {
+  it('does not mark a draft stale while the current PR head is loading', () => {
+    expect(prReviewDraftHeadIsStale('draft-head', null)).toBe(false);
+    expect(prReviewDraftHeadIsStale('draft-head', '')).toBe(false);
+    expect(prReviewDraftHeadIsStale('draft-head', 'draft-head')).toBe(false);
+    expect(prReviewDraftHeadIsStale('draft-head', 'new-head')).toBe(true);
+  });
+
   it.each([
     ['composer', { composerDirty: true }],
     ['comment editor', { commentEditorDirty: true }],

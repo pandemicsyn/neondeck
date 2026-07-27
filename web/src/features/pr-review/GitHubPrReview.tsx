@@ -90,6 +90,7 @@ import {
   clearCompletedEditor,
   githubPrReviewRefreshSafety,
   isCurrentReviewOperation,
+  prReviewDraftHeadIsStale,
   refreshOrientationTargetSettled,
   selectionAnchorMatchesPatch,
 } from './review-ui-helpers';
@@ -1979,7 +1980,7 @@ export function GitHubPrReview({
           label={`Review draft unavailable: ${queryErrorMessage(draftQuery.error)}`}
         />
       ) : null}
-      {draft && draft.headSha !== currentHeadSha ? (
+      {prReviewDraftHeadIsStale(draft?.headSha, currentHeadSha) ? (
         <div className="pr-review-stale-banner">
           <span>
             PR updated since your draft. {staleCommentIds.size} comment
