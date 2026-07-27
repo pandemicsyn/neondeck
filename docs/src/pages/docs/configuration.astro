@@ -67,51 +67,34 @@ GITHUB_LOGIN=...</code></pre>
 
         <h2>Models and providers</h2>
         <p>
-          Agent model choices live in <code>config.json</code>. Model strings
-          must be provider-qualified and use a built-in or explicitly configured
-          provider: <code>kilocode</code>, <code>openai</code>,
+          Agent model choices and provider registration live in
+          <code>config.json</code>. Model strings must be provider-qualified and
+          use a built-in or explicitly configured provider:
+          <code>kilocode</code>, <code>openai</code>,
           <code>anthropic</code>, <code>openai-codex</code>, or a validated
           OpenAI-compatible provider id.
         </p>
+
+        <h3 id="model-selection">Choose models</h3>
         <pre><code>&#123;
-  "version": 1,
   "models": &#123;
-    "displayAssistant": "kilocode/kilo-auto/balanced",
+    "displayAssistant": "openai-codex/gpt-5.5",
     "displayAssistantThinkingLevel": "medium",
-    "prReview": "kilocode/kilo-auto/frontier",
+    "prReview": "openai/gpt-5.5",
     "prReviewThinkingLevel": "medium",
-    "prReviewTimeoutMs": 300000,
-    "utility": "kilocode/kilo-auto/fast",
-    "utilityThinkingLevel": "low",
-    "selfImprovement": "kilocode/kilo-auto/fast",
-    "selfImprovementThinkingLevel": "low",
-    "subagents": &#123;
-      "default": "kilocode/kilo-auto/balanced",
-      "defaultThinkingLevel": "medium",
-      "repoResearcher": "kilocode/kilo-auto/balanced",
-      "repoResearcherThinkingLevel": "medium",
-      "ciInvestigator": "kilocode/kilo-auto/balanced",
-      "ciInvestigatorThinkingLevel": "medium",
-      "releaseReviewer": "kilocode/kilo-auto/balanced",
-      "releaseReviewerThinkingLevel": "medium"
-    &#125;
-  &#125;,
+    "prReviewTimeoutMs": 300000
+  &#125;
+&#125;</code></pre>
+
+        <h3 id="provider-registration">Register providers</h3>
+        <pre><code>&#123;
   "providers": &#123;
-    "kilocode": &#123;
-      "enabled": true,
-      "apiKeyEnv": "KILOCODE_API_KEY",
-      "organizationIdEnv": "KILOCODE_ORGANIZATION_ID"
-    &#125;,
     "openai": &#123;
       "enabled": true,
       "apiKeyEnv": "OPENAI_API_KEY"
     &#125;,
-    "anthropic": &#123;
-      "enabled": true,
-      "apiKeyEnv": "ANTHROPIC_API_KEY"
-    &#125;,
     "openaiCodex": &#123;
-      "enabled": false
+      "enabled": true
     &#125;,
     "openaiCompatible": [
       &#123;
@@ -126,46 +109,102 @@ GITHUB_LOGIN=...</code></pre>
     ]
   &#125;
 &#125;</code></pre>
+
+        <h3 id="compatible-endpoints">Compatible endpoint rules</h3>
+        <ul>
+          <li>
+            <strong>Credentials:</strong> provider config stores environment variable
+            names, never raw secrets. <code>apiKeyEnv</code> is optional, so keyless
+            loopback servers work too.
+          </li>
+          <li>
+            <strong>Limits:</strong>
+            <code>contextWindow</code> and
+            <code>maxTokens</code> are optional positive integers describing the selected
+            service and model.
+          </li>
+          <li>
+            <strong>URLs:</strong> endpoints require HTTPS except for loopback HTTP.
+            URL credentials, query strings, fragments, reserved ids, and duplicate
+            ids are rejected.
+          </li>
+          <li>
+            <strong>Ownership:</strong> endpoint definitions may be changed through
+            setup or the authenticated local dashboard/API, never through a model-callable
+            config action.
+          </li>
+        </ul>
         <p>
-          Provider config stores environment variable names, not raw secrets.
-          <code>apiKeyEnv</code> is optional for compatible endpoints, including keyless
-          loopback development servers. <code>contextWindow</code> and
-          <code>maxTokens</code> are optional positive-integer limits used to describe
-          the selected service and model. Compatible endpoints require HTTPS except
-          for loopback HTTP and reject URL credentials, query strings, fragments,
-          reserved ids, and duplicate ids. ChatGPT OAuth tokens live in the local
-          app database and are managed with
-          <code>neondeck auth ... openai-codex</code>. Generic endpoint
-          definitions are user-owned and may be changed only through setup or
-          the authenticated local dashboard/API, not a model-callable config
-          action.
-          <code>thinkingLevel</code> values use Flue's exposed reasoning tiers. The
-          PR review model is optional and falls back to the display assistant when
-          omitted; it is used by the bounded
-          <code>review-pr-for-human</code> workflow and its read-only follow-up reviewer
-          conversation. Its timeout defaults to 180,000 milliseconds and may be configured
-          from 10,000 through 1,800,000 with <code>prReviewTimeoutMs</code>. The
-          utility model is optional and falls back to the display assistant when
-          omitted, but a low-cost utility model is recommended for titles,
-          labels, notifications, and compact summaries. The self-improvement
-          model is optional and falls back through the utility model and display
-          assistant. It is used for bounded conversation reflection, memory
-          curation, and PR/autopilot retrospective workflows. Supported thinking
-          levels are
-          <code>off</code>, <code>minimal</code>, <code>low</code>,
-          <code>medium</code>, <code>high</code>, or <code>xhigh</code>.
-          Provider registration and standalone CLI ChatGPT login/logout changes
-          require a server restart.
+          ChatGPT OAuth tokens live in the local app database and are managed
+          with
+          <code>neondeck auth ... openai-codex</code>.
         </p>
-        <p>
-          The current watched-PR Autopilot owner deliberately reuses
-          <code>models.displayAssistant</code> and
-          <code>models.displayAssistantThinkingLevel</code>; there is no
-          separate Autopilot model field. <code>models.prReview</code> is only the
-          bounded PR-review-for-human role, not the coding owner for watched PRs.
-          All model-backed Autopilot modes therefore use the same model while their
-          tool registry changes with mode and turn source.
-        </p>
+
+        <h3 id="model-roles">Model roles and fallbacks</h3>
+        <div
+          class="docs-table-wrap"
+          role="region"
+          aria-label="Model roles and fallbacks"
+          tabindex="0"
+        >
+          <table>
+            <thead>
+              <tr>
+                <th scope="col">Setting</th>
+                <th scope="col">Work it powers</th>
+                <th scope="col">Default behavior</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <th scope="row"><code>displayAssistant</code></th>
+                <td>Chat and model-backed Autopilot owners</td>
+                <td>Primary model</td>
+              </tr>
+              <tr>
+                <th scope="row"><code>prReview</code></th>
+                <td>Initial and follow-up read-only PR review</td>
+                <td>Uses <code>displayAssistant</code></td>
+              </tr>
+              <tr>
+                <th scope="row"><code>utility</code></th>
+                <td>Titles, labels, notifications, and compact summaries</td>
+                <td>Uses <code>displayAssistant</code></td>
+              </tr>
+              <tr>
+                <th scope="row"><code>selfImprovement</code></th>
+                <td>Reflection, memory curation, and retrospectives</td>
+                <td
+                  >Uses <code>utility</code>, then <code>displayAssistant</code
+                  ></td
+                >
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <aside class="docs-note">
+          <strong>Autopilot model:</strong> watched-PR owners use
+          <code>models.displayAssistant</code>. <code>models.prReview</code> belongs
+          only to the bounded human-review workflow. Autopilot modes change the available
+          tools, not the owner model.
+        </aside>
+
+        <h3 id="provider-runtime-behavior">Reasoning and runtime behavior</h3>
+        <ul>
+          <li>
+            <code>thinkingLevel</code> accepts <code>off</code>,
+            <code>minimal</code>, <code>low</code>, <code>medium</code>,
+            <code>high</code>, or <code>xhigh</code>.
+          </li>
+          <li>
+            <code>prReviewTimeoutMs</code> defaults to 180,000 milliseconds and accepts
+            values from 10,000 through 1,800,000.
+          </li>
+          <li>
+            Provider registration and standalone CLI ChatGPT login or logout
+            require a server restart.
+          </li>
+        </ul>
 
         <h2>PR reviewer prompts</h2>
         <p>
