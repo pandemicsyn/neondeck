@@ -4,6 +4,85 @@ import type { GitHubPullRequestReviewThread } from '../../api';
 import { PrReviewCommentComposer } from './PrReviewCommentComposer';
 
 describe('PrReviewCommentComposer', () => {
+  it('labels Neon drafts separately from published review threads', () => {
+    const html = renderToStaticMarkup(
+      <PrReviewCommentComposer
+        annotation={{
+          side: 'additions',
+          lineNumber: 42,
+          metadata: {
+            id: 'draft-comment-1',
+            kind: 'draft',
+            title: 'RIGHT L42',
+            body: 'Please guard the empty case.',
+            isStale: false,
+          },
+        }}
+        composerBody=""
+        draft={{
+          id: 'draft-1',
+          repo: 'example/repo',
+          prNumber: 1,
+          headSha: 'abc123',
+          verdict: null,
+          body: null,
+          status: 'draft',
+          createdAt: '2026-07-21T20:00:00.000Z',
+          updatedAt: '2026-07-21T20:00:00.000Z',
+          submittedAt: null,
+          comments: [
+            {
+              id: 'draft-comment-1',
+              draftId: 'draft-1',
+              path: 'src/app.ts',
+              side: 'RIGHT',
+              line: 42,
+              startLine: null,
+              startSide: null,
+              body: 'Please guard the empty case.',
+              origin: 'neon',
+              createdAt: '2026-07-21T20:00:00.000Z',
+              updatedAt: '2026-07-21T20:00:00.000Z',
+            },
+          ],
+        }}
+        editingBody=""
+        editingCommentId={null}
+        isAddingComment={false}
+        isDeletingComment={false}
+        isReplyingToThread={false}
+        isResolvingThread={false}
+        isSavingDraft={false}
+        isUpdatingComment={false}
+        onCancelComposer={noop}
+        onCancelEdit={noop}
+        onCancelReply={noop}
+        onComposerBodyChange={noop}
+        onDeleteComment={noop}
+        onEditingBodyChange={noop}
+        onReanchorComment={noop}
+        onReplyBodyChange={noop}
+        onSetThreadResolution={noop}
+        onStartEdit={noop}
+        onStartReply={noop}
+        onSubmitComposer={noop}
+        onSubmitEdit={noop}
+        onSubmitReply={noop}
+        reanchoringCommentId={null}
+        replyingThreadId={null}
+        replyBody=""
+        reviewThreads={[]}
+      />,
+    );
+
+    expect(html).toContain('pr-review-draft');
+    expect(html).toContain('pr-review-draft-heading');
+    expect(html).toContain('Draft');
+    expect(html).toContain('Neon generated · RIGHT L42');
+    expect(html).toContain('pr-review-draft-body');
+    expect(html).toContain('pr-review-inline-actions');
+  });
+
   it('makes an inline GitHub thread and every participant visible', () => {
     const thread: GitHubPullRequestReviewThread = {
       id: 'thread-1',

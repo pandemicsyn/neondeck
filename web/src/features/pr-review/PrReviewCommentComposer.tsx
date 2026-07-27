@@ -92,11 +92,12 @@ export function PrReviewCommentComposer({
   if (metadata.kind === 'draft') {
     const comment = draft?.comments.find((item) => item.id === metadata.id);
     const isEditing = editingCommentId === metadata.id;
-    const origin = comment?.origin === 'neon' ? 'neon draft' : 'draft';
+    const isNeonDraft = comment?.origin === 'neon';
     return (
       <div
         className={
           [
+            'pr-review-draft',
             metadata.isStale ? 'pr-review-draft-stale' : null,
             selected ? 'pr-review-annotation-selected' : null,
           ]
@@ -106,29 +107,39 @@ export function PrReviewCommentComposer({
         data-neondeck-review-annotation=""
         data-navigation-selected={selected ? '' : undefined}
       >
-        <div data-neondeck-review-annotation-title="">
+        <div
+          className="pr-review-draft-heading"
+          data-neondeck-review-annotation-title=""
+        >
+          <span className="pr-review-draft-state">
+            {metadata.isStale ? 'Stale draft' : 'Draft'}
+          </span>
           <span>
-            {metadata.isStale ? `stale ${origin}` : origin} · {metadata.title}
+            {isNeonDraft ? 'Neon generated' : 'Local'} · {metadata.title}
           </span>
         </div>
         {isEditing ? (
-          <CommentForm
-            body={editingBody}
-            hint={
-              reanchoringCommentId === metadata.id
-                ? 'Select a new diff line to re-anchor this comment.'
-                : null
-            }
-            isPending={isUpdatingComment}
-            label="Edit draft review comment"
-            onBodyChange={onEditingBodyChange}
-            onCancel={onCancelEdit}
-            onSubmit={onSubmitEdit}
-            submitLabel="Save"
-          />
+          <div className="pr-review-draft-editor">
+            <CommentForm
+              body={editingBody}
+              hint={
+                reanchoringCommentId === metadata.id
+                  ? 'Select a new diff line to re-anchor this comment.'
+                  : null
+              }
+              isPending={isUpdatingComment}
+              label="Edit draft review comment"
+              onBodyChange={onEditingBodyChange}
+              onCancel={onCancelEdit}
+              onSubmit={onSubmitEdit}
+              submitLabel="Save"
+            />
+          </div>
         ) : (
           <>
-            <p>{metadata.body}</p>
+            <div className="pr-review-draft-body">
+              <p>{metadata.body}</p>
+            </div>
             <div className="pr-review-inline-actions">
               <button
                 onClick={() =>

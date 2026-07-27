@@ -1774,6 +1774,51 @@ button:disabled {
   gap: 6px;
 }
 
+.pr-review-draft {
+  display: grid;
+  border: 1px solid color-mix(in srgb, var(--violet) 48%, var(--line));
+  background: color-mix(in srgb, var(--violet) 6%, var(--field));
+  color: var(--ink);
+}
+
+.pr-review-draft-heading {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  border-bottom: 1px solid color-mix(in srgb, var(--violet) 28%, var(--line));
+  background: color-mix(in srgb, var(--violet) 10%, var(--field));
+  padding: 6px 8px;
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: calc(9.5px * var(--deck-text-scale));
+}
+
+.pr-review-draft-state {
+  color: var(--violet);
+  font-weight: 600;
+}
+
+.pr-review-draft-body,
+.pr-review-draft-editor {
+  padding: 8px;
+}
+
+.pr-review-draft-body p {
+  margin: 0;
+  max-width: 76ch;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: calc(11px * var(--deck-text-scale));
+  line-height: 1.5;
+}
+
+.pr-review-draft > .pr-review-inline-actions {
+  border-top: 1px solid var(--line);
+  padding: 7px 8px;
+}
+
 .pr-review-thread {
   display: grid;
   border: 1px solid color-mix(in srgb, var(--primary) 55%, var(--line));
@@ -1871,6 +1916,15 @@ button:disabled {
 .pr-review-draft-stale {
   border-color: color-mix(in srgb, var(--accent) 46%, var(--line));
   background: color-mix(in srgb, var(--accent) 10%, var(--field));
+}
+
+.pr-review-draft-stale .pr-review-draft-heading {
+  border-bottom-color: color-mix(in srgb, var(--accent) 30%, var(--line));
+  background: color-mix(in srgb, var(--accent) 11%, var(--field));
+}
+
+.pr-review-draft-stale .pr-review-draft-state {
+  color: var(--accent);
 }
 
 .pr-review-annotation-selected,
