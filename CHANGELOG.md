@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.0.0-beta.23
+
+### Minor Changes
+
+- [#214](https://github.com/pandemicsyn/neondeck/pull/214) [`3f5a67c`](https://github.com/pandemicsyn/neondeck/commit/3f5a67c0c58ca72a94a064bb51d93e3de761538e) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Allow exact authenticated reverse-proxy origins for the dashboard API and MCP OAuth callbacks, and document nginx and SSH setups for running packaged Neondeck on exe.dev.
+
+### Patch Changes
+
+- [#219](https://github.com/pandemicsyn/neondeck/pull/219) [`0c7cef4`](https://github.com/pandemicsyn/neondeck/commit/0c7cef42ecd8972dfb882b2242c3fba635a93343) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Pin the documentation site's Astro dependency to the compatible release so npm
+  package verification can build the bundled docs successfully.
+
 ## 1.0.0-beta.22
 
 ### Patch Changes

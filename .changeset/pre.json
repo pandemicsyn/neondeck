@@ -41,6 +41,7 @@
     "exact-reviewers-talk",
     "fair-pr-actions-chat",
     "fast-diffs-scroll",
+    "fix-docs-build-compatibility",
     "fix-release-qa-setup",
     "fresh-autopilot-feedback-arrives",
     "fresh-reviews-settle",
@@ -76,6 +77,7 @@
     "tidy-skill-roots-explain",
     "tidy-statusline-clock",
     "trusted-autopilot-workspaces",
+    "trusted-dashboard-origins",
     "typed-neon-findings-glow",
     "wise-reviews-appear"
   ]
