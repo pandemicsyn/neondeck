@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.0.0-beta.22
+
+### Patch Changes
+
+- [#211](https://github.com/pandemicsyn/neondeck/pull/211) [`9c6ceaa`](https://github.com/pandemicsyn/neondeck/commit/9c6ceaa8bc4fe840ab35e3b2c67462a3f7e7bfa9) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Clarify the setup wizard dashboard preset descriptions so review surfaces and the differences between Cockpit and Classic are explicit.
+
+- [#213](https://github.com/pandemicsyn/neondeck/pull/213) [`6248d14`](https://github.com/pandemicsyn/neondeck/commit/6248d1405ad5ceb420aa824b098a42e760dc5ddf) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Clarify fresh-install launch instructions and identify the foreground production server as Neondeck instead of exposing Flue's generic startup banner.
+
+- [#211](https://github.com/pandemicsyn/neondeck/pull/211) [`9c6ceaa`](https://github.com/pandemicsyn/neondeck/commit/9c6ceaa8bc4fe840ab35e3b2c67462a3f7e7bfa9) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Default new ChatGPT subscription setups to GPT-5.6 Sol and recommend the current GPT-5.6 subscription model family.
+
 ## 1.0.0-beta.21
 
 ### Patch Changes
