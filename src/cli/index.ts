@@ -693,9 +693,15 @@ program
 
 program
   .command('dev')
-  .description('Start the local web dashboard and backend.')
+  .description('Show source-checkout development instructions.')
   .action(() => {
-    console.log('Run `npm run dev` for the current local web dashboard.');
+    console.log(
+      [
+        '`neondeck dev` does not start a server.',
+        'For a packaged install, run `neondeck open` (normal use) or `neondeck serve` (foreground).',
+        'From a source checkout, run `npm run dev`.',
+      ].join('\n'),
+    );
   });
 
 await program.parseAsync(process.argv);
