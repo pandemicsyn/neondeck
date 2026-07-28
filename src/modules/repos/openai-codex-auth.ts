@@ -1,9 +1,10 @@
 import {
-  loginOpenAICodex,
-  loginOpenAICodexDeviceCode,
-  refreshOpenAICodexToken,
+  type AuthInteraction,
+  type OAuthAuth,
+  type OAuthCredential,
   type OAuthCredentials,
-} from '@earendil-works/pi-ai/oauth';
+} from '@earendil-works/pi-ai';
+import { openaiCodexProvider } from '@earendil-works/pi-ai/providers/openai-codex';
 import { chmod } from 'node:fs/promises';
 import { openDb } from '../../lib/sqlite';
 import {
@@ -43,6 +44,15 @@ const providerId = 'openai-codex';
 const refreshSkewMs = 60_000;
 const refreshes = new Map<string, Promise<OAuthCredentials>>();
 const refreshTimers = new Map<string, NodeJS.Timeout>();
+const openAiCodexOAuth = requireOpenAiCodexOAuth();
+
+function requireOpenAiCodexOAuth(): OAuthAuth {
+  const oauth = openaiCodexProvider().auth.oauth;
+  if (!oauth) {
+    throw new Error('OpenAI Codex provider does not support OAuth.');
+  }
+  return oauth;
+}
 
 export async function loginOpenAiCodexSubscription(
   method: OpenAiCodexLoginMethod,
@@ -51,24 +61,46 @@ export async function loginOpenAiCodexSubscription(
 ) {
   await ensureRuntimeHome(paths);
   await protectOpenAiCodexCredentialStore(paths);
-  const credentials =
-    method === 'device-code'
-      ? await loginOpenAICodexDeviceCode({
-          onDeviceCode(info) {
-            callbacks.onDeviceCode?.(info);
-          },
-        })
-      : await loginOpenAICodex({
-          originator: 'neondeck',
-          onAuth(info) {
-            callbacks.onAuth?.(info);
-          },
-          onPrompt: async (prompt) =>
-            callbacks.onPrompt?.(prompt.message) ?? '',
-          onProgress: callbacks.onProgress,
-        });
+  const credentials = await openAiCodexOAuth.login(
+    openAiCodexLoginInteraction(method, callbacks),
+  );
   writeLoginCredential(paths, credentials);
   return openAiCodexAuthStatus(paths);
+}
+
+function openAiCodexLoginInteraction(
+  method: OpenAiCodexLoginMethod,
+  callbacks: OpenAiCodexLoginCallbacks,
+): AuthInteraction {
+  return {
+    async prompt(prompt) {
+      if (prompt.type === 'select') {
+        return method === 'device-code' ? 'device_code' : 'browser';
+      }
+      return callbacks.onPrompt?.(prompt.message) ?? '';
+    },
+    notify(event) {
+      switch (event.type) {
+        case 'auth_url':
+          callbacks.onAuth?.(
+            event.instructions
+              ? { url: event.url, instructions: event.instructions }
+              : { url: event.url },
+          );
+          break;
+        case 'device_code':
+          callbacks.onDeviceCode?.({
+            userCode: event.userCode,
+            verificationUri: event.verificationUri,
+          });
+          break;
+        case 'info':
+        case 'progress':
+          callbacks.onProgress?.(event.message);
+          break;
+      }
+    },
+  };
 }
 
 export async function resolveOpenAiCodexAccessToken(
@@ -196,7 +228,9 @@ async function refreshCredential(
 ) {
   let refreshed: OAuthCredentials;
   try {
-    refreshed = await refreshOpenAICodexToken(credential.refresh);
+    refreshed = await openAiCodexOAuth.refresh(
+      canonicalOAuthCredential(credential),
+    );
   } catch (error) {
     const latest = readCredential(paths);
     if (latest && latest.refresh !== credential.refresh) {
@@ -218,6 +252,15 @@ async function refreshCredential(
   throw new Error(
     'ChatGPT subscription credentials changed or were removed while a token refresh was in progress.',
   );
+}
+
+function canonicalOAuthCredential(
+  credential: OAuthCredentials,
+): OAuthCredential {
+  return {
+    ...credential,
+    type: 'oauth',
+  };
 }
 
 function readCredential(paths: RuntimePaths): StoredCredential | undefined {
