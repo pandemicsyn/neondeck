@@ -72,7 +72,7 @@ export async function reloadConfig(
 
   return okResult('config_reload', false, paths, targetFiles('all', paths), {
     message:
-      'Runtime config reloaded. Neondeck reads config from disk, so no process restart was required.',
+      'Runtime config validated and reloaded. Restart Neondeck after changing server.trustedOrigins.',
     data: await readTarget('all', paths),
   });
 }

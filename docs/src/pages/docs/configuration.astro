@@ -65,6 +65,34 @@ ANTHROPIC_API_KEY=...
 GITHUB_TOKEN=...
 GITHUB_LOGIN=...</code></pre>
 
+        <h2 id="trusted-origins">Trusted dashboard origins</h2>
+        <p>
+          Neondeck accepts dashboard API traffic from loopback hosts by default.
+          To run the dashboard behind an authenticated reverse proxy, add each
+          externally visible browser origin to <code>server.trustedOrigins</code
+          >
+          in <code>config.json</code>. Merge this block into the existing file;
+          preserve its generated <code>localApi.token</code> and other settings:
+        </p>
+        <pre><code>&#123;
+  "version": 1,
+  "server": &#123;
+    "trustedOrigins": ["https://neondeck.exe.xyz"]
+  &#125;
+&#125;</code></pre>
+        <p>
+          Origins are exact scheme, host, and port matches. Wildcards,
+          credentials, paths, query strings, and fragments are rejected.
+          Non-loopback origins must use HTTPS. Restart Neondeck after changing
+          this startup-time setting.
+        </p>
+        <aside class="docs-note">
+          <strong>Security boundary:</strong> A trusted origin can read runtime state
+          and use the operator dashboard. Configure one only behind an authenticated
+          transport you control; the setting does not add Neondeck user accounts or
+          multi-user authorization.
+        </aside>
+
         <h2>Models and providers</h2>
         <p>
           Agent model choices and provider registration live in

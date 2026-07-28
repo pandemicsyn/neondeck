@@ -57,10 +57,126 @@ npx wrangler deploy --dry-run</code></pre>
 npm run package:app
 npm run release:app</code></pre>
 
+        <h2 id="ssh-forwarding">Use SSH forwarding for remote access</h2>
+        <p>
+          SSH forwarding is the simplest option for one operator and keeps
+          Neondeck inside its default loopback trust boundary. It requires
+          neither nginx nor <code>server.trustedOrigins</code>. First, keep the
+          packaged Neondeck service running on the exe.dev instance:
+        </p>
+        <pre><code>neondeck service install
+neondeck service status</code></pre>
+        <p>
+          From the computer running the browser, forward a local port to
+          Neondeck's loopback port on the instance. Replace
+          <code>user@instance</code> with the SSH destination used for that exe.dev
+          instance:
+        </p>
+        <pre><code>ssh -N \
+  -o ExitOnForwardFailure=yes \
+  -o ServerAliveInterval=30 \
+  -L 8000:127.0.0.1:3583 \
+  user@instance</code></pre>
+        <p>
+          Leave that SSH process running and open
+          <code>http://127.0.0.1:8000/</code> in the local browser. The left side
+          of <code>-L</code> is the local browser port; change it if port
+          <code>8000</code> is already in use. The right side remains
+          <code>127.0.0.1:3583</code>, the packaged Neondeck server on the
+          remote instance.
+        </p>
+        <pre><code>curl http://127.0.0.1:8000/api/health</code></pre>
+        <aside class="docs-note">
+          <strong>Prefer SSH for occasional access.</strong> The encrypted tunnel
+          closes when the SSH session ends and does not create a stable public dashboard
+          URL. Use the authenticated nginx setup below when a companion display needs
+          a persistent exe.dev HTTPS origin.
+        </aside>
+
+        <h2 id="exedev-nginx">Run Neondeck on exe.dev with nginx</h2>
+        <p>
+          A packaged Neondeck server exposes the complete dashboard and API on
+          loopback port <code>3583</code>. Port <code>5173</code> belongs only to
+          the Vite source-development dashboard. On an exe.dev instance, nginx can
+          accept the instance's authenticated HTTPS traffic on port
+          <code>8000</code> and proxy it to Neondeck. Unlike SSH forwarding, this
+          stable external origin must be explicitly trusted by Neondeck.
+        </p>
+
+        <h3>Trust the external browser origin</h3>
+        <p>
+          Add the exact exe.dev origin to runtime-home
+          <code>config.json</code>, replacing the example hostname with the one
+          assigned to the instance. Merge the <code>server</code> block into the existing
+          file rather than replacing its generated token or other settings:
+        </p>
+        <pre><code>&#123;
+  "version": 1,
+  "server": &#123;
+    "trustedOrigins": ["https://neondeck.exe.xyz"]
+  &#125;
+&#125;</code></pre>
+
+        <h3>Configure nginx</h3>
+        <p>
+          Preserve the public <code>Host</code> header so Neondeck can match it to
+          the configured origin. Disable proxy buffering and extend the read timeout
+          for dashboard server-sent events and long-poll responses. WebSocket upgrade
+          headers are not required.
+        </p>
+        <pre><code>server &#123;
+    listen 8000;
+    server_name _;
+
+    location / &#123;
+        proxy_pass http://127.0.0.1:3583;
+        proxy_http_version 1.1;
+
+        proxy_set_header Host $http_host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header Connection "";
+
+        proxy_buffering off;
+        proxy_cache off;
+        proxy_read_timeout 1h;
+        proxy_send_timeout 1h;
+    &#125;
+&#125;</code></pre>
+
+        <h3>Restart and validate</h3>
+        <pre><code>sudo nginx -t
+sudo systemctl reload nginx
+neondeck service install
+neondeck service status
+
+curl -i \
+  -H 'Host: neondeck.exe.xyz' \
+  http://127.0.0.1:8000/api/health</code></pre>
+        <p>
+          Restart or reinstall the Neondeck service after changing
+          <code>server.trustedOrigins</code>; the trust policy is loaded at
+          process startup. The health request should return a successful
+          response instead of the intentionally opaque <code>404</code> used for untrusted
+          hosts.
+        </p>
+        <aside class="docs-note">
+          <strong>Keep exe.dev authentication enabled.</strong> Trusted origins extend
+          Neondeck's local operator boundary to that exact browser origin; they do
+          not make Neondeck an internet-facing multi-user service. If exe.dev redirects
+          <code>manifest.webmanifest</code> to its login service, the browser may
+          report a separate manifest CORS warning and PWA installation may be unavailable.
+          That warning does not come from the Neondeck API trust check.
+        </aside>
+
         <h2>Domain</h2>
         <p>
           The public docs domain is <code>neondeck.dev</code>. The local
-          dashboard normally runs at <code>http://127.0.0.1:5173/</code> during development.
+          packaged dashboard normally runs at <code>http://127.0.0.1:3583/</code
+          >. During source development, Vite serves the dashboard on
+          <code>http://127.0.0.1:5173/</code> and proxies API traffic to port
+          <code>3583</code>.
         </p>
       </article>
     </main>
