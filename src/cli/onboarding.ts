@@ -785,7 +785,7 @@ export async function configureDashboard(paths: RuntimePaths) {
 export async function configureExecution(paths: RuntimePaths) {
   const { updateExecutionPolicy } = await configActionsModule();
   const preapprove = await promptMultiselect<PreapprovalGroupId>({
-    message: 'Preapprove safe local commands?',
+    message: 'Preapprove safe-ish local commands?',
     options: preapprovalGroups.map((group) => ({
       value: group.id,
       label: group.label,
