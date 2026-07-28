@@ -5,7 +5,10 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { updateAgentModels } from '../modules/config';
 import { readNeonSessionState } from '../modules/sessions';
 import { ensureRuntimeHome, runtimePaths } from '../runtime-home';
-import { finalizeFreshInstallSession } from './onboarding';
+import {
+  finalizeFreshInstallSession,
+  formatRuntimeSkillRootsNote,
+} from './onboarding';
 
 const tempRoots: string[] = [];
 
@@ -51,5 +54,29 @@ describe('onboarding session baseline', () => {
       activeSessionId: 'neondeck-main',
       stale: true,
     });
+  });
+});
+
+describe('runtime skill root onboarding', () => {
+  it('explains the always-on local root when no external roots are selected', () => {
+    expect(formatRuntimeSkillRootsNote('/runtime/skills', []))
+      .toMatchInlineSnapshot(`
+      "Local root (always scanned): /runtime/skills
+      External roots: none
+      Example external root: ~/.agents/skills (auto-detected when present)
+      Expected layout: <root>/<skill-name>/SKILL.md
+      Bundled Neondeck skills load automatically."
+    `);
+  });
+
+  it('lists configured and selected external roots', () => {
+    expect(
+      formatRuntimeSkillRootsNote('/runtime/skills', [
+        '/Users/alice/.agents/skills',
+        '/opt/team-skills',
+      ]),
+    ).toContain(
+      'External roots:\n  /Users/alice/.agents/skills\n  /opt/team-skills',
+    );
   });
 });
