@@ -4,6 +4,7 @@ import { writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { spawn } from 'node:child_process';
+import { defaultOpenAiCodexModel } from '../model-defaults';
 import { readDotEnvFile, type EnvLoadResult } from '../modules/runtime';
 import {
   openAiCompatibleBaseUrlIssue,
@@ -576,7 +577,7 @@ export function providerConfigInput(
 
 export function defaultProviderModel(provider: string) {
   if (provider === 'openai') return 'openai/gpt-5.5';
-  if (provider === 'openai-codex') return 'openai-codex/gpt-5.5';
+  if (provider === 'openai-codex') return defaultOpenAiCodexModel;
   if (provider === 'anthropic') return 'anthropic/claude-sonnet-4-6';
   if (provider === 'openrouter') return 'openrouter/openai/gpt-5.5';
   if (provider !== 'kilocode') return `${provider}/gpt-5.5`;
@@ -761,12 +762,12 @@ export async function configureDashboard(paths: RuntimePaths) {
       {
         value: 'cockpit',
         label: 'Cockpit',
-        hint: 'Work queue, chat, watches, briefing, runtime.',
+        hint: 'Reviews, GitHub, watches, chat, briefing, and runtime tools.',
       },
       {
         value: 'classic',
         label: 'Classic',
-        hint: 'GitHub left, Neon right.',
+        hint: 'Reviews and GitHub on the left; chat on the right.',
       },
     ],
   });
