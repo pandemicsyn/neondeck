@@ -2,10 +2,12 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { defaultOpenAiCodexModel } from '../model-defaults';
 import { updateAgentModels } from '../modules/config';
 import { readNeonSessionState } from '../modules/sessions';
 import { ensureRuntimeHome, runtimePaths } from '../runtime-home';
 import {
+  defaultProviderModel,
   finalizeFreshInstallSession,
   formatRuntimeSkillRootsNote,
 } from './onboarding';
@@ -77,6 +79,16 @@ describe('runtime skill root onboarding', () => {
       ]),
     ).toContain(
       'External roots:\n  /Users/alice/.agents/skills\n  /opt/team-skills',
+    );
+  });
+});
+
+describe('onboarding model defaults', () => {
+  it('uses the latest ChatGPT subscription model without changing API defaults', () => {
+    expect(defaultProviderModel('openai-codex')).toBe(defaultOpenAiCodexModel);
+    expect(defaultProviderModel('openai')).toBe('openai/gpt-5.5');
+    expect(defaultProviderModel('openrouter')).toBe(
+      'openrouter/openai/gpt-5.5',
     );
   });
 });
