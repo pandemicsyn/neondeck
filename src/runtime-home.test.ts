@@ -22,6 +22,7 @@ import {
   readRuntimeJson,
   resolveRuntimeHome,
   runtimePaths,
+  trustedOriginIssue,
 } from './runtime-home';
 
 const tempRoots: string[] = [];
@@ -53,6 +54,45 @@ describe('runtime home', () => {
     expect(
       openAiCompatibleBaseUrlIssue('https://user:secret@example.com/v1'),
     ).toContain('without credentials');
+  });
+
+  it('validates and normalizes exact trusted dashboard origins', () => {
+    expect(trustedOriginIssue('https://neondeck.exe.xyz')).toBeUndefined();
+    expect(trustedOriginIssue('http://localhost:8000')).toBeUndefined();
+    expect(trustedOriginIssue('http://neondeck.exe.xyz')).toContain('HTTPS');
+    expect(trustedOriginIssue('https://*.exe.xyz')).toContain('exact HTTPS');
+    expect(trustedOriginIssue('https://neondeck.exe.xyz/dashboard')).toContain(
+      'without credentials, path, query, or fragment',
+    );
+
+    expect(
+      parseAppConfig(
+        {
+          version: 1,
+          server: {
+            trustedOrigins: ['https://neondeck.exe.xyz/'],
+          },
+        },
+        'config.json',
+      ).server?.trustedOrigins,
+    ).toEqual(['https://neondeck.exe.xyz']);
+  });
+
+  it('rejects duplicate trusted dashboard origins after normalization', () => {
+    expect(() =>
+      parseAppConfig(
+        {
+          version: 1,
+          server: {
+            trustedOrigins: [
+              'https://neondeck.exe.xyz',
+              'https://neondeck.exe.xyz/',
+            ],
+          },
+        },
+        'config.json',
+      ),
+    ).toThrow(ConfigValidationError);
   });
 
   it('resolves NEONDECK_HOME before XDG and HOME defaults', () => {

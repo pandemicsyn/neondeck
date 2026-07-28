@@ -44,6 +44,43 @@ export const localApiTokenSchema = v.pipe(
     'Expected a base64url-compatible local API token.',
   ),
 );
+export function trustedOriginIssue(value: string | undefined) {
+  try {
+    const url = new URL(value ?? '');
+    const loopback = ['127.0.0.1', 'localhost', '[::1]', '::1'].includes(
+      url.hostname,
+    );
+    if (
+      (url.protocol !== 'https:' && !(url.protocol === 'http:' && loopback)) ||
+      url.username ||
+      url.password ||
+      url.hostname.includes('*') ||
+      url.pathname !== '/' ||
+      url.search ||
+      url.hash
+    ) {
+      return 'Use an exact HTTPS origin (or loopback HTTP) without credentials, path, query, or fragment.';
+    }
+    return undefined;
+  } catch {
+    return 'Enter a valid origin URL.';
+  }
+}
+export const trustedOriginSchema = v.pipe(
+  nonEmptyStringSchema,
+  v.check(
+    (value) => trustedOriginIssue(value) === undefined,
+    'Expected an exact HTTPS origin (HTTP is allowed only for loopback hosts) without credentials, path, query, or fragment.',
+  ),
+  v.transform((value) => new URL(value).origin),
+);
+const trustedOriginsSchema = v.pipe(
+  v.array(trustedOriginSchema),
+  v.check(
+    (origins) => new Set(origins).size === origins.length,
+    'Trusted origins must be unique.',
+  ),
+);
 export const thinkingLevelSchema = v.picklist([
   'off',
   'minimal',
@@ -387,9 +424,14 @@ export const localApiConfigSchema = v.strictObject({
   token: localApiTokenSchema,
 });
 
+export const serverConfigSchema = v.strictObject({
+  trustedOrigins: v.optional(trustedOriginsSchema),
+});
+
 export const appConfigSchema = v.looseObject({
   version: positiveIntegerSchema,
   localApi: v.optional(localApiConfigSchema),
+  server: v.optional(serverConfigSchema),
   skillRoots: v.optional(v.array(nonEmptyStringSchema)),
   models: v.optional(agentModelConfigSchema),
   providers: v.optional(providerConfigSchema),
@@ -546,6 +588,7 @@ export type AutopilotConfig = v.InferOutput<typeof autopilotConfigSchema>;
 export type PrReviewConfig = v.InferOutput<typeof prReviewConfigSchema>;
 export type KiloConfig = v.InferOutput<typeof kiloConfigSchema>;
 export type LocalApiConfig = v.InferOutput<typeof localApiConfigSchema>;
+export type ServerConfig = v.InferOutput<typeof serverConfigSchema>;
 export type { McpConfig };
 export type RepoConfig = v.InferOutput<typeof repoConfigSchema>;
 export type RepoRegistry = v.InferOutput<typeof repoRegistrySchema>;

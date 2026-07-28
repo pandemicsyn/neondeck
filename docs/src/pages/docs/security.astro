@@ -44,6 +44,13 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
           own authenticated transport and treat raw workflow inspection,
           reports, and runtime state as sensitive.
         </p>
+        <p>
+          Authenticated reverse proxies may be allowlisted with exact
+          <code>server.trustedOrigins</code> entries in runtime-home
+          <code>config.json</code>. This extends the operator trust boundary to
+          those browser origins; it does not provide user accounts,
+          authorization roles, or an authentication layer.
+        </p>
 
         <h2>Secrets and credentials</h2>
         <p>

@@ -79,14 +79,11 @@ export async function createApp(options: CreateAppOptions = {}) {
   process.env.NEONDECK_HOME = paths.home;
   ensureRuntimeHomeSync(paths);
   loadNeondeckEnv(paths);
-  const providerConfig = readProviderConfigSync(paths);
-  for (const provider of providerRuntimeRegistrations(
-    process.env,
-    providerConfig,
-  )) {
+  const appConfig = readProviderConfigSync(paths);
+  for (const provider of providerRuntimeRegistrations(process.env, appConfig)) {
     registerProvider(provider.id, provider.registration);
   }
-  if (resolveOpenAiCodexProviderStatus(providerConfig).enabled) {
+  if (resolveOpenAiCodexProviderStatus(appConfig).enabled) {
     let accessToken = '';
     try {
       accessToken =
@@ -127,8 +124,11 @@ export async function createApp(options: CreateAppOptions = {}) {
   }
   await getMcpRegistry(paths).start();
 
-  app.use('/api/*', requireLocalApiAccess);
-  app.use('/reports/*', requireLocalApiAccess);
+  const requireAppAccess = requireLocalApiAccess({
+    trustedOrigins: appConfig.server?.trustedOrigins,
+  });
+  app.use('/api/*', requireAppAccess);
+  app.use('/reports/*', requireAppAccess);
 
   app.route('/api', createRuntimeRoutes(paths));
   app.route(dashboardEventStreamPath, createEventStreamRoutes());
@@ -137,7 +137,12 @@ export async function createApp(options: CreateAppOptions = {}) {
   app.route('/api', createSessionRoutes(paths));
   app.route('/api', createConfigRoutes(paths));
   app.route('/api/metrics', createMetricsRoutes());
-  app.route('/api/mcp', createMcpRoutes(paths));
+  app.route(
+    '/api/mcp',
+    createMcpRoutes(paths, {
+      trustedOrigins: appConfig.server?.trustedOrigins,
+    }),
+  );
   app.route('/api/repos', createReposRoutes(paths));
   app.route('/api', createRepoEditRoutes(paths));
   app.route('/api', createWorktreeRoutes(paths));
