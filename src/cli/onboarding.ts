@@ -79,6 +79,7 @@ export async function runInit(options: { home?: string }) {
 
   const status = await readRuntimeStatus(paths);
   const failedChecks = status.checks.filter((check) => !check.ok);
+  const packagedInstall = hasPackagedServerEntry();
   const statusLines = [
     `home      ${paths.home}`,
     `status    ${status.status}`,
@@ -99,15 +100,7 @@ export async function runInit(options: { home?: string }) {
     );
   }
   statusLines.push(
-    '',
-    'Next:',
-    '  npm run dev',
-    '  open http://127.0.0.1:5173/',
-    ...(status.autopilot
-      ? [
-          `  neondeck doctor --repo ${status.autopilot.repoId} --pr <number> --mode <mode>`,
-        ]
-      : []),
+    ...formatOnboardingNextSteps(packagedInstall, status.autopilot?.repoId),
   );
   note(
     statusLines.join('\n'),
@@ -117,9 +110,38 @@ export async function runInit(options: { home?: string }) {
   );
   outro(
     status.status === 'ready'
-      ? 'The deck is live.'
+      ? packagedInstall
+        ? 'Setup complete. Run `neondeck open` to launch the deck.'
+        : 'Setup complete. Run `npm run dev` to launch the deck.'
       : 'Finish the remaining config, then start the deck.',
   );
+}
+
+export function hasPackagedServerEntry(env: NodeJS.ProcessEnv = process.env) {
+  const entry =
+    env.NEONDECK_SERVER_ENTRY ??
+    new URL('../../dist/server.mjs', import.meta.url);
+  return existsSync(entry);
+}
+
+export function formatOnboardingNextSteps(
+  packagedInstall: boolean,
+  autopilotRepoId?: string,
+) {
+  return [
+    '',
+    'Next:',
+    ...(packagedInstall
+      ? ['  neondeck service install', '  neondeck open']
+      : ['  npm run dev', '  open http://127.0.0.1:5173/']),
+    ...(autopilotRepoId
+      ? [
+          '',
+          'Optional diagnostics:',
+          `  neondeck doctor --repo ${autopilotRepoId}`,
+        ]
+      : []),
+  ];
 }
 
 export async function finalizeFreshInstallSession(

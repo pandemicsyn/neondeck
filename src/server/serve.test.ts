@@ -6,6 +6,7 @@ import {
   defaultServerPort,
   resolvePackagedServerEntry,
   resolveServerPort,
+  rewriteServerLogLine,
 } from './serve';
 
 describe('server serve options', () => {
@@ -53,6 +54,29 @@ describe('server serve options', () => {
         NEONDECK_SERVER_ENTRY: '/opt/neondeck/server.mjs',
       }),
     ).toBe('/opt/neondeck/server.mjs');
+  });
+
+  it('replaces the framework startup banner with Neondeck launch details', () => {
+    expect(
+      rewriteServerLogLine(
+        '[flue] Server listening on http://localhost:3583',
+        3583,
+        '/home/alice/.config/neondeck',
+      ),
+    ).toBe(
+      [
+        '[neondeck] Server ready',
+        '  dashboard  http://127.0.0.1:3583/',
+        '  home       /home/alice/.config/neondeck',
+        '  mode       foreground (Ctrl+C to stop)',
+      ].join('\n'),
+    );
+  });
+
+  it('preserves ordinary server output', () => {
+    expect(rewriteServerLogLine('[neondeck] scheduler started', 3583)).toBe(
+      '[neondeck] scheduler started',
+    );
   });
 });
 

@@ -1,6 +1,7 @@
 import { spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { dirname } from 'node:path';
+import { Transform } from 'node:stream';
 import { fileURLToPath } from 'node:url';
 import { serve } from '@hono/node-server';
 import type { RuntimePaths } from '../runtime-home';
@@ -54,7 +55,7 @@ export async function runBuiltNeondeckServer(
 
   await new Promise<void>((resolve, reject) => {
     const child = spawn(process.execPath, [entry], {
-      stdio: 'inherit',
+      stdio: ['inherit', 'pipe', 'inherit'],
       cwd: packageRootForServerEntry(entry),
       env: {
         ...process.env,
@@ -64,6 +65,9 @@ export async function runBuiltNeondeckServer(
       },
     });
 
+    child.stdout
+      .pipe(createServerOutputTransform(port, options.paths?.home))
+      .pipe(process.stdout, { end: false });
     child.once('error', reject);
     child.once('exit', (code, signal) => {
       if (signal) {
@@ -87,6 +91,23 @@ export function packageRootForServerEntry(entry: string) {
   return dirname(dirname(entry));
 }
 
+export function rewriteServerLogLine(
+  line: string,
+  port: number,
+  runtimeHome?: string,
+) {
+  if (!/^\[flue\] Server listening on http:\/\/localhost:\d+\r?$/.test(line)) {
+    return line;
+  }
+
+  return [
+    '[neondeck] Server ready',
+    `  dashboard  http://127.0.0.1:${port}/`,
+    ...(runtimeHome ? [`  home       ${runtimeHome}`] : []),
+    '  mode       foreground (Ctrl+C to stop)',
+  ].join('\n');
+}
+
 export function resolveServerPort(value: number | string | undefined) {
   const raw = value ?? process.env.NEONDECK_PORT ?? process.env.PORT;
   if (raw === undefined || raw === '') return defaultServerPort;
@@ -97,4 +118,24 @@ export function resolveServerPort(value: number | string | undefined) {
     );
   }
   return port;
+}
+
+function createServerOutputTransform(port: number, runtimeHome?: string) {
+  let pending = '';
+
+  return new Transform({
+    transform(chunk: Buffer, _encoding, callback) {
+      pending += chunk.toString();
+      const lines = pending.split('\n');
+      pending = lines.pop() ?? '';
+      for (const line of lines) {
+        this.push(`${rewriteServerLogLine(line, port, runtimeHome)}\n`);
+      }
+      callback();
+    },
+    flush(callback) {
+      if (pending) this.push(rewriteServerLogLine(pending, port, runtimeHome));
+      callback();
+    },
+  });
 }
