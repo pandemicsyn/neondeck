@@ -835,14 +835,22 @@ export async function configureSkillRoots(paths: RuntimePaths) {
         })
       : [];
 
+  const selectedExternalRoots = Array.from(
+    new Set([...current, ...selectedDetectedRoots]),
+  );
+  note(
+    formatRuntimeSkillRootsNote(paths.skills, selectedExternalRoots),
+    'Runtime skill locations',
+  );
+
   const shouldAddManual = await promptConfirm({
-    message: 'Add another external runtime skill root?',
+    message: 'Add another optional external runtime skill root?',
     initialValue: false,
   });
   const manualRoot = shouldAddManual
     ? await promptText({
         message: 'Skill root path',
-        placeholder: '/Users/alice/.agents/skills',
+        placeholder: '~/.agents/skills',
         validate: requiredText,
       })
     : undefined;
@@ -859,6 +867,21 @@ export async function configureSkillRoots(paths: RuntimePaths) {
   const result = await updateSkillRoots({ skillRoots: next }, paths);
   if (result.ok) log.success(result.message);
   else log.warn(result.message);
+}
+
+export function formatRuntimeSkillRootsNote(
+  localRoot: string,
+  externalRoots: string[],
+) {
+  return [
+    `Local root (always scanned): ${localRoot}`,
+    externalRoots.length > 0
+      ? `External roots:\n${externalRoots.map((root) => `  ${root}`).join('\n')}`
+      : 'External roots: none',
+    'Example external root: ~/.agents/skills (auto-detected when present)',
+    'Expected layout: <root>/<skill-name>/SKILL.md',
+    'Bundled Neondeck skills load automatically.',
+  ].join('\n');
 }
 
 export function detectExternalSkillRoots() {
