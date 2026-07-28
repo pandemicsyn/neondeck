@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.0.0-beta.21
+
+### Patch Changes
+
+- [#206](https://github.com/pandemicsyn/neondeck/pull/206) [`c61ec64`](https://github.com/pandemicsyn/neondeck/commit/c61ec6425b09d8e6c9f976250203e7dfefbfd78b) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Explain the always-scanned local runtime skill path, configured external roots, and expected skill folder layout during setup.
+
 ## 1.0.0-beta.20
 
 ### Minor Changes
