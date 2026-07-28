@@ -9,7 +9,9 @@ import { ensureRuntimeHome, runtimePaths } from '../runtime-home';
 import {
   defaultProviderModel,
   finalizeFreshInstallSession,
+  formatOnboardingNextSteps,
   formatRuntimeSkillRootsNote,
+  hasPackagedServerEntry,
 } from './onboarding';
 
 const tempRoots: string[] = [];
@@ -90,5 +92,36 @@ describe('onboarding model defaults', () => {
     expect(defaultProviderModel('openrouter')).toBe(
       'openrouter/openai/gpt-5.5',
     );
+  });
+});
+
+describe('onboarding next steps', () => {
+  it('points packaged installs to the production server commands', () => {
+    expect(formatOnboardingNextSteps(true, 'cloud')).toEqual([
+      '',
+      'Next:',
+      '  neondeck service install',
+      '  neondeck open',
+      '',
+      'Optional diagnostics:',
+      '  neondeck doctor --repo cloud',
+    ]);
+  });
+
+  it('keeps source checkout development guidance', () => {
+    expect(formatOnboardingNextSteps(false)).toEqual([
+      '',
+      'Next:',
+      '  npm run dev',
+      '  open http://127.0.0.1:5173/',
+    ]);
+  });
+
+  it('recognizes an explicit packaged server entry', () => {
+    expect(
+      hasPackagedServerEntry({
+        NEONDECK_SERVER_ENTRY: import.meta.filename,
+      }),
+    ).toBe(true);
   });
 });
