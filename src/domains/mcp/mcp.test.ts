@@ -35,8 +35,12 @@ import {
   type McpServerConfig,
   updateMcpServer,
 } from './index';
+import { isAllowedMcpOAuthRedirectUrl } from './oauth';
 import { ensureRuntimeHome, runtimePaths } from '../../runtime-home';
-import { createMcpRoutes } from '../../server/routes/mcp';
+import {
+  createMcpRoutes,
+  resolveMcpOAuthCallbackUrl,
+} from '../../server/routes/mcp';
 import {
   createChatSession,
   listChatSessionCommandEvents,
@@ -978,6 +982,53 @@ describe('MCP support', () => {
       action: 'mcp_login_start',
       requires: ['redirectUrl'],
     });
+  });
+
+  it('allows only configured HTTPS origins for external OAuth callbacks', () => {
+    const trustedOrigins = ['https://neondeck.exe.xyz'];
+
+    expect(
+      isAllowedMcpOAuthRedirectUrl(
+        'https://neondeck.exe.xyz/api/mcp/oauth/callback',
+        trustedOrigins,
+      ),
+    ).toBe(true);
+    expect(
+      isAllowedMcpOAuthRedirectUrl(
+        'https://other.example/api/mcp/oauth/callback',
+        trustedOrigins,
+      ),
+    ).toBe(false);
+    expect(
+      isAllowedMcpOAuthRedirectUrl(
+        'https://neondeck.exe.xyz/other/callback',
+        trustedOrigins,
+      ),
+    ).toBe(false);
+    expect(
+      isAllowedMcpOAuthRedirectUrl(
+        'https://neondeck.exe.xyz/api/mcp/oauth/callback?next=evil',
+        trustedOrigins,
+      ),
+    ).toBe(false);
+  });
+
+  it('derives proxied OAuth callbacks from the exact trusted HTTPS origin', () => {
+    expect(
+      resolveMcpOAuthCallbackUrl(
+        'http://neondeck.exe.xyz/api/mcp/servers/linear/login',
+        'neondeck.exe.xyz',
+        ['https://neondeck.exe.xyz'],
+      ),
+    ).toBe('https://neondeck.exe.xyz/api/mcp/oauth/callback');
+
+    expect(
+      resolveMcpOAuthCallbackUrl(
+        'http://127.0.0.1:3583/api/mcp/servers/linear/login',
+        '127.0.0.1:3583',
+        ['https://neondeck.exe.xyz'],
+      ),
+    ).toBe('http://127.0.0.1:3583/api/mcp/oauth/callback');
   });
 
   it('returns typed MCP OAuth login errors for non-oauth servers', async () => {

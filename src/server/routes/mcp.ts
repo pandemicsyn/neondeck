@@ -1,4 +1,3 @@
-import type { Context } from 'hono';
 import { Hono } from 'hono';
 import {
   addMcpServer,
@@ -17,7 +16,14 @@ import {
 import type { RuntimePaths } from '../../runtime-home';
 import { queryNumber, safeJsonBody, safeJsonObject } from '../http';
 
-export function createMcpRoutes(paths: RuntimePaths) {
+export type McpRouteOptions = {
+  trustedOrigins?: readonly string[];
+};
+
+export function createMcpRoutes(
+  paths: RuntimePaths,
+  options: McpRouteOptions = {},
+) {
   const routes = new Hono();
 
   routes.get('/servers', async (c) => {
@@ -116,10 +122,15 @@ export function createMcpRoutes(paths: RuntimePaths) {
     const redirectUrl =
       typeof body.redirectUrl === 'string'
         ? body.redirectUrl
-        : `${requestOrigin(c)}/api/mcp/oauth/callback`;
+        : resolveMcpOAuthCallbackUrl(
+            c.req.url,
+            c.req.header('host'),
+            options.trustedOrigins,
+          );
     const result = await startMcpOAuthLogin(
       { id: c.req.param('id'), redirectUrl },
       paths,
+      { trustedOrigins: options.trustedOrigins },
     );
     return c.json(result, result.ok ? 200 : 400);
   });
@@ -222,8 +233,27 @@ export function createMcpRoutes(paths: RuntimePaths) {
   return routes;
 }
 
-function requestOrigin(c: Context) {
-  return new URL(c.req.url).origin;
+export function resolveMcpOAuthCallbackUrl(
+  requestUrl: string,
+  hostHeader: string | undefined,
+  trustedOrigins: readonly string[] = [],
+) {
+  const fallbackOrigin = new URL(requestUrl).origin;
+  const requestHost = normalizedHost(hostHeader) ?? new URL(requestUrl).host;
+  const trustedOrigin = trustedOrigins.find(
+    (origin) =>
+      new URL(origin).host.toLowerCase() === requestHost.toLowerCase(),
+  );
+  return `${trustedOrigin ?? fallbackOrigin}/api/mcp/oauth/callback`;
+}
+
+function normalizedHost(value: string | undefined) {
+  if (!value) return null;
+  try {
+    return new URL(`http://${value}`).host;
+  } catch {
+    return null;
+  }
 }
 
 function readIdFromResultData(data: unknown) {

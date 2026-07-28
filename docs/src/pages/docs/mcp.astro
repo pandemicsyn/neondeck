@@ -81,9 +81,12 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
         <h2>OAuth</h2>
         <p>
           OAuth servers start in <code>needs-login</code> until a user completes a
-          state-bound loopback authorization flow. The callback exchanges the authorization
-          code through the MCP SDK provider and stores client registration, PKCE verifier,
-          discovery state, and tokens in SQLite.
+          state-bound authorization flow. By default the callback uses Neondeck's
+          loopback origin. A dashboard served through an exact
+          <code>server.trustedOrigins</code> entry instead uses that configured HTTPS
+          origin, without trusting proxy-forwarded scheme headers. The callback exchanges
+          the authorization code through the MCP SDK provider and stores client registration,
+          PKCE verifier, discovery state, and tokens in SQLite.
         </p>
         <pre><code>neondeck mcp add linear --url https://mcp.linear.app/mcp --oauth
 neondeck mcp login linear
@@ -91,7 +94,10 @@ neondeck mcp logout linear --confirm</code></pre>
         <p>
           The dashboard Runtime Overview panel shows configured MCP servers,
           OAuth login/logout controls, tool counts, connection errors, and
-          pending MCP approvals.
+          pending MCP approvals. The MCP provider must accept the matching
+          callback URL, such as
+          <code>https://neondeck.exe.xyz/api/mcp/oauth/callback</code> for the
+          <a href="/docs/deployment/#exedev-nginx">exe.dev nginx setup</a>.
         </p>
 
         <h2>CLI and API</h2>

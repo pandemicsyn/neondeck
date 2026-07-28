@@ -69,21 +69,26 @@ type TokenState = {
 const defaultCallbackUrl = 'http://127.0.0.1:3583/api/mcp/oauth/callback';
 const loginTtlMs = 10 * 60 * 1000;
 
+export type McpOAuthLoginOptions = {
+  trustedOrigins?: readonly string[];
+};
+
 export async function startMcpOAuthLogin(
   input: { id: string; redirectUrl?: string },
   paths = runtimePaths(),
+  options: McpOAuthLoginOptions = {},
 ) {
   let login: McpOAuthLoginRecord | null = null;
   try {
     const { server } = await requireOAuthServer(input.id, paths);
     const redirectUrl = input.redirectUrl ?? defaultCallbackUrl;
-    if (!isAllowedOAuthRedirectUrl(redirectUrl)) {
+    if (!isAllowedMcpOAuthRedirectUrl(redirectUrl, options.trustedOrigins)) {
       return {
         ok: false,
         action: 'mcp_login_start',
         changed: false,
         message:
-          'MCP OAuth redirects must use the local /api/mcp/oauth/callback route on a loopback host.',
+          'MCP OAuth redirects must use /api/mcp/oauth/callback on a loopback HTTP origin or configured trusted HTTPS origin.',
         requires: ['redirectUrl'],
       };
     }
@@ -1043,7 +1048,10 @@ function expiresInSeconds(expiresAt: string) {
   return Math.max(0, Math.floor((Date.parse(expiresAt) - Date.now()) / 1000));
 }
 
-function isAllowedOAuthRedirectUrl(value: string) {
+export function isAllowedMcpOAuthRedirectUrl(
+  value: string,
+  trustedOrigins: readonly string[] = [],
+) {
   let url: URL;
   try {
     url = new URL(value);
@@ -1051,11 +1059,29 @@ function isAllowedOAuthRedirectUrl(value: string) {
     return false;
   }
 
-  return (
+  if (
+    url.username ||
+    url.password ||
+    url.pathname !== '/api/mcp/oauth/callback' ||
+    url.search ||
+    url.hash
+  ) {
+    return false;
+  }
+
+  const isLoopbackHttp =
     url.protocol === 'http:' &&
-    url.pathname === '/api/mcp/oauth/callback' &&
-    ['127.0.0.1', 'localhost', '::1', '[::1]'].includes(url.hostname)
-  );
+    ['127.0.0.1', 'localhost', '::1', '[::1]'].includes(url.hostname);
+  if (isLoopbackHttp) return true;
+
+  if (url.protocol !== 'https:') return false;
+  return trustedOrigins.some((origin) => {
+    try {
+      return new URL(origin).origin === url.origin;
+    } catch {
+      return false;
+    }
+  });
 }
 
 function errorMessage(error: unknown) {

@@ -2,4 +2,4 @@
 'neondeck': minor
 ---
 
-Allow exact authenticated reverse-proxy origins for the dashboard API and document an nginx setup for running packaged Neondeck on exe.dev.
+Allow exact authenticated reverse-proxy origins for the dashboard API and MCP OAuth callbacks, and document nginx and SSH setups for running packaged Neondeck on exe.dev.

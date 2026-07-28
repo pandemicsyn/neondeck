@@ -137,7 +137,12 @@ export async function createApp(options: CreateAppOptions = {}) {
   app.route('/api', createSessionRoutes(paths));
   app.route('/api', createConfigRoutes(paths));
   app.route('/api/metrics', createMetricsRoutes());
-  app.route('/api/mcp', createMcpRoutes(paths));
+  app.route(
+    '/api/mcp',
+    createMcpRoutes(paths, {
+      trustedOrigins: appConfig.server?.trustedOrigins,
+    }),
+  );
   app.route('/api/repos', createReposRoutes(paths));
   app.route('/api', createRepoEditRoutes(paths));
   app.route('/api', createWorktreeRoutes(paths));
