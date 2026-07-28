@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.0.0-beta.20
+
+### Minor Changes
+
+- [#205](https://github.com/pandemicsyn/neondeck/pull/205) [`c67dee6`](https://github.com/pandemicsyn/neondeck/commit/c67dee62f6004ad85bd6cdf790b8f822c6b0e701) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Expand onboarding command preapprovals with Yarn, filesystem utilities, and
+  local process inspection while clarifying that the available commands are
+  safe-ish.
+
 ## 1.0.0-beta.19
 
 ### Minor Changes
