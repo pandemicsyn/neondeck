@@ -110,6 +110,47 @@ describe('conversational briefings', () => {
     expect(snapshot.byteSize).toBeLessThanOrEqual(96_000);
   });
 
+  it('recollects the current repo registry for every briefing snapshot', async () => {
+    const paths = runtimePaths(await tempDir());
+    const repos = [
+      {
+        id: 'neondeck',
+        github: { owner: 'pandemicsyn', name: 'neondeck' },
+        path: '/repos/neondeck',
+        defaultBranch: 'main',
+      },
+    ];
+    const dependencies = {
+      async readRepos() {
+        return {
+          home: paths.home,
+          path: paths.repos,
+          repos: [...repos],
+          count: repos.length,
+          fetchedAt: new Date().toISOString(),
+        };
+      },
+    };
+
+    const first = await collectBriefingSnapshot(paths, dependencies);
+    repos.push({
+      id: 'flue',
+      github: { owner: 'earendil-works', name: 'flue' },
+      path: '/repos/flue',
+      defaultBranch: 'main',
+    });
+    const second = await collectBriefingSnapshot(paths, dependencies);
+
+    expect(first.sources.repos.data).toMatchObject({
+      total: 1,
+      items: [{ id: 'neondeck' }],
+    });
+    expect(second.sources.repos.data).toMatchObject({
+      total: 2,
+      items: [{ id: 'neondeck' }, { id: 'flue' }],
+    });
+  });
+
   it('compacts oversized deterministic sections with explicit truncation metadata', async () => {
     const paths = runtimePaths(await tempDir());
     const snapshot = await collectBriefingSnapshot(paths, {
@@ -391,7 +432,21 @@ describe('conversational briefings', () => {
       }),
     );
 
-    sessionContextInstructionsForAgentSync(first.sessionId, paths);
+    const transitionInstructions = sessionContextInstructionsForAgentSync(
+      first.sessionId,
+      paths,
+    );
+    expect(transitionInstructions).toContain(
+      'Server-controlled Neondeck briefing context transition',
+    );
+    expect(transitionInstructions).toContain(
+      'Current system instructions, memory context, available tools',
+    );
+    expect(transitionInstructions).toContain(
+      'first acknowledge in one brief sentence',
+    );
+    expect(transitionInstructions).toContain('model');
+    expect(transitionInstructions).toContain('displayAssistant');
     await expect(readBriefingState(paths)).resolves.toMatchObject({
       profile: { sessionId: first.sessionId },
       sessionStaleReasons: [],
@@ -410,6 +465,14 @@ describe('conversational briefings', () => {
       .get(first.sessionId);
     refreshedDatabase.close();
     expect(audit).toBeTruthy();
+
+    const subsequentInstructions = sessionContextInstructionsForAgentSync(
+      first.sessionId,
+      paths,
+    );
+    expect(subsequentInstructions).not.toContain(
+      'Neondeck briefing context transition',
+    );
   });
 
   it('allows a stale briefing conversation to be refreshed manually in place', async () => {
