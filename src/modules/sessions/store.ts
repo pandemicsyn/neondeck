@@ -328,7 +328,11 @@ function readStaleReasons(
   return readStaleReasonChanges(database, {
     activatedAt,
     contextMemoryIds,
-    ignoredConfigActions: ['briefing_profile_update'],
+    ignoredConfigActions: [
+      'briefing_profile_update',
+      'config_apply_dashboard_preset',
+      'config_update_dashboard_layout',
+    ],
   }).reasons;
 }
 

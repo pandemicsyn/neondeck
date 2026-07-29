@@ -571,11 +571,8 @@ async function resolveScheduledBriefingSession(
       paths,
     );
     if ('session' in existing && !existing.session.archivedAt) {
-      if (existing.session.staleReasons.length > 0) {
-        throw new Error(
-          'The briefing conversation context is stale. Start a fresh briefing conversation before running again.',
-        );
-      }
+      // Flue initializes the root harness for every submission, so the same
+      // canonical conversation can load current runtime context in place.
       return profile.sessionId;
     }
   }
@@ -611,11 +608,6 @@ async function resolveScheduledBriefingSession(
   if (!('session' in created)) {
     throw new Error('Briefing session could not be created.');
   }
-  if (created.session.staleReasons.length > 0) {
-    throw new Error(
-      'The briefing conversation context is stale. Start a fresh briefing conversation before running again.',
-    );
-  }
   await setBriefingProfileSession(profile.id, created.session.id, paths);
   return created.session.id;
 }
@@ -632,7 +624,8 @@ async function validateRequestedBriefingSession(
     !('session' in result) ||
     result.session.archivedAt ||
     result.session.agentName !== 'display-assistant' ||
-    result.session.staleReasons.length > 0
+    (result.session.staleReasons.length > 0 &&
+      result.session.kind !== 'briefing')
   ) {
     throw new Error(
       'Manual briefings require an active display-assistant chat session.',
