@@ -242,6 +242,10 @@ export const BriefingPanelPlugin = {
             {briefingStale ? (
               <div className="border border-accent/60 px-2 py-1.5 text-[10.5px] leading-4 text-accent">
                 <p>{data.sessionStaleReasons[0]?.message}</p>
+                <p className="mt-1 text-muted">
+                  The next briefing will reload current context in this
+                  conversation.
+                </p>
                 <Button
                   className="mt-2"
                   disabled={rotateMutation.isPending}
@@ -250,7 +254,7 @@ export const BriefingPanelPlugin = {
                 >
                   {rotateMutation.isPending
                     ? 'starting fresh'
-                    : 'start fresh conversation'}
+                    : 'start separate conversation'}
                 </Button>
               </div>
             ) : null}
@@ -268,7 +272,7 @@ export const BriefingPanelPlugin = {
                   open conversation
                 </Button>
                 <Button
-                  disabled={runMutation.isPending || briefingStale}
+                  disabled={runMutation.isPending}
                   onClick={() => runMutation.mutate()}
                   type="button"
                 >

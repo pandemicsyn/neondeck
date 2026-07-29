@@ -33,7 +33,15 @@ export function sessionContextInstructionsForAgentSync(
     if (!session || !instructions) return '';
 
     const latestContextChangeAt = latestContextAuditAt(database, sessionId);
-    if (contextNeedsRefresh(session, latestContextChangeAt)) {
+    // Briefings intentionally keep one canonical Flue conversation. A new
+    // harness initialization reloads current runtime context without replacing
+    // that conversation's transcript.
+    const refreshStaleBriefing =
+      session.kind === 'briefing' && session.staleReasons.length > 0;
+    if (
+      refreshStaleBriefing ||
+      contextNeedsRefresh(session, latestContextChangeAt)
+    ) {
       const now = new Date().toISOString();
       const memorySnapshot = buildMemoryPromptSnapshotSync(paths, {
         repoId: session.linkedRepoId,
@@ -44,18 +52,28 @@ export function sessionContextInstructionsForAgentSync(
           UPDATE chat_sessions
           SET context_loaded_at = ?,
             context_memory_ids_json = ?,
+            stale_reasons_json = CASE WHEN ? THEN NULL ELSE stale_reasons_json END,
             updated_at = ?
           WHERE id = ?;
         `,
         )
-        .run(now, JSON.stringify(memorySnapshot.memoryIds), now, sessionId);
+        .run(
+          now,
+          JSON.stringify(memorySnapshot.memoryIds),
+          refreshStaleBriefing ? 1 : 0,
+          now,
+          sessionId,
+        );
       markLoadedMemoriesUsed(database, memorySnapshot.memoryIds, now);
       recordSessionAudit(database, {
-        action: 'context_injected',
+        action: refreshStaleBriefing
+          ? 'briefing_context_refreshed'
+          : 'context_injected',
         sessionId,
         reason: 'display-assistant-agent-context',
         metadata: {
           latestContextChangeAt,
+          staleReasons: refreshStaleBriefing ? session.staleReasons : undefined,
           memoryIds: memorySnapshot.memoryIds,
           linkedRepoId: session.linkedRepoId,
           linkedWatchId: session.linkedWatchId,

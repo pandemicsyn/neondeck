@@ -21,6 +21,7 @@ import {
   createChatSessionCommandEvent,
   listChatSessionCommandEvents,
   readNeonSessionState,
+  sessionContextInstructionsForAgentSync,
 } from './modules/sessions';
 import {
   readScheduledTask,
@@ -288,7 +289,50 @@ describe('conversational briefings', () => {
     ).toMatchObject({ kind: 'briefing', linkedTaskId: 'briefing:morning' });
   });
 
-  it('surfaces stale briefing context and rotates only through the explicit action', async () => {
+  it('does not stale briefing context for dashboard-only layout changes', async () => {
+    const paths = runtimePaths(await tempDir());
+    const first = await admitBriefing(
+      { profileId: 'morning', trigger: 'scheduled' },
+      paths,
+      {
+        dispatchAgent: async () => ({
+          dispatchId: 'dispatch:layout:first',
+          acceptedAt: new Date().toISOString(),
+        }),
+      },
+    );
+    const database = openDb(paths.neondeckDatabase);
+    database
+      .prepare(
+        `
+        INSERT INTO config_history (
+          action,
+          file,
+          target,
+          before_json,
+          after_json,
+          changed_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?);
+      `,
+      )
+      .run(
+        'config_update_dashboard_layout',
+        paths.dashboard,
+        'layout',
+        '{}',
+        '{}',
+        new Date(Date.now() + 1_000).toISOString(),
+      );
+    database.close();
+
+    await expect(readBriefingState(paths)).resolves.toMatchObject({
+      profile: { sessionId: first.sessionId },
+      sessionStaleReasons: [],
+    });
+  });
+
+  it('refreshes stale context in the same briefing conversation', async () => {
     const paths = runtimePaths(await tempDir());
     const first = await admitBriefing(
       { profileId: 'morning', trigger: 'scheduled' },
@@ -321,15 +365,111 @@ describe('conversational briefings', () => {
         expect.objectContaining({ type: 'model' }),
       ]),
     });
-    await expect(
-      admitBriefing({ profileId: 'morning', trigger: 'scheduled' }, paths, {
+    const staleDispatch = vi.fn<
+      (request: {
+        agent: string;
+        id: string;
+        input: string;
+      }) => Promise<DispatchReceipt>
+    >(async () => ({
+      dispatchId: 'dispatch:stale:continued',
+      acceptedAt: new Date().toISOString(),
+    }));
+    const continued = await admitBriefing(
+      { profileId: 'morning', trigger: 'scheduled' },
+      paths,
+      {
+        dispatchAgent: staleDispatch,
+      },
+    );
+
+    expect(continued.sessionId).toBe(first.sessionId);
+    expect(staleDispatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        agent: 'display-assistant',
+        id: first.sessionId,
+      }),
+    );
+
+    sessionContextInstructionsForAgentSync(first.sessionId, paths);
+    await expect(readBriefingState(paths)).resolves.toMatchObject({
+      profile: { sessionId: first.sessionId },
+      sessionStaleReasons: [],
+    });
+    const refreshedDatabase = openDb(paths.neondeckDatabase);
+    const audit = refreshedDatabase
+      .prepare(
+        `
+        SELECT action
+        FROM chat_session_audit
+        WHERE session_id = ?
+          AND action = 'briefing_context_refreshed'
+        LIMIT 1;
+      `,
+      )
+      .get(first.sessionId);
+    refreshedDatabase.close();
+    expect(audit).toBeTruthy();
+  });
+
+  it('allows a stale briefing conversation to be refreshed manually in place', async () => {
+    const paths = runtimePaths(await tempDir());
+    const first = await admitBriefing(
+      { profileId: 'morning', trigger: 'scheduled' },
+      paths,
+      {
         dispatchAgent: async () => ({
-          dispatchId: 'dispatch:stale:blocked',
+          dispatchId: 'dispatch:manual-stale:first',
           acceptedAt: new Date().toISOString(),
         }),
-      }),
-    ).rejects.toThrow('context is stale');
+      },
+    );
+    const database = openDb(paths.neondeckDatabase);
+    database
+      .prepare('UPDATE chat_sessions SET stale_reasons_json = ? WHERE id = ?;')
+      .run(
+        JSON.stringify([
+          {
+            type: 'skill',
+            message: 'Runtime skill configuration changed.',
+            changedAt: new Date().toISOString(),
+            target: 'skillRoots',
+          },
+        ]),
+        first.sessionId,
+      );
+    database.close();
 
+    const manual = await admitBriefing(
+      {
+        profileId: 'morning',
+        trigger: 'manual',
+        sessionId: first.sessionId,
+      },
+      paths,
+      {
+        dispatchAgent: async () => ({
+          dispatchId: 'dispatch:manual-stale:continued',
+          acceptedAt: new Date().toISOString(),
+        }),
+      },
+    );
+
+    expect(manual.sessionId).toBe(first.sessionId);
+  });
+
+  it('keeps explicit briefing conversation rotation available', async () => {
+    const paths = runtimePaths(await tempDir());
+    const first = await admitBriefing(
+      { profileId: 'morning', trigger: 'scheduled' },
+      paths,
+      {
+        dispatchAgent: async () => ({
+          dispatchId: 'dispatch:rotation:first',
+          acceptedAt: new Date().toISOString(),
+        }),
+      },
+    );
     const rotated = await rotateBriefingSession({}, paths);
     expect(rotated).toMatchObject({
       ok: true,
@@ -338,10 +478,6 @@ describe('conversational briefings', () => {
     if (!('session' in rotated) || !rotated.session)
       throw new Error('Rotation did not return session.');
     expect(rotated.session.id).not.toBe(first.sessionId);
-    await expect(readBriefingState(paths)).resolves.toMatchObject({
-      profile: { sessionId: rotated.session.id },
-      sessionStaleReasons: [],
-    });
   });
 
   it('settles from the dispatched Flue agent observation without parsing assistant prose', async () => {
