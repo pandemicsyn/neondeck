@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.0.0-beta.24
+
+### Patch Changes
+
+- [#222](https://github.com/pandemicsyn/neondeck/pull/222) [`10b4efe`](https://github.com/pandemicsyn/neondeck/commit/10b4efecfa3c82b84ebde8dba3c482ace98a3029) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Keep scheduled and manual morning briefings in their persistent conversation when runtime context changes, explicitly acknowledge the in-place context transition instead of failing the briefing, and ignore dashboard-only layout changes when evaluating conversation context.
+
 ## 1.0.0-beta.23
 
 ### Minor Changes
