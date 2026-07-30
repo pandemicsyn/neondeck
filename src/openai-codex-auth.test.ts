@@ -4,28 +4,26 @@ import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import type {
   AuthInteraction,
+  ModelAuth,
   OAuthCredential,
 } from '@earendil-works/pi-ai';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   loginOpenAiCodexSubscription,
   logoutOpenAiCodexSubscription,
   openAiCodexAuthStatus,
   protectOpenAiCodexCredentialStore,
   resolveOpenAiCodexAccessToken,
+  resolveOpenAiCodexModelAuth,
 } from './modules/repos';
 import { ensureRuntimeHome, runtimePaths } from './runtime-home';
-import { resolveOpenAiCodexAccessTokenForStartup } from './server/create-app';
+import { resolveOpenAiCodexModelAuthForStartup } from './server/create-app';
 
 const tempRoots: string[] = [];
 const oauthMocks = vi.hoisted(() => ({
   login: vi.fn<(interaction: AuthInteraction) => Promise<OAuthCredential>>(),
-  refresh: vi.fn<
-    (credential: OAuthCredential) => Promise<OAuthCredential>
-  >(),
-  toAuth: vi.fn<
-    (credential: OAuthCredential) => Promise<{ apiKey?: string }>
-  >(),
+  refresh: vi.fn<(credential: OAuthCredential) => Promise<OAuthCredential>>(),
+  toAuth: vi.fn<(credential: OAuthCredential) => Promise<ModelAuth>>(),
 }));
 
 vi.mock('@earendil-works/pi-ai/providers/openai-codex', () => ({
@@ -40,6 +38,12 @@ vi.mock('@earendil-works/pi-ai/providers/openai-codex', () => ({
     },
   }),
 }));
+
+beforeEach(() => {
+  oauthMocks.toAuth.mockImplementation(async (credential) => ({
+    apiKey: credential.access,
+  }));
+});
 
 afterEach(async () => {
   oauthMocks.login.mockReset();
@@ -78,14 +82,16 @@ describe('ChatGPT subscription authentication', () => {
       const onAuth =
         vi.fn<(info: { url: string; instructions?: string }) => void>();
       const onDeviceCode =
-        vi.fn<
-          (info: { userCode: string; verificationUri: string }) => void
-        >();
+        vi.fn<(info: { userCode: string; verificationUri: string }) => void>();
       const onProgress = vi.fn<(message: string) => void>();
-      const onPrompt =
-        vi
-          .fn<(message: string) => Promise<string>>()
-          .mockResolvedValue('manual-code');
+      const onPrompt = vi
+        .fn<
+          (
+            message: string,
+            options: { placeholder?: string; signal?: AbortSignal },
+          ) => Promise<string>
+        >()
+        .mockResolvedValue('manual-code');
       oauthMocks.login.mockImplementationOnce(async (interaction) => {
         await expect(
           interaction.prompt({
@@ -94,10 +100,13 @@ describe('ChatGPT subscription authentication', () => {
             options: [],
           }),
         ).resolves.toBe(providerMethod);
+        const promptAbort = new AbortController();
         await expect(
           interaction.prompt({
             type: 'manual_code',
             message: 'Paste the authorization code',
+            placeholder: 'http://localhost:1455/auth/callback',
+            signal: promptAbort.signal,
           }),
         ).resolves.toBe('manual-code');
         interaction.notify(notification);
@@ -125,7 +134,13 @@ describe('ChatGPT subscription authentication', () => {
         usable: true,
       });
 
-      expect(onPrompt).toHaveBeenCalledWith('Paste the authorization code');
+      expect(onPrompt).toHaveBeenCalledWith(
+        'Paste the authorization code',
+        expect.objectContaining({
+          placeholder: 'http://localhost:1455/auth/callback',
+          signal: expect.any(AbortSignal),
+        }),
+      );
       expect(onProgress).toHaveBeenCalledWith('Signing in');
       const expectedAuthCalls =
         notification.type === 'auth_url'
@@ -204,6 +219,32 @@ describe('ChatGPT subscription authentication', () => {
       authenticated: false,
       usable: false,
     });
+  });
+
+  it('derives the complete provider auth through the pi OAuth contract', async () => {
+    const paths = await createCredential(
+      'access-token',
+      'refresh-token',
+      Date.now() + 60 * 60 * 1000,
+    );
+    oauthMocks.toAuth.mockResolvedValueOnce({
+      apiKey: 'derived-token',
+      baseUrl: 'https://chatgpt.example/backend-api',
+      headers: { 'x-provider-auth': 'derived' },
+    });
+
+    await expect(resolveOpenAiCodexModelAuth(paths)).resolves.toEqual({
+      apiKey: 'derived-token',
+      baseUrl: 'https://chatgpt.example/backend-api',
+      headers: { 'x-provider-auth': 'derived' },
+    });
+    expect(oauthMocks.toAuth).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'oauth',
+        access: 'access-token',
+        refresh: 'refresh-token',
+      }),
+    );
   });
 
   it('does not resurrect credentials removed during an in-flight refresh', async () => {
@@ -320,7 +361,7 @@ describe('ChatGPT subscription authentication', () => {
     oauthMocks.refresh.mockReturnValueOnce(deferred.promise);
 
     await expect(
-      resolveOpenAiCodexAccessTokenForStartup(paths, 5),
+      resolveOpenAiCodexModelAuthForStartup(paths, 5),
     ).rejects.toThrow('startup budget');
     deferred.resolve({
       type: 'oauth',

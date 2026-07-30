@@ -1,5 +1,5 @@
 ---
-"neondeck": patch
+'neondeck': patch
 ---
 
 Pin the documentation site's Astro dependency to the compatible release so npm

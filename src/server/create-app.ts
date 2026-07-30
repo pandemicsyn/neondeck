@@ -1,4 +1,5 @@
-import { registerProvider } from '@flue/runtime';
+import { registerProvider, type ProviderRegistration } from '@flue/runtime';
+import type { ModelAuth } from '@earendil-works/pi-ai';
 import { flue } from '@flue/runtime/routing';
 import { serveStatic } from '@hono/node-server/serve-static';
 import { existsSync } from 'node:fs';
@@ -11,7 +12,7 @@ import { loadNeondeckEnv } from '../modules/runtime';
 import {
   providerRuntimeRegistrations,
   readProviderConfigSync,
-  resolveOpenAiCodexAccessToken,
+  resolveOpenAiCodexModelAuth,
   resolveOpenAiCodexProviderStatus,
   startOpenAiCodexTokenRefresh,
 } from '../modules/repos';
@@ -84,19 +85,21 @@ export async function createApp(options: CreateAppOptions = {}) {
     registerProvider(provider.id, provider.registration);
   }
   if (resolveOpenAiCodexProviderStatus(appConfig).enabled) {
-    let accessToken = '';
+    let auth: ModelAuth | undefined;
     try {
-      accessToken =
-        (await resolveOpenAiCodexAccessTokenForStartup(paths)) ?? '';
+      auth = await resolveOpenAiCodexModelAuthForStartup(paths);
     } catch (error) {
       console.warn(
         '[neondeck] ChatGPT subscription authentication needs attention',
         error,
       );
     }
-    registerProvider('openai-codex', { apiKey: accessToken });
-    startOpenAiCodexTokenRefresh(paths, (token) => {
-      registerProvider('openai-codex', { apiKey: token });
+    registerProvider('openai-codex', providerRegistrationFromModelAuth(auth));
+    startOpenAiCodexTokenRefresh(paths, (refreshedAuth) => {
+      registerProvider(
+        'openai-codex',
+        providerRegistrationFromModelAuth(refreshedAuth),
+      );
     });
   }
 
@@ -190,14 +193,14 @@ export async function createApp(options: CreateAppOptions = {}) {
   return app;
 }
 
-export async function resolveOpenAiCodexAccessTokenForStartup(
+export async function resolveOpenAiCodexModelAuthForStartup(
   paths: RuntimePaths,
   timeoutMs = 5_000,
 ) {
   let timer: NodeJS.Timeout | undefined;
   try {
     return await Promise.race([
-      resolveOpenAiCodexAccessToken(paths),
+      resolveOpenAiCodexModelAuth(paths),
       new Promise<never>((_, reject) => {
         timer = setTimeout(() => {
           reject(
@@ -212,6 +215,23 @@ export async function resolveOpenAiCodexAccessTokenForStartup(
   } finally {
     if (timer) clearTimeout(timer);
   }
+}
+
+function providerRegistrationFromModelAuth(
+  auth: ModelAuth | undefined,
+): ProviderRegistration {
+  const headers = auth?.headers
+    ? Object.fromEntries(
+        Object.entries(auth.headers).filter(
+          (entry): entry is [string, string] => entry[1] !== null,
+        ),
+      )
+    : undefined;
+  return {
+    apiKey: auth?.apiKey ?? '',
+    ...(auth?.baseUrl ? { baseUrl: auth.baseUrl } : {}),
+    ...(headers && Object.keys(headers).length > 0 ? { headers } : {}),
+  };
 }
 
 export function resolveStaticRoot(env = process.env) {

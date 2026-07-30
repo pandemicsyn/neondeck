@@ -401,10 +401,12 @@ export async function configureProviderSecret(
             openExternalUrl(info.verificationUri);
             spin.start('Waiting for ChatGPT authorization');
           },
-          onPrompt: (message) =>
+          onPrompt: (message, options) =>
             promptText({
               message,
-              placeholder: 'Paste the authorization code',
+              placeholder:
+                options.placeholder ?? 'Paste the authorization code',
+              signal: options.signal,
             }),
           onProgress(message) {
             spin.message(message);
