@@ -13,6 +13,7 @@ import {
   vi,
 } from 'vitest';
 import {
+  approvePrAutopilotChange,
   completeAutopilotWatchIfTerminal,
   configurePrAutopilot,
   controlPrAutopilot,
@@ -21,11 +22,12 @@ import {
   runAutopilotWatchEvent,
   settleAutopilotOwnerObservation,
 } from './modules/autopilot';
+import { reviewRevisionKey } from '../shared/review-source';
 import { safePushAutopilotOwner } from './modules/autopilot/owner/safe-push';
 import { recordOwnerOutcomeQuietly } from './modules/autopilot/owner/settlement-learning';
 import { buildAutopilotOwnerToolRegistry } from './modules/autopilot/owner/tools';
 import { postGitHubPrComment } from './modules/pr-events';
-import { pushInteractiveRepo } from './repo-edit';
+import { pushInteractiveRepo, readRepoDiff } from './repo-edit';
 import {
   bindWatchAutopilotOwner,
   claimWatchAutopilotTurn,
@@ -1232,14 +1234,55 @@ describe('minimal Autopilot watch loop', () => {
       ok: true,
       watch: { autopilotStatus: 'waiting' },
     });
-    await messagePrAutopilotOwner(
+    await expect(
+      approvePrAutopilotChange(
+        {
+          id: 'pandemicsyn/neondeck#123',
+          expectedRevisionKey: 'worktree-diff:stale:revision',
+        },
+        paths,
+        { dispatchOwner: humanDispatch as never },
+      ),
+    ).resolves.toMatchObject({
+      ok: false,
+      requires: ['currentReviewedDiff'],
+    });
+    expect(readWatch(paths, 'pandemicsyn/neondeck#123')).toMatchObject({
+      autopilotStatus: 'waiting',
+    });
+    const reviewedWorktree = await readManagedWorktree(
+      worktree.id,
+      'neondeck',
+      paths,
+    );
+    const reviewedDiff = await readRepoDiff(
       {
-        id: 'pandemicsyn/neondeck#123',
-        message: 'approved, push the held commit',
+        repoId: 'neondeck',
+        worktreeId: worktree.id,
+        base: reviewedWorktree.headSha ?? undefined,
+        includePatch: false,
       },
       paths,
-      humanDispatch as never,
     );
+    const reviewedRevisionKey = reviewRevisionKey(reviewedDiff.revision!);
+    expect(reviewedRevisionKey).toBeTruthy();
+    await expect(
+      approvePrAutopilotChange(
+        {
+          id: 'pandemicsyn/neondeck#123',
+          expectedRevisionKey: reviewedRevisionKey!,
+        },
+        paths,
+        { dispatchOwner: humanDispatch as never },
+      ),
+    ).resolves.toMatchObject({
+      ok: true,
+      action: 'autopilot_change_approve',
+      dispatchId: 'human-dispatch',
+    });
+    expect(
+      readPendingAutopilotTurn(paths.home, instanceId)?.approvedRevisionKey,
+    ).toBe(reviewedRevisionKey);
     const pushInteractive = vi.fn<typeof pushInteractiveRepo>(
       async (input, _ownerPaths, ownerDependencies = {}) =>
         pushInteractiveRepo(input, paths, {

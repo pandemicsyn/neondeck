@@ -21,6 +21,7 @@ import type {
 import { modeSchema } from '../autopilot-policy';
 import { completeAutopilotWatchIfTerminal } from './owner/lifecycle';
 import { gitCurrentSha, gitStatus } from '../../repo-edit/git';
+import { readRepoDiff } from '../../repo-edit';
 import { readManagedWorktree } from '../worktrees';
 import {
   clearPendingAutopilotTurnIfMatches,
@@ -55,6 +56,12 @@ export const prAutopilotOwnerMessageInputSchema = v.object({
   id: v.optional(nonEmptyString),
   ref: v.optional(nonEmptyString),
   message: nonEmptyString,
+});
+
+export const prAutopilotApprovalInputSchema = v.object({
+  id: v.optional(nonEmptyString),
+  ref: v.optional(nonEmptyString),
+  expectedRevisionKey: nonEmptyString,
 });
 
 export const prAutopilotOutputSchema = v.looseObject({
@@ -293,11 +300,117 @@ export async function messagePrAutopilotOwner(
 ) {
   const parsed = v.safeParse(prAutopilotOwnerMessageInputSchema, input);
   if (!parsed.success) return invalid('autopilot_owner_message', parsed.issues);
+  return dispatchPrAutopilotOwnerTurn(
+    parsed.output,
+    paths,
+    dispatchOwner,
+    'autopilot_owner_message',
+  );
+}
+
+export async function approvePrAutopilotChange(
+  input: v.InferInput<typeof prAutopilotApprovalInputSchema>,
+  paths: RuntimePaths = runtimePaths(),
+  dependencies: {
+    dispatchOwner?: typeof dispatch;
+    readDiff?: typeof readRepoDiff;
+    readWorktree?: typeof readManagedWorktree;
+    status?: typeof gitStatus;
+  } = {},
+) {
+  const parsed = v.safeParse(prAutopilotApprovalInputSchema, input);
+  if (!parsed.success) {
+    return invalid('autopilot_change_approve', parsed.issues);
+  }
   const resolved = await resolveWatchId(
     parsed.output,
     paths,
-    'autopilot_owner_message',
+    'autopilot_change_approve',
   );
+  if (!resolved.ok) return resolved.result;
+  const watch = readWatch(paths, resolved.id);
+  if (
+    !watch ||
+    !watch.ownerInstanceId ||
+    !watch.worktreeId ||
+    watch.autopilotMode !== 'autofix-with-approval' ||
+    watch.autopilotStatus !== 'waiting'
+  ) {
+    return failure(
+      'autopilot_change_approve',
+      `Watch "${resolved.id}" does not have a prepared approval-mode change waiting for review.`,
+    );
+  }
+  try {
+    const worktree = await (dependencies.readWorktree ?? readManagedWorktree)(
+      watch.worktreeId,
+      watch.repoId,
+      paths,
+    );
+    const status = await (dependencies.status ?? gitStatus)(worktree.localPath);
+    if (!status.clean) {
+      return reviewRequired(
+        'The managed worktree has uncommitted changes. Refresh and review the current diff before approving.',
+      );
+    }
+    if (!worktree.headSha) {
+      return reviewRequired(
+        'The managed worktree has no stable base revision to review.',
+      );
+    }
+    const diff = await (dependencies.readDiff ?? readRepoDiff)(
+      {
+        repoId: watch.repoId,
+        worktreeId: watch.worktreeId,
+        base: worktree.headSha,
+        includePatch: false,
+        expectedRevisionKey: parsed.output.expectedRevisionKey,
+      },
+      paths,
+    );
+    if (!diff.ok || !diff.files?.length) {
+      return reviewRequired(
+        diff.ok
+          ? 'The managed worktree has no current changes to approve.'
+          : 'The reviewed diff is stale or unavailable. Refresh it before approving.',
+      );
+    }
+  } catch (error) {
+    return reviewRequired(
+      `The reviewed diff could not be verified: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+  return dispatchPrAutopilotOwnerTurn(
+    {
+      id: resolved.id,
+      message: `The human approved reviewed revision ${parsed.output.expectedRevisionKey}. Push only that exact held revision to the linked pull request branch.`,
+    },
+    paths,
+    dependencies.dispatchOwner ?? dispatch,
+    'autopilot_change_approve',
+    parsed.output.expectedRevisionKey,
+  );
+
+  function reviewRequired(message: string) {
+    return {
+      ...failure('autopilot_change_approve', message),
+      requires: ['currentReviewedDiff'],
+    };
+  }
+}
+
+async function dispatchPrAutopilotOwnerTurn(
+  input: {
+    id?: string;
+    ref?: string;
+    message: string;
+  },
+  paths: RuntimePaths,
+  dispatchOwner: typeof dispatch,
+  action: 'autopilot_owner_message' | 'autopilot_change_approve',
+  approvedRevisionKey?: string,
+) {
+  const resolved = await resolveWatchId(input, paths, action);
   if (!resolved.ok) return resolved.result;
   const watch = readWatch(paths, resolved.id);
   if (
@@ -307,7 +420,7 @@ export async function messagePrAutopilotOwner(
     watch.autopilotStatus !== 'waiting'
   ) {
     return failure(
-      'autopilot_owner_message',
+      action,
       `Watch "${resolved.id}" is not an approval-mode owner waiting for a direct human message.`,
     );
   }
@@ -317,7 +430,7 @@ export async function messagePrAutopilotOwner(
   });
   if (!claimed) {
     return failure(
-      'autopilot_owner_message',
+      action,
       `Watch "${watch.id}" changed before the human turn could be claimed.`,
     );
   }
@@ -327,13 +440,14 @@ export async function messagePrAutopilotOwner(
     undefined,
     watch.autopilotMode,
     'direct-human',
+    approvedRevisionKey,
   );
   let receipt;
   try {
     receipt = await dispatchOwner({
       agent: 'pr-autopilot-owner',
       id: watch.ownerInstanceId,
-      input: parsed.output.message,
+      input: input.message,
     });
   } catch (error) {
     clearPendingAutopilotTurnIfMatches(
@@ -346,7 +460,7 @@ export async function messagePrAutopilotOwner(
       to: 'blocked',
     });
     return failure(
-      'autopilot_owner_message',
+      action,
       `The human owner turn could not be dispatched: ${error instanceof Error ? error.message : String(error)}`,
     );
   }
@@ -358,7 +472,7 @@ export async function messagePrAutopilotOwner(
   );
   return {
     ok: true,
-    action: 'autopilot_owner_message',
+    action,
     changed: true,
     message: `Sent the human instruction to continuing owner ${watch.ownerInstanceId}.`,
     watch: claimed,

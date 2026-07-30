@@ -2055,6 +2055,15 @@ export const entries: SafetyPolicyEntry[] = [
     'Relays one explicit human instruction to an approval-mode owner waiting with a held commit.',
   ),
   route(
+    '/api/watches/:id/autopilot/approve',
+    'Approve watched-PR change API',
+    {
+      ...safeMutation,
+      auditTarget: 'pr_watches/Flue agent conversation/worktrees',
+    },
+    'Approves one exact, nonempty reviewed worktree revision and relays revision-bound push authority to its owner.',
+  ),
+  route(
     '/api/prepared-diffs',
     'Prepared diffs API',
     readOnly,

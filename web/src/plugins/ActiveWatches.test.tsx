@@ -12,6 +12,22 @@ const flue = vi.hoisted(() => ({
   useFlueAgent: vi.fn<(input: { name: string; id?: string }) => void>(),
 }));
 const api = vi.hoisted(() => ({
+  approvePrAutopilotChange: vi.fn<
+    (
+      id: string,
+      expectedRevisionKey: string,
+    ) => Promise<{
+      ok: boolean;
+      action: string;
+      changed: boolean;
+      message: string;
+    }>
+  >(async () => ({
+    ok: true,
+    action: 'autopilot_change_approve',
+    changed: true,
+    message: 'Approved the reviewed change.',
+  })),
   messagePrAutopilotOwner: vi.fn<
     (
       id: string,
@@ -29,10 +45,28 @@ const api = vi.hoisted(() => ({
     message: 'Sent the human instruction.',
   })),
 }));
+const diffViewer = vi.hoisted(() => ({
+  onReviewStateChange: undefined as
+    | ((state: {
+        status: 'loading' | 'unavailable' | 'empty' | 'reviewable';
+        revisionKey: string | null;
+      }) => void)
+    | undefined,
+}));
 
 vi.mock('../api', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../api')>()),
+  approvePrAutopilotChange: api.approvePrAutopilotChange,
   messagePrAutopilotOwner: api.messagePrAutopilotOwner,
+}));
+
+vi.mock('../features/diff-viewer/surfaces', () => ({
+  WorktreeDiffReview: (props: {
+    onReviewStateChange?: typeof diffViewer.onReviewStateChange;
+  }) => {
+    diffViewer.onReviewStateChange = props.onReviewStateChange;
+    return <div>Prepared diff</div>;
+  },
 }));
 
 vi.mock('@flue/react', () => ({
@@ -74,7 +108,9 @@ describe('ActiveWatches owner conversation', () => {
     root = createRoot(container);
     flue.sendMessage.mockClear();
     flue.useFlueAgent.mockClear();
+    api.approvePrAutopilotChange.mockClear();
     api.messagePrAutopilotOwner.mockClear();
+    diffViewer.onReviewStateChange = undefined;
   });
 
   afterEach(() => {
@@ -177,6 +213,14 @@ describe('ActiveWatches owner conversation', () => {
     );
 
     act(() => buttonWithText(container, 'review diff').click());
+    expect(container.textContent).not.toContain('approve & push');
+
+    act(() =>
+      diffViewer.onReviewStateChange?.({
+        status: 'reviewable',
+        revisionKey: 'worktree-diff:base-sha:reviewed-revision',
+      }),
+    );
     expect(container.textContent).toContain(
       'Push authority and current-branch guards are checked again before delivery.',
     );
@@ -189,10 +233,44 @@ describe('ActiveWatches owner conversation', () => {
       buttonWithText(container, 'confirm approval').click(),
     );
 
-    expect(api.messagePrAutopilotOwner).toHaveBeenCalledWith(
+    expect(api.approvePrAutopilotChange).toHaveBeenCalledWith(
       'pandemicsyn/neondeck#172',
-      'I reviewed the prepared diff. Approved: push this held commit to the linked pull request branch.',
+      'worktree-diff:base-sha:reviewed-revision',
     );
+    expect(api.messagePrAutopilotOwner).not.toHaveBeenCalled();
+  });
+
+  it('withdraws approval when the loaded diff becomes empty or unavailable', () => {
+    const queryClient = new QueryClient({
+      defaultOptions: {
+        mutations: { retry: false },
+        queries: { retry: false },
+      },
+    });
+    act(() =>
+      root.render(
+        <QueryClientProvider client={queryClient}>
+          <WatchRow watch={watch()} />
+        </QueryClientProvider>,
+      ),
+    );
+
+    act(() => buttonWithText(container, 'review diff').click());
+    act(() =>
+      diffViewer.onReviewStateChange?.({
+        status: 'reviewable',
+        revisionKey: 'worktree-diff:base-sha:reviewed-revision',
+      }),
+    );
+    expect(container.textContent).toContain('approve & push');
+
+    act(() =>
+      diffViewer.onReviewStateChange?.({
+        status: 'empty',
+        revisionKey: null,
+      }),
+    );
+    expect(container.textContent).not.toContain('approve & push');
   });
 });
 

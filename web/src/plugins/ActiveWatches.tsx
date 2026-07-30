@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
 import {
+  approvePrAutopilotChange,
   getPrWatches,
   configurePrAutopilot,
   controlPrAutopilot,
@@ -17,7 +18,10 @@ import {
   prWatchAttentionReason,
 } from '../lib/watch-status';
 import type { DisplayPlugin } from '../types';
-import { WorktreeDiffReview } from '../features/diff-viewer/surfaces';
+import {
+  WorktreeDiffReview,
+  type WorktreeDiffReviewState,
+} from '../features/diff-viewer/surfaces';
 import { parsePositiveIntegerConfig } from './config';
 
 type ActiveWatchesConfig = {
@@ -100,6 +104,9 @@ export function WatchRow({ watch }: { watch: PrWatch }) {
   const [reviewingDiff, setReviewingDiff] = useState(false);
   const [reviewingOwner, setReviewingOwner] = useState(false);
   const [confirmingApproval, setConfirmingApproval] = useState(false);
+  const [reviewedRevisionKey, setReviewedRevisionKey] = useState<string | null>(
+    null,
+  );
   const queryClient = useQueryClient();
   const stopMutation = useMutation({
     mutationFn: () => controlPrAutopilot(watch.id, 'stop'),
@@ -169,10 +176,43 @@ export function WatchRow({ watch }: { watch: PrWatch }) {
       });
     },
   });
+  const approvalMutation = useMutation({
+    mutationFn: (expectedRevisionKey: string) =>
+      approvePrAutopilotChange(watch.id, expectedRevisionKey),
+    onSuccess() {
+      setConfirmingApproval(false);
+      setReviewingOwner(true);
+      void queryClient.invalidateQueries({ queryKey: queryKeys.prWatches });
+      void queryClient.invalidateQueries({
+        queryKey: queryKeys.autopilotState,
+      });
+    },
+    onError() {
+      setConfirmingApproval(false);
+      setReviewedRevisionKey(null);
+      void queryClient.invalidateQueries({
+        queryKey: ['diff-viewer', 'repo-diff'],
+      });
+    },
+  });
+  const handleDiffReviewState = useCallback(
+    (state: WorktreeDiffReviewState) => {
+      setConfirmingApproval(false);
+      setReviewedRevisionKey(
+        state.status === 'reviewable' ? state.revisionKey : null,
+      );
+    },
+    [],
+  );
   const approvalAvailable =
     watch.autopilotMode === 'autofix-with-approval' &&
     watch.autopilotStatus === 'waiting' &&
-    Boolean(watch.ownerInstanceId && watch.worktreeId && watch.worktreeHeadSha);
+    Boolean(
+      watch.ownerInstanceId &&
+      watch.worktreeId &&
+      watch.worktreeHeadSha &&
+      reviewedRevisionKey,
+    );
   return (
     <article className="border border-line bg-soft px-2.5 py-2">
       <div className="flex items-start justify-between gap-2">
@@ -339,7 +379,11 @@ export function WatchRow({ watch }: { watch: PrWatch }) {
           {watch.worktreeId && watch.worktreeHeadSha ? (
             <Button
               className="min-h-[28px] border-primary bg-transparent px-2 py-1 text-[10px] text-primary"
-              onClick={() => setReviewingDiff((current) => !current)}
+              onClick={() => {
+                setReviewedRevisionKey(null);
+                setConfirmingApproval(false);
+                setReviewingDiff((current) => !current);
+              }}
               type="button"
             >
               {reviewingDiff ? 'hide diff' : 'review diff'}
@@ -391,6 +435,7 @@ export function WatchRow({ watch }: { watch: PrWatch }) {
             <WorktreeDiffReview
               base={watch.worktreeHeadSha}
               detail={`${watch.autopilotMode} · ${watch.autopilotStatus}`}
+              onReviewStateChange={handleDiffReviewState}
               repoId={watch.repoId}
               title={`${watch.repoFullName}#${watch.prNumber} Autopilot change`}
               worktreeId={watch.worktreeId}
@@ -406,7 +451,7 @@ export function WatchRow({ watch }: { watch: PrWatch }) {
                 </p>
                 <Button
                   className="min-h-[28px] shrink-0 border-primary bg-transparent px-2 py-1 font-mono text-[10px] text-primary"
-                  disabled={ownerMessageMutation.isPending}
+                  disabled={approvalMutation.isPending}
                   onClick={() => setConfirmingApproval(true)}
                   type="button"
                 >
@@ -422,30 +467,30 @@ export function WatchRow({ watch }: { watch: PrWatch }) {
                   <div className="mt-1.5 flex gap-1.5">
                     <Button
                       className="min-h-[28px] border-primary bg-transparent px-2 py-1 text-[10px] text-primary"
-                      disabled={ownerMessageMutation.isPending}
+                      disabled={approvalMutation.isPending}
                       onClick={() =>
-                        ownerMessageMutation.mutate(
-                          'I reviewed the prepared diff. Approved: push this held commit to the linked pull request branch.',
-                        )
+                        reviewedRevisionKey
+                          ? approvalMutation.mutate(reviewedRevisionKey)
+                          : undefined
                       }
                       type="button"
                     >
-                      {ownerMessageMutation.isPending
+                      {approvalMutation.isPending
                         ? 'sending approval'
                         : 'confirm approval'}
                     </Button>
                     <Button
                       className="min-h-[28px] bg-transparent px-2 py-1 text-[10px] text-muted"
-                      disabled={ownerMessageMutation.isPending}
+                      disabled={approvalMutation.isPending}
                       onClick={() => setConfirmingApproval(false)}
                       type="button"
                     >
                       cancel
                     </Button>
                   </div>
-                  {ownerMessageMutation.error ? (
+                  {approvalMutation.error ? (
                     <p className="mt-1 text-accent">
-                      {queryErrorMessage(ownerMessageMutation.error)}
+                      {queryErrorMessage(approvalMutation.error)}
                     </p>
                   ) : null}
                 </div>

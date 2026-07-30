@@ -1,7 +1,11 @@
 import { defineTool, type ToolDefinition } from '@flue/runtime';
 import * as v from 'valibot';
 import type { RuntimePaths } from '../../../runtime-home';
-import { commitInteractiveRepo, pushInteractiveRepo } from '../../../repo-edit';
+import {
+  commitInteractiveRepo,
+  pushInteractiveRepo,
+  readRepoDiff,
+} from '../../../repo-edit';
 import { gitCurrentSha } from '../../../repo-edit/git';
 import { postGitHubPrComment } from '../../pr-events';
 import { readManagedWorktree, syncWorktree } from '../../worktrees';
@@ -140,7 +144,8 @@ export function buildAutopilotOwnerToolRegistry(input: {
             },
             paths,
             {
-              authorizePush: () => directHumanAuthorityCurrent(watch, paths),
+              authorizePush: () =>
+                directHumanPushAuthorityCurrent(watch, worktreeId, paths),
             },
           );
         },
@@ -229,6 +234,39 @@ function directHumanAuthorityCurrent(watch: PrWatch, paths: RuntimePaths) {
     current.autopilotStatus === 'working' &&
     pending?.source === 'direct-human'
   );
+}
+
+async function directHumanPushAuthorityCurrent(
+  watch: PrWatch,
+  worktreeId: string,
+  paths: RuntimePaths,
+) {
+  if (!directHumanAuthorityCurrent(watch, paths)) return false;
+  const pending = watch.ownerInstanceId
+    ? readPendingAutopilotTurn(paths.home, watch.ownerInstanceId)
+    : undefined;
+  if (!pending?.approvedRevisionKey) return true;
+  try {
+    const worktree = await readManagedWorktree(worktreeId, watch.repoId, paths);
+    if (!worktree.headSha) return false;
+    const diff = await readRepoDiff(
+      {
+        repoId: watch.repoId,
+        worktreeId,
+        base: worktree.headSha,
+        includePatch: false,
+        expectedRevisionKey: pending.approvedRevisionKey,
+      },
+      paths,
+    );
+    return (
+      diff.ok &&
+      Boolean(diff.files?.length) &&
+      directHumanAuthorityCurrent(watch, paths)
+    );
+  } catch {
+    return false;
+  }
 }
 
 function staleDirectHumanAuthority() {

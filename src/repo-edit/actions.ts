@@ -214,7 +214,7 @@ export async function pushInteractiveRepo(
     resolveContext?: typeof resolveInteractiveRepoContext;
     contextDependencies?: Parameters<typeof resolveInteractiveRepoContext>[2];
     pushGit?: typeof gitPushHead;
-    authorizePush?: () => boolean;
+    authorizePush?: () => boolean | Promise<boolean>;
   } = {},
 ) {
   await ensureRuntimeHome(paths);
@@ -317,7 +317,10 @@ export async function pushInteractiveRepo(
             database.close();
           }
         }
-        if (dependencies.authorizePush && !dependencies.authorizePush()) {
+        if (
+          dependencies.authorizePush &&
+          !(await dependencies.authorizePush())
+        ) {
           return requirementFailure(
             'repo_push',
             'Current authority no longer permits this push.',

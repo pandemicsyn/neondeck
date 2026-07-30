@@ -180,6 +180,10 @@ describe('app API safety routes', () => {
           id: '/api/watches/:id/autopilot/message',
           primitive: 'route',
         }),
+        expect.objectContaining({
+          id: '/api/watches/:id/autopilot/approve',
+          primitive: 'route',
+        }),
       ]),
     );
   });
