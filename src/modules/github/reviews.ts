@@ -1057,7 +1057,42 @@ export async function fetchPullRequestReviewComments(options: {
       `GitHub returned a comment outside submitted review ${options.reviewId}.`,
     );
   }
-  return comments.map(reviewThreadCommentFromApi);
+  const commentsWithExactAnchors = await Promise.all(
+    comments.map((comment) =>
+      comment.line == null || comment.side == null
+        ? fetchPullRequestReviewComment(options, comment.id)
+        : comment,
+    ),
+  );
+  return commentsWithExactAnchors.map(reviewThreadCommentFromApi);
+}
+
+async function fetchPullRequestReviewComment(
+  options: {
+    token: string;
+    owner: string;
+    repo: string;
+    reviewId: number;
+  },
+  commentId: number,
+) {
+  const response = await githubFetch(
+    options.token,
+    `https://api.github.com/repos/${encodePathSegment(options.owner)}/${encodePathSegment(options.repo)}/pulls/comments/${commentId}`,
+  );
+  const comment = v.parse(
+    githubPullRequestReviewCommentApiItemSchema,
+    await response.json(),
+  );
+  if (
+    comment.id !== commentId ||
+    comment.pull_request_review_id !== options.reviewId
+  ) {
+    throw new Error(
+      `GitHub returned comment ${comment.id} outside submitted review ${options.reviewId}.`,
+    );
+  }
+  return comment;
 }
 
 function reviewThreadCommentFromApi(
@@ -1076,9 +1111,12 @@ function reviewThreadCommentFromApi(
     url: comment.html_url ?? null,
     path: comment.path,
     side: comment.side ?? null,
-    line: comment.line ?? null,
-    startLine: comment.start_line ?? null,
-    startSide: comment.start_side ?? null,
+    line: comment.line ?? comment.original_line ?? null,
+    startLine: comment.start_line ?? comment.original_start_line ?? null,
+    startSide:
+      comment.start_line != null || comment.original_start_line != null
+        ? (comment.start_side ?? null)
+        : null,
     originalLine: comment.original_line ?? null,
     diffHunk: comment.diff_hunk ?? null,
     reviewId: comment.pull_request_review_id,
