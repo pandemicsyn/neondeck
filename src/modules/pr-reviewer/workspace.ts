@@ -23,7 +23,7 @@ export type PrReviewerWorkspaceTarget = {
   baseRef?: string | null;
 };
 
-export const prReviewerWorkspaceToolCallLimit = 24;
+export const prReviewerWorkspaceToolCallLimit = 250;
 
 export type PrReviewerWorkspace = {
   available: true;
