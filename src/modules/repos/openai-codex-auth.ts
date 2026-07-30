@@ -1,5 +1,6 @@
 import {
   type AuthInteraction,
+  type ModelAuth,
   type OAuthAuth,
   type OAuthCredential,
   type OAuthCredentials,
@@ -17,7 +18,10 @@ export type OpenAiCodexLoginMethod = 'browser' | 'device-code';
 export type OpenAiCodexLoginCallbacks = {
   onAuth?: (info: { url: string; instructions?: string }) => void;
   onDeviceCode?: (info: { userCode: string; verificationUri: string }) => void;
-  onPrompt?: (message: string) => Promise<string>;
+  onPrompt?: (
+    message: string,
+    options: { placeholder?: string; signal?: AbortSignal },
+  ) => Promise<string>;
   onProgress?: (message: string) => void;
 };
 
@@ -77,7 +81,12 @@ function openAiCodexLoginInteraction(
       if (prompt.type === 'select') {
         return method === 'device-code' ? 'device_code' : 'browser';
       }
-      return callbacks.onPrompt?.(prompt.message) ?? '';
+      return (
+        callbacks.onPrompt?.(prompt.message, {
+          ...(prompt.placeholder ? { placeholder: prompt.placeholder } : {}),
+          ...(prompt.signal ? { signal: prompt.signal } : {}),
+        }) ?? ''
+      );
     },
     notify(event) {
       switch (event.type) {
@@ -106,12 +115,27 @@ function openAiCodexLoginInteraction(
 export async function resolveOpenAiCodexAccessToken(
   paths: RuntimePaths = runtimePaths(),
 ) {
+  return (await resolveOpenAiCodexModelAuth(paths))?.apiKey;
+}
+
+export async function resolveOpenAiCodexModelAuth(
+  paths: RuntimePaths = runtimePaths(),
+): Promise<ModelAuth | undefined> {
+  const credential = await resolveOpenAiCodexCredential(paths);
+  return credential
+    ? openAiCodexOAuth.toAuth(canonicalOAuthCredential(credential))
+    : undefined;
+}
+
+async function resolveOpenAiCodexCredential(
+  paths: RuntimePaths,
+): Promise<OAuthCredentials | undefined> {
   await ensureRuntimeHome(paths);
   await protectOpenAiCodexCredentialStore(paths);
   const credential = readCredential(paths);
   if (!credential) return undefined;
   if (credential.expires > Date.now() + refreshSkewMs) {
-    return credential.access;
+    return credential;
   }
 
   const key = paths.neondeckDatabase;
@@ -128,12 +152,12 @@ export async function resolveOpenAiCodexAccessToken(
       },
     );
   }
-  return (await pending).access;
+  return pending;
 }
 
 export function startOpenAiCodexTokenRefresh(
   paths: RuntimePaths,
-  onToken: (accessToken: string) => void,
+  onAuth: (auth: ModelAuth) => void,
 ) {
   const key = paths.neondeckDatabase;
   const existing = refreshTimers.get(key);
@@ -152,9 +176,9 @@ export function startOpenAiCodexTokenRefresh(
         ),
       );
     const timer = setTimeout(() => {
-      void resolveOpenAiCodexAccessToken(paths)
-        .then((token) => {
-          if (token) onToken(token);
+      void resolveOpenAiCodexModelAuth(paths)
+        .then((auth) => {
+          if (auth) onAuth(auth);
           schedule();
         })
         .catch((error) => {

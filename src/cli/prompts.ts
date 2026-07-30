@@ -61,7 +61,12 @@ export function requiredText(value: string | undefined) {
 
 export async function promptText(options: Parameters<typeof text>[0]) {
   const result = await text(options);
-  if (isCancel(result)) abort();
+  if (isCancel(result)) {
+    if (options.signal?.aborted) {
+      throw new Error('Prompt cancelled because authorization completed.');
+    }
+    abort();
+  }
   return String(result);
 }
 
