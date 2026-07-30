@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.0.0-beta.25
+
+### Patch Changes
+
+- [#225](https://github.com/pandemicsyn/neondeck/pull/225) [`a0498d4`](https://github.com/pandemicsyn/neondeck/commit/a0498d4e3dfa6f08e25fabfeecc7873427b9c7b3) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Raise the exact-revision PR review workspace limit so large pull requests can be inspected thoroughly.
+
 ## 1.0.0-beta.24
 
 ### Patch Changes
