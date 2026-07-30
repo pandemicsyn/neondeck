@@ -66,6 +66,7 @@ export function FlueChatSessionView({
   messageEnabled = true,
   messageLabel = 'Message Neon',
   onReferenceDraftConsumed,
+  onSendMessage,
   quickCommands,
   referenceDraft,
   session,
@@ -77,6 +78,7 @@ export function FlueChatSessionView({
   messageEnabled?: boolean;
   messageLabel?: string;
   onReferenceDraftConsumed?: () => void;
+  onSendMessage?: (message: string) => Promise<void>;
   quickCommands: FlueChatConfig['quickCommands'];
   referenceDraft?: string;
   session: FlueChatSession | undefined;
@@ -360,7 +362,7 @@ export function FlueChatSessionView({
 
     setSendingMessage(true);
     try {
-      await agent.sendMessage(message);
+      await (onSendMessage?.(message) ?? agent.sendMessage(message));
       setInput('');
     } catch (error) {
       setSubmitError(errorMessage(error));
@@ -473,7 +475,7 @@ export function FlueChatSessionView({
   }
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
+    <div className="flex h-full min-h-0 flex-1 flex-col">
       <div className="relative min-h-0 flex-1">
         <ScrollArea
           aria-label="Chat transcript"

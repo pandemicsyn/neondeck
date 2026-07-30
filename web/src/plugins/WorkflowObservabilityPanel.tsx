@@ -1,7 +1,9 @@
 import { useQuery } from '@tanstack/react-query';
 import { useMemo, useState } from 'react';
 import {
+  getPrWatches,
   getWorkflowObservability,
+  type PrWatch,
   type WorkflowEventRecord,
   type WorkflowObservability,
 } from '../api';
@@ -34,7 +36,13 @@ type WorkflowDrilldownItem = {
   runUrl: string | null;
   badge: string;
   isError: boolean;
+  contextLabel: string;
 };
+
+type WorkflowOwnerWatch = Pick<
+  PrWatch,
+  'ownerInstanceId' | 'repoFullName' | 'prNumber'
+>;
 
 const workflowObservabilityDefaultConfig = {
   eventLimit: 18,
@@ -68,6 +76,11 @@ export const WorkflowObservabilityPanelPlugin = {
     } = useQuery({
       queryKey: queryKeys.workflowObservability,
       queryFn: getWorkflowObservability,
+      refetchInterval: Math.max(5, config.refreshSeconds) * 1000,
+    });
+    const { data: watches } = useQuery({
+      queryKey: queryKeys.prWatches,
+      queryFn: getPrWatches,
       refetchInterval: Math.max(5, config.refreshSeconds) * 1000,
     });
 
@@ -105,6 +118,7 @@ export const WorkflowObservabilityPanelPlugin = {
         eventLimit={config.eventLimit}
         filter={filter}
         onFilterChange={setFilter}
+        watches={watches?.watches ?? []}
         workflows={workflows}
       />
     );
@@ -115,16 +129,19 @@ function WorkflowObservabilityView({
   eventLimit,
   filter,
   onFilterChange,
+  watches,
   workflows,
 }: {
   eventLimit: number;
   filter: WorkflowFilter;
   onFilterChange: (filter: WorkflowFilter) => void;
+  watches: PrWatch[];
   workflows: WorkflowObservability;
 }) {
   const items = useMemo(
-    () => workflowDrilldownItems(workflows, filter).slice(0, eventLimit),
-    [eventLimit, filter, workflows],
+    () =>
+      workflowDrilldownItems(workflows, filter, watches).slice(0, eventLimit),
+    [eventLimit, filter, watches, workflows],
   );
   const counts = workflowCounts(workflows);
 
@@ -194,6 +211,12 @@ function WorkflowDrilldownRow({ item }: { item: WorkflowDrilldownItem }) {
           <p className="truncate font-mono text-[11px] text-ink">
             {item.title}
           </p>
+          <p
+            className="mt-0.5 truncate font-mono text-[10px] text-primary"
+            title={item.contextLabel}
+          >
+            <span className="text-muted">context</span> · {item.contextLabel}
+          </p>
           <p className="mt-0.5 line-clamp-2 text-[10.5px] leading-4 text-muted">
             {item.message}
           </p>
@@ -232,9 +255,15 @@ function WorkflowDrilldownRow({ item }: { item: WorkflowDrilldownItem }) {
 export function workflowDrilldownItems(
   workflows: WorkflowObservability,
   filter: WorkflowFilter,
+  watches: WorkflowOwnerWatch[] = [],
 ): WorkflowDrilldownItem[] {
   const items: WorkflowDrilldownItem[] = [];
   const seen = new Set<number>();
+  const watchesByOwner = new Map(
+    watches.flatMap((watch) =>
+      watch.ownerInstanceId ? [[watch.ownerInstanceId, watch] as const] : [],
+    ),
+  );
 
   if (filter === 'all' || filter === 'active') {
     for (const run of workflows.activeRuns) {
@@ -248,26 +277,33 @@ export function workflowDrilldownItems(
         runUrl: run.runUrl,
         badge: `${run.eventCount} events`,
         isError: false,
+        contextLabel: `workflow · ${run.workflow}`,
       });
     }
   }
 
   if (filter === 'all' || filter === 'failed') {
-    addEvents(items, seen, workflows.recentFailures, 'failed');
+    addEvents(items, seen, workflows.recentFailures, 'failed', watchesByOwner);
   }
 
   if (filter === 'all' || filter === 'progress') {
-    addEvents(items, seen, workflows.recentData, 'progress');
+    addEvents(items, seen, workflows.recentData, 'progress', watchesByOwner);
   }
 
   if (filter === 'all' || filter === 'activity') {
-    addEvents(items, seen, workflows.recentLogs, 'activity');
-    addEvents(items, seen, workflows.recentTools, 'activity');
-    addEvents(items, seen, workflows.recentOperations, 'activity');
+    addEvents(items, seen, workflows.recentLogs, 'activity', watchesByOwner);
+    addEvents(items, seen, workflows.recentTools, 'activity', watchesByOwner);
+    addEvents(
+      items,
+      seen,
+      workflows.recentOperations,
+      'activity',
+      watchesByOwner,
+    );
   }
 
   if (filter === 'all') {
-    addEvents(items, seen, workflows.recentEvents, 'event');
+    addEvents(items, seen, workflows.recentEvents, 'event', watchesByOwner);
   }
 
   return items.sort(
@@ -280,17 +316,19 @@ function addEvents(
   seen: Set<number>,
   events: WorkflowEventRecord[],
   kind: WorkflowDrilldownItem['kind'],
+  watchesByOwner: ReadonlyMap<string, WorkflowOwnerWatch>,
 ) {
   for (const event of events) {
     if (seen.has(event.id)) continue;
     seen.add(event.id);
-    items.push(eventItem(event, kind));
+    items.push(eventItem(event, kind, watchesByOwner));
   }
 }
 
 function eventItem(
   event: WorkflowEventRecord,
   kind: WorkflowDrilldownItem['kind'],
+  watchesByOwner: ReadonlyMap<string, WorkflowOwnerWatch>,
 ): WorkflowDrilldownItem {
   return {
     id: `${kind}:${event.id}`,
@@ -306,7 +344,33 @@ function eventItem(
         ? 'failed'
         : (event.level ?? event.operationKind ?? event.eventType),
     isError: event.isError || kind === 'failed',
+    contextLabel: workflowEventContext(event, watchesByOwner),
   };
+}
+
+function workflowEventContext(
+  event: WorkflowEventRecord,
+  watchesByOwner: ReadonlyMap<string, WorkflowOwnerWatch>,
+) {
+  const watch = event.instanceId
+    ? watchesByOwner.get(event.instanceId)
+    : undefined;
+  if (watch) {
+    return `${watch.repoFullName}#${watch.prNumber} · PR owner`;
+  }
+  if (event.agentName) {
+    return event.instanceId
+      ? `${agentLabel(event.agentName)} · ${event.instanceId}`
+      : agentLabel(event.agentName);
+  }
+  if (event.workflow) return `workflow · ${event.workflow}`;
+  return event.runId ? 'workflow run' : 'local runtime';
+}
+
+function agentLabel(agentName: string) {
+  if (agentName === 'pr-autopilot-owner') return 'PR owner';
+  if (agentName === 'display-assistant') return 'Neon chat';
+  return agentName;
 }
 
 function workflowCounts(workflows: WorkflowObservability) {

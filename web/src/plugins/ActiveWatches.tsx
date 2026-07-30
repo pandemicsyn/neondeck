@@ -4,6 +4,7 @@ import {
   getPrWatches,
   configurePrAutopilot,
   controlPrAutopilot,
+  messagePrAutopilotOwner,
   type PrWatch,
 } from '../api';
 import { Badge, Button, ScrollArea } from '../components/ui';
@@ -98,6 +99,7 @@ export function WatchRow({ watch }: { watch: PrWatch }) {
   >(null);
   const [reviewingDiff, setReviewingDiff] = useState(false);
   const [reviewingOwner, setReviewingOwner] = useState(false);
+  const [confirmingApproval, setConfirmingApproval] = useState(false);
   const queryClient = useQueryClient();
   const stopMutation = useMutation({
     mutationFn: () => controlPrAutopilot(watch.id, 'stop'),
@@ -156,6 +158,21 @@ export function WatchRow({ watch }: { watch: PrWatch }) {
       void queryClient.invalidateQueries({ queryKey: queryKeys.prWatches });
     },
   });
+  const ownerMessageMutation = useMutation({
+    mutationFn: (message: string) => messagePrAutopilotOwner(watch.id, message),
+    onSuccess() {
+      setConfirmingApproval(false);
+      setReviewingOwner(true);
+      void queryClient.invalidateQueries({ queryKey: queryKeys.prWatches });
+      void queryClient.invalidateQueries({
+        queryKey: queryKeys.autopilotState,
+      });
+    },
+  });
+  const approvalAvailable =
+    watch.autopilotMode === 'autofix-with-approval' &&
+    watch.autopilotStatus === 'waiting' &&
+    Boolean(watch.ownerInstanceId && watch.worktreeId && watch.worktreeHeadSha);
   return (
     <article className="border border-line bg-soft px-2.5 py-2">
       <div className="flex items-start justify-between gap-2">
@@ -369,18 +386,76 @@ export function WatchRow({ watch }: { watch: PrWatch }) {
         </div>
       ) : null}
       {reviewingDiff && watch.worktreeId && watch.worktreeHeadSha ? (
-        <div className="mt-2 max-h-[32rem] overflow-auto border border-line bg-field">
-          <WorktreeDiffReview
-            base={watch.worktreeHeadSha}
-            detail={`${watch.autopilotMode} · ${watch.autopilotStatus}`}
-            repoId={watch.repoId}
-            title={`${watch.repoFullName}#${watch.prNumber} Autopilot change`}
-            worktreeId={watch.worktreeId}
-          />
+        <div className="mt-2 border border-line bg-field">
+          <div className="max-h-[28rem] overflow-auto">
+            <WorktreeDiffReview
+              base={watch.worktreeHeadSha}
+              detail={`${watch.autopilotMode} · ${watch.autopilotStatus}`}
+              repoId={watch.repoId}
+              title={`${watch.repoFullName}#${watch.prNumber} Autopilot change`}
+              worktreeId={watch.worktreeId}
+            />
+          </div>
+          {approvalAvailable ? (
+            <div className="border-t border-line bg-panel px-2.5 py-2">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <p className="max-w-[62ch] text-[10.5px] leading-4 text-muted">
+                  Approving sends a direct human instruction to this PR owner.
+                  Push authority and current-branch guards are checked again
+                  before delivery.
+                </p>
+                <Button
+                  className="min-h-[28px] shrink-0 border-primary bg-transparent px-2 py-1 font-mono text-[10px] text-primary"
+                  disabled={ownerMessageMutation.isPending}
+                  onClick={() => setConfirmingApproval(true)}
+                  type="button"
+                >
+                  approve &amp; push
+                </Button>
+              </div>
+              {confirmingApproval ? (
+                <div className="mt-2 border border-primary/60 bg-field px-2 py-1.5 font-mono text-[10px] text-muted">
+                  <p className="text-primary">
+                    Approve this prepared commit and ask the owner to push it to
+                    the linked PR branch?
+                  </p>
+                  <div className="mt-1.5 flex gap-1.5">
+                    <Button
+                      className="min-h-[28px] border-primary bg-transparent px-2 py-1 text-[10px] text-primary"
+                      disabled={ownerMessageMutation.isPending}
+                      onClick={() =>
+                        ownerMessageMutation.mutate(
+                          'I reviewed the prepared diff. Approved: push this held commit to the linked pull request branch.',
+                        )
+                      }
+                      type="button"
+                    >
+                      {ownerMessageMutation.isPending
+                        ? 'sending approval'
+                        : 'confirm approval'}
+                    </Button>
+                    <Button
+                      className="min-h-[28px] bg-transparent px-2 py-1 text-[10px] text-muted"
+                      disabled={ownerMessageMutation.isPending}
+                      onClick={() => setConfirmingApproval(false)}
+                      type="button"
+                    >
+                      cancel
+                    </Button>
+                  </div>
+                  {ownerMessageMutation.error ? (
+                    <p className="mt-1 text-accent">
+                      {queryErrorMessage(ownerMessageMutation.error)}
+                    </p>
+                  ) : null}
+                </div>
+              ) : null}
+            </div>
+          ) : null}
         </div>
       ) : null}
       {reviewingOwner && watch.ownerInstanceId ? (
-        <div className="mt-2 h-[28rem] min-h-0 overflow-hidden border border-line bg-field">
+        <div className="mt-2 flex h-[28rem] min-h-0 flex-col overflow-hidden border border-line bg-field">
           <FlueChatSessionView
             activeRecord={undefined}
             agentName="pr-autopilot-owner"
@@ -391,6 +466,9 @@ export function WatchRow({ watch }: { watch: PrWatch }) {
               watch.autopilotStatus === 'waiting'
             }
             messageLabel={`Message owner for ${watch.repoFullName} pull request ${watch.prNumber}`}
+            onSendMessage={async (message) => {
+              await ownerMessageMutation.mutateAsync(message);
+            }}
             quickCommands={[]}
             session={{
               id: watch.ownerInstanceId,

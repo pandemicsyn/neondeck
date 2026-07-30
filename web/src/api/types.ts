@@ -1404,6 +1404,8 @@ export type WorkflowEventRecord = {
   name: string | null;
   operationKind: string | null;
   operationId: string | null;
+  agentName: string | null;
+  instanceId: string | null;
   durationMs: number | null;
   isError: boolean;
   summary: unknown;

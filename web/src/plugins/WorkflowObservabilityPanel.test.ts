@@ -14,7 +14,14 @@ describe('workflow observability drilldown', () => {
       eventType: 'run_end',
       message: 'Workflow completed in 1.2s.',
     });
-    const log = event({ id: 3, eventType: 'log', message: 'called action' });
+    const log = event({
+      id: 3,
+      eventType: 'log',
+      message: 'called action',
+      workflow: null,
+      agentName: 'pr-autopilot-owner',
+      instanceId: 'pr-owner-42',
+    });
     const workflows: WorkflowObservability = {
       ok: true,
       action: 'workflow_observability_read',
@@ -38,7 +45,13 @@ describe('workflow observability drilldown', () => {
       fetchedAt: '2026-06-27T10:05:00.000Z',
     };
 
-    const all = workflowDrilldownItems(workflows, 'all');
+    const all = workflowDrilldownItems(workflows, 'all', [
+      {
+        ownerInstanceId: 'pr-owner-42',
+        repoFullName: 'owner/repo',
+        prNumber: 42,
+      },
+    ]);
     expect(all).toHaveLength(4);
     expect(all.map((item) => item.id)).toEqual([
       'active:run-active',
@@ -46,6 +59,12 @@ describe('workflow observability drilldown', () => {
       'progress:2',
       'failed:1',
     ]);
+    expect(all.find((item) => item.id === 'activity:3')?.contextLabel).toBe(
+      'owner/repo#42 · PR owner',
+    );
+    expect(all.find((item) => item.id === 'progress:2')?.contextLabel).toBe(
+      'workflow · command-run',
+    );
 
     const progressOnly = workflowDrilldownItems(workflows, 'progress');
     expect(progressOnly).toHaveLength(1);
@@ -67,6 +86,8 @@ function event(
     name: overrides.name ?? null,
     operationKind: overrides.operationKind ?? null,
     operationId: overrides.operationId ?? null,
+    agentName: overrides.agentName ?? null,
+    instanceId: overrides.instanceId ?? null,
     durationMs: overrides.durationMs ?? null,
     isError: overrides.isError ?? false,
     summary: overrides.summary ?? null,
