@@ -4,6 +4,7 @@ import type { PrWatch } from '../../watches';
 export type AutopilotOwnerTurnSource = 'watch-event' | 'direct-human';
 
 type PendingAutopilotTurn = {
+  approvedRevisionKey?: string;
   correlationId?: string;
   eventFingerprint?: string;
   learningMemoryAvailable: boolean;
@@ -28,8 +29,10 @@ export function registerPendingAutopilotTurn(
   eventFingerprint: string | undefined,
   mode: PrWatch['autopilotMode'],
   source: AutopilotOwnerTurnSource,
+  approvedRevisionKey?: string,
 ) {
   const pending = {
+    approvedRevisionKey,
     eventFingerprint,
     learningMemoryAvailable: false,
     learningMemoryLoaded: false,

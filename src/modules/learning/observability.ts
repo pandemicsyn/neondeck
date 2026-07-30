@@ -14,6 +14,8 @@ export type WorkflowEventRecord = {
   name: string | null;
   operationKind: string | null;
   operationId: string | null;
+  agentName: string | null;
+  instanceId: string | null;
   durationMs: number | null;
   isError: boolean;
   summary: JsonValue | null;
@@ -62,7 +64,11 @@ export async function recordFlueObservation(
 ) {
   if (!persistedEventTypes.has(event.type)) return;
   await ensureRuntimeHome(paths);
-  const summary = summarizeObservation(event);
+  const summarized = summarizeObservation(event);
+  const summary = {
+    ...summarized,
+    summary: addObservationContext(summarized.summary, event),
+  };
   const database = openDb(paths.neondeckDatabase);
 
   try {
@@ -119,8 +125,12 @@ export async function readWorkflowObservability(paths = runtimePaths()) {
     const recentEvents = database
       .prepare(
         `
-        SELECT *
+        SELECT
+          workflow_events.*,
+          workflow_run_observations.workflow AS observed_run_workflow
         FROM workflow_events
+        LEFT JOIN workflow_run_observations
+          ON workflow_run_observations.run_id = workflow_events.run_id
         ORDER BY created_at DESC, id DESC
         LIMIT 120;
       `,
@@ -342,10 +352,20 @@ function summarizeObservation(event: FlueObservation) {
 function readWorkflowEventRow(row: unknown): WorkflowEventRecord {
   const record = row as Record<string, unknown>;
   const runId = typeof record.run_id === 'string' ? record.run_id : null;
+  const summary =
+    typeof record.summary_json === 'string'
+      ? parseJson(record.summary_json)
+      : null;
+  const context = observationContext(summary);
   return {
     id: Number(record.id),
     runId,
-    workflow: typeof record.workflow === 'string' ? record.workflow : null,
+    workflow:
+      typeof record.workflow === 'string'
+        ? record.workflow
+        : typeof record.observed_run_workflow === 'string'
+          ? record.observed_run_workflow
+          : null,
     eventType: String(record.event_type),
     eventIndex:
       typeof record.event_index === 'number' ? record.event_index : null,
@@ -356,13 +376,12 @@ function readWorkflowEventRow(row: unknown): WorkflowEventRecord {
       typeof record.operation_kind === 'string' ? record.operation_kind : null,
     operationId:
       typeof record.operation_id === 'string' ? record.operation_id : null,
+    agentName: context.agentName,
+    instanceId: context.instanceId,
     durationMs:
       typeof record.duration_ms === 'number' ? record.duration_ms : null,
     isError: Boolean(record.is_error),
-    summary:
-      typeof record.summary_json === 'string'
-        ? parseJson(record.summary_json)
-        : null,
+    summary,
     createdAt: String(record.created_at),
     runUrl: runInspectionUrl(runId),
   };
@@ -514,6 +533,48 @@ function workflowName(event: FlueObservation) {
 function readString(event: FlueObservation, key: string) {
   const value = (event as unknown as Record<string, unknown>)[key];
   return typeof value === 'string' ? value : null;
+}
+
+function addObservationContext(
+  summary: unknown,
+  event: FlueObservation,
+): JsonValue {
+  const agentName = readString(event, 'agentName');
+  const instanceId = readString(event, 'instanceId');
+  const jsonSummary = summary as JsonValue;
+  if (!agentName && !instanceId) return jsonSummary;
+  const details =
+    jsonSummary &&
+    typeof jsonSummary === 'object' &&
+    !Array.isArray(jsonSummary)
+      ? jsonSummary
+      : { detail: jsonSummary };
+  return {
+    ...details,
+    context: {
+      agentName: boundedIdentifier(agentName),
+      instanceId: boundedIdentifier(instanceId),
+    },
+  };
+}
+
+function observationContext(summary: JsonValue | null) {
+  if (!summary || typeof summary !== 'object' || Array.isArray(summary)) {
+    return { agentName: null, instanceId: null };
+  }
+  const context = summary.context;
+  if (!context || typeof context !== 'object' || Array.isArray(context)) {
+    return { agentName: null, instanceId: null };
+  }
+  return {
+    agentName: typeof context.agentName === 'string' ? context.agentName : null,
+    instanceId:
+      typeof context.instanceId === 'string' ? context.instanceId : null,
+  };
+}
+
+function boundedIdentifier(value: string | null) {
+  return value ? value.slice(0, 200) : null;
 }
 
 function sanitizeRecord(value: unknown) {

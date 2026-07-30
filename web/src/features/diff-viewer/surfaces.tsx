@@ -640,18 +640,25 @@ export function RepoEditEventDiffReview({ event }: { event: RepoEditEvent }) {
   );
 }
 
+export type WorktreeDiffReviewState = {
+  status: 'loading' | 'unavailable' | 'empty' | 'reviewable';
+  revisionKey: string | null;
+};
+
 export function WorktreeDiffReview({
   repoId,
   worktreeId,
   base,
   title,
   detail,
+  onReviewStateChange,
 }: {
   repoId: string;
   worktreeId: string;
   base: string;
   title: string;
   detail?: string;
+  onReviewStateChange?: (state: WorktreeDiffReviewState) => void;
 }) {
   const [activePath, setActivePath] = useState<string | null>(null);
   const diffQuery = useRepoDiff({ repoId, worktreeId, base });
@@ -667,6 +674,23 @@ export function WorktreeDiffReview({
       reason: 'The managed worktree diff has not loaded.',
     },
   );
+  const reviewState = useMemo<WorktreeDiffReviewState>(() => {
+    if (diffQuery.isLoading) return { status: 'loading', revisionKey: null };
+    if (diffQuery.error || !diffQuery.data?.ok || !revisionKey) {
+      return { status: 'unavailable', revisionKey: null };
+    }
+    if (files.length === 0) return { status: 'empty', revisionKey: null };
+    return { status: 'reviewable', revisionKey };
+  }, [
+    diffQuery.data?.ok,
+    diffQuery.error,
+    diffQuery.isLoading,
+    files.length,
+    revisionKey,
+  ]);
+  useEffect(() => {
+    onReviewStateChange?.(reviewState);
+  }, [onReviewStateChange, reviewState]);
   const patchQuery = useRepoDiffFilePatch({
     repoId,
     worktreeId,
@@ -691,6 +715,13 @@ export function WorktreeDiffReview({
     return (
       <MiniEmpty
         label={`Autopilot diff unavailable: ${queryErrorMessage(diffQuery.error)}`}
+      />
+    );
+  }
+  if (!diffQuery.data?.ok) {
+    return (
+      <MiniEmpty
+        label={`Autopilot diff unavailable: ${diffQuery.data?.message ?? 'The current revision could not be loaded.'}`}
       />
     );
   }

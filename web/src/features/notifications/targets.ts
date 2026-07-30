@@ -13,6 +13,19 @@ export function resolveNotificationTarget(
       label: 'Open watches',
     };
   }
+  const watchId = readString(data.watchId);
+  if (watchId) {
+    return {
+      kind: 'plugin',
+      pluginId: 'active-watches',
+      label:
+        readString(data.commitSha) ||
+        readString(data.currentSha) ||
+        readString(data.worktreeId)
+          ? 'Review change'
+          : 'Open watch',
+    };
+  }
 
   const reviewUrl = readInternalPath(data.reviewUrl);
   if (reviewUrl) {

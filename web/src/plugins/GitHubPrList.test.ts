@@ -171,6 +171,8 @@ function workflowEvent(
     name: 'review-pr-for-human',
     operationKind: null,
     operationId: null,
+    agentName: null,
+    instanceId: null,
     durationMs: 120_000,
     isError: false,
     summary: null,

@@ -44,6 +44,8 @@ function event(
     name: overrides.name ?? null,
     operationKind: overrides.operationKind ?? null,
     operationId: overrides.operationId ?? null,
+    agentName: overrides.agentName ?? null,
+    instanceId: overrides.instanceId ?? null,
     durationMs: overrides.durationMs ?? null,
     isError: overrides.isError ?? false,
     summary: overrides.summary ?? null,

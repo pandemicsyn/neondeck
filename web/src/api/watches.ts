@@ -45,6 +45,16 @@ export async function messagePrAutopilotOwner(id: string, message: string) {
   );
 }
 
+export async function approvePrAutopilotChange(
+  id: string,
+  expectedRevisionKey: string,
+) {
+  return postJson<PrWatchMutationResponse>(
+    `/api/watches/${encodeURIComponent(id)}/autopilot/approve`,
+    { expectedRevisionKey },
+  );
+}
+
 export async function removePrWatch(id: string) {
   return postJson<PrWatchMutationResponse>(
     `/api/watches/${encodeURIComponent(id)}`,

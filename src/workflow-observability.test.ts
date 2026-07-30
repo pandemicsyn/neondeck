@@ -64,6 +64,19 @@ describe('workflow observability', () => {
       }),
       paths,
     );
+    await recordFlueObservation(
+      event({
+        type: 'operation',
+        eventIndex: 5,
+        agentName: 'pr-autopilot-owner',
+        instanceId: 'pr-owner-42',
+        operationId: 'op_owner_42',
+        operationKind: 'prompt',
+        isError: false,
+        durationMs: 900,
+      }),
+      paths,
+    );
 
     const snapshot = await readWorkflowObservability(paths);
 
@@ -71,6 +84,7 @@ describe('workflow observability', () => {
     expect(snapshot.recentData).toEqual([
       expect.objectContaining({
         eventType: 'run_end',
+        workflow: 'command-run',
         message: 'Workflow completed in 1.3s.',
         runUrl: '/workflow-run?runId=run_1',
       }),
@@ -78,13 +92,22 @@ describe('workflow observability', () => {
     expect(snapshot.recentLogs).toEqual([
       expect.objectContaining({
         eventType: 'log',
+        workflow: 'command-run',
         message: 'Neon command requested',
       }),
     ]);
     expect(snapshot.recentTools).toEqual([
       expect.objectContaining({
         eventType: 'tool',
+        workflow: 'command-run',
         name: 'neondeck_runtime_status_lookup',
+      }),
+    ]);
+    expect(snapshot.recentOperations).toEqual([
+      expect.objectContaining({
+        eventType: 'operation',
+        agentName: 'pr-autopilot-owner',
+        instanceId: 'pr-owner-42',
       }),
     ]);
     expect(snapshot.recentData[0]?.summary).toMatchObject({

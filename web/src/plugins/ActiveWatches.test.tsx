@@ -8,8 +8,65 @@ import type { PrWatch } from '../api';
 import { activePrWatches, WatchRow } from './ActiveWatches';
 
 const flue = vi.hoisted(() => ({
-  sendMessage: vi.fn(async () => undefined),
-  useFlueAgent: vi.fn(),
+  sendMessage: vi.fn<(message: string) => Promise<void>>(async () => undefined),
+  useFlueAgent: vi.fn<(input: { name: string; id?: string }) => void>(),
+}));
+const api = vi.hoisted(() => ({
+  approvePrAutopilotChange: vi.fn<
+    (
+      id: string,
+      expectedRevisionKey: string,
+    ) => Promise<{
+      ok: boolean;
+      action: string;
+      changed: boolean;
+      message: string;
+    }>
+  >(async () => ({
+    ok: true,
+    action: 'autopilot_change_approve',
+    changed: true,
+    message: 'Approved the reviewed change.',
+  })),
+  messagePrAutopilotOwner: vi.fn<
+    (
+      id: string,
+      message: string,
+    ) => Promise<{
+      ok: boolean;
+      action: string;
+      changed: boolean;
+      message: string;
+    }>
+  >(async () => ({
+    ok: true,
+    action: 'autopilot_owner_message',
+    changed: true,
+    message: 'Sent the human instruction.',
+  })),
+}));
+const diffViewer = vi.hoisted(() => ({
+  onReviewStateChange: undefined as
+    | ((state: {
+        status: 'loading' | 'unavailable' | 'empty' | 'reviewable';
+        revisionKey: string | null;
+      }) => void)
+    | undefined,
+}));
+
+vi.mock('../api', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../api')>()),
+  approvePrAutopilotChange: api.approvePrAutopilotChange,
+  messagePrAutopilotOwner: api.messagePrAutopilotOwner,
+}));
+
+vi.mock('../features/diff-viewer/surfaces', () => ({
+  WorktreeDiffReview: (props: {
+    onReviewStateChange?: typeof diffViewer.onReviewStateChange;
+  }) => {
+    diffViewer.onReviewStateChange = props.onReviewStateChange;
+    return <div>Prepared diff</div>;
+  },
 }));
 
 vi.mock('@flue/react', () => ({
@@ -31,7 +88,11 @@ vi.mock('@flue/react', () => ({
       status: 'idle',
     };
   },
-  useFlueClient: () => ({ workflows: { invoke: vi.fn() } }),
+  useFlueClient: () => ({
+    workflows: {
+      invoke: vi.fn<(...args: unknown[]) => Promise<unknown>>(),
+    },
+  }),
 }));
 
 describe('ActiveWatches owner conversation', () => {
@@ -47,6 +108,9 @@ describe('ActiveWatches owner conversation', () => {
     root = createRoot(container);
     flue.sendMessage.mockClear();
     flue.useFlueAgent.mockClear();
+    api.approvePrAutopilotChange.mockClear();
+    api.messagePrAutopilotOwner.mockClear();
+    diffViewer.onReviewStateChange = undefined;
   });
 
   afterEach(() => {
@@ -98,6 +162,12 @@ describe('ActiveWatches owner conversation', () => {
     });
     expect(container.textContent).toContain('pr-owner-exact-172');
     expect(container.textContent).toContain('Held change is ready.');
+    const transcript = container.querySelector(
+      '[aria-label="Chat transcript"]',
+    );
+    expect(transcript?.parentElement?.parentElement?.classList).toContain(
+      'h-full',
+    );
 
     const composer = container.querySelector(
       'textarea[aria-label="Message owner for pandemicsyn/neondeck pull request 172"]',
@@ -114,13 +184,93 @@ describe('ActiveWatches owner conversation', () => {
         new SubmitEvent('submit', { bubbles: true, cancelable: true }),
       ),
     );
-    expect(flue.sendMessage).toHaveBeenCalledWith('approved, push');
+    expect(api.messagePrAutopilotOwner).toHaveBeenCalledWith(
+      'pandemicsyn/neondeck#172',
+      'approved, push',
+    );
+    expect(flue.sendMessage).not.toHaveBeenCalled();
 
     function button(label: string) {
       return container.querySelector(
         `button[aria-label="${label}"]`,
       ) as HTMLButtonElement;
     }
+  });
+
+  it('puts an explicit guarded approval action after the prepared diff', async () => {
+    const queryClient = new QueryClient({
+      defaultOptions: {
+        mutations: { retry: false },
+        queries: { retry: false },
+      },
+    });
+    act(() =>
+      root.render(
+        <QueryClientProvider client={queryClient}>
+          <WatchRow watch={watch()} />
+        </QueryClientProvider>,
+      ),
+    );
+
+    act(() => buttonWithText(container, 'review diff').click());
+    expect(container.textContent).not.toContain('approve & push');
+
+    act(() =>
+      diffViewer.onReviewStateChange?.({
+        status: 'reviewable',
+        revisionKey: 'worktree-diff:base-sha:reviewed-revision',
+      }),
+    );
+    expect(container.textContent).toContain(
+      'Push authority and current-branch guards are checked again before delivery.',
+    );
+
+    act(() => buttonWithText(container, 'approve & push').click());
+    expect(container.textContent).toContain(
+      'Approve this prepared commit and ask the owner to push it to the linked PR branch?',
+    );
+    await act(async () =>
+      buttonWithText(container, 'confirm approval').click(),
+    );
+
+    expect(api.approvePrAutopilotChange).toHaveBeenCalledWith(
+      'pandemicsyn/neondeck#172',
+      'worktree-diff:base-sha:reviewed-revision',
+    );
+    expect(api.messagePrAutopilotOwner).not.toHaveBeenCalled();
+  });
+
+  it('withdraws approval when the loaded diff becomes empty or unavailable', () => {
+    const queryClient = new QueryClient({
+      defaultOptions: {
+        mutations: { retry: false },
+        queries: { retry: false },
+      },
+    });
+    act(() =>
+      root.render(
+        <QueryClientProvider client={queryClient}>
+          <WatchRow watch={watch()} />
+        </QueryClientProvider>,
+      ),
+    );
+
+    act(() => buttonWithText(container, 'review diff').click());
+    act(() =>
+      diffViewer.onReviewStateChange?.({
+        status: 'reviewable',
+        revisionKey: 'worktree-diff:base-sha:reviewed-revision',
+      }),
+    );
+    expect(container.textContent).toContain('approve & push');
+
+    act(() =>
+      diffViewer.onReviewStateChange?.({
+        status: 'empty',
+        revisionKey: null,
+      }),
+    );
+    expect(container.textContent).not.toContain('approve & push');
   });
 });
 
@@ -321,4 +471,12 @@ function watch(overrides: Partial<PrWatch> = {}): PrWatch {
     updatedAt: '2026-07-20T05:01:00.000Z',
     ...overrides,
   };
+}
+
+function buttonWithText(container: HTMLElement, text: string) {
+  const match = Array.from(container.querySelectorAll('button')).find(
+    (button) => button.textContent?.trim() === text,
+  );
+  if (!match) throw new Error(`Missing button "${text}".`);
+  return match;
 }

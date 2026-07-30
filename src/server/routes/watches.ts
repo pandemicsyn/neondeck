@@ -14,6 +14,7 @@ import {
 } from '../../modules/watches';
 import { safeJsonBody, safeJsonObject } from '../http';
 import {
+  approvePrAutopilotChange,
   configurePrAutopilot,
   controlPrAutopilot,
   messagePrAutopilotOwner,
@@ -69,6 +70,17 @@ export function createWatchRoutes(paths: RuntimePaths) {
       paths,
     );
     return c.json(result, result.ok ? 202 : 400);
+  });
+
+  routes.post('/watches/:id/autopilot/approve', async (c) => {
+    const result = await approvePrAutopilotChange(
+      {
+        ...(await safeJsonObject(c)),
+        id: c.req.param('id'),
+      } as Parameters<typeof approvePrAutopilotChange>[0],
+      paths,
+    );
+    return c.json(result, result.ok ? 202 : 409);
   });
 
   routes.get('/watches/events/watermarks', async (c) => {
