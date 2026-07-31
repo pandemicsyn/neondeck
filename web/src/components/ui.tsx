@@ -31,35 +31,37 @@ export function Badge({
   );
 }
 
-export function Button({
-  className,
-  ...props
-}: ButtonHTMLAttributes<HTMLButtonElement>) {
+export const Button = forwardRef<
+  HTMLButtonElement,
+  ButtonHTMLAttributes<HTMLButtonElement>
+>(function Button({ className, ...props }, ref) {
   return (
     <button
       className={cn(
         'inline-flex min-h-[28px] items-center justify-center border border-line bg-soft px-3 py-1.5 font-medium text-ink transition-colors hover:border-primary hover:text-primary focus:outline-none focus:ring-1 focus:ring-primary disabled:cursor-not-allowed disabled:opacity-45',
         className,
       )}
+      ref={ref}
       {...props}
     />
   );
-}
+});
 
-export function Textarea({
-  className,
-  ...props
-}: TextareaHTMLAttributes<HTMLTextAreaElement>) {
+export const Textarea = forwardRef<
+  HTMLTextAreaElement,
+  TextareaHTMLAttributes<HTMLTextAreaElement>
+>(function Textarea({ className, ...props }, ref) {
   return (
     <textarea
       className={cn(
         'min-h-0 resize-none border-0 bg-transparent text-ink outline-none placeholder:text-muted focus:outline-none',
         className,
       )}
+      ref={ref}
       {...props}
     />
   );
-}
+});
 
 export const ScrollArea = forwardRef<
   HTMLDivElement,

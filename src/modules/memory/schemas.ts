@@ -81,6 +81,7 @@ export const memoryLearnInputSchema = v.object({
   key: nonEmptyStringSchema,
   value: jsonValueSchema,
   repoId: v.optional(nonEmptyStringSchema),
+  expectedUpdatedAt: v.optional(nonEmptyStringSchema),
   reason: v.optional(v.string()),
   actor: v.optional(memoryActorSchema),
 });
@@ -108,6 +109,7 @@ export const memoryArchiveInputSchema = v.object({
   reason: v.optional(v.string()),
   actor: v.optional(memoryActorSchema),
   confirm: v.optional(v.boolean()),
+  expectedUpdatedAt: v.optional(nonEmptyStringSchema),
 });
 export const memoryMarkUsedInputSchema = v.object({
   ids: v.pipe(v.array(nonEmptyStringSchema), v.minLength(1)),

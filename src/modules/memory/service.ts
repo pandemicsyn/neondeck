@@ -1,4 +1,4 @@
-import { openDb } from '../../lib/sqlite.ts';
+import { openDb, withImmediateTransaction } from '../../lib/sqlite.ts';
 import { asJsonValue } from '../../lib/action-result';
 import { randomUUID } from 'node:crypto';
 import * as v from 'valibot';
@@ -27,6 +27,19 @@ import {
   recordMemoryEvent,
   resolveMemory,
 } from './store';
+
+function nextMemoryUpdatedAt(
+  previousUpdatedAt: string | undefined,
+  currentTime = new Date().toISOString(),
+) {
+  if (!previousUpdatedAt) return currentTime;
+  const previousTime = Date.parse(previousUpdatedAt);
+  const currentTimeMs = Date.parse(currentTime);
+  if (!Number.isFinite(previousTime) || !Number.isFinite(currentTimeMs)) {
+    return currentTime;
+  }
+  return new Date(Math.max(currentTimeMs, previousTime + 1)).toISOString();
+}
 
 export async function listMemories(
   input: v.InferInput<typeof memoryListInputSchema> = {},
@@ -130,19 +143,50 @@ export async function upsertMemory(
   const database = openDb(paths.neondeckDatabase);
 
   try {
-    const existing = readMemoryByScopeKey(
-      database,
-      parsed.output.scope,
-      parsed.output.key,
-      parsed.output.repoId ?? null,
-    );
-    const before = existing ? memoryToJson(existing) : null;
-    const id = existing?.id ?? randomUUID();
+    return withImmediateTransaction(database, () => {
+      const existing = readMemoryByScopeKey(
+        database,
+        parsed.output.scope,
+        parsed.output.key,
+        parsed.output.repoId ?? null,
+      );
+      if (
+        parsed.output.expectedUpdatedAt !== undefined &&
+        existing?.updatedAt !== parsed.output.expectedUpdatedAt
+      ) {
+        return failedMemoryMutation(
+          'memory_learn',
+          'Memory changed after editing began. Reload the current memory before saving.',
+          ['memory-revision'],
+        );
+      }
+      const before = existing ? memoryToJson(existing) : null;
+      const id = existing?.id ?? randomUUID();
+      const updatedAt = nextMemoryUpdatedAt(existing?.updatedAt, now);
 
-    if (existing) {
-      database
-        .prepare(
-          `
+      if (existing) {
+        const update = parsed.output.expectedUpdatedAt
+          ? database
+              .prepare(
+                `
+          UPDATE memories
+          SET value_json = ?,
+            repo_id = ?,
+            status = 'active',
+            updated_at = ?
+          WHERE id = ? AND updated_at = ?;
+        `,
+              )
+              .run(
+                JSON.stringify(value),
+                parsed.output.repoId ?? null,
+                updatedAt,
+                existing.id,
+                parsed.output.expectedUpdatedAt,
+              )
+          : database
+              .prepare(
+                `
           UPDATE memories
           SET value_json = ?,
             repo_id = ?,
@@ -150,80 +194,88 @@ export async function upsertMemory(
             updated_at = ?
           WHERE id = ?;
         `,
-        )
-        .run(
-          JSON.stringify(value),
-          parsed.output.repoId ?? null,
-          now,
-          existing.id,
-        );
-    } else {
-      database
-        .prepare(
-          `
-        INSERT INTO memories (
-          id,
-          scope,
-          key,
-          value_json,
-          repo_id,
-          status,
-          use_count,
-          last_used_at,
-          created_at,
-          updated_at
-        )
-        VALUES (?, ?, ?, ?, ?, 'active', 0, NULL, ?, ?);
-      `,
-        )
-        .run(
-          id,
-          parsed.output.scope,
-          parsed.output.key,
-          JSON.stringify(value),
-          parsed.output.repoId ?? null,
-          now,
-          now,
-        );
-    }
+              )
+              .run(
+                JSON.stringify(value),
+                parsed.output.repoId ?? null,
+                updatedAt,
+                existing.id,
+              );
+        if (update.changes !== 1) {
+          return failedMemoryMutation(
+            'memory_learn',
+            'Memory changed after editing began. Reload the current memory before saving.',
+            ['memory-revision'],
+          );
+        }
+      } else {
+        database
+          .prepare(
+            `
+          INSERT INTO memories (
+            id,
+            scope,
+            key,
+            value_json,
+            repo_id,
+            status,
+            use_count,
+            last_used_at,
+            created_at,
+            updated_at
+          )
+          VALUES (?, ?, ?, ?, ?, 'active', 0, NULL, ?, ?);
+        `,
+          )
+          .run(
+            id,
+            parsed.output.scope,
+            parsed.output.key,
+            JSON.stringify(value),
+            parsed.output.repoId ?? null,
+            now,
+            updatedAt,
+          );
+      }
 
-    const memory = readMemoryByScopeKey(
-      database,
-      parsed.output.scope,
-      parsed.output.key,
-      parsed.output.repoId ?? null,
-    );
-    const after = memory ? memoryToJson(memory) : null;
-    const changed = JSON.stringify(before) !== JSON.stringify(after);
-    if (memory && changed) {
-      recordMemoryEvent(database, {
-        memoryId: memory.id,
-        action: before ? 'updated' : 'created',
-        actor: parsed.output.actor ?? mutationSource,
-        reason: parsed.output.reason ?? null,
-        before,
-        after,
-        createdAt: now,
-      });
-      recordLearningEvent(database, {
-        type: 'memory_applied',
-        source: parsed.output.actor ?? mutationSource,
-        repoId: memory.repoId,
-        data: { memoryId: memory.id, scope: memory.scope, key: memory.key },
-        createdAt: now,
-      });
-    }
+      const memory = readMemoryByScopeKey(
+        database,
+        parsed.output.scope,
+        parsed.output.key,
+        parsed.output.repoId ?? null,
+      );
+      const after = memory ? memoryToJson(memory) : null;
+      const changed = JSON.stringify(before) !== JSON.stringify(after);
+      if (memory && changed) {
+        recordMemoryEvent(database, {
+          memoryId: memory.id,
+          action: before ? 'updated' : 'created',
+          actor: parsed.output.actor ?? mutationSource,
+          reason: parsed.output.reason ?? null,
+          before,
+          after,
+          createdAt: now,
+        });
+        recordLearningEvent(database, {
+          type: 'memory_applied',
+          source: parsed.output.actor ?? mutationSource,
+          repoId: memory.repoId,
+          data: { memoryId: memory.id, scope: memory.scope, key: memory.key },
+          createdAt: now,
+        });
+      }
 
-    return {
-      ok: true,
-      action: 'memory_learn',
-      changed,
-      memory,
-      appliesAfter: 'new-session',
-      message: changed
-        ? 'Updated durable memory. Active agent context will pick this up on a new session.'
-        : 'Durable memory already matched the requested guidance.',
-    };
+      return {
+        ok: true,
+        action: 'memory_learn',
+        changed,
+        memory,
+        appliesAfter: 'new-session',
+        message: changed
+          ? 'Updated durable memory. Active agent context will pick this up on a new session.'
+          : 'Durable memory already matched the requested guidance.',
+      };
+    });
   } finally {
     database.close();
   }
@@ -260,6 +312,7 @@ export async function rewriteMemory(
     }
 
     const before = memoryToJson(existing);
+    const updatedAt = nextMemoryUpdatedAt(existing.updatedAt, now);
     database
       .prepare(
         `
@@ -268,7 +321,11 @@ export async function rewriteMemory(
         WHERE id = ?;
       `,
       )
-      .run(JSON.stringify(asJsonValue(parsed.output.value)), now, existing.id);
+      .run(
+        JSON.stringify(asJsonValue(parsed.output.value)),
+        updatedAt,
+        existing.id,
+      );
     const memory = readMemoryById(database, existing.id);
     if (!memory) {
       return failedMemoryMutation('memory_rewrite', 'Memory was not found.', [
@@ -345,6 +402,7 @@ export async function mergeMemories(
     }
 
     const before = memoryToJson(target);
+    const targetUpdatedAt = nextMemoryUpdatedAt(target.updatedAt, now);
     if (parsed.output.value !== undefined) {
       database
         .prepare(
@@ -354,9 +412,24 @@ export async function mergeMemories(
           WHERE id = ?;
         `,
         )
-        .run(JSON.stringify(asJsonValue(parsed.output.value)), now, target.id);
+        .run(
+          JSON.stringify(asJsonValue(parsed.output.value)),
+          targetUpdatedAt,
+          target.id,
+        );
+    } else {
+      database
+        .prepare(
+          `
+          UPDATE memories
+          SET updated_at = ?
+          WHERE id = ?;
+        `,
+        )
+        .run(targetUpdatedAt, target.id);
     }
     for (const sourceMemory of sources) {
+      const sourceUpdatedAt = nextMemoryUpdatedAt(sourceMemory.updatedAt, now);
       database
         .prepare(
           `
@@ -365,7 +438,7 @@ export async function mergeMemories(
           WHERE id = ?;
         `,
         )
-        .run(now, sourceMemory.id);
+        .run(sourceUpdatedAt, sourceMemory.id);
       recordMemoryEvent(database, {
         memoryId: sourceMemory.id,
         action: 'archived',
@@ -375,7 +448,7 @@ export async function mergeMemories(
         after: memoryToJson({
           ...sourceMemory,
           status: 'archived',
-          updatedAt: now,
+          updatedAt: sourceUpdatedAt,
         }),
         createdAt: now,
       });
@@ -431,58 +504,95 @@ export async function archiveMemory(
   const now = new Date().toISOString();
 
   try {
-    const existing = resolveMemory(database, parsed.output);
-    if (!existing) {
-      return {
-        ok: true,
-        action: 'memory_archive',
-        changed: false,
-        appliesAfter: 'new-session',
-        message: 'No matching memory entry existed.',
-      };
-    }
-    if (existing.status === 'archived') {
-      return {
-        ok: true,
-        action: 'memory_archive',
-        changed: false,
-        memory: existing,
-        appliesAfter: 'new-session',
-        message: 'Memory entry was already archived.',
-      };
-    }
+    return withImmediateTransaction(database, () => {
+      const existing = resolveMemory(database, parsed.output);
+      if (!existing) {
+        if (parsed.output.expectedUpdatedAt !== undefined) {
+          return failedMemoryMutation(
+            'memory_archive',
+            'Memory changed after archive confirmation began. Reload the current memory before archiving.',
+            ['memory-revision'],
+          );
+        }
+        return {
+          ok: true,
+          action: 'memory_archive',
+          changed: false,
+          appliesAfter: 'new-session',
+          message: 'No matching memory entry existed.',
+        };
+      }
+      if (
+        parsed.output.expectedUpdatedAt !== undefined &&
+        existing.updatedAt !== parsed.output.expectedUpdatedAt
+      ) {
+        return failedMemoryMutation(
+          'memory_archive',
+          'Memory changed after archive confirmation began. Reload the current memory before archiving.',
+          ['memory-revision'],
+        );
+      }
+      if (existing.status === 'archived') {
+        return {
+          ok: true,
+          action: 'memory_archive',
+          changed: false,
+          memory: existing,
+          appliesAfter: 'new-session',
+          message: 'Memory entry was already archived.',
+        };
+      }
 
-    database
-      .prepare(
-        `
+      const updatedAt = nextMemoryUpdatedAt(existing.updatedAt, now);
+      const update = parsed.output.expectedUpdatedAt
+        ? database
+            .prepare(
+              `
+        UPDATE memories
+        SET status = 'archived', updated_at = ?
+        WHERE id = ? AND updated_at = ?;
+      `,
+            )
+            .run(updatedAt, existing.id, parsed.output.expectedUpdatedAt)
+        : database
+            .prepare(
+              `
         UPDATE memories
         SET status = 'archived', updated_at = ?
         WHERE id = ?;
       `,
-      )
-      .run(now, existing.id);
-    const memory = readMemoryById(database, existing.id);
-    if (memory) {
-      recordMemoryEvent(database, {
-        memoryId: memory.id,
-        action: 'archived',
-        actor: parsed.output.actor ?? source,
-        reason: parsed.output.reason ?? null,
-        before: memoryToJson(existing),
-        after: memoryToJson(memory),
-        createdAt: now,
-      });
-    }
+            )
+            .run(updatedAt, existing.id);
+      if (update.changes !== 1) {
+        return failedMemoryMutation(
+          'memory_archive',
+          'Memory changed after archive confirmation began. Reload the current memory before archiving.',
+          ['memory-revision'],
+        );
+      }
+      const memory = readMemoryById(database, existing.id);
+      if (memory) {
+        recordMemoryEvent(database, {
+          memoryId: memory.id,
+          action: 'archived',
+          actor: parsed.output.actor ?? source,
+          reason: parsed.output.reason ?? null,
+          before: memoryToJson(existing),
+          after: memoryToJson(memory),
+          createdAt: now,
+        });
+      }
 
-    return {
-      ok: true,
-      action: 'memory_archive',
-      changed: true,
-      memory,
-      appliesAfter: 'new-session',
-      message:
-        'Archived durable memory. Active agent context will pick this up on a new session.',
-    };
+      return {
+        ok: true,
+        action: 'memory_archive',
+        changed: true,
+        memory,
+        appliesAfter: 'new-session',
+        message:
+          'Archived durable memory. Active agent context will pick this up on a new session.',
+      };
+    });
   } finally {
     database.close();
   }

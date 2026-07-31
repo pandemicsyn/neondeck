@@ -55,7 +55,8 @@ export function createMemoryRoutes(paths: RuntimePaths) {
   });
 
   routes.post('/memories', async (c) => {
-    return c.json(await upsertMemory(await c.req.json(), paths));
+    const result = await upsertMemory(await c.req.json(), paths);
+    return c.json(result, memoryMutationStatus(result));
   });
 
   routes.post('/memories/:id/archive', async (c) => {
@@ -66,7 +67,7 @@ export function createMemoryRoutes(paths: RuntimePaths) {
       },
       paths,
     );
-    return c.json(result, result.ok ? 200 : 400);
+    return c.json(result, memoryMutationStatus(result));
   });
 
   routes.get('/memory-events', async (c) => {
@@ -83,6 +84,14 @@ export function createMemoryRoutes(paths: RuntimePaths) {
   });
 
   return routes;
+}
+
+function memoryMutationStatus(result: {
+  ok: boolean;
+  requires?: string[];
+}): 200 | 400 | 409 {
+  if (result.ok) return 200;
+  return result.requires?.includes('memory-revision') ? 409 : 400;
 }
 
 function memoryScope(value: string | undefined) {
