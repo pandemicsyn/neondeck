@@ -56,6 +56,8 @@ export type GitHubPrReviewNeonSeedSeverity =
 
 export type GitHubPrReviewNeonSeedOutcome = 'submitted' | 'skipped' | 'deleted';
 
+const reviewCommentHydrationConcurrency = 4;
+
 export type GitHubPrReviewNeonSeededComment = {
   commentId: string;
   draftId: string;
@@ -1057,14 +1059,35 @@ export async function fetchPullRequestReviewComments(options: {
       `GitHub returned a comment outside submitted review ${options.reviewId}.`,
     );
   }
-  const commentsWithExactAnchors = await Promise.all(
-    comments.map((comment) =>
+  const commentsWithExactAnchors = await mapWithConcurrency(
+    comments,
+    reviewCommentHydrationConcurrency,
+    async (comment) =>
       comment.line == null || comment.side == null
         ? fetchPullRequestReviewComment(options, comment.id)
         : comment,
-    ),
   );
   return commentsWithExactAnchors.map(reviewThreadCommentFromApi);
+}
+
+async function mapWithConcurrency<T, R>(
+  items: T[],
+  concurrency: number,
+  task: (item: T) => Promise<R>,
+) {
+  const results = Array.from({ length: items.length }) as R[];
+  let nextIndex = 0;
+  await Promise.all(
+    Array.from({ length: Math.min(concurrency, items.length) }, async () => {
+      while (nextIndex < items.length) {
+        const index = nextIndex;
+        nextIndex += 1;
+        const item = items[index];
+        if (item !== undefined) results[index] = await task(item);
+      }
+    }),
+  );
+  return results;
 }
 
 async function fetchPullRequestReviewComment(
