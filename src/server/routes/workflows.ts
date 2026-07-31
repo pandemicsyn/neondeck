@@ -31,11 +31,18 @@ export function createWorkflowRoutes(
 
   routes.get('/runs/:runId', async (c) => {
     const runId = c.req.param('runId');
+    const afterEventId = parseAfterEventId(c.req.query('afterEventId'));
+    if (afterEventId === null) {
+      return c.json(
+        { error: 'afterEventId must be a non-negative integer.' },
+        400,
+      );
+    }
     const run = await readRun(runId);
     if (!run) {
       return c.json({ error: 'Workflow run not found.' }, 404);
     }
-    const eventHistory = await readRunEvents(runId, paths);
+    const eventHistory = await readRunEvents(runId, paths, { afterEventId });
     return c.json({
       ok: true,
       action: 'workflow_run_inspection_read',
@@ -51,4 +58,11 @@ export function createWorkflowRoutes(
   });
 
   return routes;
+}
+
+function parseAfterEventId(value: string | undefined) {
+  if (value === undefined) return undefined;
+  if (!/^\d+$/.test(value)) return null;
+  const parsed = Number(value);
+  return Number.isSafeInteger(parsed) && parsed >= 0 ? parsed : null;
 }

@@ -1,4 +1,4 @@
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import {
   getWorkflowRun,
@@ -10,6 +10,8 @@ import { Badge, EmptyState, MiniEmpty, ScrollArea } from '../../components/ui';
 import { queryErrorMessage, queryKeys } from '../../lib/query';
 import {
   formatWorkflowPayload,
+  latestWorkflowRunEventId,
+  mergeWorkflowRunInspection,
   orderWorkflowRunEvents,
   terminalWorkflowRunSettleGraceMs,
   type WorkflowRunPayload,
@@ -18,12 +20,22 @@ import {
 } from './workflow-run-inspector';
 
 export function WorkflowRunInspectorPage({ runId }: { runId: string }) {
+  const queryClient = useQueryClient();
+  const queryKey = queryKeys.workflowRun(runId);
   const terminalPendingSince = useRef<number | null>(null);
   const [terminalSettlementExpired, setTerminalSettlementExpired] =
     useState(false);
   const { data, error, isLoading, isRefetchError } = useQuery({
-    queryKey: queryKeys.workflowRun(runId),
-    queryFn: ({ signal }) => getWorkflowRun(runId, { signal }),
+    queryKey,
+    queryFn: async ({ signal }) => {
+      const previous =
+        queryClient.getQueryData<WorkflowRunInspectionResponse>(queryKey);
+      const afterEventId = previous
+        ? (latestWorkflowRunEventId(previous.events) ?? 0)
+        : undefined;
+      const update = await getWorkflowRun(runId, { afterEventId, signal });
+      return mergeWorkflowRunInspection(previous, update);
+    },
     refetchInterval: (query) => {
       const decision = workflowRunRefreshDecision(
         query.state.data,

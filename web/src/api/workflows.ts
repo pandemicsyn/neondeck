@@ -20,10 +20,15 @@ export async function getWorkflowSummaries(options: ApiRequestOptions = {}) {
 
 export async function getWorkflowRun(
   runId: string,
-  options: ApiRequestOptions = {},
+  options: ApiRequestOptions & { afterEventId?: number } = {},
 ) {
+  const params = new URLSearchParams();
+  if (options.afterEventId !== undefined) {
+    params.set('afterEventId', String(options.afterEventId));
+  }
+  const query = params.toString();
   return getAuthorizedJson<WorkflowRunInspectionResponse>(
-    `/api/workflows/runs/${encodeURIComponent(runId)}`,
+    `/api/workflows/runs/${encodeURIComponent(runId)}${query ? `?${query}` : ''}`,
     options,
   );
 }
