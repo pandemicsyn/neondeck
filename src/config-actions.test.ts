@@ -812,7 +812,7 @@ describe('config actions', () => {
     });
 
     await expect(
-      updateAgentModels({ prReviewTimeoutMs: 30 * 60 * 1_000 + 1 }, paths),
+      updateAgentModels({ prReviewTimeoutMs: 5 * 60 * 1_000 + 1 }, paths),
     ).resolves.toMatchObject({
       ok: false,
       changed: false,

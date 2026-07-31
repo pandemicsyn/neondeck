@@ -30,6 +30,9 @@ describe('PR review prompts', () => {
     expect(buildPrReviewAssistantRuntime(paths).instructions).toBe(
       defaultPrReviewPromptTemplates['initial-review'],
     );
+    expect(defaultPrReviewPromptTemplates['initial-review']).toContain(
+      'This bounded workflow does not permit task delegation: do not call the generic task tool or start a child review.',
+    );
 
     await updatePrReviewPrompt(
       { kind: 'initial-review', prompt: 'Custom complete review prompt.' },

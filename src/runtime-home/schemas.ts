@@ -1,4 +1,8 @@
 import * as v from 'valibot';
+import {
+  maxPrReviewTimeoutMs,
+  minPrReviewTimeoutMs,
+} from '../../shared/pr-review-policy';
 import { mcpConfigSchema, type McpConfig } from '../domains/mcp/schemas';
 import { repoGuardrailsSchema } from './guardrails';
 
@@ -92,8 +96,18 @@ export const thinkingLevelSchema = v.picklist([
 export const prReviewTimeoutMsSchema = v.pipe(
   v.number(),
   v.integer(),
-  v.minValue(10_000),
+  v.minValue(minPrReviewTimeoutMs),
+  v.maxValue(maxPrReviewTimeoutMs),
+);
+
+const persistedPrReviewTimeoutMsSchema = v.pipe(
+  v.number(),
+  v.integer(),
+  v.minValue(minPrReviewTimeoutMs),
+  // Continue parsing older runtime homes while normalizing legacy values to
+  // the current five-minute execution ceiling.
   v.maxValue(30 * 60 * 1_000),
+  v.transform((value) => Math.min(value, maxPrReviewTimeoutMs)),
 );
 
 export const agentModelConfigSchema = v.looseObject({
@@ -103,7 +117,7 @@ export const agentModelConfigSchema = v.looseObject({
   displayAssistantThinkingLevel: v.optional(thinkingLevelSchema),
   prReview: v.optional(nonEmptyStringSchema),
   prReviewThinkingLevel: v.optional(thinkingLevelSchema),
-  prReviewTimeoutMs: v.optional(prReviewTimeoutMsSchema),
+  prReviewTimeoutMs: v.optional(persistedPrReviewTimeoutMsSchema),
   utility: v.optional(nonEmptyStringSchema),
   utilityThinkingLevel: v.optional(thinkingLevelSchema),
   selfImprovement: v.optional(nonEmptyStringSchema),

@@ -1,5 +1,8 @@
 import { defineAction } from '@flue/runtime';
-import { currentFlueExecutionContext } from '../flue';
+import {
+  currentFlueExecutionContext,
+  runWithFlueTaskDelegationBlocked,
+} from '../flue';
 import { completePrReview, failPrReview } from '../pr-reviews';
 import {
   prReviewAssistInputSchema,
@@ -40,20 +43,26 @@ export const reviewPrForHumanAction = defineAction({
             runtimePaths(),
           );
           const session = await harness.session();
-          const response = await session.prompt(
-            JSON.stringify(
-              {
-                task: 'Review this pull request for a human reviewer.',
-                facts: reviewFactsForPrompt(facts, { ...context, workspace }),
-              },
-              null,
-              2,
-            ),
-            {
-              result: reviewAssistStructuredOutputSchema,
-              signal: AbortSignal.timeout(prReviewTimeoutMs),
-              tools: workspace.tools,
-            },
+          const response = await runWithFlueTaskDelegationBlocked(
+            async () =>
+              await session.prompt(
+                JSON.stringify(
+                  {
+                    task: 'Review this pull request for a human reviewer.',
+                    facts: reviewFactsForPrompt(facts, {
+                      ...context,
+                      workspace,
+                    }),
+                  },
+                  null,
+                  2,
+                ),
+                {
+                  result: reviewAssistStructuredOutputSchema,
+                  signal: AbortSignal.timeout(prReviewTimeoutMs),
+                  tools: workspace.tools,
+                },
+              ),
           );
           return response.data;
         },

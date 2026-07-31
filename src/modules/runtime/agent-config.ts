@@ -7,10 +7,14 @@ import {
   type RuntimePaths,
   type ThinkingLevel,
 } from '../../runtime-home';
+import {
+  defaultPrReviewTimeoutMs,
+  maxPrReviewTimeoutMs,
+} from '../../../shared/pr-review-policy';
 
 export const defaultAgentModel = 'kilocode/kilo-auto/balanced';
 export const defaultThinkingLevel: ThinkingLevel = 'medium';
-export const defaultPrReviewTimeoutMs = 180_000;
+export { defaultPrReviewTimeoutMs } from '../../../shared/pr-review-policy';
 
 export type NeondeckSubagentKey =
   'repoResearcher' | 'ciInvestigator' | 'releaseReviewer';
@@ -72,8 +76,10 @@ export function resolveAgentModelSelection(
     env.FLUE_PR_REVIEW_THINKING_LEVEL,
     displayAssistantThinkingLevel,
   );
-  const prReviewTimeoutMs =
-    config?.models?.prReviewTimeoutMs ?? defaultPrReviewTimeoutMs;
+  const prReviewTimeoutMs = Math.min(
+    config?.models?.prReviewTimeoutMs ?? defaultPrReviewTimeoutMs,
+    maxPrReviewTimeoutMs,
+  );
   const configuredUtility = firstOptionalModel(
     config?.models?.utility,
     env.FLUE_UTILITY_MODEL,
