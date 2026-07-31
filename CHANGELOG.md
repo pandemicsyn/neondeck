@@ -1,5 +1,19 @@
 # Changelog
 
+## 1.0.0-beta.26
+
+### Minor Changes
+
+- [#231](https://github.com/pandemicsyn/neondeck/pull/231) [`5060291`](https://github.com/pandemicsyn/neondeck/commit/5060291582f7faae31aa4a9e0102c4fc4a07b8f7) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Add inline edit and confirmed archive controls to durable memory cards in the dashboard.
+
+### Patch Changes
+
+- [#229](https://github.com/pandemicsyn/neondeck/pull/229) [`944564a`](https://github.com/pandemicsyn/neondeck/commit/944564a4cf427b5647d642386075bbabef9aa124) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Make watched-PR owner transcripts scroll correctly, expose a revision-bound diff approval action only after a current nonempty diff loads, route prepared-change notifications to Watches, and identify the workflow, agent session, or watched PR behind workflow activity.
+
+- [#230](https://github.com/pandemicsyn/neondeck/pull/230) [`74d49e4`](https://github.com/pandemicsyn/neondeck/commit/74d49e44f3bd77b440b95d00b5263ac47137559f) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Verify submitted PR review comments through their exact GitHub comment records when the review comment list omits line anchors.
+
+- [#227](https://github.com/pandemicsyn/neondeck/pull/227) [`db9b593`](https://github.com/pandemicsyn/neondeck/commit/db9b5930fa2b1f5744953699f772859d640268c5) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Complete ChatGPT subscription authentication through Pi's provider auth contract and cancel the manual browser fallback prompt when the OAuth callback succeeds.
+
 ## 1.0.0-beta.25
 
 ### Patch Changes
