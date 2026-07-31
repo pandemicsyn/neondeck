@@ -2,14 +2,21 @@ import { getRun } from '@flue/runtime';
 import { Hono } from 'hono';
 import { listWorkflowSummaries } from '../../modules/app-state';
 import type { RuntimePaths } from '../../runtime-home';
-import { readWorkflowObservability } from '../../modules/learning';
+import {
+  readWorkflowObservability,
+  readWorkflowRunEvents,
+} from '../../modules/learning';
 
 export function createWorkflowRoutes(
   paths: RuntimePaths,
-  dependencies: { getRun?: typeof getRun } = {},
+  dependencies: {
+    getRun?: typeof getRun;
+    readRunEvents?: typeof readWorkflowRunEvents;
+  } = {},
 ) {
   const routes = new Hono();
   const readRun = dependencies.getRun ?? getRun;
+  const readRunEvents = dependencies.readRunEvents ?? readWorkflowRunEvents;
 
   routes.get('/summaries', async (c) => {
     return c.json({
@@ -23,14 +30,22 @@ export function createWorkflowRoutes(
   });
 
   routes.get('/runs/:runId', async (c) => {
-    const run = await readRun(c.req.param('runId'));
+    const runId = c.req.param('runId');
+    const run = await readRun(runId);
     if (!run) {
       return c.json({ error: 'Workflow run not found.' }, 404);
     }
+    const eventHistory = await readRunEvents(runId, paths);
     return c.json({
       ok: true,
       action: 'workflow_run_inspection_read',
       run,
+      events: eventHistory.events,
+      eventHistory: {
+        totalEventCount: eventHistory.totalEventCount,
+        retainedEventCount: eventHistory.retainedEventCount,
+        isTruncated: eventHistory.isTruncated,
+      },
       fetchedAt: new Date().toISOString(),
     });
   });

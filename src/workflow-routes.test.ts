@@ -33,6 +33,32 @@ describe('workflow run inspection routes', () => {
           input: { command: '/review-queue' },
           result: { ok: true },
         }),
+        readRunEvents: async (runId) => ({
+          events: [
+            {
+              id: 1,
+              runId,
+              workflow: 'command-run',
+              eventType: 'run_start',
+              eventIndex: 1,
+              level: null,
+              message: 'Started workflow command-run.',
+              name: 'command-run',
+              operationKind: null,
+              operationId: null,
+              agentName: null,
+              instanceId: null,
+              durationMs: null,
+              isError: false,
+              summary: { workflowName: 'command-run' },
+              createdAt: '2026-07-21T16:00:00.000Z',
+              runUrl: '/workflow-run?runId=run_123',
+            },
+          ],
+          totalEventCount: 2,
+          retainedEventCount: 1,
+          isTruncated: true,
+        }),
       }),
     );
 
@@ -47,18 +73,42 @@ describe('workflow run inspection routes', () => {
         status: 'completed',
         result: { ok: true },
       },
+      events: [
+        expect.objectContaining({
+          runId: 'run_123',
+          eventType: 'run_start',
+        }),
+      ],
+      eventHistory: {
+        totalEventCount: 2,
+        retainedEventCount: 1,
+        isTruncated: true,
+      },
     });
   });
 
   it('returns not found without exposing another run', async () => {
     const paths = runtimePaths(await tempHome());
+    let readEvents = false;
     const app = new Hono().route(
       '/api/workflows',
-      createWorkflowRoutes(paths, { getRun: async () => null }),
+      createWorkflowRoutes(paths, {
+        getRun: async () => null,
+        readRunEvents: async () => {
+          readEvents = true;
+          return {
+            events: [],
+            totalEventCount: 0,
+            retainedEventCount: 0,
+            isTruncated: false,
+          };
+        },
+      }),
     );
 
     const response = await app.request('/api/workflows/runs/missing');
     expect(response.status).toBe(404);
+    expect(readEvents).toBe(false);
     await expect(response.json()).resolves.toEqual({
       error: 'Workflow run not found.',
     });
