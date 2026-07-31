@@ -541,6 +541,7 @@ export const githubPullRequestReviewCommentApiItemSchema = v.object({
   start_line: v.optional(v.nullable(v.number())),
   start_side: v.optional(v.nullable(v.string())),
   original_line: v.optional(v.nullable(v.number())),
+  original_start_line: v.optional(v.nullable(v.number())),
   body: v.string(),
   user: v.optional(
     v.nullable(v.object({ login: v.string(), type: v.optional(v.string()) })),
