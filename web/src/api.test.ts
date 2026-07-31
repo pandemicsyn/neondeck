@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
+  archiveMemory,
   archivePrReview,
   getChatSessions,
   getWorkflowRun,
@@ -37,6 +38,40 @@ describe('dashboard API helpers', () => {
       '/api/reviews/review%2F1/archive',
       '/api/reviews/review%2F1/restore',
     ]);
+  });
+
+  it('archives memory through the audited endpoint with explicit confirmation', async () => {
+    const fetchMock = vi.fn<
+      (input: string | URL | Request, init?: RequestInit) => Promise<Response>
+    >(
+      async () =>
+        new Response(
+          JSON.stringify({
+            ok: true,
+            action: 'memory_archive',
+            changed: true,
+            message: 'Archived durable memory.',
+          }),
+          { headers: { 'content-type': 'application/json' } },
+        ),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    await archiveMemory('memory/1', {
+      expectedUpdatedAt: '2026-07-30T00:00:00.000Z',
+    });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/memories/memory%2F1/archive',
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({
+          reason: 'Archived from the Memory dashboard.',
+          confirm: true,
+          expectedUpdatedAt: '2026-07-30T00:00:00.000Z',
+        }),
+      }),
+    );
   });
 
   it('builds learning operator candidate filters before limit', () => {

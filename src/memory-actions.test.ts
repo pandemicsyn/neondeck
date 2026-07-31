@@ -133,6 +133,82 @@ describe('structured memory actions', () => {
     });
   });
 
+  it('rejects stale memory edits and archives without changing current guidance', async () => {
+    const paths = runtimePaths(await tempHome());
+    const created = await upsertMemory(
+      {
+        scope: 'project',
+        key: 'checks',
+        repoId: 'repo-a',
+        value: 'npm run check',
+      },
+      paths,
+    );
+    const memory = 'memory' in created ? created.memory : undefined;
+    expect(memory).toBeDefined();
+
+    const updated = await upsertMemory(
+      {
+        scope: 'project',
+        key: 'checks',
+        repoId: 'repo-a',
+        value: 'npm run verify',
+        expectedUpdatedAt: memory?.updatedAt,
+      },
+      paths,
+    );
+    const updatedMemory = 'memory' in updated ? updated.memory : undefined;
+    expect(updatedMemory).toBeDefined();
+    expect(Date.parse(updatedMemory?.updatedAt ?? '')).toBeGreaterThan(
+      Date.parse(memory?.updatedAt ?? ''),
+    );
+
+    await expect(
+      upsertMemory(
+        {
+          scope: 'project',
+          key: 'checks',
+          repoId: 'repo-a',
+          value: 'npm run test:all',
+          expectedUpdatedAt: memory?.updatedAt,
+        },
+        paths,
+      ),
+    ).resolves.toMatchObject({
+      ok: false,
+      changed: false,
+      requires: ['memory-revision'],
+    });
+    await expect(
+      archiveMemory(
+        {
+          id: memory?.id,
+          expectedUpdatedAt: memory?.updatedAt,
+          confirm: true,
+        },
+        paths,
+      ),
+    ).resolves.toMatchObject({
+      ok: false,
+      changed: false,
+      requires: ['memory-revision'],
+    });
+    await expect(
+      listMemories(
+        { scope: 'project', key: 'checks', repoId: 'repo-a' },
+        paths,
+      ),
+    ).resolves.toMatchObject({
+      memories: [
+        expect.objectContaining({
+          id: memory?.id,
+          status: 'active',
+          value: 'npm run verify',
+        }),
+      ],
+    });
+  });
+
   it('rejects removed session and watch memory scopes', async () => {
     const paths = runtimePaths(await tempHome());
 
