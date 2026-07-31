@@ -3,9 +3,11 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
+import { openDb } from './lib/sqlite';
 import { runtimePaths } from './runtime-home';
 import {
   readWorkflowObservability,
+  readWorkflowRunEvents,
   recordFlueObservation,
 } from './modules/learning';
 
@@ -216,6 +218,78 @@ describe('workflow observability', () => {
         eventCount: 131,
       }),
     ]);
+  });
+
+  it('reads one run event timeline in chronological order', async () => {
+    const paths = runtimePaths(await tempHome());
+    await recordFlueObservation(
+      event({
+        type: 'run_start',
+        runId: 'run_timeline',
+        workflowName: 'command-run',
+        eventIndex: 1,
+        timestamp: '2026-06-27T20:00:00Z',
+        input: { command: '/review-queue' },
+      }),
+      paths,
+    );
+    await recordFlueObservation(
+      event({
+        type: 'log',
+        runId: 'another_run',
+        eventIndex: 2,
+        timestamp: '2026-06-27T20:00:01Z',
+        level: 'info',
+        message: 'Unrelated event',
+      }),
+      paths,
+    );
+    await recordFlueObservation(
+      event({
+        type: 'tool',
+        runId: 'run_timeline',
+        eventIndex: 3,
+        timestamp: '2026-06-27T19:59:59Z',
+        toolName: 'neondeck_runtime_status_lookup',
+        isError: false,
+        durationMs: 42,
+        result: { ok: true },
+      }),
+      paths,
+    );
+
+    const history = await readWorkflowRunEvents('run_timeline', paths);
+
+    expect(history.events.map((item) => item.eventType)).toEqual([
+      'run_start',
+      'tool',
+    ]);
+    expect(history.events.map((item) => item.eventIndex)).toEqual([1, 3]);
+    expect(history).toMatchObject({
+      totalEventCount: 2,
+      retainedEventCount: 2,
+      isTruncated: false,
+    });
+
+    const database = openDb(paths.neondeckDatabase);
+    database
+      .prepare(
+        `
+        UPDATE workflow_run_observations
+        SET event_count = 52
+        WHERE run_id = ?;
+      `,
+      )
+      .run('run_timeline');
+    database.close();
+
+    await expect(
+      readWorkflowRunEvents('run_timeline', paths),
+    ).resolves.toMatchObject({
+      totalEventCount: 52,
+      retainedEventCount: 2,
+      isTruncated: true,
+    });
   });
 
   it('redacts sensitive scalar summaries', async () => {

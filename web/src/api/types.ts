@@ -1455,6 +1455,12 @@ export type WorkflowRunInspectionResponse = {
   ok: true;
   action: 'workflow_run_inspection_read';
   run: WorkflowRunRecord;
+  events: WorkflowEventRecord[];
+  eventHistory: {
+    totalEventCount: number;
+    retainedEventCount: number;
+    isTruncated: boolean;
+  };
   fetchedAt: string;
 };
 

@@ -44,6 +44,13 @@ export type WorkflowObservabilitySnapshot = {
   fetchedAt: string;
 };
 
+export type WorkflowRunEventHistory = {
+  events: WorkflowEventRecord[];
+  totalEventCount: number;
+  retainedEventCount: number;
+  isTruncated: boolean;
+};
+
 const maxWorkflowEventRows = 5_000;
 const redacted = '[redacted]';
 const persistedEventTypes = new Set([
@@ -180,6 +187,63 @@ export async function readWorkflowObservability(paths = runtimePaths()) {
       recentEvents: recentEvents.slice(0, 20),
       fetchedAt: new Date().toISOString(),
     } satisfies WorkflowObservabilitySnapshot;
+  } finally {
+    database.close();
+  }
+}
+
+export async function readWorkflowRunEvents(
+  runId: string,
+  paths = runtimePaths(),
+) {
+  await ensureRuntimeHome(paths);
+  const database = openDb(paths.neondeckDatabase, { readOnly: true });
+
+  database.exec('BEGIN;');
+  try {
+    const events = database
+      .prepare(
+        `
+        SELECT
+          workflow_events.*,
+          workflow_run_observations.workflow AS observed_run_workflow
+        FROM workflow_events
+        LEFT JOIN workflow_run_observations
+          ON workflow_run_observations.run_id = workflow_events.run_id
+        WHERE workflow_events.run_id = ?
+        ORDER BY id ASC;
+      `,
+      )
+      .all(runId)
+      .map(readWorkflowEventRow)
+      .sort(compareWorkflowRunEvents);
+    const projection = database
+      .prepare(
+        `
+        SELECT event_count
+        FROM workflow_run_observations
+        WHERE run_id = ?;
+      `,
+      )
+      .get(runId) as { event_count?: unknown } | undefined;
+    const retainedEventCount = events.length;
+    const observedEventCount =
+      typeof projection?.event_count === 'number'
+        ? projection.event_count
+        : retainedEventCount;
+    const totalEventCount = Math.max(observedEventCount, retainedEventCount);
+
+    const history = {
+      events,
+      totalEventCount,
+      retainedEventCount,
+      isTruncated: totalEventCount > retainedEventCount,
+    } satisfies WorkflowRunEventHistory;
+    database.exec('COMMIT;');
+    return history;
+  } catch (error) {
+    database.exec('ROLLBACK;');
+    throw error;
   } finally {
     database.close();
   }
@@ -385,6 +449,20 @@ function readWorkflowEventRow(row: unknown): WorkflowEventRecord {
     createdAt: String(record.created_at),
     runUrl: runInspectionUrl(runId),
   };
+}
+
+function compareWorkflowRunEvents(
+  left: WorkflowEventRecord,
+  right: WorkflowEventRecord,
+) {
+  if (left.eventIndex !== null && right.eventIndex !== null) {
+    return left.eventIndex - right.eventIndex || left.id - right.id;
+  }
+  if (left.eventIndex !== null) return -1;
+  if (right.eventIndex !== null) return 1;
+  const timestampDifference =
+    Date.parse(left.createdAt) - Date.parse(right.createdAt);
+  return timestampDifference || left.id - right.id;
 }
 
 function readActiveRunRow(row: unknown) {
