@@ -1557,6 +1557,182 @@ describe('github foundation', () => {
     expect(requests).toHaveLength(2);
   });
 
+  it('hydrates exact anchors when the submitted-review list omits them', async () => {
+    const requests: string[] = [];
+    globalThis.fetch = vi.fn<typeof fetch>(async (input) => {
+      const url = String(input);
+      requests.push(url);
+      if (url.endsWith('/pulls/comments/111')) {
+        return jsonResponse({
+          id: 111,
+          node_id: 'comment-node-111',
+          pull_request_review_id: 9001,
+          diff_hunk: '@@',
+          path: 'src/app.ts',
+          side: 'RIGHT',
+          line: null,
+          start_line: null,
+          start_side: 'RIGHT',
+          original_line: 22,
+          original_start_line: 20,
+          body: 'Range comment.',
+          user: { login: 'neon', type: 'User' },
+          created_at: '2026-07-19T00:00:00.000Z',
+          updated_at: '2026-07-19T00:00:00.000Z',
+          html_url:
+            'https://github.com/pandemicsyn/neondeck/pull/123#discussion_r111',
+        });
+      }
+      if (url.endsWith('/pulls/comments/112')) {
+        return jsonResponse({
+          id: 112,
+          node_id: 'comment-node-112',
+          pull_request_review_id: 9001,
+          diff_hunk: '@@',
+          path: 'src/app.ts',
+          side: 'RIGHT',
+          line: null,
+          start_line: null,
+          start_side: null,
+          original_line: 23,
+          original_start_line: null,
+          body: 'Single-line comment.',
+          user: { login: 'neon', type: 'User' },
+          created_at: '2026-07-19T00:00:00.000Z',
+          updated_at: '2026-07-19T00:00:00.000Z',
+          html_url:
+            'https://github.com/pandemicsyn/neondeck/pull/123#discussion_r112',
+        });
+      }
+      return jsonResponse([
+        {
+          id: 111,
+          node_id: 'comment-node-111',
+          pull_request_review_id: 9001,
+          diff_hunk: '@@',
+          path: 'src/app.ts',
+          side: null,
+          line: null,
+          start_line: null,
+          start_side: null,
+          original_line: null,
+          original_start_line: null,
+          body: 'Range comment.',
+          user: { login: 'neon', type: 'User' },
+          created_at: '2026-07-19T00:00:00.000Z',
+          updated_at: '2026-07-19T00:00:00.000Z',
+          html_url:
+            'https://github.com/pandemicsyn/neondeck/pull/123#discussion_r111',
+        },
+        {
+          id: 112,
+          node_id: 'comment-node-112',
+          pull_request_review_id: 9001,
+          diff_hunk: '@@',
+          path: 'src/app.ts',
+          side: null,
+          line: null,
+          start_line: null,
+          start_side: null,
+          original_line: null,
+          original_start_line: null,
+          body: 'Single-line comment.',
+          user: { login: 'neon', type: 'User' },
+          created_at: '2026-07-19T00:00:00.000Z',
+          updated_at: '2026-07-19T00:00:00.000Z',
+          html_url:
+            'https://github.com/pandemicsyn/neondeck/pull/123#discussion_r112',
+        },
+      ]);
+    });
+
+    await expect(
+      fetchPullRequestReviewComments({
+        token: 'test-token',
+        owner: 'pandemicsyn',
+        repo: 'neondeck',
+        number: 123,
+        reviewId: 9001,
+      }),
+    ).resolves.toEqual([
+      expect.objectContaining({
+        databaseId: 111,
+        reviewId: 9001,
+        side: 'RIGHT',
+        line: 22,
+        startLine: 20,
+        startSide: 'RIGHT',
+      }),
+      expect.objectContaining({
+        databaseId: 112,
+        reviewId: 9001,
+        side: 'RIGHT',
+        line: 23,
+        startLine: null,
+        startSide: null,
+      }),
+    ]);
+    expect(requests).toEqual([
+      'https://api.github.com/repos/pandemicsyn/neondeck/pulls/123/reviews/9001/comments?per_page=100',
+      'https://api.github.com/repos/pandemicsyn/neondeck/pulls/comments/111',
+      'https://api.github.com/repos/pandemicsyn/neondeck/pulls/comments/112',
+    ]);
+  });
+
+  it('bounds concurrent exact-anchor hydration requests', async () => {
+    const comments = Array.from({ length: 12 }, (_, index) => ({
+      id: 100 + index,
+      node_id: `comment-node-${100 + index}`,
+      pull_request_review_id: 9001,
+      diff_hunk: '@@',
+      path: 'src/app.ts',
+      side: null,
+      line: null,
+      start_line: null,
+      start_side: null,
+      original_line: null,
+      original_start_line: null,
+      body: `Comment ${index}.`,
+      user: { login: 'neon', type: 'User' },
+      created_at: '2026-07-19T00:00:00.000Z',
+      updated_at: '2026-07-19T00:00:00.000Z',
+      html_url: `https://github.com/pandemicsyn/neondeck/pull/123#discussion_r${100 + index}`,
+    }));
+    let activeHydrations = 0;
+    let maxActiveHydrations = 0;
+    globalThis.fetch = vi.fn<typeof fetch>(async (input) => {
+      const url = String(input);
+      if (!url.includes('/pulls/comments/')) return jsonResponse(comments);
+
+      const id = Number(url.split('/').at(-1));
+      const comment = comments.find((candidate) => candidate.id === id);
+      if (!comment) return jsonResponse({ message: 'Not found' }, 404);
+      activeHydrations += 1;
+      maxActiveHydrations = Math.max(maxActiveHydrations, activeHydrations);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      activeHydrations -= 1;
+      return jsonResponse({
+        ...comment,
+        side: 'RIGHT',
+        line: id,
+        original_line: id,
+      });
+    });
+
+    const result = await fetchPullRequestReviewComments({
+      token: 'test-token',
+      owner: 'pandemicsyn',
+      repo: 'neondeck',
+      number: 123,
+      reviewId: 9001,
+    });
+
+    expect(maxActiveHydrations).toBe(4);
+    expect(result.map((comment) => comment.databaseId)).toEqual(
+      comments.map((comment) => comment.id),
+    );
+  });
+
   it('submits review drafts with modern GitHub line anchors and writes an audit row', async () => {
     const paths = runtimePaths(await tempHome());
     await ensureRuntimeHome(paths);
