@@ -6,8 +6,26 @@ import {
 } from '@flue/runtime';
 
 const contextStorage = new AsyncLocalStorage<FlueExecutionContext>();
+const taskDelegationStorage = new AsyncLocalStorage<'blocked'>();
 const instrumentationKey = Symbol.for('neondeck.flue.execution-context');
 let installed = false;
+
+export async function neondeckFlueExecutionInterceptor<T>(
+  operation: FlueExecutionOperation,
+  context: FlueExecutionContext,
+  next: () => Promise<T>,
+) {
+  if (
+    taskDelegationStorage.getStore() === 'blocked' &&
+    ((operation.type === 'tool' && operation.toolName === 'task') ||
+      operation.type === 'task')
+  ) {
+    throw new Error(
+      'Task delegation is disabled for this bounded PR review. Inspect the supplied workspace directly and finish the structured review in the current session.',
+    );
+  }
+  return contextStorage.run(context, next);
+}
 
 export function installFlueExecutionContextTracker() {
   if (installed) return;
@@ -16,9 +34,7 @@ export function installFlueExecutionContextTracker() {
     observe() {
       return undefined;
     },
-    async interceptor(_operation, context, next) {
-      return contextStorage.run(context, next);
-    },
+    interceptor: neondeckFlueExecutionInterceptor,
     dispose() {
       installed = false;
     },
@@ -28,6 +44,10 @@ export function installFlueExecutionContextTracker() {
 
 export function currentFlueExecutionContext() {
   return contextStorage.getStore();
+}
+
+export function runWithFlueTaskDelegationBlocked<T>(callback: () => T) {
+  return taskDelegationStorage.run('blocked', callback);
 }
 
 export function runWithFlueExecutionContextForTests<T>(

@@ -1,5 +1,9 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import {
+  maxPrReviewTimeoutMs,
+  minPrReviewTimeoutMs,
+} from '../../../../../shared/pr-review-policy';
+import {
   getAutopilotPrompts,
   getPrReviewPrompts,
   updateAgentModels,
@@ -1114,8 +1118,8 @@ const thinkingLevelOptions = [
   'xhigh',
 ];
 const newCompatibleProviderOption = '__new-compatible-provider__';
-const minPrReviewTimeoutSeconds = 10;
-const maxPrReviewTimeoutSeconds = 30 * 60;
+const minPrReviewTimeoutSeconds = minPrReviewTimeoutMs / 1000;
+const maxPrReviewTimeoutSeconds = maxPrReviewTimeoutMs / 1000;
 
 export function optionalPositiveInteger(value: string, label: string) {
   if (!value.trim()) return null;
