@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.0.0-beta.27
+
+### Minor Changes
+
+- [#233](https://github.com/pandemicsyn/neondeck/pull/233) [`db75850`](https://github.com/pandemicsyn/neondeck/commit/db758508cfae8ada63f7b154b969174409f964b4) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Show live, run-scoped workflow event timelines in the workflow inspector.
+
+### Patch Changes
+
+- [#236](https://github.com/pandemicsyn/neondeck/pull/236) [`9009312`](https://github.com/pandemicsyn/neondeck/commit/900931232520cebc85f8b21d444cc13804e6d8e1) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Fetch only new workflow observations while polling an active run inspector.
+
 ## 1.0.0-beta.26
 
 ### Minor Changes
