@@ -7,7 +7,7 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
 
 <BaseLayout
   title="CLI · neondeck"
-  description="neondeck CLI commands for onboarding, status, repository management, watches, schedules, and future TUI entrypoints."
+  description="neondeck CLI commands for onboarding, status, repository management, watches, and schedules."
 >
   <div class="site-shell">
     <SiteNav />
@@ -253,14 +253,6 @@ neondeck learning restore-skill-patch &lt;candidate-id&gt;</code></pre>
         <p>
           Doctor runs local readiness checks for runtime state, configured
           repositories, credentials, services, and development prerequisites.
-        </p>
-
-        <h2>TUI</h2>
-        <pre><code>neondeck tui</code></pre>
-        <p>
-          The command is reserved for the future OpenTUI client. The TUI should
-          reuse backend APIs and event streams rather than growing a second
-          agent runtime.
         </p>
       </article>
     </main>
