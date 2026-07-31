@@ -271,6 +271,20 @@ describe('workflow observability', () => {
       isTruncated: false,
     });
 
+    const incrementalHistory = await readWorkflowRunEvents(
+      'run_timeline',
+      paths,
+      { afterEventId: history.events[0]!.id },
+    );
+    expect(incrementalHistory.events.map((item) => item.eventType)).toEqual([
+      'tool',
+    ]);
+    expect(incrementalHistory).toMatchObject({
+      totalEventCount: 2,
+      retainedEventCount: 2,
+      isTruncated: false,
+    });
+
     const database = openDb(paths.neondeckDatabase);
     database
       .prepare(

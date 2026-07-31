@@ -51,6 +51,10 @@ export type WorkflowRunEventHistory = {
   isTruncated: boolean;
 };
 
+export type WorkflowRunEventQuery = {
+  afterEventId?: number;
+};
+
 const maxWorkflowEventRows = 5_000;
 const redacted = '[redacted]';
 const persistedEventTypes = new Set([
@@ -195,15 +199,17 @@ export async function readWorkflowObservability(paths = runtimePaths()) {
 export async function readWorkflowRunEvents(
   runId: string,
   paths = runtimePaths(),
+  query: WorkflowRunEventQuery = {},
 ) {
   await ensureRuntimeHome(paths);
   const database = openDb(paths.neondeckDatabase, { readOnly: true });
 
   database.exec('BEGIN;');
   try {
-    const events = database
-      .prepare(
-        `
+    const eventQuery =
+      query.afterEventId === undefined
+        ? database.prepare(
+            `
         SELECT
           workflow_events.*,
           workflow_run_observations.workflow AS observed_run_workflow
@@ -213,8 +219,25 @@ export async function readWorkflowRunEvents(
         WHERE workflow_events.run_id = ?
         ORDER BY id ASC;
       `,
-      )
-      .all(runId)
+          )
+        : database.prepare(
+            `
+        SELECT
+          workflow_events.*,
+          workflow_run_observations.workflow AS observed_run_workflow
+        FROM workflow_events
+        LEFT JOIN workflow_run_observations
+          ON workflow_run_observations.run_id = workflow_events.run_id
+        WHERE workflow_events.run_id = ?
+          AND workflow_events.id > ?
+        ORDER BY id ASC;
+      `,
+          );
+    const eventRows =
+      query.afterEventId === undefined
+        ? eventQuery.all(runId)
+        : eventQuery.all(runId, query.afterEventId);
+    const events = eventRows
       .map(readWorkflowEventRow)
       .sort(compareWorkflowRunEvents);
     const projection = database
@@ -226,7 +249,19 @@ export async function readWorkflowRunEvents(
       `,
       )
       .get(runId) as { event_count?: unknown } | undefined;
-    const retainedEventCount = events.length;
+    const retainedProjection = database
+      .prepare(
+        `
+        SELECT COUNT(*) AS retained_event_count
+        FROM workflow_events
+        WHERE run_id = ?;
+      `,
+      )
+      .get(runId) as { retained_event_count?: unknown } | undefined;
+    const retainedEventCount =
+      typeof retainedProjection?.retained_event_count === 'number'
+        ? retainedProjection.retained_event_count
+        : events.length;
     const observedEventCount =
       typeof projection?.event_count === 'number'
         ? projection.event_count

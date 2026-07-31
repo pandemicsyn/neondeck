@@ -59,6 +59,36 @@ export function orderWorkflowRunEvents(events: WorkflowEventRecord[]) {
   });
 }
 
+export function latestWorkflowRunEventId(events: WorkflowEventRecord[]) {
+  return events.reduce<number | undefined>(
+    (latest, event) =>
+      latest === undefined || event.id > latest ? event.id : latest,
+    undefined,
+  );
+}
+
+export function mergeWorkflowRunInspection(
+  previous: WorkflowRunInspectionResponse | undefined,
+  update: WorkflowRunInspectionResponse,
+) {
+  if (!previous || previous.run.runId !== update.run.runId) return update;
+
+  const eventsById = new Map(
+    previous.events.map((event) => [event.id, event] as const),
+  );
+  for (const event of update.events) eventsById.set(event.id, event);
+  const retainedEvents = [...eventsById.values()].sort(
+    (left, right) => left.id - right.id,
+  );
+  const retainedEventCount = update.eventHistory.retainedEventCount;
+
+  return {
+    ...update,
+    events:
+      retainedEventCount === 0 ? [] : retainedEvents.slice(-retainedEventCount),
+  } satisfies WorkflowRunInspectionResponse;
+}
+
 export type WorkflowRunRefreshDecision = {
   interval: number | false;
   terminalPendingSince: number | null;

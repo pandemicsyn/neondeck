@@ -134,13 +134,17 @@ describe('dashboard API helpers', () => {
     });
     vi.stubGlobal('fetch', fetchMock);
 
-    await expect(getWorkflowRun('run_123')).resolves.toMatchObject({
+    await expect(
+      getWorkflowRun('run_123', { afterEventId: 41 }),
+    ).resolves.toMatchObject({
       run: { runId: 'run_123' },
     });
 
     expect(fetchMock).toHaveBeenCalledTimes(2);
     const inspectionRequest = fetchMock.mock.calls[1];
-    expect(inspectionRequest?.[0]).toBe('/api/workflows/runs/run_123');
+    expect(inspectionRequest?.[0]).toBe(
+      '/api/workflows/runs/run_123?afterEventId=41',
+    );
     const inspectionHeaders = new Headers(inspectionRequest?.[1]?.headers);
     expect(inspectionHeaders.get('x-neondeck-api-token')).toBe('local-token');
   });

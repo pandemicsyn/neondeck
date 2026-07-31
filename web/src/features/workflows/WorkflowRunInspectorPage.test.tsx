@@ -11,6 +11,8 @@ import type {
 import { WorkflowRunInspectorView } from './WorkflowRunInspectorPage';
 import {
   formatWorkflowPayload,
+  latestWorkflowRunEventId,
+  mergeWorkflowRunInspection,
   orderWorkflowRunEvents,
   terminalWorkflowRunSettleGraceMs,
   workflowRunRefreshDecision,
@@ -233,6 +235,27 @@ describe('WorkflowRunInspectorPage', () => {
     events[1] = { ...events[1]!, createdAt: '2026-07-21T16:00:00.000Z' };
     expect(
       orderWorkflowRunEvents(events.reverse()).map((event) => event.id),
+    ).toEqual([1, 2, 3]);
+  });
+
+  it('merges incremental event responses without duplicating retained history', () => {
+    const previous = workflowInspection({
+      events: workflowEvents().slice(0, 2),
+    });
+    const update = {
+      ...workflowInspection({ events: workflowEvents().slice(1) }),
+      eventHistory: {
+        totalEventCount: 3,
+        retainedEventCount: 3,
+        isTruncated: false,
+      },
+    } satisfies WorkflowRunInspectionResponse;
+
+    expect(latestWorkflowRunEventId(previous.events)).toBe(2);
+    expect(
+      mergeWorkflowRunInspection(previous, update).events.map(
+        (event) => event.id,
+      ),
     ).toEqual([1, 2, 3]);
   });
 });
