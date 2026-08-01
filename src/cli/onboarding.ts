@@ -47,7 +47,7 @@ export type SetupGitIdentityResult = {
 };
 
 type GitIdentitySetupDependencies = {
-  env?: NodeJS.ProcessEnv;
+  persistedEnv?: NodeJS.ProcessEnv;
   runGit?: (args: string[]) => Promise<string>;
   confirm?: typeof promptConfirm;
   text?: typeof promptText;
@@ -85,7 +85,9 @@ export async function runInit(options: { home?: string }) {
 
   await configureSecrets(paths, envLoad);
   loadEnvForPaths(paths, { includeDevFallback: false, overwrite: true });
-  await configureGitIdentity();
+  await configureGitIdentity({
+    persistedEnv: Object.fromEntries(await readDotEnvFile(paths.env)),
+  });
   await configureSoul(paths);
   await configureProviderAndModels(paths);
   await configureRepos(paths);
@@ -137,10 +139,9 @@ export async function runInit(options: { home?: string }) {
 export async function configureGitIdentity(
   dependencies: GitIdentitySetupDependencies = {},
 ): Promise<SetupGitIdentityResult> {
-  const env = dependencies.env ?? process.env;
+  const persistedEnv = dependencies.persistedEnv ?? {};
   const runGit =
-    dependencies.runGit ??
-    ((args) => runUnattendedGit(process.cwd(), args, { env }));
+    dependencies.runGit ?? ((args) => runUnattendedGit(process.cwd(), args));
   const confirm = dependencies.confirm ?? promptConfirm;
   const text = dependencies.text ?? promptText;
   const warn = dependencies.warn ?? ((message: string) => log.warn(message));
@@ -160,10 +161,12 @@ export async function configureGitIdentity(
     readGlobalGitValue(runGit, 'user.name'),
     readGlobalGitValue(runGit, 'user.email'),
   ]);
-  const authorName = env.GIT_AUTHOR_NAME?.trim() || configuredName;
-  const authorEmail = env.GIT_AUTHOR_EMAIL?.trim() || configuredEmail;
-  const committerName = env.GIT_COMMITTER_NAME?.trim() || configuredName;
-  const committerEmail = env.GIT_COMMITTER_EMAIL?.trim() || configuredEmail;
+  const authorName = persistedEnv.GIT_AUTHOR_NAME?.trim() || configuredName;
+  const authorEmail = persistedEnv.GIT_AUTHOR_EMAIL?.trim() || configuredEmail;
+  const committerName =
+    persistedEnv.GIT_COMMITTER_NAME?.trim() || configuredName;
+  const committerEmail =
+    persistedEnv.GIT_COMMITTER_EMAIL?.trim() || configuredEmail;
 
   if (authorName && authorEmail && committerName && committerEmail) {
     success(`Git commit identity is ready: ${authorName} <${authorEmail}>`);

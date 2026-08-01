@@ -48,7 +48,9 @@ fnm use 26.4.0</code></pre>
           global <code>user.name</code> or <code>user.email</code> is missing, the
           wizard warns and offers to configure both plus
           <code>user.useConfigOnly</code> so Git cannot silently invent an identity
-          from the machine account.
+          from the machine account. Complete author and committer overrides in the
+          runtime-home <code>.env</code> are accepted, but temporary shell exports
+          do not suppress this warning.
         </p>
         <p>
           By default, local state is stored in

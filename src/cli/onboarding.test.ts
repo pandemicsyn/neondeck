@@ -19,6 +19,7 @@ const tempRoots: string[] = [];
 
 afterEach(async () => {
   vi.useRealTimers();
+  vi.unstubAllEnvs();
   await Promise.all(
     tempRoots
       .splice(0)
@@ -74,7 +75,7 @@ describe('Git identity onboarding', () => {
 
     await expect(
       configureGitIdentity({
-        env: {},
+        persistedEnv: {},
         runGit,
         confirm,
         success,
@@ -105,7 +106,7 @@ describe('Git identity onboarding', () => {
 
     await expect(
       configureGitIdentity({
-        env: {},
+        persistedEnv: {},
         runGit,
         confirm: vi
           .fn<(options: unknown) => Promise<boolean>>()
@@ -154,7 +155,7 @@ describe('Git identity onboarding', () => {
 
     await expect(
       configureGitIdentity({
-        env: {},
+        persistedEnv: {},
         runGit,
         confirm: vi
           .fn<(options: unknown) => Promise<boolean>>()
@@ -166,7 +167,31 @@ describe('Git identity onboarding', () => {
     expect(warn).toHaveBeenCalledOnce();
   });
 
-  it('accepts complete author and committer environment overrides', async () => {
+  it('does not treat temporary shell overrides as service-ready identity', async () => {
+    vi.stubEnv('GIT_AUTHOR_NAME', 'Temporary Automation');
+    vi.stubEnv('GIT_AUTHOR_EMAIL', 'temporary@example.test');
+    vi.stubEnv('GIT_COMMITTER_NAME', 'Temporary Automation');
+    vi.stubEnv('GIT_COMMITTER_EMAIL', 'temporary@example.test');
+    const runGit = vi.fn<(args: string[]) => Promise<string>>(async (args) => {
+      if (args[0] === '--version') return 'git version 2.50.0\n';
+      throw new Error('missing');
+    });
+    const confirm = vi
+      .fn<(options: unknown) => Promise<boolean>>()
+      .mockResolvedValue(false);
+
+    await expect(
+      configureGitIdentity({
+        persistedEnv: {},
+        runGit,
+        confirm,
+        warn: vi.fn<(message: string) => void>(),
+      }),
+    ).resolves.toEqual({ status: 'skipped', name: null, email: null });
+    expect(confirm).toHaveBeenCalledOnce();
+  });
+
+  it('accepts complete author and committer overrides persisted in runtime home', async () => {
     const runGit = vi.fn<(args: string[]) => Promise<string>>(async (args) => {
       if (args[0] === '--version') return 'git version 2.50.0\n';
       throw new Error('missing');
@@ -175,7 +200,7 @@ describe('Git identity onboarding', () => {
 
     await expect(
       configureGitIdentity({
-        env: {
+        persistedEnv: {
           GIT_AUTHOR_NAME: 'Automation',
           GIT_AUTHOR_EMAIL: 'automation@example.test',
           GIT_COMMITTER_NAME: 'Automation',
