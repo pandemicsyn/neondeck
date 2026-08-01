@@ -79,8 +79,13 @@ Open `http://127.0.0.1:5173/`.
 
 The setup wizard prepares a runtime home, configures KiloCode, OpenAI API-key,
 Anthropic, ChatGPT subscription, or generic OpenAI-compatible model access,
-adds local repositories, applies a dashboard preset, and can create initial
-schedules and command preapprovals.
+checks the Git identity used by Autopilot commits, adds local repositories,
+applies a dashboard preset, and can create initial schedules and command
+preapprovals. When the global Git identity is incomplete, the wizard warns and
+offers to configure it instead of allowing Git to silently invent one from the
+local account and hostname. Complete author and committer overrides persisted in
+the runtime-home `.env` are also accepted; temporary shell exports do not
+suppress the setup warning.
 
 ChatGPT login/logout and provider registration changes made with the standalone
 CLI apply after Neondeck restarts. Generic endpoint URLs are user-owned setup:
