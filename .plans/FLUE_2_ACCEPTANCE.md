@@ -1,6 +1,6 @@
 # Flue 2 Feature-Parity Acceptance
 
-Status: local runtime passed; live GitHub scenarios pending an authorized disposable PR
+Status: local runtime and recorded live read-only GitHub slices passed; externally mutating PR-review and Autopilot scenarios pending explicit authorization
 Applies to: `flue2`  
 Companion plan: [FLUE_2_MIGRATION_PLAN.md](./FLUE_2_MIGRATION_PLAN.md)
 
@@ -56,7 +56,8 @@ request.
 Pass conditions:
 
 - create, switch, resume, send, stream, history, and abort all work
-- local authentication remains enforced on agent and app routes
+- shared local host/origin access control remains enforced on agent and app
+  routes
 - typed data parts and response metadata render without unsafe assumptions
 
 ## 2. MCP Capability Preservation
@@ -193,12 +194,15 @@ failure leaves the migration incomplete.
 
 Environment:
 
-- source base: `39608d9` plus the Phase 11 working tree
+- source base: `76f9db9` plus the MCP disabled-catalog fix working tree
 - Node `26.4.0`, npm `11.17.0`, Flue `2.0.1`
 - macOS `26.6` (`25G72`)
 - clean runtime home: `/tmp/neondeck-flue2-acceptance.PsmRZL`
 - provider/model: KiloCode with `kilocode/kilo-auto/free`
-- run window: approximately 2026-08-01 21:48-21:55 UTC
+- registered repository: `neondeck` at the `flue2` checkout
+- live read-only PR: `pandemicsyn/neondeck#177`, head
+  `23799f218539933a71f062056dc06ed5655e187e`
+- run window: approximately 2026-08-01 21:48-22:44 UTC
 
 Live local results:
 
@@ -206,6 +210,12 @@ Live local results:
   `FLUE2_ACCEPTANCE_OK`. After two Node restarts, the same conversation retained
   eight messages, four settled submissions, the acceptance token, and the MCP
   result.
+- **Display session isolation and abort: pass.** Main and scratch conversations
+  retained disjoint unique tokens. A deliberately long scratch turn accepted a
+  durable abort, settled with outcome `aborted`, and the same conversation then
+  completed a healthy turn containing `AFTER_ABORT_HEALTHY`. `/repo-status
+neondeck` returned the same clean `flue2` repository facts through the local
+  API and the model-callable typed Tool.
 - **MCP discovery and invocation: pass.** The stdio fixture connected and
   exposed two tools. The first echo call produced a hash-bound approval request.
   Resolving the same approval through the CLI nudged the mounted conversation,
@@ -215,23 +225,84 @@ Live local results:
   fixture danger tool was enforced in a fresh session and the tool did not run.
   A second CLI-only approval test for `CLI_NUDGE_CHECK` also settled successfully
   without a nudge/import error.
+- **MCP catalog disable and re-enable: pass.** Disabling the fixture through the
+  live local API closed the connection and exposed zero tools. A new session
+  omitted `mcp__fixture__echo` and used only the deterministic MCP status lookup.
+  Re-enabling reconnected both tools; another new session received the refreshed
+  echo Tool and reached the normal hash-bound approval gate. A focused registry
+  regression test proves existing session snapshots remain frozen and fail
+  closed while deliberately disabled catalogs are excluded from new sessions.
 - **Restart durability: pass.** Conversation messages, submission settlement,
   and the approved MCP result survived repeated Node process restarts.
+- **Morning Briefing: pass.** The manual run
+  `briefing:20260801223513:d07e36b0` persisted its exact deterministic snapshot
+  before model work, reported the registered repo as healthy and the
+  intentionally unauthenticated GitHub review queue as partial, emitted a
+  validated `data-briefing` part, and settled `ready`. A due cron occurrence
+  created scheduled run `briefing:20260801223639:6d78eb69` through the same
+  persistent briefing session. After restart, both exact snapshots/runs remained
+  inspectable and each retained exactly one ready notification.
+- **Memory and stable context: pass.** Memory
+  `985fbc92-00e5-463d-8d32-3699c05fd577` was created, revision-checked,
+  edited, archived, and restored through the typed API with complete
+  before/after audit rows. The loaded session became stale after the edit but
+  continued to answer from its frozen `MEMORY_CONTEXT_AFTER` snapshot; a
+  deliberate new session loaded the same memory id and answered from
+  `MEMORY_CONTEXT_EDITED`.
+- **Learning policy and restore: pass.** Live `off` mode rejected both curation
+  and a Neon skill-patch proposal. `review` mode persisted candidate
+  `4ba2d183-dc3a-4d28-9ccf-c73d8a37c064` without editing its target; explicit
+  approval applied it and the audit-backed restore returned the unchanged
+  target to its exact pre-patch content. `auto` mode admitted Neon-authored
+  local memory `67d7eb65-ce24-44e8-a495-cd3c3f3bbd01`. Bounded conversation
+  learning review `8d06e910-e073-455f-a30c-0df01fd0dd9a` settled `completed`
+  from submission `sub_ik_0b3b896bf1dcb3e98ee061da788c19c3` and correctly
+  made no unsupported proposals from metadata-only evidence.
 - **Packaged runtime: pass.** `npm run smoke:npm-pack` started the packed CLI and
   server from a clean install, reached health, and loaded shipped runtime skills.
 
 Automated feature evidence:
 
-- Morning Briefing, initial and continuing PR review, memory, learning, and all
+- Initial and continuing PR review and all
   four Autopilot authority modes pass their unit, git, integration, restart,
   stale-head, recovery, and idempotency fixtures in `npm run verify`.
 - `npm run smoke:kilo`, `npm run smoke:learning`, `npm run raycast:build`, and
   `npm run raycast:lint` pass on the Phase 11 tree.
 
-Pending external acceptance:
+Live GitHub read-only evidence:
 
-- No disposable GitHub pull request was supplied, and this task did not grant
-  authority to create, push to, comment on, or otherwise mutate a live PR.
-  Therefore the live PR-review and Autopilot scenarios in sections 4 and 6 were
-  not run against GitHub. Their automated fixture coverage passes, but this file
-  deliberately does not label those external scenarios as manually passed.
+- **Initial PR review: pass.** Review attempt
+  `136f8218-8837-43ce-8ea9-d0e2b39358bd` reviewed PR #177 at the exact recorded
+  head, settled submission `sub_01KYZPNSY8E80HDTADYWC5XNJX`, and persisted two
+  report artifacts plus five validated local findings. No review or comment was
+  submitted to GitHub.
+- **Continuing reviewer: pass.** The revision-keyed reviewer conversation
+  retained its uid, history, exact head, and `REVIEWER_CONTINUITY_OK` token after
+  a Node restart. A conversation addressed with a different head refused the
+  revision-bound request rather than silently following it.
+- **Autopilot notify-only baseline: pass.** A live watch of PR #177 persisted all
+  eight GitHub event-watermark categories and the exact head, reported no source
+  changes on refresh, and retained `notify-only`/`watching` state after restart.
+  `ownerInstanceId` and `worktreeId` remained null, proving passive observation
+  did not start a mutation turn or create a managed worktree.
+
+Remaining PR-review live scenarios:
+
+- The live read-only happy path, continuing reviewer, restart persistence, and
+  revision-mismatch refusal above pass. Automated coverage passes for reload
+  during execution, timeout/failure retry, and exact-head advancement.
+- Advancing a real PR head is an external GitHub mutation and was not authorized.
+  The separately addressed mismatched-head reviewer proved the local
+  revision-bound refusal but is not represented as a live head-advance pass.
+
+Pending externally mutating acceptance:
+
+- No authorization was supplied to create, push to, comment on, advance, close,
+  or otherwise mutate a disposable live PR, nor to send a purpose-built
+  disposable PR and Autopilot owner context to the configured model provider.
+  Therefore a real PR head advancement plus `prepare-only`,
+  `autofix-with-approval`,
+  `autofix-push-when-safe`, live head advancement, and external-effect restart
+  reconciliation in section 6 remain unrun against GitHub. Their automated
+  fixture coverage passes, but this file deliberately does not label those
+  externally mutating scenarios as manually passed.

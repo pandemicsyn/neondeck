@@ -1,6 +1,6 @@
 # Flue 2 Migration Plan
 
-Status: implementation complete; live GitHub acceptance pending
+Status: implementation and recorded live read-only GitHub slices complete; externally mutating PR-review and Autopilot acceptance pending explicit authorization
 Integration branch: `flue2`  
 Created: 2026-08-01  
 Target Flue release at planning time: `2.0.1`
@@ -860,6 +860,10 @@ Implementation evidence captured on 2026-08-01:
   admission service, and command-event transitions are monotonic
 - 58 focused tests, lint, server and web production builds, and an independent
   static P1/P2 review pass
+- live acceptance persisted an exact failure-tolerant snapshot before model
+  work, rendered validated `data-briefing`, dispatched a due cron occurrence
+  through the same persistent conversation, and retained one notification per
+  settled manual/scheduled run across restart reconciliation
 
 Exit criteria:
 
@@ -916,6 +920,13 @@ Implementation evidence captured on 2026-08-01:
 - 143 focused tests across 10 files, database migration checks, web TypeScript,
   lint, formatting, docs production build, filtered Phase 8 server TypeScript,
   and an independent static P1/P2 re-review pass
+- live memory acceptance proves revision conflict handling, create/edit/archive/
+  restore audit history, frozen prompt context with a visible stale badge, and
+  deliberate adoption of edited guidance only in a new session
+- live learning acceptance proves `off`, `review`, and `auto` policy behavior,
+  proposal-only review candidates, explicit skill-patch apply, exact
+  unchanged-target audit restore, Neon-authored auto memory, and completed
+  bounded learning-review settlement without unsupported proposals
 - Flue `guide/durability`, `reference/agent-hooks-api`,
   `reference/agent-api`, and migration guidance informed the durable Tool,
   lifecycle seam, keyed recovery, and pure-render design
@@ -1028,9 +1039,16 @@ Exit criteria:
 - [x] Update README, DEVELOPMENT, Astro docs, CLI help, Raycast integration,
       package scripts, QA, desktop service, and smoke scripts.
 - [x] Add an appropriate changeset for the completed user-facing migration.
-- [ ] Complete live GitHub acceptance against an authorized disposable PR. The
-      clean local runtime, conversation restart, MCP, package, and automated
-      feature acceptance passes are recorded in `FLUE_2_ACCEPTANCE.md`.
+- [x] Complete the live read-only PR-review happy path, continuing-reviewer
+      restart/mismatch slice, and a passive `notify-only` Autopilot baseline.
+      The clean local runtime, conversation restart/abort, MCP, package,
+      read-only GitHub, and automated feature evidence is recorded in
+      `FLUE_2_ACCEPTANCE.md`.
+- [ ] Complete the remaining externally mutating PR-review head-advance and
+      Autopilot scenarios against an explicitly authorized disposable PR and
+      provider boundary. Reload/timeout/retry behavior is automated; any safe
+      additional live slice must be recorded without overstating the combined
+      gate.
 - [x] Run the automated completion gates below.
 
 Phase 11 evidence captured on 2026-08-01:
@@ -1048,6 +1066,17 @@ Phase 11 evidence captured on 2026-08-01:
   conversation URL; live stdio MCP acceptance proved ask, CLI approval,
   identical-argument retry, result delivery, denial, audit, and restart
   persistence
+- disabled MCP servers no longer seed cached Tools into newly created sessions;
+  already-created sessions retain their frozen roster and fail closed, while a
+  re-enabled server supplies its refreshed catalog only to a new session; both
+  the focused regression test and live stdio fixture acceptance pass
+- live display acceptance additionally proves isolated main/scratch histories,
+  durable abort followed by a healthy turn, and `/repo-status` parity between
+  the local API and the model-callable typed Tool
+- live read-only GitHub acceptance reviewed PR #177 at an exact head, persisted
+  validated local findings and reports, resumed its revision-keyed reviewer
+  after restart, rejected a mismatched revision, and kept a passive
+  `notify-only` Autopilot watch owner/worktree-free across restart
 - runtime skills, the product roadmap, README, development guide, Astro docs,
   Raycast command client, smoke naming, and user-facing operation vocabulary
   now describe the Flue 2 architecture; legacy table and audit field names are
@@ -1118,8 +1147,13 @@ The migration is complete only when all of the following are true:
 - [x] Flue beta state reset is documented and automatic/manual setup is clear.
 - [x] `npm run verify` passes.
 - [x] Packaged npm and desktop/server smoke paths pass.
-- [ ] Live GitHub PR review and Autopilot acceptance succeeds against an
-      authorized disposable PR. Clean local runtime and MCP acceptance passes.
+- [x] The live read-only PR-review happy path, continuing-reviewer
+      restart/mismatch slice, and passive `notify-only` Autopilot baseline
+      succeed against PR #177 without external mutations. Clean local runtime,
+      display abort/session isolation, and complete MCP acceptance pass.
+- [ ] The remaining live PR-review head-advance and GitHub-mutating Autopilot
+      acceptance succeeds against an explicitly authorized disposable PR and
+      provider boundary.
 
 ## Expected Roadmap Updates
 

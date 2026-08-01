@@ -199,6 +199,10 @@ export class McpRegistry {
   toolSessionSnapshotsSync(): McpToolSessionSnapshot[] {
     const snapshots = new Map<string, McpToolSessionSnapshot>();
     for (const entry of this.entries.values()) {
+      // Existing sessions retain their frozen snapshots and resolve them to
+      // unavailable tools below. A deliberately disabled server must not seed
+      // its cached catalog into sessions created after the disable completed.
+      if (entry.status === 'disabled') continue;
       for (const record of entry.catalog) {
         snapshots.set(record.adaptedName, sessionSnapshot(record));
       }

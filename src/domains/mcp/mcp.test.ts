@@ -2127,6 +2127,35 @@ describe('MCP support', () => {
         server: 'fixture',
         tool: 'danger',
       });
+
+      await updateMcpServer(
+        { id: 'fixture', server: { enabled: false } },
+        paths,
+      );
+      await registry.refresh('fixture');
+      expect(registry.toolSessionSnapshotsSync()).toEqual([]);
+      const disabledSessionEcho = registry
+        .toolsForSessionSync(snapshots)
+        .find((tool) => tool.name === 'mcp__fixture__echo');
+      await expect(
+        toolOutputPromise(
+          disabledSessionEcho!.run({ data: { text: 'frozen' } } as never),
+        ),
+      ).resolves.toMatchObject({
+        ok: false,
+        status: 'session-capability-unavailable',
+        server: 'fixture',
+        tool: 'echo',
+      });
+
+      await updateMcpServer(
+        { id: 'fixture', server: { enabled: true } },
+        paths,
+      );
+      await registry.refresh('fixture');
+      expect(
+        registry.toolSessionSnapshotsSync().map((tool) => tool.adaptedName),
+      ).toEqual(['mcp__fixture__echo']);
     } finally {
       if (previous === undefined) delete process.env.NEONDECK_MCP_ONLY_ECHO;
       else process.env.NEONDECK_MCP_ONLY_ECHO = previous;
