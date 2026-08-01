@@ -35,8 +35,11 @@ neondeck init --home .neondeck-test</code></pre>
         <p>
           The init wizard creates runtime files, writes runtime-home secrets,
           tunes <code>SOUL.md</code>, configures models and provider references,
-          adds repositories, applies a dashboard preset, and can create initial
-          schedules and command preapprovals.
+          checks the Git identity used by Autopilot, adds repositories, applies
+          a dashboard preset, and can create initial schedules and command
+          preapprovals. If the global identity is incomplete, setup warns and
+          offers to write <code>user.name</code>, <code>user.email</code>, and
+          <code>user.useConfigOnly=true</code>.
         </p>
 
         <h2>Provider authentication</h2>

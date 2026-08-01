@@ -7,6 +7,7 @@ import { updateAgentModels } from '../modules/config';
 import { readNeonSessionState } from '../modules/sessions';
 import { ensureRuntimeHome, runtimePaths } from '../runtime-home';
 import {
+  configureGitIdentity,
   defaultProviderModel,
   finalizeFreshInstallSession,
   formatOnboardingNextSteps,
@@ -58,6 +59,138 @@ describe('onboarding session baseline', () => {
       activeSessionId: 'neondeck-main',
       stale: true,
     });
+  });
+});
+
+describe('Git identity onboarding', () => {
+  it('accepts an existing global identity without prompting', async () => {
+    const runGit = vi.fn<(args: string[]) => Promise<string>>(async (args) => {
+      if (args.at(-1) === 'user.name') return 'syn\n';
+      if (args.at(-1) === 'user.email') return 'syn@neonronin.sh\n';
+      return 'git version 2.50.0\n';
+    });
+    const confirm = vi.fn<(options: unknown) => Promise<boolean>>();
+    const success = vi.fn<(message: string) => void>();
+
+    await expect(
+      configureGitIdentity({
+        env: {},
+        runGit,
+        confirm,
+        success,
+      }),
+    ).resolves.toEqual({
+      status: 'ready',
+      name: 'syn',
+      email: 'syn@neonronin.sh',
+    });
+    expect(confirm).not.toHaveBeenCalled();
+    expect(success).toHaveBeenCalledWith(
+      'Git commit identity is ready: syn <syn@neonronin.sh>',
+    );
+  });
+
+  it('offers to configure a missing global identity and fails closed', async () => {
+    const runGit = vi.fn<(args: string[]) => Promise<string>>(async (args) => {
+      if (args[0] === '--version') return 'git version 2.50.0\n';
+      if (args.includes('--get')) throw new Error('missing');
+      return '';
+    });
+    const text = vi
+      .fn<(options: unknown) => Promise<string>>()
+      .mockResolvedValueOnce('syn')
+      .mockResolvedValueOnce('syn@neonronin.sh');
+    const warn = vi.fn<(message: string) => void>();
+    const success = vi.fn<(message: string) => void>();
+
+    await expect(
+      configureGitIdentity({
+        env: {},
+        runGit,
+        confirm: vi
+          .fn<(options: unknown) => Promise<boolean>>()
+          .mockResolvedValue(true),
+        text,
+        warn,
+        success,
+      }),
+    ).resolves.toEqual({
+      status: 'configured',
+      name: 'syn',
+      email: 'syn@neonronin.sh',
+    });
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining('Autopilot commits may otherwise use'),
+    );
+    expect(runGit).toHaveBeenCalledWith([
+      'config',
+      '--global',
+      'user.name',
+      'syn',
+    ]);
+    expect(runGit).toHaveBeenCalledWith([
+      'config',
+      '--global',
+      'user.email',
+      'syn@neonronin.sh',
+    ]);
+    expect(runGit).toHaveBeenCalledWith([
+      'config',
+      '--global',
+      'user.useConfigOnly',
+      'true',
+    ]);
+    expect(success).toHaveBeenCalledWith(
+      'Configured global Git identity: syn <syn@neonronin.sh>',
+    );
+  });
+
+  it('warns but leaves Git unchanged when configuration is declined', async () => {
+    const runGit = vi.fn<(args: string[]) => Promise<string>>(async (args) => {
+      if (args[0] === '--version') return 'git version 2.50.0\n';
+      throw new Error('missing');
+    });
+    const warn = vi.fn<(message: string) => void>();
+
+    await expect(
+      configureGitIdentity({
+        env: {},
+        runGit,
+        confirm: vi
+          .fn<(options: unknown) => Promise<boolean>>()
+          .mockResolvedValue(false),
+        warn,
+      }),
+    ).resolves.toEqual({ status: 'skipped', name: null, email: null });
+    expect(runGit).toHaveBeenCalledTimes(3);
+    expect(warn).toHaveBeenCalledOnce();
+  });
+
+  it('accepts complete author and committer environment overrides', async () => {
+    const runGit = vi.fn<(args: string[]) => Promise<string>>(async (args) => {
+      if (args[0] === '--version') return 'git version 2.50.0\n';
+      throw new Error('missing');
+    });
+    const confirm = vi.fn<(options: unknown) => Promise<boolean>>();
+
+    await expect(
+      configureGitIdentity({
+        env: {
+          GIT_AUTHOR_NAME: 'Automation',
+          GIT_AUTHOR_EMAIL: 'automation@example.test',
+          GIT_COMMITTER_NAME: 'Automation',
+          GIT_COMMITTER_EMAIL: 'automation@example.test',
+        },
+        runGit,
+        confirm,
+        success: vi.fn<(message: string) => void>(),
+      }),
+    ).resolves.toEqual({
+      status: 'ready',
+      name: 'Automation',
+      email: 'automation@example.test',
+    });
+    expect(confirm).not.toHaveBeenCalled();
   });
 });
 
