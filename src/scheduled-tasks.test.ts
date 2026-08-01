@@ -3,9 +3,9 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import {
-  activateScheduledTaskWorkflowRun,
-  attachScheduledTaskWorkflowRunId,
-  canAdmitScheduledWorkflow,
+  activateScheduledTaskSubmission,
+  attachScheduledTaskSubmissionId,
+  canAdmitScheduledSubmission,
   claimDueScheduledTasks,
   createAgentInstructionTask,
   createBriefingTask,
@@ -14,12 +14,14 @@ import {
   readScheduledTask,
   releaseUnstartedScheduledTaskClaim,
   settleScheduledTaskRun,
-  settleScheduledTaskWorkflowRun,
+  settleScheduledTaskSubmission,
   upsertScheduledTask,
   validateAutomationTrigger,
 } from './modules/scheduled-tasks';
-import { runSchedulerTick } from './modules/scheduler';
-import { recordFlueObservation } from './modules/learning';
+import {
+  runSchedulerTick,
+  type SchedulerDependencies,
+} from './modules/scheduler';
 import { createChatSession } from './modules/sessions';
 import { runtimePaths } from './runtime-home';
 
@@ -49,6 +51,65 @@ describe('scheduled task triggers', () => {
 });
 
 describe('scheduled task storage', () => {
+  it('dispatches agent instructions once and settles by Flue submission id', async () => {
+    const home = await mkdtemp(join(tmpdir(), 'neondeck-scheduled-tasks-'));
+    const paths = runtimePaths(home);
+    try {
+      await upsertScheduledTask(
+        {
+          id: 'instruction:daily-health',
+          spec: {
+            kind: 'run-agent-instruction',
+            prompt: 'Report repository health.',
+            target: { kind: 'agent' },
+            skills: [],
+          },
+          trigger: { kind: 'interval', everySeconds: 300 },
+          nextRunAt: '2026-07-10T00:00:00.000Z',
+        },
+        paths,
+      );
+      const dispatchInstruction = vi.fn<
+        NonNullable<SchedulerDependencies['dispatchInstruction']>
+      >(async (input) => ({
+        submissionId: 'submission:scheduled-health',
+        sessionId: input.sessionId,
+      }));
+
+      await expect(
+        runSchedulerTick(paths, new Date('2026-07-10T00:00:00.000Z'), {
+          dispatchInstruction,
+        }),
+      ).resolves.toMatchObject({ ok: true, changed: true });
+      expect(dispatchInstruction).toHaveBeenCalledOnce();
+      expect(dispatchInstruction).toHaveBeenCalledWith(
+        expect.objectContaining({
+          taskId: 'instruction:daily-health',
+          sessionId: expect.stringContaining(
+            'scheduled-instruction:scheduled-task-run:',
+          ),
+          idempotencyKey: expect.stringContaining('scheduled-task-run:'),
+        }),
+      );
+      await expect(
+        readLatestScheduledTaskRun('instruction:daily-health', paths),
+      ).resolves.toBeUndefined();
+
+      await settleScheduledTaskSubmission(
+        { submissionId: 'submission:scheduled-health', failed: false },
+        paths,
+      );
+      await expect(
+        readLatestScheduledTaskRun('instruction:daily-health', paths),
+      ).resolves.toMatchObject({
+        status: 'completed',
+        submissionId: 'submission:scheduled-health',
+      });
+    } finally {
+      await rm(home, { recursive: true, force: true });
+    }
+  });
+
   it('claims one due occurrence, advances it before work, and records its terminal result', async () => {
     const home = await mkdtemp(join(tmpdir(), 'neondeck-scheduled-tasks-'));
     const paths = runtimePaths(home);
@@ -313,54 +374,70 @@ describe('scheduled task storage', () => {
     }
   });
 
-  it('recovers stale active workflow rows that never attach a Flue run id', async () => {
+  it('retries a persisted keyed admission without creating a second occurrence', async () => {
     const home = await mkdtemp(join(tmpdir(), 'neondeck-scheduled-tasks-'));
     const paths = runtimePaths(home);
     try {
       await upsertScheduledTask(
         {
-          id: 'briefing:unattached-workflow',
-          spec: { kind: 'run-briefing', briefingId: 'daily' },
+          id: 'instruction:outbox-recovery',
+          spec: {
+            kind: 'run-agent-instruction',
+            prompt: 'Inspect the repository.',
+            target: { kind: 'agent' },
+            skills: [],
+          },
           trigger: { kind: 'interval', everySeconds: 300 },
           nextRunAt: '2026-07-10T00:00:00.000Z',
         },
         paths,
       );
-      const [claim] = await claimDueScheduledTasks(
-        paths,
-        new Date('2026-07-10T00:00:00.000Z'),
-        10,
-        1_000,
-      );
-      if (!claim) throw new Error('Expected the due task to be claimed.');
-      await activateScheduledTaskWorkflowRun(
-        {
-          taskId: claim.task.id,
-          runId: claim.run.id,
-          claimId: claim.task.claimId ?? '',
-        },
-        paths,
-      );
+      const attempts: Array<
+        Parameters<NonNullable<SchedulerDependencies['dispatchInstruction']>>[0]
+      > = [];
+      const dispatchInstruction = vi.fn<
+        NonNullable<SchedulerDependencies['dispatchInstruction']>
+      >(async (input) => {
+        attempts.push(input);
+        if (attempts.length === 1)
+          throw new Error('connection closed after accept');
+        return {
+          submissionId: 'submission:outbox-recovery',
+          sessionId: input.sessionId,
+        };
+      });
+      const readInstructionSettlement = vi.fn<
+        NonNullable<SchedulerDependencies['readInstructionSettlement']>
+      >(async () => ({ failed: false }));
 
-      await expect(
-        canAdmitScheduledWorkflow(claim.task.id, paths),
-      ).resolves.toBe(false);
-      await claimDueScheduledTasks(
-        paths,
-        new Date('2026-07-10T00:00:02.000Z'),
-        10,
-        1_000,
-      );
-      await expect(
-        readLatestScheduledTaskRun(claim.task.id, paths),
-      ).resolves.toMatchObject({
-        id: claim.run.id,
-        status: 'failed',
-        error: expect.stringContaining('not attached'),
+      await runSchedulerTick(paths, new Date('2026-07-10T00:00:00.000Z'), {
+        dispatchInstruction,
+        readInstructionSettlement,
       });
       await expect(
-        canAdmitScheduledWorkflow(claim.task.id, paths),
-      ).resolves.toBe(true);
+        canAdmitScheduledSubmission('instruction:outbox-recovery', paths),
+      ).resolves.toBe(false);
+
+      await runSchedulerTick(paths, new Date('2026-07-10T00:00:01.000Z'), {
+        dispatchInstruction,
+        readInstructionSettlement,
+      });
+      expect(dispatchInstruction).toHaveBeenCalledTimes(2);
+      expect(attempts[1]).toEqual(attempts[0]);
+      expect(attempts[0]?.idempotencyKey).toMatch(/^scheduled-task-run:/);
+      await vi.waitFor(async () => {
+        await expect(
+          readLatestScheduledTaskRun('instruction:outbox-recovery', paths),
+        ).resolves.toMatchObject({
+          status: 'completed',
+          submissionId: 'submission:outbox-recovery',
+          sessionId: attempts[0]?.sessionId,
+          result: {
+            submissionId: 'submission:outbox-recovery',
+            sessionId: attempts[0]?.sessionId,
+          },
+        });
+      });
     } finally {
       await rm(home, { recursive: true, force: true });
     }
@@ -384,157 +461,34 @@ describe('scheduled task storage', () => {
         new Date('2026-07-10T00:00:00.000Z'),
       );
       if (!claim) throw new Error('Expected the due task to be claimed.');
-      await activateScheduledTaskWorkflowRun(
+      await activateScheduledTaskSubmission(
         {
           taskId: claim.task.id,
           runId: claim.run.id,
           claimId: claim.task.claimId ?? '',
+          sessionId: 'briefing-daily',
+          dispatchKey: claim.run.id,
+          dispatchPayload: { prompt: 'Daily briefing.', taskId: claim.task.id },
         },
         paths,
       );
-      await attachScheduledTaskWorkflowRunId(
-        { runId: claim.run.id, workflowRunId: 'workflow:briefing:active' },
+      await attachScheduledTaskSubmissionId(
+        { runId: claim.run.id, submissionId: 'workflow:briefing:active' },
         paths,
       );
 
       await expect(
-        canAdmitScheduledWorkflow(claim.task.id, paths),
+        canAdmitScheduledSubmission(claim.task.id, paths),
       ).resolves.toBe(false);
       await expect(
-        canAdmitScheduledWorkflow('briefing:another-task', paths, 1),
+        canAdmitScheduledSubmission('briefing:another-task', paths, 1),
       ).resolves.toBe(false);
-      await settleScheduledTaskWorkflowRun(
-        { workflowRunId: 'workflow:briefing:active', failed: false },
+      await settleScheduledTaskSubmission(
+        { submissionId: 'workflow:briefing:active', failed: false },
         paths,
       );
       await expect(
-        canAdmitScheduledWorkflow(claim.task.id, paths),
-      ).resolves.toBe(true);
-    } finally {
-      await rm(home, { recursive: true, force: true });
-    }
-  });
-
-  it('reconciles a terminal workflow observation that arrives before linkage', async () => {
-    const home = await mkdtemp(join(tmpdir(), 'neondeck-scheduled-tasks-'));
-    const paths = runtimePaths(home);
-    try {
-      await upsertScheduledTask(
-        {
-          id: 'briefing:terminal-race',
-          spec: { kind: 'run-briefing', briefingId: 'daily' },
-          trigger: { kind: 'interval', everySeconds: 300 },
-          nextRunAt: '2026-07-10T00:00:00.000Z',
-        },
-        paths,
-      );
-      const [claim] = await claimDueScheduledTasks(
-        paths,
-        new Date('2026-07-10T00:00:00.000Z'),
-      );
-      if (!claim) throw new Error('Expected the due task to be claimed.');
-      await activateScheduledTaskWorkflowRun(
-        {
-          taskId: claim.task.id,
-          runId: claim.run.id,
-          claimId: claim.task.claimId ?? '',
-        },
-        paths,
-      );
-      await recordFlueObservation(
-        {
-          v: 3,
-          type: 'run_end',
-          eventIndex: 2,
-          runId: 'workflow:briefing:terminal-race',
-          workflow: 'briefing',
-          timestamp: '2026-07-10T00:00:01.000Z',
-          durationMs: 1_000,
-          isError: false,
-          result: { ok: true },
-        } as never,
-        paths,
-      );
-      await attachScheduledTaskWorkflowRunId(
-        {
-          runId: claim.run.id,
-          workflowRunId: 'workflow:briefing:terminal-race',
-        },
-        paths,
-      );
-
-      await expect(
-        readLatestScheduledTaskRun(claim.task.id, paths),
-      ).resolves.toMatchObject({
-        id: claim.run.id,
-        status: 'completed',
-      });
-      await expect(
-        canAdmitScheduledWorkflow(claim.task.id, paths),
-      ).resolves.toBe(true);
-    } finally {
-      await rm(home, { recursive: true, force: true });
-    }
-  });
-
-  it('reconciles linked active runs when direct terminal settlement was missed', async () => {
-    const home = await mkdtemp(join(tmpdir(), 'neondeck-scheduled-tasks-'));
-    const paths = runtimePaths(home);
-    try {
-      await upsertScheduledTask(
-        {
-          id: 'briefing:missed-terminal-settlement',
-          spec: { kind: 'run-briefing', briefingId: 'daily' },
-          trigger: { kind: 'interval', everySeconds: 300 },
-          nextRunAt: '2026-07-10T00:00:00.000Z',
-        },
-        paths,
-      );
-      const [claim] = await claimDueScheduledTasks(
-        paths,
-        new Date('2026-07-10T00:00:00.000Z'),
-      );
-      if (!claim) throw new Error('Expected the due task to be claimed.');
-      await activateScheduledTaskWorkflowRun(
-        {
-          taskId: claim.task.id,
-          runId: claim.run.id,
-          claimId: claim.task.claimId ?? '',
-        },
-        paths,
-      );
-      await attachScheduledTaskWorkflowRunId(
-        {
-          runId: claim.run.id,
-          workflowRunId: 'workflow:briefing:missed-settlement',
-        },
-        paths,
-      );
-      await recordFlueObservation(
-        {
-          v: 3,
-          type: 'run_end',
-          eventIndex: 2,
-          runId: 'workflow:briefing:missed-settlement',
-          workflow: 'briefing',
-          timestamp: '2026-07-10T00:00:01.000Z',
-          durationMs: 1_000,
-          isError: false,
-          result: { ok: true },
-        } as never,
-        paths,
-      );
-
-      await claimDueScheduledTasks(paths, new Date('2026-07-10T00:00:01.000Z'));
-      await expect(
-        readLatestScheduledTaskRun(claim.task.id, paths),
-      ).resolves.toMatchObject({
-        id: claim.run.id,
-        status: 'completed',
-        message: 'Scheduled workflow completed.',
-      });
-      await expect(
-        canAdmitScheduledWorkflow(claim.task.id, paths),
+        canAdmitScheduledSubmission(claim.task.id, paths),
       ).resolves.toBe(true);
     } finally {
       await rm(home, { recursive: true, force: true });
@@ -579,7 +533,7 @@ describe('scheduled task storage', () => {
         tasks: [expect.objectContaining({ id: 'briefing:daily' })],
       });
       await expect(
-        canAdmitScheduledWorkflow('briefing:daily', paths),
+        canAdmitScheduledSubmission('briefing:daily', paths),
       ).resolves.toBe(true);
       await expect(
         readLatestScheduledTaskRun('briefing:daily', paths),
@@ -689,7 +643,7 @@ describe('scheduled task storage', () => {
             prompt:
               'Inspect the configured repository and report stale branches.',
             trigger: { kind: 'interval', everySeconds: 43_200 },
-            target: { kind: 'workflow' },
+            target: { kind: 'agent' },
             skills: [],
           },
           paths,
@@ -700,7 +654,7 @@ describe('scheduled task storage', () => {
           id: expect.stringMatching(/^instruction:/),
           spec: {
             kind: 'run-agent-instruction',
-            target: { kind: 'workflow' },
+            target: { kind: 'agent' },
           },
         },
       });

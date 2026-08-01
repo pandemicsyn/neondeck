@@ -362,6 +362,7 @@ export function listRelatedKiloResultSummaries(
 export function extractHandledPrEvent(input: {
   workflow?: string | null;
   runId?: string | null;
+  submissionId?: string | null;
   result: unknown;
 }) {
   const result = objectRecord(input.result);
@@ -534,6 +535,7 @@ export function extractHandledPrEvent(input: {
         reviewId ??
         headSha ??
         firstString(result.id, data.id) ??
+        input.submissionId ??
         input.runId ??
         'unknown',
       recoveryAction,
@@ -552,6 +554,7 @@ export function extractHandledPrEvent(input: {
     data: compactJson({
       action,
       workflow: input.workflow ?? null,
+      submissionId: input.submissionId ?? null,
       runId: input.runId ?? null,
       preparedDiffId: preparedDiffId ?? null,
       worktreeId: worktreeId ?? null,

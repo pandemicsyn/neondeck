@@ -5,10 +5,9 @@ import * as v from 'valibot';
 import { type RepoDiffFile } from '../../repo-edit/git';
 import { type RuntimePaths } from '../../runtime-home';
 import {
-  autopilotWorkflowNames,
   defaultAutopilotConcurrency,
   defaultAutopilotPolicyLimits,
-  type ActiveRunRow,
+  type ActiveSubmissionRow,
   type AutopilotFileRisk,
   type AutopilotPolicyDecision,
   type AutopilotPolicyLimits,
@@ -147,15 +146,18 @@ export function emptyPolicyFailure(
   };
 }
 
-export function readActiveAutopilotRuns(paths: RuntimePaths): ActiveRunRow[] {
+export function readActiveAutopilotSubmissions(
+  paths: RuntimePaths,
+): ActiveSubmissionRow[] {
   const database = openDb(paths.neondeckDatabase, { readOnly: true });
   try {
     return database
       .prepare(
         `
-        SELECT run_id, workflow, status
-        FROM workflow_run_observations
-        WHERE status = 'active'
+        SELECT submission_id, agent_name, status
+        FROM activity_submissions
+        WHERE status IN ('queued', 'running')
+          AND agent_name = 'pr-autopilot-owner'
         ORDER BY last_event_at DESC
         LIMIT 100;
       `,
@@ -164,15 +166,12 @@ export function readActiveAutopilotRuns(paths: RuntimePaths): ActiveRunRow[] {
       .map((row) =>
         v.parse(
           v.object({
-            run_id: v.string(),
-            workflow: v.string(),
+            submission_id: v.string(),
+            agent_name: v.nullable(v.string()),
             status: v.string(),
           }),
           row,
         ),
-      )
-      .filter((row) =>
-        autopilotWorkflowNames.has(normalizeWorkflowName(row.workflow)),
       );
   } finally {
     database.close();

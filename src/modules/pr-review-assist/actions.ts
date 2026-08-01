@@ -18,6 +18,7 @@ import {
 import { readAgentModelSelectionSync } from '../runtime';
 import { resolvePrReviewerWorkspace } from '../pr-reviewer';
 import { runtimePaths } from '../../runtime-home';
+import { recordHandledPrFromOperationResult } from '../learning';
 
 export type PrReviewToolExecutionState = { failure?: Error };
 
@@ -137,6 +138,18 @@ export function createReviewPrForHumanTool(
           }
         }
         if (result.ok) {
+          await recordHandledPrFromOperationResult(
+            {
+              operation: 'pr-review-assist',
+              submissionId: runId,
+              result,
+            },
+            runtimePaths(),
+          ).catch((error) => {
+            log.warn('Could not record PR review learning evidence', {
+              message: error instanceof Error ? error.message : String(error),
+            });
+          });
           log.info('Prepared PR review assist artifacts', {
             message: result.message,
           });

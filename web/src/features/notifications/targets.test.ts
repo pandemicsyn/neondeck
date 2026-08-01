@@ -54,12 +54,12 @@ describe('notification target resolution', () => {
       { kind: 'session', sessionId: 'session-1', label: 'Open session' },
     ],
     [
-      'Flue run',
-      note({ source: 'flue', data: { runId: 'run-1' } }),
+      'Flue submission',
+      note({ source: 'flue', data: { submissionId: 'submission-1' } }),
       {
         kind: 'plugin',
-        pluginId: 'workflow-observability',
-        label: 'Inspect run',
+        pluginId: 'activity',
+        label: 'View activity',
       },
     ],
     [

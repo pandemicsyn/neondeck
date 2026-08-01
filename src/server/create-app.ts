@@ -27,10 +27,8 @@ import {
   displayAssistantLearningMiddleware,
   installFlueObservationHandlers,
 } from './learning-hooks';
-import {
-  requireFlueRunInspectionToken,
-  requireLocalApiAccess,
-} from './middleware';
+import { requireLocalApiAccess } from './middleware';
+import { createActivityRoutes } from './routes/activity';
 import { createBriefingRoutes } from './routes/briefings';
 import { createCommandRoutes } from './routes/commands';
 import { createConfigRoutes } from './routes/config';
@@ -43,6 +41,7 @@ import { createMemoryRoutes } from './routes/memory';
 import { createMetricsRoutes } from './routes/metrics';
 import { createMcpRoutes } from './routes/mcp';
 import { createNotificationRoutes } from './routes/notifications';
+import { createOperationRoutes } from './routes/operations';
 import { createPreparedDiffRoutes } from './routes/prepared-diffs';
 import { createRepoEditRoutes } from './routes/repo-edit';
 import {
@@ -56,14 +55,10 @@ import { createScheduledTaskRoutes } from './routes/scheduled-tasks';
 import { createRuntimeRoutes } from './routes/runtime';
 import { createSafetyRoutes } from './routes/safety';
 import { createSchedulerRoutes } from './routes/scheduler';
-import {
-  resolveTransientSchedulerWorkflowNotification,
-  startSchedulerObservedLoop,
-} from './scheduler-workflow';
+import { startSchedulerLoop } from './scheduler-loop';
 import { createSessionRoutes } from './routes/sessions';
 import { createSkillRoutes } from './routes/skills';
 import { createWatchRoutes } from './routes/watches';
-import { createWorkflowRoutes } from './routes/workflows';
 import { createWorktreeRoutes } from './routes/worktrees';
 import { recoverInterruptedAutopilotOwners } from '../modules/autopilot/owner/settlement';
 import { refreshGitHubQueueSnapshot } from '../modules/github';
@@ -87,7 +82,6 @@ export async function createApp(options: CreateAppOptions = {}) {
 
   const app = new Hono();
   const staticRoot = options.staticRoot ?? resolveStaticRoot();
-  const requireRunInspection = requireFlueRunInspectionToken(paths);
 
   await ensureRuntimeHome(paths);
   installFlueExecutionContextTracker();
@@ -98,8 +92,7 @@ export async function createApp(options: CreateAppOptions = {}) {
     options.scheduler !== false &&
     process.env.NEONDECK_DISABLE_SCHEDULER !== '1'
   ) {
-    await resolveTransientSchedulerWorkflowNotification(paths);
-    startSchedulerObservedLoop(paths);
+    startSchedulerLoop(paths);
     void refreshGitHubQueueSnapshot(paths).catch((error) => {
       console.warn('[neondeck] initial GitHub queue refresh failed', error);
     });
@@ -139,6 +132,8 @@ export async function createApp(options: CreateAppOptions = {}) {
   app.route('/api', createSchedulerRoutes(paths));
   app.route('/api', createScheduledTaskRoutes(paths));
   app.route('/api/notifications', createNotificationRoutes(paths));
+  app.route('/api/activity', createActivityRoutes(paths));
+  app.route('/api/operations', createOperationRoutes(paths));
   app.route('/api', createMemoryRoutes(paths));
   app.route('/api/learning', createLearningRoutes(paths));
   app.route('/api/skills', createSkillRoutes(paths));
@@ -146,8 +141,6 @@ export async function createApp(options: CreateAppOptions = {}) {
   app.route('/api', createReportApiRoutes(paths));
   app.route('/api', createReviewRoutes(paths));
   app.route('/api', createReviewSurfaceRoutes());
-  app.use('/api/workflows/runs/*', requireRunInspection);
-  app.route('/api/workflows', createWorkflowRoutes(paths));
   app.route('/api/github', createGitHubRoutes(paths));
 
   app.use(

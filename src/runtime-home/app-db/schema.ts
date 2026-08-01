@@ -188,8 +188,10 @@ export const scheduledTaskRuns = sqliteTable(
     status: text('status').notNull(),
     outcome: text('outcome').notNull(),
     message: text('message').notNull(),
-    workflowRunId: text('workflow_run_id'),
+    submissionId: text('submission_id'),
     sessionId: text('session_id'),
+    dispatchKey: text('dispatch_key'),
+    dispatchPayloadJson: text('dispatch_payload_json'),
     resultJson: text('result_json'),
     error: text('error'),
     startedAt: text('started_at').notNull(),
@@ -595,12 +597,14 @@ export const githubPrFileCache = sqliteTable(
   ],
 );
 
-export const workflowEvents = sqliteTable(
-  'workflow_events',
+export const activityEvents = sqliteTable(
+  'activity_events',
   {
     id: integer('id').primaryKey({ autoIncrement: true }),
-    runId: text('run_id'),
-    workflow: text('workflow'),
+    submissionId: text('submission_id'),
+    agentName: text('agent_name'),
+    instanceId: text('instance_id'),
+    conversationId: text('conversation_id'),
     eventType: text('event_type').notNull(),
     eventIndex: integer('event_index'),
     level: text('level'),
@@ -614,27 +618,30 @@ export const workflowEvents = sqliteTable(
     createdAt: text('created_at').notNull(),
   },
   (table) => [
-    index('idx_workflow_events_run').on(table.runId, table.eventIndex),
-    index('idx_workflow_events_created').on(sql`${table.createdAt} DESC`),
+    index('idx_activity_events_submission').on(
+      table.submissionId,
+      table.eventIndex,
+    ),
+    index('idx_activity_events_created').on(sql`${table.createdAt} DESC`),
   ],
 );
 
-export const workflowRunObservations = sqliteTable(
-  'workflow_run_observations',
-  {
-    runId: text('run_id').primaryKey(),
-    workflow: text('workflow').notNull(),
-    status: text('status').notNull(),
-    startedAt: text('started_at').notNull(),
-    endedAt: text('ended_at'),
-    lastEventAt: text('last_event_at').notNull(),
-    lastMessage: text('last_message').notNull(),
-    eventCount: integer('event_count').default(0).notNull(),
-    durationMs: integer('duration_ms'),
-    isError: integer('is_error').default(0).notNull(),
-    updatedAt: text('updated_at').notNull(),
-  },
-);
+export const activitySubmissions = sqliteTable('activity_submissions', {
+  submissionId: text('submission_id').primaryKey(),
+  kind: text('kind').notNull(),
+  agentName: text('agent_name'),
+  instanceId: text('instance_id'),
+  status: text('status').notNull(),
+  queuedAt: text('queued_at').notNull(),
+  startedAt: text('started_at'),
+  settledAt: text('settled_at'),
+  lastEventAt: text('last_event_at').notNull(),
+  lastMessage: text('last_message').notNull(),
+  eventCount: integer('event_count').default(0).notNull(),
+  attemptCount: integer('attempt_count').default(0).notNull(),
+  isError: integer('is_error').default(0).notNull(),
+  updatedAt: text('updated_at').notNull(),
+});
 
 export const chatSessions = sqliteTable(
   'chat_sessions',

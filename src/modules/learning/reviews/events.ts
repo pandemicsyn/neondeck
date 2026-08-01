@@ -326,3 +326,32 @@ export async function recordHandledPrFromWorkflowResult(
   }
   return recordHandledPrEventAndMaybeQueueLearning(event, paths, dependencies);
 }
+
+export async function recordHandledPrFromOperationResult(
+  input: {
+    operation: string;
+    submissionId?: string | null;
+    result: unknown;
+  },
+  paths = runtimePaths(),
+  dependencies: {
+    invokePrBatchReview?: (input: PrBatchReviewInput) => Promise<{
+      runId: string;
+    }>;
+  } = {},
+) {
+  const event = extractHandledPrEvent({
+    workflow: input.operation,
+    submissionId: input.submissionId,
+    result: input.result,
+  });
+  if (!event) {
+    return {
+      recorded: false,
+      duplicate: false,
+      queued: [],
+      message: 'Operation result did not contain handled PR evidence.',
+    };
+  }
+  return recordHandledPrEventAndMaybeQueueLearning(event, paths, dependencies);
+}

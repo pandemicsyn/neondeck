@@ -41,14 +41,11 @@ export async function settleAutopilotOwnerObservation(
   paths: RuntimePaths,
   dependencies: OwnerSettlementLearningDependencies = {},
 ) {
+  if (event.type !== 'submission_settled') return null;
   if (
     (event.agentName && event.agentName !== 'pr-autopilot-owner') ||
     !event.instanceId
   ) {
-    return null;
-  }
-  if (event.type === 'agent_end') return null;
-  if (event.type === 'operation' && event.operationKind !== 'prompt') {
     return null;
   }
   const observation = event as unknown as Record<string, unknown>;
@@ -107,12 +104,7 @@ export async function settleAutopilotOwnerObservation(
       paths,
       dependencies,
     );
-  const failed =
-    event.type === 'operation'
-      ? event.isError
-      : event.type === 'submission_settled'
-        ? event.outcome !== 'completed'
-        : false;
+  const failed = event.outcome !== 'completed';
 
   try {
     let worktree: WorktreeRecord | null = null;

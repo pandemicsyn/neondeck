@@ -1,15 +1,21 @@
 import { addNotification } from '../app-state';
 import {
-  activateScheduledTaskWorkflowRun,
-  attachScheduledTaskWorkflowRunId,
-  canAdmitScheduledWorkflow,
+  activateScheduledTaskSubmission,
+  attachScheduledTaskSubmissionId,
+  canAdmitScheduledSubmission,
   claimDueScheduledTasks,
   deferUnstartedScheduledTaskClaim,
+  dispatchScheduledInstruction,
   executeScheduledTask,
+  listActiveScheduledInstructionRuns,
   listScheduledTasks,
+  prepareScheduledInstructionDispatch,
   readLatestScheduledTaskRun,
+  readScheduledInstructionSettlement,
+  recordScheduledTaskAdmissionRetry,
   releaseUnstartedScheduledTaskClaim,
   settleScheduledTaskRun,
+  settleScheduledTaskSubmission,
 } from '../scheduled-tasks';
 import {
   ensureRuntimeHome,
@@ -25,6 +31,8 @@ import {
   startSchedulerTickLeaseHeartbeat,
 } from './lease';
 import { errorMessage, okResult } from './utils';
+
+const scheduledSettlementWatchers = settlementWatchers();
 
 export async function runSchedulerTick(
   paths = runtimePaths(),
@@ -55,6 +63,7 @@ export async function runSchedulerTick(
   );
 
   try {
+    await recoverScheduledInstructionSubmissions(paths, dependencies);
     const claimedTasks = await claimDueScheduledTasks(paths, now);
     const notifications = [];
     let taskChanged = false;
@@ -81,11 +90,12 @@ export async function runSchedulerTick(
       }
       const previous = await readLatestScheduledTaskRun(task.id, paths);
       let result: Awaited<ReturnType<typeof executeScheduledTask>>;
+      let admissionOutboxPrepared = false;
       try {
-        const workflowTask = requiresWorkflowAdmission(task);
+        const submissionTask = requiresSubmissionAdmission(task);
         if (
-          workflowTask &&
-          !(await canAdmitScheduledWorkflow(task.id, paths))
+          submissionTask &&
+          !(await canAdmitScheduledSubmission(task.id, paths))
         ) {
           await deferUnstartedScheduledTaskClaim(
             {
@@ -93,33 +103,72 @@ export async function runSchedulerTick(
               previous: claim.previous,
               run,
               message:
-                'Scheduled task was deferred because the active workflow limit is reached.',
+                'Scheduled task was deferred because the active submission limit is reached.',
             },
             paths,
           );
           continue;
         }
-        if (workflowTask) {
-          await activateScheduledTaskWorkflowRun(
+        if (submissionTask) {
+          const prepared = await prepareScheduledInstructionDispatch(
+            task,
+            run.id,
+            paths,
+          );
+          await activateScheduledTaskSubmission(
             {
               taskId: task.id,
               runId: run.id,
               claimId: task.claimId ?? '',
+              sessionId: prepared.sessionId,
+              dispatchKey: prepared.idempotencyKey,
+              dispatchPayload: prepared.payload,
             },
             paths,
           );
+          admissionOutboxPrepared = true;
+          const admitted = await dispatchPreparedInstruction(
+            prepared,
+            dependencies,
+          );
+          result = {
+            outcome: 'recorded',
+            message: `Dispatched scheduled instruction to session ${admitted.sessionId}.`,
+            submissionId: admitted.submissionId,
+            sessionId: admitted.sessionId,
+            result: {
+              submissionId: admitted.submissionId,
+              sessionId: admitted.sessionId,
+            },
+          };
+        } else {
+          result = await executeScheduledTask(
+            task,
+            previous?.result ?? null,
+            paths,
+            dependencies,
+          );
         }
-        result = await executeScheduledTask(
-          task,
-          previous?.result ?? null,
-          paths,
-          dependencies,
-        );
-        if (result.workflowRunId) {
-          await attachScheduledTaskWorkflowRunId(
-            { runId: run.id, workflowRunId: result.workflowRunId },
+        if (result.submissionId) {
+          await attachScheduledTaskSubmissionId(
+            {
+              runId: run.id,
+              submissionId: result.submissionId,
+              sessionId: result.sessionId ?? null,
+              result: result.result,
+            },
             paths,
           );
+          if (submissionTask && result.sessionId) {
+            watchScheduledInstructionSettlement(
+              {
+                submissionId: result.submissionId,
+                sessionId: result.sessionId,
+              },
+              paths,
+              dependencies,
+            );
+          }
         } else {
           await settleScheduledTaskRun(
             {
@@ -137,6 +186,14 @@ export async function runSchedulerTick(
         }
       } catch (error) {
         const message = `Scheduled task failed: ${errorMessage(error)}.`;
+        if (admissionOutboxPrepared) {
+          await recordScheduledTaskAdmissionRetry(
+            { runId: run.id, message: errorMessage(error) },
+            paths,
+          );
+          taskChanged = true;
+          continue;
+        }
         await settleScheduledTaskRun(
           {
             taskId: task.id,
@@ -215,13 +272,135 @@ export async function runSchedulerTick(
   }
 }
 
-function requiresWorkflowAdmission(task: {
+function requiresSubmissionAdmission(task: {
   spec: { kind: string; target?: { kind: string } };
 }) {
   return (
     task.spec.kind === 'run-agent-instruction' &&
-    task.spec.target?.kind === 'workflow'
+    (task.spec.target?.kind === 'agent' ||
+      task.spec.target?.kind === 'agent-session')
   );
+}
+
+async function recoverScheduledInstructionSubmissions(
+  paths: RuntimePaths,
+  dependencies: SchedulerDependencies,
+) {
+  const activeRuns = await listActiveScheduledInstructionRuns(paths);
+  for (const run of activeRuns) {
+    if (run.submissionId && run.sessionId) {
+      watchScheduledInstructionSettlement(
+        { submissionId: run.submissionId, sessionId: run.sessionId },
+        paths,
+        dependencies,
+      );
+      continue;
+    }
+    if (!run.dispatchKey || !run.dispatchPayload || !run.sessionId) {
+      await recordScheduledTaskAdmissionRetry(
+        {
+          runId: run.id,
+          message: 'The persisted scheduled instruction outbox is incomplete.',
+        },
+        paths,
+      );
+      continue;
+    }
+    try {
+      const admitted = await dispatchPreparedInstruction(
+        {
+          idempotencyKey: run.dispatchKey,
+          payload: run.dispatchPayload,
+          sessionId: run.sessionId,
+        },
+        dependencies,
+      );
+      await attachScheduledTaskSubmissionId(
+        {
+          runId: run.id,
+          submissionId: admitted.submissionId,
+          sessionId: admitted.sessionId,
+          result: {
+            submissionId: admitted.submissionId,
+            sessionId: admitted.sessionId,
+          },
+        },
+        paths,
+      );
+      watchScheduledInstructionSettlement(
+        {
+          submissionId: admitted.submissionId,
+          sessionId: admitted.sessionId,
+        },
+        paths,
+        dependencies,
+      );
+    } catch (error) {
+      await recordScheduledTaskAdmissionRetry(
+        { runId: run.id, message: errorMessage(error) },
+        paths,
+      );
+    }
+  }
+}
+
+function dispatchPreparedInstruction(
+  input: {
+    idempotencyKey: string;
+    payload: { prompt: string; taskId: string };
+    sessionId: string;
+  },
+  dependencies: SchedulerDependencies,
+) {
+  return dependencies.dispatchInstruction
+    ? dependencies.dispatchInstruction({
+        idempotencyKey: input.idempotencyKey,
+        prompt: input.payload.prompt,
+        sessionId: input.sessionId,
+        taskId: input.payload.taskId,
+      })
+    : dispatchScheduledInstruction(input);
+}
+
+function watchScheduledInstructionSettlement(
+  input: { submissionId: string; sessionId: string },
+  paths: RuntimePaths,
+  dependencies: SchedulerDependencies,
+) {
+  if (
+    dependencies.dispatchInstruction &&
+    !dependencies.readInstructionSettlement
+  )
+    return;
+  const key = `${paths.home}\n${input.submissionId}`;
+  if (scheduledSettlementWatchers.has(key)) return;
+  const readSettlement =
+    dependencies.readInstructionSettlement ??
+    readScheduledInstructionSettlement;
+  const watcher = readSettlement(input)
+    .then((settlement) =>
+      settleScheduledTaskSubmission(
+        { submissionId: input.submissionId, failed: settlement.failed },
+        paths,
+      ),
+    )
+    .catch((error) => {
+      console.warn(
+        '[neondeck] scheduled instruction settlement watch failed',
+        error,
+      );
+    })
+    .finally(() => {
+      scheduledSettlementWatchers.delete(key);
+    });
+  scheduledSettlementWatchers.set(key, watcher);
+}
+
+function settlementWatchers() {
+  const target = globalThis as typeof globalThis & {
+    __neondeckScheduledSettlementWatchers?: Map<string, Promise<void>>;
+  };
+  return (target.__neondeckScheduledSettlementWatchers ??= new Map());
 }
 
 export function startSchedulerLoop(

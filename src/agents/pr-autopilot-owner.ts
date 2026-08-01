@@ -278,7 +278,6 @@ export function PrAutopilotOwner({ id }: AgentProps) {
 PrAutopilotOwner.agentName = 'pr-autopilot-owner';
 PrAutopilotOwner.durability = prAutopilotOwnerDurability;
 
-
 async function prepareOwnerWorkspaceHome(
   paths: RuntimePaths,
   instanceId: string,

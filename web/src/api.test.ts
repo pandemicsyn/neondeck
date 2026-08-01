@@ -3,7 +3,7 @@ import {
   archiveMemory,
   archivePrReview,
   getChatSessions,
-  getWorkflowRun,
+  getActivitySubmission,
   learningOperatorStateUrl,
   restorePrReview,
 } from './api';
@@ -103,49 +103,36 @@ describe('dashboard API helpers', () => {
     expect(fetchMock).toHaveBeenCalledWith('/api/sessions', { signal });
   });
 
-  it('reads workflow runs with the local inspection token in a header', async () => {
+  it('reads sanitized submission activity from the local API', async () => {
     const fetchMock = vi.fn<
       (input: string | URL | Request, init?: RequestInit) => Promise<Response>
-    >(async (input) => {
-      if (input === '/api/local-api/session') {
-        return new Response(
+    >(
+      async () =>
+        new Response(
           JSON.stringify({
             ok: true,
-            token: 'local-token',
-            header: 'x-neondeck-api-token',
+            action: 'activity_submission_read',
+            submission: {
+              submissionId: 'sub_123',
+              status: 'completed',
+            },
+            events: [],
+            fetchedAt: '2026-07-21T16:01:00.000Z',
           }),
           { headers: { 'content-type': 'application/json' } },
-        );
-      }
-      return new Response(
-        JSON.stringify({
-          ok: true,
-          action: 'workflow_run_inspection_read',
-          run: {
-            runId: 'run_123',
-            workflowName: 'command-run',
-            status: 'completed',
-            startedAt: '2026-07-21T16:00:00.000Z',
-          },
-          fetchedAt: '2026-07-21T16:01:00.000Z',
-        }),
-        { headers: { 'content-type': 'application/json' } },
-      );
-    });
+        ),
+    );
     vi.stubGlobal('fetch', fetchMock);
 
     await expect(
-      getWorkflowRun('run_123', { afterEventId: 41 }),
+      getActivitySubmission('sub_123', { afterEventId: 41 }),
     ).resolves.toMatchObject({
-      run: { runId: 'run_123' },
+      submission: { submissionId: 'sub_123' },
     });
 
-    expect(fetchMock).toHaveBeenCalledTimes(2);
-    const inspectionRequest = fetchMock.mock.calls[1];
-    expect(inspectionRequest?.[0]).toBe(
-      '/api/workflows/runs/run_123?afterEventId=41',
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock.mock.calls[0]?.[0]).toBe(
+      '/api/activity/submissions/sub_123?afterEventId=41',
     );
-    const inspectionHeaders = new Headers(inspectionRequest?.[1]?.headers);
-    expect(inspectionHeaders.get('x-neondeck-api-token')).toBe('local-token');
   });
 });

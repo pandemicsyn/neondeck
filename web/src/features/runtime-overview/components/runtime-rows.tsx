@@ -16,8 +16,8 @@ import {
   RuntimeSkill,
   RuntimeSkillsResponse,
   ScheduledTask,
-  WorkflowEventRecord,
-  WorkflowObservability,
+  ActivityEventRecord,
+  ActivityObservability,
   WorktreeCleanupFailure,
   WorktreeLockRecord,
   WorktreeRecord,
@@ -493,50 +493,48 @@ export function WorktreeCleanupRow({
   );
 }
 
-export function ActiveRunRow({
-  run,
+export function ActiveSubmissionRow({
+  submission,
 }: {
-  run: WorkflowObservability['activeRuns'][number];
+  submission: ActivityObservability['activeSubmissions'][number];
 }) {
   return (
     <article className="border border-primary/60 bg-soft px-2.5 py-2">
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
-          {run.runUrl ? (
+          {submission.detailUrl ? (
             <a
               className="truncate font-mono text-[11px] text-ink hover:text-primary"
-              href={run.runUrl}
-              rel="noreferrer"
-              target="_blank"
+              href={submission.detailUrl}
             >
-              {run.workflow}
+              {submission.agentName ?? 'agent submission'}
             </a>
           ) : (
             <span className="block truncate font-mono text-[11px] text-ink">
-              {run.workflow}
+              {submission.agentName ?? 'agent submission'}
             </span>
           )}
           <p className="mt-0.5 line-clamp-2 text-[10.5px] leading-4 text-muted">
-            {run.lastMessage}
+            {submission.lastMessage}
           </p>
         </div>
         <Badge className="border-primary text-primary">
-          {run.eventCount} events
+          {submission.eventCount} events
         </Badge>
       </div>
       <div className="mt-1.5 flex justify-between gap-2 font-mono text-[10px] text-muted">
-        <span className="truncate">{run.runId}</span>
-        <span className="shrink-0">{relativeTime(run.lastEventAt)}</span>
+        <span className="truncate">{submission.submissionId}</span>
+        <span className="shrink-0">{relativeTime(submission.lastEventAt)}</span>
       </div>
     </article>
   );
 }
 
-export function WorkflowEventRow({
+export function ActivityEventRow({
   event,
   rawLabel = false,
 }: {
-  event: WorkflowEventRecord;
+  event: ActivityEventRecord;
   rawLabel?: boolean;
 }) {
   const content = (
@@ -544,7 +542,7 @@ export function WorkflowEventRow({
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
           <p className="truncate font-mono text-[11px] text-ink">
-            {event.name ?? event.workflow ?? event.eventType}
+            {event.name ?? event.agentName ?? event.eventType}
           </p>
           <p className="mt-0.5 line-clamp-2 text-[10.5px] leading-4 text-muted">
             {event.message}
@@ -556,22 +554,20 @@ export function WorkflowEventRow({
       </div>
       <div className="mt-1.5 flex justify-between gap-2 font-mono text-[10px] text-muted">
         <span className="truncate">
-          {rawLabel && event.runUrl
-            ? 'workflow run inspection'
-            : (event.runId ?? event.operationId ?? 'local')}
+          {rawLabel && event.detailUrl
+            ? 'submission activity'
+            : (event.submissionId ?? event.operationId ?? 'local')}
         </span>
         <span className="shrink-0">{relativeTime(event.createdAt)}</span>
       </div>
     </>
   );
 
-  if (event.runUrl) {
+  if (event.detailUrl) {
     return (
       <a
         className="block border border-line bg-soft px-2.5 py-2 hover:border-primary/70"
-        href={event.runUrl}
-        rel="noreferrer"
-        target="_blank"
+        href={event.detailUrl}
       >
         {content}
       </a>

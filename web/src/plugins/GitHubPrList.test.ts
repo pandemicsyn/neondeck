@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import type { GitHubPullRequest, WorkflowObservability } from '../api';
+import type { GitHubPullRequest, ActivityObservability } from '../api';
 import {
+  ciFixOperationRefreshDecision,
   isCiFixCandidate,
   isTerminalWatchStatus,
   neonReviewActionLabel,
@@ -32,14 +33,14 @@ describe('GitHubPrList review workflow state', () => {
     expect(isTerminalWatchStatus('watching')).toBe(false);
   });
 
-  it('refreshes when an admitted review run reaches terminal observability', () => {
+  it('refreshes when an admitted review submission settles', () => {
     expect(
       reviewWorkflowCompletionState(
-        workflowObservability({
-          recentData: [
+        activityObservability({
+          recentSettlements: [
             workflowEvent({
-              runId: 'run-review',
-              eventType: 'run_end',
+              submissionId: 'run-review',
+              eventType: 'submission_settled',
               isError: false,
             }),
           ],
@@ -57,7 +58,7 @@ describe('GitHubPrList review workflow state', () => {
   it('refreshes when a previously active review run disappears', () => {
     expect(
       reviewWorkflowCompletionState(
-        workflowObservability(),
+        activityObservability(),
         'run-review',
         true,
       ),
@@ -71,16 +72,21 @@ describe('GitHubPrList review workflow state', () => {
   it('keeps observing while the admitted review run is active', () => {
     expect(
       reviewWorkflowCompletionState(
-        workflowObservability({
-          activeRuns: [
+        activityObservability({
+          activeSubmissions: [
             {
-              runId: 'run-review',
-              workflow: 'review-pr-for-human',
+              submissionId: 'run-review',
+              kind: 'dispatch',
+              agentName: 'review-pr-for-human',
+              instanceId: 'review-1',
+              status: 'running',
+              queuedAt: '2026-07-05T19:59:59.000Z',
               startedAt: '2026-07-05T20:00:00.000Z',
               lastEventAt: '2026-07-05T20:00:10.000Z',
               lastMessage: 'Running review.',
               eventCount: 2,
-              runUrl: '/api/flue/runs/run-review',
+              attemptCount: 1,
+              detailUrl: '/activity?submissionId=run-review',
             },
           ],
         }),
@@ -97,16 +103,21 @@ describe('GitHubPrList review workflow state', () => {
   it('does not use fallback refresh while the admitted review run is active', () => {
     expect(
       reviewWorkflowRefreshDecision(
-        workflowObservability({
-          activeRuns: [
+        activityObservability({
+          activeSubmissions: [
             {
-              runId: 'run-review',
-              workflow: 'review-pr-for-human',
+              submissionId: 'run-review',
+              kind: 'dispatch',
+              agentName: 'review-pr-for-human',
+              instanceId: 'review-1',
+              status: 'running',
+              queuedAt: '2026-07-05T19:59:59.000Z',
               startedAt: '2026-07-05T20:00:00.000Z',
               lastEventAt: '2026-07-05T20:00:10.000Z',
               lastMessage: 'Running review.',
               eventCount: 2,
-              runUrl: '/api/flue/runs/run-review',
+              attemptCount: 1,
+              detailUrl: '/activity?submissionId=run-review',
             },
           ],
         }),
@@ -125,7 +136,7 @@ describe('GitHubPrList review workflow state', () => {
   it('uses fallback refresh when the admitted run was never observed', () => {
     expect(
       reviewWorkflowRefreshDecision(
-        workflowObservability(),
+        activityObservability(),
         'run-review',
         false,
         true,
@@ -137,17 +148,72 @@ describe('GitHubPrList review workflow state', () => {
       done: true,
     });
   });
+
+  it('tracks CI fixes through app-owned operation summaries, not submission ids', () => {
+    const running = ciFixOperationRefreshDecision(
+      {
+        items: [
+          {
+            id: 'operation-1',
+            workflow: 'ci_fix_run',
+            runId: 'legacy-workflow-run',
+            status: 'running',
+            summary: { pr: 'pandemicsyn/neondeck#123' },
+            createdAt: '2026-08-01T10:00:00.000Z',
+            updatedAt: '2026-08-01T10:00:00.000Z',
+          },
+        ],
+        fetchedAt: '2026-08-01T10:00:01.000Z',
+      },
+      'pandemicsyn/neondeck#123',
+      false,
+      false,
+    );
+    expect(running).toEqual({
+      terminal: false,
+      sawActiveOperation: true,
+      shouldRefresh: false,
+      done: false,
+    });
+
+    expect(
+      ciFixOperationRefreshDecision(
+        {
+          items: [
+            {
+              id: 'operation-1',
+              workflow: 'ci_fix_run',
+              runId: 'legacy-workflow-run',
+              status: 'completed',
+              summary: { pr: 'pandemicsyn/neondeck#123' },
+              createdAt: '2026-08-01T10:00:00.000Z',
+              updatedAt: '2026-08-01T10:05:00.000Z',
+            },
+          ],
+          fetchedAt: '2026-08-01T10:05:01.000Z',
+        },
+        'pandemicsyn/neondeck#123',
+        true,
+        false,
+      ),
+    ).toEqual({
+      terminal: true,
+      sawActiveOperation: true,
+      shouldRefresh: true,
+      done: true,
+    });
+  });
 });
 
-function workflowObservability(
-  overrides: Partial<WorkflowObservability> = {},
-): WorkflowObservability {
+function activityObservability(
+  overrides: Partial<ActivityObservability> = {},
+): ActivityObservability {
   return {
     ok: true,
-    action: 'workflow_observability_read',
-    activeRuns: [],
+    action: 'activity_observability_read',
+    activeSubmissions: [],
     recentFailures: [],
-    recentData: [],
+    recentSettlements: [],
     recentLogs: [],
     recentTools: [],
     recentOperations: [],
@@ -158,26 +224,26 @@ function workflowObservability(
 }
 
 function workflowEvent(
-  overrides: Partial<WorkflowObservability['recentEvents'][number]> = {},
-): WorkflowObservability['recentEvents'][number] {
+  overrides: Partial<ActivityObservability['recentEvents'][number]> = {},
+): ActivityObservability['recentEvents'][number] {
   return {
     id: 1,
-    runId: 'run-review',
-    workflow: 'review-pr-for-human',
-    eventType: 'run_end',
+    submissionId: 'run-review',
+    eventType: 'submission_settled',
     eventIndex: 2,
     level: null,
     message: 'Workflow completed.',
     name: 'review-pr-for-human',
     operationKind: null,
     operationId: null,
-    agentName: null,
+    agentName: 'review-pr-for-human',
     instanceId: null,
+    conversationId: null,
     durationMs: 120_000,
     isError: false,
     summary: null,
     createdAt: '2026-07-05T20:02:00.000Z',
-    runUrl: '/api/flue/runs/run-review',
+    detailUrl: '/activity?submissionId=run-review',
     ...overrides,
   };
 }

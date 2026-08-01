@@ -2058,35 +2058,32 @@ async function toolOutputPromise(value: unknown) {
 function ownerPromptSuccess(instanceId: string, dispatchId = 'safe-dispatch') {
   return {
     v: 3,
-    type: 'operation',
-    eventIndex: 2,
+    type: 'submission_settled',
+    eventIndex: 3,
     timestamp: '2026-07-20T00:00:01.000Z',
     agentName: 'pr-autopilot-owner',
     instanceId,
     submissionId: dispatchId,
-    operationId: `${dispatchId}:prompt`,
-    operationKind: 'prompt',
-    durationMs: 1_000,
-    isError: false,
-    result: { text: 'Completed.' },
-  } as FlueObservation & { type: 'operation' };
+    outcome: 'completed',
+  } as FlueObservation & { type: 'submission_settled' };
 }
 
 function ownerPromptFailure(instanceId: string, dispatchId = 'safe-dispatch') {
   return {
     v: 3,
-    type: 'operation',
-    eventIndex: 2,
+    type: 'submission_settled',
+    eventIndex: 3,
     timestamp: '2026-07-20T00:00:01.000Z',
     agentName: 'pr-autopilot-owner',
     instanceId,
     submissionId: dispatchId,
-    operationId: `${dispatchId}:prompt`,
-    operationKind: 'prompt',
-    durationMs: 1_000,
-    isError: true,
-    error: new Error('provider disconnected after push'),
-  } as FlueObservation & { type: 'operation' };
+    outcome: 'failed',
+    error: {
+      type: 'provider_error',
+      name: 'Error',
+      message: 'provider disconnected after push',
+    },
+  } as FlueObservation & { type: 'submission_settled' };
 }
 
 async function git(cwd: string, args: string[]) {

@@ -6,8 +6,6 @@ import { completeAutopilotWatchIfTerminal } from '../autopilot';
 import type { SchedulerDependencies } from './schemas';
 import { refreshWatchJobEvents } from './pr-watch-events';
 
-export { invokeScheduledWorkflow } from './workflow-invocation';
-
 export async function refreshWatchTask(
   watchId: string,
   previousResult: JsonValue | null,

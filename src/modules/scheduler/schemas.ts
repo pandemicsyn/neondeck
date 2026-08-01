@@ -43,16 +43,20 @@ export type SchedulerDependencies = {
   ) => ReturnType<typeof listPrWatchEventWatermarks>;
   checkAutopilotConcurrency?: typeof checkAutopilotConcurrency;
   fetchCheckSummary?: typeof fetchCheckSummary;
-  invokeWorkflow?: (
-    workflow: ScheduledWorkflowName,
-    input: JsonValue,
-  ) => Promise<{ runId: string }>;
+  dispatchInstruction?: (input: {
+    idempotencyKey: string;
+    prompt: string;
+    sessionId: string;
+    taskId: string;
+  }) => Promise<{ submissionId: string; sessionId: string }>;
+  readInstructionSettlement?: (input: {
+    submissionId: string;
+    sessionId: string;
+  }) => Promise<{ failed: boolean }>;
   admitBriefing?: typeof admitBriefing;
   tickLeaseTtlMs?: number;
 };
 
-export type ScheduledWorkflowName =
-  'command-run' | 'scheduled-agent-instruction';
 export type SchedulerTickLease = {
   owner: string;
   acquiredAt: string;

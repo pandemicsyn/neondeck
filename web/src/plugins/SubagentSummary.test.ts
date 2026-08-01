@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { WorkflowEventRecord } from '../api';
+import type { ActivityEventRecord } from '../api';
 import { subagentEvents } from './SubagentSummary';
 
 describe('subagentEvents', () => {
@@ -31,12 +31,11 @@ describe('subagentEvents', () => {
 });
 
 function event(
-  overrides: Partial<WorkflowEventRecord> & Pick<WorkflowEventRecord, 'id'>,
-): WorkflowEventRecord {
+  overrides: Partial<ActivityEventRecord> & Pick<ActivityEventRecord, 'id'>,
+): ActivityEventRecord {
   return {
     id: overrides.id,
-    runId: overrides.runId ?? 'run-1',
-    workflow: overrides.workflow ?? 'command-run',
+    submissionId: overrides.submissionId ?? 'run-1',
     eventType: overrides.eventType ?? 'log',
     eventIndex: overrides.eventIndex ?? overrides.id,
     level: overrides.level ?? 'info',
@@ -46,10 +45,11 @@ function event(
     operationId: overrides.operationId ?? null,
     agentName: overrides.agentName ?? null,
     instanceId: overrides.instanceId ?? null,
+    conversationId: overrides.conversationId ?? null,
     durationMs: overrides.durationMs ?? null,
     isError: overrides.isError ?? false,
     summary: overrides.summary ?? null,
     createdAt: overrides.createdAt ?? '2026-07-05T12:00:00.000Z',
-    runUrl: overrides.runUrl ?? '/api/flue/runs/run-1?meta',
+    detailUrl: overrides.detailUrl ?? '/activity?submissionId=run-1',
   };
 }

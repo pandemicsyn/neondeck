@@ -251,7 +251,7 @@ describe('app API safety routes', () => {
     expect(response.status).toBe(404);
   });
 
-  it('hides app-owned workflow run inspection without the local API token', async () => {
+  it('does not expose removed workflow run inspection routes', async () => {
     const response = await app.request(
       'http://localhost/api/workflows/runs/missing',
       {

@@ -1,43 +1,48 @@
 import { describe, expect, it } from 'vitest';
-import type { WorkflowEventRecord, WorkflowObservability } from '../api';
-import { workflowDrilldownItems } from './WorkflowObservabilityPanel';
+import type { ActivityEventRecord, ActivityObservability } from '../api';
+import { activityItems } from './ActivityPanel';
 
-describe('workflow observability drilldown', () => {
-  it('dedupes categorized events while preserving filter-specific active runs', () => {
+describe('activity drilldown', () => {
+  it('dedupes categorized events while preserving active submissions', () => {
     const failure = event({
       id: 1,
-      eventType: 'workflow:error',
+      eventType: 'submission_settled',
       isError: true,
     });
     const progress = event({
       id: 2,
-      eventType: 'run_end',
-      message: 'Workflow completed in 1.2s.',
+      eventType: 'submission_settled',
+      message: 'Submission completed.',
+      agentName: 'command-run',
     });
     const log = event({
       id: 3,
       eventType: 'log',
       message: 'called action',
-      workflow: null,
       agentName: 'pr-autopilot-owner',
       instanceId: 'pr-owner-42',
     });
-    const workflows: WorkflowObservability = {
+    const workflows: ActivityObservability = {
       ok: true,
-      action: 'workflow_observability_read',
-      activeRuns: [
+      action: 'activity_observability_read',
+      activeSubmissions: [
         {
-          runId: 'run-active',
-          workflow: 'command-run',
+          submissionId: 'run-active',
+          kind: 'dispatch',
+          agentName: 'command-run',
+          instanceId: 'command-1',
+          status: 'running',
+          queuedAt: '2026-06-27T09:59:59.000Z',
           startedAt: '2026-06-27T10:00:00.000Z',
           lastEventAt: '2026-06-27T10:04:00.000Z',
           lastMessage: 'running /review-queue',
           eventCount: 4,
-          runUrl: '/api/flue/runs/run-active?meta',
+          attemptCount: 1,
+          detailUrl: '/activity?submissionId=run-active',
         },
       ],
       recentFailures: [failure],
-      recentData: [progress],
+      recentSettlements: [progress],
       recentLogs: [log],
       recentTools: [],
       recentOperations: [],
@@ -45,7 +50,7 @@ describe('workflow observability drilldown', () => {
       fetchedAt: '2026-06-27T10:05:00.000Z',
     };
 
-    const all = workflowDrilldownItems(workflows, 'all', [
+    const all = activityItems(workflows, 'all', [
       {
         ownerInstanceId: 'pr-owner-42',
         repoFullName: 'owner/repo',
@@ -56,29 +61,28 @@ describe('workflow observability drilldown', () => {
     expect(all.map((item) => item.id)).toEqual([
       'active:run-active',
       'activity:3',
-      'progress:2',
+      'settled:2',
       'failed:1',
     ]);
     expect(all.find((item) => item.id === 'activity:3')?.contextLabel).toBe(
       'owner/repo#42 · PR owner',
     );
-    expect(all.find((item) => item.id === 'progress:2')?.contextLabel).toBe(
-      'workflow · command-run',
+    expect(all.find((item) => item.id === 'settled:2')?.contextLabel).toBe(
+      'command-run',
     );
 
-    const progressOnly = workflowDrilldownItems(workflows, 'progress');
-    expect(progressOnly).toHaveLength(1);
-    expect(progressOnly[0]?.message).toBe('Workflow completed in 1.2s.');
+    const settledOnly = activityItems(workflows, 'settled');
+    expect(settledOnly).toHaveLength(1);
+    expect(settledOnly[0]?.message).toBe('Submission completed.');
   });
 });
 
 function event(
-  overrides: Partial<WorkflowEventRecord> & Pick<WorkflowEventRecord, 'id'>,
-): WorkflowEventRecord {
+  overrides: Partial<ActivityEventRecord> & Pick<ActivityEventRecord, 'id'>,
+): ActivityEventRecord {
   return {
     id: overrides.id,
-    runId: overrides.runId ?? 'run-1',
-    workflow: overrides.workflow ?? 'command-run',
+    submissionId: overrides.submissionId ?? 'run-1',
     eventType: overrides.eventType ?? 'log',
     eventIndex: overrides.eventIndex ?? overrides.id,
     level: overrides.level ?? 'info',
@@ -88,10 +92,11 @@ function event(
     operationId: overrides.operationId ?? null,
     agentName: overrides.agentName ?? null,
     instanceId: overrides.instanceId ?? null,
+    conversationId: overrides.conversationId ?? null,
     durationMs: overrides.durationMs ?? null,
     isError: overrides.isError ?? false,
     summary: overrides.summary ?? null,
     createdAt: overrides.createdAt ?? `2026-06-27T10:0${overrides.id}:00.000Z`,
-    runUrl: overrides.runUrl ?? '/api/flue/runs/run-1?meta',
+    detailUrl: overrides.detailUrl ?? '/activity?submissionId=run-1',
   };
 }

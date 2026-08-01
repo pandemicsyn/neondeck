@@ -1,17 +1,16 @@
-import { dispatch, type JsonValue } from '@flue/runtime';
+import { AgentRunError, dispatch, init, type JsonValue } from '@flue/runtime';
 import type { NotificationLevel, NotificationRecord } from '../app-state';
 import type { RuntimePaths } from '../../runtime-home';
 import { loadRuntimeSkill } from '../runtime';
 import { refreshWatchTask } from '../scheduler/dispatch';
 import type { SchedulerDependencies } from '../scheduler/schemas';
-import { invokeScheduledWorkflow } from '../scheduler/workflow-invocation';
 import type { ScheduledTaskRecord } from './schemas';
 
 export type ScheduledTaskExecutionResult = {
   outcome: 'recorded' | 'silent' | 'failed';
   message: string;
   result?: unknown;
-  workflowRunId?: string;
+  submissionId?: string;
   sessionId?: string;
   notifications?: Array<{
     level: NotificationLevel;
@@ -69,41 +68,84 @@ export async function executeScheduledTask(
     };
   }
 
-  const prompt = await composeInstructionPrompt(task, paths);
-  if (task.spec.target.kind === 'workflow') {
-    const invokeWorkflow =
-      dependencies.invokeWorkflow ?? invokeScheduledWorkflow;
-    const { runId } = await invokeWorkflow('scheduled-agent-instruction', {
-      prompt,
-    });
-    return {
-      outcome: 'recorded',
-      message: `Admitted scheduled instruction workflow ${runId}.`,
-      workflowRunId: runId,
-      result: { runId },
-    };
-  }
+  const prepared = await prepareScheduledInstructionDispatch(
+    task,
+    `scheduled-task:${task.id}:${task.claimId ?? task.lastRunAt ?? task.updatedAt}`,
+    paths,
+  );
+  const admitted = dependencies.dispatchInstruction
+    ? await dependencies.dispatchInstruction({
+        idempotencyKey: prepared.idempotencyKey,
+        prompt: prepared.payload.prompt,
+        sessionId: prepared.sessionId,
+        taskId: prepared.payload.taskId,
+      })
+    : await dispatchScheduledInstruction(prepared);
+  return {
+    outcome: 'recorded',
+    message: `Dispatched scheduled instruction to session ${admitted.sessionId}.`,
+    submissionId: admitted.submissionId,
+    sessionId: admitted.sessionId,
+    result: {
+      submissionId: admitted.submissionId,
+      sessionId: admitted.sessionId,
+    },
+  };
+}
 
+export async function prepareScheduledInstructionDispatch(
+  task: ScheduledTaskRecord,
+  idempotencyKey: string,
+  paths: RuntimePaths,
+) {
+  const prompt = await composeInstructionPrompt(task, paths);
+  return {
+    idempotencyKey,
+    sessionId:
+      task.spec.kind === 'run-agent-instruction' &&
+      task.spec.target.kind === 'agent-session'
+        ? task.spec.target.sessionId
+        : `scheduled-instruction:${idempotencyKey}`,
+    payload: { prompt, taskId: task.id },
+  };
+}
+
+export async function dispatchScheduledInstruction(input: {
+  idempotencyKey: string;
+  sessionId: string;
+  payload: { prompt: string; taskId: string };
+}) {
   const { DisplayAssistant } = await import('../../agents/display-assistant');
   const receipt = await dispatch(DisplayAssistant, {
-    id: task.spec.target.sessionId,
+    id: input.sessionId,
+    idempotencyKey: input.idempotencyKey,
     message: {
       kind: 'signal',
       type: 'neondeck.scheduled-instruction',
       tagName: 'scheduled-instruction',
-      body: prompt,
-      attributes: { taskId: task.id },
+      body: input.payload.prompt,
+      attributes: { taskId: input.payload.taskId },
     },
   });
   return {
-    outcome: 'recorded',
-    message: `Dispatched scheduled instruction to session ${task.spec.target.sessionId}.`,
-    sessionId: task.spec.target.sessionId,
-    result: {
-      submissionId: receipt.submissionId,
-      acceptedAt: receipt.acceptedAt,
-    },
+    submissionId: receipt.submissionId,
+    sessionId: input.sessionId,
   };
+}
+
+export async function readScheduledInstructionSettlement(input: {
+  sessionId: string;
+  submissionId: string;
+}) {
+  const { DisplayAssistant } = await import('../../agents/display-assistant');
+  const handle = init(DisplayAssistant, { id: input.sessionId });
+  try {
+    await handle.read(input.submissionId);
+    return { failed: false };
+  } catch (error) {
+    if (error instanceof AgentRunError) return { failed: true };
+    throw error;
+  }
 }
 
 async function composeInstructionPrompt(

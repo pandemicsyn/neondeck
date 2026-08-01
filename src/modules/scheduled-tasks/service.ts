@@ -18,7 +18,7 @@ import {
 import * as v from 'valibot';
 
 const agentTargetSchema = v.variant('kind', [
-  v.object({ kind: v.literal('workflow') }),
+  v.object({ kind: v.literal('agent') }),
   v.object({
     kind: v.literal('agent-session'),
     sessionId: nonEmptyStringSchema,
@@ -128,7 +128,7 @@ export async function createAgentInstructionTask(
         spec: v.parse(scheduledTaskSpecSchema, {
           kind: 'run-agent-instruction',
           prompt: input.prompt,
-          target: input.target ?? { kind: 'workflow' },
+          target: input.target ?? { kind: 'agent' },
           ...(input.repoId ? { repoId: input.repoId } : {}),
           ...(input.cwd ? { cwd: input.cwd } : {}),
           skills: input.skills ?? [],

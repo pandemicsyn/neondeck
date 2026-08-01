@@ -800,13 +800,38 @@ Exit criteria:
 
 ### Phase 5: Operations And Observability
 
-- [ ] Add/adjust app operation and submission correlation fields.
-- [ ] Migrate Flue event storage to event v3.
-- [ ] Replace workflow run projections and APIs.
-- [ ] Replace workflow dashboard panels and inspector.
-- [ ] Update notification correlation and guarded activity detail.
-- [ ] Update learning evidence ingestion.
-- [ ] Remove `getRun()`, `listRuns()`, run URLs, and raw workflow routes.
+- [x] Add/adjust app operation and submission correlation fields.
+- [x] Migrate Flue event storage to event v3.
+- [x] Replace workflow run projections and APIs.
+- [x] Replace workflow dashboard panels and inspector.
+- [x] Update notification correlation and guarded activity detail.
+- [x] Update learning evidence ingestion.
+- [x] Remove `getRun()`, `listRuns()`, run URLs, and raw workflow routes.
+
+Implementation evidence captured on 2026-08-01:
+
+- app-owned `activity_events` and `activity_submissions` tables project sanitized
+  Flue v3 observations by submission, using `submission_settled` as the only
+  terminal event and timestamp/id ordering across emitting contexts
+- `/api/activity` and bounded submission detail replace raw workflow-run routes;
+  the dashboard now presents Activity/Operations without `getRun()`,
+  `listRuns()`, workflow URLs, or raw conversation records
+- scheduled instructions run through the app scheduler with a persisted
+  occurrence-keyed dispatch outbox, stable keyed redispatch, occurrence-scoped
+  conversations by default, and restart-safe settlement reads from Flue's
+  canonical conversation stream
+- notifications, PR assistance, scheduled tasks, and Autopilot learning evidence
+  correlate by app operation/source ids plus Flue submission ids; Autopilot owner
+  turns settle only from their authoritative top-level submission settlement
+- CI-fix dashboard refresh follows app-owned operation summaries rather than
+  treating a legacy workflow id as a submission id
+- 81 focused tests across 12 files, database migration checks, web TypeScript,
+  lint, web/server production builds, and an independent static P1/P2 review
+  pass; the remaining whole-app TypeScript failures are confined to workflows
+  and learning surfaces assigned to later migration phases
+- Flue `guide/durability`, `reference/events`,
+  `reference/data-persistence-api`, and `reference/agent-api` informed the
+  outbox, ordering, and canonical settlement recovery design
 
 Exit criteria:
 

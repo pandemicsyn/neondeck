@@ -541,7 +541,7 @@ export const entries: SafetyPolicyEntry[] = [
     'Run Neon command workflow action',
     {
       ...safeMutation,
-      auditTarget: 'workflow_summaries/workflow_events',
+      auditTarget: 'workflow_summaries/activity_events',
     },
     'Runs supported slash commands and persists a workflow summary. Individual commands must stay within their own safety class.',
   ),
@@ -561,7 +561,7 @@ export const entries: SafetyPolicyEntry[] = [
     {
       ...hostExecution,
       auditTarget:
-        'reports/worktrees/worktree_locks/kilo_tasks/kilo_task_events/prepared_diffs/notifications/workflow_summaries/workflow_events',
+        'reports/worktrees/worktree_locks/kilo_tasks/kilo_task_events/prepared_diffs/notifications/workflow_summaries/activity_events',
     },
     'Creates a local CI dossier report, prepares a managed PR worktree, and starts a bounded Kilo fix task. It may create a local prepared diff, but it never pushes, comments, or submits a GitHub review.',
   ),
@@ -849,7 +849,7 @@ export const entries: SafetyPolicyEntry[] = [
     {
       ...safeMutation,
       auditTarget:
-        'scheduled_tasks/scheduled_task_runs/notifications/workflow_events',
+        'scheduled_tasks/scheduled_task_runs/notifications/activity_events',
     },
     'Claims due scheduled tasks and records task runs, notifications, and Flue workflow admissions.',
   ),
@@ -1501,7 +1501,7 @@ export const entries: SafetyPolicyEntry[] = [
     'Run command workflow',
     {
       ...safeMutation,
-      auditTarget: 'workflow_summaries/workflow_events',
+      auditTarget: 'workflow_summaries/activity_events',
     },
     'Runs a bounded command through Flue with durable run identity and summaries.',
   ),
@@ -1510,7 +1510,7 @@ export const entries: SafetyPolicyEntry[] = [
     'Run briefing workflow',
     {
       ...safeMutation,
-      auditTarget: 'workflow_summaries/workflow_events',
+      auditTarget: 'workflow_summaries/activity_events',
     },
     'Runs the bounded briefing workflow and records Flue observations.',
   ),
@@ -1519,7 +1519,7 @@ export const entries: SafetyPolicyEntry[] = [
     'Run watch-pr workflow',
     {
       ...safeMutation,
-      auditTarget: 'pr_watches/jobs/workflow_events',
+      auditTarget: 'pr_watches/jobs/activity_events',
     },
     'Creates a PR watch through the Flue workflow surface.',
   ),
@@ -1529,7 +1529,7 @@ export const entries: SafetyPolicyEntry[] = [
     {
       ...safeMutation,
       auditTarget:
-        'reports/pr_review_drafts/pr_review_draft_comments/notifications/workflow_events',
+        'reports/pr_review_drafts/pr_review_draft_comments/notifications/activity_events',
     },
     'Runs bounded PR review assistance through the Flue workflow surface, creating local reports and Neon-origin draft comments only.',
   ),
@@ -1539,7 +1539,7 @@ export const entries: SafetyPolicyEntry[] = [
     {
       ...hostExecution,
       auditTarget:
-        'reports/worktrees/worktree_locks/kilo_tasks/kilo_task_events/prepared_diffs/notifications/workflow_events',
+        'reports/worktrees/worktree_locks/kilo_tasks/kilo_task_events/prepared_diffs/notifications/activity_events',
     },
     'Runs bounded CI fix assistance through the Flue workflow surface, creating local reports, local worktree changes, and prepared diffs only. It does not push or comment.',
   ),
@@ -1548,7 +1548,7 @@ export const entries: SafetyPolicyEntry[] = [
     'Run scheduled instruction workflow',
     {
       ...safeMutation,
-      auditTarget: 'scheduled_task_runs/workflow_events',
+      auditTarget: 'scheduled_task_runs/activity_events',
     },
     'Runs one bounded scheduled instruction occurrence through Flue.',
   ),
@@ -1563,7 +1563,7 @@ export const entries: SafetyPolicyEntry[] = [
     'Run scheduler-tick workflow',
     {
       ...safeMutation,
-      auditTarget: 'jobs/notifications/workflow_events/reports',
+      auditTarget: 'jobs/notifications/activity_events/reports',
     },
     'Runs due scheduled work through the Flue workflow surface and records job outcomes, notifications, workflow observations, and scheduled report artifacts.',
   ),
@@ -1573,7 +1573,7 @@ export const entries: SafetyPolicyEntry[] = [
     {
       ...safeMutation,
       auditTarget:
-        'learning_reviews/learning_candidates/memories/memory_events/workflow_events',
+        'learning_reviews/learning_candidates/memories/memory_events/activity_events',
     },
     'Runs bounded model-backed memory curation and applies or proposes changes through typed audited memory actions.',
   ),
@@ -1583,7 +1583,7 @@ export const entries: SafetyPolicyEntry[] = [
     {
       ...safeMutation,
       auditTarget:
-        'learning_reviews/learning_candidates/memories/memory_events/workflow_events',
+        'learning_reviews/learning_candidates/memories/memory_events/activity_events',
     },
     'Runs bounded model-backed conversation reflection and applies or proposes durable memory changes through typed audited memory actions.',
   ),
@@ -1593,7 +1593,7 @@ export const entries: SafetyPolicyEntry[] = [
     {
       ...safeMutation,
       auditTarget:
-        'learning_reviews/learning_candidates/memories/memory_events/config_history/workflow_events',
+        'learning_reviews/learning_candidates/memories/memory_events/config_history/activity_events',
     },
     'Runs bounded model-backed PR/autopilot retrospectives over compact summaries and applies or proposes memory and skill changes through typed actions.',
   ),
@@ -1602,7 +1602,7 @@ export const entries: SafetyPolicyEntry[] = [
     'Run Kilo handoff workflow',
     {
       ...hostExecution,
-      auditTarget: 'kilo_tasks/kilo_task_events/workflow_events',
+      auditTarget: 'kilo_tasks/kilo_task_events/activity_events',
     },
     'Admits an explicit Kilo handoff as a bounded Flue run, then lets the app supervisor own the background process.',
   ),
@@ -1620,7 +1620,7 @@ export const entries: SafetyPolicyEntry[] = [
     'Summarize Kilo session workflow',
     {
       ...safeMutation,
-      auditTarget: 'kilo_tasks/workflow_events',
+      auditTarget: 'kilo_tasks/activity_events',
     },
     'Summarizes linked Kilo task/session metadata and persists the bounded summary on the task record.',
   ),
@@ -1789,7 +1789,7 @@ export const entries: SafetyPolicyEntry[] = [
     'Start PR review API',
     {
       ...safeMutation,
-      auditTarget: 'pr_reviews/workflow_summaries/workflow_events',
+      auditTarget: 'pr_reviews/workflow_summaries/activity_events',
     },
     'Creates or resets one local PR review record and admits the bounded review-pr-for-human workflow without submitting anything to GitHub.',
   ),
@@ -1798,7 +1798,7 @@ export const entries: SafetyPolicyEntry[] = [
     'Re-review PR API',
     {
       ...safeMutation,
-      auditTarget: 'pr_reviews/workflow_summaries/workflow_events',
+      auditTarget: 'pr_reviews/workflow_summaries/activity_events',
     },
     'Reuses one durable local PR review record for a new head and preserves its previous verdict audit field.',
   ),

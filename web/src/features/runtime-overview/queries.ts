@@ -13,11 +13,11 @@ import type {
   RuntimeStatus,
   SafetyPolicy,
   ScheduledTasksResponse,
-  WorkflowObservability,
+  ActivityObservability,
   WorktreesResponse,
 } from '../../api';
 import { queryErrorMessage, queryKeys } from '../../lib/query';
-import { emptySafetyPolicy, emptyWorkflows } from './lib/format';
+import { emptySafetyPolicy, emptyActivity } from './lib/format';
 import type { RuntimeSnapshot } from './types';
 
 type RuntimeSnapshotQueries = {
@@ -31,7 +31,7 @@ type RuntimeSnapshotQueries = {
   mcpServers: UseQueryResult<McpServersResponse>;
   mcpApprovals: UseQueryResult<McpApprovalsResponse>;
   safety: UseQueryResult<SafetyPolicy>;
-  workflows: UseQueryResult<WorkflowObservability>;
+  activity: UseQueryResult<ActivityObservability>;
   kiloTasks: UseQueryResult<KiloTasksResponse>;
   repoEditEvents: UseQueryResult<RepoEditEventsResponse>;
   worktrees: UseQueryResult<WorktreesResponse>;
@@ -52,7 +52,7 @@ export function runtimeSnapshotFromQueries(
     queryResultError(queries.mcpServers),
     queryResultError(queries.mcpApprovals),
     queryResultError(queries.safety),
-    queryResultError(queries.workflows),
+    queryResultError(queries.activity),
     queryResultError(queries.kiloTasks),
     queryResultError(queries.repoEditEvents),
     queryResultError(queries.worktrees),
@@ -113,7 +113,7 @@ export function runtimeSnapshotFromQueries(
       approvals: [],
     },
     safety: queries.safety.data ?? emptySafetyPolicy(status.fetchedAt),
-    workflows: queries.workflows.data ?? emptyWorkflows(),
+    activity: queries.activity.data ?? emptyActivity(),
     kiloTasks: queries.kiloTasks.data ?? {
       ok: false,
       action: 'kilo_tasks_list',
@@ -159,7 +159,7 @@ export async function invalidateRuntimeQueries(queryClient: QueryClient) {
     queryClient.invalidateQueries({ queryKey: queryKeys.scheduledTasks }),
     queryClient.invalidateQueries({ queryKey: queryKeys.runtimeSkills }),
     queryClient.invalidateQueries({
-      queryKey: queryKeys.workflowObservability,
+      queryKey: queryKeys.activityObservability,
     }),
     queryClient.invalidateQueries({ queryKey: queryKeys.kiloTasks }),
     queryClient.invalidateQueries({ queryKey: queryKeys.memories }),

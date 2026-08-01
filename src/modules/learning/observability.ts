@@ -3,10 +3,9 @@ import type { DatabaseSync } from 'node:sqlite';
 import { openDb } from '../../lib/sqlite';
 import { ensureRuntimeHome, runtimePaths } from '../../runtime-home';
 
-export type WorkflowEventRecord = {
+export type ActivityEventRecord = {
   id: number;
-  runId: string | null;
-  workflow: string | null;
+  submissionId: string | null;
   eventType: string;
   eventIndex: number | null;
   level: string | null;
@@ -16,56 +15,68 @@ export type WorkflowEventRecord = {
   operationId: string | null;
   agentName: string | null;
   instanceId: string | null;
+  conversationId: string | null;
   durationMs: number | null;
   isError: boolean;
   summary: JsonValue | null;
   createdAt: string;
-  runUrl: string | null;
+  detailUrl: string | null;
 };
 
-export type WorkflowObservabilitySnapshot = {
+export type ActivityObservabilitySnapshot = {
   ok: true;
-  action: 'workflow_observability_read';
-  activeRuns: Array<{
-    runId: string;
-    workflow: string;
-    startedAt: string;
+  action: 'activity_observability_read';
+  activeSubmissions: Array<{
+    submissionId: string;
+    kind: string;
+    agentName: string | null;
+    instanceId: string | null;
+    status: 'queued' | 'running';
+    queuedAt: string;
+    startedAt: string | null;
     lastEventAt: string;
     lastMessage: string;
     eventCount: number;
-    runUrl: string | null;
+    attemptCount: number;
+    detailUrl: string;
   }>;
-  recentFailures: WorkflowEventRecord[];
-  recentData: WorkflowEventRecord[];
-  recentLogs: WorkflowEventRecord[];
-  recentTools: WorkflowEventRecord[];
-  recentOperations: WorkflowEventRecord[];
-  recentEvents: WorkflowEventRecord[];
+  recentFailures: ActivityEventRecord[];
+  recentSettlements: ActivityEventRecord[];
+  recentLogs: ActivityEventRecord[];
+  recentTools: ActivityEventRecord[];
+  recentOperations: ActivityEventRecord[];
+  recentEvents: ActivityEventRecord[];
   fetchedAt: string;
 };
 
-export type WorkflowRunEventHistory = {
-  events: WorkflowEventRecord[];
+export type ActivitySubmissionEventHistory = {
+  events: ActivityEventRecord[];
   totalEventCount: number;
   retainedEventCount: number;
   isTruncated: boolean;
 };
 
-export type WorkflowRunEventQuery = {
-  afterEventId?: number;
-};
+export type ActivityEventQuery = { afterEventId?: number };
 
-const maxWorkflowEventRows = 5_000;
+const maxActivityEventRows = 5_000;
 const redacted = '[redacted]';
-const persistedEventTypes = new Set([
-  'run_start',
-  'run_resume',
-  'run_end',
+const persistedEventTypes = new Set<FlueObservation['type']>([
+  'submission_queued',
+  'submission_running',
+  'submission_recovery',
+  'submission_settled',
+  'agent_start',
+  'agent_end',
   'operation_start',
   'operation',
   'tool_start',
   'tool',
+  'turn_start',
   'turn',
+  'task_start',
+  'task',
+  'compaction_start',
+  'compaction',
   'log',
 ]);
 
@@ -75,205 +86,149 @@ export async function recordFlueObservation(
 ) {
   if (!persistedEventTypes.has(event.type)) return;
   await ensureRuntimeHome(paths);
-  const summarized = summarizeObservation(event);
-  const summary = {
-    ...summarized,
-    summary: addObservationContext(summarized.summary, event),
-  };
+  const summary = summarizeObservation(event);
   const database = openDb(paths.neondeckDatabase);
+  const createdAt = event.timestamp ?? new Date().toISOString();
 
   try {
-    const runId = readString(event, 'runId');
-    const createdAt = event.timestamp ?? new Date().toISOString();
     database
       .prepare(
         `
-        INSERT INTO workflow_events (
-          run_id,
-          workflow,
-          event_type,
-          event_index,
-          level,
-          message,
-          name,
-          operation_kind,
-          operation_id,
-          duration_ms,
-          is_error,
-          summary_json,
-          created_at
-        )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+        INSERT INTO activity_events (
+          submission_id, agent_name, instance_id, conversation_id,
+          event_type, event_index, level, message, name,
+          operation_kind, operation_id, duration_ms, is_error,
+          summary_json, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
       `,
       )
       .run(
-        runId,
-        workflowName(event),
+        event.submissionId ?? null,
+        boundedIdentifier(event.agentName ?? null),
+        boundedIdentifier(event.instanceId ?? null),
+        boundedIdentifier(event.conversationId ?? null),
         event.type,
-        typeof event.eventIndex === 'number' ? event.eventIndex : null,
-        readString(event, 'level'),
+        event.eventIndex,
+        event.type === 'log' ? event.level : null,
         summary.message,
         summary.name,
         summary.operationKind,
-        summary.operationId,
+        event.operationId ?? null,
         summary.durationMs,
         summary.isError ? 1 : 0,
         JSON.stringify(summary.summary),
         createdAt,
       );
-    updateRunProjection(database, event, summary.message, createdAt);
-    pruneWorkflowEvents(database);
+    updateSubmissionProjection(database, event, summary.message, createdAt);
+    pruneActivityEvents(database);
   } finally {
     database.close();
   }
 }
 
-export async function readWorkflowObservability(paths = runtimePaths()) {
+export async function readActivityObservability(paths = runtimePaths()) {
   await ensureRuntimeHome(paths);
   const database = openDb(paths.neondeckDatabase, { readOnly: true });
 
   try {
     const recentEvents = database
       .prepare(
-        `
-        SELECT
-          workflow_events.*,
-          workflow_run_observations.workflow AS observed_run_workflow
-        FROM workflow_events
-        LEFT JOIN workflow_run_observations
-          ON workflow_run_observations.run_id = workflow_events.run_id
-        ORDER BY created_at DESC, id DESC
-        LIMIT 120;
-      `,
+        `SELECT * FROM activity_events
+         ORDER BY created_at DESC, id DESC LIMIT 120;`,
       )
       .all()
-      .map(readWorkflowEventRow);
-
-    const activeRuns = database
+      .map(readActivityEventRow);
+    const activeSubmissions = database
       .prepare(
-        `
-        SELECT *
-        FROM workflow_run_observations
-        WHERE status = 'active'
-        ORDER BY last_event_at DESC
-        LIMIT 10;
-      `,
+        `SELECT * FROM activity_submissions
+         WHERE status IN ('queued', 'running')
+         ORDER BY last_event_at DESC LIMIT 10;`,
       )
       .all()
-      .map(readActiveRunRow);
+      .map(readActiveSubmissionRow);
 
     return {
       ok: true,
-      action: 'workflow_observability_read',
-      activeRuns,
+      action: 'activity_observability_read',
+      activeSubmissions,
       recentFailures: recentEvents
-        .filter((event) => event.eventType === 'run_end' && event.isError)
+        .filter(
+          (event) => event.eventType === 'submission_settled' && event.isError,
+        )
         .slice(0, 10),
-      recentData: recentEvents
-        .filter((event) => event.eventType === 'run_end' && !event.isError)
+      recentSettlements: recentEvents
+        .filter((event) => event.eventType === 'submission_settled')
         .slice(0, 10),
       recentLogs: recentEvents
         .filter((event) => event.eventType === 'log')
         .slice(0, 10),
       recentTools: recentEvents
-        .filter(
-          (event) =>
-            event.eventType === 'tool' || event.eventType === 'tool_start',
-        )
+        .filter((event) => event.eventType === 'tool')
         .slice(0, 10),
       recentOperations: recentEvents
-        .filter(
-          (event) =>
-            event.eventType === 'operation' ||
-            event.eventType === 'operation_start',
-        )
+        .filter((event) => event.eventType === 'operation')
         .slice(0, 10),
       recentEvents: recentEvents.slice(0, 20),
       fetchedAt: new Date().toISOString(),
-    } satisfies WorkflowObservabilitySnapshot;
+    } satisfies ActivityObservabilitySnapshot;
   } finally {
     database.close();
   }
 }
 
-export async function readWorkflowRunEvents(
-  runId: string,
+export async function readActivitySubmissionEvents(
+  submissionId: string,
   paths = runtimePaths(),
-  query: WorkflowRunEventQuery = {},
+  query: ActivityEventQuery = {},
 ) {
   await ensureRuntimeHome(paths);
   const database = openDb(paths.neondeckDatabase, { readOnly: true });
-
   database.exec('BEGIN;');
+
   try {
-    const eventQuery =
-      query.afterEventId === undefined
-        ? database.prepare(
-            `
-        SELECT
-          workflow_events.*,
-          workflow_run_observations.workflow AS observed_run_workflow
-        FROM workflow_events
-        LEFT JOIN workflow_run_observations
-          ON workflow_run_observations.run_id = workflow_events.run_id
-        WHERE workflow_events.run_id = ?
-        ORDER BY id ASC;
-      `,
-          )
-        : database.prepare(
-            `
-        SELECT
-          workflow_events.*,
-          workflow_run_observations.workflow AS observed_run_workflow
-        FROM workflow_events
-        LEFT JOIN workflow_run_observations
-          ON workflow_run_observations.run_id = workflow_events.run_id
-        WHERE workflow_events.run_id = ?
-          AND workflow_events.id > ?
-        ORDER BY id ASC;
-      `,
-          );
     const eventRows =
       query.afterEventId === undefined
-        ? eventQuery.all(runId)
-        : eventQuery.all(runId, query.afterEventId);
+        ? database
+            .prepare(
+              `SELECT * FROM activity_events
+               WHERE submission_id = ? ORDER BY id ASC;`,
+            )
+            .all(submissionId)
+        : database
+            .prepare(
+              `SELECT * FROM activity_events
+               WHERE submission_id = ? AND id > ? ORDER BY id ASC;`,
+            )
+            .all(submissionId, query.afterEventId);
     const events = eventRows
-      .map(readWorkflowEventRow)
-      .sort(compareWorkflowRunEvents);
+      .map(readActivityEventRow)
+      .sort(compareActivityEvents);
     const projection = database
       .prepare(
-        `
-        SELECT event_count
-        FROM workflow_run_observations
-        WHERE run_id = ?;
-      `,
+        `SELECT event_count FROM activity_submissions
+         WHERE submission_id = ?;`,
       )
-      .get(runId) as { event_count?: unknown } | undefined;
-    const retainedProjection = database
+      .get(submissionId) as { event_count?: unknown } | undefined;
+    const retained = database
       .prepare(
-        `
-        SELECT COUNT(*) AS retained_event_count
-        FROM workflow_events
-        WHERE run_id = ?;
-      `,
+        `SELECT COUNT(*) AS retained_event_count FROM activity_events
+         WHERE submission_id = ?;`,
       )
-      .get(runId) as { retained_event_count?: unknown } | undefined;
+      .get(submissionId) as { retained_event_count?: unknown } | undefined;
     const retainedEventCount =
-      typeof retainedProjection?.retained_event_count === 'number'
-        ? retainedProjection.retained_event_count
+      typeof retained?.retained_event_count === 'number'
+        ? retained.retained_event_count
         : events.length;
     const observedEventCount =
       typeof projection?.event_count === 'number'
         ? projection.event_count
         : retainedEventCount;
-    const totalEventCount = Math.max(observedEventCount, retainedEventCount);
-
     const history = {
       events,
-      totalEventCount,
+      totalEventCount: Math.max(observedEventCount, retainedEventCount),
       retainedEventCount,
-      isTruncated: totalEventCount > retainedEventCount,
-    } satisfies WorkflowRunEventHistory;
+      isTruncated: observedEventCount > retainedEventCount,
+    } satisfies ActivitySubmissionEventHistory;
     database.exec('COMMIT;');
     return history;
   } catch (error) {
@@ -284,319 +239,347 @@ export async function readWorkflowRunEvents(
   }
 }
 
-export async function expireWorkflowRunObservation(
-  input: { runId: string; message: string; endedAt?: string },
+export async function readActivitySubmission(
+  submissionId: string,
   paths = runtimePaths(),
 ) {
   await ensureRuntimeHome(paths);
-  const endedAt = input.endedAt ?? new Date().toISOString();
-  const database = openDb(paths.neondeckDatabase);
+  const database = openDb(paths.neondeckDatabase, { readOnly: true });
   try {
-    return (
-      database
-        .prepare(
-          `
-          UPDATE workflow_run_observations
-          SET status = 'failed', ended_at = ?, last_event_at = ?,
-              last_message = ?, is_error = 1, updated_at = ?
-          WHERE run_id = ? AND status = 'active';
-        `,
-        )
-        .run(endedAt, endedAt, input.message, endedAt, input.runId).changes ===
-      1
-    );
+    const row = database
+      .prepare(`SELECT * FROM activity_submissions WHERE submission_id = ?;`)
+      .get(submissionId);
+    return row ? readSubmissionRow(row) : null;
   } finally {
     database.close();
   }
 }
 
-function summarizeObservation(event: FlueObservation) {
+function summarizeObservation(event: FlueObservation): {
+  message: string;
+  name: string | null;
+  operationKind: string | null;
+  durationMs: number | null;
+  isError: boolean;
+  summary: JsonValue;
+} {
   switch (event.type) {
-    case 'run_start':
-      return {
-        message: `Started workflow ${event.workflowName}.`,
-        name: event.workflowName,
-        operationKind: null,
-        operationId: null,
-        durationMs: null,
-        isError: false,
-        summary: {
-          workflowName: event.workflowName,
-          input: summarizeUnknown(event.input),
+    case 'submission_queued':
+      return activitySummary(
+        `Submission queued for ${event.agentName ?? 'agent'}.`,
+        event.agentName ?? null,
+        false,
+        { kind: event.kind },
+      );
+    case 'submission_running':
+      return activitySummary(
+        `Submission attempt ${event.attemptCount} started.`,
+        event.agentName ?? null,
+        false,
+        {
+          kind: event.kind,
+          attemptCount: event.attemptCount,
+          maxAttempts: event.maxAttempts,
         },
-      };
-    case 'run_resume':
-      return {
-        message: `Resumed workflow ${event.workflowName}.`,
-        name: event.workflowName,
-        operationKind: null,
-        operationId: null,
-        durationMs: null,
-        isError: false,
-        summary: { workflowName: event.workflowName },
-      };
-    case 'run_end':
-      return {
-        message: event.isError
-          ? `Workflow failed after ${formatDuration(event.durationMs)}.`
-          : `Workflow completed in ${formatDuration(event.durationMs)}.`,
-        name: workflowName(event),
-        operationKind: null,
-        operationId: null,
-        durationMs: event.durationMs,
-        isError: event.isError,
-        summary: {
-          durationMs: event.durationMs,
-          error: event.isError ? summarizeError(event.error) : null,
-          result: summarizeUnknown(event.result),
+      );
+    case 'submission_recovery':
+      return activitySummary(
+        `Submission recovery ${event.operation}: ${event.outcome}.`,
+        event.agentName ?? null,
+        event.outcome === 'terminated',
+        {
+          operation: event.operation,
+          outcome: event.outcome,
+          attemptCount: event.attemptCount ?? null,
+          maxAttempts: event.maxAttempts ?? null,
+          error: event.error ? summarizeError(event.error) : null,
         },
-      };
+      );
+    case 'submission_settled':
+      return activitySummary(
+        `Submission ${event.outcome}.`,
+        event.agentName ?? null,
+        event.outcome !== 'completed',
+        {
+          outcome: event.outcome,
+          error: event.error ? summarizeError(event.error) : null,
+        },
+      );
     case 'log':
-      return {
-        message: sanitizeMessage(event.message),
-        name: null,
-        operationKind: null,
-        operationId: readString(event, 'operationId'),
-        durationMs: null,
-        isError: event.level === 'error',
-        summary: {
+      return activitySummary(
+        sanitizeMessage(event.message),
+        null,
+        event.level === 'error',
+        {
           level: event.level,
           attributes: sanitizeRecord(event.attributes),
         },
-      };
+      );
     case 'operation_start':
-      return {
-        message: `${event.operationKind} operation started.`,
-        name: null,
-        operationKind: event.operationKind,
-        operationId: event.operationId,
-        durationMs: null,
-        isError: false,
-        summary: { operationKind: event.operationKind },
-      };
+      return activitySummary(
+        `${event.operationKind} operation started.`,
+        null,
+        false,
+        {
+          operationKind: event.operationKind,
+        },
+        event.operationKind,
+      );
     case 'operation':
-      return {
-        message: `${event.operationKind} operation ${event.isError ? 'failed' : 'completed'} in ${formatDuration(event.durationMs)}.`,
-        name: null,
-        operationKind: event.operationKind,
-        operationId: event.operationId,
-        durationMs: event.durationMs,
-        isError: event.isError,
-        summary: {
+      return activitySummary(
+        `${event.operationKind} operation ${event.isError ? 'failed' : 'completed'} in ${formatDuration(event.durationMs)}.`,
+        null,
+        event.isError,
+        {
           operationKind: event.operationKind,
           usage: summarizeUsage(event.usage),
           error: event.isError ? summarizeError(event.error) : null,
         },
-      };
+        event.operationKind,
+        event.durationMs,
+      );
     case 'tool_start':
-      return {
-        message: `Tool ${event.toolName} started.`,
-        name: event.toolName,
-        operationKind: null,
-        operationId: readString(event, 'operationId'),
-        durationMs: null,
-        isError: false,
-        summary: {
+      return activitySummary(
+        `Tool ${event.toolName} started.`,
+        event.toolName,
+        false,
+        {
           toolName: event.toolName,
           origin: event.origin ?? null,
-          toolType: event.toolType ?? null,
           args: summarizeUnknown(event.args),
         },
-      };
+      );
     case 'tool':
-      return {
-        message: `Tool ${event.toolName} ${event.isError ? 'failed' : 'completed'} in ${formatDuration(event.durationMs)}.`,
-        name: event.toolName,
-        operationKind: null,
-        operationId: readString(event, 'operationId'),
-        durationMs: event.durationMs,
-        isError: event.isError,
-        summary: {
+      return activitySummary(
+        `Tool ${event.toolName} ${event.isError ? 'failed' : 'completed'} in ${formatDuration(event.durationMs)}.`,
+        event.toolName,
+        event.isError,
+        {
           toolName: event.toolName,
           error: event.errorInfo?.message
             ? summarizeError(event.errorInfo)
             : null,
           result: summarizeUnknown(event.effectiveResult ?? event.result),
         },
-      };
+        null,
+        event.durationMs,
+      );
+    case 'turn_start':
+      return activitySummary(
+        `Model turn started (${event.purpose}).`,
+        null,
+        false,
+        {
+          purpose: event.purpose,
+          turnId: event.turnId,
+        },
+      );
     case 'turn':
-      return {
-        message: `Model turn ${event.isError ? 'failed' : 'completed'} in ${formatDuration(event.durationMs)}.`,
-        name: event.request.requestedModel,
-        operationKind: null,
-        operationId: readString(event, 'operationId'),
-        durationMs: event.durationMs,
-        isError: event.isError,
-        summary: {
+      return activitySummary(
+        `Model turn ${event.isError ? 'failed' : 'completed'} in ${formatDuration(event.durationMs)}.`,
+        event.request.requestedModel,
+        event.isError,
+        {
           providerId: event.request.providerId,
           requestedModel: event.request.requestedModel,
           responseModel: event.response.responseModel ?? null,
           finishReason: event.response.finishReason ?? null,
           usage: summarizeUsage(event.response.usage),
         },
-      };
+        null,
+        event.durationMs,
+      );
+    case 'task_start':
+      return activitySummary(
+        `Task ${event.taskId} started.`,
+        event.agent ?? null,
+        false,
+        {
+          taskId: event.taskId,
+          agent: event.agent ?? null,
+        },
+      );
+    case 'task':
+      return activitySummary(
+        `Task ${event.taskId} ${event.isError ? 'failed' : 'completed'} in ${formatDuration(event.durationMs)}.`,
+        event.agent ?? null,
+        event.isError,
+        { taskId: event.taskId, agent: event.agent ?? null },
+        null,
+        event.durationMs,
+      );
+    case 'compaction_start':
+      return activitySummary('Context compaction started.', null, false, {
+        reason: event.reason,
+        estimatedTokens: event.estimatedTokens,
+      });
+    case 'compaction':
+      return activitySummary(
+        `Context compaction ${event.isError ? 'failed' : 'completed'} in ${formatDuration(event.durationMs)}.`,
+        null,
+        event.isError,
+        {
+          messagesBefore: event.messagesBefore,
+          messagesAfter: event.messagesAfter,
+          usage: summarizeUsage(event.usage),
+        },
+        null,
+        event.durationMs,
+      );
+    case 'agent_start':
+      return activitySummary(
+        `Agent ${event.agentName ?? 'instance'} started.`,
+        event.agentName ?? null,
+        false,
+        null,
+      );
+    case 'agent_end':
+      return activitySummary(
+        `Agent ${event.agentName ?? 'instance'} finished.`,
+        event.agentName ?? null,
+        false,
+        {
+          messageCount: event.messages.length,
+        },
+      );
     default:
-      return {
-        message: `${event.type} observed.`,
-        name: null,
-        operationKind: null,
-        operationId: readString(event, 'operationId'),
-        durationMs: null,
-        isError: false,
-        summary: { type: event.type },
-      };
+      return activitySummary(`${event.type} observed.`, null, false, {
+        type: event.type,
+      });
   }
 }
 
-function readWorkflowEventRow(row: unknown): WorkflowEventRecord {
-  const record = row as Record<string, unknown>;
-  const runId = typeof record.run_id === 'string' ? record.run_id : null;
-  const summary =
-    typeof record.summary_json === 'string'
-      ? parseJson(record.summary_json)
-      : null;
-  const context = observationContext(summary);
-  return {
-    id: Number(record.id),
-    runId,
-    workflow:
-      typeof record.workflow === 'string'
-        ? record.workflow
-        : typeof record.observed_run_workflow === 'string'
-          ? record.observed_run_workflow
-          : null,
-    eventType: String(record.event_type),
-    eventIndex:
-      typeof record.event_index === 'number' ? record.event_index : null,
-    level: typeof record.level === 'string' ? record.level : null,
-    message: String(record.message),
-    name: typeof record.name === 'string' ? record.name : null,
-    operationKind:
-      typeof record.operation_kind === 'string' ? record.operation_kind : null,
-    operationId:
-      typeof record.operation_id === 'string' ? record.operation_id : null,
-    agentName: context.agentName,
-    instanceId: context.instanceId,
-    durationMs:
-      typeof record.duration_ms === 'number' ? record.duration_ms : null,
-    isError: Boolean(record.is_error),
-    summary,
-    createdAt: String(record.created_at),
-    runUrl: runInspectionUrl(runId),
-  };
-}
-
-function compareWorkflowRunEvents(
-  left: WorkflowEventRecord,
-  right: WorkflowEventRecord,
+function activitySummary(
+  message: string,
+  name: string | null,
+  isError: boolean,
+  summary: JsonValue,
+  operationKind: string | null = null,
+  durationMs: number | null = null,
 ) {
-  if (left.eventIndex !== null && right.eventIndex !== null) {
-    return left.eventIndex - right.eventIndex || left.id - right.id;
-  }
-  if (left.eventIndex !== null) return -1;
-  if (right.eventIndex !== null) return 1;
-  const timestampDifference =
-    Date.parse(left.createdAt) - Date.parse(right.createdAt);
-  return timestampDifference || left.id - right.id;
+  return { message, name, operationKind, durationMs, isError, summary };
 }
 
-function readActiveRunRow(row: unknown) {
-  const record = row as Record<string, unknown>;
-  const runId = String(record.run_id);
-  return {
-    runId,
-    workflow: String(record.workflow),
-    startedAt: String(record.started_at),
-    lastEventAt: String(record.last_event_at),
-    lastMessage: String(record.last_message),
-    eventCount: Number(record.event_count),
-    runUrl: runInspectionUrl(runId),
-  };
-}
-
-function runInspectionUrl(runId: string | null) {
-  if (!runId || runId.startsWith('scheduler_tick_')) return null;
-  return `/workflow-run?runId=${encodeURIComponent(runId)}`;
-}
-
-function updateRunProjection(
+function updateSubmissionProjection(
   database: DatabaseSync,
   event: FlueObservation,
   message: string,
   createdAt: string,
 ) {
-  const runId = readString(event, 'runId');
-  if (!runId) return;
-  const workflow = workflowName(event) ?? 'workflow';
+  if (!event.submissionId) return;
+  const agentName = boundedIdentifier(event.agentName ?? null);
+  const instanceId = boundedIdentifier(event.instanceId ?? null);
 
-  if (event.type === 'run_start' || event.type === 'run_resume') {
+  if (event.type === 'submission_queued') {
     database
       .prepare(
-        `
-        INSERT INTO workflow_run_observations (
-          run_id,
-          workflow,
-          status,
-          started_at,
-          last_event_at,
-          last_message,
-          event_count,
-          is_error,
-          updated_at
-        )
-        VALUES (?, ?, 'active', ?, ?, ?, 1, 0, ?)
-        ON CONFLICT(run_id) DO UPDATE SET
-          workflow = excluded.workflow,
-          status = 'active',
-          last_event_at = excluded.last_event_at,
-          last_message = excluded.last_message,
-          event_count = workflow_run_observations.event_count + 1,
-          updated_at = excluded.updated_at;
-      `,
-      )
-      .run(runId, workflow, createdAt, createdAt, message, createdAt);
-    return;
-  }
-
-  if (event.type === 'run_end') {
-    database
-      .prepare(
-        `
-        INSERT INTO workflow_run_observations (
-          run_id,
-          workflow,
-          status,
-          started_at,
-          ended_at,
-          last_event_at,
-          last_message,
-          event_count,
-          duration_ms,
-          is_error,
-          updated_at
-        )
-        VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?)
-        ON CONFLICT(run_id) DO UPDATE SET
-          status = excluded.status,
-          ended_at = excluded.ended_at,
-          last_event_at = excluded.last_event_at,
-          last_message = excluded.last_message,
-          event_count = workflow_run_observations.event_count + 1,
-          duration_ms = excluded.duration_ms,
-          is_error = excluded.is_error,
-          updated_at = excluded.updated_at;
-      `,
+        `INSERT INTO activity_submissions (
+           submission_id, kind, agent_name, instance_id, status, queued_at,
+           last_event_at, last_message, event_count, attempt_count,
+           is_error, updated_at
+         ) VALUES (?, ?, ?, ?, 'queued', ?, ?, ?, 1, 0, 0, ?)
+         ON CONFLICT(submission_id) DO UPDATE SET
+           kind = excluded.kind,
+           agent_name = COALESCE(excluded.agent_name, activity_submissions.agent_name),
+           instance_id = COALESCE(excluded.instance_id, activity_submissions.instance_id),
+           last_event_at = MAX(activity_submissions.last_event_at, excluded.last_event_at),
+           last_message = CASE
+             WHEN excluded.last_event_at >= activity_submissions.last_event_at
+               THEN excluded.last_message
+             ELSE activity_submissions.last_message
+           END,
+           event_count = activity_submissions.event_count + 1,
+           updated_at = MAX(activity_submissions.updated_at, excluded.updated_at);`,
       )
       .run(
-        runId,
-        workflow,
-        event.isError ? 'failed' : 'completed',
-        readString(event, 'startedAt') ?? createdAt,
+        event.submissionId,
+        event.kind,
+        agentName,
+        instanceId,
         createdAt,
         createdAt,
         message,
-        event.durationMs,
-        event.isError ? 1 : 0,
+        createdAt,
+      );
+    return;
+  }
+
+  if (event.type === 'submission_running') {
+    database
+      .prepare(
+        `INSERT INTO activity_submissions (
+           submission_id, kind, agent_name, instance_id, status, queued_at,
+           started_at, last_event_at, last_message, event_count,
+           attempt_count, is_error, updated_at
+         ) VALUES (?, ?, ?, ?, 'running', ?, ?, ?, ?, 1, ?, 0, ?)
+         ON CONFLICT(submission_id) DO UPDATE SET
+           kind = excluded.kind,
+           agent_name = COALESCE(excluded.agent_name, activity_submissions.agent_name),
+           instance_id = COALESCE(excluded.instance_id, activity_submissions.instance_id),
+           status = CASE
+             WHEN activity_submissions.status IN ('completed', 'failed', 'aborted')
+               THEN activity_submissions.status
+             ELSE 'running'
+           END,
+           started_at = COALESCE(activity_submissions.started_at, excluded.started_at),
+           last_event_at = MAX(activity_submissions.last_event_at, excluded.last_event_at),
+           last_message = CASE
+             WHEN excluded.last_event_at >= activity_submissions.last_event_at
+               THEN excluded.last_message
+             ELSE activity_submissions.last_message
+           END,
+           event_count = activity_submissions.event_count + 1,
+           attempt_count = MAX(activity_submissions.attempt_count, excluded.attempt_count),
+           updated_at = MAX(activity_submissions.updated_at, excluded.updated_at);`,
+      )
+      .run(
+        event.submissionId,
+        event.kind,
+        agentName,
+        instanceId,
+        createdAt,
+        createdAt,
+        createdAt,
+        message,
+        event.attemptCount,
+        createdAt,
+      );
+    return;
+  }
+
+  if (event.type === 'submission_settled') {
+    database
+      .prepare(
+        `INSERT INTO activity_submissions (
+           submission_id, kind, agent_name, instance_id, status, queued_at,
+           settled_at, last_event_at, last_message, event_count,
+           attempt_count, is_error, updated_at
+         ) VALUES (?, 'unknown', ?, ?, ?, ?, ?, ?, ?, 1, 0, ?, ?)
+         ON CONFLICT(submission_id) DO UPDATE SET
+           agent_name = COALESCE(excluded.agent_name, activity_submissions.agent_name),
+           instance_id = COALESCE(excluded.instance_id, activity_submissions.instance_id),
+           status = excluded.status,
+           settled_at = COALESCE(activity_submissions.settled_at, excluded.settled_at),
+           last_event_at = MAX(activity_submissions.last_event_at, excluded.last_event_at),
+           last_message = CASE
+             WHEN excluded.last_event_at >= activity_submissions.last_event_at
+               THEN excluded.last_message
+             ELSE activity_submissions.last_message
+           END,
+           event_count = activity_submissions.event_count + 1,
+           is_error = excluded.is_error,
+           updated_at = MAX(activity_submissions.updated_at, excluded.updated_at);`,
+      )
+      .run(
+        event.submissionId,
+        agentName,
+        instanceId,
+        event.outcome,
+        createdAt,
+        createdAt,
+        createdAt,
+        message,
+        event.outcome === 'completed' ? 0 : 1,
         createdAt,
       );
     return;
@@ -604,90 +587,117 @@ function updateRunProjection(
 
   database
     .prepare(
-      `
-      UPDATE workflow_run_observations
-      SET
-        last_event_at = ?,
-        last_message = ?,
-        event_count = event_count + 1,
-        updated_at = ?
-      WHERE run_id = ?;
-    `,
+      `UPDATE activity_submissions SET
+         agent_name = COALESCE(?, agent_name),
+         instance_id = COALESCE(?, instance_id),
+         last_event_at = MAX(last_event_at, ?),
+         last_message = CASE WHEN ? >= last_event_at THEN ? ELSE last_message END,
+         event_count = event_count + 1, updated_at = MAX(updated_at, ?)
+       WHERE submission_id = ?;`,
     )
-    .run(createdAt, message, createdAt, runId);
+    .run(
+      agentName,
+      instanceId,
+      createdAt,
+      createdAt,
+      message,
+      createdAt,
+      event.submissionId,
+    );
 }
 
-function pruneWorkflowEvents(database: DatabaseSync) {
+function readActivityEventRow(row: unknown): ActivityEventRecord {
+  const record = row as Record<string, unknown>;
+  const submissionId = stringOrNull(record.submission_id);
+  return {
+    id: Number(record.id),
+    submissionId,
+    eventType: String(record.event_type),
+    eventIndex:
+      typeof record.event_index === 'number' ? record.event_index : null,
+    level: stringOrNull(record.level),
+    message: String(record.message),
+    name: stringOrNull(record.name),
+    operationKind: stringOrNull(record.operation_kind),
+    operationId: stringOrNull(record.operation_id),
+    agentName: stringOrNull(record.agent_name),
+    instanceId: stringOrNull(record.instance_id),
+    conversationId: stringOrNull(record.conversation_id),
+    durationMs:
+      typeof record.duration_ms === 'number' ? record.duration_ms : null,
+    isError: Boolean(record.is_error),
+    summary:
+      typeof record.summary_json === 'string'
+        ? parseJson(record.summary_json)
+        : null,
+    createdAt: String(record.created_at),
+    detailUrl: activityDetailUrl(submissionId),
+  };
+}
+
+function readActiveSubmissionRow(row: unknown) {
+  const submission = readSubmissionRow(row);
+  return {
+    submissionId: submission.submissionId,
+    kind: submission.kind,
+    agentName: submission.agentName,
+    instanceId: submission.instanceId,
+    status: submission.status as 'queued' | 'running',
+    queuedAt: submission.queuedAt,
+    startedAt: submission.startedAt,
+    lastEventAt: submission.lastEventAt,
+    lastMessage: submission.lastMessage,
+    eventCount: submission.eventCount,
+    attemptCount: submission.attemptCount,
+    detailUrl: activityDetailUrl(submission.submissionId)!,
+  };
+}
+
+function readSubmissionRow(row: unknown) {
+  const record = row as Record<string, unknown>;
+  return {
+    submissionId: String(record.submission_id),
+    kind: String(record.kind),
+    agentName: stringOrNull(record.agent_name),
+    instanceId: stringOrNull(record.instance_id),
+    status: String(record.status),
+    queuedAt: String(record.queued_at),
+    startedAt: stringOrNull(record.started_at),
+    settledAt: stringOrNull(record.settled_at),
+    lastEventAt: String(record.last_event_at),
+    lastMessage: String(record.last_message),
+    eventCount: Number(record.event_count),
+    attemptCount: Number(record.attempt_count),
+    isError: Boolean(record.is_error),
+    detailUrl: activityDetailUrl(String(record.submission_id)),
+  };
+}
+
+function compareActivityEvents(
+  left: ActivityEventRecord,
+  right: ActivityEventRecord,
+) {
+  return (
+    Date.parse(left.createdAt) - Date.parse(right.createdAt) ||
+    left.id - right.id
+  );
+}
+
+function activityDetailUrl(submissionId: string | null) {
+  return submissionId
+    ? `/activity?submissionId=${encodeURIComponent(submissionId)}`
+    : null;
+}
+
+function pruneActivityEvents(database: DatabaseSync) {
   database
     .prepare(
-      `
-      DELETE FROM workflow_events
-      WHERE id NOT IN (
-        SELECT id
-        FROM workflow_events
-        ORDER BY created_at DESC, id DESC
-        LIMIT ?
-      );
-    `,
+      `DELETE FROM activity_events WHERE id NOT IN (
+         SELECT id FROM activity_events
+         ORDER BY created_at DESC, id DESC LIMIT ?
+       );`,
     )
-    .run(maxWorkflowEventRows);
-}
-
-function workflowName(event: FlueObservation) {
-  if ('workflowName' in event && typeof event.workflowName === 'string') {
-    return event.workflowName;
-  }
-  if ('workflow' in event && typeof event.workflow === 'string') {
-    return event.workflow;
-  }
-  return null;
-}
-
-function readString(event: FlueObservation, key: string) {
-  const value = (event as unknown as Record<string, unknown>)[key];
-  return typeof value === 'string' ? value : null;
-}
-
-function addObservationContext(
-  summary: unknown,
-  event: FlueObservation,
-): JsonValue {
-  const agentName = readString(event, 'agentName');
-  const instanceId = readString(event, 'instanceId');
-  const jsonSummary = summary as JsonValue;
-  if (!agentName && !instanceId) return jsonSummary;
-  const details =
-    jsonSummary &&
-    typeof jsonSummary === 'object' &&
-    !Array.isArray(jsonSummary)
-      ? jsonSummary
-      : { detail: jsonSummary };
-  return {
-    ...details,
-    context: {
-      agentName: boundedIdentifier(agentName),
-      instanceId: boundedIdentifier(instanceId),
-    },
-  };
-}
-
-function observationContext(summary: JsonValue | null) {
-  if (!summary || typeof summary !== 'object' || Array.isArray(summary)) {
-    return { agentName: null, instanceId: null };
-  }
-  const context = summary.context;
-  if (!context || typeof context !== 'object' || Array.isArray(context)) {
-    return { agentName: null, instanceId: null };
-  }
-  return {
-    agentName: typeof context.agentName === 'string' ? context.agentName : null,
-    instanceId:
-      typeof context.instanceId === 'string' ? context.instanceId : null,
-  };
-}
-
-function boundedIdentifier(value: string | null) {
-  return value ? value.slice(0, 200) : null;
+    .run(maxActivityEventRows);
 }
 
 function sanitizeRecord(value: unknown) {
@@ -704,9 +714,7 @@ function sanitizeRecord(value: unknown) {
 function summarizeUnknown(value: unknown): JsonValue {
   if (value === undefined) return null;
   if (isSafeScalar(value)) return summarizeScalar(value);
-  if (Array.isArray(value)) {
-    return { type: 'array', length: value.length };
-  }
+  if (Array.isArray(value)) return { type: 'array', length: value.length };
   if (value && typeof value === 'object') {
     return {
       type: 'object',
@@ -729,24 +737,22 @@ function summarizeUsage(usage: unknown): JsonValue {
   };
 }
 
-function readNumber(value: unknown) {
-  return typeof value === 'number' && Number.isFinite(value) ? value : null;
+function summarizeError(error: unknown): JsonValue {
+  return {
+    type:
+      error && typeof error === 'object' && 'name' in error
+        ? String((error as { name?: unknown }).name)
+        : 'Error',
+    message: sanitizeMessage(errorMessage(error)),
+  };
 }
 
-function isSafeScalar(
-  value: unknown,
-): value is string | number | boolean | null {
-  return (
-    value === null ||
-    typeof value === 'string' ||
-    typeof value === 'boolean' ||
-    (typeof value === 'number' && Number.isFinite(value))
-  );
-}
-
-function formatDuration(ms: number) {
-  if (ms < 1_000) return `${Math.round(ms)}ms`;
-  return `${(ms / 1_000).toFixed(1)}s`;
+function parseJson(value: string): JsonValue | null {
+  try {
+    return JSON.parse(value) as JsonValue;
+  } catch {
+    return { type: 'parse-error' };
+  }
 }
 
 function sanitizeMessage(value: string) {
@@ -765,26 +771,15 @@ function summarizeScalar(value: string | number | boolean | null): JsonValue {
   };
 }
 
-function summarizeError(error: unknown): JsonValue {
-  const message = errorMessage(error);
-  return {
-    type:
-      error && typeof error === 'object' && 'name' in error
-        ? String((error as { name?: unknown }).name)
-        : 'Error',
-    message: sanitizeMessage(message),
-  };
-}
-
-function parseJson(value: string): JsonValue | null {
-  try {
-    return JSON.parse(value) as JsonValue;
-  } catch {
-    return {
-      type: 'parse-error',
-      message: 'Stored event summary could not be parsed.',
-    };
-  }
+function isSafeScalar(
+  value: unknown,
+): value is string | number | boolean | null {
+  return (
+    value === null ||
+    typeof value === 'string' ||
+    typeof value === 'boolean' ||
+    (typeof value === 'number' && Number.isFinite(value))
+  );
 }
 
 function isSensitiveKey(key: string) {
@@ -809,4 +804,21 @@ function errorMessage(error: unknown) {
     if (typeof message === 'string') return message;
   }
   return String(error);
+}
+
+function readNumber(value: unknown) {
+  return typeof value === 'number' && Number.isFinite(value) ? value : null;
+}
+
+function boundedIdentifier(value: string | null) {
+  return value ? value.slice(0, 200) : null;
+}
+
+function stringOrNull(value: unknown) {
+  return typeof value === 'string' ? value : null;
+}
+
+function formatDuration(ms: number) {
+  if (ms < 1_000) return `${Math.round(ms)}ms`;
+  return `${(ms / 1_000).toFixed(1)}s`;
 }

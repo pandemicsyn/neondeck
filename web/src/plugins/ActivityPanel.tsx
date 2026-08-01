@@ -2,10 +2,10 @@ import { useQuery } from '@tanstack/react-query';
 import { useMemo, useState } from 'react';
 import {
   getPrWatches,
-  getWorkflowObservability,
+  getActivityObservability,
   type PrWatch,
-  type WorkflowEventRecord,
-  type WorkflowObservability,
+  type ActivityEventRecord,
+  type ActivityObservability,
 } from '../api';
 import {
   Badge,
@@ -19,21 +19,21 @@ import { queryErrorMessage, queryKeys } from '../lib/query';
 import type { DisplayPlugin } from '../types';
 import { parsePositiveIntegerConfig } from './config';
 
-type WorkflowObservabilityConfig = {
+type ActivityPanelConfig = {
   eventLimit: number;
   refreshSeconds: number;
 };
 
-type WorkflowFilter = 'all' | 'active' | 'failed' | 'progress' | 'activity';
+type ActivityFilter = 'all' | 'active' | 'failed' | 'settled' | 'activity';
 
-type WorkflowDrilldownItem = {
+type ActivityItem = {
   id: string;
-  kind: Exclude<WorkflowFilter, 'all'> | 'event';
+  kind: Exclude<ActivityFilter, 'all'> | 'event';
   title: string;
   message: string;
   createdAt: string;
   metadata: string;
-  runUrl: string | null;
+  detailUrl: string | null;
   badge: string;
   isError: boolean;
   contextLabel: string;
@@ -44,38 +44,38 @@ type WorkflowOwnerWatch = Pick<
   'ownerInstanceId' | 'repoFullName' | 'prNumber'
 >;
 
-const workflowObservabilityDefaultConfig = {
+const activityPanelDefaultConfig = {
   eventLimit: 18,
   refreshSeconds: 20,
 };
 
 const filters: Array<{
-  id: WorkflowFilter;
+  id: ActivityFilter;
   label: string;
 }> = [
   { id: 'all', label: 'all' },
   { id: 'active', label: 'active' },
   { id: 'failed', label: 'failed' },
-  { id: 'progress', label: 'progress' },
+  { id: 'settled', label: 'settled' },
   { id: 'activity', label: 'activity' },
 ];
 
-export const WorkflowObservabilityPanelPlugin = {
-  id: 'workflow-observability',
-  title: 'Workflow observability',
+export const ActivityPanelPlugin = {
+  id: 'activity',
+  title: 'Agent activity',
   kind: 'data',
-  defaultConfig: workflowObservabilityDefaultConfig,
+  defaultConfig: activityPanelDefaultConfig,
   parseConfig: (config) =>
-    parsePositiveIntegerConfig(workflowObservabilityDefaultConfig, config),
+    parsePositiveIntegerConfig(activityPanelDefaultConfig, config),
   Component({ config }) {
-    const [filter, setFilter] = useState<WorkflowFilter>('all');
+    const [filter, setFilter] = useState<ActivityFilter>('all');
     const {
       data: workflows,
       error,
       isLoading,
     } = useQuery({
-      queryKey: queryKeys.workflowObservability,
-      queryFn: getWorkflowObservability,
+      queryKey: queryKeys.activityObservability,
+      queryFn: getActivityObservability,
       refetchInterval: Math.max(5, config.refreshSeconds) * 1000,
     });
     const { data: watches } = useQuery({
@@ -87,8 +87,8 @@ export const WorkflowObservabilityPanelPlugin = {
     if (isLoading) {
       return (
         <EmptyState
-          title="Workflows loading"
-          detail="Reading recent Flue observations."
+          title="Activity loading"
+          detail="Reading recent agent and submission activity."
         />
       );
     }
@@ -96,7 +96,7 @@ export const WorkflowObservabilityPanelPlugin = {
     if (error) {
       return (
         <EmptyState
-          title="Workflows unavailable"
+          title="Activity unavailable"
           detail={queryErrorMessage(error)}
           tone="alert"
         />
@@ -106,7 +106,7 @@ export const WorkflowObservabilityPanelPlugin = {
     if (!workflows) {
       return (
         <EmptyState
-          title="Workflows unavailable"
+          title="Activity unavailable"
           detail="No data."
           tone="alert"
         />
@@ -114,7 +114,7 @@ export const WorkflowObservabilityPanelPlugin = {
     }
 
     return (
-      <WorkflowObservabilityView
+      <ActivityView
         eventLimit={config.eventLimit}
         filter={filter}
         onFilterChange={setFilter}
@@ -123,9 +123,9 @@ export const WorkflowObservabilityPanelPlugin = {
       />
     );
   },
-} satisfies DisplayPlugin<WorkflowObservabilityConfig>;
+} satisfies DisplayPlugin<ActivityPanelConfig>;
 
-function WorkflowObservabilityView({
+function ActivityView({
   eventLimit,
   filter,
   onFilterChange,
@@ -133,23 +133,22 @@ function WorkflowObservabilityView({
   workflows,
 }: {
   eventLimit: number;
-  filter: WorkflowFilter;
-  onFilterChange: (filter: WorkflowFilter) => void;
+  filter: ActivityFilter;
+  onFilterChange: (filter: ActivityFilter) => void;
   watches: PrWatch[];
-  workflows: WorkflowObservability;
+  workflows: ActivityObservability;
 }) {
   const items = useMemo(
-    () =>
-      workflowDrilldownItems(workflows, filter, watches).slice(0, eventLimit),
+    () => activityItems(workflows, filter, watches).slice(0, eventLimit),
     [eventLimit, filter, watches, workflows],
   );
-  const counts = workflowCounts(workflows);
+  const counts = activityCounts(workflows);
 
   return (
     <div className="flex h-full min-h-0 flex-col">
       <header className="panel-header flex h-8 items-center justify-between border-b border-line px-3 font-mono text-[10.5px] tracking-[0.12em]">
         <h2 className="m-0 text-[inherit] font-[inherit] text-violet">
-          WORKFLOWS
+          ACTIVITY
         </h2>
         <Badge className={counts.failed > 0 ? 'border-accent text-accent' : ''}>
           {counts.active} active · {counts.failed} failed
@@ -157,13 +156,13 @@ function WorkflowObservabilityView({
       </header>
       <div className="border-b border-line px-3 py-2">
         <div className="grid grid-cols-4 gap-1.5 font-mono text-[10px] text-muted">
-          <Metric label="progress" value={counts.progress} />
+          <Metric label="settled" value={counts.settled} />
           <Metric label="logs" value={counts.activity} />
           <Metric label="events" value={counts.events} />
-          <Metric label="runs" value={counts.active} />
+          <Metric label="submissions" value={counts.active} />
         </div>
         <fieldset
-          aria-label="Workflow observations"
+          aria-label="Agent activity"
           className="m-0 mt-2 grid min-w-0 grid-cols-5 gap-1 border-0 p-0"
         >
           {filters.map((option) => (
@@ -186,10 +185,10 @@ function WorkflowObservabilityView({
       <ScrollArea className="flex-1">
         <div className="space-y-1.5 p-3">
           {items.map((item) => (
-            <WorkflowDrilldownRow item={item} key={item.id} />
+            <ActivityRow item={item} key={item.id} />
           ))}
           {items.length === 0 ? (
-            <MiniEmpty label="No workflow observations in this filter." />
+            <MiniEmpty label="No agent activity in this filter." />
           ) : null}
         </div>
       </ScrollArea>
@@ -197,7 +196,7 @@ function WorkflowObservabilityView({
   );
 }
 
-function WorkflowDrilldownRow({ item }: { item: WorkflowDrilldownItem }) {
+function ActivityRow({ item }: { item: ActivityItem }) {
   return (
     <article
       className={
@@ -237,12 +236,10 @@ function WorkflowDrilldownRow({ item }: { item: WorkflowDrilldownItem }) {
         <span className="min-w-0 flex-1 truncate">
           {item.metadata} · {relativeTime(item.createdAt)}
         </span>
-        {item.runUrl ? (
+        {item.detailUrl ? (
           <a
             className="shrink-0 border border-line px-1.5 py-0.5 text-muted hover:border-primary hover:text-primary"
-            href={item.runUrl}
-            rel="noreferrer"
-            target="_blank"
+            href={item.detailUrl}
           >
             inspect
           </a>
@@ -252,12 +249,12 @@ function WorkflowDrilldownRow({ item }: { item: WorkflowDrilldownItem }) {
   );
 }
 
-export function workflowDrilldownItems(
-  workflows: WorkflowObservability,
-  filter: WorkflowFilter,
+export function activityItems(
+  workflows: ActivityObservability,
+  filter: ActivityFilter,
   watches: WorkflowOwnerWatch[] = [],
-): WorkflowDrilldownItem[] {
-  const items: WorkflowDrilldownItem[] = [];
+): ActivityItem[] {
+  const items: ActivityItem[] = [];
   const seen = new Set<number>();
   const watchesByOwner = new Map(
     watches.flatMap((watch) =>
@@ -266,18 +263,20 @@ export function workflowDrilldownItems(
   );
 
   if (filter === 'all' || filter === 'active') {
-    for (const run of workflows.activeRuns) {
+    for (const submission of workflows.activeSubmissions) {
       items.push({
-        id: `active:${run.runId}`,
+        id: `active:${submission.submissionId}`,
         kind: 'active',
-        title: run.workflow,
-        message: run.lastMessage,
-        createdAt: run.lastEventAt,
-        metadata: run.runId,
-        runUrl: run.runUrl,
-        badge: `${run.eventCount} events`,
+        title: submission.agentName ?? 'agent submission',
+        message: submission.lastMessage,
+        createdAt: submission.lastEventAt,
+        metadata: submission.submissionId,
+        detailUrl: submission.detailUrl,
+        badge: `${submission.eventCount} events`,
         isError: false,
-        contextLabel: `workflow · ${run.workflow}`,
+        contextLabel: submission.instanceId
+          ? `${agentLabel(submission.agentName ?? 'agent')} · ${submission.instanceId}`
+          : agentLabel(submission.agentName ?? 'agent'),
       });
     }
   }
@@ -286,8 +285,14 @@ export function workflowDrilldownItems(
     addEvents(items, seen, workflows.recentFailures, 'failed', watchesByOwner);
   }
 
-  if (filter === 'all' || filter === 'progress') {
-    addEvents(items, seen, workflows.recentData, 'progress', watchesByOwner);
+  if (filter === 'all' || filter === 'settled') {
+    addEvents(
+      items,
+      seen,
+      workflows.recentSettlements,
+      'settled',
+      watchesByOwner,
+    );
   }
 
   if (filter === 'all' || filter === 'activity') {
@@ -312,10 +317,10 @@ export function workflowDrilldownItems(
 }
 
 function addEvents(
-  items: WorkflowDrilldownItem[],
+  items: ActivityItem[],
   seen: Set<number>,
-  events: WorkflowEventRecord[],
-  kind: WorkflowDrilldownItem['kind'],
+  events: ActivityEventRecord[],
+  kind: ActivityItem['kind'],
   watchesByOwner: ReadonlyMap<string, WorkflowOwnerWatch>,
 ) {
   for (const event of events) {
@@ -326,19 +331,19 @@ function addEvents(
 }
 
 function eventItem(
-  event: WorkflowEventRecord,
-  kind: WorkflowDrilldownItem['kind'],
+  event: ActivityEventRecord,
+  kind: ActivityItem['kind'],
   watchesByOwner: ReadonlyMap<string, WorkflowOwnerWatch>,
-): WorkflowDrilldownItem {
+): ActivityItem {
   return {
     id: `${kind}:${event.id}`,
     kind,
-    title: event.name ?? event.workflow ?? event.eventType,
+    title: event.name ?? event.agentName ?? event.eventType,
     message: event.message,
     createdAt: event.createdAt,
     metadata:
-      event.runId ?? event.operationId ?? event.operationKind ?? 'local',
-    runUrl: event.runUrl,
+      event.submissionId ?? event.operationId ?? event.operationKind ?? 'local',
+    detailUrl: event.detailUrl,
     badge:
       kind === 'failed'
         ? 'failed'
@@ -349,7 +354,7 @@ function eventItem(
 }
 
 function workflowEventContext(
-  event: WorkflowEventRecord,
+  event: ActivityEventRecord,
   watchesByOwner: ReadonlyMap<string, WorkflowOwnerWatch>,
 ) {
   const watch = event.instanceId
@@ -363,8 +368,7 @@ function workflowEventContext(
       ? `${agentLabel(event.agentName)} · ${event.instanceId}`
       : agentLabel(event.agentName);
   }
-  if (event.workflow) return `workflow · ${event.workflow}`;
-  return event.runId ? 'workflow run' : 'local runtime';
+  return event.submissionId ? 'agent submission' : 'local runtime';
 }
 
 function agentLabel(agentName: string) {
@@ -373,11 +377,11 @@ function agentLabel(agentName: string) {
   return agentName;
 }
 
-function workflowCounts(workflows: WorkflowObservability) {
+function activityCounts(workflows: ActivityObservability) {
   return {
-    active: workflows.activeRuns.length,
+    active: workflows.activeSubmissions.length,
     failed: workflows.recentFailures.length,
-    progress: workflows.recentData.length,
+    settled: workflows.recentSettlements.length,
     activity:
       workflows.recentLogs.length +
       workflows.recentTools.length +

@@ -67,9 +67,10 @@ export const queryKeys = {
   scheduledTasks: ['scheduled-tasks'] as const,
   subagents: ['subagents'] as const,
   notifications: ['notifications'] as const,
-  workflowObservability: ['workflow-observability'] as const,
-  workflowRun: (runId: string) => ['workflow-run', runId] as const,
-  workflowSummaries: ['workflow-summaries'] as const,
+  activityObservability: ['activity-observability'] as const,
+  activitySubmission: (submissionId: string) =>
+    ['activity-submission', submissionId] as const,
+  operationSummaries: ['operation-summaries'] as const,
   worktrees: ['worktrees'] as const,
 };
 

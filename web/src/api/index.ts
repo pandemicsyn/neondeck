@@ -9,7 +9,7 @@ export * from './prepared-diffs';
 export * from './events';
 export * from './safety';
 export * from './sessions';
-export * from './workflows';
+export * from './activity';
 export * from './kilo';
 export * from './execution';
 export * from './mcp';
