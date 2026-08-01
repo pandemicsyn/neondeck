@@ -541,7 +541,7 @@ describe('scheduled task storage', () => {
     }
   });
 
-  it('admits due briefings through Flue and retains an active workflow run', async () => {
+  it('admits due briefings directly and settles the scheduled task run', async () => {
     const home = await mkdtemp(join(tmpdir(), 'neondeck-scheduled-tasks-'));
     const paths = runtimePaths(home);
     try {
@@ -556,14 +556,21 @@ describe('scheduled task storage', () => {
       );
       await expect(
         runSchedulerTick(paths, new Date('2026-07-10T00:00:00.000Z'), {
-          invokeWorkflow: async (workflow, input) => {
-            expect(workflow).toBe('briefing');
+          admitBriefing: (async (
+            input: { profileId: string; trigger: 'scheduled' },
+            actualPaths: ReturnType<typeof runtimePaths>,
+          ) => {
             expect(input).toEqual({
               profileId: 'daily',
-              taskId: 'briefing:daily',
+              trigger: 'scheduled',
             });
-            return { runId: 'workflow:briefing:1' };
-          },
+            expect(actualPaths).toBe(paths);
+            return {
+              id: 'briefing:daily:1',
+              dispatchId: 'submission:briefing:1',
+              sessionId: 'briefing-session',
+            };
+          }) as never,
         }),
       ).resolves.toMatchObject({
         ok: true,
@@ -573,7 +580,16 @@ describe('scheduled task storage', () => {
       });
       await expect(
         canAdmitScheduledWorkflow('briefing:daily', paths),
-      ).resolves.toBe(false);
+      ).resolves.toBe(true);
+      await expect(
+        readLatestScheduledTaskRun('briefing:daily', paths),
+      ).resolves.toMatchObject({
+        status: 'completed',
+        result: {
+          briefingRunId: 'briefing:daily:1',
+          submissionId: 'submission:briefing:1',
+        },
+      });
     } finally {
       await rm(home, { recursive: true, force: true });
     }

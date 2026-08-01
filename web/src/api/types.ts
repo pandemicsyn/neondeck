@@ -1711,7 +1711,9 @@ export type BriefingMutationResponse = {
   message: string;
   profile?: BriefingProfile;
   run?: BriefingRun;
-  workflowRunId?: string;
+  briefingRunId?: string;
+  submissionId?: string;
+  sessionId?: string;
   errors?: string[];
 };
 

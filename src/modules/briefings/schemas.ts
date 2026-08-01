@@ -60,6 +60,25 @@ export const briefingSnapshotSchema = v.object({
   ),
 });
 
+export const briefingClientDataSchema = v.object({
+  briefingRunId: nonEmptyStringSchema,
+  profileId: v.nullable(nonEmptyStringSchema),
+  status: v.literal('grounded'),
+  snapshotVersion: v.literal(1),
+  collectedAt: nonEmptyStringSchema,
+  truncated: v.boolean(),
+  sourceHealth: v.array(
+    v.object({
+      name: nonEmptyStringSchema,
+      status: v.picklist(['ok', 'partial', 'unavailable']),
+      truncated: v.boolean(),
+      error: v.optional(v.string()),
+    }),
+  ),
+  topActions: v.array(nonEmptyStringSchema),
+  failures: v.array(nonEmptyStringSchema),
+});
+
 export type BriefingSourceStatus = {
   status: 'ok' | 'partial' | 'unavailable';
   fetchedAt: string;
@@ -78,6 +97,8 @@ export type BriefingSnapshot = {
   truncated: boolean;
   sources: Record<string, BriefingSnapshotSource>;
 };
+
+export type BriefingClientData = v.InferOutput<typeof briefingClientDataSchema>;
 
 export type BriefingProfile = {
   id: string;

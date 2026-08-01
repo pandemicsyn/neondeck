@@ -261,17 +261,10 @@ export function FlueChatSessionView({
             trigger: 'manual',
           });
           if (!admitted.ok) throw new Error(admitted.message);
-          if (admitted.workflowRunId) {
-            updateCommandEvent(createdEvent.id, {
-              flueRunId: admitted.workflowRunId,
-            });
-            await updateChatSessionCommandEvent(session.id, createdEvent.id, {
-              status: 'running',
-              flueRunId: admitted.workflowRunId,
-              reason: 'dashboard-briefing-workflow-admitted',
-            });
-          }
           refreshAgent();
+          await queryClient.invalidateQueries({
+            queryKey: queryKeys.chatSessionCommandEvents(session.id),
+          });
           setInput('');
           return;
         }

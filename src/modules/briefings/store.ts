@@ -395,13 +395,106 @@ export async function attachBriefingDispatch(
   dispatchId: string,
   paths: RuntimePaths = runtimePaths(),
 ) {
+  await ensureRuntimeHome(paths);
+  const database = openDb(paths.neondeckDatabase);
+  try {
+    database.exec('BEGIN IMMEDIATE;');
+    const existing = database
+      .prepare('SELECT * FROM briefing_runs WHERE id = ?;')
+      .get(id);
+    if (!existing) {
+      database.exec('ROLLBACK;');
+      throw new Error(`Briefing run "${id}" was not found.`);
+    }
+    const run = readRunRow(existing);
+    if (run.dispatchId && run.dispatchId !== dispatchId) {
+      database.exec('ROLLBACK;');
+      throw new Error(
+        `Briefing run "${id}" is already bound to another submission.`,
+      );
+    }
+    database
+      .prepare(
+        `UPDATE briefing_runs
+         SET dispatch_id = ?, error = NULL, updated_at = ?
+         WHERE id = ? AND status = 'queued';`,
+      )
+      .run(dispatchId, new Date().toISOString(), id);
+    const attached = database
+      .prepare('SELECT * FROM briefing_runs WHERE id = ?;')
+      .get(id);
+    database.exec('COMMIT;');
+    return attached ? readRunRow(attached) : null;
+  } catch (error) {
+    if (database.isTransaction) database.exec('ROLLBACK;');
+    throw error;
+  } finally {
+    database.close();
+  }
+}
+
+export async function listQueuedBriefingRuns(
+  paths: RuntimePaths = runtimePaths(),
+) {
+  await ensureRuntimeHome(paths);
+  const database = openDb(paths.neondeckDatabase);
+  try {
+    return database
+      .prepare(
+        `SELECT * FROM briefing_runs
+         WHERE status = 'queued'
+         ORDER BY created_at ASC;`,
+      )
+      .all()
+      .map(readRunRow);
+  } finally {
+    database.close();
+  }
+}
+
+export async function findUnattachedBriefingRun(
+  input: { profileId: string; sessionId: string },
+  paths: RuntimePaths = runtimePaths(),
+) {
+  await ensureRuntimeHome(paths);
+  const database = openDb(paths.neondeckDatabase);
+  try {
+    const row = database
+      .prepare(
+        `SELECT * FROM briefing_runs
+         WHERE profile_id = ?
+           AND session_id = ?
+           AND status = 'queued'
+           AND dispatch_id IS NULL
+         ORDER BY created_at ASC
+         LIMIT 1;`,
+      )
+      .get(input.profileId, input.sessionId);
+    return row ? readRunRow(row) : null;
+  } finally {
+    database.close();
+  }
+}
+
+export async function markBriefingAdmissionUncertain(
+  id: string,
+  error: string,
+  paths: RuntimePaths = runtimePaths(),
+) {
+  await ensureRuntimeHome(paths);
   const database = openDb(paths.neondeckDatabase);
   try {
     database
       .prepare(
-        'UPDATE briefing_runs SET dispatch_id = ?, updated_at = ? WHERE id = ?;',
+        `UPDATE briefing_runs
+         SET error = ?, updated_at = ?
+         WHERE id = ? AND status = 'queued' AND dispatch_id IS NULL;`,
       )
-      .run(dispatchId, new Date().toISOString(), id);
+      .run(
+        `Flue accepted this briefing, but Neondeck must reconcile its submission id: ${error}`,
+        new Date().toISOString(),
+        id,
+      );
   } finally {
     database.close();
   }

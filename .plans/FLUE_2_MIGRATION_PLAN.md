@@ -229,7 +229,9 @@ Target behavior:
    Neondeck SQLite before the first model turn.
 8. A schema-backed Tool/data writer emits a structured briefing part with
    source health, top actions, failures, and the briefing run id.
-9. Response metadata records briefing and snapshot ids.
+9. The structured data part is the canonical per-delivery correlation record.
+   Do not use response metadata for this: Flue response metadata is scoped to a
+   host response, while a briefing signal may join an already-running response.
 10. `submission_settled` finalizes the briefing run and idempotently creates the
     ready or attention notification.
 
@@ -239,6 +241,10 @@ Decisions:
 - Keep daily facts per submission, not in persistent agent state.
 - Do not copy the complete snapshot into immutable instance data.
 - Do not retain a wrapper workflow just to obtain a run id.
+- Treat the persisted queued briefing run as an application-owned outbox and
+  use its run id as Flue's dispatch `idempotencyKey`.
+- Reconcile both unattached admissions and attached-but-unsettled runs from
+  keyed redispatch receipts plus Flue's durable conversation settlement index.
 - For configured MCP sources, preserve Neondeck's current login, approval, and
   audit checks. Native `useMcpConnection()` may be evaluated behind that policy
   after the core migration.
@@ -810,11 +816,24 @@ Exit criteria:
 
 ### Phase 6: Morning Briefing
 
-- [ ] Replace the briefing workflow with direct admission and dispatch.
-- [ ] Add trusted signal intake and snapshot loading.
-- [ ] Add structured briefing data parts/metadata.
-- [ ] Migrate settlement and notifications to submission events.
-- [ ] Update manual, scheduled, dashboard, and chat command paths.
+- [x] Replace the briefing workflow with direct admission and dispatch.
+- [x] Add trusted signal intake and snapshot loading.
+- [x] Add structured briefing data parts with per-delivery correlation.
+- [x] Migrate settlement and notifications to submission events.
+- [x] Update manual, scheduled, dashboard, and chat command paths.
+
+Implementation evidence captured on 2026-08-01:
+
+- persisted briefing runs act as the durable outbox and their run ids are Flue
+  dispatch idempotency keys
+- startup and next-request recovery reconcile accepted admissions and durable
+  settlements without duplicate turns or notifications
+- exact stored snapshots and instructions are loaded from trusted signals before
+  model work; validated `data-briefing` parts carry per-delivery correlation
+- manual, scheduled, dashboard, and `/briefing` paths use the same direct
+  admission service, and command-event transitions are monotonic
+- 58 focused tests, lint, server and web production builds, and an independent
+  static P1/P2 review pass
 
 Exit criteria:
 

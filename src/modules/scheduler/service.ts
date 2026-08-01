@@ -219,9 +219,8 @@ function requiresWorkflowAdmission(task: {
   spec: { kind: string; target?: { kind: string } };
 }) {
   return (
-    task.spec.kind === 'run-briefing' ||
-    (task.spec.kind === 'run-agent-instruction' &&
-      task.spec.target?.kind === 'workflow')
+    task.spec.kind === 'run-agent-instruction' &&
+    task.spec.target?.kind === 'workflow'
   );
 }
 

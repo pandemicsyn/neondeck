@@ -8,6 +8,7 @@ import {
 } from '../pr-events';
 import { checkAutopilotConcurrency } from '../autopilot-policy';
 import { fetchCheckSummary } from '../github';
+import type { admitBriefing } from '../briefings/service';
 import * as v from 'valibot';
 
 export type SchedulerResult = {
@@ -46,11 +47,12 @@ export type SchedulerDependencies = {
     workflow: ScheduledWorkflowName,
     input: JsonValue,
   ) => Promise<{ runId: string }>;
+  admitBriefing?: typeof admitBriefing;
   tickLeaseTtlMs?: number;
 };
 
 export type ScheduledWorkflowName =
-  'briefing' | 'command-run' | 'scheduled-agent-instruction';
+  'command-run' | 'scheduled-agent-instruction';
 export type SchedulerTickLease = {
   owner: string;
   acquiredAt: string;

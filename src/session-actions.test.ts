@@ -866,6 +866,29 @@ describe('session actions', () => {
         }),
       ],
     });
+
+    await expect(
+      updateChatSessionCommandEvent(
+        {
+          sessionId,
+          eventId,
+          status: 'running',
+          flueRunId: 'late-admission-correlation',
+          result: null,
+          reason: 'simulated-fast-settlement-race',
+        },
+        paths,
+      ),
+    ).resolves.toMatchObject({
+      ok: true,
+      event: {
+        id: eventId,
+        status: 'completed',
+        flueRunId: 'run-1',
+        result: expect.objectContaining({ message: 'Repository is clean.' }),
+        completedAt: expect.any(String),
+      },
+    });
   });
 
   it('skips approval nudges when no requesting session is linked', async () => {

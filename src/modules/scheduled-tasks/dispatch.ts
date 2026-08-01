@@ -44,17 +44,28 @@ export async function executeScheduledTask(
   }
 
   if (task.spec.kind === 'run-briefing') {
-    const invokeWorkflow =
-      dependencies.invokeWorkflow ?? invokeScheduledWorkflow;
-    const { runId } = await invokeWorkflow('briefing', {
-      profileId: task.spec.briefingId,
-      taskId: task.id,
-    });
+    const admit =
+      dependencies.admitBriefing ??
+      (await import('../briefings/service')).admitBriefing;
+    const run = await admit(
+      {
+        profileId: task.spec.briefingId,
+        trigger: 'scheduled',
+      },
+      paths,
+    );
+    if (!run.dispatchId) {
+      throw new Error('Briefing submission was not recorded.');
+    }
     return {
       outcome: 'recorded',
-      message: `Admitted briefing workflow ${runId}.`,
-      workflowRunId: runId,
-      result: { runId, briefingId: task.spec.briefingId },
+      message: `Admitted briefing ${run.id}.`,
+      sessionId: run.sessionId,
+      result: {
+        briefingRunId: run.id,
+        submissionId: run.dispatchId,
+        briefingId: task.spec.briefingId,
+      },
     };
   }
 

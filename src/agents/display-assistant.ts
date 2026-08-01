@@ -4,6 +4,7 @@ import {
   bash,
   type AgentProps,
   useAgentStart,
+  useDataWriter,
   useDelivery,
   useModel,
   usePersistentState,
@@ -21,7 +22,11 @@ import {
   type AgentModelSelection,
   type RuntimeSkillSessionSnapshot,
 } from '../modules/runtime';
-import { neondeckBriefingActions } from '../modules/briefings';
+import {
+  briefingClientDataSchema,
+  neondeckBriefingActions,
+  prepareBriefingAgentDelivery,
+} from '../modules/briefings';
 import { neondeckCommandActions } from '../modules/commands';
 import { neondeckConfigActions } from '../modules/config';
 import { neondeckDevDoctorActions } from '../modules/runtime';
@@ -89,6 +94,10 @@ export function DisplayAssistant({ id }: AgentProps) {
     );
   const refreshForBriefing =
     delivery.kind === 'signal' && delivery.type === 'neondeck.briefing.ready';
+  const briefingAttributes =
+    refreshForBriefing && delivery.kind === 'signal'
+      ? delivery.attributes
+      : undefined;
   const context =
     !persistedContext || refreshForBriefing
       ? captureDisplayAssistantSessionContext(id)
@@ -98,8 +107,31 @@ export function DisplayAssistant({ id }: AgentProps) {
       ? neondeckRepoEditActions
       : neondeckRepoReadActions;
 
-  useAgentStart(() => {
+  const writeBriefing = useDataWriter('briefing', {
+    schema: briefingClientDataSchema,
+  });
+  useAgentStart(async ({ append }) => {
     if (!persistedContext || refreshForBriefing) setPersistedContext(context);
+    if (!refreshForBriefing) return;
+    const runId = briefingAttributes?.briefingRunId;
+    if (!runId) throw new Error('Briefing signal is missing briefingRunId.');
+    const prepared = await prepareBriefingAgentDelivery({
+      runId,
+      sessionId: id,
+      profileId: briefingAttributes?.profileId,
+      snapshotVersion: briefingAttributes?.snapshotVersion,
+    });
+    writeBriefing(prepared.data);
+    append({
+      kind: 'signal',
+      type: 'neondeck.briefing.snapshot',
+      tagName: 'briefing-snapshot',
+      body: prepared.prompt,
+      attributes: {
+        briefingRunId: prepared.data.briefingRunId,
+        snapshotVersion: String(prepared.data.snapshotVersion),
+      },
+    });
   });
   useModel(context.models.displayAssistant, {
     thinkingLevel: context.models.displayAssistantThinkingLevel,

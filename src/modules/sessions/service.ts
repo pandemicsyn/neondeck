@@ -732,18 +732,31 @@ export async function updateChatSessionCommandEvent(
       );
     }
 
-    const nextResult = owns(parsed.output, 'result')
-      ? (parsed.output.result ?? null)
-      : existing.result;
-    const nextFlueRunId = owns(parsed.output, 'flueRunId')
+    const existingIsTerminal =
+      existing.status === 'completed' || existing.status === 'failed';
+    const nextStatus = existingIsTerminal
+      ? existing.status
+      : parsed.output.status;
+    const nextResult = existingIsTerminal
+      ? existing.result
+      : owns(parsed.output, 'result')
+        ? (parsed.output.result ?? null)
+        : existing.result;
+    const requestedFlueRunId = owns(parsed.output, 'flueRunId')
       ? (parsed.output.flueRunId ?? null)
       : existing.flueRunId;
-    const nextWorkflowSummaryId =
+    const nextFlueRunId = existingIsTerminal
+      ? (existing.flueRunId ?? requestedFlueRunId)
+      : requestedFlueRunId;
+    const requestedWorkflowSummaryId =
       parsed.output.workflowSummaryId ??
-      workflowSummaryIdFromResult(nextResult) ??
-      existing.workflowSummaryId;
-    const nextCompletedAt =
-      parsed.output.status === 'running'
+      workflowSummaryIdFromResult(nextResult);
+    const nextWorkflowSummaryId = existingIsTerminal
+      ? (existing.workflowSummaryId ?? requestedWorkflowSummaryId)
+      : (requestedWorkflowSummaryId ?? existing.workflowSummaryId);
+    const nextCompletedAt = existingIsTerminal
+      ? (existing.completedAt ?? now)
+      : nextStatus === 'running'
         ? null
         : (parsed.output.completedAt ?? existing.completedAt ?? now);
 
@@ -763,7 +776,7 @@ export async function updateChatSessionCommandEvent(
       `,
       )
       .run(
-        parsed.output.status,
+        nextStatus,
         nextResult === null ? null : JSON.stringify(asJsonValue(nextResult)),
         nextFlueRunId,
         nextWorkflowSummaryId,
@@ -787,7 +800,7 @@ export async function updateChatSessionCommandEvent(
       reason: parsed.output.reason ?? null,
       metadata: {
         eventId: parsed.output.eventId,
-        status: parsed.output.status,
+        status: nextStatus,
         flueRunId: nextFlueRunId,
         workflowSummaryId: nextWorkflowSummaryId,
       },

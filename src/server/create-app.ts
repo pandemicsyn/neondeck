@@ -68,6 +68,10 @@ import { createWorktreeRoutes } from './routes/worktrees';
 import { recoverInterruptedAutopilotOwners } from '../modules/autopilot/owner/settlement';
 import { refreshGitHubQueueSnapshot } from '../modules/github';
 import { refreshPrReviewRemoteState } from '../modules/pr-reviews';
+import {
+  installBriefingConversationHistoryReader,
+  recoverInterruptedBriefingAdmissions,
+} from '../modules/briefings';
 
 export type CreateAppOptions = {
   paths?: RuntimePaths;
@@ -162,6 +166,33 @@ export async function createApp(options: CreateAppOptions = {}) {
     '/api/flue/agents/pr-autopilot-owner',
     createAgentRouter(PrAutopilotOwner),
   );
+
+  const readBriefingConversationHistory = async (sessionId: string) => {
+    const response = await app.request(
+      `http://localhost/api/flue/agents/display-assistant/${encodeURIComponent(sessionId)}?view=history`,
+    );
+    if (response.status === 404) return null;
+    if (!response.ok) {
+      throw new Error(`Flue conversation history returned ${response.status}.`);
+    }
+    return response.json();
+  };
+  installBriefingConversationHistoryReader(
+    paths,
+    readBriefingConversationHistory,
+  );
+  const briefingRecovery = await recoverInterruptedBriefingAdmissions(
+    {
+      readConversationHistory: readBriefingConversationHistory,
+    },
+    paths,
+  );
+  if (briefingRecovery.failed.length > 0) {
+    console.warn(
+      '[neondeck] briefing admission recovery remains pending',
+      briefingRecovery.failed,
+    );
+  }
   app.route('/reports', createReportFileRoutes(paths));
 
   app.use('/assets/*', serveStatic({ root: staticRoot }));
