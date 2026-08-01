@@ -455,9 +455,8 @@ async function externalReviewQueueAllowed(paths: RuntimePaths) {
 }
 
 async function invokeReviewPrWorkflow(input: { ref: string }) {
-  const { invoke } = await import('@flue/runtime');
-  const workflow = await import('../../workflows/review-pr-for-human');
-  return invoke(workflow.default, { input });
+  const { admitPrReviewAssist } = await import('../pr-review-assist');
+  return admitPrReviewAssist(input);
 }
 
 async function addHandoffAudit(

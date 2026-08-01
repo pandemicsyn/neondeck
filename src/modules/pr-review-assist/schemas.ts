@@ -1,13 +1,21 @@
 import * as v from 'valibot';
 
-export const prReviewAssistInputSchema = v.object({
-  reviewId: v.optional(v.pipe(v.string(), v.trim(), v.minLength(1))),
-  attemptId: v.optional(v.pipe(v.string(), v.trim(), v.minLength(1))),
-  watchId: v.optional(v.pipe(v.string(), v.trim(), v.minLength(1))),
-  ref: v.optional(v.pipe(v.string(), v.trim(), v.minLength(1))),
-  repo: v.optional(v.pipe(v.string(), v.trim(), v.minLength(1))),
-  prNumber: v.optional(v.pipe(v.number(), v.integer(), v.minValue(1))),
-});
+export const prReviewAssistInputSchema = v.pipe(
+  v.object({
+    reviewId: v.optional(v.pipe(v.string(), v.trim(), v.minLength(1))),
+    attemptId: v.optional(v.pipe(v.string(), v.trim(), v.minLength(1))),
+    watchId: v.optional(v.pipe(v.string(), v.trim(), v.minLength(1))),
+    ref: v.optional(v.pipe(v.string(), v.trim(), v.minLength(1))),
+    repo: v.optional(v.pipe(v.string(), v.trim(), v.minLength(1))),
+    prNumber: v.optional(v.pipe(v.number(), v.integer(), v.minValue(1))),
+  }),
+  v.check(
+    (input) =>
+      (!input.reviewId && !input.attemptId) ||
+      Boolean(input.reviewId && input.attemptId && input.ref),
+    'A durable review binding requires reviewId, attemptId, and ref together.',
+  ),
+);
 
 const reviewSeveritySchema = v.picklist(['critical', 'major', 'minor', 'nit']);
 const reviewSideSchema = v.picklist(['RIGHT', 'LEFT']);

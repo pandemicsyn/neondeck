@@ -8,7 +8,7 @@ import {
 describe('Flue execution context policy', () => {
   it('tracks the active Flue context while allowing ordinary tools', async () => {
     const next = vi.fn<() => Promise<string | undefined>>(async () => {
-      return currentFlueExecutionContext()?.runId;
+      return currentFlueExecutionContext()?.submissionId;
     });
 
     await expect(
@@ -18,7 +18,7 @@ describe('Flue execution context policy', () => {
           toolCallId: 'tool-call',
           toolName: 'neondeck_review_workspace_read',
         },
-        { runId: 'review-run' },
+        { submissionId: 'review-run' },
         next,
       ),
     ).resolves.toBe('review-run');
@@ -31,15 +31,40 @@ describe('Flue execution context policy', () => {
     await expect(
       neondeckFlueExecutionInterceptor(
         { type: 'tool', toolCallId: 'tool-call', toolName: 'task' },
-        { runId: 'chat-run' },
+        { submissionId: 'chat-run' },
         next,
       ),
     ).resolves.toBe('delegated');
     expect(next).toHaveBeenCalledOnce();
   });
 
+  it('preserves submission correlation across nested Flue scopes', async () => {
+    await expect(
+      neondeckFlueExecutionInterceptor(
+        { type: 'agent', operationId: 'submission-1', operationKind: 'prompt' },
+        { submissionId: 'submission-1', agentName: 'pr-review-assistant' },
+        () =>
+          neondeckFlueExecutionInterceptor(
+            { type: 'tool', toolCallId: 'tool-call', toolName: 'review' },
+            { conversationId: 'scratch-review', operationId: 'operation-1' },
+            async () => currentFlueExecutionContext(),
+          ),
+      ),
+    ).resolves.toMatchObject({
+      submissionId: 'submission-1',
+      agentName: 'pr-review-assistant',
+      conversationId: 'scratch-review',
+      operationId: 'operation-1',
+    });
+  });
+
   it.each([
     { type: 'tool', toolCallId: 'tool-call', toolName: 'task' } as const,
+    {
+      type: 'tool',
+      toolCallId: 'recursive-review',
+      toolName: 'neondeck_pr_review_for_human',
+    } as const,
     { type: 'task', taskId: 'task-id' } as const,
   ])(
     'blocks $type task execution inside a bounded PR review',
@@ -51,13 +76,11 @@ describe('Flue execution context policy', () => {
           await Promise.resolve();
           return neondeckFlueExecutionInterceptor(
             operation,
-            { runId: 'review-run' },
+            { submissionId: 'review-run' },
             next,
           );
         }),
-      ).rejects.toThrow(
-        'Task delegation is disabled for this bounded PR review.',
-      );
+      ).rejects.toThrow('disabled inside the bounded review prompt');
       expect(next).not.toHaveBeenCalled();
     },
   );

@@ -109,9 +109,8 @@ export async function invokeReviewPrWorkflow(input: {
   reviewId?: string;
   attemptId?: string;
 }) {
-  const { invoke } = await import('@flue/runtime');
-  const workflow = await import('../../../workflows/review-pr-for-human');
-  return invoke(workflow.default, { input });
+  const { admitPrReviewAssist } = await import('../../pr-review-assist');
+  return admitPrReviewAssist(input);
 }
 
 export async function fixCiCommand(

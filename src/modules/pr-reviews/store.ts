@@ -14,6 +14,28 @@ export function readPrReview(id: string, paths: RuntimePaths) {
   return readOne('id = ?', id.trim(), paths);
 }
 
+export function readPrReviewAdmissionBinding(id: string, paths: RuntimePaths) {
+  const database = openDb(paths.neondeckDatabase);
+  try {
+    const row = database
+      .prepare(
+        `SELECT id, repo_full_name, pr_number, attempt_id, status
+         FROM pr_reviews WHERE id = ? LIMIT 1;`,
+      )
+      .get(id.trim()) as Record<string, unknown> | undefined;
+    if (!row) return null;
+    return {
+      id: stringValue(row.id),
+      repoFullName: stringValue(row.repo_full_name),
+      prNumber: numberValue(row.pr_number),
+      attemptId: nullableString(row.attempt_id),
+      status: statusValue(row.status),
+    };
+  } finally {
+    database.close();
+  }
+}
+
 export function readPrReviewByRunId(runId: string, paths: RuntimePaths) {
   return readOne('run_id = ?', runId.trim(), paths);
 }

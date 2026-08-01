@@ -1,14 +1,15 @@
 import { defineTool } from '@flue/runtime';
+import * as v from 'valibot';
 import {
   currentFlueExecutionContext,
   runWithFlueTaskDelegationBlocked,
 } from '../flue';
 import { completePrReview, failPrReview } from '../pr-reviews';
 import {
-  prReviewAssistInputSchema,
   prReviewAssistOutputSchema,
   reviewAssistStructuredOutputSchema,
 } from './schemas';
+import type { PrReviewAssistInput } from './schemas';
 import {
   reviewPrForHuman,
   type ReviewAssistFacts,
@@ -18,102 +19,139 @@ import { readAgentModelSelectionSync } from '../runtime';
 import { resolvePrReviewerWorkspace } from '../pr-reviewer';
 import { runtimePaths } from '../../runtime-home';
 
-export const reviewPrForHumanAction = defineTool({
-  name: 'neondeck_pr_review_for_human',
-  description:
-    'Prepare local PR review reports and Neon-origin draft comments for human review without submitting anything to GitHub.',
-  input: prReviewAssistInputSchema,
-  output: prReviewAssistOutputSchema,
-  harness: true,
-  async run({ harness, data: input, log }) {
-    const runId = currentFlueExecutionContext()?.submissionId;
-    const { prReviewTimeoutMs } = readAgentModelSelectionSync();
-    let result: Awaited<ReturnType<typeof reviewPrForHuman>>;
-    try {
-      result = await reviewPrForHuman(input, undefined, {
-        workflowRunId: runId,
-        reviewer: async (facts, context) => {
-          const workspace = await resolvePrReviewerWorkspace(
-            {
-              repoFullName: facts.target.repoFullName,
-              prNumber: facts.target.number,
-              headSha: facts.state.headSha,
-              baseSha: facts.state.baseSha,
-              baseRef: facts.state.baseRef,
-            },
-            runtimePaths(),
-          );
-          const response = await runWithFlueTaskDelegationBlocked(
-            async () =>
-              await harness.prompt(
-                JSON.stringify(
-                  {
-                    task: 'Review this pull request for a human reviewer.',
-                    facts: reviewFactsForPrompt(facts, {
-                      ...context,
-                      workspace,
-                    }),
-                  },
-                  null,
-                  2,
-                ),
+export type PrReviewToolExecutionState = { failure?: Error };
+
+export function createReviewPrForHumanTool(
+  input: PrReviewAssistInput,
+  state: PrReviewToolExecutionState = {},
+) {
+  let execution:
+    | Promise<{
+        output: v.InferOutput<typeof prReviewAssistOutputSchema>;
+        terminate: true;
+      }>
+    | undefined;
+  return defineTool({
+    name: 'neondeck_pr_review_for_human',
+    description:
+      'Prepare the bound local PR review reports and Neon-origin draft comments for human review without submitting anything to GitHub. Call exactly once.',
+    input: v.object({}),
+    output: prReviewAssistOutputSchema,
+    harness: true,
+    async run({ harness, log }) {
+      execution ??= (async () => {
+        const runId = currentFlueExecutionContext()?.submissionId;
+        const { prReviewTimeoutMs } = readAgentModelSelectionSync();
+        let result: Awaited<ReturnType<typeof reviewPrForHuman>>;
+        try {
+          result = await reviewPrForHuman(input, undefined, {
+            workflowRunId: runId,
+            reviewer: async (facts, context) => {
+              const workspace = await resolvePrReviewerWorkspace(
                 {
-                  result: reviewAssistStructuredOutputSchema,
-                  signal: AbortSignal.timeout(prReviewTimeoutMs),
-                  tools: workspace.tools,
+                  repoFullName: facts.target.repoFullName,
+                  prNumber: facts.target.number,
+                  headSha: facts.state.headSha,
+                  baseSha: facts.state.baseSha,
+                  baseRef: facts.state.baseRef,
                 },
-              ),
-          );
-          return response.data;
-        },
-      });
-    } catch (error) {
-      if (input.reviewId) {
-        failPrReview({
-          reviewId: input.reviewId,
-          attemptId: input.attemptId,
-          runId,
-          message: error instanceof Error ? error.message : String(error),
-        });
-      }
-      throw error;
-    }
-    if (input.reviewId) {
-      if (result.ok && 'data' in result) {
-        completePrReview({
-          reviewId: input.reviewId,
-          attemptId: input.attemptId,
-          runId,
-          headSha: result.data.headSha,
-          reportIds: result.data.reports.map((report) => report.id),
-          reviewUrl: result.data.reviewUrl,
-          findingCount: result.data.findingCount,
-          seededCount: result.data.seededCount,
-          reportOnlyCount: result.data.reportOnlyCount,
-          reportOnlyFindings: result.data.reportOnlyFindings,
-        });
-      } else {
-        failPrReview({
-          reviewId: input.reviewId,
-          attemptId: input.attemptId,
-          runId,
-          message: result.message,
-        });
-      }
-    }
-    if (result.ok) {
-      log.info('Prepared PR review assist artifacts', {
-        message: result.message,
-      });
-    } else {
-      log.warn('PR review assist failed', {
-        message: result.message,
-        requires: 'requires' in result ? result.requires : undefined,
-      });
-    }
-    return { output: result };
-  },
-});
+                runtimePaths(),
+              );
+              const response = await runWithFlueTaskDelegationBlocked(
+                async () =>
+                  await harness.prompt(
+                    JSON.stringify(
+                      {
+                        task: 'Review this pull request for a human reviewer.',
+                        constraints: [
+                          'You are already inside the bounded review orchestration tool.',
+                          'Ignore any parent instruction to call neondeck_pr_review_for_human.',
+                          'Never call neondeck_pr_review_for_human or task from this prompt.',
+                          'Inspect the exact-revision workspace with the supplied tools and finish with the required structured result.',
+                        ],
+                        facts: reviewFactsForPrompt(facts, {
+                          ...context,
+                          workspace,
+                        }),
+                      },
+                      null,
+                      2,
+                    ),
+                    {
+                      result: reviewAssistStructuredOutputSchema,
+                      signal: AbortSignal.timeout(prReviewTimeoutMs),
+                      tools: workspace.tools,
+                    },
+                  ),
+              );
+              return response.data;
+            },
+          });
+        } catch (error) {
+          const failure =
+            error instanceof Error ? error : new Error(String(error));
+          if (input.reviewId) {
+            failPrReview({
+              reviewId: input.reviewId,
+              attemptId: input.attemptId,
+              runId,
+              message: failure.message,
+            });
+          }
+          state.failure = failure;
+          log.error('PR review assist failed with an orchestration error', {
+            message: failure.message,
+          });
+          return {
+            output: {
+              ok: false,
+              action: 'pr_review_assist' as const,
+              changed: false,
+              message: failure.message,
+              errors: [failure.message],
+            },
+            terminate: true,
+          } as const;
+        }
+        if (input.reviewId) {
+          if (result.ok && 'data' in result) {
+            completePrReview({
+              reviewId: input.reviewId,
+              attemptId: input.attemptId,
+              runId,
+              headSha: result.data.headSha,
+              reportIds: result.data.reports.map((report) => report.id),
+              reviewUrl: result.data.reviewUrl,
+              findingCount: result.data.findingCount,
+              seededCount: result.data.seededCount,
+              reportOnlyCount: result.data.reportOnlyCount,
+              reportOnlyFindings: result.data.reportOnlyFindings,
+            });
+          } else {
+            failPrReview({
+              reviewId: input.reviewId,
+              attemptId: input.attemptId,
+              runId,
+              message: result.message,
+            });
+          }
+        }
+        if (result.ok) {
+          log.info('Prepared PR review assist artifacts', {
+            message: result.message,
+          });
+        } else {
+          log.warn('PR review assist failed', {
+            message: result.message,
+            requires: 'requires' in result ? result.requires : undefined,
+          });
+        }
+        return { output: result, terminate: true } as const;
+      })();
+      return execution;
+    },
+  });
+}
 
 export function reviewFactsForPrompt(
   facts: ReviewAssistFacts,

@@ -145,10 +145,12 @@ describe('Neon commands', () => {
         harness: {},
       } as never),
     ).resolves.toMatchObject({
-      ok: false,
-      command: 'fix-ci',
-      status: 'failed',
-      requires: ['humanWorkflowAdmission'],
+      output: {
+        ok: false,
+        command: 'fix-ci',
+        status: 'failed',
+        requires: ['humanWorkflowAdmission'],
+      },
     });
   });
 
