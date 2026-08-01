@@ -1,4 +1,4 @@
-import { defineAction } from '@flue/runtime';
+import { defineTool } from '@flue/runtime';
 import {
   currentFlueExecutionContext,
   runWithFlueTaskDelegationBlocked,
@@ -18,14 +18,15 @@ import { readAgentModelSelectionSync } from '../runtime';
 import { resolvePrReviewerWorkspace } from '../pr-reviewer';
 import { runtimePaths } from '../../runtime-home';
 
-export const reviewPrForHumanAction = defineAction({
+export const reviewPrForHumanAction = defineTool({
   name: 'neondeck_pr_review_for_human',
   description:
     'Prepare local PR review reports and Neon-origin draft comments for human review without submitting anything to GitHub.',
   input: prReviewAssistInputSchema,
   output: prReviewAssistOutputSchema,
-  async run({ harness, input, log }) {
-    const runId = currentFlueExecutionContext()?.runId;
+  harness: true,
+  async run({ harness, data: input, log }) {
+    const runId = currentFlueExecutionContext()?.submissionId;
     const { prReviewTimeoutMs } = readAgentModelSelectionSync();
     let result: Awaited<ReturnType<typeof reviewPrForHuman>>;
     try {
@@ -42,10 +43,9 @@ export const reviewPrForHumanAction = defineAction({
             },
             runtimePaths(),
           );
-          const session = await harness.session();
           const response = await runWithFlueTaskDelegationBlocked(
             async () =>
-              await session.prompt(
+              await harness.prompt(
                 JSON.stringify(
                   {
                     task: 'Review this pull request for a human reviewer.',
@@ -111,7 +111,7 @@ export const reviewPrForHumanAction = defineAction({
         requires: 'requires' in result ? result.requires : undefined,
       });
     }
-    return result;
+    return { output: result };
   },
 });
 

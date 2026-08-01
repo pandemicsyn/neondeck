@@ -117,39 +117,62 @@ export function providerRuntimeRegistrations(
   const organizationId = kilocode.organizationIdEnv
     ? env[kilocode.organizationIdEnv]
     : undefined;
+  const kilocodeHeaders = organizationId
+    ? { 'X-KiloCode-OrganizationId': organizationId }
+    : undefined;
+  const kilocodeProvider = createProvider({
+    id: 'kilocode',
+    name: 'Kilo Code',
+    baseUrl: kilocodeGatewayBaseUrl,
+    auth: {
+      apiKey: configuredApiKeyAuth({
+        name: 'Kilo Code API key',
+        enabled: kilocode.enabled,
+        apiKey: env[kilocode.apiKeyEnv],
+        source: kilocode.apiKeyEnv,
+      }),
+    },
+    models: [],
+    fetchModels: async ({ signal }) => {
+      const { discoverModels } = await import('./model-discovery');
+      const discovered = await discoverModels({
+        provider: 'kilocode',
+        apiKey: env[kilocode.apiKeyEnv],
+        organizationId,
+        signal,
+      });
+      return discovered.models.map((model) =>
+        compatibleModel({
+          id: model.model,
+          name: model.name,
+          provider: 'kilocode',
+          api: 'openai-completions',
+          baseUrl: kilocodeGatewayBaseUrl,
+          headers: kilocodeHeaders,
+          reasoning: model.reasoning,
+          contextWindow: model.contextLength ?? 0,
+          maxTokens: kilocodeGatewayMaxTokens,
+        }),
+      );
+    },
+    api: openAICompletionsApi(),
+  });
   registrations.push({
     id: 'kilocode',
-    provider: withLiveModels(
-      createProvider({
-        id: 'kilocode',
-        name: 'Kilo Code',
-        baseUrl: kilocodeGatewayBaseUrl,
-        headers: organizationId
-          ? { 'X-KiloCode-OrganizationId': organizationId }
-          : undefined,
-        auth: {
-          apiKey: configuredApiKeyAuth({
-            name: 'Kilo Code API key',
-            enabled: kilocode.enabled,
-            apiKey: env[kilocode.apiKeyEnv],
-            source: kilocode.apiKeyEnv,
-          }),
-        },
-        models: [],
-        api: openAICompletionsApi(),
-      }),
-      () =>
-        modelIdsForProvider('kilocode', modelSpecifiers()).map((id) =>
-          compatibleModel({
-            id,
-            provider: 'kilocode',
-            api: 'openai-completions',
-            baseUrl: kilocodeGatewayBaseUrl,
-            reasoning: true,
-            contextWindow: 0,
-            maxTokens: kilocodeGatewayMaxTokens,
-          }),
-        ),
+    provider: withSelectedModels(kilocodeProvider, () =>
+      modelIdsForProvider('kilocode', modelSpecifiers()).map((id) =>
+        compatibleModel({
+          id,
+          name: id,
+          provider: 'kilocode',
+          api: 'openai-completions',
+          baseUrl: kilocodeGatewayBaseUrl,
+          headers: kilocodeHeaders,
+          reasoning: true,
+          contextWindow: 0,
+          maxTokens: kilocodeGatewayMaxTokens,
+        }),
+      ),
     ),
   });
 
@@ -415,6 +438,23 @@ function withLiveModels<TProvider extends Provider>(
   };
 }
 
+function withSelectedModels<TProvider extends Provider>(
+  provider: TProvider,
+  fallbackModels: () => readonly Model<Api>[],
+): TProvider {
+  const discoveredModels = provider.getModels.bind(provider);
+  return {
+    ...provider,
+    getModels() {
+      const discovered = discoveredModels();
+      return fallbackModels().map(
+        (fallback) =>
+          discovered.find((model) => model.id === fallback.id) ?? fallback,
+      );
+    },
+  };
+}
+
 function modelIdsForProvider(
   provider: string,
   specifiers: readonly string[],
@@ -435,19 +475,22 @@ function compatibleModel<
   TApi extends 'openai-completions' | 'openai-responses',
 >(input: {
   id: string;
+  name?: string;
   provider: string;
   api: TApi;
   baseUrl: string;
+  headers?: Record<string, string>;
   reasoning: boolean;
   contextWindow: number;
   maxTokens: number;
 }): Model<TApi> {
   return {
     id: input.id,
-    name: input.id,
+    name: input.name ?? input.id,
     api: input.api,
     provider: input.provider,
     baseUrl: input.baseUrl,
+    headers: input.headers,
     reasoning: input.reasoning,
     input: ['text'],
     cost: {

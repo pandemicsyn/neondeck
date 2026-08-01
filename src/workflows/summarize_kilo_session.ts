@@ -4,7 +4,7 @@ import {
   type WorkflowRunsHandler,
 } from '@flue/runtime';
 import * as v from 'valibot';
-import displayAssistant from '../agents/display-assistant';
+import { DisplayAssistant as displayAssistant } from '../agents/display-assistant';
 import { summarizeKiloSession } from '../modules/kilo';
 
 const nonEmptyStringSchema = v.pipe(v.string(), v.minLength(1));

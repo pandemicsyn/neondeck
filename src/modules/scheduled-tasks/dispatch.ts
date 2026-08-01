@@ -73,16 +73,25 @@ export async function executeScheduledTask(
     };
   }
 
-  const receipt = await dispatch({
-    agent: 'display-assistant',
+  const { DisplayAssistant } = await import('../../agents/display-assistant');
+  const receipt = await dispatch(DisplayAssistant, {
     id: task.spec.target.sessionId,
-    input: prompt,
+    message: {
+      kind: 'signal',
+      type: 'neondeck.scheduled-instruction',
+      tagName: 'scheduled-instruction',
+      body: prompt,
+      attributes: { taskId: task.id },
+    },
   });
   return {
     outcome: 'recorded',
     message: `Dispatched scheduled instruction to session ${task.spec.target.sessionId}.`,
     sessionId: task.spec.target.sessionId,
-    result: { dispatchId: receipt.dispatchId, acceptedAt: receipt.acceptedAt },
+    result: {
+      submissionId: receipt.submissionId,
+      acceptedAt: receipt.acceptedAt,
+    },
   };
 }
 

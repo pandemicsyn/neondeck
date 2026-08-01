@@ -3,7 +3,7 @@ import {
   type WorkflowRouteHandler,
   type WorkflowRunsHandler,
 } from '@flue/runtime';
-import prReviewAssistant from '../agents/pr-review-assistant';
+import { PrReviewAssistant as prReviewAssistant } from '../agents/pr-review-assistant';
 import { reviewPrForHumanAction } from '../modules/pr-review-assist';
 
 export const route: WorkflowRouteHandler = async (_c, next) => next();

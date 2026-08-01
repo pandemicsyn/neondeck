@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { createModels } from '@earendil-works/pi-ai';
 import {
   providerRuntimeRegistrations,
   resolveKilocodeProviderStatus,
@@ -41,6 +42,23 @@ describe('provider runtime registrations', () => {
     expect(resolveKilocodeProviderStatus(undefined, {})).toMatchObject({
       apiKeyEnv: 'KILOCODE_API_KEY',
       apiKeyPresent: false,
+    });
+  });
+
+  it('carries the configured Kilo organization through Pi model auth headers', async () => {
+    const registration = providerRuntimeRegistrations({
+      KILOCODE_API_KEY: 'kilo-key',
+      KILOCODE_ORGANIZATION_ID: 'org-123',
+    } as NodeJS.ProcessEnv).find((candidate) => candidate.id === 'kilocode');
+    const models = createModels();
+    models.setProvider(registration!.provider);
+    const model = registration!.provider.getModels()[0];
+
+    await expect(models.getAuth(model)).resolves.toMatchObject({
+      auth: {
+        apiKey: 'kilo-key',
+        headers: { 'X-KiloCode-OrganizationId': 'org-123' },
+      },
     });
   });
 

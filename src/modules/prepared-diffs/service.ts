@@ -1,5 +1,5 @@
 /* eslint-disable no-unused-vars */
-import { defineAction, defineTool, type JsonValue } from '@flue/runtime';
+import { defineTool, type JsonValue } from '@flue/runtime';
 import { asJsonValue } from '../../lib/action-result';
 import { randomUUID } from 'node:crypto';
 import * as v from 'valibot';

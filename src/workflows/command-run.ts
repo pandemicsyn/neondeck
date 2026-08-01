@@ -3,7 +3,7 @@ import {
   type WorkflowRouteHandler,
   type WorkflowRunsHandler,
 } from '@flue/runtime';
-import displayAssistant from '../agents/display-assistant';
+import { DisplayAssistant as displayAssistant } from '../agents/display-assistant';
 import { commandRunWorkflowAction } from '../modules/commands';
 
 export const route: WorkflowRouteHandler = async (_c, next) => next();

@@ -22,9 +22,45 @@ export function dispatchAutopilotOwnerTurn(input: {
 }) {
   const instanceId = input.instanceId.trim();
   if (!instanceId) throw new Error('Autopilot owner instance id is required.');
-  return (input.dispatchOwner ?? dispatch)({
-    agent: 'pr-autopilot-owner',
+  if (input.dispatchOwner) {
+    return input.dispatchOwner({
+      agent: 'pr-autopilot-owner',
+      id: instanceId,
+      input: serializeAutopilotOwnerEnvelope(input.envelope),
+    });
+  }
+  return dispatchOwnerAgent({
     id: instanceId,
-    input: serializeAutopilotOwnerEnvelope(input.envelope),
+    message: {
+      kind: 'signal',
+      type: 'neondeck.autopilot.watch-event',
+      tagName: 'autopilot-watch-event',
+      body: serializeAutopilotOwnerEnvelope(input.envelope),
+      attributes: {
+        watchId: input.envelope.watchId,
+        repoId: input.envelope.repoId,
+        prNumber: String(input.envelope.prNumber),
+        eventFingerprint: input.envelope.eventFingerprint,
+        mode: input.envelope.mode,
+        headSha: input.envelope.headSha,
+      },
+    },
   });
+}
+
+export async function dispatchAutopilotOwnerMessage(request: {
+  agent: 'pr-autopilot-owner';
+  id: string;
+  input: string;
+}) {
+  return dispatchOwnerAgent({ id: request.id, message: request.input });
+}
+
+async function dispatchOwnerAgent(request: {
+  id: string;
+  message: Parameters<typeof dispatch>[1]['message'];
+}) {
+  const { PrAutopilotOwner } =
+    await import('../../../agents/pr-autopilot-owner');
+  return dispatch(PrAutopilotOwner, request);
 }

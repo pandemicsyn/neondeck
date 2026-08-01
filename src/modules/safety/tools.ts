@@ -10,6 +10,6 @@ export const safetyPolicyLookupTool = defineTool({
   input: v.object({}),
   output: safetyPolicySchema,
   run() {
-    return readSafetyPolicy();
+    return { output: readSafetyPolicy() };
   },
 });

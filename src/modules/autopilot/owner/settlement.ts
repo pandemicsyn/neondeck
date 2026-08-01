@@ -62,8 +62,8 @@ export async function settleAutopilotOwnerObservation(
   const observationCorrelation = strongObservationCorrelation(event);
   if (
     registeredPending &&
-    (event.dispatchId || registeredPending.correlationId) &&
-    event.dispatchId !== registeredPending.correlationId
+    (event.submissionId || registeredPending.correlationId) &&
+    event.submissionId !== registeredPending.correlationId
   ) {
     return null;
   }
@@ -303,7 +303,6 @@ function recoveredSettlementContext(
 
 function strongObservationCorrelation(event: OwnerTerminalObservation) {
   for (const [kind, value] of [
-    ['dispatch', event.dispatchId],
     ['submission', event.submissionId],
     ['operation', event.operationId],
     ['turn', event.turnId],

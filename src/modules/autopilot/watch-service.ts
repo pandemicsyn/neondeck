@@ -1,4 +1,4 @@
-import { defineAction, dispatch } from '@flue/runtime';
+import { defineTool } from '@flue/runtime';
 import * as v from 'valibot';
 import type { RuntimePaths } from '../../runtime-home';
 import { runtimePaths } from '../../runtime-home';
@@ -28,6 +28,10 @@ import {
   recordPendingAutopilotTurnCorrelationId,
   registerPendingAutopilotTurn,
 } from './owner/pending';
+import {
+  dispatchAutopilotOwnerMessage,
+  type AutopilotOwnerDispatcher,
+} from './owner/dispatch';
 
 const nonEmptyString = v.pipe(v.string(), v.minLength(1));
 
@@ -296,7 +300,7 @@ export async function controlPrAutopilot(
 export async function messagePrAutopilotOwner(
   input: v.InferInput<typeof prAutopilotOwnerMessageInputSchema>,
   paths: RuntimePaths = runtimePaths(),
-  dispatchOwner: typeof dispatch = dispatch,
+  dispatchOwner: AutopilotOwnerDispatcher = dispatchAutopilotOwnerMessage,
 ) {
   const parsed = v.safeParse(prAutopilotOwnerMessageInputSchema, input);
   if (!parsed.success) return invalid('autopilot_owner_message', parsed.issues);
@@ -312,7 +316,7 @@ export async function approvePrAutopilotChange(
   input: v.InferInput<typeof prAutopilotApprovalInputSchema>,
   paths: RuntimePaths = runtimePaths(),
   dependencies: {
-    dispatchOwner?: typeof dispatch;
+    dispatchOwner?: AutopilotOwnerDispatcher;
     readDiff?: typeof readRepoDiff;
     readWorktree?: typeof readManagedWorktree;
     status?: typeof gitStatus;
@@ -386,7 +390,7 @@ export async function approvePrAutopilotChange(
       message: `The human approved reviewed revision ${parsed.output.expectedRevisionKey}. Push only that exact held revision to the linked pull request branch.`,
     },
     paths,
-    dependencies.dispatchOwner ?? dispatch,
+    dependencies.dispatchOwner ?? dispatchAutopilotOwnerMessage,
     'autopilot_change_approve',
     parsed.output.expectedRevisionKey,
   );
@@ -406,7 +410,7 @@ async function dispatchPrAutopilotOwnerTurn(
     message: string;
   },
   paths: RuntimePaths,
-  dispatchOwner: typeof dispatch,
+  dispatchOwner: AutopilotOwnerDispatcher,
   action: 'autopilot_owner_message' | 'autopilot_change_approve',
   approvedRevisionKey?: string,
 ) {
@@ -468,7 +472,7 @@ async function dispatchPrAutopilotOwnerTurn(
     paths.home,
     watch.ownerInstanceId,
     pendingTurn.turnId,
-    receipt.dispatchId,
+    receipt.submissionId,
   );
   return {
     ok: true,
@@ -476,51 +480,51 @@ async function dispatchPrAutopilotOwnerTurn(
     changed: true,
     message: `Sent the human instruction to continuing owner ${watch.ownerInstanceId}.`,
     watch: claimed,
-    dispatchId: receipt.dispatchId,
+    dispatchId: receipt.submissionId,
   };
 }
 
-export const configurePrAutopilotAction = defineAction({
+export const configurePrAutopilotAction = defineTool({
   name: 'neondeck_autopilot_configure_pr',
   description:
     'Put one pull request on Autopilot with an explicit capability mode and an explicit choice to process or baseline current feedback. Enabling or increasing capability above notify-only requires confirm=true after explicit user confirmation.',
   input: configurePrAutopilotInputSchema,
   output: prAutopilotOutputSchema,
-  async run({ input }) {
-    return configurePrAutopilot(input);
+  async run({ data: input }) {
+    return { output: await configurePrAutopilot(input) };
   },
 });
 
-export const prAutopilotStatusAction = defineAction({
+export const prAutopilotStatusAction = defineTool({
   name: 'neondeck_autopilot_watch_status',
   description:
     'Read the minimal one-owner, one-worktree Autopilot state for one or all PR watches.',
   input: prAutopilotStatusInputSchema,
   output: prAutopilotOutputSchema,
-  async run({ input }) {
-    return readPrAutopilotStatus(input);
+  async run({ data: input }) {
+    return { output: await readPrAutopilotStatus(input) };
   },
 });
 
-export const prAutopilotControlAction = defineAction({
+export const prAutopilotControlAction = defineTool({
   name: 'neondeck_autopilot_watch_control',
   description:
     'Pause, resume, retry, or stop one PR Autopilot watch using the same deterministic service as the API, CLI, and dashboard.',
   input: prAutopilotControlInputSchema,
   output: prAutopilotOutputSchema,
-  async run({ input }) {
-    return controlPrAutopilot(input);
+  async run({ data: input }) {
+    return { output: await controlPrAutopilot(input) };
   },
 });
 
-export const prAutopilotOwnerMessageAction = defineAction({
+export const prAutopilotOwnerMessageAction = defineTool({
   name: 'neondeck_autopilot_message_owner',
   description:
     'Send the user’s direct instruction to the same approval-mode PR owner while its managed worktree is held for review. This is the authority-bearing human turn.',
   input: prAutopilotOwnerMessageInputSchema,
   output: prAutopilotOutputSchema,
-  async run({ input }) {
-    return messagePrAutopilotOwner(input);
+  async run({ data: input }) {
+    return { output: await messagePrAutopilotOwner(input) };
   },
 });
 

@@ -1,4 +1,4 @@
-import { defineAction, defineTool } from '@flue/runtime';
+import { defineTool } from '@flue/runtime';
 import * as v from 'valibot';
 import {
   ensureRuntimeHome,
@@ -43,18 +43,18 @@ export const executionPolicyLookupTool = defineTool({
   input: v.object({}),
   output: executionPolicyOutputSchema,
   async run() {
-    return readExecutionPolicy();
+    return { output: await readExecutionPolicy() };
   },
 });
 
-export const executionPolicyCheckAction = defineAction({
+export const executionPolicyCheckAction = defineTool({
   name: 'neondeck_execution_policy_check',
   description:
     'Classify a proposed local or exe.dev command against the Neondeck execution approval policy without running it.',
   input: executionPolicyCheckInputSchema,
   output: executionPolicyOutputSchema,
-  async run({ input }) {
-    return checkExecutionPolicy(input);
+  async run({ data: input }) {
+    return { output: await checkExecutionPolicy(input) };
   },
 });
 

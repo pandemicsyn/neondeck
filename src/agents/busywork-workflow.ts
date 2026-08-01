@@ -1,24 +1,23 @@
-import { defineAgent } from '@flue/runtime';
+'use agent';
+
+import { useModel, useSkill } from '@flue/runtime';
 import {
   readAgentModelSelectionSync,
   runtimeSkillReferenceByIdSync,
 } from '../modules/runtime';
 import neonCiFix from '../skills/neon-ci-fix/SKILL.md';
 
-export default defineAgent(() => {
+export function BusyworkWorkflow() {
   const models = readAgentModelSelectionSync();
-
-  return {
-    model: models.displayAssistant,
+  useModel(models.displayAssistant, {
     thinkingLevel: models.displayAssistantThinkingLevel,
-    cwd: '/workspace',
-    instructions: [
-      'You are a private Neondeck workflow host for bounded busywork workflows.',
-      'Workflow actions perform deterministic orchestration. Do not expose chat tools, host tools, or reusable Neondeck actions through this agent.',
-    ].join('\n\n'),
-    skills: [runtimeSkillReferenceByIdSync('neon-ci-fix') ?? neonCiFix],
-    tools: [],
-    actions: [],
-    subagents: [],
-  };
-});
+  });
+  useSkill(runtimeSkillReferenceByIdSync('neon-ci-fix') ?? neonCiFix);
+
+  return [
+    'You are a private Neondeck workflow host for bounded busywork workflows.',
+    'Workflow tools perform deterministic orchestration. Do not expose chat tools, host tools, or reusable Neondeck tools through this agent.',
+  ].join('\n\n');
+}
+
+BusyworkWorkflow.agentName = 'busywork-workflow';

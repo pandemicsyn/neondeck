@@ -251,8 +251,10 @@ describe('conversational briefings', () => {
       expect(request.input).toContain('User briefing instructions:');
       expect(request.input).toContain('do not mutate external systems');
       return {
-        dispatchId: 'dispatch:manual:1',
+        submissionId: 'dispatch:manual:1',
         acceptedAt: new Date().toISOString(),
+
+        uid: 'briefing-test-session',
       };
     });
 
@@ -306,8 +308,10 @@ describe('conversational briefings', () => {
         input: string;
       }) => Promise<DispatchReceipt>
     >(async () => ({
-      dispatchId: `dispatch:scheduled:${++sequence}`,
+      submissionId: `dispatch:scheduled:${++sequence}`,
       acceptedAt: new Date().toISOString(),
+
+      uid: 'briefing-test-session',
     }));
 
     const first = await admitBriefing(
@@ -337,8 +341,10 @@ describe('conversational briefings', () => {
       paths,
       {
         dispatchAgent: async () => ({
-          dispatchId: 'dispatch:layout:first',
+          submissionId: 'dispatch:layout:first',
           acceptedAt: new Date().toISOString(),
+
+          uid: 'briefing-test-session',
         }),
       },
     );
@@ -380,8 +386,10 @@ describe('conversational briefings', () => {
       paths,
       {
         dispatchAgent: async () => ({
-          dispatchId: 'dispatch:stale:first',
+          submissionId: 'dispatch:stale:first',
           acceptedAt: new Date().toISOString(),
+
+          uid: 'briefing-test-session',
         }),
       },
     );
@@ -413,8 +421,10 @@ describe('conversational briefings', () => {
         input: string;
       }) => Promise<DispatchReceipt>
     >(async () => ({
-      dispatchId: 'dispatch:stale:continued',
+      submissionId: 'dispatch:stale:continued',
       acceptedAt: new Date().toISOString(),
+
+      uid: 'briefing-test-session',
     }));
     const continued = await admitBriefing(
       { profileId: 'morning', trigger: 'scheduled' },
@@ -482,8 +492,10 @@ describe('conversational briefings', () => {
       paths,
       {
         dispatchAgent: async () => ({
-          dispatchId: 'dispatch:manual-stale:first',
+          submissionId: 'dispatch:manual-stale:first',
           acceptedAt: new Date().toISOString(),
+
+          uid: 'briefing-test-session',
         }),
       },
     );
@@ -512,8 +524,10 @@ describe('conversational briefings', () => {
       paths,
       {
         dispatchAgent: async () => ({
-          dispatchId: 'dispatch:manual-stale:continued',
+          submissionId: 'dispatch:manual-stale:continued',
           acceptedAt: new Date().toISOString(),
+
+          uid: 'briefing-test-session',
         }),
       },
     );
@@ -528,8 +542,10 @@ describe('conversational briefings', () => {
       paths,
       {
         dispatchAgent: async () => ({
-          dispatchId: 'dispatch:rotation:first',
+          submissionId: 'dispatch:rotation:first',
           acceptedAt: new Date().toISOString(),
+
+          uid: 'briefing-test-session',
         }),
       },
     );
@@ -567,8 +583,10 @@ describe('conversational briefings', () => {
       paths,
       {
         dispatchAgent: async () => ({
-          dispatchId: 'dispatch:settle:1',
+          submissionId: 'dispatch:settle:1',
           acceptedAt: new Date().toISOString(),
+
+          uid: 'briefing-test-session',
         }),
       },
     );
@@ -580,7 +598,7 @@ describe('conversational briefings', () => {
         eventIndex: 12,
         timestamp: new Date().toISOString(),
         instanceId: active.activeSessionId,
-        dispatchId: run.dispatchId,
+        submissionId: run.dispatchId,
         messages: [],
         agentOutput: {
           type: 'text',
@@ -628,8 +646,10 @@ describe('conversational briefings', () => {
       paths,
       {
         dispatchAgent: async () => ({
-          dispatchId: 'dispatch:settle:failed',
+          submissionId: 'dispatch:settle:failed',
           acceptedAt: new Date().toISOString(),
+
+          uid: 'briefing-test-session',
         }),
       },
     );
@@ -641,7 +661,7 @@ describe('conversational briefings', () => {
         eventIndex: 14,
         timestamp: new Date().toISOString(),
         instanceId: active.activeSessionId,
-        dispatchId: run.dispatchId,
+        submissionId: run.dispatchId,
         operationId: 'operation:failed',
         operationKind: 'prompt',
         durationMs: 20,
@@ -680,7 +700,7 @@ describe('conversational briefings', () => {
               eventIndex: 1,
               timestamp: new Date().toISOString(),
               instanceId: active.activeSessionId,
-              dispatchId,
+              submissionId: dispatchId,
               messages: [],
               agentOutput: {
                 type: 'text',
@@ -690,7 +710,11 @@ describe('conversational briefings', () => {
             } as Extract<FlueObservation, { type: 'agent_end' }>,
             paths,
           );
-          return { dispatchId, acceptedAt: new Date().toISOString() };
+          return {
+            submissionId: dispatchId,
+            acceptedAt: new Date().toISOString(),
+            uid: 'briefing-test-session',
+          };
         },
       },
     );
@@ -712,8 +736,10 @@ describe('conversational briefings', () => {
       paths,
       {
         dispatchAgent: async () => ({
-          dispatchId: 'dispatch:nested',
+          submissionId: 'dispatch:nested',
           acceptedAt: new Date().toISOString(),
+
+          uid: 'briefing-test-session',
         }),
       },
     );
@@ -722,7 +748,7 @@ describe('conversational briefings', () => {
       v: 3,
       eventIndex: 2,
       timestamp: new Date().toISOString(),
-      dispatchId: run.dispatchId,
+      submissionId: run.dispatchId,
       messages: [],
       agentOutput: { type: 'text', text: 'nested', finishReason: 'stop' },
     };
@@ -776,8 +802,10 @@ describe('conversational briefings', () => {
       paths,
       {
         dispatchAgent: async () => ({
-          dispatchId: 'dispatch:corrupt-snapshot',
+          submissionId: 'dispatch:corrupt-snapshot',
           acceptedAt: new Date().toISOString(),
+
+          uid: 'briefing-test-session',
         }),
       },
     );

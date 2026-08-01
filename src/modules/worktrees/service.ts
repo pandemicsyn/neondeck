@@ -412,7 +412,9 @@ export async function lockWorktree(
       prNumber,
       owner: input.owner,
       workflowRunId:
-        input.workflowRunId ?? currentFlueExecutionContext()?.runId ?? null,
+        input.workflowRunId ??
+        currentFlueExecutionContext()?.submissionId ??
+        null,
       expiresAt,
       revokedAt: null,
       releasedAt: null,

@@ -15,9 +15,9 @@ import {
   protectOpenAiCodexCredentialStore,
   resolveOpenAiCodexAccessToken,
   resolveOpenAiCodexModelAuth,
+  resolveOpenAiCodexModelAuthForStartup,
 } from './modules/repos';
 import { ensureRuntimeHome, runtimePaths } from './runtime-home';
-import { resolveOpenAiCodexModelAuthForStartup } from './server/create-app';
 
 const tempRoots: string[] = [];
 const oauthMocks = vi.hoisted(() => ({

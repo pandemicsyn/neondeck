@@ -140,7 +140,7 @@ describe('Neon commands', () => {
   it('blocks host-executing fix-ci from the model-callable command action', async () => {
     await expect(
       commandRunAction.run({
-        input: { command: '/fix-ci pandemicsyn/neondeck#10' },
+        data: { command: '/fix-ci pandemicsyn/neondeck#10' },
         log: { info() {}, warn() {} },
         harness: {},
       } as never),

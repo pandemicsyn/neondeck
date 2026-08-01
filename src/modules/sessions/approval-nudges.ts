@@ -13,8 +13,19 @@ type ApprovalNudgeDispatch = (input: {
   input: string;
 }) => Promise<DispatchReceipt>;
 
-let approvalNudgeDispatch: ApprovalNudgeDispatch = (input) =>
-  dispatch(input) as Promise<DispatchReceipt>;
+let approvalNudgeDispatch: ApprovalNudgeDispatch = async (input) => {
+  const { DisplayAssistant } = await import('../../agents/display-assistant');
+  return dispatch(DisplayAssistant, {
+    id: input.id,
+    message: {
+      kind: 'signal',
+      type: 'neondeck.approval.resolved',
+      tagName: 'approval-resolution',
+      body: input.input,
+      attributes: { agent: input.agent },
+    },
+  });
+};
 
 export function setApprovalNudgeDispatchForTests(
   dispatchFn: ApprovalNudgeDispatch,

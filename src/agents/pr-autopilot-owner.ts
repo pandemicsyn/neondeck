@@ -1,7 +1,17 @@
+'use agent';
+
 import { createHash } from 'node:crypto';
 import { mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
-import { defineAgent, type AgentRouteHandler } from '@flue/runtime';
+import {
+  type AgentProps,
+  useAgentStart,
+  useModel,
+  usePersistentState,
+  useSandbox,
+  useTool,
+} from '@flue/runtime';
+import type { MiddlewareHandler } from 'hono';
 import { readAgentModelSelectionSync } from '../modules/runtime';
 import {
   prAutopilotOwnerCompaction,
@@ -38,7 +48,7 @@ export const description =
 
 // Operator inspection remains available through authenticated local GET routes.
 // Direct messages are accepted only for the held approval turn.
-export const route: AgentRouteHandler = async (context, next) => {
+export const route: MiddlewareHandler = async (context, next) => {
   if (context.req.method === 'GET') return next();
   const instanceId = context.req.param('id');
   if (!instanceId) {
@@ -199,15 +209,75 @@ export async function buildPrAutopilotOwnerRuntime(
     compaction: prAutopilotOwnerCompaction,
     durability: prAutopilotOwnerDurability,
     instructions,
+    workspaceContext,
     tools: registry.tools,
     actions: [],
     subagents: [],
   };
 }
 
-export default defineAgent(({ id }) => {
-  return buildPrAutopilotOwnerRuntime(id);
-});
+type PreparedOwnerContext = {
+  instructions: string;
+  workspaceContext: { path: string; home: string } | null;
+};
+
+export function PrAutopilotOwner({ id }: AgentProps) {
+  const paths = runtimePaths();
+  const models = readAgentModelSelectionSync(paths);
+  const watch = readWatchByOwnerInstanceId(paths, id);
+  const pending = readPendingAutopilotTurn(paths.home, id);
+  const source = pending?.source ?? 'watch-event';
+  const turnWatch =
+    watch && pending
+      ? {
+          ...watch,
+          autopilotMode: pending.mode,
+          autopilotStatus:
+            source === 'direct-human'
+              ? ('waiting' as const)
+              : watch.autopilotStatus,
+        }
+      : watch;
+  const registry = turnWatch
+    ? buildAutopilotOwnerToolRegistry({ watch: turnWatch, source, paths })
+    : { capabilities: [], tools: [] };
+  const [prepared, setPrepared] =
+    usePersistentState<PreparedOwnerContext | null>(
+      'prepared-owner-context',
+      null,
+    );
+
+  useModel(models.displayAssistant, {
+    thinkingLevel: models.displayAssistantThinkingLevel,
+    compaction: prAutopilotOwnerCompaction,
+  });
+  useAgentStart(async () => {
+    const runtime = await buildPrAutopilotOwnerRuntime(id, paths);
+    setPrepared({
+      instructions: runtime.instructions,
+      workspaceContext: runtime.workspaceContext,
+    });
+  });
+  if (prepared?.workspaceContext) {
+    useSandbox(
+      boundedLocal({
+        cwd: prepared.workspaceContext.path,
+        env: ownerWorkspaceEnvironment(prepared.workspaceContext.home),
+      }),
+      { cwd: prepared.workspaceContext.path },
+    );
+  }
+  for (const tool of registry.tools) useTool(tool);
+
+  return (
+    prepared?.instructions ??
+    'Prepare the bounded Autopilot owner context before acting. Do not inspect or mutate a workspace until the validated workspace environment is attached.'
+  );
+}
+
+PrAutopilotOwner.agentName = 'pr-autopilot-owner';
+PrAutopilotOwner.durability = prAutopilotOwnerDurability;
+
 
 async function prepareOwnerWorkspaceHome(
   paths: RuntimePaths,

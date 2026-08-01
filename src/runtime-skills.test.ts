@@ -8,7 +8,9 @@ import {
   listRuntimeSkills,
   loadRuntimeSkill,
   resolveApplicationSkillPaths,
+  runtimeSkillFromSessionSnapshot,
   runtimeSkillReferencesSync,
+  runtimeSkillSessionSnapshotsSync,
 } from './modules/runtime';
 
 const tempRoots: string[] = [];
@@ -201,6 +203,35 @@ describe('runtime skills', () => {
         content: expect.stringContaining('Always check the scheduler state.'),
       },
     });
+  });
+
+  it('round-trips runtime skills through durable JSON session context', async () => {
+    const home = await tempDir('neondeck-home-');
+    const paths = runtimePaths(home);
+    await ensureRuntimeHome(paths);
+    const skillDirectory = join(paths.skills, 'session-guide');
+    await writeSkill(skillDirectory, {
+      name: 'session-guide',
+      description: 'Stable per-session guidance.',
+      body: 'Keep this exact guidance for the active conversation.',
+    });
+    await writeFile(join(skillDirectory, 'REFERENCE.md'), 'reference text');
+    await writeFile(
+      join(skillDirectory, 'asset.bin'),
+      new Uint8Array([0, 255]),
+    );
+
+    const snapshots = JSON.parse(
+      JSON.stringify(runtimeSkillSessionSnapshotsSync(paths)),
+    ) as ReturnType<typeof runtimeSkillSessionSnapshotsSync>;
+    const skill = runtimeSkillFromSessionSnapshot(snapshots[0]);
+
+    expect(skill).toMatchObject({
+      name: 'session-guide',
+      instructions: expect.stringContaining('Keep this exact guidance'),
+      files: { 'REFERENCE.md': 'reference text' },
+    });
+    expect(skill.files?.['asset.bin']).toEqual(new Uint8Array([0, 255]));
   });
 
   it('keeps the built-in skill visible when external root config is invalid', async () => {

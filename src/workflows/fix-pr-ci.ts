@@ -3,7 +3,7 @@ import {
   type WorkflowRouteHandler,
   type WorkflowRunsHandler,
 } from '@flue/runtime';
-import busyworkWorkflow from '../agents/busywork-workflow';
+import { BusyworkWorkflow as busyworkWorkflow } from '../agents/busywork-workflow';
 import { ciFixRunAction } from '../modules/autopilot';
 
 export const route: WorkflowRouteHandler = async (_c, next) => next();

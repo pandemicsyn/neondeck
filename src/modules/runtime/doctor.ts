@@ -1,4 +1,4 @@
-import { defineAction, type JsonValue } from '@flue/runtime';
+import { defineTool, type JsonValue } from '@flue/runtime';
 import { existsSync, readFileSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import net from 'node:net';
@@ -110,13 +110,13 @@ const devDoctorInputSchema = v.object({
   ),
 });
 
-export const devDoctorRunAction = defineAction({
+export const devDoctorRunAction = defineTool({
   name: 'neondeck_dev_doctor_run',
   description:
     'Run deterministic local development health checks for configured repos, scripts, env, ports, runtime databases, and Node version.',
   input: devDoctorInputSchema,
   output: devDoctorOutputSchema,
-  async run({ input, log }) {
+  async run({ data: input, log }) {
     log.info('Dev doctor requested');
 
     const result = await runDevDoctor(runtimePaths(), input);
@@ -133,18 +133,18 @@ export const devDoctorRunAction = defineAction({
       log.info('Dev doctor completed', payload);
     }
 
-    return result;
+    return { output: result };
   },
 });
 
-export const repoStatusListAction = defineAction({
+export const repoStatusListAction = defineTool({
   name: 'neondeck_repo_status_list',
   description:
     'List deterministic local git status for configured repositories without creating a workflow summary.',
   input: v.object({}),
   output: devDoctorOutputSchema,
   async run() {
-    return listRepoStatus();
+    return { output: await listRepoStatus() };
   },
 });
 

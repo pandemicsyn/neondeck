@@ -242,7 +242,7 @@ export async function runAutopilotWatchEvent(
         paths.home,
         instanceId,
         pendingTurn.turnId,
-        receipt.dispatchId,
+        receipt.submissionId,
       );
       await reconcileTransientRuntimeNotificationQuietly(paths, claimed.id);
       return {
@@ -253,7 +253,7 @@ export async function runAutopilotWatchEvent(
         ),
         instanceId,
         worktreeId: worktree.id,
-        dispatchId: receipt.dispatchId,
+        dispatchId: receipt.submissionId,
       };
     } catch (error) {
       clearPendingAutopilotTurnIfMatches(

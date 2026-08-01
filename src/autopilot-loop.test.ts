@@ -770,7 +770,7 @@ describe('minimal Autopilot watch loop', () => {
       sourceId: expect.stringContaining('recovered-dispatch-123'),
       data: expect.objectContaining({
         data: expect.objectContaining({
-          correlationKind: 'dispatch',
+          correlationKind: 'submission',
           memorySnapshot: expect.objectContaining({ available: false }),
         }),
       }),
@@ -1111,8 +1111,9 @@ describe('minimal Autopilot watch loop', () => {
     }));
     let dispatchCount = 0;
     const dispatch = vi.fn(async () => ({
-      dispatchId: `dispatch-${++dispatchCount}`,
+      submissionId: `dispatch-${++dispatchCount}`,
       acceptedAt: '2026-07-20T00:00:00.000Z',
+      uid: 'owner-session',
     }));
 
     const first = await runAutopilotWatchEvent(ownerEvent('event-1'), paths, {
@@ -1181,8 +1182,9 @@ describe('minimal Autopilot watch loop', () => {
     );
 
     const humanDispatch = vi.fn(async () => ({
-      dispatchId: 'human-dispatch',
+      submissionId: 'human-dispatch',
       acceptedAt: '2026-07-20T00:00:00.000Z',
+      uid: 'owner-session',
     }));
     const postPrComment = vi.fn(async (input: { idempotencyKey?: string }) => ({
       ok: true,
@@ -1217,7 +1219,7 @@ describe('minimal Autopilot watch loop', () => {
     });
     await firstHumanRegistry.tools
       .find((tool) => tool.name === 'neondeck_owner_pr_respond')
-      ?.run({ input: { body: 'I am checking one more edit.' } } as never);
+      ?.run({ data: { body: 'I am checking one more edit.' } } as never);
     await settleAutopilotOwnerObservation(
       ownerPromptFailure(instanceId, 'human-dispatch'),
       paths,
@@ -1363,9 +1365,11 @@ describe('minimal Autopilot watch loop', () => {
       pushInteractive: stalePushInteractive,
     });
     await expect(
-      staleHumanRegistry.tools
-        .find((tool) => tool.name === 'neondeck_owner_push')
-        ?.run({ input: {} } as never),
+      toolOutputPromise(
+        staleHumanRegistry.tools
+          .find((tool) => tool.name === 'neondeck_owner_push')
+          ?.run({ data: {} } as never),
+      ),
     ).resolves.toMatchObject({
       ok: false,
       requires: ['currentAuthority'],
@@ -1386,14 +1390,16 @@ describe('minimal Autopilot watch loop', () => {
     const humanPush = humanRegistry.tools.find(
       (tool) => tool.name === 'neondeck_owner_push',
     );
-    const humanPushResult = await humanPush?.run({ input: {} } as never);
+    const humanPushResult = toolOutput(
+      await humanPush?.run({ data: {} } as never),
+    );
     expect(humanPushResult).toMatchObject({
       ok: true,
       changed: true,
     });
     await humanRegistry.tools
       .find((tool) => tool.name === 'neondeck_owner_pr_respond')
-      ?.run({ input: { body: 'The held commit is pushed.' } } as never);
+      ?.run({ data: { body: 'The held commit is pushed.' } } as never);
     const responseKeys = postPrComment.mock.calls.map(
       ([input]) => input.idempotencyKey,
     );
@@ -1592,8 +1598,9 @@ describe('minimal Autopilot watch loop', () => {
     );
     const retryPrepare = vi.fn();
     const retryDispatch = vi.fn(async () => ({
-      dispatchId: 'safe-retry-dispatch',
+      submissionId: 'safe-retry-dispatch',
       acceptedAt: '2026-07-20T00:00:00.000Z',
+      uid: 'owner-session',
     }));
     await expect(
       runAutopilotWatchEvent(ownerEvent('safe-event'), paths, {
@@ -1789,9 +1796,11 @@ describe('minimal Autopilot watch loop', () => {
       postPrComment: autonomousPostPrComment as never,
     });
     await expect(
-      autonomousRegistry.tools
-        .find((tool) => tool.name === 'neondeck_owner_pr_respond')
-        ?.run({ input: { body: 'Implemented and validated.' } } as never),
+      toolOutputPromise(
+        autonomousRegistry.tools
+          .find((tool) => tool.name === 'neondeck_owner_pr_respond')
+          ?.run({ data: { body: 'Implemented and validated.' } } as never),
+      ),
     ).resolves.toMatchObject({
       ok: false,
       requires: ['currentSafeMode'],
@@ -2033,6 +2042,19 @@ function ownerEnd(instanceId: string) {
   } as FlueObservation & { type: 'agent_end' };
 }
 
+function toolOutput<T>(
+  envelope: { output?: T } | string | void | undefined,
+): T {
+  expect(envelope).toEqual(
+    expect.objectContaining({ output: expect.anything() }),
+  );
+  return (envelope as { output: T }).output;
+}
+
+async function toolOutputPromise(value: unknown) {
+  return toolOutput((await value) as never);
+}
+
 function ownerPromptSuccess(instanceId: string, dispatchId = 'safe-dispatch') {
   return {
     v: 3,
@@ -2041,7 +2063,7 @@ function ownerPromptSuccess(instanceId: string, dispatchId = 'safe-dispatch') {
     timestamp: '2026-07-20T00:00:01.000Z',
     agentName: 'pr-autopilot-owner',
     instanceId,
-    dispatchId,
+    submissionId: dispatchId,
     operationId: `${dispatchId}:prompt`,
     operationKind: 'prompt',
     durationMs: 1_000,
@@ -2058,7 +2080,7 @@ function ownerPromptFailure(instanceId: string, dispatchId = 'safe-dispatch') {
     timestamp: '2026-07-20T00:00:01.000Z',
     agentName: 'pr-autopilot-owner',
     instanceId,
-    dispatchId,
+    submissionId: dispatchId,
     operationId: `${dispatchId}:prompt`,
     operationKind: 'prompt',
     durationMs: 1_000,

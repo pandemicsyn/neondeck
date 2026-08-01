@@ -1,5 +1,5 @@
 import { openDb } from '../../lib/sqlite.ts';
-import { defineAction, defineTool, type JsonValue } from '@flue/runtime';
+import { defineTool, type JsonValue } from '@flue/runtime';
 import type { DatabaseSync } from 'node:sqlite';
 import * as v from 'valibot';
 import {
@@ -62,14 +62,14 @@ const learningOperatorOutputSchema = v.variant('ok', [
   }),
 ]);
 
-export const learningOperatorStateAction = defineAction({
+export const learningOperatorStateAction = defineTool({
   name: 'neondeck_learning_operator_state',
   description:
     'Read consolidated learning operator state: reviews, candidates, memory decisions, skill patch decisions, and audit history.',
   input: learningOperatorInputSchema,
   output: learningOperatorOutputSchema,
-  async run({ input }) {
-    return readLearningOperatorState(input);
+  async run({ data: input }) {
+    return { output: await readLearningOperatorState(input) };
   },
 });
 
@@ -79,8 +79,8 @@ export const learningOperatorStateLookupTool = defineTool({
     'Read consolidated learning status, review history, memory decisions, skill patch decisions, and audit history without mutating state.',
   input: learningOperatorInputSchema,
   output: learningOperatorOutputSchema,
-  async run({ input }) {
-    return readLearningOperatorState(input);
+  async run({ data: input }) {
+    return { output: await readLearningOperatorState(input) };
   },
 });
 

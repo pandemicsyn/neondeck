@@ -1,4 +1,6 @@
-import { defineAgent } from '@flue/runtime';
+'use agent';
+
+import { useModel, useSandbox } from '@flue/runtime';
 import { readAgentModelSelectionSync } from '../modules/runtime';
 import {
   effectivePrReviewPromptTemplates,
@@ -30,4 +32,13 @@ export function buildPrReviewAssistantRuntime(
   };
 }
 
-export default defineAgent(() => buildPrReviewAssistantRuntime());
+export function PrReviewAssistant() {
+  const runtime = buildPrReviewAssistantRuntime();
+  useModel(runtime.model, {
+    thinkingLevel: runtime.thinkingLevel,
+  });
+  useSandbox(runtime.sandbox, { cwd: runtime.cwd });
+  return runtime.instructions;
+}
+
+PrReviewAssistant.agentName = 'pr-review-assistant';

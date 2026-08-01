@@ -1,6 +1,6 @@
 import { defineWorkflow, type WorkflowRunsHandler } from '@flue/runtime';
 import * as v from 'valibot';
-import schedulerWorkflow from '../agents/scheduler-workflow';
+import { SchedulerWorkflow as schedulerWorkflow } from '../agents/scheduler-workflow';
 import {
   admitBriefing,
   briefingWorkflowInputSchema,

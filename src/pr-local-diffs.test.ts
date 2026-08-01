@@ -125,17 +125,17 @@ describe('local PR diffs', () => {
     );
 
     await expect(
-      readTool?.run({ input: { path: 'src/app.ts' } } as never),
+      readTool?.run({ data: { path: 'src/app.ts' } } as never),
     ).resolves.toMatchObject({
       revision: headSha,
       path: 'src/app.ts',
       content: expect.stringContaining('export const value = 2;'),
     });
     await expect(
-      searchTool?.run({ input: { query: 'value = 3' } } as never),
+      searchTool?.run({ data: { query: 'value = 3' } } as never),
     ).resolves.toMatchObject({ matches: [] });
     await expect(
-      diffTool?.run({ input: { path: 'src/app.ts' } } as never),
+      diffTool?.run({ data: { path: 'src/app.ts' } } as never),
     ).resolves.toMatchObject({
       available: true,
       base: baseSha,
@@ -144,7 +144,7 @@ describe('local PR diffs', () => {
     });
     await expect(
       diffTool?.run({
-        input: { path: 'src/app.ts', rightLine: 1, contextLines: 2 },
+        data: { path: 'src/app.ts', rightLine: 1, contextLines: 2 },
       } as never),
     ).resolves.toMatchObject({
       targetChanged: true,
@@ -189,21 +189,21 @@ describe('local PR diffs', () => {
       index += 1
     ) {
       await expect(
-        listTool?.run({ input: { limit: 1 } } as never),
+        listTool?.run({ data: { limit: 1 } } as never),
       ).resolves.toMatchObject({
         workspaceToolCallsRemaining:
           prReviewerWorkspaceToolCallLimit - index - 1,
       });
     }
     await expect(
-      readTool?.run({ input: { path: 'src/app.ts' } } as never),
+      readTool?.run({ data: { path: 'src/app.ts' } } as never),
     ).resolves.toMatchObject({
       workspaceToolCallsRemaining: 0,
       content: expect.stringContaining('export const value = 2;'),
     });
 
     await expect(
-      searchTool?.run({ input: { query: 'value' } } as never),
+      searchTool?.run({ data: { query: 'value' } } as never),
     ).resolves.toMatchObject({
       available: false,
       workspaceToolCallsRemaining: 0,
@@ -232,7 +232,7 @@ describe('local PR diffs', () => {
 
     await expect(
       diffTool?.run({
-        input: { path: 'src/large.ts', rightLine: 1, contextLines: 0 },
+        data: { path: 'src/large.ts', rightLine: 1, contextLines: 0 },
       } as never),
     ).resolves.toMatchObject({
       targetChanged: true,
@@ -365,7 +365,7 @@ describe('local PR diffs', () => {
 
     await expect(
       diffTool?.run({
-        input: {
+        data: {
           path: 'src/new-name.ts',
           rightLine: 1,
           contextLines: 1,
@@ -383,7 +383,7 @@ describe('local PR diffs', () => {
     });
     await expect(
       diffTool?.run({
-        input: {
+        data: {
           path: 'src/new-name.ts',
           rightLine: 2,
           contextLines: 1,

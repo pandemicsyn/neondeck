@@ -1,4 +1,4 @@
-import { defineAction } from '@flue/runtime';
+import { defineTool } from '@flue/runtime';
 import * as v from 'valibot';
 import {
   addMcpServer,
@@ -24,197 +24,205 @@ import {
 import { resolveMcpApprovalWithPaths } from './store';
 import { runtimePaths } from '../../runtime-home';
 
-export const mcpServerAddAction = defineAction({
+export const mcpServerAddAction = defineTool({
   name: 'neondeck_mcp_server_add',
   description:
     'Add one MCP server to mcp.json using strict config validation and environment-variable secret references.',
   input: mcpServerAddInputSchema,
   output: mcpActionResultSchema,
-  async run({ input }) {
+  async run({ data: input }) {
     const paths = runtimePaths();
     const guard = guardAgentMcpServerConfig(input.server, 'mcp_server_add');
-    if (guard) return guard;
+    if (guard) return { output: guard };
     const result = await addMcpServer(input, paths);
     if (result.ok) await getMcpRegistry(paths).refresh(input.id);
-    return result;
+    return { output: result };
   },
 });
 
-export const mcpServerUpdateAction = defineAction({
+export const mcpServerUpdateAction = defineTool({
   name: 'neondeck_mcp_server_update',
   description:
     'Update one configured MCP server in mcp.json using strict config validation.',
   input: mcpServerUpdateInputSchema,
   output: mcpActionResultSchema,
-  async run({ input }) {
+  async run({ data: input }) {
     const paths = runtimePaths();
     const guard = await guardAgentMcpServerUpdate(
       input.id,
       input.server,
       paths,
     );
-    if (guard) return guard;
+    if (guard) return { output: guard };
     const result = await updateMcpServer(input, paths);
     if (result.ok) await getMcpRegistry(paths).refresh(input.id);
-    return result;
+    return { output: result };
   },
 });
 
-export const mcpServerRemoveAction = defineAction({
+export const mcpServerRemoveAction = defineTool({
   name: 'neondeck_mcp_server_remove',
   description:
     'Remove one configured MCP server and its cached MCP state. Requires confirm=true.',
   input: mcpServerRemoveInputSchema,
   output: mcpActionResultSchema,
-  async run({ input }) {
+  async run({ data: input }) {
     const paths = runtimePaths();
     const guard = await guardAgentMcpServerUserOwnedMutation(
       input.id,
       'mcp_server_remove',
       paths,
     );
-    if (guard) return guard;
+    if (guard) return { output: guard };
     const result = await removeMcpServer(input, paths);
     if (result.ok) await getMcpRegistry(paths).refresh(input.id);
-    return result;
+    return { output: result };
   },
 });
 
-export const mcpServerEnableAction = defineAction({
+export const mcpServerEnableAction = defineTool({
   name: 'neondeck_mcp_server_enable',
   description: 'Enable one configured MCP server and refresh its connection.',
   input: mcpServerIdInputSchema,
   output: mcpActionResultSchema,
-  async run({ input }) {
+  async run({ data: input }) {
     const paths = runtimePaths();
     const guard = await guardAgentMcpServerConnect(input.id, paths);
-    if (guard) return guard;
+    if (guard) return { output: guard };
     const result = await setMcpServerEnabled(input, true, paths);
     if (result.ok) await getMcpRegistry(paths).refresh(input.id);
-    return { ...result, action: 'mcp_server_enable' };
+    return { output: { ...result, action: 'mcp_server_enable' } };
   },
 });
 
-export const mcpServerDisableAction = defineAction({
+export const mcpServerDisableAction = defineTool({
   name: 'neondeck_mcp_server_disable',
   description: 'Disable one configured MCP server and close its connection.',
   input: mcpServerIdInputSchema,
   output: mcpActionResultSchema,
-  async run({ input }) {
+  async run({ data: input }) {
     const paths = runtimePaths();
     const guard = await guardAgentMcpServerUserOwnedMutation(
       input.id,
       'mcp_server_disable',
       paths,
     );
-    if (guard) return guard;
+    if (guard) return { output: guard };
     const result = await setMcpServerEnabled(input, false, paths);
     if (result.ok) await getMcpRegistry(paths).refresh(input.id);
-    return { ...result, action: 'mcp_server_disable' };
+    return { output: { ...result, action: 'mcp_server_disable' } };
   },
 });
 
-export const mcpApprovalResolveAction = defineAction({
+export const mcpApprovalResolveAction = defineTool({
   name: 'neondeck_mcp_approval_resolve',
   description:
     'Approve or deny one pending MCP tool-call approval. Requires confirm=true.',
   input: mcpApprovalResolveInputSchema,
   output: mcpActionResultSchema,
-  async run({ input }) {
+  async run({ data: input }) {
     if (!input.confirm) {
       return {
-        ok: false,
-        action: 'mcp_approval_resolve',
-        changed: false,
-        message: 'Resolving MCP approvals requires confirm=true.',
-        requires: ['confirm'],
+        output: {
+          ok: false,
+          action: 'mcp_approval_resolve',
+          changed: false,
+          message: 'Resolving MCP approvals requires confirm=true.',
+          requires: ['confirm'],
+        },
       };
     }
-    return resolveMcpApprovalWithPaths(input, runtimePaths());
+    return { output: await resolveMcpApprovalWithPaths(input, runtimePaths()) };
   },
 });
 
-export const mcpLoginStartAction = defineAction({
+export const mcpLoginStartAction = defineTool({
   name: 'neondeck_mcp_login_start',
   description:
     'Start OAuth login for one configured MCP server and return a user-facing authorization URL.',
   input: mcpLoginStartInputSchema,
   output: mcpActionResultSchema,
-  async run({ input }) {
+  async run({ data: input }) {
     const paths = runtimePaths();
     const guard = await guardAgentMcpServerCredentialMutation(
       input.id,
       'mcp_login_start',
       paths,
     );
-    if (guard) return guard;
-    return startMcpOAuthLogin(input, paths);
+    if (guard) return { output: guard };
+    return { output: await startMcpOAuthLogin(input, paths) };
   },
 });
 
-export const mcpLogoutAction = defineAction({
+export const mcpLogoutAction = defineTool({
   name: 'neondeck_mcp_logout',
   description:
     'Remove stored OAuth tokens for one MCP server. Requires confirm=true.',
   input: mcpLogoutInputSchema,
   output: mcpActionResultSchema,
-  async run({ input }) {
+  async run({ data: input }) {
     const paths = runtimePaths();
     const guard = await guardAgentMcpServerCredentialMutation(
       input.id,
       'mcp_logout',
       paths,
     );
-    if (guard) return guard;
+    if (guard) return { output: guard };
     const result = await logoutMcpOAuthServer(input, paths);
     if (result.ok) await getMcpRegistry(paths).refresh(input.id);
-    return result;
+    return { output: result };
   },
 });
 
-export const mcpRegistryRefreshAction = defineAction({
+export const mcpRegistryRefreshAction = defineTool({
   name: 'neondeck_mcp_registry_refresh',
   description: 'Refresh MCP server connections and cached tool catalogs.',
   input: v.object({
     id: v.optional(mcpServerIdSchema),
   }),
   output: mcpActionResultSchema,
-  async run({ input }) {
+  async run({ data: input }) {
     const paths = runtimePaths();
     if (!input.id) {
       return {
-        ok: false,
-        action: 'mcp_registry_refresh',
-        changed: false,
-        message:
-          'Model-callable MCP refresh requires a single safe HTTP/OAuth server id. Use the dashboard or CLI for full registry refresh.',
-        requires: ['id'],
+        output: {
+          ok: false,
+          action: 'mcp_registry_refresh',
+          changed: false,
+          message:
+            'Model-callable MCP refresh requires a single safe HTTP/OAuth server id. Use the dashboard or CLI for full registry refresh.',
+          requires: ['id'],
+        },
       };
     }
     const guard = await guardAgentMcpServerConnect(input.id, paths);
-    if (guard) return { ...guard, action: 'mcp_registry_refresh' };
+    if (guard) return { output: { ...guard, action: 'mcp_registry_refresh' } };
     const refreshed = await getMcpRegistry(paths).refresh(input.id);
     if (!refreshed) {
       return {
-        ok: false,
-        action: 'mcp_registry_refresh',
-        changed: false,
-        message: `MCP server "${input.id}" was not found.`,
-        requires: ['id'],
+        output: {
+          ok: false,
+          action: 'mcp_registry_refresh',
+          changed: false,
+          message: `MCP server "${input.id}" was not found.`,
+          requires: ['id'],
+        },
       };
     }
     return {
-      ok: true,
-      action: 'mcp_registry_refresh',
-      changed: false,
-      message: input.id
-        ? `Refreshed MCP server "${input.id}".`
-        : 'Refreshed MCP registry.',
+      output: {
+        ok: true,
+        action: 'mcp_registry_refresh',
+        changed: false,
+        message: input.id
+          ? `Refreshed MCP server "${input.id}".`
+          : 'Refreshed MCP registry.',
+      },
     };
   },
 });
 
-export const mcpStatusAction = defineAction({
+export const mcpStatusAction = defineTool({
   name: 'neondeck_mcp_status',
   description: 'Read MCP server connection status and tool counts.',
   input: mcpEmptyInputSchema,
@@ -223,11 +231,13 @@ export const mcpStatusAction = defineAction({
     const paths = runtimePaths();
     const servers = await getMcpRegistry(paths).status();
     return {
-      ok: true,
-      action: 'mcp_status',
-      changed: false,
-      message: `Read ${servers.length} MCP server statuses.`,
-      servers,
+      output: {
+        ok: true,
+        action: 'mcp_status',
+        changed: false,
+        message: `Read ${servers.length} MCP server statuses.`,
+        servers,
+      },
     };
   },
 });

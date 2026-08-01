@@ -313,15 +313,22 @@ export async function admitBriefing(
   if (!run) throw new Error('Briefing run could not be persisted.');
 
   try {
-    const dispatchAgent = dependencies.dispatchAgent ?? dispatch;
-    const receipt = await dispatchAgent({
-      agent: 'display-assistant',
-      id: sessionId,
-      input: composeBriefingInput(run, profile),
-    });
-    await attachBriefingDispatch(run.id, receipt.dispatchId, paths);
-    await reconcilePendingBriefingTerminal(receipt.dispatchId, paths);
-    return { ...run, dispatchId: receipt.dispatchId };
+    const briefingInput = composeBriefingInput(run, profile);
+    const receipt = dependencies.dispatchAgent
+      ? await dependencies.dispatchAgent({
+          agent: 'display-assistant',
+          id: sessionId,
+          input: briefingInput,
+        })
+      : await dispatchBriefingSignal({
+          id: sessionId,
+          body: briefingInput,
+          run,
+          profile,
+        });
+    await attachBriefingDispatch(run.id, receipt.submissionId, paths);
+    await reconcilePendingBriefingTerminal(receipt.submissionId, paths);
+    return { ...run, dispatchId: receipt.submissionId };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     await failBriefingRunBeforeDispatch(run.id, message, paths);
@@ -340,6 +347,29 @@ export async function admitBriefing(
   }
 }
 
+async function dispatchBriefingSignal(input: {
+  id: string;
+  body: string;
+  run: BriefingRun;
+  profile: BriefingProfile;
+}) {
+  const { DisplayAssistant } = await import('../../agents/display-assistant');
+  return dispatch(DisplayAssistant, {
+    id: input.id,
+    message: {
+      kind: 'signal',
+      type: 'neondeck.briefing.ready',
+      tagName: 'morning-briefing',
+      body: input.body,
+      attributes: {
+        briefingRunId: input.run.id,
+        profileId: input.profile.id,
+        snapshotVersion: String(input.run.snapshot.version),
+      },
+    },
+  });
+}
+
 export async function settleBriefingObservation(
   event: Extract<
     FlueObservation,
@@ -347,7 +377,7 @@ export async function settleBriefingObservation(
   >,
   paths: RuntimePaths = runtimePaths(),
 ) {
-  if (!event.dispatchId) return null;
+  if (!event.submissionId) return null;
   const observation = event as unknown as Record<string, unknown>;
   if (observation.taskId || observation.parentSession) return null;
   if (
@@ -371,7 +401,7 @@ export async function settleBriefingObservation(
   const error = failed ? briefingObservationError(event) : null;
   const instanceId =
     typeof observation.instanceId === 'string' ? observation.instanceId : '';
-  let correlated = await readBriefingRunByDispatch(event.dispatchId, paths);
+  let correlated = await readBriefingRunByDispatch(event.submissionId, paths);
   if (!correlated) {
     const runId = briefingRunIdFromObservation(observation);
     if (runId) {
@@ -380,13 +410,13 @@ export async function settleBriefingObservation(
         candidate?.status === 'queued' &&
         (!instanceId || candidate.sessionId === instanceId)
       ) {
-        await attachBriefingDispatch(runId, event.dispatchId, paths);
-        correlated = await readBriefingRunByDispatch(event.dispatchId, paths);
+        await attachBriefingDispatch(runId, event.submissionId, paths);
+        correlated = await readBriefingRunByDispatch(event.submissionId, paths);
       }
     }
   }
   if (!correlated) {
-    rememberPendingBriefingTerminal(paths, event.dispatchId, {
+    rememberPendingBriefingTerminal(paths, event.submissionId, {
       failed,
       error,
       instanceId,
@@ -396,7 +426,7 @@ export async function settleBriefingObservation(
   }
   if (instanceId && correlated.sessionId !== instanceId) return null;
   return finalizeBriefingTerminal(
-    event.dispatchId,
+    event.submissionId,
     { failed, error, instanceId, recordedAt: Date.now() },
     paths,
   );

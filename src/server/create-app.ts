@@ -1,23 +1,21 @@
-import { setProvider } from '@flue/runtime';
-import type { ModelAuth } from '@earendil-works/pi-ai';
-import { flue } from '@flue/runtime/routing';
+import { createAgentRouter } from '@flue/runtime/routing';
 import { serveStatic } from '@hono/node-server/serve-static';
 import { existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { Hono } from 'hono';
 import { dashboardEventStreamPath } from '../../shared/dashboard-events';
+import {
+  DisplayAssistant,
+  route as displayAssistantRoute,
+} from '../agents/display-assistant';
+import {
+  PrAutopilotOwner,
+  route as prAutopilotOwnerRoute,
+} from '../agents/pr-autopilot-owner';
+import { PrReviewer, route as prReviewerRoute } from '../agents/pr-reviewer';
 import { getMcpRegistry } from '../domains/mcp';
 import { installFlueExecutionContextTracker } from '../modules/flue/execution-context';
-import { loadNeondeckEnv } from '../modules/runtime';
-import {
-  providerRuntimeRegistrations,
-  effectiveModelSpecifiers,
-  openAiCodexProviderFromModelAuth,
-  readProviderConfigSync,
-  resolveOpenAiCodexModelAuth,
-  resolveOpenAiCodexProviderStatus,
-  startOpenAiCodexTokenRefresh,
-} from '../modules/repos';
+import { installNeondeckProviders } from '../modules/repos';
 import {
   ensureRuntimeHome,
   ensureRuntimeHomeSync,
@@ -81,32 +79,7 @@ export async function createApp(options: CreateAppOptions = {}) {
   const paths = options.paths ?? runtimePaths();
   process.env.NEONDECK_HOME = paths.home;
   ensureRuntimeHomeSync(paths);
-  loadNeondeckEnv(paths);
-  const appConfig = readProviderConfigSync(paths);
-  const readEffectiveModelSpecifiers = () =>
-    effectiveModelSpecifiers(readProviderConfigSync(paths), process.env);
-  for (const provider of providerRuntimeRegistrations(
-    process.env,
-    appConfig,
-    readEffectiveModelSpecifiers,
-  )) {
-    setProvider(provider.provider);
-  }
-  if (resolveOpenAiCodexProviderStatus(appConfig).enabled) {
-    let auth: ModelAuth | undefined;
-    try {
-      auth = await resolveOpenAiCodexModelAuthForStartup(paths);
-    } catch (error) {
-      console.warn(
-        '[neondeck] ChatGPT subscription authentication needs attention',
-        error,
-      );
-    }
-    setProvider(openAiCodexProviderFromModelAuth(auth));
-    startOpenAiCodexTokenRefresh(paths, (refreshedAuth) => {
-      setProvider(openAiCodexProviderFromModelAuth(refreshedAuth));
-    });
-  }
+  const appConfig = await installNeondeckProviders(paths);
 
   const app = new Hono();
   const staticRoot = options.staticRoot ?? resolveStaticRoot();
@@ -177,10 +150,21 @@ export async function createApp(options: CreateAppOptions = {}) {
     '/api/flue/agents/display-assistant/*',
     displayAssistantLearningMiddleware(paths),
   );
-
-  app.use('/api/flue/runs', requireRunInspection);
-  app.use('/api/flue/runs/*', requireRunInspection);
-  app.route('/api/flue', flue());
+  app.use('/api/flue/agents/display-assistant/*', displayAssistantRoute);
+  app.route(
+    '/api/flue/agents/display-assistant',
+    createAgentRouter(DisplayAssistant),
+  );
+  app.use('/api/flue/agents/pr-reviewer/*', prReviewerRoute);
+  app.route('/api/flue/agents/pr-reviewer', createAgentRouter(PrReviewer));
+  app.use(
+    '/api/flue/agents/pr-autopilot-owner/:id',
+    prAutopilotOwnerRoute,
+  );
+  app.route(
+    '/api/flue/agents/pr-autopilot-owner',
+    createAgentRouter(PrAutopilotOwner),
+  );
   app.route('/reports', createReportFileRoutes(paths));
 
   app.use('/assets/*', serveStatic({ root: staticRoot }));
@@ -196,30 +180,6 @@ export async function createApp(options: CreateAppOptions = {}) {
   app.get('*', serveStatic({ root: staticRoot, path: 'index.html' }));
 
   return app;
-}
-
-export async function resolveOpenAiCodexModelAuthForStartup(
-  paths: RuntimePaths,
-  timeoutMs = 5_000,
-) {
-  let timer: NodeJS.Timeout | undefined;
-  try {
-    return await Promise.race([
-      resolveOpenAiCodexModelAuth(paths),
-      new Promise<never>((_, reject) => {
-        timer = setTimeout(() => {
-          reject(
-            new Error(
-              `ChatGPT subscription token refresh exceeded the ${timeoutMs}ms startup budget; Neondeck will retry in the background.`,
-            ),
-          );
-        }, timeoutMs);
-        timer.unref();
-      }),
-    ]);
-  } finally {
-    if (timer) clearTimeout(timer);
-  }
 }
 
 export function resolveStaticRoot(env = process.env) {

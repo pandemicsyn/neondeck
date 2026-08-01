@@ -21,11 +21,13 @@ export const mcpServersLookupTool = defineTool({
     const paths = runtimePaths();
     const servers = await getMcpRegistry(paths).status();
     return {
-      ok: true,
-      action: 'mcp_servers_lookup',
-      changed: false,
-      message: `Read ${servers.length} MCP server statuses.`,
-      servers,
+      output: {
+        ok: true,
+        action: 'mcp_servers_lookup',
+        changed: false,
+        message: `Read ${servers.length} MCP server statuses.`,
+        servers,
+      },
     };
   },
 });
@@ -38,15 +40,17 @@ export const mcpToolsLookupTool = defineTool({
     id: v.optional(mcpServerIdSchema),
   }),
   output: outputSchema,
-  async run({ input }) {
+  async run({ data: input }) {
     const paths = runtimePaths();
     const tools = await getMcpRegistry(paths).listTools(input.id);
     return {
-      ok: true,
-      action: 'mcp_tools_lookup',
-      changed: false,
-      message: `Read ${tools.length} cached MCP tools.`,
-      tools,
+      output: {
+        ok: true,
+        action: 'mcp_tools_lookup',
+        changed: false,
+        message: `Read ${tools.length} cached MCP tools.`,
+        tools,
+      },
     };
   },
 });
@@ -60,11 +64,13 @@ export const mcpStatusLookupTool = defineTool({
     const paths = runtimePaths();
     const servers = await getMcpRegistry(paths).status();
     return {
-      ok: true,
-      action: 'mcp_status_lookup',
-      changed: false,
-      message: `Read ${servers.length} MCP server statuses.`,
-      servers,
+      output: {
+        ok: true,
+        action: 'mcp_status_lookup',
+        changed: false,
+        message: `Read ${servers.length} MCP server statuses.`,
+        servers,
+      },
     };
   },
 });
@@ -76,16 +82,18 @@ export const mcpApprovalsLookupTool = defineTool({
     includeResolved: v.optional(v.boolean()),
   }),
   output: outputSchema,
-  async run({ input }) {
+  async run({ data: input }) {
     const approvals = await listMcpApprovals(runtimePaths(), {
       includeResolved: input.includeResolved,
     });
     return {
-      ok: true,
-      action: 'mcp_approvals_lookup',
-      changed: false,
-      message: `Read ${approvals.length} MCP approval records.`,
-      approvals,
+      output: {
+        ok: true,
+        action: 'mcp_approvals_lookup',
+        changed: false,
+        message: `Read ${approvals.length} MCP approval records.`,
+        approvals,
+      },
     };
   },
 });
@@ -95,17 +103,19 @@ export const mcpAuditLookupTool = defineTool({
   description: 'List recent MCP tool-call audit rows.',
   input: mcpListAuditInputSchema,
   output: outputSchema,
-  async run({ input }) {
+  async run({ data: input }) {
     const audit = await listMcpAudit(runtimePaths(), {
       serverId: input.serverId,
       limit: input.limit,
     });
     return {
-      ok: true,
-      action: 'mcp_audit_lookup',
-      changed: false,
-      message: `Read ${audit.length} MCP audit rows.`,
-      audit,
+      output: {
+        ok: true,
+        action: 'mcp_audit_lookup',
+        changed: false,
+        message: `Read ${audit.length} MCP audit rows.`,
+        audit,
+      },
     };
   },
 });

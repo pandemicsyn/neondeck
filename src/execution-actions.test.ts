@@ -107,8 +107,9 @@ describe('execution actions', () => {
       });
       expect(input.input).toContain(`approval ${approvalId} approved`);
       return {
-        dispatchId: 'dispatch-execution-approval',
+        submissionId: 'dispatch-execution-approval',
         acceptedAt: new Date().toISOString(),
+        uid: 'execution-approval-session',
       };
     });
     try {
@@ -183,8 +184,9 @@ describe('execution actions', () => {
     const restoreDispatch = setApprovalNudgeDispatchForTests(async () => {
       dispatchCount += 1;
       return {
-        dispatchId: `dispatch-${dispatchCount}`,
+        submissionId: `dispatch-${dispatchCount}`,
         acceptedAt: new Date().toISOString(),
+        uid: 'execution-approval-session',
       };
     });
 
@@ -363,8 +365,9 @@ describe('execution actions', () => {
     const restoreDispatch = setApprovalNudgeDispatchForTests(async () => {
       dispatched = true;
       return {
-        dispatchId: 'unexpected-dispatch',
+        submissionId: 'unexpected-dispatch',
         acceptedAt: new Date().toISOString(),
+        uid: 'unexpected-session',
       };
     });
 
@@ -418,8 +421,9 @@ describe('execution actions', () => {
     const restoreDispatch = setApprovalNudgeDispatchForTests(async () => {
       dispatched = true;
       return {
-        dispatchId: 'unexpected-dispatch',
+        submissionId: 'unexpected-dispatch',
         acceptedAt: new Date().toISOString(),
+        uid: 'unexpected-session',
       };
     });
 

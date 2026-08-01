@@ -19,7 +19,7 @@ export function flueFindingProvenance(
   return {
     authorRole: context?.agentName ?? 'flue',
     model: null,
-    workflowRunId: context?.runId ?? null,
+    workflowRunId: context?.submissionId ?? null,
   };
 }
 

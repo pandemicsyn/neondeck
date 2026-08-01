@@ -52,7 +52,7 @@
     "raycast:build": "npm --prefix raycast install && npm --prefix raycast run build",
     "raycast:install": "npm --prefix raycast install && npm --prefix raycast run dev",
     "raycast:lint": "npm --prefix raycast run lint",
-    "run:display": "flue run src/agents/display-assistant.ts --message \"Say hello in one sentence.\" --id display-smoke",
+    "run:display": "flue run scripts/flue-run-display.ts --message \"Say hello in one sentence.\" --id display-smoke",
     "secrets:check": "gitleaks git --redact --no-banner --log-opts=--all",
     "secrets:check:staged": "gitleaks git --staged --redact --no-banner",
     "setup": "node --import=tsx src/setup.ts",

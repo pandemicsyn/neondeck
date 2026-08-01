@@ -1,9 +1,20 @@
-import { defineAgent, type AgentRouteHandler } from '@flue/runtime';
+'use agent';
+
+import {
+  type AgentProps,
+  useAgentStart,
+  useModel,
+  usePersistentState,
+  useSandbox,
+  useTool,
+} from '@flue/runtime';
+import type { MiddlewareHandler } from 'hono';
 import { parsePrReviewerConversationId } from '../../shared/pr-reviewer-session';
 import { readLivePrReviewDraft } from '../modules/github';
 import { readPrReview } from '../modules/pr-reviews';
 import {
   readPrReviewerHandoff,
+  createPrReviewerWorkspaceTools,
   resolvePrReviewerWorkspace,
   type PrReviewerHandoff,
 } from '../modules/pr-reviewer';
@@ -22,7 +33,19 @@ import { noWorkspace } from '../sandboxes/no-workspace';
 export const description =
   'Continuing read-only reviewer conversation for one durable Neondeck PR review.';
 
-export const route: AgentRouteHandler = async (_context, next) => next();
+export const route: MiddlewareHandler = async (_context, next) => next();
+
+type PreparedReviewerContext = {
+  instructions: string;
+  workspace:
+    | {
+        available: true;
+        repoPath: string;
+        headSha: string;
+        mergeBase: string | null;
+      }
+    | { available: false };
+};
 
 export async function buildPrReviewerRuntime(
   id: string,
@@ -82,13 +105,59 @@ export async function buildPrReviewerRuntime(
       handoff,
       promptTemplate,
     }),
+    reviewerWorkspace: workspace,
     tools: workspace.tools,
     actions: [],
     subagents: [],
   };
 }
 
-export default defineAgent(({ id }) => buildPrReviewerRuntime(id));
+export function PrReviewer({ id }: AgentProps) {
+  const models = readAgentModelSelectionSync();
+  const [prepared, setPrepared] =
+    usePersistentState<PreparedReviewerContext | null>(
+      'prepared-reviewer-context',
+      null,
+    );
+
+  useModel(models.prReview, {
+    thinkingLevel: models.prReviewThinkingLevel,
+    compaction: { reserveTokens: 10_000, keepRecentTokens: 8_000 },
+  });
+  useSandbox(noWorkspace(), { cwd: '/workspace' });
+  useAgentStart(async () => {
+    const runtime = await buildPrReviewerRuntime(id);
+    const workspace = runtime.reviewerWorkspace;
+    setPrepared({
+      instructions: runtime.instructions,
+      workspace: workspace.available
+        ? {
+            available: true,
+            repoPath: workspace.repoPath,
+            headSha: workspace.headSha,
+            mergeBase: workspace.mergeBase,
+          }
+        : { available: false },
+    });
+  });
+
+  if (prepared?.workspace.available) {
+    for (const tool of createPrReviewerWorkspaceTools(prepared.workspace)) {
+      useTool(tool);
+    }
+  }
+
+  return (
+    prepared?.instructions ??
+    'Prepare the exact-revision reviewer context before answering. If the context is unavailable, explain that the saved review cannot be opened and do not infer repository facts.'
+  );
+}
+
+PrReviewer.agentName = 'pr-reviewer';
+PrReviewer.durability = {
+  maxAttempts: 3,
+  timeoutMs: readAgentModelSelectionSync().prReviewTimeoutMs,
+};
 
 function unavailableReviewerRuntime(
   models: ReturnType<typeof readAgentModelSelectionSync>,
@@ -100,6 +169,11 @@ function unavailableReviewerRuntime(
     sandbox: noWorkspace(),
     cwd: '/workspace',
     instructions,
+    reviewerWorkspace: {
+      available: false as const,
+      reason: instructions,
+      tools: [] as [],
+    },
     tools: [],
     actions: [],
     subagents: [],
