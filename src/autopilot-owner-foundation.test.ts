@@ -134,6 +134,8 @@ describe('continuing Autopilot owner foundations', () => {
     expect(watcher.tools.map((tool) => tool.name)).toEqual([
       'neondeck_owner_commit',
     ]);
+    expect(watcher.tools.every((tool) => tool.durable)).toBe(true);
+    expect(directHuman.tools.every((tool) => tool.durable)).toBe(true);
   });
 });
 

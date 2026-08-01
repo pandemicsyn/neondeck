@@ -102,6 +102,53 @@ export const prWatchEventWatermarks = sqliteTable(
   ],
 );
 
+export const autopilotOwnerTurns = sqliteTable(
+  'autopilot_owner_turns',
+  {
+    turnId: text('turn_id').primaryKey(),
+    instanceId: text('instance_id').notNull(),
+    watchId: text('watch_id').notNull(),
+    source: text('source').notNull(),
+    mode: text('mode').notNull(),
+    idempotencyKey: text('idempotency_key'),
+    eventFingerprint: text('event_fingerprint'),
+    approvedRevisionKey: text('approved_revision_key'),
+    envelopeJson: text('envelope_json'),
+    messageBody: text('message_body'),
+    preparedJson: text('prepared_json'),
+    learningMemoryAvailable: integer('learning_memory_available')
+      .default(0)
+      .notNull(),
+    learningMemoryLoaded: integer('learning_memory_loaded')
+      .default(0)
+      .notNull(),
+    learningMemoryIdsJson: text('learning_memory_ids_json')
+      .default('[]')
+      .notNull(),
+    learningMemoryText: text('learning_memory_text'),
+    status: text('status').default('reserved').notNull(),
+    submissionId: text('submission_id'),
+    error: text('error'),
+    createdAt: text('created_at').notNull(),
+    admittedAt: text('admitted_at'),
+    settledAt: text('settled_at'),
+    updatedAt: text('updated_at').notNull(),
+  },
+  (table) => [
+    uniqueIndex('idx_autopilot_owner_turns_one_active')
+      .on(table.instanceId)
+      .where(sql`${table.status} IN ('reserved', 'admitted', 'settling')`),
+    uniqueIndex('idx_autopilot_owner_turns_delivery_key')
+      .on(table.instanceId, table.idempotencyKey)
+      .where(sql`${table.idempotencyKey} IS NOT NULL`),
+    index('idx_autopilot_owner_turns_active').on(
+      table.instanceId,
+      table.status,
+      sql`${table.createdAt} DESC`,
+    ),
+  ],
+);
+
 export const prNeondeckDeliveries = sqliteTable(
   'pr_neondeck_deliveries',
   {

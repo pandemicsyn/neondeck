@@ -1,6 +1,7 @@
 import { refreshGitHubQueueSnapshot } from '../modules/github';
 import { refreshPrReviewRemoteState } from '../modules/pr-reviews';
 import { runSchedulerTick } from '../modules/scheduler/service';
+import { recoverInterruptedAutopilotOwners } from '../modules/autopilot/owner/settlement';
 import type { RuntimePaths } from '../runtime-home';
 
 const schedulerTicksInFlight = new Map<
@@ -17,7 +18,12 @@ export function runSerializedSchedulerTick(paths: RuntimePaths) {
   const inFlight = schedulerTicksInFlight.get(paths.home);
   if (inFlight) return inFlight;
 
-  const next = runSchedulerTick(paths).finally(() => {
+  const next = (async () => {
+    await recoverInterruptedAutopilotOwners(paths, {
+      reclaimSettling: false,
+    });
+    return runSchedulerTick(paths);
+  })().finally(() => {
     schedulerTicksInFlight.delete(paths.home);
   });
   schedulerTicksInFlight.set(paths.home, next);

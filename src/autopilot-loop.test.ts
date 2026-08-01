@@ -45,6 +45,7 @@ import {
 import { buildPrAutopilotOwnerRuntime } from './agents/pr-autopilot-owner';
 import {
   clearPendingAutopilotTurn,
+  claimPendingAutopilotTurnSettlement,
   readPendingAutopilotTurn,
   recordPendingAutopilotTurnCorrelationId,
   recordPendingAutopilotTurnLearningMemoryContext,
@@ -63,6 +64,7 @@ import {
   type SeededGitRepository,
 } from './testing/git-repository-fixture';
 import type { FlueObservation } from '@flue/runtime';
+import { buildAutopilotOwnerEnvelope } from './modules/autopilot/owner/envelope';
 
 const tempRoots: string[] = [];
 const execFileAsync = promisify(execFile);
@@ -137,6 +139,57 @@ describe('minimal Autopilot watch loop', () => {
     });
   });
 
+  it('scopes HTTP delivery idempotency keys to one owner instance', async () => {
+    const paths = await fixturePaths();
+    const first = registerPendingAutopilotTurn(
+      paths.home,
+      'keyed-owner-a',
+      undefined,
+      'autofix-with-approval',
+      'direct-human',
+      undefined,
+      {
+        idempotencyKey: 'client-key-1',
+        messageBody: 'approved, push',
+        watchId: 'watch-a',
+      },
+    );
+    clearPendingAutopilotTurn(paths.home, 'keyed-owner-a');
+    const retry = registerPendingAutopilotTurn(
+      paths.home,
+      'keyed-owner-a',
+      undefined,
+      'autofix-with-approval',
+      'direct-human',
+      undefined,
+      {
+        idempotencyKey: 'client-key-1',
+        messageBody: 'approved, push',
+        watchId: 'watch-a',
+      },
+    );
+    const otherOwner = registerPendingAutopilotTurn(
+      paths.home,
+      'keyed-owner-b',
+      undefined,
+      'autofix-with-approval',
+      'direct-human',
+      undefined,
+      {
+        idempotencyKey: 'client-key-1',
+        messageBody: 'approved, push',
+        watchId: 'watch-b',
+      },
+    );
+
+    expect(retry).toMatchObject({
+      idempotencyKey: 'client-key-1',
+      status: 'settled',
+      turnId: first.turnId,
+    });
+    expect(otherOwner.turnId).not.toBe(first.turnId);
+  });
+
   it('applies prompt edits to an existing owner on its next turn', async () => {
     const paths = await fixturePaths();
     await configurePrAutopilot(
@@ -181,8 +234,250 @@ describe('minimal Autopilot watch loop', () => {
       },
       paths,
     );
+    clearPendingAutopilotTurn(paths.home, instanceId);
+    registerCorrelatedPendingAutopilotTurn(
+      paths.home,
+      instanceId,
+      'prompt-event-next',
+      'prepare-only',
+      'watch-event',
+    );
     const second = await buildPrAutopilotOwnerRuntime(instanceId, paths);
     expect(second.instructions).toBe('SECOND prepare-only for the same owner');
+  });
+
+  it('replays a crash-before-receipt reservation with one stable Flue idempotency key', async () => {
+    const paths = await fixturePaths();
+    await configurePrAutopilot(
+      {
+        ref: 'neondeck#123',
+        mode: 'prepare-only',
+        processExisting: false,
+        confirm: true,
+      },
+      paths,
+      fixtureDependencies(),
+    );
+    const instanceId = 'reserved-recovery-owner';
+    bindWatchAutopilotOwner(paths, 'pandemicsyn/neondeck#123', {
+      ownerInstanceId: instanceId,
+      worktreeId: 'reserved-worktree',
+    });
+    claimWatchAutopilotTurn(
+      paths,
+      'pandemicsyn/neondeck#123',
+      'reserved-event',
+    );
+    const envelope = buildAutopilotOwnerEnvelope({
+      watchId: 'pandemicsyn/neondeck#123',
+      repoId: 'neondeck',
+      repoFullName: 'pandemicsyn/neondeck',
+      prNumber: 123,
+      worktreeId: 'reserved-worktree',
+      worktreePath: '/tmp/reserved-worktree',
+      headSha: 'a'.repeat(40),
+      baseSha: 'b'.repeat(40),
+      eventFingerprint: 'reserved-event',
+      mode: 'prepare-only',
+      facts: {},
+      availableCapabilities: ['workspace', 'commit'],
+    });
+    const reserved = registerPendingAutopilotTurn(
+      paths.home,
+      instanceId,
+      envelope.eventFingerprint,
+      'prepare-only',
+      'watch-event',
+      undefined,
+      { envelope, watchId: envelope.watchId },
+    );
+    const dispatchTurn = vi.fn(async () => ({
+      submissionId: 'recovered-reservation-submission',
+      acceptedAt: new Date().toISOString(),
+      uid: 'owner-uid',
+    }));
+    const neverSettles = vi.fn(
+      () => new Promise<{ failed: false }>(() => undefined),
+    );
+
+    await expect(
+      recoverInterruptedAutopilotOwners(paths, {
+        dispatchTurn: dispatchTurn as never,
+        readSettlement: neverSettles,
+      }),
+    ).resolves.toBe(1);
+    expect(dispatchTurn).toHaveBeenCalledWith({
+      instanceId,
+      envelope,
+      idempotencyKey: reserved.turnId,
+    });
+    expect(readPendingAutopilotTurn(paths.home, instanceId)).toMatchObject({
+      correlationId: 'recovered-reservation-submission',
+      status: 'admitted',
+      turnId: reserved.turnId,
+    });
+
+    await recoverInterruptedAutopilotOwners(paths, {
+      dispatchTurn: dispatchTurn as never,
+      readSettlement: neverSettles,
+    });
+    expect(dispatchTurn).toHaveBeenCalledTimes(1);
+  });
+
+  it('reclaims an interrupted app-side settlement from the canonical Flue submission', async () => {
+    const { paths } = await gitFixturePaths();
+    await configurePrAutopilot(
+      {
+        ref: 'neondeck#123',
+        mode: 'prepare-only',
+        processExisting: false,
+        confirm: true,
+      },
+      paths,
+      fixtureDependencies(repositorySeed?.featureSha ?? undefined),
+    );
+    const created = await createWorktree(
+      { repoId: 'neondeck', prNumber: 123, headRef: 'feature' },
+      paths,
+    );
+    const worktree = worktreeFrom(created);
+    const instanceId = 'settlement-recovery-owner';
+    bindWatchAutopilotOwner(paths, 'pandemicsyn/neondeck#123', {
+      ownerInstanceId: instanceId,
+      worktreeId: worktree.id,
+    });
+    claimWatchAutopilotTurn(
+      paths,
+      'pandemicsyn/neondeck#123',
+      'settlement-recovery-event',
+    );
+    const turn = registerCorrelatedPendingAutopilotTurn(
+      paths.home,
+      instanceId,
+      'settlement-recovery-event',
+      'prepare-only',
+      'watch-event',
+      'settlement-recovery-submission',
+    );
+    expect(
+      claimPendingAutopilotTurnSettlement(paths.home, instanceId),
+    ).toMatchObject({ turnId: turn.turnId, status: 'settling' });
+
+    await recoverInterruptedAutopilotOwners(paths, {
+      readSettlement: vi.fn(async () => ({ failed: false as const })),
+    });
+    await vi.waitFor(() => {
+      expect(readWatch(paths, 'pandemicsyn/neondeck#123')).toMatchObject({
+        autopilotStatus: 'watching',
+      });
+    });
+    expect(readPendingAutopilotTurn(paths.home, instanceId)).toBeUndefined();
+  });
+
+  it('attaches a terminal submission that races ahead of receipt persistence', async () => {
+    const { paths } = await gitFixturePaths();
+    await configurePrAutopilot(
+      {
+        ref: 'neondeck#123',
+        mode: 'prepare-only',
+        processExisting: false,
+        confirm: true,
+      },
+      paths,
+      fixtureDependencies(repositorySeed?.featureSha ?? undefined),
+    );
+    const created = await createWorktree(
+      { repoId: 'neondeck', prNumber: 123, headRef: 'feature' },
+      paths,
+    );
+    const worktree = worktreeFrom(created);
+    const instanceId = 'receipt-race-owner';
+    bindWatchAutopilotOwner(paths, 'pandemicsyn/neondeck#123', {
+      ownerInstanceId: instanceId,
+      worktreeId: worktree.id,
+    });
+    claimWatchAutopilotTurn(
+      paths,
+      'pandemicsyn/neondeck#123',
+      'receipt-race-event',
+    );
+    registerPendingAutopilotTurn(
+      paths.home,
+      instanceId,
+      'receipt-race-event',
+      'prepare-only',
+      'watch-event',
+      undefined,
+      { watchId: 'pandemicsyn/neondeck#123' },
+    );
+
+    await settleAutopilotOwnerObservation(
+      ownerPromptSuccess(instanceId, 'receipt-race-submission'),
+      paths,
+    );
+
+    expect(readPendingAutopilotTurn(paths.home, instanceId)).toBeUndefined();
+    expect(readWatch(paths, 'pandemicsyn/neondeck#123')).toMatchObject({
+      autopilotStatus: 'watching',
+    });
+  });
+
+  it('does not attach a delayed duplicate settlement to a newer owner turn', async () => {
+    const { paths } = await gitFixturePaths();
+    await configurePrAutopilot(
+      {
+        ref: 'neondeck#123',
+        mode: 'prepare-only',
+        processExisting: false,
+        confirm: true,
+      },
+      paths,
+      fixtureDependencies(repositorySeed?.featureSha ?? undefined),
+    );
+    const created = await createWorktree(
+      { repoId: 'neondeck', prNumber: 123, headRef: 'feature' },
+      paths,
+    );
+    const worktree = worktreeFrom(created);
+    const instanceId = 'delayed-settlement-owner';
+    bindWatchAutopilotOwner(paths, 'pandemicsyn/neondeck#123', {
+      ownerInstanceId: instanceId,
+      worktreeId: worktree.id,
+    });
+    claimWatchAutopilotTurn(paths, 'pandemicsyn/neondeck#123', 'old-event');
+    registerCorrelatedPendingAutopilotTurn(
+      paths.home,
+      instanceId,
+      'old-event',
+      'prepare-only',
+      'watch-event',
+      'old-submission',
+    );
+    await settleAutopilotOwnerObservation(
+      ownerPromptSuccess(instanceId, 'old-submission'),
+      paths,
+    );
+    claimWatchAutopilotTurn(paths, 'pandemicsyn/neondeck#123', 'new-event');
+    const newer = registerPendingAutopilotTurn(
+      paths.home,
+      instanceId,
+      'new-event',
+      'prepare-only',
+      'watch-event',
+      undefined,
+      { watchId: 'pandemicsyn/neondeck#123' },
+    );
+
+    await expect(
+      settleAutopilotOwnerObservation(
+        ownerPromptSuccess(instanceId, 'old-submission'),
+        paths,
+      ),
+    ).resolves.toBeNull();
+    expect(readPendingAutopilotTurn(paths.home, instanceId)).toMatchObject({
+      correlationId: undefined,
+      turnId: newer.turnId,
+    });
   });
 
   it('loads bounded repo-first learning memory as read-only owner background context', async () => {
@@ -961,7 +1256,7 @@ describe('minimal Autopilot watch loop', () => {
     });
   });
 
-  it('defers owner dispatch while the local runtime starts without blocking the watch', async () => {
+  it('defers known pre-admission failures and preserves ambiguous dispatch reservations', async () => {
     const { paths } = await gitFixturePaths();
     await configurePrAutopilot(
       {
@@ -1026,19 +1321,31 @@ describe('minimal Autopilot watch loop', () => {
         }) as never,
       }),
     ).resolves.toMatchObject({
-      state: 'blocked',
+      state: 'deferred',
       changed: false,
     });
     expect(readWatch(paths, 'pandemicsyn/neondeck#123')).toMatchObject({
-      autopilotStatus: 'blocked',
+      autopilotStatus: 'working',
     });
-    expect(await listNotifications(paths)).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          title: 'Autopilot owner turn blocked',
-          message: expect.stringContaining('misconfigured'),
-        }),
-      ]),
+    const pending = readPendingAutopilotTurn(
+      paths.home,
+      readWatch(paths, 'pandemicsyn/neondeck#123')!.ownerInstanceId!,
+    )!;
+    expect(pending).toMatchObject({
+      eventFingerprint: 'permanent-dispatch-error',
+      status: 'reserved',
+    });
+    const recoveredDispatch = vi.fn(async () => ({
+      submissionId: 'ambiguous-retry-submission',
+      acceptedAt: new Date().toISOString(),
+      uid: 'owner-uid',
+    }));
+    await recoverInterruptedAutopilotOwners(paths, {
+      dispatchTurn: recoveredDispatch as never,
+      readSettlement: () => new Promise(() => undefined),
+    });
+    expect(recoveredDispatch).toHaveBeenCalledWith(
+      expect.objectContaining({ idempotencyKey: pending.turnId }),
     );
   });
 
@@ -1211,6 +1518,7 @@ describe('minimal Autopilot watch loop', () => {
       agent: 'pr-autopilot-owner',
       id: instanceId,
       input: 'approved, fix the typo then push',
+      idempotencyKey: expect.any(String),
     });
     const firstHumanRegistry = buildAutopilotOwnerToolRegistry({
       watch: {
@@ -1223,7 +1531,7 @@ describe('minimal Autopilot watch loop', () => {
     });
     await firstHumanRegistry.tools
       .find((tool) => tool.name === 'neondeck_owner_pr_respond')
-      ?.run({ data: { body: 'I am checking one more edit.' } } as never);
+      ?.run(durableToolContext({ body: 'I am checking one more edit.' }));
     await settleAutopilotOwnerObservation(
       ownerPromptFailure(instanceId, 'human-dispatch'),
       paths,
@@ -1372,7 +1680,7 @@ describe('minimal Autopilot watch loop', () => {
       toolOutputPromise(
         staleHumanRegistry.tools
           .find((tool) => tool.name === 'neondeck_owner_push')
-          ?.run({ data: {} } as never),
+          ?.run(durableToolContext({})),
       ),
     ).resolves.toMatchObject({
       ok: false,
@@ -1395,7 +1703,7 @@ describe('minimal Autopilot watch loop', () => {
       (tool) => tool.name === 'neondeck_owner_push',
     );
     const humanPushResult = toolOutput(
-      await humanPush?.run({ data: {} } as never),
+      await humanPush?.run(durableToolContext({})),
     );
     expect(humanPushResult).toMatchObject({
       ok: true,
@@ -1403,7 +1711,7 @@ describe('minimal Autopilot watch loop', () => {
     });
     await humanRegistry.tools
       .find((tool) => tool.name === 'neondeck_owner_pr_respond')
-      ?.run({ data: { body: 'The held commit is pushed.' } } as never);
+      ?.run(durableToolContext({ body: 'The held commit is pushed.' }));
     const responseKeys = postPrComment.mock.calls.map(
       ([input]) => input.idempotencyKey,
     );
@@ -1433,13 +1741,17 @@ describe('minimal Autopilot watch loop', () => {
       from: 'waiting',
       to: 'working',
     });
-    await recoverInterruptedAutopilotOwners(paths);
-    expect(readWatch(paths, 'pandemicsyn/neondeck#123')).toMatchObject({
-      autopilotStatus: 'blocked',
+    await recoverInterruptedAutopilotOwners(paths, {
+      readSettlement: vi.fn(async () => ({ failed: false as const })),
+    });
+    await vi.waitFor(() => {
+      expect(readWatch(paths, 'pandemicsyn/neondeck#123')).toMatchObject({
+        autopilotStatus: 'watching',
+      });
     });
     await settleAutopilotOwnerObservation(ownerEnd(instanceId), paths);
     expect(readWatch(paths, 'pandemicsyn/neondeck#123')).toMatchObject({
-      autopilotStatus: 'blocked',
+      autopilotStatus: 'watching',
     });
   });
 
@@ -1494,7 +1806,7 @@ describe('minimal Autopilot watch loop', () => {
       if (mode === 'autofix-push-when-safe') {
         autonomousInstructions = runtime.instructions;
       }
-      if (!('sandbox' in runtime)) {
+      if (!runtime.sandbox) {
         throw new Error(`${mode} did not receive its coding sandbox.`);
       }
       const environment = await runtime.sandbox.createSessionEnv({
@@ -1574,7 +1886,7 @@ describe('minimal Autopilot watch loop', () => {
       worktreeId: worktree.id,
     });
     claimWatchAutopilotTurn(paths, 'pandemicsyn/neondeck#123', 'safe-event');
-    registerCorrelatedPendingAutopilotTurn(
+    const firstSafeTurn = registerCorrelatedPendingAutopilotTurn(
       paths.home,
       'safe-owner',
       'safe-event',
@@ -1617,6 +1929,9 @@ describe('minimal Autopilot watch loop', () => {
       worktreeId: worktree.id,
     });
     expect(retryPrepare).not.toHaveBeenCalled();
+    expect(readPendingAutopilotTurn(paths.home, 'safe-owner')?.turnId).not.toBe(
+      firstSafeTurn.turnId,
+    );
     await settleAutopilotOwnerObservation(
       ownerPromptSuccess('safe-owner', 'safe-retry-dispatch'),
       paths,
@@ -1803,7 +2118,7 @@ describe('minimal Autopilot watch loop', () => {
       toolOutputPromise(
         autonomousRegistry.tools
           .find((tool) => tool.name === 'neondeck_owner_pr_respond')
-          ?.run({ data: { body: 'Implemented and validated.' } } as never),
+          ?.run(durableToolContext({ body: 'Implemented and validated.' })),
       ),
     ).resolves.toMatchObject({
       ok: false,
@@ -1869,6 +2184,36 @@ describe('minimal Autopilot watch loop', () => {
       force: false,
       stdout: 'pushed',
     }));
+
+    const recovered = await setupCandidate(129, 'recovered-push-owner');
+    const recoveredCommit = await gitOutput(recovered.candidate.localPath, [
+      'rev-parse',
+      'HEAD',
+    ]);
+    await expect(
+      safePushAutopilotOwner(
+        {
+          id: recovered.watchId,
+          repoId: 'neondeck',
+          repoFullName: 'pandemicsyn/neondeck',
+          prNumber: 129,
+          worktreeId: recovered.candidate.id,
+        },
+        paths,
+        {
+          token: 'test-token',
+          fetchFacts: vi.fn(async () =>
+            prEventFacts(recoveredCommit, 129),
+          ) as never,
+          pushGit: pushGit as never,
+        },
+      ),
+    ).resolves.toMatchObject({ ok: true, changed: false, recovered: true });
+    expect(pushGit).not.toHaveBeenCalled();
+    expect(readWorktreeRecord(recovered.candidate.id, paths)).toMatchObject({
+      lastPushedSha: recoveredCommit,
+      lifecycleStatus: 'succeeded',
+    });
 
     const stale = await setupCandidate(127, 'stale-head-owner');
     await expect(
@@ -2057,6 +2402,15 @@ function toolOutput<T>(
 
 async function toolOutputPromise(value: unknown) {
   return toolOutput((await value) as never);
+}
+
+function durableToolContext<T>(data: T) {
+  return {
+    data,
+    step: {
+      do: async (_name: string, run: () => unknown) => run(),
+    },
+  } as never;
 }
 
 function ownerPromptSuccess(instanceId: string, dispatchId = 'safe-dispatch') {

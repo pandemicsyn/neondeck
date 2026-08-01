@@ -26,12 +26,14 @@ import { readManagedWorktree } from '../worktrees';
 import {
   clearPendingAutopilotTurnIfMatches,
   recordPendingAutopilotTurnCorrelationId,
+  recordPendingAutopilotTurnError,
   registerPendingAutopilotTurn,
 } from './owner/pending';
 import {
   dispatchAutopilotOwnerMessage,
   type AutopilotOwnerDispatcher,
 } from './owner/dispatch';
+import { watchAutopilotOwnerSettlement } from './owner/settlement';
 
 const nonEmptyString = v.pipe(v.string(), v.minLength(1));
 
@@ -438,21 +440,31 @@ async function dispatchPrAutopilotOwnerTurn(
       `Watch "${watch.id}" changed before the human turn could be claimed.`,
     );
   }
-  const pendingTurn = registerPendingAutopilotTurn(
-    paths.home,
-    watch.ownerInstanceId,
-    undefined,
-    watch.autopilotMode,
-    'direct-human',
-    approvedRevisionKey,
-  );
-  let receipt;
+  let pendingTurn: ReturnType<typeof registerPendingAutopilotTurn>;
   try {
-    receipt = await dispatchOwner({
-      agent: 'pr-autopilot-owner',
-      id: watch.ownerInstanceId,
-      input: input.message,
+    pendingTurn = registerPendingAutopilotTurn(
+      paths.home,
+      watch.ownerInstanceId,
+      undefined,
+      watch.autopilotMode,
+      'direct-human',
+      approvedRevisionKey,
+      { messageBody: input.message, watchId: watch.id },
+    );
+  } catch (error) {
+    transitionWatchAutopilot(paths, watch.id, {
+      from: 'working',
+      to: 'waiting',
     });
+    return failure(
+      action,
+      `The human owner turn could not be reserved: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+  try {
+    const { buildPrAutopilotOwnerRuntime } =
+      await import('../../agents/pr-autopilot-owner');
+    await buildPrAutopilotOwnerRuntime(watch.ownerInstanceId, paths);
   } catch (error) {
     clearPendingAutopilotTurnIfMatches(
       paths.home,
@@ -465,7 +477,27 @@ async function dispatchPrAutopilotOwnerTurn(
     });
     return failure(
       action,
-      `The human owner turn could not be dispatched: ${error instanceof Error ? error.message : String(error)}`,
+      `The human owner turn could not be prepared: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+  let receipt;
+  try {
+    receipt = await dispatchOwner({
+      agent: 'pr-autopilot-owner',
+      id: watch.ownerInstanceId,
+      input: input.message,
+      idempotencyKey: pendingTurn.turnId,
+    });
+  } catch (error) {
+    recordPendingAutopilotTurnError(
+      paths.home,
+      watch.ownerInstanceId,
+      pendingTurn.turnId,
+      error instanceof Error ? error.message : String(error),
+    );
+    return failure(
+      action,
+      `The human owner admission outcome is uncertain. Its durable reservation remains claimed and will retry with the same idempotency key: ${error instanceof Error ? error.message : String(error)}`,
     );
   }
   recordPendingAutopilotTurnCorrelationId(
@@ -474,6 +506,15 @@ async function dispatchPrAutopilotOwnerTurn(
     pendingTurn.turnId,
     receipt.submissionId,
   );
+  if (dispatchOwner === dispatchAutopilotOwnerMessage) {
+    void watchAutopilotOwnerSettlement(
+      watch.ownerInstanceId,
+      receipt.submissionId,
+      paths,
+      undefined,
+      pendingTurn.turnId,
+    );
+  }
   return {
     ok: true,
     action,

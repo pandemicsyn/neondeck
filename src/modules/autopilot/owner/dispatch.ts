@@ -1,5 +1,6 @@
-import { dispatch, type DispatchReceipt } from '@flue/runtime';
+import { dispatch, init, type DispatchReceipt } from '@flue/runtime';
 import {
+  autopilotOwnerInitialData,
   serializeAutopilotOwnerEnvelope,
   type AutopilotOwnerEnvelope,
 } from './envelope';
@@ -8,6 +9,7 @@ export type AutopilotOwnerDispatcher = (request: {
   agent: 'pr-autopilot-owner';
   id: string;
   input: string;
+  idempotencyKey?: string;
 }) => Promise<DispatchReceipt>;
 
 /**
@@ -18,6 +20,7 @@ export type AutopilotOwnerDispatcher = (request: {
 export function dispatchAutopilotOwnerTurn(input: {
   instanceId: string;
   envelope: AutopilotOwnerEnvelope;
+  idempotencyKey?: string;
   dispatchOwner?: AutopilotOwnerDispatcher;
 }) {
   const instanceId = input.instanceId.trim();
@@ -31,6 +34,8 @@ export function dispatchAutopilotOwnerTurn(input: {
   }
   return dispatchOwnerAgent({
     id: instanceId,
+    initialData: autopilotOwnerInitialData(input.envelope),
+    idempotencyKey: input.idempotencyKey,
     message: {
       kind: 'signal',
       type: 'neondeck.autopilot.watch-event',
@@ -52,15 +57,29 @@ export async function dispatchAutopilotOwnerMessage(request: {
   agent: 'pr-autopilot-owner';
   id: string;
   input: string;
+  idempotencyKey?: string;
 }) {
-  return dispatchOwnerAgent({ id: request.id, message: request.input });
+  return dispatchOwnerAgent({
+    id: request.id,
+    message: request.input,
+    idempotencyKey: request.idempotencyKey,
+  });
 }
 
 async function dispatchOwnerAgent(request: {
   id: string;
+  initialData?: ReturnType<typeof autopilotOwnerInitialData>;
+  idempotencyKey?: string;
   message: Parameters<typeof dispatch>[1]['message'];
 }) {
   const { PrAutopilotOwner } =
     await import('../../../agents/pr-autopilot-owner');
-  return dispatch(PrAutopilotOwner, request);
+  const handle = init(PrAutopilotOwner, { id: request.id });
+  return handle.dispatch({
+    message: request.message,
+    ...(request.initialData ? { initialData: request.initialData } : {}),
+    ...(request.idempotencyKey
+      ? { idempotencyKey: request.idempotencyKey }
+      : {}),
+  });
 }

@@ -5,13 +5,17 @@ import { mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import {
   type AgentProps,
+  useAgentFinish,
   useAgentStart,
+  useDelivery,
+  useInitialData,
   useModel,
   usePersistentState,
   useSandbox,
   useTool,
 } from '@flue/runtime';
 import type { MiddlewareHandler } from 'hono';
+import * as v from 'valibot';
 import { readAgentModelSelectionSync } from '../modules/runtime';
 import {
   prAutopilotOwnerCompaction,
@@ -36,8 +40,15 @@ import {
   clearPendingAutopilotTurnIfMatches,
   readPendingAutopilotTurn,
   recordPendingAutopilotTurnLearningMemoryContext,
+  recordPendingAutopilotTurnPreparedContext,
   registerPendingAutopilotTurn,
+  type PreparedAutopilotOwnerContext,
 } from '../modules/autopilot/owner/pending';
+import {
+  autopilotOwnerInitialDataSchema,
+  parseAutopilotOwnerEnvelope,
+  type AutopilotOwnerInitialData,
+} from '../modules/autopilot/owner/envelope';
 import { boundedLocal } from '../sandboxes/local';
 import { loadAutomationLearningMemoryContext } from '../modules/learning';
 
@@ -64,6 +75,47 @@ export const route: MiddlewareHandler = async (context, next) => {
     watch?.autopilotMode === 'autofix-with-approval' &&
     watch.autopilotStatus === 'waiting'
   ) {
+    const requestPayload = (await context.req.raw
+      .clone()
+      .json()
+      .catch(() => null)) as {
+      body?: unknown;
+      idempotencyKey?: unknown;
+      message?: { body?: unknown };
+    } | null;
+    if (!requestPayload) {
+      return context.json(
+        { ok: false, error: 'A valid JSON owner message is required.' },
+        400,
+      );
+    }
+    const messageBody =
+      typeof requestPayload.body === 'string'
+        ? requestPayload.body
+        : typeof requestPayload.message?.body === 'string'
+          ? requestPayload.message.body
+          : null;
+    if (!messageBody) {
+      return context.json(
+        { ok: false, error: 'A direct-human owner message is required.' },
+        400,
+      );
+    }
+    const idempotencyKey =
+      typeof requestPayload.idempotencyKey === 'string' &&
+      requestPayload.idempotencyKey.trim()
+        ? requestPayload.idempotencyKey
+        : null;
+    if (!idempotencyKey) {
+      return context.json(
+        {
+          ok: false,
+          error:
+            'Direct owner messages require an idempotencyKey. Use the typed Neondeck owner-message action or a keyed Flue client send.',
+        },
+        400,
+      );
+    }
     const claimed = transitionWatchAutopilot(paths, watch.id, {
       from: 'waiting',
       to: 'working',
@@ -74,15 +126,47 @@ export const route: MiddlewareHandler = async (context, next) => {
         409,
       );
     }
-    const pendingTurn = registerPendingAutopilotTurn(
-      paths.home,
-      watch.ownerInstanceId,
-      undefined,
-      watch.autopilotMode,
-      'direct-human',
-    );
+    let pendingTurn: ReturnType<typeof registerPendingAutopilotTurn>;
     try {
-      return await next();
+      pendingTurn = registerPendingAutopilotTurn(
+        paths.home,
+        watch.ownerInstanceId,
+        undefined,
+        watch.autopilotMode,
+        'direct-human',
+        undefined,
+        { idempotencyKey, messageBody, watchId: watch.id },
+      );
+    } catch (error) {
+      transitionWatchAutopilot(paths, watch.id, {
+        from: 'working',
+        to: 'waiting',
+      });
+      throw error;
+    }
+    if (pendingTurn.status === 'settled') {
+      await next();
+      transitionWatchAutopilot(paths, watch.id, {
+        from: 'working',
+        to: 'waiting',
+      });
+      return;
+    }
+    try {
+      await buildPrAutopilotOwnerRuntime(watch.ownerInstanceId, paths);
+      await next();
+      if (context.res.status >= 400) {
+        clearPendingAutopilotTurnIfMatches(
+          paths.home,
+          watch.ownerInstanceId,
+          pendingTurn.turnId,
+        );
+        transitionWatchAutopilot(paths, watch.id, {
+          from: 'working',
+          to: 'waiting',
+        });
+      }
+      return;
     } catch (error) {
       clearPendingAutopilotTurnIfMatches(
         paths.home,
@@ -109,10 +193,19 @@ export const route: MiddlewareHandler = async (context, next) => {
 export async function buildPrAutopilotOwnerRuntime(
   id: string,
   paths = runtimePaths(),
-) {
+): Promise<AutopilotOwnerRuntime> {
   const model = readAgentModelSelectionSync(paths);
   const watch = readWatchByOwnerInstanceId(paths, id);
   const pending = readPendingAutopilotTurn(paths.home, id);
+  if (pending?.prepared) {
+    const registry = buildAutopilotOwnerToolRegistry({
+      watch: pending.prepared.watch,
+      source: pending.source,
+      paths,
+      capabilities: pending.prepared.capabilities,
+    });
+    return runtimeFromPrepared(pending.prepared, registry.tools);
+  }
   const source = pending?.source ?? 'watch-event';
   const turnWatch =
     watch && pending
@@ -194,89 +287,212 @@ export async function buildPrAutopilotOwnerRuntime(
           learningMemoryContext.text,
         ].join('\n')
       : ownerInstructions;
-  return {
-    model: model.displayAssistant,
-    thinkingLevel: model.displayAssistantThinkingLevel,
-    ...(workspaceContext
-      ? {
-          sandbox: boundedLocal({
-            cwd: workspaceContext.path,
-            env: ownerWorkspaceEnvironment(workspaceContext.home),
-          }),
-          cwd: workspaceContext.path,
-        }
-      : { cwd: '/workspace' }),
-    compaction: prAutopilotOwnerCompaction,
-    durability: prAutopilotOwnerDurability,
-    instructions,
-    workspaceContext,
-    tools: registry.tools,
-    actions: [],
-    subagents: [],
-  };
+  const prepared: PreparedAutopilotOwnerContext | null = turnWatch
+    ? {
+        schema: 'neondeck.autopilot-owner-prepared.v1',
+        model: model.displayAssistant,
+        thinkingLevel: model.displayAssistantThinkingLevel,
+        instructions,
+        workspaceContext,
+        capabilities: registry.capabilities,
+        watch: turnWatch,
+      }
+    : null;
+  if (pending && prepared) {
+    recordPendingAutopilotTurnPreparedContext(
+      paths.home,
+      id,
+      pending.turnId,
+      prepared,
+    );
+  }
+  return prepared
+    ? runtimeFromPrepared(prepared, registry.tools)
+    : {
+        model: model.displayAssistant,
+        thinkingLevel: model.displayAssistantThinkingLevel,
+        ...(workspaceContext
+          ? {
+              sandbox: boundedLocal({
+                cwd: workspaceContext.path,
+                env: ownerWorkspaceEnvironment(workspaceContext.home),
+              }),
+              cwd: workspaceContext.path,
+            }
+          : { cwd: '/workspace' }),
+        compaction: prAutopilotOwnerCompaction,
+        durability: prAutopilotOwnerDurability,
+        instructions,
+        workspaceContext,
+        tools: registry.tools,
+        actions: [],
+        subagents: [],
+      };
 }
 
-type PreparedOwnerContext = {
-  instructions: string;
-  workspaceContext: { path: string; home: string } | null;
-};
+type PreparedOwnerState = Pick<
+  PreparedAutopilotOwnerContext,
+  'instructions' | 'workspaceContext'
+> & { turnId: string };
 
 export function PrAutopilotOwner({ id }: AgentProps) {
   const paths = runtimePaths();
-  const models = readAgentModelSelectionSync(paths);
-  const watch = readWatchByOwnerInstanceId(paths, id);
+  const initialData = useInitialData<AutopilotOwnerInitialData>();
+  const delivery = useDelivery();
   const pending = readPendingAutopilotTurn(paths.home, id);
-  const source = pending?.source ?? 'watch-event';
-  const turnWatch =
-    watch && pending
-      ? {
-          ...watch,
-          autopilotMode: pending.mode,
-          autopilotStatus:
-            source === 'direct-human'
-              ? ('waiting' as const)
-              : watch.autopilotStatus,
-        }
-      : watch;
-  const registry = turnWatch
-    ? buildAutopilotOwnerToolRegistry({ watch: turnWatch, source, paths })
-    : { capabilities: [], tools: [] };
-  const [prepared, setPrepared] =
-    usePersistentState<PreparedOwnerContext | null>(
-      'prepared-owner-context',
-      null,
-    );
+  const fallbackModels = readAgentModelSelectionSync(paths);
+  const preparedTurn = pending?.prepared;
+  const registry =
+    preparedTurn && pending
+      ? buildAutopilotOwnerToolRegistry({
+          watch: preparedTurn.watch,
+          source: pending.source,
+          paths,
+          capabilities: preparedTurn.capabilities,
+        })
+      : { capabilities: [], tools: [] };
+  const [prepared, setPrepared] = usePersistentState<PreparedOwnerState | null>(
+    'prepared-owner-context',
+    null,
+  );
+  const [finishPromptedTurnId, setFinishPromptedTurnId] = usePersistentState<
+    string | null
+  >('finish-prompted-turn-id', null);
 
-  useModel(models.displayAssistant, {
-    thinkingLevel: models.displayAssistantThinkingLevel,
+  useModel(preparedTurn?.model ?? fallbackModels.displayAssistant, {
+    thinkingLevel:
+      preparedTurn?.thinkingLevel ??
+      fallbackModels.displayAssistantThinkingLevel,
     compaction: prAutopilotOwnerCompaction,
   });
   useAgentStart(async () => {
+    assertOwnerDelivery(initialData, delivery, pending);
     const runtime = await buildPrAutopilotOwnerRuntime(id, paths);
     setPrepared({
       instructions: runtime.instructions,
       workspaceContext: runtime.workspaceContext,
+      turnId: pending?.turnId ?? 'missing',
     });
   });
-  if (prepared?.workspaceContext) {
+  const activeWorkspace = preparedTurn?.workspaceContext;
+  if (activeWorkspace) {
     useSandbox(
       boundedLocal({
-        cwd: prepared.workspaceContext.path,
-        env: ownerWorkspaceEnvironment(prepared.workspaceContext.home),
+        cwd: activeWorkspace.path,
+        env: ownerWorkspaceEnvironment(activeWorkspace.home),
       }),
-      { cwd: prepared.workspaceContext.path },
+      { cwd: activeWorkspace.path },
     );
   }
   for (const tool of registry.tools) useTool(tool);
+  useAgentFinish(({ append, response }) => {
+    if (!pending || prepared?.turnId !== pending.turnId) {
+      throw new Error(
+        'Autopilot owner authority was not prepared for this turn.',
+      );
+    }
+    if (
+      pending.source === 'watch-event' &&
+      pending.mode !== 'notify-only' &&
+      registry.capabilities.includes('commit') &&
+      response.toolCalls.length === 0 &&
+      finishPromptedTurnId !== pending.turnId
+    ) {
+      setFinishPromptedTurnId(pending.turnId);
+      append({
+        kind: 'signal',
+        type: 'neondeck.autopilot.completion-required',
+        body: 'Inspect the bounded workspace and complete the requested owner turn. Use the available commit or delivery tools when a change is required; otherwise explicitly explain why no repository mutation is appropriate.',
+      });
+    }
+  });
 
   return (
+    preparedTurn?.instructions ??
     prepared?.instructions ??
     'Prepare the bounded Autopilot owner context before acting. Do not inspect or mutate a workspace until the validated workspace environment is attached.'
   );
 }
 
 PrAutopilotOwner.agentName = 'pr-autopilot-owner';
+PrAutopilotOwner.initialData = autopilotOwnerInitialDataSchema;
 PrAutopilotOwner.durability = prAutopilotOwnerDurability;
+
+function runtimeFromPrepared(
+  prepared: PreparedAutopilotOwnerContext,
+  tools: ReturnType<typeof buildAutopilotOwnerToolRegistry>['tools'],
+): AutopilotOwnerRuntime {
+  return {
+    model: prepared.model,
+    thinkingLevel: prepared.thinkingLevel,
+    ...(prepared.workspaceContext
+      ? {
+          sandbox: boundedLocal({
+            cwd: prepared.workspaceContext.path,
+            env: ownerWorkspaceEnvironment(prepared.workspaceContext.home),
+          }),
+          cwd: prepared.workspaceContext.path,
+        }
+      : { cwd: '/workspace' }),
+    compaction: prAutopilotOwnerCompaction,
+    durability: prAutopilotOwnerDurability,
+    instructions: prepared.instructions,
+    workspaceContext: prepared.workspaceContext,
+    tools,
+    actions: [],
+    subagents: [],
+  };
+}
+
+type AutopilotOwnerRuntime = {
+  model: string;
+  thinkingLevel: PreparedAutopilotOwnerContext['thinkingLevel'];
+  sandbox?: ReturnType<typeof boundedLocal>;
+  cwd: string;
+  compaction: typeof prAutopilotOwnerCompaction;
+  durability: typeof prAutopilotOwnerDurability;
+  instructions: string;
+  workspaceContext: PreparedAutopilotOwnerContext['workspaceContext'];
+  tools: ReturnType<typeof buildAutopilotOwnerToolRegistry>['tools'];
+  actions: never[];
+  subagents: never[];
+};
+
+function assertOwnerDelivery(
+  initialData: AutopilotOwnerInitialData,
+  delivery: ReturnType<typeof useDelivery>,
+  pending: ReturnType<typeof readPendingAutopilotTurn>,
+) {
+  const validated = v.parse(autopilotOwnerInitialDataSchema, initialData);
+  if (!pending || pending.watchId !== validated.watchId) {
+    throw new Error('Autopilot owner delivery has no matching durable turn.');
+  }
+  if (pending.source === 'watch-event') {
+    if (delivery.kind !== 'signal') {
+      throw new Error('Autopilot watch authority requires a trusted signal.');
+    }
+    const envelope = parseAutopilotOwnerEnvelope(delivery.body);
+    if (
+      envelope.watchId !== validated.watchId ||
+      envelope.repoId !== validated.repoId ||
+      envelope.repoFullName !== validated.repoFullName ||
+      envelope.prNumber !== validated.prNumber ||
+      envelope.eventFingerprint !== pending.eventFingerprint ||
+      JSON.stringify(envelope) !== JSON.stringify(pending.envelope)
+    ) {
+      throw new Error(
+        'Autopilot owner signal does not match its reserved turn.',
+      );
+    }
+  } else if (
+    delivery.kind !== 'user' ||
+    delivery.body !== pending.messageBody
+  ) {
+    throw new Error(
+      'Direct-human owner delivery does not match its reservation.',
+    );
+  }
+}
 
 async function prepareOwnerWorkspaceHome(
   paths: RuntimePaths,

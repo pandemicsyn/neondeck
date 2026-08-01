@@ -925,15 +925,46 @@ Exit criteria:
 
 ### Phase 9: Autopilot
 
-- [ ] Add immutable owner creation data and trusted event signals.
-- [ ] Port conditional workspace and delivery Tools.
-- [ ] Port lazy bounded local sandbox.
-- [ ] Port/strengthen idempotent comment and push recovery.
-- [ ] Migrate settlement to submission events.
-- [ ] Add finish enforcement if it improves terminal reliability.
-- [ ] Replace or narrow startup interrupted-owner recovery.
-- [ ] Run crash tests at model, edit, commit, push, response, and settlement
+- [x] Add immutable owner creation data and trusted event signals.
+- [x] Port conditional workspace and delivery Tools.
+- [x] Port lazy bounded local sandbox.
+- [x] Port/strengthen idempotent comment and push recovery.
+- [x] Migrate settlement to submission events.
+- [x] Add finish enforcement if it improves terminal reliability.
+- [x] Replace or narrow startup interrupted-owner recovery.
+- [x] Run crash tests at model, edit, commit, push, response, and settlement
       boundaries.
+
+Implementation evidence:
+
+- the stable owner instance now has validated immutable watch creation data;
+  each watcher turn arrives as an exact trusted signal and every direct-human
+  delivery is bound to a durable keyed reservation
+- a transactional SQLite owner-turn ledger freezes model, instructions,
+  learning-memory context, workspace binding, source, mode, and capability
+  ceiling before Flue admission; a partial unique index enforces one active
+  turn per owner across processes
+- conditional Tools and lazy bounded-sandbox declarations derive from the
+  frozen turn snapshot, while execution-time authority checks still fail
+  closed against current watch, worktree, GitHub, and revision state
+- commit, discard, push, and response Tools are durable; comment calls retain
+  stable application idempotency keys and safe-push recovery recognizes the
+  exact already-delivered commit before recording success without re-pushing
+- accepted submissions settle from `submission_settled` observations and a
+  reattachable canonical `read(submissionId)` watcher; receipt races attach to
+  the reserved turn and interrupted app-side settlement claims are reclaimed
+- startup and scheduler recovery replay only reserved turns with the same Flue
+  idempotency key, reattach admitted work, and block only orphaned legacy
+  `working` watches instead of blanket-blocking every in-flight owner
+- finish enforcement gives a no-tool watcher response one durable corrective
+  continuation, then permits a grounded no-change result without looping
+- 30 focused tests across the owner, watch loop, safe delivery, settlement,
+  crash replay, and scheduler recovery surfaces pass with database migration
+  checks, filtered Phase 9 TypeScript, formatting, lint, and static sub-agent
+  review
+- Flue `reference/agent-api`, `reference/agent-hooks-api`, `guide/durability`,
+  and `reference/streaming-protocol` informed creation data, delivery cursors,
+  lifecycle seams, keyed admission, durable Tool, and recovery design
 
 Exit criteria:
 

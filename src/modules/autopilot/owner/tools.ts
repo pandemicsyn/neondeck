@@ -48,16 +48,19 @@ export function buildAutopilotOwnerToolRegistry(input: {
   pushInteractive?: typeof pushInteractiveRepo;
   readWorktree?: typeof readManagedWorktree;
   currentSha?: typeof gitCurrentSha;
+  capabilities?: string[];
 }) {
   const { watch, source, paths } = input;
   if (!watch.worktreeId) return { capabilities: [], tools: [] };
   const worktreeId = watch.worktreeId;
   const sessionId = watch.ownerInstanceId ?? undefined;
-  const capabilities = autopilotOwnerCapabilitySet({
-    mode: watch.autopilotMode,
-    source,
-    status: watch.autopilotStatus,
-  });
+  const capabilities = input.capabilities
+    ? [...input.capabilities]
+    : autopilotOwnerCapabilitySet({
+        mode: watch.autopilotMode,
+        source,
+        status: watch.autopilotStatus,
+      });
   const enabled = new Set(capabilities);
   const tools: ToolDefinition[] = [];
 
@@ -69,16 +72,19 @@ export function buildAutopilotOwnerToolRegistry(input: {
           description:
             'Discard the held prepared commit only when the human explicitly asks to discard it.',
           input: v.object({ confirm: v.literal(true) }),
-          async run() {
+          durable: true,
+          async run({ step }) {
             return {
-              output: await syncWorktree(
-                {
-                  worktreeId,
-                  headSha: watch.lastSnapshot?.headSha,
-                  headRef: watch.lastSnapshot?.headSha,
-                  force: true,
-                },
-                paths,
+              output: await step.do('discard-prepared-commit', () =>
+                syncWorktree(
+                  {
+                    worktreeId,
+                    headSha: watch.lastSnapshot?.headSha,
+                    headRef: watch.lastSnapshot?.headSha,
+                    force: true,
+                  },
+                  paths,
+                ),
               ),
             };
           },
@@ -96,16 +102,19 @@ export function buildAutopilotOwnerToolRegistry(input: {
           message: v.string(),
           paths: v.optional(v.array(v.string())),
         }),
-        async run({ data: toolInput }) {
+        durable: true,
+        async run({ data: toolInput, step }) {
           return {
-            output: await commitInteractiveRepo(
-              {
-                ...toolInput,
-                repoId: watch.repoId,
-                worktreeId,
-                sessionId,
-              },
-              paths,
+            output: await step.do('commit-workspace', () =>
+              commitInteractiveRepo(
+                {
+                  ...toolInput,
+                  repoId: watch.repoId,
+                  worktreeId,
+                  sessionId,
+                },
+                paths,
+              ),
             ),
           };
         },
@@ -131,12 +140,12 @@ export function buildAutopilotOwnerToolRegistry(input: {
                 acknowledgeExpansion: v.optional(v.boolean()),
                 confirmationToken: v.optional(v.string()),
               }),
-        async run({ data: toolInput }) {
+        durable: true,
+        async run({ data: toolInput, step }) {
           if (source === 'watch-event') {
             return {
-              output: await safePushAutopilotOwner(
-                { ...watch, worktreeId },
-                paths,
+              output: await step.do('safe-push-current-commit', () =>
+                safePushAutopilotOwner({ ...watch, worktreeId }, paths),
               ),
             };
           }
@@ -144,19 +153,21 @@ export function buildAutopilotOwnerToolRegistry(input: {
             return { output: await staleDirectHumanAuthority() };
           }
           return {
-            output: await (input.pushInteractive ?? pushInteractiveRepo)(
-              {
-                sessionId,
-                repoId: watch.repoId,
-                worktreeId,
-                prNumber: watch.prNumber,
-                ...toolInput,
-              },
-              paths,
-              {
-                authorizePush: () =>
-                  directHumanPushAuthorityCurrent(watch, worktreeId, paths),
-              },
+            output: await step.do('push-approved-commit', () =>
+              (input.pushInteractive ?? pushInteractiveRepo)(
+                {
+                  sessionId,
+                  repoId: watch.repoId,
+                  worktreeId,
+                  prNumber: watch.prNumber,
+                  ...toolInput,
+                },
+                paths,
+                {
+                  authorizePush: () =>
+                    directHumanPushAuthorityCurrent(watch, worktreeId, paths),
+                },
+              ),
             ),
           };
         },
@@ -171,7 +182,8 @@ export function buildAutopilotOwnerToolRegistry(input: {
         description:
           'Post a concise response to this PR after grounded work has completed.',
         input: v.object({ body: v.string() }),
-        async run({ data: toolInput }) {
+        durable: true,
+        async run({ data: toolInput, step }) {
           if (source === 'watch-event') {
             if (!autonomousResponseAuthorityCurrent(watch, paths)) {
               return { output: await staleAutonomousResponseAuthority() };
@@ -210,25 +222,27 @@ export function buildAutopilotOwnerToolRegistry(input: {
               ? `human-turn:${turnFingerprint.turnId}`
               : `watch-event:${turnFingerprint?.eventFingerprint ?? watch.lastEventFingerprint ?? 'current'}`;
           return {
-            output: await (input.postPrComment ?? postGitHubPrComment)(
-              {
-                watchId: watch.id,
-                body: toolInput.body,
-                idempotencyKey: `autopilot-owner:${watch.id}:${responseIdentity}`,
-              },
-              paths,
-              {
-                authorizeComment: () => {
-                  if (source === 'watch-event') {
-                    return autonomousResponseAuthorityCurrent(watch, paths)
-                      ? undefined
-                      : staleAutonomousResponseAuthority();
-                  }
-                  return directHumanAuthorityCurrent(watch, paths)
-                    ? undefined
-                    : staleDirectHumanAuthority();
+            output: await step.do('post-grounded-pr-response', () =>
+              (input.postPrComment ?? postGitHubPrComment)(
+                {
+                  watchId: watch.id,
+                  body: toolInput.body,
+                  idempotencyKey: `autopilot-owner:${watch.id}:${responseIdentity}`,
                 },
-              },
+                paths,
+                {
+                  authorizeComment: () => {
+                    if (source === 'watch-event') {
+                      return autonomousResponseAuthorityCurrent(watch, paths)
+                        ? undefined
+                        : staleAutonomousResponseAuthority();
+                    }
+                    return directHumanAuthorityCurrent(watch, paths)
+                      ? undefined
+                      : staleDirectHumanAuthority();
+                  },
+                },
+              ),
             ),
           };
         },
