@@ -6,6 +6,7 @@ import { ChatTimelineItems } from '../flue-chat/components/chat-timeline';
 import { chatMessagesForRender } from '../flue-chat/lib/messages';
 import { sessionTimelineItems } from '../flue-chat/lib/timeline';
 import { useChatAutoScroll } from '../flue-chat/lib/use-chat-auto-scroll';
+import { createNeondeckConversationClient } from '../../lib/flue';
 
 export function PrReviewReviewerChat({
   review,
@@ -47,7 +48,11 @@ function ReviewerConversation({
   agentId: string;
   onReconnect: () => void;
 }) {
-  const agent = useFlueAgent({ name: 'pr-reviewer', id: agentId });
+  const conversationClient = useMemo(
+    () => createNeondeckConversationClient('pr-reviewer', agentId),
+    [agentId],
+  );
+  const agent = useFlueAgent({ client: conversationClient });
   const [input, setInput] = useState('');
   const [sendError, setSendError] = useState<string | null>(null);
   const [sending, setSending] = useState(false);

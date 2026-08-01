@@ -1,7 +1,7 @@
 // The multiline composer intentionally implements the WAI-ARIA combobox
 // pattern; replacing it with a single-line input would remove message editing.
 /* oxlint-disable jsx-a11y/prefer-tag-over-role */
-import { useFlueAgent, useFlueClient } from '@flue/react';
+import { useFlueAgent } from '@flue/react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   useEffect,
@@ -23,9 +23,11 @@ import {
   getChatSessionActivity,
   getChatSessionCommandEvents,
   getNeonCommands,
+  neonCommandRunId,
   openChatSessionCommandEventStream,
   openChatSessionEventStream,
   runBriefing,
+  runNeonCommand,
   updateChatSessionCommandEvent,
 } from '../../../api';
 import {
@@ -36,6 +38,7 @@ import {
   Textarea,
 } from '../../../components/ui';
 import { useDashboardEventConnectionState } from '../../../lib/dashboard-connection';
+import { createNeondeckConversationClient } from '../../../lib/flue';
 import { queryKeys } from '../../../lib/query';
 import { CommandResultSummary, CommandTypeahead } from './command-controls';
 import { ChatTimelineItems } from './chat-timeline';
@@ -96,11 +99,15 @@ export function FlueChatSessionView({
   const commandSubmitLockRef = useRef(false);
   const commandTypeaheadId = useId();
   const queryClient = useQueryClient();
-  const flue = useFlueClient();
-  const agent = useFlueAgent({
-    name: agentName,
-    id: session?.id,
-  });
+  const conversationClient = useMemo(
+    () =>
+      session?.id
+        ? createNeondeckConversationClient(agentName, session.id)
+        : undefined,
+    [agentName, session?.id],
+  );
+  const agent = useFlueAgent({ client: conversationClient });
+  const refreshAgent = agent.refresh;
   const messages = useMemo(
     () => chatMessagesForRender(agent.messages),
     [agent.messages],
@@ -185,6 +192,7 @@ export function FlueChatSessionView({
     };
     const refreshSessionQueries = () => {
       refreshCommandEvents();
+      refreshAgent();
       void queryClient.invalidateQueries({
         queryKey: queryKeys.chatSessionActivity(session.id, linkedWatchId),
       });
@@ -193,13 +201,13 @@ export function FlueChatSessionView({
       if (event.session.id === session.id) refreshSessionQueries();
     });
     const closeCommandEvents = openChatSessionCommandEventStream((event) => {
-      if (event.sessionId === session.id) refreshCommandEvents();
+      if (event.sessionId === session.id) refreshSessionQueries();
     });
     return () => {
       closeCommandEvents();
       closeSessionEvents();
     };
-  }, [linkedWatchId, queryClient, session?.id]);
+  }, [linkedWatchId, queryClient, refreshAgent, session?.id]);
 
   useEffect(() => {
     if (!referenceDraft) return;
@@ -263,6 +271,7 @@ export function FlueChatSessionView({
               reason: 'dashboard-briefing-workflow-admitted',
             });
           }
+          refreshAgent();
           setInput('');
           return;
         }
@@ -410,18 +419,12 @@ export function FlueChatSessionView({
   async function runCommand(command: string) {
     setRunningCommand(command);
     try {
-      const run = await flue.workflows.invoke('command-run', {
-        input: {
-          command,
-          ...(session?.id ? { sessionId: session.id } : {}),
-          surface: 'dashboard',
-        },
-        wait: 'result',
+      const result = await runNeonCommand({
+        command,
+        ...(session?.id ? { sessionId: session.id } : {}),
+        surface: 'dashboard',
       });
-      return {
-        ...(run.result as NeonCommandResult),
-        flueRunId: run.runId,
-      };
+      return { ...result, flueRunId: neonCommandRunId(result) };
     } finally {
       setRunningCommand(undefined);
     }

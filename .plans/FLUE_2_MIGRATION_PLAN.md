@@ -763,12 +763,28 @@ Exit criteria:
 
 ### Phase 4: Display Chat And Client
 
-- [ ] Implement stable display-session context snapshot state.
-- [ ] Convert display chat to conversation URL clients.
-- [ ] Remove root `FlueProvider` and `useFlueClient()`.
-- [ ] Preserve authenticated fetch behavior.
-- [ ] Convert message rendering for data parts and metadata.
-- [ ] Route slash-command execution through the Hono API/service surface.
+- [x] Implement stable display-session context snapshot state.
+- [x] Convert display chat to conversation URL clients.
+- [x] Remove root `FlueProvider` and `useFlueClient()`.
+- [x] Preserve authenticated fetch behavior.
+- [x] Convert message rendering for data parts and metadata.
+- [x] Route slash-command execution through the Hono API/service surface.
+
+Implementation evidence captured on 2026-08-01:
+
+- display, PR-reviewer, and Autopilot-owner chats use memoized Flue 2 clients
+  addressed to one explicit conversation URL
+- the conversation client resolves the current local API token for every
+  request and reconnect
+- hidden dispatches and diagnostic advisories stay out of the visible chat
+  lane; `data-*` and dynamic-tool error payloads remain inspectable
+- out-of-band briefing creation refreshes observation immediately and again
+  from session/command events
+- dashboard commands use the authenticated Neondeck Hono service surface;
+  no browser code uses the removed deployment client or workflow invocation
+  API
+- the web TypeScript project, 36 focused chat/reviewer/owner tests, and the
+  production web build pass
 
 Exit criteria:
 

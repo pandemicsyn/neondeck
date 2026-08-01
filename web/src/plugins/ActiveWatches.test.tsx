@@ -8,8 +8,9 @@ import type { PrWatch } from '../api';
 import { activePrWatches, WatchRow } from './ActiveWatches';
 
 const flue = vi.hoisted(() => ({
+  client: { url: 'test:owner' },
   sendMessage: vi.fn<(message: string) => Promise<void>>(async () => undefined),
-  useFlueAgent: vi.fn<(input: { name: string; id?: string }) => void>(),
+  useFlueAgent: vi.fn<(input: unknown) => void>(),
 }));
 const api = vi.hoisted(() => ({
   approvePrAutopilotChange: vi.fn<
@@ -70,7 +71,7 @@ vi.mock('../features/diff-viewer/surfaces', () => ({
 }));
 
 vi.mock('@flue/react', () => ({
-  useFlueAgent: (input: { name: string; id?: string }) => {
+  useFlueAgent: (input: unknown) => {
     flue.useFlueAgent(input);
     return {
       error: undefined,
@@ -79,6 +80,8 @@ vi.mock('@flue/react', () => ({
         {
           id: 'owner-history-1',
           role: 'assistant',
+          purpose: 'assistant',
+          display: 'visible',
           parts: [
             { type: 'text', state: 'done', text: 'Held change is ready.' },
           ],
@@ -88,11 +91,10 @@ vi.mock('@flue/react', () => ({
       status: 'idle',
     };
   },
-  useFlueClient: () => ({
-    workflows: {
-      invoke: vi.fn<(...args: unknown[]) => Promise<unknown>>(),
-    },
-  }),
+}));
+
+vi.mock('../lib/flue', () => ({
+  createNeondeckConversationClient: () => flue.client,
 }));
 
 describe('ActiveWatches owner conversation', () => {
@@ -157,8 +159,7 @@ describe('ActiveWatches owner conversation', () => {
     );
 
     expect(flue.useFlueAgent).toHaveBeenCalledWith({
-      name: 'pr-autopilot-owner',
-      id: 'pr-owner-exact-172',
+      client: flue.client,
     });
     expect(container.textContent).toContain('pr-owner-exact-172');
     expect(container.textContent).toContain('Held change is ready.');

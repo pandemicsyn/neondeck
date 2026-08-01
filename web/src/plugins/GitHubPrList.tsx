@@ -1,4 +1,3 @@
-import { useFlueClient } from '@flue/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { lazy, Suspense, useId, useState } from 'react';
 import {
@@ -6,9 +5,10 @@ import {
   getGitHubPullRequests,
   getRepoRegistry,
   getWorkflowObservability,
+  neonCommandRunId,
+  runNeonCommand,
   startPrReview,
   type GitHubPullRequest,
-  type NeonCommandResult,
   type WorkflowObservability,
 } from '../api';
 import { SessionReferenceButton } from '../components/SessionReferenceButton';
@@ -304,16 +304,17 @@ function NeonReviewButton({ item }: { item: GitHubPullRequest }) {
 }
 
 function FixCiButton({ item }: { item: GitHubPullRequest }) {
-  const flue = useFlueClient();
   const queryClient = useQueryClient();
   const mutation = useMutation({
     mutationFn: async () => {
-      const run = await flue.workflows.invoke('fix-pr-ci', {
-        input: {
-          ref: `${item.repo}#${item.number}`,
-        },
+      const result = await runNeonCommand({
+        command: `/fix-ci ${item.repo}#${item.number}`,
+        surface: 'dashboard',
       });
-      return run satisfies FixCiWorkflowAdmission;
+      if (!result.ok) throw new Error(result.message);
+      const runId = neonCommandRunId(result);
+      if (!runId) throw new Error('CI fix admission returned no operation id.');
+      return { runId } satisfies FixCiWorkflowAdmission;
     },
     onSuccess(run) {
       void queryClient.invalidateQueries({
@@ -458,7 +459,6 @@ export function reviewWorkflowRefreshDecision(
 }
 
 function WatchPrButton({ item }: { item: GitHubPullRequest }) {
-  const flue = useFlueClient();
   const queryClient = useQueryClient();
   const watchId = `${item.repo}#${item.number}`;
   const { data: watchData } = useQuery({
@@ -480,17 +480,10 @@ function WatchPrButton({ item }: { item: GitHubPullRequest }) {
       : undefined;
   const mutation = useMutation({
     mutationFn: async () => {
-      const run = await flue.workflows.invoke('command-run', {
-        input: {
-          command: `/watch-pr ${watchId}`,
-          surface: 'dashboard',
-        },
-        wait: 'result',
+      const result = await runNeonCommand({
+        command: `/watch-pr ${watchId}`,
+        surface: 'dashboard',
       });
-      const result = {
-        ...(run.result as NeonCommandResult),
-        flueRunId: run.runId,
-      };
       if (!result.ok) throw new Error(result.message);
       return result;
     },
@@ -523,7 +516,7 @@ function WatchPrButton({ item }: { item: GitHubPullRequest }) {
           : existingWatch
             ? `Re-watch ${existingWatch.id}`
             : mutation.data
-              ? `${mutation.data.message} · run ${mutation.data.flueRunId}`
+              ? mutation.data.message
               : 'Watch this PR until checks are green'
       }
       type="button"

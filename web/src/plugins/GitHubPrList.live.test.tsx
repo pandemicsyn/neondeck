@@ -12,14 +12,6 @@ const api = vi.hoisted(() => ({
   getRepoRegistry: vi.fn<ApiModule['getRepoRegistry']>(),
 }));
 
-vi.mock('@flue/react', () => ({
-  useFlueClient: () => ({
-    workflows: {
-      invoke: vi.fn<(...args: unknown[]) => Promise<unknown>>(),
-    },
-  }),
-}));
-
 vi.mock('../api', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../api')>()),
   getGitHubPullRequests: api.getGitHubPullRequests,

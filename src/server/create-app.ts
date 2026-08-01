@@ -138,7 +138,7 @@ export async function createApp(options: CreateAppOptions = {}) {
   app.route('/api', createMemoryRoutes(paths));
   app.route('/api/learning', createLearningRoutes(paths));
   app.route('/api/skills', createSkillRoutes(paths));
-  app.route('/api/commands', createCommandRoutes());
+  app.route('/api/commands', createCommandRoutes(paths));
   app.route('/api', createReportApiRoutes(paths));
   app.route('/api', createReviewRoutes(paths));
   app.route('/api', createReviewSurfaceRoutes());
@@ -157,10 +157,7 @@ export async function createApp(options: CreateAppOptions = {}) {
   );
   app.use('/api/flue/agents/pr-reviewer/*', prReviewerRoute);
   app.route('/api/flue/agents/pr-reviewer', createAgentRouter(PrReviewer));
-  app.use(
-    '/api/flue/agents/pr-autopilot-owner/:id',
-    prAutopilotOwnerRoute,
-  );
+  app.use('/api/flue/agents/pr-autopilot-owner/:id', prAutopilotOwnerRoute);
   app.route(
     '/api/flue/agents/pr-autopilot-owner',
     createAgentRouter(PrAutopilotOwner),

@@ -48,6 +48,8 @@ function message(id: string, timestamp?: string): FlueConversationMessage {
   return {
     id,
     role: 'assistant',
+    purpose: 'assistant',
+    display: 'visible',
     parts: [{ type: 'text', state: 'done', text: id }],
     metadata: timestamp ? { timestamp } : undefined,
   };
