@@ -19,7 +19,7 @@ import {
   type AppConfig,
   type RuntimePaths,
 } from '../../runtime-home';
-import { resolveAgentModelSelection } from '../runtime/agent-config';
+import { resolveAgentModelSelection } from '../runtime';
 
 export const registeredProviderIds = [
   'kilocode',

@@ -3,7 +3,7 @@ import { init } from '@flue/runtime';
 import * as v from 'valibot';
 import { PrReviewAssistant } from '../../agents/pr-review-assistant';
 import { ensureRuntimeHome, runtimePaths } from '../../runtime-home';
-import { resolvePullRequestTarget } from '../pr-events/target';
+import { resolvePullRequestTarget } from '../pr-events';
 import { readPrReviewAdmissionBinding } from '../pr-reviews/store';
 import { prReviewAssistInputSchema } from './schemas';
 

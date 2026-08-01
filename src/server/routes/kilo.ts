@@ -13,6 +13,7 @@ import {
   readUnavailableSessionAdapter,
   searchKiloSessions,
   startKiloTask,
+  summarizeKiloSession,
 } from '../../modules/kilo';
 import {
   listKiloResultStates,
@@ -132,6 +133,11 @@ export function createKiloRoutes(paths: RuntimePaths) {
   routes.post('/sessions/search', async (c) => {
     const result = await searchKiloSessions(await safeJsonBody(c), paths);
     return c.json(result, result.ok ? 200 : 400);
+  });
+
+  routes.post('/sessions/summarize', async (c) => {
+    const result = await summarizeKiloSession(await safeJsonBody(c), paths);
+    return c.json(result, result.ok ? 200 : 404);
   });
 
   routes.get('/sessions/:id', async (c) => {

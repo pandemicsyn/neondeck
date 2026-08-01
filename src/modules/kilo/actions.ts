@@ -6,6 +6,7 @@ import {
   sessionReadInputSchema,
   sessionsSearchInputSchema,
   startInputSchema,
+  summarizeInputSchema,
   taskIdInputSchema,
   taskStatusOutputSchema,
   tasksListInputSchema,
@@ -20,6 +21,7 @@ import {
   readKiloTaskStatus,
   reconcileKiloTask,
   startKiloTask,
+  summarizeKiloSession,
 } from './service';
 import {
   readKiloSession,
@@ -199,6 +201,17 @@ export const kiloSessionDiffAction = defineTool({
   },
 });
 
+export const kiloSessionSummarizeAction = defineTool({
+  name: 'neondeck_kilo_session_summarize',
+  description:
+    'Summarize linked Kilo session metadata and recent task events, then persist the bounded summary on the task when available.',
+  input: summarizeInputSchema,
+  output: outputSchema,
+  async run({ data: input }) {
+    return { output: await summarizeKiloSession(input) };
+  },
+});
+
 export const kiloTasksLookupTool = defineTool({
   name: 'neondeck_kilo_tasks_lookup',
   description:
@@ -224,6 +237,7 @@ export const neondeckKiloActions = [
   kiloSessionChildrenAction,
   kiloSessionTodosAction,
   kiloSessionDiffAction,
+  kiloSessionSummarizeAction,
 ];
 
 export const neondeckKiloTools = [kiloTasksLookupTool];

@@ -26,7 +26,7 @@ describe('safety policy', () => {
     expect(policy).toMatchObject({
       ok: true,
       action: 'safety_policy_read',
-      version: 6,
+      version: 7,
     });
     expect(policy.summary.destructiveMutation).toBeGreaterThanOrEqual(4);
     expect(policy.summary.hostExecution).toBeGreaterThanOrEqual(2);
@@ -169,5 +169,10 @@ describe('safety policy', () => {
       defaultLocalAccess: true,
       exeDevPlanned: true,
     });
+    expect(
+      policy.entries.some(
+        (entry) => (entry.primitive as string) === 'workflow',
+      ),
+    ).toBe(false);
   });
 });

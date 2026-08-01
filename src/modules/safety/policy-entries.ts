@@ -1261,6 +1261,15 @@ export const entries: SafetyPolicyEntry[] = [
     'Reads the linked task workspace diff summary for a Kilo session.',
   ),
   action(
+    'neondeck_kilo_session_summarize',
+    'Summarize Kilo session',
+    {
+      ...safeMutation,
+      auditTarget: 'kilo_tasks/kilo_task_events',
+    },
+    'Summarizes linked Kilo session metadata and recent task events, persisting the bounded summary on the task when available.',
+  ),
+  action(
     'neondeck_kilo_result_review',
     'Review Kilo result',
     {
@@ -1505,131 +1514,6 @@ export const entries: SafetyPolicyEntry[] = [
       auditTarget: 'worktrees/worktree_cleanup_attempts',
     },
     'Deletes eligible Neondeck-owned worktrees according to cleanup policy and never deletes adopted worktrees without explicit confirmation.',
-  ),
-  workflow(
-    'command-run',
-    'Run command workflow',
-    {
-      ...safeMutation,
-      auditTarget: 'workflow_summaries/activity_events',
-    },
-    'Runs a bounded command through Flue with durable run identity and summaries.',
-  ),
-  workflow(
-    'briefing',
-    'Run briefing workflow',
-    {
-      ...safeMutation,
-      auditTarget: 'workflow_summaries/activity_events',
-    },
-    'Runs the bounded briefing workflow and records Flue observations.',
-  ),
-  workflow(
-    'watch-pr',
-    'Run watch-pr workflow',
-    {
-      ...safeMutation,
-      auditTarget: 'pr_watches/jobs/activity_events',
-    },
-    'Creates a PR watch through the Flue workflow surface.',
-  ),
-  workflow(
-    'review-pr-for-human',
-    'Run PR review assist workflow',
-    {
-      ...safeMutation,
-      auditTarget:
-        'reports/pr_review_drafts/pr_review_draft_comments/notifications/activity_events',
-    },
-    'Runs bounded PR review assistance through the Flue workflow surface, creating local reports and Neon-origin draft comments only.',
-  ),
-  workflow(
-    'fix-pr-ci',
-    'Run PR CI fix workflow',
-    {
-      ...hostExecution,
-      auditTarget:
-        'reports/worktrees/worktree_locks/kilo_tasks/kilo_task_events/prepared_diffs/notifications/activity_events',
-    },
-    'Runs bounded CI fix assistance through the Flue workflow surface, creating local reports, local worktree changes, and prepared diffs only. It does not push or comment.',
-  ),
-  workflow(
-    'scheduled-agent-instruction',
-    'Run scheduled instruction workflow',
-    {
-      ...safeMutation,
-      auditTarget: 'scheduled_task_runs/activity_events',
-    },
-    'Runs one bounded scheduled instruction occurrence through Flue.',
-  ),
-  workflow(
-    'dev-doctor',
-    'Run dev-doctor workflow',
-    readOnly,
-    'Runs read-only local diagnostics through the Flue workflow surface.',
-  ),
-  workflow(
-    'scheduler-tick',
-    'Run scheduler-tick workflow',
-    {
-      ...safeMutation,
-      auditTarget: 'jobs/notifications/activity_events/reports',
-    },
-    'Runs due scheduled work through the Flue workflow surface and records job outcomes, notifications, workflow observations, and scheduled report artifacts.',
-  ),
-  workflow(
-    'handoff_to_kilo',
-    'Run Kilo handoff workflow',
-    {
-      ...hostExecution,
-      auditTarget: 'kilo_tasks/kilo_task_events/activity_events',
-    },
-    'Admits an explicit Kilo handoff as a bounded Flue run, then lets the app supervisor own the background process.',
-  ),
-  workflow(
-    'reconcile_kilo_task',
-    'Reconcile Kilo task workflow',
-    {
-      ...safeMutation,
-      auditTarget: 'kilo_tasks/kilo_task_events/worktree_events',
-    },
-    'Reconciles persisted Kilo task state after restart by inspecting detached process, session, and diff facts.',
-  ),
-  workflow(
-    'summarize_kilo_session',
-    'Summarize Kilo session workflow',
-    {
-      ...safeMutation,
-      auditTarget: 'kilo_tasks/activity_events',
-    },
-    'Summarizes linked Kilo task/session metadata and persists the bounded summary on the task record.',
-  ),
-  workflow(
-    'review_kilo_result',
-    'Review Kilo result workflow',
-    {
-      ...safeMutation,
-      auditTarget: 'kilo_result_state/kilo_result_events/prepared_diffs',
-    },
-    'Runs bounded Kilo result review and records classification in app state.',
-  ),
-  workflow(
-    'verify_kilo_result',
-    'Verify Kilo result workflow',
-    {
-      ...hostExecution,
-      auditTarget: 'kilo_result_state/kilo_result_events/execution_approvals',
-    },
-    'Runs configured Kilo result checks through execution approval policy.',
-  ),
-  workflow(
-    'promote_kilo_result',
-    'Promote Kilo result workflow',
-    {
-      ...safeMutation,
-      auditTarget: 'kilo_result_state/kilo_result_events',
-    },
-    'Runs the Kilo promotion admission layer and explicitly avoids commit, push, or PR comment mutation.',
   ),
   route(
     '/api/reports',
@@ -2335,15 +2219,6 @@ function action(
   notes: string,
 ) {
   return entry('action', id, title, policy, notes);
-}
-
-function workflow(
-  id: string,
-  title: string,
-  policy: Partial<SafetyPolicyEntry>,
-  notes: string,
-) {
-  return entry('workflow', id, title, policy, notes);
 }
 
 function route(

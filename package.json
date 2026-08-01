@@ -57,7 +57,7 @@
     "secrets:check:staged": "gitleaks git --staged --redact --no-banner",
     "setup": "node --import=tsx src/setup.ts",
     "reset:flue-db": "node scripts/reset-flue-db.mjs",
-    "smoke:kilo": "node scripts/kilo-smoke.mjs",
+    "smoke:kilo": "node --import=tsx scripts/kilo-smoke.mjs",
     "smoke:learning": "vitest run --config vitest.integration.config.ts src/learning-workflow-smoke.test.ts",
     "smoke:npm-pack": "node scripts/npm-pack-smoke.mjs",
     "start": "node dist/server.mjs",

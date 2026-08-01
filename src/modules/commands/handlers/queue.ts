@@ -4,7 +4,7 @@ import type {
   GitHubQueueIssue,
 } from '../../github';
 import { fetchGitHubLogin, fetchPullRequestQueue } from '../../github';
-import { createCiFailureDossierReport } from '../../autopilot';
+import { createCiFailureDossierReport, fixPrCiRun } from '../../autopilot';
 import { readRepoRegistrySnapshot } from '../../repos';
 import { listPrWatchRecords } from '../../watches';
 import { startPrReview } from '../../pr-reviews';
@@ -129,9 +129,10 @@ export async function fixCiCommand(
         { requires: ['pr'] },
       );
     }
-    return queueFixCiWorkflow(
+    return runFixCiOperation(
       command,
       `${parsed.repo}#${parsed.number}`,
+      paths,
       dependencies,
     );
   }
@@ -168,39 +169,66 @@ export async function fixCiCommand(
   }
 
   const ref = `${selected.item.repo}#${selected.item.number}`;
-  return queueFixCiWorkflow(command, ref, dependencies);
+  return runFixCiOperation(command, ref, paths, dependencies);
 }
 
-async function queueFixCiWorkflow(
+async function runFixCiOperation(
   command: ParsedNeonCommand,
   ref: string,
+  paths: RuntimePaths,
   dependencies: CommandDependencies,
 ): Promise<NeonCommandResult> {
-  const invokeWorkflow =
-    dependencies.invokeFixCiWorkflow ?? invokeFixCiWorkflow;
-  const { runId } = await invokeWorkflow({ ref });
+  const run = await (dependencies.runFixCi ?? fixPrCiRun)({ ref }, paths);
+  if (!run.ok) {
+    const details = {
+      errors: 'errors' in run ? run.errors : undefined,
+      requires: 'requires' in run ? run.requires : undefined,
+      data: {
+        operation: 'fix-pr-ci',
+        ref,
+        result: run.data,
+        operationSummaryId: workflowSummaryId(run),
+      },
+    };
+    return details.requires?.includes('GITHUB_TOKEN')
+      ? needsConfigCommand(command.name, command.raw, run.message, details)
+      : failedCommand(command.name, command.raw, run.message, details);
+  }
+
+  const operationSummaryId = workflowSummaryId(run);
   return completedCommand(
     command.name,
     command.raw,
-    `Queued CI fix workflow ${runId} for ${ref}.`,
+    `Started CI fix operation${operationSummaryId ? ` ${operationSummaryId}` : ''} for ${ref}.`,
     {
-      workflow: 'fix-pr-ci',
-      runId,
+      operation: 'fix-pr-ci',
+      ...(operationSummaryId
+        ? { runId: operationSummaryId, operationSummaryId }
+        : {}),
       ref,
-      queued: true,
+      queued: objectString(run.data, 'outcome') === 'kilo-started',
+      result: run.data,
       reportUrlHint: '/reports',
       trustBoundary:
-        'The workflow can create local reports, a managed local worktree, a Kilo task, and a prepared diff only; it does not push, comment, or submit a GitHub review.',
+        'The operation can create local reports, a managed local worktree, a Kilo task, and a prepared diff only; it does not push, comment, or submit a GitHub review.',
       assistantBrief:
-        'Track the returned workflow run id. The dossier report is local; any code changes must pass through the prepared-diff review loop.',
+        'Track the returned operation summary id. The dossier report is local; any code changes must pass through the prepared-diff review loop.',
     },
   );
 }
 
-export async function invokeFixCiWorkflow(input: { ref: string }) {
-  const { invoke } = await import('@flue/runtime');
-  const workflow = await import('../../../workflows/fix-pr-ci');
-  return invoke(workflow.default, { input });
+function workflowSummaryId(result: { workflowSummary?: unknown }) {
+  if (!result.workflowSummary || typeof result.workflowSummary !== 'object') {
+    return null;
+  }
+  const id = 'id' in result.workflowSummary ? result.workflowSummary.id : null;
+  return typeof id === 'string' && id.trim() ? id : null;
+}
+
+function objectString(value: unknown, key: string) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const item = key in value ? value[key as keyof typeof value] : null;
+  return typeof item === 'string' ? item : null;
 }
 
 export async function explainCiCommand(

@@ -972,14 +972,45 @@ Exit criteria:
 
 ### Phase 10: Remaining Workflows And Integrations
 
-- [ ] Remove command-run workflow.
-- [ ] Remove scheduler-tick and watch-pr workflows.
-- [ ] Remove dev-doctor and fix-pr-ci workflows.
-- [ ] Remove scheduled-agent-instruction workflow.
-- [ ] Remove Kilo handoff/reconcile/review/verify/promote/summarize workflows.
-- [ ] Preserve app-owned Kilo task lifecycle and scheduler run state.
-- [ ] Evaluate, but do not require, native Flue MCP connections behind the
+- [x] Remove command-run workflow.
+- [x] Remove scheduler-tick and watch-pr workflows.
+- [x] Remove dev-doctor and fix-pr-ci workflows.
+- [x] Remove scheduled-agent-instruction workflow.
+- [x] Remove Kilo handoff/reconcile/review/verify/promote/summarize workflows.
+- [x] Preserve app-owned Kilo task lifecycle and scheduler run state.
+- [x] Evaluate, but do not require, native Flue MCP connections behind the
       existing Neondeck policy layer.
+
+Phase 10 evidence captured on 2026-08-01:
+
+- all remaining `src/workflows/*` modules and the wrapper-only
+  `BusyworkWorkflow` agent were removed; source and build configuration no
+  longer include a workflow directory
+- commands, watch operations, dev diagnostics, scheduler ticks, scheduled
+  instructions, Kilo handoff/reconciliation/results, and their durable app
+  records continue through existing services, Tools, routes, and direct agent
+  admission
+- `/fix-ci` now calls the app-owned CI-fix service directly, returns its
+  persisted operation-summary identity, and reports synchronous admission
+  failures instead of falsely claiming a workflow was queued
+- Kilo session summarization remains available as the
+  `neondeck_kilo_session_summarize` Tool and
+  `POST /api/kilo/sessions/summarize`, backed by the existing task/session
+  service, persisted task summary, and a shared `session.summarized` audit
+  event
+- `npm run smoke:kilo` now exercises the app-owned Kilo services directly
+  instead of deleted Flue 1 workflow CLI syntax and passes on Node `26.4.0`
+- obsolete workflow safety-policy entries were removed and policy version 7
+  describes the remaining Tool/action/route/CLI surfaces
+- Flue 2 `guide/mcp` was evaluated. Direct `useMcpConnection()` mounting would
+  bypass Neondeck's session-frozen catalog, allow/ask/deny gate, consumable
+  per-argument approvals, and app-owned audit trail. The migration therefore
+  retains Neondeck's wrapped MCP Tools; `createMcpConnection()` remains a
+  possible future transport adapter only if it stays behind that policy layer
+- 94 focused command, Kilo, safety, app-route, and MCP tests pass, along with
+  TypeScript, lint (existing warnings only), formatting, database migration,
+  and static workflow-symbol scans
+- independent static sub-agent re-review found no remaining P1/P2 findings
 
 Exit criteria:
 

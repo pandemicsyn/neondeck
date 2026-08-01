@@ -394,13 +394,13 @@ export async function recordHandledPrEventAndMaybeQueueLearning(
   )) {
     if (!claimLearningReviewAdmissionIntent(intent.id, paths)) continue;
     try {
-      const invoke =
+      const admit =
         dependencies.invokePrBatchReview ??
         ((input: PrBatchReviewInput) =>
           admitPrBatchLearningReview(input, paths, {
             reviewId: intent.id,
           }).then(requireLearningReviewAdmission));
-      const receipt = await invoke(intent.input as PrBatchReviewInput);
+      const receipt = await admit(intent.input as PrBatchReviewInput);
       markLearningReviewAdmissionIntentAdmitted(intent.id, paths);
       queued.push({ operation: 'learning-review', ...receipt });
     } catch (error) {

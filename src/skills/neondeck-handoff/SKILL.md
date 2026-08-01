@@ -24,7 +24,7 @@ curl -sS -X POST http://127.0.0.1:3583/api/handoff/register-pr \
 
 HTTP handoff requests must include `source`. CLI commands default to `external:cli`, or normalize `--from codex` to `external:codex`. `ci:` and `external:` prefixes are preserved.
 
-`register-pr` creates or confirms a PR watch and optionally creates a note. Duplicate PR watch registration is a successful no-op. `--review` is default-off and only queues the bounded `review-pr-for-human` Flue workflow when `handoff.allowExternalReviewQueue` allows it. That workflow reads PR facts and creates local reports/local draft comments only; it does not submit GitHub reviews.
+`register-pr` creates or confirms a PR watch and optionally creates a note. Duplicate PR watch registration is a successful no-op. `--review` is default-off and only admits a bounded fresh PR review agent when `handoff.allowExternalReviewQueue` allows it. That review reads PR facts and creates local reports/local draft comments only; it does not submit GitHub reviews.
 
 Notes create Neondeck notifications with levels `info`, `ready`, or `attention`; external callers cannot create `urgent` notes. Linked repo or PR references must match configured repositories.
 

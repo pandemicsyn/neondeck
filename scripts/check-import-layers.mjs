@@ -47,7 +47,6 @@ const backendLayers = new Map([
   ['src/modules/commands', 5],
   ['src/server', 5],
   ['src/cli', 5],
-  ['src/workflows', 5],
   ['src/agents', 5],
   ['src/skills', 5],
 ]);
@@ -57,7 +56,17 @@ const compatibilityShimLayers = new Map([
   ['src/db.ts', 1],
 ]);
 
-const allowedLayerBridges = new Set([]);
+// Flue 2 admissions must pass the concrete agent function to init()/dispatch().
+// Keep these reverse edges explicit and narrow instead of relaxing module layers.
+const allowedLayerBridges = new Set([
+  'src/modules/autopilot/owner/dispatch.ts -> src/agents/pr-autopilot-owner.ts',
+  'src/modules/autopilot/owner/loop.ts -> src/agents/pr-autopilot-owner.ts',
+  'src/modules/autopilot/owner/settlement.ts -> src/agents/pr-autopilot-owner.ts',
+  'src/modules/autopilot/watch-service.ts -> src/agents/pr-autopilot-owner.ts',
+  'src/modules/learning/reviews/admission.ts -> src/agents/learning-review-agent.ts',
+  'src/modules/pr-review-assist/admission.ts -> src/agents/pr-review-assistant.ts',
+  'src/modules/sessions/approval-nudges.ts -> src/agents/display-assistant.ts',
+]);
 
 const frontendApiHelperImports = new Set(['web/src/lib/query.ts']);
 

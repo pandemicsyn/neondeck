@@ -80,6 +80,7 @@ import {
   readKiloTaskStatus,
   searchKiloSessions,
   startKiloTask,
+  summarizeKiloSession,
 } from './modules/kilo';
 import {
   ensureRuntimeHome,
@@ -157,6 +158,8 @@ describe('Kilo handoff runner', () => {
     const status = await readKiloTaskStatus({ taskId }, paths);
     const sessions = await readKiloTaskSessions({ taskId }, paths);
     const events = await readKiloTaskEvents({ taskId }, paths);
+    const summary = await summarizeKiloSession({ taskId }, paths);
+    const summaryEvents = await readKiloTaskEvents({ taskId }, paths);
     const notifications = await listNotifications(paths);
 
     expect(status).toMatchObject({
@@ -202,6 +205,23 @@ describe('Kilo handoff runner', () => {
           eventType: 'tool_use',
           sessionId: 'ses_root',
           childSessionId: 'ses_child',
+        }),
+      ]),
+    });
+    expect(summary).toMatchObject({
+      ok: true,
+      changed: true,
+      taskId,
+      summary: expect.stringContaining('Kilo finished the requested change.'),
+    });
+    expect(summaryEvents).toMatchObject({
+      ok: true,
+      events: expect.arrayContaining([
+        expect.objectContaining({
+          eventType: 'session.summarized',
+          stream: 'system',
+          sessionId: 'ses_root',
+          summary: 'Persisted a bounded Kilo session summary.',
         }),
       ]),
     });

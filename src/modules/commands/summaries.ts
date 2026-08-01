@@ -74,7 +74,9 @@ export function needsConfigCommand(
   command: NeonCommandName,
   input: string,
   message: string,
-  details: Pick<NeonCommandResult, 'errors' | 'requires'>,
+  details: Pick<NeonCommandResult, 'errors' | 'requires'> & {
+    data?: unknown;
+  },
 ): NeonCommandResult {
   return {
     ok: false,
@@ -84,6 +86,7 @@ export function needsConfigCommand(
     message,
     ...(details.errors ? { errors: details.errors } : {}),
     ...(details.requires ? { requires: details.requires } : {}),
+    ...(details.data ? { data: asJsonValue(details.data) } : {}),
   };
 }
 

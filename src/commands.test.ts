@@ -33,6 +33,50 @@ const addPrWatch = (...args: Parameters<typeof addPrWatchWithoutBaseline>) =>
     emptyPrWatchInitialEventBaseline,
   );
 
+function successfulCiFixRun(id: string) {
+  const timestamp = '2026-06-27T20:01:00.000Z';
+  return {
+    ok: true as const,
+    action: 'ci_fix_run' as const,
+    changed: true,
+    message: 'Queued CI fix.',
+    data: {
+      workflow: 'fix-pr-ci',
+      outcome: 'kilo-started',
+    },
+    workflowSummary: {
+      id,
+      workflow: 'ci_fix_run',
+      runId: null,
+      status: 'running',
+      summary: null,
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    },
+  };
+}
+
+function failedCiFixRun(id: string) {
+  const timestamp = '2026-06-27T20:01:00.000Z';
+  return {
+    ok: false as const,
+    action: 'ci_fix_run' as const,
+    changed: false,
+    message: 'GitHub token is required.',
+    requires: ['GITHUB_TOKEN'],
+    data: { outcome: 'dossier-failed' },
+    workflowSummary: {
+      id,
+      workflow: 'ci_fix_run',
+      runId: null,
+      status: 'failed',
+      summary: null,
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    },
+  };
+}
+
 const execFileAsync = promisify(execFile);
 const tempRoots: string[] = [];
 const originalEnv = { ...process.env };
@@ -240,7 +284,7 @@ describe('Neon commands', () => {
     ]);
   });
 
-  it('queues explicit fix-ci refs through the bounded workflow surface without review-queue gating', async () => {
+  it('runs explicit fix-ci refs through the bounded operation without review-queue gating', async () => {
     const home = await tempDir('neondeck-home-');
     const paths = runtimePaths(home);
     const invocations: unknown[] = [];
@@ -250,19 +294,20 @@ describe('Neon commands', () => {
         fetchPullRequestQueue: async () => {
           throw new Error('explicit fix-ci should not fetch review queue');
         },
-        invokeFixCiWorkflow: async (input) => {
+        runFixCi: async (input) => {
           invocations.push(input);
-          return { runId: 'ci-fix-run-1' };
+          return successfulCiFixRun('ci-fix-run-1');
         },
       }),
     ).resolves.toMatchObject({
       ok: true,
       command: 'fix-ci',
       message:
-        'Queued CI fix workflow ci-fix-run-1 for pandemicsyn/neondeck#10.',
+        'Started CI fix operation ci-fix-run-1 for pandemicsyn/neondeck#10.',
       data: {
-        workflow: 'fix-pr-ci',
+        operation: 'fix-pr-ci',
         runId: 'ci-fix-run-1',
+        operationSummaryId: 'ci-fix-run-1',
         ref: 'pandemicsyn/neondeck#10',
         trustBoundary: expect.stringContaining('does not push'),
       },
@@ -294,19 +339,20 @@ describe('Neon commands', () => {
           truncated: false,
           issues: [],
         }),
-        invokeFixCiWorkflow: async (input) => {
+        runFixCi: async (input) => {
           invocations.push(input);
-          return { runId: 'ci-fix-run-1' };
+          return successfulCiFixRun('ci-fix-run-1');
         },
       }),
     ).resolves.toMatchObject({
       ok: true,
       command: 'fix-ci',
       message:
-        'Queued CI fix workflow ci-fix-run-1 for pandemicsyn/neondeck#10.',
+        'Started CI fix operation ci-fix-run-1 for pandemicsyn/neondeck#10.',
       data: {
-        workflow: 'fix-pr-ci',
+        operation: 'fix-pr-ci',
         runId: 'ci-fix-run-1',
+        operationSummaryId: 'ci-fix-run-1',
         ref: 'pandemicsyn/neondeck#10',
         trustBoundary: expect.stringContaining('does not push'),
       },
@@ -317,6 +363,31 @@ describe('Neon commands', () => {
       },
     });
     expect(invocations).toEqual([{ ref: 'pandemicsyn/neondeck#10' }]);
+  });
+
+  it('reports direct fix-ci admission failures instead of claiming they queued', async () => {
+    const home = await tempDir('neondeck-home-');
+    const paths = runtimePaths(home);
+
+    await expect(
+      runNeonCommand({ command: '/fix-ci neondeck#10' }, paths, {
+        runFixCi: async () => failedCiFixRun('ci-fix-failed-1'),
+      }),
+    ).resolves.toMatchObject({
+      ok: false,
+      command: 'fix-ci',
+      status: 'needs-config',
+      message: 'GitHub token is required.',
+      requires: ['GITHUB_TOKEN'],
+      data: {
+        operation: 'fix-pr-ci',
+        operationSummaryId: 'ci-fix-failed-1',
+      },
+      workflowSummary: {
+        workflow: 'command:fix-ci',
+        status: 'needs-config',
+      },
+    });
   });
 
   it('runs repo-status and stores a workflow summary', async () => {
