@@ -4,6 +4,7 @@ import { writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { spawn } from 'node:child_process';
+import { runUnattendedGit } from '../lib/git';
 import { defaultOpenAiCodexModel } from '../model-defaults';
 import { readDotEnvFile, type EnvLoadResult } from '../modules/runtime';
 import {
@@ -39,6 +40,21 @@ const defaultModel = 'kilocode/kilo-auto/balanced';
 type SetupModelProvider =
   'kilocode' | 'openai' | 'anthropic' | 'openai-codex' | 'openai-compatible';
 
+export type SetupGitIdentityResult = {
+  status: 'ready' | 'configured' | 'skipped' | 'unavailable';
+  name: string | null;
+  email: string | null;
+};
+
+type GitIdentitySetupDependencies = {
+  persistedEnv?: NodeJS.ProcessEnv;
+  runGit?: (args: string[]) => Promise<string>;
+  confirm?: typeof promptConfirm;
+  text?: typeof promptText;
+  warn?: (message: string) => void;
+  success?: (message: string) => void;
+};
+
 export async function runInit(options: { home?: string }) {
   intro('neondeck init');
   const { ensureRuntimeHome, runtimePaths, validateRuntimeFiles } =
@@ -69,6 +85,9 @@ export async function runInit(options: { home?: string }) {
 
   await configureSecrets(paths, envLoad);
   loadEnvForPaths(paths, { includeDevFallback: false, overwrite: true });
+  await configureGitIdentity({
+    persistedEnv: Object.fromEntries(await readDotEnvFile(paths.env)),
+  });
   await configureSoul(paths);
   await configureProviderAndModels(paths);
   await configureRepos(paths);
@@ -115,6 +134,111 @@ export async function runInit(options: { home?: string }) {
         : 'Setup complete. Run `npm run dev` to launch the deck.'
       : 'Finish the remaining config, then start the deck.',
   );
+}
+
+export async function configureGitIdentity(
+  dependencies: GitIdentitySetupDependencies = {},
+): Promise<SetupGitIdentityResult> {
+  const persistedEnv = dependencies.persistedEnv ?? {};
+  const runGit =
+    dependencies.runGit ?? ((args) => runUnattendedGit(process.cwd(), args));
+  const confirm = dependencies.confirm ?? promptConfirm;
+  const text = dependencies.text ?? promptText;
+  const warn = dependencies.warn ?? ((message: string) => log.warn(message));
+  const success =
+    dependencies.success ?? ((message: string) => log.success(message));
+
+  try {
+    await runGit(['--version']);
+  } catch (error) {
+    warn(
+      `Git identity could not be checked: ${error instanceof Error ? error.message : String(error)}`,
+    );
+    return { status: 'unavailable', name: null, email: null };
+  }
+
+  const [configuredName, configuredEmail] = await Promise.all([
+    readGlobalGitValue(runGit, 'user.name'),
+    readGlobalGitValue(runGit, 'user.email'),
+  ]);
+  const authorName = persistedEnv.GIT_AUTHOR_NAME?.trim() || configuredName;
+  const authorEmail = persistedEnv.GIT_AUTHOR_EMAIL?.trim() || configuredEmail;
+  const committerName =
+    persistedEnv.GIT_COMMITTER_NAME?.trim() || configuredName;
+  const committerEmail =
+    persistedEnv.GIT_COMMITTER_EMAIL?.trim() || configuredEmail;
+
+  if (authorName && authorEmail && committerName && committerEmail) {
+    success(`Git commit identity is ready: ${authorName} <${authorEmail}>`);
+    return { status: 'ready', name: authorName, email: authorEmail };
+  }
+
+  const missing = [
+    !authorName && 'author name',
+    !authorEmail && 'author email',
+    !committerName && 'committer name',
+    !committerEmail && 'committer email',
+  ].filter(Boolean);
+  warn(
+    `Git commit identity is incomplete (${missing.join(', ')} missing). Autopilot commits may otherwise use an OS-generated identity.`,
+  );
+  const shouldConfigure = await confirm({
+    message: 'Configure a global Git commit identity now?',
+    initialValue: true,
+  });
+  if (!shouldConfigure) {
+    return {
+      status: 'skipped',
+      name: authorName || null,
+      email: authorEmail || null,
+    };
+  }
+
+  const name = (
+    await text({
+      message: 'Git author name',
+      placeholder: 'Your Name',
+      initialValue: configuredName || authorName,
+      validate: requiredText,
+    })
+  ).trim();
+  const email = (
+    await text({
+      message: 'Git author email',
+      placeholder: 'you@example.com',
+      initialValue: configuredEmail || authorEmail,
+      validate: requiredText,
+    })
+  ).trim();
+
+  try {
+    await runGit(['config', '--global', '--replace-all', 'user.name', name]);
+    await runGit(['config', '--global', '--replace-all', 'user.email', email]);
+    await runGit([
+      'config',
+      '--global',
+      '--replace-all',
+      'user.useConfigOnly',
+      'true',
+    ]);
+  } catch (error) {
+    warn(
+      `Global Git identity could not be configured: ${error instanceof Error ? error.message : String(error)}`,
+    );
+    return { status: 'unavailable', name, email };
+  }
+
+  success(`Configured global Git identity: ${name} <${email}>`);
+  return { status: 'configured', name, email };
+}
+
+async function readGlobalGitValue(
+  runGit: (args: string[]) => Promise<string>,
+  key: 'user.name' | 'user.email',
+) {
+  return runGit(['config', '--global', '--get', key])
+    .then((value) => value.trim())
+    .catch(() => '');
 }
 
 export function hasPackagedServerEntry(env: NodeJS.ProcessEnv = process.env) {
