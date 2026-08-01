@@ -53,6 +53,7 @@ import {
 export async function prepareConversationReflection(
   input: ConversationReviewInput = {},
   paths = runtimePaths(),
+  options: { reviewId?: string } = {},
 ): Promise<PreparedLearningReview | FailedLearningReview> {
   await ensureRuntimeHome(paths);
   const parsed = v.safeParse(conversationReviewInputSchema, input);
@@ -134,6 +135,7 @@ export async function prepareConversationReflection(
   });
   const reviewId = startLearningReview(
     {
+      id: options.reviewId,
       kind: 'conversation',
       model: models.selfImprovement,
       thinkingLevel: models.selfImprovementThinkingLevel,
@@ -173,6 +175,7 @@ export async function prepareConversationReflection(
 export async function prepareMemoryCurationReview(
   input: CurationReviewInput = {},
   paths = runtimePaths(),
+  options: { reviewId?: string } = {},
 ): Promise<PreparedLearningReview | FailedLearningReview> {
   await ensureRuntimeHome(paths);
   const parsed = v.safeParse(curationReviewInputSchema, input);
@@ -233,6 +236,7 @@ export async function prepareMemoryCurationReview(
   });
   const reviewId = startLearningReview(
     {
+      id: options.reviewId,
       kind: 'curation',
       model: models.selfImprovement,
       thinkingLevel: models.selfImprovementThinkingLevel,
@@ -265,6 +269,7 @@ export async function prepareMemoryCurationReview(
 export async function preparePrBatchLearningReview(
   input: PrBatchReviewInput = {},
   paths = runtimePaths(),
+  options: { reviewId?: string } = {},
 ): Promise<PreparedLearningReview | FailedLearningReview> {
   await ensureRuntimeHome(paths);
   const parsed = v.safeParse(prBatchReviewInputSchema, input);
@@ -353,6 +358,7 @@ export async function preparePrBatchLearningReview(
   });
   const reviewId = startLearningReview(
     {
+      id: options.reviewId,
       kind: 'pr-batch',
       model: models.selfImprovement,
       thinkingLevel: models.selfImprovementThinkingLevel,

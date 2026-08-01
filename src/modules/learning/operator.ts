@@ -228,7 +228,9 @@ function readReviews(
         inputSummary: parseJson(record.input_summary_json),
         result: parseJson(record.result_json),
         error: stringOrNull(record.error),
-        flueRunId: stringOrNull(record.flue_run_id),
+        agentId: stringOrNull(record.agent_id),
+        submissionId: stringOrNull(record.submission_id),
+        dispatchError: stringOrNull(record.dispatch_error),
         startedAt: String(record.started_at),
         completedAt: stringOrNull(record.completed_at),
       };

@@ -160,6 +160,20 @@ export async function upsertMemory(
           ['memory-revision'],
         );
       }
+      if (
+        existing?.status === 'active' &&
+        existing.repoId === (parsed.output.repoId ?? null) &&
+        JSON.stringify(existing.value) === JSON.stringify(value)
+      ) {
+        return {
+          ok: true,
+          action: 'memory_learn',
+          changed: false,
+          memory: existing,
+          appliesAfter: 'new-session',
+          message: 'Durable memory already matched the requested guidance.',
+        };
+      }
       const before = existing ? memoryToJson(existing) : null;
       const id = existing?.id ?? randomUUID();
       const updatedAt = nextMemoryUpdatedAt(existing?.updatedAt, now);
@@ -304,53 +318,65 @@ export async function rewriteMemory(
   const now = new Date().toISOString();
 
   try {
-    const existing = resolveMemory(database, parsed.output);
-    if (!existing) {
-      return failedMemoryMutation('memory_rewrite', 'Memory was not found.', [
-        'memory',
-      ]);
-    }
+    return withImmediateTransaction(database, () => {
+      const existing = resolveMemory(database, parsed.output);
+      if (!existing) {
+        return failedMemoryMutation('memory_rewrite', 'Memory was not found.', [
+          'memory',
+        ]);
+      }
+      const value = asJsonValue(parsed.output.value);
+      if (
+        existing.status === 'active' &&
+        JSON.stringify(existing.value) === JSON.stringify(value)
+      ) {
+        return {
+          ok: true,
+          action: 'memory_rewrite',
+          changed: false,
+          memory: existing,
+          appliesAfter: 'new-session',
+          message: 'Durable memory already matched the requested rewrite.',
+        };
+      }
 
-    const before = memoryToJson(existing);
-    const updatedAt = nextMemoryUpdatedAt(existing.updatedAt, now);
-    database
-      .prepare(
-        `
-        UPDATE memories
-        SET value_json = ?, status = 'active', updated_at = ?
-        WHERE id = ?;
-      `,
-      )
-      .run(
-        JSON.stringify(asJsonValue(parsed.output.value)),
-        updatedAt,
-        existing.id,
-      );
-    const memory = readMemoryById(database, existing.id);
-    if (!memory) {
-      return failedMemoryMutation('memory_rewrite', 'Memory was not found.', [
-        'memory',
-      ]);
-    }
-    recordMemoryEvent(database, {
-      memoryId: memory.id,
-      action: 'rewritten',
-      actor: parsed.output.actor ?? mutationSource,
-      reason: parsed.output.reason ?? null,
-      before,
-      after: memoryToJson(memory),
-      createdAt: now,
+      const before = memoryToJson(existing);
+      const updatedAt = nextMemoryUpdatedAt(existing.updatedAt, now);
+      database
+        .prepare(
+          `
+          UPDATE memories
+          SET value_json = ?, status = 'active', updated_at = ?
+          WHERE id = ?;
+        `,
+        )
+        .run(JSON.stringify(value), updatedAt, existing.id);
+      const memory = readMemoryById(database, existing.id);
+      if (!memory) {
+        return failedMemoryMutation('memory_rewrite', 'Memory was not found.', [
+          'memory',
+        ]);
+      }
+      recordMemoryEvent(database, {
+        memoryId: memory.id,
+        action: 'rewritten',
+        actor: parsed.output.actor ?? mutationSource,
+        reason: parsed.output.reason ?? null,
+        before,
+        after: memoryToJson(memory),
+        createdAt: now,
+      });
+
+      return {
+        ok: true,
+        action: 'memory_rewrite',
+        changed: true,
+        memory,
+        appliesAfter: 'new-session',
+        message:
+          'Rewrote durable memory. Active agent context will pick this up on a new session.',
+      };
     });
-
-    return {
-      ok: true,
-      action: 'memory_rewrite',
-      changed: true,
-      memory,
-      appliesAfter: 'new-session',
-      message:
-        'Rewrote durable memory. Active agent context will pick this up on a new session.',
-    };
   } finally {
     database.close();
   }
@@ -380,107 +406,128 @@ export async function mergeMemories(
   const now = new Date().toISOString();
 
   try {
-    const target = readMemoryById(database, parsed.output.targetId);
-    if (!target) {
-      return failedMemoryMutation(
-        'memory_merge',
-        'Target memory was not found.',
-        ['targetId'],
+    return withImmediateTransaction(database, () => {
+      const target = readMemoryById(database, parsed.output.targetId);
+      if (!target) {
+        return failedMemoryMutation(
+          'memory_merge',
+          'Target memory was not found.',
+          ['targetId'],
+        );
+      }
+
+      const sourceIds = [...new Set(parsed.output.sourceIds)].filter(
+        (id) => id !== target.id,
       );
-    }
+      const existingSources = sourceIds
+        .map((id) => readMemoryById(database, id))
+        .filter((memory): memory is MemoryRecord => !!memory);
+      if (existingSources.length === 0) {
+        return failedMemoryMutation(
+          'memory_merge',
+          'No source memories found.',
+          ['sourceIds'],
+        );
+      }
+      const sources = existingSources.filter(
+        (memory) => memory.status !== 'archived',
+      );
+      if (sources.length === 0) {
+        return {
+          ok: true,
+          action: 'memory_merge',
+          changed: false,
+          memory: target,
+          archivedSourceIds: [],
+          appliesAfter: 'new-session',
+          message: 'Source memories were already merged.',
+        };
+      }
 
-    const sourceIds = [...new Set(parsed.output.sourceIds)].filter(
-      (id) => id !== target.id,
-    );
-    const sources = sourceIds
-      .map((id) => readMemoryById(database, id))
-      .filter((memory): memory is MemoryRecord => !!memory);
-    if (sources.length === 0) {
-      return failedMemoryMutation('memory_merge', 'No source memories found.', [
-        'sourceIds',
-      ]);
-    }
-
-    const before = memoryToJson(target);
-    const targetUpdatedAt = nextMemoryUpdatedAt(target.updatedAt, now);
-    if (parsed.output.value !== undefined) {
-      database
-        .prepare(
-          `
+      const before = memoryToJson(target);
+      const targetUpdatedAt = nextMemoryUpdatedAt(target.updatedAt, now);
+      if (parsed.output.value !== undefined) {
+        database
+          .prepare(
+            `
           UPDATE memories
           SET value_json = ?, status = 'active', updated_at = ?
           WHERE id = ?;
         `,
-        )
-        .run(
-          JSON.stringify(asJsonValue(parsed.output.value)),
-          targetUpdatedAt,
-          target.id,
-        );
-    } else {
-      database
-        .prepare(
-          `
+          )
+          .run(
+            JSON.stringify(asJsonValue(parsed.output.value)),
+            targetUpdatedAt,
+            target.id,
+          );
+      } else {
+        database
+          .prepare(
+            `
           UPDATE memories
           SET updated_at = ?
           WHERE id = ?;
         `,
-        )
-        .run(targetUpdatedAt, target.id);
-    }
-    for (const sourceMemory of sources) {
-      const sourceUpdatedAt = nextMemoryUpdatedAt(sourceMemory.updatedAt, now);
-      database
-        .prepare(
-          `
+          )
+          .run(targetUpdatedAt, target.id);
+      }
+      for (const sourceMemory of sources) {
+        const sourceUpdatedAt = nextMemoryUpdatedAt(
+          sourceMemory.updatedAt,
+          now,
+        );
+        database
+          .prepare(
+            `
           UPDATE memories
           SET status = 'archived', updated_at = ?
           WHERE id = ?;
         `,
-        )
-        .run(sourceUpdatedAt, sourceMemory.id);
+          )
+          .run(sourceUpdatedAt, sourceMemory.id);
+        recordMemoryEvent(database, {
+          memoryId: sourceMemory.id,
+          action: 'archived',
+          actor: parsed.output.actor ?? mutationSource,
+          reason: parsed.output.reason ?? `Merged into ${target.id}.`,
+          before: memoryToJson(sourceMemory),
+          after: memoryToJson({
+            ...sourceMemory,
+            status: 'archived',
+            updatedAt: sourceUpdatedAt,
+          }),
+          createdAt: now,
+        });
+      }
+
+      const memory = readMemoryById(database, target.id);
+      if (!memory) {
+        return failedMemoryMutation(
+          'memory_merge',
+          'Target memory was not found.',
+          ['targetId'],
+        );
+      }
       recordMemoryEvent(database, {
-        memoryId: sourceMemory.id,
-        action: 'archived',
+        memoryId: memory.id,
+        action: 'merged',
         actor: parsed.output.actor ?? mutationSource,
-        reason: parsed.output.reason ?? `Merged into ${target.id}.`,
-        before: memoryToJson(sourceMemory),
-        after: memoryToJson({
-          ...sourceMemory,
-          status: 'archived',
-          updatedAt: sourceUpdatedAt,
-        }),
+        reason: parsed.output.reason ?? null,
+        before,
+        after: memoryToJson(memory),
         createdAt: now,
       });
-    }
 
-    const memory = readMemoryById(database, target.id);
-    if (!memory) {
-      return failedMemoryMutation(
-        'memory_merge',
-        'Target memory was not found.',
-        ['targetId'],
-      );
-    }
-    recordMemoryEvent(database, {
-      memoryId: memory.id,
-      action: 'merged',
-      actor: parsed.output.actor ?? mutationSource,
-      reason: parsed.output.reason ?? null,
-      before,
-      after: memoryToJson(memory),
-      createdAt: now,
+      return {
+        ok: true,
+        action: 'memory_merge',
+        changed: true,
+        memory,
+        archivedSourceIds: sources.map((source) => source.id),
+        appliesAfter: 'new-session',
+        message: `Merged ${sources.length} memory entr${sources.length === 1 ? 'y' : 'ies'}. Active agent context will pick this up on a new session.`,
+      };
     });
-
-    return {
-      ok: true,
-      action: 'memory_merge',
-      changed: true,
-      memory,
-      archivedSourceIds: sources.map((source) => source.id),
-      appliesAfter: 'new-session',
-      message: `Merged ${sources.length} memory entr${sources.length === 1 ? 'y' : 'ies'}. Active agent context will pick this up on a new session.`,
-    };
   } finally {
     database.close();
   }

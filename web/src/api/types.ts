@@ -1560,7 +1560,9 @@ export type LearningReviewRecord = {
   inputSummary: unknown;
   result: unknown;
   error: string | null;
-  flueRunId: string | null;
+  agentId: string | null;
+  submissionId: string | null;
+  dispatchError: string | null;
   startedAt: string;
   completedAt: string | null;
 };

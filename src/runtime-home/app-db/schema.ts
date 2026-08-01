@@ -358,6 +358,11 @@ export const learningEvents = sqliteTable(
       .where(
         sql`${table.type} = 'pr_handled' AND ${table.sourceId} IS NOT NULL`,
       ),
+    uniqueIndex('idx_learning_conversation_turn_source')
+      .on(table.sourceId)
+      .where(
+        sql`${table.type} = 'conversation_turn_settled' AND ${table.sourceId} IS NOT NULL`,
+      ),
   ],
 );
 
@@ -373,7 +378,10 @@ export const learningReviews = sqliteTable(
     inputSummaryJson: text('input_summary_json'),
     resultJson: text('result_json'),
     error: text('error'),
-    flueRunId: text('flue_run_id'),
+    agentId: text('agent_id'),
+    submissionId: text('submission_id'),
+    preparedJson: text('prepared_json'),
+    dispatchError: text('dispatch_error'),
     startedAt: text('started_at').notNull(),
     completedAt: text('completed_at'),
   },
@@ -382,6 +390,26 @@ export const learningReviews = sqliteTable(
       table.kind,
       table.status,
       sql`${table.startedAt} DESC`,
+    ),
+  ],
+);
+
+export const learningReviewAdmissions = sqliteTable(
+  'learning_review_admissions',
+  {
+    id: text('id').primaryKey(),
+    kind: text('kind').notNull(),
+    sessionId: text('session_id'),
+    inputJson: text('input_json').notNull(),
+    status: text('status').default('pending').notNull(),
+    error: text('error'),
+    createdAt: text('created_at').notNull(),
+    updatedAt: text('updated_at').notNull(),
+  },
+  (table) => [
+    index('idx_learning_review_admissions_pending').on(
+      table.status,
+      table.createdAt,
     ),
   ],
 );
@@ -663,6 +691,7 @@ export const chatSessions = sqliteTable(
     summaryRefreshNote: text('summary_refresh_note'),
     contextLoadedAt: text('context_loaded_at'),
     contextMemoryIdsJson: text('context_memory_ids_json'),
+    contextSnapshotId: text('context_snapshot_id'),
     learningTurnCount: integer('learning_turn_count').default(0).notNull(),
     lastLearningReviewTurnCount: integer('last_learning_review_turn_count')
       .default(0)

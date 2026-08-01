@@ -866,12 +866,22 @@ Exit criteria:
 
 ### Phase 7: PR Reviews
 
-- [ ] Replace initial review workflow with bounded agent handle.
-- [ ] Add structured review submission Tool/data.
-- [ ] Convert continuing reviewer creation data and async intake.
-- [ ] Migrate reviewer React client.
-- [ ] Replace run-id correlation with attempt/operation/submission ids.
-- [ ] Preserve exact-head workspace and timeout policy.
+- [x] Replace initial review workflow with bounded agent handle.
+- [x] Add structured review submission Tool/data.
+- [x] Convert continuing reviewer creation data and async intake.
+- [x] Migrate reviewer React client.
+- [x] Replace run-id correlation with attempt/operation/submission ids.
+- [x] Preserve exact-head workspace and timeout policy.
+
+Implementation evidence captured on 2026-08-01:
+
+- initial review uses a fresh bounded `pr-review-assistant` submission with a
+  structured terminal Tool result and app-owned attempt state
+- continuing review uses the keyed reviewer agent and the Flue 2 conversation
+  client while retaining exact-head authorization and workspace boundaries
+- attempts, operations, and submissions replace workflow-run identity across
+  recovery, reports, and dashboard state
+- focused PR-review validation and an independent static P1/P2 review pass
 
 Exit criteria:
 
@@ -879,12 +889,35 @@ Exit criteria:
 
 ### Phase 8: Memory And Learning
 
-- [ ] Complete stable context snapshot behavior.
-- [ ] Replace conversation review workflow.
-- [ ] Replace PR-batch learning workflow.
-- [ ] Replace curation workflow.
-- [ ] Migrate cadence triggers to settled submissions.
-- [ ] Preserve candidate, auto-apply, audit, and restore behavior.
+- [x] Complete stable context snapshot behavior.
+- [x] Replace conversation review workflow.
+- [x] Replace PR-batch learning workflow.
+- [x] Replace curation workflow.
+- [x] Migrate cadence triggers to settled submissions.
+- [x] Preserve candidate, auto-apply, audit, and restore behavior.
+
+Implementation evidence captured on 2026-08-01:
+
+- display sessions persist a versioned SOUL/model/memory/MCP/skill/link snapshot;
+  ordinary renders are read-only, start recording is snapshot-idempotent, and
+  briefing transition state is acknowledged only after Flue commits the start
+  seam
+- conversation, curation, and PR-batch learning use one keyed
+  `learning-review-agent` with persisted bounded evidence, structured durable
+  Tool output, submission correlation, settlement retry, and restart recovery
+- conversation and PR cadence originate from successful settled source
+  submissions; cadence checkpoints and claimable admission intents commit in
+  the same immediate SQLite transaction, preventing crash loss and duplicate
+  ambiguous redispatch
+- memory/skill candidates, auto memory effects, review terminal state, and
+  their audit events are replay-idempotent and atomic while existing
+  off/review/auto, restore, and target-bounding policies remain app-owned
+- 143 focused tests across 10 files, database migration checks, web TypeScript,
+  lint, formatting, docs production build, filtered Phase 8 server TypeScript,
+  and an independent static P1/P2 re-review pass
+- Flue `guide/durability`, `reference/agent-hooks-api`,
+  `reference/agent-api`, and migration guidance informed the durable Tool,
+  lifecycle seam, keyed recovery, and pure-render design
 
 Exit criteria:
 

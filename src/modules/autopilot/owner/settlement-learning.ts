@@ -1,6 +1,7 @@
 import type { RuntimePaths } from '../../../runtime-home';
 import {
   recordHandledPrEventAndMaybeQueueLearning,
+  type LearningReviewAdmission,
   type PrBatchReviewInput,
 } from '../../learning';
 import type { PrWatch } from '../../watches';
@@ -9,7 +10,7 @@ import type { OwnerSettlementOutcome } from './settlement-decision';
 export type OwnerSettlementLearningDependencies = {
   invokePrBatchReview?: (
     input: PrBatchReviewInput,
-  ) => Promise<{ runId: string }>;
+  ) => Promise<LearningReviewAdmission>;
   recordHandledPr?: typeof recordHandledPrEventAndMaybeQueueLearning;
 };
 

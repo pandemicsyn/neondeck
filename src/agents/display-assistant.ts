@@ -8,6 +8,7 @@ import {
   useDelivery,
   useModel,
   usePersistentState,
+  useResponseFinish,
   useSandbox,
   useSkill,
   useSubagent,
@@ -15,6 +16,7 @@ import {
 } from '@flue/runtime';
 import type { MiddlewareHandler } from 'hono';
 import { Bash, InMemoryFs } from 'just-bash';
+import { createHash } from 'node:crypto';
 import {
   readAgentModelSelectionSync,
   runtimeSkillFromSessionSnapshot,
@@ -43,10 +45,7 @@ import {
   neondeckMcpActions,
   type McpToolSessionSnapshot,
 } from '../domains/mcp';
-import {
-  memoryInstructionsSync,
-  neondeckMemoryActions,
-} from '../modules/memory';
+import { neondeckMemoryActions } from '../modules/memory';
 import { neondeckPrEventActions } from '../modules/pr-events';
 import { neondeckReviewSurfaceActions } from '../modules/review-surfaces';
 import { neondeckRuntimeSkillActions } from '../modules/runtime';
@@ -56,7 +55,9 @@ import { neondeckSchedulerActions } from '../modules/scheduler';
 import { neondeckScheduledTaskActions } from '../modules/scheduled-tasks';
 import {
   neondeckSessionActions,
-  sessionContextInstructionsForAgentSync,
+  displaySessionContextSnapshotForAgentSync,
+  acknowledgeDisplaySessionContextSnapshotSync,
+  recordDisplaySessionContextSnapshotSync,
 } from '../modules/sessions';
 import { soulInstructions } from '../modules/runtime';
 import { neondeckSubagents } from '../modules/runtime';
@@ -76,12 +77,22 @@ export const description =
 export const route: MiddlewareHandler = async (_c, next) => next();
 
 type DisplayAssistantSessionContext = {
+  version: 2;
+  snapshotId: string;
   models: AgentModelSelection;
   soul: string;
   memory: string;
+  memoryIds: string[];
   mcp: string;
   mcpTools: McpToolSessionSnapshot[];
   session: string;
+  linkedContext: {
+    repoId: string | null;
+    watchId: string | null;
+    taskId: string | null;
+  };
+  refreshBriefingContext: boolean;
+  skillCatalogVersion: string;
   skills: RuntimeSkillSessionSnapshot[];
 };
 
@@ -89,7 +100,7 @@ export function DisplayAssistant({ id }: AgentProps) {
   const delivery = useDelivery();
   const [persistedContext, setPersistedContext] =
     usePersistentState<DisplayAssistantSessionContext | null>(
-      'neondeck-session-context-v1',
+      'neondeck-session-context-v2',
       null,
     );
   const refreshForBriefing =
@@ -111,6 +122,13 @@ export function DisplayAssistant({ id }: AgentProps) {
     schema: briefingClientDataSchema,
   });
   useAgentStart(async ({ append }) => {
+    recordDisplaySessionContextSnapshotSync({
+      sessionId: id,
+      snapshotId: context.snapshotId,
+      memoryIds: context.memoryIds,
+      refreshBriefingContext: context.refreshBriefingContext,
+      linkedContext: context.linkedContext,
+    });
     if (!persistedContext || refreshForBriefing) setPersistedContext(context);
     if (!refreshForBriefing) return;
     const runId = briefingAttributes?.briefingRunId;
@@ -131,6 +149,13 @@ export function DisplayAssistant({ id }: AgentProps) {
         briefingRunId: prepared.data.briefingRunId,
         snapshotVersion: String(prepared.data.snapshotVersion),
       },
+    });
+  });
+  useResponseFinish(() => {
+    if (!context.refreshBriefingContext) return;
+    acknowledgeDisplaySessionContextSnapshotSync({
+      sessionId: id,
+      snapshotId: context.snapshotId,
     });
   });
   useModel(context.models.displayAssistant, {
@@ -242,13 +267,28 @@ DisplayAssistant.agentName = 'display-assistant';
 function captureDisplayAssistantSessionContext(
   id: string,
 ): DisplayAssistantSessionContext {
-  return {
+  const session = displaySessionContextSnapshotForAgentSync(id);
+  const skills = runtimeSkillSessionSnapshotsSync();
+  const snapshot: Omit<DisplayAssistantSessionContext, 'snapshotId'> = {
+    version: 2,
     models: readAgentModelSelectionSync(),
     soul: soulInstructions(),
-    memory: memoryInstructionsSync(),
+    memory: session.memoryInstructions,
+    memoryIds: session.memoryIds,
     mcp: mcpInstructionsSync(),
     mcpTools: mcpToolSessionSnapshotsSync(),
-    session: sessionContextInstructionsForAgentSync(id),
-    skills: runtimeSkillSessionSnapshotsSync(),
+    session: session.instructions,
+    linkedContext: session.linkedContext,
+    refreshBriefingContext: session.refreshBriefingContext,
+    skillCatalogVersion: createHash('sha256')
+      .update(JSON.stringify(skills))
+      .digest('hex'),
+    skills,
+  };
+  return {
+    ...snapshot,
+    snapshotId: createHash('sha256')
+      .update(JSON.stringify(snapshot))
+      .digest('hex'),
   };
 }

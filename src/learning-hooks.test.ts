@@ -102,4 +102,71 @@ describe('Flue v3 observation handlers', () => {
       ),
     ).resolves.toBeUndefined();
   });
+
+  it('admits conversation cadence only from successful direct assistant settlements', async () => {
+    let subscriber: FlueObservationSubscriber | undefined;
+    const paths = runtimePaths('/tmp/neondeck-learning-settlement');
+    const recordConversationTurn = vi.fn(async () => ({
+      queued: [],
+      turnCount: 1,
+      message: 'recorded',
+    }));
+    installFlueObservationHandlers(paths, {
+      observe(next) {
+        subscriber = next;
+        return vi.fn<() => void>();
+      },
+      recordFlueObservation: vi.fn(async () => undefined),
+      recordConversationTurn,
+      isDirectDisplayAssistantSubmission: vi.fn(() => true),
+    });
+
+    const settled = {
+      v: 3,
+      type: 'submission_settled',
+      eventIndex: 3,
+      timestamp: '2026-08-01T10:00:02.000Z',
+      submissionId: 'submission-direct',
+      agentName: 'display-assistant',
+      instanceId: 'session-1',
+      outcome: 'completed',
+    } as const;
+    await subscriber?.(settled, {} as never);
+    await subscriber?.(
+      { ...settled, submissionId: 'submission-failed', outcome: 'failed' },
+      {} as never,
+    );
+    await subscriber?.(
+      {
+        ...settled,
+        submissionId: 'submission-review',
+        agentName: 'learning-review-agent',
+      },
+      {} as never,
+    );
+    await subscriber?.(
+      {
+        v: 3,
+        type: 'operation',
+        eventIndex: 4,
+        timestamp: '2026-08-01T10:00:03.000Z',
+        submissionId: 'submission-direct',
+        agentName: 'display-assistant',
+        instanceId: 'session-1',
+        operationId: 'operation-1',
+        operationKind: 'prompt',
+        durationMs: 10,
+        isError: false,
+      },
+      {} as never,
+    );
+
+    expect(recordConversationTurn).toHaveBeenCalledTimes(1);
+    expect(recordConversationTurn).toHaveBeenCalledWith(
+      'session-1',
+      paths,
+      {},
+      'submission-direct',
+    );
+  });
 });

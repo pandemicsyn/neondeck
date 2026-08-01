@@ -66,7 +66,10 @@ export async function queueLearningReview(kind: 'conversation' | 'pr-batch') {
     ok: boolean;
     action: string;
     changed: boolean;
-    runId?: string;
+    reviewId?: string;
+    agentId?: string;
+    submissionId?: string;
+    activityUrl?: string;
     message: string;
   }>(
     kind === 'conversation'

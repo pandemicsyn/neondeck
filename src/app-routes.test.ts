@@ -6,6 +6,21 @@ import { dashboardEventStreamPath } from '../shared/dashboard-events';
 import { publishConfigEvent, type ConfigChangeEvent } from './modules/config';
 import { createMemoryCandidate } from './modules/memory';
 
+vi.mock('./skills/github-gh/SKILL.md', () => ({
+  default: {
+    name: 'github-gh',
+    description: 'GitHub test skill.',
+    instructions: 'Use deterministic GitHub test facts.',
+  },
+}));
+vi.mock('./skills/neondeck/SKILL.md', () => ({
+  default: {
+    name: 'neondeck',
+    description: 'Neondeck test skill.',
+    instructions: 'Use deterministic Neondeck test actions.',
+  },
+}));
+
 const originalEnv = { ...process.env };
 let home: string;
 let app: Awaited<typeof import('./app')>['default'];

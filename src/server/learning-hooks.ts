@@ -4,7 +4,7 @@ import {
   type FlueObservation,
   type FlueObservationSubscriber,
 } from '@flue/runtime';
-import type { MiddlewareHandler } from 'hono';
+import { openDb } from '../lib/sqlite';
 import { addNotification } from '../modules/app-state';
 import { settleAutopilotOwnerObservation } from '../modules/autopilot/owner/settlement';
 import { settleBriefingObservation } from '../modules/briefings';
@@ -21,6 +21,8 @@ import type { RuntimePaths } from '../runtime-home';
 type ObservationInstallDependencies = {
   observe?: (subscriber: FlueObservationSubscriber) => () => void;
   recordFlueObservation?: typeof recordFlueObservation;
+  recordConversationTurn?: typeof recordConversationTurnAndMaybeQueueLearning;
+  isDirectDisplayAssistantSubmission?: typeof isDirectDisplayAssistantSubmission;
 };
 
 const observationHandlerUnsubscribers = new Map<string, () => void>();
@@ -57,6 +59,24 @@ export function installFlueObservationHandlers(
           '[neondeck] failed to settle scheduled instruction submission',
           error,
         );
+      });
+    }
+
+    if (
+      event.type === 'submission_settled' &&
+      event.outcome === 'completed' &&
+      event.agentName === 'display-assistant' &&
+      event.instanceId &&
+      (
+        dependencies.isDirectDisplayAssistantSubmission ??
+        isDirectDisplayAssistantSubmission
+      )(event.submissionId, paths)
+    ) {
+      void (
+        dependencies.recordConversationTurn ??
+        recordConversationTurnAndMaybeQueueLearning
+      )(event.instanceId, paths, {}, event.submissionId).catch((error) => {
+        console.error('[neondeck] failed to record learning turn', error);
       });
     }
 
@@ -190,27 +210,20 @@ export function recordHumanReviewSubmittedApiEvidence(
     });
 }
 
-export function displayAssistantLearningMiddleware(
+function isDirectDisplayAssistantSubmission(
+  submissionId: string,
   paths: RuntimePaths,
-): MiddlewareHandler {
-  return async (c, next) => {
-    const method = c.req.method.toUpperCase();
-    const sessionId = displayAssistantSessionId(c.req.path);
-    await next();
-    if (!sessionId || method !== 'POST' || c.res.status >= 400) return;
-
-    void recordConversationTurnAndMaybeQueueLearning(sessionId, paths).catch(
-      (error) => {
-        console.error('[neondeck] failed to record learning turn', error);
-      },
-    );
-  };
-}
-
-function displayAssistantSessionId(path: string) {
-  const prefix = '/api/flue/agents/display-assistant/';
-  if (!path.startsWith(prefix)) return undefined;
-  const remainder = path.slice(prefix.length);
-  if (!remainder || remainder.includes('/')) return undefined;
-  return decodeURIComponent(remainder);
+) {
+  const database = openDb(paths.neondeckDatabase, { readOnly: true });
+  try {
+    const row = database
+      .prepare(
+        `SELECT kind, agent_name FROM activity_submissions WHERE submission_id = ?;`,
+      )
+      .get(submissionId) as
+      { kind?: unknown; agent_name?: unknown } | undefined;
+    return row?.kind === 'direct' && row.agent_name === 'display-assistant';
+  } finally {
+    database.close();
+  }
 }

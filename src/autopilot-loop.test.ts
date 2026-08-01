@@ -318,9 +318,13 @@ describe('minimal Autopilot watch loop', () => {
       'prepare-only',
       'watch-event',
     );
-    const invokePrBatchReview = vi.fn<
-      (input: PrBatchReviewInput) => Promise<{ runId: string }>
-    >(async () => ({ runId: 'learning-review-run' }));
+    const invokePrBatchReview = vi.fn(async (_input: PrBatchReviewInput) => ({
+      ok: true as const,
+      reviewId: 'learning-review',
+      agentId: 'learning-review:learning-review',
+      submissionId: 'learning-review-run',
+      activityUrl: '/activity?submissionId=learning-review-run',
+    }));
 
     await settleAutopilotOwnerObservation(
       ownerPromptSuccess(instanceId),

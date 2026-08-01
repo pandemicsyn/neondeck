@@ -4,7 +4,10 @@ import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { updateLearningConfig } from './modules/config';
 import {
+  completeLearningReviewFromModelOutput,
   listLearningReviews,
+  prepareConversationReflection,
+  preparePrBatchLearningReview,
   recordHandledPrEventAndMaybeQueueLearning,
 } from './modules/learning/reviews';
 import { readLearningOperatorState } from './modules/learning';
@@ -16,25 +19,6 @@ const tempRoots: string[] = [];
 const originalEnv = { ...process.env };
 
 vi.setConfig({ testTimeout: 60_000 });
-vi.mock('./skills/github-gh/SKILL.md', async () => {
-  const { defineSkill } = await import('@flue/runtime');
-  return {
-    default: defineSkill({
-      name: 'github-gh',
-      description: 'GitHub fixture skill for learning workflow smoke tests.',
-    }),
-  };
-});
-vi.mock('./skills/neondeck/SKILL.md', async () => {
-  const { defineSkill } = await import('@flue/runtime');
-  return {
-    default: defineSkill({
-      name: 'neondeck',
-      description: 'Neondeck fixture skill for learning workflow smoke tests.',
-    }),
-  };
-});
-
 afterEach(async () => {
   process.env = { ...originalEnv };
   await Promise.all(
@@ -44,9 +28,8 @@ afterEach(async () => {
   );
 });
 
-describe('learning Flue workflow smoke', () => {
-  it('runs conversation reflection and PR retrospective with fake model output', async () => {
-    const workflows = await loadWorkflows();
+describe('learning review smoke', () => {
+  it('completes conversation reflection and PR retrospective snapshots', async () => {
     const paths = await fixture();
     const session = await createChatSession(
       {
@@ -60,14 +43,20 @@ describe('learning Flue workflow smoke', () => {
     );
     if (!('session' in session)) throw new Error(session.message);
 
-    const conversation = await runWorkflow(
-      workflows.reviewConversationForLearning,
+    const preparedConversation = await prepareConversationReflection(
       {
         sessionId: session.session.id,
-        reason: 'workflow smoke',
+        reason: 'learning review smoke',
         trigger: 'manual',
       },
-      fakeHarness({
+      paths,
+    );
+    if (!preparedConversation.ok) {
+      throw new Error(preparedConversation.message);
+    }
+    const conversation = await completeLearningReviewFromModelOutput(
+      preparedConversation,
+      {
         summary: 'Remember the local verification loop.',
         memoryActions: [
           {
@@ -78,7 +67,8 @@ describe('learning Flue workflow smoke', () => {
             reason: 'Repeated user correction in conversation summary.',
           },
         ],
-      }),
+      },
+      paths,
     );
     expect(conversation).toMatchObject({
       ok: true,
@@ -103,10 +93,16 @@ describe('learning Flue workflow smoke', () => {
       },
       paths,
     );
-    const retrospective = await runWorkflow(
-      workflows.reviewPrBatchForLearning,
-      { trigger: 'manual', reason: 'workflow smoke' },
-      fakeHarness({
+    const preparedRetrospective = await preparePrBatchLearningReview(
+      { trigger: 'manual', reason: 'learning review smoke' },
+      paths,
+    );
+    if (!preparedRetrospective.ok) {
+      throw new Error(preparedRetrospective.message);
+    }
+    const retrospective = await completeLearningReviewFromModelOutput(
+      preparedRetrospective,
+      {
         summary: 'Capture the recurring Valibot API boundary lesson.',
         memoryActions: [
           {
@@ -132,7 +128,8 @@ describe('learning Flue workflow smoke', () => {
             },
           },
         ],
-      }),
+      },
+      paths,
     );
     expect(retrospective).toMatchObject({
       ok: true,
@@ -173,47 +170,10 @@ async function fixture() {
     {
       memoryWriteMode: 'auto',
       skillWriteMode: 'review',
-      prRetrospectiveThreshold: 1,
+      prRetrospectiveThreshold: 10,
       maxPrBatchItems: 4,
     },
     paths,
   );
   return paths;
-}
-
-function fakeHarness(output: unknown) {
-  return {
-    async session() {
-      return {
-        async task() {
-          return { data: output };
-        },
-      };
-    },
-  };
-}
-
-async function runWorkflow(
-  workflow: unknown,
-  input: unknown,
-  harness: unknown,
-) {
-  const runnable = workflow as {
-    action: {
-      run(context: { harness: unknown; input: unknown }): unknown;
-    };
-  };
-  return Promise.resolve(runnable.action.run({ harness, input }));
-}
-
-async function loadWorkflows() {
-  const [reviewConversationForLearning, reviewPrBatchForLearning] =
-    await Promise.all([
-      import('./workflows/review_conversation_for_learning'),
-      import('./workflows/review_pr_batch_for_learning'),
-    ]);
-  return {
-    reviewConversationForLearning: reviewConversationForLearning.default,
-    reviewPrBatchForLearning: reviewPrBatchForLearning.default,
-  };
 }

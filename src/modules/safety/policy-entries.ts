@@ -556,6 +556,16 @@ export const entries: SafetyPolicyEntry[] = [
     'Creates local PR review reports and Neon-origin local draft comments for human review. It never submits a GitHub review or performs external writes.',
   ),
   action(
+    'neondeck_submit_learning_review',
+    'Submit bounded learning review',
+    {
+      ...safeMutation,
+      auditTarget:
+        'learning_reviews/learning_candidates/memories/memory_events/config_history/activity_events',
+    },
+    'Reviews one immutable evidence snapshot and applies or proposes memory and skill changes only through typed, audited Neondeck policy actions.',
+  ),
+  action(
     'neondeck_autopilot_ci_fix_run',
     'Run bounded PR CI fix',
     {
@@ -1566,36 +1576,6 @@ export const entries: SafetyPolicyEntry[] = [
       auditTarget: 'jobs/notifications/activity_events/reports',
     },
     'Runs due scheduled work through the Flue workflow surface and records job outcomes, notifications, workflow observations, and scheduled report artifacts.',
-  ),
-  workflow(
-    'curate_learning_store',
-    'Run memory curation workflow',
-    {
-      ...safeMutation,
-      auditTarget:
-        'learning_reviews/learning_candidates/memories/memory_events/activity_events',
-    },
-    'Runs bounded model-backed memory curation and applies or proposes changes through typed audited memory actions.',
-  ),
-  workflow(
-    'review_conversation_for_learning',
-    'Run conversation learning review workflow',
-    {
-      ...safeMutation,
-      auditTarget:
-        'learning_reviews/learning_candidates/memories/memory_events/activity_events',
-    },
-    'Runs bounded model-backed conversation reflection and applies or proposes durable memory changes through typed audited memory actions.',
-  ),
-  workflow(
-    'review_pr_batch_for_learning',
-    'Run PR learning retrospective workflow',
-    {
-      ...safeMutation,
-      auditTarget:
-        'learning_reviews/learning_candidates/memories/memory_events/config_history/activity_events',
-    },
-    'Runs bounded model-backed PR/autopilot retrospectives over compact summaries and applies or proposes memory and skill changes through typed actions.',
   ),
   workflow(
     'handoff_to_kilo',

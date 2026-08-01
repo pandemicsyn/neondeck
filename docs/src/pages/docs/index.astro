@@ -220,21 +220,23 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
         </p>
         <pre><code>briefing
 command-run
-curate_learning_store
 dev-doctor
 fix-pr-ci
 handoff_to_kilo
 promote_kilo_result
 reconcile_kilo_task
 review-pr-for-human
-review_conversation_for_learning
 review_kilo_result
-review_pr_batch_for_learning
 scheduled-agent-instruction
 scheduler-tick
 summarize_kilo_session
 verify_kilo_result
 watch-pr</code></pre>
+        <p>
+          Learning reviews use a keyed <code>learning-review</code> Flue agent. Their
+          bounded evidence, submission identity, result, and audit trail remain in
+          Neondeck's app-owned learning state so interrupted admission can be recovered.
+        </p>
         <p>
           Watched-PR Autopilot is a continuing
           <code>pr-autopilot-owner</code> agent controlled through typed actions,

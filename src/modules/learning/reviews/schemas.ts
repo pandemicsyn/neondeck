@@ -1,5 +1,6 @@
 import type { JsonValue } from '@flue/runtime';
 import * as v from 'valibot';
+import type { ThinkingLevel } from '../../../runtime-home';
 
 export type LearningReviewKind = 'conversation' | 'curation' | 'pr-batch';
 export type LearningReviewStatus = 'running' | 'completed' | 'failed';
@@ -9,12 +10,14 @@ export type LearningReviewRecord = {
   kind: LearningReviewKind;
   status: LearningReviewStatus;
   model: string;
-  thinkingLevel: string;
+  thinkingLevel: ThinkingLevel;
   trigger: JsonValue;
   inputSummary: JsonValue | null;
   result: JsonValue | null;
   error: string | null;
-  flueRunId: string | null;
+  agentId: string | null;
+  submissionId: string | null;
+  dispatchError: string | null;
   startedAt: string;
   completedAt: string | null;
 };
@@ -92,6 +95,28 @@ export const learningReviewerOutputSchema = v.object({
   ),
 });
 
+export const preparedLearningReviewSchema = v.object({
+  ok: v.literal(true),
+  reviewId: nonEmptyStringSchema,
+  kind: v.picklist(['conversation', 'curation', 'pr-batch']),
+  mode: v.picklist(['off', 'review', 'auto']),
+  skillMode: v.picklist(['off', 'review', 'auto']),
+  model: nonEmptyStringSchema,
+  thinkingLevel: v.picklist([
+    'off',
+    'minimal',
+    'low',
+    'medium',
+    'high',
+    'xhigh',
+  ]),
+  inputSummary: v.unknown(),
+  prompt: nonEmptyStringSchema,
+  allowedMemoryIds: v.array(nonEmptyStringSchema),
+  allowedProjectRepoIds: v.array(v.nullable(nonEmptyStringSchema)),
+  allowedSkillIds: v.array(nonEmptyStringSchema),
+});
+
 export const conversationReviewInputSchema = v.object({
   sessionId: v.optional(nonEmptyStringSchema),
   reason: v.optional(v.string()),
@@ -139,7 +164,7 @@ export type PreparedLearningReview = {
   mode: 'off' | 'review' | 'auto';
   skillMode: 'off' | 'review' | 'auto';
   model: string;
-  thinkingLevel: string;
+  thinkingLevel: ThinkingLevel;
   inputSummary: JsonValue;
   prompt: string;
   allowedMemoryIds: string[];

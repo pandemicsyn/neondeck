@@ -23,15 +23,26 @@ import {
   reviewAction,
 } from './store';
 
+export type LearningReviewEffectRunner = <T>(
+  name: string,
+  effect: () => T | Promise<T>,
+) => Promise<T>;
+
 export async function completeLearningReviewFromModelOutput(
   prepared: PreparedLearningReview,
   output: LearningReviewerOutput,
   paths = runtimePaths(),
+  options: { runEffect?: LearningReviewEffectRunner } = {},
 ) {
+  const runEffect: LearningReviewEffectRunner =
+    options.runEffect ?? ((_name, effect) => Promise.resolve(effect()));
   const parsed = v.safeParse(learningReviewerOutputSchema, output);
   if (!parsed.success) {
     const message = v.summarize(parsed.issues);
-    failLearningReview(prepared.reviewId, message, paths);
+    await runEffect('fail-invalid-result', () => {
+      failLearningReview(prepared.reviewId, message, paths);
+      return { failed: true };
+    });
     return failedReview(reviewAction(prepared.kind), message);
   }
 
@@ -42,7 +53,7 @@ export async function completeLearningReviewFromModelOutput(
   const allowedMemoryIds = new Set(prepared.allowedMemoryIds);
   const allowedProjectRepoIds = new Set(prepared.allowedProjectRepoIds);
   const allowedSkillIds = new Set(prepared.allowedSkillIds);
-  for (const proposal of parsed.output.memoryActions) {
+  for (const [index, proposal] of parsed.output.memoryActions.entries()) {
     if (prepared.kind === 'pr-batch' && proposal.action === 'upsert') {
       if (proposal.scope === 'user') {
         skipped.push({
@@ -66,20 +77,25 @@ export async function completeLearningReviewFromModelOutput(
       continue;
     }
     if (prepared.mode === 'review') {
-      const result = await createCandidateFromProposal(
-        proposal,
-        prepared.reviewId,
-        paths,
+      const result = await runEffect(`memory-candidate:${index}`, () =>
+        createCandidateFromProposal(
+          proposal,
+          prepared.reviewId,
+          paths,
+          `learning:${prepared.reviewId}:memory:${index}`,
+        ),
       );
       if (result.ok && 'candidate' in result) candidates.push(result.candidate);
       else skipped.push(result);
       continue;
     }
-    const result = await applyProposal(proposal, paths);
+    const result = await runEffect(`memory-action:${index}`, () =>
+      applyProposal(proposal, paths),
+    );
     if (result.ok && result.changed) applied.push(result);
     else skipped.push(result);
   }
-  for (const proposal of parsed.output.skillPatches) {
+  for (const [index, proposal] of parsed.output.skillPatches.entries()) {
     if (!allowedSkillIds.has(proposal.skillId)) {
       skipped.push({
         action: 'skill-patch',
@@ -96,10 +112,11 @@ export async function completeLearningReviewFromModelOutput(
       });
       continue;
     }
-    const proposed = await proposeSkillPatch(
-      { ...proposal, reviewId: prepared.reviewId },
-      paths,
-      { source: 'workflow' },
+    const proposed = await runEffect(`skill-proposal:${index}`, () =>
+      proposeSkillPatch({ ...proposal, reviewId: prepared.reviewId }, paths, {
+        source: 'workflow',
+        candidateId: `learning:${prepared.reviewId}:skill:${index}`,
+      }),
     );
     if (!proposed.ok || !('candidate' in proposed)) {
       skipped.push(proposed);
@@ -121,10 +138,12 @@ export async function completeLearningReviewFromModelOutput(
     const candidateId = String(
       (proposed.candidate as Record<string, unknown>).id,
     );
-    const appliedPatch = await applySkillPatchCandidate(
-      { id: candidateId, reason: proposal.reason },
-      paths,
-      { source: 'workflow' },
+    const appliedPatch = await runEffect(`skill-apply:${index}`, () =>
+      applySkillPatchCandidate(
+        { id: candidateId, reason: proposal.reason },
+        paths,
+        { source: 'workflow', idempotent: true },
+      ),
     );
     if (appliedPatch.ok && appliedPatch.changed) applied.push(appliedPatch);
     else skipped.push(appliedPatch);
@@ -149,7 +168,10 @@ export async function completeLearningReviewFromModelOutput(
       )
       .filter(Boolean),
   });
-  completeLearningReview(prepared.reviewId, result, paths);
+  await runEffect('complete-review', () => {
+    completeLearningReview(prepared.reviewId, result, paths);
+    return { completed: true };
+  });
 
   return {
     ok: true,
@@ -191,6 +213,7 @@ export async function createCandidateFromProposal(
   proposal: MemoryProposal,
   reviewId: string,
   paths: RuntimePaths,
+  candidateId?: string,
 ) {
   if (proposal.action === 'upsert') {
     return createMemoryCandidate(
@@ -204,7 +227,7 @@ export async function createCandidateFromProposal(
         reviewId,
       },
       paths,
-      { source: 'workflow' },
+      { source: 'workflow', candidateId },
     );
   }
   if (proposal.action === 'rewrite') {
@@ -217,7 +240,7 @@ export async function createCandidateFromProposal(
         patch: { memoryId: proposal.memoryId },
       },
       paths,
-      { source: 'workflow' },
+      { source: 'workflow', candidateId },
     );
   }
   if (proposal.action === 'archive') {
@@ -229,7 +252,7 @@ export async function createCandidateFromProposal(
         patch: { memoryId: proposal.memoryId },
       },
       paths,
-      { source: 'workflow' },
+      { source: 'workflow', candidateId },
     );
   }
   return createMemoryCandidate(
@@ -244,7 +267,7 @@ export async function createCandidateFromProposal(
       },
     },
     paths,
-    { source: 'workflow' },
+    { source: 'workflow', candidateId },
   );
 }
 

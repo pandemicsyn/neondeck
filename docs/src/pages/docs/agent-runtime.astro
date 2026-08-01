@@ -61,21 +61,25 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
         </p>
         <pre><code>briefing
 command-run
-curate_learning_store
 dev-doctor
 fix-pr-ci
 handoff_to_kilo
 promote_kilo_result
 reconcile_kilo_task
 review-pr-for-human
-review_conversation_for_learning
 review_kilo_result
-review_pr_batch_for_learning
 scheduled-agent-instruction
 scheduler-tick
 summarize_kilo_session
 verify_kilo_result
 watch-pr</code></pre>
+        <p>
+          Conversation, curation, and handled-PR learning reviews use keyed
+          <code>learning-review</code> agent submissions instead of workflows. Neondeck
+          persists the bounded evidence before dispatch, correlates the Flue submission
+          with app-owned review state, and can recover interrupted admissions after
+          restart.
+        </p>
         <p>
           Watched-PR Autopilot uses one continuing
           <code>pr-autopilot-owner</code> agent per PR rather than a chain of transition

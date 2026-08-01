@@ -1,4 +1,4 @@
-import { openDb } from '../../lib/sqlite';
+import { openDb, withImmediateTransaction } from '../../lib/sqlite';
 import {
   ensureRuntimeHomeSync,
   runtimePaths,
@@ -87,6 +87,142 @@ export function sessionContextInstructionsForAgentSync(
     }
 
     return [instructions, transitionInstructions].filter(Boolean).join('\n\n');
+  } finally {
+    database.close();
+  }
+}
+
+export function displaySessionContextSnapshotForAgentSync(
+  sessionId: string,
+  paths: RuntimePaths = runtimePaths(),
+) {
+  ensureRuntimeHomeSync(paths);
+  const database = openDb(paths.neondeckDatabase, { readOnly: true });
+  try {
+    const session = findChatSession(database, sessionId);
+    const memory = buildMemoryPromptSnapshotSync(paths, {
+      repoId: session?.linkedRepoId ?? null,
+    });
+    const refreshBriefingContext =
+      session?.kind === 'briefing' && session.staleReasons.length > 0;
+    const transitionInstructions = refreshBriefingContext
+      ? briefingContextTransitionInstructions(session.staleReasons)
+      : '';
+    return {
+      instructions: [
+        linkedSessionContextInstructions(session),
+        transitionInstructions,
+      ]
+        .filter(Boolean)
+        .join('\n\n'),
+      memoryIds: memory.memoryIds,
+      memoryInstructions: memory.instructions,
+      refreshBriefingContext,
+      linkedContext: {
+        repoId: session?.linkedRepoId ?? null,
+        watchId: session?.linkedWatchId ?? null,
+        taskId: session?.linkedTaskId ?? null,
+      },
+    };
+  } finally {
+    database.close();
+  }
+}
+
+export function recordDisplaySessionContextSnapshotSync(
+  input: {
+    sessionId: string;
+    snapshotId: string;
+    memoryIds: string[];
+    refreshBriefingContext: boolean;
+    linkedContext: {
+      repoId: string | null;
+      watchId: string | null;
+      taskId: string | null;
+    };
+  },
+  paths: RuntimePaths = runtimePaths(),
+) {
+  ensureRuntimeHomeSync(paths);
+  const database = openDb(paths.neondeckDatabase);
+  try {
+    return withImmediateTransaction(database, () => {
+      const current = database
+        .prepare(`SELECT context_snapshot_id FROM chat_sessions WHERE id = ?;`)
+        .get(input.sessionId) as { context_snapshot_id?: unknown } | undefined;
+      if (!current || current.context_snapshot_id === input.snapshotId) {
+        return false;
+      }
+
+      const now = new Date().toISOString();
+      database
+        .prepare(
+          `
+          UPDATE chat_sessions
+          SET context_loaded_at = ?,
+            context_memory_ids_json = ?,
+            context_snapshot_id = ?,
+            updated_at = ?
+          WHERE id = ?;
+        `,
+        )
+        .run(
+          now,
+          JSON.stringify(input.memoryIds),
+          input.snapshotId,
+          now,
+          input.sessionId,
+        );
+      markLoadedMemoriesUsed(database, input.memoryIds, now);
+      recordSessionAudit(database, {
+        action: 'context_snapshot_captured',
+        sessionId: input.sessionId,
+        reason: 'display-assistant-persistent-context',
+        metadata: {
+          snapshotId: input.snapshotId,
+          memoryIds: input.memoryIds,
+          linkedRepoId: input.linkedContext.repoId,
+          linkedWatchId: input.linkedContext.watchId,
+          linkedTaskId: input.linkedContext.taskId,
+        },
+      });
+      return true;
+    });
+  } finally {
+    database.close();
+  }
+}
+
+export function acknowledgeDisplaySessionContextSnapshotSync(
+  input: { sessionId: string; snapshotId: string },
+  paths: RuntimePaths = runtimePaths(),
+) {
+  ensureRuntimeHomeSync(paths);
+  const database = openDb(paths.neondeckDatabase);
+  try {
+    return withImmediateTransaction(database, () => {
+      const now = new Date().toISOString();
+      const update = database
+        .prepare(
+          `
+          UPDATE chat_sessions
+          SET stale_reasons_json = NULL,
+            updated_at = ?
+          WHERE id = ?
+            AND context_snapshot_id = ?
+            AND stale_reasons_json IS NOT NULL;
+        `,
+        )
+        .run(now, input.sessionId, input.snapshotId);
+      if (update.changes === 0) return false;
+      recordSessionAudit(database, {
+        action: 'briefing_context_refreshed',
+        sessionId: input.sessionId,
+        reason: 'display-assistant-persistent-context',
+        metadata: { snapshotId: input.snapshotId },
+      });
+      return true;
+    });
   } finally {
     database.close();
   }

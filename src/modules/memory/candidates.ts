@@ -1,4 +1,4 @@
-import { openDb } from '../../lib/sqlite.ts';
+import { openDb, withImmediateTransaction } from '../../lib/sqlite.ts';
 import type { JsonValue } from '@flue/runtime';
 import { asJsonValue } from '../../lib/action-result';
 import { randomUUID } from 'node:crypto';
@@ -47,7 +47,7 @@ import {
 export async function createMemoryCandidate(
   input: v.InferInput<typeof memoryCandidateCreateInputSchema>,
   paths = runtimePaths(),
-  options: { source?: MemoryMutationSource } = {},
+  options: { source?: MemoryMutationSource; candidateId?: string } = {},
 ) {
   await ensureRuntimeHome(paths);
   const parsed = v.safeParse(memoryCandidateCreateInputSchema, input);
@@ -66,6 +66,28 @@ export async function createMemoryCandidate(
   }
 
   const now = new Date().toISOString();
+  if (options.candidateId) {
+    const database = openDb(paths.neondeckDatabase, { readOnly: true });
+    try {
+      const row = database
+        .prepare(
+          `SELECT * FROM learning_candidates WHERE id = ? AND target = 'memory';`,
+        )
+        .get(options.candidateId);
+      if (row) {
+        const candidate = readMemoryCandidateRow(row);
+        return {
+          ok: true,
+          action: 'memory_candidate_create',
+          changed: false,
+          candidate,
+          message: `Memory ${candidate.action} candidate was already created.`,
+        };
+      }
+    } finally {
+      database.close();
+    }
+  }
   if (parsed.output.value !== undefined) {
     const rejection = memoryRejectionReason(parsed.output.value);
     if (rejection) {
@@ -89,7 +111,7 @@ export async function createMemoryCandidate(
   }
 
   const candidate: MemoryCandidateRecord = {
-    id: randomUUID(),
+    id: options.candidateId ?? randomUUID(),
     target: 'memory',
     status: 'proposed',
     action: parsed.output.action,
@@ -112,13 +134,15 @@ export async function createMemoryCandidate(
 
   const database = openDb(paths.neondeckDatabase);
   try {
-    insertMemoryCandidate(database, candidate);
-    recordLearningEvent(database, {
-      type: 'memory_candidate_created',
-      source: 'workflow',
-      repoId: candidate.repoId,
-      data: { candidateId: candidate.id, action: candidate.action },
-      createdAt: now,
+    withImmediateTransaction(database, () => {
+      insertMemoryCandidate(database, candidate);
+      recordLearningEvent(database, {
+        type: 'memory_candidate_created',
+        source: 'workflow',
+        repoId: candidate.repoId,
+        data: { candidateId: candidate.id, action: candidate.action },
+        createdAt: now,
+      });
     });
     return {
       ok: true,

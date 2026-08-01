@@ -8,10 +8,11 @@ import {
 } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { updateAgentModels, updateLearningConfig } from './modules/config';
 import {
   completeLearningReviewFromModelOutput,
+  listPendingLearningReviewAdmissionIntents,
   listLearningReviews,
   prepareConversationReflection,
   prepareMemoryCurationReview,
@@ -83,34 +84,36 @@ describe('learning review orchestration', () => {
       thinkingLevel: 'low',
     });
     if (!prepared.ok) throw new Error(prepared.message);
+    const modelOutput = {
+      summary: 'User preference is durable.',
+      memoryActions: [
+        {
+          action: 'upsert' as const,
+          scope: 'user' as const,
+          key: 'summary-style',
+          value: 'Prefer terse PR summaries.',
+          reason: 'Repeated summary preference in conversation.',
+        },
+      ],
+    };
 
     await expect(
-      completeLearningReviewFromModelOutput(
-        prepared,
-        {
-          summary: 'User preference is durable.',
-          memoryActions: [
-            {
-              action: 'upsert',
-              scope: 'user',
-              key: 'summary-style',
-              value: 'Prefer terse PR summaries.',
-              reason: 'Repeated summary preference in conversation.',
-            },
-          ],
-        },
-        paths,
-      ),
+      completeLearningReviewFromModelOutput(prepared, modelOutput, paths),
     ).resolves.toMatchObject({
       ok: true,
       changed: true,
       candidates: [expect.objectContaining({ action: 'upsert' })],
       applied: [],
     });
-
     await expect(
-      listMemoryCandidates({ status: 'proposed' }, paths),
-    ).resolves.toMatchObject({
+      completeLearningReviewFromModelOutput(prepared, modelOutput, paths),
+    ).resolves.toMatchObject({ ok: true });
+
+    const candidateState = await listMemoryCandidates(
+      { status: 'proposed' },
+      paths,
+    );
+    expect(candidateState).toMatchObject({
       candidates: [
         expect.objectContaining({
           action: 'upsert',
@@ -119,6 +122,7 @@ describe('learning review orchestration', () => {
         }),
       ],
     });
+    expect(candidateState.candidates).toHaveLength(1);
     await expect(listMemories({}, paths)).resolves.toMatchObject({
       memories: [],
     });
@@ -480,14 +484,26 @@ describe('learning review orchestration', () => {
         throw new Error('admission failed');
       },
     });
+    expect(listPendingLearningReviewAdmissionIntents(paths, sessionId)).toEqual(
+      [
+        expect.objectContaining({
+          kind: 'conversation',
+          status: 'pending',
+          input: expect.objectContaining({ turnCount: 2 }),
+        }),
+      ],
+    );
     await recordConversationTurnAndMaybeQueueLearning(sessionId, paths, {
       async invokeConversationReview(input) {
         attempts.push(input.turnCount ?? 0);
-        return { runId: 'run-retry' };
+        return learningReviewAdmission('run-retry');
       },
     });
 
-    expect(attempts).toEqual([2, 3]);
+    expect(attempts).toEqual([2, 2]);
+    expect(listPendingLearningReviewAdmissionIntents(paths, sessionId)).toEqual(
+      [],
+    );
   });
 
   it('fails closed when learning config cannot be parsed', async () => {
@@ -534,31 +550,31 @@ describe('learning review orchestration', () => {
     await recordConversationTurnAndMaybeQueueLearning(sessionId, paths, {
       async invokeConversationReview(input) {
         conversationCalls.push(input);
-        return { runId: 'run-reflect-1' };
+        return learningReviewAdmission('run-reflect-1');
       },
       async invokeCurationReview(input) {
         curationCalls.push(input);
-        return { runId: 'run-curate-1' };
+        return learningReviewAdmission('run-curate-1');
       },
     });
     await recordConversationTurnAndMaybeQueueLearning(sessionId, paths, {
       async invokeConversationReview(input) {
         conversationCalls.push(input);
-        return { runId: 'run-reflect-2' };
+        return learningReviewAdmission('run-reflect-2');
       },
       async invokeCurationReview(input) {
         curationCalls.push(input);
-        return { runId: 'run-curate-2' };
+        return learningReviewAdmission('run-curate-2');
       },
     });
     await recordConversationTurnAndMaybeQueueLearning(sessionId, paths, {
       async invokeConversationReview(input) {
         conversationCalls.push(input);
-        return { runId: 'run-reflect-3' };
+        return learningReviewAdmission('run-reflect-3');
       },
       async invokeCurationReview(input) {
         curationCalls.push(input);
-        return { runId: 'run-curate-3' };
+        return learningReviewAdmission('run-curate-3');
       },
     });
 
@@ -575,6 +591,106 @@ describe('learning review orchestration', () => {
         turnCount: 3,
       }),
     ]);
+  });
+
+  it('reserves a due conversation cadence before awaiting admission', async () => {
+    const paths = runtimePaths(await tempHome());
+    await updateLearningConfig(
+      {
+        conversationReviewTurnInterval: 2,
+        memoryCurationEnabled: false,
+      },
+      paths,
+    );
+    const session = await createChatSession(
+      { title: 'Concurrent cadence' },
+      paths,
+    );
+    const sessionId = (session as { session: { id: string } }).session.id;
+    await recordConversationTurnAndMaybeQueueLearning(
+      sessionId,
+      paths,
+      {},
+      'submission-before-threshold',
+    );
+
+    let releaseAdmission: (() => void) | undefined;
+    const admission = new Promise<void>((resolve) => {
+      releaseAdmission = resolve;
+    });
+    const firstInvoke = vi.fn<
+      () => Promise<ReturnType<typeof learningReviewAdmission>>
+    >(async () => {
+      await admission;
+      return learningReviewAdmission('run-concurrent');
+    });
+    const secondInvoke = vi.fn<
+      () => Promise<ReturnType<typeof learningReviewAdmission>>
+    >(async () => learningReviewAdmission('run-duplicate'));
+    const first = recordConversationTurnAndMaybeQueueLearning(
+      sessionId,
+      paths,
+      { invokeConversationReview: firstInvoke },
+      'submission-at-threshold',
+    );
+    await vi.waitFor(() => expect(firstInvoke).toHaveBeenCalledOnce());
+
+    await expect(
+      recordConversationTurnAndMaybeQueueLearning(
+        sessionId,
+        paths,
+        { invokeConversationReview: secondInvoke },
+        'submission-during-admission',
+      ),
+    ).resolves.toMatchObject({ queued: [], turnCount: 3 });
+    expect(secondInvoke).not.toHaveBeenCalled();
+
+    releaseAdmission?.();
+    await expect(first).resolves.toMatchObject({
+      queued: [expect.objectContaining({ reviewId: 'review-run-concurrent' })],
+      turnCount: 2,
+    });
+  });
+
+  it('records each settled conversation submission only once', async () => {
+    const paths = runtimePaths(await tempHome());
+    await updateLearningConfig(
+      {
+        conversationReviewTurnInterval: 10,
+        memoryCurationEnabled: false,
+      },
+      paths,
+    );
+    const session = await createChatSession(
+      { title: 'Idempotent cadence' },
+      paths,
+    );
+    const sessionId = (session as { session: { id: string } }).session.id;
+
+    await expect(
+      recordConversationTurnAndMaybeQueueLearning(
+        sessionId,
+        paths,
+        {},
+        'submission-1',
+      ),
+    ).resolves.toMatchObject({ turnCount: 1 });
+    await expect(
+      recordConversationTurnAndMaybeQueueLearning(
+        sessionId,
+        paths,
+        {},
+        'submission-1',
+      ),
+    ).resolves.toMatchObject({ duplicate: true, turnCount: 0 });
+    await expect(
+      recordConversationTurnAndMaybeQueueLearning(
+        sessionId,
+        paths,
+        {},
+        'submission-2',
+      ),
+    ).resolves.toMatchObject({ turnCount: 2 });
   });
 
   it('records handled PR events idempotently and queues threshold reviews', async () => {
@@ -595,7 +711,7 @@ describe('learning review orchestration', () => {
       {
         async invokePrBatchReview(input) {
           queued.push(input);
-          return { runId: 'run-pr-review' };
+          return learningReviewAdmission('run-pr-review');
         },
       },
     );
@@ -624,7 +740,7 @@ describe('learning review orchestration', () => {
       {
         async invokePrBatchReview(input) {
           queued.push(input);
-          return { runId: 'run-pr-review' };
+          return learningReviewAdmission('run-pr-review');
         },
       },
     );
@@ -638,7 +754,7 @@ describe('learning review orchestration', () => {
     expect(second).toMatchObject({
       recorded: true,
       handledCountSinceReview: 2,
-      queued: [expect.objectContaining({ runId: 'run-pr-review' })],
+      queued: [expect.objectContaining({ submissionId: 'run-pr-review' })],
     });
     expect(queued).toEqual([expect.objectContaining({ trigger: 'threshold' })]);
     expect((queued[0] as { repoId?: unknown }).repoId).toBeUndefined();
@@ -673,7 +789,7 @@ describe('learning review orchestration', () => {
       {
         async invokePrBatchReview(input) {
           queued.push(input);
-          return { runId: 'run-pr-review' };
+          return learningReviewAdmission('run-pr-review');
         },
       },
     );
@@ -681,7 +797,7 @@ describe('learning review orchestration', () => {
     expect(second).toMatchObject({
       recorded: true,
       handledCountSinceReview: 2,
-      queued: [expect.objectContaining({ runId: 'run-pr-review' })],
+      queued: [expect.objectContaining({ submissionId: 'run-pr-review' })],
     });
     expect(queued).toEqual([expect.objectContaining({ trigger: 'threshold' })]);
     expect((queued[0] as { repoId?: unknown }).repoId).toBeUndefined();
@@ -733,7 +849,7 @@ describe('learning review orchestration', () => {
       {
         async invokePrBatchReview(input) {
           attempts.push(input);
-          return { runId: 'run-pr-review-retry' };
+          return learningReviewAdmission('run-pr-review-retry');
         },
       },
     );
@@ -741,7 +857,9 @@ describe('learning review orchestration', () => {
     expect(attempts).toHaveLength(2);
     expect(retry).toMatchObject({
       recorded: true,
-      queued: [expect.objectContaining({ runId: 'run-pr-review-retry' })],
+      queued: [
+        expect.objectContaining({ submissionId: 'run-pr-review-retry' }),
+      ],
     });
   });
 
@@ -773,7 +891,7 @@ describe('learning review orchestration', () => {
       {
         async invokePrBatchReview(input) {
           queued.push(input);
-          return { runId: 'run-pr-review-1' };
+          return learningReviewAdmission('run-pr-review-1');
         },
       },
     );
@@ -801,7 +919,7 @@ describe('learning review orchestration', () => {
       {
         async invokePrBatchReview(input) {
           queued.push(input);
-          return { runId: 'run-pr-review-2' };
+          return learningReviewAdmission('run-pr-review-2');
         },
       },
     );
@@ -862,7 +980,7 @@ describe('learning review orchestration', () => {
       {
         async invokePrBatchReview(input) {
           queued.push(input);
-          return { runId: 'run-pr-review-kilo' };
+          return learningReviewAdmission('run-pr-review-kilo');
         },
       },
     );
@@ -870,7 +988,7 @@ describe('learning review orchestration', () => {
     expect(result).toMatchObject({
       recorded: true,
       duplicate: false,
-      queued: [expect.objectContaining({ runId: 'run-pr-review-kilo' })],
+      queued: [expect.objectContaining({ submissionId: 'run-pr-review-kilo' })],
     });
     expect(queued).toEqual([expect.objectContaining({ trigger: 'threshold' })]);
   });
@@ -1671,6 +1789,16 @@ async function tempHome() {
   const home = await mkdtemp(join(tmpdir(), 'neondeck-learning-'));
   tempRoots.push(home);
   return home;
+}
+
+function learningReviewAdmission(submissionId: string) {
+  return {
+    ok: true as const,
+    reviewId: `review-${submissionId}`,
+    agentId: `learning-review:review-${submissionId}`,
+    submissionId,
+    activityUrl: `/activity?submissionId=${submissionId}`,
+  };
 }
 
 async function writeUserSkill(home: string, id: string) {

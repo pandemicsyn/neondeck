@@ -23,10 +23,7 @@ import {
   runtimePaths,
 } from '../runtime-home';
 import { createEventStreamRoutes } from './events/event-stream';
-import {
-  displayAssistantLearningMiddleware,
-  installFlueObservationHandlers,
-} from './learning-hooks';
+import { installFlueObservationHandlers } from './learning-hooks';
 import { requireLocalApiAccess } from './middleware';
 import { createActivityRoutes } from './routes/activity';
 import { createBriefingRoutes } from './routes/briefings';
@@ -67,6 +64,7 @@ import {
   installBriefingConversationHistoryReader,
   recoverInterruptedBriefingAdmissions,
 } from '../modules/briefings';
+import { recoverInterruptedLearningReviews } from '../modules/learning/reviews';
 
 export type CreateAppOptions = {
   paths?: RuntimePaths;
@@ -87,6 +85,13 @@ export async function createApp(options: CreateAppOptions = {}) {
   installFlueExecutionContextTracker();
   await recoverInterruptedAutopilotOwners(paths);
   installFlueObservationHandlers(paths);
+  const learningRecovery = await recoverInterruptedLearningReviews(paths);
+  if (learningRecovery.failed.length > 0) {
+    console.warn(
+      '[neondeck] learning review recovery remains pending',
+      learningRecovery.failed,
+    );
+  }
 
   if (
     options.scheduler !== false &&
@@ -143,10 +148,6 @@ export async function createApp(options: CreateAppOptions = {}) {
   app.route('/api', createReviewSurfaceRoutes());
   app.route('/api/github', createGitHubRoutes(paths));
 
-  app.use(
-    '/api/flue/agents/display-assistant/*',
-    displayAssistantLearningMiddleware(paths),
-  );
   app.use('/api/flue/agents/display-assistant/*', displayAssistantRoute);
   app.route(
     '/api/flue/agents/display-assistant',
@@ -187,6 +188,8 @@ export async function createApp(options: CreateAppOptions = {}) {
     );
   }
   app.route('/reports', createReportFileRoutes(paths));
+
+  app.all('/api/*', (c) => c.notFound());
 
   app.use('/assets/*', serveStatic({ root: staticRoot }));
   app.get(

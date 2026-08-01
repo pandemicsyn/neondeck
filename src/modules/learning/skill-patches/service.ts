@@ -47,7 +47,7 @@ import {
 export async function proposeSkillPatch(
   input: v.InferInput<typeof skillPatchProposeInputSchema>,
   paths = runtimePaths(),
-  options: { source?: SkillPatchMutationSource } = {},
+  options: { source?: SkillPatchMutationSource; candidateId?: string } = {},
 ) {
   await ensureRuntimeHome(paths);
   const parsed = v.safeParse(skillPatchProposeInputSchema, input);
@@ -56,6 +56,27 @@ export async function proposeSkillPatch(
   }
   const policy = await skillPatchPolicyResult(paths, options.source ?? 'user');
   if (!policy.ok) return { ...policy.result, action: 'skill_patch_propose' };
+
+  if (options.candidateId) {
+    const database = openDb(paths.neondeckDatabase, { readOnly: true });
+    try {
+      const candidate = readSkillPatchCandidateById(
+        database,
+        options.candidateId,
+      );
+      if (candidate) {
+        return {
+          ok: true,
+          action: 'skill_patch_propose',
+          changed: false,
+          candidate,
+          message: 'Skill patch candidate was already proposed.',
+        };
+      }
+    } finally {
+      database.close();
+    }
+  }
 
   const target = await resolvePatchableSkill(parsed.output.skillId, paths);
   if (!target.ok) return target.result;
@@ -97,7 +118,7 @@ export async function proposeSkillPatch(
     appliesAfter: 'new-session',
   });
   const candidate: SkillPatchCandidateRecord = {
-    id: randomUUID(),
+    id: options.candidateId ?? randomUUID(),
     target: 'skill',
     status: 'proposed',
     action: 'patch',
@@ -111,12 +132,14 @@ export async function proposeSkillPatch(
 
   const database = openDb(paths.neondeckDatabase);
   try {
-    insertSkillPatchCandidate(database, candidate);
-    recordLearningEvent(database, {
-      type: 'skill_patch_proposed',
-      source: options.source ?? 'user',
-      data: { candidateId: candidate.id, skillId: candidate.skillId },
-      createdAt: now,
+    withImmediateTransaction(database, () => {
+      insertSkillPatchCandidate(database, candidate);
+      recordLearningEvent(database, {
+        type: 'skill_patch_proposed',
+        source: options.source ?? 'user',
+        data: { candidateId: candidate.id, skillId: candidate.skillId },
+        createdAt: now,
+      });
     });
   } finally {
     database.close();
@@ -185,7 +208,7 @@ export async function listSkillPatchCandidates(
 export async function applySkillPatchCandidate(
   input: v.InferInput<typeof skillPatchDecideInputSchema>,
   paths = runtimePaths(),
-  options: { source?: SkillPatchMutationSource } = {},
+  options: { source?: SkillPatchMutationSource; idempotent?: boolean } = {},
 ) {
   await ensureRuntimeHome(paths);
   const parsed = v.safeParse(skillPatchDecideInputSchema, input);
@@ -203,6 +226,17 @@ export async function applySkillPatchCandidate(
         'Skill patch was not found.',
         ['id'],
       );
+    }
+    if (candidate.status === 'applied' && options.idempotent) {
+      return {
+        ok: true,
+        action: 'skill_patch_apply',
+        changed: true,
+        candidateId: candidate.id,
+        skillId: candidate.skillId,
+        appliesAfter: 'new-session',
+        message: 'Skill patch was already applied.',
+      };
     }
     if (candidate.status !== 'proposed') {
       return failedSkillPatch(

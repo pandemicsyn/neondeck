@@ -248,6 +248,12 @@ describe('structured memory actions', () => {
     const secondId = (second as { memory?: { id: string } }).memory?.id;
     expect(firstId).toBeTruthy();
     expect(secondId).toBeTruthy();
+    await expect(
+      upsertMemory(
+        { scope: 'project', key: 'neondeck.tests', value: 'npm run check' },
+        paths,
+      ),
+    ).resolves.toMatchObject({ ok: true, changed: false });
 
     await expect(
       rewriteMemory(
@@ -265,6 +271,16 @@ describe('structured memory actions', () => {
         value: 'Use npm run check for the fast loop.',
       },
     });
+    await expect(
+      rewriteMemory(
+        {
+          id: firstId!,
+          value: 'Use npm run check for the fast loop.',
+          reason: 'Replay the durable learning step.',
+        },
+        paths,
+      ),
+    ).resolves.toMatchObject({ ok: true, changed: false });
 
     await expect(
       mergeMemories(
@@ -281,6 +297,17 @@ describe('structured memory actions', () => {
       changed: true,
       archivedSourceIds: [secondId],
     });
+    await expect(
+      mergeMemories(
+        {
+          targetId: firstId!,
+          sourceIds: [secondId!],
+          value:
+            'Use Node 26 and npm run check for the Neondeck fast development loop.',
+        },
+        paths,
+      ),
+    ).resolves.toMatchObject({ ok: true, changed: false });
 
     await expect(listMemories({}, paths)).resolves.toMatchObject({
       memories: [
@@ -320,6 +347,15 @@ describe('structured memory actions', () => {
         expect.objectContaining({ action: 'archived' }),
       ]),
     );
+    expect(
+      events.events.filter((event) => event.action === 'created'),
+    ).toHaveLength(2);
+    expect(
+      events.events.filter((event) => event.action === 'rewritten'),
+    ).toHaveLength(1);
+    expect(
+      events.events.filter((event) => event.action === 'merged'),
+    ).toHaveLength(1);
   });
 
   it('archives durable memory through the canonical mutation', async () => {
