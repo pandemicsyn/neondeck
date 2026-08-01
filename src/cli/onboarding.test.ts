@@ -126,18 +126,21 @@ describe('Git identity onboarding', () => {
     expect(runGit).toHaveBeenCalledWith([
       'config',
       '--global',
+      '--replace-all',
       'user.name',
       'syn',
     ]);
     expect(runGit).toHaveBeenCalledWith([
       'config',
       '--global',
+      '--replace-all',
       'user.email',
       'syn@neonronin.sh',
     ]);
     expect(runGit).toHaveBeenCalledWith([
       'config',
       '--global',
+      '--replace-all',
       'user.useConfigOnly',
       'true',
     ]);

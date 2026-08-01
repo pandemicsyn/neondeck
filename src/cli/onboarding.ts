@@ -212,9 +212,15 @@ export async function configureGitIdentity(
   ).trim();
 
   try {
-    await runGit(['config', '--global', 'user.name', name]);
-    await runGit(['config', '--global', 'user.email', email]);
-    await runGit(['config', '--global', 'user.useConfigOnly', 'true']);
+    await runGit(['config', '--global', '--replace-all', 'user.name', name]);
+    await runGit(['config', '--global', '--replace-all', 'user.email', email]);
+    await runGit([
+      'config',
+      '--global',
+      '--replace-all',
+      'user.useConfigOnly',
+      'true',
+    ]);
   } catch (error) {
     warn(
       `Global Git identity could not be configured: ${error instanceof Error ? error.message : String(error)}`,
