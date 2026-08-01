@@ -2,7 +2,9 @@
 
 neondeck is a local-first developer cockpit for a companion display. Its agent, Neon, should act as a second brain and autopilot for active engineering work: repo-aware, watchful, concise, and able to turn deterministic signals into useful next actions and, when configured, bounded code changes.
 
-The near-term priority is to build Neondeck's local operating system before deeper dashboard customization: app home, config, SQLite state, repo registry, runtime skills, schedules, watches, and typed Flue actions. The UI should be an efficient surface over that runtime, not the place where core agent behavior lives.
+The near-term priority is to build Neondeck's local operating system before deeper dashboard customization: app home, config, SQLite state, repo registry, runtime skills, schedules, watches, and typed Flue tools and app APIs. The UI should be an efficient surface over that runtime, not the place where core agent behavior lives.
+
+> **Current Flue 2 runtime note (August 2026):** the Flue 2 migration supersedes the older Flue beta architecture recorded throughout this roadmap. Current code uses Flue agents, tools, direct bounded agent submissions, and app-owned services/state; Flue workflows, actions, and workflow-run persistence no longer exist. Older workflow/action wording below is retained where it documents historical milestones or product workflows rather than the current framework API. See `.plans/FLUE_2_MIGRATION_PLAN.md` for the migration record.
 
 With the runtime foundation in place, the next product focus is autonomy. Neon should move from "tell me what needs attention" toward "watch the work, prepare fixes, delegate larger chunks when useful, and safely push routine changes when policy allows." This requires stronger isolation, worktree orchestration, review-event workflows, delegated agent handoff, push-back policy, and operator-visible audit trails.
 
@@ -14,10 +16,10 @@ Core principles:
 
 - Prefer deterministic APIs and local state for facts.
 - Use Flue agents for continuing conversations and follow-up.
-- Use Flue workflows for bounded operations with run history.
-- Use Flue actions for reusable schema-backed, application-controlled operations.
+- Use direct bounded Flue agent submissions when model reasoning is required.
+- Use typed Flue tools and app APIs for schema-backed, application-controlled operations.
 - Use skills for behavior, conventions, and domain guidance.
-- Treat chat commands and UI buttons as two frontends over the same backend workflows.
+- Treat chat commands and UI buttons as two frontends over the same backend services.
 - Keep session context stable: SOUL, selected skills, repo config, and memory summaries should be loaded deliberately rather than silently changing mid-turn.
 - Treat learning as an explicit, auditable runtime subsystem: durable memory and skill changes should be derived from high-signal evidence, reviewed when policy requires it, and applied only to new sessions or deliberate context refreshes.
 - Use deterministic watchers first and agent summarization only when a watcher detects a meaningful state change.
@@ -26,16 +28,15 @@ Core principles:
 - Prefer bounded autopilot modes over a binary on/off switch: notify-only, prepare-only, autofix with approval, and autofix push when safe.
 - Keep one backend command/event surface so the web dashboard, future TUI, and possible companion surfaces reuse the same runtime.
 
-Flue usage boundaries:
+Current Flue 2 usage boundaries:
 
 - Use the `display-assistant` Flue agent for continuing, addressable Neon conversations.
-- Use Flue workflows for finite, inspectable units of work that should have a run id, events, result, and history.
-- Use Flue actions when an agent or workflow needs application-controlled multi-step behavior with Valibot schemas and reusable logic.
-- Use Flue tools for direct application lookups or small deterministic operations that the model can call during a response.
-- Use Flue skills for procedural guidance and conventions only; skills should point Neon toward tools/actions/workflows, not execute work themselves.
-- Use Hono routes for app-owned dashboard/TUI APIs and UI-only reads. Those routes should call the same service functions as Flue tools/actions rather than duplicating business logic.
-- Use Neondeck app SQLite for product state such as repos, watches, jobs, worktrees, approvals, notifications, memories, and delegated Kilo tasks. Use Flue SQLite for Flue session, submission, workflow-run, and event persistence.
-- Do not keep Flue workflow runs open merely to supervise indefinite background processes. Persist long-lived job state in Neondeck app state and use workflows for bounded admissions, ticks, reconciliations, summaries, verifications, and promotions.
+- Use direct Flue agent submissions for finite, inspectable model work; record product outcomes and operation state in Neondeck.
+- Use Flue tools for model-callable deterministic operations with schema validation.
+- Use Flue skills for procedural guidance and conventions only; skills should point Neon toward tools and APIs, not execute work themselves.
+- Use Hono routes for app-owned dashboard/TUI APIs and UI-only reads. Those routes should call the same service functions as Flue tools rather than duplicating business logic.
+- Use Neondeck app SQLite for product state such as repos, watches, jobs, worktrees, approvals, notifications, memories, delegated Kilo tasks, and operation summaries. Use Flue SQLite for Flue sessions, submissions, and events.
+- Keep long-lived coordination in Neondeck app state. Admit bounded agent work only when a deterministic state change requires model reasoning.
 
 ## Roadmap Ordering
 
@@ -45,7 +46,7 @@ Status markers:
 - `[ ]` still planned or only partially implemented.
 
 1. Neondeck home and runtime state.
-2. Flue actions for self-configuration.
+2. Typed self-configuration services and Flue tools.
 3. Repo registry and GitHub foundation.
 4. Schedules, watches, and blueprint-style automations.
 5. Runtime skills and skill reload.

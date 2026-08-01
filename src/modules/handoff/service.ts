@@ -295,7 +295,7 @@ export async function registerHandoffPr(
       );
       return failResult(
         'handoff_pr_register',
-        `Review workflow dispatch failed for ${ref}.`,
+        `Review agent admission failed for ${ref}.`,
         {
           changed: watchChanged || Boolean(notification),
           id: watchId ?? notificationIdFromValue(notification),
@@ -303,7 +303,7 @@ export async function registerHandoffPr(
           notification,
           audit,
           errors: [message],
-          requires: ['workflowDispatch'],
+          requires: ['reviewAgentAdmission'],
         },
       );
     }

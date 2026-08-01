@@ -193,7 +193,7 @@ describe('Neon commands', () => {
         ok: false,
         command: 'fix-ci',
         status: 'failed',
-        requires: ['humanWorkflowAdmission'],
+        requires: ['humanOperationAdmission'],
       },
     });
   });

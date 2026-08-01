@@ -5,7 +5,6 @@ import { Transform } from 'node:stream';
 import { fileURLToPath } from 'node:url';
 import { serve } from '@hono/node-server';
 import type { RuntimePaths } from '../runtime-home';
-import { createApp } from './create-app';
 
 export const defaultServerPort = 3583;
 export const defaultServerHost = '127.0.0.1';
@@ -24,6 +23,7 @@ export async function startNeondeckServer(options: StartServerOptions = {}) {
   process.env.NEONDECK_PORT = String(port);
   process.env.PORT = String(port);
 
+  const { createApp } = await import('./create-app');
   const app = await createApp({
     paths: options.paths,
     scheduler: options.scheduler,

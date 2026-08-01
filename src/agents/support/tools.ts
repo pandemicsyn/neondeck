@@ -97,7 +97,7 @@ const toolOutputSchema = v.looseObject({
 export const commandsLookupTool = defineTool({
   name: 'neondeck_commands_lookup',
   description:
-    'List supported Neon slash commands without starting a workflow.',
+    'List supported Neon slash commands without starting an operation.',
   input: emptyInputSchema,
   output: v.looseObject({
     ok: v.boolean(),
@@ -111,7 +111,7 @@ export const commandsLookupTool = defineTool({
 export const workflowSummariesLookupTool = defineTool({
   name: 'neondeck_workflow_summaries_lookup',
   description:
-    'List recently persisted Neondeck workflow and command summaries for follow-up context.',
+    'List recently persisted Neondeck operation and command summaries for follow-up context. The tool name reflects the legacy storage table.',
   input: emptyInputSchema,
   output: v.looseObject({
     ok: v.boolean(),

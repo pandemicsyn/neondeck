@@ -127,35 +127,41 @@ describe('local PR diffs', () => {
     await expect(
       readTool?.run({ data: { path: 'src/app.ts' } } as never),
     ).resolves.toMatchObject({
-      revision: headSha,
-      path: 'src/app.ts',
-      content: expect.stringContaining('export const value = 2;'),
+      output: {
+        revision: headSha,
+        path: 'src/app.ts',
+        content: expect.stringContaining('export const value = 2;'),
+      },
     });
     await expect(
       searchTool?.run({ data: { query: 'value = 3' } } as never),
-    ).resolves.toMatchObject({ matches: [] });
+    ).resolves.toMatchObject({ output: { matches: [] } });
     await expect(
       diffTool?.run({ data: { path: 'src/app.ts' } } as never),
     ).resolves.toMatchObject({
-      available: true,
-      base: baseSha,
-      head: headSha,
-      patch: expect.stringContaining('+export const value = 2;'),
+      output: {
+        available: true,
+        base: baseSha,
+        head: headSha,
+        patch: expect.stringContaining('+export const value = 2;'),
+      },
     });
     await expect(
       diffTool?.run({
         data: { path: 'src/app.ts', rightLine: 1, contextLines: 2 },
       } as never),
     ).resolves.toMatchObject({
-      targetChanged: true,
-      rightLine: 1,
-      lines: expect.arrayContaining([
-        expect.objectContaining({
-          kind: 'addition',
-          rightLine: 1,
-          text: 'export const value = 2;',
-        }),
-      ]),
+      output: {
+        targetChanged: true,
+        rightLine: 1,
+        lines: expect.arrayContaining([
+          expect.objectContaining({
+            kind: 'addition',
+            rightLine: 1,
+            text: 'export const value = 2;',
+          }),
+        ]),
+      },
     });
   });
 
@@ -191,23 +197,29 @@ describe('local PR diffs', () => {
       await expect(
         listTool?.run({ data: { limit: 1 } } as never),
       ).resolves.toMatchObject({
-        workspaceToolCallsRemaining:
-          prReviewerWorkspaceToolCallLimit - index - 1,
+        output: {
+          workspaceToolCallsRemaining:
+            prReviewerWorkspaceToolCallLimit - index - 1,
+        },
       });
     }
     await expect(
       readTool?.run({ data: { path: 'src/app.ts' } } as never),
     ).resolves.toMatchObject({
-      workspaceToolCallsRemaining: 0,
-      content: expect.stringContaining('export const value = 2;'),
+      output: {
+        workspaceToolCallsRemaining: 0,
+        content: expect.stringContaining('export const value = 2;'),
+      },
     });
 
     await expect(
       searchTool?.run({ data: { query: 'value' } } as never),
     ).resolves.toMatchObject({
-      available: false,
-      workspaceToolCallsRemaining: 0,
-      reason: expect.stringContaining('exploration budget'),
+      output: {
+        available: false,
+        workspaceToolCallsRemaining: 0,
+        reason: expect.stringContaining('exploration budget'),
+      },
     });
   });
 
@@ -235,15 +247,17 @@ describe('local PR diffs', () => {
         data: { path: 'src/large.ts', rightLine: 1, contextLines: 0 },
       } as never),
     ).resolves.toMatchObject({
-      targetChanged: true,
-      truncated: true,
-      lines: [
-        expect.objectContaining({
-          kind: 'addition',
-          rightLine: 1,
-          textTruncated: true,
-        }),
-      ],
+      output: {
+        targetChanged: true,
+        truncated: true,
+        lines: [
+          expect.objectContaining({
+            kind: 'addition',
+            rightLine: 1,
+            textTruncated: true,
+          }),
+        ],
+      },
     });
   });
 
@@ -372,14 +386,16 @@ describe('local PR diffs', () => {
         },
       } as never),
     ).resolves.toMatchObject({
-      targetChanged: false,
-      lines: expect.arrayContaining([
-        expect.objectContaining({
-          kind: 'context',
-          rightLine: 1,
-          text: 'export const one = 1;',
-        }),
-      ]),
+      output: {
+        targetChanged: false,
+        lines: expect.arrayContaining([
+          expect.objectContaining({
+            kind: 'context',
+            rightLine: 1,
+            text: 'export const one = 1;',
+          }),
+        ]),
+      },
     });
     await expect(
       diffTool?.run({
@@ -390,14 +406,16 @@ describe('local PR diffs', () => {
         },
       } as never),
     ).resolves.toMatchObject({
-      targetChanged: true,
-      lines: expect.arrayContaining([
-        expect.objectContaining({
-          kind: 'addition',
-          rightLine: 2,
-          text: 'export const two = 22;',
-        }),
-      ]),
+      output: {
+        targetChanged: true,
+        lines: expect.arrayContaining([
+          expect.objectContaining({
+            kind: 'addition',
+            rightLine: 2,
+            text: 'export const two = 22;',
+          }),
+        ]),
+      },
     });
   });
 

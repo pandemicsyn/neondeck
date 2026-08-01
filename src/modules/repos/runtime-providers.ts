@@ -1,6 +1,6 @@
 import { setProvider } from '@flue/runtime';
 import type { ModelAuth } from '@earendil-works/pi-ai';
-import { loadNeondeckEnv } from '../runtime';
+import { loadNeondeckEnv } from '../runtime/env';
 import { runtimePaths, type RuntimePaths } from '../../runtime-home';
 import {
   effectiveModelSpecifiers,

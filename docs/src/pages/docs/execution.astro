@@ -88,7 +88,7 @@ const boundaryDiagram = `flowchart TB
               <td>Virtual scratch space</td>
               <td>
                 The same bounded product capabilities, subject to
-                workflow-origin restrictions and existing approval policy
+                scheduled-origin restrictions and existing approval policy
               </td>
               <td
                 >Durable task claim, bounded run, capability policy, and audit</td
@@ -153,9 +153,9 @@ const boundaryDiagram = `flowchart TB
         <p>
           The scheduler first claims each due occurrence, prevents overlapping
           scheduler ticks, and records an independent run. A general scheduled
-          instruction normally receives a fresh bounded workflow context. It may
-          instead target an existing Neon session when conversation continuity
-          is explicitly useful.
+          instruction normally receives a fresh bounded agent conversation. It
+          may instead target an existing Neon session when conversation
+          continuity is explicitly useful.
         </p>
         <p>
           Scheduled model work uses the same virtual workspace as chat.
@@ -165,11 +165,11 @@ const boundaryDiagram = `flowchart TB
           Neondeck capability.
         </p>
         <p>
-          The default workflow target cannot use the ordinary interactive commit
-          and push path. It can still use other typed capabilities allowed by
-          the task. If you deliberately target an existing agent session for
-          continuity, the turn inherits that session's interactive context,
-          including any linked repo or worktree authority. A scheduled
+          The default fresh-session target cannot use the ordinary interactive
+          commit and push path. It can still use other typed capabilities
+          allowed by the task. If you deliberately target an existing agent
+          session for continuity, the turn inherits that session's interactive
+          context, including any linked repo or worktree authority. A scheduled
           instruction should therefore be treated as automation—not as a
           read-only reminder. Destructive configuration changes retain their
           confirmation requirements, connected-service calls retain their own
@@ -310,11 +310,11 @@ const boundaryDiagram = `flowchart TB
 
         <h2>What is audited</h2>
         <p>
-          Neondeck keeps durable records for scheduled occurrences, workflow
-          runs, watch changes, worktree events, repo edits, execution decisions,
-          command outcomes, connected-service approvals, and Autopilot delivery.
-          Review reports and draft findings remain local until a human submits
-          them.
+          Neondeck keeps durable records for scheduled occurrences, agent
+          submissions, app operations, watch changes, worktree events, repo
+          edits, execution decisions, command outcomes, connected-service
+          approvals, and Autopilot delivery. Review reports and draft findings
+          remain local until a human submits them.
         </p>
         <p>
           Audit data is sensitive. It may include prompts, command arguments,
@@ -377,9 +377,9 @@ const boundaryDiagram = `flowchart TB
         <h2>Related</h2>
         <p>
           See <a href="/docs/autopilot/">Autopilot</a> for mode-specific behavior,
-          <a href="/docs/agent-runtime/"> Agent runtime</a> for sessions and workflows,
-          and <a href="/docs/security/"> Security</a> for secrets and local trust
-          boundaries.
+          <a href="/docs/agent-runtime/"> Agent runtime</a> for sessions, tools, and
+          operations, and <a href="/docs/security/"> Security</a> for secrets and
+          local trust boundaries.
         </p>
       </article>
     </main>

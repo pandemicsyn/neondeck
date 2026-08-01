@@ -9,7 +9,7 @@ A note from me, the human:
 
 This thing does 3 things
 
-1. Helps me review *alot* for PRs without having to ever open up Github.
+1. Helps me review _alot_ for PRs without having to ever open up Github.
 2. Manages my PR's for me. Kilo/codex hand off changes to Neon, and neon takes care of them through merge.
 3. Sends me a morning briefing to help me keep up with the stuff all my EU coworkers have shipped.
 
@@ -18,7 +18,7 @@ This thing does 3 things
 A companion agent for keeping PRs moving, getting reviews done, and helping humans stay on task.
 
 Neon watches your PRs, tracks CI and release checks, and can configure its own
-repos, schedules, models, and deck layout through typed actions. Its current
+repos, schedules, models, and deck layout through typed tools and APIs. Its current
 PR watches retain complete feedback facts and semantic watermarks, including an
 explicit choice to process or baseline existing feedback. Autopilot can bind one
 continuing Neon owner and one managed worktree to a watched PR, hold committed
@@ -59,7 +59,7 @@ Neon watches your PRs, prepares fixes, and keeps things moving.
   can enrich it with any relevant configured MCP source under normal login and
   approval controls. Follow up in chat, or run your own saved prompt on a timer.
 - **Scoped execution for each job.** Keep code-changing work in managed
-  worktrees, use approval policy for ordinary chat/workflow commands, give the
+  worktrees, use approval policy for ordinary chat and scheduled operations, give the
   trusted Autopilot coding owner a repository-native workspace with a
   credential-free default environment, or run mediated work on an `exe.dev`
   sandbox VM.
@@ -68,11 +68,11 @@ Neon watches your PRs, prepares fixes, and keeps things moving.
   improvements. Safe writes apply automatically by default; explicit
   `review` and `off` modes keep autonomy operator-controlled.
 - **Ask Neon to set up the deck.** Configure repos, models, schedules, layout,
-  and display behavior through typed actions instead of hand-editing every file.
+  and display behavior through typed tools instead of hand-editing every file.
 
 ## Project shape
 
-- `src/`: Hono/Flue backend, agents, actions, workflows, persistence, metrics,
+- `src/`: Hono/Flue backend, agents, tools, app-owned operations, persistence, metrics,
   CLI, and runtime-home setup.
 - `web/`: Vite, React, and Tailwind dashboard for the local companion display.
 - `docs/`: Astro marketing/docs site deployed to Cloudflare for
@@ -104,8 +104,8 @@ suppress the setup warning.
 
 ChatGPT login/logout and provider registration changes made with the standalone
 CLI apply after Neondeck restarts. Generic endpoint URLs are user-owned setup:
-configure them with `neondeck init` or the authenticated local dashboard/API,
-not through model-callable actions.
+configure them with `neondeck init` or the local access-controlled dashboard/API,
+not through model-callable tools.
 
 ## Runtime home
 
@@ -130,7 +130,7 @@ npm run cli -- status    # runtime readiness and configured paths
 npm run cli -- auth status openai-codex # ChatGPT subscription status
 npm run cli -- doctor    # local diagnostics
 npm run check            # fast local verification
-npm run test:integration # slower workflow coverage
+npm run test:integration # slower operation/worktree coverage
 npm run build            # production dashboard/server + docs build
 npm run docs:astro-dev   # hot dev server for the docs site
 ```
@@ -153,7 +153,7 @@ neondeck open sidebar
 - [Configuration](https://neondeck.dev/docs/configuration/): runtime config,
   models, providers, repos, schedules, SOUL, and skills.
 - [Agent runtime](https://neondeck.dev/docs/agent-runtime/): Flue agents,
-  actions, workflows, memory, watches, reports, and scheduled tasks.
+  tools, app-owned operations, memory, watches, reports, and scheduled tasks.
 - [Autopilot](https://neondeck.dev/docs/autopilot/): watched-PR modes,
   semantic autonomous judgment, delivery guards, and fail-closed recovery.
 - [Execution environments](https://neondeck.dev/docs/execution/): local and

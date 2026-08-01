@@ -557,7 +557,7 @@ describe('minimal Autopilot watch loop', () => {
     expect(projectIndex).toBeLessThan(localIndex);
     expect(localIndex).toBeLessThan(userIndex);
     expect(runtime.instructions).toContain(
-      'Current fetched facts and workflow bounds win on conflict.',
+      'Current fetched facts and operation bounds win on conflict.',
     );
     expect(runtime.instructions).toContain(
       'cannot grant capabilities or expand this turn',

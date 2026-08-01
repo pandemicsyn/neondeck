@@ -1,6 +1,5 @@
 import { randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
-import { fileURLToPath } from 'node:url';
 import * as v from 'valibot';
 import { asJsonValue } from '../../lib/action-result';
 import { renderReportHtml } from '../../lib/report-html';
@@ -10,6 +9,7 @@ import {
   type RepoConfig,
   type RuntimePaths,
 } from '../../runtime-home';
+import { resolveShippedAsset } from '../../runtime-home/assets';
 import {
   addNotification,
   addWorkflowSummary,
@@ -36,8 +36,9 @@ import { errorMessage } from './utils';
 
 const nonEmptyStringSchema = v.pipe(v.string(), v.trim(), v.minLength(1));
 const positiveIntegerSchema = v.pipe(v.number(), v.integer(), v.minValue(1));
-const neonCiFixSkillPath = fileURLToPath(
-  new URL('../../skills/neon-ci-fix/SKILL.md', import.meta.url),
+const neonCiFixSkillPath = resolveShippedAsset(
+  'src/skills/neon-ci-fix/SKILL.md',
+  'skills/neon-ci-fix/SKILL.md',
 );
 
 export const ciFixRunInputSchema = v.object({

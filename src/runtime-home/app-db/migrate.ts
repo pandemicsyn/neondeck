@@ -8,13 +8,14 @@ import {
 } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
-import { fileURLToPath } from 'node:url';
 import { readMigrationFiles } from 'drizzle-orm/migrator';
 import { defaultSqliteBusyTimeoutMs } from '../../lib/sqlite';
+import { resolveShippedAsset } from '../assets';
 
 const drizzleMigrationsTable = '__drizzle_migrations';
-const defaultMigrationsFolder = fileURLToPath(
-  new URL('./migrations', import.meta.url),
+const defaultMigrationsFolder = resolveShippedAsset(
+  'src/runtime-home/app-db/migrations',
+  'assets/migrations',
 );
 const backupRetention = 5;
 

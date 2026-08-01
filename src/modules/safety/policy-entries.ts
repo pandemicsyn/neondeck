@@ -538,12 +538,12 @@ export const entries: SafetyPolicyEntry[] = [
   ),
   action(
     'neondeck_command_run',
-    'Run Neon command workflow action',
+    'Run Neon command operation',
     {
       ...safeMutation,
       auditTarget: 'workflow_summaries/activity_events',
     },
-    'Runs supported slash commands and persists a workflow summary. Individual commands must stay within their own safety class.',
+    'Runs supported slash commands and persists an operation summary in the legacy workflow_summaries table. Individual commands must stay within their own safety class.',
   ),
   action(
     'neondeck_pr_review_for_human',
@@ -676,7 +676,7 @@ export const entries: SafetyPolicyEntry[] = [
       ...safeMutation,
       auditTarget: 'scheduled_tasks/scheduled_task_runs',
     },
-    'Creates or updates a bounded scheduled agent instruction with an explicit workflow or session target.',
+    'Creates or updates a bounded scheduled agent instruction with an explicit fresh or existing session target.',
   ),
   action(
     'neondeck_scheduled_task_pause',
@@ -861,7 +861,7 @@ export const entries: SafetyPolicyEntry[] = [
       auditTarget:
         'scheduled_tasks/scheduled_task_runs/notifications/activity_events',
     },
-    'Claims due scheduled tasks and records task runs, notifications, and Flue workflow admissions.',
+    'Claims due scheduled tasks and records task runs, notifications, app operations, and Flue agent submissions.',
   ),
   action(
     'neondeck_watch_pr_add',
@@ -1655,7 +1655,7 @@ export const entries: SafetyPolicyEntry[] = [
       ...safeMutation,
       auditTarget: 'pr_reviews/workflow_summaries/activity_events',
     },
-    'Creates or resets one local PR review record and admits the bounded review-pr-for-human workflow without submitting anything to GitHub.',
+    'Creates or resets one local PR review record and admits a fresh bounded human-review agent without submitting anything to GitHub.',
   ),
   route(
     'POST /api/reviews/:id/review',
@@ -2110,7 +2110,7 @@ export const entries: SafetyPolicyEntry[] = [
       auditTarget:
         'learning_reviews/learning_candidates/memories/memory_events',
     },
-    'Queues manual model-backed memory curation through the bounded Flue workflow surface.',
+    'Queues manual model-backed memory curation through a bounded Flue agent submission.',
   ),
   route(
     '/api/learning/state',
@@ -2132,7 +2132,7 @@ export const entries: SafetyPolicyEntry[] = [
       auditTarget:
         'learning_reviews/learning_candidates/memories/memory_events',
     },
-    'Queues manual model-backed conversation reflection through the bounded Flue workflow surface.',
+    'Queues manual model-backed conversation reflection through a bounded Flue agent submission.',
   ),
   route(
     '/api/learning/reviews/prs',
@@ -2142,7 +2142,7 @@ export const entries: SafetyPolicyEntry[] = [
       auditTarget:
         'learning_reviews/learning_candidates/memories/memory_events/config_history',
     },
-    'Queues manual PR/autopilot retrospectives through the bounded Flue workflow surface.',
+    'Queues manual PR/autopilot retrospectives through a bounded Flue agent submission.',
   ),
   route(
     '/api/learning/candidates',

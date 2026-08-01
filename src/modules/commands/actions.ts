@@ -12,7 +12,7 @@ import {
 export const commandRunAction = defineTool({
   name: 'neondeck_command_run',
   description:
-    'Run a safe Neon slash command such as /repo-status, /review-queue, /review-pr, /explain-ci, /summarize-pr, /draft-pr-description, /prepare-pr, /review-local, /briefing, /reasoning, /memory, /watch-pr, or /dev-doctor and persist a workflow summary.',
+    'Run a safe Neon slash command such as /repo-status, /review-queue, /review-pr, /explain-ci, /summarize-pr, /draft-pr-description, /prepare-pr, /review-local, /briefing, /reasoning, /memory, /watch-pr, or /dev-doctor and persist an operation summary.',
   input: commandRunInputSchema,
   output: commandRunOutputSchema,
   async run({ data: input, log }) {
@@ -26,8 +26,8 @@ export const commandRunAction = defineTool({
           command: parsed.command.name,
           input: input.command,
           status: 'failed' as const,
-          message: `${parsed.command.raw} starts a host-executing workflow and cannot run through model-callable neondeck_command_run. Use the dashboard workflow button or a direct human workflow admission surface.`,
-          requires: ['humanWorkflowAdmission'],
+          message: `${parsed.command.raw} starts a host-executing app operation and cannot run through model-callable neondeck_command_run. Use the dashboard control or another direct human admission surface.`,
+          requires: ['humanOperationAdmission'],
         },
       };
     }
@@ -37,20 +37,6 @@ export const commandRunAction = defineTool({
 });
 
 const modelCallableCommandDenylist = new Set(['fix-ci']);
-
-export const commandRunWorkflowAction = defineTool({
-  name: 'neondeck_command_workflow_run',
-  description:
-    'Run a human-admitted Neon slash command and persist a workflow summary.',
-  input: commandRunInputSchema,
-  output: commandRunOutputSchema,
-  async run({ data: input, log }) {
-    log.info('Human Neon command workflow requested', {
-      command: input.command,
-    });
-    return { output: await runCommandAction(input, log) };
-  },
-});
 
 async function runCommandAction(
   input: v.InferOutput<typeof commandRunInputSchema>,
@@ -96,7 +82,7 @@ export const commandsListAction = defineTool({
 export const workflowSummariesListAction = defineTool({
   name: 'neondeck_workflow_summaries_list',
   description:
-    'List recently persisted Neondeck workflow and command summaries for follow-up questions.',
+    'List recently persisted Neondeck operation and command summaries for follow-up questions. The tool name reflects the legacy storage table.',
   input: v.object({}),
   output: commandActionOutputSchema,
   async run() {

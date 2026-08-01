@@ -2,8 +2,7 @@ import { defineTool, type JsonValue } from '@flue/runtime';
 import { existsSync, readFileSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import net from 'node:net';
-import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { join } from 'node:path';
 import * as v from 'valibot';
 import { resolveAgentModelSelection } from './agent-config';
 import { readEnvFiles } from './env';
@@ -32,6 +31,7 @@ import {
   runtimePaths,
   type AppConfig,
 } from '../../runtime-home';
+import { resolvePackageRoot } from '../../runtime-home/assets';
 
 type DoctorStatus = 'ok' | 'attention';
 
@@ -89,9 +89,7 @@ const healthResponseSchema = v.object({
   home: v.optional(v.string()),
   uptimeSeconds: v.optional(v.number()),
 });
-const rootDir = dirname(
-  fileURLToPath(new URL('../../../package.json', import.meta.url)),
-);
+const rootDir = resolvePackageRoot();
 const devDoctorOutputSchema = v.looseObject({
   ok: v.boolean(),
   action: v.string(),

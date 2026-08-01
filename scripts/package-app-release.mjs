@@ -91,7 +91,7 @@ function writeRuntimePackageJson() {
     engines: packageJson.engines,
     bin: packageJson.bin,
     scripts: {
-      start: 'node dist/server.mjs',
+      start: 'node bin/neondeck.mjs serve',
     },
     dependencies: packageJson.dependencies,
   };

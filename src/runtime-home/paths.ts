@@ -1,6 +1,6 @@
 import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { resolveShippedAsset } from './assets';
 
 export type RuntimeHomeEnv = Partial<
   Pick<NodeJS.ProcessEnv, 'NEONDECK_HOME' | 'XDG_CONFIG_HOME' | 'HOME'>
@@ -22,15 +22,15 @@ export type RuntimePaths = {
   flueDatabase: string;
 };
 
-export const defaultDashboardPath = fileURLToPath(
-  new URL('../../config/dashboard.json', import.meta.url),
+export const defaultDashboardPath = resolveShippedAsset(
+  'config/dashboard.json',
+  'config/dashboard.json',
 );
-export const defaultDashboardSchemaPath = fileURLToPath(
-  new URL('../../config/dashboard.schema.json', import.meta.url),
+export const defaultDashboardSchemaPath = resolveShippedAsset(
+  'config/dashboard.schema.json',
+  'config/dashboard.schema.json',
 );
-export const defaultSoulPath = fileURLToPath(
-  new URL('../../SOUL.md', import.meta.url),
-);
+export const defaultSoulPath = resolveShippedAsset('SOUL.md', 'SOUL.md');
 
 export function resolveRuntimeHome(env: RuntimeHomeEnv = process.env) {
   if (env.NEONDECK_HOME) {

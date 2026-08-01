@@ -65,6 +65,8 @@ const allowedLayerBridges = new Set([
   'src/modules/autopilot/watch-service.ts -> src/agents/pr-autopilot-owner.ts',
   'src/modules/learning/reviews/admission.ts -> src/agents/learning-review-agent.ts',
   'src/modules/pr-review-assist/admission.ts -> src/agents/pr-review-assistant.ts',
+  'src/modules/repos/providers.ts -> src/modules/runtime/agent-config.ts',
+  'src/modules/repos/runtime-providers.ts -> src/modules/runtime/env.ts',
   'src/modules/sessions/approval-nudges.ts -> src/agents/display-assistant.ts',
 ]);
 

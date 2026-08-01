@@ -111,7 +111,7 @@ describe('learning review smoke', () => {
             repoId: 'neondeck',
             key: 'learning.valibot-boundaries',
             value:
-              'Learning/operator APIs should validate inputs with Valibot before workflow admission.',
+              'Learning/operator APIs should validate inputs with Valibot before agent admission.',
             reason: 'PR retrospective smoke fixture.',
           },
         ],
@@ -124,7 +124,7 @@ describe('learning review smoke', () => {
               type: 'append-section',
               heading: 'Learning Operator Reminders',
               content:
-                '- Validate learning/operator API inputs with Valibot before workflow admission.\n',
+                '- Validate learning/operator API inputs with Valibot before agent admission.\n',
             },
           },
         ],

@@ -152,5 +152,5 @@ function titleForState(
       ? 'Autofix result commented'
       : 'Autofix result comment needs attention';
   }
-  return 'Autopilot workflow failed';
+  return 'Autopilot operation failed';
 }

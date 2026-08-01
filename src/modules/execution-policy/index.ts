@@ -145,7 +145,7 @@ const defaultPreapprovals: NormalizedPreapprovedCommand[] = [
     'gh-run-view',
     'gh run view',
     'prefix',
-    'Read workflow run details and logs.',
+    'Read operation details and logs.',
   ),
 ];
 

@@ -517,7 +517,7 @@ describe('PR review assist', () => {
         'Structured memory background context:\nproject:\n- review-style: focus on error handling',
       memoryIds: ['memory-1'],
       usage:
-        'Treat memory as durable background guidance, not current PR evidence. Fetched PR facts and workflow bounds win on conflict.',
+        'Treat memory as durable background guidance, not current PR evidence. Fetched PR facts and bounded review rules win on conflict.',
     });
     expect(promptFacts.commits).toMatchObject([{ sha: 'head123' }]);
     expect(promptFacts.reviewThreads).toMatchObject([

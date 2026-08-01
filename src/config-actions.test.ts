@@ -759,7 +759,7 @@ describe('config actions', () => {
       'memory',
       'learning',
       'runtime',
-      'workflows',
+      'activity',
       'subagents',
     ]);
   });

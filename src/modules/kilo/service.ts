@@ -538,6 +538,16 @@ export async function summarizeKiloSession(
     'summarize_kilo_session',
   );
   if (!parsed.ok) return parsed.result;
+  if (
+    !parsed.input.taskId &&
+    !parsed.input.sessionId &&
+    !parsed.input.titleQuery
+  ) {
+    return failResult(
+      'summarize_kilo_session',
+      'A taskId, sessionId, or titleQuery is required.',
+    );
+  }
   await ensureRuntimeHome(paths);
   const task = resolveKiloTaskForSessionInput(parsed.input, paths);
   const session = await resolveSession(parsed.input, paths);

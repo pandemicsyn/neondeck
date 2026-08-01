@@ -66,7 +66,7 @@ export const worktreeLockAction = defineTool({
 export const worktreeReleaseAction = defineTool({
   name: 'neondeck_worktree_release',
   description:
-    'Release a Neondeck worktree lock and optionally record the bounded workflow final status.',
+    'Release a Neondeck worktree lock and optionally record the bounded operation final status.',
   input: releaseInputSchema,
   output: outputSchema,
   async run({ data: input }) {

@@ -111,13 +111,13 @@ The dev command runs the Flue/Hono backend and Vite dashboard together. Runtime
 home, repository, MCP server/approval, scheduler, and skill state are visible in
 the Runtime Overview panel.
 
-Neon command workflows can be run from dashboard controls, typed into chat, or
-invoked through Flue:
+Neon commands can be run from dashboard controls, typed into chat, or invoked
+through the local access-controlled API:
 
 ```sh
-curl -X POST 'http://127.0.0.1:5173/api/flue/workflows/command-run?wait=result' \
+curl -X POST 'http://127.0.0.1:5173/api/commands/run' \
   -H 'Content-Type: application/json' \
-  -d '{"input":{"command":"/briefing"}}'
+  -d '{"command":"/repo-status"}'
 ```
 
 Common commands include `/repo-status`, `/review-queue`, `/review-pr <ref>`,
@@ -183,7 +183,7 @@ npm run verify
 `npm run check` is the fast local loop: lint, import-layer check, database
 migration check, typecheck, and the unit Vitest suite. The slower
 serial Git/performance/docs-drift group lives under `npm run test:git`; the
-workflow-heavy worktree/Kilo/autopilot group lives under
+operation-heavy worktree/Kilo/autopilot group lives under
 `npm run test:integration`. `npm run test:all` runs every Vitest suite.
 `npm run verify` keeps the full pre-release path: lint, import-layer check,
 database migration check, typecheck, all tests, production builds, npm package

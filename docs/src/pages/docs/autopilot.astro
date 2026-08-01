@@ -45,10 +45,10 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
         </p>
         <p>
           Do not confuse <code>models.prReview</code> with the Autopilot owner. The
-          PR-review role powers the separate bounded
-          <code>review-pr-for-human</code> workflow. Utility, self-improvement, and
-          named subagent models likewise do not replace the Autopilot owner model.
-          Configure model roles in the dashboard's <strong>Runtime</strong>
+          PR-review role powers each separate, fresh bounded initial-review agent
+          submission. Utility, self-improvement, and named subagent models likewise
+          do not replace the Autopilot owner model. Configure model roles in the dashboard's
+          <strong>Runtime</strong>
           panel or through <code>neondeck_config_update_agent_models</code>.
         </p>
 
@@ -163,8 +163,8 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
         <p>
           Neon can read and change the same templates through
           <code>neondeck_config_read_autopilot_prompts</code> and
-          <code>neondeck_config_update_autopilot_prompt</code>. The
-          authenticated local API mirrors those operations at
+          <code>neondeck_config_update_autopilot_prompt</code>. The local
+          access-controlled API mirrors those operations at
           <code>GET /api/autopilot/prompts</code> and
           <code>POST /api/autopilot/prompts</code>; posting
           <code>&#123;"mode": "…", "prompt": "…"&#125;</code> updates one mode, while

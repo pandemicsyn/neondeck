@@ -10,7 +10,7 @@ function CiInvestigator() {
 }
 
 function ReleaseReviewer() {
-  return 'Assess release readiness from provided watch, scheduler, and workflow facts. Keep the answer operational and call out blockers first.';
+  return 'Assess release readiness from provided watch, scheduler, and operation facts. Keep the answer operational and call out blockers first.';
 }
 
 export function neondeckSubagents(

@@ -1,6 +1,6 @@
 # Flue 2 Migration Plan
 
-Status: in progress  
+Status: implementation complete; live GitHub acceptance pending
 Integration branch: `flue2`  
 Created: 2026-08-01  
 Target Flue release at planning time: `2.0.1`
@@ -654,30 +654,30 @@ development databases, but it does not need to preserve obsolete rows.
 Track the upstream checklist here. Mark an item complete only when its entire
 Neondeck scope is complete.
 
-- [ ] 1. Pins: upgrade Flue packages, add Vite plugin dependencies, remove beta
+- [x] 1. Pins: upgrade Flue packages, add Vite plugin dependencies, remove beta
       patches/vendored assumptions.
-- [ ] 2. Build: add root Vite config, update scripts/config/imports/ignore files,
+- [x] 2. Build: add root Vite config, update scripts/config/imports/ignore files,
       preserve port and package entry contracts.
-- [ ] 3. Routing: add explicit agent mounts and middleware; remove auto-router
+- [x] 3. Routing: add explicit agent mounts and middleware; remove auto-router
       and workflow routes.
-- [ ] 4. Agents: convert all agents and profiles to synchronous functions,
+- [x] 4. Agents: convert all agents and profiles to synchronous functions,
       hooks, statics, explicit sandboxes, and stable names.
-- [ ] 5. Tools: remove Actions, convert model-callable adapters, rename
+- [x] 5. Tools: remove Actions, convert model-callable adapters, rename
       `input` to `data`, wrap result envelopes, and add durable/harness flags only
       where justified.
-- [ ] 6. Skills: remove import attributes and verify packaged/runtime skills.
-- [ ] 7. Workflows: replace all 17 with the smallest correct Flue 2 or
+- [x] 6. Skills: remove import attributes and verify packaged/runtime skills.
+- [x] 7. Workflows: replace all 17 with the smallest correct Flue 2 or
       app-owned primitive.
-- [ ] 8. Channels and database: confirm channels are not in use, validate the
+- [x] 8. Channels and database: confirm channels are not in use, validate the
       Node SQLite adapter, and keep `db.ts` at source root.
-- [ ] 9. Providers: replace beta registration with Pi providers and
+- [x] 9. Providers: replace beta registration with Pi providers and
       `setProvider()`.
-- [ ] 10. Observability: migrate events and correlation to agent/submission
+- [x] 10. Observability: migrate events and correlation to agent/submission
       vocabulary and replace workflow-run inspection.
-- [ ] 11. Clients: migrate SDK and React to conversation-scoped clients.
-- [ ] 12. Deployment: reset beta Flue state, update Node build/package/service
+- [x] 11. Clients: migrate SDK and React to conversation-scoped clients.
+- [x] 12. Deployment: reset beta Flue state, update Node build/package/service
       behavior, and confirm Cloudflare-specific class work is not applicable.
-- [ ] 13. Verify: typecheck, tests, production build, package smoke, recovery,
+- [x] 13. Verify: typecheck, tests, production build, package smoke, recovery,
       and built-artifact inspection.
 
 ## Implementation Phases
@@ -719,13 +719,13 @@ Exit criteria:
 
 ### Phase 1: Build And Runtime Skeleton
 
-- [ ] Upgrade packages.
-- [ ] Add root Flue Vite config.
-- [ ] Update `flue.config.ts` and scripts.
-- [ ] Make an empty/minimal Flue 2 Node server boot on port 3583.
-- [ ] Preserve production `dist/server.mjs` and packaged startup behavior.
-- [ ] Configure and validate the Flue 2 SQLite adapter.
-- [ ] Port provider registration enough for one configured model to run.
+- [x] Upgrade packages.
+- [x] Add root Flue Vite config.
+- [x] Update `flue.config.ts` and scripts.
+- [x] Make an empty/minimal Flue 2 Node server boot on port 3583.
+- [x] Preserve production `dist/server.mjs` and packaged startup behavior.
+- [x] Configure and validate the Flue 2 SQLite adapter.
+- [x] Port provider registration enough for one configured model to run.
 
 Exit criteria:
 
@@ -735,14 +735,14 @@ Exit criteria:
 
 ### Phase 2: Services And Tools
 
-- [ ] Inventory every Action by category: plain service, Tool, harness Tool,
+- [x] Inventory every Action by category: plain service, Tool, harness Tool,
       durable Tool, or removed wrapper.
-- [ ] Extract any remaining business logic from Action handlers into services.
-- [ ] Convert fact lookup Tools to the Flue 2 contract.
-- [ ] Convert display-assistant mutation adapters to Tools.
-- [ ] Add shared helpers for `{ output }` envelopes, logging, authorization
+- [x] Extract any remaining business logic from Action handlers into services.
+- [x] Convert fact lookup Tools to the Flue 2 contract.
+- [x] Convert display-assistant mutation adapters to Tools.
+- [x] Add shared helpers for `{ output }` envelopes, logging, authorization
       binding, and tests.
-- [ ] Remove all `defineAction()` usage.
+- [x] Remove all `defineAction()` usage.
 
 Exit criteria:
 
@@ -752,14 +752,14 @@ Exit criteria:
 
 ### Phase 3: Agents And Routing
 
-- [ ] Convert display assistant.
-- [ ] Convert Autopilot owner.
-- [ ] Convert continuing PR reviewer.
-- [ ] Add bounded PR review and learning agents.
-- [ ] Convert named display subagents.
-- [ ] Delete wrapper-only scheduler/busywork agents.
-- [ ] Add explicit Hono mounts and middleware.
-- [ ] Pin all agent identities.
+- [x] Convert display assistant.
+- [x] Convert Autopilot owner.
+- [x] Convert continuing PR reviewer.
+- [x] Add bounded PR review and learning agents.
+- [x] Convert named display subagents.
+- [x] Delete wrapper-only scheduler/busywork agents.
+- [x] Add explicit Hono mounts and middleware.
+- [x] Pin all agent identities.
 
 Exit criteria:
 
@@ -772,7 +772,7 @@ Exit criteria:
 - [x] Implement stable display-session context snapshot state.
 - [x] Convert display chat to conversation URL clients.
 - [x] Remove root `FlueProvider` and `useFlueClient()`.
-- [x] Preserve authenticated fetch behavior.
+- [x] Preserve local access-control fetch behavior.
 - [x] Convert message rendering for data parts and metadata.
 - [x] Route slash-command execution through the Hono API/service surface.
 
@@ -780,13 +780,14 @@ Implementation evidence captured on 2026-08-01:
 
 - display, PR-reviewer, and Autopilot-owner chats use memoized Flue 2 clients
   addressed to one explicit conversation URL
-- the conversation client resolves the current local API token for every
-  request and reconnect
+- the conversation client preserves the local session-header convention for
+  every request and reconnect; the server's actual boundary is loopback or an
+  explicitly trusted host plus same-origin browser mutation checks
 - hidden dispatches and diagnostic advisories stay out of the visible chat
   lane; `data-*` and dynamic-tool error payloads remain inspectable
 - out-of-band briefing creation refreshes observation immediately and again
   from session/command events
-- dashboard commands use the authenticated Neondeck Hono service surface;
+- dashboard commands use the local access-controlled Neondeck Hono service surface;
   no browser code uses the removed deployment client or workflow invocation
   API
 - the web TypeScript project, 36 focused chat/reviewer/owner tests, and the
@@ -1019,14 +1020,45 @@ Exit criteria:
 
 ### Phase 11: Cleanup, Docs, And Release Gate
 
-- [ ] Delete beta-only execution-context and workflow compatibility code.
-- [ ] Update runtime skills and roadmap language from Actions/Workflows to
+- [x] Delete beta-only workflow compatibility code. Retain
+      `src/modules/flue/execution-context.ts`: it is the Flue 2 `instrument()`
+      security/audit bridge, not beta compatibility code.
+- [x] Update runtime skills and roadmap language from Actions/Workflows to
       services/Tools/agents/operations.
-- [ ] Update README, DEVELOPMENT, Astro docs, CLI help, Raycast integration,
+- [x] Update README, DEVELOPMENT, Astro docs, CLI help, Raycast integration,
       package scripts, QA, desktop service, and smoke scripts.
-- [ ] Add an appropriate changeset for the completed user-facing migration.
-- [ ] Reset a clean runtime home and perform full manual acceptance.
-- [ ] Run the completion gates below.
+- [x] Add an appropriate changeset for the completed user-facing migration.
+- [ ] Complete live GitHub acceptance against an authorized disposable PR. The
+      clean local runtime, conversation restart, MCP, package, and automated
+      feature acceptance passes are recorded in `FLUE_2_ACCEPTANCE.md`.
+- [x] Run the automated completion gates below.
+
+Phase 11 evidence captured on 2026-08-01:
+
+- source and packaged runtime asset discovery share one resolver that handles
+  source modules, bundled chunks, the package root, and `dist/runtime-assets`
+- the packaged launcher lazy-loads the source app only for direct development;
+  `npm run smoke:npm-pack` proves the installed CLI starts the built server,
+  reaches health, and loads its shipped skills and migrations
+- `npm start` now enters through the CLI launcher, propagates port `3583` to the
+  built Flue server, and passed a clean-home `/api/health` probe
+- Vitest uses Flue's Markdown import transform with a TypeScript-only filter,
+  so real packaged skill imports are exercised without parsing unrelated TSX
+- CLI approval resolution now nudges the local access-controlled mounted Flue 2
+  conversation URL; live stdio MCP acceptance proved ask, CLI approval,
+  identical-argument retry, result delivery, denial, audit, and restart
+  persistence
+- runtime skills, the product roadmap, README, development guide, Astro docs,
+  Raycast command client, smoke naming, and user-facing operation vocabulary
+  now describe the Flue 2 architecture; legacy table and audit field names are
+  retained only where they are persisted app-domain compatibility
+- `npm run verify` passes with 971 unit tests, 39 git tests, 87 integration
+  tests, all type/layer/database checks, dashboard/server/docs builds, a
+  913-file package audit, packed CLI smoke, and formatting
+- the changeset records the user-facing Flue 2 migration as a minor release
+- independent static Phase 11 review identified and verified fixes for packaged
+  package-root resolution, `npm start` port propagation, and accurate local
+  host/origin access-control documentation; the re-review found no P1/P2 issues
 
 Exit criteria:
 
@@ -1067,24 +1099,27 @@ Add focused Flue 2 tests for:
 
 The migration is complete only when all of the following are true:
 
-- [ ] The official 13-item migration checklist is complete.
-- [ ] No `defineAction` remains.
-- [ ] No `defineWorkflow` or `invoke` remains.
-- [ ] No `defineAgent` or `defineAgentProfile` remains.
-- [ ] No beta `flue()` auto-router remains.
-- [ ] No workflow `route` or `runs` exports remain.
-- [ ] No `getRun`, `listRuns`, workflow run URL, or workflow React client remains.
-- [ ] No `FlueProvider` or `useFlueClient` remains.
-- [ ] No `registerProvider` or beta provider registration type remains.
-- [ ] No `run({ input })` Tool handler remains.
-- [ ] No skill import attribute remains.
-- [ ] Every mounted agent is explicitly authenticated/authorized.
-- [ ] Display session context is demonstrably stable.
-- [ ] Briefing, reviews, memory/learning, and Autopilot acceptance criteria pass.
-- [ ] Flue beta state reset is documented and automatic/manual setup is clear.
-- [ ] `npm run verify` passes.
-- [ ] Packaged npm and desktop/server smoke paths pass.
-- [ ] A clean runtime-home manual acceptance pass succeeds.
+- [x] The official 13-item migration checklist is complete.
+- [x] No `defineAction` remains.
+- [x] No `defineWorkflow` or `invoke` remains.
+- [x] No `defineAgent` or `defineAgentProfile` remains.
+- [x] No beta `flue()` auto-router remains.
+- [x] No workflow `route` or `runs` exports remain.
+- [x] No `getRun`, `listRuns`, workflow run URL, or workflow React client remains.
+- [x] No `FlueProvider` or `useFlueClient` remains.
+- [x] No `registerProvider` or beta provider registration type remains.
+- [x] No `run({ input })` Tool handler remains.
+- [x] No skill import attribute remains.
+- [x] Every mounted agent is behind the shared local host/origin access control
+      and its agent-specific route policy.
+- [x] Display session context is demonstrably stable.
+- [x] Briefing, reviews, memory/learning, and Autopilot automated acceptance
+      criteria pass.
+- [x] Flue beta state reset is documented and automatic/manual setup is clear.
+- [x] `npm run verify` passes.
+- [x] Packaged npm and desktop/server smoke paths pass.
+- [ ] Live GitHub PR review and Autopilot acceptance succeeds against an
+      authorized disposable PR. Clean local runtime and MCP acceptance passes.
 
 ## Expected Roadmap Updates
 

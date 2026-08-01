@@ -317,7 +317,7 @@ function reviewBackgroundContext(context?: ReviewFactsPromptContext) {
         }
       : {}),
     usage:
-      'Treat memory as durable background guidance, not current PR evidence. Fetched PR facts and workflow bounds win on conflict.',
+      'Treat memory as durable background guidance, not current PR evidence. Fetched PR facts and bounded review rules win on conflict.',
   };
 }
 

@@ -1,6 +1,6 @@
 # Flue 2 Feature-Parity Acceptance
 
-Status: captured; final execution pending  
+Status: local runtime passed; live GitHub scenarios pending an authorized disposable PR
 Applies to: `flue2`  
 Companion plan: [FLUE_2_MIGRATION_PLAN.md](./FLUE_2_MIGRATION_PLAN.md)
 
@@ -188,3 +188,50 @@ Pass conditions:
 Record each scenario as pass or fail with evidence. Any compromise, silently
 removed capability, missing MCP behavior, unverified crash boundary, or test
 failure leaves the migration incomplete.
+
+## 2026-08-01 Acceptance Evidence
+
+Environment:
+
+- source base: `39608d9` plus the Phase 11 working tree
+- Node `26.4.0`, npm `11.17.0`, Flue `2.0.1`
+- macOS `26.6` (`25G72`)
+- clean runtime home: `/tmp/neondeck-flue2-acceptance.PsmRZL`
+- provider/model: KiloCode with `kilocode/kilo-auto/free`
+- run window: approximately 2026-08-01 21:48-21:55 UTC
+
+Live local results:
+
+- **Display conversation: pass.** A new conversation returned the unique token
+  `FLUE2_ACCEPTANCE_OK`. After two Node restarts, the same conversation retained
+  eight messages, four settled submissions, the acceptance token, and the MCP
+  result.
+- **MCP discovery and invocation: pass.** The stdio fixture connected and
+  exposed two tools. The first echo call produced a hash-bound approval request.
+  Resolving the same approval through the CLI nudged the mounted conversation,
+  retried the identical arguments, and returned `FLUE2_MCP_APPROVAL`.
+- **MCP policy and audit: pass.** Audit history recorded the initial ask result,
+  approval, and successful execution. A newly configured `deny` rule for the
+  fixture danger tool was enforced in a fresh session and the tool did not run.
+  A second CLI-only approval test for `CLI_NUDGE_CHECK` also settled successfully
+  without a nudge/import error.
+- **Restart durability: pass.** Conversation messages, submission settlement,
+  and the approved MCP result survived repeated Node process restarts.
+- **Packaged runtime: pass.** `npm run smoke:npm-pack` started the packed CLI and
+  server from a clean install, reached health, and loaded shipped runtime skills.
+
+Automated feature evidence:
+
+- Morning Briefing, initial and continuing PR review, memory, learning, and all
+  four Autopilot authority modes pass their unit, git, integration, restart,
+  stale-head, recovery, and idempotency fixtures in `npm run verify`.
+- `npm run smoke:kilo`, `npm run smoke:learning`, `npm run raycast:build`, and
+  `npm run raycast:lint` pass on the Phase 11 tree.
+
+Pending external acceptance:
+
+- No disposable GitHub pull request was supplied, and this task did not grant
+  authority to create, push to, comment on, or otherwise mutate a live PR.
+  Therefore the live PR-review and Autopilot scenarios in sections 4 and 6 were
+  not run against GitHub. Their automated fixture coverage passes, but this file
+  deliberately does not label those external scenarios as manually passed.
