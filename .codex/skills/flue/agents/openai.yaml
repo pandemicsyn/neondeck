@@ -1,4 +1,4 @@
 interface:
   display_name: 'Flue'
-  short_description: 'Build and reason about Flue agents'
-  default_prompt: 'Use $flue to design a Flue agent, workflow, action, or schedule.'
+  short_description: 'Build Flue with version-matched docs'
+  default_prompt: 'Use $flue to inspect the installed Flue version, search and read the matching docs, then implement or explain the requested change.'
