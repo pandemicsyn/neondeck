@@ -3,7 +3,7 @@ import {
   readAgentModelSelectionSync,
   runtimeSkillReferenceByIdSync,
 } from '../modules/runtime';
-import neonCiFix from '../skills/neon-ci-fix/SKILL.md' with { type: 'skill' };
+import neonCiFix from '../skills/neon-ci-fix/SKILL.md';
 
 export default defineAgent(() => {
   const models = readAgentModelSelectionSync();

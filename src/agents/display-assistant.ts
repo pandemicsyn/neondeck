@@ -42,8 +42,8 @@ import {
 } from './support/autopilot';
 import { neondeckWatchActions } from '../modules/watches';
 import { neondeckWorktreeActions } from '../modules/worktrees';
-import githubGh from '../skills/github-gh/SKILL.md' with { type: 'skill' };
-import neondeck from '../skills/neondeck/SKILL.md' with { type: 'skill' };
+import githubGh from '../skills/github-gh/SKILL.md';
+import neondeck from '../skills/neondeck/SKILL.md';
 
 export const description =
   'Persistent assistant for the neondeck companion dashboard.';

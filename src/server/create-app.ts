@@ -1,4 +1,4 @@
-import { registerProvider, type ProviderRegistration } from '@flue/runtime';
+import { setProvider } from '@flue/runtime';
 import type { ModelAuth } from '@earendil-works/pi-ai';
 import { flue } from '@flue/runtime/routing';
 import { serveStatic } from '@hono/node-server/serve-static';
@@ -11,6 +11,8 @@ import { installFlueExecutionContextTracker } from '../modules/flue/execution-co
 import { loadNeondeckEnv } from '../modules/runtime';
 import {
   providerRuntimeRegistrations,
+  effectiveModelSpecifiers,
+  openAiCodexProviderFromModelAuth,
   readProviderConfigSync,
   resolveOpenAiCodexModelAuth,
   resolveOpenAiCodexProviderStatus,
@@ -81,8 +83,14 @@ export async function createApp(options: CreateAppOptions = {}) {
   ensureRuntimeHomeSync(paths);
   loadNeondeckEnv(paths);
   const appConfig = readProviderConfigSync(paths);
-  for (const provider of providerRuntimeRegistrations(process.env, appConfig)) {
-    registerProvider(provider.id, provider.registration);
+  const readEffectiveModelSpecifiers = () =>
+    effectiveModelSpecifiers(readProviderConfigSync(paths), process.env);
+  for (const provider of providerRuntimeRegistrations(
+    process.env,
+    appConfig,
+    readEffectiveModelSpecifiers,
+  )) {
+    setProvider(provider.provider);
   }
   if (resolveOpenAiCodexProviderStatus(appConfig).enabled) {
     let auth: ModelAuth | undefined;
@@ -94,12 +102,9 @@ export async function createApp(options: CreateAppOptions = {}) {
         error,
       );
     }
-    registerProvider('openai-codex', providerRegistrationFromModelAuth(auth));
+    setProvider(openAiCodexProviderFromModelAuth(auth));
     startOpenAiCodexTokenRefresh(paths, (refreshedAuth) => {
-      registerProvider(
-        'openai-codex',
-        providerRegistrationFromModelAuth(refreshedAuth),
-      );
+      setProvider(openAiCodexProviderFromModelAuth(refreshedAuth));
     });
   }
 
@@ -215,23 +220,6 @@ export async function resolveOpenAiCodexModelAuthForStartup(
   } finally {
     if (timer) clearTimeout(timer);
   }
-}
-
-function providerRegistrationFromModelAuth(
-  auth: ModelAuth | undefined,
-): ProviderRegistration {
-  const headers = auth?.headers
-    ? Object.fromEntries(
-        Object.entries(auth.headers).filter(
-          (entry): entry is [string, string] => entry[1] !== null,
-        ),
-      )
-    : undefined;
-  return {
-    apiKey: auth?.apiKey ?? '',
-    ...(auth?.baseUrl ? { baseUrl: auth.baseUrl } : {}),
-    ...(headers && Object.keys(headers).length > 0 ? { headers } : {}),
-  };
 }
 
 export function resolveStaticRoot(env = process.env) {
