@@ -41,10 +41,16 @@ fnm use 26.4.0</code></pre>
         <pre><code>neondeck init</code></pre>
         <p>
           The wizard creates your local runtime home, configures a model
-          provider, and can add repositories, choose a dashboard preset, and
-          create initial schedules. It supports KiloCode, OpenAI, Anthropic, a
-          ChatGPT subscription, and OpenAI-compatible endpoints such as
-          OpenRouter.
+          provider, checks the Git identity used for Autopilot commits, and can
+          add repositories, choose a dashboard preset, and create initial
+          schedules. It supports KiloCode, OpenAI, Anthropic, a ChatGPT
+          subscription, and OpenAI-compatible endpoints such as OpenRouter. If
+          global <code>user.name</code> or <code>user.email</code> is missing, the
+          wizard warns and offers to configure both plus
+          <code>user.useConfigOnly</code> so Git cannot silently invent an identity
+          from the machine account. Complete author and committer overrides in the
+          runtime-home <code>.env</code> are accepted, but temporary shell exports
+          do not suppress this warning.
         </p>
         <p>
           By default, local state is stored in

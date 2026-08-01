@@ -1,6 +1,21 @@
 # neondeck
 
-A companion agent for keeping PRs moving.
+A note from me, the human:
+
+- Is this vibe coded? 100% barely looked at the code. Its fine'ish.
+- Should this maybe have been vanilla Pi? Probably. This started out life has just a little companion app.
+- Does this do well with large diffs? 110% - use this to review 50k line pr's pretty regularly at day job.
+- Is this a serious thing ? No, but it's really fucking useful.
+
+This thing does 3 things
+
+1. Helps me review *alot* for PRs without having to ever open up Github.
+2. Manages my PR's for me. Kilo/codex hand off changes to Neon, and neon takes care of them through merge.
+3. Sends me a morning briefing to help me keep up with the stuff all my EU coworkers have shipped.
+
+## From the robots
+
+A companion agent for keeping PRs moving, getting reviews done, and helping humans stay on task.
 
 Neon watches your PRs, tracks CI and release checks, and can configure its own
 repos, schedules, models, and deck layout through typed actions. Its current
@@ -18,7 +33,7 @@ mutable state stored in SQLite under a runtime home you control.
 
 ## Built for work in progress
 
-Neon watches your PRs, prepares fixes, and keeps the busywork moving.
+Neon watches your PRs, prepares fixes, and keeps things moving.
 
 - **Your PRs, with CI status at a glance.** See open PRs across your repos in
   one panel, with live check status and stale-work flags.
@@ -79,8 +94,13 @@ Open `http://127.0.0.1:5173/`.
 
 The setup wizard prepares a runtime home, configures KiloCode, OpenAI API-key,
 Anthropic, ChatGPT subscription, or generic OpenAI-compatible model access,
-adds local repositories, applies a dashboard preset, and can create initial
-schedules and command preapprovals.
+checks the Git identity used by Autopilot commits, adds local repositories,
+applies a dashboard preset, and can create initial schedules and command
+preapprovals. When the global Git identity is incomplete, the wizard warns and
+offers to configure it instead of allowing Git to silently invent one from the
+local account and hostname. Complete author and committer overrides persisted in
+the runtime-home `.env` are also accepted; temporary shell exports do not
+suppress the setup warning.
 
 ChatGPT login/logout and provider registration changes made with the standalone
 CLI apply after Neondeck restarts. Generic endpoint URLs are user-owned setup:

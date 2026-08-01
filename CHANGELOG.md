@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.0.0-beta.29
+
+### Minor Changes
+
+- [#240](https://github.com/pandemicsyn/neondeck/pull/240) [`b997e63`](https://github.com/pandemicsyn/neondeck/commit/b997e63de6bf2dc162154b984cf00c7a8e7044b6) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Detect incomplete Git commit identity during `neondeck init`, warn before Autopilot can inherit an OS-generated identity, and offer to configure a fail-closed global identity.
+
+## 1.0.0-beta.28
+
+### Patch Changes
+
+- [#234](https://github.com/pandemicsyn/neondeck/pull/234) [`3a38233`](https://github.com/pandemicsyn/neondeck/commit/3a38233ab101f37573892241fb8f2c5f770750f6) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Keep bounded PR reviews within a configurable five-minute ceiling and prevent initial reviewers from duplicating work through generic child-task delegation.
+
 ## 1.0.0-beta.27
 
 ### Minor Changes
