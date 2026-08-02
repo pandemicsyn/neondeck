@@ -889,7 +889,7 @@ export const entries: SafetyPolicyEntry[] = [
       auditTarget:
         'pr_watches/scheduled_tasks/worktrees/worktree_cleanup_attempts',
     },
-    'Pauses, resumes, retries, or stops one minimal Autopilot watch; stop cleans only an eligible Neondeck-managed worktree.',
+    'Pauses, resumes, retries, or stops one minimal Autopilot watch. Stop cleans only an eligible Neondeck-managed worktree and requires confirmPreparedDiff=true after explicit user confirmation before deleting a held unpushed prepared commit.',
   ),
   action(
     'neondeck_autopilot_message_owner',
@@ -1907,7 +1907,7 @@ export const entries: SafetyPolicyEntry[] = [
       auditTarget:
         'pr_watches/scheduled_tasks/worktrees/worktree_cleanup_attempts',
     },
-    'Pauses, resumes, retries, or stops one minimal Autopilot watch.',
+    'Pauses, resumes, retries, or stops one minimal Autopilot watch. A held unpushed prepared commit is retained unless the request explicitly confirms its discard with confirmPreparedDiff=true.',
   ),
   route(
     '/api/watches/:id/autopilot/message',

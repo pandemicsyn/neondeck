@@ -203,6 +203,7 @@ export async function buildPrAutopilotOwnerRuntime(
       source: pending.source,
       paths,
       capabilities: pending.prepared.capabilities,
+      approvedRevisionKey: pending.approvedRevisionKey,
     });
     return runtimeFromPrepared(pending.prepared, registry.tools);
   }
@@ -219,7 +220,12 @@ export async function buildPrAutopilotOwnerRuntime(
         }
       : watch;
   const registry = turnWatch
-    ? buildAutopilotOwnerToolRegistry({ watch: turnWatch, source, paths })
+    ? buildAutopilotOwnerToolRegistry({
+        watch: turnWatch,
+        source,
+        paths,
+        approvedRevisionKey: pending?.approvedRevisionKey,
+      })
     : { capabilities: [], tools: [] };
   const workspace =
     turnWatch?.worktreeId && registry.capabilities.includes('workspace')
@@ -349,6 +355,7 @@ export function PrAutopilotOwner({ id }: AgentProps) {
           source: pending.source,
           paths,
           capabilities: preparedTurn.capabilities,
+          approvedRevisionKey: pending.approvedRevisionKey,
         })
       : { capabilities: [], tools: [] };
   const [prepared, setPrepared] = usePersistentState<PreparedOwnerState | null>(

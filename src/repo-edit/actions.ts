@@ -215,6 +215,7 @@ export async function pushInteractiveRepo(
     contextDependencies?: Parameters<typeof resolveInteractiveRepoContext>[2];
     pushGit?: typeof gitPushHead;
     authorizePush?: () => boolean | Promise<boolean>;
+    expectedRemoteSha?: string;
   } = {},
 ) {
   await ensureRuntimeHome(paths);
@@ -333,6 +334,7 @@ export async function pushInteractiveRepo(
             remote: context.pushRemote,
             branch: context.pushBranch,
             sha: commitSha,
+            expectedRemoteSha: dependencies.expectedRemoteSha,
           },
         );
         await recordWorktreePushSucceeded(

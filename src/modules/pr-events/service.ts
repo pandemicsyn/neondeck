@@ -43,6 +43,8 @@ import { readRepoRegistrySnapshot, repoFullName } from '../repos';
 import {
   type RuntimePaths,
   ensureRuntimeHome,
+  parseAppConfig,
+  readRuntimeJson,
   runtimePaths,
 } from '../../runtime-home';
 import {
@@ -1538,7 +1540,7 @@ export async function postGitHubPrComment(
     }
 
     const idempotencyMarker = parsed.output.idempotencyKey
-      ? `<!-- neondeck:idempotency:${createHmac('sha256', token).update(parsed.output.idempotencyKey).digest('hex')} -->`
+      ? await prCommentIdempotencyMarker(parsed.output.idempotencyKey, paths)
       : undefined;
     if (idempotencyMarker) {
       const comments = await (
@@ -1553,7 +1555,7 @@ export async function postGitHubPrComment(
         comment.body.includes(idempotencyMarker),
       );
       if (existing) {
-        const authorizationFailure = dependencies.authorizeComment?.();
+        const authorizationFailure = await dependencies.authorizeComment?.();
         if (authorizationFailure) return authorizationFailure;
         recordNeondeckPrDelivery(
           {
@@ -1603,7 +1605,7 @@ export async function postGitHubPrComment(
         { requires: ['shorterComment'] },
       );
     }
-    const authorizationFailure = dependencies.authorizeComment?.();
+    const authorizationFailure = await dependencies.authorizeComment?.();
     if (authorizationFailure) return authorizationFailure;
     const comment = await poster({
       token,
@@ -1652,6 +1654,24 @@ export async function postGitHubPrComment(
       errors: [errorMessage(error)],
     });
   }
+}
+
+async function prCommentIdempotencyMarker(
+  idempotencyKey: string,
+  paths: RuntimePaths,
+) {
+  const config = await readRuntimeJson(paths.config, parseAppConfig);
+  const applicationSecret = config.localApi?.token;
+  if (!applicationSecret) {
+    throw new Error(
+      'Neondeck local API credentials are unavailable for stable PR comment idempotency.',
+    );
+  }
+  const digest = createHmac('sha256', applicationSecret)
+    .update('github-pr-comment\0')
+    .update(idempotencyKey)
+    .digest('hex');
+  return `<!-- neondeck:idempotency:${digest} -->`;
 }
 
 const neondeckSelfAuthoredMarker = '<!-- neondeck:generated -->';

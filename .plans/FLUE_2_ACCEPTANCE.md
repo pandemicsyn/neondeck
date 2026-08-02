@@ -1,6 +1,6 @@
 # Flue 2 Feature-Parity Acceptance
 
-Status: local runtime and recorded live read-only GitHub slices passed; externally mutating PR-review and Autopilot scenarios pending explicit authorization
+Status: complete — all local, live review, and live Autopilot authority-mode acceptance scenarios passed
 Applies to: `flue2`  
 Companion plan: [FLUE_2_MIGRATION_PLAN.md](./FLUE_2_MIGRATION_PLAN.md)
 
@@ -162,9 +162,10 @@ Use disposable PRs with actionable review feedback. Test each authority mode:
    worktree or starting a mutation turn.
 2. `prepare-only`: confirm the owner works only in its managed worktree,
    validates changes, and leaves a local commit without push/response tools.
-3. `autofix-with-approval`: confirm watcher-generated turns cannot push. Send a
-   direct human approval in the same owner conversation and confirm only that
-   approval turn gains guarded delivery tools.
+3. `autofix-with-approval`: confirm watcher-generated turns and generic owner
+   messages cannot push. Review the held diff, approve its exact current
+   revision through Active Watches or the typed approval API, and confirm only
+   that exact-revision approval turn gains guarded delivery tools.
 4. `autofix-push-when-safe`: confirm the owner may prepare, validate, commit,
    push, and respond only after current mode, head, destination, credentials,
    and worktree checks pass.
@@ -194,7 +195,7 @@ failure leaves the migration incomplete.
 
 Environment:
 
-- source base: `76f9db9` plus the MCP disabled-catalog fix working tree
+- source base: `1a2df33` plus the final acceptance-hardening working tree
 - Node `26.4.0`, npm `11.17.0`, Flue `2.0.1`
 - macOS `26.6` (`25G72`)
 - clean runtime home: `/tmp/neondeck-flue2-acceptance.PsmRZL`
@@ -202,7 +203,7 @@ Environment:
 - registered repository: `neondeck` at the `flue2` checkout
 - live read-only PR: `pandemicsyn/neondeck#177`, head
   `23799f218539933a71f062056dc06ed5655e187e`
-- run window: approximately 2026-08-01 21:48-22:44 UTC
+- run window: approximately 2026-08-01 21:48 through 2026-08-02 00:36 UTC
 
 Live local results:
 
@@ -266,6 +267,9 @@ Automated feature evidence:
 - Initial and continuing PR review and all
   four Autopilot authority modes pass their unit, git, integration, restart,
   stale-head, recovery, and idempotency fixtures in `npm run verify`.
+- Autopilot stop retains a held unpushed prepared commit until a separate
+  explicit `confirmPreparedDiff=true` discard decision; focused service and
+  dashboard tests cover the refusal and confirmed cleanup paths.
 - `npm run smoke:kilo`, `npm run smoke:learning`, `npm run raycast:build`, and
   `npm run raycast:lint` pass on the Phase 11 tree.
 
@@ -276,33 +280,88 @@ Live GitHub read-only evidence:
   head, settled submission `sub_01KYZPNSY8E80HDTADYWC5XNJX`, and persisted two
   report artifacts plus five validated local findings. No review or comment was
   submitted to GitHub.
-- **Continuing reviewer: pass.** The revision-keyed reviewer conversation
-  retained its uid, history, exact head, and `REVIEWER_CONTINUITY_OK` token after
-  a Node restart. A conversation addressed with a different head refused the
-  revision-bound request rather than silently following it.
+- **Continuing reviewer and real head advancement: pass.** The earlier
+  revision-keyed reviewer conversation retained its uid, history, exact head,
+  and `REVIEWER_CONTINUITY_OK` token after a Node restart. Disposable PR #245
+  was reviewed at `e105c260b7f68f9e3f482ac561419b195be090e6`, advanced on
+  GitHub to `daaf6c3ebe3843a59c1f4c1959a204ddc2aa3e44`, and re-reviewed in
+  the same durable review record. That re-review produced two fresh report
+  artifacts and two findings. A live probe exposed that the already-open old
+  conversation could briefly retain stale Tools before its asynchronous
+  context refresh; the route now rejects the stale POST before Flue admission
+  with `409 review_revision_stale`. After restart, the rejection named both
+  revisions and left the old conversation at exactly three settlements.
 - **Autopilot notify-only baseline: pass.** A live watch of PR #177 persisted all
   eight GitHub event-watermark categories and the exact head, reported no source
   changes on refresh, and retained `notify-only`/`watching` state after restart.
   `ownerInstanceId` and `worktreeId` remained null, proving passive observation
   did not start a mutation turn or create a managed worktree.
+- **Autopilot prepare-only: pass.** Authorized disposable PR #245 produced one
+  owner (`pr-owner-bd42a4ca4503c4712c1a16cd`) and one managed worktree
+  (`33254b96-7c58-44a4-b278-f40010328dbd`) from exact GitHub head
+  `daaf6c3ebe3843a59c1f4c1959a204ddc2aa3e44`. The watch-event envelope exposed
+  only `workspace` and `commit` capabilities. The owner changed only
+  `src/flue2-autopilot-acceptance.ts`, committed the requested addition fix as
+  `30a70eee68a257adbb455064861bc3e0978ea6fd`, and settled `waiting`. The held
+  diff revision was
+  `6b99c4fcaae5d714d0e6f4d26f8ded2ecf5233c69827659c9a829dc29c00bdeb`;
+  its focused Vitest fixture passed, while GitHub remained unchanged at
+  `daaf6c3ebe3843a59c1f4c1959a204ddc2aa3e44`. Explicit stop settled the watch
+  `complete` without pushing or commenting. After a Node restart, that terminal
+  state and both audit bindings remained durable; confirmed prepared-diff
+  cleanup deleted the managed worktree, and the completed watch was then
+  removed through the normal typed API.
+- **Autopilot approval mode: pass.** Re-arming PR #245 in
+  `autofix-with-approval` created one replacement managed worktree
+  (`c4a7cbc0-7eea-41f7-a4c3-61d14023f45c`) while retaining the same durable
+  owner. The owner committed the exact reviewed one-line fix as
+  `dcb4aaa490456c779fa4ffa5be7bea004affa327` and passed all 969 unit tests.
+  A generic direct-human inspection message exposed no push or response Tool
+  and left GitHub unchanged. The exact approval for revision
+  `worktree-diff:daaf6c3ebe3843a59c1f4c1959a204ddc2aa3e44:6b99c4fcaae5d714d0e6f4d26f8ded2ecf5233c69827659c9a829dc29c00bdeb`
+  then exposed guarded delivery Tools and pushed only the held commit. GitHub,
+  the managed-worktree head, and `last_pushed_sha` all converged on
+  `dcb4aaa490456c779fa4ffa5be7bea004affa327`. The model did not elect to post a
+  PR reply in that turn. A Node restart reconciled the new remote head without
+  a duplicate push or comment. Explicit stop deleted the clean managed
+  worktree, and the completed watch was removable through the typed API.
+- **Autopilot autonomous safe-push mode: pass.** Authorized disposable PR #246
+  began at exact head `c8d17dc34b7bde2636cc58355016f02364d15491` with one
+  actionable multiplication defect. The canonical scheduler created one owner
+  (`pr-owner-c266f155f55b394b54efc1cb`) and one managed worktree
+  (`d4c87670-8e3b-4877-a8a3-262e334407dd`). The owner changed only
+  `src/flue2-autopilot-safe-acceptance.ts`, passed all 969 unit tests, and
+  committed `4418316a699b725eadf81b8dc1c3fa61ae4e8eaa`. Its first delivery attempt
+  failed closed at a final clean/current-turn guard and left a recoverable
+  blocked watch. Typed retry fetched current GitHub facts and reused the same
+  owner, worktree, and held commit; guarded delivery then pushed exactly that
+  commit and posted idempotent response `5154104965`. After a Node restart and
+  canonical scheduler reconciliation, GitHub head, snapshot head, managed
+  worktree head, `last_synced_sha`, and `last_pushed_sha` all equaled
+  `4418316a699b725eadf81b8dc1c3fa61ae4e8eaa`, while the response marker occurred
+  exactly once. Explicit stop deleted the managed worktree, and the completed
+  watch was removed through the typed API.
+- **Final repository verification: pass.** `npm run verify` passed with 1,000 unit
+  tests, 39 git tests, 90 integration tests, all type/layer/database checks,
+  dashboard/server/docs builds, a 913-file npm package audit, packed CLI smoke,
+  and formatting. The definitive post-hardening run completed at approximately
+  2026-08-02 01:04 UTC. Independent final static re-reviews found no remaining
+  P1/P2 issues across authority, polling/teardown state, docs/skills, restart
+  semantics, or MCP parity.
 
-Remaining PR-review live scenarios:
+PR-review evidence scope:
 
-- The live read-only happy path, continuing reviewer, restart persistence, and
-  revision-mismatch refusal above pass. Automated coverage passes for reload
-  during execution, timeout/failure retry, and exact-head advancement.
-- Advancing a real PR head is an external GitHub mutation and was not authorized.
-  The separately addressed mismatched-head reviewer proved the local
-  revision-bound refusal but is not represented as a live head-advance pass.
+- The live happy path, continuing reviewer, restart persistence, real head
+  advancement, same-record re-review, and pre-admission stale-revision refusal
+  above pass. Automated coverage passes for reload during execution and
+  timeout/failure retry.
 
-Pending externally mutating acceptance:
+Externally mutating acceptance:
 
-- No authorization was supplied to create, push to, comment on, advance, close,
-  or otherwise mutate a disposable live PR, nor to send a purpose-built
-  disposable PR and Autopilot owner context to the configured model provider.
-  Therefore a real PR head advancement plus `prepare-only`,
-  `autofix-with-approval`,
-  `autofix-push-when-safe`, live head advancement, and external-effect restart
-  reconciliation in section 6 remain unrun against GitHub. Their automated
-  fixture coverage passes, but this file deliberately does not label those
-  externally mutating scenarios as manually passed.
+- Authorization was supplied to use disposable live PRs and the configured
+  model provider. PR #245 was created and advanced for the completed reviewer,
+  `prepare-only`, and approval-mode slices. PR #246 completed autonomous
+  safe-push, response, retry, and restart reconciliation. No disposable PR was
+  merged. Both PRs were closed, both exact remote/local fixture branches and
+  fixture worktrees were removed, the repository origin was restored to SSH,
+  and the acceptance server was stopped.

@@ -48,9 +48,14 @@ describe('display assistant Autopilot surface', () => {
       /increasing authority requires explicit user confirmation/i,
     );
     expect(displayAssistantAutopilotInstructions).toMatch(
+      /held unpushed prepared commit requires separate explicit user confirmation/i,
+    );
+    expect(displayAssistantAutopilotInstructions).toMatch(
       /one persistent PR-owner conversation and one managed worktree/i,
     );
-    expect(displayAssistantAutopilotInstructions).toMatch(/direct-human turn/i);
+    expect(displayAssistantAutopilotInstructions).toMatch(
+      /exact current reviewed-revision approval/i,
+    );
     expect(displayAssistantAutopilotInstructions).toMatch(/non-force push/i);
     expect(displayAssistantAutopilotInstructions).toMatch(/fails closed/i);
     expect(displayAssistantAutopilotInstructions).not.toMatch(

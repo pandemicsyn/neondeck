@@ -169,11 +169,30 @@ export async function setScheduledTaskEnabled(
   id: string,
   enabled: boolean,
   paths = runtimePaths(),
+  options: {
+    clearMetadataKeys?: string[];
+    watchGuard?: { id: string; disallowAutopilotStatuses: string[] };
+  } = {},
 ) {
   await ensureRuntimeHome(paths);
   const database = openDb(paths.neondeckDatabase);
   try {
     database.exec('BEGIN IMMEDIATE;');
+    if (options.watchGuard) {
+      const watch = database
+        .prepare('SELECT autopilot_status FROM pr_watches WHERE id = ?;')
+        .get(options.watchGuard.id) as
+        { autopilot_status?: string } | undefined;
+      if (
+        !watch ||
+        options.watchGuard.disallowAutopilotStatuses.includes(
+          String(watch.autopilot_status),
+        )
+      ) {
+        database.exec('COMMIT;');
+        return undefined;
+      }
+    }
     const current = database
       .prepare('SELECT * FROM scheduled_tasks WHERE id = ?;')
       .get(id);
@@ -199,6 +218,9 @@ export async function setScheduledTaskEnabled(
       `,
       )
       .run(nextEnabled ? 1 : 0, resumeAt, now.toISOString(), id);
+    for (const key of options.clearMetadataKeys ?? []) {
+      database.prepare('DELETE FROM app_metadata WHERE key = ?;').run(key);
+    }
     database.exec('COMMIT;');
     if (result.changes !== 1) return undefined;
   } catch (error) {

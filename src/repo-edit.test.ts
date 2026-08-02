@@ -103,6 +103,88 @@ describe('repo edit actions', () => {
     expect(remoteSha).toBe(selectedSha);
   });
 
+  it('atomically rejects an expected remote head that moves after readiness', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'neondeck-leased-push-'));
+    const repo = join(root, 'repo');
+    const remote = join(root, 'remote.git');
+    tempRoots.push(root);
+    await mkdir(repo, { recursive: true });
+    await execFileAsync('git', ['init', '--bare', remote]);
+    await execFileAsync('git', ['init', '-b', 'main'], { cwd: repo });
+    await execFileAsync('git', ['config', 'user.name', 'Test'], { cwd: repo });
+    await execFileAsync('git', ['config', 'user.email', 'test@example.com'], {
+      cwd: repo,
+    });
+    await writeFile(join(repo, 'value.txt'), 'one\n');
+    await execFileAsync('git', ['add', 'value.txt'], { cwd: repo });
+    await execFileAsync('git', ['commit', '-m', 'one'], { cwd: repo });
+    const expectedRemoteSha = (
+      await execFileAsync('git', ['rev-parse', 'HEAD'], { cwd: repo })
+    ).stdout.trim();
+    await execFileAsync(
+      'git',
+      ['push', remote, `${expectedRemoteSha}:refs/heads/feature`],
+      { cwd: repo },
+    );
+    await writeFile(join(repo, 'value.txt'), 'two\n');
+    await execFileAsync('git', ['commit', '-am', 'two'], { cwd: repo });
+    const selectedSha = (
+      await execFileAsync('git', ['rev-parse', 'HEAD'], { cwd: repo })
+    ).stdout.trim();
+    await writeFile(join(repo, 'value.txt'), 'three\n');
+    await execFileAsync('git', ['commit', '-am', 'three'], { cwd: repo });
+    const concurrentSha = (
+      await execFileAsync('git', ['rev-parse', 'HEAD'], { cwd: repo })
+    ).stdout.trim();
+    await execFileAsync(
+      'git',
+      ['push', remote, `${concurrentSha}:refs/heads/concurrent`],
+      { cwd: repo },
+    );
+    await execFileAsync('git', ['reset', '--hard', selectedSha], { cwd: repo });
+
+    let remoteAdvanced = false;
+    await expect(
+      gitPushHead(
+        repo,
+        {
+          remote,
+          branch: 'feature',
+          sha: selectedSha,
+          expectedRemoteSha,
+        },
+        {
+          runGit: async (cwd, args) => {
+            if (args[0] === 'push' && !remoteAdvanced) {
+              remoteAdvanced = true;
+              await execFileAsync(
+                'git',
+                [
+                  '--git-dir',
+                  remote,
+                  'update-ref',
+                  'refs/heads/feature',
+                  concurrentSha,
+                ],
+                { cwd },
+              );
+            }
+            return (await execFileAsync('git', args, { cwd })).stdout;
+          },
+        },
+      ),
+    ).rejects.toThrow();
+
+    const remoteSha = (
+      await execFileAsync(
+        'git',
+        ['--git-dir', remote, 'rev-parse', 'refs/heads/feature'],
+        { cwd: repo },
+      )
+    ).stdout.trim();
+    expect(remoteSha).toBe(concurrentSha);
+  });
+
   it('publishes a targeted worktree revision event after an applied edit', async () => {
     const { paths } = await fixture();
     const events: Array<{

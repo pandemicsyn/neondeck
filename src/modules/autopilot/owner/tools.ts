@@ -7,8 +7,13 @@ import {
   readRepoDiff,
 } from '../../../repo-edit';
 import { gitCurrentSha } from '../../../repo-edit/git';
+import { fetchPullRequestDetail } from '../../github';
 import { postGitHubPrComment } from '../../pr-events';
-import { readManagedWorktree, syncWorktree } from '../../worktrees';
+import {
+  readManagedWorktree,
+  recordWorktreePushSucceeded,
+  syncWorktree,
+} from '../../worktrees';
 import { readWatch, type PrWatch } from '../../watches';
 import type { AutopilotOwnerCapability } from './capabilities';
 import { safePushAutopilotOwner } from './safe-push';
@@ -18,6 +23,7 @@ import {
 } from './pending';
 
 export function autopilotOwnerCapabilitySet(input: {
+  approvedRevisionKey?: string;
   mode: PrWatch['autopilotMode'];
   source: AutopilotOwnerTurnSource;
   status: PrWatch['autopilotStatus'];
@@ -28,7 +34,9 @@ export function autopilotOwnerCapabilitySet(input: {
     input.source === 'direct-human' &&
     input.status === 'waiting'
   ) {
-    return [...prepare, 'push', 'respond'];
+    return input.approvedRevisionKey
+      ? [...prepare, 'push', 'respond']
+      : prepare;
   }
   if (input.source !== 'watch-event' || input.status !== 'working') {
     return [];
@@ -48,19 +56,26 @@ export function buildAutopilotOwnerToolRegistry(input: {
   pushInteractive?: typeof pushInteractiveRepo;
   readWorktree?: typeof readManagedWorktree;
   currentSha?: typeof gitCurrentSha;
+  fetchPrDetail?: typeof fetchPullRequestDetail;
+  githubToken?: string;
   capabilities?: string[];
+  approvedRevisionKey?: string;
 }) {
   const { watch, source, paths } = input;
   if (!watch.worktreeId) return { capabilities: [], tools: [] };
   const worktreeId = watch.worktreeId;
   const sessionId = watch.ownerInstanceId ?? undefined;
+  const capabilityCeiling = autopilotOwnerCapabilitySet({
+    approvedRevisionKey: input.approvedRevisionKey,
+    mode: watch.autopilotMode,
+    source,
+    status: watch.autopilotStatus,
+  });
   const capabilities = input.capabilities
-    ? [...input.capabilities]
-    : autopilotOwnerCapabilitySet({
-        mode: watch.autopilotMode,
-        source,
-        status: watch.autopilotStatus,
-      });
+    ? input.capabilities.filter((capability) =>
+        capabilityCeiling.includes(capability as AutopilotOwnerCapability),
+      )
+    : capabilityCeiling;
   const enabled = new Set(capabilities);
   const tools: ToolDefinition[] = [];
 
@@ -153,8 +168,42 @@ export function buildAutopilotOwnerToolRegistry(input: {
             return { output: await staleDirectHumanAuthority() };
           }
           return {
-            output: await step.do('push-approved-commit', () =>
-              (input.pushInteractive ?? pushInteractiveRepo)(
+            output: await step.do('push-approved-commit', async () => {
+              const preflight = await directHumanPushPreflight(
+                watch,
+                worktreeId,
+                input.approvedRevisionKey,
+                paths,
+                {
+                  fetchPrDetail: input.fetchPrDetail,
+                  githubToken: input.githubToken,
+                },
+              );
+              if (!preflight) {
+                return staleDirectHumanPushHead();
+              }
+              if (preflight.kind === 'already-pushed') {
+                if (!preflight.recorded) {
+                  await recordWorktreePushSucceeded(
+                    worktreeId,
+                    {
+                      commitSha: preflight.commitSha,
+                      message: `Autopilot reconciled the already-pushed approved commit ${preflight.commitSha}.`,
+                      data: { recovered: true },
+                    },
+                    paths,
+                  );
+                }
+                return {
+                  ok: true,
+                  action: 'autopilot_owner_push',
+                  changed: false,
+                  message: `The linked PR head already contains the exact approved commit ${preflight.commitSha}; recovered the interrupted push record without pushing again.`,
+                  commitSha: preflight.commitSha,
+                  recovered: true,
+                };
+              }
+              return (input.pushInteractive ?? pushInteractiveRepo)(
                 {
                   sessionId,
                   repoId: watch.repoId,
@@ -164,11 +213,17 @@ export function buildAutopilotOwnerToolRegistry(input: {
                 },
                 paths,
                 {
+                  expectedRemoteSha: preflight.expectedRemoteSha,
                   authorizePush: () =>
-                    directHumanPushAuthorityCurrent(watch, worktreeId, paths),
+                    directHumanPushAuthorityCurrent(
+                      watch,
+                      worktreeId,
+                      input.approvedRevisionKey,
+                      paths,
+                    ),
                 },
-              ),
-            ),
+              );
+            }),
           };
         },
       }),
@@ -185,34 +240,36 @@ export function buildAutopilotOwnerToolRegistry(input: {
         durable: true,
         async run({ data: toolInput, step }) {
           if (source === 'watch-event') {
-            if (!autonomousResponseAuthorityCurrent(watch, paths)) {
-              return { output: await staleAutonomousResponseAuthority() };
-            }
-            const currentWorktree = await (
-              input.readWorktree ?? readManagedWorktree
-            )(worktreeId, watch.repoId, paths);
             if (
-              !currentWorktree.lastPushedSha ||
-              (await (input.currentSha ?? gitCurrentSha)(
-                currentWorktree.localPath,
-              )) !== currentWorktree.lastPushedSha
-            ) {
-              return {
-                output: {
-                  ok: false,
-                  action: 'autopilot_owner_pr_respond',
-                  changed: false,
-                  message:
-                    'Autopilot must push the current commit before posting an autonomous PR response.',
-                  requires: ['currentPushedCommit'],
+              !(await autonomousResponseDeliveryCurrent(
+                watch,
+                worktreeId,
+                paths,
+                {
+                  currentSha: input.currentSha,
+                  fetchPrDetail: input.fetchPrDetail,
+                  githubToken: input.githubToken,
+                  readWorktree: input.readWorktree,
                 },
-              };
-            }
-            if (!autonomousResponseAuthorityCurrent(watch, paths)) {
+              ))
+            ) {
               return { output: await staleAutonomousResponseAuthority() };
             }
-          } else if (!directHumanAuthorityCurrent(watch, paths)) {
-            return { output: await staleDirectHumanAuthority() };
+          } else if (
+            !(await directHumanResponseAuthorityCurrent(
+              watch,
+              worktreeId,
+              input.approvedRevisionKey,
+              paths,
+              {
+                currentSha: input.currentSha,
+                fetchPrDetail: input.fetchPrDetail,
+                githubToken: input.githubToken,
+                readWorktree: input.readWorktree,
+              },
+            ))
+          ) {
+            return { output: await staleDirectHumanResponseAuthority() };
           }
           const turnFingerprint = watch.ownerInstanceId
             ? readPendingAutopilotTurn(paths.home, watch.ownerInstanceId)
@@ -231,15 +288,36 @@ export function buildAutopilotOwnerToolRegistry(input: {
                 },
                 paths,
                 {
-                  authorizeComment: () => {
+                  authorizeComment: async () => {
                     if (source === 'watch-event') {
-                      return autonomousResponseAuthorityCurrent(watch, paths)
+                      return (await autonomousResponseDeliveryCurrent(
+                        watch,
+                        worktreeId,
+                        paths,
+                        {
+                          currentSha: input.currentSha,
+                          fetchPrDetail: input.fetchPrDetail,
+                          githubToken: input.githubToken,
+                          readWorktree: input.readWorktree,
+                        },
+                      ))
                         ? undefined
                         : staleAutonomousResponseAuthority();
                     }
-                    return directHumanAuthorityCurrent(watch, paths)
+                    return (await directHumanResponseAuthorityCurrent(
+                      watch,
+                      worktreeId,
+                      input.approvedRevisionKey,
+                      paths,
+                      {
+                        currentSha: input.currentSha,
+                        fetchPrDetail: input.fetchPrDetail,
+                        githubToken: input.githubToken,
+                        readWorktree: input.readWorktree,
+                      },
+                    ))
                       ? undefined
-                      : staleDirectHumanAuthority();
+                      : staleDirectHumanResponseAuthority();
                   },
                 },
               ),
@@ -253,7 +331,11 @@ export function buildAutopilotOwnerToolRegistry(input: {
   return { capabilities, tools };
 }
 
-function directHumanAuthorityCurrent(watch: PrWatch, paths: RuntimePaths) {
+function directHumanAuthorityCurrent(
+  watch: PrWatch,
+  paths: RuntimePaths,
+  expectedRevisionKey?: string,
+) {
   if (!watch.ownerInstanceId) return false;
   const current = readWatch(paths, watch.id);
   const pending = readPendingAutopilotTurn(paths.home, watch.ownerInstanceId);
@@ -261,20 +343,26 @@ function directHumanAuthorityCurrent(watch: PrWatch, paths: RuntimePaths) {
     current?.ownerInstanceId === watch.ownerInstanceId &&
     current?.autopilotMode === 'autofix-with-approval' &&
     current.autopilotStatus === 'working' &&
-    pending?.source === 'direct-human'
+    pending?.source === 'direct-human' &&
+    Boolean(pending.approvedRevisionKey) &&
+    (!expectedRevisionKey ||
+      pending.approvedRevisionKey === expectedRevisionKey)
   );
 }
 
 async function directHumanPushAuthorityCurrent(
   watch: PrWatch,
   worktreeId: string,
+  approvedRevisionKey: string | undefined,
   paths: RuntimePaths,
 ) {
-  if (!directHumanAuthorityCurrent(watch, paths)) return false;
+  if (!directHumanAuthorityCurrent(watch, paths, approvedRevisionKey)) {
+    return false;
+  }
   const pending = watch.ownerInstanceId
     ? readPendingAutopilotTurn(paths.home, watch.ownerInstanceId)
     : undefined;
-  if (!pending?.approvedRevisionKey) return true;
+  if (!pending?.approvedRevisionKey) return false;
   try {
     const worktree = await readManagedWorktree(worktreeId, watch.repoId, paths);
     if (!worktree.headSha) return false;
@@ -291,11 +379,172 @@ async function directHumanPushAuthorityCurrent(
     return (
       diff.ok &&
       Boolean(diff.files?.length) &&
-      directHumanAuthorityCurrent(watch, paths)
+      directHumanAuthorityCurrent(watch, paths, approvedRevisionKey)
     );
   } catch {
     return false;
   }
+}
+
+async function directHumanPushPreflight(
+  watch: PrWatch,
+  worktreeId: string,
+  approvedRevisionKey: string | undefined,
+  paths: RuntimePaths,
+  dependencies: {
+    fetchPrDetail?: typeof fetchPullRequestDetail;
+    githubToken?: string;
+  },
+) {
+  if (
+    !(await directHumanPushAuthorityCurrent(
+      watch,
+      worktreeId,
+      approvedRevisionKey,
+      paths,
+    ))
+  ) {
+    return undefined;
+  }
+  const token = dependencies.githubToken ?? process.env.GITHUB_TOKEN;
+  if (!token) return undefined;
+  try {
+    const [worktree, detail] = await Promise.all([
+      readManagedWorktree(worktreeId, watch.repoId, paths),
+      (dependencies.fetchPrDetail ?? fetchPullRequestDetail)({
+        token,
+        owner: watch.githubOwner,
+        repo: watch.githubName,
+        number: watch.prNumber,
+      }),
+    ]);
+    if (
+      !worktree.headSha ||
+      !directHumanAuthorityCurrent(watch, paths, approvedRevisionKey)
+    ) {
+      return undefined;
+    }
+    if (detail.headSha === worktree.headSha) {
+      return {
+        kind: 'push-required' as const,
+        expectedRemoteSha: detail.headSha,
+      };
+    }
+    const currentSha = await gitCurrentSha(worktree.localPath);
+    if (
+      currentSha !== worktree.headSha &&
+      detail.headSha === currentSha &&
+      (await directHumanPushAuthorityCurrent(
+        watch,
+        worktreeId,
+        approvedRevisionKey,
+        paths,
+      ))
+    ) {
+      return {
+        kind: 'already-pushed' as const,
+        commitSha: currentSha,
+        recorded: worktree.lastPushedSha === currentSha,
+      };
+    }
+    return undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+export function approvedResponseStateCurrent(input: {
+  approvedRevisionKey?: string;
+  currentRevisionKey?: string;
+  currentSha?: string | null;
+  diffHasFiles: boolean;
+  diffIsCurrent: boolean;
+  lastPushedSha?: string | null;
+  remoteHeadSha?: string | null;
+}) {
+  return Boolean(
+    input.approvedRevisionKey &&
+    input.currentRevisionKey === input.approvedRevisionKey &&
+    input.diffIsCurrent &&
+    input.diffHasFiles &&
+    input.currentSha &&
+    input.lastPushedSha === input.currentSha &&
+    input.remoteHeadSha === input.currentSha,
+  );
+}
+
+async function directHumanResponseAuthorityCurrent(
+  watch: PrWatch,
+  worktreeId: string,
+  approvedRevisionKey: string | undefined,
+  paths: RuntimePaths,
+  dependencies: {
+    currentSha?: typeof gitCurrentSha;
+    fetchPrDetail?: typeof fetchPullRequestDetail;
+    githubToken?: string;
+    readWorktree?: typeof readManagedWorktree;
+  } = {},
+) {
+  if (!directHumanAuthorityCurrent(watch, paths, approvedRevisionKey)) {
+    return false;
+  }
+  const pending = watch.ownerInstanceId
+    ? readPendingAutopilotTurn(paths.home, watch.ownerInstanceId)
+    : undefined;
+  if (!pending?.approvedRevisionKey || !approvedRevisionKey) return false;
+  const token = dependencies.githubToken ?? process.env.GITHUB_TOKEN;
+  if (!token) return false;
+  try {
+    const worktree = await (dependencies.readWorktree ?? readManagedWorktree)(
+      worktreeId,
+      watch.repoId,
+      paths,
+    );
+    if (!worktree.headSha) return false;
+    const [currentSha, diff, detail] = await Promise.all([
+      (dependencies.currentSha ?? gitCurrentSha)(worktree.localPath),
+      readRepoDiff(
+        {
+          repoId: watch.repoId,
+          worktreeId,
+          base: worktree.headSha,
+          includePatch: false,
+          expectedRevisionKey: approvedRevisionKey,
+        },
+        paths,
+      ),
+      (dependencies.fetchPrDetail ?? fetchPullRequestDetail)({
+        token,
+        owner: watch.githubOwner,
+        repo: watch.githubName,
+        number: watch.prNumber,
+      }),
+    ]);
+    return (
+      approvedResponseStateCurrent({
+        approvedRevisionKey,
+        currentRevisionKey: pending.approvedRevisionKey,
+        currentSha,
+        diffHasFiles: Boolean(diff.ok && diff.files?.length),
+        diffIsCurrent: diff.ok,
+        lastPushedSha: worktree.lastPushedSha,
+        remoteHeadSha: detail.headSha,
+      }) && directHumanAuthorityCurrent(watch, paths, approvedRevisionKey)
+    );
+  } catch {
+    return false;
+  }
+}
+
+function staleDirectHumanPushHead() {
+  return {
+    ok: false,
+    action: 'autopilot_owner_push',
+    changed: false,
+    message:
+      'The exact approved worktree revision is no longer based on the current PR head; no push was performed.',
+    requires: ['currentPrHead'],
+  };
 }
 
 function staleDirectHumanAuthority() {
@@ -306,6 +555,17 @@ function staleDirectHumanAuthority() {
     message:
       'The approval-mode human turn is no longer current; no external effect was performed.',
     requires: ['currentHumanTurn'],
+  };
+}
+
+function staleDirectHumanResponseAuthority() {
+  return {
+    ok: false,
+    action: 'autopilot_owner_pr_respond',
+    changed: false,
+    message:
+      'The exact approved worktree revision is not the current successfully pushed commit; no PR response was posted.',
+    requires: ['currentApprovedPushedRevision'],
   };
 }
 
@@ -323,6 +583,48 @@ function autonomousResponseAuthorityCurrent(
     pending?.source === 'watch-event' &&
     pending.mode === 'autofix-push-when-safe'
   );
+}
+
+async function autonomousResponseDeliveryCurrent(
+  watch: PrWatch,
+  worktreeId: string,
+  paths: RuntimePaths,
+  dependencies: {
+    currentSha?: typeof gitCurrentSha;
+    fetchPrDetail?: typeof fetchPullRequestDetail;
+    githubToken?: string;
+    readWorktree?: typeof readManagedWorktree;
+  } = {},
+) {
+  if (!autonomousResponseAuthorityCurrent(watch, paths)) return false;
+  const token = dependencies.githubToken ?? process.env.GITHUB_TOKEN;
+  if (!token) return false;
+  try {
+    const detail = await (dependencies.fetchPrDetail ?? fetchPullRequestDetail)(
+      {
+        token,
+        owner: watch.githubOwner,
+        repo: watch.githubName,
+        number: watch.prNumber,
+      },
+    );
+    const worktree = await (dependencies.readWorktree ?? readManagedWorktree)(
+      worktreeId,
+      watch.repoId,
+      paths,
+    );
+    const currentSha = await (dependencies.currentSha ?? gitCurrentSha)(
+      worktree.localPath,
+    );
+    return Boolean(
+      worktree.lastPushedSha &&
+      currentSha === worktree.lastPushedSha &&
+      detail.headSha === currentSha &&
+      autonomousResponseAuthorityCurrent(watch, paths),
+    );
+  } catch {
+    return false;
+  }
 }
 
 function staleAutonomousResponseAuthority() {

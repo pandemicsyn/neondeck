@@ -123,6 +123,92 @@ describe('worktree runtime foundation', () => {
     ).resolves.toBe('export const value = 3;\n');
   });
 
+  it('recreates a deleted target without overwriting its audit identity', async () => {
+    const { paths } = await fixture();
+    const original = worktreeFrom(
+      await createWorktree(
+        { repoId: 'sample', prNumber: 7, headRef: 'feature' },
+        paths,
+      ),
+    );
+
+    await expect(
+      cleanupWorktrees({ worktreeId: original.id, force: true }, paths),
+    ).resolves.toMatchObject({
+      ok: true,
+      changed: true,
+      results: [{ worktreeId: original.id, outcome: 'deleted' }],
+    });
+
+    const recreated = worktreeFrom(
+      await createWorktree(
+        { repoId: 'sample', prNumber: 7, headRef: 'feature' },
+        paths,
+      ),
+    );
+    const inventory = await listWorktrees(paths);
+
+    expect(recreated).toMatchObject({
+      repoId: 'sample',
+      prNumber: 7,
+      lifecycleStatus: 'ready',
+      adopted: false,
+    });
+    expect(recreated.id).not.toBe(original.id);
+    expect(recreated.localPath).not.toBe(original.localPath);
+    expect(recreated.localPath).toMatch(
+      new RegExp(`${escapeRegExp(original.localPath)}-[0-9a-f-]{36}$`),
+    );
+    expect(inventory.worktrees).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: original.id,
+          localPath: original.localPath,
+          lifecycleStatus: 'deleted',
+          adopted: false,
+        }),
+        expect.objectContaining({
+          id: recreated.id,
+          localPath: recreated.localPath,
+          lifecycleStatus: 'ready',
+          adopted: false,
+        }),
+      ]),
+    );
+    await expect(stat(original.localPath)).rejects.toThrow(
+      /ENOENT|no such file/i,
+    );
+    await expect(stat(recreated.localPath)).resolves.toBeDefined();
+  });
+
+  it('continues to reuse an active managed target unchanged', async () => {
+    const { paths } = await fixture();
+    const original = worktreeFrom(
+      await createWorktree(
+        { repoId: 'sample', prNumber: 7, headRef: 'feature' },
+        paths,
+      ),
+    );
+
+    const reused = await createWorktree(
+      { repoId: 'sample', prNumber: 7, headRef: 'feature' },
+      paths,
+    );
+
+    expect(reused).toMatchObject({
+      ok: true,
+      changed: false,
+      message: `Reused worktree ${original.id}.`,
+      worktree: {
+        id: original.id,
+        localPath: original.localPath,
+        lifecycleStatus: 'ready',
+        adopted: false,
+      },
+    });
+    expect((await listWorktrees(paths)).worktrees).toHaveLength(1);
+  });
+
   it('blocks sync when the worktree is dirty', async () => {
     const { paths } = await fixture();
     const created = await createWorktree(
@@ -745,6 +831,10 @@ function unsignedGitEnv() {
     GIT_CONFIG_KEY_0: 'commit.gpgsign',
     GIT_CONFIG_VALUE_0: 'false',
   };
+}
+
+function escapeRegExp(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
 function worktreeFrom(result: unknown) {

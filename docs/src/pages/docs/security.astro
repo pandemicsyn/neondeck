@@ -109,9 +109,10 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
         <p>
           GitHub facts and mutations run server-side. Watched-PR Autopilot keeps
           coding authority separate from delivery authority: prepare modes
-          cannot push, approval mode can deliver only during a direct human
-          turn, and autonomous mode receives narrowly bound push and response
-          capabilities.
+          cannot push, approval mode can deliver only from an exact current
+          reviewed-revision approval through Active Watches or the typed API,
+          and autonomous mode receives narrowly bound push and response
+          capabilities. Generic owner messages never approve delivery.
         </p>
         <p>
           Before an autonomous push, Neondeck rechecks the current PR head,

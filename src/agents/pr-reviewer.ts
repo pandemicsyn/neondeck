@@ -33,7 +33,53 @@ import { noWorkspace } from '../sandboxes/no-workspace';
 export const description =
   'Continuing read-only reviewer conversation for one durable Neondeck PR review.';
 
-export const route: MiddlewareHandler = async (_context, next) => next();
+export function createPrReviewerRoute(
+  paths: RuntimePaths = runtimePaths(),
+): MiddlewareHandler {
+  return async (context, next) => {
+    if (context.req.method !== 'POST') return next();
+    const id = reviewerConversationIdFromPath(context.req.path);
+    if (!id) return next();
+    const conversation = parsePrReviewerConversationId(id);
+    if (!conversation.headSha) {
+      return context.json(
+        {
+          error: {
+            type: 'review_revision_required',
+            message: 'Reviewer conversations must name a PR revision.',
+            details:
+              'Open the reviewer conversation from the completed review so its conversation id includes the reviewed head revision.',
+            meta: {
+              reviewId: conversation.reviewId,
+            },
+          },
+        },
+        409,
+      );
+    }
+    const review = readPrReview(conversation.reviewId, paths);
+    if (!review || conversation.headSha === review.headSha) return next();
+    return context.json(
+      {
+        error: {
+          type: 'review_revision_stale',
+          message:
+            'This reviewer conversation belongs to an older PR revision.',
+          details:
+            'Open the reviewer conversation for the current completed review before asking revision-bound questions.',
+          meta: {
+            currentHeadSha: review.headSha,
+            conversationHeadSha: conversation.headSha,
+            reviewId: review.id,
+          },
+        },
+      },
+      409,
+    );
+  };
+}
+
+export const route = createPrReviewerRoute();
 
 type PreparedReviewerContext = {
   instructions: string;
@@ -178,6 +224,19 @@ function unavailableReviewerRuntime(
     actions: [],
     subagents: [],
   };
+}
+
+function reviewerConversationIdFromPath(path: string) {
+  const marker = '/api/flue/agents/pr-reviewer/';
+  const markerIndex = path.indexOf(marker);
+  if (markerIndex < 0) return null;
+  const suffix = path.slice(markerIndex + marker.length);
+  if (!suffix || suffix.includes('/')) return null;
+  try {
+    return decodeURIComponent(suffix);
+  } catch {
+    return null;
+  }
 }
 
 export function reviewerInstructions(input: {

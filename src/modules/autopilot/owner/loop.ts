@@ -53,8 +53,17 @@ export async function runAutopilotWatchEvent(
   if (!watch)
     return loopResult('missing', false, 'The watch no longer exists.');
   watch = (await canonicalizePrWatchRepoId(paths, watch.id)) ?? watch;
-  if (watch.autopilotStatus === 'complete') {
-    return loopResult('complete', false, 'The watch is complete.');
+  if (
+    watch.autopilotStatus === 'complete' ||
+    watch.autopilotStatus === 'stopping'
+  ) {
+    return loopResult(
+      'complete',
+      false,
+      watch.autopilotStatus === 'stopping'
+        ? 'The watch is stopping and cleanup is in progress.'
+        : 'The watch is complete.',
+    );
   }
   if (watch.lastEventFingerprint === event.eventFingerprint) {
     return loopResult('duplicate', false, 'This event was already handled.');

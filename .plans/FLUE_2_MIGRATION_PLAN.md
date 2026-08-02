@@ -1,6 +1,6 @@
 # Flue 2 Migration Plan
 
-Status: implementation and recorded live read-only GitHub slices complete; externally mutating PR-review and Autopilot acceptance pending explicit authorization
+Status: complete — implementation, live feature-parity acceptance, final verification, and independent static re-review passed
 Integration branch: `flue2`  
 Created: 2026-08-01  
 Target Flue release at planning time: `2.0.1`
@@ -960,8 +960,10 @@ Implementation evidence:
   frozen turn snapshot, while execution-time authority checks still fail
   closed against current watch, worktree, GitHub, and revision state
 - commit, discard, push, and response Tools are durable; comment calls retain
-  stable application idempotency keys and safe-push recovery recognizes the
-  exact already-delivered commit before recording success without re-pushing
+  stable application idempotency keys whose public markers are authenticated
+  with the stable local application secret rather than mutable GitHub
+  credentials, and safe-push recovery recognizes the exact already-delivered
+  commit before recording success without re-pushing
 - accepted submissions settle from `submission_settled` observations and a
   reattachable canonical `read(submissionId)` watcher; receipt races attach to
   the reserved turn and interrupted app-side settlement claims are reclaimed
@@ -1044,11 +1046,14 @@ Exit criteria:
       The clean local runtime, conversation restart/abort, MCP, package,
       read-only GitHub, and automated feature evidence is recorded in
       `FLUE_2_ACCEPTANCE.md`.
-- [ ] Complete the remaining externally mutating PR-review head-advance and
-      Autopilot scenarios against an explicitly authorized disposable PR and
-      provider boundary. Reload/timeout/retry behavior is automated; any safe
-      additional live slice must be recorded without overstating the combined
-      gate.
+- [x] Complete real PR head advancement, same-record re-review, and old-reviewer
+      refusal against an authorized disposable PR. The live run exposed and
+      fixed a stale Tool window by rejecting old-revision POSTs before Flue
+      admission.
+- [x] Complete the externally mutating Autopilot scenarios against explicitly
+      authorized disposable PRs and the configured provider boundary. Approval
+      mode, autonomous safe push/response, failed-closed retry, and restart
+      reconciliation evidence is recorded in `FLUE_2_ACCEPTANCE.md`.
 - [x] Run the automated completion gates below.
 
 Phase 11 evidence captured on 2026-08-01:
@@ -1077,17 +1082,90 @@ Phase 11 evidence captured on 2026-08-01:
   validated local findings and reports, resumed its revision-keyed reviewer
   after restart, rejected a mismatched revision, and kept a passive
   `notify-only` Autopilot watch owner/worktree-free across restart
+- authorized live PR-review acceptance created disposable PR #245, reviewed
+  head `e105c260b7f68f9e3f482ac561419b195be090e6`, advanced it to
+  `daaf6c3ebe3843a59c1f4c1959a204ddc2aa3e44`, and re-reviewed the same
+  durable record with two new report artifacts and two findings; a stale
+  reviewer POST now fails before admission with `409 review_revision_stale`
+  and cannot append another settlement
+- the live head-advance run also triggered a static authority audit; generic
+  approval-mode owner messages now retain edit/commit/discard capabilities but
+  gain no push/comment authority without an exact reviewed revision,
+  unconfirmed mutating-mode setup performs no watch mutation, and owner-bound
+  watches must pass through Autopilot stop/cleanup before removal
+- final stop-path hardening removed implicit prepared-commit discard: model,
+  API, and dashboard stops retain an unpushed prepared diff unless the user
+  explicitly confirms that destructive cleanup with `confirmPreparedDiff=true`
+- authorized live `prepare-only` acceptance on PR #245 created one durable
+  owner and one managed worktree at exact head
+  `daaf6c3ebe3843a59c1f4c1959a204ddc2aa3e44`, exposed no delivery capability,
+  committed the one-file fix locally as
+  `30a70eee68a257adbb455064861bc3e0978ea6fd`, passed the focused fixture test,
+  and left the remote PR head unchanged; restart preserved the completed watch
+  and its audit bindings, after which confirmed prepared-diff cleanup and the
+  normal watch-removal API completed teardown
+- authorized live `autofix-with-approval` acceptance on PR #245 retained that
+  durable owner, created a fresh managed worktree after the prior audit record
+  was deleted, committed and validated the exact one-file reviewed change as
+  `dcb4aaa490456c779fa4ffa5be7bea004affa327`, and proved a generic owner message
+  could neither push nor respond; exact revision approval then pushed only that
+  commit, with GitHub head, managed-worktree head, and `last_pushed_sha`
+  converging on the same value; restart reconciliation produced no duplicate
+  push/comment, and typed stop removed the clean worktree before watch removal
+- authorized live `autofix-push-when-safe` acceptance on PR #246 used only the
+  canonical scheduler, created one durable owner and managed worktree at exact
+  head `c8d17dc34b7bde2636cc58355016f02364d15491`, fixed one file, passed all
+  969 unit tests, and committed `4418316a699b725eadf81b8dc1c3fa61ae4e8eaa`;
+  a failed-closed delivery boundary recovered through typed retry without a
+  second owner/worktree/commit, then guarded push and response succeeded; after
+  restart, every local and remote head field converged on that exact commit and
+  the response idempotency marker remained singular; typed stop and watch
+  removal completed managed-resource teardown
+- disposable PRs #245 and #246 were closed without merge; their exact remote
+  and local fixture branches/worktrees were removed, the repository `origin`
+  was restored to `git@github.com:pandemicsyn/neondeck.git`, and the clean-home
+  acceptance server was stopped
 - runtime skills, the product roadmap, README, development guide, Astro docs,
   Raycast command client, smoke naming, and user-facing operation vocabulary
   now describe the Flue 2 architecture; legacy table and audit field names are
   retained only where they are persisted app-domain compatibility
-- `npm run verify` passes with 971 unit tests, 39 git tests, 87 integration
+- `npm run verify` passes with 1,000 unit tests, 39 git tests, 90 integration
   tests, all type/layer/database checks, dashboard/server/docs builds, a
   913-file package audit, packed CLI smoke, and formatting
 - the changeset records the user-facing Flue 2 migration as a minor release
 - independent static Phase 11 review identified and verified fixes for packaged
   package-root resolution, `npm start` port propagation, and accurate local
   host/origin access-control documentation; the re-review found no P1/P2 issues
+- final post-acceptance static safety review hardened the Autopilot teardown
+  boundary: fenced watch removal now deletes its polling task, task runs, and
+  event watermarks in the same SQLite transaction, with rollback and lost-fence
+  race coverage; retained or unreadable worktree cleanup now includes recovery
+  instructions in the durable notification and a dismissible dashboard outcome
+  that remains visible after the completed watch row disappears; failed rearm
+  polling upserts are repaired by a fenced retry, and stop verifies durable
+  polling is disabled before transitioning state or attempting cleanup
+- final authority hardening adds an atomic expected-head git lease, reconciles
+  approval pushes that reached GitHub before the durable local record, rechecks
+  autonomous response authority against live GitHub/local/pushed heads at the
+  final comment boundary, and keys public idempotency markers with the stable
+  app-owned local API secret so GitHub token rotation cannot duplicate replies
+- stop now requires explicit `confirmPreparedDiff` before deleting either a
+  settled prepared-diff or a clean unpushed commit from the pre-settlement crash
+  window; completed-watch rearm applies a requested lower mode atomically before
+  polling resumes, and generic owner messages remain non-authorizing
+- the focused teardown/recovery verification passes 70 tests across watch
+  actions, the Autopilot loop, and Active Watches, and `npm run typecheck:app`
+  passes for the backend and dashboard
+- final stop/configure concurrency hardening claims a durable `stopping` state
+  and disables polling in the same SQLite transaction before cleanup, rejects
+  reconfiguration until cleanup settles, and uses a durable failed-rearm marker
+  so an idempotent configure repairs only an interrupted rearm while preserving
+  an intentional manual polling pause; the definitive post-fix verification
+  completed at approximately 2026-08-02 01:04 UTC
+- independent final static re-reviews of authority boundaries, polling and
+  teardown state, Flue skill/docs accuracy, restart semantics, and MCP parity
+  found no remaining P1/P2 issues after the identified races and documentation
+  ambiguity were resolved
 
 Exit criteria:
 
@@ -1151,9 +1229,10 @@ The migration is complete only when all of the following are true:
       restart/mismatch slice, and passive `notify-only` Autopilot baseline
       succeed against PR #177 without external mutations. Clean local runtime,
       display abort/session isolation, and complete MCP acceptance pass.
-- [ ] The remaining live PR-review head-advance and GitHub-mutating Autopilot
-      acceptance succeeds against an explicitly authorized disposable PR and
-      provider boundary.
+- [x] Real PR head advancement, same-record re-review, and pre-admission stale
+      reviewer refusal succeed against authorized disposable PR #245.
+- [x] GitHub-mutating Autopilot acceptance succeeds against explicitly
+      authorized disposable PRs and the configured provider boundary.
 
 ## Expected Roadmap Updates
 

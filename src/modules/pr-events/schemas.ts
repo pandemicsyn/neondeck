@@ -88,7 +88,8 @@ export type PrEventStateDependencies = {
   fetchPullRequestReviewComments?: typeof fetchPullRequestReviewComments;
   fetchPullRequestReviewThread?: typeof fetchPullRequestReviewThread;
   postPullRequestComment?: typeof postPullRequestComment;
-  authorizeComment?: () => PrEventActionResult | undefined;
+  authorizeComment?: () =>
+    PrEventActionResult | undefined | Promise<PrEventActionResult | undefined>;
   listPullRequestComments?: typeof listPullRequestComments;
   submitPullRequestReview?: typeof submitPullRequestReview;
   replyToPullRequestReviewThread?: typeof replyToPullRequestReviewThread;

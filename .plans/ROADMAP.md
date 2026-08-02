@@ -346,7 +346,7 @@ Worktree principles:
 - Allow read-only same-PR triage/research in parallel, but serialize same-PR mutation workflows by default.
 - Treat created worktrees as declared Neondeck coding workspaces. A continuing Autopilot owner may read and edit files and run whatever repository commands it needs inside its managed worktree without a per-command allowlist.
 - Keep the primary checkout outside autonomous mutation scope. The managed worktree, not a language-specific edit/check API, is the isolation boundary.
-- Keep external delivery authority separate from coding authority: prepare modes may edit, test, format, build, and commit but cannot push or respond; only autonomous mode or a direct-human approval turn receives the bound push/response tools.
+- Keep external delivery authority separate from coding authority: prepare modes may edit, test, format, build, and commit but cannot push or respond; only autonomous mode or an exact current reviewed-revision approval turn receives the bound push/response tools. Generic owner messages are non-authorizing.
 - Record every worktree lifecycle event, edit, command, push, PR comment, and cleanup decision in SQLite.
 
 Suggested runtime layout:
@@ -1275,7 +1275,7 @@ Must-haves:
 
 ### Phase 20: Autopilot Policy And UX Hardening
 
-- Status: complete. Legacy prepared-diff/coordinator surfaces remain retired; chat/API/CLI/dashboard setup, direct-human approval, watch controls, owner visibility, and product docs describe the minimal watch/owner/worktree loop. Mode is a delivery-authority ceiling rather than a repository-command allowlist, and `autofix-push-when-safe` delegates semantic engineering judgment to the continuing owner.
+- Status: complete. Legacy prepared-diff/coordinator surfaces remain retired; chat/API/CLI/dashboard setup, exact-revision human approval, watch controls, owner visibility, and product docs describe the minimal watch/owner/worktree loop. Mode is a delivery-authority ceiling rather than a repository-command allowlist, and `autofix-push-when-safe` delegates semantic engineering judgment to the continuing owner.
 
 - [x] Add repo-level autopilot config with explicit modes:
   - `notify-only`
@@ -1283,7 +1283,7 @@ Must-haves:
   - `autofix-with-approval`
   - `autofix-push-when-safe`
 - [x] Complete stable watch-plus-mode setup across chat, CLI, API, and dashboard.
-- [x] Implement approval as a direct human message to the waiting continuing owner rather than a separate approval record or dispatch workflow.
+- [x] Implement approval as an exact current reviewed-revision decision from Active Watches/the typed API, dispatched to the waiting continuing owner without a separate approval record or workflow; generic owner messages remain non-authorizing.
 - [x] Use the managed worktree commit as the review artifact and the existing diff viewer as its UI; do not restore prepared-diff or approval records.
 - [x] Surface Autopilot mode, state, owner, worktree/diff, and controls through the active Watches product surface.
 - [x] Preserve only mechanical delivery guards: current autonomous/approved authority, managed worktree, linked destination, clean committed head, current remote head, credential, and non-force push.

@@ -7,6 +7,7 @@ import {
   controlPrAutopilot,
   messagePrAutopilotOwner,
   type PrWatch,
+  type PrWatchMutationResponse,
 } from '../api';
 import { Badge, Button, ScrollArea } from '../components/ui';
 import { FlueChatSessionView } from '../features/flue-chat/components/session-view';
@@ -28,6 +29,13 @@ type ActiveWatchesConfig = {
   limit: number;
 };
 
+export type PrWatchStopOutcome = Pick<
+  PrWatchMutationResponse,
+  'message' | 'detachedWorktreeId' | 'cleanupRecovery'
+> & {
+  watchId: string;
+};
+
 const activeWatchesDefaultConfig = {
   limit: 8,
 };
@@ -41,6 +49,9 @@ export const ActiveWatchesPlugin = {
     parsePositiveIntegerConfig(activeWatchesDefaultConfig, config),
   Component({ config }) {
     const queryClient = useQueryClient();
+    const [stopOutcome, setStopOutcome] = useState<PrWatchStopOutcome | null>(
+      null,
+    );
     const { data, error, isLoading } = useQuery({
       queryKey: queryKeys.prWatches,
       queryFn: getPrWatches,
@@ -67,6 +78,12 @@ export const ActiveWatchesPlugin = {
         </header>
         <ScrollArea className="flex-1">
           <div className="space-y-2 p-3">
+            {stopOutcome ? (
+              <StopOutcomeNotice
+                onDismiss={() => setStopOutcome(null)}
+                outcome={stopOutcome}
+              />
+            ) : null}
             {isLoading ? (
               <WatchState
                 title="Loading watches"
@@ -83,7 +100,13 @@ export const ActiveWatchesPlugin = {
                 detail="PR watches will appear here after they are created."
               />
             ) : (
-              visible.map((watch) => <WatchRow key={watch.id} watch={watch} />)
+              visible.map((watch) => (
+                <WatchRow
+                  key={watch.id}
+                  onStopOutcome={setStopOutcome}
+                  watch={watch}
+                />
+              ))
             )}
           </div>
         </ScrollArea>
@@ -96,7 +119,13 @@ export function activePrWatches(watches: PrWatch[]) {
   return watches.filter((watch) => !isCompletedPrWatch(watch));
 }
 
-export function WatchRow({ watch }: { watch: PrWatch }) {
+export function WatchRow({
+  watch,
+  onStopOutcome,
+}: {
+  watch: PrWatch;
+  onStopOutcome?: (outcome: PrWatchStopOutcome) => void;
+}) {
   const [confirmingStop, setConfirmingStop] = useState(false);
   const [confirmingMode, setConfirmingMode] = useState<
     PrWatch['autopilotMode'] | null
@@ -109,8 +138,15 @@ export function WatchRow({ watch }: { watch: PrWatch }) {
   );
   const queryClient = useQueryClient();
   const stopMutation = useMutation({
-    mutationFn: () => controlPrAutopilot(watch.id, 'stop'),
-    onSuccess() {
+    mutationFn: () =>
+      controlPrAutopilot(watch.id, 'stop', { confirmPreparedDiff: true }),
+    onSuccess(result) {
+      onStopOutcome?.({
+        watchId: watch.id,
+        message: result.message,
+        detachedWorktreeId: result.detachedWorktreeId,
+        cleanupRecovery: result.cleanupRecovery,
+      });
       setConfirmingStop(false);
       void queryClient.invalidateQueries({ queryKey: queryKeys.prWatches });
       void queryClient.invalidateQueries({
@@ -401,8 +437,12 @@ export function WatchRow({ watch }: { watch: PrWatch }) {
       </div>
       {confirmingStop ? (
         <div className="mt-2 border border-accent/50 bg-field px-2 py-1.5 font-mono text-[10px] text-muted">
-          <div className="flex items-center justify-between gap-2">
-            <span className="text-accent">Stop this Autopilot watch?</span>
+          <div className="flex items-start justify-between gap-2">
+            <span className="text-accent">
+              Stop this Autopilot watch? Eligible Neondeck-managed worktrees
+              will be deleted. If one holds an unpushed prepared commit, this
+              confirms that you reviewed and want to discard it.
+            </span>
             <span className="flex gap-1.5">
               <Button
                 className="min-h-[28px] border-accent bg-transparent px-2 py-1 text-[10px] text-accent"
@@ -521,7 +561,7 @@ export function WatchRow({ watch }: { watch: PrWatch }) {
               placeholder:
                 watch.autopilotMode === 'autofix-with-approval' &&
                 watch.autopilotStatus === 'waiting'
-                  ? 'approved, push — or ask for one more focused edit'
+                  ? 'ask for one more focused edit or request discard'
                   : 'Owner messages are available while approval mode is waiting.',
             }}
             sessionState={undefined}
@@ -529,6 +569,48 @@ export function WatchRow({ watch }: { watch: PrWatch }) {
         </div>
       ) : null}
     </article>
+  );
+}
+
+export function StopOutcomeNotice({
+  outcome,
+  onDismiss,
+}: {
+  outcome: PrWatchStopOutcome;
+  onDismiss: () => void;
+}) {
+  const retained = Boolean(outcome.cleanupRecovery);
+  return (
+    <div
+      className={`border bg-field px-2 py-2 font-mono text-[10px] leading-4 ${
+        retained ? 'border-accent/70 text-accent' : 'border-primary/60 text-ink'
+      }`}
+      role={retained ? 'alert' : 'status'}
+    >
+      <div className="flex items-start justify-between gap-2">
+        <div>
+          <p className="font-semibold">
+            {retained ? 'Worktree retained for recovery' : 'Autopilot stopped'}
+          </p>
+          <p className="mt-1 text-muted">
+            {outcome.cleanupRecovery ?? outcome.message}
+          </p>
+          {outcome.detachedWorktreeId ? (
+            <p className="mt-1 text-ink">
+              Recovery worktree: {outcome.detachedWorktreeId}
+            </p>
+          ) : null}
+        </div>
+        <Button
+          aria-label={`Dismiss stop outcome for ${outcome.watchId}`}
+          className="min-h-[24px] bg-transparent px-1.5 py-0.5 text-[9px] text-muted"
+          onClick={onDismiss}
+          type="button"
+        >
+          dismiss
+        </Button>
+      </div>
+    </div>
   );
 }
 

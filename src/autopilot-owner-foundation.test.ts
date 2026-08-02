@@ -5,6 +5,7 @@ import {
   autopilotOwnerInstanceId,
 } from './modules/autopilot';
 import {
+  approvedResponseStateCurrent,
   autopilotOwnerCapabilitySet,
   buildAutopilotOwnerToolRegistry,
 } from './modules/autopilot/owner/tools';
@@ -82,6 +83,14 @@ describe('continuing Autopilot owner foundations', () => {
         source: 'direct-human',
         status: 'waiting',
       }),
+    ).toEqual(['workspace', 'commit']);
+    expect(
+      autopilotOwnerCapabilitySet({
+        approvedRevisionKey: 'worktree-diff:approved',
+        mode: 'autofix-with-approval',
+        source: 'direct-human',
+        status: 'waiting',
+      }),
     ).toEqual(['workspace', 'commit', 'push', 'respond']);
     expect(
       autopilotOwnerCapabilitySet({
@@ -117,6 +126,15 @@ describe('continuing Autopilot owner foundations', () => {
       source: 'direct-human',
       paths: runtimePaths('/tmp/neondeck-owner-tools'),
     });
+    const approvedDirectHuman = buildAutopilotOwnerToolRegistry({
+      watch: ownerWatch({
+        autopilotMode: 'autofix-with-approval',
+        autopilotStatus: 'waiting',
+      }),
+      source: 'direct-human',
+      paths: runtimePaths('/tmp/neondeck-owner-tools'),
+      approvedRevisionKey: 'worktree-diff:approved',
+    });
 
     expect(watcher.tools.map((tool) => tool.name)).not.toContain(
       'neondeck_owner_push',
@@ -124,7 +142,13 @@ describe('continuing Autopilot owner foundations', () => {
     expect(watcher.tools.map((tool) => tool.name)).not.toContain(
       'neondeck_owner_pr_respond',
     );
-    expect(directHuman.tools.map((tool) => tool.name)).toEqual(
+    expect(directHuman.tools.map((tool) => tool.name)).not.toContain(
+      'neondeck_owner_push',
+    );
+    expect(directHuman.tools.map((tool) => tool.name)).not.toContain(
+      'neondeck_owner_pr_respond',
+    );
+    expect(approvedDirectHuman.tools.map((tool) => tool.name)).toEqual(
       expect.arrayContaining([
         'neondeck_owner_push',
         'neondeck_owner_discard_prepared_commit',
@@ -135,7 +159,63 @@ describe('continuing Autopilot owner foundations', () => {
       'neondeck_owner_commit',
     ]);
     expect(watcher.tools.every((tool) => tool.durable)).toBe(true);
-    expect(directHuman.tools.every((tool) => tool.durable)).toBe(true);
+    expect(approvedDirectHuman.tools.every((tool) => tool.durable)).toBe(true);
+  });
+
+  it('rejects an approval response before the approved commit is pushed', () => {
+    expect(
+      approvedResponseStateCurrent({
+        approvedRevisionKey: 'worktree-diff:approved',
+        currentRevisionKey: 'worktree-diff:approved',
+        currentSha: 'a'.repeat(40),
+        diffHasFiles: true,
+        diffIsCurrent: true,
+        lastPushedSha: null,
+      }),
+    ).toBe(false);
+  });
+
+  it('rejects an approval response after the approved revision or pushed commit diverges', () => {
+    expect(
+      approvedResponseStateCurrent({
+        approvedRevisionKey: 'worktree-diff:approved',
+        currentRevisionKey: 'worktree-diff:replacement',
+        currentSha: 'b'.repeat(40),
+        diffHasFiles: true,
+        diffIsCurrent: false,
+        lastPushedSha: 'a'.repeat(40),
+      }),
+    ).toBe(false);
+  });
+
+  it('allows an approval response for the exact approved current pushed commit', () => {
+    const pushedSha = 'a'.repeat(40);
+    expect(
+      approvedResponseStateCurrent({
+        approvedRevisionKey: 'worktree-diff:approved',
+        currentRevisionKey: 'worktree-diff:approved',
+        currentSha: pushedSha,
+        diffHasFiles: true,
+        diffIsCurrent: true,
+        lastPushedSha: pushedSha,
+        remoteHeadSha: pushedSha,
+      }),
+    ).toBe(true);
+  });
+
+  it('rejects an approval response after the remote PR head moves', () => {
+    const pushedSha = 'a'.repeat(40);
+    expect(
+      approvedResponseStateCurrent({
+        approvedRevisionKey: 'worktree-diff:approved',
+        currentRevisionKey: 'worktree-diff:approved',
+        currentSha: pushedSha,
+        diffHasFiles: true,
+        diffIsCurrent: true,
+        lastPushedSha: pushedSha,
+        remoteHeadSha: 'b'.repeat(40),
+      }),
+    ).toBe(false);
   });
 });
 

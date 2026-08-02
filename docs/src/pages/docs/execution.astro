@@ -218,8 +218,9 @@ const boundaryDiagram = `flowchart TB
           </li>
           <li>
             <strong>Fix with approval</strong> prepares the commit first. Push and
-            response are available only during a direct human follow-up while the
-            owner is waiting.
+            response are available only during the exact current reviewed-revision
+            approval turn created through Active Watches or the typed API. Generic
+            owner follow-ups can request work but cannot approve delivery.
           </li>
           <li>
             <strong>Push when safe</strong> lets a watcher-generated turn push and

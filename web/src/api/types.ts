@@ -1848,7 +1848,8 @@ export type PrWatch = {
     | 'prepare-only'
     | 'autofix-with-approval'
     | 'autofix-push-when-safe';
-  autopilotStatus: 'watching' | 'working' | 'waiting' | 'blocked' | 'complete';
+  autopilotStatus:
+    'watching' | 'working' | 'waiting' | 'blocked' | 'stopping' | 'complete';
   ownerInstanceId: string | null;
   worktreeId: string | null;
   worktreeHeadSha?: string | null;
@@ -1894,6 +1895,8 @@ export type PrWatchMutationResponse = {
   message: string;
   watch?: PrWatch;
   watches?: PrWatch[];
+  detachedWorktreeId?: string | null;
+  cleanupRecovery?: string | null;
   requires?: string[];
   errors?: string[];
 };

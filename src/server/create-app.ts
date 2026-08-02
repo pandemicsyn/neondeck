@@ -12,7 +12,7 @@ import {
   PrAutopilotOwner,
   route as prAutopilotOwnerRoute,
 } from '../agents/pr-autopilot-owner';
-import { PrReviewer, route as prReviewerRoute } from '../agents/pr-reviewer';
+import { createPrReviewerRoute, PrReviewer } from '../agents/pr-reviewer';
 import { getMcpRegistry } from '../domains/mcp';
 import { installFlueExecutionContextTracker } from '../modules/flue/execution-context';
 import { installNeondeckProviders } from '../modules/repos';
@@ -153,7 +153,7 @@ export async function createApp(options: CreateAppOptions = {}) {
     '/api/flue/agents/display-assistant',
     createAgentRouter(DisplayAssistant),
   );
-  app.use('/api/flue/agents/pr-reviewer/*', prReviewerRoute);
+  app.use('/api/flue/agents/pr-reviewer/*', createPrReviewerRoute(paths));
   app.route('/api/flue/agents/pr-reviewer', createAgentRouter(PrReviewer));
   app.use('/api/flue/agents/pr-autopilot-owner/:id', prAutopilotOwnerRoute);
   app.route(
