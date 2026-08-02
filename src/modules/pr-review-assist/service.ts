@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import * as v from 'valibot';
 import { addNotification, addWorkflowSummary } from '../app-state';
 import {
@@ -69,7 +70,20 @@ export type ReviewAssistDependencies = {
   ) => Promise<unknown> | unknown;
   prEventDependencies?: PrEventStateDependencies;
   workflowRunId?: string;
+  effectId?: string;
+  signal?: AbortSignal;
+  runEffect?: ReviewAssistEffectRunner;
+  validateReviewFiles?: (
+    facts: ReviewAssistFacts,
+    output: ReviewAssistStructuredOutput,
+    paths: RuntimePaths,
+  ) => Promise<GitHubPullRequestFile[]>;
 };
+
+export type ReviewAssistEffectRunner = <T>(
+  name: string,
+  effect: () => T | Promise<T>,
+) => Promise<T>;
 
 type SeededFinding = {
   finding: ReviewAssistFinding;
@@ -96,21 +110,29 @@ export async function reviewPrForHuman(
     });
   }
 
-  const factsResult = await readReviewFacts(parsed.output, paths, dependencies);
+  const runEffect: ReviewAssistEffectRunner =
+    dependencies.runEffect ?? ((_name, effect) => Promise.resolve(effect()));
+  const factsResult = await runEffect('read-review-facts', () =>
+    readReviewFacts(parsed.output, paths, dependencies),
+  );
   if (!factsResult.ok) return factsResult.result;
 
   const facts = factsResult.facts;
-  const repoId = await repoIdForFullName(facts.target.repoFullName, paths);
-  const promptContext = {
-    repoId,
-    learningMemoryContext: await loadAutomationLearningMemoryContext(paths, {
+  const revisionFailure = exactRevisionFailure(parsed.output, facts);
+  if (revisionFailure) return revisionFailure;
+  const promptContext = await runEffect('load-review-context', async () => {
+    const repoId = await repoIdForFullName(facts.target.repoFullName, paths);
+    return {
       repoId,
-      includeGlobal: true,
-    }),
-  };
-  const rawOutput = await (dependencies.reviewer ?? deterministicReviewPass)(
-    facts,
-    promptContext,
+      learningMemoryContext: await loadAutomationLearningMemoryContext(paths, {
+        repoId,
+        includeGlobal: true,
+      }),
+    };
+  });
+  const repoId = promptContext.repoId;
+  const rawOutput = await runEffect('generate-review-output', () =>
+    (dependencies.reviewer ?? deterministicReviewPass)(facts, promptContext),
   );
   const reviewed = v.safeParse(reviewAssistStructuredOutputSchema, rawOutput);
   if (!reviewed.success) {
@@ -119,62 +141,84 @@ export async function reviewPrForHuman(
     });
   }
 
-  const seedResult = await seedDraftComments(
-    facts,
-    reviewed.output,
-    paths,
-    reviewSeedingBlockedReason(facts),
+  const seedResult = await runEffect('seed-draft-comments', () =>
+    seedDraftComments(
+      facts,
+      reviewed.output,
+      paths,
+      reviewSeedingBlockedReason(facts),
+      dependencies.effectId,
+      dependencies.signal,
+      dependencies.validateReviewFiles,
+    ),
   );
-  const reports = await writeReviewReports({
-    facts,
-    output: reviewed.output,
-    repoId,
-    seedResult,
-    paths,
-  });
-  const workflowSummary = await addWorkflowSummary(
-    {
-      workflow: 'review-pr-for-human',
-      ...(dependencies.workflowRunId
-        ? { runId: dependencies.workflowRunId }
-        : {}),
-      status: 'completed',
-      summary: {
-        message: `Prepared review reports for ${facts.target.repoFullName}#${facts.target.number}.`,
-        repoId,
-        repoFullName: facts.target.repoFullName,
-        prNumber: facts.target.number,
-        headSha: facts.state.headSha,
-        findingCount: reviewed.output.findings.length,
-        seededCount: seedResult.seeded.length,
-        reportOnlyCount: seedResult.reportOnly.length,
-        skippedSeedingReason: seedResult.skippedReason,
-        reportIds: reports.map((report) => report.id),
-        memoryIds: promptContext.learningMemoryContext.memoryIds,
-      },
-    },
-    paths,
+  const generatedAt = await runEffect('review-generated-at', () =>
+    Promise.resolve(new Date().toISOString()),
   );
-  await addNotification(
-    {
-      level: 'ready',
-      title: 'PR review ready',
-      message: `Neon prepared ${reports.length} report${reports.length === 1 ? '' : 's'} and ${seedResult.seeded.length} draft comment${seedResult.seeded.length === 1 ? '' : 's'} for ${facts.target.repoFullName}#${facts.target.number}.`,
-      source: 'review-pr-for-human',
-      sourceId: `${facts.target.repoFullName}#${facts.target.number}:${facts.state.headSha}`,
-      data: {
+  const reports = await runEffect('write-review-reports', () =>
+    writeReviewReports({
+      facts,
+      output: reviewed.output,
+      repoId,
+      seedResult,
+      paths,
+      generatedAt,
+      overviewId: stableEffectId(dependencies.effectId, 'overview-report'),
+      issuesId: stableEffectId(dependencies.effectId, 'issues-report'),
+      signal: dependencies.signal,
+    }),
+  );
+  const workflowSummary = await runEffect('write-workflow-summary', () =>
+    addWorkflowSummary(
+      {
+        id: stableEffectId(dependencies.effectId, 'workflow-summary'),
+        signal: dependencies.signal,
         workflow: 'review-pr-for-human',
-        repo: facts.target.repoFullName,
-        prNumber: facts.target.number,
-        reportIds: reports.map((report) => report.id),
-        reportUrls: reports.map((report) => `/reports/${report.id}`),
-        reviewUrl: reviewSurfaceUrl(facts.target),
-        seededCount: seedResult.seeded.length,
-        reportOnlyCount: seedResult.reportOnly.length,
-        skippedSeedingReason: seedResult.skippedReason,
+        ...(dependencies.workflowRunId
+          ? { runId: dependencies.workflowRunId }
+          : {}),
+        status: 'completed',
+        summary: {
+          message: `Prepared review reports for ${facts.target.repoFullName}#${facts.target.number}.`,
+          repoId,
+          repoFullName: facts.target.repoFullName,
+          prNumber: facts.target.number,
+          headSha: facts.state.headSha,
+          findingCount: reviewed.output.findings.length,
+          seededCount: seedResult.seeded.length,
+          reportOnlyCount: seedResult.reportOnly.length,
+          skippedSeedingReason: seedResult.skippedReason,
+          reportIds: reports.map((report) => report.id),
+          memoryIds: promptContext.learningMemoryContext.memoryIds,
+        },
       },
-    },
-    paths,
+      paths,
+    ),
+  );
+  await runEffect('notify-review-ready', () =>
+    addNotification(
+      {
+        id: stableEffectId(dependencies.effectId, 'ready-notification'),
+        signal: dependencies.signal,
+        level: 'ready',
+        title: 'PR review ready',
+        message: `Neon prepared ${reports.length} report${reports.length === 1 ? '' : 's'} and ${seedResult.seeded.length} draft comment${seedResult.seeded.length === 1 ? '' : 's'} for ${facts.target.repoFullName}#${facts.target.number}.`,
+        source: 'review-pr-for-human',
+        sourceId: `${facts.target.repoFullName}#${facts.target.number}:${facts.state.headSha}`,
+        data: {
+          workflow: 'review-pr-for-human',
+          repo: facts.target.repoFullName,
+          prNumber: facts.target.number,
+          reportIds: reports.map((report) => report.id),
+          reportUrls: reports.map((report) => `/reports/${report.id}`),
+          reviewUrl: reviewSurfaceUrl(facts.target),
+          seededCount: seedResult.seeded.length,
+          reportOnlyCount: seedResult.reportOnly.length,
+          skippedSeedingReason: seedResult.skippedReason,
+        },
+      },
+      paths,
+    ),
   );
 
   return {
@@ -324,6 +368,9 @@ async function seedDraftComments(
   output: ReviewAssistStructuredOutput,
   paths: RuntimePaths,
   seedingBlockedReason: string | null,
+  effectId?: string,
+  signal?: AbortSignal,
+  validateReviewFiles = reviewValidationFiles,
 ) {
   let existing = readLivePrReviewDraft({
     databasePath: paths.neondeckDatabase,
@@ -341,6 +388,24 @@ async function seedDraftComments(
       skippedReason: seedingBlockedReason,
     };
   }
+  if (existing && draftHasHumanWork(existing)) {
+    return {
+      draft: existing,
+      seeded: [] as SeededFinding[],
+      reportOnly: output.findings.map((finding) => ({
+        finding,
+        reason: 'existing-human-draft',
+      })),
+      skippedReason: 'existing-human-draft',
+    };
+  }
+  const validationFiles = await validateReviewFiles(facts, output, paths);
+  signal?.throwIfAborted();
+  existing = readLivePrReviewDraft({
+    databasePath: paths.neondeckDatabase,
+    repo: facts.target.repoFullName,
+    prNumber: facts.target.number,
+  });
   if (existing && draftHasHumanWork(existing)) {
     return {
       draft: existing,
@@ -378,8 +443,6 @@ async function seedDraftComments(
       skippedReason: 'existing-draft-comments',
     };
   }
-
-  const validationFiles = await reviewValidationFiles(facts, output, paths);
   const anchors = anchorsByPath(validationFiles);
   const filesByPath = new Map(validationFiles.map((file) => [file.path, file]));
   const seeded: SeededFinding[] = [];
@@ -421,9 +484,17 @@ async function seedDraftComments(
   });
   const addedIds: string[] = [];
   try {
-    for (const item of seedable) {
+    for (const [index, item] of seedable.entries()) {
       const beforeIds = new Set(draft.comments.map((comment) => comment.id));
+      const sourceFindingId = prReviewFindingSourceId({
+        ...item.finding,
+        line: findingLine(item.finding),
+      });
       draft = addPrReviewDraftComment({
+        id: stableEffectId(
+          effectId,
+          `draft-comment:${index}:${sourceFindingId}`,
+        ),
         databasePath: paths.neondeckDatabase,
         draftId: draft.id,
         path: item.finding.path,
@@ -433,10 +504,7 @@ async function seedDraftComments(
         startSide: item.anchor.startSide ?? null,
         body: seededCommentBody(item.finding),
         origin: 'neon',
-        sourceFindingId: prReviewFindingSourceId({
-          ...item.finding,
-          line: findingLine(item.finding),
-        }),
+        sourceFindingId,
       });
       const added = draft.comments.find(
         (comment) => !beforeIds.has(comment.id),
@@ -547,11 +615,14 @@ async function writeReviewReports(input: {
   repoId: string | null;
   seedResult: Awaited<ReturnType<typeof seedDraftComments>>;
   paths: RuntimePaths;
+  generatedAt: string;
+  overviewId?: string;
+  issuesId?: string;
+  signal?: AbortSignal;
 }) {
   const { facts, output, repoId, seedResult, paths } = input;
   const sourceRef = `${facts.target.repoFullName}#${facts.target.number}`;
-  const generatedAt = new Date();
-  const generatedAtIso = generatedAt.toISOString();
+  const generatedAtIso = input.generatedAt;
   const decks = buildReviewReportDecks({
     sourceRef,
     state: facts.state,
@@ -609,8 +680,11 @@ async function writeReviewReports(input: {
       },
     ],
   };
+  input.signal?.throwIfAborted();
   const overview = await writeReport(
     {
+      id: input.overviewId,
+      signal: input.signal,
       kind: 'pr-review',
       title: `PR Overview: ${sourceRef}`,
       repoId,
@@ -629,6 +703,7 @@ async function writeReviewReports(input: {
         document: overviewDocument,
       },
       html: renderReportDeckHtml(decks.overview.document),
+      createdAt: generatedAtIso,
     },
     paths,
   );
@@ -672,8 +747,11 @@ async function writeReviewReports(input: {
       },
     ],
   };
+  input.signal?.throwIfAborted();
   const issues = await writeReport(
     {
+      id: input.issuesId,
+      signal: input.signal,
       kind: 'pr-review',
       title: `Review Issues: ${sourceRef}`,
       repoId,
@@ -694,10 +772,37 @@ async function writeReviewReports(input: {
         document: issuesDocument,
       },
       html: renderReportDeckHtml(decks.issues.document),
+      createdAt: generatedAtIso,
     },
     paths,
   );
   return [overview, issues];
+}
+
+function exactRevisionFailure(
+  input: v.InferOutput<typeof prReviewAssistInputSchema>,
+  facts: ReviewAssistFacts,
+) {
+  if (!input.reviewId) return null;
+  const matches =
+    input.repoFullName?.toLowerCase() ===
+      facts.target.repoFullName.toLowerCase() &&
+    input.prNumber === facts.target.number &&
+    input.headSha === facts.state.headSha &&
+    input.baseSha === facts.state.baseSha &&
+    input.baseRef === facts.state.baseRef;
+  return matches
+    ? null
+    : failure(
+        `Pull request ${input.repoFullName}#${input.prNumber} moved from the exact revision admitted for this review attempt. Start a new review.`,
+      );
+}
+
+function stableEffectId(effectId: string | undefined, purpose: string) {
+  if (!effectId) return undefined;
+  return createHash('sha256')
+    .update(`pr-review-assist:${effectId}:${purpose}`)
+    .digest('hex');
 }
 
 function anchorsByPath(files: GitHubPullRequestFile[]) {

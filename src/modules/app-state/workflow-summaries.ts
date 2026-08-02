@@ -1,11 +1,17 @@
 import { randomUUID } from 'node:crypto';
 import { asJsonValue } from '../../lib/action-result';
 import { openDb } from '../../lib/sqlite';
-import { ensureRuntimeHome, runtimePaths } from '../../runtime-home';
+import {
+  ensureRuntimeHome,
+  runtimePaths,
+  type RuntimePaths,
+} from '../../runtime-home';
 import type { WorkflowSummaryRecord } from './types';
 
 export async function addWorkflowSummary(
   input: {
+    id?: string;
+    signal?: AbortSignal;
     workflow: string;
     runId?: string;
     status: string;
@@ -14,11 +20,16 @@ export async function addWorkflowSummary(
   paths = runtimePaths(),
 ) {
   await ensureRuntimeHome(paths);
+  input.signal?.throwIfAborted();
   const now = new Date().toISOString();
   const summary =
     input.summary === undefined ? null : asJsonValue(input.summary);
+  if (input.id) {
+    const existing = databaseWorkflowSummary(input.id, paths);
+    if (existing) return existing;
+  }
   const record: WorkflowSummaryRecord = {
-    id: randomUUID(),
+    id: input.id ?? randomUUID(),
     workflow: input.workflow,
     runId: input.runId ?? null,
     status: input.status,
@@ -29,6 +40,7 @@ export async function addWorkflowSummary(
   const database = openDb(paths.neondeckDatabase);
 
   try {
+    input.signal?.throwIfAborted();
     database
       .prepare(
         `
@@ -58,6 +70,18 @@ export async function addWorkflowSummary(
   }
 
   return record;
+}
+
+function databaseWorkflowSummary(id: string, paths: RuntimePaths) {
+  const database = openDb(paths.neondeckDatabase);
+  try {
+    const row = database
+      .prepare('SELECT * FROM workflow_summaries WHERE id = ? LIMIT 1;')
+      .get(id.trim());
+    return row ? readWorkflowSummaryRow(row) : null;
+  } finally {
+    database.close();
+  }
 }
 
 export async function setWorkflowSummaryRunId(

@@ -1,7 +1,8 @@
 import { rm, mkdtemp, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import type { ToolStep } from '@flue/runtime';
 import {
   addPrReviewDraftComment,
   readLivePrReviewDraft,
@@ -12,15 +13,19 @@ import {
   type GitHubPullRequestFile,
 } from './modules/github';
 import {
+  createReviewPrForHumanTool,
+  createReviewDurableEffectRunner,
   reviewFactsForPrompt,
   reviewPrForHuman,
   type ReviewAssistFacts,
 } from './modules/pr-review-assist';
 import { upsertMemory } from './modules/memory';
 import { listReports, readReportHtml } from './modules/reports';
+import { listNotifications, listWorkflowSummaries } from './modules/app-state';
 import { ensureRuntimeHome, runtimePaths } from './runtime-home';
 import { reportDocumentFromSummary } from '../shared/report-document';
 import { reportDeckFromSummary } from '../shared/report-deck';
+import { openDb } from './lib/sqlite';
 
 const tempRoots: string[] = [];
 
@@ -33,6 +38,191 @@ afterEach(async () => {
 });
 
 describe('PR review assist', () => {
+  it('declares the bounded review harness as a durable Flue tool', () => {
+    const tool = createReviewPrForHumanTool({
+      ref: 'pandemicsyn/neondeck#10',
+    });
+    expect(tool).toMatchObject({ harness: true, durable: true });
+  });
+
+  it('checkpoints durable effect failures and propagates outer aborts', async () => {
+    const recorded = new Map<string, unknown>();
+    const step: ToolStep = {
+      async do<T>(name: string, effect: () => T | Promise<T>) {
+        if (recorded.has(name)) return recorded.get(name) as T;
+        const value = await effect();
+        recorded.set(name, value);
+        return value;
+      },
+    };
+    const runEffect = createReviewDurableEffectRunner(step);
+    let attempts = 0;
+    await expect(
+      runEffect('transient-operation', async () => {
+        attempts += 1;
+        throw new Error('record this failure');
+      }),
+    ).rejects.toThrow('record this failure');
+    await expect(
+      runEffect('transient-operation', async () => {
+        attempts += 1;
+        return 'unexpected recovery success';
+      }),
+    ).rejects.toThrow('record this failure');
+    expect(attempts).toBe(1);
+
+    const controller = new AbortController();
+    controller.abort(new DOMException('operator cancelled', 'AbortError'));
+    let abortedStepCalls = 0;
+    const abortedStep: ToolStep = {
+      async do<T>(_name: string, _effect: () => T | Promise<T>): Promise<T> {
+        abortedStepCalls += 1;
+        throw new Error('The aborted step must not execute.');
+      },
+    };
+    const abortedEffect = vi.fn<() => Promise<string>>();
+    await expect(
+      createReviewDurableEffectRunner(abortedStep, controller.signal)(
+        'must-not-run',
+        abortedEffect,
+      ),
+    ).rejects.toMatchObject({ name: 'AbortError' });
+    expect(abortedStepCalls).toBe(0);
+    expect(abortedEffect).not.toHaveBeenCalled();
+
+    const inFlightController = new AbortController();
+    let releaseEffect!: () => void;
+    const effectGate = new Promise<void>((resolve) => {
+      releaseEffect = resolve;
+    });
+    const inFlightEffect = vi.fn(async () => {
+      await effectGate;
+      return 'finished after cancellation';
+    });
+    const inFlightStep: ToolStep = {
+      async do<T>(_name: string, effect: () => T | Promise<T>): Promise<T> {
+        return effect();
+      },
+    };
+    const inFlightResult = createReviewDurableEffectRunner(
+      inFlightStep,
+      inFlightController.signal,
+    )('in-flight-operation', inFlightEffect);
+    await vi.waitFor(() => expect(inFlightEffect).toHaveBeenCalledOnce());
+    inFlightController.abort(
+      new DOMException('operator cancelled in flight', 'AbortError'),
+    );
+    releaseEffect();
+    await expect(inFlightResult).rejects.toMatchObject({ name: 'AbortError' });
+  });
+
+  it('stops the review before application effects when cancellation arrives in flight', async () => {
+    const paths = await tempPaths();
+    const controller = new AbortController();
+    let releaseFacts!: () => void;
+    const factsGate = new Promise<void>((resolve) => {
+      releaseFacts = resolve;
+    });
+    const fetchFacts = vi.fn(async () => {
+      await factsGate;
+      return reviewFacts();
+    });
+    const reviewer = vi.fn(() => reviewOutputWithOneFinding());
+    const step: ToolStep = {
+      async do<T>(_name: string, effect: () => T | Promise<T>): Promise<T> {
+        return effect();
+      },
+    };
+    const result = reviewPrForHuman({ ref: 'pandemicsyn/neondeck#10' }, paths, {
+      signal: controller.signal,
+      runEffect: createReviewDurableEffectRunner(step, controller.signal),
+      fetchFacts,
+      reviewer,
+    });
+    await vi.waitFor(() => expect(fetchFacts).toHaveBeenCalledOnce());
+    controller.abort(new DOMException('operator cancelled', 'AbortError'));
+    releaseFacts();
+
+    await expect(result).rejects.toMatchObject({ name: 'AbortError' });
+    expect(reviewer).not.toHaveBeenCalled();
+    await expect(listReports(paths, { kind: 'pr-review' })).resolves.toEqual(
+      [],
+    );
+    await expect(
+      listNotifications(paths, { includeResolved: true }),
+    ).resolves.toEqual([]);
+    await expect(listWorkflowSummaries(paths)).resolves.toEqual([]);
+    expect(
+      readLivePrReviewDraft({
+        databasePath: paths.neondeckDatabase,
+        repo: 'pandemicsyn/neondeck',
+        prNumber: 10,
+      }),
+    ).toBeNull();
+  });
+
+  it('preserves an existing Neon draft when cancellation arrives during validation', async () => {
+    const paths = await tempPaths();
+    const original = upsertPrReviewDraft({
+      databasePath: paths.neondeckDatabase,
+      repo: 'pandemicsyn/neondeck',
+      prNumber: 10,
+      headSha: 'previous-head',
+    });
+    addPrReviewDraftComment({
+      id: 'existing-neon-comment',
+      databasePath: paths.neondeckDatabase,
+      draftId: original.id,
+      path: 'src/app.ts',
+      side: 'RIGHT',
+      line: 2,
+      body: 'Existing Neon draft comment',
+      origin: 'neon',
+      sourceFindingId: 'existing-finding',
+    });
+    const before = readLivePrReviewDraft({
+      databasePath: paths.neondeckDatabase,
+      repo: 'pandemicsyn/neondeck',
+      prNumber: 10,
+    });
+    const controller = new AbortController();
+    let releaseValidation!: () => void;
+    const validationGate = new Promise<void>((resolve) => {
+      releaseValidation = resolve;
+    });
+    const validateReviewFiles = vi.fn(async (facts: ReviewAssistFacts) => {
+      await validationGate;
+      return facts.files;
+    });
+    const step: ToolStep = {
+      async do<T>(_name: string, effect: () => T | Promise<T>): Promise<T> {
+        return effect();
+      },
+    };
+    const result = reviewPrForHuman({ ref: 'pandemicsyn/neondeck#10' }, paths, {
+      signal: controller.signal,
+      runEffect: createReviewDurableEffectRunner(step, controller.signal),
+      fetchFacts: async () => reviewFacts(),
+      reviewer: async () => reviewOutputWithOneFinding(),
+      validateReviewFiles,
+    });
+    await vi.waitFor(() => expect(validateReviewFiles).toHaveBeenCalledOnce());
+    controller.abort(new DOMException('operator cancelled', 'AbortError'));
+    releaseValidation();
+
+    await expect(result).rejects.toMatchObject({ name: 'AbortError' });
+    expect(
+      readLivePrReviewDraft({
+        databasePath: paths.neondeckDatabase,
+        repo: 'pandemicsyn/neondeck',
+        prNumber: 10,
+      }),
+    ).toEqual(before);
+    await expect(listReports(paths, { kind: 'pr-review' })).resolves.toEqual(
+      [],
+    );
+  });
+
   it('defaults human draft comment origin and preserves explicit Neon origin', async () => {
     const paths = await tempPaths();
     const draft = upsertPrReviewDraft({
@@ -623,6 +813,164 @@ describe('PR review assist', () => {
       }),
     ).toBeNull();
   });
+
+  it('rejects facts that drift from the immutable admitted revision', async () => {
+    const paths = await tempPaths();
+    let reviewed = false;
+    const result = await reviewPrForHuman(
+      {
+        reviewId: 'review-1',
+        attemptId: 'attempt-1',
+        ref: 'pandemicsyn/neondeck#10',
+        repoFullName: 'pandemicsyn/neondeck',
+        repo: 'pandemicsyn/neondeck',
+        prNumber: 10,
+        headSha: 'admitted-head',
+        baseSha: 'base123',
+        baseRef: 'main',
+      },
+      paths,
+      {
+        fetchFacts: async () => reviewFacts(),
+        reviewer: async () => {
+          reviewed = true;
+          return reviewOutputWithOneFinding();
+        },
+      },
+    );
+
+    expect(result).toMatchObject({
+      ok: false,
+      message: expect.stringContaining('moved from the exact revision'),
+    });
+    expect(reviewed).toBe(false);
+    await expect(listReports(paths)).resolves.toEqual([]);
+  });
+
+  it('replays a crashed report step without duplicating artifacts', async () => {
+    const paths = await tempPaths();
+    const steps = new Map<string, unknown>();
+    let interruptReportRecording = true;
+    const runEffect = async <T>(
+      name: string,
+      effect: () => T | Promise<T>,
+    ): Promise<T> => {
+      if (steps.has(name)) return steps.get(name) as T;
+      const value = await effect();
+      if (name === 'write-review-reports' && interruptReportRecording) {
+        interruptReportRecording = false;
+        throw new Error('simulated crash after report writes');
+      }
+      steps.set(name, value);
+      return value;
+    };
+    const options = {
+      effectId: 'review-1:attempt-1',
+      runEffect,
+      fetchFacts: async () => reviewFacts(),
+      reviewer: async () => reviewOutputWithOneFinding(),
+    };
+
+    await expect(
+      reviewPrForHuman({ ref: 'pandemicsyn/neondeck#10' }, paths, options),
+    ).rejects.toThrow('simulated crash');
+    const firstReports = await listReports(paths, { kind: 'pr-review' });
+    expect(firstReports).toHaveLength(2);
+
+    const replayed = requireReviewAssistOk(
+      await reviewPrForHuman(
+        { ref: 'pandemicsyn/neondeck#10' },
+        paths,
+        options,
+      ),
+    );
+    const replayedReports = await listReports(paths, { kind: 'pr-review' });
+    expect(replayedReports).toHaveLength(2);
+    expect(replayed.data.reports.map((report) => report.id).sort()).toEqual(
+      firstReports.map((report) => report.id).sort(),
+    );
+  });
+
+  it('replays crashed draft seeding without orphaning its seed ledger', async () => {
+    const paths = await tempPaths();
+    const steps = new Map<string, unknown>();
+    let interruptSeedRecording = true;
+    const runEffect = async <T>(
+      name: string,
+      effect: () => T | Promise<T>,
+    ): Promise<T> => {
+      if (steps.has(name)) return steps.get(name) as T;
+      const value = await effect();
+      if (name === 'seed-draft-comments' && interruptSeedRecording) {
+        interruptSeedRecording = false;
+        throw new Error('simulated crash after draft seeding');
+      }
+      steps.set(name, value);
+      return value;
+    };
+    const options = {
+      effectId: 'review-seed:attempt-1',
+      runEffect,
+      fetchFacts: async () => reviewFacts(),
+      reviewer: async () => reviewOutputWithOneFinding(),
+    };
+
+    await expect(
+      reviewPrForHuman({ ref: 'pandemicsyn/neondeck#10' }, paths, options),
+    ).rejects.toThrow('simulated crash');
+    expect(reviewSeedCounts(paths.neondeckDatabase)).toEqual({
+      comments: 1,
+      seeds: 1,
+    });
+
+    await expect(
+      reviewPrForHuman({ ref: 'pandemicsyn/neondeck#10' }, paths, options),
+    ).resolves.toMatchObject({ ok: true });
+    expect(reviewSeedCounts(paths.neondeckDatabase)).toEqual({
+      comments: 1,
+      seeds: 1,
+    });
+  });
+
+  it('replays a crashed notification step without duplicate user effects', async () => {
+    const paths = await tempPaths();
+    const steps = new Map<string, unknown>();
+    let interruptNotificationRecording = true;
+    const runEffect = async <T>(
+      name: string,
+      effect: () => T | Promise<T>,
+    ): Promise<T> => {
+      if (steps.has(name)) return steps.get(name) as T;
+      const value = await effect();
+      if (name === 'notify-review-ready' && interruptNotificationRecording) {
+        interruptNotificationRecording = false;
+        throw new Error('simulated crash after notification write');
+      }
+      steps.set(name, value);
+      return value;
+    };
+    const options = {
+      effectId: 'review-2:attempt-1',
+      runEffect,
+      fetchFacts: async () => reviewFacts(),
+      reviewer: async () => reviewOutputWithOneFinding(),
+    };
+
+    await expect(
+      reviewPrForHuman({ ref: 'pandemicsyn/neondeck#10' }, paths, options),
+    ).rejects.toThrow('simulated crash');
+    await expect(
+      reviewPrForHuman({ ref: 'pandemicsyn/neondeck#10' }, paths, options),
+    ).resolves.toMatchObject({ ok: true });
+
+    const notifications = await listNotifications(paths, {
+      includeResolved: true,
+    });
+    expect(notifications).toMatchObject([
+      { source: 'review-pr-for-human', occurrenceCount: 1 },
+    ]);
+    await expect(listWorkflowSummaries(paths)).resolves.toHaveLength(1);
+  });
 });
 
 async function tempPaths() {
@@ -763,4 +1111,21 @@ function reviewOutputWithOneFinding() {
       },
     ],
   };
+}
+
+function reviewSeedCounts(databasePath: string) {
+  const database = openDb(databasePath, { readOnly: true });
+  try {
+    const comments = database
+      .prepare(
+        "SELECT count(*) AS count FROM pr_review_draft_comments WHERE origin = 'neon';",
+      )
+      .get() as { count: number };
+    const seeds = database
+      .prepare('SELECT count(*) AS count FROM pr_review_neon_seeded_comments;')
+      .get() as { count: number };
+    return { comments: comments.count, seeds: seeds.count };
+  } finally {
+    database.close();
+  }
 }

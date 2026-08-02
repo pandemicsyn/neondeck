@@ -385,6 +385,7 @@ export function discardPrReviewDraft(options: {
 }
 
 export function addPrReviewDraftComment(options: {
+  id?: string;
   databasePath: string;
   draftId: string;
   path: string;
@@ -401,6 +402,18 @@ export function addPrReviewDraftComment(options: {
   try {
     assertDraftIsLive(database, options.draftId);
     assertValidReviewCommentAnchor(options);
+    const id = options.id?.trim() || randomUUID();
+    const existing = database
+      .prepare(
+        'SELECT draft_id FROM pr_review_draft_comments WHERE id = ? LIMIT 1;',
+      )
+      .get(id) as { draft_id?: unknown } | undefined;
+    if (existing) {
+      if (existing.draft_id !== options.draftId) {
+        throw new Error('Review draft comment id belongs to another draft.');
+      }
+      return readDraftWithCommentsById(database, options.draftId);
+    }
     database
       .prepare(
         `
@@ -422,7 +435,7 @@ export function addPrReviewDraftComment(options: {
       `,
       )
       .run(
-        randomUUID(),
+        id,
         options.draftId,
         options.path,
         options.side,

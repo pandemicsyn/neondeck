@@ -1,10 +1,15 @@
-import { defineTool } from '@flue/runtime';
+import { defineTool, type ToolStep } from '@flue/runtime';
 import * as v from 'valibot';
 import {
   currentFlueExecutionContext,
   runWithFlueTaskDelegationBlocked,
 } from '../flue';
-import { completePrReview, failPrReview } from '../pr-reviews';
+import {
+  completePrReview,
+  failPrReview,
+  readPrReview,
+  readPrReviewAdmissionBinding,
+} from '../pr-reviews';
 import {
   prReviewAssistOutputSchema,
   reviewAssistStructuredOutputSchema,
@@ -12,6 +17,7 @@ import {
 import type { PrReviewAssistInput } from './schemas';
 import {
   reviewPrForHuman,
+  type ReviewAssistEffectRunner,
   type ReviewAssistFacts,
   type ReviewAssistPromptContext,
 } from './service';
@@ -39,14 +45,22 @@ export function createReviewPrForHumanTool(
     input: v.object({}),
     output: prReviewAssistOutputSchema,
     harness: true,
-    async run({ harness, log }) {
+    durable: true,
+    async run({ harness, log, signal, step, toolCallId }) {
       execution ??= (async () => {
         const runId = currentFlueExecutionContext()?.submissionId;
+        const effectId =
+          input.reviewId && input.attemptId
+            ? `${input.reviewId}:${input.attemptId}`
+            : toolCallId;
         const { prReviewTimeoutMs } = readAgentModelSelectionSync();
-        let result: Awaited<ReturnType<typeof reviewPrForHuman>>;
+        const runEffect = createReviewDurableEffectRunner(step, signal);
         try {
-          result = await reviewPrForHuman(input, undefined, {
+          const result = await reviewPrForHuman(input, undefined, {
             workflowRunId: runId,
+            effectId,
+            runEffect,
+            signal,
             reviewer: async (facts, context) => {
               const workspace = await resolvePrReviewerWorkspace(
                 {
@@ -80,7 +94,12 @@ export function createReviewPrForHumanTool(
                     ),
                     {
                       result: reviewAssistStructuredOutputSchema,
-                      signal: AbortSignal.timeout(prReviewTimeoutMs),
+                      signal: signal
+                        ? AbortSignal.any([
+                            signal,
+                            AbortSignal.timeout(prReviewTimeoutMs),
+                          ])
+                        : AbortSignal.timeout(prReviewTimeoutMs),
                       tools: workspace.tools,
                     },
                   ),
@@ -88,16 +107,61 @@ export function createReviewPrForHumanTool(
               return response.data;
             },
           });
+          if (input.reviewId) {
+            if (result.ok && 'data' in result) {
+              await runEffect('complete-review', () =>
+                completePrReviewIdempotently(input, result.data, runId),
+              );
+            } else {
+              await runEffect('fail-review-result', () =>
+                failPrReview({
+                  reviewId: input.reviewId,
+                  attemptId: input.attemptId,
+                  runId,
+                  message: result.message,
+                }),
+              );
+            }
+          }
+          if (result.ok) {
+            await runEffect('record-learning-evidence', () =>
+              recordHandledPrFromOperationResult(
+                {
+                  operation: 'pr-review-assist',
+                  submissionId: runId,
+                  result,
+                },
+                runtimePaths(),
+              ),
+            ).catch((error) => {
+              if (signal?.aborted) throw abortReason(signal, error);
+              log.warn('Could not record PR review learning evidence', {
+                message: error instanceof Error ? error.message : String(error),
+              });
+            });
+            log.info('Prepared PR review assist artifacts', {
+              message: result.message,
+            });
+          } else {
+            log.warn('PR review assist failed', {
+              message: result.message,
+              requires: 'requires' in result ? result.requires : undefined,
+            });
+          }
+          return { output: result, terminate: true } as const;
         } catch (error) {
+          if (signal?.aborted) throw abortReason(signal, error);
           const failure =
             error instanceof Error ? error : new Error(String(error));
           if (input.reviewId) {
-            failPrReview({
-              reviewId: input.reviewId,
-              attemptId: input.attemptId,
-              runId,
-              message: failure.message,
-            });
+            await runEffect('fail-review-exception', () =>
+              failPrReview({
+                reviewId: input.reviewId,
+                attemptId: input.attemptId,
+                runId,
+                message: failure.message,
+              }),
+            );
           }
           state.failure = failure;
           log.error('PR review assist failed with an orchestration error', {
@@ -114,56 +178,99 @@ export function createReviewPrForHumanTool(
             terminate: true,
           } as const;
         }
-        if (input.reviewId) {
-          if (result.ok && 'data' in result) {
-            completePrReview({
-              reviewId: input.reviewId,
-              attemptId: input.attemptId,
-              runId,
-              headSha: result.data.headSha,
-              reportIds: result.data.reports.map((report) => report.id),
-              reviewUrl: result.data.reviewUrl,
-              findingCount: result.data.findingCount,
-              seededCount: result.data.seededCount,
-              reportOnlyCount: result.data.reportOnlyCount,
-              reportOnlyFindings: result.data.reportOnlyFindings,
-            });
-          } else {
-            failPrReview({
-              reviewId: input.reviewId,
-              attemptId: input.attemptId,
-              runId,
-              message: result.message,
-            });
-          }
-        }
-        if (result.ok) {
-          await recordHandledPrFromOperationResult(
-            {
-              operation: 'pr-review-assist',
-              submissionId: runId,
-              result,
-            },
-            runtimePaths(),
-          ).catch((error) => {
-            log.warn('Could not record PR review learning evidence', {
-              message: error instanceof Error ? error.message : String(error),
-            });
-          });
-          log.info('Prepared PR review assist artifacts', {
-            message: result.message,
-          });
-        } else {
-          log.warn('PR review assist failed', {
-            message: result.message,
-            requires: 'requires' in result ? result.requires : undefined,
-          });
-        }
-        return { output: result, terminate: true } as const;
       })();
       return execution;
     },
   });
+}
+
+type DurableEffectOutcome<T> =
+  | { ok: true; value: T }
+  | { ok: false; error: { name: string; message: string } };
+
+export function createReviewDurableEffectRunner(
+  step: ToolStep,
+  signal?: AbortSignal,
+): ReviewAssistEffectRunner {
+  return async <T>(name: string, effect: () => T | Promise<T>) => {
+    if (signal?.aborted) throw abortReason(signal);
+    const outcome = await step.do<DurableEffectOutcome<T>>(name, async () => {
+      try {
+        const value = await effect();
+        if (signal?.aborted) throw abortReason(signal);
+        return { ok: true, value };
+      } catch (error) {
+        if (signal?.aborted) throw abortReason(signal, error);
+        const failure =
+          error instanceof Error ? error : new Error(String(error));
+        return {
+          ok: false,
+          error: { name: failure.name, message: failure.message },
+        };
+      }
+    });
+    if (signal?.aborted) throw abortReason(signal);
+    if (outcome.ok) return outcome.value;
+    const failure = new Error(outcome.error.message);
+    failure.name = outcome.error.name;
+    throw failure;
+  };
+}
+
+function abortReason(signal: AbortSignal, fallback?: unknown) {
+  if (signal.reason instanceof Error) return signal.reason;
+  if (signal.reason !== undefined) {
+    return new DOMException(String(signal.reason), 'AbortError');
+  }
+  if (fallback instanceof Error) return fallback;
+  return new DOMException('The PR review was aborted.', 'AbortError');
+}
+
+function completePrReviewIdempotently(
+  input: PrReviewAssistInput,
+  data: Extract<
+    Awaited<ReturnType<typeof reviewPrForHuman>>,
+    { data: unknown }
+  >['data'],
+  runId: string | undefined,
+) {
+  if (!input.reviewId || !input.attemptId) {
+    throw new Error('The PR review completion binding is incomplete.');
+  }
+  const paths = runtimePaths();
+  const reportIds = data.reports.map((report) => report.id);
+  const transitioned = completePrReview(
+    {
+      reviewId: input.reviewId,
+      attemptId: input.attemptId,
+      runId,
+      headSha: data.headSha,
+      reportIds,
+      reviewUrl: data.reviewUrl,
+      findingCount: data.findingCount,
+      seededCount: data.seededCount,
+      reportOnlyCount: data.reportOnlyCount,
+      reportOnlyFindings: data.reportOnlyFindings,
+    },
+    paths,
+  );
+  if (transitioned) return transitioned;
+  const binding = readPrReviewAdmissionBinding(input.reviewId, paths);
+  const current = readPrReview(input.reviewId, paths);
+  if (
+    binding?.status === 'ready' &&
+    binding.attemptId === input.attemptId &&
+    (!runId || binding.runId === runId) &&
+    current &&
+    current.headSha === data.headSha &&
+    current.reviewUrl === data.reviewUrl &&
+    JSON.stringify(current.reportIds) === JSON.stringify(reportIds)
+  ) {
+    return current;
+  }
+  throw new Error(
+    `PR review "${input.reviewId}" could not settle the admitted attempt as ready.`,
+  );
 }
 
 export function reviewFactsForPrompt(

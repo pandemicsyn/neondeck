@@ -27,6 +27,8 @@ export type ReportRecord = {
 };
 
 export type WriteReportInput = {
+  id?: string;
+  signal?: AbortSignal;
   kind: string;
   title: string;
   html: string;
@@ -40,10 +42,16 @@ export type WriteReportInput = {
 export async function writeReport(
   input: WriteReportInput,
   paths = runtimePaths(),
+  dependencies: { prune?: typeof pruneReports } = {},
 ) {
   await ensureRuntimeHome(paths);
+  input.signal?.throwIfAborted();
   const kind = normalizeReportKind(input.kind);
-  const id = randomUUID();
+  const id = input.id ? normalizeReportId(input.id) : randomUUID();
+  if (input.id) {
+    const existing = await readReport(id, paths);
+    if (existing) return existing;
+  }
   const createdAt = dateText(input.createdAt ?? new Date());
   const htmlPath = `${kind}/${id}.html`;
   const filePath = resolveReportFilePath(paths, htmlPath);
@@ -65,10 +73,30 @@ export async function writeReport(
   if (!record.createdBy) throw new Error('Report creator is required.');
 
   await mkdir(resolveReportFilePath(paths, kind), { recursive: true });
-  await writeFile(filePath, input.html, 'utf8');
+  input.signal?.throwIfAborted();
+  try {
+    await writeFile(filePath, input.html, {
+      encoding: 'utf8',
+      signal: input.signal,
+    });
+    input.signal?.throwIfAborted();
+  } catch (error) {
+    try {
+      await unlink(filePath);
+    } catch (cleanupError) {
+      if (!isNodeErrorCode(cleanupError, 'ENOENT')) {
+        throw new AggregateError(
+          [error, cleanupError],
+          'Failed to write or cancel a report artifact and remove its partial file.',
+        );
+      }
+    }
+    throw error;
+  }
 
   const database = openDb(paths.neondeckDatabase);
   try {
+    input.signal?.throwIfAborted();
     database
       .prepare(
         `
@@ -111,7 +139,39 @@ export async function writeReport(
     database.close();
   }
 
-  await pruneReports(paths, { kind, preserveIds: [id] });
+  try {
+    input.signal?.throwIfAborted();
+    await (dependencies.prune ?? pruneReports)(paths, {
+      kind,
+      preserveIds: [id],
+    });
+    input.signal?.throwIfAborted();
+  } catch (error) {
+    if (!input.signal?.aborted) throw error;
+    const cleanupErrors: unknown[] = [];
+    const cleanupDatabase = openDb(paths.neondeckDatabase);
+    try {
+      cleanupDatabase.prepare('DELETE FROM reports WHERE id = ?;').run(id);
+    } catch (cleanupError) {
+      cleanupErrors.push(cleanupError);
+    } finally {
+      cleanupDatabase.close();
+    }
+    try {
+      await unlink(filePath);
+    } catch (cleanupError) {
+      if (!isNodeErrorCode(cleanupError, 'ENOENT')) {
+        cleanupErrors.push(cleanupError);
+      }
+    }
+    if (cleanupErrors.length > 0) {
+      throw new AggregateError(
+        [error, ...cleanupErrors],
+        'Cancelled report write could not be fully rolled back.',
+      );
+    }
+    throw error;
+  }
   return record;
 }
 
@@ -310,6 +370,16 @@ function normalizeReportKind(value: string) {
     throw new Error('Report kind must be lowercase kebab-case.');
   }
   return kind;
+}
+
+function normalizeReportId(value: string) {
+  const id = value.trim();
+  if (!/^[a-zA-Z0-9_-]+$/.test(id) || id.length > 128) {
+    throw new Error(
+      'Report id must use only letters, numbers, underscores, and dashes.',
+    );
+  }
+  return id;
 }
 
 function isNodeErrorCode(error: unknown, code: string) {

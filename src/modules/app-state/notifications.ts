@@ -32,6 +32,8 @@ export async function listNotifications(
 
 export async function addNotification(
   input: {
+    id?: string;
+    signal?: AbortSignal;
     level: NotificationLevel;
     title: string;
     message: string;
@@ -42,11 +44,23 @@ export async function addNotification(
   paths = runtimePaths(),
 ) {
   await ensureRuntimeHome(paths);
+  input.signal?.throwIfAborted();
+  if (input.id) {
+    const database = openDb(paths.neondeckDatabase);
+    try {
+      const row = database
+        .prepare('SELECT * FROM notifications WHERE id = ? LIMIT 1;')
+        .get(input.id.trim());
+      if (row) return readNotificationRow(row);
+    } finally {
+      database.close();
+    }
+  }
   const now = new Date().toISOString();
   const source = input.source ?? null;
   const sourceId = input.sourceId ?? null;
   const notification: NotificationRecord = {
-    id: randomUUID(),
+    id: input.id ?? randomUUID(),
     level: input.level,
     title: input.title,
     message: input.message,
@@ -62,6 +76,7 @@ export async function addNotification(
   const database = openDb(paths.neondeckDatabase);
 
   try {
+    input.signal?.throwIfAborted();
     const existing =
       source && sourceId
         ? database

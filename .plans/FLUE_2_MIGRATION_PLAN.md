@@ -1,6 +1,6 @@
 # Flue 2 Migration Plan
 
-Status: migration and post-PR correctness remediation complete
+Status: migration and Flue 2 correctness hardening complete
 Integration branch: `flue2`  
 Created: 2026-08-01  
 Target Flue release at planning time: `2.0.1`
@@ -1238,6 +1238,53 @@ remediation and reported no remaining P1–P3 findings for Morning Briefing, PR
 reviews, memory/learning, or Autopilot/watches. The upstream PR review thread
 about same-PR CI-fix poller cross-talk is also covered by an exact-operation-id
 regression test.
+
+### Flue 2 Usage Correctness Follow-Up
+
+A subsequent documentation-backed Flue 2 architecture review identified two
+remaining correctness gaps in the initial PR-review path. Remediation status:
+
+- [x] Bound initial reviews now freeze canonical repository identity, PR
+      number, base SHA/ref, and head SHA in schema-validated immutable
+      `initialData`. Admission and restart recovery reconstruct the same
+      snapshot from the persisted review attempt, and execution refuses facts
+      that drift from that exact revision.
+- [x] `neondeck_pr_review_for_human` is now a Flue durable harness Tool. Exact
+      facts, bounded context, model output, draft seeding, report writes,
+      operation summary, notification, review settlement, and learning evidence
+      execute through named `step.do()` checkpoints.
+- [x] Report, summary, and notification writes use stable application ids for
+      the bound attempt/tool call. This closes the at-least-once execution gap
+      where an application effect commits immediately before Flue records the
+      completed step.
+- [x] Durable step failures are checkpointed as tagged JSON outcomes, so a
+      transient callback cannot fail the app review and later replay as a
+      contradictory successful Tool result. Ready settlement also verifies the
+      persisted attempt when replay observes an already-completed transition.
+- [x] Outer Flue aborts propagate without running review-failure or artifact
+      side effects. Draft validation finishes before any mutation and re-reads
+      current state, while cancelled report writes compensate committed rows
+      and files. The separate bounded model timeout remains a durable,
+      inspectable review failure.
+- [x] Neon draft comments use stable attempt-scoped ids. Replaying seeding after
+      the application write/Flue-record crash window recreates the same comment
+      identities and preserves one matching seed-ledger entry per finding.
+- [x] Focused crash-replay regression tests prove report and notification
+      effects converge without duplicate artifacts or user notifications, step
+      errors remain stable, in-flight aborts preserve existing drafts and roll
+      back reports, and draft-seed replay leaves no orphaned ledger rows.
+- [x] `npm run check` passes with 1,022 unit tests; lint reports only the
+      repository's existing warning class.
+- [x] `npm run verify` passes: 1,022 unit tests, 40 git tests, 90 integration
+      tests, all builds, a 914-file package audit, packed CLI smoke, and
+      formatting.
+- [x] Complete an independent static re-review against the version-matched
+      Flue 2.0.1 initial-data and durable-Tool contracts.
+
+The final independent reviewer reported no remaining P1–P3 correctness
+findings. The review explicitly confirmed exact-revision binding, tagged error
+replay, abort propagation, stable draft/seed identity, idempotent settlement,
+and compensation for the Flue orphan-execution windows.
 
 ## Verification Strategy
 

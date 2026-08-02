@@ -28,10 +28,20 @@ export async function admitPrReviewAssist(
   const parsed = v.parse(prReviewAssistInputSchema, input);
   const paths = runtimePaths();
   await ensureRuntimeHome(paths);
+  let initialData = parsed;
   if (parsed.reviewId || parsed.attemptId) {
-    if (!parsed.reviewId || !parsed.attemptId || !parsed.ref) {
+    if (
+      !parsed.reviewId ||
+      !parsed.attemptId ||
+      !parsed.ref ||
+      !parsed.repoFullName ||
+      !parsed.prNumber ||
+      !parsed.headSha ||
+      !parsed.baseSha ||
+      !parsed.baseRef
+    ) {
       throw new Error(
-        'A durable PR review admission requires reviewId, attemptId, and ref.',
+        'A durable PR review admission requires its attempt binding and exact revision.',
       );
     }
     const binding = readPrReviewAdmissionBinding(parsed.reviewId, paths);
@@ -55,12 +65,34 @@ export async function admitPrReviewAssist(
     if (
       target.target.repoFullName.toLowerCase() !==
         binding.repoFullName.toLowerCase() ||
-      target.target.number !== binding.prNumber
+      target.target.number !== binding.prNumber ||
+      parsed.repoFullName.toLowerCase() !==
+        binding.repoFullName.toLowerCase() ||
+      parsed.prNumber !== binding.prNumber
     ) {
       throw new Error(
         `PR review "${parsed.reviewId}" is bound to ${binding.repoFullName}#${binding.prNumber}, not ${target.target.repoFullName}#${target.target.number}.`,
       );
     }
+    if (
+      parsed.headSha !== binding.headSha ||
+      parsed.baseSha !== binding.baseSha ||
+      parsed.baseRef !== binding.baseRef
+    ) {
+      throw new Error(
+        `PR review "${parsed.reviewId}" exact revision no longer matches its admitted attempt.`,
+      );
+    }
+    initialData = {
+      ...parsed,
+      ref: `${binding.repoFullName}#${binding.prNumber}`,
+      repo: binding.repoFullName,
+      repoFullName: binding.repoFullName,
+      prNumber: binding.prNumber,
+      headSha: binding.headSha,
+      baseSha: parsed.baseSha,
+      baseRef: parsed.baseRef,
+    };
   }
   const instanceId =
     parsed.reviewId && parsed.attemptId
@@ -73,7 +105,7 @@ export async function admitPrReviewAssist(
           idempotencyKey: `pr-review-assist:${parsed.reviewId}:${parsed.attemptId}`,
         }
       : {}),
-    initialData: parsed,
+    initialData,
     message: {
       kind: 'signal',
       type: 'neondeck.pr-review.requested',

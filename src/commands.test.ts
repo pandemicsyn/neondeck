@@ -216,6 +216,11 @@ describe('Neon commands', () => {
             ref: input.ref,
             reviewId: 'review-1',
             attemptId: 'attempt-1',
+            repoFullName: 'pandemicsyn/neondeck',
+            prNumber: 10,
+            headSha: 'head-1',
+            baseSha: 'base-1',
+            baseRef: 'main',
           });
           const review = {
             id: 'review-1',
@@ -280,6 +285,11 @@ describe('Neon commands', () => {
         ref: 'pandemicsyn/neondeck#10',
         reviewId: 'review-1',
         attemptId: 'attempt-1',
+        repoFullName: 'pandemicsyn/neondeck',
+        prNumber: 10,
+        headSha: 'head-1',
+        baseSha: 'base-1',
+        baseRef: 'main',
       },
     ]);
   });

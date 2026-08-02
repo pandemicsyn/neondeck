@@ -82,6 +82,11 @@ export async function reviewPrCommand(
               ref: input.ref,
               reviewId: input.reviewId,
               attemptId: input.attemptId,
+              repoFullName: input.repoFullName,
+              prNumber: input.prNumber,
+              headSha: input.headSha,
+              baseSha: input.baseSha,
+              baseRef: input.baseRef,
             }),
         }
       : undefined,

@@ -1,19 +1,34 @@
 import * as v from 'valibot';
 
+const nonEmptyString = v.pipe(v.string(), v.trim(), v.minLength(1));
+
 export const prReviewAssistInputSchema = v.pipe(
   v.object({
-    reviewId: v.optional(v.pipe(v.string(), v.trim(), v.minLength(1))),
-    attemptId: v.optional(v.pipe(v.string(), v.trim(), v.minLength(1))),
-    watchId: v.optional(v.pipe(v.string(), v.trim(), v.minLength(1))),
-    ref: v.optional(v.pipe(v.string(), v.trim(), v.minLength(1))),
-    repo: v.optional(v.pipe(v.string(), v.trim(), v.minLength(1))),
+    reviewId: v.optional(nonEmptyString),
+    attemptId: v.optional(nonEmptyString),
+    watchId: v.optional(nonEmptyString),
+    ref: v.optional(nonEmptyString),
+    repo: v.optional(nonEmptyString),
     prNumber: v.optional(v.pipe(v.number(), v.integer(), v.minValue(1))),
+    repoFullName: v.optional(nonEmptyString),
+    headSha: v.optional(nonEmptyString),
+    baseSha: v.optional(nonEmptyString),
+    baseRef: v.optional(nonEmptyString),
   }),
   v.check(
     (input) =>
       (!input.reviewId && !input.attemptId) ||
-      Boolean(input.reviewId && input.attemptId && input.ref),
-    'A durable review binding requires reviewId, attemptId, and ref together.',
+      Boolean(
+        input.reviewId &&
+        input.attemptId &&
+        input.ref &&
+        input.repoFullName &&
+        input.prNumber &&
+        input.headSha &&
+        input.baseSha &&
+        input.baseRef,
+      ),
+    'A durable review binding requires reviewId, attemptId, ref, repoFullName, prNumber, headSha, baseSha, and baseRef together.',
   ),
 );
 
@@ -180,7 +195,7 @@ export const prReviewAssistOutputSchema = v.looseObject({
   message: v.string(),
 });
 
-export type PrReviewAssistInput = v.InferInput<
+export type PrReviewAssistInput = v.InferOutput<
   typeof prReviewAssistInputSchema
 >;
 export type ReviewAssistStructuredOutput = v.InferOutput<

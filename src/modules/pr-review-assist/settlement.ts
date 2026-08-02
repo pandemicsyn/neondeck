@@ -20,6 +20,11 @@ export type PrReviewAssistAdmission = (input: {
   ref: string;
   reviewId: string;
   attemptId: string;
+  repoFullName: string;
+  prNumber: number;
+  headSha: string;
+  baseSha: string;
+  baseRef: string;
 }) => Promise<{ runId: string }>;
 
 export function prReviewAssistInstanceId(reviewId: string, attemptId: string) {
@@ -119,6 +124,11 @@ export async function recoverInterruptedPrReviewAssists(
           ref: candidate.ref,
           reviewId: candidate.reviewId,
           attemptId: candidate.attemptId,
+          repoFullName: candidate.repoFullName,
+          prNumber: candidate.prNumber,
+          headSha: candidate.headSha,
+          baseSha: requireRevisionValue(candidate.baseSha, 'base SHA'),
+          baseRef: requireRevisionValue(candidate.baseRef, 'base ref'),
         });
         submissionId = admission.runId;
         const attached = attachPrReviewAttemptRun(
@@ -185,4 +195,9 @@ function prReviewSettlementWatchers() {
 
 function delay(milliseconds: number) {
   return new Promise<void>((resolve) => setTimeout(resolve, milliseconds));
+}
+
+function requireRevisionValue(value: string | null, label: string) {
+  if (value) return value;
+  throw new Error(`The persisted PR review is missing its exact ${label}.`);
 }

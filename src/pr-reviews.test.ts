@@ -21,6 +21,7 @@ import {
   startPrReview,
   submitPrReview,
   subscribePrReviewEvents,
+  type StartPrReviewDependencies,
   type PrReviewEvent,
 } from './modules/pr-reviews';
 import {
@@ -28,6 +29,7 @@ import {
   recoverInterruptedPrReviewAssists,
   settlePrReviewAssistObservation,
   watchPrReviewAssistSettlement,
+  type PrReviewAssistAdmission,
 } from './modules/pr-review-assist';
 import { openDb } from './lib/sqlite';
 import { ensureRuntimeHome, runtimePaths } from './runtime-home';
@@ -68,7 +70,9 @@ describe('durable PR reviews', () => {
     } finally {
       database.close();
     }
-    const admit = vi.fn(async () => ({ runId: 'submission:recovered' }));
+    const admit = vi.fn<PrReviewAssistAdmission>(async () => ({
+      runId: 'submission:recovered',
+    }));
 
     await expect(
       recoverInterruptedPrReviewAssists(
@@ -84,10 +88,48 @@ describe('durable PR reviews', () => {
       ref: 'other/project#42',
       reviewId: started.reviewId,
       attemptId: expect.any(String),
+      repoFullName: 'other/project',
+      prNumber: 42,
+      headSha: 'head-1',
+      baseSha: 'base',
+      baseRef: 'main',
     });
     expect(readPrReviewForTarget('other/project', 42, paths)).toMatchObject({
       status: 'reviewing',
       runId: 'submission:recovered',
+    });
+  });
+
+  it('freezes the admitted PR revision in Flue initial data', async () => {
+    const paths = await tempPaths();
+    const invokeWorkflow = vi.fn<
+      NonNullable<StartPrReviewDependencies['invokeWorkflow']>
+    >(async () => ({ runId: 'revision-run' }));
+
+    await startPrReview(
+      { ref: 'https://github.com/Other/Project/pull/42', origin: 'api' },
+      paths,
+      {
+        resolveTarget: async () => ({
+          repoFullName: 'Other/Project',
+          owner: 'Other',
+          repo: 'Project',
+          number: 42,
+        }),
+        fetchDetail: async () => detail('exact-head'),
+        invokeWorkflow,
+      },
+    );
+
+    expect(invokeWorkflow).toHaveBeenCalledWith({
+      ref: 'other/project#42',
+      reviewId: expect.any(String),
+      attemptId: expect.any(String),
+      repoFullName: 'other/project',
+      prNumber: 42,
+      headSha: 'exact-head',
+      baseSha: 'base',
+      baseRef: 'main',
     });
   });
 
