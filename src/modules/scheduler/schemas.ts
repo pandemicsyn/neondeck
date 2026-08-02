@@ -54,6 +54,7 @@ export type SchedulerDependencies = {
     sessionId: string;
   }) => Promise<{ failed: boolean }>;
   admitBriefing?: typeof admitBriefing;
+  scheduledTaskRunId?: string;
   tickLeaseTtlMs?: number;
 };
 

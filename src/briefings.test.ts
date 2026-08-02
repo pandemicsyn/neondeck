@@ -453,33 +453,40 @@ describe('conversational briefings', () => {
         input: string;
         idempotencyKey: string;
       }) => Promise<DispatchReceipt>
-    >(async () => ({
-      submissionId: 'submission:transient-attach',
-      acceptedAt: new Date().toISOString(),
-      uid: 'briefing-test-session',
-      deduplicated: true,
-    }));
+    >(async (request) => {
+      const deduplicated = request.idempotencyKey === first.briefingRunId;
+      return {
+        submissionId: deduplicated
+          ? 'submission:transient-attach'
+          : 'submission:next-briefing',
+        acceptedAt: new Date().toISOString(),
+        uid: 'briefing-test-session',
+        ...(deduplicated ? { deduplicated: true as const } : {}),
+      };
+    });
 
-    await expect(
-      admitBriefing(
-        {
-          profileId: 'morning',
-          trigger: 'manual',
-          sessionId: active.activeSessionId,
-        },
-        paths,
-        {
-          dispatchAgent: retryDispatch,
-          readConversationHistory: async () =>
-            briefingHistory({
-              conversationId: active.activeSessionId,
-              runId: first.briefingRunId,
-              submissionId: 'submission:transient-attach',
-              outcome: 'completed',
-            }),
-        },
-      ),
-    ).rejects.toThrow('already active');
+    const next = await admitBriefing(
+      {
+        profileId: 'morning',
+        trigger: 'manual',
+        sessionId: active.activeSessionId,
+      },
+      paths,
+      {
+        dispatchAgent: retryDispatch,
+        readConversationHistory: async () =>
+          briefingHistory({
+            conversationId: active.activeSessionId,
+            runId: first.briefingRunId,
+            submissionId: 'submission:transient-attach',
+            outcome: 'completed',
+          }),
+      },
+    );
+    expect(next).toMatchObject({
+      status: 'queued',
+      dispatchId: 'submission:next-briefing',
+    });
     expect(retryDispatch).toHaveBeenCalledWith(
       expect.objectContaining({ idempotencyKey: first.briefingRunId }),
     );
@@ -605,7 +612,7 @@ describe('conversational briefings', () => {
     });
   });
 
-  it('reuses a non-active briefing conversation for scheduled occurrences', async () => {
+  it('reuses a non-active briefing conversation for sequential scheduled occurrences', async () => {
     const paths = runtimePaths(await tempDir());
     const activeBefore = await readNeonSessionState(paths);
     let sequence = 0;
@@ -627,6 +634,18 @@ describe('conversational briefings', () => {
       paths,
       { dispatchAgent },
     );
+    await settleBriefingObservation(
+      {
+        type: 'submission_settled',
+        v: 3,
+        eventIndex: 1,
+        timestamp: new Date().toISOString(),
+        instanceId: first.sessionId,
+        submissionId: first.dispatchId!,
+        outcome: 'completed',
+      } as Extract<FlueObservation, { type: 'submission_settled' }>,
+      paths,
+    );
     const second = await admitBriefing(
       { profileId: 'morning', trigger: 'scheduled' },
       paths,
@@ -642,6 +661,75 @@ describe('conversational briefings', () => {
     ).toMatchObject({ kind: 'briefing', linkedTaskId: 'briefing:morning' });
   });
 
+  it('rejects a second briefing while an attached submission is still active', async () => {
+    const paths = runtimePaths(await tempDir());
+    const active = await readNeonSessionState(paths);
+    const dispatchAgent = vi.fn(async () => ({
+      submissionId: 'submission:briefing:active',
+      acceptedAt: new Date().toISOString(),
+      uid: 'briefing-test-session',
+    }));
+
+    const first = await admitBriefing(
+      {
+        profileId: 'morning',
+        trigger: 'manual',
+        sessionId: active.activeSessionId,
+      },
+      paths,
+      { dispatchAgent },
+    );
+
+    await expect(
+      admitBriefing(
+        {
+          profileId: 'morning',
+          trigger: 'manual',
+          sessionId: active.activeSessionId,
+        },
+        paths,
+        {
+          dispatchAgent,
+          readConversationHistory: async () => {
+            throw new Error('temporary history outage');
+          },
+        },
+      ),
+    ).rejects.toThrow(`Briefing "${first.id}" is already active`);
+    expect(dispatchAgent).toHaveBeenCalledTimes(1);
+  });
+
+  it('fences a conversation across briefing profiles', async () => {
+    const paths = runtimePaths(await tempDir());
+    const active = await readNeonSessionState(paths);
+    const snapshot = await collectBriefingSnapshot(paths);
+    const first = await createBriefingRun(
+      {
+        profileId: 'morning',
+        trigger: 'manual',
+        snapshot,
+        instructions: 'First profile.',
+        instructionsVersion: 1,
+        sessionId: active.activeSessionId,
+      },
+      paths,
+    );
+
+    await expect(
+      createBriefingRun(
+        {
+          profileId: 'another-profile',
+          trigger: 'manual',
+          snapshot,
+          instructions: 'Second profile.',
+          instructionsVersion: 1,
+          sessionId: active.activeSessionId,
+        },
+        paths,
+      ),
+    ).rejects.toThrow(`Briefing "${first?.id}" is already active`);
+  });
+
   it('does not stale briefing context for dashboard-only layout changes', async () => {
     const paths = runtimePaths(await tempDir());
     const first = await admitBriefing(
@@ -655,6 +743,18 @@ describe('conversational briefings', () => {
           uid: 'briefing-test-session',
         }),
       },
+    );
+    await settleBriefingObservation(
+      {
+        type: 'submission_settled',
+        v: 3,
+        eventIndex: 1,
+        timestamp: new Date().toISOString(),
+        instanceId: first.sessionId,
+        submissionId: first.dispatchId!,
+        outcome: 'completed',
+      } as Extract<FlueObservation, { type: 'submission_settled' }>,
+      paths,
     );
     const database = openDb(paths.neondeckDatabase);
     database
@@ -700,6 +800,18 @@ describe('conversational briefings', () => {
           uid: 'briefing-test-session',
         }),
       },
+    );
+    await settleBriefingObservation(
+      {
+        type: 'submission_settled',
+        v: 3,
+        eventIndex: 1,
+        timestamp: new Date().toISOString(),
+        instanceId: first.sessionId,
+        submissionId: first.dispatchId!,
+        outcome: 'completed',
+      } as Extract<FlueObservation, { type: 'submission_settled' }>,
+      paths,
     );
     const database = openDb(paths.neondeckDatabase);
     database
@@ -806,6 +918,18 @@ describe('conversational briefings', () => {
           uid: 'briefing-test-session',
         }),
       },
+    );
+    await settleBriefingObservation(
+      {
+        type: 'submission_settled',
+        v: 3,
+        eventIndex: 1,
+        timestamp: new Date().toISOString(),
+        instanceId: first.sessionId,
+        submissionId: first.dispatchId!,
+        outcome: 'completed',
+      } as Extract<FlueObservation, { type: 'submission_settled' }>,
+      paths,
     );
     const database = openDb(paths.neondeckDatabase);
     database

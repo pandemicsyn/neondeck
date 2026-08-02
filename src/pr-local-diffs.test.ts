@@ -9,6 +9,7 @@ import {
   readLocalPullRequestFiles,
 } from './modules/pr-local-diffs';
 import {
+  createPrReviewerWorkspaceTools,
   prReviewerWorkspaceToolCallLimit,
   resolvePrReviewerWorkspace,
 } from './modules/pr-reviewer';
@@ -214,6 +215,40 @@ describe('local PR diffs', () => {
 
     await expect(
       searchTool?.run({ data: { query: 'value' } } as never),
+    ).resolves.toMatchObject({
+      output: {
+        available: false,
+        workspaceToolCallsRemaining: 0,
+        reason: expect.stringContaining('exploration budget'),
+      },
+    });
+  });
+
+  it('keeps a supplied workspace budget across reconstructed tool arrays', async () => {
+    const { headSha, repo } = await fixture();
+    let remaining = 1;
+    const consumeToolCall = () => {
+      if (remaining === 0) return null;
+      remaining -= 1;
+      return remaining;
+    };
+    const input = { repoPath: repo, headSha, mergeBase: null };
+    const first = createPrReviewerWorkspaceTools(input, { consumeToolCall });
+    const second = createPrReviewerWorkspaceTools(input, { consumeToolCall });
+    const firstList = first.find(
+      (tool) => tool.name === 'neondeck_review_workspace_list',
+    );
+    const secondList = second.find(
+      (tool) => tool.name === 'neondeck_review_workspace_list',
+    );
+
+    await expect(
+      firstList?.run({ data: { limit: 1 } } as never),
+    ).resolves.toMatchObject({
+      output: { workspaceToolCallsRemaining: 0 },
+    });
+    await expect(
+      secondList?.run({ data: { limit: 1 } } as never),
     ).resolves.toMatchObject({
       output: {
         available: false,

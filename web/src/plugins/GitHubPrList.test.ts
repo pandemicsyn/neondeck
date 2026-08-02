@@ -165,7 +165,7 @@ describe('GitHubPrList review workflow state', () => {
         ],
         fetchedAt: '2026-08-01T10:00:01.000Z',
       },
-      'pandemicsyn/neondeck#123',
+      'operation-1',
       false,
       false,
     );
@@ -192,7 +192,7 @@ describe('GitHubPrList review workflow state', () => {
           ],
           fetchedAt: '2026-08-01T10:05:01.000Z',
         },
-        'pandemicsyn/neondeck#123',
+        'operation-1',
         true,
         false,
       ),
@@ -201,6 +201,44 @@ describe('GitHubPrList review workflow state', () => {
       sawActiveOperation: true,
       shouldRefresh: true,
       done: true,
+    });
+  });
+
+  it('keeps concurrent CI-fix pollers bound to their admitted operation', () => {
+    const decision = ciFixOperationRefreshDecision(
+      {
+        items: [
+          {
+            id: 'newer-operation',
+            workflow: 'ci_fix_run',
+            runId: null,
+            status: 'completed',
+            summary: { pr: 'pandemicsyn/neondeck#123' },
+            createdAt: '2026-08-01T10:01:00.000Z',
+            updatedAt: '2026-08-01T10:02:00.000Z',
+          },
+          {
+            id: 'admitted-operation',
+            workflow: 'ci_fix_run',
+            runId: null,
+            status: 'running',
+            summary: { pr: 'pandemicsyn/neondeck#123' },
+            createdAt: '2026-08-01T10:00:00.000Z',
+            updatedAt: '2026-08-01T10:03:00.000Z',
+          },
+        ],
+        fetchedAt: '2026-08-01T10:03:01.000Z',
+      },
+      'admitted-operation',
+      false,
+      false,
+    );
+
+    expect(decision).toEqual({
+      terminal: false,
+      sawActiveOperation: true,
+      shouldRefresh: false,
+      done: false,
     });
   });
 });

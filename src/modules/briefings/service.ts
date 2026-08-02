@@ -28,9 +28,10 @@ import {
 } from './snapshot';
 import {
   attachBriefingDispatch,
+  BriefingAdmissionConflictError,
   createBriefingRun,
   failBriefingRunBeforeDispatch,
-  findUnattachedBriefingRun,
+  findActiveBriefingRun,
   listBriefingRunMetadata,
   listQueuedBriefingRuns,
   markBriefingAdmissionUncertain,
@@ -325,6 +326,7 @@ export async function admitBriefing(
     trigger: BriefingRun['trigger'];
     sessionId?: string;
     commandEventId?: string;
+    scheduledTaskRunId?: string;
   },
   paths: RuntimePaths = runtimePaths(),
   dependencies: BriefingServiceDependencies = {},
@@ -333,11 +335,12 @@ export async function admitBriefing(
   const sessionId = input.sessionId
     ? await validateRequestedBriefingSession(input.sessionId, paths)
     : await resolveScheduledBriefingSession(profile, paths);
-  const lockKey = `${paths.neondeckDatabase}\0${profile.id}\0${sessionId}`;
+  const lockKey = `${paths.neondeckDatabase}\0${sessionId}`;
   const activeAdmission = activeBriefingAdmissions.get(lockKey);
   if (activeAdmission) {
-    throw new Error(
-      `A briefing admission is already in progress for conversation "${sessionId}".`,
+    throw new BriefingAdmissionConflictError(
+      'admission-in-progress',
+      sessionId,
     );
   }
   const admission = admitBriefingLocked(
@@ -360,20 +363,26 @@ async function admitBriefingLocked(
     trigger: BriefingRun['trigger'];
     sessionId: string;
     commandEventId?: string;
+    scheduledTaskRunId?: string;
   },
   profile: BriefingProfile,
   paths: RuntimePaths,
   dependencies: BriefingServiceDependencies,
 ) {
-  const pending = await findUnattachedBriefingRun(
-    { profileId: profile.id, sessionId: input.sessionId },
+  const pending = await findActiveBriefingRun(
+    { sessionId: input.sessionId },
     paths,
   );
   if (pending) {
+    let submissionId = pending.dispatchId;
     if (!pending.dispatchId) {
+      const pendingProfile = await readBriefingProfile(
+        pending.profileId ?? defaultBriefingProfileId,
+        paths,
+      );
       const receipt = await dispatchPersistedBriefing(
         pending,
-        profile,
+        pendingProfile,
         dependencies,
       );
       const attached = await recordBriefingAdmission(
@@ -382,18 +391,33 @@ async function admitBriefingLocked(
         paths,
         dependencies,
       );
+      submissionId = receipt.submissionId;
       if (attached) {
-        await reconcileBriefingSettlementFromHistory(
+        await reconcileBriefingSettlementForAdmission(
           attached,
           receipt.submissionId,
           paths,
           dependencies.readConversationHistory,
         );
       }
+    } else {
+      await reconcileBriefingSettlementForAdmission(
+        pending,
+        pending.dispatchId,
+        paths,
+        dependencies.readConversationHistory,
+      );
     }
-    throw new Error(
-      `Briefing "${pending.id}" is already active in conversation "${input.sessionId}"; no duplicate was submitted.`,
+    const stillActive = await findActiveBriefingRun(
+      { sessionId: input.sessionId },
+      paths,
     );
+    if (stillActive) {
+      throw new BriefingAdmissionConflictError(stillActive.id, input.sessionId);
+    }
+    if (submissionId) {
+      await reconcilePendingBriefingTerminal(submissionId, paths);
+    }
   }
   const snapshot = await collectBriefingSnapshot(paths, dependencies);
   const run = await createBriefingRun(
@@ -405,6 +429,7 @@ async function admitBriefingLocked(
       instructionsVersion: profile.instructionsVersion,
       sessionId: input.sessionId,
       commandEventId: input.commandEventId,
+      scheduledTaskRunId: input.scheduledTaskRunId,
     },
     paths,
   );
@@ -441,6 +466,30 @@ async function admitBriefingLocked(
     dispatchId: receipt.submissionId,
     admissionReconciliationPending: !attached,
   };
+}
+
+async function reconcileBriefingSettlementForAdmission(
+  run: BriefingRun,
+  submissionId: string,
+  paths: RuntimePaths,
+  suppliedReader?: (
+    sessionId: string,
+  ) => Promise<FlueConversationSnapshot | null>,
+) {
+  try {
+    return await reconcileBriefingSettlementFromHistory(
+      run,
+      submissionId,
+      paths,
+      suppliedReader,
+    );
+  } catch (error) {
+    console.warn(
+      '[neondeck] briefing history reconciliation will retry while admission remains fenced',
+      error,
+    );
+    return null;
+  }
 }
 
 async function dispatchPersistedBriefing(
@@ -571,6 +620,21 @@ export async function recoverInterruptedBriefingAdmissions(
   return { recovered, dispatched, failed };
 }
 
+export async function recoverRegisteredInterruptedBriefingAdmissions(
+  paths: RuntimePaths = runtimePaths(),
+) {
+  const readConversationHistory = briefingHistoryReaders.get(
+    paths.neondeckDatabase,
+  );
+  if (!readConversationHistory) {
+    return { recovered: [], dispatched: [], failed: [] };
+  }
+  return recoverInterruptedBriefingAdmissions(
+    { readConversationHistory },
+    paths,
+  );
+}
+
 async function reconcileBriefingSettlementFromHistory(
   run: BriefingRun,
   submissionId: string,
@@ -684,6 +748,11 @@ async function finalizeBriefingTerminal(
   if (!settled.changed || !settled.run) return settled.run;
 
   const run = settled.run;
+  const { settleScheduledTaskSubmission } = await import('../scheduled-tasks');
+  await settleScheduledTaskSubmission(
+    { submissionId: dispatchId, failed },
+    paths,
+  );
   if (run.commandEventId) {
     await updateChatSessionCommandEvent(
       {

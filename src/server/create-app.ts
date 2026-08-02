@@ -65,6 +65,11 @@ import {
   recoverInterruptedBriefingAdmissions,
 } from '../modules/briefings';
 import { recoverInterruptedLearningReviews } from '../modules/learning/reviews';
+import {
+  admitPrReviewAssist,
+  readPrReviewAssistSettlement,
+  recoverInterruptedPrReviewAssists,
+} from '../modules/pr-review-assist';
 
 export type CreateAppOptions = {
   paths?: RuntimePaths;
@@ -85,6 +90,17 @@ export async function createApp(options: CreateAppOptions = {}) {
   installFlueExecutionContextTracker();
   await recoverInterruptedAutopilotOwners(paths);
   installFlueObservationHandlers(paths);
+  const prReviewRecovery = await recoverInterruptedPrReviewAssists(
+    paths,
+    readPrReviewAssistSettlement,
+    admitPrReviewAssist,
+  );
+  if (prReviewRecovery.failed.length > 0) {
+    console.warn(
+      '[neondeck] PR review admission recovery remains pending',
+      prReviewRecovery.failed,
+    );
+  }
   const learningRecovery = await recoverInterruptedLearningReviews(paths);
   if (learningRecovery.failed.length > 0) {
     console.warn(
@@ -93,18 +109,6 @@ export async function createApp(options: CreateAppOptions = {}) {
     );
   }
 
-  if (
-    options.scheduler !== false &&
-    process.env.NEONDECK_DISABLE_SCHEDULER !== '1'
-  ) {
-    startSchedulerLoop(paths);
-    void refreshGitHubQueueSnapshot(paths).catch((error) => {
-      console.warn('[neondeck] initial GitHub queue refresh failed', error);
-    });
-    void refreshPrReviewRemoteState(paths).catch((error) => {
-      console.warn('[neondeck] initial PR review state refresh failed', error);
-    });
-  }
   await getMcpRegistry(paths).start();
 
   const requireAppAccess = requireLocalApiAccess({
@@ -186,6 +190,18 @@ export async function createApp(options: CreateAppOptions = {}) {
       '[neondeck] briefing admission recovery remains pending',
       briefingRecovery.failed,
     );
+  }
+  if (
+    options.scheduler !== false &&
+    process.env.NEONDECK_DISABLE_SCHEDULER !== '1'
+  ) {
+    startSchedulerLoop(paths);
+    void refreshGitHubQueueSnapshot(paths).catch((error) => {
+      console.warn('[neondeck] initial GitHub queue refresh failed', error);
+    });
+    void refreshPrReviewRemoteState(paths).catch((error) => {
+      console.warn('[neondeck] initial PR review state refresh failed', error);
+    });
   }
   app.route('/reports', createReportFileRoutes(paths));
 

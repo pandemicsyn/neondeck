@@ -1,11 +1,26 @@
 import { randomUUID } from 'node:crypto';
-import { init } from '@flue/runtime';
+import { AgentRunError, init } from '@flue/runtime';
 import * as v from 'valibot';
 import { PrReviewAssistant } from '../../agents/pr-review-assistant';
 import { ensureRuntimeHome, runtimePaths } from '../../runtime-home';
 import { resolvePullRequestTarget } from '../pr-events';
 import { readPrReviewAdmissionBinding } from '../pr-reviews/store';
 import { prReviewAssistInputSchema } from './schemas';
+import { watchPrReviewAssistSettlement } from './settlement';
+
+export async function readPrReviewAssistSettlement(input: {
+  instanceId: string;
+  submissionId: string;
+}) {
+  const handle = init(PrReviewAssistant, { id: input.instanceId });
+  try {
+    await handle.read(input.submissionId);
+    return { failed: false };
+  } catch (error) {
+    if (error instanceof AgentRunError) return { failed: true };
+    throw error;
+  }
+}
 
 export async function admitPrReviewAssist(
   input: v.InferInput<typeof prReviewAssistInputSchema>,
@@ -53,6 +68,11 @@ export async function admitPrReviewAssist(
       : `pr-review:${randomUUID()}`;
   const handle = init(PrReviewAssistant, { id: instanceId, uid: null });
   const receipt = await handle.dispatch({
+    ...(parsed.reviewId && parsed.attemptId
+      ? {
+          idempotencyKey: `pr-review-assist:${parsed.reviewId}:${parsed.attemptId}`,
+        }
+      : {}),
     initialData: parsed,
     message: {
       kind: 'signal',
@@ -65,6 +85,17 @@ export async function admitPrReviewAssist(
       },
     },
   });
+  if (parsed.reviewId && parsed.attemptId) {
+    void watchPrReviewAssistSettlement(
+      {
+        reviewId: parsed.reviewId,
+        attemptId: parsed.attemptId,
+        submissionId: receipt.submissionId,
+      },
+      paths,
+      readPrReviewAssistSettlement,
+    );
+  }
   return {
     agentId: instanceId,
     submissionId: receipt.submissionId,

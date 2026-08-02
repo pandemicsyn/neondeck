@@ -89,8 +89,9 @@ export async function completeLearningReviewFromModelOutput(
       else skipped.push(result);
       continue;
     }
-    const result = await runEffect(`memory-action:${index}`, () =>
-      applyProposal(proposal, paths),
+    const effectName = `memory-action:${index}`;
+    const result = await runEffect(effectName, () =>
+      applyProposal(proposal, paths, `${prepared.reviewId}:${effectName}`),
     );
     if (result.ok && result.changed) applied.push(result);
     else skipped.push(result);
@@ -274,6 +275,7 @@ export async function createCandidateFromProposal(
 export async function applyProposal(
   proposal: MemoryProposal,
   paths: RuntimePaths,
+  effectId?: string,
 ) {
   if (proposal.action === 'upsert') {
     return upsertMemory(
@@ -286,7 +288,7 @@ export async function applyProposal(
         actor: 'workflow',
       },
       paths,
-      { source: 'workflow' },
+      { source: 'workflow', effectId },
     );
   }
   if (proposal.action === 'rewrite') {
@@ -298,7 +300,7 @@ export async function applyProposal(
         actor: 'workflow',
       },
       paths,
-      { source: 'workflow' },
+      { source: 'workflow', effectId },
     );
   }
   if (proposal.action === 'archive') {
@@ -309,7 +311,7 @@ export async function applyProposal(
         actor: 'workflow',
       },
       paths,
-      { source: 'workflow' },
+      { source: 'workflow', effectId },
     );
   }
   return mergeMemories(
@@ -321,7 +323,7 @@ export async function applyProposal(
       actor: 'workflow',
     },
     paths,
-    { source: 'workflow' },
+    { source: 'workflow', effectId },
   );
 }
 

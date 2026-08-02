@@ -8,6 +8,7 @@ import { openDb } from '../lib/sqlite';
 import { addNotification } from '../modules/app-state';
 import { settleAutopilotOwnerObservation } from '../modules/autopilot/owner/settlement';
 import { settleBriefingObservation } from '../modules/briefings';
+import { settlePrReviewAssistObservation } from '../modules/pr-review-assist';
 import { recordFlueObservation } from '../modules/learning';
 import {
   recordConversationTurnAndMaybeQueueLearning,
@@ -48,6 +49,14 @@ export function installFlueObservationHandlers(
       void settleBriefingObservation(event, paths).catch((error) => {
         console.error('[neondeck] failed to settle briefing submission', error);
       });
+      void Promise.resolve()
+        .then(() => settlePrReviewAssistObservation(event, paths))
+        .catch((error) => {
+          console.error(
+            '[neondeck] failed to settle PR review submission',
+            error,
+          );
+        });
       void settleScheduledTaskSubmission(
         {
           submissionId: event.submissionId,

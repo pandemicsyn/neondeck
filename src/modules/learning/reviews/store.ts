@@ -63,6 +63,8 @@ export function startLearningReview(
     thinkingLevel: string;
     trigger: JsonValue;
     inputSummary: JsonValue;
+    prepared?: PreparedLearningReview;
+    agentId?: string;
   },
   paths = runtimePaths(),
 ) {
@@ -82,9 +84,11 @@ export function startLearningReview(
           thinking_level,
           trigger_json,
           input_summary_json,
+          agent_id,
+          prepared_json,
           started_at
         )
-        VALUES (?, ?, 'running', ?, ?, ?, ?, ?)
+        VALUES (?, ?, 'running', ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(id) DO NOTHING;
       `,
         )
@@ -95,6 +99,8 @@ export function startLearningReview(
           input.thinkingLevel,
           JSON.stringify(input.trigger),
           JSON.stringify(input.inputSummary),
+          input.agentId ?? null,
+          input.prepared ? JSON.stringify(input.prepared) : null,
           now,
         );
       if (insert.changes === 0) return;

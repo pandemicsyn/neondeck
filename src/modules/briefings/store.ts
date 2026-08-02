@@ -70,6 +70,18 @@ const persistedBriefingTaskSchema = v.object({
   created_at: v.string(),
 });
 
+export class BriefingAdmissionConflictError extends Error {
+  constructor(
+    readonly runId: string,
+    readonly sessionId: string,
+  ) {
+    super(
+      `Briefing "${runId}" is already active in conversation "${sessionId}"; no duplicate was submitted.`,
+    );
+    this.name = 'BriefingAdmissionConflictError';
+  }
+}
+
 export async function readBriefingProfile(
   id = defaultBriefingProfileId,
   paths: RuntimePaths = runtimePaths(),
@@ -354,6 +366,7 @@ export async function createBriefingRun(
     instructionsVersion: number;
     sessionId: string;
     commandEventId?: string | null;
+    scheduledTaskRunId?: string | null;
   },
   paths: RuntimePaths = runtimePaths(),
 ) {
@@ -362,6 +375,19 @@ export async function createBriefingRun(
   const id = `briefing:${now.replace(/\D/g, '').slice(0, 14)}:${randomUUID().slice(0, 8)}`;
   const database = openDb(paths.neondeckDatabase);
   try {
+    database.exec('BEGIN IMMEDIATE;');
+    const active = database
+      .prepare(
+        `SELECT id FROM briefing_runs
+         WHERE session_id = ? AND status = 'queued'
+         ORDER BY created_at ASC
+         LIMIT 1;`,
+      )
+      .get(input.sessionId) as { id: string } | undefined;
+    if (active) {
+      database.exec('ROLLBACK;');
+      throw new BriefingAdmissionConflictError(active.id, input.sessionId);
+    }
     database
       .prepare(
         `INSERT INTO briefing_runs (
@@ -384,7 +410,23 @@ export async function createBriefingRun(
         now,
         now,
       );
-    return readBriefingRun(id, paths);
+    if (input.scheduledTaskRunId) {
+      database
+        .prepare(
+          `INSERT INTO app_metadata (key, value, updated_at)
+           VALUES (?, ?, ?)
+           ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at;`,
+        )
+        .run(`scheduled-briefing-run:${input.scheduledTaskRunId}`, id, now);
+    }
+    const row = database
+      .prepare('SELECT * FROM briefing_runs WHERE id = ?;')
+      .get(id);
+    database.exec('COMMIT;');
+    return row ? readRunRow(row) : null;
+  } catch (error) {
+    if (database.isTransaction) database.exec('ROLLBACK;');
+    throw error;
   } finally {
     database.close();
   }
@@ -470,6 +512,28 @@ export async function findUnattachedBriefingRun(
          LIMIT 1;`,
       )
       .get(input.profileId, input.sessionId);
+    return row ? readRunRow(row) : null;
+  } finally {
+    database.close();
+  }
+}
+
+export async function findActiveBriefingRun(
+  input: { sessionId: string },
+  paths: RuntimePaths = runtimePaths(),
+) {
+  await ensureRuntimeHome(paths);
+  const database = openDb(paths.neondeckDatabase);
+  try {
+    const row = database
+      .prepare(
+        `SELECT * FROM briefing_runs
+         WHERE session_id = ?
+           AND status = 'queued'
+         ORDER BY created_at ASC
+         LIMIT 1;`,
+      )
+      .get(input.sessionId);
     return row ? readRunRow(row) : null;
   } finally {
     database.close();

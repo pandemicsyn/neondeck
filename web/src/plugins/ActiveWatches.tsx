@@ -674,7 +674,7 @@ function autopilotModeHelp(mode: PrWatch['autopilotMode']) {
     case 'prepare-only':
       return 'Codes, validates, and commits locally for your review; it cannot push or respond to the PR.';
     case 'autofix-with-approval':
-      return 'Does the same work, then waits; only your direct instruction in the owner chat can authorize it to push or respond.';
+      return 'Does the same work, then waits for Review diff → Approve & push. Owner chat can guide edits or discard the held change, but cannot authorize delivery.';
     case 'autofix-push-when-safe':
       return 'Delegates semantic engineering judgment: the owner validates proportionately and may push/respond when it judges the change sound.';
   }

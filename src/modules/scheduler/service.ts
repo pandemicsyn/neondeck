@@ -1,16 +1,19 @@
 import { addNotification } from '../app-state';
 import {
   activateScheduledTaskSubmission,
+  activateScheduledTaskResultSubmission,
   attachScheduledTaskSubmissionId,
   canAdmitScheduledSubmission,
   claimDueScheduledTasks,
   deferUnstartedScheduledTaskClaim,
   dispatchScheduledInstruction,
   executeScheduledTask,
+  listRecoverableScheduledBriefingRuns,
   listActiveScheduledInstructionRuns,
   listScheduledTasks,
   prepareScheduledInstructionDispatch,
   readLatestScheduledTaskRun,
+  readScheduledTask,
   readScheduledInstructionSettlement,
   recordScheduledTaskAdmissionRetry,
   releaseUnstartedScheduledTaskClaim,
@@ -31,6 +34,11 @@ import {
   startSchedulerTickLeaseHeartbeat,
 } from './lease';
 import { errorMessage, okResult } from './utils';
+import {
+  BriefingAdmissionConflictError,
+  readBriefingRun,
+  recoverRegisteredInterruptedBriefingAdmissions,
+} from '../briefings';
 
 const scheduledSettlementWatchers = settlementWatchers();
 
@@ -63,6 +71,8 @@ export async function runSchedulerTick(
   );
 
   try {
+    await recoverRegisteredInterruptedBriefingAdmissions(paths);
+    await recoverScheduledBriefingSubmissions(paths);
     await recoverScheduledInstructionSubmissions(paths, dependencies);
     const claimedTasks = await claimDueScheduledTasks(paths, now);
     const notifications = [];
@@ -146,19 +156,28 @@ export async function runSchedulerTick(
             task,
             previous?.result ?? null,
             paths,
-            dependencies,
+            { ...dependencies, scheduledTaskRunId: run.id },
           );
         }
         if (result.submissionId) {
-          await attachScheduledTaskSubmissionId(
-            {
-              runId: run.id,
-              submissionId: result.submissionId,
-              sessionId: result.sessionId ?? null,
-              result: result.result,
-            },
-            paths,
-          );
+          const correlation = {
+            runId: run.id,
+            submissionId: result.submissionId,
+            sessionId: result.sessionId ?? null,
+            result: result.result,
+          };
+          if (submissionTask) {
+            await attachScheduledTaskSubmissionId(correlation, paths);
+          } else {
+            await activateScheduledTaskResultSubmission(
+              {
+                ...correlation,
+                taskId: task.id,
+                claimId: task.claimId ?? '',
+              },
+              paths,
+            );
+          }
           if (submissionTask && result.sessionId) {
             watchScheduledInstructionSettlement(
               {
@@ -185,6 +204,18 @@ export async function runSchedulerTick(
           );
         }
       } catch (error) {
+        if (error instanceof BriefingAdmissionConflictError) {
+          await deferUnstartedScheduledTaskClaim(
+            {
+              task,
+              previous: claim.previous,
+              run,
+              message: `Scheduled briefing was deferred because conversation ${error.sessionId} already has an active briefing.`,
+            },
+            paths,
+          );
+          continue;
+        }
         const message = `Scheduled task failed: ${errorMessage(error)}.`;
         if (admissionOutboxPrepared) {
           await recordScheduledTaskAdmissionRetry(
@@ -269,6 +300,60 @@ export async function runSchedulerTick(
   } finally {
     stopLeaseHeartbeat();
     await releaseSchedulerTickLease(paths, lease.owner);
+  }
+}
+
+async function recoverScheduledBriefingSubmissions(paths: RuntimePaths) {
+  const candidates = await listRecoverableScheduledBriefingRuns(paths);
+  for (const candidate of candidates) {
+    if (!candidate.briefingRunId) continue;
+    const briefing = await readBriefingRun(candidate.briefingRunId, paths);
+    const task = await readScheduledTask(candidate.run.taskId, paths);
+    if (!briefing || !task) continue;
+
+    if (candidate.run.status === 'claimed') {
+      if (!briefing.dispatchId) {
+        if (briefing.status === 'failed') {
+          await settleScheduledTaskRun(
+            {
+              taskId: task.id,
+              runId: candidate.run.id,
+              claimId: task.claimId ?? '',
+              status: 'failed',
+              outcome: 'failed',
+              message: 'Scheduled briefing admission failed before dispatch.',
+              error: briefing.error,
+            },
+            paths,
+          );
+        }
+        continue;
+      }
+      await activateScheduledTaskResultSubmission(
+        {
+          taskId: task.id,
+          runId: candidate.run.id,
+          claimId: task.claimId ?? '',
+          submissionId: briefing.dispatchId,
+          sessionId: briefing.sessionId,
+          result: {
+            briefingRunId: briefing.id,
+            submissionId: briefing.dispatchId,
+            briefingId: briefing.profileId,
+          },
+        },
+        paths,
+      );
+    }
+    if (briefing.dispatchId && briefing.status !== 'queued') {
+      await settleScheduledTaskSubmission(
+        {
+          submissionId: briefing.dispatchId,
+          failed: briefing.status === 'failed',
+        },
+        paths,
+      );
+    }
   }
 }
 

@@ -107,7 +107,7 @@ export async function startPrReview(
     const admission = await (
       dependencies.invokeWorkflow ?? invokeReviewPrWorkflow
     )({
-      ref: `${target.repoFullName}#${target.number}`,
+      ref: `${review.repoFullName}#${review.prNumber}`,
       reviewId: review.id,
       attemptId,
     });

@@ -2,6 +2,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
+import type { FlueObservation } from '@flue/runtime';
 import {
   activateScheduledTaskSubmission,
   attachScheduledTaskSubmissionId,
@@ -23,6 +24,11 @@ import {
   type SchedulerDependencies,
 } from './modules/scheduler';
 import { createChatSession } from './modules/sessions';
+import {
+  admitBriefing,
+  BriefingAdmissionConflictError,
+  settleBriefingObservation,
+} from './modules/briefings';
 import { runtimePaths } from './runtime-home';
 
 describe('scheduled task triggers', () => {
@@ -495,7 +501,7 @@ describe('scheduled task storage', () => {
     }
   });
 
-  it('admits due briefings directly and settles the scheduled task run', async () => {
+  it('admits due briefings and retains submission correlation until settlement', async () => {
     const home = await mkdtemp(join(tmpdir(), 'neondeck-scheduled-tasks-'));
     const paths = runtimePaths(home);
     try {
@@ -511,12 +517,17 @@ describe('scheduled task storage', () => {
       await expect(
         runSchedulerTick(paths, new Date('2026-07-10T00:00:00.000Z'), {
           admitBriefing: (async (
-            input: { profileId: string; trigger: 'scheduled' },
+            input: {
+              profileId: string;
+              trigger: 'scheduled';
+              scheduledTaskRunId: string;
+            },
             actualPaths: ReturnType<typeof runtimePaths>,
           ) => {
-            expect(input).toEqual({
+            expect(input).toMatchObject({
               profileId: 'daily',
               trigger: 'scheduled',
+              scheduledTaskRunId: expect.stringMatching(/^scheduled-task-run:/),
             });
             expect(actualPaths).toBe(paths);
             return {
@@ -534,15 +545,125 @@ describe('scheduled task storage', () => {
       });
       await expect(
         canAdmitScheduledSubmission('briefing:daily', paths),
-      ).resolves.toBe(true);
+      ).resolves.toBe(false);
+      await settleScheduledTaskSubmission(
+        { submissionId: 'submission:briefing:1', failed: false },
+        paths,
+      );
       await expect(
         readLatestScheduledTaskRun('briefing:daily', paths),
       ).resolves.toMatchObject({
         status: 'completed',
+        outcome: 'recorded',
+        submissionId: 'submission:briefing:1',
+        sessionId: 'briefing-session',
         result: {
           briefingRunId: 'briefing:daily:1',
           submissionId: 'submission:briefing:1',
         },
+      });
+    } finally {
+      await rm(home, { recursive: true, force: true });
+    }
+  });
+
+  it('recovers a scheduled briefing admitted before scheduler correlation', async () => {
+    const home = await mkdtemp(join(tmpdir(), 'neondeck-scheduled-tasks-'));
+    const paths = runtimePaths(home);
+    try {
+      await upsertScheduledTask(
+        {
+          id: 'briefing:morning',
+          spec: { kind: 'run-briefing', briefingId: 'morning' },
+          trigger: { kind: 'interval', everySeconds: 3_600 },
+          nextRunAt: '2026-07-10T00:00:00.000Z',
+        },
+        paths,
+      );
+      const [claim] = await claimDueScheduledTasks(
+        paths,
+        new Date('2026-07-10T00:00:00.000Z'),
+      );
+      const briefing = await admitBriefing(
+        {
+          profileId: 'morning',
+          trigger: 'scheduled',
+          scheduledTaskRunId: claim.run.id,
+        },
+        paths,
+        {
+          dispatchAgent: async () => ({
+            submissionId: 'submission:briefing:recovered',
+            acceptedAt: new Date().toISOString(),
+            uid: 'briefing-recovery-test',
+          }),
+        },
+      );
+
+      await runSchedulerTick(paths, new Date('2026-07-10T00:00:01.000Z'));
+      await expect(
+        canAdmitScheduledSubmission('briefing:morning', paths),
+      ).resolves.toBe(false);
+
+      await settleBriefingObservation(
+        {
+          type: 'submission_settled',
+          v: 3,
+          eventIndex: 1,
+          timestamp: new Date().toISOString(),
+          instanceId: briefing.sessionId,
+          submissionId: briefing.dispatchId!,
+          outcome: 'completed',
+        } as Extract<FlueObservation, { type: 'submission_settled' }>,
+        paths,
+      );
+      await expect(
+        readLatestScheduledTaskRun('briefing:morning', paths),
+      ).resolves.toMatchObject({
+        status: 'completed',
+        submissionId: 'submission:briefing:recovered',
+      });
+    } finally {
+      await rm(home, { recursive: true, force: true });
+    }
+  });
+
+  it('defers a scheduled briefing when its conversation is already active', async () => {
+    const home = await mkdtemp(join(tmpdir(), 'neondeck-scheduled-tasks-'));
+    const paths = runtimePaths(home);
+    try {
+      await upsertScheduledTask(
+        {
+          id: 'briefing:morning',
+          spec: { kind: 'run-briefing', briefingId: 'morning' },
+          trigger: { kind: 'once', at: '2026-07-10T00:00:00.000Z' },
+          nextRunAt: '2026-07-10T00:00:00.000Z',
+        },
+        paths,
+      );
+
+      await runSchedulerTick(paths, new Date('2026-07-10T00:00:00.000Z'), {
+        admitBriefing: (async () => {
+          throw new BriefingAdmissionConflictError(
+            'briefing:active',
+            'briefing-session',
+          );
+        }) as never,
+      });
+
+      await expect(
+        readLatestScheduledTaskRun('briefing:morning', paths),
+      ).resolves.toMatchObject({
+        status: 'completed',
+        outcome: 'silent',
+        message: expect.stringContaining('was deferred'),
+      });
+      await expect(
+        readScheduledTask('briefing:morning', paths),
+      ).resolves.toMatchObject({
+        enabled: true,
+        nextRunAt: expect.any(String),
+        claimId: null,
       });
     } finally {
       await rm(home, { recursive: true, force: true });

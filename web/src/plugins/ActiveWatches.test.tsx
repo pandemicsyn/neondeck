@@ -181,7 +181,7 @@ describe('ActiveWatches owner conversation', () => {
     );
 
     expect(container.textContent).not.toContain(
-      'Does the same work, then waits; only your direct instruction in the owner chat can authorize it to push or respond.',
+      'Does the same work, then waits for Review diff → Approve & push. Owner chat can guide edits or discard the held change, but cannot authorize delivery.',
     );
     expect(
       Array.from(container.querySelectorAll('option')).map((option) =>
@@ -622,7 +622,7 @@ describe('ActiveWatches visibility', () => {
       'why · Merged, but 1 of 46 checks failed.',
     );
     expect(container.textContent).not.toContain(
-      'Does the same work, then waits; only your direct instruction in the owner chat can authorize it to push or respond.',
+      'Does the same work, then waits for Review diff → Approve & push. Owner chat can guide edits or discard the held change, but cannot authorize delivery.',
     );
 
     act(() => root.unmount());

@@ -328,7 +328,7 @@ function FixCiButton({ item }: { item: GitHubPullRequest }) {
         queryKey: queryKeys.operationSummaries,
       });
       void queryClient.invalidateQueries({ queryKey: queryKeys.reports });
-      scheduleCiFixCompletionRefresh(queryClient, run.ref);
+      scheduleCiFixCompletionRefresh(queryClient, run.runId);
     },
   });
 
@@ -353,7 +353,7 @@ function FixCiButton({ item }: { item: GitHubPullRequest }) {
 
 function scheduleCiFixCompletionRefresh(
   queryClient: ReturnType<typeof useQueryClient>,
-  ref: string,
+  operationId: string,
 ) {
   let sawActiveOperation = false;
   let done = false;
@@ -386,7 +386,7 @@ function scheduleCiFixCompletionRefresh(
       });
       const state = ciFixOperationRefreshDecision(
         operations,
-        ref,
+        operationId,
         sawActiveOperation,
         forceRefresh,
       );
@@ -416,14 +416,13 @@ function scheduleCiFixCompletionRefresh(
 
 export function ciFixOperationRefreshDecision(
   operations: WorkflowSummaryResponse,
-  ref: string,
+  operationId: string,
   sawActiveOperation: boolean,
   forceRefresh: boolean,
 ) {
   const matching = operations.items.find(
     (operation) =>
-      operation.workflow === 'ci_fix_run' &&
-      readSummaryString(operation.summary, 'pr') === ref,
+      operation.workflow === 'ci_fix_run' && operation.id === operationId,
   );
   const active =
     matching?.status === 'running' || matching?.status === 'queued';
@@ -437,12 +436,6 @@ export function ciFixOperationRefreshDecision(
     shouldRefresh: terminal || disappeared || shouldFallbackRefresh,
     done: terminal || disappeared || shouldFallbackRefresh,
   };
-}
-
-function readSummaryString(value: unknown, key: string) {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
-  const field = (value as Record<string, unknown>)[key];
-  return typeof field === 'string' ? field : null;
 }
 
 const reviewCompletionPollDelays = [15_000, 45_000, 90_000, 150_000, 210_000];

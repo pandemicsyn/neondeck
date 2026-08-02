@@ -481,9 +481,6 @@ function assertOwnerDelivery(
     const envelope = parseAutopilotOwnerEnvelope(delivery.body);
     if (
       envelope.watchId !== validated.watchId ||
-      envelope.repoId !== validated.repoId ||
-      envelope.repoFullName !== validated.repoFullName ||
-      envelope.prNumber !== validated.prNumber ||
       envelope.eventFingerprint !== pending.eventFingerprint ||
       JSON.stringify(envelope) !== JSON.stringify(pending.envelope)
     ) {

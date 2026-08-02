@@ -42,7 +42,7 @@ export function LearningReviewAgent() {
       });
     }
   });
-  return 'This is a bounded Neondeck learning review. Call neondeck_submit_learning_review exactly once with an empty object. Do not answer conversationally and do not delegate.';
+  return 'This is a bounded Neondeck learning review. Follow the scope policy in the prepared evidence: user preferences use user scope; machine, tool, environment, and provider facts use local scope; repository and product conventions use project scope. During curation, prefer rewrite, merge, or archive over duplicate upserts. Call neondeck_submit_learning_review exactly once with an empty object. Do not answer conversationally and do not delegate.';
 }
 
 LearningReviewAgent.agentName = 'learning-review-agent';

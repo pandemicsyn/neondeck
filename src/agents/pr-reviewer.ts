@@ -15,6 +15,7 @@ import { readPrReview } from '../modules/pr-reviews';
 import {
   readPrReviewerHandoff,
   createPrReviewerWorkspaceTools,
+  prReviewerWorkspaceToolCallLimit,
   resolvePrReviewerWorkspace,
   type PrReviewerHandoff,
 } from '../modules/pr-reviewer';
@@ -165,6 +166,10 @@ export function PrReviewer({ id }: AgentProps) {
       'prepared-reviewer-context',
       null,
     );
+  const [, setWorkspaceToolCallsUsed] = usePersistentState(
+    'workspace-tool-calls-used',
+    0,
+  );
 
   useModel(models.prReview, {
     thinkingLevel: models.prReviewThinkingLevel,
@@ -188,7 +193,18 @@ export function PrReviewer({ id }: AgentProps) {
   });
 
   if (prepared?.workspace.available) {
-    for (const tool of createPrReviewerWorkspaceTools(prepared.workspace)) {
+    const consumeToolCall = () => {
+      let remaining: number | null = null;
+      setWorkspaceToolCallsUsed((used) => {
+        if (used >= prReviewerWorkspaceToolCallLimit) return used;
+        remaining = prReviewerWorkspaceToolCallLimit - used - 1;
+        return used + 1;
+      });
+      return remaining;
+    };
+    for (const tool of createPrReviewerWorkspaceTools(prepared.workspace, {
+      consumeToolCall,
+    })) {
       useTool(tool);
     }
   }

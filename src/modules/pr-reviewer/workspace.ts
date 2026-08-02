@@ -136,18 +136,25 @@ async function ensureRevisionAvailable(
   );
 }
 
-export function createPrReviewerWorkspaceTools(input: {
-  repoPath: string;
-  headSha: string;
-  mergeBase: string | null;
-}): ToolDefinition[] {
+export function createPrReviewerWorkspaceTools(
+  input: {
+    repoPath: string;
+    headSha: string;
+    mergeBase: string | null;
+  },
+  options: {
+    consumeToolCall?: () => number | null;
+  } = {},
+): ToolDefinition[] {
   const { repoPath, headSha, mergeBase } = input;
   let remainingToolCalls = prReviewerWorkspaceToolCallLimit;
-  const consumeToolCall = () => {
-    if (remainingToolCalls <= 0) return null;
-    remainingToolCalls -= 1;
-    return remainingToolCalls;
-  };
+  const consumeToolCall =
+    options.consumeToolCall ??
+    (() => {
+      if (remainingToolCalls <= 0) return null;
+      remainingToolCalls -= 1;
+      return remainingToolCalls;
+    });
   const budgeted = <T extends Record<string, unknown>>(
     result: T,
     remaining: number,

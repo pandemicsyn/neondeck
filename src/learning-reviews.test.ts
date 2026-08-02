@@ -14,6 +14,7 @@ import {
   completeLearningReviewFromModelOutput,
   listPendingLearningReviewAdmissionIntents,
   listLearningReviews,
+  listRecoverableLearningReviews,
   prepareConversationReflection,
   prepareMemoryCurationReview,
   preparePrBatchLearningReview,
@@ -40,6 +41,8 @@ import {
   restoreSkillPatchCandidate,
 } from './modules/learning/skill-patches';
 import { runtimePaths } from './runtime-home';
+import { learningPrompt } from './modules/learning/reviews/context';
+import { openDb } from './lib/sqlite';
 
 const tempRoots: string[] = [];
 
@@ -52,6 +55,22 @@ afterEach(async () => {
 });
 
 describe('learning review orchestration', () => {
+  it('keeps the explicit semantic scope and curation policy in model context', () => {
+    const prompt = learningPrompt('curation', {}, 'auto');
+    expect(prompt).toContain(
+      'Use user scope only for durable user preferences.',
+    );
+    expect(prompt).toContain(
+      'Use local scope for machine, tool, environment, and provider facts.',
+    );
+    expect(prompt).toContain(
+      'Use project scope for repository or product conventions',
+    );
+    expect(prompt).toContain(
+      'For curation, prefer rewrites, merges, and archives',
+    );
+  });
+
   it('creates review-mode memory candidates from conversation reflection output', async () => {
     const paths = runtimePaths(await tempHome());
     await updateLearningConfig({ memoryWriteMode: 'review' }, paths);
@@ -187,6 +206,12 @@ describe('learning review orchestration', () => {
       paths,
     );
     if (!prepared.ok) throw new Error(prepared.message);
+    expect(listRecoverableLearningReviews(paths)).toEqual([
+      expect.objectContaining({
+        review: expect.objectContaining({ id: prepared.reviewId }),
+        prepared,
+      }),
+    ]);
 
     expect(prepared.allowedMemoryIds).toContain(
       (repoA as { memory: { id: string } }).memory.id,
@@ -317,6 +342,78 @@ describe('learning review orchestration', () => {
     await expect(
       listMemories(
         { scope: 'project', repoId: 'repo-a', key: 'learned-check' },
+        paths,
+      ),
+    ).resolves.toMatchObject({
+      memories: [expect.objectContaining({ value: 'npm run check' })],
+    });
+  });
+
+  it('replays the originally applied memory result after a step checkpoint crash', async () => {
+    const paths = runtimePaths(await tempHome());
+    await updateLearningConfig({ memoryWriteMode: 'auto' }, paths);
+    const session = await createChatSession(
+      {
+        title: 'Replay-safe learning',
+        linkedRepoId: 'repo-a',
+        summary: 'Repo A uses npm run check.',
+        summarySource: 'manual',
+      },
+      paths,
+    );
+    const prepared = await prepareConversationReflection(
+      {
+        sessionId: (session as { session: { id: string } }).session.id,
+        trigger: 'manual',
+      },
+      paths,
+    );
+    if (!prepared.ok) throw new Error(prepared.message);
+    const output = {
+      summary: 'Repo A has a durable validation command.',
+      memoryActions: [
+        {
+          action: 'upsert' as const,
+          scope: 'project' as const,
+          repoId: 'repo-a',
+          key: 'validation-command',
+          value: 'npm run check',
+          reason: 'Repeated project convention.',
+        },
+      ],
+    };
+
+    await expect(
+      completeLearningReviewFromModelOutput(prepared, output, paths, {
+        runEffect: async (name, effect) => {
+          const result = await effect();
+          if (name === 'memory-action:0') {
+            throw new Error('crash before Flue step checkpoint');
+          }
+          return result;
+        },
+      }),
+    ).rejects.toThrow('crash before Flue step checkpoint');
+
+    await updateLearningConfig({ memoryWriteMode: 'review' }, paths);
+
+    await expect(
+      completeLearningReviewFromModelOutput(prepared, output, paths),
+    ).resolves.toMatchObject({
+      ok: true,
+      changed: true,
+      applied: [
+        expect.objectContaining({ action: 'memory_learn', changed: true }),
+      ],
+      message: expect.stringContaining('1 applied action'),
+    });
+    await expect(
+      listMemories(
+        {
+          scope: 'project',
+          repoId: 'repo-a',
+          key: 'validation-command',
+        },
         paths,
       ),
     ).resolves.toMatchObject({
@@ -1509,6 +1606,15 @@ describe('learning review orchestration', () => {
     expect(concurrentApplyResults.filter((result) => !result.ok)).toHaveLength(
       1,
     );
+    const appliedResult = concurrentApplyResults.find((result) => result.ok);
+    await expect(
+      applySkillPatchCandidate({ id: candidateId }, paths, {
+        idempotent: true,
+      }),
+    ).resolves.toEqual(appliedResult);
+    await expect(
+      readFile(join(paths.home, 'skills', 'test-skill', 'SKILL.md'), 'utf8'),
+    ).resolves.toContain('Run npm run check before summarizing local changes.');
     await expect(
       restoreSkillPatchCandidate(
         {
@@ -1607,6 +1713,69 @@ describe('learning review orchestration', () => {
         expect.objectContaining({ id: String(rejectId), status: 'rejected' }),
       ]),
     });
+  });
+
+  it('finalizes an audited skill patch after a crash following file replacement', async () => {
+    const paths = runtimePaths(await tempHome());
+    await writeUserSkill(paths.home, 'journaled-skill');
+    const skillPath = join(paths.home, 'skills', 'journaled-skill', 'SKILL.md');
+    const proposed = await proposeSkillPatch(
+      {
+        skillId: 'journaled-skill',
+        summary: 'Add journaled recovery guidance.',
+        operation: {
+          type: 'append-section',
+          heading: 'Journaled recovery',
+          content: '- Recover the audit after atomic replacement.\n',
+        },
+      },
+      paths,
+    );
+    if (!proposed.ok || !('candidate' in proposed)) {
+      throw new Error(proposed.message);
+    }
+    const candidate = proposed.candidate as unknown as {
+      id: string;
+      patch: { beforeContent: string; afterContent: string };
+    };
+    const database = openDb(paths.neondeckDatabase);
+    try {
+      database
+        .prepare(
+          `INSERT INTO app_metadata (key, value, updated_at) VALUES (?, ?, ?);`,
+        )
+        .run(
+          `skill-patch-apply-intent:${candidate.id}`,
+          JSON.stringify({
+            source: 'neon',
+            reason: 'Recovered review effect.',
+          }),
+          new Date().toISOString(),
+        );
+    } finally {
+      database.close();
+    }
+    await writeFile(skillPath, candidate.patch.afterContent, 'utf8');
+
+    await expect(
+      applySkillPatchCandidate({ id: candidate.id }, paths, {
+        source: 'neon',
+        idempotent: true,
+      }),
+    ).resolves.toMatchObject({ ok: true, changed: true });
+    await expect(
+      restoreSkillPatchCandidate(
+        {
+          id: candidate.id,
+          confirm: true,
+          reason: 'Verify the recovered audit can restore.',
+        },
+        paths,
+      ),
+    ).resolves.toMatchObject({ ok: true, changed: true });
+    await expect(readFile(skillPath, 'utf8')).resolves.toBe(
+      candidate.patch.beforeContent,
+    );
   });
 
   it('keeps applied skill content intact when an atomic restore cannot be staged', async () => {

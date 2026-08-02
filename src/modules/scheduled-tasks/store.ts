@@ -71,6 +71,41 @@ export async function readLatestScheduledTaskRun(
   }
 }
 
+export async function listRecoverableScheduledBriefingRuns(
+  paths = runtimePaths(),
+) {
+  await ensureRuntimeHome(paths);
+  const database = openDb(paths.neondeckDatabase);
+  try {
+    return database
+      .prepare(
+        `SELECT scheduled_task_runs.*,
+                app_metadata.value AS briefing_run_id
+         FROM scheduled_task_runs
+         JOIN scheduled_tasks
+           ON scheduled_tasks.id = scheduled_task_runs.task_id
+          AND scheduled_tasks.kind = 'run-briefing'
+         LEFT JOIN app_metadata
+           ON app_metadata.key = 'scheduled-briefing-run:' || scheduled_task_runs.id
+         WHERE scheduled_task_runs.status IN ('claimed', 'active')
+         ORDER BY scheduled_task_runs.created_at ASC;`,
+      )
+      .all()
+      .map((row) => {
+        const record = row as Record<string, unknown>;
+        return {
+          run: readScheduledTaskRunRow(record),
+          briefingRunId:
+            typeof record.briefing_run_id === 'string'
+              ? record.briefing_run_id
+              : null,
+        };
+      });
+  } finally {
+    database.close();
+  }
+}
+
 export async function upsertScheduledTask(
   input: {
     id: string;
@@ -659,6 +694,62 @@ export async function attachScheduledTaskSubmissionId(
         new Date().toISOString(),
         input.runId,
       );
+  } finally {
+    database.close();
+  }
+}
+
+export async function activateScheduledTaskResultSubmission(
+  input: {
+    taskId: string;
+    runId: string;
+    claimId: string;
+    submissionId: string;
+    sessionId?: string | null;
+    result?: unknown;
+  },
+  paths = runtimePaths(),
+) {
+  await ensureRuntimeHome(paths);
+  const now = new Date().toISOString();
+  const database = openDb(paths.neondeckDatabase);
+  try {
+    database.exec('BEGIN IMMEDIATE;');
+    const activated = database
+      .prepare(
+        `
+        UPDATE scheduled_task_runs
+        SET status = 'active', submission_id = ?, session_id = ?,
+            result_json = ?, message = ?, error = NULL, updated_at = ?
+        WHERE id = ? AND task_id = ? AND status = 'claimed';
+      `,
+      )
+      .run(
+        input.submissionId,
+        input.sessionId ?? null,
+        input.result === undefined
+          ? null
+          : JSON.stringify(asJsonValue(input.result)),
+        'Scheduled task dispatched and awaiting submission settlement.',
+        now,
+        input.runId,
+        input.taskId,
+      );
+    if (activated.changes !== 1)
+      throw new Error('Scheduled task run is not claimable.');
+    database
+      .prepare(
+        `
+        UPDATE scheduled_tasks
+        SET claim_id = NULL, claim_expires_at = NULL, updated_at = ?
+        WHERE id = ? AND claim_id = ?;
+      `,
+      )
+      .run(now, input.taskId, input.claimId);
+    database.exec('COMMIT;');
+  } catch (error) {
+    rollbackQuietly(database);
+    throw error;
   } finally {
     database.close();
   }

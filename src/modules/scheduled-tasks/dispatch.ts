@@ -50,6 +50,7 @@ export async function executeScheduledTask(
       {
         profileId: task.spec.briefingId,
         trigger: 'scheduled',
+        scheduledTaskRunId: dependencies.scheduledTaskRunId,
       },
       paths,
     );
@@ -59,6 +60,7 @@ export async function executeScheduledTask(
     return {
       outcome: 'recorded',
       message: `Admitted briefing ${run.id}.`,
+      submissionId: run.dispatchId,
       sessionId: run.sessionId,
       result: {
         briefingRunId: run.id,

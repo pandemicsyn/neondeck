@@ -2,11 +2,8 @@ import type { JsonValue } from '@flue/runtime';
 import * as v from 'valibot';
 
 export const autopilotOwnerInitialDataSchema = v.object({
-  schema: v.literal('neondeck.autopilot-owner-instance.v1'),
+  schema: v.literal('neondeck.autopilot-owner-instance.v2'),
   watchId: v.string(),
-  repoId: v.string(),
-  repoFullName: v.string(),
-  prNumber: v.pipe(v.number(), v.integer()),
 });
 
 export type AutopilotOwnerInitialData = v.InferOutput<
@@ -52,11 +49,8 @@ export function autopilotOwnerInitialData(
   envelope: AutopilotOwnerEnvelope,
 ): AutopilotOwnerInitialData {
   return {
-    schema: 'neondeck.autopilot-owner-instance.v1',
+    schema: 'neondeck.autopilot-owner-instance.v2',
     watchId: envelope.watchId,
-    repoId: envelope.repoId,
-    repoFullName: envelope.repoFullName,
-    prNumber: envelope.prNumber,
   };
 }
 

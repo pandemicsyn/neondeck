@@ -1,6 +1,6 @@
 # Flue 2 Migration Plan
 
-Status: complete — implementation, live feature-parity acceptance, final verification, and independent static re-review passed
+Status: migration and post-PR correctness remediation complete
 Integration branch: `flue2`  
 Created: 2026-08-01  
 Target Flue release at planning time: `2.0.1`
@@ -1170,6 +1170,74 @@ Phase 11 evidence captured on 2026-08-01:
 Exit criteria:
 
 - `flue2` is ready to merge into `main`
+
+### Post-PR Correctness Remediation
+
+Independent feature reviews performed after draft PR #247 was opened found
+migration regressions and crash-window gaps. The implementation fixes were
+completed on 2026-08-02:
+
+- [x] Morning Briefing admission now uses a cross-process SQLite transaction
+      fence for every queued or running delivery in the bound conversation,
+      across all profiles, so joined Flue responses cannot overwrite one named
+      briefing data part.
+- [x] Attached briefing admissions reconcile durable Flue history before
+      rejecting a new delivery. Transient history failures retain the typed
+      occupied-conversation fence so scheduled occurrences defer instead of
+      failing or skipping the occurrence.
+- [x] Scheduled briefing task runs retain the Flue submission id and remain
+      active until terminal submission settlement instead of completing at
+      admission. The scheduler-run → briefing-run mapping is committed in the
+      same app SQLite transaction as the briefing outbox, and each scheduler
+      tick recovers claimed/active correlations and terminal state.
+- [x] Initial PR reviews now correlate every attempt to its submission, fail
+      `reviewing` or `ready` state on terminal Flue failure, accelerate through
+      live observations, and reconcile durably through re-attachable
+      `read(submissionId)` watchers after restart.
+- [x] PR-review admission uses a stable Flue idempotency key and byte-identical
+      canonical `initialData` on replay. Startup re-admits persisted attempts
+      whose submission id was not attached, and settlement reads retry after
+      transient failures until terminal settlement or attempt supersession.
+- [x] The continuing PR reviewer stores its 250-call workspace exploration
+      budget in Flue persistent state, so agent rerenders cannot replenish it.
+- [x] Autopilot owner immutable initial data contains only the stable watch
+      identity; mutable repository ids and PR facts remain validated against
+      the current reserved delivery envelope after repo-id canonicalization.
+- [x] Approval-mode help text names `Review diff → Approve & push` as the sole
+      delivery authority and describes owner chat as edit/discard guidance.
+- [x] Auto-applied learning memory effects store their first mutation result in
+      the same app SQLite transaction as the mutation, keyed by review and
+      action index, so a `step.do` replay preserves the original applied count
+      even if the current autonomous-write policy changed after the commit.
+- [x] Manual learning-review preparation atomically persists the bounded
+      `prepared_json`, agent id, running review, and started event, closing the
+      pre-dispatch restart gap that could strand a review without an outbox.
+- [x] Skill patch application journals its durable authority and audit inputs
+      before atomic file replacement, reconciles an already-replaced file on
+      replay, preserves a concurrent winner during compensation, and returns
+      the exact original success result after an applied-state replay.
+- [x] Learning prompts again require user preferences → `user`, machine/tool/
+      environment/provider facts → `local`, repository/product conventions →
+      `project`, and rewrite/merge/archive-first curation.
+- [x] Concurrent CI-fix dashboard pollers now follow the exact app-owned
+      operation id returned by admission instead of whichever operation for
+      the same PR appears newest.
+- [x] The focused remediation suite passes 64 tests across briefing,
+      scheduling, PR reviews, and CI-fix polling; the existing Autopilot/UI and
+      learning/memory focused suites remain green.
+- [x] `npm run check` passes with 1,012 unit tests; lint reports only the
+      repository's existing warning class.
+- [x] `npm run verify` passes on the remediation working tree: 1,012 unit
+      tests, 40 git tests, 90 integration tests, all builds, a 914-file package
+      audit, packed CLI smoke, and formatting.
+- [x] Fresh independent feature reviewers confirm no remaining correctness or
+      feature-parity regressions.
+
+Independent reviewers compared each Flue 2 feature against `main` after the
+remediation and reported no remaining P1–P3 findings for Morning Briefing, PR
+reviews, memory/learning, or Autopilot/watches. The upstream PR review thread
+about same-PR CI-fix poller cross-talk is also covered by an exact-operation-id
+regression test.
 
 ## Verification Strategy
 

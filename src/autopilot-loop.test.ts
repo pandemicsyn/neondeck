@@ -71,7 +71,10 @@ import {
   type SeededGitRepository,
 } from './testing/git-repository-fixture';
 import type { FlueObservation } from '@flue/runtime';
-import { buildAutopilotOwnerEnvelope } from './modules/autopilot/owner/envelope';
+import {
+  autopilotOwnerInitialData,
+  buildAutopilotOwnerEnvelope,
+} from './modules/autopilot/owner/envelope';
 
 const tempRoots: string[] = [];
 const execFileAsync = promisify(execFile);
@@ -100,6 +103,28 @@ afterEach(async () => {
 });
 
 describe('minimal Autopilot watch loop', () => {
+  it('keeps immutable owner creation data limited to the stable watch identity', () => {
+    const envelope = buildAutopilotOwnerEnvelope({
+      watchId: 'pandemicsyn/neondeck#123',
+      repoId: 'canonical-repo-id',
+      repoFullName: 'pandemicsyn/neondeck',
+      prNumber: 123,
+      worktreeId: 'worktree-1',
+      worktreePath: '/tmp/worktree-1',
+      headSha: 'a'.repeat(40),
+      baseSha: 'b'.repeat(40),
+      eventFingerprint: 'event-1',
+      mode: 'prepare-only',
+      facts: {},
+      availableCapabilities: [],
+    });
+
+    expect(autopilotOwnerInitialData(envelope)).toEqual({
+      schema: 'neondeck.autopilot-owner-instance.v2',
+      watchId: envelope.watchId,
+    });
+  });
+
   it('ignores late owner context updates from a superseded turn', async () => {
     const paths = await fixturePaths();
     const instanceId = 'superseded-context-owner';

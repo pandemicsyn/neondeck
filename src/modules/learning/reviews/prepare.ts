@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import * as v from 'valibot';
 import { readAutomationHealth } from '../automation-health';
 import { readAgentModelSelectionSync } from '../../runtime';
@@ -133,23 +134,8 @@ export async function prepareConversationReflection(
     },
     activeMemories: summarizeMemories(memories),
   });
-  const reviewId = startLearningReview(
-    {
-      id: options.reviewId,
-      kind: 'conversation',
-      model: models.selfImprovement,
-      thinkingLevel: models.selfImprovementThinkingLevel,
-      trigger: {
-        type: parsed.output.trigger ?? 'manual',
-        sessionId: reviewedSession.id,
-        turnCount: parsed.output.turnCount ?? null,
-      },
-      inputSummary,
-    },
-    paths,
-  );
-
-  return {
+  const reviewId = options.reviewId ?? randomUUID();
+  const prepared: PreparedLearningReview = {
     ok: true,
     reviewId,
     kind: 'conversation',
@@ -170,6 +156,24 @@ export async function prepareConversationReflection(
     ),
     allowedSkillIds: ['neondeck'],
   };
+  startLearningReview(
+    {
+      id: reviewId,
+      kind: 'conversation',
+      model: models.selfImprovement,
+      thinkingLevel: models.selfImprovementThinkingLevel,
+      trigger: {
+        type: parsed.output.trigger ?? 'manual',
+        sessionId: reviewedSession.id,
+        turnCount: parsed.output.turnCount ?? null,
+      },
+      inputSummary,
+      prepared,
+      agentId: `learning-review:${reviewId}`,
+    },
+    paths,
+  );
+  return prepared;
 }
 
 export async function prepareMemoryCurationReview(
@@ -234,23 +238,8 @@ export async function prepareMemoryCurationReview(
       }),
     ),
   });
-  const reviewId = startLearningReview(
-    {
-      id: options.reviewId,
-      kind: 'curation',
-      model: models.selfImprovement,
-      thinkingLevel: models.selfImprovementThinkingLevel,
-      trigger: {
-        type: trigger,
-        mode,
-        turnCount: parsed.output.turnCount ?? null,
-      },
-      inputSummary,
-    },
-    paths,
-  );
-
-  return {
+  const reviewId = options.reviewId ?? randomUUID();
+  const prepared: PreparedLearningReview = {
     ok: true,
     reviewId,
     kind: 'curation',
@@ -264,6 +253,24 @@ export async function prepareMemoryCurationReview(
     allowedProjectRepoIds: projectRepoIdsFromMemories(memories),
     allowedSkillIds: ['neondeck'],
   };
+  startLearningReview(
+    {
+      id: reviewId,
+      kind: 'curation',
+      model: models.selfImprovement,
+      thinkingLevel: models.selfImprovementThinkingLevel,
+      trigger: {
+        type: trigger,
+        mode,
+        turnCount: parsed.output.turnCount ?? null,
+      },
+      inputSummary,
+      prepared,
+      agentId: `learning-review:${reviewId}`,
+    },
+    paths,
+  );
+  return prepared;
 }
 
 export async function preparePrBatchLearningReview(
@@ -356,23 +363,8 @@ export async function preparePrBatchLearningReview(
     activeMemories: summarizeMemories(memories),
     skillSnippets,
   });
-  const reviewId = startLearningReview(
-    {
-      id: options.reviewId,
-      kind: 'pr-batch',
-      model: models.selfImprovement,
-      thinkingLevel: models.selfImprovementThinkingLevel,
-      trigger: {
-        type: trigger,
-        repoId: parsed.output.repoId ?? null,
-        handledEventIds: handledEvents.map((event) => event.id),
-      },
-      inputSummary,
-    },
-    paths,
-  );
-
-  return {
+  const reviewId = options.reviewId ?? randomUUID();
+  const prepared: PreparedLearningReview = {
     ok: true,
     reviewId,
     kind: 'pr-batch',
@@ -390,4 +382,22 @@ export async function preparePrBatchLearningReview(
     ]),
     allowedSkillIds: skillSnippets.map((skill) => skill.id),
   };
+  startLearningReview(
+    {
+      id: reviewId,
+      kind: 'pr-batch',
+      model: models.selfImprovement,
+      thinkingLevel: models.selfImprovementThinkingLevel,
+      trigger: {
+        type: trigger,
+        repoId: parsed.output.repoId ?? null,
+        handledEventIds: handledEvents.map((event) => event.id),
+      },
+      inputSummary,
+      prepared,
+      agentId: `learning-review:${reviewId}`,
+    },
+    paths,
+  );
+  return prepared;
 }
