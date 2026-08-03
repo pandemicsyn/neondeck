@@ -888,6 +888,9 @@ Exit criteria:
 - [x] Add a real Flue lifecycle regression covering workspace exploration,
       typed submission, and bound review settlement without a nested model
       operation.
+- [x] Prefix Neondeck-generated draft comments, submitted inline comments, and
+      PR conversation comments with `bot:` while preserving human-authored
+      review text and UI-authored review-thread replies.
 
 Implementation evidence captured on 2026-08-01:
 

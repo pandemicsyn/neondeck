@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import * as v from 'valibot';
+import { prefixBotComment } from '../../../shared/bot-comments';
 import { isUniqueConstraintError, openDb } from '../../lib/sqlite';
 import type { RuntimePaths } from '../../runtime-home';
 import { addWorkflowSummary } from '../app-state';
@@ -399,6 +400,11 @@ export function addPrReviewDraftComment(options: {
 }): GitHubPrReviewDraft {
   const database = openDb(options.databasePath);
   const now = new Date().toISOString();
+  const origin = options.origin ?? 'human';
+  const body =
+    origin === 'neon'
+      ? prefixBotComment(unbrandedGeneratedCommentBody(options.body))
+      : options.body.trim();
   try {
     assertDraftIsLive(database, options.draftId);
     assertValidReviewCommentAnchor(options);
@@ -442,8 +448,8 @@ export function addPrReviewDraftComment(options: {
         options.line,
         options.startLine ?? null,
         options.startSide ?? null,
-        options.body.trim(),
-        options.origin ?? 'human',
+        body,
+        origin,
         options.sourceFindingId ?? null,
         now,
         now,
@@ -1363,7 +1369,7 @@ function readDraftComments(
         startSide: parsed.start_side,
         body:
           parsed.origin === 'neon'
-            ? unbrandedGeneratedCommentBody(parsed.body)
+            ? prefixBotComment(unbrandedGeneratedCommentBody(parsed.body))
             : parsed.body,
         origin: parsed.origin,
         sourceFindingId: parsed.source_finding_id,

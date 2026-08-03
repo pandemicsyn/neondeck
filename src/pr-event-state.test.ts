@@ -673,7 +673,7 @@ describe('PR event state watermarks', () => {
         owner: 'pandemicsyn',
         repo: 'neondeck',
         number: 123,
-        body: 'Addressed review feedback in commit abc123. Checks: test.\n\n<!-- neondeck:generated -->',
+        body: 'bot: Addressed review feedback in commit abc123. Checks: test.\n\n<!-- neondeck:generated -->',
       }),
     ]);
     const addressed = readAddressedPrFeedback(

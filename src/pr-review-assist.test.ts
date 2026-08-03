@@ -254,11 +254,28 @@ describe('PR review assist', () => {
       origin: 'neon',
       sourceFindingId: 'prf_seeded_finding',
     });
+    const alreadyPrefixed = addPrReviewDraftComment({
+      databasePath: paths.neondeckDatabase,
+      draftId: draft.id,
+      path: 'src/app.ts',
+      side: 'RIGHT',
+      line: 4,
+      body: 'bot: Existing attribution',
+      origin: 'neon',
+    });
 
-    expect(withHuman.comments.at(-1)).toMatchObject({ origin: 'human' });
+    expect(withHuman.comments.at(-1)).toMatchObject({
+      origin: 'human',
+      body: 'Human draft',
+    });
     expect(withNeon.comments.at(-1)).toMatchObject({
       origin: 'neon',
+      body: 'bot: Neon draft',
       sourceFindingId: 'prf_seeded_finding',
+    });
+    expect(alreadyPrefixed.comments.at(-1)).toMatchObject({
+      origin: 'neon',
+      body: 'bot: Existing attribution',
     });
   });
 
@@ -342,7 +359,7 @@ describe('PR review assist', () => {
         origin: 'neon',
         sourceFindingId: expect.stringMatching(/^prf_[a-f0-9]{24}$/),
         body: [
-          'Validate the new branch.',
+          'bot: Validate the new branch.',
           '',
           'Suggested fix: Add an explicit guard.',
         ].join('\n'),

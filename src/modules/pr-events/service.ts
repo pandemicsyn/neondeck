@@ -3,6 +3,7 @@ import { defineTool, type JsonValue } from '@flue/runtime';
 import { createHmac } from 'node:crypto';
 import type { DatabaseSync } from 'node:sqlite';
 import * as v from 'valibot';
+import { prefixBotComment } from '../../../shared/bot-comments';
 import {
   addPrReviewDraftComment,
   deletePrReviewDraftComment,
@@ -1605,7 +1606,7 @@ export async function postGitHubPrComment(
 
     const poster =
       dependencies.postPullRequestComment ?? postPullRequestComment;
-    const body = `${parsed.output.body}\n\n${idempotencyMarker ?? neondeckSelfAuthoredMarker}`;
+    const body = `${prefixBotComment(parsed.output.body)}\n\n${idempotencyMarker ?? neondeckSelfAuthoredMarker}`;
     if (body.length > githubCommentLengthLimit) {
       return failResult(
         'pr_comment',

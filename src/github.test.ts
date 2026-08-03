@@ -1573,7 +1573,7 @@ describe('github foundation', () => {
           id: withComment.comments[0]?.id,
           path: 'src/app.ts',
           line: 12,
-          body: 'Keep this branch explicit.',
+          body: 'bot: Keep this branch explicit.',
         },
       ],
     });
@@ -1625,7 +1625,7 @@ describe('github foundation', () => {
       })?.comments[0]?.body,
     ).toBe(
       [
-        'Keep this branch explicit.',
+        'bot: Keep this branch explicit.',
         '',
         'Suggested fix: Add a named guard.',
       ].join('\n'),
@@ -1912,10 +1912,10 @@ describe('github foundation', () => {
       (comment) => comment.body === 'Right side comment.',
     );
     const left = saved.comments.find(
-      (comment) => comment.body === 'Left side comment.',
+      (comment) => comment.body === 'bot: Left side comment.',
     );
     const range = saved.comments.find(
-      (comment) => comment.body === 'Range on renamed path.',
+      (comment) => comment.body === 'bot: Range on renamed path.',
     );
     expect(right?.id).toEqual(expect.any(String));
     expect(left?.id).toEqual(expect.any(String));
@@ -2003,7 +2003,7 @@ describe('github foundation', () => {
           line: 22,
           start_line: 20,
           start_side: 'RIGHT',
-          body: 'Range on renamed path.',
+          body: 'bot: Range on renamed path.',
         },
       ],
     });
