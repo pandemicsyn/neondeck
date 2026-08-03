@@ -156,6 +156,7 @@ export async function getGitHubPrReviewThreads(
 
   let threads: GitHubPullRequestReviewThread[];
   let truncated = false;
+  let headSha: string | null = null;
   try {
     const fetcher =
       dependencies.fetchPullRequestReviewThreads ??
@@ -170,6 +171,7 @@ export async function getGitHubPrReviewThreads(
       signal: options.signal,
     });
     threads = result.reviewThreads;
+    headSha = result.headSha ?? null;
     truncated =
       result.truncated || threads.some((thread) => thread.commentsTruncated);
   } catch (error) {
@@ -195,11 +197,13 @@ export async function getGitHubPrReviewThreads(
     `Fetched ${threads.length} review thread(s) for ${resolved.target.repoFullName}#${resolved.target.number}.`,
     options.surface
       ? {
+          headSha,
           reviewThreads: threads as unknown as JsonValue,
           reviewThreadsTruncated: truncated,
         }
       : {
           target: eventTargetJson(resolved.target),
+          headSha,
           reviewThreads: threads as unknown as JsonValue,
           reviewThreadsTruncated: truncated,
           unresolvedReviewThreads: unresolvedThreads as unknown as JsonValue,

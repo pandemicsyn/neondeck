@@ -1310,6 +1310,50 @@ application-owned snapshots at admission, recovery, and settlement boundaries.
       turns, approval transitions, no-tool continuation, and restart recovery.
 - [x] Audit initial and continuing PR review context across admission, exact
       revision loading, first-turn tools, and later questions.
+- [x] Keep the continuing reviewer's control instructions stable across
+      asynchronous intake. `useAgentStart()` now appends only a bounded
+      `review-context` facts signal, so ordinary context refreshes no longer
+      churn the composed instruction document or provoke Flue's reserved
+      `instructions` narration marker.
+- [x] Refresh live GitHub review threads alongside the review handoff and local
+      draft comments before every continuing-reviewer answer. The signal
+      carries authors, thread/reply order, resolution and outdated state,
+      revision anchors, bounded bodies, and explicit source/local truncation
+      metadata while preserving the exact-revision read-only Tool boundary.
+- [x] Revision-bind that live-thread snapshot to `headRefOid` returned by the
+      same paginated GraphQL request. Reject a head change during pagination,
+      and classify each delivered snapshot as exact-reviewed-revision,
+      different-pr-head, or unverified so thread anchors cannot silently be
+      correlated with the wrong exact-revision workspace. Non-exact snapshots
+      retain conversation text but deterministically omit repository anchors.
+      Nested review-comment pagination queries carry and validate the same PR
+      head, preventing a head change from mixing comment pages into an older
+      thread snapshot.
+- [x] Reuse the review surface's cached GitHub thread fetch so the sidebar and
+      reviewer consume the same live conversation snapshot. Focused regression
+      coverage proves a named GitHub reviewer and reply reach first-turn
+      context while changing thread data leaves system instructions stable.
+- [x] Separate deferred reviewer Tool workspace resolution from asynchronous
+      intake loading. Tool rerenders now resolve only the exact-revision local
+      workspace, forward Flue's Tool abort signal through local revision fetch
+      and every Git subprocess, and never refetch handoff or live GitHub thread
+      context.
+- [x] Replace the follow-up prompt's misleading mutable-value tokens with
+      explicit stable `workspaceToolGuidance` and
+      `reviewContextDeliveryGuidance` tokens. Live review data is delivered
+      only through the per-delivery signal, matching the configurable prompt
+      contract. Runtime configuration docs and dashboard fixtures expose the
+      same token catalog.
+- [x] Mount the real continuing reviewer under `start()` with Pi's faux
+      provider. The lifecycle regression test proves the initial context lands
+      before the first model call, a later delivery receives refreshed draft
+      context, and stable policy emits no reserved `instructions` advisory.
+- [x] Run full verification after the reviewer correction: 1,034 unit tests,
+      44 serial/git tests, 90 integration tests, all application and docs
+      builds, package validation, packed CLI smoke, and formatting pass.
+- [x] Run an independent post-fix Flue 2.0.1 static review. Address its nested
+      pagination, end-to-end Tool cancellation, and remaining public token
+      documentation findings before final verification.
 - [x] Audit memory/learning context across immutable review preparation,
       durable Tool execution, recovery, autonomous application, and later
       candidate decisions.

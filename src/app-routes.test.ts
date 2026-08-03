@@ -108,7 +108,7 @@ describe('app API safety routes', () => {
         },
         body: JSON.stringify({
           kind: 'follow-up-reviewer',
-          prompt: 'Route reviewer prompt {{reviewContext}}',
+          prompt: 'Route reviewer prompt {{reviewContextDeliveryGuidance}}',
         }),
       },
     );
@@ -118,7 +118,8 @@ describe('app API safety routes', () => {
       changed: true,
       data: {
         overrides: {
-          'follow-up-reviewer': 'Route reviewer prompt {{reviewContext}}',
+          'follow-up-reviewer':
+            'Route reviewer prompt {{reviewContextDeliveryGuidance}}',
         },
       },
     });

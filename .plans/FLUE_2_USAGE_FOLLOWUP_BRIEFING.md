@@ -69,6 +69,22 @@ The implementation already uses the important Flue 2 primitives:
 - Durable Tools checkpoint short review and delivery side-effect sequences.
 - Flue submission events drive application settlement and observability.
 
+The migration PR also completed one correctness-sensitive reviewer context
+refactor discovered during dogfooding. Continuing-reviewer control policy is
+now stable from the first render; mutable review facts arrive through a
+bounded `review-context` signal during `useAgentStart()`. That snapshot now
+includes the live GitHub review threads already shown by the review surface,
+with explicit truncation metadata and the `headRefOid` returned by the same
+GitHub query. Neondeck rejects head changes during pagination and marks every
+snapshot as exact, mismatched, or unverified before the reviewer may correlate
+thread anchors with the exact-revision workspace. Deferred workspace Tools
+resolve only that local workspace and do not reload the live intake context.
+The configurable follow-up prompt now exposes stable delivery-guidance tokens,
+while mutable facts arrive only through the signal. A mounted Flue faux-provider
+test verifies first-turn delivery, refresh on the next question, and the absence
+of reserved `instructions` churn. This completed correction is separate from
+the opaque-id and bounded-root architecture work below.
+
 ## Remaining Recommendations
 
 | Priority   | Recommendation                                                                                    | Nature                        |

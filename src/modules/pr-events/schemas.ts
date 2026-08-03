@@ -84,7 +84,15 @@ export type PrEventStateDependencies = {
     headSha: string | null | undefined;
     baseSha: string | null | undefined;
   }>;
-  fetchPullRequestReviewThreads?: typeof fetchPullRequestReviewThreadsWithMetadata;
+  fetchPullRequestReviewThreads?: (
+    options: Parameters<typeof fetchPullRequestReviewThreadsWithMetadata>[0],
+  ) => Promise<{
+    reviewThreads: Awaited<
+      ReturnType<typeof fetchPullRequestReviewThreadsWithMetadata>
+    >['reviewThreads'];
+    truncated: boolean;
+    headSha?: string | null;
+  }>;
   fetchPullRequestReviewComments?: typeof fetchPullRequestReviewComments;
   fetchPullRequestReviewThread?: typeof fetchPullRequestReviewThread;
   postPullRequestComment?: typeof postPullRequestComment;

@@ -203,6 +203,32 @@ describe('local PR diffs', () => {
     expect(resolveCalls).toBe(1);
   });
 
+  it('forwards the Flue tool abort signal into deferred workspace resolution', async () => {
+    const controller = new AbortController();
+    const resolve = vi.fn<
+      (signal?: AbortSignal) => Promise<{
+        available: false;
+        reason: string;
+      }>
+    >(async (signal) => {
+      signal?.throwIfAborted();
+      return { available: false, reason: 'not reached' };
+    });
+    const tools = createDeferredPrReviewerWorkspaceTools(resolve);
+    const listTool = tools.find(
+      (tool) => tool.name === 'neondeck_review_workspace_list',
+    );
+    controller.abort(new DOMException('Tool stopped.', 'AbortError'));
+
+    await expect(
+      listTool?.run({
+        data: { limit: 1 },
+        signal: controller.signal,
+      } as never),
+    ).rejects.toMatchObject({ name: 'AbortError' });
+    expect(resolve).toHaveBeenCalledWith(controller.signal);
+  });
+
   it('retries a deferred workspace after transient unavailability', async () => {
     const { headSha, repo } = await fixture();
     let available = false;

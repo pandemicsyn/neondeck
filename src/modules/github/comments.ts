@@ -26,9 +26,10 @@ const reviewSurfaceCacheMaxEntries = 16;
 const reviewSurfaceCache = new Map<string, CachedReviewSurfaceThreads>();
 const reviewSurfaceTargetEpochs = new Map<string, number>();
 
-type ReviewThreadsWithMetadata = {
+export type ReviewThreadsWithMetadata = {
   reviewThreads: GitHubPullRequestReviewThread[];
   truncated: boolean;
+  headSha: string | null;
 };
 
 type CachedReviewSurfaceThreads = {
@@ -167,6 +168,7 @@ export async function fetchPullRequestReviewThreadsWithMetadata(options: {
 }): Promise<{
   reviewThreads: GitHubPullRequestReviewThread[];
   truncated: boolean;
+  headSha: string | null;
 }> {
   return fetchReviewThreadsWithQuery(options, pullRequestReviewThreadsQuery);
 }
@@ -269,10 +271,12 @@ async function fetchReviewThreadsWithQuery(
 ): Promise<{
   reviewThreads: GitHubPullRequestReviewThread[];
   truncated: boolean;
+  headSha: string | null;
 }> {
   const threads: GitHubPullRequestReviewThread[] = [];
   let cursor: string | null = null;
   let truncated = false;
+  let headSha: string | null = null;
 
   const pageLimit = options.eventBudget ? 100 : 5;
   for (let page = 0; page < pageLimit; page += 1) {
@@ -294,12 +298,20 @@ async function fetchReviewThreadsWithQuery(
     const parsed = v.parse(githubReviewThreadsGraphqlResponseSchema, data);
     const pullRequest = parsed.data.repository?.pullRequest;
     if (!pullRequest) break;
+    const pageHeadSha = pullRequest.headRefOid ?? null;
+    if (headSha && pageHeadSha && pageHeadSha !== headSha) {
+      throw new Error(
+        `Pull request head changed from ${headSha} to ${pageHeadSha} while loading review threads.`,
+      );
+    }
+    headSha ??= pageHeadSha;
     for (const thread of pullRequest.reviewThreads.nodes ?? []) {
       const normalized = await normalizeReviewThread(
         options.token,
         thread,
         options.signal,
         options.eventBudget,
+        pageHeadSha,
       );
       if (!normalized) {
         truncated = true;
@@ -326,6 +338,7 @@ async function fetchReviewThreadsWithQuery(
 
   return {
     reviewThreads: threads,
+    headSha,
     truncated:
       truncated || threads.some((thread) => thread.commentsTruncated === true),
   };
@@ -353,6 +366,8 @@ export async function fetchPullRequestReviewThread(options: {
     options.token,
     thread,
     options.signal,
+    undefined,
+    thread.pullRequest?.headRefOid ?? null,
   );
   if (!normalized) {
     throw new Error(
@@ -367,6 +382,7 @@ async function normalizeReviewThread(
   thread: GitHubReviewThreadGraphqlNode,
   signal?: AbortSignal,
   eventBudget?: PullRequestEventFetchBudget,
+  expectedHeadSha?: string | null,
 ): Promise<GitHubPullRequestReviewThread | undefined> {
   if (
     eventBudget?.admit('review_threads', {
@@ -384,6 +400,7 @@ async function normalizeReviewThread(
     thread,
     signal,
     eventBudget,
+    expectedHeadSha,
   );
   return {
     id: thread.id,
@@ -407,6 +424,7 @@ async function fetchAllReviewThreadComments(
   thread: GitHubReviewThreadGraphqlNode,
   signal?: AbortSignal,
   eventBudget?: PullRequestEventFetchBudget,
+  expectedHeadSha?: string | null,
 ) {
   const comments: GitHubReviewThreadCommentGraphqlNode[] = [];
   let truncated = false;
@@ -446,6 +464,12 @@ async function fetchAllReviewThreadComments(
     );
     const node = parsed.data.node;
     if (!node?.comments) break;
+    const pageHeadSha = node.pullRequest?.headRefOid ?? null;
+    if (expectedHeadSha && pageHeadSha && pageHeadSha !== expectedHeadSha) {
+      throw new Error(
+        `Pull request head changed from ${expectedHeadSha} to ${pageHeadSha} while loading review thread comments.`,
+      );
+    }
     for (const comment of node.comments.nodes ?? []) {
       if (eventBudget?.admit('review_threads', comment) === false) {
         truncated = true;

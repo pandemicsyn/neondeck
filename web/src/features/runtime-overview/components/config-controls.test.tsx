@@ -149,7 +149,7 @@ describe('PrReviewPromptControls', () => {
     const reviewPrompts = {
       'initial-review': 'Initial review default',
       'follow-up-reviewer':
-        'Follow-up {{workspaceInstructions}} {{reviewContext}}',
+        'Follow-up {{workspaceToolGuidance}} {{reviewContextDeliveryGuidance}}',
     };
     const fetchMock = vi
       .spyOn(globalThis, 'fetch')
@@ -242,8 +242,8 @@ function reviewPromptResponse(
         tokens: {
           'initial-review': [],
           'follow-up-reviewer': [
-            '{{workspaceInstructions}}',
-            '{{reviewContext}}',
+            '{{workspaceToolGuidance}}',
+            '{{reviewContextDeliveryGuidance}}',
           ],
         },
         appliesAfter: {

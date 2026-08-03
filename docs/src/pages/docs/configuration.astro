@@ -249,7 +249,7 @@ GITHUB_LOGIN=...</code></pre>
   "prReview": &#123;
     "prompts": &#123;
       "initial-review": "Complete replacement prompt…",
-      "follow-up-reviewer": "Review context:\n&#123;&#123;reviewContext&#125;&#125;\n&#123;&#123;workspaceInstructions&#125;&#125;"
+      "follow-up-reviewer": "&#123;&#123;reviewContextDeliveryGuidance&#125;&#125;\n&#123;&#123;workspaceToolGuidance&#125;&#125;"
     &#125;
   &#125;
 &#125;</code></pre>
@@ -257,12 +257,15 @@ GITHUB_LOGIN=...</code></pre>
           Overrides are non-empty strings up to 40,000 characters. The initial
           prompt receives PR facts separately as untrusted JSON and has no
           template tokens. The follow-up prompt supports <code
-            >{'{{workspaceInstructions}}'}</code
+            >{'{{workspaceToolGuidance}}'}</code
           >
-          and <code>{'{{reviewContext}}'}</code>. Initial changes apply to the
-          next review run; follow-up changes apply to the next turn, including
-          an existing reviewer conversation. There is no prompt versioning or
-          stale-session state.
+          and <code>{'{{reviewContextDeliveryGuidance}}'}</code>. These expand
+          to stable policy explaining the workspace tools and per-question
+          signal delivery; mutable review facts are delivered separately in the <code
+            >review-context</code
+          > signal. Initial changes apply to the next review run; follow-up changes
+          apply to the next turn, including an existing reviewer conversation. There
+          is no prompt versioning or stale-session state.
         </p>
         <p>
           Set a prompt to <code>null</code> through

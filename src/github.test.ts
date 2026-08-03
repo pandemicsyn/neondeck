@@ -692,6 +692,7 @@ describe('github foundation', () => {
           return jsonResponse({
             data: {
               node: {
+                pullRequest: { headRefOid: 'review-head' },
                 comments: {
                   pageInfo: { hasNextPage: false, endCursor: null },
                   nodes: [reviewThreadComment('comment-101', 101)],
@@ -706,6 +707,7 @@ describe('github foundation', () => {
         data: {
           repository: {
             pullRequest: {
+              headRefOid: 'review-head',
               reviewThreads: {
                 pageInfo: { hasNextPage: false, endCursor: null },
                 nodes: [
@@ -756,6 +758,66 @@ describe('github foundation', () => {
     );
     expect((fetchedBodies[1] as { query?: string }).query).toContain(
       'comments(first: 20',
+    );
+  });
+
+  it('rejects review-thread comment pages collected after the PR head changes', async () => {
+    globalThis.fetch = vi.fn<typeof fetch>(async (_input, init) => {
+      const body = JSON.parse(String(init?.body ?? '{}')) as {
+        variables?: { threadId?: string };
+      };
+      if (body.variables?.threadId === 'thread-1') {
+        return jsonResponse({
+          data: {
+            node: {
+              pullRequest: { headRefOid: 'head-after' },
+              comments: {
+                pageInfo: { hasNextPage: false, endCursor: null },
+                nodes: [reviewThreadComment('comment-2', 2)],
+              },
+            },
+          },
+        });
+      }
+      return jsonResponse({
+        data: {
+          repository: {
+            pullRequest: {
+              headRefOid: 'head-before',
+              reviewThreads: {
+                pageInfo: { hasNextPage: false, endCursor: null },
+                nodes: [
+                  {
+                    id: 'thread-1',
+                    isResolved: false,
+                    isOutdated: false,
+                    path: 'src/app.ts',
+                    line: 12,
+                    comments: {
+                      pageInfo: {
+                        hasNextPage: true,
+                        endCursor: 'next-comments',
+                      },
+                      nodes: [reviewThreadComment('comment-1', 1)],
+                    },
+                  },
+                ],
+              },
+            },
+          },
+        },
+      });
+    });
+
+    await expect(
+      fetchPullRequestReviewThreadsWithMetadata({
+        token: 'token',
+        owner: 'pandemicsyn',
+        repo: 'neondeck',
+        number: 123,
+      }),
+    ).rejects.toThrow(
+      'Pull request head changed from head-before to head-after while loading review thread comments.',
     );
   });
 
@@ -923,6 +985,40 @@ describe('github foundation', () => {
     });
   });
 
+  it('rejects review-thread pages collected across different PR heads', async () => {
+    let page = 0;
+    globalThis.fetch = vi.fn<typeof fetch>(async () => {
+      page += 1;
+      return jsonResponse({
+        data: {
+          repository: {
+            pullRequest: {
+              headRefOid: page === 1 ? 'head-before' : 'head-after',
+              reviewThreads: {
+                pageInfo: {
+                  hasNextPage: page === 1,
+                  endCursor: page === 1 ? 'next-page' : null,
+                },
+                nodes: [],
+              },
+            },
+          },
+        },
+      });
+    });
+
+    await expect(
+      fetchPullRequestReviewThreadsWithMetadata({
+        token: 'token',
+        owner: 'pandemicsyn',
+        repo: 'neondeck',
+        number: 123,
+      }),
+    ).rejects.toThrow(
+      'Pull request head changed from head-before to head-after while loading review threads.',
+    );
+  });
+
   it('uses a lean review-thread query for the interactive review surface', async () => {
     const fetchedBodies: Array<{ query?: string }> = [];
     const controller = new AbortController();
@@ -934,6 +1030,7 @@ describe('github foundation', () => {
         data: {
           repository: {
             pullRequest: {
+              headRefOid: 'head-surface',
               reviewThreads: {
                 pageInfo: { hasNextPage: false, endCursor: null },
                 nodes: [
@@ -979,6 +1076,7 @@ describe('github foundation', () => {
         signal: controller.signal,
       }),
     ).resolves.toMatchObject({
+      headSha: 'head-surface',
       reviewThreads: [
         {
           id: 'thread-1',

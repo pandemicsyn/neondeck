@@ -41,6 +41,7 @@ export const serialUnitTestFiles = [
   'src/ci-fix-run.test.ts',
   'src/docs-drift.test.ts',
   'src/pr-local-diffs.test.ts',
+  'src/pr-reviewer-flue-lifecycle.test.ts',
   'src/pr-review-performance.test.ts',
   'src/task-authority.test.ts',
 ];

@@ -149,8 +149,8 @@ describe('config actions', () => {
       initialData.defaults['initial-review'],
     );
     expect(initialData.tokens['follow-up-reviewer']).toEqual([
-      '{{workspaceInstructions}}',
-      '{{reviewContext}}',
+      '{{workspaceToolGuidance}}',
+      '{{reviewContextDeliveryGuidance}}',
     ]);
 
     const prompt = 'Custom initial review prompt.';

@@ -619,6 +619,7 @@ export type GitHubReviewThreadCommentGraphqlNode = v.InferOutput<
 >;
 
 const githubReviewThreadPullRequestGraphqlSchema = v.object({
+  headRefOid: v.optional(v.string()),
   number: v.number(),
   repository: v.object({
     nameWithOwner: v.string(),
@@ -631,6 +632,7 @@ export const githubReviewThreadsGraphqlResponseSchema = v.object({
       v.object({
         pullRequest: v.nullable(
           v.object({
+            headRefOid: v.optional(v.string()),
             reviewThreads: v.object({
               pageInfo: v.object({
                 hasNextPage: v.boolean(),
@@ -682,6 +684,13 @@ export const githubReviewThreadCommentsGraphqlResponseSchema = v.object({
   data: v.object({
     node: v.nullable(
       v.object({
+        pullRequest: v.optional(
+          v.nullable(
+            v.object({
+              headRefOid: v.string(),
+            }),
+          ),
+        ),
         comments: v.object({
           pageInfo: v.object({
             hasNextPage: v.boolean(),
@@ -733,6 +742,7 @@ export const pullRequestReviewThreadsQuery = `
   query NeondeckPullRequestReviewThreads($owner: String!, $name: String!, $number: Int!, $after: String) {
     repository(owner: $owner, name: $name) {
       pullRequest(number: $number) {
+        headRefOid
         reviewThreads(first: 10, after: $after) {
           pageInfo {
             hasNextPage
@@ -788,6 +798,7 @@ export const pullRequestReviewSurfaceThreadsQuery = `
   query NeondeckPullRequestReviewSurfaceThreads($owner: String!, $name: String!, $number: Int!, $after: String) {
     repository(owner: $owner, name: $name) {
       pullRequest(number: $number) {
+        headRefOid
         reviewThreads(first: 100, after: $after) {
           pageInfo {
             hasNextPage
@@ -832,6 +843,9 @@ export const reviewThreadCommentsQuery = `
   query NeondeckPullRequestReviewThreadComments($threadId: ID!, $after: String) {
     node(id: $threadId) {
       ... on PullRequestReviewThread {
+        pullRequest {
+          headRefOid
+        }
         comments(first: 20, after: $after) {
           pageInfo {
             hasNextPage
@@ -874,6 +888,7 @@ export const pullRequestReviewThreadNodeQuery = `
         originalLine
         diffSide
         pullRequest {
+          headRefOid
           number
           repository {
             nameWithOwner
