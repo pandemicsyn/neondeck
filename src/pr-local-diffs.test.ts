@@ -9,6 +9,7 @@ import {
   readLocalPullRequestFiles,
 } from './modules/pr-local-diffs';
 import {
+  createDeferredPrReviewerWorkspaceTools,
   createPrReviewerWorkspaceTools,
   prReviewerWorkspaceToolCallLimit,
   resolvePrReviewerWorkspace,
@@ -162,6 +163,78 @@ describe('local PR diffs', () => {
             text: 'export const value = 2;',
           }),
         ]),
+      },
+    });
+  });
+
+  it('mounts exact-revision tools before deferred reviewer intake resolves', async () => {
+    const { baseSha, headSha, repo } = await fixture();
+    let resolveCalls = 0;
+    const resolve = async () => {
+      resolveCalls += 1;
+      return {
+        available: true as const,
+        repoPath: repo,
+        headSha,
+        mergeBase: baseSha,
+      };
+    };
+    const tools = createDeferredPrReviewerWorkspaceTools(resolve);
+
+    expect(resolveCalls).toBe(0);
+    expect(tools.map((tool) => tool.name)).toEqual([
+      'neondeck_review_workspace_list',
+      'neondeck_review_workspace_read',
+      'neondeck_review_workspace_search',
+      'neondeck_review_workspace_diff',
+    ]);
+
+    const searchTool = tools.find(
+      (tool) => tool.name === 'neondeck_review_workspace_search',
+    );
+    await expect(
+      searchTool?.run({ data: { query: 'value = 2' } } as never),
+    ).resolves.toMatchObject({
+      output: {
+        revision: headSha,
+        matches: ['src/app.ts:1:export const value = 2;'],
+      },
+    });
+    expect(resolveCalls).toBe(1);
+  });
+
+  it('retries a deferred workspace after transient unavailability', async () => {
+    const { headSha, repo } = await fixture();
+    let available = false;
+    const tools = createDeferredPrReviewerWorkspaceTools(async () =>
+      available
+        ? { available: true, repoPath: repo, headSha, mergeBase: null }
+        : { available: false, reason: 'Repository refresh is in progress.' },
+    );
+    const listTool = tools.find(
+      (tool) => tool.name === 'neondeck_review_workspace_list',
+    );
+
+    const unavailableResult = (await listTool?.run({
+      data: { limit: 1 },
+    } as never)) as { output: Record<string, unknown> };
+    expect(unavailableResult).toMatchObject({
+      output: {
+        available: false,
+        reason: 'Repository refresh is in progress.',
+      },
+    });
+    expect(unavailableResult.output).not.toHaveProperty(
+      'workspaceToolCallsRemaining',
+    );
+
+    available = true;
+    await expect(
+      listTool?.run({ data: { limit: 1 } } as never),
+    ).resolves.toMatchObject({
+      output: {
+        revision: headSha,
+        workspaceToolCallsRemaining: prReviewerWorkspaceToolCallLimit - 1,
       },
     });
   });

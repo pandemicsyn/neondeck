@@ -13,9 +13,9 @@ import { parsePrReviewerConversationId } from '../../shared/pr-reviewer-session'
 import { readLivePrReviewDraft } from '../modules/github';
 import { readPrReview } from '../modules/pr-reviews';
 import {
-  readPrReviewerHandoff,
-  createPrReviewerWorkspaceTools,
+  createDeferredPrReviewerWorkspaceTools,
   prReviewerWorkspaceToolCallLimit,
+  readPrReviewerHandoff,
   resolvePrReviewerWorkspace,
   type PrReviewerHandoff,
 } from '../modules/pr-reviewer';
@@ -170,14 +170,16 @@ export function PrReviewer({ id }: AgentProps) {
     'workspace-tool-calls-used',
     0,
   );
+  let runtimePromise: ReturnType<typeof buildPrReviewerRuntime> | null = null;
+  const loadRuntime = () => (runtimePromise ??= buildPrReviewerRuntime(id));
 
   useModel(models.prReview, {
     thinkingLevel: models.prReviewThinkingLevel,
     compaction: { reserveTokens: 10_000, keepRecentTokens: 8_000 },
   });
   useSandbox(noWorkspace(), { cwd: '/workspace' });
-  useAgentStart(async () => {
-    const runtime = await buildPrReviewerRuntime(id);
+  useAgentStart(async ({ append }) => {
+    const runtime = await loadRuntime();
     const workspace = runtime.reviewerWorkspace;
     setPrepared({
       instructions: runtime.instructions,
@@ -190,28 +192,52 @@ export function PrReviewer({ id }: AgentProps) {
           }
         : { available: false },
     });
+    if (prepared?.instructions !== runtime.instructions) {
+      append({
+        kind: 'signal',
+        type: workspace.available
+          ? 'review_context_ready'
+          : 'review_context_unavailable',
+        tagName: 'review-context',
+        body: runtime.instructions,
+        attributes: {
+          reviewId: parsePrReviewerConversationId(id).reviewId,
+          workspace: workspace.available ? 'exact-revision' : 'unavailable',
+        },
+      });
+    }
   });
 
-  if (prepared?.workspace.available) {
-    const consumeToolCall = () => {
-      let remaining: number | null = null;
-      setWorkspaceToolCallsUsed((used) => {
-        if (used >= prReviewerWorkspaceToolCallLimit) return used;
-        remaining = prReviewerWorkspaceToolCallLimit - used - 1;
-        return used + 1;
-      });
-      return remaining;
-    };
-    for (const tool of createPrReviewerWorkspaceTools(prepared.workspace, {
-      consumeToolCall,
-    })) {
-      useTool(tool);
-    }
+  const consumeToolCall = () => {
+    let remaining: number | null = null;
+    setWorkspaceToolCallsUsed((used) => {
+      if (used >= prReviewerWorkspaceToolCallLimit) return used;
+      remaining = prReviewerWorkspaceToolCallLimit - used - 1;
+      return used + 1;
+    });
+    return remaining;
+  };
+  const tools = createDeferredPrReviewerWorkspaceTools(
+    async () => {
+      const workspace = (await loadRuntime()).reviewerWorkspace;
+      return workspace.available
+        ? {
+            available: true,
+            repoPath: workspace.repoPath,
+            headSha: workspace.headSha,
+            mergeBase: workspace.mergeBase,
+          }
+        : { available: false, reason: workspace.reason };
+    },
+    { consumeToolCall },
+  );
+  for (const tool of tools) {
+    useTool(tool);
   }
 
   return (
     prepared?.instructions ??
-    'Prepare the exact-revision reviewer context before answering. If the context is unavailable, explain that the saved review cannot be opened and do not infer repository facts.'
+    'The application is attaching the exact-revision review context as a review-context signal before this response. Answer from that context and the mounted Neondeck review workspace tools. Inspect the exact reviewed revision before making repository claims; never infer missing facts.'
   );
 }
 

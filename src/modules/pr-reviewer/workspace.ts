@@ -45,6 +45,16 @@ export type UnavailablePrReviewerWorkspace = {
 export type PrReviewerWorkspaceResolution =
   PrReviewerWorkspace | UnavailablePrReviewerWorkspace;
 
+export type PrReviewerWorkspaceToolContext = {
+  repoPath: string;
+  headSha: string;
+  mergeBase: string | null;
+};
+
+export type PrReviewerWorkspaceToolContextResolution =
+  | ({ available: true } & PrReviewerWorkspaceToolContext)
+  | { available: false; reason: string };
+
 const relativePathSchema = v.pipe(
   v.string(),
   v.trim(),
@@ -137,16 +147,32 @@ async function ensureRevisionAvailable(
 }
 
 export function createPrReviewerWorkspaceTools(
-  input: {
-    repoPath: string;
-    headSha: string;
-    mergeBase: string | null;
-  },
+  input: PrReviewerWorkspaceToolContext,
   options: {
     consumeToolCall?: () => number | null;
   } = {},
 ): ToolDefinition[] {
-  const { repoPath, headSha, mergeBase } = input;
+  return createResolvedPrReviewerWorkspaceTools(
+    async () => ({ available: true, ...input }),
+    options,
+  );
+}
+
+export function createDeferredPrReviewerWorkspaceTools(
+  resolve: () => Promise<PrReviewerWorkspaceToolContextResolution>,
+  options: {
+    consumeToolCall?: () => number | null;
+  } = {},
+): ToolDefinition[] {
+  return createResolvedPrReviewerWorkspaceTools(resolve, options);
+}
+
+function createResolvedPrReviewerWorkspaceTools(
+  resolve: () => Promise<PrReviewerWorkspaceToolContextResolution>,
+  options: {
+    consumeToolCall?: () => number | null;
+  },
+): ToolDefinition[] {
   let remainingToolCalls = prReviewerWorkspaceToolCallLimit;
   const consumeToolCall =
     options.consumeToolCall ??
@@ -169,6 +195,10 @@ export function createPrReviewerWorkspaceTools(
     workspaceToolCallsRemaining: 0,
     workspaceToolCallLimit: prReviewerWorkspaceToolCallLimit,
   });
+  const unavailableWorkspace = (reason: string) => ({
+    available: false,
+    reason,
+  });
   const budgetDescription = ` This call shares a hard ${prReviewerWorkspaceToolCallLimit}-call exploration budget with the other exact-revision workspace tools.`;
   return [
     defineTool({
@@ -183,8 +213,13 @@ export function createPrReviewerWorkspaceTools(
         ),
       }),
       async run({ data: toolInput }) {
+        const workspace = await resolve();
+        if (!workspace.available) {
+          return { output: await unavailableWorkspace(workspace.reason) };
+        }
         const remaining = consumeToolCall();
         if (remaining === null) return { output: await exhausted() };
+        const { repoPath, headSha } = workspace;
         const limit = toolInput.limit ?? 500;
         const output = await git(repoPath, [
           'ls-tree',
@@ -218,8 +253,13 @@ export function createPrReviewerWorkspaceTools(
         endLine: v.optional(lineSchema),
       }),
       async run({ data: toolInput }) {
+        const workspace = await resolve();
+        if (!workspace.available) {
+          return { output: await unavailableWorkspace(workspace.reason) };
+        }
         const remaining = consumeToolCall();
         if (remaining === null) return { output: await exhausted() };
+        const { repoPath, headSha } = workspace;
         const startLine = toolInput.startLine ?? 1;
         const requestedEnd = toolInput.endLine ?? startLine + 399;
         const endLine = Math.min(
@@ -281,8 +321,13 @@ export function createPrReviewerWorkspaceTools(
         ),
       }),
       async run({ data: toolInput }) {
+        const workspace = await resolve();
+        if (!workspace.available) {
+          return { output: await unavailableWorkspace(workspace.reason) };
+        }
         const remaining = consumeToolCall();
         if (remaining === null) return { output: await exhausted() };
+        const { repoPath, headSha } = workspace;
         const limit = toolInput.limit ?? 100;
         const output = await git(repoPath, [
           'grep',
@@ -329,8 +374,13 @@ export function createPrReviewerWorkspaceTools(
         rightLine: v.optional(lineSchema),
       }),
       async run({ data: toolInput }) {
+        const workspace = await resolve();
+        if (!workspace.available) {
+          return { output: await unavailableWorkspace(workspace.reason) };
+        }
         const remaining = consumeToolCall();
         if (remaining === null) return { output: await exhausted() };
+        const { repoPath, headSha, mergeBase } = workspace;
         if (!mergeBase) {
           return {
             output: await budgeted(

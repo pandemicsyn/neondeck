@@ -1200,6 +1200,15 @@ completed on 2026-08-02:
       transient failures until terminal settlement or attempt supersession.
 - [x] The continuing PR reviewer stores its 250-call workspace exploration
       budget in Flue persistent state, so agent rerenders cannot replenish it.
+- [x] The continuing PR reviewer now appends asynchronously loaded review
+      context into the same first response and mounts deferred exact-revision
+      workspace Tools before intake resolves. The first sidebar question no
+      longer runs against fallback instructions with an empty Tool catalog.
+      Mutable draft, handoff, prompt, and registry context refreshes on each
+      delivery, and transiently unavailable workspaces remain retryable.
+- [x] Post-fix `npm run verify` passes with 1,022 unit tests, 42 serial git
+      tests, 90 integration tests, all builds, package audit, packed CLI smoke,
+      and formatting.
 - [x] Autopilot owner immutable initial data contains only the stable watch
       identity; mutable repository ids and PR facts remain validated against
       the current reserved delivery envelope after repo-id canonicalization.
@@ -1275,7 +1284,7 @@ remaining correctness gaps in the initial PR-review path. Remediation status:
       back reports, and draft-seed replay leaves no orphaned ledger rows.
 - [x] `npm run check` passes with 1,022 unit tests; lint reports only the
       repository's existing warning class.
-- [x] `npm run verify` passes: 1,022 unit tests, 40 git tests, 90 integration
+- [x] `npm run verify` passes: 1,022 unit tests, 42 git tests, 90 integration
       tests, all builds, a 914-file package audit, packed CLI smoke, and
       formatting.
 - [x] Complete an independent static re-review against the version-matched
