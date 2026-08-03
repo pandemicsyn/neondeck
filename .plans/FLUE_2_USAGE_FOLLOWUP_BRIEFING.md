@@ -175,7 +175,7 @@ Tradeoff:
 Recommendation: remove reviewer sandboxes first, then narrow the display
 sandbox after the dependency audit.
 
-### 4. Simplify The Bounded Initial-Review Agent
+### 4. Simplify The Bounded Initial-Review Agent — Completed 2026-08-03
 
 Current behavior:
 
@@ -185,8 +185,10 @@ Current behavior:
    exact-revision workspace Tools.
 3. The harness Tool persists artifacts and settles the review.
 
-This pattern is supported and now durable, idempotent, and abort-safe. It is not
-a correctness issue.
+Dogfooding showed that this was a correctness issue in practice: the nested
+prompt had an independent 300-second deadline and its timeout could be recorded
+as the durable result of the model-generation step, leaving the review unable
+to recover.
 
 More direct Flue shape:
 
@@ -204,8 +206,23 @@ Benefit:
 - Produces a simpler and more inspectable conversation trace.
 - Makes the agent's tools and terminal contract visible at the root lifecycle.
 
-Recommendation: treat this as a dedicated review architecture refactor, not a
-quick cleanup of the correctness patch.
+Implemented result:
+
+- prepared facts, learning context, model policy, and exact-revision workspace
+  binding are frozen before admission in validated `initialData`
+- `useAgentStart()` appends the prepared evidence as untrusted conversation
+  data before the first model turn; evidence is not promoted into system
+  instructions
+- exact-revision workspace Tools are mounted directly on the bounded root
+  reviewer with a persistent call budget
+- `neondeck_submit_pr_review` accepts the structured schema directly, performs
+  durable application effects, and terminates the response
+- `useAgentFinish()` provides bounded correction when the model omits or
+  miscalls the submit Tool, avoids fallible post-success reads, and accepts
+  recovery state only for the exact admitted attempt/revision
+- the attempt and exact revision are revalidated immediately before mutation
+- the whole initial-review submission now has a 30-minute default/ceiling
+  instead of a nested five-minute model timeout
 
 ### 5. Enrich Autopilot Owner Initial Data
 
@@ -307,11 +324,14 @@ Exit criteria:
 
 ### Follow-Up B: Reviewer Architecture
 
-- Bootstrap continuing reviewers with opaque ids and immutable initial data.
-- Mount exact-revision Tools directly on the bounded initial-review agent.
-- Replace the empty-input harness indirection with a terminating structured
-  submit Tool.
-- Preserve the durable, idempotent, and abort-safe artifact path.
+- [ ] Bootstrap continuing reviewers with opaque ids and immutable initial
+      data.
+- [x] Mount exact-revision Tools directly on the bounded initial-review agent.
+- [x] Replace the empty-input harness indirection with a terminating structured
+      submit Tool.
+- [x] Preserve the durable, idempotent, and abort-safe artifact path.
+- [x] Add real Flue lifecycle coverage proving workspace exploration and one
+      root structured submission without a nested model operation.
 
 Exit criteria:
 

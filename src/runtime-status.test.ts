@@ -52,7 +52,7 @@ describe('runtime status', () => {
       displayAssistant: 'kilocode/kilo-auto/balanced',
       prReview: 'kilocode/kilo-auto/balanced',
       prReviewConfigured: false,
-      prReviewTimeoutMs: 300_000,
+      prReviewTimeoutMs: 30 * 60 * 1_000,
       utility: 'kilocode/kilo-auto/balanced',
       utilityConfigured: false,
       utilityRecommendation: expect.stringContaining('low-cost'),

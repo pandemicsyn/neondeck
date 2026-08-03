@@ -1,12 +1,28 @@
 import { randomUUID } from 'node:crypto';
 import { AgentRunError, init } from '@flue/runtime';
 import * as v from 'valibot';
-import { PrReviewAssistant } from '../../agents/pr-review-assistant';
+import {
+  buildPrReviewAssistantRuntime,
+  PrReviewAssistant,
+} from '../../agents/pr-review-assistant';
 import { ensureRuntimeHome, runtimePaths } from '../../runtime-home';
 import { resolvePullRequestTarget } from '../pr-events';
 import { readPrReviewAdmissionBinding } from '../pr-reviews/store';
 import { prReviewAssistInputSchema } from './schemas';
 import { watchPrReviewAssistSettlement } from './settlement';
+import { loadPrReviewAgentContext } from './actions';
+import type { RuntimePaths } from '../../runtime-home';
+import type { ReviewAssistDependencies } from './service';
+import type { resolvePrReviewerWorkspace } from '../pr-reviewer';
+
+type PrReviewAssistAdmissionDependencies = {
+  paths?: RuntimePaths;
+  resolveTarget?: typeof resolvePullRequestTarget;
+  fetchFacts?: ReviewAssistDependencies['fetchFacts'];
+  resolveWorkspace?: typeof resolvePrReviewerWorkspace;
+  runtime?: ReturnType<typeof buildPrReviewAssistantRuntime>;
+  watchSettlement?: typeof watchPrReviewAssistSettlement;
+};
 
 export async function readPrReviewAssistSettlement(input: {
   instanceId: string;
@@ -24,9 +40,10 @@ export async function readPrReviewAssistSettlement(input: {
 
 export async function admitPrReviewAssist(
   input: v.InferInput<typeof prReviewAssistInputSchema>,
+  dependencies: PrReviewAssistAdmissionDependencies = {},
 ) {
   const parsed = v.parse(prReviewAssistInputSchema, input);
-  const paths = runtimePaths();
+  const paths = dependencies.paths ?? runtimePaths();
   await ensureRuntimeHome(paths);
   let initialData = parsed;
   if (parsed.reviewId || parsed.attemptId) {
@@ -56,11 +73,9 @@ export async function admitPrReviewAssist(
         `PR review "${parsed.reviewId}" is not bound to the active attempt.`,
       );
     }
-    const target = await resolvePullRequestTarget(
-      { ref: parsed.ref },
-      paths,
-      'pr_review_admission',
-    );
+    const target = await (
+      dependencies.resolveTarget ?? resolvePullRequestTarget
+    )({ ref: parsed.ref }, paths, 'pr_review_admission');
     if (!target.ok) throw new Error(target.result.message);
     if (
       target.target.repoFullName.toLowerCase() !==
@@ -98,6 +113,16 @@ export async function admitPrReviewAssist(
     parsed.reviewId && parsed.attemptId
       ? `pr-review:${parsed.reviewId}:${parsed.attemptId}`
       : `pr-review:${randomUUID()}`;
+  const runtime = dependencies.runtime ?? buildPrReviewAssistantRuntime(paths);
+  const preparedInitialData = await loadPrReviewAgentContext(
+    initialData,
+    paths,
+    {
+      runtime,
+      fetchFacts: dependencies.fetchFacts,
+      resolveWorkspace: dependencies.resolveWorkspace,
+    },
+  );
   const handle = init(PrReviewAssistant, { id: instanceId, uid: null });
   const receipt = await handle.dispatch({
     ...(parsed.reviewId && parsed.attemptId
@@ -105,7 +130,7 @@ export async function admitPrReviewAssist(
           idempotencyKey: `pr-review-assist:${parsed.reviewId}:${parsed.attemptId}`,
         }
       : {}),
-    initialData,
+    initialData: preparedInitialData,
     message: {
       kind: 'signal',
       type: 'neondeck.pr-review.requested',
@@ -118,7 +143,7 @@ export async function admitPrReviewAssist(
     },
   });
   if (parsed.reviewId && parsed.attemptId) {
-    void watchPrReviewAssistSettlement(
+    void (dependencies.watchSettlement ?? watchPrReviewAssistSettlement)(
       {
         reviewId: parsed.reviewId,
         attemptId: parsed.attemptId,

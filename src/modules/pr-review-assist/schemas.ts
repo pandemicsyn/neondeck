@@ -32,6 +32,40 @@ export const prReviewAssistInputSchema = v.pipe(
   ),
 );
 
+export const prReviewAgentInitialDataSchema = v.object({
+  model: nonEmptyString,
+  thinkingLevel: v.picklist([
+    'off',
+    'minimal',
+    'low',
+    'medium',
+    'high',
+    'xhigh',
+  ]),
+  instructions: nonEmptyString,
+  prepared: v.object({
+    input: prReviewAssistInputSchema,
+    facts: v.unknown(),
+    promptContext: v.unknown(),
+  }),
+  workspace: v.variant('available', [
+    v.object({
+      available: v.literal(true),
+      repoId: nonEmptyString,
+      repoFullName: nonEmptyString,
+      repoPath: nonEmptyString,
+      headSha: nonEmptyString,
+      baseSha: v.nullable(nonEmptyString),
+      mergeBase: v.nullable(nonEmptyString),
+    }),
+    v.object({
+      available: v.literal(false),
+      reason: nonEmptyString,
+    }),
+  ]),
+  prompt: nonEmptyString,
+});
+
 const reviewSeveritySchema = v.picklist(['critical', 'major', 'minor', 'nit']);
 const reviewSideSchema = v.picklist(['RIGHT', 'LEFT']);
 const reviewAnchorSchema = v.variant('kind', [

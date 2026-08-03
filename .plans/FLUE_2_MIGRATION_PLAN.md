@@ -1,6 +1,6 @@
 # Flue 2 Migration Plan
 
-Status: migration and Flue 2 correctness hardening complete
+Status: migration complete; post-migration Flue 2 hardening in progress
 Integration branch: `flue2`  
 Created: 2026-08-01  
 Target Flue release at planning time: `2.0.1`
@@ -877,6 +877,17 @@ Exit criteria:
 - [x] Migrate reviewer React client.
 - [x] Replace run-id correlation with attempt/operation/submission ids.
 - [x] Preserve exact-head workspace and timeout policy.
+- [x] Remove the nested initial-review model prompt and its five-minute inner
+      deadline.
+- [x] Freeze prepared facts, learning context, runtime selection, and
+      exact-revision workspace binding in validated Flue `initialData`.
+- [x] Mount exact-revision read-only Tools on the bounded root reviewer and
+      terminate through a typed durable `neondeck_submit_pr_review` Tool.
+- [x] Revalidate the active attempt and exact revision immediately before
+      review artifacts can be mutated.
+- [x] Add a real Flue lifecycle regression covering workspace exploration,
+      typed submission, and bound review settlement without a nested model
+      operation.
 
 Implementation evidence captured on 2026-08-01:
 
@@ -887,6 +898,21 @@ Implementation evidence captured on 2026-08-01:
 - attempts, operations, and submissions replace workflow-run identity across
   recovery, reports, and dashboard state
 - focused PR-review validation and an independent static P1/P2 review pass
+
+Post-migration hardening evidence captured on 2026-08-03:
+
+- dogfooding exposed an exact 300-second failure caused by the outer bounded
+  reviewer opening the real review as a nested `harness.prompt()` with its own
+  five-minute abort signal
+- initial review now performs one root Flue reasoning conversation, receives
+  immutable prepared evidence through `useAgentStart()`, explores only the
+  prepared exact revision, and submits validated structured output directly
+- the configured initial-review default and ceiling are now 30 minutes and
+  govern the whole Flue submission rather than an inner model operation
+- focused unit/type validation and a faux-provider Flue lifecycle regression
+  pass; an independent documentation-backed architecture review endorsed the
+  direct-agent shape, and a second static review's two P2 findings were fixed
+  and re-reviewed cleanly
 
 Exit criteria:
 

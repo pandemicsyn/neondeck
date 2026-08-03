@@ -46,10 +46,8 @@ describe('PR review prompts', () => {
     const runtime = buildPrReviewAssistantRuntime(paths);
     expect(runtime.instructions).toBe('Custom complete review prompt.');
     expect(runtime.skills).toEqual([]);
-    const environment = await runtime.sandbox.createSessionEnv({
-      id: 'initial-review',
-    });
-    expect(runtime.sandbox.tools?.(environment, { subagents: {} })).toEqual([]);
+    expect(runtime.tools).toEqual([]);
+    expect(runtime).not.toHaveProperty('sandbox');
   });
 
   it('suppresses generic sandbox tools for continuing reviewer sessions', async () => {

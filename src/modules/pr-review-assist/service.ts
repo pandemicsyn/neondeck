@@ -59,6 +59,12 @@ export type ReviewAssistPromptContext = {
   learningMemoryContext: AutomationLearningMemoryContext;
 };
 
+export type PreparedPrReviewAssist = {
+  input: PrReviewAssistInput;
+  facts: ReviewAssistFacts;
+  promptContext: ReviewAssistPromptContext;
+};
+
 export type ReviewAssistDependencies = {
   fetchFacts?: (
     input: v.InferOutput<typeof prReviewAssistInputSchema>,
@@ -101,25 +107,59 @@ export async function reviewPrForHuman(
   paths = runtimePaths(),
   dependencies: ReviewAssistDependencies = {},
 ) {
+  const runEffect: ReviewAssistEffectRunner =
+    dependencies.runEffect ?? ((_name, effect) => Promise.resolve(effect()));
+  const preparation = await preparePrReviewForHuman(input, paths, {
+    ...dependencies,
+    runEffect,
+  });
+  if (!preparation.ok) return preparation.result;
+  const rawOutput = await runEffect('generate-review-output', () =>
+    (dependencies.reviewer ?? deterministicReviewPass)(
+      preparation.prepared.facts,
+      preparation.prepared.promptContext,
+    ),
+  );
+  return completePreparedPrReviewForHuman(
+    preparation.prepared,
+    rawOutput,
+    paths,
+    { ...dependencies, runEffect },
+  );
+}
+
+export async function preparePrReviewForHuman(
+  input: PrReviewAssistInput,
+  paths = runtimePaths(),
+  dependencies: Pick<
+    ReviewAssistDependencies,
+    'fetchFacts' | 'prEventDependencies' | 'runEffect' | 'signal'
+  > = {},
+): Promise<
+  | { ok: true; prepared: PreparedPrReviewAssist }
+  | { ok: false; result: ReturnType<typeof failure> }
+> {
   await ensureRuntimeHome(paths);
   const parsed = v.safeParse(prReviewAssistInputSchema, input);
   if (!parsed.success) {
-    return failure('Invalid PR review assist input.', {
-      errors: [v.summarize(parsed.issues)],
-      requires: ['ref'],
-    });
+    return {
+      ok: false,
+      result: failure('Invalid PR review assist input.', {
+        errors: [v.summarize(parsed.issues)],
+        requires: ['ref'],
+      }),
+    };
   }
-
   const runEffect: ReviewAssistEffectRunner =
     dependencies.runEffect ?? ((_name, effect) => Promise.resolve(effect()));
   const factsResult = await runEffect('read-review-facts', () =>
     readReviewFacts(parsed.output, paths, dependencies),
   );
-  if (!factsResult.ok) return factsResult.result;
+  if (!factsResult.ok) return { ok: false, result: factsResult.result };
 
   const facts = factsResult.facts;
   const revisionFailure = exactRevisionFailure(parsed.output, facts);
-  if (revisionFailure) return revisionFailure;
+  if (revisionFailure) return { ok: false, result: revisionFailure };
   const promptContext = await runEffect('load-review-context', async () => {
     const repoId = await repoIdForFullName(facts.target.repoFullName, paths);
     return {
@@ -130,10 +170,30 @@ export async function reviewPrForHuman(
       }),
     };
   });
+  return {
+    ok: true,
+    prepared: { input: parsed.output, facts, promptContext },
+  };
+}
+
+export async function completePreparedPrReviewForHuman(
+  prepared: PreparedPrReviewAssist,
+  rawOutput: unknown,
+  paths = runtimePaths(),
+  dependencies: Pick<
+    ReviewAssistDependencies,
+    | 'workflowRunId'
+    | 'effectId'
+    | 'signal'
+    | 'runEffect'
+    | 'validateReviewFiles'
+  > = {},
+) {
+  await ensureRuntimeHome(paths);
+  const runEffect: ReviewAssistEffectRunner =
+    dependencies.runEffect ?? ((_name, effect) => Promise.resolve(effect()));
+  const { facts, promptContext } = prepared;
   const repoId = promptContext.repoId;
-  const rawOutput = await runEffect('generate-review-output', () =>
-    (dependencies.reviewer ?? deterministicReviewPass)(facts, promptContext),
-  );
   const reviewed = v.safeParse(reviewAssistStructuredOutputSchema, rawOutput);
   if (!reviewed.success) {
     return failure('Review output did not match the expected schema.', {

@@ -110,7 +110,7 @@ GITHUB_LOGIN=...</code></pre>
     "displayAssistantThinkingLevel": "medium",
     "prReview": "openai/gpt-5.5",
     "prReviewThinkingLevel": "medium",
-    "prReviewTimeoutMs": 300000
+    "prReviewTimeoutMs": 1800000
   &#125;
 &#125;</code></pre>
 
@@ -225,9 +225,9 @@ GITHUB_LOGIN=...</code></pre>
             <code>high</code>, or <code>xhigh</code>.
           </li>
           <li>
-            <code>prReviewTimeoutMs</code> defaults to 300,000 milliseconds and accepts
-            values from 10,000 through 300,000. Initial review runs cannot delegate
-            generic child tasks; they inspect and finish in one bounded session.
+            <code>prReviewTimeoutMs</code> defaults to 1,800,000 milliseconds and
+            accepts values from 10,000 through 1,800,000. Initial review runs cannot
+            delegate generic child tasks; they inspect and finish in one bounded session.
           </li>
           <li>
             Provider registration and standalone CLI ChatGPT login or logout

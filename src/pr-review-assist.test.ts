@@ -13,7 +13,7 @@ import {
   type GitHubPullRequestFile,
 } from './modules/github';
 import {
-  createReviewPrForHumanTool,
+  createSubmitPrReviewTool,
   createReviewDurableEffectRunner,
   reviewFactsForPrompt,
   reviewPrForHuman,
@@ -38,11 +38,15 @@ afterEach(async () => {
 });
 
 describe('PR review assist', () => {
-  it('declares the bounded review harness as a durable Flue tool', () => {
-    const tool = createReviewPrForHumanTool({
-      ref: 'pandemicsyn/neondeck#10',
-    });
-    expect(tool).toMatchObject({ harness: true, durable: true });
+  it('declares typed review submission as a durable non-harness Flue tool', () => {
+    const tool = createSubmitPrReviewTool(
+      { ref: 'pandemicsyn/neondeck#10' },
+      async () => {
+        throw new Error('The declaration test must not load review context.');
+      },
+    );
+    expect(tool).toMatchObject({ durable: true });
+    expect(tool).not.toHaveProperty('harness', true);
   });
 
   it('checkpoints durable effect failures and propagates outer aborts', async () => {
