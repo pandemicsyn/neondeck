@@ -104,6 +104,7 @@ export async function prepareConversationReflection(
     reviewedSession,
     paths,
   );
+  const skillSnippets = await readLearningSkillSnippets(paths);
   const models = readAgentModelSelectionSync(paths);
   const inputSummary = compactJson({
     kind: 'conversation',
@@ -133,6 +134,7 @@ export async function prepareConversationReflection(
           .reference?.transcript?.available === false,
     },
     activeMemories: summarizeMemories(memories),
+    skillSnippets,
   });
   const reviewId = options.reviewId ?? randomUUID();
   const prepared: PreparedLearningReview = {
@@ -155,7 +157,8 @@ export async function prepareConversationReflection(
       reviewedSession,
       memories,
     ),
-    allowedSkillIds: ['neondeck'],
+    allowedSkillIds: skillSnippets.map((skill) => skill.id),
+    skillSnapshots: learningSkillSnapshots(skillSnippets),
   };
   startLearningReview(
     {
@@ -218,6 +221,7 @@ export async function prepareMemoryCurationReview(
 
   const memories = await listActiveLearningMemories(paths);
   const events = await listMemoryEvents({ limit: 40 }, paths);
+  const skillSnippets = await readLearningSkillSnippets(paths);
   const models = readAgentModelSelectionSync(paths);
   const inputSummary = compactJson({
     kind: 'curation',
@@ -238,6 +242,7 @@ export async function prepareMemoryCurationReview(
         createdAt: event.createdAt,
       }),
     ),
+    skillSnippets,
   });
   const reviewId = options.reviewId ?? randomUUID();
   const prepared: PreparedLearningReview = {
@@ -253,7 +258,8 @@ export async function prepareMemoryCurationReview(
     allowedMemoryIds: memories.map((memory) => memory.id),
     memorySnapshots: learningMemorySnapshots(memories),
     allowedProjectRepoIds: projectRepoIdsFromMemories(memories),
-    allowedSkillIds: ['neondeck'],
+    allowedSkillIds: skillSnippets.map((skill) => skill.id),
+    skillSnapshots: learningSkillSnapshots(skillSnippets),
   };
   startLearningReview(
     {
@@ -384,6 +390,7 @@ export async function preparePrBatchLearningReview(
       ...projectRepoIdsFromMemories(memories),
     ]),
     allowedSkillIds: skillSnippets.map((skill) => skill.id),
+    skillSnapshots: learningSkillSnapshots(skillSnippets),
   };
   startLearningReview(
     {
@@ -421,4 +428,10 @@ function learningMemorySnapshots(
     repoId,
     updatedAt,
   }));
+}
+
+function learningSkillSnapshots(
+  skills: Array<{ id: string; sha256: string }>,
+): PreparedLearningReview['skillSnapshots'] {
+  return skills.map(({ id, sha256 }) => ({ id, sha256 }));
 }

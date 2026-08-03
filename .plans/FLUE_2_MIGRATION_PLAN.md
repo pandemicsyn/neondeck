@@ -1395,6 +1395,25 @@ application-owned snapshots at admission, recovery, and settlement boundaries.
       the `updatedAt` values in their prepared evidence. Carry those fences
       through review candidates so delayed or recovered decisions cannot
       mutate a newer memory version by id alone.
+- [x] Remove the Learning Review Agent's recursive harness prompt. Deliver the
+      immutable evidence as canonical untrusted signal data, accept the
+      structured review as typed durable Tool input, and reserve `step.do()`
+      for deterministic Neondeck effects. Revision-bind skill proposals to the
+      full skill hash captured during preparation so delayed reviews cannot
+      patch newer guidance.
+- [x] Close the independent Flue 2 learning-review lifecycle findings. A
+      per-render single-flight guards parallel duplicate submission Tool calls,
+      and failed reviews persist the names, mutation flags, and available ids
+      for durable effects that completed before a later checkpoint failed.
+      Effects that may have committed before their Flue checkpoint rejected are
+      recorded separately with an unknown outcome. Focused tests cover the real
+      parallel Flue Tool batch, a later failure after a confirmed effect, and
+      the at-least-once-executed checkpoint boundary.
+- [x] Complete the final independent static re-review of the Learning Review
+      Agent refactor against Flue 2.0.1. No P1 or P2 findings remain.
+- [x] Run full post-refactor verification: 1,043 unit tests, 44 serial/git
+      tests, 90 integration tests, application and documentation builds, npm
+      package validation, packed CLI smoke, and formatting all pass.
 - [ ] Add mounted-agent lifecycle tests for Display Assistant briefing joins
       and Autopilot owner first turns, no-tool continuation, capability changes,
       and crash-before-preparation recovery.
@@ -1408,6 +1427,13 @@ review candidates. All newly created memory candidates, including deterministic
 curation candidates, now capture or validate revision evidence and fail closed
 at approval when it is absent. Upserts also carry an explicit absent-row fence
 so a memory created after preparation cannot be overwritten as a collision.
+The mounted Learning Review Agent regression proves one outer model turn calls
+one typed submission Tool without opening a nested harness conversation, and a
+second lifecycle case proves the required no-Tool continuation. A parallel
+duplicate-call lifecycle case proves only the first structured submission can
+complete the review, while partial-failure records make already-landed effects
+visible to operators and recovery logic. Prepared skill hashes now fence
+proposal creation before review or auto-apply policy runs.
 
 The audit found no equivalent first-turn gap in initial PR review, continuing
 PR review after its remediation, Learning Review Agent evidence, ordinary

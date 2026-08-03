@@ -28,6 +28,12 @@ export type LearningReviewEffectRunner = <T>(
   effect: () => T | Promise<T>,
 ) => Promise<T>;
 
+export type CompletedLearningReviewEffect = {
+  name: string;
+  changed: boolean;
+  identifiers?: Record<string, string>;
+};
+
 export async function completeLearningReviewFromModelOutput(
   prepared: PreparedLearningReview,
   output: LearningReviewerOutput,
@@ -53,6 +59,9 @@ export async function completeLearningReviewFromModelOutput(
   const allowedMemoryIds = new Set(prepared.allowedMemoryIds);
   const allowedProjectRepoIds = new Set(prepared.allowedProjectRepoIds);
   const allowedSkillIds = new Set(prepared.allowedSkillIds);
+  const skillSnapshots = new Map(
+    prepared.skillSnapshots.map((snapshot) => [snapshot.id, snapshot.sha256]),
+  );
   for (const [index, proposal] of parsed.output.memoryActions.entries()) {
     if (prepared.kind === 'pr-batch' && proposal.action === 'upsert') {
       if (proposal.scope === 'user') {
@@ -130,10 +139,20 @@ export async function completeLearningReviewFromModelOutput(
       });
       continue;
     }
+    const expectedBeforeHash = skillSnapshots.get(proposal.skillId);
+    if (!expectedBeforeHash) {
+      skipped.push({
+        action: 'skill-patch',
+        skillId: proposal.skillId,
+        reason: 'skill-revision-not-in-review-snapshot',
+      });
+      continue;
+    }
     const proposed = await runEffect(`skill-proposal:${index}`, () =>
       proposeSkillPatch({ ...proposal, reviewId: prepared.reviewId }, paths, {
         source: 'workflow',
         candidateId: `learning:${prepared.reviewId}:skill:${index}`,
+        expectedBeforeHash,
       }),
     );
     if (!proposed.ok || !('candidate' in proposed)) {
@@ -218,12 +237,37 @@ export function failPreparedLearningReview(
   prepared: PreparedLearningReview,
   error: unknown,
   paths = runtimePaths(),
+  options: {
+    completedEffects?: CompletedLearningReviewEffect[];
+    uncertainEffect?: string;
+  } = {},
 ) {
   const message = errorMessage(error);
-  failLearningReview(prepared.reviewId, message, paths);
+  const completedEffects = options.completedEffects ?? [];
+  const changed = completedEffects.some((effect) => effect.changed);
+  const outcomeUnknown = options.uncertainEffect !== undefined;
+  const partial = completedEffects.length > 0 || outcomeUnknown;
+  const result = compactJson({
+    failed: true,
+    partial,
+    changed,
+    outcomeUnknown,
+    ...(options.uncertainEffect
+      ? { uncertainEffect: options.uncertainEffect }
+      : {}),
+    completedEffects,
+  });
+  failLearningReview(prepared.reviewId, message, paths, result);
   return {
     ...failedReview(reviewAction(prepared.kind), message),
+    changed,
     reviewId: prepared.reviewId,
+    partial,
+    outcomeUnknown,
+    ...(options.uncertainEffect
+      ? { uncertainEffect: options.uncertainEffect }
+      : {}),
+    completedEffects,
   };
 }
 

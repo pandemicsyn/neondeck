@@ -50,7 +50,11 @@ const appliedSkillPatchMessage =
 export async function proposeSkillPatch(
   input: v.InferInput<typeof skillPatchProposeInputSchema>,
   paths = runtimePaths(),
-  options: { source?: SkillPatchMutationSource; candidateId?: string } = {},
+  options: {
+    source?: SkillPatchMutationSource;
+    candidateId?: string;
+    expectedBeforeHash?: string;
+  } = {},
 ) {
   await ensureRuntimeHome(paths);
   const parsed = v.safeParse(skillPatchProposeInputSchema, input);
@@ -85,6 +89,16 @@ export async function proposeSkillPatch(
   if (!target.ok) return target.result;
 
   const beforeContent = await readFile(target.skill.path, 'utf8');
+  if (
+    options.expectedBeforeHash &&
+    sha256(beforeContent) !== options.expectedBeforeHash
+  ) {
+    return failedSkillPatch(
+      'skill_patch_propose',
+      'Skill content changed after the learning review was prepared. Prepare a fresh review before proposing a patch.',
+      ['stale-skill-content'],
+    );
+  }
   const afterContent = applyPatchOperation(
     beforeContent,
     parsed.output.operation,

@@ -297,6 +297,7 @@ export function failLearningReview(
   id: string,
   message: string,
   paths = runtimePaths(),
+  result?: JsonValue,
 ) {
   const now = new Date().toISOString();
   const database = openDb(paths.neondeckDatabase);
@@ -308,12 +309,18 @@ export function failLearningReview(
           `
         UPDATE learning_reviews
         SET status = 'failed',
+          result_json = COALESCE(?, result_json),
           error = ?,
           completed_at = ?
         WHERE id = ? AND status = 'running';
       `,
         )
-        .run(message, now, id);
+        .run(
+          result === undefined ? null : JSON.stringify(result),
+          message,
+          now,
+          id,
+        );
       if (update.changes === 0) return;
       recordLearningEventInDatabase(database, {
         type:
@@ -323,7 +330,11 @@ export function failLearningReview(
               ? 'curation_failed'
               : 'pr_retrospective_failed',
         source: 'learning-review-agent',
-        data: { reviewId: id, error: message },
+        data: {
+          reviewId: id,
+          error: message,
+          ...(result === undefined ? {} : { result }),
+        },
         createdAt: now,
       });
     });

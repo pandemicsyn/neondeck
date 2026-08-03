@@ -138,7 +138,7 @@ export async function dispatchPreparedLearningReview(
     message: {
       kind: 'signal',
       type: 'neondeck.learning-review.requested',
-      body: 'Run the persisted bounded learning review snapshot.',
+      body: prepared.prompt,
       attributes: {
         reviewId: prepared.reviewId,
         reviewKind: prepared.kind,

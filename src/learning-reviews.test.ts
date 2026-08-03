@@ -1750,6 +1750,77 @@ describe('learning review orchestration', () => {
     });
   });
 
+  it('rejects skill proposals when guidance changed after review preparation', async () => {
+    const paths = runtimePaths(await tempHome());
+    await writeUserSkill(paths.home, 'neon-pr-review');
+    await updateLearningConfig({ skillWriteMode: 'review' }, paths);
+    await recordHandledPrEventAndMaybeQueueLearning(
+      {
+        eventType: 'review-feedback-workflow-completed',
+        source: 'workflow',
+        sourceId: 'neondeck#99:review-feedback-workflow-completed:run-1',
+        repoId: 'neondeck',
+        repoFullName: 'pandemicsyn/neondeck',
+        prNumber: 99,
+        summary: 'neon-pr-review guidance may need a durable update.',
+      },
+      paths,
+    );
+    const prepared = await preparePrBatchLearningReview(
+      { trigger: 'manual' },
+      paths,
+    );
+    if (!prepared.ok) throw new Error(prepared.message);
+    const snippets = (
+      prepared.inputSummary as {
+        skillSnippets: Array<{ id: string; path: string }>;
+      }
+    ).skillSnippets;
+    const reviewSkill = snippets.find((skill) => skill.id === 'neon-pr-review');
+    if (!reviewSkill) {
+      throw new Error('Expected the neon-pr-review skill snapshot.');
+    }
+    const current = await readFile(reviewSkill.path, 'utf8');
+    await writeFile(
+      reviewSkill.path,
+      `${current}\n\n## Concurrent update\n\nNewer guidance.\n`,
+      'utf8',
+    );
+
+    const result = await completeLearningReviewFromModelOutput(
+      prepared,
+      {
+        summary: 'A procedural update was proposed against stale evidence.',
+        memoryActions: [],
+        skillPatches: [
+          {
+            skillId: 'neon-pr-review',
+            operation: {
+              type: 'append-section',
+              heading: 'Learning Guidance',
+              content: '- Apply the proposed guidance.\n',
+            },
+          },
+        ],
+      },
+      paths,
+    );
+
+    expect(result).toMatchObject({
+      ok: true,
+      changed: false,
+      skipped: [
+        expect.objectContaining({
+          ok: false,
+          requires: ['stale-skill-content'],
+        }),
+      ],
+    });
+    await expect(listSkillPatchCandidates({}, paths)).resolves.toMatchObject({
+      candidates: [],
+    });
+  });
+
   it('proposes, applies, and rejects skill patch candidates for user runtime skills', async () => {
     const paths = runtimePaths(await tempHome());
     await writeUserSkill(paths.home, 'test-skill');

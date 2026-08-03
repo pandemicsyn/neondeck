@@ -1,5 +1,6 @@
 import { openDb } from '../../../lib/sqlite.ts';
 import type { JsonValue } from '@flue/runtime';
+import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { listRuntimeSkills } from '../../runtime';
 import type { RuntimePaths } from '../../../runtime-home';
@@ -114,6 +115,7 @@ export async function readLearningSkillSnippets(
               id: skill.id,
               source: skill.source,
               path: skill.path,
+              sha256: createHash('sha256').update(content).digest('hex'),
               content: truncate(content, 6_000),
             })),
           ]

@@ -124,6 +124,12 @@ export const preparedLearningReviewSchema = v.object({
   ),
   allowedProjectRepoIds: v.array(v.nullable(nonEmptyStringSchema)),
   allowedSkillIds: v.array(nonEmptyStringSchema),
+  skillSnapshots: v.array(
+    v.object({
+      id: nonEmptyStringSchema,
+      sha256: nonEmptyStringSchema,
+    }),
+  ),
 });
 
 export const conversationReviewInputSchema = v.object({
@@ -186,6 +192,10 @@ export type PreparedLearningReview = {
   }>;
   allowedProjectRepoIds: Array<string | null>;
   allowedSkillIds: string[];
+  skillSnapshots: Array<{
+    id: string;
+    sha256: string;
+  }>;
 };
 export type FailedLearningReview = {
   ok: false;

@@ -16,6 +16,7 @@ import {
   startLearningReview,
   type PreparedLearningReview,
 } from './modules/learning/reviews';
+import { listMemoryCandidates } from './modules/memory';
 import { createChatSession } from './modules/sessions';
 import { runtimePaths, type RuntimePaths } from './runtime-home';
 
@@ -217,19 +218,18 @@ describe('learning review admission', () => {
     });
   });
 
-  it('marks invalid structured model output as a submission failure', async () => {
+  it('applies validated structured input without opening a nested harness prompt', async () => {
     const paths = await fixture();
     process.env.NEONDECK_HOME = paths.home;
     const prepared = preparedReview(paths);
-    const state: { failure?: Error } = {};
-    const tool = createSubmitLearningReviewTool(prepared, state);
+    const tool = createSubmitLearningReviewTool(prepared);
     const run = tool.run;
     if (!run) throw new Error('Learning review tool has no run handler.');
     const result = await run({
-      harness: {
-        async prompt() {
-          return { data: { summary: 42 } };
-        },
+      data: {
+        summary: 'No durable learning was justified.',
+        memoryActions: [],
+        skillPatches: [],
       },
       log: {
         error: vi.fn<(message: string, data?: unknown) => void>(),
@@ -246,11 +246,203 @@ describe('learning review admission', () => {
 
     expect(result).toMatchObject({
       terminate: true,
-      output: { ok: false, action: 'learning_review_conversation' },
+      output: { ok: true, action: 'learning_review_conversation' },
     });
-    expect(state.failure?.message).toContain('Invalid type');
+    expect(tool).not.toHaveProperty('harness', true);
+    expect(getLearningReview(prepared.reviewId, paths)).toMatchObject({
+      status: 'completed',
+    });
+  });
+
+  it('single-flights duplicate submit calls from the same Flue tool batch', async () => {
+    const paths = await fixture();
+    process.env.NEONDECK_HOME = paths.home;
+    const prepared = preparedReview(paths);
+    const tool = createSubmitLearningReviewTool(prepared);
+    const run = tool.run;
+    if (!run) throw new Error('Learning review tool has no run handler.');
+    const stepDo = vi.fn<
+      (name: string, effect: () => unknown) => Promise<unknown>
+    >(async (_name, effect) => effect());
+    const context = {
+      data: {
+        summary: 'No durable learning was justified.',
+        memoryActions: [],
+        skillPatches: [],
+      },
+      log: {
+        error: vi.fn<(message: string, data?: unknown) => void>(),
+        warn: vi.fn<(message: string, data?: unknown) => void>(),
+        info: vi.fn<(message: string, data?: unknown) => void>(),
+        debug: vi.fn<(message: string, data?: unknown) => void>(),
+      },
+      step: { do: stepDo },
+    };
+
+    const [first, duplicate] = await Promise.all([
+      run(context as never),
+      run(context as never),
+    ]);
+
+    expect(duplicate).toEqual(first);
+    expect(stepDo.mock.calls.map(([name]) => name)).toEqual([
+      'complete-review',
+    ]);
+    expect(getLearningReview(prepared.reviewId, paths)).toMatchObject({
+      status: 'completed',
+    });
+  });
+
+  it('records committed effects when a later durable step fails', async () => {
+    const paths = await fixture();
+    process.env.NEONDECK_HOME = paths.home;
+    const prepared = preparedReview(paths);
+    const tool = createSubmitLearningReviewTool(prepared);
+    const run = tool.run;
+    if (!run) throw new Error('Learning review tool has no run handler.');
+    const result = await run({
+      data: {
+        summary: 'A local validation preference was observed.',
+        memoryActions: [
+          {
+            action: 'upsert',
+            scope: 'local',
+            key: 'validation-command',
+            value: 'npm run check',
+            reason: 'Repeated local preference.',
+          },
+        ],
+        skillPatches: [],
+      },
+      log: {
+        error: vi.fn<(message: string, data?: unknown) => void>(),
+        warn: vi.fn<(message: string, data?: unknown) => void>(),
+        info: vi.fn<(message: string, data?: unknown) => void>(),
+        debug: vi.fn<(message: string, data?: unknown) => void>(),
+      },
+      step: {
+        async do(name: string, effect: () => unknown) {
+          if (name === 'complete-review') {
+            throw new Error('forced completion checkpoint failure');
+          }
+          return effect();
+        },
+      },
+    } as never);
+
+    expect(result).toMatchObject({
+      terminate: true,
+      output: {
+        ok: false,
+        changed: true,
+        partial: true,
+        outcomeUnknown: true,
+        uncertainEffect: 'complete-review',
+        completedEffects: [
+          {
+            name: 'memory-candidate:0',
+            changed: true,
+            identifiers: {
+              id: `learning:${prepared.reviewId}:memory:0`,
+            },
+          },
+        ],
+      },
+    });
     expect(getLearningReview(prepared.reviewId, paths)).toMatchObject({
       status: 'failed',
+      error: 'forced completion checkpoint failure',
+      result: {
+        failed: true,
+        partial: true,
+        changed: true,
+        outcomeUnknown: true,
+        uncertainEffect: 'complete-review',
+        completedEffects: [
+          expect.objectContaining({ name: 'memory-candidate:0' }),
+        ],
+      },
+    });
+    await expect(
+      listMemoryCandidates({ status: 'proposed' }, paths),
+    ).resolves.toMatchObject({
+      candidates: [
+        expect.objectContaining({
+          id: `learning:${prepared.reviewId}:memory:0`,
+        }),
+      ],
+    });
+  });
+
+  it('marks an effect outcome unknown when mutation succeeds before its checkpoint rejects', async () => {
+    const paths = await fixture();
+    process.env.NEONDECK_HOME = paths.home;
+    const prepared = preparedReview(paths);
+    const tool = createSubmitLearningReviewTool(prepared);
+    const run = tool.run;
+    if (!run) throw new Error('Learning review tool has no run handler.');
+    const result = await run({
+      data: {
+        summary: 'A local validation preference was observed.',
+        memoryActions: [
+          {
+            action: 'upsert',
+            scope: 'local',
+            key: 'validation-command',
+            value: 'npm run check',
+            reason: 'Repeated local preference.',
+          },
+        ],
+        skillPatches: [],
+      },
+      log: {
+        error: vi.fn<(message: string, data?: unknown) => void>(),
+        warn: vi.fn<(message: string, data?: unknown) => void>(),
+        info: vi.fn<(message: string, data?: unknown) => void>(),
+        debug: vi.fn<(message: string, data?: unknown) => void>(),
+      },
+      step: {
+        async do(name: string, effect: () => unknown) {
+          const effectResult = await effect();
+          if (name === 'memory-candidate:0') {
+            throw new Error('forced checkpoint persistence failure');
+          }
+          return effectResult;
+        },
+      },
+    } as never);
+
+    expect(result).toMatchObject({
+      terminate: true,
+      output: {
+        ok: false,
+        changed: false,
+        partial: true,
+        outcomeUnknown: true,
+        uncertainEffect: 'memory-candidate:0',
+        completedEffects: [],
+      },
+    });
+    expect(getLearningReview(prepared.reviewId, paths)).toMatchObject({
+      status: 'failed',
+      error: 'forced checkpoint persistence failure',
+      result: {
+        failed: true,
+        partial: true,
+        changed: false,
+        outcomeUnknown: true,
+        uncertainEffect: 'memory-candidate:0',
+        completedEffects: [],
+      },
+    });
+    await expect(
+      listMemoryCandidates({ status: 'proposed' }, paths),
+    ).resolves.toMatchObject({
+      candidates: [
+        expect.objectContaining({
+          id: `learning:${prepared.reviewId}:memory:0`,
+        }),
+      ],
     });
   });
 });
@@ -289,5 +481,8 @@ function preparedReview(paths: RuntimePaths): PreparedLearningReview {
     memorySnapshots: [],
     allowedProjectRepoIds: [null],
     allowedSkillIds: ['neondeck'],
+    skillSnapshots: [
+      { id: 'neondeck', sha256: 'prepared-neondeck-skill-hash' },
+    ],
   };
 }
