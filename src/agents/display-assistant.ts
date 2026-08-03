@@ -9,6 +9,7 @@ import {
   useModel,
   usePersistentState,
   useResponseFinish,
+  useResponseStart,
   useSandbox,
   useSkill,
   useSubagent,
@@ -151,12 +152,29 @@ export function DisplayAssistant({ id }: AgentProps) {
       },
     });
   });
-  useResponseFinish(() => {
+  useResponseStart(() => ({
+    neondeckDisplayAssistant: {
+      model: context.models.displayAssistant,
+      thinkingLevel: context.models.displayAssistantThinkingLevel,
+    },
+  }));
+  useResponseFinish(({ metadata, log }) => {
     if (!context.refreshBriefingContext) return;
-    acknowledgeDisplaySessionContextSnapshotSync({
-      sessionId: id,
-      snapshotId: context.snapshotId,
-    });
+    if (!displayAssistantContextModelWasAdopted(metadata, context.models)) {
+      return;
+    }
+    try {
+      acknowledgeDisplaySessionContextSnapshotSync({
+        sessionId: id,
+        snapshotId: context.snapshotId,
+      });
+    } catch (error) {
+      log.warn('Could not acknowledge refreshed briefing context', {
+        sessionId: id,
+        snapshotId: context.snapshotId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
   });
   useModel(context.models.displayAssistant, {
     thinkingLevel: context.models.displayAssistantThinkingLevel,
@@ -263,6 +281,22 @@ export function DisplayAssistant({ id }: AgentProps) {
 }
 
 DisplayAssistant.agentName = 'display-assistant';
+
+export function displayAssistantContextModelWasAdopted(
+  metadata: Record<string, unknown>,
+  models: Pick<
+    AgentModelSelection,
+    'displayAssistant' | 'displayAssistantThinkingLevel'
+  >,
+) {
+  const value = metadata.neondeckDisplayAssistant;
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const started = value as Record<string, unknown>;
+  return (
+    started.model === models.displayAssistant &&
+    started.thinkingLevel === models.displayAssistantThinkingLevel
+  );
+}
 
 function captureDisplayAssistantSessionContext(
   id: string,

@@ -279,7 +279,7 @@ describe('minimal Autopilot watch loop', () => {
   });
 
   it('replays a crash-before-receipt reservation with one stable Flue idempotency key', async () => {
-    const paths = await fixturePaths();
+    const { paths } = await gitFixturePaths();
     await configurePrAutopilot(
       {
         ref: 'neondeck#123',
@@ -288,12 +288,17 @@ describe('minimal Autopilot watch loop', () => {
         confirm: true,
       },
       paths,
-      fixtureDependencies(),
+      fixtureDependencies(repositorySeed?.featureSha ?? undefined),
     );
+    const created = await createWorktree(
+      { repoId: 'neondeck', prNumber: 123, headRef: 'feature' },
+      paths,
+    );
+    const worktree = worktreeFrom(created);
     const instanceId = 'reserved-recovery-owner';
     bindWatchAutopilotOwner(paths, 'pandemicsyn/neondeck#123', {
       ownerInstanceId: instanceId,
-      worktreeId: 'reserved-worktree',
+      worktreeId: worktree.id,
     });
     claimWatchAutopilotTurn(
       paths,
@@ -305,9 +310,9 @@ describe('minimal Autopilot watch loop', () => {
       repoId: 'neondeck',
       repoFullName: 'pandemicsyn/neondeck',
       prNumber: 123,
-      worktreeId: 'reserved-worktree',
-      worktreePath: '/tmp/reserved-worktree',
-      headSha: 'a'.repeat(40),
+      worktreeId: worktree.id,
+      worktreePath: worktree.localPath,
+      headSha: repositorySeed?.featureSha ?? 'a'.repeat(40),
       baseSha: 'b'.repeat(40),
       eventFingerprint: 'reserved-event',
       mode: 'prepare-only',
@@ -323,21 +328,54 @@ describe('minimal Autopilot watch loop', () => {
       undefined,
       { envelope, watchId: envelope.watchId },
     );
-    const dispatchTurn = vi.fn(async () => ({
-      submissionId: 'recovered-reservation-submission',
-      acceptedAt: new Date().toISOString(),
-      uid: 'owner-uid',
-    }));
-    const neverSettles = vi.fn(
+    const dispatchTurn = vi.fn<
+      (input: unknown) => Promise<{
+        submissionId: string;
+        acceptedAt: string;
+        uid: string;
+      }>
+    >(async () => {
+      expect(
+        readPendingAutopilotTurn(paths.home, instanceId)?.prepared,
+      ).toEqual(
+        expect.objectContaining({
+          schema: 'neondeck.autopilot-owner-prepared.v1',
+        }),
+      );
+      return {
+        submissionId: 'recovered-reservation-submission',
+        acceptedAt: new Date().toISOString(),
+        uid: 'owner-uid',
+      };
+    });
+    const neverSettles = vi.fn<() => Promise<{ failed: false }>>(
       () => new Promise<{ failed: false }>(() => undefined),
     );
 
     await expect(
       recoverInterruptedAutopilotOwners(paths, {
         dispatchTurn: dispatchTurn as never,
+        prepareTurn: vi.fn<() => Promise<never>>(async () => {
+          throw new Error('transient preparation failure');
+        }),
         readSettlement: neverSettles,
       }),
-    ).resolves.toBe(1);
+    ).resolves.toBe(0);
+    expect(dispatchTurn).not.toHaveBeenCalled();
+    expect(readPendingAutopilotTurn(paths.home, instanceId)).toMatchObject({
+      error: 'transient preparation failure',
+      status: 'reserved',
+      turnId: reserved.turnId,
+    });
+
+    const recoveredCount = await recoverInterruptedAutopilotOwners(paths, {
+      dispatchTurn: dispatchTurn as never,
+      readSettlement: neverSettles,
+    });
+    expect(
+      readPendingAutopilotTurn(paths.home, instanceId)?.error,
+    ).toBeUndefined();
+    expect(recoveredCount).toBe(1);
     expect(dispatchTurn).toHaveBeenCalledWith({
       instanceId,
       envelope,

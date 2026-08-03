@@ -4,10 +4,7 @@ import { runSchedulerTick } from '../modules/scheduler/service';
 import { recoverInterruptedAutopilotOwners } from '../modules/autopilot/owner/settlement';
 import type { RuntimePaths } from '../runtime-home';
 
-const schedulerTicksInFlight = new Map<
-  string,
-  ReturnType<typeof runSchedulerTick>
->();
+const schedulerTicksInFlight = schedulerTickRegistry();
 const schedulerLoopRegistry = schedulerLoops();
 
 /**
@@ -68,6 +65,16 @@ export function startSchedulerLoop(
   timer.unref?.();
   schedulerLoopRegistry.set(paths.home, timer);
   return timer;
+}
+
+function schedulerTickRegistry() {
+  const target = globalThis as typeof globalThis & {
+    __neondeckSchedulerTicksInFlight?: Map<
+      string,
+      ReturnType<typeof runSchedulerTick>
+    >;
+  };
+  return (target.__neondeckSchedulerTicksInFlight ??= new Map());
 }
 
 function schedulerLoops() {

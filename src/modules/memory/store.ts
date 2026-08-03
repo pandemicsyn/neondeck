@@ -478,6 +478,29 @@ export function patchStringArray(value: JsonValue | null, key: string) {
     : [];
 }
 
+export function patchNullableString(value: JsonValue | null, key: string) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return undefined;
+  }
+  const item = (value as Record<string, unknown>)[key];
+  return typeof item === 'string' || item === null ? item : undefined;
+}
+
+export function patchStringRecord(value: JsonValue | null, key: string) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return undefined;
+  }
+  const item = (value as Record<string, unknown>)[key];
+  if (!item || typeof item !== 'object' || Array.isArray(item)) {
+    return undefined;
+  }
+  const entries = Object.entries(item);
+  if (entries.some(([, revision]) => typeof revision !== 'string')) {
+    return undefined;
+  }
+  return Object.fromEntries(entries) as Record<string, string>;
+}
+
 export function readLearningConfigSync(paths: RuntimePaths) {
   try {
     return resolveLearningConfig(

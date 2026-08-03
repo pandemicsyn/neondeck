@@ -113,6 +113,15 @@ export const preparedLearningReviewSchema = v.object({
   inputSummary: v.unknown(),
   prompt: nonEmptyStringSchema,
   allowedMemoryIds: v.array(nonEmptyStringSchema),
+  memorySnapshots: v.array(
+    v.object({
+      id: nonEmptyStringSchema,
+      scope: activeMemoryScopeSchema,
+      key: nonEmptyStringSchema,
+      repoId: v.nullable(nonEmptyStringSchema),
+      updatedAt: nonEmptyStringSchema,
+    }),
+  ),
   allowedProjectRepoIds: v.array(v.nullable(nonEmptyStringSchema)),
   allowedSkillIds: v.array(nonEmptyStringSchema),
 });
@@ -168,6 +177,13 @@ export type PreparedLearningReview = {
   inputSummary: JsonValue;
   prompt: string;
   allowedMemoryIds: string[];
+  memorySnapshots: Array<{
+    id: string;
+    scope: 'user' | 'local' | 'project';
+    key: string;
+    repoId: string | null;
+    updatedAt: string;
+  }>;
   allowedProjectRepoIds: Array<string | null>;
   allowedSkillIds: string[];
 };

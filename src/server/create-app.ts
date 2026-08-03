@@ -1,4 +1,6 @@
+import { getAgentInstance } from '@flue/runtime';
 import { createAgentRouter } from '@flue/runtime/routing';
+import type { FlueConversationSnapshot } from '@flue/sdk';
 import { serveStatic } from '@hono/node-server/serve-static';
 import { existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -75,6 +77,7 @@ export type CreateAppOptions = {
   paths?: RuntimePaths;
   staticRoot?: string;
   scheduler?: boolean;
+  runtimeServices?: boolean;
 };
 
 export async function createApp(options: CreateAppOptions = {}) {
@@ -88,28 +91,24 @@ export async function createApp(options: CreateAppOptions = {}) {
 
   await ensureRuntimeHome(paths);
   installFlueExecutionContextTracker();
-  await recoverInterruptedAutopilotOwners(paths);
   installFlueObservationHandlers(paths);
-  const prReviewRecovery = await recoverInterruptedPrReviewAssists(
-    paths,
-    readPrReviewAssistSettlement,
-    admitPrReviewAssist,
-  );
-  if (prReviewRecovery.failed.length > 0) {
-    console.warn(
-      '[neondeck] PR review admission recovery remains pending',
-      prReviewRecovery.failed,
-    );
-  }
-  const learningRecovery = await recoverInterruptedLearningReviews(paths);
-  if (learningRecovery.failed.length > 0) {
-    console.warn(
-      '[neondeck] learning review recovery remains pending',
-      learningRecovery.failed,
-    );
-  }
 
   await getMcpRegistry(paths).start();
+
+  const readBriefingConversationHistory = async (sessionId: string) => {
+    const response = await app.request(
+      `http://localhost/api/flue/agents/display-assistant/${encodeURIComponent(sessionId)}?view=history`,
+    );
+    if (response.status === 404) return null;
+    if (!response.ok) {
+      throw new Error(`Flue conversation history returned ${response.status}.`);
+    }
+    return response.json();
+  };
+  installBriefingConversationHistoryReader(
+    paths,
+    readBriefingConversationHistory,
+  );
 
   const requireAppAccess = requireLocalApiAccess({
     trustedOrigins: appConfig.server?.trustedOrigins,
@@ -165,44 +164,6 @@ export async function createApp(options: CreateAppOptions = {}) {
     createAgentRouter(PrAutopilotOwner),
   );
 
-  const readBriefingConversationHistory = async (sessionId: string) => {
-    const response = await app.request(
-      `http://localhost/api/flue/agents/display-assistant/${encodeURIComponent(sessionId)}?view=history`,
-    );
-    if (response.status === 404) return null;
-    if (!response.ok) {
-      throw new Error(`Flue conversation history returned ${response.status}.`);
-    }
-    return response.json();
-  };
-  installBriefingConversationHistoryReader(
-    paths,
-    readBriefingConversationHistory,
-  );
-  const briefingRecovery = await recoverInterruptedBriefingAdmissions(
-    {
-      readConversationHistory: readBriefingConversationHistory,
-    },
-    paths,
-  );
-  if (briefingRecovery.failed.length > 0) {
-    console.warn(
-      '[neondeck] briefing admission recovery remains pending',
-      briefingRecovery.failed,
-    );
-  }
-  if (
-    options.scheduler !== false &&
-    process.env.NEONDECK_DISABLE_SCHEDULER !== '1'
-  ) {
-    startSchedulerLoop(paths);
-    void refreshGitHubQueueSnapshot(paths).catch((error) => {
-      console.warn('[neondeck] initial GitHub queue refresh failed', error);
-    });
-    void refreshPrReviewRemoteState(paths).catch((error) => {
-      console.warn('[neondeck] initial PR review state refresh failed', error);
-    });
-  }
   app.route('/reports', createReportFileRoutes(paths));
 
   app.all('/api/*', (c) => c.notFound());
@@ -219,7 +180,196 @@ export async function createApp(options: CreateAppOptions = {}) {
   );
   app.get('*', serveStatic({ root: staticRoot, path: 'index.html' }));
 
+  if (options.runtimeServices === true) {
+    const startRuntimeServices = createFlueRuntimeServiceStarter({
+      paths,
+      scheduler: options.scheduler !== false,
+      readBriefingConversationHistory,
+    });
+    void startRuntimeServicesWhenAvailable(startRuntimeServices);
+  }
+
   return app;
+}
+
+type FlueRuntimeReadinessProbe = () => Promise<unknown>;
+
+export async function waitForFlueRuntime(
+  probe: FlueRuntimeReadinessProbe = () =>
+    getAgentInstance(DisplayAssistant, '__neondeck-runtime-readiness__'),
+  retryDelayMs = 25,
+) {
+  let waitedForConfiguration = false;
+  for (;;) {
+    try {
+      await probe();
+      return waitedForConfiguration;
+    } catch (error) {
+      if (!isRuntimeNotConfiguredError(error)) throw error;
+      waitedForConfiguration = true;
+      await startupDelay(retryDelayMs);
+    }
+  }
+}
+
+function createFlueRuntimeServiceStarter(input: FlueRuntimeServiceInput) {
+  let completed = false;
+  let inFlight: Promise<void> | null = null;
+  let retryDelayMs = 1_000;
+  let schedulerStarted = false;
+
+  function start() {
+    if (completed || inFlight) return;
+    inFlight = startFlueRuntimeServiceAttempt()
+      .then(() => {
+        completed = true;
+      })
+      .catch((error) => {
+        console.warn(
+          `[neondeck] Flue-backed runtime services will retry in ${retryDelayMs}ms`,
+          error,
+        );
+        const timer = setTimeout(() => {
+          inFlight = null;
+          retryDelayMs = Math.min(retryDelayMs * 2, 30_000);
+          start();
+        }, retryDelayMs);
+        timer.unref?.();
+      });
+  }
+
+  async function startFlueRuntimeServiceAttempt() {
+    await waitForFlueRuntime();
+    if (!schedulerStarted) {
+      schedulerStarted = true;
+      startFlueRuntimeScheduler(input);
+    }
+    await recoverFlueRuntimeServices(input);
+  }
+
+  return start;
+}
+
+async function startRuntimeServicesWhenAvailable(start: () => void) {
+  await startupDelay(0);
+  try {
+    await waitForFlueRuntime();
+  } catch {}
+  start();
+}
+
+type FlueRuntimeServiceInput = {
+  paths: RuntimePaths;
+  scheduler: boolean;
+  readBriefingConversationHistory: (
+    sessionId: string,
+  ) => Promise<FlueConversationSnapshot | null>;
+};
+
+function startFlueRuntimeScheduler(input: FlueRuntimeServiceInput) {
+  if (input.scheduler && process.env.NEONDECK_DISABLE_SCHEDULER !== '1') {
+    startSchedulerLoop(input.paths);
+    void refreshGitHubQueueSnapshot(input.paths).catch((error) => {
+      console.warn('[neondeck] initial GitHub queue refresh failed', error);
+    });
+    void refreshPrReviewRemoteState(input.paths).catch((error) => {
+      console.warn('[neondeck] initial PR review state refresh failed', error);
+    });
+  }
+}
+
+async function recoverFlueRuntimeServices(input: FlueRuntimeServiceInput) {
+  const failures: Error[] = [];
+  await captureRuntimeStartupFailure('Autopilot owner recovery', failures, () =>
+    recoverInterruptedAutopilotOwners(input.paths),
+  );
+
+  const prReviewRecovery = await captureRuntimeStartupFailure(
+    'PR review recovery',
+    failures,
+    () =>
+      recoverInterruptedPrReviewAssists(
+        input.paths,
+        readPrReviewAssistSettlement,
+        admitPrReviewAssist,
+      ),
+  );
+  if (prReviewRecovery?.failed.length) {
+    console.warn(
+      '[neondeck] PR review admission recovery remains pending',
+      prReviewRecovery.failed,
+    );
+    failures.push(new Error('PR review admission recovery remains pending.'));
+  }
+
+  const learningRecovery = await captureRuntimeStartupFailure(
+    'Learning review recovery',
+    failures,
+    () => recoverInterruptedLearningReviews(input.paths),
+  );
+  if (learningRecovery?.failed.length) {
+    console.warn(
+      '[neondeck] learning review recovery remains pending',
+      learningRecovery.failed,
+    );
+    failures.push(new Error('Learning review recovery remains pending.'));
+  }
+
+  const briefingRecovery = await captureRuntimeStartupFailure(
+    'Briefing recovery',
+    failures,
+    () =>
+      recoverInterruptedBriefingAdmissions(
+        {
+          readConversationHistory: input.readBriefingConversationHistory,
+        },
+        input.paths,
+      ),
+  );
+  if (briefingRecovery?.failed.length) {
+    console.warn(
+      '[neondeck] briefing admission recovery remains pending',
+      briefingRecovery.failed,
+    );
+    failures.push(new Error('Briefing admission recovery remains pending.'));
+  }
+
+  if (failures.length === 1) throw failures[0];
+  if (failures.length > 1)
+    throw new AggregateError(
+      failures,
+      'Flue-backed runtime recovery is pending.',
+    );
+}
+
+async function captureRuntimeStartupFailure<T>(
+  label: string,
+  failures: Error[],
+  run: () => Promise<T>,
+) {
+  try {
+    return await run();
+  } catch (error) {
+    const failure =
+      error instanceof Error ? error : new Error(`${label}: ${String(error)}`);
+    failures.push(failure);
+    console.warn(`[neondeck] ${label} remains pending`, failure);
+    return null;
+  }
+}
+
+function isRuntimeNotConfiguredError(error: unknown) {
+  return (
+    error instanceof Error &&
+    error.message.includes('before runtime was configured')
+  );
+}
+
+function startupDelay(delayMs: number) {
+  return new Promise<void>((resolve) => {
+    const timer = setTimeout(resolve, delayMs);
+    timer.unref?.();
+  });
 }
 
 export function resolveStaticRoot(env = process.env) {

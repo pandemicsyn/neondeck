@@ -1295,6 +1295,76 @@ findings. The review explicitly confirmed exact-revision binding, tagged error
 replay, abort propagation, stable draft/seed identity, idempotent settlement,
 and compensation for the Flue orphan-execution windows.
 
+### Cross-Feature Context Lifecycle Audit
+
+After fixing continuing-reviewer first-turn context, independent static
+reviewers audited every Flue agent against the installed Flue 2.0.1 hook,
+render, resource, sandbox, and durability contracts. This audit distinguishes
+render-time context, same-response signals, submission-scoped resources, and
+application-owned snapshots at admission, recovery, and settlement boundaries.
+
+- [x] Audit Morning Briefing and Display Assistant context across first
+      delivery, joined briefing delivery, refresh, response finish, and
+      recovery.
+- [x] Audit Autopilot/watch owner context across watch events, direct-human
+      turns, approval transitions, no-tool continuation, and restart recovery.
+- [x] Audit initial and continuing PR review context across admission, exact
+      revision loading, first-turn tools, and later questions.
+- [x] Audit memory/learning context across immutable review preparation,
+      durable Tool execution, recovery, autonomous application, and later
+      candidate decisions.
+- [x] Defer PR-review, learning, Autopilot, briefing, and scheduler startup
+      until the generated Flue Node entry has configured the runtime. App
+      module evaluation now performs only safe registration, route setup, and
+      readiness gating. A non-mutating exact-agent instance lookup gates
+      Flue-backed recovery, failed startup passes retry without suppressing
+      later services, and development reloads replace the previous scheduler
+      only after their agent function identities are accepted by the active
+      runtime.
+- [x] Remove the Autopilot owner's same-response dependency on
+      `prepared-owner-context`; a value written in `useAgentStart` is not a
+      valid prerequisite for the first `useAgentFinish` cycle when the model
+      makes no tool call.
+- [x] Prepare and persist every reserved Autopilot owner turn before startup
+      recovery dispatches it. A crash between reservation and ordinary
+      preparation must not produce fallback instructions with no bounded
+      sandbox or capability tools.
+- [x] Handle briefing refreshes that join an active display response without
+      claiming that a changed model/provider was adopted. `useModel` is
+      submission-scoped even though instructions and per-render resources can
+      refresh at the joined turn boundary.
+- [x] Move or contain Display Assistant context acknowledgement so a
+      synchronous app-database failure in `useResponseFinish` cannot fail an
+      otherwise completed briefing.
+- [ ] Validate the exact briefing run before advancing the application-owned
+      display-context baseline, and reconcile that external mutation at a
+      durable settlement boundary.
+- [x] Revision-bind learning memory rewrite, merge, and archive proposals to
+      the `updatedAt` values in their prepared evidence. Carry those fences
+      through review candidates so delayed or recovered decisions cannot
+      mutate a newer memory version by id alone.
+- [ ] Add mounted-agent lifecycle tests for Display Assistant briefing joins
+      and Autopilot owner first turns, no-tool continuation, capability changes,
+      and crash-before-preparation recovery.
+
+The completed lifecycle fixes use the pre-admission owner snapshot directly in
+the first finish cycle, rebuild missing reserved-turn context before replay,
+stamp the response-start model and thinking level into Flue metadata before
+acknowledging a briefing refresh, contain acknowledgement failures for later
+retry, and carry exact memory revisions through automatic actions and delayed
+review candidates. All newly created memory candidates, including deterministic
+curation candidates, now capture or validate revision evidence and fail closed
+at approval when it is absent. Upserts also carry an explicit absent-row fence
+so a memory created after preparation cannot be overwritten as a collision.
+
+The audit found no equivalent first-turn gap in initial PR review, continuing
+PR review after its remediation, Learning Review Agent evidence, ordinary
+Display Assistant session memory, or normally admitted Autopilot turns. No P1
+issue was found. The remaining items above concern stronger durable-settlement
+placement and mounted-agent lifecycle coverage; the memory revision fence
+predates Flue 2, while the Autopilot and joined-briefing lifecycle fixes are
+specific to the v2 execution model.
+
 ## Verification Strategy
 
 Run the normal repository checks throughout the migration:

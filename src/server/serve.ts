@@ -3,47 +3,17 @@ import { existsSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { Transform } from 'node:stream';
 import { fileURLToPath } from 'node:url';
-import { serve } from '@hono/node-server';
 import type { RuntimePaths } from '../runtime-home';
 
 export const defaultServerPort = 3583;
-export const defaultServerHost = '127.0.0.1';
 
-export type StartServerOptions = {
-  host?: string;
+export type RunBuiltServerOptions = {
   port?: number | string;
   paths?: RuntimePaths;
-  scheduler?: boolean;
-  onReady?: (info: { host: string; port: number; url: string }) => void;
 };
 
-export async function startNeondeckServer(options: StartServerOptions = {}) {
-  const host = options.host ?? defaultServerHost;
-  const port = resolveServerPort(options.port);
-  process.env.NEONDECK_PORT = String(port);
-  process.env.PORT = String(port);
-
-  const { createApp } = await import('./create-app');
-  const app = await createApp({
-    paths: options.paths,
-    scheduler: options.scheduler,
-  });
-  const url = `http://${host}:${port}`;
-
-  const server = serve(
-    {
-      fetch: app.fetch,
-      hostname: host,
-      port,
-    },
-    () => options.onReady?.({ host, port, url }),
-  );
-
-  return { server, host, port, url };
-}
-
 export async function runBuiltNeondeckServer(
-  options: Pick<StartServerOptions, 'port' | 'paths'> = {},
+  options: RunBuiltServerOptions = {},
 ) {
   const port = resolveServerPort(options.port);
   const entry = resolvePackagedServerEntry();

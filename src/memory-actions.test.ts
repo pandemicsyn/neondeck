@@ -637,6 +637,48 @@ describe('structured memory actions', () => {
     });
   });
 
+  it('revision-fences deterministic curation candidates before approval', async () => {
+    const paths = runtimePaths(await tempHome());
+    await updateLearningConfig(
+      { memoryMaxActiveItems: 1, memoryCurationMode: 'review' },
+      paths,
+    );
+    const first = await upsertMemory(
+      { scope: 'local', key: 'first', value: 'reviewed value' },
+      paths,
+    );
+    await upsertMemory(
+      { scope: 'local', key: 'second', value: 'retained value' },
+      paths,
+    );
+    await curateMemoryStore({ mode: 'review' }, paths);
+    const candidates = await listMemoryCandidates(
+      { status: 'proposed' },
+      paths,
+    );
+    const candidate = candidates.candidates[0]!;
+    await rewriteMemory(
+      {
+        id: (first as { memory: { id: string } }).memory.id,
+        value: 'changed after curation',
+      },
+      paths,
+    );
+
+    await expect(
+      decideMemoryCandidate({ id: candidate.id, decision: 'apply' }, paths),
+    ).resolves.toMatchObject({
+      ok: false,
+      action: 'memory_archive',
+      requires: ['memory-revision'],
+    });
+    await expect(
+      listMemoryCandidates({ status: 'proposed' }, paths),
+    ).resolves.toMatchObject({
+      candidates: [expect.objectContaining({ id: candidate.id })],
+    });
+  });
+
   it('enforces learning memory write policy for autonomous mutations', async () => {
     const paths = runtimePaths(await tempHome());
     await updateLearningConfig(

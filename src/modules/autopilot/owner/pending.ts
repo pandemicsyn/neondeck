@@ -20,6 +20,7 @@ export type PendingAutopilotTurn = {
   approvedRevisionKey?: string;
   correlationId?: string;
   envelope?: AutopilotOwnerEnvelope;
+  error?: string;
   eventFingerprint?: string;
   idempotencyKey?: string;
   instanceId: string;
@@ -182,9 +183,13 @@ export function recordPendingAutopilotTurnPreparedContext(
   turnId: string,
   prepared: PreparedAutopilotOwnerContext,
 ) {
-  return updateTurn(home, instanceId, turnId, 'prepared_json = ?', [
-    JSON.stringify(prepared),
-  ]);
+  return updateTurn(
+    home,
+    instanceId,
+    turnId,
+    'prepared_json = ?, error = NULL',
+    [JSON.stringify(prepared)],
+  );
 }
 
 export function recordPendingAutopilotTurnLearningMemoryContext(
@@ -335,6 +340,7 @@ function readTurnRow(row: unknown): PendingAutopilotTurn {
       typeof value.envelope_json === 'string'
         ? (JSON.parse(value.envelope_json) as AutopilotOwnerEnvelope)
         : undefined,
+    error: typeof value.error === 'string' ? value.error : undefined,
     eventFingerprint:
       typeof value.event_fingerprint === 'string'
         ? value.event_fingerprint

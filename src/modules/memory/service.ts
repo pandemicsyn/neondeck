@@ -204,7 +204,7 @@ export async function upsertMemory(
         );
         if (
           parsed.output.expectedUpdatedAt !== undefined &&
-          existing?.updatedAt !== parsed.output.expectedUpdatedAt
+          (existing?.updatedAt ?? null) !== parsed.output.expectedUpdatedAt
         ) {
           return failedMemoryMutation(
             'memory_learn',
@@ -383,6 +383,16 @@ export async function rewriteMemory(
             ['memory'],
           );
         }
+        if (
+          parsed.output.expectedUpdatedAt !== undefined &&
+          existing.updatedAt !== parsed.output.expectedUpdatedAt
+        ) {
+          return failedMemoryMutation(
+            'memory_rewrite',
+            'Memory changed after the rewrite was prepared. Refresh the review before applying it.',
+            ['memory-revision'],
+          );
+        }
         const value = asJsonValue(parsed.output.value);
         if (
           existing.status === 'active' &&
@@ -400,15 +410,37 @@ export async function rewriteMemory(
 
         const before = memoryToJson(existing);
         const updatedAt = nextMemoryUpdatedAt(existing.updatedAt, now);
-        database
-          .prepare(
-            `
+        const update = parsed.output.expectedUpdatedAt
+          ? database
+              .prepare(
+                `
+          UPDATE memories
+          SET value_json = ?, status = 'active', updated_at = ?
+          WHERE id = ? AND updated_at = ?;
+        `,
+              )
+              .run(
+                JSON.stringify(value),
+                updatedAt,
+                existing.id,
+                parsed.output.expectedUpdatedAt,
+              )
+          : database
+              .prepare(
+                `
           UPDATE memories
           SET value_json = ?, status = 'active', updated_at = ?
           WHERE id = ?;
         `,
-          )
-          .run(JSON.stringify(value), updatedAt, existing.id);
+              )
+              .run(JSON.stringify(value), updatedAt, existing.id);
+        if (update.changes !== 1) {
+          return failedMemoryMutation(
+            'memory_rewrite',
+            'Memory changed after the rewrite was prepared. Refresh the review before applying it.',
+            ['memory-revision'],
+          );
+        }
         const memory = readMemoryById(database, existing.id);
         if (!memory) {
           return failedMemoryMutation(
@@ -483,6 +515,22 @@ export async function mergeMemories(
         const sourceIds = [...new Set(parsed.output.sourceIds)].filter(
           (id) => id !== target.id,
         );
+        if (parsed.output.expectedUpdatedAts !== undefined) {
+          for (const id of [target.id, ...sourceIds]) {
+            const memory = readMemoryById(database, id);
+            if (
+              !memory ||
+              parsed.output.expectedUpdatedAts[id] === undefined ||
+              memory.updatedAt !== parsed.output.expectedUpdatedAts[id]
+            ) {
+              return failedMemoryMutation(
+                'memory_merge',
+                'Memory changed after the merge was prepared. Refresh the review before applying it.',
+                ['memory-revision'],
+              );
+            }
+          }
+        }
         const existingSources = sourceIds
           .map((id) => readMemoryById(database, id))
           .filter((memory): memory is MemoryRecord => !!memory);

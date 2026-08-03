@@ -150,6 +150,7 @@ export async function prepareConversationReflection(
       config.memoryWriteMode,
     ),
     allowedMemoryIds: memories.map((memory) => memory.id),
+    memorySnapshots: learningMemorySnapshots(memories),
     allowedProjectRepoIds: conversationProjectRepoIds(
       reviewedSession,
       memories,
@@ -250,6 +251,7 @@ export async function prepareMemoryCurationReview(
     inputSummary,
     prompt: learningPrompt('curation', inputSummary, mode),
     allowedMemoryIds: memories.map((memory) => memory.id),
+    memorySnapshots: learningMemorySnapshots(memories),
     allowedProjectRepoIds: projectRepoIdsFromMemories(memories),
     allowedSkillIds: ['neondeck'],
   };
@@ -375,6 +377,7 @@ export async function preparePrBatchLearningReview(
     inputSummary,
     prompt: learningPrompt('pr-batch', inputSummary, config.memoryWriteMode),
     allowedMemoryIds: memories.map((memory) => memory.id),
+    memorySnapshots: learningMemorySnapshots(memories),
     allowedProjectRepoIds: uniqueRepoIds([
       null,
       ...handledEvents.map((event) => event.repoId),
@@ -400,4 +403,22 @@ export async function preparePrBatchLearningReview(
     paths,
   );
   return prepared;
+}
+
+function learningMemorySnapshots(
+  memories: Array<{
+    id: string;
+    scope: 'user' | 'local' | 'project';
+    key: string;
+    repoId: string | null;
+    updatedAt: string;
+  }>,
+): PreparedLearningReview['memorySnapshots'] {
+  return memories.map(({ id, scope, key, repoId, updatedAt }) => ({
+    id,
+    scope,
+    key,
+    repoId,
+    updatedAt,
+  }));
 }

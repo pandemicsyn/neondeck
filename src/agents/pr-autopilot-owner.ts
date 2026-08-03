@@ -336,11 +336,6 @@ export async function buildPrAutopilotOwnerRuntime(
       };
 }
 
-type PreparedOwnerState = Pick<
-  PreparedAutopilotOwnerContext,
-  'instructions' | 'workspaceContext'
-> & { turnId: string };
-
 export function PrAutopilotOwner({ id }: AgentProps) {
   const paths = runtimePaths();
   const initialData = useInitialData<AutopilotOwnerInitialData>();
@@ -358,10 +353,6 @@ export function PrAutopilotOwner({ id }: AgentProps) {
           approvedRevisionKey: pending.approvedRevisionKey,
         })
       : { capabilities: [], tools: [] };
-  const [prepared, setPrepared] = usePersistentState<PreparedOwnerState | null>(
-    'prepared-owner-context',
-    null,
-  );
   const [finishPromptedTurnId, setFinishPromptedTurnId] = usePersistentState<
     string | null
   >('finish-prompted-turn-id', null);
@@ -372,14 +363,13 @@ export function PrAutopilotOwner({ id }: AgentProps) {
       fallbackModels.displayAssistantThinkingLevel,
     compaction: prAutopilotOwnerCompaction,
   });
-  useAgentStart(async () => {
+  useAgentStart(() => {
     assertOwnerDelivery(initialData, delivery, pending);
-    const runtime = await buildPrAutopilotOwnerRuntime(id, paths);
-    setPrepared({
-      instructions: runtime.instructions,
-      workspaceContext: runtime.workspaceContext,
-      turnId: pending?.turnId ?? 'missing',
-    });
+    if (!pending?.prepared) {
+      throw new Error(
+        'Autopilot owner authority was not prepared before admission.',
+      );
+    }
   });
   const activeWorkspace = preparedTurn?.workspaceContext;
   if (activeWorkspace) {
@@ -393,7 +383,7 @@ export function PrAutopilotOwner({ id }: AgentProps) {
   }
   for (const tool of registry.tools) useTool(tool);
   useAgentFinish(({ append, response }) => {
-    if (!pending || prepared?.turnId !== pending.turnId) {
+    if (!pending || !preparedTurn) {
       throw new Error(
         'Autopilot owner authority was not prepared for this turn.',
       );
@@ -416,7 +406,6 @@ export function PrAutopilotOwner({ id }: AgentProps) {
 
   return (
     preparedTurn?.instructions ??
-    prepared?.instructions ??
     'Prepare the bounded Autopilot owner context before acting. Do not inspect or mutate a workspace until the validated workspace environment is attached.'
   );
 }

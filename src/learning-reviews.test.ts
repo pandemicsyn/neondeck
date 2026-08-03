@@ -30,6 +30,7 @@ import {
   decideMemoryCandidate,
   listMemories,
   listMemoryCandidates,
+  rewriteMemory,
   upsertMemory,
 } from './modules/memory';
 import { createChatSession } from './modules/sessions';
@@ -502,6 +503,188 @@ describe('learning review orchestration', () => {
       listMemories({ includeArchived: true }, paths),
     ).resolves.toMatchObject({
       memories: [expect.objectContaining({ id: memoryId, status: 'archived' })],
+    });
+  });
+
+  it('rejects stale rewrite, archive, and merge proposals from prepared evidence', async () => {
+    const paths = runtimePaths(await tempHome());
+    await updateLearningConfig(
+      { memoryCurationMode: 'auto', memoryWriteMode: 'auto' },
+      paths,
+    );
+    const rewriteTarget = await upsertMemory(
+      { scope: 'local', key: 'rewrite-target', value: 'old rewrite' },
+      paths,
+    );
+    const archiveTarget = await upsertMemory(
+      { scope: 'local', key: 'archive-target', value: 'old archive' },
+      paths,
+    );
+    const mergeTarget = await upsertMemory(
+      { scope: 'local', key: 'merge-target', value: 'merge target' },
+      paths,
+    );
+    const mergeSource = await upsertMemory(
+      { scope: 'local', key: 'merge-source', value: 'merge source' },
+      paths,
+    );
+    const ids = {
+      rewrite: (rewriteTarget as { memory: { id: string } }).memory.id,
+      archive: (archiveTarget as { memory: { id: string } }).memory.id,
+      mergeTarget: (mergeTarget as { memory: { id: string } }).memory.id,
+      mergeSource: (mergeSource as { memory: { id: string } }).memory.id,
+    };
+    const prepared = await prepareMemoryCurationReview(
+      { trigger: 'manual', mode: 'auto' },
+      paths,
+    );
+    if (!prepared.ok) throw new Error(prepared.message);
+
+    await rewriteMemory({ id: ids.rewrite, value: 'current rewrite' }, paths);
+    await rewriteMemory({ id: ids.archive, value: 'current archive' }, paths);
+    await rewriteMemory(
+      { id: ids.mergeSource, value: 'current merge source' },
+      paths,
+    );
+
+    await expect(
+      completeLearningReviewFromModelOutput(
+        prepared,
+        {
+          summary: 'Attempted stale memory maintenance.',
+          memoryActions: [
+            {
+              action: 'rewrite',
+              memoryId: ids.rewrite,
+              value: 'review rewrite',
+            },
+            { action: 'archive', memoryId: ids.archive },
+            {
+              action: 'merge',
+              targetId: ids.mergeTarget,
+              sourceIds: [ids.mergeSource],
+            },
+          ],
+        },
+        paths,
+      ),
+    ).resolves.toMatchObject({
+      ok: true,
+      changed: false,
+      applied: [],
+      skipped: [
+        expect.objectContaining({ requires: ['memory-revision'] }),
+        expect.objectContaining({ requires: ['memory-revision'] }),
+        expect.objectContaining({ requires: ['memory-revision'] }),
+      ],
+    });
+    await expect(
+      listMemories({ includeArchived: true }, paths),
+    ).resolves.toMatchObject({
+      memories: expect.arrayContaining([
+        expect.objectContaining({ id: ids.rewrite, value: 'current rewrite' }),
+        expect.objectContaining({ id: ids.archive, status: 'active' }),
+        expect.objectContaining({
+          id: ids.mergeSource,
+          status: 'active',
+          value: 'current merge source',
+        }),
+      ]),
+    });
+  });
+
+  it('keeps delayed candidates proposed when reviewed memory changed', async () => {
+    const paths = runtimePaths(await tempHome());
+    await updateLearningConfig(
+      { memoryCurationMode: 'review', memoryWriteMode: 'review' },
+      paths,
+    );
+    const created = await upsertMemory(
+      { scope: 'local', key: 'candidate-target', value: 'reviewed value' },
+      paths,
+    );
+    const memoryId = (created as { memory: { id: string } }).memory.id;
+    const prepared = await prepareMemoryCurationReview(
+      { trigger: 'manual', mode: 'review' },
+      paths,
+    );
+    if (!prepared.ok) throw new Error(prepared.message);
+    const completed = await completeLearningReviewFromModelOutput(
+      prepared,
+      {
+        summary: 'Proposed archiving reviewed guidance.',
+        memoryActions: [{ action: 'archive', memoryId }],
+      },
+      paths,
+    );
+    const candidateId = String(
+      (completed as { memoryCandidates: Array<{ id: string }> })
+        .memoryCandidates[0]?.id,
+    );
+    await rewriteMemory({ id: memoryId, value: 'changed after review' }, paths);
+
+    await expect(
+      decideMemoryCandidate(
+        { id: candidateId, decision: 'apply', reason: 'approve' },
+        paths,
+      ),
+    ).resolves.toMatchObject({
+      ok: false,
+      action: 'memory_archive',
+      requires: ['memory-revision'],
+    });
+    await expect(
+      listMemoryCandidates({ status: 'proposed' }, paths),
+    ).resolves.toMatchObject({
+      candidates: [expect.objectContaining({ id: candidateId })],
+    });
+  });
+
+  it('rejects an upsert collision created after the review snapshot', async () => {
+    const paths = runtimePaths(await tempHome());
+    await updateLearningConfig({ memoryWriteMode: 'auto' }, paths);
+    const session = await createChatSession(
+      { title: 'Collision review' },
+      paths,
+    );
+    const prepared = await prepareConversationReflection(
+      {
+        sessionId: (session as { session: { id: string } }).session.id,
+        trigger: 'manual',
+      },
+      paths,
+    );
+    if (!prepared.ok) throw new Error(prepared.message);
+    await upsertMemory(
+      { scope: 'local', key: 'new-after-review', value: 'current value' },
+      paths,
+    );
+
+    await expect(
+      completeLearningReviewFromModelOutput(
+        prepared,
+        {
+          summary: 'Attempted a colliding upsert.',
+          memoryActions: [
+            {
+              action: 'upsert',
+              scope: 'local',
+              key: 'new-after-review',
+              value: 'stale review value',
+            },
+          ],
+        },
+        paths,
+      ),
+    ).resolves.toMatchObject({
+      ok: true,
+      changed: false,
+      skipped: [expect.objectContaining({ requires: ['memory-revision'] })],
+    });
+    await expect(
+      listMemories({ scope: 'local', key: 'new-after-review' }, paths),
+    ).resolves.toMatchObject({
+      memories: [expect.objectContaining({ value: 'current value' })],
     });
   });
 

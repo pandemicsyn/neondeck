@@ -203,6 +203,7 @@ export async function recoverInterruptedAutopilotOwners(
   dependencies: {
     dispatchTurn?: typeof dispatchAutopilotOwnerTurn;
     dispatchMessage?: typeof dispatchAutopilotOwnerMessage;
+    prepareTurn?: (instanceId: string, paths: RuntimePaths) => Promise<unknown>;
     readSettlement?: typeof readAutopilotOwnerSettlement;
     reclaimSettling?: boolean;
   } = {},
@@ -224,6 +225,21 @@ export async function recoverInterruptedAutopilotOwners(
     let submissionId = turn.correlationId;
     if (!submissionId && turn.status === 'reserved') {
       try {
+        if (!turn.prepared) {
+          await (dependencies.prepareTurn ?? prepareAutopilotOwnerTurn)(
+            turn.instanceId,
+            paths,
+          );
+          const prepared = readPendingAutopilotTurn(
+            paths.home,
+            turn.instanceId,
+          );
+          if (prepared?.turnId !== turn.turnId || !prepared.prepared) {
+            throw new Error(
+              'The reserved owner turn could not persist its prepared context.',
+            );
+          }
+        }
         const receipt =
           turn.source === 'watch-event' && turn.envelope
             ? await (dependencies.dispatchTurn ?? dispatchAutopilotOwnerTurn)({
@@ -300,6 +316,15 @@ export async function recoverInterruptedAutopilotOwners(
     );
   }
   return recovered + interrupted.length;
+}
+
+async function prepareAutopilotOwnerTurn(
+  instanceId: string,
+  paths: RuntimePaths,
+) {
+  const { buildPrAutopilotOwnerRuntime } =
+    await import('../../../agents/pr-autopilot-owner');
+  await buildPrAutopilotOwnerRuntime(instanceId, paths);
 }
 
 export function watchAutopilotOwnerSettlement(

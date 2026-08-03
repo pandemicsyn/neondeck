@@ -286,6 +286,7 @@ function preparedReview(paths: RuntimePaths): PreparedLearningReview {
     inputSummary,
     prompt: 'Review only this bounded evidence.',
     allowedMemoryIds: [],
+    memorySnapshots: [],
     allowedProjectRepoIds: [null],
     allowedSkillIds: ['neondeck'],
   };
