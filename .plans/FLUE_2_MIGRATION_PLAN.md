@@ -1329,10 +1329,15 @@ application-owned snapshots at admission, recovery, and settlement boundaries.
       Nested review-comment pagination queries carry and validate the same PR
       head, preventing a head change from mixing comment pages into an older
       thread snapshot.
-- [x] Reuse the review surface's cached GitHub thread fetch so the sidebar and
-      reviewer consume the same live conversation snapshot. Focused regression
-      coverage proves a named GitHub reviewer and reply reach first-turn
-      context while changing thread data leaves system instructions stable.
+- [x] Reuse the review surface's bounded GitHub thread query while keeping its
+      caching policy surface-specific. The UI retains its short process cache,
+      while every reviewer intake bypasses that cache so a newly posted comment
+      or moved PR head is visible before the next model turn. Focused regression
+      coverage proves cached UI reads and fresh reviewer reads remain distinct.
+- [x] Revision-bind local draft context as well as GitHub threads. Drafts from a
+      different PR head retain their discussion text but expose explicit
+      revision metadata and omit path/line anchors, preventing a newer draft
+      from being correlated with an older exact-revision workspace.
 - [x] Separate deferred reviewer Tool workspace resolution from asynchronous
       intake loading. Tool rerenders now resolve only the exact-revision local
       workspace, forward Flue's Tool abort signal through local revision fetch
@@ -1348,12 +1353,15 @@ application-owned snapshots at admission, recovery, and settlement boundaries.
       provider. The lifecycle regression test proves the initial context lands
       before the first model call, a later delivery receives refreshed draft
       context, and stable policy emits no reserved `instructions` advisory.
-- [x] Run full verification after the reviewer correction: 1,034 unit tests,
+- [x] Run full verification after the reviewer correction: 1,035 unit tests,
       44 serial/git tests, 90 integration tests, all application and docs
       builds, package validation, packed CLI smoke, and formatting pass.
 - [x] Run an independent post-fix Flue 2.0.1 static review. Address its nested
       pagination, end-to-end Tool cancellation, and remaining public token
       documentation findings before final verification.
+- [x] Run a second independent static review against the exact pushed reviewer
+      commit. Address its local-draft revision binding and per-delivery GitHub
+      freshness findings with focused regression coverage.
 - [x] Audit memory/learning context across immutable review preparation,
       durable Tool execution, recovery, autonomous application, and later
       candidate decisions.

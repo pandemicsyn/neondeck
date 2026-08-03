@@ -331,6 +331,8 @@ export function reviewerContext(input: {
   liveReviewThreads: ReviewerLiveThreads;
 }) {
   const { review, workspace, draft, handoff, liveReviewThreads } = input;
+  const draftRevisionMatch = draft ? draft.headSha === review.headSha : null;
+  const draftAnchorsIncluded = draftRevisionMatch === true;
   return JSON.stringify({
     available: true,
     preparedAt: new Date().toISOString(),
@@ -345,11 +347,22 @@ export function reviewerContext(input: {
       reportOnlyFindings: review.reportOnlyFindings,
     },
     initialReviewHandoff: handoff,
+    localDraftRevision: {
+      available: Boolean(draft),
+      headSha: draft?.headSha ?? null,
+      revisionMatch: draftRevisionMatch,
+      repositoryCorrelation: draft
+        ? draftAnchorsIncluded
+          ? 'exact-reviewed-revision'
+          : 'different-pr-head'
+        : 'unavailable',
+      anchorsIncluded: draftAnchorsIncluded,
+    },
     localDraftComments: (draft?.comments ?? []).map((comment) => ({
       id: comment.id,
-      path: comment.path,
-      line: comment.line,
-      startLine: comment.startLine,
+      path: draftAnchorsIncluded ? comment.path : null,
+      line: draftAnchorsIncluded ? comment.line : null,
+      startLine: draftAnchorsIncluded ? comment.startLine : null,
       origin: comment.origin,
       body: comment.body.slice(0, 4_000),
     })),
@@ -387,7 +400,7 @@ async function readLiveReviewThreads(
     { repo: review.repoFullName, prNumber: review.prNumber },
     paths,
     {},
-    { signal: dependencies.signal, surface: true },
+    { signal: dependencies.signal, surface: true, fresh: true },
   );
   if (!result.ok) {
     if (dependencies.signal?.aborted) throw dependencies.signal.reason;

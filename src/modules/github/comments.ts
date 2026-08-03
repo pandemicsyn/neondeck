@@ -191,10 +191,8 @@ export async function fetchPullRequestReviewSurfaceThreadsWithMetadata(options: 
   if (cached) reviewSurfaceCache.delete(cacheKey);
 
   const targetEpoch = reviewSurfaceTargetEpochs.get(targetKey) ?? 0;
-  const value = await fetchReviewThreadsWithQuery(
-    options,
-    pullRequestReviewSurfaceThreadsQuery,
-  );
+  const value =
+    await fetchPullRequestReviewSurfaceThreadsFreshWithMetadata(options);
   if ((reviewSurfaceTargetEpochs.get(targetKey) ?? 0) === targetEpoch) {
     storeReviewSurfaceThreads(cacheKey, {
       targetKey,
@@ -203,6 +201,19 @@ export async function fetchPullRequestReviewSurfaceThreadsWithMetadata(options: 
     });
   }
   return value;
+}
+
+export async function fetchPullRequestReviewSurfaceThreadsFreshWithMetadata(options: {
+  token: string;
+  owner: string;
+  repo: string;
+  number: number;
+  signal?: AbortSignal;
+}): Promise<ReviewThreadsWithMetadata> {
+  return fetchReviewThreadsWithQuery(
+    options,
+    pullRequestReviewSurfaceThreadsQuery,
+  );
 }
 
 export function invalidatePullRequestReviewSurfaceThreadCache(options: {

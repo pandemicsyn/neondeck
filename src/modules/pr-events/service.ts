@@ -11,6 +11,7 @@ import {
   fetchPullRequestFiles,
   fetchPullRequestFilesWithCache,
   fetchPullRequestReviewComments,
+  fetchPullRequestReviewSurfaceThreadsFreshWithMetadata,
   fetchPullRequestReviewSurfaceThreadsWithMetadata,
   fetchPullRequestReviewThreadsWithMetadata,
   fetchPullRequestReviewThread,
@@ -133,6 +134,7 @@ export async function getGitHubPrReviewThreads(
   options: {
     signal?: AbortSignal;
     surface?: boolean;
+    fresh?: boolean;
   } = {},
 ): Promise<PrEventActionResult> {
   const action = 'github_pr_review_threads_get';
@@ -161,7 +163,9 @@ export async function getGitHubPrReviewThreads(
     const fetcher =
       dependencies.fetchPullRequestReviewThreads ??
       (options.surface
-        ? fetchPullRequestReviewSurfaceThreadsWithMetadata
+        ? options.fresh
+          ? fetchPullRequestReviewSurfaceThreadsFreshWithMetadata
+          : fetchPullRequestReviewSurfaceThreadsWithMetadata
         : fetchPullRequestReviewThreadsWithMetadata);
     const result = await fetcher({
       token,

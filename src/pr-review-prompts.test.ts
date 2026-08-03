@@ -6,6 +6,7 @@ import { prReviewerConversationId } from '../shared/pr-reviewer-session';
 import { buildPrReviewAssistantRuntime } from './agents/pr-review-assistant';
 import { buildPrReviewerRuntime } from './agents/pr-reviewer';
 import { updatePrReviewPrompt } from './modules/config';
+import { addPrReviewDraftComment, upsertPrReviewDraft } from './modules/github';
 import { completePrReview, startPrReview } from './modules/pr-reviews';
 import {
   defaultPrReviewPromptTemplates,
@@ -100,8 +101,13 @@ describe('PR review prompts', () => {
       paths,
     );
     const id = prReviewerConversationId(started.reviewId, headSha);
+    let firstReadOptions:
+      { signal?: AbortSignal; surface?: boolean; fresh?: boolean } | undefined;
     const first = await buildPrReviewerRuntime(id, paths, {
-      getReviewThreads: async () => reviewThreadsResult('iscekic'),
+      getReviewThreads: async (_input, _paths, _dependencies, options) => {
+        firstReadOptions = options;
+        return reviewThreadsResult('iscekic');
+      },
     });
     const second = await buildPrReviewerRuntime(id, paths, {
       getReviewThreads: async () => reviewThreadsResult('second-reviewer'),
@@ -110,7 +116,27 @@ describe('PR review prompts', () => {
       getReviewThreads: async () =>
         reviewThreadsResult('future-reviewer', 'b'.repeat(40)),
     });
+    const newerDraft = upsertPrReviewDraft({
+      databasePath: paths.neondeckDatabase,
+      repo: 'other/project',
+      prNumber: 42,
+      headSha: 'b'.repeat(40),
+      reanchorHeadSha: true,
+    });
+    addPrReviewDraftComment({
+      id: 'newer-head-draft-comment',
+      databasePath: paths.neondeckDatabase,
+      draftId: newerDraft.id,
+      path: 'src/newer-head.ts',
+      side: 'RIGHT',
+      line: 27,
+      body: 'This draft belongs to the newer head.',
+    });
+    const mismatchedDraft = await buildPrReviewerRuntime(id, paths, {
+      getReviewThreads: async () => reviewThreadsResult('iscekic'),
+    });
 
+    expect(firstReadOptions).toMatchObject({ surface: true, fresh: true });
     expect(first.instructions).toBe(second.instructions);
     expect(first.instructions).toContain(
       'Flue framework narration signals with reserved types',
@@ -158,6 +184,24 @@ describe('PR review prompts', () => {
           },
         ],
       },
+    });
+    expect(JSON.parse(mismatchedDraft.context)).toMatchObject({
+      localDraftRevision: {
+        available: true,
+        headSha: 'b'.repeat(40),
+        revisionMatch: false,
+        repositoryCorrelation: 'different-pr-head',
+        anchorsIncluded: false,
+      },
+      localDraftComments: [
+        {
+          id: 'newer-head-draft-comment',
+          path: null,
+          line: null,
+          startLine: null,
+          body: 'This draft belongs to the newer head.',
+        },
+      ],
     });
   });
 

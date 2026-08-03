@@ -13,6 +13,7 @@ import {
   fetchCheckSummary,
   fetchPullRequestFiles,
   fetchPullRequestReviewComments,
+  fetchPullRequestReviewSurfaceThreadsFreshWithMetadata,
   fetchPullRequestReviewSurfaceThreadsWithMetadata,
   fetchPullRequestReviewThreads,
   fetchPullRequestReviewThreadsWithMetadata,
@@ -1169,6 +1170,43 @@ describe('github foundation', () => {
       number: 123,
     });
 
+    expect(globalThis.fetch).toHaveBeenCalledTimes(2);
+  });
+
+  it('performs a fresh review-thread surface read without consulting the UI cache', async () => {
+    let calls = 0;
+    globalThis.fetch = vi.fn<typeof fetch>(async () => {
+      calls += 1;
+      return jsonResponse({
+        data: {
+          repository: {
+            pullRequest: {
+              headRefOid: calls === 1 ? 'head-a' : 'head-b',
+              reviewThreads: {
+                pageInfo: { hasNextPage: false, endCursor: null },
+                nodes: [],
+              },
+            },
+          },
+        },
+      });
+    });
+    const target = {
+      token: 'token',
+      owner: 'pandemicsyn',
+      repo: 'neondeck',
+      number: 123,
+    };
+
+    await expect(
+      fetchPullRequestReviewSurfaceThreadsWithMetadata(target),
+    ).resolves.toMatchObject({ headSha: 'head-a' });
+    await expect(
+      fetchPullRequestReviewSurfaceThreadsFreshWithMetadata(target),
+    ).resolves.toMatchObject({ headSha: 'head-b' });
+    await expect(
+      fetchPullRequestReviewSurfaceThreadsWithMetadata(target),
+    ).resolves.toMatchObject({ headSha: 'head-a' });
     expect(globalThis.fetch).toHaveBeenCalledTimes(2);
   });
 

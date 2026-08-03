@@ -84,6 +84,7 @@ export type {
 export {
   clearPullRequestReviewSurfaceThreadCache,
   fetchPullRequestReviewThread,
+  fetchPullRequestReviewSurfaceThreadsFreshWithMetadata,
   fetchPullRequestReviewSurfaceThreadsWithMetadata,
   fetchPullRequestReviewThreads,
   listPullRequestComments,
