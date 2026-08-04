@@ -1417,9 +1417,13 @@ application-owned snapshots at admission, recovery, and settlement boundaries.
 - [x] Move or contain Display Assistant context acknowledgement so a
       synchronous app-database failure in `useResponseFinish` cannot fail an
       otherwise completed briefing.
-- [ ] Validate the exact briefing run before advancing the application-owned
+- [x] Validate the exact briefing run before advancing the application-owned
       display-context baseline, and reconcile that external mutation at a
-      durable settlement boundary.
+      durable settlement boundary. The mounted agent now persists the validated
+      queued run's complete captured context as its retry-stable source of truth,
+      compares that binding with Flue's durable response-start model metadata,
+      and advances the capture-time-fenced session baseline only while settling
+      the matching completed submission that adopted the bound model.
 - [x] Revision-bind learning memory rewrite, merge, and archive proposals to
       the `updatedAt` values in their prepared evidence. Carry those fences
       through review candidates so delayed or recovered decisions cannot
@@ -1443,9 +1447,24 @@ application-owned snapshots at admission, recovery, and settlement boundaries.
 - [x] Run full post-refactor verification: 1,043 unit tests, 44 serial/git
       tests, 90 integration tests, application and documentation builds, npm
       package validation, packed CLI smoke, and formatting all pass.
-- [ ] Add mounted-agent lifecycle tests for Display Assistant briefing joins
+- [x] Add mounted-agent lifecycle tests for Display Assistant briefing joins
       and Autopilot owner first turns, no-tool continuation, capability changes,
-      and crash-before-preparation recovery.
+      and crash-before-preparation recovery. The tests run the real agents under
+      `start()` with Pi's faux provider, including a joined briefing that cannot
+      adopt a newly configured submission-scoped model until its next response,
+      a later joined delivery, production config-history staleness, and replay
+      from the already-persisted briefing context.
+- [x] Preserve the Autopilot owner turn idempotency key through both production
+      dispatch and the injected dispatcher seam used by recovery and focused
+      tests.
+- [x] Complete an independent final Flue 2 lifecycle re-review. Its joined
+      delivery, pre-settlement baseline, retry stability, and post-capture
+      context-drift findings are covered by durable binding reuse plus atomic
+      session/config/memory settlement fences; no P1-P3 findings remain.
+- [x] Run final full verification: 1,047 unit tests, 44 serial/git tests, 90
+      integration tests, application and documentation builds, npm package
+      validation, packed CLI smoke, database migration checks, and formatting
+      all pass.
 
 The completed lifecycle fixes use the pre-admission owner snapshot directly in
 the first finish cycle, rebuild missing reserved-turn context before replay,

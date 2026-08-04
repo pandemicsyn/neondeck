@@ -8,7 +8,6 @@ import {
   useDelivery,
   useModel,
   usePersistentState,
-  useResponseFinish,
   useResponseStart,
   useSandbox,
   useSkill,
@@ -26,9 +25,12 @@ import {
   type RuntimeSkillSessionSnapshot,
 } from '../modules/runtime';
 import {
+  type BriefingDisplayContextBinding,
   briefingClientDataSchema,
   neondeckBriefingActions,
   prepareBriefingAgentDelivery,
+  attachBriefingContextSnapshot,
+  readBriefingContextBindingSync,
 } from '../modules/briefings';
 import { neondeckCommandActions } from '../modules/commands';
 import { neondeckConfigActions } from '../modules/config';
@@ -57,7 +59,6 @@ import { neondeckScheduledTaskActions } from '../modules/scheduled-tasks';
 import {
   neondeckSessionActions,
   displaySessionContextSnapshotForAgentSync,
-  acknowledgeDisplaySessionContextSnapshotSync,
   recordDisplaySessionContextSnapshotSync,
 } from '../modules/sessions';
 import { soulInstructions } from '../modules/runtime';
@@ -80,6 +81,13 @@ export const route: MiddlewareHandler = async (_c, next) => next();
 type DisplayAssistantSessionContext = {
   version: 2;
   snapshotId: string;
+  capturedAt: string;
+  baselineSnapshotId: string | null;
+  baselineLoadedAt: string;
+  sessionContextFence: string;
+  configHistoryId: number;
+  memoryEventSequence: number;
+  pendingBriefingRunId: string | null;
   models: AgentModelSelection;
   soul: string;
   memory: string;
@@ -110,9 +118,18 @@ export function DisplayAssistant({ id }: AgentProps) {
     refreshForBriefing && delivery.kind === 'signal'
       ? delivery.attributes
       : undefined;
-  const context =
-    !persistedContext || refreshForBriefing
-      ? captureDisplayAssistantSessionContext(id)
+  const briefingRunId = briefingAttributes?.briefingRunId;
+  const existingBriefingBinding =
+    refreshForBriefing && briefingRunId
+      ? readBriefingContextBindingSync(briefingRunId, id)
+      : null;
+  const context = existingBriefingBinding
+    ? displayContextFromBriefingBinding(existingBriefingBinding)
+    : !persistedContext || refreshForBriefing
+      ? captureDisplayAssistantSessionContext(
+          id,
+          refreshForBriefing ? (briefingRunId ?? null) : null,
+        )
       : persistedContext;
   const repoActions =
     delivery.kind === 'user'
@@ -123,23 +140,36 @@ export function DisplayAssistant({ id }: AgentProps) {
     schema: briefingClientDataSchema,
   });
   useAgentStart(async ({ append }) => {
-    recordDisplaySessionContextSnapshotSync({
-      sessionId: id,
-      snapshotId: context.snapshotId,
-      memoryIds: context.memoryIds,
-      refreshBriefingContext: context.refreshBriefingContext,
-      linkedContext: context.linkedContext,
-    });
+    let prepared: Awaited<
+      ReturnType<typeof prepareBriefingAgentDelivery>
+    > | null = null;
+    let runId: string | undefined;
+    if (refreshForBriefing) {
+      runId = briefingRunId;
+      if (!runId) throw new Error('Briefing signal is missing briefingRunId.');
+      prepared = await prepareBriefingAgentDelivery({
+        runId,
+        sessionId: id,
+        profileId: briefingAttributes?.profileId,
+        snapshotVersion: briefingAttributes?.snapshotVersion,
+      });
+      await attachBriefingContextSnapshot({
+        id: runId,
+        sessionId: id,
+        binding: briefingBindingFromDisplayContext(context),
+      });
+    }
+    if (!context.pendingBriefingRunId) {
+      recordDisplaySessionContextSnapshotSync({
+        sessionId: id,
+        snapshotId: context.snapshotId,
+        memoryIds: context.memoryIds,
+        refreshBriefingContext: context.refreshBriefingContext,
+        linkedContext: context.linkedContext,
+      });
+    }
     if (!persistedContext || refreshForBriefing) setPersistedContext(context);
-    if (!refreshForBriefing) return;
-    const runId = briefingAttributes?.briefingRunId;
-    if (!runId) throw new Error('Briefing signal is missing briefingRunId.');
-    const prepared = await prepareBriefingAgentDelivery({
-      runId,
-      sessionId: id,
-      profileId: briefingAttributes?.profileId,
-      snapshotVersion: briefingAttributes?.snapshotVersion,
-    });
+    if (!prepared || !runId) return;
     writeBriefing(prepared.data);
     append({
       kind: 'signal',
@@ -158,24 +188,6 @@ export function DisplayAssistant({ id }: AgentProps) {
       thinkingLevel: context.models.displayAssistantThinkingLevel,
     },
   }));
-  useResponseFinish(({ metadata, log }) => {
-    if (!context.refreshBriefingContext) return;
-    if (!displayAssistantContextModelWasAdopted(metadata, context.models)) {
-      return;
-    }
-    try {
-      acknowledgeDisplaySessionContextSnapshotSync({
-        sessionId: id,
-        snapshotId: context.snapshotId,
-      });
-    } catch (error) {
-      log.warn('Could not acknowledge refreshed briefing context', {
-        sessionId: id,
-        snapshotId: context.snapshotId,
-        error: error instanceof Error ? error.message : String(error),
-      });
-    }
-  });
   useModel(context.models.displayAssistant, {
     thinkingLevel: context.models.displayAssistantThinkingLevel,
   });
@@ -300,11 +312,13 @@ export function displayAssistantContextModelWasAdopted(
 
 function captureDisplayAssistantSessionContext(
   id: string,
+  pendingBriefingRunId: string | null,
 ): DisplayAssistantSessionContext {
+  const capturedAt = new Date().toISOString();
   const session = displaySessionContextSnapshotForAgentSync(id);
   const skills = runtimeSkillSessionSnapshotsSync();
-  const snapshot: Omit<DisplayAssistantSessionContext, 'snapshotId'> = {
-    version: 2,
+  const snapshot = {
+    version: 2 as const,
     models: readAgentModelSelectionSync(),
     soul: soulInstructions(),
     memory: session.memoryInstructions,
@@ -321,8 +335,45 @@ function captureDisplayAssistantSessionContext(
   };
   return {
     ...snapshot,
+    capturedAt,
+    baselineSnapshotId: session.baselineSnapshotId,
+    baselineLoadedAt: session.baselineLoadedAt,
+    sessionContextFence: session.sessionContextFence,
+    configHistoryId: session.configHistoryId,
+    memoryEventSequence: session.memoryEventSequence,
+    pendingBriefingRunId,
     snapshotId: createHash('sha256')
       .update(JSON.stringify(snapshot))
       .digest('hex'),
   };
+}
+
+function briefingBindingFromDisplayContext(
+  context: DisplayAssistantSessionContext,
+): BriefingDisplayContextBinding {
+  return {
+    snapshotId: context.snapshotId,
+    capturedAt: context.capturedAt,
+    baselineSnapshotId: context.baselineSnapshotId,
+    baselineLoadedAt: context.baselineLoadedAt,
+    sessionContextFence: context.sessionContextFence,
+    configHistoryId: context.configHistoryId,
+    memoryEventSequence: context.memoryEventSequence,
+    refreshRequired: context.refreshBriefingContext,
+    model: context.models.displayAssistant,
+    thinkingLevel: context.models.displayAssistantThinkingLevel,
+    memoryIds: context.memoryIds,
+    linkedContext: context.linkedContext,
+    agentContext: JSON.parse(JSON.stringify(context)),
+  };
+}
+
+function displayContextFromBriefingBinding(
+  binding: BriefingDisplayContextBinding,
+) {
+  const context = binding.agentContext as DisplayAssistantSessionContext;
+  if (context.snapshotId !== binding.snapshotId || context.version !== 2) {
+    throw new Error('Briefing display-context binding is invalid.');
+  }
+  return context;
 }

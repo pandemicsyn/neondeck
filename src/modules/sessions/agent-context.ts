@@ -100,6 +100,21 @@ export function displaySessionContextSnapshotForAgentSync(
   const database = openDb(paths.neondeckDatabase, { readOnly: true });
   try {
     const session = findChatSession(database, sessionId);
+    const baseline = database
+      .prepare(
+        `SELECT context_snapshot_id, context_loaded_at FROM chat_sessions WHERE id = ?;`,
+      )
+      .get(sessionId) as
+      | { context_snapshot_id?: unknown; context_loaded_at?: unknown }
+      | undefined;
+    const configHighWater = database
+      .prepare('SELECT COALESCE(MAX(id), 0) AS id FROM config_history;')
+      .get() as { id?: unknown };
+    const memoryHighWater = database
+      .prepare(
+        'SELECT COALESCE(MAX(sequence), 0) AS sequence FROM memory_events;',
+      )
+      .get() as { sequence?: unknown };
     const memory = buildMemoryPromptSnapshotSync(paths, {
       repoId: session?.linkedRepoId ?? null,
     });
@@ -118,6 +133,21 @@ export function displaySessionContextSnapshotForAgentSync(
       memoryIds: memory.memoryIds,
       memoryInstructions: memory.instructions,
       refreshBriefingContext,
+      baselineSnapshotId:
+        typeof baseline?.context_snapshot_id === 'string'
+          ? baseline.context_snapshot_id
+          : null,
+      baselineLoadedAt:
+        typeof baseline?.context_loaded_at === 'string'
+          ? baseline.context_loaded_at
+          : (session?.contextLoadedAt ?? new Date().toISOString()),
+      sessionContextFence: displaySessionContextFence(session),
+      configHistoryId:
+        typeof configHighWater.id === 'number' ? configHighWater.id : 0,
+      memoryEventSequence:
+        typeof memoryHighWater.sequence === 'number'
+          ? memoryHighWater.sequence
+          : 0,
       linkedContext: {
         repoId: session?.linkedRepoId ?? null,
         watchId: session?.linkedWatchId ?? null,
@@ -127,6 +157,125 @@ export function displaySessionContextSnapshotForAgentSync(
   } finally {
     database.close();
   }
+}
+
+export function settleDisplaySessionContextSnapshotSync(
+  input: {
+    sessionId: string;
+    snapshotId: string;
+    capturedAt: string;
+    baselineSnapshotId: string | null;
+    baselineLoadedAt: string;
+    sessionContextFence: string;
+    configHistoryId: number;
+    memoryEventSequence: number;
+    memoryIds: string[];
+    linkedContext: {
+      repoId: string | null;
+      watchId: string | null;
+      taskId: string | null;
+    };
+  },
+  paths: RuntimePaths = runtimePaths(),
+) {
+  ensureRuntimeHomeSync(paths);
+  const database = openDb(paths.neondeckDatabase);
+  try {
+    return withImmediateTransaction(database, () => {
+      const current = database
+        .prepare(
+          `SELECT context_snapshot_id, context_loaded_at FROM chat_sessions WHERE id = ?;`,
+        )
+        .get(input.sessionId) as
+        | { context_snapshot_id?: unknown; context_loaded_at?: unknown }
+        | undefined;
+      if (!current) {
+        throw new Error(`Display session "${input.sessionId}" was not found.`);
+      }
+      const currentSession = findChatSession(database, input.sessionId);
+      const configHighWater = database
+        .prepare('SELECT COALESCE(MAX(id), 0) AS id FROM config_history;')
+        .get() as { id?: unknown };
+      const memoryHighWater = database
+        .prepare(
+          'SELECT COALESCE(MAX(sequence), 0) AS sequence FROM memory_events;',
+        )
+        .get() as { sequence?: unknown };
+      if (
+        displaySessionContextFence(currentSession) !==
+          input.sessionContextFence ||
+        configHighWater.id !== input.configHistoryId ||
+        memoryHighWater.sequence !== input.memoryEventSequence
+      ) {
+        return false;
+      }
+      if (
+        current.context_snapshot_id === input.snapshotId &&
+        current.context_loaded_at === input.capturedAt
+      ) {
+        return false;
+      }
+      const currentSnapshotId =
+        typeof current.context_snapshot_id === 'string'
+          ? current.context_snapshot_id
+          : null;
+      const currentLoadedAt =
+        typeof current.context_loaded_at === 'string'
+          ? current.context_loaded_at
+          : input.baselineLoadedAt;
+      if (
+        currentSnapshotId !== input.baselineSnapshotId ||
+        currentLoadedAt !== input.baselineLoadedAt
+      ) {
+        return false;
+      }
+
+      database
+        .prepare(
+          `UPDATE chat_sessions
+           SET context_loaded_at = ?, context_memory_ids_json = ?,
+             context_snapshot_id = ?, stale_reasons_json = NULL, updated_at = ?
+           WHERE id = ?;`,
+        )
+        .run(
+          input.capturedAt,
+          JSON.stringify(input.memoryIds),
+          input.snapshotId,
+          new Date().toISOString(),
+          input.sessionId,
+        );
+      markLoadedMemoriesUsed(database, input.memoryIds, input.capturedAt);
+      recordSessionAudit(database, {
+        action: 'briefing_context_settled',
+        sessionId: input.sessionId,
+        reason: 'briefing-submission-settled',
+        metadata: {
+          snapshotId: input.snapshotId,
+          capturedAt: input.capturedAt,
+          memoryIds: input.memoryIds,
+          linkedRepoId: input.linkedContext.repoId,
+          linkedWatchId: input.linkedContext.watchId,
+          linkedTaskId: input.linkedContext.taskId,
+        },
+      });
+      return true;
+    });
+  } finally {
+    database.close();
+  }
+}
+
+function displaySessionContextFence(session: ChatSessionRecord | undefined) {
+  if (!session) return '';
+  return JSON.stringify({
+    title: session.title,
+    kind: session.kind,
+    linkedRepoId: session.linkedRepoId,
+    linkedWatchId: session.linkedWatchId,
+    linkedTaskId: session.linkedTaskId,
+    summary: session.summary,
+    uiMetadata: session.uiMetadata,
+  });
 }
 
 export function recordDisplaySessionContextSnapshotSync(
@@ -197,10 +346,54 @@ export function acknowledgeDisplaySessionContextSnapshotSync(
   input: { sessionId: string; snapshotId: string },
   paths: RuntimePaths = runtimePaths(),
 ) {
+  return updateDisplaySessionContextSnapshotAcknowledgementSync(
+    input,
+    paths,
+    false,
+  );
+}
+
+export function reconcileDisplaySessionContextSnapshotSync(
+  input: { sessionId: string; snapshotId: string },
+  paths: RuntimePaths = runtimePaths(),
+) {
+  return updateDisplaySessionContextSnapshotAcknowledgementSync(
+    input,
+    paths,
+    true,
+  );
+}
+
+function updateDisplaySessionContextSnapshotAcknowledgementSync(
+  input: { sessionId: string; snapshotId: string },
+  paths: RuntimePaths,
+  requireCurrentSnapshot: boolean,
+) {
   ensureRuntimeHomeSync(paths);
   const database = openDb(paths.neondeckDatabase);
   try {
     return withImmediateTransaction(database, () => {
+      const current = database
+        .prepare(
+          `SELECT context_snapshot_id, stale_reasons_json FROM chat_sessions WHERE id = ?;`,
+        )
+        .get(input.sessionId) as
+        | {
+            context_snapshot_id?: unknown;
+            stale_reasons_json?: unknown;
+          }
+        | undefined;
+      const matches = current?.context_snapshot_id === input.snapshotId;
+      if (!matches) {
+        if (requireCurrentSnapshot) {
+          throw new Error(
+            `Display context snapshot "${input.snapshotId}" is not current for session "${input.sessionId}".`,
+          );
+        }
+        return false;
+      }
+      if (current.stale_reasons_json === null) return false;
+
       const now = new Date().toISOString();
       const update = database
         .prepare(

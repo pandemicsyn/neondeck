@@ -3,6 +3,9 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
+import { fauxAssistantMessage, fauxProvider } from '@earendil-works/pi-ai';
+import { init, type FlueObservation } from '@flue/runtime';
+import { start } from '@flue/runtime/node';
 import {
   afterAll,
   afterEach,
@@ -17,6 +20,7 @@ import {
   completeAutopilotWatchIfTerminal,
   configurePrAutopilot,
   controlPrAutopilot,
+  dispatchAutopilotOwnerTurn,
   messagePrAutopilotOwner,
   recoverInterruptedAutopilotOwners,
   runAutopilotWatchEvent,
@@ -49,7 +53,10 @@ import {
   recordWorktreePushSucceeded,
   readWorktreeRecord,
 } from './modules/worktrees';
-import { buildPrAutopilotOwnerRuntime } from './agents/pr-autopilot-owner';
+import {
+  buildPrAutopilotOwnerRuntime,
+  PrAutopilotOwner,
+} from './agents/pr-autopilot-owner';
 import {
   clearPendingAutopilotTurn,
   claimPendingAutopilotTurnSettlement,
@@ -70,7 +77,6 @@ import {
   createSeededGitRepository,
   type SeededGitRepository,
 } from './testing/git-repository-fixture';
-import type { FlueObservation } from '@flue/runtime';
 import {
   autopilotOwnerInitialData,
   buildAutopilotOwnerEnvelope,
@@ -392,6 +398,161 @@ describe('minimal Autopilot watch loop', () => {
       readSettlement: neverSettles,
     });
     expect(dispatchTurn).toHaveBeenCalledTimes(1);
+  });
+
+  it('mounts recovered owner authority before the first turn and changes capabilities only at the next turn', async () => {
+    const { paths } = await gitFixturePaths();
+    await configurePrAutopilot(
+      {
+        ref: 'neondeck#123',
+        mode: 'prepare-only',
+        processExisting: false,
+        confirm: true,
+      },
+      paths,
+      fixtureDependencies(repositorySeed?.featureSha ?? undefined),
+    );
+    const created = await createWorktree(
+      { repoId: 'neondeck', prNumber: 123, headRef: 'feature' },
+      paths,
+    );
+    const worktree = worktreeFrom(created);
+    const instanceId = 'mounted-recovery-owner';
+    bindWatchAutopilotOwner(paths, 'pandemicsyn/neondeck#123', {
+      ownerInstanceId: instanceId,
+      worktreeId: worktree.id,
+    });
+    claimWatchAutopilotTurn(
+      paths,
+      'pandemicsyn/neondeck#123',
+      'mounted-recovery-event',
+    );
+    const firstEnvelope = buildAutopilotOwnerEnvelope({
+      watchId: 'pandemicsyn/neondeck#123',
+      repoId: 'neondeck',
+      repoFullName: 'pandemicsyn/neondeck',
+      prNumber: 123,
+      worktreeId: worktree.id,
+      worktreePath: worktree.localPath,
+      headSha: repositorySeed?.featureSha ?? 'a'.repeat(40),
+      baseSha: repositorySeed?.baseSha ?? 'b'.repeat(40),
+      eventFingerprint: 'mounted-recovery-event',
+      mode: 'prepare-only',
+      facts: { feedback: ['Confirm the mounted lifecycle boundary.'] },
+      availableCapabilities: ['workspace', 'commit'],
+    });
+    const firstTurn = registerPendingAutopilotTurn(
+      paths.home,
+      instanceId,
+      firstEnvelope.eventFingerprint,
+      'prepare-only',
+      'watch-event',
+      undefined,
+      { envelope: firstEnvelope, watchId: firstEnvelope.watchId },
+    );
+    vi.stubEnv('NEONDECK_HOME', paths.home);
+    vi.stubEnv('FLUE_AGENT_MODEL', 'faux/faux-1');
+    const modelContexts: string[] = [];
+    const modelToolCatalogs: string[][] = [];
+    const faux = fauxProvider();
+    faux.setResponses([
+      (context) => {
+        modelContexts.push(JSON.stringify(context));
+        modelToolCatalogs.push((context.tools ?? []).map((tool) => tool.name));
+        return fauxAssistantMessage('No repository mutation looks necessary.');
+      },
+      (context) => {
+        modelContexts.push(JSON.stringify(context));
+        modelToolCatalogs.push((context.tools ?? []).map((tool) => tool.name));
+        return fauxAssistantMessage(
+          'I inspected the bounded turn and no repository mutation is appropriate.',
+        );
+      },
+      (context) => {
+        modelContexts.push(JSON.stringify(context));
+        modelToolCatalogs.push((context.tools ?? []).map((tool) => tool.name));
+        return fauxAssistantMessage('Notification-only turn acknowledged.');
+      },
+    ]);
+    const flue = await start({
+      agents: [PrAutopilotOwner],
+      providers: [faux.provider],
+    });
+    const handle = init(PrAutopilotOwner, { id: instanceId });
+    const neverSettles = () => new Promise<{ failed: false }>(() => undefined);
+    try {
+      await expect(
+        recoverInterruptedAutopilotOwners(paths, {
+          readSettlement: neverSettles,
+        }),
+      ).resolves.toBe(1);
+      const recovered = readPendingAutopilotTurn(paths.home, instanceId);
+      expect(recovered).toMatchObject({
+        turnId: firstTurn.turnId,
+        status: 'admitted',
+        prepared: {
+          schema: 'neondeck.autopilot-owner-prepared.v1',
+          capabilities: ['workspace', 'commit'],
+          workspaceContext: { path: worktree.localPath },
+        },
+      });
+      await expect(
+        handle.read(recovered!.correlationId!),
+      ).resolves.toBeDefined();
+      expect(modelContexts).toHaveLength(2);
+      expect(modelToolCatalogs[0]).toContain('neondeck_owner_commit');
+      expect(modelContexts[0]).toContain(worktree.localPath);
+      expect(modelContexts[1]).toContain(
+        'neondeck.autopilot.completion-required',
+      );
+
+      clearPendingAutopilotTurn(paths.home, instanceId);
+      transitionWatchAutopilot(paths, 'pandemicsyn/neondeck#123', {
+        from: 'working',
+        to: 'watching',
+      });
+      configureWatchAutopilot(paths, 'pandemicsyn/neondeck#123', 'notify-only');
+      claimWatchAutopilotTurn(
+        paths,
+        'pandemicsyn/neondeck#123',
+        'mounted-notify-event',
+      );
+      const secondEnvelope = buildAutopilotOwnerEnvelope({
+        ...firstEnvelope,
+        eventFingerprint: 'mounted-notify-event',
+        mode: 'notify-only',
+        availableCapabilities: [],
+      });
+      const secondTurn = registerPendingAutopilotTurn(
+        paths.home,
+        instanceId,
+        secondEnvelope.eventFingerprint,
+        'notify-only',
+        'watch-event',
+        undefined,
+        { envelope: secondEnvelope, watchId: secondEnvelope.watchId },
+      );
+      await buildPrAutopilotOwnerRuntime(instanceId, paths);
+      const receipt = await dispatchAutopilotOwnerTurn({
+        instanceId,
+        envelope: secondEnvelope,
+        idempotencyKey: secondTurn.turnId,
+      });
+      recordPendingAutopilotTurnCorrelationId(
+        paths.home,
+        instanceId,
+        secondTurn.turnId,
+        receipt.submissionId,
+      );
+      await expect(handle.read(receipt)).resolves.toBeDefined();
+      expect(modelContexts).toHaveLength(3);
+      expect(modelToolCatalogs[2]).not.toContain('neondeck_owner_commit');
+      expect(readPendingAutopilotTurn(paths.home, instanceId)).toMatchObject({
+        prepared: { capabilities: [], workspaceContext: null },
+      });
+    } finally {
+      await flue.stop();
+    }
   });
 
   it('reclaims an interrupted app-side settlement from the canonical Flue submission', async () => {

@@ -45,6 +45,7 @@ describe('continuing Autopilot owner foundations', () => {
     await dispatchAutopilotOwnerTurn({
       instanceId: 'pr-owner-stable',
       envelope,
+      idempotencyKey: 'owner-turn-1',
       dispatchOwner: dispatchOwner as never,
     });
 
@@ -52,6 +53,7 @@ describe('continuing Autopilot owner foundations', () => {
       agent: 'pr-autopilot-owner',
       id: 'pr-owner-stable',
       input: JSON.stringify(envelope),
+      idempotencyKey: 'owner-turn-1',
     });
   });
 

@@ -116,6 +116,26 @@ export type BriefingProfile = {
 
 export type BriefingRunStatus = 'queued' | 'ready' | 'failed';
 
+export type BriefingDisplayContextBinding = {
+  snapshotId: string;
+  capturedAt: string;
+  baselineSnapshotId: string | null;
+  baselineLoadedAt: string;
+  sessionContextFence: string;
+  configHistoryId: number;
+  memoryEventSequence: number;
+  refreshRequired: boolean;
+  model: string;
+  thinkingLevel: string;
+  memoryIds: string[];
+  linkedContext: {
+    repoId: string | null;
+    watchId: string | null;
+    taskId: string | null;
+  };
+  agentContext: JsonValue;
+};
+
 export type BriefingRun = {
   id: string;
   profileId: string | null;
@@ -127,6 +147,8 @@ export type BriefingRun = {
   commandEventId: string | null;
   dispatchId: string | null;
   workflowRunId: string | null;
+  contextSnapshotId: string | null;
+  contextBinding: BriefingDisplayContextBinding | null;
   status: BriefingRunStatus;
   error: string | null;
   queuedAt: string;

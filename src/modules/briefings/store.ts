@@ -8,6 +8,7 @@ import {
   type RuntimePaths,
 } from '../../runtime-home';
 import type {
+  BriefingDisplayContextBinding,
   BriefingProfile,
   BriefingRun,
   BriefingRunMetadata,
@@ -49,6 +50,8 @@ const persistedRunSchema = v.object({
   command_event_id: nullableString,
   dispatch_id: nullableString,
   workflow_run_id: nullableString,
+  context_snapshot_id: nullableString,
+  context_binding_json: nullableString,
   status: v.picklist(['queued', 'ready', 'failed']),
   error: nullableString,
   queued_at: v.string(),
@@ -475,6 +478,82 @@ export async function attachBriefingDispatch(
   }
 }
 
+export async function attachBriefingContextSnapshot(
+  input: {
+    id: string;
+    sessionId: string;
+    binding: BriefingDisplayContextBinding;
+  },
+  paths: RuntimePaths = runtimePaths(),
+) {
+  await ensureRuntimeHome(paths);
+  const database = openDb(paths.neondeckDatabase);
+  try {
+    database.exec('BEGIN IMMEDIATE;');
+    const row = database
+      .prepare('SELECT * FROM briefing_runs WHERE id = ?;')
+      .get(input.id);
+    if (!row) {
+      throw new Error(`Briefing run "${input.id}" was not found.`);
+    }
+    const run = readRunRow(row);
+    if (run.status !== 'queued') {
+      throw new Error(`Briefing run "${input.id}" is no longer queued.`);
+    }
+    if (run.sessionId !== input.sessionId) {
+      throw new Error(
+        'Briefing context snapshot does not match its conversation.',
+      );
+    }
+    if (run.contextBinding) {
+      database.exec('COMMIT;');
+      return run;
+    }
+    database
+      .prepare(
+        `UPDATE briefing_runs
+         SET context_snapshot_id = ?, context_binding_json = ?, updated_at = ?
+         WHERE id = ? AND status = 'queued';`,
+      )
+      .run(
+        input.binding.snapshotId,
+        JSON.stringify(input.binding),
+        new Date().toISOString(),
+        input.id,
+      );
+    const attached = database
+      .prepare('SELECT * FROM briefing_runs WHERE id = ?;')
+      .get(input.id);
+    database.exec('COMMIT;');
+    return attached ? readRunRow(attached) : null;
+  } catch (error) {
+    if (database.isTransaction) database.exec('ROLLBACK;');
+    throw error;
+  } finally {
+    database.close();
+  }
+}
+
+export function readBriefingContextBindingSync(
+  id: string,
+  sessionId: string,
+  paths: RuntimePaths = runtimePaths(),
+) {
+  const database = openDb(paths.neondeckDatabase, { readOnly: true });
+  try {
+    const row = database
+      .prepare('SELECT * FROM briefing_runs WHERE id = ?;')
+      .get(id);
+    if (!row) return null;
+    const run = readRunRow(row);
+    return run.status === 'queued' && run.sessionId === sessionId
+      ? run.contextBinding
+      : null;
+  } finally {
+    database.close();
+  }
+}
+
 export async function listQueuedBriefingRuns(
   paths: RuntimePaths = runtimePaths(),
 ) {
@@ -687,7 +766,8 @@ export async function listBriefingRunMetadata(
       .prepare(
         `SELECT
           id, profile_id, trigger, instructions_version, session_id,
-          command_event_id, dispatch_id, workflow_run_id, status, error,
+          command_event_id, dispatch_id, workflow_run_id, context_snapshot_id,
+          context_binding_json, status, error,
           queued_at, completed_at, created_at, updated_at,
           json_extract(snapshot_json, '$.version') AS snapshot_version,
           json_extract(snapshot_json, '$.collectedAt') AS snapshot_collected_at,
@@ -745,6 +825,8 @@ function readRunRow(row: unknown): BriefingRun {
     commandEventId: value.command_event_id,
     dispatchId: value.dispatch_id,
     workflowRunId: value.workflow_run_id,
+    contextSnapshotId: value.context_snapshot_id,
+    contextBinding: parseBriefingContextBinding(value.context_binding_json),
     status: value.status,
     error: value.error,
     queuedAt: value.queued_at,
@@ -775,6 +857,8 @@ function readRunMetadataRow(row: unknown): BriefingRunMetadata {
     commandEventId: value.command_event_id,
     dispatchId: value.dispatch_id,
     workflowRunId: value.workflow_run_id,
+    contextSnapshotId: value.context_snapshot_id,
+    contextBinding: parseBriefingContextBinding(value.context_binding_json),
     status: value.status,
     error: value.error,
     queuedAt: value.queued_at,
@@ -788,6 +872,17 @@ function readRunMetadataRow(row: unknown): BriefingRunMetadata {
       truncated: value.snapshot_truncated === 1,
     },
   };
+}
+
+function parseBriefingContextBinding(
+  value: string | null,
+): BriefingDisplayContextBinding | null {
+  if (!value) return null;
+  try {
+    return JSON.parse(value) as BriefingDisplayContextBinding;
+  } catch {
+    return null;
+  }
 }
 
 function parsePersisted<

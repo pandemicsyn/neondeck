@@ -30,6 +30,7 @@ export function dispatchAutopilotOwnerTurn(input: {
       agent: 'pr-autopilot-owner',
       id: instanceId,
       input: serializeAutopilotOwnerEnvelope(input.envelope),
+      idempotencyKey: input.idempotencyKey,
     });
   }
   return dispatchOwnerAgent({

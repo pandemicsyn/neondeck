@@ -19,6 +19,7 @@ import {
   briefingRunNowSchema,
   defaultBriefingProfileId,
   type BriefingClientData,
+  type BriefingDisplayContextBinding,
   type BriefingProfile,
   type BriefingRun,
 } from './schemas';
@@ -42,6 +43,7 @@ import {
   settleBriefingRun,
   writeBriefingProfileAndTask,
 } from './store';
+import { settleDisplaySessionContextSnapshotSync } from '../sessions';
 
 type BriefingServiceDependencies = BriefingSnapshotDependencies & {
   dispatchAgent?: (request: {
@@ -739,6 +741,11 @@ async function finalizeBriefingTerminal(
   paths: RuntimePaths,
 ) {
   const { failed, error } = terminal;
+  const correlated = await readBriefingRunByDispatch(dispatchId, paths);
+  if (!correlated) return null;
+  if (!failed && correlated.contextSnapshotId) {
+    await reconcileBriefingContextSettlement(correlated, dispatchId, paths);
+  }
   const settled = await settleBriefingRun(
     dispatchId,
     failed ? 'failed' : 'ready',
@@ -786,6 +793,61 @@ async function finalizeBriefingTerminal(
     publishSessionEvent('updated', sessionResult.session, null);
   }
   return run;
+}
+
+async function reconcileBriefingContextSettlement(
+  run: BriefingRun,
+  submissionId: string,
+  paths: RuntimePaths,
+) {
+  const metadata = await readBriefingReplyMetadata(run.sessionId, submissionId);
+  const binding = run.contextBinding;
+  if (!binding || binding.snapshotId !== run.contextSnapshotId) {
+    throw new Error(
+      `Briefing run "${run.id}" settled without its exact display-context binding.`,
+    );
+  }
+  if (!briefingContextModelWasAdopted(metadata, binding)) return;
+  settleDisplaySessionContextSnapshotSync(
+    {
+      sessionId: run.sessionId,
+      snapshotId: binding.snapshotId,
+      capturedAt: binding.capturedAt,
+      baselineSnapshotId: binding.baselineSnapshotId,
+      baselineLoadedAt: binding.baselineLoadedAt,
+      sessionContextFence: binding.sessionContextFence,
+      configHistoryId: binding.configHistoryId,
+      memoryEventSequence: binding.memoryEventSequence,
+      memoryIds: binding.memoryIds,
+      linkedContext: binding.linkedContext,
+    },
+    paths,
+  );
+}
+
+async function readBriefingReplyMetadata(
+  sessionId: string,
+  submissionId: string,
+) {
+  const [{ init }, { DisplayAssistant }] = await Promise.all([
+    import('@flue/runtime'),
+    import('../../agents/display-assistant'),
+  ]);
+  return (await init(DisplayAssistant, { id: sessionId }).read(submissionId))
+    .metadata;
+}
+
+export function briefingContextModelWasAdopted(
+  metadata: Record<string, unknown> | undefined,
+  binding: Pick<BriefingDisplayContextBinding, 'model' | 'thinkingLevel'>,
+) {
+  const value = metadata?.neondeckDisplayAssistant;
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const started = value as Record<string, unknown>;
+  return (
+    started.model === binding.model &&
+    started.thinkingLevel === binding.thinkingLevel
+  );
 }
 
 function briefingObservationError(

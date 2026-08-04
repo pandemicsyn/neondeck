@@ -284,6 +284,8 @@ export const briefingRuns = sqliteTable(
     commandEventId: text('command_event_id'),
     dispatchId: text('dispatch_id'),
     workflowRunId: text('workflow_run_id'),
+    contextSnapshotId: text('context_snapshot_id'),
+    contextBindingJson: text('context_binding_json'),
     status: text('status').notNull(),
     error: text('error'),
     queuedAt: text('queued_at').notNull(),
