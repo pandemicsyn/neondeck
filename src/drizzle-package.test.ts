@@ -127,7 +127,7 @@ describe('Drizzle v1 package behavior', () => {
              ORDER BY name;`,
           )
           .all(),
-      ).toEqual([]);
+      ).toEqual([{ name: 'autopilot_owner_turns' }]);
     } finally {
       database.close();
     }

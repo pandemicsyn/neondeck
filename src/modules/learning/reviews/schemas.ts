@@ -1,5 +1,6 @@
 import type { JsonValue } from '@flue/runtime';
 import * as v from 'valibot';
+import type { ThinkingLevel } from '../../../runtime-home';
 
 export type LearningReviewKind = 'conversation' | 'curation' | 'pr-batch';
 export type LearningReviewStatus = 'running' | 'completed' | 'failed';
@@ -9,12 +10,14 @@ export type LearningReviewRecord = {
   kind: LearningReviewKind;
   status: LearningReviewStatus;
   model: string;
-  thinkingLevel: string;
+  thinkingLevel: ThinkingLevel;
   trigger: JsonValue;
   inputSummary: JsonValue | null;
   result: JsonValue | null;
   error: string | null;
-  flueRunId: string | null;
+  agentId: string | null;
+  submissionId: string | null;
+  dispatchError: string | null;
   startedAt: string;
   completedAt: string | null;
 };
@@ -92,6 +95,43 @@ export const learningReviewerOutputSchema = v.object({
   ),
 });
 
+export const preparedLearningReviewSchema = v.object({
+  ok: v.literal(true),
+  reviewId: nonEmptyStringSchema,
+  kind: v.picklist(['conversation', 'curation', 'pr-batch']),
+  mode: v.picklist(['off', 'review', 'auto']),
+  skillMode: v.picklist(['off', 'review', 'auto']),
+  model: nonEmptyStringSchema,
+  thinkingLevel: v.picklist([
+    'off',
+    'minimal',
+    'low',
+    'medium',
+    'high',
+    'xhigh',
+  ]),
+  inputSummary: v.unknown(),
+  prompt: nonEmptyStringSchema,
+  allowedMemoryIds: v.array(nonEmptyStringSchema),
+  memorySnapshots: v.array(
+    v.object({
+      id: nonEmptyStringSchema,
+      scope: activeMemoryScopeSchema,
+      key: nonEmptyStringSchema,
+      repoId: v.nullable(nonEmptyStringSchema),
+      updatedAt: nonEmptyStringSchema,
+    }),
+  ),
+  allowedProjectRepoIds: v.array(v.nullable(nonEmptyStringSchema)),
+  allowedSkillIds: v.array(nonEmptyStringSchema),
+  skillSnapshots: v.array(
+    v.object({
+      id: nonEmptyStringSchema,
+      sha256: nonEmptyStringSchema,
+    }),
+  ),
+});
+
 export const conversationReviewInputSchema = v.object({
   sessionId: v.optional(nonEmptyStringSchema),
   reason: v.optional(v.string()),
@@ -139,12 +179,23 @@ export type PreparedLearningReview = {
   mode: 'off' | 'review' | 'auto';
   skillMode: 'off' | 'review' | 'auto';
   model: string;
-  thinkingLevel: string;
+  thinkingLevel: ThinkingLevel;
   inputSummary: JsonValue;
   prompt: string;
   allowedMemoryIds: string[];
+  memorySnapshots: Array<{
+    id: string;
+    scope: 'user' | 'local' | 'project';
+    key: string;
+    repoId: string | null;
+    updatedAt: string;
+  }>;
   allowedProjectRepoIds: Array<string | null>;
   allowedSkillIds: string[];
+  skillSnapshots: Array<{
+    id: string;
+    sha256: string;
+  }>;
 };
 export type FailedLearningReview = {
   ok: false;

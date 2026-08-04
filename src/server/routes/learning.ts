@@ -1,4 +1,3 @@
-import { invoke } from '@flue/runtime';
 import { Hono } from 'hono';
 import * as v from 'valibot';
 import {
@@ -14,9 +13,11 @@ import {
   rejectSkillPatchCandidate,
 } from '../../modules/learning/skill-patches';
 import { readChatSession } from '../../modules/sessions';
-import curateLearningStoreWorkflow from '../../workflows/curate_learning_store';
-import reviewConversationForLearningWorkflow from '../../workflows/review_conversation_for_learning';
-import reviewPrBatchForLearningWorkflow from '../../workflows/review_pr_batch_for_learning';
+import {
+  admitConversationLearningReview,
+  admitCurationLearningReview,
+  admitPrBatchLearningReview,
+} from '../../modules/learning/reviews';
 import { boundedQueryLimit, safeJsonBody } from '../http';
 
 export function createLearningRoutes(paths: RuntimePaths) {
@@ -41,15 +42,20 @@ export function createLearningRoutes(paths: RuntimePaths) {
         400,
       );
     }
-    const receipt = await invoke(curateLearningStoreWorkflow, {
-      input: { ...parsed.output, trigger: 'manual' },
-    });
+    const receipt = await admitCurationLearningReview(
+      { ...parsed.output, trigger: 'manual' },
+      paths,
+    );
+    if (!receipt.ok) return c.json(receipt, 400);
     return c.json({
       ok: true,
       action: 'learning_curate',
       changed: true,
-      runId: receipt.runId,
-      message: 'Queued memory curation learning workflow.',
+      reviewId: receipt.reviewId,
+      agentId: receipt.agentId,
+      submissionId: receipt.submissionId,
+      activityUrl: receipt.activityUrl,
+      message: 'Queued memory curation learning review.',
     });
   });
 
@@ -200,15 +206,20 @@ export function createLearningRoutes(paths: RuntimePaths) {
       );
       if (!session.ok) return c.json(session, 400);
     }
-    const receipt = await invoke(reviewConversationForLearningWorkflow, {
-      input: { ...parsed.output, trigger: 'manual' },
-    });
+    const receipt = await admitConversationLearningReview(
+      { ...parsed.output, trigger: 'manual' },
+      paths,
+    );
+    if (!receipt.ok) return c.json(receipt, 400);
     return c.json({
       ok: true,
       action: 'learning_review_conversation',
       changed: true,
-      runId: receipt.runId,
-      message: 'Queued conversation learning review workflow.',
+      reviewId: receipt.reviewId,
+      agentId: receipt.agentId,
+      submissionId: receipt.submissionId,
+      activityUrl: receipt.activityUrl,
+      message: 'Queued conversation learning review.',
     });
   });
 
@@ -232,15 +243,20 @@ export function createLearningRoutes(paths: RuntimePaths) {
         400,
       );
     }
-    const receipt = await invoke(reviewPrBatchForLearningWorkflow, {
-      input: { ...parsed.output, trigger: 'manual' },
-    });
+    const receipt = await admitPrBatchLearningReview(
+      { ...parsed.output, trigger: 'manual' },
+      paths,
+    );
+    if (!receipt.ok) return c.json(receipt, 400);
     return c.json({
       ok: true,
       action: 'learning_review_pr_batch',
       changed: true,
-      runId: receipt.runId,
-      message: 'Queued PR/autopilot learning retrospective workflow.',
+      reviewId: receipt.reviewId,
+      agentId: receipt.agentId,
+      submissionId: receipt.submissionId,
+      activityUrl: receipt.activityUrl,
+      message: 'Queued PR/autopilot learning retrospective.',
     });
   });
 

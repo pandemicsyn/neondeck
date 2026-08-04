@@ -2,6 +2,7 @@ import * as v from 'valibot';
 import type { RuntimePaths } from '../../../runtime-home';
 import { recordHandledPrEventAndMaybeQueueLearning } from './events';
 import { nonEmptyStringSchema, type PrBatchReviewInput } from './schemas';
+import type { LearningReviewAdmission } from './admission';
 
 export const humanReviewSubmittedEvidenceSchema = v.object({
   origin: v.picklist(['submission', 'reconciliation']),
@@ -22,9 +23,9 @@ export async function recordHumanReviewSubmittedEvidence(
   input: HumanReviewSubmittedEvidenceInput,
   paths: RuntimePaths,
   dependencies: {
-    invokePrBatchReview?: (input: PrBatchReviewInput) => Promise<{
-      runId: string;
-    }>;
+    invokePrBatchReview?: (
+      input: PrBatchReviewInput,
+    ) => Promise<LearningReviewAdmission>;
   } = {},
 ) {
   const parsed = v.safeParse(humanReviewSubmittedEvidenceSchema, input);

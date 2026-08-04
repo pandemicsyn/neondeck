@@ -14,8 +14,69 @@ export function readPrReview(id: string, paths: RuntimePaths) {
   return readOne('id = ?', id.trim(), paths);
 }
 
+export function readPrReviewAdmissionBinding(id: string, paths: RuntimePaths) {
+  const database = openDb(paths.neondeckDatabase);
+  try {
+    const row = database
+      .prepare(
+        `SELECT id, ref, repo_full_name, pr_number, attempt_id, run_id, status,
+                head_sha, base_sha, base_ref
+         FROM pr_reviews WHERE id = ? LIMIT 1;`,
+      )
+      .get(id.trim()) as Record<string, unknown> | undefined;
+    if (!row) return null;
+    return {
+      id: stringValue(row.id),
+      ref: stringValue(row.ref),
+      repoFullName: stringValue(row.repo_full_name),
+      prNumber: numberValue(row.pr_number),
+      attemptId: nullableString(row.attempt_id),
+      runId: nullableString(row.run_id),
+      status: statusValue(row.status),
+      headSha: stringValue(row.head_sha),
+      baseSha: nullableString(row.base_sha),
+      baseRef: nullableString(row.base_ref),
+    };
+  } finally {
+    database.close();
+  }
+}
+
 export function readPrReviewByRunId(runId: string, paths: RuntimePaths) {
   return readOne('run_id = ?', runId.trim(), paths);
+}
+
+export function listPrReviewAssistSettlementCandidates(paths: RuntimePaths) {
+  const database = openDb(paths.neondeckDatabase);
+  try {
+    return database
+      .prepare(
+        `SELECT id, repo_full_name, pr_number, attempt_id, run_id, status,
+                head_sha, base_sha, base_ref
+         FROM pr_reviews
+         WHERE status IN ('reviewing', 'ready')
+           AND attempt_id IS NOT NULL
+         ORDER BY updated_at ASC;`,
+      )
+      .all()
+      .map((row) => {
+        const value = row as Record<string, unknown>;
+        return {
+          reviewId: stringValue(value.id),
+          ref: `${stringValue(value.repo_full_name)}#${numberValue(value.pr_number)}`,
+          attemptId: stringValue(value.attempt_id),
+          submissionId: nullableString(value.run_id),
+          status: statusValue(value.status),
+          repoFullName: stringValue(value.repo_full_name),
+          prNumber: numberValue(value.pr_number),
+          headSha: stringValue(value.head_sha),
+          baseSha: nullableString(value.base_sha),
+          baseRef: nullableString(value.base_ref),
+        };
+      });
+  } finally {
+    database.close();
+  }
 }
 
 export function readPrReviewForTarget(

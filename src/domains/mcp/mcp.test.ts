@@ -137,12 +137,14 @@ describe('MCP support', () => {
       .find((tool) => tool.name === 'mcp__fixture__echo');
     expect(echo).toBeTruthy();
 
-    const first = await runWithFlueExecutionContextForTests(
-      { agentName: 'display-assistant', instanceId: sessionId },
-      () =>
-        echo!.run({
-          input: { text: 'hello' },
-        } as never),
+    const first = toolOutput(
+      await runWithFlueExecutionContextForTests(
+        { agentName: 'display-assistant', instanceId: sessionId },
+        () =>
+          echo!.run({
+            data: { text: 'hello' },
+          } as never),
+      ),
     );
     expect(first).toMatchObject({
       ok: false,
@@ -161,8 +163,9 @@ describe('MCP support', () => {
       });
       expect(input.input).toContain(`approval ${approvals[0].id} approved`);
       return {
-        dispatchId: 'dispatch-mcp-gate-approval',
+        submissionId: 'dispatch-mcp-gate-approval',
         acceptedAt: new Date().toISOString(),
+        uid: 'mcp-gate-session',
       };
     });
     try {
@@ -180,9 +183,11 @@ describe('MCP support', () => {
       restoreDispatch();
     }
 
-    const second = await echo!.run({
-      input: { text: 'hello' },
-    } as never);
+    const second = toolOutput(
+      await echo!.run({
+        data: { text: 'hello' },
+      } as never),
+    );
     expect(second).toMatchObject({
       ok: true,
       status: 'ok',
@@ -195,9 +200,11 @@ describe('MCP support', () => {
     const denied = registry
       .toolsSync()
       .find((tool) => tool.name === 'mcp__fixture__danger');
-    const deniedResult = await denied!.run({
-      input: { text: 'stop' },
-    } as never);
+    const deniedResult = toolOutput(
+      await denied!.run({
+        data: { text: 'stop' },
+      } as never),
+    );
     expect(deniedResult).toMatchObject({
       ok: false,
       status: 'denied',
@@ -404,7 +411,7 @@ describe('MCP support', () => {
         .find((tool) => tool.name === 'mcp__fixture__nullable');
       expect(nullable).toBeTruthy();
       await expect(
-        nullable!.run({ input: { text: null } } as never),
+        toolOutputPromise(nullable!.run({ data: { text: null } } as never)),
       ).resolves.toMatchObject({
         ok: true,
         status: 'ok',
@@ -447,7 +454,9 @@ describe('MCP support', () => {
     await expect(registry.status()).resolves.toHaveLength(1);
     await expect(registry.listTools('fixture')).resolves.toHaveLength(2);
     await expect(
-      echo!.run({ input: { text: 'still-connected' } } as never),
+      toolOutputPromise(
+        echo!.run({ data: { text: 'still-connected' } } as never),
+      ),
     ).resolves.toMatchObject({
       ok: true,
       status: 'ok',
@@ -609,9 +618,11 @@ describe('MCP support', () => {
         false,
       );
       await expect(
-        mcpRegistryRefreshAction.run({
-          input: { id: 'missing' },
-        } as never),
+        toolOutputPromise(
+          mcpRegistryRefreshAction.run({
+            data: { id: 'missing' },
+          } as never),
+        ),
       ).resolves.toMatchObject({
         ok: false,
         action: 'mcp_registry_refresh',
@@ -662,8 +673,9 @@ describe('MCP support', () => {
       });
       expect(input.input).toContain(`approval ${request!.id} approved`);
       return {
-        dispatchId: 'dispatch-mcp-approval',
+        submissionId: 'dispatch-mcp-approval',
         acceptedAt: new Date().toISOString(),
+        uid: 'mcp-approval-session',
       };
     });
     try {
@@ -867,8 +879,9 @@ describe('MCP support', () => {
     const restoreDispatch = setApprovalNudgeDispatchForTests(async () => {
       dispatched = true;
       return {
-        dispatchId: 'unexpected-dispatch',
+        submissionId: 'unexpected-dispatch',
         acceptedAt: new Date().toISOString(),
+        uid: 'unexpected-session',
       };
     });
 
@@ -917,8 +930,9 @@ describe('MCP support', () => {
     const restoreDispatch = setApprovalNudgeDispatchForTests(async () => {
       dispatched = true;
       return {
-        dispatchId: 'unexpected-dispatch',
+        submissionId: 'unexpected-dispatch',
         acceptedAt: new Date().toISOString(),
+        uid: 'unexpected-session',
       };
     });
 
@@ -1151,12 +1165,14 @@ describe('MCP support', () => {
     process.env.NEONDECK_HOME = home;
     try {
       await expect(
-        mcpServerUpdateAction.run({
-          input: {
-            id: 'remote',
-            server: { timeoutMs: '1000' },
-          },
-        } as never),
+        toolOutputPromise(
+          mcpServerUpdateAction.run({
+            data: {
+              id: 'remote',
+              server: { timeoutMs: '1000' },
+            },
+          } as never),
+        ),
       ).resolves.toMatchObject({
         ok: false,
         action: 'mcp_server_update',
@@ -1189,12 +1205,14 @@ describe('MCP support', () => {
     process.env.NEONDECK_HOME = home;
     try {
       await expect(
-        mcpServerUpdateAction.run({
-          input: {
-            id: 'remote',
-            server: { url: 'https://mcp2.example.test/mcp' },
-          },
-        } as never),
+        toolOutputPromise(
+          mcpServerUpdateAction.run({
+            data: {
+              id: 'remote',
+              server: { url: 'https://mcp2.example.test/mcp' },
+            },
+          } as never),
+        ),
       ).resolves.toMatchObject({
         ok: false,
         changed: false,
@@ -1209,12 +1227,14 @@ describe('MCP support', () => {
       });
 
       await expect(
-        mcpServerUpdateAction.run({
-          input: {
-            id: 'remote',
-            server: { enabled: false },
-          },
-        } as never),
+        toolOutputPromise(
+          mcpServerUpdateAction.run({
+            data: {
+              id: 'remote',
+              server: { enabled: false },
+            },
+          } as never),
+        ),
       ).resolves.toMatchObject({ ok: true, changed: true });
       await expect(readMcpConfig(paths)).resolves.toMatchObject({
         servers: {
@@ -1238,19 +1258,21 @@ describe('MCP support', () => {
     process.env.NEONDECK_HOME = home;
     try {
       await expect(
-        mcpServerAddAction.run({
-          input: {
-            id: 'remote',
-            server: {
-              transport: 'http',
-              url: 'https://mcp.example.test/mcp',
-              auth: {
-                kind: 'oauth',
-                clientSecret: { env: 'MCP_CLIENT_SECRET' },
+        toolOutputPromise(
+          mcpServerAddAction.run({
+            data: {
+              id: 'remote',
+              server: {
+                transport: 'http',
+                url: 'https://mcp.example.test/mcp',
+                auth: {
+                  kind: 'oauth',
+                  clientSecret: { env: 'MCP_CLIENT_SECRET' },
+                },
               },
             },
-          },
-        } as never),
+          } as never),
+        ),
       ).resolves.toMatchObject({
         ok: false,
         changed: false,
@@ -1287,63 +1309,77 @@ describe('MCP support', () => {
     process.env.NEONDECK_HOME = home;
     try {
       await expect(
-        mcpRegistryRefreshAction.run({
-          input: { id: 'remote' },
-        } as never),
+        toolOutputPromise(
+          mcpRegistryRefreshAction.run({
+            data: { id: 'remote' },
+          } as never),
+        ),
       ).resolves.toMatchObject({
         ok: false,
         changed: false,
         requires: ['user-owned-surface'],
       });
       await expect(
-        mcpServerEnableAction.run({
-          input: { id: 'remote' },
-        } as never),
+        toolOutputPromise(
+          mcpServerEnableAction.run({
+            data: { id: 'remote' },
+          } as never),
+        ),
       ).resolves.toMatchObject({
         ok: false,
         changed: false,
         requires: ['user-owned-surface'],
       });
       await expect(
-        mcpServerDisableAction.run({
-          input: { id: 'remote' },
-        } as never),
+        toolOutputPromise(
+          mcpServerDisableAction.run({
+            data: { id: 'remote' },
+          } as never),
+        ),
       ).resolves.toMatchObject({
         ok: false,
         changed: false,
         requires: ['user-owned-surface'],
       });
       await expect(
-        mcpServerRemoveAction.run({
-          input: { id: 'remote', confirm: true },
-        } as never),
+        toolOutputPromise(
+          mcpServerRemoveAction.run({
+            data: { id: 'remote', confirm: true },
+          } as never),
+        ),
       ).resolves.toMatchObject({
         ok: false,
         changed: false,
         requires: ['user-owned-surface'],
       });
       await expect(
-        mcpLoginStartAction.run({
-          input: { id: 'remote' },
-        } as never),
+        toolOutputPromise(
+          mcpLoginStartAction.run({
+            data: { id: 'remote' },
+          } as never),
+        ),
       ).resolves.toMatchObject({
         ok: false,
         changed: false,
         requires: ['user-owned-surface'],
       });
       await expect(
-        mcpLogoutAction.run({
-          input: { id: 'remote', confirm: true },
-        } as never),
+        toolOutputPromise(
+          mcpLogoutAction.run({
+            data: { id: 'remote', confirm: true },
+          } as never),
+        ),
       ).resolves.toMatchObject({
         ok: false,
         changed: false,
         requires: ['user-owned-surface'],
       });
       await expect(
-        mcpServerUpdateAction.run({
-          input: { id: 'remote', server: {} },
-        } as never),
+        toolOutputPromise(
+          mcpServerUpdateAction.run({
+            data: { id: 'remote', server: {} },
+          } as never),
+        ),
       ).resolves.toMatchObject({
         ok: false,
         changed: false,
@@ -1963,9 +1999,11 @@ describe('MCP support', () => {
     const echo = registry
       .toolsSync()
       .find((tool) => tool.name === 'mcp__fixture__echo');
-    const result = await echo!.run({
-      input: { text: 'x'.repeat(30_000) },
-    } as never);
+    const result = toolOutput(
+      await echo!.run({
+        data: { text: 'x'.repeat(30_000) },
+      } as never),
+    );
 
     expect(result).toMatchObject({
       ok: true,
@@ -2019,13 +2057,109 @@ describe('MCP support', () => {
       .find((tool) => tool.name === 'mcp__fixture__echo');
     expect(echo).toBeTruthy();
     await expect(
-      echo!.run({ input: { text: 'offline' } } as never),
+      toolOutputPromise(echo!.run({ data: { text: 'offline' } } as never)),
     ).resolves.toMatchObject({
       ok: false,
       status: 'server-disconnected',
       server: 'fixture',
       tool: 'echo',
     });
+  });
+
+  it('freezes each session MCP roster and capability schema across registry refreshes', async () => {
+    const home = await tempDir();
+    const paths = runtimePaths(home);
+    await ensureRuntimeHome(paths);
+    const previous = process.env.NEONDECK_MCP_ONLY_ECHO;
+    try {
+      delete process.env.NEONDECK_MCP_ONLY_ECHO;
+      await addMcpServer(
+        {
+          id: 'fixture',
+          server: {
+            transport: 'stdio',
+            command: process.execPath,
+            args: [fixturePath()],
+            env: {
+              NEONDECK_MCP_ONLY_ECHO: { env: 'NEONDECK_MCP_ONLY_ECHO' },
+            },
+            tools: { autoApprove: ['echo', 'danger'] },
+          },
+        },
+        paths,
+      );
+      const registry = getMcpRegistry(paths);
+      await registry.refresh('fixture');
+      const snapshots = JSON.parse(
+        JSON.stringify(registry.toolSessionSnapshotsSync()),
+      );
+
+      expect(
+        snapshots.map((tool: { adaptedName: string }) => tool.adaptedName),
+      ).toEqual(
+        expect.arrayContaining(['mcp__fixture__echo', 'mcp__fixture__danger']),
+      );
+
+      process.env.NEONDECK_MCP_ONLY_ECHO = '1';
+      await registry.refresh('fixture');
+      const sessionTools = registry.toolsForSessionSync(snapshots);
+      expect(sessionTools.map((tool) => tool.name)).toEqual(
+        snapshots.map((tool: { adaptedName: string }) => tool.adaptedName),
+      );
+      expect(registry.toolsSync().map((tool) => tool.name)).not.toContain(
+        'mcp__fixture__danger',
+      );
+
+      const echo = sessionTools.find(
+        (tool) => tool.name === 'mcp__fixture__echo',
+      );
+      await expect(
+        toolOutputPromise(echo!.run({ data: { text: 'still-live' } } as never)),
+      ).resolves.toMatchObject({ ok: true, status: 'ok' });
+      const danger = sessionTools.find(
+        (tool) => tool.name === 'mcp__fixture__danger',
+      );
+      await expect(
+        toolOutputPromise(danger!.run({ data: { text: 'frozen' } } as never)),
+      ).resolves.toMatchObject({
+        ok: false,
+        status: 'session-capability-unavailable',
+        server: 'fixture',
+        tool: 'danger',
+      });
+
+      await updateMcpServer(
+        { id: 'fixture', server: { enabled: false } },
+        paths,
+      );
+      await registry.refresh('fixture');
+      expect(registry.toolSessionSnapshotsSync()).toEqual([]);
+      const disabledSessionEcho = registry
+        .toolsForSessionSync(snapshots)
+        .find((tool) => tool.name === 'mcp__fixture__echo');
+      await expect(
+        toolOutputPromise(
+          disabledSessionEcho!.run({ data: { text: 'frozen' } } as never),
+        ),
+      ).resolves.toMatchObject({
+        ok: false,
+        status: 'session-capability-unavailable',
+        server: 'fixture',
+        tool: 'echo',
+      });
+
+      await updateMcpServer(
+        { id: 'fixture', server: { enabled: true } },
+        paths,
+      );
+      await registry.refresh('fixture');
+      expect(
+        registry.toolSessionSnapshotsSync().map((tool) => tool.adaptedName),
+      ).toEqual(['mcp__fixture__echo']);
+    } finally {
+      if (previous === undefined) delete process.env.NEONDECK_MCP_ONLY_ECHO;
+      else process.env.NEONDECK_MCP_ONLY_ECHO = previous;
+    }
   });
 
   it('rejects duplicate adapted MCP tool names', async () => {
@@ -2117,6 +2251,17 @@ describe('MCP support', () => {
 
 function fixturePath() {
   return fileURLToPath(new URL('./fixtures/stdio-server.mjs', import.meta.url));
+}
+
+function toolOutput<T>(envelope: { output?: T } | string | void): T {
+  expect(envelope).toEqual(
+    expect.objectContaining({ output: expect.anything() }),
+  );
+  return (envelope as { output: T }).output;
+}
+
+async function toolOutputPromise(value: unknown) {
+  return toolOutput((await value) as never);
 }
 
 function oauthServerIdentity(url: string) {

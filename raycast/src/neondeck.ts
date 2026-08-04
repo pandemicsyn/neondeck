@@ -28,10 +28,9 @@ export async function addPrWatch(
     desiredTerminalState === 'checks'
       ? `/watch-pr ${ref}`
       : `/watch-pr ${ref} until ${desiredTerminalState}`;
-  const result = await postNeondeck<NeondeckActionResult>(
-    '/api/flue/workflows/command-run?wait=result',
-    { input: { command } },
-  );
+  const result = await postNeondeck<NeondeckActionResult>('/api/commands/run', {
+    command,
+  });
 
   if (!result.ok) {
     throw new Error(resultMessage(result, 'Could not add PR watch.'));

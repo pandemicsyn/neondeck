@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import type { UseFlueAgentResult } from '@flue/react';
+import type { UseFlueAgentOptions, UseFlueAgentResult } from '@flue/react';
 import { act } from 'react';
 import { createRoot } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -8,10 +8,15 @@ import type { PrReviewRecord } from '../../api';
 import { PrReviewReviewerChat } from './PrReviewReviewerChat';
 
 const useFlueAgentMock = vi.hoisted(() =>
-  vi.fn<(options: { name: string; id?: string }) => UseFlueAgentResult>(),
+  vi.fn<(options: UseFlueAgentOptions) => UseFlueAgentResult>(),
 );
 
+const conversationClient = vi.hoisted(() => ({ client: { url: 'test:' } }));
+
 vi.mock('@flue/react', () => ({ useFlueAgent: useFlueAgentMock }));
+vi.mock('../../lib/flue', () => ({
+  createNeondeckConversationClient: () => conversationClient.client,
+}));
 
 describe('PrReviewReviewerChat', () => {
   let container: HTMLDivElement;
@@ -30,7 +35,9 @@ describe('PrReviewReviewerChat', () => {
       historyReady: false,
       error: new Error('History request failed.'),
       failedSends: [],
+      settlements: [],
       sendMessage: vi.fn<UseFlueAgentResult['sendMessage']>(),
+      refresh: vi.fn<() => void>(),
     });
   });
 
@@ -50,8 +57,7 @@ describe('PrReviewReviewerChat', () => {
     act(() => root.render(<PrReviewReviewerChat review={review} />));
 
     expect(useFlueAgentMock).toHaveBeenLastCalledWith({
-      name: 'pr-reviewer',
-      id: `review-123@${'a'.repeat(40)}`,
+      client: conversationClient.client,
     });
     expect(container.querySelector('[role="alert"]')?.textContent).toContain(
       'History request failed.',
@@ -79,7 +85,9 @@ describe('PrReviewReviewerChat', () => {
       historyReady: true,
       error: undefined,
       failedSends: [],
+      settlements: [],
       sendMessage,
+      refresh: vi.fn<() => void>(),
     });
     const review = {
       id: 'review-123',

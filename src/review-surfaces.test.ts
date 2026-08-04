@@ -520,10 +520,10 @@ describe('review surface registry', () => {
     reviewSurfaceRegistry.upsert(snapshot(surfaceId));
     try {
       const result = await runWithFlueExecutionContextForTests(
-        { agentName: 'display-assistant', runId: 'trusted-run' },
+        { agentName: 'display-assistant', submissionId: 'trusted-run' },
         () =>
           reviewSurfaceFindingsApplyAction.run({
-            input: {
+            data: {
               surfaceId,
               revisionKey: 'git-commit::head-sha',
               findings: [
@@ -539,7 +539,9 @@ describe('review surface registry', () => {
           } as never),
       );
 
-      expect(result).toMatchObject({ ok: true, changed: true });
+      expect(result).toMatchObject({
+        output: { ok: true, changed: true },
+      });
       expect(reviewSurfaceRegistry.readFindings(surfaceId)).toMatchObject({
         findings: [
           {

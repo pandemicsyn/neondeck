@@ -21,12 +21,14 @@ import { autopilotOwnerInstanceId } from './instance';
 import {
   clearPendingAutopilotTurnIfMatches,
   recordPendingAutopilotTurnCorrelationId,
+  recordPendingAutopilotTurnError,
   registerPendingAutopilotTurn,
 } from './pending';
 import {
   autopilotDispatchBlockedSourceId,
   reconcileTransientAutopilotRuntimeBlocks,
 } from './runtime-recovery';
+import { watchAutopilotOwnerSettlement } from './settlement';
 
 export type AutopilotWatchEvent = {
   watchId: string;
@@ -51,8 +53,17 @@ export async function runAutopilotWatchEvent(
   if (!watch)
     return loopResult('missing', false, 'The watch no longer exists.');
   watch = (await canonicalizePrWatchRepoId(paths, watch.id)) ?? watch;
-  if (watch.autopilotStatus === 'complete') {
-    return loopResult('complete', false, 'The watch is complete.');
+  if (
+    watch.autopilotStatus === 'complete' ||
+    watch.autopilotStatus === 'stopping'
+  ) {
+    return loopResult(
+      'complete',
+      false,
+      watch.autopilotStatus === 'stopping'
+        ? 'The watch is stopping and cleanup is in progress.'
+        : 'The watch is complete.',
+    );
   }
   if (watch.lastEventFingerprint === event.eventFingerprint) {
     return loopResult('duplicate', false, 'This event was already handled.');
@@ -233,17 +244,40 @@ export async function runAutopilotWatchEvent(
       event.eventFingerprint,
       bound.autopilotMode,
       'watch-event',
+      undefined,
+      { envelope, watchId: bound.id },
     );
+    try {
+      const { buildPrAutopilotOwnerRuntime } =
+        await import('../../../agents/pr-autopilot-owner');
+      await buildPrAutopilotOwnerRuntime(instanceId, paths);
+    } catch (error) {
+      clearPendingAutopilotTurnIfMatches(
+        paths.home,
+        instanceId,
+        pendingTurn.turnId,
+      );
+      throw error;
+    }
     try {
       const receipt = await (
         dependencies.dispatch ?? dispatchAutopilotOwnerTurn
-      )({ instanceId, envelope });
+      )({ instanceId, envelope, idempotencyKey: pendingTurn.turnId });
       recordPendingAutopilotTurnCorrelationId(
         paths.home,
         instanceId,
         pendingTurn.turnId,
-        receipt.dispatchId,
+        receipt.submissionId,
       );
+      if (!dependencies.dispatch) {
+        void watchAutopilotOwnerSettlement(
+          instanceId,
+          receipt.submissionId,
+          paths,
+          undefined,
+          pendingTurn.turnId,
+        );
+      }
       await reconcileTransientRuntimeNotificationQuietly(paths, claimed.id);
       return {
         ...loopResult(
@@ -253,15 +287,41 @@ export async function runAutopilotWatchEvent(
         ),
         instanceId,
         worktreeId: worktree.id,
-        dispatchId: receipt.dispatchId,
+        dispatchId: receipt.submissionId,
       };
     } catch (error) {
-      clearPendingAutopilotTurnIfMatches(
+      if (isTransientFlueRuntimeFailure(error)) {
+        clearPendingAutopilotTurnIfMatches(
+          paths.home,
+          instanceId,
+          pendingTurn.turnId,
+        );
+        transitionWatchAutopilot(paths, claimed.id, {
+          from: 'working',
+          to: 'watching',
+        });
+        await reconcileTransientRuntimeNotificationQuietly(paths, claimed.id);
+        return loopResult(
+          'deferred',
+          false,
+          'The local runtime is temporarily unavailable; the owner turn will retry on the next eligible poll.',
+        );
+      }
+      recordPendingAutopilotTurnError(
         paths.home,
         instanceId,
         pendingTurn.turnId,
+        errorMessage(error),
       );
-      throw error;
+      return {
+        ...loopResult(
+          'deferred',
+          false,
+          'The owner admission outcome is uncertain. The durable reservation remains claimed and will retry with the same idempotency key.',
+        ),
+        instanceId,
+        worktreeId: worktree.id,
+      };
     }
   } catch (error) {
     if (isTransientFlueRuntimeFailure(error)) {

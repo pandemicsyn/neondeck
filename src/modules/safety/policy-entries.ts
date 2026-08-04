@@ -538,12 +538,12 @@ export const entries: SafetyPolicyEntry[] = [
   ),
   action(
     'neondeck_command_run',
-    'Run Neon command workflow action',
+    'Run Neon command operation',
     {
       ...safeMutation,
-      auditTarget: 'workflow_summaries/workflow_events',
+      auditTarget: 'workflow_summaries/activity_events',
     },
-    'Runs supported slash commands and persists a workflow summary. Individual commands must stay within their own safety class.',
+    'Runs supported slash commands and persists an operation summary in the legacy workflow_summaries table. Individual commands must stay within their own safety class.',
   ),
   action(
     'neondeck_pr_review_for_human',
@@ -556,12 +556,22 @@ export const entries: SafetyPolicyEntry[] = [
     'Creates local PR review reports and Neon-origin local draft comments for human review. It never submits a GitHub review or performs external writes.',
   ),
   action(
+    'neondeck_submit_learning_review',
+    'Submit bounded learning review',
+    {
+      ...safeMutation,
+      auditTarget:
+        'learning_reviews/learning_candidates/memories/memory_events/config_history/activity_events',
+    },
+    'Reviews one immutable evidence snapshot and applies or proposes memory and skill changes only through typed, audited Neondeck policy actions.',
+  ),
+  action(
     'neondeck_autopilot_ci_fix_run',
     'Run bounded PR CI fix',
     {
       ...hostExecution,
       auditTarget:
-        'reports/worktrees/worktree_locks/kilo_tasks/kilo_task_events/prepared_diffs/notifications/workflow_summaries/workflow_events',
+        'reports/worktrees/worktree_locks/kilo_tasks/kilo_task_events/prepared_diffs/notifications/workflow_summaries/activity_events',
     },
     'Creates a local CI dossier report, prepares a managed PR worktree, and starts a bounded Kilo fix task. It may create a local prepared diff, but it never pushes, comments, or submits a GitHub review.',
   ),
@@ -666,7 +676,7 @@ export const entries: SafetyPolicyEntry[] = [
       ...safeMutation,
       auditTarget: 'scheduled_tasks/scheduled_task_runs',
     },
-    'Creates or updates a bounded scheduled agent instruction with an explicit workflow or session target.',
+    'Creates or updates a bounded scheduled agent instruction with an explicit fresh or existing session target.',
   ),
   action(
     'neondeck_scheduled_task_pause',
@@ -849,9 +859,9 @@ export const entries: SafetyPolicyEntry[] = [
     {
       ...safeMutation,
       auditTarget:
-        'scheduled_tasks/scheduled_task_runs/notifications/workflow_events',
+        'scheduled_tasks/scheduled_task_runs/notifications/activity_events',
     },
-    'Claims due scheduled tasks and records task runs, notifications, and Flue workflow admissions.',
+    'Claims due scheduled tasks and records task runs, notifications, app operations, and Flue agent submissions.',
   ),
   action(
     'neondeck_watch_pr_add',
@@ -879,7 +889,7 @@ export const entries: SafetyPolicyEntry[] = [
       auditTarget:
         'pr_watches/scheduled_tasks/worktrees/worktree_cleanup_attempts',
     },
-    'Pauses, resumes, retries, or stops one minimal Autopilot watch; stop cleans only an eligible Neondeck-managed worktree.',
+    'Pauses, resumes, retries, or stops one minimal Autopilot watch. Stop cleans only an eligible Neondeck-managed worktree and requires confirmPreparedDiff=true after explicit user confirmation before deleting a held unpushed prepared commit.',
   ),
   action(
     'neondeck_autopilot_message_owner',
@@ -1251,6 +1261,15 @@ export const entries: SafetyPolicyEntry[] = [
     'Reads the linked task workspace diff summary for a Kilo session.',
   ),
   action(
+    'neondeck_kilo_session_summarize',
+    'Summarize Kilo session',
+    {
+      ...safeMutation,
+      auditTarget: 'kilo_tasks/kilo_task_events',
+    },
+    'Summarizes linked Kilo session metadata and recent task events, persisting the bounded summary on the task when available.',
+  ),
+  action(
     'neondeck_kilo_result_review',
     'Review Kilo result',
     {
@@ -1496,161 +1515,6 @@ export const entries: SafetyPolicyEntry[] = [
     },
     'Deletes eligible Neondeck-owned worktrees according to cleanup policy and never deletes adopted worktrees without explicit confirmation.',
   ),
-  workflow(
-    'command-run',
-    'Run command workflow',
-    {
-      ...safeMutation,
-      auditTarget: 'workflow_summaries/workflow_events',
-    },
-    'Runs a bounded command through Flue with durable run identity and summaries.',
-  ),
-  workflow(
-    'briefing',
-    'Run briefing workflow',
-    {
-      ...safeMutation,
-      auditTarget: 'workflow_summaries/workflow_events',
-    },
-    'Runs the bounded briefing workflow and records Flue observations.',
-  ),
-  workflow(
-    'watch-pr',
-    'Run watch-pr workflow',
-    {
-      ...safeMutation,
-      auditTarget: 'pr_watches/jobs/workflow_events',
-    },
-    'Creates a PR watch through the Flue workflow surface.',
-  ),
-  workflow(
-    'review-pr-for-human',
-    'Run PR review assist workflow',
-    {
-      ...safeMutation,
-      auditTarget:
-        'reports/pr_review_drafts/pr_review_draft_comments/notifications/workflow_events',
-    },
-    'Runs bounded PR review assistance through the Flue workflow surface, creating local reports and Neon-origin draft comments only.',
-  ),
-  workflow(
-    'fix-pr-ci',
-    'Run PR CI fix workflow',
-    {
-      ...hostExecution,
-      auditTarget:
-        'reports/worktrees/worktree_locks/kilo_tasks/kilo_task_events/prepared_diffs/notifications/workflow_events',
-    },
-    'Runs bounded CI fix assistance through the Flue workflow surface, creating local reports, local worktree changes, and prepared diffs only. It does not push or comment.',
-  ),
-  workflow(
-    'scheduled-agent-instruction',
-    'Run scheduled instruction workflow',
-    {
-      ...safeMutation,
-      auditTarget: 'scheduled_task_runs/workflow_events',
-    },
-    'Runs one bounded scheduled instruction occurrence through Flue.',
-  ),
-  workflow(
-    'dev-doctor',
-    'Run dev-doctor workflow',
-    readOnly,
-    'Runs read-only local diagnostics through the Flue workflow surface.',
-  ),
-  workflow(
-    'scheduler-tick',
-    'Run scheduler-tick workflow',
-    {
-      ...safeMutation,
-      auditTarget: 'jobs/notifications/workflow_events/reports',
-    },
-    'Runs due scheduled work through the Flue workflow surface and records job outcomes, notifications, workflow observations, and scheduled report artifacts.',
-  ),
-  workflow(
-    'curate_learning_store',
-    'Run memory curation workflow',
-    {
-      ...safeMutation,
-      auditTarget:
-        'learning_reviews/learning_candidates/memories/memory_events/workflow_events',
-    },
-    'Runs bounded model-backed memory curation and applies or proposes changes through typed audited memory actions.',
-  ),
-  workflow(
-    'review_conversation_for_learning',
-    'Run conversation learning review workflow',
-    {
-      ...safeMutation,
-      auditTarget:
-        'learning_reviews/learning_candidates/memories/memory_events/workflow_events',
-    },
-    'Runs bounded model-backed conversation reflection and applies or proposes durable memory changes through typed audited memory actions.',
-  ),
-  workflow(
-    'review_pr_batch_for_learning',
-    'Run PR learning retrospective workflow',
-    {
-      ...safeMutation,
-      auditTarget:
-        'learning_reviews/learning_candidates/memories/memory_events/config_history/workflow_events',
-    },
-    'Runs bounded model-backed PR/autopilot retrospectives over compact summaries and applies or proposes memory and skill changes through typed actions.',
-  ),
-  workflow(
-    'handoff_to_kilo',
-    'Run Kilo handoff workflow',
-    {
-      ...hostExecution,
-      auditTarget: 'kilo_tasks/kilo_task_events/workflow_events',
-    },
-    'Admits an explicit Kilo handoff as a bounded Flue run, then lets the app supervisor own the background process.',
-  ),
-  workflow(
-    'reconcile_kilo_task',
-    'Reconcile Kilo task workflow',
-    {
-      ...safeMutation,
-      auditTarget: 'kilo_tasks/kilo_task_events/worktree_events',
-    },
-    'Reconciles persisted Kilo task state after restart by inspecting detached process, session, and diff facts.',
-  ),
-  workflow(
-    'summarize_kilo_session',
-    'Summarize Kilo session workflow',
-    {
-      ...safeMutation,
-      auditTarget: 'kilo_tasks/workflow_events',
-    },
-    'Summarizes linked Kilo task/session metadata and persists the bounded summary on the task record.',
-  ),
-  workflow(
-    'review_kilo_result',
-    'Review Kilo result workflow',
-    {
-      ...safeMutation,
-      auditTarget: 'kilo_result_state/kilo_result_events/prepared_diffs',
-    },
-    'Runs bounded Kilo result review and records classification in app state.',
-  ),
-  workflow(
-    'verify_kilo_result',
-    'Verify Kilo result workflow',
-    {
-      ...hostExecution,
-      auditTarget: 'kilo_result_state/kilo_result_events/execution_approvals',
-    },
-    'Runs configured Kilo result checks through execution approval policy.',
-  ),
-  workflow(
-    'promote_kilo_result',
-    'Promote Kilo result workflow',
-    {
-      ...safeMutation,
-      auditTarget: 'kilo_result_state/kilo_result_events',
-    },
-    'Runs the Kilo promotion admission layer and explicitly avoids commit, push, or PR comment mutation.',
-  ),
   route(
     '/api/reports',
     'Reports list API',
@@ -1789,16 +1653,16 @@ export const entries: SafetyPolicyEntry[] = [
     'Start PR review API',
     {
       ...safeMutation,
-      auditTarget: 'pr_reviews/workflow_summaries/workflow_events',
+      auditTarget: 'pr_reviews/workflow_summaries/activity_events',
     },
-    'Creates or resets one local PR review record and admits the bounded review-pr-for-human workflow without submitting anything to GitHub.',
+    'Creates or resets one local PR review record and admits a fresh bounded human-review agent without submitting anything to GitHub.',
   ),
   route(
     'POST /api/reviews/:id/review',
     'Re-review PR API',
     {
       ...safeMutation,
-      auditTarget: 'pr_reviews/workflow_summaries/workflow_events',
+      auditTarget: 'pr_reviews/workflow_summaries/activity_events',
     },
     'Reuses one durable local PR review record for a new head and preserves its previous verdict audit field.',
   ),
@@ -2043,7 +1907,7 @@ export const entries: SafetyPolicyEntry[] = [
       auditTarget:
         'pr_watches/scheduled_tasks/worktrees/worktree_cleanup_attempts',
     },
-    'Pauses, resumes, retries, or stops one minimal Autopilot watch.',
+    'Pauses, resumes, retries, or stops one minimal Autopilot watch. A held unpushed prepared commit is retained unless the request explicitly confirms its discard with confirmPreparedDiff=true.',
   ),
   route(
     '/api/watches/:id/autopilot/message',
@@ -2246,7 +2110,7 @@ export const entries: SafetyPolicyEntry[] = [
       auditTarget:
         'learning_reviews/learning_candidates/memories/memory_events',
     },
-    'Queues manual model-backed memory curation through the bounded Flue workflow surface.',
+    'Queues manual model-backed memory curation through a bounded Flue agent submission.',
   ),
   route(
     '/api/learning/state',
@@ -2268,7 +2132,7 @@ export const entries: SafetyPolicyEntry[] = [
       auditTarget:
         'learning_reviews/learning_candidates/memories/memory_events',
     },
-    'Queues manual model-backed conversation reflection through the bounded Flue workflow surface.',
+    'Queues manual model-backed conversation reflection through a bounded Flue agent submission.',
   ),
   route(
     '/api/learning/reviews/prs',
@@ -2278,7 +2142,7 @@ export const entries: SafetyPolicyEntry[] = [
       auditTarget:
         'learning_reviews/learning_candidates/memories/memory_events/config_history',
     },
-    'Queues manual PR/autopilot retrospectives through the bounded Flue workflow surface.',
+    'Queues manual PR/autopilot retrospectives through a bounded Flue agent submission.',
   ),
   route(
     '/api/learning/candidates',
@@ -2355,15 +2219,6 @@ function action(
   notes: string,
 ) {
   return entry('action', id, title, policy, notes);
-}
-
-function workflow(
-  id: string,
-  title: string,
-  policy: Partial<SafetyPolicyEntry>,
-  notes: string,
-) {
-  return entry('workflow', id, title, policy, notes);
 }
 
 function route(

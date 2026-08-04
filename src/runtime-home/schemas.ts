@@ -104,9 +104,7 @@ const persistedPrReviewTimeoutMsSchema = v.pipe(
   v.number(),
   v.integer(),
   v.minValue(minPrReviewTimeoutMs),
-  // Continue parsing older runtime homes while normalizing legacy values to
-  // the current five-minute execution ceiling.
-  v.maxValue(30 * 60 * 1_000),
+  v.maxValue(maxPrReviewTimeoutMs),
   v.transform((value) => Math.min(value, maxPrReviewTimeoutMs)),
 );
 

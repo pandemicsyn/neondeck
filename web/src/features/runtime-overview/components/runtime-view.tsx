@@ -19,7 +19,7 @@ import {
   ExecutionApprovalRow,
 } from './setup-rows';
 import {
-  ActiveRunRow,
+  ActiveSubmissionRow,
   JobRow,
   KiloTaskRow,
   MemoryRow,
@@ -29,7 +29,7 @@ import {
   RepoRow,
   SkillIssues,
   SkillRow,
-  WorkflowEventRow,
+  ActivityEventRow,
   WorktreeCleanupRow,
   WorktreeLockRow,
   WorktreeRow,
@@ -373,83 +373,86 @@ export function RuntimeView({
             </div>
           </RuntimeSection>
           <RuntimeSection
-            count={snapshot.workflows.activeRuns.length}
-            title="ACTIVE RUNS"
+            count={snapshot.activity.activeSubmissions.length}
+            title="ACTIVE SUBMISSIONS"
             tone="primary"
           >
             <div className="space-y-1.5">
-              {snapshot.workflows.activeRuns.map((run) => (
-                <ActiveRunRow key={run.runId} run={run} />
+              {snapshot.activity.activeSubmissions.map((submission) => (
+                <ActiveSubmissionRow
+                  key={submission.submissionId}
+                  submission={submission}
+                />
               ))}
-              {snapshot.workflows.activeRuns.length === 0 ? (
-                <MiniEmpty label="No active workflow runs observed." />
+              {snapshot.activity.activeSubmissions.length === 0 ? (
+                <MiniEmpty label="No active agent submissions observed." />
               ) : null}
             </div>
           </RuntimeSection>
           <RuntimeSection
-            count={snapshot.workflows.recentFailures.length}
-            title="FAILED RUNS"
+            count={snapshot.activity.recentFailures.length}
+            title="FAILED SUBMISSIONS"
             tone="accent"
           >
             <div className="space-y-1.5">
-              {snapshot.workflows.recentFailures
-                .slice(0, config.workflowEventLimit)
+              {snapshot.activity.recentFailures
+                .slice(0, config.activityEventLimit)
                 .map((event) => (
-                  <WorkflowEventRow
+                  <ActivityEventRow
                     event={event}
                     key={`failure:${event.id}`}
                     rawLabel
                   />
                 ))}
-              {snapshot.workflows.recentFailures.length === 0 ? (
-                <MiniEmpty label="No recent failed workflow runs." />
+              {snapshot.activity.recentFailures.length === 0 ? (
+                <MiniEmpty label="No recent failed submissions." />
               ) : null}
             </div>
           </RuntimeSection>
           <RuntimeSection
-            count={snapshot.workflows.recentData.length}
-            title="RUN RESULTS"
+            count={snapshot.activity.recentSettlements.length}
+            title="SETTLEMENTS"
             tone="violet"
           >
             <div className="space-y-1.5">
-              {snapshot.workflows.recentData
-                .slice(0, config.workflowEventLimit)
+              {snapshot.activity.recentSettlements
+                .slice(0, config.activityEventLimit)
                 .map((event) => (
-                  <WorkflowEventRow event={event} key={`data:${event.id}`} />
+                  <ActivityEventRow event={event} key={`data:${event.id}`} />
                 ))}
-              {snapshot.workflows.recentData.length === 0 ? (
-                <MiniEmpty label="No completed workflow results yet." />
+              {snapshot.activity.recentSettlements.length === 0 ? (
+                <MiniEmpty label="No submission settlements yet." />
               ) : null}
             </div>
           </RuntimeSection>
           <RuntimeSection
             count={
-              snapshot.workflows.recentLogs.length +
-              snapshot.workflows.recentTools.length +
-              snapshot.workflows.recentOperations.length
+              snapshot.activity.recentLogs.length +
+              snapshot.activity.recentTools.length +
+              snapshot.activity.recentOperations.length
             }
             title="ACTION LOGS"
             tone="primary"
           >
             <div className="space-y-1.5">
               {[
-                ...snapshot.workflows.recentLogs,
-                ...snapshot.workflows.recentTools,
-                ...snapshot.workflows.recentOperations,
+                ...snapshot.activity.recentLogs,
+                ...snapshot.activity.recentTools,
+                ...snapshot.activity.recentOperations,
               ]
                 .sort(
                   (a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt),
                 )
-                .slice(0, config.workflowEventLimit)
+                .slice(0, config.activityEventLimit)
                 .map((event) => (
-                  <WorkflowEventRow
+                  <ActivityEventRow
                     event={event}
                     key={`activity:${event.id}`}
                   />
                 ))}
-              {snapshot.workflows.recentLogs.length +
-                snapshot.workflows.recentTools.length +
-                snapshot.workflows.recentOperations.length ===
+              {snapshot.activity.recentLogs.length +
+                snapshot.activity.recentTools.length +
+                snapshot.activity.recentOperations.length ===
               0 ? (
                 <MiniEmpty label="No action, tool, or operation logs yet." />
               ) : null}

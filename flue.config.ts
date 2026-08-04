@@ -1,34 +1,8 @@
-import { defineConfig } from '@flue/cli/config';
-import { defineConfig as defineViteConfig } from 'vite';
+import { defineConfig } from '@flue/runtime/config';
 
 export default defineConfig({
   target: 'node',
-});
-
-export const vite = defineViteConfig({
-  server: {
-    watch: {
-      ignored: [
-        '**/.agents/**',
-        '**/.changeset/**',
-        '**/.codex/**',
-        '**/.git/**',
-        '**/.impeccable/**',
-        '**/.playwright-mcp/**',
-        '**/.plans/**',
-        '**/.tmp-*',
-        '**/.tmp-*/**',
-        '**/.astro/**',
-        '**/.flue-vite',
-        '**/.flue-vite/**',
-        '**/.flue-vite.wrangler.jsonc',
-        '**/data/**',
-        '**/design/**',
-        '**/dist/**',
-        '**/research-repos/**',
-        '**/web/**',
-        '**/docs/**',
-      ],
-    },
-  },
+  // Neondeck installs an exhaustive configuration-aware provider set in its
+  // app entry. Do not preload Pi built-ins that can bypass disabled config.
+  providers: [],
 });

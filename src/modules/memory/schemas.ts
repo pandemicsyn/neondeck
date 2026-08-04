@@ -81,7 +81,7 @@ export const memoryLearnInputSchema = v.object({
   key: nonEmptyStringSchema,
   value: jsonValueSchema,
   repoId: v.optional(nonEmptyStringSchema),
-  expectedUpdatedAt: v.optional(nonEmptyStringSchema),
+  expectedUpdatedAt: v.optional(v.nullable(nonEmptyStringSchema)),
   reason: v.optional(v.string()),
   actor: v.optional(memoryActorSchema),
 });
@@ -91,6 +91,7 @@ export const memoryRewriteInputSchema = v.object({
   key: v.optional(nonEmptyStringSchema),
   repoId: v.optional(nonEmptyStringSchema),
   value: jsonValueSchema,
+  expectedUpdatedAt: v.optional(nonEmptyStringSchema),
   reason: v.optional(v.string()),
   actor: v.optional(memoryActorSchema),
 });
@@ -98,6 +99,9 @@ export const memoryMergeInputSchema = v.object({
   targetId: nonEmptyStringSchema,
   sourceIds: v.pipe(v.array(nonEmptyStringSchema), v.minLength(1)),
   value: v.optional(jsonValueSchema),
+  expectedUpdatedAts: v.optional(
+    v.record(nonEmptyStringSchema, nonEmptyStringSchema),
+  ),
   reason: v.optional(v.string()),
   actor: v.optional(memoryActorSchema),
 });

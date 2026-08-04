@@ -6,7 +6,6 @@ import {
   type RuntimePaths,
 } from '../../runtime-home';
 import {
-  deleteScheduledTask,
   listScheduledTasks,
   readScheduledTask,
   setScheduledTaskEnabled,
@@ -47,6 +46,7 @@ import {
 } from './polling';
 import {
   deleteWatch,
+  clearWatchPollingRepair,
   insertRefWatch,
   insertWatch,
   readRefWatch,
@@ -57,6 +57,8 @@ import {
   updateWatch,
   markWatchInitialEventProcessed,
   upsertWatchPollingTask,
+  watchPollingRepairNeeded,
+  watchPollingRepairKey,
   watchPollingTaskId,
 } from './store';
 import {
@@ -66,6 +68,7 @@ import {
 } from './references';
 import { failResult, okResult, parseActionInput } from './utils';
 import { readWorktreeRecord } from '../worktrees';
+import { asJsonValue } from '../../lib/action-result';
 
 export async function addPrWatch(
   input: v.InferInput<typeof watchPrAddInputSchema>,
@@ -73,6 +76,14 @@ export async function addPrWatch(
   fetcher: WatchFetcher = defaultWatchFetcher,
   checkFetcher: CheckFetcher = defaultCheckFetcher,
   initialEventBaselineFetcher?: PrWatchInitialEventBaselineFetcher,
+  options: {
+    expectedExisting?: Pick<
+      PrWatch,
+      'autopilotMode' | 'autopilotStatus' | 'updatedAt'
+    > | null;
+    rearmAutopilotMode?: PrWatch['autopilotMode'];
+    upsertPollingTask?: typeof upsertWatchPollingTask;
+  } = {},
 ): Promise<WatchActionResult> {
   await ensureRuntimeHome(paths);
   const parsed = parseActionInput(watchPrAddInputSchema, input, 'watch_pr_add');
@@ -89,7 +100,19 @@ export async function addPrWatch(
   if (!resolved.ok) return resolved.result;
 
   const existing = readWatch(paths, resolved.reference.id);
+  if (
+    (options.expectedExisting === null && existing) ||
+    (options.expectedExisting && !existing)
+  ) {
+    return staleWatchUpdateResult('watch_pr_add', resolved.reference.id);
+  }
   if (existing) {
+    if (
+      options.expectedExisting &&
+      !matchesAutopilotConfigurationFence(existing, options.expectedExisting)
+    ) {
+      return staleWatchUpdateResult('watch_pr_add', existing.id);
+    }
     const task = await readScheduledTask(
       watchPollingTaskId(existing.id),
       paths,
@@ -106,11 +129,16 @@ export async function addPrWatch(
       parsed.input.intervalSeconds !== undefined &&
       (task?.trigger.kind !== 'interval' ||
         task.trigger.everySeconds !== parsed.input.intervalSeconds);
-    const missingPollingTask = !task;
+    const pollingRepairPending = watchPollingRepairNeeded(paths, existing.id);
+    if (task?.enabled && pollingRepairPending) {
+      clearWatchPollingRepair(paths, existing.id);
+    }
+    const pollingTaskNeedsRepair =
+      !task || (!task.enabled && pollingRepairPending);
     if (
       !desiredTerminalStateChanged &&
       !intervalChanged &&
-      !missingPollingTask &&
+      !pollingTaskNeedsRepair &&
       !processExistingChanged &&
       !terminalWatch
     ) {
@@ -185,6 +213,7 @@ export async function addPrWatch(
         processExisting: effectiveProcessExisting,
         initialEventProcessedAt: effectiveProcessExisting ? null : now,
         eventWatermarkVersion: currentPrWatchEventWatermarkVersion,
+        autopilotMode: options.rearmAutopilotMode ?? existing.autopilotMode,
         autopilotStatus: 'watching',
         ownerInstanceId: null,
         worktreeId: null,
@@ -208,6 +237,7 @@ export async function addPrWatch(
         existing,
         baseline?.watermarks,
         needsCurrentFeedbackRearm,
+        true,
       );
       if (!updated) return staleWatchUpdateResult('watch_pr_add', watch.id);
     } else if (desiredTerminalStateChanged || processExistingChanged) {
@@ -220,7 +250,9 @@ export async function addPrWatch(
       );
       if (!updated) return staleWatchUpdateResult('watch_pr_add', watch.id);
     }
-    await upsertWatchPollingTask(
+    const upsertPollingTask =
+      options.upsertPollingTask ?? upsertWatchPollingTask;
+    const polling = await upsertPollingTask(
       watch,
       paths,
       parsed.input.intervalSeconds ??
@@ -228,6 +260,17 @@ export async function addPrWatch(
           ? task.trigger.everySeconds
           : undefined),
     );
+    if (
+      polling &&
+      typeof polling === 'object' &&
+      'matched' in polling &&
+      polling.matched === false
+    ) {
+      return staleWatchUpdateResult('watch_pr_add', watch.id);
+    }
+    if (options.upsertPollingTask) {
+      clearWatchPollingRepair(paths, watch.id);
+    }
 
     return okResult(
       'watch_pr_add',
@@ -292,7 +335,14 @@ export async function addPrWatch(
   };
 
   insertWatch(paths, watch, baseline?.watermarks);
-  await upsertWatchPollingTask(watch, paths, parsed.input.intervalSeconds);
+  const polling = await upsertWatchPollingTask(
+    watch,
+    paths,
+    parsed.input.intervalSeconds,
+  );
+  if (!polling.matched) {
+    return staleWatchUpdateResult('watch_pr_add', watch.id);
+  }
 
   return okResult(
     'watch_pr_add',
@@ -300,6 +350,17 @@ export async function addPrWatch(
     'created',
     `Watching ${watch.id}. ${initialFeedbackChoiceMessage(watch)}`,
     { watch },
+  );
+}
+
+function matchesAutopilotConfigurationFence(
+  watch: Pick<PrWatch, 'autopilotMode' | 'autopilotStatus' | 'updatedAt'>,
+  expected: Pick<PrWatch, 'autopilotMode' | 'autopilotStatus' | 'updatedAt'>,
+) {
+  return (
+    watch.updatedAt === expected.updatedAt &&
+    watch.autopilotMode === expected.autopilotMode &&
+    watch.autopilotStatus === expected.autopilotStatus
   );
 }
 
@@ -608,6 +669,7 @@ export async function refreshRefWatch(
 export async function removePrWatch(
   input: v.InferInput<typeof watchPrRemoveInputSchema>,
   paths = runtimePaths(),
+  dependencies: { deleteWatch?: typeof deleteWatch } = {},
 ): Promise<WatchActionResult> {
   await ensureRuntimeHome(paths);
   const parsed = parseActionInput(
@@ -636,9 +698,65 @@ export async function removePrWatch(
       `Watch "${idResult.id}" does not exist.`,
     );
   }
+  if (
+    ['working', 'waiting', 'blocked', 'stopping'].includes(
+      watch.autopilotStatus,
+    )
+  ) {
+    return failResult(
+      'watch_pr_remove',
+      `Watch "${watch.id}" still has active Autopilot state. Stop Autopilot before removing the watch.`,
+      { requires: ['stopAutopilot'] },
+    );
+  }
+  if (
+    watch.autopilotStatus !== 'complete' &&
+    (watch.ownerInstanceId || watch.worktreeId)
+  ) {
+    return failResult(
+      'watch_pr_remove',
+      `Watch "${watch.id}" still has active Autopilot bindings. Stop Autopilot before removing the watch.`,
+      { requires: ['stopAutopilot'] },
+    );
+  }
+  if (watch.autopilotStatus === 'complete' && watch.worktreeId) {
+    let worktree: ReturnType<typeof readWorktreeRecord>;
+    try {
+      worktree = readWorktreeRecord(watch.worktreeId, paths);
+    } catch {
+      return failResult(
+        'watch_pr_remove',
+        `Watch "${watch.id}" cleanup could not be verified because worktree "${watch.worktreeId}" has no durable record.`,
+        { requires: ['completeWorktreeCleanup'] },
+      );
+    }
+    if (!worktree.adopted && worktree.lifecycleStatus !== 'deleted') {
+      return failResult(
+        'watch_pr_remove',
+        `Watch "${watch.id}" cannot be removed until managed worktree "${worktree.id}" finishes cleanup.`,
+        { requires: ['completeWorktreeCleanup'] },
+      );
+    }
+  }
 
-  deleteWatch(paths, idResult.id);
-  await deleteScheduledTask(watchPollingTaskId(idResult.id), paths);
+  const deleted = (dependencies.deleteWatch ?? deleteWatch)(
+    paths,
+    idResult.id,
+    watch,
+  );
+  if (!deleted) {
+    const current = readWatch(paths, idResult.id);
+    return {
+      ...failResult(
+        'watch_pr_remove',
+        current
+          ? `Watch "${watch.id}" changed before removal. Review its current state and retry.`
+          : `Watch "${watch.id}" was removed by another operation before this request completed.`,
+        { requires: ['currentWatchState'] },
+      ),
+      ...(current ? { watch: asJsonValue(current) } : {}),
+    };
+  }
   return okResult(
     'watch_pr_remove',
     true,
@@ -671,8 +789,35 @@ export async function setPrWatchPolling(
     watchPollingTaskId(idResult.id),
     parsed.input.enabled,
     paths,
+    {
+      clearMetadataKeys: [watchPollingRepairKey(idResult.id)],
+      watchGuard: {
+        id: idResult.id,
+        disallowAutopilotStatuses: parsed.input.enabled
+          ? ['stopping', 'complete']
+          : [],
+      },
+    },
   );
   if (!task) {
+    const current = readWatch(paths, idResult.id);
+    if (
+      parsed.input.enabled &&
+      current &&
+      ['stopping', 'complete'].includes(current.autopilotStatus)
+    ) {
+      return failResult(
+        action,
+        `Polling cannot be resumed while Autopilot for "${idResult.id}" is ${current.autopilotStatus}.`,
+        {
+          requires: [
+            current.autopilotStatus === 'stopping'
+              ? 'retryStop'
+              : 'rearmAutopilot',
+          ],
+        },
+      );
+    }
     return failResult(
       action,
       `Polling task for watch "${idResult.id}" does not exist.`,

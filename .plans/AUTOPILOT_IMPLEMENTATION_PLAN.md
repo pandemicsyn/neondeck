@@ -1,7 +1,7 @@
 # Autopilot: Simplified Implementation Plan
 
-Status: minimal loop delivered in PRs #171 and #172; trusted-workspace semantic
-correction pending
+Status: complete; trusted-workspace semantics, exact-revision approval, guarded
+delivery recovery, and live disposable-PR acceptance are implemented
 
 Companion audit: `.plans/AUTOPILOT_END_TO_END_REVIEW.html`
 
@@ -22,7 +22,7 @@ watch PR
     when the owner judges the requested change sane and appropriately scoped
   → continue watching the same PR with the same agent instance and worktree
   → PR merges and configured merge checks are green
-  → stop the watch, archive the agent instance, and clean the managed worktree
+  → stop the watch, retain the agent audit conversation, and clean the eligible managed worktree
 ```
 
 The first actionable event lazily creates one Neon agent instance and one managed
@@ -115,12 +115,12 @@ to a preconfigured `requiredChecks` list.
 
 The hard capability boundary is external delivery:
 
-| Mode                     | Agent turn | Workspace and delivery authority                                                                                                            |
-| ------------------------ | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
-| `notify-only`            | No         | None; emit a notification only                                                                                                              |
-| `prepare-only`           | Yes        | Full repo-scoped coding workspace and commit; no push or PR response                                                                        |
-| `autofix-with-approval`  | Yes        | Watcher turn: full coding workspace and commit, but no push/response. A direct-human turn while waiting adds push and PR-response authority |
-| `autofix-push-when-safe` | Yes        | Full coding workspace plus guarded push and PR response; the owner decides whether the requested change is sane enough to deliver           |
+| Mode                     | Agent turn | Workspace and delivery authority                                                                                                                                        |
+| ------------------------ | ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `notify-only`            | No         | None; emit a notification only                                                                                                                                          |
+| `prepare-only`           | Yes        | Full repo-scoped coding workspace and commit; no push or PR response                                                                                                    |
+| `autofix-with-approval`  | Yes        | Watcher turn: full coding workspace and commit, but no push/response. Only an exact current reviewed-revision approval turn adds guarded push and PR-response authority |
+| `autofix-push-when-safe` | Yes        | Full coding workspace plus guarded push and PR response; the owner decides whether the requested change is sane enough to deliver                                       |
 
 The coding environment must be rooted in the managed worktree and must not mutate
 the primary checkout. Prefer a workspace/sandbox boundary that withholds GitHub and
@@ -147,15 +147,15 @@ Therefore:
 - origin detection is not an Autopilot authority boundary;
 - watcher-generated turns never receive delivery authority unless the mode is
   `autofix-push-when-safe`;
-- in `autofix-with-approval`, only a direct human turn to an owner that is waiting
-  for review receives push and PR-response authority; the operator's presence is the
-  authority boundary, and the agent follows the actual message—plain approval pushes
-  the held commit, while “fix this first, then push” may edit, validate, commit, and
-  push in that same turn;
+- in `autofix-with-approval`, only the exact current reviewed-revision approval
+  turn dispatched from Active Watches or the typed approval API receives push and
+  PR-response authority; operator presence or a generic owner message is not enough;
+  requests for more work remain ordinary non-delivery turns, and the human reviews
+  the resulting revision before approving it;
 - `notify-only` does not dispatch a coding turn;
 - delivery tools are rebuilt for every dispatch from current watch
-  state and the known dispatch source (`watch-event` or `direct-human`), without
-  relying on `currentTaskOrigin()`;
+  state, known dispatch source (`watch-event` or `direct-human`), and exact approved
+  revision key, without relying on `currentTaskOrigin()`;
 - the guarded autonomous-push tool re-reads the current mode immediately before pushing,
   because a mode decrease during a running turn must fail closed.
 
@@ -260,32 +260,32 @@ push in this mode.
 
 ### `autofix-with-approval`
 
-Approval is another message in the continuing PR-owner conversation, not a separate
-mechanism:
+Approval is an exact current reviewed-revision decision dispatched to the continuing
+PR-owner conversation through Active Watches or the typed API, not a generic owner
+message or a separate workflow:
 
 1. The agent commits the proposed change and says it is ready for review.
 2. The watch enters `waiting`; the worktree is held steady and watcher events cannot
    start another turn or synchronize it.
 3. The human reviews the on-demand worktree diff.
-4. If satisfied, the human tells the same agent, for example, “Approved—commit and
-   push.”
-5. That direct-human turn retains the full coding workspace and receives push and PR
-   response authority. A plain approval pushes the held commit as-is; a request such
-   as “approved, but fix the typo first, then push” can edit, validate, commit, and
-   push in that same turn.
+4. If satisfied, the human chooses **approve & push** in Active Watches (or calls
+   the equivalent typed API) for the exact current reviewed revision.
+5. That exact-revision approval turn retains the full coding workspace and receives
+   guarded push and PR-response authority. A generic message can request another
+   edit, but the resulting revision must be reviewed and approved separately.
 
-The human message is the authority grant, and the durable Flue conversation records
-the request, approval, and result. There is no approve action, approval row,
-reviewed-SHA record, or push-dispatch workflow.
+The exact reviewed-revision decision is the authority grant, and the durable Flue
+conversation records the request, approval, and result. The approval key is scoped
+to the pending owner turn; there is no separate approval row, prepared-diff record,
+or push-dispatch workflow.
 
 PR feedback can never impersonate approval: it enters through a `watch-event` turn,
-which has no push tool in this mode. A direct human message is distinguishable at the
-dispatch boundary and is the only waiting-mode turn that can receive push authority.
+which has no push tool in this mode. Generic owner messages are also non-authorizing;
+only the typed exact-revision approval dispatch can receive push authority.
 
-If the remote branch advanced while the worktree was held, the normal non-force push
-fails. The agent can rebase with its coding workspace or explain the blocker, as it
-would in a normal git session. This is not a race that needs an approval state
-machine.
+If the remote branch advanced while the worktree was held, exact-revision approval
+or its atomic leased push fails closed. The agent can prepare a new revision in its
+coding workspace or explain the blocker, and the human must review the new diff.
 
 ## Autofix Push When The Change Is Safe
 
@@ -330,19 +330,19 @@ Keep failure handling understandable:
   meaningful PR event may
   move `blocked` back to `watching` after fetching current facts.
 - Do not implement automatic multi-step backoff or a generalized retry classifier.
-- Do not retry push or comment effects speculatively.
-- After a Neondeck restart, a watch found in `working` becomes `blocked`; retain its
-  instance and worktree and ask the user to retry after inspection.
+- Do not retry push or comment effects speculatively. Reconcile only when GitHub
+  already contains the exact intended pushed commit or stable idempotency marker.
+- After a Neondeck restart, first reattach a recoverable canonical pending Flue
+  submission and reconcile only exact intended push/comment effects. An orphaned or
+  uncertain `working` watch becomes `blocked`; retain its instance and worktree and
+  ask the user to retry after inspection.
 - A failed comment does not undo a successful push.
 
-Accepted limitation: a crash after an autonomous push succeeds but before Neondeck
-records settlement also restarts as `blocked`. `autofix-push-when-safe` therefore
-degrades to needs-human: the operator or managing agent inspects the remote and
-decides whether to continue. Do not “fix” this accepted seam by reintroducing effect
-journals, push reconciliation, stage attempts, or automatic delivery recovery.
-
-This intentionally prefers a visible human decision over complicated autonomous
-reconciliation.
+A crash after an exact autonomous/approved push or response succeeds but before
+Neondeck records settlement is reconciled from the linked GitHub head, durable
+`lastPushedSha`, and stable comment idempotency marker without repeating the effect.
+Any different or uncertain remote state becomes `blocked` for human inspection. This
+is narrow effect recovery, not a generalized delivery journal or stage machine.
 
 ## Terminal Lifecycle
 
@@ -350,13 +350,15 @@ Continue polling after a push. When the PR is merged or closed:
 
 - if the configured merge checks are still running, keep watching;
 - when required checks are green or terminal, set the watch `complete`;
-- disable/remove the watch;
-- archive the Flue owner instance;
+- disable/remove the polling task and watch through one fenced transaction;
+- retain the Flue owner conversation as the durable audit trail;
 - remove only the eligible Neondeck-managed worktree;
 - retain a concise activity result for the user.
 
 Cleanup failure is visible and manually retryable. It does not create another agent
-instance or restart the watch.
+instance or restart the watch. Explicit Stop requires a separate
+`confirmPreparedDiff=true` decision before deleting a held unpushed commit; retained
+or unreadable cleanup artifacts are detached with persistent recovery instructions.
 
 ## Setup And UX
 
@@ -384,8 +386,10 @@ The dashboard needs only one row per watched PR with:
 - `watching`, `working`, `waiting`, `blocked`, or `complete` status;
 - last meaningful activity;
 - links to the PR, owner agent, worktree, and current diff when present;
-- Pause, Resume, Retry, Review/Open Agent, and Stop. Approval itself remains a
-  message in the owner conversation rather than a separate control contract.
+- Pause, Resume, Retry, Review/Open Agent, Stop, and an exact-revision
+  **approve & push** control while approval mode is waiting. Generic owner messages
+  can request more work but cannot approve delivery. Stop presents separate prepared
+  commit discard confirmation when required.
 
 Do not rebuild an admission queue, stage history, recovery-option matrix, or a
 cross-table canonical state projection.
@@ -451,18 +455,18 @@ same owner/worktree identifiers without any admission records.
 - Dispatch feedback and CI facts to the same agent instance.
 - Produce a committed worktree change for prepare/approval modes.
 - Render the commit through the existing diff viewer.
-- Hold the worktree steady while waiting. Give direct-human waiting turns the full
-  coding workspace plus delivery authority while watcher turns remain unable to
-  push.
+- Hold the worktree steady while waiting. Generic owner messages retain the full
+  coding workspace but no delivery authority; only an exact current reviewed-revision
+  approval turn receives guarded delivery tools.
 
 Exit: two sequential feedback events reuse the same instance/worktree; a prepared
-commit is reviewable without a prepared-diff database object; an explicit approval
-message is recorded in the same conversation and pushes the held worktree.
+commit is reviewable without a prepared-diff database object; an exact-revision
+approval is recorded in the same conversation and pushes only the held revision.
 
 #### Stage C: autonomous judgment, delivery, and terminal cleanup
 
 - Add the narrow push and PR-response tools only to the autonomous watch turn and
-  the direct-human approval turn.
+  the exact-revision approval turn.
 - Give the owner a full repo-scoped coding workspace so it can choose and run the
   repository's appropriate validation commands.
 - In autonomous mode, deliver sane, appropriately scoped changes without waiting
@@ -476,8 +480,8 @@ message is recorded in the same conversation and pushes the held worktree.
 Exit: autonomous mode can complete the simple loop without human intervention when
 the owner judges the request sound. Unreasonable scope, inadequate validation,
 stale head, changed mode, or uncertain credentials produce no push. A
-post-push/pre-settlement crash visibly blocks for human inspection rather than
-starting automatic reconciliation.
+post-push/pre-settlement crash reconciles only the exact intended external effect;
+different or uncertain remote state visibly blocks for human inspection.
 
 PR #172 completed this structure, but implemented the owner with a configured-check
 allowlist and interpreted “safe” as a mechanically verified push. That semantic
@@ -524,17 +528,18 @@ During development, run targeted unit tests only. The required high-value tests 
 - two events reuse the same agent instance and worktree;
 - work begins from the exact current PR head;
 - an unpublished prepared commit is never overwritten;
-- watcher feedback cannot obtain push/response authority in approval mode, while a
-  direct human waiting turn does;
+- watcher feedback and generic owner messages cannot obtain push/response authority
+  in approval mode, while the exact current reviewed-revision approval turn does;
 - a waiting-for-approval worktree remains unchanged until the human resolves it;
 - autonomous mode does not require preconfigured checks and can use repository-native
   tests, formatters, typechecks, generators, and compilers selected by the owner;
 - semantic uncertainty leaves the change for review, while mechanical uncertainty
   blocks the push;
-- restart preserves bindings and turns an interrupted `working` state into a
-  visible block;
-- a crash after push but before settlement becomes a visible needs-human block and
-  does not trigger automatic effect reconciliation;
+- restart preserves bindings, reattaches recoverable canonical submissions, and
+  turns only orphaned or uncertain interrupted `working` state into a visible
+  block;
+- a crash after the exact intended push/comment but before settlement reconciles the
+  same external effect idempotently; different or uncertain remote state fails closed;
 - merged/closed plus settled checks stops the watch and cleans only its managed
   worktree.
 
@@ -550,12 +555,14 @@ The simplified implementation does not include:
 - stage attempts or transition-event logs;
 - the former 17-state transition graph;
 - a central advancement coordinator or workflow-per-transition model;
-- generalized retry, reconciliation, exponential backoff, or effect recovery;
+- generalized retry, reconciliation, or exponential backoff beyond the narrow
+  exact push/comment recovery paths;
 - queued/coalesced same-PR events;
 - generation management for routine instance rotation;
 - grounding cursors, config/memory snapshots, envelope hashes, or CAS baselines;
 - policy-hash-bound prepared diffs or approval records;
-- approve actions, reviewed-SHA bookkeeping, or approval dispatch workflows;
+- separate approval rows, prepared-diff approval state machines, or approval
+  workflows; the pending owner turn carries only its exact reviewed revision key;
 - automatic rebase and stale-effect repair;
 - a canonical operator admission queue or recovery-action matrix;
 - general-purpose distributed workflow machinery.
@@ -579,8 +586,8 @@ Autopilot is usable when:
 - every fixing mode has a normal repo-scoped coding workspace;
 - the current mode and dispatch source determine push and PR-response authority;
 - notify and prepare modes cannot push;
-- approval is a direct message to the same managing agent; that human turn alone
-  receives push authority and operates on the worktree held steady for review;
+- approval is an exact current reviewed-revision decision through Active Watches or
+  the typed API; generic messages to the same managing agent are non-authorizing;
 - autonomous mode judges whether feedback is sane and appropriately scoped, runs
   proportionate repository-native validation, and pushes without human approval when
   satisfied;
@@ -588,7 +595,8 @@ Autopilot is usable when:
 - uncertainty leaves a reviewable local commit and notifies the user;
 - new events are observed on the next poll without an event-coalescing subsystem;
 - failures are visible and manually retryable;
-- an autonomous post-push crash may require human inspection by design;
+- an exact autonomous post-push/comment crash is reconciled without duplication,
+  while different or uncertain remote state requires human inspection;
 - a merged/closed PR with settled checks stops the watch and cleans its managed
   resources;
 - the full behavior is proven by a small number of focused tests and described

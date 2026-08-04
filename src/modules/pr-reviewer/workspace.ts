@@ -12,7 +12,7 @@ import {
   type RuntimePaths,
   type RepoConfig,
 } from '../../runtime-home';
-import { readLocalPullRequestFiles } from '../pr-local-diffs';
+import { ensureLocalPullRequestRevisions } from '../pr-local-diffs';
 import { readRepoRegistrySnapshot, repoFullName } from '../repos';
 
 export type PrReviewerWorkspaceTarget = {
@@ -29,6 +29,7 @@ export type PrReviewerWorkspace = {
   available: true;
   repoId: string;
   repoFullName: string;
+  repoPath: string;
   headSha: string;
   baseSha: string | null;
   mergeBase: string | null;
@@ -44,6 +45,16 @@ export type UnavailablePrReviewerWorkspace = {
 export type PrReviewerWorkspaceResolution =
   PrReviewerWorkspace | UnavailablePrReviewerWorkspace;
 
+export type PrReviewerWorkspaceToolContext = {
+  repoPath: string;
+  headSha: string;
+  mergeBase: string | null;
+};
+
+export type PrReviewerWorkspaceToolContextResolution =
+  | ({ available: true } & PrReviewerWorkspaceToolContext)
+  | { available: false; reason: string };
+
 const relativePathSchema = v.pipe(
   v.string(),
   v.trim(),
@@ -56,8 +67,11 @@ const lineSchema = v.pipe(v.number(), v.integer(), v.minValue(1));
 export async function resolvePrReviewerWorkspace(
   target: PrReviewerWorkspaceTarget,
   paths: RuntimePaths = runtimePaths(),
+  signal?: AbortSignal,
 ): Promise<PrReviewerWorkspaceResolution> {
+  signal?.throwIfAborted();
   const registry = await readRepoRegistrySnapshot(paths);
+  signal?.throwIfAborted();
   const repo = registry.repos.find(
     (item) =>
       repoFullName(item).toLowerCase() === target.repoFullName.toLowerCase(),
@@ -74,11 +88,14 @@ export async function resolvePrReviewerWorkspace(
 
   try {
     const base = baseSha ?? localBaseRef(target.baseRef ?? repo.defaultBranch);
-    await ensureRevisionAvailable(repo, target, headSha, base, paths);
+    await ensureRevisionAvailable(repo, target, headSha, base, paths, signal);
     const mergeBase = base
-      ? await git(repo.path, ['merge-base', base, headSha]).then((value) =>
-          value.trim(),
-        )
+      ? await git(
+          repo.path,
+          ['merge-base', base, headSha],
+          undefined,
+          signal,
+        ).then((value) => value.trim())
       : null;
     if (base && !mergeBase) {
       return unavailable('Git could not resolve the reviewed merge base.');
@@ -87,16 +104,18 @@ export async function resolvePrReviewerWorkspace(
       available: true,
       repoId: repo.id,
       repoFullName: repoFullName(repo),
+      repoPath: repo.path,
       headSha,
       baseSha,
       mergeBase,
-      tools: reviewerWorkspaceTools({
-        repo,
+      tools: createPrReviewerWorkspaceTools({
+        repoPath: repo.path,
         headSha,
         mergeBase,
       }),
     };
   } catch (error) {
+    signal?.throwIfAborted();
     return unavailable(errorMessage(error));
   }
 }
@@ -107,20 +126,29 @@ async function ensureRevisionAvailable(
   headSha: string,
   base: string | null,
   paths: RuntimePaths,
+  signal?: AbortSignal,
 ) {
   const requiredRevisions = [headSha, base].filter(
     (revision): revision is string => Boolean(revision),
   );
   const revisionsAvailable = await Promise.all(
     requiredRevisions.map((revision) =>
-      git(repo.path, ['cat-file', '-e', `${revision}^{commit}`])
+      git(
+        repo.path,
+        ['cat-file', '-e', `${revision}^{commit}`],
+        undefined,
+        signal,
+      )
         .then(() => true)
-        .catch(() => false),
+        .catch(() => {
+          signal?.throwIfAborted();
+          return false;
+        }),
     ),
   );
   if (revisionsAvailable.every(Boolean)) return;
 
-  await readLocalPullRequestFiles(
+  await ensureLocalPullRequestRevisions(
     {
       owner: repo.github.owner,
       repo: repo.github.name,
@@ -131,21 +159,49 @@ async function ensureRevisionAvailable(
       includePatches: false,
     },
     paths,
+    signal,
   );
 }
 
-function reviewerWorkspaceTools(input: {
-  repo: RepoConfig;
-  headSha: string;
-  mergeBase: string | null;
-}): ToolDefinition[] {
-  const { repo, headSha, mergeBase } = input;
+export function createPrReviewerWorkspaceTools(
+  input: PrReviewerWorkspaceToolContext,
+  options: {
+    consumeToolCall?: () => number | null;
+  } = {},
+): ToolDefinition[] {
+  return createResolvedPrReviewerWorkspaceTools(
+    async () => ({ available: true, ...input }),
+    options,
+  );
+}
+
+export function createDeferredPrReviewerWorkspaceTools(
+  resolve: (
+    signal?: AbortSignal,
+  ) => Promise<PrReviewerWorkspaceToolContextResolution>,
+  options: {
+    consumeToolCall?: () => number | null;
+  } = {},
+): ToolDefinition[] {
+  return createResolvedPrReviewerWorkspaceTools(resolve, options);
+}
+
+function createResolvedPrReviewerWorkspaceTools(
+  resolve: (
+    signal?: AbortSignal,
+  ) => Promise<PrReviewerWorkspaceToolContextResolution>,
+  options: {
+    consumeToolCall?: () => number | null;
+  },
+): ToolDefinition[] {
   let remainingToolCalls = prReviewerWorkspaceToolCallLimit;
-  const consumeToolCall = () => {
-    if (remainingToolCalls <= 0) return null;
-    remainingToolCalls -= 1;
-    return remainingToolCalls;
-  };
+  const consumeToolCall =
+    options.consumeToolCall ??
+    (() => {
+      if (remainingToolCalls <= 0) return null;
+      remainingToolCalls -= 1;
+      return remainingToolCalls;
+    });
   const budgeted = <T extends Record<string, unknown>>(
     result: T,
     remaining: number,
@@ -160,6 +216,10 @@ function reviewerWorkspaceTools(input: {
     workspaceToolCallsRemaining: 0,
     workspaceToolCallLimit: prReviewerWorkspaceToolCallLimit,
   });
+  const unavailableWorkspace = (reason: string) => ({
+    available: false,
+    reason,
+  });
   const budgetDescription = ` This call shares a hard ${prReviewerWorkspaceToolCallLimit}-call exploration budget with the other exact-revision workspace tools.`;
   return [
     defineTool({
@@ -173,27 +233,39 @@ function reviewerWorkspaceTools(input: {
           v.pipe(v.number(), v.integer(), v.minValue(1), v.maxValue(2_000)),
         ),
       }),
-      async run({ input: toolInput }) {
+      async run({ data: toolInput, signal }) {
+        const workspace = await resolve(signal);
+        if (!workspace.available) {
+          return { output: await unavailableWorkspace(workspace.reason) };
+        }
         const remaining = consumeToolCall();
-        if (remaining === null) return exhausted();
+        if (remaining === null) return { output: await exhausted() };
+        const { repoPath, headSha } = workspace;
         const limit = toolInput.limit ?? 500;
-        const output = await git(repo.path, [
-          'ls-tree',
-          '-r',
-          '--name-only',
-          headSha,
-          '--',
-          ...(toolInput.path ? [toolInput.path] : []),
-        ]);
-        const allPaths = output.split('\n').filter(Boolean);
-        return budgeted(
-          {
-            revision: headSha,
-            paths: allPaths.slice(0, limit),
-            truncated: allPaths.length > limit,
-          },
-          remaining,
+        const output = await git(
+          repoPath,
+          [
+            'ls-tree',
+            '-r',
+            '--name-only',
+            headSha,
+            '--',
+            ...(toolInput.path ? [toolInput.path] : []),
+          ],
+          undefined,
+          signal,
         );
+        const allPaths = output.split('\n').filter(Boolean);
+        return {
+          output: await budgeted(
+            {
+              revision: headSha,
+              paths: allPaths.slice(0, limit),
+              truncated: allPaths.length > limit,
+            },
+            remaining,
+          ),
+        };
       },
     }),
     defineTool({
@@ -206,9 +278,14 @@ function reviewerWorkspaceTools(input: {
         startLine: v.optional(lineSchema),
         endLine: v.optional(lineSchema),
       }),
-      async run({ input: toolInput }) {
+      async run({ data: toolInput, signal }) {
+        const workspace = await resolve(signal);
+        if (!workspace.available) {
+          return { output: await unavailableWorkspace(workspace.reason) };
+        }
         const remaining = consumeToolCall();
-        if (remaining === null) return exhausted();
+        if (remaining === null) return { output: await exhausted() };
+        const { repoPath, headSha } = workspace;
         const startLine = toolInput.startLine ?? 1;
         const requestedEnd = toolInput.endLine ?? startLine + 399;
         const endLine = Math.min(
@@ -216,41 +293,46 @@ function reviewerWorkspaceTools(input: {
           startLine + 999,
         );
         const content = await git(
-          repo.path,
+          repoPath,
           ['show', `${headSha}:${toolInput.path}`],
           16 * 1024 * 1024,
+          signal,
         );
         if (content.includes('\u0000')) {
-          return budgeted(
-            {
-              revision: headSha,
-              path: toolInput.path,
-              binary: true,
-              content: '',
-            },
-            remaining,
-          );
+          return {
+            output: await budgeted(
+              {
+                revision: headSha,
+                path: toolInput.path,
+                binary: true,
+                content: '',
+              },
+              remaining,
+            ),
+          };
         }
         const lines = content.split('\n');
         const selected = lines.slice(startLine - 1, endLine);
-        return budgeted(
-          {
-            revision: headSha,
-            path: toolInput.path,
-            binary: false,
-            startLine,
-            endLine: startLine + Math.max(0, selected.length - 1),
-            totalLines: lines.length,
-            content: selected
-              .map(
-                (line, index) =>
-                  `${String(startLine + index).padStart(6, ' ')}\t${line}`,
-              )
-              .join('\n'),
-            truncated: endLine < lines.length,
-          },
-          remaining,
-        );
+        return {
+          output: await budgeted(
+            {
+              revision: headSha,
+              path: toolInput.path,
+              binary: false,
+              startLine,
+              endLine: startLine + Math.max(0, selected.length - 1),
+              totalLines: lines.length,
+              content: selected
+                .map(
+                  (line, index) =>
+                    `${String(startLine + index).padStart(6, ' ')}\t${line}`,
+                )
+                .join('\n'),
+              truncated: endLine < lines.length,
+            },
+            remaining,
+          ),
+        };
       },
     }),
     defineTool({
@@ -265,22 +347,33 @@ function reviewerWorkspaceTools(input: {
           v.pipe(v.number(), v.integer(), v.minValue(1), v.maxValue(500)),
         ),
       }),
-      async run({ input: toolInput }) {
+      async run({ data: toolInput, signal }) {
+        const workspace = await resolve(signal);
+        if (!workspace.available) {
+          return { output: await unavailableWorkspace(workspace.reason) };
+        }
         const remaining = consumeToolCall();
-        if (remaining === null) return exhausted();
+        if (remaining === null) return { output: await exhausted() };
+        const { repoPath, headSha } = workspace;
         const limit = toolInput.limit ?? 100;
-        const output = await git(repo.path, [
-          'grep',
-          '-n',
-          '--full-name',
-          '-I',
-          '-F',
-          '-e',
-          toolInput.query,
-          headSha,
-          '--',
-          ...(toolInput.path ? [toolInput.path] : []),
-        ]).catch((error) => {
+        const output = await git(
+          repoPath,
+          [
+            'grep',
+            '-n',
+            '--full-name',
+            '-I',
+            '-F',
+            '-e',
+            toolInput.query,
+            headSha,
+            '--',
+            ...(toolInput.path ? [toolInput.path] : []),
+          ],
+          undefined,
+          signal,
+        ).catch((error) => {
+          signal?.throwIfAborted();
           if (isNoMatchesError(error)) return '';
           throw error;
         });
@@ -288,15 +381,17 @@ function reviewerWorkspaceTools(input: {
           .split('\n')
           .filter(Boolean)
           .map((line) => line.replace(`${headSha}:`, ''));
-        return budgeted(
-          {
-            revision: headSha,
-            query: toolInput.query,
-            matches: allMatches.slice(0, limit),
-            truncated: allMatches.length > limit,
-          },
-          remaining,
-        );
+        return {
+          output: await budgeted(
+            {
+              revision: headSha,
+              query: toolInput.query,
+              matches: allMatches.slice(0, limit),
+              truncated: allMatches.length > limit,
+            },
+            remaining,
+          ),
+        };
       },
     }),
     defineTool({
@@ -311,27 +406,35 @@ function reviewerWorkspaceTools(input: {
         ),
         rightLine: v.optional(lineSchema),
       }),
-      async run({ input: toolInput }) {
+      async run({ data: toolInput, signal }) {
+        const workspace = await resolve(signal);
+        if (!workspace.available) {
+          return { output: await unavailableWorkspace(workspace.reason) };
+        }
         const remaining = consumeToolCall();
-        if (remaining === null) return exhausted();
+        if (remaining === null) return { output: await exhausted() };
+        const { repoPath, headSha, mergeBase } = workspace;
         if (!mergeBase) {
-          return budgeted(
-            {
-              available: false,
-              reason: 'The reviewed merge base is unavailable.',
-            },
-            remaining,
-          );
+          return {
+            output: await budgeted(
+              {
+                available: false,
+                reason: 'The reviewed merge base is unavailable.',
+              },
+              remaining,
+            ),
+          };
         }
         const pathspec = await reviewDiffPathspec(
-          repo.path,
+          repoPath,
           mergeBase,
           headSha,
           toolInput.path,
+          signal,
         );
         if (toolInput.rightLine) {
           const targeted = await streamDiffLinesAroundRightLine(
-            repo.path,
+            repoPath,
             [
               'diff',
               '--no-color',
@@ -344,23 +447,26 @@ function reviewerWorkspaceTools(input: {
             ],
             toolInput.rightLine,
             toolInput.contextLines ?? 20,
+            signal,
           );
-          return budgeted(
-            {
-              available: true,
-              base: mergeBase,
-              head: headSha,
-              path: toolInput.path,
-              rightLine: toolInput.rightLine,
-              targetChanged: targeted.targetChanged,
-              lines: targeted.lines,
-              truncated: targeted.truncated,
-            },
-            remaining,
-          );
+          return {
+            output: await budgeted(
+              {
+                available: true,
+                base: mergeBase,
+                head: headSha,
+                path: toolInput.path,
+                rightLine: toolInput.rightLine,
+                targetChanged: targeted.targetChanged,
+                lines: targeted.lines,
+                truncated: targeted.truncated,
+              },
+              remaining,
+            ),
+          };
         }
         const patch = await git(
-          repo.path,
+          repoPath,
           [
             'diff',
             '--no-color',
@@ -372,19 +478,22 @@ function reviewerWorkspaceTools(input: {
             ...pathspec,
           ],
           16 * 1024 * 1024,
+          signal,
         );
         const bounded = boundText(patch, 256 * 1024);
-        return budgeted(
-          {
-            available: true,
-            base: mergeBase,
-            head: headSha,
-            path: toolInput.path,
-            patch: bounded.text,
-            truncated: bounded.truncated,
-          },
-          remaining,
-        );
+        return {
+          output: await budgeted(
+            {
+              available: true,
+              base: mergeBase,
+              head: headSha,
+              path: toolInput.path,
+              patch: bounded.text,
+              truncated: bounded.truncated,
+            },
+            remaining,
+          ),
+        };
       },
     }),
   ];
@@ -395,11 +504,13 @@ async function reviewDiffPathspec(
   mergeBase: string,
   headSha: string,
   path: string,
+  signal?: AbortSignal,
 ) {
   const output = await git(
     cwd,
     ['diff', '--name-status', '-z', '--find-renames', mergeBase, headSha, '--'],
     16 * 1024 * 1024,
+    signal,
   );
   const fields = output.split('\u0000');
   for (let index = 0; index < fields.length;) {
@@ -431,7 +542,9 @@ async function streamDiffLinesAroundRightLine(
   args: string[],
   targetRightLine: number,
   contextLines: number,
+  signal?: AbortSignal,
 ) {
+  signal?.throwIfAborted();
   const child = spawn('git', args, {
     cwd,
     env: unattendedGitEnv(),
@@ -445,10 +558,17 @@ async function streamDiffLinesAroundRightLine(
   let rightLine = 0;
   let inHunk = false;
   let timedOut = false;
+  let aborted = false;
   const timeout = setTimeout(() => {
     timedOut = true;
     child.kill('SIGTERM');
   }, unattendedGitTimeoutMs);
+  const abort = () => {
+    aborted = true;
+    child.kill('SIGTERM');
+  };
+  signal?.addEventListener('abort', abort, { once: true });
+  if (signal?.aborted) abort();
   child.stderr.on('data', (chunk: Buffer) => {
     stderr = boundText(`${stderr}${chunk.toString()}`, 64 * 1024).text;
   });
@@ -526,6 +646,7 @@ async function streamDiffLinesAroundRightLine(
   try {
     await consumeBoundedLines(child.stdout, 8 * 1024 + 1, handleLine);
     const result = await closed;
+    if (aborted) signal?.throwIfAborted();
     if (timedOut) {
       throw new Error(
         `git ${args.join(' ')} timed out after ${unattendedGitTimeoutMs}ms.`,
@@ -539,6 +660,7 @@ async function streamDiffLinesAroundRightLine(
     }
   } finally {
     clearTimeout(timeout);
+    signal?.removeEventListener('abort', abort);
   }
   return { lines, targetChanged, truncated: responseTruncated };
 }
@@ -584,8 +706,13 @@ async function consumeBoundedLines(
   if (retained || truncated) emit();
 }
 
-async function git(cwd: string, args: string[], maxBuffer = 2 * 1024 * 1024) {
-  return runUnattendedGit(cwd, args, { maxBuffer });
+async function git(
+  cwd: string,
+  args: string[],
+  maxBuffer = 2 * 1024 * 1024,
+  signal?: AbortSignal,
+) {
+  return runUnattendedGit(cwd, args, { maxBuffer, signal });
 }
 
 function localBaseRef(baseRef: string | null | undefined) {

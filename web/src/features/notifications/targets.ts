@@ -37,6 +37,11 @@ export function resolveNotificationTarget(
     return { kind: 'url', href: reportUrl, label: 'Open report' };
   }
 
+  const detailUrl = readInternalPath(data.detailUrl);
+  if (detailUrl) {
+    return { kind: 'url', href: detailUrl, label: 'View activity' };
+  }
+
   const sessionId = readString(data.sessionId);
   if (sessionId && isSessionSource(notification.source)) {
     return { kind: 'session', sessionId, label: 'Open session' };
@@ -69,13 +74,13 @@ export function resolveNotificationTarget(
 
   if (
     notification.source === 'flue' ||
-    readString(data.runId) ||
-    readString(data.workflow)
+    readString(data.submissionId) ||
+    readString(data.agentName)
   ) {
     return {
       kind: 'plugin',
-      pluginId: 'workflow-observability',
-      label: 'Inspect run',
+      pluginId: 'activity',
+      label: 'View activity',
     };
   }
 

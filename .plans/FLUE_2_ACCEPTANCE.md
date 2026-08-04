@@ -1,0 +1,367 @@
+# Flue 2 Feature-Parity Acceptance
+
+Status: complete — all local, live review, and live Autopilot authority-mode acceptance scenarios passed
+Applies to: `flue2`  
+Companion plan: [FLUE_2_MIGRATION_PLAN.md](./FLUE_2_MIGRATION_PLAN.md)
+
+Run this against a clean runtime home after the automated completion gates pass.
+The migration is not feature-complete until every scenario passes without
+weakening the beta behavior, including the existing MCP trust, approval, and
+audit boundary.
+
+## Evidence Header
+
+Record these values with the final acceptance result:
+
+- commit SHA
+- Node, npm, and Flue versions
+- operating system
+- clean `NEONDECK_HOME` path
+- configured model/provider and authentication mode
+- registered test repository
+- disposable pull request refs used for review and Autopilot
+- start/end timestamps
+- screenshots or API responses for failed assertions
+
+## Setup
+
+```sh
+eval "$(fnm env)"
+fnm use 26.4.0
+export NEONDECK_ACCEPTANCE_HOME="$(mktemp -d /tmp/neondeck-flue2-acceptance.XXXXXX)"
+export NEONDECK_HOME="$NEONDECK_ACCEPTANCE_HOME"
+npm run setup -- --home "$NEONDECK_ACCEPTANCE_HOME"
+npm run cli -- --home "$NEONDECK_ACCEPTANCE_HOME" status
+npm run dev
+```
+
+Configure one real model/provider through the normal onboarding or auth flow.
+Register a disposable repository and GitHub identity before the review and
+Autopilot scenarios. Do not reuse a production runtime home or a valuable pull
+request.
+
+## 1. Display Chat And Sessions
+
+1. Open the dashboard and create a new main session.
+2. Send a prompt with a unique token. Confirm the response streams, settles,
+   and retains the token in history after a full page reload.
+3. Create a second scratch session, switch between both sessions, and verify
+   each conversation retains its own history.
+4. Start a deliberately long response and abort it. Confirm the conversation
+   settles as aborted without corrupting later messages.
+5. Run `/repo-status` and one typed configuration or lookup command. Confirm
+   chat, dashboard controls, and the corresponding local API expose the same
+   result.
+
+Pass conditions:
+
+- create, switch, resume, send, stream, history, and abort all work
+- shared local host/origin access control remains enforced on agent and app
+  routes
+- typed data parts and response metadata render without unsafe assumptions
+
+## 2. MCP Capability Preservation
+
+Add Neondeck's local fixture server to the clean runtime home:
+
+```sh
+npm run cli -- --home "$NEONDECK_ACCEPTANCE_HOME" mcp add fixture \
+  --command node \
+  --arg "$PWD/src/domains/mcp/fixtures/stdio-server.mjs"
+npm run cli -- --home "$NEONDECK_ACCEPTANCE_HOME" mcp status fixture
+npm run cli -- --home "$NEONDECK_ACCEPTANCE_HOME" mcp tools fixture
+```
+
+1. Create a new display session after the fixture catalog loads.
+2. Ask Neon to call `mcp__fixture__echo` with a unique value.
+3. Confirm the first call requires approval and that the dashboard and
+   `mcp approvals` CLI show the same hash-bound pending request.
+4. Approve that request, retry with identical arguments, and confirm the tool
+   result reaches the conversation.
+5. Confirm `mcp audit` records the request, decision, and execution without
+   leaking secrets.
+6. Disable the server. Confirm a new session cannot call its stale tools.
+7. Re-enable it and confirm another new session receives the refreshed catalog.
+8. Exercise one denied tool policy and confirm it cannot be overridden by the
+   model or by changing arguments after approval.
+
+Pass conditions:
+
+- stdio discovery, schema adaptation, invocation, approval, denial, audit,
+  enable/disable, and session-stable tool catalogs match beta behavior
+- tool output remains explicitly treated as untrusted external data
+- the migration does not bypass Neondeck policy by mounting native Flue MCP
+  connections directly
+
+## 3. Morning Briefing
+
+1. Configure a briefing profile with at least one repository/GitHub source and
+   one intentionally unavailable source.
+2. Run a manual briefing from the dashboard or `POST /api/briefings/run`.
+3. Confirm one persisted snapshot and run record are created before model work.
+4. Confirm the briefing enters the canonical briefing conversation and renders
+   validated structured source health, actions, and failures.
+5. Reload the dashboard and verify the exact snapshot remains inspectable.
+6. Schedule a near-term occurrence and confirm it uses the same admission path.
+7. Replay settlement/reconciliation and confirm no duplicate ready or attention
+   notification is created.
+
+Pass conditions:
+
+- manual, scheduled, dashboard, and `/briefing` paths all work
+- snapshot grounding is exact and failure-tolerant
+- run status settles from submission state without workflow-run inspection
+
+## 4. PR Review
+
+1. Start an initial review for a disposable open PR and record its exact head
+   SHA and review attempt id.
+2. Confirm the bounded review produces validated findings, report artifacts,
+   and handoff data for that exact revision.
+3. Reload during execution and verify status remains recoverable and visible.
+4. Open the continuing reviewer conversation, ask a follow-up question, reload,
+   and verify its history resumes.
+5. Advance the PR head and confirm the old reviewer refuses revision-bound
+   reads or comments rather than silently following the new head.
+6. Exercise timeout/failure and retry paths; confirm only the intended attempt
+   settles and no duplicate submission occurs.
+
+Pass conditions:
+
+- initial and continuing review retain read-only exact-head scope
+- findings, draft comments, reports, handoff, timeout, and recovery match beta
+- no raw Flue workflow-run inspector is required to diagnose the review
+
+## 5. Memory And Learning
+
+1. In a fresh display session, capture the effective SOUL, model, skills, and
+   active memory guidance through observable behavior or debug metadata.
+2. Add and edit a memory through the typed chat/API surface, then archive and
+   restore it. Confirm revision checks and audit rows for every mutation.
+3. Change SOUL, memory, model selection, or runtime skills while the first
+   session remains active. Confirm that session is marked stale but its prompt
+   context does not silently change.
+4. Create a new session and confirm it receives the new context snapshot.
+5. Exercise learning in `off`, `review`, and `auto` modes. Confirm bounded
+   evidence, candidate decisions, auto-apply policy, audit history, skill patch
+   application, and unchanged-target restore behavior.
+6. Confirm conversation and PR learning cadence advances only after successful
+   submission settlement.
+
+Pass conditions:
+
+- user/local/project memory scopes and archive history are preserved
+- active context is stable and new context is deliberate
+- learning remains proposal-first, bounded, auditable, and restorable
+
+## 6. Autopilot
+
+Use disposable PRs with actionable review feedback. Test each authority mode:
+
+1. `notify-only`: confirm meaningful changes notify without creating a managed
+   worktree or starting a mutation turn.
+2. `prepare-only`: confirm the owner works only in its managed worktree,
+   validates changes, and leaves a local commit without push/response tools.
+3. `autofix-with-approval`: confirm watcher-generated turns and generic owner
+   messages cannot push. Review the held diff, approve its exact current
+   revision through Active Watches or the typed approval API, and confirm only
+   that exact-revision approval turn gains guarded delivery tools.
+4. `autofix-push-when-safe`: confirm the owner may prepare, validate, commit,
+   push, and respond only after current mode, head, destination, credentials,
+   and worktree checks pass.
+5. Change mode/source state between turns and confirm tool and sandbox
+   availability changes at the next turn boundary.
+6. Exercise stale head, dirty worktree, wrong destination, missing credentials,
+   and concurrent-message cases; each must fail closed.
+7. Restart the Node process before and after edit, commit, push, response, and
+   settlement boundaries. Confirm accepted work recovers or settles without a
+   duplicate external effect.
+
+Pass conditions:
+
+- one stable owner, one managed worktree, one active turn, and one pending
+  semantic fingerprint remain the coordination model
+- capability ceilings cannot be raised by model-selected arguments
+- push/comment recovery reconciles actual GitHub and Git state
+- no second workflow/coordinator engine is introduced
+
+## Final Result
+
+Record each scenario as pass or fail with evidence. Any compromise, silently
+removed capability, missing MCP behavior, unverified crash boundary, or test
+failure leaves the migration incomplete.
+
+## 2026-08-01 Acceptance Evidence
+
+Environment:
+
+- source base: `1a2df33` plus the final acceptance-hardening working tree
+- Node `26.4.0`, npm `11.17.0`, Flue `2.0.1`
+- macOS `26.6` (`25G72`)
+- clean runtime home: `/tmp/neondeck-flue2-acceptance.PsmRZL`
+- provider/model: KiloCode with `kilocode/kilo-auto/free`
+- registered repository: `neondeck` at the `flue2` checkout
+- live read-only PR: `pandemicsyn/neondeck#177`, head
+  `23799f218539933a71f062056dc06ed5655e187e`
+- run window: approximately 2026-08-01 21:48 through 2026-08-02 00:36 UTC
+
+Live local results:
+
+- **Display conversation: pass.** A new conversation returned the unique token
+  `FLUE2_ACCEPTANCE_OK`. After two Node restarts, the same conversation retained
+  eight messages, four settled submissions, the acceptance token, and the MCP
+  result.
+- **Display session isolation and abort: pass.** Main and scratch conversations
+  retained disjoint unique tokens. A deliberately long scratch turn accepted a
+  durable abort, settled with outcome `aborted`, and the same conversation then
+  completed a healthy turn containing `AFTER_ABORT_HEALTHY`. `/repo-status
+neondeck` returned the same clean `flue2` repository facts through the local
+  API and the model-callable typed Tool.
+- **MCP discovery and invocation: pass.** The stdio fixture connected and
+  exposed two tools. The first echo call produced a hash-bound approval request.
+  Resolving the same approval through the CLI nudged the mounted conversation,
+  retried the identical arguments, and returned `FLUE2_MCP_APPROVAL`.
+- **MCP policy and audit: pass.** Audit history recorded the initial ask result,
+  approval, and successful execution. A newly configured `deny` rule for the
+  fixture danger tool was enforced in a fresh session and the tool did not run.
+  A second CLI-only approval test for `CLI_NUDGE_CHECK` also settled successfully
+  without a nudge/import error.
+- **MCP catalog disable and re-enable: pass.** Disabling the fixture through the
+  live local API closed the connection and exposed zero tools. A new session
+  omitted `mcp__fixture__echo` and used only the deterministic MCP status lookup.
+  Re-enabling reconnected both tools; another new session received the refreshed
+  echo Tool and reached the normal hash-bound approval gate. A focused registry
+  regression test proves existing session snapshots remain frozen and fail
+  closed while deliberately disabled catalogs are excluded from new sessions.
+- **Restart durability: pass.** Conversation messages, submission settlement,
+  and the approved MCP result survived repeated Node process restarts.
+- **Morning Briefing: pass.** The manual run
+  `briefing:20260801223513:d07e36b0` persisted its exact deterministic snapshot
+  before model work, reported the registered repo as healthy and the
+  intentionally unauthenticated GitHub review queue as partial, emitted a
+  validated `data-briefing` part, and settled `ready`. A due cron occurrence
+  created scheduled run `briefing:20260801223639:6d78eb69` through the same
+  persistent briefing session. After restart, both exact snapshots/runs remained
+  inspectable and each retained exactly one ready notification.
+- **Memory and stable context: pass.** Memory
+  `985fbc92-00e5-463d-8d32-3699c05fd577` was created, revision-checked,
+  edited, archived, and restored through the typed API with complete
+  before/after audit rows. The loaded session became stale after the edit but
+  continued to answer from its frozen `MEMORY_CONTEXT_AFTER` snapshot; a
+  deliberate new session loaded the same memory id and answered from
+  `MEMORY_CONTEXT_EDITED`.
+- **Learning policy and restore: pass.** Live `off` mode rejected both curation
+  and a Neon skill-patch proposal. `review` mode persisted candidate
+  `4ba2d183-dc3a-4d28-9ccf-c73d8a37c064` without editing its target; explicit
+  approval applied it and the audit-backed restore returned the unchanged
+  target to its exact pre-patch content. `auto` mode admitted Neon-authored
+  local memory `67d7eb65-ce24-44e8-a495-cd3c3f3bbd01`. Bounded conversation
+  learning review `8d06e910-e073-455f-a30c-0df01fd0dd9a` settled `completed`
+  from submission `sub_ik_0b3b896bf1dcb3e98ee061da788c19c3` and correctly
+  made no unsupported proposals from metadata-only evidence.
+- **Packaged runtime: pass.** `npm run smoke:npm-pack` started the packed CLI and
+  server from a clean install, reached health, and loaded shipped runtime skills.
+
+Automated feature evidence:
+
+- Initial and continuing PR review and all
+  four Autopilot authority modes pass their unit, git, integration, restart,
+  stale-head, recovery, and idempotency fixtures in `npm run verify`.
+- Autopilot stop retains a held unpushed prepared commit until a separate
+  explicit `confirmPreparedDiff=true` discard decision; focused service and
+  dashboard tests cover the refusal and confirmed cleanup paths.
+- `npm run smoke:kilo`, `npm run smoke:learning`, `npm run raycast:build`, and
+  `npm run raycast:lint` pass on the Phase 11 tree.
+
+Live GitHub read-only evidence:
+
+- **Initial PR review: pass.** Review attempt
+  `136f8218-8837-43ce-8ea9-d0e2b39358bd` reviewed PR #177 at the exact recorded
+  head, settled submission `sub_01KYZPNSY8E80HDTADYWC5XNJX`, and persisted two
+  report artifacts plus five validated local findings. No review or comment was
+  submitted to GitHub.
+- **Continuing reviewer and real head advancement: pass.** The earlier
+  revision-keyed reviewer conversation retained its uid, history, exact head,
+  and `REVIEWER_CONTINUITY_OK` token after a Node restart. Disposable PR #245
+  was reviewed at `e105c260b7f68f9e3f482ac561419b195be090e6`, advanced on
+  GitHub to `daaf6c3ebe3843a59c1f4c1959a204ddc2aa3e44`, and re-reviewed in
+  the same durable review record. That re-review produced two fresh report
+  artifacts and two findings. A live probe exposed that the already-open old
+  conversation could briefly retain stale Tools before its asynchronous
+  context refresh; the route now rejects the stale POST before Flue admission
+  with `409 review_revision_stale`. After restart, the rejection named both
+  revisions and left the old conversation at exactly three settlements.
+- **Autopilot notify-only baseline: pass.** A live watch of PR #177 persisted all
+  eight GitHub event-watermark categories and the exact head, reported no source
+  changes on refresh, and retained `notify-only`/`watching` state after restart.
+  `ownerInstanceId` and `worktreeId` remained null, proving passive observation
+  did not start a mutation turn or create a managed worktree.
+- **Autopilot prepare-only: pass.** Authorized disposable PR #245 produced one
+  owner (`pr-owner-bd42a4ca4503c4712c1a16cd`) and one managed worktree
+  (`33254b96-7c58-44a4-b278-f40010328dbd`) from exact GitHub head
+  `daaf6c3ebe3843a59c1f4c1959a204ddc2aa3e44`. The watch-event envelope exposed
+  only `workspace` and `commit` capabilities. The owner changed only
+  `src/flue2-autopilot-acceptance.ts`, committed the requested addition fix as
+  `30a70eee68a257adbb455064861bc3e0978ea6fd`, and settled `waiting`. The held
+  diff revision was
+  `6b99c4fcaae5d714d0e6f4d26f8ded2ecf5233c69827659c9a829dc29c00bdeb`;
+  its focused Vitest fixture passed, while GitHub remained unchanged at
+  `daaf6c3ebe3843a59c1f4c1959a204ddc2aa3e44`. Explicit stop settled the watch
+  `complete` without pushing or commenting. After a Node restart, that terminal
+  state and both audit bindings remained durable; confirmed prepared-diff
+  cleanup deleted the managed worktree, and the completed watch was then
+  removed through the normal typed API.
+- **Autopilot approval mode: pass.** Re-arming PR #245 in
+  `autofix-with-approval` created one replacement managed worktree
+  (`c4a7cbc0-7eea-41f7-a4c3-61d14023f45c`) while retaining the same durable
+  owner. The owner committed the exact reviewed one-line fix as
+  `dcb4aaa490456c779fa4ffa5be7bea004affa327` and passed all 969 unit tests.
+  A generic direct-human inspection message exposed no push or response Tool
+  and left GitHub unchanged. The exact approval for revision
+  `worktree-diff:daaf6c3ebe3843a59c1f4c1959a204ddc2aa3e44:6b99c4fcaae5d714d0e6f4d26f8ded2ecf5233c69827659c9a829dc29c00bdeb`
+  then exposed guarded delivery Tools and pushed only the held commit. GitHub,
+  the managed-worktree head, and `last_pushed_sha` all converged on
+  `dcb4aaa490456c779fa4ffa5be7bea004affa327`. The model did not elect to post a
+  PR reply in that turn. A Node restart reconciled the new remote head without
+  a duplicate push or comment. Explicit stop deleted the clean managed
+  worktree, and the completed watch was removable through the typed API.
+- **Autopilot autonomous safe-push mode: pass.** Authorized disposable PR #246
+  began at exact head `c8d17dc34b7bde2636cc58355016f02364d15491` with one
+  actionable multiplication defect. The canonical scheduler created one owner
+  (`pr-owner-c266f155f55b394b54efc1cb`) and one managed worktree
+  (`d4c87670-8e3b-4877-a8a3-262e334407dd`). The owner changed only
+  `src/flue2-autopilot-safe-acceptance.ts`, passed all 969 unit tests, and
+  committed `4418316a699b725eadf81b8dc1c3fa61ae4e8eaa`. Its first delivery attempt
+  failed closed at a final clean/current-turn guard and left a recoverable
+  blocked watch. Typed retry fetched current GitHub facts and reused the same
+  owner, worktree, and held commit; guarded delivery then pushed exactly that
+  commit and posted idempotent response `5154104965`. After a Node restart and
+  canonical scheduler reconciliation, GitHub head, snapshot head, managed
+  worktree head, `last_synced_sha`, and `last_pushed_sha` all equaled
+  `4418316a699b725eadf81b8dc1c3fa61ae4e8eaa`, while the response marker occurred
+  exactly once. Explicit stop deleted the managed worktree, and the completed
+  watch was removed through the typed API.
+- **Final repository verification: pass.** `npm run verify` passed with 1,000 unit
+  tests, 39 git tests, 90 integration tests, all type/layer/database checks,
+  dashboard/server/docs builds, a 913-file npm package audit, packed CLI smoke,
+  and formatting. The definitive post-hardening run completed at approximately
+  2026-08-02 01:04 UTC. Independent final static re-reviews found no remaining
+  P1/P2 issues across authority, polling/teardown state, docs/skills, restart
+  semantics, or MCP parity.
+
+PR-review evidence scope:
+
+- The live happy path, continuing reviewer, restart persistence, real head
+  advancement, same-record re-review, and pre-admission stale-revision refusal
+  above pass. Automated coverage passes for reload during execution and
+  timeout/failure retry.
+
+Externally mutating acceptance:
+
+- Authorization was supplied to use disposable live PRs and the configured
+  model provider. PR #245 was created and advanced for the completed reviewer,
+  `prepare-only`, and approval-mode slices. PR #246 completed autonomous
+  safe-push, response, retry, and restart reconciliation. No disposable PR was
+  merged. Both PRs were closed, both exact remote/local fixture branches and
+  fixture worktrees were removed, the repository origin was restored to SSH,
+  and the acceptance server was stopped.

@@ -6,6 +6,7 @@ web/dist/
 web/dist-perf/
 benchmarks/results/
 .flue-vite/
+.flue-vite.wrangler.jsonc
 .playwright-mcp/
 .release/
 .codex/environments/

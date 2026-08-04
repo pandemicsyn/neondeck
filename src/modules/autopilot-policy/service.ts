@@ -13,13 +13,8 @@ import {
   repoAutopilotPolicy,
   repoAutopilotPolicyForWatch,
 } from './config';
+import { emptyPolicyFailure, readActiveAutopilotSubmissions } from './risk';
 import {
-  emptyPolicyFailure,
-  normalizeWorkflowName,
-  readActiveAutopilotRuns,
-} from './risk';
-import {
-  mutationWorkflowNames,
   type AutopilotConcurrencyDecision,
   type AutopilotConcurrencyPolicy,
   type AutopilotPolicyDecision,
@@ -173,9 +168,11 @@ export async function checkAutopilotConcurrency(
   const limits = repo
     ? repoAutopilotPolicy(repo, appConfig).concurrency
     : globalAutopilotPolicy(appConfig).concurrency;
-  const activeRuns = readActiveAutopilotRuns(paths);
-  const activeRunIds = new Set(activeRuns.map((run) => run.run_id));
-  const activeWorkflowRuns = activeRuns.length;
+  const activeSubmissions = readActiveAutopilotSubmissions(paths);
+  const activeRunIds = new Set(
+    activeSubmissions.map((submission) => submission.submission_id),
+  );
+  const activeWorkflowRuns = activeSubmissions.length;
   const activeWorktrees = worktreeSnapshot.worktrees.filter((worktree) => {
     if (worktree.owningWorkflowRunId) {
       return activeRunIds.has(worktree.owningWorkflowRunId);
@@ -192,13 +189,7 @@ export async function checkAutopilotConcurrency(
       worktree.repoId === input.repoId &&
       worktree.prNumber === input.prNumber &&
       (worktree.owningWorkflowRunId
-        ? mutationWorkflowNames.has(
-            normalizeWorkflowName(
-              activeRuns.find(
-                (run) => run.run_id === worktree.owningWorkflowRunId,
-              )?.workflow ?? '',
-            ),
-          )
+        ? activeRunIds.has(worktree.owningWorkflowRunId)
         : true),
   ).length;
   const reasons: string[] = [];

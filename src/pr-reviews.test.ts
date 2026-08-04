@@ -2,6 +2,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import type { FlueObservation } from '@flue/runtime';
 import {
   archivePrReview,
   beginPrReviewSubmissionAttempt,
@@ -9,6 +10,7 @@ import {
   completePrReview,
   failPrReview,
   prReviewRemoteRefreshIntervalMs,
+  readPrReviewAdmissionBinding,
   readPrReviewForTarget,
   recentPrReviews,
   refreshPrReviewRemoteState,
@@ -19,14 +21,18 @@ import {
   startPrReview,
   submitPrReview,
   subscribePrReviewEvents,
+  type StartPrReviewDependencies,
   type PrReviewEvent,
 } from './modules/pr-reviews';
+import {
+  reconcilePrReviewAssistSettlement,
+  recoverInterruptedPrReviewAssists,
+  settlePrReviewAssistObservation,
+  watchPrReviewAssistSettlement,
+  type PrReviewAssistAdmission,
+} from './modules/pr-review-assist';
 import { openDb } from './lib/sqlite';
 import { ensureRuntimeHome, runtimePaths } from './runtime-home';
-import {
-  linkPrReviewRunObservation,
-  settlePrReviewObservation,
-} from './server/learning-hooks';
 import { createGitHubRoutes } from './server/routes/github';
 import { createReviewRoutes } from './server/routes/reviews';
 
@@ -40,6 +46,214 @@ afterEach(async () => {
 });
 
 describe('durable PR reviews', () => {
+  it('recovers an admitted attempt whose submission id was not attached', async () => {
+    const paths = await tempPaths();
+    const started = await startPrReview(
+      { ref: 'https://github.com/Other/Project/pull/42', origin: 'api' },
+      paths,
+      {
+        resolveTarget: async () => ({
+          repoFullName: 'Other/Project',
+          owner: 'Other',
+          repo: 'Project',
+          number: 42,
+        }),
+        fetchDetail: async () => detail('head-1'),
+        invokeWorkflow: async () => ({ runId: 'submission:lost-attachment' }),
+      },
+    );
+    const database = openDb(paths.neondeckDatabase);
+    try {
+      database
+        .prepare('UPDATE pr_reviews SET run_id = NULL WHERE id = ?;')
+        .run(started.reviewId);
+    } finally {
+      database.close();
+    }
+    const admit = vi.fn<PrReviewAssistAdmission>(async () => ({
+      runId: 'submission:recovered',
+    }));
+
+    await expect(
+      recoverInterruptedPrReviewAssists(
+        paths,
+        async () => ({ failed: false }),
+        admit,
+      ),
+    ).resolves.toMatchObject({
+      recovered: [started.reviewId],
+      failed: [],
+    });
+    expect(admit).toHaveBeenCalledWith({
+      ref: 'other/project#42',
+      reviewId: started.reviewId,
+      attemptId: expect.any(String),
+      repoFullName: 'other/project',
+      prNumber: 42,
+      headSha: 'head-1',
+      baseSha: 'base',
+      baseRef: 'main',
+    });
+    expect(readPrReviewForTarget('other/project', 42, paths)).toMatchObject({
+      status: 'reviewing',
+      runId: 'submission:recovered',
+    });
+  });
+
+  it('freezes the admitted PR revision in Flue initial data', async () => {
+    const paths = await tempPaths();
+    const invokeWorkflow = vi.fn<
+      NonNullable<StartPrReviewDependencies['invokeWorkflow']>
+    >(async () => ({ runId: 'revision-run' }));
+
+    await startPrReview(
+      { ref: 'https://github.com/Other/Project/pull/42', origin: 'api' },
+      paths,
+      {
+        resolveTarget: async () => ({
+          repoFullName: 'Other/Project',
+          owner: 'Other',
+          repo: 'Project',
+          number: 42,
+        }),
+        fetchDetail: async () => detail('exact-head'),
+        invokeWorkflow,
+      },
+    );
+
+    expect(invokeWorkflow).toHaveBeenCalledWith({
+      ref: 'other/project#42',
+      reviewId: expect.any(String),
+      attemptId: expect.any(String),
+      repoFullName: 'other/project',
+      prNumber: 42,
+      headSha: 'exact-head',
+      baseSha: 'base',
+      baseRef: 'main',
+    });
+  });
+
+  it('retries transient settlement reads until the bound attempt settles', async () => {
+    const paths = await tempPaths();
+    const started = await startPrReview(
+      { ref: 'other/project#42', origin: 'api' },
+      paths,
+      {
+        resolveTarget: async () => ({
+          repoFullName: 'other/project',
+          owner: 'other',
+          repo: 'project',
+          number: 42,
+        }),
+        fetchDetail: async () => detail('head-1'),
+        invokeWorkflow: async () => ({ runId: 'submission:transient-read' }),
+      },
+    );
+    const readSettlement = vi
+      .fn<() => Promise<{ failed: boolean }>>()
+      .mockRejectedValueOnce(new Error('temporary read outage'))
+      .mockResolvedValueOnce({ failed: true });
+    const attemptId = readPrReviewAdmissionBinding(
+      started.reviewId,
+      paths,
+    )?.attemptId;
+    if (!attemptId) throw new Error('Review attempt was not persisted.');
+
+    await watchPrReviewAssistSettlement(
+      {
+        reviewId: started.reviewId,
+        attemptId,
+        submissionId: started.runId,
+      },
+      paths,
+      readSettlement,
+      { retryDelayMs: 0 },
+    );
+
+    expect(readSettlement).toHaveBeenCalledTimes(2);
+    expect(readPrReviewForTarget('other/project', 42, paths)).toMatchObject({
+      status: 'failed',
+    });
+  });
+
+  it('fails reviewing and ready attempts when their Flue submission fails', async () => {
+    const paths = await tempPaths();
+    const dependencies = {
+      resolveTarget: async () => ({
+        repoFullName: 'other/project',
+        owner: 'other',
+        repo: 'project',
+        number: 42,
+      }),
+      fetchDetail: async () => detail('head-1'),
+      invokeWorkflow: async () => ({ runId: 'submission:review:failed' }),
+    };
+    const started = await startPrReview(
+      { ref: 'other/project#42', origin: 'api' },
+      paths,
+      dependencies,
+    );
+    completePrReview(
+      {
+        reviewId: started.reviewId,
+        runId: started.runId,
+        headSha: 'head-1',
+        reportIds: ['overview'],
+        reviewUrl: started.review.reviewUrl,
+        findingCount: 0,
+        seededCount: 0,
+        reportOnlyCount: 0,
+        reportOnlyFindings: [],
+      },
+      paths,
+    );
+
+    const settled = settlePrReviewAssistObservation(
+      {
+        type: 'submission_settled',
+        v: 3,
+        eventIndex: 1,
+        timestamp: new Date().toISOString(),
+        agentName: 'pr-review-assistant',
+        instanceId: 'pr-review:test',
+        submissionId: started.runId,
+        outcome: 'failed',
+        error: { message: 'provider failed' },
+      } as Extract<FlueObservation, { type: 'submission_settled' }>,
+      paths,
+    );
+    expect(settled).toMatchObject({
+      status: 'failed',
+      failureMessage: 'provider failed',
+    });
+
+    const restarted = await startPrReview(
+      { ref: 'other/project#42', origin: 'api' },
+      paths,
+      {
+        ...dependencies,
+        invokeWorkflow: async () => ({ runId: 'submission:review:restart' }),
+      },
+    );
+    await expect(
+      reconcilePrReviewAssistSettlement(
+        {
+          reviewId: restarted.reviewId,
+          attemptId: readAttemptId(restarted.reviewId, paths),
+          submissionId: restarted.runId,
+        },
+        paths,
+        async ({ instanceId, submissionId }) => {
+          expect(instanceId).toBe(
+            `pr-review:${restarted.reviewId}:${readAttemptId(restarted.reviewId, paths)}`,
+          );
+          expect(submissionId).toBe(restarted.runId);
+          return { failed: true };
+        },
+      ),
+    ).resolves.toMatchObject({ status: 'failed' });
+  });
+
   it('publishes reviewing, ready, submitted, and same-record re-review transitions', async () => {
     const paths = await tempPaths();
     const events: PrReviewEvent[] = [];
@@ -450,163 +664,6 @@ describe('durable PR reviews', () => {
       status: 'reviewing',
       runId: started.runId,
       headSha: 'head-1',
-    });
-  });
-
-  it('links run_start before admission returns so early framework failures settle', async () => {
-    const paths = await tempPaths();
-    let releaseAdmission!: (value: { runId: string }) => void;
-    let invoked!: (input: { reviewId: string; attemptId: string }) => void;
-    const admission = new Promise<{ runId: string }>((resolve) => {
-      releaseAdmission = resolve;
-    });
-    const invocation = new Promise<{ reviewId: string; attemptId: string }>(
-      (resolve) => {
-        invoked = resolve;
-      },
-    );
-    const start = startPrReview(
-      { ref: 'other/project#42', origin: 'api' },
-      paths,
-      {
-        resolveTarget: async () => ({
-          repoFullName: 'other/project',
-          owner: 'other',
-          repo: 'project',
-          number: 42,
-        }),
-        fetchDetail: async () => detail('head-1'),
-        invokeWorkflow: async (input) => {
-          invoked(input);
-          return admission;
-        },
-      },
-    );
-    const input = await invocation;
-    linkPrReviewRunObservation(
-      {
-        v: 3,
-        type: 'run_start',
-        eventIndex: 1,
-        timestamp: '2026-07-14T20:29:59.000Z',
-        runId: 'early-failed-run',
-        workflowName: 'review-pr-for-human',
-        startedAt: '2026-07-14T20:29:59.000Z',
-        input,
-      },
-      paths,
-    );
-    settlePrReviewObservation(
-      {
-        v: 3,
-        type: 'run_end',
-        eventIndex: 2,
-        timestamp: '2026-07-14T20:30:00.000Z',
-        runId: 'early-failed-run',
-        durationMs: 10,
-        isError: true,
-      },
-      paths,
-    );
-    releaseAdmission({ runId: 'early-failed-run' });
-
-    await expect(start).resolves.toMatchObject({
-      review: { status: 'failed', runId: 'early-failed-run' },
-    });
-  });
-
-  it('settles an owning review as failed when its Flue run ends in error', async () => {
-    const paths = await tempPaths();
-    const started = await startPrReview(
-      { ref: 'other/project#42', origin: 'api' },
-      paths,
-      {
-        resolveTarget: async () => ({
-          repoFullName: 'other/project',
-          owner: 'other',
-          repo: 'project',
-          number: 42,
-        }),
-        fetchDetail: async () => detail('head-1'),
-        invokeWorkflow: async () => ({ runId: 'failed-flue-run' }),
-      },
-    );
-
-    failPrReview(
-      {
-        runId: started.runId,
-        message: 'Concrete action failure.',
-      },
-      paths,
-    );
-    settlePrReviewObservation(
-      {
-        v: 3,
-        type: 'run_end',
-        eventIndex: 2,
-        timestamp: '2026-07-14T20:30:00.000Z',
-        runId: started.runId,
-        workflow: 'review-pr-for-human',
-        durationMs: 10,
-        isError: true,
-      } as never,
-      paths,
-    );
-
-    expect(readPrReviewForTarget('other/project', 42, paths)).toMatchObject({
-      status: 'failed',
-      runId: started.runId,
-      failureMessage: 'Concrete action failure.',
-    });
-  });
-
-  it('lets a framework output failure invalidate a ready action result', async () => {
-    const paths = await tempPaths();
-    const started = await startPrReview(
-      { ref: 'other/project#42', origin: 'api' },
-      paths,
-      {
-        resolveTarget: async () => ({
-          repoFullName: 'other/project',
-          owner: 'other',
-          repo: 'project',
-          number: 42,
-        }),
-        fetchDetail: async () => detail('head-1'),
-        invokeWorkflow: async () => ({ runId: 'output-failed-run' }),
-      },
-    );
-    completePrReview(
-      {
-        reviewId: started.reviewId,
-        runId: started.runId,
-        headSha: 'head-1',
-        reportIds: ['overview'],
-        reviewUrl: started.review.reviewUrl,
-        findingCount: 1,
-        seededCount: 1,
-        reportOnlyCount: 0,
-        reportOnlyFindings: [],
-      },
-      paths,
-    );
-
-    settlePrReviewObservation(
-      {
-        v: 3,
-        type: 'run_end',
-        eventIndex: 3,
-        timestamp: '2026-07-14T20:30:01.000Z',
-        runId: started.runId,
-        durationMs: 11,
-        isError: true,
-      },
-      paths,
-    );
-
-    expect(readPrReviewForTarget('other/project', 42, paths)).toMatchObject({
-      status: 'failed',
-      failureMessage: expect.stringContaining('Flue review workflow failed'),
     });
   });
 
@@ -1106,6 +1163,24 @@ async function startReadyReview(
     paths,
   );
   return started;
+}
+
+function readAttemptId(
+  reviewId: string,
+  paths: Awaited<ReturnType<typeof tempPaths>>,
+) {
+  const database = openDb(paths.neondeckDatabase, { readOnly: true });
+  try {
+    const row = database
+      .prepare('SELECT attempt_id FROM pr_reviews WHERE id = ?;')
+      .get(reviewId) as { attempt_id?: unknown } | undefined;
+    if (typeof row?.attempt_id !== 'string') {
+      throw new Error('Review attempt id was not persisted.');
+    }
+    return row.attempt_id;
+  } finally {
+    database.close();
+  }
 }
 
 function detail(headSha: string) {

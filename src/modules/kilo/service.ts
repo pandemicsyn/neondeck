@@ -538,6 +538,16 @@ export async function summarizeKiloSession(
     'summarize_kilo_session',
   );
   if (!parsed.ok) return parsed.result;
+  if (
+    !parsed.input.taskId &&
+    !parsed.input.sessionId &&
+    !parsed.input.titleQuery
+  ) {
+    return failResult(
+      'summarize_kilo_session',
+      'A taskId, sessionId, or titleQuery is required.',
+    );
+  }
   await ensureRuntimeHome(paths);
   const task = resolveKiloTaskForSessionInput(parsed.input, paths);
   const session = await resolveSession(parsed.input, paths);
@@ -567,7 +577,24 @@ export async function summarizeKiloSession(
     .filter(Boolean)
     .join('\n');
 
-  if (task) updateKiloTaskSummary(task.id, summary, paths);
+  if (task) {
+    updateKiloTaskSummary(task.id, summary, paths);
+    addKiloTaskEvent(
+      task.id,
+      {
+        eventType: 'session.summarized',
+        stream: 'system',
+        sessionId: session?.id ?? task.rootSessionId,
+        summary: 'Persisted a bounded Kilo session summary.',
+        data: {
+          source: 'kilo_session_summarize',
+          sessionId: session?.id ?? task.rootSessionId,
+          titleQuery: parsed.input.titleQuery ?? null,
+        },
+      },
+      paths,
+    );
+  }
 
   return {
     ok: true,

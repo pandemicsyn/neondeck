@@ -41,7 +41,7 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
         <p>
           Do not expose the local server directly to an untrusted LAN or the
           public internet. If remote access is required, place it behind your
-          own authenticated transport and treat raw workflow inspection,
+          own authenticated transport and treat agent-submission inspection,
           reports, and runtime state as sensitive.
         </p>
         <p>
@@ -109,9 +109,10 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
         <p>
           GitHub facts and mutations run server-side. Watched-PR Autopilot keeps
           coding authority separate from delivery authority: prepare modes
-          cannot push, approval mode can deliver only during a direct human
-          turn, and autonomous mode receives narrowly bound push and response
-          capabilities.
+          cannot push, approval mode can deliver only from an exact current
+          reviewed-revision approval through Active Watches or the typed API,
+          and autonomous mode receives narrowly bound push and response
+          capabilities. Generic owner messages never approve delivery.
         </p>
         <p>
           Before an autonomous push, Neondeck rechecks the current PR head,
@@ -135,7 +136,7 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
           Scheduled occurrences are claimed, recorded, and run as bounded work.
           They do not receive a mounted host workspace by default, but general
           scheduled instructions can still use permitted Neondeck or connected
-          service capabilities. The default workflow target cannot use the
+          service capabilities. The default fresh-session target cannot use the
           normal interactive commit or push path; a task explicitly attached to
           an existing agent session inherits that session's linked context and
           authority. Keep scheduled instructions narrow, review their result
@@ -168,12 +169,12 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
 
         <h2>Inspection and audit data</h2>
         <p>
-          Conversation history, workflow runs, command records, tool arguments,
-          reports, diffs, and output previews may reveal source code, paths,
-          prompts, or operational details. Output redaction catches some common
-          token formats but is not a general secret scanner. Keep runtime
-          storage and inspection views private, and rotate a credential if it is
-          ever exposed to model context or logs.
+          Conversation history, agent submissions, app-operation records,
+          command records, tool arguments, reports, diffs, and output previews
+          may reveal source code, paths, prompts, or operational details. Output
+          redaction catches some common token formats but is not a general
+          secret scanner. Keep runtime storage and inspection views private, and
+          rotate a credential if it is ever exposed to model context or logs.
         </p>
       </article>
     </main>

@@ -102,6 +102,53 @@ export const prWatchEventWatermarks = sqliteTable(
   ],
 );
 
+export const autopilotOwnerTurns = sqliteTable(
+  'autopilot_owner_turns',
+  {
+    turnId: text('turn_id').primaryKey(),
+    instanceId: text('instance_id').notNull(),
+    watchId: text('watch_id').notNull(),
+    source: text('source').notNull(),
+    mode: text('mode').notNull(),
+    idempotencyKey: text('idempotency_key'),
+    eventFingerprint: text('event_fingerprint'),
+    approvedRevisionKey: text('approved_revision_key'),
+    envelopeJson: text('envelope_json'),
+    messageBody: text('message_body'),
+    preparedJson: text('prepared_json'),
+    learningMemoryAvailable: integer('learning_memory_available')
+      .default(0)
+      .notNull(),
+    learningMemoryLoaded: integer('learning_memory_loaded')
+      .default(0)
+      .notNull(),
+    learningMemoryIdsJson: text('learning_memory_ids_json')
+      .default('[]')
+      .notNull(),
+    learningMemoryText: text('learning_memory_text'),
+    status: text('status').default('reserved').notNull(),
+    submissionId: text('submission_id'),
+    error: text('error'),
+    createdAt: text('created_at').notNull(),
+    admittedAt: text('admitted_at'),
+    settledAt: text('settled_at'),
+    updatedAt: text('updated_at').notNull(),
+  },
+  (table) => [
+    uniqueIndex('idx_autopilot_owner_turns_one_active')
+      .on(table.instanceId)
+      .where(sql`${table.status} IN ('reserved', 'admitted', 'settling')`),
+    uniqueIndex('idx_autopilot_owner_turns_delivery_key')
+      .on(table.instanceId, table.idempotencyKey)
+      .where(sql`${table.idempotencyKey} IS NOT NULL`),
+    index('idx_autopilot_owner_turns_active').on(
+      table.instanceId,
+      table.status,
+      sql`${table.createdAt} DESC`,
+    ),
+  ],
+);
+
 export const prNeondeckDeliveries = sqliteTable(
   'pr_neondeck_deliveries',
   {
@@ -188,8 +235,10 @@ export const scheduledTaskRuns = sqliteTable(
     status: text('status').notNull(),
     outcome: text('outcome').notNull(),
     message: text('message').notNull(),
-    workflowRunId: text('workflow_run_id'),
+    submissionId: text('submission_id'),
     sessionId: text('session_id'),
+    dispatchKey: text('dispatch_key'),
+    dispatchPayloadJson: text('dispatch_payload_json'),
     resultJson: text('result_json'),
     error: text('error'),
     startedAt: text('started_at').notNull(),
@@ -235,6 +284,8 @@ export const briefingRuns = sqliteTable(
     commandEventId: text('command_event_id'),
     dispatchId: text('dispatch_id'),
     workflowRunId: text('workflow_run_id'),
+    contextSnapshotId: text('context_snapshot_id'),
+    contextBindingJson: text('context_binding_json'),
     status: text('status').notNull(),
     error: text('error'),
     queuedAt: text('queued_at').notNull(),
@@ -356,6 +407,11 @@ export const learningEvents = sqliteTable(
       .where(
         sql`${table.type} = 'pr_handled' AND ${table.sourceId} IS NOT NULL`,
       ),
+    uniqueIndex('idx_learning_conversation_turn_source')
+      .on(table.sourceId)
+      .where(
+        sql`${table.type} = 'conversation_turn_settled' AND ${table.sourceId} IS NOT NULL`,
+      ),
   ],
 );
 
@@ -371,7 +427,10 @@ export const learningReviews = sqliteTable(
     inputSummaryJson: text('input_summary_json'),
     resultJson: text('result_json'),
     error: text('error'),
-    flueRunId: text('flue_run_id'),
+    agentId: text('agent_id'),
+    submissionId: text('submission_id'),
+    preparedJson: text('prepared_json'),
+    dispatchError: text('dispatch_error'),
     startedAt: text('started_at').notNull(),
     completedAt: text('completed_at'),
   },
@@ -380,6 +439,26 @@ export const learningReviews = sqliteTable(
       table.kind,
       table.status,
       sql`${table.startedAt} DESC`,
+    ),
+  ],
+);
+
+export const learningReviewAdmissions = sqliteTable(
+  'learning_review_admissions',
+  {
+    id: text('id').primaryKey(),
+    kind: text('kind').notNull(),
+    sessionId: text('session_id'),
+    inputJson: text('input_json').notNull(),
+    status: text('status').default('pending').notNull(),
+    error: text('error'),
+    createdAt: text('created_at').notNull(),
+    updatedAt: text('updated_at').notNull(),
+  },
+  (table) => [
+    index('idx_learning_review_admissions_pending').on(
+      table.status,
+      table.createdAt,
     ),
   ],
 );
@@ -595,12 +674,14 @@ export const githubPrFileCache = sqliteTable(
   ],
 );
 
-export const workflowEvents = sqliteTable(
-  'workflow_events',
+export const activityEvents = sqliteTable(
+  'activity_events',
   {
     id: integer('id').primaryKey({ autoIncrement: true }),
-    runId: text('run_id'),
-    workflow: text('workflow'),
+    submissionId: text('submission_id'),
+    agentName: text('agent_name'),
+    instanceId: text('instance_id'),
+    conversationId: text('conversation_id'),
     eventType: text('event_type').notNull(),
     eventIndex: integer('event_index'),
     level: text('level'),
@@ -614,27 +695,30 @@ export const workflowEvents = sqliteTable(
     createdAt: text('created_at').notNull(),
   },
   (table) => [
-    index('idx_workflow_events_run').on(table.runId, table.eventIndex),
-    index('idx_workflow_events_created').on(sql`${table.createdAt} DESC`),
+    index('idx_activity_events_submission').on(
+      table.submissionId,
+      table.eventIndex,
+    ),
+    index('idx_activity_events_created').on(sql`${table.createdAt} DESC`),
   ],
 );
 
-export const workflowRunObservations = sqliteTable(
-  'workflow_run_observations',
-  {
-    runId: text('run_id').primaryKey(),
-    workflow: text('workflow').notNull(),
-    status: text('status').notNull(),
-    startedAt: text('started_at').notNull(),
-    endedAt: text('ended_at'),
-    lastEventAt: text('last_event_at').notNull(),
-    lastMessage: text('last_message').notNull(),
-    eventCount: integer('event_count').default(0).notNull(),
-    durationMs: integer('duration_ms'),
-    isError: integer('is_error').default(0).notNull(),
-    updatedAt: text('updated_at').notNull(),
-  },
-);
+export const activitySubmissions = sqliteTable('activity_submissions', {
+  submissionId: text('submission_id').primaryKey(),
+  kind: text('kind').notNull(),
+  agentName: text('agent_name'),
+  instanceId: text('instance_id'),
+  status: text('status').notNull(),
+  queuedAt: text('queued_at').notNull(),
+  startedAt: text('started_at'),
+  settledAt: text('settled_at'),
+  lastEventAt: text('last_event_at').notNull(),
+  lastMessage: text('last_message').notNull(),
+  eventCount: integer('event_count').default(0).notNull(),
+  attemptCount: integer('attempt_count').default(0).notNull(),
+  isError: integer('is_error').default(0).notNull(),
+  updatedAt: text('updated_at').notNull(),
+});
 
 export const chatSessions = sqliteTable(
   'chat_sessions',
@@ -656,6 +740,7 @@ export const chatSessions = sqliteTable(
     summaryRefreshNote: text('summary_refresh_note'),
     contextLoadedAt: text('context_loaded_at'),
     contextMemoryIdsJson: text('context_memory_ids_json'),
+    contextSnapshotId: text('context_snapshot_id'),
     learningTurnCount: integer('learning_turn_count').default(0).notNull(),
     lastLearningReviewTurnCount: integer('last_learning_review_turn_count')
       .default(0)

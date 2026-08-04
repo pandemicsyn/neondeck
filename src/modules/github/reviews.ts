@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import * as v from 'valibot';
+import { prefixBotComment } from '../../../shared/bot-comments';
 import { isUniqueConstraintError, openDb } from '../../lib/sqlite';
 import type { RuntimePaths } from '../../runtime-home';
 import { addWorkflowSummary } from '../app-state';
@@ -385,6 +386,7 @@ export function discardPrReviewDraft(options: {
 }
 
 export function addPrReviewDraftComment(options: {
+  id?: string;
   databasePath: string;
   draftId: string;
   path: string;
@@ -398,9 +400,26 @@ export function addPrReviewDraftComment(options: {
 }): GitHubPrReviewDraft {
   const database = openDb(options.databasePath);
   const now = new Date().toISOString();
+  const origin = options.origin ?? 'human';
+  const body =
+    origin === 'neon'
+      ? prefixBotComment(unbrandedGeneratedCommentBody(options.body))
+      : options.body.trim();
   try {
     assertDraftIsLive(database, options.draftId);
     assertValidReviewCommentAnchor(options);
+    const id = options.id?.trim() || randomUUID();
+    const existing = database
+      .prepare(
+        'SELECT draft_id FROM pr_review_draft_comments WHERE id = ? LIMIT 1;',
+      )
+      .get(id) as { draft_id?: unknown } | undefined;
+    if (existing) {
+      if (existing.draft_id !== options.draftId) {
+        throw new Error('Review draft comment id belongs to another draft.');
+      }
+      return readDraftWithCommentsById(database, options.draftId);
+    }
     database
       .prepare(
         `
@@ -422,15 +441,15 @@ export function addPrReviewDraftComment(options: {
       `,
       )
       .run(
-        randomUUID(),
+        id,
         options.draftId,
         options.path,
         options.side,
         options.line,
         options.startLine ?? null,
         options.startSide ?? null,
-        options.body.trim(),
-        options.origin ?? 'human',
+        body,
+        origin,
         options.sourceFindingId ?? null,
         now,
         now,
@@ -1350,7 +1369,7 @@ function readDraftComments(
         startSide: parsed.start_side,
         body:
           parsed.origin === 'neon'
-            ? unbrandedGeneratedCommentBody(parsed.body)
+            ? prefixBotComment(unbrandedGeneratedCommentBody(parsed.body))
             : parsed.body,
         origin: parsed.origin,
         sourceFindingId: parsed.source_finding_id,

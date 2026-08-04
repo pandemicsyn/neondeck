@@ -673,7 +673,7 @@ describe('PR event state watermarks', () => {
         owner: 'pandemicsyn',
         repo: 'neondeck',
         number: 123,
-        body: 'Addressed review feedback in commit abc123. Checks: test.\n\n<!-- neondeck:generated -->',
+        body: 'bot: Addressed review feedback in commit abc123. Checks: test.\n\n<!-- neondeck:generated -->',
       }),
     ]);
     const addressed = readAddressedPrFeedback(
@@ -694,13 +694,56 @@ describe('PR event state watermarks', () => {
     ).toEqual(new Map([['77', expect.any(String)]]));
   });
 
-  it('reuses an existing PR comment with the same idempotency key', async () => {
+  it('awaits final comment authority before performing the GitHub side effect', async () => {
     process.env.GITHUB_TOKEN = 'token';
+    const home = await tempHome();
+    const paths = runtimePaths(home);
+    await writeRepoRegistry(paths.repos);
+    let postCount = 0;
+
+    await expect(
+      postGitHubPrComment(
+        {
+          repo: 'neondeck',
+          prNumber: 123,
+          body: 'This stale response must not be posted.',
+        },
+        paths,
+        {
+          fetchPullRequestEventState: async () => prEventState(),
+          authorizeComment: async () => {
+            await Promise.resolve();
+            return {
+              ok: false,
+              action: 'autopilot_owner_pr_respond',
+              changed: false,
+              message: 'The approved revision is stale.',
+              requires: ['currentApprovedPushedRevision'],
+            };
+          },
+          postPullRequestComment: async () => {
+            postCount += 1;
+            throw new Error('Unexpected PR comment side effect.');
+          },
+        },
+      ),
+    ).resolves.toMatchObject({
+      ok: false,
+      action: 'autopilot_owner_pr_respond',
+      requires: ['currentApprovedPushedRevision'],
+    });
+    expect(postCount).toBe(0);
+  });
+
+  it('reuses an existing PR comment after the GitHub token rotates', async () => {
+    process.env.GITHUB_TOKEN = 'token-before-rotation';
     const home = await tempHome();
     const paths = runtimePaths(home);
     await writeRepoRegistry(paths.repos);
     let postedBody: string | undefined;
     let postCount = 0;
+    const listedWithTokens: string[] = [];
+    const postedWithTokens: string[] = [];
     const existingComment = () => ({
       id: 88,
       nodeId: 'comment-node-88',
@@ -712,8 +755,10 @@ describe('PR event state watermarks', () => {
     });
     const dependencies = {
       fetchPullRequestEventState: async () => prEventState(),
-      listPullRequestComments: async () =>
-        postedBody ? [existingComment()] : [],
+      listPullRequestComments: async (request: { token: string }) => {
+        listedWithTokens.push(request.token);
+        return postedBody ? [existingComment()] : [];
+      },
       postPullRequestComment: async (input: {
         token: string;
         owner: string;
@@ -722,6 +767,7 @@ describe('PR event state watermarks', () => {
         body: string;
       }) => {
         postCount += 1;
+        postedWithTokens.push(input.token);
         postedBody = input.body;
         return existingComment();
       },
@@ -736,6 +782,7 @@ describe('PR event state watermarks', () => {
     await expect(
       postGitHubPrComment(input, paths, dependencies),
     ).resolves.toMatchObject({ ok: true, changed: true });
+    process.env.GITHUB_TOKEN = 'token-after-rotation';
     await expect(
       postGitHubPrComment(input, paths, dependencies),
     ).resolves.toMatchObject({
@@ -744,6 +791,11 @@ describe('PR event state watermarks', () => {
       data: { metadata: { idempotentReplay: true } },
     });
     expect(postCount).toBe(1);
+    expect(listedWithTokens).toEqual([
+      'token-before-rotation',
+      'token-after-rotation',
+    ]);
+    expect(postedWithTokens).toEqual(['token-before-rotation']);
     expect(postedBody).toContain('<!-- neondeck:idempotency:');
   });
 

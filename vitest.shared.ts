@@ -1,3 +1,23 @@
+import { markdownImportPlugin } from '@flue/vite/internal';
+import type { Plugin } from 'vite';
+
+export function flueMarkdownImportsForTests(): Plugin {
+  const plugin = markdownImportPlugin();
+  const transform = plugin.transform;
+  if (!transform || typeof transform === 'function') return plugin;
+
+  return {
+    ...plugin,
+    transform: {
+      ...transform,
+      filter: {
+        id: { include: /\.(?:ts|mts|cts)(?:\?|$)/i },
+        code: { include: [/\.md/] },
+      },
+    },
+  } as Plugin;
+}
+
 export const baseExclude = [
   '**/node_modules/**',
   '**/dist/**',
@@ -11,7 +31,7 @@ export const integrationTestFiles = [
   'src/commands.test.ts',
   'src/kilo-actions.test.ts',
   'src/kilo-results.test.ts',
-  'src/learning-workflow-smoke.test.ts',
+  'src/learning-agent-smoke.test.ts',
   'src/prepared-diffs.test.ts',
   'src/repo-edit.test.ts',
   'src/worktrees.test.ts',
@@ -21,6 +41,7 @@ export const serialUnitTestFiles = [
   'src/ci-fix-run.test.ts',
   'src/docs-drift.test.ts',
   'src/pr-local-diffs.test.ts',
+  'src/pr-reviewer-flue-lifecycle.test.ts',
   'src/pr-review-performance.test.ts',
   'src/task-authority.test.ts',
 ];

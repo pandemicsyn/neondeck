@@ -1393,10 +1393,9 @@ export type ChatSessionCommandChangeEvent = {
   changedAt: string;
 };
 
-export type WorkflowEventRecord = {
+export type ActivityEventRecord = {
   id: number;
-  runId: string | null;
-  workflow: string | null;
+  submissionId: string | null;
   eventType: string;
   eventIndex: number | null;
   level: string | null;
@@ -1406,56 +1405,62 @@ export type WorkflowEventRecord = {
   operationId: string | null;
   agentName: string | null;
   instanceId: string | null;
+  conversationId: string | null;
   durationMs: number | null;
   isError: boolean;
   summary: unknown;
   createdAt: string;
-  runUrl: string | null;
+  detailUrl: string | null;
 };
 
-export type WorkflowObservability = {
+export type ActivityObservability = {
   ok: boolean;
-  action: 'workflow_observability_read';
-  activeRuns: Array<{
-    runId: string;
-    workflow: string;
-    startedAt: string;
+  action: 'activity_observability_read';
+  activeSubmissions: Array<{
+    submissionId: string;
+    kind: string;
+    agentName: string | null;
+    instanceId: string | null;
+    status: 'queued' | 'running';
+    queuedAt: string;
+    startedAt: string | null;
     lastEventAt: string;
     lastMessage: string;
     eventCount: number;
-    runUrl: string | null;
+    attemptCount: number;
+    detailUrl: string;
   }>;
-  recentFailures: WorkflowEventRecord[];
-  recentData: WorkflowEventRecord[];
-  recentLogs: WorkflowEventRecord[];
-  recentTools: WorkflowEventRecord[];
-  recentOperations: WorkflowEventRecord[];
-  recentEvents: WorkflowEventRecord[];
+  recentFailures: ActivityEventRecord[];
+  recentSettlements: ActivityEventRecord[];
+  recentLogs: ActivityEventRecord[];
+  recentTools: ActivityEventRecord[];
+  recentOperations: ActivityEventRecord[];
+  recentEvents: ActivityEventRecord[];
   fetchedAt: string;
 };
 
-export type WorkflowRunRecord = {
-  runId: string;
-  workflowName: string;
-  status: 'active' | 'completed' | 'errored';
-  startedAt: string;
-  input?: unknown;
-  traceCarrier?: {
-    traceparent: string;
-    tracestate?: string;
-  };
-  endedAt?: string;
-  isError?: boolean;
-  durationMs?: number;
-  result?: unknown;
-  error?: unknown;
+export type ActivitySubmissionRecord = {
+  submissionId: string;
+  kind: string;
+  agentName: string | null;
+  instanceId: string | null;
+  status: 'queued' | 'running' | 'completed' | 'failed' | 'aborted';
+  queuedAt: string;
+  startedAt: string | null;
+  settledAt: string | null;
+  lastEventAt: string;
+  lastMessage: string;
+  eventCount: number;
+  attemptCount: number;
+  isError: boolean;
+  detailUrl: string;
 };
 
-export type WorkflowRunInspectionResponse = {
+export type ActivitySubmissionResponse = {
   ok: true;
-  action: 'workflow_run_inspection_read';
-  run: WorkflowRunRecord;
-  events: WorkflowEventRecord[];
+  action: 'activity_submission_read';
+  submission: ActivitySubmissionRecord;
+  events: ActivityEventRecord[];
   eventHistory: {
     totalEventCount: number;
     retainedEventCount: number;
@@ -1555,7 +1560,9 @@ export type LearningReviewRecord = {
   inputSummary: unknown;
   result: unknown;
   error: string | null;
-  flueRunId: string | null;
+  agentId: string | null;
+  submissionId: string | null;
+  dispatchError: string | null;
   startedAt: string;
   completedAt: string | null;
 };
@@ -1711,7 +1718,9 @@ export type BriefingMutationResponse = {
   message: string;
   profile?: BriefingProfile;
   run?: BriefingRun;
-  workflowRunId?: string;
+  briefingRunId?: string;
+  submissionId?: string;
+  sessionId?: string;
   errors?: string[];
 };
 
@@ -1839,7 +1848,8 @@ export type PrWatch = {
     | 'prepare-only'
     | 'autofix-with-approval'
     | 'autofix-push-when-safe';
-  autopilotStatus: 'watching' | 'working' | 'waiting' | 'blocked' | 'complete';
+  autopilotStatus:
+    'watching' | 'working' | 'waiting' | 'blocked' | 'stopping' | 'complete';
   ownerInstanceId: string | null;
   worktreeId: string | null;
   worktreeHeadSha?: string | null;
@@ -1885,6 +1895,8 @@ export type PrWatchMutationResponse = {
   message: string;
   watch?: PrWatch;
   watches?: PrWatch[];
+  detachedWorktreeId?: string | null;
+  cleanupRecovery?: string | null;
   requires?: string[];
   errors?: string[];
 };

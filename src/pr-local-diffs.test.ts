@@ -9,6 +9,8 @@ import {
   readLocalPullRequestFiles,
 } from './modules/pr-local-diffs';
 import {
+  createDeferredPrReviewerWorkspaceTools,
+  createPrReviewerWorkspaceTools,
   prReviewerWorkspaceToolCallLimit,
   resolvePrReviewerWorkspace,
 } from './modules/pr-reviewer';
@@ -125,37 +127,141 @@ describe('local PR diffs', () => {
     );
 
     await expect(
-      readTool?.run({ input: { path: 'src/app.ts' } } as never),
+      readTool?.run({ data: { path: 'src/app.ts' } } as never),
     ).resolves.toMatchObject({
-      revision: headSha,
-      path: 'src/app.ts',
-      content: expect.stringContaining('export const value = 2;'),
+      output: {
+        revision: headSha,
+        path: 'src/app.ts',
+        content: expect.stringContaining('export const value = 2;'),
+      },
     });
     await expect(
-      searchTool?.run({ input: { query: 'value = 3' } } as never),
-    ).resolves.toMatchObject({ matches: [] });
+      searchTool?.run({ data: { query: 'value = 3' } } as never),
+    ).resolves.toMatchObject({ output: { matches: [] } });
     await expect(
-      diffTool?.run({ input: { path: 'src/app.ts' } } as never),
+      diffTool?.run({ data: { path: 'src/app.ts' } } as never),
     ).resolves.toMatchObject({
-      available: true,
-      base: baseSha,
-      head: headSha,
-      patch: expect.stringContaining('+export const value = 2;'),
+      output: {
+        available: true,
+        base: baseSha,
+        head: headSha,
+        patch: expect.stringContaining('+export const value = 2;'),
+      },
     });
     await expect(
       diffTool?.run({
-        input: { path: 'src/app.ts', rightLine: 1, contextLines: 2 },
+        data: { path: 'src/app.ts', rightLine: 1, contextLines: 2 },
       } as never),
     ).resolves.toMatchObject({
-      targetChanged: true,
-      rightLine: 1,
-      lines: expect.arrayContaining([
-        expect.objectContaining({
-          kind: 'addition',
-          rightLine: 1,
-          text: 'export const value = 2;',
-        }),
-      ]),
+      output: {
+        targetChanged: true,
+        rightLine: 1,
+        lines: expect.arrayContaining([
+          expect.objectContaining({
+            kind: 'addition',
+            rightLine: 1,
+            text: 'export const value = 2;',
+          }),
+        ]),
+      },
+    });
+  });
+
+  it('mounts exact-revision tools before deferred reviewer intake resolves', async () => {
+    const { baseSha, headSha, repo } = await fixture();
+    let resolveCalls = 0;
+    const resolve = async () => {
+      resolveCalls += 1;
+      return {
+        available: true as const,
+        repoPath: repo,
+        headSha,
+        mergeBase: baseSha,
+      };
+    };
+    const tools = createDeferredPrReviewerWorkspaceTools(resolve);
+
+    expect(resolveCalls).toBe(0);
+    expect(tools.map((tool) => tool.name)).toEqual([
+      'neondeck_review_workspace_list',
+      'neondeck_review_workspace_read',
+      'neondeck_review_workspace_search',
+      'neondeck_review_workspace_diff',
+    ]);
+
+    const searchTool = tools.find(
+      (tool) => tool.name === 'neondeck_review_workspace_search',
+    );
+    await expect(
+      searchTool?.run({ data: { query: 'value = 2' } } as never),
+    ).resolves.toMatchObject({
+      output: {
+        revision: headSha,
+        matches: ['src/app.ts:1:export const value = 2;'],
+      },
+    });
+    expect(resolveCalls).toBe(1);
+  });
+
+  it('forwards the Flue tool abort signal into deferred workspace resolution', async () => {
+    const controller = new AbortController();
+    const resolve = vi.fn<
+      (signal?: AbortSignal) => Promise<{
+        available: false;
+        reason: string;
+      }>
+    >(async (signal) => {
+      signal?.throwIfAborted();
+      return { available: false, reason: 'not reached' };
+    });
+    const tools = createDeferredPrReviewerWorkspaceTools(resolve);
+    const listTool = tools.find(
+      (tool) => tool.name === 'neondeck_review_workspace_list',
+    );
+    controller.abort(new DOMException('Tool stopped.', 'AbortError'));
+
+    await expect(
+      listTool?.run({
+        data: { limit: 1 },
+        signal: controller.signal,
+      } as never),
+    ).rejects.toMatchObject({ name: 'AbortError' });
+    expect(resolve).toHaveBeenCalledWith(controller.signal);
+  });
+
+  it('retries a deferred workspace after transient unavailability', async () => {
+    const { headSha, repo } = await fixture();
+    let available = false;
+    const tools = createDeferredPrReviewerWorkspaceTools(async () =>
+      available
+        ? { available: true, repoPath: repo, headSha, mergeBase: null }
+        : { available: false, reason: 'Repository refresh is in progress.' },
+    );
+    const listTool = tools.find(
+      (tool) => tool.name === 'neondeck_review_workspace_list',
+    );
+
+    const unavailableResult = (await listTool?.run({
+      data: { limit: 1 },
+    } as never)) as { output: Record<string, unknown> };
+    expect(unavailableResult).toMatchObject({
+      output: {
+        available: false,
+        reason: 'Repository refresh is in progress.',
+      },
+    });
+    expect(unavailableResult.output).not.toHaveProperty(
+      'workspaceToolCallsRemaining',
+    );
+
+    available = true;
+    await expect(
+      listTool?.run({ data: { limit: 1 } } as never),
+    ).resolves.toMatchObject({
+      output: {
+        revision: headSha,
+        workspaceToolCallsRemaining: prReviewerWorkspaceToolCallLimit - 1,
+      },
     });
   });
 
@@ -189,25 +295,65 @@ describe('local PR diffs', () => {
       index += 1
     ) {
       await expect(
-        listTool?.run({ input: { limit: 1 } } as never),
+        listTool?.run({ data: { limit: 1 } } as never),
       ).resolves.toMatchObject({
-        workspaceToolCallsRemaining:
-          prReviewerWorkspaceToolCallLimit - index - 1,
+        output: {
+          workspaceToolCallsRemaining:
+            prReviewerWorkspaceToolCallLimit - index - 1,
+        },
       });
     }
     await expect(
-      readTool?.run({ input: { path: 'src/app.ts' } } as never),
+      readTool?.run({ data: { path: 'src/app.ts' } } as never),
     ).resolves.toMatchObject({
-      workspaceToolCallsRemaining: 0,
-      content: expect.stringContaining('export const value = 2;'),
+      output: {
+        workspaceToolCallsRemaining: 0,
+        content: expect.stringContaining('export const value = 2;'),
+      },
     });
 
     await expect(
-      searchTool?.run({ input: { query: 'value' } } as never),
+      searchTool?.run({ data: { query: 'value' } } as never),
     ).resolves.toMatchObject({
-      available: false,
-      workspaceToolCallsRemaining: 0,
-      reason: expect.stringContaining('exploration budget'),
+      output: {
+        available: false,
+        workspaceToolCallsRemaining: 0,
+        reason: expect.stringContaining('exploration budget'),
+      },
+    });
+  });
+
+  it('keeps a supplied workspace budget across reconstructed tool arrays', async () => {
+    const { headSha, repo } = await fixture();
+    let remaining = 1;
+    const consumeToolCall = () => {
+      if (remaining === 0) return null;
+      remaining -= 1;
+      return remaining;
+    };
+    const input = { repoPath: repo, headSha, mergeBase: null };
+    const first = createPrReviewerWorkspaceTools(input, { consumeToolCall });
+    const second = createPrReviewerWorkspaceTools(input, { consumeToolCall });
+    const firstList = first.find(
+      (tool) => tool.name === 'neondeck_review_workspace_list',
+    );
+    const secondList = second.find(
+      (tool) => tool.name === 'neondeck_review_workspace_list',
+    );
+
+    await expect(
+      firstList?.run({ data: { limit: 1 } } as never),
+    ).resolves.toMatchObject({
+      output: { workspaceToolCallsRemaining: 0 },
+    });
+    await expect(
+      secondList?.run({ data: { limit: 1 } } as never),
+    ).resolves.toMatchObject({
+      output: {
+        available: false,
+        workspaceToolCallsRemaining: 0,
+        reason: expect.stringContaining('exploration budget'),
+      },
     });
   });
 
@@ -232,18 +378,20 @@ describe('local PR diffs', () => {
 
     await expect(
       diffTool?.run({
-        input: { path: 'src/large.ts', rightLine: 1, contextLines: 0 },
+        data: { path: 'src/large.ts', rightLine: 1, contextLines: 0 },
       } as never),
     ).resolves.toMatchObject({
-      targetChanged: true,
-      truncated: true,
-      lines: [
-        expect.objectContaining({
-          kind: 'addition',
-          rightLine: 1,
-          textTruncated: true,
-        }),
-      ],
+      output: {
+        targetChanged: true,
+        truncated: true,
+        lines: [
+          expect.objectContaining({
+            kind: 'addition',
+            rightLine: 1,
+            textTruncated: true,
+          }),
+        ],
+      },
     });
   });
 
@@ -365,39 +513,43 @@ describe('local PR diffs', () => {
 
     await expect(
       diffTool?.run({
-        input: {
+        data: {
           path: 'src/new-name.ts',
           rightLine: 1,
           contextLines: 1,
         },
       } as never),
     ).resolves.toMatchObject({
-      targetChanged: false,
-      lines: expect.arrayContaining([
-        expect.objectContaining({
-          kind: 'context',
-          rightLine: 1,
-          text: 'export const one = 1;',
-        }),
-      ]),
+      output: {
+        targetChanged: false,
+        lines: expect.arrayContaining([
+          expect.objectContaining({
+            kind: 'context',
+            rightLine: 1,
+            text: 'export const one = 1;',
+          }),
+        ]),
+      },
     });
     await expect(
       diffTool?.run({
-        input: {
+        data: {
           path: 'src/new-name.ts',
           rightLine: 2,
           contextLines: 1,
         },
       } as never),
     ).resolves.toMatchObject({
-      targetChanged: true,
-      lines: expect.arrayContaining([
-        expect.objectContaining({
-          kind: 'addition',
-          rightLine: 2,
-          text: 'export const two = 22;',
-        }),
-      ]),
+      output: {
+        targetChanged: true,
+        lines: expect.arrayContaining([
+          expect.objectContaining({
+            kind: 'addition',
+            rightLine: 2,
+            text: 'export const two = 22;',
+          }),
+        ]),
+      },
     });
   });
 

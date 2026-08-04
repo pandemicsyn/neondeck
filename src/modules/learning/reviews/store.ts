@@ -1,4 +1,4 @@
-import { openDb } from '../../../lib/sqlite.ts';
+import { openDb, withImmediateTransaction } from '../../../lib/sqlite.ts';
 import type { JsonValue } from '@flue/runtime';
 import { randomUUID } from 'node:crypto';
 import type { DatabaseSync } from 'node:sqlite';
@@ -8,7 +8,9 @@ import type {
   LearningReviewKind,
   LearningReviewRecord,
   LearningReviewStatus,
+  PreparedLearningReview,
 } from './schemas';
+import { preparedLearningReviewSchema } from './schemas';
 
 export function listLearningReviews(
   input: {
@@ -55,21 +57,25 @@ export function listLearningReviews(
 
 export function startLearningReview(
   input: {
+    id?: string;
     kind: LearningReviewKind;
     model: string;
     thinkingLevel: string;
     trigger: JsonValue;
     inputSummary: JsonValue;
+    prepared?: PreparedLearningReview;
+    agentId?: string;
   },
   paths = runtimePaths(),
 ) {
-  const id = randomUUID();
+  const id = input.id ?? randomUUID();
   const now = new Date().toISOString();
   const database = openDb(paths.neondeckDatabase);
   try {
-    database
-      .prepare(
-        `
+    withImmediateTransaction(database, () => {
+      const insert = database
+        .prepare(
+          `
         INSERT INTO learning_reviews (
           id,
           kind,
@@ -78,35 +84,173 @@ export function startLearningReview(
           thinking_level,
           trigger_json,
           input_summary_json,
+          agent_id,
+          prepared_json,
           started_at
         )
-        VALUES (?, ?, 'running', ?, ?, ?, ?, ?);
+        VALUES (?, ?, 'running', ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(id) DO NOTHING;
       `,
-      )
-      .run(
-        id,
-        input.kind,
-        input.model,
-        input.thinkingLevel,
-        JSON.stringify(input.trigger),
-        JSON.stringify(input.inputSummary),
-        now,
-      );
-    recordLearningEventInDatabase(database, {
-      type:
-        input.kind === 'conversation'
-          ? 'reflection_started'
-          : input.kind === 'curation'
-            ? 'curation_started'
-            : 'pr_retrospective_started',
-      source: 'workflow',
-      data: { reviewId: id },
-      createdAt: now,
+        )
+        .run(
+          id,
+          input.kind,
+          input.model,
+          input.thinkingLevel,
+          JSON.stringify(input.trigger),
+          JSON.stringify(input.inputSummary),
+          input.agentId ?? null,
+          input.prepared ? JSON.stringify(input.prepared) : null,
+          now,
+        );
+      if (insert.changes === 0) return;
+      recordLearningEventInDatabase(database, {
+        type:
+          input.kind === 'conversation'
+            ? 'reflection_started'
+            : input.kind === 'curation'
+              ? 'curation_started'
+              : 'pr_retrospective_started',
+        source: 'learning-review-agent',
+        data: { reviewId: id },
+        createdAt: now,
+      });
     });
   } finally {
     database.close();
   }
   return id;
+}
+
+export type LearningReviewAdmissionIntent = {
+  id: string;
+  kind: LearningReviewKind;
+  sessionId: string | null;
+  input: Record<string, unknown>;
+  status: 'pending' | 'processing' | 'admitted';
+  error: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export function insertLearningReviewAdmissionIntent(
+  database: DatabaseSync,
+  input: {
+    id?: string;
+    kind: LearningReviewKind;
+    sessionId?: string | null;
+    reviewInput: Record<string, unknown>;
+    createdAt: string;
+  },
+) {
+  const id = input.id ?? randomUUID();
+  database
+    .prepare(
+      `
+      INSERT INTO learning_review_admissions (
+        id, kind, session_id, input_json, status, error, created_at, updated_at
+      )
+      VALUES (?, ?, ?, ?, 'pending', NULL, ?, ?);
+    `,
+    )
+    .run(
+      id,
+      input.kind,
+      input.sessionId ?? null,
+      JSON.stringify(input.reviewInput),
+      input.createdAt,
+      input.createdAt,
+    );
+  return id;
+}
+
+export function listPendingLearningReviewAdmissionIntents(
+  paths = runtimePaths(),
+  sessionId?: string,
+) {
+  const database = openDb(paths.neondeckDatabase);
+  try {
+    return database
+      .prepare(
+        `
+        SELECT *
+        FROM learning_review_admissions
+        WHERE status != 'admitted'
+          ${sessionId ? 'AND session_id = ?' : ''}
+        ORDER BY created_at ASC;
+      `,
+      )
+      .all(...(sessionId ? [sessionId] : []))
+      .map(readLearningReviewAdmissionIntentRow);
+  } finally {
+    database.close();
+  }
+}
+
+export function claimLearningReviewAdmissionIntent(
+  id: string,
+  paths = runtimePaths(),
+) {
+  const database = openDb(paths.neondeckDatabase);
+  try {
+    return (
+      database
+        .prepare(
+          `UPDATE learning_review_admissions SET status = 'processing', updated_at = ? WHERE id = ? AND status = 'pending';`,
+        )
+        .run(new Date().toISOString(), id).changes === 1
+    );
+  } finally {
+    database.close();
+  }
+}
+
+export function resetProcessingLearningReviewAdmissionIntents(
+  paths = runtimePaths(),
+) {
+  const database = openDb(paths.neondeckDatabase);
+  try {
+    database
+      .prepare(
+        `UPDATE learning_review_admissions SET status = 'pending', updated_at = ? WHERE status = 'processing';`,
+      )
+      .run(new Date().toISOString());
+  } finally {
+    database.close();
+  }
+}
+
+export function markLearningReviewAdmissionIntentAdmitted(
+  id: string,
+  paths = runtimePaths(),
+) {
+  const database = openDb(paths.neondeckDatabase);
+  try {
+    database
+      .prepare(
+        `UPDATE learning_review_admissions SET status = 'admitted', error = NULL, updated_at = ? WHERE id = ?;`,
+      )
+      .run(new Date().toISOString(), id);
+  } finally {
+    database.close();
+  }
+}
+
+export function recordLearningReviewAdmissionIntentError(
+  id: string,
+  error: string,
+  paths = runtimePaths(),
+) {
+  const database = openDb(paths.neondeckDatabase);
+  try {
+    database
+      .prepare(
+        `UPDATE learning_review_admissions SET status = 'pending', error = ?, updated_at = ? WHERE id = ? AND status != 'admitted';`,
+      )
+      .run(error, new Date().toISOString(), id);
+  } finally {
+    database.close();
+  }
 }
 
 export function completeLearningReview(
@@ -117,29 +261,32 @@ export function completeLearningReview(
   const now = new Date().toISOString();
   const database = openDb(paths.neondeckDatabase);
   try {
-    const review = readLearningReviewById(database, id);
-    database
-      .prepare(
-        `
+    withImmediateTransaction(database, () => {
+      const review = readLearningReviewById(database, id);
+      const update = database
+        .prepare(
+          `
         UPDATE learning_reviews
         SET status = 'completed',
           result_json = ?,
           error = NULL,
           completed_at = ?
-        WHERE id = ?;
+        WHERE id = ? AND status = 'running';
       `,
-      )
-      .run(JSON.stringify(result), now, id);
-    recordLearningEventInDatabase(database, {
-      type:
-        review?.kind === 'conversation'
-          ? 'reflection_completed'
-          : review?.kind === 'curation'
-            ? 'memory_curated'
-            : 'pr_retrospective_completed',
-      source: 'workflow',
-      data: { reviewId: id, result },
-      createdAt: now,
+        )
+        .run(JSON.stringify(result), now, id);
+      if (update.changes === 0) return;
+      recordLearningEventInDatabase(database, {
+        type:
+          review?.kind === 'conversation'
+            ? 'reflection_completed'
+            : review?.kind === 'curation'
+              ? 'memory_curated'
+              : 'pr_retrospective_completed',
+        source: 'learning-review-agent',
+        data: { reviewId: id, result },
+        createdAt: now,
+      });
     });
   } finally {
     database.close();
@@ -150,42 +297,84 @@ export function failLearningReview(
   id: string,
   message: string,
   paths = runtimePaths(),
+  result?: JsonValue,
 ) {
   const now = new Date().toISOString();
   const database = openDb(paths.neondeckDatabase);
   try {
-    const review = readLearningReviewById(database, id);
-    database
-      .prepare(
-        `
+    withImmediateTransaction(database, () => {
+      const review = readLearningReviewById(database, id);
+      const update = database
+        .prepare(
+          `
         UPDATE learning_reviews
         SET status = 'failed',
+          result_json = COALESCE(?, result_json),
           error = ?,
           completed_at = ?
-        WHERE id = ?;
+        WHERE id = ? AND status = 'running';
       `,
-      )
-      .run(message, now, id);
-    recordLearningEventInDatabase(database, {
-      type:
-        review?.kind === 'conversation'
-          ? 'reflection_failed'
-          : review?.kind === 'curation'
-            ? 'curation_failed'
-            : 'pr_retrospective_failed',
-      source: 'workflow',
-      data: { reviewId: id, error: message },
-      createdAt: now,
+        )
+        .run(
+          result === undefined ? null : JSON.stringify(result),
+          message,
+          now,
+          id,
+        );
+      if (update.changes === 0) return;
+      recordLearningEventInDatabase(database, {
+        type:
+          review?.kind === 'conversation'
+            ? 'reflection_failed'
+            : review?.kind === 'curation'
+              ? 'curation_failed'
+              : 'pr_retrospective_failed',
+        source: 'learning-review-agent',
+        data: {
+          reviewId: id,
+          error: message,
+          ...(result === undefined ? {} : { result }),
+        },
+        createdAt: now,
+      });
     });
   } finally {
     database.close();
   }
 }
 
-export function attachLearningReviewRunId(
+export function persistPreparedLearningReview(
+  prepared: PreparedLearningReview,
+  agentId: string,
+  paths = runtimePaths(),
+) {
+  const database = openDb(paths.neondeckDatabase);
+  try {
+    const update = database
+      .prepare(
+        `
+        UPDATE learning_reviews
+        SET agent_id = ?,
+          prepared_json = ?,
+          dispatch_error = NULL
+        WHERE id = ? AND status = 'running';
+      `,
+      )
+      .run(agentId, JSON.stringify(prepared), prepared.reviewId);
+    if (update.changes !== 1) {
+      throw new Error(
+        `Learning review "${prepared.reviewId}" is not available for admission.`,
+      );
+    }
+  } finally {
+    database.close();
+  }
+}
+
+export function attachLearningReviewSubmission(
   input: {
     reviewId: string;
-    runId: string;
+    submissionId: string;
   },
   paths = runtimePaths(),
 ) {
@@ -195,50 +384,57 @@ export function attachLearningReviewRunId(
       .prepare(
         `
         UPDATE learning_reviews
-        SET flue_run_id = ?
+        SET submission_id = ?, dispatch_error = NULL
         WHERE id = ?;
       `,
       )
-      .run(input.runId, input.reviewId);
+      .run(input.submissionId, input.reviewId);
   } finally {
     database.close();
   }
 }
 
-export function markLearningCadenceAdmitted(
-  paths: RuntimePaths,
-  sessionId: string,
-  kind: LearningReviewKind,
-  turnCount: number,
+export function recordLearningReviewDispatchError(
+  reviewId: string,
+  error: string,
+  paths = runtimePaths(),
 ) {
-  const now = new Date().toISOString();
   const database = openDb(paths.neondeckDatabase);
   try {
-    if (kind === 'conversation') {
-      database
-        .prepare(
-          `
-          UPDATE chat_sessions
-          SET last_learning_review_turn_count = ?,
-            last_learning_review_at = ?,
-            updated_at = ?
-          WHERE id = ?;
-        `,
-        )
-        .run(turnCount, now, now, sessionId);
-      return;
-    }
     database
       .prepare(
-        `
-        UPDATE chat_sessions
-        SET last_learning_curation_turn_count = ?,
-          last_learning_curation_at = ?,
-          updated_at = ?
-        WHERE id = ?;
-      `,
+        `UPDATE learning_reviews SET dispatch_error = ? WHERE id = ? AND status = 'running';`,
       )
-      .run(turnCount, now, now, sessionId);
+      .run(error, reviewId);
+  } finally {
+    database.close();
+  }
+}
+
+export function listRecoverableLearningReviews(paths = runtimePaths()) {
+  const database = openDb(paths.neondeckDatabase);
+  try {
+    return database
+      .prepare(
+        `SELECT * FROM learning_reviews WHERE status = 'running' AND prepared_json IS NOT NULL ORDER BY started_at ASC;`,
+      )
+      .all()
+      .map((row) => {
+        const record = row as Record<string, unknown>;
+        const parsed = v.safeParse(
+          preparedLearningReviewSchema,
+          parseNullableJson(record.prepared_json),
+        );
+        if (!parsed.success) {
+          throw new Error(
+            `Learning review "${String(record.id)}" has an invalid prepared snapshot: ${v.summarize(parsed.issues)}`,
+          );
+        }
+        return {
+          review: readLearningReviewRow(row),
+          prepared: parsed.output as PreparedLearningReview,
+        };
+      });
   } finally {
     database.close();
   }
@@ -311,6 +507,15 @@ export function readLearningReviewById(database: DatabaseSync, id: string) {
   return row ? readLearningReviewRow(row) : undefined;
 }
 
+export function getLearningReview(id: string, paths = runtimePaths()) {
+  const database = openDb(paths.neondeckDatabase, { readOnly: true });
+  try {
+    return readLearningReviewById(database, id);
+  } finally {
+    database.close();
+  }
+}
+
 export function readLearningReviewRow(row: unknown): LearningReviewRecord {
   const record = row as Record<string, unknown>;
   return {
@@ -324,16 +529,50 @@ export function readLearningReviewRow(row: unknown): LearningReviewRecord {
       record.status,
     ),
     model: String(record.model),
-    thinkingLevel: String(record.thinking_level),
+    thinkingLevel: v.parse(
+      v.picklist(['off', 'minimal', 'low', 'medium', 'high', 'xhigh']),
+      record.thinking_level,
+    ),
     trigger: parseNullableJson(record.trigger_json) ?? {},
     inputSummary: parseNullableJson(record.input_summary_json),
     result: parseNullableJson(record.result_json),
     error: typeof record.error === 'string' ? record.error : null,
-    flueRunId:
-      typeof record.flue_run_id === 'string' ? record.flue_run_id : null,
+    agentId: typeof record.agent_id === 'string' ? record.agent_id : null,
+    submissionId:
+      typeof record.submission_id === 'string' ? record.submission_id : null,
+    dispatchError:
+      typeof record.dispatch_error === 'string' ? record.dispatch_error : null,
     startedAt: String(record.started_at),
     completedAt:
       typeof record.completed_at === 'string' ? record.completed_at : null,
+  };
+}
+
+function readLearningReviewAdmissionIntentRow(
+  row: unknown,
+): LearningReviewAdmissionIntent {
+  const record = row as Record<string, unknown>;
+  const input = parseNullableJson(record.input_json);
+  if (!input || Array.isArray(input) || typeof input !== 'object') {
+    throw new Error(
+      `Learning review admission "${String(record.id)}" has invalid input.`,
+    );
+  }
+  return {
+    id: String(record.id),
+    kind: v.parse(
+      v.picklist(['conversation', 'curation', 'pr-batch']),
+      record.kind,
+    ),
+    sessionId: typeof record.session_id === 'string' ? record.session_id : null,
+    input: input as Record<string, unknown>,
+    status: v.parse(
+      v.picklist(['pending', 'processing', 'admitted']),
+      record.status,
+    ),
+    error: typeof record.error === 'string' ? record.error : null,
+    createdAt: String(record.created_at),
+    updatedAt: String(record.updated_at),
   };
 }
 

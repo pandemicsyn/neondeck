@@ -1,12 +1,4 @@
 import type { MiddlewareHandler } from 'hono';
-import {
-  bearerToken,
-  localApiAuthHeader,
-  localApiTokenMatches,
-  localApiTokenQueryParam,
-  readLocalApiToken,
-} from '../modules/runtime';
-import type { RuntimePaths } from '../runtime-home';
 
 const localHosts = new Set(['127.0.0.1', 'localhost', '[::1]', '::1']);
 
@@ -114,28 +106,6 @@ function urlOrigin(value: string) {
   } catch {
     return '';
   }
-}
-
-/*
- * Raw run inspection remains separately token-protected. Trusted origins only
- * widen the app API and report surfaces mounted behind this middleware.
- */
-export function requireFlueRunInspectionToken(
-  paths: RuntimePaths,
-): MiddlewareHandler {
-  return async (c, next) => {
-    const expected = await readLocalApiToken(paths);
-    const provided =
-      c.req.header(localApiAuthHeader) ??
-      bearerToken(c.req.header('authorization')) ??
-      c.req.query(localApiTokenQueryParam);
-
-    if (!localApiTokenMatches(provided, expected)) {
-      return c.json({ error: 'Not found' }, 404);
-    }
-
-    await next();
-  };
 }
 
 function isSafeMethod(method: string) {

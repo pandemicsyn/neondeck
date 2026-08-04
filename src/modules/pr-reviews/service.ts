@@ -39,6 +39,11 @@ export type StartPrReviewDependencies = {
     ref: string;
     reviewId: string;
     attemptId: string;
+    repoFullName: string;
+    prNumber: number;
+    headSha: string;
+    baseSha: string;
+    baseRef: string;
   }) => Promise<{ runId: string }>;
 };
 
@@ -93,6 +98,12 @@ export async function startPrReview(
     paths,
   );
   const detail = await (dependencies.fetchDetail ?? defaultFetchDetail)(target);
+  const baseSha = detail.baseSha?.trim();
+  if (!baseSha) {
+    throw new Error(
+      `Pull request ${target.repoFullName}#${target.number} did not provide an exact base revision.`,
+    );
+  }
   const attemptId = randomUUID();
   const review = upsertReviewingRecord(
     { ref, origin: input.origin, target, detail, attemptId },
@@ -107,9 +118,14 @@ export async function startPrReview(
     const admission = await (
       dependencies.invokeWorkflow ?? invokeReviewPrWorkflow
     )({
-      ref: `${target.repoFullName}#${target.number}`,
+      ref: `${review.repoFullName}#${review.prNumber}`,
       reviewId: review.id,
       attemptId,
+      repoFullName: review.repoFullName,
+      prNumber: review.prNumber,
+      headSha: review.headSha,
+      baseSha,
+      baseRef: detail.baseRef,
     });
     const attached = attachPrReviewAttemptRun(
       review.id,
@@ -134,10 +150,14 @@ export async function invokeReviewPrWorkflow(input: {
   ref: string;
   reviewId: string;
   attemptId: string;
+  repoFullName: string;
+  prNumber: number;
+  headSha: string;
+  baseSha: string;
+  baseRef: string;
 }) {
-  const { invoke } = await import('@flue/runtime');
-  const workflow = await import('../../workflows/review-pr-for-human');
-  return invoke(workflow.default, { input });
+  const { admitPrReviewAssist } = await import('../pr-review-assist/admission');
+  return admitPrReviewAssist(input);
 }
 
 export function completePrReview(

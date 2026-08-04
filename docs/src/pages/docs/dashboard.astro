@@ -58,8 +58,8 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
           Display panels are typed in-repo plugins selected by runtime{' '}
           <code>dashboard.json</code>. The current plugin set covers GitHub PRs,
           Flue chat, runtime overview, commands, watches, memory, learning
-          operator review, workflow observability, and terminal-style status
-          surfaces.
+          operator review, activity and agent-submission observability, and
+          terminal-style status surfaces.
         </p>
         <p>
           The Learning panel is the operator surface for self-improvement. It
@@ -70,17 +70,19 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
         </p>
         <p>
           Reviewing diffs and PRs stays inside the deck. Watched-PR Autopilot
-          commits in managed worktrees, prepared diffs from explicit workflows,
-          skill patches, Kilo tasks, repo-edit events, and GitHub PR rows can
-          open a syntax-highlighted file diff view with a searchable file tree
-          on wide layouts and a compact file selector on narrow layouts. GitHub
-          PRs can also be reviewed from this view: select lines to draft inline
-          review comments, reply to or resolve existing review threads, and
-          submit one review with Comment, Approve, or Request changes. Draft
-          comments survive reloads and stale anchors are skipped until the human
-          re-anchors them. Existing GitHub threads are rendered as prominent
-          open or resolved conversations at their diff line, with every comment
-          and participant visible. The inspector's <strong>Ask reviewer</strong>
+          commits in managed worktrees, prepared diffs from explicit app
+          operations, skill patches, Kilo tasks, repo-edit events, and GitHub PR
+          rows can open a syntax-highlighted file diff view with a searchable
+          file tree on wide layouts and a compact file selector on narrow
+          layouts. GitHub PRs can also be reviewed from this view: select lines
+          to draft inline review comments, reply to or resolve existing review
+          threads, and submit one review with Comment, Approve, or Request
+          changes. Draft comments survive reloads and stale anchors are skipped
+          until the human re-anchors them. Existing GitHub threads are rendered
+          as prominent open or resolved conversations at their diff line, with
+          every comment and participant visible. The inspector's <strong
+            >Ask reviewer</strong
+          >
           tab opens a durable, read-only conversation grounded in the saved review
           and exact PR revision; it can explain findings and inspect more code, but
           it cannot edit drafts or deliver anything to GitHub. Compact layouts keep

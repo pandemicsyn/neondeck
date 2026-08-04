@@ -221,7 +221,7 @@ export const updateProviderInputSchema = v.variant('provider', [
   }),
 ]);
 
-// Flue actions currently require a top-level object schema. Keep the
+// Flue tools require a top-level object schema. Keep the
 // model-callable surface deliberately narrower than the local API/CLI schema:
 // arbitrary endpoints must be configured directly by the user.
 export const updateProviderActionInputSchema = v.strictObject({

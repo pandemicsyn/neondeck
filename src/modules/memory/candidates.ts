@@ -1,4 +1,4 @@
-import { openDb } from '../../lib/sqlite.ts';
+import { openDb, withImmediateTransaction } from '../../lib/sqlite.ts';
 import type { JsonValue } from '@flue/runtime';
 import { asJsonValue } from '../../lib/action-result';
 import { randomUUID } from 'node:crypto';
@@ -37,8 +37,12 @@ import {
   memoryCandidatePolicyResult,
   memoryRejectionReason,
   memoryValuePreview,
+  patchNullableString,
   patchString,
   patchStringArray,
+  patchStringRecord,
+  readMemoryById,
+  readMemoryByScopeKey,
   readMemoryCandidateRow,
   recordLearningEvent,
   recordMemoryEvent,
@@ -47,7 +51,7 @@ import {
 export async function createMemoryCandidate(
   input: v.InferInput<typeof memoryCandidateCreateInputSchema>,
   paths = runtimePaths(),
-  options: { source?: MemoryMutationSource } = {},
+  options: { source?: MemoryMutationSource; candidateId?: string } = {},
 ) {
   await ensureRuntimeHome(paths);
   const parsed = v.safeParse(memoryCandidateCreateInputSchema, input);
@@ -66,6 +70,28 @@ export async function createMemoryCandidate(
   }
 
   const now = new Date().toISOString();
+  if (options.candidateId) {
+    const database = openDb(paths.neondeckDatabase, { readOnly: true });
+    try {
+      const row = database
+        .prepare(
+          `SELECT * FROM learning_candidates WHERE id = ? AND target = 'memory';`,
+        )
+        .get(options.candidateId);
+      if (row) {
+        const candidate = readMemoryCandidateRow(row);
+        return {
+          ok: true,
+          action: 'memory_candidate_create',
+          changed: false,
+          candidate,
+          message: `Memory ${candidate.action} candidate was already created.`,
+        };
+      }
+    } finally {
+      database.close();
+    }
+  }
   if (parsed.output.value !== undefined) {
     const rejection = memoryRejectionReason(parsed.output.value);
     if (rejection) {
@@ -87,9 +113,17 @@ export async function createMemoryCandidate(
       ]);
     }
   }
+  const revisionPatch = memoryCandidateRevisionPatch(parsed.output, paths);
+  if (!revisionPatch.ok) {
+    return failedMemoryMutation(
+      'memory_candidate_create',
+      revisionPatch.message,
+      ['memory-revision'],
+    );
+  }
 
   const candidate: MemoryCandidateRecord = {
-    id: randomUUID(),
+    id: options.candidateId ?? randomUUID(),
     target: 'memory',
     status: 'proposed',
     action: parsed.output.action,
@@ -102,23 +136,22 @@ export async function createMemoryCandidate(
     repoId: parsed.output.repoId ?? null,
     reason: parsed.output.reason ?? null,
     reviewId: parsed.output.reviewId ?? null,
-    patch:
-      parsed.output.patch === undefined
-        ? null
-        : asJsonValue(parsed.output.patch),
+    patch: revisionPatch.patch,
     createdAt: now,
     decidedAt: null,
   };
 
   const database = openDb(paths.neondeckDatabase);
   try {
-    insertMemoryCandidate(database, candidate);
-    recordLearningEvent(database, {
-      type: 'memory_candidate_created',
-      source: 'workflow',
-      repoId: candidate.repoId,
-      data: { candidateId: candidate.id, action: candidate.action },
-      createdAt: now,
+    withImmediateTransaction(database, () => {
+      insertMemoryCandidate(database, candidate);
+      recordLearningEvent(database, {
+        type: 'memory_candidate_created',
+        source: 'workflow',
+        repoId: candidate.repoId,
+        data: { candidateId: candidate.id, action: candidate.action },
+        createdAt: now,
+      });
     });
     return {
       ok: true,
@@ -362,10 +395,16 @@ export async function curateMemoryStore(
   for (const proposal of proposals) {
     if (proposal.action !== 'archive') continue;
     const memoryId = patchString(proposal.patch as JsonValue, 'memoryId');
+    const expectedUpdatedAt = patchString(
+      proposal.patch as JsonValue,
+      'expectedUpdatedAt',
+    );
     if (!memoryId) continue;
+    if (!expectedUpdatedAt) continue;
     const result = await archiveMemory(
       {
         id: memoryId,
+        expectedUpdatedAt,
         actor: 'workflow',
         reason: proposal.reason ?? parsed.output.reason,
       },
@@ -401,12 +440,20 @@ async function applyMemoryCandidate(
         'Memory upsert candidate is missing scope, key, or value.',
       );
     }
+    const expectedUpdatedAt = patchNullableString(
+      candidate.patch,
+      'expectedUpdatedAt',
+    );
+    if (expectedUpdatedAt === undefined) {
+      return missingCandidateRevision('upsert');
+    }
     return upsertMemory(
       {
         scope: candidate.scope,
         key: candidate.key,
         value: candidate.value,
         repoId: candidate.repoId ?? undefined,
+        ...(expectedUpdatedAt === undefined ? {} : { expectedUpdatedAt }),
         reason: candidate.reason ?? undefined,
         actor: 'workflow',
       },
@@ -417,16 +464,19 @@ async function applyMemoryCandidate(
 
   if (candidate.action === 'rewrite') {
     const memoryId = patchString(candidate.patch, 'memoryId');
+    const expectedUpdatedAt = patchString(candidate.patch, 'expectedUpdatedAt');
     if (!memoryId || candidate.value === null) {
       return failedMemoryMutation(
         'memory_candidate_apply',
         'Memory rewrite candidate is missing memory id or value.',
       );
     }
+    if (!expectedUpdatedAt) return missingCandidateRevision('rewrite');
     return rewriteMemory(
       {
         id: memoryId,
         value: candidate.value,
+        ...(expectedUpdatedAt ? { expectedUpdatedAt } : {}),
         reason: candidate.reason ?? undefined,
         actor: 'workflow',
       },
@@ -437,15 +487,18 @@ async function applyMemoryCandidate(
 
   if (candidate.action === 'archive') {
     const memoryId = patchString(candidate.patch, 'memoryId');
+    const expectedUpdatedAt = patchString(candidate.patch, 'expectedUpdatedAt');
     if (!memoryId) {
       return failedMemoryMutation(
         'memory_candidate_apply',
         'Memory archive candidate is missing memory id.',
       );
     }
+    if (!expectedUpdatedAt) return missingCandidateRevision('archive');
     return archiveMemory(
       {
         id: memoryId,
+        ...(expectedUpdatedAt ? { expectedUpdatedAt } : {}),
         reason: candidate.reason ?? undefined,
         actor: 'workflow',
       },
@@ -456,16 +509,22 @@ async function applyMemoryCandidate(
 
   const targetId = patchString(candidate.patch, 'targetId');
   const sourceIds = patchStringArray(candidate.patch, 'sourceIds');
+  const expectedUpdatedAts = patchStringRecord(
+    candidate.patch,
+    'expectedUpdatedAts',
+  );
   if (!targetId || sourceIds.length === 0) {
     return failedMemoryMutation(
       'memory_candidate_apply',
       'Memory merge candidate is missing target or source ids.',
     );
   }
+  if (!expectedUpdatedAts) return missingCandidateRevision('merge');
   return mergeMemories(
     {
       targetId,
       sourceIds,
+      ...(expectedUpdatedAts ? { expectedUpdatedAts } : {}),
       ...(candidate.value === null ? {} : { value: candidate.value }),
       reason: candidate.reason ?? undefined,
       actor: 'workflow',
@@ -494,7 +553,10 @@ function curationProposals(
       scope: isActiveLearningMemory(memory) ? memory.scope : undefined,
       key: memory.key,
       reason: `Active memory count exceeds configured memoryMaxActiveItems (${maxActiveItems}).`,
-      patch: { memoryId: memory.id },
+      patch: {
+        memoryId: memory.id,
+        expectedUpdatedAt: memory.updatedAt,
+      },
     });
   }
 
@@ -517,9 +579,141 @@ function curationProposals(
       patch: {
         targetId: target.id,
         sourceIds: sources.map((source) => source.id),
+        expectedUpdatedAts: Object.fromEntries(
+          [target, ...sources].map((memory) => [memory.id, memory.updatedAt]),
+        ),
       },
     });
   }
 
   return proposals;
+}
+
+function memoryCandidateRevisionPatch(
+  input: v.InferOutput<typeof memoryCandidateCreateInputSchema>,
+  paths: RuntimePaths,
+): { ok: true; patch: JsonValue } | { ok: false; message: string } {
+  const patch =
+    input.patch &&
+    typeof input.patch === 'object' &&
+    !Array.isArray(input.patch)
+      ? { ...(input.patch as Record<string, JsonValue>) }
+      : {};
+  const database = openDb(paths.neondeckDatabase, { readOnly: true });
+  try {
+    if (input.action === 'upsert') {
+      if (!input.scope || !input.key || input.value === undefined) {
+        return {
+          ok: false,
+          message: 'Memory upsert candidate requires scope, key, and value.',
+        };
+      }
+      const supplied = Object.hasOwn(patch, 'expectedUpdatedAt');
+      if (
+        supplied &&
+        patch.expectedUpdatedAt !== null &&
+        typeof patch.expectedUpdatedAt !== 'string'
+      ) {
+        return invalidCandidateRevision('upsert');
+      }
+      const existing = readMemoryByScopeKey(
+        database,
+        input.scope,
+        input.key,
+        input.repoId ?? null,
+      );
+      return {
+        ok: true,
+        patch: {
+          ...patch,
+          expectedUpdatedAt: supplied
+            ? (patch.expectedUpdatedAt as string | null)
+            : (existing?.updatedAt ?? null),
+        },
+      };
+    }
+
+    if (input.action === 'rewrite' || input.action === 'archive') {
+      const memoryId = patchString(asJsonValue(patch), 'memoryId');
+      if (!memoryId) {
+        return {
+          ok: false,
+          message: `Memory ${input.action} candidate requires a memory id.`,
+        };
+      }
+      const supplied = Object.hasOwn(patch, 'expectedUpdatedAt');
+      if (supplied && typeof patch.expectedUpdatedAt !== 'string') {
+        return invalidCandidateRevision(input.action);
+      }
+      const memory = readMemoryById(database, memoryId);
+      if (!supplied && !memory) {
+        return {
+          ok: false,
+          message: `Memory ${input.action} candidate target was not found.`,
+        };
+      }
+      return {
+        ok: true,
+        patch: {
+          ...patch,
+          expectedUpdatedAt: supplied
+            ? (patch.expectedUpdatedAt as string)
+            : memory!.updatedAt,
+        },
+      };
+    }
+
+    const targetId = patchString(asJsonValue(patch), 'targetId');
+    const sourceIds = patchStringArray(asJsonValue(patch), 'sourceIds');
+    if (!targetId || sourceIds.length === 0) {
+      return {
+        ok: false,
+        message: 'Memory merge candidate requires target and source ids.',
+      };
+    }
+    const ids = [...new Set([targetId, ...sourceIds])];
+    const supplied = Object.hasOwn(patch, 'expectedUpdatedAts');
+    const suppliedRevisions = patchStringRecord(
+      asJsonValue(patch),
+      'expectedUpdatedAts',
+    );
+    if (
+      supplied &&
+      (!suppliedRevisions ||
+        ids.some((id) => suppliedRevisions[id] === undefined))
+    ) {
+      return invalidCandidateRevision('merge');
+    }
+    const expectedUpdatedAts: Record<string, string> = {};
+    for (const id of ids) {
+      const memory = readMemoryById(database, id);
+      if (!supplied && !memory) {
+        return {
+          ok: false,
+          message: 'Memory merge candidate target was not found.',
+        };
+      }
+      expectedUpdatedAts[id] = supplied
+        ? suppliedRevisions![id]!
+        : memory!.updatedAt;
+    }
+    return { ok: true, patch: { ...patch, expectedUpdatedAts } };
+  } finally {
+    database.close();
+  }
+}
+
+function invalidCandidateRevision(action: string) {
+  return {
+    ok: false as const,
+    message: `Memory ${action} candidate has invalid revision evidence.`,
+  };
+}
+
+function missingCandidateRevision(action: string) {
+  return failedMemoryMutation(
+    'memory_candidate_apply',
+    `Memory ${action} candidate is missing revision evidence. Create a fresh candidate before applying it.`,
+    ['memory-revision'],
+  );
 }

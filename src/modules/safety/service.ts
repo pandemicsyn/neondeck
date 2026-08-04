@@ -19,7 +19,7 @@ export function readSafetyPolicy(
   return {
     ok: true,
     action: 'safety_policy_read',
-    version: 6,
+    version: 7,
     summary: summarizeEntries(entries),
     confirmationPolicy:
       'Destructive mutations require explicit user confirmation and action input confirm=true. Safe mutations should be user-directed and audited when they change durable state.',

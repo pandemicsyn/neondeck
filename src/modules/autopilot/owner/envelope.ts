@@ -1,4 +1,14 @@
 import type { JsonValue } from '@flue/runtime';
+import * as v from 'valibot';
+
+export const autopilotOwnerInitialDataSchema = v.object({
+  schema: v.literal('neondeck.autopilot-owner-instance.v2'),
+  watchId: v.string(),
+});
+
+export type AutopilotOwnerInitialData = v.InferOutput<
+  typeof autopilotOwnerInitialDataSchema
+>;
 
 export type AutopilotOwnerEnvelope = {
   schema: 'neondeck.autopilot-owner-envelope.v1';
@@ -33,4 +43,28 @@ export function serializeAutopilotOwnerEnvelope(
   envelope: AutopilotOwnerEnvelope,
 ) {
   return JSON.stringify(envelope);
+}
+
+export function autopilotOwnerInitialData(
+  envelope: AutopilotOwnerEnvelope,
+): AutopilotOwnerInitialData {
+  return {
+    schema: 'neondeck.autopilot-owner-instance.v2',
+    watchId: envelope.watchId,
+  };
+}
+
+export function parseAutopilotOwnerEnvelope(value: string) {
+  const parsed = JSON.parse(value) as AutopilotOwnerEnvelope;
+  if (
+    parsed.schema !== 'neondeck.autopilot-owner-envelope.v1' ||
+    !parsed.watchId ||
+    !parsed.repoId ||
+    !parsed.repoFullName ||
+    !Number.isInteger(parsed.prNumber) ||
+    !parsed.eventFingerprint
+  ) {
+    throw new Error('Invalid Autopilot owner delivery envelope.');
+  }
+  return parsed;
 }

@@ -5,13 +5,55 @@ import { act } from 'react';
 import { createRoot } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { PrWatch } from '../api';
-import { activePrWatches, WatchRow } from './ActiveWatches';
+import { activePrWatches, StopOutcomeNotice, WatchRow } from './ActiveWatches';
 
 const flue = vi.hoisted(() => ({
+  client: { url: 'test:owner' },
   sendMessage: vi.fn<(message: string) => Promise<void>>(async () => undefined),
-  useFlueAgent: vi.fn<(input: { name: string; id?: string }) => void>(),
+  useFlueAgent: vi.fn<(input: unknown) => void>(),
 }));
 const api = vi.hoisted(() => ({
+  controlPrAutopilot: vi.fn<
+    (
+      id: string,
+      operation: 'pause' | 'resume' | 'retry' | 'stop',
+      options?: { confirmPreparedDiff?: boolean },
+    ) => Promise<{
+      ok: boolean;
+      action: string;
+      changed: boolean;
+      message: string;
+      detachedWorktreeId?: string | null;
+      cleanupRecovery?: string | null;
+    }>
+  >(async () => ({
+    ok: true,
+    action: 'autopilot_watch_stop',
+    changed: true,
+    message: 'Stopped Autopilot.',
+  })),
+  configurePrAutopilot: vi.fn<
+    (input: {
+      ref: string;
+      mode:
+        | 'notify-only'
+        | 'prepare-only'
+        | 'autofix-with-approval'
+        | 'autofix-push-when-safe';
+      processExisting: boolean;
+      confirm?: boolean;
+    }) => Promise<{
+      ok: boolean;
+      action: string;
+      changed: boolean;
+      message: string;
+    }>
+  >(async () => ({
+    ok: true,
+    action: 'autopilot_configure_pr',
+    changed: true,
+    message: 'Configured Autopilot.',
+  })),
   approvePrAutopilotChange: vi.fn<
     (
       id: string,
@@ -56,6 +98,8 @@ const diffViewer = vi.hoisted(() => ({
 
 vi.mock('../api', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../api')>()),
+  controlPrAutopilot: api.controlPrAutopilot,
+  configurePrAutopilot: api.configurePrAutopilot,
   approvePrAutopilotChange: api.approvePrAutopilotChange,
   messagePrAutopilotOwner: api.messagePrAutopilotOwner,
 }));
@@ -70,7 +114,7 @@ vi.mock('../features/diff-viewer/surfaces', () => ({
 }));
 
 vi.mock('@flue/react', () => ({
-  useFlueAgent: (input: { name: string; id?: string }) => {
+  useFlueAgent: (input: unknown) => {
     flue.useFlueAgent(input);
     return {
       error: undefined,
@@ -79,6 +123,8 @@ vi.mock('@flue/react', () => ({
         {
           id: 'owner-history-1',
           role: 'assistant',
+          purpose: 'assistant',
+          display: 'visible',
           parts: [
             { type: 'text', state: 'done', text: 'Held change is ready.' },
           ],
@@ -88,11 +134,10 @@ vi.mock('@flue/react', () => ({
       status: 'idle',
     };
   },
-  useFlueClient: () => ({
-    workflows: {
-      invoke: vi.fn<(...args: unknown[]) => Promise<unknown>>(),
-    },
-  }),
+}));
+
+vi.mock('../lib/flue', () => ({
+  createNeondeckConversationClient: () => flue.client,
 }));
 
 describe('ActiveWatches owner conversation', () => {
@@ -108,6 +153,8 @@ describe('ActiveWatches owner conversation', () => {
     root = createRoot(container);
     flue.sendMessage.mockClear();
     flue.useFlueAgent.mockClear();
+    api.controlPrAutopilot.mockClear();
+    api.configurePrAutopilot.mockClear();
     api.approvePrAutopilotChange.mockClear();
     api.messagePrAutopilotOwner.mockClear();
     diffViewer.onReviewStateChange = undefined;
@@ -134,7 +181,7 @@ describe('ActiveWatches owner conversation', () => {
     );
 
     expect(container.textContent).not.toContain(
-      'Does the same work, then waits; only your direct instruction in the owner chat can authorize it to push or respond.',
+      'Does the same work, then waits for Review diff → Approve & push. Owner chat can guide edits or discard the held change, but cannot authorize delivery.',
     );
     expect(
       Array.from(container.querySelectorAll('option')).map((option) =>
@@ -157,8 +204,7 @@ describe('ActiveWatches owner conversation', () => {
     );
 
     expect(flue.useFlueAgent).toHaveBeenCalledWith({
-      name: 'pr-autopilot-owner',
-      id: 'pr-owner-exact-172',
+      client: flue.client,
     });
     expect(container.textContent).toContain('pr-owner-exact-172');
     expect(container.textContent).toContain('Held change is ready.');
@@ -240,6 +286,122 @@ describe('ActiveWatches owner conversation', () => {
     expect(api.messagePrAutopilotOwner).not.toHaveBeenCalled();
   });
 
+  it('confirms authority increases but applies downgrades directly', async () => {
+    const queryClient = new QueryClient({
+      defaultOptions: {
+        mutations: { retry: false },
+        queries: { retry: false },
+      },
+    });
+    act(() =>
+      root.render(
+        <QueryClientProvider client={queryClient}>
+          <WatchRow watch={watch()} />
+        </QueryClientProvider>,
+      ),
+    );
+    const select = container.querySelector(
+      `select[aria-label="Autopilot mode for pandemicsyn/neondeck#172"]`,
+    ) as HTMLSelectElement;
+
+    await act(async () => {
+      select.value = 'prepare-only';
+      select.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    expect(api.configurePrAutopilot).toHaveBeenLastCalledWith({
+      ref: 'pandemicsyn/neondeck#172',
+      mode: 'prepare-only',
+      processExisting: false,
+      confirm: false,
+    });
+    expect(container.textContent).not.toContain('confirm increase');
+
+    await act(async () => {
+      select.value = 'autofix-push-when-safe';
+      select.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    expect(container.textContent).toContain(
+      'Increase Autopilot authority to autofix-push-when-safe?',
+    );
+    expect(api.configurePrAutopilot).toHaveBeenCalledTimes(1);
+
+    await act(async () =>
+      buttonWithText(container, 'confirm increase').click(),
+    );
+    expect(api.configurePrAutopilot).toHaveBeenLastCalledWith({
+      ref: 'pandemicsyn/neondeck#172',
+      mode: 'autofix-push-when-safe',
+      processExisting: false,
+      confirm: true,
+    });
+  });
+
+  it('confirms prepared-commit discard explicitly before stopping', async () => {
+    const queryClient = new QueryClient({
+      defaultOptions: {
+        mutations: { retry: false },
+        queries: { retry: false },
+      },
+    });
+    act(() =>
+      root.render(
+        <QueryClientProvider client={queryClient}>
+          <WatchRow watch={watch()} />
+        </QueryClientProvider>,
+      ),
+    );
+
+    act(() => buttonWithText(container, 'stop').click());
+    expect(container.textContent).toContain(
+      'If one holds an unpushed prepared commit, this confirms that you reviewed and want to discard it.',
+    );
+    expect(api.controlPrAutopilot).not.toHaveBeenCalled();
+
+    await act(async () => buttonWithText(container, 'confirm').click());
+    expect(api.controlPrAutopilot).toHaveBeenCalledWith(
+      'pandemicsyn/neondeck#172',
+      'stop',
+      { confirmPreparedDiff: true },
+    );
+  });
+
+  it('reports a retained cleanup result before the completed watch row disappears', async () => {
+    const queryClient = new QueryClient({
+      defaultOptions: {
+        mutations: { retry: false },
+        queries: { retry: false },
+      },
+    });
+    const onStopOutcome = vi.fn();
+    api.controlPrAutopilot.mockResolvedValueOnce({
+      ok: true,
+      action: 'autopilot_watch_stop',
+      changed: true,
+      message: 'Stopped Autopilot with a retained worktree.',
+      detachedWorktreeId: 'worktree-recovery-172',
+      cleanupRecovery:
+        'Managed worktree worktree-recovery-172 was retained for manual recovery.',
+    });
+    act(() =>
+      root.render(
+        <QueryClientProvider client={queryClient}>
+          <WatchRow onStopOutcome={onStopOutcome} watch={watch()} />
+        </QueryClientProvider>,
+      ),
+    );
+
+    act(() => buttonWithText(container, 'stop').click());
+    await act(async () => buttonWithText(container, 'confirm').click());
+
+    expect(onStopOutcome).toHaveBeenCalledWith({
+      watchId: 'pandemicsyn/neondeck#172',
+      message: 'Stopped Autopilot with a retained worktree.',
+      detachedWorktreeId: 'worktree-recovery-172',
+      cleanupRecovery:
+        'Managed worktree worktree-recovery-172 was retained for manual recovery.',
+    });
+  });
+
   it('withdraws approval when the loaded diff becomes empty or unavailable', () => {
     const queryClient = new QueryClient({
       defaultOptions: {
@@ -275,6 +437,39 @@ describe('ActiveWatches owner conversation', () => {
 });
 
 describe('ActiveWatches visibility', () => {
+  it('keeps retained-worktree recovery visible until dismissed', () => {
+    const container = document.createElement('div');
+    const root = createRoot(container);
+    const onDismiss = vi.fn();
+
+    act(() =>
+      root.render(
+        <StopOutcomeNotice
+          onDismiss={onDismiss}
+          outcome={{
+            watchId: 'pandemicsyn/neondeck#172',
+            message: 'Stopped Autopilot.',
+            detachedWorktreeId: 'worktree-recovery-172',
+            cleanupRecovery:
+              'The worktree was retained and detached for manual recovery.',
+          }}
+        />,
+      ),
+    );
+
+    expect(container.textContent).toContain('Worktree retained for recovery');
+    expect(container.textContent).toContain(
+      'The worktree was retained and detached for manual recovery.',
+    );
+    expect(container.textContent).toContain(
+      'Recovery worktree: worktree-recovery-172',
+    );
+    act(() => buttonWithText(container, 'dismiss').click());
+    expect(onDismiss).toHaveBeenCalledOnce();
+
+    act(() => root.unmount());
+  });
+
   it('keeps completed watch records out of the active panel', () => {
     expect(
       activePrWatches([
@@ -427,7 +622,7 @@ describe('ActiveWatches visibility', () => {
       'why · Merged, but 1 of 46 checks failed.',
     );
     expect(container.textContent).not.toContain(
-      'Does the same work, then waits; only your direct instruction in the owner chat can authorize it to push or respond.',
+      'Does the same work, then waits for Review diff → Approve & push. Owner chat can guide edits or discard the held change, but cannot authorize delivery.',
     );
 
     act(() => root.unmount());

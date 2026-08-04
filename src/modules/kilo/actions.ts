@@ -1,4 +1,4 @@
-import { defineAction, defineTool } from '@flue/runtime';
+import { defineTool } from '@flue/runtime';
 import {
   eventsInputSchema,
   outputSchema,
@@ -6,6 +6,7 @@ import {
   sessionReadInputSchema,
   sessionsSearchInputSchema,
   startInputSchema,
+  summarizeInputSchema,
   taskIdInputSchema,
   taskStatusOutputSchema,
   tasksListInputSchema,
@@ -20,6 +21,7 @@ import {
   readKiloTaskStatus,
   reconcileKiloTask,
   startKiloTask,
+  summarizeKiloSession,
 } from './service';
 import {
   readKiloSession,
@@ -61,141 +63,152 @@ export {
   readKiloSessionDiff,
 } from './sessions';
 
-export const kiloTaskStartAction = defineAction({
+export const kiloTaskStartAction = defineTool({
   name: 'neondeck_kilo_task_start',
   description:
     'Explicitly start a background KiloCode handoff in a declared repo or Neondeck-managed worktree and persist task/event state.',
   input: startInputSchema,
   output: outputSchema,
-  async run({ input }) {
-    return startKiloTask(input);
+  async run({ data: input }) {
+    return { output: await startKiloTask(input) };
   },
 });
 
-export const kiloTaskStatusAction = defineAction({
+export const kiloTaskStatusAction = defineTool({
   name: 'neondeck_kilo_task_status',
   description: 'Read one persisted Kilo handoff task status.',
   input: taskIdInputSchema,
   output: taskStatusOutputSchema,
-  async run({ input }) {
-    return readKiloTaskStatus(input);
+  async run({ data: input }) {
+    return { output: await readKiloTaskStatus(input) };
   },
 });
 
-export const kiloTaskEventsAction = defineAction({
+export const kiloTaskEventsAction = defineTool({
   name: 'neondeck_kilo_task_events',
   description: 'Read persisted Kilo handoff task events.',
   input: eventsInputSchema,
   output: outputSchema,
-  async run({ input }) {
-    return readKiloTaskEvents(input);
+  async run({ data: input }) {
+    return { output: await readKiloTaskEvents(input) };
   },
 });
 
-export const kiloTaskAbortAction = defineAction({
+export const kiloTaskAbortAction = defineTool({
   name: 'neondeck_kilo_task_abort',
   description: 'Cancel a running Kilo handoff task and mark it cancelled.',
   input: taskIdInputSchema,
   output: outputSchema,
-  async run({ input }) {
-    return abortKiloTask(input);
+  async run({ data: input }) {
+    return { output: await abortKiloTask(input) };
   },
 });
 
-export const kiloTaskSessionsAction = defineAction({
+export const kiloTaskSessionsAction = defineTool({
   name: 'neondeck_kilo_task_sessions',
   description: 'List root and child Kilo session ids linked to one task.',
   input: taskIdInputSchema,
   output: outputSchema,
-  async run({ input }) {
-    return readKiloTaskSessions(input);
+  async run({ data: input }) {
+    return { output: await readKiloTaskSessions(input) };
   },
 });
 
-export const kiloTaskDiffAction = defineAction({
+export const kiloTaskDiffAction = defineTool({
   name: 'neondeck_kilo_task_diff',
   description: 'Read a git diff summary for the workspace used by a Kilo task.',
   input: taskIdInputSchema,
   output: outputSchema,
-  async run({ input }) {
-    return readKiloTaskDiff(input);
+  async run({ data: input }) {
+    return { output: await readKiloTaskDiff(input) };
   },
 });
 
-export const kiloTaskReconcileAction = defineAction({
+export const kiloTaskReconcileAction = defineTool({
   name: 'neondeck_kilo_task_reconcile',
   description:
     'Reconcile persisted Kilo task state after restart by inspecting detached task process/session/diff state.',
   input: reconcileInputSchema,
   output: outputSchema,
-  async run({ input }) {
-    return reconcileKiloTask(input);
+  async run({ data: input }) {
+    return { output: await reconcileKiloTask(input) };
   },
 });
 
-export const kiloSessionsSearchAction = defineAction({
+export const kiloSessionsSearchAction = defineTool({
   name: 'neondeck_kilo_sessions_search',
   description:
     'Search Kilo session metadata through linked Neondeck tasks and the Kilo CLI session list fallback.',
   input: sessionsSearchInputSchema,
   output: outputSchema,
-  async run({ input }) {
-    return searchKiloSessions(input);
+  async run({ data: input }) {
+    return { output: await searchKiloSessions(input) };
   },
 });
 
-export const kiloSessionReadAction = defineAction({
+export const kiloSessionReadAction = defineTool({
   name: 'neondeck_kilo_session_read',
   description:
     'Read normalized Kilo session metadata linked to a task or found through Kilo CLI session list. Transcript paging is deferred.',
   input: sessionReadInputSchema,
   output: outputSchema,
-  async run({ input }) {
-    return readKiloSession(input);
+  async run({ data: input }) {
+    return { output: await readKiloSession(input) };
   },
 });
 
-export const kiloSessionMessagesAction = defineAction({
+export const kiloSessionMessagesAction = defineTool({
   name: 'neondeck_kilo_session_messages',
   description:
     'Audit a request for Kilo session messages. The CLI MVP returns metadata only until a stable transcript adapter is wired.',
   input: sessionReadInputSchema,
   output: outputSchema,
-  async run({ input }) {
-    return readKiloSessionMessages(input);
+  async run({ data: input }) {
+    return { output: await readKiloSessionMessages(input) };
   },
 });
 
-export const kiloSessionChildrenAction = defineAction({
+export const kiloSessionChildrenAction = defineTool({
   name: 'neondeck_kilo_session_children',
   description:
     'Read child Kilo session ids captured from persisted task events.',
   input: sessionReadInputSchema,
   output: outputSchema,
-  async run({ input }) {
-    return readKiloSessionChildren(input);
+  async run({ data: input }) {
+    return { output: await readKiloSessionChildren(input) };
   },
 });
 
-export const kiloSessionTodosAction = defineAction({
+export const kiloSessionTodosAction = defineTool({
   name: 'neondeck_kilo_session_todos',
   description:
     'Report that Kilo todo access is unavailable in the CLI MVP while returning linked session metadata.',
   input: sessionReadInputSchema,
   output: outputSchema,
-  async run({ input }) {
-    return readUnavailableSessionAdapter(input, 'todos');
+  async run({ data: input }) {
+    return { output: await readUnavailableSessionAdapter(input, 'todos') };
   },
 });
 
-export const kiloSessionDiffAction = defineAction({
+export const kiloSessionDiffAction = defineTool({
   name: 'neondeck_kilo_session_diff',
   description:
     'Read the Neondeck task workspace diff summary for a linked Kilo session when available.',
   input: sessionReadInputSchema,
   output: outputSchema,
-  async run({ input }) {
-    return readKiloSessionDiff(input);
+  async run({ data: input }) {
+    return { output: await readKiloSessionDiff(input) };
+  },
+});
+
+export const kiloSessionSummarizeAction = defineTool({
+  name: 'neondeck_kilo_session_summarize',
+  description:
+    'Summarize linked Kilo session metadata and recent task events, then persist the bounded summary on the task when available.',
+  input: summarizeInputSchema,
+  output: outputSchema,
+  async run({ data: input }) {
+    return { output: await summarizeKiloSession(input) };
   },
 });
 
@@ -205,8 +218,8 @@ export const kiloTasksLookupTool = defineTool({
     'List persisted Kilo handoff tasks without starting or cancelling work.',
   input: tasksListInputSchema,
   output: tasksListOutputSchema,
-  async run({ input }) {
-    return listKiloTasks(input);
+  async run({ data: input }) {
+    return { output: await listKiloTasks(input) };
   },
 });
 
@@ -224,6 +237,7 @@ export const neondeckKiloActions = [
   kiloSessionChildrenAction,
   kiloSessionTodosAction,
   kiloSessionDiffAction,
+  kiloSessionSummarizeAction,
 ];
 
 export const neondeckKiloTools = [kiloTasksLookupTool];

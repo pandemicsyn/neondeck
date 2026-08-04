@@ -1,9 +1,8 @@
-import { defineAction, type JsonValue } from '@flue/runtime';
+import { defineTool, type JsonValue } from '@flue/runtime';
 import { existsSync, readFileSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import net from 'node:net';
-import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { join } from 'node:path';
 import * as v from 'valibot';
 import { resolveAgentModelSelection } from './agent-config';
 import { readEnvFiles } from './env';
@@ -32,6 +31,7 @@ import {
   runtimePaths,
   type AppConfig,
 } from '../../runtime-home';
+import { resolvePackageRoot } from '../../runtime-home/assets';
 
 type DoctorStatus = 'ok' | 'attention';
 
@@ -89,9 +89,7 @@ const healthResponseSchema = v.object({
   home: v.optional(v.string()),
   uptimeSeconds: v.optional(v.number()),
 });
-const rootDir = dirname(
-  fileURLToPath(new URL('../../../package.json', import.meta.url)),
-);
+const rootDir = resolvePackageRoot();
 const devDoctorOutputSchema = v.looseObject({
   ok: v.boolean(),
   action: v.string(),
@@ -110,13 +108,13 @@ const devDoctorInputSchema = v.object({
   ),
 });
 
-export const devDoctorRunAction = defineAction({
+export const devDoctorRunAction = defineTool({
   name: 'neondeck_dev_doctor_run',
   description:
     'Run deterministic local development health checks for configured repos, scripts, env, ports, runtime databases, and Node version.',
   input: devDoctorInputSchema,
   output: devDoctorOutputSchema,
-  async run({ input, log }) {
+  async run({ data: input, log }) {
     log.info('Dev doctor requested');
 
     const result = await runDevDoctor(runtimePaths(), input);
@@ -133,18 +131,18 @@ export const devDoctorRunAction = defineAction({
       log.info('Dev doctor completed', payload);
     }
 
-    return result;
+    return { output: result };
   },
 });
 
-export const repoStatusListAction = defineAction({
+export const repoStatusListAction = defineTool({
   name: 'neondeck_repo_status_list',
   description:
     'List deterministic local git status for configured repositories without creating a workflow summary.',
   input: v.object({}),
   output: devDoctorOutputSchema,
   async run() {
-    return listRepoStatus();
+    return { output: await listRepoStatus() };
   },
 });
 

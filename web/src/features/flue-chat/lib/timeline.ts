@@ -33,7 +33,10 @@ export function sessionTimelineItems(
       kind: 'message',
       id: `message:${message.id}`,
       order: index,
-      timestamp: message.metadata?.timestamp,
+      timestamp:
+        typeof message.metadata?.timestamp === 'string'
+          ? message.metadata.timestamp
+          : undefined,
       message,
     })),
     ...activity.map((item, index): SessionTimelineItem => ({

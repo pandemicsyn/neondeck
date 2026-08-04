@@ -44,6 +44,7 @@ import {
 } from './schemas';
 import {
   findReusableWorktree,
+  findWorktreeByLocalPath,
   listWorktreeRecords,
   recordCleanupAttempt,
   recordWorktreeCreating,
@@ -89,7 +90,8 @@ export async function createWorktree(
       context.appDefaultStorage,
     );
     const storageRoot = await ensureStorageRoot(repoRoot, storageKind, paths);
-    const localPath = input.localPath
+    const id = randomUUID();
+    const requestedLocalPath = input.localPath
       ? await resolveDeclaredWorktreePath(input.localPath, storageRoot)
       : await defaultWorktreePath(
           storageRoot,
@@ -97,7 +99,15 @@ export async function createWorktree(
           input.prNumber,
           headRef,
         );
-    const id = randomUUID();
+    const localPath =
+      !input.localPath && findWorktreeByLocalPath(requestedLocalPath, paths)
+        ? await availableManagedWorktreePath(
+            requestedLocalPath,
+            storageRoot,
+            id,
+            paths,
+          )
+        : requestedLocalPath;
     const now = new Date().toISOString();
     const adopted = Boolean(input.adopted);
     const createdBy = input.createdBy ?? (adopted ? 'user' : 'neondeck');
@@ -213,6 +223,29 @@ export async function createWorktree(
     };
   } catch (error) {
     return failureResult('worktree_create', error);
+  }
+}
+
+async function availableManagedWorktreePath(
+  requestedPath: string,
+  storageRoot: string,
+  worktreeId: string,
+  paths: RuntimePaths,
+) {
+  let attempt = 1;
+  while (true) {
+    const suffix = attempt === 1 ? worktreeId : `${worktreeId}-${attempt}`;
+    const candidate = await resolveDeclaredWorktreePath(
+      `${requestedPath}-${suffix}`,
+      storageRoot,
+    );
+    if (
+      !(await exists(candidate)) &&
+      !findWorktreeByLocalPath(candidate, paths)
+    ) {
+      return candidate;
+    }
+    attempt += 1;
   }
 }
 
@@ -412,7 +445,9 @@ export async function lockWorktree(
       prNumber,
       owner: input.owner,
       workflowRunId:
-        input.workflowRunId ?? currentFlueExecutionContext()?.runId ?? null,
+        input.workflowRunId ??
+        currentFlueExecutionContext()?.submissionId ??
+        null,
       expiresAt,
       revokedAt: null,
       releasedAt: null,

@@ -639,7 +639,27 @@ export async function gitPushHead(
         : `Git push target no longer has the expected branch at ${input.expectedRemoteSha}.`,
     );
   }
-  const stdout = await runGit(repoRoot, ['push', '--', remote, refspec]);
+  const expectedRemoteSha =
+    input.expectedRemoteSha === undefined
+      ? null
+      : validateCommitSha(input.expectedRemoteSha);
+  if (expectedRemoteSha && !input.force) {
+    await runGit(repoRoot, [
+      'merge-base',
+      '--is-ancestor',
+      expectedRemoteSha,
+      sha,
+    ]);
+  }
+  const stdout = await runGit(repoRoot, [
+    'push',
+    ...(expectedRemoteSha
+      ? [`--force-with-lease=refs/heads/${branch}:${expectedRemoteSha}`]
+      : []),
+    '--',
+    remote,
+    refspec,
+  ]);
   return {
     remote,
     branch,

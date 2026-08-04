@@ -7,7 +7,7 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
 
 <BaseLayout
   title="Agent runtime · neondeck"
-  description="How neondeck uses Flue agents, actions, workflows, skills, memory, watches, schedules, and observability."
+  description="How neondeck uses Flue agents, tools, skills, memory, watches, schedules, app-owned operations, and observability."
 >
   <div class="site-shell">
     <SiteNav />
@@ -17,8 +17,8 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
         <h1>Agent runtime</h1>
         <p>
           Neon is a durable Flue assistant backed by local app state. The design
-          keeps deterministic facts and mutations in actions while using the
-          model for synthesis, triage, and next-step reasoning.
+          keeps deterministic facts and mutations in services and typed tools
+          while using the model for synthesis, triage, and next-step reasoning.
         </p>
         <p>
           A normal conversation starts in a virtual scratch workspace rather
@@ -45,53 +45,48 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
           and owned by Flue.
         </p>
 
-        <h2>Actions</h2>
+        <h2>Tools and services</h2>
         <p>
-          Actions are schema-backed deterministic capabilities. Neon uses them
-          for config updates, repo facts, GitHub PR/check facts, runtime skill
-          lookup, memory, dashboard presets, schedules, watches, and guarded
-          execution. Config changes should go through typed actions, not
-          freestyle file editing.
+          Tools are schema-backed deterministic capabilities backed by shared
+          app services. Neon uses them for config updates, repo facts, GitHub
+          PR/check facts, runtime skill lookup, memory, dashboard presets,
+          schedules, watches, and guarded execution. Dashboard, CLI, and local
+          API surfaces call the same services. Config changes should go through
+          typed tools or APIs, not freestyle file editing.
         </p>
 
-        <h2>Workflows</h2>
+        <h2>Agents and app-owned operations</h2>
         <p>
-          Bounded jobs run as Flue workflows so each run has an identity,
-          events, output, and inspection path.
+          Flue 2 has no workflow runtime. Neondeck keeps durable operation state
+          in its own SQLite tables and dispatches purpose-bound agents only when
+          model work is required. The mounted agents are:
         </p>
-        <pre><code>briefing
-command-run
-curate_learning_store
-dev-doctor
-fix-pr-ci
-handoff_to_kilo
-promote_kilo_result
-reconcile_kilo_task
-review-pr-for-human
-review_conversation_for_learning
-review_kilo_result
-review_pr_batch_for_learning
-scheduled-agent-instruction
-scheduler-tick
-summarize_kilo_session
-verify_kilo_result
-watch-pr</code></pre>
+        <pre><code>display-assistant
+pr-review-assistant
+pr-reviewer
+learning-review
+pr-autopilot-owner</code></pre>
+        <p>
+          Conversation, curation, and handled-PR learning reviews use keyed
+          <code>learning-review</code> agent submissions. Neondeck persists the bounded
+          evidence before dispatch, correlates the Flue submission with app-owned
+          review state, and can recover interrupted admissions after restart.
+        </p>
         <p>
           Watched-PR Autopilot uses one continuing
           <code>pr-autopilot-owner</code> agent per PR rather than a chain of transition
-          workflows. Every fixing turn runs in that PR's managed-worktree coding workspace;
+          jobs. Every fixing turn runs in that PR's managed-worktree coding workspace;
           current mode and turn source add or withhold the separate push and PR-response
-          tools. The manual <code>/fix-ci</code> command remains a separate <code
-            >fix-pr-ci</code
-          > workflow.
+          tools. The manual <code>/fix-ci</code> command remains a separate app-owned
+          operation that prepares a CI dossier and may start a bounded Kilo task.
         </p>
         <p>
           That owner resolves the current display-assistant model and thinking
           level for each turn; <code>models.prReview</code> belongs to the separate
-          human-review workflow. Its full per-mode system prompt is editable in runtime
-          config and applies on the next turn without replacing the owner conversation.
-          The current watch state still constructs the actual tool registry outside
-          the prompt.
+          fresh initial-review agent. Its full per-mode system prompt is editable
+          in runtime config and applies on the next turn without replacing the owner
+          conversation. The current watch state still constructs the actual tool registry
+          outside the prompt.
         </p>
 
         <h2>Skills</h2>
@@ -115,14 +110,14 @@ watch-pr</code></pre>
 
         <h2>Schedules and watches</h2>
         <p>
-          The local scheduler admits real Flue workflow runs for bounded
-          scheduled work. PR watches are deterministic pollers that invoke agent
+          The local scheduler claims and records each bounded occurrence in app
+          state. PR watches are deterministic pollers that invoke agent
           reasoning only when there is meaningful state to summarize or act on.
         </p>
         <p>
           Scheduled tasks cover PR watches, briefings, and bounded agent
           instructions. Their validated triggers are persisted locally, while
-          Flue owns each admitted workflow run. A requested repo or working
+          Flue owns each admitted agent submission. A requested repo or working
           directory is task context, not a mounted shell workspace. General
           instructions can still use allowed typed capabilities, so scheduled
           work is not automatically read-only.
@@ -164,16 +159,17 @@ watch-pr</code></pre>
         <p>
           Scheduled tasks are validated local records with a typed spec and an
           interval, one-shot, or timezone-aware cron trigger. The scheduler
-          claims each due occurrence before dispatching a bounded Flue workflow;
-          approval-gated actions remain approval-gated, and workflow-originated
-          runs cannot use the ordinary interactive commit or push path. Other
-          typed mutations remain available when the task asks for them. An
-          instruction deliberately targeted at an existing agent session
-          inherits that session's interactive context instead of the default
-          workflow restriction. Morning briefings use a typed profile and a
-          persistent, non-active briefing session so a background run never
-          replaces the dashboard's active conversation. General instruction
-          tasks can be paused, resumed, or deleted.
+          claims each due occurrence before running an app service or
+          dispatching a bounded agent submission; approval-gated tools remain
+          approval-gated, and fresh scheduled-agent sessions cannot use the
+          ordinary interactive commit or push path. Other typed mutations remain
+          available when the task asks for them. An instruction deliberately
+          targeted at an existing agent session inherits that session's
+          interactive context instead of the default scheduled-session
+          restriction. Morning briefings use a typed profile and a persistent,
+          non-active briefing session so a background run never replaces the
+          dashboard's active conversation. General instruction tasks can be
+          paused, resumed, or deleted.
         </p>
         <p>
           Briefing orchestration persists deterministic grounding separately
@@ -190,7 +186,7 @@ watch-pr</code></pre>
           Same-host agents and local hooks can hand work to Neon through the CLI
           or the localhost-only <code>/api/handoff/*</code> mirror. Handoff verbs
           are additive: they create attributed PR watches, notifications, release
-          watches, and optionally queue the bounded PR review workflow when
+          watches, and optionally admit a fresh bounded PR review agent when
           <code>handoff.allowExternalReviewQueue</code> allows it. They do not execute
           commands, approve work, push branches, submit GitHub reviews, or mutate
           provider settings.
@@ -210,10 +206,10 @@ curl -sS -X POST http://127.0.0.1:3583/api/handoff/register-pr \
 
         <h2>Observability</h2>
         <p>
-          neondeck records Flue observations, failed runs, workflow summaries,
-          emitted progress data, action/tool activity, and notifications. Raw
-          run inspection can expose prompts and tool data, so dashboard
-          summaries stay compact and guarded.
+          neondeck records Flue observations, failed submissions, app operation
+          summaries, emitted progress data, tool activity, and notifications.
+          Raw submission inspection can expose prompts and tool data, so
+          dashboard summaries stay compact and guarded.
         </p>
       </article>
     </main>

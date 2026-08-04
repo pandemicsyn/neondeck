@@ -43,7 +43,7 @@ export function buildMemoryBackgroundContextSync(
   } catch {
     return {
       memoryIds: [],
-      text: 'Structured memory background context: unavailable for this workflow run.',
+      text: 'Structured memory background context: unavailable for this operation.',
       available: false,
     };
   }
@@ -58,7 +58,7 @@ export function loadMemoryBackgroundContextSync(
   try {
     markMemoryBackgroundContextUsedSync(paths, context.memoryIds);
   } catch {
-    // Memory usage accounting should not block the workflow prompt itself.
+    // Memory usage accounting should not block prompt construction itself.
   }
   return context;
 }
@@ -199,11 +199,11 @@ function memoryBackgroundText(instructions: string) {
     )
     .replace(
       'Structured memory: no active user, local, or project memories are currently loaded for this session.',
-      'Structured memory background context: no active user, local, or project memories matched this workflow run.',
+      'Structured memory background context: no active user, local, or project memories matched this operation.',
     )
     .replace(
       'Memory updates during this session are durable immediately but do not change this loaded context until a new session or explicit context refresh.',
-      'Memory updates outside this workflow do not change this run context.',
+      'Memory updates outside this operation do not change its captured context.',
     );
   return text.startsWith('Structured memory background context:\n')
     ? text.replace(

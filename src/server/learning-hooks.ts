@@ -1,36 +1,29 @@
 import {
-  invoke,
   observe,
   type FlueEventContext,
   type FlueObservation,
   type FlueObservationSubscriber,
 } from '@flue/runtime';
-import type { MiddlewareHandler } from 'hono';
-import { addNotification, setWorkflowSummaryRunId } from '../modules/app-state';
-import { settleScheduledTaskWorkflowRun } from '../modules/scheduled-tasks';
+import { openDb } from '../lib/sqlite';
+import { addNotification } from '../modules/app-state';
+import { settleAutopilotOwnerObservation } from '../modules/autopilot/owner/settlement';
+import { settleBriefingObservation } from '../modules/briefings';
+import { settlePrReviewAssistObservation } from '../modules/pr-review-assist';
+import { recordFlueObservation } from '../modules/learning';
 import {
-  attachLearningReviewRunId,
-  recordHumanReviewSubmittedEvidence,
   recordConversationTurnAndMaybeQueueLearning,
-  recordHandledPrFromWorkflowResult,
+  recordHandledPrFromOperationResult,
+  recordHumanReviewSubmittedEvidence,
   type HumanReviewSubmittedEvidenceInput,
 } from '../modules/learning/reviews';
+import { settleScheduledTaskSubmission } from '../modules/scheduled-tasks';
 import type { RuntimePaths } from '../runtime-home';
-import { recordFlueObservation } from '../modules/learning';
-import curateLearningStoreWorkflow from '../workflows/curate_learning_store';
-import reviewConversationForLearningWorkflow from '../workflows/review_conversation_for_learning';
-import reviewPrBatchForLearningWorkflow from '../workflows/review_pr_batch_for_learning';
-import {
-  linkBriefingWorkflowObservation,
-  settleBriefingObservation,
-} from '../modules/briefings';
-import { attachPrReviewAttemptRun, failPrReview } from '../modules/pr-reviews';
-import { settleAutopilotOwnerObservation } from '../modules/autopilot/owner/settlement';
 
 type ObservationInstallDependencies = {
   observe?: (subscriber: FlueObservationSubscriber) => () => void;
   recordFlueObservation?: typeof recordFlueObservation;
-  settleScheduledTaskWorkflowRun?: typeof settleScheduledTaskWorkflowRun;
+  recordConversationTurn?: typeof recordConversationTurnAndMaybeQueueLearning;
+  isDirectDisplayAssistantSubmission?: typeof isDirectDisplayAssistantSubmission;
 };
 
 const observationHandlerUnsubscribers = new Map<string, () => void>();
@@ -43,129 +36,61 @@ export function installFlueObservationHandlers(
   const observeFn = dependencies.observe ?? observe;
   const recordObservation =
     dependencies.recordFlueObservation ?? recordFlueObservation;
-  const settleScheduledWorkflow =
-    dependencies.settleScheduledTaskWorkflowRun ??
-    settleScheduledTaskWorkflowRun;
-  const unsubscribe = observeFn((event, context) => {
+
+  const unsubscribe = observeFn(async (event, context) => {
     const contextHome = flueContextRuntimeHome(context);
     if (contextHome && contextHome !== paths.home) return;
 
-    if (event.type === 'run_start') {
-      try {
-        linkPrReviewRunObservation(event, paths);
-      } catch (error) {
-        console.error('[neondeck] failed to link PR review run', error);
-      }
-    }
+    await recordObservation(event, paths).catch((error) => {
+      console.error('[neondeck] failed to record Flue activity', error);
+    });
 
-    if (event.type === 'run_end') {
-      void recordObservation(event, paths).catch((error) => {
-        console.error('[neondeck] failed to record Flue observation', error);
-      });
-      void settleScheduledWorkflow(
-        { workflowRunId: event.runId, failed: event.isError },
-        paths,
-      ).catch((error) => {
-        console.error(
-          '[neondeck] failed to settle scheduled workflow run',
-          error,
-        );
-      });
-      void attachCommandRunSummaryRunId(event, paths).catch((error) => {
-        console.error('[neondeck] failed to attach Flue run id', error);
-      });
-      void linkBriefingWorkflowObservation(event, paths).catch((error) => {
-        console.error('[neondeck] failed to link briefing workflow run', error);
-      });
-      void Promise.resolve()
-        .then(() => settlePrReviewObservation(event, paths))
-        .catch((error) => {
-          console.error('[neondeck] failed to settle PR review run', error);
-        });
-      const learningReviewId = learningReviewResultId(event);
-      if (learningReviewId) {
-        void Promise.resolve()
-          .then(() =>
-            attachLearningReviewRunId(
-              { reviewId: learningReviewId, runId: event.runId },
-              paths,
-            ),
-          )
-          .catch((error) => {
-            console.error(
-              '[neondeck] failed to attach learning review run id',
-              error,
-            );
-          });
-      }
-      if (!learningReviewId && !event.isError && 'result' in event) {
-        void Promise.resolve()
-          .then(() =>
-            recordHandledPrFromWorkflowResult(
-              {
-                workflow: workflowLabel(event),
-                runId: event.runId,
-                result: event.result,
-              },
-              paths,
-              {
-                async invokePrBatchReview(input) {
-                  return invoke(reviewPrBatchForLearningWorkflow, { input });
-                },
-              },
-            ),
-          )
-          .catch((error) => {
-            console.error(
-              '[neondeck] failed to record handled PR learning event',
-              error,
-            );
-          });
-      }
-
-      if (event.isError) {
-        void addNotification(
-          {
-            level: 'attention',
-            title: 'Workflow failed',
-            message: `${workflowLabel(event)} failed.`,
-            source: 'flue',
-            sourceId: event.runId,
-            data: {
-              runId: event.runId,
-              workflow: workflowLabel(event),
-              error: 'See guarded Flue run inspection for error details.',
-            },
-          },
-          paths,
-        ).catch((error) => {
-          console.error('[neondeck] failed to record Flue failure', error);
-        });
-      }
-
-      return;
-    }
-
-    if (
-      event.type === 'agent_end' ||
-      event.type === 'operation' ||
-      event.type === 'submission_settled'
-    ) {
+    if (event.type === 'submission_settled') {
       void settleBriefingObservation(event, paths).catch((error) => {
         console.error('[neondeck] failed to settle briefing submission', error);
       });
+      void Promise.resolve()
+        .then(() => settlePrReviewAssistObservation(event, paths))
+        .catch((error) => {
+          console.error(
+            '[neondeck] failed to settle PR review submission',
+            error,
+          );
+        });
+      void settleScheduledTaskSubmission(
+        {
+          submissionId: event.submissionId,
+          failed: event.outcome !== 'completed',
+        },
+        paths,
+      ).catch((error) => {
+        console.error(
+          '[neondeck] failed to settle scheduled instruction submission',
+          error,
+        );
+      });
     }
 
     if (
-      event.type === 'agent_end' ||
-      event.type === 'operation' ||
-      event.type === 'submission_settled'
+      event.type === 'submission_settled' &&
+      event.outcome === 'completed' &&
+      event.agentName === 'display-assistant' &&
+      event.instanceId &&
+      (
+        dependencies.isDirectDisplayAssistantSubmission ??
+        isDirectDisplayAssistantSubmission
+      )(event.submissionId, paths)
     ) {
-      void settleAutopilotOwnerObservation(event, paths, {
-        async invokePrBatchReview(input) {
-          return invoke(reviewPrBatchForLearningWorkflow, { input });
-        },
-      }).catch((error) => {
+      void (
+        dependencies.recordConversationTurn ??
+        recordConversationTurnAndMaybeQueueLearning
+      )(event.instanceId, paths, {}, event.submissionId).catch((error) => {
+        console.error('[neondeck] failed to record learning turn', error);
+      });
+    }
+
+    if (event.type === 'submission_settled') {
+      void settleAutopilotOwnerObservation(event, paths).catch((error) => {
         console.error(
           '[neondeck] failed to settle Autopilot owner turn',
           error,
@@ -173,9 +98,11 @@ export function installFlueObservationHandlers(
       });
     }
 
-    void recordFlueObservation(event, paths).catch((error) => {
-      console.error('[neondeck] failed to record Flue observation', error);
-    });
+    if (event.type === 'submission_settled' && event.outcome !== 'completed') {
+      void recordSubmissionFailure(event, paths).catch((error) => {
+        console.error('[neondeck] failed to record submission failure', error);
+      });
+    }
 
     if (
       event.type === 'operation' &&
@@ -191,8 +118,12 @@ export function installFlueObservationHandlers(
           sourceId: event.operationId,
           data: {
             operationKind: event.operationKind,
+            operationId: event.operationId,
+            submissionId: event.submissionId ?? null,
             durationMs: event.durationMs,
-            error: 'See workflow observability for error details.',
+            detailUrl: event.submissionId
+              ? `/activity?submissionId=${encodeURIComponent(event.submissionId)}`
+              : null,
           },
         },
         paths,
@@ -211,32 +142,29 @@ export function resetFlueObservationHandlersForTests() {
   observationHandlerUnsubscribers.clear();
 }
 
-export function settlePrReviewObservation(
-  event: Extract<FlueObservation, { type: 'run_end' }>,
+function recordSubmissionFailure(
+  event: Extract<FlueObservation, { type: 'submission_settled' }>,
   paths: RuntimePaths,
 ) {
-  if (!event.isError) return null;
-  return failPrReview(
+  const label = event.agentName ?? 'Flue submission';
+  return addNotification(
     {
-      runId: event.runId,
-      allowReady: true,
-      message:
-        'The Flue review workflow failed. Inspect the guarded run for details.',
+      level: 'attention',
+      title: 'Agent submission failed',
+      message: `${label} ${event.outcome}.`,
+      source: 'flue',
+      sourceId: event.submissionId,
+      data: {
+        submissionId: event.submissionId,
+        agentName: event.agentName ?? null,
+        instanceId: event.instanceId ?? null,
+        outcome: event.outcome,
+        errorType: event.error?.type ?? event.error?.name ?? null,
+        detailUrl: `/activity?submissionId=${encodeURIComponent(event.submissionId)}`,
+      },
     },
     paths,
   );
-}
-
-export function linkPrReviewRunObservation(
-  event: Extract<FlueObservation, { type: 'run_start' }>,
-  paths: RuntimePaths,
-) {
-  if (event.workflowName !== 'review-pr-for-human') return null;
-  if (!event.input || typeof event.input !== 'object') return null;
-  const reviewId = stringField(event.input, 'reviewId');
-  const attemptId = stringField(event.input, 'attemptId');
-  if (!reviewId || !attemptId) return null;
-  return attachPrReviewAttemptRun(reviewId, attemptId, event.runId, paths);
 }
 
 function flueContextRuntimeHome(context: FlueEventContext | undefined) {
@@ -249,22 +177,14 @@ export function recordHandledPrApiResult(
   workflow: string,
   result: unknown,
   dependencies: {
-    recordHandledPr?: typeof recordHandledPrFromWorkflowResult;
+    recordHandledPr?: typeof recordHandledPrFromOperationResult;
   } = {},
 ) {
   return Promise.resolve()
     .then(() =>
-      (dependencies.recordHandledPr ?? recordHandledPrFromWorkflowResult)(
-        {
-          workflow,
-          result,
-        },
+      (dependencies.recordHandledPr ?? recordHandledPrFromOperationResult)(
+        { operation: workflow, result },
         paths,
-        {
-          async invokePrBatchReview(input) {
-            return invoke(reviewPrBatchForLearningWorkflow, { input });
-          },
-        },
       ),
     )
     .catch((error) => {
@@ -288,11 +208,6 @@ export function recordHumanReviewSubmittedApiEvidence(
       (dependencies.recordEvidence ?? recordHumanReviewSubmittedEvidence)(
         evidence,
         paths,
-        {
-          async invokePrBatchReview(input) {
-            return invoke(reviewPrBatchForLearningWorkflow, { input });
-          },
-        },
       ),
     )
     .catch((error) => {
@@ -304,120 +219,20 @@ export function recordHumanReviewSubmittedApiEvidence(
     });
 }
 
-export function displayAssistantLearningMiddleware(
-  paths: RuntimePaths,
-): MiddlewareHandler {
-  return async (c, next) => {
-    const method = c.req.method.toUpperCase();
-    const sessionId = displayAssistantSessionId(c.req.path);
-    await next();
-    if (!sessionId || method !== 'POST' || c.res.status >= 400) return;
-
-    void recordConversationTurnAndMaybeQueueLearning(sessionId, paths, {
-      async invokeConversationReview(input) {
-        return invoke(reviewConversationForLearningWorkflow, { input });
-      },
-      async invokeCurationReview(input) {
-        return invoke(curateLearningStoreWorkflow, { input });
-      },
-    }).catch((error) => {
-      console.error('[neondeck] failed to queue learning review', error);
-    });
-  };
-}
-
-export async function attachCommandRunSummaryRunId(
-  event: FlueObservation,
+function isDirectDisplayAssistantSubmission(
+  submissionId: string,
   paths: RuntimePaths,
 ) {
-  const link = commandRunSummaryLink(event);
-  if (!link) return;
-  await setWorkflowSummaryRunId(link.summaryId, link.runId, paths);
-}
-
-function commandRunSummaryLink(event: FlueObservation) {
-  if (!('result' in event)) return undefined;
-  const result = event.result;
-  if (!result || typeof result !== 'object') return undefined;
-
-  const summary = (result as { workflowSummary?: unknown }).workflowSummary;
-  if (!summary || typeof summary !== 'object') return undefined;
-
-  const id = (summary as { id?: unknown }).id;
-  if (typeof id !== 'string') return undefined;
-  const summaryWorkflow = stringField(summary, 'workflow');
-  const runId =
-    summaryWorkflow === 'ci_fix_run'
-      ? stringField(event, 'runId')
-      : (objectStringField(result, 'data', 'runId') ??
-        stringField(summary, 'runId') ??
-        stringField(event, 'runId'));
-  if (!runId) return undefined;
-
-  return {
-    summaryId: id,
-    runId,
-  };
-}
-
-function learningReviewResultId(event: FlueObservation) {
-  if (!('result' in event)) return undefined;
-  const result = event.result;
-  if (!result || typeof result !== 'object') return undefined;
-
-  const action = (result as { action?: unknown }).action;
-  if (
-    action !== 'learning_review_conversation' &&
-    action !== 'learning_curate' &&
-    action !== 'learning_review_pr_batch'
-  ) {
-    return undefined;
+  const database = openDb(paths.neondeckDatabase, { readOnly: true });
+  try {
+    const row = database
+      .prepare(
+        `SELECT kind, agent_name FROM activity_submissions WHERE submission_id = ?;`,
+      )
+      .get(submissionId) as
+      { kind?: unknown; agent_name?: unknown } | undefined;
+    return row?.kind === 'direct' && row.agent_name === 'display-assistant';
+  } finally {
+    database.close();
   }
-  const reviewId = (result as { reviewId?: unknown }).reviewId;
-  return typeof reviewId === 'string' ? reviewId : undefined;
-}
-
-function workflowLabel(event: FlueObservation) {
-  if ('workflowName' in event && typeof event.workflowName === 'string') {
-    return event.workflowName;
-  }
-  if ('result' in event) {
-    const result = event.result;
-    if (result && typeof result === 'object') {
-      const direct = stringField(result, 'workflow');
-      const data = objectStringField(result, 'data', 'workflow');
-      const summary = objectStringField(result, 'workflowSummary', 'workflow');
-      if (direct || data || summary) return direct ?? data ?? summary!;
-    }
-  }
-  if ('workflow' in event && typeof event.workflow === 'string') {
-    return event.workflow;
-  }
-
-  return `Workflow run ${event.runId ?? 'unknown'}`;
-}
-
-function objectStringField(
-  value: object,
-  objectKey: string,
-  stringKey: string,
-) {
-  if (!(objectKey in value)) return undefined;
-  const nested = (value as Record<string, unknown>)[objectKey];
-  if (!nested || typeof nested !== 'object') return undefined;
-  return stringField(nested, stringKey);
-}
-
-function stringField(value: object, key: string) {
-  if (!(key in value)) return undefined;
-  const field = (value as Record<string, unknown>)[key];
-  return typeof field === 'string' && field.trim() ? field : undefined;
-}
-
-function displayAssistantSessionId(path: string) {
-  const prefix = '/api/flue/agents/display-assistant/';
-  if (!path.startsWith(prefix)) return undefined;
-  const remainder = path.slice(prefix.length);
-  if (!remainder || remainder.includes('/')) return undefined;
-  return decodeURIComponent(remainder);
 }

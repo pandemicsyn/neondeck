@@ -5,6 +5,7 @@ import { ensureRuntimeHome, runtimePaths } from '../../runtime-home';
 import {
   scheduledTaskSpecSchema,
   type AutomationTrigger,
+  type ScheduledInstructionDispatchPayload,
   type ScheduledTaskRecord,
   type ScheduledTaskRunRecord,
 } from './schemas';
@@ -12,7 +13,7 @@ import { nextOccurrence, validateAutomationTrigger } from './triggers';
 import * as v from 'valibot';
 
 const defaultClaimTtlMs = 5 * 60 * 1_000;
-export const maxActiveScheduledWorkflowRuns = 10;
+export const maxActiveScheduledSubmissions = 10;
 
 export async function listScheduledTasks(paths = runtimePaths()) {
   await ensureRuntimeHome(paths);
@@ -65,6 +66,41 @@ export async function readLatestScheduledTaskRun(
       )
       .get(taskId);
     return row ? readScheduledTaskRunRow(row) : undefined;
+  } finally {
+    database.close();
+  }
+}
+
+export async function listRecoverableScheduledBriefingRuns(
+  paths = runtimePaths(),
+) {
+  await ensureRuntimeHome(paths);
+  const database = openDb(paths.neondeckDatabase);
+  try {
+    return database
+      .prepare(
+        `SELECT scheduled_task_runs.*,
+                app_metadata.value AS briefing_run_id
+         FROM scheduled_task_runs
+         JOIN scheduled_tasks
+           ON scheduled_tasks.id = scheduled_task_runs.task_id
+          AND scheduled_tasks.kind = 'run-briefing'
+         LEFT JOIN app_metadata
+           ON app_metadata.key = 'scheduled-briefing-run:' || scheduled_task_runs.id
+         WHERE scheduled_task_runs.status IN ('claimed', 'active')
+         ORDER BY scheduled_task_runs.created_at ASC;`,
+      )
+      .all()
+      .map((row) => {
+        const record = row as Record<string, unknown>;
+        return {
+          run: readScheduledTaskRunRow(record),
+          briefingRunId:
+            typeof record.briefing_run_id === 'string'
+              ? record.briefing_run_id
+              : null,
+        };
+      });
   } finally {
     database.close();
   }
@@ -168,11 +204,30 @@ export async function setScheduledTaskEnabled(
   id: string,
   enabled: boolean,
   paths = runtimePaths(),
+  options: {
+    clearMetadataKeys?: string[];
+    watchGuard?: { id: string; disallowAutopilotStatuses: string[] };
+  } = {},
 ) {
   await ensureRuntimeHome(paths);
   const database = openDb(paths.neondeckDatabase);
   try {
     database.exec('BEGIN IMMEDIATE;');
+    if (options.watchGuard) {
+      const watch = database
+        .prepare('SELECT autopilot_status FROM pr_watches WHERE id = ?;')
+        .get(options.watchGuard.id) as
+        { autopilot_status?: string } | undefined;
+      if (
+        !watch ||
+        options.watchGuard.disallowAutopilotStatuses.includes(
+          String(watch.autopilot_status),
+        )
+      ) {
+        database.exec('COMMIT;');
+        return undefined;
+      }
+    }
     const current = database
       .prepare('SELECT * FROM scheduled_tasks WHERE id = ?;')
       .get(id);
@@ -198,6 +253,9 @@ export async function setScheduledTaskEnabled(
       `,
       )
       .run(nextEnabled ? 1 : 0, resumeAt, now.toISOString(), id);
+    for (const key of options.clearMetadataKeys ?? []) {
+      database.prepare('DELETE FROM app_metadata WHERE key = ?;').run(key);
+    }
     database.exec('COMMIT;');
     if (result.changes !== 1) return undefined;
   } catch (error) {
@@ -224,71 +282,8 @@ export async function claimDueScheduledTasks(
   }> = [];
   const nowIso = now.toISOString();
   const expiresAt = new Date(now.getTime() + claimTtlMs).toISOString();
-  const staleUnattachedRunAt = new Date(
-    now.getTime() - claimTtlMs,
-  ).toISOString();
   try {
     database.exec('BEGIN IMMEDIATE;');
-    database
-      .prepare(
-        `
-        UPDATE scheduled_task_runs
-        SET
-          status = CASE terminal.status
-            WHEN 'failed' THEN 'failed'
-            ELSE 'completed'
-          END,
-          outcome = CASE terminal.status
-            WHEN 'failed' THEN 'failed'
-            ELSE 'recorded'
-          END,
-          message = CASE terminal.status
-            WHEN 'failed' THEN 'Scheduled workflow failed; see Flue run details.'
-            ELSE 'Scheduled workflow completed.'
-          END,
-          error = CASE terminal.status
-            WHEN 'failed' THEN 'See Flue run details.'
-            ELSE NULL
-          END,
-          completed_at = COALESCE(terminal.ended_at, ?),
-          updated_at = ?
-        FROM workflow_run_observations AS terminal
-        WHERE scheduled_task_runs.status = 'active'
-          AND scheduled_task_runs.workflow_run_id = terminal.run_id
-          AND terminal.status IN ('completed', 'failed');
-      `,
-      )
-      .run(nowIso, nowIso);
-    database
-      .prepare(
-        `
-        UPDATE scheduled_tasks
-        SET enabled = 1, next_run_at = ?, updated_at = ?
-        WHERE json_extract(trigger_json, '$.kind') = 'once'
-          AND EXISTS (
-            SELECT 1 FROM scheduled_task_runs
-            WHERE scheduled_task_runs.task_id = scheduled_tasks.id
-              AND scheduled_task_runs.status = 'active'
-              AND scheduled_task_runs.workflow_run_id IS NULL
-              AND scheduled_task_runs.started_at <= ?
-          );
-      `,
-      )
-      .run(nowIso, nowIso, staleUnattachedRunAt);
-    database
-      .prepare(
-        `
-        UPDATE scheduled_task_runs
-        SET status = 'failed', outcome = 'failed',
-            message = 'Scheduled workflow admission was not durably attached before recovery.',
-            error = 'Scheduled workflow run id was not attached before the recovery deadline.',
-            completed_at = ?, updated_at = ?
-        WHERE status = 'active'
-          AND workflow_run_id IS NULL
-          AND started_at <= ?;
-      `,
-      )
-      .run(nowIso, nowIso, staleUnattachedRunAt);
     database
       .prepare(
         `
@@ -383,8 +378,10 @@ export async function claimDueScheduledTasks(
         status: 'claimed',
         outcome: 'recorded',
         message: 'Scheduled task claimed.',
-        workflowRunId: null,
+        submissionId: null,
         sessionId: null,
+        dispatchKey: null,
+        dispatchPayload: null,
         result: null,
         error: null,
         startedAt: nowIso,
@@ -396,9 +393,10 @@ export async function claimDueScheduledTasks(
         .prepare(
           `
           INSERT INTO scheduled_task_runs (
-            id, task_id, status, outcome, message, workflow_run_id, session_id,
-            result_json, error, started_at, completed_at, created_at, updated_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+            id, task_id, status, outcome, message, submission_id, session_id,
+            dispatch_key, dispatch_payload_json, result_json, error, started_at,
+            completed_at, created_at, updated_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
         `,
         )
         .run(
@@ -407,6 +405,8 @@ export async function claimDueScheduledTasks(
           run.status,
           run.outcome,
           run.message,
+          null,
+          null,
           null,
           null,
           null,
@@ -549,10 +549,10 @@ export async function deferUnstartedScheduledTaskClaim(
   }
 }
 
-export async function canAdmitScheduledWorkflow(
+export async function canAdmitScheduledSubmission(
   taskId: string,
   paths = runtimePaths(),
-  maximumActiveRuns = maxActiveScheduledWorkflowRuns,
+  maximumActiveRuns = maxActiveScheduledSubmissions,
 ) {
   await ensureRuntimeHome(paths);
   const database = openDb(paths.neondeckDatabase);
@@ -583,8 +583,15 @@ export async function canAdmitScheduledWorkflow(
   }
 }
 
-export async function activateScheduledTaskWorkflowRun(
-  input: { taskId: string; runId: string; claimId: string },
+export async function activateScheduledTaskSubmission(
+  input: {
+    taskId: string;
+    runId: string;
+    claimId: string;
+    sessionId: string;
+    dispatchKey: string;
+    dispatchPayload: ScheduledInstructionDispatchPayload;
+  },
   paths = runtimePaths(),
 ) {
   await ensureRuntimeHome(paths);
@@ -596,12 +603,16 @@ export async function activateScheduledTaskWorkflowRun(
       .prepare(
         `
         UPDATE scheduled_task_runs
-        SET status = 'active', message = ?, updated_at = ?
+        SET status = 'active', message = ?, session_id = ?, dispatch_key = ?,
+            dispatch_payload_json = ?, updated_at = ?
         WHERE id = ? AND task_id = ? AND status = 'claimed';
       `,
       )
       .run(
-        'Scheduled workflow admitted and awaiting terminal observation.',
+        'Scheduled instruction admission is pending.',
+        input.sessionId,
+        input.dispatchKey,
+        JSON.stringify(asJsonValue(input.dispatchPayload)),
         now,
         input.runId,
         input.taskId,
@@ -626,55 +637,115 @@ export async function activateScheduledTaskWorkflowRun(
   }
 }
 
-export async function attachScheduledTaskWorkflowRunId(
-  input: { runId: string; workflowRunId: string },
+export async function listActiveScheduledInstructionRuns(
+  paths = runtimePaths(),
+) {
+  await ensureRuntimeHome(paths);
+  const database = openDb(paths.neondeckDatabase, { readOnly: true });
+  try {
+    return database
+      .prepare(
+        `
+        SELECT scheduled_task_runs.*
+        FROM scheduled_task_runs
+        INNER JOIN scheduled_tasks
+          ON scheduled_tasks.id = scheduled_task_runs.task_id
+        WHERE scheduled_task_runs.status = 'active'
+          AND scheduled_tasks.kind = 'run-agent-instruction'
+        ORDER BY scheduled_task_runs.created_at ASC;
+      `,
+      )
+      .all()
+      .map(readScheduledTaskRunRow);
+  } finally {
+    database.close();
+  }
+}
+
+export async function attachScheduledTaskSubmissionId(
+  input: {
+    runId: string;
+    submissionId: string;
+    sessionId?: string | null;
+    result?: unknown;
+  },
   paths = runtimePaths(),
 ) {
   await ensureRuntimeHome(paths);
   const database = openDb(paths.neondeckDatabase);
   try {
-    database.exec('BEGIN IMMEDIATE;');
-    const terminal = database
-      .prepare(
-        `
-        SELECT status, ended_at
-        FROM workflow_run_observations
-        WHERE run_id = ? AND status IN ('completed', 'failed');
-      `,
-      )
-      .get(input.workflowRunId) as
-      { status?: unknown; ended_at?: unknown } | undefined;
     database
       .prepare(
         `
         UPDATE scheduled_task_runs
-        SET workflow_run_id = ?, status = ?, outcome = ?, message = ?, error = ?,
-            completed_at = ?, updated_at = ?
+        SET submission_id = ?, session_id = COALESCE(?, session_id),
+            result_json = COALESCE(?, result_json), message = ?, error = NULL,
+            updated_at = ?
         WHERE id = ? AND status = 'active';
       `,
       )
       .run(
-        input.workflowRunId,
-        terminal?.status === 'failed'
-          ? 'failed'
-          : terminal
-            ? 'completed'
-            : 'active',
-        terminal?.status === 'failed' ? 'failed' : 'recorded',
-        terminal
-          ? terminal.status === 'failed'
-            ? 'Scheduled workflow failed; see Flue run details.'
-            : 'Scheduled workflow completed.'
-          : 'Scheduled workflow admitted and awaiting terminal observation.',
-        terminal?.status === 'failed' ? 'See Flue run details.' : null,
-        terminal
-          ? typeof terminal.ended_at === 'string'
-            ? terminal.ended_at
-            : new Date().toISOString()
-          : null,
+        input.submissionId,
+        input.sessionId ?? null,
+        input.result === undefined
+          ? null
+          : JSON.stringify(asJsonValue(input.result)),
+        'Scheduled instruction dispatched and awaiting submission settlement.',
         new Date().toISOString(),
         input.runId,
       );
+  } finally {
+    database.close();
+  }
+}
+
+export async function activateScheduledTaskResultSubmission(
+  input: {
+    taskId: string;
+    runId: string;
+    claimId: string;
+    submissionId: string;
+    sessionId?: string | null;
+    result?: unknown;
+  },
+  paths = runtimePaths(),
+) {
+  await ensureRuntimeHome(paths);
+  const now = new Date().toISOString();
+  const database = openDb(paths.neondeckDatabase);
+  try {
+    database.exec('BEGIN IMMEDIATE;');
+    const activated = database
+      .prepare(
+        `
+        UPDATE scheduled_task_runs
+        SET status = 'active', submission_id = ?, session_id = ?,
+            result_json = ?, message = ?, error = NULL, updated_at = ?
+        WHERE id = ? AND task_id = ? AND status = 'claimed';
+      `,
+      )
+      .run(
+        input.submissionId,
+        input.sessionId ?? null,
+        input.result === undefined
+          ? null
+          : JSON.stringify(asJsonValue(input.result)),
+        'Scheduled task dispatched and awaiting submission settlement.',
+        now,
+        input.runId,
+        input.taskId,
+      );
+    if (activated.changes !== 1)
+      throw new Error('Scheduled task run is not claimable.');
+    database
+      .prepare(
+        `
+        UPDATE scheduled_tasks
+        SET claim_id = NULL, claim_expires_at = NULL, updated_at = ?
+        WHERE id = ? AND claim_id = ?;
+      `,
+      )
+      .run(now, input.taskId, input.claimId);
     database.exec('COMMIT;');
   } catch (error) {
     rollbackQuietly(database);
@@ -684,8 +755,30 @@ export async function attachScheduledTaskWorkflowRunId(
   }
 }
 
-export async function settleScheduledTaskWorkflowRun(
-  input: { workflowRunId: string; failed: boolean },
+export async function recordScheduledTaskAdmissionRetry(
+  input: { runId: string; message: string },
+  paths = runtimePaths(),
+) {
+  await ensureRuntimeHome(paths);
+  const database = openDb(paths.neondeckDatabase);
+  try {
+    database
+      .prepare(
+        `
+        UPDATE scheduled_task_runs
+        SET message = 'Scheduled instruction admission will be retried.',
+            error = ?, updated_at = ?
+        WHERE id = ? AND status = 'active' AND submission_id IS NULL;
+      `,
+      )
+      .run(input.message, new Date().toISOString(), input.runId);
+  } finally {
+    database.close();
+  }
+}
+
+export async function settleScheduledTaskSubmission(
+  input: { submissionId: string; failed: boolean },
   paths = runtimePaths(),
 ) {
   await ensureRuntimeHome(paths);
@@ -697,19 +790,19 @@ export async function settleScheduledTaskWorkflowRun(
         `
         UPDATE scheduled_task_runs
         SET status = ?, outcome = ?, message = ?, error = ?, completed_at = ?, updated_at = ?
-        WHERE workflow_run_id = ? AND status = 'active';
+        WHERE submission_id = ? AND status = 'active';
       `,
       )
       .run(
         input.failed ? 'failed' : 'completed',
         input.failed ? 'failed' : 'recorded',
         input.failed
-          ? 'Scheduled workflow failed; see Flue run details.'
-          : 'Scheduled workflow completed.',
-        input.failed ? 'See Flue run details.' : null,
+          ? 'Scheduled instruction submission failed.'
+          : 'Scheduled instruction completed.',
+        input.failed ? 'See sanitized submission activity.' : null,
         now,
         now,
-        input.workflowRunId,
+        input.submissionId,
       );
   } finally {
     database.close();
@@ -724,7 +817,7 @@ export async function settleScheduledTaskRun(
     status: 'completed' | 'failed';
     outcome: 'recorded' | 'silent' | 'failed';
     message: string;
-    workflowRunId?: string | null;
+    submissionId?: string | null;
     sessionId?: string | null;
     result?: unknown;
     error?: string | null;
@@ -740,7 +833,7 @@ export async function settleScheduledTaskRun(
       .prepare(
         `
         UPDATE scheduled_task_runs
-        SET status = ?, outcome = ?, message = ?, workflow_run_id = ?, session_id = ?,
+        SET status = ?, outcome = ?, message = ?, submission_id = ?, session_id = ?,
             result_json = ?, error = ?, completed_at = ?, updated_at = ?
         WHERE id = ? AND task_id = ? AND status IN ('claimed', 'active');
       `,
@@ -749,7 +842,7 @@ export async function settleScheduledTaskRun(
         input.status,
         input.outcome,
         input.message,
-        input.workflowRunId ?? null,
+        input.submissionId ?? null,
         input.sessionId ?? null,
         input.result === undefined
           ? null
@@ -826,11 +919,21 @@ function readScheduledTaskRunRow(row: unknown): ScheduledTaskRunRecord {
       record.outcome,
     ),
     message: String(record.message),
-    workflowRunId:
-      typeof record.workflow_run_id === 'string'
-        ? record.workflow_run_id
-        : null,
+    submissionId:
+      typeof record.submission_id === 'string' ? record.submission_id : null,
     sessionId: typeof record.session_id === 'string' ? record.session_id : null,
+    dispatchKey:
+      typeof record.dispatch_key === 'string' ? record.dispatch_key : null,
+    dispatchPayload:
+      typeof record.dispatch_payload_json === 'string'
+        ? v.parse(
+            v.object({
+              prompt: v.string(),
+              taskId: v.string(),
+            }),
+            JSON.parse(record.dispatch_payload_json),
+          )
+        : null,
     result:
       typeof record.result_json === 'string'
         ? (JSON.parse(record.result_json) as ScheduledTaskRunRecord['result'])

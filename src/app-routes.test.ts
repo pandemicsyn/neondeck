@@ -108,7 +108,7 @@ describe('app API safety routes', () => {
         },
         body: JSON.stringify({
           kind: 'follow-up-reviewer',
-          prompt: 'Route reviewer prompt {{reviewContext}}',
+          prompt: 'Route reviewer prompt {{reviewContextDeliveryGuidance}}',
         }),
       },
     );
@@ -118,7 +118,8 @@ describe('app API safety routes', () => {
       changed: true,
       data: {
         overrides: {
-          'follow-up-reviewer': 'Route reviewer prompt {{reviewContext}}',
+          'follow-up-reviewer':
+            'Route reviewer prompt {{reviewContextDeliveryGuidance}}',
         },
       },
     });
@@ -161,8 +162,8 @@ describe('app API safety routes', () => {
           primitive: 'tool',
         }),
         expect.objectContaining({
-          id: 'fix-pr-ci',
-          primitive: 'workflow',
+          id: 'neondeck_autopilot_ci_fix_run',
+          primitive: 'action',
         }),
         expect.objectContaining({
           id: 'neondeck_autopilot_watch_status',
@@ -251,7 +252,7 @@ describe('app API safety routes', () => {
     expect(response.status).toBe(404);
   });
 
-  it('hides app-owned workflow run inspection without the local API token', async () => {
+  it('does not expose removed workflow run inspection routes', async () => {
     const response = await app.request(
       'http://localhost/api/workflows/runs/missing',
       {
@@ -260,6 +261,21 @@ describe('app API safety routes', () => {
     );
 
     expect(response.status).toBe(404);
+  });
+
+  it('exposes Kilo summarization through the app-owned API', async () => {
+    const response = await app.request(
+      'http://localhost/api/kilo/sessions/summarize',
+      {
+        method: 'POST',
+        headers: { host: 'localhost', 'content-type': 'application/json' },
+        body: '{}',
+      },
+    );
+    const body = (await response.json()) as { action: string };
+
+    expect(response.status).toBe(404);
+    expect(body.action).toBe('summarize_kilo_session');
   });
 
   it('returns prepared-diff API validation errors as bad requests', async () => {

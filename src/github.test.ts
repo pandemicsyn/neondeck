@@ -13,6 +13,7 @@ import {
   fetchCheckSummary,
   fetchPullRequestFiles,
   fetchPullRequestReviewComments,
+  fetchPullRequestReviewSurfaceThreadsFreshWithMetadata,
   fetchPullRequestReviewSurfaceThreadsWithMetadata,
   fetchPullRequestReviewThreads,
   fetchPullRequestReviewThreadsWithMetadata,
@@ -692,6 +693,7 @@ describe('github foundation', () => {
           return jsonResponse({
             data: {
               node: {
+                pullRequest: { headRefOid: 'review-head' },
                 comments: {
                   pageInfo: { hasNextPage: false, endCursor: null },
                   nodes: [reviewThreadComment('comment-101', 101)],
@@ -706,6 +708,7 @@ describe('github foundation', () => {
         data: {
           repository: {
             pullRequest: {
+              headRefOid: 'review-head',
               reviewThreads: {
                 pageInfo: { hasNextPage: false, endCursor: null },
                 nodes: [
@@ -756,6 +759,66 @@ describe('github foundation', () => {
     );
     expect((fetchedBodies[1] as { query?: string }).query).toContain(
       'comments(first: 20',
+    );
+  });
+
+  it('rejects review-thread comment pages collected after the PR head changes', async () => {
+    globalThis.fetch = vi.fn<typeof fetch>(async (_input, init) => {
+      const body = JSON.parse(String(init?.body ?? '{}')) as {
+        variables?: { threadId?: string };
+      };
+      if (body.variables?.threadId === 'thread-1') {
+        return jsonResponse({
+          data: {
+            node: {
+              pullRequest: { headRefOid: 'head-after' },
+              comments: {
+                pageInfo: { hasNextPage: false, endCursor: null },
+                nodes: [reviewThreadComment('comment-2', 2)],
+              },
+            },
+          },
+        });
+      }
+      return jsonResponse({
+        data: {
+          repository: {
+            pullRequest: {
+              headRefOid: 'head-before',
+              reviewThreads: {
+                pageInfo: { hasNextPage: false, endCursor: null },
+                nodes: [
+                  {
+                    id: 'thread-1',
+                    isResolved: false,
+                    isOutdated: false,
+                    path: 'src/app.ts',
+                    line: 12,
+                    comments: {
+                      pageInfo: {
+                        hasNextPage: true,
+                        endCursor: 'next-comments',
+                      },
+                      nodes: [reviewThreadComment('comment-1', 1)],
+                    },
+                  },
+                ],
+              },
+            },
+          },
+        },
+      });
+    });
+
+    await expect(
+      fetchPullRequestReviewThreadsWithMetadata({
+        token: 'token',
+        owner: 'pandemicsyn',
+        repo: 'neondeck',
+        number: 123,
+      }),
+    ).rejects.toThrow(
+      'Pull request head changed from head-before to head-after while loading review thread comments.',
     );
   });
 
@@ -923,6 +986,40 @@ describe('github foundation', () => {
     });
   });
 
+  it('rejects review-thread pages collected across different PR heads', async () => {
+    let page = 0;
+    globalThis.fetch = vi.fn<typeof fetch>(async () => {
+      page += 1;
+      return jsonResponse({
+        data: {
+          repository: {
+            pullRequest: {
+              headRefOid: page === 1 ? 'head-before' : 'head-after',
+              reviewThreads: {
+                pageInfo: {
+                  hasNextPage: page === 1,
+                  endCursor: page === 1 ? 'next-page' : null,
+                },
+                nodes: [],
+              },
+            },
+          },
+        },
+      });
+    });
+
+    await expect(
+      fetchPullRequestReviewThreadsWithMetadata({
+        token: 'token',
+        owner: 'pandemicsyn',
+        repo: 'neondeck',
+        number: 123,
+      }),
+    ).rejects.toThrow(
+      'Pull request head changed from head-before to head-after while loading review threads.',
+    );
+  });
+
   it('uses a lean review-thread query for the interactive review surface', async () => {
     const fetchedBodies: Array<{ query?: string }> = [];
     const controller = new AbortController();
@@ -934,6 +1031,7 @@ describe('github foundation', () => {
         data: {
           repository: {
             pullRequest: {
+              headRefOid: 'head-surface',
               reviewThreads: {
                 pageInfo: { hasNextPage: false, endCursor: null },
                 nodes: [
@@ -979,6 +1077,7 @@ describe('github foundation', () => {
         signal: controller.signal,
       }),
     ).resolves.toMatchObject({
+      headSha: 'head-surface',
       reviewThreads: [
         {
           id: 'thread-1',
@@ -1071,6 +1170,43 @@ describe('github foundation', () => {
       number: 123,
     });
 
+    expect(globalThis.fetch).toHaveBeenCalledTimes(2);
+  });
+
+  it('performs a fresh review-thread surface read without consulting the UI cache', async () => {
+    let calls = 0;
+    globalThis.fetch = vi.fn<typeof fetch>(async () => {
+      calls += 1;
+      return jsonResponse({
+        data: {
+          repository: {
+            pullRequest: {
+              headRefOid: calls === 1 ? 'head-a' : 'head-b',
+              reviewThreads: {
+                pageInfo: { hasNextPage: false, endCursor: null },
+                nodes: [],
+              },
+            },
+          },
+        },
+      });
+    });
+    const target = {
+      token: 'token',
+      owner: 'pandemicsyn',
+      repo: 'neondeck',
+      number: 123,
+    };
+
+    await expect(
+      fetchPullRequestReviewSurfaceThreadsWithMetadata(target),
+    ).resolves.toMatchObject({ headSha: 'head-a' });
+    await expect(
+      fetchPullRequestReviewSurfaceThreadsFreshWithMetadata(target),
+    ).resolves.toMatchObject({ headSha: 'head-b' });
+    await expect(
+      fetchPullRequestReviewSurfaceThreadsWithMetadata(target),
+    ).resolves.toMatchObject({ headSha: 'head-a' });
     expect(globalThis.fetch).toHaveBeenCalledTimes(2);
   });
 
@@ -1437,7 +1573,7 @@ describe('github foundation', () => {
           id: withComment.comments[0]?.id,
           path: 'src/app.ts',
           line: 12,
-          body: 'Keep this branch explicit.',
+          body: 'bot: Keep this branch explicit.',
         },
       ],
     });
@@ -1489,7 +1625,7 @@ describe('github foundation', () => {
       })?.comments[0]?.body,
     ).toBe(
       [
-        'Keep this branch explicit.',
+        'bot: Keep this branch explicit.',
         '',
         'Suggested fix: Add a named guard.',
       ].join('\n'),
@@ -1776,10 +1912,10 @@ describe('github foundation', () => {
       (comment) => comment.body === 'Right side comment.',
     );
     const left = saved.comments.find(
-      (comment) => comment.body === 'Left side comment.',
+      (comment) => comment.body === 'bot: Left side comment.',
     );
     const range = saved.comments.find(
-      (comment) => comment.body === 'Range on renamed path.',
+      (comment) => comment.body === 'bot: Range on renamed path.',
     );
     expect(right?.id).toEqual(expect.any(String));
     expect(left?.id).toEqual(expect.any(String));
@@ -1867,7 +2003,7 @@ describe('github foundation', () => {
           line: 22,
           start_line: 20,
           start_side: 'RIGHT',
-          body: 'Range on renamed path.',
+          body: 'bot: Range on renamed path.',
         },
       ],
     });

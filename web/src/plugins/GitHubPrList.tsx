@@ -1,15 +1,16 @@
-import { useFlueClient } from '@flue/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { lazy, Suspense, useId, useState } from 'react';
 import {
   getPrWatches,
   getGitHubPullRequests,
+  getOperationSummaries,
   getRepoRegistry,
-  getWorkflowObservability,
+  neonCommandRunId,
+  runNeonCommand,
   startPrReview,
   type GitHubPullRequest,
-  type NeonCommandResult,
-  type WorkflowObservability,
+  type ActivityObservability,
+  type WorkflowSummaryResponse,
 } from '../api';
 import { SessionReferenceButton } from '../components/SessionReferenceButton';
 import { StopPrWatchButton } from '../components/StopPrWatchButton';
@@ -304,23 +305,27 @@ function NeonReviewButton({ item }: { item: GitHubPullRequest }) {
 }
 
 function FixCiButton({ item }: { item: GitHubPullRequest }) {
-  const flue = useFlueClient();
   const queryClient = useQueryClient();
   const mutation = useMutation({
     mutationFn: async () => {
-      const run = await flue.workflows.invoke('fix-pr-ci', {
-        input: {
-          ref: `${item.repo}#${item.number}`,
-        },
+      const result = await runNeonCommand({
+        command: `/fix-ci ${item.repo}#${item.number}`,
+        surface: 'dashboard',
       });
-      return run satisfies FixCiWorkflowAdmission;
+      if (!result.ok) throw new Error(result.message);
+      const runId = neonCommandRunId(result);
+      if (!runId) throw new Error('CI fix admission returned no operation id.');
+      return {
+        runId,
+        ref: `${item.repo}#${item.number}`,
+      } satisfies FixCiWorkflowAdmission;
     },
     onSuccess(run) {
       void queryClient.invalidateQueries({
-        queryKey: queryKeys.workflowObservability,
+        queryKey: queryKeys.activityObservability,
       });
       void queryClient.invalidateQueries({
-        queryKey: queryKeys.workflowSummaries,
+        queryKey: queryKeys.operationSummaries,
       });
       void queryClient.invalidateQueries({ queryKey: queryKeys.reports });
       scheduleCiFixCompletionRefresh(queryClient, run.runId);
@@ -348,9 +353,9 @@ function FixCiButton({ item }: { item: GitHubPullRequest }) {
 
 function scheduleCiFixCompletionRefresh(
   queryClient: ReturnType<typeof useQueryClient>,
-  runId: string,
+  operationId: string,
 ) {
-  let sawActiveRun = false;
+  let sawActiveOperation = false;
   let done = false;
   const refresh = () => {
     void queryClient.invalidateQueries({ queryKey: queryKeys.reports });
@@ -359,10 +364,10 @@ function scheduleCiFixCompletionRefresh(
     void queryClient.invalidateQueries({ queryKey: queryKeys.autopilotState });
     void queryClient.invalidateQueries({ queryKey: queryKeys.worktrees });
     void queryClient.invalidateQueries({
-      queryKey: queryKeys.workflowObservability,
+      queryKey: queryKeys.activityObservability,
     });
     void queryClient.invalidateQueries({
-      queryKey: queryKeys.workflowSummaries,
+      queryKey: queryKeys.operationSummaries,
     });
   };
   const scheduleActiveFollowUp = () => {
@@ -374,26 +379,26 @@ function scheduleCiFixCompletionRefresh(
   const observe = async (forceRefresh: boolean) => {
     if (done) return;
     try {
-      const workflows = await queryClient.fetchQuery({
-        queryKey: queryKeys.workflowObservability,
-        queryFn: getWorkflowObservability,
+      const operations = await queryClient.fetchQuery({
+        queryKey: queryKeys.operationSummaries,
+        queryFn: getOperationSummaries,
         staleTime: 0,
       });
-      const state = reviewWorkflowRefreshDecision(
-        workflows,
-        runId,
-        sawActiveRun,
+      const state = ciFixOperationRefreshDecision(
+        operations,
+        operationId,
+        sawActiveOperation,
         forceRefresh,
       );
-      sawActiveRun = state.sawActiveRun;
+      sawActiveOperation = state.sawActiveOperation;
       if (state.shouldRefresh) refresh();
       if (state.done) {
         done = true;
         return;
       }
-      if (forceRefresh && state.sawActiveRun) scheduleActiveFollowUp();
+      if (forceRefresh && state.sawActiveOperation) scheduleActiveFollowUp();
     } catch {
-      if (forceRefresh && !sawActiveRun) {
+      if (forceRefresh && !sawActiveOperation) {
         refresh();
         done = true;
         return;
@@ -407,6 +412,30 @@ function scheduleCiFixCompletionRefresh(
       delay,
     );
   }
+}
+
+export function ciFixOperationRefreshDecision(
+  operations: WorkflowSummaryResponse,
+  operationId: string,
+  sawActiveOperation: boolean,
+  forceRefresh: boolean,
+) {
+  const matching = operations.items.find(
+    (operation) =>
+      operation.workflow === 'ci_fix_run' && operation.id === operationId,
+  );
+  const active =
+    matching?.status === 'running' || matching?.status === 'queued';
+  const terminal = Boolean(matching && !active);
+  const sawActive = sawActiveOperation || active;
+  const disappeared = sawActiveOperation && !matching;
+  const shouldFallbackRefresh = forceRefresh && !sawActive;
+  return {
+    terminal,
+    sawActiveOperation: sawActive,
+    shouldRefresh: terminal || disappeared || shouldFallbackRefresh,
+    done: terminal || disappeared || shouldFallbackRefresh,
+  };
 }
 
 const reviewCompletionPollDelays = [15_000, 45_000, 90_000, 150_000, 210_000];
@@ -425,16 +454,21 @@ export function neonReviewActionLabel() {
 }
 
 export function reviewWorkflowCompletionState(
-  workflows: WorkflowObservability,
+  workflows: ActivityObservability,
   runId: string,
   sawActiveRun: boolean,
 ) {
-  const active = workflows.activeRuns.some((run) => run.runId === runId);
+  const active = workflows.activeSubmissions.some(
+    (submission) => submission.submissionId === runId,
+  );
   const terminal = [
     ...workflows.recentFailures,
-    ...workflows.recentData,
+    ...workflows.recentSettlements,
     ...workflows.recentEvents,
-  ].some((event) => event.runId === runId && event.eventType === 'run_end');
+  ].some(
+    (event) =>
+      event.submissionId === runId && event.eventType === 'submission_settled',
+  );
   return {
     terminal,
     sawActiveRun: sawActiveRun || active,
@@ -443,7 +477,7 @@ export function reviewWorkflowCompletionState(
 }
 
 export function reviewWorkflowRefreshDecision(
-  workflows: WorkflowObservability,
+  workflows: ActivityObservability,
   runId: string,
   sawActiveRun: boolean,
   forceRefresh: boolean,
@@ -458,7 +492,6 @@ export function reviewWorkflowRefreshDecision(
 }
 
 function WatchPrButton({ item }: { item: GitHubPullRequest }) {
-  const flue = useFlueClient();
   const queryClient = useQueryClient();
   const watchId = `${item.repo}#${item.number}`;
   const { data: watchData } = useQuery({
@@ -480,24 +513,17 @@ function WatchPrButton({ item }: { item: GitHubPullRequest }) {
       : undefined;
   const mutation = useMutation({
     mutationFn: async () => {
-      const run = await flue.workflows.invoke('command-run', {
-        input: {
-          command: `/watch-pr ${watchId}`,
-          surface: 'dashboard',
-        },
-        wait: 'result',
+      const result = await runNeonCommand({
+        command: `/watch-pr ${watchId}`,
+        surface: 'dashboard',
       });
-      const result = {
-        ...(run.result as NeonCommandResult),
-        flueRunId: run.runId,
-      };
       if (!result.ok) throw new Error(result.message);
       return result;
     },
     onSuccess() {
       void queryClient.invalidateQueries({ queryKey: queryKeys.prWatches });
       void queryClient.invalidateQueries({
-        queryKey: queryKeys.workflowObservability,
+        queryKey: queryKeys.activityObservability,
       });
       void queryClient.invalidateQueries({
         queryKey: queryKeys.autopilotState,
@@ -523,7 +549,7 @@ function WatchPrButton({ item }: { item: GitHubPullRequest }) {
           : existingWatch
             ? `Re-watch ${existingWatch.id}`
             : mutation.data
-              ? `${mutation.data.message} · run ${mutation.data.flueRunId}`
+              ? mutation.data.message
               : 'Watch this PR until checks are green'
       }
       type="button"
@@ -539,6 +565,7 @@ export function isTerminalWatchStatus(status: string | null | undefined) {
 
 type FixCiWorkflowAdmission = {
   runId: string;
+  ref: string;
 };
 
 function PrSkeleton() {

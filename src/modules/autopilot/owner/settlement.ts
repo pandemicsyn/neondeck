@@ -1,11 +1,10 @@
-import type { FlueObservation } from '@flue/runtime';
+import { AgentRunError, init, type FlueObservation } from '@flue/runtime';
 import type { RuntimePaths } from '../../../runtime-home';
 import { gitCurrentSha, gitStatus } from '../../../repo-edit/git';
 import { addNotification } from '../../app-state';
 import {
   listPrWatchRecords,
   readWatchByOwnerInstanceId,
-  recoverInterruptedAutopilotWatches,
   transitionWatchAutopilot,
 } from '../../watches';
 import {
@@ -16,8 +15,17 @@ import {
 import {
   claimPendingAutopilotTurnSettlement,
   clearPendingAutopilotTurnIfMatches,
+  listRecoverableAutopilotTurns,
+  readAutopilotTurnBySubmissionId,
   readPendingAutopilotTurn,
+  recordPendingAutopilotTurnCorrelationId,
+  recordPendingAutopilotTurnError,
+  resetSettlingAutopilotTurns,
 } from './pending';
+import {
+  dispatchAutopilotOwnerMessage,
+  dispatchAutopilotOwnerTurn,
+} from './dispatch';
 import { reconcileTransientAutopilotRuntimeBlocks } from './runtime-recovery';
 import {
   deriveOwnerSettlementDecision,
@@ -41,29 +49,55 @@ export async function settleAutopilotOwnerObservation(
   paths: RuntimePaths,
   dependencies: OwnerSettlementLearningDependencies = {},
 ) {
+  if (event.type !== 'submission_settled') return null;
   if (
     (event.agentName && event.agentName !== 'pr-autopilot-owner') ||
     !event.instanceId
   ) {
     return null;
   }
-  if (event.type === 'agent_end') return null;
-  if (event.type === 'operation' && event.operationKind !== 'prompt') {
-    return null;
-  }
   const observation = event as unknown as Record<string, unknown>;
   if (observation.taskId || observation.parentSession) return null;
   const watch = readWatchByOwnerInstanceId(paths, event.instanceId);
   if (!watch || !watch.worktreeId) return null;
-  const registeredPending = readPendingAutopilotTurn(
+  let registeredPending = readPendingAutopilotTurn(
     paths.home,
     event.instanceId,
   );
+  const historicalSubmission = event.submissionId
+    ? readAutopilotTurnBySubmissionId(
+        paths.home,
+        event.instanceId,
+        event.submissionId,
+      )
+    : undefined;
+  if (!registeredPending && historicalSubmission?.status === 'settled') {
+    return null;
+  }
   const observationCorrelation = strongObservationCorrelation(event);
   if (
     registeredPending &&
-    (event.dispatchId || registeredPending.correlationId) &&
-    event.dispatchId !== registeredPending.correlationId
+    !registeredPending.correlationId &&
+    event.submissionId
+  ) {
+    if (
+      historicalSubmission &&
+      historicalSubmission.turnId !== registeredPending.turnId
+    ) {
+      return null;
+    }
+    recordPendingAutopilotTurnCorrelationId(
+      paths.home,
+      event.instanceId,
+      registeredPending.turnId,
+      event.submissionId,
+    );
+    registeredPending = readPendingAutopilotTurn(paths.home, event.instanceId);
+  }
+  if (
+    registeredPending &&
+    (event.submissionId || registeredPending.correlationId) &&
+    event.submissionId !== registeredPending.correlationId
   ) {
     return null;
   }
@@ -107,12 +141,7 @@ export async function settleAutopilotOwnerObservation(
       paths,
       dependencies,
     );
-  const failed =
-    event.type === 'operation'
-      ? event.isError
-      : event.type === 'submission_settled'
-        ? event.outcome !== 'completed'
-        : false;
+  const failed = event.outcome !== 'completed';
 
   try {
     let worktree: WorktreeRecord | null = null;
@@ -167,7 +196,18 @@ export async function settleAutopilotOwnerObservation(
   }
 }
 
-export async function recoverInterruptedAutopilotOwners(paths: RuntimePaths) {
+const settlementWatchers = new Map<string, Promise<void>>();
+
+export async function recoverInterruptedAutopilotOwners(
+  paths: RuntimePaths,
+  dependencies: {
+    dispatchTurn?: typeof dispatchAutopilotOwnerTurn;
+    dispatchMessage?: typeof dispatchAutopilotOwnerMessage;
+    prepareTurn?: (instanceId: string, paths: RuntimePaths) => Promise<unknown>;
+    readSettlement?: typeof readAutopilotOwnerSettlement;
+    reclaimSettling?: boolean;
+  } = {},
+) {
   try {
     await reconcileTransientAutopilotRuntimeBlocks(paths, { rearm: true });
   } catch (error) {
@@ -176,12 +216,89 @@ export async function recoverInterruptedAutopilotOwners(paths: RuntimePaths) {
       error,
     );
   }
+  let recovered = 0;
+  if (dependencies.reclaimSettling !== false) {
+    resetSettlingAutopilotTurns(paths.home);
+  }
+  const activeTurns = listRecoverableAutopilotTurns(paths.home);
+  for (const turn of activeTurns) {
+    let submissionId = turn.correlationId;
+    if (!submissionId && turn.status === 'reserved') {
+      try {
+        if (!turn.prepared) {
+          await (dependencies.prepareTurn ?? prepareAutopilotOwnerTurn)(
+            turn.instanceId,
+            paths,
+          );
+          const prepared = readPendingAutopilotTurn(
+            paths.home,
+            turn.instanceId,
+          );
+          if (prepared?.turnId !== turn.turnId || !prepared.prepared) {
+            throw new Error(
+              'The reserved owner turn could not persist its prepared context.',
+            );
+          }
+        }
+        const receipt =
+          turn.source === 'watch-event' && turn.envelope
+            ? await (dependencies.dispatchTurn ?? dispatchAutopilotOwnerTurn)({
+                instanceId: turn.instanceId,
+                envelope: turn.envelope,
+                idempotencyKey: turn.idempotencyKey ?? turn.turnId,
+              })
+            : turn.source === 'direct-human' && turn.messageBody
+              ? await (
+                  dependencies.dispatchMessage ?? dispatchAutopilotOwnerMessage
+                )({
+                  agent: 'pr-autopilot-owner',
+                  id: turn.instanceId,
+                  input: turn.messageBody,
+                  idempotencyKey: turn.idempotencyKey ?? turn.turnId,
+                })
+              : null;
+        if (!receipt) {
+          throw new Error('The reserved owner turn has no replayable payload.');
+        }
+        submissionId = receipt.submissionId;
+        recordPendingAutopilotTurnCorrelationId(
+          paths.home,
+          turn.instanceId,
+          turn.turnId,
+          submissionId,
+        );
+        recovered += 1;
+      } catch (error) {
+        recordPendingAutopilotTurnError(
+          paths.home,
+          turn.instanceId,
+          turn.turnId,
+          errorMessage(error),
+        );
+        continue;
+      }
+    }
+    if (submissionId) {
+      watchAutopilotOwnerSettlement(
+        turn.instanceId,
+        submissionId,
+        paths,
+        dependencies.readSettlement,
+        turn.turnId,
+      );
+    }
+  }
+  const activeInstances = new Set(activeTurns.map((turn) => turn.instanceId));
   const interrupted = (await listPrWatchRecords(paths)).filter(
-    (watch) => watch.autopilotStatus === 'working',
+    (watch) =>
+      watch.autopilotStatus === 'working' &&
+      (!watch.ownerInstanceId || !activeInstances.has(watch.ownerInstanceId)),
   );
-  if (interrupted.length === 0) return 0;
-  recoverInterruptedAutopilotWatches(paths);
   for (const watch of interrupted) {
+    transitionWatchAutopilot(paths, watch.id, {
+      from: 'working',
+      to: 'blocked',
+    });
     await addNotification(
       {
         level: 'attention',
@@ -198,7 +315,84 @@ export async function recoverInterruptedAutopilotOwners(paths: RuntimePaths) {
       paths,
     );
   }
-  return interrupted.length;
+  return recovered + interrupted.length;
+}
+
+async function prepareAutopilotOwnerTurn(
+  instanceId: string,
+  paths: RuntimePaths,
+) {
+  const { buildPrAutopilotOwnerRuntime } =
+    await import('../../../agents/pr-autopilot-owner');
+  await buildPrAutopilotOwnerRuntime(instanceId, paths);
+}
+
+export function watchAutopilotOwnerSettlement(
+  instanceId: string,
+  submissionId: string,
+  paths: RuntimePaths,
+  readSettlement: typeof readAutopilotOwnerSettlement = readAutopilotOwnerSettlement,
+  expectedTurnId?: string,
+) {
+  const key = `${paths.home}\0${instanceId}\0${submissionId}`;
+  const existing = settlementWatchers.get(key);
+  if (existing) return existing;
+  const watcher = (async () => {
+    const outcome = await readSettlement(instanceId, submissionId);
+    if (
+      expectedTurnId &&
+      readPendingAutopilotTurn(paths.home, instanceId)?.turnId !==
+        expectedTurnId
+    ) {
+      return;
+    }
+    await settleAutopilotOwnerObservation(
+      {
+        v: 3,
+        type: 'submission_settled',
+        eventIndex: 0,
+        timestamp: new Date().toISOString(),
+        agentName: 'pr-autopilot-owner',
+        instanceId,
+        submissionId,
+        outcome: outcome.failed ? 'failed' : 'completed',
+        ...(outcome.failed
+          ? {
+              error: {
+                type: 'agent_run_error',
+                name: 'AgentRunError',
+                message: outcome.error,
+              },
+            }
+          : {}),
+      } as OwnerTerminalObservation,
+      paths,
+    );
+  })()
+    .catch((error) => {
+      console.warn('[neondeck] failed to observe owner settlement', error);
+    })
+    .finally(() => settlementWatchers.delete(key));
+  settlementWatchers.set(key, watcher);
+  return watcher;
+}
+
+export async function readAutopilotOwnerSettlement(
+  instanceId: string,
+  submissionId: string,
+) {
+  const { PrAutopilotOwner } =
+    await import('../../../agents/pr-autopilot-owner');
+  const handle = init(PrAutopilotOwner, { id: instanceId });
+  try {
+    await handle.read(submissionId);
+    return { failed: false as const };
+  } catch (error) {
+    if (error instanceof AgentRunError) {
+      return { failed: true as const, error: error.message };
+    }
+    throw error;
+  }
 }
 
 async function applyOwnerSettlementEffects(
@@ -303,7 +497,6 @@ function recoveredSettlementContext(
 
 function strongObservationCorrelation(event: OwnerTerminalObservation) {
   for (const [kind, value] of [
-    ['dispatch', event.dispatchId],
     ['submission', event.submissionId],
     ['operation', event.operationId],
     ['turn', event.turnId],

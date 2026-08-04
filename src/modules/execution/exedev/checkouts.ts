@@ -1,4 +1,4 @@
-import { defineAction } from '@flue/runtime';
+import { defineTool } from '@flue/runtime';
 import * as v from 'valibot';
 import {
   exedevTargetInputSchema,
@@ -51,14 +51,14 @@ const outputSchema = v.looseObject({
   message: v.string(),
 });
 
-export const exedevCheckoutSyncAction = defineAction({
+export const exedevCheckoutSyncAction = defineTool({
   name: 'neondeck_exedev_checkout_sync',
   description:
     'Checkout or sync a declared repo or Neondeck-managed worktree on the configured existing exe.dev VM through the execution approval policy.',
   input: syncInputSchema,
   output: outputSchema,
-  async run({ input }) {
-    return syncExeDevCheckout(input);
+  async run({ data: input }) {
+    return { output: await syncExeDevCheckout(input) };
   },
 });
 

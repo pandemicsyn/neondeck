@@ -188,54 +188,56 @@ function createMcpToolDefinition(input: {
     async run(context) {
       assertJsonSchema(
         inputValidator,
-        context.input,
+        context.data,
         `Input for MCP tool "${input.tool.name}"`,
       );
-      return input.gate({
-        serverId: input.serverId,
-        toolName: input.tool.name,
-        adaptedName,
-        context: {
-          input: context.input,
-          signal: context.signal,
-        },
-        run: async ({ input: args, signal }) => {
-          const result = (await input.client.callTool(
-            {
-              name: input.tool.name,
-              arguments: args,
-            },
-            CallToolResultSchema,
-            {
-              ...input.requestOptions,
-              signal,
-            },
-          )) as CallToolResult;
-          const text = formatMcpResult(result);
-          if (result.isError) {
-            throw new Error(text);
-          }
-          if (outputValidator) {
-            if (result.structuredContent === undefined) {
-              throw new Error(
-                `MCP tool "${input.tool.name}" returned no structuredContent for its declared output schema.`,
+      return {
+        output: await input.gate({
+          serverId: input.serverId,
+          toolName: input.tool.name,
+          adaptedName,
+          context: {
+            input: context.data,
+            signal: context.signal,
+          },
+          run: async ({ input: args, signal }) => {
+            const result = (await input.client.callTool(
+              {
+                name: input.tool.name,
+                arguments: args,
+              },
+              CallToolResultSchema,
+              {
+                ...input.requestOptions,
+                signal,
+              },
+            )) as CallToolResult;
+            const text = formatMcpResult(result);
+            if (result.isError) {
+              throw new Error(text);
+            }
+            if (outputValidator) {
+              if (result.structuredContent === undefined) {
+                throw new Error(
+                  `MCP tool "${input.tool.name}" returned no structuredContent for its declared output schema.`,
+                );
+              }
+              assertJsonSchema(
+                outputValidator,
+                result.structuredContent,
+                `Structured output for MCP tool "${input.tool.name}"`,
               );
             }
-            assertJsonSchema(
-              outputValidator,
-              result.structuredContent,
-              `Structured output for MCP tool "${input.tool.name}"`,
-            );
-          }
-          return {
-            text,
-            structuredContent: boundedStructuredContent(
-              result.structuredContent,
-            ),
-            raw: result,
-          };
-        },
-      });
+            return {
+              text,
+              structuredContent: boundedStructuredContent(
+                result.structuredContent,
+              ),
+              raw: result,
+            };
+          },
+        }),
+      };
     },
   });
 
@@ -301,6 +303,14 @@ function assertJsonSchema(
       ?.map((error) => `${error.instancePath || '/'} ${error.message}`)
       .join('; ') || 'unknown schema mismatch';
   throw new Error(`${label} does not match declared JSON Schema: ${detail}`);
+}
+
+export function mcpInputSchemaToValibot(schema: unknown) {
+  const normalized =
+    schema && typeof schema === 'object'
+      ? (schema as Tool['inputSchema'])
+      : ({ type: 'object', properties: {} } as Tool['inputSchema']);
+  return inputSchemaToValibot(normalized, compileJsonSchema(normalized));
 }
 
 function inputSchemaToValibot(

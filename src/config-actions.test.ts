@@ -149,8 +149,8 @@ describe('config actions', () => {
       initialData.defaults['initial-review'],
     );
     expect(initialData.tokens['follow-up-reviewer']).toEqual([
-      '{{workspaceInstructions}}',
-      '{{reviewContext}}',
+      '{{workspaceToolGuidance}}',
+      '{{reviewContextDeliveryGuidance}}',
     ]);
 
     const prompt = 'Custom initial review prompt.';
@@ -759,7 +759,7 @@ describe('config actions', () => {
       'memory',
       'learning',
       'runtime',
-      'workflows',
+      'activity',
       'subagents',
     ]);
   });
@@ -812,7 +812,7 @@ describe('config actions', () => {
     });
 
     await expect(
-      updateAgentModels({ prReviewTimeoutMs: 5 * 60 * 1_000 + 1 }, paths),
+      updateAgentModels({ prReviewTimeoutMs: 30 * 60 * 1_000 + 1 }, paths),
     ).resolves.toMatchObject({
       ok: false,
       changed: false,

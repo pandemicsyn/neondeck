@@ -35,7 +35,7 @@ import type {
   ReviewPopoutTarget,
 } from './features/pr-review/PrReviewPopoutPage';
 import { NotificationController } from './features/notifications/controller';
-import { WorkflowRunInspectorPage } from './features/workflows/WorkflowRunInspectorPage';
+import { ActivitySubmissionPage } from './features/activity/ActivitySubmissionPage';
 import type {
   DashboardConfig,
   DashboardDensity,
@@ -70,9 +70,9 @@ if (typeof window !== 'undefined' && window.location.pathname === '/review') {
 export function App() {
   const queryClient = useQueryClient();
   const reviewRoute = useMemo(readReviewPopoutRoute, []);
-  const workflowRunRoute = useMemo(readWorkflowRunRoute, []);
+  const activityRoute = useMemo(readActivityRoute, []);
   const isDashboardRoute =
-    reviewRoute.kind === 'none' && workflowRunRoute.kind === 'none';
+    reviewRoute.kind === 'none' && activityRoute.kind === 'none';
   const {
     data: config,
     error,
@@ -200,28 +200,28 @@ export function App() {
     );
   }
 
-  if (workflowRunRoute.kind === 'target') {
+  if (activityRoute.kind === 'target') {
     const style = {
       '--deck-text-scale': reviewAppearance.textScale.toString(),
     } as CSSProperties;
     return (
       <main
         className={`dashboard-grid deck-density-${reviewAppearance.density} h-screen overflow-hidden bg-bg text-ink`}
-        data-deck-arrangement="workflow-run"
-        data-deck-profile="workflow-run"
-        data-display-preset="workflow-run"
+        data-deck-arrangement="activity"
+        data-deck-profile="activity"
+        data-display-preset="activity"
         style={style}
       >
-        <WorkflowRunInspectorPage runId={workflowRunRoute.runId} />
+        <ActivitySubmissionPage submissionId={activityRoute.submissionId} />
       </main>
     );
   }
 
-  if (workflowRunRoute.kind === 'invalid') {
+  if (activityRoute.kind === 'invalid') {
     return (
       <BootState
-        detail={workflowRunRoute.message}
-        title="Invalid workflow run route"
+        detail={activityRoute.message}
+        title="Invalid activity route"
         tone="alert"
       />
     );
@@ -754,10 +754,10 @@ type ReviewPopoutRoute =
   | { kind: 'invalid'; message: string }
   | { kind: 'target'; target: ReviewPopoutTarget };
 
-type WorkflowRunRoute =
+type ActivityRoute =
   | { kind: 'none' }
   | { kind: 'invalid'; message: string }
-  | { kind: 'target'; runId: string };
+  | { kind: 'target'; submissionId: string };
 
 function ReviewPopoutLoadingPage({
   appearance,
@@ -836,19 +836,21 @@ function readReviewPopoutRoute(): ReviewPopoutRoute {
   };
 }
 
-function readWorkflowRunRoute(
+function readActivityRoute(
   location: Pick<Location, 'pathname' | 'search'> = window.location,
-): WorkflowRunRoute {
-  if (location.pathname !== '/workflow-run') return { kind: 'none' };
-  const runId = new URLSearchParams(location.search).get('runId')?.trim();
-  if (!runId) {
+): ActivityRoute {
+  if (location.pathname !== '/activity') return { kind: 'none' };
+  const submissionId = new URLSearchParams(location.search)
+    .get('submissionId')
+    ?.trim();
+  if (!submissionId) {
     return {
       kind: 'invalid',
       message:
-        'A workflow run id is required, for example /workflow-run?runId=run_123.',
+        'A submission id is required, for example /activity?submissionId=sub_123.',
     };
   }
-  return { kind: 'target', runId };
+  return { kind: 'target', submissionId };
 }
 
 function resolveAppearance(config: DashboardConfig): {

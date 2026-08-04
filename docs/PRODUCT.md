@@ -51,7 +51,7 @@ sandbox.
 
 The optional `exe.dev` integration is work in progress. It can mediate explicit
 commands on a configured remote VM, but it does not host Neondeck's main
-runtime, scheduled work, PR watches, human review workflow, or Autopilot owner.
+runtime, scheduled work, PR watches, human review agent, or Autopilot owner.
 The product and website must not imply that enabling it moves all agent work to
 an isolated remote environment.
 

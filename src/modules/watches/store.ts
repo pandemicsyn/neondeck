@@ -8,11 +8,11 @@ import {
   type AutomationExecutionResult,
   type NotificationRecord,
 } from '../app-state';
-import { upsertScheduledTask } from '../scheduled-tasks';
 import type {
   DesiredTerminalState,
   PrWatch,
   PrWatchInitialWatermark,
+  PrWatchRemovalFence,
   PrWatchStateFence,
   PrWatchSnapshot,
   PrWatchStatus,
@@ -90,6 +90,7 @@ export function updateWatch(
   expectedWatchState: PrWatchStateFence,
   initialWatermarks?: PrWatchInitialWatermark[],
   resetEventWatermarks = false,
+  pollingRepairMarker = false,
 ) {
   const database = openDb(paths.neondeckDatabase);
   try {
@@ -129,7 +130,9 @@ export function updateWatch(
           AND updated_at = ?
           AND process_existing = ?
           AND initial_event_processed_at IS ?
-          AND event_watermark_version = ?;
+          AND event_watermark_version = ?
+          AND autopilot_mode = ?
+          AND autopilot_status = ?;
       `,
         )
         .run(
@@ -161,6 +164,8 @@ export function updateWatch(
           expectedWatchState.processExisting ? 1 : 0,
           expectedWatchState.initialEventProcessedAt,
           expectedWatchState.eventWatermarkVersion,
+          expectedWatchState.autopilotMode,
+          expectedWatchState.autopilotStatus,
         ).changes;
       if (updated !== 1) {
         rollbackQuietly(database);
@@ -178,6 +183,18 @@ export function updateWatch(
           initialWatermarks,
           watch.initialEventProcessedAt ?? watch.updatedAt,
         );
+      }
+      if (pollingRepairMarker) {
+        const now = new Date().toISOString();
+        database
+          .prepare(
+            `INSERT INTO app_metadata (key, value, updated_at)
+             VALUES (?, ?, ?)
+             ON CONFLICT(key) DO UPDATE SET
+               value = excluded.value,
+               updated_at = excluded.updated_at;`,
+          )
+          .run(watchPollingRepairKey(watch.id), watch.updatedAt, now);
       }
       database.exec('COMMIT;');
       return true;
@@ -303,30 +320,247 @@ export function updateRefWatch(paths: RuntimePaths, watch: RefWatch) {
   }
 }
 
-export function upsertWatchPollingTask(
+export async function upsertWatchPollingTask(
   watch: PrWatch,
   paths: RuntimePaths,
   intervalSeconds = 300,
 ) {
-  return upsertScheduledTask(
-    {
-      id: watchPollingTaskId(watch.id),
-      spec: {
-        kind: 'poll-pr-watch',
-        watchId: watch.id,
-      },
-      trigger: {
-        kind: 'interval',
-        everySeconds: intervalSeconds,
-      },
-      enabled: true,
-    },
-    paths,
-  );
+  const database = openDb(paths.neondeckDatabase);
+  try {
+    database.exec('BEGIN IMMEDIATE;');
+    const matchedWatch = database
+      .prepare(
+        `SELECT autopilot_status
+         FROM pr_watches
+         WHERE id = ?
+           AND updated_at = ?
+           AND process_existing = ?
+           AND initial_event_processed_at IS ?
+           AND event_watermark_version = ?
+           AND autopilot_mode = ?
+           AND autopilot_status = ?;`,
+      )
+      .get(
+        watch.id,
+        watch.updatedAt,
+        watch.processExisting ? 1 : 0,
+        watch.initialEventProcessedAt,
+        watch.eventWatermarkVersion,
+        watch.autopilotMode,
+        watch.autopilotStatus,
+      ) as { autopilot_status?: string } | undefined;
+    if (
+      !matchedWatch ||
+      matchedWatch.autopilot_status === 'stopping' ||
+      matchedWatch.autopilot_status === 'complete'
+    ) {
+      rollbackQuietly(database);
+      return { matched: false, enabled: false };
+    }
+
+    const taskId = watchPollingTaskId(watch.id);
+    const current = database
+      .prepare(
+        `SELECT enabled, trigger_json, next_run_at, claim_id,
+                claim_expires_at, last_run_at, created_at
+         FROM scheduled_tasks
+         WHERE id = ?;`,
+      )
+      .get(taskId) as
+      | {
+          enabled: number;
+          trigger_json: string;
+          next_run_at: string | null;
+          claim_id: string | null;
+          claim_expires_at: string | null;
+          last_run_at: string | null;
+          created_at: string;
+        }
+      | undefined;
+    const repairPending = Boolean(
+      database
+        .prepare('SELECT 1 FROM app_metadata WHERE key = ?;')
+        .get(watchPollingRepairKey(watch.id)),
+    );
+    const now = new Date();
+    const nowIso = now.toISOString();
+    const trigger = { kind: 'interval', everySeconds: intervalSeconds };
+    let sameTrigger = false;
+    if (current) {
+      try {
+        const parsed = JSON.parse(current.trigger_json) as {
+          kind?: string;
+          everySeconds?: number;
+        };
+        sameTrigger =
+          parsed.kind === trigger.kind &&
+          parsed.everySeconds === trigger.everySeconds;
+      } catch {
+        sameTrigger = false;
+      }
+    }
+    const enabled = current ? repairPending || current.enabled === 1 : true;
+    const shouldAdvanceNextRun =
+      !current ||
+      !sameTrigger ||
+      (enabled &&
+        current.enabled !== 1 &&
+        (!current.next_run_at ||
+          Date.parse(current.next_run_at) <= now.getTime()));
+    const nextRunAt = shouldAdvanceNextRun
+      ? new Date(now.getTime() + intervalSeconds * 1_000).toISOString()
+      : current.next_run_at;
+    database
+      .prepare(
+        `INSERT INTO scheduled_tasks (
+           id, kind, trigger_json, payload_json, enabled, next_run_at,
+           claim_id, claim_expires_at, last_run_at, created_at, updated_at
+         )
+         VALUES (?, 'poll-pr-watch', ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT(id) DO UPDATE SET
+           kind = excluded.kind,
+           trigger_json = excluded.trigger_json,
+           payload_json = excluded.payload_json,
+           enabled = excluded.enabled,
+           next_run_at = excluded.next_run_at,
+           updated_at = excluded.updated_at;`,
+      )
+      .run(
+        taskId,
+        JSON.stringify(trigger),
+        JSON.stringify({ kind: 'poll-pr-watch', watchId: watch.id }),
+        enabled ? 1 : 0,
+        nextRunAt,
+        current?.claim_id ?? null,
+        current?.claim_expires_at ?? null,
+        current?.last_run_at ?? null,
+        current?.created_at ?? nowIso,
+        nowIso,
+      );
+    database
+      .prepare('DELETE FROM app_metadata WHERE key = ?;')
+      .run(watchPollingRepairKey(watch.id));
+    database.exec('COMMIT;');
+    return { matched: true, enabled };
+  } catch (error) {
+    rollbackQuietly(database);
+    throw error;
+  } finally {
+    database.close();
+  }
 }
 
 export function watchPollingTaskId(id: string) {
   return `watch:${id}`;
+}
+
+export function watchPollingRepairKey(id: string) {
+  return `watch-polling-repair:${id}`;
+}
+
+export function watchPollingRepairNeeded(paths: RuntimePaths, id: string) {
+  const database = openDb(paths.neondeckDatabase, { readOnly: true });
+  try {
+    return Boolean(
+      database
+        .prepare('SELECT 1 FROM app_metadata WHERE key = ?;')
+        .get(watchPollingRepairKey(id)),
+    );
+  } finally {
+    database.close();
+  }
+}
+
+export function clearWatchPollingRepair(paths: RuntimePaths, id: string) {
+  const database = openDb(paths.neondeckDatabase);
+  try {
+    database
+      .prepare('DELETE FROM app_metadata WHERE key = ?;')
+      .run(watchPollingRepairKey(id));
+  } finally {
+    database.close();
+  }
+}
+
+export function beginWatchAutopilotCompletion(
+  paths: RuntimePaths,
+  id: string,
+  expected: PrWatchStateFence,
+) {
+  const database = openDb(paths.neondeckDatabase);
+  try {
+    database.exec('BEGIN IMMEDIATE;');
+    const row = database
+      .prepare('SELECT * FROM pr_watches WHERE id = ?;')
+      .get(id);
+    if (!row) {
+      rollbackQuietly(database);
+      return undefined;
+    }
+    const current = readWatchRow(row);
+    const alreadyStopping = current.autopilotStatus === 'stopping';
+    if (
+      (!alreadyStopping &&
+        (current.updatedAt !== expected.updatedAt ||
+          current.processExisting !== expected.processExisting ||
+          current.initialEventProcessedAt !==
+            expected.initialEventProcessedAt ||
+          current.eventWatermarkVersion !== expected.eventWatermarkVersion ||
+          current.autopilotMode !== expected.autopilotMode ||
+          current.autopilotStatus !== expected.autopilotStatus)) ||
+      !['watching', 'waiting', 'blocked', 'complete', 'stopping'].includes(
+        current.autopilotStatus,
+      )
+    ) {
+      rollbackQuietly(database);
+      return undefined;
+    }
+
+    const now = new Date().toISOString();
+    database
+      .prepare(
+        `UPDATE scheduled_tasks
+         SET enabled = 0, updated_at = ?
+         WHERE id = ?;`,
+      )
+      .run(now, watchPollingTaskId(id));
+    const pollingTask = database
+      .prepare('SELECT enabled FROM scheduled_tasks WHERE id = ?;')
+      .get(watchPollingTaskId(id)) as { enabled?: number } | undefined;
+    if (pollingTask?.enabled === 1) {
+      throw new Error('The persisted polling task remained enabled.');
+    }
+
+    if (!alreadyStopping) {
+      const changed = database
+        .prepare(
+          `UPDATE pr_watches
+           SET autopilot_status = 'stopping', updated_at = ?
+           WHERE id = ?
+             AND updated_at = ?
+             AND autopilot_mode = ?
+             AND autopilot_status = ?;`,
+        )
+        .run(
+          now,
+          id,
+          current.updatedAt,
+          current.autopilotMode,
+          current.autopilotStatus,
+        ).changes;
+      if (changed !== 1) {
+        rollbackQuietly(database);
+        return undefined;
+      }
+    }
+    database.exec('COMMIT;');
+    return readWatch(paths, id);
+  } catch (error) {
+    rollbackQuietly(database);
+    throw error;
+  } finally {
+    database.close();
+  }
 }
 
 export function readWatches(paths: RuntimePaths): PrWatch[] {
@@ -385,23 +619,62 @@ export function configureWatchAutopilot(
   paths: RuntimePaths,
   id: string,
   mode: PrWatch['autopilotMode'],
+  options: {
+    expected?: Pick<PrWatch, 'autopilotMode' | 'autopilotStatus' | 'updatedAt'>;
+  } = {},
 ) {
   const database = openDb(paths.neondeckDatabase);
   try {
     const now = new Date().toISOString();
-    const changed = database
-      .prepare(
-        `UPDATE pr_watches
-         SET autopilot_mode = ?,
-             autopilot_status = CASE
-               WHEN autopilot_status = 'complete' THEN 'watching'
-               ELSE autopilot_status
-             END,
-             updated_at = ?
-         WHERE id = ? AND autopilot_mode <> ?;`,
-      )
-      .run(mode, now, id, mode).changes;
-    return { changed: changed === 1, watch: readWatch(paths, id) };
+    const expected = options.expected;
+    const statement = expected
+      ? database.prepare(
+          `UPDATE pr_watches
+           SET autopilot_mode = ?,
+               autopilot_status = CASE
+                 WHEN autopilot_status = 'complete' THEN 'watching'
+                 ELSE autopilot_status
+               END,
+               updated_at = CASE
+                 WHEN autopilot_mode <> ? OR autopilot_status = 'complete' THEN ?
+                 ELSE updated_at
+               END
+           WHERE id = ?
+             AND updated_at = ?
+             AND autopilot_mode = ?
+             AND autopilot_status = ?;`,
+        )
+      : database.prepare(
+          `UPDATE pr_watches
+           SET autopilot_mode = ?,
+               autopilot_status = CASE
+                 WHEN autopilot_status = 'complete' THEN 'watching'
+                 ELSE autopilot_status
+               END,
+               updated_at = ?
+           WHERE id = ? AND autopilot_mode <> ?;`,
+        );
+    const matched = expected
+      ? statement.run(
+          mode,
+          mode,
+          now,
+          id,
+          expected.updatedAt,
+          expected.autopilotMode,
+          expected.autopilotStatus,
+        ).changes === 1
+      : statement.run(mode, now, id, mode).changes === 1;
+    return {
+      matched: expected ? matched : true,
+      changed:
+        matched &&
+        (expected
+          ? expected.autopilotMode !== mode ||
+            expected.autopilotStatus === 'complete'
+          : true),
+      watch: readWatch(paths, id),
+    };
   } finally {
     database.close();
   }
@@ -564,16 +837,54 @@ export function readRefWatch(paths: RuntimePaths, id: string) {
   }
 }
 
-export function deleteWatch(paths: RuntimePaths, id: string) {
+export function deleteWatch(
+  paths: RuntimePaths,
+  id: string,
+  expected: PrWatchRemovalFence,
+) {
   const database = openDb(paths.neondeckDatabase);
   try {
     database.exec('BEGIN IMMEDIATE;');
     try {
+      const deleted = database
+        .prepare(
+          `DELETE FROM pr_watches
+           WHERE id = ?
+             AND updated_at = ?
+             AND autopilot_mode = ?
+             AND autopilot_status = ?
+             AND owner_instance_id IS ?
+             AND worktree_id IS ?
+             AND last_event_fingerprint IS ?;`,
+        )
+        .run(
+          id,
+          expected.updatedAt,
+          expected.autopilotMode,
+          expected.autopilotStatus,
+          expected.ownerInstanceId,
+          expected.worktreeId,
+          expected.lastEventFingerprint,
+        ).changes;
+      if (deleted !== 1) {
+        rollbackQuietly(database);
+        return false;
+      }
+      const pollingTaskId = watchPollingTaskId(id);
+      database
+        .prepare('DELETE FROM scheduled_task_runs WHERE task_id = ?;')
+        .run(pollingTaskId);
+      database
+        .prepare('DELETE FROM scheduled_tasks WHERE id = ?;')
+        .run(pollingTaskId);
       database
         .prepare('DELETE FROM pr_watch_event_watermarks WHERE watch_id = ?;')
         .run(id);
-      database.prepare('DELETE FROM pr_watches WHERE id = ?;').run(id);
+      database
+        .prepare('DELETE FROM app_metadata WHERE key = ?;')
+        .run(watchPollingRepairKey(id));
       database.exec('COMMIT;');
+      return true;
     } catch (error) {
       rollbackQuietly(database);
       throw error;

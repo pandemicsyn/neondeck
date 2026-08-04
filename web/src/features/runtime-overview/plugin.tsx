@@ -13,7 +13,7 @@ import {
   getRuntimeStatus,
   getSafetyPolicy,
   getScheduledTasks,
-  getWorkflowObservability,
+  getActivityObservability,
   getWorktrees,
 } from '../../api';
 import { EmptyState } from '../../components/ui';
@@ -52,7 +52,7 @@ export const RuntimeOverviewPlugin = {
       mcpServersQuery,
       mcpApprovalsQuery,
       safetyQuery,
-      workflowsQuery,
+      activityQuery,
       kiloTasksQuery,
       repoEditEventsQuery,
       worktreesQuery,
@@ -116,8 +116,8 @@ export const RuntimeOverviewPlugin = {
           refetchInterval: 30_000,
         },
         {
-          queryKey: queryKeys.workflowObservability,
-          queryFn: getWorkflowObservability,
+          queryKey: queryKeys.activityObservability,
+          queryFn: getActivityObservability,
           refetchInterval: 30_000,
         },
         {
@@ -180,7 +180,7 @@ export const RuntimeOverviewPlugin = {
       mcpServers: mcpServersQuery,
       mcpApprovals: mcpApprovalsQuery,
       safety: safetyQuery,
-      workflows: workflowsQuery,
+      activity: activityQuery,
       kiloTasks: kiloTasksQuery,
       repoEditEvents: repoEditEventsQuery,
       worktrees: worktreesQuery,

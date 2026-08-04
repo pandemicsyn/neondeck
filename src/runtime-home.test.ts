@@ -475,7 +475,7 @@ describe('runtime home', () => {
       prReview: 'openai/gpt-5-mini',
       prReviewConfigured: false,
       prReviewThinkingLevel: 'medium',
-      prReviewTimeoutMs: 300_000,
+      prReviewTimeoutMs: 30 * 60 * 1_000,
       utility: 'openai/gpt-5-mini',
       utilityConfigured: false,
       utilityThinkingLevel: 'low',
@@ -485,7 +485,7 @@ describe('runtime home', () => {
     });
   });
 
-  it('clamps legacy PR review timeouts to the five-minute ceiling', async () => {
+  it('accepts the thirty-minute PR review ceiling', async () => {
     const root = await mkdtemp(join(tmpdir(), 'neondeck-home-'));
     tempRoots.push(root);
     const paths = runtimePaths(root);
@@ -501,7 +501,9 @@ describe('runtime home', () => {
       }),
     );
 
-    expect(readAgentModelSelectionSync(paths).prReviewTimeoutMs).toBe(300_000);
+    expect(readAgentModelSelectionSync(paths).prReviewTimeoutMs).toBe(
+      30 * 60 * 1_000,
+    );
   });
 
   it('falls back self-improvement model through utility and env settings', () => {

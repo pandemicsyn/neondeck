@@ -31,10 +31,11 @@ export async function configurePrAutopilot(input: {
 export async function controlPrAutopilot(
   id: string,
   operation: 'pause' | 'resume' | 'retry' | 'stop',
+  options: { confirmPreparedDiff?: boolean } = {},
 ) {
   return postJson<PrWatchMutationResponse>(
     `/api/watches/${encodeURIComponent(id)}/autopilot/control`,
-    { operation },
+    { operation, ...options },
   );
 }
 

@@ -60,6 +60,25 @@ export const briefingSnapshotSchema = v.object({
   ),
 });
 
+export const briefingClientDataSchema = v.object({
+  briefingRunId: nonEmptyStringSchema,
+  profileId: v.nullable(nonEmptyStringSchema),
+  status: v.literal('grounded'),
+  snapshotVersion: v.literal(1),
+  collectedAt: nonEmptyStringSchema,
+  truncated: v.boolean(),
+  sourceHealth: v.array(
+    v.object({
+      name: nonEmptyStringSchema,
+      status: v.picklist(['ok', 'partial', 'unavailable']),
+      truncated: v.boolean(),
+      error: v.optional(v.string()),
+    }),
+  ),
+  topActions: v.array(nonEmptyStringSchema),
+  failures: v.array(nonEmptyStringSchema),
+});
+
 export type BriefingSourceStatus = {
   status: 'ok' | 'partial' | 'unavailable';
   fetchedAt: string;
@@ -79,6 +98,8 @@ export type BriefingSnapshot = {
   sources: Record<string, BriefingSnapshotSource>;
 };
 
+export type BriefingClientData = v.InferOutput<typeof briefingClientDataSchema>;
+
 export type BriefingProfile = {
   id: string;
   name: string;
@@ -95,6 +116,26 @@ export type BriefingProfile = {
 
 export type BriefingRunStatus = 'queued' | 'ready' | 'failed';
 
+export type BriefingDisplayContextBinding = {
+  snapshotId: string;
+  capturedAt: string;
+  baselineSnapshotId: string | null;
+  baselineLoadedAt: string;
+  sessionContextFence: string;
+  configHistoryId: number;
+  memoryEventSequence: number;
+  refreshRequired: boolean;
+  model: string;
+  thinkingLevel: string;
+  memoryIds: string[];
+  linkedContext: {
+    repoId: string | null;
+    watchId: string | null;
+    taskId: string | null;
+  };
+  agentContext: JsonValue;
+};
+
 export type BriefingRun = {
   id: string;
   profileId: string | null;
@@ -106,6 +147,8 @@ export type BriefingRun = {
   commandEventId: string | null;
   dispatchId: string | null;
   workflowRunId: string | null;
+  contextSnapshotId: string | null;
+  contextBinding: BriefingDisplayContextBinding | null;
   status: BriefingRunStatus;
   error: string | null;
   queuedAt: string;

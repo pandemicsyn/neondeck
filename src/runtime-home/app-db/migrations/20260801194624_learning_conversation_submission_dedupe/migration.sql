@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX `idx_learning_conversation_turn_source` ON `learning_events` (`source_id`) WHERE "learning_events"."type" = 'conversation_turn_settled' AND "learning_events"."source_id" IS NOT NULL;

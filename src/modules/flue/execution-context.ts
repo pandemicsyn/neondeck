@@ -6,7 +6,7 @@ import {
 } from '@flue/runtime';
 
 const contextStorage = new AsyncLocalStorage<FlueExecutionContext>();
-const taskDelegationStorage = new AsyncLocalStorage<'blocked'>();
+const boundedReviewPromptStorage = new AsyncLocalStorage<'blocked'>();
 const instrumentationKey = Symbol.for('neondeck.flue.execution-context');
 let installed = false;
 
@@ -16,15 +16,17 @@ export async function neondeckFlueExecutionInterceptor<T>(
   next: () => Promise<T>,
 ) {
   if (
-    taskDelegationStorage.getStore() === 'blocked' &&
+    boundedReviewPromptStorage.getStore() === 'blocked' &&
     ((operation.type === 'tool' && operation.toolName === 'task') ||
-      operation.type === 'task')
+      operation.type === 'task' ||
+      (operation.type === 'tool' &&
+        operation.toolName === 'neondeck_pr_review_for_human'))
   ) {
     throw new Error(
-      'Task delegation is disabled for this bounded PR review. Inspect the supplied workspace directly and finish the structured review in the current session.',
+      'Task delegation and recursive PR review orchestration are disabled inside the bounded review prompt. Inspect the supplied workspace directly and finish the structured review in the current session.',
     );
   }
-  return contextStorage.run(context, next);
+  return contextStorage.run({ ...contextStorage.getStore(), ...context }, next);
 }
 
 export function installFlueExecutionContextTracker() {
@@ -47,7 +49,7 @@ export function currentFlueExecutionContext() {
 }
 
 export function runWithFlueTaskDelegationBlocked<T>(callback: () => T) {
-  return taskDelegationStorage.run('blocked', callback);
+  return boundedReviewPromptStorage.run('blocked', callback);
 }
 
 export function runWithFlueExecutionContextForTests<T>(

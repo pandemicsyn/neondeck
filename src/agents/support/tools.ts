@@ -97,21 +97,21 @@ const toolOutputSchema = v.looseObject({
 export const commandsLookupTool = defineTool({
   name: 'neondeck_commands_lookup',
   description:
-    'List supported Neon slash commands without starting a workflow.',
+    'List supported Neon slash commands without starting an operation.',
   input: emptyInputSchema,
   output: v.looseObject({
     ok: v.boolean(),
     commands: v.array(v.unknown()),
   }),
   async run() {
-    return { ok: true, commands: supportedCommands() };
+    return { output: { ok: true, commands: supportedCommands() } };
   },
 });
 
 export const workflowSummariesLookupTool = defineTool({
   name: 'neondeck_workflow_summaries_lookup',
   description:
-    'List recently persisted Neondeck workflow and command summaries for follow-up context.',
+    'List recently persisted Neondeck operation and command summaries for follow-up context. The tool name reflects the legacy storage table.',
   input: emptyInputSchema,
   output: v.looseObject({
     ok: v.boolean(),
@@ -119,8 +119,10 @@ export const workflowSummariesLookupTool = defineTool({
   }),
   async run() {
     return {
-      ok: true,
-      summaries: await listWorkflowSummaries(),
+      output: {
+        ok: true,
+        summaries: await listWorkflowSummaries(),
+      },
     };
   },
 });
@@ -132,7 +134,7 @@ export const runtimeStatusLookupTool = defineTool({
   input: emptyInputSchema,
   output: runtimeStatusSchema,
   async run() {
-    return readRuntimeStatus();
+    return { output: await readRuntimeStatus() };
   },
 });
 
@@ -143,7 +145,7 @@ export const sessionStatusLookupTool = defineTool({
   input: emptyInputSchema,
   output: toolOutputSchema,
   async run() {
-    return readNeonSessionState();
+    return { output: await readNeonSessionState() };
   },
 });
 
@@ -153,8 +155,8 @@ export const sessionListLookupTool = defineTool({
     'List Neondeck chat session metadata without reading Flue transcripts.',
   input: sessionListInputSchema,
   output: toolOutputSchema,
-  async run({ input }) {
-    return listChatSessions(input);
+  async run({ data: input }) {
+    return { output: await listChatSessions(input) };
   },
 });
 
@@ -164,8 +166,8 @@ export const sessionSearchLookupTool = defineTool({
     'Search chat session titles, summaries, and linked context metadata without reading raw transcripts.',
   input: sessionSearchInputSchema,
   output: toolOutputSchema,
-  async run({ input }) {
-    return searchChatSessions(input);
+  async run({ data: input }) {
+    return { output: await searchChatSessions(input) };
   },
 });
 
@@ -175,8 +177,8 @@ export const sessionReadLookupTool = defineTool({
     'Read one chat session metadata record and audit the read without copying transcript history.',
   input: sessionReadInputSchema,
   output: toolOutputSchema,
-  async run({ input }) {
-    return readChatSession(input);
+  async run({ data: input }) {
+    return { output: await readChatSession(input) };
   },
 });
 
@@ -186,8 +188,8 @@ export const sessionMessagesLookupTool = defineTool({
     'Audit a request for Flue-owned chat session messages. Neondeck returns metadata only unless a Flue transcript reader is available.',
   input: sessionMessagesInputSchema,
   output: toolOutputSchema,
-  async run({ input }) {
-    return readChatSessionMessages(input);
+  async run({ data: input }) {
+    return { output: await readChatSessionMessages(input) };
   },
 });
 
@@ -198,7 +200,7 @@ export const repoStatusLookupTool = defineTool({
   input: emptyInputSchema,
   output: toolOutputSchema,
   async run() {
-    return listRepoStatus();
+    return { output: await listRepoStatus() };
   },
 });
 
@@ -209,7 +211,7 @@ export const githubPrQueueLookupTool = defineTool({
   input: emptyInputSchema,
   output: toolOutputSchema,
   async run() {
-    return listGitHubPrQueue();
+    return { output: await listGitHubPrQueue() };
   },
 });
 
@@ -219,8 +221,8 @@ export const githubCheckSummaryLookupTool = defineTool({
     'Fetch GitHub check-run summary for a configured repository ref or default branch.',
   input: checkSummaryInputSchema,
   output: toolOutputSchema,
-  async run({ input }) {
-    return getGitHubCheckSummary(input);
+  async run({ data: input }) {
+    return { output: await getGitHubCheckSummary(input) };
   },
 });
 
@@ -230,8 +232,8 @@ export const githubIssuesLookupTool = defineTool({
     'Fetch open GitHub issues for a configured repository without mutating GitHub.',
   input: githubIssuesInputSchema,
   output: toolOutputSchema,
-  async run({ input }) {
-    return listGitHubIssues(input);
+  async run({ data: input }) {
+    return { output: await listGitHubIssues(input) };
   },
 });
 
@@ -241,7 +243,7 @@ export const scheduledTasksLookupTool = defineTool({
   input: emptyInputSchema,
   output: toolOutputSchema,
   async run() {
-    return listTaskRecords();
+    return { output: await listTaskRecords() };
   },
 });
 
@@ -251,7 +253,7 @@ export const prWatchesLookupTool = defineTool({
   input: emptyInputSchema,
   output: toolOutputSchema,
   async run() {
-    return listPrWatches();
+    return { output: await listPrWatches() };
   },
 });
 
@@ -261,7 +263,7 @@ export const refWatchesLookupTool = defineTool({
   input: emptyInputSchema,
   output: toolOutputSchema,
   async run() {
-    return listRefWatches();
+    return { output: await listRefWatches() };
   },
 });
 
@@ -274,7 +276,7 @@ export const runtimeSkillsLookupTool = defineTool({
     skills: v.array(v.unknown()),
   }),
   async run() {
-    return listRuntimeSkills();
+    return { output: await listRuntimeSkills() };
   },
 });
 
@@ -286,8 +288,8 @@ export const runtimeSkillLoadTool = defineTool({
   output: v.looseObject({
     ok: v.boolean(),
   }),
-  async run({ input }) {
-    return loadRuntimeSkill(input);
+  async run({ data: input }) {
+    return { output: await loadRuntimeSkill(input) };
   },
 });
 
@@ -300,8 +302,8 @@ export const memoryLookupTool = defineTool({
     ok: v.boolean(),
     memories: v.array(v.unknown()),
   }),
-  async run({ input }) {
-    return listMemories(input);
+  async run({ data: input }) {
+    return { output: await listMemories(input) };
   },
 });
 

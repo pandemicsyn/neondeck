@@ -49,4 +49,34 @@ describe('renderMessagePart', () => {
       ),
     ).not.toBeNull();
   });
+
+  it('renders Flue 2 data payloads and dynamic-tool errors', () => {
+    act(() =>
+      root.render(
+        <>
+          {renderMessagePart(
+            {
+              type: 'data-briefing',
+              data: { briefingRunId: 'briefing:1', status: 'ready' },
+            },
+            'data',
+          )}
+          {renderMessagePart(
+            {
+              type: 'dynamic-tool',
+              toolName: 'read_context',
+              state: 'output-error',
+              input: { path: 'README.md' },
+              errorText: 'Workspace unavailable.',
+            },
+            'tool-error',
+          )}
+        </>,
+      ),
+    );
+
+    expect(container.textContent).toContain('briefingRunId');
+    expect(container.textContent).toContain('Workspace unavailable.');
+    expect(container.textContent).not.toContain('README.md');
+  });
 });

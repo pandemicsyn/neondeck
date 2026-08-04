@@ -1,8 +1,9 @@
 /* eslint-disable no-unused-vars */
-import { defineAction, defineTool, type JsonValue } from '@flue/runtime';
+import { defineTool, type JsonValue } from '@flue/runtime';
 import { createHmac } from 'node:crypto';
 import type { DatabaseSync } from 'node:sqlite';
 import * as v from 'valibot';
+import { prefixBotComment } from '../../../shared/bot-comments';
 import {
   addPrReviewDraftComment,
   deletePrReviewDraftComment,
@@ -11,6 +12,7 @@ import {
   fetchPullRequestFiles,
   fetchPullRequestFilesWithCache,
   fetchPullRequestReviewComments,
+  fetchPullRequestReviewSurfaceThreadsFreshWithMetadata,
   fetchPullRequestReviewSurfaceThreadsWithMetadata,
   fetchPullRequestReviewThreadsWithMetadata,
   fetchPullRequestReviewThread,
@@ -43,6 +45,8 @@ import { readRepoRegistrySnapshot, repoFullName } from '../repos';
 import {
   type RuntimePaths,
   ensureRuntimeHome,
+  parseAppConfig,
+  readRuntimeJson,
   runtimePaths,
 } from '../../runtime-home';
 import {
@@ -131,6 +135,7 @@ export async function getGitHubPrReviewThreads(
   options: {
     signal?: AbortSignal;
     surface?: boolean;
+    fresh?: boolean;
   } = {},
 ): Promise<PrEventActionResult> {
   const action = 'github_pr_review_threads_get';
@@ -154,11 +159,14 @@ export async function getGitHubPrReviewThreads(
 
   let threads: GitHubPullRequestReviewThread[];
   let truncated = false;
+  let headSha: string | null = null;
   try {
     const fetcher =
       dependencies.fetchPullRequestReviewThreads ??
       (options.surface
-        ? fetchPullRequestReviewSurfaceThreadsWithMetadata
+        ? options.fresh
+          ? fetchPullRequestReviewSurfaceThreadsFreshWithMetadata
+          : fetchPullRequestReviewSurfaceThreadsWithMetadata
         : fetchPullRequestReviewThreadsWithMetadata);
     const result = await fetcher({
       token,
@@ -168,6 +176,7 @@ export async function getGitHubPrReviewThreads(
       signal: options.signal,
     });
     threads = result.reviewThreads;
+    headSha = result.headSha ?? null;
     truncated =
       result.truncated || threads.some((thread) => thread.commentsTruncated);
   } catch (error) {
@@ -193,11 +202,13 @@ export async function getGitHubPrReviewThreads(
     `Fetched ${threads.length} review thread(s) for ${resolved.target.repoFullName}#${resolved.target.number}.`,
     options.surface
       ? {
+          headSha,
           reviewThreads: threads as unknown as JsonValue,
           reviewThreadsTruncated: truncated,
         }
       : {
           target: eventTargetJson(resolved.target),
+          headSha,
           reviewThreads: threads as unknown as JsonValue,
           reviewThreadsTruncated: truncated,
           unresolvedReviewThreads: unresolvedThreads as unknown as JsonValue,
@@ -1538,7 +1549,7 @@ export async function postGitHubPrComment(
     }
 
     const idempotencyMarker = parsed.output.idempotencyKey
-      ? `<!-- neondeck:idempotency:${createHmac('sha256', token).update(parsed.output.idempotencyKey).digest('hex')} -->`
+      ? await prCommentIdempotencyMarker(parsed.output.idempotencyKey, paths)
       : undefined;
     if (idempotencyMarker) {
       const comments = await (
@@ -1553,7 +1564,7 @@ export async function postGitHubPrComment(
         comment.body.includes(idempotencyMarker),
       );
       if (existing) {
-        const authorizationFailure = dependencies.authorizeComment?.();
+        const authorizationFailure = await dependencies.authorizeComment?.();
         if (authorizationFailure) return authorizationFailure;
         recordNeondeckPrDelivery(
           {
@@ -1595,7 +1606,7 @@ export async function postGitHubPrComment(
 
     const poster =
       dependencies.postPullRequestComment ?? postPullRequestComment;
-    const body = `${parsed.output.body}\n\n${idempotencyMarker ?? neondeckSelfAuthoredMarker}`;
+    const body = `${prefixBotComment(parsed.output.body)}\n\n${idempotencyMarker ?? neondeckSelfAuthoredMarker}`;
     if (body.length > githubCommentLengthLimit) {
       return failResult(
         'pr_comment',
@@ -1603,7 +1614,7 @@ export async function postGitHubPrComment(
         { requires: ['shorterComment'] },
       );
     }
-    const authorizationFailure = dependencies.authorizeComment?.();
+    const authorizationFailure = await dependencies.authorizeComment?.();
     if (authorizationFailure) return authorizationFailure;
     const comment = await poster({
       token,
@@ -1652,6 +1663,24 @@ export async function postGitHubPrComment(
       errors: [errorMessage(error)],
     });
   }
+}
+
+async function prCommentIdempotencyMarker(
+  idempotencyKey: string,
+  paths: RuntimePaths,
+) {
+  const config = await readRuntimeJson(paths.config, parseAppConfig);
+  const applicationSecret = config.localApi?.token;
+  if (!applicationSecret) {
+    throw new Error(
+      'Neondeck local API credentials are unavailable for stable PR comment idempotency.',
+    );
+  }
+  const digest = createHmac('sha256', applicationSecret)
+    .update('github-pr-comment\0')
+    .update(idempotencyKey)
+    .digest('hex');
+  return `<!-- neondeck:idempotency:${digest} -->`;
 }
 
 const neondeckSelfAuthoredMarker = '<!-- neondeck:generated -->';

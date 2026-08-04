@@ -67,6 +67,17 @@ export async function readLocalPullRequestFiles(
   return readResolvedPullRequestFiles(input, { repo, ...refs });
 }
 
+export async function ensureLocalPullRequestRevisions(
+  input: LocalPullRequestDiffInput,
+  paths: RuntimePaths = runtimePaths(),
+  signal?: AbortSignal,
+) {
+  signal?.throwIfAborted();
+  const repo = await resolveRegisteredRepo(input, paths);
+  signal?.throwIfAborted();
+  return resolveLocalPullRequestRefs(repo, input, signal);
+}
+
 export async function readLocalPullRequestFileDiff(
   input: LocalPullRequestDiffInput & { path: string },
   paths: RuntimePaths = runtimePaths(),
@@ -207,6 +218,7 @@ async function resolveRegisteredRepo(
 async function resolveLocalPullRequestRefs(
   repo: RepoConfig,
   input: LocalPullRequestDiffInput,
+  signal?: AbortSignal,
 ) {
   const head = normalizeSha(input.headSha, 'head SHA');
   const baseSha = input.baseSha
@@ -221,18 +233,27 @@ async function resolveLocalPullRequestRefs(
   }
 
   const base = baseSha ?? neondeckBaseRef(baseRef!);
-  const warmMergeBase = await mergeBase(repo.path, base, head).catch(
-    () => null,
+  const warmMergeBase = await mergeBase(repo.path, base, head, signal).catch(
+    () => {
+      signal?.throwIfAborted();
+      return null;
+    },
   );
   if (warmMergeBase) {
     return { head, mergeBase: warmMergeBase };
   }
 
-  await assertOriginMatches(repo);
-  await singleFlight(fetchKey(repo, input, head), async () => {
-    const currentMergeBase = await mergeBase(repo.path, base, head).catch(
-      () => null,
-    );
+  await assertOriginMatches(repo, signal);
+  const fetchMissingRefs = async () => {
+    const currentMergeBase = await mergeBase(
+      repo.path,
+      base,
+      head,
+      signal,
+    ).catch(() => {
+      signal?.throwIfAborted();
+      return null;
+    });
     if (currentMergeBase) {
       return;
     }
@@ -243,17 +264,20 @@ async function resolveLocalPullRequestRefs(
     if (baseRef) {
       refspecs.push(`+refs/heads/${baseRef}:${neondeckBaseRef(baseRef)}`);
     }
-    await git(repo.path, [
-      'fetch',
-      '--no-tags',
-      '--refmap=',
-      'origin',
-      ...refspecs,
-    ]);
-  });
+    await git(
+      repo.path,
+      ['fetch', '--no-tags', '--refmap=', 'origin', ...refspecs],
+      signal,
+    );
+  };
+  if (signal) await fetchMissingRefs();
+  else await singleFlight(fetchKey(repo, input, head), fetchMissingRefs);
 
-  const fetchedMergeBase = await mergeBase(repo.path, base, head).catch(
-    () => null,
+  const fetchedMergeBase = await mergeBase(repo.path, base, head, signal).catch(
+    () => {
+      signal?.throwIfAborted();
+      return null;
+    },
   );
   if (!fetchedMergeBase) {
     throw unavailable(
@@ -264,12 +288,12 @@ async function resolveLocalPullRequestRefs(
   return { head, mergeBase: fetchedMergeBase };
 }
 
-async function assertOriginMatches(repo: RepoConfig) {
-  const origin = await git(repo.path, [
-    'config',
-    '--get',
-    'remote.origin.url',
-  ]).then((output) => output.trim());
+async function assertOriginMatches(repo: RepoConfig, signal?: AbortSignal) {
+  const origin = await git(
+    repo.path,
+    ['config', '--get', 'remote.origin.url'],
+    signal,
+  ).then((output) => output.trim());
   const parsed = parseGitHubRemote(origin);
   if (!parsed) {
     throw unavailable(`Origin remote is not a GitHub repository: ${origin}`);
@@ -299,8 +323,13 @@ function parseGitHubRemote(url: string) {
   return null;
 }
 
-async function mergeBase(repoPath: string, base: string, head: string) {
-  const output = await git(repoPath, ['merge-base', base, head]);
+async function mergeBase(
+  repoPath: string,
+  base: string,
+  head: string,
+  signal?: AbortSignal,
+) {
+  const output = await git(repoPath, ['merge-base', base, head], signal);
   const value = output.trim();
   if (!value) throw unavailable('Git merge-base returned no commit.');
   return value;
@@ -396,12 +425,14 @@ async function singleFlight(key: string, fn: () => Promise<void>) {
   return promise;
 }
 
-async function git(cwd: string, args: string[]) {
+async function git(cwd: string, args: string[], signal?: AbortSignal) {
   try {
     return await runUnattendedGit(cwd, args, {
       maxBuffer: 16 * 1024 * 1024,
+      signal,
     });
   } catch (error) {
+    signal?.throwIfAborted();
     throw unavailable(errorMessage(error));
   }
 }

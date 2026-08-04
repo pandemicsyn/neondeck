@@ -45,10 +45,10 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
         </p>
         <p>
           Do not confuse <code>models.prReview</code> with the Autopilot owner. The
-          PR-review role powers the separate bounded
-          <code>review-pr-for-human</code> workflow. Utility, self-improvement, and
-          named subagent models likewise do not replace the Autopilot owner model.
-          Configure model roles in the dashboard's <strong>Runtime</strong>
+          PR-review role powers each separate, fresh bounded initial-review agent
+          submission. Utility, self-improvement, and named subagent models likewise
+          do not replace the Autopilot owner model. Configure model roles in the dashboard's
+          <strong>Runtime</strong>
           panel or through <code>neondeck_config_update_agent_models</code>.
         </p>
 
@@ -116,8 +116,10 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
           The watcher turn can prepare and commit but cannot push. When a commit
           is ready, the watch enters <code>waiting</code> and holds the worktree steady.
           The watcher turn has the same full coding workspace as every fixing mode,
-          but no delivery tools. Only a direct human message in that same owner conversation
-          adds push and PR-response authority for the approval turn.
+          but no delivery tools. The human must review the held diff and approve its
+          exact current revision through Active Watches or the typed approval API.
+          Generic messages in the owner conversation can request more work but never
+          add push or PR-response authority.
         </p>
 
         <h3><code>autofix-push-when-safe</code></h3>
@@ -163,8 +165,8 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
         <p>
           Neon can read and change the same templates through
           <code>neondeck_config_read_autopilot_prompts</code> and
-          <code>neondeck_config_update_autopilot_prompt</code>. The
-          authenticated local API mirrors those operations at
+          <code>neondeck_config_update_autopilot_prompt</code>. The local
+          access-controlled API mirrors those operations at
           <code>GET /api/autopilot/prompts</code> and
           <code>POST /api/autopilot/prompts</code>; posting
           <code>&#123;"mode": "…", "prompt": "…"&#125;</code> updates one mode, while
@@ -198,9 +200,9 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
             <code>pr-autopilot-owner</code> conversation for that PR;
           </li>
           <li>
-            in approval mode while <code>waiting</code>, send a direct
-            instruction such as “approved, push” or “approved, fix the typo,
-            then push”;
+            in approval mode while <code>waiting</code>, review the current diff
+            and choose <strong>approve &amp; push</strong> for that exact revision;
+            use the owner conversation separately when you want to request more work;
           </li>
           <li>
             <strong>pause</strong> or <strong>resume</strong> scheduler polling;
@@ -211,15 +213,18 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
           </li>
           <li>
             <strong>stop</strong> the watch through its confirmation step. An active
-            owner turn must settle before terminal cleanup can complete.
+            owner turn must settle before terminal cleanup can complete. If the managed
+            worktree holds an unpushed prepared commit, stopping requires a separate
+            explicit confirmation that the reviewed commit may be discarded.
           </li>
         </ul>
         <p>
-          Approval is the direct human message itself. The minimal watch loop
-          does not create a durable approval object, prepared-diff record,
-          reviewed-SHA state machine, or workflow-per-transition chain. GitHub
-          feedback cannot impersonate approval because watcher-generated
-          approval-mode turns never receive push capability.
+          Approval is an exact current reviewed-revision decision made through
+          Active Watches or the equivalent typed API. The revision key is bound
+          to the delivery turn without creating a separate prepared-diff record
+          or workflow-per-transition chain. Generic owner messages and GitHub
+          feedback cannot impersonate approval because they never receive push
+          capability.
         </p>
 
         <h2>Product boundaries</h2>
@@ -243,8 +248,9 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
             supplied to the owner. Prompt text alone never grants capability.
           </li>
           <li>
-            Approval-mode watcher turns cannot push. Only a direct human turn
-            while that owner is waiting can receive the approval-mode push tool.
+            Approval-mode watcher turns cannot push. Only the exact-revision
+            approval turn created by Active Watches or the typed approval API
+            can receive the approval-mode push tool.
           </li>
           <li>
             Autonomous delivery always uses a non-force push bound to the
@@ -348,15 +354,17 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
           engine.
         </p>
 
-        <h2>Restart and crash limitation</h2>
+        <h2>Restart and crash recovery</h2>
         <p>
-          On startup, any watch left in <code>working</code> becomes
-          <code>blocked</code>. Its owner id and worktree id are retained, and
-          the notification asks you to inspect both before an explicit retry.
-          This also covers the ambiguous case where a push may have succeeded
-          just before the process crashed but Neondeck did not record
-          settlement. Neondeck never infers that external outcome or
-          speculatively repeats the push or PR response.
+          On startup, Neondeck first reattaches a recoverable canonical pending
+          Flue submission. If the exact intended commit or stable response
+          marker already reached GitHub, narrow reconciliation records that
+          effect without repeating it. An orphaned or otherwise uncertain watch
+          left in
+          <code>working</code> becomes <code>blocked</code>; its owner and
+          worktree remain available for inspection before explicit retry.
+          Neondeck never guesses from an ambiguous remote state or speculatively
+          repeats a push or PR response.
         </p>
 
         <h2>Completion and cleanup</h2>
@@ -367,7 +375,8 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
           polling and direct owner turns, and cleans only eligible
           Neondeck-created worktrees. Adopted, dirty, or policy-retained
           worktrees remain for manual handling, and a cleanup failure stays
-          visible.
+          visible. Explicit stop also retains a held unpushed prepared commit
+          unless the stop request separately confirms that destructive discard.
         </p>
         <p>
           The durable <code>pr-autopilot-owner</code> conversation is retained after
@@ -380,13 +389,15 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
         <p>
           The repository proves the minimal loop with automated coverage for
           mode capability ceilings, owner/worktree reuse, exact-head handling,
-          managed-worktree command execution, direct human approval, autonomous
-          delivery without configured checks, semantic escalation, mechanical
-          delivery guards, blocked restart recovery, and terminal cleanup. The
-          available evidence is credential-free and uses fixtures or local test
-          repositories; it is not evidence of a live external GitHub PR push
-          smoke. Validate your own token, git remote, identity, permissions, and
-          repository instructions before enabling autonomous delivery.
+          managed-worktree command execution, exact-revision human approval,
+          autonomous delivery without configured checks, semantic escalation,
+          mechanical delivery guards, blocked restart recovery, and terminal
+          cleanup. Live migration acceptance also exercised approval-mode and
+          autonomous push, response, retry, restart reconciliation, and
+          idempotency against two explicitly authorized disposable GitHub PRs
+          that were closed without merge after validation. Validate your own
+          token, git remote, identity, permissions, and repository instructions
+          before enabling autonomous delivery.
         </p>
       </article>
     </main>

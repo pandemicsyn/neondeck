@@ -63,14 +63,12 @@ export async function safePushAutopilotOwner(
       },
     );
     const truncation = pullRequestEventStateTruncation(facts);
-    if (truncation.any || facts.headSha !== worktree.headSha) {
+    if (truncation.any) {
       return blockSafePush(
         current,
         worktree.id,
-        truncation.any
-          ? 'Current GitHub facts are incomplete immediately before push.'
-          : 'The remote PR head changed before push.',
-        truncation.any ? ['completePrEventFacts'] : ['currentPrHead'],
+        'Current GitHub facts are incomplete immediately before push.',
+        ['completePrEventFacts'],
         paths,
         { currentHeadSha: facts.headSha },
       );
@@ -88,6 +86,39 @@ export async function safePushAutopilotOwner(
 
     const status = await gitStatus(worktree.localPath);
     const commitSha = await gitCurrentSha(worktree.localPath);
+    if (
+      status.clean &&
+      commitSha !== worktree.headSha &&
+      facts.headSha === commitSha
+    ) {
+      await recordWorktreePushSucceeded(
+        worktree.id,
+        {
+          commitSha,
+          message: `Autopilot reconciled the already-pushed commit ${commitSha}.`,
+          data: { recovered: true },
+        },
+        paths,
+      );
+      return {
+        ok: true,
+        action: 'autopilot_owner_safe_push',
+        changed: false,
+        message: `The current linked PR head already contains ${commitSha}; recovered the interrupted push record without pushing again.`,
+        commitSha,
+        recovered: true,
+      };
+    }
+    if (facts.headSha !== worktree.headSha) {
+      return blockSafePush(
+        current,
+        worktree.id,
+        'The remote PR head changed before push.',
+        ['currentPrHead'],
+        paths,
+        { currentHeadSha: facts.headSha },
+      );
+    }
     if (!status.clean || commitSha === worktree.headSha) {
       return blockSafePush(
         current,

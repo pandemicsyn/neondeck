@@ -110,7 +110,7 @@ GITHUB_LOGIN=...</code></pre>
     "displayAssistantThinkingLevel": "medium",
     "prReview": "openai/gpt-5.5",
     "prReviewThinkingLevel": "medium",
-    "prReviewTimeoutMs": 300000
+    "prReviewTimeoutMs": 1800000
   &#125;
 &#125;</code></pre>
 
@@ -158,7 +158,7 @@ GITHUB_LOGIN=...</code></pre>
           </li>
           <li>
             <strong>Ownership:</strong> endpoint definitions may be changed through
-            setup or the authenticated local dashboard/API, never through a model-callable
+            setup or the local access-controlled dashboard/API, never through a model-callable
             config action.
           </li>
         </ul>
@@ -213,8 +213,8 @@ GITHUB_LOGIN=...</code></pre>
         <aside class="docs-note">
           <strong>Autopilot model:</strong> watched-PR owners use
           <code>models.displayAssistant</code>. <code>models.prReview</code> belongs
-          only to the bounded human-review workflow. Autopilot modes change the available
-          tools, not the owner model.
+          only to the fresh bounded human-review agent. Autopilot modes change the
+          available tools, not the owner model.
         </aside>
 
         <h3 id="provider-runtime-behavior">Reasoning and runtime behavior</h3>
@@ -225,9 +225,9 @@ GITHUB_LOGIN=...</code></pre>
             <code>high</code>, or <code>xhigh</code>.
           </li>
           <li>
-            <code>prReviewTimeoutMs</code> defaults to 300,000 milliseconds and accepts
-            values from 10,000 through 300,000. Initial review runs cannot delegate
-            generic child tasks; they inspect and finish in one bounded session.
+            <code>prReviewTimeoutMs</code> defaults to 1,800,000 milliseconds and
+            accepts values from 10,000 through 1,800,000. Initial review runs cannot
+            delegate generic child tasks; they inspect and finish in one bounded session.
           </li>
           <li>
             Provider registration and standalone CLI ChatGPT login or logout
@@ -237,19 +237,19 @@ GITHUB_LOGIN=...</code></pre>
 
         <h2>PR reviewer prompts</h2>
         <p>
-          The bounded human-review workflow has two independently configurable
-          full system prompts: <code>initial-review</code> for a new review run and
+          Human review has two independently configurable full system prompts:
+          <code>initial-review</code> for each fresh bounded review submission and
           <code>follow-up-reviewer</code> for the durable read-only reviewer chat.
           Inspect, replace, or reset either prompt in the dashboard's <strong
             >Runtime</strong
-          > panel, through typed config actions, or through the authenticated local
+          > panel, through typed config tools, or through the local access-controlled
           API.
         </p>
         <pre><code>&#123;
   "prReview": &#123;
     "prompts": &#123;
       "initial-review": "Complete replacement prompt…",
-      "follow-up-reviewer": "Review context:\n&#123;&#123;reviewContext&#125;&#125;\n&#123;&#123;workspaceInstructions&#125;&#125;"
+      "follow-up-reviewer": "&#123;&#123;reviewContextDeliveryGuidance&#125;&#125;\n&#123;&#123;workspaceToolGuidance&#125;&#125;"
     &#125;
   &#125;
 &#125;</code></pre>
@@ -257,12 +257,15 @@ GITHUB_LOGIN=...</code></pre>
           Overrides are non-empty strings up to 40,000 characters. The initial
           prompt receives PR facts separately as untrusted JSON and has no
           template tokens. The follow-up prompt supports <code
-            >{'{{workspaceInstructions}}'}</code
+            >{'{{workspaceToolGuidance}}'}</code
           >
-          and <code>{'{{reviewContext}}'}</code>. Initial changes apply to the
-          next review run; follow-up changes apply to the next turn, including
-          an existing reviewer conversation. There is no prompt versioning or
-          stale-session state.
+          and <code>{'{{reviewContextDeliveryGuidance}}'}</code>. These expand
+          to stable policy explaining the workspace tools and per-question
+          signal delivery; mutable review facts are delivered separately in the <code
+            >review-context</code
+          > signal. Initial changes apply to the next review run; follow-up changes
+          apply to the next turn, including an existing reviewer conversation. There
+          is no prompt versioning or stale-session state.
         </p>
         <p>
           Set a prompt to <code>null</code> through
@@ -280,7 +283,7 @@ GITHUB_LOGIN=...</code></pre>
           <code>prepare-only</code>, <code>autofix-with-approval</code>, and
           <code>autofix-push-when-safe</code>. Use the prompt editor in the
           dashboard's <strong>Runtime</strong> panel, ask Neon through the typed config
-          actions, or use the authenticated local API. The editor shows the effective
+          actions, or use the local access-controlled API. The editor shows the effective
           prompt and can reset an override to the built-in default. <code
             >notify-only</code
           > has no template because it never starts an owner mutation turn.

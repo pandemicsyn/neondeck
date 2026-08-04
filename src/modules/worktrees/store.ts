@@ -255,6 +255,21 @@ export function findReusableWorktree(
   }
 }
 
+export function findWorktreeByLocalPath(
+  localPath: string,
+  paths: RuntimePaths,
+) {
+  const database = openDb(paths.neondeckDatabase, { readOnly: true });
+  try {
+    const row = database
+      .prepare('SELECT * FROM worktrees WHERE local_path = ?;')
+      .get(localPath);
+    return row ? readWorktreeRow(row) : undefined;
+  } finally {
+    database.close();
+  }
+}
+
 export function requireWorktree(id: string, paths: RuntimePaths) {
   const database = openDb(paths.neondeckDatabase, { readOnly: true });
   try {

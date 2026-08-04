@@ -248,6 +248,12 @@ describe('structured memory actions', () => {
     const secondId = (second as { memory?: { id: string } }).memory?.id;
     expect(firstId).toBeTruthy();
     expect(secondId).toBeTruthy();
+    await expect(
+      upsertMemory(
+        { scope: 'project', key: 'neondeck.tests', value: 'npm run check' },
+        paths,
+      ),
+    ).resolves.toMatchObject({ ok: true, changed: false });
 
     await expect(
       rewriteMemory(
@@ -265,6 +271,16 @@ describe('structured memory actions', () => {
         value: 'Use npm run check for the fast loop.',
       },
     });
+    await expect(
+      rewriteMemory(
+        {
+          id: firstId!,
+          value: 'Use npm run check for the fast loop.',
+          reason: 'Replay the durable learning step.',
+        },
+        paths,
+      ),
+    ).resolves.toMatchObject({ ok: true, changed: false });
 
     await expect(
       mergeMemories(
@@ -281,6 +297,17 @@ describe('structured memory actions', () => {
       changed: true,
       archivedSourceIds: [secondId],
     });
+    await expect(
+      mergeMemories(
+        {
+          targetId: firstId!,
+          sourceIds: [secondId!],
+          value:
+            'Use Node 26 and npm run check for the Neondeck fast development loop.',
+        },
+        paths,
+      ),
+    ).resolves.toMatchObject({ ok: true, changed: false });
 
     await expect(listMemories({}, paths)).resolves.toMatchObject({
       memories: [
@@ -320,6 +347,15 @@ describe('structured memory actions', () => {
         expect.objectContaining({ action: 'archived' }),
       ]),
     );
+    expect(
+      events.events.filter((event) => event.action === 'created'),
+    ).toHaveLength(2);
+    expect(
+      events.events.filter((event) => event.action === 'rewritten'),
+    ).toHaveLength(1);
+    expect(
+      events.events.filter((event) => event.action === 'merged'),
+    ).toHaveLength(1);
   });
 
   it('archives durable memory through the canonical mutation', async () => {
@@ -598,6 +634,48 @@ describe('structured memory actions', () => {
       ok: true,
       changed: true,
       decision: 'reject',
+    });
+  });
+
+  it('revision-fences deterministic curation candidates before approval', async () => {
+    const paths = runtimePaths(await tempHome());
+    await updateLearningConfig(
+      { memoryMaxActiveItems: 1, memoryCurationMode: 'review' },
+      paths,
+    );
+    const first = await upsertMemory(
+      { scope: 'local', key: 'first', value: 'reviewed value' },
+      paths,
+    );
+    await upsertMemory(
+      { scope: 'local', key: 'second', value: 'retained value' },
+      paths,
+    );
+    await curateMemoryStore({ mode: 'review' }, paths);
+    const candidates = await listMemoryCandidates(
+      { status: 'proposed' },
+      paths,
+    );
+    const candidate = candidates.candidates[0]!;
+    await rewriteMemory(
+      {
+        id: (first as { memory: { id: string } }).memory.id,
+        value: 'changed after curation',
+      },
+      paths,
+    );
+
+    await expect(
+      decideMemoryCandidate({ id: candidate.id, decision: 'apply' }, paths),
+    ).resolves.toMatchObject({
+      ok: false,
+      action: 'memory_archive',
+      requires: ['memory-revision'],
+    });
+    await expect(
+      listMemoryCandidates({ status: 'proposed' }, paths),
+    ).resolves.toMatchObject({
+      candidates: [expect.objectContaining({ id: candidate.id })],
     });
   });
 

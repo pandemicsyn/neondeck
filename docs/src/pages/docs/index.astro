@@ -40,7 +40,7 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
           </li>
           <li>
             <a href="/docs/agent-runtime/">Agent runtime</a>: Flue agents,
-            actions, workflows, skills, memory, watches, reports, scheduled
+            tools, app operations, skills, memory, watches, reports, scheduled
             tasks, and observability.
           </li>
           <li>
@@ -67,12 +67,12 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
 
         <h2>Current runtime</h2>
         <p>
-          The local app is a Node 26 Hono server with Flue agents, Flue
-          workflows, deterministic actions, local SQLite state, and a Vite/React
+          The local app is a Node 26 Hono server with Flue agents and tools,
+          app-owned deterministic services, local SQLite state, and a Vite/React
           dashboard. It is designed for everything from 32:9 ultrawides like the
           Corsair Xeneon Edge to custom layouts for the size and constraints you
           want. Dashboard layout is driven by runtime JSON config, measured
-          panel size, and typed actions Neon can use to adapt the surface. Local
+          panel size, and typed tools Neon can use to adapt the surface. Local
           dashboard surfaces subscribe to one multiplexed
           <code>/api/events</code> stream whose named config, notification, session,
           and review events refresh affected panels without a browser reload.
@@ -135,10 +135,9 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
         <h2 id="commands">Neon commands</h2>
         <p>
           Slash commands can be typed into the chat panel, run from dashboard
-          buttons, or invoked through the <code>command-run</code> Flue workflow.
-          Deterministic results are persisted in
-          <code>workflow_summaries</code> and exposed at
-          <code>/api/workflows/summaries</code>. The chat surface special-cases
+          buttons, or invoked through <code>POST /api/commands/run</code>.
+          Deterministic results are persisted in app-owned operation summaries
+          and shown in the Activity panel. The chat surface special-cases
           <code>/briefing</code> as a normal assistant turn instead of a result card.
         </p>
         <pre><code>/repo-status [repo-id]
@@ -210,46 +209,37 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
           > and typed task actions.
         </p>
 
-        <h2 id="flue">Flue actions and workflows</h2>
+        <h2 id="flue">Flue agents and tools</h2>
         <p>
-          Neon gets deterministic capabilities through schema-backed Flue
-          actions for config, repo status, GitHub PR/check facts, runtime
-          skills, dashboard layout presets, schedules, watches, commands, and
-          local dev doctor checks. Bounded operations are also available as
-          discovered Flue workflows:
+          Neon gets deterministic capabilities through schema-backed Flue tools
+          for config, repo status, GitHub PR/check facts, runtime skills,
+          dashboard layout presets, schedules, watches, commands, and local dev
+          doctor checks. Product state and orchestration remain app-owned; Flue
+          agents are dispatched only for model work:
         </p>
-        <pre><code>briefing
-command-run
-curate_learning_store
-dev-doctor
-fix-pr-ci
-handoff_to_kilo
-promote_kilo_result
-reconcile_kilo_task
-review-pr-for-human
-review_conversation_for_learning
-review_kilo_result
-review_pr_batch_for_learning
-scheduled-agent-instruction
-scheduler-tick
-summarize_kilo_session
-verify_kilo_result
-watch-pr</code></pre>
+        <pre><code>display-assistant
+pr-review-assistant
+pr-reviewer
+learning-review
+pr-autopilot-owner</code></pre>
+        <p>
+          Learning reviews use a keyed <code>learning-review</code> Flue agent. Their
+          bounded evidence, submission identity, result, and audit trail remain in
+          Neondeck's app-owned learning state so interrupted admission can be recovered.
+        </p>
         <p>
           Watched-PR Autopilot is a continuing
-          <code>pr-autopilot-owner</code> agent controlled through typed actions,
-          not a workflow for every transition. The separate manual
-          <code>/fix-ci</code> path remains available as the
-          <code>fix-pr-ci</code> workflow.
+          <code>pr-autopilot-owner</code> agent controlled through typed tools, not
+          a job for every transition. The separate manual
+          <code>/fix-ci</code> path remains available as an explicit app-owned operation.
         </p>
 
-        <h2 id="observability">Workflow observability</h2>
+        <h2 id="observability">Activity and submission observability</h2>
         <p>
-          The dashboard includes a dedicated workflow observability panel for
-          active Flue runs, failed runs, emitted progress data, and recent
-          action/tool/operation activity. Rows show compact, redacted summaries
-          by default. When a row has a guarded Flue run inspection URL, the
-          panel exposes it through an explicit <code>inspect</code> link.
+          The dashboard Activity panel combines compact app operation summaries,
+          Flue submission observations, emitted progress data, and recent tool
+          activity. Rows stay compact and redacted by default; raw prompts and
+          tool payloads are not exposed through a legacy workflow-run inspector.
         </p>
 
         <h2>Developer commands</h2>

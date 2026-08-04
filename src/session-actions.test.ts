@@ -9,11 +9,13 @@ import { archiveMemory, rewriteMemory, upsertMemory } from './modules/memory';
 import { ensureRuntimeHome, runtimePaths } from './runtime-home';
 import {
   archiveChatSession,
+  acknowledgeDisplaySessionContextSnapshotSync,
   type ChatSessionCommandChangeEvent,
   type ChatSessionRecord,
   createApprovalResolutionNudge,
   createChatSessionCommandEvent,
   createChatSession,
+  displaySessionContextSnapshotForAgentSync,
   linkChatSessionContext,
   listChatSessionCommandEvents,
   listChatSessionActivity,
@@ -22,6 +24,7 @@ import {
   readChatSession,
   readChatSessionMessages,
   readNeonSessionState,
+  recordDisplaySessionContextSnapshotSync,
   referenceChatSession,
   renameChatSession,
   refreshChatSessionSummary,
@@ -403,6 +406,150 @@ describe('session actions', () => {
     );
     expect(instructions).toContain('check totals and failures');
     expect(instructions).toContain('unresolved review or requested-change');
+  });
+
+  it('captures selected memory ids and linked identifiers for persistent agent context', async () => {
+    const paths = runtimePaths(await tempDir());
+    const memory = await upsertMemory(
+      {
+        scope: 'project',
+        repoId: 'neondeck',
+        key: 'verification.fast-loop',
+        value: 'Run npm run check before summarizing.',
+      },
+      paths,
+    );
+    if (!memory.ok || !('memory' in memory)) throw new Error(memory.message);
+    const memoryId = memory.memory?.id;
+    if (!memoryId) throw new Error('Memory fixture did not return an id.');
+    const created = await createChatSession(
+      {
+        title: 'Snapshot fields',
+        linkedRepoId: 'neondeck',
+        linkedWatchId: 'watch-1',
+        linkedTaskId: 'task-1',
+      },
+      paths,
+    );
+    const sessionId = (created as { session: ChatSessionRecord }).session.id;
+
+    const snapshot = displaySessionContextSnapshotForAgentSync(
+      sessionId,
+      paths,
+    );
+    expect(snapshot).toMatchObject({
+      memoryIds: [memoryId],
+      memoryInstructions: expect.stringContaining('verification.fast-loop'),
+      linkedContext: {
+        repoId: 'neondeck',
+        watchId: 'watch-1',
+        taskId: 'task-1',
+      },
+    });
+    expect(
+      recordDisplaySessionContextSnapshotSync(
+        {
+          sessionId,
+          snapshotId: 'snapshot:test-context',
+          memoryIds: snapshot.memoryIds,
+          refreshBriefingContext: snapshot.refreshBriefingContext,
+          linkedContext: snapshot.linkedContext,
+        },
+        paths,
+      ),
+    ).toBe(true);
+    expect(
+      recordDisplaySessionContextSnapshotSync(
+        {
+          sessionId,
+          snapshotId: 'snapshot:test-context',
+          memoryIds: snapshot.memoryIds,
+          refreshBriefingContext: snapshot.refreshBriefingContext,
+          linkedContext: snapshot.linkedContext,
+        },
+        paths,
+      ),
+    ).toBe(false);
+    await expect(
+      readChatSession({ id: sessionId }, paths),
+    ).resolves.toMatchObject({
+      session: { contextMemoryIds: [memoryId] },
+    });
+    const database = new DatabaseSync(paths.neondeckDatabase);
+    const audit = database
+      .prepare(
+        `
+        SELECT COUNT(*) AS count
+        FROM chat_session_audit
+        WHERE session_id = ?
+          AND action = 'context_snapshot_captured';
+      `,
+      )
+      .get(sessionId) as { count: number };
+    database.close();
+    expect(audit.count).toBe(1);
+  });
+
+  it('keeps briefing transition context stable until its persisted snapshot is acknowledged', async () => {
+    const paths = runtimePaths(await tempDir());
+    const created = await createChatSession(
+      { title: 'Briefing transition', kind: 'briefing' },
+      paths,
+    );
+    const sessionId = (created as { session: ChatSessionRecord }).session.id;
+    const database = new DatabaseSync(paths.neondeckDatabase);
+    database
+      .prepare(`UPDATE chat_sessions SET stale_reasons_json = ? WHERE id = ?;`)
+      .run(
+        JSON.stringify([
+          {
+            type: 'model',
+            message: 'Display model changed.',
+            changedAt: new Date().toISOString(),
+            target: 'displayAssistant',
+          },
+        ]),
+        sessionId,
+      );
+    database.close();
+
+    const first = displaySessionContextSnapshotForAgentSync(sessionId, paths);
+    expect(first.refreshBriefingContext).toBe(true);
+    expect(first.instructions).toContain(
+      'Server-controlled Neondeck briefing context transition',
+    );
+    expect(
+      recordDisplaySessionContextSnapshotSync(
+        {
+          sessionId,
+          snapshotId: 'snapshot:briefing-transition',
+          memoryIds: first.memoryIds,
+          refreshBriefingContext: first.refreshBriefingContext,
+          linkedContext: first.linkedContext,
+        },
+        paths,
+      ),
+    ).toBe(true);
+
+    const retry = displaySessionContextSnapshotForAgentSync(sessionId, paths);
+    expect(retry.refreshBriefingContext).toBe(true);
+    expect(retry.instructions).toBe(first.instructions);
+    expect(
+      acknowledgeDisplaySessionContextSnapshotSync(
+        { sessionId, snapshotId: 'snapshot:briefing-transition' },
+        paths,
+      ),
+    ).toBe(true);
+    expect(
+      acknowledgeDisplaySessionContextSnapshotSync(
+        { sessionId, snapshotId: 'snapshot:briefing-transition' },
+        paths,
+      ),
+    ).toBe(false);
+    expect(
+      displaySessionContextSnapshotForAgentSync(sessionId, paths)
+        .refreshBriefingContext,
+    ).toBe(false);
   });
 
   it('uses the utility model role metadata for generated session titles', async () => {
@@ -865,6 +1012,29 @@ describe('session actions', () => {
           workflowSummaryId: 'summary-1',
         }),
       ],
+    });
+
+    await expect(
+      updateChatSessionCommandEvent(
+        {
+          sessionId,
+          eventId,
+          status: 'running',
+          flueRunId: 'late-admission-correlation',
+          result: null,
+          reason: 'simulated-fast-settlement-race',
+        },
+        paths,
+      ),
+    ).resolves.toMatchObject({
+      ok: true,
+      event: {
+        id: eventId,
+        status: 'completed',
+        flueRunId: 'run-1',
+        result: expect.objectContaining({ message: 'Repository is clean.' }),
+        completedAt: expect.any(String),
+      },
     });
   });
 

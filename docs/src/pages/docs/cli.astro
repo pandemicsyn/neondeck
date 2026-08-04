@@ -167,7 +167,8 @@ neondeck note "Finished local cleanup without a PR." \
         <p>
           Scheduled tasks are created with typed local API actions. The backend
           scheduler persists their validated trigger and dispatches each due
-          occurrence through a bounded Flue workflow.
+          occurrence through an app-owned service or a bounded Flue agent
+          submission when model reasoning is required.
         </p>
 
         <h2>Neon slash commands</h2>
@@ -187,12 +188,12 @@ neondeck note "Finished local cleanup without a PR." \
 /dev-doctor</code></pre>
         <p>
           Slash commands can be typed in chat, launched from dashboard buttons,
-          or invoked through the <code>command-run</code> Flue workflow.
+          or invoked through <code>POST /api/commands/run</code>.
           <code>/review-pr</code> prepares local reports and Neon-origin draft review
           comments for a human reviewer; it does not submit a GitHub review. <code
             >/fix-ci</code
-          > queues a bounded CI fix workflow and routes any resulting code change
-          back through prepared-diff review.
+          > queues a bounded app-owned CI fix operation and routes any resulting code
+          change back through prepared-diff review.
           <code>/explain-ci --report</code> writes the CI dossier without starting
           a fix attempt. In the dashboard chat, <code>/briefing</code> persists a
           local snapshot and streams a normal assistant response; it does not render

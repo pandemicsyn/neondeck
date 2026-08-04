@@ -1,4 +1,4 @@
-import { defineAction, type JsonValue } from '@flue/runtime';
+import { defineTool, type JsonValue } from '@flue/runtime';
 import { asJsonValue } from '../../lib/action-result';
 import * as v from 'valibot';
 import { runtimePaths } from '../../runtime-home';
@@ -39,36 +39,36 @@ const runtimeSkillActionOutputSchema = v.looseObject({
   requires: v.optional(v.array(v.string())),
 });
 
-export const skillsListAction = defineAction({
+export const skillsListAction = defineTool({
   name: 'neondeck_skills_list',
   description:
     'List discovered Neondeck runtime skills, ignored skill folders, and duplicate skill ids.',
   input: v.object({}),
   output: runtimeSkillActionOutputSchema,
   async run() {
-    return listRuntimeSkillsAction();
+    return { output: await listRuntimeSkillsAction() };
   },
 });
 
-export const skillLoadAction = defineAction({
+export const skillLoadAction = defineTool({
   name: 'neondeck_skill_load',
   description:
     'Load the full SKILL.md content for one active Neondeck runtime skill by id.',
   input: skillLoadInputSchema,
   output: runtimeSkillActionOutputSchema,
-  async run({ input }) {
-    return loadRuntimeSkillAction(input);
+  async run({ data: input }) {
+    return { output: await loadRuntimeSkillAction(input) };
   },
 });
 
-export const skillsReloadAction = defineAction({
+export const skillsReloadAction = defineTool({
   name: 'neondeck_skills_reload',
   description:
     'Rescan Neondeck runtime skill metadata from disk and report validation issues. Agent behavior uses Flue skills and may require a new session or server restart.',
   input: v.object({}),
   output: runtimeSkillActionOutputSchema,
   async run() {
-    return reloadRuntimeSkillsAction();
+    return { output: await reloadRuntimeSkillsAction() };
   },
 });
 
