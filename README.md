@@ -9,8 +9,8 @@ A note from me, the human:
 
 This thing does 3 things
 
-1. Helps me review _alot_ for PRs without having to ever open up Github.
-2. Manages my PR's for me. Kilo/codex hand off changes to Neon, and neon takes care of them through merge.
+1. Helps me review _alot_ of PRs without having to ever open up Github.
+2. Manages my PR's for me. Kilo/codex hand off changes to Neon, and neon takes care of them through merge. Reviews are basically the only time I look at code at this point.
 3. Sends me a morning briefing to help me keep up with the stuff all my EU coworkers have shipped.
 
 ## From the robots
