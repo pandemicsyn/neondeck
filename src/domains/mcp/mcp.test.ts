@@ -1249,6 +1249,107 @@ describe('MCP support', () => {
     }
   });
 
+  it('allows a model-owned safe HTTP server to adopt dynamic OAuth', async () => {
+    const home = await tempDir();
+    const paths = runtimePaths(home);
+    await ensureRuntimeHome(paths);
+    await addMcpServer(
+      {
+        id: 'remote',
+        server: {
+          transport: 'http',
+          url: 'https://mcp.example.test/mcp',
+        },
+      },
+      paths,
+    );
+
+    const previousHome = process.env.NEONDECK_HOME;
+    process.env.NEONDECK_HOME = home;
+    try {
+      await expect(
+        toolOutputPromise(
+          mcpServerUpdateAction.run({
+            data: {
+              id: 'remote',
+              server: { auth: { kind: 'oauth' } },
+            },
+          } as never),
+        ),
+      ).resolves.toMatchObject({ ok: true, changed: true });
+      await expect(readMcpConfig(paths)).resolves.toMatchObject({
+        servers: {
+          remote: {
+            transport: 'http',
+            url: 'https://mcp.example.test/mcp',
+            auth: { kind: 'oauth' },
+          },
+        },
+      });
+    } finally {
+      if (previousHome === undefined) delete process.env.NEONDECK_HOME;
+      else process.env.NEONDECK_HOME = previousHome;
+    }
+  });
+
+  it('keeps unsafe model-owned MCP auth transitions blocked', async () => {
+    const home = await tempDir();
+    const paths = runtimePaths(home);
+    await ensureRuntimeHome(paths);
+    await addMcpServer(
+      {
+        id: 'remote',
+        server: {
+          transport: 'http',
+          url: 'https://mcp.example.test/mcp',
+          auth: { kind: 'oauth' },
+        },
+      },
+      paths,
+    );
+
+    const previousHome = process.env.NEONDECK_HOME;
+    process.env.NEONDECK_HOME = home;
+    try {
+      await expect(
+        toolOutputPromise(
+          mcpServerUpdateAction.run({
+            data: {
+              id: 'remote',
+              server: { auth: { kind: 'none' } },
+            },
+          } as never),
+        ),
+      ).resolves.toMatchObject({
+        ok: false,
+        changed: false,
+        requires: ['user-owned-surface'],
+      });
+      await expect(
+        toolOutputPromise(
+          mcpServerUpdateAction.run({
+            data: {
+              id: 'remote',
+              server: {
+                auth: {
+                  kind: 'oauth',
+                  clientSecret: { env: 'MCP_CLIENT_SECRET' },
+                },
+              },
+            },
+          } as never),
+        ),
+      ).resolves.toMatchObject({
+        ok: false,
+        changed: false,
+        requires: ['user-owned-surface'],
+      });
+    } finally {
+      if (previousHome === undefined) delete process.env.NEONDECK_HOME;
+      else process.env.NEONDECK_HOME = previousHome;
+    }
+  });
+
   it('blocks model-owned MCP OAuth client-secret references', async () => {
     const home = await tempDir();
     const paths = runtimePaths(home);

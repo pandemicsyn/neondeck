@@ -1893,6 +1893,7 @@ export type PrWatchMutationResponse = {
   action: string;
   changed: boolean;
   message: string;
+  dispatchId?: string | null;
   watch?: PrWatch;
   watches?: PrWatch[];
   detachedWorktreeId?: string | null;

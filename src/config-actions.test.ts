@@ -23,6 +23,7 @@ import {
   updateLearningConfig,
   updateExecutionPolicy,
   updateDashboardLayout,
+  updateDashboardLayoutAction,
   updateProviderConfig,
   updateSkillRoots,
   updateWorktreePolicy,
@@ -698,7 +699,10 @@ describe('config actions', () => {
       },
       paths.dashboard,
     );
-    await expect(updateDashboardLayout(next, paths)).resolves.toMatchObject({
+    const { $schema: _schema, ...toolCompatibleNext } = next;
+    await expect(
+      updateDashboardLayout(toolCompatibleNext, paths),
+    ).resolves.toMatchObject({
       ok: true,
       changed: true,
       action: 'config_update_dashboard_layout',
@@ -709,11 +713,20 @@ describe('config actions', () => {
       JSON.parse(await readFile(paths.dashboard, 'utf8')),
       paths.dashboard,
     );
+    expect(dashboard.$schema).toBe('./dashboard.schema.json');
     expect(dashboard.statusline?.position).toBe('bottom');
     expect(readHistory(paths.neondeckDatabase)).toMatchObject([
       { action: 'config_apply_dashboard_preset', target: 'classic' },
       { action: 'config_update_dashboard_layout', target: 'layout' },
     ]);
+  });
+
+  it('keeps provider-incompatible JSON Schema metadata out of the dashboard tool input', () => {
+    const input = updateDashboardLayoutAction.input as unknown as {
+      entries: Record<string, unknown>;
+    };
+
+    expect(input.entries).not.toHaveProperty('$schema');
   });
 
   it('can apply a dashboard preset over an invalid existing dashboard file', async () => {

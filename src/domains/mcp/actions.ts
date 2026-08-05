@@ -43,7 +43,7 @@ export const mcpServerAddAction = defineTool({
 export const mcpServerUpdateAction = defineTool({
   name: 'neondeck_mcp_server_update',
   description:
-    'Update one configured MCP server in mcp.json using strict config validation.',
+    'Update one configured MCP server in mcp.json using strict config validation. Model-owned updates may change ordinary state or configure safe HTTP OAuth without a client secret; endpoint, process, header-auth, client-secret, and tool approval changes require a user-owned surface.',
   input: mcpServerUpdateInputSchema,
   output: mcpActionResultSchema,
   async run({ data: input }) {
@@ -319,26 +319,31 @@ async function guardAgentMcpServerUpdate(
       'OAuth MCP servers with client-secret references can only be updated from a user-owned surface.',
     );
   }
+  if (Object.hasOwn(patch, 'auth') && !isSafeAgentOAuthPatch(patch.auth)) {
+    return blockedAgentMcpAction(
+      'mcp_server_update',
+      'Header auth, OAuth client-secret references, and removing OAuth authentication must be configured from a user-owned surface.',
+    );
+  }
   if (hasUserOwnedMcpUpdateField(patch)) {
     return blockedAgentMcpAction(
       'mcp_server_update',
-      'Endpoint, transport, auth, stdio process, and MCP trust-policy changes must be made from a user-owned surface so existing approvals and auto-approval policy cannot be retargeted by the model.',
+      'Endpoint, transport, stdio process, and MCP tool-policy changes must be made from a user-owned surface so existing approvals and auto-approval policy cannot be retargeted by the model.',
     );
   }
   return null;
 }
 
+function isSafeAgentOAuthPatch(auth: unknown) {
+  if (!auth || typeof auth !== 'object' || Array.isArray(auth)) return false;
+  const value = auth as Record<string, unknown>;
+  return value.kind === 'oauth' && !Object.hasOwn(value, 'clientSecret');
+}
+
 function hasUserOwnedMcpUpdateField(patch: Record<string, unknown>) {
-  return [
-    'transport',
-    'url',
-    'auth',
-    'tools',
-    'command',
-    'args',
-    'cwd',
-    'env',
-  ].some((key) => Object.hasOwn(patch, key));
+  return ['transport', 'url', 'tools', 'command', 'args', 'cwd', 'env'].some(
+    (key) => Object.hasOwn(patch, key),
+  );
 }
 
 async function guardAgentMcpServerConnect(

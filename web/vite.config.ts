@@ -12,6 +12,7 @@ const packageVersion = JSON.parse(
 
 export default defineConfig({
   root: 'web',
+  cacheDir: '../node_modules/.vite-neondeck-web',
   plugins: [react(), tailwindcss()],
   define: {
     'import.meta.env.VITE_NEONDECK_VERSION': JSON.stringify(packageVersion),

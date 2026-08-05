@@ -552,7 +552,10 @@ export function WatchRow({
             }
             messageLabel={`Message owner for ${watch.repoFullName} pull request ${watch.prNumber}`}
             onSendMessage={async (message) => {
-              await ownerMessageMutation.mutateAsync(message);
+              const result = await ownerMessageMutation.mutateAsync(message);
+              return {
+                submissionId: result.dispatchId ?? undefined,
+              };
             }}
             quickCommands={[]}
             session={{

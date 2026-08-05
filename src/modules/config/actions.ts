@@ -51,6 +51,10 @@ import {
   updateRepoAutopilotPolicy,
 } from './mutations/repos';
 
+const dashboardLayoutToolInputSchema = v.omit(dashboardConfigSchema, [
+  '$schema',
+]);
+
 export const configReadAction = defineTool({
   name: 'neondeck_config_read',
   description:
@@ -224,7 +228,7 @@ export const updateDashboardLayoutAction = defineTool({
   name: 'neondeck_config_update_dashboard_layout',
   description:
     'Replace dashboard.json with a validated stacked-region dashboard layout.',
-  input: dashboardConfigSchema,
+  input: dashboardLayoutToolInputSchema,
   output: configActionOutputSchema,
   async run({ data: input }) {
     return { output: await updateDashboardLayout(input) };

@@ -38,6 +38,33 @@ export const ChatTimelineItems = memo(function ChatTimelineItems({
   });
 });
 
+export function ChatResponseProgress({
+  phase,
+}: {
+  phase: 'admitting' | 'submitted' | 'streaming';
+}) {
+  const label =
+    phase === 'admitting'
+      ? 'Sending to Neon…'
+      : phase === 'submitted'
+        ? 'Neon is working…'
+        : 'Neon is responding…';
+
+  return (
+    <output
+      aria-live="polite"
+      aria-label={label}
+      className="chat-message chat-message-assistant flex items-center gap-2 font-mono text-[10.5px] text-muted"
+    >
+      <span
+        aria-hidden="true"
+        className="h-1.5 w-1.5 shrink-0 bg-primary [animation:nd-pulse_1.2s_ease-in-out_infinite]"
+      />
+      <span>{label}</span>
+    </output>
+  );
+}
+
 const ChatTimelineMessage = memo(function ChatTimelineMessage({
   message,
 }: {

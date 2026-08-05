@@ -41,7 +41,7 @@ import { useDashboardEventConnectionState } from '../../../lib/dashboard-connect
 import { createNeondeckConversationClient } from '../../../lib/flue';
 import { queryKeys } from '../../../lib/query';
 import { CommandResultSummary, CommandTypeahead } from './command-controls';
-import { ChatTimelineItems } from './chat-timeline';
+import { ChatResponseProgress, ChatTimelineItems } from './chat-timeline';
 import { errorMessage } from './message-parts';
 import {
   clampCommandIndex,
@@ -81,7 +81,9 @@ export function FlueChatSessionView({
   messageEnabled?: boolean;
   messageLabel?: string;
   onReferenceDraftConsumed?: () => void;
-  onSendMessage?: (message: string) => Promise<void>;
+  onSendMessage?: (
+    message: string,
+  ) => Promise<{ submissionId?: string } | void>;
   quickCommands: FlueChatConfig['quickCommands'];
   referenceDraft?: string;
   session: FlueChatSession | undefined;
@@ -95,6 +97,9 @@ export function FlueChatSessionView({
   const [requestedCommandIndex, setRequestedCommandIndex] = useState(0);
   const [dismissedCommandInput, setDismissedCommandInput] = useState('');
   const [sendingMessage, setSendingMessage] = useState(false);
+  const [externalSubmissionIds, setExternalSubmissionIds] = useState<string[]>(
+    [],
+  );
   const [submitError, setSubmitError] = useState<string>();
   const commandSubmitLockRef = useRef(false);
   const commandTypeaheadId = useId();
@@ -139,6 +144,31 @@ export function FlueChatSessionView({
   const activeCommand = visibleCommands[activeCommandIndex];
   const historyInputBlocked = Boolean(session?.id) && !agent.historyReady;
   const commandBusy = commandSubmitting || Boolean(runningCommand);
+  const settlements = agent.settlements ?? [];
+  const pendingExternalSubmissionIds = externalSubmissionIds.filter(
+    (submissionId) =>
+      !settlements.some(
+        (settlement) => settlement.submissionId === submissionId,
+      ),
+  );
+  const externalSubmissionStreaming = pendingExternalSubmissionIds.some(
+    (submissionId) =>
+      messages.some(
+        (message) =>
+          message.role === 'assistant' && message.submissionId === submissionId,
+      ),
+  );
+  const responseProgress = sendingMessage
+    ? 'admitting'
+    : externalSubmissionStreaming
+      ? 'streaming'
+      : pendingExternalSubmissionIds.length > 0
+        ? 'submitted'
+        : agent.status === 'submitted'
+          ? 'submitted'
+          : agent.status === 'streaming'
+            ? 'streaming'
+            : undefined;
   const inputPlaceholder = !session
     ? 'Resolving active session...'
     : !messageEnabled
@@ -177,7 +207,15 @@ export function FlueChatSessionView({
 
   useEffect(() => {
     setCommandEvents([]);
+    setExternalSubmissionIds([]);
   }, [agentName, session?.id]);
+
+  useEffect(() => {
+    if (pendingExternalSubmissionIds.length === externalSubmissionIds.length) {
+      return;
+    }
+    setExternalSubmissionIds(pendingExternalSubmissionIds);
+  }, [externalSubmissionIds, pendingExternalSubmissionIds]);
 
   useEffect(() => {
     setCommandEvents(commandEventsQuery.data?.events ?? []);
@@ -364,7 +402,16 @@ export function FlueChatSessionView({
 
     setSendingMessage(true);
     try {
-      await (onSendMessage?.(message) ?? agent.sendMessage(message));
+      const receipt = await (onSendMessage?.(message) ??
+        agent.sendMessage(message));
+      const submissionId = receipt?.submissionId;
+      if (submissionId) {
+        setExternalSubmissionIds((submissionIds) =>
+          submissionIds.includes(submissionId)
+            ? submissionIds
+            : [...submissionIds, submissionId],
+        );
+      }
       setInput('');
     } catch (error) {
       setSubmitError(errorMessage(error));
@@ -557,6 +604,9 @@ export function FlueChatSessionView({
               hasSession={Boolean(session)}
               items={timelineItems}
             />
+            {responseProgress ? (
+              <ChatResponseProgress phase={responseProgress} />
+            ) : null}
           </div>
         </ScrollArea>
         {!chatAutoScroll.followsLatest ? (

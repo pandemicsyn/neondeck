@@ -28,7 +28,10 @@ export async function updateDashboardLayout(
   if (!parsed.ok) return parsed.result;
 
   const current = await readDashboardForHistory(paths);
-  const next = parsed.input;
+  const next = {
+    ...parsed.input,
+    $schema: './dashboard.schema.json',
+  };
   const changed = JSON.stringify(current) !== JSON.stringify(next);
 
   if (changed) {

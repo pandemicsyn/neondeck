@@ -9,6 +9,19 @@ import { activePrWatches, StopOutcomeNotice, WatchRow } from './ActiveWatches';
 
 const flue = vi.hoisted(() => ({
   client: { url: 'test:owner' },
+  messages: [
+    {
+      id: 'owner-history-1',
+      role: 'assistant',
+      purpose: 'assistant',
+      display: 'visible',
+      parts: [{ type: 'text', state: 'done', text: 'Held change is ready.' }],
+    },
+  ] as Array<Record<string, unknown>>,
+  settlements: [] as Array<{
+    submissionId: string;
+    outcome: 'completed' | 'failed' | 'aborted';
+  }>,
   sendMessage: vi.fn<(message: string) => Promise<void>>(async () => undefined),
   useFlueAgent: vi.fn<(input: unknown) => void>(),
 }));
@@ -47,6 +60,7 @@ const api = vi.hoisted(() => ({
       action: string;
       changed: boolean;
       message: string;
+      dispatchId?: string | null;
     }>
   >(async () => ({
     ok: true,
@@ -85,6 +99,7 @@ const api = vi.hoisted(() => ({
     action: 'autopilot_owner_message',
     changed: true,
     message: 'Sent the human instruction.',
+    dispatchId: 'sub-owner-message-1',
   })),
 }));
 const diffViewer = vi.hoisted(() => ({
@@ -119,17 +134,8 @@ vi.mock('@flue/react', () => ({
     return {
       error: undefined,
       historyReady: true,
-      messages: [
-        {
-          id: 'owner-history-1',
-          role: 'assistant',
-          purpose: 'assistant',
-          display: 'visible',
-          parts: [
-            { type: 'text', state: 'done', text: 'Held change is ready.' },
-          ],
-        },
-      ],
+      messages: flue.messages,
+      settlements: flue.settlements,
       sendMessage: flue.sendMessage,
       status: 'idle',
     };
@@ -153,6 +159,8 @@ describe('ActiveWatches owner conversation', () => {
     root = createRoot(container);
     flue.sendMessage.mockClear();
     flue.useFlueAgent.mockClear();
+    flue.messages.splice(1);
+    flue.settlements.splice(0);
     api.controlPrAutopilot.mockClear();
     api.configurePrAutopilot.mockClear();
     api.approvePrAutopilotChange.mockClear();
@@ -235,6 +243,37 @@ describe('ActiveWatches owner conversation', () => {
       'approved, push',
     );
     expect(flue.sendMessage).not.toHaveBeenCalled();
+    expect(container.textContent).toContain('Neon is working…');
+
+    flue.messages.push({
+      id: 'owner-response-1',
+      role: 'assistant',
+      purpose: 'assistant',
+      display: 'visible',
+      submissionId: 'sub-owner-message-1',
+      parts: [],
+    });
+    act(() =>
+      root.render(
+        <QueryClientProvider client={queryClient}>
+          <WatchRow watch={watch()} />
+        </QueryClientProvider>,
+      ),
+    );
+    expect(container.textContent).toContain('Neon is responding…');
+
+    flue.settlements.push({
+      submissionId: 'sub-owner-message-1',
+      outcome: 'completed',
+    });
+    act(() =>
+      root.render(
+        <QueryClientProvider client={queryClient}>
+          <WatchRow watch={watch()} />
+        </QueryClientProvider>,
+      ),
+    );
+    expect(container.textContent).not.toContain('Neon is responding…');
 
     function button(label: string) {
       return container.querySelector(
