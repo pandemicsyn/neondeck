@@ -3,7 +3,7 @@
 Status: complete; trusted-workspace semantics, exact-revision approval, guarded
 delivery recovery, and live disposable-PR acceptance are implemented
 
-Companion audit: `.plans/AUTOPILOT_END_TO_END_REVIEW.html`
+Companion audit: `.plans/archived/AUTOPILOT_END_TO_END_REVIEW.html`
 
 This document replaces the former admission/coordinator implementation plan. The
 HTML audit remains useful evidence about product gaps, but its recommended machinery

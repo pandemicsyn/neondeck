@@ -4,9 +4,9 @@ neondeck is a local-first developer cockpit for a companion display. Its agent, 
 
 The near-term priority is to build Neondeck's local operating system before deeper dashboard customization: app home, config, SQLite state, repo registry, runtime skills, schedules, watches, and typed Flue tools and app APIs. The UI should be an efficient surface over that runtime, not the place where core agent behavior lives.
 
-> **Current Flue 2 runtime note (August 2026):** the Flue 2 migration supersedes the older Flue beta architecture recorded throughout this roadmap. Current code uses Flue agents, tools, direct bounded agent submissions, and app-owned services/state; Flue workflows, actions, and workflow-run persistence no longer exist. Older workflow/action wording below is retained where it documents historical milestones or product workflows rather than the current framework API. See `.plans/FLUE_2_MIGRATION_PLAN.md` for the migration record.
+> **Current Flue 2 runtime note (August 2026):** the Flue 2 migration supersedes the older Flue beta architecture recorded throughout this roadmap. Current code uses Flue agents, tools, direct bounded agent submissions, and app-owned services/state; Flue workflows, actions, and workflow-run persistence no longer exist. Older workflow/action wording below is retained where it documents historical milestones or product workflows rather than the current framework API. See `.plans/archived/FLUE_2_MIGRATION_PLAN.md` for the completed migration record.
 
-With the runtime foundation in place, the next product focus is autonomy. Neon should move from "tell me what needs attention" toward "watch the work, prepare fixes, delegate larger chunks when useful, and safely push routine changes when policy allows." This requires stronger isolation, worktree orchestration, review-event workflows, delegated agent handoff, push-back policy, and operator-visible audit trails.
+The runtime foundation, watched-PR autonomy, and learning system are now in place. The remaining product work is concentrated in richer Kilo handoff/result promotion, targeted review and dashboard improvements, and intentionally deferred deploy-adapter and TUI work.
 
 ## Product Direction
 
@@ -56,6 +56,17 @@ Status markers:
 9. KiloCode handoff for large delegated work inside managed worktrees.
 10. Hermes-style self-improvement and learning over memory, skills, and PR/autopilot retrospectives.
 11. Later TUI/OpenTUI surface over the same backend API.
+
+## Current Status
+
+As of August 2026:
+
+- Phases 1–16 are complete for the current product scope.
+- Phases 18–20 are complete: managed worktrees and the watched-PR Autopilot loop are shipped.
+- Phase 22 is complete for v1: memory, learning reviews, candidates, skill patches, and operator surfaces are shipped.
+- Phase 21's Kilo CLI runner, session inspection, result review, verification, notifications, and basic dashboard/API surfaces are complete. Richer handoff/summarization orchestration, actual guarded promotion, fuller operator contracts, and the managed-server evaluation remain open.
+- Phase 10's provider-specific deploy adapters and all of Phase 17's TUI surface remain intentionally deferred.
+- Active product follow-ups live in the top level of `.plans/`; completed implementation plans and point-in-time reviews live in `.plans/archived/`. See `.plans/README.md` for the index.
 
 ## Usability Gate
 
@@ -971,6 +982,7 @@ Must-haves:
 23. [x] Dedicated subagent run summary dashboard beyond current Flue observations.
 24. [x] Config-backed execution approval policy for `local` and planned `exe.dev` backends.
 25. [x] Approved host execution actions for `local` and `exe.dev`.
+26. [x] Durable MCP tool approval modes with chat-scoped and persisted per-tool policy.
 
 ## Suggested Implementation Phases
 
@@ -1148,7 +1160,7 @@ Must-haves:
 
 ### Phase 13: Provider Configuration And Safety
 
-- Status: complete for config, readiness, dashboard controls, and execution policy; actual executors move to Phase 14.
+- Status: complete for config, readiness, dashboard controls, execution policy, and durable MCP authorization; actual host executors move to Phase 14.
 
 - [x] Design provider config schema and allowed provider types.
 - [x] Use secret references or environment-backed credentials rather than raw secrets in normal config.
@@ -1160,6 +1172,7 @@ Must-haves:
 - [x] Keep local shell access action-mediated by default.
 - [x] Add config-backed preapproved command policy for `local` and planned `exe.dev` execution.
 - [x] Only add actual shell/sandbox execution actions after trust boundaries and audit records are explicit.
+- [x] Add MCP server-default and exact per-tool approval policy with allow-once, allow-chat, allow-always, deny, OAuth-safe invalidation, and dashboard/CLI/API controls.
 
 ### Phase 14: Approved Host Execution And exe.dev Sandbox
 
@@ -1261,7 +1274,7 @@ Must-haves:
 
 ### Phase 19: PR Event Autopilot
 
-- Status: minimal watch/owner/worktree loop and trusted-workspace semantic correction complete. The admission/coordinator implementation from Autopilot Packages 1–4 was abandoned because it could not deliver the product path without expanding into a second workflow engine. Its live progression path, queue/coalescing records, intake and owner generations, stage attempts/events, grounding snapshots/cursors, submission leases, workflow-observation continuation, and operator admission projections have been removed. Historical shipped migrations remain, followed by one forward cleanup migration. PRs #171 and #172 delivered the reset and minimal loop; the focused follow-up gives every fixing mode a trusted managed-worktree coding workspace and autonomous mode semantic delivery judgment. `.plans/AUTOPILOT_END_TO_END_REVIEW.html` is historical evidence only.
+- Status: minimal watch/owner/worktree loop and trusted-workspace semantic correction complete. The admission/coordinator implementation from Autopilot Packages 1–4 was abandoned because it could not deliver the product path without expanding into a second workflow engine. Its live progression path, queue/coalescing records, intake and owner generations, stage attempts/events, grounding snapshots/cursors, submission leases, workflow-observation continuation, and operator admission projections have been removed. Historical shipped migrations remain, followed by one forward cleanup migration. PRs #171 and #172 delivered the reset and minimal loop; the focused follow-up gives every fixing mode a trusted managed-worktree coding workspace and autonomous mode semantic delivery judgment. `.plans/archived/AUTOPILOT_END_TO_END_REVIEW.html` is historical evidence only.
 
 - [x] Preserve complete PR feedback facts and semantic fingerprints for commits, review threads and comments, requested-changes review bodies, conversation comments, checks, mergeability, and branch freshness.
 - [x] Preserve explicit first-poll behavior: process current feedback or install a complete baseline, failing closed on truncated GitHub facts.

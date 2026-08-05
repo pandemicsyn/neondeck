@@ -5,7 +5,7 @@ Status: implemented (single-PR)
 Related:
 
 - `.plans/ROADMAP.md` Phases 14, 19, 20
-- `.plans/REPO_EDITING_PLAN.md`
+- `.plans/archived/REPO_EDITING_PLAN.md`
 - `.plans/EXEDEV_WORKSPACE_MODE_PLAN.md`
 
 > The app is not widely used. There is no legacy data or external contract to

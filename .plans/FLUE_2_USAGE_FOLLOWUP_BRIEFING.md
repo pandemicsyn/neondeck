@@ -12,7 +12,7 @@ Primary references:
 - [Flue tools](https://flueframework.com/docs/guide/tools/)
 - [Flue durability](https://flueframework.com/docs/guide/durability/)
 - [Flue MCP](https://flueframework.com/docs/guide/mcp/)
-- [Migration plan](./FLUE_2_MIGRATION_PLAN.md)
+- [Completed migration plan](./archived/FLUE_2_MIGRATION_PLAN.md)
 
 ## Executive Summary
 

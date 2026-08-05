@@ -1,6 +1,6 @@
 # Flue 2 Migration Plan
 
-Status: migration complete; post-migration Flue 2 hardening in progress
+Status: complete; migration, feature-parity acceptance, lifecycle hardening, and independent static review are finished
 Integration branch: `flue2`  
 Created: 2026-08-01  
 Target Flue release at planning time: `2.0.1`

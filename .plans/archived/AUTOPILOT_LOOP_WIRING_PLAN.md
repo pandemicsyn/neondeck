@@ -1,6 +1,6 @@
 # Autopilot Loop Wiring Plan
 
-Status: superseded and archived by `.plans/AUTOPILOT_IMPLEMENTATION_PLAN.md`
+Status: superseded and archived by `.plans/archived/AUTOPILOT_IMPLEMENTATION_PLAN.md`
 
 Historical note: this document intentionally stopped the coordinator at worktree
 preparation. Keep it as implementation history; do not use it as the current

@@ -31,7 +31,7 @@ Current sequencing note (2026-07-18): Phase B is the stopping milestone. Complet
 Related plans:
 
 - `.plans/PR_REVIEW_PERF_PLAN.md` — complete-for-now large-PR data-path and performance workstream with explicit deferred misses
-- `.plans/OTHER_PEOPLE_PR_REVIEW.md` — current human PR review workflow
+- `.plans/archived/OTHER_PEOPLE_PR_REVIEW.md` — implemented human PR review workflow record
 - `.plans/archived/DIFF_UI_PLAN.md` — landed Pierre diff/tree adoption
 - `.plans/archived/DIFF_REVIEW.md` — earlier diff review research and interaction planning
 - `.plans/ROADMAP.md` — product direction and future TUI reuse requirements

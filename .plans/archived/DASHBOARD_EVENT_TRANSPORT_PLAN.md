@@ -4,7 +4,7 @@ Status: implemented (durable transport refactor)
 
 Related:
 
-- `.plans/OTHER_PEOPLE_PR_REVIEW.md` (the review flow whose overlay exposed this)
+- `.plans/archived/OTHER_PEOPLE_PR_REVIEW.md` (the review flow whose overlay exposed this)
 - PRs #115 / #116 / #117 (review-flow work)
 
 ## Problem

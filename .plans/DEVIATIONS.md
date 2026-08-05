@@ -47,7 +47,7 @@ Use this format:
 
 - Roadmap item: Phase 19 / PR event Autopilot reset
 - Decision: Forward-delete the abandoned admission/coordinator runtime while preserving complete GitHub feedback fingerprints, exact-head worktrees, bounded Git behavior, generic watches and worktrees, the diff viewer, readiness facts, and reusable private owner/Flue seams. Keep every historical migration already on `main` and add one generated forward cleanup migration that removes the abandoned tables and watch generation column from upgraded runtime homes.
-- Reason: The Package 1–4 migrations are already in the shipped `main` history and were not proven unshipped, so rewriting them would make upgrades unsafe. The coordinator also duplicated workflow-engine responsibilities and is explicitly superseded by `.plans/AUTOPILOT_IMPLEMENTATION_PLAN.md`.
+- Reason: The Package 1–4 migrations are already in the shipped `main` history and were not proven unshipped, so rewriting them would make upgrades unsafe. The coordinator also duplicated workflow-engine responsibilities and is explicitly superseded by `.plans/archived/AUTOPILOT_IMPLEMENTATION_PLAN.md`.
 - Follow-up: Implement the replacement minimal loop in PR 2 only after this reset is reviewed and merged. Do not restore admissions, stage ledgers, owner generations, grounding snapshots, queues/coalescing, submission leases, or workflow-observation continuation.
 
 ## 2026-07-19 - Kilo Reconciliation Fixture Process Inspection
@@ -567,7 +567,7 @@ Use this format:
 
 - Roadmap item: Phases 19–21 / watched-PR Autopilot product closure.
 - Decision: Reopened the Phase 19 and 20 completion claims, added
-  `.plans/AUTOPILOT_IMPLEMENTATION_PLAN.md` as the implementation source of truth,
+  `.plans/archived/AUTOPILOT_IMPLEMENTATION_PLAN.md` as the implementation source of truth,
   retained the HTML end-to-end review as evidence, and archived the superseded
   partial loop-wiring plan and July 9 scheduler/Autopilot mechanics review. The
   consolidated plan selects one continuing Neon PR-owner session and managed
