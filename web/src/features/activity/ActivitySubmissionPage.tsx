@@ -3,6 +3,7 @@ import { useMemo } from 'react';
 import { getActivitySubmission, type ActivityEventRecord } from '../../api';
 import { Badge, EmptyState, MiniEmpty, ScrollArea } from '../../components/ui';
 import { queryErrorMessage, queryKeys } from '../../lib/query';
+import { activitySubmissionMetrics } from './activity-metrics';
 
 export function ActivitySubmissionPage({
   submissionId,
@@ -40,6 +41,10 @@ export function ActivitySubmissionPage({
   }
 
   const { submission } = data;
+  const metrics = activitySubmissionMetrics(data.events);
+  const showReviewProgress =
+    submission.agentName === 'pr-review-assistant' ||
+    submission.agentName === 'pr-reviewer';
   return (
     <ActivityShell submissionId={submissionId} status={submission.status}>
       <div className="grid min-h-0 flex-1 grid-cols-1 lg:grid-cols-[minmax(280px,360px)_minmax(0,1fr)]">
@@ -70,6 +75,14 @@ export function ActivitySubmissionPage({
             />
             <Fact label="attempts" value={String(submission.attemptCount)} />
           </dl>
+          {showReviewProgress ? (
+            <ReviewProgress
+              metrics={metrics}
+              retained={data.eventHistory.retainedEventCount}
+              total={data.eventHistory.totalEventCount}
+              truncated={data.eventHistory.isTruncated}
+            />
+          ) : null}
         </aside>
         <ActivityTimeline
           events={data.events}
@@ -79,6 +92,68 @@ export function ActivitySubmissionPage({
         />
       </div>
     </ActivityShell>
+  );
+}
+
+function ReviewProgress({
+  metrics,
+  retained,
+  total,
+  truncated,
+}: {
+  metrics: ReturnType<typeof activitySubmissionMetrics>;
+  retained: number;
+  total: number;
+  truncated: boolean;
+}) {
+  return (
+    <section className="border-t border-line px-4 py-3 font-mono text-[10px]">
+      <div className="mb-2 flex items-center justify-between gap-2">
+        <h2 className="m-0 font-medium tracking-[0.06em] text-violet">
+          REVIEW PROGRESS
+        </h2>
+        {truncated ? <span className="text-accent">PARTIAL</span> : null}
+      </div>
+      <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-2">
+        <Fact
+          label="coverage"
+          value={truncated ? `${retained} of ${total} retained` : 'complete'}
+        />
+        <Fact label="model turns" value={formatCount(metrics.modelTurns)} />
+        <Fact
+          label="workspace calls"
+          value={formatCount(metrics.workspaceToolCalls)}
+        />
+        <Fact
+          label="model time"
+          value={formatDuration(metrics.modelDurationMs)}
+        />
+        <Fact
+          label="tool time"
+          value={formatDuration(metrics.toolDurationMs)}
+        />
+        <Fact
+          label="latest tokens"
+          value={
+            metrics.latestTotalTokens === null
+              ? 'pending'
+              : formatCount(metrics.latestTotalTokens)
+          }
+        />
+        <Fact label="result payload" value={formatBytes(metrics.resultBytes)} />
+        <Fact label="model" value={metrics.responseModel ?? 'pending'} />
+        <Fact
+          label="git operations"
+          value={
+            metrics.workspaceOperations.length
+              ? metrics.workspaceOperations
+                  .map(({ operation, count }) => `${operation} ${count}`)
+                  .join(' · ')
+              : 'pending'
+          }
+        />
+      </dl>
+    </section>
   );
 }
 
@@ -188,7 +263,7 @@ function ActivityTimeline({
                   {event.summary !== null ? (
                     <details className="mt-1.5 border-t border-line/70 pt-1">
                       <summary className="cursor-pointer font-mono text-[9.5px] text-muted">
-                        sanitized event data
+                        event details
                       </summary>
                       <pre className="m-0 mt-1 max-h-44 overflow-auto whitespace-pre-wrap break-words bg-field/50 p-2 font-mono text-[10px] text-ink">
                         {JSON.stringify(event.summary, null, 2)}
@@ -245,4 +320,22 @@ function formatTime(value: string) {
         minute: '2-digit',
         second: '2-digit',
       }).format(timestamp);
+}
+
+function formatCount(value: number) {
+  return new Intl.NumberFormat().format(value);
+}
+
+function formatDuration(value: number) {
+  if (value < 1_000) return `${Math.round(value)}ms`;
+  if (value < 60_000) return `${(value / 1_000).toFixed(1)}s`;
+  const minutes = Math.floor(value / 60_000);
+  const seconds = Math.round((value % 60_000) / 1_000);
+  return `${minutes}m ${seconds}s`;
+}
+
+function formatBytes(value: number) {
+  if (value < 1_024) return `${value} B`;
+  if (value < 1_048_576) return `${(value / 1_024).toFixed(1)} KiB`;
+  return `${(value / 1_048_576).toFixed(1)} MiB`;
 }
