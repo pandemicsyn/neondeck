@@ -129,6 +129,62 @@ describe('PrReviewReviewerChat', () => {
     expect(sendMessage).toHaveBeenCalledWith('What changed?');
     expect(textarea?.value).toBe('');
   });
+
+  it('reports successful local draft mutations once so the review can refresh', () => {
+    const onDraftChanged = vi.fn<() => void>();
+    useFlueAgentMock.mockReturnValue({
+      messages: [
+        {
+          id: 'assistant-1',
+          role: 'assistant',
+          purpose: 'answer',
+          display: 'visible',
+          parts: [
+            {
+              type: 'dynamic-tool',
+              toolName: 'neondeck_pr_review_draft_comment_update',
+              toolCallId: 'tool-call-1',
+              state: 'output-available',
+              input: { commentId: 'comment-1' },
+              output: { ok: true, changed: false },
+            },
+          ],
+        },
+      ] as never,
+      status: 'idle',
+      historyReady: true,
+      error: undefined,
+      failedSends: [],
+      settlements: [],
+      sendMessage: vi.fn<UseFlueAgentResult['sendMessage']>(),
+      refresh: vi.fn<() => void>(),
+    });
+    const review = {
+      id: 'review-123',
+      headSha: 'a'.repeat(40),
+      status: 'ready',
+    } as PrReviewRecord;
+
+    act(() =>
+      root.render(
+        <PrReviewReviewerChat
+          onDraftChanged={onDraftChanged}
+          review={review}
+        />,
+      ),
+    );
+    expect(onDraftChanged).toHaveBeenCalledTimes(1);
+
+    act(() =>
+      root.render(
+        <PrReviewReviewerChat
+          onDraftChanged={onDraftChanged}
+          review={review}
+        />,
+      ),
+    );
+    expect(onDraftChanged).toHaveBeenCalledTimes(1);
+  });
 });
 
 function setTextareaValue(textarea: HTMLTextAreaElement, value: string) {

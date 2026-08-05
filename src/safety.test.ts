@@ -107,6 +107,14 @@ describe('safety policy', () => {
           unattended: true,
         }),
         expect.objectContaining({
+          id: 'neondeck_pr_review_draft_comment_update',
+          primitive: 'tool',
+          class: 'safe-mutation',
+          requiresConfirmation: false,
+          audited: true,
+          auditTarget: 'pr_review_drafts/pr_review_draft_comments',
+        }),
+        expect.objectContaining({
           id: 'neondeck_config_update_execution_policy',
           primitive: 'action',
           class: 'safe-mutation',

@@ -35,6 +35,7 @@ export type PrReviewFindingsSidebarProps = {
   neonFindings: readonly NeonReviewFinding[];
   onChooseLine: (finding: PrReviewReportOnlyFinding) => void;
   onDelete: (commentId: string) => void;
+  onDraftChanged?: () => void;
   onDismissFinding: (finding: NeonReviewFinding) => void;
   onPromoteFinding: (finding: NeonReviewFinding) => void;
   promoteLabel: string;
@@ -144,7 +145,10 @@ export function PrReviewFindingsSidebar({
           {panels}
         </>
       ) : (
-        <PrReviewReviewerChat review={props.review} />
+        <PrReviewReviewerChat
+          onDraftChanged={props.onDraftChanged}
+          review={props.review}
+        />
       )}
     </div>
   );
