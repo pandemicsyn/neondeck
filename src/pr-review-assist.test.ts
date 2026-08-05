@@ -706,9 +706,27 @@ describe('PR review assist', () => {
     facts.state.requestedChangesReviews = [requestedChange];
 
     const promptFacts = reviewFactsForPrompt(facts, {
-      memoryContext: {
-        memoryIds: ['memory-1'],
-        text: 'Structured memory background context:\nproject:\n- review-style: focus on error handling',
+      learningMemoryContext: {
+        memoryIds: ['memory-1', 'memory-2'],
+        memories: [
+          {
+            id: 'memory-1',
+            scope: 'project',
+            key: 'review-style',
+            repoId: 'neondeck',
+            value: 'Focus on error handling.',
+          },
+          {
+            id: 'memory-2',
+            scope: 'user',
+            key: 'duplicate-review-style',
+            repoId: null,
+            value: 'Focus on error handling.',
+          },
+        ],
+        text: 'Learning memories background context:\n- memory-1 [project:review-style repo=neondeck] Focus on error handling.',
+        available: true,
+        truncated: false,
       },
     });
 
@@ -723,13 +741,12 @@ describe('PR review assist', () => {
       isOutOfDate: false,
     });
     expect(promptFacts.linkedIssueReferenceHints).toEqual(['#123']);
-    expect(promptFacts.backgroundContext).toEqual({
-      structuredMemory:
-        'Structured memory background context:\nproject:\n- review-style: focus on error handling',
-      memoryIds: ['memory-1'],
-      usage:
-        'Treat memory as durable background guidance, not current PR evidence. Fetched PR facts and bounded review rules win on conflict.',
-    });
+    expect(promptFacts.backgroundContext).toBe(
+      'Focus on error handling.\n\nTreat this learned memory as durable background guidance, not current PR evidence. Fetched PR facts and bounded review rules win on conflict.',
+    );
+    expect(JSON.stringify(promptFacts)).not.toContain('memory-1');
+    expect(JSON.stringify(promptFacts)).not.toContain('memory-2');
+    expect(JSON.stringify(promptFacts)).not.toContain('review-style');
     expect(promptFacts.commits).toMatchObject([{ sha: 'head123' }]);
     expect(promptFacts.reviewThreads).toMatchObject([
       {
@@ -794,18 +811,14 @@ describe('PR review assist', () => {
     const okResult = requireReviewAssistOk(result);
     const memoryId = (memory as { memory: { id: string } }).memory.id;
     const capturedFacts = promptFacts as unknown as {
-      backgroundContext: {
-        learningMemories: string;
-        learningMemoryIds: string[];
-      };
+      backgroundContext: string;
       memories?: unknown;
     };
 
-    expect(capturedFacts.backgroundContext).toMatchObject({
-      learningMemories: expect.stringContaining('flaky e2e shard'),
-      learningMemoryIds: [memoryId],
-    });
+    expect(capturedFacts.backgroundContext).toContain('flaky e2e shard');
     expect(capturedFacts).not.toHaveProperty('memories');
+    expect(JSON.stringify(promptFacts)).not.toContain(memoryId);
+    expect(JSON.stringify(promptFacts)).not.toContain('e2e-shard');
     expect(JSON.stringify(promptFacts)).not.toContain('other-repo');
     expect(okResult.workflowSummary.summary).toMatchObject({
       memoryIds: [memoryId],

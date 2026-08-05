@@ -475,30 +475,21 @@ type ReviewFactsPromptContext = Partial<
   Pick<ReviewAssistPromptContext, 'learningMemoryContext'>
 > & {
   workspace?: Awaited<ReturnType<typeof resolvePrReviewerWorkspace>>;
-  memoryContext?: {
-    text: string;
-    memoryIds: string[];
-  };
 };
 
 function reviewBackgroundContext(context?: ReviewFactsPromptContext) {
-  if (!context?.memoryContext && !context?.learningMemoryContext) return null;
-  return {
-    ...(context.memoryContext
-      ? {
-          structuredMemory: context.memoryContext.text,
-          memoryIds: context.memoryContext.memoryIds,
-        }
-      : {}),
-    ...(context.learningMemoryContext
-      ? {
-          learningMemories: context.learningMemoryContext.text,
-          learningMemoryIds: context.learningMemoryContext.memoryIds,
-        }
-      : {}),
-    usage:
-      'Treat memory as durable background guidance, not current PR evidence. Fetched PR facts and bounded review rules win on conflict.',
-  };
+  const memories = [
+    ...new Set(
+      (context?.learningMemoryContext?.memories ?? [])
+        .map((memory) => memory.value.trim())
+        .filter(Boolean),
+    ),
+  ];
+  if (memories.length === 0) return null;
+  return [
+    ...memories,
+    'Treat this learned memory as durable background guidance, not current PR evidence. Fetched PR facts and bounded review rules win on conflict.',
+  ].join('\n\n');
 }
 
 function reviewChecksForPrompt(state: GitHubPullRequestEventState) {
