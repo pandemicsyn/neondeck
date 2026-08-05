@@ -1,5 +1,27 @@
 # Changelog
 
+## 1.0.0-beta.30
+
+### Minor Changes
+
+- [#247](https://github.com/pandemicsyn/neondeck/pull/247) [`d9e8a70`](https://github.com/pandemicsyn/neondeck/commit/d9e8a7052842d80fe833976a0420259958df5005) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Migrate Neondeck to Flue 2 agents, tools, conversation clients, submissions, and runtime persistence while replacing removed Flue workflows and actions with durable app-owned operations.
+
+- [#255](https://github.com/pandemicsyn/neondeck/pull/255) [`eab8c85`](https://github.com/pandemicsyn/neondeck/commit/eab8c855e7f7ae355cbd5ea04504c239cab03d9e) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Add server-level MCP approval modes, exact per-tool overrides, and once, chat, or always approval decisions, with read-only annotated tools allowed by default.
+
+### Patch Changes
+
+- [#247](https://github.com/pandemicsyn/neondeck/pull/247) [`d9e8a70`](https://github.com/pandemicsyn/neondeck/commit/d9e8a7052842d80fe833976a0420259958df5005) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Prevent learning reviews from recursively invoking their submission tool, and reject skill patches prepared against stale guidance.
+
+- [`9e4069a`](https://github.com/pandemicsyn/neondeck/commit/9e4069a39439105a65db5774b45f6722b26e1843) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Bind the Flue development server to the same IPv4 loopback address used by the dashboard proxy, and isolate the web server's Vite dependency cache so the two development servers cannot invalidate each other's optimized modules.
+
+- [#247](https://github.com/pandemicsyn/neondeck/pull/247) [`d9e8a70`](https://github.com/pandemicsyn/neondeck/commit/d9e8a7052842d80fe833976a0420259958df5005) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Prefix Neondeck-generated PR review drafts and conversation comments with `bot:` so their automated origin is visible before submission and on GitHub.
+
+- [#247](https://github.com/pandemicsyn/neondeck/pull/247) [`d9e8a70`](https://github.com/pandemicsyn/neondeck/commit/d9e8a7052842d80fe833976a0420259958df5005) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Run initial PR reviews as one bounded Flue submission with exact-revision tools and a typed durable result, avoiding the nested five-minute model timeout that left reviews unfinished.
+
+- [`9e4069a`](https://github.com/pandemicsyn/neondeck/commit/9e4069a39439105a65db5774b45f6722b26e1843) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Restore visible chat response progress and allow typed agent actions to configure dynamic OAuth on safe HTTP MCP servers without client secrets.
+
+- [`9e4069a`](https://github.com/pandemicsyn/neondeck/commit/9e4069a39439105a65db5774b45f6722b26e1843) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Keep dashboard JSON Schema metadata out of model-facing tool arguments while preserving the canonical schema reference in written dashboard configuration.
+
 ## 1.0.0-beta.29
 
 ### Minor Changes
