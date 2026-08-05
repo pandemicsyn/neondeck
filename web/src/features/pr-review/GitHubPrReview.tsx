@@ -1783,6 +1783,9 @@ export function GitHubPrReview({
     neonFindings,
     onChooseLine: beginAnchorFinding,
     onDelete: deleteDraftComment,
+    onDraftChanged: () => {
+      void draftQuery.refetch();
+    },
     onDismissFinding: dismissNeonFinding,
     onPromoteFinding: promoteNeonFinding,
     promoteLabel: 'Add to local draft',
