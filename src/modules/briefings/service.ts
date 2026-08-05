@@ -867,7 +867,7 @@ export function composeBriefingInput(run: BriefingRun) {
     JSON.stringify(run.snapshot, null, 2),
     'User briefing instructions:',
     run.instructions,
-    'Respond to the user normally in this conversation. Use any configured MCP tools relevant to their instructions; do not assume a named external source was consulted unless you actually used it. If a deterministic or MCP source is unavailable, needs login, is denied, or awaits approval, explain that naturally and continue with the useful context you do have. Distinguish observed facts from inference. This briefing is informational; do not mutate external systems or auto-approve tool calls.',
+    'Respond to the user normally in this conversation. Use any configured MCP tools relevant to their instructions; do not assume a named external source was consulted unless you actually used it. If a deterministic or MCP source is unavailable, needs login, is denied, or awaits approval, explain that naturally and continue with the useful context you do have. Distinguish observed facts from inference. This briefing is informational; do not mutate external systems or change MCP approval policy.',
   ].join('\n\n');
 }
 

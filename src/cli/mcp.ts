@@ -25,8 +25,8 @@ type McpAddOptions = {
   header?: string[];
   oauth?: boolean;
   disabled?: boolean;
-  autoApprove?: string[];
-  deny?: string[];
+  approvalMode?: string;
+  tool?: string[];
   timeoutMs?: string;
 };
 
@@ -35,6 +35,7 @@ type McpApprovalOptions = {
   resolve?: string;
   approve?: boolean;
   deny?: boolean;
+  scope?: string;
 };
 
 type McpRegistry = ReturnType<
@@ -109,14 +110,12 @@ export function registerMcpCommands(program: Command) {
     .option('--oauth', 'mark HTTP server as OAuth-authenticated')
     .option('--disabled', 'add the server disabled')
     .option(
-      '--auto-approve <tool>',
-      'auto-approve exact tool name; repeatable',
-      collectOption,
-      [],
+      '--approval-mode <mode>',
+      'default tool policy: prompt, writes, or approve',
     )
     .option(
-      '--deny <tool>',
-      'deny exact tool name; repeatable',
+      '--tool <name=mode>',
+      'per-tool policy: prompt, approve, or deny; repeatable',
       collectOption,
       [],
     )
@@ -136,6 +135,59 @@ export function registerMcpCommands(program: Command) {
         },
       );
     });
+
+  mcp
+    .command('policy <id>')
+    .description('Update an MCP server tool approval policy.')
+    .option(
+      '--approval-mode <mode>',
+      'default tool policy: prompt, writes, or approve',
+    )
+    .option(
+      '--tool <name=mode>',
+      'per-tool policy: prompt, approve, deny, or inherit; repeatable',
+      collectOption,
+      [],
+    )
+    .action(
+      async (
+        id: string,
+        options: { approvalMode?: string; tool?: string[] },
+      ) => {
+        const { readMcpConfig, updateMcpServer } = await mcpModule();
+        const paths = await pathsFromOptions(program.opts<GlobalOptions>());
+        loadEnvForPaths(paths);
+        if (!options.approvalMode && (options.tool?.length ?? 0) === 0) {
+          throw new Error('MCP policy requires --approval-mode or --tool.');
+        }
+        const config = await readMcpConfig(paths);
+        const existing = config.servers[id];
+        if (!existing) throw new Error(`MCP server "${id}" was not found.`);
+        const approvalMode = parseApprovalMode(
+          options.approvalMode ?? existing.tools?.approvalMode ?? 'writes',
+        );
+        const overrides = { ...existing.tools?.overrides };
+        for (const entry of options.tool ?? []) {
+          const [toolName, mode] = parseToolOverride(entry, true);
+          if (mode === 'inherit') delete overrides[toolName];
+          else overrides[toolName] = mode;
+        }
+        printActionResult(
+          await updateMcpServer(
+            {
+              id,
+              server: {
+                tools: {
+                  approvalMode,
+                  ...(Object.keys(overrides).length > 0 ? { overrides } : {}),
+                },
+              },
+            },
+            paths,
+          ),
+        );
+      },
+    );
 
   mcp
     .command('remove <id>')
@@ -250,6 +302,10 @@ export function registerMcpCommands(program: Command) {
     .option('--resolve <id>', 'approval id to resolve')
     .option('--approve', 'approve the selected approval')
     .option('--deny', 'deny the selected approval')
+    .option(
+      '--scope <scope>',
+      'approval scope: once, chat, or always (default: once)',
+    )
     .action(async (options: McpApprovalOptions) => {
       const { listMcpApprovals, resolveMcpApprovalWithPaths } =
         await mcpModule();
@@ -257,7 +313,7 @@ export function registerMcpCommands(program: Command) {
       loadEnvForPaths(paths);
       if (options.resolve) {
         const decision = options.approve
-          ? 'approve'
+          ? approvalDecision(options.scope)
           : options.deny
             ? 'deny'
             : null;
@@ -371,13 +427,46 @@ function mcpAuthFromOptions(options: McpAddOptions) {
 }
 
 function mcpToolPolicy(options: McpAddOptions) {
-  const autoApprove = options.autoApprove ?? [];
-  const deny = options.deny ?? [];
-  if (autoApprove.length === 0 && deny.length === 0) return undefined;
+  const approvalMode = parseApprovalMode(options.approvalMode ?? 'writes');
+  const overrides = Object.fromEntries(
+    (options.tool ?? []).map((entry) => parseToolOverride(entry, false)),
+  );
   return {
-    ...(autoApprove.length ? { autoApprove } : {}),
-    ...(deny.length ? { deny } : {}),
+    approvalMode,
+    ...(Object.keys(overrides).length > 0 ? { overrides } : {}),
   };
+}
+
+function parseApprovalMode(value: string) {
+  if (value === 'prompt' || value === 'writes' || value === 'approve') {
+    return value;
+  }
+  throw new Error('--approval-mode must be prompt, writes, or approve.');
+}
+
+function parseToolOverride(value: string, allowInherit: boolean) {
+  const index = value.lastIndexOf('=');
+  const toolName = value.slice(0, index).trim();
+  const mode = value.slice(index + 1).trim();
+  if (!toolName || index < 1) throw new Error('Expected TOOL=MODE.');
+  if (
+    mode !== 'prompt' &&
+    mode !== 'approve' &&
+    mode !== 'deny' &&
+    !(allowInherit && mode === 'inherit')
+  ) {
+    throw new Error(
+      `Tool mode must be prompt, approve, deny${allowInherit ? ', or inherit' : ''}.`,
+    );
+  }
+  return [toolName, mode] as const;
+}
+
+function approvalDecision(scope: string | undefined) {
+  if (scope === undefined || scope === 'once') return 'allow-once' as const;
+  if (scope === 'chat') return 'allow-chat' as const;
+  if (scope === 'always') return 'allow-always' as const;
+  throw new Error('--scope must be once, chat, or always.');
 }
 
 function parseEnvRefPair(value: string): [string, { env: string }] {
@@ -417,6 +506,9 @@ function printMcpServers(servers: unknown[]) {
     );
     const message = stringField(server, 'message');
     if (message) console.log(`  ${message}`);
+    console.log(
+      `  tool approval: ${stringField(server, 'approvalMode') || 'writes'}`,
+    );
   }
 }
 

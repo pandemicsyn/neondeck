@@ -26,7 +26,7 @@ import {
   type McpConfig,
   type McpServerConfig,
 } from './schemas';
-import { expireMcpServerApprovals } from './store';
+import { expireMcpServerApprovals } from './approval-state';
 
 export type McpConfigActionResult = {
   ok: boolean;
@@ -107,6 +107,7 @@ export async function addMcpServer(rawInput: unknown, paths = runtimePaths()) {
 export async function updateMcpServer(
   rawInput: unknown,
   paths = runtimePaths(),
+  options: { preserveApprovalId?: string } = {},
 ) {
   await ensureRuntimeHome(paths);
   const parsed = v.safeParse(mcpServerUpdateInputSchema, rawInput);
@@ -119,23 +120,68 @@ export async function updateMcpServer(
     );
   }
 
+  return withMcpServerConfigLock(paths, parsed.output.id, () =>
+    updateMcpServerParsed(parsed.output, paths, options),
+  );
+}
+
+export async function promoteMcpToolAlways(
+  input: { serverId: string; toolName: string; preserveApprovalId: string },
+  paths = runtimePaths(),
+) {
+  await ensureRuntimeHome(paths);
+  return withMcpServerConfigLock(paths, input.serverId, async () => {
+    const config = await readMcpConfig(paths);
+    const server = config.servers[input.serverId];
+    if (!server) {
+      return failedResult(
+        'mcp_approval_resolve',
+        paths,
+        `MCP server "${input.serverId}" was not found.`,
+        ['serverId'],
+      );
+    }
+    return updateMcpServerParsed(
+      {
+        id: input.serverId,
+        server: {
+          tools: {
+            approvalMode: server.tools?.approvalMode,
+            overrides: {
+              ...server.tools?.overrides,
+              [input.toolName]: 'approve',
+            },
+          },
+        },
+      },
+      paths,
+      { preserveApprovalId: input.preserveApprovalId },
+    );
+  });
+}
+
+async function updateMcpServerParsed(
+  input: { id: string; server: Record<string, unknown> },
+  paths: RuntimePaths,
+  options: { preserveApprovalId?: string },
+) {
   const config = await readMcpConfig(paths);
-  const existing = config.servers[parsed.output.id];
+  const existing = config.servers[input.id];
   if (!existing) {
     return failedResult(
       'mcp_server_update',
       paths,
-      `MCP server "${parsed.output.id}" was not found.`,
+      `MCP server "${input.id}" was not found.`,
       ['id'],
     );
   }
 
   const mergedRaw: Record<string, unknown> = {
     ...existing,
-    ...parsed.output.server,
+    ...input.server,
   };
-  replaceOptionalField(mergedRaw, parsed.output.server, 'auth');
-  replaceOptionalField(mergedRaw, parsed.output.server, 'tools');
+  replaceOptionalField(mergedRaw, input.server, 'auth');
+  replaceOptionalField(mergedRaw, input.server, 'tools');
 
   let merged: McpServerConfig;
   let next: McpConfig;
@@ -145,7 +191,7 @@ export async function updateMcpServer(
       {
         servers: {
           ...config.servers,
-          [parsed.output.id]: merged,
+          [input.id]: merged,
         },
       },
       paths,
@@ -159,30 +205,68 @@ export async function updateMcpServer(
     );
   }
   const changed =
-    JSON.stringify(config.servers[parsed.output.id]) !== JSON.stringify(merged);
+    JSON.stringify(config.servers[input.id]) !== JSON.stringify(merged);
+  const refreshRegistry = mcpConnectionConfigChanged(existing, merged);
   if (changed) {
     const clearOAuth = mcpOAuthIdentityChanged(existing, merged);
     const expireApprovals = mcpApprovalScopeChanged(existing, merged);
+    if (expireApprovals) {
+      // Revoke reusable authority before publishing the new trust boundary.
+      // A failed config write may require the user to approve again, but it
+      // cannot leave an older grant briefly usable under the new policy.
+      await expireMcpServerApprovals(input.id, paths, {
+        exceptId: options.preserveApprovalId,
+      });
+    }
     await writeChangedConfig(
       paths,
-      'mcp_server_update',
-      parsed.output.id,
+      refreshRegistry ? 'mcp_server_update' : 'mcp_tool_policy_update',
+      input.id,
       config,
       next,
     );
-    if (expireApprovals) {
-      await expireMcpServerApprovals(parsed.output.id, paths);
-    }
     if (clearOAuth) {
-      deleteMcpOAuthState(paths, parsed.output.id);
+      deleteMcpOAuthState(paths, input.id);
     }
   }
   return okResult('mcp_server_update', changed, paths, {
     message: changed
-      ? `Updated MCP server "${parsed.output.id}".`
-      : `MCP server "${parsed.output.id}" already matched the requested config.`,
-    data: { server: { id: parsed.output.id, ...merged } },
+      ? `Updated MCP server "${input.id}".`
+      : `MCP server "${input.id}" already matched the requested config.`,
+    data: {
+      server: { id: input.id, ...merged },
+      refreshRegistry,
+    },
   });
+}
+
+const mcpServerConfigLocks = new Map<string, Promise<void>>();
+
+async function withMcpServerConfigLock<T>(
+  paths: RuntimePaths,
+  serverId: string,
+  run: () => Promise<T>,
+) {
+  const key = `${paths.home}\0${serverId}`;
+  const previous = mcpServerConfigLocks.get(key) ?? Promise.resolve();
+  let release: () => void = () => undefined;
+  const slot = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const tail = previous.then(
+    () => slot,
+    () => slot,
+  );
+  mcpServerConfigLocks.set(key, tail);
+  await previous.catch(() => undefined);
+  try {
+    return await run();
+  } finally {
+    release();
+    if (mcpServerConfigLocks.get(key) === tail) {
+      mcpServerConfigLocks.delete(key);
+    }
+  }
 }
 
 export async function setMcpServerEnabled(
@@ -418,6 +502,15 @@ function mcpApprovalScopeChanged(
     );
   }
   return false;
+}
+
+function mcpConnectionConfigChanged(
+  before: McpServerConfig,
+  after: McpServerConfig,
+) {
+  const { tools: _beforeTools, ...beforeConnection } = before;
+  const { tools: _afterTools, ...afterConnection } = after;
+  return jsonChanged(beforeConnection, afterConnection);
 }
 
 function mcpOAuthIdentityChanged(

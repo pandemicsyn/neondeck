@@ -1,0 +1,1 @@
+ALTER TABLE `mcp_tool_approvals` ADD `approval_decision` text;

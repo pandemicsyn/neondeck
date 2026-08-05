@@ -4,7 +4,7 @@ import type {
   McpLoginResponse,
   McpServersResponse,
 } from './types';
-import { getJson, postJson, type ApiRequestOptions } from './http';
+import { getJson, patchJson, postJson, type ApiRequestOptions } from './http';
 
 export async function getMcpServers(options: ApiRequestOptions = {}) {
   return getJson<McpServersResponse>('/api/mcp/servers', options);
@@ -33,7 +33,7 @@ export async function logoutMcpServer(id: string) {
 
 export async function resolveMcpApproval(
   id: string,
-  decision: 'approve' | 'deny',
+  decision: 'allow-once' | 'allow-chat' | 'allow-always' | 'deny',
 ) {
   return postJson<{
     ok: boolean;
@@ -46,5 +46,27 @@ export async function resolveMcpApproval(
   }>(`/api/mcp/approvals/${id}/resolve`, {
     decision,
     approverSurface: 'dashboard',
+  });
+}
+
+export async function updateMcpApprovalMode(
+  id: string,
+  approvalMode: 'prompt' | 'writes' | 'approve',
+  toolOverrides: Record<string, 'prompt' | 'approve' | 'deny'>,
+) {
+  return patchJson<{
+    ok: boolean;
+    action: string;
+    changed: boolean;
+    message: string;
+  }>(`/api/mcp/servers/${id}`, {
+    server: {
+      tools: {
+        approvalMode,
+        ...(Object.keys(toolOverrides).length > 0
+          ? { overrides: toolOverrides }
+          : {}),
+      },
+    },
   });
 }

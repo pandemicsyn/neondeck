@@ -55,6 +55,7 @@ export type McpToolGate = (input: {
   serverId: string;
   toolName: string;
   adaptedName: string;
+  annotations: unknown;
   run: McpToolDelegate;
   context: {
     input: Record<string, unknown>;
@@ -196,6 +197,7 @@ function createMcpToolDefinition(input: {
           serverId: input.serverId,
           toolName: input.tool.name,
           adaptedName,
+          annotations: input.tool.annotations ?? null,
           context: {
             input: context.data,
             signal: context.signal,

@@ -35,7 +35,10 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
       "command": "node",
       "args": ["/absolute/path/to/server.mjs"],
       "tools": &#123;
-        "deny": ["dangerous_tool"]
+        "approvalMode": "writes",
+        "overrides": &#123;
+          "dangerous_tool": "deny"
+        &#125;
       &#125;
     &#125;
   &#125;
@@ -63,19 +66,35 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
 
         <h2>Approval policy</h2>
         <p>
-          MCP tools default to per-call approval. Exact tool names can be denied
-          or auto-approved per server:
+          MCP servers default to <code>writes</code> mode: tools explicitly annotated
+          by the MCP server as read-only run immediately, while mutations and unannotated
+          tools ask first. Use <code>prompt</code> to ask for every tool or <code
+            >approve</code
+          > to allow every tool. A per-tool override wins over the server mode:
         </p>
         <pre><code>&#123;
   "tools": &#123;
-    "autoApprove": ["search"],
-    "deny": ["delete_project"]
+    "approvalMode": "writes",
+    "overrides": &#123;
+      "search": "approve",
+      "delete_project": "deny"
+    &#125;
   &#125;
 &#125;</code></pre>
         <p>
-          Pending approvals are single-use and bound to the exact argument hash.
-          Resolve them from Runtime Overview, the local API, or the CLI, then
-          retry the same tool call with unchanged arguments.
+          A pending request can be allowed once, allowed for the current chat,
+          always allowed, or denied. Allow-once grants expire after 15 minutes,
+          are bound to the exact arguments, and are consumed by one retry. Chat
+          grants are bound to the requesting Flue conversation and remain valid
+          for that chat. Always allow writes an exact per-tool override to
+          <code>mcp.json</code>. Server and tool policy changes invalidate older
+          pending and reusable grants.
+        </p>
+        <p>
+          MCP annotations are hints supplied by the server. Neondeck only uses
+          an explicit <code>readOnlyHint: true</code> without a destructive hint for
+          the <code>writes</code> shortcut; unannotated tools still ask. Use
+          <code>prompt</code> for servers whose annotations you do not trust.
         </p>
 
         <h2>OAuth</h2>
@@ -89,13 +108,16 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
           PKCE verifier, discovery state, and tokens in SQLite.
         </p>
         <pre><code>neondeck mcp add linear --url https://mcp.linear.app/mcp --oauth
+neondeck mcp policy linear --approval-mode writes
+neondeck mcp policy linear --tool search=approve --tool delete_project=deny
 neondeck mcp login linear
 neondeck mcp logout linear --confirm</code></pre>
         <p>
           The dashboard Runtime Overview panel shows configured MCP servers,
-          OAuth login/logout controls, tool counts, connection errors, and
-          pending MCP approvals. The MCP provider must accept the matching
-          callback URL, such as
+          OAuth login/logout controls, the server-default approval mode, exact
+          per-tool overrides, tool counts, connection errors, and pending MCP
+          approvals. The MCP provider must accept the matching callback URL,
+          such as
           <code>https://example.exe.xyz/api/mcp/oauth/callback</code> for the
           <a href="/docs/deployment/#exedev-nginx">exe.dev nginx setup</a>.
         </p>
@@ -107,7 +129,9 @@ neondeck mcp add &lt;id&gt; --url ... | --command ...
 neondeck mcp enable &lt;id&gt;
 neondeck mcp disable &lt;id&gt;
 neondeck mcp tools &lt;id&gt;
-neondeck mcp approvals [--resolve &lt;id&gt; --approve|--deny]
+neondeck mcp policy &lt;id&gt; --approval-mode prompt|writes|approve
+neondeck mcp policy &lt;id&gt; --tool &lt;name&gt;=prompt|approve|deny|inherit
+neondeck mcp approvals [--resolve &lt;id&gt; --approve [--scope once|chat|always]|--deny]
 neondeck mcp audit</code></pre>
         <pre><code>GET    /api/mcp/servers
 POST   /api/mcp/servers
@@ -126,9 +150,9 @@ GET    /api/mcp/audit</code></pre>
         <h2>Agent boundary</h2>
         <p>
           Neon can use safe typed actions for HTTP/OAuth server setup and OAuth
-          login starts. Stdio servers, header-authenticated servers, and
-          auto-approval policy are user-owned surfaces because they can spawn
-          host processes or forward environment-backed secrets. Configure those
+          login starts. Stdio servers, header-authenticated servers, and tool
+          approval policy are user-owned surfaces because they can spawn host
+          processes or forward environment-backed secrets. Configure those
           through the CLI, local API, or direct <code>mcp.json</code> edits.
         </p>
       </article>

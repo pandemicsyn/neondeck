@@ -7,7 +7,12 @@ import {
 } from '../../modules/config/events';
 import { runtimePaths, type RuntimePaths } from '../../runtime-home';
 import { runMcpToolThroughGate } from './gate';
-import { mcpServerEnabled, type McpServerConfig } from './schemas';
+import {
+  mcpServerApprovalMode,
+  mcpServerEnabled,
+  type McpServerConfig,
+  type McpToolApprovalMode,
+} from './schemas';
 import { readMcpConfig } from './config';
 import {
   createMcpOAuthProvider,
@@ -41,6 +46,8 @@ export type McpServerSnapshot = {
   id: string;
   transport: 'http' | 'stdio';
   enabled: boolean;
+  approvalMode: 'prompt' | 'writes' | 'approve';
+  toolOverrides: Record<string, McpToolApprovalMode>;
   status: McpServerStatus;
   auth: {
     kind: 'none' | 'header' | 'oauth';
@@ -170,6 +177,7 @@ export class McpRegistry {
     if (this.unsubscribe) return this.startPromise ?? Promise.resolve();
     this.unsubscribe = subscribeConfigEvents((event) => {
       if (!event.files.includes(this.paths.mcp)) return;
+      if (event.action === 'mcp_tool_policy_update') return;
       void this.refresh(refreshTargetFromConfigEvent(event)).catch((error) => {
         console.error('[neondeck] failed to refresh MCP registry', error);
       });
@@ -258,6 +266,8 @@ export class McpRegistry {
           id,
           transport: server.transport,
           enabled: mcpServerEnabled(server),
+          approvalMode: mcpServerApprovalMode(server),
+          toolOverrides: server.tools?.overrides ?? {},
           auth,
           status:
             entry?.status ??

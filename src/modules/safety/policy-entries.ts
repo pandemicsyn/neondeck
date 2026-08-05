@@ -291,7 +291,7 @@ export const entries: SafetyPolicyEntry[] = [
       ...hostExecution,
       auditTarget: 'mcp_tool_approvals/mcp_tool_audit',
     },
-    'Dynamic third-party MCP tools are untrusted external tool calls. Per-call confirmation is delegated to the MCP approval gate; deny and auto-approve lists are exact-match per server.',
+    'Dynamic third-party MCP tools are untrusted external tool calls. The MCP gate applies a user-owned server mode, exact per-tool overrides, and once/chat/always approval scopes before dispatch.',
   ),
   tool(
     'neondeck_mcp_servers_lookup',
@@ -833,7 +833,7 @@ export const entries: SafetyPolicyEntry[] = [
       auditTarget:
         'mcp_tool_approvals/chat_session_command_events/notifications',
     },
-    'User-owned approval resolver for local API and CLI surfaces. It records the decision and nudges the requesting display-assistant session when linked. This action is not registered on the display assistant to prevent self-approval.',
+    'User-owned approval resolver for local API and CLI surfaces. It records once, chat, always, or deny decisions and nudges the requesting display-assistant session when linked. This action is not registered on the display assistant to prevent self-approval.',
   ),
   action(
     'neondeck_mcp_server_remove',
@@ -1876,7 +1876,7 @@ export const entries: SafetyPolicyEntry[] = [
       auditTarget:
         'mcp_tool_approvals/chat_session_command_events/notifications',
     },
-    'Approves or denies one pending third-party MCP tool call by exact approval id and nudges the requesting display-assistant session when linked.',
+    'Allows one pending third-party MCP tool call once, for its chat, or always—or denies it—then nudges the requesting display-assistant session when linked.',
   ),
   route(
     '/api/mcp/audit',
