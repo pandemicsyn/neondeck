@@ -1249,6 +1249,7 @@ export const mcpToolApprovals = sqliteTable(
     argumentsHash: text('arguments_hash').notNull(),
     argumentsPreview: text('arguments_preview').notNull(),
     status: text('status').notNull(),
+    approvalDecision: text('approval_decision'),
     approverSurface: text('approver_surface'),
     sessionId: text('session_id'),
     expiresAt: text('expires_at').notNull(),

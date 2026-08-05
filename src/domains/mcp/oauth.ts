@@ -20,7 +20,7 @@ import type { McpServerConfig } from './schemas';
 import {
   expireMcpServerApprovals,
   expireMcpServerApprovalsSync,
-} from './store';
+} from './approval-state';
 
 export type McpOAuthLoginStatus =
   'pending' | 'redirect' | 'authorized' | 'failed' | 'expired';
@@ -506,7 +506,6 @@ class NeondeckMcpOAuthProvider implements OAuthClientProvider {
           : null,
       scopes: tokens.scope ? tokens.scope.split(/\s+/).filter(Boolean) : [],
     });
-    expireMcpServerApprovalsSync(this.input.serverId, this.input.paths);
   }
 
   async redirectToAuthorization(authorizationUrl: URL) {

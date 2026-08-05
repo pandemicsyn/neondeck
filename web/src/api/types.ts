@@ -785,6 +785,8 @@ export type McpServer = {
   id: string;
   transport: 'http' | 'stdio';
   enabled: boolean;
+  approvalMode: 'prompt' | 'writes' | 'approve';
+  toolOverrides: Record<string, 'prompt' | 'approve' | 'deny'>;
   status: McpServerStatus;
   auth: {
     kind: 'none' | 'header' | 'oauth';
@@ -813,6 +815,8 @@ export type McpApproval = {
   argumentsHash: string;
   argumentsPreview: string;
   status: 'pending' | 'approved' | 'denied' | 'used' | 'expired';
+  approvalDecision:
+    'allow-once' | 'allow-chat' | 'allow-always' | 'deny' | null;
   approverSurface: string | null;
   sessionId: string | null;
   createdAt: string;

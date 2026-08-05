@@ -51,7 +51,9 @@ export function createMcpRoutes(
       { ...(await safeJsonObject(c)), id },
       paths,
     );
-    if (result.ok) await getMcpRegistry(paths).refresh(id);
+    if (result.ok && readRefreshRegistry(result.data)) {
+      await getMcpRegistry(paths).refresh(id);
+    }
     return c.json(result, result.ok ? 200 : 400);
   });
 
@@ -209,7 +211,7 @@ export function createMcpRoutes(
     const result = await resolveMcpApprovalWithPaths(
       { ...(await safeJsonObject(c)), id: c.req.param('id') } as {
         id: string;
-        decision: 'approve' | 'deny';
+        decision: 'allow-once' | 'allow-chat' | 'allow-always' | 'deny';
         approverSurface?: string;
       },
       paths,
@@ -264,6 +266,10 @@ function readIdFromResultData(data: unknown) {
   return isRecord(server) && typeof server.id === 'string'
     ? server.id
     : undefined;
+}
+
+function readRefreshRegistry(data: unknown) {
+  return !isRecord(data) || data.refreshRegistry !== false;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

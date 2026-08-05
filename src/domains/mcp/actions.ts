@@ -117,7 +117,7 @@ export const mcpServerDisableAction = defineTool({
 export const mcpApprovalResolveAction = defineTool({
   name: 'neondeck_mcp_approval_resolve',
   description:
-    'Approve or deny one pending MCP tool-call approval. Requires confirm=true.',
+    'Allow one exact pending MCP tool call or deny it. Chat-wide and persistent policy changes require a user-owned surface. Requires confirm=true.',
   input: mcpApprovalResolveInputSchema,
   output: mcpActionResultSchema,
   async run({ data: input }) {
@@ -129,6 +129,18 @@ export const mcpApprovalResolveAction = defineTool({
           changed: false,
           message: 'Resolving MCP approvals requires confirm=true.',
           requires: ['confirm'],
+        },
+      };
+    }
+    if (input.decision === 'allow-chat' || input.decision === 'allow-always') {
+      return {
+        output: {
+          ok: false,
+          action: 'mcp_approval_resolve',
+          changed: false,
+          message:
+            'Chat-wide and always-allow MCP decisions must be made from the dashboard or CLI.',
+          requires: ['userOwnedSurface'],
         },
       };
     }
@@ -258,7 +270,7 @@ function guardAgentMcpServerConfig(
   server: {
     transport: string;
     auth?: { kind?: string; clientSecret?: unknown };
-    tools?: { autoApprove?: string[] };
+    tools?: unknown;
   },
   action: string,
 ) {
@@ -280,10 +292,10 @@ function guardAgentMcpServerConfig(
       'OAuth MCP client-secret references are user-surface only because they forward environment-backed secrets.',
     );
   }
-  if (server.tools?.autoApprove && server.tools.autoApprove.length > 0) {
+  if (server.tools !== undefined) {
     return blockedAgentMcpAction(
       action,
-      'MCP tool auto-approval can only be configured from the dashboard, CLI, or direct config edit.',
+      'MCP tool approval policy can only be configured from the dashboard, CLI, or direct config edit.',
     );
   }
   return null;
@@ -328,7 +340,7 @@ async function guardAgentMcpServerUpdate(
   if (hasUserOwnedMcpUpdateField(patch)) {
     return blockedAgentMcpAction(
       'mcp_server_update',
-      'Endpoint, transport, stdio process, and MCP tool-policy changes must be made from a user-owned surface so existing approvals and auto-approval policy cannot be retargeted by the model.',
+      'Endpoint, transport, stdio process, and MCP tool-policy changes must be made from a user-owned surface so existing approvals and approval policy cannot be retargeted by the model.',
     );
   }
   return null;

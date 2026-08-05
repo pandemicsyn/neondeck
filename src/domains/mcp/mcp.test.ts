@@ -10,6 +10,7 @@ import {
   completeMcpOAuthCallback,
   consumeUsableMcpApproval,
   createMcpApprovalRequest,
+  decideMcpToolPolicy,
   getMcpRegistry,
   hashMcpArguments,
   listMcpApprovals,
@@ -62,6 +63,69 @@ afterEach(async () => {
 });
 
 describe('MCP support', () => {
+  it('defaults to allowing explicitly read-only tools and prompting for writes', () => {
+    const config = {
+      servers: {
+        mail: {
+          transport: 'http' as const,
+          url: 'https://mcp.example.test/mcp',
+        },
+      },
+    };
+
+    expect(
+      decideMcpToolPolicy({
+        config,
+        serverId: 'mail',
+        toolName: 'search',
+        annotations: { readOnlyHint: true, destructiveHint: false },
+      }),
+    ).toBe('allow');
+    expect(
+      decideMcpToolPolicy({
+        config,
+        serverId: 'mail',
+        toolName: 'send',
+        annotations: { readOnlyHint: false, destructiveHint: false },
+      }),
+    ).toBe('ask');
+    expect(
+      decideMcpToolPolicy({
+        config,
+        serverId: 'mail',
+        toolName: 'unannotated',
+      }),
+    ).toBe('ask');
+  });
+
+  it('applies per-tool policy overrides before the server approval mode', () => {
+    const config = {
+      servers: {
+        mail: {
+          transport: 'http' as const,
+          url: 'https://mcp.example.test/mcp',
+          tools: {
+            approvalMode: 'approve' as const,
+            overrides: {
+              search: 'prompt' as const,
+              send: 'deny' as const,
+            },
+          },
+        },
+      },
+    };
+
+    expect(
+      decideMcpToolPolicy({ config, serverId: 'mail', toolName: 'search' }),
+    ).toBe('ask');
+    expect(
+      decideMcpToolPolicy({ config, serverId: 'mail', toolName: 'send' }),
+    ).toBe('deny');
+    expect(
+      decideMcpToolPolicy({ config, serverId: 'mail', toolName: 'other' }),
+    ).toBe('allow');
+  });
+
   it('bootstraps and validates strict mcp.json config', async () => {
     const home = await tempDir();
     const paths = runtimePaths(home);
@@ -122,7 +186,8 @@ describe('MCP support', () => {
             command: process.execPath,
             args: [fixture],
             tools: {
-              deny: ['danger'],
+              approvalMode: 'prompt',
+              overrides: { danger: 'deny' },
             },
           },
         },
@@ -173,7 +238,7 @@ describe('MCP support', () => {
         resolveMcpApprovalWithPaths(
           {
             id: approvals[0].id,
-            decision: 'approve',
+            decision: 'allow-once',
             approverSurface: 'test',
           },
           paths,
@@ -184,9 +249,13 @@ describe('MCP support', () => {
     }
 
     const second = toolOutput(
-      await echo!.run({
-        data: { text: 'hello' },
-      } as never),
+      await runWithFlueExecutionContextForTests(
+        { agentName: 'display-assistant', instanceId: sessionId },
+        () =>
+          echo!.run({
+            data: { text: 'hello' },
+          } as never),
+      ),
     );
     expect(second).toMatchObject({
       ok: true,
@@ -218,7 +287,7 @@ describe('MCP support', () => {
     ]);
   });
 
-  it('normalizes blank MCP session ids before creating or updating approvals', async () => {
+  it('normalizes blank MCP session ids and isolates pending approvals by chat', async () => {
     const home = await tempDir();
     const paths = runtimePaths(home);
     await ensureRuntimeHome(paths);
@@ -305,72 +374,17 @@ describe('MCP support', () => {
     expect(second).toMatchObject({
       ok: false,
       status: 'approval-required',
-      approvalId: existing!.id,
     });
+    expect(second.approvalId).not.toBe(existing!.id);
     approvals = await listMcpApprovals(paths);
     expect(approvals).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
           id: existing!.id,
-          sessionId,
+          sessionId: null,
         }),
-      ]),
-    );
-
-    const legacyWhitespace = await createMcpApprovalRequest(
-      {
-        serverId: 'fixture',
-        toolName: 'echo',
-        adaptedName: 'mcp__fixture__echo',
-        argumentsHash: hashMcpArguments({ text: 'legacy-whitespace' }),
-        argumentsPreview: '{"text":"legacy-whitespace"}',
-      },
-      paths,
-    );
-    const database = new DatabaseSync(paths.neondeckDatabase);
-    try {
-      database
-        .prepare(
-          `
-          UPDATE mcp_tool_approvals
-          SET session_id = '   '
-          WHERE id = ?;
-        `,
-        )
-        .run(legacyWhitespace!.id);
-    } finally {
-      database.close();
-    }
-
-    const third = await runWithFlueExecutionContextForTests(
-      { agentName: 'display-assistant', instanceId: sessionId },
-      () =>
-        runMcpToolThroughGate(
-          {
-            serverId: 'fixture',
-            toolName: 'echo',
-            adaptedName: 'mcp__fixture__echo',
-            context: {
-              input: { text: 'legacy-whitespace' },
-              sessionId: ' ',
-            },
-            run: async () => {
-              throw new Error('unexpected MCP execution before approval');
-            },
-          },
-          paths,
-        ),
-    );
-    expect(third).toMatchObject({
-      ok: false,
-      status: 'approval-required',
-      approvalId: legacyWhitespace!.id,
-    });
-    approvals = await listMcpApprovals(paths);
-    expect(approvals).toEqual(
-      expect.arrayContaining([
         expect.objectContaining({
-          id: legacyWhitespace!.id,
+          id: second.approvalId,
           sessionId,
         }),
       ]),
@@ -397,7 +411,7 @@ describe('MCP support', () => {
               },
             },
             tools: {
-              autoApprove: ['nullable'],
+              overrides: { nullable: 'approve' },
             },
           },
         },
@@ -437,7 +451,7 @@ describe('MCP support', () => {
           command: process.execPath,
           args: [fixture],
           tools: {
-            autoApprove: ['echo'],
+            overrides: { echo: 'approve' },
           },
         },
       },
@@ -606,6 +620,48 @@ describe('MCP support', () => {
     }
   });
 
+  it('applies MCP policy changes without reconnecting the server', async () => {
+    const home = await tempDir();
+    const paths = runtimePaths(home);
+    await ensureRuntimeHome(paths);
+    await addMcpServer(
+      {
+        id: 'fixture',
+        server: {
+          transport: 'http',
+          url: 'https://mcp.example.test/mcp',
+          enabled: false,
+        },
+      },
+      paths,
+    );
+
+    let refreshes = 0;
+    let started = false;
+    const initialRefresh = deferred<void>();
+    const restoreRefreshHook = setMcpRegistryRefreshHookForTests(() => {
+      if (!started) initialRefresh.resolve();
+      else refreshes += 1;
+    });
+    const registry = getMcpRegistry(paths);
+    try {
+      registry.start();
+      await initialRefresh.promise;
+      started = true;
+      await updateMcpServer(
+        {
+          id: 'fixture',
+          server: { tools: { approvalMode: 'prompt' } },
+        },
+        paths,
+      );
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      expect(refreshes).toBe(0);
+    } finally {
+      restoreRefreshHook();
+    }
+  });
+
   it('returns not found for missing targeted MCP registry refreshes', async () => {
     const home = await tempDir();
     const paths = runtimePaths(home);
@@ -682,7 +738,7 @@ describe('MCP support', () => {
       await resolveMcpApprovalWithPaths(
         {
           id: request!.id,
-          decision: 'approve',
+          decision: 'allow-once',
           approverSurface: 'test',
         },
         paths,
@@ -708,6 +764,7 @@ describe('MCP support', () => {
           toolName: 'echo',
           adaptedName: 'mcp__fixture__echo',
           argumentsHash: 'abc123',
+          sessionId,
         },
         paths,
       ),
@@ -731,6 +788,7 @@ describe('MCP support', () => {
           toolName: 'echo',
           adaptedName: 'mcp__fixture__echo',
           argumentsHash: 'abc123',
+          sessionId,
         },
         paths,
       ),
@@ -748,6 +806,217 @@ describe('MCP support', () => {
       ok: false,
       changed: false,
       approval: { id: request!.id, status: 'used' },
+    });
+  });
+
+  it('reuses chat-scoped MCP approval for different arguments only in that chat', async () => {
+    const home = await tempDir();
+    const paths = runtimePaths(home);
+    await ensureRuntimeHome(paths);
+    const session = await createChatSession({ title: 'MCP chat grant' }, paths);
+    const sessionId = (session as { session: ChatSessionRecord }).session.id;
+    const request = await createMcpApprovalRequest(
+      {
+        serverId: 'fixture',
+        toolName: 'echo',
+        adaptedName: 'mcp__fixture__echo',
+        argumentsHash: 'first',
+        argumentsPreview: '{"text":"first"}',
+        sessionId,
+      },
+      paths,
+    );
+    const restoreDispatch = setApprovalNudgeDispatchForTests(async () => ({
+      submissionId: 'dispatch-mcp-chat-grant',
+      acceptedAt: new Date().toISOString(),
+      uid: 'mcp-chat-grant',
+    }));
+    try {
+      await expect(
+        resolveMcpApprovalWithPaths(
+          {
+            id: request!.id,
+            decision: 'allow-chat',
+            approverSurface: 'test',
+          },
+          paths,
+        ),
+      ).resolves.toMatchObject({
+        ok: true,
+        approval: { approvalDecision: 'allow-chat', status: 'approved' },
+      });
+    } finally {
+      restoreDispatch();
+    }
+
+    const database = new DatabaseSync(paths.neondeckDatabase);
+    try {
+      database
+        .prepare(`UPDATE mcp_tool_approvals SET expires_at = ? WHERE id = ?;`)
+        .run('2000-01-01T00:00:00.000Z', request!.id);
+    } finally {
+      database.close();
+    }
+
+    await expect(
+      consumeUsableMcpApproval(
+        {
+          serverId: 'fixture',
+          toolName: 'echo',
+          adaptedName: 'mcp__fixture__echo',
+          argumentsHash: 'different',
+          sessionId,
+        },
+        paths,
+      ),
+    ).resolves.toMatchObject({
+      id: request!.id,
+      approvalDecision: 'allow-chat',
+      status: 'approved',
+    });
+    await expect(
+      consumeUsableMcpApproval(
+        {
+          serverId: 'fixture',
+          toolName: 'echo',
+          adaptedName: 'mcp__fixture__echo',
+          argumentsHash: 'different',
+          sessionId: 'another-chat',
+        },
+        paths,
+      ),
+    ).resolves.toBeNull();
+  });
+
+  it('promotes always-allow decisions into the MCP server policy', async () => {
+    const home = await tempDir();
+    const paths = runtimePaths(home);
+    await ensureRuntimeHome(paths);
+    await addMcpServer(
+      {
+        id: 'fixture',
+        server: {
+          transport: 'http',
+          url: 'https://mcp.example.test/mcp',
+          tools: { approvalMode: 'prompt' },
+        },
+      },
+      paths,
+    );
+    const request = await createMcpApprovalRequest(
+      {
+        serverId: 'fixture',
+        toolName: 'echo',
+        adaptedName: 'mcp__fixture__echo',
+        argumentsHash: 'first',
+        argumentsPreview: '{"text":"first"}',
+      },
+      paths,
+    );
+
+    await expect(
+      resolveMcpApprovalWithPaths(
+        {
+          id: request!.id,
+          decision: 'allow-always',
+          approverSurface: 'test',
+        },
+        paths,
+      ),
+    ).resolves.toMatchObject({
+      ok: true,
+      approval: { approvalDecision: 'allow-always', status: 'approved' },
+    });
+    await expect(readMcpConfig(paths)).resolves.toMatchObject({
+      servers: {
+        fixture: {
+          tools: {
+            approvalMode: 'prompt',
+            overrides: { echo: 'approve' },
+          },
+        },
+      },
+    });
+    const database = new DatabaseSync(paths.neondeckDatabase);
+    try {
+      database
+        .prepare(`UPDATE mcp_tool_approvals SET expires_at = ? WHERE id = ?;`)
+        .run('2000-01-01T00:00:00.000Z', request!.id);
+    } finally {
+      database.close();
+    }
+    await expect(
+      listMcpApprovals(paths, { includeResolved: true }),
+    ).resolves.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: request!.id,
+          approvalDecision: 'allow-always',
+          status: 'approved',
+        }),
+      ]),
+    );
+  });
+
+  it('serializes concurrent always-allow promotions without losing overrides', async () => {
+    const home = await tempDir();
+    const paths = runtimePaths(home);
+    await ensureRuntimeHome(paths);
+    await addMcpServer(
+      {
+        id: 'fixture',
+        server: {
+          transport: 'http',
+          url: 'https://mcp.example.test/mcp',
+          tools: { approvalMode: 'prompt' },
+        },
+      },
+      paths,
+    );
+    const [echo, search] = await Promise.all(
+      [
+        ['echo', 'echo-hash'],
+        ['search', 'search-hash'],
+      ].map(([toolName, argumentsHash]) =>
+        createMcpApprovalRequest(
+          {
+            serverId: 'fixture',
+            toolName,
+            adaptedName: `mcp__fixture__${toolName}`,
+            argumentsHash,
+            argumentsPreview: '{}',
+          },
+          paths,
+        ),
+      ),
+    );
+
+    await expect(
+      Promise.all(
+        [echo!, search!].map((approval) =>
+          resolveMcpApprovalWithPaths(
+            {
+              id: approval.id,
+              decision: 'allow-always',
+              approverSurface: 'test',
+            },
+            paths,
+          ),
+        ),
+      ),
+    ).resolves.toEqual([
+      expect.objectContaining({ ok: true, changed: true }),
+      expect.objectContaining({ ok: true, changed: true }),
+    ]);
+    await expect(readMcpConfig(paths)).resolves.toMatchObject({
+      servers: {
+        fixture: {
+          tools: {
+            approvalMode: 'prompt',
+            overrides: { echo: 'approve', search: 'approve' },
+          },
+        },
+      },
     });
   });
 
@@ -817,7 +1086,7 @@ describe('MCP support', () => {
         resolveMcpApprovalWithPaths(
           {
             id: request!.id,
-            decision: 'approve',
+            decision: 'allow-once',
             approverSurface: 'test',
           },
           paths,
@@ -890,7 +1159,7 @@ describe('MCP support', () => {
         resolveMcpApprovalWithPaths(
           {
             id: request!.id,
-            decision: 'approve',
+            decision: 'allow-once',
             approverSurface: 'test',
           },
           paths,
@@ -1091,7 +1360,10 @@ describe('MCP support', () => {
           transport: 'http',
           url: 'https://mcp.example.test/mcp',
           auth: { kind: 'oauth', clientId: 'old-client' },
-          tools: { autoApprove: ['echo'], deny: ['danger'] },
+          tools: {
+            approvalMode: 'prompt',
+            overrides: { echo: 'approve', danger: 'deny' },
+          },
         },
       },
       paths,
@@ -1109,13 +1381,16 @@ describe('MCP support', () => {
 
     await expect(
       updateMcpServer(
-        { id: 'remote', server: { tools: { deny: ['blocked'] } } },
+        {
+          id: 'remote',
+          server: { tools: { overrides: { blocked: 'deny' } } },
+        },
         paths,
       ),
     ).resolves.toMatchObject({ ok: true, changed: true });
     config = await readMcpConfig(paths);
     server = expectHttpServer(config.servers.remote);
-    expect(server.tools).toEqual({ deny: ['blocked'] });
+    expect(server.tools).toEqual({ overrides: { blocked: 'deny' } });
 
     await expect(
       updateMcpServer(
@@ -1195,7 +1470,7 @@ describe('MCP support', () => {
         server: {
           transport: 'http',
           url: 'https://mcp.example.test/mcp',
-          tools: { autoApprove: ['echo'] },
+          tools: { overrides: { echo: 'approve' } },
         },
       },
       paths,
@@ -1519,7 +1794,7 @@ describe('MCP support', () => {
     await resolveMcpApprovalWithPaths(
       {
         id: request!.id,
-        decision: 'approve',
+        decision: 'allow-once',
         approverSurface: 'test',
       },
       paths,
@@ -1573,7 +1848,7 @@ describe('MCP support', () => {
     await resolveMcpApprovalWithPaths(
       {
         id: request!.id,
-        decision: 'approve',
+        decision: 'allow-once',
         approverSurface: 'test',
       },
       paths,
@@ -1735,7 +2010,7 @@ describe('MCP support', () => {
     await resolveMcpApprovalWithPaths(
       {
         id: request!.id,
-        decision: 'approve',
+        decision: 'allow-once',
         approverSurface: 'test',
       },
       paths,
@@ -1767,7 +2042,7 @@ describe('MCP support', () => {
     );
   });
 
-  it('expires approved MCP tool calls when OAuth tokens are replaced', async () => {
+  it('preserves chat-scoped MCP grants when OAuth tokens refresh', async () => {
     const home = await tempDir();
     const paths = runtimePaths(home);
     await ensureRuntimeHome(paths);
@@ -1817,6 +2092,8 @@ describe('MCP support', () => {
     } finally {
       database.close();
     }
+    const session = await createChatSession({ title: 'OAuth refresh' }, paths);
+    const sessionId = (session as { session: ChatSessionRecord }).session.id;
     const request = await createMcpApprovalRequest(
       {
         serverId: 'remote',
@@ -1824,17 +2101,27 @@ describe('MCP support', () => {
         adaptedName: 'mcp__remote__echo',
         argumentsHash: 'abc123',
         argumentsPreview: '{"text":"hello"}',
+        sessionId,
       },
       paths,
     );
-    await resolveMcpApprovalWithPaths(
-      {
-        id: request!.id,
-        decision: 'approve',
-        approverSurface: 'test',
-      },
-      paths,
-    );
+    const restoreDispatch = setApprovalNudgeDispatchForTests(async () => ({
+      submissionId: 'dispatch-oauth-refresh-grant',
+      acceptedAt: new Date().toISOString(),
+      uid: 'oauth-refresh-grant',
+    }));
+    try {
+      await resolveMcpApprovalWithPaths(
+        {
+          id: request!.id,
+          decision: 'allow-chat',
+          approverSurface: 'test',
+        },
+        paths,
+      );
+    } finally {
+      restoreDispatch();
+    }
 
     const { createMcpOAuthProvider } = await import('./oauth');
     const provider = createMcpOAuthProvider({
@@ -1860,18 +2147,24 @@ describe('MCP support', () => {
           serverId: 'remote',
           toolName: 'echo',
           adaptedName: 'mcp__remote__echo',
-          argumentsHash: 'abc123',
+          argumentsHash: 'different-after-refresh',
+          sessionId,
         },
         paths,
       ),
-    ).resolves.toBeNull();
+    ).resolves.toMatchObject({
+      id: request!.id,
+      approvalDecision: 'allow-chat',
+      status: 'approved',
+    });
     await expect(
       listMcpApprovals(paths, { includeResolved: true }),
     ).resolves.toEqual(
       expect.arrayContaining([
         expect.objectContaining({
           id: request!.id,
-          status: 'expired',
+          approvalDecision: 'allow-chat',
+          status: 'approved',
         }),
       ]),
     );
@@ -2089,7 +2382,7 @@ describe('MCP support', () => {
           command: process.execPath,
           args: [fixturePath()],
           tools: {
-            autoApprove: ['echo'],
+            overrides: { echo: 'approve' },
           },
         },
       },
@@ -2129,7 +2422,7 @@ describe('MCP support', () => {
           command: process.execPath,
           args: [fixturePath()],
           tools: {
-            autoApprove: ['echo'],
+            overrides: { echo: 'approve' },
           },
         },
       },
@@ -2184,7 +2477,9 @@ describe('MCP support', () => {
             env: {
               NEONDECK_MCP_ONLY_ECHO: { env: 'NEONDECK_MCP_ONLY_ECHO' },
             },
-            tools: { autoApprove: ['echo', 'danger'] },
+            tools: {
+              overrides: { echo: 'approve', danger: 'approve' },
+            },
           },
         },
         paths,

@@ -16,6 +16,7 @@ export type McpGateInput = {
   serverId: string;
   toolName: string;
   adaptedName: string;
+  annotations?: unknown;
   run: McpToolDelegate;
   context: {
     input: Record<string, unknown>;
@@ -36,6 +37,7 @@ export async function runMcpToolThroughGate(
     config,
     serverId: input.serverId,
     toolName: input.toolName,
+    annotations: input.annotations,
   });
 
   if (policy === 'deny') {
@@ -73,6 +75,7 @@ export async function runMcpToolThroughGate(
         toolName: input.toolName,
         adaptedName: input.adaptedName,
         argumentsHash,
+        sessionId,
       },
       paths,
     );
@@ -113,7 +116,7 @@ export async function runMcpToolThroughGate(
         argumentsHash,
         argumentsPreview: truncateText(argumentsPreview, 1000),
         message:
-          'MCP tool approval is required. Ask the user to approve, then retry the same tool call with the same arguments.',
+          'MCP tool approval is required. Ask the user to allow it once, for this chat, or always, then retry the tool call. Only allow-once requires identical arguments.',
       };
     }
     approvalId = approval.id;

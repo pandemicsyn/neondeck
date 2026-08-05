@@ -18,9 +18,19 @@ export const mcpEnvRefSchema = v.strictObject({
   env: mcpEnvVarNameSchema,
 });
 
+export const mcpServerApprovalModeSchema = v.picklist([
+  'prompt',
+  'writes',
+  'approve',
+]);
+export const mcpToolApprovalModeSchema = v.picklist([
+  'prompt',
+  'approve',
+  'deny',
+]);
 export const mcpToolPolicySchema = v.strictObject({
-  autoApprove: v.optional(v.array(mcpToolNameSchema)),
-  deny: v.optional(v.array(mcpToolNameSchema)),
+  approvalMode: v.optional(mcpServerApprovalModeSchema),
+  overrides: v.optional(v.record(mcpToolNameSchema, mcpToolApprovalModeSchema)),
 });
 
 const mcpNoneAuthSchema = v.strictObject({
@@ -115,7 +125,7 @@ export const mcpServerRemoveInputSchema = v.object({
 
 export const mcpApprovalResolveInputSchema = v.object({
   id: nonEmptyStringSchema,
-  decision: v.picklist(['approve', 'deny']),
+  decision: v.picklist(['allow-once', 'allow-chat', 'allow-always', 'deny']),
   approverSurface: v.optional(nonEmptyStringSchema),
   confirm: v.optional(v.boolean()),
 });
@@ -138,6 +148,12 @@ export const mcpListAuditInputSchema = v.object({
 export type McpConfig = v.InferOutput<typeof mcpConfigSchema>;
 export type McpServerConfig = v.InferOutput<typeof mcpServerConfigSchema>;
 export type McpToolPolicy = v.InferOutput<typeof mcpToolPolicySchema>;
+export type McpServerApprovalMode = v.InferOutput<
+  typeof mcpServerApprovalModeSchema
+>;
+export type McpToolApprovalMode = v.InferOutput<
+  typeof mcpToolApprovalModeSchema
+>;
 export type McpAuthConfig = v.InferOutput<typeof mcpAuthConfigSchema>;
 export type McpEnvRef = v.InferOutput<typeof mcpEnvRefSchema>;
 
@@ -155,6 +171,10 @@ export function defaultMcpConfig(): McpConfig {
 
 export function mcpServerEnabled(server: McpServerConfig) {
   return server.enabled ?? true;
+}
+
+export function mcpServerApprovalMode(server: McpServerConfig) {
+  return server.tools?.approvalMode ?? 'writes';
 }
 
 function isAllowedMcpHttpUrl(value: string) {
