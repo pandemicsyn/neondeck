@@ -197,7 +197,11 @@ export function createPrReviewerDraftTools(
               },
               paths,
               {},
-              { expectedHeadSha: bound.review.headSha, origin: 'neon' },
+              {
+                expectedHeadSha: bound.review.headSha,
+                origin:
+                  data.body === undefined ? comment.comment.origin : 'neon',
+              },
             );
             return compactResult(updateName, result, data.commentId);
           },

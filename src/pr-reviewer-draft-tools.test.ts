@@ -150,6 +150,50 @@ describe('PR reviewer local draft tools', () => {
     });
   });
 
+  it('preserves human origin and text during an anchor-only update', async () => {
+    const review = reviewRecord();
+    const humanComment = {
+      ...draftComment('draft-1'),
+      body: 'Human-authored wording.',
+      origin: 'human' as const,
+    };
+    const draft = reviewDraft(review, [humanComment]);
+    const patchComment = vi.fn<typeof patchGitHubPrReviewDraftComment>(() =>
+      Promise.resolve(
+        success('patch', {
+          ...draft,
+          comments: [{ ...humanComment, line: 18 }],
+        }),
+      ),
+    );
+    const tools = createPrReviewerDraftTools(
+      { reviewId: review.id, headSha: review.headSha },
+      runtimePaths('/tmp/neondeck-reviewer-draft-tools'),
+      {
+        readReview: () => review,
+        readDraftForComment: () => draft,
+        patchComment,
+      },
+    );
+    const update = tools.find(
+      (tool) => tool.name === 'neondeck_pr_review_draft_comment_update',
+    );
+
+    await update?.run({
+      data: { commentId: humanComment.id, line: 18 },
+      step: immediateStep(),
+    } as never);
+
+    expect(patchComment.mock.calls[0]?.[2]).toMatchObject({
+      body: humanComment.body,
+      line: 18,
+    });
+    expect(patchComment.mock.calls[0]?.[5]).toEqual({
+      expectedHeadSha: review.headSha,
+      origin: 'human',
+    });
+  });
+
   it('refuses mutations after the bound review revision changes', async () => {
     const review = reviewRecord();
     const patchComment = vi.fn<typeof patchGitHubPrReviewDraftComment>();
