@@ -588,7 +588,11 @@ export async function postGitHubPrReviewDraftComment(
   input: v.InferInput<typeof prReviewDraftCommentInputSchema>,
   paths: RuntimePaths = runtimePaths(),
   dependencies: PrEventStateDependencies = {},
-  metadata: { origin?: 'human' | 'neon' } = {},
+  metadata: {
+    expectedHeadSha?: string;
+    id?: string;
+    origin?: 'human' | 'neon';
+  } = {},
 ): Promise<PrEventActionResult> {
   await ensureRuntimeHome(paths);
   const parsedTarget = v.safeParse(prEventTargetInputSchema, targetInput);
@@ -643,8 +647,10 @@ export async function postGitHubPrReviewDraftComment(
 
   try {
     const draft = addPrReviewDraftComment({
+      id: metadata.id,
       databasePath: paths.neondeckDatabase,
       draftId: parsed.output.draftId,
+      expectedHeadSha: metadata.expectedHeadSha,
       path: parsed.output.path,
       side: parsed.output.side,
       line: parsed.output.line,
@@ -675,6 +681,10 @@ export async function patchGitHubPrReviewDraftComment(
   input: v.InferInput<typeof prReviewDraftCommentUpdateInputSchema>,
   paths: RuntimePaths = runtimePaths(),
   dependencies: PrEventStateDependencies = {},
+  metadata: {
+    expectedHeadSha?: string;
+    origin?: 'human' | 'neon';
+  } = {},
 ): Promise<PrEventActionResult> {
   await ensureRuntimeHome(paths);
   const parsedTarget = v.safeParse(prEventTargetInputSchema, targetInput);
@@ -748,6 +758,8 @@ export async function patchGitHubPrReviewDraftComment(
       databasePath: paths.neondeckDatabase,
       commentId,
       body: parsed.output.body,
+      expectedHeadSha: metadata.expectedHeadSha,
+      origin: metadata.origin,
       ...('path' in parsed.output ? { path: parsed.output.path } : {}),
       ...('side' in parsed.output ? { side: parsed.output.side } : {}),
       ...('line' in parsed.output ? { line: parsed.output.line } : {}),
@@ -777,6 +789,7 @@ export async function deleteGitHubPrReviewDraftComment(
   targetInput: v.InferInput<typeof prEventTargetInputSchema>,
   commentId: string,
   paths: RuntimePaths = runtimePaths(),
+  metadata: { expectedHeadSha?: string } = {},
 ): Promise<PrEventActionResult> {
   await ensureRuntimeHome(paths);
   const parsedTarget = v.safeParse(prEventTargetInputSchema, targetInput);
@@ -816,6 +829,7 @@ export async function deleteGitHubPrReviewDraftComment(
     const draft = deletePrReviewDraftComment({
       databasePath: paths.neondeckDatabase,
       commentId,
+      expectedHeadSha: metadata.expectedHeadSha,
     });
     return okResult(
       'github_pr_review_draft_comment_delete',

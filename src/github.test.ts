@@ -1465,6 +1465,18 @@ describe('github foundation', () => {
       body: 'Prefer an early return.',
     });
 
+    const neonUpdated = updatePrReviewDraftComment({
+      databasePath: paths.neondeckDatabase,
+      commentId: commentId ?? '',
+      body: 'Neon revised this local draft.',
+      origin: 'neon',
+    });
+    expect(neonUpdated.comments[0]).toMatchObject({
+      id: commentId,
+      body: expect.stringContaining('Neon revised this local draft.'),
+      origin: 'neon',
+    });
+
     const reanchored = updatePrReviewDraftComment({
       databasePath: paths.neondeckDatabase,
       commentId: commentId ?? '',
@@ -1588,6 +1600,75 @@ describe('github foundation', () => {
     ).toMatchObject({
       id: draft.id,
       verdict: 'comment',
+    });
+  });
+
+  it('rejects draft comment writes after the draft head is reanchored', async () => {
+    const paths = runtimePaths(await tempHome());
+    await ensureRuntimeHome(paths);
+    const originalHead = 'head-before-race';
+    const draft = upsertPrReviewDraft({
+      databasePath: paths.neondeckDatabase,
+      repo: 'pandemicsyn/neondeck',
+      prNumber: 123,
+      headSha: originalHead,
+    });
+    const withComment = addPrReviewDraftComment({
+      databasePath: paths.neondeckDatabase,
+      draftId: draft.id,
+      expectedHeadSha: originalHead,
+      path: 'src/app.ts',
+      side: 'RIGHT',
+      line: 12,
+      body: 'Keep this comment on the original revision.',
+    });
+    const commentId = withComment.comments[0]!.id;
+    upsertPrReviewDraft({
+      databasePath: paths.neondeckDatabase,
+      repo: 'pandemicsyn/neondeck',
+      prNumber: 123,
+      headSha: 'head-after-race',
+      reanchorHeadSha: true,
+    });
+
+    expect(() =>
+      updatePrReviewDraftComment({
+        databasePath: paths.neondeckDatabase,
+        commentId,
+        expectedHeadSha: originalHead,
+        body: 'This stale update must not land.',
+      }),
+    ).toThrow(/expected head revision/i);
+    expect(() =>
+      deletePrReviewDraftComment({
+        databasePath: paths.neondeckDatabase,
+        commentId,
+        expectedHeadSha: originalHead,
+      }),
+    ).toThrow(/expected head revision/i);
+    expect(() =>
+      addPrReviewDraftComment({
+        databasePath: paths.neondeckDatabase,
+        draftId: draft.id,
+        expectedHeadSha: originalHead,
+        path: 'src/app.ts',
+        side: 'RIGHT',
+        line: 14,
+        body: 'This stale create must not land.',
+      }),
+    ).toThrow(/expected head revision/i);
+
+    expect(
+      readLivePrReviewDraft({
+        databasePath: paths.neondeckDatabase,
+        repo: 'pandemicsyn/neondeck',
+        prNumber: 123,
+      }),
+    ).toMatchObject({
+      headSha: 'head-after-race',
+      comments: [
+        { id: commentId, body: 'Keep this comment on the original revision.' },
+      ],
     });
   });
 

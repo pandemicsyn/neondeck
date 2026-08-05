@@ -136,6 +136,14 @@ describe('PR review prompts', () => {
 
     expect(firstReadOptions).toMatchObject({ surface: true, fresh: true });
     expect(first.instructions).toBe(second.instructions);
+    expect(first.tools.map((tool) => tool.name)).toEqual(
+      expect.arrayContaining([
+        'neondeck_pr_review_draft_comment_create',
+        'neondeck_pr_review_draft_comment_update',
+        'neondeck_pr_review_draft_comment_delete',
+      ]),
+    );
+    expect(first.instructions).toContain('use the matching mounted draft tool');
     expect(first.instructions).toContain(
       'Flue framework narration signals with reserved types',
     );

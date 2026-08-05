@@ -21,6 +21,7 @@ import {
 import { readPrReview } from '../modules/pr-reviews';
 import {
   createDeferredPrReviewerWorkspaceTools,
+  createPrReviewerDraftTools,
   prReviewerWorkspaceToolCallLimit,
   readPrReviewerHandoff,
   resolvePrReviewerWorkspace,
@@ -39,7 +40,7 @@ import {
 import { noWorkspace } from '../sandboxes/no-workspace';
 
 export const description =
-  'Continuing read-only reviewer conversation for one durable Neondeck PR review.';
+  'Continuing reviewer conversation with read-only repository access and review-bound local draft management.';
 
 export function createPrReviewerRoute(
   paths: RuntimePaths = runtimePaths(),
@@ -168,7 +169,13 @@ export async function buildPrReviewerRuntime(
     }),
     contextAvailable: true,
     reviewerWorkspace: workspace,
-    tools: workspace.tools,
+    tools: [
+      ...workspace.tools,
+      ...createPrReviewerDraftTools(
+        { reviewId: review.id, headSha: review.headSha },
+        paths,
+      ),
+    ],
     actions: [],
     subagents: [],
   };
@@ -176,6 +183,8 @@ export async function buildPrReviewerRuntime(
 
 export function PrReviewer({ id }: AgentProps) {
   const models = readAgentModelSelectionSync();
+  const paths = runtimePaths();
+  const conversation = parsePrReviewerConversationId(id);
   const [, setWorkspaceToolCallsUsed] = usePersistentState(
     'workspace-tool-calls-used',
     0,
@@ -185,11 +194,11 @@ export function PrReviewer({ id }: AgentProps) {
     typeof resolvePrReviewerWorkspaceForConversation
   > | null = null;
   const loadRuntime = (signal?: AbortSignal) =>
-    (runtimePromise ??= buildPrReviewerRuntime(id, runtimePaths(), { signal }));
+    (runtimePromise ??= buildPrReviewerRuntime(id, paths, { signal }));
   const loadWorkspace = (signal?: AbortSignal) =>
     (workspacePromise ??= resolvePrReviewerWorkspaceForConversation(
       id,
-      runtimePaths(),
+      paths,
       signal,
     ));
 
@@ -240,6 +249,14 @@ export function PrReviewer({ id }: AgentProps) {
   );
   for (const tool of tools) {
     useTool(tool);
+  }
+  if (conversation.headSha) {
+    for (const tool of createPrReviewerDraftTools(
+      { reviewId: conversation.reviewId, headSha: conversation.headSha },
+      paths,
+    )) {
+      useTool(tool);
+    }
   }
 
   return reviewerInstructionsFromRuntimeHome();
@@ -361,8 +378,10 @@ export function reviewerContext(input: {
     localDraftComments: (draft?.comments ?? []).map((comment) => ({
       id: comment.id,
       path: draftAnchorsIncluded ? comment.path : null,
+      side: draftAnchorsIncluded ? comment.side : null,
       line: draftAnchorsIncluded ? comment.line : null,
       startLine: draftAnchorsIncluded ? comment.startLine : null,
+      startSide: draftAnchorsIncluded ? comment.startSide : null,
       origin: comment.origin,
       body: comment.body.slice(0, 4_000),
     })),
