@@ -36,101 +36,115 @@ export function installFlueObservationHandlers(
   const observeFn = dependencies.observe ?? observe;
   const recordObservation =
     dependencies.recordFlueObservation ?? recordFlueObservation;
+  let activityWriteQueue = Promise.resolve();
 
-  const unsubscribe = observeFn(async (event, context) => {
+  const unsubscribe = observeFn((event, context) => {
     const contextHome = flueContextRuntimeHome(context);
     if (contextHome && contextHome !== paths.home) return;
 
-    await recordObservation(event, paths).catch((error) => {
-      console.error('[neondeck] failed to record Flue activity', error);
-    });
-
-    if (event.type === 'submission_settled') {
-      void settleBriefingObservation(event, paths).catch((error) => {
-        console.error('[neondeck] failed to settle briefing submission', error);
+    activityWriteQueue = activityWriteQueue
+      .then(() => recordObservation(event, paths))
+      .catch((error) => {
+        console.error('[neondeck] failed to record Flue activity', error);
       });
-      void Promise.resolve()
-        .then(() => settlePrReviewAssistObservation(event, paths))
-        .catch((error) => {
+
+    return activityWriteQueue.then(() => {
+      if (event.type === 'submission_settled') {
+        void settleBriefingObservation(event, paths).catch((error) => {
           console.error(
-            '[neondeck] failed to settle PR review submission',
+            '[neondeck] failed to settle briefing submission',
             error,
           );
         });
-      void settleScheduledTaskSubmission(
-        {
-          submissionId: event.submissionId,
-          failed: event.outcome !== 'completed',
-        },
-        paths,
-      ).catch((error) => {
-        console.error(
-          '[neondeck] failed to settle scheduled instruction submission',
-          error,
-        );
-      });
-    }
-
-    if (
-      event.type === 'submission_settled' &&
-      event.outcome === 'completed' &&
-      event.agentName === 'display-assistant' &&
-      event.instanceId &&
-      (
-        dependencies.isDirectDisplayAssistantSubmission ??
-        isDirectDisplayAssistantSubmission
-      )(event.submissionId, paths)
-    ) {
-      void (
-        dependencies.recordConversationTurn ??
-        recordConversationTurnAndMaybeQueueLearning
-      )(event.instanceId, paths, {}, event.submissionId).catch((error) => {
-        console.error('[neondeck] failed to record learning turn', error);
-      });
-    }
-
-    if (event.type === 'submission_settled') {
-      void settleAutopilotOwnerObservation(event, paths).catch((error) => {
-        console.error(
-          '[neondeck] failed to settle Autopilot owner turn',
-          error,
-        );
-      });
-    }
-
-    if (event.type === 'submission_settled' && event.outcome !== 'completed') {
-      void recordSubmissionFailure(event, paths).catch((error) => {
-        console.error('[neondeck] failed to record submission failure', error);
-      });
-    }
-
-    if (
-      event.type === 'operation' &&
-      event.durationMs > 15_000 &&
-      event.isError
-    ) {
-      void addNotification(
-        {
-          level: 'attention',
-          title: 'Slow Flue operation failed',
-          message: `${event.operationKind} failed after ${Math.round(event.durationMs / 1000)}s.`,
-          source: 'flue',
-          sourceId: event.operationId,
-          data: {
-            operationKind: event.operationKind,
-            operationId: event.operationId,
-            submissionId: event.submissionId ?? null,
-            durationMs: event.durationMs,
-            detailUrl: event.submissionId
-              ? `/activity?submissionId=${encodeURIComponent(event.submissionId)}`
-              : null,
+        void Promise.resolve()
+          .then(() => settlePrReviewAssistObservation(event, paths))
+          .catch((error) => {
+            console.error(
+              '[neondeck] failed to settle PR review submission',
+              error,
+            );
+          });
+        void settleScheduledTaskSubmission(
+          {
+            submissionId: event.submissionId,
+            failed: event.outcome !== 'completed',
           },
-        },
-        paths,
-      ).catch((error) => {
-        console.error('[neondeck] failed to record Flue operation', error);
-      });
-    }
+          paths,
+        ).catch((error) => {
+          console.error(
+            '[neondeck] failed to settle scheduled instruction submission',
+            error,
+          );
+        });
+      }
+
+      if (
+        event.type === 'submission_settled' &&
+        event.outcome === 'completed' &&
+        event.agentName === 'display-assistant' &&
+        event.instanceId &&
+        (
+          dependencies.isDirectDisplayAssistantSubmission ??
+          isDirectDisplayAssistantSubmission
+        )(event.submissionId, paths)
+      ) {
+        void (
+          dependencies.recordConversationTurn ??
+          recordConversationTurnAndMaybeQueueLearning
+        )(event.instanceId, paths, {}, event.submissionId).catch((error) => {
+          console.error('[neondeck] failed to record learning turn', error);
+        });
+      }
+
+      if (event.type === 'submission_settled') {
+        void settleAutopilotOwnerObservation(event, paths).catch((error) => {
+          console.error(
+            '[neondeck] failed to settle Autopilot owner turn',
+            error,
+          );
+        });
+      }
+
+      if (
+        event.type === 'submission_settled' &&
+        event.outcome !== 'completed'
+      ) {
+        void recordSubmissionFailure(event, paths).catch((error) => {
+          console.error(
+            '[neondeck] failed to record submission failure',
+            error,
+          );
+        });
+      }
+
+      if (
+        event.type === 'operation' &&
+        event.durationMs > 15_000 &&
+        event.isError
+      ) {
+        void addNotification(
+          {
+            level: 'attention',
+            title: 'Slow Flue operation failed',
+            message: `${event.operationKind} failed after ${Math.round(event.durationMs / 1000)}s.`,
+            source: 'flue',
+            sourceId: event.operationId,
+            data: {
+              operationKind: event.operationKind,
+              operationId: event.operationId,
+              submissionId: event.submissionId ?? null,
+              durationMs: event.durationMs,
+              detailUrl: event.submissionId
+                ? `/activity?submissionId=${encodeURIComponent(event.submissionId)}`
+                : null,
+            },
+          },
+          paths,
+        ).catch((error) => {
+          console.error('[neondeck] failed to record Flue operation', error);
+        });
+      }
+    });
   });
   observationHandlerUnsubscribers.set(paths.home, unsubscribe);
 }

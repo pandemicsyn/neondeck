@@ -133,6 +133,159 @@ describe('Flue v3 activity observability', () => {
     );
   });
 
+  it('retains safe typed review-workspace evidence without source contents', async () => {
+    const paths = await tempPaths();
+    await recordFlueObservation(queued(1), paths);
+    await recordFlueObservation(
+      {
+        ...base(2),
+        type: 'tool',
+        toolName: 'neondeck_review_workspace_read',
+        durationMs: 25,
+        isError: false,
+        result: { output: 'transport wrapper' },
+        effectiveResult: {
+          revisionKind: 'head',
+          path: 'src/app.ts',
+          startLine: 10,
+          endLine: 40,
+          totalLines: 120,
+          content: 'secret implementation contents',
+          truncated: false,
+          workspaceToolCallsRemaining: 249,
+          workspaceToolCallLimit: 250,
+        },
+      } as never,
+      paths,
+    );
+    const query = 'exact source fragment that must not be persisted';
+    await recordFlueObservation(
+      {
+        ...base(3),
+        type: 'tool_start',
+        toolName: 'neondeck_review_workspace_search',
+        origin: 'model',
+        args: {
+          query,
+          path: 'src/very-long-but-legitimate-repository-path.ts',
+        },
+      } as never,
+      paths,
+    );
+    await recordFlueObservation(
+      {
+        ...base(4),
+        type: 'tool',
+        toolName: 'neondeck_review_workspace_search',
+        durationMs: 10,
+        isError: false,
+        effectiveResult: {
+          query,
+          matches: ['src/app.ts:10:exact source fragment'],
+          workspaceToolCallsRemaining: 248,
+          workspaceToolCallLimit: 250,
+        },
+      } as never,
+      paths,
+    );
+
+    const history = await readActivitySubmissionEvents('submission-1', paths);
+    expect(history.events[1]).toMatchObject({
+      message: 'Review workspace read completed for src/app.ts in 25ms.',
+      name: 'neondeck_review_workspace_read',
+      summary: {
+        category: 'review-workspace',
+        operation: 'read',
+        phase: 'completed',
+        revisionKind: 'head',
+        path: 'src/app.ts',
+        startLine: 10,
+        endLine: 40,
+        totalLines: 120,
+        resultBytes: expect.any(Number),
+        workspaceToolCallsRemaining: 249,
+        workspaceToolCallLimit: 250,
+      },
+    });
+    expect(history.events[1]?.summary).not.toHaveProperty('query');
+    expect(history.events[1]?.summary).not.toHaveProperty('rightLine');
+    expect(history.events[2]).toMatchObject({
+      summary: {
+        category: 'review-workspace',
+        operation: 'search',
+        path: 'src/very-long-but-legitimate-repository-path.ts',
+        queryLength: query.length,
+      },
+    });
+    expect(history.events[3]).toMatchObject({
+      summary: {
+        category: 'review-workspace',
+        operation: 'search',
+        queryLength: query.length,
+        returnedMatches: 1,
+        resultBytes: expect.any(Number),
+      },
+    });
+    expect(JSON.stringify(history.events[1]?.summary)).not.toContain(
+      'secret implementation contents',
+    );
+    expect(JSON.stringify(history.events)).not.toContain(query);
+  });
+
+  it('projects Flue 2 usage fields and cost breakdowns', async () => {
+    const paths = await tempPaths();
+    await recordFlueObservation(queued(1), paths);
+    await recordFlueObservation(
+      {
+        ...base(2),
+        type: 'turn',
+        purpose: 'agent',
+        turnId: 'turn-1',
+        durationMs: 1_000,
+        isError: false,
+        request: { providerId: 'provider', requestedModel: 'requested-model' },
+        response: {
+          responseModel: 'actual-model',
+          finishReason: 'stop',
+          usage: {
+            input: 1_000,
+            output: 200,
+            cacheRead: 800,
+            cacheWrite: 50,
+            totalTokens: 2_050,
+            cost: {
+              input: 0.01,
+              output: 0.02,
+              cacheRead: 0.003,
+              cacheWrite: 0.004,
+              total: 0.037,
+            },
+          },
+        },
+      } as never,
+      paths,
+    );
+
+    const history = await readActivitySubmissionEvents('submission-1', paths);
+    expect(history.events[1]?.summary).toMatchObject({
+      responseModel: 'actual-model',
+      usage: {
+        inputTokens: 1_000,
+        outputTokens: 200,
+        cacheReadTokens: 800,
+        cacheWriteTokens: 50,
+        totalTokens: 2_050,
+        cost: {
+          input: 0.01,
+          output: 0.02,
+          cacheRead: 0.003,
+          cacheWrite: 0.004,
+          total: 0.037,
+        },
+      },
+    });
+  });
+
   it('returns incremental retained history in event order', async () => {
     const paths = await tempPaths();
     await recordFlueObservation(queued(1), paths);

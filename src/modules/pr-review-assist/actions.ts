@@ -26,6 +26,7 @@ import { resolvePrReviewerWorkspace } from '../pr-reviewer';
 import { runtimePaths, type RuntimePaths } from '../../runtime-home';
 import type { ThinkingLevel } from '../../runtime-home';
 import { recordHandledPrFromOperationResult } from '../learning';
+import type { GitHubPullRequestEventState } from '../github';
 
 export type PrReviewToolExecutionState = {
   failure?: Error;
@@ -379,15 +380,6 @@ export function reviewFactsForPrompt(
       number: facts.target.number,
     },
     ...(backgroundContext ? { backgroundContext } : {}),
-    memories: (context?.learningMemoryContext?.memories ?? []).map(
-      (memory) => ({
-        id: memory.id,
-        scope: memory.scope,
-        key: memory.key,
-        repoId: memory.repoId,
-        value: memory.value,
-      }),
-    ),
     pullRequest: {
       title: facts.state.title,
       body: truncate(facts.state.body ?? '', 20_000),
@@ -422,22 +414,7 @@ export function reviewFactsForPrompt(
           source: facts.source,
           reason: workspace?.reason ?? 'No local workspace was requested.',
         },
-    checks: {
-      suites: facts.state.checkSuites.map((suite) => ({
-        id: suite.id,
-        status: suite.status,
-        conclusion: suite.conclusion,
-        appSlug: suite.appSlug,
-        htmlUrl: suite.htmlUrl,
-      })),
-      runs: facts.state.checkRuns.map((check) => ({
-        id: check.id,
-        name: check.name,
-        status: check.status,
-        conclusion: check.conclusion,
-        htmlUrl: check.htmlUrl,
-      })),
-    },
+    checks: reviewChecksForPrompt(facts.state),
     commits: facts.state.commits.map((commit) => ({
       sha: commit.sha,
       url: commit.url,
@@ -471,21 +448,23 @@ export function reviewFactsForPrompt(
     },
     requestedChangesReviews: facts.state.requestedChangesReviews,
     branchPermissions: facts.state.branchPermissions,
-    files: facts.files.map((file) => ({
-      path: file.path,
-      previousPath: file.previousPath,
-      status: file.status,
-      additions: file.additions,
-      deletions: file.deletions,
-      changes: file.changes,
-      binary: file.binary,
-      generatedLike: file.generatedLike,
-      truncated: file.truncated,
-      ...(workspace?.available
-        ? {}
-        : { patch: truncate(file.patch ?? '', 12_000) }),
-      message: file.message,
-    })),
+    ...(workspace?.available
+      ? {}
+      : {
+          files: facts.files.map((file) => ({
+            path: file.path,
+            previousPath: file.previousPath,
+            status: file.status,
+            additions: file.additions,
+            deletions: file.deletions,
+            changes: file.changes,
+            binary: file.binary,
+            generatedLike: file.generatedLike,
+            truncated: file.truncated,
+            patch: truncate(file.patch ?? '', 12_000),
+            message: file.message,
+          })),
+        }),
     limitations: [
       'Linked issue relationships are not currently typed separately in GitHubPullRequestEventState; linkedIssueReferenceHints are extracted from PR title/body text only.',
     ],
@@ -519,6 +498,57 @@ function reviewBackgroundContext(context?: ReviewFactsPromptContext) {
       : {}),
     usage:
       'Treat memory as durable background guidance, not current PR evidence. Fetched PR facts and bounded review rules win on conflict.',
+  };
+}
+
+function reviewChecksForPrompt(state: GitHubPullRequestEventState) {
+  const suites = state.checkSuites.map((suite) => ({
+    kind: 'suite' as const,
+    name: suite.appSlug ?? 'unknown app',
+    status: suite.status,
+    conclusion: suite.conclusion,
+    url: suite.htmlUrl,
+  }));
+  const runs = state.checkRuns.map((run) => ({
+    kind: 'run' as const,
+    name: run.name,
+    status: run.status,
+    conclusion: run.conclusion,
+    url: run.htmlUrl,
+  }));
+  const checks = [...suites, ...runs];
+  const pending = checks.filter((check) => check.status !== 'completed');
+  const successfulRuns = runs.filter((check) => check.conclusion === 'success');
+  const failed = checks.filter((check) =>
+    [
+      'action_required',
+      'cancelled',
+      'failure',
+      'stale',
+      'startup_failure',
+      'timed_out',
+    ].includes(check.conclusion ?? ''),
+  );
+  return {
+    summary: {
+      suites: suites.length,
+      runs: runs.length,
+      suitesTruncated: state.checkSuitesTruncated ?? false,
+      runsTruncated: state.checkRunsTruncated ?? false,
+      successful: checks.filter((check) => check.conclusion === 'success')
+        .length,
+      skipped: checks.filter((check) => check.conclusion === 'skipped').length,
+      neutral: checks.filter((check) => check.conclusion === 'neutral').length,
+      pending: pending.length,
+      failed: failed.length,
+    },
+    successfulRuns: {
+      count: successfulRuns.length,
+      names: successfulRuns.slice(0, 50).map((check) => check.name),
+      truncated: successfulRuns.length > 50,
+    },
+    pending,
+    failed,
   };
 }
 

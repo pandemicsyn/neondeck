@@ -120,6 +120,7 @@ describe('GitHub PR file cache', () => {
       .fn<() => Promise<GitHubPullRequestFiles>>()
       .mockResolvedValueOnce(baseA)
       .mockResolvedValueOnce(baseB);
+    const now = new Date('2026-07-05T14:02:00.000Z');
 
     const first = await fetchPullRequestFilesWithCache({
       token: 'token',
@@ -129,6 +130,7 @@ describe('GitHub PR file cache', () => {
       headSha,
       baseSha: 'base-a',
       databasePath: paths.neondeckDatabase,
+      now,
       fetcher,
       fetchRevision: async () => ({ headSha, baseSha: 'base-a' }),
     });
@@ -140,6 +142,7 @@ describe('GitHub PR file cache', () => {
       headSha,
       baseSha: 'base-b',
       databasePath: paths.neondeckDatabase,
+      now,
       fetcher,
       fetchRevision: async () => ({ headSha, baseSha: 'base-b' }),
     });
@@ -151,6 +154,7 @@ describe('GitHub PR file cache', () => {
       headSha,
       baseSha: 'base-a',
       databasePath: paths.neondeckDatabase,
+      now,
       fetcher,
       fetchRevision: async () => ({ headSha, baseSha: 'base-a' }),
     });
