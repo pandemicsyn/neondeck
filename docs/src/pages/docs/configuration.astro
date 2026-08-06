@@ -265,6 +265,13 @@ GITHUB_LOGIN=...</code></pre>
           profile such as OpenAI Luna with high reasoning or OpenAI Terra with
           medium reasoning.
         </p>
+        <p>
+          Parent agents use one Explore task for narrow or dependent research.
+          When several investigations are independent, they may launch up to
+          three distinct Explore tasks in one tool-call batch; Flue runs that
+          batch concurrently, and the parent reconciles the returned evidence
+          before it acts or answers.
+        </p>
         <aside class="docs-note">
           <strong>Access follows the parent:</strong> chat exploration receives only
           configured-repository read tools, while PR review receives exact-revision
