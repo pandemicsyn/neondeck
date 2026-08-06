@@ -17,7 +17,7 @@ export const defaultThinkingLevel: ThinkingLevel = 'medium';
 export { defaultPrReviewTimeoutMs } from '../../../shared/pr-review-policy';
 
 export type NeondeckSubagentKey =
-  'repoResearcher' | 'ciInvestigator' | 'releaseReviewer';
+  'explore' | 'repoResearcher' | 'ciInvestigator' | 'releaseReviewer';
 
 export type AgentModelSelection = {
   displayAssistant: string;
@@ -32,6 +32,8 @@ export type AgentModelSelection = {
   selfImprovement: string;
   selfImprovementConfigured: boolean;
   selfImprovementThinkingLevel: ThinkingLevel;
+  exploreConfigured: boolean;
+  exploreThinkingConfigured: boolean;
   subagents: Record<NeondeckSubagentKey, string>;
   subagentThinkingLevels: Record<NeondeckSubagentKey, ThinkingLevel>;
 };
@@ -119,6 +121,14 @@ export function resolveAgentModelSelection(
     config?.models?.defaultThinkingLevel,
     displayAssistantThinkingLevel,
   );
+  const configuredExplore = firstOptionalModel(
+    config?.models?.subagents?.explore,
+    env.FLUE_EXPLORE_SUBAGENT_MODEL,
+  );
+  const configuredExploreThinkingLevel = firstOptionalThinkingLevel(
+    config?.models?.subagents?.exploreThinkingLevel,
+    env.FLUE_EXPLORE_SUBAGENT_THINKING_LEVEL,
+  );
 
   return {
     displayAssistant,
@@ -133,7 +143,10 @@ export function resolveAgentModelSelection(
     selfImprovement,
     selfImprovementConfigured: Boolean(configuredSelfImprovement),
     selfImprovementThinkingLevel,
+    exploreConfigured: Boolean(configuredExplore),
+    exploreThinkingConfigured: Boolean(configuredExploreThinkingLevel),
     subagents: {
+      explore: firstModel(configuredExplore, displayAssistant),
       repoResearcher: firstModel(
         config?.models?.subagents?.repoResearcher,
         subagentDefault,
@@ -148,6 +161,10 @@ export function resolveAgentModelSelection(
       ),
     },
     subagentThinkingLevels: {
+      explore: firstThinkingLevel(
+        configuredExploreThinkingLevel,
+        displayAssistantThinkingLevel,
+      ),
       repoResearcher: firstThinkingLevel(
         config?.models?.subagents?.repoResearcherThinkingLevel,
         subagentThinkingDefault,
@@ -175,11 +192,14 @@ function firstOptionalModel(...values: Array<string | undefined>) {
 export function firstThinkingLevel(
   ...values: Array<string | undefined>
 ): ThinkingLevel {
+  return firstOptionalThinkingLevel(...values) ?? defaultThinkingLevel;
+}
+
+function firstOptionalThinkingLevel(...values: Array<string | undefined>) {
   const value = values
     .find((item) => item && isThinkingLevel(item.trim()))
     ?.trim();
-
-  return value ? (value as ThinkingLevel) : defaultThinkingLevel;
+  return value ? (value as ThinkingLevel) : undefined;
 }
 
 export function isThinkingLevel(value: string): value is ThinkingLevel {

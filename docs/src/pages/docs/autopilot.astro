@@ -47,9 +47,21 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
           Do not confuse <code>models.prReview</code> with the Autopilot owner. The
           PR-review role powers each separate, fresh bounded initial-review agent
           submission. Utility, self-improvement, and named subagent models likewise
-          do not replace the Autopilot owner model. Configure model roles in the dashboard's
+          do not replace the Autopilot owner model. The optional
+          <code>explore</code> delegate uses its independently configured subagent
+          model, falling back to the display-assistant model. Configure model roles
+          in the dashboard's
           <strong>Runtime</strong>
           panel or through <code>neondeck_config_update_agent_models</code>.
+        </p>
+
+        <p>
+          Fixing-mode owners may delegate focused repository investigation to
+          <code>explore</code>. The child receives a fresh context but inherits
+          the owner's managed-worktree local sandbox, so its read-only contract
+          is an instruction boundary rather than separate filesystem or shell
+          isolation. The parent owner remains solely responsible for edits,
+          commits, push decisions, and PR responses.
         </p>
 
         <h2>Start a watched PR</h2>

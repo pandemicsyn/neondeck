@@ -103,6 +103,8 @@ export const removeRepoInputSchema = v.object({
 export const subagentModelInputSchema = v.object({
   default: v.optional(providerQualifiedModelSchema),
   defaultThinkingLevel: v.optional(thinkingLevelSchema),
+  explore: v.optional(v.nullable(providerQualifiedModelSchema)),
+  exploreThinkingLevel: v.optional(v.nullable(thinkingLevelSchema)),
   repoResearcher: v.optional(providerQualifiedModelSchema),
   repoResearcherThinkingLevel: v.optional(thinkingLevelSchema),
   ciInvestigator: v.optional(providerQualifiedModelSchema),

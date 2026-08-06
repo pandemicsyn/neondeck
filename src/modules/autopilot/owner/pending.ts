@@ -7,9 +7,11 @@ import type { AutopilotOwnerEnvelope } from './envelope';
 export type AutopilotOwnerTurnSource = 'watch-event' | 'direct-human';
 
 export type PreparedAutopilotOwnerContext = {
-  schema: 'neondeck.autopilot-owner-prepared.v1';
+  schema: 'neondeck.autopilot-owner-prepared.v2';
   model: string;
   thinkingLevel: ThinkingLevel;
+  exploreModel: string;
+  exploreThinkingLevel: ThinkingLevel;
   instructions: string;
   workspaceContext: { path: string; home: string } | null;
   capabilities: string[];

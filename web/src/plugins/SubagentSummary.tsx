@@ -23,6 +23,7 @@ const subagentSummaryDefaultConfig = {
 };
 
 const subagentLabels: Record<string, string> = {
+  explore: 'explore',
   repoResearcher: 'repo_researcher',
   ciInvestigator: 'ci_investigator',
   releaseReviewer: 'release_reviewer',

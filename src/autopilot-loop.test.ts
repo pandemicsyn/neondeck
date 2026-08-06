@@ -345,7 +345,7 @@ describe('minimal Autopilot watch loop', () => {
         readPendingAutopilotTurn(paths.home, instanceId)?.prepared,
       ).toEqual(
         expect.objectContaining({
-          schema: 'neondeck.autopilot-owner-prepared.v1',
+          schema: 'neondeck.autopilot-owner-prepared.v2',
         }),
       );
       return {
@@ -491,7 +491,7 @@ describe('minimal Autopilot watch loop', () => {
         turnId: firstTurn.turnId,
         status: 'admitted',
         prepared: {
-          schema: 'neondeck.autopilot-owner-prepared.v1',
+          schema: 'neondeck.autopilot-owner-prepared.v2',
           capabilities: ['workspace', 'commit'],
           workspaceContext: { path: worktree.localPath },
         },

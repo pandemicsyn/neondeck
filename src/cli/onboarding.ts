@@ -11,6 +11,7 @@ import {
   openAiCompatibleBaseUrlIssue,
   openAiCompatibleProviderIdIssue,
   type RuntimePaths,
+  type ThinkingLevel,
 } from '../runtime-home';
 import type { EnvMap } from './types';
 import {
@@ -37,6 +38,8 @@ import { readConfigData } from './output';
 import { preapprovalGroups, type PreapprovalGroupId } from './preapprovals';
 
 const defaultModel = 'kilocode/kilo-auto/balanced';
+export const exploreModelRecommendation =
+  'Recommended: OpenAI Luna at high reasoning or OpenAI Terra at medium.';
 type SetupModelProvider =
   'kilocode' | 'openai' | 'anthropic' | 'openai-codex' | 'openai-compatible';
 
@@ -432,6 +435,12 @@ export async function configureProviderAndModels(paths: RuntimePaths) {
   const model = await chooseModel(modelProvider, env);
   const thinkingLevel = await promptThinkingLevel();
   const utilityModel = await chooseUtilityModel(modelProvider, env, model);
+  const exploreModel = await chooseExploreModel(
+    modelProvider,
+    env,
+    model,
+    thinkingLevel,
+  );
 
   await updateProviderConfig(configInput, paths);
   await updateAgentModels(
@@ -444,6 +453,7 @@ export async function configureProviderAndModels(paths: RuntimePaths) {
       subagents: {
         default: model,
         defaultThinkingLevel: thinkingLevel,
+        ...exploreModel,
         repoResearcher: model,
         ciInvestigator: model,
         releaseReviewer: model,
@@ -451,6 +461,43 @@ export async function configureProviderAndModels(paths: RuntimePaths) {
     },
     paths,
   );
+}
+
+export async function chooseExploreModel(
+  provider: string,
+  env: EnvMap,
+  displayModel: string,
+  displayThinkingLevel: ThinkingLevel,
+) {
+  const mode = await promptSelect<'default' | 'manual'>({
+    message: 'Explore subagent model',
+    initialValue: 'default',
+    options: [
+      {
+        value: 'default',
+        label: 'Use display model',
+        hint: `${displayModel} · ${displayThinkingLevel}`,
+      },
+      {
+        value: 'manual',
+        label: 'Choose cheap, fast model',
+        hint: exploreModelRecommendation,
+      },
+    ],
+  });
+
+  if (mode === 'default') {
+    return { explore: null, exploreThinkingLevel: null };
+  }
+  const model =
+    provider === 'kilocode'
+      ? await chooseModel(provider, env)
+      : await promptModelText(provider, displayModel, 'Explore subagent model');
+  const thinkingLevel = await promptThinkingLevel({
+    message: 'Explore thinking level',
+    initialValue: 'medium',
+  });
+  return { explore: model, exploreThinkingLevel: thinkingLevel };
 }
 
 export async function chooseUtilityModel(
@@ -675,10 +722,15 @@ export async function promptModelText(
   });
 }
 
-export async function promptThinkingLevel() {
+export async function promptThinkingLevel(
+  options: {
+    message?: string;
+    initialValue?: ThinkingLevel;
+  } = {},
+) {
   return promptSelect<'off' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh'>({
-    message: 'Thinking level',
-    initialValue: 'medium',
+    message: options.message ?? 'Thinking level',
+    initialValue: options.initialValue ?? 'medium',
     options: [
       { value: 'medium', label: 'medium', hint: 'Balanced default.' },
       { value: 'high', label: 'high', hint: 'More careful reasoning.' },

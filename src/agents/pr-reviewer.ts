@@ -4,8 +4,8 @@ import {
   type AgentProps,
   useAgentStart,
   useModel,
-  usePersistentState,
   useSandbox,
+  useSubagent,
   useTool,
 } from '@flue/runtime';
 import type { MiddlewareHandler } from 'hono';
@@ -22,12 +22,17 @@ import { readPrReview } from '../modules/pr-reviews';
 import {
   createDeferredPrReviewerWorkspaceTools,
   createPrReviewerDraftTools,
+  consumePrReviewWorkspaceBudget,
+  prReviewWorkspaceBudgetKey,
   prReviewerWorkspaceToolCallLimit,
   readPrReviewerHandoff,
   resolvePrReviewerWorkspace,
   type PrReviewerHandoff,
 } from '../modules/pr-reviewer';
-import { readAgentModelSelectionSync } from '../modules/runtime';
+import {
+  exploreSubagent,
+  readAgentModelSelectionSync,
+} from '../modules/runtime';
 import {
   effectivePrReviewPromptTemplates,
   ensureRuntimeHomeSync,
@@ -185,10 +190,6 @@ export function PrReviewer({ id }: AgentProps) {
   const models = readAgentModelSelectionSync();
   const paths = runtimePaths();
   const conversation = parsePrReviewerConversationId(id);
-  const [, setWorkspaceToolCallsUsed] = usePersistentState(
-    'workspace-tool-calls-used',
-    0,
-  );
   let runtimePromise: ReturnType<typeof buildPrReviewerRuntime> | null = null;
   let workspacePromise: ReturnType<
     typeof resolvePrReviewerWorkspaceForConversation
@@ -224,15 +225,18 @@ export function PrReviewer({ id }: AgentProps) {
     });
   });
 
-  const consumeToolCall = () => {
-    let remaining: number | null = null;
-    setWorkspaceToolCallsUsed((used) => {
-      if (used >= prReviewerWorkspaceToolCallLimit) return used;
-      remaining = prReviewerWorkspaceToolCallLimit - used - 1;
-      return used + 1;
-    });
-    return remaining;
-  };
+  const consumeToolCall = () =>
+    consumePrReviewWorkspaceBudget(
+      {
+        key: prReviewWorkspaceBudgetKey({
+          kind: 'follow-up',
+          reviewId: conversation.reviewId,
+          revision: conversation.headSha ?? 'unavailable',
+        }),
+        limit: prReviewerWorkspaceToolCallLimit,
+      },
+      paths,
+    );
   const tools = createDeferredPrReviewerWorkspaceTools(
     async (signal) => {
       const workspace = await loadWorkspace(signal);
@@ -250,6 +254,13 @@ export function PrReviewer({ id }: AgentProps) {
   for (const tool of tools) {
     useTool(tool);
   }
+  useSubagent(
+    exploreSubagent({
+      model: models.subagents.explore,
+      thinkingLevel: models.subagentThinkingLevels.explore,
+      tools,
+    }),
+  );
   if (conversation.headSha) {
     for (const tool of createPrReviewerDraftTools(
       { reviewId: conversation.reviewId, headSha: conversation.headSha },

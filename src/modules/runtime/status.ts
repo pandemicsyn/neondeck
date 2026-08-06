@@ -415,6 +415,8 @@ export async function readRuntimeStatus(
       selfImprovementProvider: providerFromModel(models.selfImprovement),
       selfImprovementThinkingLevel: models.selfImprovementThinkingLevel,
       selfImprovementConfigured: models.selfImprovementConfigured,
+      exploreConfigured: models.exploreConfigured,
+      exploreThinkingConfigured: models.exploreThinkingConfigured,
       subagents: models.subagents,
       subagentThinkingLevels: models.subagentThinkingLevels,
     },

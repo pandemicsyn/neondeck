@@ -12,11 +12,15 @@ import {
   useModel,
   usePersistentState,
   useSandbox,
+  useSubagent,
   useTool,
 } from '@flue/runtime';
 import type { MiddlewareHandler } from 'hono';
 import * as v from 'valibot';
-import { readAgentModelSelectionSync } from '../modules/runtime';
+import {
+  exploreSubagent,
+  readAgentModelSelectionSync,
+} from '../modules/runtime';
 import {
   prAutopilotOwnerCompaction,
   prAutopilotOwnerDurability,
@@ -295,9 +299,11 @@ export async function buildPrAutopilotOwnerRuntime(
       : ownerInstructions;
   const prepared: PreparedAutopilotOwnerContext | null = turnWatch
     ? {
-        schema: 'neondeck.autopilot-owner-prepared.v1',
+        schema: 'neondeck.autopilot-owner-prepared.v2',
         model: model.displayAssistant,
         thinkingLevel: model.displayAssistantThinkingLevel,
+        exploreModel: model.subagents.explore,
+        exploreThinkingLevel: model.subagentThinkingLevels.explore,
         instructions,
         workspaceContext,
         capabilities: registry.capabilities,
@@ -379,6 +385,12 @@ export function PrAutopilotOwner({ id }: AgentProps) {
         env: ownerWorkspaceEnvironment(activeWorkspace.home),
       }),
       { cwd: activeWorkspace.path },
+    );
+    useSubagent(
+      exploreSubagent({
+        model: preparedTurn.exploreModel,
+        thinkingLevel: preparedTurn.exploreThinkingLevel,
+      }),
     );
   }
   for (const tool of registry.tools) useTool(tool);

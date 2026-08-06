@@ -680,6 +680,8 @@ export type RuntimeStatus = {
     utilityThinkingLevel: string;
     utilityConfigured: boolean;
     utilityRecommendation: string | null;
+    exploreConfigured: boolean;
+    exploreThinkingConfigured: boolean;
     subagents: Record<string, string>;
     subagentThinkingLevels: Record<string, string>;
   };
@@ -1216,6 +1218,8 @@ export type AgentModelUpdate = {
   utilityThinkingLevel?: string;
   subagents?: {
     defaultThinkingLevel?: string;
+    explore?: string | null;
+    exploreThinkingLevel?: string | null;
     repoResearcher?: string;
     repoResearcherThinkingLevel?: string;
     ciInvestigator?: string;

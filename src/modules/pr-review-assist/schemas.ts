@@ -42,6 +42,15 @@ export const prReviewAgentInitialDataSchema = v.object({
     'high',
     'xhigh',
   ]),
+  exploreModel: nonEmptyString,
+  exploreThinkingLevel: v.picklist([
+    'off',
+    'minimal',
+    'low',
+    'medium',
+    'high',
+    'xhigh',
+  ]),
   instructions: nonEmptyString,
   prepared: v.object({
     input: prReviewAssistInputSchema,
