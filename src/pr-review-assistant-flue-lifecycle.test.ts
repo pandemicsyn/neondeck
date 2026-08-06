@@ -16,6 +16,7 @@ import {
   admitPrReviewAssist,
   type ReviewAssistFacts,
 } from './modules/pr-review-assist';
+import { loadPrReviewAgentContext } from './modules/pr-review-assist/actions';
 import { readPrReview, startPrReview } from './modules/pr-reviews';
 import { ensureRuntimeHome, runtimePaths } from './runtime-home';
 
@@ -190,14 +191,126 @@ it('delegates exact-revision exploration, verifies its result, and submits one b
   }
 });
 
+it('resumes pre-Explore review data with the current configured Explore selection', async () => {
+  const home = await mkdtemp(join(tmpdir(), 'neondeck-pr-review-legacy-flue-'));
+  tempRoots.push(home);
+  process.env.NEONDECK_HOME = home;
+  const paths = runtimePaths(home);
+  await ensureRuntimeHome(paths);
+  await writeFile(
+    paths.config,
+    JSON.stringify({
+      version: 1,
+      models: {
+        default: 'faux/faux-1',
+        displayAssistantThinkingLevel: 'low',
+        subagents: {
+          explore: 'faux/faux-1',
+          exploreThinkingLevel: 'minimal',
+        },
+      },
+    }),
+  );
+  const repository = await createRepository(home);
+  const input = {
+    ref: 'example/project#42',
+    repoFullName: 'example/project',
+    prNumber: 42,
+    headSha: repository.headSha,
+    baseSha: repository.baseSha,
+    baseRef: 'main',
+  };
+  const current = await loadPrReviewAgentContext(input, paths, {
+    runtime: {
+      model: 'faux/faux-1',
+      thinkingLevel: 'low',
+      exploreModel: 'faux/faux-1',
+      exploreThinkingLevel: 'minimal',
+      instructions: 'Perform the bounded exact-revision PR review.',
+    },
+    fetchFacts: async () => reviewFacts(input, repository),
+    resolveWorkspace: async () => ({
+      available: true,
+      repoId: 'example-project',
+      repoFullName: input.repoFullName,
+      repoPath: repository.path,
+      headSha: repository.headSha,
+      baseSha: repository.baseSha,
+      mergeBase: repository.baseSha,
+      tools: [],
+    }),
+  });
+  const {
+    schema: _schema,
+    exploreModel: _exploreModel,
+    exploreThinkingLevel: _exploreThinkingLevel,
+    ...legacyInitialData
+  } = current;
+  const faux = fauxProvider();
+  faux.setResponses([
+    fauxAssistantMessage(
+      [
+        fauxToolCall('task', {
+          agent: 'explore',
+          prompt: 'List the changed files in this exact-revision workspace.',
+        }),
+      ],
+      { stopReason: 'toolUse' },
+    ),
+    fauxAssistantMessage(
+      [fauxToolCall('neondeck_review_workspace_list', { limit: 20 })],
+      { stopReason: 'toolUse' },
+    ),
+    fauxAssistantMessage('Observed src/app.ts in the reviewed workspace.'),
+    fauxAssistantMessage(
+      [
+        fauxToolCall('neondeck_submit_pr_review', {
+          overview: {
+            summary: 'The legacy review resumed successfully.',
+            changeMap: [
+              { path: 'src/app.ts', summary: 'Updates the reviewed export.' },
+            ],
+            risks: [],
+            checks: ['Explore inspected the exact workspace.'],
+          },
+          findings: [],
+        }),
+      ],
+      { stopReason: 'toolUse' },
+    ),
+  ]);
+
+  const flue = await start({
+    agents: [PrReviewAssistant],
+    providers: [faux.provider],
+  });
+  try {
+    const handle = init(PrReviewAssistant, { id: 'legacy-pr-review' });
+    const receipt = await handle.dispatch({
+      initialData: legacyInitialData,
+      message: {
+        kind: 'signal',
+        type: 'neondeck.pr-review.requested',
+        body: 'Resume the persisted pull-request review.',
+      },
+    });
+
+    await expect(handle.read(receipt)).resolves.toBeDefined();
+    expect(faux.state.callCount).toBe(4);
+    expect(faux.getPendingResponseCount()).toBe(0);
+  } finally {
+    await flue.stop();
+  }
+});
+
 function reviewFacts(
-  input: NonNullable<
-    Parameters<
-      NonNullable<
-        NonNullable<Parameters<typeof startPrReview>[2]>['invokeWorkflow']
-      >
-    >[0]
-  >,
+  input: {
+    repoFullName: string;
+    prNumber: number;
+    headSha: string;
+    baseSha: string;
+    baseRef: string;
+  },
   repository: Awaited<ReturnType<typeof createRepository>>,
 ): ReviewAssistFacts {
   return {

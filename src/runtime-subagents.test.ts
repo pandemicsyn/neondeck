@@ -3,6 +3,7 @@ import {
   exploreSubagent,
   exploreSubagentInstructions,
   neondeckSubagents,
+  resolveExploreSubagentSelection,
 } from './modules/runtime/subagents';
 
 describe('runtime subagents', () => {
@@ -18,6 +19,21 @@ describe('runtime subagents', () => {
       thinkingLevel: 'medium',
     });
     expect(definition.agent()).toBe(exploreSubagentInstructions);
+  });
+
+  it('uses current Explore defaults only when restored work has no captured selection', () => {
+    const fallback = {
+      model: 'openai/gpt-5.6-terra',
+      thinkingLevel: 'medium' as const,
+    };
+
+    expect(resolveExploreSubagentSelection({}, fallback)).toEqual(fallback);
+    expect(
+      resolveExploreSubagentSelection(
+        { model: 'openai/gpt-5.6-sol', thinkingLevel: 'high' },
+        fallback,
+      ),
+    ).toEqual({ model: 'openai/gpt-5.6-sol', thinkingLevel: 'high' });
   });
 
   it('mounts Explore alongside the existing display specialists', () => {

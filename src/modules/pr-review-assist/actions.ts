@@ -33,11 +33,9 @@ export type PrReviewToolExecutionState = {
   completed?: boolean;
 };
 
-export type PrReviewAgentContext = {
+type PrReviewAgentContextBase = {
   model: string;
   thinkingLevel: ThinkingLevel;
-  exploreModel: string;
-  exploreThinkingLevel: ThinkingLevel;
   instructions: string;
   prepared: PreparedPrReviewAssist;
   workspace:
@@ -53,6 +51,19 @@ export type PrReviewAgentContext = {
     | { available: false; reason: string };
   prompt: string;
 };
+
+export type LegacyPrReviewAgentContext = PrReviewAgentContextBase & {
+  schema?: 'neondeck.pr-review-agent-context.v1';
+};
+
+export type PrReviewAgentContext = PrReviewAgentContextBase & {
+  schema: 'neondeck.pr-review-agent-context.v2';
+  exploreModel: string;
+  exploreThinkingLevel: ThinkingLevel;
+};
+
+export type PersistedPrReviewAgentContext =
+  LegacyPrReviewAgentContext | PrReviewAgentContext;
 
 export async function loadPrReviewAgentContext(
   input: PrReviewAssistInput,
@@ -104,6 +115,7 @@ export async function loadPrReviewAgentContext(
       }
     : { available: false as const, reason: workspace.reason };
   return {
+    schema: 'neondeck.pr-review-agent-context.v2',
     ...runtime,
     prepared: preparation.prepared,
     workspace: preparedWorkspace,
@@ -131,7 +143,7 @@ export async function loadPrReviewAgentContext(
 
 export function createSubmitPrReviewTool(
   input: PrReviewAssistInput,
-  loadContext: (signal?: AbortSignal) => Promise<PrReviewAgentContext>,
+  loadContext: (signal?: AbortSignal) => Promise<PersistedPrReviewAgentContext>,
   state: PrReviewToolExecutionState = {},
 ) {
   let execution:

@@ -12,12 +12,13 @@ import {
 } from '@flue/runtime';
 import {
   createSubmitPrReviewTool,
-  type PrReviewAgentContext,
+  type PersistedPrReviewAgentContext,
 } from '../modules/pr-review-assist/actions';
 import { prReviewAgentInitialDataSchema } from '../modules/pr-review-assist/schemas';
 import {
   exploreSubagent,
   readAgentModelSelectionSync,
+  resolveExploreSubagentSelection,
 } from '../modules/runtime';
 import {
   createPrReviewerWorkspaceTools,
@@ -56,7 +57,20 @@ export function buildPrReviewAssistantRuntime(
 }
 
 export function PrReviewAssistant({ id }: AgentProps) {
-  const context = useInitialData<PrReviewAgentContext>();
+  const context = useInitialData<PersistedPrReviewAgentContext>();
+  const fallbackModels = readAgentModelSelectionSync();
+  const exploreSelection = resolveExploreSubagentSelection(
+    context.schema === 'neondeck.pr-review-agent-context.v2'
+      ? {
+          model: context.exploreModel,
+          thinkingLevel: context.exploreThinkingLevel,
+        }
+      : {},
+    {
+      model: fallbackModels.subagents.explore,
+      thinkingLevel: fallbackModels.subagentThinkingLevels.explore,
+    },
+  );
   const input = context.prepared.input;
   const executionState: { failure?: Error; completed?: boolean } = {};
   const [corrections, setCorrections] = usePersistentState(
@@ -107,8 +121,7 @@ export function PrReviewAssistant({ id }: AgentProps) {
   for (const tool of workspaceTools) useTool(tool);
   useSubagent(
     exploreSubagent({
-      model: context.exploreModel,
-      thinkingLevel: context.exploreThinkingLevel,
+      ...exploreSelection,
       tools: workspaceTools,
     }),
   );

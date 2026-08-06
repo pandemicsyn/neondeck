@@ -32,18 +32,9 @@ export const prReviewAssistInputSchema = v.pipe(
   ),
 );
 
-export const prReviewAgentInitialDataSchema = v.object({
+const prReviewAgentInitialDataEntries = {
   model: nonEmptyString,
   thinkingLevel: v.picklist([
-    'off',
-    'minimal',
-    'low',
-    'medium',
-    'high',
-    'xhigh',
-  ]),
-  exploreModel: nonEmptyString,
-  exploreThinkingLevel: v.picklist([
     'off',
     'minimal',
     'low',
@@ -73,7 +64,33 @@ export const prReviewAgentInitialDataSchema = v.object({
     }),
   ]),
   prompt: nonEmptyString,
-});
+  skills: v.optional(v.array(v.unknown())),
+  tools: v.optional(v.array(v.unknown())),
+  actions: v.optional(v.array(v.unknown())),
+  subagents: v.optional(v.array(v.unknown())),
+};
+
+const thinkingLevelSchema = v.picklist([
+  'off',
+  'minimal',
+  'low',
+  'medium',
+  'high',
+  'xhigh',
+]);
+
+export const prReviewAgentInitialDataSchema = v.union([
+  v.strictObject({
+    ...prReviewAgentInitialDataEntries,
+    schema: v.literal('neondeck.pr-review-agent-context.v2'),
+    exploreModel: nonEmptyString,
+    exploreThinkingLevel: thinkingLevelSchema,
+  }),
+  v.strictObject({
+    ...prReviewAgentInitialDataEntries,
+    schema: v.optional(v.literal('neondeck.pr-review-agent-context.v1')),
+  }),
+]);
 
 const reviewSeveritySchema = v.picklist(['critical', 'major', 'minor', 'nit']);
 const reviewSideSchema = v.picklist(['RIGHT', 'LEFT']);

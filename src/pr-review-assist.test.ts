@@ -26,6 +26,8 @@ import { ensureRuntimeHome, runtimePaths } from './runtime-home';
 import { reportDocumentFromSummary } from '../shared/report-document';
 import { reportDeckFromSummary } from '../shared/report-deck';
 import { openDb } from './lib/sqlite';
+import * as v from 'valibot';
+import { prReviewAgentInitialDataSchema } from './modules/pr-review-assist/schemas';
 
 const tempRoots: string[] = [];
 
@@ -38,6 +40,39 @@ afterEach(async () => {
 });
 
 describe('PR review assist', () => {
+  it('accepts persisted initial-review data created before Explore was captured', () => {
+    const legacyInitialData = {
+      model: 'faux/faux-1',
+      thinkingLevel: 'low',
+      instructions: 'Review the bounded change.',
+      prepared: {
+        input: { ref: 'pandemicsyn/neondeck#10' },
+        facts: {},
+        promptContext: {},
+      },
+      workspace: { available: false, reason: 'fixture has no workspace' },
+      prompt: '{"task":"Review this pull request."}',
+    };
+
+    expect(
+      v.safeParse(prReviewAgentInitialDataSchema, legacyInitialData).success,
+    ).toBe(true);
+    expect(
+      v.safeParse(prReviewAgentInitialDataSchema, {
+        ...legacyInitialData,
+        exploreModel: 'faux/faux-1',
+      }).success,
+    ).toBe(false);
+    expect(
+      v.safeParse(prReviewAgentInitialDataSchema, {
+        ...legacyInitialData,
+        schema: 'neondeck.pr-review-agent-context.v2',
+        exploreModel: 'faux/faux-1',
+        exploreThinkingLevel: 'minimal',
+      }).success,
+    ).toBe(true);
+  });
+
   it('declares typed review submission as a durable non-harness Flue tool', () => {
     const tool = createSubmitPrReviewTool(
       { ref: 'pandemicsyn/neondeck#10' },

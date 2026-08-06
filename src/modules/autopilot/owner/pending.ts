@@ -6,17 +6,29 @@ import type { AutopilotOwnerEnvelope } from './envelope';
 
 export type AutopilotOwnerTurnSource = 'watch-event' | 'direct-human';
 
-export type PreparedAutopilotOwnerContext = {
-  schema: 'neondeck.autopilot-owner-prepared.v2';
+type PreparedAutopilotOwnerContextBase = {
   model: string;
   thinkingLevel: ThinkingLevel;
-  exploreModel: string;
-  exploreThinkingLevel: ThinkingLevel;
   instructions: string;
   workspaceContext: { path: string; home: string } | null;
   capabilities: string[];
   watch: PrWatch;
 };
+
+export type LegacyPreparedAutopilotOwnerContext =
+  PreparedAutopilotOwnerContextBase & {
+    schema: 'neondeck.autopilot-owner-prepared.v1';
+  };
+
+export type PreparedAutopilotOwnerContext =
+  PreparedAutopilotOwnerContextBase & {
+    schema: 'neondeck.autopilot-owner-prepared.v2';
+    exploreModel: string;
+    exploreThinkingLevel: ThinkingLevel;
+  };
+
+export type PersistedAutopilotOwnerContext =
+  LegacyPreparedAutopilotOwnerContext | PreparedAutopilotOwnerContext;
 
 export type PendingAutopilotTurn = {
   approvedRevisionKey?: string;
@@ -32,7 +44,7 @@ export type PendingAutopilotTurn = {
   learningMemoryText: string | null;
   messageBody?: string;
   mode: PrWatch['autopilotMode'];
-  prepared?: PreparedAutopilotOwnerContext;
+  prepared?: PersistedAutopilotOwnerContext;
   settling: boolean;
   source: AutopilotOwnerTurnSource;
   status: 'reserved' | 'admitted' | 'settling' | 'settled';
@@ -367,7 +379,7 @@ function readTurnRow(row: unknown): PendingAutopilotTurn {
     mode: value.mode as PrWatch['autopilotMode'],
     prepared:
       typeof value.prepared_json === 'string'
-        ? (JSON.parse(value.prepared_json) as PreparedAutopilotOwnerContext)
+        ? (JSON.parse(value.prepared_json) as PersistedAutopilotOwnerContext)
         : undefined,
     settling: value.status === 'settling',
     source: value.source as AutopilotOwnerTurnSource,
