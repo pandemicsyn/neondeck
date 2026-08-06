@@ -44,6 +44,12 @@ neondeck init --home .neondeck-test</code></pre>
           accepted only when persisted in the selected runtime-home
           <code>.env</code>.
         </p>
+        <p>
+          Model setup also offers an optional model and reasoning profile for
+          the shared <code>explore</code> subagent. It defaults to the display-assistant
+          model. For lower delegation latency and cost, setup recommends a fast profile
+          such as OpenAI Luna with high reasoning or OpenAI Terra with medium reasoning.
+        </p>
 
         <h2>Provider authentication</h2>
         <pre><code>neondeck auth login openai-codex
@@ -123,7 +129,6 @@ neondeck edit-events</code></pre>
           diffs read bounded metadata by default; <code>--patch</code> includes bounded
           patch text. Edit events expose the recent repo-edit audit trail.
         </p>
-
         <h2>Watches</h2>
         <pre><code>neondeck watch-pr pandemicsyn/neondeck#521
 neondeck watch-pr https://github.com/pandemicsyn/neondeck/pull/521

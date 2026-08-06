@@ -35,7 +35,7 @@ describe('PR review prompts', () => {
       defaultPrReviewPromptTemplates['initial-review'],
     );
     expect(defaultPrReviewPromptTemplates['initial-review']).toContain(
-      'This bounded review submission does not permit task delegation: do not call the generic task tool or start a child review.',
+      'You may delegate focused, independent investigation questions to the explore subagent.',
     );
 
     await updatePrReviewPrompt(

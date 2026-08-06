@@ -469,6 +469,8 @@ describe('config actions', () => {
           selfImprovementThinkingLevel: 'minimal',
           subagents: {
             default: 'kilocode/kilo/subagent',
+            explore: 'kilocode/kilo/explore',
+            exploreThinkingLevel: 'minimal',
             ciInvestigator: 'kilocode/kilo/ci',
           },
         },
@@ -500,6 +502,8 @@ describe('config actions', () => {
       selfImprovementThinkingLevel: 'minimal',
       subagents: {
         default: 'kilocode/kilo/subagent',
+        explore: 'kilocode/kilo/explore',
+        exploreThinkingLevel: 'minimal',
         ciInvestigator: 'kilocode/kilo/ci',
       },
     });
@@ -533,11 +537,33 @@ describe('config actions', () => {
       selfImprovementThinkingLevel: 'minimal',
       subagents: {
         default: 'kilocode/kilo/subagent',
+        explore: 'kilocode/kilo/explore',
+        exploreThinkingLevel: 'minimal',
         repoResearcher: 'kilocode/kilo/repo',
         ciInvestigator: 'kilocode/kilo/ci',
       },
     });
+
+    await expect(
+      updateAgentModels(
+        {
+          subagents: {
+            explore: null,
+            exploreThinkingLevel: null,
+          },
+        },
+        paths,
+      ),
+    ).resolves.toMatchObject({ ok: true, changed: true });
+
+    config = parseAppConfig(
+      JSON.parse(await readFile(paths.config, 'utf8')),
+      paths.config,
+    );
+    expect(config.models?.subagents).not.toHaveProperty('explore');
+    expect(config.models?.subagents).not.toHaveProperty('exploreThinkingLevel');
     expect(readHistory(paths.neondeckDatabase)).toMatchObject([
+      { action: 'config_update_agent_models', target: 'models' },
       { action: 'config_update_agent_models', target: 'models' },
       { action: 'config_update_agent_models', target: 'models' },
     ]);

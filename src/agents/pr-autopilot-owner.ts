@@ -12,11 +12,16 @@ import {
   useModel,
   usePersistentState,
   useSandbox,
+  useSubagent,
   useTool,
 } from '@flue/runtime';
 import type { MiddlewareHandler } from 'hono';
 import * as v from 'valibot';
-import { readAgentModelSelectionSync } from '../modules/runtime';
+import {
+  exploreSubagent,
+  readAgentModelSelectionSync,
+  resolveExploreSubagentSelection,
+} from '../modules/runtime';
 import {
   prAutopilotOwnerCompaction,
   prAutopilotOwnerDurability,
@@ -42,6 +47,7 @@ import {
   recordPendingAutopilotTurnLearningMemoryContext,
   recordPendingAutopilotTurnPreparedContext,
   registerPendingAutopilotTurn,
+  type PersistedAutopilotOwnerContext,
   type PreparedAutopilotOwnerContext,
 } from '../modules/autopilot/owner/pending';
 import {
@@ -295,9 +301,11 @@ export async function buildPrAutopilotOwnerRuntime(
       : ownerInstructions;
   const prepared: PreparedAutopilotOwnerContext | null = turnWatch
     ? {
-        schema: 'neondeck.autopilot-owner-prepared.v1',
+        schema: 'neondeck.autopilot-owner-prepared.v2',
         model: model.displayAssistant,
         thinkingLevel: model.displayAssistantThinkingLevel,
+        exploreModel: model.subagents.explore,
+        exploreThinkingLevel: model.subagentThinkingLevels.explore,
         instructions,
         workspaceContext,
         capabilities: registry.capabilities,
@@ -373,12 +381,29 @@ export function PrAutopilotOwner({ id }: AgentProps) {
   });
   const activeWorkspace = preparedTurn?.workspaceContext;
   if (activeWorkspace) {
+    const exploreSelection = resolveExploreSubagentSelection(
+      preparedTurn.schema === 'neondeck.autopilot-owner-prepared.v2'
+        ? {
+            model: preparedTurn.exploreModel,
+            thinkingLevel: preparedTurn.exploreThinkingLevel,
+          }
+        : {},
+      {
+        model: fallbackModels.subagents.explore,
+        thinkingLevel: fallbackModels.subagentThinkingLevels.explore,
+      },
+    );
     useSandbox(
       boundedLocal({
         cwd: activeWorkspace.path,
         env: ownerWorkspaceEnvironment(activeWorkspace.home),
       }),
       { cwd: activeWorkspace.path },
+    );
+    useSubagent(
+      exploreSubagent({
+        ...exploreSelection,
+      }),
     );
   }
   for (const tool of registry.tools) useTool(tool);
@@ -415,7 +440,7 @@ PrAutopilotOwner.initialData = autopilotOwnerInitialDataSchema;
 PrAutopilotOwner.durability = prAutopilotOwnerDurability;
 
 function runtimeFromPrepared(
-  prepared: PreparedAutopilotOwnerContext,
+  prepared: PersistedAutopilotOwnerContext,
   tools: ReturnType<typeof buildAutopilotOwnerToolRegistry>['tools'],
 ): AutopilotOwnerRuntime {
   return {
@@ -442,13 +467,13 @@ function runtimeFromPrepared(
 
 type AutopilotOwnerRuntime = {
   model: string;
-  thinkingLevel: PreparedAutopilotOwnerContext['thinkingLevel'];
+  thinkingLevel: PersistedAutopilotOwnerContext['thinkingLevel'];
   sandbox?: ReturnType<typeof boundedLocal>;
   cwd: string;
   compaction: typeof prAutopilotOwnerCompaction;
   durability: typeof prAutopilotOwnerDurability;
   instructions: string;
-  workspaceContext: PreparedAutopilotOwnerContext['workspaceContext'];
+  workspaceContext: PersistedAutopilotOwnerContext['workspaceContext'];
   tools: ReturnType<typeof buildAutopilotOwnerToolRegistry>['tools'];
   actions: never[];
   subagents: never[];
