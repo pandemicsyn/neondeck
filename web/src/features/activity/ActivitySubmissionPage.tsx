@@ -41,14 +41,17 @@ export function ActivitySubmissionPage({
   }
 
   const { submission } = data;
-  const metrics = activitySubmissionMetrics(data.events);
+  const metrics = activitySubmissionMetrics(data.events, data.fetchedAt);
   const showReviewProgress =
     submission.agentName === 'pr-review-assistant' ||
     submission.agentName === 'pr-reviewer';
   return (
     <ActivityShell submissionId={submissionId} status={submission.status}>
       <div className="grid min-h-0 flex-1 grid-cols-1 lg:grid-cols-[minmax(280px,360px)_minmax(0,1fr)]">
-        <aside className="border-b border-line bg-soft lg:border-r lg:border-b-0">
+        <aside
+          aria-label="Submission details and review progress"
+          className="min-h-0 overflow-y-auto border-b border-line bg-soft lg:border-r lg:border-b-0"
+        >
           <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-3 p-4 font-mono text-[11px]">
             <Fact label="agent" value={submission.agentName ?? 'unavailable'} />
             <Fact
@@ -119,17 +122,113 @@ function ReviewProgress({
           label="coverage"
           value={truncated ? `${retained} of ${total} retained` : 'complete'}
         />
+      </dl>
+      <MetricScope
+        label="REVIEWER"
+        metrics={metrics.reviewer}
+        modelTimeLabel="model time"
+      />
+      {metrics.delegates.length ? (
+        <section className="mt-3 border-t border-line pt-3">
+          <div className="flex items-start justify-between gap-3">
+            <h3 className="m-0 font-medium tracking-[0.06em] text-primary">
+              {delegateHeading(metrics)}
+            </h3>
+            <span className="text-right text-muted tabular-nums">
+              {delegateSummary(metrics)}
+            </span>
+          </div>
+          <dl className="mt-2 grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-2">
+            <Fact
+              label="model turns"
+              value={formatCount(metrics.delegated.modelTurns)}
+            />
+            <Fact
+              label="workspace calls"
+              value={formatCount(metrics.delegated.workspaceToolCalls)}
+            />
+            <Fact
+              label="model time (sum)"
+              value={formatDuration(metrics.delegated.modelDurationMs)}
+            />
+            <Fact
+              label="other tool time"
+              value={formatDuration(metrics.delegated.toolDurationMs)}
+            />
+            <Fact
+              label="workspace payload"
+              value={formatBytes(metrics.delegated.resultBytes)}
+            />
+            <Fact
+              label="model"
+              value={metrics.delegated.responseModel ?? 'pending'}
+            />
+            <Fact
+              label="git operations"
+              value={formatOperations(metrics.delegated.workspaceOperations)}
+            />
+          </dl>
+          <ol className="m-0 mt-3 list-none divide-y divide-line border-y border-line p-0">
+            {metrics.delegates.map((delegate, index) => (
+              <li className="py-2" key={delegate.taskId}>
+                <div className="flex items-center justify-between gap-3">
+                  <span className="truncate text-ink" title={delegate.taskId}>
+                    {delegate.agent} {index + 1}
+                  </span>
+                  <span
+                    className={
+                      delegate.isError
+                        ? 'shrink-0 text-accent tabular-nums'
+                        : delegate.status === 'running'
+                          ? 'shrink-0 text-primary tabular-nums'
+                          : 'shrink-0 text-violet tabular-nums'
+                    }
+                  >
+                    {delegate.status} · {formatDuration(delegate.durationMs)}
+                  </span>
+                </div>
+                <p className="m-0 mt-1 text-muted tabular-nums">
+                  {formatCount(delegate.modelTurns)} turns ·{' '}
+                  {formatCount(delegate.workspaceToolCalls)} workspace calls ·{' '}
+                  {delegate.latestTotalTokens === null
+                    ? 'tokens pending'
+                    : `${formatCount(delegate.latestTotalTokens)} tokens`}
+                </p>
+              </li>
+            ))}
+          </ol>
+        </section>
+      ) : null}
+    </section>
+  );
+}
+
+function MetricScope({
+  label,
+  metrics,
+  modelTimeLabel,
+}: {
+  label: string;
+  metrics: ReturnType<typeof activitySubmissionMetrics>['reviewer'];
+  modelTimeLabel: string;
+}) {
+  return (
+    <section className="mt-3 border-t border-line pt-3">
+      <h3 className="m-0 font-medium tracking-[0.06em] text-primary">
+        {label}
+      </h3>
+      <dl className="mt-2 grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-2">
         <Fact label="model turns" value={formatCount(metrics.modelTurns)} />
         <Fact
           label="workspace calls"
           value={formatCount(metrics.workspaceToolCalls)}
         />
         <Fact
-          label="model time"
+          label={modelTimeLabel}
           value={formatDuration(metrics.modelDurationMs)}
         />
         <Fact
-          label="tool time"
+          label="other tool time"
           value={formatDuration(metrics.toolDurationMs)}
         />
         <Fact
@@ -140,17 +239,14 @@ function ReviewProgress({
               : formatCount(metrics.latestTotalTokens)
           }
         />
-        <Fact label="result payload" value={formatBytes(metrics.resultBytes)} />
+        <Fact
+          label="workspace payload"
+          value={formatBytes(metrics.resultBytes)}
+        />
         <Fact label="model" value={metrics.responseModel ?? 'pending'} />
         <Fact
           label="git operations"
-          value={
-            metrics.workspaceOperations.length
-              ? metrics.workspaceOperations
-                  .map(({ operation, count }) => `${operation} ${count}`)
-                  .join(' · ')
-              : 'pending'
-          }
+          value={formatOperations(metrics.workspaceOperations)}
         />
       </dl>
     </section>
@@ -329,8 +425,9 @@ function formatCount(value: number) {
 function formatDuration(value: number) {
   if (value < 1_000) return `${Math.round(value)}ms`;
   if (value < 60_000) return `${(value / 1_000).toFixed(1)}s`;
-  const minutes = Math.floor(value / 60_000);
-  const seconds = Math.round((value % 60_000) / 1_000);
+  const totalSeconds = Math.round(value / 1_000);
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
   return `${minutes}m ${seconds}s`;
 }
 
@@ -338,4 +435,55 @@ function formatBytes(value: number) {
   if (value < 1_024) return `${value} B`;
   if (value < 1_048_576) return `${(value / 1_024).toFixed(1)} KiB`;
   return `${(value / 1_048_576).toFixed(1)} MiB`;
+}
+
+function formatOperations(
+  operations: Array<{ operation: string; count: number }>,
+) {
+  return operations.length
+    ? operations
+        .map(({ operation, count }) => `${operation} ${count}`)
+        .join(' · ')
+    : 'pending';
+}
+
+function delegateSummary(
+  metrics: ReturnType<typeof activitySubmissionMetrics>,
+) {
+  const completed = metrics.delegates.filter(
+    (delegate) => delegate.status === 'completed',
+  ).length;
+  const running = metrics.delegates.filter(
+    (delegate) => delegate.status === 'running',
+  ).length;
+  const failed = metrics.delegates.filter(
+    (delegate) => delegate.status === 'failed',
+  ).length;
+  const status =
+    completed === metrics.delegates.length
+      ? `${completed} completed`
+      : [
+          completed ? `${completed} completed` : null,
+          running ? `${running} running` : null,
+          failed ? `${failed} failed` : null,
+        ]
+          .filter(Boolean)
+          .join(' · ');
+  return [
+    status,
+    metrics.maxConcurrentDelegates > 1 ? 'parallel' : null,
+    `longest ${formatDuration(metrics.longestDelegateDurationMs)}`,
+  ]
+    .filter(Boolean)
+    .join(' · ');
+}
+
+function delegateHeading(
+  metrics: ReturnType<typeof activitySubmissionMetrics>,
+) {
+  return metrics.delegates.every(
+    (delegate) => delegate.agent.toLowerCase() === 'explore',
+  )
+    ? 'EXPLORE'
+    : 'SUBAGENTS';
 }
