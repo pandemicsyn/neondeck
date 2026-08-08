@@ -443,7 +443,7 @@ export function linkedSessionContextInstructions(
       : undefined,
     '- Treat this linked entity as the default subject for ambiguous follow-up questions. Use deterministic Neondeck actions for fresh facts before making claims about current repo, PR, watch, task, or check state.',
     session.linkedWatchId
-      ? '- For watch status or "why does this need attention?" questions, first call neondeck_watch_pr_refresh for the linked watch, then use the deterministic GitHub check and review actions needed to explain the result. Do not treat earlier chat messages, session summaries, or notification text as current state.'
+      ? '- For watch status or "why does this need attention?" questions, first call neondeck_watch_pr_refresh for the linked watch, then use the smallest narrow GitHub lookup that supplies any missing check, review, requested-change, or permission facts. Use neondeck_github_pr_event_state_get only when several event categories are required together; avoid loading its comprehensive payload for a one-category question. Do not treat earlier chat messages, session summaries, or notification text as current state.'
       : undefined,
     session.linkedWatchId
       ? '- Cite the current observed evidence in the answer: PR and merge state, check totals and failures or pending checks, relevant unresolved review or requested-change state, and the observed ref or timestamp when available. If the actions do not identify a specific failed check or review detail, say that it is unavailable instead of guessing.'

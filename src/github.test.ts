@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   addPrReviewDraftComment,
   buildPullRequestQueries,
+  clearGitHubRequestCache,
   clearGitHubPullRequestQueueCache,
   clearPullRequestReviewSurfaceThreadCache,
   deletePrReviewNeonSeedsForComments,
@@ -41,6 +42,7 @@ const tempRoots: string[] = [];
 
 afterEach(async () => {
   globalThis.fetch = originalFetch;
+  clearGitHubRequestCache();
   clearGitHubPullRequestQueueCache();
   clearPullRequestReviewSurfaceThreadCache();
   vi.restoreAllMocks();
@@ -232,6 +234,76 @@ describe('github foundation', () => {
     ).toHaveLength(4);
     expect(new Set(buildPullRequestQueries('pandemicsyn', repos)).size).toEqual(
       buildPullRequestQueries('pandemicsyn', repos).length,
+    );
+  });
+
+  it('coalesces concurrent queue refreshes for the same token and scope', async () => {
+    const repos: RepoConfig[] = [
+      {
+        id: 'neondeck',
+        github: { owner: 'pandemicsyn', name: 'neondeck' },
+        path: '/src/neondeck',
+        defaultBranch: 'main',
+      },
+    ];
+    globalThis.fetch = vi.fn<typeof fetch>(async () =>
+      jsonResponse({ total_count: 0, items: [] }),
+    );
+
+    const [first, second] = await Promise.all([
+      fetchPullRequestQueue({
+        token: 'token',
+        login: 'pandemicsyn',
+        repos,
+      }),
+      fetchPullRequestQueue({
+        token: 'token',
+        login: 'pandemicsyn',
+        repos,
+      }),
+    ]);
+
+    expect(second).toBe(first);
+    expect(globalThis.fetch).toHaveBeenCalledTimes(3);
+  });
+
+  it('only runs the stale authored search when the primary search is incomplete', async () => {
+    const repos: RepoConfig[] = [
+      {
+        id: 'neondeck',
+        github: { owner: 'pandemicsyn', name: 'neondeck' },
+        path: '/src/neondeck',
+        defaultBranch: 'main',
+      },
+    ];
+    const queries: string[] = [];
+    globalThis.fetch = vi.fn<typeof fetch>(async (input) => {
+      const url = new URL(String(input));
+      const query = url.searchParams.get('q') ?? '';
+      queries.push(query);
+      if (
+        query.includes('author:pandemicsyn') &&
+        !query.includes('updated:<')
+      ) {
+        return jsonResponse({
+          total_count: 101,
+          items: Array.from({ length: 50 }, (_, index) =>
+            searchIssue(index + 1),
+          ),
+        });
+      }
+      return jsonResponse({ total_count: 0, items: [] });
+    });
+
+    await fetchPullRequestQueue({
+      token: 'token',
+      login: 'pandemicsyn',
+      repos,
+      maxItems: 0,
+    });
+
+    expect(queries.filter((query) => query.includes('updated:<'))).toHaveLength(
+      1,
     );
   });
 

@@ -20,6 +20,7 @@ import {
   type RuntimePaths,
 } from '../../runtime-home';
 import {
+  fetchGitHubLogin,
   fetchPullRequestEventState,
   githubFetch,
   pullRequestEventStateTruncation,
@@ -723,10 +724,15 @@ async function githubMetadata(
   repo: string,
   fetcher: typeof githubFetch = githubFetch,
 ) {
-  const response = await fetcher(
-    token,
-    `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}`,
-  );
+  const [response, login] = await Promise.all([
+    fetcher(
+      token,
+      `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}`,
+    ),
+    fetcher === githubFetch
+      ? fetchGitHubLogin(token)
+      : githubLogin(token, fetcher),
+  ]);
   const parsed = v.safeParse(
     githubRepositoryMetadataSchema,
     await response.json(),
@@ -743,7 +749,7 @@ async function githubMetadata(
       .filter(Boolean),
     private: parsed.output.private,
     push: parsed.output.permissions.push,
-    login: await githubLogin(token, fetcher),
+    login,
   };
 }
 
