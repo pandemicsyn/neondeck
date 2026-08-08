@@ -323,6 +323,9 @@ describe('reports', () => {
     expect(servedHtml).toContain(
       `<script>${REPORT_DECK_CONTROLLER_SOURCE}</script>`,
     );
+    expect(servedHtml).toContain('data-deck-chrome="full"');
+    expect(servedHtml).toContain(representativeReportDeckFixture.title);
+    expect(servedHtml).toContain(representativeReportDeckFixture.subtitle);
   });
 
   it('keeps report paths under the runtime reports root', async () => {

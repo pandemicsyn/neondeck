@@ -32,10 +32,12 @@ export function PrReviewArtifactsOverlay({
   reviewUrl,
 }: PrReviewArtifactsOverlayProps) {
   const dialogRef = useRef<HTMLDialogElement>(null);
+  const headingRef = useRef<HTMLHeadingElement>(null);
   const [activeIndex, setActiveIndex] = useState(initialReportIndex);
   const [loadAttempt, setLoadAttempt] = useState(0);
   const [loadState, setLoadState] = useState<ReportLoadState | null>(null);
   const [focusDeckHeading, setFocusDeckHeading] = useState(false);
+  const [deckActiveIndex, setDeckActiveIndex] = useState(0);
 
   useEffect(() => {
     setActiveIndex(Math.min(initialReportIndex, reportIds.length - 1));
@@ -114,6 +116,7 @@ export function PrReviewArtifactsOverlay({
 
   useEffect(() => {
     if (loadState?.status !== 'loaded' || !focusDeckHeading) return;
+    headingRef.current?.focus();
     const timeout = window.setTimeout(() => setFocusDeckHeading(false), 0);
     return () => window.clearTimeout(timeout);
   }, [focusDeckHeading, loadState]);
@@ -132,6 +135,11 @@ export function PrReviewArtifactsOverlay({
       'popup,width=1180,height=860',
     );
 
+  const loadedDocument =
+    currentLoadState.status === 'loaded' ? currentLoadState.document : null;
+  const slideCount = loadedDocument?.slides.length ?? 0;
+  const currentSlideNumber = deckActiveIndex + 1;
+
   return createPortal(
     <>
       <style>{REPORT_DECK_CSS}</style>
@@ -148,62 +156,87 @@ export function PrReviewArtifactsOverlay({
           <header className="flex min-h-11 flex-wrap items-center justify-between gap-2 border-b border-line px-3 py-2">
             <div className="min-w-0">
               <p className="font-mono text-[10px] tracking-[0.12em] text-primary">
-                PR REVIEW ARTIFACTS
+                PR REVIEW ARTIFACTS &middot;{' '}
+                {reportLabel(activeIndex).toUpperCase()}
               </p>
-              <p className="truncate text-[11px] text-ink">{reviewLabel}</p>
+              <h1
+                className="truncate font-display text-[16px] font-semibold text-ink"
+                ref={headingRef}
+                tabIndex={-1}
+              >
+                {loadedDocument?.title ?? reviewLabel}
+              </h1>
+              {loadedDocument?.subtitle ? (
+                <p className="truncate text-[11px] text-muted">
+                  {loadedDocument.subtitle}
+                </p>
+              ) : null}
             </div>
-            <div className="flex flex-wrap items-center gap-1.5 font-mono text-[10px]">
-              {reportIds.map((id, index) => (
+            <div className="flex flex-wrap items-center gap-2 font-mono text-[10px]">
+              {loadedDocument ? (
+                <>
+                  <span className="text-muted" title="Keyboard navigation">
+                    [ ] move &middot; 1&ndash;{Math.min(slideCount, 9)} jump
+                  </span>
+                  <span className="text-muted tabular-nums">
+                    {currentSlideNumber} / {slideCount}
+                  </span>
+                </>
+              ) : null}
+              <div className="flex flex-wrap items-center gap-1.5">
+                {reportIds.map((id, index) => (
+                  <button
+                    aria-pressed={activeIndex === index}
+                    className={
+                      activeIndex === index
+                        ? 'border border-primary px-2 py-1 text-primary focus:outline-none focus:ring-1 focus:ring-primary'
+                        : 'border border-line px-2 py-1 text-muted hover:border-primary hover:text-primary focus:outline-none focus:ring-1 focus:ring-primary'
+                    }
+                    key={id}
+                    onClick={() => {
+                      if (index !== activeIndex) setFocusDeckHeading(true);
+                      setActiveIndex(index);
+                    }}
+                    type="button"
+                  >
+                    {reportLabel(index)}
+                  </button>
+                ))}
                 <button
-                  aria-pressed={activeIndex === index}
-                  className={
-                    activeIndex === index
-                      ? 'border border-primary px-2 py-1 text-primary focus:outline-none focus:ring-1 focus:ring-primary'
-                      : 'border border-line px-2 py-1 text-muted hover:border-primary hover:text-primary focus:outline-none focus:ring-1 focus:ring-primary'
-                  }
-                  key={id}
-                  onClick={() => {
-                    if (index !== activeIndex) setFocusDeckHeading(true);
-                    setActiveIndex(index);
-                  }}
+                  className="border border-line px-2 py-1 text-muted hover:border-primary hover:text-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                  onClick={popOut}
                   type="button"
                 >
-                  {reportLabel(index)}
+                  pop out
                 </button>
-              ))}
-              <button
-                className="border border-line px-2 py-1 text-muted hover:border-primary hover:text-primary focus:outline-none focus:ring-1 focus:ring-primary"
-                onClick={popOut}
-                type="button"
-              >
-                pop out
-              </button>
-              <a
-                className="border border-line px-2 py-1 text-muted hover:border-primary hover:text-primary focus:outline-none focus:ring-1 focus:ring-primary"
-                href={reviewUrl}
-                rel="noreferrer"
-                target="_blank"
-              >
-                workbench
-              </a>
-              <button
-                autoFocus
-                className="border border-primary px-2 py-1 text-primary focus:outline-none focus:ring-1 focus:ring-primary"
-                onClick={onClose}
-                type="button"
-              >
-                close
-              </button>
+                <a
+                  className="border border-line px-2 py-1 text-muted hover:border-primary hover:text-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                  href={reviewUrl}
+                  rel="noreferrer"
+                  target="_blank"
+                >
+                  workbench
+                </a>
+                <button
+                  autoFocus
+                  className="border border-primary px-2 py-1 text-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                  onClick={onClose}
+                  type="button"
+                >
+                  close
+                </button>
+              </div>
             </div>
           </header>
           <div className="relative min-h-0 flex-1 bg-canvas">
             {currentLoadState.status === 'loaded' ? (
               <ReportDeck
+                chrome="embedded"
                 className="h-full"
                 deckKey={loadKey}
                 document={currentLoadState.document}
-                focusHeading={focusDeckHeading}
                 key={loadKey}
+                onActiveSlideChange={(index) => setDeckActiveIndex(index)}
               />
             ) : (
               <ReportLoadingState

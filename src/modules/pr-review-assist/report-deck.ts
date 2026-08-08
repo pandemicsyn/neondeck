@@ -44,6 +44,15 @@ export type BuiltReviewReportDeck = {
   overflowUsed: boolean;
 };
 
+const FAILING_CHECK_CONCLUSIONS = new Set([
+  'action_required',
+  'cancelled',
+  'failure',
+  'stale',
+  'startup_failure',
+  'timed_out',
+]);
+
 export function buildReviewReportDecks(input: ReviewReportDeckInput) {
   const fileUrls = new Map(
     input.files.map((file) => [file.path, safeReportUrl(file.htmlUrl)]),
@@ -107,40 +116,75 @@ function buildOverviewDeck(
   fileUrls: Map<string, string | null>,
   links: ReportDeckDocument['links'],
 ): BuiltReviewReportDeck {
+  const findingCount =
+    input.seededFindings.length + input.reportOnlyFindings.length;
   const summarySlide: ReportDeckSlide = {
     kind: 'summary',
     title: 'Review brief',
     facts: [
-      { label: 'PR title', value: input.state.title, href: null },
       { label: 'State', value: input.state.state, href: null },
       { label: 'Review SHA', value: input.state.headSha, href: null },
-      { label: 'Generated', value: input.generatedAt, href: null },
+      {
+        label: 'Changed files',
+        value: String(input.files.length),
+        href: null,
+      },
+      { label: 'Findings', value: String(findingCount), href: null },
     ],
     emptyStateMarkdown: null,
   };
+  const checkRuns = input.state.checkRuns ?? [];
+  const passingChecks = checkRuns.filter(
+    (run) => run.conclusion === 'success',
+  ).length;
+  const failingChecks = checkRuns.filter((run) =>
+    FAILING_CHECK_CONCLUSIONS.has(run.conclusion ?? ''),
+  ).length;
+  const additionsTotal = input.files.reduce(
+    (total, file) => total + file.additions,
+    0,
+  );
+  const deletionsTotal = input.files.reduce(
+    (total, file) => total + file.deletions,
+    0,
+  );
   const factsSlide: ReportDeckSlide = {
     kind: 'facts',
     title: 'PR facts',
     items: [
-      { label: 'Repository', value: input.state.repo, href: null },
-      { label: 'PR', value: String(input.state.number), href: null },
-      { label: 'State', value: input.state.state, href: null },
       { label: 'Base', value: input.state.baseRef, href: null },
       { label: 'Head', value: input.state.headSha, href: null },
+      { label: 'Author', value: input.state.author ?? 'unknown', href: null },
+      { label: 'Additions', value: String(additionsTotal), href: null },
+      { label: 'Deletions', value: String(deletionsTotal), href: null },
       {
-        label: 'Files',
-        value: String(input.files.length),
+        label: 'Checks',
+        value: `${passingChecks} passing / ${failingChecks} failing`,
         href: null,
       },
+      {
+        label: 'Mergeable',
+        value: input.state.mergeableState ?? 'unknown',
+        href: null,
+      },
+      { label: 'Generated', value: input.generatedAt, href: null },
     ],
   };
+  const churnByPath = new Map(
+    input.files.map((file) => [file.path, file] as const),
+  );
   const changeItems: ReportDeckChangeMapItem[] =
-    input.output.overview.changeMap.map((item) => ({
-      path: item.path,
-      summaryMarkdown: item.summary,
-      riskMarkdown: item.risk || null,
-      href: fileUrls.get(item.path) ?? null,
-    }));
+    input.output.overview.changeMap.map((item) => {
+      const file = churnByPath.get(item.path);
+      return {
+        path: item.path,
+        summaryMarkdown: item.summary,
+        riskMarkdown: item.risk || null,
+        href: fileUrls.get(item.path) ?? null,
+        additions: file?.additions ?? null,
+        deletions: file?.deletions ?? null,
+      };
+    });
   const columnsSlide = buildReviewGuidanceSlide(input.output);
   const trailingSlides = columnsSlide ? [columnsSlide] : [];
   const availableChangeSlides =
@@ -161,6 +205,7 @@ function buildOverviewDeck(
       part: index + 1,
       totalParts: changePages.length,
       items,
+      totalFiles: input.files.length,
     }));
   const appendixItems = changeItems.slice(
     normalPageCount * REPORT_DECK_LIMITS.normalChangeMapItems,
@@ -186,8 +231,9 @@ function buildOverviewDeck(
   return {
     document: parseBuiltDeck({
       version: 2,
-      eyebrow: 'PR REVIEW',
-      title: `PR Overview: ${input.sourceRef}`,
+      eyebrow: 'PR REVIEW · OVERVIEW',
+      title: input.sourceRef,
+      subtitle: input.state.title,
       summaryMarkdown: input.output.overview.summary,
       generatedAt: input.generatedAt,
       links,
@@ -239,9 +285,10 @@ function buildIssuesDeck(
         ? 'There is nothing to triage in this review pass. Open the PR to inspect the change directly.'
         : null,
   };
+  const revision = input.state.headSha.slice(0, 7) || null;
   const seededItems = sortFindings(
     input.seededFindings.map(({ finding, line }) =>
-      findingItem(finding, 'seeded', line, null, fileUrls),
+      findingItem(finding, 'seeded', line, null, fileUrls, revision),
     ),
   );
   const reportOnlyItems = sortFindings(
@@ -252,6 +299,7 @@ function buildIssuesDeck(
         finding.anchor.kind === 'inline' ? finding.anchor.line : null,
         reason,
         fileUrls,
+        revision,
       ),
     ),
   );
@@ -314,8 +362,9 @@ function buildIssuesDeck(
   return {
     document: parseBuiltDeck({
       version: 2,
-      eyebrow: 'PR REVIEW',
-      title: `Review Issues: ${input.sourceRef}`,
+      eyebrow: 'PR REVIEW · ISSUES',
+      title: input.sourceRef,
+      subtitle: input.state.title,
       summaryMarkdown,
       generatedAt: input.generatedAt,
       links,
@@ -375,6 +424,7 @@ function findingSlides(
   return pages.map<ReportDeckSlide>((items, index) => ({
     kind: 'findings',
     title,
+    subtitle: 'sorted by severity',
     disposition,
     part: index + 1,
     totalParts: pages.length,
@@ -388,6 +438,7 @@ function findingItem(
   line: number | null,
   reason: string | null,
   fileUrls: Map<string, string | null>,
+  revision: string | null,
 ): ReportDeckFindingItem {
   return {
     severity: finding.severity,
@@ -399,6 +450,7 @@ function findingItem(
     confidence: finding.confidence ?? null,
     reason,
     href: fileUrls.get(finding.path) ?? null,
+    revision,
   };
 }
 

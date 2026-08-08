@@ -188,6 +188,7 @@ export async function fetchPullRequestEventState(options: {
     url: detail.url,
     title: detail.title,
     body: detail.body ?? null,
+    author: detail.author ?? null,
     state: detail.state,
     draft: detail.draft ?? false,
     merged: detail.merged,
