@@ -32,6 +32,8 @@ export function ReportDeck({
   const [activeIndex, setActiveIndex] = useState(0);
   const [announcement, setAnnouncement] = useState('');
   const stepsRef = useRef<HTMLDivElement>(null);
+  const articleRef = useRef<HTMLElement>(null);
+  const restoreFocusRef = useRef(false);
   const id = useId().replaceAll(':', '');
   const slideCount = document.slides.length;
   const activeSlide = document.slides[activeIndex] ?? document.slides[0]!;
@@ -67,8 +69,38 @@ export function ReportDeck({
     return () => window.clearTimeout(timeout);
   }, [activeIndex, activeSlide.title, slideCount]);
 
+  // Hiding the outgoing slide drops focus that was inside it out of the
+  // focus order entirely (real browsers move it to <body>, which jsdom does
+  // not emulate). When that happens, restore focus onto the incoming
+  // slide's scroll region so keyboard navigation keeps working. Navigation
+  // triggered from chrome that stays in the DOM (footer buttons, step dots)
+  // must not steal focus, so `navigate` only arms this when focus was
+  // actually inside the slide being hidden.
+  useEffect(() => {
+    if (!restoreFocusRef.current) return;
+    restoreFocusRef.current = false;
+    const incomingSlide = articleRef.current?.querySelector(
+      `[data-deck-slide-index="${activeIndex}"]`,
+    );
+    const target =
+      (incomingSlide?.querySelector(
+        '[data-deck-scroll-region]',
+      ) as HTMLElement | null) ?? articleRef.current;
+    if (target && typeof target.focus === 'function') {
+      target.focus();
+    }
+  }, [activeIndex]);
+
   const navigate = (nextIndex: number) => {
-    setActiveIndex(Math.max(0, Math.min(slideCount - 1, nextIndex)));
+    const clamped = Math.max(0, Math.min(slideCount - 1, nextIndex));
+    const outgoingSlide = articleRef.current?.querySelector(
+      `[data-deck-slide-index="${activeIndex}"]`,
+    );
+    const activeElement = globalThis.document?.activeElement;
+    restoreFocusRef.current = Boolean(
+      outgoingSlide && activeElement && outgoingSlide.contains(activeElement),
+    );
+    setActiveIndex(clamped);
   };
 
   return (
@@ -83,6 +115,7 @@ export function ReportDeck({
           : (event) =>
               handleDeckKeyDown(event, activeIndex, slideCount, navigate)
       }
+      ref={articleRef}
       tabIndex={0}
     >
       <div aria-hidden="true" className="report-deck-print-heading">
@@ -498,10 +531,20 @@ function ChangeMapChurn({
   return (
     <div className="report-deck-churn">
       {additions !== null ? (
-        <span className="report-deck-churn-add">+{additions}</span>
+        <span className="report-deck-churn-add">
+          <span aria-hidden="true">+{additions}</span>
+          <span className="report-deck-sr-only">
+            {additions} addition{additions === 1 ? '' : 's'}
+          </span>
+        </span>
       ) : null}
       {deletions !== null ? (
-        <span className="report-deck-churn-del">&minus;{deletions}</span>
+        <span className="report-deck-churn-del">
+          <span aria-hidden="true">&minus;{deletions}</span>
+          <span className="report-deck-sr-only">
+            {deletions} deletion{deletions === 1 ? '' : 's'}
+          </span>
+        </span>
       ) : null}
     </div>
   );
@@ -699,7 +742,8 @@ function structuredLinksInSlide(slide: ReportDeckSlide) {
   }
 }
 
-const HORIZONTAL_DECK_KEYS = new Set(['ArrowLeft', 'ArrowRight', '[', ']']);
+const HORIZONTAL_FORWARD_DECK_KEYS = new Set(['ArrowRight']);
+const HORIZONTAL_BACKWARD_DECK_KEYS = new Set(['ArrowLeft']);
 const VERTICAL_FORWARD_DECK_KEYS = new Set(['PageDown', ' ', 'End']);
 const VERTICAL_BACKWARD_DECK_KEYS = new Set(['PageUp', 'Home']);
 
@@ -723,8 +767,16 @@ function handleDeckKeyDown(
   const scrollRegion = deckScrollRegion(event.target);
   if (
     scrollRegion &&
-    HORIZONTAL_DECK_KEYS.has(event.key) &&
-    scrollRegion.scrollWidth > scrollRegion.clientWidth
+    HORIZONTAL_FORWARD_DECK_KEYS.has(event.key) &&
+    scrollRegion.scrollLeft + scrollRegion.clientWidth <
+      scrollRegion.scrollWidth - 1
+  ) {
+    return;
+  }
+  if (
+    scrollRegion &&
+    HORIZONTAL_BACKWARD_DECK_KEYS.has(event.key) &&
+    scrollRegion.scrollLeft > 0
   ) {
     return;
   }

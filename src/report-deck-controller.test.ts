@@ -176,4 +176,79 @@ describe('standalone report deck controller', () => {
     );
     expect(location.hash).toBe('#slide-3');
   });
+
+  it('lets bracket keys jump slides even inside a horizontally-scrollable region', () => {
+    const scrollRegion = document.querySelector<HTMLElement>(
+      '[data-deck-scroll-region]',
+    )!;
+    for (const [property, value] of [
+      ['scrollWidth', 900],
+      ['clientWidth', 300],
+    ] as const) {
+      Object.defineProperty(scrollRegion, property, {
+        configurable: true,
+        value,
+      });
+    }
+
+    scrollRegion.dispatchEvent(
+      new KeyboardEvent('keydown', { bubbles: true, key: ']' }),
+    );
+    expect(location.hash).toBe('#slide-2');
+  });
+
+  it('lets ArrowRight fall through to deck navigation once the region has no remaining rightward scroll', () => {
+    const scrollRegion = document.querySelector<HTMLElement>(
+      '[data-deck-scroll-region]',
+    )!;
+    for (const [property, value] of [
+      ['scrollWidth', 900],
+      ['clientWidth', 300],
+      ['scrollLeft', 600],
+    ] as const) {
+      Object.defineProperty(scrollRegion, property, {
+        configurable: true,
+        value,
+      });
+    }
+
+    scrollRegion.dispatchEvent(
+      new KeyboardEvent('keydown', { bubbles: true, key: 'ArrowRight' }),
+    );
+    expect(location.hash).toBe('#slide-2');
+  });
+
+  it('moves focus onto the incoming slide when keyboard navigation hides the focused slide body', () => {
+    const scrollRegion = document.querySelector<HTMLElement>(
+      '[data-deck-scroll-region]',
+    )!;
+    scrollRegion.focus();
+    expect(document.activeElement).toBe(scrollRegion);
+
+    scrollRegion.dispatchEvent(
+      new KeyboardEvent('keydown', { bubbles: true, key: 'ArrowRight' }),
+    );
+
+    const slides = [
+      ...document.querySelectorAll<HTMLElement>('[data-deck-slide-index]'),
+    ];
+    const nextScrollRegion = slides[1]!.querySelector<HTMLElement>(
+      '[data-deck-scroll-region]',
+    );
+    expect(nextScrollRegion).not.toBeNull();
+    expect(document.activeElement).toBe(nextScrollRegion);
+  });
+
+  it('leaves focus on a footer step button after it navigates the deck', () => {
+    const stepButton = document.querySelector<HTMLButtonElement>(
+      '[data-deck-dot-index="1"]',
+    )!;
+    stepButton.focus();
+    expect(document.activeElement).toBe(stepButton);
+
+    stepButton.click();
+
+    expect(location.hash).toBe('#slide-2');
+    expect(document.activeElement).toBe(stepButton);
+  });
 });

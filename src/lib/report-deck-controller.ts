@@ -26,10 +26,27 @@ export const REPORT_DECK_CONTROLLER_SOURCE = String.raw`(() => {
   };
 
   const setActive = (requested, updateHash = true) => {
+    const previousActive = active;
+    const outgoingSlide = slides[previousActive];
+    const shouldRestoreFocus =
+      outgoingSlide instanceof HTMLElement &&
+      document.activeElement instanceof Node &&
+      outgoingSlide.contains(document.activeElement);
     active = Math.max(0, Math.min(slides.length - 1, requested));
     slides.forEach((slide, index) => {
       if (slide instanceof HTMLElement) slide.hidden = index !== active;
     });
+    if (shouldRestoreFocus) {
+      const incomingSlide = slides[active];
+      const scrollRegion =
+        incomingSlide instanceof HTMLElement
+          ? incomingSlide.querySelector('[data-deck-scroll-region]')
+          : null;
+      const focusTarget = scrollRegion instanceof HTMLElement ? scrollRegion : root;
+      if (focusTarget && typeof focusTarget.focus === 'function') {
+        focusTarget.focus();
+      }
+    }
     let activeDot = null;
     dots.forEach((dot, index) => {
       if (!(dot instanceof HTMLElement)) return;
@@ -69,7 +86,8 @@ export const REPORT_DECK_CONTROLLER_SOURCE = String.raw`(() => {
     return region instanceof HTMLElement ? region : null;
   };
 
-  const horizontalKeys = new Set(['ArrowLeft', 'ArrowRight', '[', ']']);
+  const horizontalForwardKeys = new Set(['ArrowRight']);
+  const horizontalBackwardKeys = new Set(['ArrowLeft']);
   const verticalForwardKeys = new Set(['PageDown', ' ', 'End']);
   const verticalBackwardKeys = new Set(['PageUp', 'Home']);
 
@@ -106,7 +124,8 @@ export const REPORT_DECK_CONTROLLER_SOURCE = String.raw`(() => {
       interactiveTarget(event.target)
     ) return;
     const scrollRegion = deckScrollRegion(event.target);
-    if (scrollRegion && horizontalKeys.has(event.key) && scrollRegion.scrollWidth > scrollRegion.clientWidth) return;
+    if (scrollRegion && horizontalForwardKeys.has(event.key) && scrollRegion.scrollLeft + scrollRegion.clientWidth < scrollRegion.scrollWidth - 1) return;
+    if (scrollRegion && horizontalBackwardKeys.has(event.key) && scrollRegion.scrollLeft > 0) return;
     if (scrollRegion && verticalForwardKeys.has(event.key) && scrollRegion.scrollTop + scrollRegion.clientHeight < scrollRegion.scrollHeight - 1) return;
     if (scrollRegion && verticalBackwardKeys.has(event.key) && scrollRegion.scrollTop > 0) return;
     const requested = nextIndex(event.key);

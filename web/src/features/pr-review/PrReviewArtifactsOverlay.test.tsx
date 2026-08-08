@@ -256,6 +256,138 @@ describe('PR review artifacts overlay', () => {
     );
     expect(slides[0]?.hidden).toBe(false);
   });
+
+  it('restores focus onto the incoming slide after keyboard navigation hides the focused slide body', async () => {
+    getReportMock.mockResolvedValue({
+      ...reportResponse(),
+      item: {
+        ...reportResponse().item!,
+        summary: { deck: representativeReportDeckFixture },
+      },
+    });
+    renderOverlay(root);
+    await act(async () => Promise.resolve());
+
+    const slides = [
+      ...document.querySelectorAll<HTMLElement>('[data-deck-slide-index]'),
+    ];
+    const firstScrollRegion = slides[0]!.querySelector<HTMLElement>(
+      '[data-deck-scroll-region]',
+    )!;
+    act(() => firstScrollRegion.focus());
+    expect(document.activeElement).toBe(firstScrollRegion);
+
+    // Real browsers drop focus out of the DOM's focus order entirely once
+    // its container gets `hidden` (jsdom does not emulate that), so the
+    // deck must proactively refocus the incoming slide's scroll region.
+    act(() =>
+      firstScrollRegion.dispatchEvent(
+        new KeyboardEvent('keydown', { bubbles: true, key: 'ArrowRight' }),
+      ),
+    );
+    expect(slides[0]?.hidden).toBe(true);
+    expect(slides[1]?.hidden).toBe(false);
+    const secondScrollRegion = slides[1]!.querySelector<HTMLElement>(
+      '[data-deck-scroll-region]',
+    );
+    expect(secondScrollRegion).not.toBeNull();
+    expect(document.activeElement).toBe(secondScrollRegion);
+  });
+
+  it('leaves focus on a footer step button after it navigates the deck', async () => {
+    getReportMock.mockResolvedValue({
+      ...reportResponse(),
+      item: {
+        ...reportResponse().item!,
+        summary: { deck: representativeReportDeckFixture },
+      },
+    });
+    renderOverlay(root);
+    await act(async () => Promise.resolve());
+
+    const stepButton = document.querySelector<HTMLButtonElement>(
+      '[data-deck-dot-index="2"]',
+    )!;
+    act(() => stepButton.focus());
+    expect(document.activeElement).toBe(stepButton);
+
+    // Clicking a step button must not yank focus into the newly-shown
+    // slide body: the button stays in the DOM and keeps working.
+    act(() => stepButton.click());
+    const slides = [
+      ...document.querySelectorAll<HTMLElement>('[data-deck-slide-index]'),
+    ];
+    expect(slides[2]?.hidden).toBe(false);
+    expect(document.activeElement).toBe(stepButton);
+  });
+
+  it('lets bracket keys navigate and ArrowRight release once a scrollable slide body has no remaining rightward scroll', async () => {
+    getReportMock.mockResolvedValue({
+      ...reportResponse(),
+      item: {
+        ...reportResponse().item!,
+        summary: { deck: representativeReportDeckFixture },
+      },
+    });
+    renderOverlay(root);
+    await act(async () => Promise.resolve());
+
+    const slides = [
+      ...document.querySelectorAll<HTMLElement>('[data-deck-slide-index]'),
+    ];
+    const scrollRegion = slides[0]!.querySelector<HTMLElement>(
+      '[data-deck-scroll-region]',
+    )!;
+    for (const [property, value] of [
+      ['scrollWidth', 900],
+      ['clientWidth', 300],
+    ] as const) {
+      Object.defineProperty(scrollRegion, property, {
+        configurable: true,
+        value,
+      });
+    }
+
+    // `[`/`]` have no native scroll behavior, so a horizontally-scrollable
+    // body must never trap them.
+    act(() =>
+      scrollRegion.dispatchEvent(
+        new KeyboardEvent('keydown', { bubbles: true, key: ']' }),
+      ),
+    );
+    expect(slides[1]?.hidden).toBe(false);
+
+    act(() =>
+      document
+        .querySelector<HTMLButtonElement>('[data-deck-action="prev"]')!
+        .click(),
+    );
+    expect(slides[0]?.hidden).toBe(false);
+
+    // Not yet scrolled all the way right: ArrowRight stays trapped so the
+    // region can keep scrolling.
+    act(() =>
+      scrollRegion.dispatchEvent(
+        new KeyboardEvent('keydown', { bubbles: true, key: 'ArrowRight' }),
+      ),
+    );
+    expect(slides[0]?.hidden).toBe(false);
+    expect(slides[1]?.hidden).toBe(true);
+
+    // Scrolled all the way right: ArrowRight now releases to deck
+    // navigation instead of staying trapped for the region's lifetime.
+    Object.defineProperty(scrollRegion, 'scrollLeft', {
+      configurable: true,
+      value: 600,
+    });
+    act(() =>
+      scrollRegion.dispatchEvent(
+        new KeyboardEvent('keydown', { bubbles: true, key: 'ArrowRight' }),
+      ),
+    );
+    expect(slides[0]?.hidden).toBe(true);
+    expect(slides[1]?.hidden).toBe(false);
+  });
 });
 
 function renderOverlay(root: ReturnType<typeof createRoot>) {

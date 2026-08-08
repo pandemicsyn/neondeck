@@ -293,6 +293,24 @@ describe('report deck rendering', () => {
     expect(html).toContain('last 31');
   });
 
+  it('gives change-map churn values screen-reader text without doubling the announcement', () => {
+    const html = renderReportDeckHtml(representativeReportDeckFixture);
+
+    // The visible glyphs stay exactly as rendered today, but are hidden
+    // from assistive tech so they don't announce alongside the spelled-out
+    // text (e.g. "plus 42 42 additions").
+    expect(html).toContain(
+      '<span class="report-deck-churn-add">' +
+        '<span aria-hidden="true">+42</span>' +
+        '<span class="report-deck-sr-only">42 additions</span></span>',
+    );
+    expect(html).toContain(
+      '<span class="report-deck-churn-del">' +
+        '<span aria-hidden="true">−6</span>' +
+        '<span class="report-deck-sr-only">6 deletions</span></span>',
+    );
+  });
+
   it('adapts retained v1 report documents into bounded v2 decks', () => {
     const deck = reportDocumentToDeck({
       eyebrow: 'PR REVIEW',
