@@ -191,6 +191,7 @@ export type PrReviewChangeEvent = {
 export type GitHubQueueIssue = {
   type:
     | 'search-truncated'
+    | 'search-incomplete'
     | 'search-error'
     | 'enrichment-error'
     | 'queue-truncated';
