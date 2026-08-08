@@ -419,13 +419,34 @@ describe('PR review assist', () => {
       version: 2,
       summaryMarkdown: 'Review <script>alert(1)</script>',
     });
+    expect(overviewDeck?.eyebrow).toBe('PR REVIEW · OVERVIEW');
     expect(overviewDeck?.slides).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ kind: 'summary', title: 'Review brief' }),
-        expect.objectContaining({ kind: 'facts', title: 'PR facts' }),
+        expect.objectContaining({
+          kind: 'facts',
+          title: 'PR facts',
+          items: [
+            { label: 'Base', value: 'main', href: null },
+            { label: 'Head', value: 'head123', href: null },
+            { label: 'Author', value: 'unknown', href: null },
+            { label: 'Additions', value: '2', href: null },
+            { label: 'Deletions', value: '0', href: null },
+            { label: 'Checks', value: '0 passing / 0 failing', href: null },
+            { label: 'Mergeable', value: 'clean', href: null },
+            expect.objectContaining({ label: 'Generated' }),
+          ],
+        }),
         expect.objectContaining({
           kind: 'change-map',
-          items: expect.any(Array),
+          totalFiles: 1,
+          items: [
+            expect.objectContaining({
+              path: 'src/app.ts',
+              additions: 2,
+              deletions: 0,
+            }),
+          ],
         }),
       ]),
     );
@@ -439,6 +460,7 @@ describe('PR review assist', () => {
     );
     const issuesDeck = reportDeckFromSummary(issues?.summary);
     expect(issuesDeck).toMatchObject({ version: 2 });
+    expect(issuesDeck?.eyebrow).toBe('PR REVIEW · ISSUES');
     expect(issuesDeck?.slides).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ kind: 'summary', title: 'Review brief' }),

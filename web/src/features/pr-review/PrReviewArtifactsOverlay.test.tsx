@@ -113,11 +113,29 @@ describe('PR review artifacts overlay', () => {
     expect(deck.getAttribute('aria-label')).toContain('report deck');
     expect(slides[0]?.hidden).toBe(false);
     expect(slides[1]?.hidden).toBe(true);
+    // The step badge (item count, part, or severity count) is folded into
+    // the accessible name so screen reader users get the same information
+    // sighted users see in the visible badge.
     expect(
       document
         .querySelector('[data-deck-dot-index="1"]')
         ?.getAttribute('aria-label'),
-    ).toBe('Go to slide 2: PR facts');
+    ).toBe('Go to slide 2: PR facts, 2');
+    expect(
+      document
+        .querySelector('[data-deck-dot-index="1"]')
+        ?.querySelector('.report-deck-step-badge')?.textContent,
+    ).toBe('2');
+    expect(
+      document
+        .querySelector('[data-deck-dot-index="3"]')
+        ?.getAttribute('aria-label'),
+    ).toBe('Go to slide 4: Change map, 1/1');
+    expect(
+      document
+        .querySelector('[data-deck-dot-index="3"]')
+        ?.querySelector('.report-deck-step-badge')?.textContent,
+    ).toBe('1/1');
     expect(document.querySelector('[aria-live="polite"]')).not.toBeNull();
     const scrollRegion = slides[0]!.querySelector<HTMLElement>(
       '[data-deck-scroll-region]',
@@ -126,17 +144,24 @@ describe('PR review artifacts overlay', () => {
     expect(scrollRegion.getAttribute('aria-label')).toBe(
       'Review brief content',
     );
+
+    // Arrow keys pressed while focus is inside the slide scroll region now
+    // advance the deck, since the region cannot actually scroll further.
     act(() =>
       scrollRegion.dispatchEvent(
-        new KeyboardEvent('keydown', { bubbles: true, key: 'PageDown' }),
+        new KeyboardEvent('keydown', { bubbles: true, key: 'ArrowRight' }),
       ),
     );
-    expect(slides[0]?.hidden).toBe(false);
-    expect(slides[1]?.hidden).toBe(true);
-
-    act(() => button('next')!.click());
     expect(slides[0]?.hidden).toBe(true);
     expect(slides[1]?.hidden).toBe(false);
+
+    act(() =>
+      document
+        .querySelector<HTMLButtonElement>('[data-deck-action="next"]')!
+        .click(),
+    );
+    expect(slides[1]?.hidden).toBe(true);
+    expect(slides[2]?.hidden).toBe(false);
 
     act(() =>
       deck.dispatchEvent(
@@ -150,14 +175,86 @@ describe('PR review artifacts overlay', () => {
         new KeyboardEvent('keydown', { bubbles: true, key: 'Home' }),
       ),
     );
+    expect(slides[0]?.hidden).toBe(false);
+
+    act(() =>
+      deck.dispatchEvent(
+        new KeyboardEvent('keydown', { bubbles: true, key: ']' }),
+      ),
+    );
+    expect(slides[1]?.hidden).toBe(false);
+
+    act(() =>
+      deck.dispatchEvent(
+        new KeyboardEvent('keydown', { bubbles: true, key: '3' }),
+      ),
+    );
+    expect(slides[2]?.hidden).toBe(false);
+
     const link = document.querySelector<HTMLAnchorElement>('.report-deck a')!;
     act(() =>
       link.dispatchEvent(
         new KeyboardEvent('keydown', { bubbles: true, key: 'ArrowRight' }),
       ),
     );
+    expect(slides[2]?.hidden).toBe(false);
+
+    // Home is yielded to a scrolled region instead of jumping to slide 1.
+    const activeScrollRegion = slides[2]!.querySelector<HTMLElement>(
+      '[data-deck-scroll-region]',
+    )!;
+    Object.defineProperty(activeScrollRegion, 'scrollTop', {
+      configurable: true,
+      value: 40,
+    });
+    act(() =>
+      activeScrollRegion.dispatchEvent(
+        new KeyboardEvent('keydown', { bubbles: true, key: 'Home' }),
+      ),
+    );
+    expect(slides[2]?.hidden).toBe(false);
+    expect(slides[0]?.hidden).toBe(true);
+
+    // PageDown at the bottom of a scrollable-but-fully-scrolled slide still
+    // advances the deck instead of dead-ending.
+    for (const [property, value] of [
+      ['scrollHeight', 500],
+      ['clientHeight', 200],
+      ['scrollTop', 300],
+    ] as const) {
+      Object.defineProperty(activeScrollRegion, property, {
+        configurable: true,
+        value,
+      });
+    }
+    act(() =>
+      activeScrollRegion.dispatchEvent(
+        new KeyboardEvent('keydown', { bubbles: true, key: 'PageDown' }),
+      ),
+    );
+    expect(slides[2]?.hidden).toBe(true);
+    expect(slides[3]?.hidden).toBe(false);
+
+    // Digit jumps always navigate, even inside a horizontally-scrollable
+    // region.
+    const wideScrollRegion = slides[3]!.querySelector<HTMLElement>(
+      '[data-deck-scroll-region]',
+    )!;
+    for (const [property, value] of [
+      ['scrollWidth', 900],
+      ['clientWidth', 300],
+    ] as const) {
+      Object.defineProperty(wideScrollRegion, property, {
+        configurable: true,
+        value,
+      });
+    }
+    act(() =>
+      wideScrollRegion.dispatchEvent(
+        new KeyboardEvent('keydown', { bubbles: true, key: '1' }),
+      ),
+    );
     expect(slides[0]?.hidden).toBe(false);
-    expect(slides[1]?.hidden).toBe(true);
   });
 });
 

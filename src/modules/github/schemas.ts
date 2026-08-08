@@ -292,6 +292,7 @@ export type GitHubPullRequestEventState = {
   url: string;
   title: string;
   body: string | null;
+  author?: string | null;
   state: string;
   draft: boolean;
   merged: boolean;
