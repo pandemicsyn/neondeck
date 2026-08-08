@@ -131,7 +131,10 @@ export async function safePushAutopilotOwner(
         { status },
       );
     }
-    const apiLogin = await (dependencies.fetchLogin ?? fetchGitHubLogin)(token);
+    const apiLogin = await (dependencies.fetchLogin ?? fetchGitHubLogin)(
+      token,
+      { revalidate: true },
+    );
     const target = await (
       dependencies.resolvePushTarget ?? resolvePrPushTargetForCheckout
     )({

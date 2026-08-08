@@ -165,14 +165,16 @@ async function fetchPullRequestQueueUncached(
       sortedQueueItems.length > queueItemsToEnrich.length,
     issues,
   };
-  pullRequestQueueCache.set(cacheKey, {
-    expiresAt: Date.now() + pullRequestQueueCacheTtlMs,
-    value: queue,
-  });
-  while (pullRequestQueueCache.size > pullRequestQueueCacheMaxEntries) {
-    const oldestKey = pullRequestQueueCache.keys().next().value;
-    if (oldestKey === undefined) break;
-    pullRequestQueueCache.delete(oldestKey);
+  if (!issues.some((issue) => issue.type === 'search-incomplete')) {
+    pullRequestQueueCache.set(cacheKey, {
+      expiresAt: Date.now() + pullRequestQueueCacheTtlMs,
+      value: queue,
+    });
+    while (pullRequestQueueCache.size > pullRequestQueueCacheMaxEntries) {
+      const oldestKey = pullRequestQueueCache.keys().next().value;
+      if (oldestKey === undefined) break;
+      pullRequestQueueCache.delete(oldestKey);
+    }
   }
 
   return queue;
@@ -259,6 +261,7 @@ async function searchPullRequests(
 ): Promise<PullRequestSearchResult> {
   const items: GitHubPullRequest[] = [];
   let totalCount = 0;
+  let incompleteResults = false;
   for (let page = 1; page <= maxSearchPages; page += 1) {
     const params = new URLSearchParams({
       q: query,
@@ -276,21 +279,27 @@ async function searchPullRequests(
       await response.json(),
     );
     totalCount = data.total_count;
+    incompleteResults ||= data.incomplete_results;
     items.push(...data.items.map(normalizePullRequest));
     if (items.length >= data.total_count || data.items.length < searchPerPage) {
       break;
     }
   }
-  const truncated = totalCount > maxSearchItemsPerQuery;
+  const exceededItemLimit = totalCount > maxSearchItemsPerQuery;
+  const truncated = exceededItemLimit || incompleteResults;
   return {
     items,
     truncated,
     issues: truncated
       ? [
           {
-            type: 'search-truncated' as const,
+            type: incompleteResults
+              ? ('search-incomplete' as const)
+              : ('search-truncated' as const),
             query,
-            message: `GitHub search returned more than ${maxSearchItemsPerQuery} PRs for this query; showing the newest ${items.length}.`,
+            message: incompleteResults
+              ? `GitHub reported incomplete search results for this query; showing ${items.length} results and running any configured fallback.`
+              : `GitHub search returned more than ${maxSearchItemsPerQuery} PRs for this query; showing the newest ${items.length}.`,
           },
         ]
       : [],

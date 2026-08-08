@@ -307,6 +307,69 @@ describe('github foundation', () => {
     );
   });
 
+  it('runs the stale authored fallback when GitHub reports incomplete results', async () => {
+    const repos: RepoConfig[] = [
+      {
+        id: 'neondeck',
+        github: { owner: 'pandemicsyn', name: 'neondeck' },
+        path: '/src/neondeck',
+        defaultBranch: 'main',
+      },
+    ];
+    const queries: string[] = [];
+    globalThis.fetch = vi.fn<typeof fetch>(async (input) => {
+      const url = new URL(String(input));
+      const query = url.searchParams.get('q') ?? '';
+      queries.push(query);
+      if (
+        query.includes('author:pandemicsyn') &&
+        !query.includes('updated:<')
+      ) {
+        return jsonResponse({
+          total_count: 1,
+          incomplete_results: true,
+          items: [],
+        });
+      }
+      return jsonResponse({
+        total_count: 0,
+        incomplete_results: false,
+        items: [],
+      });
+    });
+
+    const queue = await fetchPullRequestQueue({
+      token: 'token',
+      login: 'pandemicsyn',
+      repos,
+      maxItems: 0,
+    });
+
+    expect(queries.filter((query) => query.includes('updated:<'))).toHaveLength(
+      1,
+    );
+    expect(queue.truncated).toBe(true);
+    expect(queue.issues).toContainEqual(
+      expect.objectContaining({
+        type: 'search-incomplete',
+        message: expect.stringContaining('incomplete search results'),
+      }),
+    );
+
+    await fetchPullRequestQueue({
+      token: 'token',
+      login: 'pandemicsyn',
+      repos,
+      maxItems: 0,
+    });
+    expect(
+      queries.filter(
+        (query) =>
+          query.includes('author:pandemicsyn') && !query.includes('updated:<'),
+      ),
+    ).toHaveLength(2);
+  });
+
   it('paginates PR searches and merges queue relations', async () => {
     const repos: RepoConfig[] = [
       {

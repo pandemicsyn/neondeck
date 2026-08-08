@@ -8,6 +8,7 @@ const githubMaxConcurrentRequests = 8;
 const githubValidatorCacheMaxEntries = 256;
 const githubValidatorCacheMaxBytes = 32 * 1024 * 1024;
 const githubValidatorMaxBodyBytes = 2 * 1024 * 1024;
+const githubLoginCacheTtlMs = 60 * 60 * 1000;
 
 type CachedGitHubResponse = {
   body: ArrayBuffer;
@@ -19,32 +20,57 @@ type CachedGitHubResponse = {
 const githubValidatorCache = new Map<string, CachedGitHubResponse>();
 const githubGetRequestsInFlight = new Map<string, Promise<Response>>();
 const githubGraphqlQueriesInFlight = new Map<string, Promise<unknown>>();
-const githubLoginCache = new Map<string, Promise<string>>();
+const githubLoginCache = new Map<
+  string,
+  { expiresAt: number | null; value: Promise<string> }
+>();
 const githubReadGenerations = new Map<string, number>();
-const githubRequestWaiters: Array<() => void> = [];
+const githubRequestWaiters: Array<{
+  resolve: () => void;
+  reject: (reason: unknown) => void;
+  signal: AbortSignal;
+  onAbort: () => void;
+}> = [];
 let githubValidatorCacheBytes = 0;
 let githubActiveRequests = 0;
 
-export async function fetchGitHubLogin(token: string) {
+export async function fetchGitHubLogin(
+  token: string,
+  options: { revalidate?: boolean } = {},
+) {
   const key = githubTokenFingerprint(token);
   const cached = githubLoginCache.get(key);
-  if (cached) {
+  if (
+    cached &&
+    (cached.expiresAt === null ||
+      (!options.revalidate && cached.expiresAt > Date.now()))
+  ) {
     githubLoginCache.delete(key);
     githubLoginCache.set(key, cached);
-    return cached;
+    return cached.value;
   }
+  if (cached) githubLoginCache.delete(key);
 
-  const value = fetchGitHubLoginUncached(token).catch((error) => {
-    githubLoginCache.delete(key);
-    throw error;
-  });
-  githubLoginCache.set(key, value);
+  const entry: { expiresAt: number | null; value: Promise<string> } = {
+    expiresAt: null,
+    value: Promise.resolve(''),
+  };
+  entry.value = fetchGitHubLoginUncached(token)
+    .then((login) => {
+      entry.expiresAt = Date.now() + githubLoginCacheTtlMs;
+      return login;
+    })
+    .catch((error) => {
+      if (githubLoginCache.get(key) === entry) githubLoginCache.delete(key);
+      throw error;
+    });
+  githubLoginCache.set(key, entry);
   while (githubLoginCache.size > 8) {
     const oldestKey = githubLoginCache.keys().next().value;
     if (oldestKey === undefined) break;
     githubLoginCache.delete(oldestKey);
   }
-  return value;
+  return entry.value;
 }
 
 async function fetchGitHubLoginUncached(token: string) {
@@ -219,8 +245,11 @@ async function executeConditionalGitHubGet(
     response.ok &&
     isValidatorCacheable(response)
   ) {
-    const body = await response.clone().arrayBuffer();
-    if (body.byteLength <= githubValidatorMaxBodyBytes) {
+    const body = await readBoundedGitHubResponseBody(
+      response,
+      githubValidatorMaxBodyBytes,
+    );
+    if (body) {
       storeCachedGitHubResponse(validatorCacheKey, {
         body,
         headers: [...response.headers.entries()],
@@ -238,16 +267,20 @@ async function executeGitHubRequest(
   cached?: CachedGitHubResponse,
 ) {
   let response: Response;
-  await acquireGitHubRequestSlot();
   const timeoutSignal = AbortSignal.timeout(githubRequestTimeoutMs);
+  const requestSignal = init.signal
+    ? AbortSignal.any([init.signal, timeoutSignal])
+    : timeoutSignal;
+  let acquiredSlot = false;
   try {
+    await acquireGitHubRequestSlot(requestSignal);
+    acquiredSlot = true;
     response = await fetch(url, {
       ...init,
-      signal: init.signal
-        ? AbortSignal.any([init.signal, timeoutSignal])
-        : timeoutSignal,
+      signal: requestSignal,
     });
   } catch (error) {
+    if (acquiredSlot) releaseGitHubRequestSlot();
     if (
       timeoutSignal.aborted &&
       !init.signal?.aborted &&
@@ -257,8 +290,6 @@ async function executeGitHubRequest(
         `GitHub request timed out after ${Math.round(githubRequestTimeoutMs / 1000)}s`,
       );
     }
-
-    releaseGitHubRequestSlot();
     throw error;
   }
 
@@ -398,14 +429,52 @@ function isValidatorCacheable(response: Response) {
   if (!response.headers.has('etag') && !response.headers.has('last-modified')) {
     return false;
   }
-  const contentLength = Number(response.headers.get('content-length'));
+  const declaredContentLength = response.headers.get('content-length');
+  const contentLength =
+    declaredContentLength === null ? undefined : Number(declaredContentLength);
   if (
+    contentLength !== undefined &&
     Number.isFinite(contentLength) &&
     contentLength > githubValidatorMaxBodyBytes
   ) {
     return false;
   }
   return /(^|[+/])json\b/i.test(response.headers.get('content-type') ?? '');
+}
+
+async function readBoundedGitHubResponseBody(
+  response: Response,
+  maxBytes: number,
+) {
+  const reader = response.clone().body?.getReader();
+  if (!reader) return undefined;
+
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) {
+        const body = new Uint8Array(total);
+        let offset = 0;
+        for (const chunk of chunks) {
+          body.set(chunk, offset);
+          offset += chunk.byteLength;
+        }
+        return body.buffer;
+      }
+      if (!value) continue;
+      if (total + value.byteLength > maxBytes) {
+        void reader.cancel().catch(() => undefined);
+        return undefined;
+      }
+      chunks.push(value);
+      total += value.byteLength;
+    }
+  } catch {
+    void reader.cancel().catch(() => undefined);
+    return undefined;
+  }
 }
 
 function storeCachedGitHubResponse(key: string, value: CachedGitHubResponse) {
@@ -440,6 +509,7 @@ function holdGitHubRequestSlot(response: Response) {
     released = true;
     releaseGitHubRequestSlot();
   };
+  void reader.closed.then(release, release);
   const body = new ReadableStream<Uint8Array>({
     async pull(controller) {
       try {
@@ -475,20 +545,43 @@ async function discardGitHubResponseBody(response: Response) {
   await response.body.cancel().catch(() => undefined);
 }
 
-async function acquireGitHubRequestSlot() {
+async function acquireGitHubRequestSlot(signal: AbortSignal) {
+  if (signal.aborted) throw signal.reason;
   if (githubActiveRequests < githubMaxConcurrentRequests) {
     githubActiveRequests += 1;
     return;
   }
-  await new Promise<void>((resolve) => githubRequestWaiters.push(resolve));
+  await new Promise<void>((resolve, reject) => {
+    const waiter = {
+      resolve,
+      reject,
+      signal,
+      onAbort: () => {
+        const index = githubRequestWaiters.indexOf(waiter);
+        if (index < 0) return;
+        githubRequestWaiters.splice(index, 1);
+        reject(signal.reason);
+      },
+    };
+    signal.addEventListener('abort', waiter.onAbort, { once: true });
+    githubRequestWaiters.push(waiter);
+  });
 }
 
 function releaseGitHubRequestSlot() {
-  const next = githubRequestWaiters.shift();
-  if (next) {
-    next();
-  } else {
-    githubActiveRequests -= 1;
+  while (true) {
+    const next = githubRequestWaiters.shift();
+    if (!next) {
+      githubActiveRequests -= 1;
+      return;
+    }
+    next.signal.removeEventListener('abort', next.onAbort);
+    if (next.signal.aborted) {
+      next.reject(next.signal.reason);
+      continue;
+    }
+    next.resolve();
+    return;
   }
 }
 

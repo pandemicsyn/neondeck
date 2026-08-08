@@ -51,6 +51,47 @@ describe('GitHub request budgeting', () => {
     ).toBe('"pr-v1"');
   });
 
+  it('does not cache an oversized streaming response without a content length', async () => {
+    const oversizedChunk = new Uint8Array(2 * 1024 * 1024 + 1);
+    let call = 0;
+    const fetchMock = vi.fn<typeof fetch>(async () => {
+      call += 1;
+      if (call === 1) {
+        return new Response(
+          new ReadableStream<Uint8Array>({
+            start(controller) {
+              controller.enqueue(oversizedChunk);
+            },
+          }),
+          {
+            status: 200,
+            headers: {
+              'Content-Type': 'application/json',
+              ETag: '"oversized"',
+            },
+          },
+        );
+      }
+      return jsonResponse({ ok: true }, { ETag: '"small"' });
+    });
+    globalThis.fetch = fetchMock;
+
+    const first = await githubFetch(
+      'token-a',
+      'https://api.github.com/streaming-resource',
+    );
+    await first.body?.cancel();
+    const second = await githubFetch(
+      'token-a',
+      'https://api.github.com/streaming-resource',
+    );
+
+    await expect(second.json()).resolves.toEqual({ ok: true });
+    expect(
+      new Headers(fetchMock.mock.calls[1]?.[1]?.headers).get('if-none-match'),
+    ).toBeNull();
+  });
+
   it('coalesces identical GitHub GETs that are already in flight', async () => {
     let release: (() => void) | undefined;
     const blocked = new Promise<void>((resolve) => {
@@ -79,17 +120,29 @@ describe('GitHub request budgeting', () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
-  it('caches the authenticated login by token', async () => {
-    const fetchMock = vi.fn<typeof fetch>(async () =>
-      jsonResponse({ login: 'octocat' }),
-    );
+  it('caches the authenticated login by token and supports revalidation', async () => {
+    const callsByToken = new Map<string, number>();
+    const fetchMock = vi.fn<typeof fetch>(async (_input, init) => {
+      const authorization = new Headers(init?.headers).get('authorization');
+      const calls = (callsByToken.get(authorization ?? '') ?? 0) + 1;
+      callsByToken.set(authorization ?? '', calls);
+      return jsonResponse({
+        login:
+          authorization === 'Bearer token-a' && calls > 1
+            ? 'renamed-octocat'
+            : 'octocat',
+      });
+    });
     globalThis.fetch = fetchMock;
 
     await expect(fetchGitHubLogin('token-a')).resolves.toBe('octocat');
     await expect(fetchGitHubLogin('token-a')).resolves.toBe('octocat');
     await expect(fetchGitHubLogin('token-b')).resolves.toBe('octocat');
+    await expect(
+      fetchGitHubLogin('token-a', { revalidate: true }),
+    ).resolves.toBe('renamed-octocat');
 
-    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock).toHaveBeenCalledTimes(3);
   });
 
   it('coalesces identical in-flight GraphQL queries', async () => {
@@ -221,6 +274,93 @@ describe('GitHub request budgeting', () => {
     for (const release of releases) release();
 
     await expect(Promise.all(requests)).resolves.toHaveLength(9);
+  });
+
+  it('removes aborted requests waiting for a concurrency slot', async () => {
+    const fetchMock = vi.fn<typeof fetch>(
+      async () =>
+        new Response(new ReadableStream<Uint8Array>({ start() {} }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+    );
+    globalThis.fetch = fetchMock;
+
+    const activeResponses = await Promise.all(
+      Array.from({ length: 8 }, (_, index) =>
+        githubFetch('token-a', `https://api.github.com/active/${index}`),
+      ),
+    );
+    expect(fetchMock).toHaveBeenCalledTimes(8);
+
+    const controller = new AbortController();
+    const aborted = githubFetch(
+      'token-a',
+      'https://api.github.com/aborted-while-queued',
+      { signal: controller.signal },
+    );
+    controller.abort();
+
+    await expect(aborted).rejects.toMatchObject({ name: 'AbortError' });
+    expect(fetchMock).toHaveBeenCalledTimes(8);
+
+    const replacement = githubFetch(
+      'token-a',
+      'https://api.github.com/replacement',
+    );
+    await activeResponses[0]?.body?.cancel();
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(9));
+    const replacementResponse = await replacement;
+
+    await Promise.all(
+      [...activeResponses.slice(1), replacementResponse].map((response) =>
+        response.body?.cancel(),
+      ),
+    );
+  });
+
+  it('releases a response slot when an unread body aborts after headers', async () => {
+    let call = 0;
+    const fetchMock = vi.fn<typeof fetch>(async (_input, init) => {
+      call += 1;
+      if (call > 8) return jsonResponse({ ok: true });
+      return new Response(
+        new ReadableStream<Uint8Array>({
+          start(controller) {
+            init?.signal?.addEventListener(
+              'abort',
+              () => controller.error(init.signal?.reason),
+              { once: true },
+            );
+          },
+        }),
+        {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        },
+      );
+    });
+    globalThis.fetch = fetchMock;
+    const controllers = Array.from({ length: 8 }, () => new AbortController());
+    const unreadResponses = await Promise.all(
+      controllers.map((controller, index) =>
+        githubFetch('token-a', `https://api.github.com/unread/${index}`, {
+          signal: controller.signal,
+        }),
+      ),
+    );
+    expect(unreadResponses).toHaveLength(8);
+    expect(fetchMock).toHaveBeenCalledTimes(8);
+
+    for (const controller of controllers) controller.abort();
+    const replacement = githubFetch(
+      'token-a',
+      'https://api.github.com/after-unread-aborts',
+    );
+
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(9));
+    const replacementResponse = await replacement;
+    await expect(replacementResponse.json()).resolves.toEqual({ ok: true });
   });
 });
 
