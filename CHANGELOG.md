@@ -1,5 +1,23 @@
 # Changelog
 
+## 1.0.0-beta.31
+
+### Minor Changes
+
+- [#263](https://github.com/pandemicsyn/neondeck/pull/263) [`bcd583c`](https://github.com/pandemicsyn/neondeck/commit/bcd583cc59948013ae8e93644d1e67bb4507b963) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Separate PR reviewer activity metrics from delegated Explore work and show concurrent subagent progress.
+
+- [#261](https://github.com/pandemicsyn/neondeck/pull/261) [`36efc8e`](https://github.com/pandemicsyn/neondeck/commit/36efc8ea00e39b3a55858c637e4f56e429fde4d7) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Add a configurable shared Explore subagent for chat, PR review, and Autopilot repository investigation.
+
+- [#258](https://github.com/pandemicsyn/neondeck/pull/258) [`4081a40`](https://github.com/pandemicsyn/neondeck/commit/4081a40964155782a73b67dea95d8b9c3c4c7091) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Let the revision-bound PR reviewer chat create, edit, re-anchor, and delete local draft comments while keeping GitHub submission human-owned.
+
+- [#266](https://github.com/pandemicsyn/neondeck/pull/266) [`a69bb1b`](https://github.com/pandemicsyn/neondeck/commit/a69bb1b631a7321b407d4cd004326623f4da1ad9) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Refine the PR review deck: named step-bar navigation with per-slide badges, a single consolidated header in the artifacts overlay, change-map churn columns, severity-railed findings, and keyboard jumps that no longer get swallowed by slide scroll regions.
+
+- [#260](https://github.com/pandemicsyn/neondeck/pull/260) [`242b172`](https://github.com/pandemicsyn/neondeck/commit/242b172c1762e1a21bc2f4b1df04fce9d5e2f9c6) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Let PR reviewers discover exact-revision changes with bounded Git-native tools, compact their initial context, and expose useful exploration progress in Activity.
+
+### Patch Changes
+
+- [#262](https://github.com/pandemicsyn/neondeck/pull/262) [`7ac477d`](https://github.com/pandemicsyn/neondeck/commit/7ac477d4c005daadc4faee3974ac5db8a0a11ab9) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Let chat, PR review, and Autopilot fan independent Explore investigations out concurrently while keeping dependent work and mutations sequential.
+
 ## 1.0.0-beta.30
 
 ### Minor Changes

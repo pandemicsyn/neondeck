@@ -29,6 +29,7 @@
     "calm-reviews-use-frontier",
     "calm-revisions-refresh",
     "calm-sqlite-schedules",
+    "calm-taxis-explore",
     "calm-toasts-wait",
     "calm-workflow-event-polling",
     "canonical-watch-repo-ids",
@@ -51,11 +52,13 @@
     "fix-dev-proxy-bind",
     "fix-docs-build-compatibility",
     "fix-release-qa-setup",
+    "focused-explorers-delegate",
     "fresh-autopilot-feedback-arrives",
     "fresh-briefings-continue",
     "fresh-reviews-settle",
     "fresh-sessions-glow",
     "friendly-providers-connect",
+    "fuzzy-reviewers-edit",
     "honest-local-preapprovals",
     "include-seeded-review-comments",
     "inline-neon-findings-glow",
@@ -67,6 +70,7 @@
     "pr-review-inbox-retention",
     "prefer-latest-chatgpt-model",
     "quick-chats-flow",
+    "quick-explorers-fan-out",
     "quick-patches-lead",
     "quick-review-threads",
     "quick-reviews-settle",
@@ -90,6 +94,7 @@
     "steady-sessions-sync",
     "swift-reviews-open",
     "tidy-briefings-glow",
+    "tidy-decks-navigate",
     "tidy-popouts-match",
     "tidy-skill-roots-explain",
     "tidy-statusline-clock",
@@ -97,6 +102,7 @@
     "trusted-dashboard-origins",
     "typed-neon-findings-glow",
     "valid-dashboard-tool-schema",
-    "wise-reviews-appear"
+    "wise-reviews-appear",
+    "wise-reviews-explore"
   ]
 }
