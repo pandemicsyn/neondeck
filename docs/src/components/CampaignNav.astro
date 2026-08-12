@@ -1,0 +1,81 @@
+---
+type Props = {
+  campaign: 'pr-review' | 'pr-autopilot';
+};
+
+const { campaign } = Astro.props;
+---
+
+<nav class="campaign-nav" aria-label="Campaign navigation">
+  <div class="container campaign-nav-inner">
+    <a class="brand" href="/" aria-label="neondeck home">
+      <span class="brand-mark" aria-hidden="true"></span>
+      <span>neondeck</span>
+    </a>
+    <div class="campaign-nav-context" aria-label="Current product focus">
+      <span class="campaign-nav-signal" aria-hidden="true"></span>
+      <span>{campaign === 'pr-review' ? 'PR REVIEW' : 'PR AUTOPILOT'}</span>
+    </div>
+    <a
+      class="button secondary campaign-nav-cta"
+      href="https://github.com/pandemicsyn/neondeck"
+      data-marketing-event="github_click"
+      data-marketing-placement="nav">View on GitHub</a
+    >
+  </div>
+</nav>
+
+<style>
+  .campaign-nav {
+    position: sticky;
+    top: 0;
+    z-index: 20;
+    border-bottom: 1px solid var(--line);
+    background: color-mix(in srgb, var(--bg) 92%, transparent);
+    backdrop-filter: blur(10px);
+  }
+
+  .campaign-nav-inner {
+    display: flex;
+    min-height: 64px;
+    align-items: center;
+    justify-content: space-between;
+    gap: 22px;
+  }
+
+  .campaign-nav-context {
+    display: inline-flex;
+    align-items: center;
+    gap: 9px;
+    margin-left: auto;
+    color: var(--muted);
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 0.14em;
+  }
+
+  .campaign-nav-signal {
+    width: 7px;
+    height: 7px;
+    border-radius: 999px;
+    background: var(--teal);
+    box-shadow: 0 0 9px var(--teal);
+  }
+
+  .campaign-nav-cta {
+    min-height: 38px;
+    padding: 9px 14px;
+    font-size: 12px;
+  }
+
+  @media (max-width: 640px) {
+    .campaign-nav-context {
+      display: none;
+    }
+
+    .campaign-nav-cta {
+      padding-inline: 10px;
+      font-size: 11px;
+    }
+  }
+</style>

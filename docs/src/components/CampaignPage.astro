@@ -1,0 +1,682 @@
+---
+import CampaignNav from './CampaignNav.astro';
+import CampaignProductPreview from './CampaignProductPreview.astro';
+import SiteFooter from './SiteFooter.astro';
+import BaseLayout from '../layouts/BaseLayout.astro';
+
+type Campaign = 'pr-review' | 'pr-autopilot';
+
+type Detail = {
+  title: string;
+  body: string;
+  signal: 'pink' | 'teal' | 'cyan' | 'violet';
+};
+
+type Step = {
+  title: string;
+  body: string;
+};
+
+type Props = {
+  campaign: Campaign;
+  title: string;
+  description: string;
+  kicker: string;
+  headline: string;
+  headlineAccent: string;
+  heroCopy: string;
+  previewTitle: string;
+  previewCopy: string;
+  detailsTitle: string;
+  detailsCopy: string;
+  details: Detail[];
+  stepsTitle: string;
+  steps: Step[];
+  trustTitle: string;
+  trustCopy: string;
+  trustPoints: string[];
+  docsHref: string;
+  docsLabel: string;
+};
+
+const {
+  campaign,
+  title,
+  description,
+  kicker,
+  headline,
+  headlineAccent,
+  heroCopy,
+  previewTitle,
+  previewCopy,
+  detailsTitle,
+  detailsCopy,
+  details,
+  stepsTitle,
+  steps,
+  trustTitle,
+  trustCopy,
+  trustPoints,
+  docsHref,
+  docsLabel,
+} = Astro.props;
+
+const installCommand = 'npm i -g neondeck@next';
+---
+
+<BaseLayout title={title} description={description} marketingPage={campaign}>
+  <div class="site-shell campaign-shell">
+    <CampaignNav campaign={campaign} />
+    <main>
+      <section class="campaign-hero">
+        <div class="hero-bg" aria-hidden="true">
+          <div class="hero-wash pink"></div>
+          <div class="hero-wash teal"></div>
+          <div class="hero-wash violet"></div>
+          <div class="hero-wash cyan"></div>
+          <div class="hero-stripes"></div>
+          <div class="hero-vignette"></div>
+        </div>
+        <div class="container campaign-hero-grid">
+          <div class="campaign-hero-copy">
+            <p class="kicker">{kicker}</p>
+            <h1>{headline}<br /><span>{headlineAccent}</span></h1>
+            <p class="campaign-lede">{heroCopy}</p>
+            <div class="command campaign-command">
+              <span class="command-code"><span>$</span> {installCommand}</span>
+              <button
+                type="button"
+                data-copy-command={installCommand}
+                data-marketing-event="install_command_copy"
+                data-marketing-placement="hero">copy</button
+              >
+            </div>
+            <p class="command-note">
+              Current preview release · macOS and Linux · MIT
+            </p>
+            <div class="hero-actions campaign-actions">
+              <a
+                class="button hero-primary"
+                href="https://github.com/pandemicsyn/neondeck"
+                data-marketing-event="github_click"
+                data-marketing-placement="hero">View the source on GitHub</a
+              >
+              <a
+                class="button secondary hero-secondary"
+                href={docsHref}
+                data-marketing-event="docs_click"
+                data-marketing-placement="hero">{docsLabel}</a
+              >
+            </div>
+          </div>
+          <div class="hero-proof" aria-label="Product guarantees">
+            <span>RUNS LOCALLY</span>
+            <span>HUMAN-CONTROLLED AUTHORITY</span>
+            <span>NO APP TELEMETRY</span>
+          </div>
+        </div>
+      </section>
+
+      <section class="campaign-section product-section">
+        <div class="container">
+          <div class="campaign-section-head">
+            <h2>{previewTitle}</h2>
+            <p>{previewCopy}</p>
+          </div>
+          <CampaignProductPreview campaign={campaign} />
+        </div>
+      </section>
+
+      <section class="campaign-section detail-section">
+        <div class="container detail-layout">
+          <div class="detail-intro">
+            <h2>{detailsTitle}</h2>
+            <p>{detailsCopy}</p>
+          </div>
+          <div class="detail-list">
+            {
+              details.map((detail) => (
+                <article class="detail-row">
+                  <span
+                    class:list={['detail-signal', detail.signal]}
+                    aria-hidden="true"
+                  />
+                  <div>
+                    <h3>{detail.title}</h3>
+                    <p>{detail.body}</p>
+                  </div>
+                </article>
+              ))
+            }
+          </div>
+        </div>
+      </section>
+
+      <section class="campaign-section flow-section">
+        <div class="container">
+          <div class="campaign-section-head flow-head">
+            <h2>{stepsTitle}</h2>
+            <p>
+              One bounded path from attention to action. No invisible handoff
+              and no mystery state.
+            </p>
+          </div>
+          <ol class="campaign-flow">
+            {
+              steps.map((step, index) => (
+                <li>
+                  <span>{String(index + 1).padStart(2, '0')}</span>
+                  <div>
+                    <h3>{step.title}</h3>
+                    <p>{step.body}</p>
+                  </div>
+                </li>
+              ))
+            }
+          </ol>
+        </div>
+      </section>
+
+      <section class="campaign-section trust-section">
+        <div class="container trust-layout">
+          <div>
+            <h2>{trustTitle}</h2>
+            <p>{trustCopy}</p>
+          </div>
+          <ul>
+            {
+              trustPoints.map((point) => (
+                <li>
+                  <span aria-hidden="true">◆</span>
+                  {point}
+                </li>
+              ))
+            }
+          </ul>
+        </div>
+      </section>
+
+      <section class="campaign-close">
+        <div class="container close-layout">
+          <div>
+            <p>LOCAL-FIRST · OPEN SOURCE · BUILT ON FLUE</p>
+            <h2>Put the next pull request on deck.</h2>
+          </div>
+          <div class="close-action">
+            <div class="command close-command">
+              <span class="command-code"><span>$</span> {installCommand}</span>
+              <button
+                type="button"
+                data-copy-command={installCommand}
+                data-marketing-event="install_command_copy"
+                data-marketing-placement="footer">copy</button
+              >
+            </div>
+            <a
+              href="https://github.com/pandemicsyn/neondeck"
+              data-marketing-event="github_click"
+              data-marketing-placement="footer"
+              >Inspect the repository before installing →</a
+            >
+          </div>
+        </div>
+      </section>
+    </main>
+    <SiteFooter />
+  </div>
+</BaseLayout>
+
+<style>
+  .campaign-shell {
+    background: var(--bg);
+  }
+
+  .campaign-hero {
+    position: relative;
+    min-height: min(760px, calc(100vh - 64px));
+    overflow: hidden;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .campaign-hero-grid {
+    position: relative;
+    z-index: 2;
+    display: grid;
+    min-height: min(760px, calc(100vh - 64px));
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 54px;
+    padding-block: clamp(74px, 10vw, 116px);
+  }
+
+  .campaign-hero-copy {
+    max-width: 870px;
+  }
+
+  .campaign-hero h1 {
+    max-width: 11.5ch;
+    margin: 0;
+    font-size: clamp(3.15rem, 7.7vw, 5.8rem);
+    text-align: left;
+  }
+
+  .campaign-hero h1 span {
+    color: var(--cyan);
+    text-shadow: 0 0 34px rgba(105, 230, 255, 0.28);
+  }
+
+  .campaign-lede {
+    max-width: 62ch;
+    margin: 28px 0 0;
+    color: var(--body);
+    font-size: clamp(1.05rem, 1.8vw, 1.22rem);
+    line-height: 1.72;
+    text-wrap: pretty;
+  }
+
+  .campaign-command {
+    margin-top: 34px;
+  }
+
+  .command-note {
+    margin: 10px 0 0;
+    color: var(--faint);
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 10px;
+  }
+
+  .campaign-actions {
+    justify-content: flex-start;
+    margin-top: 24px;
+  }
+
+  .hero-proof {
+    display: grid;
+    align-self: stretch;
+    width: 38px;
+    border-inline: 1px solid rgba(105, 230, 255, 0.22);
+    background: rgba(6, 8, 12, 0.28);
+    color: rgba(215, 247, 255, 0.64);
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 9px;
+    letter-spacing: 0.16em;
+    writing-mode: vertical-rl;
+  }
+
+  .hero-proof span {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 18px 9px;
+    border-bottom: 1px solid rgba(105, 230, 255, 0.16);
+  }
+
+  .hero-proof span:first-child {
+    color: var(--teal);
+  }
+
+  .hero-proof span:nth-child(2) {
+    color: var(--cyan);
+  }
+
+  .hero-proof span:last-child {
+    border-bottom: 0;
+    color: var(--pink);
+  }
+
+  .campaign-section {
+    padding: clamp(68px, 9vw, 112px) 0;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .campaign-section-head {
+    display: grid;
+    grid-template-columns: minmax(0, 1.15fr) minmax(280px, 0.65fr);
+    align-items: end;
+    gap: clamp(30px, 6vw, 88px);
+    margin-bottom: 34px;
+  }
+
+  .campaign-section h2,
+  .campaign-close h2 {
+    max-width: 15ch;
+    margin: 0;
+    font-size: clamp(2.2rem, 5vw, 4.3rem);
+    line-height: 0.98;
+    letter-spacing: -0.015em;
+  }
+
+  .campaign-section-head p,
+  .detail-intro p,
+  .trust-layout > div > p {
+    max-width: 58ch;
+    margin: 0;
+    color: var(--muted);
+    font-size: 16px;
+    line-height: 1.72;
+    text-wrap: pretty;
+  }
+
+  .detail-section {
+    background: color-mix(in srgb, var(--surface) 38%, var(--bg));
+  }
+
+  .detail-layout {
+    display: grid;
+    grid-template-columns: minmax(280px, 0.72fr) minmax(0, 1.28fr);
+    gap: clamp(40px, 9vw, 128px);
+  }
+
+  .detail-intro {
+    position: sticky;
+    top: 108px;
+    align-self: start;
+  }
+
+  .detail-intro p {
+    margin-top: 24px;
+  }
+
+  .detail-list {
+    border-top: 1px solid var(--line);
+  }
+
+  .detail-row {
+    display: grid;
+    grid-template-columns: 16px minmax(0, 1fr);
+    gap: 19px;
+    padding: 28px 0;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .detail-signal {
+    width: 10px;
+    height: 10px;
+    margin-top: 5px;
+    transform: rotate(45deg);
+    background: var(--cyan);
+    box-shadow: 0 0 12px currentColor;
+    color: var(--cyan);
+  }
+
+  .detail-signal.pink {
+    background: var(--pink);
+    color: var(--pink);
+  }
+
+  .detail-signal.teal {
+    background: var(--teal);
+    color: var(--teal);
+  }
+
+  .detail-signal.violet {
+    background: var(--violet);
+    color: var(--violet);
+  }
+
+  .detail-row h3,
+  .campaign-flow h3 {
+    margin: 0;
+    font-size: clamp(1.15rem, 2vw, 1.45rem);
+  }
+
+  .detail-row p,
+  .campaign-flow p {
+    max-width: 64ch;
+    margin: 8px 0 0;
+    color: var(--muted);
+    font-size: 15px;
+    line-height: 1.7;
+    text-wrap: pretty;
+  }
+
+  .flow-head {
+    margin-bottom: 38px;
+  }
+
+  .campaign-flow {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    margin: 0;
+    padding: 0;
+    border-top: 1px solid var(--line);
+    border-bottom: 1px solid var(--line);
+    list-style: none;
+  }
+
+  .campaign-flow li {
+    display: grid;
+    min-height: 260px;
+    grid-template-rows: auto 1fr;
+    gap: 48px;
+    padding: 24px;
+    border-right: 1px solid var(--line);
+  }
+
+  .campaign-flow li:last-child {
+    border-right: 0;
+  }
+
+  .campaign-flow li > span {
+    color: var(--pink);
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 13px;
+  }
+
+  .trust-section {
+    background: var(--bg-strong);
+  }
+
+  .trust-layout {
+    display: grid;
+    grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.2fr);
+    gap: clamp(42px, 9vw, 132px);
+  }
+
+  .trust-layout > div > p {
+    margin-top: 24px;
+  }
+
+  .trust-layout ul {
+    display: grid;
+    align-content: start;
+    margin: 0;
+    padding: 0;
+    border-top: 1px solid var(--line);
+    list-style: none;
+  }
+
+  .trust-layout li {
+    display: grid;
+    grid-template-columns: 15px minmax(0, 1fr);
+    gap: 14px;
+    padding: 19px 0;
+    border-bottom: 1px solid var(--line);
+    color: var(--body);
+    font-size: 15px;
+    line-height: 1.55;
+  }
+
+  .trust-layout li span {
+    color: var(--teal);
+    font-size: 10px;
+  }
+
+  .campaign-close {
+    position: relative;
+    overflow: hidden;
+    padding: clamp(70px, 10vw, 120px) 0;
+    background:
+      radial-gradient(
+        circle at 13% 20%,
+        rgba(255, 79, 184, 0.16),
+        transparent 38%
+      ),
+      radial-gradient(
+        circle at 84% 80%,
+        rgba(0, 183, 199, 0.14),
+        transparent 42%
+      ),
+      var(--bg);
+  }
+
+  .close-layout {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: end;
+    gap: 44px;
+  }
+
+  .close-layout > div > p {
+    margin: 0 0 18px;
+    color: var(--cyan);
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.18em;
+  }
+
+  .close-action {
+    display: grid;
+    justify-items: end;
+    gap: 14px;
+  }
+
+  .close-command {
+    margin-top: 0;
+  }
+
+  .close-action > a {
+    color: var(--muted);
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 11px;
+    text-decoration: none;
+  }
+
+  .close-action > a:hover {
+    color: var(--cyan);
+  }
+
+  @media (max-width: 900px) {
+    .campaign-hero,
+    .campaign-hero-grid {
+      min-height: auto;
+    }
+
+    .campaign-hero-grid,
+    .campaign-section-head,
+    .detail-layout,
+    .trust-layout,
+    .close-layout {
+      grid-template-columns: 1fr;
+    }
+
+    .campaign-hero h1 {
+      font-size: clamp(2.7rem, 11vw, 5rem);
+    }
+
+    .hero-proof {
+      display: flex;
+      width: auto;
+      min-height: 38px;
+      align-self: auto;
+      border-block: 1px solid rgba(105, 230, 255, 0.22);
+      border-inline: 0;
+      writing-mode: horizontal-tb;
+    }
+
+    .hero-proof span {
+      flex: 1;
+      border-right: 1px solid rgba(105, 230, 255, 0.16);
+      border-bottom: 0;
+      text-align: center;
+    }
+
+    .hero-proof span:last-child {
+      border-right: 0;
+    }
+
+    .detail-intro {
+      position: static;
+    }
+
+    .campaign-flow {
+      grid-template-columns: 1fr;
+    }
+
+    .campaign-flow li {
+      min-height: 0;
+      grid-template-columns: 42px minmax(0, 1fr);
+      grid-template-rows: none;
+      gap: 12px;
+      border-right: 0;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .campaign-flow li:last-child {
+      border-bottom: 0;
+    }
+
+    .close-action {
+      justify-items: start;
+    }
+  }
+
+  @media (max-width: 640px) {
+    .campaign-hero-grid {
+      gap: 34px;
+      padding-block: 58px 48px;
+    }
+
+    .campaign-hero h1 {
+      max-width: 100%;
+      font-size: clamp(2.3rem, 11.5vw, 3.55rem);
+      line-height: 1.01;
+    }
+
+    .campaign-lede {
+      font-size: 1rem;
+    }
+
+    .campaign-actions .button {
+      width: 100%;
+      max-width: none;
+    }
+
+    .hero-proof {
+      display: grid;
+      grid-template-columns: 1fr;
+    }
+
+    .hero-proof span {
+      min-height: 36px;
+      border-right: 0;
+      border-bottom: 1px solid rgba(105, 230, 255, 0.16);
+      padding: 9px;
+    }
+
+    .campaign-section-head {
+      gap: 18px;
+    }
+
+    .campaign-section h2,
+    .campaign-close h2 {
+      max-width: 100%;
+      font-size: clamp(2rem, 10vw, 3rem);
+      line-height: 1.03;
+    }
+
+    .detail-layout,
+    .trust-layout {
+      gap: 34px;
+    }
+
+    .campaign-flow li {
+      padding-inline: 0;
+    }
+
+    .close-action,
+    .close-command {
+      width: 100%;
+    }
+  }
+</style>

@@ -1,11 +1,13 @@
 ---
 type Props = {
   description?: string;
+  marketingPage?: string;
   title?: string;
 };
 
 const {
   description = 'A local-first autonomous developer assistant for companion displays, vertical panels, and sensor-panel style decks.',
+  marketingPage,
   title = 'neondeck',
 } = Astro.props;
 
@@ -27,6 +29,7 @@ const canonical = new URL(Astro.url.pathname, 'https://neondeck.dev');
     <meta property="og:url" content={canonical.href} />
     <meta name="twitter:card" content="summary_large_image" />
     <link rel="canonical" href={canonical.href} />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
@@ -35,7 +38,7 @@ const canonical = new URL(Astro.url.pathname, 'https://neondeck.dev');
     />
     <title>{title}</title>
   </head>
-  <body>
+  <body data-marketing-page={marketingPage}>
     <svg
       class="svg-defs"
       width="0"
@@ -97,12 +100,51 @@ const canonical = new URL(Astro.url.pathname, 'https://neondeck.dev');
         );
       });
 
+      function marketingContext() {
+        const query = new URLSearchParams(window.location.search);
+        return {
+          page: document.body.dataset.marketingPage,
+          path: window.location.pathname,
+          utmSource: query.get('utm_source') || undefined,
+          utmCampaign: query.get('utm_campaign') || undefined,
+          utmContent: query.get('utm_content') || undefined,
+        };
+      }
+
+      function trackMarketingEvent(name, properties = {}) {
+        if (!name || !document.body.dataset.marketingPage) return;
+        window.dispatchEvent(
+          new CustomEvent('neondeck:marketing', {
+            detail: {
+              name,
+              ...marketingContext(),
+              ...properties,
+            },
+          }),
+        );
+      }
+
+      window.neondeckTrackMarketing = trackMarketingEvent;
+
+      document.addEventListener('click', (event) => {
+        if (!(event.target instanceof Element)) return;
+        const link = event.target.closest('a[data-marketing-event]');
+        if (!link) return;
+        trackMarketingEvent(link.dataset.marketingEvent, {
+          href: link.href,
+          placement: link.dataset.marketingPlacement,
+        });
+      });
+
       document.querySelectorAll('[data-copy-command]').forEach((button) => {
         button.addEventListener('click', async () => {
           const command = button.dataset.copyCommand;
           if (!command) return;
           try {
             await navigator.clipboard.writeText(command);
+            trackMarketingEvent(button.dataset.marketingEvent, {
+              placement: button.dataset.marketingPlacement,
+            });
             const original = button.textContent;
             button.textContent = 'copied';
             window.setTimeout(() => {
@@ -115,6 +157,10 @@ const canonical = new URL(Astro.url.pathname, 'https://neondeck.dev');
       });
 
       setLook(initialLook);
+
+      if (document.body.dataset.marketingPage) {
+        trackMarketingEvent('campaign_view');
+      }
     </script>
   </body>
 </html>

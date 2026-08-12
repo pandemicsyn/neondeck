@@ -1,0 +1,65 @@
+---
+import CampaignPage from '../../components/CampaignPage.astro';
+
+const details = [
+  {
+    title: 'Notify only',
+    body: 'Record and report meaningful feedback or failing checks. No mutation turn and no worktree created just to deliver a notification.',
+    signal: 'cyan' as const,
+  },
+  {
+    title: 'Prepare a reviewable commit',
+    body: 'Work inside one managed PR worktree, run targeted checks, and retain a normal local commit for your review without receiving push capability.',
+    signal: 'violet' as const,
+  },
+  {
+    title: 'Wait for approval—or push only when safe',
+    body: 'Choose a direct human approval turn, or explicitly enable safe delivery gated by required checks, exact remote head, credentials, policy, and a clean committed worktree.',
+    signal: 'pink' as const,
+  },
+];
+
+const steps = [
+  {
+    title: 'Watch the pull request',
+    body: 'Choose whether to process current feedback or baseline it and respond only to later meaningful changes.',
+  },
+  {
+    title: 'Neon prepares in isolation',
+    body: 'One continuing owner and one managed worktree keep later feedback, restarts, checks, and commits attached to the same PR.',
+  },
+  {
+    title: 'Review, approve, or let gates decide',
+    body: 'Inspect the exact retained diff, continue in the owner conversation, or permit non-force delivery only when every configured prerequisite still passes.',
+  },
+];
+---
+
+<CampaignPage
+  campaign="pr-autopilot"
+  title="PR Autopilot with explicit guardrails · neondeck"
+  description="Watch review feedback and failing checks, prepare fixes in isolated worktrees, require approval, or push only when explicit safety gates pass."
+  kicker="PR AUTOPILOT · BOUNDED AUTHORITY"
+  headline="Keep the PR moving."
+  headlineAccent="Keep the guardrails."
+  heroCopy="Neondeck watches meaningful review feedback and failing checks, then follows the authority you chose: notify, prepare a commit, wait for approval, or deliver only when every safety gate still passes."
+  previewTitle="Automation you can inspect mid-flight."
+  previewCopy="Every watched PR exposes its mode, continuing owner, managed worktree, current state, prepared commit, and the next human decision."
+  detailsTitle="Choose how far Neon can go."
+  detailsCopy="Authority is a product setting, not prompt language. Every increase above notify-only requires explicit confirmation."
+  details={details}
+  stepsTitle="One PR. One owner. One worktree."
+  steps={steps}
+  trustTitle="Uncertainty stops the push."
+  trustCopy="Autopilot fails closed. When current GitHub facts, credentials, policy, checks, or the expected remote head cannot be proven, the commit stays local and the watch becomes visibly blocked."
+  trustPoints={[
+    'The primary checkout is never modified by Autopilot.',
+    'Watcher turns in approval mode cannot receive push capability.',
+    'Automatic delivery requires configured checks to pass immediately before push.',
+    'Delivery is a non-force push bound to the expected current PR head.',
+    'Blocked work retains its commit and diff for human inspection and retry.',
+    'The installed app contains no marketing pixel or product telemetry.',
+  ]}
+  docsHref="/docs/autopilot/"
+  docsLabel="Read the Autopilot guide"
+/>
