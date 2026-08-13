@@ -1,0 +1,19 @@
+---
+type Props = {
+  placement: 'hero' | 'quickstart';
+};
+
+const { placement } = Astro.props;
+const command = 'npm install --global neondeck@next';
+---
+
+<div class="campaign-command">
+  <span aria-hidden="true">$</span>
+  <code>{command}</code>
+  <button
+    type="button"
+    data-copy-command={command}
+    data-marketing-event="install_command_copy"
+    data-marketing-placement={placement}>copy</button
+  >
+</div>

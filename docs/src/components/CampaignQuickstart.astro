@@ -1,0 +1,60 @@
+---
+type Props = {
+  campaign: 'pr-review' | 'pr-autopilot';
+};
+
+const { campaign } = Astro.props;
+---
+
+<section
+  class="campaign-section campaign-quickstart"
+  aria-labelledby="quickstart-heading"
+>
+  <div class="campaign-quickstart__intro">
+    <p class="campaign-kicker">quickstart</p>
+    <h2 id="quickstart-heading">
+      {
+        campaign === 'pr-review'
+          ? 'Reviewing in under a minute'
+          : 'Up and running in a minute'
+      }
+    </h2>
+    <p>
+      Node 26+ and a GitHub token. {
+        campaign === 'pr-review'
+          ? 'Everything runs local from there.'
+          : "That's the whole setup."
+      }
+    </p>
+    <a
+      class="campaign-link-button"
+      href="https://github.com/pandemicsyn/neondeck"
+      data-marketing-event="github_click"
+      data-marketing-placement="quickstart">★ star the repo</a
+    >
+  </div>
+  <ol class="campaign-quickstart__steps">
+    <li>
+      <span>1</span>
+      <div>
+        <small>install</small><code>$ npm install --global neondeck@next</code>
+      </div>
+    </li>
+    <li>
+      <span>2</span>
+      <div><small>setup</small><code>$ neondeck init</code></div>
+    </li>
+    <li>
+      <span>3</span>
+      <div>
+        <small>{campaign === 'pr-review' ? 'open the deck' : 'run'}</small>
+        <code>$ neondeck open</code>
+        {
+          campaign === 'pr-autopilot' && (
+            <em>— it starts watching every PR automatically.</em>
+          )
+        }
+      </div>
+    </li>
+  </ol>
+</section>

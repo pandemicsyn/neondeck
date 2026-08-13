@@ -1,64 +1,36 @@
 ---
 import CampaignPage from '../../components/CampaignPage.astro';
 
-const details = [
+const steps = [
   {
-    title: 'A review map, not another diff tab',
-    body: 'Move through changed files, hunks, unresolved threads, local drafts, and current-revision Neon findings from one focused workbench.',
+    title: 'Keep it local',
+    body: 'The PR lands on your machine with one command. Local Git-backed diffs keep the work responsive without waiting on another GitHub page.',
+    signal: 'teal' as const,
+  },
+  {
+    title: 'Read the briefing',
+    body: "Neon scouts the change and stages its observations. You get what changed, what's risky, and where to look first.",
     signal: 'cyan' as const,
   },
   {
-    title: 'Every comment stays bound to its revision',
-    body: 'Drafts survive reloads. Stale anchors remain visible as history instead of silently moving onto different code after a new push.',
+    title: 'Ask, then approve',
+    body: 'Review staged comments, ask about the PR, and add your own. GitHub review submission stays a human-controlled action. You own the verdict.',
     signal: 'violet' as const,
-  },
-  {
-    title: 'Neon can find. Only you can submit.',
-    body: 'Promote a finding into a local draft, dismiss it locally, or ignore it. Approve and request-changes controls remain dashboard-only human actions.',
-    signal: 'pink' as const,
-  },
-];
-
-const steps = [
-  {
-    title: 'Open the PR from your queue',
-    body: 'Authored PRs, review requests, checks, and stale-work signals already live together on your deck.',
-  },
-  {
-    title: 'Traverse the review map',
-    body: 'Work file by file or jump directly to unresolved threads, drafts, and revision-bound findings.',
-  },
-  {
-    title: 'Submit the verdict yourself',
-    body: 'Send one GitHub review as Comment, Approve, or Request changes when the review is actually yours.',
   },
 ];
 ---
 
 <CampaignPage
   campaign="pr-review"
-  title="Review pull requests without losing your flow · neondeck"
-  description="A local-first pull request review workbench with revision-bound threads, drafts, Neon findings, and human-controlled GitHub verdicts."
-  kicker="PULL REQUEST REVIEW · LOCAL-FIRST"
-  headline="Review the change."
-  headlineAccent="Keep your flow."
-  heroCopy="Neondeck brings the diff, review threads, local drafts, and Neon findings onto one persistent workbench. You keep the final verdict—and your editor keeps the screen."
-  previewTitle="The whole review, on one surface."
-  previewCopy="The file tree is a live review map. Threads, drafts, stale anchors, and Neon findings stay visible without flattening them into one generic comment count."
-  detailsTitle="Context stays attached to the code."
-  detailsCopy="A review tool is only useful if it preserves what you saw, what you wrote, and which revision both belonged to."
-  details={details}
-  stepsTitle="From queue to verdict."
+  title="A local-first guide for pull request review · neondeck"
+  description="Review pull requests in a local-first bench with fast Git-backed diffs, a staged briefing, revision-bound comments, and a review agent beside the code."
+  kicker="review mode"
+  headlineLead="Your"
+  headlineAccent="review guide"
+  headlineTail="for PRs. Even the sloppy ones."
+  heroCopy="A local-first review bench with the Neon agent a step ahead of you. It scouts the PR, stages its observations and draft comments, and stays beside the diff to answer what changed, what's risky, and where to look. No tab hunting."
+  microcopy="100% open source (MIT) · npm · runs on your machine · no app telemetry"
+  sectionKicker="how it works"
+  sectionTitle="40,000 lines. Neon helps you grok it."
   steps={steps}
-  trustTitle="The reviewer stays in control."
-  trustCopy="Neondeck helps you see and navigate the work. It does not give the model a hidden path to approve, reject, reply, resolve, or submit on your behalf."
-  trustPoints={[
-    'Runs locally with mutable state in a runtime home you control.',
-    'GitHub review submission and thread controls are human-only dashboard actions.',
-    'Dirty drafts and in-flight actions are never replaced by an automatic refresh.',
-    'Current-revision findings show their severity, explanation, and provenance.',
-    'The installed app contains no marketing pixel or product telemetry.',
-  ]}
-  docsHref="/docs/dashboard/"
-  docsLabel="Read the review docs"
 />
