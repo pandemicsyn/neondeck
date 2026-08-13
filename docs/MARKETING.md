@@ -12,11 +12,13 @@ page aligned; do not turn these into alternate general-purpose homepages.
 ## Current measurement boundary
 
 The installed Neondeck app sends no marketing or product telemetry. The
-campaign pages currently make no analytics network requests either.
+campaign pages make no analytics network requests until a visitor opts in to
+advertising measurement. The choice is stored locally in the visitor's browser
+under `neondeck-marketing-consent`.
 
 `BaseLayout.astro` exposes a credential-free browser event bridge on campaign
 pages. It dispatches `neondeck:marketing` events and exposes
-`window.neondeckTrackMarketing` for a future consent-gated provider adapter.
+`window.neondeckTrackMarketing` for the consent-gated provider adapter.
 The current event names are:
 
 - `campaign_view`
@@ -26,23 +28,28 @@ The current event names are:
 
 Each event includes the campaign page, path, placement when applicable, and
 the `utm_source`, `utm_campaign`, and `utm_content` query values when present.
-These values are neither persisted nor transmitted by the current site.
+The Reddit adapter does not explicitly pass these contextual properties to the
+provider. As part of an ordinary browser pixel request, Reddit can still receive
+the current campaign URL, including its query string.
 
-## Adding the Reddit Pixel later
+## Reddit Pixel
 
-Do not place provider code in the campaign page components. Add one small
-adapter that:
+`MarketingConsent.astro` is the only provider adapter. It:
 
-1. loads only after the visitor's applicable consent choice;
-2. initializes from a deployment-provided public pixel id;
-3. reports the page view and maps the three action events to Reddit custom
-   conversion events;
+1. loads only after the visitor explicitly allows measurement;
+2. initializes the public Reddit Pixel id `t2_4ljtr`;
+3. reports `PageVisit` and maps `install_command_copy` and `github_click` to
+   the custom conversions `InstallCommandCopy` and `GitHubClick`;
 4. does not send email addresses, stable user ids, or Neondeck app data; and
-5. can be disabled without changing campaign markup.
+5. ignores docs clicks and the event bridge's contextual properties.
 
-Add a plain-language privacy page before enabling the adapter. Verify the
-integration with Reddit Events Manager and the Pixel Helper before buying
-traffic.
+The public Pixel id is intentionally committed because browser visitors can
+always inspect it. A future Conversions API access token must be stored as a
+Cloudflare Worker secret and must never enter this repository or browser code.
+The disclosure and choice controls live at `/privacy/`.
+
+Verify the integration with Reddit Events Manager and the Pixel Helper before
+buying traffic.
 
 GitHub stars and npm downloads remain aggregate supporting outcomes. They are
 not attributed to an individual campaign visitor.
