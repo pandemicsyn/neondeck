@@ -1,12 +1,16 @@
 import { describe, expect, it } from 'vitest';
 import * as v from 'valibot';
-import { verifyGithubSignature } from '../src/github-webhook';
-import { fetchWorker, githubWebhookSecret, sendGithubWebhook } from './helpers';
-
-const errorSchema = v.object({
-  error: v.pipe(v.string(), v.minLength(1)),
-  code: v.pipe(v.string(), v.minLength(1)),
-});
+import {
+  verifyGithubSignature,
+  verifyGithubWebhook,
+} from '../src/github-webhook';
+import {
+  errorSchema,
+  fetchWorker,
+  githubWebhookSecret,
+  sendGithubWebhook,
+  signBody,
+} from './helpers';
 
 const relayResponseSchema = v.object({
   relayed: v.literal(true),
@@ -160,4 +164,97 @@ describe('GitHub webhook ingress', () => {
       deliveryId,
     );
   });
+
+  it('reports 500 without an HTTP round trip when GITHUB_WEBHOOK_SECRET is misconfigured', async () => {
+    // `verifyGithubWebhook` is exported and directly callable with a
+    // fabricated bad `env` — no need to route through `fetchWorker` /
+    // `sendGithubWebhook` to reach this branch, and doing it directly is
+    // both cheaper and more precise about which validation failed.
+    const body = JSON.stringify({ action: 'opened' });
+    const bytes = new TextEncoder().encode(body);
+    const request = new Request(
+      'https://relay.test/channels/misconfigured/webhooks/github',
+      {
+        method: 'POST',
+        headers: {
+          'content-length': String(bytes.byteLength),
+          'content-type': 'application/json',
+          'x-github-delivery': 'b6f9b6c2-df7f-4b8a-9b8f-df6a2e6ec111',
+          'x-github-event': 'pull_request',
+          'x-github-hook-id': '12345678',
+          'x-hub-signature-256': `sha256=${'0'.repeat(64)}`,
+        },
+        body: bytes,
+      },
+    );
+
+    // Too short to satisfy `webhookEnvironmentSchema`'s `v.minLength(16)` —
+    // simulates a deployment where the secret was never set correctly.
+    const badEnv = {
+      GITHUB_WEBHOOK_SECRET: 'too-short',
+      MAX_WEBHOOK_BYTES: 1048576,
+    } as unknown as Env;
+
+    const result = await verifyGithubWebhook(request, badEnv);
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.status).toBe(500);
+      expect(result.code).toBe('invalid_request');
+    }
+  });
+
+  it('verifies a signature under the single-secret (no-rotation) configuration', async () => {
+    // `vitest.config.ts` binds GITHUB_WEBHOOK_SECRET_PREVIOUS globally for
+    // every test, so the no-rotation-in-progress case — the normal
+    // production configuration for any deployment not mid-rotation — never
+    // runs through the HTTP path (`sendGithubWebhook`). Calling
+    // `verifyGithubWebhook` directly with a deployment-shaped env that
+    // genuinely omits the field exercises the config every user who never
+    // rotates a secret actually runs, without touching the global test
+    // config other tests depend on.
+    const body = JSON.stringify({ action: 'opened' });
+    const bytes = new TextEncoder().encode(body);
+    const signature = await signBody(bytes, githubWebhookSecret);
+    const request = new Request(
+      'https://relay.test/channels/single-secret/webhooks/github',
+      {
+        method: 'POST',
+        headers: {
+          'content-length': String(bytes.byteLength),
+          'content-type': 'application/json',
+          'x-github-delivery': 'c1a9c5c1-df7f-4b8a-9b8f-df6a2e6ec222',
+          'x-github-event': 'pull_request',
+          'x-github-hook-id': '12345678',
+          'x-hub-signature-256': signature,
+        },
+        body: bytes,
+      },
+    );
+
+    const singleSecretEnv = {
+      GITHUB_WEBHOOK_SECRET: githubWebhookSecret,
+      MAX_WEBHOOK_BYTES: 1048576,
+    } as unknown as Env;
+
+    const result = await verifyGithubWebhook(request, singleSecretEnv);
+
+    expect(result.ok).toBe(true);
+  });
+
+  // Deliberately no test here for "stream-abort -> 400"
+  // (`readBodyWithLimit`'s catch branch). It was investigated but could
+  // not be written honestly: every way tried to make a `Request`'s body
+  // stream fail mid-read in this test harness (a `ReadableStream` that
+  // calls `controller.error()` from `start` or `pull`, and a
+  // `TransformStream` whose writer is `abort()`-ed after a partial write)
+  // produces the same observable result whether or not the catch branch
+  // exists — `request.body`'s reader resolves as if the stream simply
+  // ended, and the response comes back 400 via the pre-existing
+  // Content-Length-mismatch path instead, with the injected error only
+  // ever surfacing as an unrelated "uncaught exception" diagnostic.
+  // Confirmed by temporarily deleting the catch branch from
+  // src/github-webhook.ts and re-running: a test asserting 400 here still
+  // passed. Shipping it would be exactly the "passes for the wrong
+  // reason" failure mode this task explicitly warns against.
 });

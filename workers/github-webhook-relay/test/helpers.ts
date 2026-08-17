@@ -1,12 +1,66 @@
 import { exports as workerExports } from 'cloudflare:workers';
 import { runInDurableObject } from 'cloudflare:test';
 import * as v from 'valibot';
+import { errorCodeSchema } from '../src/http';
 import type { JsonObject } from '../src/json';
 import type { EventLogRow } from '../src/protocol';
 import type { RelayRoom } from '../src/relay-room';
 
 export const githubWebhookSecret = "It's a Secret to Everybody";
 export const webSocketClientSecret = 'test-client-secret-0123456789';
+
+// The one shared `{ error, code }` response shape every test file should
+// validate error responses against. `code` is checked against the actual
+// `errorCodeSchema` union from src/http.ts, not merely "non-empty string" —
+// a response carrying a code outside the documented union must fail a test,
+// not silently pass because the assertion only checked for stringiness.
+export const errorSchema = v.object({
+  error: v.pipe(v.string(), v.minLength(1)),
+  code: errorCodeSchema,
+});
+
+// A realistic `pull_request` webhook delivery. Both the top-level `number`
+// and `pull_request.number` are populated, mirroring GitHub's actual
+// payload shape, so tests exercising `extractPrNumber`'s
+// `payload.pull_request.number` path have real-shaped input rather than a
+// synthetic `{ pull_request: { number } }` stub.
+export const pullRequestWebhookPayload: JsonObject = {
+  action: 'opened',
+  number: 42,
+  pull_request: {
+    number: 42,
+    state: 'open',
+    title: 'Add relay hibernation guard',
+    html_url: 'https://github.com/owner/repository/pull/42',
+    user: { login: 'octocat', id: 1 },
+    head: { ref: 'feature/hibernation-guard', sha: 'abc123def456' },
+    base: { ref: 'main', sha: 'def456abc123' },
+  },
+  repository: { full_name: 'owner/repository' },
+  sender: { login: 'octocat', id: 1 },
+  installation: { id: 123456 },
+};
+
+// A realistic `issue_comment`-shaped delivery: `issue.number` populated,
+// no `pull_request` field at all, so `extractPrNumber`'s fallback to
+// `payload.issue.number` runs against a real-shaped payload.
+export const issueWebhookPayload: JsonObject = {
+  action: 'created',
+  issue: {
+    number: 7,
+    title: 'Ping frame byte order is undocumented',
+    state: 'open',
+    user: { login: 'octocat', id: 1 },
+  },
+  comment: {
+    id: 987654321,
+    body: 'Confirmed on the relay side too.',
+    user: { login: 'octocat', id: 1 },
+  },
+  repository: { full_name: 'owner/repository' },
+  sender: { login: 'octocat', id: 1 },
+  installation: { id: 123456 },
+};
 
 const messageDataSchema = v.string();
 
@@ -129,6 +183,15 @@ export function nextMessage(socket: WebSocket): Promise<string> {
   });
 }
 
+// Collapses the `v.parse(<schema>, JSON.parse(await nextMessage(socket)))`
+// pattern repeated across the WebSocket-driven test files into one call.
+export async function nextEnvelope<TOutput>(
+  socket: WebSocket,
+  schema: v.GenericSchema<unknown, TOutput>,
+): Promise<TOutput> {
+  return v.parse(schema, JSON.parse(await nextMessage(socket)));
+}
+
 export function nextClose(socket: WebSocket): Promise<CloseEvent> {
   return new Promise((resolve) => {
     socket.addEventListener('close', resolve, { once: true });
@@ -172,9 +235,18 @@ export function closeOpenSockets(): void {
 
 // Seeds the event log through the same recordEvent/pruneEventLog path a
 // real broadcast uses, skipping the HTTP + HMAC overhead of a full webhook
-// round trip. Lets the pruning tests exercise retention at scale without
-// paying for thousands of real requests. `recordEvent` is private, so the
-// cast below is the price of not exposing it from the production class.
+// round trip. Lets the pruning tests exercise retention at scale (up to and
+// past the 1000-row cap) without paying for thousands of real requests.
+// `recordEvent` is private, so the cast below is the price of not exposing
+// it from the production class purely for tests: it reaches past the
+// compiler, so a future rename of `recordEvent` will NOT be caught by
+// `tsc` here — this cast will keep compiling and the break will only show
+// up as a runtime "recordEvent is not a function" in whichever test calls
+// `seedEventLog`. That risk is the deliberate trade for keeping
+// `RelayRoom`'s public surface free of test-only RPC methods; keep the
+// seam, but prefer driving `sendGithubWebhook` (the real HTTP path) instead
+// of this cast for any test where correctness of the insert path itself —
+// not just retention behavior at scale — is what's being verified.
 export async function seedEventLog(
   room: DurableObjectStub<RelayRoom>,
   rows: EventLogRow[],
