@@ -39,10 +39,11 @@ jobs:
         run: git config core.hooksPath /dev/null
 
       - name: Create or update version PR
-        uses: changesets/action@v1
+        uses: changesets/action@v2
         with:
           version: npm run version-packages
           title: 'chore: version packages'
           commit: 'chore: version packages'
+          github-token: ${{ secrets.GITHUB_TOKEN }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
