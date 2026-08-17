@@ -740,7 +740,7 @@ export type RuntimeStatus = {
 export type ExecutionApproval = {
   id: string;
   command: string;
-  backend: 'local' | 'exe.dev';
+  backend: string;
   cwd: string | null;
   context: 'interactive' | 'unattended';
   risk: 'read-only' | 'safe-mutation' | 'destructive-mutation' | 'hardline';
@@ -1495,13 +1495,128 @@ export type WorkflowSummaryResponse = {
 
 export type ScheduledTask = {
   id: string;
-  spec: { kind: string };
-  trigger: { kind: string; everySeconds?: number };
+  spec: {
+    kind: string;
+    prompt?: string;
+    workspace?: ScheduledWorkspacePolicy;
+  };
+  trigger: {
+    kind: string;
+    everySeconds?: number;
+    expression?: string;
+    timezone?: string;
+  };
   enabled: boolean;
   nextRunAt: string | null;
   lastRunAt: string | null;
   claimId: string | null;
   claimExpiresAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+  lastRun?: ScheduledTaskRun | null;
+  activeRun?: ScheduledTaskRun | null;
+};
+
+export type ScheduledWorkspacePolicy =
+  | { kind: 'virtual' }
+  | {
+      kind: 'repository';
+      repoId: string;
+      providerId: string;
+      subdirectory?: string;
+      resource: {
+        lifecycle: 'per-run' | 'reuse-task' | 'existing';
+        existingResourceId?: string;
+      };
+      revision: {
+        ref: string;
+        mode: 'latest-each-run' | 'pinned' | 'continue';
+        sha?: string;
+      };
+      git: {
+        mode: 'run-branch' | 'task-branch' | 'direct-branch';
+        branch?: string;
+        acknowledgeDirectBranch?: boolean;
+      };
+      authority: 'read-only' | 'trusted-workspace' | 'delivery-enabled';
+      retention?: 'cleanup-success' | 'retain-always';
+      overlap?: 'skip' | 'queue-one' | 'allow-parallel';
+    };
+
+export type ScheduledTaskRun = {
+  id: string;
+  taskId: string;
+  status: 'claimed' | 'active' | 'completed' | 'failed';
+  outcome: 'recorded' | 'silent' | 'failed';
+  message: string;
+  error: string | null;
+  startedAt: string;
+  completedAt: string | null;
+  result: unknown;
+};
+
+export type TaskWorkspace = {
+  id: string;
+  providerId: string;
+  providerResourceId: string;
+  repoId: string;
+  repoSnapshot: {
+    verified: boolean;
+    id: string;
+    github: { owner: string; name: string };
+    path: string;
+    defaultBranch: string;
+  };
+  lifecycle: string;
+  workspaceRoot: string;
+  requestedRef: string;
+  branchName: string | null;
+  baseSha: string | null;
+  finalSha: string | null;
+  dirty: boolean | null;
+  authority: string;
+  status: string;
+  lockOwner: string | null;
+  lockExpiresAt: string | null;
+  retentionReason: string | null;
+  providerError: string | null;
+};
+
+export type ScheduledRunArtifact = {
+  id: string;
+  kind: string;
+  summary: string;
+  content: string | null;
+  truncated: boolean;
+  redacted: boolean;
+  createdAt: string;
+};
+
+export type WorkspaceProviderState = {
+  descriptor: {
+    id: string;
+    label: string;
+    location: 'local' | 'remote';
+    capabilities: Record<string, unknown>;
+  };
+  readiness: { ready: boolean; message: string; missingEnvironment: string[] };
+  readinessByLifecycle: Record<
+    'per-run' | 'reuse-task' | 'existing',
+    { ready: boolean; message: string; missingEnvironment: string[] }
+  >;
+};
+
+export type PhysicalWorkspaceQuarantine = {
+  physicalResourceKey: string;
+  providerId: string;
+  source:
+    | 'scheduled-run'
+    | 'approved-execution'
+    | 'preparation'
+    | 'collection'
+    | 'cleanup';
+  sourceId: string;
+  reason: string;
   createdAt: string;
   updatedAt: string;
 };

@@ -392,11 +392,79 @@ GITHUB_LOGIN=...</code></pre>
           and do not expose the token to the browser.
         </p>
         <p>
-          <strong>Work in progress:</strong> exe.dev settings describe an experimental
-          approved-command backend for an existing VM. They do not select a remote
-          workspace for chat, schedules, reviews, managed worktrees, or Autopilot.
-          Keep local execution as the default unless you are deliberately testing
-          that limited command path.
+          Workspace providers are configured by driver and environment-variable
+          references. <code>local</code> is always available, <code
+            >exe.dev</code
+          >
+          is the recommended remote, and the <code>ssh</code> driver connects a dedicated
+          Linux host. Legacy <code>execution.exeDev</code> settings are synthesized
+          as the built-in exe.dev provider for compatibility. Raw tokens and private
+          keys do not belong in task specs or config files.
+        </p>
+        <pre><code>&#123;
+  "workspaces": &#123;
+    "defaultRemoteProvider": "exe.dev",
+    "providers": &#123;
+      "exe.dev": &#123;
+        "driver": "exe.dev",
+        "apiTokenEnv": "EXE_API_TOKEN",
+        "vmHostEnv": "EXE_VM_HOST",
+        "sshKeyEnv": "EXE_SSH_KEY"
+      &#125;,
+      "build-box": &#123;
+        "driver": "ssh",
+        "hostEnv": "NEONDECK_BUILD_BOX_HOST",
+        "privateKeyEnv": "NEONDECK_BUILD_BOX_KEY",
+        "remoteRoot": "/srv/neondeck/workspaces"
+      &#125;
+    &#125;
+  &#125;
+&#125;</code></pre>
+        <p>
+          <code>GET /api/workspace-providers</code> reports capability and readiness
+          without returning secret values. The Scheduled Tasks editor only offers
+          explicit policies; choosing a remote provider never grants push authority
+          or silently falls back to local.
+        </p>
+        <p>
+          Provider mutations require explicit <code>confirm: true</code> through
+          <code>POST /api/workspace-providers/:id</code> or the typed config action.
+          The CLI exposes the same boundary through <code
+            >neondeck workspace-provider set &lt;id&gt; --config '&lt;json&gt;'
+            --confirm</code
+          > and <code>remove &lt;id&gt; --confirm</code>. The built-in exe.dev
+          compatibility provider cannot be removed. Admissions and config writes
+          share a durable coordinator, and each admitted workspace stores an
+          immutable non-secret adapter snapshot for later cleanup and recovery.
+          Removal is also blocked while retained resources or execution-policy
+          references still depend on that provider id, or while any saved
+          scheduled task specification still selects it even if that task has
+          not created a workspace yet. Pending or reusable approved-command
+          grants also pin the exact provider snapshot and physical target, so
+          replacing their provider requires resolving or exhausting those grants
+          first. Repository removal is likewise refused while a saved schedule,
+          material scheduled workspace, or managed worktree still references it.
+          The configured default remote and every execution backend must resolve
+          to <code>local</code>, built-in <code>exe.dev</code>, or a currently
+          registered provider.
+        </p>
+        <p>
+          Readiness is lifecycle-aware: attaching an existing exe.dev VM needs
+          <code>EXE_VM_HOST</code>, while managed per-run and reused VMs need
+          <code>EXE_API_TOKEN</code>. Remote trusted workspaces must connect as
+          a dedicated credential-free account. Neondeck refuses accounts with
+          ambient Git credential helpers, private SSH identities, GitHub CLI
+          credentials, or token-like environment variables; delivery credentials
+          are never inherited by the scheduled worker.
+          <code>remoteRoot</code> must be an absolute, non-root POSIX directory; Neondeck
+          normalizes it before deriving physical workspace identities and locks. Generic
+          SSH existing-resource ids select a safe child beneath that root, never the
+          root itself. Provisioned roots are resolved physically before locking so
+          provider aliases through symbolic links still serialize. Each remote workspace
+          receives a private HOME under the provider root; cleanup and detach remove
+          that HOME even when adopted infrastructure is preserved. Approved remote
+          execution derives its private HOME identity from the selected physical root,
+          so distinct checkout roots do not accidentally share caches or credentials.
         </p>
 
         <h2>Dashboard</h2>

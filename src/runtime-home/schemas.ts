@@ -1,4 +1,5 @@
 import * as v from 'valibot';
+import { posix } from 'node:path';
 import {
   maxPrReviewTimeoutMs,
   minPrReviewTimeoutMs,
@@ -262,7 +263,57 @@ export const providerConfigSchema = v.strictObject({
   ),
 });
 
-const executionBackendSchema = v.picklist(['local', 'exe.dev']);
+export const workspaceProviderIdSchema = v.pipe(
+  v.string(),
+  v.regex(
+    /^[a-z][a-z0-9.-]{0,62}$/,
+    'Expected a lowercase workspace provider id using letters, numbers, dots, or hyphens.',
+  ),
+);
+export const remoteWorkspaceProviderIdSchema = v.pipe(
+  workspaceProviderIdSchema,
+  v.check(
+    (value) => value !== 'local',
+    'The provider id "local" is reserved for Neondeck\'s built-in local workspace provider.',
+  ),
+);
+export const remoteWorkspaceRootSchema = v.pipe(
+  nonEmptyStringSchema,
+  v.check(
+    (value) => posix.isAbsolute(value) && posix.normalize(value) !== '/',
+    'Remote workspace root must be an absolute, non-root POSIX directory.',
+  ),
+  v.transform((value) => posix.normalize(value).replace(/\/+$/, '')),
+);
+const executionBackendSchema = workspaceProviderIdSchema;
+export const exeDevWorkspaceProviderConfigSchema = v.strictObject({
+  driver: v.literal('exe.dev'),
+  apiTokenEnv: v.optional(envVarNameSchema),
+  sshKeyEnv: v.optional(envVarNameSchema),
+  vmHostEnv: v.optional(envVarNameSchema),
+  remoteRoot: v.optional(remoteWorkspaceRootSchema),
+  username: v.optional(nonEmptyStringSchema),
+});
+export const sshWorkspaceProviderConfigSchema = v.strictObject({
+  driver: v.literal('ssh'),
+  hostEnv: envVarNameSchema,
+  privateKeyEnv: envVarNameSchema,
+  username: v.optional(nonEmptyStringSchema),
+  port: v.optional(
+    v.pipe(v.number(), v.integer(), v.minValue(1), v.maxValue(65_535)),
+  ),
+  remoteRoot: remoteWorkspaceRootSchema,
+});
+export const workspaceProviderConfigSchema = v.variant('driver', [
+  exeDevWorkspaceProviderConfigSchema,
+  sshWorkspaceProviderConfigSchema,
+]);
+export const workspaceConfigSchema = v.strictObject({
+  defaultRemoteProvider: v.optional(remoteWorkspaceProviderIdSchema),
+  providers: v.optional(
+    v.record(remoteWorkspaceProviderIdSchema, workspaceProviderConfigSchema),
+  ),
+});
 const executionApprovalModeSchema = v.picklist(['manual', 'off']);
 const executionUnattendedModeSchema = v.picklist(['deny', 'allow-preapproved']);
 const executionCommandMatchSchema = v.picklist(['exact', 'prefix', 'glob']);
@@ -311,7 +362,7 @@ export const executionConfigSchema = v.looseObject({
       lifecycle: v.optional(executionSandboxLifecycleSchema),
       sshKeyEnv: v.optional(envVarNameSchema),
       vmHostEnv: v.optional(envVarNameSchema),
-      remoteRoot: v.optional(nonEmptyStringSchema),
+      remoteRoot: v.optional(remoteWorkspaceRootSchema),
       env: v.optional(exeDevEnvForwardingSchema),
       repos: v.optional(
         v.record(nonEmptyStringSchema, exeDevCheckoutConfigSchema),
@@ -450,6 +501,7 @@ export const appConfigSchema = v.looseObject({
   models: v.optional(agentModelConfigSchema),
   providers: v.optional(providerConfigSchema),
   execution: v.optional(executionConfigSchema),
+  workspaces: v.optional(workspaceConfigSchema),
   worktrees: v.optional(worktreeConfigSchema),
   guardrails: v.optional(repoGuardrailsSchema),
   autopilot: v.optional(autopilotConfigSchema),
@@ -584,6 +636,10 @@ export type HandoffConfig = v.InferOutput<typeof handoffConfigSchema>;
 export type ProviderConfig = v.InferOutput<typeof providerConfigSchema>;
 export type ThinkingLevel = v.InferOutput<typeof thinkingLevelSchema>;
 export type ExecutionConfig = v.InferOutput<typeof executionConfigSchema>;
+export type WorkspaceConfig = v.InferOutput<typeof workspaceConfigSchema>;
+export type WorkspaceProviderConfig = v.InferOutput<
+  typeof workspaceProviderConfigSchema
+>;
 export type ExecutionBackend = v.InferOutput<typeof executionBackendSchema>;
 export type ExeDevEnvForwardingConfig = v.InferOutput<
   typeof exeDevEnvForwardingSchema
@@ -624,7 +680,42 @@ export class ConfigValidationError extends Error {
 }
 
 export function parseAppConfig(value: unknown, path: string): AppConfig {
-  return parseSchema(appConfigSchema, value, path);
+  const config = parseSchema(appConfigSchema, value, path);
+  validateWorkspaceProviderReferences(config, path);
+  return config;
+}
+
+function validateWorkspaceProviderReferences(config: AppConfig, path: string) {
+  const supported = new Set([
+    'local',
+    'exe.dev',
+    ...Object.keys(config.workspaces?.providers ?? {}),
+  ]);
+  const defaultRemote = config.workspaces?.defaultRemoteProvider;
+  if (defaultRemote && !supported.has(defaultRemote)) {
+    throw new ConfigValidationError(
+      path,
+      `workspaces.defaultRemoteProvider references unconfigured provider "${defaultRemote}".`,
+    );
+  }
+  const references = [
+    ...(config.execution?.defaultBackend
+      ? [config.execution.defaultBackend]
+      : []),
+    ...(config.execution?.enabledBackends ?? []),
+    ...(config.execution?.preapprovedCommands ?? []).flatMap(
+      (command) => command.backends ?? [],
+    ),
+  ];
+  const unknown = [...new Set(references)].filter(
+    (providerId) => !supported.has(providerId),
+  );
+  if (unknown.length > 0) {
+    throw new ConfigValidationError(
+      path,
+      `execution policy references unconfigured workspace providers: ${unknown.join(', ')}.`,
+    );
+  }
 }
 
 export function parseMcpConfig(value: unknown, path: string): McpConfig {

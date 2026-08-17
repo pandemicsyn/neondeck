@@ -80,6 +80,7 @@ export async function readRuntimeStatus(
   );
   const executionPolicy = executionPolicyFromConfig({
     execution: config.ok ? config.value.execution : undefined,
+    workspaces: config.ok ? config.value.workspaces : undefined,
   });
   const modelProviders = requiredModelProviders(models);
   const kiloKey = kilocodeProvider.enabled && kilocodeProvider.apiKeyPresent;

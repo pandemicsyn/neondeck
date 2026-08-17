@@ -16,7 +16,7 @@ import {
   recordHumanReviewSubmittedEvidence,
   type HumanReviewSubmittedEvidenceInput,
 } from '../modules/learning/reviews';
-import { settleScheduledTaskSubmission } from '../modules/scheduled-tasks';
+import { settleScheduledTaskObservation } from '../modules/scheduled-tasks';
 import type { RuntimePaths } from '../runtime-home';
 
 type ObservationInstallDependencies = {
@@ -64,7 +64,7 @@ export function installFlueObservationHandlers(
               error,
             );
           });
-        void settleScheduledTaskSubmission(
+        void settleScheduledTaskObservation(
           {
             submissionId: event.submissionId,
             failed: event.outcome !== 'completed',

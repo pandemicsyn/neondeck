@@ -49,6 +49,10 @@ const envFileLine = /^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)\s*$/;
 export async function resolveExeDevCheckoutTarget(
   input: ExeDevTargetInput,
   paths: RuntimePaths = runtimePaths(),
+  options: {
+    remoteRoot?: string;
+    useConfiguredRemotePath?: boolean;
+  } = {},
 ): Promise<ExeDevCheckoutTarget | null> {
   if (!input.repoId && !input.worktreeId) return null;
   await ensureRuntimeHome(paths);
@@ -79,10 +83,13 @@ export async function resolveExeDevCheckoutTarget(
     ? exeDev?.checkouts?.[worktree.id]
     : undefined;
   const checkoutConfig = worktreeCheckout ?? repoCheckout;
-  const remoteRoot = exeDev?.remoteRoot ?? '/home/user/neondeck/checkouts';
+  const remoteRoot =
+    options.remoteRoot ?? exeDev?.remoteRoot ?? '/home/user/neondeck/checkouts';
   const repoFullName = `${repo.github.owner}/${repo.github.name}`;
   const remotePath =
-    checkoutConfig?.remotePath ??
+    (options.useConfiguredRemotePath !== false
+      ? checkoutConfig?.remotePath
+      : undefined) ??
     `${remoteRoot.replace(/\/+$/, '')}/${defaultRemoteCheckoutName(
       repo,
       worktree,
@@ -104,8 +111,12 @@ export async function resolveExeDevCheckoutTarget(
 export async function resolveExeDevForwardedEnv(
   input: ExeDevTargetInput,
   paths: RuntimePaths = runtimePaths(),
+  options: {
+    remoteRoot?: string;
+    useConfiguredRemotePath?: boolean;
+  } = {},
 ): Promise<ExeDevForwardedEnv> {
-  const target = await resolveExeDevCheckoutTarget(input, paths);
+  const target = await resolveExeDevCheckoutTarget(input, paths, options);
   if (!target) return { env: {}, sources: [] };
   const appConfig = await readRuntimeJson(paths.config, parseAppConfig);
   const scopes: Array<{

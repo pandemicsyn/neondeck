@@ -208,6 +208,26 @@ export function runtimeSkillSessionSnapshotsSync(
     .map(runtimeSkillSessionSnapshot);
 }
 
+export function selectedRuntimeSkillSessionSnapshotsSync(
+  ids: readonly string[],
+  paths = runtimePaths(),
+): RuntimeSkillSessionSnapshot[] {
+  ensureRuntimeHomeSync(paths);
+  const roots = runtimeSkillRootsSafeSync(paths);
+  const inventory = discoverRuntimeSkillsSync(
+    paths,
+    roots.roots,
+    roots.ignored,
+  );
+  return ids.map((id) => {
+    const skill = inventory.skills.find(
+      (candidate) => candidate.id === id && candidate.status === 'active',
+    );
+    if (!skill) throw new Error(`Skill "${id}" is not available.`);
+    return runtimeSkillSessionSnapshot(skill);
+  });
+}
+
 export function runtimeSkillFromSessionSnapshot(
   snapshot: RuntimeSkillSessionSnapshot,
 ): SkillDefinition {

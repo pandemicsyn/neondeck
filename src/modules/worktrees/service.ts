@@ -57,6 +57,7 @@ import {
 export async function createWorktree(
   rawInput: unknown,
   paths: RuntimePaths = runtimePaths(),
+  options: { reuseExisting?: boolean } = {},
 ) {
   const parsed = parseInput(createInputSchema, rawInput, 'worktree_create');
   if (!parsed.ok) return parsed.result;
@@ -74,7 +75,12 @@ export async function createWorktree(
       headRef,
       paths,
     );
-    if (existing && !input.localPath && !input.adopted) {
+    if (
+      options.reuseExisting !== false &&
+      existing &&
+      !input.localPath &&
+      !input.adopted
+    ) {
       return {
         ok: true,
         action: 'worktree_create',
@@ -224,6 +230,17 @@ export async function createWorktree(
   } catch (error) {
     return failureResult('worktree_create', error);
   }
+}
+
+export async function createScheduledTaskWorktree(
+  input: Omit<v.InferInput<typeof createInputSchema>, 'adopted' | 'createdBy'>,
+  paths: RuntimePaths = runtimePaths(),
+) {
+  return createWorktree(
+    { ...input, adopted: false, createdBy: 'scheduled-task' },
+    paths,
+    { reuseExisting: false },
+  );
 }
 
 async function availableManagedWorktreePath(

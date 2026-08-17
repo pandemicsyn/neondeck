@@ -48,11 +48,16 @@ export type SchedulerDependencies = {
     prompt: string;
     sessionId: string;
     taskId: string;
+    runId?: string;
+    workspaceId?: string;
+    cwd?: string;
+    lockOwner?: string;
   }) => Promise<{ submissionId: string; sessionId: string }>;
   readInstructionSettlement?: (input: {
     submissionId: string;
     sessionId: string;
-  }) => Promise<{ failed: boolean }>;
+    workspaceId?: string;
+  }) => Promise<{ failed: boolean; response?: string }>;
   admitBriefing?: typeof admitBriefing;
   scheduledTaskRunId?: string;
   tickLeaseTtlMs?: number;

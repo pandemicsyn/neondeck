@@ -1,0 +1,1 @@
+ALTER TABLE `scheduled_run_artifacts` ADD `redacted` integer DEFAULT 0 NOT NULL;

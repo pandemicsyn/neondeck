@@ -60,11 +60,36 @@ Neon watches your PRs, prepares fixes, and keeps things moving.
   durable Morning Briefing conversation in an inspectable local snapshot, then
   can enrich it with any relevant configured MCP source under normal login and
   approval controls. Follow up in chat, or run your own saved prompt on a timer.
+  Repository schedules can independently select a fresh or reusable managed
+  worktree, an exact branch or commit, a run or persistent task branch, and
+  read-only or trusted workspace authority. Every occurrence records its final
+  response, commands, Git status, patch, provider identity, and retention state
+  in the Scheduled Tasks dashboard. Shared and existing workspaces are physically
+  serialized, local direct branches never displace a branch held by the primary
+  checkout, and remote trusted workspaces require a dedicated credential-free
+  SSH account.
+  Pinned schedules require a full commit SHA, persistent task branches are
+  continuation-only, and every reused workspace keeps an immutable per-run
+  revision snapshot. Persisted responses, command output, and Git evidence are
+  secret-redacted and byte-bounded, with redaction and truncation shown separately.
+  Shell-enabled schedules strip ambient credentials but
+  retain arbitrary shell and network access; no separately bound delivery tool
+  is mounted in this release. SSH cancellation is conservatively orphan-possible;
+  an uncertain remote command durably quarantines the physical resource across
+  restarts until confirmed cleanup or explicit operator clearance.
+  Existing provider resources can be detached from a task without deleting their
+  infrastructure.
 - **Scoped execution for each job.** Keep code-changing work in managed
   worktrees, use approval policy for ordinary chat and scheduled operations, give the
   trusted Autopilot coding owner a repository-native workspace with a
   credential-free default environment, or run mediated work on an `exe.dev`
-  sandbox VM.
+  sandbox VM. Scheduled workspaces use a provider registry: `local` and
+  `exe.dev` are built in, and dedicated SSH Linux hosts can be configured by
+  environment-variable references without persisting raw secrets. Local stays
+  the overall task default; a configured default remote is offered explicitly
+  in the task editor. SSH hosts and readable key references are validated
+  before admission, and approved provider commands share the same physical
+  workspace locks as scheduled work.
 - **Memory that learns from your work.** Neon turns conversations and PR
   outcomes into typed, validated, audited, reversible memory and skill
   improvements. Safe writes apply automatically by default; explicit

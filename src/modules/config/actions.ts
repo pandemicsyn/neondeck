@@ -18,6 +18,7 @@ import {
   updateRepoInputSchema,
   updateSkillRootsInputSchema,
   updateWorktreePolicyInputSchema,
+  updateWorkspaceProviderInputSchema,
 } from './schemas';
 import {
   readAutopilotPrompts,
@@ -50,6 +51,7 @@ import {
   updateRepo,
   updateRepoAutopilotPolicy,
 } from './mutations/repos';
+import { updateWorkspaceProviderConfig } from './mutations/workspaces';
 
 const dashboardLayoutToolInputSchema = v.omit(dashboardConfigSchema, [
   '$schema',
@@ -224,6 +226,17 @@ export const updateExecutionPolicyAction = defineTool({
   },
 });
 
+export const updateWorkspaceProviderAction = defineTool({
+  name: 'neondeck_config_update_workspace_provider',
+  description:
+    'Register, update, remove, or select a remote scheduled-workspace provider using environment-variable references only. Every mutation requires confirm=true; raw secret values are rejected.',
+  input: updateWorkspaceProviderInputSchema,
+  output: configActionOutputSchema,
+  async run({ data: input }) {
+    return { output: await updateWorkspaceProviderConfig(input) };
+  },
+});
+
 export const updateDashboardLayoutAction = defineTool({
   name: 'neondeck_config_update_dashboard_layout',
   description:
@@ -306,6 +319,7 @@ export const neondeckConfigActions = [
   readProvidersAction,
   updateProviderAction,
   updateExecutionPolicyAction,
+  updateWorkspaceProviderAction,
   updateDashboardLayoutAction,
   applyDashboardPresetAction,
   addRepoAction,

@@ -6,4 +6,5 @@ export * from './push-target';
 export * from './queries';
 export * from './schemas';
 export * from './service';
+export { acquireLockInTransaction } from './locks';
 export { recordWorktreeEvent } from './store';
