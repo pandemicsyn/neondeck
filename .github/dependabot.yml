@@ -8,6 +8,17 @@ updates:
       interval: 'weekly'
     cooldown:
       default-days: 2
+    ignore:
+      # Flue 2.0.3 still uses the pi-ai 0.83 provider protocol. Revisit this
+      # when Flue moves to the 0.84 provider types.
+      - dependency-name: '@earendil-works/pi-ai'
+        versions:
+          - '>=0.84.0 <0.85.0'
+      # Astro 7.2.x resolves the repository's CommonJS cookie dependency
+      # during prerendering and fails the docs build. Revisit for Astro 7.3.
+      - dependency-name: 'astro'
+        versions:
+          - '>=7.2.0 <7.3.0'
     groups:
       all-npm-dependencies:
         patterns:
