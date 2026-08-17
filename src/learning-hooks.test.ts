@@ -1,4 +1,4 @@
-import type { FlueObservationSubscriber } from '@flue/runtime';
+import type { FlueObservation, FlueObservationSubscriber } from '@flue/runtime';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { runtimePaths } from './runtime-home';
 import {
@@ -42,6 +42,7 @@ describe('Flue v3 observation handlers', () => {
   it('records v3 submission activity for the matching runtime home', async () => {
     let subscriber: FlueObservationSubscriber | undefined;
     const record = vi.fn<() => Promise<void>>(async () => undefined);
+    const logActivity = vi.fn<(event: FlueObservation) => void>();
     const paths = runtimePaths('/tmp/neondeck-observation-home');
     installFlueObservationHandlers(paths, {
       observe(next) {
@@ -49,6 +50,7 @@ describe('Flue v3 observation handlers', () => {
         return vi.fn<() => void>();
       },
       recordFlueObservation: record,
+      logActivity,
     });
 
     const event = {
@@ -70,6 +72,8 @@ describe('Flue v3 observation handlers', () => {
 
     expect(record).toHaveBeenCalledTimes(1);
     expect(record).toHaveBeenCalledWith(event, paths);
+    expect(logActivity).toHaveBeenCalledTimes(1);
+    expect(logActivity).toHaveBeenCalledWith(event);
   });
 
   it('contains activity persistence failures inside the observer', async () => {

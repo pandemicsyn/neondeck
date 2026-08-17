@@ -10,6 +10,7 @@ export const defaultServerPort = 3583;
 export type RunBuiltServerOptions = {
   port?: number | string;
   paths?: RuntimePaths;
+  verbose?: boolean;
 };
 
 export async function runBuiltNeondeckServer(
@@ -30,24 +31,59 @@ export async function runBuiltNeondeckServer(
       env: {
         ...process.env,
         ...(options.paths ? { NEONDECK_HOME: options.paths.home } : {}),
+        ...(options.verbose ? { NEONDECK_LOG_LEVEL: 'debug' } : {}),
         NEONDECK_PORT: String(port),
         PORT: String(port),
       },
     });
+    let stoppingSignal: NodeJS.Signals | null = null;
+    const forwardSignal = (signal: NodeJS.Signals) => {
+      if (stoppingSignal) return;
+      stoppingSignal = signal;
+      child.kill(signal);
+    };
+    const forwardSigint = () => forwardSignal('SIGINT');
+    const forwardSigterm = () => forwardSignal('SIGTERM');
+    const cleanupSignalHandlers = () => {
+      process.off('SIGINT', forwardSigint);
+      process.off('SIGTERM', forwardSigterm);
+    };
+    process.on('SIGINT', forwardSigint);
+    process.on('SIGTERM', forwardSigterm);
 
     child.stdout
       .pipe(createServerOutputTransform(port, options.paths?.home))
       .pipe(process.stdout, { end: false });
-    child.once('error', reject);
+    child.once('error', (error) => {
+      cleanupSignalHandlers();
+      reject(error);
+    });
     child.once('exit', (code, signal) => {
+      cleanupSignalHandlers();
+      console.info(formatServerStop(code, signal));
       if (signal) {
-        process.kill(process.pid, signal);
+        process.exitCode = serverSignalExitCode(signal);
+        resolve();
         return;
       }
       process.exitCode = code ?? 0;
       resolve();
     });
   });
+}
+
+export function serverSignalExitCode(signal: NodeJS.Signals) {
+  if (signal === 'SIGINT') return 130;
+  if (signal === 'SIGTERM') return 143;
+  return 1;
+}
+
+export function formatServerStop(
+  code: number | null,
+  signal: NodeJS.Signals | null,
+) {
+  if (signal) return `[neondeck] Server stopped signal=${signal}`;
+  return `[neondeck] Server stopped code=${code ?? 0}`;
 }
 
 export function resolvePackagedServerEntry(

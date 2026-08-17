@@ -77,6 +77,7 @@ program
   .command('serve')
   .description('Start the production Neondeck server in the foreground.')
   .option('--port <port>', 'override the configured/default API port')
+  .option('--verbose', 'log successful API reads in addition to activity')
   .action(async (options: ServeOptions) => {
     const { ensureRuntimeHome } = await runtimeHomeModule();
     const { runBuiltNeondeckServer } = await serverModule();
@@ -86,6 +87,7 @@ program
     await runBuiltNeondeckServer({
       paths,
       port: options.port,
+      verbose: options.verbose,
     });
   });
 

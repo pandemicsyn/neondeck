@@ -24,6 +24,7 @@ type ObservationInstallDependencies = {
   recordFlueObservation?: typeof recordFlueObservation;
   recordConversationTurn?: typeof recordConversationTurnAndMaybeQueueLearning;
   isDirectDisplayAssistantSubmission?: typeof isDirectDisplayAssistantSubmission;
+  logActivity?: (event: FlueObservation) => void;
 };
 
 const observationHandlerUnsubscribers = new Map<string, () => void>();
@@ -41,6 +42,7 @@ export function installFlueObservationHandlers(
   const unsubscribe = observeFn((event, context) => {
     const contextHome = flueContextRuntimeHome(context);
     if (contextHome && contextHome !== paths.home) return;
+    dependencies.logActivity?.(event);
 
     activityWriteQueue = activityWriteQueue
       .then(() => recordObservation(event, paths))

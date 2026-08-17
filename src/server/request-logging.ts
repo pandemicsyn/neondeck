@@ -1,17 +1,22 @@
+import type { FlueObservation } from '@flue/runtime';
 import type { MiddlewareHandler } from 'hono';
 
-type FailureLogLevel = 'error' | 'warn';
+export type ServerLogLevel = 'error' | 'info' | 'warn';
 
-type FailureLogWriter = (level: FailureLogLevel, message: string) => void;
+type ServerLogWriter = (level: ServerLogLevel, message: string) => void;
 
-export function logFailedApiRequests(
+export function logApiRequests(
   options: {
+    logSuccessfulReads?: boolean;
     now?: () => number;
-    write?: FailureLogWriter;
+    slowRequestMs?: number;
+    write?: ServerLogWriter;
   } = {},
 ): MiddlewareHandler {
+  const logSuccessfulReads = options.logSuccessfulReads ?? false;
   const now = options.now ?? Date.now;
-  const write = options.write ?? writeFailureLog;
+  const slowRequestMs = options.slowRequestMs ?? 1_000;
+  const write = options.write ?? writeServerLog;
 
   return async (context, next) => {
     const startedAt = now();
@@ -20,7 +25,7 @@ export function logFailedApiRequests(
     } catch (error) {
       write(
         'error',
-        formatFailedRequest({
+        formatApiRequest({
           method: context.req.method,
           path: context.req.path,
           status: 500,
@@ -31,22 +36,29 @@ export function logFailedApiRequests(
       throw error;
     }
 
-    if (context.res.status < 400) return;
-    const details = await readFailureResponse(context.res);
+    const durationMs = elapsedMilliseconds(startedAt, now());
+    const failed = context.res.status >= 400;
+    const successfulRead =
+      !failed && ['GET', 'HEAD'].includes(context.req.method.toUpperCase());
+    if (successfulRead && !logSuccessfulReads && durationMs < slowRequestMs) {
+      return;
+    }
+
+    const details = await readResponseDiagnostics(context.res, failed);
     write(
-      context.res.status >= 500 ? 'error' : 'warn',
-      formatFailedRequest({
+      failed ? (context.res.status >= 500 ? 'error' : 'warn') : 'info',
+      formatApiRequest({
         method: context.req.method,
         path: context.req.path,
         status: context.res.status,
-        durationMs: elapsedMilliseconds(startedAt, now()),
+        durationMs,
         ...details,
       }),
     );
   };
 }
 
-export function formatFailedRequest(input: {
+export function formatApiRequest(input: {
   method: string;
   path: string;
   status: number;
@@ -67,12 +79,73 @@ export function formatFailedRequest(input: {
       : null,
   ].filter((line): line is string => Boolean(line));
   return [
-    `[neondeck] HTTP ${input.method.toUpperCase()} ${input.path} ${input.status} ${input.durationMs}ms`,
+    `[neondeck] HTTP ${safeLogToken(input.method).toUpperCase()} ${safeLogValue(input.path)} ${input.status} ${input.durationMs}ms`,
     ...detailLines,
   ].join('\n');
 }
 
-async function readFailureResponse(response: Response) {
+export function logFlueActivity(
+  event: FlueObservation,
+  write: ServerLogWriter = writeServerLog,
+) {
+  const entry = formatFlueActivity(event);
+  if (entry) write(entry.level, entry.message);
+}
+
+export function formatFlueActivity(
+  event: FlueObservation,
+): { level: ServerLogLevel; message: string } | null {
+  const fields = [
+    event.agentName ? `agent=${safeLogToken(event.agentName)}` : null,
+    event.submissionId
+      ? `submission=${safeLogToken(event.submissionId)}`
+      : null,
+  ];
+
+  switch (event.type) {
+    case 'submission_queued':
+      return activityEntry('info', 'submission queued', [
+        ...fields,
+        `kind=${safeLogToken(event.kind)}`,
+      ]);
+    case 'submission_running':
+      return activityEntry('info', 'submission running', [
+        ...fields,
+        `attempt=${event.attemptCount}/${event.maxAttempts}`,
+      ]);
+    case 'submission_recovery':
+      return activityEntry('warn', 'submission recovery', [
+        ...fields,
+        `operation=${safeLogToken(event.operation)}`,
+        `outcome=${safeLogToken(event.outcome)}`,
+      ]);
+    case 'submission_settled':
+      return activityEntry(
+        event.outcome === 'completed' ? 'info' : 'warn',
+        'submission settled',
+        [
+          ...fields,
+          `outcome=${safeLogToken(event.outcome)}`,
+          ...errorTypeField(event.error),
+        ],
+      );
+    case 'operation':
+      if (!event.isError) return null;
+      return activityEntry('warn', 'operation failed', [
+        ...fields,
+        `operation=${safeLogToken(event.operationKind)}`,
+        `duration=${Math.max(0, Math.round(event.durationMs))}ms`,
+        ...errorTypeField(event.error),
+      ]);
+    default:
+      return null;
+  }
+}
+
+async function readResponseDiagnostics(
+  response: Response,
+  includeFailureDetails: boolean,
+) {
   const contentType = response.headers.get('content-type')?.toLowerCase() ?? '';
   if (!contentType.includes('json')) return {};
   try {
@@ -81,19 +154,43 @@ async function readFailureResponse(response: Response) {
     const record = data as Record<string, unknown>;
     return {
       ...(typeof record.action === 'string' ? { action: record.action } : {}),
-      ...(typeof record.message === 'string'
+      ...(includeFailureDetails && typeof record.message === 'string'
         ? { message: record.message }
         : {}),
-      ...(stringArray(record.errors).length
+      ...(includeFailureDetails && stringArray(record.errors).length
         ? { errors: stringArray(record.errors) }
         : {}),
-      ...(stringArray(record.requires).length
+      ...(includeFailureDetails && stringArray(record.requires).length
         ? { requires: stringArray(record.requires) }
         : {}),
     };
   } catch {
     return {};
   }
+}
+
+function activityEntry(
+  level: ServerLogLevel,
+  label: string,
+  fields: Array<string | null>,
+) {
+  const details = fields.filter(Boolean).join(' ');
+  return {
+    level,
+    message: `[neondeck] ACTIVITY ${label}${details ? ` ${details}` : ''}`,
+  };
+}
+
+function errorTypeField(value: unknown) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return [];
+  const error = value as Record<string, unknown>;
+  const type =
+    typeof error.type === 'string'
+      ? error.type
+      : typeof error.name === 'string'
+        ? error.name
+        : null;
+  return type ? [`error=${safeLogToken(type)}`] : [];
 }
 
 function stringArray(value: unknown) {
@@ -106,14 +203,20 @@ function safeLogValue(value: string) {
   return value.replace(/[\r\n]+/g, ' ').slice(0, 800);
 }
 
+function safeLogToken(value: string) {
+  return value.replace(/[^a-zA-Z0-9._:/#-]+/g, '_').slice(0, 160);
+}
+
 function elapsedMilliseconds(startedAt: number, finishedAt: number) {
   return Math.max(0, Math.round(finishedAt - startedAt));
 }
 
-function writeFailureLog(level: FailureLogLevel, message: string) {
+function writeServerLog(level: ServerLogLevel, message: string) {
   if (level === 'error') {
     console.error(message);
-  } else {
+  } else if (level === 'warn') {
     console.warn(message);
+  } else {
+    console.info(message);
   }
 }

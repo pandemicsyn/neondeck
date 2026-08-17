@@ -235,6 +235,12 @@ supported Chromium browser is available.
 `dist/server.mjs`; from a source checkout, use `npm run dev` for the fast loop
 or run `npm run build:server` before testing the packaged path.
 
+Production logs include state-changing API requests, failed and slow requests,
+agent submission lifecycle activity, dashboard event-stream connections, and
+runtime-service lifecycle events. Routine successful reads are suppressed to
+keep dashboard polling quiet; use `neondeck serve --verbose` or set
+`NEONDECK_LOG_LEVEL=debug` to include them.
+
 ## Marketing And Docs Site
 
 The Astro site lives under `docs/` and deploys to Cloudflare for

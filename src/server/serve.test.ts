@@ -4,9 +4,11 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
   defaultServerPort,
+  formatServerStop,
   resolvePackagedServerEntry,
   resolveServerPort,
   rewriteServerLogLine,
+  serverSignalExitCode,
 } from './serve';
 
 describe('server serve options', () => {
@@ -77,6 +79,15 @@ describe('server serve options', () => {
     expect(rewriteServerLogLine('[neondeck] scheduler started', 3583)).toBe(
       '[neondeck] scheduler started',
     );
+  });
+
+  it('formats server shutdown outcomes', () => {
+    expect(formatServerStop(0, null)).toBe('[neondeck] Server stopped code=0');
+    expect(formatServerStop(null, 'SIGTERM')).toBe(
+      '[neondeck] Server stopped signal=SIGTERM',
+    );
+    expect(serverSignalExitCode('SIGINT')).toBe(130);
+    expect(serverSignalExitCode('SIGTERM')).toBe(143);
   });
 });
 

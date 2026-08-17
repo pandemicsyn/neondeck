@@ -80,10 +80,19 @@ const defaultDependencies: EventStreamDependencies = {
   subscribeReviewSourceRevisionEvents,
 };
 
+export type EventStreamOptions = {
+  onConnectionChange?: (event: {
+    activeConnections: number;
+    state: 'connected' | 'disconnected';
+  }) => void;
+};
+
 export function createEventStreamRoutes(
   dependencies: EventStreamDependencies = defaultDependencies,
+  options: EventStreamOptions = {},
 ) {
   const routes = new Hono();
+  let activeConnections = 0;
 
   routes.get('/', (c) => {
     const encoder = new TextEncoder();
@@ -93,6 +102,11 @@ export function createEventStreamRoutes(
     const stream = new ReadableStream<Uint8Array>({
       start(controller) {
         let active = true;
+        activeConnections += 1;
+        options.onConnectionChange?.({
+          activeConnections,
+          state: 'connected',
+        });
         const send = (value: string) => {
           if (!active) return;
           controller.enqueue(encoder.encode(value));
@@ -138,6 +152,11 @@ export function createEventStreamRoutes(
           active = false;
           clearInterval(heartbeat);
           for (const unsubscribe of unsubscribers) unsubscribe();
+          activeConnections = Math.max(0, activeConnections - 1);
+          options.onConnectionChange?.({
+            activeConnections,
+            state: 'disconnected',
+          });
         };
       },
       cancel() {
