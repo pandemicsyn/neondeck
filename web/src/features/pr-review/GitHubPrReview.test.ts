@@ -29,6 +29,7 @@ import {
   annotationsFromThreads,
   backgroundReviewPatchPaths,
   draftCommentIdsWithUnknownPatch,
+  mutationErrorMessage,
   prReviewMapByPath,
   reviewPatchQuerySettled,
 } from './review-view-model';
@@ -48,6 +49,23 @@ import {
 import capturedReviewPatch from './fixtures/captured-review.patch?raw';
 
 describe('GitHubPrReview helpers', () => {
+  it('shows structured GitHub diagnostics for failed review operations', () => {
+    const error = new ApiError(
+      'Could not fetch GitHub PR event state.',
+      400,
+      '/api/reviews',
+      {
+        errors: [
+          'GitHub request failed with 403: Resource not accessible by integration',
+        ],
+      },
+    );
+
+    expect(mutationErrorMessage(error, null)).toBe(
+      'Could not fetch GitHub PR event state. GitHub request failed with 403: Resource not accessible by integration',
+    );
+  });
+
   it('does not mark a draft stale while the current PR head is loading', () => {
     expect(prReviewDraftHeadIsStale('draft-head', null)).toBe(false);
     expect(prReviewDraftHeadIsStale('draft-head', '')).toBe(false);

@@ -45,6 +45,7 @@ export type RegisterPrOptions = {
 
 export type ServeOptions = {
   port?: string;
+  verbose?: boolean;
 };
 
 export type ServiceInstallOptions = {

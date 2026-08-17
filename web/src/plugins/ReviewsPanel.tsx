@@ -23,7 +23,7 @@ import { Badge, Button, EmptyState, ScrollArea } from '../components/ui';
 import { PrReviewArtifactsOverlay } from '../features/pr-review/PrReviewArtifactsOverlay';
 import { relativeTime } from '../lib/format';
 import { useDashboardEventConnectionState } from '../lib/dashboard-connection';
-import { queryErrorMessage, queryKeys } from '../lib/query';
+import { actionErrorMessage, queryErrorMessage, queryKeys } from '../lib/query';
 import type { DisplayPlugin } from '../types';
 
 export const ReviewsPanelPlugin = {
@@ -166,7 +166,7 @@ export const ReviewsPanelPlugin = {
         archiveMutation.error ||
         restoreMutation.error ? (
           <p className="border-b border-accent/60 px-3 py-1.5 font-mono text-[10px] text-accent">
-            {queryErrorMessage(
+            {actionErrorMessage(
               startMutation.error ??
                 restartMutation.error ??
                 reconcileMutation.error ??

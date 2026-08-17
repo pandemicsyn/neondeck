@@ -1,6 +1,11 @@
 import { defineTool, type ToolStep } from '@flue/runtime';
 import * as v from 'valibot';
+import { ActionResultError } from '../../lib/action-result';
+import { runtimePaths, type RuntimePaths } from '../../runtime-home';
+import type { ThinkingLevel } from '../../runtime-home';
 import { currentFlueExecutionContext } from '../flue';
+import type { GitHubPullRequestEventState } from '../github';
+import { recordHandledPrFromOperationResult } from '../learning';
 import {
   completePrReview,
   failPrReview,
@@ -23,10 +28,6 @@ import {
   type ReviewAssistPromptContext,
 } from './service';
 import { resolvePrReviewerWorkspace } from '../pr-reviewer';
-import { runtimePaths, type RuntimePaths } from '../../runtime-home';
-import type { ThinkingLevel } from '../../runtime-home';
-import { recordHandledPrFromOperationResult } from '../learning';
-import type { GitHubPullRequestEventState } from '../github';
 
 export type PrReviewToolExecutionState = {
   failure?: Error;
@@ -86,7 +87,7 @@ export async function loadPrReviewAgentContext(
     signal,
     fetchFacts: options.fetchFacts,
   });
-  if (!preparation.ok) throw new Error(preparation.result.message);
+  if (!preparation.ok) throw new ActionResultError(preparation.result);
   signal?.throwIfAborted();
   const { facts, promptContext } = preparation.prepared;
   const workspace = await (

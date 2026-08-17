@@ -1,4 +1,5 @@
 import { QueryClient } from '@tanstack/react-query';
+import { ApiError } from '../api/http';
 
 const chatSessionActivityRoot = ['chat-session-activity'] as const;
 
@@ -76,4 +77,28 @@ export const queryKeys = {
 
 export function queryErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : String(error);
+}
+
+export function actionErrorMessage(error: unknown) {
+  const message = queryErrorMessage(error);
+  if (!(error instanceof ApiError) || !isRecord(error.data)) return message;
+
+  const errors = stringArray(error.data.errors);
+  const requires = stringArray(error.data.requires);
+  const details = [
+    ...errors,
+    ...(requires.length > 0 ? [`Requires: ${requires.join(', ')}`] : []),
+  ].filter((detail) => detail !== message);
+
+  return details.length > 0 ? `${message} ${details.join(' ')}` : message;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === 'object';
+}
+
+function stringArray(value: unknown) {
+  return Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === 'string')
+    : [];
 }

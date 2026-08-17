@@ -26,6 +26,7 @@ import {
 import {
   createEventStreamRoutes,
   type EventStreamDependencies,
+  type EventStreamOptions,
 } from './event-stream';
 import {
   formatGitHubQueueSnapshotServerSentEvent,
@@ -33,6 +34,25 @@ import {
 } from '../../modules/github';
 
 describe('dashboard event stream', () => {
+  it('reports dashboard connections and disconnects', async () => {
+    const onConnectionChange =
+      vi.fn<NonNullable<EventStreamOptions['onConnectionChange']>>();
+    const harness = eventHarness({ onConnectionChange });
+    const app = new Hono().route('/api/events', harness.routes);
+    const response = await app.request('http://localhost/api/events');
+
+    expect(onConnectionChange).toHaveBeenCalledWith({
+      activeConnections: 1,
+      state: 'connected',
+    });
+
+    await response.body?.cancel();
+    expect(onConnectionChange).toHaveBeenLastCalledWith({
+      activeConnections: 0,
+      state: 'disconnected',
+    });
+  });
+
   it('fans all app-domain events into one stream and cleans up together', async () => {
     const harness = eventHarness();
     const app = new Hono().route('/api/events', harness.routes);
@@ -101,7 +121,7 @@ describe('dashboard event stream', () => {
   });
 });
 
-function eventHarness() {
+function eventHarness(options: EventStreamOptions = {}) {
   let configListener: ((event: ConfigChangeEvent) => void) | undefined;
   let notificationListener: ((event: NotificationEvent) => void) | undefined;
   let sessionListener: ((event: ChatSessionEvent) => void) | undefined;
@@ -172,7 +192,7 @@ function eventHarness() {
   };
 
   return {
-    routes: createEventStreamRoutes(dependencies),
+    routes: createEventStreamRoutes(dependencies, options),
     replay,
     unsubscribers,
     emitAll() {

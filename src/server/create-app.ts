@@ -59,6 +59,7 @@ import { createSessionRoutes } from './routes/sessions';
 import { createSkillRoutes } from './routes/skills';
 import { createWatchRoutes } from './routes/watches';
 import { createWorktreeRoutes } from './routes/worktrees';
+import { logApiRequests, logFlueActivity } from './request-logging';
 import { recoverInterruptedAutopilotOwners } from '../modules/autopilot/owner/settlement';
 import { refreshGitHubQueueSnapshot } from '../modules/github';
 import { refreshPrReviewRemoteState } from '../modules/pr-reviews';
@@ -78,6 +79,7 @@ export type CreateAppOptions = {
   staticRoot?: string;
   scheduler?: boolean;
   runtimeServices?: boolean;
+  requestLogging?: boolean;
 };
 
 export async function createApp(options: CreateAppOptions = {}) {
@@ -91,7 +93,10 @@ export async function createApp(options: CreateAppOptions = {}) {
 
   await ensureRuntimeHome(paths);
   installFlueExecutionContextTracker();
-  installFlueObservationHandlers(paths);
+  installFlueObservationHandlers(
+    paths,
+    options.requestLogging === true ? { logActivity: logFlueActivity } : {},
+  );
 
   await getMcpRegistry(paths).start();
 
@@ -113,11 +118,33 @@ export async function createApp(options: CreateAppOptions = {}) {
   const requireAppAccess = requireLocalApiAccess({
     trustedOrigins: appConfig.server?.trustedOrigins,
   });
+  if (options.requestLogging === true) {
+    app.use(
+      '/api/*',
+      logApiRequests({
+        logSuccessfulReads: process.env.NEONDECK_LOG_LEVEL === 'debug',
+      }),
+    );
+  }
   app.use('/api/*', requireAppAccess);
   app.use('/reports/*', requireAppAccess);
 
   app.route('/api', createRuntimeRoutes(paths));
-  app.route(dashboardEventStreamPath, createEventStreamRoutes());
+  app.route(
+    dashboardEventStreamPath,
+    createEventStreamRoutes(
+      undefined,
+      options.requestLogging === true
+        ? {
+            onConnectionChange({ activeConnections, state }) {
+              console.info(
+                `[neondeck] DASHBOARD ${state} active=${activeConnections}`,
+              );
+            },
+          }
+        : {},
+    ),
+  );
   app.route('/api/safety', createSafetyRoutes(paths));
   app.route('/api/execution', createExecutionRoutes(paths));
   app.route('/api', createSessionRoutes(paths));
@@ -223,6 +250,7 @@ function createFlueRuntimeServiceStarter(input: FlueRuntimeServiceInput) {
     inFlight = startFlueRuntimeServiceAttempt()
       .then(() => {
         completed = true;
+        console.info('[neondeck] Runtime services ready');
       })
       .catch((error) => {
         console.warn(
@@ -269,6 +297,7 @@ type FlueRuntimeServiceInput = {
 function startFlueRuntimeScheduler(input: FlueRuntimeServiceInput) {
   if (input.scheduler && process.env.NEONDECK_DISABLE_SCHEDULER !== '1') {
     startSchedulerLoop(input.paths);
+    console.info('[neondeck] Scheduler started');
     void refreshGitHubQueueSnapshot(input.paths).catch((error) => {
       console.warn('[neondeck] initial GitHub queue refresh failed', error);
     });
