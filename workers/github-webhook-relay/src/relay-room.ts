@@ -5,6 +5,7 @@ import {
   createGithubWebhookEnvelope,
   createGithubWebhookReplayEnvelope,
   encodeServerFrame,
+  extractPrNumber,
   parseClientControlFrame,
   pingFrameText,
   pongFrameText,
@@ -12,13 +13,26 @@ import {
   type EventLogRow,
 } from './protocol';
 import { channelSchema, parseWebSocketRoute } from './routes';
+import { isoTimestampSchema, uuidSchema } from './schema-primitives';
 
 const connectionAttachmentSchema = v.strictObject({
   version: v.literal(1),
-  channel: v.pipe(v.string(), v.minLength(1), v.maxLength(64)),
-  connectionId: v.pipe(v.string(), v.uuid()),
-  connectedAt: v.pipe(v.string(), v.isoTimestamp()),
+  channel: channelSchema,
+  connectionId: uuidSchema,
+  connectedAt: isoTimestampSchema,
 });
+
+// Thrown when the caller's `channel` disagrees with this Durable Object's
+// own identity (`ctx.id.name`) — an invariant violation in the caller, not
+// an RPC/transport failure. `src/index.ts` distinguishes this from a
+// genuine relay outage by name (see the comment there on why `.name` and
+// not `instanceof` is used across the RPC boundary).
+export class RelayChannelMismatchError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'RelayChannelMismatchError';
+  }
+}
 
 export const broadcastResultSchema = v.strictObject({
   connectedClients: v.pipe(v.number(), v.integer(), v.minValue(0)),
@@ -31,31 +45,11 @@ export const broadcastResultSchema = v.strictObject({
 // already types `message` that way — the runtime guarantees it, so the
 // check below is a plain `instanceof` narrowing instead.
 
-const sinceCursorSchema = v.pipe(v.string(), v.uuid());
+const sinceCursorSchema = uuidSchema;
 
 // Retain roughly 24h or 1000 rows, whichever bound ends up smaller.
 const eventLogRetentionMs = 24 * 60 * 60 * 1000;
 const eventLogRetentionRows = 1000;
-
-// Pulls a PR number out of an already-signature-verified but otherwise
-// untyped GitHub payload. This is real GitHub input — the payload's nested
-// shape is not guaranteed by any type, so it is validated here.
-const prNumberSourceSchema = v.looseObject({
-  pull_request: v.optional(
-    v.looseObject({ number: v.pipe(v.number(), v.integer(), v.minValue(1)) }),
-  ),
-  issue: v.optional(
-    v.looseObject({ number: v.pipe(v.number(), v.integer(), v.minValue(1)) }),
-  ),
-});
-
-function extractPrNumber(payload: unknown): number | null {
-  const parsed = v.safeParse(prNumberSourceSchema, payload);
-  if (!parsed.success) return null;
-  return (
-    parsed.output.pull_request?.number ?? parsed.output.issue?.number ?? null
-  );
-}
 
 // Key for the persisted webSocketMessage counter in the `counters` table —
 // see the hibernation cost-model comment on that table in the constructor.
@@ -130,7 +124,11 @@ export class RelayRoom extends DurableObject<Env> {
     });
 
     server.serializeAttachment(attachment);
-    this.ctx.acceptWebSocket(server, [`channel:${roomChannel.output}`]);
+    // No tags: `getWebSockets()` is always called unfiltered elsewhere in
+    // this class (there is exactly one channel per Durable Object, so
+    // per-channel tag filtering has nothing to do), and tags are not read
+    // back anywhere.
+    this.ctx.acceptWebSocket(server);
 
     if (sinceParam !== null) {
       this.replayFrom(server, roomChannel.output, sinceParam);
@@ -145,7 +143,9 @@ export class RelayRoom extends DurableObject<Env> {
     const broadcast = v.parse(relayBroadcastInputSchema, input);
     const roomChannel = v.parse(channelSchema, this.ctx.id.name);
     if (broadcast.channel !== roomChannel) {
-      throw new Error('Relay channel does not match Durable Object identity.');
+      throw new RelayChannelMismatchError(
+        'Relay channel does not match Durable Object identity.',
+      );
     }
 
     this.recordEvent({
@@ -166,12 +166,24 @@ export class RelayRoom extends DurableObject<Env> {
 
     for (const socket of sockets) {
       if (socket.readyState !== WebSocket.OPEN) continue;
+      // Fully self-contained per socket: a `send` failure must never stop
+      // later sockets in this loop from receiving the frame, and a `close`
+      // failure on the way out of the `catch` must not escape either —
+      // `recordEvent` above already committed the event, and
+      // `INSERT OR IGNORE` means a GitHub retry will not re-broadcast it,
+      // so a socket skipped here because of an uncaught exception would
+      // miss this event permanently.
       try {
         socket.send(frame);
         deliveredClients += 1;
       } catch {
         failedClients += 1;
-        socket.close(1011, 'Relay delivery failed.');
+        try {
+          socket.close(1011, 'Relay delivery failed.');
+        } catch {
+          // Best-effort teardown of an already-broken socket. Nothing more
+          // to do — the loop must continue regardless.
+        }
       }
     }
 
@@ -186,7 +198,7 @@ export class RelayRoom extends DurableObject<Env> {
     // One transaction for the insert and its prune, so a broadcast costs a
     // single durable commit instead of one per statement.
     this.ctx.storage.transactionSync(() => {
-      this.ctx.storage.sql.exec(
+      const inserted = this.ctx.storage.sql.exec(
         `INSERT OR IGNORE INTO events
            (deliveryId, event, action, repository, prNumber, receivedAt)
          VALUES (?, ?, ?, ?, ?, ?)`,
@@ -197,7 +209,13 @@ export class RelayRoom extends DurableObject<Env> {
         row.prNumber,
         row.receivedAt,
       );
-      this.pruneEventLog();
+      // `INSERT OR IGNORE` writes nothing on a duplicate `deliveryId` (a
+      // GitHub redelivery). Pruning is only meaningful after a row was
+      // actually added, so skip it on a no-op insert instead of paying for
+      // the prune's two extra statements on every redelivery.
+      if (inserted.rowsWritten > 0) {
+        this.pruneEventLog();
+      }
     });
   }
 
@@ -277,8 +295,14 @@ export class RelayRoom extends DurableObject<Env> {
     ws: WebSocket,
     message: string | ArrayBuffer,
   ): void {
-    // Single indexed upsert — same cost class as the event-log insert path
-    // below, not a meaningful addition to this handler's hot-path cost.
+    // `webSocketMessage` only runs for a frame `setWebSocketAutoResponse`
+    // did NOT answer itself — i.e. anything that is not a byte-exact match
+    // for the canonical ping (see the field-order note on
+    // `clientControlFrameSchema` in protocol.ts). A correctly implemented
+    // client's keepalive never lands here, so this insert is not
+    // unconditional production overhead; it only runs for a malformed or
+    // non-canonical client message. Cost class is the same as the
+    // event-log insert path below regardless.
     this.ctx.storage.sql.exec(
       `INSERT INTO counters (name, value) VALUES (?, 1)
          ON CONFLICT (name) DO UPDATE SET value = value + 1`,
@@ -294,6 +318,18 @@ export class RelayRoom extends DurableObject<Env> {
       ws.deserializeAttachment(),
     );
     if (!attachment.success) {
+      // This is the designed-for scenario for hibernating sockets: they
+      // survive redeploys, and the attachment schema has no migration path
+      // for a changed shape (`version` is a hardcoded literal). Without
+      // this log, a shape change kills every hibernating socket with no
+      // trace — consistent with `webSocketError` below, which already logs
+      // on attachment-parse failure.
+      console.error(
+        JSON.stringify({
+          message: 'relay WebSocket attachment is invalid, closing',
+          issues: attachment.issues.map((issue) => issue.message),
+        }),
+      );
       ws.close(1011, 'Connection state is invalid.');
       return;
     }
@@ -325,7 +361,20 @@ export class RelayRoom extends DurableObject<Env> {
       connectionAttachmentSchema,
       ws.deserializeAttachment(),
     );
-    if (!attachment.success) return;
+    if (!attachment.success) {
+      // Same invisible-teardown risk as the `webSocketMessage` case above:
+      // without this log, a socket whose attachment fails to parse closes
+      // with no trace anywhere.
+      console.error(
+        JSON.stringify({
+          message: 'relay WebSocket closed with an invalid attachment',
+          code,
+          wasClean,
+          issues: attachment.issues.map((issue) => issue.message),
+        }),
+      );
+      return;
+    }
 
     // Always log, regardless of the close code the runtime reports — codes
     // outside the registered 0-4999 range are still real close events and

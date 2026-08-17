@@ -1,4 +1,5 @@
 import * as v from 'valibot';
+import { failureResult } from './result';
 
 const bearerTokenSchema = v.pipe(
   v.string(),
@@ -84,5 +85,5 @@ function failure(
   code: 'invalid_request' | 'unauthorized' | 'upgrade_required',
   error: string,
 ): Exclude<WebSocketAuthenticationResult, { ok: true }> {
-  return { ok: false, status, code, error };
+  return failureResult(status, code, error);
 }

@@ -1,7 +1,11 @@
 import * as v from 'valibot';
 import { verifyGithubWebhook } from './github-webhook';
 import { jsonError } from './http';
-import { broadcastResultSchema, RelayRoom } from './relay-room';
+import {
+  broadcastResultSchema,
+  RelayChannelMismatchError,
+  RelayRoom,
+} from './relay-room';
 import { parseGithubWebhookRoute, parseWebSocketRoute } from './routes';
 import { authenticateWebSocketRequest } from './websocket-auth';
 
@@ -14,6 +18,20 @@ export { RelayRoom };
 // caller.
 function isWebSocketUpgradeResponse(response: Response): boolean {
   return response.status === 101 && response.webSocket instanceof WebSocket;
+}
+
+// `RelayRoom.broadcast` is invoked over Durable Object RPC, not a plain
+// function call — a thrown error crosses that boundary structurally
+// cloned, not by reference. Cloudflare's RPC error serialization retains
+// an Error's `.message` and `.name` but reconstructs it as a plain
+// `Error`, so `instanceof RelayChannelMismatchError` is always false here
+// even when the error really was one on the Durable Object side.
+// Comparing `.name` against the class's own static `.name` is the
+// reliable way to recognize it after the round trip.
+function isRelayChannelMismatchError(error: unknown): boolean {
+  return (
+    error instanceof Error && error.name === RelayChannelMismatchError.name
+  );
 }
 
 export default {
@@ -72,20 +90,36 @@ export default {
           { status: 200 },
         );
       } catch (error) {
+        // A thrown validation/invariant error (e.g. the channel-identity
+        // check in `RelayRoom.broadcast`) means the request reached the
+        // Durable Object and it made a deliberate decision — that is a
+        // routing bug in this worker, not a relay outage, and flattening
+        // it to the same 503 as a genuine RPC/transport failure would make
+        // the two indistinguishable in both the response and this log
+        // line.
+        const isInvariantError = isRelayChannelMismatchError(error);
         console.error(
           JSON.stringify({
-            message: 'GitHub webhook relay failed',
+            message: isInvariantError
+              ? 'GitHub webhook relay rejected the request'
+              : 'GitHub webhook relay failed',
             channel: webhookRoute.channel,
             deliveryId: result.webhook.deliveryId,
             error:
               error instanceof Error ? error.message : 'Unknown relay error',
           }),
         );
-        return jsonError(
-          503,
-          'relay_unavailable',
-          'Webhook relay is unavailable.',
-        );
+        return isInvariantError
+          ? jsonError(
+              500,
+              'invalid_request',
+              'Webhook relay encountered an internal routing error.',
+            )
+          : jsonError(
+              503,
+              'relay_unavailable',
+              'Webhook relay is unavailable.',
+            );
       }
     }
 

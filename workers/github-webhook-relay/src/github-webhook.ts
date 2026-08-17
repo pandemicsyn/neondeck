@@ -1,5 +1,14 @@
 import * as v from 'valibot';
 import { jsonObjectSchema } from './json';
+import { failureResult } from './result';
+import {
+  githubDeliveryIdSchema,
+  githubEventNameSchema,
+  githubHookIdSchema,
+  isoTimestampSchema,
+  nonEmptyStringSchema,
+  positiveIntegerSchema,
+} from './schema-primitives';
 
 const maximumBufferedPayloadBytes = 5 * 1024 * 1024;
 
@@ -11,10 +20,15 @@ const webhookEnvironmentSchema = v.object({
   GITHUB_WEBHOOK_SECRET_PREVIOUS: v.optional(
     v.pipe(v.string(), v.minLength(16)),
   ),
+  // Accepts either a genuine JSON number (how `wrangler.jsonc` declares
+  // `vars`) or a plain digit string (how a `.dev.vars` / CLI `--var`
+  // override would supply it). Bare `Number()` on an unconstrained string
+  // would also silently accept `"0x800"` (hex) or `"2e3"` (exponential) —
+  // surprising input for a byte limit — so a string is only accepted if it
+  // is nothing but decimal digits, mirroring the header parsing below.
   MAX_WEBHOOK_BYTES: v.pipe(
-    v.unknown(),
+    v.union([v.pipe(v.string(), v.regex(/^\d+$/)), v.number()]),
     v.transform((value) => Number(value)),
-    v.number(),
     v.integer(),
     v.minValue(1024),
     v.maxValue(maximumBufferedPayloadBytes),
@@ -30,9 +44,9 @@ const contentLengthSchema = v.pipe(
 const githubHeadersSchema = v.object({
   contentLength: contentLengthSchema,
   contentType: v.pipe(v.string(), v.regex(/^application\/json(?:\s*;.*)?$/i)),
-  deliveryId: v.pipe(v.string(), v.uuid()),
-  event: v.pipe(v.string(), v.regex(/^[a-z][a-z0-9_]{0,63}$/)),
-  hookId: v.pipe(v.string(), v.regex(/^\d+$/)),
+  deliveryId: githubDeliveryIdSchema,
+  event: githubEventNameSchema,
+  hookId: githubHookIdSchema,
   signature: v.pipe(v.string(), v.regex(/^sha256=[0-9a-f]{64}$/)),
 });
 
@@ -43,13 +57,9 @@ const githubHeadersSchema = v.object({
 
 export const githubPayloadSchema = v.pipe(
   v.looseObject({
-    action: v.optional(v.pipe(v.string(), v.minLength(1))),
-    installation: v.optional(
-      v.looseObject({ id: v.pipe(v.number(), v.integer(), v.minValue(1)) }),
-    ),
-    repository: v.optional(
-      v.looseObject({ full_name: v.pipe(v.string(), v.minLength(1)) }),
-    ),
+    action: v.optional(nonEmptyStringSchema),
+    installation: v.optional(v.looseObject({ id: positiveIntegerSchema })),
+    repository: v.optional(v.looseObject({ full_name: nonEmptyStringSchema })),
   }),
   v.check(
     (value) => v.safeParse(jsonObjectSchema, value).success,
@@ -58,10 +68,10 @@ export const githubPayloadSchema = v.pipe(
 );
 
 export const verifiedGithubWebhookSchema = v.strictObject({
-  deliveryId: v.pipe(v.string(), v.uuid()),
-  event: v.pipe(v.string(), v.regex(/^[a-z][a-z0-9_]{0,63}$/)),
-  hookId: v.pipe(v.string(), v.regex(/^\d+$/)),
-  receivedAt: v.pipe(v.string(), v.isoTimestamp()),
+  deliveryId: githubDeliveryIdSchema,
+  event: githubEventNameSchema,
+  hookId: githubHookIdSchema,
+  receivedAt: isoTimestampSchema,
   payload: githubPayloadSchema,
 });
 
@@ -165,16 +175,22 @@ export async function verifyGithubWebhook(
     );
   }
 
-  return {
-    ok: true,
-    webhook: v.parse(verifiedGithubWebhookSchema, {
-      deliveryId: parsedHeaders.output.deliveryId,
-      event: parsedHeaders.output.event,
-      hookId: parsedHeaders.output.hookId,
-      receivedAt: new Date().toISOString(),
-      payload: parsedPayload.output,
-    }),
+  // Every field below is already validated: the header fields by
+  // `githubHeadersSchema` above, `payload` by `githubPayloadSchema` just
+  // above, and `receivedAt` is always a fresh, well-formed ISO timestamp.
+  // Re-running `v.parse(verifiedGithubWebhookSchema, ...)` here would only
+  // re-walk `payload` — GitHub data up to 5 MB — for no new information, so
+  // this constructs the already-typed `VerifiedGithubWebhook` literal
+  // directly instead.
+  const webhook: VerifiedGithubWebhook = {
+    deliveryId: parsedHeaders.output.deliveryId,
+    event: parsedHeaders.output.event,
+    hookId: parsedHeaders.output.hookId,
+    receivedAt: new Date().toISOString(),
+    payload: parsedPayload.output,
   };
+
+  return { ok: true, webhook };
 }
 
 async function readBodyWithLimit(
@@ -215,6 +231,18 @@ async function readBodyWithLimit(
       bytes.set(next.value, total);
       total = nextTotal;
     }
+  } catch {
+    // The stream itself failed mid-read — a client abort, a proxy timeout,
+    // or any other transport-level break. This is reachable pre-auth
+    // (HMAC verification only runs after the body is fully read), so it
+    // must resolve to the same documented `{error, code}` JSON shape as
+    // the content-length-mismatch case below, not escape as an unhandled
+    // rejection that the platform turns into a generic HTML 500.
+    return failure(
+      400,
+      'invalid_request',
+      'Webhook payload could not be read.',
+    );
   } finally {
     reader.releaseLock();
   }
@@ -262,5 +290,5 @@ function failure(
   code: GithubWebhookFailure['code'],
   error: string,
 ): GithubWebhookFailure {
-  return { ok: false, status, code, error };
+  return failureResult(status, code, error);
 }
