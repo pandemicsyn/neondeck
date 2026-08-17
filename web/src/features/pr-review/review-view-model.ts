@@ -8,13 +8,8 @@ import {
   type GitHubPullRequestReviewThread,
   type PrReviewReportOnlyFinding,
 } from '../../api';
-import type {
-  GitHubPrReviewDraftResponse,
-  GitHubPrReviewSubmitResponse,
-  GitHubPrThreadMutationResponse,
-} from '../../api';
 import type { NeonReviewFinding } from '../../../../shared/review-finding';
-import { queryErrorMessage } from '../../lib/query';
+import { actionErrorMessage } from '../../lib/query';
 import { patchHasContent } from '../diff-viewer/helpers';
 import type {
   DiffFilePatch,
@@ -380,31 +375,25 @@ export function mutationErrorMessage(
   error: unknown,
   draft: GitHubPrReviewDraft | null,
 ) {
+  if (!error) return null;
+  const message = actionErrorMessage(error);
   if (error instanceof ApiError) {
-    const data = error.data as
-      | GitHubPrReviewDraftResponse
-      | GitHubPrReviewSubmitResponse
-      | GitHubPrThreadMutationResponse
-      | undefined;
-    const details = [
-      ...(data?.errors ?? []),
-      ...(data?.requires?.length
-        ? [`Requires: ${data.requires.join(', ')}`]
-        : []),
-      ...(data?.data &&
-      'failingCommentIds' in data.data &&
-      Array.isArray(data.data.failingCommentIds) &&
-      data.data.failingCommentIds.length > 0
-        ? [
-            `Failing comments: ${failingCommentLabels(data.data.failingCommentIds, draft).join(', ')}`,
-          ]
-        : []),
-    ];
-    return details.length > 0
-      ? `${error.message} ${details.join(' ')}`
-      : error.message;
+    const data = error.data as {
+      data?: { failingCommentIds?: unknown };
+    } | null;
+    const failingCommentIds = Array.isArray(data?.data?.failingCommentIds)
+      ? data.data.failingCommentIds.filter(
+          (id): id is string => typeof id === 'string',
+        )
+      : [];
+    if (failingCommentIds.length > 0) {
+      return `${message} Failing comments: ${failingCommentLabels(
+        failingCommentIds,
+        draft,
+      ).join(', ')}`;
+    }
   }
-  return error ? queryErrorMessage(error) : null;
+  return message;
 }
 
 function failingCommentLabels(

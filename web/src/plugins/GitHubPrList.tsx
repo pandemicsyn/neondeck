@@ -24,7 +24,7 @@ import {
 import { configEventTouchesFile, useConfigEvents } from '../lib/config-events';
 import { useDashboardEventConnectionState } from '../lib/dashboard-connection';
 import { relativeTime } from '../lib/format';
-import { queryErrorMessage, queryKeys } from '../lib/query';
+import { actionErrorMessage, queryErrorMessage, queryKeys } from '../lib/query';
 import { isCompletedPrWatch } from '../lib/watch-status';
 import type { DisplayPlugin } from '../types';
 import { parsePositiveIntegerConfig } from './config';
@@ -288,7 +288,7 @@ function NeonReviewButton({ item }: { item: GitHubPullRequest }) {
       onClick={() => mutation.mutate()}
       title={
         mutation.error
-          ? queryErrorMessage(mutation.error)
+          ? actionErrorMessage(mutation.error)
           : mutation.data
             ? `Review workflow ${mutation.data.runId} is running. Follow it in Reviews.`
             : 'Prepare local reports and Neon-origin draft comments through the review workflow'
