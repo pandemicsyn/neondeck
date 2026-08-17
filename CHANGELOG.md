@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.0.0-beta.32
+
+### Patch Changes
+
+- [#278](https://github.com/pandemicsyn/neondeck/pull/278) [`7bfed49`](https://github.com/pandemicsyn/neondeck/commit/7bfed49aad5905ac7b9da34994b380bec5d863dd) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Remove the unsupported Raycast extension and its development commands.
+
 ## 1.0.0-beta.31
 
 ### Minor Changes
