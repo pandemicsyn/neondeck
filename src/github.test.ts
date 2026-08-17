@@ -12,6 +12,7 @@ import {
   fetchFailingCheckFacts,
   fetchGitHubIssues,
   fetchCheckSummary,
+  fetchPullRequestEventState,
   fetchPullRequestFiles,
   fetchPullRequestReviewComments,
   fetchPullRequestReviewSurfaceThreadsFreshWithMetadata,
@@ -482,6 +483,64 @@ describe('github foundation', () => {
       pending: 1,
       statusContexts: 2,
     });
+  });
+
+  it('continues PR event fetches when a fine-grained PAT cannot access Checks', async () => {
+    const warning = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    globalThis.fetch = vi.fn<typeof fetch>(async (input) => {
+      const url = String(input);
+      if (url.includes('/commits/head123/check-')) {
+        return jsonResponse(
+          { message: 'Resource not accessible by personal access token' },
+          403,
+        );
+      }
+      return pullRequestEventResponse(url);
+    });
+
+    const state = await fetchPullRequestEventState({
+      token: 'github_pat_test',
+      owner: 'pandemicsyn',
+      repo: 'neondeck',
+      number: 123,
+    });
+
+    expect(state).toMatchObject({
+      checkSuites: [],
+      checkSuitesTruncated: false,
+      checkSuitesUnavailableReason:
+        'GitHub request failed with 403: Resource not accessible by personal access token',
+      checkRuns: [],
+      checkRunsTruncated: false,
+      checkRunsUnavailableReason:
+        'GitHub request failed with 403: Resource not accessible by personal access token',
+    });
+    expect(warning).toHaveBeenCalledWith(
+      '[neondeck] GitHub Checks unavailable; continuing with partial PR event state',
+      expect.objectContaining({
+        repo: 'pandemicsyn/neondeck',
+        prNumber: 123,
+      }),
+    );
+  });
+
+  it('does not hide GitHub Checks outages as optional permission failures', async () => {
+    globalThis.fetch = vi.fn<typeof fetch>(async (input) => {
+      const url = String(input);
+      if (url.includes('/commits/head123/check-')) {
+        return jsonResponse({ message: 'Internal Server Error' }, 500);
+      }
+      return pullRequestEventResponse(url);
+    });
+
+    await expect(
+      fetchPullRequestEventState({
+        token: 'token',
+        owner: 'pandemicsyn',
+        repo: 'neondeck',
+        number: 123,
+      }),
+    ).rejects.toThrow('GitHub request failed with 500: Internal Server Error');
   });
 
   it('encodes slash-bearing refs in check summary paths', async () => {
@@ -2990,6 +3049,72 @@ function jsonResponse(
     status,
     headers: { 'Content-Type': 'application/json', ...headers },
   });
+}
+
+function pullRequestEventResponse(url: string) {
+  if (url.endsWith('/pulls/123')) {
+    return jsonResponse({
+      id: 123,
+      number: 123,
+      title: 'Review fine-grained PAT support',
+      body: null,
+      html_url: 'https://github.com/pandemicsyn/neondeck/pull/123',
+      state: 'open',
+      draft: false,
+      user: { login: 'pandemicsyn' },
+      labels: [],
+      comments: 0,
+      merged: false,
+      merge_commit_sha: null,
+      mergeable: true,
+      mergeable_state: 'clean',
+      maintainer_can_modify: true,
+      created_at: '2026-08-17T12:00:00.000Z',
+      updated_at: '2026-08-17T12:01:00.000Z',
+      head: {
+        sha: 'head123',
+        ref: 'feature/fine-grained-pat',
+        repo: {
+          full_name: 'pandemicsyn/neondeck',
+          name: 'neondeck',
+          owner: { login: 'pandemicsyn' },
+        },
+      },
+      base: {
+        sha: 'base123',
+        ref: 'main',
+        repo: { full_name: 'pandemicsyn/neondeck' },
+      },
+    });
+  }
+  if (url.includes('/pulls/123/commits')) return jsonResponse([]);
+  if (url.includes('/pulls/123/reviews')) return jsonResponse([]);
+  if (url.includes('/issues/123/comments')) return jsonResponse([]);
+  if (url.endsWith('/graphql')) {
+    return jsonResponse({
+      data: {
+        repository: {
+          pullRequest: {
+            headRefOid: 'head123',
+            reviewThreads: {
+              nodes: [],
+              pageInfo: { hasNextPage: false, endCursor: null },
+            },
+          },
+        },
+      },
+    });
+  }
+  if (url.endsWith('/repos/pandemicsyn/neondeck')) {
+    return jsonResponse({
+      full_name: 'pandemicsyn/neondeck',
+      permissions: { push: true, pull: true },
+    });
+  }
+  if (url.includes('/compare/base123...head123')) {
+    return jsonResponse({ behind_by: 0 });
+  }
+  throw new Error(`Unexpected GitHub fetch: ${url}`);
 }
 
 async function tempHome() {

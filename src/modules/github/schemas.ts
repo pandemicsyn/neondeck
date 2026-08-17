@@ -319,8 +319,10 @@ export type GitHubPullRequestEventState = {
   conversationCommentsTruncated?: boolean;
   checkSuites: GitHubCheckSuiteDetail[];
   checkSuitesTruncated?: boolean;
+  checkSuitesUnavailableReason?: string | null;
   checkRuns: GitHubCheckRunDetail[];
   checkRunsTruncated?: boolean;
+  checkRunsUnavailableReason?: string | null;
   reviewsTruncated?: boolean;
   branchPermissions: GitHubBranchPushPermissions;
   isOutOfDate: boolean;
