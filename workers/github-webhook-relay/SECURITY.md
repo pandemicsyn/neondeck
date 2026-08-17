@@ -27,9 +27,9 @@ Secret changes deploy a new Worker version and can disconnect active Durable
 Object WebSockets. The webhook secret supports a dual-secret overlap during
 rotation: setting the optional `GITHUB_WEBHOOK_SECRET_PREVIOUS` lets the relay
 verify a signature against either the current or the outgoing secret, so
-GitHub and Cloudflare do not need to be updated atomically. See README.md for
-the rotation procedure. `WS_CLIENT_SECRET` has no equivalent overlap;
-rotating it disconnects every WebSocket client at once.
+GitHub and Cloudflare do not need to be updated atomically. `WS_CLIENT_SECRET`
+has no equivalent overlap mechanism. See README.md for the rotation procedure
+and the consequences of rotating each secret.
 
 ## Known limitations
 

@@ -18,9 +18,11 @@ The Worker exposes three routes:
 | `POST` | `/channels/:channel/webhooks/github` | Signed GitHub webhook ingress.   |
 | `GET`  | `/channels/:channel/ws`              | Authenticated WebSocket upgrade. |
 
-Channels are public routing identifiers containing 1–64 ASCII letters, digits,
-underscores, or hyphens. A channel is not a credential. The same channel name
-in both URLs routes the webhook and clients to the same Durable Object.
+Channels are public routing identifiers, 1–64 characters long, made of ASCII
+letters, digits, underscores, and hyphens, and must start with a letter or
+digit — a channel beginning with `_` or `-` is rejected with `404`. A channel
+is not a credential. The same channel name in both URLs routes the webhook and
+clients to the same Durable Object.
 
 ## Local development
 
@@ -132,22 +134,22 @@ All HTTP error bodies use this schema:
 { "error": "Human-readable message.", "code": "machine_readable_code" }
 ```
 
-| Route                    | Status | Meaning                                                                                                            |
-| ------------------------ | ------ | ------------------------------------------------------------------------------------------------------------------ |
-| Webhook                  | `200`  | Synchronous best-effort fan-out completed.                                                                         |
-| Webhook                  | `400`  | Required headers, length, UTF-8, JSON, or payload shape is invalid.                                                |
-| Webhook                  | `401`  | HMAC signature is invalid.                                                                                         |
-| Webhook                  | `413`  | Declared or streamed body exceeds the configured limit.                                                            |
-| Webhook                  | `500`  | Required Worker configuration is invalid.                                                                          |
-| Webhook                  | `503`  | Durable Object lookup, validation, or broadcast failed.                                                            |
-| WebSocket                | `101`  | Authenticated upgrade succeeded.                                                                                   |
-| WebSocket                | `400`  | The Durable Object rejected the connection request itself; passed through as-is rather than reported as an outage. |
-| WebSocket                | `401`  | Bearer authentication failed; includes `WWW-Authenticate`.                                                         |
-| WebSocket                | `426`  | `Upgrade: websocket` is missing; includes `Upgrade`.                                                               |
-| WebSocket                | `500`  | Required Worker configuration is invalid.                                                                          |
-| WebSocket                | `503`  | Durable Object lookup failed, or it returned an unexpected non-101 response.                                       |
-| Either channel route     | `405`  | Wrong method; includes the route's `Allow` header.                                                                 |
-| Unknown or invalid route | `404`  | Route or channel name is not recognized.                                                                           |
+| Route                    | Status | Meaning                                                                                                                                                                                                                                                                                        |
+| ------------------------ | ------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Webhook                  | `200`  | Synchronous best-effort fan-out completed.                                                                                                                                                                                                                                                     |
+| Webhook                  | `400`  | Required headers, length, UTF-8, JSON, or payload shape is invalid.                                                                                                                                                                                                                            |
+| Webhook                  | `401`  | HMAC signature is invalid.                                                                                                                                                                                                                                                                     |
+| Webhook                  | `413`  | Declared or streamed body exceeds the configured limit.                                                                                                                                                                                                                                        |
+| Webhook                  | `500`  | Required Worker configuration is invalid.                                                                                                                                                                                                                                                      |
+| Webhook                  | `503`  | Durable Object lookup, validation, or broadcast failed.                                                                                                                                                                                                                                        |
+| WebSocket                | `101`  | Authenticated upgrade succeeded.                                                                                                                                                                                                                                                               |
+| WebSocket                | `400`  | The Durable Object rejected the connection request itself; passed through as-is rather than reported as an outage. This is defense-in-depth only — the public route already validates channel, method, and `Upgrade` before calling the Durable Object, so external callers cannot trigger it. |
+| WebSocket                | `401`  | Bearer authentication failed; includes `WWW-Authenticate`.                                                                                                                                                                                                                                     |
+| WebSocket                | `426`  | `Upgrade: websocket` is missing; includes `Upgrade`.                                                                                                                                                                                                                                           |
+| WebSocket                | `500`  | Required Worker configuration is invalid.                                                                                                                                                                                                                                                      |
+| WebSocket                | `503`  | Durable Object lookup or `fetch` failed, it returned a `101` without a paired WebSocket, or it returned a non-101 status other than `400` (mapped to `503` rather than passed through).                                                                                                        |
+| Either channel route     | `405`  | Wrong method; includes the route's `Allow` header.                                                                                                                                                                                                                                             |
+| Unknown or invalid route | `404`  | Route or channel name is not recognized.                                                                                                                                                                                                                                                       |
 
 ## WebSocket clients
 
@@ -199,8 +201,8 @@ Version 1 deliberately has small, explicit guarantees:
   protocol does not promise durable global ordering or sequence numbers.
 - A disconnected or reconnecting client can replay events up to the retention
   window above. Past that window, or on a cursor the log never recorded, the
-  connection receives `replayTruncated` instead and must fall back to a full
-  refresh from GitHub.
+  connection receives a `replay.truncated` frame instead and must fall back to
+  a full refresh from GitHub.
 
 ## Observability
 

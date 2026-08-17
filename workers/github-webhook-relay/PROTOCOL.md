@@ -17,14 +17,17 @@ preserves the complete signed JSON object.
   "hookId": "12345678",
   "receivedAt": "2026-07-16T14:00:00.000Z",
   "repository": "owner/repository",
+  "prNumber": 42,
   "installationId": 123456,
   "payload": {}
 }
 ```
 
-`action`, `repository`, and `installationId` are `null` when the GitHub event
-does not supply them. `payload` is the validated, complete GitHub JSON payload.
-The webhook HMAC is intentionally not forwarded.
+`action`, `repository`, `installationId`, and `prNumber` are `null` when the
+GitHub event does not supply them. `prNumber` is derived from
+`pull_request.number` or `issue.number` when the original event carried one.
+`payload` is the validated, complete GitHub JSON payload. The webhook HMAC is
+intentionally not forwarded.
 
 Consumers should reject unsupported `version` values and unknown `type` values.
 Use `deliveryId` as the idempotency key.
@@ -57,13 +60,12 @@ distinct frame type:
 }
 ```
 
-`github.webhook.replay` deliberately omits `payload`, `hookId`, and
-`installationId`: the Durable Object's event log persists routing facts only,
-never the GitHub payload, so there is nothing to replay it from. Treat a
-replay frame the same way you would treat a live one that arrived with no
-payload — refetch from GitHub if you need the content. `prNumber` is derived
-from `pull_request.number` or `issue.number` when the original event carried
-one, `null` otherwise.
+`github.webhook.replay` carries the same `prNumber` as the live frame but
+deliberately omits `payload`, `hookId`, and `installationId`: the Durable
+Object's event log persists routing facts only, never the GitHub payload, so
+there is nothing to replay it from. Treat a replay frame the same way you
+would treat a live one that arrived with no payload — refetch from GitHub if
+you need the content.
 
 The event log retains roughly the last 24 hours or 1000 events per channel,
 whichever bound is smaller. If `since` names a delivery the log no longer has
@@ -98,9 +100,9 @@ The exact canonical ping is answered by the Durable Object hibernation API
 without waking the object. An equivalent valid JSON ping with different
 whitespace is validated and answered after wake-up.
 
-Client text frames are capped at 256 characters. Invalid client JSON, unknown
-fields, or unsupported messages close with `1008`; oversized text closes with
-`1009`; binary frames close with `1003`.
+Client text frames are capped at 256 UTF-16 code units (JS string length).
+Invalid client JSON, unknown fields, or unsupported messages close with
+`1008`; oversized text closes with `1009`; binary frames close with `1003`.
 
 ## Close behavior
 
