@@ -14,14 +14,14 @@
  * does not create, clone, or delete infrastructure.
  */
 import {
-  createSandboxSessionEnv,
+  sandboxFromDriver,
   SandboxOperationUnsupportedError,
 } from '@flue/runtime';
 import type {
   FileStat,
-  SandboxApi,
+  SandboxDriver,
   SandboxFactory,
-  SessionEnv,
+  Sandbox,
 } from '@flue/runtime';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
@@ -98,7 +98,7 @@ const defaultVmReadyTimeoutMs = 90_000;
 const defaultMaxOutputBytes = 1024 * 1024;
 const vmName = /^[A-Za-z0-9][A-Za-z0-9-]*$/;
 const shellEnvName = /^[A-Za-z_][A-Za-z0-9_]*$/;
-const disposers = new WeakMap<SessionEnv, () => void>();
+const disposers = new WeakMap<Sandbox, () => void>();
 
 async function exeApi(token: string, command: string): Promise<string> {
   const res = await fetch(exeApiUrl, {
@@ -370,7 +370,7 @@ export interface SshExecStream {
   close(): void;
 }
 
-export class ExeDevSandboxApi implements SandboxApi {
+export class ExeDevSandboxApi implements SandboxDriver {
   private sftpInstance: SFTPWrapper | null = null;
   private sftpPromise: Promise<SFTPWrapper> | null = null;
 
@@ -636,7 +636,7 @@ export function exedev(
 ): SandboxFactory {
   const resolvedVm = typeof vm === 'string' ? { host: vm } : vm;
   return {
-    async createSessionEnv(_options): Promise<SessionEnv> {
+    async createSandbox(_options): Promise<Sandbox> {
       const { env } = await createExeDevSessionEnv(resolvedVm, options);
       return env;
     },
@@ -646,7 +646,7 @@ export function exedev(
 export async function createExeDevSessionEnv(
   vm: ExeDevVm | string,
   options?: ExeDevAdapterOptions,
-): Promise<{ env: SessionEnv; dispose: () => void }> {
+): Promise<{ env: Sandbox; dispose: () => void }> {
   const resolvedVm = typeof vm === 'string' ? { host: vm } : vm;
   const { ssh, disconnect } = await sshConnect(resolvedVm, options ?? {});
   const api = new ExeDevSandboxApi(
@@ -663,12 +663,12 @@ export async function createExeDevSessionEnv(
     // Fall back to /home/user.
   }
 
-  const env = createSandboxSessionEnv(api, sandboxCwd);
+  const env = sandboxFromDriver(api, sandboxCwd);
   disposers.set(env, disconnect);
   return { env, dispose: disconnect };
 }
 
-export function disposeExeDevSessionEnv(env: SessionEnv): void {
+export function disposeExeDevSessionEnv(env: Sandbox): void {
   const dispose = disposers.get(env);
   if (!dispose) return;
   disposers.delete(env);

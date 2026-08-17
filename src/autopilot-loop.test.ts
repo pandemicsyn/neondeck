@@ -3072,7 +3072,7 @@ describe('minimal Autopilot watch loop', () => {
       if (!runtime.sandbox) {
         throw new Error(`${mode} did not receive its coding sandbox.`);
       }
-      const environment = await runtime.sandbox.createSessionEnv({
+      const environment = await runtime.sandbox.createSandbox({
         id: instanceId,
       });
       expect((await environment.exec('pwd')).stdout.trim()).toBe(

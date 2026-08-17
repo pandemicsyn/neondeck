@@ -57,7 +57,7 @@ describe('PR review prompts', () => {
       'missing-review-record',
       runtimePaths(home),
     );
-    const environment = await runtime.sandbox.createSessionEnv({
+    const environment = await runtime.sandbox.createSandbox({
       id: 'follow-up-review',
     });
 
