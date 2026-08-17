@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto';
 import type { DatabaseSync } from 'node:sqlite';
 import * as v from 'valibot';
 import { asJsonValue } from '../../lib/action-result';
-import { openDb } from '../../lib/sqlite';
+import { openDb, withImmediateTransaction } from '../../lib/sqlite';
 import { buildMemoryPromptSnapshotSync } from '../memory';
 import {
   type RuntimePaths,
@@ -45,8 +45,10 @@ import type { ChatSessionEventAction } from './events';
 /**
  * A brand-new runtime home creates its primary session before onboarding writes
  * provider, model, execution, and skill configuration. Move that empty
- * session's context baseline forward once setup succeeds. Existing homes must
- * not call this: their active sessions should remain stale after config edits.
+ * session's context baseline forward once setup succeeds. A durable pending
+ * audit marker distinguishes new runtime databases materialized by read-only
+ * commands from existing homes, while the session checks prevent rebaselining
+ * a bootstrap session that was used before onboarding completed.
  */
 export async function rebaselineFreshInstallChatSession(
   paths: RuntimePaths = runtimePaths(),
@@ -57,37 +59,68 @@ export async function rebaselineFreshInstallChatSession(
   const database = openDb(paths.neondeckDatabase);
 
   try {
-    database.exec('BEGIN;');
-    const session = readActiveChatSession(database, 'dashboard');
-    database
-      .prepare(
-        `
-        UPDATE chat_sessions
-        SET context_loaded_at = ?,
-          context_memory_ids_json = ?,
-          updated_at = ?
-        WHERE id = ?;
-      `,
-      )
-      .run(now, JSON.stringify(memorySnapshot.memoryIds), now, session.id);
-    markLoadedMemoriesUsed(database, memorySnapshot.memoryIds, now);
-    recordSessionAudit(database, {
-      action: 'context_rebaseline',
-      sessionId: session.id,
-      surface: 'dashboard',
-      reason: 'fresh-install-complete',
-      metadata: {
-        memoryIds: memorySnapshot.memoryIds,
-      },
+    return withImmediateTransaction(database, () => {
+      const session = readActiveChatSession(database, 'dashboard');
+      if (!isPendingBootstrapSession(database, session.id)) return null;
+
+      database
+        .prepare(
+          `
+          UPDATE chat_sessions
+          SET context_loaded_at = ?,
+            context_memory_ids_json = ?,
+            updated_at = ?
+          WHERE id = ?;
+        `,
+        )
+        .run(now, JSON.stringify(memorySnapshot.memoryIds), now, session.id);
+      markLoadedMemoriesUsed(database, memorySnapshot.memoryIds, now);
+      recordSessionAudit(database, {
+        action: 'context_rebaseline',
+        sessionId: session.id,
+        surface: 'dashboard',
+        reason: 'fresh-install-complete',
+        metadata: {
+          memoryIds: memorySnapshot.memoryIds,
+        },
+      });
+      return findChatSession(database, session.id);
     });
-    database.exec('COMMIT;');
-    return findChatSession(database, session.id);
-  } catch (error) {
-    database.exec('ROLLBACK;');
-    throw error;
   } finally {
     database.close();
   }
+}
+
+function isPendingBootstrapSession(database: DatabaseSync, sessionId: string) {
+  const row = database
+    .prepare(
+      `
+      SELECT id
+      FROM chat_sessions
+      WHERE id = ?
+        AND id = 'neondeck-main'
+        AND context_snapshot_id IS NULL
+        AND NOT EXISTS (
+          SELECT 1
+          FROM chat_session_command_events
+          WHERE session_id = chat_sessions.id
+        )
+        AND EXISTS (
+          SELECT 1
+          FROM chat_session_audit
+          WHERE session_id = chat_sessions.id
+            AND action = 'onboarding_pending'
+        )
+        AND NOT EXISTS (
+          SELECT 1
+          FROM chat_session_audit
+          WHERE session_id = chat_sessions.id
+            AND action = 'context_rebaseline'
+        );
+    `,
+    )
+    .get(sessionId);
+  return Boolean(row);
 }
 
 export async function createChatSession(

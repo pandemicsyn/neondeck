@@ -78,7 +78,6 @@ export async function runInit(options: { home?: string }) {
     },
   });
   const paths = runtimePaths(expandHome(home));
-  const freshInstall = !existsSync(paths.neondeckDatabase);
   const spin = spinner();
   spin.start('Preparing runtime home');
   await ensureRuntimeHome(paths);
@@ -97,7 +96,7 @@ export async function runInit(options: { home?: string }) {
   await configureDashboard(paths);
   await configureExecution(paths);
   await configureSkillRoots(paths);
-  await finalizeFreshInstallSession(paths, freshInstall);
+  await finalizeFreshInstallSession(paths);
 
   const status = await readRuntimeStatus(paths);
   const failedChecks = status.checks.filter((check) => !check.ok);
@@ -271,11 +270,7 @@ export function formatOnboardingNextSteps(
   ];
 }
 
-export async function finalizeFreshInstallSession(
-  paths: RuntimePaths,
-  freshInstall: boolean,
-) {
-  if (!freshInstall) return;
+export async function finalizeFreshInstallSession(paths: RuntimePaths) {
   const { rebaselineFreshInstallChatSession } = await sessionsModule();
   await rebaselineFreshInstallChatSession(paths);
 }
