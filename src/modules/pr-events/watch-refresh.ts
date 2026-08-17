@@ -2,7 +2,7 @@ import type { JsonValue } from '@flue/runtime';
 import * as v from 'valibot';
 import {
   prEventWatermarkTruncationCategories,
-  pullRequestEventStateTruncation,
+  pullRequestEventStateIncompleteness,
 } from '../github';
 import {
   type RuntimePaths,
@@ -73,15 +73,15 @@ export async function refreshPrWatchEventState(
       { requires: ['watchId'] },
     );
   }
-  const truncation = pullRequestEventStateTruncation(resolved.state);
-  if (truncation.any) {
+  const incompleteness = pullRequestEventStateIncompleteness(resolved.state);
+  if (incompleteness.any) {
     return failResult(
       'pr_watch_event_state_refresh',
       'PR event facts are incomplete; preserving the last acknowledged watermark baseline and retrying later.',
       {
         requires: ['completePrEventFacts'],
         errors: [
-          `Incomplete PR event fact categories: ${truncation.categories.join(', ')}.`,
+          `Incomplete PR event fact categories: ${incompleteness.categories.join(', ')}.`,
         ],
       },
     );

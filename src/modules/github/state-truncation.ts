@@ -13,6 +13,9 @@ export type GitHubPullRequestEventStateTruncation = {
   checkRuns: boolean;
 };
 
+export type GitHubPullRequestEventStateIncompleteness =
+  GitHubPullRequestEventStateTruncation;
+
 export function pullRequestEventStateTruncation(
   state: GitHubPullRequestEventState,
 ): GitHubPullRequestEventStateTruncation {
@@ -39,6 +42,30 @@ export function pullRequestEventStateTruncation(
     .map(([category]) => category);
   return {
     ...truncation,
+    any: categories.length > 0,
+    categories,
+  };
+}
+
+export function pullRequestEventStateIncompleteness(
+  state: GitHubPullRequestEventState,
+): GitHubPullRequestEventStateIncompleteness {
+  const truncation = pullRequestEventStateTruncation(state);
+  const incomplete = {
+    commits: truncation.commits,
+    reviewThreads: truncation.reviewThreads,
+    reviews: truncation.reviews,
+    conversationComments: truncation.conversationComments,
+    checkSuites:
+      truncation.checkSuites || Boolean(state.checkSuitesUnavailableReason),
+    checkRuns:
+      truncation.checkRuns || Boolean(state.checkRunsUnavailableReason),
+  };
+  const categories = Object.entries(incomplete)
+    .filter(([, value]) => value)
+    .map(([category]) => category);
+  return {
+    ...incomplete,
     any: categories.length > 0,
     categories,
   };

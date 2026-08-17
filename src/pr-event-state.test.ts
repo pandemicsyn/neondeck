@@ -253,7 +253,7 @@ describe('PR event state watermarks', () => {
       ok: false,
       action: 'pr_watch_event_state_refresh',
       requires: ['completePrEventFacts'],
-      errors: [expect.stringContaining('check_suites')],
+      errors: [expect.stringContaining('checkSuites')],
     });
   });
 

@@ -6,7 +6,7 @@ import {
   fetchPullRequestEventState,
   listPullRequestComments,
   postPullRequestComment,
-  pullRequestEventStateTruncation,
+  pullRequestEventStateIncompleteness,
   type GitHubPullRequestEventState,
 } from '../github';
 import {
@@ -78,15 +78,15 @@ export async function postGitHubPrComment(
       repo: resolved.target.repo,
       number: resolved.target.number,
     });
-    const truncation = pullRequestEventStateTruncation(eventState);
-    if (truncation.any) {
+    const incompleteness = pullRequestEventStateIncompleteness(eventState);
+    if (incompleteness.any) {
       return failResult(
         'pr_comment',
-        'PR event facts are incomplete; refusing to post a PR comment from truncated GitHub data.',
+        'PR event facts are incomplete; refusing to post a PR comment from incomplete GitHub data.',
         {
           requires: ['completePrEventFacts'],
           errors: [
-            `Truncated PR event fact categories: ${truncation.categories.join(', ')}.`,
+            `Incomplete PR event fact categories: ${incompleteness.categories.join(', ')}.`,
           ],
         },
       );

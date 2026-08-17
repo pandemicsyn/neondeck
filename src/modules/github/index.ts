@@ -39,9 +39,13 @@ export {
 export {
   maxPrEventFeedbackBodyLength,
   prEventWatermarkTruncationCategories,
+  pullRequestEventStateIncompleteness,
   pullRequestEventStateTruncation,
 } from './state-truncation';
-export type { GitHubPullRequestEventStateTruncation } from './state-truncation';
+export type {
+  GitHubPullRequestEventStateIncompleteness,
+  GitHubPullRequestEventStateTruncation,
+} from './state-truncation';
 export {
   fetchPullRequestFilesWithCache,
   readCachedPullRequestFiles,

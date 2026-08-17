@@ -23,6 +23,8 @@ import {
   invalidatePullRequestReviewSurfaceThreadCache,
   listPullRequestCommentsWithMetadata,
   postPullRequestComment,
+  pullRequestEventStateIncompleteness,
+  pullRequestEventStateTruncation,
   readLivePrReviewDraft,
   recordPrReviewNeonSeed,
   deletePrReviewDraftComment,
@@ -514,6 +516,17 @@ describe('github foundation', () => {
       checkRunsTruncated: false,
       checkRunsUnavailableReason:
         'GitHub request failed with 403: Resource not accessible by personal access token',
+    });
+    expect(pullRequestEventStateTruncation(state)).toMatchObject({
+      any: false,
+      checkSuites: false,
+      checkRuns: false,
+    });
+    expect(pullRequestEventStateIncompleteness(state)).toMatchObject({
+      any: true,
+      categories: ['checkSuites', 'checkRuns'],
+      checkSuites: true,
+      checkRuns: true,
     });
     expect(warning).toHaveBeenCalledWith(
       '[neondeck] GitHub Checks unavailable; continuing with partial PR event state',
