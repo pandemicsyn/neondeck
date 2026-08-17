@@ -114,7 +114,7 @@
   },
   "dependencies": {
     "@clack/prompts": "^1.7.0",
-    "@earendil-works/pi-ai": "0.84.2",
+    "@earendil-works/pi-ai": "0.83.0",
     "@flue/react": "2.0.3",
     "@flue/runtime": "2.0.3",
     "@flue/sdk": "2.0.3",
