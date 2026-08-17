@@ -109,14 +109,17 @@ describe('API request logging', () => {
       path: '/api/demo\n[forged]',
       status: 503,
       durationMs: 2,
-      message: `upstream\nfailed`,
+      message: `upstream\nfailed \u001b]8;;https://example.com\u0007link\u001b]8;;\u0007 \u009b31mred`,
       errors: ['x'.repeat(1_000)],
     });
 
     expect(output).toContain('message   upstream failed');
     expect(output).not.toContain('\nfailed');
     expect(output).not.toContain('\n[forged]');
-    expect(output.length).toBeLessThan(900);
+    expect(output).not.toContain('\u001b');
+    expect(output).not.toContain('\u0007');
+    expect(output).not.toContain('\u009b');
+    expect(output.length).toBeLessThan(1_000);
   });
 });
 

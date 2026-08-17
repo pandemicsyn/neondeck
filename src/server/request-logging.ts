@@ -200,7 +200,7 @@ function stringArray(value: unknown) {
 }
 
 function safeLogValue(value: string) {
-  return value.replace(/[\r\n]+/g, ' ').slice(0, 800);
+  return value.replace(/\p{Cc}+/gu, ' ').slice(0, 800);
 }
 
 function safeLogToken(value: string) {
