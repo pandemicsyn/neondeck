@@ -11,11 +11,10 @@ under `docs/` carries the detailed user-facing guides.
   subscription login, for the configured Flue model provider
 - A GitHub token for GitHub-backed panels and workflows
 
-Use any Node installer or version manager. With `fnm`, that looks like:
+Use any Node installer or version manager, then confirm the active version:
 
 ```sh
-fnm install 26.4.0
-fnm use 26.4.0
+node --version
 ```
 
 Then install dependencies:
@@ -47,7 +46,6 @@ npm run cli -- doctor
 npm run cli -- db status
 npm run cli -- repo add ~/dev/neondeck
 npm run cli -- watch-pr pandemicsyn/neondeck#123
-npm run cli -- tui
 ```
 
 ## Runtime Home And Secrets
@@ -111,14 +109,8 @@ The dev command runs the Flue/Hono backend and Vite dashboard together. Runtime
 home, repository, MCP server/approval, scheduler, and skill state are visible in
 the Runtime Overview panel.
 
-Neon commands can be run from dashboard controls, typed into chat, or invoked
-through the local access-controlled API:
-
-```sh
-curl -X POST 'http://127.0.0.1:5173/api/commands/run' \
-  -H 'Content-Type: application/json' \
-  -d '{"command":"/repo-status"}'
-```
+Neon commands can be run from dashboard controls, typed into chat, or chosen
+from the chat input's slash-command suggestions.
 
 Common commands include `/repo-status`, `/review-queue`, `/review-pr <ref>`,
 `/fix-ci [ref]`, `/explain-ci [--report] [ref]`, `/summarize-pr [ref]`,
@@ -148,10 +140,7 @@ npm run cli -- watch-pr <repo#number>
 npm run cli -- note "message"
 npm run cli -- register-pr <repo#number>
 npm run cli -- doctor
-npm run cli -- tui
 ```
-
-The `tui` command exists as the future OpenTUI entrypoint.
 
 ## Checks
 
@@ -216,12 +205,26 @@ npm run release:app
 npm run release:npm:check
 ```
 
-After a production build or package install:
+After a production build or package install, either run Neondeck in the
+foreground:
+
+```sh
+neondeck serve
+```
+
+Or install and start the macOS or Linux login service:
 
 ```sh
 neondeck service install
+```
+
+Then, from another terminal if using `serve`, open the default dashboard or a
+named window profile:
+
+```sh
 neondeck open
 neondeck open sidebar
+neondeck open xeneon
 ```
 
 `neondeck service install` creates a macOS launchd agent or Linux systemd user

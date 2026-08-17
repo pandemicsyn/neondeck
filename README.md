@@ -137,12 +137,25 @@ npm run build            # production dashboard/server + docs build
 npm run docs:astro-dev   # hot dev server for the docs site
 ```
 
-After a production build or package install:
+After a production build or package install, run Neondeck in the foreground:
+
+```sh
+neondeck serve
+```
+
+Or install and start the macOS or Linux login service:
 
 ```sh
 neondeck service install
+```
+
+Then, from another terminal if using `serve`, open the default dashboard or a
+named window profile:
+
+```sh
 neondeck open
 neondeck open sidebar
+neondeck open xeneon
 ```
 
 ## Documentation
