@@ -149,13 +149,19 @@ Or install and start the macOS or Linux login service:
 neondeck service install
 ```
 
-Then, from another terminal if using `serve`, open the default dashboard or a
-named window profile:
+Then, from another terminal if using `serve`, open the dashboard in the OS
+default browser:
 
 ```sh
 neondeck open
-neondeck open sidebar
-neondeck open xeneon
+```
+
+To launch a named window profile with Chromium app-mode placement, select the
+browser executable explicitly:
+
+```sh
+neondeck open sidebar --browser "/path/to/chromium"
+neondeck open xeneon --browser "/path/to/chromium"
 ```
 
 ## Documentation

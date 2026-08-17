@@ -3,196 +3,669 @@ import DocsNav from '../../components/DocsNav.astro';
 import SiteFooter from '../../components/SiteFooter.astro';
 import SiteNav from '../../components/SiteNav.astro';
 import BaseLayout from '../../layouts/BaseLayout.astro';
+
+const dashboardConfigExample = JSON.stringify(
+  {
+    $schema: './dashboard.schema.json',
+    schemaVersion: 1,
+    display: { preset: 'xeneon-edge', width: 2560, height: 720 },
+    appearance: { density: 'comfortable' },
+    theme: 'system',
+    windows: {
+      sidebar: { width: 480, height: 1400, x: 0, y: 25 },
+      xeneon: { kiosk: true, x: 3440, y: 0 },
+    },
+    statusline: {
+      position: 'top',
+      pluginId: 'host-metrics',
+      config: {},
+    },
+    layout: {
+      mode: 'auto',
+      columns: 12,
+      rows: 5,
+      regions: [
+        {
+          id: 'work',
+          title: 'WORK',
+          column: 1,
+          row: 1,
+          columnSpan: 4,
+          rowSpan: 5,
+          defaultTab: 'reviews',
+          tabs: [
+            {
+              id: 'reviews',
+              title: 'REVIEWS',
+              pluginId: 'reviews-panel',
+              config: {},
+            },
+            {
+              id: 'watches',
+              title: 'WATCHES',
+              pluginId: 'active-watches',
+              config: { limit: 8 },
+            },
+          ],
+        },
+        {
+          id: 'neon',
+          title: 'NEON',
+          column: 5,
+          row: 1,
+          columnSpan: 8,
+          rowSpan: 5,
+          defaultTab: 'chat',
+          tabs: [
+            {
+              id: 'chat',
+              title: 'CHAT',
+              pluginId: 'flue-chat',
+              config: { agentName: 'display-assistant' },
+            },
+          ],
+        },
+      ],
+    },
+  },
+  null,
+  2,
+);
 ---
 
 <BaseLayout
-  title="Dashboard · neondeck"
-  description="The neondeck local dashboard layout, plugin system, themes, and companion-display orientation targets."
+  title="Dashboard layouts and configuration · neondeck"
+  description="Configure Neondeck's responsive dashboard, window profiles, regions, tabs, plugins, themes, and companion-display launch behavior."
 >
   <div class="site-shell">
     <SiteNav />
     <main class="container docs-layout">
       <DocsNav />
-      <article class="docs-prose">
+      <article class="docs-prose dashboard-guide">
         <h1>Dashboard</h1>
-        <p>
-          The local dashboard is a Vite/React/Tailwind app served beside the
-          Hono/Flue backend. It is the always-on surface for Neon: a companion
-          display, vertical panel, ultrawide strip, or sensor deck on the
-          primary monitor.
+        <p class="dashboard-lede">
+          Neondeck is a full-viewport developer cockpit that adapts to the space
+          you give it. Open it in a regular browser window, install it as a web
+          app, pin it to a portrait panel, or stretch it across an ultrawide
+          companion display—the same configured regions reflow around the
+          measured dashboard shell.
         </p>
 
-        <h2>Display target</h2>
+        <nav class="dashboard-jump" aria-label="On this page">
+          <a href="#responsive-layouts">Responsive layouts</a>
+          <a href="#layout-controls">Layout controls</a>
+          <a href="#open-and-place">Open and place</a>
+          <a href="#dashboard-config">Configuration</a>
+          <a href="#operator-surfaces">Operator surfaces</a>
+        </nav>
+
+        <aside class="docs-note dashboard-default">
+          <strong>The default path is intentionally simple:</strong>
+          <code>neondeck open</code> starts or finds the local server, opens the operating
+          system's default browser, and lets <code>layout.mode: "auto"</code>
+          respond to that browser window. Special hardware is not required.
+        </aside>
+
+        <h2 id="responsive-layouts">Responsive layouts</h2>
         <p>
-          Neondeck is designed for everything from 32:9 aspect ratios like the
-          Corsair Xeneon Edge to custom layouts for the size, orientation, and
-          constraints you want. The layout engine supports horizontal, vertical,
-          and compact panels by measuring the deck shell instead of assuming one
-          device, and Neon can adapt validated dashboard config through typed
-          actions. The UI favors dense, stable panels over marketing-style cards
-          because it is meant to stay visible during real work.
+          In <code>auto</code> mode, Neondeck observes the dashboard shell with a
+          <code>ResizeObserver</code>. It classifies the shell only when a width
+          or aspect-ratio boundary is crossed, then chooses one of two
+          structural arrangements: the authored grid or a height-contained
+          vertical column. Resizing a window does not rewrite <code
+            >dashboard.json</code
+          >.
         </p>
 
-        <h2>Install as an app</h2>
+        <div
+          class="layout-visual"
+          aria-label="Wide and compact dashboard arrangements"
+        >
+          <figure class="layout-frame">
+            <figcaption>
+              <strong>Wide / ultrawide</strong>
+              <span>authored grid</span>
+            </figcaption>
+            <div
+              class="layout-screen layout-screen--wide"
+              role="img"
+              aria-label="A status line above a narrow work rail and a wide Neon panel"
+            >
+              <span class="layout-status">status</span>
+              <span class="layout-work">work rail</span>
+              <span class="layout-neon">Neon / active work</span>
+            </div>
+          </figure>
+          <figure class="layout-frame">
+            <figcaption>
+              <strong>Portrait / compact</strong>
+              <span>vertical column</span>
+            </figcaption>
+            <div
+              class="layout-screen layout-screen--column"
+              role="img"
+              aria-label="A status line above a compact work band and a larger Neon panel"
+            >
+              <span class="layout-status">status</span>
+              <span class="layout-work">work band</span>
+              <span class="layout-neon">Neon / active work</span>
+            </div>
+          </figure>
+        </div>
+
+        <div
+          class="docs-table-wrap"
+          role="region"
+          aria-label="Automatic responsive profiles"
+          tabindex="0"
+        >
+          <table>
+            <thead>
+              <tr>
+                <th scope="col">Resolved profile</th>
+                <th scope="col">Current boundary</th>
+                <th scope="col">Arrangement</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <th scope="row">Compact</th>
+                <td>Shell width below 640px</td>
+                <td>Vertical column</td>
+              </tr>
+              <tr>
+                <th scope="row">Portrait</th>
+                <td>At least 640px wide; aspect ratio below 1.1</td>
+                <td>Vertical column</td>
+              </tr>
+              <tr>
+                <th scope="row">Wide</th>
+                <td>Aspect ratio from 1.1 up to 2.2</td>
+                <td>Authored grid</td>
+              </tr>
+              <tr>
+                <th scope="row">Ultrawide</th>
+                <td>Aspect ratio 2.2 or wider</td>
+                <td>Authored grid</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
         <p>
-          The production dashboard ships a web app manifest, so the browser can
-          install it as a standalone Neondeck window with its own dock icon and
-          remembered window bounds. This is the preferred sidebar setup because
-          resizing the dashboard no longer changes normal Safari or Chrome
-          windows.
-        </p>
-        <p>
-          In Safari, open the local dashboard and choose <strong>File</strong>
-          → <strong>Add to Dock</strong>. In Chrome or Edge, open the dashboard
-          and use the install button in the address bar, or choose
-          <strong>Install Neondeck</strong> from the browser menu.
-        </p>
-        <p>
-          The PWA does not include offline caching. If the local server is down,
-          start it with <code>neondeck open</code> or
-          <code>neondeck service start</code>.
+          The column arrangement keeps the whole cockpit inside the viewport.
+          Data regions form a compact band, the primary agent region grows into
+          the remaining space, and each panel handles its own scrolling. This is
+          app-style responsiveness rather than a document page with body scroll.
         </p>
 
-        <h2>Plugins</h2>
+        <h3>Choose a layout mode</h3>
+        <div
+          class="docs-table-wrap"
+          role="region"
+          aria-label="Dashboard layout modes"
+          tabindex="0"
+        >
+          <table>
+            <thead>
+              <tr>
+                <th scope="col">Mode</th>
+                <th scope="col">Behavior</th>
+                <th scope="col">Use it when</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <th scope="row"><code>auto</code></th>
+                <td>Measures the real shell and selects grid or column.</td>
+                <td
+                  >Default; regular browser windows and resizable app windows.</td
+                >
+              </tr>
+              <tr>
+                <th scope="row"><code>xeneon</code></th>
+                <td>Pins the ultrawide grid arrangement.</td>
+                <td
+                  >A fixed companion strip where reflow would be undesirable.</td
+                >
+              </tr>
+              <tr>
+                <th scope="row"><code>stacked</code></th>
+                <td>Pins the portrait column arrangement.</td>
+                <td
+                  >A fixed vertical panel or deliberately single-column cockpit.</td
+                >
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h2 id="layout-controls">Four controls, four different jobs</h2>
         <p>
-          Display panels are typed in-repo plugins selected by runtime{' '}
-          <code>dashboard.json</code>. The current plugin set covers GitHub PRs,
-          Flue chat, runtime overview, commands, watches, memory, learning
-          operator review, activity and agent-submission observability, and
-          terminal-style status surfaces.
+          “Layout” can refer to several related settings. They cooperate, but
+          none is a substitute for the others.
         </p>
+        <div
+          class="docs-table-wrap"
+          role="region"
+          aria-label="Dashboard layout controls"
+          tabindex="0"
+        >
+          <table>
+            <thead>
+              <tr>
+                <th scope="col">Control</th>
+                <th scope="col">What it controls</th>
+                <th scope="col">What it does not control</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <th scope="row"><code>layout.mode</code></th>
+                <td
+                  >Responsive arrangement: measured, forced grid, or forced
+                  column.</td
+                >
+                <td>Browser choice and window bounds.</td>
+              </tr>
+              <tr>
+                <th scope="row"
+                  ><code>layout.columns</code>, <code>rows</code>, <code
+                    >regions</code
+                  ></th
+                >
+                <td>Panel placement and spans in the authored grid.</td>
+                <td>The physical size of the browser window.</td>
+              </tr>
+              <tr>
+                <th scope="row"><code>display</code></th>
+                <td>Target-display metadata used for defaults and previews.</td>
+                <td
+                  >The live responsive classification; the shell is still
+                  measured.</td
+                >
+              </tr>
+              <tr>
+                <th scope="row"><code>windows</code></th>
+                <td
+                  >Named Chromium launch-time size, position, and kiosk
+                  profiles.</td
+                >
+                <td>Panel placement inside the dashboard.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h2 id="open-and-place">Open and place the dashboard</h2>
+        <h3>Use the operating system default browser</h3>
+        <pre><code>neondeck open</code></pre>
         <p>
-          The Learning panel is the operator surface for self-improvement. It
-          shows review runs, pending memory and skill candidates, audit events,
-          and buttons for manual conversation or PR retrospective reviews. Skill
-          patch rows can apply, reject, or restore audited patches when the
-          backend restore guard allows it.
-        </p>
-        <p>
-          Reviewing diffs and PRs stays inside the deck. Watched-PR Autopilot
-          commits in managed worktrees, prepared diffs from explicit app
-          operations, skill patches, Kilo tasks, repo-edit events, and GitHub PR
-          rows can open a syntax-highlighted file diff view with a searchable
-          file tree on wide layouts and a compact file selector on narrow
-          layouts. GitHub PRs can also be reviewed from this view: select lines
-          to draft inline review comments, reply to or resolve existing review
-          threads, and submit one review with Comment, Approve, or Request
-          changes. Draft comments survive reloads and stale anchors are skipped
-          until the human re-anchors them. Existing GitHub threads are rendered
-          as prominent open or resolved conversations at their diff line, with
-          every comment and participant visible. The inspector's <strong
-            >Ask reviewer</strong
-          >
-          tab opens a durable, read-only conversation grounded in the saved review
-          and exact PR revision; it can explain findings and inspect more code, but
-          it cannot edit drafts or deliver anything to GitHub. Compact layouts keep
-          the deck glanceable; use the review pop-out control or <code
-            >neondeck open</code
-          > when a full PR review needs the wider controls. Generated overview and
-          issues artifacts open as keyboard-navigable slide decks that lead with the
-          agent's review brief, render a bounded safe Markdown subset, and preserve
-          overflow in a final appendix. Retained report artifacts are adapted into
-          the same view. These review actions are dashboard-only controls; Neon does
-          not get a model-callable action or tool for submitting PR reviews, verdicts,
-          thread replies, or thread resolution.
-        </p>
-        <p>
-          Start Autopilot from a GitHub PR row with <strong>watch</strong>, then
-          choose its mode in <strong>Active Watches</strong>. The watch row
-          exposes pause, resume, retry, review diff, review agent, and stop
-          controls. See the <a href="/docs/autopilot/">Autopilot guide</a> for the
-          authority and recovery rules behind those controls.
-        </p>
-        <p>
-          The <strong>Runtime</strong> panel is also the operator surface for model
-          and provider configuration. Choose a built-in provider or
-          <strong>+ compatible endpoint</strong> to create an OpenAI-compatible provider.
-          The editor accepts its id, endpoint URL, Chat Completions or Responses protocol,
-          optional API-key environment variable, optional context and output-token
-          limits, and enabled state. An existing compatible provider can be edited
-          or removed with confirmation; its id cannot be changed after creation. Provider
-          changes apply after a Neondeck restart. The ChatGPT provider card shows
-          OAuth state, expiry, and the latest error, while login and logout remain
-          CLI-managed.
-        </p>
-        <p>
-          Autopilot owners currently use the display-assistant model. The
-          panel's Autopilot prompt editor lets you inspect, replace, save, and
-          reset the complete owner prompt for each model-backed mode; changes
-          apply to existing owners on their next turn. Notify-only has no owner
-          prompt because it does not dispatch an owner turn. The adjacent PR
-          review prompt editor exposes the complete initial-review and
-          follow-up-conversation prompts. Initial changes apply to new review
-          runs; conversation changes apply on the next reviewer turn. Each
-          override can be reset to the shipped default.
-        </p>
-        <p>
-          The focused PR workbench adds a guided review map over files, hunks,
-          unresolved threads, local drafts, and Neon findings. Visible previous
-          and next controls have keyboard parity with <code>[</code> and
-          <code>]</code>; <code>?</code> opens shortcut help. Shortcuts stay scoped
-          away from inputs, editors, dialogs, modified browser keys, and text composition.
-          The tree, diff, inspector, and active review target move together, including
-          across files, without loading every patch up front.
-        </p>
-        <p>
-          Current-revision Neon findings render inline with their severity,
-          explanation, and provenance. Dismissing one is local-only. Promotion
-          is always explicit: a GitHub finding can seed a local draft comment
-          without submitting a review, while a prepared-diff finding can request
-          a confirmed revision through the existing approval and recovery flow.
-          Unsupported or stale findings remain visible as history instead of
-          silently attaching to different code.
-        </p>
-        <p>
-          Live GitHub, prepared-diff, and worktree-backed Kilo reviews remain
-          bound to the revision shown in the viewer. When a newer revision is
-          detected, Neondeck either refreshes a clean surface or shows a
-          <strong>New revision available</strong> control with the reason an automatic
-          refresh is paused. Dirty editors and in-flight actions are never replaced.
-          An applied refresh keeps the nearest valid file and review target when possible,
-          while stale drafts and findings retain their older-revision identity instead
-          of silently moving.
-        </p>
-        <p>
-          Work rows can open linked chat sessions without a side-by-side chat
-          layout. PR, watch, repo, briefing, Kilo, and autopilot rows create
-          context-aware sessions with compact summary metadata, and the chat
-          panel can reference the active session for cross-session follow-up.
+          This is the normal path. Neondeck waits for the local server and then
+          delegates the URL to macOS, Windows, or Linux. The browser decides
+          whether that becomes a tab or a window; Neondeck's responsive layout
+          handles the available viewport.
         </p>
 
-        <h2>Layout config</h2>
-        <pre><code>&#123;
-  "schemaVersion": 1,
-  "display": &#123; "width": 2560, "height": 720 &#125;,
-  "theme": "dark",
-  "layout": &#123;
-    "columns": 12,
-    "rows": 6,
-    "regions": []
-  &#125;
-&#125;</code></pre>
+        <h3>Opt into Chromium window placement</h3>
+        <pre><code>neondeck open sidebar --browser "/path/to/chromium"
+neondeck open xeneon --browser "/path/to/chromium"</code></pre>
         <p>
-          The dashboard subscribes to config events so supported layout and
-          runtime changes refresh without a browser reload.
+          Passing <code>--browser</code> launches that Chromium-family executable
+          with <code>--app</code>. Only this explicit path applies a named
+          window profile or the one-shot <code>--width</code>, <code
+            >--height</code
+          >,
+          <code>--x</code>, <code>--y</code>, and <code>--kiosk</code> flags. Width
+          and height must be supplied together; x and y must also be supplied together.
         </p>
 
-        <h2>Theme</h2>
+        <div
+          class="docs-table-wrap"
+          role="region"
+          aria-label="Shipped dashboard window profiles"
+          tabindex="0"
+        >
+          <table>
+            <thead>
+              <tr>
+                <th scope="col">Shipped profile</th>
+                <th scope="col">Bounds</th>
+                <th scope="col">Intent</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <th scope="row"><code>sidebar</code></th>
+                <td>480 × 1400 at (0, 25)</td>
+                <td>Tall companion panel beside the primary workspace.</td>
+              </tr>
+              <tr>
+                <th scope="row"><code>xeneon</code></th>
+                <td>Kiosk at (3440, 0)</td>
+                <td
+                  >Dedicated ultrawide strip at a machine-specific display
+                  origin.</td
+                >
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <aside class="docs-note">
+          The shipped coordinates are examples, not monitor discovery. Edit the
+          profiles in your runtime-home <code>dashboard.json</code> to match your
+          display arrangement. Running a profile without <code>--browser</code>
+          still opens the default browser, but the launcher warns that geometry and
+          kiosk settings were not applied.
+        </aside>
+
+        <h3>Install it as a web app</h3>
         <p>
-          The dark theme uses the Miami tiger-stripe palette: hot pink, Aztec
-          teal, cyan, violet, charcoal, and pale blue text. Light mode exists
-          from the start so future dashboards can switch without changing the
-          plugin contract.
+          The production dashboard includes a web app manifest. Safari's
+          <strong>File → Add to Dock</strong> and Chrome or Edge's
+          <strong>Install Neondeck</strong> flow create a standalone app window with
+          its own dock icon and browser-managed remembered bounds. This is usually
+          the best long-term sidebar setup; launcher geometry is better for scripted
+          kiosk placement. The app requires the local Neondeck server and does not
+          cache an offline dashboard.
         </p>
 
-        <h2>Future TUI</h2>
+        <h2 id="dashboard-config">Configure the cockpit</h2>
         <p>
-          The web dashboard is the first UI. A future OpenTUI client should use
-          the same backend APIs, event streams, config model, and agent runtime
-          rather than forking behavior.
+          Mutable dashboard configuration lives at
+          <code>NEONDECK_HOME/dashboard.json</code>, then the normal
+          runtime-home fallbacks described in <a href="/docs/configuration/"
+            >Configuration</a
+          >. New runtime homes receive the checked-in config and JSON Schema.
+          This compact example shows every layout layer working together:
+        </p>
+        <pre><code>{dashboardConfigExample}</code></pre>
+
+        <h3>Regions, tabs, and plugins</h3>
+        <p>
+          A region is one panel in the authored grid. Its one-based
+          <code>column</code> and <code>row</code> select the starting cell;
+          <code>columnSpan</code> and <code>rowSpan</code> control its footprint.
+          Each region contains one or more tabs, and every tab selects a typed dashboard
+          plugin with <code>pluginId</code> plus plugin-specific
+          <code>config</code>. <code>defaultTab</code>, when present, must match
+          a tab id in the same region.
+        </p>
+        <p>
+          The shipped dashboard uses a four-column work rail and an eight-column
+          Neon region on a twelve-column grid. In column mode, numeric grid
+          coordinates stop driving visual placement: data regions form the upper
+          band, the agent region grows below them, and the configured status
+          line remains pinned to its chosen edge.
+        </p>
+
+        <div
+          class="docs-table-wrap"
+          role="region"
+          aria-label="Built-in dashboard plugin groups"
+          tabindex="0"
+        >
+          <table>
+            <thead>
+              <tr>
+                <th scope="col">Surface</th>
+                <th scope="col">Built-in plugin ids</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <th scope="row">PR work</th>
+                <td
+                  ><code>reviews-panel</code>, <code>github-pr-list</code>, <code
+                    >active-watches</code
+                  >, <code>reports-panel</code></td
+                >
+              </tr>
+              <tr>
+                <th scope="row">Neon and runtime</th>
+                <td
+                  ><code>flue-chat</code>, <code>briefing-panel</code>, <code
+                    >runtime-overview</code
+                  >, <code>activity</code></td
+                >
+              </tr>
+              <tr>
+                <th scope="row">Memory and learning</th>
+                <td
+                  ><code>memory-panel</code>, <code>learning-operator</code>, <code
+                    >subagent-summary</code
+                  ></td
+                >
+              </tr>
+              <tr>
+                <th scope="row">Status line</th>
+                <td><code>host-metrics</code>, <code>clock-status</code></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h2 id="operator-surfaces">Operator surfaces</h2>
+        <div class="surface-list">
+          <section>
+            <h3>Keep pull requests moving</h3>
+            <p>
+              Reviews, GitHub PRs, watches, checks, and generated reports stay
+              in one work rail. A PR opens into the focused review workbench
+              with a searchable tree on wide layouts and a compact selector on
+              narrow ones. The human drafts and submits every GitHub review
+              verdict.
+            </p>
+          </section>
+          <section>
+            <h3>Operate Autopilot without hiding authority</h3>
+            <p>
+              Active Watches exposes the current mode, owner activity, prepared
+              changes, pause and recovery controls, and review entry points. See
+              the <a href="/docs/autopilot/">Autopilot guide</a> for delivery authority
+              and mechanical guards.
+            </p>
+          </section>
+          <section>
+            <h3>Keep Neon and runtime state visible</h3>
+            <p>
+              Chat, briefings, runtime setup, activity, memory, learning review,
+              and subagent summaries share the second region as tabs. Linked
+              work can open context-aware sessions without forcing a permanent
+              side-by-side chat layout.
+            </p>
+          </section>
+        </div>
+
+        <h2>Theme and readability</h2>
+        <p>
+          <code>theme</code> accepts <code>dark</code>, <code>light</code>, or
+          <code>system</code>. <code>appearance.density</code> accepts
+          <code>compact</code>, <code>comfortable</code>, or <code>large</code>,
+          and
+          <code>appearance.textScale</code> provides a 0.9–1.75 readability multiplier.
+          These settings change presentation without changing the region map.
+        </p>
+        <p>
+          Supported config actions publish events through Neondeck's local event
+          stream, so affected dashboard surfaces refresh without a full browser
+          reload. The web dashboard is the first operator UI; a future TUI is
+          intended to reuse the same backend APIs and events rather than create
+          a second agent runtime.
         </p>
       </article>
     </main>
     <SiteFooter />
   </div>
 </BaseLayout>
+
+<style>
+  .dashboard-lede {
+    max-width: 64ch;
+    margin-bottom: 26px;
+    color: var(--body);
+    font-size: clamp(1.05rem, 1.8vw, 1.2rem);
+    line-height: 1.7;
+  }
+
+  .dashboard-jump {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0;
+    max-width: 70ch;
+    margin: 0 0 28px;
+    border-block: 1px solid var(--line);
+  }
+
+  .dashboard-jump a {
+    min-height: 42px;
+    display: inline-flex;
+    align-items: center;
+    padding: 8px 14px;
+    border-right: 1px solid var(--line);
+    color: var(--muted);
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 12px;
+    text-decoration: none;
+  }
+
+  .dashboard-jump a:hover,
+  .dashboard-jump a:focus-visible {
+    background: color-mix(in srgb, var(--cyan) 7%, transparent);
+    color: var(--cyan);
+  }
+
+  .dashboard-default {
+    margin-bottom: 6px;
+  }
+
+  .layout-visual {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(260px, 100%), 1fr));
+    gap: 14px;
+    max-width: 70ch;
+    margin: 24px 0;
+  }
+
+  .layout-frame {
+    margin: 0;
+    border: 1px solid var(--line);
+    background: var(--card);
+  }
+
+  .layout-frame figcaption {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 14px;
+    padding: 11px 13px;
+    border-bottom: 1px solid var(--line);
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 11px;
+  }
+
+  .layout-frame figcaption strong {
+    color: var(--ink);
+    font-weight: 600;
+  }
+
+  .layout-frame figcaption span {
+    color: var(--faint);
+  }
+
+  .layout-screen {
+    display: grid;
+    min-height: 184px;
+    padding: 10px;
+    gap: 5px;
+    background:
+      linear-gradient(
+        color-mix(in srgb, var(--line) 45%, transparent) 1px,
+        transparent 1px
+      ),
+      linear-gradient(
+        90deg,
+        color-mix(in srgb, var(--line) 45%, transparent) 1px,
+        transparent 1px
+      ),
+      var(--code-bg);
+    background-size: 18px 18px;
+  }
+
+  .layout-screen span {
+    display: grid;
+    place-items: center;
+    min-width: 0;
+    border: 1px solid var(--line);
+    background: color-mix(in srgb, var(--surface) 92%, transparent);
+    color: var(--muted);
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 10px;
+    text-align: center;
+  }
+
+  .layout-screen--wide {
+    grid-template-columns: minmax(74px, 1fr) minmax(130px, 2fr);
+    grid-template-rows: 24px minmax(0, 1fr);
+  }
+
+  .layout-screen--wide .layout-status {
+    grid-column: 1 / -1;
+  }
+
+  .layout-screen--wide .layout-work {
+    color: var(--cyan);
+  }
+
+  .layout-screen--wide .layout-neon,
+  .layout-screen--column .layout-neon {
+    color: var(--pink);
+  }
+
+  .layout-screen--column {
+    grid-template-rows: 24px 48px minmax(76px, 1fr);
+  }
+
+  .surface-list {
+    max-width: 70ch;
+    margin-top: 18px;
+    border-block: 1px solid var(--line);
+  }
+
+  .surface-list section {
+    display: grid;
+    grid-template-columns: minmax(150px, 0.7fr) minmax(0, 1.3fr);
+    gap: clamp(20px, 4vw, 42px);
+    padding: 22px 0;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .surface-list section:last-child {
+    border-bottom: 0;
+  }
+
+  .surface-list h3,
+  .surface-list p {
+    margin: 0;
+  }
+
+  .surface-list h3 {
+    color: var(--ink);
+    font-size: 1.05rem;
+  }
+
+  @media (max-width: 640px) {
+    .dashboard-jump a {
+      flex: 1 1 50%;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .layout-screen {
+      min-height: 160px;
+    }
+
+    .surface-list section {
+      grid-template-columns: 1fr;
+      gap: 8px;
+    }
+  }
+</style>

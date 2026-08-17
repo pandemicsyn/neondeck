@@ -94,8 +94,8 @@ neondeck service stop
 neondeck service start
 neondeck service uninstall
 neondeck open
-neondeck open sidebar
-neondeck open xeneon</code></pre>
+neondeck open sidebar --browser "/path/to/chromium"
+neondeck open xeneon --browser "/path/to/chromium"</code></pre>
         <p>
           <code>serve</code> starts the production server in the foreground. It expects
           the packaged <code>dist/server.mjs</code> entry; in a source checkout, run
@@ -114,10 +114,10 @@ neondeck open xeneon</code></pre>
             >sidebar</code
           >
           and <code>xeneon</code>. Width/height and x/y must be supplied in
-          pairs, and CLI flags override profile values for one launch. Window
-          geometry and kiosk mode apply only when Neondeck finds a
-          Chromium-family browser; otherwise it opens the default browser
-          without those settings.
+          pairs, and CLI flags override profile values for one launch. By
+          default, Neondeck delegates to the OS default browser. Window geometry
+          and kiosk mode apply only when <code>--browser &lt;path&gt;</code> selects
+          a Chromium-family executable for app-mode launch.
         </p>
 
         <h2>Repositories</h2>
