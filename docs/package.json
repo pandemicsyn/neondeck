@@ -12,7 +12,9 @@
     "preview": "astro preview --host 127.0.0.1 --port 4321"
   },
   "dependencies": {
+    "@astrojs/sitemap": "^3.7.3",
     "astro": "7.2.2",
+    "cookie": "^2.0.1",
     "mermaid": "^11.16.1"
   },
   "devDependencies": {
