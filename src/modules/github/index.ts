@@ -1,4 +1,8 @@
-export { fetchGitHubLogin, githubFetch } from './client';
+export {
+  clearGitHubRequestCache,
+  fetchGitHubLogin,
+  githubFetch,
+} from './client';
 export {
   getGitHubCheckSummary,
   getGitHubPullRequest,

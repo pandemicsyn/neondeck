@@ -102,6 +102,8 @@ export const runtimeStatusSchema = v.looseObject({
     selfImprovementProvider: v.string(),
     selfImprovementThinkingLevel: v.string(),
     selfImprovementConfigured: v.boolean(),
+    exploreConfigured: v.boolean(),
+    exploreThinkingConfigured: v.boolean(),
     subagents: v.record(v.string(), v.string()),
     subagentThinkingLevels: v.record(v.string(), v.string()),
   }),

@@ -29,6 +29,7 @@ const safeUrlSchema = v.pipe(
   v.transform((value) => safeReportUrl(value) as string),
 );
 const nullableSafeUrlSchema = v.nullable(safeUrlSchema);
+const churnSchema = v.nullable(v.pipe(v.number(), v.integer(), v.minValue(0)));
 
 export const reportDeckLinkSchema = v.object({
   kind: v.picklist(['primary', 'source', 'file', 'finding', 'workbench']),
@@ -65,6 +66,8 @@ export const reportDeckChangeMapItemSchema = v.object({
     v.pipe(v.string(), v.trim(), v.minLength(1), v.maxLength(1_000)),
   ),
   href: nullableSafeUrlSchema,
+  additions: v.optional(churnSchema, null),
+  deletions: v.optional(churnSchema, null),
 });
 
 export const reportDeckFindingItemSchema = v.object({
@@ -89,6 +92,7 @@ export const reportDeckFindingItemSchema = v.object({
     v.pipe(v.string(), v.trim(), v.minLength(1), v.maxLength(1_000)),
   ),
   href: nullableSafeUrlSchema,
+  revision: v.optional(v.nullable(boundedText(64)), null),
 });
 
 const reportDeckSummarySlideSchema = v.object({
@@ -135,11 +139,13 @@ const reportDeckChangeMapSlideSchema = v.object({
     v.minLength(1),
     v.maxLength(REPORT_DECK_LIMITS.normalChangeMapItems),
   ),
+  totalFiles: v.optional(churnSchema, null),
 });
 
 const reportDeckFindingsSlideSchema = v.object({
   kind: v.literal('findings'),
   title: titleSchema,
+  subtitle: v.optional(v.nullable(labelSchema), null),
   disposition: v.picklist(['seeded', 'report-only']),
   part: v.pipe(v.number(), v.integer(), v.minValue(1)),
   totalParts: v.pipe(v.number(), v.integer(), v.minValue(1)),
@@ -207,6 +213,7 @@ export const reportDeckDocumentSchema = v.pipe(
     version: v.literal(2),
     eyebrow: v.nullable(labelSchema),
     title: titleSchema,
+    subtitle: v.optional(v.nullable(titleSchema), null),
     summaryMarkdown: v.pipe(
       v.string(),
       v.trim(),

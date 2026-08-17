@@ -81,6 +81,7 @@ import {
   autopilotOwnerInitialData,
   buildAutopilotOwnerEnvelope,
 } from './modules/autopilot/owner/envelope';
+import { openDb } from './lib/sqlite';
 
 const tempRoots: string[] = [];
 const execFileAsync = promisify(execFile);
@@ -345,7 +346,7 @@ describe('minimal Autopilot watch loop', () => {
         readPendingAutopilotTurn(paths.home, instanceId)?.prepared,
       ).toEqual(
         expect.objectContaining({
-          schema: 'neondeck.autopilot-owner-prepared.v1',
+          schema: 'neondeck.autopilot-owner-prepared.v2',
         }),
       );
       return {
@@ -400,7 +401,7 @@ describe('minimal Autopilot watch loop', () => {
     expect(dispatchTurn).toHaveBeenCalledTimes(1);
   });
 
-  it('mounts recovered owner authority before the first turn and changes capabilities only at the next turn', async () => {
+  it('mounts recovered pre-Explore owner authority before the first turn and changes capabilities only at the next turn', async () => {
     const { paths } = await gitFixturePaths();
     await configurePrAutopilot(
       {
@@ -452,6 +453,38 @@ describe('minimal Autopilot watch loop', () => {
     );
     vi.stubEnv('NEONDECK_HOME', paths.home);
     vi.stubEnv('FLUE_AGENT_MODEL', 'faux/faux-1');
+    await buildPrAutopilotOwnerRuntime(instanceId, paths);
+    const currentPrepared = readPendingAutopilotTurn(
+      paths.home,
+      instanceId,
+    )?.prepared;
+    if (
+      !currentPrepared ||
+      currentPrepared.schema !== 'neondeck.autopilot-owner-prepared.v2'
+    ) {
+      throw new Error('Expected the current prepared owner context.');
+    }
+    const {
+      exploreModel: _exploreModel,
+      exploreThinkingLevel: _exploreThinkingLevel,
+      ...preparedWithoutExplore
+    } = currentPrepared;
+    const database = openDb(paths.neondeckDatabase);
+    try {
+      database
+        .prepare(
+          'UPDATE autopilot_owner_turns SET prepared_json = ? WHERE turn_id = ?;',
+        )
+        .run(
+          JSON.stringify({
+            ...preparedWithoutExplore,
+            schema: 'neondeck.autopilot-owner-prepared.v1',
+          }),
+          firstTurn.turnId,
+        );
+    } finally {
+      database.close();
+    }
     const modelContexts: string[] = [];
     const modelToolCatalogs: string[][] = [];
     const faux = fauxProvider();
@@ -3039,7 +3072,7 @@ describe('minimal Autopilot watch loop', () => {
       if (!runtime.sandbox) {
         throw new Error(`${mode} did not receive its coding sandbox.`);
       }
-      const environment = await runtime.sandbox.createSessionEnv({
+      const environment = await runtime.sandbox.createSandbox({
         id: instanceId,
       });
       expect((await environment.exec('pwd')).stdout.trim()).toBe(

@@ -13,6 +13,7 @@ import {
   representativeReportDeckFixture,
 } from '../shared/report-deck-fixtures';
 import { reportDocumentToDeck } from '../shared/report-document-to-deck';
+import { changeMapFootnote, slideBadge } from '../shared/report-deck-view';
 import { ReportMarkdown } from '../shared/report-markdown';
 import {
   REPORT_MARKDOWN_LIMITS,
@@ -87,6 +88,74 @@ describe('report deck contract', () => {
     ) as ReportDeckDocument;
     unsafeLink.links[0]!.href = 'javascript:alert(1)';
     expect(parseReportDeckDocument(unsafeLink)).toBeNull();
+  });
+
+  it('parses the all-null variant of the new nullable fields', () => {
+    const allNull = structuredClone(
+      representativeReportDeckFixture,
+    ) as ReportDeckDocument;
+    allNull.subtitle = null;
+    for (const slide of allNull.slides) {
+      if (slide.kind === 'change-map') {
+        slide.totalFiles = null;
+        for (const item of slide.items) {
+          item.additions = null;
+          item.deletions = null;
+        }
+      }
+      if (slide.kind === 'findings') {
+        slide.subtitle = null;
+        for (const item of slide.items) {
+          item.revision = null;
+        }
+      }
+    }
+    const parsed = parseReportDeckDocument(allNull);
+    expect(parsed).toEqual(allNull);
+    expect(parsed?.subtitle).toBeNull();
+  });
+
+  it('parses persisted decks that predate the new keys and are missing them entirely', () => {
+    // Regression guard: persisted report rows were written before `subtitle`,
+    // `totalFiles`, `additions`, `deletions`, and `revision` existed, so those
+    // keys are absent from the stored JSON rather than present-and-null.
+    const legacy = structuredClone(
+      representativeReportDeckFixture,
+    ) as Record<string, unknown>;
+    delete legacy.subtitle;
+    for (const slide of legacy.slides as Array<Record<string, unknown>>) {
+      if (slide.kind === 'change-map') {
+        delete slide.totalFiles;
+        for (const item of slide.items as Array<Record<string, unknown>>) {
+          delete item.additions;
+          delete item.deletions;
+        }
+      }
+      if (slide.kind === 'findings') {
+        delete slide.subtitle;
+        for (const item of slide.items as Array<Record<string, unknown>>) {
+          delete item.revision;
+        }
+      }
+    }
+
+    const parsed = parseReportDeckDocument(legacy);
+    expect(parsed).not.toBeNull();
+    expect(parsed?.subtitle).toBeNull();
+    const changeMapSlide = parsed?.slides.find(
+      (slide) => slide.kind === 'change-map',
+    );
+    expect(changeMapSlide).toMatchObject({
+      totalFiles: null,
+      items: [expect.objectContaining({ additions: null, deletions: null })],
+    });
+    const findingsSlide = parsed?.slides.find(
+      (slide) => slide.kind === 'findings',
+    );
+    expect(findingsSlide).toMatchObject({
+      subtitle: null,
+      items: [expect.objectContaining({ revision: null })],
+    });
   });
 });
 
@@ -181,6 +250,7 @@ describe('report deck rendering', () => {
       version: 2,
       eyebrow: 'PR REVIEW',
       title: 'Bounded links',
+      subtitle: null,
       summaryMarkdown: 'Summary',
       generatedAt: '2026-07-15T12:00:00.000Z',
       links: [],
@@ -223,6 +293,24 @@ describe('report deck rendering', () => {
     expect(html).toContain('last 31');
   });
 
+  it('gives change-map churn values screen-reader text without doubling the announcement', () => {
+    const html = renderReportDeckHtml(representativeReportDeckFixture);
+
+    // The visible glyphs stay exactly as rendered today, but are hidden
+    // from assistive tech so they don't announce alongside the spelled-out
+    // text (e.g. "plus 42 42 additions").
+    expect(html).toContain(
+      '<span class="report-deck-churn-add">' +
+        '<span aria-hidden="true">+42</span>' +
+        '<span class="report-deck-sr-only">42 additions</span></span>',
+    );
+    expect(html).toContain(
+      '<span class="report-deck-churn-del">' +
+        '<span aria-hidden="true">−6</span>' +
+        '<span class="report-deck-sr-only">6 deletions</span></span>',
+    );
+  });
+
   it('adapts retained v1 report documents into bounded v2 decks', () => {
     const deck = reportDocumentToDeck({
       eyebrow: 'PR REVIEW',
@@ -256,6 +344,226 @@ describe('report deck rendering', () => {
       items: expect.any(Array),
     });
     expect(parseReportDeckDocument(deck)).toEqual(deck);
+  });
+});
+
+describe('slideBadge', () => {
+  const [
+    summarySlide,
+    factsSlide,
+    columnsSlide,
+    changeMapSlide,
+    findingsSlide,
+    appendixSlide,
+  ] = representativeReportDeckFixture.slides;
+
+  it('renders no badge for summary and markdown slides', () => {
+    expect(
+      slideBadge(summarySlide!, representativeReportDeckFixture),
+    ).toBeNull();
+    const markdownSlide: ReportDeckSlide = {
+      kind: 'markdown',
+      title: 'Why this matters',
+      markdown: 'Body',
+      tone: 'neutral',
+    };
+    expect(
+      slideBadge(markdownSlide, representativeReportDeckFixture),
+    ).toBeNull();
+  });
+
+  it('renders the item count for facts slides', () => {
+    expect(slideBadge(factsSlide!, representativeReportDeckFixture)).toEqual([
+      { text: '2' },
+    ]);
+  });
+
+  it('renders the risk item count for columns slides, omitted when zero', () => {
+    expect(slideBadge(columnsSlide!, representativeReportDeckFixture)).toEqual([
+      { text: '1', tone: 'warning' },
+    ]);
+    const noRiskColumns: ReportDeckSlide = {
+      kind: 'columns',
+      title: 'Checks only',
+      columns: [{ title: 'Checks', tone: 'check', items: ['ok'] }],
+    };
+    expect(
+      slideBadge(noRiskColumns, representativeReportDeckFixture),
+    ).toBeNull();
+  });
+
+  it('renders part/totalParts for change-map slides', () => {
+    expect(
+      slideBadge(changeMapSlide!, representativeReportDeckFixture),
+    ).toEqual([{ text: '1/1' }]);
+  });
+
+  it('renders the severe count against the document finding total for findings slides', () => {
+    expect(slideBadge(findingsSlide!, representativeReportDeckFixture)).toEqual(
+      [
+        { text: '0', tone: 'danger' },
+        { text: '/1', tone: 'muted' },
+      ],
+    );
+  });
+
+  it('renders the total item count across groups for appendix slides', () => {
+    expect(slideBadge(appendixSlide!, representativeReportDeckFixture)).toEqual(
+      [{ text: '1' }],
+    );
+  });
+});
+
+describe('changeMapFootnote', () => {
+  const changeMapItem = (path: string) => ({
+    path,
+    summaryMarkdown: 'Change.',
+    riskMarkdown: null,
+    href: null,
+    additions: 1,
+    deletions: 0,
+  });
+
+  it('reports the cumulative shown count through the current part, not the per-part count', () => {
+    const document: ReportDeckDocument = {
+      version: 2,
+      eyebrow: 'PR REVIEW',
+      title: 'Multi-part change map',
+      subtitle: null,
+      summaryMarkdown: 'Summary',
+      generatedAt: '2026-07-15T12:00:00.000Z',
+      links: [],
+      slides: [
+        {
+          kind: 'summary',
+          title: 'Review brief',
+          facts: [],
+          emptyStateMarkdown: null,
+        },
+        {
+          kind: 'change-map',
+          title: 'Change map',
+          part: 1,
+          totalParts: 3,
+          items: [changeMapItem('src/a.ts'), changeMapItem('src/b.ts')],
+          totalFiles: 40,
+        },
+        {
+          kind: 'change-map',
+          title: 'Change map',
+          part: 2,
+          totalParts: 3,
+          items: [changeMapItem('src/c.ts'), changeMapItem('src/d.ts')],
+          totalFiles: 40,
+        },
+        {
+          kind: 'change-map',
+          title: 'Change map',
+          part: 3,
+          totalParts: 3,
+          items: [changeMapItem('src/e.ts')],
+          totalFiles: 40,
+        },
+      ],
+    };
+    const [, partOne, partTwo, partThree] = document.slides as Array<
+      Extract<ReportDeckSlide, { kind: 'change-map' }>
+    >;
+
+    // Part 2 shows 2 files, but 4 have been shown cumulatively through part
+    // 2 (2 in part 1 + 2 in part 2) — the footnote must say 4, not 2.
+    expect(changeMapFootnote(partTwo!, document)).toBe(
+      '4 of 40 files · part 2 of 3',
+    );
+    expect(changeMapFootnote(partOne!, document)).toBe(
+      '2 of 40 files · part 1 of 3',
+    );
+    expect(changeMapFootnote(partThree!, document)).toBe(
+      '5 of 40 files · part 3 of 3',
+    );
+  });
+
+  it('omits the appendix remainder when nothing is deferred to the appendix', () => {
+    const document: ReportDeckDocument = {
+      version: 2,
+      eyebrow: 'PR REVIEW',
+      title: 'Single-part change map',
+      subtitle: null,
+      summaryMarkdown: 'Summary',
+      generatedAt: '2026-07-15T12:00:00.000Z',
+      links: [],
+      slides: [
+        {
+          kind: 'summary',
+          title: 'Review brief',
+          facts: [],
+          emptyStateMarkdown: null,
+        },
+        {
+          kind: 'change-map',
+          title: 'Change map',
+          part: 1,
+          totalParts: 1,
+          items: [changeMapItem('src/a.ts')],
+          totalFiles: 1,
+        },
+      ],
+    };
+    const slide = document.slides[1] as Extract<
+      ReportDeckSlide,
+      { kind: 'change-map' }
+    >;
+    expect(changeMapFootnote(slide, document)).toBe(
+      '1 of 1 files · part 1 of 1',
+    );
+    expect(changeMapFootnote(slide, document)).not.toContain('appendix');
+  });
+
+  it('includes the appendix remainder only when files are actually deferred', () => {
+    const document: ReportDeckDocument = {
+      version: 2,
+      eyebrow: 'PR REVIEW',
+      title: 'Overflowed change map',
+      subtitle: null,
+      summaryMarkdown: 'Summary',
+      generatedAt: '2026-07-15T12:00:00.000Z',
+      links: [],
+      slides: [
+        {
+          kind: 'summary',
+          title: 'Review brief',
+          facts: [],
+          emptyStateMarkdown: null,
+        },
+        {
+          kind: 'change-map',
+          title: 'Change map',
+          part: 1,
+          totalParts: 1,
+          items: [changeMapItem('src/a.ts')],
+          totalFiles: 3,
+        },
+        {
+          kind: 'appendix',
+          title: 'Change map appendix',
+          bodyMarkdown: 'Remaining files.',
+          groups: [
+            {
+              kind: 'change-map',
+              title: 'Remaining changed files',
+              items: [changeMapItem('src/b.ts'), changeMapItem('src/c.ts')],
+            },
+          ],
+        },
+      ],
+    };
+    const slide = document.slides[1] as Extract<
+      ReportDeckSlide,
+      { kind: 'change-map' }
+    >;
+    expect(changeMapFootnote(slide, document)).toBe(
+      '1 of 3 files · part 1 of 1 · remaining 2 in appendix',
+    );
   });
 });
 
@@ -337,8 +645,14 @@ describe('default PR review deck builder', () => {
       sourceRef: 'pandemicsyn/neondeck#125',
       state: reviewState(),
       files: [
-        reviewFile('src/app.ts', 'https://example.com/src/app.ts'),
-        reviewFile('src/extra.ts', 'https://example.com/src/extra.ts'),
+        reviewFile('src/app.ts', 'https://example.com/src/app.ts', {
+          additions: 5,
+          deletions: 1,
+        }),
+        reviewFile('src/extra.ts', 'https://example.com/src/extra.ts', {
+          additions: 2,
+          deletions: 0,
+        }),
       ],
       output: {
         overview: {
@@ -373,7 +687,19 @@ describe('default PR review deck builder', () => {
     expect(facts).toMatchObject({
       kind: 'facts',
       items: expect.arrayContaining([
-        expect.objectContaining({ label: 'Files', value: '2' }),
+        expect.objectContaining({ label: 'Base', value: 'main' }),
+        expect.objectContaining({ label: 'Head', value: 'abc123' }),
+        expect.objectContaining({ label: 'Additions', value: '7' }),
+        expect.objectContaining({ label: 'Deletions', value: '1' }),
+      ]),
+    });
+    const summary = result.overview.document.slides.find(
+      (slide) => slide.kind === 'summary',
+    );
+    expect(summary).toMatchObject({
+      kind: 'summary',
+      facts: expect.arrayContaining([
+        expect.objectContaining({ label: 'Changed files', value: '2' }),
       ]),
     });
     expect(result.overview.document.slides).toEqual(
@@ -528,6 +854,27 @@ describe('default PR review deck builder', () => {
     );
   });
 
+  it('gives the overview and issues decks distinct eyebrows', () => {
+    const result = buildReviewReportDecks({
+      sourceRef: 'pandemicsyn/neondeck#125',
+      state: reviewState(),
+      files: [],
+      output: {
+        overview: { summary: 'Summary', changeMap: [], checks: [], risks: [] },
+        findings: [],
+      },
+      seededFindings: [],
+      reportOnlyFindings: [],
+      generatedAt: '2026-07-15T12:00:00.000Z',
+    });
+
+    expect(result.overview.document.eyebrow).toBe('PR REVIEW · OVERVIEW');
+    expect(result.issues.document.eyebrow).toBe('PR REVIEW · ISSUES');
+    expect(result.overview.document.eyebrow).not.toBe(
+      result.issues.document.eyebrow,
+    );
+  });
+
   it('rejects presentation plans beyond the Markdown bounds', () => {
     expect(
       parseReviewPresentationPlan({
@@ -581,10 +928,17 @@ function reviewState() {
   } as Parameters<typeof buildReviewReportDecks>[0]['state'];
 }
 
-function reviewFile(path: string, htmlUrl: string) {
-  return { path, htmlUrl } as Parameters<
-    typeof buildReviewReportDecks
-  >[0]['files'][number];
+function reviewFile(
+  path: string,
+  htmlUrl: string,
+  churn: { additions?: number; deletions?: number } = {},
+) {
+  return {
+    path,
+    htmlUrl,
+    additions: churn.additions ?? 0,
+    deletions: churn.deletions ?? 0,
+  } as Parameters<typeof buildReviewReportDecks>[0]['files'][number];
 }
 
 function changeMapPaths(slides: ReportDeckSlide[]) {

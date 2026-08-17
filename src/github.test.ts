@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   addPrReviewDraftComment,
   buildPullRequestQueries,
+  clearGitHubRequestCache,
   clearGitHubPullRequestQueueCache,
   clearPullRequestReviewSurfaceThreadCache,
   deletePrReviewNeonSeedsForComments,
@@ -41,6 +42,7 @@ const tempRoots: string[] = [];
 
 afterEach(async () => {
   globalThis.fetch = originalFetch;
+  clearGitHubRequestCache();
   clearGitHubPullRequestQueueCache();
   clearPullRequestReviewSurfaceThreadCache();
   vi.restoreAllMocks();
@@ -233,6 +235,139 @@ describe('github foundation', () => {
     expect(new Set(buildPullRequestQueries('pandemicsyn', repos)).size).toEqual(
       buildPullRequestQueries('pandemicsyn', repos).length,
     );
+  });
+
+  it('coalesces concurrent queue refreshes for the same token and scope', async () => {
+    const repos: RepoConfig[] = [
+      {
+        id: 'neondeck',
+        github: { owner: 'pandemicsyn', name: 'neondeck' },
+        path: '/src/neondeck',
+        defaultBranch: 'main',
+      },
+    ];
+    globalThis.fetch = vi.fn<typeof fetch>(async () =>
+      jsonResponse({ total_count: 0, items: [] }),
+    );
+
+    const [first, second] = await Promise.all([
+      fetchPullRequestQueue({
+        token: 'token',
+        login: 'pandemicsyn',
+        repos,
+      }),
+      fetchPullRequestQueue({
+        token: 'token',
+        login: 'pandemicsyn',
+        repos,
+      }),
+    ]);
+
+    expect(second).toBe(first);
+    expect(globalThis.fetch).toHaveBeenCalledTimes(3);
+  });
+
+  it('only runs the stale authored search when the primary search is incomplete', async () => {
+    const repos: RepoConfig[] = [
+      {
+        id: 'neondeck',
+        github: { owner: 'pandemicsyn', name: 'neondeck' },
+        path: '/src/neondeck',
+        defaultBranch: 'main',
+      },
+    ];
+    const queries: string[] = [];
+    globalThis.fetch = vi.fn<typeof fetch>(async (input) => {
+      const url = new URL(String(input));
+      const query = url.searchParams.get('q') ?? '';
+      queries.push(query);
+      if (
+        query.includes('author:pandemicsyn') &&
+        !query.includes('updated:<')
+      ) {
+        return jsonResponse({
+          total_count: 101,
+          items: Array.from({ length: 50 }, (_, index) =>
+            searchIssue(index + 1),
+          ),
+        });
+      }
+      return jsonResponse({ total_count: 0, items: [] });
+    });
+
+    await fetchPullRequestQueue({
+      token: 'token',
+      login: 'pandemicsyn',
+      repos,
+      maxItems: 0,
+    });
+
+    expect(queries.filter((query) => query.includes('updated:<'))).toHaveLength(
+      1,
+    );
+  });
+
+  it('runs the stale authored fallback when GitHub reports incomplete results', async () => {
+    const repos: RepoConfig[] = [
+      {
+        id: 'neondeck',
+        github: { owner: 'pandemicsyn', name: 'neondeck' },
+        path: '/src/neondeck',
+        defaultBranch: 'main',
+      },
+    ];
+    const queries: string[] = [];
+    globalThis.fetch = vi.fn<typeof fetch>(async (input) => {
+      const url = new URL(String(input));
+      const query = url.searchParams.get('q') ?? '';
+      queries.push(query);
+      if (
+        query.includes('author:pandemicsyn') &&
+        !query.includes('updated:<')
+      ) {
+        return jsonResponse({
+          total_count: 1,
+          incomplete_results: true,
+          items: [],
+        });
+      }
+      return jsonResponse({
+        total_count: 0,
+        incomplete_results: false,
+        items: [],
+      });
+    });
+
+    const queue = await fetchPullRequestQueue({
+      token: 'token',
+      login: 'pandemicsyn',
+      repos,
+      maxItems: 0,
+    });
+
+    expect(queries.filter((query) => query.includes('updated:<'))).toHaveLength(
+      1,
+    );
+    expect(queue.truncated).toBe(true);
+    expect(queue.issues).toContainEqual(
+      expect.objectContaining({
+        type: 'search-incomplete',
+        message: expect.stringContaining('incomplete search results'),
+      }),
+    );
+
+    await fetchPullRequestQueue({
+      token: 'token',
+      login: 'pandemicsyn',
+      repos,
+      maxItems: 0,
+    });
+    expect(
+      queries.filter(
+        (query) =>
+          query.includes('author:pandemicsyn') && !query.includes('updated:<'),
+      ),
+    ).toHaveLength(2);
   });
 
   it('paginates PR searches and merges queue relations', async () => {
@@ -1465,6 +1600,18 @@ describe('github foundation', () => {
       body: 'Prefer an early return.',
     });
 
+    const neonUpdated = updatePrReviewDraftComment({
+      databasePath: paths.neondeckDatabase,
+      commentId: commentId ?? '',
+      body: 'Neon revised this local draft.',
+      origin: 'neon',
+    });
+    expect(neonUpdated.comments[0]).toMatchObject({
+      id: commentId,
+      body: expect.stringContaining('Neon revised this local draft.'),
+      origin: 'neon',
+    });
+
     const reanchored = updatePrReviewDraftComment({
       databasePath: paths.neondeckDatabase,
       commentId: commentId ?? '',
@@ -1588,6 +1735,75 @@ describe('github foundation', () => {
     ).toMatchObject({
       id: draft.id,
       verdict: 'comment',
+    });
+  });
+
+  it('rejects draft comment writes after the draft head is reanchored', async () => {
+    const paths = runtimePaths(await tempHome());
+    await ensureRuntimeHome(paths);
+    const originalHead = 'head-before-race';
+    const draft = upsertPrReviewDraft({
+      databasePath: paths.neondeckDatabase,
+      repo: 'pandemicsyn/neondeck',
+      prNumber: 123,
+      headSha: originalHead,
+    });
+    const withComment = addPrReviewDraftComment({
+      databasePath: paths.neondeckDatabase,
+      draftId: draft.id,
+      expectedHeadSha: originalHead,
+      path: 'src/app.ts',
+      side: 'RIGHT',
+      line: 12,
+      body: 'Keep this comment on the original revision.',
+    });
+    const commentId = withComment.comments[0]!.id;
+    upsertPrReviewDraft({
+      databasePath: paths.neondeckDatabase,
+      repo: 'pandemicsyn/neondeck',
+      prNumber: 123,
+      headSha: 'head-after-race',
+      reanchorHeadSha: true,
+    });
+
+    expect(() =>
+      updatePrReviewDraftComment({
+        databasePath: paths.neondeckDatabase,
+        commentId,
+        expectedHeadSha: originalHead,
+        body: 'This stale update must not land.',
+      }),
+    ).toThrow(/expected head revision/i);
+    expect(() =>
+      deletePrReviewDraftComment({
+        databasePath: paths.neondeckDatabase,
+        commentId,
+        expectedHeadSha: originalHead,
+      }),
+    ).toThrow(/expected head revision/i);
+    expect(() =>
+      addPrReviewDraftComment({
+        databasePath: paths.neondeckDatabase,
+        draftId: draft.id,
+        expectedHeadSha: originalHead,
+        path: 'src/app.ts',
+        side: 'RIGHT',
+        line: 14,
+        body: 'This stale create must not land.',
+      }),
+    ).toThrow(/expected head revision/i);
+
+    expect(
+      readLivePrReviewDraft({
+        databasePath: paths.neondeckDatabase,
+        repo: 'pandemicsyn/neondeck',
+        prNumber: 123,
+      }),
+    ).toMatchObject({
+      headSha: 'head-after-race',
+      comments: [
+        { id: commentId, body: 'Keep this comment on the original revision.' },
+      ],
     });
   });
 

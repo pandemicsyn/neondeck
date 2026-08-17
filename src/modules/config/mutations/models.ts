@@ -372,6 +372,8 @@ function hasAgentModelUpdate(
     input.selfImprovementThinkingLevel ||
     input.subagents?.default ||
     input.subagents?.defaultThinkingLevel ||
+    input.subagents?.explore !== undefined ||
+    input.subagents?.exploreThinkingLevel !== undefined ||
     input.subagents?.repoResearcher ||
     input.subagents?.repoResearcherThinkingLevel ||
     input.subagents?.ciInvestigator ||
@@ -449,7 +451,11 @@ function mergeAgentModelConfig(
   const subagents = {
     ...current?.subagents,
     ...input.subagents,
-  };
+  } as NonNullable<AgentModelConfig['subagents']>;
+  if (input.subagents?.explore === null) delete subagents.explore;
+  if (input.subagents?.exploreThinkingLevel === null) {
+    delete subagents.exploreThinkingLevel;
+  }
 
   return {
     ...currentModels,

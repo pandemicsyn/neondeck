@@ -110,7 +110,11 @@ GITHUB_LOGIN=...</code></pre>
     "displayAssistantThinkingLevel": "medium",
     "prReview": "openai/gpt-5.5",
     "prReviewThinkingLevel": "medium",
-    "prReviewTimeoutMs": 1800000
+    "prReviewTimeoutMs": 1800000,
+    "subagents": &#123;
+      "explore": "openai/gpt-5.6-terra",
+      "exploreThinkingLevel": "medium"
+    &#125;
   &#125;
 &#125;</code></pre>
 
@@ -207,6 +211,14 @@ GITHUB_LOGIN=...</code></pre>
                   ></td
                 >
               </tr>
+              <tr>
+                <th scope="row"><code>subagents.explore</code></th>
+                <td>
+                  Focused read-only repository investigation for chat, PR
+                  review, and Autopilot
+                </td>
+                <td>Uses <code>displayAssistant</code></td>
+              </tr>
             </tbody>
           </table>
         </div>
@@ -226,14 +238,48 @@ GITHUB_LOGIN=...</code></pre>
           </li>
           <li>
             <code>prReviewTimeoutMs</code> defaults to 1,800,000 milliseconds and
-            accepts values from 10,000 through 1,800,000. Initial review runs cannot
-            delegate generic child tasks; they inspect and finish in one bounded session.
+            accepts values from 10,000 through 1,800,000. Initial and follow-up reviewers
+            may delegate focused evidence gathering to
+            <code>explore</code>; the parent reviewer still owns the final
+            review or response.
           </li>
           <li>
             Provider registration and standalone CLI ChatGPT login or logout
             require a server restart.
           </li>
         </ul>
+
+        <h3 id="explore-subagent">Explore subagent</h3>
+        <p>
+          <code>explore</code> is a shared Flue subagent available to the display
+          assistant, initial and follow-up code reviewers, and active Autopilot owners.
+          It runs in a fresh context and receives only the complete task briefing
+          written by its parent. Its model and reasoning level are independently configurable
+          through <code>models.subagents.explore</code>
+          and <code>models.subagents.exploreThinkingLevel</code>.
+        </p>
+        <p>
+          When those settings are absent, Explore uses the display-assistant
+          model and reasoning level. During <code>neondeck init</code>, setup
+          offers an optional cheaper model for this role and recommends a fast
+          profile such as OpenAI Luna with high reasoning or OpenAI Terra with
+          medium reasoning.
+        </p>
+        <p>
+          Parent agents use one Explore task for narrow or dependent research.
+          When several investigations are independent, they may launch up to
+          three distinct Explore tasks in one tool-call batch; Flue runs that
+          batch concurrently, and the parent reconciles the returned evidence
+          before it acts or answers.
+        </p>
+        <aside class="docs-note">
+          <strong>Access follows the parent:</strong> chat exploration receives only
+          configured-repository read tools, while PR review receives exact-revision
+          read-only tools. An Autopilot delegate shares the owner's trusted local
+          worktree shell because Flue subagents inherit their parent's sandbox. Its
+          no-mutation rule is behavioral, not OS isolation; edits and delivery remain
+          the parent owner's responsibility.
+        </aside>
 
         <h2>PR reviewer prompts</h2>
         <p>

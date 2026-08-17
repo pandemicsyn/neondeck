@@ -9,6 +9,7 @@ import { ensureRuntimeHome, runtimePaths } from '../runtime-home';
 import {
   configureGitIdentity,
   defaultProviderModel,
+  exploreModelRecommendation,
   finalizeFreshInstallSession,
   formatOnboardingNextSteps,
   formatRuntimeSkillRootsNote,
@@ -252,6 +253,12 @@ describe('onboarding model defaults', () => {
     expect(defaultProviderModel('openai')).toBe('openai/gpt-5.5');
     expect(defaultProviderModel('openrouter')).toBe(
       'openrouter/openai/gpt-5.5',
+    );
+  });
+
+  it('recommends cheap, fast Explore model profiles', () => {
+    expect(exploreModelRecommendation).toBe(
+      'Recommended: OpenAI Luna at high reasoning or OpenAI Terra at medium.',
     );
   });
 });

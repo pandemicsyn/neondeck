@@ -972,6 +972,33 @@ export const entries: SafetyPolicyEntry[] = [
     readOnly,
     'Local API route for fetching read-only PR file patches with the server-side GitHub token.',
   ),
+  tool(
+    'neondeck_pr_review_draft_comment_create',
+    'Create bound PR review draft comment',
+    {
+      ...safeMutation,
+      auditTarget: 'pr_review_drafts/pr_review_draft_comments',
+    },
+    "Creates one Neon-origin local draft comment only for the reviewer conversation's durable review and exact head. It never posts to GitHub.",
+  ),
+  tool(
+    'neondeck_pr_review_draft_comment_update',
+    'Update bound PR review draft comment',
+    {
+      ...safeMutation,
+      auditTarget: 'pr_review_drafts/pr_review_draft_comments',
+    },
+    "Edits or re-anchors one local draft comment only when its draft matches the reviewer conversation's durable review and exact head.",
+  ),
+  tool(
+    'neondeck_pr_review_draft_comment_delete',
+    'Delete bound PR review draft comment',
+    {
+      ...safeMutation,
+      auditTarget: 'pr_review_drafts/pr_review_draft_comments',
+    },
+    "Deletes one local draft comment only when its draft matches the reviewer conversation's durable review and exact head. It cannot delete GitHub comments.",
+  ),
   route(
     '/api/github/prs/:owner/:repo/:number/review-draft',
     'Manage PR review draft API',
@@ -979,7 +1006,7 @@ export const entries: SafetyPolicyEntry[] = [
       ...safeMutation,
       auditTarget: 'pr_review_drafts/pr_review_draft_comments',
     },
-    'User-surface-only local API for reading, saving, and discarding durable PR review drafts. This route is not registered as a model-callable action or tool.',
+    'User-surface-only local API for reading, saving, and discarding durable PR review drafts. The route is not model-callable; the reviewer uses separate exact-review-bound tools for local comment mutations.',
   ),
   route(
     '/api/github/prs/:owner/:repo/:number/review-draft/comments',

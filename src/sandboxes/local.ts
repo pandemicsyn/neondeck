@@ -1,4 +1,4 @@
-import type { SandboxFactory, SessionEnv } from '@flue/runtime';
+import type { Sandbox, SandboxFactory } from '@flue/runtime';
 import { local, type LocalSandboxOptions } from '@flue/runtime/node';
 
 export const defaultLocalShellTimeoutMs = 10 * 60 * 1_000;
@@ -34,8 +34,8 @@ export function withMaxShellTimeout(
 
   return {
     ...sandbox,
-    async createSessionEnv(options): Promise<SessionEnv> {
-      const environment = await sandbox.createSessionEnv(options);
+    async createSandbox(options): Promise<Sandbox> {
+      const environment = await sandbox.createSandbox(options);
       return {
         ...environment,
         exec(command, execOptions) {

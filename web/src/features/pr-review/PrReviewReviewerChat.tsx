@@ -1,6 +1,16 @@
 import { useFlueAgent } from '@flue/react';
-import { useMemo, useState, type FormEvent, type KeyboardEvent } from 'react';
-import { prReviewerConversationId } from '../../../../shared/pr-reviewer-session';
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type FormEvent,
+  type KeyboardEvent,
+} from 'react';
+import {
+  isPrReviewerDraftToolName,
+  prReviewerConversationId,
+} from '../../../../shared/pr-reviewer-session';
 import type { PrReviewRecord } from '../../api';
 import { ChatTimelineItems } from '../flue-chat/components/chat-timeline';
 import { chatMessagesForRender } from '../flue-chat/lib/messages';
@@ -9,8 +19,10 @@ import { useChatAutoScroll } from '../flue-chat/lib/use-chat-auto-scroll';
 import { createNeondeckConversationClient } from '../../lib/flue';
 
 export function PrReviewReviewerChat({
+  onDraftChanged,
   review,
 }: {
+  onDraftChanged?: () => void;
   review: PrReviewRecord | null;
 }) {
   const [connectionAttempt, setConnectionAttempt] = useState(0);
@@ -36,6 +48,7 @@ export function PrReviewReviewerChat({
     <ReviewerConversation
       agentId={agentId}
       key={`${agentId}:${connectionAttempt}`}
+      onDraftChanged={onDraftChanged}
       onReconnect={() => setConnectionAttempt((attempt) => attempt + 1)}
     />
   );
@@ -43,9 +56,11 @@ export function PrReviewReviewerChat({
 
 function ReviewerConversation({
   agentId,
+  onDraftChanged,
   onReconnect,
 }: {
   agentId: string;
+  onDraftChanged?: () => void;
   onReconnect: () => void;
 }) {
   const conversationClient = useMemo(
@@ -56,6 +71,7 @@ function ReviewerConversation({
   const [input, setInput] = useState('');
   const [sendError, setSendError] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
+  const observedDraftToolCalls = useRef(new Set<string>());
   const messages = useMemo(
     () => chatMessagesForRender(agent.messages),
     [agent.messages],
@@ -69,6 +85,25 @@ function ReviewerConversation({
     agent.status === 'submitted' ||
     agent.status === 'streaming';
   const ready = agent.historyReady && !connectionError && !busy;
+
+  useEffect(() => {
+    let changed = false;
+    for (const message of agent.messages) {
+      for (const part of message.parts) {
+        if (
+          part.type !== 'dynamic-tool' ||
+          part.state !== 'output-available' ||
+          !isPrReviewerDraftToolName(part.toolName) ||
+          observedDraftToolCalls.current.has(part.toolCallId)
+        ) {
+          continue;
+        }
+        observedDraftToolCalls.current.add(part.toolCallId);
+        if (draftMutationSucceeded(part.output)) changed = true;
+      }
+    }
+    if (changed) onDraftChanged?.();
+  }, [agent.messages, onDraftChanged]);
 
   async function submit(event: FormEvent) {
     event.preventDefault();
@@ -175,6 +210,15 @@ function ReviewerConversation({
         </div>
       </form>
     </section>
+  );
+}
+
+function draftMutationSucceeded(output: unknown) {
+  return Boolean(
+    output &&
+    typeof output === 'object' &&
+    'ok' in output &&
+    output.ok === true,
   );
 }
 

@@ -241,6 +241,24 @@ pr-autopilot-owner</code></pre>
           activity. Rows stay compact and redacted by default; raw prompts and
           tool payloads are not exposed through a legacy workflow-run inspector.
         </p>
+        <p>
+          PR review submissions show model turns, exact-revision workspace
+          calls, separate model and tool time, latest-turn token usage, returned
+          evidence volume, and the Git operations the reviewer chose. If older
+          events were pruned, the summary is explicitly marked partial. Expand
+          an event to see typed metadata such as paths, line ranges, result
+          counts, truncation, and remaining workspace budget. Source, patch, and
+          literal search contents are deliberately excluded from retained
+          activity records.
+        </p>
+        <p>
+          The reviewer receives a bounded read-only Git surface instead of a
+          preselected changed-file manifest. It starts from the exact merge-base
+          change index, then chooses among patches, targeted hunk evidence, raw
+          head or base files, repository search, commit history, and blame. This
+          keeps exploration revision-bound while allowing the model to gather
+          the context appropriate to each change.
+        </p>
 
         <h2>Developer commands</h2>
         <pre><code>fnm use 26.4.0

@@ -120,16 +120,21 @@ async function refreshGitHubQueueSnapshotOnce(
   let next: GitHubQueueSnapshot;
 
   if (queue) {
-    const searchFailed = queue.issues.some(
-      (issue) => issue.type === 'search-error',
+    const unreliableSearch = queue.issues.some(
+      (issue) =>
+        issue.type === 'search-error' || issue.type === 'search-incomplete',
     );
-    const retainPrevious = searchFailed && previous.lastCompleteAt !== null;
+    const retainPrevious = unreliableSearch && previous.lastCompleteAt !== null;
     const source = retainPrevious ? previous : queue;
     const status =
-      queue.issues.length > 0 || searchFailed ? 'degraded' : 'ready';
-    const error = searchFailed
+      queue.issues.length > 0 || unreliableSearch ? 'degraded' : 'ready';
+    const error = unreliableSearch
       ? queue.issues
-          .filter((issue) => issue.type === 'search-error')
+          .filter(
+            (issue) =>
+              issue.type === 'search-error' ||
+              issue.type === 'search-incomplete',
+          )
           .map((issue) => issue.message)
           .join(' ')
       : undefined;
@@ -143,7 +148,7 @@ async function refreshGitHubQueueSnapshotOnce(
       issues: queue.issues,
       status,
       lastAttemptAt: attemptedAt,
-      lastCompleteAt: searchFailed ? previous.lastCompleteAt : attemptedAt,
+      lastCompleteAt: unreliableSearch ? previous.lastCompleteAt : attemptedAt,
       ...(error ? { error } : {}),
     });
   } else {

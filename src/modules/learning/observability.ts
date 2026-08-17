@@ -339,31 +339,9 @@ function summarizeObservation(event: FlueObservation): {
         event.durationMs,
       );
     case 'tool_start':
-      return activitySummary(
-        `Tool ${event.toolName} started.`,
-        event.toolName,
-        false,
-        {
-          toolName: event.toolName,
-          origin: event.origin ?? null,
-          args: summarizeUnknown(event.args),
-        },
-      );
+      return summarizeToolStart(event);
     case 'tool':
-      return activitySummary(
-        `Tool ${event.toolName} ${event.isError ? 'failed' : 'completed'} in ${formatDuration(event.durationMs)}.`,
-        event.toolName,
-        event.isError,
-        {
-          toolName: event.toolName,
-          error: event.errorInfo?.message
-            ? summarizeError(event.errorInfo)
-            : null,
-          result: summarizeUnknown(event.effectiveResult ?? event.result),
-        },
-        null,
-        event.durationMs,
-      );
+      return summarizeToolCompletion(event);
     case 'turn_start':
       return activitySummary(
         `Model turn started (${event.purpose}).`,
@@ -458,6 +436,216 @@ function activitySummary(
   durationMs: number | null = null,
 ) {
   return { message, name, operationKind, durationMs, isError, summary };
+}
+
+const reviewWorkspaceToolPrefix = 'neondeck_review_workspace_';
+
+function summarizeToolStart(
+  event: Extract<FlueObservation, { type: 'tool_start' }>,
+) {
+  const reviewOperation = reviewWorkspaceOperation(event.toolName);
+  if (!reviewOperation) {
+    return activitySummary(
+      `Tool ${event.toolName} started.`,
+      event.toolName,
+      false,
+      {
+        toolName: event.toolName,
+        origin: event.origin ?? null,
+        args: summarizeUnknown(event.args),
+      },
+    );
+  }
+  const args = reviewWorkspaceArgs(event.args);
+  const target = typeof args.path === 'string' ? ` for ${args.path}` : '';
+  return activitySummary(
+    `Review workspace ${reviewOperation} started${target}.`,
+    event.toolName,
+    false,
+    {
+      category: 'review-workspace',
+      operation: reviewOperation,
+      phase: 'started',
+      origin: event.origin ?? null,
+      ...args,
+    },
+  );
+}
+
+function summarizeToolCompletion(
+  event: Extract<FlueObservation, { type: 'tool' }>,
+) {
+  const reviewOperation = reviewWorkspaceOperation(event.toolName);
+  if (!reviewOperation) {
+    return activitySummary(
+      `Tool ${event.toolName} ${event.isError ? 'failed' : 'completed'} in ${formatDuration(event.durationMs)}.`,
+      event.toolName,
+      event.isError,
+      {
+        toolName: event.toolName,
+        error: event.errorInfo?.message
+          ? summarizeError(event.errorInfo)
+          : null,
+        result: summarizeUnknown(event.effectiveResult ?? event.result),
+      },
+      null,
+      event.durationMs,
+    );
+  }
+  const result = reviewWorkspaceResult(
+    reviewOperation,
+    event.effectiveResult ?? event.result,
+  );
+  const target = typeof result.path === 'string' ? ` for ${result.path}` : '';
+  return activitySummary(
+    `Review workspace ${reviewOperation} ${event.isError ? 'failed' : 'completed'}${target} in ${formatDuration(event.durationMs)}.`,
+    event.toolName,
+    event.isError,
+    {
+      category: 'review-workspace',
+      operation: reviewOperation,
+      phase: event.isError ? 'failed' : 'completed',
+      ...result,
+      error: event.errorInfo?.message ? summarizeError(event.errorInfo) : null,
+    },
+    null,
+    event.durationMs,
+  );
+}
+
+function reviewWorkspaceOperation(toolName: string) {
+  return toolName.startsWith(reviewWorkspaceToolPrefix)
+    ? toolName.slice(reviewWorkspaceToolPrefix.length)
+    : null;
+}
+
+function reviewWorkspaceArgs(value: unknown): Record<string, JsonValue> {
+  const record = objectRecord(value);
+  if (!record) return {};
+  return compactJsonRecord({
+    path: safeActivityPath(record.path),
+    queryLength:
+      typeof record.query === 'string' ? record.query.length : undefined,
+    revision: safeEnum(record.revision, ['head', 'base']),
+    startLine: optionalNumber(record.startLine),
+    endLine: optionalNumber(record.endLine),
+    rightLine: optionalNumber(record.rightLine),
+    contextLines: optionalNumber(record.contextLines),
+    cursor: optionalNumber(record.cursor),
+    limit: optionalNumber(record.limit),
+  });
+}
+
+function reviewWorkspaceResult(
+  operation: string,
+  value: unknown,
+): Record<string, JsonValue> {
+  const record = objectRecord(value);
+  if (!record) return { result: summarizeUnknown(value) };
+  const matches = Array.isArray(record.matches) ? record.matches : null;
+  const paths = Array.isArray(record.paths) ? record.paths : null;
+  const files = Array.isArray(record.files) ? record.files : null;
+  const hunks = Array.isArray(record.hunks) ? record.hunks : null;
+  const lines = Array.isArray(record.lines) ? record.lines : null;
+  const commits = Array.isArray(record.commits) ? record.commits : null;
+  const summary = objectRecord(record.summary);
+  return compactJsonRecord({
+    path: safeActivityPath(record.path),
+    queryLength:
+      typeof record.query === 'string' ? record.query.length : undefined,
+    revisionKind: safeEnum(record.revisionKind, ['head', 'base']),
+    scope: safeEnum(record.scope, ['file', 'pull-request']),
+    available:
+      typeof record.available === 'boolean' ? record.available : undefined,
+    reason: safeActivityString(record.reason, 500),
+    startLine: optionalNumber(record.startLine),
+    endLine: optionalNumber(record.endLine),
+    totalLines: optionalNumber(record.totalLines),
+    rightLine: optionalNumber(record.rightLine),
+    targetChanged:
+      typeof record.targetChanged === 'boolean'
+        ? record.targetChanged
+        : undefined,
+    resultBytes: jsonByteLength(value),
+    returnedPaths: paths?.length,
+    returnedFiles: files?.length,
+    returnedMatches: matches?.length,
+    returnedHunks: hunks?.length,
+    returnedLines: lines?.length,
+    returnedCommits: commits?.length,
+    totalHunks: optionalNumber(record.totalHunks),
+    totalFiles: optionalNumber(summary?.files),
+    additions: optionalNumber(summary?.additions),
+    deletions: optionalNumber(summary?.deletions),
+    cursor: optionalNumber(record.cursor),
+    nextCursor: optionalNumber(record.nextCursor),
+    truncated:
+      typeof record.truncated === 'boolean' ? record.truncated : undefined,
+    workspaceToolCallsRemaining: optionalNumber(
+      record.workspaceToolCallsRemaining,
+    ),
+    workspaceToolCallLimit: optionalNumber(record.workspaceToolCallLimit),
+    operation,
+  });
+}
+
+function objectRecord(value: unknown) {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
+}
+
+function compactJsonRecord(
+  value: Record<string, JsonValue | undefined>,
+): Record<string, JsonValue> {
+  return Object.fromEntries(
+    Object.entries(value).filter(
+      (entry): entry is [string, JsonValue] => entry[1] !== undefined,
+    ),
+  );
+}
+
+function safeActivityString(value: unknown, maxLength: number) {
+  if (typeof value !== 'string') return undefined;
+  if (looksSensitive(value)) return redacted;
+  return value.length > maxLength
+    ? `${value.slice(0, Math.max(0, maxLength - 3))}...`
+    : value;
+}
+
+function safeActivityPath(value: unknown) {
+  if (typeof value !== 'string') return undefined;
+  if (
+    value.includes('\u0000') ||
+    value.includes('\n') ||
+    value.includes('\r')
+  ) {
+    return '[invalid path]';
+  }
+  return value.length > 1_000 ? `${value.slice(0, 997)}...` : value;
+}
+
+function optionalNumber(value: unknown) {
+  return typeof value === 'number' && Number.isFinite(value)
+    ? value
+    : undefined;
+}
+
+function jsonByteLength(value: unknown) {
+  try {
+    const serialized = JSON.stringify(value);
+    return serialized === undefined
+      ? undefined
+      : Buffer.byteLength(serialized, 'utf8');
+  } catch {
+    return undefined;
+  }
+}
+
+function safeEnum(value: unknown, values: readonly string[]) {
+  return typeof value === 'string' && values.includes(value)
+    ? value
+    : undefined;
 }
 
 function updateSubmissionProjection(
@@ -731,9 +919,23 @@ function summarizeUsage(usage: unknown): JsonValue {
   const record = usage as Record<string, unknown>;
   return {
     totalTokens: readNumber(record.totalTokens),
-    inputTokens: readNumber(record.inputTokens),
-    outputTokens: readNumber(record.outputTokens),
-    cost: summarizeUnknown(record.cost),
+    inputTokens: readNumber(record.input ?? record.inputTokens),
+    outputTokens: readNumber(record.output ?? record.outputTokens),
+    cacheReadTokens: readNumber(record.cacheRead),
+    cacheWriteTokens: readNumber(record.cacheWrite),
+    cost: summarizeCost(record.cost),
+  };
+}
+
+function summarizeCost(cost: unknown): JsonValue {
+  if (!cost || typeof cost !== 'object') return null;
+  const record = cost as Record<string, unknown>;
+  return {
+    input: readNumber(record.input),
+    output: readNumber(record.output),
+    cacheRead: readNumber(record.cacheRead),
+    cacheWrite: readNumber(record.cacheWrite),
+    total: readNumber(record.total),
   };
 }
 

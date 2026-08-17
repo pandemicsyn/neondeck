@@ -35,7 +35,7 @@ describe('PR review prompts', () => {
       defaultPrReviewPromptTemplates['initial-review'],
     );
     expect(defaultPrReviewPromptTemplates['initial-review']).toContain(
-      'This bounded review submission does not permit task delegation: do not call the generic task tool or start a child review.',
+      'You may delegate focused, independent investigation questions to the explore subagent.',
     );
 
     await updatePrReviewPrompt(
@@ -57,7 +57,7 @@ describe('PR review prompts', () => {
       'missing-review-record',
       runtimePaths(home),
     );
-    const environment = await runtime.sandbox.createSessionEnv({
+    const environment = await runtime.sandbox.createSandbox({
       id: 'follow-up-review',
     });
 
@@ -136,6 +136,14 @@ describe('PR review prompts', () => {
 
     expect(firstReadOptions).toMatchObject({ surface: true, fresh: true });
     expect(first.instructions).toBe(second.instructions);
+    expect(first.tools.map((tool) => tool.name)).toEqual(
+      expect.arrayContaining([
+        'neondeck_pr_review_draft_comment_create',
+        'neondeck_pr_review_draft_comment_update',
+        'neondeck_pr_review_draft_comment_delete',
+      ]),
+    );
+    expect(first.instructions).toContain('use the matching mounted draft tool');
     expect(first.instructions).toContain(
       'Flue framework narration signals with reserved types',
     );

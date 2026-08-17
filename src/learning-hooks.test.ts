@@ -103,6 +103,50 @@ describe('Flue v3 observation handlers', () => {
     ).resolves.toBeUndefined();
   });
 
+  it('serializes activity persistence in Flue emission order', async () => {
+    let subscriber: FlueObservationSubscriber | undefined;
+    const paths = runtimePaths('/tmp/neondeck-observation-order');
+    const firstWrite = Promise.withResolvers<void>();
+    const recorded: number[] = [];
+    const recordFlueObservation = vi.fn(
+      async (event: { eventIndex: number }) => {
+        if (event.eventIndex === 1) await firstWrite.promise;
+        recorded.push(event.eventIndex);
+      },
+    );
+    installFlueObservationHandlers(paths, {
+      observe(next) {
+        subscriber = next;
+        return vi.fn<() => void>();
+      },
+      recordFlueObservation: recordFlueObservation as never,
+    });
+    const event = {
+      v: 3,
+      type: 'log',
+      eventIndex: 1,
+      timestamp: '2026-08-01T10:00:00.000Z',
+      submissionId: 'submission-1',
+      agentName: 'display-assistant',
+      instanceId: 'session-1',
+      level: 'info',
+      message: 'first',
+    } as const;
+
+    const first = subscriber?.(event, {} as never);
+    const second = subscriber?.(
+      { ...event, eventIndex: 2, message: 'second' },
+      {} as never,
+    );
+    await vi.waitFor(() =>
+      expect(recordFlueObservation).toHaveBeenCalledTimes(1),
+    );
+    firstWrite.resolve();
+    await Promise.all([first, second]);
+
+    expect(recorded).toEqual([1, 2]);
+  });
+
   it('admits conversation cadence only from successful direct assistant settlements', async () => {
     let subscriber: FlueObservationSubscriber | undefined;
     const paths = runtimePaths('/tmp/neondeck-learning-settlement');

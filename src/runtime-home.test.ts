@@ -401,6 +401,8 @@ describe('runtime home', () => {
             selfImprovementThinkingLevel: 'minimal',
             subagents: {
               default: 'kilocode/kilo/subagent',
+              explore: 'openai/gpt-5.6-terra',
+              exploreThinkingLevel: 'high',
               repoResearcher: 'kilocode/kilo/repo',
               ciInvestigator: 'kilocode/kilo/ci',
               releaseReviewer: 'kilocode/kilo/release',
@@ -422,6 +424,7 @@ describe('runtime home', () => {
         prReviewTimeoutMs: 300_000,
         utility: 'kilocode/kilo/utility',
         subagents: {
+          explore: 'openai/gpt-5.6-terra',
           repoResearcher: 'kilocode/kilo/repo',
           ciInvestigator: 'kilocode/kilo/ci',
           releaseReviewer: 'kilocode/kilo/release',
@@ -441,12 +444,16 @@ describe('runtime home', () => {
       selfImprovement: 'kilocode/kilo/reflect',
       selfImprovementConfigured: true,
       selfImprovementThinkingLevel: 'minimal',
+      exploreConfigured: true,
+      exploreThinkingConfigured: true,
       subagents: {
+        explore: 'openai/gpt-5.6-terra',
         repoResearcher: 'kilocode/kilo/repo',
         ciInvestigator: 'kilocode/kilo/ci',
         releaseReviewer: 'kilocode/kilo/release',
       },
       subagentThinkingLevels: {
+        explore: 'high',
         repoResearcher: 'medium',
         ciInvestigator: 'medium',
         releaseReviewer: 'medium',
@@ -482,6 +489,14 @@ describe('runtime home', () => {
       selfImprovement: 'openai/gpt-5-mini',
       selfImprovementConfigured: false,
       selfImprovementThinkingLevel: 'low',
+      exploreConfigured: false,
+      exploreThinkingConfigured: false,
+      subagents: {
+        explore: 'openai/gpt-5-mini',
+      },
+      subagentThinkingLevels: {
+        explore: 'medium',
+      },
     });
   });
 

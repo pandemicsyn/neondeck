@@ -79,6 +79,47 @@ describe('GitHub queue snapshot', () => {
     expect(refreshed.snapshot.lastCompleteAt).toBe('2026-07-23T15:00:00.000Z');
   });
 
+  it('retains the last complete queue when GitHub reports incomplete search results', async () => {
+    const paths = runtimePaths('/tmp/neondeck-github-snapshot-incomplete');
+    const complete = queue('Known PR');
+    const incomplete = {
+      ...queue('Incomplete PR'),
+      truncated: true,
+      issues: [
+        {
+          type: 'search-incomplete' as const,
+          query: 'is:pr repo:owner/repo',
+          message: 'GitHub reported incomplete search results.',
+        },
+      ],
+    };
+    const list = vi
+      .fn<typeof listGitHubPrQueue>()
+      .mockResolvedValueOnce(queueResult(complete))
+      .mockResolvedValueOnce(queueResult(incomplete));
+
+    await refreshGitHubQueueSnapshot(
+      paths,
+      {
+        listGitHubPrQueue: list,
+        now: () => new Date('2026-07-23T15:00:00.000Z'),
+      },
+      { force: true },
+    );
+    const refreshed = await refreshGitHubQueueSnapshot(
+      paths,
+      {
+        listGitHubPrQueue: list,
+        now: () => new Date('2026-07-23T15:04:00.000Z'),
+      },
+      { force: true },
+    );
+
+    expect(refreshed.snapshot.status).toBe('degraded');
+    expect(refreshed.snapshot.items).toEqual(complete.items);
+    expect(refreshed.snapshot.lastCompleteAt).toBe('2026-07-23T15:00:00.000Z');
+  });
+
   it('emits only when queue contents or health materially change', async () => {
     const paths = runtimePaths('/tmp/neondeck-github-snapshot-events');
     const events: unknown[] = [];

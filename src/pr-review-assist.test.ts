@@ -26,6 +26,8 @@ import { ensureRuntimeHome, runtimePaths } from './runtime-home';
 import { reportDocumentFromSummary } from '../shared/report-document';
 import { reportDeckFromSummary } from '../shared/report-deck';
 import { openDb } from './lib/sqlite';
+import * as v from 'valibot';
+import { prReviewAgentInitialDataSchema } from './modules/pr-review-assist/schemas';
 
 const tempRoots: string[] = [];
 
@@ -38,6 +40,39 @@ afterEach(async () => {
 });
 
 describe('PR review assist', () => {
+  it('accepts persisted initial-review data created before Explore was captured', () => {
+    const legacyInitialData = {
+      model: 'faux/faux-1',
+      thinkingLevel: 'low',
+      instructions: 'Review the bounded change.',
+      prepared: {
+        input: { ref: 'pandemicsyn/neondeck#10' },
+        facts: {},
+        promptContext: {},
+      },
+      workspace: { available: false, reason: 'fixture has no workspace' },
+      prompt: '{"task":"Review this pull request."}',
+    };
+
+    expect(
+      v.safeParse(prReviewAgentInitialDataSchema, legacyInitialData).success,
+    ).toBe(true);
+    expect(
+      v.safeParse(prReviewAgentInitialDataSchema, {
+        ...legacyInitialData,
+        exploreModel: 'faux/faux-1',
+      }).success,
+    ).toBe(false);
+    expect(
+      v.safeParse(prReviewAgentInitialDataSchema, {
+        ...legacyInitialData,
+        schema: 'neondeck.pr-review-agent-context.v2',
+        exploreModel: 'faux/faux-1',
+        exploreThinkingLevel: 'minimal',
+      }).success,
+    ).toBe(true);
+  });
+
   it('declares typed review submission as a durable non-harness Flue tool', () => {
     const tool = createSubmitPrReviewTool(
       { ref: 'pandemicsyn/neondeck#10' },
@@ -384,13 +419,34 @@ describe('PR review assist', () => {
       version: 2,
       summaryMarkdown: 'Review <script>alert(1)</script>',
     });
+    expect(overviewDeck?.eyebrow).toBe('PR REVIEW · OVERVIEW');
     expect(overviewDeck?.slides).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ kind: 'summary', title: 'Review brief' }),
-        expect.objectContaining({ kind: 'facts', title: 'PR facts' }),
+        expect.objectContaining({
+          kind: 'facts',
+          title: 'PR facts',
+          items: [
+            { label: 'Base', value: 'main', href: null },
+            { label: 'Head', value: 'head123', href: null },
+            { label: 'Author', value: 'unknown', href: null },
+            { label: 'Additions', value: '2', href: null },
+            { label: 'Deletions', value: '0', href: null },
+            { label: 'Checks', value: '0 passing / 0 failing', href: null },
+            { label: 'Mergeable', value: 'clean', href: null },
+            expect.objectContaining({ label: 'Generated' }),
+          ],
+        }),
         expect.objectContaining({
           kind: 'change-map',
-          items: expect.any(Array),
+          totalFiles: 1,
+          items: [
+            expect.objectContaining({
+              path: 'src/app.ts',
+              additions: 2,
+              deletions: 0,
+            }),
+          ],
         }),
       ]),
     );
@@ -404,6 +460,7 @@ describe('PR review assist', () => {
     );
     const issuesDeck = reportDeckFromSummary(issues?.summary);
     expect(issuesDeck).toMatchObject({ version: 2 });
+    expect(issuesDeck?.eyebrow).toBe('PR REVIEW · ISSUES');
     expect(issuesDeck?.slides).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ kind: 'summary', title: 'Review brief' }),
@@ -706,9 +763,27 @@ describe('PR review assist', () => {
     facts.state.requestedChangesReviews = [requestedChange];
 
     const promptFacts = reviewFactsForPrompt(facts, {
-      memoryContext: {
-        memoryIds: ['memory-1'],
-        text: 'Structured memory background context:\nproject:\n- review-style: focus on error handling',
+      learningMemoryContext: {
+        memoryIds: ['memory-1', 'memory-2'],
+        memories: [
+          {
+            id: 'memory-1',
+            scope: 'project',
+            key: 'review-style',
+            repoId: 'neondeck',
+            value: 'Focus on error handling.',
+          },
+          {
+            id: 'memory-2',
+            scope: 'user',
+            key: 'duplicate-review-style',
+            repoId: null,
+            value: 'Focus on error handling.',
+          },
+        ],
+        text: 'Learning memories background context:\n- memory-1 [project:review-style repo=neondeck] Focus on error handling.',
+        available: true,
+        truncated: false,
       },
     });
 
@@ -723,13 +798,12 @@ describe('PR review assist', () => {
       isOutOfDate: false,
     });
     expect(promptFacts.linkedIssueReferenceHints).toEqual(['#123']);
-    expect(promptFacts.backgroundContext).toEqual({
-      structuredMemory:
-        'Structured memory background context:\nproject:\n- review-style: focus on error handling',
-      memoryIds: ['memory-1'],
-      usage:
-        'Treat memory as durable background guidance, not current PR evidence. Fetched PR facts and bounded review rules win on conflict.',
-    });
+    expect(promptFacts.backgroundContext).toBe(
+      'Focus on error handling.\n\nTreat this learned memory as durable background guidance, not current PR evidence. Fetched PR facts and bounded review rules win on conflict.',
+    );
+    expect(JSON.stringify(promptFacts)).not.toContain('memory-1');
+    expect(JSON.stringify(promptFacts)).not.toContain('memory-2');
+    expect(JSON.stringify(promptFacts)).not.toContain('review-style');
     expect(promptFacts.commits).toMatchObject([{ sha: 'head123' }]);
     expect(promptFacts.reviewThreads).toMatchObject([
       {
@@ -794,20 +868,93 @@ describe('PR review assist', () => {
     const okResult = requireReviewAssistOk(result);
     const memoryId = (memory as { memory: { id: string } }).memory.id;
     const capturedFacts = promptFacts as unknown as {
-      memories: Array<Record<string, unknown>>;
+      backgroundContext: string;
+      memories?: unknown;
     };
 
-    expect(capturedFacts.memories).toEqual([
-      expect.objectContaining({
-        id: memoryId,
-        repoId: 'neondeck',
-        value: expect.stringContaining('flaky e2e shard'),
-      }),
-    ]);
+    expect(capturedFacts.backgroundContext).toContain('flaky e2e shard');
+    expect(capturedFacts).not.toHaveProperty('memories');
+    expect(JSON.stringify(promptFacts)).not.toContain(memoryId);
+    expect(JSON.stringify(promptFacts)).not.toContain('e2e-shard');
     expect(JSON.stringify(promptFacts)).not.toContain('other-repo');
     expect(okResult.workflowSummary.summary).toMatchObject({
       memoryIds: [memoryId],
     });
+  });
+
+  it('lets exact-revision tools own changed-file discovery in the model seed', () => {
+    const facts = reviewFacts();
+    const promptFacts = reviewFactsForPrompt(facts, {
+      workspace: {
+        available: true,
+        repoId: 'neondeck',
+        repoFullName: 'pandemicsyn/neondeck',
+        repoPath: '/tmp/neondeck',
+        headSha: 'head123',
+        baseSha: 'base123',
+        mergeBase: 'base123',
+        tools: [],
+      },
+    });
+
+    expect(promptFacts.workspace).toMatchObject({
+      available: true,
+      access: 'exact-revision-read-only-tools',
+    });
+    expect(promptFacts).not.toHaveProperty('files');
+    expect(JSON.stringify(promptFacts)).not.toContain('+const added = true;');
+  });
+
+  it('keeps actionable CI details while compacting successful checks', () => {
+    const facts = reviewFacts();
+    facts.state.checkSuites = [
+      {
+        id: 5001,
+        headSha: 'head123',
+        status: 'completed',
+        conclusion: 'success',
+        appSlug: 'github-actions',
+        url: null,
+        htmlUrl: null,
+        createdAt: '2026-07-05T11:00:00.000Z',
+        updatedAt: '2026-07-05T11:01:00.000Z',
+      },
+    ];
+    facts.state.checkRuns = [
+      checkRun(6001, 'unit', 'completed', 'success'),
+      checkRun(6002, 'docs', 'completed', 'skipped'),
+      checkRun(6003, 'integration', 'in_progress', null),
+      checkRun(6004, 'lint', 'completed', 'failure'),
+    ];
+    facts.state.checkSuitesTruncated = true;
+    facts.state.checkRunsTruncated = false;
+
+    const promptFacts = reviewFactsForPrompt(facts);
+    expect(promptFacts.checks).toEqual({
+      summary: {
+        suites: 1,
+        runs: 4,
+        suitesTruncated: true,
+        runsTruncated: false,
+        successful: 2,
+        skipped: 1,
+        neutral: 0,
+        pending: 1,
+        failed: 1,
+      },
+      successfulRuns: {
+        count: 1,
+        names: ['unit'],
+        truncated: false,
+      },
+      pending: [
+        expect.objectContaining({ name: 'integration', status: 'in_progress' }),
+      ],
+      failed: [
+        expect.objectContaining({ name: 'lint', conclusion: 'failure' }),
+      ],
+    });
+    expect(JSON.stringify(promptFacts.checks)).not.toContain('docs');
   });
 
   it('rejects malformed structured output before writing reports or drafts', async () => {
@@ -1104,6 +1251,26 @@ function reviewFacts(): ReviewAssistFacts {
     files,
     diffSummary,
     source: 'local',
+  };
+}
+
+function checkRun(
+  id: number,
+  name: string,
+  status: string,
+  conclusion: string | null,
+): GitHubPullRequestEventState['checkRuns'][number] {
+  return {
+    id,
+    name,
+    headSha: 'head123',
+    status,
+    conclusion,
+    url: null,
+    htmlUrl: null,
+    detailsUrl: null,
+    startedAt: '2026-07-05T11:00:00.000Z',
+    completedAt: status === 'completed' ? '2026-07-05T11:01:00.000Z' : null,
   };
 }
 

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import type { SandboxFactory, SessionEnv } from '@flue/runtime';
+import type { Sandbox, SandboxFactory } from '@flue/runtime';
 import {
   boundedLocal,
   defaultLocalShellTimeoutMs,
@@ -8,7 +8,7 @@ import {
 
 describe('bounded local sandbox', () => {
   it('adds a default timeout and caps longer requested timeouts', async () => {
-    const exec = vi.fn<SessionEnv['exec']>(async () => ({
+    const exec = vi.fn<Sandbox['exec']>(async () => ({
       stdout: '',
       stderr: '',
       exitCode: 0,
@@ -17,7 +17,7 @@ describe('bounded local sandbox', () => {
       sandboxWithExec(exec),
       defaultLocalShellTimeoutMs,
     );
-    const environment = await sandbox.createSessionEnv({ id: 'owner' });
+    const environment = await sandbox.createSandbox({ id: 'owner' });
     const signal = new AbortController().signal;
 
     await environment.exec('default');
@@ -43,7 +43,7 @@ describe('bounded local sandbox', () => {
       cwd: process.cwd(),
       maxCommandTimeoutMs: 5_000,
     });
-    const environment = await sandbox.createSessionEnv({ id: 'owner' });
+    const environment = await sandbox.createSandbox({ id: 'owner' });
     const controller = new AbortController();
     const command = environment.exec(`node -e "setInterval(() => {}, 1000)"`, {
       signal: controller.signal,
@@ -68,9 +68,9 @@ describe('bounded local sandbox', () => {
   });
 });
 
-function sandboxWithExec(exec: SessionEnv['exec']): SandboxFactory {
+function sandboxWithExec(exec: Sandbox['exec']): SandboxFactory {
   return {
-    async createSessionEnv() {
+    async createSandbox() {
       return {
         exec,
         readFile: async () => '',

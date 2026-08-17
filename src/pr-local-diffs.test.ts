@@ -183,10 +183,14 @@ describe('local PR diffs', () => {
 
     expect(resolveCalls).toBe(0);
     expect(tools.map((tool) => tool.name)).toEqual([
+      'neondeck_review_workspace_changes',
       'neondeck_review_workspace_list',
       'neondeck_review_workspace_read',
       'neondeck_review_workspace_search',
       'neondeck_review_workspace_diff',
+      'neondeck_review_workspace_diff_hunks',
+      'neondeck_review_workspace_history',
+      'neondeck_review_workspace_blame',
     ]);
 
     const searchTool = tools.find(
@@ -201,6 +205,138 @@ describe('local PR diffs', () => {
       },
     });
     expect(resolveCalls).toBe(1);
+  });
+
+  it('lets the reviewer discover scope and choose exact-revision Git evidence', async () => {
+    const { baseSha, headSha, paths } = await fixture();
+    const workspace = await resolvePrReviewerWorkspace(
+      {
+        repoFullName: 'example/sample',
+        prNumber: 42,
+        headSha,
+        baseSha,
+        baseRef: 'main',
+      },
+      paths,
+    );
+
+    expect(workspace.available).toBe(true);
+    if (!workspace.available) return;
+    const tool = (name: string) =>
+      workspace.tools.find((candidate) => candidate.name === name);
+
+    await expect(
+      tool('neondeck_review_workspace_changes')?.run({
+        data: { limit: 1 },
+      } as never),
+    ).resolves.toMatchObject({
+      output: {
+        available: true,
+        base: baseSha,
+        head: headSha,
+        summary: { files: 2, additions: 2, deletions: 1 },
+        files: [
+          expect.objectContaining({
+            path: 'src/added.ts',
+            status: 'added',
+            additions: 1,
+            deletions: 0,
+          }),
+        ],
+        nextCursor: 1,
+        truncated: true,
+      },
+    });
+    await expect(
+      tool('neondeck_review_workspace_changes')?.run({
+        data: { cursor: 1, limit: 1 },
+      } as never),
+    ).resolves.toMatchObject({
+      output: {
+        files: [
+          expect.objectContaining({
+            path: 'src/app.ts',
+            status: 'modified',
+            additions: 1,
+            deletions: 1,
+          }),
+        ],
+        nextCursor: null,
+        truncated: false,
+      },
+    });
+    await expect(
+      tool('neondeck_review_workspace_read')?.run({
+        data: { path: 'src/app.ts', revision: 'base' },
+      } as never),
+    ).resolves.toMatchObject({
+      output: {
+        revision: baseSha,
+        revisionKind: 'base',
+        content: expect.stringContaining('value = 1'),
+      },
+    });
+    await expect(
+      tool('neondeck_review_workspace_diff_hunks')?.run({
+        data: { path: 'src/app.ts' },
+      } as never),
+    ).resolves.toMatchObject({
+      output: {
+        path: 'src/app.ts',
+        totalHunks: 1,
+        hunks: [
+          expect.objectContaining({
+            leftStart: 1,
+            leftCount: 1,
+            rightStart: 1,
+            rightCount: 1,
+          }),
+        ],
+      },
+    });
+    await expect(
+      tool('neondeck_review_workspace_history')?.run({
+        data: { limit: 1 },
+      } as never),
+    ).resolves.toMatchObject({
+      output: {
+        scope: 'pull-request',
+        commits: [expect.objectContaining({ subject: 'head' })],
+        truncated: false,
+      },
+    });
+    await expect(
+      tool('neondeck_review_workspace_blame')?.run({
+        data: { path: 'src/app.ts', startLine: 1 },
+      } as never),
+    ).resolves.toMatchObject({
+      output: {
+        revision: headSha,
+        revisionKind: 'head',
+        lines: [
+          expect.objectContaining({
+            line: 1,
+            author: 'Test',
+            text: 'export const value = 2;',
+          }),
+        ],
+      },
+    });
+    await expect(
+      tool('neondeck_review_workspace_list')?.run({
+        data: { path: 'src/*.ts', limit: 10 },
+      } as never),
+    ).resolves.toMatchObject({ output: { paths: [] } });
+    await expect(
+      tool('neondeck_review_workspace_search')?.run({
+        data: { query: 'export', path: 'src/*.ts', limit: 10 },
+      } as never),
+    ).resolves.toMatchObject({ output: { matches: [] } });
+    await expect(
+      tool('neondeck_review_workspace_diff')?.run({
+        data: { path: 'src/*.ts' },
+      } as never),
+    ).resolves.toMatchObject({ output: { patch: '' } });
   });
 
   it('forwards the Flue tool abort signal into deferred workspace resolution', async () => {
@@ -507,9 +643,46 @@ describe('local PR diffs', () => {
     );
     expect(workspace.available).toBe(true);
     if (!workspace.available) return;
+    const changesTool = workspace.tools.find(
+      (tool) => tool.name === 'neondeck_review_workspace_changes',
+    );
+    const historyTool = workspace.tools.find(
+      (tool) => tool.name === 'neondeck_review_workspace_history',
+    );
     const diffTool = workspace.tools.find(
       (tool) => tool.name === 'neondeck_review_workspace_diff',
     );
+
+    await expect(
+      changesTool?.run({ data: { limit: 10 } } as never),
+    ).resolves.toMatchObject({
+      output: {
+        summary: { files: 1, additions: 1, deletions: 1 },
+        files: [
+          expect.objectContaining({
+            path: 'src/new-name.ts',
+            previousPath: 'src/old-name.ts',
+            status: 'renamed',
+            additions: 1,
+            deletions: 1,
+          }),
+        ],
+      },
+    });
+    await expect(
+      historyTool?.run({
+        data: { path: 'src/new-name.ts', limit: 10 },
+      } as never),
+    ).resolves.toMatchObject({
+      output: {
+        scope: 'file',
+        commits: [
+          expect.objectContaining({ subject: 'head' }),
+          expect.objectContaining({ subject: 'base' }),
+        ],
+        truncated: false,
+      },
+    });
 
     await expect(
       diffTool?.run({

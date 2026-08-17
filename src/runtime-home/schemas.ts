@@ -124,6 +124,8 @@ export const agentModelConfigSchema = v.looseObject({
     v.looseObject({
       default: v.optional(nonEmptyStringSchema),
       defaultThinkingLevel: v.optional(thinkingLevelSchema),
+      explore: v.optional(nonEmptyStringSchema),
+      exploreThinkingLevel: v.optional(thinkingLevelSchema),
       repoResearcher: v.optional(nonEmptyStringSchema),
       repoResearcherThinkingLevel: v.optional(thinkingLevelSchema),
       ciInvestigator: v.optional(nonEmptyStringSchema),

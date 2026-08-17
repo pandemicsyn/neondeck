@@ -1,6 +1,10 @@
-import { createHash } from 'node:crypto';
 import * as v from 'valibot';
-import { encodePathSegment, githubFetch, githubGraphqlFetch } from './client';
+import {
+  encodePathSegment,
+  githubFetch,
+  githubGraphqlFetch,
+  githubTokenFingerprint,
+} from './client';
 import {
   githubIssueCommentApiResponseSchema,
   githubIssueCommentsApiResponseSchema,
@@ -24,6 +28,10 @@ import type { PullRequestEventFetchBudget } from './event-budget';
 const reviewSurfaceCacheTtlMs = 15_000;
 const reviewSurfaceCacheMaxEntries = 16;
 const reviewSurfaceCache = new Map<string, CachedReviewSurfaceThreads>();
+const reviewSurfaceRequestsInFlight = new Map<
+  string,
+  Promise<ReviewThreadsWithMetadata>
+>();
 const reviewSurfaceTargetEpochs = new Map<string, number>();
 
 export type ReviewThreadsWithMetadata = {
@@ -181,7 +189,7 @@ export async function fetchPullRequestReviewSurfaceThreadsWithMetadata(options: 
   signal?: AbortSignal;
 }): Promise<ReviewThreadsWithMetadata> {
   const targetKey = reviewSurfaceTargetKey(options);
-  const cacheKey = `${targetKey}\u0000${tokenFingerprint(options.token)}`;
+  const cacheKey = `${targetKey}\u0000${githubTokenFingerprint(options.token)}`;
   const cached = reviewSurfaceCache.get(cacheKey);
   if (cached && cached.expiresAt > Date.now()) {
     reviewSurfaceCache.delete(cacheKey);
@@ -190,6 +198,32 @@ export async function fetchPullRequestReviewSurfaceThreadsWithMetadata(options: 
   }
   if (cached) reviewSurfaceCache.delete(cacheKey);
 
+  if (!options.signal) {
+    const existing = reviewSurfaceRequestsInFlight.get(cacheKey);
+    if (existing) return existing;
+    const request = fetchAndCacheReviewSurfaceThreads(
+      options,
+      targetKey,
+      cacheKey,
+    ).finally(() => {
+      if (reviewSurfaceRequestsInFlight.get(cacheKey) === request) {
+        reviewSurfaceRequestsInFlight.delete(cacheKey);
+      }
+    });
+    reviewSurfaceRequestsInFlight.set(cacheKey, request);
+    return request;
+  }
+
+  return fetchAndCacheReviewSurfaceThreads(options, targetKey, cacheKey);
+}
+
+async function fetchAndCacheReviewSurfaceThreads(
+  options: Parameters<
+    typeof fetchPullRequestReviewSurfaceThreadsFreshWithMetadata
+  >[0],
+  targetKey: string,
+  cacheKey: string,
+) {
   const targetEpoch = reviewSurfaceTargetEpochs.get(targetKey) ?? 0;
   const value =
     await fetchPullRequestReviewSurfaceThreadsFreshWithMetadata(options);
@@ -229,10 +263,16 @@ export function invalidatePullRequestReviewSurfaceThreadCache(options: {
   for (const [key, cached] of reviewSurfaceCache) {
     if (cached.targetKey === targetKey) reviewSurfaceCache.delete(key);
   }
+  for (const key of reviewSurfaceRequestsInFlight.keys()) {
+    if (key.startsWith(`${targetKey}\u0000`)) {
+      reviewSurfaceRequestsInFlight.delete(key);
+    }
+  }
 }
 
 export function clearPullRequestReviewSurfaceThreadCache() {
   reviewSurfaceCache.clear();
+  reviewSurfaceRequestsInFlight.clear();
   reviewSurfaceTargetEpochs.clear();
 }
 
@@ -263,10 +303,6 @@ function reviewSurfaceTargetKey(options: {
     options.repo.toLowerCase(),
     options.number,
   ].join('\u0000');
-}
-
-function tokenFingerprint(token: string) {
-  return createHash('sha256').update(token).digest('base64url').slice(0, 16);
 }
 
 async function fetchReviewThreadsWithQuery(

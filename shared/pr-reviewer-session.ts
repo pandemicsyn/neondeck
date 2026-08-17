@@ -1,5 +1,19 @@
 const revisionSeparator = '@';
 
+export const prReviewerDraftToolNames = [
+  'neondeck_pr_review_draft_comment_create',
+  'neondeck_pr_review_draft_comment_update',
+  'neondeck_pr_review_draft_comment_delete',
+] as const;
+
+export type PrReviewerDraftToolName = (typeof prReviewerDraftToolNames)[number];
+
+export function isPrReviewerDraftToolName(
+  value: string,
+): value is PrReviewerDraftToolName {
+  return (prReviewerDraftToolNames as readonly string[]).includes(value);
+}
+
 export function prReviewerConversationId(reviewId: string, headSha: string) {
   return `${reviewId}${revisionSeparator}${headSha}`;
 }

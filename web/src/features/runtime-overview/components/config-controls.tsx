@@ -46,6 +46,16 @@ export function RuntimeConfigControls({
   const [utilityThinking, setUtilityThinking] = useState(
     status.models.utilityThinkingLevel,
   );
+  const [exploreModel, setExploreModel] = useState(
+    status.models.exploreConfigured
+      ? (status.models.subagents.explore ?? '')
+      : '',
+  );
+  const [exploreThinking, setExploreThinking] = useState(
+    status.models.exploreThinkingConfigured
+      ? (status.models.subagentThinkingLevels.explore ?? 'medium')
+      : 'inherit',
+  );
   const [repoResearcher, setRepoResearcher] = useState(
     status.models.subagents.repoResearcher ?? '',
   );
@@ -123,6 +133,16 @@ export function RuntimeConfigControls({
       status.models.utilityConfigured ? status.models.utility : '',
     );
     setUtilityThinking(status.models.utilityThinkingLevel);
+    setExploreModel(
+      status.models.exploreConfigured
+        ? (status.models.subagents.explore ?? '')
+        : '',
+    );
+    setExploreThinking(
+      status.models.exploreThinkingConfigured
+        ? (status.models.subagentThinkingLevels.explore ?? 'medium')
+        : 'inherit',
+    );
     setRepoResearcher(status.models.subagents.repoResearcher ?? '');
     setRepoThinking(
       status.models.subagentThinkingLevels.repoResearcher ?? 'medium',
@@ -195,6 +215,8 @@ export function RuntimeConfigControls({
         prReviewTimeoutSeconds: parsedPrReviewTimeoutSeconds,
         utilityModel,
         utilityThinking,
+        exploreModel,
+        exploreThinking,
         repoResearcher,
         repoThinking,
         ciInvestigator,
@@ -403,6 +425,26 @@ export function RuntimeConfigControls({
           }}
           options={thinkingLevelOptions}
           value={utilityThinking}
+        />
+        <ConfigInput
+          label="explore"
+          onChange={(value) => {
+            skipModelSyncForStatus.current = null;
+            setModelDirty(true);
+            setExploreModel(value);
+          }}
+          placeholder={status.models.displayAssistant}
+          value={exploreModel}
+        />
+        <ConfigSelect
+          label="explore think"
+          onChange={(value) => {
+            skipModelSyncForStatus.current = null;
+            setModelDirty(true);
+            setExploreThinking(value);
+          }}
+          options={['inherit', ...thinkingLevelOptions]}
+          value={exploreThinking}
         />
         <ConfigInput
           label="repo"
@@ -946,6 +988,8 @@ function modelUpdateInput(
     prReviewTimeoutSeconds: number;
     utilityModel: string;
     utilityThinking: string;
+    exploreModel: string;
+    exploreThinking: string;
     repoResearcher: string;
     repoThinking: string;
     ciInvestigator: string;
@@ -961,13 +1005,15 @@ function modelUpdateInput(
   const prReviewTimeoutMs = values.prReviewTimeoutSeconds * 1000;
   const utilityModel = values.utilityModel.trim();
   const utilityThinking = values.utilityThinking.trim();
+  const exploreModel = values.exploreModel.trim();
+  const exploreThinking = values.exploreThinking.trim();
   const repoResearcher = values.repoResearcher.trim();
   const repoThinking = values.repoThinking.trim();
   const ciInvestigator = values.ciInvestigator.trim();
   const ciThinking = values.ciThinking.trim();
   const releaseReviewer = values.releaseReviewer.trim();
   const releaseThinking = values.releaseThinking.trim();
-  const subagents: Record<string, string> = {};
+  const subagents: Record<string, string | null> = {};
   const input: {
     displayAssistant?: string;
     displayAssistantThinkingLevel?: string;
@@ -976,7 +1022,7 @@ function modelUpdateInput(
     prReviewTimeoutMs?: number;
     utility?: string | null;
     utilityThinkingLevel?: string;
-    subagents?: Record<string, string>;
+    subagents?: Record<string, string | null>;
   } = {};
 
   if (displayAssistant !== status.models.displayAssistant) {
@@ -1015,6 +1061,26 @@ function modelUpdateInput(
     input.utilityThinkingLevel = utilityThinking;
   }
 
+  if (exploreModel) {
+    if (
+      !status.models.exploreConfigured ||
+      exploreModel !== status.models.subagents.explore
+    ) {
+      subagents.explore = exploreModel;
+    }
+  } else if (status.models.exploreConfigured) {
+    subagents.explore = null;
+  }
+  if (exploreThinking === 'inherit') {
+    if (status.models.exploreThinkingConfigured) {
+      subagents.exploreThinkingLevel = null;
+    }
+  } else if (
+    !status.models.exploreThinkingConfigured ||
+    exploreThinking !== status.models.subagentThinkingLevels.explore
+  ) {
+    subagents.exploreThinkingLevel = exploreThinking;
+  }
   if (repoResearcher !== status.models.subagents.repoResearcher) {
     subagents.repoResearcher = repoResearcher;
   }

@@ -22,6 +22,8 @@ This turn is {{source}}; the watch mode at dispatch was {{mode}}, the loop statu
 
 {{workspaceInstructions}}
 
+You may delegate focused read-only investigation to the explore subagent when a fresh context will materially help. Give it a complete task with the exact question, relevant revision, and known facts because it does not inherit this conversation. When two or more investigations are independent, give each a distinct focus and launch up to three Explore task calls together in one tool-call batch so they run concurrently. Use one task when the scope is narrow or a later investigation depends on an earlier result. Do not set task.cwd; the child must remain in the inherited managed-worktree cwd. Explore shares this owner's workspace environment, so its read-only and workspace-scope rules are behavioral rather than an OS boundary. Treat its answer as evidence to verify. Never batch a task call with a file mutation, commit, push, or PR-response tool; wait for Explore to settle and evaluate its result in a later model turn. This parent remains responsible for every edit, commit, delivery decision, and final response.
+
 Workspace commands are for coding and validation only. Never use git push, gh, curl, or another shell/network client to push commits or post PR responses; external delivery must use the mode-scoped Neondeck push and PR-response tools, which bind the destination and credentials.
 
 {{modeInstructions}}

@@ -75,7 +75,6 @@ const forbiddenPatterns = [
   /^design\//,
   /^docs\//,
   /^node_modules\//,
-  /^raycast\//,
   /^research-repos\//,
   /^web\/(?!dist\/)/,
   /(^|\/)\.DS_Store$/,

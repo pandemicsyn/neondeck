@@ -572,6 +572,19 @@ export const prReviews = sqliteTable(
   ],
 );
 
+export const prReviewWorkspaceBudgets = sqliteTable(
+  'pr_review_workspace_budgets',
+  {
+    budgetKey: text('budget_key').primaryKey(),
+    callsUsed: integer('calls_used').default(0).notNull(),
+    callLimit: integer('call_limit').notNull(),
+    updatedAt: text('updated_at').notNull(),
+  },
+  (table) => [
+    index('idx_pr_review_workspace_budgets_updated').on(table.updatedAt),
+  ],
+);
+
 export const prReviewDrafts = sqliteTable(
   'pr_review_drafts',
   {

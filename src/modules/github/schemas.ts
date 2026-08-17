@@ -26,6 +26,7 @@ export type GitHubPullRequest = {
 export type GitHubQueueIssue = {
   type:
     | 'search-truncated'
+    | 'search-incomplete'
     | 'search-error'
     | 'enrichment-error'
     | 'queue-truncated';
@@ -292,6 +293,7 @@ export type GitHubPullRequestEventState = {
   url: string;
   title: string;
   body: string | null;
+  author?: string | null;
   state: string;
   draft: boolean;
   merged: boolean;
@@ -352,6 +354,7 @@ export const githubSearchIssueSchema = v.object({
 
 export const githubSearchIssuesApiResponseSchema = v.object({
   total_count: v.number(),
+  incomplete_results: v.optional(v.boolean(), false),
   items: v.array(githubSearchIssueSchema),
 });
 
