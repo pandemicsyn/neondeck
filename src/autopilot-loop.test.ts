@@ -3663,6 +3663,37 @@ describe('minimal Autopilot watch loop', () => {
       lifecycleStatus: 'succeeded',
     });
 
+    const unavailableChecks = await setupCandidate(
+      130,
+      'unavailable-checks-owner',
+    );
+    await expect(
+      safePushAutopilotOwner(
+        {
+          id: unavailableChecks.watchId,
+          repoId: 'neondeck',
+          repoFullName: 'pandemicsyn/neondeck',
+          prNumber: 130,
+          worktreeId: unavailableChecks.candidate.id,
+        },
+        paths,
+        {
+          token: 'test-token',
+          fetchFacts: vi.fn(async () => ({
+            ...prEventFacts(repositorySeed!.featureSha!, 130),
+            checkRunsUnavailableReason:
+              'GitHub request failed with 403: Resource not accessible by personal access token',
+          })) as never,
+          pushGit: pushGit as never,
+        },
+      ),
+    ).resolves.toMatchObject({
+      ok: false,
+      requires: ['completePrEventFacts'],
+      message: expect.stringContaining('incomplete'),
+    });
+    expect(pushGit).not.toHaveBeenCalled();
+
     const stale = await setupCandidate(127, 'stale-head-owner');
     await expect(
       safePushAutopilotOwner(

@@ -406,18 +406,26 @@ function deterministicReviewPass(
   const failedChecks = checkRuns.filter(
     (check) => check.conclusion && check.conclusion !== 'success',
   );
+  const unavailableChecks = [
+    facts.state.checkSuitesUnavailableReason,
+    facts.state.checkRunsUnavailableReason,
+  ].filter((reason): reason is string => Boolean(reason));
   return {
     overview: {
       summary: `${facts.state.title} changes ${facts.diffSummary.files} file${facts.diffSummary.files === 1 ? '' : 's'} with ${facts.diffSummary.additions} addition${facts.diffSummary.additions === 1 ? '' : 's'} and ${facts.diffSummary.deletions} deletion${facts.diffSummary.deletions === 1 ? '' : 's'}.`,
       changeMap,
       risks,
       checks:
-        failedChecks.length > 0
-          ? failedChecks.map(
-              (check) =>
-                `${check.name}: ${check.conclusion ?? check.status ?? 'unknown'}`,
-            )
-          : ['No failing check runs were present in fetched facts.'],
+        unavailableChecks.length > 0
+          ? [
+              `GitHub Checks were unavailable: ${[...new Set(unavailableChecks)].join('; ')}`,
+            ]
+          : failedChecks.length > 0
+            ? failedChecks.map(
+                (check) =>
+                  `${check.name}: ${check.conclusion ?? check.status ?? 'unknown'}`,
+              )
+            : ['No failing check runs were present in fetched facts.'],
     },
     findings: [],
   };

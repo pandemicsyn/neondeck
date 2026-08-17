@@ -2,7 +2,7 @@ import { addNotification } from '../../app-state';
 import {
   fetchGitHubLogin,
   fetchPullRequestEventState,
-  pullRequestEventStateTruncation,
+  pullRequestEventStateIncompleteness,
 } from '../../github';
 import {
   recordWorktreePushBlocked,
@@ -62,8 +62,8 @@ export async function safePushAutopilotOwner(
         number: current.prNumber,
       },
     );
-    const truncation = pullRequestEventStateTruncation(facts);
-    if (truncation.any) {
+    const incompleteness = pullRequestEventStateIncompleteness(facts);
+    if (incompleteness.any) {
       return blockSafePush(
         current,
         worktree.id,

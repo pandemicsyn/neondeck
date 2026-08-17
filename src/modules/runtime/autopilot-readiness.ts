@@ -23,7 +23,7 @@ import {
   fetchGitHubLogin,
   fetchPullRequestEventState,
   githubFetch,
-  pullRequestEventStateTruncation,
+  pullRequestEventStateIncompleteness,
   type GitHubPullRequestEventState,
 } from '../github';
 import {
@@ -281,24 +281,24 @@ export async function readAutopilotReadiness(
           repo: repo.github.name,
           number: input.prNumber,
         });
-        const truncation = pullRequestEventStateTruncation(eventState);
+        const incompleteness = pullRequestEventStateIncompleteness(eventState);
         const permissionsKnown = branchPermissionFactsKnown(
           eventState.branchPermissions,
         );
         api =
-          truncation.any || !permissionsKnown
+          incompleteness.any || !permissionsKnown
             ? fact(
                 'api',
                 'GitHub API',
                 'blocked',
                 true,
-                truncation.any
-                  ? `GitHub returned incomplete PR facts: ${truncation.categories.join(', ')}.`
+                incompleteness.any
+                  ? `GitHub returned incomplete PR facts: ${incompleteness.categories.join(', ')}.`
                   : 'GitHub did not return complete base/head repository push permission facts.',
                 'Reduce the PR fact set or restore access before admitting Autopilot.',
                 {
                   scopes: metadata.scopes,
-                  truncation: truncation.categories,
+                  truncation: incompleteness.categories,
                   branchPermissionsKnown: permissionsKnown,
                 },
               )

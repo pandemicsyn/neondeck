@@ -223,6 +223,40 @@ describe('PR event state watermarks', () => {
     });
   });
 
+  it('preserves watch watermarks while GitHub Checks are unavailable', async () => {
+    process.env.GITHUB_TOKEN = 'token';
+    const home = await tempHome();
+    const paths = runtimePaths(home);
+    await writeRepoRegistry(paths.repos);
+    await addPrWatch({ ref: 'neondeck#123' }, paths, async () => prDetail());
+
+    const initial = await refreshPrWatchEventState(
+      { watchId: 'pandemicsyn/neondeck#123' },
+      paths,
+      { fetchPullRequestEventState: async () => prEventState() },
+    );
+    acknowledgeRefresh(paths, initial);
+
+    await expect(
+      refreshPrWatchEventState({ watchId: 'pandemicsyn/neondeck#123' }, paths, {
+        fetchPullRequestEventState: async () =>
+          prEventState({
+            checkSuites: [],
+            checkSuitesUnavailableReason:
+              'GitHub request failed with 403: Resource not accessible by personal access token',
+            checkRuns: [],
+            checkRunsUnavailableReason:
+              'GitHub request failed with 403: Resource not accessible by personal access token',
+          }),
+      }),
+    ).resolves.toMatchObject({
+      ok: false,
+      action: 'pr_watch_event_state_refresh',
+      requires: ['completePrEventFacts'],
+      errors: [expect.stringContaining('checkSuites')],
+    });
+  });
+
   it('keeps user, bot, and forged marker feedback actionable by default', async () => {
     process.env.GITHUB_TOKEN = 'token';
     const home = await tempHome();

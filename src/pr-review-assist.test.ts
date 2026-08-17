@@ -709,6 +709,32 @@ describe('PR review assist', () => {
     });
   });
 
+  it('still seeds review findings when GitHub Checks are unavailable', async () => {
+    const paths = await tempPaths();
+    const facts = reviewFacts();
+    facts.state.checkSuites = [];
+    facts.state.checkRuns = [];
+    facts.state.checkSuitesUnavailableReason =
+      'GitHub request failed with 403: Resource not accessible by personal access token';
+    facts.state.checkRunsUnavailableReason =
+      facts.state.checkSuitesUnavailableReason;
+
+    const result = await reviewPrForHuman(
+      { ref: 'pandemicsyn/neondeck#10' },
+      paths,
+      {
+        fetchFacts: async () => facts,
+        reviewer: async () => reviewOutputWithOneFinding(),
+      },
+    );
+
+    expect(requireReviewAssistOk(result).data).toMatchObject({
+      seededCount: 1,
+      reportOnlyCount: 0,
+      skippedSeedingReason: null,
+    });
+  });
+
   it('includes typed PR context and explicit limitations in review prompt facts', () => {
     const facts = reviewFacts();
     facts.state.commits = [
@@ -936,6 +962,8 @@ describe('PR review assist', () => {
         runs: 4,
         suitesTruncated: true,
         runsTruncated: false,
+        suitesUnavailableReason: null,
+        runsUnavailableReason: null,
         successful: 2,
         skipped: 1,
         neutral: 0,

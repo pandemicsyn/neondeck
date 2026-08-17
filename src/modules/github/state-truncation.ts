@@ -13,6 +13,9 @@ export type GitHubPullRequestEventStateTruncation = {
   checkRuns: boolean;
 };
 
+export type GitHubPullRequestEventStateIncompleteness =
+  GitHubPullRequestEventStateTruncation;
+
 export function pullRequestEventStateTruncation(
   state: GitHubPullRequestEventState,
 ): GitHubPullRequestEventStateTruncation {
@@ -44,12 +47,42 @@ export function pullRequestEventStateTruncation(
   };
 }
 
+export function pullRequestEventStateIncompleteness(
+  state: GitHubPullRequestEventState,
+): GitHubPullRequestEventStateIncompleteness {
+  const truncation = pullRequestEventStateTruncation(state);
+  const incomplete = {
+    commits: truncation.commits,
+    reviewThreads: truncation.reviewThreads,
+    reviews: truncation.reviews,
+    conversationComments: truncation.conversationComments,
+    checkSuites:
+      truncation.checkSuites || Boolean(state.checkSuitesUnavailableReason),
+    checkRuns:
+      truncation.checkRuns || Boolean(state.checkRunsUnavailableReason),
+  };
+  const categories = Object.entries(incomplete)
+    .filter(([, value]) => value)
+    .map(([category]) => category);
+  return {
+    ...incomplete,
+    any: categories.length > 0,
+    categories,
+  };
+}
+
 export function prEventWatermarkTruncationCategories(
   watermarks: Array<{ category: string; value: unknown }>,
 ) {
   return watermarks.flatMap((watermark) => {
     const value = recordValue(watermark.value);
-    if (!value || value.truncated === true) return [watermark.category];
+    if (
+      !value ||
+      value.truncated === true ||
+      typeof value.unavailableReason === 'string'
+    ) {
+      return [watermark.category];
+    }
     if (
       watermark.category === 'review_threads' &&
       recordArray(value.threads).some(

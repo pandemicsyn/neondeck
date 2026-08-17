@@ -544,6 +544,8 @@ function reviewChecksForPrompt(state: GitHubPullRequestEventState) {
       runs: runs.length,
       suitesTruncated: state.checkSuitesTruncated ?? false,
       runsTruncated: state.checkRunsTruncated ?? false,
+      suitesUnavailableReason: state.checkSuitesUnavailableReason ?? null,
+      runsUnavailableReason: state.checkRunsUnavailableReason ?? null,
       successful: checks.filter((check) => check.conclusion === 'success')
         .length,
       skipped: checks.filter((check) => check.conclusion === 'skipped').length,
