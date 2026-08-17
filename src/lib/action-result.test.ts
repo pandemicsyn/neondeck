@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
+  ActionResultError,
+  actionResultErrorDetails,
   asJsonValue,
   failedAction,
   invalidInputAction,
@@ -42,6 +44,26 @@ describe('action-result helpers', () => {
       errors: ['Invalid.'],
       error: { code: 'INVALID_INPUT', message: 'Invalid.' },
     });
+  });
+
+  it('preserves structured action failure diagnostics across thrown boundaries', () => {
+    const error = new ActionResultError({
+      action: 'github_pr_event_state_get',
+      message: 'Could not fetch GitHub PR event state.',
+      errors: ['GitHub request failed with 403: Resource not accessible.'],
+      requires: ['GITHUB_TOKEN repository access'],
+    });
+
+    expect(error).toMatchObject({
+      name: 'ActionResultError',
+      action: 'github_pr_event_state_get',
+      message: 'Could not fetch GitHub PR event state.',
+    });
+    expect(actionResultErrorDetails(error)).toEqual({
+      errors: ['GitHub request failed with 403: Resource not accessible.'],
+      requires: ['GITHUB_TOKEN repository access'],
+    });
+    expect(actionResultErrorDetails(new Error('plain failure'))).toEqual({});
   });
 
   it('serializes values into JSON-compatible data', () => {

@@ -1,4 +1,5 @@
 import { Hono } from 'hono';
+import { actionResultErrorDetails } from '../../lib/action-result';
 import {
   listGitHubPrQueue,
   type GitHubPullRequest,
@@ -140,6 +141,7 @@ export function createReviewRoutes(
           action: 'pr_review_start',
           changed: false,
           message: errorMessage(error),
+          ...actionResultErrorDetails(error),
         },
         400,
       );
@@ -181,6 +183,7 @@ export function createReviewRoutes(
           action: 'pr_review_restart',
           changed: false,
           message: errorMessage(error),
+          ...actionResultErrorDetails(error),
         },
         400,
       );

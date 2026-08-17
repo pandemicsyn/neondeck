@@ -1,9 +1,36 @@
 import { type JsonValue } from '@flue/runtime';
 
-type ActionDetails = {
+export type ActionDetails = {
   errors?: string[];
   requires?: string[];
 };
+
+type FailedActionLike = ActionDetails & {
+  action?: string;
+  message: string;
+};
+
+export class ActionResultError extends Error {
+  readonly action?: string;
+  readonly errors?: string[];
+  readonly requires?: string[];
+
+  constructor(result: FailedActionLike) {
+    super(result.message);
+    this.name = 'ActionResultError';
+    this.action = result.action;
+    this.errors = result.errors;
+    this.requires = result.requires;
+  }
+}
+
+export function actionResultErrorDetails(error: unknown): ActionDetails {
+  if (!(error instanceof ActionResultError)) return {};
+  return {
+    ...(error.errors ? { errors: error.errors } : {}),
+    ...(error.requires ? { requires: error.requires } : {}),
+  };
+}
 
 export function okAction<TExtra extends Record<string, unknown> = never>(
   action: string,

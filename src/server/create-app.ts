@@ -59,6 +59,7 @@ import { createSessionRoutes } from './routes/sessions';
 import { createSkillRoutes } from './routes/skills';
 import { createWatchRoutes } from './routes/watches';
 import { createWorktreeRoutes } from './routes/worktrees';
+import { logFailedApiRequests } from './request-logging';
 import { recoverInterruptedAutopilotOwners } from '../modules/autopilot/owner/settlement';
 import { refreshGitHubQueueSnapshot } from '../modules/github';
 import { refreshPrReviewRemoteState } from '../modules/pr-reviews';
@@ -78,6 +79,7 @@ export type CreateAppOptions = {
   staticRoot?: string;
   scheduler?: boolean;
   runtimeServices?: boolean;
+  requestLogging?: boolean;
 };
 
 export async function createApp(options: CreateAppOptions = {}) {
@@ -113,6 +115,9 @@ export async function createApp(options: CreateAppOptions = {}) {
   const requireAppAccess = requireLocalApiAccess({
     trustedOrigins: appConfig.server?.trustedOrigins,
   });
+  if (options.requestLogging === true) {
+    app.use('/api/*', logFailedApiRequests());
+  }
   app.use('/api/*', requireAppAccess);
   app.use('/reports/*', requireAppAccess);
 
