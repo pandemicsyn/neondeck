@@ -85,14 +85,16 @@ export function reviewCommentPreview(
   value: string,
   fallback = 'Review thread',
 ) {
-  const preview = value
-    .split(/\n\s*Useful\? React with/i)[0]
-    .replace(/```[\s\S]*?```/g, (block) =>
-      block.replace(/```[\w-]*\n?/g, '').replace(/```/g, ''),
-    )
-    .replace(/!\[[^\]]*]\([^)]+\)/g, '')
-    .replace(/\[([^\]]+)]\([^)]+\)/g, '$1')
-    .replace(/<\/?[^>]+>/g, '')
+  const withoutHtml = stripHtmlTags(
+    value
+      .split(/\n\s*Useful\? React with/i)[0]
+      .replace(/```[\s\S]*?```/g, (block) =>
+        block.replace(/```[\w-]*\n?/g, '').replace(/```/g, ''),
+      )
+      .replace(/!\[[^\]]*]\([^)]+\)/g, '')
+      .replace(/\[([^\]]+)]\([^)]+\)/g, '$1'),
+  );
+  const preview = withoutHtml
     .replace(/^#{1,6}\s+/gm, '')
     .replace(/^\s*>+\s?/gm, '')
     .replace(/^\s*[-*+]\s+/gm, '')
@@ -105,6 +107,21 @@ export function reviewCommentPreview(
     .replace(/\s+/g, ' ')
     .trim();
   return preview || fallback;
+}
+
+function stripHtmlTags(value: string) {
+  let tagDepth = 0;
+  let plainText = '';
+  for (const character of value) {
+    if (character === '<') {
+      tagDepth += 1;
+    } else if (character === '>' && tagDepth > 0) {
+      tagDepth -= 1;
+    } else if (tagDepth === 0) {
+      plainText += character;
+    }
+  }
+  return plainText;
 }
 
 export function patchAnchorIndexesByPath(files: DiffFilePatch[]) {

@@ -481,6 +481,12 @@ describe('GitHubPrReview helpers', () => {
     ).toBe('Suggested change Use safeValue here Keep fallbacks explicit');
   });
 
+  it('removes nested HTML tags from annotation previews', () => {
+    expect(reviewCommentPreview('<scr<script>ipt>alert(123)</script>')).toBe(
+      'alert(123)',
+    );
+  });
+
   it('keeps active patch work separate from neighbor and review background paths', () => {
     const files = reviewFiles([
       'src/previous.ts',
