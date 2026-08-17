@@ -57,6 +57,29 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
           provider, and model details.
         </p>
 
+        <h3>GitHub token for pull request workflows</h3>
+        <p>
+          Neondeck reads <code>GITHUB_TOKEN</code> from the runtime-home
+          <code>.env</code>; it does not reuse the credential shown by
+          <code>gh auth status</code>. For complete private-repository PR review
+          and CI context, use a
+          <a href="https://github.com/settings/tokens"
+            >classic personal access token</a
+          >
+          with the <code>repo</code> scope. If your organization uses SAML SSO, authorize
+          the token for that organization, and confirm that the organization permits
+          classic PAT access.
+        </p>
+        <aside class="docs-note">
+          <strong>Fine-grained PAT limitation:</strong> GitHub's fine-grained token
+          settings do not currently expose the Checks permission required by the check-runs
+          and check-suites APIs. Actions and Workflows read access do not grant that
+          permission. Neondeck continues PR reviews without check data when those
+          endpoints return the corresponding 403, but features that specifically require
+          complete CI facts still need a classic PAT or a GitHub App with Checks read
+          access.
+        </aside>
+
         <h2>4. Start Neondeck</h2>
         <p>Run Neondeck in the foreground:</p>
         <pre><code>neondeck serve</code></pre>

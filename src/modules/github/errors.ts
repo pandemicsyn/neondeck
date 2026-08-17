@@ -34,6 +34,15 @@ export function errorMessage(error: unknown) {
   return error instanceof Error ? error.message : String(error);
 }
 
+export function isGitHubChecksAccessError(error: unknown) {
+  if (!(error instanceof GitHubApiError) || error.status !== 403) return false;
+  const detail = githubResponseDetail(error.data)?.toLowerCase();
+  return (
+    detail === 'resource not accessible by personal access token' ||
+    detail === 'resource not accessible by integration'
+  );
+}
+
 export function isRequestTimeout(error: unknown) {
   return (
     error instanceof Error &&

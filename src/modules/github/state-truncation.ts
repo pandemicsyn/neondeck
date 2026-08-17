@@ -49,7 +49,13 @@ export function prEventWatermarkTruncationCategories(
 ) {
   return watermarks.flatMap((watermark) => {
     const value = recordValue(watermark.value);
-    if (!value || value.truncated === true) return [watermark.category];
+    if (
+      !value ||
+      value.truncated === true ||
+      typeof value.unavailableReason === 'string'
+    ) {
+      return [watermark.category];
+    }
     if (
       watermark.category === 'review_threads' &&
       recordArray(value.threads).some(
