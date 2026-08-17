@@ -43,13 +43,13 @@
     "fix-lint": "ray lint --fix"
   },
   "dependencies": {
-    "@raycast/api": "^1.104.23"
+    "@raycast/api": "^1.104.24"
   },
   "overrides": {
     "esbuild": "0.28.1"
   },
   "devDependencies": {
-    "@types/node": "^26.1.1",
+    "@types/node": "^26.2.0",
     "typescript": "^7.0.2"
   }
 }
