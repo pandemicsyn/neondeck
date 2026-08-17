@@ -1,6 +1,7 @@
 .playwright-mcp/
 .impeccable/
 node_modules/
+.npm-cache/
 dist/
 web/dist/
 web/dist-perf/

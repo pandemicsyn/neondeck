@@ -73,3 +73,23 @@ jobs:
 
       - name: Build Neondeck app
         run: npm run build:dashboard
+
+  packages:
+    name: Validate workspace packages
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Set up Node
+        uses: actions/setup-node@v7
+        with:
+          node-version-file: .node-version
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Check workspace packages
+        run: npm run check:packages
