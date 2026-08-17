@@ -14,6 +14,7 @@
 - `PR_REVIEW_REPORT_DECK_PLAN.md` — proposed agent-authored review presentation work.
 - `EXEDEV_WORKSPACE_MODE_PLAN.md` — proposed exe.dev workspace-location mode.
 - `FLUE_2_USAGE_FOLLOWUP_BRIEFING.md` — non-blocking idiomatic cleanup and capability-surface reductions after the completed migration.
+- `GITHUB_WEBHOOK_RELAY_PLAN.md` — proposed GitHub webhook relay worker integration, blocked on a rebase prerequisite.
 
 ## Durable Research
 

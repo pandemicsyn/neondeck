@@ -2,8 +2,9 @@
   "$schema": "./node_modules/wrangler/config-schema.json",
   "name": "neondeck-github-webhook-relay",
   "main": "src/index.ts",
-  "compatibility_date": "2026-07-16",
-  "compatibility_flags": ["nodejs_compat"],
+  // Pinned to the newest date the installed wrangler's workerd supports
+  // (4.111.0 / workerd 1.20260710.1). Raise alongside a wrangler bump.
+  "compatibility_date": "2026-07-17",
   "secrets": {
     "required": ["GITHUB_WEBHOOK_SECRET", "WS_CLIENT_SECRET"],
   },
