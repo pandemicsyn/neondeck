@@ -4,7 +4,7 @@ import { noWorkspace } from './no-workspace';
 describe('noWorkspace', () => {
   it('retains an empty virtual environment without model-facing sandbox tools', async () => {
     const sandbox = noWorkspace();
-    const environment = await sandbox.createSessionEnv({ id: 'review-test' });
+    const environment = await sandbox.createSandbox({ id: 'review-test' });
 
     expect(environment.cwd).toBe('/workspace');
     expect(await environment.readdir('.')).toEqual([]);
