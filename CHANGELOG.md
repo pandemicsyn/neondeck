@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.0.0-beta.33
+
+### Patch Changes
+
+- [#291](https://github.com/pandemicsyn/neondeck/pull/291) [`9218208`](https://github.com/pandemicsyn/neondeck/commit/9218208cbe619512763f2efdf932c6a91f4b3901) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Add production API, agent activity, dashboard connection, and runtime lifecycle logs, and show the underlying GitHub diagnostics when starting a pull request review fails.
+
+- [#285](https://github.com/pandemicsyn/neondeck/pull/285) [`291fdca`](https://github.com/pandemicsyn/neondeck/commit/291fdca1c37aa65fa3d3f94b0bafb97bf6a1d2a4) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Harden pull request review previews against nested HTML tags.
+
 ## 1.0.0-beta.32
 
 ### Patch Changes
