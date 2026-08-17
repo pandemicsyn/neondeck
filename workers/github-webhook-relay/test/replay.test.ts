@@ -9,8 +9,10 @@ import {
 } from '../src/protocol';
 import {
   closeOpenSockets,
+  getEventLogRowCount,
   nextMessage,
   openWebSocket,
+  seedEventLog,
   sendGithubWebhook,
   webSocketClientSecret,
 } from './helpers';
@@ -27,11 +29,11 @@ function syntheticDeliveryId(prefix: string, index: number): string {
   return `${prefix}-0000-4000-8000-${String(index).padStart(12, '0')}`;
 }
 
-// Builds rows for `seedEventLogForTest`, the DO's test-only bulk-insert RPC.
-// It drives the exact same recordEvent/pruneEventLog path a real webhook
-// does, without the per-request HTTP + HMAC cost of `sendGithubWebhook` —
-// which matters here because these tests intentionally push past the
-// 1000-row retention cap.
+// Builds rows for `seedEventLog` (see helpers.ts), which drives the exact
+// same recordEvent/pruneEventLog path a real webhook does via
+// `runInDurableObject`, without the per-request HTTP + HMAC cost of
+// `sendGithubWebhook` — which matters here because these tests
+// intentionally push past the 1000-row retention cap.
 function syntheticEventRows(prefix: string, count: number) {
   return Array.from({ length: count }, (_, index) => ({
     deliveryId: syntheticDeliveryId(prefix, index),
@@ -146,9 +148,10 @@ describe('event log replay', () => {
     expect(response.status).toBe(200);
 
     // Push well past the retention cap so the delivery above is pruned out.
-    await room.seedEventLogForTest({
-      rows: syntheticEventRows('eeeeeeff', eventLogRetentionRows + 5),
-    });
+    await seedEventLog(
+      room,
+      syntheticEventRows('eeeeeeff', eventLogRetentionRows + 5),
+    );
 
     const socket = await openWebSocket(
       channel,
@@ -166,18 +169,19 @@ describe('event log replay', () => {
     const channel = 'pruning-room';
     const room = env.RELAY_ROOMS.getByName(channel);
 
-    await room.seedEventLogForTest({
-      rows: syntheticEventRows('11111111', eventLogRetentionRows + 50),
-    });
-    const seededStats = await room.getEventLogDiagnostics();
-    expect(seededStats.rowCount).toBeGreaterThan(0);
-    expect(seededStats.rowCount).toBeLessThanOrEqual(eventLogRetentionRows);
+    await seedEventLog(
+      room,
+      syntheticEventRows('11111111', eventLogRetentionRows + 50),
+    );
+    const seededRowCount = await getEventLogRowCount(room);
+    expect(seededRowCount).toBeGreaterThan(0);
+    expect(seededRowCount).toBeLessThanOrEqual(eventLogRetentionRows);
 
     // The production insert path prunes the same way on top of seeded rows.
     const liveId = syntheticDeliveryId('22222222', 0);
     const response = await sendGithubWebhook({ channel, deliveryId: liveId });
     expect(response.status).toBe(200);
-    const liveStats = await room.getEventLogDiagnostics();
-    expect(liveStats.rowCount).toBeLessThanOrEqual(eventLogRetentionRows);
+    const liveRowCount = await getEventLogRowCount(room);
+    expect(liveRowCount).toBeLessThanOrEqual(eventLogRetentionRows);
   });
 });

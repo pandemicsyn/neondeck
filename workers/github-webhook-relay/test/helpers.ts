@@ -1,6 +1,9 @@
 import { exports as workerExports } from 'cloudflare:workers';
+import { runInDurableObject } from 'cloudflare:test';
 import * as v from 'valibot';
 import type { JsonObject } from '../src/json';
+import type { EventLogRow } from '../src/protocol';
+import type { RelayRoom } from '../src/relay-room';
 
 export const githubWebhookSecret = "It's a Secret to Everybody";
 export const webSocketClientSecret = 'test-client-secret-0123456789';
@@ -159,4 +162,65 @@ export function closeOpenSockets(): void {
     }
   }
   openSockets.clear();
+}
+
+// Test-only access to the DO's internals via `runInDurableObject` (from
+// `cloudflare:test`), which reaches the instance and its
+// `DurableObjectState` directly. This is what lets the production class
+// stay free of RPC methods that exist purely for tests — see
+// `.plans/GITHUB_WEBHOOK_RELAY_PLAN.md` and the comments on `RelayRoom`.
+
+// Seeds the event log through the same recordEvent/pruneEventLog path a
+// real broadcast uses, skipping the HTTP + HMAC overhead of a full webhook
+// round trip. Lets the pruning tests exercise retention at scale without
+// paying for thousands of real requests. `recordEvent` is private, so the
+// cast below is the price of not exposing it from the production class.
+export async function seedEventLog(
+  room: DurableObjectStub<RelayRoom>,
+  rows: EventLogRow[],
+): Promise<void> {
+  await runInDurableObject(room, (instance) => {
+    const withRecordEvent = instance as unknown as {
+      recordEvent(row: EventLogRow): void;
+    };
+    for (const row of rows) withRecordEvent.recordEvent(row);
+  });
+}
+
+export async function getEventLogRowCount(
+  room: DurableObjectStub<RelayRoom>,
+): Promise<number> {
+  return runInDurableObject(room, (_instance, state) => {
+    const rows = state.storage.sql
+      .exec<{ rowCount: number }>(`SELECT COUNT(*) AS rowCount FROM events`)
+      .toArray();
+    return rows[0]?.rowCount ?? 0;
+  });
+}
+
+// Reads the durable `webSocketMessageCount` counter straight from storage
+// (not an instance field), so the read is honest across Durable Object
+// eviction — see the hibernation cost-model comment in `relay-room.ts`.
+export async function getWebSocketMessageCount(
+  room: DurableObjectStub<RelayRoom>,
+): Promise<number> {
+  return runInDurableObject(room, (_instance, state) => {
+    const rows = state.storage.sql
+      .exec<{ value: number }>(
+        `SELECT value FROM counters WHERE name = 'webSocketMessageCount'`,
+      )
+      .toArray();
+    return rows[0]?.value ?? 0;
+  });
+}
+
+export async function getWebSocketAutoResponseTimestamps(
+  room: DurableObjectStub<RelayRoom>,
+): Promise<(string | null)[]> {
+  return runInDurableObject(room, (_instance, state) =>
+    state.getWebSockets().map((socket) => {
+      const timestamp = state.getWebSocketAutoResponseTimestamp(socket);
+      return timestamp ? timestamp.toISOString() : null;
+    }),
+  );
 }

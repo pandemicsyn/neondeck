@@ -57,27 +57,11 @@ function extractPrNumber(payload: unknown): number | null {
   );
 }
 
-const eventLogSeedInputSchema = v.object({
-  rows: v.array(
-    v.object({
-      deliveryId: v.pipe(v.string(), v.uuid()),
-      event: v.pipe(v.string(), v.regex(/^[a-z][a-z0-9_]{0,63}$/)),
-      action: v.nullable(v.pipe(v.string(), v.minLength(1))),
-      repository: v.nullable(v.pipe(v.string(), v.minLength(1))),
-      prNumber: v.nullable(v.pipe(v.number(), v.integer(), v.minValue(1))),
-      receivedAt: v.pipe(v.string(), v.isoTimestamp()),
-    }),
-  ),
-});
+// Key for the persisted webSocketMessage counter in the `counters` table —
+// see the hibernation cost-model comment on that table in the constructor.
+const webSocketMessageCounterName = 'webSocketMessageCount';
 
 export class RelayRoom extends DurableObject<Env> {
-  // Test instrumentation for the hibernation cost-model guard: counts
-  // webSocketMessage invocations so a test can assert the canonical ping
-  // never reaches it (auto-response answers it without waking the object).
-  // Resets to 0 on every construction, which is fine — the guarantee under
-  // test is "stays 0 across N pings", not a total across the object's life.
-  private webSocketMessageCount = 0;
-
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
     this.ctx.setWebSocketAutoResponse(
@@ -97,6 +81,22 @@ export class RelayRoom extends DurableObject<Env> {
     this.ctx.storage.sql.exec(
       `CREATE INDEX IF NOT EXISTS idxEventsReceivedAt ON events (receivedAt)`,
     );
+    // Durable counters for test instrumentation, notably the hibernation
+    // cost-model guard: `webSocketMessage` increments `webSocketMessageCount`
+    // here so a test can assert the canonical ping never reaches it
+    // (auto-response answers it without waking the object). This must live
+    // in SQLite storage rather than an instance field — an instance field
+    // resets to 0 on every construction, so a Durable Object eviction
+    // between the pings and the assertion would make a regressed guarantee
+    // silently read back as 0 and pass for the wrong reason. Storage
+    // survives eviction, so the assertion is honest regardless of whether
+    // the object stayed resident.
+    this.ctx.storage.sql.exec(`
+      CREATE TABLE IF NOT EXISTS counters (
+        name TEXT PRIMARY KEY,
+        value INTEGER NOT NULL
+      )
+    `);
   }
 
   override async fetch(request: Request): Promise<Response> {
@@ -180,42 +180,6 @@ export class RelayRoom extends DurableObject<Env> {
       deliveredClients,
       failedClients,
     });
-  }
-
-  // Test-only diagnostics for the hibernation guard. Not reachable from any
-  // HTTP route — only via direct Durable Object RPC, the same surface the
-  // test suite already uses for `evictDurableObject`.
-  async getHibernationDiagnostics(): Promise<{
-    webSocketMessageCount: number;
-    autoResponseTimestamps: (string | null)[];
-  }> {
-    return {
-      webSocketMessageCount: this.webSocketMessageCount,
-      autoResponseTimestamps: this.ctx.getWebSockets().map((socket) => {
-        const timestamp = this.ctx.getWebSocketAutoResponseTimestamp(socket);
-        return timestamp ? timestamp.toISOString() : null;
-      }),
-    };
-  }
-
-  // Test-only diagnostics for the pruning guard. Same RPC-only surface as
-  // getHibernationDiagnostics above.
-  async getEventLogDiagnostics(): Promise<{ rowCount: number }> {
-    const rows = this.ctx.storage.sql
-      .exec<{ rowCount: number }>(`SELECT COUNT(*) AS rowCount FROM events`)
-      .toArray();
-    return { rowCount: rows[0]?.rowCount ?? 0 };
-  }
-
-  // Test-only: seeds the event log through the same recordEvent/
-  // pruneEventLog path a real broadcast uses, skipping the HTTP + HMAC
-  // overhead of a full webhook round trip. Lets the pruning tests exercise
-  // retention at scale without paying for thousands of real requests.
-  async seedEventLogForTest(input: unknown): Promise<void> {
-    const parsed = v.parse(eventLogSeedInputSchema, input);
-    for (const row of parsed.rows) {
-      this.recordEvent(row);
-    }
   }
 
   private recordEvent(row: EventLogRow): void {
@@ -313,7 +277,13 @@ export class RelayRoom extends DurableObject<Env> {
     ws: WebSocket,
     message: string | ArrayBuffer,
   ): void {
-    this.webSocketMessageCount += 1;
+    // Single indexed upsert — same cost class as the event-log insert path
+    // below, not a meaningful addition to this handler's hot-path cost.
+    this.ctx.storage.sql.exec(
+      `INSERT INTO counters (name, value) VALUES (?, 1)
+         ON CONFLICT (name) DO UPDATE SET value = value + 1`,
+      webSocketMessageCounterName,
+    );
     if (message instanceof ArrayBuffer) {
       ws.close(1003, 'Text frames only.');
       return;

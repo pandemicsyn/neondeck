@@ -10,6 +10,8 @@ import {
 import {
   closeOpenSockets,
   fetchWorker,
+  getWebSocketAutoResponseTimestamps,
+  getWebSocketMessageCount,
   nextClose,
   nextMessage,
   openWebSocket,
@@ -101,6 +103,11 @@ describe('authenticated hibernating WebSockets', () => {
     // regression makes the ping fall through to webSocketMessage, this
     // relay silently goes back to being billed for continuous duration
     // instead of only real deliveries.
+    //
+    // The count is read from durable storage (see getWebSocketMessageCount
+    // in helpers.ts), not an instance field, so this assertion is honest
+    // even if the object were evicted between pings — see the persistence
+    // test below and the comment on the `counters` table in relay-room.ts.
     const channel = 'hibernation-guard';
     const socket = await openWebSocket(channel);
     const room = env.RELAY_ROOMS.getByName(channel);
@@ -110,13 +117,16 @@ describe('authenticated hibernating WebSockets', () => {
       const pong = nextMessage(socket);
       socket.send(pingFrameText);
       await pong;
-      const diagnostics = await room.getHibernationDiagnostics();
-      expect(diagnostics.webSocketMessageCount).toBe(0);
-      timestampsAfterPing.push(diagnostics.autoResponseTimestamps[0] ?? null);
+      timestampsAfterPing.push(
+        (await getWebSocketAutoResponseTimestamps(room))[0] ?? null,
+      );
     }
 
     // Every ping was answered by the auto-response system (the timestamp
-    // is set and non-decreasing) while webSocketMessage was never called.
+    // is set and non-decreasing) while webSocketMessage was never called —
+    // checked once at the end, against durable storage, after all five
+    // pings.
+    expect(await getWebSocketMessageCount(room)).toBe(0);
     for (const timestamp of timestampsAfterPing) {
       expect(timestamp).not.toBeNull();
     }
@@ -128,6 +138,38 @@ describe('authenticated hibernating WebSockets', () => {
         parsedTimestamps[index - 1] as number,
       );
     }
+  });
+
+  it('persists the webSocketMessage counter across Durable Object eviction', async () => {
+    // Finding 1's fix: webSocketMessageCount lives in SQLite storage, not
+    // an instance field, so it must survive eviction. This test proves the
+    // fix directly — increment the counter, evict the object, read it back
+    // — which is exactly what the "stays 0" guard above depends on to be
+    // meaningful rather than accidental (a millisecond-scale test never
+    // naturally reaches the 10s hibernation threshold, so without this test
+    // the guard could regress silently).
+    const channel = 'counter-persistence';
+    const socket = await openWebSocket(channel);
+    const room = env.RELAY_ROOMS.getByName(channel);
+
+    // A control frame that parses as a valid ping but is not byte-exact
+    // with the canonical `pingFrameText` misses the auto-response fast
+    // path and falls through to webSocketMessage, incrementing the
+    // counter without closing the connection.
+    const nonCanonicalPing = JSON.stringify({ type: 'ping', version: 1 });
+    expect(nonCanonicalPing).not.toBe(pingFrameText);
+
+    const pingCount = 3;
+    for (let index = 0; index < pingCount; index += 1) {
+      const pong = nextMessage(socket);
+      socket.send(nonCanonicalPing);
+      await pong;
+    }
+    expect(await getWebSocketMessageCount(room)).toBe(pingCount);
+
+    await evictDurableObject(room);
+
+    expect(await getWebSocketMessageCount(room)).toBe(pingCount);
   });
 
   it('rejects unknown fields in a client control frame', async () => {
