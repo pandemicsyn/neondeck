@@ -1,27 +1,30 @@
-import { z } from 'zod';
+import * as v from 'valibot';
 
-const bearerTokenSchema = z
-  .string()
-  .min(16)
-  .max(256)
-  .regex(/^[\x21-\x7e]+$/);
+const bearerTokenSchema = v.pipe(
+  v.string(),
+  v.minLength(16),
+  v.maxLength(256),
+  v.regex(/^[\x21-\x7e]+$/),
+);
 
-const webSocketEnvironmentSchema = z.object({
+const webSocketEnvironmentSchema = v.object({
   WS_CLIENT_SECRET: bearerTokenSchema,
 });
 
-const upgradeHeaderSchema = z
-  .string()
-  .transform((value) => value.toLowerCase())
-  .pipe(z.literal('websocket'));
+const upgradeHeaderSchema = v.pipe(
+  v.string(),
+  v.transform((value) => value.toLowerCase()),
+  v.literal('websocket'),
+);
 
-const authorizationHeaderSchema = z
-  .string()
-  .min(1)
-  .max(263)
-  .regex(/^Bearer [\x21-\x7e]+$/i)
-  .transform((value) => value.slice(value.indexOf(' ') + 1))
-  .pipe(bearerTokenSchema);
+const authorizationHeaderSchema = v.pipe(
+  v.string(),
+  v.minLength(1),
+  v.maxLength(263),
+  v.regex(/^Bearer [\x21-\x7e]+$/i),
+  v.transform((value) => value.slice(value.indexOf(' ') + 1)),
+  bearerTokenSchema,
+);
 
 export type WebSocketAuthenticationResult =
   | { ok: true }
@@ -36,7 +39,7 @@ export async function authenticateWebSocketRequest(
   request: Request,
   env: Env,
 ): Promise<WebSocketAuthenticationResult> {
-  const parsedEnvironment = webSocketEnvironmentSchema.safeParse(env);
+  const parsedEnvironment = v.safeParse(webSocketEnvironmentSchema, env);
   if (!parsedEnvironment.success) {
     return failure(
       500,
@@ -45,14 +48,16 @@ export async function authenticateWebSocketRequest(
     );
   }
 
-  const parsedUpgrade = upgradeHeaderSchema.safeParse(
+  const parsedUpgrade = v.safeParse(
+    upgradeHeaderSchema,
     request.headers.get('upgrade'),
   );
   if (!parsedUpgrade.success) {
     return failure(426, 'upgrade_required', 'WebSocket upgrade is required.');
   }
 
-  const parsedAuthorization = authorizationHeaderSchema.safeParse(
+  const parsedAuthorization = v.safeParse(
+    authorizationHeaderSchema,
     request.headers.get('authorization'),
   );
   if (!parsedAuthorization.success) {
@@ -60,8 +65,8 @@ export async function authenticateWebSocketRequest(
   }
 
   const [providedHash, expectedHash] = await Promise.all([
-    hashSecret(parsedAuthorization.data),
-    hashSecret(parsedEnvironment.data.WS_CLIENT_SECRET),
+    hashSecret(parsedAuthorization.output),
+    hashSecret(parsedEnvironment.output.WS_CLIENT_SECRET),
   ]);
   if (!crypto.subtle.timingSafeEqual(providedHash, expectedHash)) {
     return failure(401, 'unauthorized', 'WebSocket authentication failed.');

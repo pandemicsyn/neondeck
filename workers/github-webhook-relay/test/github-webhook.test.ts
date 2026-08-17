@@ -1,18 +1,18 @@
 import { describe, expect, it } from 'vitest';
-import { z } from 'zod';
+import * as v from 'valibot';
 import { verifyGithubSignature } from '../src/github-webhook';
 import { fetchWorker, githubWebhookSecret, sendGithubWebhook } from './helpers';
 
-const errorSchema = z.object({
-  error: z.string().min(1),
-  code: z.string().min(1),
+const errorSchema = v.object({
+  error: v.pipe(v.string(), v.minLength(1)),
+  code: v.pipe(v.string(), v.minLength(1)),
 });
 
-const relayResponseSchema = z.object({
-  relayed: z.literal(true),
-  protocolVersion: z.literal(1),
-  deliveryId: z.string().uuid(),
-  deliveredClients: z.number().int().nonnegative(),
+const relayResponseSchema = v.object({
+  relayed: v.literal(true),
+  protocolVersion: v.literal(1),
+  deliveryId: v.pipe(v.string(), v.uuid()),
+  deliveredClients: v.pipe(v.number(), v.integer(), v.minValue(0)),
 });
 
 describe('GitHub webhook ingress', () => {
@@ -33,12 +33,13 @@ describe('GitHub webhook ingress', () => {
 
     expect(response.status).toBe(200);
     expect(
-      z
-        .object({
-          ok: z.literal(true),
-          service: z.literal('github-webhook-relay'),
-        })
-        .parse(await response.json()),
+      v.parse(
+        v.object({
+          ok: v.literal(true),
+          service: v.literal('github-webhook-relay'),
+        }),
+        await response.json(),
+      ),
     ).toEqual({ ok: true, service: 'github-webhook-relay' });
   });
 
@@ -54,7 +55,7 @@ describe('GitHub webhook ingress', () => {
     });
 
     expect(response.status).toBe(200);
-    expect(relayResponseSchema.parse(await response.json())).toEqual({
+    expect(v.parse(relayResponseSchema, await response.json())).toEqual({
       relayed: true,
       protocolVersion: 1,
       deliveryId,
@@ -69,7 +70,9 @@ describe('GitHub webhook ingress', () => {
     });
 
     expect(response.status).toBe(401);
-    expect(errorSchema.parse(await response.json()).code).toBe('unauthorized');
+    expect(v.parse(errorSchema, await response.json()).code).toBe(
+      'unauthorized',
+    );
   });
 
   it('rejects missing required GitHub headers', async () => {
@@ -78,7 +81,7 @@ describe('GitHub webhook ingress', () => {
     });
 
     expect(response.status).toBe(400);
-    expect(errorSchema.parse(await response.json()).code).toBe(
+    expect(v.parse(errorSchema, await response.json()).code).toBe(
       'invalid_request',
     );
   });
@@ -87,7 +90,7 @@ describe('GitHub webhook ingress', () => {
     const response = await sendGithubWebhook({ body: 'not-json' });
 
     expect(response.status).toBe(400);
-    expect(errorSchema.parse(await response.json()).error).toContain(
+    expect(v.parse(errorSchema, await response.json()).error).toContain(
       'not valid JSON',
     );
   });
@@ -100,7 +103,7 @@ describe('GitHub webhook ingress', () => {
     });
 
     expect(response.status).toBe(400);
-    expect(errorSchema.parse(await response.json()).error).toContain(
+    expect(v.parse(errorSchema, await response.json()).error).toContain(
       'Content-Length',
     );
   });
@@ -109,7 +112,7 @@ describe('GitHub webhook ingress', () => {
     const response = await sendGithubWebhook({ declaredLength: 1_048_577 });
 
     expect(response.status).toBe(413);
-    expect(errorSchema.parse(await response.json()).code).toBe(
+    expect(v.parse(errorSchema, await response.json()).code).toBe(
       'payload_too_large',
     );
   });
@@ -127,7 +130,9 @@ describe('GitHub webhook ingress', () => {
     });
 
     expect(response.status).toBe(200);
-    expect(relayResponseSchema.parse(await response.json()).relayed).toBe(true);
+    expect(v.parse(relayResponseSchema, await response.json()).relayed).toBe(
+      true,
+    );
   });
 
   it('rejects a body signed with a secret unrelated to either configured secret', async () => {
@@ -136,7 +141,9 @@ describe('GitHub webhook ingress', () => {
     });
 
     expect(response.status).toBe(401);
-    expect(errorSchema.parse(await response.json()).code).toBe('unauthorized');
+    expect(v.parse(errorSchema, await response.json()).code).toBe(
+      'unauthorized',
+    );
   });
 
   it('accepts GitHub redelivery with the same delivery ID', async () => {
@@ -146,10 +153,10 @@ describe('GitHub webhook ingress', () => {
 
     expect(first.status).toBe(200);
     expect(second.status).toBe(200);
-    expect(relayResponseSchema.parse(await first.json()).deliveryId).toBe(
+    expect(v.parse(relayResponseSchema, await first.json()).deliveryId).toBe(
       deliveryId,
     );
-    expect(relayResponseSchema.parse(await second.json()).deliveryId).toBe(
+    expect(v.parse(relayResponseSchema, await second.json()).deliveryId).toBe(
       deliveryId,
     );
   });

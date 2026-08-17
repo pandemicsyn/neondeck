@@ -1,16 +1,16 @@
-import { z } from 'zod';
+import * as v from 'valibot';
 
 export type JsonValue =
   null | boolean | number | string | JsonValue[] | { [key: string]: JsonValue };
 
 export type JsonObject = { [key: string]: JsonValue };
 
-export const jsonValueSchema = z.custom<JsonValue>(
+export const jsonValueSchema = v.custom<JsonValue>(
   (value) => isJsonValue(value, new WeakSet<object>()),
   'Expected a finite, acyclic JSON value.',
 );
 
-export const jsonObjectSchema = z.custom<JsonObject>(
+export const jsonObjectSchema = v.custom<JsonObject>(
   (value) => isPlainObject(value) && isJsonValue(value, new WeakSet<object>()),
   'Expected a finite, acyclic JSON object.',
 );

@@ -10,8 +10,8 @@
 - Worker-to-Durable-Object requests remove the bearer credential before
   forwarding the upgrade.
 - RPC inputs, connection attachments, HTTP JSON bodies, and WebSocket frames are
-  validated with Zod. Payloads must be finite, acyclic JSON values before frame
-  encoding.
+  validated with valibot. Payloads must be finite, acyclic JSON values before
+  frame encoding.
 
 ## Secret handling
 

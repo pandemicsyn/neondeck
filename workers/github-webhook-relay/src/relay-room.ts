@@ -1,5 +1,5 @@
 import { DurableObject } from 'cloudflare:workers';
-import { z } from 'zod';
+import * as v from 'valibot';
 import { jsonError } from './http';
 import {
   createGithubWebhookEnvelope,
@@ -13,26 +13,25 @@ import {
 } from './protocol';
 import { channelSchema, parseWebSocketRoute } from './routes';
 
-const connectionAttachmentSchema = z
-  .object({
-    version: z.literal(1),
-    channel: z.string().min(1).max(64),
-    connectionId: z.string().uuid(),
-    connectedAt: z.string().datetime(),
-  })
-  .strict();
+const connectionAttachmentSchema = v.strictObject({
+  version: v.literal(1),
+  channel: v.pipe(v.string(), v.minLength(1), v.maxLength(64)),
+  connectionId: v.pipe(v.string(), v.uuid()),
+  connectedAt: v.pipe(v.string(), v.isoTimestamp()),
+});
 
-export const broadcastResultSchema = z
-  .object({
-    connectedClients: z.number().int().nonnegative(),
-    deliveredClients: z.number().int().nonnegative(),
-    failedClients: z.number().int().nonnegative(),
-  })
-  .strict();
+export const broadcastResultSchema = v.strictObject({
+  connectedClients: v.pipe(v.number(), v.integer(), v.minValue(0)),
+  deliveredClients: v.pipe(v.number(), v.integer(), v.minValue(0)),
+  failedClients: v.pipe(v.number(), v.integer(), v.minValue(0)),
+});
 
-const socketFrameSchema = z.union([z.string(), z.instanceof(ArrayBuffer)]);
+// Note: incoming WebSocket messages used to be re-validated against a
+// `string | ArrayBuffer` union schema here, but `webSocketMessage` below
+// already types `message` that way — the runtime guarantees it, so the
+// check below is a plain `instanceof` narrowing instead.
 
-const sinceCursorSchema = z.string().uuid();
+const sinceCursorSchema = v.pipe(v.string(), v.uuid());
 
 // Retain roughly 24h or 1000 rows, whichever bound ends up smaller.
 const eventLogRetentionMs = 24 * 60 * 60 * 1000;
@@ -41,34 +40,32 @@ const eventLogRetentionRows = 1000;
 // Pulls a PR number out of an already-signature-verified but otherwise
 // untyped GitHub payload. This is real GitHub input — the payload's nested
 // shape is not guaranteed by any type, so it is validated here.
-const prNumberSourceSchema = z
-  .object({
-    pull_request: z
-      .object({ number: z.number().int().positive() })
-      .passthrough()
-      .optional(),
-    issue: z
-      .object({ number: z.number().int().positive() })
-      .passthrough()
-      .optional(),
-  })
-  .passthrough();
+const prNumberSourceSchema = v.looseObject({
+  pull_request: v.optional(
+    v.looseObject({ number: v.pipe(v.number(), v.integer(), v.minValue(1)) }),
+  ),
+  issue: v.optional(
+    v.looseObject({ number: v.pipe(v.number(), v.integer(), v.minValue(1)) }),
+  ),
+});
 
 function extractPrNumber(payload: unknown): number | null {
-  const parsed = prNumberSourceSchema.safeParse(payload);
+  const parsed = v.safeParse(prNumberSourceSchema, payload);
   if (!parsed.success) return null;
-  return parsed.data.pull_request?.number ?? parsed.data.issue?.number ?? null;
+  return (
+    parsed.output.pull_request?.number ?? parsed.output.issue?.number ?? null
+  );
 }
 
-const eventLogSeedInputSchema = z.object({
-  rows: z.array(
-    z.object({
-      deliveryId: z.string().uuid(),
-      event: z.string().regex(/^[a-z][a-z0-9_]{0,63}$/),
-      action: z.string().min(1).nullable(),
-      repository: z.string().min(1).nullable(),
-      prNumber: z.number().int().positive().nullable(),
-      receivedAt: z.string().datetime(),
+const eventLogSeedInputSchema = v.object({
+  rows: v.array(
+    v.object({
+      deliveryId: v.pipe(v.string(), v.uuid()),
+      event: v.pipe(v.string(), v.regex(/^[a-z][a-z0-9_]{0,63}$/)),
+      action: v.nullable(v.pipe(v.string(), v.minLength(1))),
+      repository: v.nullable(v.pipe(v.string(), v.minLength(1))),
+      prNumber: v.nullable(v.pipe(v.number(), v.integer(), v.minValue(1))),
+      receivedAt: v.pipe(v.string(), v.isoTimestamp()),
     }),
   ),
 });
@@ -105,11 +102,11 @@ export class RelayRoom extends DurableObject<Env> {
   override async fetch(request: Request): Promise<Response> {
     const url = new URL(request.url);
     const route = parseWebSocketRoute(url.pathname);
-    const roomChannel = channelSchema.safeParse(this.ctx.id.name);
+    const roomChannel = v.safeParse(channelSchema, this.ctx.id.name);
     if (
       !route ||
       !roomChannel.success ||
-      route.channel !== roomChannel.data ||
+      route.channel !== roomChannel.output ||
       request.method !== 'GET' ||
       request.headers.get('upgrade')?.toLowerCase() !== 'websocket'
     ) {
@@ -125,18 +122,18 @@ export class RelayRoom extends DurableObject<Env> {
     const pair = new WebSocketPair();
     const client = pair[0];
     const server = pair[1];
-    const attachment = connectionAttachmentSchema.parse({
+    const attachment = v.parse(connectionAttachmentSchema, {
       version: 1,
-      channel: roomChannel.data,
+      channel: roomChannel.output,
       connectionId: crypto.randomUUID(),
       connectedAt: new Date().toISOString(),
     });
 
     server.serializeAttachment(attachment);
-    this.ctx.acceptWebSocket(server, [`channel:${roomChannel.data}`]);
+    this.ctx.acceptWebSocket(server, [`channel:${roomChannel.output}`]);
 
     if (sinceParam !== null) {
-      this.replayFrom(server, roomChannel.data, sinceParam);
+      this.replayFrom(server, roomChannel.output, sinceParam);
     }
 
     return new Response(null, { status: 101, webSocket: client });
@@ -144,9 +141,9 @@ export class RelayRoom extends DurableObject<Env> {
 
   async broadcast(
     input: unknown,
-  ): Promise<z.infer<typeof broadcastResultSchema>> {
-    const broadcast = relayBroadcastInputSchema.parse(input);
-    const roomChannel = channelSchema.parse(this.ctx.id.name);
+  ): Promise<v.InferOutput<typeof broadcastResultSchema>> {
+    const broadcast = v.parse(relayBroadcastInputSchema, input);
+    const roomChannel = v.parse(channelSchema, this.ctx.id.name);
     if (broadcast.channel !== roomChannel) {
       throw new Error('Relay channel does not match Durable Object identity.');
     }
@@ -178,7 +175,7 @@ export class RelayRoom extends DurableObject<Env> {
       }
     }
 
-    return broadcastResultSchema.parse({
+    return v.parse(broadcastResultSchema, {
       connectedClients: sockets.length,
       deliveredClients,
       failedClients,
@@ -215,7 +212,7 @@ export class RelayRoom extends DurableObject<Env> {
   // overhead of a full webhook round trip. Lets the pruning tests exercise
   // retention at scale without paying for thousands of real requests.
   async seedEventLogForTest(input: unknown): Promise<void> {
-    const parsed = eventLogSeedInputSchema.parse(input);
+    const parsed = v.parse(eventLogSeedInputSchema, input);
     for (const row of parsed.rows) {
       this.recordEvent(row);
     }
@@ -272,7 +269,7 @@ export class RelayRoom extends DurableObject<Env> {
     channel: string,
     sinceParam: string,
   ): void {
-    const cursor = sinceCursorSchema.safeParse(sinceParam);
+    const cursor = v.safeParse(sinceCursorSchema, sinceParam);
     if (!cursor.success) {
       server.send(encodeServerFrame({ version: 1, type: 'replay.truncated' }));
       return;
@@ -281,7 +278,7 @@ export class RelayRoom extends DurableObject<Env> {
     const cursorRow = this.ctx.storage.sql
       .exec<{ seq: number }>(
         `SELECT seq FROM events WHERE deliveryId = ?`,
-        cursor.data,
+        cursor.output,
       )
       .toArray();
     const cursorSeq = cursorRow[0]?.seq;
@@ -317,13 +314,13 @@ export class RelayRoom extends DurableObject<Env> {
     message: string | ArrayBuffer,
   ): void {
     this.webSocketMessageCount += 1;
-    const parsedMessage = socketFrameSchema.safeParse(message);
-    if (!parsedMessage.success || parsedMessage.data instanceof ArrayBuffer) {
+    if (message instanceof ArrayBuffer) {
       ws.close(1003, 'Text frames only.');
       return;
     }
 
-    const attachment = connectionAttachmentSchema.safeParse(
+    const attachment = v.safeParse(
+      connectionAttachmentSchema,
       ws.deserializeAttachment(),
     );
     if (!attachment.success) {
@@ -331,7 +328,7 @@ export class RelayRoom extends DurableObject<Env> {
       return;
     }
 
-    const controlFrame = parseClientControlFrame(parsedMessage.data);
+    const controlFrame = parseClientControlFrame(message);
     if (!controlFrame.ok) {
       ws.close(
         controlFrame.reason === 'too_large' ? 1009 : 1008,
@@ -345,44 +342,47 @@ export class RelayRoom extends DurableObject<Env> {
     ws.send(encodeServerFrame({ version: 1, type: 'pong' }));
   }
 
+  // `reason` is part of the DurableObject override signature but is not
+  // logged (it never was — a schema used to validate it without the result
+  // being used).
   override webSocketClose(
     ws: WebSocket,
     code: number,
-    reason: string,
+    _reason: string,
     wasClean: boolean,
   ): void {
-    const closeEvent = z
-      .object({
-        code: z.number().int().min(0).max(4999),
-        reason: z.string().max(123),
-        wasClean: z.boolean(),
-      })
-      .safeParse({ code, reason, wasClean });
-    const attachment = connectionAttachmentSchema.safeParse(
+    const attachment = v.safeParse(
+      connectionAttachmentSchema,
       ws.deserializeAttachment(),
     );
-    if (!closeEvent.success || !attachment.success) return;
+    if (!attachment.success) return;
 
+    // Always log, regardless of the close code the runtime reports — codes
+    // outside the registered 0-4999 range are still real close events and
+    // must not be silently dropped.
     console.log(
       JSON.stringify({
         message: 'relay WebSocket closed',
-        channel: attachment.data.channel,
-        connectionId: attachment.data.connectionId,
-        code: closeEvent.data.code,
-        wasClean: closeEvent.data.wasClean,
+        channel: attachment.output.channel,
+        connectionId: attachment.output.connectionId,
+        code,
+        wasClean,
       }),
     );
   }
 
   override webSocketError(ws: WebSocket, error: unknown): void {
-    const attachment = connectionAttachmentSchema.safeParse(
+    const attachment = v.safeParse(
+      connectionAttachmentSchema,
       ws.deserializeAttachment(),
     );
     console.error(
       JSON.stringify({
         message: 'relay WebSocket error',
-        channel: attachment.success ? attachment.data.channel : null,
-        connectionId: attachment.success ? attachment.data.connectionId : null,
+        channel: attachment.success ? attachment.output.channel : null,
+        connectionId: attachment.success
+          ? attachment.output.connectionId
+          : null,
         error:
           error instanceof Error ? error.message : 'Unknown WebSocket error',
       }),

@@ -1,4 +1,4 @@
-import { z } from 'zod';
+import * as v from 'valibot';
 import { verifyGithubWebhook } from './github-webhook';
 import { jsonError } from './http';
 import { broadcastResultSchema, RelayRoom } from './relay-room';
@@ -7,55 +7,31 @@ import { authenticateWebSocketRequest } from './websocket-auth';
 
 export { RelayRoom };
 
-const requestTargetSchema = z.object({
-  method: z.string(),
-  pathname: z.string(),
-});
-
-const healthRequestSchema = requestTargetSchema.extend({
-  method: z.literal('GET'),
-  pathname: z.literal('/healthz'),
-});
-
-const healthResponseSchema = z.object({
-  ok: z.literal(true),
-  service: z.literal('github-webhook-relay'),
-});
-
-const webhookRelayResponseSchema = z.object({
-  relayed: z.literal(true),
-  protocolVersion: z.literal(1),
-  deliveryId: z.string().uuid(),
-  deliveredClients: z.number().int().nonnegative(),
-});
-
-const webSocketUpgradeResponseSchema = z.custom<Response>(
-  (value) =>
-    value instanceof Response &&
-    value.status === 101 &&
-    value.webSocket instanceof WebSocket,
-);
+// A non-101 response with a `webSocket` isn't a valid upgrade — this is the
+// one remaining check worth keeping from the schema this used to be: it
+// guards against the Durable Object returning a malformed 101 (missing the
+// paired client socket), which would otherwise be handed straight to the
+// caller.
+function isWebSocketUpgradeResponse(response: Response): boolean {
+  return response.status === 101 && response.webSocket instanceof WebSocket;
+}
 
 export default {
   async fetch(request, env): Promise<Response> {
     const url = new URL(request.url);
-    const target = requestTargetSchema.parse({
-      method: request.method,
-      pathname: url.pathname,
-    });
+    const method = request.method;
+    const pathname = url.pathname;
 
-    if (healthRequestSchema.safeParse(target).success) {
-      return Response.json(
-        healthResponseSchema.parse({
-          ok: true,
-          service: 'github-webhook-relay',
-        }),
-      );
+    if (method === 'GET' && pathname === '/healthz') {
+      return Response.json({
+        ok: true as const,
+        service: 'github-webhook-relay' as const,
+      });
     }
 
-    const webhookRoute = parseGithubWebhookRoute(target.pathname);
+    const webhookRoute = parseGithubWebhookRoute(pathname);
     if (webhookRoute) {
-      if (target.method !== 'POST') {
+      if (method !== 'POST') {
         return jsonError(405, 'invalid_request', 'Method not allowed.', {
           Allow: 'POST',
         });
@@ -68,7 +44,8 @@ export default {
 
       try {
         const room = env.RELAY_ROOMS.getByName(webhookRoute.channel);
-        const broadcast = broadcastResultSchema.parse(
+        const broadcast = v.parse(
+          broadcastResultSchema,
           await room.broadcast({
             channel: webhookRoute.channel,
             webhook: result.webhook,
@@ -86,12 +63,12 @@ export default {
           }),
         );
         return Response.json(
-          webhookRelayResponseSchema.parse({
-            relayed: true,
-            protocolVersion: 1,
+          {
+            relayed: true as const,
+            protocolVersion: 1 as const,
             deliveryId: result.webhook.deliveryId,
             deliveredClients: broadcast.deliveredClients,
-          }),
+          },
           { status: 200 },
         );
       } catch (error) {
@@ -112,9 +89,9 @@ export default {
       }
     }
 
-    const webSocketRoute = parseWebSocketRoute(target.pathname);
+    const webSocketRoute = parseWebSocketRoute(pathname);
     if (webSocketRoute) {
-      if (target.method !== 'GET') {
+      if (method !== 'GET') {
         return jsonError(405, 'invalid_request', 'Method not allowed.', {
           Allow: 'GET',
         });
@@ -151,7 +128,10 @@ export default {
         if (response.status !== 101) {
           return response;
         }
-        return webSocketUpgradeResponseSchema.parse(response);
+        if (!isWebSocketUpgradeResponse(response)) {
+          throw new Error('Durable Object did not return a WebSocket upgrade.');
+        }
+        return response;
       } catch (error) {
         console.error(
           JSON.stringify({

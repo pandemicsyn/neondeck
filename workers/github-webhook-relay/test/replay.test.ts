@@ -1,6 +1,7 @@
 import { env } from 'cloudflare:workers';
 import { evictDurableObject } from 'cloudflare:test';
 import { afterEach, describe, expect, it } from 'vitest';
+import * as v from 'valibot';
 import {
   githubWebhookEnvelopeSchema,
   githubWebhookReplayEnvelopeSchema,
@@ -70,7 +71,8 @@ describe('event log replay', () => {
     );
     const replayedIds: string[] = [];
     for (let index = 0; index < missedIds.length; index += 1) {
-      const envelope = githubWebhookReplayEnvelopeSchema.parse(
+      const envelope = v.parse(
+        githubWebhookReplayEnvelopeSchema,
         JSON.parse(await nextMessage(second)),
       );
       replayedIds.push(envelope.deliveryId);
@@ -82,7 +84,8 @@ describe('event log replay', () => {
     const liveId = syntheticDeliveryId('bbbbbbbb', 99);
     const liveMessage = nextMessage(second);
     await sendGithubWebhook({ channel, deliveryId: liveId });
-    const liveEnvelope = githubWebhookEnvelopeSchema.parse(
+    const liveEnvelope = v.parse(
+      githubWebhookEnvelopeSchema,
       JSON.parse(await liveMessage),
     );
     expect(liveEnvelope.deliveryId).toBe(liveId);
@@ -112,7 +115,8 @@ describe('event log replay', () => {
       webSocketClientSecret,
       baselineId,
     );
-    const envelope = githubWebhookReplayEnvelopeSchema.parse(
+    const envelope = v.parse(
+      githubWebhookReplayEnvelopeSchema,
       JSON.parse(await nextMessage(second)),
     );
     expect(envelope.deliveryId).toBe(missedId);
@@ -127,7 +131,8 @@ describe('event log replay', () => {
       webSocketClientSecret,
       unknownId,
     );
-    const frame = replayTruncatedFrameSchema.parse(
+    const frame = v.parse(
+      replayTruncatedFrameSchema,
       JSON.parse(await nextMessage(socket)),
     );
     expect(frame).toEqual({ version: 1, type: 'replay.truncated' });
@@ -150,7 +155,8 @@ describe('event log replay', () => {
       webSocketClientSecret,
       prunedId,
     );
-    const frame = replayTruncatedFrameSchema.parse(
+    const frame = v.parse(
+      replayTruncatedFrameSchema,
       JSON.parse(await nextMessage(socket)),
     );
     expect(frame.type).toBe('replay.truncated');

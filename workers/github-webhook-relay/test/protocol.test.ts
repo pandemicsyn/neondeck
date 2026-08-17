@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import * as v from 'valibot';
 import { jsonObjectSchema, jsonValueSchema } from '../src/json';
 import {
   clientControlFrameSchema,
@@ -12,24 +13,24 @@ describe('protocol validation', () => {
     const sparse: unknown[] = [];
     sparse.length = 1;
 
-    expect(jsonValueSchema.safeParse(Number.POSITIVE_INFINITY).success).toBe(
+    expect(v.safeParse(jsonValueSchema, Number.POSITIVE_INFINITY).success).toBe(
       false,
     );
-    expect(jsonValueSchema.safeParse(1n).success).toBe(false);
-    expect(jsonObjectSchema.safeParse(cyclic).success).toBe(false);
-    expect(jsonValueSchema.safeParse(sparse).success).toBe(false);
+    expect(v.safeParse(jsonValueSchema, 1n).success).toBe(false);
+    expect(v.safeParse(jsonObjectSchema, cyclic).success).toBe(false);
+    expect(v.safeParse(jsonValueSchema, sparse).success).toBe(false);
   });
 
   it('rejects unknown protocol fields', () => {
     expect(
-      clientControlFrameSchema.safeParse({
+      v.safeParse(clientControlFrameSchema, {
         version: 1,
         type: 'ping',
         unexpected: true,
       }).success,
     ).toBe(false);
     expect(
-      githubWebhookEnvelopeSchema.safeParse({
+      v.safeParse(githubWebhookEnvelopeSchema, {
         version: 1,
         type: 'github.webhook',
         unexpected: true,

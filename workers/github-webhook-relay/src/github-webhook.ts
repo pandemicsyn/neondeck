@@ -1,74 +1,73 @@
-import { z } from 'zod';
+import * as v from 'valibot';
 import { jsonObjectSchema } from './json';
 
 const maximumBufferedPayloadBytes = 5 * 1024 * 1024;
 
-const webhookEnvironmentSchema = z.object({
-  GITHUB_WEBHOOK_SECRET: z.string().min(16),
+const webhookEnvironmentSchema = v.object({
+  GITHUB_WEBHOOK_SECRET: v.pipe(v.string(), v.minLength(16)),
   // Optional. Set during rotation so a body signed with the outgoing secret
   // still verifies while GitHub is updated to the new one, removing the
   // signature-mismatch window a single secret guarantees.
-  GITHUB_WEBHOOK_SECRET_PREVIOUS: z.string().min(16).optional(),
-  MAX_WEBHOOK_BYTES: z.coerce
-    .number()
-    .int()
-    .min(1024)
-    .max(maximumBufferedPayloadBytes),
+  GITHUB_WEBHOOK_SECRET_PREVIOUS: v.optional(
+    v.pipe(v.string(), v.minLength(16)),
+  ),
+  MAX_WEBHOOK_BYTES: v.pipe(
+    v.unknown(),
+    v.transform((value) => Number(value)),
+    v.number(),
+    v.integer(),
+    v.minValue(1024),
+    v.maxValue(maximumBufferedPayloadBytes),
+  ),
 });
 
-const contentLengthSchema = z
-  .string()
-  .regex(/^\d+$/)
-  .transform((value) => Number(value));
+const contentLengthSchema = v.pipe(
+  v.string(),
+  v.regex(/^\d+$/),
+  v.transform((value) => Number(value)),
+);
 
-const githubHeadersSchema = z.object({
+const githubHeadersSchema = v.object({
   contentLength: contentLengthSchema,
-  contentType: z.string().regex(/^application\/json(?:\s*;.*)?$/i),
-  deliveryId: z.string().uuid(),
-  event: z.string().regex(/^[a-z][a-z0-9_]{0,63}$/),
-  hookId: z.string().regex(/^\d+$/),
-  signature: z.string().regex(/^sha256=[0-9a-f]{64}$/),
+  contentType: v.pipe(v.string(), v.regex(/^application\/json(?:\s*;.*)?$/i)),
+  deliveryId: v.pipe(v.string(), v.uuid()),
+  event: v.pipe(v.string(), v.regex(/^[a-z][a-z0-9_]{0,63}$/)),
+  hookId: v.pipe(v.string(), v.regex(/^\d+$/)),
+  signature: v.pipe(v.string(), v.regex(/^sha256=[0-9a-f]{64}$/)),
 });
 
-const signatureVerificationInputSchema = z.object({
-  body: z.instanceof(Uint8Array),
-  signatureHeader: z.string().regex(/^sha256=[0-9a-f]{64}$/),
-  secret: z.string().min(16),
+// Note: signature verification input used to be validated by its own schema
+// here, but the inputs come only from `verifyGithubWebhook` below with
+// already-checked types (Uint8Array body, a regex-matched signature header,
+// and a length-checked secret) — an internal call, not a trust boundary.
+
+export const githubPayloadSchema = v.pipe(
+  v.looseObject({
+    action: v.optional(v.pipe(v.string(), v.minLength(1))),
+    installation: v.optional(
+      v.looseObject({ id: v.pipe(v.number(), v.integer(), v.minValue(1)) }),
+    ),
+    repository: v.optional(
+      v.looseObject({ full_name: v.pipe(v.string(), v.minLength(1)) }),
+    ),
+  }),
+  v.check(
+    (value) => v.safeParse(jsonObjectSchema, value).success,
+    'GitHub payload must be a finite, acyclic JSON object.',
+  ),
+);
+
+export const verifiedGithubWebhookSchema = v.strictObject({
+  deliveryId: v.pipe(v.string(), v.uuid()),
+  event: v.pipe(v.string(), v.regex(/^[a-z][a-z0-9_]{0,63}$/)),
+  hookId: v.pipe(v.string(), v.regex(/^\d+$/)),
+  receivedAt: v.pipe(v.string(), v.isoTimestamp()),
+  payload: githubPayloadSchema,
 });
 
-export const githubPayloadSchema = z
-  .object({
-    action: z.string().min(1).optional(),
-    installation: z
-      .object({ id: z.number().int().positive() })
-      .passthrough()
-      .optional(),
-    repository: z
-      .object({ full_name: z.string().min(1) })
-      .passthrough()
-      .optional(),
-  })
-  .passthrough()
-  .superRefine((value, context) => {
-    if (!jsonObjectSchema.safeParse(value).success) {
-      context.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: 'GitHub payload must be a finite, acyclic JSON object.',
-      });
-    }
-  });
-
-export const verifiedGithubWebhookSchema = z
-  .object({
-    deliveryId: z.string().uuid(),
-    event: z.string().regex(/^[a-z][a-z0-9_]{0,63}$/),
-    hookId: z.string().regex(/^\d+$/),
-    receivedAt: z.string().datetime(),
-    payload: githubPayloadSchema,
-  })
-  .strict();
-
-export type VerifiedGithubWebhook = z.infer<typeof verifiedGithubWebhookSchema>;
+export type VerifiedGithubWebhook = v.InferOutput<
+  typeof verifiedGithubWebhookSchema
+>;
 
 export type GithubWebhookFailure = {
   ok: false;
@@ -84,12 +83,12 @@ export async function verifyGithubWebhook(
   request: Request,
   env: Env,
 ): Promise<GithubWebhookResult> {
-  const parsedEnvironment = webhookEnvironmentSchema.safeParse(env);
+  const parsedEnvironment = v.safeParse(webhookEnvironmentSchema, env);
   if (!parsedEnvironment.success) {
     return failure(500, 'invalid_request', 'Webhook configuration is invalid.');
   }
 
-  const parsedHeaders = githubHeadersSchema.safeParse({
+  const parsedHeaders = v.safeParse(githubHeadersSchema, {
     contentLength: request.headers.get('content-length'),
     contentType: request.headers.get('content-type'),
     deliveryId: request.headers.get('x-github-delivery'),
@@ -106,22 +105,23 @@ export async function verifyGithubWebhook(
   }
 
   if (
-    parsedHeaders.data.contentLength > parsedEnvironment.data.MAX_WEBHOOK_BYTES
+    parsedHeaders.output.contentLength >
+    parsedEnvironment.output.MAX_WEBHOOK_BYTES
   ) {
     return failure(413, 'payload_too_large', 'Webhook payload is too large.');
   }
 
   const body = await readBodyWithLimit(
     request.body,
-    parsedHeaders.data.contentLength,
-    parsedEnvironment.data.MAX_WEBHOOK_BYTES,
+    parsedHeaders.output.contentLength,
+    parsedEnvironment.output.MAX_WEBHOOK_BYTES,
   );
   if (!body.ok) return body;
 
   const candidateSecrets = [
-    parsedEnvironment.data.GITHUB_WEBHOOK_SECRET,
-    ...(parsedEnvironment.data.GITHUB_WEBHOOK_SECRET_PREVIOUS
-      ? [parsedEnvironment.data.GITHUB_WEBHOOK_SECRET_PREVIOUS]
+    parsedEnvironment.output.GITHUB_WEBHOOK_SECRET,
+    ...(parsedEnvironment.output.GITHUB_WEBHOOK_SECRET_PREVIOUS
+      ? [parsedEnvironment.output.GITHUB_WEBHOOK_SECRET_PREVIOUS]
       : []),
   ];
   let signatureValid = false;
@@ -129,7 +129,7 @@ export async function verifyGithubWebhook(
     if (
       await verifyGithubSignature(
         body.bytes,
-        parsedHeaders.data.signature,
+        parsedHeaders.output.signature,
         secret,
       )
     ) {
@@ -156,7 +156,7 @@ export async function verifyGithubWebhook(
     );
   }
 
-  const parsedPayload = githubPayloadSchema.safeParse(decoded);
+  const parsedPayload = v.safeParse(githubPayloadSchema, decoded);
   if (!parsedPayload.success) {
     return failure(
       400,
@@ -167,12 +167,12 @@ export async function verifyGithubWebhook(
 
   return {
     ok: true,
-    webhook: verifiedGithubWebhookSchema.parse({
-      deliveryId: parsedHeaders.data.deliveryId,
-      event: parsedHeaders.data.event,
-      hookId: parsedHeaders.data.hookId,
+    webhook: v.parse(verifiedGithubWebhookSchema, {
+      deliveryId: parsedHeaders.output.deliveryId,
+      event: parsedHeaders.output.event,
+      hookId: parsedHeaders.output.hookId,
       receivedAt: new Date().toISOString(),
-      payload: parsedPayload.data,
+      payload: parsedPayload.output,
     }),
   };
 }
@@ -234,14 +234,9 @@ export async function verifyGithubSignature(
   signatureHeader: string,
   secret: string,
 ): Promise<boolean> {
-  const input = signatureVerificationInputSchema.parse({
-    body,
-    signatureHeader,
-    secret,
-  });
   const key = await crypto.subtle.importKey(
     'raw',
-    new TextEncoder().encode(input.secret),
+    new TextEncoder().encode(secret),
     { name: 'HMAC', hash: 'SHA-256' },
     false,
     ['verify'],
@@ -249,8 +244,8 @@ export async function verifyGithubSignature(
   return crypto.subtle.verify(
     'HMAC',
     key,
-    hexToBytes(input.signatureHeader.slice('sha256='.length)),
-    input.body,
+    hexToBytes(signatureHeader.slice('sha256='.length)),
+    body,
   );
 }
 

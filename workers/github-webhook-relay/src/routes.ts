@@ -1,35 +1,40 @@
-import { z } from 'zod';
+import * as v from 'valibot';
 
-export const channelSchema = z
-  .string()
-  .min(1)
-  .max(64)
-  .regex(/^[A-Za-z0-9][A-Za-z0-9_-]*$/);
+export const channelSchema = v.pipe(
+  v.string(),
+  v.minLength(1),
+  v.maxLength(64),
+  v.regex(/^[A-Za-z0-9][A-Za-z0-9_-]*$/),
+);
 
-const githubWebhookPathSchema = z
-  .string()
-  .regex(/^\/channels\/[^/]+\/webhooks\/github$/);
+const githubWebhookPathSchema = v.pipe(
+  v.string(),
+  v.regex(/^\/channels\/[^/]+\/webhooks\/github$/),
+);
 
-const githubWebhookRouteSchema = z.object({
+const githubWebhookRouteSchema = v.object({
   channel: channelSchema,
 });
 
-const webSocketPathSchema = z.string().regex(/^\/channels\/[^/]+\/ws$/);
+const webSocketPathSchema = v.pipe(
+  v.string(),
+  v.regex(/^\/channels\/[^/]+\/ws$/),
+);
 
-const webSocketRouteSchema = z.object({
+const webSocketRouteSchema = v.object({
   channel: channelSchema,
 });
 
 export function parseGithubWebhookRoute(
   pathname: string,
-): z.infer<typeof githubWebhookRouteSchema> | null {
-  if (!githubWebhookPathSchema.safeParse(pathname).success) return null;
+): v.InferOutput<typeof githubWebhookRouteSchema> | null {
+  if (!v.safeParse(githubWebhookPathSchema, pathname).success) return null;
 
   const encodedChannel = pathname.split('/')[2];
   if (!encodedChannel) return null;
 
   try {
-    return githubWebhookRouteSchema.parse({
+    return v.parse(githubWebhookRouteSchema, {
       channel: decodeURIComponent(encodedChannel),
     });
   } catch {
@@ -39,14 +44,14 @@ export function parseGithubWebhookRoute(
 
 export function parseWebSocketRoute(
   pathname: string,
-): z.infer<typeof webSocketRouteSchema> | null {
-  if (!webSocketPathSchema.safeParse(pathname).success) return null;
+): v.InferOutput<typeof webSocketRouteSchema> | null {
+  if (!v.safeParse(webSocketPathSchema, pathname).success) return null;
 
   const encodedChannel = pathname.split('/')[2];
   if (!encodedChannel) return null;
 
   try {
-    return webSocketRouteSchema.parse({
+    return v.parse(webSocketRouteSchema, {
       channel: decodeURIComponent(encodedChannel),
     });
   } catch {

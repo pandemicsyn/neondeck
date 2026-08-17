@@ -1,7 +1,7 @@
 import { env } from 'cloudflare:workers';
 import { evictDurableObject } from 'cloudflare:test';
 import { afterEach, describe, expect, it } from 'vitest';
-import { z } from 'zod';
+import * as v from 'valibot';
 import {
   githubWebhookEnvelopeSchema,
   pingFrameText,
@@ -18,9 +18,9 @@ import {
   webSocketClientSecret,
 } from './helpers';
 
-const errorSchema = z.object({
-  error: z.string().min(1),
-  code: z.string().min(1),
+const errorSchema = v.object({
+  error: v.pipe(v.string(), v.minLength(1)),
+  code: v.pipe(v.string(), v.minLength(1)),
 });
 
 afterEach(() => {
@@ -37,7 +37,9 @@ describe('authenticated hibernating WebSockets', () => {
 
     expect(response.status).toBe(401);
     expect(response.headers.get('www-authenticate')).toContain('Bearer');
-    expect(errorSchema.parse(await response.json()).code).toBe('unauthorized');
+    expect(v.parse(errorSchema, await response.json()).code).toBe(
+      'unauthorized',
+    );
   });
 
   it('rejects an invalid bearer credential', async () => {
@@ -83,7 +85,9 @@ describe('authenticated hibernating WebSockets', () => {
 
     socket.send('{"version":1,"type":"ping"}');
 
-    expect(serverControlFrameSchema.parse(JSON.parse(await message))).toEqual({
+    expect(
+      v.parse(serverControlFrameSchema, JSON.parse(await message)),
+    ).toEqual({
       version: 1,
       type: 'pong',
     });
@@ -173,10 +177,12 @@ describe('authenticated hibernating WebSockets', () => {
     });
 
     expect(response.status).toBe(200);
-    const firstEnvelope = githubWebhookEnvelopeSchema.parse(
+    const firstEnvelope = v.parse(
+      githubWebhookEnvelopeSchema,
       JSON.parse(await firstMessage),
     );
-    const secondEnvelope = githubWebhookEnvelopeSchema.parse(
+    const secondEnvelope = v.parse(
+      githubWebhookEnvelopeSchema,
       JSON.parse(await secondMessage),
     );
     expect(firstEnvelope).toEqual(secondEnvelope);
@@ -200,13 +206,15 @@ describe('authenticated hibernating WebSockets', () => {
 
     const firstMessage = nextMessage(socket);
     await sendGithubWebhook({ channel: 'duplicate-room', deliveryId });
-    const first = githubWebhookEnvelopeSchema.parse(
+    const first = v.parse(
+      githubWebhookEnvelopeSchema,
       JSON.parse(await firstMessage),
     );
 
     const secondMessage = nextMessage(socket);
     await sendGithubWebhook({ channel: 'duplicate-room', deliveryId });
-    const second = githubWebhookEnvelopeSchema.parse(
+    const second = v.parse(
+      githubWebhookEnvelopeSchema,
       JSON.parse(await secondMessage),
     );
 
@@ -228,7 +236,8 @@ describe('authenticated hibernating WebSockets', () => {
 
     expect(response.status).toBe(200);
     expect(
-      githubWebhookEnvelopeSchema.parse(JSON.parse(await message)).deliveryId,
+      v.parse(githubWebhookEnvelopeSchema, JSON.parse(await message))
+        .deliveryId,
     ).toBe('4a577ab1-8d2f-4785-8a5e-745225485caf');
   });
 });

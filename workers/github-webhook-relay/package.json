@@ -18,7 +18,7 @@
     "types:check": "wrangler types --check"
   },
   "dependencies": {
-    "zod": "3.25.76"
+    "valibot": "1.4.2"
   },
   "devDependencies": {
     "@cloudflare/vitest-pool-workers": "0.18.5",

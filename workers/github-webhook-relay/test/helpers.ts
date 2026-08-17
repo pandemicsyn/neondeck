@@ -1,11 +1,11 @@
 import { exports as workerExports } from 'cloudflare:workers';
-import { z } from 'zod';
+import * as v from 'valibot';
 import type { JsonObject } from '../src/json';
 
 export const githubWebhookSecret = "It's a Secret to Everybody";
 export const webSocketClientSecret = 'test-client-secret-0123456789';
 
-const messageDataSchema = z.string();
+const messageDataSchema = v.string();
 
 const openSockets = new Set<WebSocket>();
 
@@ -117,8 +117,8 @@ export function nextMessage(socket: WebSocket): Promise<string> {
     socket.addEventListener(
       'message',
       (event) => {
-        const parsed = messageDataSchema.safeParse(event.data);
-        if (parsed.success) resolve(parsed.data);
+        const parsed = v.safeParse(messageDataSchema, event.data);
+        if (parsed.success) resolve(parsed.output);
         else reject(new Error('Expected a text WebSocket message.'));
       },
       { once: true },
