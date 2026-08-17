@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync } from 'node:fs';
+import { existsSync, mkdirSync, rmSync } from 'node:fs';
 import { mkdir } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 
@@ -98,6 +98,7 @@ async function initializeRuntimeHome(paths = runtimePaths()) {
   await copyIfMissing(defaultDashboardSchemaPath, paths.dashboardSchema);
   await copyIfMissing(defaultSoulPath, paths.soul);
   await seedRuntimeSkills(paths);
+  await ensureOnboardingPendingMarker(paths);
   await ensureRuntimeDatabases(paths);
 }
 
@@ -117,6 +118,7 @@ export function ensureRuntimeHomeSync(paths = runtimePaths()) {
   copyIfMissingSync(defaultDashboardSchemaPath, paths.dashboardSchema);
   copyIfMissingSync(defaultSoulPath, paths.soul);
   seedRuntimeSkillsSync(paths);
+  ensureOnboardingPendingMarkerSync(paths);
   ensureRuntimeDatabasesSync(paths);
 }
 
@@ -150,8 +152,32 @@ function ensureRuntimeDatabasesSync(paths = runtimePaths()) {
 }
 
 function initializeRuntimeDatabases(paths = runtimePaths()) {
-  initializeAppDatabase(paths.neondeckDatabase);
+  const onboardingPendingMarker = onboardingPendingMarkerPath(paths);
+  initializeAppDatabase(paths.neondeckDatabase, {
+    onboardingPending: existsSync(onboardingPendingMarker),
+  });
+  rmSync(onboardingPendingMarker, { force: true });
   initializeFlueDatabase(paths.flueDatabase);
+}
+
+async function ensureOnboardingPendingMarker(paths = runtimePaths()) {
+  if (existsSync(paths.neondeckDatabase)) return;
+  await writeFileIfMissing(
+    onboardingPendingMarkerPath(paths),
+    'Neondeck onboarding is pending. This file is managed automatically.\n',
+  );
+}
+
+function ensureOnboardingPendingMarkerSync(paths = runtimePaths()) {
+  if (existsSync(paths.neondeckDatabase)) return;
+  writeFileIfMissingSync(
+    onboardingPendingMarkerPath(paths),
+    'Neondeck onboarding is pending. This file is managed automatically.\n',
+  );
+}
+
+function onboardingPendingMarkerPath(paths = runtimePaths()) {
+  return join(paths.home, '.onboarding-pending');
 }
 
 async function seedRuntimeSkills(paths = runtimePaths()) {

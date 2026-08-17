@@ -1,10 +1,11 @@
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { defaultOpenAiCodexModel } from '../model-defaults';
 import { updateAgentModels } from '../modules/config';
-import { readNeonSessionState } from '../modules/sessions';
+import { readChatSession, readNeonSessionState } from '../modules/sessions';
 import { ensureRuntimeHome, runtimePaths } from '../runtime-home';
 import {
   configureGitIdentity,
@@ -29,7 +30,7 @@ afterEach(async () => {
 });
 
 describe('onboarding session baseline', () => {
-  it('rebaselines only a session created for a fresh installation', async () => {
+  it('rebaselines only an unused bootstrap session', async () => {
     vi.useFakeTimers();
     vi.setSystemTime('2026-07-24T12:00:00.000Z');
     const home = await mkdtemp(join(tmpdir(), 'neondeck-onboarding-'));
@@ -42,9 +43,15 @@ describe('onboarding session baseline', () => {
     await expect(readNeonSessionState(paths)).resolves.toMatchObject({
       stale: true,
     });
+    await expect(
+      readChatSession(
+        { id: 'neondeck-main', reason: 'status-inspection' },
+        paths,
+      ),
+    ).resolves.toMatchObject({ ok: true, changed: false });
 
     vi.setSystemTime('2026-07-24T12:00:02.000Z');
-    await finalizeFreshInstallSession(paths, true);
+    await finalizeFreshInstallSession(paths);
     await expect(readNeonSessionState(paths)).resolves.toMatchObject({
       activeSessionId: 'neondeck-main',
       stale: false,
@@ -56,7 +63,57 @@ describe('onboarding session baseline', () => {
       { displayAssistant: 'anthropic/claude-sonnet-4-6' },
       paths,
     );
-    await finalizeFreshInstallSession(paths, false);
+    await finalizeFreshInstallSession(paths);
+    await expect(readNeonSessionState(paths)).resolves.toMatchObject({
+      activeSessionId: 'neondeck-main',
+      stale: true,
+    });
+  });
+
+  it('rebaselines a bootstrap session materialized by a read-only command', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime('2026-07-24T12:00:00.000Z');
+    const home = await mkdtemp(join(tmpdir(), 'neondeck-onboarding-'));
+    tempRoots.push(home);
+    const paths = runtimePaths(home);
+
+    await readNeonSessionState(paths);
+    vi.setSystemTime('2026-07-24T12:00:01.000Z');
+    await updateAgentModels({ displayAssistant: 'openai/gpt-5.5' }, paths);
+    await expect(readNeonSessionState(paths)).resolves.toMatchObject({
+      stale: true,
+    });
+
+    vi.setSystemTime('2026-07-24T12:00:02.000Z');
+    await finalizeFreshInstallSession(paths);
+    await expect(readNeonSessionState(paths)).resolves.toMatchObject({
+      activeSessionId: 'neondeck-main',
+      stale: false,
+      staleReasons: [],
+    });
+  });
+
+  it('does not rebaseline an existing unused home without the onboarding marker', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime('2026-07-24T12:00:00.000Z');
+    const home = await mkdtemp(join(tmpdir(), 'neondeck-onboarding-'));
+    tempRoots.push(home);
+    const paths = runtimePaths(home);
+    await ensureRuntimeHome(paths);
+    const database = new DatabaseSync(paths.neondeckDatabase);
+    try {
+      database
+        .prepare(
+          `DELETE FROM chat_session_audit WHERE action = 'onboarding_pending';`,
+        )
+        .run();
+    } finally {
+      database.close();
+    }
+
+    vi.setSystemTime('2026-07-24T12:00:01.000Z');
+    await updateAgentModels({ displayAssistant: 'openai/gpt-5.5' }, paths);
+    await finalizeFreshInstallSession(paths);
     await expect(readNeonSessionState(paths)).resolves.toMatchObject({
       activeSessionId: 'neondeck-main',
       stale: true,

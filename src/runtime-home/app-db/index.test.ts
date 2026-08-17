@@ -18,6 +18,39 @@ describe('app database initialization', () => {
         expect(pragmaValue(database, 'busy_timeout')).toBe(
           defaultSqliteBusyTimeoutMs,
         );
+        expect(
+          database
+            .prepare(
+              `SELECT COUNT(*) AS count FROM chat_session_audit WHERE action = 'onboarding_pending';`,
+            )
+            .get(),
+        ).toEqual({ count: 1 });
+      } finally {
+        database.close();
+      }
+    } finally {
+      await rm(home, { recursive: true, force: true });
+    }
+  });
+
+  it('recovers pending onboarding after the database file becomes visible', async () => {
+    const home = await mkdtemp(join(tmpdir(), 'neondeck-app-db-'));
+    const databasePath = join(home, 'neondeck.db');
+    try {
+      new DatabaseSync(databasePath).close();
+      initializeAppDatabase(databasePath, { onboardingPending: true });
+
+      const database = openDb(databasePath, { readOnly: true });
+      try {
+        expect(
+          database
+            .prepare(
+              `SELECT action, session_id FROM chat_session_audit WHERE action = 'onboarding_pending';`,
+            )
+            .all(),
+        ).toEqual([
+          { action: 'onboarding_pending', session_id: 'neondeck-main' },
+        ]);
       } finally {
         database.close();
       }
