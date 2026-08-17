@@ -3,7 +3,6 @@ updates:
   - package-ecosystem: 'npm'
     directories:
       - '/'
-      - '/raycast'
     schedule:
       interval: 'weekly'
     cooldown:
