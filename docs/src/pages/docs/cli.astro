@@ -95,7 +95,7 @@ neondeck service start
 neondeck service uninstall
 neondeck open
 neondeck open sidebar
-neondeck open xeneon --kiosk</code></pre>
+neondeck open xeneon</code></pre>
         <p>
           <code>serve</code> starts the production server in the foreground. It expects
           the packaged <code>dist/server.mjs</code> entry; in a source checkout, run
@@ -110,8 +110,14 @@ neondeck open xeneon --kiosk</code></pre>
         <p>
           <code>open</code> ensures the server is ready and opens the dashboard. Named
           window profiles come from runtime-home <code>dashboard.json</code>
-          under <code>windows</code>. Width/height and x/y must be configured in
-          pairs; CLI flags override profile values for one launch.
+          under <code>windows</code>; new runtime homes include <code
+            >sidebar</code
+          >
+          and <code>xeneon</code>. Width/height and x/y must be supplied in
+          pairs, and CLI flags override profile values for one launch. Window
+          geometry and kiosk mode apply only when Neondeck finds a
+          Chromium-family browser; otherwise it opens the default browser
+          without those settings.
         </p>
 
         <h2>Repositories</h2>
@@ -193,7 +199,7 @@ neondeck note "Finished local cleanup without a PR." \
 /dev-doctor</code></pre>
         <p>
           Slash commands can be typed in chat, launched from dashboard buttons,
-          or invoked through <code>POST /api/commands/run</code>.
+          or chosen from the chat input's slash-command suggestions.
           <code>/review-pr</code> prepares local reports and Neon-origin draft review
           comments for a human reviewer; it does not submit a GitHub review. <code
             >/fix-ci</code

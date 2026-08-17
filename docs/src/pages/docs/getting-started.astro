@@ -23,12 +23,10 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
 
         <h2>1. Install Node.js</h2>
         <p>
-          Install Node.js 26 or newer using your preferred installer or version
-          manager. <a href="https://github.com/Schniz/fnm">fnm</a> is a convenient
-          option, but it is not required:
+          Install Node.js 26 or newer using any installer or version manager,
+          then confirm the active version:
         </p>
-        <pre><code>fnm install 26.4.0
-fnm use 26.4.0</code></pre>
+        <pre><code>node --version</code></pre>
 
         <h2>2. Install Neondeck</h2>
         <p>
@@ -59,25 +57,41 @@ fnm use 26.4.0</code></pre>
           provider, and model details.
         </p>
 
-        <h2>4. Open the dashboard</h2>
-        <pre><code>neondeck service install
-neondeck open</code></pre>
+        <h2>4. Start Neondeck</h2>
+        <p>Run Neondeck in the foreground:</p>
+        <pre><code>neondeck serve</code></pre>
         <p>
-          The service command installs and starts Neondeck for your login. The
-          open command waits for the local server, then opens the dashboard.
+          Or, on macOS and Linux, install and start a background login service:
         </p>
+        <pre><code>neondeck service install</code></pre>
         <p>
-          Named window profiles are available for companion displays and
-          vertical panels:
-        </p>
-        <pre><code>neondeck open sidebar
-neondeck open xeneon --kiosk</code></pre>
-        <p>
-          See the <a href="/docs/dashboard/">Dashboard guide</a> for browser app installation,
-          display layouts, and window behavior.
+          Windows users should use <code>neondeck serve</code> for now. Keep its terminal
+          open while using Neondeck.
         </p>
 
-        <h2>5. Check the installation</h2>
+        <h2>5. Open the dashboard</h2>
+        <pre><code>neondeck open</code></pre>
+        <p>
+          If you started Neondeck with <code>serve</code>, run <code>open</code> in
+          another terminal. The command waits for the local server, then opens the
+          dashboard.
+        </p>
+        <p>
+          New runtime homes include named <code>sidebar</code> and
+          <code>xeneon</code> window profiles for companion displays:
+        </p>
+        <pre><code>neondeck open sidebar
+neondeck open xeneon</code></pre>
+        <p>
+          Profile names and window settings come from <code>dashboard.json</code
+          >. Size, position, and kiosk settings require a supported
+          Chromium-family browser; otherwise Neondeck opens the default browser
+          without applying them. See the <a href="/docs/dashboard/"
+            >Dashboard guide</a
+          > for browser app installation, display layouts, and window behavior.
+        </p>
+
+        <h2>6. Check the installation</h2>
         <pre><code>neondeck status</code></pre>
         <p>
           Once the dashboard is running, use the

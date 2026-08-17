@@ -135,7 +135,7 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
         <h2 id="commands">Neon commands</h2>
         <p>
           Slash commands can be typed into the chat panel, run from dashboard
-          buttons, or invoked through <code>POST /api/commands/run</code>.
+          buttons, or chosen from the chat input's slash-command suggestions.
           Deterministic results are persisted in app-owned operation summaries
           and shown in the Activity panel. The chat surface special-cases
           <code>/briefing</code> as a normal assistant turn instead of a result card.
@@ -261,7 +261,7 @@ pr-autopilot-owner</code></pre>
         </p>
 
         <h2>Developer commands</h2>
-        <pre><code>fnm use 26.4.0
+        <pre><code>node --version
 npm run setup
 npm run dev
 npm run check
