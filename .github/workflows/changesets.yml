@@ -41,9 +41,9 @@ jobs:
       - name: Create or update version PR
         uses: changesets/action@v2
         with:
-          version: npm run version-packages
-          title: 'chore: version packages'
-          commit: 'chore: version packages'
+          version-script: npm run version-packages
+          pr-title: 'chore: version packages'
+          commit-message: 'chore: version packages'
           github-token: ${{ secrets.GITHUB_TOKEN }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
