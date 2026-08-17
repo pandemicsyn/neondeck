@@ -70,11 +70,23 @@ them in `wrangler.jsonc`.
 
 For later rotations, use interactive `wrangler secret put`. A secret update
 deploys a new Worker version and may terminate existing Durable Object
-WebSockets; clients must reconnect and use the new WebSocket secret. The relay
-accepts only one GitHub webhook secret, so GitHub and Cloudflare cannot have an
-overlap window during rotation. Coordinate both updates closely, expect a brief
-signature-mismatch window, inspect failed GitHub deliveries, and redeliver them
-after both sides agree.
+WebSockets; clients must reconnect and use the new WebSocket secret.
+
+`GITHUB_WEBHOOK_SECRET_PREVIOUS` gives the GitHub webhook secret an overlap
+window: set it to the outgoing value while rotating, and the relay accepts a
+signature verified against either secret. To rotate without a mismatch
+window:
+
+1. `wrangler secret put GITHUB_WEBHOOK_SECRET_PREVIOUS`, set to the current
+   (soon-to-be-outgoing) `GITHUB_WEBHOOK_SECRET` value.
+2. `wrangler secret put GITHUB_WEBHOOK_SECRET`, set to the new value.
+3. Update the GitHub webhook's secret to the same new value.
+4. Once GitHub deliveries are confirmed passing with the new secret, run
+   `wrangler secret delete GITHUB_WEBHOOK_SECRET_PREVIOUS` to close the
+   overlap window.
+
+`WS_CLIENT_SECRET` has no such overlap mechanism: rotating it disconnects
+every client at once, and clients must reconnect with the new value.
 
 ## GitHub webhook setup
 
@@ -120,21 +132,22 @@ All HTTP error bodies use this schema:
 { "error": "Human-readable message.", "code": "machine_readable_code" }
 ```
 
-| Route                    | Status | Meaning                                                             |
-| ------------------------ | ------ | ------------------------------------------------------------------- |
-| Webhook                  | `200`  | Synchronous best-effort fan-out completed.                          |
-| Webhook                  | `400`  | Required headers, length, UTF-8, JSON, or payload shape is invalid. |
-| Webhook                  | `401`  | HMAC signature is invalid.                                          |
-| Webhook                  | `413`  | Declared or streamed body exceeds the configured limit.             |
-| Webhook                  | `500`  | Required Worker configuration is invalid.                           |
-| Webhook                  | `503`  | Durable Object lookup, validation, or broadcast failed.             |
-| WebSocket                | `101`  | Authenticated upgrade succeeded.                                    |
-| WebSocket                | `401`  | Bearer authentication failed; includes `WWW-Authenticate`.          |
-| WebSocket                | `426`  | `Upgrade: websocket` is missing; includes `Upgrade`.                |
-| WebSocket                | `500`  | Required Worker configuration is invalid.                           |
-| WebSocket                | `503`  | Durable Object lookup or upgrade failed.                            |
-| Either channel route     | `405`  | Wrong method; includes the route's `Allow` header.                  |
-| Unknown or invalid route | `404`  | Route or channel name is not recognized.                            |
+| Route                    | Status | Meaning                                                                                                            |
+| ------------------------ | ------ | ------------------------------------------------------------------------------------------------------------------ |
+| Webhook                  | `200`  | Synchronous best-effort fan-out completed.                                                                         |
+| Webhook                  | `400`  | Required headers, length, UTF-8, JSON, or payload shape is invalid.                                                |
+| Webhook                  | `401`  | HMAC signature is invalid.                                                                                         |
+| Webhook                  | `413`  | Declared or streamed body exceeds the configured limit.                                                            |
+| Webhook                  | `500`  | Required Worker configuration is invalid.                                                                          |
+| Webhook                  | `503`  | Durable Object lookup, validation, or broadcast failed.                                                            |
+| WebSocket                | `101`  | Authenticated upgrade succeeded.                                                                                   |
+| WebSocket                | `400`  | The Durable Object rejected the connection request itself; passed through as-is rather than reported as an outage. |
+| WebSocket                | `401`  | Bearer authentication failed; includes `WWW-Authenticate`.                                                         |
+| WebSocket                | `426`  | `Upgrade: websocket` is missing; includes `Upgrade`.                                                               |
+| WebSocket                | `500`  | Required Worker configuration is invalid.                                                                          |
+| WebSocket                | `503`  | Durable Object lookup failed, or it returned an unexpected non-101 response.                                       |
+| Either channel route     | `405`  | Wrong method; includes the route's `Allow` header.                                                                 |
+| Unknown or invalid route | `404`  | Route or channel name is not recognized.                                                                           |
 
 ## WebSocket clients
 
@@ -156,7 +169,14 @@ credentials are not supported. This v1 handshake is intended for server-side or
 CLI clients that can set custom upgrade headers; browser WebSocket clients are
 not supported.
 
-See [PROTOCOL.md](./PROTOCOL.md) for the complete frame contract.
+Add `?since=<deliveryId>` to replay events broadcast while disconnected:
+
+```text
+wss://<worker-host>/channels/<channel>/ws?since=<last-seen-deliveryId>
+```
+
+See [PROTOCOL.md](./PROTOCOL.md) for the complete frame contract, including
+the `github.webhook.replay` frame shape and the `replay.truncated` signal.
 
 ## Delivery semantics
 
@@ -164,8 +184,12 @@ Version 1 deliberately has small, explicit guarantees:
 
 - Events are broadcast only to clients connected to that channel when the
   signed webhook arrives.
-- The relay does not persist payloads, replay missed events, queue work, wait for
-  client acknowledgements, or provide backpressure.
+- The relay never persists the GitHub payload. Each Durable Object keeps an
+  append-only log of routing facts only (delivery ID, event, action,
+  repository, PR number, received time) for roughly the last 24 hours or 1000
+  events per channel, whichever is smaller, purely to support replay on
+  reconnect — see [Replay on reconnect](./PROTOCOL.md#replay-on-reconnect).
+  There is no queue, no client acknowledgement, and no backpressure.
 - GitHub redelivery can produce duplicate frames. Consumers must deduplicate on
   `deliveryId`; a GitHub redelivery uses the original delivery ID.
 - Socket send failures are isolated from other clients. A completed fan-out is
@@ -173,8 +197,10 @@ Version 1 deliberately has small, explicit guarantees:
   clients.
 - Channel ordering follows serialized Durable Object request handling, but the
   protocol does not promise durable global ordering or sequence numbers.
-- A disconnected or reconnecting client can miss events. Reliable offline
-  delivery requires a future queue and payload store, outside v1 scope.
+- A disconnected or reconnecting client can replay events up to the retention
+  window above. Past that window, or on a cursor the log never recorded, the
+  connection receives `replayTruncated` instead and must fall back to a full
+  refresh from GitHub.
 
 ## Observability
 

@@ -8,6 +8,7 @@ export default defineConfig({
       miniflare: {
         bindings: {
           GITHUB_WEBHOOK_SECRET: "It's a Secret to Everybody",
+          GITHUB_WEBHOOK_SECRET_PREVIOUS: 'A Previous Secret, Rotated Out',
           WS_CLIENT_SECRET: 'test-client-secret-0123456789',
         },
       },

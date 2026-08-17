@@ -24,10 +24,12 @@ password, Cloudflare credential, or other existing credential as either relay
 secret.
 
 Secret changes deploy a new Worker version and can disconnect active Durable
-Object WebSockets. The implementation accepts one GitHub webhook secret at a
-time, so webhook-secret rotation has no dual-secret overlap: coordinate the
-Cloudflare and GitHub updates, then redeliver any delivery that failed during
-the mismatch window.
+Object WebSockets. The webhook secret supports a dual-secret overlap during
+rotation: setting the optional `GITHUB_WEBHOOK_SECRET_PREVIOUS` lets the relay
+verify a signature against either the current or the outgoing secret, so
+GitHub and Cloudflare do not need to be updated atomically. See README.md for
+the rotation procedure. `WS_CLIENT_SECRET` has no equivalent overlap;
+rotating it disconnects every WebSocket client at once.
 
 ## Known limitations
 
@@ -35,8 +37,12 @@ the mismatch window.
   does not identify individual clients or provide per-channel authorization.
 - Existing WebSocket connections are not reauthenticated after a secret
   rotation.
-- There is no payload persistence, replay, acknowledgement, or delivery audit
-  log.
+- There is no payload persistence, delivery acknowledgement, or audit log. The
+  per-channel event log used for replay stores routing facts only (delivery
+  ID, event, action, repository, PR number, received time) — never the GitHub
+  payload — and is retained for roughly 24 hours or 1000 events, whichever is
+  smaller. It exists only to let a reconnecting client catch up; it is not a
+  general-purpose audit trail.
 - GitHub IP allowlisting, Cloudflare WAF rules, rate limiting, and per-client
   quotas are deployment-level hardening options, not implemented in this
   package.

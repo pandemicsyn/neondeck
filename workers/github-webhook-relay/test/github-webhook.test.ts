@@ -121,6 +121,24 @@ describe('GitHub webhook ingress', () => {
     expect(response.headers.get('allow')).toBe('POST');
   });
 
+  it('verifies a body signed with the previous secret during rotation', async () => {
+    const response = await sendGithubWebhook({
+      secret: 'A Previous Secret, Rotated Out',
+    });
+
+    expect(response.status).toBe(200);
+    expect(relayResponseSchema.parse(await response.json()).relayed).toBe(true);
+  });
+
+  it('rejects a body signed with a secret unrelated to either configured secret', async () => {
+    const response = await sendGithubWebhook({
+      secret: 'A Completely Unrelated Secret Value',
+    });
+
+    expect(response.status).toBe(401);
+    expect(errorSchema.parse(await response.json()).code).toBe('unauthorized');
+  });
+
   it('accepts GitHub redelivery with the same delivery ID', async () => {
     const deliveryId = '146b6c3d-fb13-46f7-a019-68f5ecf3c454';
     const first = await sendGithubWebhook({ deliveryId });

@@ -1,2 +1,6 @@
 GITHUB_WEBHOOK_SECRET=replace-with-a-local-webhook-secret
+# Optional. Set only while rotating GITHUB_WEBHOOK_SECRET: the relay accepts
+# a signature verified against either value, so GitHub and Cloudflare can be
+# updated without a mismatch window.
+# GITHUB_WEBHOOK_SECRET_PREVIOUS=replace-with-the-outgoing-webhook-secret
 WS_CLIENT_SECRET=replace-with-a-local-client-secret

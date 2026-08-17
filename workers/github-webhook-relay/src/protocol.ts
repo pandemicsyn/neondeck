@@ -47,12 +47,44 @@ export const serverControlFrameSchema = z
   })
   .strict();
 
+// A replayed event log row. It deliberately carries only the routing facts
+// that were persisted — never the GitHub payload, which the relay does not
+// store at rest. Consumers that need the payload re-fetch from GitHub.
+export const githubWebhookReplayEnvelopeSchema = z
+  .object({
+    version: protocolVersionSchema,
+    type: z.literal('github.webhook.replay'),
+    channel: channelSchema,
+    deliveryId: z.string().uuid(),
+    event: z.string().regex(/^[a-z][a-z0-9_]{0,63}$/),
+    action: z.string().min(1).nullable(),
+    repository: z.string().min(1).nullable(),
+    prNumber: z.number().int().positive().nullable(),
+    receivedAt: z.string().datetime(),
+  })
+  .strict();
+
+// Sent as the first frame of a replay when `since` was supplied but could
+// not be resolved (unknown or already-pruned delivery ID). No rows are
+// replayed; the client must treat this as a gap and force a full refresh.
+export const replayTruncatedFrameSchema = z
+  .object({
+    version: protocolVersionSchema,
+    type: z.literal('replay.truncated'),
+  })
+  .strict();
+
 export const serverFrameSchema = z.union([
   githubWebhookEnvelopeSchema,
+  githubWebhookReplayEnvelopeSchema,
+  replayTruncatedFrameSchema,
   serverControlFrameSchema,
 ]);
 
 export type GithubWebhookEnvelope = z.infer<typeof githubWebhookEnvelopeSchema>;
+export type GithubWebhookReplayEnvelope = z.infer<
+  typeof githubWebhookReplayEnvelopeSchema
+>;
 
 export const pingFrameText = JSON.stringify(
   clientControlFrameSchema.parse({ version: 1, type: 'ping' }),
@@ -79,6 +111,33 @@ export function createGithubWebhookEnvelope(
     repository: parsedInput.webhook.payload.repository?.full_name ?? null,
     installationId: parsedInput.webhook.payload.installation?.id ?? null,
     payload: parsedInput.webhook.payload,
+  });
+}
+
+// Row shape read back from the Durable Object's persisted event log.
+export type EventLogRow = {
+  deliveryId: string;
+  event: string;
+  action: string | null;
+  repository: string | null;
+  prNumber: number | null;
+  receivedAt: string;
+};
+
+export function createGithubWebhookReplayEnvelope(
+  channel: string,
+  row: EventLogRow,
+): GithubWebhookReplayEnvelope {
+  return githubWebhookReplayEnvelopeSchema.parse({
+    version: 1,
+    type: 'github.webhook.replay',
+    channel: channelSchema.parse(channel),
+    deliveryId: row.deliveryId,
+    event: row.event,
+    action: row.action,
+    repository: row.repository,
+    prNumber: row.prNumber,
+    receivedAt: row.receivedAt,
   });
 }
 

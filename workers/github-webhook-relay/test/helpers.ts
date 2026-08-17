@@ -87,17 +87,20 @@ export async function signBody(
 export async function openWebSocket(
   channel: string,
   secret = webSocketClientSecret,
+  since?: string,
 ): Promise<WebSocket> {
+  const url = new URL(
+    `https://relay.test/channels/${encodeURIComponent(channel)}/ws`,
+  );
+  if (since !== undefined) url.searchParams.set('since', since);
+
   const response = await fetchWorker(
-    new Request(
-      `https://relay.test/channels/${encodeURIComponent(channel)}/ws`,
-      {
-        headers: {
-          Authorization: `Bearer ${secret}`,
-          Upgrade: 'websocket',
-        },
+    new Request(url, {
+      headers: {
+        Authorization: `Bearer ${secret}`,
+        Upgrade: 'websocket',
       },
-    ),
+    }),
   );
   if (response.status !== 101 || !response.webSocket) {
     throw new Error(`Expected WebSocket upgrade, received ${response.status}.`);

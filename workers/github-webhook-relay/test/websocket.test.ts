@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { z } from 'zod';
 import {
   githubWebhookEnvelopeSchema,
+  pingFrameText,
   serverControlFrameSchema,
 } from '../src/protocol';
 import {
@@ -86,6 +87,43 @@ describe('authenticated hibernating WebSockets', () => {
       version: 1,
       type: 'pong',
     });
+  });
+
+  it('answers canonical pings without waking the Durable Object', async () => {
+    // This guards the cost model decision this relay is built on: a
+    // hibernating WebSocket accrues no duration while idle, and
+    // setWebSocketAutoResponse answers the exact canonical ping without
+    // ever invoking webSocketMessage or otherwise waking the object. If a
+    // regression makes the ping fall through to webSocketMessage, this
+    // relay silently goes back to being billed for continuous duration
+    // instead of only real deliveries.
+    const channel = 'hibernation-guard';
+    const socket = await openWebSocket(channel);
+    const room = env.RELAY_ROOMS.getByName(channel);
+
+    const timestampsAfterPing: (string | null)[] = [];
+    for (let index = 0; index < 5; index += 1) {
+      const pong = nextMessage(socket);
+      socket.send(pingFrameText);
+      await pong;
+      const diagnostics = await room.getHibernationDiagnostics();
+      expect(diagnostics.webSocketMessageCount).toBe(0);
+      timestampsAfterPing.push(diagnostics.autoResponseTimestamps[0] ?? null);
+    }
+
+    // Every ping was answered by the auto-response system (the timestamp
+    // is set and non-decreasing) while webSocketMessage was never called.
+    for (const timestamp of timestampsAfterPing) {
+      expect(timestamp).not.toBeNull();
+    }
+    const parsedTimestamps = timestampsAfterPing.map((timestamp) =>
+      new Date(timestamp as string).getTime(),
+    );
+    for (let index = 1; index < parsedTimestamps.length; index += 1) {
+      expect(parsedTimestamps[index]).toBeGreaterThanOrEqual(
+        parsedTimestamps[index - 1] as number,
+      );
+    }
   });
 
   it('rejects unknown fields in a client control frame', async () => {

@@ -6,6 +6,9 @@
   // (4.111.0 / workerd 1.20260710.1). Raise alongside a wrangler bump.
   "compatibility_date": "2026-07-17",
   "secrets": {
+    // GITHUB_WEBHOOK_SECRET_PREVIOUS is optional and intentionally omitted
+    // here: it enables overlap-window rotation (see README.md) and is set
+    // only while a rotation is in progress.
     "required": ["GITHUB_WEBHOOK_SECRET", "WS_CLIENT_SECRET"],
   },
   "vars": {

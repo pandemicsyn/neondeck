@@ -3,11 +3,13 @@ import { z } from 'zod';
 import { jsonError } from './http';
 import {
   createGithubWebhookEnvelope,
+  createGithubWebhookReplayEnvelope,
   encodeServerFrame,
   parseClientControlFrame,
   pingFrameText,
   pongFrameText,
   relayBroadcastInputSchema,
+  type EventLogRow,
 } from './protocol';
 import { channelSchema, parseWebSocketRoute } from './routes';
 
@@ -30,11 +32,73 @@ export const broadcastResultSchema = z
 
 const socketFrameSchema = z.union([z.string(), z.instanceof(ArrayBuffer)]);
 
+const sinceCursorSchema = z.string().uuid();
+
+// Retain roughly 24h or 1000 rows, whichever bound ends up smaller.
+const eventLogRetentionMs = 24 * 60 * 60 * 1000;
+const eventLogRetentionRows = 1000;
+
+// Pulls a PR number out of an already-signature-verified but otherwise
+// untyped GitHub payload. This is real GitHub input — the payload's nested
+// shape is not guaranteed by any type, so it is validated here.
+const prNumberSourceSchema = z
+  .object({
+    pull_request: z
+      .object({ number: z.number().int().positive() })
+      .passthrough()
+      .optional(),
+    issue: z
+      .object({ number: z.number().int().positive() })
+      .passthrough()
+      .optional(),
+  })
+  .passthrough();
+
+function extractPrNumber(payload: unknown): number | null {
+  const parsed = prNumberSourceSchema.safeParse(payload);
+  if (!parsed.success) return null;
+  return parsed.data.pull_request?.number ?? parsed.data.issue?.number ?? null;
+}
+
+const eventLogSeedInputSchema = z.object({
+  rows: z.array(
+    z.object({
+      deliveryId: z.string().uuid(),
+      event: z.string().regex(/^[a-z][a-z0-9_]{0,63}$/),
+      action: z.string().min(1).nullable(),
+      repository: z.string().min(1).nullable(),
+      prNumber: z.number().int().positive().nullable(),
+      receivedAt: z.string().datetime(),
+    }),
+  ),
+});
+
 export class RelayRoom extends DurableObject<Env> {
+  // Test instrumentation for the hibernation cost-model guard: counts
+  // webSocketMessage invocations so a test can assert the canonical ping
+  // never reaches it (auto-response answers it without waking the object).
+  // Resets to 0 on every construction, which is fine — the guarantee under
+  // test is "stays 0 across N pings", not a total across the object's life.
+  private webSocketMessageCount = 0;
+
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
     this.ctx.setWebSocketAutoResponse(
       new WebSocketRequestResponsePair(pingFrameText, pongFrameText),
+    );
+    this.ctx.storage.sql.exec(`
+      CREATE TABLE IF NOT EXISTS events (
+        seq INTEGER PRIMARY KEY AUTOINCREMENT,
+        deliveryId TEXT UNIQUE NOT NULL,
+        event TEXT NOT NULL,
+        action TEXT,
+        repository TEXT,
+        prNumber INTEGER,
+        receivedAt TEXT NOT NULL
+      )
+    `);
+    this.ctx.storage.sql.exec(
+      `CREATE INDEX IF NOT EXISTS idxEventsReceivedAt ON events (receivedAt)`,
     );
   }
 
@@ -56,6 +120,8 @@ export class RelayRoom extends DurableObject<Env> {
       );
     }
 
+    const sinceParam = url.searchParams.get('since');
+
     const pair = new WebSocketPair();
     const client = pair[0];
     const server = pair[1];
@@ -69,6 +135,10 @@ export class RelayRoom extends DurableObject<Env> {
     server.serializeAttachment(attachment);
     this.ctx.acceptWebSocket(server, [`channel:${roomChannel.data}`]);
 
+    if (sinceParam !== null) {
+      this.replayFrom(server, roomChannel.data, sinceParam);
+    }
+
     return new Response(null, { status: 101, webSocket: client });
   }
 
@@ -80,6 +150,16 @@ export class RelayRoom extends DurableObject<Env> {
     if (broadcast.channel !== roomChannel) {
       throw new Error('Relay channel does not match Durable Object identity.');
     }
+
+    this.recordEvent({
+      deliveryId: broadcast.webhook.deliveryId,
+      event: broadcast.webhook.event,
+      action: broadcast.webhook.payload.action ?? null,
+      repository: broadcast.webhook.payload.repository?.full_name ?? null,
+      prNumber: extractPrNumber(broadcast.webhook.payload),
+      receivedAt: broadcast.webhook.receivedAt,
+    });
+
     const frame = encodeServerFrame(
       createGithubWebhookEnvelope(roomChannel, broadcast.webhook),
     );
@@ -105,10 +185,138 @@ export class RelayRoom extends DurableObject<Env> {
     });
   }
 
+  // Test-only diagnostics for the hibernation guard. Not reachable from any
+  // HTTP route — only via direct Durable Object RPC, the same surface the
+  // test suite already uses for `evictDurableObject`.
+  async getHibernationDiagnostics(): Promise<{
+    webSocketMessageCount: number;
+    autoResponseTimestamps: (string | null)[];
+  }> {
+    return {
+      webSocketMessageCount: this.webSocketMessageCount,
+      autoResponseTimestamps: this.ctx.getWebSockets().map((socket) => {
+        const timestamp = this.ctx.getWebSocketAutoResponseTimestamp(socket);
+        return timestamp ? timestamp.toISOString() : null;
+      }),
+    };
+  }
+
+  // Test-only diagnostics for the pruning guard. Same RPC-only surface as
+  // getHibernationDiagnostics above.
+  async getEventLogDiagnostics(): Promise<{ rowCount: number }> {
+    const rows = this.ctx.storage.sql
+      .exec<{ rowCount: number }>(`SELECT COUNT(*) AS rowCount FROM events`)
+      .toArray();
+    return { rowCount: rows[0]?.rowCount ?? 0 };
+  }
+
+  // Test-only: seeds the event log through the same recordEvent/
+  // pruneEventLog path a real broadcast uses, skipping the HTTP + HMAC
+  // overhead of a full webhook round trip. Lets the pruning tests exercise
+  // retention at scale without paying for thousands of real requests.
+  async seedEventLogForTest(input: unknown): Promise<void> {
+    const parsed = eventLogSeedInputSchema.parse(input);
+    for (const row of parsed.rows) {
+      this.recordEvent(row);
+    }
+  }
+
+  private recordEvent(row: EventLogRow): void {
+    // One transaction for the insert and its prune, so a broadcast costs a
+    // single durable commit instead of one per statement.
+    this.ctx.storage.transactionSync(() => {
+      this.ctx.storage.sql.exec(
+        `INSERT OR IGNORE INTO events
+           (deliveryId, event, action, repository, prNumber, receivedAt)
+         VALUES (?, ?, ?, ?, ?, ?)`,
+        row.deliveryId,
+        row.event,
+        row.action,
+        row.repository,
+        row.prNumber,
+        row.receivedAt,
+      );
+      this.pruneEventLog();
+    });
+  }
+
+  private pruneEventLog(): void {
+    const cutoff = new Date(Date.now() - eventLogRetentionMs).toISOString();
+    this.ctx.storage.sql.exec(
+      `DELETE FROM events WHERE receivedAt < ?`,
+      cutoff,
+    );
+
+    // `seq` is an AUTOINCREMENT primary key, so MAX(seq) is a cheap index
+    // lookup and the retention cutoff is plain arithmetic on it — an
+    // indexed range delete on the primary key, cheap even called on every
+    // write. Avoid `ORDER BY seq DESC LIMIT 1 OFFSET n`: OFFSET forces
+    // SQLite to walk and discard `n` rows per call, which turns "prune on
+    // every write" quadratic as the table approaches the retention cap.
+    const maxSeqRow = this.ctx.storage.sql
+      .exec<{ maxSeq: number | null }>(`SELECT MAX(seq) AS maxSeq FROM events`)
+      .toArray();
+    const maxSeq = maxSeqRow[0]?.maxSeq;
+    if (maxSeq !== null && maxSeq !== undefined) {
+      const cutoffSeq = maxSeq - eventLogRetentionRows + 1;
+      this.ctx.storage.sql.exec(`DELETE FROM events WHERE seq < ?`, cutoffSeq);
+    }
+  }
+
+  // Sends replayed rows after `sinceParam`'s delivery, then resumes live
+  // delivery. An unresolvable cursor (malformed, unknown, or already
+  // pruned) replays nothing and sends a truncation notice instead, so the
+  // client knows it has a gap and must force a full refresh.
+  private replayFrom(
+    server: WebSocket,
+    channel: string,
+    sinceParam: string,
+  ): void {
+    const cursor = sinceCursorSchema.safeParse(sinceParam);
+    if (!cursor.success) {
+      server.send(encodeServerFrame({ version: 1, type: 'replay.truncated' }));
+      return;
+    }
+
+    const cursorRow = this.ctx.storage.sql
+      .exec<{ seq: number }>(
+        `SELECT seq FROM events WHERE deliveryId = ?`,
+        cursor.data,
+      )
+      .toArray();
+    const cursorSeq = cursorRow[0]?.seq;
+    if (cursorSeq === undefined) {
+      server.send(encodeServerFrame({ version: 1, type: 'replay.truncated' }));
+      return;
+    }
+
+    const rows = this.ctx.storage.sql
+      .exec<{
+        deliveryId: string;
+        event: string;
+        action: string | null;
+        repository: string | null;
+        prNumber: number | null;
+        receivedAt: string;
+      }>(
+        `SELECT deliveryId, event, action, repository, prNumber, receivedAt
+           FROM events WHERE seq > ? ORDER BY seq ASC`,
+        cursorSeq,
+      )
+      .toArray();
+
+    for (const row of rows) {
+      server.send(
+        encodeServerFrame(createGithubWebhookReplayEnvelope(channel, row)),
+      );
+    }
+  }
+
   override webSocketMessage(
     ws: WebSocket,
     message: string | ArrayBuffer,
   ): void {
+    this.webSocketMessageCount += 1;
     const parsedMessage = socketFrameSchema.safeParse(message);
     if (!parsedMessage.success || parsedMessage.data instanceof ArrayBuffer) {
       ws.close(1003, 'Text frames only.');

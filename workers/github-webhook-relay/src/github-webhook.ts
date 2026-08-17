@@ -5,6 +5,10 @@ const maximumBufferedPayloadBytes = 5 * 1024 * 1024;
 
 const webhookEnvironmentSchema = z.object({
   GITHUB_WEBHOOK_SECRET: z.string().min(16),
+  // Optional. Set during rotation so a body signed with the outgoing secret
+  // still verifies while GitHub is updated to the new one, removing the
+  // signature-mismatch window a single secret guarantees.
+  GITHUB_WEBHOOK_SECRET_PREVIOUS: z.string().min(16).optional(),
   MAX_WEBHOOK_BYTES: z.coerce
     .number()
     .int()
@@ -114,11 +118,25 @@ export async function verifyGithubWebhook(
   );
   if (!body.ok) return body;
 
-  const signatureValid = await verifyGithubSignature(
-    body.bytes,
-    parsedHeaders.data.signature,
+  const candidateSecrets = [
     parsedEnvironment.data.GITHUB_WEBHOOK_SECRET,
-  );
+    ...(parsedEnvironment.data.GITHUB_WEBHOOK_SECRET_PREVIOUS
+      ? [parsedEnvironment.data.GITHUB_WEBHOOK_SECRET_PREVIOUS]
+      : []),
+  ];
+  let signatureValid = false;
+  for (const secret of candidateSecrets) {
+    if (
+      await verifyGithubSignature(
+        body.bytes,
+        parsedHeaders.data.signature,
+        secret,
+      )
+    ) {
+      signatureValid = true;
+      break;
+    }
+  }
   if (!signatureValid) {
     return failure(401, 'unauthorized', 'Webhook signature is invalid.');
   }

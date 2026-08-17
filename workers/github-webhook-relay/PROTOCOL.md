@@ -29,6 +29,57 @@ The webhook HMAC is intentionally not forwarded.
 Consumers should reject unsupported `version` values and unknown `type` values.
 Use `deliveryId` as the idempotency key.
 
+## Replay on reconnect
+
+Connect with `?since=<deliveryId>` to catch up on events broadcast while
+disconnected:
+
+```text
+wss://<worker-host>/channels/<channel>/ws?since=8c2f4fb8-1a2b-4f4d-92cf-a0d9a7ab53f0
+```
+
+`since` names the last delivery the client already processed. On accept, the
+Durable Object looks up that delivery in its event log and sends every later
+event first, in order, before resuming live delivery. Replayed events use a
+distinct frame type:
+
+```json
+{
+  "version": 1,
+  "type": "github.webhook.replay",
+  "channel": "default",
+  "deliveryId": "b4e1a3b0-9e1d-4c8b-9b1e-2f6c9a0b7e3d",
+  "event": "pull_request",
+  "action": "synchronize",
+  "repository": "owner/repository",
+  "prNumber": 42,
+  "receivedAt": "2026-07-16T14:00:05.000Z"
+}
+```
+
+`github.webhook.replay` deliberately omits `payload`, `hookId`, and
+`installationId`: the Durable Object's event log persists routing facts only,
+never the GitHub payload, so there is nothing to replay it from. Treat a
+replay frame the same way you would treat a live one that arrived with no
+payload — refetch from GitHub if you need the content. `prNumber` is derived
+from `pull_request.number` or `issue.number` when the original event carried
+one, `null` otherwise.
+
+The event log retains roughly the last 24 hours or 1000 events per channel,
+whichever bound is smaller. If `since` names a delivery the log no longer has
+— because it was never recorded, or has since been pruned — the connection
+replays nothing and instead sends one control frame before any live traffic:
+
+```text
+{"version":1,"type":"replay.truncated"}
+```
+
+`replay.truncated` means there is a gap: some events may have been missed
+that this connection cannot recover. Treat it as a signal to force a full
+refresh from GitHub rather than trusting incremental state. A connection
+without a `since` parameter never receives this frame — replay only applies
+when a cursor was requested.
+
 ## Ping and pong
 
 The canonical client ping is:

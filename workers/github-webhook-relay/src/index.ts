@@ -133,11 +133,24 @@ export default {
       try {
         const room = env.RELAY_ROOMS.getByName(webSocketRoute.channel);
         const headers = new Headers({ Upgrade: 'websocket' });
-        const internalRequest = new Request(
+        const internalUrl = new URL(
           `https://relay.internal/channels/${encodeURIComponent(webSocketRoute.channel)}/ws`,
-          { headers },
         );
+        // Forward the replay cursor so the Durable Object can catch the
+        // client up. The client's bearer credential is deliberately not
+        // forwarded — only the Upgrade header and this routing param.
+        const sinceParam = url.searchParams.get('since');
+        if (sinceParam !== null) {
+          internalUrl.searchParams.set('since', sinceParam);
+        }
+        const internalRequest = new Request(internalUrl, { headers });
         const response = await room.fetch(internalRequest);
+        // A non-101 response is the Durable Object's own routing decision
+        // (e.g. its `400 invalid_request`), not a relay outage. Pass it
+        // through instead of flattening it to a generic 503 below.
+        if (response.status !== 101) {
+          return response;
+        }
         return webSocketUpgradeResponseSchema.parse(response);
       } catch (error) {
         console.error(
