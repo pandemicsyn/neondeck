@@ -37,7 +37,7 @@ const dashboardConfig = `{
 
 <BaseLayout
   title="neondeck · autonomous developer assistant for pull requests"
-  description="A local-first autonomous developer assistant. It puts the PRs you opened on autopilot, works beside you while you review everyone else's, and briefs you each morning on what actually needs you."
+  description="A local-first autonomous developer assistant. It surfaces the PRs you opened and can put any of them on Autopilot, works beside you while you review everyone else's, and briefs you each morning on what actually needs you."
 >
   <div class="site-shell">
     <SiteNav />
@@ -59,10 +59,11 @@ const dashboardConfig = `{
           </h1>
           <p class="hero-copy">
             neondeck is a local-first agent that lives beside your work and
-            keeps pull requests moving. It puts the PRs you opened on autopilot,
-            sits with you while you review everyone else's, and every morning
-            tells you which of them actually needs a human. Run it on a spare
-            monitor, a vertical panel, or a strip display like the Xeneon Edge.
+            keeps pull requests moving. It queues up the PRs you opened and puts
+            any of them on Autopilot when you say so, sits with you while you
+            review everyone else's, and every morning tells you which of them
+            actually needs a human. Run it on a spare monitor, a vertical panel,
+            or a strip display like the Xeneon Edge.
           </p>
           <div class="command">
             <span class="command-code"
@@ -115,14 +116,14 @@ const dashboardConfig = `{
                   it land.
                 </h3>
                 <p>
-                  Neon watches the PRs you authored for new feedback, failing
-                  checks, and a branch that has fallen behind, then chases
-                  all-green: CI failures, merge gates, routine review nits. Each
-                  one gets a continuing owner and a managed worktree that stay
-                  with it to merge. When a reviewer raises a real architectural
-                  flag, it hands that back to you instead of winging a fix. You
-                  decide how much rope it gets, and raising that takes an
-                  explicit confirmation.
+                  Put a PR on Autopilot and Neon watches it for new feedback,
+                  failing checks, and a branch that has fallen behind, then
+                  chases all-green: CI failures, merge gates, routine review
+                  nits. Each one gets a continuing owner and a managed worktree
+                  that stay with it to merge. When a reviewer raises a real
+                  architectural flag, it hands that back to you instead of
+                  winging a fix. You decide how much rope it gets, and raising
+                  that takes an explicit confirmation.
                 </p>
               </div>
               <div class="feature-grid">
