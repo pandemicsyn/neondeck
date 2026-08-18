@@ -19,6 +19,7 @@ import { runSchedulerTick } from './modules/scheduler';
 import { upsertScheduledTask } from './modules/scheduled-tasks';
 import {
   addPrWatch,
+  bindWatchAutopilotOwner,
   claimWatchAutopilotTurn,
   listPrWatchRecords,
   transitionWatchAutopilot,
@@ -228,6 +229,148 @@ describe('deterministic PR watch event refresh', () => {
         autopilot: expect.objectContaining({ state: 'notified' }),
         deltas: expect.arrayContaining([
           expect.objectContaining({ type: 'requested-changes' }),
+        ]),
+      }),
+    ]);
+  });
+
+  it('acknowledges handled feedback without replaying the exact approved Autopilot push', async () => {
+    const paths = await fixture();
+    const watchId = 'pandemicsyn/neondeck#164';
+    const target = [{ watch: { id: watchId } }] as never;
+    await addPrWatch({ ref: watchId, processExisting: true }, paths, async () =>
+      prDetail(),
+    );
+    // This is the actionable first poll: processExisting intentionally leaves
+    // `initialEventProcessedAt` unset until the admitted owner event settles.
+    const feedback = eventState();
+    const eventFingerprint = 'feedback-before-approval';
+    expect(
+      claimWatchAutopilotTurn(paths, watchId, eventFingerprint),
+    ).toBeTruthy();
+    bindWatchAutopilotOwner(paths, watchId, {
+      ownerInstanceId: 'owner-1',
+      worktreeId: 'worktree-1',
+    });
+    transitionWatchAutopilot(paths, watchId, {
+      from: 'working',
+      to: 'waiting',
+      eventFingerprint,
+      eventWatermarks: watermarksFromEventState(watchId, feedback),
+      markInitialEventProcessed: true,
+    });
+    expect(await readWatchInitialEventProcessedAt(paths, watchId)).toEqual(
+      expect.any(String),
+    );
+    // Approval and push use a direct-human turn; its settlement retains the
+    // original admission watermark rather than refetching this later state.
+    transitionWatchAutopilot(paths, watchId, {
+      from: 'waiting',
+      to: 'watching',
+    });
+    const pushedSha = 'c'.repeat(40);
+    const pushed = eventState();
+    pushed.headSha = pushedSha;
+    pushed.commits = [commit(pushedSha)];
+
+    const result = await refreshWatchJobEvents(
+      target,
+      paths,
+      {
+        ...liveDependencies(pushed),
+        readManagedWorktree: async () =>
+          ({ lastPushedSha: pushedSha }) as never,
+      },
+      null,
+    );
+
+    expect(result).toEqual([
+      expect.objectContaining({
+        ok: true,
+        changed: false,
+        deltas: [],
+      }),
+    ]);
+    expect(result[0]).not.toHaveProperty('autopilot');
+    expect(await listNotifications(paths)).toEqual([]);
+  });
+
+  it('keeps human feedback that arrived during approval actionable', async () => {
+    const paths = await fixture();
+    const watchId = 'pandemicsyn/neondeck#164';
+    const target = [{ watch: { id: watchId } }] as never;
+    await addPrWatch({ ref: watchId, processExisting: true }, paths, async () =>
+      prDetail(),
+    );
+    const quiet = eventState();
+    quiet.requestedChangesReviews = [];
+    quiet.requestedChangesState = {
+      active: [],
+      latestByReviewer: [],
+      history: [],
+    };
+    await refreshWatchJobEvents(target, paths, liveDependencies(quiet), null);
+
+    const feedback = eventState();
+    expect(
+      claimWatchAutopilotTurn(paths, watchId, 'feedback-before-approval'),
+    ).toBeTruthy();
+    bindWatchAutopilotOwner(paths, watchId, {
+      ownerInstanceId: 'owner-1',
+      worktreeId: 'worktree-1',
+    });
+    transitionWatchAutopilot(paths, watchId, {
+      from: 'working',
+      to: 'waiting',
+      eventFingerprint: 'feedback-before-approval',
+      eventWatermarks: watermarksFromEventState(watchId, feedback),
+    });
+    transitionWatchAutopilot(paths, watchId, {
+      from: 'waiting',
+      to: 'watching',
+    });
+    const pushedSha = 'c'.repeat(40);
+    const laterFeedback = eventState();
+    laterFeedback.headSha = pushedSha;
+    laterFeedback.commits = [commit(pushedSha)];
+    const humanReview = {
+      ...laterFeedback.requestedChangesReviews[0],
+      id: 9002,
+      nodeId: 'review-9002',
+      body: 'Please also cover the approval retry.',
+      submittedAt: '2026-07-19T00:11:00.000Z',
+    };
+    laterFeedback.requestedChangesReviews = [
+      ...laterFeedback.requestedChangesReviews,
+      humanReview,
+    ];
+    laterFeedback.requestedChangesState = {
+      active: laterFeedback.requestedChangesReviews,
+      latestByReviewer: laterFeedback.requestedChangesReviews,
+      history: laterFeedback.requestedChangesReviews,
+    };
+
+    const result = await refreshWatchJobEvents(
+      target,
+      paths,
+      {
+        ...liveDependencies(laterFeedback),
+        readManagedWorktree: async () =>
+          ({ lastPushedSha: pushedSha }) as never,
+      },
+      null,
+    );
+
+    expect(result).toEqual([
+      expect.objectContaining({
+        changed: true,
+        autopilot: expect.objectContaining({ state: 'notified' }),
+        deltas: expect.arrayContaining([
+          expect.objectContaining({
+            type: 'requested-changes',
+            itemId: '9002',
+            actionable: true,
+          }),
         ]),
       }),
     ]);
@@ -614,4 +757,21 @@ function reviewThread(): GitHubPullRequestEventState['reviewThreads'][number] {
       },
     ],
   };
+}
+
+function commit(sha: string) {
+  return {
+    sha,
+    url: `https://github.com/pandemicsyn/neondeck/commit/${sha}`,
+    authorLogin: 'neondeck[bot]',
+    committedAt: '2026-07-19T00:10:30.000Z',
+  };
+}
+
+async function readWatchInitialEventProcessedAt(
+  paths: RuntimePaths,
+  watchId: string,
+) {
+  return (await listPrWatchRecords(paths)).find((watch) => watch.id === watchId)
+    ?.initialEventProcessedAt;
 }

@@ -30,7 +30,10 @@ import { reviewRevisionKey } from '../shared/review-source';
 import { safePushAutopilotOwner } from './modules/autopilot/owner/safe-push';
 import { recordOwnerOutcomeQuietly } from './modules/autopilot/owner/settlement-learning';
 import { buildAutopilotOwnerToolRegistry } from './modules/autopilot/owner/tools';
-import { postGitHubPrComment } from './modules/pr-events';
+import {
+  listPrWatchEventWatermarks,
+  postGitHubPrComment,
+} from './modules/pr-events';
 import { pushInteractiveRepo, readRepoDiff } from './repo-edit';
 import { gitCurrentSha, gitPushHead, gitStatus } from './repo-edit/git';
 import {
@@ -683,6 +686,104 @@ describe('minimal Autopilot watch loop', () => {
     expect(readPendingAutopilotTurn(paths.home, instanceId)).toBeUndefined();
     expect(readWatch(paths, 'pandemicsyn/neondeck#123')).toMatchObject({
       autopilotStatus: 'watching',
+    });
+  });
+
+  it('acknowledges first-poll facts from the durable owner envelope on settlement', async () => {
+    const { paths } = await gitFixturePaths();
+    const watchId = 'pandemicsyn/neondeck#123';
+    await configurePrAutopilot(
+      {
+        ref: 'neondeck#123',
+        mode: 'prepare-only',
+        processExisting: true,
+        confirm: true,
+      },
+      paths,
+      fixtureDependencies(repositorySeed?.featureSha ?? undefined),
+    );
+    const created = await createWorktree(
+      { repoId: 'neondeck', prNumber: 123, headRef: 'feature' },
+      paths,
+    );
+    const worktree = worktreeFrom(created);
+    const instanceId = 'envelope-watermark-owner';
+    const eventFingerprint = 'first-poll-feedback';
+    bindWatchAutopilotOwner(paths, watchId, {
+      ownerInstanceId: instanceId,
+      worktreeId: worktree.id,
+    });
+    expect(
+      claimWatchAutopilotTurn(paths, watchId, eventFingerprint),
+    ).toBeTruthy();
+    const eventWatermarks = [
+      {
+        watchId,
+        category: 'review_threads',
+        watermark: {
+          total: 1,
+          truncated: false,
+          unresolvedThreadIds: ['thread-1'],
+          threads: [],
+        },
+        sourceUpdatedAt: '2026-07-20T00:00:00Z',
+        checkedAt: '2026-07-20T00:00:00Z',
+        createdAt: '2026-07-20T00:00:00Z',
+        updatedAt: '2026-07-20T00:00:00Z',
+      },
+    ];
+    const envelope = buildAutopilotOwnerEnvelope({
+      watchId,
+      repoId: 'neondeck',
+      repoFullName: 'pandemicsyn/neondeck',
+      prNumber: 123,
+      worktreeId: worktree.id,
+      worktreePath: worktree.localPath,
+      headSha: repositorySeed?.featureSha ?? 'a'.repeat(40),
+      baseSha: repositorySeed?.baseSha ?? 'b'.repeat(40),
+      eventFingerprint,
+      mode: 'prepare-only',
+      facts: { event: { watermarks: eventWatermarks } },
+      availableCapabilities: [],
+    });
+    const pending = registerPendingAutopilotTurn(
+      paths.home,
+      instanceId,
+      eventFingerprint,
+      'prepare-only',
+      'watch-event',
+      undefined,
+      { envelope, watchId },
+    );
+    recordPendingAutopilotTurnCorrelationId(
+      paths.home,
+      instanceId,
+      pending.turnId,
+      'envelope-watermark-submission',
+    );
+
+    await settleAutopilotOwnerObservation(
+      ownerPromptSuccess(instanceId, 'envelope-watermark-submission'),
+      paths,
+    );
+
+    expect(readWatch(paths, watchId)).toMatchObject({
+      autopilotStatus: 'watching',
+      initialEventProcessedAt: expect.any(String),
+    });
+    await expect(
+      listPrWatchEventWatermarks({ watchId }, paths),
+    ).resolves.toMatchObject({
+      data: {
+        watermarks: [
+          expect.objectContaining({
+            category: 'review_threads',
+            watermark: expect.objectContaining({
+              unresolvedThreadIds: ['thread-1'],
+            }),
+          }),
+        ],
+      },
     });
   });
 

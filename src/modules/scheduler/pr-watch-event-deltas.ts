@@ -26,9 +26,15 @@ export function deltasFromChangedCategories(
     neondeckReviewCommentFingerprints?: ReadonlyMap<string, string>;
     neondeckRequestedChangesReviewFingerprints?: ReadonlyMap<string, string>;
     neondeckConversationCommentFingerprints?: ReadonlyMap<string, string>;
+    neondeckCommitShas?: ReadonlySet<string>;
   } = {},
 ) {
-  return categories.flatMap((category) => {
+  const exactNeondeckPush = isExactNeondeckCommit(
+    watermarkPayload(currentWatermarks, 'commits'),
+    watermarkPayload(previousWatermarks, 'commits'),
+    filters.neondeckCommitShas,
+  );
+  const deltas = categories.flatMap((category) => {
     const payload = watermarkPayload(currentWatermarks, category);
     const previousPayload = watermarkPayload(previousWatermarks, category);
     if (category === 'review_threads') {
@@ -43,8 +49,17 @@ export function deltasFromChangedCategories(
     if (category === 'check_suites' || category === 'check_runs') {
       return checkDeltas(category, payload, previousPayload);
     }
+    if (category === 'commits' && exactNeondeckPush) {
+      return [];
+    }
     return [deltaFromWatermark(category, payload, previousPayload)];
   });
+  // A pushed head naturally changes mergeability/freshness (and can start
+  // pending checks). Do not turn those informational side effects into a
+  // second notification; failures and all human feedback remain visible.
+  return exactNeondeckPush
+    ? deltas.filter((delta) => delta.type !== 'metadata')
+    : deltas;
 }
 
 export function initialActionableDeltas(
@@ -88,6 +103,7 @@ function reviewCommentDeltas(
   const previous = feedbackFingerprintMap(
     feedbackItemsFromThreads(previousPayload),
   );
+  let suppressed = false;
   const deltas = feedbackItemsFromThreads(payload).flatMap((item) => {
     const threadId = stringField(item.threadId);
     const id = feedbackItemId(item);
@@ -107,6 +123,8 @@ function reviewCommentDeltas(
     const addressedThreadFingerprint = threadId
       ? filters.addressedReviewThreadFingerprints?.get(threadId)
       : undefined;
+    const change = feedbackChange(item, previous.get(id));
+    if (!change) return [];
     if (
       fingerprint &&
       (addressedCommentFingerprint === fingerprint ||
@@ -115,10 +133,9 @@ function reviewCommentDeltas(
           neondeckDeliveryFingerprint === deliveryFingerprint) ||
         addressedThreadFingerprint === fingerprint)
     ) {
+      suppressed = true;
       return [];
     }
-    const change = feedbackChange(item, previous.get(id));
-    if (!change) return [];
     const incomplete =
       booleanField(item.bodyTruncated) === true ||
       booleanField(item.commentsTruncated) === true ||
@@ -145,6 +162,7 @@ function reviewCommentDeltas(
   if (booleanField(payload.truncated) === true) {
     return [incompleteCollectionDelta('review_threads')];
   }
+  if (suppressed) return [];
   return [
     jsonRecord({
       type: 'metadata',
@@ -163,19 +181,21 @@ function requestedChangesDeltas(
   },
 ) {
   const previous = feedbackFingerprintMap(recordArray(previousPayload.reviews));
+  let suppressed = false;
   const deltas = recordArray(payload.reviews).flatMap((item) => {
     const id = feedbackItemId(item);
     if (!id || item.actionable === false) return [];
     const fingerprint = stringField(item.fingerprint);
+    const change = feedbackChange(item, previous.get(id));
+    if (!change) return [];
     if (
       fingerprint &&
       filters.neondeckRequestedChangesReviewFingerprints?.get(id) ===
         fingerprint
     ) {
+      suppressed = true;
       return [];
     }
-    const change = feedbackChange(item, previous.get(id));
-    if (!change) return [];
     const incomplete =
       item.bodyTruncated === true || payload.truncated === true;
     return [
@@ -199,6 +219,7 @@ function requestedChangesDeltas(
   if (booleanField(payload.truncated) === true) {
     return [incompleteCollectionDelta('requested_changes_reviews')];
   }
+  if (suppressed) return [];
   const previousTotal = numberField(previousPayload.total) ?? 0;
   return [
     jsonRecord({
@@ -223,18 +244,20 @@ function conversationCommentDeltas(
   const previous = feedbackFingerprintMap(
     recordArray(previousPayload.comments),
   );
+  let suppressed = false;
   const deltas = recordArray(payload.comments).flatMap((item) => {
     const id = feedbackItemId(item);
     if (!id || item.actionable === false) return [];
     const fingerprint = stringField(item.fingerprint);
+    const change = feedbackChange(item, previous.get(id));
+    if (!change) return [];
     if (
       fingerprint &&
       filters.neondeckConversationCommentFingerprints?.get(id) === fingerprint
     ) {
+      suppressed = true;
       return [];
     }
-    const change = feedbackChange(item, previous.get(id));
-    if (!change) return [];
     const incomplete =
       item.bodyTruncated === true || payload.truncated === true;
     return [
@@ -260,6 +283,7 @@ function conversationCommentDeltas(
   if (booleanField(payload.truncated) === true) {
     return [incompleteCollectionDelta('conversation_comments')];
   }
+  if (suppressed) return [];
   return [
     jsonRecord({
       type: 'metadata',
@@ -364,6 +388,33 @@ function feedbackChange(
   const fingerprint = stringField(item.fingerprint);
   if (!previousFingerprint) return 'new';
   return fingerprint && fingerprint !== previousFingerprint ? 'changed' : null;
+}
+
+/**
+ * A single new SHA is quiet only when it is exactly the SHA that the managed
+ * worktree recorded as pushed. Requiring the complete new-SHA set avoids
+ * hiding a human commit that arrived during an approval window.
+ */
+function isExactNeondeckCommit(
+  payload: Record<string, unknown>,
+  previousPayload: Record<string, unknown>,
+  neondeckCommitShas: ReadonlySet<string> | undefined,
+) {
+  if (
+    !neondeckCommitShas?.size ||
+    booleanField(payload.truncated) === true ||
+    booleanField(previousPayload.truncated) === true
+  ) {
+    return false;
+  }
+  const currentShas = new Set(arrayField(payload.shas).map(String));
+  const previousShas = new Set(arrayField(previousPayload.shas).map(String));
+  const newShas = [...currentShas].filter((sha) => !previousShas.has(sha));
+  return (
+    newShas.length === 1 &&
+    neondeckCommitShas.has(newShas[0]) &&
+    stringField(payload.headSha) === newShas[0]
+  );
 }
 
 function recordArray(value: unknown) {

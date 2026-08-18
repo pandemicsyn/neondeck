@@ -6,6 +6,7 @@ import {
   listPrWatchRecords,
   readWatchByOwnerInstanceId,
   transitionWatchAutopilot,
+  type PrWatchInitialWatermark,
 } from '../../watches';
 import {
   readManagedWorktree,
@@ -172,7 +173,12 @@ export async function settleAutopilotOwnerObservation(
     }
     await applyOwnerSettlementEffects(decision, watch, worktree, paths);
     if (decision.outcome) await recordOutcome(decision.outcome);
-    return commitOwnerSettlementDecision(decision, watch, paths);
+    return commitOwnerSettlementDecision(
+      decision,
+      watch,
+      paths,
+      eventWatermarksFromPendingTurn(pending),
+    );
   } catch (error) {
     const message = `${watch.repoFullName}#${watch.prNumber} could not be settled safely: ${errorMessage(error)}`;
     await recordOutcome({
@@ -426,6 +432,7 @@ function commitOwnerSettlementDecision(
   decision: OwnerSettlementDecision,
   watch: NonNullable<ReturnType<typeof readWatchByOwnerInstanceId>>,
   paths: RuntimePaths,
+  eventWatermarks: PrWatchInitialWatermark[] | undefined,
 ) {
   if (decision.blockMessage) {
     return transitionWatchAutopilot(paths, watch.id, {
@@ -434,8 +441,57 @@ function commitOwnerSettlementDecision(
     });
   }
   return decision.transition
-    ? transitionWatchAutopilot(paths, watch.id, decision.transition)
+    ? transitionWatchAutopilot(paths, watch.id, {
+        ...decision.transition,
+        ...(eventWatermarks
+          ? { eventWatermarks, markInitialEventProcessed: true }
+          : {}),
+      })
     : watch;
+}
+
+/**
+ * An owner envelope is a durable record of the facts that were actually
+ * admitted. Reusing those facts at settlement advances only the handled event
+ * baseline, leaving any feedback that arrived while the owner was working or
+ * awaiting approval for the next poll.
+ */
+function eventWatermarksFromPendingTurn(
+  pending: ReturnType<typeof claimPendingAutopilotTurnSettlement>,
+) {
+  if (pending?.source !== 'watch-event' || !pending.envelope) return undefined;
+  const facts = objectValue(pending.envelope.facts);
+  const event = objectValue(facts?.event);
+  const values = event?.watermarks;
+  if (!Array.isArray(values)) return undefined;
+  const watermarks = values.flatMap((value) => {
+    const record = objectValue(value);
+    if (
+      !record ||
+      typeof record.category !== 'string' ||
+      !record.category ||
+      !('watermark' in record) ||
+      !('sourceUpdatedAt' in record) ||
+      (record.sourceUpdatedAt !== null &&
+        typeof record.sourceUpdatedAt !== 'string')
+    ) {
+      return [];
+    }
+    return [
+      {
+        category: record.category,
+        value: record.watermark as PrWatchInitialWatermark['value'],
+        sourceUpdatedAt: record.sourceUpdatedAt,
+      },
+    ];
+  });
+  return watermarks.length > 0 ? watermarks : undefined;
+}
+
+function objectValue(value: unknown) {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : undefined;
 }
 
 function addOwnerBlockNotification(

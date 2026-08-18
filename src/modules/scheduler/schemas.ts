@@ -8,6 +8,7 @@ import {
 } from '../pr-events';
 import { checkAutopilotConcurrency } from '../autopilot-policy';
 import { fetchCheckSummary } from '../github';
+import { readManagedWorktree } from '../worktrees';
 import type { admitBriefing } from '../briefings/service';
 import * as v from 'valibot';
 
@@ -41,6 +42,7 @@ export type SchedulerDependencies = {
     input: Parameters<typeof listPrWatchEventWatermarks>[0],
     paths: RuntimePaths,
   ) => ReturnType<typeof listPrWatchEventWatermarks>;
+  readManagedWorktree?: typeof readManagedWorktree;
   checkAutopilotConcurrency?: typeof checkAutopilotConcurrency;
   fetchCheckSummary?: typeof fetchCheckSummary;
   dispatchInstruction?: (input: {
