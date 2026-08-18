@@ -33,7 +33,6 @@ describe('useGitHubPrReviewMutations', () => {
   it('clears the live draft cache after GitHub accepts the review', async () => {
     const pr = pullRequest();
     const liveDraft = reviewDraft('draft');
-    const submittedDraft = reviewDraft('submitted');
     const queryClient = new QueryClient({
       defaultOptions: {
         mutations: { retry: false },
@@ -42,28 +41,11 @@ describe('useGitHubPrReviewMutations', () => {
     });
     const cancelQueries = vi.spyOn(queryClient, 'cancelQueries');
     queryClient.setQueryData(prReviewQueryKeys.draft(pr), liveDraft);
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
-      new Response(
-        JSON.stringify({
-          ok: true,
-          action: 'github_pr_review_post',
-          changed: true,
-          message: 'Submitted PR review.',
-          data: {
-            draft: submittedDraft,
-            review: {
-              id: 123,
-              nodeId: 'PRR_123',
-              state: 'APPROVED',
-              authorLogin: 'pandemicsyn',
-              submittedAt: '2026-08-18T03:15:00.000Z',
-              commitId: pr.headSha,
-              url: `${pr.url}#pullrequestreview-123`,
-              body: null,
-            },
-          },
-        }),
-        { headers: { 'content-type': 'application/json' } },
+    vi.spyOn(globalThis, 'fetch').mockImplementation((input) =>
+      Promise.resolve(
+        String(input).endsWith('/review-draft')
+          ? liveDraftResponse(null)
+          : successfulSubmitResponse(pr),
       ),
     );
 
@@ -108,33 +90,11 @@ describe('useGitHubPrReviewMutations', () => {
       },
     });
     queryClient.setQueryData(prReviewQueryKeys.draft(pr), reviewDraft('draft'));
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
-      new Response(
-        JSON.stringify({
-          ok: false,
-          action: 'github_pr_review_post',
-          changed: true,
-          message:
-            'Submitted PR review but could not uniquely verify its durable delivery identity.',
-          data: {
-            draft: reviewDraft('submitted'),
-            review: {
-              id: 123,
-              nodeId: 'PRR_123',
-              state: 'APPROVED',
-              authorLogin: 'pandemicsyn',
-              submittedAt: '2026-08-18T03:15:00.000Z',
-              commitId: pr.headSha,
-              url: `${pr.url}#pullrequestreview-123`,
-              body: null,
-            },
-          },
-          requires: ['deliveryIdentity'],
-        }),
-        {
-          status: 409,
-          headers: { 'content-type': 'application/json' },
-        },
+    vi.spyOn(globalThis, 'fetch').mockImplementation((input) =>
+      Promise.resolve(
+        String(input).endsWith('/review-draft')
+          ? liveDraftResponse(null)
+          : acceptedUnverifiedSubmitResponse(pr),
       ),
     );
 
@@ -180,8 +140,14 @@ describe('useGitHubPrReviewMutations', () => {
     const draftResponse = new Promise<Response>((resolve) => {
       resolveDraftResponse = resolve;
     });
+    let draftReadCount = 0;
     vi.spyOn(globalThis, 'fetch').mockImplementation((input) => {
-      if (String(input).endsWith('/review-draft')) return draftResponse;
+      if (String(input).endsWith('/review-draft')) {
+        draftReadCount += 1;
+        return draftReadCount === 1
+          ? draftResponse
+          : Promise.resolve(liveDraftResponse(null));
+      }
       return Promise.resolve(successfulSubmitResponse(pr));
     });
 
@@ -230,6 +196,88 @@ describe('useGitHubPrReviewMutations', () => {
 
     expect(queryClient.getQueryData(prReviewQueryKeys.draft(pr))).toBeNull();
   });
+
+  it('preserves a new draft saved while submission verification is pending', async () => {
+    const pr = pullRequest();
+    const submittedDraft = reviewDraft('draft');
+    const newerDraft = {
+      ...reviewDraft('draft'),
+      id: 'draft-2',
+      body: 'Summary saved during verification.',
+      comments: [],
+      updatedAt: '2026-08-18T03:16:00.000Z',
+    } satisfies GitHubPrReviewDraft;
+    const queryClient = new QueryClient({
+      defaultOptions: {
+        mutations: { retry: false },
+        queries: { retry: false },
+      },
+    });
+    queryClient.setQueryData(prReviewQueryKeys.draft(pr), submittedDraft);
+    let resolveSubmission!: (response: Response) => void;
+    const submissionResponse = new Promise<Response>((resolve) => {
+      resolveSubmission = resolve;
+    });
+    vi.spyOn(globalThis, 'fetch').mockImplementation((input, init) => {
+      const url = String(input);
+      if (url.endsWith('/reviews')) return submissionResponse;
+      if (url.endsWith('/review-draft') && init?.method === 'PUT') {
+        return Promise.resolve(liveDraftResponse(newerDraft));
+      }
+      if (url.endsWith('/review-draft')) {
+        return Promise.resolve(liveDraftResponse(null));
+      }
+      throw new Error(`Unexpected request: ${url}`);
+    });
+
+    let mutations: ReturnType<typeof useGitHubPrReviewMutations> | null = null;
+    function Harness() {
+      mutations = useGitHubPrReviewMutations(pr);
+      return null;
+    }
+
+    act(() =>
+      root.render(
+        <QueryClientProvider client={queryClient}>
+          <Harness />
+        </QueryClientProvider>,
+      ),
+    );
+
+    let submission!: Promise<unknown>;
+    act(() => {
+      submission = mutations!.submitReview.mutateAsync({
+        repo: pr.repo,
+        number: pr.number,
+        headSha: pr.headSha!,
+        body: null,
+        verdict: 'approve',
+        commentIds: ['comment-1'],
+      });
+      void submission.catch(() => undefined);
+    });
+
+    await act(async () => {
+      await mutations!.saveDraft.mutateAsync({
+        repo: pr.repo,
+        number: pr.number,
+        headSha: pr.headSha!,
+        body: newerDraft.body,
+      });
+    });
+
+    resolveSubmission(acceptedUnverifiedSubmitResponse(pr));
+    await act(async () => {
+      await expect(submission).rejects.toThrow('could not uniquely verify');
+    });
+
+    expect(queryClient.getQueryData(prReviewQueryKeys.draft(pr))).toMatchObject(
+      {
+        id: 'draft-2',
+        body: 'Summary saved during verification.',
+      },
+    );
+  });
 });
 
 function successfulSubmitResponse(pr: GitHubPullRequest) {
@@ -255,6 +303,53 @@ function successfulSubmitResponse(pr: GitHubPullRequest) {
     }),
     { headers: { 'content-type': 'application/json' } },
   );
+}
+
+function acceptedUnverifiedSubmitResponse(pr: GitHubPullRequest) {
+  return new Response(
+    JSON.stringify({
+      ok: false,
+      action: 'github_pr_review_post',
+      changed: true,
+      message:
+        'Submitted PR review but could not uniquely verify its durable delivery identity.',
+      data: {
+        draft: reviewDraft('submitted'),
+        review: submittedReview(pr),
+      },
+      requires: ['deliveryIdentity'],
+    }),
+    {
+      status: 409,
+      headers: { 'content-type': 'application/json' },
+    },
+  );
+}
+
+function liveDraftResponse(draft: GitHubPrReviewDraft | null) {
+  return new Response(
+    JSON.stringify({
+      ok: true,
+      action: 'github_pr_review_draft_get',
+      changed: false,
+      message: draft ? 'Fetched review draft.' : 'No review draft.',
+      data: { draft },
+    }),
+    { headers: { 'content-type': 'application/json' } },
+  );
+}
+
+function submittedReview(pr: GitHubPullRequest) {
+  return {
+    id: 123,
+    nodeId: 'PRR_123',
+    state: 'APPROVED',
+    authorLogin: 'pandemicsyn',
+    submittedAt: '2026-08-18T03:15:00.000Z',
+    commitId: pr.headSha,
+    url: `${pr.url}#pullrequestreview-123`,
+    body: null,
+  };
 }
 
 function pullRequest(): GitHubPullRequest {

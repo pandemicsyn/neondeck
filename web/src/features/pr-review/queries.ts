@@ -317,16 +317,23 @@ export function useGitHubPrReviewMutations(pr: GitHubPullRequest) {
   const updateDraftCache = (draft: GitHubPrReviewDraft | null) => {
     queryClient.setQueryData(prReviewQueryKeys.draft(pr), draft);
   };
-  const reconcileSubmittedReview = async () => {
+  const reconcileSubmittedReview = async (submittedDraftId: string | null) => {
+    const queryKey = prReviewQueryKeys.draft(pr);
     await queryClient.cancelQueries({
       exact: true,
-      queryKey: prReviewQueryKeys.draft(pr),
+      queryKey,
     });
-    // The submit response includes the now-submitted draft for audit
-    // context, but the draft query represents only the live local draft.
-    // Caching the submitted record here renders it beside the newly
-    // published GitHub thread until the page is refreshed.
-    updateDraftCache(null);
+    const liveDraft = await getGitHubPrReviewDraft({
+      repo: pr.repo,
+      number: pr.number,
+    }).catch(() => null);
+    queryClient.setQueryData<GitHubPrReviewDraft | null>(queryKey, (current) =>
+      current?.status === 'draft' &&
+      submittedDraftId !== null &&
+      current.id !== submittedDraftId
+        ? current
+        : liveDraft,
+    );
     await Promise.all([
       invalidateThreads(),
       invalidateSubmittedReviewQueries(queryClient, pr),
@@ -393,11 +400,13 @@ export function useGitHubPrReviewMutations(pr: GitHubPullRequest) {
     submitReview: useMutation({
       mutationFn: postGitHubPrReview,
       onError: async (error) => {
-        if (submittedReviewWasAccepted(error)) {
-          await reconcileSubmittedReview();
+        const submittedDraft = submittedReviewDraftFromError(error);
+        if (submittedDraft) {
+          await reconcileSubmittedReview(submittedDraft.id);
         }
       },
-      onSuccess: reconcileSubmittedReview,
+      onSuccess: (result) =>
+        reconcileSubmittedReview(result?.draft?.id ?? null),
     }),
     replyToThread: useMutation({
       mutationFn: postGitHubPrThreadReply,
@@ -413,13 +422,21 @@ export function useGitHubPrReviewMutations(pr: GitHubPullRequest) {
 }
 
 export function submittedReviewWasAccepted(error: unknown) {
-  if (!(error instanceof ApiError)) return false;
+  return submittedReviewDraftFromError(error) !== null;
+}
+
+function submittedReviewDraftFromError(error: unknown) {
+  if (!(error instanceof ApiError)) return null;
   const result = error.data as GitHubPrReviewSubmitResponse | undefined;
-  return Boolean(
-    result?.changed &&
-    result.data?.draft?.status === 'submitted' &&
-    result.data.review,
-  );
+  const draft = result?.data?.draft;
+  if (
+    !result?.changed ||
+    draft?.status !== 'submitted' ||
+    !result.data?.review
+  ) {
+    return null;
+  }
+  return draft;
 }
 
 export function invalidateSubmittedReviewQueries(
