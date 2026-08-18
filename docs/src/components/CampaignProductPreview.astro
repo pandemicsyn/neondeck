@@ -1,0 +1,213 @@
+---
+type Props = {
+  campaign: 'pr-review' | 'pr-autopilot';
+};
+
+const { campaign } = Astro.props;
+---
+
+<div
+  class:list={['campaign-product', campaign]}
+  role="img"
+  aria-label={campaign === 'pr-review'
+    ? 'A Neondeck review bench with a pull request briefing, diff, staged comment, and review agent chat'
+    : 'A Neondeck Autopilot activity view with completed fixes, a held architectural decision, and the delivered diff'}
+>
+  <header class="campaign-product__chrome">
+    <span class="window-dot pink"></span>
+    <span class="window-dot amber"></span>
+    <span class="window-dot teal"></span>
+    <strong
+      >neondeck · {
+        campaign === 'pr-review' ? 'review bench' : 'autopilot'
+      }</strong
+    >
+  </header>
+  <div class="campaign-product__signal"></div>
+
+  {
+    campaign === 'pr-review' ? (
+      <div class="review-preview">
+        <section class="review-preview__diff">
+          <div class="review-briefing">
+            <div class="preview-title-row">
+              <span class="preview-badge teal">#617</span>
+              <strong>Refactor auth middleware</strong>
+              <span class="preview-badge cyan">12 files</span>
+            </div>
+            <p class="preview-label">pr briefing</p>
+            <p>
+              Moves session validation into shared middleware and drops the
+              per-route checks. <b>Behavior is unchanged for happy paths</b> —
+              the risk sits in error handling.
+            </p>
+            <ul>
+              <li class="pink">
+                Watch <code>middleware/auth.ts:88</code> — 401 path lost its
+                logging
+              </li>
+              <li class="teal">
+                Tests cover the new happy path; no test for expired token
+              </li>
+            </ul>
+          </div>
+          <div class="preview-filebar">
+            <>
+              <code>middleware/auth.ts</code>
+              <span class="preview-badge pink">−7 +2</span>
+            </>
+          </div>
+          <pre class="preview-diff">
+            <span> 86 if (!session) &#123;</span>
+            <span class="removed">
+              - 87 logger.warn('auth.reject', &#123; ip &#125;)
+            </span>
+            <span class="removed">- 88 return res.status(401).end()</span>
+            <span class="added">+ 87 return reject(res, 401)</span>
+            <span> 89 &#125;</span>
+            <span> 90 return next()</span>
+          </pre>
+        </section>
+
+        <section class="review-preview__agent">
+          <header>
+            <>
+              <i />
+              <span>review agent</span>
+            </>
+          </header>
+          <div class="review-chat">
+            <p class="chat assistant">
+              I reviewed this PR and staged <b>3 comments</b>. The one worth a
+              look first:
+            </p>
+            <article class="draft-comment">
+              <header>
+                <>
+                  <i />
+                  <span>draft comment</span>
+                  <code>auth.ts:88</code>
+                </>
+                <b>staged</b>
+              </header>
+              <p>
+                The old path logged <code>auth.reject</code> before returning
+                401.
+                <code>reject()</code> drops it — can we keep the warn so
+                rejections stay traceable?
+              </p>
+              <footer>
+                <>
+                  <strong>add to review</strong>
+                  <span>edit</span>
+                  <span>discard</span>
+                </>
+              </footer>
+            </article>
+            <p class="chat user">
+              Is that logging used anywhere else, or just here?
+            </p>
+            <div class="chat assistant">
+              <p>
+                Just here — <code>auth.reject</code> is only emitted on this
+                path, and nothing greps for it downstream. Dropping it loses the
+                only signal on rejected sessions.
+              </p>
+              <p>
+                Want me to suggest moving the log into <code>reject()</code>{' '}
+                itself?
+              </p>
+            </div>
+            <span class="jump-chip">◆ jump to auth.ts:88</span>
+            <div class="chat-input">
+              <>
+                <span>Ask about this diff…</span>
+                <i />
+              </>
+            </div>
+          </div>
+        </section>
+      </div>
+    ) : (
+      <div class="autopilot-preview">
+        <div class="autopilot-preview__heading">
+          <span class="preview-badge teal">#482</span>
+          <strong>Add retry budget to fetcher queue</strong>
+          <span class="preview-badge amber">driving to green</span>
+          <small>ready for review · 2m ago</small>
+        </div>
+        <div class="autopilot-preview__body">
+          <section class="autopilot-log">
+            <span class="mode-chip">◆ autopilot · autofix-push-when-safe</span>
+            <div class="log-item success">
+              <>
+                <i />
+                <p>
+                  Fixed CI — retry budget unset on cold start. Pushed{' '}
+                  <>
+                    <code>a3f9c1</code>
+                    <small>✓ checks green</small>
+                  </>
+                </p>
+              </>
+            </div>
+            <div class="log-item success">
+              <>
+                <i />
+                <p>
+                  Reviewer nit — “add debug logging on reject.” Handled, pushed{' '}
+                  <>
+                    <code>b7c2e9</code>
+                    <small>✓ thread resolved</small>
+                  </>
+                </p>
+              </>
+            </div>
+            <div class="log-item warning">
+              <>
+                <i />
+                <p>
+                  Reviewer flagged the retry design as a correctness risk.
+                  <small>
+                    Architectural call — flagged for you, not touched.
+                  </small>
+                </p>
+              </>
+            </div>
+            <footer>
+              <i />2 fixes shipped · 1 flagged for you
+            </footer>
+          </section>
+          <section class="autopilot-diff">
+            <div class="preview-filebar">
+              <>
+                <code>src/fetcher/queue.ts</code>
+                <span class="preview-badge cyan">+4 −1</span>
+              </>
+            </div>
+            <pre class="preview-diff">
+              <span> 41 constructor(opts) &#123;</span>
+              <span> 42 this.pending = []</span>
+              <span class="removed">- 43 this.budget = opts.retry</span>
+              <span class="added">
+                + 43 this.budget = opts.retry ?? DEFAULT_RETRY
+              </span>
+              <span class="added">
+                + 44 if (this.budget &lt; 1) this.budget = 1
+              </span>
+              <span> 45 &#125;</span>
+              <span> 46</span>
+              <span class="added">+ 47 // cold-start safe default</span>
+              <span class="added">+ 48 const DEFAULT_RETRY = 3</span>
+            </pre>
+            <footer>
+              <i />
+              Delivered automatically — checks green, no force-push. The
+              judgment call is flagged for you, not guessed.
+            </footer>
+          </section>
+        </div>
+      </div>
+    )
+  }
+</div>

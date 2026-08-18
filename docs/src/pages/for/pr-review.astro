@@ -1,0 +1,36 @@
+---
+import CampaignPage from '../../components/CampaignPage.astro';
+
+const steps = [
+  {
+    title: 'Keep it local',
+    body: 'The PR lands on your machine with one command. Local Git-backed diffs keep the work responsive without waiting on another GitHub page.',
+    signal: 'teal' as const,
+  },
+  {
+    title: 'Read the briefing',
+    body: "Neon scouts the change and stages its observations. You get what changed, what's risky, and where to look first.",
+    signal: 'cyan' as const,
+  },
+  {
+    title: 'Ask, then approve',
+    body: 'Review staged comments, ask about the PR, and add your own. GitHub review submission stays a human-controlled action. You own the verdict.',
+    signal: 'violet' as const,
+  },
+];
+---
+
+<CampaignPage
+  campaign="pr-review"
+  title="A local-first guide for pull request review · neondeck"
+  description="Review pull requests in a local-first bench with fast Git-backed diffs, a staged briefing, revision-bound comments, and a review agent beside the code."
+  kicker="review mode"
+  headlineLead="Your"
+  headlineAccent="review guide"
+  headlineTail="for PRs. Even the sloppy ones."
+  heroCopy="A local-first review bench with the Neon agent a step ahead of you. It scouts the PR, stages its observations and draft comments, and stays beside the diff to answer what changed, what's risky, and where to look. No tab hunting."
+  microcopy="100% open source (MIT) · npm · runs on your machine · no app telemetry"
+  sectionKicker="how it works"
+  sectionTitle="40,000 lines. Neon helps you grok it."
+  steps={steps}
+/>

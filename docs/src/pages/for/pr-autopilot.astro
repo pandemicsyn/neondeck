@@ -1,0 +1,45 @@
+---
+import CampaignPage from '../../components/CampaignPage.astro';
+
+const steps = [
+  {
+    title: 'Notify',
+    code: 'notify-only',
+    body: 'Watches every PR and pings you when something needs eyes. Changes nothing on its own.',
+    signal: 'teal' as const,
+  },
+  {
+    title: 'Prepare',
+    code: 'prepare-only',
+    body: 'Diagnoses the failure and writes a fix in a managed worktree, left for you to inspect.',
+    signal: 'pink' as const,
+  },
+  {
+    title: 'Approve',
+    code: 'autofix-with-approval',
+    body: 'Prepares the fix and waits for your explicit sign-off before it touches the PR.',
+    signal: 'violet' as const,
+  },
+  {
+    title: 'Auto-deliver',
+    code: 'autofix-push-when-safe',
+    body: 'Delivers automatically when checks and delivery guards pass. Never force-pushes.',
+    signal: 'cyan' as const,
+  },
+];
+---
+
+<CampaignPage
+  campaign="pr-autopilot"
+  title="PR Autopilot with explicit guardrails · neondeck"
+  description="Neondeck watches review feedback and failing checks, prepares fixes in isolated worktrees, and delivers only within the authority you choose."
+  kicker="pr auto pilot"
+  headlineLead="You opened the PR. Neon agent helps it"
+  headlineAccent="land."
+  headlineTail=""
+  heroCopy="You and your agent opened the PR — Neon takes it from there and chases down all-green: CI and merge-gate failures, routine review nits, and approvals. When a reviewer raises a real architectural flag, it doesn't wing a fix; it bubbles that straight back to you. You set how much rope it gets."
+  microcopy="100% open source (MIT) · npm · no signup · no app telemetry"
+  sectionKicker="the autonomy dial"
+  sectionTitle="Watches every PR. You set the autonomy."
+  steps={steps}
+/>

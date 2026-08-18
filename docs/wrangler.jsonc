@@ -1,6 +1,7 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "neondeck-site",
+  "account_id": "4e82b24ed3c0c8f3f84f97866d180f11",
   "compatibility_date": "2026-06-27",
   "assets": {
     "directory": "./dist",

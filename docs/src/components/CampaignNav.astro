@@ -1,0 +1,28 @@
+---
+type Props = {
+  campaign: 'pr-review' | 'pr-autopilot';
+};
+
+const { campaign } = Astro.props;
+---
+
+<nav class="campaign-nav" aria-label="Campaign navigation">
+  <div class="campaign-container campaign-nav__inner">
+    <a class="campaign-brand" href="/" aria-label="neondeck home">
+      <img src="/favicon.svg" width="30" height="30" alt="" />
+      <span>neondeck</span>
+    </a>
+    <span class="campaign-nav__context">
+      {campaign === 'pr-review' ? 'review mode' : 'pr auto pilot'}
+    </span>
+    <a
+      class="campaign-link-button campaign-nav__cta"
+      href="https://github.com/pandemicsyn/neondeck"
+      data-marketing-event="github_click"
+      data-marketing-placement="nav"
+    >
+      <i aria-hidden="true"></i>
+      star on github
+    </a>
+  </div>
+</nav>
