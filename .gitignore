@@ -19,4 +19,7 @@ data/dev-home/
 .env
 .env.*
 !.env.example
+
+# Per-user Claude Code settings; .claude/launch.json is shared
+.claude/settings.local.json
 .DS_Store
