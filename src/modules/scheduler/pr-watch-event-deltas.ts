@@ -58,9 +58,20 @@ export function deltasFromChangedCategories(
   // pending checks). Do not turn those informational side effects into a
   // second notification; failures and all human feedback remain visible.
   return exactNeondeckPush
-    ? deltas.filter((delta) => delta.type !== 'metadata')
+    ? deltas.filter(
+        (delta) =>
+          delta.type !== 'metadata' ||
+          !selfPushMetadataCategories.has(stringField(delta.id) ?? ''),
+      )
     : deltas;
 }
+
+const selfPushMetadataCategories: ReadonlySet<string> = new Set([
+  'check_suites',
+  'check_runs',
+  'mergeability',
+  'out_of_date_branch',
+]);
 
 export function initialActionableDeltas(
   currentWatermarks: PrWatchEventWatermarkRecord[],

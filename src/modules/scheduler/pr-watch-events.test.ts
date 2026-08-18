@@ -391,6 +391,48 @@ describe('per-item PR feedback deltas', () => {
       ),
     ).toEqual([expect.objectContaining({ type: 'new-commit' })]);
   });
+
+  it('preserves unrelated metadata changes alongside an exact self-push', () => {
+    const self = 'self-push';
+    const previous = [
+      watermark('commits', { headSha: 'base', shas: ['base'] }),
+      watermark('requested_changes_reviews', {
+        total: 1,
+        reviews: [
+          {
+            id: '901',
+            fingerprint: 'requested-changes-fingerprint',
+            actionable: true,
+          },
+        ],
+      }),
+      watermark('mergeability', { mergeable: false }),
+    ];
+    const current = [
+      watermark('commits', {
+        headSha: self,
+        shas: ['base', self],
+        truncated: false,
+      }),
+      watermark('requested_changes_reviews', { total: 0, reviews: [] }),
+      watermark('mergeability', { mergeable: true }),
+    ];
+
+    expect(
+      deltasFromChangedCategories(
+        ['commits', 'requested_changes_reviews', 'mergeability'],
+        current,
+        previous,
+        { neondeckCommitShas: new Set([self]) },
+      ),
+    ).toEqual([
+      expect.objectContaining({
+        type: 'metadata',
+        id: 'requested_changes_reviews',
+        summary: 'Requested changes were cleared.',
+      }),
+    ]);
+  });
 });
 
 function watermark(
