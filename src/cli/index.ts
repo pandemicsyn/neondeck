@@ -93,14 +93,17 @@ program
 
 program
   .command('open [profile]')
-  .description('Ensure Neondeck is running and open the dashboard window.')
+  .description('Ensure Neondeck is running and open the dashboard.')
   .option('--port <port>', 'override the configured/default API port')
   .option('--width <pixels>', 'override Chromium app-mode window width')
   .option('--height <pixels>', 'override Chromium app-mode window height')
   .option('--x <pixels>', 'override Chromium app-mode window x position')
   .option('--y <pixels>', 'override Chromium app-mode window y position')
   .option('--kiosk', 'launch Chromium app-mode in kiosk mode')
-  .option('--browser <path>', 'use a specific Chromium-family executable')
+  .option(
+    '--browser <path>',
+    'use a Chromium-family executable in app mode instead of the OS default browser',
+  )
   .action(async (profile: string | undefined, options: OpenOptions) => {
     const { ensureRuntimeHome } = await runtimeHomeModule();
     const { openDashboard } = await openModule();

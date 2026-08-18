@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  findChromiumBrowser,
+  resolveExplicitChromiumBrowser,
   resolveOpenPort,
   resolveWindowProfile,
   serviceMatchesRuntimeHome,
@@ -42,17 +42,17 @@ describe('desktop open launcher', () => {
     );
   });
 
-  it('detects Chromium-family browsers from injected filesystem state', () => {
-    const browser = findChromiumBrowser({
-      platform: 'linux',
-      env: { PATH: '/bin:/opt/bin' },
-      exists: (path) => path === '/opt/bin/chromium',
-    });
+  it('uses Chromium app mode only for an explicit existing browser path', () => {
+    const exists = (path: string) => path === '/opt/bin/brave';
 
-    expect(browser).toEqual({
-      id: 'chromium',
-      name: 'Chromium',
-      path: '/opt/bin/chromium',
+    expect(resolveExplicitChromiumBrowser(undefined, exists)).toBeNull();
+    expect(
+      resolveExplicitChromiumBrowser('/opt/bin/missing', exists),
+    ).toBeNull();
+    expect(resolveExplicitChromiumBrowser('/opt/bin/brave', exists)).toEqual({
+      id: 'custom',
+      name: 'Custom Chromium',
+      path: '/opt/bin/brave',
     });
   });
 

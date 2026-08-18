@@ -103,15 +103,15 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
           New runtime homes include named <code>sidebar</code> and
           <code>xeneon</code> window profiles for companion displays:
         </p>
-        <pre><code>neondeck open sidebar
-neondeck open xeneon</code></pre>
+        <pre><code>neondeck open sidebar --browser "/path/to/chromium"
+neondeck open xeneon --browser "/path/to/chromium"</code></pre>
         <p>
           Profile names and window settings come from <code>dashboard.json</code
-          >. Size, position, and kiosk settings require a supported
-          Chromium-family browser; otherwise Neondeck opens the default browser
-          without applying them. See the <a href="/docs/dashboard/"
-            >Dashboard guide</a
-          > for browser app installation, display layouts, and window behavior.
+          >. Neondeck opens the OS default browser. To apply size, position, or
+          kiosk settings, pass a Chromium-family executable with <code
+            >--browser &lt;path&gt;</code
+          >. See the <a href="/docs/dashboard/">Dashboard guide</a> for browser app
+          installation, display layouts, and window behavior.
         </p>
 
         <h2>6. Check the installation</h2>
