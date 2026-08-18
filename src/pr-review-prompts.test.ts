@@ -37,6 +37,15 @@ describe('PR review prompts', () => {
     expect(defaultPrReviewPromptTemplates['initial-review']).toContain(
       'You may delegate focused, independent investigation questions to the explore subagent.',
     );
+    expect(defaultPrReviewPromptTemplates['initial-review']).toContain(
+      'Choose one, two, or three based on the number of genuinely independent domains; do not prefer a particular count.',
+    );
+    expect(defaultPrReviewPromptTemplates['initial-review']).toContain(
+      'Question:, Revision:, Scope:, Exclusions:, Known facts:, Expected evidence:, and Thoroughness:',
+    );
+    expect(defaultPrReviewPromptTemplates['initial-review']).toContain(
+      'Treat the durable shared 500-call workspace budget as a safety ceiling, not a target.',
+    );
 
     await updatePrReviewPrompt(
       { kind: 'initial-review', prompt: 'Custom complete review prompt.' },

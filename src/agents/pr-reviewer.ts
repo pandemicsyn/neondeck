@@ -225,14 +225,15 @@ export function PrReviewer({ id }: AgentProps) {
     });
   });
 
+  const workspaceScopeKey = prReviewWorkspaceBudgetKey({
+    kind: 'follow-up',
+    reviewId: conversation.reviewId,
+    revision: conversation.headSha ?? 'unavailable',
+  });
   const consumeToolCall = () =>
     consumePrReviewWorkspaceBudget(
       {
-        key: prReviewWorkspaceBudgetKey({
-          kind: 'follow-up',
-          reviewId: conversation.reviewId,
-          revision: conversation.headSha ?? 'unavailable',
-        }),
+        key: workspaceScopeKey,
         limit: prReviewerWorkspaceToolCallLimit,
       },
       paths,
@@ -249,7 +250,10 @@ export function PrReviewer({ id }: AgentProps) {
           }
         : { available: false, reason: workspace.reason };
     },
-    { consumeToolCall },
+    {
+      consumeToolCall,
+      retainedOutput: { key: workspaceScopeKey, paths },
+    },
   );
   for (const tool of tools) {
     useTool(tool);

@@ -500,6 +500,25 @@ describe('runtime home', () => {
     });
   });
 
+  it('defaults Explore reasoning to medium independently of the display assistant', () => {
+    expect(
+      resolveAgentModelSelection(
+        {
+          models: {
+            displayAssistant: 'openai/gpt-5.5',
+            displayAssistantThinkingLevel: 'high',
+          },
+        },
+        {},
+      ),
+    ).toMatchObject({
+      displayAssistantThinkingLevel: 'high',
+      exploreThinkingConfigured: false,
+      subagents: { explore: 'openai/gpt-5.5' },
+      subagentThinkingLevels: { explore: 'medium' },
+    });
+  });
+
   it('accepts the thirty-minute PR review ceiling', async () => {
     const root = await mkdtemp(join(tmpdir(), 'neondeck-home-'));
     tempRoots.push(root);

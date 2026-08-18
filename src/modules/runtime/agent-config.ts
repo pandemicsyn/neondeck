@@ -163,7 +163,7 @@ export function resolveAgentModelSelection(
     subagentThinkingLevels: {
       explore: firstThinkingLevel(
         configuredExploreThinkingLevel,
-        displayAssistantThinkingLevel,
+        defaultThinkingLevel,
       ),
       repoResearcher: firstThinkingLevel(
         config?.models?.subagents?.repoResearcherThinkingLevel,

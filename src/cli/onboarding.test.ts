@@ -315,7 +315,7 @@ describe('onboarding model defaults', () => {
 
   it('recommends cheap, fast Explore model profiles', () => {
     expect(exploreModelRecommendation).toBe(
-      'Recommended: OpenAI Luna at high reasoning or OpenAI Terra at medium.',
+      'Recommended: OpenAI Luna or OpenAI Terra at medium reasoning.',
     );
   });
 });

@@ -8,6 +8,7 @@ import {
   readActivitySubmissionEvents,
   recordFlueObservation,
 } from './modules/learning';
+import { prReviewerWorkspaceToolCallLimit } from './modules/pr-reviewer';
 import { runtimePaths, type RuntimePaths } from './runtime-home';
 
 const roots: string[] = [];
@@ -120,7 +121,6 @@ describe('Flue v3 activity observability', () => {
       },
       paths,
     );
-
     const history = await readActivitySubmissionEvents('submission-1', paths);
     expect(history.events[1]).toMatchObject({
       message: '[redacted]',
@@ -152,8 +152,8 @@ describe('Flue v3 activity observability', () => {
           totalLines: 120,
           content: 'secret implementation contents',
           truncated: false,
-          workspaceToolCallsRemaining: 249,
-          workspaceToolCallLimit: 250,
+          workspaceToolCallsRemaining: prReviewerWorkspaceToolCallLimit - 1,
+          workspaceToolCallLimit: prReviewerWorkspaceToolCallLimit,
         },
       } as never,
       paths,
@@ -182,8 +182,39 @@ describe('Flue v3 activity observability', () => {
         effectiveResult: {
           query,
           matches: ['src/app.ts:10:exact source fragment'],
-          workspaceToolCallsRemaining: 248,
-          workspaceToolCallLimit: 250,
+          workspaceToolCallsRemaining: prReviewerWorkspaceToolCallLimit - 2,
+          workspaceToolCallLimit: prReviewerWorkspaceToolCallLimit,
+        },
+      } as never,
+      paths,
+    );
+    await recordFlueObservation(
+      {
+        ...base(5),
+        type: 'tool_start',
+        toolName: 'neondeck_review_workspace_search',
+        origin: 'model',
+        args: {
+          path: 'src/very-long-but-legitimate-repository-path.ts',
+          query,
+        },
+      } as never,
+      paths,
+    );
+    await recordFlueObservation(
+      {
+        ...base(6),
+        type: 'tool',
+        toolName: 'neondeck_review_workspace_search',
+        durationMs: 8,
+        isError: false,
+        effectiveResult: {
+          query,
+          matches: ['src/app.ts:10:exact source fragment'],
+          outputRef: 'ephemeral-output-ref',
+          outputHint: 'ephemeral output hint',
+          workspaceToolCallsRemaining: prReviewerWorkspaceToolCallLimit - 3,
+          workspaceToolCallLimit: prReviewerWorkspaceToolCallLimit,
         },
       } as never,
       paths,
@@ -203,8 +234,9 @@ describe('Flue v3 activity observability', () => {
         endLine: 40,
         totalLines: 120,
         resultBytes: expect.any(Number),
-        workspaceToolCallsRemaining: 249,
-        workspaceToolCallLimit: 250,
+        resultHash: expect.stringMatching(/^sha256:[0-9a-f]{64}$/),
+        workspaceToolCallsRemaining: prReviewerWorkspaceToolCallLimit - 1,
+        workspaceToolCallLimit: prReviewerWorkspaceToolCallLimit,
       },
     });
     expect(history.events[1]?.summary).not.toHaveProperty('query');
@@ -215,6 +247,8 @@ describe('Flue v3 activity observability', () => {
         operation: 'search',
         path: 'src/very-long-but-legitimate-repository-path.ts',
         queryLength: query.length,
+        queryHash: expect.stringMatching(/^sha256:[0-9a-f]{64}$/),
+        inputHash: expect.stringMatching(/^sha256:[0-9a-f]{64}$/),
       },
     });
     expect(history.events[3]).toMatchObject({
@@ -222,6 +256,8 @@ describe('Flue v3 activity observability', () => {
         category: 'review-workspace',
         operation: 'search',
         queryLength: query.length,
+        queryHash: expect.stringMatching(/^sha256:[0-9a-f]{64}$/),
+        resultHash: expect.stringMatching(/^sha256:[0-9a-f]{64}$/),
         returnedMatches: 1,
         resultBytes: expect.any(Number),
       },
@@ -229,7 +265,72 @@ describe('Flue v3 activity observability', () => {
     expect(JSON.stringify(history.events[1]?.summary)).not.toContain(
       'secret implementation contents',
     );
+    const firstSearchStart = history.events[2];
+    const firstSearchResult = history.events[3];
+    const repeatedSearchStart = history.events[4];
+    const repeatedSearchResult = history.events[5];
+    expect(firstSearchStart).toBeDefined();
+    expect(firstSearchResult).toBeDefined();
+    expect(repeatedSearchStart).toBeDefined();
+    expect(repeatedSearchResult).toBeDefined();
+    expect(
+      (firstSearchStart!.summary as Record<string, unknown>).inputHash,
+    ).toBe((repeatedSearchStart!.summary as Record<string, unknown>).inputHash);
+    expect(
+      (firstSearchResult!.summary as Record<string, unknown>).resultHash,
+    ).toBe(
+      (repeatedSearchResult!.summary as Record<string, unknown>).resultHash,
+    );
     expect(JSON.stringify(history.events)).not.toContain(query);
+  });
+
+  it('records hashed Explore scope metadata without retaining task prompts', async () => {
+    const paths = await tempPaths();
+    await recordFlueObservation(queued(1), paths);
+    const prompt = [
+      'Question: Does the cache invalidate after a rename?',
+      'Revision: head abc123 against merge-base def456',
+      'Scope: src/cache.ts, src/rename.ts',
+      'Exclusions: docs/, generated files',
+      'Known facts: The PR changes both scoped files.',
+      'Expected evidence: Exact callers and changed-line evidence.',
+      'Thoroughness: medium',
+    ].join('\n');
+    await recordFlueObservation(
+      {
+        ...base(2),
+        type: 'task_start',
+        taskId: 'task-1',
+        agent: 'explore',
+        prompt,
+      } as never,
+      paths,
+    );
+
+    const history = await readActivitySubmissionEvents('submission-1', paths);
+    expect(history.events[1]).toMatchObject({
+      name: 'explore',
+      summary: {
+        taskId: 'task-1',
+        agent: 'explore',
+        promptLength: prompt.length,
+        promptHash: expect.stringMatching(/^sha256:[0-9a-f]{64}$/),
+        questionHash: expect.stringMatching(/^sha256:[0-9a-f]{64}$/),
+        revisionHash: expect.stringMatching(/^sha256:[0-9a-f]{64}$/),
+        scopeHash: expect.stringMatching(/^sha256:[0-9a-f]{64}$/),
+        scopeItemCount: 2,
+        exclusionsHash: expect.stringMatching(/^sha256:[0-9a-f]{64}$/),
+        exclusionItemCount: 2,
+        expectedEvidenceHash: expect.stringMatching(/^sha256:[0-9a-f]{64}$/),
+        thoroughness: 'medium',
+      },
+    });
+    expect(JSON.stringify(history.events[1]?.summary)).not.toContain(
+      'cache invalidate',
+    );
+    expect(JSON.stringify(history.events[1]?.summary)).not.toContain(
+      'src/cache.ts',
+    );
   });
 
   it('projects Flue 2 usage fields and cost breakdowns', async () => {

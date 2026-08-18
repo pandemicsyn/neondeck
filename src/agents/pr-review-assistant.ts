@@ -99,18 +99,23 @@ export function PrReviewAssistant({ id }: AgentProps) {
       },
     });
   });
+  const paths = runtimePaths();
+  const workspaceScopeKey = prReviewWorkspaceBudgetKey({
+    kind: 'initial',
+    reviewId: `${input.reviewId ?? id}:${input.attemptId ?? 'direct'}`,
+    revision:
+      (context.workspace.available ? context.workspace.headSha : null) ??
+      input.headSha ??
+      'unavailable',
+  });
   const consumeToolCall = () =>
-    consumePrReviewWorkspaceBudget({
-      key: prReviewWorkspaceBudgetKey({
-        kind: 'initial',
-        reviewId: `${input.reviewId ?? id}:${input.attemptId ?? 'direct'}`,
-        revision:
-          (context.workspace.available ? context.workspace.headSha : null) ??
-          input.headSha ??
-          'unavailable',
-      }),
-      limit: prReviewerWorkspaceToolCallLimit,
-    });
+    consumePrReviewWorkspaceBudget(
+      {
+        key: workspaceScopeKey,
+        limit: prReviewerWorkspaceToolCallLimit,
+      },
+      paths,
+    );
   const workspaceTools = context.workspace.available
     ? createPrReviewerWorkspaceTools(
         {
@@ -118,7 +123,10 @@ export function PrReviewAssistant({ id }: AgentProps) {
           headSha: context.workspace.headSha,
           mergeBase: context.workspace.mergeBase,
         },
-        { consumeToolCall },
+        {
+          consumeToolCall,
+          retainedOutput: { key: workspaceScopeKey, paths },
+        },
       )
     : [];
   for (const tool of workspaceTools) useTool(tool);
@@ -133,7 +141,7 @@ export function PrReviewAssistant({ id }: AgentProps) {
     if (executionState.failure) throw executionState.failure;
     if (executionState.completed) return;
     const binding = input.reviewId
-      ? readPrReviewAdmissionBinding(input.reviewId, runtimePaths())
+      ? readPrReviewAdmissionBinding(input.reviewId, paths)
       : null;
     const matchesAdmittedAttempt =
       binding !== null &&

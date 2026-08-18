@@ -14,6 +14,11 @@ import {
 } from '../../runtime-home';
 import { ensureLocalPullRequestRevisions } from '../pr-local-diffs';
 import { readRepoRegistrySnapshot, repoFullName } from '../repos';
+import {
+  readPrReviewWorkspaceOutput,
+  retainPrReviewWorkspaceOutput,
+  type PrReviewWorkspaceOutputScope,
+} from './workspace-outputs';
 
 export type PrReviewerWorkspaceTarget = {
   repoFullName: string;
@@ -23,7 +28,7 @@ export type PrReviewerWorkspaceTarget = {
   baseRef?: string | null;
 };
 
-export const prReviewerWorkspaceToolCallLimit = 250;
+export const prReviewerWorkspaceToolCallLimit = 500;
 
 export type PrReviewerWorkspace = {
   available: true;
@@ -71,6 +76,9 @@ const resultLimitSchema = (maximum: number) =>
 const cursorSchema = v.optional(
   v.pipe(v.number(), v.integer(), v.minValue(0), v.maxValue(1_000_000)),
 );
+const retainedOutputRefSchema = v.pipe(v.string(), v.trim(), v.uuid());
+const workspacePreviewMaxLines = 2_000;
+const workspacePreviewMaxBytes = 50 * 1024;
 
 export async function resolvePrReviewerWorkspace(
   target: PrReviewerWorkspaceTarget,
@@ -116,11 +124,19 @@ export async function resolvePrReviewerWorkspace(
       headSha,
       baseSha,
       mergeBase,
-      tools: createPrReviewerWorkspaceTools({
-        repoPath: repo.path,
-        headSha,
-        mergeBase,
-      }),
+      tools: createPrReviewerWorkspaceTools(
+        {
+          repoPath: repo.path,
+          headSha,
+          mergeBase,
+        },
+        {
+          retainedOutput: {
+            key: `resolved:${repoFullName(repo)}:${target.prNumber}:${headSha}`,
+            paths,
+          },
+        },
+      ),
     };
   } catch (error) {
     signal?.throwIfAborted();
@@ -175,6 +191,7 @@ export function createPrReviewerWorkspaceTools(
   input: PrReviewerWorkspaceToolContext,
   options: {
     consumeToolCall?: () => number | null;
+    retainedOutput?: PrReviewWorkspaceOutputScope;
   } = {},
 ): ToolDefinition[] {
   return createResolvedPrReviewerWorkspaceTools(
@@ -189,6 +206,7 @@ export function createDeferredPrReviewerWorkspaceTools(
   ) => Promise<PrReviewerWorkspaceToolContextResolution>,
   options: {
     consumeToolCall?: () => number | null;
+    retainedOutput?: PrReviewWorkspaceOutputScope;
   } = {},
 ): ToolDefinition[] {
   return createResolvedPrReviewerWorkspaceTools(resolve, options);
@@ -200,6 +218,7 @@ function createResolvedPrReviewerWorkspaceTools(
   ) => Promise<PrReviewerWorkspaceToolContextResolution>,
   options: {
     consumeToolCall?: () => number | null;
+    retainedOutput?: PrReviewWorkspaceOutputScope;
   },
 ): ToolDefinition[] {
   let remainingToolCalls = prReviewerWorkspaceToolCallLimit;
@@ -228,8 +247,141 @@ function createResolvedPrReviewerWorkspaceTools(
     available: false,
     reason,
   });
+  const retainOutput = (source: 'diff' | 'list' | 'search', text: string) =>
+    options.retainedOutput
+      ? retainPrReviewWorkspaceOutput({
+          scope: options.retainedOutput,
+          source,
+          text,
+        })
+      : {
+          outputRetained: false as const,
+          outputBytes: Buffer.byteLength(text, 'utf8'),
+          outputLines: countLines(text),
+          outputHint:
+            'Durable retained output is unavailable for this workspace. Narrow the original request.',
+        };
   const budgetDescription = ` This call shares a hard ${prReviewerWorkspaceToolCallLimit}-call exploration budget with the other exact-revision workspace tools.`;
   return [
+    defineTool({
+      name: 'neondeck_review_workspace_output',
+      description:
+        'Search or read a targeted slice of a full output retained by a previous truncated review-workspace list, search, or diff call. Use the opaque outputRef returned by that call instead of repeating the broad operation. Line reads return only complete source lines, and nextStartLine identifies the precise continuation point. An individual source line larger than the preview limit is unavailable through line reads; search the retained output or narrow the original source request instead.' +
+        budgetDescription,
+      input: v.object({
+        outputRef: retainedOutputRefSchema,
+        query: v.optional(v.pipe(v.string(), v.minLength(1), v.maxLength(240))),
+        startLine: v.optional(lineSchema),
+        endLine: v.optional(lineSchema),
+        limit: resultLimitSchema(500),
+      }),
+      async run({ data: toolInput }) {
+        const remaining = consumeToolCall();
+        if (remaining === null) return { output: await exhausted() };
+        const retained = options.retainedOutput
+          ? readPrReviewWorkspaceOutput({
+              scope: options.retainedOutput,
+              outputRef: toolInput.outputRef,
+            })
+          : null;
+        if (!retained) {
+          return {
+            output: await budgeted(
+              {
+                available: false,
+                reason:
+                  'This retained output is unavailable or has been evicted. Repeat the narrowest possible source request.',
+              },
+              remaining,
+            ),
+          };
+        }
+        const lines = retained.text.split('\n');
+        if (toolInput.query) {
+          const limit = toolInput.limit ?? 100;
+          const matches: string[] = [];
+          let totalMatches = 0;
+          for (let index = 0; index < lines.length; index += 1) {
+            if (!lines[index]!.includes(toolInput.query)) continue;
+            totalMatches += 1;
+            if (matches.length >= limit) continue;
+            matches.push(
+              `${String(index + 1).padStart(6, ' ')}\t${lines[index]}`,
+            );
+          }
+          const preview = boundLineItems(matches, limit);
+          return {
+            output: await budgeted(
+              {
+                available: true,
+                source: retained.source,
+                query: toolInput.query,
+                matches: preview.items,
+                totalMatches,
+                outputLines: retained.lines,
+                outputBytes: retained.bytes,
+                truncated:
+                  preview.truncated || preview.items.length < totalMatches,
+              },
+              remaining,
+            ),
+          };
+        }
+        const startLine = Math.min(
+          toolInput.startLine ?? 1,
+          Math.max(1, lines.length),
+        );
+        const requestedEnd = toolInput.endLine ?? startLine + 399;
+        const endLine = Math.min(
+          Math.max(startLine, requestedEnd),
+          startLine + 999,
+          lines.length,
+        );
+        const selected = lines
+          .slice(startLine - 1, endLine)
+          .map(
+            (line, index) =>
+              `${String(startLine + index).padStart(6, ' ')}\t${line}`,
+          );
+        const preview = boundCompleteLineItems(selected, selected.length);
+        if (preview.oversizedFirstItem) {
+          return {
+            output: await budgeted(
+              {
+                available: false,
+                reason: `Source line ${startLine} exceeds the retained-output line-read preview limit. Search this outputRef for a specific token or repeat the original source request with a narrower scope.`,
+                source: retained.source,
+                oversizedLine: startLine,
+                totalLines: retained.lines,
+                outputBytes: retained.bytes,
+              },
+              remaining,
+            ),
+          };
+        }
+        const representedEndLine =
+          startLine + Math.max(0, preview.items.length - 1);
+        const nextStartLine =
+          representedEndLine < lines.length ? representedEndLine + 1 : null;
+        return {
+          output: await budgeted(
+            {
+              available: true,
+              source: retained.source,
+              startLine,
+              endLine: representedEndLine,
+              endLineComplete: true,
+              nextStartLine,
+              totalLines: retained.lines,
+              outputBytes: retained.bytes,
+              content: preview.items.join('\n'),
+              truncated: preview.truncated || endLine < lines.length,
+            },
+            remaining,
+          ),
+        };
+      },
+    }),
     defineTool({
       name: 'neondeck_review_workspace_changes',
       description:
@@ -331,17 +483,21 @@ function createResolvedPrReviewerWorkspaceTools(
             '--',
             ...(toolInput.path ? [literalPathspec(toolInput.path)] : []),
           ],
-          undefined,
+          16 * 1024 * 1024,
           signal,
         );
         const allPaths = output.split('\n').filter(Boolean);
+        const preview = boundLineItems(allPaths, limit);
+        const truncated =
+          preview.truncated || preview.items.length < allPaths.length;
         return {
           output: await budgeted(
             {
               revision: revision.sha,
               revisionKind: revision.kind,
-              paths: allPaths.slice(0, limit),
-              truncated: allPaths.length > limit,
+              paths: preview.items,
+              truncated,
+              ...(truncated ? retainOutput('list', allPaths.join('\n')) : {}),
             },
             remaining,
           ),
@@ -484,7 +640,7 @@ function createResolvedPrReviewerWorkspaceTools(
             '--',
             ...(toolInput.path ? [literalPathspec(toolInput.path)] : []),
           ],
-          undefined,
+          16 * 1024 * 1024,
           signal,
         ).catch((error) => {
           signal?.throwIfAborted();
@@ -495,14 +651,20 @@ function createResolvedPrReviewerWorkspaceTools(
           .split('\n')
           .filter(Boolean)
           .map((line) => line.replace(`${revision.sha}:`, ''));
+        const preview = boundLineItems(allMatches, limit);
+        const truncated =
+          preview.truncated || preview.items.length < allMatches.length;
         return {
           output: await budgeted(
             {
               revision: revision.sha,
               revisionKind: revision.kind,
               query: toolInput.query,
-              matches: allMatches.slice(0, limit),
-              truncated: allMatches.length > limit,
+              matches: preview.items,
+              truncated,
+              ...(truncated
+                ? retainOutput('search', allMatches.join('\n'))
+                : {}),
             },
             remaining,
           ),
@@ -599,7 +761,7 @@ function createResolvedPrReviewerWorkspaceTools(
           16 * 1024 * 1024,
           signal,
         );
-        const bounded = boundText(patch, 256 * 1024);
+        const bounded = boundWorkspacePreview(patch);
         return {
           output: await budgeted(
             {
@@ -609,6 +771,7 @@ function createResolvedPrReviewerWorkspaceTools(
               path: toolInput.path,
               patch: bounded.text,
               truncated: bounded.truncated,
+              ...(bounded.truncated ? retainOutput('diff', patch) : {}),
             },
             remaining,
           ),
@@ -1461,6 +1624,81 @@ function boundText(value: string, maxBytes: number) {
   return {
     text: Buffer.from(value, 'utf8').subarray(0, maxBytes).toString('utf8'),
     truncated: true,
+  };
+}
+
+function countLines(value: string) {
+  if (!value) return 0;
+  let lines = 1;
+  for (let index = 0; index < value.length; index += 1) {
+    if (value.charCodeAt(index) === 10) lines += 1;
+  }
+  return lines;
+}
+
+function boundWorkspacePreview(value: string) {
+  const lines = value.split('\n');
+  const lineBounded = lines.slice(0, workspacePreviewMaxLines).join('\n');
+  const byteBounded = boundText(lineBounded, workspacePreviewMaxBytes);
+  return {
+    text: byteBounded.text,
+    truncated: byteBounded.truncated || lines.length > workspacePreviewMaxLines,
+  };
+}
+
+function boundLineItems(items: string[], requestedLimit: number) {
+  const selected: string[] = [];
+  let bytes = 0;
+  let truncated = false;
+  let lastItemTruncated = false;
+  const itemLimit = Math.min(requestedLimit, workspacePreviewMaxLines);
+  for (const item of items) {
+    if (selected.length >= itemLimit) {
+      truncated = true;
+      break;
+    }
+    const separatorBytes = selected.length > 0 ? 1 : 0;
+    const itemBytes = Buffer.byteLength(item, 'utf8');
+    const remaining = workspacePreviewMaxBytes - bytes - separatorBytes;
+    if (remaining <= 0) {
+      truncated = true;
+      break;
+    }
+    if (itemBytes > remaining) {
+      selected.push(boundText(item, remaining).text);
+      truncated = true;
+      lastItemTruncated = true;
+      break;
+    }
+    selected.push(item);
+    bytes += separatorBytes + itemBytes;
+  }
+  return { items: selected, truncated, lastItemTruncated };
+}
+
+function boundCompleteLineItems(items: string[], requestedLimit: number) {
+  const selected: string[] = [];
+  let bytes = 0;
+  let truncated = false;
+  const itemLimit = Math.min(requestedLimit, workspacePreviewMaxLines);
+  for (const item of items) {
+    if (selected.length >= itemLimit) {
+      truncated = true;
+      break;
+    }
+    const separatorBytes = selected.length > 0 ? 1 : 0;
+    const itemBytes = Buffer.byteLength(item, 'utf8');
+    if (bytes + separatorBytes + itemBytes > workspacePreviewMaxBytes) {
+      truncated = true;
+      break;
+    }
+    selected.push(item);
+    bytes += separatorBytes + itemBytes;
+  }
+  return {
+    items: selected,
+    truncated,
+    oversizedFirstItem: truncated && selected.length === 0,
   };
 }
 
