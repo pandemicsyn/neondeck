@@ -7,7 +7,7 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
 
 <BaseLayout
   title="neondeck docs"
-  description="Documentation for installing, configuring, and deploying neondeck, a local-first autonomous developer assistant."
+  description="Documentation for installing, configuring, and running neondeck, a local-first autonomous developer assistant for pull requests."
 >
   <div class="site-shell">
     <SiteNav />
@@ -16,11 +16,17 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
       <article class="docs-prose">
         <h1>Docs</h1>
         <p>
-          neondeck is a local-first autonomous developer assistant designed to
-          stay visible beside your work on a companion display, vertical panel,
-          or sensor-panel style deck. The local app serves a React dashboard and
-          Flue backend; this Astro site documents the project and deploys
-          separately to Cloudflare at neondeck.dev.
+          neondeck is a local-first autonomous developer assistant that keeps
+          pull requests moving. It surfaces the PRs you opened, watches the ones
+          you put on Autopilot, works beside you while you review everyone
+          else's, and briefs you on what needs attention. It runs on whatever
+          screen you already have. A second monitor, a vertical panel, or a
+          strip display like the Xeneon Edge all work, and none of them are
+          required.
+        </p>
+        <p>
+          This Astro site documents the project and deploys separately to
+          Cloudflare at neondeck.dev.
         </p>
 
         <h2>Start here</h2>
@@ -69,11 +75,12 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
         <p>
           The local app is a Node 26 Hono server with Flue agents and tools,
           app-owned deterministic services, local SQLite state, and a Vite/React
-          dashboard. It is designed for everything from 32:9 ultrawides like the
-          Corsair Xeneon Edge to custom layouts for the size and constraints you
-          want. Dashboard layout is driven by runtime JSON config, measured
-          panel size, and typed tools Neon can use to adapt the surface. Local
-          dashboard surfaces subscribe to one multiplexed
+          dashboard. The dashboard fits the screen it is on, whether that is an
+          ordinary monitor or a 32:9 ultrawide like the Corsair Xeneon Edge, and
+          you can hand it a custom layout instead. Dashboard layout is driven by
+          runtime JSON config, measured panel size, and typed tools Neon can use
+          to adapt the surface. Local dashboard surfaces subscribe to one
+          multiplexed
           <code>/api/events</code> stream whose named config, notification, session,
           and review events refresh affected panels without a browser reload.
         </p>
@@ -115,7 +122,7 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
             local APIs.
           </li>
           <li>
-            <code>web/</code>: Vite React dashboard for the companion display.
+            <code>web/</code>: Vite React dashboard.
           </li>
           <li>
             <code>docs/</code>: Astro marketing and docs site for neondeck.dev.
@@ -159,15 +166,17 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
         <p>
           PR watches persist in SQLite and survive restart. A
           <code>/watch-pr</code> watch polls GitHub for merge state, merge commit
-          checks, review feedback, and quiet no-op refreshes. The
-          <a href="/docs/autopilot/">watched-PR Autopilot</a> can notify, prepare
+          checks, review feedback, and quiet no-op refreshes. Provider-specific deploy
+          adapters are still a future integration.
+        </p>
+        <p>
+          The <a href="/docs/autopilot/">watched-PR Autopilot</a> can notify, prepare
           a committed change for review, wait for approval in its continuing owner
           conversation, or autonomously deliver when that owner judges the change
-          sound and the narrow mechanical delivery guards pass. Provider-specific
-          deploy adapters are still a future integration. The owner currently uses
-          the display-assistant model; its complete per-mode prompt can be inspected,
-          replaced, or reset from the Runtime panel, with changes applying on the
-          next owner turn.
+          sound and the narrow mechanical delivery guards pass. The owner currently
+          uses the display-assistant model. Its complete per-mode prompt can be inspected,
+          replaced, or reset from the Runtime panel, and changes apply on the next
+          owner turn.
         </p>
         <p>
           Scheduled tasks use validated interval, one-shot, or timezone-aware
