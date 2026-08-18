@@ -761,6 +761,14 @@ export function transitionWatchAutopilot(
     from: PrWatch['autopilotStatus'] | PrWatch['autopilotStatus'][];
     to: PrWatch['autopilotStatus'];
     eventFingerprint?: string;
+    /**
+     * Facts captured when the owner was admitted. These are deliberately not
+     * refetched here: a later GitHub snapshot can contain human feedback that
+     * arrived while an approval was pending.
+     */
+    eventWatermarks?: PrWatchInitialWatermark[];
+    /** Mark an admitted first-poll event handled with its captured facts. */
+    markInitialEventProcessed?: boolean;
   },
 ) {
   const from = Array.isArray(input.from) ? input.from : [input.from];
@@ -769,16 +777,45 @@ export function transitionWatchAutopilot(
   try {
     const placeholders = from.map(() => '?').join(', ');
     const now = new Date().toISOString();
-    const changed = database
-      .prepare(
-        `UPDATE pr_watches
-         SET autopilot_status = ?,
-             last_event_fingerprint = COALESCE(?, last_event_fingerprint),
-             updated_at = ?
-         WHERE id = ? AND autopilot_status IN (${placeholders});`,
-      )
-      .run(input.to, input.eventFingerprint ?? null, now, id, ...from).changes;
-    return changed === 1 ? readWatch(paths, id) : undefined;
+    database.exec(input.eventWatermarks ? 'BEGIN IMMEDIATE;' : 'BEGIN;');
+    try {
+      const changed = database
+        .prepare(
+          `UPDATE pr_watches
+           SET autopilot_status = ?,
+               last_event_fingerprint = COALESCE(?, last_event_fingerprint),
+               updated_at = ?
+           WHERE id = ? AND autopilot_status IN (${placeholders});`,
+        )
+        .run(
+          input.to,
+          input.eventFingerprint ?? null,
+          now,
+          id,
+          ...from,
+        ).changes;
+      if (changed !== 1) {
+        rollbackQuietly(database);
+        return undefined;
+      }
+      if (input.eventWatermarks) {
+        upsertInitialEventWatermarks(database, id, input.eventWatermarks, now);
+      }
+      if (input.markInitialEventProcessed) {
+        database
+          .prepare(
+            `UPDATE pr_watches
+             SET initial_event_processed_at = ?, updated_at = ?
+             WHERE id = ? AND initial_event_processed_at IS NULL;`,
+          )
+          .run(now, now, id);
+      }
+      database.exec('COMMIT;');
+      return readWatch(paths, id);
+    } catch (error) {
+      rollbackQuietly(database);
+      throw error;
+    }
   } finally {
     database.close();
   }

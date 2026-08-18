@@ -21,6 +21,7 @@ import {
   readWatch,
   type PrWatch,
 } from '../watches';
+import { readManagedWorktree } from '../worktrees';
 import type { SchedulerDependencies } from './schemas';
 import {
   deltasFromChangedCategories,
@@ -178,6 +179,7 @@ async function refreshOneWatchEvent(
     neondeckRequestedChangesReviewFingerprints: deliveries.reviewFingerprints,
     neondeckConversationCommentFingerprints:
       deliveries.conversationCommentFingerprints,
+    neondeckCommitShas: await selfPushedCommitShas(watch, paths, dependencies),
   };
   const firstPoll = !watch.initialEventProcessedAt;
   const deltas = firstPoll
@@ -273,6 +275,26 @@ async function refreshOneWatchEvent(
       ? { persistedNotifications: [persisted.notification] }
       : {}),
   };
+}
+
+async function selfPushedCommitShas(
+  watch: PrWatch,
+  paths: RuntimePaths,
+  dependencies: SchedulerDependencies,
+) {
+  if (!watch.worktreeId) return new Set<string>();
+  try {
+    const worktree = await (
+      dependencies.readManagedWorktree ?? readManagedWorktree
+    )(watch.worktreeId, watch.repoId, paths);
+    return worktree.lastPushedSha
+      ? new Set([worktree.lastPushedSha])
+      : new Set<string>();
+  } catch {
+    // The event remains safe and actionable when a stale/deleted worktree
+    // cannot prove that the observed commit was Neondeck's own push.
+    return new Set<string>();
+  }
 }
 
 function staleWatchEventPersistenceResult(

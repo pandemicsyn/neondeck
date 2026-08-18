@@ -300,6 +300,139 @@ describe('per-item PR feedback deltas', () => {
       ),
     ).toEqual([expect.objectContaining({ itemId: '901' })]);
   });
+
+  it('emits no metadata delta when every changed item is a known Neondeck delivery', () => {
+    const previous = [watermark('conversation_comments', { comments: [] })];
+    const current = [
+      watermark('conversation_comments', {
+        comments: [
+          conversation('304', 'delivered-fp', 'Actual Neondeck delivery'),
+        ],
+      }),
+    ];
+
+    expect(
+      deltasFromChangedCategories(
+        ['conversation_comments'],
+        current,
+        previous,
+        {
+          neondeckConversationCommentFingerprints: new Map([
+            ['304', 'delivered-fp'],
+          ]),
+        },
+      ),
+    ).toEqual([]);
+  });
+
+  it('does not let an unchanged historical delivery hide later metadata changes', () => {
+    const delivered = conversation(
+      '304',
+      'delivered-fp',
+      'Actual Neondeck delivery',
+    );
+    expect(
+      deltasFromChangedCategories(
+        ['conversation_comments'],
+        [
+          watermark('conversation_comments', {
+            comments: [delivered],
+            latestUpdatedAt: '2026-07-20T00:01:00.000Z',
+          }),
+        ],
+        [
+          watermark('conversation_comments', {
+            comments: [delivered],
+            latestUpdatedAt: '2026-07-20T00:00:00.000Z',
+          }),
+        ],
+        {
+          neondeckConversationCommentFingerprints: new Map([
+            ['304', 'delivered-fp'],
+          ]),
+        },
+      ),
+    ).toEqual([expect.objectContaining({ type: 'metadata' })]);
+  });
+
+  it('suppresses only an exact self-pushed commit, not a concurrent human commit', () => {
+    const previous = [
+      watermark('commits', { headSha: 'base', shas: ['base'] }),
+    ];
+    const self = 'self-push';
+
+    expect(
+      deltasFromChangedCategories(
+        ['commits'],
+        [
+          watermark('commits', {
+            headSha: self,
+            shas: ['base', self],
+            truncated: false,
+          }),
+        ],
+        previous,
+        { neondeckCommitShas: new Set([self]) },
+      ),
+    ).toEqual([]);
+
+    expect(
+      deltasFromChangedCategories(
+        ['commits'],
+        [
+          watermark('commits', {
+            headSha: self,
+            shas: ['base', 'human-push', self],
+            truncated: false,
+          }),
+        ],
+        previous,
+        { neondeckCommitShas: new Set([self]) },
+      ),
+    ).toEqual([expect.objectContaining({ type: 'new-commit' })]);
+  });
+
+  it('preserves unrelated metadata changes alongside an exact self-push', () => {
+    const self = 'self-push';
+    const previous = [
+      watermark('commits', { headSha: 'base', shas: ['base'] }),
+      watermark('requested_changes_reviews', {
+        total: 1,
+        reviews: [
+          {
+            id: '901',
+            fingerprint: 'requested-changes-fingerprint',
+            actionable: true,
+          },
+        ],
+      }),
+      watermark('mergeability', { mergeable: false }),
+    ];
+    const current = [
+      watermark('commits', {
+        headSha: self,
+        shas: ['base', self],
+        truncated: false,
+      }),
+      watermark('requested_changes_reviews', { total: 0, reviews: [] }),
+      watermark('mergeability', { mergeable: true }),
+    ];
+
+    expect(
+      deltasFromChangedCategories(
+        ['commits', 'requested_changes_reviews', 'mergeability'],
+        current,
+        previous,
+        { neondeckCommitShas: new Set([self]) },
+      ),
+    ).toEqual([
+      expect.objectContaining({
+        type: 'metadata',
+        id: 'requested_changes_reviews',
+        summary: 'Requested changes were cleared.',
+      }),
+    ]);
+  });
 });
 
 function watermark(
