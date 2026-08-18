@@ -1,0 +1,862 @@
+---
+// Token classes: k keyword, t type, p property, s string, f call, v binding, m punctuation.
+// Rendered via set:html so the template's own indentation never lands inside `white-space: pre`.
+const esc = (text) =>
+  text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+const codeHtml = (tokens) =>
+  tokens
+    .map(([text, cls]) => `<span class="${cls}">${esc(text)}</span>`)
+    .join('');
+const diffTop = [
+  [
+    49,
+    [
+      ['  options', 'p'],
+      ['?: {', 'm'],
+    ],
+  ],
+  [
+    50,
+    [
+      ['    cwd', 'p'],
+      ['?: ', 'm'],
+      ['string', 't'],
+      [';', 'm'],
+    ],
+  ],
+  [
+    51,
+    [
+      ['    env', 'p'],
+      ['?: ', 'm'],
+      ['Record', 't'],
+      ['<', 'm'],
+      ['string', 't'],
+      [', ', 'm'],
+      ['string', 't'],
+      ['>;', 'm'],
+    ],
+  ],
+  [
+    52,
+    [
+      ['    timeoutMs', 'p'],
+      ['?: ', 'm'],
+      ['number', 't'],
+      [';', 'm'],
+    ],
+  ],
+  [
+    53,
+    [
+      ['    signal', 'p'],
+      ['?: ', 'm'],
+      ['AbortSignal', 't'],
+      [';', 'm'],
+    ],
+  ],
+];
+
+const diffBottom = [
+  [54, [['  },', 'm']]],
+  [
+    55,
+    [
+      ['  ): ', 'm'],
+      ['Promise', 't'],
+      ['<', 'm'],
+      ['ShellResult', 't'],
+      ['> {', 'm'],
+    ],
+  ],
+  [
+    56,
+    [
+      ['    const ', 'k'],
+      ['timeout', 'v'],
+      [' = ', 'm'],
+      ['options', 'p'],
+      ['?.', 'm'],
+      ['timeoutMs', 'p'],
+      [';', 'm'],
+    ],
+  ],
+  [
+    57,
+    [
+      ['    const ', 'k'],
+      ['result', 'v'],
+      [' = ', 'm'],
+      ['await ', 'k'],
+      ['this', 'k'],
+      ['.sandbox.', 'm'],
+      ['run', 'f'],
+      ["('", 'm'],
+      ['bash', 's'],
+      ["', args);", 'm'],
+    ],
+  ],
+];
+
+const tree = [
+  { kind: 'dir', name: '.changeset', dot: true },
+  {
+    kind: 'file',
+    icon: 'md',
+    name: 'brave-tigers-dance.md',
+    flag: 'A',
+    depth: 1,
+  },
+  { kind: 'dir', name: '.github / workflows', dot: true },
+  { kind: 'file', icon: 'yml', name: 'pr-checks.yml', flag: 'M', depth: 1 },
+  { kind: 'dir', name: 'packages / flue-sandbox', dot: true },
+  { kind: 'dir', name: 'src', depth: 1 },
+  { kind: 'file', icon: 'ts', name: 'index.test.ts', flag: 'A', depth: 2 },
+  {
+    kind: 'file',
+    icon: 'ts',
+    name: 'index.ts',
+    note: 'T1 D2',
+    flag: 'A',
+    depth: 2,
+    on: true,
+  },
+  { kind: 'file', icon: 'txt', name: 'LICENSE', flag: 'A', depth: 1 },
+  {
+    kind: 'file',
+    icon: 'json',
+    name: 'package.json',
+    note: 'T1',
+    flag: 'A',
+    depth: 1,
+  },
+  { kind: 'file', icon: 'md', name: 'README.md', flag: 'A', depth: 1 },
+  { kind: 'file', icon: 'json', name: 'tsconfig.json', flag: 'A', depth: 1 },
+  { kind: 'file', icon: 'ts', name: 'vitest.config.ts', flag: 'A', depth: 1 },
+];
+
+const draftBody =
+  'exec() accepts options.signal in its type but never reads it. If Flue cancels a turn while sandbox.run() is in flight, the returned promise stays pending until the remote command completes. Honor the AbortSignal locally: settle as soon as options.signal.aborted is true.';
+---
+
+<div class="review-frame" aria-label="neondeck review workbench preview">
+  <div class="review-screen">
+    <header class="review-top">
+      <div class="review-ident">
+        <p class="review-crumb">PR REVIEW · flue/runtime#742</p>
+        <p class="review-title">add tensorlake sandbox adapter package</p>
+      </div>
+      <div class="review-chips">
+        <span class="chip ok">checks pass</span>
+        <span class="chip">main</span>
+        <span class="chip">2/2 threads</span>
+        <span class="chip">+41,206 -892</span>
+        <span class="chip">re-review</span>
+        <span class="chip">GitHub</span>
+      </div>
+    </header>
+
+    <div class="traverse">
+      <span class="tv-label">Traverse</span>
+      <span class="tv-select">local draft ▾</span>
+      <span class="tv-key">← Previous [</span>
+      <span class="tv-key">Next ] →</span>
+      <span class="tv-state">local draft · not selected · 2 available</span>
+      <span class="tv-help">Shortcuts ?</span>
+    </div>
+
+    <div class="review-body">
+      <section class="files-pane">
+        <header><span>files</span><span class="add">+41,206 -892</span></header>
+        <p class="tree-legend">
+          review map · T threads · D drafts · S stale · N Neon
+        </p>
+        <p class="tree-filter">filter paths or Neon findings</p>
+        <ul>
+          {
+            tree.map((row) => (
+              <li class:list={[row.kind, `d${row.depth ?? 0}`, { on: row.on }]}>
+                <span class="row-name">
+                  {row.kind === 'dir' && <em class="chev">∨</em>}
+                  {row.icon && <em class={`ic ic-${row.icon}`}>{row.icon}</em>}
+                  {row.name}
+                  {row.dot && <em class="dot">●</em>}
+                </span>
+                <span class="row-flags">
+                  {row.note && <em class="note">{row.note}</em>}
+                  {row.flag && <em class={`flag f-${row.flag}`}>{row.flag}</em>}
+                </span>
+              </li>
+            ))
+          }
+        </ul>
+      </section>
+
+      <section class="diff-pane">
+        <header>
+          <span class="file-add">+</span>
+          <span class="file-path">packages/flue-sandbox/src/index.ts</span>
+          <span class="add">+199</span>
+        </header>
+        <div class="diff">
+          {
+            diffTop.map(([n, tokens]) => (
+              <p>
+                <em>{n}</em>
+                <code set:html={codeHtml(tokens)} />
+              </p>
+            ))
+          }
+        </div>
+        <div class="draft">
+          <header>
+            <span class="draft-tag">Draft</span><span class="draft-src"
+              >Neon generated · RIGHT L53</span
+            >
+          </header>
+          <p>{draftBody}</p>
+          <div class="draft-actions"><span>Edit</span><span>Delete</span></div>
+        </div>
+        <div class="diff">
+          {
+            diffBottom.map(([n, tokens]) => (
+              <p>
+                <em>{n}</em>
+                <code set:html={codeHtml(tokens)} />
+              </p>
+            ))
+          }
+        </div>
+      </section>
+
+      <section class="ask-pane">
+        <header>
+          <span class="tab">REVIEW</span><span class="tab on">ASK REVIEWER</span
+          >
+        </header>
+        <div class="ask-scroll">
+          <p class="ask-role">user</p>
+          <p class="ask-user">Tell me more about the options.signal issue</p>
+          <p class="ask-role">assistant</p>
+          <p class="ask-agent">
+            <b>Where it lives:</b>
+            <code>packages/flue-sandbox/src/index.ts</code>, <code
+              >TensorlakeSandboxDriver.exec()</code
+            >, flagged in a local draft anchored at line 53 and corroborated by
+            an unresolved GitHub thread at line 61 (P2).
+          </p>
+          <p class="ask-agent">
+            <b>What's wrong:</b> the type surface accepts a <code>signal</code>,
+            the implementation forwards <code>cwd</code>, <code>env</code>, and <code
+              >timeoutMs</code
+            > to <code>sandbox.run()</code> and ignores the rest.
+          </p>
+        </div>
+      </section>
+    </div>
+
+    <footer class="review-foot">
+      <div class="verdict">
+        <span class="pending">2 pending</span>
+        <span class="btn on">Comment</span>
+        <span class="btn">Approve</span>
+        <span class="btn">Request changes</span>
+        <span class="submit">Submit</span>
+      </div>
+      <p>
+        Local drafts only; nothing is sent to GitHub until you submit the
+        review.
+      </p>
+    </footer>
+  </div>
+</div>
+
+<style>
+  .review-frame {
+    overflow: hidden;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    background: #05060a;
+    padding: 10px;
+  }
+
+  .review-screen {
+    display: flex;
+    aspect-ratio: 5 / 2;
+    width: 100%;
+    min-width: 0;
+    overflow: hidden;
+    flex-direction: column;
+    background: #0a0b10;
+    font-family: 'IBM Plex Mono', monospace;
+  }
+
+  .review-top {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 14px;
+    padding: clamp(6px, 0.8vw, 10px) clamp(8px, 1.1vw, 14px);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+    background: #070810;
+  }
+
+  .review-ident p {
+    margin: 0;
+  }
+
+  .review-crumb {
+    color: var(--cyan);
+    font-size: clamp(5px, 0.68vw, 9.5px);
+    letter-spacing: 0.14em;
+  }
+
+  .review-title {
+    margin-top: 2px !important;
+    color: var(--body);
+    font-family: 'IBM Plex Sans', sans-serif;
+    font-size: clamp(7px, 0.92vw, 12.5px);
+    font-weight: 600;
+  }
+
+  .review-chips {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 4px;
+  }
+
+  .chip {
+    padding: 2px 6px;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    color: rgba(215, 247, 255, 0.55);
+    font-size: clamp(4px, 0.6vw, 8.5px);
+    white-space: nowrap;
+  }
+
+  .chip.ok {
+    border-color: rgba(105, 230, 255, 0.4);
+    color: var(--cyan);
+  }
+
+  .traverse {
+    display: flex;
+    align-items: center;
+    gap: clamp(5px, 0.8vw, 10px);
+    overflow: hidden;
+    padding: clamp(3px, 0.5vw, 6px) clamp(8px, 1.1vw, 14px);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+    color: rgba(215, 247, 255, 0.45);
+    font-size: clamp(4px, 0.62vw, 9px);
+    white-space: nowrap;
+  }
+
+  .tv-select,
+  .tv-key,
+  .tv-help {
+    padding: 2px 7px;
+    border: 1px solid rgba(255, 255, 255, 0.13);
+    color: rgba(215, 247, 255, 0.68);
+  }
+
+  .tv-help {
+    margin-left: auto;
+  }
+
+  .review-body {
+    display: grid;
+    flex: 1;
+    min-height: 0;
+    grid-template-columns: 3.6fr 8fr 3.8fr;
+  }
+
+  .files-pane,
+  .diff-pane,
+  .ask-pane {
+    min-width: 0;
+    min-height: 0;
+    overflow: hidden;
+    border-right: 1px solid rgba(255, 255, 255, 0.08);
+  }
+
+  .ask-pane {
+    border-right: 0;
+    background: linear-gradient(
+      180deg,
+      rgba(0, 183, 199, 0.05),
+      transparent 34%
+    );
+  }
+
+  .files-pane > header,
+  .diff-pane > header,
+  .ask-pane > header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 6px clamp(6px, 0.9vw, 12px);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+    color: rgba(215, 247, 255, 0.5);
+    font-size: clamp(4px, 0.64vw, 9px);
+    letter-spacing: 0.12em;
+  }
+
+  .add {
+    color: var(--teal);
+  }
+
+  .tree-legend,
+  .tree-filter {
+    margin: 0;
+    padding: 4px clamp(6px, 0.9vw, 12px);
+    color: rgba(215, 247, 255, 0.32);
+    font-size: clamp(4px, 0.58vw, 8px);
+  }
+
+  .tree-filter {
+    margin: 0 clamp(6px, 0.9vw, 12px) 4px;
+    padding: clamp(3px, 0.45vw, 5px) 8px;
+    border: 1px solid rgba(255, 255, 255, 0.13);
+    color: rgba(215, 247, 255, 0.4);
+  }
+
+  .files-pane ul {
+    margin: 0;
+    padding: 0 0 6px;
+    list-style: none;
+  }
+
+  .files-pane li {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 6px;
+    overflow: hidden;
+    padding: 2px clamp(6px, 0.9vw, 12px);
+    font-size: clamp(4.5px, 0.72vw, 9.1px);
+  }
+
+  .row-name {
+    display: flex;
+    align-items: center;
+    min-width: 0;
+    gap: 4px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .row-flags {
+    display: flex;
+    flex-shrink: 0;
+    gap: 5px;
+  }
+
+  .files-pane em {
+    font-style: normal;
+  }
+
+  .files-pane .dir {
+    color: rgba(215, 247, 255, 0.82);
+  }
+
+  .files-pane .file {
+    color: rgba(215, 247, 255, 0.6);
+  }
+
+  .files-pane .d1 {
+    padding-left: clamp(14px, 1.9vw, 24px);
+  }
+
+  .files-pane .d2 {
+    padding-left: clamp(20px, 2.8vw, 36px);
+  }
+
+  .chev {
+    color: rgba(215, 247, 255, 0.4);
+  }
+
+  .ic {
+    padding: 0 3px;
+    border-radius: 2px;
+    font-size: 0.82em;
+    line-height: 1.45;
+  }
+
+  .ic-ts {
+    background: rgba(105, 230, 255, 0.18);
+    color: var(--cyan);
+  }
+
+  .ic-json {
+    background: rgba(139, 77, 255, 0.18);
+    color: var(--violet);
+  }
+
+  .ic-md,
+  .ic-yml {
+    background: rgba(255, 79, 184, 0.16);
+    color: var(--pink);
+  }
+
+  .ic-txt {
+    background: rgba(255, 255, 255, 0.09);
+    color: rgba(215, 247, 255, 0.55);
+  }
+
+  .dot {
+    color: var(--cyan);
+    font-size: 0.7em;
+  }
+
+  .note {
+    color: var(--violet);
+  }
+
+  .f-A {
+    color: var(--teal);
+  }
+
+  .f-M {
+    color: var(--pink);
+  }
+
+  .files-pane .on {
+    background: rgba(0, 183, 199, 0.16);
+    color: var(--body);
+  }
+
+  .file-add {
+    color: var(--teal);
+  }
+
+  .file-path {
+    margin-right: auto;
+    overflow: hidden;
+    color: rgba(215, 247, 255, 0.78);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .diff p {
+    display: flex;
+    gap: clamp(5px, 0.8vw, 11px);
+    margin: 0;
+    padding: 0 clamp(6px, 0.9vw, 12px);
+    background: rgba(0, 183, 199, 0.07);
+    font-size: clamp(5px, 0.78vw, 9.9px);
+    line-height: 1.72;
+  }
+
+  .diff em {
+    flex-shrink: 0;
+    border-left: 2px solid rgba(0, 183, 199, 0.55);
+    padding-left: 5px;
+    color: rgba(0, 183, 199, 0.75);
+    font-style: normal;
+  }
+
+  .diff code {
+    overflow: hidden;
+    font-family: inherit;
+    text-overflow: ellipsis;
+    white-space: pre;
+  }
+
+  .diff code :global(.k) {
+    color: var(--pink);
+  }
+
+  .diff code :global(.t) {
+    color: var(--violet);
+  }
+
+  .diff code :global(.p) {
+    color: var(--cyan);
+  }
+
+  .diff code :global(.s) {
+    color: var(--teal);
+  }
+
+  .diff code :global(.f) {
+    color: #9ad6ff;
+  }
+
+  .diff code :global(.v) {
+    color: rgba(215, 247, 255, 0.92);
+  }
+
+  .diff code :global(.m) {
+    color: rgba(215, 247, 255, 0.45);
+  }
+
+  .draft {
+    margin: 4px clamp(5px, 0.7vw, 9px);
+    border: 1px solid rgba(139, 77, 255, 0.45);
+    background: rgba(139, 77, 255, 0.09);
+  }
+
+  .draft > header {
+    display: flex;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 3px clamp(5px, 0.8vw, 10px);
+    border-bottom: 1px solid rgba(139, 77, 255, 0.25);
+    font-size: clamp(4px, 0.6vw, 8.5px);
+    letter-spacing: 0.1em;
+  }
+
+  .draft-tag {
+    color: var(--violet);
+    font-weight: 600;
+  }
+
+  .draft-src {
+    color: rgba(215, 247, 255, 0.42);
+  }
+
+  .draft p {
+    margin: 0;
+    padding: clamp(4px, 0.6vw, 8px) clamp(5px, 0.8vw, 10px);
+    color: rgba(215, 247, 255, 0.82);
+    font-size: clamp(5px, 0.76vw, 9.6px);
+    line-height: 1.6;
+  }
+
+  .draft-actions {
+    display: flex;
+    gap: 5px;
+    padding: 0 clamp(5px, 0.8vw, 10px) clamp(4px, 0.6vw, 8px);
+  }
+
+  .draft-actions span {
+    padding: 1px 7px;
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    color: rgba(215, 247, 255, 0.6);
+    font-size: clamp(4px, 0.58vw, 8px);
+  }
+
+  .ask-pane > header {
+    gap: 12px;
+    justify-content: flex-start;
+  }
+
+  .tab {
+    color: rgba(215, 247, 255, 0.4);
+  }
+
+  .tab.on {
+    border-bottom: 1px solid var(--cyan);
+    color: var(--cyan);
+  }
+
+  .ask-scroll {
+    padding: clamp(5px, 0.85vw, 11px) clamp(6px, 1vw, 13px);
+  }
+
+  .ask-scroll p {
+    margin: 0;
+  }
+
+  .ask-role {
+    color: rgba(215, 247, 255, 0.35);
+    font-size: clamp(4px, 0.58vw, 8px);
+    letter-spacing: 0.1em;
+  }
+
+  .ask-user {
+    margin: 3px 0 7px !important;
+    padding: clamp(3px, 0.6vw, 7px) clamp(4px, 0.75vw, 9px);
+    border: 1px solid rgba(105, 230, 255, 0.22);
+    background: rgba(105, 230, 255, 0.1);
+    color: rgba(215, 247, 255, 0.92);
+    font-family: 'IBM Plex Sans', sans-serif;
+    font-size: clamp(5.5px, 0.8vw, 10.1px);
+  }
+
+  .ask-agent {
+    margin-top: 5px !important;
+    color: rgba(215, 247, 255, 0.72);
+    font-family: 'IBM Plex Sans', sans-serif;
+    font-size: clamp(5.5px, 0.78vw, 9.9px);
+    line-height: 1.55;
+  }
+
+  .ask-agent b {
+    color: var(--cyan);
+    font-weight: 600;
+  }
+
+  .ask-agent code {
+    color: var(--pink);
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.94em;
+  }
+
+  .review-foot {
+    padding: clamp(5px, 0.8vw, 10px) clamp(8px, 1.1vw, 14px);
+    border-top: 1px solid rgba(255, 255, 255, 0.07);
+    background: #070810;
+  }
+
+  .verdict {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .verdict span {
+    padding: 2px 8px;
+    border: 1px solid rgba(255, 255, 255, 0.13);
+    color: rgba(215, 247, 255, 0.62);
+    font-size: clamp(4px, 0.64vw, 9px);
+    white-space: nowrap;
+  }
+
+  .verdict .pending {
+    border-color: transparent;
+    padding-left: 0;
+    color: var(--violet);
+  }
+
+  .verdict .btn.on {
+    border-color: rgba(105, 230, 255, 0.45);
+    color: var(--cyan);
+  }
+
+  .verdict .submit {
+    margin-left: auto;
+    border-color: rgba(255, 79, 184, 0.45);
+    color: var(--pink);
+  }
+
+  .review-foot > p {
+    margin: 6px 0 0;
+    color: rgba(215, 247, 255, 0.38);
+    font-size: clamp(4px, 0.62vw, 9px);
+  }
+
+  /* Three panes at phone width is unreadable, so stack and let it grow. */
+  @media (max-width: 760px) {
+    .review-screen {
+      aspect-ratio: auto;
+    }
+
+    .review-body {
+      grid-template-columns: 1fr;
+    }
+
+    .files-pane,
+    .traverse {
+      display: none;
+    }
+
+    .review-top {
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 8px;
+    }
+
+    .review-chips {
+      justify-content: flex-start;
+    }
+
+    .verdict {
+      flex-wrap: wrap;
+      gap: 5px;
+    }
+
+    .verdict .submit {
+      margin-left: 0;
+    }
+
+    .diff-pane {
+      border-right: 0;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    }
+
+    .review-crumb,
+    .chip,
+    .diff p,
+    .draft > header,
+    .draft p,
+    .verdict span,
+    .review-foot > p,
+    .ask-role,
+    .tab,
+    .draft-actions span {
+      font-size: 9px;
+    }
+
+    .review-title,
+    .ask-user,
+    .ask-agent {
+      font-size: 11.5px;
+    }
+  }
+
+  :global(:root[data-theme='light']) .review-frame {
+    border-color: rgba(18, 40, 55, 0.18);
+    background: #d8eaf0;
+  }
+
+  :global(:root[data-theme='light']) .review-screen {
+    background: #eef7fa;
+  }
+
+  :global(:root[data-theme='light']) .review-top,
+  :global(:root[data-theme='light']) .review-foot {
+    border-color: rgba(18, 40, 55, 0.13);
+    background: #d9ecf2;
+  }
+
+  :global(:root[data-theme='light']) .traverse,
+  :global(:root[data-theme='light']) .files-pane,
+  :global(:root[data-theme='light']) .diff-pane,
+  :global(:root[data-theme='light']) .ask-pane,
+  :global(:root[data-theme='light']) .files-pane > header,
+  :global(:root[data-theme='light']) .diff-pane > header,
+  :global(:root[data-theme='light']) .ask-pane > header,
+  :global(:root[data-theme='light']) .tree-filter {
+    border-color: rgba(18, 40, 55, 0.13);
+  }
+
+  :global(:root[data-theme='light']) .review-title,
+  :global(:root[data-theme='light']) .draft p,
+  :global(:root[data-theme='light']) .ask-user,
+  :global(:root[data-theme='light']) .ask-agent,
+  :global(:root[data-theme='light']) .diff code :global(.v),
+  :global(:root[data-theme='light']) .files-pane .dir {
+    color: #19232e;
+  }
+
+  :global(:root[data-theme='light']) .chip,
+  :global(:root[data-theme='light']) .traverse,
+  :global(:root[data-theme='light']) .tv-select,
+  :global(:root[data-theme='light']) .tv-key,
+  :global(:root[data-theme='light']) .tv-help,
+  :global(:root[data-theme='light']) .files-pane .file,
+  :global(:root[data-theme='light']) .file-path,
+  :global(:root[data-theme='light']) .tree-legend,
+  :global(:root[data-theme='light']) .tree-filter,
+  :global(:root[data-theme='light']) .draft-src,
+  :global(:root[data-theme='light']) .draft-actions span,
+  :global(:root[data-theme='light']) .ask-role,
+  :global(:root[data-theme='light']) .tab,
+  :global(:root[data-theme='light']) .verdict span,
+  :global(:root[data-theme='light']) .review-foot > p,
+  :global(:root[data-theme='light']) .diff code :global(.m) {
+    color: rgba(19, 23, 30, 0.6);
+  }
+
+  :global(:root[data-theme='light']) .diff p {
+    background: rgba(0, 147, 168, 0.09);
+  }
+
+  :global(:root[data-theme='light']) .files-pane .on {
+    background: rgba(0, 147, 168, 0.16);
+    color: #19232e;
+  }
+</style>

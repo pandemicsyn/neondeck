@@ -812,6 +812,58 @@ const canonical = new URL(Astro.url.pathname, 'https://neondeck.dev');
     line-height: 1.65;
   }
 
+  .pillar-stack {
+    display: grid;
+    gap: clamp(46px, 6vw, 78px);
+  }
+
+  .pillar-head {
+    max-width: 70ch;
+    margin-bottom: 22px;
+  }
+
+  .pillar-head h3 {
+    margin: 0 0 12px;
+    font-size: clamp(1.45rem, 2.6vw, 2.05rem);
+    line-height: 1.08;
+    letter-spacing: -0.012em;
+  }
+
+  .pillar-num {
+    margin-right: 6px;
+    color: var(--cyan);
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.52em;
+    letter-spacing: 0.1em;
+    vertical-align: 0.35em;
+  }
+
+  .pillar:nth-child(2) .pillar-num {
+    color: var(--pink);
+  }
+
+  .pillar:nth-child(3) .pillar-num {
+    color: var(--violet);
+  }
+
+  .pillar-head p {
+    margin: 0;
+    max-width: 66ch;
+    color: var(--muted);
+    line-height: 1.7;
+  }
+
+  .pillar .review-frame {
+    margin-top: clamp(14px, 1.6vw, 22px);
+  }
+
+  .feature p.mode {
+    margin: 12px 0 0;
+    color: var(--cyan);
+    font-size: 12px;
+    letter-spacing: 0.06em;
+  }
+
   .feature-grid {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(min(250px, 100%), 1fr));

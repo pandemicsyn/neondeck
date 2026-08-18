@@ -1,5 +1,6 @@
 ---
 import DeckMockup from '../components/DeckMockup.astro';
+import ReviewMockup from '../components/ReviewMockup.astro';
 import SiteFooter from '../components/SiteFooter.astro';
 import SiteNav from '../components/SiteNav.astro';
 import BaseLayout from '../layouts/BaseLayout.astro';
@@ -35,8 +36,8 @@ const dashboardConfig = `{
 ---
 
 <BaseLayout
-  title="neondeck · autonomous developer assistant for companion displays"
-  description="A local-first autonomous developer assistant designed to live full time on a companion display, vertical panel, or sensor-panel style deck."
+  title="neondeck · autonomous developer assistant for pull requests"
+  description="A local-first autonomous developer assistant. It puts the PRs you opened on autopilot, works beside you while you review everyone else's, and briefs you each morning on what actually needs you."
 >
   <div class="site-shell">
     <SiteNav />
@@ -57,9 +58,11 @@ const dashboardConfig = `{
             >
           </h1>
           <p class="hero-copy">
-            Your PR queue, deployments, and review requests, in one always-on
-            console that Neon manages for you. Run it on a companion display, a
-            sensor panel like a Xeneon Edge, or let other agents drive it.
+            neondeck is a local-first agent that lives beside your work and
+            keeps pull requests moving. It puts the PRs you opened on autopilot,
+            sits with you while you review everyone else's, and every morning
+            tells you which of them actually needs a human. Run it on a spare
+            monitor, a vertical panel, or a strip display like the Xeneon Edge.
           </p>
           <div class="command">
             <span class="command-code"
@@ -84,10 +87,10 @@ const dashboardConfig = `{
       <section id="panel" class="section">
         <div class="container">
           <div class="section-header">
-            <h2>The deck, live.</h2>
+            <h2>What the deck looks like</h2>
             <p>
-              Sample 32:9 layout for the Corsair Xeneon Edge. Neon can configure
-              itself to run as a companion on any display.
+              Sample 32:9 layout for the Corsair Xeneon Edge. But, Neon can
+              configure itself to run as a companion on any display.
             </p>
           </div>
           <DeckMockup />
@@ -97,85 +100,202 @@ const dashboardConfig = `{
       <section id="features" class="section-tight">
         <div class="container">
           <div class="section-header">
-            <h2>Built for work in progress.</h2>
+            <h2>Three things Neon does</h2>
             <p>
-              Neon watches your PRs, prepares fixes when feedback comes in, and
-              keeps them moving.
+              Your pull requests, everyone else's pull requests, and a daily
+              read on which of them needs you.
             </p>
           </div>
-          <div class="feature-grid">
-            <article class="feature">
-              <div class="spark pink"></div>
-              <h3>Your PRs, with CI status at a glance</h3>
-              <p>
-                Every open PR you've authored across your repos in one panel,
-                with live check status and a flag when one goes stale or has
-                issues.
-              </p>
+
+          <div class="pillar-stack">
+            <article class="pillar">
+              <div class="pillar-head">
+                <h3>
+                  <span class="pillar-num">01</span> You opened the PR. Neon helps
+                  it land.
+                </h3>
+                <p>
+                  Neon watches the PRs you authored for new feedback, failing
+                  checks, and a branch that has fallen behind, then chases
+                  all-green: CI failures, merge gates, routine review nits. Each
+                  one gets a continuing owner and a managed worktree that stay
+                  with it to merge. When a reviewer raises a real architectural
+                  flag, it hands that back to you instead of winging a fix. You
+                  decide how much rope it gets, and raising that takes an
+                  explicit confirmation.
+                </p>
+              </div>
+              <div class="feature-grid">
+                <article class="feature">
+                  <div class="spark teal"></div>
+                  <h3>Notify</h3>
+                  <p>
+                    Watches the PR and pings you when something needs eyes.
+                    Changes nothing on its own.
+                  </p>
+                  <p class="mode"><code>notify-only</code></p>
+                </article>
+                <article class="feature">
+                  <div class="spark pink"></div>
+                  <h3>Prepare</h3>
+                  <p>
+                    Diagnoses the failure and writes a fix in a managed
+                    worktree, left for you to inspect.
+                  </p>
+                  <p class="mode"><code>prepare-only</code></p>
+                </article>
+                <article class="feature">
+                  <div class="spark violet"></div>
+                  <h3>Approve</h3>
+                  <p>
+                    Prepares the fix and waits for your explicit sign-off before
+                    it touches the PR.
+                  </p>
+                  <p class="mode"><code>autofix-with-approval</code></p>
+                </article>
+                <article class="feature">
+                  <div class="spark"></div>
+                  <h3>Auto-deliver</h3>
+                  <p>
+                    Delivers on its own when checks and delivery guards pass.
+                    Never force-pushes.
+                  </p>
+                  <p class="mode"><code>autofix-push-when-safe</code></p>
+                </article>
+              </div>
             </article>
-            <article class="feature">
-              <div class="spark teal"></div>
-              <h3>Keep one agent owner with every watched PR</h3>
-              <p>
-                Neon tracks a PR through feedback, checks, and merge with one
-                continuing owner and one managed worktree. It can notify,
-                prepare a commit, wait for approval, or autonomously deliver a
-                validated fix.
-              </p>
+
+            <article class="pillar">
+              <div class="pillar-head">
+                <h3>
+                  <span class="pillar-num">02</span> Your coworker's agent left you
+                  a 40,000-line PR. Neon helps you grok it.
+                </h3>
+                <p>
+                  A huge, mostly machine-written PR lands in your queue and
+                  someone still has to actually read it. Pull it onto your
+                  machine with one command: Neon scouts the exact revision
+                  before you get there and stages what it found, then stays
+                  beside the diff to answer what changed and where to look. It
+                  drafts, you decide. Every GitHub review action stays yours to
+                  submit.
+                </p>
+              </div>
+              <div class="feature-grid">
+                <article class="feature">
+                  <div class="spark teal"></div>
+                  <h3>Keep it local</h3>
+                  <p>
+                    Review the PR locally, diffs come from git rather than yet
+                    another slow GitHub page load. The diff viewer is built on
+                    @pierre/diffs, and even giant PRs are fast to navigate and
+                    render.
+                  </p>
+                </article>
+                <article class="feature">
+                  <div class="spark"></div>
+                  <h3>Get oriented first</h3>
+                  <p>
+                    Neon reviews the PR first, then stages its observations,
+                    draft comments, and a briefing that walks you through the
+                    change.
+                  </p>
+                </article>
+                <article class="feature">
+                  <div class="spark violet"></div>
+                  <h3>Ask, then approve</h3>
+                  <p>
+                    Ask the reviewer agent about the code while you read. Leave
+                    inline comments, resolve threads, and submit Comment,
+                    Approve, or Request changes without opening github.com.
+                  </p>
+                </article>
+              </div>
+              <ReviewMockup />
             </article>
-            <article class="feature">
-              <div class="spark"></div>
-              <h3>Agent + Human reviews = less slop</h3>
-              <p>
-                Review PRs faster, without compromising on thoroughness. Neon
-                performs a pre-review and then hands you short PR briefings,
-                pointers to the parts that matter, and flags issues it noticed.
-                Chat with the agent reviewer as you review the PR.
-              </p>
+
+            <article class="pillar">
+              <div class="pillar-head">
+                <h3>
+                  <span class="pillar-num">03</span> A morning briefing worth reading.
+                </h3>
+                <p>
+                  Neon pulls your PRs, active watches, CI failures, and next
+                  actions into one briefing, led by whatever actually changed
+                  since you last looked. Write your own scheduled instructions
+                  alongside it, and connect MCP servers so a briefing can reach
+                  past GitHub into the rest of your work.
+                </p>
+              </div>
+              <div class="feature-grid">
+                <article class="feature">
+                  <div class="spark pink"></div>
+                  <h3>What needs you, not everything</h3>
+                  <p>
+                    The briefing leads with PRs that moved, checks that broke,
+                    and reviews waiting on you. Semantic watermarks keep
+                    unchanged polls quiet instead of restating yesterday.
+                  </p>
+                </article>
+                <article class="feature">
+                  <div class="spark teal"></div>
+                  <h3>Your own scheduled tasks</h3>
+                  <p>
+                    Add a custom instruction and Neon runs it on your schedule,
+                    in the same durable session as the rest of its work.
+                  </p>
+                </article>
+                <article class="feature">
+                  <div class="spark violet"></div>
+                  <h3>Bring your other tools</h3>
+                  <p>
+                    Connect local and remote MCP servers, Jira and Superhuman
+                    included, so briefings and tasks can pull from the tools
+                    your work already lives in. Access runs through an approval
+                    policy you can inspect.
+                  </p>
+                </article>
+              </div>
             </article>
-            <article class="feature">
-              <div class="spark violet"></div>
-              <h3>Super fast diff and review UI</h3>
-              <p>
-                We've got a diff viewer based on @pierre/diffs that can handle
-                large diffs. Leave inline comments, resolve threads, and submit
-                an approval or change request — without switching to github.com.
-              </p>
-            </article>
-            <article class="feature">
-              <div class="spark pink"></div>
-              <h3>Briefings and scheduled tasks</h3>
-              <p>
-                A morning briefing pulls your PRs, watches, CI failures, and
-                next actions. Or add a custom instruction and extend the task by
-                pulling in MCPs.
-              </p>
-            </article>
-            <article class="feature">
-              <div class="spark teal"></div>
-              <h3>Gated local execution</h3>
-              <p>
-                Repository automation uses managed worktrees, while direct host
-                commands clear an inspectable approval policy first. Coding and
-                validation currently run on your local machine.
-              </p>
-            </article>
-            <article class="feature">
-              <div class="spark"></div>
-              <h3>Memory that learns from your work</h3>
-              <p>
-                Neon applies typed, audited, reversible memory and skill
-                improvements from conversations and PR outcomes automatically by
-                default. It learns as it watches your review.
-              </p>
-            </article>
-            <article class="feature">
-              <div class="spark violet"></div>
-              <h3>Ask Neon to set up the deck</h3>
-              <p>
-                Neon configures itself — repos, models, schedules, even its own
-                layout and display. Want to change something? Just ask.
-              </p>
+
+            <article class="pillar">
+              <div class="pillar-head">
+                <h3>Underneath all three</h3>
+                <p>Same machine, same rules, whichever one you are using.</p>
+              </div>
+              <div class="feature-grid">
+                <article class="feature">
+                  <div class="spark"></div>
+                  <h3>It runs on your machine</h3>
+                  <p>
+                    Coding and validation happen locally, in a Neondeck-managed
+                    worktree that keeps autonomous changes out of your primary
+                    checkout. Commands that touch the host clear an approval
+                    policy you can read first. A worktree is not an
+                    operating-system sandbox, and we don't claim otherwise.
+                  </p>
+                </article>
+                <article class="feature">
+                  <div class="spark pink"></div>
+                  <h3>No signups, bring your own provider</h3>
+                  <p>
+                    Install from npm, configure your AI provider (OpenAI,
+                    Anthropic, OpenRouter, or any OpenAI-compatible endpoint),
+                    point it at your repos, and go. Neondeck is MIT licensed,
+                    feel free to fork and contribute.
+                  </p>
+                </article>
+                <article class="feature">
+                  <div class="spark teal"></div>
+                  <h3>It learns from your work</h3>
+                  <p>
+                    Neon updates its own memory and skills from your
+                    conversations and from how PRs turn out, by default. Each
+                    change is typed, recorded, and can be reverted, so you can
+                    read back what it picked up.
+                  </p>
+                </article>
+              </div>
             </article>
           </div>
         </div>
@@ -184,13 +304,13 @@ const dashboardConfig = `{
       <section id="config" class="section">
         <div class="container config-grid">
           <div>
-            <p class="kicker">CONFIG OR CHAT</p>
-            <h2>The layout is a file. Or a request.</h2>
+            <h2>The deck configures itself</h2>
             <p class="hero-copy">
-              Manually tune layouts, text scale, fonts, panel regions, and
-              plugin config in runtime-home <code>dashboard.json</code>, or ask
-              Neon to adapt the deck for your size, orientation, and
-              constraints.
+              Layouts, text scale, fonts, panel regions, and plugin config live
+              in <code>dashboard.json</code> in your runtime home. Edit it by hand,
+              or describe the display you have and ask Neon to fit the deck to its
+              size, orientation, and constraints. Repos, models, and schedules work
+              the same way: if something is in the wrong place, tell it to move it.
             </p>
             <div class="hero-actions">
               <a class="button secondary" href="/docs/getting-started/"
