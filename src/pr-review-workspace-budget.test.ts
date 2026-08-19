@@ -37,4 +37,23 @@ describe('PR review workspace budget', () => {
     expect(consumePrReviewWorkspaceBudget(budget, paths)).toBe(0);
     expect(consumePrReviewWorkspaceBudget(budget, paths)).toBeNull();
   });
+
+  it('adopts a changed limit for an existing review scope', async () => {
+    const home = await mkdtemp(join(tmpdir(), 'neondeck-review-budget-'));
+    tempRoots.push(home);
+    const paths = runtimePaths(home);
+    await ensureRuntimeHome(paths);
+    const key = prReviewWorkspaceBudgetKey({
+      kind: 'follow-up',
+      reviewId: 'review-1',
+      revision: 'abc123',
+    });
+
+    expect(consumePrReviewWorkspaceBudget({ key, limit: 250 }, paths)).toBe(
+      249,
+    );
+    expect(consumePrReviewWorkspaceBudget({ key, limit: 500 }, paths)).toBe(
+      498,
+    );
+  });
 });

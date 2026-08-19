@@ -526,6 +526,31 @@ describe('local PR diffs', () => {
         truncated: true,
       },
     });
+
+    const unavailableDatabase = join(paths.data, 'retention-db-directory');
+    await mkdir(unavailableDatabase);
+    const fallbackTools = createPrReviewerWorkspaceTools(
+      { repoPath: repo, headSha, mergeBase: null },
+      {
+        retainedOutput: {
+          key: 'review:test:retention-failure',
+          paths: { ...paths, neondeckDatabase: unavailableDatabase },
+        },
+      },
+    );
+    const fallbackList = fallbackTools.find(
+      (tool) => tool.name === 'neondeck_review_workspace_list',
+    );
+    await expect(
+      fallbackList?.run({ data: { limit: 1 } } as never),
+    ).resolves.toMatchObject({
+      output: {
+        paths: [expect.any(String)],
+        truncated: true,
+        outputRetained: false,
+        outputHint: expect.stringContaining('bounded preview is still valid'),
+      },
+    });
   });
 
   it('bounds retained workspace outputs across review scopes', async () => {

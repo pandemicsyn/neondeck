@@ -247,20 +247,30 @@ function createResolvedPrReviewerWorkspaceTools(
     available: false,
     reason,
   });
-  const retainOutput = (source: 'diff' | 'list' | 'search', text: string) =>
-    options.retainedOutput
-      ? retainPrReviewWorkspaceOutput({
-          scope: options.retainedOutput,
-          source,
-          text,
-        })
-      : {
-          outputRetained: false as const,
-          outputBytes: Buffer.byteLength(text, 'utf8'),
-          outputLines: countLines(text),
-          outputHint:
-            'Durable retained output is unavailable for this workspace. Narrow the original request.',
-        };
+  const retainOutput = (source: 'diff' | 'list' | 'search', text: string) => {
+    const unavailable = (outputHint: string) => ({
+      outputRetained: false as const,
+      outputBytes: Buffer.byteLength(text, 'utf8'),
+      outputLines: countLines(text),
+      outputHint,
+    });
+    if (!options.retainedOutput) {
+      return unavailable(
+        'Durable retained output is unavailable for this workspace. Narrow the original request.',
+      );
+    }
+    try {
+      return retainPrReviewWorkspaceOutput({
+        scope: options.retainedOutput,
+        source,
+        text,
+      });
+    } catch {
+      return unavailable(
+        'The full output could not be retained, but the bounded preview is still valid. Continue from the preview or narrow the original request.',
+      );
+    }
+  };
   const budgetDescription = ` This call shares a hard ${prReviewerWorkspaceToolCallLimit}-call exploration budget with the other exact-revision workspace tools.`;
   return [
     defineTool({
