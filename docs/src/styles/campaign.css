@@ -670,6 +670,12 @@
 }
 
 @media (max-width: 900px) {
+  /* The 340px minimum on the second column starves the first one to 0px and
+     pushes the proof list outside the panel, where the shell clips it. */
+  .campaign-big-diffs {
+    grid-template-columns: minmax(0, 1fr);
+    align-items: start;
+  }
   .campaign-step-grid,
   .campaign-step-grid.four-up {
     grid-template-columns: repeat(2, minmax(0, 1fr));
