@@ -1,6 +1,7 @@
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import type { ToolStep } from '@flue/runtime';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { updateLearningConfig } from './modules/config';
 import { openDb, withImmediateTransaction } from './lib/sqlite';
@@ -71,6 +72,34 @@ describe('learning review admission', () => {
       dispatchError: null,
     });
     releaseSettlement?.();
+  });
+
+  it('rejects malformed non-record admission input before dispatch', async () => {
+    const paths = await fixture();
+    const database = openDb(paths.neondeckDatabase);
+    try {
+      database
+        .prepare(
+          `INSERT INTO learning_review_admissions (
+            id, kind, session_id, input_json, status, error, created_at, updated_at
+          ) VALUES (?, ?, ?, ?, ?, NULL, ?, ?);`,
+        )
+        .run(
+          'learning-intent:malformed-array',
+          'conversation',
+          null,
+          '[]',
+          'pending',
+          '2026-08-01T00:00:00.000Z',
+          '2026-08-01T00:00:00.000Z',
+        );
+    } finally {
+      database.close();
+    }
+
+    expect(() => listPendingLearningReviewAdmissionIntents(paths)).toThrow(
+      'learning-intent:malformed-array',
+    );
   });
 
   it('keyed-redispatches the persisted snapshot after an interrupted admission', async () => {
@@ -225,24 +254,13 @@ describe('learning review admission', () => {
     const tool = createSubmitLearningReviewTool(prepared);
     const run = tool.run;
     if (!run) throw new Error('Learning review tool has no run handler.');
-    const result = await run({
-      data: {
+    const result = await run(
+      toolRunContext({
         summary: 'No durable learning was justified.',
         memoryActions: [],
         skillPatches: [],
-      },
-      log: {
-        error: vi.fn<(message: string, data?: unknown) => void>(),
-        warn: vi.fn<(message: string, data?: unknown) => void>(),
-        info: vi.fn<(message: string, data?: unknown) => void>(),
-        debug: vi.fn<(message: string, data?: unknown) => void>(),
-      },
-      step: {
-        async do(_name: string, effect: () => unknown) {
-          return effect();
-        },
-      },
-    } as never);
+      }),
+    );
 
     expect(result).toMatchObject({
       terminate: true,
@@ -261,28 +279,18 @@ describe('learning review admission', () => {
     const tool = createSubmitLearningReviewTool(prepared);
     const run = tool.run;
     if (!run) throw new Error('Learning review tool has no run handler.');
-    const stepDo = vi.fn<
-      (name: string, effect: () => unknown) => Promise<unknown>
-    >(async (_name, effect) => effect());
-    const context = {
-      data: {
+    const step = immediateToolStep();
+    const stepDo = vi.spyOn(step, 'do');
+    const context = toolRunContext(
+      {
         summary: 'No durable learning was justified.',
         memoryActions: [],
         skillPatches: [],
       },
-      log: {
-        error: vi.fn<(message: string, data?: unknown) => void>(),
-        warn: vi.fn<(message: string, data?: unknown) => void>(),
-        info: vi.fn<(message: string, data?: unknown) => void>(),
-        debug: vi.fn<(message: string, data?: unknown) => void>(),
-      },
-      step: { do: stepDo },
-    };
+      step,
+    );
 
-    const [first, duplicate] = await Promise.all([
-      run(context as never),
-      run(context as never),
-    ]);
+    const [first, duplicate] = await Promise.all([run(context), run(context)]);
 
     expect(duplicate).toEqual(first);
     expect(stepDo.mock.calls.map(([name]) => name)).toEqual([
@@ -300,35 +308,34 @@ describe('learning review admission', () => {
     const tool = createSubmitLearningReviewTool(prepared);
     const run = tool.run;
     if (!run) throw new Error('Learning review tool has no run handler.');
-    const result = await run({
-      data: {
-        summary: 'A local validation preference was observed.',
-        memoryActions: [
-          {
-            action: 'upsert',
-            scope: 'local',
-            key: 'validation-command',
-            value: 'npm run check',
-            reason: 'Repeated local preference.',
-          },
-        ],
-        skillPatches: [],
-      },
-      log: {
-        error: vi.fn<(message: string, data?: unknown) => void>(),
-        warn: vi.fn<(message: string, data?: unknown) => void>(),
-        info: vi.fn<(message: string, data?: unknown) => void>(),
-        debug: vi.fn<(message: string, data?: unknown) => void>(),
-      },
-      step: {
-        async do(name: string, effect: () => unknown) {
-          if (name === 'complete-review') {
-            throw new Error('forced completion checkpoint failure');
-          }
-          return effect();
+    const result = await run(
+      toolRunContext(
+        {
+          summary: 'A local validation preference was observed.',
+          memoryActions: [
+            {
+              action: 'upsert',
+              scope: 'local',
+              key: 'validation-command',
+              value: 'npm run check',
+              reason: 'Repeated local preference.',
+            },
+          ],
+          skillPatches: [],
         },
-      },
-    } as never);
+        {
+          async do<Result>(
+            name: string,
+            effect: () => Result | Promise<Result>,
+          ) {
+            if (name === 'complete-review') {
+              throw new Error('forced completion checkpoint failure');
+            }
+            return effect();
+          },
+        },
+      ),
+    );
 
     expect(result).toMatchObject({
       terminate: true,
@@ -381,36 +388,35 @@ describe('learning review admission', () => {
     const tool = createSubmitLearningReviewTool(prepared);
     const run = tool.run;
     if (!run) throw new Error('Learning review tool has no run handler.');
-    const result = await run({
-      data: {
-        summary: 'A local validation preference was observed.',
-        memoryActions: [
-          {
-            action: 'upsert',
-            scope: 'local',
-            key: 'validation-command',
-            value: 'npm run check',
-            reason: 'Repeated local preference.',
-          },
-        ],
-        skillPatches: [],
-      },
-      log: {
-        error: vi.fn<(message: string, data?: unknown) => void>(),
-        warn: vi.fn<(message: string, data?: unknown) => void>(),
-        info: vi.fn<(message: string, data?: unknown) => void>(),
-        debug: vi.fn<(message: string, data?: unknown) => void>(),
-      },
-      step: {
-        async do(name: string, effect: () => unknown) {
-          const effectResult = await effect();
-          if (name === 'memory-candidate:0') {
-            throw new Error('forced checkpoint persistence failure');
-          }
-          return effectResult;
+    const result = await run(
+      toolRunContext(
+        {
+          summary: 'A local validation preference was observed.',
+          memoryActions: [
+            {
+              action: 'upsert',
+              scope: 'local',
+              key: 'validation-command',
+              value: 'npm run check',
+              reason: 'Repeated local preference.',
+            },
+          ],
+          skillPatches: [],
         },
-      },
-    } as never);
+        {
+          async do<Result>(
+            name: string,
+            effect: () => Result | Promise<Result>,
+          ) {
+            const effectResult = await effect();
+            if (name === 'memory-candidate:0') {
+              throw new Error('forced checkpoint persistence failure');
+            }
+            return effectResult;
+          },
+        },
+      ),
+    );
 
     expect(result).toMatchObject({
       terminate: true,
@@ -453,6 +459,35 @@ async function fixture() {
   const paths = runtimePaths(home);
   await updateLearningConfig({}, paths);
   return paths;
+}
+
+type SubmitReviewRun = NonNullable<
+  ReturnType<typeof createSubmitLearningReviewTool>['run']
+>;
+type SubmitReviewRunContext = Parameters<SubmitReviewRun>[0];
+
+function toolRunContext(
+  data: SubmitReviewRunContext['data'],
+  step: ToolStep = immediateToolStep(),
+): SubmitReviewRunContext {
+  return {
+    toolCallId: 'learning-review-test-call',
+    data,
+    log: {
+      error: vi.fn<SubmitReviewRunContext['log']['error']>(),
+      warn: vi.fn<SubmitReviewRunContext['log']['warn']>(),
+      info: vi.fn<SubmitReviewRunContext['log']['info']>(),
+    },
+    step,
+  };
+}
+
+function immediateToolStep(): ToolStep {
+  return {
+    async do<Result>(_name: string, effect: () => Result | Promise<Result>) {
+      return effect();
+    },
+  };
 }
 
 function preparedReview(paths: RuntimePaths): PreparedLearningReview {

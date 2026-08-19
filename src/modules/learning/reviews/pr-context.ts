@@ -2,6 +2,7 @@ import { openDb } from '../../../lib/sqlite.ts';
 import type { JsonValue } from '@flue/runtime';
 import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
+import * as v from 'valibot';
 import { listRuntimeSkills } from '../../runtime';
 import type { RuntimePaths } from '../../../runtime-home';
 import {
@@ -21,13 +22,18 @@ const learningSkillSnippetIds = [
 
 type LearningSkillSnippetEvidence = {
   handledEvents?: HandledPrEventRecord[];
-  workflowSummaries?: unknown[];
-  preparedDiffs?: unknown[];
-  verificationResults?: unknown[];
-  notifications?: unknown[];
-  kiloResults?: unknown[];
-  automationHealth?: unknown;
+  workflowSummaries?: JsonValue[];
+  preparedDiffs?: JsonValue[];
+  verificationResults?: JsonValue[];
+  notifications?: JsonValue[];
+  kiloResults?: JsonValue[];
+  automationHealth?: JsonValue;
 };
+
+const externalValueSchema = v.unknown();
+const evidenceRecordSchema = v.record(v.string(), externalValueSchema);
+type ExternalValue = v.InferInput<typeof externalValueSchema>;
+type EvidenceRecord = v.InferOutput<typeof evidenceRecordSchema>;
 
 export function listHandledPrEventsForReview(
   input: { repoId?: string; limit: number; sinceLastReview: boolean },
@@ -217,13 +223,14 @@ export function listRelatedPreparedDiffSummaries(
       )
       .all()
       .map((row) => {
-        const record = row as Record<string, unknown>;
+        const record = v.parse(evidenceRecordSchema, row);
         return {
           id: String(record.id),
           repoId: String(record.repo_id),
           repoFullName: String(record.repo_full_name),
-          prNumber:
-            typeof record.pr_number === 'number' ? record.pr_number : null,
+          prNumber: v.is(v.number(), record.pr_number)
+            ? record.pr_number
+            : null,
           status: String(record.status),
           pushApprovalStatus: String(record.push_approval_status),
           verificationStatus: String(record.verification_status),
@@ -231,10 +238,9 @@ export function listRelatedPreparedDiffSummaries(
           createdBy: String(record.created_by),
           createdAt: String(record.created_at),
           updatedAt: String(record.updated_at),
-          abandonedAt:
-            typeof record.abandoned_at === 'string'
-              ? record.abandoned_at
-              : null,
+          abandonedAt: v.is(v.string(), record.abandoned_at)
+            ? record.abandoned_at
+            : null,
         };
       })
       .filter((item) => keys.has(`${item.repoId}#${item.prNumber}`))
@@ -272,20 +278,22 @@ export function listRelatedNotificationSummaries(
       )
       .all()
       .map((row) => {
-        const record = row as Record<string, unknown>;
+        const record = v.parse(evidenceRecordSchema, row);
         return {
           level: String(record.level),
           title: truncate(String(record.title), 200),
           message: truncate(String(record.message), 400),
-          source: typeof record.source === 'string' ? record.source : null,
-          sourceId:
-            typeof record.source_id === 'string' ? record.source_id : null,
+          source: v.is(v.string(), record.source) ? record.source : null,
+          sourceId: v.is(v.string(), record.source_id)
+            ? record.source_id
+            : null,
           data: summarizeJson(parseNullableJson(record.data_json), 1_000),
           occurrenceCount: Number(record.occurrence_count ?? 1),
           createdAt: String(record.created_at),
           updatedAt: String(record.updated_at),
-          resolvedAt:
-            typeof record.resolved_at === 'string' ? record.resolved_at : null,
+          resolvedAt: v.is(v.string(), record.resolved_at)
+            ? record.resolved_at
+            : null,
         };
       })
       .filter((item) => containsAnyNeedle(item, needles))
@@ -318,20 +326,19 @@ export function listRelatedKiloResultSummaries(
       )
       .all()
       .map((row) => {
-        const record = row as Record<string, unknown>;
+        const record = v.parse(evidenceRecordSchema, row);
         return {
           taskId: String(record.task_id),
-          repoId: typeof record.repo_id === 'string' ? record.repo_id : null,
-          repoFullName:
-            typeof record.repo_full_name === 'string'
-              ? record.repo_full_name
-              : null,
-          prNumber:
-            typeof record.pr_number === 'number' ? record.pr_number : null,
-          preparedDiffId:
-            typeof record.prepared_diff_id === 'string'
-              ? record.prepared_diff_id
-              : null,
+          repoId: v.is(v.string(), record.repo_id) ? record.repo_id : null,
+          repoFullName: v.is(v.string(), record.repo_full_name)
+            ? record.repo_full_name
+            : null,
+          prNumber: v.is(v.number(), record.pr_number)
+            ? record.pr_number
+            : null,
+          preparedDiffId: v.is(v.string(), record.prepared_diff_id)
+            ? record.prepared_diff_id
+            : null,
           classification: String(record.classification),
           verificationStatus: String(record.verification_status),
           promotionStatus: String(record.promotion_status),
@@ -365,11 +372,11 @@ export function extractHandledPrEvent(input: {
   workflow?: string | null;
   runId?: string | null;
   submissionId?: string | null;
-  result: unknown;
+  result: ExternalValue;
 }) {
   const result = objectRecord(input.result);
   if (!result) return null;
-  const action = typeof result.action === 'string' ? result.action : null;
+  const action = v.is(v.string(), result.action) ? result.action : null;
   const data = objectRecord(result.data) ?? {};
   const recoveryAction = firstString(data.recoveryAction);
   const nestedResult =
@@ -604,7 +611,7 @@ export function isAutopilotFixOutcome(
 export function handledEventType(
   action: string | null,
   workflow?: string | null,
-  preparedDiff?: Record<string, unknown>,
+  preparedDiff?: EvidenceRecord,
   outcome: { ok: boolean | null; blocked: boolean } = {
     ok: null,
     blocked: false,
@@ -695,8 +702,9 @@ export function handledEventType(
       'human-review-submission-failed',
     );
   }
-  const status =
-    typeof preparedDiff?.status === 'string' ? preparedDiff.status : null;
+  const status = v.is(v.string(), preparedDiff?.status)
+    ? preparedDiff.status
+    : null;
   if (status === 'abandoned') return 'prepared-diff-abandoned';
   if (preparedDiff) {
     return outcomeLabel(
@@ -708,25 +716,27 @@ export function handledEventType(
   return null;
 }
 
-export function readHandledPrEventRow(row: unknown): HandledPrEventRecord {
-  const record = row as Record<string, unknown>;
+export function readHandledPrEventRow(
+  row: ExternalValue,
+): HandledPrEventRecord {
+  const record = v.parse(evidenceRecordSchema, row);
   return {
     id: String(record.id),
     source: String(record.source),
-    sourceId: typeof record.source_id === 'string' ? record.source_id : null,
-    repoId: typeof record.repo_id === 'string' ? record.repo_id : null,
-    prKey: typeof record.pr_key === 'string' ? record.pr_key : null,
+    sourceId: v.is(v.string(), record.source_id) ? record.source_id : null,
+    repoId: v.is(v.string(), record.repo_id) ? record.repo_id : null,
+    prKey: v.is(v.string(), record.pr_key) ? record.pr_key : null,
     data: parseNullableJson(record.data_json),
     createdAt: String(record.created_at),
   };
 }
 
-export function readWorkflowSummaryLikeRow(row: unknown) {
-  const record = row as Record<string, unknown>;
+export function readWorkflowSummaryLikeRow(row: ExternalValue) {
+  const record = v.parse(evidenceRecordSchema, row);
   return {
     id: String(record.id),
     workflow: String(record.workflow),
-    runId: typeof record.run_id === 'string' ? record.run_id : null,
+    runId: v.is(v.string(), record.run_id) ? record.run_id : null,
     status: String(record.status),
     summary: summarizeJson(parseNullableJson(record.summary_json), 2_000),
     createdAt: String(record.created_at),
@@ -739,10 +749,9 @@ export function prEventKeys(events: HandledPrEventRecord[]) {
     events
       .map((event) => {
         const data = dataRecord(event.data);
-        const prNumber =
-          typeof data.prNumber === 'number'
-            ? data.prNumber
-            : event.prKey?.split('#').at(-1);
+        const prNumber = v.is(v.number(), data.prNumber)
+          ? data.prNumber
+          : event.prKey?.split('#').at(-1);
         return event.repoId && prNumber ? `${event.repoId}#${prNumber}` : null;
       })
       .filter((key): key is string => !!key),
@@ -757,14 +766,14 @@ export function eventNeedles(events: HandledPrEventRecord[]) {
     if (event.prKey) values.add(event.prKey);
     const data = dataRecord(event.data);
     for (const key of ['repoFullName', 'preparedDiffId', 'taskId']) {
-      if (typeof data[key] === 'string') values.add(data[key]);
+      if (v.is(v.string(), data[key])) values.add(data[key]);
     }
-    if (typeof data.prNumber === 'number') values.add(`#${data.prNumber}`);
+    if (v.is(v.number(), data.prNumber)) values.add(`#${data.prNumber}`);
   }
   return values;
 }
 
-export function containsAnyNeedle(value: unknown, needles: Set<string>) {
+export function containsAnyNeedle(value: ExternalValue, needles: Set<string>) {
   const serialized = JSON.stringify(value);
   for (const needle of needles) {
     if (needle && serialized.includes(needle)) return true;
@@ -773,44 +782,41 @@ export function containsAnyNeedle(value: unknown, needles: Set<string>) {
 }
 
 export function dataRecord(value: JsonValue | null) {
-  return value && typeof value === 'object' && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : {};
+  return objectRecord(value) ?? {};
 }
 
-export function objectRecord(value: unknown) {
-  return value && typeof value === 'object' && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : null;
+export function objectRecord(value: ExternalValue) {
+  const parsed = v.safeParse(evidenceRecordSchema, value);
+  return parsed.success ? parsed.output : null;
 }
 
-export function firstString(...values: unknown[]) {
-  return values.find((value): value is string => typeof value === 'string');
+export function firstString(...values: ExternalValue[]) {
+  return values.find((value): value is string => v.is(v.string(), value));
 }
 
-export function firstNumber(...values: unknown[]) {
+export function firstNumber(...values: ExternalValue[]) {
   return values.find(
     (value): value is number =>
-      typeof value === 'number' && Number.isFinite(value),
+      v.is(v.number(), value) && Number.isFinite(value),
   );
 }
 
-export function firstIdentifier(...values: unknown[]) {
+export function firstIdentifier(...values: ExternalValue[]) {
   const value = values.find(
     (item) =>
-      (typeof item === 'string' && item.length > 0) ||
-      (typeof item === 'number' && Number.isFinite(item)),
+      (v.is(v.string(), item) && item.length > 0) ||
+      (v.is(v.number(), item) && Number.isFinite(item)),
   );
   return value === undefined ? undefined : String(value);
 }
 
-export function firstBoolean(...values: unknown[]) {
+export function firstBoolean(...values: ExternalValue[]) {
   return (
-    values.find((value): value is boolean => typeof value === 'boolean') ?? null
+    values.find((value): value is boolean => v.is(v.boolean(), value)) ?? null
   );
 }
 
-export function hasRequires(...values: unknown[]) {
+export function hasRequires(...values: ExternalValue[]) {
   return values.some((value) => Array.isArray(value) && value.length > 0);
 }
 

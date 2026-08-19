@@ -51,6 +51,15 @@ import {
   summarizeHandledPrEvent,
 } from './pr-context';
 
+const memoryEventEvidenceSchema = v.array(
+  v.object({
+    action: v.optional(v.nullable(v.string())),
+    memoryId: v.optional(v.nullable(v.string())),
+    reason: v.optional(v.nullable(v.string())),
+    createdAt: v.optional(v.nullable(v.string())),
+  }),
+);
+
 export async function prepareConversationReflection(
   input: ConversationReviewInput = {},
   paths = runtimePaths(),
@@ -91,6 +100,7 @@ export async function prepareConversationReflection(
     paths,
   );
   const reviewedSession =
+    // SAFETY: refreshChatSessionSummary returns its persisted session when refresh succeeds.
     (refreshed as { session?: ChatSessionRecord }).session ?? session;
   const reference = await referenceChatSession(
     {
@@ -130,6 +140,7 @@ export async function prepareConversationReflection(
       staleReasons: reviewedSession.staleReasons,
       contextMemoryIds: reviewedSession.contextMemoryIds,
       transcriptUnavailable:
+        // SAFETY: referenceChatSession's reference payload is produced by the local sessions adapter.
         (reference as { reference?: { transcript?: { available: boolean } } })
           .reference?.transcript?.available === false,
     },
@@ -234,14 +245,14 @@ export async function prepareMemoryCurationReview(
       memoryMaxActiveItems: config.memoryMaxActiveItems,
     },
     activeMemories: summarizeMemories(memories, 160),
-    recentMemoryEvents: (events.events as Array<Record<string, unknown>>).map(
-      (event) => ({
+    recentMemoryEvents: v
+      .parse(memoryEventEvidenceSchema, events.events)
+      .map((event) => ({
         action: event.action,
         memoryId: event.memoryId,
         reason: truncate(String(event.reason ?? ''), 240),
         createdAt: event.createdAt,
-      }),
-    ),
+      })),
     skillSnippets,
   });
   const reviewId = options.reviewId ?? randomUUID();

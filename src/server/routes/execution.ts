@@ -12,7 +12,7 @@ import {
 } from '../../modules/execution';
 import type { RuntimePaths } from '../../runtime-home';
 import { updateExecutionPolicy } from '../../modules/config';
-import { safeJsonBody } from '../http';
+import { safeJsonBody, safeJsonObject } from '../http';
 
 export function createExecutionRoutes(paths: RuntimePaths) {
   const routes = new Hono();
@@ -22,6 +22,7 @@ export function createExecutionRoutes(paths: RuntimePaths) {
   });
 
   routes.post('/policy', async (c) => {
+    // SAFETY: updateExecutionPolicy parses and validates its request payload.
     const input = (await safeJsonBody(c)) as Parameters<
       typeof updateExecutionPolicy
     >[0];
@@ -29,6 +30,7 @@ export function createExecutionRoutes(paths: RuntimePaths) {
   });
 
   routes.post('/check', async (c) => {
+    // SAFETY: checkExecutionPolicy parses and validates its request payload.
     const input = (await safeJsonBody(c)) as Parameters<
       typeof checkExecutionPolicy
     >[0];
@@ -46,10 +48,7 @@ export function createExecutionRoutes(paths: RuntimePaths) {
   });
 
   routes.post('/approvals/:id/resolve', async (c) => {
-    const input = (await c.req.json().catch(() => ({}))) as Record<
-      string,
-      unknown
-    >;
+    const input = await safeJsonObject(c);
     const result = await resolveExecutionApproval(
       { ...input, id: c.req.param('id') },
       paths,

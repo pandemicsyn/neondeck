@@ -125,6 +125,7 @@ describe('API request logging', () => {
 
 describe('Flue activity logging', () => {
   it('logs submission lifecycle milestones without payloads', () => {
+    // SAFETY: this fixture is a complete Flue submission-settled observation.
     expect(
       formatFlueActivity({
         v: 3,
@@ -142,6 +143,7 @@ describe('Flue activity logging', () => {
         '[neondeck] ACTIVITY submission queued agent=review-pr-for-human submission=submission-1 kind=dispatch',
     });
 
+    // SAFETY: this fixture is a complete Flue submission-settled observation.
     expect(
       formatFlueActivity({
         v: 3,
@@ -161,7 +163,36 @@ describe('Flue activity logging', () => {
     });
   });
 
+  it('preserves error identity from serialized operation failures', () => {
+    // SAFETY: this fixture is a complete failed Flue operation observation.
+    expect(
+      formatFlueActivity({
+        v: 3,
+        type: 'operation',
+        eventIndex: 3,
+        timestamp: '2026-08-17T19:00:03.000Z',
+        submissionId: 'submission-1',
+        agentName: 'review-pr-for-human',
+        instanceId: 'review-1',
+        operationId: 'operation-1',
+        operationKind: 'prompt',
+        durationMs: 25,
+        isError: true,
+        error: {
+          name: 'SerializedFlueError',
+          message: 'sensitive details must not be logged',
+          type: 'SomeFlueError',
+        },
+      } as FlueObservation),
+    ).toEqual({
+      level: 'warn',
+      message:
+        '[neondeck] ACTIVITY operation failed agent=review-pr-for-human submission=submission-1 operation=prompt duration=25ms error=SomeFlueError',
+    });
+  });
+
   it('ignores noisy nested log events', () => {
+    // SAFETY: this fixture is a complete Flue log observation.
     expect(
       formatFlueActivity({
         v: 3,

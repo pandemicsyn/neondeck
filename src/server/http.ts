@@ -1,16 +1,35 @@
 import type { Context } from 'hono';
+import * as v from 'valibot';
 
-export async function safeJsonBody(c: Context): Promise<unknown> {
-  return c.req.json().catch(() => ({}));
+export type JsonPrimitive = boolean | null | number | string;
+export type JsonValue = JsonPrimitive | JsonObject | JsonValue[];
+export interface JsonObject {
+  [key: string]: JsonValue;
 }
 
-export async function safeJsonObject(
-  c: Context,
-): Promise<Record<string, unknown>> {
+export async function safeJsonBody(c: Context): Promise<JsonValue> {
+  // SAFETY: the Fetch JSON decoder only produces JSON-compatible primitives,
+  // arrays, and objects; malformed payloads use the empty-object fallback.
+  return (await c.req.json().catch(() => ({}))) as JsonValue;
+}
+
+export async function safeJsonObject(c: Context): Promise<JsonObject> {
   const body = await safeJsonBody(c);
-  return body && typeof body === 'object' && !Array.isArray(body)
-    ? (body as Record<string, unknown>)
-    : {};
+  return isJsonObject(body) ? body : {};
+}
+
+export function isJsonObject(
+  value: JsonValue | undefined,
+): value is JsonObject {
+  return Object.prototype.toString.call(value) === '[object Object]';
+}
+
+export function isJsonString(value: JsonValue | undefined): value is string {
+  return v.is(v.string(), value);
+}
+
+export function isJsonNumber(value: JsonValue | undefined): value is number {
+  return Number.isFinite(value);
 }
 
 export function boundedQueryLimit(value: string | undefined, fallback: number) {

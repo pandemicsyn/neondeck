@@ -1,8 +1,9 @@
 import type { JsonValue } from '@flue/runtime';
 import { asJsonValue } from '../../../lib/action-result';
+import { isJsonValue } from '../../execution/utils';
 import { createHash, randomUUID } from 'node:crypto';
 import { realpath } from 'node:fs/promises';
-import type { DatabaseSync } from 'node:sqlite';
+import type { DatabaseSync, SQLOutputValue } from 'node:sqlite';
 import * as v from 'valibot';
 import {
   parseAppConfig,
@@ -18,6 +19,19 @@ import type {
 
 const maxSkillPatchBytes = 1024 * 1024;
 import { nonEmptyStringSchema, skillPatchOperationSchema } from './schemas';
+
+const jsonValueSchema = v.pipe(
+  v.unknown(),
+  v.check(isJsonValue, 'Expected a JSON value.'),
+);
+type FailedSkillPatchResult = {
+  ok: false;
+  action: string;
+  changed: false;
+  message: string;
+  errors: string[];
+  requires?: string[];
+};
 
 export async function resolvePatchableSkill(
   skillId: string,
@@ -158,7 +172,7 @@ export async function skillPatchPolicyResult(
       ok: false as const,
       result: failedSkillPatch(
         'skill_patch_policy',
-        `Learning config is invalid; skill patches are blocked. ${errorMessage(error)}`,
+        `Learning config is invalid; skill patches are blocked. ${errorMessage(v.is(v.instance(Error), error) ? error : 'Unexpected learning configuration failure.')}`,
         ['valid-learning-config'],
       ),
     };
@@ -211,7 +225,7 @@ export async function skillPatchApplyPolicyResult(
       ok: false as const,
       result: failedSkillPatch(
         'skill_patch_policy',
-        `Learning config is invalid; skill patches are blocked. ${errorMessage(error)}`,
+        `Learning config is invalid; skill patches are blocked. ${errorMessage(v.is(v.instance(Error), error) ? error : 'Unexpected learning configuration failure.')}`,
         ['valid-learning-config'],
       ),
     };
@@ -271,9 +285,9 @@ export function readSkillPatchCandidateById(
 }
 
 export function readSkillPatchCandidateRow(
-  row: unknown,
+  row: Record<string, SQLOutputValue>,
 ): SkillPatchCandidateRecord {
-  const record = row as Record<string, unknown>;
+  const record = row;
   return {
     id: String(record.id),
     target: 'skill',
@@ -284,10 +298,10 @@ export function readSkillPatchCandidateRow(
     action: 'patch',
     skillId: String(record.skill_id),
     patch: parseNullableJson(record.patch_json) ?? {},
-    reason: typeof record.reason === 'string' ? record.reason : null,
-    reviewId: typeof record.review_id === 'string' ? record.review_id : null,
+    reason: stringOrNull(record.reason),
+    reviewId: stringOrNull(record.review_id),
     createdAt: String(record.created_at),
-    decidedAt: typeof record.decided_at === 'string' ? record.decided_at : null,
+    decidedAt: stringOrNull(record.decided_at),
   };
 }
 
@@ -403,9 +417,18 @@ export function escapeRegExp(value: string) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
-export function parseNullableJson(value: unknown): JsonValue | null {
-  if (typeof value !== 'string') return null;
-  return JSON.parse(value) as JsonValue;
+export function parseNullableJson(
+  value: SQLOutputValue | undefined,
+): JsonValue | null {
+  const text = v.safeParse(v.string(), value);
+  if (!text.success) return null;
+  try {
+    const parsed = v.safeParse(jsonValueSchema, JSON.parse(text.output));
+    // SAFETY: jsonValueSchema validates the parsed input is JSON-safe before this result crosses the boundary.
+    return parsed.success ? (parsed.output as JsonValue) : null;
+  } catch {
+    return null;
+  }
 }
 
 export function failedSkillPatch(
@@ -413,16 +436,22 @@ export function failedSkillPatch(
   message: string,
   requires?: string[],
 ) {
-  return {
+  const result: FailedSkillPatchResult = {
     ok: false as const,
     action,
     changed: false as const,
     message,
     errors: [message],
-    ...(requires ? { requires } : {}),
   };
+  if (requires) result.requires = requires;
+  return result;
 }
 
-export function errorMessage(error: unknown) {
+export function errorMessage(error: Error | JsonValue | null | undefined) {
   return error instanceof Error ? error.message : String(error);
+}
+
+function stringOrNull(value: SQLOutputValue | undefined) {
+  const parsed = v.safeParse(v.string(), value);
+  return parsed.success ? parsed.output : null;
 }

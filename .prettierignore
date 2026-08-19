@@ -9,6 +9,7 @@ design
 research-repos
 .plans/*.html
 .flue-vite
+tools/oxlint/anti-slop
 package-lock.json
 
 .env

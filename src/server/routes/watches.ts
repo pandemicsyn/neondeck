@@ -29,12 +29,14 @@ export function createWatchRoutes(paths: RuntimePaths) {
   });
 
   routes.post('/watches', async (c) => {
+    // SAFETY: addPrWatch validates the externally supplied watch contract.
     const input = (await safeJsonBody(c)) as Parameters<typeof addPrWatch>[0];
     const result = await addPrWatch(input, paths);
     return c.json(result, result.ok ? 200 : 400);
   });
 
   routes.post('/watches/autopilot', async (c) => {
+    // SAFETY: configurePrAutopilot validates the externally supplied policy.
     const result = await configurePrAutopilot(
       (await safeJsonBody(c)) as Parameters<typeof configurePrAutopilot>[0],
       paths,
@@ -51,6 +53,7 @@ export function createWatchRoutes(paths: RuntimePaths) {
   });
 
   routes.post('/watches/:id/autopilot/control', async (c) => {
+    // SAFETY: controlPrAutopilot validates the action and the route owns id.
     const result = await controlPrAutopilot(
       {
         ...(await safeJsonObject(c)),
@@ -62,6 +65,7 @@ export function createWatchRoutes(paths: RuntimePaths) {
   });
 
   routes.post('/watches/:id/autopilot/message', async (c) => {
+    // SAFETY: messagePrAutopilotOwner validates the message and route owns id.
     const result = await messagePrAutopilotOwner(
       {
         ...(await safeJsonObject(c)),
@@ -73,6 +77,7 @@ export function createWatchRoutes(paths: RuntimePaths) {
   });
 
   routes.post('/watches/:id/autopilot/approve', async (c) => {
+    // SAFETY: approvePrAutopilotChange validates the request and the route owns id.
     const result = await approvePrAutopilotChange(
       {
         ...(await safeJsonObject(c)),
@@ -111,12 +116,14 @@ export function createWatchRoutes(paths: RuntimePaths) {
   });
 
   routes.post('/watches/ref', async (c) => {
+    // SAFETY: addRefWatch validates the externally supplied watch contract.
     const input = (await safeJsonBody(c)) as Parameters<typeof addRefWatch>[0];
     const result = await addRefWatch(input, paths);
     return c.json(result, result.ok ? 200 : 400);
   });
 
   routes.post('/watches/:id/polling', async (c) => {
+    // SAFETY: setPrWatchPolling validates the action and the route owns id.
     const input = {
       ...(await safeJsonObject(c)),
       id: c.req.param('id'),

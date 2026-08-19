@@ -28,13 +28,7 @@ export async function runBuiltNeondeckServer(
     const child = spawn(process.execPath, [entry], {
       stdio: ['inherit', 'pipe', 'inherit'],
       cwd: packageRootForServerEntry(entry),
-      env: {
-        ...process.env,
-        ...(options.paths ? { NEONDECK_HOME: options.paths.home } : {}),
-        ...(options.verbose ? { NEONDECK_LOG_LEVEL: 'debug' } : {}),
-        NEONDECK_PORT: String(port),
-        PORT: String(port),
-      },
+      env: serverEnvironment(options, port),
     });
     let stoppingSignal: NodeJS.Signals | null = null;
     const forwardSignal = (signal: NodeJS.Signals) => {
@@ -109,7 +103,7 @@ export function rewriteServerLogLine(
   return [
     '[neondeck] Server ready',
     `  dashboard  http://127.0.0.1:${port}/`,
-    ...(runtimeHome ? [`  home       ${runtimeHome}`] : []),
+    ...serverHomeLogLine(runtimeHome),
     '  mode       foreground (Ctrl+C to stop)',
   ].join('\n');
 }
@@ -117,13 +111,32 @@ export function rewriteServerLogLine(
 export function resolveServerPort(value: number | string | undefined) {
   const raw = value ?? process.env.NEONDECK_PORT ?? process.env.PORT;
   if (raw === undefined || raw === '') return defaultServerPort;
-  const port = typeof raw === 'number' ? raw : Number(raw);
+  const port = numberPortValue(raw);
   if (!Number.isInteger(port) || port < 1 || port > 65_535) {
     throw new Error(
       `Port must be an integer between 1 and 65535, got ${JSON.stringify(raw)}.`,
     );
   }
   return port;
+}
+
+function serverEnvironment(options: RunBuiltServerOptions, port: number) {
+  const env: NodeJS.ProcessEnv = {
+    ...process.env,
+    NEONDECK_PORT: String(port),
+    PORT: String(port),
+  };
+  if (options.paths) env.NEONDECK_HOME = options.paths.home;
+  if (options.verbose) env.NEONDECK_LOG_LEVEL = 'debug';
+  return env;
+}
+
+function serverHomeLogLine(runtimeHome: string | undefined): string[] {
+  return runtimeHome ? [`  home       ${runtimeHome}`] : [];
+}
+
+function numberPortValue(value: number | string): number {
+  return Number(value);
 }
 
 function createServerOutputTransform(port: number, runtimeHome?: string) {

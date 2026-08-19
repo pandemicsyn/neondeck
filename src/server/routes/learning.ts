@@ -18,7 +18,7 @@ import {
   admitCurationLearningReview,
   admitPrBatchLearningReview,
 } from '../../modules/learning/reviews';
-import { boundedQueryLimit, safeJsonBody } from '../http';
+import { boundedQueryLimit, safeJsonBody, safeJsonObject } from '../http';
 
 export function createLearningRoutes(paths: RuntimePaths) {
   const routes = new Hono();
@@ -305,7 +305,7 @@ export function createLearningRoutes(paths: RuntimePaths) {
   });
 
   routes.post('/candidates/:id/approve', async (c) => {
-    const body = (await safeJsonBody(c)) as Record<string, unknown>;
+    const body = await safeJsonObject(c);
     const result = await decideMemoryCandidate(
       {
         ...body,
@@ -324,7 +324,7 @@ export function createLearningRoutes(paths: RuntimePaths) {
   });
 
   routes.post('/candidates/:id/reject', async (c) => {
-    const body = (await safeJsonBody(c)) as Record<string, unknown>;
+    const body = await safeJsonObject(c);
     const result = await decideMemoryCandidate(
       {
         ...body,
@@ -389,12 +389,12 @@ function learningReviewStatus(
   return undefined;
 }
 
-function memoryCandidateWasNotFound(result: unknown) {
-  if (!result || typeof result !== 'object') return false;
-  const record = result as { message?: unknown; requires?: unknown };
+function memoryCandidateWasNotFound(result: {
+  message?: string;
+  requires?: readonly string[];
+}) {
   return (
-    record.message === 'Memory candidate was not found.' &&
-    Array.isArray(record.requires) &&
-    record.requires.includes('id')
+    result.message === 'Memory candidate was not found.' &&
+    result.requires?.includes('id') === true
   );
 }

@@ -34,6 +34,7 @@ export function createConfigRoutes(paths: RuntimePaths) {
   });
 
   routes.post('/autopilot/prompts', async (c) => {
+    // SAFETY: updateAutopilotPrompt parses and validates its request payload.
     const input = (await safeJsonBody(c)) as Parameters<
       typeof updateAutopilotPrompt
     >[0];
@@ -46,6 +47,7 @@ export function createConfigRoutes(paths: RuntimePaths) {
   });
 
   routes.post('/pr-review/prompts', async (c) => {
+    // SAFETY: updatePrReviewPrompt parses and validates its request payload.
     const input = (await safeJsonBody(c)) as Parameters<
       typeof updatePrReviewPrompt
     >[0];
@@ -62,7 +64,7 @@ export function createConfigRoutes(paths: RuntimePaths) {
   });
 
   routes.post('/providers/kilocode', async (c) => {
-    const input = (await c.req.json()) as Record<string, unknown>;
+    const input = await safeJsonObject(c);
     return c.json(
       await updateProviderConfig(
         {
@@ -75,7 +77,7 @@ export function createConfigRoutes(paths: RuntimePaths) {
   });
 
   routes.post('/providers/:provider', async (c) => {
-    const input = (await safeJsonObject(c)) as Record<string, unknown>;
+    const input = await safeJsonObject(c);
     const provider = c.req.param('provider');
     if (provider !== 'openai-compatible' && !isRegisteredProvider(provider)) {
       return c.json(
@@ -89,6 +91,7 @@ export function createConfigRoutes(paths: RuntimePaths) {
       );
     }
 
+    // SAFETY: updateProviderConfig validates the request and provider is checked above.
     return c.json(
       await updateProviderConfig(
         {
@@ -101,6 +104,7 @@ export function createConfigRoutes(paths: RuntimePaths) {
   });
 
   routes.post('/worktrees/policy', async (c) => {
+    // SAFETY: updateWorktreePolicy parses and validates its request payload.
     const input = (await safeJsonBody(c)) as Parameters<
       typeof updateWorktreePolicy
     >[0];
@@ -109,7 +113,7 @@ export function createConfigRoutes(paths: RuntimePaths) {
   });
 
   routes.post('/repos/:repoId/autopilot-policy', async (c) => {
-    const input = (await safeJsonObject(c)) as Record<string, unknown>;
+    const input = await safeJsonObject(c);
     const result = await updateRepoAutopilotPolicy(
       { ...input, repoId: c.req.param('repoId') },
       paths,

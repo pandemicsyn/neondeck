@@ -219,11 +219,12 @@ export async function createApp(options: CreateAppOptions = {}) {
   return app;
 }
 
-type FlueRuntimeReadinessProbe = () => Promise<unknown>;
+type FlueRuntimeReadinessProbe = () => Promise<void>;
 
 export async function waitForFlueRuntime(
-  probe: FlueRuntimeReadinessProbe = () =>
-    getAgentInstance(DisplayAssistant, '__neondeck-runtime-readiness__'),
+  probe: FlueRuntimeReadinessProbe = async () => {
+    await getAgentInstance(DisplayAssistant, '__neondeck-runtime-readiness__');
+  },
   retryDelayMs = 25,
 ) {
   let waitedForConfiguration = false;
@@ -232,7 +233,8 @@ export async function waitForFlueRuntime(
       await probe();
       return waitedForConfiguration;
     } catch (error) {
-      if (!isRuntimeNotConfiguredError(error)) throw error;
+      const failure = error instanceof Error ? error : String(error);
+      if (!isRuntimeNotConfiguredError(failure)) throw error;
       waitedForConfiguration = true;
       await startupDelay(retryDelayMs);
     }
@@ -387,7 +389,7 @@ async function captureRuntimeStartupFailure<T>(
   }
 }
 
-function isRuntimeNotConfiguredError(error: unknown) {
+function isRuntimeNotConfiguredError(error: Error | string) {
   return (
     error instanceof Error &&
     error.message.includes('before runtime was configured')

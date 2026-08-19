@@ -14,6 +14,12 @@ import {
 import { boundedQueryLimit, safeJsonObject } from '../http';
 import { learningCandidateStatus } from './learning';
 
+type RestoreSkillPatchInput = {
+  id: string;
+  confirm: true;
+  reason?: string;
+};
+
 export function createSkillRoutes(paths: RuntimePaths) {
   const routes = new Hono();
 
@@ -71,12 +77,9 @@ export function createSkillRoutes(paths: RuntimePaths) {
 
   routes.post('/patches/:id/restore', async (c) => {
     const body = await safeJsonObject(c);
+    // SAFETY: restoreSkillPatchCandidate validates confirmation and reason.
     const result = await restoreSkillPatchCandidate(
-      { ...body, id: c.req.param('id') } as {
-        id: string;
-        confirm: true;
-        reason?: string;
-      },
+      { ...body, id: c.req.param('id') } as RestoreSkillPatchInput,
       paths,
     );
     return c.json(result, result.ok ? 200 : 400);

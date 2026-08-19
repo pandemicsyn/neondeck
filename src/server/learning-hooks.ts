@@ -18,6 +18,7 @@ import {
 } from '../modules/learning/reviews';
 import { settleScheduledTaskSubmission } from '../modules/scheduled-tasks';
 import type { RuntimePaths } from '../runtime-home';
+import * as v from 'valibot';
 
 type ObservationInstallDependencies = {
   observe?: (subscriber: FlueObservationSubscriber) => () => void;
@@ -185,13 +186,13 @@ function recordSubmissionFailure(
 
 function flueContextRuntimeHome(context: FlueEventContext | undefined) {
   const value = context?.env?.NEONDECK_HOME;
-  return typeof value === 'string' && value ? value : undefined;
+  return v.is(v.string(), value) && value ? value : undefined;
 }
 
 export function recordHandledPrApiResult(
   paths: RuntimePaths,
   workflow: string,
-  result: unknown,
+  result: Parameters<typeof recordHandledPrFromOperationResult>[0]['result'],
   dependencies: {
     recordHandledPr?: typeof recordHandledPrFromOperationResult;
   } = {},
@@ -241,6 +242,7 @@ function isDirectDisplayAssistantSubmission(
 ) {
   const database = openDb(paths.neondeckDatabase, { readOnly: true });
   try {
+    // SAFETY: sqlite returns the selected columns named by this query.
     const row = database
       .prepare(
         `SELECT kind, agent_name FROM activity_submissions WHERE submission_id = ?;`,

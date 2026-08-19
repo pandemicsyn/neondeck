@@ -1,6 +1,7 @@
 import type { JsonValue } from '@flue/runtime';
 import * as v from 'valibot';
 import type { ThinkingLevel } from '../../../runtime-home';
+import { isJsonValue } from '../../sessions/schemas';
 
 export type LearningReviewKind = 'conversation' | 'curation' | 'pr-batch';
 export type LearningReviewStatus = 'running' | 'completed' | 'failed';
@@ -30,7 +31,9 @@ export const maxReviewValueJsonChars = 4_000;
 export const jsonValueSchema = v.pipe(
   v.unknown(),
   v.check(
-    isBoundedJsonValue,
+    (value) =>
+      isJsonValue(value) &&
+      JSON.stringify(value).length <= maxReviewValueJsonChars,
     `Value must be JSON-safe and no larger than ${maxReviewValueJsonChars} serialized characters.`,
   ),
 );
@@ -205,31 +208,3 @@ export type FailedLearningReview = {
   errors: string[];
   requires?: string[];
 };
-
-function isJsonValue(value: unknown): boolean {
-  if (
-    value === null ||
-    typeof value === 'string' ||
-    typeof value === 'number' ||
-    typeof value === 'boolean'
-  ) {
-    return Number.isFinite(value) || typeof value !== 'number';
-  }
-
-  if (Array.isArray(value)) return value.every(isJsonValue);
-
-  if (typeof value === 'object') {
-    return Object.values(value).every(isJsonValue);
-  }
-
-  return false;
-}
-
-function isBoundedJsonValue(value: unknown): boolean {
-  if (!isJsonValue(value)) return false;
-  try {
-    return JSON.stringify(value).length <= maxReviewValueJsonChars;
-  } catch {
-    return false;
-  }
-}

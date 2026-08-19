@@ -1,8 +1,19 @@
 import { openDb } from '../../lib/sqlite.ts';
+import type { JsonValue } from '@flue/runtime';
 import type { DatabaseSync } from 'node:sqlite';
+import * as v from 'valibot';
+import { isJsonValue } from '../execution/utils';
 import { ensureRuntimeHome, runtimePaths } from '../../runtime-home';
 
 export const automationHealthDefaultWindowDays = 30;
+
+const jsonValueSchema = v.pipe(
+  v.unknown(),
+  v.check(isJsonValue, 'Expected a JSON value.'),
+);
+const jsonObjectSchema = v.record(v.string(), jsonValueSchema);
+const nonEmptyStringSchema = v.pipe(v.string(), v.trim(), v.minLength(1));
+const finiteNumberSchema = v.pipe(v.number(), v.finite());
 
 export type AutomationHealthSnapshot = {
   window: {
@@ -99,6 +110,7 @@ function reviewAssistHealth(
   database: DatabaseSync,
   window: AutomationHealthSnapshot['window'],
 ): AutomationHealthSnapshot['reviewAssist'] {
+  // SAFETY: This query selects exactly these grouped columns from the local schema.
   const rows = database
     .prepare(
       `
@@ -171,6 +183,7 @@ function revisionLoopHealth(
   database: DatabaseSync,
   window: AutomationHealthSnapshot['window'],
 ): AutomationHealthSnapshot['revisionLoop'] {
+  // SAFETY: This query selects only the nullable summary_json column.
   const revisionRows = database
     .prepare(
       `
@@ -244,6 +257,7 @@ function scheduledTaskHealth(
   database: DatabaseSync,
   window: AutomationHealthSnapshot['window'],
 ): AutomationHealthSnapshot['scheduledTasks'] {
+  // SAFETY: This query selects exactly these scheduled-task columns from the local schema.
   const rows = database
     .prepare(
       `
@@ -321,20 +335,26 @@ function githubReviewOutcomeSummaries(
   window: AutomationHealthSnapshot['window'],
 ) {
   return (
-    database
-      .prepare(
-        `
+    // SAFETY: This query selects only the nullable summary_json column.
+    (
+      database
+        .prepare(
+          `
         SELECT summary_json
         FROM workflow_summaries
         WHERE workflow = 'github_pr_review'
           AND created_at >= ? AND created_at <= ?;
       `,
-      )
-      .all(window.since, window.until) as Array<{ summary_json: string | null }>
-  ).map((row) => objectField(parseJson(row.summary_json)));
+        )
+        .all(window.since, window.until) as Array<{
+        summary_json: string | null;
+      }>
+    ).map((row) => objectField(parseJson(row.summary_json)))
+  );
 }
 
 function preparedDiffRevisionStatus(database: DatabaseSync, id: string) {
+  // SAFETY: The prepared-diff lookup selects only these two optional string columns.
   const row = database
     .prepare(
       `
@@ -356,6 +376,7 @@ function reportIds(
   kind: string,
   window: Pick<AutomationHealthSnapshot['window'], 'since' | 'until'>,
 ) {
+  // SAFETY: This report query selects its non-null id column only.
   const rows = database
     .prepare(
       `
@@ -375,6 +396,7 @@ function distinctWorkflowSummaryFieldValuesUntil(
   field: string,
   until: string,
 ) {
+  // SAFETY: This workflow query selects only the nullable summary_json column.
   const rows = database
     .prepare(
       `
@@ -418,25 +440,29 @@ function rate(numerator: number, denominator: number) {
   return Number((numerator / denominator).toFixed(4));
 }
 
-function parseJson(value: string | null | undefined) {
+function parseJson(value: string | null | undefined): JsonValue | null {
   if (!value) return null;
   try {
-    return JSON.parse(value) as unknown;
+    const parsed = v.safeParse(jsonValueSchema, JSON.parse(value));
+    // SAFETY: jsonValueSchema validates the parsed input is JSON-safe before this result crosses the boundary.
+    return parsed.success ? (parsed.output as JsonValue) : null;
   } catch {
     return null;
   }
 }
 
-function objectField(value: unknown): Record<string, unknown> {
-  return value && typeof value === 'object' && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : {};
+function objectField(value: JsonValue | null): Record<string, JsonValue> {
+  const parsed = v.safeParse(jsonObjectSchema, value);
+  // SAFETY: jsonObjectSchema validates every property is JSON-safe before returning the record.
+  return parsed.success ? (parsed.output as Record<string, JsonValue>) : {};
 }
 
-function stringField(value: unknown) {
-  return typeof value === 'string' && value.trim() ? value.trim() : null;
+function stringField(value: JsonValue | undefined) {
+  const parsed = v.safeParse(nonEmptyStringSchema, value);
+  return parsed.success ? parsed.output : null;
 }
 
-function numberField(value: unknown) {
-  return typeof value === 'number' && Number.isFinite(value) ? value : 0;
+function numberField(value: JsonValue | undefined) {
+  const parsed = v.safeParse(finiteNumberSchema, value);
+  return parsed.success ? parsed.output : 0;
 }

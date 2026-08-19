@@ -1,6 +1,8 @@
 import { type FlueObservation, type JsonValue } from '@flue/runtime';
 import { createHash } from 'node:crypto';
-import type { DatabaseSync } from 'node:sqlite';
+import type { DatabaseSync, SQLOutputValue } from 'node:sqlite';
+import * as v from 'valibot';
+import { isJsonValue } from '../execution/utils';
 import { openDb } from '../../lib/sqlite';
 import { ensureRuntimeHome, runtimePaths } from '../../runtime-home';
 
@@ -154,6 +156,40 @@ export type PrReviewPerformanceProjection = {
 const maxActivityEventRows = 5_000;
 const taskBriefSchemaVersion = 1;
 const redacted = '[redacted]';
+const externalValueSchema = v.unknown();
+const jsonValueSchema = v.pipe(
+  v.unknown(),
+  v.check(isJsonValue, 'Expected a JSON value.'),
+);
+const jsonObjectSchema = v.record(v.string(), jsonValueSchema);
+const scalarSchema = v.union([
+  v.string(),
+  v.pipe(v.number(), v.finite()),
+  v.boolean(),
+  v.null(),
+]);
+const activeSubmissionStatusSchema = v.picklist(['queued', 'running']);
+const maxNormalizedActivityDepth = 8;
+const maxNormalizedActivityEntries = 24;
+const maxNormalizedActivityNodes = 128;
+const maxNormalizedActivityStringLength = 2_000;
+const maxNormalizedActivityKeyLength = 200;
+const stableReviewWorkspaceResultExcludedKeys = new Set([
+  'workspaceToolCallsRemaining',
+  'outputRef',
+  'outputHint',
+]);
+const trustedErrorPrototypes = new Set<object>([
+  Error.prototype,
+  EvalError.prototype,
+  RangeError.prototype,
+  ReferenceError.prototype,
+  SyntaxError.prototype,
+  TypeError.prototype,
+  URIError.prototype,
+  AggregateError.prototype,
+]);
+type ExternalValue = v.InferInput<typeof externalValueSchema>;
 const persistedEventTypes = new Set<FlueObservation['type']>([
   'submission_queued',
   'submission_running',
@@ -297,26 +333,24 @@ export async function readActivitySubmissionEvents(
     const events = eventRows
       .map(readActivityEventRow)
       .sort(compareActivityEvents);
+    // SAFETY: This query selects only the event_count projection from the local SQLite schema.
     const projection = database
       .prepare(
         `SELECT event_count FROM activity_submissions
          WHERE submission_id = ?;`,
       )
-      .get(submissionId) as { event_count?: unknown } | undefined;
+      .get(submissionId);
+    // SAFETY: This query selects only the retained_event_count aggregate from the local SQLite schema.
     const retained = database
       .prepare(
         `SELECT COUNT(*) AS retained_event_count FROM activity_events
          WHERE submission_id = ?;`,
       )
-      .get(submissionId) as { retained_event_count?: unknown } | undefined;
+      .get(submissionId);
     const retainedEventCount =
-      typeof retained?.retained_event_count === 'number'
-        ? retained.retained_event_count
-        : events.length;
+      finiteNumberOrNull(retained?.retained_event_count) ?? events.length;
     const observedEventCount =
-      typeof projection?.event_count === 'number'
-        ? projection.event_count
-        : retainedEventCount;
+      finiteNumberOrNull(projection?.event_count) ?? retainedEventCount;
     const history = {
       events,
       totalEventCount: Math.max(observedEventCount, retainedEventCount),
@@ -989,7 +1023,9 @@ function summarizeObservation(event: FlueObservation): {
           outcome: event.outcome,
           attemptCount: event.attemptCount ?? null,
           maxAttempts: event.maxAttempts ?? null,
-          error: event.error ? summarizeError(event.error) : null,
+          error: event.error
+            ? summarizeError(normalizeActivityValue(event.error))
+            : null,
         },
       );
     case 'submission_settled':
@@ -999,7 +1035,9 @@ function summarizeObservation(event: FlueObservation): {
         event.outcome !== 'completed',
         {
           outcome: event.outcome,
-          error: event.error ? summarizeError(event.error) : null,
+          error: event.error
+            ? summarizeError(normalizeActivityValue(event.error))
+            : null,
         },
       );
     case 'log':
@@ -1009,7 +1047,7 @@ function summarizeObservation(event: FlueObservation): {
         event.level === 'error',
         {
           level: event.level,
-          attributes: sanitizeRecord(event.attributes),
+          attributes: sanitizeRecord(normalizeActivityValue(event.attributes)),
         },
       );
     case 'operation_start':
@@ -1029,8 +1067,10 @@ function summarizeObservation(event: FlueObservation): {
         event.isError,
         {
           operationKind: event.operationKind,
-          usage: summarizeUsage(event.usage),
-          error: event.isError ? summarizeError(event.error) : null,
+          usage: summarizeUsage(normalizeActivityValue(event.usage)),
+          error: event.isError
+            ? summarizeError(normalizeActivityValue(event.error))
+            : null,
         },
         event.operationKind,
         event.durationMs,
@@ -1060,7 +1100,7 @@ function summarizeObservation(event: FlueObservation): {
           reasoningLevel: event.request.reasoningLevel ?? null,
           responseModel: event.response.responseModel ?? null,
           finishReason: event.response.finishReason ?? null,
-          usage: summarizeUsage(event.response.usage),
+          usage: summarizeUsage(normalizeActivityValue(event.response.usage)),
         },
         null,
         event.durationMs,
@@ -1076,7 +1116,8 @@ function summarizeObservation(event: FlueObservation): {
           ...taskPromptMetadata(event.prompt),
         },
       );
-    case 'task':
+    case 'task': {
+      const result = normalizeActivityValue(event.result);
       return activitySummary(
         `Task ${event.taskId} ${event.isError ? 'failed' : 'completed'} in ${formatDuration(event.durationMs)}.`,
         event.agent ?? null,
@@ -1084,14 +1125,14 @@ function summarizeObservation(event: FlueObservation): {
         compactJsonRecord({
           taskId: event.taskId,
           agent: event.agent ?? null,
-          resultHash:
-            event.result === undefined ? null : privacyHash(event.result),
-          resultBytes: jsonByteLength(event.result),
-          ...taskResultMetadata(event.result),
+          resultHash: event.result === undefined ? null : privacyHash(result),
+          resultBytes: jsonByteLength(result),
+          ...taskResultMetadata(result),
         }),
         null,
         event.durationMs,
       );
+    }
     case 'compaction_start':
       return activitySummary('Context compaction started.', null, false, {
         reason: event.reason,
@@ -1105,7 +1146,7 @@ function summarizeObservation(event: FlueObservation): {
         {
           messagesBefore: event.messagesBefore,
           messagesAfter: event.messagesAfter,
-          usage: summarizeUsage(event.usage),
+          usage: summarizeUsage(normalizeActivityValue(event.usage)),
         },
         null,
         event.durationMs,
@@ -1234,28 +1275,20 @@ function scopeItemCount(value: string) {
     .filter(Boolean).length;
 }
 
-function privacyHash(value: unknown) {
-  let serialized: string;
-  try {
-    serialized = JSON.stringify(canonicalHashValue(value)) ?? 'null';
-  } catch {
-    serialized = String(value);
-  }
+function privacyHash(value: JsonValue) {
+  const serialized = JSON.stringify(canonicalHashValue(value));
   return `sha256:${createHash('sha256').update(serialized).digest('hex')}`;
 }
 
-function canonicalHashValue(value: unknown): unknown {
+function canonicalHashValue(value: JsonValue): JsonValue {
   if (Array.isArray(value)) return value.map(canonicalHashValue);
-  if (value && typeof value === 'object') {
-    return Object.fromEntries(
-      Object.entries(value as Record<string, unknown>)
-        .sort(([left], [right]) => left.localeCompare(right))
-        .map(([key, entry]) => [key, canonicalHashValue(entry)]),
-    );
-  }
-  if (typeof value === 'bigint') return value.toString();
-  if (value === undefined) return null;
-  return value;
+  const record = objectRecord(value);
+  if (!record) return value;
+  return Object.fromEntries(
+    Object.entries(record)
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([key, entry]) => [key, canonicalHashValue(entry)]),
+  );
 }
 
 const reviewWorkspaceToolPrefix = 'neondeck_review_workspace_';
@@ -1272,12 +1305,14 @@ function summarizeToolStart(
       {
         toolName: event.toolName,
         origin: event.origin ?? null,
-        args: summarizeUnknown(event.args),
+        args: summarizeUnknown(normalizeActivityValue(event.args)),
       },
     );
   }
-  const args = reviewWorkspaceArgs(event.args);
-  const target = typeof args.path === 'string' ? ` for ${args.path}` : '';
+  const normalizedArgs = normalizeActivityValue(event.args);
+  const args = reviewWorkspaceArgs(normalizedArgs);
+  const path = stringOrNull(args.path);
+  const target = path ? ` for ${path}` : '';
   return activitySummary(
     `Review workspace ${reviewOperation} started${target}.`,
     event.toolName,
@@ -1287,7 +1322,7 @@ function summarizeToolStart(
       operation: reviewOperation,
       phase: 'started',
       origin: event.origin ?? null,
-      inputHash: privacyHash(event.args),
+      inputHash: privacyHash(normalizedArgs),
       ...args,
     },
   );
@@ -1297,6 +1332,7 @@ function summarizeToolCompletion(
   event: Extract<FlueObservation, { type: 'tool' }>,
 ) {
   const reviewOperation = reviewWorkspaceOperation(event.toolName);
+  const error = normalizedErrorSummary(event.errorInfo);
   if (!reviewOperation) {
     return activitySummary(
       `Tool ${event.toolName} ${event.isError ? 'failed' : 'completed'} in ${formatDuration(event.durationMs)}.`,
@@ -1304,20 +1340,21 @@ function summarizeToolCompletion(
       event.isError,
       {
         toolName: event.toolName,
-        error: event.errorInfo?.message
-          ? summarizeError(event.errorInfo)
-          : null,
-        result: summarizeUnknown(event.effectiveResult ?? event.result),
+        error,
+        result: summarizeUnknown(
+          normalizeActivityValue(event.effectiveResult ?? event.result),
+        ),
       },
       null,
       event.durationMs,
     );
   }
-  const result = reviewWorkspaceResult(
-    reviewOperation,
-    event.effectiveResult ?? event.result,
-  );
-  const target = typeof result.path === 'string' ? ` for ${result.path}` : '';
+  const observedResult = event.effectiveResult ?? event.result;
+  const normalizedResult = normalizeActivityValue(observedResult);
+  const stableResult = stableReviewWorkspaceResult(observedResult);
+  const result = reviewWorkspaceResult(reviewOperation, normalizedResult);
+  const path = stringOrNull(result.path);
+  const target = path ? ` for ${path}` : '';
   return activitySummary(
     `Review workspace ${reviewOperation} ${event.isError ? 'failed' : 'completed'}${target} in ${formatDuration(event.durationMs)}.`,
     event.toolName,
@@ -1326,11 +1363,9 @@ function summarizeToolCompletion(
       category: 'review-workspace',
       operation: reviewOperation,
       phase: event.isError ? 'failed' : 'completed',
-      resultHash: privacyHash(
-        stableReviewWorkspaceResult(event.effectiveResult ?? event.result),
-      ),
+      resultHash: privacyHash(stableResult),
       ...result,
-      error: event.errorInfo?.message ? summarizeError(event.errorInfo) : null,
+      error,
     },
     null,
     event.durationMs,
@@ -1343,15 +1378,14 @@ function reviewWorkspaceOperation(toolName: string) {
     : null;
 }
 
-function reviewWorkspaceArgs(value: unknown): Record<string, JsonValue> {
+function reviewWorkspaceArgs(value: JsonValue): Record<string, JsonValue> {
   const record = objectRecord(value);
   if (!record) return {};
+  const query = stringOrNull(record.query);
   return compactJsonRecord({
     path: safeActivityPath(record.path),
-    queryLength:
-      typeof record.query === 'string' ? record.query.length : undefined,
-    queryHash:
-      typeof record.query === 'string' ? privacyHash(record.query) : undefined,
+    queryLength: query?.length,
+    queryHash: query === null ? undefined : privacyHash(query),
     revision: safeEnum(record.revision, ['head', 'base']),
     startLine: optionalNumber(record.startLine),
     endLine: optionalNumber(record.endLine),
@@ -1362,10 +1396,7 @@ function reviewWorkspaceArgs(value: unknown): Record<string, JsonValue> {
   });
 }
 
-function reviewWorkspaceResult(
-  operation: string,
-  value: unknown,
-): Record<string, JsonValue> {
+function reviewWorkspaceResult(operation: string, value: JsonValue) {
   const record = objectRecord(value);
   if (!record) return { result: summarizeUnknown(value) };
   const matches = Array.isArray(record.matches) ? record.matches : null;
@@ -1375,25 +1406,20 @@ function reviewWorkspaceResult(
   const lines = Array.isArray(record.lines) ? record.lines : null;
   const commits = Array.isArray(record.commits) ? record.commits : null;
   const summary = objectRecord(record.summary);
+  const query = stringOrNull(record.query);
   return compactJsonRecord({
     path: safeActivityPath(record.path),
-    queryLength:
-      typeof record.query === 'string' ? record.query.length : undefined,
-    queryHash:
-      typeof record.query === 'string' ? privacyHash(record.query) : undefined,
+    queryLength: query?.length,
+    queryHash: query === null ? undefined : privacyHash(query),
     revisionKind: safeEnum(record.revisionKind, ['head', 'base']),
     scope: safeEnum(record.scope, ['file', 'pull-request']),
-    available:
-      typeof record.available === 'boolean' ? record.available : undefined,
+    available: booleanOrUndefined(record.available),
     reason: safeActivityString(record.reason, 500),
     startLine: optionalNumber(record.startLine),
     endLine: optionalNumber(record.endLine),
     totalLines: optionalNumber(record.totalLines),
     rightLine: optionalNumber(record.rightLine),
-    targetChanged:
-      typeof record.targetChanged === 'boolean'
-        ? record.targetChanged
-        : undefined,
+    targetChanged: booleanOrUndefined(record.targetChanged),
     resultBytes: jsonByteLength(value),
     returnedPaths: paths?.length,
     returnedFiles: files?.length,
@@ -1403,10 +1429,7 @@ function reviewWorkspaceResult(
     returnedCommits: commits?.length,
     totalHunks: optionalNumber(record.totalHunks),
     totalMatches: optionalNumber(record.totalMatches),
-    outputRetained:
-      typeof record.outputRetained === 'boolean'
-        ? record.outputRetained
-        : undefined,
+    outputRetained: booleanOrUndefined(record.outputRetained),
     outputBytes: optionalNumber(record.outputBytes),
     outputLines: optionalNumber(record.outputLines),
     totalFiles: optionalNumber(summary?.files),
@@ -1414,8 +1437,7 @@ function reviewWorkspaceResult(
     deletions: optionalNumber(summary?.deletions),
     cursor: optionalNumber(record.cursor),
     nextCursor: optionalNumber(record.nextCursor),
-    truncated:
-      typeof record.truncated === 'boolean' ? record.truncated : undefined,
+    truncated: booleanOrUndefined(record.truncated),
     workspaceToolCallsRemaining: optionalNumber(
       record.workspaceToolCallsRemaining,
     ),
@@ -1424,23 +1446,16 @@ function reviewWorkspaceResult(
   });
 }
 
-function stableReviewWorkspaceResult(value: unknown) {
-  const record = objectRecord(value);
-  if (!record) return value;
-  return Object.fromEntries(
-    Object.entries(record).filter(
-      ([key]) =>
-        key !== 'workspaceToolCallsRemaining' &&
-        key !== 'outputRef' &&
-        key !== 'outputHint',
-    ),
-  );
+function stableReviewWorkspaceResult(value: ExternalValue) {
+  return normalizeActivityValue(value, stableReviewWorkspaceResultExcludedKeys);
 }
 
-function objectRecord(value: unknown) {
-  return value && typeof value === 'object' && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : null;
+function objectRecord(
+  value: JsonValue | undefined,
+): Record<string, JsonValue> | null {
+  const parsed = v.safeParse(jsonObjectSchema, value);
+  // SAFETY: jsonObjectSchema validates every property is JSON-safe before returning the record.
+  return parsed.success ? (parsed.output as Record<string, JsonValue>) : null;
 }
 
 function compactJsonRecord(
@@ -1453,33 +1468,29 @@ function compactJsonRecord(
   );
 }
 
-function safeActivityString(value: unknown, maxLength: number) {
-  if (typeof value !== 'string') return undefined;
-  if (looksSensitive(value)) return redacted;
-  return value.length > maxLength
-    ? `${value.slice(0, Math.max(0, maxLength - 3))}...`
-    : value;
+function safeActivityString(value: JsonValue | undefined, maxLength: number) {
+  const text = stringOrNull(value);
+  if (text === null) return undefined;
+  if (looksSensitive(text)) return redacted;
+  return text.length > maxLength
+    ? `${text.slice(0, Math.max(0, maxLength - 3))}...`
+    : text;
 }
 
-function safeActivityPath(value: unknown) {
-  if (typeof value !== 'string') return undefined;
-  if (
-    value.includes('\u0000') ||
-    value.includes('\n') ||
-    value.includes('\r')
-  ) {
+function safeActivityPath(value: JsonValue | undefined) {
+  const path = stringOrNull(value);
+  if (path === null) return undefined;
+  if (path.includes('\u0000') || path.includes('\n') || path.includes('\r')) {
     return '[invalid path]';
   }
-  return value.length > 1_000 ? `${value.slice(0, 997)}...` : value;
+  return path.length > 1_000 ? `${path.slice(0, 997)}...` : path;
 }
 
-function optionalNumber(value: unknown) {
-  return typeof value === 'number' && Number.isFinite(value)
-    ? value
-    : undefined;
+function optionalNumber(value: JsonValue | undefined) {
+  return finiteNumberOrNull(value) ?? undefined;
 }
 
-function jsonByteLength(value: unknown) {
+function jsonByteLength(value: JsonValue) {
   try {
     const serialized = JSON.stringify(value);
     return serialized === undefined
@@ -1490,10 +1501,9 @@ function jsonByteLength(value: unknown) {
   }
 }
 
-function safeEnum(value: unknown, values: readonly string[]) {
-  return typeof value === 'string' && values.includes(value)
-    ? value
-    : undefined;
+function safeEnum(value: JsonValue | undefined, values: readonly string[]) {
+  const text = stringOrNull(value);
+  return text !== null && values.includes(text) ? text : undefined;
 }
 
 function updateSubmissionProjection(
@@ -1642,15 +1652,16 @@ function updateSubmissionProjection(
     );
 }
 
-function readActivityEventRow(row: unknown): ActivityEventRecord {
-  const record = row as Record<string, unknown>;
+function readActivityEventRow(
+  row: Record<string, SQLOutputValue>,
+): ActivityEventRecord {
+  const record = row;
   const submissionId = stringOrNull(record.submission_id);
   return {
     id: Number(record.id),
     submissionId,
     eventType: String(record.event_type),
-    eventIndex:
-      typeof record.event_index === 'number' ? record.event_index : null,
+    eventIndex: finiteNumberOrNull(record.event_index),
     level: stringOrNull(record.level),
     message: String(record.message),
     name: stringOrNull(record.name),
@@ -1659,26 +1670,22 @@ function readActivityEventRow(row: unknown): ActivityEventRecord {
     agentName: stringOrNull(record.agent_name),
     instanceId: stringOrNull(record.instance_id),
     conversationId: stringOrNull(record.conversation_id),
-    durationMs:
-      typeof record.duration_ms === 'number' ? record.duration_ms : null,
+    durationMs: finiteNumberOrNull(record.duration_ms),
     isError: Boolean(record.is_error),
-    summary:
-      typeof record.summary_json === 'string'
-        ? parseJson(record.summary_json)
-        : null,
+    summary: parseNullableJson(record.summary_json),
     createdAt: String(record.created_at),
     detailUrl: activityDetailUrl(submissionId),
   };
 }
 
-function readActiveSubmissionRow(row: unknown) {
+function readActiveSubmissionRow(row: Record<string, SQLOutputValue>) {
   const submission = readSubmissionRow(row);
   return {
     submissionId: submission.submissionId,
     kind: submission.kind,
     agentName: submission.agentName,
     instanceId: submission.instanceId,
-    status: submission.status as 'queued' | 'running',
+    status: v.parse(activeSubmissionStatusSchema, submission.status),
     queuedAt: submission.queuedAt,
     startedAt: submission.startedAt,
     lastEventAt: submission.lastEventAt,
@@ -1689,8 +1696,8 @@ function readActiveSubmissionRow(row: unknown) {
   };
 }
 
-function readSubmissionRow(row: unknown) {
-  const record = row as Record<string, unknown>;
+function readSubmissionRow(row: Record<string, SQLOutputValue>) {
+  const record = row;
   return {
     submissionId: String(record.submission_id),
     kind: String(record.kind),
@@ -1736,35 +1743,195 @@ function pruneActivityEvents(database: DatabaseSync) {
     .run(maxActivityEventRows);
 }
 
-function sanitizeRecord(value: unknown) {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+/**
+ * Converts untrusted Flue observation payloads into bounded JSON without invoking
+ * user-defined serialization hooks or getters. Activity capture must never reject
+ * because a tool result is cyclic, contains a bigint, or has hostile metadata.
+ */
+function normalizeActivityValue(
+  value: ExternalValue,
+  excludedTopLevelKeys?: ReadonlySet<string>,
+): JsonValue {
+  const seen = new WeakSet<object>();
+  let remainingNodes = maxNormalizedActivityNodes;
+  try {
+    return normalize(value, 0);
+  } catch {
+    return { type: 'uninspectable-value' };
+  }
+
+  function normalize(current: ExternalValue, depth: number): JsonValue {
+    if (remainingNodes <= 0) return { type: 'truncated-size' };
+    remainingNodes -= 1;
+    if (depth >= maxNormalizedActivityDepth) {
+      return { type: 'truncated-depth' };
+    }
+    if (current === undefined) return null;
+    if (current === null) return null;
+    const text = v.safeParse(v.string(), current);
+    if (text.success) return boundedActivityString(text.output);
+    const number = v.safeParse(v.number(), current);
+    if (number.success) {
+      return Number.isFinite(number.output)
+        ? number.output
+        : { type: 'non-finite-number' };
+    }
+    const boolean = v.safeParse(v.boolean(), current);
+    if (boolean.success) return boolean.output;
+    const bigint = v.safeParse(v.bigint(), current);
+    if (bigint.success) return { type: 'bigint' };
+    const symbol = v.safeParse(v.symbol(), current);
+    if (symbol.success) return { type: 'symbol' };
+    if (v.is(v.function(), current)) return { type: 'function' };
+    if (!isObjectReference(current)) return { type: 'unsupported-value' };
+    if (seen.has(current)) return { type: 'cycle' };
+    seen.add(current);
+
+    try {
+      const isArray = Array.isArray(current);
+      if (current instanceof Error) return normalizeError(current);
+      if (isArray) return normalizeArray(current, depth);
+
+      const output: Record<string, JsonValue> = {};
+      let entryCount = 0;
+      for (const key in current) {
+        if (depth === 0 && excludedTopLevelKeys?.has(key)) continue;
+        if (entryCount >= maxNormalizedActivityEntries) {
+          output.$truncated = { type: 'truncated-entries' };
+          break;
+        }
+        entryCount += 1;
+        const descriptor = Object.getOwnPropertyDescriptor(current, key);
+        if (!descriptor) continue;
+        output[boundedActivityKey(key)] =
+          'value' in descriptor
+            ? normalize(descriptor.value, depth + 1)
+            : { type: 'accessor' };
+      }
+      return output;
+    } catch {
+      return { type: 'uninspectable-object' };
+    }
+  }
+
+  function normalizeArray(
+    array: readonly ExternalValue[],
+    depth: number,
+  ): JsonValue {
+    const lengthDescriptor = Object.getOwnPropertyDescriptor(array, 'length');
+    const length =
+      lengthDescriptor && 'value' in lengthDescriptor
+        ? finiteNumberOrNull(lengthDescriptor.value)
+        : null;
+    if (length === null || length < 0) return { type: 'invalid-array' };
+
+    const output: JsonValue[] = [];
+    const entryCount = Math.min(length, maxNormalizedActivityEntries);
+    for (let index = 0; index < entryCount; index += 1) {
+      const descriptor = Object.getOwnPropertyDescriptor(array, String(index));
+      output[index] = !descriptor
+        ? { type: 'array-hole' }
+        : 'value' in descriptor
+          ? normalize(descriptor.value, depth + 1)
+          : { type: 'accessor' };
+    }
+    if (length > entryCount) {
+      output[entryCount] = { type: 'truncated-entries' };
+    }
+    return output;
+  }
+
+  function normalizeError(error: Error): JsonValue {
+    const name =
+      descriptorString(Object.getOwnPropertyDescriptor(error, 'name')) ??
+      trustedErrorName(error) ??
+      'Error';
+    const message =
+      descriptorString(Object.getOwnPropertyDescriptor(error, 'message')) ??
+      'Unknown error';
+    return {
+      type: 'error',
+      name: sanitizeMessage(name),
+      message: sanitizeMessage(message),
+    };
+  }
+}
+
+function trustedErrorName(error: Error) {
+  let prototype = Object.getPrototypeOf(error);
+  let remainingDepth = maxNormalizedActivityDepth;
+  while (prototype !== null && remainingDepth > 0) {
+    if (trustedErrorPrototypes.has(prototype)) {
+      const name = descriptorString(
+        Object.getOwnPropertyDescriptor(prototype, 'name'),
+      );
+      if (name !== null) return name;
+    }
+    prototype = Object.getPrototypeOf(prototype);
+    remainingDepth -= 1;
+  }
+  return null;
+}
+
+function isObjectReference(value: ExternalValue): value is object {
+  return value !== null && Object(value) === value;
+}
+
+function descriptorString(descriptor: PropertyDescriptor | undefined) {
+  if (!descriptor || !('value' in descriptor)) return null;
+  const parsed = v.safeParse(v.string(), descriptor.value);
+  return parsed.success ? boundedActivityString(parsed.output) : null;
+}
+
+function boundedActivityString(value: string) {
+  return value.length > maxNormalizedActivityStringLength
+    ? `${value.slice(0, maxNormalizedActivityStringLength - 3)}...`
+    : value;
+}
+
+function boundedActivityKey(value: string) {
+  return value.length > maxNormalizedActivityKeyLength
+    ? `${value.slice(0, maxNormalizedActivityKeyLength - 3)}...`
+    : value;
+}
+
+function sanitizeRecord(value: JsonValue | undefined): JsonValue {
+  const record = objectRecord(value);
+  if (!record) return null;
+  // SAFETY: Every entry is reduced to summarizeScalar's JSON-safe result.
   return Object.fromEntries(
-    Object.entries(value)
+    Object.entries(record)
       .filter(([key]) => !isSensitiveKey(key))
-      .filter(([, entry]) => isSafeScalar(entry))
+      .map((entry) => [entry[0], safeScalar(entry[1])] as const)
+      .filter(
+        (entry): entry is readonly [string, string | number | boolean | null] =>
+          entry[1] !== null,
+      )
       .map(([key, entry]) => [key, summarizeScalar(entry)])
       .slice(0, 12),
   ) as JsonValue;
 }
 
-function summarizeUnknown(value: unknown): JsonValue {
+function summarizeUnknown(value: JsonValue | undefined): JsonValue {
   if (value === undefined) return null;
-  if (isSafeScalar(value)) return summarizeScalar(value);
+  const scalar = safeScalar(value);
+  if (scalar !== null) return summarizeScalar(scalar);
   if (Array.isArray(value)) return { type: 'array', length: value.length };
-  if (value && typeof value === 'object') {
+  const record = objectRecord(value);
+  if (record) {
     return {
       type: 'object',
-      keys: Object.keys(value)
+      keys: Object.keys(record)
         .filter((key) => !isSensitiveKey(key))
         .slice(0, 12),
     };
   }
-  return { type: typeof value };
+  return { type: 'unsupported' };
 }
 
-function summarizeUsage(usage: unknown): JsonValue {
-  if (!usage || typeof usage !== 'object') return null;
-  const record = usage as Record<string, unknown>;
+function summarizeUsage(usage: JsonValue | undefined): JsonValue {
+  const record = objectRecord(usage);
+  if (!record) return null;
   return {
     totalTokens: readNumber(record.totalTokens),
     inputTokens: readNumber(record.input ?? record.inputTokens),
@@ -1775,9 +1942,9 @@ function summarizeUsage(usage: unknown): JsonValue {
   };
 }
 
-function summarizeCost(cost: unknown): JsonValue {
-  if (!cost || typeof cost !== 'object') return null;
-  const record = cost as Record<string, unknown>;
+function summarizeCost(cost: JsonValue | undefined): JsonValue {
+  const record = objectRecord(cost);
+  if (!record) return null;
   return {
     input: readNumber(record.input),
     output: readNumber(record.output),
@@ -1787,19 +1954,28 @@ function summarizeCost(cost: unknown): JsonValue {
   };
 }
 
-function summarizeError(error: unknown): JsonValue {
+function normalizedErrorSummary(value: ExternalValue): JsonValue | null {
+  const normalized = normalizeActivityValue(value);
+  const record = objectRecord(normalized);
+  if (!record || stringOrNull(record.message) === null) return null;
+  return summarizeError(normalized);
+}
+
+function summarizeError(error: Error | JsonValue | undefined): JsonValue {
+  const errorRecord = error instanceof Error ? null : objectRecord(error);
+  const errorName = errorRecord ? stringOrNull(errorRecord.name) : null;
+  const errorType = errorRecord ? stringOrNull(errorRecord.type) : null;
   return {
-    type:
-      error && typeof error === 'object' && 'name' in error
-        ? String((error as { name?: unknown }).name)
-        : 'Error',
+    type: errorName ?? errorType ?? 'Error',
     message: sanitizeMessage(errorMessage(error)),
   };
 }
 
 function parseJson(value: string): JsonValue | null {
   try {
-    return JSON.parse(value) as JsonValue;
+    const parsed = v.safeParse(jsonValueSchema, JSON.parse(value));
+    // SAFETY: jsonValueSchema validates the parsed input is JSON-safe before this result crosses the boundary.
+    return parsed.success ? (parsed.output as JsonValue) : null;
   } catch {
     return { type: 'parse-error' };
   }
@@ -1811,25 +1987,24 @@ function sanitizeMessage(value: string) {
 }
 
 function summarizeScalar(value: string | number | boolean | null): JsonValue {
-  if (value === null || typeof value === 'boolean') return value;
-  if (typeof value === 'number') return Number.isFinite(value) ? value : null;
-  if (looksSensitive(value)) return redacted;
+  const booleanValue = v.safeParse(v.boolean(), value);
+  if (value === null || booleanValue.success) return value;
+  const numberValue = v.safeParse(v.pipe(v.number(), v.finite()), value);
+  if (numberValue.success) return numberValue.output;
+  const text = v.safeParse(v.string(), value);
+  if (!text.success) return null;
+  if (looksSensitive(text.output)) return redacted;
   return {
     type: 'string',
-    length: value.length,
-    preview: value.length > 80 ? `${value.slice(0, 77)}...` : value,
+    length: text.output.length,
+    preview:
+      text.output.length > 80 ? `${text.output.slice(0, 77)}...` : text.output,
   };
 }
 
-function isSafeScalar(
-  value: unknown,
-): value is string | number | boolean | null {
-  return (
-    value === null ||
-    typeof value === 'string' ||
-    typeof value === 'boolean' ||
-    (typeof value === 'number' && Number.isFinite(value))
-  );
+function safeScalar(value: JsonValue) {
+  const parsed = v.safeParse(scalarSchema, value);
+  return parsed.success ? parsed.output : null;
 }
 
 function isSensitiveKey(key: string) {
@@ -1846,26 +2021,43 @@ function looksSensitive(value: string) {
   );
 }
 
-function errorMessage(error: unknown) {
+function errorMessage(error: Error | JsonValue | undefined) {
   if (!error) return 'Unknown error';
   if (error instanceof Error) return error.message;
-  if (typeof error === 'object' && 'message' in error) {
-    const message = (error as { message?: unknown }).message;
-    if (typeof message === 'string') return message;
-  }
+  const record = objectRecord(error);
+  const message = record ? stringOrNull(record.message) : null;
+  if (message !== null) return message;
   return String(error);
 }
 
-function readNumber(value: unknown) {
-  return typeof value === 'number' && Number.isFinite(value) ? value : null;
+function readNumber(value: JsonValue | undefined) {
+  return finiteNumberOrNull(value);
 }
 
 function boundedIdentifier(value: string | null) {
   return value ? value.slice(0, 200) : null;
 }
 
-function stringOrNull(value: unknown) {
-  return typeof value === 'string' ? value : null;
+function stringOrNull(value: JsonValue | SQLOutputValue | undefined) {
+  const parsed = v.safeParse(v.string(), value);
+  return parsed.success ? parsed.output : null;
+}
+
+function finiteNumberOrNull(value: JsonValue | SQLOutputValue | undefined) {
+  const parsed = v.safeParse(v.pipe(v.number(), v.finite()), value);
+  return parsed.success ? parsed.output : null;
+}
+
+function booleanOrUndefined(value: JsonValue | undefined) {
+  const parsed = v.safeParse(v.boolean(), value);
+  return parsed.success ? parsed.output : undefined;
+}
+
+function parseNullableJson(
+  value: SQLOutputValue | undefined,
+): JsonValue | null {
+  const text = stringOrNull(value);
+  return text === null ? null : parseJson(text);
 }
 
 function formatDuration(ms: number) {

@@ -1,7 +1,8 @@
 import { openDb } from '../../lib/sqlite.ts';
 import { defineTool, type JsonValue } from '@flue/runtime';
-import type { DatabaseSync } from 'node:sqlite';
+import type { DatabaseSync, SQLOutputValue } from 'node:sqlite';
 import * as v from 'valibot';
+import { isJsonValue } from '../execution/utils';
 import {
   ensureRuntimeHome,
   parseAppConfig,
@@ -29,6 +30,11 @@ const learningOperatorInputSchema = v.object({
 });
 
 const learningCountMapSchema = v.record(v.string(), v.number());
+const jsonValueSchema = v.pipe(
+  v.unknown(),
+  v.check(isJsonValue, 'Expected a JSON value.'),
+);
+const jsonObjectSchema = v.record(v.string(), jsonValueSchema);
 const learningOperatorOutputSchema = v.variant('ok', [
   v.object({
     ok: v.literal(false),
@@ -217,7 +223,7 @@ function readReviews(
     )
     .all(...params, input.limit)
     .map((row) => {
-      const record = row as Record<string, unknown>;
+      const record = row;
       return {
         id: String(record.id),
         kind: String(record.kind),
@@ -266,8 +272,8 @@ function readCandidates(
     .map(readCandidateRow);
 }
 
-function readCandidateRow(row: unknown) {
-  const record = row as Record<string, unknown>;
+function readCandidateRow(row: Record<string, SQLOutputValue>) {
+  const record = row;
   const target = String(record.target);
   const patch = parseJson(record.patch_json);
   return {
@@ -306,7 +312,7 @@ function readMemoryEvents(
     )
     .all(...params, input.limit)
     .map((row) => {
-      const record = row as Record<string, unknown>;
+      const record = row;
       return {
         id: String(record.id),
         memoryId: stringOrNull(record.memory_id),
@@ -332,7 +338,7 @@ function readLearningEvents(database: DatabaseSync, input: { limit: number }) {
     )
     .all(input.limit)
     .map((row) => {
-      const record = row as Record<string, unknown>;
+      const record = row;
       return {
         id: String(record.id),
         type: String(record.type),
@@ -348,13 +354,19 @@ function readLearningEvents(database: DatabaseSync, input: { limit: number }) {
 }
 
 function summarizeSkillPatch(value: JsonValue | null) {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return value;
-  const patch = value as Record<string, unknown>;
+  const parsedPatch = v.safeParse(jsonObjectSchema, value);
+  if (!parsedPatch.success) return value;
+  // SAFETY: jsonObjectSchema validates every property before this record is read.
+  const patch = parsedPatch.output as Record<string, JsonValue>;
   const operation = patch.operation;
-  const operationType =
-    operation && typeof operation === 'object' && !Array.isArray(operation)
-      ? String((operation as Record<string, unknown>).type ?? '')
-      : null;
+  const parsedOperation = v.safeParse(jsonObjectSchema, operation);
+  // SAFETY: jsonObjectSchema validates operation properties before reading its type.
+  const operationRecord = parsedOperation.success
+    ? (parsedOperation.output as Record<string, JsonValue>)
+    : null;
+  const operationType = operationRecord
+    ? String(operationRecord.type ?? '')
+    : null;
   return {
     skillId: stringOrNull(patch.skillId),
     skillSource: stringOrNull(patch.skillSource),
@@ -382,26 +394,30 @@ function countsBy(database: DatabaseSync, table: string, column: string) {
       )
       .all()
       .map((row) => {
-        const record = row as Record<string, unknown>;
+        const record = row;
         return [String(record.name), Number(record.count ?? 0)];
       }),
   );
 }
 
 function scalarCount(database: DatabaseSync, sql: string) {
-  const row = database.prepare(sql).get() as { count?: unknown } | undefined;
+  const row = database.prepare(sql).get();
   return Number(row?.count ?? 0);
 }
 
-function parseJson(value: unknown): JsonValue | null {
-  if (typeof value !== 'string') return null;
+function parseJson(value: SQLOutputValue | undefined): JsonValue | null {
+  const text = v.safeParse(v.string(), value);
+  if (!text.success) return null;
   try {
-    return JSON.parse(value) as JsonValue;
+    const parsed = v.safeParse(jsonValueSchema, JSON.parse(text.output));
+    // SAFETY: jsonValueSchema validates the parsed input is JSON-safe before this result crosses the boundary.
+    return parsed.success ? (parsed.output as JsonValue) : null;
   } catch {
     return null;
   }
 }
 
-function stringOrNull(value: unknown) {
-  return typeof value === 'string' ? value : null;
+function stringOrNull(value: JsonValue | SQLOutputValue | undefined) {
+  const parsed = v.safeParse(v.string(), value);
+  return parsed.success ? parsed.output : null;
 }

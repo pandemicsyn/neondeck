@@ -5,7 +5,7 @@ import {
   registerHandoffWatchPr,
 } from '../../modules/handoff';
 import type { RuntimePaths } from '../../runtime-home';
-import { safeJsonObject } from '../http';
+import { isJsonString, safeJsonObject } from '../http';
 
 export function createHandoffRoutes(paths: RuntimePaths) {
   const routes = new Hono();
@@ -14,6 +14,7 @@ export function createHandoffRoutes(paths: RuntimePaths) {
     const input = await handoffBody(c);
     if (!input.ok) return c.json(input.result, 400);
     const body = input.body;
+    // SAFETY: handoffBody verifies source before this action's input validation.
     const result = await registerHandoffWatchPr(
       {
         ref: body.ref,
@@ -29,6 +30,7 @@ export function createHandoffRoutes(paths: RuntimePaths) {
   routes.post('/handoff/note', async (c) => {
     const input = await handoffBody(c);
     if (!input.ok) return c.json(input.result, 400);
+    // SAFETY: createHandoffNote validates the parsed HTTP body.
     const result = await createHandoffNote(
       input.body as Parameters<typeof createHandoffNote>[0],
       paths,
@@ -39,6 +41,7 @@ export function createHandoffRoutes(paths: RuntimePaths) {
   routes.post('/handoff/register-pr', async (c) => {
     const input = await handoffBody(c);
     if (!input.ok) return c.json(input.result, 400);
+    // SAFETY: registerHandoffPr validates the parsed HTTP body.
     const result = await registerHandoffPr(
       input.body as Parameters<typeof registerHandoffPr>[0],
       paths,
@@ -51,7 +54,7 @@ export function createHandoffRoutes(paths: RuntimePaths) {
 
 async function handoffBody(c: Context) {
   const body = await safeJsonObject(c);
-  if (typeof body.source !== 'string' || !body.source.trim()) {
+  if (!isJsonString(body.source) || !body.source.trim()) {
     return {
       ok: false as const,
       result: {

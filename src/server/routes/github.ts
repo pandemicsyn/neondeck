@@ -29,7 +29,15 @@ import {
   reservePrReviewSubmission,
   submitPrReview,
 } from '../../modules/pr-reviews';
-import { queryNumber, safeJsonBody } from '../http';
+import {
+  isJsonNumber,
+  isJsonObject,
+  isJsonString,
+  type JsonObject,
+  type JsonValue,
+  queryNumber,
+  safeJsonBody,
+} from '../http';
 import { recordHumanReviewSubmittedApiEvidence } from '../learning-hooks';
 
 export function createGitHubRoutes(
@@ -144,6 +152,7 @@ export function createGitHubRoutes(
       c.req.param('number'),
     );
     if (!target.ok) return c.json(target.result, 400);
+    // SAFETY: the PR-event action validates its parsed request payload.
     const result = await putGitHubPrReviewDraft(
       target.input,
       (await safeJsonBody(c)) as Parameters<typeof putGitHubPrReviewDraft>[1],
@@ -162,6 +171,7 @@ export function createGitHubRoutes(
       c.req.param('number'),
     );
     if (!target.ok) return c.json(target.result, 400);
+    // SAFETY: the PR-event action validates its parsed request payload.
     const result = await postGitHubPrReviewDraftComment(
       target.input,
       (await safeJsonBody(c)) as Parameters<
@@ -181,6 +191,7 @@ export function createGitHubRoutes(
         c.req.param('number'),
       );
       if (!target.ok) return c.json(target.result, 400);
+      // SAFETY: the PR-event action validates its parsed request payload.
       const result = await patchGitHubPrReviewDraftComment(
         target.input,
         c.req.param('id'),
@@ -231,10 +242,9 @@ export function createGitHubRoutes(
     if (!target.ok) return c.json(target.result, 400);
     const reviewInput = await safeJsonBody(c);
     const reviewInputObject = objectField(reviewInput);
-    const requestedHeadSha =
-      typeof reviewInputObject.headSha === 'string'
-        ? reviewInputObject.headSha
-        : null;
+    const requestedHeadSha = isJsonString(reviewInputObject.headSha)
+      ? reviewInputObject.headSha
+      : null;
     const durableReview = readPrReviewForTarget(
       target.input.repo,
       target.input.prNumber,
@@ -315,7 +325,7 @@ export function createGitHubRoutes(
       : () => {};
     const recordSubmittedReviewEvidence = (
       submittedVerdict: 'comment' | 'approve' | 'request-changes',
-      review: Record<string, unknown>,
+      review: JsonObject,
     ) =>
       (
         dependencies.recordHumanReviewSubmittedApiEvidence ??
@@ -326,7 +336,7 @@ export function createGitHubRoutes(
         prNumber: target.input.prNumber,
         headSha: requestedHeadSha ?? '',
         reviewId: identifier(review.id),
-        reviewUrl: typeof review.url === 'string' ? review.url : null,
+        reviewUrl: isJsonString(review.url) ? review.url : null,
         verdict: submittedVerdict,
       });
 
@@ -338,10 +348,9 @@ export function createGitHubRoutes(
         target.input,
         {
           headSha: requestedHeadSha ?? '',
-          body:
-            typeof reviewInputObject.body === 'string'
-              ? reviewInputObject.body
-              : null,
+          body: isJsonString(reviewInputObject.body)
+            ? reviewInputObject.body
+            : null,
           verdict,
         },
         paths,
@@ -351,7 +360,7 @@ export function createGitHubRoutes(
         return c.json(savedDraftResult, 400);
       }
       const savedDraft = objectField(objectField(savedDraftResult.data).draft);
-      if (typeof savedDraft.id !== 'string') {
+      if (!isJsonString(savedDraft.id)) {
         releaseReservation();
         return c.json(
           {
@@ -372,8 +381,8 @@ export function createGitHubRoutes(
           draftId: savedDraft.id,
           headSha: requestedHeadSha ?? '',
           commentIds: Array.isArray(reviewInputObject.commentIds)
-            ? reviewInputObject.commentIds.filter(
-                (id): id is string => typeof id === 'string',
+            ? reviewInputObject.commentIds.filter((id): id is string =>
+                isJsonString(id),
               )
             : undefined,
         },
@@ -394,10 +403,9 @@ export function createGitHubRoutes(
                 {
                   reviewId: reserved.id,
                   verdict: submittedVerdict,
-                  githubReviewUrl:
-                    typeof acceptedReview.review.url === 'string'
-                      ? acceptedReview.review.url
-                      : null,
+                  githubReviewUrl: isJsonString(acceptedReview.review.url)
+                    ? acceptedReview.review.url
+                    : null,
                 },
                 paths,
               )
@@ -428,8 +436,7 @@ export function createGitHubRoutes(
             {
               reviewId: reserved.id,
               verdict: submittedVerdict,
-              githubReviewUrl:
-                typeof review.url === 'string' ? review.url : null,
+              githubReviewUrl: isJsonString(review.url) ? review.url : null,
             },
             paths,
           )
@@ -465,6 +472,7 @@ export function createGitHubRoutes(
         c.req.param('number'),
       );
       if (!target.ok) return c.json(target.result, 400);
+      // SAFETY: the PR-event action validates its parsed request payload.
       const result = await postGitHubPrThreadReply(
         target.input,
         c.req.param('threadId'),
@@ -516,6 +524,7 @@ export function createGitHubRoutes(
   );
 
   routes.post('/prs/event-state', async (c) => {
+    // SAFETY: the PR-event action validates its parsed request payload.
     const result = await getGitHubPrEventState(
       (await safeJsonBody(c)) as Parameters<typeof getGitHubPrEventState>[0],
       paths,
@@ -524,6 +533,7 @@ export function createGitHubRoutes(
   });
 
   routes.post('/prs/review-threads', async (c) => {
+    // SAFETY: the PR-event action validates its parsed request payload.
     const result = await getGitHubPrReviewThreads(
       (await safeJsonBody(c)) as Parameters<typeof getGitHubPrReviewThreads>[0],
       paths,
@@ -534,6 +544,7 @@ export function createGitHubRoutes(
   });
 
   routes.post('/prs/requested-changes', async (c) => {
+    // SAFETY: the PR-event action validates its parsed request payload.
     const result = await getGitHubPrRequestedChanges(
       (await safeJsonBody(c)) as Parameters<
         typeof getGitHubPrRequestedChanges
@@ -544,6 +555,7 @@ export function createGitHubRoutes(
   });
 
   routes.post('/prs/branch-permissions', async (c) => {
+    // SAFETY: the PR-event action validates its parsed request payload.
     const result = await getGitHubPrBranchPermissions(
       (await safeJsonBody(c)) as Parameters<
         typeof getGitHubPrBranchPermissions
@@ -554,6 +566,7 @@ export function createGitHubRoutes(
   });
 
   routes.post('/prs/comment', async (c) => {
+    // SAFETY: the PR-event action validates its parsed request payload.
     const result = await postGitHubPrComment(
       (await safeJsonBody(c)) as Parameters<typeof postGitHubPrComment>[0],
       paths,
@@ -564,15 +577,17 @@ export function createGitHubRoutes(
   return routes;
 }
 
-function unverifiedAcceptedReview(result: {
+type GitHubActionResult = {
   ok: boolean;
   action: string;
   changed: boolean;
   message: string;
-  data?: unknown;
+  data?: JsonValue;
   requires?: string[];
   errors?: string[];
-}) {
+};
+
+function unverifiedAcceptedReview(result: GitHubActionResult) {
   if (
     result.ok ||
     !result.changed ||
@@ -584,8 +599,8 @@ function unverifiedAcceptedReview(result: {
   const draft = objectField(data.draft);
   const review = objectField(data.review);
   if (
-    (typeof review.id !== 'string' && typeof review.id !== 'number') ||
-    (typeof draft.verdict !== 'string' && draft.verdict !== null)
+    (!isJsonString(review.id) && !isJsonNumber(review.id)) ||
+    (!isJsonString(draft.verdict) && draft.verdict !== null)
   ) {
     return null;
   }
@@ -595,13 +610,11 @@ function unverifiedAcceptedReview(result: {
   };
 }
 
-function objectField(value: unknown): Record<string, unknown> {
-  return value && typeof value === 'object' && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : {};
+function objectField(value: JsonValue | undefined): JsonObject {
+  return value !== undefined && isJsonObject(value) ? value : {};
 }
 
-function prReviewVerdict(value: unknown) {
+function prReviewVerdict(value: JsonValue | undefined) {
   return value === 'comment' ||
     value === 'approve' ||
     value === 'request-changes'
@@ -609,10 +622,10 @@ function prReviewVerdict(value: unknown) {
     : null;
 }
 
-function identifier(value: unknown) {
-  return typeof value === 'string' && value
+function identifier(value: JsonValue | undefined) {
+  return isJsonString(value) && value
     ? value
-    : typeof value === 'number' && Number.isFinite(value)
+    : isJsonNumber(value)
       ? String(value)
       : '';
 }

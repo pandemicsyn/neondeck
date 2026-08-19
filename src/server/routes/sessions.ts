@@ -43,6 +43,7 @@ export function createSessionRoutes(paths: RuntimePaths) {
   });
 
   routes.post('/sessions/search', async (c) => {
+    // SAFETY: searchChatSessions validates its request payload.
     const result = await searchChatSessions(
       (await safeJsonBody(c)) as Parameters<typeof searchChatSessions>[0],
       paths,
@@ -51,6 +52,7 @@ export function createSessionRoutes(paths: RuntimePaths) {
   });
 
   routes.post('/sessions', async (c) => {
+    // SAFETY: createChatSession validates its request payload.
     const result = await createChatSession(
       (await safeJsonBody(c)) as Parameters<typeof createChatSession>[0],
       paths,
@@ -111,6 +113,7 @@ export function createSessionRoutes(paths: RuntimePaths) {
   });
 
   routes.post('/sessions/:id/command-events', async (c) => {
+    // SAFETY: the command-event action validates its payload and the route owns ids.
     const result = await createChatSessionCommandEvent(
       {
         ...(await safeJsonObject(c)),
@@ -122,6 +125,7 @@ export function createSessionRoutes(paths: RuntimePaths) {
   });
 
   routes.post('/sessions/:id/command-events/:eventId', async (c) => {
+    // SAFETY: the command-event action validates its payload and the route owns ids.
     const result = await updateChatSessionCommandEvent(
       {
         ...(await safeJsonObject(c)),
@@ -134,6 +138,7 @@ export function createSessionRoutes(paths: RuntimePaths) {
   });
 
   routes.post('/sessions/:id/summary/refresh', async (c) => {
+    // SAFETY: refreshChatSessionSummary validates its payload and the route owns id.
     const result = await refreshChatSessionSummary(
       {
         ...(await safeJsonObject(c)),
@@ -145,6 +150,7 @@ export function createSessionRoutes(paths: RuntimePaths) {
   });
 
   routes.post('/sessions/:id/reference', async (c) => {
+    // SAFETY: referenceChatSession validates its payload and the route owns id.
     const result = await referenceChatSession(
       {
         ...(await safeJsonObject(c)),
@@ -156,6 +162,7 @@ export function createSessionRoutes(paths: RuntimePaths) {
   });
 
   routes.post('/sessions/:id/switch', async (c) => {
+    // SAFETY: switchChatSession validates its payload and the route owns id.
     const result = await switchChatSession(
       { ...(await safeJsonObject(c)), id: c.req.param('id') },
       paths,
@@ -164,6 +171,7 @@ export function createSessionRoutes(paths: RuntimePaths) {
   });
 
   routes.post('/sessions/:id/rename', async (c) => {
+    // SAFETY: renameChatSession validates its payload and the route owns id.
     const result = await renameChatSession(
       {
         ...(await safeJsonObject(c)),
@@ -175,6 +183,7 @@ export function createSessionRoutes(paths: RuntimePaths) {
   });
 
   routes.post('/sessions/:id/pin', async (c) => {
+    // SAFETY: pinChatSession validates its payload and the route owns id.
     const result = await pinChatSession(
       {
         ...(await safeJsonObject(c)),
@@ -186,6 +195,7 @@ export function createSessionRoutes(paths: RuntimePaths) {
   });
 
   routes.post('/sessions/:id/archive', async (c) => {
+    // SAFETY: archiveChatSession validates its payload and the route owns id.
     const result = await archiveChatSession(
       { ...(await safeJsonObject(c)), id: c.req.param('id') },
       paths,
@@ -194,6 +204,7 @@ export function createSessionRoutes(paths: RuntimePaths) {
   });
 
   routes.post('/sessions/:id/restore', async (c) => {
+    // SAFETY: restoreChatSession validates its payload and the route owns id.
     const result = await restoreChatSession(
       { ...(await safeJsonObject(c)), id: c.req.param('id') },
       paths,
@@ -202,6 +213,7 @@ export function createSessionRoutes(paths: RuntimePaths) {
   });
 
   routes.post('/sessions/:id/link-context', async (c) => {
+    // SAFETY: linkChatSessionContext validates its payload and the route owns id.
     const result = await linkChatSessionContext(
       { ...(await safeJsonObject(c)), id: c.req.param('id') },
       paths,

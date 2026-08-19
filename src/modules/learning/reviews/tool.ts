@@ -10,7 +10,27 @@ import {
   learningReviewOutputSchema,
   type PreparedLearningReview,
 } from './schemas';
+import { compactJson } from './store';
 import { runtimePaths } from '../../../runtime-home';
+
+const completedEffectRecordSchema = v.looseObject({
+  changed: v.optional(v.boolean()),
+  id: v.optional(v.string()),
+  candidateId: v.optional(v.string()),
+  memoryId: v.optional(v.string()),
+  skillId: v.optional(v.string()),
+  candidate: v.optional(v.unknown()),
+  memory: v.optional(v.unknown()),
+});
+
+export type CompletedEffectIdentifiers = {
+  id?: string;
+  candidateId?: string;
+  memoryId?: string;
+  skillId?: string;
+};
+
+type CompletedEffectRecord = v.InferOutput<typeof completedEffectRecordSchema>;
 
 export function createSubmitLearningReviewTool(
   prepared: PreparedLearningReview,
@@ -42,7 +62,7 @@ export function createSubmitLearningReviewTool(
                 uncertainEffect = name;
                 const effectResult = await step.do(name, effect);
                 completedEffects.push(
-                  summarizeCompletedEffect(name, effectResult),
+                  summarizeCompletedEffect(name, compactJson(effectResult)),
                 );
                 uncertainEffect = undefined;
                 return effectResult;
@@ -85,35 +105,45 @@ export function createSubmitLearningReviewTool(
 
 function summarizeCompletedEffect(
   name: string,
-  result: unknown,
+  result: import('@flue/runtime').JsonValue,
 ): CompletedLearningReviewEffect {
-  const record = asRecord(result);
-  const identifiers = {
-    ...readIdentifiers(record),
-    ...readIdentifiers(asRecord(record?.candidate)),
-    ...readIdentifiers(asRecord(record?.memory)),
-  };
+  const record = parseCompletedEffectRecord(result);
+  const identifiers = readIdentifiers(record);
+  const candidate =
+    record?.candidate === undefined
+      ? undefined
+      : parseCompletedEffectRecord(compactJson(record.candidate));
+  const memory =
+    record?.memory === undefined
+      ? undefined
+      : parseCompletedEffectRecord(compactJson(record.memory));
+  appendIdentifiers(identifiers, candidate);
+  appendIdentifiers(identifiers, memory);
   return {
     name,
     changed: record?.changed === true,
-    ...(Object.keys(identifiers).length > 0 ? { identifiers } : {}),
+    identifiers: Object.keys(identifiers).length > 0 ? identifiers : undefined,
   };
 }
 
-function readIdentifiers(
-  record: Record<string, unknown> | undefined,
-): Record<string, string> {
-  if (!record) return {};
-  const identifiers: Record<string, string> = {};
-  for (const key of ['id', 'candidateId', 'memoryId', 'skillId']) {
-    const value = record[key];
-    if (typeof value === 'string') identifiers[key] = value;
-  }
+function readIdentifiers(record: CompletedEffectRecord | undefined) {
+  const identifiers: CompletedEffectIdentifiers = {};
+  appendIdentifiers(identifiers, record);
   return identifiers;
 }
 
-function asRecord(value: unknown): Record<string, unknown> | undefined {
-  return value && typeof value === 'object'
-    ? (value as Record<string, unknown>)
-    : undefined;
+function appendIdentifiers(
+  identifiers: CompletedEffectIdentifiers,
+  record: CompletedEffectRecord | undefined,
+) {
+  if (!record) return;
+  if (record.id) identifiers.id = record.id;
+  if (record.candidateId) identifiers.candidateId = record.candidateId;
+  if (record.memoryId) identifiers.memoryId = record.memoryId;
+  if (record.skillId) identifiers.skillId = record.skillId;
+}
+
+function parseCompletedEffectRecord(value: import('@flue/runtime').JsonValue) {
+  const parsed = v.safeParse(completedEffectRecordSchema, value);
+  return parsed.success ? parsed.output : undefined;
 }

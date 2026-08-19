@@ -14,10 +14,24 @@ import {
   updateMcpServer,
 } from '../../domains/mcp';
 import type { RuntimePaths } from '../../runtime-home';
-import { queryNumber, safeJsonBody, safeJsonObject } from '../http';
+import {
+  isJsonObject,
+  isJsonString,
+  type JsonObject,
+  type JsonValue,
+  queryNumber,
+  safeJsonBody,
+  safeJsonObject,
+} from '../http';
 
 export type McpRouteOptions = {
   trustedOrigins?: readonly string[];
+};
+
+type McpApprovalResolutionInput = {
+  id: string;
+  decision: 'allow-once' | 'allow-chat' | 'allow-always' | 'deny';
+  approverSurface?: string;
 };
 
 export function createMcpRoutes(
@@ -39,7 +53,8 @@ export function createMcpRoutes(
   routes.post('/servers', async (c) => {
     const result = await addMcpServer(await safeJsonBody(c), paths);
     if (result.ok) {
-      const id = readIdFromResultData(result.data);
+      // SAFETY: addMcpServer returns JSON-compatible action data.
+      const id = readIdFromResultData(result.data as JsonValue | undefined);
       await getMcpRegistry(paths).refresh(id);
     }
     return c.json(result, result.ok ? 200 : 400);
@@ -51,7 +66,11 @@ export function createMcpRoutes(
       { ...(await safeJsonObject(c)), id },
       paths,
     );
-    if (result.ok && readRefreshRegistry(result.data)) {
+    // SAFETY: updateMcpServer returns JSON-compatible action data.
+    if (
+      result.ok &&
+      readRefreshRegistry(result.data as JsonValue | undefined)
+    ) {
       await getMcpRegistry(paths).refresh(id);
     }
     return c.json(result, result.ok ? 200 : 400);
@@ -121,14 +140,13 @@ export function createMcpRoutes(
 
   routes.post('/servers/:id/login', async (c) => {
     const body = await safeJsonObject(c);
-    const redirectUrl =
-      typeof body.redirectUrl === 'string'
-        ? body.redirectUrl
-        : resolveMcpOAuthCallbackUrl(
-            c.req.url,
-            c.req.header('host'),
-            options.trustedOrigins,
-          );
+    const redirectUrl = isJsonString(body.redirectUrl)
+      ? body.redirectUrl
+      : resolveMcpOAuthCallbackUrl(
+          c.req.url,
+          c.req.header('host'),
+          options.trustedOrigins,
+        );
     const result = await startMcpOAuthLogin(
       { id: c.req.param('id'), redirectUrl },
       paths,
@@ -171,7 +189,7 @@ export function createMcpRoutes(
     const login =
       'login' in result && isRecord(result.login) ? result.login : null;
     const serverId =
-      login && typeof login.serverId === 'string' ? login.serverId : undefined;
+      login && isJsonString(login.serverId) ? login.serverId : undefined;
     if (result.ok && serverId) {
       await getMcpRegistry(paths).refresh(serverId);
     }
@@ -208,12 +226,12 @@ export function createMcpRoutes(
   });
 
   routes.post('/approvals/:id/resolve', async (c) => {
+    // SAFETY: resolveMcpApprovalWithPaths validates the parsed approval decision.
     const result = await resolveMcpApprovalWithPaths(
-      { ...(await safeJsonObject(c)), id: c.req.param('id') } as {
-        id: string;
-        decision: 'allow-once' | 'allow-chat' | 'allow-always' | 'deny';
-        approverSurface?: string;
-      },
+      {
+        ...(await safeJsonObject(c)),
+        id: c.req.param('id'),
+      } as McpApprovalResolutionInput,
       paths,
     );
     return c.json(result, result.ok ? 200 : 400);
@@ -258,22 +276,20 @@ function normalizedHost(value: string | undefined) {
   }
 }
 
-function readIdFromResultData(data: unknown) {
+function readIdFromResultData(data: JsonValue | undefined) {
   if (!isRecord(data)) return undefined;
   const id = data.id ?? data.serverId;
-  if (typeof id === 'string') return id;
+  if (isJsonString(id)) return id;
   const server = data.server;
-  return isRecord(server) && typeof server.id === 'string'
-    ? server.id
-    : undefined;
+  return isRecord(server) && isJsonString(server.id) ? server.id : undefined;
 }
 
-function readRefreshRegistry(data: unknown) {
+function readRefreshRegistry(data: JsonValue | undefined) {
   return !isRecord(data) || data.refreshRegistry !== false;
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+function isRecord(value: JsonValue | undefined): value is JsonObject {
+  return value !== undefined && isJsonObject(value);
 }
 
 function oauthCallbackHtml(ok: boolean, message: string) {

@@ -6,7 +6,7 @@ import {
   upsertMemory,
 } from '../../modules/memory';
 import type { RuntimePaths } from '../../runtime-home';
-import { safeJsonBody } from '../http';
+import { safeJsonObject } from '../http';
 
 export function createMemoryRoutes(paths: RuntimePaths) {
   const routes = new Hono();
@@ -62,7 +62,7 @@ export function createMemoryRoutes(paths: RuntimePaths) {
   routes.post('/memories/:id/archive', async (c) => {
     const result = await archiveMemory(
       {
-        ...((await safeJsonBody(c)) as Record<string, unknown>),
+        ...(await safeJsonObject(c)),
         id: c.req.param('id'),
       },
       paths,

@@ -1,6 +1,7 @@
 import { openDb } from '../../../lib/sqlite.ts';
 import type { JsonValue } from '@flue/runtime';
 import { randomUUID } from 'node:crypto';
+import * as v from 'valibot';
 import {
   ensureRuntimeHome,
   runtimePaths,
@@ -10,6 +11,11 @@ import type {
   ConversationReviewInput,
   CurationReviewInput,
   PrBatchReviewInput,
+} from './schemas';
+import {
+  conversationReviewInputSchema,
+  curationReviewInputSchema,
+  prBatchReviewInputSchema,
 } from './schemas';
 import { readLearningConfig } from './context';
 import {
@@ -81,9 +87,19 @@ export async function recordConversationTurnAndMaybeQueueLearning(
         message: 'Conversation submission was already recorded.',
       };
     }
-    const row = database
-      .prepare(
-        `
+    const row = v.parse(
+      v.optional(
+        v.object({
+          learning_turn_count: v.optional(v.number()),
+          last_learning_review_turn_count: v.optional(v.number()),
+          last_learning_review_at: v.optional(v.nullable(v.string())),
+          last_learning_curation_turn_count: v.optional(v.number()),
+          last_learning_curation_at: v.optional(v.nullable(v.string())),
+        }),
+      ),
+      database
+        .prepare(
+          `
         SELECT learning_turn_count,
           last_learning_review_turn_count,
           last_learning_review_at,
@@ -92,16 +108,9 @@ export async function recordConversationTurnAndMaybeQueueLearning(
         FROM chat_sessions
         WHERE id = ? AND agent_name = 'display-assistant';
       `,
-      )
-      .get(sessionId) as
-      | {
-          learning_turn_count?: number;
-          last_learning_review_turn_count?: number;
-          last_learning_review_at?: string | null;
-          last_learning_curation_turn_count?: number;
-          last_learning_curation_at?: string | null;
-        }
-      | undefined;
+        )
+        .get(sessionId),
+    );
     if (!row) {
       database.exec('ROLLBACK;');
       return { queued: [], turnCount: 0, message: 'Session was not indexed.' };
@@ -119,7 +128,10 @@ export async function recordConversationTurnAndMaybeQueueLearning(
           `SELECT kind FROM learning_review_admissions WHERE status != 'admitted' AND session_id = ?;`,
         )
         .all(sessionId)
-        .map((entry) => String((entry as { kind?: unknown }).kind)),
+        .flatMap((entry) => {
+          const parsed = v.safeParse(v.object({ kind: v.string() }), entry);
+          return parsed.success ? [parsed.output.kind] : [];
+        }),
     );
     queueConversation =
       !pendingKinds.has('conversation') &&
@@ -400,7 +412,8 @@ export async function recordHandledPrEventAndMaybeQueueLearning(
           admitPrBatchLearningReview(input, paths, {
             reviewId: intent.id,
           }).then(requireLearningReviewAdmission));
-      const receipt = await admit(intent.input as PrBatchReviewInput);
+      const input = v.parse(prBatchReviewInputSchema, intent.input);
+      const receipt = await admit(input);
       markLearningReviewAdmissionIntentAdmitted(intent.id, paths);
       queued.push({ operation: 'learning-review', ...receipt });
     } catch (error) {
@@ -543,14 +556,14 @@ async function processPendingLearningIntents(
                 admitConversationLearningReview(input, paths, {
                   reviewId: intent.id,
                 }).then(requireLearningReviewAdmission))
-            )(intent.input as ConversationReviewInput)
+            )(v.parse(conversationReviewInputSchema, intent.input))
           : await (
               dependencies.invokeCurationReview ??
               ((input: CurationReviewInput) =>
                 admitCurationLearningReview(input, paths, {
                   reviewId: intent.id,
                 }).then(requireLearningReviewAdmission))
-            )(intent.input as CurationReviewInput);
+            )(v.parse(curationReviewInputSchema, intent.input));
       markLearningReviewAdmissionIntentAdmitted(intent.id, paths);
       queued.push({ operation: 'learning-review', ...receipt });
     } catch (error) {

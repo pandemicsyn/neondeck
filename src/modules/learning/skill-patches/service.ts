@@ -245,16 +245,21 @@ export async function applySkillPatchCandidate(
       );
     }
     const journalKey = `skill-patch-apply-intent:${candidate.id}`;
+    // SAFETY: app_metadata rows expose the requested value column from the local SQLite schema.
     const journalRow = database
       .prepare('SELECT value FROM app_metadata WHERE key = ?;')
       .get(journalKey) as { value?: unknown } | undefined;
-    const journal =
-      typeof journalRow?.value === 'string'
-        ? (JSON.parse(journalRow.value) as {
-            source: SkillPatchMutationSource;
-            reason: string | null;
-          })
-        : null;
+    const journalText = v.safeParse(v.string(), journalRow?.value);
+    const parsedJournal = journalText.success
+      ? v.safeParse(
+          v.object({
+            source: v.picklist(['user', 'neon', 'workflow']),
+            reason: v.nullable(v.string()),
+          }),
+          JSON.parse(journalText.output),
+        )
+      : null;
+    const journal = parsedJournal?.success ? parsedJournal.output : null;
     if (candidate.status === 'applied' && options.idempotent) {
       database
         .prepare('DELETE FROM app_metadata WHERE key = ?;')
@@ -358,7 +363,7 @@ export async function applySkillPatchCandidate(
       } catch (error) {
         return failedSkillPatch(
           'skill_patch_apply',
-          `Skill patch was not applied. ${errorMessage(error)}`,
+          `Skill patch was not applied. ${errorMessage(v.is(v.instance(Error), error) ? error : 'Unexpected skill patch failure.')}`,
           ['skill-patch-state'],
         );
       }
@@ -465,20 +470,20 @@ export async function applySkillPatchCandidate(
       if (!fileChanged) {
         return failedSkillPatch(
           'skill_patch_apply',
-          `Skill patch was not applied. ${errorMessage(error)}`,
+          `Skill patch was not applied. ${errorMessage(v.is(v.instance(Error), error) ? error : 'Unexpected skill patch failure.')}`,
           ['skill-patch-state'],
         );
       }
       if (!compensated) {
         return failedSkillPatch(
           'skill_patch_apply',
-          `Skill patch audit failed and the file could not be safely restored; inspect the skill and audit state manually. ${errorMessage(error)}`,
+          `Skill patch audit failed and the file could not be safely restored; inspect the skill and audit state manually. ${errorMessage(v.is(v.instance(Error), error) ? error : 'Unexpected skill patch failure.')}`,
           ['skill-patch-manual-recovery'],
         );
       }
       return failedSkillPatch(
         'skill_patch_apply',
-        `Skill patch audit failed; restored the previous skill content. ${errorMessage(error)}`,
+        `Skill patch audit failed; restored the previous skill content. ${errorMessage(v.is(v.instance(Error), error) ? error : 'Unexpected skill patch failure.')}`,
         ['skill-patch-audit'],
       );
     }
@@ -730,14 +735,14 @@ export async function restoreSkillPatchCandidate(
       if (!fileChanged) {
         return failedSkillPatch(
           'skill_patch_restore',
-          `Skill patch was not restored. ${errorMessage(error)}`,
+          `Skill patch was not restored. ${errorMessage(v.is(v.instance(Error), error) ? error : 'Unexpected skill patch failure.')}`,
           ['skill-patch-state'],
         );
       }
       if (!compensated) {
         return failedSkillPatch(
           'skill_patch_restore',
-          `Skill patch restore audit failed and the patched file could not be safely reapplied; inspect the skill and audit state manually. ${errorMessage(error)}`,
+          `Skill patch restore audit failed and the patched file could not be safely reapplied; inspect the skill and audit state manually. ${errorMessage(v.is(v.instance(Error), error) ? error : 'Unexpected skill patch failure.')}`,
           ['skill-patch-manual-recovery'],
         );
       }
@@ -748,7 +753,11 @@ export async function restoreSkillPatchCandidate(
           data: {
             candidateId: candidate.id,
             skillId: candidate.skillId,
-            error: errorMessage(error),
+            error: errorMessage(
+              v.is(v.instance(Error), error)
+                ? error
+                : 'Unexpected skill patch failure.',
+            ),
           },
           createdAt: new Date().toISOString(),
         });
@@ -757,7 +766,7 @@ export async function restoreSkillPatchCandidate(
       }
       return failedSkillPatch(
         'skill_patch_restore',
-        `Skill patch restore audit failed; reapplied the patched content. ${errorMessage(error)}`,
+        `Skill patch restore audit failed; reapplied the patched content. ${errorMessage(v.is(v.instance(Error), error) ? error : 'Unexpected skill patch failure.')}`,
         ['skill-patch-audit'],
       );
     }

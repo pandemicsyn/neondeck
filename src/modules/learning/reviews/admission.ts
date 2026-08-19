@@ -1,4 +1,5 @@
 import { AgentRunError, init } from '@flue/runtime';
+import * as v from 'valibot';
 import { runtimePaths, type RuntimePaths } from '../../../runtime-home';
 import {
   prepareConversationReflection,
@@ -12,6 +13,11 @@ import type {
   LearningReviewKind,
   PrBatchReviewInput,
   PreparedLearningReview,
+} from './schemas';
+import {
+  conversationReviewInputSchema,
+  curationReviewInputSchema,
+  prBatchReviewInputSchema,
 } from './schemas';
 import {
   attachLearningReviewSubmission,
@@ -276,27 +282,34 @@ async function admitLearningReviewIntent(
   }
 
   const intentDependencies = { ...dependencies, reviewId: intent.id };
-  const result =
-    intent.kind === 'conversation'
-      ? await admitConversationLearningReview(
-          intent.input as ConversationReviewInput,
-          paths,
-          intentDependencies,
-        )
-      : intent.kind === 'curation'
-        ? await admitCurationLearningReview(
-            intent.input as CurationReviewInput,
-            paths,
-            intentDependencies,
-          )
-        : await admitPrBatchLearningReview(
-            intent.input as PrBatchReviewInput,
-            paths,
-            intentDependencies,
-          );
+  const result = await admitReviewIntentByKind(
+    intent,
+    paths,
+    intentDependencies,
+  );
   if (!result.ok) throw new Error(result.message);
   markLearningReviewAdmissionIntentAdmitted(intent.id, paths);
   return result;
+}
+
+async function admitReviewIntentByKind(
+  intent: ReturnType<typeof listPendingLearningReviewAdmissionIntents>[number],
+  paths: RuntimePaths,
+  dependencies: AdmissionDependencies,
+) {
+  if (intent.kind === 'conversation') {
+    const parsed = v.safeParse(conversationReviewInputSchema, intent.input);
+    if (!parsed.success) throw new Error(v.summarize(parsed.issues));
+    return admitConversationLearningReview(parsed.output, paths, dependencies);
+  }
+  if (intent.kind === 'curation') {
+    const parsed = v.safeParse(curationReviewInputSchema, intent.input);
+    if (!parsed.success) throw new Error(v.summarize(parsed.issues));
+    return admitCurationLearningReview(parsed.output, paths, dependencies);
+  }
+  const parsed = v.safeParse(prBatchReviewInputSchema, intent.input);
+  if (!parsed.success) throw new Error(v.summarize(parsed.issues));
+  return admitPrBatchLearningReview(parsed.output, paths, dependencies);
 }
 
 function watchLearningReviewSettlement(

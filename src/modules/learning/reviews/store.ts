@@ -11,6 +11,24 @@ import type {
   PreparedLearningReview,
 } from './schemas';
 import { preparedLearningReviewSchema } from './schemas';
+import { isJsonValue } from '../../sessions/schemas';
+
+const externalValueSchema = v.unknown();
+const databaseRowSchema = v.record(v.string(), externalValueSchema);
+type ExternalValue = v.InferInput<typeof externalValueSchema>;
+type LearningReviewFailedEventData = {
+  reviewId: string;
+  error: string;
+  result?: JsonValue;
+};
+type FailedReviewResponse = {
+  ok: false;
+  action: string;
+  changed: false;
+  message: string;
+  errors: string[];
+  requires?: string[];
+};
 
 export function listLearningReviews(
   input: {
@@ -126,7 +144,7 @@ export type LearningReviewAdmissionIntent = {
   id: string;
   kind: LearningReviewKind;
   sessionId: string | null;
-  input: Record<string, unknown>;
+  input: Record<string, JsonValue>;
   status: 'pending' | 'processing' | 'admitted';
   error: string | null;
   createdAt: string;
@@ -139,7 +157,7 @@ export function insertLearningReviewAdmissionIntent(
     id?: string;
     kind: LearningReviewKind;
     sessionId?: string | null;
-    reviewInput: Record<string, unknown>;
+    reviewInput: Record<string, JsonValue>;
     createdAt: string;
   },
 ) {
@@ -322,6 +340,11 @@ export function failLearningReview(
           id,
         );
       if (update.changes === 0) return;
+      const eventData: LearningReviewFailedEventData = {
+        reviewId: id,
+        error: message,
+      };
+      if (result !== undefined) eventData.result = result;
       recordLearningEventInDatabase(database, {
         type:
           review?.kind === 'conversation'
@@ -330,11 +353,7 @@ export function failLearningReview(
               ? 'curation_failed'
               : 'pr_retrospective_failed',
         source: 'learning-review-agent',
-        data: {
-          reviewId: id,
-          error: message,
-          ...(result === undefined ? {} : { result }),
-        },
+        data: eventData,
         createdAt: now,
       });
     });
@@ -420,7 +439,7 @@ export function listRecoverableLearningReviews(paths = runtimePaths()) {
       )
       .all()
       .map((row) => {
-        const record = row as Record<string, unknown>;
+        const record = v.parse(databaseRowSchema, row);
         const parsed = v.safeParse(
           preparedLearningReviewSchema,
           parseNullableJson(record.prepared_json),
@@ -432,7 +451,10 @@ export function listRecoverableLearningReviews(paths = runtimePaths()) {
         }
         return {
           review: readLearningReviewRow(row),
-          prepared: parsed.output as PreparedLearningReview,
+          prepared: {
+            ...parsed.output,
+            inputSummary: compactJson(parsed.output.inputSummary),
+          },
         };
       });
   } finally {
@@ -516,8 +538,10 @@ export function getLearningReview(id: string, paths = runtimePaths()) {
   }
 }
 
-export function readLearningReviewRow(row: unknown): LearningReviewRecord {
-  const record = row as Record<string, unknown>;
+export function readLearningReviewRow(
+  row: ExternalValue,
+): LearningReviewRecord {
+  const record = v.parse(databaseRowSchema, row);
   return {
     id: String(record.id),
     kind: v.parse(
@@ -536,24 +560,27 @@ export function readLearningReviewRow(row: unknown): LearningReviewRecord {
     trigger: parseNullableJson(record.trigger_json) ?? {},
     inputSummary: parseNullableJson(record.input_summary_json),
     result: parseNullableJson(record.result_json),
-    error: typeof record.error === 'string' ? record.error : null,
-    agentId: typeof record.agent_id === 'string' ? record.agent_id : null,
-    submissionId:
-      typeof record.submission_id === 'string' ? record.submission_id : null,
-    dispatchError:
-      typeof record.dispatch_error === 'string' ? record.dispatch_error : null,
+    error: v.is(v.string(), record.error) ? record.error : null,
+    agentId: v.is(v.string(), record.agent_id) ? record.agent_id : null,
+    submissionId: v.is(v.string(), record.submission_id)
+      ? record.submission_id
+      : null,
+    dispatchError: v.is(v.string(), record.dispatch_error)
+      ? record.dispatch_error
+      : null,
     startedAt: String(record.started_at),
-    completedAt:
-      typeof record.completed_at === 'string' ? record.completed_at : null,
+    completedAt: v.is(v.string(), record.completed_at)
+      ? record.completed_at
+      : null,
   };
 }
 
 function readLearningReviewAdmissionIntentRow(
-  row: unknown,
+  row: ExternalValue,
 ): LearningReviewAdmissionIntent {
-  const record = row as Record<string, unknown>;
+  const record = v.parse(databaseRowSchema, row);
   const input = parseNullableJson(record.input_json);
-  if (!input || Array.isArray(input) || typeof input !== 'object') {
+  if (!isPlainJsonRecord(input)) {
     throw new Error(
       `Learning review admission "${String(record.id)}" has invalid input.`,
     );
@@ -564,53 +591,41 @@ function readLearningReviewAdmissionIntentRow(
       v.picklist(['conversation', 'curation', 'pr-batch']),
       record.kind,
     ),
-    sessionId: typeof record.session_id === 'string' ? record.session_id : null,
-    input: input as Record<string, unknown>,
+    sessionId: v.is(v.string(), record.session_id) ? record.session_id : null,
+    input,
     status: v.parse(
       v.picklist(['pending', 'processing', 'admitted']),
       record.status,
     ),
-    error: typeof record.error === 'string' ? record.error : null,
+    error: v.is(v.string(), record.error) ? record.error : null,
     createdAt: String(record.created_at),
     updatedAt: String(record.updated_at),
   };
 }
 
-export function summarizeMemories(memories: unknown[], limit = 80) {
-  return memories.slice(0, limit).map((memory) => {
-    const item = memory as {
-      id?: string;
-      scope?: string;
-      key?: string;
-      value?: unknown;
-      repoId?: string | null;
-      useCount?: number;
-      updatedAt?: string;
-    };
-    return {
-      id: item.id,
-      scope: item.scope,
-      key: item.key,
-      value: truncate(
-        typeof item.value === 'string'
-          ? item.value
-          : JSON.stringify(item.value),
-        500,
-      ),
-      repoId: item.repoId ?? null,
-      useCount: item.useCount ?? 0,
-      updatedAt: item.updatedAt,
-    };
-  });
+function isPlainJsonRecord(
+  value: ExternalValue,
+): value is Record<string, JsonValue> {
+  if (!v.is(v.record(v.string(), externalValueSchema), value)) return false;
+  if (Array.isArray(value)) return false;
+  if (Object.getPrototypeOf(value) !== Object.prototype) return false;
+  return isJsonValue(value);
 }
 
-export function compactJson(value: unknown): JsonValue {
-  return JSON.parse(JSON.stringify(value)) as JsonValue;
+export function compactJson(value: ExternalValue): JsonValue {
+  const parsed = JSON.parse(JSON.stringify(value));
+  if (!isJsonValue(parsed)) throw new Error('Unable to serialize JSON value.');
+  return parsed;
 }
 
-export function parseNullableJson(value: unknown): JsonValue | null {
-  if (typeof value !== 'string') return null;
-  return JSON.parse(value) as JsonValue;
+export function parseNullableJson(value: ExternalValue): JsonValue | null {
+  if (!v.is(v.string(), value)) return null;
+  try {
+    const parsed = JSON.parse(value);
+    return isJsonValue(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
 }
 
 export function failedReview(
@@ -618,14 +633,15 @@ export function failedReview(
   message: string,
   requires?: string[],
 ) {
-  return {
+  const response: FailedReviewResponse = {
     ok: false as const,
     action,
     changed: false as const,
     message,
     errors: [message],
-    ...(requires ? { requires } : {}),
   };
+  if (requires) response.requires = requires;
+  return response;
 }
 
 export function reviewAction(kind: LearningReviewKind) {
@@ -640,6 +656,6 @@ export function truncate(value: string, maxLength: number) {
     : value;
 }
 
-export function errorMessage(error: unknown) {
+export function errorMessage(error: ExternalValue) {
   return error instanceof Error ? error.message : String(error);
 }

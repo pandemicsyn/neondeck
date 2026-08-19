@@ -30,15 +30,19 @@ export function runSerializedSchedulerTick(paths: RuntimePaths) {
 export function startSchedulerLoop(
   paths: RuntimePaths,
   intervalMs = 60_000,
-  runTick: (
-    paths: RuntimePaths,
-  ) => Promise<unknown> = runSerializedSchedulerTick,
-  refreshGitHubQueue: (
-    paths: RuntimePaths,
-  ) => Promise<unknown> = refreshGitHubQueueSnapshot,
-  refreshPrReviews: (
-    paths: RuntimePaths,
-  ) => Promise<unknown> = refreshPrReviewRemoteState,
+  runTick: (paths: RuntimePaths) => Promise<void> = async (runtimePaths) => {
+    await runSerializedSchedulerTick(runtimePaths);
+  },
+  refreshGitHubQueue: (paths: RuntimePaths) => Promise<void> = async (
+    runtimePaths,
+  ) => {
+    await refreshGitHubQueueSnapshot(runtimePaths);
+  },
+  refreshPrReviews: (paths: RuntimePaths) => Promise<void> = async (
+    runtimePaths,
+  ) => {
+    await refreshPrReviewRemoteState(runtimePaths);
+  },
 ) {
   const existing = schedulerLoopRegistry.get(paths.home);
   if (existing) clearInterval(existing);
@@ -68,6 +72,8 @@ export function startSchedulerLoop(
 }
 
 function schedulerTickRegistry() {
+  // SAFETY: this module exclusively owns the global registry and preserves the
+  // map's key/value contract across application reloads.
   const target = globalThis as typeof globalThis & {
     __neondeckSchedulerTicksInFlight?: Map<
       string,
@@ -78,6 +84,8 @@ function schedulerTickRegistry() {
 }
 
 function schedulerLoops() {
+  // SAFETY: this module exclusively owns the global registry and preserves the
+  // map's key/value contract across application reloads.
   const target = globalThis as typeof globalThis & {
     __neondeckSchedulerLoops?: Map<string, ReturnType<typeof setInterval>>;
   };

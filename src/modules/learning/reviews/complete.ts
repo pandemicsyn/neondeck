@@ -14,6 +14,7 @@ import type {
   PreparedLearningReview,
 } from './schemas';
 import { learningReviewerOutputSchema } from './schemas';
+import type { CompletedEffectIdentifiers } from './tool';
 import {
   compactJson,
   completeLearningReview,
@@ -31,8 +32,20 @@ export type LearningReviewEffectRunner = <T>(
 export type CompletedLearningReviewEffect = {
   name: string;
   changed: boolean;
-  identifiers?: Record<string, string>;
+  identifiers?: CompletedEffectIdentifiers;
 };
+
+type LearningReviewFailureResult = {
+  failed: boolean;
+  partial: boolean;
+  changed: boolean;
+  outcomeUnknown: boolean;
+  uncertainEffect?: string;
+  completedEffects: CompletedLearningReviewEffect[];
+};
+
+const candidateIdSchema = v.object({ id: v.string() });
+type CandidateWithId = v.InferInput<typeof candidateIdSchema>;
 
 export async function completeLearningReviewFromModelOutput(
   prepared: PreparedLearningReview,
@@ -172,9 +185,19 @@ export async function completeLearningReviewFromModelOutput(
       });
       continue;
     }
-    const candidateId = String(
-      (proposed.candidate as Record<string, unknown>).id,
+    const candidate = v.safeParse(
+      v.object({ id: v.string() }),
+      proposed.candidate,
     );
+    if (!candidate.success) {
+      skipped.push({
+        action: 'skill-patch-apply',
+        skillId: proposal.skillId,
+        reason: 'candidate-missing-identifier',
+      });
+      continue;
+    }
+    const candidateId = candidate.output.id;
     const appliedPatch = await runEffect(`skill-apply:${index}`, () =>
       applySkillPatchCandidate(
         { id: candidateId, reason: proposal.reason },
@@ -198,11 +221,7 @@ export async function completeLearningReviewFromModelOutput(
     applied: applied.length,
     skipped: skipped.length,
     candidateIds: [...candidates, ...skillCandidates]
-      .map((candidate) =>
-        candidate && typeof candidate === 'object' && 'id' in candidate
-          ? String(candidate.id)
-          : null,
-      )
+      .map((candidate) => candidateIdentifier(candidate))
       .filter(Boolean),
   });
   await runEffect('complete-review', () => {
@@ -235,7 +254,7 @@ export async function completeLearningReviewFromModelOutput(
 
 export function failPreparedLearningReview(
   prepared: PreparedLearningReview,
-  error: unknown,
+  error: Error,
   paths = runtimePaths(),
   options: {
     completedEffects?: CompletedLearningReviewEffect[];
@@ -247,28 +266,37 @@ export function failPreparedLearningReview(
   const changed = completedEffects.some((effect) => effect.changed);
   const outcomeUnknown = options.uncertainEffect !== undefined;
   const partial = completedEffects.length > 0 || outcomeUnknown;
-  const result = compactJson({
+  const failureResult: LearningReviewFailureResult = {
     failed: true,
     partial,
     changed,
     outcomeUnknown,
-    ...(options.uncertainEffect
-      ? { uncertainEffect: options.uncertainEffect }
-      : {}),
     completedEffects,
-  });
+  };
+  if (options.uncertainEffect) {
+    failureResult.uncertainEffect = options.uncertainEffect;
+  }
+  const result = compactJson(failureResult);
   failLearningReview(prepared.reviewId, message, paths, result);
-  return {
+  const response: Omit<ReturnType<typeof failedReview>, 'changed'> & {
+    changed: boolean;
+    reviewId: string;
+    partial: boolean;
+    outcomeUnknown: boolean;
+    uncertainEffect?: string;
+    completedEffects: CompletedLearningReviewEffect[];
+  } = {
     ...failedReview(reviewAction(prepared.kind), message),
     changed,
     reviewId: prepared.reviewId,
     partial,
     outcomeUnknown,
-    ...(options.uncertainEffect
-      ? { uncertainEffect: options.uncertainEffect }
-      : {}),
     completedEffects,
   };
+  if (options.uncertainEffect) {
+    response.uncertainEffect = options.uncertainEffect;
+  }
+  return response;
 }
 
 export async function createCandidateFromProposal(
@@ -390,18 +418,20 @@ export async function applyProposal(
       { source: 'workflow', effectId },
     );
   }
-  return mergeMemories(
-    {
-      targetId: proposal.targetId,
-      sourceIds: proposal.sourceIds,
-      expectedUpdatedAts: revisionContext.expectedUpdatedAts,
-      ...(proposal.value === undefined ? {} : { value: proposal.value }),
-      reason: proposal.reason,
-      actor: 'workflow',
-    },
-    paths,
-    { source: 'workflow', effectId },
-  );
+  const mergeInput: Parameters<typeof mergeMemories>[0] = {
+    targetId: proposal.targetId,
+    sourceIds: proposal.sourceIds,
+    expectedUpdatedAts: revisionContext.expectedUpdatedAts,
+    reason: proposal.reason,
+    actor: 'workflow',
+  };
+  if (proposal.value !== undefined) mergeInput.value = proposal.value;
+  return mergeMemories(mergeInput, paths, { source: 'workflow', effectId });
+}
+
+function candidateIdentifier(candidate: CandidateWithId | undefined) {
+  const parsed = v.safeParse(candidateIdSchema, candidate);
+  return parsed.success ? parsed.output.id : null;
 }
 
 type MemorySnapshot = PreparedLearningReview['memorySnapshots'][number];

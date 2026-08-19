@@ -1,4 +1,6 @@
 import type { RuntimePaths } from '../../runtime-home';
+import type { JsonValue } from '@flue/runtime';
+import * as v from 'valibot';
 import {
   markMemoryBackgroundContextUsedSync,
   type MemoryRecord,
@@ -163,8 +165,9 @@ function memoryLine(memory: AutomationLearningMemory) {
   return `- ${memory.id} [${memory.scope}:${memory.key}${repo}] ${memory.value}`;
 }
 
-function memoryValue(value: unknown) {
-  const text = typeof value === 'string' ? value : JSON.stringify(value);
+function memoryValue(value: JsonValue) {
+  const parsed = v.safeParse(v.string(), value);
+  const text = parsed.success ? parsed.output : JSON.stringify(value);
   return text.length > 1_000 ? `${text.slice(0, 1_000)}...` : text;
 }
 

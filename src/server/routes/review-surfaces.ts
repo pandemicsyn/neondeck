@@ -1,5 +1,6 @@
 import { Hono } from 'hono';
 import * as v from 'valibot';
+import type { JsonValue } from '../http';
 import {
   reviewSurfaceFindingsApplySchema,
   reviewSurfaceFindingsClearSchema,
@@ -148,13 +149,13 @@ export function createReviewSurfaceRoutes(
 }
 
 async function readJson(c: {
-  req: { json: () => Promise<unknown> };
-}): Promise<unknown> {
+  req: { json: () => Promise<JsonValue> };
+}): Promise<JsonValue> {
   return c.req.json().catch(() => null);
 }
 
 function invalidInput(
-  c: { json: (body: unknown, status: 400) => Response },
+  c: { json: (body: JsonValue, status: 400) => Response },
   issues: readonly v.BaseIssue<unknown>[],
 ) {
   return c.json(
@@ -168,7 +169,7 @@ function invalidInput(
 
 function findingResult(
   c: {
-    json: (body: unknown, status?: 200 | 404 | 409) => Response;
+    json: (body: JsonValue, status?: 200 | 404 | 409) => Response;
   },
   result: ReturnType<ReviewSurfaceRegistry['applyFindings']>,
 ) {

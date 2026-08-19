@@ -2,6 +2,7 @@ import { openDb, withImmediateTransaction } from '../../../lib/sqlite.ts';
 import type { JsonValue } from '@flue/runtime';
 import { randomUUID } from 'node:crypto';
 import type { DatabaseSync } from 'node:sqlite';
+import * as v from 'valibot';
 import type { RuntimePaths } from '../../../runtime-home';
 
 export type HandledPrEventRecord = {
@@ -32,16 +33,19 @@ export function prRetrospectiveDueInDatabase(
     database,
     checkpoint,
   );
-  const row = database
-    .prepare(
-      `
+  const row = v.parse(
+    v.object({ count: v.optional(v.number()) }),
+    database
+      .prepare(
+        `
       SELECT COUNT(*) AS count
       FROM learning_events
       WHERE type = 'pr_handled'
         ${checkpoint ? 'AND created_at > ?' : ''};
     `,
-    )
-    .get(...(checkpoint ? [checkpoint] : [])) as { count?: unknown };
+      )
+      .get(...(checkpoint ? [checkpoint] : [])),
+  );
   const count = Number(row.count ?? 0);
   return { due: count >= threshold, count, activeAdmission };
 }
@@ -96,9 +100,11 @@ export function markPrRetrospectiveAdmittedInDatabase(
 }
 
 export function latestPrRetrospectiveCheckpoint(database: DatabaseSync) {
-  const review = database
-    .prepare(
-      `
+  const review = v.parse(
+    v.optional(v.object({ completed_at: v.optional(v.string()) })),
+    database
+      .prepare(
+        `
       SELECT completed_at
       FROM learning_reviews
       WHERE kind = 'pr-batch'
@@ -107,9 +113,10 @@ export function latestPrRetrospectiveCheckpoint(database: DatabaseSync) {
       ORDER BY completed_at DESC
       LIMIT 1;
     `,
-    )
-    .get() as { completed_at?: unknown } | undefined;
-  return typeof review?.completed_at === 'string' ? review.completed_at : null;
+      )
+      .get(),
+  );
+  return review?.completed_at ?? null;
 }
 
 export function hasActivePrRetrospectiveAdmission(
@@ -122,9 +129,11 @@ export function hasActivePrRetrospectiveAdmission(
     )
     .get();
   if (pendingIntent) return true;
-  const admission = database
-    .prepare(
-      `
+  const admission = v.parse(
+    v.optional(v.object({ created_at: v.optional(v.string()) })),
+    database
+      .prepare(
+        `
       SELECT created_at
       FROM learning_events
       WHERE type = 'pr_retrospective_admitted'
@@ -132,11 +141,10 @@ export function hasActivePrRetrospectiveAdmission(
       ORDER BY created_at DESC
       LIMIT 1;
     `,
-    )
-    .get(...(checkpoint ? [checkpoint] : [])) as
-    { created_at?: unknown } | undefined;
-  const admittedAt =
-    typeof admission?.created_at === 'string' ? admission.created_at : null;
+      )
+      .get(...(checkpoint ? [checkpoint] : [])),
+  );
+  const admittedAt = admission?.created_at ?? null;
   if (!admittedAt) {
     const running = database
       .prepare(
@@ -152,9 +160,11 @@ export function hasActivePrRetrospectiveAdmission(
       .get(...(checkpoint ? [checkpoint] : []));
     return Boolean(running);
   }
-  const review = database
-    .prepare(
-      `
+  const review = v.parse(
+    v.optional(v.object({ status: v.optional(v.string()) })),
+    database
+      .prepare(
+        `
       SELECT status
       FROM learning_reviews
       WHERE kind = 'pr-batch'
@@ -162,8 +172,9 @@ export function hasActivePrRetrospectiveAdmission(
       ORDER BY started_at DESC
       LIMIT 1;
     `,
-    )
-    .get(admittedAt) as { status?: unknown } | undefined;
+      )
+      .get(admittedAt),
+  );
   if (review?.status === 'running') return true;
   const failedAdmission = database
     .prepare(

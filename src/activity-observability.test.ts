@@ -1,7 +1,8 @@
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import * as v from 'valibot';
 import {
   readActivityObservability,
   readActivitySubmission,
@@ -15,6 +16,8 @@ import { runtimePaths, type RuntimePaths } from './runtime-home';
 import { createActivityRoutes } from './server/routes/activity';
 
 const roots: string[] = [];
+const inputHashSummarySchema = v.object({ inputHash: v.string() });
+const resultHashSummarySchema = v.object({ resultHash: v.string() });
 
 afterEach(async () => {
   await Promise.all(
@@ -136,6 +139,285 @@ describe('Flue v3 activity observability', () => {
     );
   });
 
+  it('records cyclic and hostile Flue payloads as safe activity summaries', async () => {
+    const paths = await tempPaths();
+    const getter = vi.fn<() => never>(() => {
+      throw new Error('payload getter must not run');
+    });
+    const arrayMethod = vi.fn<() => never>(() => {
+      throw new Error('payload array method must not run');
+    });
+    const hostileArray: HostileActivityValue[] = [];
+    Object.defineProperty(hostileArray, '0', { enumerable: true, get: getter });
+    Object.defineProperties(hostileArray, {
+      slice: { value: arrayMethod },
+      map: { value: arrayMethod },
+    });
+
+    const cyclicArgs = hostileActivityInput('cyclic args');
+    cyclicArgs.amount = 1n << 200_000n;
+    cyclicArgs.hugeString = 'x'.repeat(100_000);
+    cyclicArgs.hostileArray = hostileArray;
+    cyclicArgs.self = cyclicArgs;
+    for (let index = 0; index < 100; index += 1) {
+      const branch = hostileActivityInput(`branch-${index}`);
+      branch.self = cyclicArgs;
+      cyclicArgs[`branch-${index}`] = branch;
+    }
+    Object.defineProperty(cyclicArgs, 'getter', {
+      enumerable: true,
+      get: getter,
+    });
+
+    const cyclicResult = hostileActivityInput('cyclic result');
+    cyclicResult.self = cyclicResult;
+    cyclicResult.toJSON = () => {
+      throw new Error('must not serialize tool results');
+    };
+    const hostileError = new FlueErrorPayload('tool payload failed');
+    Object.defineProperty(hostileError, 'name', {
+      enumerable: true,
+      get: getter,
+    });
+
+    await recordFlueObservation(queued(1), paths);
+    await expect(
+      recordFlueObservation(
+        {
+          ...base(2),
+          type: 'tool_start',
+          toolName: 'untrusted_tool',
+          origin: 'model',
+          args: cyclicArgs,
+        },
+        paths,
+      ),
+    ).resolves.toBeUndefined();
+    await expect(
+      recordFlueObservation(
+        {
+          ...base(3),
+          type: 'tool',
+          toolName: 'untrusted_tool',
+          durationMs: 5,
+          isError: true,
+          effectiveResult: cyclicResult,
+          errorInfo: hostileError,
+        },
+        paths,
+      ),
+    ).resolves.toBeUndefined();
+
+    const history = await readActivitySubmissionEvents('submission-1', paths);
+    expect(history.events).toHaveLength(3);
+    expect(getter).not.toHaveBeenCalled();
+    expect(arrayMethod).not.toHaveBeenCalled();
+    expect(history.events[1]).toMatchObject({
+      eventType: 'tool_start',
+      summary: { args: { type: 'object', keys: expect.any(Array) } },
+    });
+    expect(history.events[2]).toMatchObject({
+      eventType: 'tool',
+      summary: {
+        result: { type: 'object', keys: expect.any(Array) },
+        error: { type: 'Error', message: 'tool payload failed' },
+      },
+    });
+    expect(JSON.stringify(history.events).length).toBeLessThan(20_000);
+  });
+
+  it('normalizes review ingress and error metadata before reading fields', async () => {
+    const paths = await tempPaths();
+    const getter = vi.fn<() => never>(() => {
+      throw new Error('hostile field getter must not run');
+    });
+    const args = hostileActivityInput('hostile review args');
+    Object.defineProperty(args, 'path', { enumerable: true, get: getter });
+    args.toJSON = () => {
+      throw new Error('review args toJSON must not run');
+    };
+    const errorInfo = new HostileFlueErrorInfo();
+    Object.defineProperty(errorInfo, 'message', {
+      enumerable: true,
+      get: getter,
+    });
+
+    await recordFlueObservation(queued(1), paths);
+    await expect(
+      recordFlueObservation(
+        {
+          ...base(2),
+          type: 'tool_start',
+          toolName: 'neondeck_review_workspace_search',
+          origin: 'model',
+          args,
+        },
+        paths,
+      ),
+    ).resolves.toBeUndefined();
+    await expect(
+      recordFlueObservation(
+        {
+          ...base(3),
+          type: 'tool',
+          toolName: 'untrusted_tool',
+          durationMs: 5,
+          isError: true,
+          effectiveResult: null,
+          errorInfo,
+        },
+        paths,
+      ),
+    ).resolves.toBeUndefined();
+    await expect(
+      recordFlueObservation(
+        {
+          ...base(4),
+          type: 'tool',
+          toolName: 'neondeck_review_workspace_read',
+          durationMs: 5,
+          isError: true,
+          effectiveResult: { path: 'src/review.ts' },
+          errorInfo,
+        },
+        paths,
+      ),
+    ).resolves.toBeUndefined();
+    await recordFlueObservation(
+      {
+        ...base(5),
+        type: 'tool',
+        toolName: 'untrusted_tool',
+        durationMs: 5,
+        isError: true,
+        effectiveResult: null,
+        errorInfo: new FlueTypeError('invalid tool input'),
+      },
+      paths,
+    );
+    await recordFlueObservation(
+      {
+        ...base(6),
+        type: 'tool',
+        toolName: 'neondeck_review_workspace_read',
+        durationMs: 5,
+        isError: true,
+        effectiveResult: { path: 'src/review.ts' },
+        errorInfo: new FlueRangeError('review range failed'),
+      },
+      paths,
+    );
+
+    const history = await readActivitySubmissionEvents('submission-1', paths);
+    expect(getter).not.toHaveBeenCalled();
+    expect(history.events[1]).toMatchObject({
+      summary: {
+        category: 'review-workspace',
+        operation: 'search',
+        phase: 'started',
+      },
+    });
+    expect(history.events[1]?.summary).not.toHaveProperty('path');
+    expect(history.events[2]?.summary).toMatchObject({ error: null });
+    expect(history.events[3]?.summary).toMatchObject({ error: null });
+    expect(history.events[4]?.summary).toMatchObject({
+      error: { type: 'TypeError', message: 'invalid tool input' },
+    });
+    expect(history.events[5]?.summary).toMatchObject({
+      error: { type: 'RangeError', message: 'review range failed' },
+    });
+  });
+
+  it('bounds descriptor reads for very large tool results', async () => {
+    const paths = await tempPaths();
+    const largeResult = { path: 'src/bounded.ts' };
+    for (let index = 0; index < 20_000; index += 1) {
+      Object.defineProperty(largeResult, `field-${index}`, {
+        enumerable: true,
+        value: index,
+      });
+    }
+    let descriptorReads = 0;
+    const trackedResult = new Proxy(largeResult, {
+      getOwnPropertyDescriptor(target, property) {
+        descriptorReads += 1;
+        return Reflect.getOwnPropertyDescriptor(target, property);
+      },
+    });
+
+    await recordFlueObservation(queued(1), paths);
+    await expect(
+      recordFlueObservation(
+        {
+          ...base(2),
+          type: 'tool',
+          toolName: 'neondeck_review_workspace_read',
+          durationMs: 5,
+          isError: false,
+          effectiveResult: trackedResult,
+        },
+        paths,
+      ),
+    ).resolves.toBeUndefined();
+
+    const history = await readActivitySubmissionEvents('submission-1', paths);
+    expect(descriptorReads).toBeLessThan(100);
+    expect(history.events[1]).toMatchObject({
+      message: 'Review workspace read completed for src/bounded.ts in 5ms.',
+      summary: {
+        category: 'review-workspace',
+        path: 'src/bounded.ts',
+        resultBytes: expect.any(Number),
+      },
+    });
+    const summary = history.events[1]?.summary;
+    expect(JSON.stringify(summary).length).toBeLessThan(10_000);
+  });
+
+  it('counts inherited enumerable keys against the descriptor budget', async () => {
+    const paths = await tempPaths();
+    for (let index = 0; index < 20_000; index += 1) {
+      Object.defineProperty(
+        InheritedActivityResult.prototype,
+        `inherited-${index}`,
+        { enumerable: true, value: index },
+      );
+    }
+    let descriptorReads = 0;
+    const trackedResult = new Proxy(new InheritedActivityResult(), {
+      getOwnPropertyDescriptor(target, property) {
+        descriptorReads += 1;
+        return Reflect.getOwnPropertyDescriptor(target, property);
+      },
+    });
+
+    await recordFlueObservation(queued(1), paths);
+    await expect(
+      recordFlueObservation(
+        {
+          ...base(2),
+          type: 'tool',
+          toolName: 'neondeck_review_workspace_read',
+          durationMs: 5,
+          isError: false,
+          effectiveResult: trackedResult,
+        },
+        paths,
+      ),
+    ).resolves.toBeUndefined();
+
+    const history = await readActivitySubmissionEvents('submission-1', paths);
+    expect(descriptorReads).toBeLessThan(100);
+    expect(history.events[1]).toMatchObject({
+      message: 'Review workspace read completed for src/inherited.ts in 5ms.',
+      summary: {
+        category: 'review-workspace',
+        path: 'src/inherited.ts',
+        resultBytes: expect.any(Number),
+      },
+    });
+  });
+
   it('retains safe typed review-workspace evidence without source contents', async () => {
     const paths = await tempPaths();
     await recordFlueObservation(queued(1), paths);
@@ -158,7 +440,7 @@ describe('Flue v3 activity observability', () => {
           workspaceToolCallsRemaining: prReviewerWorkspaceToolCallLimit - 1,
           workspaceToolCallLimit: prReviewerWorkspaceToolCallLimit,
         },
-      } as never,
+      },
       paths,
     );
     const query = 'exact source fragment that must not be persisted';
@@ -172,7 +454,7 @@ describe('Flue v3 activity observability', () => {
           query,
           path: 'src/very-long-but-legitimate-repository-path.ts',
         },
-      } as never,
+      },
       paths,
     );
     await recordFlueObservation(
@@ -188,7 +470,7 @@ describe('Flue v3 activity observability', () => {
           workspaceToolCallsRemaining: prReviewerWorkspaceToolCallLimit - 2,
           workspaceToolCallLimit: prReviewerWorkspaceToolCallLimit,
         },
-      } as never,
+      },
       paths,
     );
     await recordFlueObservation(
@@ -201,9 +483,30 @@ describe('Flue v3 activity observability', () => {
           path: 'src/very-long-but-legitimate-repository-path.ts',
           query,
         },
-      } as never,
+      },
       paths,
     );
+    const excludedFieldGetter = vi.fn<() => never>(() => {
+      throw new Error('excluded result field getter must not run');
+    });
+    const excludedOutput = Array.from({ length: 24 }, (_, outerIndex) =>
+      Array.from(
+        { length: 24 },
+        (_, innerIndex) => `${outerIndex}:${innerIndex}`,
+      ),
+    );
+    const repeatedResult = {
+      outputRef: excludedOutput,
+      outputHint: 'x'.repeat(100_000),
+      workspaceToolCallsRemaining: prReviewerWorkspaceToolCallLimit - 3,
+      query,
+      matches: ['src/app.ts:10:exact source fragment'],
+      workspaceToolCallLimit: prReviewerWorkspaceToolCallLimit,
+    };
+    Object.defineProperty(repeatedResult, 'outputHint', {
+      enumerable: true,
+      get: excludedFieldGetter,
+    });
     await recordFlueObservation(
       {
         ...base(6),
@@ -211,15 +514,8 @@ describe('Flue v3 activity observability', () => {
         toolName: 'neondeck_review_workspace_search',
         durationMs: 8,
         isError: false,
-        effectiveResult: {
-          query,
-          matches: ['src/app.ts:10:exact source fragment'],
-          outputRef: 'ephemeral-output-ref',
-          outputHint: 'ephemeral output hint',
-          workspaceToolCallsRemaining: prReviewerWorkspaceToolCallLimit - 3,
-          workspaceToolCallLimit: prReviewerWorkspaceToolCallLimit,
-        },
-      } as never,
+        effectiveResult: repeatedResult,
+      },
       paths,
     );
 
@@ -276,14 +572,25 @@ describe('Flue v3 activity observability', () => {
     expect(firstSearchResult).toBeDefined();
     expect(repeatedSearchStart).toBeDefined();
     expect(repeatedSearchResult).toBeDefined();
-    expect(
-      (firstSearchStart!.summary as Record<string, unknown>).inputHash,
-    ).toBe((repeatedSearchStart!.summary as Record<string, unknown>).inputHash);
-    expect(
-      (firstSearchResult!.summary as Record<string, unknown>).resultHash,
-    ).toBe(
-      (repeatedSearchResult!.summary as Record<string, unknown>).resultHash,
-    );
+    const firstStartHash = v.parse(
+      inputHashSummarySchema,
+      firstSearchStart?.summary,
+    ).inputHash;
+    const repeatedStartHash = v.parse(
+      inputHashSummarySchema,
+      repeatedSearchStart?.summary,
+    ).inputHash;
+    const firstResultHash = v.parse(
+      resultHashSummarySchema,
+      firstSearchResult?.summary,
+    ).resultHash;
+    const repeatedResultHash = v.parse(
+      resultHashSummarySchema,
+      repeatedSearchResult?.summary,
+    ).resultHash;
+    expect(firstStartHash).toBe(repeatedStartHash);
+    expect(firstResultHash).toBe(repeatedResultHash);
+    expect(excludedFieldGetter).not.toHaveBeenCalled();
     expect(JSON.stringify(history.events)).not.toContain(query);
   });
 
@@ -306,7 +613,7 @@ describe('Flue v3 activity observability', () => {
         taskId: 'task-1',
         agent: 'explore',
         prompt,
-      } as never,
+      },
       paths,
     );
 
@@ -349,7 +656,12 @@ describe('Flue v3 activity observability', () => {
         turnId: 'turn-1',
         durationMs: 1_000,
         isError: false,
-        request: { providerId: 'provider', requestedModel: 'requested-model' },
+        request: {
+          providerId: 'provider',
+          providerName: 'Provider',
+          requestedModel: 'requested-model',
+          api: 'test',
+        },
         response: {
           responseModel: 'actual-model',
           finishReason: 'stop',
@@ -368,7 +680,7 @@ describe('Flue v3 activity observability', () => {
             },
           },
         },
-      } as never,
+      },
       paths,
     );
 
@@ -811,6 +1123,7 @@ function base(eventIndex: number) {
     agentName: 'display-assistant',
     instanceId: 'session-1',
     conversationId: 'conversation-1',
+    toolCallId: `tool-call-${eventIndex}`,
   } as const;
 }
 
@@ -856,4 +1169,50 @@ async function ensureReviewBinding(paths: RuntimePaths) {
   } finally {
     database.close();
   }
+}
+
+type HostileActivityValue =
+  | string
+  | bigint
+  | HostileActivityInput
+  | HostileActivityValue[]
+  | (() => never)
+  | undefined;
+
+class HostileActivityInput {
+  [key: string]: HostileActivityValue;
+  readonly label: string;
+  amount: bigint | undefined = undefined;
+  hugeString: string | undefined = undefined;
+  hostileArray: HostileActivityValue[] | undefined = undefined;
+  self: HostileActivityInput | undefined = undefined;
+  toJSON: (() => never) | undefined = undefined;
+
+  constructor(label: string) {
+    this.label = label;
+  }
+}
+
+function hostileActivityInput(label: string) {
+  return new HostileActivityInput(label);
+}
+
+class HostileFlueErrorInfo {
+  readonly type = 'hostile-error';
+}
+
+class FlueErrorPayload extends Error {
+  readonly type = 'payload-error';
+}
+
+class FlueTypeError extends TypeError {
+  readonly type = 'type-error';
+}
+
+class FlueRangeError extends RangeError {
+  readonly type = 'range-error';
+}
+
+class InheritedActivityResult {
+  readonly path = 'src/inherited.ts';
 }

@@ -16,8 +16,16 @@ import {
   type PrReviewRecord,
 } from '../../modules/pr-reviews';
 import type { RuntimePaths } from '../../runtime-home';
-import { safeJsonBody } from '../http';
+import {
+  isJsonObject,
+  isJsonString,
+  type JsonObject,
+  type JsonValue,
+  safeJsonBody,
+} from '../http';
 import { recordHumanReviewSubmittedApiEvidence } from '../learning-hooks';
+
+type GitHubQueue = { items: GitHubPullRequest[] };
 
 export function createReviewRoutes(
   paths: RuntimePaths,
@@ -58,8 +66,9 @@ export function createReviewRoutes(
     // this request is in flight cannot be overwritten by a stale snapshot.
     const reviews = recentPrReviews(paths);
     const queue = queueResult.ok
-      ? queueFromResult(queueResult.data)
-      : { items: [] as GitHubPullRequest[] };
+      ? // SAFETY: listGitHubPrQueue validates its provider response before returning it.
+        queueFromResult(queueResult.data as JsonValue)
+      : emptyGitHubQueue();
     const awaiting = queue.items
       .filter((item) => item.relations.includes('review-requested'))
       .map((pullRequest) => ({
@@ -106,7 +115,7 @@ export function createReviewRoutes(
 
   routes.post('/reviews', async (c) => {
     const body = objectBody(await safeJsonBody(c));
-    const ref = typeof body.ref === 'string' ? body.ref.trim() : '';
+    const ref = isJsonString(body.ref) ? body.ref.trim() : '';
     if (!ref) {
       return c.json(
         {
@@ -140,7 +149,7 @@ export function createReviewRoutes(
           ok: false,
           action: 'pr_review_start',
           changed: false,
-          message: errorMessage(error),
+          message: errorMessage(error instanceof Error ? error : String(error)),
           ...actionResultErrorDetails(error),
         },
         400,
@@ -182,7 +191,7 @@ export function createReviewRoutes(
           ok: false,
           action: 'pr_review_restart',
           changed: false,
-          message: errorMessage(error),
+          message: errorMessage(error instanceof Error ? error : String(error)),
           ...actionResultErrorDetails(error),
         },
         400,
@@ -241,7 +250,9 @@ export function createReviewRoutes(
         result.outcome === 'pending' ? 202 : 200,
       );
     } catch (error) {
-      const message = errorMessage(error);
+      const message = errorMessage(
+        error instanceof Error ? error : String(error),
+      );
       return c.json(
         {
           ok: false,
@@ -316,8 +327,11 @@ function reviewArchiveResult(
       },
     };
   } catch (error) {
-    const message = errorMessage(error);
+    const message = errorMessage(
+      error instanceof Error ? error : String(error),
+    );
     return {
+      // SAFETY: the conditional can only evaluate to one of the two declared statuses.
       status: (message === 'PR review not found.' ? 404 : 400) as 400 | 404,
       body: {
         ok: false,
@@ -329,30 +343,34 @@ function reviewArchiveResult(
   }
 }
 
-function queueFromResult(value: unknown): { items: GitHubPullRequest[] } {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+function queueFromResult(value: JsonValue): GitHubQueue {
+  if (!isJsonObject(value)) {
     return { items: [] };
   }
-  const queue = (value as { queue?: unknown }).queue;
-  if (!queue || typeof queue !== 'object' || Array.isArray(queue)) {
+  const queue = value.queue;
+  if (!isJsonObject(queue)) {
     return { items: [] };
   }
-  const items = (queue as { items?: unknown }).items;
-  return { items: Array.isArray(items) ? (items as GitHubPullRequest[]) : [] };
+  const items = queue.items;
+  if (!Array.isArray(items)) return { items: [] };
+  // SAFETY: listGitHubPrQueue decodes each queue item before returning data.
+  return { items: items as GitHubPullRequest[] };
 }
 
-function objectBody(value: unknown): Record<string, unknown> {
-  return value && typeof value === 'object' && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : {};
+function emptyGitHubQueue(): GitHubQueue {
+  return { items: [] };
 }
 
-function reviewOrigin(value: unknown): PrReviewOrigin {
+function objectBody(value: JsonValue): JsonObject {
+  return isJsonObject(value) ? value : {};
+}
+
+function reviewOrigin(value: JsonValue | undefined): PrReviewOrigin {
   return value === 'chat' || value === 'panel' || value === 'api'
     ? value
     : 'api';
 }
 
-function errorMessage(error: unknown) {
+function errorMessage(error: Error | string) {
   return error instanceof Error ? error.message : String(error);
 }

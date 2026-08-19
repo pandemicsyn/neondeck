@@ -1,4 +1,5 @@
 import type { JsonValue } from '@flue/runtime';
+import * as v from 'valibot';
 import { readChatSession, type ChatSessionRecord } from '../../sessions';
 import { listMemories, type MemoryRecord } from '../../memory';
 import {
@@ -25,7 +26,7 @@ export async function readSessionForReview(
   if (!result.ok || !('session' in result)) {
     throw new Error(`Session ${sessionId} was not found.`);
   }
-  return result.session as ChatSessionRecord;
+  return result.session;
 }
 
 export function learningPrompt(
@@ -81,7 +82,7 @@ export async function listActiveLearningMemories(paths: RuntimePaths) {
     listMemories({ status: 'active', scope: 'local' }, paths),
     listMemories({ status: 'active', scope: 'project' }, paths),
   ]);
-  return scopes.flatMap((scope) => scope.memories) as MemoryRecord[];
+  return scopes.flatMap((scope) => scope.memories);
 }
 
 export async function listConversationLearningMemories(
@@ -122,25 +123,14 @@ export function uniqueRepoIds(repoIds: Array<string | null>) {
   return Array.from(new Set(repoIds));
 }
 
-export function summarizeMemories(memories: unknown[], limit = 80) {
-  return memories.slice(0, limit).map((memory) => {
-    const item = memory as {
-      id?: string;
-      scope?: string;
-      key?: string;
-      value?: unknown;
-      repoId?: string | null;
-      useCount?: number;
-      updatedAt?: string;
-    };
+export function summarizeMemories(memories: MemoryRecord[], limit = 80) {
+  return memories.slice(0, limit).map((item) => {
     return {
       id: item.id,
       scope: item.scope,
       key: item.key,
       value: truncate(
-        typeof item.value === 'string'
-          ? item.value
-          : JSON.stringify(item.value),
+        v.is(v.string(), item.value) ? item.value : JSON.stringify(item.value),
         500,
       ),
       repoId: item.repoId ?? null,

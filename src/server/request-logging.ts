@@ -1,9 +1,24 @@
 import type { FlueObservation } from '@flue/runtime';
 import type { MiddlewareHandler } from 'hono';
+import * as v from 'valibot';
+import { isJsonObject, isJsonString, type JsonValue } from './http';
 
 export type ServerLogLevel = 'error' | 'info' | 'warn';
 
+type ResponseDiagnostics = {
+  action?: string;
+  message?: string;
+  errors?: string[];
+  requires?: string[];
+};
+
 type ServerLogWriter = (level: ServerLogLevel, message: string) => void;
+
+const serializedFlueErrorIdentitySchema = v.object({
+  name: v.string(),
+  message: v.string(),
+  type: v.optional(v.string()),
+});
 
 export function logApiRequests(
   options: {
@@ -129,14 +144,25 @@ export function formatFlueActivity(
           ...errorTypeField(event.error),
         ],
       );
-    case 'operation':
+    case 'operation': {
       if (!event.isError) return null;
+      const serializedError = v.safeParse(
+        serializedFlueErrorIdentitySchema,
+        event.error,
+      );
+      const errorIdentity =
+        event.error instanceof Error
+          ? { name: event.error.name }
+          : serializedError.success
+            ? serializedError.output
+            : undefined;
       return activityEntry('warn', 'operation failed', [
         ...fields,
         `operation=${safeLogToken(event.operationKind)}`,
         `duration=${Math.max(0, Math.round(event.durationMs))}ms`,
-        ...errorTypeField(event.error),
+        ...errorTypeField(errorIdentity),
       ]);
+    }
     default:
       return null;
   }
@@ -149,21 +175,19 @@ async function readResponseDiagnostics(
   const contentType = response.headers.get('content-type')?.toLowerCase() ?? '';
   if (!contentType.includes('json')) return {};
   try {
-    const data = (await response.clone().json()) as unknown;
-    if (!data || typeof data !== 'object' || Array.isArray(data)) return {};
-    const record = data as Record<string, unknown>;
-    return {
-      ...(typeof record.action === 'string' ? { action: record.action } : {}),
-      ...(includeFailureDetails && typeof record.message === 'string'
-        ? { message: record.message }
-        : {}),
-      ...(includeFailureDetails && stringArray(record.errors).length
-        ? { errors: stringArray(record.errors) }
-        : {}),
-      ...(includeFailureDetails && stringArray(record.requires).length
-        ? { requires: stringArray(record.requires) }
-        : {}),
-    };
+    // SAFETY: JSON response decoding produces JSON-compatible values.
+    const data = (await response.clone().json()) as JsonValue;
+    if (!isJsonObject(data)) return {};
+    const details: ResponseDiagnostics = {};
+    if (isJsonString(data.action)) details.action = data.action;
+    if (includeFailureDetails && isJsonString(data.message)) {
+      details.message = data.message;
+    }
+    const errors = stringArray(data.errors);
+    if (includeFailureDetails && errors.length) details.errors = errors;
+    const requires = stringArray(data.requires);
+    if (includeFailureDetails && requires.length) details.requires = requires;
+    return details;
   } catch {
     return {};
   }
@@ -181,21 +205,15 @@ function activityEntry(
   };
 }
 
-function errorTypeField(value: unknown) {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return [];
-  const error = value as Record<string, unknown>;
-  const type =
-    typeof error.type === 'string'
-      ? error.type
-      : typeof error.name === 'string'
-        ? error.name
-        : null;
+function errorTypeField(value: { name?: string; type?: string } | undefined) {
+  if (!value) return [];
+  const type = value.type ?? value.name ?? null;
   return type ? [`error=${safeLogToken(type)}`] : [];
 }
 
-function stringArray(value: unknown) {
+function stringArray(value: JsonValue | undefined) {
   return Array.isArray(value)
-    ? value.filter((item): item is string => typeof item === 'string')
+    ? value.filter((item): item is string => isJsonString(item))
     : [];
 }
 
