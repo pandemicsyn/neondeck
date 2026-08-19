@@ -1,5 +1,21 @@
 # Changelog
 
+## 1.0.0-beta.34
+
+### Minor Changes
+
+- [#301](https://github.com/pandemicsyn/neondeck/pull/301) [`8afc430`](https://github.com/pandemicsyn/neondeck/commit/8afc430fa7028bdcd0b40bae065236854533cca3) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Speed up pull-request exploration with medium-reasoning defaults, focused adaptive delegation, duplicate-work telemetry, and retained full workspace outputs for targeted follow-up inspection.
+
+### Patch Changes
+
+- [#300](https://github.com/pandemicsyn/neondeck/pull/300) [`3a5b85e`](https://github.com/pandemicsyn/neondeck/commit/3a5b85e34acc8768057fc18056c1fc63f544cc5e) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Clear submitted PR review drafts from the workbench immediately so published inline comments do not appear beside stale local duplicates.
+
+- [#295](https://github.com/pandemicsyn/neondeck/pull/295) [`254eb92`](https://github.com/pandemicsyn/neondeck/commit/254eb9207d6877c6ce95413cb8f06f773627db0f) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Use the operating system's default browser for `neondeck open` unless a Chromium executable is explicitly selected with `--browser` for app-mode window controls.
+
+- [#293](https://github.com/pandemicsyn/neondeck/pull/293) [`6a07418`](https://github.com/pandemicsyn/neondeck/commit/6a0741874906c45445e3d13c4f50a86abed14e73) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Keep the initial chat session current when read-only CLI commands create the runtime home before onboarding.
+
+- [#296](https://github.com/pandemicsyn/neondeck/pull/296) [`19d5584`](https://github.com/pandemicsyn/neondeck/commit/19d558420eaeed4c64085f0c029442dbcd195183) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Prevent Autopilot from replaying handled PR feedback after an approved self-push.
+
 ## 1.0.0-beta.33
 
 ### Patch Changes
