@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import * as v from 'valibot';
 import { addNotification, addWorkflowSummary } from '../app-state';
 import {
@@ -16,6 +17,7 @@ import {
 } from '../github';
 import { getGitHubPrEventState, getGitHubPrFiles } from '../pr-events';
 import type { PrEventStateDependencies, PullRequestTarget } from '../pr-events';
+import { readLocalPullRequestFileDiff } from '../pr-local-diffs';
 import { readRepoRegistrySnapshot, repoFullName } from '../repos';
 import { writeReport } from '../reports';
 import {
@@ -49,11 +51,18 @@ export type ReviewAssistFacts = {
   state: GitHubPullRequestEventState;
   files: GitHubPullRequestFile[];
   diffSummary: GitHubDiffSummary;
+  source: 'local' | 'github';
 };
 
 export type ReviewAssistPromptContext = {
   repoId: string | null;
   learningMemoryContext: AutomationLearningMemoryContext;
+};
+
+export type PreparedPrReviewAssist = {
+  input: PrReviewAssistInput;
+  facts: ReviewAssistFacts;
+  promptContext: ReviewAssistPromptContext;
 };
 
 export type ReviewAssistDependencies = {
@@ -67,7 +76,20 @@ export type ReviewAssistDependencies = {
   ) => Promise<unknown> | unknown;
   prEventDependencies?: PrEventStateDependencies;
   workflowRunId?: string;
+  effectId?: string;
+  signal?: AbortSignal;
+  runEffect?: ReviewAssistEffectRunner;
+  validateReviewFiles?: (
+    facts: ReviewAssistFacts,
+    output: ReviewAssistStructuredOutput,
+    paths: RuntimePaths,
+  ) => Promise<GitHubPullRequestFile[]>;
 };
+
+export type ReviewAssistEffectRunner = <T>(
+  name: string,
+  effect: () => T | Promise<T>,
+) => Promise<T>;
 
 type SeededFinding = {
   finding: ReviewAssistFinding;
@@ -85,31 +107,93 @@ export async function reviewPrForHuman(
   paths = runtimePaths(),
   dependencies: ReviewAssistDependencies = {},
 ) {
+  const runEffect: ReviewAssistEffectRunner =
+    dependencies.runEffect ?? ((_name, effect) => Promise.resolve(effect()));
+  const preparation = await preparePrReviewForHuman(input, paths, {
+    ...dependencies,
+    runEffect,
+  });
+  if (!preparation.ok) return preparation.result;
+  const rawOutput = await runEffect('generate-review-output', () =>
+    (dependencies.reviewer ?? deterministicReviewPass)(
+      preparation.prepared.facts,
+      preparation.prepared.promptContext,
+    ),
+  );
+  return completePreparedPrReviewForHuman(
+    preparation.prepared,
+    rawOutput,
+    paths,
+    { ...dependencies, runEffect },
+  );
+}
+
+export async function preparePrReviewForHuman(
+  input: PrReviewAssistInput,
+  paths = runtimePaths(),
+  dependencies: Pick<
+    ReviewAssistDependencies,
+    'fetchFacts' | 'prEventDependencies' | 'runEffect' | 'signal'
+  > = {},
+): Promise<
+  | { ok: true; prepared: PreparedPrReviewAssist }
+  | { ok: false; result: ReturnType<typeof failure> }
+> {
   await ensureRuntimeHome(paths);
   const parsed = v.safeParse(prReviewAssistInputSchema, input);
   if (!parsed.success) {
-    return failure('Invalid PR review assist input.', {
-      errors: [v.summarize(parsed.issues)],
-      requires: ['ref'],
-    });
+    return {
+      ok: false,
+      result: failure('Invalid PR review assist input.', {
+        errors: [v.summarize(parsed.issues)],
+        requires: ['ref'],
+      }),
+    };
   }
-
-  const factsResult = await readReviewFacts(parsed.output, paths, dependencies);
-  if (!factsResult.ok) return factsResult.result;
+  const runEffect: ReviewAssistEffectRunner =
+    dependencies.runEffect ?? ((_name, effect) => Promise.resolve(effect()));
+  const factsResult = await runEffect('read-review-facts', () =>
+    readReviewFacts(parsed.output, paths, dependencies),
+  );
+  if (!factsResult.ok) return { ok: false, result: factsResult.result };
 
   const facts = factsResult.facts;
-  const repoId = await repoIdForFullName(facts.target.repoFullName, paths);
-  const promptContext = {
-    repoId,
-    learningMemoryContext: await loadAutomationLearningMemoryContext(paths, {
+  const revisionFailure = exactRevisionFailure(parsed.output, facts);
+  if (revisionFailure) return { ok: false, result: revisionFailure };
+  const promptContext = await runEffect('load-review-context', async () => {
+    const repoId = await repoIdForFullName(facts.target.repoFullName, paths);
+    return {
       repoId,
-      includeGlobal: true,
-    }),
+      learningMemoryContext: await loadAutomationLearningMemoryContext(paths, {
+        repoId,
+        includeGlobal: true,
+      }),
+    };
+  });
+  return {
+    ok: true,
+    prepared: { input: parsed.output, facts, promptContext },
   };
-  const rawOutput = await (dependencies.reviewer ?? deterministicReviewPass)(
-    facts,
-    promptContext,
-  );
+}
+
+export async function completePreparedPrReviewForHuman(
+  prepared: PreparedPrReviewAssist,
+  rawOutput: unknown,
+  paths = runtimePaths(),
+  dependencies: Pick<
+    ReviewAssistDependencies,
+    | 'workflowRunId'
+    | 'effectId'
+    | 'signal'
+    | 'runEffect'
+    | 'validateReviewFiles'
+  > = {},
+) {
+  await ensureRuntimeHome(paths);
+  const runEffect: ReviewAssistEffectRunner =
+    dependencies.runEffect ?? ((_name, effect) => Promise.resolve(effect()));
+  const { facts, promptContext } = prepared;
+  const repoId = promptContext.repoId;
   const reviewed = v.safeParse(reviewAssistStructuredOutputSchema, rawOutput);
   if (!reviewed.success) {
     return failure('Review output did not match the expected schema.', {
@@ -117,62 +201,84 @@ export async function reviewPrForHuman(
     });
   }
 
-  const seedResult = await seedDraftComments(
-    facts,
-    reviewed.output,
-    paths,
-    reviewSeedingBlockedReason(facts),
+  const seedResult = await runEffect('seed-draft-comments', () =>
+    seedDraftComments(
+      facts,
+      reviewed.output,
+      paths,
+      reviewSeedingBlockedReason(facts),
+      dependencies.effectId,
+      dependencies.signal,
+      dependencies.validateReviewFiles,
+    ),
   );
-  const reports = await writeReviewReports({
-    facts,
-    output: reviewed.output,
-    repoId,
-    seedResult,
-    paths,
-  });
-  const workflowSummary = await addWorkflowSummary(
-    {
-      workflow: 'review-pr-for-human',
-      ...(dependencies.workflowRunId
-        ? { runId: dependencies.workflowRunId }
-        : {}),
-      status: 'completed',
-      summary: {
-        message: `Prepared review reports for ${facts.target.repoFullName}#${facts.target.number}.`,
-        repoId,
-        repoFullName: facts.target.repoFullName,
-        prNumber: facts.target.number,
-        headSha: facts.state.headSha,
-        findingCount: reviewed.output.findings.length,
-        seededCount: seedResult.seeded.length,
-        reportOnlyCount: seedResult.reportOnly.length,
-        skippedSeedingReason: seedResult.skippedReason,
-        reportIds: reports.map((report) => report.id),
-        memoryIds: promptContext.learningMemoryContext.memoryIds,
-      },
-    },
-    paths,
+  const generatedAt = await runEffect('review-generated-at', () =>
+    Promise.resolve(new Date().toISOString()),
   );
-  await addNotification(
-    {
-      level: 'ready',
-      title: 'PR review ready',
-      message: `Neon prepared ${reports.length} report${reports.length === 1 ? '' : 's'} and ${seedResult.seeded.length} draft comment${seedResult.seeded.length === 1 ? '' : 's'} for ${facts.target.repoFullName}#${facts.target.number}.`,
-      source: 'review-pr-for-human',
-      sourceId: `${facts.target.repoFullName}#${facts.target.number}:${facts.state.headSha}`,
-      data: {
+  const reports = await runEffect('write-review-reports', () =>
+    writeReviewReports({
+      facts,
+      output: reviewed.output,
+      repoId,
+      seedResult,
+      paths,
+      generatedAt,
+      overviewId: stableEffectId(dependencies.effectId, 'overview-report'),
+      issuesId: stableEffectId(dependencies.effectId, 'issues-report'),
+      signal: dependencies.signal,
+    }),
+  );
+  const workflowSummary = await runEffect('write-workflow-summary', () =>
+    addWorkflowSummary(
+      {
+        id: stableEffectId(dependencies.effectId, 'workflow-summary'),
+        signal: dependencies.signal,
         workflow: 'review-pr-for-human',
-        repo: facts.target.repoFullName,
-        prNumber: facts.target.number,
-        reportIds: reports.map((report) => report.id),
-        reportUrls: reports.map((report) => `/reports/${report.id}`),
-        reviewUrl: reviewSurfaceUrl(facts.target),
-        seededCount: seedResult.seeded.length,
-        reportOnlyCount: seedResult.reportOnly.length,
-        skippedSeedingReason: seedResult.skippedReason,
+        ...(dependencies.workflowRunId
+          ? { runId: dependencies.workflowRunId }
+          : {}),
+        status: 'completed',
+        summary: {
+          message: `Prepared review reports for ${facts.target.repoFullName}#${facts.target.number}.`,
+          repoId,
+          repoFullName: facts.target.repoFullName,
+          prNumber: facts.target.number,
+          headSha: facts.state.headSha,
+          findingCount: reviewed.output.findings.length,
+          seededCount: seedResult.seeded.length,
+          reportOnlyCount: seedResult.reportOnly.length,
+          skippedSeedingReason: seedResult.skippedReason,
+          reportIds: reports.map((report) => report.id),
+          memoryIds: promptContext.learningMemoryContext.memoryIds,
+        },
       },
-    },
-    paths,
+      paths,
+    ),
+  );
+  await runEffect('notify-review-ready', () =>
+    addNotification(
+      {
+        id: stableEffectId(dependencies.effectId, 'ready-notification'),
+        signal: dependencies.signal,
+        level: 'ready',
+        title: 'PR review ready',
+        message: `Neon prepared ${reports.length} report${reports.length === 1 ? '' : 's'} and ${seedResult.seeded.length} draft comment${seedResult.seeded.length === 1 ? '' : 's'} for ${facts.target.repoFullName}#${facts.target.number}.`,
+        source: 'review-pr-for-human',
+        sourceId: `${facts.target.repoFullName}#${facts.target.number}:${facts.state.headSha}`,
+        data: {
+          workflow: 'review-pr-for-human',
+          repo: facts.target.repoFullName,
+          prNumber: facts.target.number,
+          reportIds: reports.map((report) => report.id),
+          reportUrls: reports.map((report) => `/reports/${report.id}`),
+          reviewUrl: reviewSurfaceUrl(facts.target),
+          seededCount: seedResult.seeded.length,
+          reportOnlyCount: seedResult.reportOnly.length,
+          skippedSeedingReason: seedResult.skippedReason,
+        },
+      },
+      paths,
+    ),
   );
 
   return {
@@ -254,6 +360,7 @@ async function readReviewFacts(
       prNumber: target.number,
       headSha: state.headSha,
       baseSha: state.baseSha,
+      baseRef: state.baseRef,
     },
     paths,
     dependencies.prEventDependencies,
@@ -266,6 +373,7 @@ async function readReviewFacts(
     ? (filesData.files as GitHubPullRequestFile[])
     : null;
   const diffSummary = filesData.diffSummary as GitHubDiffSummary | undefined;
+  const source = filesData.source === 'local' ? 'local' : 'github';
   if (!files || !diffSummary) {
     return {
       ok: false,
@@ -273,7 +381,7 @@ async function readReviewFacts(
     };
   }
 
-  return { ok: true, facts: { target, state, files, diffSummary } };
+  return { ok: true, facts: { target, state, files, diffSummary, source } };
 }
 
 function deterministicReviewPass(
@@ -298,18 +406,26 @@ function deterministicReviewPass(
   const failedChecks = checkRuns.filter(
     (check) => check.conclusion && check.conclusion !== 'success',
   );
+  const unavailableChecks = [
+    facts.state.checkSuitesUnavailableReason,
+    facts.state.checkRunsUnavailableReason,
+  ].filter((reason): reason is string => Boolean(reason));
   return {
     overview: {
       summary: `${facts.state.title} changes ${facts.diffSummary.files} file${facts.diffSummary.files === 1 ? '' : 's'} with ${facts.diffSummary.additions} addition${facts.diffSummary.additions === 1 ? '' : 's'} and ${facts.diffSummary.deletions} deletion${facts.diffSummary.deletions === 1 ? '' : 's'}.`,
       changeMap,
       risks,
       checks:
-        failedChecks.length > 0
-          ? failedChecks.map(
-              (check) =>
-                `${check.name}: ${check.conclusion ?? check.status ?? 'unknown'}`,
-            )
-          : ['No failing check runs were present in fetched facts.'],
+        unavailableChecks.length > 0
+          ? [
+              `GitHub Checks were unavailable: ${[...new Set(unavailableChecks)].join('; ')}`,
+            ]
+          : failedChecks.length > 0
+            ? failedChecks.map(
+                (check) =>
+                  `${check.name}: ${check.conclusion ?? check.status ?? 'unknown'}`,
+              )
+            : ['No failing check runs were present in fetched facts.'],
     },
     findings: [],
   };
@@ -320,6 +436,9 @@ async function seedDraftComments(
   output: ReviewAssistStructuredOutput,
   paths: RuntimePaths,
   seedingBlockedReason: string | null,
+  effectId?: string,
+  signal?: AbortSignal,
+  validateReviewFiles = reviewValidationFiles,
 ) {
   let existing = readLivePrReviewDraft({
     databasePath: paths.neondeckDatabase,
@@ -337,6 +456,24 @@ async function seedDraftComments(
       skippedReason: seedingBlockedReason,
     };
   }
+  if (existing && draftHasHumanWork(existing)) {
+    return {
+      draft: existing,
+      seeded: [] as SeededFinding[],
+      reportOnly: output.findings.map((finding) => ({
+        finding,
+        reason: 'existing-human-draft',
+      })),
+      skippedReason: 'existing-human-draft',
+    };
+  }
+  const validationFiles = await validateReviewFiles(facts, output, paths);
+  signal?.throwIfAborted();
+  existing = readLivePrReviewDraft({
+    databasePath: paths.neondeckDatabase,
+    repo: facts.target.repoFullName,
+    prNumber: facts.target.number,
+  });
   if (existing && draftHasHumanWork(existing)) {
     return {
       draft: existing,
@@ -374,14 +511,18 @@ async function seedDraftComments(
       skippedReason: 'existing-draft-comments',
     };
   }
-
-  const anchors = anchorsByPath(facts.files);
+  const anchors = anchorsByPath(validationFiles);
+  const filesByPath = new Map(validationFiles.map((file) => [file.path, file]));
   const seeded: SeededFinding[] = [];
   const reportOnly: ReportOnlyFinding[] = [];
   const seedable = [];
   for (const finding of output.findings) {
     if (finding.anchor.kind === 'report-only') {
       reportOnly.push({ finding, reason: finding.anchor.reason });
+      continue;
+    }
+    if (filesByPath.get(finding.path)?.truncated) {
+      reportOnly.push({ finding, reason: 'file-diff-truncated' });
       continue;
     }
     const anchor = findingAnchor(finding);
@@ -411,9 +552,17 @@ async function seedDraftComments(
   });
   const addedIds: string[] = [];
   try {
-    for (const item of seedable) {
+    for (const [index, item] of seedable.entries()) {
       const beforeIds = new Set(draft.comments.map((comment) => comment.id));
+      const sourceFindingId = prReviewFindingSourceId({
+        ...item.finding,
+        line: findingLine(item.finding),
+      });
       draft = addPrReviewDraftComment({
+        id: stableEffectId(
+          effectId,
+          `draft-comment:${index}:${sourceFindingId}`,
+        ),
         databasePath: paths.neondeckDatabase,
         draftId: draft.id,
         path: item.finding.path,
@@ -423,10 +572,7 @@ async function seedDraftComments(
         startSide: item.anchor.startSide ?? null,
         body: seededCommentBody(item.finding),
         origin: 'neon',
-        sourceFindingId: prReviewFindingSourceId({
-          ...item.finding,
-          line: findingLine(item.finding),
-        }),
+        sourceFindingId,
       });
       const added = draft.comments.find(
         (comment) => !beforeIds.has(comment.id),
@@ -469,14 +615,64 @@ async function seedDraftComments(
   return { draft, seeded, reportOnly, skippedReason: null as string | null };
 }
 
+async function reviewValidationFiles(
+  facts: ReviewAssistFacts,
+  output: ReviewAssistStructuredOutput,
+  paths: RuntimePaths,
+) {
+  const findingPaths = new Set(
+    output.findings
+      .filter((finding) => finding.anchor.kind === 'inline')
+      .map((finding) => finding.path),
+  );
+  const truncatedPaths = [
+    ...new Set(
+      facts.files
+        .filter((file) => file.truncated && findingPaths.has(file.path))
+        .map((file) => file.path),
+    ),
+  ];
+  if (truncatedPaths.length === 0) return facts.files;
+
+  const exactFiles = new Map<string, GitHubPullRequestFile>();
+  let nextPathIndex = 0;
+  const worker = async () => {
+    while (nextPathIndex < truncatedPaths.length) {
+      const path = truncatedPaths[nextPathIndex];
+      nextPathIndex += 1;
+      if (!path) continue;
+      try {
+        const exact = await readLocalPullRequestFileDiff(
+          {
+            owner: facts.target.owner,
+            repo: facts.target.repo,
+            number: facts.target.number,
+            headSha: facts.state.headSha,
+            baseSha: facts.state.baseSha,
+            baseRef: facts.state.baseRef,
+            path,
+            maxPatchBytes: 16 * 1024 * 1024,
+          },
+          paths,
+        );
+        if (exact.file) exactFiles.set(path, exact.file);
+      } catch {
+        // Preserve the bounded source patch and keep the finding report-only.
+      }
+    }
+  };
+  await Promise.all(
+    Array.from({ length: Math.min(3, truncatedPaths.length) }, () => worker()),
+  );
+  return facts.files.map((file) => exactFiles.get(file.path) ?? file);
+}
+
 function reviewSeedingBlockedReason(facts: ReviewAssistFacts) {
   const stateTruncation = pullRequestEventStateTruncation(facts.state);
-  const filePatchTruncation = facts.files.some((file) => file.truncated);
   const reasons = [
     stateTruncation.any
       ? `truncated-pr-event-facts:${stateTruncation.categories.join(',')}`
       : null,
-    filePatchTruncation ? 'truncated-file-patches' : null,
   ].filter((reason): reason is string => Boolean(reason));
   return reasons.length > 0 ? reasons.join(';') : null;
 }
@@ -487,11 +683,14 @@ async function writeReviewReports(input: {
   repoId: string | null;
   seedResult: Awaited<ReturnType<typeof seedDraftComments>>;
   paths: RuntimePaths;
+  generatedAt: string;
+  overviewId?: string;
+  issuesId?: string;
+  signal?: AbortSignal;
 }) {
   const { facts, output, repoId, seedResult, paths } = input;
   const sourceRef = `${facts.target.repoFullName}#${facts.target.number}`;
-  const generatedAt = new Date();
-  const generatedAtIso = generatedAt.toISOString();
+  const generatedAtIso = input.generatedAt;
   const decks = buildReviewReportDecks({
     sourceRef,
     state: facts.state,
@@ -549,8 +748,11 @@ async function writeReviewReports(input: {
       },
     ],
   };
+  input.signal?.throwIfAborted();
   const overview = await writeReport(
     {
+      id: input.overviewId,
+      signal: input.signal,
       kind: 'pr-review',
       title: `PR Overview: ${sourceRef}`,
       repoId,
@@ -569,6 +771,7 @@ async function writeReviewReports(input: {
         document: overviewDocument,
       },
       html: renderReportDeckHtml(decks.overview.document),
+      createdAt: generatedAtIso,
     },
     paths,
   );
@@ -612,8 +815,11 @@ async function writeReviewReports(input: {
       },
     ],
   };
+  input.signal?.throwIfAborted();
   const issues = await writeReport(
     {
+      id: input.issuesId,
+      signal: input.signal,
       kind: 'pr-review',
       title: `Review Issues: ${sourceRef}`,
       repoId,
@@ -634,10 +840,37 @@ async function writeReviewReports(input: {
         document: issuesDocument,
       },
       html: renderReportDeckHtml(decks.issues.document),
+      createdAt: generatedAtIso,
     },
     paths,
   );
   return [overview, issues];
+}
+
+function exactRevisionFailure(
+  input: v.InferOutput<typeof prReviewAssistInputSchema>,
+  facts: ReviewAssistFacts,
+) {
+  if (!input.reviewId) return null;
+  const matches =
+    input.repoFullName?.toLowerCase() ===
+      facts.target.repoFullName.toLowerCase() &&
+    input.prNumber === facts.target.number &&
+    input.headSha === facts.state.headSha &&
+    input.baseSha === facts.state.baseSha &&
+    input.baseRef === facts.state.baseRef;
+  return matches
+    ? null
+    : failure(
+        `Pull request ${input.repoFullName}#${input.prNumber} moved from the exact revision admitted for this review attempt. Start a new review.`,
+      );
+}
+
+function stableEffectId(effectId: string | undefined, purpose: string) {
+  if (!effectId) return undefined;
+  return createHash('sha256')
+    .update(`pr-review-assist:${effectId}:${purpose}`)
+    .digest('hex');
 }
 
 function anchorsByPath(files: GitHubPullRequestFile[]) {
@@ -663,13 +896,9 @@ function findingLine(finding: ReviewAssistFinding) {
 }
 
 function seededCommentBody(finding: ReviewAssistFinding) {
-  return [
-    `Neon review finding (${finding.severity}${finding.confidence ? `, ${finding.confidence} confidence` : ''}): ${finding.summary}`,
-    '',
-    `Suggested fix: ${finding.suggestedFix}`,
-    '',
-    'Generated by Neon. Edit or delete before submitting the review.',
-  ].join('\n');
+  return [finding.summary, '', `Suggested fix: ${finding.suggestedFix}`].join(
+    '\n',
+  );
 }
 
 function draftHasHumanWork(draft: GitHubPrReviewDraft) {

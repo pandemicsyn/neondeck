@@ -26,9 +26,33 @@ import {
 import {
   createEventStreamRoutes,
   type EventStreamDependencies,
+  type EventStreamOptions,
 } from './event-stream';
+import {
+  formatGitHubQueueSnapshotServerSentEvent,
+  type GitHubQueueSnapshotEvent,
+} from '../../modules/github';
 
 describe('dashboard event stream', () => {
+  it('reports dashboard connections and disconnects', async () => {
+    const onConnectionChange =
+      vi.fn<NonNullable<EventStreamOptions['onConnectionChange']>>();
+    const harness = eventHarness({ onConnectionChange });
+    const app = new Hono().route('/api/events', harness.routes);
+    const response = await app.request('http://localhost/api/events');
+
+    expect(onConnectionChange).toHaveBeenCalledWith({
+      activeConnections: 1,
+      state: 'connected',
+    });
+
+    await response.body?.cancel();
+    expect(onConnectionChange).toHaveBeenLastCalledWith({
+      activeConnections: 0,
+      state: 'disconnected',
+    });
+  });
+
   it('fans all app-domain events into one stream and cleans up together', async () => {
     const harness = eventHarness();
     const app = new Hono().route('/api/events', harness.routes);
@@ -44,11 +68,15 @@ describe('dashboard event stream', () => {
     expect(reader).toBeDefined();
     const connected = await reader!.read();
     expect(new TextDecoder().decode(connected.value)).toContain(': connected');
+    const heartbeat = await reader!.read();
+    expect(new TextDecoder().decode(heartbeat.value)).toContain(
+      'event: dashboard-heartbeat',
+    );
 
     harness.emitAll();
     const output = await readUntil(
       reader!,
-      'event: review-source-revision',
+      'event: github-queue-change',
       new TextDecoder(),
     );
     expect(output).toContain('event: config-change');
@@ -58,6 +86,7 @@ describe('dashboard event stream', () => {
     expect(output).toContain('event: review-change');
     expect(output).toContain('event: review-surface-change');
     expect(output).toContain('event: review-source-revision');
+    expect(output).toContain('event: github-queue-change');
 
     await reader!.cancel();
     for (const unsubscribe of harness.unsubscribers) {
@@ -92,7 +121,7 @@ describe('dashboard event stream', () => {
   });
 });
 
-function eventHarness() {
+function eventHarness(options: EventStreamOptions = {}) {
   let configListener: ((event: ConfigChangeEvent) => void) | undefined;
   let notificationListener: ((event: NotificationEvent) => void) | undefined;
   let sessionListener: ((event: ChatSessionEvent) => void) | undefined;
@@ -103,7 +132,10 @@ function eventHarness() {
     ((event: ReviewSurfaceChangeEvent) => void) | undefined;
   let reviewSourceListener:
     ((event: ReviewSourceRevisionEvent) => void) | undefined;
+  let githubQueueListener:
+    ((event: GitHubQueueSnapshotEvent) => void) | undefined;
   const unsubscribers = [
+    vi.fn<() => void>(),
     vi.fn<() => void>(),
     vi.fn<() => void>(),
     vi.fn<() => void>(),
@@ -119,6 +151,7 @@ function eventHarness() {
     formatChatSessionCommandServerSentEvent,
     formatChatSessionServerSentEvent,
     formatConfigServerSentEvent,
+    formatGitHubQueueSnapshotServerSentEvent,
     formatNotificationServerSentEvent,
     formatPrReviewServerSentEvent,
     formatReviewSurfaceServerSentEvent,
@@ -135,6 +168,10 @@ function eventHarness() {
     subscribeConfigEvents(listener) {
       configListener = listener;
       return unsubscribers[0]!;
+    },
+    subscribeGitHubQueueSnapshotEvents(listener) {
+      githubQueueListener = listener;
+      return unsubscribers[7]!;
     },
     subscribeNotificationEvents(listener) {
       notificationListener = listener;
@@ -155,7 +192,7 @@ function eventHarness() {
   };
 
   return {
-    routes: createEventStreamRoutes(dependencies),
+    routes: createEventStreamRoutes(dependencies, options),
     replay,
     unsubscribers,
     emitAll() {
@@ -166,11 +203,34 @@ function eventHarness() {
       reviewListener?.(reviewEvent());
       reviewSurfaceListener?.(reviewSurfaceEvent());
       reviewSourceListener?.(reviewSourceEvent());
+      githubQueueListener?.(githubQueueEvent());
     },
     emitConfigAndNotification() {
       configListener?.(configEvent());
       notificationListener?.(notificationEvent());
     },
+  };
+}
+
+function githubQueueEvent(): GitHubQueueSnapshotEvent {
+  const snapshot = {
+    revision: 'queue-revision',
+    status: 'ready' as const,
+    login: 'syn',
+    repos: ['owner/repo'],
+    items: [],
+    fetchedAt: '2026-07-18T00:00:00.000Z',
+    lastAttemptAt: '2026-07-18T00:00:00.000Z',
+    lastCompleteAt: '2026-07-18T00:00:00.000Z',
+    truncated: false,
+    issues: [],
+  };
+  return {
+    id: 'github-queue:queue-revision',
+    action: 'changed',
+    revision: snapshot.revision,
+    snapshot,
+    changedAt: '2026-07-18T00:00:00.000Z',
   };
 }
 
@@ -316,6 +376,8 @@ function reviewEvent(): PrReviewEvent {
       status: 'ready',
       runId: 'run-1',
       headSha: 'head-1',
+      baseSha: null,
+      baseRef: null,
       origin: 'panel',
       reviewUrl: '/review?repo=owner%2Frepo&number=1',
       reportIds: ['report-1'],
@@ -333,6 +395,7 @@ function reviewEvent(): PrReviewEvent {
       readyAt: timestamp,
       submittedAt: null,
       failedAt: null,
+      archivedAt: null,
     },
   };
 }

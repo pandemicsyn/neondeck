@@ -23,15 +23,32 @@ import {
   reviewAction,
 } from './store';
 
+export type LearningReviewEffectRunner = <T>(
+  name: string,
+  effect: () => T | Promise<T>,
+) => Promise<T>;
+
+export type CompletedLearningReviewEffect = {
+  name: string;
+  changed: boolean;
+  identifiers?: Record<string, string>;
+};
+
 export async function completeLearningReviewFromModelOutput(
   prepared: PreparedLearningReview,
   output: LearningReviewerOutput,
   paths = runtimePaths(),
+  options: { runEffect?: LearningReviewEffectRunner } = {},
 ) {
+  const runEffect: LearningReviewEffectRunner =
+    options.runEffect ?? ((_name, effect) => Promise.resolve(effect()));
   const parsed = v.safeParse(learningReviewerOutputSchema, output);
   if (!parsed.success) {
     const message = v.summarize(parsed.issues);
-    failLearningReview(prepared.reviewId, message, paths);
+    await runEffect('fail-invalid-result', () => {
+      failLearningReview(prepared.reviewId, message, paths);
+      return { failed: true };
+    });
     return failedReview(reviewAction(prepared.kind), message);
   }
 
@@ -42,7 +59,10 @@ export async function completeLearningReviewFromModelOutput(
   const allowedMemoryIds = new Set(prepared.allowedMemoryIds);
   const allowedProjectRepoIds = new Set(prepared.allowedProjectRepoIds);
   const allowedSkillIds = new Set(prepared.allowedSkillIds);
-  for (const proposal of parsed.output.memoryActions) {
+  const skillSnapshots = new Map(
+    prepared.skillSnapshots.map((snapshot) => [snapshot.id, snapshot.sha256]),
+  );
+  for (const [index, proposal] of parsed.output.memoryActions.entries()) {
     if (prepared.kind === 'pr-batch' && proposal.action === 'upsert') {
       if (proposal.scope === 'user') {
         skipped.push({
@@ -61,25 +81,48 @@ export async function completeLearningReviewFromModelOutput(
       });
       continue;
     }
+    const revisionContext = memoryRevisionContext(
+      proposal,
+      prepared.memorySnapshots,
+    );
+    if (!revisionContext) {
+      skipped.push({
+        action: proposal.action,
+        reason: 'memory-revision-not-in-review-snapshot',
+      });
+      continue;
+    }
     if (prepared.mode === 'off') {
       skipped.push({ action: proposal.action, reason: 'mode-off' });
       continue;
     }
     if (prepared.mode === 'review') {
-      const result = await createCandidateFromProposal(
-        proposal,
-        prepared.reviewId,
-        paths,
+      const result = await runEffect(`memory-candidate:${index}`, () =>
+        createCandidateFromProposal(
+          proposal,
+          revisionContext,
+          prepared.reviewId,
+          paths,
+          `learning:${prepared.reviewId}:memory:${index}`,
+        ),
       );
       if (result.ok && 'candidate' in result) candidates.push(result.candidate);
       else skipped.push(result);
       continue;
     }
-    const result = await applyProposal(proposal, paths);
+    const effectName = `memory-action:${index}`;
+    const result = await runEffect(effectName, () =>
+      applyProposal(
+        proposal,
+        revisionContext,
+        paths,
+        `${prepared.reviewId}:${effectName}`,
+      ),
+    );
     if (result.ok && result.changed) applied.push(result);
     else skipped.push(result);
   }
-  for (const proposal of parsed.output.skillPatches) {
+  for (const [index, proposal] of parsed.output.skillPatches.entries()) {
     if (!allowedSkillIds.has(proposal.skillId)) {
       skipped.push({
         action: 'skill-patch',
@@ -96,10 +139,21 @@ export async function completeLearningReviewFromModelOutput(
       });
       continue;
     }
-    const proposed = await proposeSkillPatch(
-      { ...proposal, reviewId: prepared.reviewId },
-      paths,
-      { source: 'workflow' },
+    const expectedBeforeHash = skillSnapshots.get(proposal.skillId);
+    if (!expectedBeforeHash) {
+      skipped.push({
+        action: 'skill-patch',
+        skillId: proposal.skillId,
+        reason: 'skill-revision-not-in-review-snapshot',
+      });
+      continue;
+    }
+    const proposed = await runEffect(`skill-proposal:${index}`, () =>
+      proposeSkillPatch({ ...proposal, reviewId: prepared.reviewId }, paths, {
+        source: 'workflow',
+        candidateId: `learning:${prepared.reviewId}:skill:${index}`,
+        expectedBeforeHash,
+      }),
     );
     if (!proposed.ok || !('candidate' in proposed)) {
       skipped.push(proposed);
@@ -121,10 +175,12 @@ export async function completeLearningReviewFromModelOutput(
     const candidateId = String(
       (proposed.candidate as Record<string, unknown>).id,
     );
-    const appliedPatch = await applySkillPatchCandidate(
-      { id: candidateId, reason: proposal.reason },
-      paths,
-      { source: 'workflow' },
+    const appliedPatch = await runEffect(`skill-apply:${index}`, () =>
+      applySkillPatchCandidate(
+        { id: candidateId, reason: proposal.reason },
+        paths,
+        { source: 'workflow', idempotent: true },
+      ),
     );
     if (appliedPatch.ok && appliedPatch.changed) applied.push(appliedPatch);
     else skipped.push(appliedPatch);
@@ -149,7 +205,10 @@ export async function completeLearningReviewFromModelOutput(
       )
       .filter(Boolean),
   });
-  completeLearningReview(prepared.reviewId, result, paths);
+  await runEffect('complete-review', () => {
+    completeLearningReview(prepared.reviewId, result, paths);
+    return { completed: true };
+  });
 
   return {
     ok: true,
@@ -178,19 +237,46 @@ export function failPreparedLearningReview(
   prepared: PreparedLearningReview,
   error: unknown,
   paths = runtimePaths(),
+  options: {
+    completedEffects?: CompletedLearningReviewEffect[];
+    uncertainEffect?: string;
+  } = {},
 ) {
   const message = errorMessage(error);
-  failLearningReview(prepared.reviewId, message, paths);
+  const completedEffects = options.completedEffects ?? [];
+  const changed = completedEffects.some((effect) => effect.changed);
+  const outcomeUnknown = options.uncertainEffect !== undefined;
+  const partial = completedEffects.length > 0 || outcomeUnknown;
+  const result = compactJson({
+    failed: true,
+    partial,
+    changed,
+    outcomeUnknown,
+    ...(options.uncertainEffect
+      ? { uncertainEffect: options.uncertainEffect }
+      : {}),
+    completedEffects,
+  });
+  failLearningReview(prepared.reviewId, message, paths, result);
   return {
     ...failedReview(reviewAction(prepared.kind), message),
+    changed,
     reviewId: prepared.reviewId,
+    partial,
+    outcomeUnknown,
+    ...(options.uncertainEffect
+      ? { uncertainEffect: options.uncertainEffect }
+      : {}),
+    completedEffects,
   };
 }
 
 export async function createCandidateFromProposal(
   proposal: MemoryProposal,
+  revisionContext: MemoryRevisionContext,
   reviewId: string,
   paths: RuntimePaths,
+  candidateId?: string,
 ) {
   if (proposal.action === 'upsert') {
     return createMemoryCandidate(
@@ -202,9 +288,12 @@ export async function createCandidateFromProposal(
         repoId: proposal.repoId,
         reason: proposal.reason,
         reviewId,
+        patch: {
+          expectedUpdatedAt: revisionContext.expectedUpdatedAt ?? null,
+        },
       },
       paths,
-      { source: 'workflow' },
+      { source: 'workflow', candidateId },
     );
   }
   if (proposal.action === 'rewrite') {
@@ -214,10 +303,13 @@ export async function createCandidateFromProposal(
         value: proposal.value,
         reason: proposal.reason,
         reviewId,
-        patch: { memoryId: proposal.memoryId },
+        patch: {
+          memoryId: proposal.memoryId,
+          expectedUpdatedAt: revisionContext.expectedUpdatedAt,
+        },
       },
       paths,
-      { source: 'workflow' },
+      { source: 'workflow', candidateId },
     );
   }
   if (proposal.action === 'archive') {
@@ -226,10 +318,13 @@ export async function createCandidateFromProposal(
         action: 'archive',
         reason: proposal.reason,
         reviewId,
-        patch: { memoryId: proposal.memoryId },
+        patch: {
+          memoryId: proposal.memoryId,
+          expectedUpdatedAt: revisionContext.expectedUpdatedAt,
+        },
       },
       paths,
-      { source: 'workflow' },
+      { source: 'workflow', candidateId },
     );
   }
   return createMemoryCandidate(
@@ -241,16 +336,19 @@ export async function createCandidateFromProposal(
       patch: {
         targetId: proposal.targetId,
         sourceIds: proposal.sourceIds,
+        expectedUpdatedAts: revisionContext.expectedUpdatedAts,
       },
     },
     paths,
-    { source: 'workflow' },
+    { source: 'workflow', candidateId },
   );
 }
 
 export async function applyProposal(
   proposal: MemoryProposal,
+  revisionContext: MemoryRevisionContext,
   paths: RuntimePaths,
+  effectId?: string,
 ) {
   if (proposal.action === 'upsert') {
     return upsertMemory(
@@ -259,11 +357,12 @@ export async function applyProposal(
         key: proposal.key,
         value: proposal.value,
         repoId: proposal.repoId,
+        expectedUpdatedAt: revisionContext.expectedUpdatedAt ?? null,
         reason: proposal.reason,
         actor: 'workflow',
       },
       paths,
-      { source: 'workflow' },
+      { source: 'workflow', effectId },
     );
   }
   if (proposal.action === 'rewrite') {
@@ -271,35 +370,73 @@ export async function applyProposal(
       {
         id: proposal.memoryId,
         value: proposal.value,
+        expectedUpdatedAt: revisionContext.expectedUpdatedAt ?? undefined,
         reason: proposal.reason,
         actor: 'workflow',
       },
       paths,
-      { source: 'workflow' },
+      { source: 'workflow', effectId },
     );
   }
   if (proposal.action === 'archive') {
     return archiveMemory(
       {
         id: proposal.memoryId,
+        expectedUpdatedAt: revisionContext.expectedUpdatedAt ?? undefined,
         reason: proposal.reason,
         actor: 'workflow',
       },
       paths,
-      { source: 'workflow' },
+      { source: 'workflow', effectId },
     );
   }
   return mergeMemories(
     {
       targetId: proposal.targetId,
       sourceIds: proposal.sourceIds,
+      expectedUpdatedAts: revisionContext.expectedUpdatedAts,
       ...(proposal.value === undefined ? {} : { value: proposal.value }),
       reason: proposal.reason,
       actor: 'workflow',
     },
     paths,
-    { source: 'workflow' },
+    { source: 'workflow', effectId },
   );
+}
+
+type MemorySnapshot = PreparedLearningReview['memorySnapshots'][number];
+
+type MemoryRevisionContext = {
+  expectedUpdatedAt?: string | null;
+  expectedUpdatedAts?: Record<string, string>;
+};
+
+export function memoryRevisionContext(
+  proposal: MemoryProposal,
+  snapshots: MemorySnapshot[],
+): MemoryRevisionContext | null {
+  if (proposal.action === 'upsert') {
+    const existing = snapshots.find(
+      (snapshot) =>
+        snapshot.scope === proposal.scope &&
+        snapshot.key === proposal.key &&
+        snapshot.repoId === (proposal.repoId ?? null),
+    );
+    return { expectedUpdatedAt: existing?.updatedAt ?? null };
+  }
+  if (proposal.action === 'rewrite' || proposal.action === 'archive') {
+    const snapshot = snapshots.find(
+      (candidate) => candidate.id === proposal.memoryId,
+    );
+    return snapshot ? { expectedUpdatedAt: snapshot.updatedAt } : null;
+  }
+  const expectedUpdatedAts: Record<string, string> = {};
+  for (const id of [proposal.targetId, ...proposal.sourceIds]) {
+    const snapshot = snapshots.find((candidate) => candidate.id === id);
+    if (!snapshot) return null;
+    expectedUpdatedAts[id] = snapshot.updatedAt;
+  }
+  return { expectedUpdatedAts };
 }
 
 export function proposalTargetsAllowed(

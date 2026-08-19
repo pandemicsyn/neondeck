@@ -2,9 +2,11 @@
 
 neondeck is a local-first developer cockpit for a companion display. Its agent, Neon, should act as a second brain and autopilot for active engineering work: repo-aware, watchful, concise, and able to turn deterministic signals into useful next actions and, when configured, bounded code changes.
 
-The near-term priority is to build Neondeck's local operating system before deeper dashboard customization: app home, config, SQLite state, repo registry, runtime skills, schedules, watches, and typed Flue actions. The UI should be an efficient surface over that runtime, not the place where core agent behavior lives.
+The near-term priority is to build Neondeck's local operating system before deeper dashboard customization: app home, config, SQLite state, repo registry, runtime skills, schedules, watches, and typed Flue tools and app APIs. The UI should be an efficient surface over that runtime, not the place where core agent behavior lives.
 
-With the runtime foundation in place, the next product focus is autonomy. Neon should move from "tell me what needs attention" toward "watch the work, prepare fixes, delegate larger chunks when useful, and safely push routine changes when policy allows." This requires stronger isolation, worktree orchestration, review-event workflows, delegated agent handoff, push-back policy, and operator-visible audit trails.
+> **Current Flue 2 runtime note (August 2026):** the Flue 2 migration supersedes the older Flue beta architecture recorded throughout this roadmap. Current code uses Flue agents, tools, direct bounded agent submissions, and app-owned services/state; Flue workflows, actions, and workflow-run persistence no longer exist. Older workflow/action wording below is retained where it documents historical milestones or product workflows rather than the current framework API. See `.plans/archived/FLUE_2_MIGRATION_PLAN.md` for the completed migration record.
+
+The runtime foundation, watched-PR autonomy, and learning system are now in place. The remaining product work is concentrated in richer Kilo handoff/result promotion, targeted review and dashboard improvements, and intentionally deferred deploy-adapter and TUI work.
 
 ## Product Direction
 
@@ -14,10 +16,10 @@ Core principles:
 
 - Prefer deterministic APIs and local state for facts.
 - Use Flue agents for continuing conversations and follow-up.
-- Use Flue workflows for bounded operations with run history.
-- Use Flue actions for reusable schema-backed, application-controlled operations.
+- Use direct bounded Flue agent submissions when model reasoning is required.
+- Use typed Flue tools and app APIs for schema-backed, application-controlled operations.
 - Use skills for behavior, conventions, and domain guidance.
-- Treat chat commands and UI buttons as two frontends over the same backend workflows.
+- Treat chat commands and UI buttons as two frontends over the same backend services.
 - Keep session context stable: SOUL, selected skills, repo config, and memory summaries should be loaded deliberately rather than silently changing mid-turn.
 - Treat learning as an explicit, auditable runtime subsystem: durable memory and skill changes should be derived from high-signal evidence, reviewed when policy requires it, and applied only to new sessions or deliberate context refreshes.
 - Use deterministic watchers first and agent summarization only when a watcher detects a meaningful state change.
@@ -26,16 +28,15 @@ Core principles:
 - Prefer bounded autopilot modes over a binary on/off switch: notify-only, prepare-only, autofix with approval, and autofix push when safe.
 - Keep one backend command/event surface so the web dashboard, future TUI, and possible companion surfaces reuse the same runtime.
 
-Flue usage boundaries:
+Current Flue 2 usage boundaries:
 
 - Use the `display-assistant` Flue agent for continuing, addressable Neon conversations.
-- Use Flue workflows for finite, inspectable units of work that should have a run id, events, result, and history.
-- Use Flue actions when an agent or workflow needs application-controlled multi-step behavior with Valibot schemas and reusable logic.
-- Use Flue tools for direct application lookups or small deterministic operations that the model can call during a response.
-- Use Flue skills for procedural guidance and conventions only; skills should point Neon toward tools/actions/workflows, not execute work themselves.
-- Use Hono routes for app-owned dashboard/TUI APIs and UI-only reads. Those routes should call the same service functions as Flue tools/actions rather than duplicating business logic.
-- Use Neondeck app SQLite for product state such as repos, watches, jobs, worktrees, approvals, notifications, memories, and delegated Kilo tasks. Use Flue SQLite for Flue session, submission, workflow-run, and event persistence.
-- Do not keep Flue workflow runs open merely to supervise indefinite background processes. Persist long-lived job state in Neondeck app state and use workflows for bounded admissions, ticks, reconciliations, summaries, verifications, and promotions.
+- Use direct Flue agent submissions for finite, inspectable model work; record product outcomes and operation state in Neondeck.
+- Use Flue tools for model-callable deterministic operations with schema validation.
+- Use Flue skills for procedural guidance and conventions only; skills should point Neon toward tools and APIs, not execute work themselves.
+- Use Hono routes for app-owned dashboard/TUI APIs and UI-only reads. Those routes should call the same service functions as Flue tools rather than duplicating business logic.
+- Use Neondeck app SQLite for product state such as repos, watches, jobs, worktrees, approvals, notifications, memories, delegated Kilo tasks, and operation summaries. Use Flue SQLite for Flue sessions, submissions, and events.
+- Keep long-lived coordination in Neondeck app state. Admit bounded agent work only when a deterministic state change requires model reasoning.
 
 ## Roadmap Ordering
 
@@ -45,7 +46,7 @@ Status markers:
 - `[ ]` still planned or only partially implemented.
 
 1. Neondeck home and runtime state.
-2. Flue actions for self-configuration.
+2. Typed self-configuration services and Flue tools.
 3. Repo registry and GitHub foundation.
 4. Schedules, watches, and blueprint-style automations.
 5. Runtime skills and skill reload.
@@ -55,6 +56,17 @@ Status markers:
 9. KiloCode handoff for large delegated work inside managed worktrees.
 10. Hermes-style self-improvement and learning over memory, skills, and PR/autopilot retrospectives.
 11. Later TUI/OpenTUI surface over the same backend API.
+
+## Current Status
+
+As of August 2026:
+
+- Phases 1–16 are complete for the current product scope.
+- Phases 18–20 are complete: managed worktrees and the watched-PR Autopilot loop are shipped.
+- Phase 22 is complete for v1: memory, learning reviews, candidates, skill patches, and operator surfaces are shipped.
+- Phase 21's Kilo CLI runner, session inspection, result review, verification, notifications, and basic dashboard/API surfaces are complete. Richer handoff/summarization orchestration, actual guarded promotion, fuller operator contracts, and the managed-server evaluation remain open.
+- Phase 10's provider-specific deploy adapters and all of Phase 17's TUI surface remain intentionally deferred.
+- Active product follow-ups live in the top level of `.plans/`; completed implementation plans and point-in-time reviews live in `.plans/archived/`. See `.plans/README.md` for the index.
 
 ## Usability Gate
 
@@ -343,9 +355,9 @@ Worktree principles:
 - Keep same-PR tasks serialized by default with a per-PR lock.
 - Allow parallel workflows across different PRs and repos.
 - Allow read-only same-PR triage/research in parallel, but serialize same-PR mutation workflows by default.
-- Treat created worktrees as declared Neondeck workspaces so repo-edit actions can read and edit files there without approval prompts when path policy passes.
-- Keep all file changes routed through repo-edit actions, not ad hoc shell writes.
-- Keep shell/test execution routed through the approved execution policy.
+- Treat created worktrees as declared Neondeck coding workspaces. A continuing Autopilot owner may read and edit files and run whatever repository commands it needs inside its managed worktree without a per-command allowlist.
+- Keep the primary checkout outside autonomous mutation scope. The managed worktree, not a language-specific edit/check API, is the isolation boundary.
+- Keep external delivery authority separate from coding authority: prepare modes may edit, test, format, build, and commit but cannot push or respond; only autonomous mode or an exact current reviewed-revision approval turn receives the bound push/response tools. Generic owner messages are non-authorizing.
 - Record every worktree lifecycle event, edit, command, push, PR comment, and cleanup decision in SQLite.
 
 Suggested runtime layout:
@@ -395,18 +407,18 @@ Needed actions:
 
 Replacement loop direction:
 
-- Keep deterministic GitHub fact collection, exact-head worktree synchronization, bounded repo edit/check/commit tools, guarded push, and Flue dispatch as reusable foundations.
+- Keep deterministic GitHub fact collection, exact-head worktree synchronization, a trusted repo-scoped coding workspace, guarded delivery tools, and Flue dispatch as reusable foundations.
 - For each watched PR, use one stable owner instance and one managed worktree.
 - A meaningful fingerprint dispatches at most one bounded owner turn. The owner gathers current facts, edits, verifies, and commits in that turn; a later poll observes anything that arrived while it was busy.
 - Do not recreate the removed triage/prepare/fix/verify/push workflow chain, admission queue, stage ledger, coalescing coordinator, or workflow-observation continuation path.
-- Keep push and PR response capability mode-specific and fail closed when current facts, exact head, or policy no longer permit the mutation.
+- Keep push and PR response capability mode-specific and fail closed when current facts, exact head, mode, or destination binding no longer permit delivery. Do not restrict ordinary repository commands to configured checks or route the autonomous owner's semantic decision through deterministic diff-risk approval gates.
 
 Autopilot modes:
 
 - `notify-only`: detect and notify, but do not create a worktree.
 - `prepare-only`: create a worktree, commit the proposed change locally, and surface the exact commit diff for review without pushing.
-- `autofix-with-approval`: create a worktree, commit locally, run checks, and wait for explicit user approval before push.
-- `autofix-push-when-safe`: create a worktree, commit locally, run configured checks, push when checks pass, and comment on the PR.
+- `autofix-with-approval`: use the full coding workspace, commit locally, run proportionate repository-native validation, and wait for explicit user approval before push.
+- `autofix-push-when-safe`: fully autonomously evaluate whether the requested change is sane and appropriately scoped; when it is, implement it, choose and run proportionate repository-native validation, commit, push, and comment. Escalate unreasonable scope or insufficiently validated changes instead of pushing.
 
 Decision: default newly configured repos to `prepare-only`, and make the default configurable globally and per repo.
 
@@ -422,11 +434,11 @@ Push-back policy:
 
 - Direct push is allowed only when the GitHub token can write to the PR branch or GitHub reports maintainer push permission for the fork.
 - If direct push is not allowed, Neondeck should leave the prepared worktree intact and notify the user with the reason push-back is blocked.
-- Do not force-push unless a user explicitly enables a narrowly scoped policy for a repo.
-- Before pushing, require a clean worktree except for the intended commit, a diff summary, and configured checks.
-- Auto-push requires configured checks to pass by default. Repo policy can explicitly allow push with failing checks for low-risk classes such as docs-only changes.
-- Autonomous fixes should create one commit per workflow run, with the commit message referencing the PR and addressed review/check ids.
-- Large, generated, secret-like, or high-risk files should require explicit approval even in auto-push mode. Database migrations are a common expected output and should be easy to generate in prepare-only or approved flows, but unattended auto-push of migration changes still requires explicit repo policy or approval.
+- Never force-push from Autopilot.
+- Before pushing, require a clean committed worktree, the linked current PR head, the bound destination, and a non-force push. Configured command hints may guide validation but are not a delivery prerequisite.
+- Autonomous delivery relies on the continuing owner's engineering judgment. It should run validation proportionate to the change, but an absent `requiredChecks` list does not block an otherwise sound fix. Unreasonable scope, failed relevant validation, or unresolved uncertainty should be retained for human review instead of pushed.
+- Autonomous fixes should create a focused commit per owner turn, with the commit message referencing the PR and addressed review/check ids when useful.
+- The owner must include file sensitivity, generated output, dependencies, CI/deploy config, migrations, and overall scope in its semantic judgment. Those are reasons to validate carefully or escalate, not a separate deterministic approval state machine after the operator has selected autonomous mode.
 
 Direct push-back readiness should verify that the configured GitHub credential can read repository metadata, PRs, checks/statuses, and contents; write contents to the target branch; comment on PRs/issues; and rerun workflows where that feature is enabled. For fork PRs, readiness should verify that GitHub reports maintainer push permission or that the credential can push to the fork branch. Missing permissions should be reported in plain language with the affected repo/branch.
 
@@ -468,7 +480,7 @@ Dashboard and future TUI needs:
 
 Runtime skill guidance:
 
-The Neondeck runtime skill should teach Neon that worktrees are the normal isolation boundary for autonomous PR work. Neon should gather deterministic PR facts first, then use workflows/actions for edits and checks, and only reason from those facts. It should clearly distinguish inference from fetched GitHub/check/worktree state.
+The Neondeck runtime skill should teach Neon that worktrees are the normal isolation boundary for autonomous PR work. Neon should gather deterministic PR facts first, then operate as a trusted coding agent inside the managed worktree: inspect repository guidance, edit, run the appropriate tests/formatters/typechecks/builds, and commit. The mode controls delivery authority, while the owner decides whether autonomous feedback is sane enough to implement and push. It should clearly distinguish engineering judgment from fetched GitHub/check/worktree facts.
 
 ### KiloCode Handoff
 
@@ -742,7 +754,7 @@ Testing layers:
 - Local smoke scripts for the happy path: create watch, run scheduler tick, inspect workflow summary, verify notification, and confirm no-op watcher silence.
 - Evals only for model-sensitive behavior such as explanation quality, triage prioritization, and summary usefulness. Do not use evals for deterministic watch or worktree mechanics.
 
-The replacement owner loop should have a non-model fixture path first: inject structured PR/check/review facts and temporary repos to prove polling, exact-head synchronization, bounded mutation tools, committed review artifacts, and guarded push without live GitHub. Retained standalone workflow primitives should remain directly smoke-testable, but tests must not reassemble them into the abandoned coordinator chain.
+The replacement owner loop should have a non-model fixture path first: inject structured PR/check/review facts and temporary repos to prove polling, exact-head synchronization, repo-scoped command execution, committed review artifacts, and guarded delivery without live GitHub. Retained standalone workflow primitives should remain directly smoke-testable, but tests must not reassemble them into the abandoned coordinator chain.
 
 First-party workflows that are useful to inspect from tests or UI should expose guarded `runs` middleware so SDK clients and the dashboard can fetch run records/events. CLI smoke tests can use `flue run` against the local authored `/api/flue` mount to verify routing, middleware, persistence, and workflow behavior together.
 
@@ -878,7 +890,7 @@ Design requirements:
 - classify actions as read-only, safe mutation, destructive mutation, or host execution
 - require confirmation for destructive repo/config/watch changes
 - audit mutation actions in `config_history` or app state
-- keep host filesystem and shell access action-mediated by default
+- keep host filesystem and shell access action-mediated by default, except for a trusted Autopilot coding owner operating inside its declared managed worktree
 - support a config-backed execution approval policy before adding shell executors
 - allow users to preapprove specific single commands through audited config
 - model `local` as the default backend and `exe.dev` as the planned sandbox backend
@@ -898,7 +910,7 @@ Default-preapproved examples:
 
 Policy-gated by default:
 
-- force-push, branch deletion, reset/clean, merge/rebase operations that rewrite or discard work, repo deletion/archive, secret mutations, dependency installs, and arbitrary package scripts unless configured for a repo.
+- force-push, branch deletion, reset/clean, merge/rebase operations that rewrite or discard work, repo deletion/archive, secret mutations, and dependency installs. Arbitrary package scripts remain gated outside a trusted Autopilot managed-worktree turn; the Autopilot owner may choose repository-native validation commands inside its bound coding workspace.
 
 exe.dev remote execution should use the existing configured remote Linux VM as the primary model. Neondeck can checkout and sync whichever declared repos or managed worktrees it needs on that VM rather than owning VM creation/reuse lifecycles in the near term.
 
@@ -970,6 +982,7 @@ Must-haves:
 23. [x] Dedicated subagent run summary dashboard beyond current Flue observations.
 24. [x] Config-backed execution approval policy for `local` and planned `exe.dev` backends.
 25. [x] Approved host execution actions for `local` and `exe.dev`.
+26. [x] Durable MCP tool approval modes with chat-scoped and persisted per-tool policy.
 
 ## Suggested Implementation Phases
 
@@ -1147,7 +1160,7 @@ Must-haves:
 
 ### Phase 13: Provider Configuration And Safety
 
-- Status: complete for config, readiness, dashboard controls, and execution policy; actual executors move to Phase 14.
+- Status: complete for config, readiness, dashboard controls, execution policy, and durable MCP authorization; actual host executors move to Phase 14.
 
 - [x] Design provider config schema and allowed provider types.
 - [x] Use secret references or environment-backed credentials rather than raw secrets in normal config.
@@ -1159,6 +1172,7 @@ Must-haves:
 - [x] Keep local shell access action-mediated by default.
 - [x] Add config-backed preapproved command policy for `local` and planned `exe.dev` execution.
 - [x] Only add actual shell/sandbox execution actions after trust boundaries and audit records are explicit.
+- [x] Add MCP server-default and exact per-tool approval policy with allow-once, allow-chat, allow-always, deny, OAuth-safe invalidation, and dashboard/CLI/API controls.
 
 ### Phase 14: Approved Host Execution And exe.dev Sandbox
 
@@ -1260,75 +1274,36 @@ Must-haves:
 
 ### Phase 19: PR Event Autopilot
 
-- Status: reset to retained foundations. The admission/coordinator implementation from Autopilot Packages 1–4 was abandoned because it could not deliver the product path without expanding into a second workflow engine. Its live progression path, queue/coalescing records, intake and owner generations, stage attempts/events, grounding snapshots/cursors, submission leases, workflow-observation continuation, and operator admission projections have been removed. Historical shipped migrations remain, followed by one forward cleanup migration. The source of truth for the replacement is `.plans/AUTOPILOT_IMPLEMENTATION_PLAN.md`; `.plans/AUTOPILOT_END_TO_END_REVIEW.html` is historical evidence only.
+- Status: minimal watch/owner/worktree loop and trusted-workspace semantic correction complete. The admission/coordinator implementation from Autopilot Packages 1–4 was abandoned because it could not deliver the product path without expanding into a second workflow engine. Its live progression path, queue/coalescing records, intake and owner generations, stage attempts/events, grounding snapshots/cursors, submission leases, workflow-observation continuation, and operator admission projections have been removed. Historical shipped migrations remain, followed by one forward cleanup migration. PRs #171 and #172 delivered the reset and minimal loop; the focused follow-up gives every fixing mode a trusted managed-worktree coding workspace and autonomous mode semantic delivery judgment. `.plans/archived/AUTOPILOT_END_TO_END_REVIEW.html` is historical evidence only.
 
 - [x] Preserve complete PR feedback facts and semantic fingerprints for commits, review threads and comments, requested-changes review bodies, conversation comments, checks, mergeability, and branch freshness.
 - [x] Preserve explicit first-poll behavior: process current feedback or install a complete baseline, failing closed on truncated GitHub facts.
 - [x] Preserve exact-head same-repository and fork worktree fetch/synchronization.
-- [x] Preserve bounded noninteractive Git execution, guarded repo edits/pushes, the diff viewer, GitHub services, generic watches/worktrees, and the small readiness facts needed by later setup and safe push.
+- [x] Preserve bounded noninteractive Git execution, guarded repo edits/pushes, the diff viewer, GitHub services, generic watches/worktrees, and the small readiness facts needed by setup and delivery.
 - [x] Preserve a private `pr-autopilot-owner` definition plus stable instance-id, envelope, capability, and injected Flue-dispatch seams without connecting them to watch polling.
-- [ ] Implement the complete minimal loop in the follow-up PR only: one watch, one owner instance, one worktree, one busy flag, one pending semantic fingerprint, and bounded owner turns.
-- [ ] Add the thin setup/status/pause/resume/retry/stop service and adapters only after the minimal backend state and loop are complete.
-- [ ] Add safe push, response, and terminal cleanup only after the bounded owner turn and review flow are proven.
+- [x] Implement the complete minimal loop: one watch, one owner instance, one worktree, one busy flag, one pending semantic fingerprint, and one owner turn at a time.
+- [x] Add the thin setup/status/pause/resume/retry/stop service and chat/API/CLI/dashboard adapters.
+- [x] Add mode-specific delivery authority, response, and terminal cleanup.
+- [x] Correct the owner execution model: every fixing mode gets a trusted repo-scoped coding workspace with ordinary command execution; the autonomous mode judges whether a requested change is sane and may deliver without a configured-check list.
 
 ### Phase 20: Autopilot Policy And UX Hardening
 
-- Status: incomplete. Policy, guardrails, prepared-diff records, central readiness, and most deterministic recovery primitives have landed. Explicit watch-plus-mode setup, fresh-install discoverability, approval semantics, canonical operator state, pause/stop behavior, complete recovery UX, and accurate end-to-end docs remain open under `.plans/AUTOPILOT_IMPLEMENTATION_PLAN.md`.
+- Status: complete. Legacy prepared-diff/coordinator surfaces remain retired; chat/API/CLI/dashboard setup, exact-revision human approval, watch controls, owner visibility, and product docs describe the minimal watch/owner/worktree loop. Mode is a delivery-authority ceiling rather than a repository-command allowlist, and `autofix-push-when-safe` delegates semantic engineering judgment to the continuing owner.
 
 - [x] Add repo-level autopilot config with explicit modes:
   - `notify-only`
   - `prepare-only`
   - `autofix-with-approval`
   - `autofix-push-when-safe`
-- [ ] Complete stable watch-rule override mutation and expose an explicit watch-plus-mode setup contract across chat, CLI, API, and dashboard.
-- [x] Add policy limits:
-  - maximum files changed
-  - maximum lines changed
-  - denied file globs
-  - approval-required file globs
-  - required checks before push
-  - allowed push destinations
-  - no force-push by default
-- [x] Add default high-risk approval classes:
-  - lockfiles
-  - dependency manifest changes that alter dependency versions
-  - CI/CD config
-  - deployment and infrastructure config
-  - auth/security-sensitive code
-  - secrets and environment files
-  - database migrations unless repo policy explicitly permits unattended migration pushes
-  - generated files above a configured size threshold
-  - binary files
-  - vendored code
-  - repo-configured globs
-- [ ] Correct pending approval creation, dispatch, resolution, and supersession semantics for prepare-only, approval, and safe-push modes.
-- [x] Add prepared-diff records in app state that reference the source worktree as the source of truth.
-- [x] Add shared prepared-diff APIs/actions for web and future TUI:
-  - list prepared diffs
-  - read summary
-  - read changed files
-  - read file diff
-  - approve push
-  - request revision
-  - abandon
-  - open worktree path
-  - run verification
-- [x] Keep git/diff operations in backend services and actions; UI clients should not implement git logic.
-- [ ] Make the Autopilot dashboard panel available in recommended fresh-install layouts and base it on the simplified watch/owner/worktree state with accurate controls.
-- [x] Add human-readable audit summaries for autonomous workflows, suitable for PR comments and timeline UI.
-- [ ] Expose all bounded prepared-diff recovery actions and query failures in the primary operator UI:
-  - inspect retained worktree
-  - retry verification
-  - retry push
-  - retry PR result comment
-  - request revision
-  - abandon prepared fix
-  - surface manual follow-up
-- [x] Add rebase/resync and cleanup-specific recovery actions:
-  - retry after new commit
-  - rebase/resync worktree
-  - clean up worktree
-- [ ] Add accurate docs for setup, modes, baseline/current-feedback behavior, trust boundaries, worktree storage, API and git credential readiness, push-back, recovery, stop semantics, polling latency, and quick disable.
+- [x] Complete stable watch-plus-mode setup across chat, CLI, API, and dashboard.
+- [x] Implement approval as an exact current reviewed-revision decision from Active Watches/the typed API, dispatched to the waiting continuing owner without a separate approval record or workflow; generic owner messages remain non-authorizing.
+- [x] Use the managed worktree commit as the review artifact and the existing diff viewer as its UI; do not restore prepared-diff or approval records.
+- [x] Surface Autopilot mode, state, owner, worktree/diff, and controls through the active Watches product surface.
+- [x] Preserve only mechanical delivery guards: current autonomous/approved authority, managed worktree, linked destination, clean committed head, current remote head, credential, and non-force push.
+- [x] Give every fixing mode a trusted repo-scoped coding workspace with arbitrary repository command execution while keeping push/response credentials outside ordinary commands.
+- [x] Remove configured-check and deterministic diff-risk approval gates from the continuing owner's autonomous delivery path. Selecting `autofix-push-when-safe` delegates semantic scope, soundness, and validation judgment to the owner.
+- [x] Update owner instructions, UI wording, runtime skill guidance, and Astro docs so autonomous mode is not described as mechanically safe-push orchestration or as requiring configured checks.
+- [x] Add focused regression coverage for repository-native command execution, delivery-authority separation, autonomous delivery without configured checks, semantic escalation, and stale-head/mode refusal.
 
 ### Phase 21: KiloCode Handoff Runner
 

@@ -5,196 +5,382 @@ import SiteFooter from '../../components/SiteFooter.astro';
 import SiteNav from '../../components/SiteNav.astro';
 import BaseLayout from '../../layouts/BaseLayout.astro';
 
-const layersDiagram = `flowchart TB
-  subgraph Brain["Host: Neon's brain"]
-    Agent["display assistant<br/>(virtual Flue sandbox)"]
-    Actions["typed actions and tools"]
-    Policy["execution policy<br/>allow / ask / deny"]
-    Approvals["approvals + audit"]
-    State["config + SQLite + GitHub API"]
-  end
+const boundaryDiagram = `flowchart TB
+  Request["You, a schedule, or a GitHub change"] --> Route{"What kind of work is it?"}
 
-  subgraph Work["Workspaces"]
-    LocalExec["local backend<br/>host shell"]
-    ExeDev["exe.dev backend<br/>VM over SSH"]
-    Repos["declared repos<br/>+ managed worktrees"]
-  end
+  Route --> Chat["Chat or scheduled instruction<br/>virtual workspace"]
+  Route --> Watch["PR watch<br/>deterministic read-only poller"]
+  Route --> Review["Human PR review<br/>exact-revision reader"]
 
-  Agent --> Actions
-  Actions --> Policy
-  Policy --> Approvals
-  Approvals --> LocalExec
-  Approvals --> ExeDev
-  Actions --> Repos
-  Actions --> State`;
+  Chat --> Capabilities["Bounded Neondeck capabilities"]
+  Capabilities --> State["Local state, registered repos,<br/>GitHub, and connected services"]
+  Capabilities --> CommandGate["Host-command policy<br/>allow, ask, or deny"]
+  CommandGate --> Host["Local host or experimental<br/>exe.dev command path"]
+
+  Watch --> Delta{"Meaningful change?"}
+  Delta -->|No| Quiet["Stay quiet"]
+  Delta -->|Yes, fixing mode| Owner["Trusted coding owner<br/>managed worktree"]
+  Owner --> Delivery["Mode-bound push and response checks"]
+
+  Review --> Findings["Local report and draft findings"]
+  Findings --> Human["Human reviews and submits"]`;
 ---
 
 <BaseLayout
-  title="Execution environments · neondeck"
-  description="Where Neon's work actually runs: the virtual Flue sandbox, policy-gated host execution, exe.dev VMs, and the planned remote workspace mode."
+  title="Safety and sandboxes · neondeck"
+  description="How neondeck separates chat, scheduled work, PR watches, reviews, host commands, and external delivery."
 >
   <div class="site-shell">
     <SiteNav />
     <main class="container docs-layout">
       <DocsNav />
       <article class="docs-prose">
-        <h1>Execution environments</h1>
+        <h1>Safety and sandboxes</h1>
         <p>
-          Neon separates its <strong>brain</strong> from its
-          <strong>workspace</strong>. The brain — config, app state, GitHub
-          facts, sessions, schedules — always runs on the host inside the
-          Neondeck server. The workspace — checkouts, file edits, and shell
-          commands — is governed: the model never holds a raw shell, and every
-          command runs through a policy gate you can inspect and audit.
+          Neondeck does not use one universal sandbox. It gives each kind of
+          work a different combination of workspace access and product
+          capabilities. Ordinary conversation starts in a virtual scratch
+          workspace. PR review gets bounded, read-only access to one revision.
+          Watched-PR Autopilot can receive a trusted local coding workspace.
+          Direct host commands go through a separate policy and approval system.
         </p>
+        <p>
+          The most important distinction is that a <strong
+            >model workspace</strong
+          >
+          and <strong>permission to cause an effect</strong> are separate. A virtual
+          workspace prevents direct browsing of the host filesystem, but a schema-checked
+          Neondeck capability may still read a registered repo, update local state,
+          call GitHub, or use a connected service. Conversely, an Autopilot owner
+          can have a real shell while still lacking the capability needed to push
+          or respond to a PR.
+        </p>
+
         <MermaidDiagram
-          chart={layersDiagram}
-          label="Execution layers: agent to typed actions to policy gate to local or exe.dev backends"
+          chart={boundaryDiagram}
+          label="Neondeck safety boundaries for chat, schedules, PR watches, PR review, and host commands"
         />
 
-        <h2>Flue sandbox patterns, and which ones Neondeck uses</h2>
+        <h2>Boundaries at a glance</h2>
+        <table>
+          <thead>
+            <tr>
+              <th>Surface</th>
+              <th>Workspace</th>
+              <th>Effects it can cause</th>
+              <th>Primary boundary</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Plain chat</td>
+              <td>Virtual scratch space</td>
+              <td>
+                Typed reads and mutations for registered repos, local state,
+                GitHub, and connected services
+              </td>
+              <td
+                >Capability schemas, repo boundaries, policy, and confirmations</td
+              >
+            </tr>
+            <tr>
+              <td>Scheduled instruction</td>
+              <td>Virtual scratch space</td>
+              <td>
+                The same bounded product capabilities, subject to
+                scheduled-origin restrictions and existing approval policy
+              </td>
+              <td
+                >Durable task claim, bounded run, capability policy, and audit</td
+              >
+            </tr>
+            <tr>
+              <td>PR watch</td>
+              <td>None while polling</td>
+              <td>Read GitHub state and update local watch state</td>
+              <td>Deterministic change detection and quiet no-op behavior</td>
+            </tr>
+            <tr>
+              <td>Autopilot fixing turn</td>
+              <td>Trusted host shell in a managed worktree</td>
+              <td
+                >Edit, validate, and commit; push or respond only in eligible
+                modes</td
+              >
+              <td>Worktree binding plus mode-scoped delivery capabilities</td>
+            </tr>
+            <tr>
+              <td>Human PR review</td>
+              <td>Read-only view of one exact revision</td>
+              <td>Create local reports and draft findings</td>
+              <td
+                >Revision binding, bounded reads, and human-owned submission</td
+              >
+            </tr>
+          </tbody>
+        </table>
+
+        <h2>Plain chat</h2>
         <p>
-          Flue offers three sandbox patterns for an agent's built-in file and
-          shell tools. Neondeck takes a deliberate position on each:
+          A normal Neon conversation uses an in-memory workspace. Files placed
+          there are temporary and it is not a mounted view of your machine or
+          registered repositories. Neon cannot use generic shell or filesystem
+          tools to wander through the host from this workspace.
+        </p>
+        <p>
+          Useful work happens through explicit Neondeck capabilities. Repository
+          operations resolve a registered repo or managed worktree, require
+          repository-relative paths, reject traversal and symlink escapes, and
+          apply sensitive-path, stale-write, lock, and audit checks. Routine
+          edits do not create host-command approvals because repository editing
+          is its own bounded capability rather than arbitrary shell execution.
+        </p>
+        <p>
+          An interactive conversation can prepare a managed worktree, edit it,
+          commit it, and—when it is linked to a current PR head—request a
+          guarded push. Pushes are non-force, destination-bound, and may require
+          a fresh confirmation when the effect expands beyond the normal
+          interactive guardrails. The confirmation is tied to the reviewed
+          commit and effect; changing the worktree invalidates it.
+        </p>
+        <p>
+          This means “virtual workspace” does not mean “incapable of changing
+          anything.” It means host access is mediated by product capabilities
+          whose scope and result can be checked.
+        </p>
+
+        <h2>Scheduled tasks and briefings</h2>
+        <p>
+          The scheduler first claims each due occurrence, prevents overlapping
+          scheduler ticks, and records an independent run. A general scheduled
+          instruction normally receives a fresh bounded agent conversation. It
+          may instead target an existing Neon session when conversation
+          continuity is explicitly useful.
+        </p>
+        <p>
+          Scheduled model work uses the same virtual workspace as chat.
+          Selecting a repo or working directory supplies task context; it does
+          not mount that directory or grant a generic host shell. Any real repo,
+          service, or command access still goes through the corresponding
+          Neondeck capability.
+        </p>
+        <p>
+          The default fresh-session target cannot use the ordinary interactive
+          commit and push path. It can still use other typed capabilities
+          allowed by the task. If you deliberately target an existing agent
+          session for continuity, the turn inherits that session's interactive
+          context, including any linked repo or worktree authority. A scheduled
+          instruction should therefore be treated as automation—not as a
+          read-only reminder. Destructive configuration changes retain their
+          confirmation requirements, connected-service calls retain their own
+          allow, ask, or deny policy, and a host command marked as unattended
+          must be preapproved.
+        </p>
+        <p>
+          Briefings are narrower than general scheduled instructions. They are
+          told to summarize a persisted fact snapshot, use relevant approved
+          data sources, report partial coverage honestly, and avoid external
+          mutations. They run in a dedicated briefing conversation so a
+          background result does not replace the active chat.
+        </p>
+
+        <h2>Watched repositories and Autopilot</h2>
+        <p>
+          A PR watch is deterministic and read-only by default. It polls
+          structured GitHub state, compares that state with durable watermarks,
+          and stays quiet when nothing meaningful changed. Merely watching a PR
+          does not create a coding workspace or start a model turn.
+        </p>
+        <p>
+          When an actionable change reaches a fixing mode, Neondeck creates or
+          reuses one managed worktree and one continuing owner for that PR. The
+          owner receives a real local shell with the repository toolchain.
+          Commands have a maximum runtime, but they do not pass through the
+          ordinary per-command approval list. This is intentional: the selected
+          Autopilot mode authorizes repository-native coding and validation
+          inside that trusted workspace.
+        </p>
+        <p>
+          Neondeck gives the owner a private home directory and removes the
+          usual GitHub token, SSH agent, credential helper, and interactive
+          credential paths from its shell environment. Workspace commands
+          therefore should not be able to deliver changes accidentally. Push and
+          PR-response authority arrives through separate capabilities selected
+          from the current mode and turn source:
         </p>
         <ul>
           <li>
-            <strong>Virtual (used, the default).</strong> Neon's chat agent works
-            in Flue's in-memory <code>/workspace</code>. It is scratch space
-            only — no host files, nothing persists.
+            <strong>Notify only</strong> never starts a coding turn.
           </li>
           <li>
-            <strong>Local (deliberately unused).</strong> Flue's
-            <code>local()</code> sandbox would give the model direct host filesystem
-            and shell access, bypassing every Neondeck policy gate. No Neondeck agent
-            uses it, and none should.
+            <strong>Prepare only</strong> may edit, validate, and commit locally,
+            but cannot push or respond.
           </li>
           <li>
-            <strong>Remote Flue sandbox (planned).</strong> Neondeck already supports
-            policy-mediated command and repo execution on an existing exe.dev VM.
-            The later workspace mode would also relocate the agent's built-in Flue
-            sandbox and the entire managed workspace to that VM. See below.
+            <strong>Fix with approval</strong> prepares the commit first. Push and
+            response are available only during the exact current reviewed-revision
+            approval turn created through Active Watches or the typed API. Generic
+            owner follow-ups can request work but cannot approve delivery.
+          </li>
+          <li>
+            <strong>Push when safe</strong> lets a watcher-generated turn push and
+            respond after the owner judges the change sound and the final destination,
+            identity, permissions, exact PR head, clean commit, and non-force race
+            checks all pass.
           </li>
         </ul>
         <p>
-          Instead of a shell, the agent gets <em>mediated</em> access to everything
-          through typed actions: repo files through repo-edit, commands through execution
-          actions, isolated changes through managed worktrees, config through config
-          actions. Access is broad; it is never direct.
+          A mode change takes effect at the capability boundary, not just in
+          prompt text. If authority, credentials, PR head, worktree state, or
+          delivery facts become uncertain, Neondeck retains the local commit and
+          blocks delivery for human inspection.
         </p>
 
-        <h2>The execution policy gate</h2>
+        <h3>Important local-workspace limitation</h3>
         <p>
-          Every host or VM command flows through
-          <code>neondeck_execution_run</code> and is checked against the config-backed
-          execution policy first:
+          The current Autopilot coding workspace is a <strong
+            >trusted host workspace</strong
+          >, not a container, virtual machine, chroot, or adversarial filesystem
+          jail. Neondeck starts the owner in its managed worktree and instructs
+          it to stay there, while bound repository and delivery operations
+          validate that worktree. The underlying shell still runs as the
+          Neondeck server user and should be treated as having host visibility.
+          Use higher-authority Autopilot modes only for repositories, models,
+          prompts, and local machines you trust.
         </p>
+
+        <h2>Reviewing a PR for a human</h2>
+        <p>
+          PR review uses a separate read-only model role. It has no generic
+          shell, no generic filesystem tools, no repo mutation capabilities, and
+          no GitHub delivery capability. Neondeck supplies bounded PR facts and,
+          when the repo is registered locally, read-only tools that list,
+          search, and read files at the exact reviewed commit and compare that
+          revision with its merge base.
+        </p>
+        <p>
+          Exploration has a fixed call budget and bounded file windows. Large,
+          binary, generated, unavailable, or truncated changes may therefore
+          require manual inspection. Findings that cannot be proven against an
+          exact changed line remain report-only instead of being attached to a
+          guessed location.
+        </p>
+        <p>
+          The review run may create local reports and seed local draft comments.
+          It never submits a GitHub review. Follow-up reviewer chat stays bound
+          to the saved head revision and has the same read-only limits. A human
+          owns editing drafts, choosing a verdict, replying to threads, and
+          submitting the final review from the dashboard.
+        </p>
+
+        <h2>Direct host commands</h2>
+        <p>
+          Arbitrary command execution is separate from repo editing and
+          Autopilot. The default policy enables local execution with manual
+          approval. A small set of read-only diagnostic commands is preapproved;
+          other interactive commands create an approval request. Approval can be
+          one-time, session-scoped, or promoted to a persistent command rule.
+          The model cannot approve its own request.
+        </p>
+        <p>
+          The local backend runs directly on the host in the requested existing
+          directory. It accepts one executable plus arguments rather than a
+          shell pipeline, receives a reduced environment, has a ten-minute
+          maximum runtime, and stores bounded output previews. Broad destructive
+          patterns such as system erasure, device formatting, shutdown, and
+          process-wide termination are always blocked, even when approvals are
+          disabled.
+        </p>
+        <h3>Experimental: exe.dev command backend</h3>
+        <p>
+          <strong>Work in progress:</strong> the exe.dev integration is not a remote
+          Neondeck workspace and is unlikely to behave as users expect from a general
+          sandbox setting today. Enabling it does not move chat, scheduled tasks,
+          PR review, managed worktrees, or watched-PR Autopilot onto the VM. Autopilot
+          continues to edit, validate, commit, and push from its local managed worktree.
+        </p>
+        <p>
+          The implemented portion can run one approved command over SSH on an
+          existing VM. It can also create a remote checkout from a
+          GitHub-reachable revision and forward explicitly selected environment
+          values. It does not copy uncommitted local work, provide seamless
+          local-to-remote workspace continuity, or create and dispose VMs for
+          each task. Treat it as an experimental diagnostic path, not a safety
+          boundary for autonomous coding.
+        </p>
+
+        <h2>What is audited</h2>
+        <p>
+          Neondeck keeps durable records for scheduled occurrences, agent
+          submissions, app operations, watch changes, worktree events, repo
+          edits, execution decisions, command outcomes, connected-service
+          approvals, and Autopilot delivery. Review reports and draft findings
+          remain local until a human submits them.
+        </p>
+        <p>
+          Audit data is sensitive. It may include prompts, command arguments,
+          bounded output, file paths, diffs, tool arguments, and model
+          responses. Keep the dashboard, runtime state, and raw run inspection
+          available only to trusted local users.
+        </p>
+
+        <h2>Current limitations</h2>
         <ul>
           <li>
-            <strong>allow</strong>: the command matches a preapproved entry in
-            <code>execution.preapprovedCommands</code> and runs immediately. Preapproved
-            commands are single commands without shell operators; hardline destructive
-            commands cannot be preapproved.
+            Local command execution and the Autopilot coding shell are host
+            processes, not OS-level isolation.
           </li>
           <li>
-            <strong>ask</strong>: anything else needs an approval, resolved by
-            you in the dashboard, API, or CLI — never by the model. Unattended
-            contexts (scheduler, autopilot) deny instead of asking.
+            The virtual chat workspace limits direct filesystem access, but
+            typed product capabilities can intentionally cross into registered
+            repos, local state, GitHub, and connected services.
           </li>
-          <li><strong>deny</strong>: refused with a typed reason.</li>
+          <li>
+            Destructive-command detection and output redaction are defense in
+            depth, not a complete shell security system or general-purpose
+            secret scanner. Treat every preapproval as delegated trust.
+          </li>
+          <li>
+            Scheduled instructions are bounded runs, not automatically read-only
+            runs. Keep their requested effects narrow and review their history.
+          </li>
+          <li>
+            PR review is revision-bound and evidence-bounded; it can miss issues
+            outside the supplied facts or exploration budget.
+          </li>
+          <li>
+            exe.dev support is work in progress. Only explicit approved commands
+            and GitHub-reachable checkouts can use an existing VM; the main
+            agent workspace and managed worktrees remain local.
+          </li>
         </ul>
-        <p>
-          Every run — allowed, approved, or failed — records an approval row
-          with exit code, output previews, and backend metadata, visible in the
-          Runtime Overview panel.
-        </p>
 
-        <h2>Backends</h2>
-        <p>
-          <code>execution.defaultBackend</code> and
-          <code>execution.enabledBackends</code> select where approved commands execute:
-        </p>
+        <h2>Recommended operating posture</h2>
         <ul>
+          <li>Keep command approvals in manual mode.</li>
           <li>
-            <strong><code>local</code></strong>: the host machine, in the
-            server's environment.
+            Start PR watches in notify-only or prepare-only mode and inspect the
+            retained worktree before increasing authority.
           </li>
           <li>
-            <strong><code>exe.dev</code></strong>: an existing exe.dev VM you
-            own, reached over SSH. Configure it with
-            <code>execution.exeDev</code> (<code>vmHostEnv</code>, default
-            <code>EXE_VM_HOST</code>; <code>sshKeyEnv</code>, default
-            <code>EXE_SSH_KEY</code>; falls back to <code>SSH_AUTH_SOCK</code>).
-            Neondeck adapts the VM through Flue's exe.dev sandbox adapter but
-            never creates or deletes VMs on your behalf.
+            Register only repositories Neon should be able to inspect or change.
+          </li>
+          <li>
+            Treat user skills, owner prompt overrides, and connected-service
+            auto-approval rules as trusted local configuration.
+          </li>
+          <li>
+            Keep the local server off untrusted networks unless you add a
+            separate authentication and transport layer.
           </li>
         </ul>
-        <p>
-          Repo-scoped exe.dev work uses
-          <code>neondeck_exedev_checkout_sync</code> to clone or sync a declared repo
-          (or a managed worktree) onto the VM under
-          <code>execution.exeDev.remoteRoot</code>, with every git step running
-          through the same policy gate. Environment forwarding to the VM is
-          opt-in per scope (<code>execution.exeDev.env</code>), sourced from
-          repo env files, config vars, or named host variables, and each
-          forwarded source is recorded in the execution audit.
-        </p>
-
-        <h2>Repo boundaries and worktrees</h2>
-        <p>
-          File reads and edits use the repo-edit actions, which operate only
-          inside declared Neondeck repo workspaces: path containment, symlink
-          escape checks, and sensitive-path rules return typed policy errors
-          instead of prompting. Autonomous change flows (autopilot, Kilo
-          results) never mutate your primary checkout — they work in managed
-          worktrees. The minimal watched-PR Autopilot keeps its review artifact
-          as an ordinary local commit; explicit fixer and Kilo workflows may
-          still use prepared-diff records and their separate review gates.
-        </p>
-        <p>
-          Authority follows task origin. In a human-driven chat, typed repo
-          actions may edit, commit, and push to the linked PR head without
-          creating routine execution approvals. A shared
-          <code>guardrails</code> config block still denies forbidden paths and destinations,
-          and asks once before high-risk or over-limit pushes. That acknowledgment
-          is bound to the reviewed commit and effect, so a changed worktree prompts
-          again. The current <a href="/docs/autopilot/">Autopilot owner loop</a>
-          gives each watcher or direct-human turn only the bounded tools allowed by
-          its current mode. Automatic delivery additionally reruns every configured
-          targeted check, refetches complete GitHub facts, proves the current PR head,
-          policy, permissions, and push identity, and uses a non-force expected-head
-          push. Any uncertainty blocks with the local commit retained for review.
-        </p>
-
-        <h2>Planned: exe.dev workspace mode</h2>
-        <p>
-          <em>Status: planned, not yet implemented.</em> A single config switch will
-          relocate the entire workspace to your exe.dev VM:
-        </p>
-        <pre><code>&#123;
-  "workspace": &#123; "mode": "exe.dev" &#125;
-&#125;</code></pre>
-        <p>
-          With the mode on, repo checkouts, managed worktrees, repo-edit file
-          operations, verification commands, and the agent's own Flue sandbox
-          all live on the VM; GitHub facts, config, sessions, and schedules stay
-          on the host. The trust model is unchanged — the policy gate controls <em
-            >what</em
-          > runs, not <em>where</em> — and there is no silent fallback: if the VM
-          is unreachable, workspace operations fail with typed errors and runtime
-          status says why. The design is documented in
-          <a
-            href="https://github.com/pandemicsyn/neondeck/blob/main/.plans/EXEDEV_WORKSPACE_MODE_PLAN.md"
-            >the workspace mode plan</a
-          >.
-        </p>
 
         <h2>Related</h2>
         <p>
-          See <a href="/docs/security/">Security</a> for secrets, tokens, and local
-          API trust boundaries, and
-          <a href="/docs/agent-runtime/">Agent runtime</a> for how actions and workflows
-          fit together.
+          See <a href="/docs/autopilot/">Autopilot</a> for mode-specific behavior,
+          <a href="/docs/agent-runtime/"> Agent runtime</a> for sessions, tools, and
+          operations, and <a href="/docs/security/"> Security</a> for secrets and
+          local trust boundaries.
         </p>
       </article>
     </main>

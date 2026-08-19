@@ -1,10 +1,19 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useEffect, useState, type FormEvent, type ReactNode } from 'react';
 import {
+  Children,
+  useCallback,
+  useEffect,
+  useState,
+  type FormEvent,
+  type ReactNode,
+} from 'react';
+import {
+  archivePrReview,
   getPrReviews,
   openPrReviewEventStream,
   reconcilePrReviewSubmission,
   restartPrReview,
+  restorePrReview,
   startPrReview,
   type PrReviewAwaitingItem,
   type PrReviewRecord,
@@ -13,7 +22,8 @@ import {
 import { Badge, Button, EmptyState, ScrollArea } from '../components/ui';
 import { PrReviewArtifactsOverlay } from '../features/pr-review/PrReviewArtifactsOverlay';
 import { relativeTime } from '../lib/format';
-import { queryErrorMessage, queryKeys } from '../lib/query';
+import { useDashboardEventConnectionState } from '../lib/dashboard-connection';
+import { actionErrorMessage, queryErrorMessage, queryKeys } from '../lib/query';
 import type { DisplayPlugin } from '../types';
 
 export const ReviewsPanelPlugin = {
@@ -23,20 +33,51 @@ export const ReviewsPanelPlugin = {
   defaultConfig: {},
   Component() {
     const queryClient = useQueryClient();
+    const eventConnection = useDashboardEventConnectionState();
     const [adding, setAdding] = useState(false);
     const [ref, setRef] = useState('');
     const { data, error, isLoading } = useQuery({
       queryKey: queryKeys.prReviews,
       queryFn: ({ signal }) => getPrReviews({}, { signal }),
     });
+    const { data: localData } = useQuery({
+      queryKey: queryKeys.prReviewsLocal,
+      queryFn: ({ signal }) => getPrReviews({ localOnly: true }, { signal }),
+      refetchInterval: eventConnection === 'open' ? false : 5_000,
+      refetchIntervalInBackground: eventConnection !== 'open',
+    });
+    useEffect(() => {
+      if (!localData) return;
+      queryClient.setQueryData<PrReviewsResponse>(
+        queryKeys.prReviews,
+        (current) => applyPrReviewSnapshot(current, localData),
+      );
+    }, [localData, queryClient]);
+
+    const updateReviewCaches = useCallback(
+      (review: PrReviewRecord) => {
+        for (const queryKey of [
+          queryKeys.prReviews,
+          queryKeys.prReviewsLocal,
+        ]) {
+          queryClient.setQueryData<PrReviewsResponse>(queryKey, (current) =>
+            applyPrReviewChange(current, review),
+          );
+        }
+      },
+      [queryClient],
+    );
     const startMutation = useMutation({
       mutationFn: (reviewRef: string) =>
         startPrReview({ ref: reviewRef, origin: 'panel' }),
+      async onMutate() {
+        await Promise.all([
+          queryClient.cancelQueries({ queryKey: queryKeys.prReviews }),
+          queryClient.cancelQueries({ queryKey: queryKeys.prReviewsLocal }),
+        ]);
+      },
       onSuccess(result) {
-        queryClient.setQueryData<PrReviewsResponse>(
-          queryKeys.prReviews,
-          (current) => applyPrReviewChange(current, result.review),
-        );
+        updateReviewCaches(result.review);
         setRef('');
         setAdding(false);
       },
@@ -44,39 +85,34 @@ export const ReviewsPanelPlugin = {
     const restartMutation = useMutation({
       mutationFn: (id: string) => restartPrReview(id),
       onSuccess(result) {
-        queryClient.setQueryData<PrReviewsResponse>(
-          queryKeys.prReviews,
-          (current) => applyPrReviewChange(current, result.review),
-        );
+        updateReviewCaches(result.review);
       },
     });
     const reconcileMutation = useMutation({
       mutationFn: (id: string) => reconcilePrReviewSubmission(id),
       onSuccess(result) {
-        queryClient.setQueryData<PrReviewsResponse>(
-          queryKeys.prReviews,
-          (current) => applyPrReviewChange(current, result.review),
-        );
+        updateReviewCaches(result.review);
+      },
+    });
+    const archiveMutation = useMutation({
+      mutationFn: (id: string) => archivePrReview(id),
+      onSuccess(result) {
+        updateReviewCaches(result.review);
+      },
+    });
+    const restoreMutation = useMutation({
+      mutationFn: (id: string) => restorePrReview(id),
+      onSuccess(result) {
+        updateReviewCaches(result.review);
       },
     });
 
     useEffect(
       () =>
-        openPrReviewEventStream(
-          (event) => {
-            queryClient.setQueryData<PrReviewsResponse>(
-              queryKeys.prReviews,
-              (current) => applyPrReviewChange(current, event.review),
-            );
-          },
-          undefined,
-          () => {
-            void queryClient.invalidateQueries({
-              queryKey: queryKeys.prReviews,
-            });
-          },
-        ),
-      [queryClient],
+        openPrReviewEventStream((event) => {
+          updateReviewCaches(event.review);
+        }),
+      [queryClient, updateReviewCaches],
     );
 
     const submit = (event: FormEvent) => {
@@ -126,12 +162,16 @@ export const ReviewsPanelPlugin = {
         ) : null}
         {startMutation.error ||
         restartMutation.error ||
-        reconcileMutation.error ? (
+        reconcileMutation.error ||
+        archiveMutation.error ||
+        restoreMutation.error ? (
           <p className="border-b border-accent/60 px-3 py-1.5 font-mono text-[10px] text-accent">
-            {queryErrorMessage(
+            {actionErrorMessage(
               startMutation.error ??
                 restartMutation.error ??
-                reconcileMutation.error,
+                reconcileMutation.error ??
+                archiveMutation.error ??
+                restoreMutation.error,
             )}
           </p>
         ) : null}
@@ -171,6 +211,13 @@ export const ReviewsPanelPlugin = {
                 empty="No reviews are running."
                 title="IN PROGRESS"
               >
+                {startMutation.isPending &&
+                startMutation.variables &&
+                !data.groups.inProgress.some(
+                  (review) => review.ref === startMutation.variables,
+                ) ? (
+                  <StartingReviewRow reviewRef={startMutation.variables} />
+                ) : null}
                 {data.groups.inProgress.map((review) => (
                   <ReviewRow
                     key={review.id}
@@ -187,8 +234,11 @@ export const ReviewsPanelPlugin = {
                 {data.groups.needsAction.map((review) => (
                   <ReviewRow
                     key={review.id}
+                    onArchive={(id) => archiveMutation.mutate(id)}
                     onRestart={(id) => restartMutation.mutate(id)}
-                    pending={restartMutation.isPending}
+                    pending={
+                      restartMutation.isPending || archiveMutation.isPending
+                    }
                     review={review}
                   />
                 ))}
@@ -201,11 +251,38 @@ export const ReviewsPanelPlugin = {
                 <div className="border-t border-line">
                   {data.groups.submitted.length ? (
                     data.groups.submitted.map((review) => (
-                      <ReviewRow key={review.id} review={review} />
+                      <ReviewRow
+                        key={review.id}
+                        onArchive={(id) => archiveMutation.mutate(id)}
+                        pending={archiveMutation.isPending}
+                        review={review}
+                      />
                     ))
                   ) : (
                     <p className="px-3 py-2 text-[10.5px] text-muted">
                       No reviews submitted in the last seven days.
+                    </p>
+                  )}
+                </div>
+              </details>
+              <details className="group">
+                <summary className="flex cursor-pointer list-none items-center justify-between px-3 py-2 font-mono text-[10px] tracking-[0.08em] text-muted focus:outline-none focus:ring-1 focus:ring-primary">
+                  <span>ARCHIVED</span>
+                  <Badge>{data.groups.archived.length}</Badge>
+                </summary>
+                <div className="border-t border-line">
+                  {data.groups.archived.length ? (
+                    data.groups.archived.map((review) => (
+                      <ReviewRow
+                        key={review.id}
+                        onRestore={(id) => restoreMutation.mutate(id)}
+                        pending={restoreMutation.isPending}
+                        review={review}
+                      />
+                    ))
+                  ) : (
+                    <p className="px-3 py-2 text-[10.5px] text-muted">
+                      Archived reviews stay available here.
                     </p>
                   )}
                 </div>
@@ -227,7 +304,8 @@ function ReviewSection({
   empty: string;
   title: string;
 }) {
-  const count = Array.isArray(children) ? children.length : children ? 1 : 0;
+  const content = Children.toArray(children);
+  const count = content.length;
   return (
     <section>
       <div className="flex items-center justify-between bg-field px-3 py-1.5 font-mono text-[10px] tracking-[0.08em] text-muted">
@@ -236,12 +314,28 @@ function ReviewSection({
       </div>
       <div className="divide-y divide-line">
         {count ? (
-          children
+          content
         ) : (
           <p className="px-3 py-2 text-[10.5px] text-muted">{empty}</p>
         )}
       </div>
     </section>
+  );
+}
+
+function StartingReviewRow({ reviewRef }: { reviewRef: string }) {
+  return (
+    <article className="px-3 py-2">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="truncate font-mono text-[11px] text-ink">{reviewRef}</p>
+          <p className="mt-1 font-mono text-[10px] text-primary">
+            resolving PR and starting review…
+          </p>
+        </div>
+        <Badge>starting</Badge>
+      </div>
+    </article>
   );
 }
 
@@ -315,13 +409,17 @@ function AwaitingRow({
 }
 
 function ReviewRow({
+  onArchive,
   onReconcile,
   onRestart,
+  onRestore,
   pending = false,
   review,
 }: {
+  onArchive?: (id: string) => void;
   onReconcile?: (id: string) => void;
   onRestart?: (id: string) => void;
+  onRestore?: (id: string) => void;
   pending?: boolean;
   review: PrReviewRecord;
 }) {
@@ -339,13 +437,20 @@ function ReviewRow({
           <p className="mt-1 font-mono text-[10px] text-primary">
             {reviewStatusLine(review)}
           </p>
-          {review.status === 'ready' ? (
+          {review.status === 'ready' && !review.archivedAt ? (
             <p className="mt-1 max-w-[65ch] text-[10px] leading-4 text-muted">
-              {review.trustBoundary}
+              {reviewReadyDetail(review)}
             </p>
           ) : null}
         </div>
-        <Badge>{review.status}</Badge>
+        <div className="flex shrink-0 flex-col items-end gap-1">
+          <Badge>{review.status}</Badge>
+          {review.status === 'ready' && review.previousVerdict ? (
+            <Badge className="border-primary text-primary">
+              {previousReviewLabel(review.previousVerdict)}
+            </Badge>
+          ) : null}
+        </div>
       </div>
       <div className="mt-1.5 flex flex-wrap items-center justify-end gap-1.5 font-mono text-[10px]">
         {review.reportIds.map((reportId, index) => (
@@ -383,6 +488,24 @@ function ReviewRow({
             {pending ? 'checking' : 'recover submission'}
           </Button>
         ) : null}
+        {onArchive ? (
+          <Button
+            disabled={pending}
+            onClick={() => onArchive(review.id)}
+            type="button"
+          >
+            archive
+          </Button>
+        ) : null}
+        {onRestore ? (
+          <Button
+            disabled={pending}
+            onClick={() => onRestore(review.id)}
+            type="button"
+          >
+            restore
+          </Button>
+        ) : null}
       </div>
       {artifactIndex !== null ? (
         <PrReviewArtifactsOverlay
@@ -410,7 +533,7 @@ function OpenReviewButton({ review }: { review: PrReviewRecord }) {
   );
 }
 
-function reviewStatusLine(review: PrReviewRecord) {
+export function reviewStatusLine(review: PrReviewRecord) {
   if (review.status === 'reviewing') return 'reviewing…';
   if (review.status === 'submitting') return 'submitting to GitHub…';
   if (review.status === 'failed')
@@ -419,6 +542,34 @@ function reviewStatusLine(review: PrReviewRecord) {
     return `${review.verdict ?? 'submitted'} · ${relativeTime(review.submittedAt ?? review.updatedAt)}`;
   }
   return `${review.findingCount} findings · ${review.seededCount} drafts${review.reportOnlyCount ? ` · ${review.reportOnlyCount} report-only` : ''}`;
+}
+
+export function reviewReadyDetail(review: PrReviewRecord) {
+  if (!review.previousVerdict) return review.trustBoundary;
+  const previous = previousReviewClause(review.previousVerdict);
+  if (review.seededCount > 0) {
+    return `You previously ${previous} on GitHub. ${review.seededCount} local draft comment${review.seededCount === 1 ? ' is' : 's are'} not submitted.`;
+  }
+  if (review.reportOnlyCount > 0) {
+    return `You previously ${previous} on GitHub. ${review.reportOnlyCount} report-only finding${review.reportOnlyCount === 1 ? ' remains' : 's remain'} to inspect.`;
+  }
+  return `You previously ${previous} on GitHub. Nothing new is pending locally.`;
+}
+
+function previousReviewLabel(
+  verdict: NonNullable<PrReviewRecord['previousVerdict']>,
+) {
+  if (verdict === 'approve') return 'previously approved';
+  if (verdict === 'request-changes') return 'previously requested changes';
+  return 'previously commented';
+}
+
+function previousReviewClause(
+  verdict: NonNullable<PrReviewRecord['previousVerdict']>,
+) {
+  if (verdict === 'approve') return 'approved this PR';
+  if (verdict === 'request-changes') return 'requested changes on this PR';
+  return 'commented on this PR';
 }
 
 export function applyPrReviewChange(
@@ -431,12 +582,15 @@ export function applyPrReviewChange(
           Date.parse(right.updatedAt) - Date.parse(left.updatedAt),
       )
     : [review];
-  const awaiting = (current?.groups.awaiting ?? []).map((item) =>
-    item.pullRequest.repo.toLowerCase() === review.repoFullName.toLowerCase() &&
-    item.pullRequest.number === review.prNumber
-      ? { ...item, review }
-      : item,
-  );
+  const awaiting = (current?.groups.awaiting ?? [])
+    .map((item) =>
+      item.pullRequest.repo.toLowerCase() ===
+        review.repoFullName.toLowerCase() &&
+      item.pullRequest.number === review.prNumber
+        ? { ...item, review: review.archivedAt ? null : review }
+        : item,
+    )
+    .filter((item) => !item.review);
   return {
     ok: true,
     action: 'pr_reviews_list',
@@ -445,12 +599,46 @@ export function applyPrReviewChange(
     groups: {
       awaiting,
       inProgress: items.filter(
-        (item) => item.status === 'reviewing' || item.status === 'submitting',
+        (item) =>
+          !item.archivedAt &&
+          (item.status === 'reviewing' || item.status === 'submitting'),
       ),
       needsAction: items.filter(
-        (item) => item.status === 'ready' || item.status === 'failed',
+        (item) =>
+          !item.archivedAt &&
+          (item.status === 'ready' || item.status === 'failed'),
       ),
-      submitted: items.filter((item) => item.status === 'submitted'),
+      submitted: items.filter(
+        (item) => !item.archivedAt && item.status === 'submitted',
+      ),
+      archived: items.filter((item) => Boolean(item.archivedAt)),
+    },
+    queueIssues: current?.queueIssues,
+  };
+}
+
+export function applyPrReviewSnapshot(
+  current: PrReviewsResponse | undefined,
+  snapshot: PrReviewsResponse,
+): PrReviewsResponse {
+  const awaiting = (current?.groups.awaiting ?? [])
+    .map((item) => ({
+      ...item,
+      review:
+        snapshot.items.find(
+          (review) =>
+            !review.archivedAt &&
+            review.repoFullName.toLowerCase() ===
+              item.pullRequest.repo.toLowerCase() &&
+            review.prNumber === item.pullRequest.number,
+        ) ?? null,
+    }))
+    .filter((item) => !item.review);
+  return {
+    ...snapshot,
+    groups: {
+      ...snapshot.groups,
+      awaiting,
     },
     queueIssues: current?.queueIssues,
   };

@@ -1,7 +1,20 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import {
+  maxPrReviewTimeoutMs,
+  minPrReviewTimeoutMs,
+} from '../../../../../shared/pr-review-policy';
+import {
+  getAutopilotPrompts,
+  getPrReviewPrompts,
   updateAgentModels,
+  updateAutopilotPrompt,
+  updatePrReviewPrompt,
   updateProvider,
+  type AutopilotOwnerPromptMode,
+  type AutopilotPromptConfigData,
+  type PrReviewPromptConfigData,
+  type PrReviewPromptKind,
+  type ProviderUpdate,
   type RuntimeStatus,
 } from '../../../api';
 
@@ -18,11 +31,30 @@ export function RuntimeConfigControls({
   const [displayThinking, setDisplayThinking] = useState(
     status.models.displayAssistantThinkingLevel,
   );
+  const [prReviewModel, setPrReviewModel] = useState(
+    status.models.prReviewConfigured ? status.models.prReview : '',
+  );
+  const [prReviewThinking, setPrReviewThinking] = useState(
+    status.models.prReviewThinkingLevel,
+  );
+  const [prReviewTimeoutSeconds, setPrReviewTimeoutSeconds] = useState(
+    String(status.models.prReviewTimeoutMs / 1000),
+  );
   const [utilityModel, setUtilityModel] = useState(
     status.models.utilityConfigured ? status.models.utility : '',
   );
   const [utilityThinking, setUtilityThinking] = useState(
     status.models.utilityThinkingLevel,
+  );
+  const [exploreModel, setExploreModel] = useState(
+    status.models.exploreConfigured
+      ? (status.models.subagents.explore ?? '')
+      : '',
+  );
+  const [exploreThinking, setExploreThinking] = useState(
+    status.models.exploreThinkingConfigured
+      ? (status.models.subagentThinkingLevels.explore ?? 'medium')
+      : 'inherit',
   );
   const [repoResearcher, setRepoResearcher] = useState(
     status.models.subagents.repoResearcher ?? '',
@@ -49,6 +81,25 @@ export function RuntimeConfigControls({
     modelProviderId(status.models.displayAssistantProvider),
   );
   const selectedProvider = providerStatusSummary(status, providerId);
+  const selectedCompatibleProvider =
+    status.providers.configs.openaiCompatible.find(
+      (provider) => provider.id === providerId,
+    );
+  const [creatingCompatibleProvider, setCreatingCompatibleProvider] =
+    useState(false);
+  const [compatibleProviderId, setCompatibleProviderId] = useState('');
+  const [compatibleBaseUrl, setCompatibleBaseUrl] = useState(
+    selectedCompatibleProvider?.baseUrl ?? '',
+  );
+  const [compatibleApi, setCompatibleApi] = useState<
+    'openai-completions' | 'openai-responses'
+  >(selectedCompatibleProvider?.api ?? 'openai-completions');
+  const [compatibleContextWindow, setCompatibleContextWindow] = useState(
+    selectedCompatibleProvider?.contextWindow?.toString() ?? '',
+  );
+  const [compatibleMaxTokens, setCompatibleMaxTokens] = useState(
+    selectedCompatibleProvider?.maxTokens?.toString() ?? '',
+  );
   const [providerEnabled, setProviderEnabled] = useState(
     selectedProvider.enabled,
   );
@@ -73,10 +124,25 @@ export function RuntimeConfigControls({
     if (modelDirty || savingModels) return;
     setDisplayAssistant(status.models.displayAssistant);
     setDisplayThinking(status.models.displayAssistantThinkingLevel);
+    setPrReviewModel(
+      status.models.prReviewConfigured ? status.models.prReview : '',
+    );
+    setPrReviewThinking(status.models.prReviewThinkingLevel);
+    setPrReviewTimeoutSeconds(String(status.models.prReviewTimeoutMs / 1000));
     setUtilityModel(
       status.models.utilityConfigured ? status.models.utility : '',
     );
     setUtilityThinking(status.models.utilityThinkingLevel);
+    setExploreModel(
+      status.models.exploreConfigured
+        ? (status.models.subagents.explore ?? '')
+        : '',
+    );
+    setExploreThinking(
+      status.models.exploreThinkingConfigured
+        ? (status.models.subagentThinkingLevels.explore ?? 'medium')
+        : 'inherit',
+    );
     setRepoResearcher(status.models.subagents.repoResearcher ?? '');
     setRepoThinking(
       status.models.subagentThinkingLevels.repoResearcher ?? 'medium',
@@ -101,12 +167,26 @@ export function RuntimeConfigControls({
   useEffect(() => {
     if (skipProviderSyncForStatus.current === status.fetchedAt) return;
     skipProviderSyncForStatus.current = null;
-    if (providerDirty || savingProvider) return;
+    if (providerDirty || savingProvider || creatingCompatibleProvider) return;
     const provider = providerStatusSummary(status, providerId);
+    const compatible = status.providers.configs.openaiCompatible.find(
+      (candidate) => candidate.id === providerId,
+    );
     setProviderEnabled(provider.enabled);
     setApiKeyEnv(provider.apiKeyEnv);
     setOrganizationIdEnv(provider.organizationIdEnv ?? '');
-  }, [providerDirty, providerId, savingProvider, status]);
+    setCompatibleProviderId(compatible?.id ?? '');
+    setCompatibleBaseUrl(compatible?.baseUrl ?? '');
+    setCompatibleApi(compatible?.api ?? 'openai-completions');
+    setCompatibleContextWindow(compatible?.contextWindow?.toString() ?? '');
+    setCompatibleMaxTokens(compatible?.maxTokens?.toString() ?? '');
+  }, [
+    creatingCompatibleProvider,
+    providerDirty,
+    providerId,
+    savingProvider,
+    status,
+  ]);
 
   async function saveModels(event: FormEvent) {
     event.preventDefault();
@@ -115,11 +195,28 @@ export function RuntimeConfigControls({
     setModelMessageIsError(false);
 
     try {
+      const parsedPrReviewTimeoutSeconds = Number(prReviewTimeoutSeconds);
+      if (
+        !Number.isInteger(parsedPrReviewTimeoutSeconds) ||
+        parsedPrReviewTimeoutSeconds < minPrReviewTimeoutSeconds ||
+        parsedPrReviewTimeoutSeconds > maxPrReviewTimeoutSeconds
+      ) {
+        setModelMessageIsError(true);
+        setModelMessage(
+          `Review timeout must be a whole number from ${minPrReviewTimeoutSeconds} to ${maxPrReviewTimeoutSeconds} seconds.`,
+        );
+        return;
+      }
       const input = modelUpdateInput(status, {
         displayAssistant,
         displayThinking,
+        prReviewModel,
+        prReviewThinking,
+        prReviewTimeoutSeconds: parsedPrReviewTimeoutSeconds,
         utilityModel,
         utilityThinking,
+        exploreModel,
+        exploreThinking,
         repoResearcher,
         repoThinking,
         ciInvestigator,
@@ -153,15 +250,80 @@ export function RuntimeConfigControls({
     setProviderMessageIsError(false);
 
     try {
-      const result = await updateProvider(providerId, {
-        enabled: providerEnabled,
-        apiKeyEnv: apiKeyEnv.trim() || null,
-        ...(providerId === 'kilocode'
-          ? { organizationIdEnv: organizationIdEnv.trim() || null }
-          : {}),
+      const update: ProviderUpdate =
+        providerId === 'kilocode'
+          ? {
+              provider: 'kilocode',
+              input: {
+                enabled: providerEnabled,
+                apiKeyEnv: apiKeyEnv.trim() || null,
+                organizationIdEnv: organizationIdEnv.trim() || null,
+              },
+            }
+          : providerId === 'openai' || providerId === 'anthropic'
+            ? {
+                provider: providerId,
+                input: {
+                  enabled: providerEnabled,
+                  apiKeyEnv: apiKeyEnv.trim() || null,
+                },
+              }
+            : providerId === 'openai-codex'
+              ? {
+                  provider: 'openai-codex',
+                  input: { enabled: providerEnabled },
+                }
+              : compatibleProviderUpdate({
+                  id: creatingCompatibleProvider
+                    ? compatibleProviderId
+                    : providerId,
+                  enabled: providerEnabled,
+                  baseUrl: compatibleBaseUrl,
+                  apiKeyEnv,
+                  api: compatibleApi,
+                  contextWindow: compatibleContextWindow,
+                  maxTokens: compatibleMaxTokens,
+                });
+      const result = await updateProvider(update);
+      setProviderMessage(result.message);
+      if (update.provider === 'openai-compatible') {
+        setProviderId(update.input.id);
+        setCompatibleProviderId(update.input.id);
+        setCreatingCompatibleProvider(false);
+      }
+      skipProviderSyncForStatus.current = status.fetchedAt;
+      setProviderDirty(false);
+      onRefresh();
+    } catch (cause) {
+      setProviderMessageIsError(true);
+      setProviderMessage(
+        cause instanceof Error ? cause.message : String(cause),
+      );
+    } finally {
+      setSavingProvider(false);
+    }
+  }
+
+  async function removeCompatibleProvider() {
+    if (
+      !selectedCompatibleProvider ||
+      !window.confirm(
+        `Remove the "${selectedCompatibleProvider.id}" provider definition?`,
+      )
+    ) {
+      return;
+    }
+
+    setSavingProvider(true);
+    setProviderMessage(null);
+    setProviderMessageIsError(false);
+    try {
+      const result = await updateProvider({
+        provider: 'openai-compatible',
+        input: { id: selectedCompatibleProvider.id, remove: true },
       });
       setProviderMessage(result.message);
-      skipProviderSyncForStatus.current = status.fetchedAt;
+      setProviderId('kilocode');
       setProviderDirty(false);
       onRefresh();
     } catch (cause) {
@@ -212,6 +374,39 @@ export function RuntimeConfigControls({
           value={displayThinking}
         />
         <ConfigInput
+          label="PR review"
+          onChange={(value) => {
+            skipModelSyncForStatus.current = null;
+            setModelDirty(true);
+            setPrReviewModel(value);
+          }}
+          placeholder={status.models.prReview}
+          value={prReviewModel}
+        />
+        <ConfigSelect
+          label="review think"
+          onChange={(value) => {
+            skipModelSyncForStatus.current = null;
+            setModelDirty(true);
+            setPrReviewThinking(value);
+          }}
+          options={thinkingLevelOptions}
+          value={prReviewThinking}
+        />
+        <ConfigInput
+          label="timeout (s)"
+          max={maxPrReviewTimeoutSeconds}
+          min={minPrReviewTimeoutSeconds}
+          onChange={(value) => {
+            skipModelSyncForStatus.current = null;
+            setModelDirty(true);
+            setPrReviewTimeoutSeconds(value);
+          }}
+          step={1}
+          type="number"
+          value={prReviewTimeoutSeconds}
+        />
+        <ConfigInput
           label="utility"
           onChange={(value) => {
             skipModelSyncForStatus.current = null;
@@ -230,6 +425,26 @@ export function RuntimeConfigControls({
           }}
           options={thinkingLevelOptions}
           value={utilityThinking}
+        />
+        <ConfigInput
+          label="explore"
+          onChange={(value) => {
+            skipModelSyncForStatus.current = null;
+            setModelDirty(true);
+            setExploreModel(value);
+          }}
+          placeholder={status.models.displayAssistant}
+          value={exploreModel}
+        />
+        <ConfigSelect
+          label="explore think"
+          onChange={(value) => {
+            skipModelSyncForStatus.current = null;
+            setModelDirty(true);
+            setExploreThinking(value);
+          }}
+          options={['inherit', ...thinkingLevelOptions]}
+          value={exploreThinking}
         />
         <ConfigInput
           label="repo"
@@ -316,13 +531,36 @@ export function RuntimeConfigControls({
             onChange={(event) => {
               skipProviderSyncForStatus.current = null;
               setProviderDirty(false);
+              if (event.target.value === newCompatibleProviderOption) {
+                setCreatingCompatibleProvider(true);
+                setProviderId('');
+                setProviderEnabled(true);
+                setCompatibleProviderId('');
+                setCompatibleBaseUrl('');
+                setCompatibleApi('openai-completions');
+                setCompatibleContextWindow('');
+                setCompatibleMaxTokens('');
+                setApiKeyEnv('');
+                setOrganizationIdEnv('');
+                return;
+              }
+              setCreatingCompatibleProvider(false);
               setProviderId(modelProviderId(event.target.value));
             }}
-            value={providerId}
+            value={
+              creatingCompatibleProvider
+                ? newCompatibleProviderOption
+                : providerId
+            }
           >
-            <option value="kilocode">KiloCode</option>
-            <option value="openai">OpenAI</option>
-            <option value="anthropic">Anthropic</option>
+            {status.providers.registered.map((provider) => (
+              <option key={provider} value={provider}>
+                {provider === 'openai-codex' ? 'ChatGPT' : provider}
+              </option>
+            ))}
+            <option value={newCompatibleProviderOption}>
+              + compatible endpoint
+            </option>
           </select>
           <button
             className="border border-violet px-2 py-1 font-mono text-[10px] text-violet disabled:opacity-50"
@@ -332,15 +570,109 @@ export function RuntimeConfigControls({
             {savingProvider ? 'saving' : 'save'}
           </button>
         </div>
-        <ConfigInput
-          label="key env"
-          onChange={(value) => {
-            skipProviderSyncForStatus.current = null;
-            setProviderDirty(true);
-            setApiKeyEnv(value);
-          }}
-          value={apiKeyEnv}
-        />
+        {providerId === 'openai-codex' && !creatingCompatibleProvider ? (
+          <div className="space-y-1 border border-line bg-field px-2 py-1.5 font-mono text-[10px] text-muted">
+            <p>
+              OAuth state:{' '}
+              <span
+                className={
+                  status.providers.configs.openaiCodex.usable
+                    ? 'text-cyan'
+                    : 'text-accent'
+                }
+              >
+                {status.providers.configs.openaiCodex.state}
+              </span>
+            </p>
+            {status.providers.configs.openaiCodex.expiresAt ? (
+              <p>Expires {status.providers.configs.openaiCodex.expiresAt}</p>
+            ) : null}
+            {status.providers.configs.openaiCodex.lastError ? (
+              <p className="text-accent">
+                {status.providers.configs.openaiCodex.lastError}
+              </p>
+            ) : null}
+            <p>
+              Manage with <code>neondeck auth login openai-codex</code>, then
+              restart Neondeck.
+            </p>
+          </div>
+        ) : creatingCompatibleProvider || selectedCompatibleProvider ? (
+          <>
+            {creatingCompatibleProvider ? (
+              <ConfigInput
+                label="provider id"
+                onChange={(value) => {
+                  setProviderDirty(true);
+                  setCompatibleProviderId(value);
+                }}
+                placeholder="openrouter"
+                value={compatibleProviderId}
+              />
+            ) : null}
+            <ConfigInput
+              label="endpoint"
+              onChange={(value) => {
+                setProviderDirty(true);
+                setCompatibleBaseUrl(value);
+              }}
+              placeholder="https://openrouter.ai/api/v1"
+              value={compatibleBaseUrl}
+            />
+            <ConfigSelect
+              label="protocol"
+              onChange={(value) => {
+                setProviderDirty(true);
+                setCompatibleApi(
+                  value as 'openai-completions' | 'openai-responses',
+                );
+              }}
+              options={['openai-completions', 'openai-responses']}
+              value={compatibleApi}
+            />
+            <ConfigInput
+              label="key env"
+              onChange={(value) => {
+                setProviderDirty(true);
+                setApiKeyEnv(value);
+              }}
+              placeholder="optional"
+              value={apiKeyEnv}
+            />
+            <ConfigInput
+              label="context"
+              min={1}
+              onChange={(value) => {
+                setProviderDirty(true);
+                setCompatibleContextWindow(value);
+              }}
+              placeholder="provider default"
+              type="number"
+              value={compatibleContextWindow}
+            />
+            <ConfigInput
+              label="output"
+              min={1}
+              onChange={(value) => {
+                setProviderDirty(true);
+                setCompatibleMaxTokens(value);
+              }}
+              placeholder="provider default"
+              type="number"
+              value={compatibleMaxTokens}
+            />
+          </>
+        ) : (
+          <ConfigInput
+            label="key env"
+            onChange={(value) => {
+              skipProviderSyncForStatus.current = null;
+              setProviderDirty(true);
+              setApiKeyEnv(value);
+            }}
+            value={apiKeyEnv}
+          />
+        )}
         {providerId === 'kilocode' ? (
           <ConfigInput
             label="org env"
@@ -357,6 +689,16 @@ export function RuntimeConfigControls({
           Environment variable references only. Provider registration changes
           apply after server restart.
         </p>
+        {selectedCompatibleProvider && !creatingCompatibleProvider ? (
+          <button
+            className="border border-line px-2 py-1 font-mono text-[10px] text-accent disabled:opacity-50"
+            disabled={savingProvider}
+            onClick={() => void removeCompatibleProvider()}
+            type="button"
+          >
+            remove provider
+          </button>
+        ) : null}
         {providerMessage ? (
           <ConfigMessage
             error={providerMessageIsError}
@@ -364,17 +706,290 @@ export function RuntimeConfigControls({
           />
         ) : null}
       </form>
+      <PrReviewPromptControls />
+      <AutopilotPromptControls />
     </div>
   );
 }
+
+export function PrReviewPromptControls() {
+  const [data, setData] = useState<PrReviewPromptConfigData | null>(null);
+  const [kind, setKind] = useState<PrReviewPromptKind>(
+    initialPrReviewPromptKind,
+  );
+  const [prompt, setPrompt] = useState('');
+  const [dirty, setDirty] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+  const [error, setError] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    void getPrReviewPrompts()
+      .then((result) => {
+        if (!active) return;
+        setData(result.data);
+        setPrompt(result.data.prompts[initialPrReviewPromptKind]);
+      })
+      .catch((cause) => {
+        if (!active) return;
+        setError(true);
+        setMessage(cause instanceof Error ? cause.message : String(cause));
+      })
+      .finally(() => {
+        if (active) setLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  function selectKind(nextKind: PrReviewPromptKind) {
+    setKind(nextKind);
+    setPrompt(data?.prompts[nextKind] ?? '');
+    setDirty(false);
+    setMessage(null);
+    setError(false);
+  }
+
+  async function persist(nextPrompt: string | null) {
+    setSaving(true);
+    setMessage(null);
+    setError(false);
+    try {
+      const result = await updatePrReviewPrompt({ kind, prompt: nextPrompt });
+      setData(result.data);
+      setPrompt(result.data.prompts[kind]);
+      setDirty(false);
+      setMessage(result.message);
+    } catch (cause) {
+      setError(true);
+      setMessage(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <section className="space-y-2 border border-line bg-soft px-2.5 py-2">
+      <div className="flex items-center justify-between gap-2">
+        <p className="font-mono text-[10px] tracking-[0.12em] text-violet">
+          PR REVIEW PROMPT
+        </p>
+        <div className="flex items-center gap-1">
+          <button
+            className="border border-line px-2 py-1 font-mono text-[10px] text-muted disabled:opacity-50"
+            disabled={loading || saving || !data?.overrides[kind]}
+            onClick={() => void persist(null)}
+            type="button"
+          >
+            reset default
+          </button>
+          <button
+            className="border border-violet px-2 py-1 font-mono text-[10px] text-violet disabled:opacity-50"
+            disabled={loading || saving || !dirty || !prompt.trim()}
+            onClick={() => void persist(prompt)}
+            type="button"
+          >
+            {saving ? 'saving' : 'save'}
+          </button>
+        </div>
+      </div>
+      <label className="grid grid-cols-[4.5rem_minmax(0,1fr)] items-center gap-2 font-mono text-[10px] text-muted">
+        <span>prompt</span>
+        <select
+          aria-label="PR review prompt kind"
+          className="min-w-0 border border-line bg-field px-2 py-1 text-[10.5px] text-ink outline-none focus:border-violet"
+          disabled={loading || saving}
+          onChange={(event) =>
+            selectKind(event.target.value as PrReviewPromptKind)
+          }
+          value={kind}
+        >
+          <option value="initial-review">initial review run</option>
+          <option value="follow-up-reviewer">follow-up conversation</option>
+        </select>
+      </label>
+      <textarea
+        aria-label="PR review prompt"
+        className="min-h-64 w-full resize-y border border-line bg-field px-2 py-1.5 font-mono text-[10.5px] leading-4 text-ink outline-none focus:border-violet disabled:opacity-50"
+        disabled={loading || saving}
+        maxLength={40_000}
+        onChange={(event) => {
+          setPrompt(event.target.value);
+          setDirty(true);
+          setMessage(null);
+        }}
+        placeholder={
+          loading ? 'loading prompt…' : 'Enter reviewer instructions'
+        }
+        spellCheck={false}
+        value={prompt}
+      />
+      <p className="text-[10.5px] leading-4 text-muted">
+        {kind === 'initial-review'
+          ? 'Complete replacement system instructions for new review runs. PR facts and the structured result contract are supplied separately.'
+          : 'Complete replacement system instructions for reviewer chat. Changes apply on the next turn, including existing conversations.'}
+      </p>
+      {data?.tokens[kind].length ? (
+        <p className="break-words font-mono text-[9.5px] leading-4 text-muted opacity-80">
+          tokens · {data.tokens[kind].join(' · ')}
+        </p>
+      ) : null}
+      {message ? <ConfigMessage error={error} message={message} /> : null}
+    </section>
+  );
+}
+
+export function AutopilotPromptControls() {
+  const [data, setData] = useState<AutopilotPromptConfigData | null>(null);
+  const [mode, setMode] = useState<AutopilotOwnerPromptMode>(
+    initialAutopilotPromptMode,
+  );
+  const [prompt, setPrompt] = useState('');
+  const [dirty, setDirty] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+  const [error, setError] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    void getAutopilotPrompts()
+      .then((result) => {
+        if (!active) return;
+        setData(result.data);
+        setPrompt(result.data.prompts[initialAutopilotPromptMode]);
+      })
+      .catch((cause) => {
+        if (!active) return;
+        setError(true);
+        setMessage(cause instanceof Error ? cause.message : String(cause));
+      })
+      .finally(() => {
+        if (active) setLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  function selectMode(nextMode: AutopilotOwnerPromptMode) {
+    setMode(nextMode);
+    setPrompt(data?.prompts[nextMode] ?? '');
+    setDirty(false);
+    setMessage(null);
+    setError(false);
+  }
+
+  async function persist(nextPrompt: string | null) {
+    setSaving(true);
+    setMessage(null);
+    setError(false);
+    try {
+      const result = await updateAutopilotPrompt({ mode, prompt: nextPrompt });
+      setData(result.data);
+      setPrompt(result.data.prompts[mode]);
+      setDirty(false);
+      setMessage(result.message);
+    } catch (cause) {
+      setError(true);
+      setMessage(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <section className="space-y-2 border border-line bg-soft px-2.5 py-2">
+      <div className="flex items-center justify-between gap-2">
+        <p className="font-mono text-[10px] tracking-[0.12em] text-violet">
+          AUTOPILOT OWNER PROMPT
+        </p>
+        <div className="flex items-center gap-1">
+          <button
+            className="border border-line px-2 py-1 font-mono text-[10px] text-muted disabled:opacity-50"
+            disabled={loading || saving || !data?.overrides[mode]}
+            onClick={() => void persist(null)}
+            type="button"
+          >
+            reset default
+          </button>
+          <button
+            className="border border-violet px-2 py-1 font-mono text-[10px] text-violet disabled:opacity-50"
+            disabled={loading || saving || !dirty || !prompt.trim()}
+            onClick={() => void persist(prompt)}
+            type="button"
+          >
+            {saving ? 'saving' : 'save'}
+          </button>
+        </div>
+      </div>
+      <label className="grid grid-cols-[4.5rem_minmax(0,1fr)] items-center gap-2 font-mono text-[10px] text-muted">
+        <span>mode</span>
+        <select
+          aria-label="Autopilot prompt mode"
+          className="min-w-0 border border-line bg-field px-2 py-1 text-[10.5px] text-ink outline-none focus:border-violet"
+          disabled={loading || saving}
+          onChange={(event) =>
+            selectMode(event.target.value as AutopilotOwnerPromptMode)
+          }
+          value={mode}
+        >
+          <option value="prepare-only">prepare commit · no delivery</option>
+          <option value="autofix-with-approval">
+            fix and await human delivery
+          </option>
+          <option value="autofix-push-when-safe">
+            autonomous judgment + delivery
+          </option>
+        </select>
+      </label>
+      <textarea
+        aria-label="Autopilot owner prompt"
+        className="min-h-64 w-full resize-y border border-line bg-field px-2 py-1.5 font-mono text-[10.5px] leading-4 text-ink outline-none focus:border-violet disabled:opacity-50"
+        disabled={loading || saving}
+        maxLength={20_000}
+        onChange={(event) => {
+          setPrompt(event.target.value);
+          setDirty(true);
+          setMessage(null);
+        }}
+        placeholder={loading ? 'loading prompt…' : 'Enter owner instructions'}
+        spellCheck={false}
+        value={prompt}
+      />
+      <p className="text-[10.5px] leading-4 text-muted">
+        Full owner system instructions. Changes apply on the next turn,
+        including existing owners. Notify-only has no prompt because it does not
+        start an owner turn.
+      </p>
+      {data ? (
+        <p className="break-words font-mono text-[9.5px] leading-4 text-muted opacity-80">
+          tokens · {data.tokens.join(' · ')}
+        </p>
+      ) : null}
+      {message ? <ConfigMessage error={error} message={message} /> : null}
+    </section>
+  );
+}
+
+const initialAutopilotPromptMode = 'prepare-only' as const;
+const initialPrReviewPromptKind = 'initial-review' as const;
 
 function modelUpdateInput(
   status: RuntimeStatus,
   values: {
     displayAssistant: string;
     displayThinking: string;
+    prReviewModel: string;
+    prReviewThinking: string;
+    prReviewTimeoutSeconds: number;
     utilityModel: string;
     utilityThinking: string;
+    exploreModel: string;
+    exploreThinking: string;
     repoResearcher: string;
     repoThinking: string;
     ciInvestigator: string;
@@ -385,21 +1000,29 @@ function modelUpdateInput(
 ) {
   const displayAssistant = values.displayAssistant.trim();
   const displayThinking = values.displayThinking.trim();
+  const prReviewModel = values.prReviewModel.trim();
+  const prReviewThinking = values.prReviewThinking.trim();
+  const prReviewTimeoutMs = values.prReviewTimeoutSeconds * 1000;
   const utilityModel = values.utilityModel.trim();
   const utilityThinking = values.utilityThinking.trim();
+  const exploreModel = values.exploreModel.trim();
+  const exploreThinking = values.exploreThinking.trim();
   const repoResearcher = values.repoResearcher.trim();
   const repoThinking = values.repoThinking.trim();
   const ciInvestigator = values.ciInvestigator.trim();
   const ciThinking = values.ciThinking.trim();
   const releaseReviewer = values.releaseReviewer.trim();
   const releaseThinking = values.releaseThinking.trim();
-  const subagents: Record<string, string> = {};
+  const subagents: Record<string, string | null> = {};
   const input: {
     displayAssistant?: string;
     displayAssistantThinkingLevel?: string;
+    prReview?: string | null;
+    prReviewThinkingLevel?: string;
+    prReviewTimeoutMs?: number;
     utility?: string | null;
     utilityThinkingLevel?: string;
-    subagents?: Record<string, string>;
+    subagents?: Record<string, string | null>;
   } = {};
 
   if (displayAssistant !== status.models.displayAssistant) {
@@ -407,6 +1030,22 @@ function modelUpdateInput(
   }
   if (displayThinking !== status.models.displayAssistantThinkingLevel) {
     input.displayAssistantThinkingLevel = displayThinking;
+  }
+  if (prReviewModel) {
+    if (
+      !status.models.prReviewConfigured ||
+      prReviewModel !== status.models.prReview
+    ) {
+      input.prReview = prReviewModel;
+    }
+  } else if (status.models.prReviewConfigured) {
+    input.prReview = null;
+  }
+  if (prReviewThinking !== status.models.prReviewThinkingLevel) {
+    input.prReviewThinkingLevel = prReviewThinking;
+  }
+  if (prReviewTimeoutMs !== status.models.prReviewTimeoutMs) {
+    input.prReviewTimeoutMs = prReviewTimeoutMs;
   }
   if (utilityModel) {
     if (
@@ -422,6 +1061,26 @@ function modelUpdateInput(
     input.utilityThinkingLevel = utilityThinking;
   }
 
+  if (exploreModel) {
+    if (
+      !status.models.exploreConfigured ||
+      exploreModel !== status.models.subagents.explore
+    ) {
+      subagents.explore = exploreModel;
+    }
+  } else if (status.models.exploreConfigured) {
+    subagents.explore = null;
+  }
+  if (exploreThinking === 'inherit') {
+    if (status.models.exploreThinkingConfigured) {
+      subagents.exploreThinkingLevel = null;
+    }
+  } else if (
+    !status.models.exploreThinkingConfigured ||
+    exploreThinking !== status.models.subagentThinkingLevels.explore
+  ) {
+    subagents.exploreThinkingLevel = exploreThinking;
+  }
   if (repoResearcher !== status.models.subagents.repoResearcher) {
     subagents.repoResearcher = repoResearcher;
   }
@@ -451,13 +1110,21 @@ function modelUpdateInput(
 
 function ConfigInput({
   label,
+  max,
+  min,
   onChange,
   placeholder,
+  step,
+  type = 'text',
   value,
 }: {
   label: string;
+  max?: number;
+  min?: number;
   onChange: (value: string) => void;
   placeholder?: string;
+  step?: number;
+  type?: 'number' | 'text';
   value: string;
 }) {
   return (
@@ -465,8 +1132,12 @@ function ConfigInput({
       <span className="truncate">{label}</span>
       <input
         className="min-w-0 border border-line bg-field px-2 py-1 text-[10.5px] text-ink outline-none focus:border-violet"
+        max={max}
+        min={min}
         onChange={(event) => onChange(event.target.value)}
         placeholder={placeholder}
+        step={step}
+        type={type}
         value={value}
       />
     </label>
@@ -502,7 +1173,7 @@ function ConfigSelect({
   );
 }
 
-export type ModelProviderId = 'kilocode' | 'openai' | 'anthropic';
+export type ModelProviderId = string;
 
 const thinkingLevelOptions = [
   'off',
@@ -512,10 +1183,51 @@ const thinkingLevelOptions = [
   'high',
   'xhigh',
 ];
+const newCompatibleProviderOption = '__new-compatible-provider__';
+const minPrReviewTimeoutSeconds = minPrReviewTimeoutMs / 1000;
+const maxPrReviewTimeoutSeconds = maxPrReviewTimeoutMs / 1000;
+
+export function optionalPositiveInteger(value: string, label: string) {
+  if (!value.trim()) return null;
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed < 1) {
+    throw new Error(`${label} must be a positive whole number.`);
+  }
+  return parsed;
+}
+
+export function compatibleProviderUpdate(input: {
+  id: string;
+  enabled: boolean;
+  baseUrl: string;
+  apiKeyEnv: string;
+  api: 'openai-completions' | 'openai-responses';
+  contextWindow: string;
+  maxTokens: string;
+}): Extract<ProviderUpdate, { provider: 'openai-compatible' }> {
+  const id = input.id.trim();
+  const baseUrl = input.baseUrl.trim();
+  if (!id) throw new Error('Provider id is required.');
+  if (!baseUrl) throw new Error('Endpoint URL is required.');
+  return {
+    provider: 'openai-compatible',
+    input: {
+      id,
+      enabled: input.enabled,
+      baseUrl,
+      apiKeyEnv: input.apiKeyEnv.trim() || null,
+      api: input.api,
+      contextWindow: optionalPositiveInteger(
+        input.contextWindow,
+        'Context window',
+      ),
+      maxTokens: optionalPositiveInteger(input.maxTokens, 'Output token limit'),
+    },
+  };
+}
 
 function modelProviderId(value: string): ModelProviderId {
-  if (value === 'openai' || value === 'anthropic') return value;
-  return 'kilocode';
+  return /^[a-z][a-z0-9-]{0,62}$/.test(value) ? value : 'kilocode';
 }
 
 export function activeModelProviderIds(
@@ -539,7 +1251,27 @@ export function providerCredentialConfigured(
   provider: ModelProviderId,
 ) {
   if (provider === 'kilocode') return status.providers.credentials.kilo;
-  return status.providers.credentials[provider];
+  if (provider === 'openai') return status.providers.credentials.openai;
+  if (provider === 'anthropic') return status.providers.credentials.anthropic;
+  if (provider === 'openai-codex')
+    return status.providers.credentials.openaiCodex;
+  const custom = status.providers.configs.openaiCompatible.find(
+    (candidate) => candidate.id === provider,
+  );
+  return custom ? !custom.apiKeyEnv || custom.apiKeyPresent : false;
+}
+
+export function providerCredentialLabel(
+  status: RuntimeStatus,
+  provider: ModelProviderId,
+) {
+  if (!providerCredentialConfigured(status, provider)) return 'missing';
+  if (provider === 'openai-codex') return 'oauth';
+  const custom = status.providers.configs.openaiCompatible.find(
+    (candidate) => candidate.id === provider,
+  );
+  if (custom && !custom.apiKeyEnv) return 'ready';
+  return 'key';
 }
 
 export function providerStatusSummary(status: RuntimeStatus, provider: string) {
@@ -558,6 +1290,27 @@ export function providerStatusSummary(status: RuntimeStatus, provider: string) {
       label: 'ANTHROPIC',
       enabled: status.providers.configs.anthropic.enabled,
       apiKeyEnv: status.providers.configs.anthropic.apiKeyEnv,
+      organizationIdEnv: null,
+    };
+  }
+
+  if (id === 'openai-codex') {
+    return {
+      label: 'CHATGPT',
+      enabled: status.providers.configs.openaiCodex.enabled,
+      apiKeyEnv: '',
+      organizationIdEnv: null,
+    };
+  }
+
+  const custom = status.providers.configs.openaiCompatible.find(
+    (provider) => provider.id === id,
+  );
+  if (custom) {
+    return {
+      label: custom.id.toUpperCase(),
+      enabled: custom.enabled,
+      apiKeyEnv: custom.apiKeyEnv ?? '',
       organizationIdEnv: null,
     };
   }

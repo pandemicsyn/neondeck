@@ -7,7 +7,7 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
 
 <BaseLayout
   title="Security · neondeck"
-  description="Local trust boundaries, provider secrets, GitHub token handling, runtime skills, Flue inspection, and execution approvals in neondeck."
+  description="Neondeck's local trust model for secrets, repositories, connected services, automation, reviews, and host execution."
 >
   <div class="site-shell">
     <SiteNav />
@@ -16,62 +16,165 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
       <article class="docs-prose">
         <h1>Security</h1>
         <p>
-          neondeck is local-first, but it still handles provider keys, GitHub
-          tokens, local git checkouts, model-visible tools, and optional host
-          execution. Treat the runtime home as sensitive local state.
+          Neondeck is local-first, not zero-trust. The server is a trusted local
+          application that can hold provider credentials, call GitHub, inspect
+          registered repositories, run scheduled work, and—when enabled—execute
+          commands. The browser is an operator surface over that trusted
+          process.
+        </p>
+        <p>
+          The practical security model is layered: keep secrets server-side,
+          expose only bounded model capabilities, require confirmation or
+          approval for sensitive effects, bind autonomous delivery to current
+          facts, and preserve an audit trail. See
+          <a href="/docs/execution/"> safety and sandboxes</a> for the detailed boundary
+          of each work surface.
         </p>
 
-        <h2>Secrets</h2>
+        <h2>Local trust boundary</h2>
         <p>
-          Secrets live in runtime-home <code>.env</code> or process environment variables.
-          Normal config stores environment variable names only. Do not put secrets
-          in <code>config.json</code>, runtime skills, SOUL, or dashboard
-          config.
+          The dashboard and local API are intended for the person using the
+          machine. Mutating requests are protected by local-origin checks, but
+          Neondeck does not provide a complete multi-user authentication,
+          authorization, or internet-facing deployment layer.
+        </p>
+        <p>
+          Do not expose the local server directly to an untrusted LAN or the
+          public internet. If remote access is required, place it behind your
+          own authenticated transport and treat agent-submission inspection,
+          reports, and runtime state as sensitive.
+        </p>
+        <p>
+          Authenticated reverse proxies may be allowlisted with exact
+          <code>server.trustedOrigins</code> entries in runtime-home
+          <code>config.json</code>. This extends the operator trust boundary to
+          those browser origins; it does not provide user accounts,
+          authorization roles, or an authentication layer.
         </p>
 
-        <h2>Provider credentials</h2>
+        <h2>Secrets and credentials</h2>
         <p>
-          Hosted model providers use API credentials or platform bindings. A
-          ChatGPT or Codex subscription login is not a documented Flue provider
-          credential path. Provider config is allowlisted for KiloCode, OpenAI,
-          and Anthropic and stores environment variable names rather than raw
-          secrets.
+          Provider keys, GitHub tokens, SSH credentials, and connected-service
+          tokens stay in the server environment or protected runtime state.
+          Ordinary settings refer to secret variable names rather than storing
+          secret values. The browser receives sanitized operational data, not
+          the underlying provider or GitHub credential.
+        </p>
+        <p>
+          ChatGPT OAuth credentials are stored in
+          <code>data/neondeck.db</code>. Before credential access, Neondeck
+          restricts the runtime <code>data/</code> directory to the current user and
+          protects the database plus existing WAL and shared-memory sidecars on POSIX
+          systems. OAuth tokens are never sent to the browser.
+        </p>
+        <p>
+          Do not place secrets in agent personality text, runtime skills,
+          prompts, memories, scheduled instructions, or dashboard settings.
+          Those surfaces can enter model context or appear in audit and
+          inspection views.
         </p>
 
-        <h2>GitHub token</h2>
+        <h2>Registered repositories</h2>
         <p>
-          GitHub API calls run server-side. The browser receives sanitized PR,
-          check, watch, and summary data; it does not receive the token.
+          Registering a repository grants Neondeck deliberate, bounded access to
+          that checkout. Chat-side file operations use relative paths,
+          containment and symlink checks, denied-path rules, stale-write
+          protection, worktree locks, and audit events. Autonomous changes are
+          directed to managed worktrees rather than the primary checkout.
+        </p>
+        <p>
+          A managed worktree is an isolation boundary between coding tasks, not
+          a security boundary between Neondeck and the operating system. The
+          current Autopilot owner shell runs as the local Neondeck user and must
+          be treated as trusted host code.
         </p>
 
-        <h2>Runtime skills</h2>
+        <h2>Commands and approvals</h2>
         <p>
-          Runtime skills are trusted local extensions. They are guidance, not a
-          place to store credentials. Adding arbitrary external skill roots
-          gives the agent new procedural knowledge and should be treated like
-          editing local agent configuration.
+          Direct local or VM commands use a separate policy. Preapproved
+          commands run immediately, other interactive commands require operator
+          approval, and commands submitted as unattended are limited to
+          preapprovals. Hardline destructive patterns remain blocked. Approval
+          resolution is operator-owned; the model cannot approve its own
+          request.
+        </p>
+        <p>
+          Keep manual approval enabled unless the machine and all model-visible
+          instructions are fully trusted. Disabling approvals does not turn the
+          local backend into a sandbox—it broadens what the trusted host process
+          may execute.
         </p>
 
-        <h2>Execution approvals</h2>
+        <h2>GitHub and external delivery</h2>
         <p>
-          Host execution is action-mediated. Commands outside preapprovals
-          require interactive approval and are denied in unattended contexts.
-          Approval resolution is dashboard/API/user-owned, not model-callable.
-          Hardline destructive commands cannot be preapproved.
+          GitHub facts and mutations run server-side. Watched-PR Autopilot keeps
+          coding authority separate from delivery authority: prepare modes
+          cannot push, approval mode can deliver only from an exact current
+          reviewed-revision approval through Active Watches or the typed API,
+          and autonomous mode receives narrowly bound push and response
+          capabilities. Generic owner messages never approve delivery.
+        </p>
+        <p>
+          Before an autonomous push, Neondeck rechecks the current PR head,
+          destination, permissions, identity, clean committed worktree, and
+          watch authority. Delivery is non-force and expected-head guarded. If
+          the outcome becomes uncertain, Neondeck blocks and retains the local
+          commit instead of guessing or repeating the effect.
         </p>
 
-        <h2>Flue run inspection</h2>
+        <h2>PR review</h2>
         <p>
-          Raw Flue runs may include prompts, inputs, outputs, and tool data.
-          Keep inspection local and guarded. UI summaries should stay compact
-          and avoid leaking secrets.
+          Model-assisted PR review is read-only and revision-bound. It can
+          inspect bounded evidence and create local reports or draft findings,
+          but it cannot edit the repo, submit a review, choose a GitHub verdict,
+          reply to a thread, or resolve one. Those actions remain human-owned
+          dashboard controls.
         </p>
 
-        <h2>Local API access</h2>
+        <h2>Scheduled work</h2>
         <p>
-          The local server protects mutating API access behind local-origin
-          checks. Do not expose the local app directly to an untrusted network
-          without adding an explicit auth layer.
+          Scheduled occurrences are claimed, recorded, and run as bounded work.
+          They do not receive a mounted host workspace by default, but general
+          scheduled instructions can still use permitted Neondeck or connected
+          service capabilities. The default fresh-session target cannot use the
+          normal interactive commit or push path; a task explicitly attached to
+          an existing agent session inherits that session's linked context and
+          authority. Keep scheduled instructions narrow, review their result
+          history, and do not assume “background” means “read-only.”
+        </p>
+        <p>
+          Briefings are explicitly informational. They are instructed not to
+          mutate external systems and must continue with partial data when a
+          source is unavailable, denied, logged out, or waiting for approval.
+        </p>
+
+        <h2>Connected services</h2>
+        <p>
+          Connected tool calls have their own allow, ask, or deny policy. An
+          approval is bound to the specific server, tool, and arguments;
+          changing that scope invalidates it. Tools and returned content should
+          be treated as untrusted external input even when the connection itself
+          is authenticated.
+        </p>
+
+        <h2>Skills, memories, and prompt overrides</h2>
+        <p>
+          Runtime skills, durable memory, and full prompt overrides can strongly
+          influence model behavior. They cannot add a server-side capability
+          that was not supplied for the current turn, but they can change how
+          the model uses capabilities it already has. Treat changes to these
+          surfaces as trusted local configuration and review learned skill
+          patches before applying them in sensitive environments.
+        </p>
+
+        <h2>Inspection and audit data</h2>
+        <p>
+          Conversation history, agent submissions, app-operation records,
+          command records, tool arguments, reports, diffs, and output previews
+          may reveal source code, paths, prompts, or operational details. Output
+          redaction catches some common token formats but is not a general
+          secret scanner. Keep runtime storage and inspection views private, and
+          rotate a credential if it is ever exposed to model context or logs.
         </p>
       </article>
     </main>

@@ -26,15 +26,40 @@ export const REPORT_DECK_CONTROLLER_SOURCE = String.raw`(() => {
   };
 
   const setActive = (requested, updateHash = true) => {
+    const previousActive = active;
+    const outgoingSlide = slides[previousActive];
+    const shouldRestoreFocus =
+      outgoingSlide instanceof HTMLElement &&
+      document.activeElement instanceof Node &&
+      outgoingSlide.contains(document.activeElement);
     active = Math.max(0, Math.min(slides.length - 1, requested));
     slides.forEach((slide, index) => {
       if (slide instanceof HTMLElement) slide.hidden = index !== active;
     });
+    if (shouldRestoreFocus) {
+      const incomingSlide = slides[active];
+      const scrollRegion =
+        incomingSlide instanceof HTMLElement
+          ? incomingSlide.querySelector('[data-deck-scroll-region]')
+          : null;
+      const focusTarget = scrollRegion instanceof HTMLElement ? scrollRegion : root;
+      if (focusTarget && typeof focusTarget.focus === 'function') {
+        focusTarget.focus();
+      }
+    }
+    let activeDot = null;
     dots.forEach((dot, index) => {
       if (!(dot instanceof HTMLElement)) return;
-      if (index === active) dot.setAttribute('aria-current', 'true');
-      else dot.removeAttribute('aria-current');
+      if (index === active) {
+        dot.setAttribute('aria-current', 'true');
+        activeDot = dot;
+      } else {
+        dot.removeAttribute('aria-current');
+      }
     });
+    if (activeDot && typeof activeDot.scrollIntoView === 'function') {
+      activeDot.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+    }
     if (previous instanceof HTMLButtonElement) previous.disabled = active === 0;
     if (next instanceof HTMLButtonElement) next.disabled = active === slides.length - 1;
     if (current) current.textContent = String(active + 1);
@@ -53,7 +78,30 @@ export const REPORT_DECK_CONTROLLER_SOURCE = String.raw`(() => {
 
   const interactiveTarget = (target) =>
     target instanceof Element &&
-    Boolean(target.closest('a, button, input, select, textarea, [data-deck-scroll-region], [contenteditable]:not([contenteditable="false"])'));
+    Boolean(target.closest('a, button, input, select, textarea, [contenteditable]:not([contenteditable="false"])'));
+
+  const deckScrollRegion = (target) => {
+    if (!(target instanceof Element)) return null;
+    const region = target.closest('[data-deck-scroll-region]');
+    return region instanceof HTMLElement ? region : null;
+  };
+
+  const horizontalForwardKeys = new Set(['ArrowRight']);
+  const horizontalBackwardKeys = new Set(['ArrowLeft']);
+  const verticalForwardKeys = new Set(['PageDown', ' ', 'End']);
+  const verticalBackwardKeys = new Set(['PageUp', 'Home']);
+
+  const nextIndex = (key) => {
+    if (key === 'ArrowLeft' || key === 'PageUp' || key === '[') return active - 1;
+    if (key === 'ArrowRight' || key === 'PageDown' || key === ' ' || key === ']') return active + 1;
+    if (key === 'Home') return 0;
+    if (key === 'End') return slides.length - 1;
+    if (key.length === 1 && key >= '1' && key <= '9') {
+      const requested = Number(key) - 1;
+      return requested < slides.length ? requested : null;
+    }
+    return null;
+  };
 
   root.addEventListener('click', (event) => {
     if (!(event.target instanceof Element)) return;
@@ -75,11 +123,12 @@ export const REPORT_DECK_CONTROLLER_SOURCE = String.raw`(() => {
       event.shiftKey ||
       interactiveTarget(event.target)
     ) return;
-    let requested = null;
-    if (event.key === 'ArrowLeft' || event.key === 'PageUp') requested = active - 1;
-    else if (event.key === 'ArrowRight' || event.key === 'PageDown' || event.key === ' ') requested = active + 1;
-    else if (event.key === 'Home') requested = 0;
-    else if (event.key === 'End') requested = slides.length - 1;
+    const scrollRegion = deckScrollRegion(event.target);
+    if (scrollRegion && horizontalForwardKeys.has(event.key) && scrollRegion.scrollLeft + scrollRegion.clientWidth < scrollRegion.scrollWidth - 1) return;
+    if (scrollRegion && horizontalBackwardKeys.has(event.key) && scrollRegion.scrollLeft > 0) return;
+    if (scrollRegion && verticalForwardKeys.has(event.key) && scrollRegion.scrollTop + scrollRegion.clientHeight < scrollRegion.scrollHeight - 1) return;
+    if (scrollRegion && verticalBackwardKeys.has(event.key) && scrollRegion.scrollTop > 0) return;
+    const requested = nextIndex(event.key);
     if (requested === null) return;
     event.preventDefault();
     setActive(requested);

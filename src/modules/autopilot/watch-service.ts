@@ -1,9 +1,10 @@
-import { defineAction, dispatch } from '@flue/runtime';
+import { defineTool } from '@flue/runtime';
 import * as v from 'valibot';
 import type { RuntimePaths } from '../../runtime-home';
 import { runtimePaths } from '../../runtime-home';
 import {
   addPrWatch,
+  canonicalizePrWatchRepoId,
   listPrWatches,
   readWatch,
   resolveWatchId,
@@ -20,11 +21,19 @@ import type {
 import { modeSchema } from '../autopilot-policy';
 import { completeAutopilotWatchIfTerminal } from './owner/lifecycle';
 import { gitCurrentSha, gitStatus } from '../../repo-edit/git';
+import { readRepoDiff } from '../../repo-edit';
 import { readManagedWorktree } from '../worktrees';
 import {
-  clearPendingAutopilotTurn,
+  clearPendingAutopilotTurnIfMatches,
+  recordPendingAutopilotTurnCorrelationId,
+  recordPendingAutopilotTurnError,
   registerPendingAutopilotTurn,
 } from './owner/pending';
+import {
+  dispatchAutopilotOwnerMessage,
+  type AutopilotOwnerDispatcher,
+} from './owner/dispatch';
+import { watchAutopilotOwnerSettlement } from './owner/settlement';
 
 const nonEmptyString = v.pipe(v.string(), v.minLength(1));
 
@@ -47,12 +56,19 @@ export const prAutopilotControlInputSchema = v.object({
   id: v.optional(nonEmptyString),
   ref: v.optional(nonEmptyString),
   operation: v.picklist(['pause', 'resume', 'retry', 'stop']),
+  confirmPreparedDiff: v.optional(v.boolean()),
 });
 
 export const prAutopilotOwnerMessageInputSchema = v.object({
   id: v.optional(nonEmptyString),
   ref: v.optional(nonEmptyString),
   message: nonEmptyString,
+});
+
+export const prAutopilotApprovalInputSchema = v.object({
+  id: v.optional(nonEmptyString),
+  ref: v.optional(nonEmptyString),
+  expectedRevisionKey: nonEmptyString,
 });
 
 export const prAutopilotOutputSchema = v.looseObject({
@@ -66,15 +82,71 @@ export async function configurePrAutopilot(
   input: v.InferInput<typeof configurePrAutopilotInputSchema>,
   paths: RuntimePaths = runtimePaths(),
   dependencies: {
+    addWatch?: typeof addPrWatch;
     fetcher?: WatchFetcher;
     checkFetcher?: CheckFetcher;
     initialEventBaselineFetcher?: PrWatchInitialEventBaselineFetcher;
+    upsertPollingTask?: NonNullable<
+      Parameters<typeof addPrWatch>[5]
+    >['upsertPollingTask'];
   } = {},
 ) {
   const parsed = v.safeParse(configurePrAutopilotInputSchema, input);
   if (!parsed.success) return invalid('autopilot_configure_pr', parsed.issues);
+  const resolved = await resolveWatchId(
+    { ref: parsed.output.ref },
+    paths,
+    'autopilot_configure_pr',
+  );
+  if (!resolved.ok) {
+    return { ...resolved.result, action: 'autopilot_configure_pr' };
+  }
+  const existing = readWatch(paths, resolved.id);
+  if (existing?.autopilotStatus === 'stopping') {
+    return {
+      ...failure(
+        'autopilot_configure_pr',
+        `Autopilot for "${existing.id}" is stopping and cannot be reconfigured until cleanup finishes.`,
+      ),
+      watch: existing,
+      requires: ['retryStop'],
+    };
+  }
+  const increasesAuthority =
+    existing === undefined
+      ? parsed.output.mode !== 'notify-only'
+      : autopilotModeRank(parsed.output.mode) >
+        autopilotModeRank(existing.autopilotMode);
+  const rearmsCompletedAuthority =
+    existing?.autopilotStatus === 'complete' &&
+    parsed.output.mode !== 'notify-only';
+  if (
+    (increasesAuthority || rearmsCompletedAuthority) &&
+    parsed.output.confirm !== true
+  ) {
+    const message = existing
+      ? rearmsCompletedAuthority
+        ? `Rearming completed Autopilot in ${parsed.output.mode} mode requires explicit confirmation.`
+        : `Increasing Autopilot from ${existing.autopilotMode} to ${parsed.output.mode} requires explicit confirmation.`
+      : `Enabling Autopilot in ${parsed.output.mode} mode requires explicit confirmation.`;
+    return {
+      ok: false,
+      action: 'autopilot_configure_pr',
+      changed: false,
+      message,
+      ...(existing ? { watch: existing } : {}),
+      requires: ['confirmAutopilotMode'],
+      errors: [
+        rearmsCompletedAuthority
+          ? 'Set confirm=true only after the user explicitly confirms rearming this completed Autopilot watch.'
+          : existing
+            ? 'Set confirm=true only after the user explicitly confirms this autonomy increase.'
+            : 'Set confirm=true only after the user explicitly confirms this autonomy level.',
+      ],
+    };
+  }
 
-  const watchResult = await addPrWatch(
+  const watchResult = await (dependencies.addWatch ?? addPrWatch)(
     {
       ref: parsed.output.ref,
       processExisting: parsed.output.processExisting,
@@ -86,6 +158,15 @@ export async function configurePrAutopilot(
     dependencies.fetcher,
     dependencies.checkFetcher,
     dependencies.initialEventBaselineFetcher,
+    {
+      expectedExisting: existing ? autopilotWatchFence(existing) : null,
+      ...(existing?.autopilotStatus === 'complete'
+        ? { rearmAutopilotMode: parsed.output.mode }
+        : {}),
+      ...(dependencies.upsertPollingTask
+        ? { upsertPollingTask: dependencies.upsertPollingTask }
+        : {}),
+    },
   );
   if (!watchResult.ok) {
     return { ...watchResult, action: 'autopilot_configure_pr' };
@@ -97,35 +178,28 @@ export async function configurePrAutopilot(
       'The PR watch was created without a durable watch id.',
     );
   }
-  const current = readWatch(paths, watchId);
-  if (!current) {
+  const watchFence = watchFenceFromResult(watchResult);
+  if (!watchFence) {
     return failure(
       'autopilot_configure_pr',
-      `Watch "${watchId}" could not be read before configuration.`,
+      `Watch "${watchId}" did not return the state fence required for safe Autopilot configuration.`,
     );
-  }
-  if (
-    autopilotModeRank(parsed.output.mode) >
-      autopilotModeRank(current.autopilotMode) &&
-    parsed.output.confirm !== true
-  ) {
-    return {
-      ok: false,
-      action: 'autopilot_configure_pr',
-      changed: watchResult.changed,
-      message: `Increasing Autopilot from ${current.autopilotMode} to ${parsed.output.mode} requires explicit confirmation.`,
-      watch: current,
-      requires: ['confirmAutopilotMode'],
-      errors: [
-        'Set confirm=true only after the user explicitly confirms this autonomy increase.',
-      ],
-    };
   }
   const configured = configureWatchAutopilot(
     paths,
     watchId,
     parsed.output.mode,
+    { expected: watchFence },
   );
+  if (!configured.matched) {
+    return {
+      ...failure(
+        'autopilot_configure_pr',
+        `Watch "${watchId}" changed while Autopilot was being configured. Review its current state and retry.`,
+      ),
+      requires: ['currentAutopilotState'],
+    };
+  }
   if (!configured.watch) {
     return failure(
       'autopilot_configure_pr',
@@ -175,6 +249,9 @@ export async function readPrAutopilotStatus(
 export async function controlPrAutopilot(
   input: v.InferInput<typeof prAutopilotControlInputSchema>,
   paths: RuntimePaths = runtimePaths(),
+  dependencies: {
+    complete?: typeof completeAutopilotWatchIfTerminal;
+  } = {},
 ) {
   const parsed = v.safeParse(prAutopilotControlInputSchema, input);
   if (!parsed.success) return invalid('autopilot_watch_control', parsed.issues);
@@ -192,17 +269,46 @@ export async function controlPrAutopilot(
     return setPrWatchPolling({ id: resolved.id, enabled: true }, paths);
   }
   if (parsed.output.operation === 'stop') {
-    const stopped = await completeAutopilotWatchIfTerminal(resolved.id, paths, {
+    const stopped = await (
+      dependencies.complete ?? completeAutopilotWatchIfTerminal
+    )(resolved.id, paths, {
       explicitStop: true,
+      ...(parsed.output.confirmPreparedDiff === true
+        ? { confirmPreparedDiff: true }
+        : {}),
     });
+    if (stopped.reason === 'prepared-diff-confirmation-required') {
+      return {
+        ...failure(
+          'autopilot_watch_stop',
+          `Stopping watch "${resolved.id}" would delete its held unpushed prepared commit. Review the diff and confirm that discard explicitly before stopping.`,
+        ),
+        watch: stopped.watch,
+        requires: ['confirmPreparedDiff'],
+      };
+    }
+    if (stopped.reason === 'polling-disable-failed') {
+      return {
+        ...failure(
+          'autopilot_watch_stop',
+          `Watch "${resolved.id}" was not stopped because polling could not be disabled. No worktree cleanup was attempted; retry the stop after polling storage is available.`,
+        ),
+        watch: stopped.watch,
+        requires: ['retryStop'],
+      };
+    }
     return stopped.complete
       ? {
           ok: true,
           action: 'autopilot_watch_stop',
           changed: true,
-          message: `Stopped Autopilot watch "${resolved.id}".`,
+          message: stopped.cleanupRecovery
+            ? `Stopped Autopilot watch "${resolved.id}". ${stopped.cleanupRecovery}`
+            : `Stopped Autopilot watch "${resolved.id}".`,
           watch: stopped.watch,
           cleanup: stopped.cleanup,
+          detachedWorktreeId: stopped.detachedWorktreeId,
+          cleanupRecovery: stopped.cleanupRecovery,
         }
       : failure(
           'autopilot_watch_stop',
@@ -210,7 +316,7 @@ export async function controlPrAutopilot(
         );
   }
 
-  const current = readWatch(paths, resolved.id);
+  const current = await canonicalizePrWatchRepoId(paths, resolved.id);
   if (
     current?.autopilotStatus === 'blocked' &&
     current.autopilotMode === 'autofix-with-approval' &&
@@ -287,15 +393,121 @@ export async function controlPrAutopilot(
 export async function messagePrAutopilotOwner(
   input: v.InferInput<typeof prAutopilotOwnerMessageInputSchema>,
   paths: RuntimePaths = runtimePaths(),
-  dispatchOwner: typeof dispatch = dispatch,
+  dispatchOwner: AutopilotOwnerDispatcher = dispatchAutopilotOwnerMessage,
 ) {
   const parsed = v.safeParse(prAutopilotOwnerMessageInputSchema, input);
   if (!parsed.success) return invalid('autopilot_owner_message', parsed.issues);
+  return dispatchPrAutopilotOwnerTurn(
+    parsed.output,
+    paths,
+    dispatchOwner,
+    'autopilot_owner_message',
+  );
+}
+
+export async function approvePrAutopilotChange(
+  input: v.InferInput<typeof prAutopilotApprovalInputSchema>,
+  paths: RuntimePaths = runtimePaths(),
+  dependencies: {
+    dispatchOwner?: AutopilotOwnerDispatcher;
+    readDiff?: typeof readRepoDiff;
+    readWorktree?: typeof readManagedWorktree;
+    status?: typeof gitStatus;
+  } = {},
+) {
+  const parsed = v.safeParse(prAutopilotApprovalInputSchema, input);
+  if (!parsed.success) {
+    return invalid('autopilot_change_approve', parsed.issues);
+  }
   const resolved = await resolveWatchId(
     parsed.output,
     paths,
-    'autopilot_owner_message',
+    'autopilot_change_approve',
   );
+  if (!resolved.ok) return resolved.result;
+  const watch = readWatch(paths, resolved.id);
+  if (
+    !watch ||
+    !watch.ownerInstanceId ||
+    !watch.worktreeId ||
+    watch.autopilotMode !== 'autofix-with-approval' ||
+    watch.autopilotStatus !== 'waiting'
+  ) {
+    return failure(
+      'autopilot_change_approve',
+      `Watch "${resolved.id}" does not have a prepared approval-mode change waiting for review.`,
+    );
+  }
+  try {
+    const worktree = await (dependencies.readWorktree ?? readManagedWorktree)(
+      watch.worktreeId,
+      watch.repoId,
+      paths,
+    );
+    const status = await (dependencies.status ?? gitStatus)(worktree.localPath);
+    if (!status.clean) {
+      return reviewRequired(
+        'The managed worktree has uncommitted changes. Refresh and review the current diff before approving.',
+      );
+    }
+    if (!worktree.headSha) {
+      return reviewRequired(
+        'The managed worktree has no stable base revision to review.',
+      );
+    }
+    const diff = await (dependencies.readDiff ?? readRepoDiff)(
+      {
+        repoId: watch.repoId,
+        worktreeId: watch.worktreeId,
+        base: worktree.headSha,
+        includePatch: false,
+        expectedRevisionKey: parsed.output.expectedRevisionKey,
+      },
+      paths,
+    );
+    if (!diff.ok || !diff.files?.length) {
+      return reviewRequired(
+        diff.ok
+          ? 'The managed worktree has no current changes to approve.'
+          : 'The reviewed diff is stale or unavailable. Refresh it before approving.',
+      );
+    }
+  } catch (error) {
+    return reviewRequired(
+      `The reviewed diff could not be verified: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+  return dispatchPrAutopilotOwnerTurn(
+    {
+      id: resolved.id,
+      message: `The human approved reviewed revision ${parsed.output.expectedRevisionKey}. Push only that exact held revision to the linked pull request branch.`,
+    },
+    paths,
+    dependencies.dispatchOwner ?? dispatchAutopilotOwnerMessage,
+    'autopilot_change_approve',
+    parsed.output.expectedRevisionKey,
+  );
+
+  function reviewRequired(message: string) {
+    return {
+      ...failure('autopilot_change_approve', message),
+      requires: ['currentReviewedDiff'],
+    };
+  }
+}
+
+async function dispatchPrAutopilotOwnerTurn(
+  input: {
+    id?: string;
+    ref?: string;
+    message: string;
+  },
+  paths: RuntimePaths,
+  dispatchOwner: AutopilotOwnerDispatcher,
+  action: 'autopilot_owner_message' | 'autopilot_change_approve',
+  approvedRevisionKey?: string,
+) {
+  const resolved = await resolveWatchId(input, paths, action);
   if (!resolved.ok) return resolved.result;
   const watch = readWatch(paths, resolved.id);
   if (
@@ -305,7 +517,7 @@ export async function messagePrAutopilotOwner(
     watch.autopilotStatus !== 'waiting'
   ) {
     return failure(
-      'autopilot_owner_message',
+      action,
       `Watch "${resolved.id}" is not an approval-mode owner waiting for a direct human message.`,
     );
   }
@@ -315,86 +527,136 @@ export async function messagePrAutopilotOwner(
   });
   if (!claimed) {
     return failure(
-      'autopilot_owner_message',
+      action,
       `Watch "${watch.id}" changed before the human turn could be claimed.`,
     );
   }
-  registerPendingAutopilotTurn(
-    paths.home,
-    watch.ownerInstanceId,
-    undefined,
-    watch.autopilotMode,
-    'direct-human',
-  );
-  let receipt;
+  let pendingTurn: ReturnType<typeof registerPendingAutopilotTurn>;
   try {
-    receipt = await dispatchOwner({
-      agent: 'pr-autopilot-owner',
-      id: watch.ownerInstanceId,
-      input: parsed.output.message,
-    });
+    pendingTurn = registerPendingAutopilotTurn(
+      paths.home,
+      watch.ownerInstanceId,
+      undefined,
+      watch.autopilotMode,
+      'direct-human',
+      approvedRevisionKey,
+      { messageBody: input.message, watchId: watch.id },
+    );
   } catch (error) {
-    clearPendingAutopilotTurn(paths.home, watch.ownerInstanceId);
+    transitionWatchAutopilot(paths, watch.id, {
+      from: 'working',
+      to: 'waiting',
+    });
+    return failure(
+      action,
+      `The human owner turn could not be reserved: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+  try {
+    const { buildPrAutopilotOwnerRuntime } =
+      await import('../../agents/pr-autopilot-owner');
+    await buildPrAutopilotOwnerRuntime(watch.ownerInstanceId, paths);
+  } catch (error) {
+    clearPendingAutopilotTurnIfMatches(
+      paths.home,
+      watch.ownerInstanceId,
+      pendingTurn.turnId,
+    );
     transitionWatchAutopilot(paths, watch.id, {
       from: 'working',
       to: 'blocked',
     });
     return failure(
-      'autopilot_owner_message',
-      `The human owner turn could not be dispatched: ${error instanceof Error ? error.message : String(error)}`,
+      action,
+      `The human owner turn could not be prepared: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+  let receipt;
+  try {
+    receipt = await dispatchOwner({
+      agent: 'pr-autopilot-owner',
+      id: watch.ownerInstanceId,
+      input: input.message,
+      idempotencyKey: pendingTurn.turnId,
+    });
+  } catch (error) {
+    recordPendingAutopilotTurnError(
+      paths.home,
+      watch.ownerInstanceId,
+      pendingTurn.turnId,
+      error instanceof Error ? error.message : String(error),
+    );
+    return failure(
+      action,
+      `The human owner admission outcome is uncertain. Its durable reservation remains claimed and will retry with the same idempotency key: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+  recordPendingAutopilotTurnCorrelationId(
+    paths.home,
+    watch.ownerInstanceId,
+    pendingTurn.turnId,
+    receipt.submissionId,
+  );
+  if (dispatchOwner === dispatchAutopilotOwnerMessage) {
+    void watchAutopilotOwnerSettlement(
+      watch.ownerInstanceId,
+      receipt.submissionId,
+      paths,
+      undefined,
+      pendingTurn.turnId,
     );
   }
   return {
     ok: true,
-    action: 'autopilot_owner_message',
+    action,
     changed: true,
     message: `Sent the human instruction to continuing owner ${watch.ownerInstanceId}.`,
     watch: claimed,
-    dispatchId: receipt.dispatchId,
+    dispatchId: receipt.submissionId,
   };
 }
 
-export const configurePrAutopilotAction = defineAction({
+export const configurePrAutopilotAction = defineTool({
   name: 'neondeck_autopilot_configure_pr',
   description:
     'Put one pull request on Autopilot with an explicit capability mode and an explicit choice to process or baseline current feedback. Enabling or increasing capability above notify-only requires confirm=true after explicit user confirmation.',
   input: configurePrAutopilotInputSchema,
   output: prAutopilotOutputSchema,
-  async run({ input }) {
-    return configurePrAutopilot(input);
+  async run({ data: input }) {
+    return { output: await configurePrAutopilot(input) };
   },
 });
 
-export const prAutopilotStatusAction = defineAction({
+export const prAutopilotStatusAction = defineTool({
   name: 'neondeck_autopilot_watch_status',
   description:
     'Read the minimal one-owner, one-worktree Autopilot state for one or all PR watches.',
   input: prAutopilotStatusInputSchema,
   output: prAutopilotOutputSchema,
-  async run({ input }) {
-    return readPrAutopilotStatus(input);
+  async run({ data: input }) {
+    return { output: await readPrAutopilotStatus(input) };
   },
 });
 
-export const prAutopilotControlAction = defineAction({
+export const prAutopilotControlAction = defineTool({
   name: 'neondeck_autopilot_watch_control',
   description:
-    'Pause, resume, retry, or stop one PR Autopilot watch using the same deterministic service as the API, CLI, and dashboard.',
+    'Pause, resume, retry, or stop one PR Autopilot watch using the same deterministic service as the API, CLI, and dashboard. Stop never deletes a held unpushed prepared commit unless confirmPreparedDiff=true is supplied after the user explicitly confirms that discard.',
   input: prAutopilotControlInputSchema,
   output: prAutopilotOutputSchema,
-  async run({ input }) {
-    return controlPrAutopilot(input);
+  async run({ data: input }) {
+    return { output: await controlPrAutopilot(input) };
   },
 });
 
-export const prAutopilotOwnerMessageAction = defineAction({
+export const prAutopilotOwnerMessageAction = defineTool({
   name: 'neondeck_autopilot_message_owner',
   description:
-    'Send the user’s direct instruction to the same approval-mode PR owner while its managed worktree is held for review. This is the authority-bearing human turn.',
+    'Send the user’s guidance to the same approval-mode PR owner while its managed worktree is held for review. This does not approve delivery; exact-revision approval happens only through the Active Watches approval control or typed approval API.',
   input: prAutopilotOwnerMessageInputSchema,
   output: prAutopilotOutputSchema,
-  async run({ input }) {
-    return messagePrAutopilotOwner(input);
+  async run({ data: input }) {
+    return { output: await messagePrAutopilotOwner(input) };
   },
 });
 
@@ -409,6 +671,40 @@ function watchIdFromResult(result: { watch?: unknown }) {
   if (!result.watch || typeof result.watch !== 'object') return undefined;
   const id = (result.watch as Record<string, unknown>).id;
   return typeof id === 'string' ? id : undefined;
+}
+
+function watchFenceFromResult(result: { watch?: unknown }) {
+  if (!result.watch || typeof result.watch !== 'object') return undefined;
+  const watch = result.watch as Record<string, unknown>;
+  if (
+    typeof watch.updatedAt !== 'string' ||
+    ![
+      'notify-only',
+      'prepare-only',
+      'autofix-with-approval',
+      'autofix-push-when-safe',
+    ].includes(String(watch.autopilotMode)) ||
+    !['watching', 'working', 'waiting', 'blocked', 'complete'].includes(
+      String(watch.autopilotStatus),
+    )
+  ) {
+    return undefined;
+  }
+  return {
+    updatedAt: watch.updatedAt,
+    autopilotMode: watch.autopilotMode as PrWatch['autopilotMode'],
+    autopilotStatus: watch.autopilotStatus as PrWatch['autopilotStatus'],
+  };
+}
+
+function autopilotWatchFence(
+  watch: Pick<PrWatch, 'autopilotMode' | 'autopilotStatus' | 'updatedAt'>,
+) {
+  return {
+    updatedAt: watch.updatedAt,
+    autopilotMode: watch.autopilotMode,
+    autopilotStatus: watch.autopilotStatus,
+  };
 }
 
 function initialFeedbackMessage(processExisting: boolean) {

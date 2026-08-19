@@ -4,14 +4,20 @@ import type { GitHubCheckSummary, GitHubPullRequestDetail } from '../github';
 import * as v from 'valibot';
 
 export type PrWatchStatus =
-  'watching' | 'merged' | 'closed' | 'green' | 'attention-needed' | 'unknown';
+  | 'watching'
+  | 'ready'
+  | 'merged'
+  | 'closed'
+  | 'green'
+  | 'attention-needed'
+  | 'unknown';
 export type RefWatchStatus =
   'watching' | 'green' | 'attention-needed' | 'unknown';
 
 export type DesiredTerminalState = 'checks' | 'merged';
 export type WatchOutcome = 'created' | 'updated' | 'removed' | 'silent';
 export type AutopilotWatchStatus =
-  'watching' | 'working' | 'waiting' | 'blocked' | 'complete';
+  'watching' | 'working' | 'waiting' | 'blocked' | 'stopping' | 'complete';
 export const currentPrWatchEventWatermarkVersion = 2;
 
 export type WatchActionResult = {
@@ -63,12 +69,25 @@ export type PrWatchStateFence = Pick<
   | 'processExisting'
   | 'initialEventProcessedAt'
   | 'eventWatermarkVersion'
+  | 'autopilotMode'
+  | 'autopilotStatus'
+>;
+
+export type PrWatchRemovalFence = Pick<
+  PrWatch,
+  | 'updatedAt'
+  | 'autopilotMode'
+  | 'autopilotStatus'
+  | 'ownerInstanceId'
+  | 'worktreeId'
+  | 'lastEventFingerprint'
 >;
 
 export type PrWatchSnapshot = {
   state: string;
   merged: boolean;
   mergeCommitSha: string | null;
+  reviewDecision?: GitHubPullRequestDetail['reviewDecision'];
   checks: GitHubCheckSummary | null;
   title: string;
   url: string;

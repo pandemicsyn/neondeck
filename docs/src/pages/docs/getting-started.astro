@@ -7,7 +7,7 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
 
 <BaseLayout
   title="Getting started · neondeck"
-  description="Install and run neondeck locally with Node 26, Flue, Kilo, GitHub, and the always-on dashboard."
+  description="Install neondeck, run the setup wizard, and open the local dashboard."
 >
   <div class="site-shell">
     <SiteNav />
@@ -16,294 +16,120 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
       <article class="docs-prose">
         <h1>Getting started</h1>
         <p>
-          Use Node 26.4.0 with fnm. The setup wizard can configure KiloCode,
-          OpenAI, or Anthropic as the Flue model provider.
+          Install Neondeck, run the guided setup, and open the local dashboard.
+          You need Node.js 26 or newer and credentials for at least one
+          supported model provider.
         </p>
 
-        <h2>Install from npm</h2>
+        <h2>1. Install Node.js</h2>
+        <p>
+          Install Node.js 26 or newer using any installer or version manager,
+          then confirm the active version:
+        </p>
+        <pre><code>node --version</code></pre>
+
+        <h2>2. Install Neondeck</h2>
         <p>
           Neondeck currently publishes beta releases on npm's
-          <code>next</code> channel. The package and installed CLI are both named
-          <a href="https://www.npmjs.com/package/neondeck"
-            ><code>neondeck</code></a
-          >.
+          <code>next</code> channel.
         </p>
-        <pre><code>fnm install 26.4.0
-fnm use 26.4.0
-npm install --global neondeck@next</code></pre>
+        <pre><code>npm install --global neondeck@next</code></pre>
 
-        <h2>Run the CLI wizard</h2>
-        <p>
-          Start with the guided terminal setup. It prepares runtime state,
-          writes local secrets to the runtime home, configures the agent model,
-          adds repositories, applies a dashboard preset, and can create initial
-          schedules. When KiloCode is selected, init can discover and search
-          available KiloCode models before writing model config.
-        </p>
+        <h2>3. Run the setup wizard</h2>
         <pre><code>neondeck init</code></pre>
         <p>
-          The same CLI is the base for direct command-and-control workflows and
-          the future OpenTUI client.
+          The wizard creates your local runtime home, configures a model
+          provider, checks the Git identity used for Autopilot commits, and can
+          add repositories, choose a dashboard preset, and create initial
+          schedules. It supports KiloCode, OpenAI, Anthropic, a ChatGPT
+          subscription, and OpenAI-compatible endpoints such as OpenRouter. If
+          global <code>user.name</code> or <code>user.email</code> is missing, the
+          wizard warns and offers to configure both plus
+          <code>user.useConfigOnly</code> so Git cannot silently invent an identity
+          from the machine account. Complete author and committer overrides in the
+          runtime-home <code>.env</code> are accepted, but temporary shell exports
+          do not suppress this warning.
         </p>
-        <pre><code>neondeck status
-neondeck repo add ~/dev/neondeck
-neondeck watch-pr pandemicsyn/neondeck#123
-neondeck tui</code></pre>
-
-        <h2 id="runtime-home">Initialize runtime home</h2>
         <p>
-          The app creates a runtime home on first start. You can also prepare it
-          explicitly before launching the dashboard. For new installs, use
-          <code>neondeck init</code>. Any command that reads app state also
-          creates missing runtime-home files without rerunning the wizard.
+          By default, local state is stored in
+          <code>~/.config/neondeck</code>. See
+          <a href="/docs/configuration/">Configuration</a> for runtime-home, credentials,
+          provider, and model details.
         </p>
+
+        <h3>GitHub token for pull request workflows</h3>
+        <p>
+          Neondeck reads <code>GITHUB_TOKEN</code> from the runtime-home
+          <code>.env</code>; it does not reuse the credential shown by
+          <code>gh auth status</code>. For complete private-repository PR review
+          and CI context, use a
+          <a href="https://github.com/settings/tokens"
+            >classic personal access token</a
+          >
+          with the <code>repo</code> scope. If your organization uses SAML SSO, authorize
+          the token for that organization, and confirm that the organization permits
+          classic PAT access.
+        </p>
+        <aside class="docs-note">
+          <strong>Fine-grained PAT limitation:</strong> GitHub's fine-grained token
+          settings do not currently expose the Checks permission required by the check-runs
+          and check-suites APIs. Actions and Workflows read access do not grant that
+          permission. Neondeck continues PR reviews without check data when those
+          endpoints return the corresponding 403, but features that specifically require
+          complete CI facts still need a classic PAT or a GitHub App with Checks read
+          access.
+        </aside>
+
+        <h2>4. Start Neondeck</h2>
+        <p>Run Neondeck in the foreground:</p>
+        <pre><code>neondeck serve</code></pre>
+        <p>
+          Or, on macOS and Linux, install and start a background login service:
+        </p>
+        <pre><code>neondeck service install</code></pre>
+        <p>
+          Windows users should use <code>neondeck serve</code> for now. Keep its terminal
+          open while using Neondeck.
+        </p>
+
+        <h2>5. Open the dashboard</h2>
+        <pre><code>neondeck open</code></pre>
+        <p>
+          If you started Neondeck with <code>serve</code>, run <code>open</code> in
+          another terminal. The command waits for the local server, then opens the
+          dashboard.
+        </p>
+        <p>
+          New runtime homes include named <code>sidebar</code> and
+          <code>xeneon</code> window profiles for companion displays:
+        </p>
+        <pre><code>neondeck open sidebar --browser "/path/to/chromium"
+neondeck open xeneon --browser "/path/to/chromium"</code></pre>
+        <p>
+          Profile names and window settings come from <code>dashboard.json</code
+          >. Neondeck opens the OS default browser. To apply size, position, or
+          kiosk settings, pass a Chromium-family executable with <code
+            >--browser &lt;path&gt;</code
+          >. See the <a href="/docs/dashboard/">Dashboard guide</a> for browser app
+          installation, display layouts, and window behavior.
+        </p>
+
+        <h2>6. Check the installation</h2>
         <pre><code>neondeck status</code></pre>
         <p>
-          By default this writes to <code>~/.config/neondeck</code>. Set
-          <code>NEONDECK_HOME</code> when you want an isolated test home.
-        </p>
-        <pre><code>neondeck --home .neondeck-test status</code></pre>
-
-        <h2 id="secrets">Configure secrets</h2>
-        <p>
-          Packaged and local app secrets live in runtime-home <code>.env</code>,
-          for example <code>~/.config/neondeck/.env</code>. For checkout-based
-          development, repo-root <code>.env</code> is also supported as a dev-only
-          fallback.
-        </p>
-        <pre><code>KILOCODE_API_KEY=...
-KILOCODE_ORGANIZATION_ID=...
-OPENAI_API_KEY=...
-ANTHROPIC_API_KEY=...
-GITHUB_TOKEN=...
-GITHUB_LOGIN=...</code></pre>
-
-        <h2 id="providers">Provider credentials</h2>
-        <p>
-          Flue model strings use provider-qualified names such as
-          <code>kilocode/kilo-auto/balanced</code>, <code>openai/gpt-5.5</code>,
-          or <code>anthropic/claude-sonnet-4-6</code>. Hosted providers use
-          their normal API credentials or a platform binding. A ChatGPT or Codex
-          subscription login is not a documented Flue provider credential path.
-        </p>
-        <p>
-          Neondeck allowlists KiloCode, OpenAI, and Anthropic provider
-          configuration in runtime
-          <code>config.json</code>. Provider settings store environment variable
-          names, not raw secrets or arbitrary base URLs. Provider registration
-          changes require a server restart. See
-          <a href="/docs/configuration/">configuration</a> for the full runtime file
-          model.
+          Once the dashboard is running, use the
+          <a href="/docs/cli/">CLI reference</a> to add repositories, configure watches,
+          inspect authentication, and run diagnostics.
         </p>
 
-        <h2>Run the local dashboard</h2>
-        <pre><code>neondeck service install
-neondeck open</code></pre>
+        <h2>Development</h2>
         <p>
-          The service command installs and starts Neondeck for your login. The
-          open command waits for a healthy local server, then opens the
-          dashboard on a companion display, a vertical panel, or your primary
-          monitor.
-        </p>
-
-        <h2>Open a specific window profile</h2>
-        <p>
-          Named profiles can set size, placement, and kiosk behavior for a
-          particular display.
-        </p>
-        <pre><code>neondeck open sidebar
-neondeck open xeneon --kiosk</code></pre>
-        <p>
-          <code>neondeck service install</code> writes a macOS launchd agent or Linux
-          systemd user unit with absolute Node and Neondeck CLI entry paths. Re-run
-          it after changing Node versions. <code>neondeck open</code> probes
-          <code>/api/health</code>, starts the installed service when present,
-          or starts a detached <code>serve</code> process when no service exists,
-          then opens the dashboard.
-        </p>
-        <p>
-          For a persistent sidebar window, install the dashboard as a browser
-          app from <a href="/docs/dashboard/">the dashboard docs</a>. PWA
-          windows remember their own bounds; <code>neondeck open sidebar</code> is
-          a launch-time placement tool for Chromium app-mode windows.
-        </p>
-
-        <h2 id="commands">Run Neon commands</h2>
-        <p>
-          Commands can be typed into the chat panel or invoked through the
-          <code>command-run</code> Flue workflow. Deterministic command results are
-          stored as workflow summaries for follow-up agent context. In chat,
-          <code>/briefing</code> is conversational: it dispatches a normal turn to
-          the active display-assistant session.
-        </p>
-        <pre><code>curl -X POST 'http://127.0.0.1:3583/api/briefings/run' \
-  -H 'content-type: application/json' \
-  -d '&#123;"profileId":"morning","trigger":"dashboard"&#125;'</code></pre>
-        <p>Current commands:</p>
-        <pre><code>/repo-status [repo-id]
-/review-queue
-/review-pr &lt;repo#number|owner/repo#number|url&gt;
-/fix-ci [repo#number|owner/repo#number]
-/explain-ci [--report] [repo#number|owner/repo#number]
-/summarize-pr [repo#number|owner/repo#number]
-/draft-pr-description [repo-id|owner/repo]
-/prepare-pr [repo-id|owner/repo]
-/review-local [repo-id|owner/repo]
-/briefing
-/reasoning [off|minimal|low|medium|high|xhigh]
-/memory ...
-/dev-doctor
-/watch-pr &lt;repo#number|owner/repo#number|url&gt;
-</code></pre>
-
-        <h2 id="repositories">Configure repositories</h2>
-        <p>
-          Repositories live in runtime-home <code>repos.json</code>. Neon should
-          mutate config through typed actions rather than direct file edits. The
-          repo registry powers GitHub PR queues, watches, release checks, local
-          repo status, and dev doctor diagnostics. See the
-          <a href="/docs/cli/">CLI reference</a> for repo and watch commands.
-        </p>
-
-        <h2 id="runtime-skills">Runtime skills</h2>
-        <p>
-          The built-in Neondeck runtime skill is an application-owned Flue
-          skill. User runtime skills load from <code>skills/</code> inside the runtime
-          home, plus configured external skill roots, and are registered as Flue skills
-          when the agent initializes. Start a new session or restart the server after
-          changing runtime skills. Treat runtime skill directories as trusted input
-          and do not place secrets in skill resources. See
-          <a href="/docs/agent-runtime/">agent runtime</a> for how skills fit with
-          actions and workflows.
-        </p>
-
-        <h2 id="agent-models">Agent models</h2>
-        <p>
-          Configure the display assistant, utility, and subagent model choices
-          in runtime-home
-          <code>config.json</code>. Environment variables remain fallback
-          values, but runtime config is the preferred local control point.
-        </p>
-        <pre><code>&#123;
-  "version": 1,
-  "models": &#123;
-    "displayAssistant": "kilocode/kilo-auto/balanced",
-    "displayAssistantThinkingLevel": "medium",
-    "utility": "kilocode/kilo-auto/fast",
-    "utilityThinkingLevel": "low",
-    "subagents": &#123;
-      "default": "kilocode/kilo-auto/balanced",
-      "defaultThinkingLevel": "medium",
-      "repoResearcher": "kilocode/kilo-auto/balanced",
-      "repoResearcherThinkingLevel": "medium",
-      "ciInvestigator": "kilocode/kilo-auto/balanced",
-      "ciInvestigatorThinkingLevel": "medium",
-      "releaseReviewer": "kilocode/kilo-auto/balanced",
-      "releaseReviewerThinkingLevel": "medium"
-    &#125;
-  &#125;
-&#125;</code></pre>
-        <p>
-          The chat agent can update these fields through the typed
-          <code>neondeck_config_update_agent_models</code> action. Model strings must
-          reference allowlisted providers. Thinking levels use Flue's
-          <code>thinkingLevel</code> values such as <code>low</code>,
-          <code>medium</code>, and <code>high</code>. The utility model is
-          optional; when skipped, Neondeck falls back to the display assistant
-          and recommends a cheaper model for bounded helper work.
-        </p>
-
-        <h2 id="execution-approvals">Execution approvals</h2>
-        <p>
-          Neondeck keeps host execution action-mediated. The default execution
-          backend is <code>local</code>; <code>exe.dev</code> runs through the Flue
-          sandbox adapter against an existing VM.
-        </p>
-        <pre><code>&#123;
-  "version": 1,
-  "execution": &#123;
-    "defaultBackend": "local",
-    "enabledBackends": ["local"],
-    "approvalMode": "manual",
-    "unattended": "deny",
-    "exeDev": &#123;
-      "lifecycle": "existing-vm",
-      "vmHostEnv": "EXE_VM_HOST",
-      "sshKeyEnv": "EXE_SSH_KEY",
-      "apiTokenEnv": "EXE_API_TOKEN"
-    &#125;,
-    "preapprovedCommands": [
-      &#123;
-        "id": "test",
-        "command": "npm test",
-        "match": "exact",
-        "backends": ["local"],
-        "description": "Run the repo test suite."
-      &#125;
-    ]
-  &#125;
-&#125;</code></pre>
-        <p>
-          Preapproved commands must be single commands without shell operators,
-          redirection, subshells, or newlines. Commands that do not match the
-          preapproval list require interactive approval and are denied in
-          unattended contexts. Hardline destructive commands cannot be
-          preapproved.
-        </p>
-        <p>
-          Use <code>neondeck_execution_policy_lookup</code> to inspect the active
-          policy, <code>neondeck_execution_policy_check</code> to classify a proposed
-          command without running it, and
-          <code>neondeck_config_update_execution_policy</code> to update config. Use
-          <code>neondeck_execution_request_approval</code> and
-          <code>neondeck_execution_run</code> for the model-callable approval/run
-          path. Approval resolution is dashboard/API/user-owned, not model-callable.
-          Policy updates are audited in <code>config_history</code>; executions
-          are audited in
-          <code>execution_approvals</code>.
-        </p>
-        <p>
-          Trusted-local execution runs on your machine and is best for local git
-          or developer commands you already trust. <code>exe.dev</code> is the isolated
-          sandbox option; enable it explicitly by adding <code>"exe.dev"</code> to
-          <code>enabledBackends</code> after <code>EXE_VM_HOST</code> points at an
-          existing VM and SSH auth is configured.
-        </p>
-        <p>
-          Repo-scoped <code>exe.dev</code> work should first call
-          <code>neondeck_exedev_checkout_sync</code> for a configured
-          <code>repoId</code> or managed <code>worktreeId</code>. Subsequent
-          <code>neondeck_execution_run</code> calls can pass the same target so the
-          remote cwd and explicitly enabled env forwarding apply. Env audit metadata
-          records source ids and keys, not values, and Neondeck does not filter env
-          vars by heuristic name.
-        </p>
-
-        <h2 id="verify">Verify locally</h2>
-        <pre><code>npm run check
-npm run test:integration
-npm run verify</code></pre>
-        <p>
-          <code>npm run check</code> is the fast loop with unit tests.
-          <code>npm run test:integration</code> runs the slower integration suites
-          for command paths, worktrees, Kilo, and other host-backed flows.
-          <code>npm run verify</code> runs lint, typecheck, all tests, formatting,
-          the dashboard build, the Flue Node build, and the Astro docs site build.
-        </p>
-
-        <h2>Run the docs site</h2>
-        <pre><code>npm run docs:astro-dev</code></pre>
-        <p>
-          The Astro marketing/docs site runs separately from the local dashboard
-          and deploys to Cloudflare.
-        </p>
-
-        <h2>Deploy neondeck.dev</h2>
-        <pre><code>npm run docs:deploy</code></pre>
-        <p>
-          The Worker is configured in <code>docs/wrangler.jsonc</code> with custom
-          domains for <code>neondeck.dev</code> and <code>www.neondeck.dev</code
-          >. See <a href="/docs/deployment/">deployment</a> for the deploy surface.
+          Working from a source checkout? See the
+          <a
+            href="https://github.com/pandemicsyn/neondeck/blob/main/DEVELOPMENT.md"
+            >development guide on GitHub</a
+          > for repository setup, npm scripts, tests, builds, packaging, and docs
+          development.
         </p>
       </article>
     </main>

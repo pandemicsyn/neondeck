@@ -1,4 +1,8 @@
-export { fetchGitHubLogin, githubFetch } from './client';
+export {
+  clearGitHubRequestCache,
+  fetchGitHubLogin,
+  githubFetch,
+} from './client';
 export {
   getGitHubCheckSummary,
   getGitHubPullRequest,
@@ -12,18 +16,36 @@ export {
   fetchPullRequestQueue,
 } from './queue';
 export {
+  clearGitHubQueueSnapshotsForTests,
+  formatGitHubQueueSnapshotServerSentEvent,
+  githubQueueRefreshIntervalMs,
+  readGitHubQueueSnapshot,
+  refreshGitHubQueueSnapshot,
+  subscribeGitHubQueueSnapshotEvents,
+} from './queue-snapshot';
+export type {
+  GitHubQueueSnapshot,
+  GitHubQueueSnapshotEvent,
+  GitHubQueueSnapshotStatus,
+} from './queue-snapshot';
+export {
   fetchPullRequestCommits,
   fetchPullRequestCommitsWithMetadata,
   fetchPullRequestDetail,
   fetchPullRequestEventState,
   fetchPullRequestFiles,
+  fetchPullRequestReviewDecision,
 } from './pull-requests';
 export {
   maxPrEventFeedbackBodyLength,
   prEventWatermarkTruncationCategories,
+  pullRequestEventStateIncompleteness,
   pullRequestEventStateTruncation,
 } from './state-truncation';
-export type { GitHubPullRequestEventStateTruncation } from './state-truncation';
+export type {
+  GitHubPullRequestEventStateIncompleteness,
+  GitHubPullRequestEventStateTruncation,
+} from './state-truncation';
 export {
   fetchPullRequestFilesWithCache,
   readCachedPullRequestFiles,
@@ -70,6 +92,7 @@ export type {
 export {
   clearPullRequestReviewSurfaceThreadCache,
   fetchPullRequestReviewThread,
+  fetchPullRequestReviewSurfaceThreadsFreshWithMetadata,
   fetchPullRequestReviewSurfaceThreadsWithMetadata,
   fetchPullRequestReviewThreads,
   listPullRequestComments,

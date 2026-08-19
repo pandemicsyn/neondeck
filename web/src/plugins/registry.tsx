@@ -10,7 +10,7 @@ import { ReportsPanelPlugin } from './ReportsPanel';
 import { ReviewsPanelPlugin } from './ReviewsPanel';
 import { RuntimeOverviewPlugin } from './RuntimeOverview';
 import { SubagentSummaryPlugin } from './SubagentSummary';
-import { WorkflowObservabilityPanelPlugin } from './WorkflowObservabilityPanel';
+import { ActivityPanelPlugin } from './ActivityPanel';
 import type { DisplayPlugin } from '../types';
 
 export const plugins = [
@@ -23,7 +23,7 @@ export const plugins = [
   MemoryPanelPlugin,
   LearningOperatorPanelPlugin,
   SubagentSummaryPlugin,
-  WorkflowObservabilityPanelPlugin,
+  ActivityPanelPlugin,
   FlueChatPlugin,
   HostMetricsPlugin,
   ClockStatusPlugin,

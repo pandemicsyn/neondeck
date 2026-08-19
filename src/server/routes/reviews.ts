@@ -1,21 +1,31 @@
 import { Hono } from 'hono';
+import { actionResultErrorDetails } from '../../lib/action-result';
 import {
   listGitHubPrQueue,
   type GitHubPullRequest,
 } from '../../modules/github';
 import {
+  archivePrReview,
   readPrReview,
   readPrReviewForTarget,
   reconcilePrReviewSubmission,
   recentPrReviews,
+  restorePrReview,
   startPrReview,
   type PrReviewOrigin,
   type PrReviewRecord,
 } from '../../modules/pr-reviews';
 import type { RuntimePaths } from '../../runtime-home';
 import { safeJsonBody } from '../http';
+import { recordHumanReviewSubmittedApiEvidence } from '../learning-hooks';
 
-export function createReviewRoutes(paths: RuntimePaths) {
+export function createReviewRoutes(
+  paths: RuntimePaths,
+  dependencies: {
+    reconcilePrReviewSubmission?: typeof reconcilePrReviewSubmission;
+    recordHumanReviewSubmittedApiEvidence?: typeof recordHumanReviewSubmittedApiEvidence;
+  } = {},
+) {
   const routes = new Hono();
 
   routes.get('/reviews', async (c) => {
@@ -32,9 +42,21 @@ export function createReviewRoutes(paths: RuntimePaths) {
         groups: groupReviews(items, []),
       });
     }
+    if (c.req.query('localOnly') === '1') {
+      const reviews = recentPrReviews(paths);
+      return c.json({
+        ok: true,
+        action: 'pr_reviews_list',
+        changed: false,
+        items: reviews,
+        groups: groupReviews(reviews, []),
+      });
+    }
 
-    const reviews = recentPrReviews(paths);
     const queueResult = await listGitHubPrQueue(paths);
+    // Read local state after the slower GitHub call so a review started while
+    // this request is in flight cannot be overwritten by a stale snapshot.
+    const reviews = recentPrReviews(paths);
     const queue = queueResult.ok
       ? queueFromResult(queueResult.data)
       : { items: [] as GitHubPullRequest[] };
@@ -45,6 +67,7 @@ export function createReviewRoutes(paths: RuntimePaths) {
         review:
           reviews.find(
             (review) =>
+              !review.archivedAt &&
               review.repoFullName.toLowerCase() ===
                 pullRequest.repo.toLowerCase() &&
               review.prNumber === pullRequest.number,
@@ -118,6 +141,7 @@ export function createReviewRoutes(paths: RuntimePaths) {
           action: 'pr_review_start',
           changed: false,
           message: errorMessage(error),
+          ...actionResultErrorDetails(error),
         },
         400,
       );
@@ -159,6 +183,7 @@ export function createReviewRoutes(paths: RuntimePaths) {
           action: 'pr_review_restart',
           changed: false,
           message: errorMessage(error),
+          ...actionResultErrorDetails(error),
         },
         400,
       );
@@ -167,18 +192,42 @@ export function createReviewRoutes(paths: RuntimePaths) {
 
   routes.post('/reviews/:id/reconcile', async (c) => {
     try {
-      const result = await reconcilePrReviewSubmission(
-        { reviewId: c.req.param('id') },
-        paths,
-      );
+      const result = await (
+        dependencies.reconcilePrReviewSubmission ?? reconcilePrReviewSubmission
+      )({ reviewId: c.req.param('id') }, paths);
+      const submitted =
+        result.outcome === 'submitted' ||
+        result.outcome === 'submitted-existing';
+      if (submitted) {
+        const verdict = result.review.verdict;
+        if (!verdict) {
+          throw new Error(
+            'Recovered submitted review is missing its submitted verdict.',
+          );
+        }
+        await (
+          dependencies.recordHumanReviewSubmittedApiEvidence ??
+          recordHumanReviewSubmittedApiEvidence
+        )(paths, {
+          origin: 'reconciliation',
+          repoFullName: result.review.repoFullName,
+          prNumber: result.review.prNumber,
+          headSha: result.review.headSha,
+          reviewId: result.githubReviewId,
+          reviewUrl: result.review.githubReviewUrl,
+          verdict,
+        });
+      }
       const message =
         result.outcome === 'submitted'
           ? 'Recovered the submitted review from GitHub.'
-          : result.outcome === 'ready'
-            ? 'GitHub has no matching review; the local draft is ready to submit again.'
-            : result.outcome === 'pending'
-              ? 'GitHub has not reported the review yet. Wait a moment, then check again.'
-              : `The review is already ${result.review.status}.`;
+          : result.outcome === 'submitted-existing'
+            ? 'Confirmed the submitted review and reconciled its learning evidence.'
+            : result.outcome === 'ready'
+              ? 'GitHub has no matching review; the local draft is ready to submit again.'
+              : result.outcome === 'pending'
+                ? 'GitHub has not reported the review yet. Wait a moment, then check again.'
+                : `The review is already ${result.review.status}.`;
       return c.json(
         {
           ok: true,
@@ -205,6 +254,16 @@ export function createReviewRoutes(paths: RuntimePaths) {
     }
   });
 
+  routes.post('/reviews/:id/archive', (c) => {
+    const result = reviewArchiveResult(c.req.param('id'), true, paths);
+    return c.json(result.body, result.status);
+  });
+
+  routes.post('/reviews/:id/restore', (c) => {
+    const result = reviewArchiveResult(c.req.param('id'), false, paths);
+    return c.json(result.body, result.status);
+  });
+
   return routes;
 }
 
@@ -216,16 +275,58 @@ function groupReviews(
   }>,
 ) {
   return {
-    awaiting,
+    awaiting: awaiting.filter((item) => !item.review),
     inProgress: reviews.filter(
       (review) =>
-        review.status === 'reviewing' || review.status === 'submitting',
+        !review.archivedAt &&
+        (review.status === 'reviewing' || review.status === 'submitting'),
     ),
     needsAction: reviews.filter(
-      (review) => review.status === 'ready' || review.status === 'failed',
+      (review) =>
+        !review.archivedAt &&
+        (review.status === 'ready' || review.status === 'failed'),
     ),
-    submitted: reviews.filter((review) => review.status === 'submitted'),
+    submitted: reviews.filter(
+      (review) => !review.archivedAt && review.status === 'submitted',
+    ),
+    archived: reviews.filter((review) => Boolean(review.archivedAt)),
   };
+}
+
+function reviewArchiveResult(
+  reviewId: string,
+  archived: boolean,
+  paths: RuntimePaths,
+) {
+  try {
+    const result = (archived ? archivePrReview : restorePrReview)(
+      { reviewId },
+      paths,
+    );
+    return {
+      status: 200 as const,
+      body: {
+        ok: true,
+        action: archived ? 'pr_review_archive' : 'pr_review_restore',
+        changed: result.changed,
+        message: archived ? 'Archived PR review.' : 'Restored PR review.',
+        review: result.review,
+        reviewId: result.review.id,
+        runId: result.review.runId ?? '',
+      },
+    };
+  } catch (error) {
+    const message = errorMessage(error);
+    return {
+      status: (message === 'PR review not found.' ? 404 : 400) as 400 | 404,
+      body: {
+        ok: false,
+        action: archived ? 'pr_review_archive' : 'pr_review_restore',
+        changed: false,
+        message,
+      },
+    };
+  }
 }
 
 function queueFromResult(value: unknown): { items: GitHubPullRequest[] } {

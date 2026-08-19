@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest';
+import { createModels } from '@earendil-works/pi-ai';
 import {
   providerRuntimeRegistrations,
   resolveKilocodeProviderStatus,
-} from './modules/repos';
+} from './modules/repos/providers';
 
 describe('provider runtime registrations', () => {
   it('sets an explicit KiloCode gateway output-token budget', () => {
@@ -14,10 +15,20 @@ describe('provider runtime registrations', () => {
       expect.arrayContaining([
         expect.objectContaining({
           id: 'kilocode',
-          registration: expect.objectContaining({
-            api: 'openai-completions',
-            maxTokens: 16_384,
-          }),
+          provider: expect.objectContaining({ id: 'kilocode' }),
+        }),
+      ]),
+    );
+    const kilocode = registrations.find(
+      (registration) => registration.id === 'kilocode',
+    );
+    expect(kilocode?.provider.getModels()).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: 'kilo-auto/balanced',
+          api: 'openai-completions',
+          reasoning: true,
+          maxTokens: 16_384,
         }),
       ]),
     );
@@ -34,7 +45,24 @@ describe('provider runtime registrations', () => {
     });
   });
 
-  it('uses configured OpenAI and Anthropic environment references for Flue', () => {
+  it('carries the configured Kilo organization through Pi model auth headers', async () => {
+    const registration = providerRuntimeRegistrations({
+      KILOCODE_API_KEY: 'kilo-key',
+      KILOCODE_ORGANIZATION_ID: 'org-123',
+    } as NodeJS.ProcessEnv).find((candidate) => candidate.id === 'kilocode');
+    const models = createModels();
+    models.setProvider(registration!.provider);
+    const model = registration!.provider.getModels()[0];
+
+    await expect(models.getAuth(model)).resolves.toMatchObject({
+      auth: {
+        apiKey: 'kilo-key',
+        headers: { 'X-KiloCode-OrganizationId': 'org-123' },
+      },
+    });
+  });
+
+  it('uses configured OpenAI and Anthropic environment references for Flue', async () => {
     const registrations = providerRuntimeRegistrations(
       {
         OPENAI_API_KEY: 'default-openai-key',
@@ -56,25 +84,31 @@ describe('provider runtime registrations', () => {
       },
     );
 
-    expect(registrations).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          id: 'openai',
-          registration: expect.objectContaining({
-            apiKey: 'configured-openai-key',
-          }),
-        }),
-        expect.objectContaining({
-          id: 'anthropic',
-          registration: expect.objectContaining({
-            apiKey: 'configured-anthropic-key',
-          }),
-        }),
-      ]),
+    await expect(resolveApiKey(registrations, 'openai')).resolves.toMatchObject(
+      {
+        auth: { apiKey: 'configured-openai-key' },
+        source: 'NEONDECK_OPENAI_KEY',
+      },
     );
+    await expect(
+      resolveApiKey(registrations, 'anthropic'),
+    ).resolves.toMatchObject({
+      auth: { apiKey: 'configured-anthropic-key' },
+      source: 'NEONDECK_ANTHROPIC_KEY',
+    });
+    expect(
+      registrations
+        .find((registration) => registration.id === 'openai')
+        ?.provider.getModels().length,
+    ).toBeGreaterThan(0);
+    expect(
+      registrations
+        .find((registration) => registration.id === 'anthropic')
+        ?.provider.getModels().length,
+    ).toBeGreaterThan(0);
   });
 
-  it('does not fall back to default built-in provider env vars when disabled', () => {
+  it('does not fall back to default built-in provider env vars when disabled', async () => {
     const registrations = providerRuntimeRegistrations(
       {
         OPENAI_API_KEY: 'default-openai-key',
@@ -94,17 +128,126 @@ describe('provider runtime registrations', () => {
       },
     );
 
+    await expect(
+      resolveApiKey(registrations, 'openai'),
+    ).resolves.toBeUndefined();
+    await expect(
+      resolveApiKey(registrations, 'anthropic'),
+    ).resolves.toBeUndefined();
+  });
+
+  it('registers configured OpenAI-compatible endpoints with env-backed keys', async () => {
+    const registrations = providerRuntimeRegistrations(
+      { OPENROUTER_API_KEY: 'router-key' } as NodeJS.ProcessEnv,
+      {
+        models: {
+          displayAssistant: 'openrouter/openai/gpt-5.5',
+        },
+        providers: {
+          openaiCompatible: [
+            {
+              id: 'openrouter',
+              baseUrl: 'https://openrouter.ai/api/v1/',
+              apiKeyEnv: 'OPENROUTER_API_KEY',
+            },
+          ],
+        },
+      },
+    );
+
     expect(registrations).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({
-          id: 'openai',
-          registration: expect.objectContaining({ apiKey: '' }),
-        }),
-        expect.objectContaining({
-          id: 'anthropic',
-          registration: expect.objectContaining({ apiKey: '' }),
-        }),
+        {
+          id: 'openrouter',
+          provider: expect.objectContaining({
+            baseUrl: 'https://openrouter.ai/api/v1',
+          }),
+        },
       ]),
     );
+    await expect(
+      resolveApiKey(registrations, 'openrouter'),
+    ).resolves.toMatchObject({ auth: { apiKey: 'router-key' } });
+    expect(
+      registrations
+        .find((registration) => registration.id === 'openrouter')
+        ?.provider.getModels(),
+    ).toEqual([
+      expect.objectContaining({
+        id: 'openai/gpt-5.5',
+        api: 'openai-completions',
+        provider: 'openrouter',
+      }),
+    ]);
+  });
+
+  it('uses a non-secret placeholder for compatible endpoints without auth', async () => {
+    const registrations = providerRuntimeRegistrations(
+      {} as NodeJS.ProcessEnv,
+      {
+        providers: {
+          openaiCompatible: [
+            {
+              id: 'local-models',
+              baseUrl: 'http://localhost:11434/v1',
+            },
+          ],
+        },
+      },
+    );
+
+    await expect(
+      resolveApiKey(registrations, 'local-models'),
+    ).resolves.toMatchObject({ auth: { apiKey: 'unused' } });
+  });
+
+  it('reads custom model selections lazily so a new session sees config changes', () => {
+    let specifiers = ['local-models/llama-3'];
+    const registrations = providerRuntimeRegistrations(
+      {} as NodeJS.ProcessEnv,
+      {
+        providers: {
+          openaiCompatible: [
+            {
+              id: 'local-models',
+              baseUrl: 'http://localhost:11434/v1',
+              contextWindow: 32_768,
+              maxTokens: 4_096,
+            },
+          ],
+        },
+      },
+      () => specifiers,
+    );
+    const provider = registrations.find(
+      (registration) => registration.id === 'local-models',
+    )?.provider;
+
+    expect(provider?.getModels()).toEqual([
+      expect.objectContaining({
+        id: 'llama-3',
+        contextWindow: 32_768,
+        maxTokens: 4_096,
+      }),
+    ]);
+    specifiers = ['local-models/qwen-3'];
+    expect(provider?.getModels()).toEqual([
+      expect.objectContaining({ id: 'qwen-3' }),
+    ]);
   });
 });
+
+async function resolveApiKey(
+  registrations: ReturnType<typeof providerRuntimeRegistrations>,
+  id: string,
+) {
+  const auth = registrations.find((registration) => registration.id === id)
+    ?.provider.auth.apiKey;
+  if (!auth) return undefined;
+  return auth.resolve({
+    ctx: {
+      env: async () => undefined,
+      fileExists: async () => false,
+    },
+  });
+}

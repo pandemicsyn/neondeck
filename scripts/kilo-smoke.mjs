@@ -4,11 +4,9 @@ import { chmod, mkdir, mkdtemp, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
-import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 
 const execFileAsync = promisify(execFile);
-const root = fileURLToPath(new URL('..', import.meta.url));
 const home = await mkdtemp(join(tmpdir(), 'neondeck-kilo-flue-run-'));
 const repo = await mkdtemp(join(tmpdir(), 'neondeck-kilo-flue-repo-'));
 
@@ -42,9 +40,9 @@ try {
         },
         autopilot: {
           defaultMode: 'autofix-push-when-safe',
-          limits: {
-            requiredChecks: ['node --version'],
-          },
+        },
+        guardrails: {
+          requiredChecks: ['node --version'],
         },
       },
       null,
@@ -68,8 +66,15 @@ try {
       2,
     )}\n`,
   );
-  const env = { ...process.env, NEONDECK_HOME: home };
-  await bootstrapRuntime(env);
+  process.env.NEONDECK_HOME = home;
+  const { ensureRuntimeHome, runtimePaths } =
+    await import('../src/runtime-home/index.ts');
+  const { reconcileKiloTask, startKiloTask, summarizeKiloSession } =
+    await import('../src/modules/kilo/index.ts');
+  const { promoteKiloResult, reviewKiloResult, verifyKiloResult } =
+    await import('../src/modules/kilo/results/index.ts');
+  const paths = runtimePaths(home);
+  await ensureRuntimeHome(paths);
   const worktree = await createManagedWorktree(repo, home);
 
   const input = {
@@ -79,12 +84,12 @@ try {
     mode: 'patch-proposal',
     explicitUserRequest: true,
   };
-  const result = await runWorkflow('handoff_to_kilo', input, env);
+  const result = await startKiloTask(input, paths);
   assert(
     result?.action === 'kilo_task_start',
-    'flue run did not return the Kilo handoff workflow result',
+    'Kilo handoff service did not return the expected result',
   );
-  assert(result?.ok === true, 'Kilo handoff flue run did not start');
+  assert(result?.ok === true, 'Kilo handoff service did not start');
   const taskId = result.taskId;
   assert(
     typeof taskId === 'string',
@@ -93,21 +98,21 @@ try {
   await waitForSmokeFile(worktree.localPath);
   completeTask(home, taskId);
 
-  const summary = await runWorkflow('summarize_kilo_session', { taskId }, env);
+  const summary = await summarizeKiloSession({ taskId }, paths);
   assert(
     summary?.action === 'summarize_kilo_session',
-    'flue run did not return the Kilo summary workflow result',
+    'Kilo summary service did not return the expected result',
   );
 
-  const review = await runWorkflow('review_kilo_result', { taskId }, env);
+  const review = await reviewKiloResult({ taskId }, paths);
   assert(
     review?.action === 'kilo_result_review',
-    'flue run did not return the Kilo review workflow result',
+    'Kilo review service did not return the expected result',
   );
-  assert(review?.ok === true, 'Kilo review workflow did not succeed');
+  assert(review?.ok === true, 'Kilo review service did not succeed');
   assert(
     review?.resultState?.classification === 'ready-to-verify',
-    'Kilo review did not classify the managed worktree result as ready-to-verify',
+    `Kilo review did not classify the managed worktree result as ready-to-verify: ${JSON.stringify(review)}`,
   );
   const preparedDiffId = review?.resultState?.preparedDiffId;
   assert(
@@ -115,46 +120,44 @@ try {
     'Kilo review result did not include a prepared diff id',
   );
 
-  const verification = await runWorkflow(
-    'verify_kilo_result',
+  const verification = await verifyKiloResult(
     {
       taskId,
       checks: ['node --version'],
       context: 'unattended',
       lock: false,
     },
-    env,
+    paths,
   );
   assert(
     verification?.action === 'kilo_result_verify',
-    'flue run did not return the Kilo verification workflow result',
+    'Kilo verification service did not return the expected result',
   );
   assert(
     verification?.ok === true,
-    'Kilo verification workflow did not succeed',
+    'Kilo verification service did not succeed',
   );
   approvePreparedDiff(home, preparedDiffId);
 
-  const promotion = await runWorkflow('promote_kilo_result', { taskId }, env);
+  const promotion = await promoteKiloResult({ taskId }, paths);
   assert(
     promotion?.action === 'kilo_result_promote',
-    'flue run did not return the Kilo promotion workflow result',
+    'Kilo promotion service did not return the expected result',
   );
-  assert(promotion?.ok === true, 'Kilo promotion workflow did not succeed');
+  assert(promotion?.ok === true, 'Kilo promotion service did not succeed');
   assert(
     promotion?.data?.admitted === true,
     'Kilo promotion did not admit the verified result',
   );
 
   insertDetachedRunningTask(home, repo);
-  const reconciliation = await runWorkflow(
-    'reconcile_kilo_task',
+  const reconciliation = await reconcileKiloTask(
     { taskId: 'kilo-cli-stale' },
-    env,
+    paths,
   );
   assert(
     reconciliation?.action === 'kilo_task_reconcile',
-    'flue run did not return the Kilo reconcile workflow result',
+    'Kilo reconcile service did not return the expected result',
   );
 
   console.log('kilo smoke passed');
@@ -163,29 +166,6 @@ try {
     rm(home, { recursive: true, force: true }),
     rm(repo, { recursive: true, force: true }),
   ]);
-}
-
-async function runWorkflow(name, input, env) {
-  const run = await execFileAsync(
-    'npx',
-    [
-      'flue',
-      'run',
-      `workflow:${name}`,
-      '--target',
-      'node',
-      '--server',
-      '/api/flue',
-      '--input',
-      JSON.stringify(input),
-    ],
-    { cwd: root, env, maxBuffer: 1024 * 1024 },
-  );
-  return parseLastJson(run.stdout);
-}
-
-async function bootstrapRuntime(env) {
-  await runWorkflow('summarize_kilo_session', { taskId: 'bootstrap' }, env);
 }
 
 async function createManagedWorktree(repo, home) {
@@ -264,6 +244,9 @@ async function setupRepo(path) {
     cwd: path,
   });
   await execFileAsync('git', ['config', 'user.name', 'Neon Test'], {
+    cwd: path,
+  });
+  await execFileAsync('git', ['config', 'commit.gpgSign', 'false'], {
     cwd: path,
   });
   await execFileAsync('git', ['add', 'README.md'], { cwd: path });
@@ -417,17 +400,6 @@ function dirnameFallback(path) {
   return dirname(path);
 }
 `;
-}
-
-function parseLastJson(stdout) {
-  for (const line of stdout.trim().split('\n').reverse()) {
-    try {
-      return JSON.parse(line);
-    } catch {
-      continue;
-    }
-  }
-  return null;
 }
 
 function assert(condition, message) {

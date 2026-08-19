@@ -23,8 +23,11 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
         </p>
 
         <h2>Local setup</h2>
-        <pre><code>fnm install 26.4.0
-fnm use 26.4.0
+        <p>
+          Install Node.js 26 or newer with your preferred installer or version
+          manager, then set up the repository:
+        </p>
+        <pre><code>node --version
 npm install
 npm run setup
 npm run dev</code></pre>
@@ -68,7 +71,7 @@ npm run docs:build</code></pre>
         <pre><code>npm run verify</code></pre>
         <p>
           <code>test:git</code> runs the serial Git/performance/docs-drift group;
-          <code>test:integration</code> runs the slower workflow and worktree group.
+          <code>test:integration</code> runs the slower operation and worktree group.
           Full verification runs both groups plus the unit suite, then adds formatting
           and production builds. Run it before broad or release-oriented changes,
           not after every unrelated edit.

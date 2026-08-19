@@ -25,14 +25,14 @@ describe('StopPrWatchButton', () => {
     vi.restoreAllMocks();
   });
 
-  it('requires confirmation before removing a durable watch', async () => {
+  it('requires confirmation before stopping a durable watch', async () => {
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
       new Response(
         JSON.stringify({
           ok: true,
-          action: 'watch_pr_remove',
+          action: 'autopilot_watch_stop',
           changed: true,
-          message: 'Removed watch.',
+          message: 'Stopped watch.',
         }),
         { headers: { 'content-type': 'application/json' } },
       ),
@@ -63,10 +63,10 @@ describe('StopPrWatchButton', () => {
     );
 
     expect(fetchMock).toHaveBeenCalledWith(
-      '/api/watches/pandemicsyn%2Fneondeck%23124',
+      '/api/watches/pandemicsyn%2Fneondeck%23124/autopilot/control',
       expect.objectContaining({
         method: 'POST',
-        body: JSON.stringify({ confirm: true }),
+        body: JSON.stringify({ operation: 'stop' }),
       }),
     );
 

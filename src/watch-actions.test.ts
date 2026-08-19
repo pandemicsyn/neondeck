@@ -7,6 +7,9 @@ import { listScheduledTasks } from './modules/scheduled-tasks';
 import {
   addRefWatch,
   addPrWatch as addPrWatchWithoutBaseline,
+  bindWatchAutopilotOwner,
+  canonicalizePrWatchRepoId,
+  deleteWatch as deleteWatchRecord,
   listRefWatches,
   listPrWatches,
   parseWatchRefReference,
@@ -14,14 +17,23 @@ import {
   refreshRefWatch,
   refreshPrWatch,
   removePrWatch,
+  readWatch,
   setPrWatchPolling,
+  transitionWatchAutopilot,
+  updateWatch,
 } from './modules/watches';
-import { runtimePaths } from './runtime-home';
+import { runtimePaths, type RuntimePaths } from './runtime-home';
 import type {
   GitHubCheckSummary,
   GitHubPullRequestDetail,
 } from './modules/github';
 import { emptyPrWatchInitialEventBaseline } from './testing/pr-watch-event-baseline';
+import { openDb } from './lib/sqlite';
+import {
+  recordWorktreeCreating,
+  updateWorktreeStatus,
+} from './modules/worktrees/store';
+import type { WorktreeLifecycleStatus } from './modules/worktrees';
 
 const addPrWatch = (...args: Parameters<typeof addPrWatchWithoutBaseline>) =>
   addPrWatchWithoutBaseline(
@@ -61,6 +73,7 @@ describe('PR watch actions', () => {
       ok: true,
       reference: {
         id: 'pandemicsyn/neondeck#123',
+        repoId: 'neondeck',
         desiredTerminalState: 'checks',
       },
     });
@@ -71,11 +84,23 @@ describe('PR watch actions', () => {
       ),
     ).toMatchObject({
       ok: true,
-      reference: { id: 'pandemicsyn/neondeck#123' },
+      reference: {
+        id: 'pandemicsyn/neondeck#123',
+        repoId: 'neondeck',
+      },
     });
     expect(parseWatchPrReference('#123', registry)).toMatchObject({
       ok: true,
       reference: { id: 'pandemicsyn/neondeck#123' },
+    });
+    expect(
+      parseWatchPrReference('external/example#42', registry),
+    ).toMatchObject({
+      ok: true,
+      reference: {
+        id: 'external/example#42',
+        repoId: 'external/example',
+      },
     });
   });
 
@@ -100,6 +125,28 @@ describe('PR watch actions', () => {
     expect(parseWatchPrReference('#123', registry)).toMatchObject({
       ok: false,
       result: { requires: ['repo'] },
+    });
+  });
+
+  it('repairs a legacy full-name repo id before local Autopilot work', async () => {
+    const home = await tempHome();
+    const paths = runtimePaths(home);
+    await writeRepoRegistry(paths.repos);
+    await addPrWatch({ ref: 'neondeck#123' }, paths, async () => prDetail());
+    const watch = readWatch(paths, 'pandemicsyn/neondeck#123');
+    expect(watch).toBeDefined();
+    const legacyWatch = {
+      ...watch!,
+      repoId: 'pandemicsyn/neondeck',
+      updatedAt: '2026-07-21T21:00:00.000Z',
+    };
+    expect(updateWatch(paths, legacyWatch, watch!)).toBe(true);
+
+    await expect(
+      canonicalizePrWatchRepoId(paths, legacyWatch.id),
+    ).resolves.toMatchObject({ repoId: 'neondeck' });
+    expect(readWatch(paths, legacyWatch.id)).toMatchObject({
+      repoId: 'neondeck',
     });
   });
 
@@ -205,6 +252,184 @@ describe('PR watch actions', () => {
       changed: false,
       outcome: 'silent',
     });
+  });
+
+  it('requires Autopilot cleanup before removing an owner-bound watch', async () => {
+    const home = await tempHome();
+    const paths = runtimePaths(home);
+    await writeRepoRegistry(paths.repos);
+    await addPrWatch(
+      { ref: 'neondeck#123' },
+      paths,
+      async () => prDetail(),
+      async () => checkSummary('pending'),
+    );
+    bindWatchAutopilotOwner(paths, 'pandemicsyn/neondeck#123', {
+      ownerInstanceId: 'owner-123',
+      worktreeId: 'worktree-123',
+    });
+
+    await expect(
+      removePrWatch({ id: 'pandemicsyn/neondeck#123', confirm: true }, paths),
+    ).resolves.toMatchObject({
+      ok: false,
+      changed: false,
+      requires: ['stopAutopilot'],
+    });
+    expect(readWatch(paths, 'pandemicsyn/neondeck#123')).toBeTruthy();
+  });
+
+  it('removes a completed Autopilot watch while retaining its adopted worktree', async () => {
+    const home = await tempHome();
+    const paths = runtimePaths(home);
+    await writeRepoRegistry(paths.repos);
+    await addPrWatch(
+      { ref: 'neondeck#123' },
+      paths,
+      async () => prDetail(),
+      async () => checkSummary('pending'),
+    );
+    recordAutopilotWorktree(paths, {
+      id: 'adopted-worktree-123',
+      adopted: true,
+      status: 'ready',
+    });
+    bindWatchAutopilotOwner(paths, 'pandemicsyn/neondeck#123', {
+      ownerInstanceId: 'owner-123',
+      worktreeId: 'adopted-worktree-123',
+    });
+    expect(
+      transitionWatchAutopilot(paths, 'pandemicsyn/neondeck#123', {
+        from: 'watching',
+        to: 'complete',
+      }),
+    ).toBeTruthy();
+
+    await expect(
+      removePrWatch({ id: 'pandemicsyn/neondeck#123', confirm: true }, paths),
+    ).resolves.toMatchObject({
+      ok: true,
+      changed: true,
+      outcome: 'removed',
+    });
+    expect(readWatch(paths, 'pandemicsyn/neondeck#123')).toBeUndefined();
+  });
+
+  it('retains a completed watch when managed worktree cleanup failed', async () => {
+    const home = await tempHome();
+    const paths = runtimePaths(home);
+    await writeRepoRegistry(paths.repos);
+    await addPrWatch(
+      { ref: 'neondeck#123' },
+      paths,
+      async () => prDetail(),
+      async () => checkSummary('pending'),
+    );
+    recordAutopilotWorktree(paths, {
+      id: 'cleanup-failed-worktree-123',
+      adopted: false,
+      status: 'cleanup-pending',
+    });
+    bindWatchAutopilotOwner(paths, 'pandemicsyn/neondeck#123', {
+      ownerInstanceId: 'owner-123',
+      worktreeId: 'cleanup-failed-worktree-123',
+    });
+    expect(
+      transitionWatchAutopilot(paths, 'pandemicsyn/neondeck#123', {
+        from: 'watching',
+        to: 'complete',
+      }),
+    ).toBeTruthy();
+
+    await expect(
+      removePrWatch({ id: 'pandemicsyn/neondeck#123', confirm: true }, paths),
+    ).resolves.toMatchObject({
+      ok: false,
+      changed: false,
+      requires: ['completeWorktreeCleanup'],
+      message: expect.stringContaining('finishes cleanup'),
+    });
+    expect(readWatch(paths, 'pandemicsyn/neondeck#123')).toBeTruthy();
+  });
+
+  it('keeps a rearmed watch and polling task when removal loses its state fence', async () => {
+    const home = await tempHome();
+    const paths = runtimePaths(home);
+    await writeRepoRegistry(paths.repos);
+    await addPrWatch(
+      { ref: 'neondeck#123' },
+      paths,
+      async () => prDetail(),
+      async () => checkSummary('pending'),
+    );
+    expect(
+      transitionWatchAutopilot(paths, 'pandemicsyn/neondeck#123', {
+        from: 'watching',
+        to: 'complete',
+      }),
+    ).toBeTruthy();
+
+    await expect(
+      removePrWatch({ id: 'pandemicsyn/neondeck#123', confirm: true }, paths, {
+        deleteWatch(deletePaths, id, expected) {
+          expect(
+            transitionWatchAutopilot(deletePaths, id, {
+              from: 'complete',
+              to: 'watching',
+            }),
+          ).toBeTruthy();
+          return deleteWatchRecord(deletePaths, id, expected);
+        },
+      }),
+    ).resolves.toMatchObject({
+      ok: false,
+      changed: false,
+      requires: ['currentWatchState'],
+      watch: { autopilotStatus: 'watching' },
+    });
+    expect(readWatch(paths, 'pandemicsyn/neondeck#123')).toMatchObject({
+      autopilotStatus: 'watching',
+    });
+    expect(
+      (await listScheduledTasks(paths)).some(
+        (task) => task.id === 'watch:pandemicsyn/neondeck#123',
+      ),
+    ).toBe(true);
+  });
+
+  it('rolls back watch removal when polling task cleanup fails', async () => {
+    const home = await tempHome();
+    const paths = runtimePaths(home);
+    await writeRepoRegistry(paths.repos);
+    await addPrWatch(
+      { ref: 'neondeck#123' },
+      paths,
+      async () => prDetail(),
+      async () => checkSummary('pending'),
+    );
+    const database = openDb(paths.neondeckDatabase);
+    try {
+      database.exec(`
+        CREATE TRIGGER reject_watch_polling_task_delete
+        BEFORE DELETE ON scheduled_tasks
+        WHEN OLD.id = 'watch:pandemicsyn/neondeck#123'
+        BEGIN
+          SELECT RAISE(ABORT, 'polling task cleanup failed');
+        END;
+      `);
+    } finally {
+      database.close();
+    }
+
+    await expect(
+      removePrWatch({ id: 'pandemicsyn/neondeck#123', confirm: true }, paths),
+    ).rejects.toThrow('polling task cleanup failed');
+    expect(readWatch(paths, 'pandemicsyn/neondeck#123')).toBeTruthy();
+    expect(
+      (await listScheduledTasks(paths)).some(
+        (task) => task.id === 'watch:pandemicsyn/neondeck#123',
+      ),
+    ).toBe(true);
   });
 
   it('returns an existing PR watch as an idempotent no-op with attribution preserved', async () => {
@@ -478,6 +703,37 @@ describe('PR watch actions', () => {
     });
   });
 
+  it('marks an approved open PR watch ready', async () => {
+    const home = await tempHome();
+    const paths = runtimePaths(home);
+    await writeRepoRegistry(paths.repos);
+
+    await addPrWatch({ ref: 'neondeck#123' }, paths, async () =>
+      prDetail({ state: 'open', updatedAt: '2026-06-27T20:00:00Z' }),
+    );
+
+    await expect(
+      refreshPrWatch(
+        { id: 'pandemicsyn/neondeck#123' },
+        paths,
+        async () =>
+          prDetail({
+            reviewDecision: 'APPROVED',
+            updatedAt: '2026-06-27T20:05:00Z',
+          }),
+        async () => checkSummary('success'),
+      ),
+    ).resolves.toMatchObject({
+      ok: true,
+      changed: true,
+      outcome: 'updated',
+      watch: {
+        status: 'ready',
+        lastSnapshot: { reviewDecision: 'APPROVED' },
+      },
+    });
+  });
+
   it('marks merged PR watches attention-needed when checks fail', async () => {
     const home = await tempHome();
     const paths = runtimePaths(home);
@@ -630,6 +886,52 @@ describe('PR watch actions', () => {
     });
   });
 
+  it('re-arms an explicitly stopped watch with fresh owner bindings', async () => {
+    const home = await tempHome();
+    const paths = runtimePaths(home);
+    await writeRepoRegistry(paths.repos);
+
+    await addPrWatch({ ref: 'neondeck#123' }, paths, async () =>
+      prDetail({ state: 'open', updatedAt: '2026-06-27T20:00:00Z' }),
+    );
+    bindWatchAutopilotOwner(paths, 'pandemicsyn/neondeck#123', {
+      ownerInstanceId: 'owner-before-stop',
+      worktreeId: 'worktree-before-stop',
+    });
+    transitionWatchAutopilot(paths, 'pandemicsyn/neondeck#123', {
+      from: 'watching',
+      to: 'complete',
+      eventFingerprint: 'handled-before-stop',
+    });
+    await setPrWatchPolling(
+      { id: 'pandemicsyn/neondeck#123', enabled: false },
+      paths,
+    );
+
+    await expect(
+      addPrWatch(
+        { ref: 'neondeck#123' },
+        paths,
+        async () =>
+          prDetail({ state: 'open', updatedAt: '2026-06-27T20:10:00Z' }),
+        async () => checkSummary('pending'),
+      ),
+    ).resolves.toMatchObject({
+      ok: true,
+      changed: true,
+      outcome: 'updated',
+      watch: {
+        autopilotStatus: 'watching',
+        ownerInstanceId: null,
+        worktreeId: null,
+        lastEventFingerprint: null,
+      },
+    });
+    await expect(listPrWatches(paths)).resolves.toMatchObject({
+      watches: [{ pollingEnabled: true }],
+    });
+  });
+
   it('re-arms green PR watches when watch-pr is run again', async () => {
     const home = await tempHome();
     const paths = runtimePaths(home);
@@ -740,6 +1042,7 @@ describe('ref watch actions', () => {
       ok: true,
       reference: {
         id: 'pandemicsyn/neondeck@feature/scheduler',
+        repoId: 'neondeck',
         ref: 'feature/scheduler',
       },
     });
@@ -764,7 +1067,20 @@ describe('ref watch actions', () => {
       ok: true,
       reference: {
         id: 'pandemicsyn/neondeck@feature/scheduler',
+        repoId: 'neondeck',
         ref: 'feature/scheduler',
+      },
+    });
+    expect(
+      parseWatchRefReference(
+        { target: 'external/example@feature/scheduler' },
+        registry,
+      ),
+    ).toMatchObject({
+      ok: true,
+      reference: {
+        id: 'external/example@feature/scheduler',
+        repoId: 'external/example',
       },
     });
   });
@@ -863,6 +1179,49 @@ async function writeRepoRegistry(path: string) {
       ],
     })}\n`,
   );
+}
+
+function recordAutopilotWorktree(
+  paths: RuntimePaths,
+  input: {
+    id: string;
+    adopted: boolean;
+    status: WorktreeLifecycleStatus;
+  },
+) {
+  const now = new Date().toISOString();
+  recordWorktreeCreating(
+    {
+      id: input.id,
+      repo: {
+        id: 'neondeck',
+        github: { owner: 'pandemicsyn', name: 'neondeck' },
+        path: '/src/neondeck',
+        defaultBranch: 'main',
+      },
+      prNumber: 123,
+      baseRef: 'main',
+      headOwner: 'pandemicsyn',
+      headName: 'neondeck',
+      headRef: 'feature/autopilot',
+      headSha: 'head123',
+      localPath: `/tmp/${input.id}`,
+      storageKind: 'home',
+      workflowRunId: null,
+      cleanupPolicy: {
+        retainFailed: true,
+        retainPreparedDiff: true,
+        successfulGraceHours: 24,
+        staleAgeHours: 168,
+      },
+      directPushAllowed: false,
+      adopted: input.adopted,
+      createdBy: input.adopted ? 'user' : 'neondeck',
+      now,
+    },
+    paths,
+  );
+  updateWorktreeStatus(input.id, input.status, paths);
 }
 
 function prDetail(

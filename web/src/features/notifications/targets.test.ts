@@ -15,6 +15,22 @@ describe('notification target resolution', () => {
       { kind: 'plugin', pluginId: 'active-watches', label: 'Open watches' },
     ],
     [
+      'Autopilot prepared change',
+      note({
+        source: 'autopilot-owner',
+        data: {
+          watchId: 'owner/repo#42',
+          worktreeId: 'worktree-42',
+          commitSha: 'abc123',
+        },
+      }),
+      {
+        kind: 'plugin',
+        pluginId: 'active-watches',
+        label: 'Review change',
+      },
+    ],
+    [
       'approval',
       note({ source: 'mcp', data: { approvalId: 'approval-1' } }),
       {
@@ -38,12 +54,12 @@ describe('notification target resolution', () => {
       { kind: 'session', sessionId: 'session-1', label: 'Open session' },
     ],
     [
-      'Flue run',
-      note({ source: 'flue', data: { runId: 'run-1' } }),
+      'Flue submission',
+      note({ source: 'flue', data: { submissionId: 'submission-1' } }),
       {
         kind: 'plugin',
-        pluginId: 'workflow-observability',
-        label: 'Inspect run',
+        pluginId: 'activity',
+        label: 'View activity',
       },
     ],
     [

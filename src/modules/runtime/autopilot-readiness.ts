@@ -20,15 +20,12 @@ import {
   type RuntimePaths,
 } from '../../runtime-home';
 import {
+  fetchGitHubLogin,
   fetchPullRequestEventState,
   githubFetch,
-  pullRequestEventStateTruncation,
+  pullRequestEventStateIncompleteness,
   type GitHubPullRequestEventState,
 } from '../github';
-import {
-  evaluateExecutionPolicy,
-  executionPolicyFromConfig,
-} from '../execution-policy';
 import {
   probeExactPullRequestHead,
   resolvePrPushTargetForCheckout,
@@ -284,24 +281,24 @@ export async function readAutopilotReadiness(
           repo: repo.github.name,
           number: input.prNumber,
         });
-        const truncation = pullRequestEventStateTruncation(eventState);
+        const incompleteness = pullRequestEventStateIncompleteness(eventState);
         const permissionsKnown = branchPermissionFactsKnown(
           eventState.branchPermissions,
         );
         api =
-          truncation.any || !permissionsKnown
+          incompleteness.any || !permissionsKnown
             ? fact(
                 'api',
                 'GitHub API',
                 'blocked',
                 true,
-                truncation.any
-                  ? `GitHub returned incomplete PR facts: ${truncation.categories.join(', ')}.`
+                incompleteness.any
+                  ? `GitHub returned incomplete PR facts: ${incompleteness.categories.join(', ')}.`
                   : 'GitHub did not return complete base/head repository push permission facts.',
                 'Reduce the PR fact set or restore access before admitting Autopilot.',
                 {
                   scopes: metadata.scopes,
-                  truncation: truncation.categories,
+                  truncation: incompleteness.categories,
                   branchPermissionsKnown: permissionsKnown,
                 },
               )
@@ -638,56 +635,29 @@ function branchPermissionFactsKnown(value: unknown) {
 function checkCommandFact(
   repo: RepoConfig,
   appConfig: AppConfig,
-  mode: AutopilotMode,
+  _mode: AutopilotMode,
 ) {
-  const required =
-    mode === 'autofix-with-approval' || mode === 'autofix-push-when-safe';
   const commands = readinessRequiredChecks(repo, appConfig);
   if (commands.length === 0) {
     return fact(
       'check-commands',
-      'Unattended check commands',
-      required ? 'blocked' : 'not-required',
-      required,
-      required
-        ? 'No required checks are configured for this push-capable mode.'
-        : 'This mode does not require unattended verification commands.',
-      required
-        ? 'Configure guardrails.requiredChecks and preapprove each exact command for unattended execution.'
-        : null,
+      'Configured validation hints',
+      'not-required',
+      false,
+      'No validation hints are configured. The coding owner chooses proportionate repository-native commands for each change.',
+      null,
       { commands: [] },
     );
   }
-  const policy = executionPolicyFromConfig(appConfig);
-  const checks = commands.map((command) =>
-    evaluateExecutionPolicy(
-      {
-        command,
-        backend: policy.defaultBackend,
-        context: 'unattended',
-      },
-      policy,
-    ),
-  );
-  const blocked = checks.filter((check) => check.decision !== 'allow');
   return fact(
     'check-commands',
-    'Unattended check commands',
-    blocked.length > 0 ? 'blocked' : 'ready',
-    required,
-    blocked.length > 0
-      ? `${blocked.length}/${commands.length} required check command${commands.length === 1 ? '' : 's'} are not preapproved for unattended execution.`
-      : `${commands.length} required check command${commands.length === 1 ? '' : 's'} are configured and preapproved.`,
-    blocked.length > 0
-      ? 'Add exact commands to execution.preapprovedCommands or reduce requiredChecks deliberately.'
-      : null,
+    'Configured validation hints',
+    'ready',
+    false,
+    `${commands.length} repository validation hint${commands.length === 1 ? ' is' : 's are'} configured. The owner may run these and any other relevant repository commands.`,
+    null,
     {
-      backend: policy.defaultBackend,
-      commands: checks.map((check) => ({
-        command: check.command,
-        decision: check.decision,
-        reason: check.reason,
-      })),
+      commands,
     },
   );
 }
@@ -754,10 +724,15 @@ async function githubMetadata(
   repo: string,
   fetcher: typeof githubFetch = githubFetch,
 ) {
-  const response = await fetcher(
-    token,
-    `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}`,
-  );
+  const [response, login] = await Promise.all([
+    fetcher(
+      token,
+      `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}`,
+    ),
+    fetcher === githubFetch
+      ? fetchGitHubLogin(token)
+      : githubLogin(token, fetcher),
+  ]);
   const parsed = v.safeParse(
     githubRepositoryMetadataSchema,
     await response.json(),
@@ -774,7 +749,7 @@ async function githubMetadata(
       .filter(Boolean),
     private: parsed.output.private,
     push: parsed.output.permissions.push,
-    login: await githubLogin(token, fetcher),
+    login,
   };
 }
 

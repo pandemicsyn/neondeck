@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import * as v from 'valibot';
+import { prefixBotComment } from '../../../shared/bot-comments';
 import { isUniqueConstraintError, openDb } from '../../lib/sqlite';
 import type { RuntimePaths } from '../../runtime-home';
 import { addWorkflowSummary } from '../app-state';
@@ -55,6 +56,8 @@ export type GitHubPrReviewNeonSeedSeverity =
   'critical' | 'major' | 'minor' | 'nit';
 
 export type GitHubPrReviewNeonSeedOutcome = 'submitted' | 'skipped' | 'deleted';
+
+const reviewCommentHydrationConcurrency = 4;
 
 export type GitHubPrReviewNeonSeededComment = {
   commentId: string;
@@ -217,7 +220,7 @@ export function readLivePrReviewDraft(options: {
         `
         SELECT *
         FROM pr_review_drafts
-        WHERE repo = ?
+        WHERE repo = ? COLLATE NOCASE
           AND pr_number = ?
           AND status = 'draft'
         ORDER BY updated_at DESC
@@ -280,7 +283,7 @@ export function upsertPrReviewDraft(options: {
         `
         SELECT *
         FROM pr_review_drafts
-        WHERE repo = ?
+        WHERE repo = ? COLLATE NOCASE
           AND pr_number = ?
           AND status = 'draft'
         LIMIT 1;
@@ -328,7 +331,7 @@ export function upsertPrReviewDraft(options: {
           `
           SELECT *
           FROM pr_review_drafts
-          WHERE repo = ?
+          WHERE repo = ? COLLATE NOCASE
             AND pr_number = ?
             AND status = 'draft'
           LIMIT 1;
@@ -357,7 +360,7 @@ export function discardPrReviewDraft(options: {
         `
         SELECT *
         FROM pr_review_drafts
-        WHERE repo = ?
+        WHERE repo = ? COLLATE NOCASE
           AND pr_number = ?
           AND status = 'draft'
         LIMIT 1;
@@ -383,8 +386,10 @@ export function discardPrReviewDraft(options: {
 }
 
 export function addPrReviewDraftComment(options: {
+  id?: string;
   databasePath: string;
   draftId: string;
+  expectedHeadSha?: string;
   path: string;
   side: GitHubPrReviewDraftCommentSide;
   line: number;
@@ -396,45 +401,70 @@ export function addPrReviewDraftComment(options: {
 }): GitHubPrReviewDraft {
   const database = openDb(options.databasePath);
   const now = new Date().toISOString();
+  const origin = options.origin ?? 'human';
+  const body =
+    origin === 'neon'
+      ? prefixBotComment(unbrandedGeneratedCommentBody(options.body))
+      : options.body.trim();
   try {
-    assertDraftIsLive(database, options.draftId);
-    assertValidReviewCommentAnchor(options);
-    database
-      .prepare(
-        `
-        INSERT INTO pr_review_draft_comments (
-          id,
-          draft_id,
-          path,
-          side,
-          line,
-          start_line,
-          start_side,
-          body,
-          origin,
-          source_finding_id,
-          created_at,
-          updated_at
-        )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
-      `,
-      )
-      .run(
-        randomUUID(),
-        options.draftId,
-        options.path,
-        options.side,
-        options.line,
-        options.startLine ?? null,
-        options.startSide ?? null,
-        options.body.trim(),
-        options.origin ?? 'human',
-        options.sourceFindingId ?? null,
-        now,
-        now,
-      );
-    touchDraft(database, options.draftId, now);
-    return readDraftWithCommentsById(database, options.draftId);
+    return withEditableDraftWrite(
+      database,
+      options.draftId,
+      options.expectedHeadSha,
+      () => {
+        assertValidReviewCommentAnchor(options);
+        const id = options.id?.trim() || randomUUID();
+        const existing = database
+          .prepare(
+            'SELECT draft_id FROM pr_review_draft_comments WHERE id = ? LIMIT 1;',
+          )
+          .get(id) as { draft_id?: unknown } | undefined;
+        if (existing) {
+          if (existing.draft_id !== options.draftId) {
+            throw new Error(
+              'Review draft comment id belongs to another draft.',
+            );
+          }
+          return readDraftWithCommentsById(database, options.draftId);
+        }
+        database
+          .prepare(
+            `
+            INSERT INTO pr_review_draft_comments (
+              id,
+              draft_id,
+              path,
+              side,
+              line,
+              start_line,
+              start_side,
+              body,
+              origin,
+              source_finding_id,
+              created_at,
+              updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+          `,
+          )
+          .run(
+            id,
+            options.draftId,
+            options.path,
+            options.side,
+            options.line,
+            options.startLine ?? null,
+            options.startSide ?? null,
+            body,
+            origin,
+            options.sourceFindingId ?? null,
+            now,
+            now,
+          );
+        touchDraft(database, options.draftId, now);
+        return readDraftWithCommentsById(database, options.draftId);
+      },
+    );
   } finally {
     database.close();
   }
@@ -444,6 +474,8 @@ export function updatePrReviewDraftComment(options: {
   databasePath: string;
   commentId: string;
   body: string;
+  expectedHeadSha?: string;
+  origin?: GitHubPrReviewDraftCommentOrigin;
   path?: string;
   side?: GitHubPrReviewDraftCommentSide;
   line?: number;
@@ -452,72 +484,84 @@ export function updatePrReviewDraftComment(options: {
 }): GitHubPrReviewDraft {
   const database = openDb(options.databasePath);
   const now = new Date().toISOString();
+  const origin = options.origin ?? 'human';
+  const body =
+    origin === 'neon'
+      ? prefixBotComment(unbrandedGeneratedCommentBody(options.body))
+      : options.body.trim();
   try {
     const row = database
       .prepare('SELECT draft_id FROM pr_review_draft_comments WHERE id = ?;')
       .get(options.commentId) as { draft_id?: unknown } | undefined;
     const draftId = typeof row?.draft_id === 'string' ? row.draft_id : null;
     if (!draftId) throw new Error('Review draft comment not found.');
-    assertDraftIsLive(database, draftId);
-    const existing = database
-      .prepare(
-        `
-        SELECT path, side, line, start_line, start_side
-        FROM pr_review_draft_comments
-        WHERE id = ?;
-      `,
-      )
-      .get(options.commentId) as
-      | {
-          path: string;
-          side: GitHubPrReviewDraftCommentSide;
-          line: number;
-          start_line: number | null;
-          start_side: GitHubPrReviewDraftCommentSide | null;
-        }
-      | undefined;
-    if (!existing) throw new Error('Review draft comment not found.');
-    const nextAnchor = {
-      path: options.path ?? existing.path,
-      side: options.side ?? existing.side,
-      line: options.line ?? existing.line,
-      startLine:
-        'startLine' in options
-          ? (options.startLine ?? null)
-          : existing.start_line,
-      startSide:
-        'startSide' in options
-          ? (options.startSide ?? null)
-          : existing.start_side,
-    };
-    assertValidReviewCommentAnchor(nextAnchor);
-    database
-      .prepare(
-        `
-        UPDATE pr_review_draft_comments
-        SET path = ?,
-            side = ?,
-            line = ?,
-            start_line = ?,
-            start_side = ?,
-            body = ?,
-            origin = 'human',
-            updated_at = ?
-        WHERE id = ?;
-      `,
-      )
-      .run(
-        nextAnchor.path,
-        nextAnchor.side,
-        nextAnchor.line,
-        nextAnchor.startLine,
-        nextAnchor.startSide,
-        options.body.trim(),
-        now,
-        options.commentId,
-      );
-    touchDraft(database, draftId, now);
-    return readDraftWithCommentsById(database, draftId);
+    return withEditableDraftWrite(
+      database,
+      draftId,
+      options.expectedHeadSha,
+      () => {
+        const existing = database
+          .prepare(
+            `
+            SELECT path, side, line, start_line, start_side
+            FROM pr_review_draft_comments
+            WHERE id = ?;
+          `,
+          )
+          .get(options.commentId) as
+          | {
+              path: string;
+              side: GitHubPrReviewDraftCommentSide;
+              line: number;
+              start_line: number | null;
+              start_side: GitHubPrReviewDraftCommentSide | null;
+            }
+          | undefined;
+        if (!existing) throw new Error('Review draft comment not found.');
+        const nextAnchor = {
+          path: options.path ?? existing.path,
+          side: options.side ?? existing.side,
+          line: options.line ?? existing.line,
+          startLine:
+            'startLine' in options
+              ? (options.startLine ?? null)
+              : existing.start_line,
+          startSide:
+            'startSide' in options
+              ? (options.startSide ?? null)
+              : existing.start_side,
+        };
+        assertValidReviewCommentAnchor(nextAnchor);
+        database
+          .prepare(
+            `
+            UPDATE pr_review_draft_comments
+            SET path = ?,
+                side = ?,
+                line = ?,
+                start_line = ?,
+                start_side = ?,
+                body = ?,
+                origin = ?,
+                updated_at = ?
+            WHERE id = ?;
+          `,
+          )
+          .run(
+            nextAnchor.path,
+            nextAnchor.side,
+            nextAnchor.line,
+            nextAnchor.startLine,
+            nextAnchor.startSide,
+            body,
+            origin,
+            now,
+            options.commentId,
+          );
+        touchDraft(database, draftId, now);
+        return readDraftWithCommentsById(database, draftId);
+      },
+    );
   } finally {
     database.close();
   }
@@ -550,6 +594,7 @@ export function clearPrReviewNeonDraftComments(options: {
 export function deletePrReviewDraftComment(options: {
   databasePath: string;
   commentId: string;
+  expectedHeadSha?: string;
 }): GitHubPrReviewDraft {
   const database = openDb(options.databasePath);
   const now = new Date().toISOString();
@@ -559,12 +604,18 @@ export function deletePrReviewDraftComment(options: {
       .get(options.commentId) as { draft_id?: unknown } | undefined;
     const draftId = typeof row?.draft_id === 'string' ? row.draft_id : null;
     if (!draftId) throw new Error('Review draft comment not found.');
-    assertDraftIsLive(database, draftId);
-    database
-      .prepare('DELETE FROM pr_review_draft_comments WHERE id = ?;')
-      .run(options.commentId);
-    touchDraft(database, draftId, now);
-    return readDraftWithCommentsById(database, draftId);
+    return withEditableDraftWrite(
+      database,
+      draftId,
+      options.expectedHeadSha,
+      () => {
+        database
+          .prepare('DELETE FROM pr_review_draft_comments WHERE id = ?;')
+          .run(options.commentId);
+        touchDraft(database, draftId, now);
+        return readDraftWithCommentsById(database, draftId);
+      },
+    );
   } finally {
     database.close();
   }
@@ -1057,7 +1108,63 @@ export async function fetchPullRequestReviewComments(options: {
       `GitHub returned a comment outside submitted review ${options.reviewId}.`,
     );
   }
-  return comments.map(reviewThreadCommentFromApi);
+  const commentsWithExactAnchors = await mapWithConcurrency(
+    comments,
+    reviewCommentHydrationConcurrency,
+    async (comment) =>
+      comment.line == null || comment.side == null
+        ? fetchPullRequestReviewComment(options, comment.id)
+        : comment,
+  );
+  return commentsWithExactAnchors.map(reviewThreadCommentFromApi);
+}
+
+async function mapWithConcurrency<T, R>(
+  items: T[],
+  concurrency: number,
+  task: (item: T) => Promise<R>,
+) {
+  const results = Array.from({ length: items.length }) as R[];
+  let nextIndex = 0;
+  await Promise.all(
+    Array.from({ length: Math.min(concurrency, items.length) }, async () => {
+      while (nextIndex < items.length) {
+        const index = nextIndex;
+        nextIndex += 1;
+        const item = items[index];
+        if (item !== undefined) results[index] = await task(item);
+      }
+    }),
+  );
+  return results;
+}
+
+async function fetchPullRequestReviewComment(
+  options: {
+    token: string;
+    owner: string;
+    repo: string;
+    reviewId: number;
+  },
+  commentId: number,
+) {
+  const response = await githubFetch(
+    options.token,
+    `https://api.github.com/repos/${encodePathSegment(options.owner)}/${encodePathSegment(options.repo)}/pulls/comments/${commentId}`,
+  );
+  const comment = v.parse(
+    githubPullRequestReviewCommentApiItemSchema,
+    await response.json(),
+  );
+  if (
+    comment.id !== commentId ||
+    comment.pull_request_review_id !== options.reviewId
+  ) {
+    throw new Error(
+      `GitHub returned comment ${comment.id} outside submitted review ${options.reviewId}.`,
+    );
+  }
+  return comment;
 }
 
 function reviewThreadCommentFromApi(
@@ -1076,9 +1183,12 @@ function reviewThreadCommentFromApi(
     url: comment.html_url ?? null,
     path: comment.path,
     side: comment.side ?? null,
-    line: comment.line ?? null,
-    startLine: comment.start_line ?? null,
-    startSide: comment.start_side ?? null,
+    line: comment.line ?? comment.original_line ?? null,
+    startLine: comment.start_line ?? comment.original_start_line ?? null,
+    startSide:
+      comment.start_line != null || comment.original_start_line != null
+        ? (comment.start_side ?? null)
+        : null,
     originalLine: comment.original_line ?? null,
     diffHunk: comment.diff_hunk ?? null,
     reviewId: comment.pull_request_review_id,
@@ -1287,7 +1397,10 @@ function readDraftComments(
         line: parsed.line,
         startLine: parsed.start_line,
         startSide: parsed.start_side,
-        body: parsed.body,
+        body:
+          parsed.origin === 'neon'
+            ? prefixBotComment(unbrandedGeneratedCommentBody(parsed.body))
+            : parsed.body,
         origin: parsed.origin,
         sourceFindingId: parsed.source_finding_id,
         createdAt: parsed.created_at,
@@ -1296,15 +1409,60 @@ function readDraftComments(
     });
 }
 
+function unbrandedGeneratedCommentBody(body: string) {
+  return body
+    .replace(/^Neon review finding \([^)\n]+\): /, '')
+    .replace(
+      /\n\nGenerated by Neon\. Edit or delete before submitting the review\.$/,
+      '',
+    )
+    .replace(
+      /\n\nManually anchored from a report-only finding\. Edit or delete before submitting the review\.$/,
+      '',
+    );
+}
+
 function assertDraftIsLive(
   database: ReturnType<typeof openDb>,
   draftId: string,
+  expectedHeadSha?: string,
 ) {
   const row = database
-    .prepare('SELECT status FROM pr_review_drafts WHERE id = ?;')
-    .get(draftId) as { status?: unknown } | undefined;
+    .prepare('SELECT status, head_sha FROM pr_review_drafts WHERE id = ?;')
+    .get(draftId) as { status?: unknown; head_sha?: unknown } | undefined;
   if (row?.status !== 'draft') {
     throw new Error('Review draft is not editable.');
+  }
+  if (expectedHeadSha && row.head_sha !== expectedHeadSha) {
+    throw new Error(
+      'Review draft no longer matches the expected head revision.',
+    );
+  }
+}
+
+function withEditableDraftWrite<T>(
+  database: ReturnType<typeof openDb>,
+  draftId: string,
+  expectedHeadSha: string | undefined,
+  write: () => T,
+) {
+  if (!expectedHeadSha) {
+    assertDraftIsLive(database, draftId);
+    return write();
+  }
+  database.exec('BEGIN IMMEDIATE;');
+  try {
+    assertDraftIsLive(database, draftId, expectedHeadSha);
+    const result = write();
+    database.exec('COMMIT;');
+    return result;
+  } catch (error) {
+    try {
+      database.exec('ROLLBACK;');
+    } catch {
+      // Preserve the write failure if SQLite already ended the transaction.
+    }
+    throw error;
   }
 }
 

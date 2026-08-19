@@ -1,5 +1,66 @@
 import type { DatabaseSync } from 'node:sqlite';
 
+export const submittedPrReviewRetentionMs = 14 * 24 * 60 * 60 * 1_000;
+export const prReviewWorkspaceOutputGlobalMaxEntries = 96;
+export const prReviewWorkspaceOutputGlobalMaxBytes = 128 * 1024 * 1024;
+
+export function prunePrReviewWorkspaceOutputs(
+  database: DatabaseSync,
+  options: {
+    now?: number;
+    reserveEntries?: number;
+    reserveBytes?: number;
+  } = {},
+) {
+  const now = new Date(options.now ?? Date.now()).toISOString();
+  const reserveEntries = options.reserveEntries ?? 0;
+  const reserveBytes = options.reserveBytes ?? 0;
+  let changes = Number(
+    database
+      .prepare(`DELETE FROM pr_review_workspace_outputs WHERE expires_at <= ?;`)
+      .run(now).changes,
+  );
+  const rows = database
+    .prepare(
+      `SELECT output_ref, byte_size
+       FROM pr_review_workspace_outputs
+       ORDER BY created_at ASC, output_ref ASC;`,
+    )
+    .all() as Array<{ output_ref: string; byte_size: number }>;
+  let retainedBytes = rows.reduce((total, row) => total + row.byte_size, 0);
+  while (
+    rows.length + reserveEntries > prReviewWorkspaceOutputGlobalMaxEntries ||
+    retainedBytes + reserveBytes > prReviewWorkspaceOutputGlobalMaxBytes
+  ) {
+    const oldest = rows.shift();
+    if (!oldest) break;
+    changes += Number(
+      database
+        .prepare(
+          `DELETE FROM pr_review_workspace_outputs WHERE output_ref = ?;`,
+        )
+        .run(oldest.output_ref).changes,
+    );
+    retainedBytes -= oldest.byte_size;
+  }
+  return changes;
+}
+
+export function pruneExpiredSubmittedPrReviewRows(
+  database: DatabaseSync,
+  now = Date.now(),
+) {
+  const cutoff = new Date(now - submittedPrReviewRetentionMs).toISOString();
+  return database
+    .prepare(
+      `DELETE FROM pr_reviews
+       WHERE status = 'submitted'
+         AND submitted_at IS NOT NULL
+         AND submitted_at < ?;`,
+    )
+    .run(cutoff).changes;
+}
+
 export function reconcileActiveChatSession(database: DatabaseSync) {
   const active = database
     .prepare(

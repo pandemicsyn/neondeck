@@ -29,6 +29,7 @@ import {
   annotationsFromThreads,
   backgroundReviewPatchPaths,
   draftCommentIdsWithUnknownPatch,
+  mutationErrorMessage,
   prReviewMapByPath,
   reviewPatchQuerySettled,
 } from './review-view-model';
@@ -41,12 +42,37 @@ import {
   clearCompletedEditor,
   githubPrReviewRefreshSafety,
   isCurrentReviewOperation,
+  prReviewDraftHeadIsStale,
   refreshOrientationTargetSettled,
   selectionAnchorMatchesPatch,
 } from './review-ui-helpers';
 import capturedReviewPatch from './fixtures/captured-review.patch?raw';
 
 describe('GitHubPrReview helpers', () => {
+  it('shows structured GitHub diagnostics for failed review operations', () => {
+    const error = new ApiError(
+      'Could not fetch GitHub PR event state.',
+      400,
+      '/api/reviews',
+      {
+        errors: [
+          'GitHub request failed with 403: Resource not accessible by integration',
+        ],
+      },
+    );
+
+    expect(mutationErrorMessage(error, null)).toBe(
+      'Could not fetch GitHub PR event state. GitHub request failed with 403: Resource not accessible by integration',
+    );
+  });
+
+  it('does not mark a draft stale while the current PR head is loading', () => {
+    expect(prReviewDraftHeadIsStale('draft-head', null)).toBe(false);
+    expect(prReviewDraftHeadIsStale('draft-head', '')).toBe(false);
+    expect(prReviewDraftHeadIsStale('draft-head', 'draft-head')).toBe(false);
+    expect(prReviewDraftHeadIsStale('draft-head', 'new-head')).toBe(true);
+  });
+
   it.each([
     ['composer', { composerDirty: true }],
     ['comment editor', { commentEditorDirty: true }],
@@ -473,6 +499,12 @@ describe('GitHubPrReview helpers', () => {
     ).toBe('Suggested change Use safeValue here Keep fallbacks explicit');
   });
 
+  it('removes nested HTML tags from annotation previews', () => {
+    expect(reviewCommentPreview('<scr<script>ipt>alert(123)</script>')).toBe(
+      'alert(123)',
+    );
+  });
+
   it('keeps active patch work separate from neighbor and review background paths', () => {
     const files = reviewFiles([
       'src/previous.ts',
@@ -661,6 +693,26 @@ describe('GitHubPrReview helpers', () => {
         sourceId: 'prf_source_2',
       }),
     ).toBe(false);
+  });
+
+  it('builds report-only draft comments without generator attribution', () => {
+    expect(
+      reportOnlyFindingBody({
+        sourceId: 'prf_source_1',
+        severity: 'nit',
+        path: 'src/review.ts',
+        line: null,
+        summary: 'Keep this branch explicit.',
+        suggestedFix: 'Add a named guard.',
+        reason: 'unanchorable',
+      }),
+    ).toBe(
+      [
+        'Keep this branch explicit.',
+        '',
+        'Suggested fix: Add a named guard.',
+      ].join('\n'),
+    );
   });
 
   it('falls back to exact text and path for provenance-less legacy drafts', () => {

@@ -7,7 +7,7 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
 
 <BaseLayout
   title="CLI · neondeck"
-  description="neondeck CLI commands for onboarding, status, repository management, watches, schedules, and future TUI entrypoints."
+  description="neondeck CLI commands for onboarding, status, repository management, watches, and schedules."
 >
   <div class="site-shell">
     <SiteNav />
@@ -35,8 +35,36 @@ neondeck init --home .neondeck-test</code></pre>
         <p>
           The init wizard creates runtime files, writes runtime-home secrets,
           tunes <code>SOUL.md</code>, configures models and provider references,
-          adds repositories, applies a dashboard preset, and can create initial
-          schedules and command preapprovals.
+          checks the Git identity used by Autopilot, adds repositories, applies
+          a dashboard preset, and can create initial schedules and command
+          preapprovals. If the global identity is incomplete, setup warns and
+          offers to write <code>user.name</code>, <code>user.email</code>, and
+          <code>user.useConfigOnly=true</code>. Complete
+          <code>GIT_AUTHOR_*</code> and <code>GIT_COMMITTER_*</code> overrides are
+          accepted only when persisted in the selected runtime-home
+          <code>.env</code>.
+        </p>
+        <p>
+          Model setup also offers an optional model and reasoning profile for
+          the shared <code>explore</code> subagent. It defaults to the display-assistant
+          model. For lower delegation latency and cost, setup recommends a fast profile
+          such as OpenAI Luna with high reasoning or OpenAI Terra with medium reasoning.
+        </p>
+
+        <h2>Provider authentication</h2>
+        <pre><code>neondeck auth login openai-codex
+neondeck auth status openai-codex
+neondeck --json auth status openai-codex
+neondeck auth logout openai-codex</code></pre>
+        <p>
+          ChatGPT subscription login supports a local browser callback or a
+          device code. Neondeck stores and refreshes the OAuth credentials in
+          its local app database. Restart Neondeck after standalone CLI login or
+          logout so the running process picks up the new credential state.
+          Status reports <code>missing</code>, <code>valid</code>,
+          <code>refresh-needed</code>, or <code>error</code>, along with whether
+          credentials are stored and currently usable. Expiry and the latest
+          refresh error are included when available.
         </p>
 
         <h2>Status</h2>
@@ -66,8 +94,8 @@ neondeck service stop
 neondeck service start
 neondeck service uninstall
 neondeck open
-neondeck open sidebar
-neondeck open xeneon --kiosk</code></pre>
+neondeck open sidebar --browser "/path/to/chromium"
+neondeck open xeneon --browser "/path/to/chromium"</code></pre>
         <p>
           <code>serve</code> starts the production server in the foreground. It expects
           the packaged <code>dist/server.mjs</code> entry; in a source checkout, run
@@ -82,8 +110,14 @@ neondeck open xeneon --kiosk</code></pre>
         <p>
           <code>open</code> ensures the server is ready and opens the dashboard. Named
           window profiles come from runtime-home <code>dashboard.json</code>
-          under <code>windows</code>. Width/height and x/y must be configured in
-          pairs; CLI flags override profile values for one launch.
+          under <code>windows</code>; new runtime homes include <code
+            >sidebar</code
+          >
+          and <code>xeneon</code>. Width/height and x/y must be supplied in
+          pairs, and CLI flags override profile values for one launch. By
+          default, Neondeck delegates to the OS default browser. Window geometry
+          and kiosk mode apply only when <code>--browser &lt;path&gt;</code> selects
+          a Chromium-family executable for app-mode launch.
         </p>
 
         <h2>Repositories</h2>
@@ -101,7 +135,6 @@ neondeck edit-events</code></pre>
           diffs read bounded metadata by default; <code>--patch</code> includes bounded
           patch text. Edit events expose the recent repo-edit audit trail.
         </p>
-
         <h2>Watches</h2>
         <pre><code>neondeck watch-pr pandemicsyn/neondeck#521
 neondeck watch-pr https://github.com/pandemicsyn/neondeck/pull/521
@@ -116,8 +149,8 @@ neondeck watch-pr pandemicsyn/neondeck#521 \
           current actionable feedback instead of baselining it. Any initial mode above
           <code>notify-only</code>, and every later increase in authority,
           requires explicit confirmation. See the
-          <a href="/docs/autopilot/">Autopilot guide</a> for modes, review, safe push,
-          and recovery behavior.
+          <a href="/docs/autopilot/">Autopilot guide</a> for modes, review, semantic
+          autonomous delivery, and recovery behavior.
         </p>
 
         <h2>External agent handoff</h2>
@@ -145,7 +178,8 @@ neondeck note "Finished local cleanup without a PR." \
         <p>
           Scheduled tasks are created with typed local API actions. The backend
           scheduler persists their validated trigger and dispatches each due
-          occurrence through a bounded Flue workflow.
+          occurrence through an app-owned service or a bounded Flue agent
+          submission when model reasoning is required.
         </p>
 
         <h2>Neon slash commands</h2>
@@ -165,12 +199,12 @@ neondeck note "Finished local cleanup without a PR." \
 /dev-doctor</code></pre>
         <p>
           Slash commands can be typed in chat, launched from dashboard buttons,
-          or invoked through the <code>command-run</code> Flue workflow.
+          or chosen from the chat input's slash-command suggestions.
           <code>/review-pr</code> prepares local reports and Neon-origin draft review
           comments for a human reviewer; it does not submit a GitHub review. <code
             >/fix-ci</code
-          > queues a bounded CI fix workflow and routes any resulting code change
-          back through prepared-diff review.
+          > queues a bounded app-owned CI fix operation and routes any resulting code
+          change back through prepared-diff review.
           <code>/explain-ci --report</code> writes the CI dossier without starting
           a fix attempt. In the dashboard chat, <code>/briefing</code> persists a
           local snapshot and streams a normal assistant response; it does not render
@@ -237,14 +271,6 @@ neondeck learning restore-skill-patch &lt;candidate-id&gt;</code></pre>
         <p>
           Doctor runs local readiness checks for runtime state, configured
           repositories, credentials, services, and development prerequisites.
-        </p>
-
-        <h2>TUI</h2>
-        <pre><code>neondeck tui</code></pre>
-        <p>
-          The command is reserved for the future OpenTUI client. The TUI should
-          reuse backend APIs and event streams rather than growing a second
-          agent runtime.
         </p>
       </article>
     </main>

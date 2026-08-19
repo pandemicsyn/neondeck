@@ -505,7 +505,7 @@ function seedScheduledTaskRows(databasePath: string, now: string) {
         .prepare(
           `
           INSERT INTO scheduled_task_runs (
-            id, task_id, status, outcome, message, workflow_run_id, session_id,
+            id, task_id, status, outcome, message, submission_id, session_id,
             result_json, error, started_at, completed_at, created_at, updated_at
           )
           VALUES (?, 'task:health', ?, ?, 'message', NULL, NULL,

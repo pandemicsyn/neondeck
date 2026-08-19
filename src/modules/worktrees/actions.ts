@@ -1,4 +1,4 @@
-import { defineAction, defineTool } from '@flue/runtime';
+import { defineTool } from '@flue/runtime';
 import * as v from 'valibot';
 import {
   cleanupInputSchema,
@@ -19,69 +19,69 @@ import {
 } from './service';
 import { listWorktrees } from './queries';
 
-export const worktreeCreateAction = defineAction({
+export const worktreeCreateAction = defineTool({
   name: 'neondeck_worktree_create',
   description:
     'Create or adopt a Neondeck-managed Git worktree inside declared worktree roots for isolated repo or PR work.',
   input: createInputSchema,
   output: outputSchema,
-  async run({ input }) {
-    return createWorktree(input);
+  async run({ data: input }) {
+    return { output: await createWorktree(input) };
   },
 });
 
-export const worktreeSyncAction = defineAction({
+export const worktreeSyncAction = defineTool({
   name: 'neondeck_worktree_sync',
   description:
     'Safely update a Neondeck-managed worktree to a requested head ref or SHA. Refuses dirty worktrees unless force is true.',
   input: syncInputSchema,
   output: outputSchema,
-  async run({ input }) {
-    return syncWorktree(input);
+  async run({ data: input }) {
+    return { output: await syncWorktree(input) };
   },
 });
 
-export const worktreeStatusAction = defineAction({
+export const worktreeStatusAction = defineTool({
   name: 'neondeck_worktree_status',
   description:
     'Read branch, dirty state, HEAD SHA, base SHA, and lock status for one Neondeck-managed worktree.',
   input: statusInputSchema,
   output: outputSchema,
-  async run({ input }) {
-    return readWorktreeStatus(input);
+  async run({ data: input }) {
+    return { output: await readWorktreeStatus(input) };
   },
 });
 
-export const worktreeLockAction = defineAction({
+export const worktreeLockAction = defineTool({
   name: 'neondeck_worktree_lock',
   description:
     'Acquire a per-worktree or per-PR lock with expiration and stale-lock recovery.',
   input: lockInputSchema,
   output: outputSchema,
-  async run({ input }) {
-    return lockWorktree(input);
+  async run({ data: input }) {
+    return { output: await lockWorktree(input) };
   },
 });
 
-export const worktreeReleaseAction = defineAction({
+export const worktreeReleaseAction = defineTool({
   name: 'neondeck_worktree_release',
   description:
-    'Release a Neondeck worktree lock and optionally record the bounded workflow final status.',
+    'Release a Neondeck worktree lock and optionally record the bounded operation final status.',
   input: releaseInputSchema,
   output: outputSchema,
-  async run({ input }) {
-    return releaseWorktreeLock(input);
+  async run({ data: input }) {
+    return { output: await releaseWorktreeLock(input) };
   },
 });
 
-export const worktreeCleanupAction = defineAction({
+export const worktreeCleanupAction = defineTool({
   name: 'neondeck_worktree_cleanup',
   description:
     'Apply Neondeck worktree cleanup policy. Retains dirty, failed, prepared-diff, and adopted worktrees unless policy/input allows cleanup.',
   input: cleanupInputSchema,
   output: outputSchema,
-  async run({ input }) {
-    return cleanupWorktrees(input);
+  async run({ data: input }) {
+    return { output: await cleanupWorktrees(input) };
   },
 });
 
@@ -92,7 +92,7 @@ export const worktreesLookupTool = defineTool({
   input: v.object({}),
   output: outputSchema,
   async run() {
-    return listWorktrees();
+    return { output: await listWorktrees() };
   },
 });
 

@@ -8,6 +8,8 @@ import {
 } from '../pr-events';
 import { checkAutopilotConcurrency } from '../autopilot-policy';
 import { fetchCheckSummary } from '../github';
+import { readManagedWorktree } from '../worktrees';
+import type { admitBriefing } from '../briefings/service';
 import * as v from 'valibot';
 
 export type SchedulerResult = {
@@ -40,17 +42,24 @@ export type SchedulerDependencies = {
     input: Parameters<typeof listPrWatchEventWatermarks>[0],
     paths: RuntimePaths,
   ) => ReturnType<typeof listPrWatchEventWatermarks>;
+  readManagedWorktree?: typeof readManagedWorktree;
   checkAutopilotConcurrency?: typeof checkAutopilotConcurrency;
   fetchCheckSummary?: typeof fetchCheckSummary;
-  invokeWorkflow?: (
-    workflow: ScheduledWorkflowName,
-    input: JsonValue,
-  ) => Promise<{ runId: string }>;
+  dispatchInstruction?: (input: {
+    idempotencyKey: string;
+    prompt: string;
+    sessionId: string;
+    taskId: string;
+  }) => Promise<{ submissionId: string; sessionId: string }>;
+  readInstructionSettlement?: (input: {
+    submissionId: string;
+    sessionId: string;
+  }) => Promise<{ failed: boolean }>;
+  admitBriefing?: typeof admitBriefing;
+  scheduledTaskRunId?: string;
   tickLeaseTtlMs?: number;
 };
 
-export type ScheduledWorkflowName =
-  'briefing' | 'command-run' | 'scheduled-agent-instruction';
 export type SchedulerTickLease = {
   owner: string;
   acquiredAt: string;

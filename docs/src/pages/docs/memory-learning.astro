@@ -18,7 +18,7 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
         <p>
           Memory is Neon's small working set of durable guidance — the lessons
           it should carry into future sessions. It is not a transcript archive
-          or an evidence graph; chat history, watch state, and workflow results
+          or an evidence graph; chat history, watch state, and operation results
           live in their own stores. Learning is the audited loop that turns
           finished work into memory updates and skill improvements, at a level
           of autonomy you choose. For diagrams and internals, see
@@ -64,11 +64,11 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
 
         <h2>How Neon learns</h2>
         <p>
-          Three bounded review loops run as finite Flue workflows using the
-          self-improvement model role. Each prepares a compact evidence snapshot
-          (summaries and metadata — never raw transcripts, diffs, or logs) and
-          gets back structured proposals, which Neondeck validates and applies
-          only through the memory actions above.
+          Three bounded review loops run as keyed Flue learning-review agent
+          submissions using the self-improvement model role. Each persists a
+          compact evidence snapshot (summaries and metadata — never raw
+          transcripts, diffs, or logs) and gets back structured proposals, which
+          Neondeck validates and applies only through the memory tools above.
         </p>
         <ul>
           <li>
@@ -88,18 +88,30 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
             <code>memoryMaxActiveItems</code> with rewrites, merges, and archives.
           </li>
         </ul>
+        <p>
+          Each active Autopilot owner turn also receives a small, bounded memory
+          snapshot: matching project guidance first, followed by local and user
+          guidance. It is read-only background and cannot expand the turn's
+          mode, tools, or delivery authority; current PR facts and operation
+          boundaries always win. If memory is temporarily unavailable, the turn
+          continues without it and the learning audit records that no snapshot
+          was available.
+        </p>
 
         <h2>Write modes</h2>
-        <p>You pick the autonomy level per write path:</p>
+        <p>
+          Safe typed memory and append-only skill improvements apply
+          automatically by default. You can lower the autonomy level separately
+          for each write path:
+        </p>
         <ul>
           <li><code>off</code> — reviews may run, nothing is written.</li>
           <li>
             <code>review</code> — proposals queue as candidates for your approval.
-            This is the default posture.
           </li>
           <li>
-            <code>auto</code> — the workflow applies allowed changes itself, still
-            through typed actions, still audited.
+            <code>auto</code> — the learning-review agent applies allowed changes
+            itself, still through typed actions, still audited and reversible.
           </li>
         </ul>
         <p>
@@ -159,14 +171,14 @@ POST /api/skills/patches/:id/apply | reject | restore</code></pre>
         <pre><code>&#123;
   "learning": &#123;
     "conversationReviewTurnInterval": 10,
-    "memoryWriteMode": "review",
+    "memoryWriteMode": "auto",
     "memoryCurationEnabled": true,
     "memoryCurationMode": "review",
     "memoryCurationTurnInterval": 200,
     "memoryMaxActiveItems": 200,
     "prRetrospectiveThreshold": 5,
     "maxPrBatchItems": 8,
-    "skillWriteMode": "review"
+    "skillWriteMode": "auto"
   &#125;
 &#125;</code></pre>
         <p>

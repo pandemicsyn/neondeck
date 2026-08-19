@@ -7,22 +7,33 @@ import {
   type RuntimePaths,
   type ThinkingLevel,
 } from '../../runtime-home';
+import {
+  defaultPrReviewTimeoutMs,
+  maxPrReviewTimeoutMs,
+} from '../../../shared/pr-review-policy';
 
 export const defaultAgentModel = 'kilocode/kilo-auto/balanced';
 export const defaultThinkingLevel: ThinkingLevel = 'medium';
+export { defaultPrReviewTimeoutMs } from '../../../shared/pr-review-policy';
 
 export type NeondeckSubagentKey =
-  'repoResearcher' | 'ciInvestigator' | 'releaseReviewer';
+  'explore' | 'repoResearcher' | 'ciInvestigator' | 'releaseReviewer';
 
 export type AgentModelSelection = {
   displayAssistant: string;
   displayAssistantThinkingLevel: ThinkingLevel;
+  prReview: string;
+  prReviewConfigured: boolean;
+  prReviewThinkingLevel: ThinkingLevel;
+  prReviewTimeoutMs: number;
   utility: string;
   utilityConfigured: boolean;
   utilityThinkingLevel: ThinkingLevel;
   selfImprovement: string;
   selfImprovementConfigured: boolean;
   selfImprovementThinkingLevel: ThinkingLevel;
+  exploreConfigured: boolean;
+  exploreThinkingConfigured: boolean;
   subagents: Record<NeondeckSubagentKey, string>;
   subagentThinkingLevels: Record<NeondeckSubagentKey, ThinkingLevel>;
 };
@@ -56,6 +67,20 @@ export function resolveAgentModelSelection(
     config?.models?.defaultThinkingLevel,
     env.FLUE_AGENT_THINKING_LEVEL,
     defaultThinkingLevel,
+  );
+  const configuredPrReview = firstOptionalModel(
+    config?.models?.prReview,
+    env.FLUE_PR_REVIEW_MODEL,
+  );
+  const prReview = configuredPrReview ?? displayAssistant;
+  const prReviewThinkingLevel = firstThinkingLevel(
+    config?.models?.prReviewThinkingLevel,
+    env.FLUE_PR_REVIEW_THINKING_LEVEL,
+    displayAssistantThinkingLevel,
+  );
+  const prReviewTimeoutMs = Math.min(
+    config?.models?.prReviewTimeoutMs ?? defaultPrReviewTimeoutMs,
+    maxPrReviewTimeoutMs,
   );
   const configuredUtility = firstOptionalModel(
     config?.models?.utility,
@@ -96,17 +121,32 @@ export function resolveAgentModelSelection(
     config?.models?.defaultThinkingLevel,
     displayAssistantThinkingLevel,
   );
+  const configuredExplore = firstOptionalModel(
+    config?.models?.subagents?.explore,
+    env.FLUE_EXPLORE_SUBAGENT_MODEL,
+  );
+  const configuredExploreThinkingLevel = firstOptionalThinkingLevel(
+    config?.models?.subagents?.exploreThinkingLevel,
+    env.FLUE_EXPLORE_SUBAGENT_THINKING_LEVEL,
+  );
 
   return {
     displayAssistant,
     displayAssistantThinkingLevel,
+    prReview,
+    prReviewConfigured: Boolean(configuredPrReview),
+    prReviewThinkingLevel,
+    prReviewTimeoutMs,
     utility,
     utilityConfigured: Boolean(configuredUtility),
     utilityThinkingLevel,
     selfImprovement,
     selfImprovementConfigured: Boolean(configuredSelfImprovement),
     selfImprovementThinkingLevel,
+    exploreConfigured: Boolean(configuredExplore),
+    exploreThinkingConfigured: Boolean(configuredExploreThinkingLevel),
     subagents: {
+      explore: firstModel(configuredExplore, displayAssistant),
       repoResearcher: firstModel(
         config?.models?.subagents?.repoResearcher,
         subagentDefault,
@@ -121,6 +161,10 @@ export function resolveAgentModelSelection(
       ),
     },
     subagentThinkingLevels: {
+      explore: firstThinkingLevel(
+        configuredExploreThinkingLevel,
+        defaultThinkingLevel,
+      ),
       repoResearcher: firstThinkingLevel(
         config?.models?.subagents?.repoResearcherThinkingLevel,
         subagentThinkingDefault,
@@ -148,11 +192,14 @@ function firstOptionalModel(...values: Array<string | undefined>) {
 export function firstThinkingLevel(
   ...values: Array<string | undefined>
 ): ThinkingLevel {
+  return firstOptionalThinkingLevel(...values) ?? defaultThinkingLevel;
+}
+
+function firstOptionalThinkingLevel(...values: Array<string | undefined>) {
   const value = values
     .find((item) => item && isThinkingLevel(item.trim()))
     ?.trim();
-
-  return value ? (value as ThinkingLevel) : defaultThinkingLevel;
+  return value ? (value as ThinkingLevel) : undefined;
 }
 
 export function isThinkingLevel(value: string): value is ThinkingLevel {

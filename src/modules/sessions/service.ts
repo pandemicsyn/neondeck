@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto';
 import type { DatabaseSync } from 'node:sqlite';
 import * as v from 'valibot';
 import { asJsonValue } from '../../lib/action-result';
-import { openDb } from '../../lib/sqlite';
+import { openDb, withImmediateTransaction } from '../../lib/sqlite';
 import { buildMemoryPromptSnapshotSync } from '../memory';
 import {
   type RuntimePaths,
@@ -20,6 +20,7 @@ import {
   findLinkedChatSession,
   listChatSessionCommandEventRows,
   markLoadedMemoriesUsed,
+  readActiveChatSession,
   readActiveSessionId,
   readChatSessionInternal,
   recordSessionAudit,
@@ -40,6 +41,87 @@ import {
   type ChatSessionRecord,
 } from './schemas';
 import type { ChatSessionEventAction } from './events';
+
+/**
+ * A brand-new runtime home creates its primary session before onboarding writes
+ * provider, model, execution, and skill configuration. Move that empty
+ * session's context baseline forward once setup succeeds. A durable pending
+ * audit marker distinguishes new runtime databases materialized by read-only
+ * commands from existing homes, while the session checks prevent rebaselining
+ * a bootstrap session that was used before onboarding completed.
+ */
+export async function rebaselineFreshInstallChatSession(
+  paths: RuntimePaths = runtimePaths(),
+) {
+  await ensureRuntimeHome(paths);
+  const now = new Date().toISOString();
+  const memorySnapshot = buildMemoryPromptSnapshotSync(paths);
+  const database = openDb(paths.neondeckDatabase);
+
+  try {
+    return withImmediateTransaction(database, () => {
+      const session = readActiveChatSession(database, 'dashboard');
+      if (!isPendingBootstrapSession(database, session.id)) return null;
+
+      database
+        .prepare(
+          `
+          UPDATE chat_sessions
+          SET context_loaded_at = ?,
+            context_memory_ids_json = ?,
+            updated_at = ?
+          WHERE id = ?;
+        `,
+        )
+        .run(now, JSON.stringify(memorySnapshot.memoryIds), now, session.id);
+      markLoadedMemoriesUsed(database, memorySnapshot.memoryIds, now);
+      recordSessionAudit(database, {
+        action: 'context_rebaseline',
+        sessionId: session.id,
+        surface: 'dashboard',
+        reason: 'fresh-install-complete',
+        metadata: {
+          memoryIds: memorySnapshot.memoryIds,
+        },
+      });
+      return findChatSession(database, session.id);
+    });
+  } finally {
+    database.close();
+  }
+}
+
+function isPendingBootstrapSession(database: DatabaseSync, sessionId: string) {
+  const row = database
+    .prepare(
+      `
+      SELECT id
+      FROM chat_sessions
+      WHERE id = ?
+        AND id = 'neondeck-main'
+        AND context_snapshot_id IS NULL
+        AND NOT EXISTS (
+          SELECT 1
+          FROM chat_session_command_events
+          WHERE session_id = chat_sessions.id
+        )
+        AND EXISTS (
+          SELECT 1
+          FROM chat_session_audit
+          WHERE session_id = chat_sessions.id
+            AND action = 'onboarding_pending'
+        )
+        AND NOT EXISTS (
+          SELECT 1
+          FROM chat_session_audit
+          WHERE session_id = chat_sessions.id
+            AND action = 'context_rebaseline'
+        );
+    `,
+    )
+    .get(sessionId);
+  return Boolean(row);
+}
 
 export async function createChatSession(
   input: v.InferInput<typeof sessionCreateInputSchema> = {},
@@ -683,18 +765,31 @@ export async function updateChatSessionCommandEvent(
       );
     }
 
-    const nextResult = owns(parsed.output, 'result')
-      ? (parsed.output.result ?? null)
-      : existing.result;
-    const nextFlueRunId = owns(parsed.output, 'flueRunId')
+    const existingIsTerminal =
+      existing.status === 'completed' || existing.status === 'failed';
+    const nextStatus = existingIsTerminal
+      ? existing.status
+      : parsed.output.status;
+    const nextResult = existingIsTerminal
+      ? existing.result
+      : owns(parsed.output, 'result')
+        ? (parsed.output.result ?? null)
+        : existing.result;
+    const requestedFlueRunId = owns(parsed.output, 'flueRunId')
       ? (parsed.output.flueRunId ?? null)
       : existing.flueRunId;
-    const nextWorkflowSummaryId =
+    const nextFlueRunId = existingIsTerminal
+      ? (existing.flueRunId ?? requestedFlueRunId)
+      : requestedFlueRunId;
+    const requestedWorkflowSummaryId =
       parsed.output.workflowSummaryId ??
-      workflowSummaryIdFromResult(nextResult) ??
-      existing.workflowSummaryId;
-    const nextCompletedAt =
-      parsed.output.status === 'running'
+      workflowSummaryIdFromResult(nextResult);
+    const nextWorkflowSummaryId = existingIsTerminal
+      ? (existing.workflowSummaryId ?? requestedWorkflowSummaryId)
+      : (requestedWorkflowSummaryId ?? existing.workflowSummaryId);
+    const nextCompletedAt = existingIsTerminal
+      ? (existing.completedAt ?? now)
+      : nextStatus === 'running'
         ? null
         : (parsed.output.completedAt ?? existing.completedAt ?? now);
 
@@ -714,7 +809,7 @@ export async function updateChatSessionCommandEvent(
       `,
       )
       .run(
-        parsed.output.status,
+        nextStatus,
         nextResult === null ? null : JSON.stringify(asJsonValue(nextResult)),
         nextFlueRunId,
         nextWorkflowSummaryId,
@@ -738,7 +833,7 @@ export async function updateChatSessionCommandEvent(
       reason: parsed.output.reason ?? null,
       metadata: {
         eventId: parsed.output.eventId,
-        status: parsed.output.status,
+        status: nextStatus,
         flueRunId: nextFlueRunId,
         workflowSummaryId: nextWorkflowSummaryId,
       },

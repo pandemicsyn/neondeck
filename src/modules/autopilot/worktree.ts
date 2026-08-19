@@ -349,7 +349,7 @@ export async function preparePrWorktree(
         runLinkage: {
           owningWorkflowRunIdAttached: false,
           reason:
-            'Flue ActionContext does not expose workflow identity; caller-supplied run ids are not accepted.',
+            'This app-owned operation does not accept caller-supplied Flue submission identity.',
         },
       }),
     };

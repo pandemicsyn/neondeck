@@ -1,5 +1,5 @@
 /* eslint-disable no-unused-vars */
-import { defineAction, defineTool, type JsonValue } from '@flue/runtime';
+import { defineTool, type JsonValue } from '@flue/runtime';
 import type { DatabaseSync } from 'node:sqlite';
 import * as v from 'valibot';
 import {
@@ -84,10 +84,20 @@ export type PrEventStateDependencies = {
     headSha: string | null | undefined;
     baseSha: string | null | undefined;
   }>;
-  fetchPullRequestReviewThreads?: typeof fetchPullRequestReviewThreadsWithMetadata;
+  fetchPullRequestReviewThreads?: (
+    options: Parameters<typeof fetchPullRequestReviewThreadsWithMetadata>[0],
+  ) => Promise<{
+    reviewThreads: Awaited<
+      ReturnType<typeof fetchPullRequestReviewThreadsWithMetadata>
+    >['reviewThreads'];
+    truncated: boolean;
+    headSha?: string | null;
+  }>;
   fetchPullRequestReviewComments?: typeof fetchPullRequestReviewComments;
   fetchPullRequestReviewThread?: typeof fetchPullRequestReviewThread;
   postPullRequestComment?: typeof postPullRequestComment;
+  authorizeComment?: () =>
+    PrEventActionResult | undefined | Promise<PrEventActionResult | undefined>;
   listPullRequestComments?: typeof listPullRequestComments;
   submitPullRequestReview?: typeof submitPullRequestReview;
   replyToPullRequestReviewThread?: typeof replyToPullRequestReviewThread;

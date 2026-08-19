@@ -1,5 +1,13 @@
 export type PreapprovalGroupId =
-  'filesystem' | 'git-read' | 'npm' | 'pnpm' | 'bun' | 'python' | 'go';
+  | 'filesystem'
+  | 'process'
+  | 'git-read'
+  | 'npm'
+  | 'pnpm'
+  | 'yarn'
+  | 'bun'
+  | 'python'
+  | 'go';
 
 type PreapprovalCommand = {
   id: string;
@@ -17,7 +25,7 @@ export const preapprovalGroups: Array<{
   {
     id: 'filesystem',
     label: 'Filesystem inspection',
-    hint: 'pwd, ls, find, cat, sed, rg, wc.',
+    hint: 'pwd, ls, find, cat, sed, rg, wc, head, tail, stat, file, du, jq.',
     commands: [
       commandPreapproval('pwd', 'pwd', 'exact', 'Print the current directory.'),
       commandPreapproval(
@@ -40,6 +48,36 @@ export const preapprovalGroups: Array<{
         'wc',
         'prefix',
         'Count local text file lines or bytes.',
+      ),
+      commandPreapproval('head', 'head', 'prefix', 'Read the start of files.'),
+      commandPreapproval('tail', 'tail', 'prefix', 'Read the end of files.'),
+      commandPreapproval(
+        'stat',
+        'stat',
+        'prefix',
+        'Inspect local file metadata.',
+      ),
+      commandPreapproval('file', 'file', 'prefix', 'Inspect local file types.'),
+      commandPreapproval(
+        'du',
+        'du',
+        'prefix',
+        'Inspect local file and directory sizes.',
+      ),
+      commandPreapproval('jq', 'jq', 'prefix', 'Inspect and transform JSON.'),
+    ],
+  },
+  {
+    id: 'process',
+    label: 'Process inspection',
+    hint: 'ps, lsof.',
+    commands: [
+      commandPreapproval('ps', 'ps', 'prefix', 'Inspect local processes.'),
+      commandPreapproval(
+        'lsof',
+        'lsof',
+        'prefix',
+        'Inspect open local files and network sockets.',
       ),
     ],
   },
@@ -144,6 +182,39 @@ export const preapprovalGroups: Array<{
         'pnpm list',
         'prefix',
         'List installed pnpm dependencies.',
+      ),
+    ],
+  },
+  {
+    id: 'yarn',
+    label: 'Yarn',
+    hint: 'yarn run, test, install, exec, info, list.',
+    commands: [
+      commandPreapproval('yarn-run', 'yarn run', 'prefix', 'Run Yarn scripts.'),
+      commandPreapproval('yarn-test', 'yarn test', 'prefix', 'Run Yarn tests.'),
+      commandPreapproval(
+        'yarn-install',
+        'yarn install',
+        'prefix',
+        'Install Yarn dependencies.',
+      ),
+      commandPreapproval(
+        'yarn-exec',
+        'yarn exec',
+        'prefix',
+        'Run Yarn binaries.',
+      ),
+      commandPreapproval(
+        'yarn-info',
+        'yarn info',
+        'prefix',
+        'Read Yarn package metadata.',
+      ),
+      commandPreapproval(
+        'yarn-list',
+        'yarn list',
+        'prefix',
+        'List installed Yarn dependencies.',
       ),
     ],
   },

@@ -1,6 +1,5 @@
 import { randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
-import { fileURLToPath } from 'node:url';
 import * as v from 'valibot';
 import { asJsonValue } from '../../lib/action-result';
 import { renderReportHtml } from '../../lib/report-html';
@@ -10,6 +9,7 @@ import {
   type RepoConfig,
   type RuntimePaths,
 } from '../../runtime-home';
+import { resolveShippedAsset } from '../../runtime-home/assets';
 import {
   addNotification,
   addWorkflowSummary,
@@ -18,7 +18,7 @@ import {
 } from '../app-state';
 import {
   fetchFailingCheckFacts,
-  pullRequestEventStateTruncation,
+  pullRequestEventStateIncompleteness,
   type GitHubFailingCheckFact,
   type GitHubPullRequestEventState,
 } from '../github';
@@ -36,8 +36,9 @@ import { errorMessage } from './utils';
 
 const nonEmptyStringSchema = v.pipe(v.string(), v.trim(), v.minLength(1));
 const positiveIntegerSchema = v.pipe(v.number(), v.integer(), v.minValue(1));
-const neonCiFixSkillPath = fileURLToPath(
-  new URL('../../skills/neon-ci-fix/SKILL.md', import.meta.url),
+const neonCiFixSkillPath = resolveShippedAsset(
+  'src/skills/neon-ci-fix/SKILL.md',
+  'skills/neon-ci-fix/SKILL.md',
 );
 
 export const ciFixRunInputSchema = v.object({
@@ -157,10 +158,12 @@ export async function runCiFix(
     };
   }
 
-  const stateTruncation = pullRequestEventStateTruncation(dossier.state);
-  if (stateTruncation.any) {
+  const stateIncompleteness = pullRequestEventStateIncompleteness(
+    dossier.state,
+  );
+  if (stateIncompleteness.any) {
     const message =
-      'CI fix handoff requires complete PR event facts; wrote the dossier report but did not start Kilo because GitHub data was truncated.';
+      'CI fix handoff requires complete PR event facts; wrote the dossier report but did not start Kilo because GitHub data was incomplete.';
     await notifyCiFixAttention(dossier, report, message, paths);
     const workflowSummary = await addTerminalCiFixSummary(
       dossier,
@@ -170,19 +173,19 @@ export async function runCiFix(
         outcome: 'pr-event-facts-truncated',
         message,
         requires: ['completePrEventFacts'],
-        truncation: stateTruncation.categories,
+        truncation: stateIncompleteness.categories,
       },
       paths,
     );
     return failure(message, {
       requires: ['completePrEventFacts'],
       errors: [
-        `Truncated PR event fact categories: ${stateTruncation.categories.join(', ')}.`,
+        `Incomplete PR event fact categories: ${stateIncompleteness.categories.join(', ')}.`,
       ],
       data: {
         report: reportLink(report),
         dossier: dossierSummary(dossier),
-        truncation: stateTruncation,
+        truncation: stateIncompleteness,
       },
       workflowSummary,
     });
@@ -711,7 +714,9 @@ export async function writeCiFixDossierReport(
 ) {
   const ref = sourceRef(dossier);
   const generatedAt = new Date();
-  const stateTruncation = pullRequestEventStateTruncation(dossier.state);
+  const stateIncompleteness = pullRequestEventStateIncompleteness(
+    dossier.state,
+  );
   const failingCheckLogFactsError =
     incompleteFailingCheckLogFactsError(dossier);
   return writeReport(
@@ -731,7 +736,7 @@ export async function writeCiFixDossierReport(
         failingCheckFactsError: dossier.failingCheckFactsError,
         failingCheckLogFactsError,
         likelyCommands: dossier.likelyCommands.slice(0, 5),
-        truncation: stateTruncation,
+        truncation: stateIncompleteness,
       },
       html: renderReportHtml({
         eyebrow: 'CI FIX',
@@ -759,9 +764,9 @@ export async function writeCiFixDossierReport(
                   : 'not configured',
               },
               {
-                label: 'truncated facts',
-                value: stateTruncation.any
-                  ? stateTruncation.categories.join(', ')
+                label: 'incomplete facts',
+                value: stateIncompleteness.any
+                  ? stateIncompleteness.categories.join(', ')
                   : 'none',
               },
             ],
@@ -1097,7 +1102,7 @@ function dossierSummary(dossier: CiFixDossier) {
     errorLines: extractedErrorLines(dossier).slice(0, 10),
     suspectFiles: suspectFiles(dossier),
     likelyCommands: dossier.likelyCommands.slice(0, 5),
-    truncation: pullRequestEventStateTruncation(dossier.state),
+    truncation: pullRequestEventStateIncompleteness(dossier.state),
   };
 }
 

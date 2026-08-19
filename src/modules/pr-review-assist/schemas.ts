@@ -1,13 +1,96 @@
 import * as v from 'valibot';
 
-export const prReviewAssistInputSchema = v.object({
-  reviewId: v.optional(v.pipe(v.string(), v.trim(), v.minLength(1))),
-  attemptId: v.optional(v.pipe(v.string(), v.trim(), v.minLength(1))),
-  watchId: v.optional(v.pipe(v.string(), v.trim(), v.minLength(1))),
-  ref: v.optional(v.pipe(v.string(), v.trim(), v.minLength(1))),
-  repo: v.optional(v.pipe(v.string(), v.trim(), v.minLength(1))),
-  prNumber: v.optional(v.pipe(v.number(), v.integer(), v.minValue(1))),
-});
+const nonEmptyString = v.pipe(v.string(), v.trim(), v.minLength(1));
+
+export const prReviewAssistInputSchema = v.pipe(
+  v.object({
+    reviewId: v.optional(nonEmptyString),
+    attemptId: v.optional(nonEmptyString),
+    watchId: v.optional(nonEmptyString),
+    ref: v.optional(nonEmptyString),
+    repo: v.optional(nonEmptyString),
+    prNumber: v.optional(v.pipe(v.number(), v.integer(), v.minValue(1))),
+    repoFullName: v.optional(nonEmptyString),
+    headSha: v.optional(nonEmptyString),
+    baseSha: v.optional(nonEmptyString),
+    baseRef: v.optional(nonEmptyString),
+  }),
+  v.check(
+    (input) =>
+      (!input.reviewId && !input.attemptId) ||
+      Boolean(
+        input.reviewId &&
+        input.attemptId &&
+        input.ref &&
+        input.repoFullName &&
+        input.prNumber &&
+        input.headSha &&
+        input.baseSha &&
+        input.baseRef,
+      ),
+    'A durable review binding requires reviewId, attemptId, ref, repoFullName, prNumber, headSha, baseSha, and baseRef together.',
+  ),
+);
+
+const prReviewAgentInitialDataEntries = {
+  model: nonEmptyString,
+  thinkingLevel: v.picklist([
+    'off',
+    'minimal',
+    'low',
+    'medium',
+    'high',
+    'xhigh',
+  ]),
+  instructions: nonEmptyString,
+  prepared: v.object({
+    input: prReviewAssistInputSchema,
+    facts: v.unknown(),
+    promptContext: v.unknown(),
+  }),
+  workspace: v.variant('available', [
+    v.object({
+      available: v.literal(true),
+      repoId: nonEmptyString,
+      repoFullName: nonEmptyString,
+      repoPath: nonEmptyString,
+      headSha: nonEmptyString,
+      baseSha: v.nullable(nonEmptyString),
+      mergeBase: v.nullable(nonEmptyString),
+    }),
+    v.object({
+      available: v.literal(false),
+      reason: nonEmptyString,
+    }),
+  ]),
+  prompt: nonEmptyString,
+  skills: v.optional(v.array(v.unknown())),
+  tools: v.optional(v.array(v.unknown())),
+  actions: v.optional(v.array(v.unknown())),
+  subagents: v.optional(v.array(v.unknown())),
+};
+
+const thinkingLevelSchema = v.picklist([
+  'off',
+  'minimal',
+  'low',
+  'medium',
+  'high',
+  'xhigh',
+]);
+
+export const prReviewAgentInitialDataSchema = v.union([
+  v.strictObject({
+    ...prReviewAgentInitialDataEntries,
+    schema: v.literal('neondeck.pr-review-agent-context.v2'),
+    exploreModel: nonEmptyString,
+    exploreThinkingLevel: thinkingLevelSchema,
+  }),
+  v.strictObject({
+    ...prReviewAgentInitialDataEntries,
+    schema: v.optional(v.literal('neondeck.pr-review-agent-context.v1')),
+  }),
+]);
 
 const reviewSeveritySchema = v.picklist(['critical', 'major', 'minor', 'nit']);
 const reviewSideSchema = v.picklist(['RIGHT', 'LEFT']);
@@ -172,7 +255,7 @@ export const prReviewAssistOutputSchema = v.looseObject({
   message: v.string(),
 });
 
-export type PrReviewAssistInput = v.InferInput<
+export type PrReviewAssistInput = v.InferOutput<
   typeof prReviewAssistInputSchema
 >;
 export type ReviewAssistStructuredOutput = v.InferOutput<

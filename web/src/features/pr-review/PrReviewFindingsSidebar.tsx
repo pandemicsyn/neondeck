@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import type {
   GitHubPrReviewDraft,
   GitHubPrReviewDraftComment,
@@ -18,12 +19,14 @@ import { resolveReviewFilePath } from './review-view-model';
 import { reportOnlyFindingNavigationId } from './review-navigation';
 import { PrReviewNeonFindingsPanel } from './PrReviewNeonFinding';
 import type { NeonFindingAnchorResolution } from './review-findings';
+import { PrReviewReviewerChat } from './PrReviewReviewerChat';
 
 export type PrReviewFindingsSidebarProps = {
   actionsLocked: (findingId: string) => boolean;
   activePath: string | null;
   cleanCommentCount: number;
   draft: GitHubPrReviewDraft | null;
+  draftComments: GitHubPrReviewDraftComment[];
   files: DiffFilePatch[];
   isDeleting: boolean;
   isLoadingThreads: boolean;
@@ -32,11 +35,13 @@ export type PrReviewFindingsSidebarProps = {
   neonFindings: readonly NeonReviewFinding[];
   onChooseLine: (finding: PrReviewReportOnlyFinding) => void;
   onDelete: (commentId: string) => void;
+  onDraftChanged?: () => void;
   onDismissFinding: (finding: NeonReviewFinding) => void;
   onPromoteFinding: (finding: NeonReviewFinding) => void;
   promoteLabel: string;
   promotionDisabledReason: (finding: NeonReviewFinding) => string | null;
   onReanchor: (comment: GitHubPrReviewDraftComment) => void;
+  onSelectDraftComment: (comment: GitHubPrReviewDraftComment) => void;
   onSelectFinding: (finding: NeonReviewFinding) => void;
   review: PrReviewRecord | null;
   reviewThreads: GitHubPullRequestReviewThread[];
@@ -55,6 +60,9 @@ export function PrReviewFindingsSidebar({
 }: PrReviewFindingsSidebarProps & {
   variant: 'compact' | 'embedded' | 'inspector';
 }) {
+  const [inspectorView, setInspectorView] = useState<'review' | 'reviewer'>(
+    'review',
+  );
   const panels = <FindingsPanels {...props} />;
 
   if (variant === 'embedded') return panels;
@@ -77,39 +85,71 @@ export function PrReviewFindingsSidebar({
   ]).size;
   return (
     <div className="pr-review-inspector">
-      <section className="pr-review-inspector-section">
-        <div className="pr-review-inspector-heading">
-          <span>Review focus</span>
-          <span>{props.activePath ? 'active file' : 'no file'}</span>
-        </div>
-        <p className="pr-review-inspector-path">
-          {props.activePath ?? 'Select a changed file to review.'}
-        </p>
-        <div className="pr-review-inspector-metrics">
-          <span>{props.files.length} files</span>
-          <span>{reviewedFileCount} touched</span>
-          <span>
-            {props.unresolvedThreads.length}/{props.reviewThreads.length}{' '}
-            threads
-          </span>
-          <span>{props.cleanCommentCount} pending</span>
-          {props.selectedAnnotationId ? <span>target selected</span> : null}
-          {props.staleCommentCount > 0 ? (
-            <span>{props.staleCommentCount} stale</span>
-          ) : null}
-        </div>
-      </section>
-      <section className="pr-review-inspector-section">
-        <div className="pr-review-inspector-heading">
-          <span>Line review</span>
-          <span>select diff lines</span>
-        </div>
-        <p className="pr-review-inspector-copy">
-          Select a changed line or range in the diff to draft an inline review
-          comment. Saved drafts stay local until the review is submitted.
-        </p>
-      </section>
-      {panels}
+      <div
+        aria-label="PR review inspector view"
+        className="pr-review-inspector-tabs"
+        role="tablist"
+      >
+        <button
+          aria-selected={inspectorView === 'review'}
+          onClick={() => setInspectorView('review')}
+          role="tab"
+          type="button"
+        >
+          Review
+        </button>
+        <button
+          aria-selected={inspectorView === 'reviewer'}
+          onClick={() => setInspectorView('reviewer')}
+          role="tab"
+          type="button"
+        >
+          Ask reviewer
+        </button>
+      </div>
+      {inspectorView === 'review' ? (
+        <>
+          <section className="pr-review-inspector-section">
+            <div className="pr-review-inspector-heading">
+              <span>Review focus</span>
+              <span>{props.activePath ? 'active file' : 'no file'}</span>
+            </div>
+            <p className="pr-review-inspector-path">
+              {props.activePath ?? 'Select a changed file to review.'}
+            </p>
+            <div className="pr-review-inspector-metrics">
+              <span>{props.files.length} files</span>
+              <span>{reviewedFileCount} touched</span>
+              <span>
+                {props.unresolvedThreads.length}/{props.reviewThreads.length}{' '}
+                threads
+              </span>
+              <span>{props.cleanCommentCount} pending</span>
+              {props.selectedAnnotationId ? <span>target selected</span> : null}
+              {props.staleCommentCount > 0 ? (
+                <span>{props.staleCommentCount} stale</span>
+              ) : null}
+            </div>
+          </section>
+          <section className="pr-review-inspector-section">
+            <div className="pr-review-inspector-heading">
+              <span>Line review</span>
+              <span>select diff lines</span>
+            </div>
+            <p className="pr-review-inspector-copy">
+              Select a changed line or range in the diff to draft an inline
+              review comment. Saved drafts stay local until the review is
+              submitted.
+            </p>
+          </section>
+          {panels}
+        </>
+      ) : (
+        <PrReviewReviewerChat
+          onDraftChanged={props.onDraftChanged}
+          review={props.review}
+        />
+      )}
     </div>
   );
 }
@@ -126,6 +166,14 @@ function FindingsPanels(props: PrReviewFindingsSidebarProps) {
           props.activePath,
           props.files,
         )}
+      />
+      <DraftCommentPanel
+        activePath={props.activePath}
+        comments={props.draftComments}
+        isDeleting={props.isDeleting}
+        onDelete={props.onDelete}
+        onSelect={props.onSelectDraftComment}
+        selectedAnnotationId={props.selectedAnnotationId}
       />
       <StaleDraftCommentPanel
         comments={props.staleDraftComments}
@@ -156,6 +204,87 @@ function FindingsPanels(props: PrReviewFindingsSidebarProps) {
       />
     </>
   );
+}
+
+function DraftCommentPanel({
+  activePath,
+  comments,
+  isDeleting,
+  onDelete,
+  onSelect,
+  selectedAnnotationId,
+}: {
+  activePath: string | null;
+  comments: GitHubPrReviewDraftComment[];
+  isDeleting: boolean;
+  onDelete: (commentId: string) => void;
+  onSelect: (comment: GitHubPrReviewDraftComment) => void;
+  selectedAnnotationId: string | null;
+}) {
+  if (comments.length === 0) return null;
+  const ordered = [...comments].sort(
+    (left, right) =>
+      Number(right.path === activePath) - Number(left.path === activePath) ||
+      left.path.localeCompare(right.path) ||
+      left.line - right.line ||
+      left.id.localeCompare(right.id),
+  );
+  return (
+    <section className="pr-review-inspector-section">
+      <div className="pr-review-inspector-heading">
+        <span>Draft comments</span>
+        <Badge>{comments.length}</Badge>
+      </div>
+      <div className="divide-y divide-line border-t border-line">
+        {ordered.map((comment) => {
+          const selected = selectedAnnotationId === comment.id;
+          return (
+            <article
+              aria-current={selected ? 'true' : undefined}
+              className="pr-review-neon-finding-summary"
+              data-navigation-selected={selected ? '' : undefined}
+              key={comment.id}
+            >
+              <div className="pr-review-neon-finding-heading">
+                <span className="pr-review-neon-finding-title">
+                  {draftCommentSourceLabel(comment)}
+                </span>
+                <span className="pr-review-neon-finding-state">
+                  {commentAnchorLabel(comment)}
+                </span>
+              </div>
+              <p className="pr-review-neon-finding-location">{comment.path}</p>
+              <p className="pr-review-neon-finding-copy">
+                {reviewCommentPreview(comment.body)}
+              </p>
+              <div className="pr-review-inline-actions">
+                <button onClick={() => onSelect(comment)} type="button">
+                  Show comment
+                </button>
+                <button
+                  disabled={isDeleting}
+                  onClick={() => onDelete(comment.id)}
+                  type="button"
+                >
+                  {isDeleting ? 'Deleting' : 'Delete'}
+                </button>
+              </div>
+            </article>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
+export function draftCommentSourceLabel(
+  comment: Pick<GitHubPrReviewDraftComment, 'body' | 'origin'>,
+) {
+  const severity = comment.body.match(
+    /^Neon review finding \((critical|major|minor|nit)(?:,|\))/,
+  )?.[1];
+  if (severity) return `Generated · ${severity}`;
+  return comment.origin === 'neon' ? 'Generated draft' : 'Local draft';
 }
 
 function ReviewThreadPanel({
@@ -357,7 +486,7 @@ function ReportOnlyFindingPanel({
                 Suggested fix: {finding.suggestedFix}
               </p>
               <p className="mt-1 font-mono text-[9.5px] leading-4 text-muted">
-                Unanchored: {finding.reason}
+                {reportOnlyFindingReason(finding.reason)}
               </p>
               <button
                 className="mt-1.5 border border-line px-1.5 py-1 font-mono text-[10px] text-muted hover:border-primary hover:text-primary disabled:opacity-50"
@@ -375,6 +504,19 @@ function ReportOnlyFindingPanel({
   );
 }
 
+function reportOnlyFindingReason(reason: string) {
+  switch (reason) {
+    case 'file-diff-truncated':
+      return "Couldn't anchor automatically because this file's diff exceeded the review limit.";
+    case 'truncated-file-patches':
+      return "Couldn't anchor automatically because this review used the previous review-wide truncation guard. Run Neon again to re-evaluate it per file.";
+    case 'invalid-line':
+      return "Couldn't anchor automatically because the suggested line was not a changed line in the current diff.";
+    default:
+      return `Couldn't anchor automatically: ${reason.replaceAll('-', ' ')}.`;
+  }
+}
+
 function threadsForPath(
   threads: GitHubPullRequestReviewThread[],
   path: string | null,
@@ -387,13 +529,9 @@ function threadsForPath(
 }
 
 export function reportOnlyFindingBody(finding: PrReviewReportOnlyFinding) {
-  return [
-    `Neon review finding (${finding.severity}): ${finding.summary}`,
-    '',
-    `Suggested fix: ${finding.suggestedFix}`,
-    '',
-    'Manually anchored from a report-only finding. Edit or delete before submitting the review.',
-  ].join('\n');
+  return [finding.summary, '', `Suggested fix: ${finding.suggestedFix}`].join(
+    '\n',
+  );
 }
 
 export function isReportOnlyFindingDrafted(

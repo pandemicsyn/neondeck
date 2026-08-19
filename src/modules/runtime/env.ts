@@ -1,8 +1,8 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
-import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { join } from 'node:path';
 import { type RuntimePaths, runtimePaths } from '../../runtime-home';
+import { resolvePackageRoot } from '../../runtime-home/assets';
 
 export type EnvFile = {
   id: 'runtime' | 'dev';
@@ -15,9 +15,7 @@ export type EnvLoadResult = {
   files: EnvFile[];
 };
 
-const rootDir = dirname(
-  fileURLToPath(new URL('../../../package.json', import.meta.url)),
-);
+const rootDir = resolvePackageRoot();
 export const devEnvPath = join(rootDir, '.env');
 
 export function loadNeondeckEnv(

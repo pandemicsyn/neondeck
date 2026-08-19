@@ -48,7 +48,7 @@ jobs:
           ref: ${{ github.event_name == 'workflow_dispatch' && inputs.release_ref || github.ref }}
 
       - name: Set up Node
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@v7
         with:
           node-version-file: .node-version
           package-manager-cache: false

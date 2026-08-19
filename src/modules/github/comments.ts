@@ -1,6 +1,10 @@
-import { createHash } from 'node:crypto';
 import * as v from 'valibot';
-import { encodePathSegment, githubFetch, githubGraphqlFetch } from './client';
+import {
+  encodePathSegment,
+  githubFetch,
+  githubGraphqlFetch,
+  githubTokenFingerprint,
+} from './client';
 import {
   githubIssueCommentApiResponseSchema,
   githubIssueCommentsApiResponseSchema,
@@ -24,11 +28,16 @@ import type { PullRequestEventFetchBudget } from './event-budget';
 const reviewSurfaceCacheTtlMs = 15_000;
 const reviewSurfaceCacheMaxEntries = 16;
 const reviewSurfaceCache = new Map<string, CachedReviewSurfaceThreads>();
+const reviewSurfaceRequestsInFlight = new Map<
+  string,
+  Promise<ReviewThreadsWithMetadata>
+>();
 const reviewSurfaceTargetEpochs = new Map<string, number>();
 
-type ReviewThreadsWithMetadata = {
+export type ReviewThreadsWithMetadata = {
   reviewThreads: GitHubPullRequestReviewThread[];
   truncated: boolean;
+  headSha: string | null;
 };
 
 type CachedReviewSurfaceThreads = {
@@ -167,6 +176,7 @@ export async function fetchPullRequestReviewThreadsWithMetadata(options: {
 }): Promise<{
   reviewThreads: GitHubPullRequestReviewThread[];
   truncated: boolean;
+  headSha: string | null;
 }> {
   return fetchReviewThreadsWithQuery(options, pullRequestReviewThreadsQuery);
 }
@@ -179,7 +189,7 @@ export async function fetchPullRequestReviewSurfaceThreadsWithMetadata(options: 
   signal?: AbortSignal;
 }): Promise<ReviewThreadsWithMetadata> {
   const targetKey = reviewSurfaceTargetKey(options);
-  const cacheKey = `${targetKey}\u0000${tokenFingerprint(options.token)}`;
+  const cacheKey = `${targetKey}\u0000${githubTokenFingerprint(options.token)}`;
   const cached = reviewSurfaceCache.get(cacheKey);
   if (cached && cached.expiresAt > Date.now()) {
     reviewSurfaceCache.delete(cacheKey);
@@ -188,11 +198,35 @@ export async function fetchPullRequestReviewSurfaceThreadsWithMetadata(options: 
   }
   if (cached) reviewSurfaceCache.delete(cacheKey);
 
+  if (!options.signal) {
+    const existing = reviewSurfaceRequestsInFlight.get(cacheKey);
+    if (existing) return existing;
+    const request = fetchAndCacheReviewSurfaceThreads(
+      options,
+      targetKey,
+      cacheKey,
+    ).finally(() => {
+      if (reviewSurfaceRequestsInFlight.get(cacheKey) === request) {
+        reviewSurfaceRequestsInFlight.delete(cacheKey);
+      }
+    });
+    reviewSurfaceRequestsInFlight.set(cacheKey, request);
+    return request;
+  }
+
+  return fetchAndCacheReviewSurfaceThreads(options, targetKey, cacheKey);
+}
+
+async function fetchAndCacheReviewSurfaceThreads(
+  options: Parameters<
+    typeof fetchPullRequestReviewSurfaceThreadsFreshWithMetadata
+  >[0],
+  targetKey: string,
+  cacheKey: string,
+) {
   const targetEpoch = reviewSurfaceTargetEpochs.get(targetKey) ?? 0;
-  const value = await fetchReviewThreadsWithQuery(
-    options,
-    pullRequestReviewSurfaceThreadsQuery,
-  );
+  const value =
+    await fetchPullRequestReviewSurfaceThreadsFreshWithMetadata(options);
   if ((reviewSurfaceTargetEpochs.get(targetKey) ?? 0) === targetEpoch) {
     storeReviewSurfaceThreads(cacheKey, {
       targetKey,
@@ -201,6 +235,19 @@ export async function fetchPullRequestReviewSurfaceThreadsWithMetadata(options: 
     });
   }
   return value;
+}
+
+export async function fetchPullRequestReviewSurfaceThreadsFreshWithMetadata(options: {
+  token: string;
+  owner: string;
+  repo: string;
+  number: number;
+  signal?: AbortSignal;
+}): Promise<ReviewThreadsWithMetadata> {
+  return fetchReviewThreadsWithQuery(
+    options,
+    pullRequestReviewSurfaceThreadsQuery,
+  );
 }
 
 export function invalidatePullRequestReviewSurfaceThreadCache(options: {
@@ -216,10 +263,16 @@ export function invalidatePullRequestReviewSurfaceThreadCache(options: {
   for (const [key, cached] of reviewSurfaceCache) {
     if (cached.targetKey === targetKey) reviewSurfaceCache.delete(key);
   }
+  for (const key of reviewSurfaceRequestsInFlight.keys()) {
+    if (key.startsWith(`${targetKey}\u0000`)) {
+      reviewSurfaceRequestsInFlight.delete(key);
+    }
+  }
 }
 
 export function clearPullRequestReviewSurfaceThreadCache() {
   reviewSurfaceCache.clear();
+  reviewSurfaceRequestsInFlight.clear();
   reviewSurfaceTargetEpochs.clear();
 }
 
@@ -252,10 +305,6 @@ function reviewSurfaceTargetKey(options: {
   ].join('\u0000');
 }
 
-function tokenFingerprint(token: string) {
-  return createHash('sha256').update(token).digest('base64url').slice(0, 16);
-}
-
 async function fetchReviewThreadsWithQuery(
   options: {
     token: string;
@@ -269,10 +318,12 @@ async function fetchReviewThreadsWithQuery(
 ): Promise<{
   reviewThreads: GitHubPullRequestReviewThread[];
   truncated: boolean;
+  headSha: string | null;
 }> {
   const threads: GitHubPullRequestReviewThread[] = [];
   let cursor: string | null = null;
   let truncated = false;
+  let headSha: string | null = null;
 
   const pageLimit = options.eventBudget ? 100 : 5;
   for (let page = 0; page < pageLimit; page += 1) {
@@ -294,12 +345,20 @@ async function fetchReviewThreadsWithQuery(
     const parsed = v.parse(githubReviewThreadsGraphqlResponseSchema, data);
     const pullRequest = parsed.data.repository?.pullRequest;
     if (!pullRequest) break;
+    const pageHeadSha = pullRequest.headRefOid ?? null;
+    if (headSha && pageHeadSha && pageHeadSha !== headSha) {
+      throw new Error(
+        `Pull request head changed from ${headSha} to ${pageHeadSha} while loading review threads.`,
+      );
+    }
+    headSha ??= pageHeadSha;
     for (const thread of pullRequest.reviewThreads.nodes ?? []) {
       const normalized = await normalizeReviewThread(
         options.token,
         thread,
         options.signal,
         options.eventBudget,
+        pageHeadSha,
       );
       if (!normalized) {
         truncated = true;
@@ -326,6 +385,7 @@ async function fetchReviewThreadsWithQuery(
 
   return {
     reviewThreads: threads,
+    headSha,
     truncated:
       truncated || threads.some((thread) => thread.commentsTruncated === true),
   };
@@ -353,6 +413,8 @@ export async function fetchPullRequestReviewThread(options: {
     options.token,
     thread,
     options.signal,
+    undefined,
+    thread.pullRequest?.headRefOid ?? null,
   );
   if (!normalized) {
     throw new Error(
@@ -367,6 +429,7 @@ async function normalizeReviewThread(
   thread: GitHubReviewThreadGraphqlNode,
   signal?: AbortSignal,
   eventBudget?: PullRequestEventFetchBudget,
+  expectedHeadSha?: string | null,
 ): Promise<GitHubPullRequestReviewThread | undefined> {
   if (
     eventBudget?.admit('review_threads', {
@@ -384,6 +447,7 @@ async function normalizeReviewThread(
     thread,
     signal,
     eventBudget,
+    expectedHeadSha,
   );
   return {
     id: thread.id,
@@ -407,6 +471,7 @@ async function fetchAllReviewThreadComments(
   thread: GitHubReviewThreadGraphqlNode,
   signal?: AbortSignal,
   eventBudget?: PullRequestEventFetchBudget,
+  expectedHeadSha?: string | null,
 ) {
   const comments: GitHubReviewThreadCommentGraphqlNode[] = [];
   let truncated = false;
@@ -446,6 +511,12 @@ async function fetchAllReviewThreadComments(
     );
     const node = parsed.data.node;
     if (!node?.comments) break;
+    const pageHeadSha = node.pullRequest?.headRefOid ?? null;
+    if (expectedHeadSha && pageHeadSha && pageHeadSha !== expectedHeadSha) {
+      throw new Error(
+        `Pull request head changed from ${expectedHeadSha} to ${pageHeadSha} while loading review thread comments.`,
+      );
+    }
     for (const comment of node.comments.nodes ?? []) {
       if (eventBudget?.admit('review_threads', comment) === false) {
         truncated = true;

@@ -2,6 +2,7 @@ import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { dashboardEventStreamPath } from '../shared/dashboard-events';
 import { publishConfigEvent, type ConfigChangeEvent } from './modules/config';
 import { createMemoryCandidate } from './modules/memory';
 
@@ -22,6 +23,127 @@ afterAll(async () => {
 });
 
 describe('app API safety routes', () => {
+  it('reads, updates, and resets Autopilot owner prompts', async () => {
+    const readResponse = await app.request(
+      'http://localhost/api/autopilot/prompts',
+      { headers: { host: 'localhost' } },
+    );
+    const initial = (await readResponse.json()) as {
+      data: {
+        prompts: Record<string, string>;
+        overrides: Record<string, string>;
+      };
+    };
+    expect(readResponse.status).toBe(200);
+    expect(initial.data.prompts['prepare-only']).toContain(
+      'private continuing Neondeck owner',
+    );
+
+    const updateResponse = await app.request(
+      'http://localhost/api/autopilot/prompts',
+      {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          host: 'localhost',
+          origin: 'http://localhost',
+        },
+        body: JSON.stringify({
+          mode: 'prepare-only',
+          prompt: 'Route prompt {{mode}}',
+        }),
+      },
+    );
+    expect(updateResponse.status).toBe(200);
+    expect(await updateResponse.json()).toMatchObject({
+      ok: true,
+      changed: true,
+      data: { overrides: { 'prepare-only': 'Route prompt {{mode}}' } },
+    });
+
+    const resetResponse = await app.request(
+      'http://localhost/api/autopilot/prompts',
+      {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          host: 'localhost',
+          origin: 'http://localhost',
+        },
+        body: JSON.stringify({ mode: 'prepare-only', prompt: null }),
+      },
+    );
+    expect(resetResponse.status).toBe(200);
+    expect(await resetResponse.json()).toMatchObject({
+      ok: true,
+      changed: true,
+      data: { overrides: {} },
+    });
+  });
+
+  it('reads, updates, and resets PR reviewer prompts', async () => {
+    const readResponse = await app.request(
+      'http://localhost/api/pr-review/prompts',
+      { headers: { host: 'localhost' } },
+    );
+    const initial = (await readResponse.json()) as {
+      data: {
+        prompts: Record<string, string>;
+        overrides: Record<string, string>;
+      };
+    };
+    expect(readResponse.status).toBe(200);
+    expect(initial.data.prompts['initial-review']).toContain(
+      'private Neondeck reviewer',
+    );
+
+    const updateResponse = await app.request(
+      'http://localhost/api/pr-review/prompts',
+      {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          host: 'localhost',
+          origin: 'http://localhost',
+        },
+        body: JSON.stringify({
+          kind: 'follow-up-reviewer',
+          prompt: 'Route reviewer prompt {{reviewContextDeliveryGuidance}}',
+        }),
+      },
+    );
+    expect(updateResponse.status).toBe(200);
+    expect(await updateResponse.json()).toMatchObject({
+      ok: true,
+      changed: true,
+      data: {
+        overrides: {
+          'follow-up-reviewer':
+            'Route reviewer prompt {{reviewContextDeliveryGuidance}}',
+        },
+      },
+    });
+
+    const resetResponse = await app.request(
+      'http://localhost/api/pr-review/prompts',
+      {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          host: 'localhost',
+          origin: 'http://localhost',
+        },
+        body: JSON.stringify({ kind: 'follow-up-reviewer', prompt: null }),
+      },
+    );
+    expect(resetResponse.status).toBe(200);
+    expect(await resetResponse.json()).toMatchObject({
+      ok: true,
+      changed: true,
+      data: { overrides: {} },
+    });
+  });
+
   it('serves safety policy over the local API', async () => {
     const response = await app.request('http://localhost/api/safety/policy', {
       headers: { host: 'localhost' },
@@ -40,8 +162,8 @@ describe('app API safety routes', () => {
           primitive: 'tool',
         }),
         expect.objectContaining({
-          id: 'fix-pr-ci',
-          primitive: 'workflow',
+          id: 'neondeck_autopilot_ci_fix_run',
+          primitive: 'action',
         }),
         expect.objectContaining({
           id: 'neondeck_autopilot_watch_status',
@@ -57,6 +179,10 @@ describe('app API safety routes', () => {
         }),
         expect.objectContaining({
           id: '/api/watches/:id/autopilot/message',
+          primitive: 'route',
+        }),
+        expect.objectContaining({
+          id: '/api/watches/:id/autopilot/approve',
           primitive: 'route',
         }),
       ]),
@@ -124,6 +250,32 @@ describe('app API safety routes', () => {
     );
 
     expect(response.status).toBe(404);
+  });
+
+  it('does not expose removed workflow run inspection routes', async () => {
+    const response = await app.request(
+      'http://localhost/api/workflows/runs/missing',
+      {
+        headers: { host: 'localhost' },
+      },
+    );
+
+    expect(response.status).toBe(404);
+  });
+
+  it('exposes Kilo summarization through the app-owned API', async () => {
+    const response = await app.request(
+      'http://localhost/api/kilo/sessions/summarize',
+      {
+        method: 'POST',
+        headers: { host: 'localhost', 'content-type': 'application/json' },
+        body: '{}',
+      },
+    );
+    const body = (await response.json()) as { action: string };
+
+    expect(response.status).toBe(404);
+    expect(body.action).toBe('summarize_kilo_session');
   });
 
   it('returns prepared-diff API validation errors as bad requests', async () => {
@@ -205,9 +357,12 @@ describe('app API safety routes', () => {
   });
 
   it('serves app events as one local server-sent event stream', async () => {
-    const response = await app.request('http://localhost/api/events', {
-      headers: { host: 'localhost' },
-    });
+    const response = await app.request(
+      `http://localhost${dashboardEventStreamPath}`,
+      {
+        headers: { host: 'localhost' },
+      },
+    );
 
     expect(response.status).toBe(200);
     expect(response.headers.get('content-type')).toContain('text/event-stream');
@@ -241,12 +396,15 @@ describe('app API safety routes', () => {
     publishConfigEvent(previousEvent);
     publishConfigEvent(missedEvent);
 
-    const response = await app.request('http://localhost/api/events', {
-      headers: {
-        host: 'localhost',
-        'last-event-id': previousEvent.id,
+    const response = await app.request(
+      `http://localhost${dashboardEventStreamPath}`,
+      {
+        headers: {
+          host: 'localhost',
+          'last-event-id': previousEvent.id,
+        },
       },
-    });
+    );
 
     const reader = response.body?.getReader();
     expect(reader).toBeDefined();

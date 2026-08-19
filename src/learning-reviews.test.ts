@@ -8,11 +8,13 @@ import {
 } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { updateAgentModels, updateLearningConfig } from './modules/config';
 import {
   completeLearningReviewFromModelOutput,
+  listPendingLearningReviewAdmissionIntents,
   listLearningReviews,
+  listRecoverableLearningReviews,
   prepareConversationReflection,
   prepareMemoryCurationReview,
   preparePrBatchLearningReview,
@@ -28,6 +30,7 @@ import {
   decideMemoryCandidate,
   listMemories,
   listMemoryCandidates,
+  rewriteMemory,
   upsertMemory,
 } from './modules/memory';
 import { createChatSession } from './modules/sessions';
@@ -39,6 +42,8 @@ import {
   restoreSkillPatchCandidate,
 } from './modules/learning/skill-patches';
 import { runtimePaths } from './runtime-home';
+import { learningPrompt } from './modules/learning/reviews/context';
+import { openDb } from './lib/sqlite';
 
 const tempRoots: string[] = [];
 
@@ -51,6 +56,22 @@ afterEach(async () => {
 });
 
 describe('learning review orchestration', () => {
+  it('keeps the explicit semantic scope and curation policy in model context', () => {
+    const prompt = learningPrompt('curation', {}, 'auto');
+    expect(prompt).toContain(
+      'Use user scope only for durable user preferences.',
+    );
+    expect(prompt).toContain(
+      'Use local scope for machine, tool, environment, and provider facts.',
+    );
+    expect(prompt).toContain(
+      'Use project scope for repository or product conventions',
+    );
+    expect(prompt).toContain(
+      'For curation, prefer rewrites, merges, and archives',
+    );
+  });
+
   it('creates review-mode memory candidates from conversation reflection output', async () => {
     const paths = runtimePaths(await tempHome());
     await updateLearningConfig({ memoryWriteMode: 'review' }, paths);
@@ -83,34 +104,36 @@ describe('learning review orchestration', () => {
       thinkingLevel: 'low',
     });
     if (!prepared.ok) throw new Error(prepared.message);
+    const modelOutput = {
+      summary: 'User preference is durable.',
+      memoryActions: [
+        {
+          action: 'upsert' as const,
+          scope: 'user' as const,
+          key: 'summary-style',
+          value: 'Prefer terse PR summaries.',
+          reason: 'Repeated summary preference in conversation.',
+        },
+      ],
+    };
 
     await expect(
-      completeLearningReviewFromModelOutput(
-        prepared,
-        {
-          summary: 'User preference is durable.',
-          memoryActions: [
-            {
-              action: 'upsert',
-              scope: 'user',
-              key: 'summary-style',
-              value: 'Prefer terse PR summaries.',
-              reason: 'Repeated summary preference in conversation.',
-            },
-          ],
-        },
-        paths,
-      ),
+      completeLearningReviewFromModelOutput(prepared, modelOutput, paths),
     ).resolves.toMatchObject({
       ok: true,
       changed: true,
       candidates: [expect.objectContaining({ action: 'upsert' })],
       applied: [],
     });
-
     await expect(
-      listMemoryCandidates({ status: 'proposed' }, paths),
-    ).resolves.toMatchObject({
+      completeLearningReviewFromModelOutput(prepared, modelOutput, paths),
+    ).resolves.toMatchObject({ ok: true });
+
+    const candidateState = await listMemoryCandidates(
+      { status: 'proposed' },
+      paths,
+    );
+    expect(candidateState).toMatchObject({
       candidates: [
         expect.objectContaining({
           action: 'upsert',
@@ -119,6 +142,7 @@ describe('learning review orchestration', () => {
         }),
       ],
     });
+    expect(candidateState.candidates).toHaveLength(1);
     await expect(listMemories({}, paths)).resolves.toMatchObject({
       memories: [],
     });
@@ -183,6 +207,12 @@ describe('learning review orchestration', () => {
       paths,
     );
     if (!prepared.ok) throw new Error(prepared.message);
+    expect(listRecoverableLearningReviews(paths)).toEqual([
+      expect.objectContaining({
+        review: expect.objectContaining({ id: prepared.reviewId }),
+        prepared,
+      }),
+    ]);
 
     expect(prepared.allowedMemoryIds).toContain(
       (repoA as { memory: { id: string } }).memory.id,
@@ -320,6 +350,78 @@ describe('learning review orchestration', () => {
     });
   });
 
+  it('replays the originally applied memory result after a step checkpoint crash', async () => {
+    const paths = runtimePaths(await tempHome());
+    await updateLearningConfig({ memoryWriteMode: 'auto' }, paths);
+    const session = await createChatSession(
+      {
+        title: 'Replay-safe learning',
+        linkedRepoId: 'repo-a',
+        summary: 'Repo A uses npm run check.',
+        summarySource: 'manual',
+      },
+      paths,
+    );
+    const prepared = await prepareConversationReflection(
+      {
+        sessionId: (session as { session: { id: string } }).session.id,
+        trigger: 'manual',
+      },
+      paths,
+    );
+    if (!prepared.ok) throw new Error(prepared.message);
+    const output = {
+      summary: 'Repo A has a durable validation command.',
+      memoryActions: [
+        {
+          action: 'upsert' as const,
+          scope: 'project' as const,
+          repoId: 'repo-a',
+          key: 'validation-command',
+          value: 'npm run check',
+          reason: 'Repeated project convention.',
+        },
+      ],
+    };
+
+    await expect(
+      completeLearningReviewFromModelOutput(prepared, output, paths, {
+        runEffect: async (name, effect) => {
+          const result = await effect();
+          if (name === 'memory-action:0') {
+            throw new Error('crash before Flue step checkpoint');
+          }
+          return result;
+        },
+      }),
+    ).rejects.toThrow('crash before Flue step checkpoint');
+
+    await updateLearningConfig({ memoryWriteMode: 'review' }, paths);
+
+    await expect(
+      completeLearningReviewFromModelOutput(prepared, output, paths),
+    ).resolves.toMatchObject({
+      ok: true,
+      changed: true,
+      applied: [
+        expect.objectContaining({ action: 'memory_learn', changed: true }),
+      ],
+      message: expect.stringContaining('1 applied action'),
+    });
+    await expect(
+      listMemories(
+        {
+          scope: 'project',
+          repoId: 'repo-a',
+          key: 'validation-command',
+        },
+        paths,
+      ),
+    ).resolves.toMatchObject({
+      memories: [expect.objectContaining({ value: 'npm run check' })],
+    });
+  });
+
   it('prepares manual reviews for valid sessions outside the recent state list', async () => {
     const paths = runtimePaths(await tempHome());
     const first = await createChatSession(
@@ -404,6 +506,188 @@ describe('learning review orchestration', () => {
     });
   });
 
+  it('rejects stale rewrite, archive, and merge proposals from prepared evidence', async () => {
+    const paths = runtimePaths(await tempHome());
+    await updateLearningConfig(
+      { memoryCurationMode: 'auto', memoryWriteMode: 'auto' },
+      paths,
+    );
+    const rewriteTarget = await upsertMemory(
+      { scope: 'local', key: 'rewrite-target', value: 'old rewrite' },
+      paths,
+    );
+    const archiveTarget = await upsertMemory(
+      { scope: 'local', key: 'archive-target', value: 'old archive' },
+      paths,
+    );
+    const mergeTarget = await upsertMemory(
+      { scope: 'local', key: 'merge-target', value: 'merge target' },
+      paths,
+    );
+    const mergeSource = await upsertMemory(
+      { scope: 'local', key: 'merge-source', value: 'merge source' },
+      paths,
+    );
+    const ids = {
+      rewrite: (rewriteTarget as { memory: { id: string } }).memory.id,
+      archive: (archiveTarget as { memory: { id: string } }).memory.id,
+      mergeTarget: (mergeTarget as { memory: { id: string } }).memory.id,
+      mergeSource: (mergeSource as { memory: { id: string } }).memory.id,
+    };
+    const prepared = await prepareMemoryCurationReview(
+      { trigger: 'manual', mode: 'auto' },
+      paths,
+    );
+    if (!prepared.ok) throw new Error(prepared.message);
+
+    await rewriteMemory({ id: ids.rewrite, value: 'current rewrite' }, paths);
+    await rewriteMemory({ id: ids.archive, value: 'current archive' }, paths);
+    await rewriteMemory(
+      { id: ids.mergeSource, value: 'current merge source' },
+      paths,
+    );
+
+    await expect(
+      completeLearningReviewFromModelOutput(
+        prepared,
+        {
+          summary: 'Attempted stale memory maintenance.',
+          memoryActions: [
+            {
+              action: 'rewrite',
+              memoryId: ids.rewrite,
+              value: 'review rewrite',
+            },
+            { action: 'archive', memoryId: ids.archive },
+            {
+              action: 'merge',
+              targetId: ids.mergeTarget,
+              sourceIds: [ids.mergeSource],
+            },
+          ],
+        },
+        paths,
+      ),
+    ).resolves.toMatchObject({
+      ok: true,
+      changed: false,
+      applied: [],
+      skipped: [
+        expect.objectContaining({ requires: ['memory-revision'] }),
+        expect.objectContaining({ requires: ['memory-revision'] }),
+        expect.objectContaining({ requires: ['memory-revision'] }),
+      ],
+    });
+    await expect(
+      listMemories({ includeArchived: true }, paths),
+    ).resolves.toMatchObject({
+      memories: expect.arrayContaining([
+        expect.objectContaining({ id: ids.rewrite, value: 'current rewrite' }),
+        expect.objectContaining({ id: ids.archive, status: 'active' }),
+        expect.objectContaining({
+          id: ids.mergeSource,
+          status: 'active',
+          value: 'current merge source',
+        }),
+      ]),
+    });
+  });
+
+  it('keeps delayed candidates proposed when reviewed memory changed', async () => {
+    const paths = runtimePaths(await tempHome());
+    await updateLearningConfig(
+      { memoryCurationMode: 'review', memoryWriteMode: 'review' },
+      paths,
+    );
+    const created = await upsertMemory(
+      { scope: 'local', key: 'candidate-target', value: 'reviewed value' },
+      paths,
+    );
+    const memoryId = (created as { memory: { id: string } }).memory.id;
+    const prepared = await prepareMemoryCurationReview(
+      { trigger: 'manual', mode: 'review' },
+      paths,
+    );
+    if (!prepared.ok) throw new Error(prepared.message);
+    const completed = await completeLearningReviewFromModelOutput(
+      prepared,
+      {
+        summary: 'Proposed archiving reviewed guidance.',
+        memoryActions: [{ action: 'archive', memoryId }],
+      },
+      paths,
+    );
+    const candidateId = String(
+      (completed as { memoryCandidates: Array<{ id: string }> })
+        .memoryCandidates[0]?.id,
+    );
+    await rewriteMemory({ id: memoryId, value: 'changed after review' }, paths);
+
+    await expect(
+      decideMemoryCandidate(
+        { id: candidateId, decision: 'apply', reason: 'approve' },
+        paths,
+      ),
+    ).resolves.toMatchObject({
+      ok: false,
+      action: 'memory_archive',
+      requires: ['memory-revision'],
+    });
+    await expect(
+      listMemoryCandidates({ status: 'proposed' }, paths),
+    ).resolves.toMatchObject({
+      candidates: [expect.objectContaining({ id: candidateId })],
+    });
+  });
+
+  it('rejects an upsert collision created after the review snapshot', async () => {
+    const paths = runtimePaths(await tempHome());
+    await updateLearningConfig({ memoryWriteMode: 'auto' }, paths);
+    const session = await createChatSession(
+      { title: 'Collision review' },
+      paths,
+    );
+    const prepared = await prepareConversationReflection(
+      {
+        sessionId: (session as { session: { id: string } }).session.id,
+        trigger: 'manual',
+      },
+      paths,
+    );
+    if (!prepared.ok) throw new Error(prepared.message);
+    await upsertMemory(
+      { scope: 'local', key: 'new-after-review', value: 'current value' },
+      paths,
+    );
+
+    await expect(
+      completeLearningReviewFromModelOutput(
+        prepared,
+        {
+          summary: 'Attempted a colliding upsert.',
+          memoryActions: [
+            {
+              action: 'upsert',
+              scope: 'local',
+              key: 'new-after-review',
+              value: 'stale review value',
+            },
+          ],
+        },
+        paths,
+      ),
+    ).resolves.toMatchObject({
+      ok: true,
+      changed: false,
+      skipped: [expect.objectContaining({ requires: ['memory-revision'] })],
+    });
+    await expect(
+      listMemories({ scope: 'local', key: 'new-after-review' }, paths),
+    ).resolves.toMatchObject({
+      memories: [expect.objectContaining({ value: 'current value' })],
+    });
+  });
+
   it('bounds model-proposed memory actions before creating candidates', async () => {
     const paths = runtimePaths(await tempHome());
     await updateLearningConfig({ memoryWriteMode: 'review' }, paths);
@@ -480,14 +764,26 @@ describe('learning review orchestration', () => {
         throw new Error('admission failed');
       },
     });
+    expect(listPendingLearningReviewAdmissionIntents(paths, sessionId)).toEqual(
+      [
+        expect.objectContaining({
+          kind: 'conversation',
+          status: 'pending',
+          input: expect.objectContaining({ turnCount: 2 }),
+        }),
+      ],
+    );
     await recordConversationTurnAndMaybeQueueLearning(sessionId, paths, {
       async invokeConversationReview(input) {
         attempts.push(input.turnCount ?? 0);
-        return { runId: 'run-retry' };
+        return learningReviewAdmission('run-retry');
       },
     });
 
-    expect(attempts).toEqual([2, 3]);
+    expect(attempts).toEqual([2, 2]);
+    expect(listPendingLearningReviewAdmissionIntents(paths, sessionId)).toEqual(
+      [],
+    );
   });
 
   it('fails closed when learning config cannot be parsed', async () => {
@@ -534,31 +830,31 @@ describe('learning review orchestration', () => {
     await recordConversationTurnAndMaybeQueueLearning(sessionId, paths, {
       async invokeConversationReview(input) {
         conversationCalls.push(input);
-        return { runId: 'run-reflect-1' };
+        return learningReviewAdmission('run-reflect-1');
       },
       async invokeCurationReview(input) {
         curationCalls.push(input);
-        return { runId: 'run-curate-1' };
+        return learningReviewAdmission('run-curate-1');
       },
     });
     await recordConversationTurnAndMaybeQueueLearning(sessionId, paths, {
       async invokeConversationReview(input) {
         conversationCalls.push(input);
-        return { runId: 'run-reflect-2' };
+        return learningReviewAdmission('run-reflect-2');
       },
       async invokeCurationReview(input) {
         curationCalls.push(input);
-        return { runId: 'run-curate-2' };
+        return learningReviewAdmission('run-curate-2');
       },
     });
     await recordConversationTurnAndMaybeQueueLearning(sessionId, paths, {
       async invokeConversationReview(input) {
         conversationCalls.push(input);
-        return { runId: 'run-reflect-3' };
+        return learningReviewAdmission('run-reflect-3');
       },
       async invokeCurationReview(input) {
         curationCalls.push(input);
-        return { runId: 'run-curate-3' };
+        return learningReviewAdmission('run-curate-3');
       },
     });
 
@@ -575,6 +871,106 @@ describe('learning review orchestration', () => {
         turnCount: 3,
       }),
     ]);
+  });
+
+  it('reserves a due conversation cadence before awaiting admission', async () => {
+    const paths = runtimePaths(await tempHome());
+    await updateLearningConfig(
+      {
+        conversationReviewTurnInterval: 2,
+        memoryCurationEnabled: false,
+      },
+      paths,
+    );
+    const session = await createChatSession(
+      { title: 'Concurrent cadence' },
+      paths,
+    );
+    const sessionId = (session as { session: { id: string } }).session.id;
+    await recordConversationTurnAndMaybeQueueLearning(
+      sessionId,
+      paths,
+      {},
+      'submission-before-threshold',
+    );
+
+    let releaseAdmission: (() => void) | undefined;
+    const admission = new Promise<void>((resolve) => {
+      releaseAdmission = resolve;
+    });
+    const firstInvoke = vi.fn<
+      () => Promise<ReturnType<typeof learningReviewAdmission>>
+    >(async () => {
+      await admission;
+      return learningReviewAdmission('run-concurrent');
+    });
+    const secondInvoke = vi.fn<
+      () => Promise<ReturnType<typeof learningReviewAdmission>>
+    >(async () => learningReviewAdmission('run-duplicate'));
+    const first = recordConversationTurnAndMaybeQueueLearning(
+      sessionId,
+      paths,
+      { invokeConversationReview: firstInvoke },
+      'submission-at-threshold',
+    );
+    await vi.waitFor(() => expect(firstInvoke).toHaveBeenCalledOnce());
+
+    await expect(
+      recordConversationTurnAndMaybeQueueLearning(
+        sessionId,
+        paths,
+        { invokeConversationReview: secondInvoke },
+        'submission-during-admission',
+      ),
+    ).resolves.toMatchObject({ queued: [], turnCount: 3 });
+    expect(secondInvoke).not.toHaveBeenCalled();
+
+    releaseAdmission?.();
+    await expect(first).resolves.toMatchObject({
+      queued: [expect.objectContaining({ reviewId: 'review-run-concurrent' })],
+      turnCount: 2,
+    });
+  });
+
+  it('records each settled conversation submission only once', async () => {
+    const paths = runtimePaths(await tempHome());
+    await updateLearningConfig(
+      {
+        conversationReviewTurnInterval: 10,
+        memoryCurationEnabled: false,
+      },
+      paths,
+    );
+    const session = await createChatSession(
+      { title: 'Idempotent cadence' },
+      paths,
+    );
+    const sessionId = (session as { session: { id: string } }).session.id;
+
+    await expect(
+      recordConversationTurnAndMaybeQueueLearning(
+        sessionId,
+        paths,
+        {},
+        'submission-1',
+      ),
+    ).resolves.toMatchObject({ turnCount: 1 });
+    await expect(
+      recordConversationTurnAndMaybeQueueLearning(
+        sessionId,
+        paths,
+        {},
+        'submission-1',
+      ),
+    ).resolves.toMatchObject({ duplicate: true, turnCount: 0 });
+    await expect(
+      recordConversationTurnAndMaybeQueueLearning(
+        sessionId,
+        paths,
+        {},
+        'submission-2',
+      ),
+    ).resolves.toMatchObject({ turnCount: 2 });
   });
 
   it('records handled PR events idempotently and queues threshold reviews', async () => {
@@ -595,7 +991,7 @@ describe('learning review orchestration', () => {
       {
         async invokePrBatchReview(input) {
           queued.push(input);
-          return { runId: 'run-pr-review' };
+          return learningReviewAdmission('run-pr-review');
         },
       },
     );
@@ -624,7 +1020,7 @@ describe('learning review orchestration', () => {
       {
         async invokePrBatchReview(input) {
           queued.push(input);
-          return { runId: 'run-pr-review' };
+          return learningReviewAdmission('run-pr-review');
         },
       },
     );
@@ -638,7 +1034,7 @@ describe('learning review orchestration', () => {
     expect(second).toMatchObject({
       recorded: true,
       handledCountSinceReview: 2,
-      queued: [expect.objectContaining({ runId: 'run-pr-review' })],
+      queued: [expect.objectContaining({ submissionId: 'run-pr-review' })],
     });
     expect(queued).toEqual([expect.objectContaining({ trigger: 'threshold' })]);
     expect((queued[0] as { repoId?: unknown }).repoId).toBeUndefined();
@@ -673,7 +1069,7 @@ describe('learning review orchestration', () => {
       {
         async invokePrBatchReview(input) {
           queued.push(input);
-          return { runId: 'run-pr-review' };
+          return learningReviewAdmission('run-pr-review');
         },
       },
     );
@@ -681,7 +1077,7 @@ describe('learning review orchestration', () => {
     expect(second).toMatchObject({
       recorded: true,
       handledCountSinceReview: 2,
-      queued: [expect.objectContaining({ runId: 'run-pr-review' })],
+      queued: [expect.objectContaining({ submissionId: 'run-pr-review' })],
     });
     expect(queued).toEqual([expect.objectContaining({ trigger: 'threshold' })]);
     expect((queued[0] as { repoId?: unknown }).repoId).toBeUndefined();
@@ -733,7 +1129,7 @@ describe('learning review orchestration', () => {
       {
         async invokePrBatchReview(input) {
           attempts.push(input);
-          return { runId: 'run-pr-review-retry' };
+          return learningReviewAdmission('run-pr-review-retry');
         },
       },
     );
@@ -741,7 +1137,9 @@ describe('learning review orchestration', () => {
     expect(attempts).toHaveLength(2);
     expect(retry).toMatchObject({
       recorded: true,
-      queued: [expect.objectContaining({ runId: 'run-pr-review-retry' })],
+      queued: [
+        expect.objectContaining({ submissionId: 'run-pr-review-retry' }),
+      ],
     });
   });
 
@@ -773,7 +1171,7 @@ describe('learning review orchestration', () => {
       {
         async invokePrBatchReview(input) {
           queued.push(input);
-          return { runId: 'run-pr-review-1' };
+          return learningReviewAdmission('run-pr-review-1');
         },
       },
     );
@@ -801,7 +1199,7 @@ describe('learning review orchestration', () => {
       {
         async invokePrBatchReview(input) {
           queued.push(input);
-          return { runId: 'run-pr-review-2' };
+          return learningReviewAdmission('run-pr-review-2');
         },
       },
     );
@@ -862,7 +1260,7 @@ describe('learning review orchestration', () => {
       {
         async invokePrBatchReview(input) {
           queued.push(input);
-          return { runId: 'run-pr-review-kilo' };
+          return learningReviewAdmission('run-pr-review-kilo');
         },
       },
     );
@@ -870,7 +1268,7 @@ describe('learning review orchestration', () => {
     expect(result).toMatchObject({
       recorded: true,
       duplicate: false,
-      queued: [expect.objectContaining({ runId: 'run-pr-review-kilo' })],
+      queued: [expect.objectContaining({ submissionId: 'run-pr-review-kilo' })],
     });
     expect(queued).toEqual([expect.objectContaining({ trigger: 'threshold' })]);
   });
@@ -1352,6 +1750,77 @@ describe('learning review orchestration', () => {
     });
   });
 
+  it('rejects skill proposals when guidance changed after review preparation', async () => {
+    const paths = runtimePaths(await tempHome());
+    await writeUserSkill(paths.home, 'neon-pr-review');
+    await updateLearningConfig({ skillWriteMode: 'review' }, paths);
+    await recordHandledPrEventAndMaybeQueueLearning(
+      {
+        eventType: 'review-feedback-workflow-completed',
+        source: 'workflow',
+        sourceId: 'neondeck#99:review-feedback-workflow-completed:run-1',
+        repoId: 'neondeck',
+        repoFullName: 'pandemicsyn/neondeck',
+        prNumber: 99,
+        summary: 'neon-pr-review guidance may need a durable update.',
+      },
+      paths,
+    );
+    const prepared = await preparePrBatchLearningReview(
+      { trigger: 'manual' },
+      paths,
+    );
+    if (!prepared.ok) throw new Error(prepared.message);
+    const snippets = (
+      prepared.inputSummary as {
+        skillSnippets: Array<{ id: string; path: string }>;
+      }
+    ).skillSnippets;
+    const reviewSkill = snippets.find((skill) => skill.id === 'neon-pr-review');
+    if (!reviewSkill) {
+      throw new Error('Expected the neon-pr-review skill snapshot.');
+    }
+    const current = await readFile(reviewSkill.path, 'utf8');
+    await writeFile(
+      reviewSkill.path,
+      `${current}\n\n## Concurrent update\n\nNewer guidance.\n`,
+      'utf8',
+    );
+
+    const result = await completeLearningReviewFromModelOutput(
+      prepared,
+      {
+        summary: 'A procedural update was proposed against stale evidence.',
+        memoryActions: [],
+        skillPatches: [
+          {
+            skillId: 'neon-pr-review',
+            operation: {
+              type: 'append-section',
+              heading: 'Learning Guidance',
+              content: '- Apply the proposed guidance.\n',
+            },
+          },
+        ],
+      },
+      paths,
+    );
+
+    expect(result).toMatchObject({
+      ok: true,
+      changed: false,
+      skipped: [
+        expect.objectContaining({
+          ok: false,
+          requires: ['stale-skill-content'],
+        }),
+      ],
+    });
+    await expect(listSkillPatchCandidates({}, paths)).resolves.toMatchObject({
+      candidates: [],
+    });
+  });
+
   it('proposes, applies, and rejects skill patch candidates for user runtime skills', async () => {
     const paths = runtimePaths(await tempHome());
     await writeUserSkill(paths.home, 'test-skill');
@@ -1391,6 +1860,15 @@ describe('learning review orchestration', () => {
     expect(concurrentApplyResults.filter((result) => !result.ok)).toHaveLength(
       1,
     );
+    const appliedResult = concurrentApplyResults.find((result) => result.ok);
+    await expect(
+      applySkillPatchCandidate({ id: candidateId }, paths, {
+        idempotent: true,
+      }),
+    ).resolves.toEqual(appliedResult);
+    await expect(
+      readFile(join(paths.home, 'skills', 'test-skill', 'SKILL.md'), 'utf8'),
+    ).resolves.toContain('Run npm run check before summarizing local changes.');
     await expect(
       restoreSkillPatchCandidate(
         {
@@ -1489,6 +1967,69 @@ describe('learning review orchestration', () => {
         expect.objectContaining({ id: String(rejectId), status: 'rejected' }),
       ]),
     });
+  });
+
+  it('finalizes an audited skill patch after a crash following file replacement', async () => {
+    const paths = runtimePaths(await tempHome());
+    await writeUserSkill(paths.home, 'journaled-skill');
+    const skillPath = join(paths.home, 'skills', 'journaled-skill', 'SKILL.md');
+    const proposed = await proposeSkillPatch(
+      {
+        skillId: 'journaled-skill',
+        summary: 'Add journaled recovery guidance.',
+        operation: {
+          type: 'append-section',
+          heading: 'Journaled recovery',
+          content: '- Recover the audit after atomic replacement.\n',
+        },
+      },
+      paths,
+    );
+    if (!proposed.ok || !('candidate' in proposed)) {
+      throw new Error(proposed.message);
+    }
+    const candidate = proposed.candidate as unknown as {
+      id: string;
+      patch: { beforeContent: string; afterContent: string };
+    };
+    const database = openDb(paths.neondeckDatabase);
+    try {
+      database
+        .prepare(
+          `INSERT INTO app_metadata (key, value, updated_at) VALUES (?, ?, ?);`,
+        )
+        .run(
+          `skill-patch-apply-intent:${candidate.id}`,
+          JSON.stringify({
+            source: 'neon',
+            reason: 'Recovered review effect.',
+          }),
+          new Date().toISOString(),
+        );
+    } finally {
+      database.close();
+    }
+    await writeFile(skillPath, candidate.patch.afterContent, 'utf8');
+
+    await expect(
+      applySkillPatchCandidate({ id: candidate.id }, paths, {
+        source: 'neon',
+        idempotent: true,
+      }),
+    ).resolves.toMatchObject({ ok: true, changed: true });
+    await expect(
+      restoreSkillPatchCandidate(
+        {
+          id: candidate.id,
+          confirm: true,
+          reason: 'Verify the recovered audit can restore.',
+        },
+        paths,
+      ),
+    ).resolves.toMatchObject({ ok: true, changed: true });
+    await expect(readFile(skillPath, 'utf8')).resolves.toBe(
+      candidate.patch.beforeContent,
+    );
   });
 
   it('keeps applied skill content intact when an atomic restore cannot be staged', async () => {
@@ -1671,6 +2212,16 @@ async function tempHome() {
   const home = await mkdtemp(join(tmpdir(), 'neondeck-learning-'));
   tempRoots.push(home);
   return home;
+}
+
+function learningReviewAdmission(submissionId: string) {
+  return {
+    ok: true as const,
+    reviewId: `review-${submissionId}`,
+    agentId: `learning-review:review-${submissionId}`,
+    submissionId,
+    activityUrl: `/activity?submissionId=${submissionId}`,
+  };
 }
 
 async function writeUserSkill(home: string, id: string) {

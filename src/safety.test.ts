@@ -26,7 +26,7 @@ describe('safety policy', () => {
     expect(policy).toMatchObject({
       ok: true,
       action: 'safety_policy_read',
-      version: 6,
+      version: 7,
     });
     expect(policy.summary.destructiveMutation).toBeGreaterThanOrEqual(4);
     expect(policy.summary.hostExecution).toBeGreaterThanOrEqual(2);
@@ -107,6 +107,14 @@ describe('safety policy', () => {
           unattended: true,
         }),
         expect.objectContaining({
+          id: 'neondeck_pr_review_draft_comment_update',
+          primitive: 'tool',
+          class: 'safe-mutation',
+          requiresConfirmation: false,
+          audited: true,
+          auditTarget: 'pr_review_drafts/pr_review_draft_comments',
+        }),
+        expect.objectContaining({
           id: 'neondeck_config_update_execution_policy',
           primitive: 'action',
           class: 'safe-mutation',
@@ -169,5 +177,10 @@ describe('safety policy', () => {
       defaultLocalAccess: true,
       exeDevPlanned: true,
     });
+    expect(
+      policy.entries.some(
+        (entry) => (entry.primitive as string) === 'workflow',
+      ),
+    ).toBe(false);
   });
 });

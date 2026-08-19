@@ -1,5 +1,5 @@
 /* eslint-disable no-unused-vars */
-import { defineAction, defineTool, type JsonValue } from '@flue/runtime';
+import { defineTool, type JsonValue } from '@flue/runtime';
 import { createHash } from 'node:crypto';
 import * as v from 'valibot';
 import { openDb, rollbackQuietly } from '../../lib/sqlite';
@@ -235,6 +235,9 @@ export function watermarksFromEventState(
     categoryWatermark(watchId, 'check_suites', latestSuiteUpdate, {
       total: checkSuites.length,
       truncated: state.checkSuitesTruncated ?? false,
+      ...(state.checkSuitesUnavailableReason
+        ? { unavailableReason: state.checkSuitesUnavailableReason }
+        : {}),
       suiteIds: checkSuites.map((suite) => suite.id),
       failingSuiteIds: checkSuites
         .filter((suite) => isFailingConclusion(suite.conclusion))
@@ -247,6 +250,9 @@ export function watermarksFromEventState(
     categoryWatermark(watchId, 'check_runs', latestRunUpdate, {
       total: checkRuns.length,
       truncated: state.checkRunsTruncated ?? false,
+      ...(state.checkRunsUnavailableReason
+        ? { unavailableReason: state.checkRunsUnavailableReason }
+        : {}),
       runIds: checkRuns.map((run) => run.id),
       failingRunIds: checkRuns
         .filter((run) => isFailingConclusion(run.conclusion))

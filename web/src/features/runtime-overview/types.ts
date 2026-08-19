@@ -12,7 +12,7 @@ import type {
   RuntimeStatus,
   SafetyPolicy,
   ScheduledTask,
-  WorkflowObservability,
+  ActivityObservability,
   WorktreesResponse,
 } from '../../api';
 
@@ -22,7 +22,7 @@ export type RuntimeOverviewConfig = {
   skillLimit: number;
   memoryLimit: number;
   notificationLimit: number;
-  workflowEventLimit: number;
+  activityEventLimit: number;
   repoEditLimit: number;
   mcpLimit: number;
 };
@@ -39,7 +39,7 @@ export type RuntimeSnapshot = {
   mcpServers: McpServersResponse;
   mcpApprovals: McpApprovalsResponse;
   safety: SafetyPolicy;
-  workflows: WorkflowObservability;
+  activity: ActivityObservability;
   kiloTasks: KiloTasksResponse;
   repoEditEvents: RepoEditEventsResponse;
   worktrees: WorktreesResponse;
@@ -61,7 +61,7 @@ export const runtimeOverviewDefaultConfig = {
   skillLimit: 5,
   memoryLimit: 5,
   notificationLimit: 5,
-  workflowEventLimit: 6,
+  activityEventLimit: 6,
   repoEditLimit: 5,
   mcpLimit: 5,
 };

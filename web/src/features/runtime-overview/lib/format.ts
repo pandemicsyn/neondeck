@@ -9,7 +9,7 @@ import type {
   RuntimeStatusCheck,
   SafetyPolicy,
   SafetyPolicyEntry,
-  WorkflowObservability,
+  ActivityObservability,
   WorktreeRecord,
 } from '../../../api';
 import type { SetupStep } from '../types';
@@ -317,13 +317,13 @@ export function emptySafetyPolicy(fetchedAt: string): SafetyPolicy {
   };
 }
 
-export function emptyWorkflows(): WorkflowObservability {
+export function emptyActivity(): ActivityObservability {
   return {
     ok: true,
-    action: 'workflow_observability_read',
-    activeRuns: [],
+    action: 'activity_observability_read',
+    activeSubmissions: [],
     recentFailures: [],
-    recentData: [],
+    recentSettlements: [],
     recentLogs: [],
     recentTools: [],
     recentOperations: [],

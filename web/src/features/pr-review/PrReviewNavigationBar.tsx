@@ -289,7 +289,10 @@ function navigationPositionText({
   status: string | null;
   total: number;
 }) {
-  const label = reviewNavigationKindLabel(kind);
+  const label =
+    kind === 'attention' && currentTarget?.kind === 'attention'
+      ? `${reviewNavigationKindLabel(currentTarget.attentionKind)} attention`
+      : reviewNavigationKindLabel(kind);
   if (isBusy) return status ?? `Loading the next ${label}.`;
   if (total === 0) {
     if (kind === 'hunk' && canMove) {
@@ -307,5 +310,7 @@ function navigationPositionText({
   const boundaryText = boundary
     ? ` · ${boundary === 'start' ? 'start boundary' : 'end boundary'}`
     : '';
-  return `${label} · ${position}${boundaryText}${status ? ` · ${status}` : ''}`;
+  const statusText =
+    status && status !== `${boundary} boundary` ? ` · ${status}` : '';
+  return `${label} · ${position}${boundaryText}${statusText}`;
 }

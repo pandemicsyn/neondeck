@@ -22,7 +22,9 @@ import {
   postGitHubPrThreadReply,
   postGitHubPrThreadResolution,
   putGitHubPrReviewDraft,
+  ApiError,
   type GitHubPrReviewDraft,
+  type GitHubPrReviewSubmitResponse,
   type GitHubPullRequest,
   type GitHubPullRequestReviewThread,
 } from '../../api';
@@ -315,6 +317,28 @@ export function useGitHubPrReviewMutations(pr: GitHubPullRequest) {
   const updateDraftCache = (draft: GitHubPrReviewDraft | null) => {
     queryClient.setQueryData(prReviewQueryKeys.draft(pr), draft);
   };
+  const reconcileSubmittedReview = async (submittedDraftId: string | null) => {
+    const queryKey = prReviewQueryKeys.draft(pr);
+    await queryClient.cancelQueries({
+      exact: true,
+      queryKey,
+    });
+    const liveDraft = await getGitHubPrReviewDraft({
+      repo: pr.repo,
+      number: pr.number,
+    }).catch(() => null);
+    queryClient.setQueryData<GitHubPrReviewDraft | null>(queryKey, (current) =>
+      current?.status === 'draft' &&
+      submittedDraftId !== null &&
+      current.id !== submittedDraftId
+        ? current
+        : liveDraft,
+    );
+    await Promise.all([
+      invalidateThreads(),
+      invalidateSubmittedReviewQueries(queryClient, pr),
+    ]);
+  };
   const invalidateThreads = () =>
     queryClient.invalidateQueries({
       queryKey: prReviewQueryKeys.reviewThreads(pr),
@@ -375,11 +399,14 @@ export function useGitHubPrReviewMutations(pr: GitHubPullRequest) {
     }),
     submitReview: useMutation({
       mutationFn: postGitHubPrReview,
-      onSuccess: (result) => {
-        updateDraftCache(result?.draft ?? null);
-        void invalidateThreads();
-        void invalidateSubmittedReviewQueries(queryClient, pr);
+      onError: async (error) => {
+        const submittedDraft = submittedReviewDraftFromError(error);
+        if (submittedDraft) {
+          await reconcileSubmittedReview(submittedDraft.id);
+        }
       },
+      onSuccess: (result) =>
+        reconcileSubmittedReview(result?.draft?.id ?? null),
     }),
     replyToThread: useMutation({
       mutationFn: postGitHubPrThreadReply,
@@ -392,6 +419,24 @@ export function useGitHubPrReviewMutations(pr: GitHubPullRequest) {
     refetchPullRequestHeadSha,
     invalidateReviewSources,
   };
+}
+
+export function submittedReviewWasAccepted(error: unknown) {
+  return submittedReviewDraftFromError(error) !== null;
+}
+
+function submittedReviewDraftFromError(error: unknown) {
+  if (!(error instanceof ApiError)) return null;
+  const result = error.data as GitHubPrReviewSubmitResponse | undefined;
+  const draft = result?.data?.draft;
+  if (
+    !result?.changed ||
+    draft?.status !== 'submitted' ||
+    !result.data?.review
+  ) {
+    return null;
+  }
+  return draft;
 }
 
 export function invalidateSubmittedReviewQueries(

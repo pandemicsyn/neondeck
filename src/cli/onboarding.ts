@@ -3,8 +3,16 @@ import { existsSync } from 'node:fs';
 import { writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
+import { spawn } from 'node:child_process';
+import { runUnattendedGit } from '../lib/git';
+import { defaultOpenAiCodexModel } from '../model-defaults';
 import { readDotEnvFile, type EnvLoadResult } from '../modules/runtime';
-import type { RuntimePaths } from '../runtime-home';
+import {
+  openAiCompatibleBaseUrlIssue,
+  openAiCompatibleProviderIdIssue,
+  type RuntimePaths,
+  type ThinkingLevel,
+} from '../runtime-home';
 import type { EnvMap } from './types';
 import {
   configActionsModule,
@@ -12,6 +20,7 @@ import {
   modelDiscoveryModule,
   runtimeHomeModule,
   runtimeStatusModule,
+  sessionsModule,
 } from './modules';
 import { loadEnvForPaths } from './options';
 import {
@@ -29,7 +38,25 @@ import { readConfigData } from './output';
 import { preapprovalGroups, type PreapprovalGroupId } from './preapprovals';
 
 const defaultModel = 'kilocode/kilo-auto/balanced';
-type SetupModelProvider = 'kilocode' | 'openai' | 'anthropic';
+export const exploreModelRecommendation =
+  'Recommended: OpenAI Luna or OpenAI Terra at medium reasoning.';
+type SetupModelProvider =
+  'kilocode' | 'openai' | 'anthropic' | 'openai-codex' | 'openai-compatible';
+
+export type SetupGitIdentityResult = {
+  status: 'ready' | 'configured' | 'skipped' | 'unavailable';
+  name: string | null;
+  email: string | null;
+};
+
+type GitIdentitySetupDependencies = {
+  persistedEnv?: NodeJS.ProcessEnv;
+  runGit?: (args: string[]) => Promise<string>;
+  confirm?: typeof promptConfirm;
+  text?: typeof promptText;
+  warn?: (message: string) => void;
+  success?: (message: string) => void;
+};
 
 export async function runInit(options: { home?: string }) {
   intro('neondeck init');
@@ -60,15 +87,20 @@ export async function runInit(options: { home?: string }) {
 
   await configureSecrets(paths, envLoad);
   loadEnvForPaths(paths, { includeDevFallback: false, overwrite: true });
+  await configureGitIdentity({
+    persistedEnv: Object.fromEntries(await readDotEnvFile(paths.env)),
+  });
   await configureSoul(paths);
   await configureProviderAndModels(paths);
   await configureRepos(paths);
   await configureDashboard(paths);
   await configureExecution(paths);
   await configureSkillRoots(paths);
+  await finalizeFreshInstallSession(paths);
 
   const status = await readRuntimeStatus(paths);
   const failedChecks = status.checks.filter((check) => !check.ok);
+  const packagedInstall = hasPackagedServerEntry();
   const statusLines = [
     `home      ${paths.home}`,
     `status    ${status.status}`,
@@ -76,6 +108,7 @@ export async function runInit(options: { home?: string }) {
     `github    ${status.providers.credentials.github ? 'configured' : 'missing'}`,
     `kilo      ${status.providers.credentials.kilo ? 'configured' : 'missing'}`,
     `openai    ${status.providers.credentials.openai ? 'configured' : 'missing'}`,
+    `chatgpt   ${status.providers.credentials.openaiCodex ? 'configured' : 'missing'}`,
     `anthropic ${status.providers.credentials.anthropic ? 'configured' : 'missing'}`,
     `repos     ${status.counts.repos}`,
     `autopilot ${status.autopilot ? `${status.autopilot.status} (${status.autopilot.repoId})` : 'needs a repo'}`,
@@ -88,15 +121,7 @@ export async function runInit(options: { home?: string }) {
     );
   }
   statusLines.push(
-    '',
-    'Next:',
-    '  npm run dev',
-    '  open http://127.0.0.1:5173/',
-    ...(status.autopilot
-      ? [
-          `  neondeck doctor --repo ${status.autopilot.repoId} --pr <number> --mode <mode>`,
-        ]
-      : []),
+    ...formatOnboardingNextSteps(packagedInstall, status.autopilot?.repoId),
   );
   note(
     statusLines.join('\n'),
@@ -106,9 +131,148 @@ export async function runInit(options: { home?: string }) {
   );
   outro(
     status.status === 'ready'
-      ? 'The deck is live.'
+      ? packagedInstall
+        ? 'Setup complete. Run `neondeck open` to launch the deck.'
+        : 'Setup complete. Run `npm run dev` to launch the deck.'
       : 'Finish the remaining config, then start the deck.',
   );
+}
+
+export async function configureGitIdentity(
+  dependencies: GitIdentitySetupDependencies = {},
+): Promise<SetupGitIdentityResult> {
+  const persistedEnv = dependencies.persistedEnv ?? {};
+  const runGit =
+    dependencies.runGit ?? ((args) => runUnattendedGit(process.cwd(), args));
+  const confirm = dependencies.confirm ?? promptConfirm;
+  const text = dependencies.text ?? promptText;
+  const warn = dependencies.warn ?? ((message: string) => log.warn(message));
+  const success =
+    dependencies.success ?? ((message: string) => log.success(message));
+
+  try {
+    await runGit(['--version']);
+  } catch (error) {
+    warn(
+      `Git identity could not be checked: ${error instanceof Error ? error.message : String(error)}`,
+    );
+    return { status: 'unavailable', name: null, email: null };
+  }
+
+  const [configuredName, configuredEmail] = await Promise.all([
+    readGlobalGitValue(runGit, 'user.name'),
+    readGlobalGitValue(runGit, 'user.email'),
+  ]);
+  const authorName = persistedEnv.GIT_AUTHOR_NAME?.trim() || configuredName;
+  const authorEmail = persistedEnv.GIT_AUTHOR_EMAIL?.trim() || configuredEmail;
+  const committerName =
+    persistedEnv.GIT_COMMITTER_NAME?.trim() || configuredName;
+  const committerEmail =
+    persistedEnv.GIT_COMMITTER_EMAIL?.trim() || configuredEmail;
+
+  if (authorName && authorEmail && committerName && committerEmail) {
+    success(`Git commit identity is ready: ${authorName} <${authorEmail}>`);
+    return { status: 'ready', name: authorName, email: authorEmail };
+  }
+
+  const missing = [
+    !authorName && 'author name',
+    !authorEmail && 'author email',
+    !committerName && 'committer name',
+    !committerEmail && 'committer email',
+  ].filter(Boolean);
+  warn(
+    `Git commit identity is incomplete (${missing.join(', ')} missing). Autopilot commits may otherwise use an OS-generated identity.`,
+  );
+  const shouldConfigure = await confirm({
+    message: 'Configure a global Git commit identity now?',
+    initialValue: true,
+  });
+  if (!shouldConfigure) {
+    return {
+      status: 'skipped',
+      name: authorName || null,
+      email: authorEmail || null,
+    };
+  }
+
+  const name = (
+    await text({
+      message: 'Git author name',
+      placeholder: 'Your Name',
+      initialValue: configuredName || authorName,
+      validate: requiredText,
+    })
+  ).trim();
+  const email = (
+    await text({
+      message: 'Git author email',
+      placeholder: 'you@example.com',
+      initialValue: configuredEmail || authorEmail,
+      validate: requiredText,
+    })
+  ).trim();
+
+  try {
+    await runGit(['config', '--global', '--replace-all', 'user.name', name]);
+    await runGit(['config', '--global', '--replace-all', 'user.email', email]);
+    await runGit([
+      'config',
+      '--global',
+      '--replace-all',
+      'user.useConfigOnly',
+      'true',
+    ]);
+  } catch (error) {
+    warn(
+      `Global Git identity could not be configured: ${error instanceof Error ? error.message : String(error)}`,
+    );
+    return { status: 'unavailable', name, email };
+  }
+
+  success(`Configured global Git identity: ${name} <${email}>`);
+  return { status: 'configured', name, email };
+}
+
+async function readGlobalGitValue(
+  runGit: (args: string[]) => Promise<string>,
+  key: 'user.name' | 'user.email',
+) {
+  return runGit(['config', '--global', '--get', key])
+    .then((value) => value.trim())
+    .catch(() => '');
+}
+
+export function hasPackagedServerEntry(env: NodeJS.ProcessEnv = process.env) {
+  const entry =
+    env.NEONDECK_SERVER_ENTRY ??
+    new URL('../../dist/server.mjs', import.meta.url);
+  return existsSync(entry);
+}
+
+export function formatOnboardingNextSteps(
+  packagedInstall: boolean,
+  autopilotRepoId?: string,
+) {
+  return [
+    '',
+    'Next:',
+    ...(packagedInstall
+      ? ['  neondeck service install', '  neondeck open']
+      : ['  npm run dev', '  open http://127.0.0.1:5173/']),
+    ...(autopilotRepoId
+      ? [
+          '',
+          'Optional diagnostics:',
+          `  neondeck doctor --repo ${autopilotRepoId}`,
+        ]
+      : []),
+  ];
+}
+
+export async function finalizeFreshInstallSession(paths: RuntimePaths) {
+  const { rebaselineFreshInstallChatSession } = await sessionsModule();
+  await rebaselineFreshInstallChatSession(paths);
 }
 
 export async function configureSecrets(
@@ -230,25 +394,50 @@ export async function configureProviderAndModels(paths: RuntimePaths) {
       },
       {
         value: 'openai',
-        label: 'OpenAI',
-        hint: 'Built-in Flue provider using OPENAI_API_KEY.',
+        label: 'OpenAI API key',
+        hint: 'Usage-based OpenAI API billing via OPENAI_API_KEY.',
+      },
+      {
+        value: 'openai-codex',
+        label: 'ChatGPT subscription',
+        hint: 'Sign in with ChatGPT OAuth; no API key required.',
       },
       {
         value: 'anthropic',
         label: 'Anthropic',
         hint: 'Built-in Flue provider using ANTHROPIC_API_KEY.',
       },
+      {
+        value: 'openai-compatible',
+        label: 'OpenAI-compatible endpoint',
+        hint: 'OpenRouter, a local server, or another compatible API.',
+      },
     ],
   });
 
-  await configureProviderSecret(provider, env, paths);
+  let modelProvider: string = provider;
+  let configInput: Parameters<typeof updateProviderConfig>[0];
+  if (provider === 'openai-compatible') {
+    const custom = await configureOpenAiCompatibleProvider(env, paths);
+    modelProvider = custom.id;
+    configInput = custom.configInput;
+  } else {
+    await configureProviderSecret(provider, env, paths);
+    configInput = providerConfigInput(provider, env);
+  }
   loadEnvForPaths(paths, { includeDevFallback: false, overwrite: true });
 
-  const model = await chooseModel(provider, env);
+  const model = await chooseModel(modelProvider, env);
   const thinkingLevel = await promptThinkingLevel();
-  const utilityModel = await chooseUtilityModel(provider, env, model);
+  const utilityModel = await chooseUtilityModel(modelProvider, env, model);
+  const exploreModel = await chooseExploreModel(
+    modelProvider,
+    env,
+    model,
+    thinkingLevel,
+  );
 
-  await updateProviderConfig(providerConfigInput(provider, env), paths);
+  await updateProviderConfig(configInput, paths);
   await updateAgentModels(
     {
       displayAssistant: model,
@@ -259,6 +448,7 @@ export async function configureProviderAndModels(paths: RuntimePaths) {
       subagents: {
         default: model,
         defaultThinkingLevel: thinkingLevel,
+        ...exploreModel,
         repoResearcher: model,
         ciInvestigator: model,
         releaseReviewer: model,
@@ -268,8 +458,49 @@ export async function configureProviderAndModels(paths: RuntimePaths) {
   );
 }
 
+export async function chooseExploreModel(
+  provider: string,
+  env: EnvMap,
+  displayModel: string,
+  displayThinkingLevel: ThinkingLevel,
+) {
+  const mode = await promptSelect<'default' | 'manual'>({
+    message: 'Explore subagent model',
+    initialValue: 'default',
+    options: [
+      {
+        value: 'default',
+        label: 'Use display model',
+        hint: `${displayModel} · ${displayThinkingLevel}`,
+      },
+      {
+        value: 'manual',
+        label: 'Choose cheap, fast model',
+        hint: exploreModelRecommendation,
+      },
+    ],
+  });
+
+  if (mode === 'default') {
+    const thinkingLevel = await promptThinkingLevel({
+      message: 'Explore thinking level',
+      initialValue: 'medium',
+    });
+    return { explore: null, exploreThinkingLevel: thinkingLevel };
+  }
+  const model =
+    provider === 'kilocode'
+      ? await chooseModel(provider, env)
+      : await promptModelText(provider, displayModel, 'Explore subagent model');
+  const thinkingLevel = await promptThinkingLevel({
+    message: 'Explore thinking level',
+    initialValue: 'medium',
+  });
+  return { explore: model, exploreThinkingLevel: thinkingLevel };
+}
+
 export async function chooseUtilityModel(
-  provider: SetupModelProvider,
+  provider: string,
   env: EnvMap,
   displayModel: string,
 ) {
@@ -301,6 +532,66 @@ export async function configureProviderSecret(
   env: EnvMap,
   paths: RuntimePaths,
 ) {
+  if (provider === 'openai-codex') {
+    const method = await promptSelect<'browser' | 'device-code'>({
+      message: 'ChatGPT sign-in method',
+      initialValue: 'browser',
+      options: [
+        {
+          value: 'browser',
+          label: 'Browser',
+          hint: 'Recommended on this computer.',
+        },
+        {
+          value: 'device-code',
+          label: 'Device code',
+          hint: 'Use another browser or a headless machine.',
+        },
+      ],
+    });
+    const { loginOpenAiCodexSubscription } = await modelDiscoveryModule();
+    const spin = spinner();
+    spin.start('Waiting for ChatGPT authorization');
+    try {
+      await loginOpenAiCodexSubscription(
+        method,
+        {
+          onAuth(info) {
+            spin.stop('Continue sign-in in your browser');
+            note(info.url, info.instructions ?? 'ChatGPT sign-in');
+            openExternalUrl(info.url);
+            spin.start('Waiting for ChatGPT authorization');
+          },
+          onDeviceCode(info) {
+            spin.stop('Enter this code to authorize Neondeck');
+            note(
+              `${info.userCode}\n\n${info.verificationUri}`,
+              'ChatGPT device code',
+            );
+            openExternalUrl(info.verificationUri);
+            spin.start('Waiting for ChatGPT authorization');
+          },
+          onPrompt: (message, options) =>
+            promptText({
+              message,
+              placeholder:
+                options.placeholder ?? 'Paste the authorization code',
+              signal: options.signal,
+            }),
+          onProgress(message) {
+            spin.message(message);
+          },
+        },
+        paths,
+      );
+      spin.stop('Signed in with your ChatGPT subscription');
+    } catch (error) {
+      spin.stop('ChatGPT sign-in failed');
+      throw error;
+    }
+    return;
+  }
+
   if (provider === 'kilocode') {
     const kiloKey = await promptPassword({
       message: env.get('KILOCODE_API_KEY')
@@ -317,7 +608,7 @@ export async function configureProviderSecret(
     });
     if (orgId.trim()) env.set('KILOCODE_ORGANIZATION_ID', orgId.trim());
     else env.delete('KILOCODE_ORGANIZATION_ID');
-  } else {
+  } else if (provider !== 'openai-compatible') {
     const key = provider === 'openai' ? 'OPENAI_API_KEY' : 'ANTHROPIC_API_KEY';
     const label = provider === 'openai' ? 'OpenAI' : 'Anthropic';
     const value = await promptPassword({
@@ -333,7 +624,7 @@ export async function configureProviderSecret(
   log.success(`Wrote ${paths.env}`);
 }
 
-export async function chooseModel(provider: SetupModelProvider, env: EnvMap) {
+export async function chooseModel(provider: string, env: EnvMap) {
   if (provider !== 'kilocode') {
     return promptModelText(provider, defaultProviderModel(provider));
   }
@@ -408,7 +699,7 @@ export async function chooseModel(provider: SetupModelProvider, env: EnvMap) {
 }
 
 export async function promptModelText(
-  provider: SetupModelProvider,
+  provider: string,
   initialValue: string,
   message = 'Display assistant model',
 ) {
@@ -430,10 +721,15 @@ export async function promptModelText(
   });
 }
 
-export async function promptThinkingLevel() {
+export async function promptThinkingLevel(
+  options: {
+    message?: string;
+    initialValue?: ThinkingLevel;
+  } = {},
+) {
   return promptSelect<'off' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh'>({
-    message: 'Thinking level',
-    initialValue: 'medium',
+    message: options.message ?? 'Thinking level',
+    initialValue: options.initialValue ?? 'medium',
     options: [
       { value: 'medium', label: 'medium', hint: 'Balanced default.' },
       { value: 'high', label: 'high', hint: 'More careful reasoning.' },
@@ -449,7 +745,10 @@ export async function promptThinkingLevel() {
   });
 }
 
-export function providerConfigInput(provider: SetupModelProvider, env: EnvMap) {
+export function providerConfigInput(
+  provider: Exclude<SetupModelProvider, 'openai-compatible'>,
+  env: EnvMap,
+) {
   if (provider === 'kilocode') {
     return {
       provider,
@@ -461,6 +760,13 @@ export function providerConfigInput(provider: SetupModelProvider, env: EnvMap) {
     };
   }
 
+  if (provider === 'openai-codex') {
+    return {
+      provider,
+      enabled: true,
+    };
+  }
+
   return {
     provider,
     enabled: true,
@@ -468,16 +774,121 @@ export function providerConfigInput(provider: SetupModelProvider, env: EnvMap) {
   };
 }
 
-export function defaultProviderModel(provider: SetupModelProvider) {
+export function defaultProviderModel(provider: string) {
   if (provider === 'openai') return 'openai/gpt-5.5';
+  if (provider === 'openai-codex') return defaultOpenAiCodexModel;
   if (provider === 'anthropic') return 'anthropic/claude-sonnet-4-6';
+  if (provider === 'openrouter') return 'openrouter/openai/gpt-5.5';
+  if (provider !== 'kilocode') return `${provider}/gpt-5.5`;
   return defaultModel;
 }
 
 export function providerFromModel(model: string): SetupModelProvider {
   const provider = model.includes('/') ? model.split('/')[0] : 'kilocode';
-  if (provider === 'openai' || provider === 'anthropic') return provider;
+  if (
+    provider === 'openai' ||
+    provider === 'anthropic' ||
+    provider === 'openai-codex'
+  )
+    return provider;
   return 'kilocode';
+}
+
+async function configureOpenAiCompatibleProvider(
+  env: EnvMap,
+  paths: RuntimePaths,
+) {
+  const id = (
+    await promptText({
+      message: 'Provider id',
+      initialValue: 'openrouter',
+      placeholder: 'openrouter',
+      validate: openAiCompatibleProviderIdIssue,
+    })
+  ).trim();
+  const baseUrl = (
+    await promptText({
+      message: 'OpenAI-compatible base URL',
+      initialValue:
+        id === 'openrouter'
+          ? 'https://openrouter.ai/api/v1'
+          : 'https://example.com/v1',
+      validate: openAiCompatibleBaseUrlIssue,
+    })
+  ).replace(/\/+$/, '');
+  const api = await promptSelect<'openai-completions' | 'openai-responses'>({
+    message: 'Compatible API protocol',
+    initialValue: 'openai-completions',
+    options: [
+      {
+        value: 'openai-completions',
+        label: 'Chat Completions',
+        hint: 'OpenRouter and most compatible endpoints.',
+      },
+      {
+        value: 'openai-responses',
+        label: 'Responses',
+        hint: 'Endpoints implementing OpenAI Responses.',
+      },
+    ],
+  });
+  const suggestedEnv = `${id.replaceAll('-', '_').toUpperCase()}_API_KEY`;
+  const requiresApiKey = await promptConfirm({
+    message: 'Does this endpoint require an API key?',
+    initialValue: true,
+  });
+  let apiKeyEnv: string | undefined;
+  if (requiresApiKey) {
+    apiKeyEnv = (
+      await promptText({
+        message: 'API key environment variable',
+        initialValue: suggestedEnv,
+        placeholder: suggestedEnv,
+        validate(value) {
+          return /^[A-Z_][A-Z0-9_]*$/.test(value ?? '')
+            ? undefined
+            : 'Use a valid uppercase environment variable name.';
+        },
+      })
+    ).trim();
+    const value = await promptPassword({
+      message: env.get(apiKeyEnv)
+        ? `${id} API key (blank keeps existing)`
+        : `${id} API key`,
+      required: !env.get(apiKeyEnv),
+    });
+    if (value) env.set(apiKeyEnv, value);
+  }
+  await writeDotEnvFile(paths.env, env);
+  log.success(`Wrote ${paths.env}`);
+
+  return {
+    id,
+    configInput: {
+      provider: 'openai-compatible' as const,
+      id,
+      enabled: true,
+      baseUrl,
+      ...(apiKeyEnv ? { apiKeyEnv } : {}),
+      api,
+    },
+  };
+}
+
+function openExternalUrl(url: string) {
+  const command =
+    process.platform === 'darwin'
+      ? 'open'
+      : process.platform === 'win32'
+        ? 'cmd'
+        : 'xdg-open';
+  const args = process.platform === 'win32' ? ['/c', 'start', '', url] : [url];
+  const child = spawn(command, args, {
+    detached: true,
+    stdio: 'ignore',
+  });
+  child.on('error', () => {});
+  child.unref();
 }
 
 export async function configureRepos(paths: RuntimePaths) {
@@ -550,12 +961,12 @@ export async function configureDashboard(paths: RuntimePaths) {
       {
         value: 'cockpit',
         label: 'Cockpit',
-        hint: 'Work queue, chat, watches, briefing, runtime.',
+        hint: 'Reviews, GitHub, watches, chat, briefing, and runtime tools.',
       },
       {
         value: 'classic',
         label: 'Classic',
-        hint: 'GitHub left, Neon right.',
+        hint: 'Reviews and GitHub on the left; chat on the right.',
       },
     ],
   });
@@ -574,7 +985,7 @@ export async function configureDashboard(paths: RuntimePaths) {
 export async function configureExecution(paths: RuntimePaths) {
   const { updateExecutionPolicy } = await configActionsModule();
   const preapprove = await promptMultiselect<PreapprovalGroupId>({
-    message: 'Preapprove safe local commands?',
+    message: 'Preapprove safe-ish local commands?',
     options: preapprovalGroups.map((group) => ({
       value: group.id,
       label: group.label,
@@ -624,14 +1035,22 @@ export async function configureSkillRoots(paths: RuntimePaths) {
         })
       : [];
 
+  const selectedExternalRoots = Array.from(
+    new Set([...current, ...selectedDetectedRoots]),
+  );
+  note(
+    formatRuntimeSkillRootsNote(paths.skills, selectedExternalRoots),
+    'Runtime skill locations',
+  );
+
   const shouldAddManual = await promptConfirm({
-    message: 'Add another external runtime skill root?',
+    message: 'Add another optional external runtime skill root?',
     initialValue: false,
   });
   const manualRoot = shouldAddManual
     ? await promptText({
         message: 'Skill root path',
-        placeholder: '/Users/alice/.agents/skills',
+        placeholder: '~/.agents/skills',
         validate: requiredText,
       })
     : undefined;
@@ -648,6 +1067,21 @@ export async function configureSkillRoots(paths: RuntimePaths) {
   const result = await updateSkillRoots({ skillRoots: next }, paths);
   if (result.ok) log.success(result.message);
   else log.warn(result.message);
+}
+
+export function formatRuntimeSkillRootsNote(
+  localRoot: string,
+  externalRoots: string[],
+) {
+  return [
+    `Local root (always scanned): ${localRoot}`,
+    externalRoots.length > 0
+      ? `External roots:\n${externalRoots.map((root) => `  ${root}`).join('\n')}`
+      : 'External roots: none',
+    'Example external root: ~/.agents/skills (auto-detected when present)',
+    'Expected layout: <root>/<skill-name>/SKILL.md',
+    'Bundled Neondeck skills load automatically.',
+  ].join('\n');
 }
 
 export function detectExternalSkillRoots() {

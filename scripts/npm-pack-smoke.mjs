@@ -1,5 +1,5 @@
 import { spawn, spawnSync } from 'node:child_process';
-import { existsSync, mkdtempSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -45,6 +45,10 @@ try {
     '.bin',
     process.platform === 'win32' ? 'neondeck.cmd' : 'neondeck',
   );
+  run('npm', ['run', 'setup', '--', '--home', home, '--json'], {
+    cwd: packageRoot,
+  });
+  assertSetupHome(home);
   const status = run(cli, ['--home', home, '--json', 'status'], {
     cwd: projectDir,
   });
@@ -59,6 +63,45 @@ try {
   console.log('Packed CLI smoke passed.');
 } finally {
   rmSync(root, { recursive: true, force: true });
+}
+
+function assertSetupHome(home) {
+  for (const requiredPath of [
+    '.env',
+    'config.json',
+    'mcp.json',
+    'repos.json',
+    'dashboard.json',
+    'dashboard.schema.json',
+    'SOUL.md',
+    'data/neondeck.db',
+    'data/flue.db',
+  ]) {
+    if (!existsSync(join(home, requiredPath))) {
+      throw new Error(`Packed setup did not create ${requiredPath}.`);
+    }
+  }
+
+  const config = readJson(join(home, 'config.json'));
+  const repos = readJson(join(home, 'repos.json'));
+  const mcp = readJson(join(home, 'mcp.json'));
+  if (
+    !Number.isInteger(config.version) ||
+    config.version < 1 ||
+    !/^[A-Za-z0-9_-]{32,}$/.test(config.localApi?.token ?? '')
+  ) {
+    throw new Error('Packed setup created an invalid config.json.');
+  }
+  if (!Array.isArray(repos.repos)) {
+    throw new Error('Packed setup created an invalid repos.json.');
+  }
+  if (!mcp.servers || typeof mcp.servers !== 'object') {
+    throw new Error('Packed setup created an invalid mcp.json.');
+  }
+}
+
+function readJson(path) {
+  return JSON.parse(readFileSync(path, 'utf8'));
 }
 
 function ensureDir(path) {
@@ -123,7 +166,10 @@ async function smokeServe(cli, home, port, cwd) {
       }
       try {
         const response = await fetch(`http://127.0.0.1:${port}/api/health`);
-        if (response.ok) return;
+        if (response.ok) {
+          await assertRuntimeSkills(port);
+          return;
+        }
       } catch {
         // Retry until the server binds or the deadline expires.
       }
@@ -132,6 +178,27 @@ async function smokeServe(cli, home, port, cwd) {
     throw new Error(`Packed serve did not become healthy.\n${output}`);
   } finally {
     await stopProcess(child);
+  }
+}
+
+async function assertRuntimeSkills(port) {
+  const response = await fetch(`http://127.0.0.1:${port}/api/runtime/status`);
+  if (!response.ok) {
+    throw new Error(`Packed runtime status returned HTTP ${response.status}.`);
+  }
+  const status = await response.json();
+  const skillsCheck = status.checks?.find((check) => check.id === 'skills');
+  if (skillsCheck?.ok !== true || !(status.counts?.activeSkills >= 7)) {
+    throw new Error(
+      `Packed runtime could not load built-in skills.\n${JSON.stringify(
+        {
+          skillsCheck,
+          activeSkills: status.counts?.activeSkills,
+        },
+        null,
+        2,
+      )}`,
+    );
   }
 }
 

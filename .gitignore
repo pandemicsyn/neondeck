@@ -6,6 +6,7 @@ web/dist/
 web/dist-perf/
 benchmarks/results/
 .flue-vite/
+.flue-vite.wrangler.jsonc
 .playwright-mcp/
 .release/
 .codex/environments/
@@ -15,8 +16,10 @@ research-repos/
 data/*.db
 data/*.db-*
 data/dev-home/
-raycast/raycast-env.d.ts
 .env
 .env.*
 !.env.example
+
+# Per-user Claude Code settings; .claude/launch.json is shared
+.claude/settings.local.json
 .DS_Store

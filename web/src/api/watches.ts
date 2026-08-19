@@ -31,10 +31,11 @@ export async function configurePrAutopilot(input: {
 export async function controlPrAutopilot(
   id: string,
   operation: 'pause' | 'resume' | 'retry' | 'stop',
+  options: { confirmPreparedDiff?: boolean } = {},
 ) {
   return postJson<PrWatchMutationResponse>(
     `/api/watches/${encodeURIComponent(id)}/autopilot/control`,
-    { operation },
+    { operation, ...options },
   );
 }
 
@@ -42,6 +43,16 @@ export async function messagePrAutopilotOwner(id: string, message: string) {
   return postJson<PrWatchMutationResponse>(
     `/api/watches/${encodeURIComponent(id)}/autopilot/message`,
     { message },
+  );
+}
+
+export async function approvePrAutopilotChange(
+  id: string,
+  expectedRevisionKey: string,
+) {
+  return postJson<PrWatchMutationResponse>(
+    `/api/watches/${encodeURIComponent(id)}/autopilot/approve`,
+    { expectedRevisionKey },
   );
 }
 

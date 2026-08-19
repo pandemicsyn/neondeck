@@ -1,66 +1,75 @@
 import type { MiddlewareHandler } from 'hono';
-import {
-  bearerToken,
-  localApiAuthHeader,
-  localApiTokenMatches,
-  localApiTokenQueryParam,
-  readLocalApiToken,
-} from '../modules/runtime';
-import type { RuntimePaths } from '../runtime-home';
 
 const localHosts = new Set(['127.0.0.1', 'localhost', '[::1]', '::1']);
 
-export const requireLocalApiAccess: MiddlewareHandler = async (c, next) => {
-  const host = hostName(c.req.header('host'));
-  if (host && localHosts.has(host)) {
-    if (!isSafeMethod(c.req.method) && !isAllowedBrowserOrigin(c.req.raw)) {
-      return c.json({ error: 'Not found' }, 404);
-    }
-
-    await next();
-    return;
-  }
-
-  return c.json({ error: 'Not found' }, 404);
+export type LocalApiAccessOptions = {
+  trustedOrigins?: readonly string[];
 };
 
-export function requireFlueRunInspectionToken(
-  paths: RuntimePaths,
+export function requireLocalApiAccess(
+  options: LocalApiAccessOptions = {},
 ): MiddlewareHandler {
-  return async (c, next) => {
-    const expected = await readLocalApiToken(paths);
-    const provided =
-      c.req.header(localApiAuthHeader) ??
-      bearerToken(c.req.header('authorization')) ??
-      c.req.query(localApiTokenQueryParam);
+  const trustedOrigins = resolveTrustedOrigins(options.trustedOrigins);
 
-    if (!localApiTokenMatches(provided, expected)) {
-      return c.json({ error: 'Not found' }, 404);
+  return async (c, next) => {
+    const target = accessTarget(c.req.header('host'), trustedOrigins);
+    if (!target) return c.json({ error: 'Not found' }, 404);
+
+    if (!isSafeMethod(c.req.method)) {
+      const allowed =
+        target.kind === 'local'
+          ? isAllowedLocalBrowserOrigin(c.req.raw)
+          : isAllowedTrustedBrowserOrigin(c.req.raw, target.origins);
+      if (!allowed) {
+        return c.json({ error: 'Not found' }, 404);
+      }
     }
 
     await next();
   };
 }
 
-function hostName(host: string | undefined) {
-  if (!host) return undefined;
-  const lower = host.toLowerCase();
-  if (lower.startsWith('[')) {
-    return lower.slice(0, lower.indexOf(']') + 1);
-  }
-
-  return lower.split(':')[0];
+export function resolveTrustedOrigins(origins: readonly string[] = []) {
+  return origins.map((value) => {
+    const url = new URL(value);
+    return {
+      origin: url.origin,
+      host: url.host.toLowerCase(),
+    };
+  });
 }
 
-function isSafeMethod(method: string) {
-  return method === 'GET' || method === 'HEAD' || method === 'OPTIONS';
+function accessTarget(
+  hostHeader: string | undefined,
+  trustedOrigins: ReturnType<typeof resolveTrustedOrigins>,
+) {
+  const host = parseRequestHost(hostHeader);
+  if (!host) return null;
+  if (localHosts.has(host.hostname)) return { kind: 'local' as const };
+
+  const origins = trustedOrigins
+    .filter((entry) => entry.host === host.host)
+    .map((entry) => entry.origin);
+  return origins.length > 0
+    ? { kind: 'trusted' as const, origins: new Set(origins) }
+    : null;
 }
 
-function isAllowedBrowserOrigin(request: Request) {
-  const fetchSite = request.headers.get('sec-fetch-site');
-  if (fetchSite && fetchSite !== 'same-origin' && fetchSite !== 'none') {
-    return false;
+function parseRequestHost(value: string | undefined) {
+  if (!value) return null;
+  try {
+    const url = new URL(`http://${value}`);
+    return {
+      host: url.host.toLowerCase(),
+      hostname: url.hostname.toLowerCase(),
+    };
+  } catch {
+    return null;
   }
+}
+
+function isAllowedLocalBrowserOrigin(request: Request) {
+  if (!hasAllowedFetchSite(request)) return false;
 
   const origin = request.headers.get('origin');
   if (origin) return isLocalUrl(origin);
@@ -69,6 +78,38 @@ function isAllowedBrowserOrigin(request: Request) {
   if (referer) return isLocalUrl(referer);
 
   return true;
+}
+
+function isAllowedTrustedBrowserOrigin(
+  request: Request,
+  trustedOrigins: Set<string>,
+) {
+  if (!hasAllowedFetchSite(request)) return false;
+
+  const origin = request.headers.get('origin');
+  if (origin) return trustedOrigins.has(urlOrigin(origin));
+
+  const referer = request.headers.get('referer');
+  if (referer) return trustedOrigins.has(urlOrigin(referer));
+
+  return false;
+}
+
+function hasAllowedFetchSite(request: Request) {
+  const fetchSite = request.headers.get('sec-fetch-site');
+  return !fetchSite || fetchSite === 'same-origin' || fetchSite === 'none';
+}
+
+function urlOrigin(value: string) {
+  try {
+    return new URL(value).origin;
+  } catch {
+    return '';
+  }
+}
+
+function isSafeMethod(method: string) {
+  return method === 'GET' || method === 'HEAD' || method === 'OPTIONS';
 }
 
 function isLocalUrl(value: string) {

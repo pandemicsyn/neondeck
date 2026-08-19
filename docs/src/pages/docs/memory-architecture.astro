@@ -12,7 +12,7 @@ const systemDiagram = `flowchart LR
   Sessions["chat_sessions + prompt snapshots"]
   Events["learning_events"]
   Reviews["learning_reviews"]
-  Reviewer["Flue workflow + learning_reviewer"]
+  Reviewer["Flue learning-review agent"]
   Candidates["learning_candidates"]
   Memory["memories"]
   Audit["memory_events"]
@@ -40,7 +40,7 @@ const systemDiagram = `flowchart LR
 const feedbackDiagram = `sequenceDiagram
   participant Work as Chat / PR work
   participant State as Neondeck SQLite
-  participant Flue as Bounded Flue workflow
+  participant Flue as Learning-review agent submission
   participant Model as Self-improvement model
   participant Actions as Typed actions
   participant Session as Future session
@@ -49,7 +49,7 @@ const feedbackDiagram = `sequenceDiagram
   State->>State: record learning_event or cadence counter
   State-->>Flue: threshold or manual trigger
   Flue->>State: prepare bounded evidence snapshot
-  Flue->>Model: ask learning_reviewer for structured output
+  Flue->>Model: request structured review output
   Model-->>Flue: memoryActions and skillPatches
   Flue->>Actions: validate and apply or create candidates
   Actions->>State: write memories, candidates, audit events
@@ -112,13 +112,13 @@ const storeDiagram = `flowchart TB
           <li>
             <strong>Every write is a typed action.</strong> Memory state changes only
             through Valibot-validated actions that record before/after audit events
-            — the same actions whether a human, the dashboard, or a learning workflow
-            is the caller.
+            — the same actions whether a human, the dashboard, or the learning-review
+            agent is the caller.
           </li>
           <li>
             <strong>Model-backed learning is bounded.</strong> Reviews run as finite
-            Flue workflows that prepare compact evidence snapshots first. The model
-            returns structured
+            durable Flue agent submissions that persist compact evidence snapshots
+            first. The model returns structured
             <code>memoryActions</code> and <code>skillPatches</code> — never raw state,
             never SQL.
           </li>
@@ -150,10 +150,10 @@ const storeDiagram = `flowchart TB
           Work Neon already performs is compacted into learning events with
           stable, idempotent source ids, so repeat observations of the same
           outcome never inflate the signal. Cadence and threshold rules decide
-          when a bounded workflow asks the self-improvement model for durable
-          lessons; Neondeck validates the structured output, rejects secret-like
-          or injection-like content, and applies the remainder through the
-          action layer.
+          when a keyed learning-review agent asks the self-improvement model for
+          durable lessons; Neondeck validates the structured output, rejects
+          secret-like or injection-like content, and applies the remainder
+          through the action layer.
         </p>
 
         <h2>Storage layout</h2>
@@ -161,8 +161,9 @@ const storeDiagram = `flowchart TB
           App state and Flue runtime state are separate databases. The app
           database owns memory, learning records, and session metadata; Flue
           owns transcripts and run state; runtime-home files hold config,
-          secrets, and skills. Learning reviews read Flue run observations, but
-          only compact summaries ever cross back into app state.
+          secrets, and skills. Learning reviews correlate Flue submissions with
+          persisted bounded snapshots, and only validated structured results
+          cross back into app state.
         </p>
         <MermaidDiagram
           chart={storeDiagram}
@@ -207,10 +208,10 @@ const storeDiagram = `flowchart TB
             reject, audit, and restore.
           </li>
           <li>
-            <code>src/workflows/review_conversation_for_learning.ts</code>, <code
-              >src/workflows/curate_learning_store.ts</code
-            >, and <code>src/workflows/review_pr_batch_for_learning.ts</code>:
-            bounded Flue workflow entry points.
+            <code>src/agents/learning-review-agent.ts</code> and <code
+              >src/modules/learning/reviews/</code
+            >: bounded Flue agent admission, durable tool execution, recovery,
+            and app-owned review state.
           </li>
         </ul>
       </article>

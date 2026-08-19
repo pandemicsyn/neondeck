@@ -1,4 +1,5 @@
-import type { ToolDefinition } from '@flue/runtime';
+import { defineTool, type ToolDefinition } from '@flue/runtime';
+import * as v from 'valibot';
 import { UnauthorizedError } from '@modelcontextprotocol/sdk/client/auth.js';
 import {
   subscribeConfigEvents,
@@ -6,7 +7,12 @@ import {
 } from '../../modules/config/events';
 import { runtimePaths, type RuntimePaths } from '../../runtime-home';
 import { runMcpToolThroughGate } from './gate';
-import { mcpServerEnabled, type McpServerConfig } from './schemas';
+import {
+  mcpServerApprovalMode,
+  mcpServerEnabled,
+  type McpServerConfig,
+  type McpToolApprovalMode,
+} from './schemas';
 import { readMcpConfig } from './config';
 import {
   createMcpOAuthProvider,
@@ -14,7 +20,12 @@ import {
   readMcpOAuthStatus,
   type McpOAuthStatus,
 } from './oauth';
-import { connectSdkMcpServer, type McpSdkConnection } from './stdio';
+import {
+  connectSdkMcpServer,
+  mcpInputSchemaToValibot,
+  type McpSdkConnection,
+} from './stdio';
+import { stableJson } from './format';
 import {
   deleteMcpToolCatalog,
   listMcpToolCatalog,
@@ -35,6 +46,8 @@ export type McpServerSnapshot = {
   id: string;
   transport: 'http' | 'stdio';
   enabled: boolean;
+  approvalMode: 'prompt' | 'writes' | 'approve';
+  toolOverrides: Record<string, McpToolApprovalMode>;
   status: McpServerStatus;
   auth: {
     kind: 'none' | 'header' | 'oauth';
@@ -47,6 +60,17 @@ export type McpServerSnapshot = {
   lastConnectedAt: string | null;
   lastErrorAt: string | null;
 };
+
+export type McpToolSessionSnapshot = Pick<
+  McpToolCatalogRecord,
+  | 'serverId'
+  | 'toolName'
+  | 'adaptedName'
+  | 'description'
+  | 'inputSchema'
+  | 'outputSchema'
+  | 'annotations'
+>;
 
 type RegistryEntry = {
   status: McpServerStatus;
@@ -127,6 +151,17 @@ export function mcpAgentToolsSync(paths = runtimePaths()) {
   return getMcpRegistry(paths).toolsSync();
 }
 
+export function mcpToolSessionSnapshotsSync(paths = runtimePaths()) {
+  return getMcpRegistry(paths).toolSessionSnapshotsSync();
+}
+
+export function mcpAgentToolsForSessionSync(
+  snapshots: McpToolSessionSnapshot[],
+  paths = runtimePaths(),
+) {
+  return getMcpRegistry(paths).toolsForSessionSync(snapshots);
+}
+
 export function mcpSnapshotSync(paths = runtimePaths()) {
   return getMcpRegistry(paths).snapshotSync();
 }
@@ -142,6 +177,7 @@ export class McpRegistry {
     if (this.unsubscribe) return this.startPromise ?? Promise.resolve();
     this.unsubscribe = subscribeConfigEvents((event) => {
       if (!event.files.includes(this.paths.mcp)) return;
+      if (event.action === 'mcp_tool_policy_update') return;
       void this.refresh(refreshTargetFromConfigEvent(event)).catch((error) => {
         console.error('[neondeck] failed to refresh MCP registry', error);
       });
@@ -168,6 +204,47 @@ export class McpRegistry {
     return [...this.entries.values()].flatMap((entry) => entry.tools);
   }
 
+  toolSessionSnapshotsSync(): McpToolSessionSnapshot[] {
+    const snapshots = new Map<string, McpToolSessionSnapshot>();
+    for (const entry of this.entries.values()) {
+      // Existing sessions retain their frozen snapshots and resolve them to
+      // unavailable tools below. A deliberately disabled server must not seed
+      // its cached catalog into sessions created after the disable completed.
+      if (entry.status === 'disabled') continue;
+      for (const record of entry.catalog) {
+        snapshots.set(record.adaptedName, sessionSnapshot(record));
+      }
+    }
+    return [...snapshots.values()];
+  }
+
+  toolsForSessionSync(snapshots: McpToolSessionSnapshot[]) {
+    const current = new Map<string, ToolDefinition>();
+    const currentCatalog = new Map<
+      string,
+      { entry: RegistryEntry; record: McpToolCatalogRecord }
+    >();
+    for (const entry of this.entries.values()) {
+      for (const tool of entry.tools) current.set(tool.name, tool);
+      for (const record of entry.catalog) {
+        currentCatalog.set(record.adaptedName, { entry, record });
+      }
+    }
+
+    return snapshots.map((snapshot) => {
+      const catalog = currentCatalog.get(snapshot.adaptedName);
+      const live = current.get(snapshot.adaptedName);
+      if (
+        live &&
+        catalog?.entry.status === 'connected' &&
+        sameSessionCapability(snapshot, catalog.record)
+      ) {
+        return live;
+      }
+      return unavailableSessionTool(snapshot);
+    });
+  }
+
   snapshotSync() {
     return [...this.entries.entries()].map(([id, entry]) => ({
       id,
@@ -189,6 +266,8 @@ export class McpRegistry {
           id,
           transport: server.transport,
           enabled: mcpServerEnabled(server),
+          approvalMode: mcpServerApprovalMode(server),
+          toolOverrides: server.tools?.overrides ?? {},
           auth,
           status:
             entry?.status ??
@@ -449,13 +528,62 @@ function disconnectedTools(serverId: string, catalog: McpToolCatalogRecord[]) {
     output: undefined,
     async run() {
       return {
-        ok: false,
-        status: 'server-disconnected',
-        server: serverId,
-        tool: tool.toolName,
-        untrusted: true,
-        message: `MCP server "${serverId}" is disconnected.`,
+        output: {
+          ok: false,
+          status: 'server-disconnected',
+          server: serverId,
+          tool: tool.toolName,
+          untrusted: true,
+          message: `MCP server "${serverId}" is disconnected.`,
+        },
       };
     },
   })) satisfies ToolDefinition[];
+}
+
+function sessionSnapshot(record: McpToolCatalogRecord): McpToolSessionSnapshot {
+  return {
+    serverId: record.serverId,
+    toolName: record.toolName,
+    adaptedName: record.adaptedName,
+    description: record.description,
+    inputSchema: record.inputSchema,
+    outputSchema: record.outputSchema,
+    annotations: record.annotations,
+  };
+}
+
+function sameSessionCapability(
+  snapshot: McpToolSessionSnapshot,
+  record: McpToolCatalogRecord,
+) {
+  return stableJson(snapshot) === stableJson(sessionSnapshot(record));
+}
+
+function unavailableSessionTool(snapshot: McpToolSessionSnapshot) {
+  return defineTool({
+    name: snapshot.adaptedName,
+    description: `${snapshot.description} This session's frozen capability is currently unavailable.`,
+    input: mcpInputSchemaToValibot(snapshot.inputSchema),
+    output: v.looseObject({
+      ok: v.boolean(),
+      status: v.string(),
+      server: v.string(),
+      tool: v.string(),
+      untrusted: v.boolean(),
+    }),
+    async run() {
+      return {
+        output: {
+          ok: false,
+          status: 'session-capability-unavailable',
+          server: snapshot.serverId,
+          tool: snapshot.toolName,
+          untrusted: true,
+          message:
+            'This MCP capability is disconnected or changed since the session context was captured. Reconnect it or deliberately refresh the session context.',
+        },
+      };
+    },
+  });
 }

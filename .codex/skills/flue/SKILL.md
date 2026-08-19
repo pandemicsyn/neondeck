@@ -1,62 +1,94 @@
 ---
 name: flue
-description: Explain, research, design, and carefully implement Flue framework projects and integrations. Use when Codex is asked about Flue features, docs locations, TypeScript agents, workflows, actions, skills, schedules, routes, React clients, Node.js or Cloudflare targets, persistence, durable execution, or Flue integration in a local developer dashboard such as neondeck.
+description: Use when building, debugging, reviewing, migrating, or documenting Flue projects, including agents, hooks, tools, skills, subagents, sandboxes, routing, channels, persistence, schedules, observability, React clients, deployment targets, and CLI usage. Find and read version-matched Flue documentation before relying on API details.
 ---
 
 # Flue
 
-Use this skill when working on Flue framework projects or answering questions about Flue capabilities. Flue is evolving quickly, so treat this skill as a map and orientation guide, not a frozen API reference.
+Treat every Flue API detail as versioned. Inspect the project, search the relevant documentation, and read the matching pages before designing or editing code. Do not implement Flue APIs from memory.
 
-Prefer this order of authority:
+## Establish the Documentation Target
 
-1. Current project code and installed `@flue/*` package docs.
-2. Public Flue docs linked in this skill.
-3. Prior memory or examples, only after verification.
+1. Inspect `package.json` and the lockfile for the installed `@flue/*` versions.
+2. Decide whether the task targets the installed version or upgrades to a newer version.
+3. Use the project-local `flue` executable. Do not install or download another CLI merely to search its docs.
 
-## Start Here
+For maintenance work, prefer the documentation bundled with the installed `@flue/cli`; it matches the code being maintained. For upgrade work, read the target release's migration guide and current official docs until the dependency pins have been upgraded, then use the newly installed CLI docs.
 
-Read [references/docs-map.md](references/docs-map.md) when you need feature coverage, docs URLs, or a reminder of which Flue primitive fits a task.
+Never combine examples from different Flue versions without explicitly reconciling the changed API.
 
-For implementation work, inspect the project before editing and verify exact function names, imports, route shapes, and CLI flags against the installed package or current docs:
+## Search, Then Read
 
-1. Check `package.json` for installed Flue package versions.
-2. Identify the active Flue source layout and discovered resource directories.
-3. Inspect Flue config, application entrypoints, persistence setup, agents, workflows, channels, actions, and imported skills.
-4. Validate with the repo’s typecheck/build scripts and Flue CLI where appropriate.
+Use the local CLI through the project's package manager so the repository's binary wins. For npm projects, use this loop:
 
-## Choose the Flue Primitive
+```sh
+npm exec -- flue docs search durable execution
+npm exec -- flue docs read guide/durability
+```
 
-- Use an **Agent** for continuing, addressable sessions with identity and persistent conversation state.
-- Use a **Workflow** for bounded, finite jobs with lifecycle events, run records, and inspectable results.
-- Use an **Action** for reusable, schema-backed harness logic that should be deterministic or callable from multiple places.
-- Use a **Skill** for procedural knowledge, conventions, or prompt guidance that should shape model behavior.
-- Use **Schedules** when recurring work should start workflows or send events to continuing agents. Node.js still needs an application scheduler; Cloudflare can use Worker scheduling primitives.
-- Use **Routing** when the application needs auth, health checks, route prefixes, custom APIs, webhooks, SPA serving, or another HTTP surface alongside Flue.
+Apply these commands deliberately:
 
-## Implementation Guardrails
+- Run `flue docs search <query>` with the exact concept, symbol, import, CLI flag, or error text. The command returns up to eight ranked JSON results.
+- Run `flue docs read <path>` for the most relevant results and read each page completely before acting on it.
+- Run `flue docs` with no arguments when terminology has changed or search results are ambiguous; it lists every bundled page.
+- Pass a catalog path, docs URL, absolute docs path, or source Markdown filename to `flue docs read`.
+- Refine broad searches. For a cross-cutting change, search and read each affected surface rather than relying on one overview page.
 
-- Avoid hardcoding Flue API details from memory. Confirm exact names and signatures before writing code.
-- Keep scheduled work modeled as Flue work units, but let the host environment or app scheduler decide when to start them.
-- Treat workflow/run inspection as potentially sensitive because it can reveal prompts, inputs, outputs, and model activity.
-- For Node.js persistence, verify the current database guide before adding or changing state storage.
-- For Cloudflare persistence, verify the current Cloudflare target guide before adding database files or migrations.
-- For React clients, verify the mounted API path and SDK setup before choosing a `baseUrl`.
-- For host filesystem or shell access, verify the target and sandbox guide before enabling local execution.
+Useful query shapes include:
 
-## Docs
+```sh
+npm exec -- flue docs search usePersistentState
+npm exec -- flue docs search "tool result envelope"
+npm exec -- flue docs search "conversation scoped client"
+npm exec -- flue docs search "submission_settled"
+npm exec -- flue docs search "<exact error message>"
+```
 
-Primary docs:
+If the local CLI is unavailable, inspect installed package types and source first. Then use only official Flue documentation at `https://flueframework.com/docs/` as the network fallback. State when live docs target a different version than the installed packages.
 
-- Quickstart: https://flueframework.com/docs/getting-started/quickstart/
-- Quickstart Markdown: https://flueframework.com/docs/getting-started/quickstart/index.md
-- Schedules: https://flueframework.com/docs/guide/schedules/
-- Project Layout: https://flueframework.com/docs/guide/project-layout/
-- Agents: https://flueframework.com/docs/guide/building-agents/
-- Workflows: https://flueframework.com/docs/guide/workflows/
-- Actions: https://flueframework.com/docs/guide/actions/
-- Skills: https://flueframework.com/docs/guide/skills/
-- Routing: https://flueframework.com/docs/guide/routing/
-- Database: https://flueframework.com/docs/guide/database/
-- React: https://flueframework.com/docs/guide/react/
-- Node.js target: https://flueframework.com/docs/guide/targets/node/
-- Cloudflare target: https://flueframework.com/docs/guide/targets/cloudflare/
+## Verify the Contract
+
+Read enough material to verify all affected boundaries:
+
+- Confirm imports, signatures, return envelopes, statics, hook rules, route shapes, event fields, and CLI flags.
+- Inspect installed `.d.ts` files or runtime source when the docs do not answer a code-level question.
+- Search the repository for existing conventions and removed APIs before editing.
+- Treat compiler errors as prompts for another exact-symbol or exact-error docs search.
+- Record the Flue docs paths that materially informed the implementation in the handoff.
+
+## Migrate to Flue 2
+
+For a `1.0.0-beta.9` to Flue 2 migration, read the live [migration guide](https://flueframework.com/docs/guide/migration/) before editing. Use its ordered checklist as the migration sequence: pins, build, routing, agents, tools, skills, workflows, channels and database, providers, observability, clients, deployment, then verification.
+
+Keep these Flue 2 boundaries visible while migrating:
+
+- Use Vite with `@flue/vite`; do not use the removed `flue dev` or `flue build` commands.
+- Mount each agent and channel explicitly in `app.ts`; do not use the removed auto-router.
+- Define agents as exported capitalized synchronous functions in a `'use agent'` module and compose behavior with hooks; do not use `defineAgent`.
+- Replace Actions with tools. Use `run({ data })` and return the documented tool result envelope.
+- Replace each Workflow with the smallest correct fit: an awaited `init()` handle, a durable tool, or an application-owned orchestrator.
+- Import `SKILL.md` directly without import attributes. Wrap other Markdown with `defineSkill` only when it must behave as a skill.
+- Attach a sandbox explicitly when filesystem or shell capabilities are required; Flue 2 provides no implicit sandbox.
+- Use conversation-scoped SDK and React clients rather than the removed deployment-wide namespaces.
+- Correlate observability with agent/submission events and `instanceId`/`submissionId`, not workflow runs.
+
+Treat that list as orientation, not an API reference. Search and read the current target-version page for every item before implementing it.
+
+## Choose the Smallest Flue 2 Primitive
+
+- Use an agent for continuing, addressable model conversations.
+- Use a tool for a typed capability the model or application can invoke.
+- Use a durable tool for a short checkpointed side-effect sequence owned by one agent turn.
+- Use application code for deterministic domain services, scheduling, and multi-step orchestration with its own state and inspection needs.
+- Use a skill for procedural guidance that shapes model behavior.
+
+For Neondeck, keep application SQLite state separate from Flue conversation/runtime persistence. Preserve one typed backend command and event surface for dashboard and future clients. Prefer deterministic Neondeck services for facts and mutations, and use Flue where model reasoning, conversation continuity, or model-facing tools add value.
+
+## Validate Changes
+
+Run the repository's focused typecheck and tests, then the production Vite build when build, routing, generated exports, or deployment configuration changes. During a migration, re-run searches after upgrading the packages so final code is checked against the documentation bundled with the installed Flue 2 CLI.
+
+Primary references:
+
+- `flue docs` CLI: https://flueframework.com/docs/cli/docs/
+- Flue 2 migration guide: https://flueframework.com/docs/guide/migration/

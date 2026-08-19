@@ -7,7 +7,7 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
 
 <BaseLayout
   title="neondeck docs"
-  description="Documentation for installing, configuring, and deploying neondeck, a local-first autonomous developer assistant."
+  description="Documentation for installing, configuring, and running neondeck, a local-first autonomous developer assistant for pull requests."
 >
   <div class="site-shell">
     <SiteNav />
@@ -16,11 +16,17 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
       <article class="docs-prose">
         <h1>Docs</h1>
         <p>
-          neondeck is a local-first autonomous developer assistant designed to
-          stay visible beside your work on a companion display, vertical panel,
-          or sensor-panel style deck. The local app serves a React dashboard and
-          Flue backend; this Astro site documents the project and deploys
-          separately to Cloudflare at neondeck.dev.
+          neondeck is a local-first autonomous developer assistant that keeps
+          pull requests moving. It surfaces the PRs you opened, watches the ones
+          you put on Autopilot, works beside you while you review everyone
+          else's, and briefs you on what needs attention. It runs on whatever
+          screen you already have. A second monitor, a vertical panel, or a
+          strip display like the Xeneon Edge all work, and none of them are
+          required.
+        </p>
+        <p>
+          This Astro site documents the project and deploys separately to
+          Cloudflare at neondeck.dev.
         </p>
 
         <h2>Start here</h2>
@@ -36,25 +42,28 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
           </li>
           <li>
             <a href="/docs/cli/">CLI</a>: command reference for setup, repo
-            registry, watches, Neon slash commands, and future TUI entrypoints.
+            registry, watches, and Neon slash commands.
           </li>
           <li>
             <a href="/docs/agent-runtime/">Agent runtime</a>: Flue agents,
-            actions, workflows, skills, memory, watches, reports, scheduled
+            tools, app operations, skills, memory, watches, reports, scheduled
             tasks, and observability.
           </li>
           <li>
             <a href="/docs/autopilot/">Autopilot</a>: watch a PR, choose a
             capability mode, review the continuing owner's work, and understand
-            the safe-push and recovery boundaries.
+            semantic autonomous judgment, mechanical delivery guards, and
+            recovery.
           </li>
           <li>
             <a href="/docs/mcp/">MCP servers</a>: remote and local MCP servers,
             OAuth login, approval policy, and Runtime Overview state.
           </li>
           <li>
-            <a href="/docs/execution/">Execution environments</a>: sandboxes,
-            the execution policy gate, exe.dev, and where work actually runs.
+            <a href="/docs/execution/">Safety and sandboxes</a>: how plain chat,
+            scheduled work, PR watches, Autopilot, human review, host commands,
+            and the experimental exe.dev command path use different trust
+            boundaries.
           </li>
           <li>
             <a href="/docs/contributing/">Contributing</a>: local dev loop,
@@ -64,13 +73,14 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
 
         <h2>Current runtime</h2>
         <p>
-          The local app is a Node 26 Hono server with Flue agents, Flue
-          workflows, deterministic actions, local SQLite state, and a Vite/React
-          dashboard. It is designed for everything from 32:9 ultrawides like the
-          Corsair Xeneon Edge to custom layouts for the size and constraints you
-          want. Dashboard layout is driven by runtime JSON config, measured
-          panel size, and typed actions Neon can use to adapt the surface. Local
-          dashboard surfaces subscribe to one multiplexed
+          The local app is a Node 26 Hono server with Flue agents and tools,
+          app-owned deterministic services, local SQLite state, and a Vite/React
+          dashboard. The dashboard fits the screen it is on, whether that is an
+          ordinary monitor or a 32:9 ultrawide like the Corsair Xeneon Edge, and
+          you can hand it a custom layout instead. Dashboard layout is driven by
+          runtime JSON config, measured panel size, and typed tools Neon can use
+          to adapt the surface. Local dashboard surfaces subscribe to one
+          multiplexed
           <code>/api/events</code> stream whose named config, notification, session,
           and review events refresh affected panels without a browser reload.
         </p>
@@ -112,7 +122,7 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
             local APIs.
           </li>
           <li>
-            <code>web/</code>: Vite React dashboard for the companion display.
+            <code>web/</code>: Vite React dashboard.
           </li>
           <li>
             <code>docs/</code>: Astro marketing and docs site for neondeck.dev.
@@ -132,10 +142,9 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
         <h2 id="commands">Neon commands</h2>
         <p>
           Slash commands can be typed into the chat panel, run from dashboard
-          buttons, or invoked through the <code>command-run</code> Flue workflow.
-          Deterministic results are persisted in
-          <code>workflow_summaries</code> and exposed at
-          <code>/api/workflows/summaries</code>. The chat surface special-cases
+          buttons, or chosen from the chat input's slash-command suggestions.
+          Deterministic results are persisted in app-owned operation summaries
+          and shown in the Activity panel. The chat surface special-cases
           <code>/briefing</code> as a normal assistant turn instead of a result card.
         </p>
         <pre><code>/repo-status [repo-id]
@@ -157,11 +166,17 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
         <p>
           PR watches persist in SQLite and survive restart. A
           <code>/watch-pr</code> watch polls GitHub for merge state, merge commit
-          checks, review feedback, and quiet no-op refreshes. The
-          <a href="/docs/autopilot/">watched-PR Autopilot</a> can notify, prepare
+          checks, review feedback, and quiet no-op refreshes. Provider-specific deploy
+          adapters are still a future integration.
+        </p>
+        <p>
+          The <a href="/docs/autopilot/">watched-PR Autopilot</a> can notify, prepare
           a committed change for review, wait for approval in its continuing owner
-          conversation, or push through its narrow safe-delivery path. Provider-specific
-          deploy adapters are still a future integration.
+          conversation, or autonomously deliver when that owner judges the change
+          sound and the narrow mechanical delivery guards pass. The owner currently
+          uses the display-assistant model. Its complete per-mode prompt can be inspected,
+          replaced, or reset from the Runtime panel, and changes apply on the next
+          owner turn.
         </p>
         <p>
           Scheduled tasks use validated interval, one-shot, or timezone-aware
@@ -203,50 +218,59 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
           > and typed task actions.
         </p>
 
-        <h2 id="flue">Flue actions and workflows</h2>
+        <h2 id="flue">Flue agents and tools</h2>
         <p>
-          Neon gets deterministic capabilities through schema-backed Flue
-          actions for config, repo status, GitHub PR/check facts, runtime
-          skills, dashboard layout presets, schedules, watches, commands, and
-          local dev doctor checks. Bounded operations are also available as
-          discovered Flue workflows:
+          Neon gets deterministic capabilities through schema-backed Flue tools
+          for config, repo status, GitHub PR/check facts, runtime skills,
+          dashboard layout presets, schedules, watches, commands, and local dev
+          doctor checks. Product state and orchestration remain app-owned; Flue
+          agents are dispatched only for model work:
         </p>
-        <pre><code>briefing
-command-run
-curate_learning_store
-dev-doctor
-fix-pr-ci
-handoff_to_kilo
-promote_kilo_result
-reconcile_kilo_task
-review-pr-for-human
-review_conversation_for_learning
-review_kilo_result
-review_pr_batch_for_learning
-scheduled-agent-instruction
-scheduler-tick
-summarize_kilo_session
-verify_kilo_result
-watch-pr</code></pre>
+        <pre><code>display-assistant
+pr-review-assistant
+pr-reviewer
+learning-review
+pr-autopilot-owner</code></pre>
+        <p>
+          Learning reviews use a keyed <code>learning-review</code> Flue agent. Their
+          bounded evidence, submission identity, result, and audit trail remain in
+          Neondeck's app-owned learning state so interrupted admission can be recovered.
+        </p>
         <p>
           Watched-PR Autopilot is a continuing
-          <code>pr-autopilot-owner</code> agent controlled through typed actions,
-          not a workflow for every transition. The separate manual
-          <code>/fix-ci</code> path remains available as the
-          <code>fix-pr-ci</code> workflow.
+          <code>pr-autopilot-owner</code> agent controlled through typed tools, not
+          a job for every transition. The separate manual
+          <code>/fix-ci</code> path remains available as an explicit app-owned operation.
         </p>
 
-        <h2 id="observability">Workflow observability</h2>
+        <h2 id="observability">Activity and submission observability</h2>
         <p>
-          The dashboard includes a dedicated workflow observability panel for
-          active Flue runs, failed runs, emitted progress data, and recent
-          action/tool/operation activity. Rows show compact, redacted summaries
-          by default. When a row has a guarded Flue run inspection URL, the
-          panel exposes it through an explicit <code>inspect</code> link.
+          The dashboard Activity panel combines compact app operation summaries,
+          Flue submission observations, emitted progress data, and recent tool
+          activity. Rows stay compact and redacted by default; raw prompts and
+          tool payloads are not exposed through a legacy workflow-run inspector.
+        </p>
+        <p>
+          PR review submissions show model turns, exact-revision workspace
+          calls, separate model and tool time, latest-turn token usage, returned
+          evidence volume, and the Git operations the reviewer chose. If older
+          events were pruned, the summary is explicitly marked partial. Expand
+          an event to see typed metadata such as paths, line ranges, result
+          counts, truncation, and remaining workspace budget. Source, patch, and
+          literal search contents are deliberately excluded from retained
+          activity records.
+        </p>
+        <p>
+          The reviewer receives a bounded read-only Git surface instead of a
+          preselected changed-file manifest. It starts from the exact merge-base
+          change index, then chooses among patches, targeted hunk evidence, raw
+          head or base files, repository search, commit history, and blame. This
+          keeps exploration revision-bound while allowing the model to gather
+          the context appropriate to each change.
         </p>
 
         <h2>Developer commands</h2>
-        <pre><code>fnm use 26.4.0
+        <pre><code>node --version
 npm run setup
 npm run dev
 npm run check

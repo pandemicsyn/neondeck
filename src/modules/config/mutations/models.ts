@@ -13,6 +13,7 @@ import {
   readRuntimeJson,
   runtimePaths,
 } from '../../../runtime-home';
+import { isRegisteredProvider } from '../../repos';
 import {
   updateAgentModelsInputSchema,
   updateHandoffConfigInputSchema,
@@ -45,6 +46,24 @@ export async function updateAgentModels(
   }
 
   const config = await readRuntimeJson(paths.config, parseAppConfig);
+  const unknownProviders = Array.from(
+    new Set(
+      modelValues(input)
+        .map((model) => model.slice(0, model.indexOf('/')))
+        .filter(
+          (provider) =>
+            !isRegisteredProvider(provider, {
+              providers: config.providers,
+            }),
+        ),
+    ),
+  );
+  if (unknownProviders.length > 0) {
+    return failResult('config_update_agent_models', paths, [paths.config], {
+      message: `Model strings reference unconfigured providers: ${unknownProviders.join(', ')}.`,
+      requires: ['registered-provider'],
+    });
+  }
   const nextModels = mergeAgentModelConfig(config.models, input);
   const next = parseAppConfig(
     {
@@ -83,6 +102,16 @@ export async function updateAgentModels(
           'Model strings must reference providers already registered by Neondeck or Flue runtime configuration.',
       },
     },
+  );
+}
+
+function modelValues(value: unknown): string[] {
+  if (typeof value === 'string') return [value];
+  if (!value || typeof value !== 'object') return [];
+  return Object.entries(value).flatMap(([key, nested]) =>
+    key.toLowerCase().includes('think') || key.endsWith('TimeoutMs')
+      ? []
+      : modelValues(nested),
   );
 }
 
@@ -334,12 +363,17 @@ function hasAgentModelUpdate(
     input.defaultThinkingLevel ||
     input.displayAssistant ||
     input.displayAssistantThinkingLevel ||
+    input.prReview !== undefined ||
+    input.prReviewThinkingLevel ||
+    input.prReviewTimeoutMs !== undefined ||
     input.utility !== undefined ||
     input.utilityThinkingLevel ||
     input.selfImprovement !== undefined ||
     input.selfImprovementThinkingLevel ||
     input.subagents?.default ||
     input.subagents?.defaultThinkingLevel ||
+    input.subagents?.explore !== undefined ||
+    input.subagents?.exploreThinkingLevel !== undefined ||
     input.subagents?.repoResearcher ||
     input.subagents?.repoResearcherThinkingLevel ||
     input.subagents?.ciInvestigator ||
@@ -411,12 +445,17 @@ function mergeAgentModelConfig(
   input: v.InferOutput<typeof updateAgentModelsInputSchema>,
 ): AgentModelConfig {
   const currentModels = { ...current };
+  if (input.prReview === null) delete currentModels.prReview;
   if (input.utility === null) delete currentModels.utility;
   if (input.selfImprovement === null) delete currentModels.selfImprovement;
   const subagents = {
     ...current?.subagents,
     ...input.subagents,
-  };
+  } as NonNullable<AgentModelConfig['subagents']>;
+  if (input.subagents?.explore === null) delete subagents.explore;
+  if (input.subagents?.exploreThinkingLevel === null) {
+    delete subagents.exploreThinkingLevel;
+  }
 
   return {
     ...currentModels,
@@ -429,6 +468,15 @@ function mergeAgentModelConfig(
       : {}),
     ...(input.displayAssistantThinkingLevel !== undefined
       ? { displayAssistantThinkingLevel: input.displayAssistantThinkingLevel }
+      : {}),
+    ...(input.prReview !== undefined && input.prReview !== null
+      ? { prReview: input.prReview }
+      : {}),
+    ...(input.prReviewThinkingLevel !== undefined
+      ? { prReviewThinkingLevel: input.prReviewThinkingLevel }
+      : {}),
+    ...(input.prReviewTimeoutMs !== undefined
+      ? { prReviewTimeoutMs: input.prReviewTimeoutMs }
       : {}),
     ...(input.utility !== undefined && input.utility !== null
       ? { utility: input.utility }

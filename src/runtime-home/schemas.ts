@@ -1,4 +1,8 @@
 import * as v from 'valibot';
+import {
+  maxPrReviewTimeoutMs,
+  minPrReviewTimeoutMs,
+} from '../../shared/pr-review-policy';
 import { mcpConfigSchema, type McpConfig } from '../domains/mcp/schemas';
 import { repoGuardrailsSchema } from './guardrails';
 
@@ -44,6 +48,43 @@ export const localApiTokenSchema = v.pipe(
     'Expected a base64url-compatible local API token.',
   ),
 );
+export function trustedOriginIssue(value: string | undefined) {
+  try {
+    const url = new URL(value ?? '');
+    const loopback = ['127.0.0.1', 'localhost', '[::1]', '::1'].includes(
+      url.hostname,
+    );
+    if (
+      (url.protocol !== 'https:' && !(url.protocol === 'http:' && loopback)) ||
+      url.username ||
+      url.password ||
+      url.hostname.includes('*') ||
+      url.pathname !== '/' ||
+      url.search ||
+      url.hash
+    ) {
+      return 'Use an exact HTTPS origin (or loopback HTTP) without credentials, path, query, or fragment.';
+    }
+    return undefined;
+  } catch {
+    return 'Enter a valid origin URL.';
+  }
+}
+export const trustedOriginSchema = v.pipe(
+  nonEmptyStringSchema,
+  v.check(
+    (value) => trustedOriginIssue(value) === undefined,
+    'Expected an exact HTTPS origin (HTTP is allowed only for loopback hosts) without credentials, path, query, or fragment.',
+  ),
+  v.transform((value) => new URL(value).origin),
+);
+const trustedOriginsSchema = v.pipe(
+  v.array(trustedOriginSchema),
+  v.check(
+    (origins) => new Set(origins).size === origins.length,
+    'Trusted origins must be unique.',
+  ),
+);
 export const thinkingLevelSchema = v.picklist([
   'off',
   'minimal',
@@ -52,12 +93,29 @@ export const thinkingLevelSchema = v.picklist([
   'high',
   'xhigh',
 ]);
+export const prReviewTimeoutMsSchema = v.pipe(
+  v.number(),
+  v.integer(),
+  v.minValue(minPrReviewTimeoutMs),
+  v.maxValue(maxPrReviewTimeoutMs),
+);
+
+const persistedPrReviewTimeoutMsSchema = v.pipe(
+  v.number(),
+  v.integer(),
+  v.minValue(minPrReviewTimeoutMs),
+  v.maxValue(maxPrReviewTimeoutMs),
+  v.transform((value) => Math.min(value, maxPrReviewTimeoutMs)),
+);
 
 export const agentModelConfigSchema = v.looseObject({
   default: v.optional(nonEmptyStringSchema),
   defaultThinkingLevel: v.optional(thinkingLevelSchema),
   displayAssistant: v.optional(nonEmptyStringSchema),
   displayAssistantThinkingLevel: v.optional(thinkingLevelSchema),
+  prReview: v.optional(nonEmptyStringSchema),
+  prReviewThinkingLevel: v.optional(thinkingLevelSchema),
+  prReviewTimeoutMs: v.optional(persistedPrReviewTimeoutMsSchema),
   utility: v.optional(nonEmptyStringSchema),
   utilityThinkingLevel: v.optional(thinkingLevelSchema),
   selfImprovement: v.optional(nonEmptyStringSchema),
@@ -66,6 +124,8 @@ export const agentModelConfigSchema = v.looseObject({
     v.looseObject({
       default: v.optional(nonEmptyStringSchema),
       defaultThinkingLevel: v.optional(thinkingLevelSchema),
+      explore: v.optional(nonEmptyStringSchema),
+      exploreThinkingLevel: v.optional(thinkingLevelSchema),
       repoResearcher: v.optional(nonEmptyStringSchema),
       repoResearcherThinkingLevel: v.optional(thinkingLevelSchema),
       ciInvestigator: v.optional(nonEmptyStringSchema),
@@ -103,6 +163,67 @@ export const handoffConfigSchema = v.looseObject({
   allowExternalReviewQueue: v.optional(v.boolean()),
 });
 
+const reservedProviderIds = [
+  'kilocode',
+  'openai',
+  'anthropic',
+  'openai-codex',
+  'openai-compatible',
+];
+
+export function openAiCompatibleProviderIdIssue(value: string | undefined) {
+  if (!/^[a-z][a-z0-9-]{0,62}$/.test(value ?? '')) {
+    return 'Use lowercase letters, numbers, and hyphens.';
+  }
+  if (reservedProviderIds.includes(value ?? '')) {
+    return 'That id is reserved by a built-in provider.';
+  }
+  return undefined;
+}
+
+export function openAiCompatibleBaseUrlIssue(value: string | undefined) {
+  try {
+    const url = new URL(value ?? '');
+    const loopback = ['127.0.0.1', 'localhost', '[::1]'].includes(url.hostname);
+    if (
+      (url.protocol !== 'https:' && !(url.protocol === 'http:' && loopback)) ||
+      url.username ||
+      url.password ||
+      url.search ||
+      url.hash
+    ) {
+      return 'Use HTTPS (or loopback HTTP) without credentials, query, or fragment.';
+    }
+    return undefined;
+  } catch {
+    return 'Enter a valid endpoint URL.';
+  }
+}
+
+export const openAiCompatibleProviderIdSchema = v.pipe(
+  v.string(),
+  v.check(
+    (value) => openAiCompatibleProviderIdIssue(value) === undefined,
+    'Expected a unique lowercase provider id using letters, numbers, and hyphens.',
+  ),
+);
+export const openAiCompatibleBaseUrlSchema = v.pipe(
+  nonEmptyStringSchema,
+  v.check(
+    (value) => openAiCompatibleBaseUrlIssue(value) === undefined,
+    'Expected an HTTPS endpoint URL (HTTP is allowed only for loopback hosts) without credentials, query, or fragment.',
+  ),
+);
+const openAiCompatibleProviderSchema = v.strictObject({
+  id: openAiCompatibleProviderIdSchema,
+  enabled: v.optional(v.boolean()),
+  baseUrl: openAiCompatibleBaseUrlSchema,
+  apiKeyEnv: v.optional(envVarNameSchema),
+  api: v.optional(v.picklist(['openai-completions', 'openai-responses'])),
+  contextWindow: v.optional(positiveIntegerSchema),
+  maxTokens: v.optional(positiveIntegerSchema),
+});
+
 export const providerConfigSchema = v.strictObject({
   kilocode: v.optional(
     v.strictObject({
@@ -122,6 +243,22 @@ export const providerConfigSchema = v.strictObject({
       enabled: v.optional(v.boolean()),
       apiKeyEnv: v.optional(envVarNameSchema),
     }),
+  ),
+  openaiCodex: v.optional(
+    v.strictObject({
+      enabled: v.optional(v.boolean()),
+    }),
+  ),
+  openaiCompatible: v.optional(
+    v.pipe(
+      v.array(openAiCompatibleProviderSchema),
+      v.check(
+        (providers) =>
+          new Set(providers.map((provider) => provider.id)).size ===
+          providers.length,
+        'Custom provider ids must be unique.',
+      ),
+    ),
   ),
 });
 
@@ -221,10 +358,53 @@ export const autopilotConcurrencySchema = v.looseObject({
   ),
 });
 
+export const autopilotPromptTemplateSchema = v.pipe(
+  v.string(),
+  v.maxLength(20_000),
+  v.check((value) => value.trim().length > 0, 'Prompt cannot be empty.'),
+);
+
+export const autopilotOwnerPromptModeSchema = v.picklist([
+  'prepare-only',
+  'autofix-with-approval',
+  'autofix-push-when-safe',
+]);
+
+export const autopilotPromptTemplatesSchema = v.partial(
+  v.object({
+    'prepare-only': autopilotPromptTemplateSchema,
+    'autofix-with-approval': autopilotPromptTemplateSchema,
+    'autofix-push-when-safe': autopilotPromptTemplateSchema,
+  }),
+);
+
 export const autopilotConfigSchema = v.looseObject({
   defaultMode: v.optional(autopilotModeSchema),
   mode: v.optional(autopilotModeSchema),
   concurrency: v.optional(autopilotConcurrencySchema),
+  prompts: v.optional(autopilotPromptTemplatesSchema),
+});
+
+export const prReviewPromptKindSchema = v.picklist([
+  'initial-review',
+  'follow-up-reviewer',
+]);
+
+export const prReviewPromptTemplateSchema = v.pipe(
+  v.string(),
+  v.maxLength(40_000),
+  v.check((value) => value.trim().length > 0, 'Prompt cannot be empty.'),
+);
+
+export const prReviewPromptTemplatesSchema = v.partial(
+  v.object({
+    'initial-review': prReviewPromptTemplateSchema,
+    'follow-up-reviewer': prReviewPromptTemplateSchema,
+  }),
+);
+
+export const prReviewConfigSchema = v.looseObject({
+  prompts: v.optional(prReviewPromptTemplatesSchema),
 });
 
 const kiloHandoffModeSchema = v.picklist([
@@ -258,9 +438,14 @@ export const localApiConfigSchema = v.strictObject({
   token: localApiTokenSchema,
 });
 
+export const serverConfigSchema = v.strictObject({
+  trustedOrigins: v.optional(trustedOriginsSchema),
+});
+
 export const appConfigSchema = v.looseObject({
   version: positiveIntegerSchema,
   localApi: v.optional(localApiConfigSchema),
+  server: v.optional(serverConfigSchema),
   skillRoots: v.optional(v.array(nonEmptyStringSchema)),
   models: v.optional(agentModelConfigSchema),
   providers: v.optional(providerConfigSchema),
@@ -268,6 +453,7 @@ export const appConfigSchema = v.looseObject({
   worktrees: v.optional(worktreeConfigSchema),
   guardrails: v.optional(repoGuardrailsSchema),
   autopilot: v.optional(autopilotConfigSchema),
+  prReview: v.optional(prReviewConfigSchema),
   kilo: v.optional(kiloConfigSchema),
   learning: v.optional(learningConfigSchema),
   handoff: v.optional(handoffConfigSchema),
@@ -413,8 +599,10 @@ export type WorktreeCleanupConfig = v.InferOutput<
   typeof worktreeCleanupConfigSchema
 >;
 export type AutopilotConfig = v.InferOutput<typeof autopilotConfigSchema>;
+export type PrReviewConfig = v.InferOutput<typeof prReviewConfigSchema>;
 export type KiloConfig = v.InferOutput<typeof kiloConfigSchema>;
 export type LocalApiConfig = v.InferOutput<typeof localApiConfigSchema>;
+export type ServerConfig = v.InferOutput<typeof serverConfigSchema>;
 export type { McpConfig };
 export type RepoConfig = v.InferOutput<typeof repoConfigSchema>;
 export type RepoRegistry = v.InferOutput<typeof repoRegistrySchema>;

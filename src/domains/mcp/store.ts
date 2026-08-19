@@ -9,6 +9,7 @@ import * as v from 'valibot';
 import { stableJson, truncateText } from './format';
 import { mcpApprovalResolveInputSchema } from './schemas';
 import { createApprovalResolutionNudge } from '../../modules/sessions';
+import { promoteMcpToolAlways, readMcpConfig } from './config';
 
 export type McpToolCatalogRecord = {
   serverId: string;
@@ -24,6 +25,8 @@ export type McpToolCatalogRecord = {
 
 export type McpApprovalStatus =
   'pending' | 'approved' | 'denied' | 'used' | 'expired';
+export type McpApprovalDecision =
+  'allow-once' | 'allow-chat' | 'allow-always' | 'deny';
 
 export type McpApprovalRecord = {
   id: string;
@@ -33,6 +36,7 @@ export type McpApprovalRecord = {
   argumentsHash: string;
   argumentsPreview: string;
   status: McpApprovalStatus;
+  approvalDecision: McpApprovalDecision | null;
   approverSurface: string | null;
   sessionId: string | null;
   expiresAt: string;
@@ -241,6 +245,7 @@ export async function findUsableMcpApproval(
     toolName: string;
     adaptedName: string;
     argumentsHash: string;
+    sessionId?: string;
   },
   paths = runtimePaths(),
 ) {
@@ -248,6 +253,28 @@ export async function findUsableMcpApproval(
   expireOldApprovals(paths);
   const database = openDb(paths.neondeckDatabase);
   try {
+    const sessionId = nonEmpty(input.sessionId);
+    const chatRow = sessionId
+      ? (database
+          .prepare(
+            `
+            SELECT *
+            FROM mcp_tool_approvals
+            WHERE server_id = ?
+              AND tool_name = ?
+              AND adapted_name = ?
+              AND session_id = ?
+              AND status = 'approved'
+              AND approval_decision = 'allow-chat'
+            ORDER BY resolved_at DESC
+            LIMIT 1;
+          `,
+          )
+          .get(input.serverId, input.toolName, input.adaptedName, sessionId) as
+          McpApprovalRow | undefined)
+      : undefined;
+    if (chatRow) return readApprovalRow(chatRow);
+
     const row = database
       .prepare(
         `
@@ -258,6 +285,8 @@ export async function findUsableMcpApproval(
           AND adapted_name = ?
           AND arguments_hash = ?
           AND status = 'approved'
+          AND approval_decision = 'allow-once'
+          AND COALESCE(session_id, '') = ?
           AND expires_at > ?
         ORDER BY resolved_at ASC
         LIMIT 1;
@@ -268,6 +297,7 @@ export async function findUsableMcpApproval(
         input.toolName,
         input.adaptedName,
         input.argumentsHash,
+        nonEmpty(input.sessionId) ?? '',
         new Date().toISOString(),
       ) as McpApprovalRow | undefined;
     return row ? readApprovalRow(row) : null;
@@ -282,6 +312,7 @@ export async function consumeUsableMcpApproval(
     toolName: string;
     adaptedName: string;
     argumentsHash: string;
+    sessionId?: string;
   },
   paths = runtimePaths(),
 ) {
@@ -293,6 +324,31 @@ export async function consumeUsableMcpApproval(
   try {
     database.exec('BEGIN IMMEDIATE;');
     transactionStarted = true;
+    const sessionId = nonEmpty(input.sessionId);
+    const chatRow = sessionId
+      ? (database
+          .prepare(
+            `
+            SELECT *
+            FROM mcp_tool_approvals
+            WHERE server_id = ?
+              AND tool_name = ?
+              AND adapted_name = ?
+              AND session_id = ?
+              AND status = 'approved'
+              AND approval_decision = 'allow-chat'
+            ORDER BY resolved_at DESC
+            LIMIT 1;
+          `,
+          )
+          .get(input.serverId, input.toolName, input.adaptedName, sessionId) as
+          McpApprovalRow | undefined)
+      : undefined;
+    if (chatRow) {
+      database.exec('COMMIT;');
+      transactionStarted = false;
+      return readApprovalRow(chatRow);
+    }
     const row = database
       .prepare(
         `
@@ -303,6 +359,8 @@ export async function consumeUsableMcpApproval(
           AND adapted_name = ?
           AND arguments_hash = ?
           AND status = 'approved'
+          AND approval_decision = 'allow-once'
+          AND COALESCE(session_id, '') = ?
           AND expires_at > ?
         ORDER BY resolved_at ASC
         LIMIT 1;
@@ -313,6 +371,7 @@ export async function consumeUsableMcpApproval(
         input.toolName,
         input.adaptedName,
         input.argumentsHash,
+        sessionId ?? '',
         now,
       ) as McpApprovalRow | undefined;
     if (!row) {
@@ -382,6 +441,7 @@ export async function createMcpApprovalRequest(
           AND tool_name = ?
           AND adapted_name = ?
           AND arguments_hash = ?
+          AND COALESCE(session_id, '') = ?
           AND status = 'pending'
           AND expires_at > ?
         ORDER BY created_at DESC
@@ -393,26 +453,10 @@ export async function createMcpApprovalRequest(
         input.toolName,
         input.adaptedName,
         input.argumentsHash,
+        sessionId ?? '',
         nowIso,
       ) as McpApprovalRow | undefined;
     if (existing) {
-      if (sessionId && !nonEmpty(existing.session_id)) {
-        database
-          .prepare(
-            `
-            UPDATE mcp_tool_approvals
-            SET session_id = ?,
-                updated_at = ?
-            WHERE id = ?;
-          `,
-          )
-          .run(sessionId, nowIso, existing.id);
-        return readApprovalRow({
-          ...existing,
-          session_id: sessionId,
-          updated_at: nowIso,
-        });
-      }
       return readApprovalRow(existing);
     }
 
@@ -428,6 +472,7 @@ export async function createMcpApprovalRequest(
           arguments_hash,
           arguments_preview,
           status,
+          approval_decision,
           approver_surface,
           session_id,
           expires_at,
@@ -436,7 +481,7 @@ export async function createMcpApprovalRequest(
           used_at,
           updated_at
         )
-        VALUES (?, ?, ?, ?, ?, ?, 'pending', NULL, ?, ?, ?, NULL, NULL, ?);
+        VALUES (?, ?, ?, ?, ?, ?, 'pending', NULL, NULL, ?, ?, ?, NULL, NULL, ?);
       `,
       )
       .run(
@@ -479,37 +524,6 @@ export async function consumeMcpApproval(id: string, paths = runtimePaths()) {
   }
 }
 
-export async function expireMcpServerApprovals(
-  serverId: string,
-  paths = runtimePaths(),
-) {
-  await ensureRuntimeHome(paths);
-  expireMcpServerApprovalsSync(serverId, paths);
-}
-
-export function expireMcpServerApprovalsSync(
-  serverId: string,
-  paths = runtimePaths(),
-) {
-  const database = openDb(paths.neondeckDatabase);
-  const now = new Date().toISOString();
-  try {
-    database
-      .prepare(
-        `
-        UPDATE mcp_tool_approvals
-        SET status = 'expired',
-            updated_at = ?
-        WHERE server_id = ?
-          AND status IN ('pending', 'approved');
-      `,
-      )
-      .run(now, serverId);
-  } finally {
-    database.close();
-  }
-}
-
 export async function resolveMcpApproval(rawInput: unknown) {
   const paths = runtimePaths();
   return resolveMcpApprovalWithPaths(rawInput, paths);
@@ -532,7 +546,90 @@ export async function resolveMcpApprovalWithPaths(
   }
   const input = parsed.output;
   expireOldApprovals(paths);
-  const nextStatus = input.decision === 'approve' ? 'approved' : 'denied';
+  const nextStatus = input.decision === 'deny' ? 'denied' : 'approved';
+  const preflight = readApproval(paths, input.id);
+  if (!preflight) {
+    return {
+      ok: false,
+      action: 'mcp_approval_resolve',
+      changed: false,
+      message: `MCP approval "${input.id}" was not found.`,
+      requires: ['id'],
+    };
+  }
+  if (preflight.status !== 'pending') {
+    return {
+      ok: false,
+      action: 'mcp_approval_resolve',
+      changed: false,
+      message: `MCP approval "${input.id}" is already ${preflight.status}.`,
+      approval: preflight,
+    };
+  }
+
+  if (input.decision === 'allow-chat') {
+    if (!preflight.sessionId) {
+      return {
+        ok: false,
+        action: 'mcp_approval_resolve',
+        changed: false,
+        message:
+          'This MCP approval is not linked to a chat, so it cannot be allowed for this chat.',
+        requires: ['sessionId'],
+        approval: preflight,
+      };
+    }
+  }
+
+  let resolutionClaim: string | null = null;
+  if (input.decision === 'allow-always') {
+    resolutionClaim = `resolving:${randomUUID()}`;
+    if (!claimMcpApprovalResolution(paths, input.id, resolutionClaim)) {
+      const current = readApproval(paths, input.id);
+      return {
+        ok: false,
+        action: 'mcp_approval_resolve',
+        changed: false,
+        message: current
+          ? `MCP approval "${input.id}" is already being resolved.`
+          : `MCP approval "${input.id}" was not found.`,
+        ...(current ? { approval: current } : { requires: ['id'] }),
+      };
+    }
+    let promoted: Awaited<ReturnType<typeof promoteMcpToolAlways>>;
+    try {
+      promoted = await promoteMcpToolAlways(
+        {
+          serverId: preflight.serverId,
+          toolName: preflight.toolName,
+          preserveApprovalId: preflight.id,
+        },
+        paths,
+      );
+    } catch (error) {
+      const config = await readMcpConfig(paths).catch(() => null);
+      const persisted =
+        config?.servers[preflight.serverId]?.tools?.overrides?.[
+          preflight.toolName
+        ] === 'approve';
+      if (!persisted) {
+        releaseMcpApprovalResolution(paths, input.id, resolutionClaim);
+        throw error;
+      }
+      promoted = {
+        ok: true,
+        action: 'mcp_server_update',
+        changed: true,
+        message: `Always-allow policy for MCP tool "${preflight.toolName}" was persisted before ancillary config recording failed.`,
+        home: paths.home,
+        files: [paths.mcp],
+      };
+    }
+    if (!promoted.ok) {
+      releaseMcpApprovalResolution(paths, input.id, resolutionClaim);
+      return promoted;
+    }
+  }
   const now = new Date().toISOString();
   const database = openDb(paths.neondeckDatabase);
   let transactionStarted = false;
@@ -545,6 +642,9 @@ export async function resolveMcpApprovalWithPaths(
     if (!existingRow) {
       database.exec('COMMIT;');
       transactionStarted = false;
+      if (resolutionClaim) {
+        releaseMcpApprovalResolution(paths, input.id, resolutionClaim);
+      }
       return {
         ok: false,
         action: 'mcp_approval_resolve',
@@ -555,9 +655,26 @@ export async function resolveMcpApprovalWithPaths(
     }
 
     const existing = readApprovalRow(existingRow);
+    if (
+      existingRow.approver_surface?.startsWith('resolving:') &&
+      existingRow.approver_surface !== resolutionClaim
+    ) {
+      database.exec('COMMIT;');
+      transactionStarted = false;
+      return {
+        ok: false,
+        action: 'mcp_approval_resolve',
+        changed: false,
+        message: `MCP approval "${input.id}" is already being resolved.`,
+        approval: existing,
+      };
+    }
     if (existing.status !== 'pending') {
       database.exec('COMMIT;');
       transactionStarted = false;
+      if (resolutionClaim) {
+        releaseMcpApprovalResolution(paths, input.id, resolutionClaim);
+      }
       return {
         ok: false,
         action: 'mcp_approval_resolve',
@@ -572,14 +689,24 @@ export async function resolveMcpApprovalWithPaths(
         `
         UPDATE mcp_tool_approvals
         SET status = ?,
+            approval_decision = ?,
             approver_surface = ?,
             resolved_at = ?,
             updated_at = ?
         WHERE id = ?
-          AND status = 'pending';
+          AND status = 'pending'
+          ${resolutionClaim ? 'AND approver_surface = ?' : "AND COALESCE(approver_surface, '') NOT LIKE 'resolving:%'"};
       `,
       )
-      .run(nextStatus, input.approverSurface ?? 'unknown', now, now, input.id);
+      .run(
+        nextStatus,
+        input.decision,
+        input.approverSurface ?? 'unknown',
+        now,
+        now,
+        input.id,
+        ...(resolutionClaim ? [resolutionClaim] : []),
+      );
 
     if (result.changes !== 1) {
       const currentRow = database
@@ -588,6 +715,9 @@ export async function resolveMcpApprovalWithPaths(
       const current = currentRow ? readApprovalRow(currentRow) : null;
       database.exec('COMMIT;');
       transactionStarted = false;
+      if (resolutionClaim) {
+        releaseMcpApprovalResolution(paths, input.id, resolutionClaim);
+      }
       return {
         ok: false,
         action: 'mcp_approval_resolve',
@@ -602,6 +732,7 @@ export async function resolveMcpApprovalWithPaths(
     const approval = readApprovalRow({
       ...existingRow,
       status: nextStatus,
+      approval_decision: input.decision,
       approver_surface: input.approverSurface ?? 'unknown',
       resolved_at: now,
       updated_at: now,
@@ -616,7 +747,9 @@ export async function resolveMcpApprovalWithPaths(
         decision: nextStatus === 'approved' ? 'approved' : 'denied',
         subject: `${approval.serverId}/${approval.adaptedName}`,
         retryInstruction:
-          'Retry the same MCP tool call with the same arguments.',
+          input.decision === 'allow-once'
+            ? 'Retry the same MCP tool call with the same arguments.'
+            : 'Retry the MCP tool call. This grant is not bound to the previous arguments.',
       },
       paths,
     );
@@ -627,7 +760,11 @@ export async function resolveMcpApprovalWithPaths(
       changed: true,
       message:
         nextStatus === 'approved'
-          ? `Approved MCP tool call "${input.id}". Retry the same tool call with the same arguments.`
+          ? input.decision === 'allow-once'
+            ? `Allowed MCP tool call "${input.id}" once. Retry it with the same arguments.`
+            : input.decision === 'allow-chat'
+              ? `Allowed MCP tool "${approval.toolName}" for this chat. Retry the tool call.`
+              : `Always allowed MCP tool "${approval.toolName}" on server "${approval.serverId}". Retry the tool call.`
           : `Denied MCP tool call "${input.id}".`,
       approval,
       ...(nudgeErrors.length > 0
@@ -636,7 +773,57 @@ export async function resolveMcpApprovalWithPaths(
     };
   } catch (error) {
     if (transactionStarted) database.exec('ROLLBACK;');
+    if (resolutionClaim) {
+      releaseMcpApprovalResolution(paths, input.id, resolutionClaim);
+    }
     throw error;
+  } finally {
+    database.close();
+  }
+}
+
+function claimMcpApprovalResolution(
+  paths: RuntimePaths,
+  id: string,
+  claimedSurface: string,
+) {
+  const database = openDb(paths.neondeckDatabase);
+  try {
+    const result = database
+      .prepare(
+        `
+        UPDATE mcp_tool_approvals
+        SET approver_surface = ?, updated_at = ?
+        WHERE id = ?
+          AND status = 'pending'
+          AND COALESCE(approver_surface, '') NOT LIKE 'resolving:%';
+      `,
+      )
+      .run(claimedSurface, new Date().toISOString(), id);
+    return result.changes === 1;
+  } finally {
+    database.close();
+  }
+}
+
+function releaseMcpApprovalResolution(
+  paths: RuntimePaths,
+  id: string,
+  claimedSurface: string,
+) {
+  const database = openDb(paths.neondeckDatabase);
+  try {
+    database
+      .prepare(
+        `
+        UPDATE mcp_tool_approvals
+        SET approver_surface = NULL, updated_at = ?
+        WHERE id = ?
+          AND status = 'pending'
+          AND approver_surface = ?;
+      `,
+      )
+      .run(new Date().toISOString(), id, claimedSurface);
   } finally {
     database.close();
   }
@@ -787,6 +974,7 @@ function expireOldApprovals(paths: RuntimePaths) {
         SET status = 'expired',
             updated_at = ?
         WHERE status IN ('pending', 'approved')
+          AND COALESCE(approval_decision, '') NOT IN ('allow-chat', 'allow-always')
           AND expires_at <= ?;
       `,
       )
@@ -816,6 +1004,7 @@ type McpApprovalRow = {
   arguments_hash: string;
   arguments_preview: string;
   status: McpApprovalStatus;
+  approval_decision: McpApprovalDecision | null;
   approver_surface: string | null;
   expires_at: string;
   created_at: string;
@@ -863,6 +1052,7 @@ function readApprovalRow(row: McpApprovalRow): McpApprovalRecord {
     argumentsHash: row.arguments_hash,
     argumentsPreview: row.arguments_preview,
     status: row.status,
+    approvalDecision: row.approval_decision,
     approverSurface: row.approver_surface,
     sessionId: nonEmpty(row.session_id) ?? null,
     expiresAt: row.expires_at,

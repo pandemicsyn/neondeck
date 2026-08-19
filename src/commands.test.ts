@@ -33,6 +33,50 @@ const addPrWatch = (...args: Parameters<typeof addPrWatchWithoutBaseline>) =>
     emptyPrWatchInitialEventBaseline,
   );
 
+function successfulCiFixRun(id: string) {
+  const timestamp = '2026-06-27T20:01:00.000Z';
+  return {
+    ok: true as const,
+    action: 'ci_fix_run' as const,
+    changed: true,
+    message: 'Queued CI fix.',
+    data: {
+      workflow: 'fix-pr-ci',
+      outcome: 'kilo-started',
+    },
+    workflowSummary: {
+      id,
+      workflow: 'ci_fix_run',
+      runId: null,
+      status: 'running',
+      summary: null,
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    },
+  };
+}
+
+function failedCiFixRun(id: string) {
+  const timestamp = '2026-06-27T20:01:00.000Z';
+  return {
+    ok: false as const,
+    action: 'ci_fix_run' as const,
+    changed: false,
+    message: 'GitHub token is required.',
+    requires: ['GITHUB_TOKEN'],
+    data: { outcome: 'dossier-failed' },
+    workflowSummary: {
+      id,
+      workflow: 'ci_fix_run',
+      runId: null,
+      status: 'failed',
+      summary: null,
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    },
+  };
+}
+
 const execFileAsync = promisify(execFile);
 const tempRoots: string[] = [];
 const originalEnv = { ...process.env };
@@ -140,15 +184,17 @@ describe('Neon commands', () => {
   it('blocks host-executing fix-ci from the model-callable command action', async () => {
     await expect(
       commandRunAction.run({
-        input: { command: '/fix-ci pandemicsyn/neondeck#10' },
+        data: { command: '/fix-ci pandemicsyn/neondeck#10' },
         log: { info() {}, warn() {} },
         harness: {},
       } as never),
     ).resolves.toMatchObject({
-      ok: false,
-      command: 'fix-ci',
-      status: 'failed',
-      requires: ['humanWorkflowAdmission'],
+      output: {
+        ok: false,
+        command: 'fix-ci',
+        status: 'failed',
+        requires: ['humanOperationAdmission'],
+      },
     });
   });
 
@@ -170,6 +216,11 @@ describe('Neon commands', () => {
             ref: input.ref,
             reviewId: 'review-1',
             attemptId: 'attempt-1',
+            repoFullName: 'pandemicsyn/neondeck',
+            prNumber: 10,
+            headSha: 'head-1',
+            baseSha: 'base-1',
+            baseRef: 'main',
           });
           const review = {
             id: 'review-1',
@@ -182,6 +233,8 @@ describe('Neon commands', () => {
             status: 'reviewing' as const,
             runId: 'review-run-1',
             headSha: 'head-1',
+            baseSha: null,
+            baseRef: null,
             origin: input.origin,
             reviewUrl: '/review?repo=pandemicsyn%2Fneondeck&number=10',
             reportIds: [],
@@ -200,6 +253,7 @@ describe('Neon commands', () => {
             readyAt: null,
             submittedAt: null,
             failedAt: null,
+            archivedAt: null,
           };
           return { review, reviewId: review.id, runId: 'review-run-1' };
         },
@@ -231,11 +285,16 @@ describe('Neon commands', () => {
         ref: 'pandemicsyn/neondeck#10',
         reviewId: 'review-1',
         attemptId: 'attempt-1',
+        repoFullName: 'pandemicsyn/neondeck',
+        prNumber: 10,
+        headSha: 'head-1',
+        baseSha: 'base-1',
+        baseRef: 'main',
       },
     ]);
   });
 
-  it('queues explicit fix-ci refs through the bounded workflow surface without review-queue gating', async () => {
+  it('runs explicit fix-ci refs through the bounded operation without review-queue gating', async () => {
     const home = await tempDir('neondeck-home-');
     const paths = runtimePaths(home);
     const invocations: unknown[] = [];
@@ -245,19 +304,20 @@ describe('Neon commands', () => {
         fetchPullRequestQueue: async () => {
           throw new Error('explicit fix-ci should not fetch review queue');
         },
-        invokeFixCiWorkflow: async (input) => {
+        runFixCi: async (input) => {
           invocations.push(input);
-          return { runId: 'ci-fix-run-1' };
+          return successfulCiFixRun('ci-fix-run-1');
         },
       }),
     ).resolves.toMatchObject({
       ok: true,
       command: 'fix-ci',
       message:
-        'Queued CI fix workflow ci-fix-run-1 for pandemicsyn/neondeck#10.',
+        'Started CI fix operation ci-fix-run-1 for pandemicsyn/neondeck#10.',
       data: {
-        workflow: 'fix-pr-ci',
+        operation: 'fix-pr-ci',
         runId: 'ci-fix-run-1',
+        operationSummaryId: 'ci-fix-run-1',
         ref: 'pandemicsyn/neondeck#10',
         trustBoundary: expect.stringContaining('does not push'),
       },
@@ -289,19 +349,20 @@ describe('Neon commands', () => {
           truncated: false,
           issues: [],
         }),
-        invokeFixCiWorkflow: async (input) => {
+        runFixCi: async (input) => {
           invocations.push(input);
-          return { runId: 'ci-fix-run-1' };
+          return successfulCiFixRun('ci-fix-run-1');
         },
       }),
     ).resolves.toMatchObject({
       ok: true,
       command: 'fix-ci',
       message:
-        'Queued CI fix workflow ci-fix-run-1 for pandemicsyn/neondeck#10.',
+        'Started CI fix operation ci-fix-run-1 for pandemicsyn/neondeck#10.',
       data: {
-        workflow: 'fix-pr-ci',
+        operation: 'fix-pr-ci',
         runId: 'ci-fix-run-1',
+        operationSummaryId: 'ci-fix-run-1',
         ref: 'pandemicsyn/neondeck#10',
         trustBoundary: expect.stringContaining('does not push'),
       },
@@ -312,6 +373,31 @@ describe('Neon commands', () => {
       },
     });
     expect(invocations).toEqual([{ ref: 'pandemicsyn/neondeck#10' }]);
+  });
+
+  it('reports direct fix-ci admission failures instead of claiming they queued', async () => {
+    const home = await tempDir('neondeck-home-');
+    const paths = runtimePaths(home);
+
+    await expect(
+      runNeonCommand({ command: '/fix-ci neondeck#10' }, paths, {
+        runFixCi: async () => failedCiFixRun('ci-fix-failed-1'),
+      }),
+    ).resolves.toMatchObject({
+      ok: false,
+      command: 'fix-ci',
+      status: 'needs-config',
+      message: 'GitHub token is required.',
+      requires: ['GITHUB_TOKEN'],
+      data: {
+        operation: 'fix-pr-ci',
+        operationSummaryId: 'ci-fix-failed-1',
+      },
+      workflowSummary: {
+        workflow: 'command:fix-ci',
+        status: 'needs-config',
+      },
+    });
   });
 
   it('runs repo-status and stores a workflow summary', async () => {
@@ -980,12 +1066,12 @@ describe('Neon commands', () => {
     const paths = runtimePaths(home);
     const session = await createChatSession(
       {
-        title: 'PR Kilo-Org/cloud#4443',
+        title: 'PR Acme-Org/widgets#4443',
         kind: 'task',
-        linkedTaskId: 'github-pr:Kilo-Org/cloud#4443',
+        linkedTaskId: 'github-pr:Acme-Org/widgets#4443',
         uiMetadata: {
           source: 'github-pr',
-          repo: 'Kilo-Org/cloud',
+          repo: 'Acme-Org/widgets',
           prNumber: 4443,
         },
       },
@@ -1018,8 +1104,8 @@ describe('Neon commands', () => {
         'Current feedback was baselined; only later changes will run.',
       ),
       data: {
-        inferredRef: 'Kilo-Org/cloud#4443',
-        watch: { id: 'Kilo-Org/cloud#4443' },
+        inferredRef: 'Acme-Org/widgets#4443',
+        watch: { id: 'Acme-Org/widgets#4443' },
       },
     });
   });
@@ -1032,11 +1118,11 @@ describe('Neon commands', () => {
         summary: null,
         uiMetadata: {
           source: 'github-pr',
-          repo: 'Kilo-Org/cloud',
+          repo: 'Acme-Org/widgets',
           prNumber: '4443',
         },
       }),
-    ).toBe('Kilo-Org/cloud#4443');
+    ).toBe('Acme-Org/widgets#4443');
 
     expect(
       inferWatchPrReferenceFromSession({
@@ -1045,11 +1131,11 @@ describe('Neon commands', () => {
         summary: null,
         uiMetadata: {
           source: 'pr-watch',
-          repoFullName: 'Kilo-Org/cloud',
+          repoFullName: 'Acme-Org/widgets',
           prNumber: 4443,
         },
       }),
-    ).toBe('Kilo-Org/cloud#4443');
+    ).toBe('Acme-Org/widgets#4443');
   });
 
   it('does not infer watch-pr refs from free session title text', () => {

@@ -1,164 +1,94 @@
 ---
 name: flue
-description: Use when building, debugging, reviewing, or documenting Flue agents, workflows, channels, skills, tools, sandboxes, targets, routing, persistence, observability, or CLI usage; routes coding agents to version-matched Flue documentation through the CLI.
+description: Use when building, debugging, reviewing, migrating, or documenting Flue projects, including agents, hooks, tools, skills, subagents, sandboxes, routing, channels, persistence, schedules, observability, React clients, deployment targets, and CLI usage. Find and read version-matched Flue documentation before relying on API details.
 ---
 
 # Flue
 
-Use `flue docs` to read the documentation bundled with the installed `@flue/cli` version. Choose relevant paths from the catalog below and run `flue docs read <path>`. If no catalog entry matches your task, run `flue docs search <query>`, then read the most relevant result with `flue docs read <path>`.
+Treat every Flue API detail as versioned. Inspect the project, search the relevant documentation, and read the matching pages before designing or editing code. Do not implement Flue APIs from memory.
 
-For example, `flue docs search "durable execution"` searches with the query `durable execution`. If it returns the path `concepts/durable-execution`, run `flue docs read concepts/durable-execution` to read that page.
+## Establish the Documentation Target
 
-## Documentation Catalog
+1. Inspect `package.json` and the lockfile for the installed `@flue/*` versions.
+2. Decide whether the task targets the installed version or upgrades to a newer version.
+3. Use the project-local `flue` executable. Do not install or download another CLI merely to search its docs.
 
-<!-- flue-docs-catalog:start -->
+For maintenance work, prefer the documentation bundled with the installed `@flue/cli`; it matches the code being maintained. For upgrade work, read the target release's migration guide and current official docs until the dependency pins have been upgraded, then use the newly installed CLI docs.
 
-```text
-api/action-api -- Action API
-  Reference for defining reusable finite Actions with @flue/runtime.
-api/agent-api -- Agent API
-  Reference for defining agents and running agent operations with @flue/runtime.
-api/data-persistence-api -- Data Persistence API
-  Reference for Flue persistence adapters and stores.
-api/errors-reference -- Errors Reference
-  Reference Flue transport errors, runtime failures, and development diagnostics.
-api/events-reference -- Events Reference
-  Reference runtime activity, attached-agent event types, and global observation APIs.
-api/provider-api -- Provider API
-  Register custom model providers and override built-in provider transport.
-api/routing-api -- Routing API
-  Compose Flue routes in an authored application entrypoint.
-api/sandbox-api -- Sandbox Adapter API
-  Adapt a provider sandbox SDK into Flue's public sandbox contract.
-api/streaming-protocol -- Streaming Protocol
-  Reference for reading Flue agent conversations and workflow events over Durable Streams.
-api/workflow-api -- Workflow API
-  Reference for creating and invoking workflows with @flue/runtime.
-cli/add -- flue add
-  Reference for discovering and applying Flue implementation blueprints.
-cli/build -- flue build
-  Reference for creating deployable Flue application artifacts.
-cli/dev -- flue dev
-  Reference for starting a watch-mode local Flue development server.
-cli/docs -- flue docs
-  Reference for listing, reading, and searching the bundled Flue documentation.
-cli/init -- flue init
-  Reference for creating an initial Flue project configuration file.
-cli/overview -- CLI
-  Use the Flue CLI to configure, develop, exercise, inspect, and build an application.
-cli/run -- flue run
-  Reference for executing one agent prompt or workflow invocation from the command line.
-cli/update -- flue update
-  Reference for updating integrations from newer Flue blueprint upgrade guides.
-concepts/agents -- What is an agent?
-  What an AI agent actually is, why a model alone isn't one, and what makes a Flue agent different.
-concepts/durable-execution -- Durable Agents
-  Understand how Flue agents and workflows handle server restarts, interrupted connections, and other disruptions.
-ecosystem/channels/discord -- Discord
-ecosystem/channels/github -- GitHub
-ecosystem/channels/google-chat -- Google Chat
-ecosystem/channels/intercom -- Intercom
-ecosystem/channels/linear -- Linear
-ecosystem/channels/messenger -- Facebook Messenger
-ecosystem/channels/notion -- Notion
-ecosystem/channels/resend -- Resend
-ecosystem/channels/salesforce-marketing-cloud -- Salesforce Marketing Cloud
-ecosystem/channels/shopify -- Shopify
-ecosystem/channels/slack -- Slack
-ecosystem/channels/stripe -- Stripe
-ecosystem/channels/teams -- Microsoft Teams
-ecosystem/channels/telegram -- Telegram
-ecosystem/channels/twilio -- Twilio
-ecosystem/channels/whatsapp -- WhatsApp
-ecosystem/channels/zendesk -- Zendesk
-ecosystem/databases/libsql -- libSQL
-ecosystem/databases/mongodb -- MongoDB
-ecosystem/databases/mysql -- MySQL
-ecosystem/databases/postgres -- Postgres
-ecosystem/databases/redis -- Redis
-ecosystem/databases/supabase -- Supabase
-ecosystem/databases/turso -- Turso
-ecosystem/databases/valkey -- Valkey
-ecosystem/deploy/aws -- Deploy Agents on AWS
-ecosystem/deploy/cloudflare -- Deploy to Cloudflare
-ecosystem/deploy/docker -- Deploy Agents with Docker
-ecosystem/deploy/fly -- Deploy Agents on Fly.io
-ecosystem/deploy/github-actions -- Build Agents for GitHub Actions
-ecosystem/deploy/gitlab-ci -- Build Agents for GitLab CI/CD
-ecosystem/deploy/node -- Deploy Agents on Node.js
-ecosystem/deploy/railway -- Deploy Agents on Railway
-ecosystem/deploy/render -- Deploy Agents on Render
-ecosystem/deploy/sst -- Deploy Agents on SST
-ecosystem/sandboxes/boxd -- boxd
-ecosystem/sandboxes/cloudflare -- Cloudflare Sandbox
-ecosystem/sandboxes/cloudflare-shell -- Cloudflare Shell
-ecosystem/sandboxes/daytona -- Daytona
-ecosystem/sandboxes/e2b -- E2B
-ecosystem/sandboxes/exedev -- exe.dev
-ecosystem/sandboxes/islo -- islo
-ecosystem/sandboxes/mirage -- Mirage
-ecosystem/sandboxes/modal -- Modal
-ecosystem/sandboxes/vercel -- Vercel Sandbox
-ecosystem/tooling/braintrust -- Braintrust
-ecosystem/tooling/opentelemetry -- OpenTelemetry
-ecosystem/tooling/sentry -- Sentry
-ecosystem/tooling/vitest-evals -- Vitest Evals
-getting-started/quickstart -- Getting Started
-  Set up a Flue project automatically or create your first agent manually.
-guide/actions -- Actions
-  Define finite agent-backed operations that can be reused by workflows and agents.
-guide/building-agents -- Agents
-  Create an agent, configure its capabilities, and send it messages over time.
-guide/channels -- Channels
-  Receive verified provider events and connect them to Flue applications.
-guide/database -- Database
-  Configure database-backed state for Flue agents and workflow runs.
-guide/evals -- Evals
-  Evaluate Flue agents with repeatable Vitest suites using vitest-evals.
-guide/models -- LLM (Models & Providers)
-  Select models, configure providers, and tune reasoning behavior in Flue agents.
-guide/observability -- Observability
-  Inspect workflow runs, monitor agent activity, and export telemetry from your application.
-guide/project-layout -- Project Layout
-  Understand the source files and generated output in a Flue project.
-guide/react -- React
-  Build React interfaces for live agent conversations and workflow runs.
-guide/routing -- Routing
-  Compose Flue with application routes, middleware, and custom HTTP ingress.
-guide/sandboxes -- Sandboxes
-  Give agents a workspace for files and command-driven work.
-guide/schedules -- Schedules
-  Invoke Flue workflows or dispatch agent input on a schedule with Cloudflare or Node.js.
-guide/skills -- Skills
-  Add Agent Skills to Flue agents and invoke them from sessions.
-guide/subagents -- Subagents
-  Let agents delegate focused work to named specialists.
-guide/targets/cloudflare -- Cloudflare
-  Understand the Cloudflare-specific runtime behavior and APIs for Flue applications.
-guide/targets/node -- Node.js
-  Understand the Node.js-specific runtime behavior and APIs for Flue applications.
-guide/tools -- Tools
-  Give agents application capabilities through custom tools and MCP servers.
-guide/workflows -- Workflows
-  Create, invoke, and expose finite agent-backed operations.
-introduction/why-flue -- Why Flue?
-  Build autonomous AI agents and powerful workflows with a programmable TypeScript harness, and run them anywhere.
-reference/configuration -- Configuration
-  Reference for flue.config.ts options.
-sdk/agents -- client.agents
-  Invoke persistent agent instances and read their conversations.
-sdk/client -- createFlueClient(...)
-  Configure an SDK client for a deployed Flue application.
-sdk/errors -- Errors
-  SDK HTTP and stream error types.
-sdk/events -- Events and records
-  SDK event, workflow-run record, and normalized model-turn types.
-sdk/overview -- SDK overview
-  Reference for consuming deployed Flue agents and workflows with @flue/sdk.
-sdk/runs -- client.runs
-  Inspect and stream HTTP-exposed workflow runs.
-sdk/workflows -- client.workflows
-  Start workflow runs and receive their run ID.
+Never combine examples from different Flue versions without explicitly reconciling the changed API.
+
+## Search, Then Read
+
+Use the local CLI through the project's package manager so the repository's binary wins. For npm projects, use this loop:
+
+```sh
+npm exec -- flue docs search durable execution
+npm exec -- flue docs read guide/durability
 ```
 
-<!-- flue-docs-catalog:end -->
+Apply these commands deliberately:
+
+- Run `flue docs search <query>` with the exact concept, symbol, import, CLI flag, or error text. The command returns up to eight ranked JSON results.
+- Run `flue docs read <path>` for the most relevant results and read each page completely before acting on it.
+- Run `flue docs` with no arguments when terminology has changed or search results are ambiguous; it lists every bundled page.
+- Pass a catalog path, docs URL, absolute docs path, or source Markdown filename to `flue docs read`.
+- Refine broad searches. For a cross-cutting change, search and read each affected surface rather than relying on one overview page.
+
+Useful query shapes include:
+
+```sh
+npm exec -- flue docs search usePersistentState
+npm exec -- flue docs search "tool result envelope"
+npm exec -- flue docs search "conversation scoped client"
+npm exec -- flue docs search "submission_settled"
+npm exec -- flue docs search "<exact error message>"
+```
+
+If the local CLI is unavailable, inspect installed package types and source first. Then use only official Flue documentation at `https://flueframework.com/docs/` as the network fallback. State when live docs target a different version than the installed packages.
+
+## Verify the Contract
+
+Read enough material to verify all affected boundaries:
+
+- Confirm imports, signatures, return envelopes, statics, hook rules, route shapes, event fields, and CLI flags.
+- Inspect installed `.d.ts` files or runtime source when the docs do not answer a code-level question.
+- Search the repository for existing conventions and removed APIs before editing.
+- Treat compiler errors as prompts for another exact-symbol or exact-error docs search.
+- Record the Flue docs paths that materially informed the implementation in the handoff.
+
+## Migrate to Flue 2
+
+For a `1.0.0-beta.9` to Flue 2 migration, read the live [migration guide](https://flueframework.com/docs/guide/migration/) before editing. Use its ordered checklist as the migration sequence: pins, build, routing, agents, tools, skills, workflows, channels and database, providers, observability, clients, deployment, then verification.
+
+Keep these Flue 2 boundaries visible while migrating:
+
+- Use Vite with `@flue/vite`; do not use the removed `flue dev` or `flue build` commands.
+- Mount each agent and channel explicitly in `app.ts`; do not use the removed auto-router.
+- Define agents as exported capitalized synchronous functions in a `'use agent'` module and compose behavior with hooks; do not use `defineAgent`.
+- Replace Actions with tools. Use `run({ data })` and return the documented tool result envelope.
+- Replace each Workflow with the smallest correct fit: an awaited `init()` handle, a durable tool, or an application-owned orchestrator.
+- Import `SKILL.md` directly without import attributes. Wrap other Markdown with `defineSkill` only when it must behave as a skill.
+- Attach a sandbox explicitly when filesystem or shell capabilities are required; Flue 2 provides no implicit sandbox.
+- Use conversation-scoped SDK and React clients rather than the removed deployment-wide namespaces.
+- Correlate observability with agent/submission events and `instanceId`/`submissionId`, not workflow runs.
+
+Treat that list as orientation, not an API reference. Search and read the current target-version page for every item before implementing it.
+
+## Choose the Smallest Flue 2 Primitive
+
+- Use an agent for continuing, addressable model conversations.
+- Use a tool for a typed capability the model or application can invoke.
+- Use a durable tool for a short checkpointed side-effect sequence owned by one agent turn.
+- Use application code for deterministic domain services, scheduling, and multi-step orchestration with its own state and inspection needs.
+- Use a skill for procedural guidance that shapes model behavior.
+
+For Neondeck, keep application SQLite state separate from Flue conversation/runtime persistence. Preserve one typed backend command and event surface for dashboard and future clients. Prefer deterministic Neondeck services for facts and mutations, and use Flue where model reasoning, conversation continuity, or model-facing tools add value.
+
+## Validate Changes
+
+Run the repository's focused typecheck and tests, then the production Vite build when build, routing, generated exports, or deployment configuration changes. During a migration, re-run searches after upgrading the packages so final code is checked against the documentation bundled with the installed Flue 2 CLI.
+
+Primary references:
+
+- `flue docs` CLI: https://flueframework.com/docs/cli/docs/
+- Flue 2 migration guide: https://flueframework.com/docs/guide/migration/

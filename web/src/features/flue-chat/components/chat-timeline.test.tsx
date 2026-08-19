@@ -5,7 +5,7 @@ import { act, type ReactNode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { sessionTimelineItems } from '../lib/timeline';
-import { ChatTimelineItems } from './chat-timeline';
+import { ChatResponseProgress, ChatTimelineItems } from './chat-timeline';
 import { renderMessagePart } from './message-parts';
 
 vi.mock('./message-parts', () => ({
@@ -52,6 +52,29 @@ describe('ChatTimelineItems', () => {
     expect(renderMessagePartMock).toHaveBeenCalledTimes(3);
   });
 
+  it('uses task-oriented copy for an empty ready session', () => {
+    render([]);
+
+    expect(container.textContent).toContain('Start a conversation');
+    expect(container.textContent).toContain(
+      'Ask about a PR, check an active watch, or explore your runtime.',
+    );
+    expect(container.textContent).not.toContain('SQLite');
+  });
+
+  it.each([
+    ['admitting', 'Sending to Neon…'],
+    ['submitted', 'Neon is working…'],
+    ['streaming', 'Neon is responding…'],
+  ] as const)('renders %s response progress', (phase, label) => {
+    act(() => root.render(<ChatResponseProgress phase={phase} />));
+
+    expect(container.querySelector('output')?.textContent).toBe(label);
+    expect(
+      container.querySelector('[aria-label]')?.getAttribute('aria-label'),
+    ).toBe(label);
+  });
+
   function render(items: ReturnType<typeof sessionTimelineItems>) {
     act(() => root.render(<ChatTimelineItems hasSession items={items} />));
   }
@@ -61,6 +84,8 @@ function message(id: string): FlueConversationMessage {
   return {
     id,
     role: 'assistant',
+    purpose: 'assistant',
+    display: 'visible',
     parts: [{ type: 'text', state: 'done', text: id }],
   };
 }

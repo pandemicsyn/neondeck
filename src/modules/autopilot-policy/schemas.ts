@@ -109,9 +109,9 @@ export type RepoAutopilotConfig = Partial<{
   }>;
 }>;
 
-export type ActiveRunRow = {
-  run_id: string;
-  workflow: string;
+export type ActiveSubmissionRow = {
+  submission_id: string;
+  agent_name: string | null;
   status: string;
 };
 

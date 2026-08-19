@@ -1,16 +1,16 @@
-import { defineAction } from '@flue/runtime';
+import { defineTool } from '@flue/runtime';
 import * as v from 'valibot';
 import { runtimePaths } from '../../runtime-home';
 import { runSchedulerTick } from './service';
 import { schedulerActionOutputSchema } from './schemas';
 
-export const schedulerTickAction = defineAction({
+export const schedulerTickAction = defineTool({
   name: 'neondeck_scheduler_tick',
   description:
     'Claim due canonical scheduled tasks and run their bounded executions.',
   input: v.object({ runtimeHome: v.optional(v.string()) }),
   output: schedulerActionOutputSchema,
-  async run({ input, log }) {
+  async run({ data: input, log }) {
     log.info('Scheduler tick requested');
 
     const result = await runSchedulerTick(
@@ -30,7 +30,7 @@ export const schedulerTickAction = defineAction({
       log.warn('Scheduler tick failed', payload);
     }
 
-    return result;
+    return { output: result };
   },
 });
 

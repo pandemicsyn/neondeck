@@ -94,6 +94,12 @@ export async function serverModule() {
   >;
 }
 
+export async function sessionsModule() {
+  return import(
+    new URL('../modules/sessions/index.ts', import.meta.url).href
+  ) as Promise<typeof import('../modules/sessions')>;
+}
+
 export async function serviceModule() {
   return import(
     new URL('../desktop/service.ts', import.meta.url).href

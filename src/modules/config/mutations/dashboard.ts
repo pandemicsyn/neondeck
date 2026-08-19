@@ -28,7 +28,10 @@ export async function updateDashboardLayout(
   if (!parsed.ok) return parsed.result;
 
   const current = await readDashboardForHistory(paths);
-  const next = parsed.input;
+  const next = {
+    ...parsed.input,
+    $schema: './dashboard.schema.json',
+  };
   const changed = JSON.stringify(current) !== JSON.stringify(next);
 
   if (changed) {
@@ -256,13 +259,13 @@ function dashboardPresetConfig(
                   jobLimit: 5,
                   skillLimit: 5,
                   memoryLimit: 5,
-                  workflowEventLimit: 6,
+                  activityEventLimit: 6,
                 },
               },
               {
-                id: 'workflows',
-                title: 'WORKFLOWS',
-                pluginId: 'workflow-observability',
+                id: 'activity',
+                title: 'ACTIVITY',
+                pluginId: 'activity',
                 config: {
                   eventLimit: 16,
                   refreshSeconds: 20,

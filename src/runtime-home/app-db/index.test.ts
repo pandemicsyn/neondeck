@@ -18,8 +18,87 @@ describe('app database initialization', () => {
         expect(pragmaValue(database, 'busy_timeout')).toBe(
           defaultSqliteBusyTimeoutMs,
         );
+        expect(
+          database
+            .prepare(
+              `SELECT COUNT(*) AS count FROM chat_session_audit WHERE action = 'onboarding_pending';`,
+            )
+            .get(),
+        ).toEqual({ count: 1 });
       } finally {
         database.close();
+      }
+    } finally {
+      await rm(home, { recursive: true, force: true });
+    }
+  });
+
+  it('recovers pending onboarding after the database file becomes visible', async () => {
+    const home = await mkdtemp(join(tmpdir(), 'neondeck-app-db-'));
+    const databasePath = join(home, 'neondeck.db');
+    try {
+      new DatabaseSync(databasePath).close();
+      initializeAppDatabase(databasePath, { onboardingPending: true });
+
+      const database = openDb(databasePath, { readOnly: true });
+      try {
+        expect(
+          database
+            .prepare(
+              `SELECT action, session_id FROM chat_session_audit WHERE action = 'onboarding_pending';`,
+            )
+            .all(),
+        ).toEqual([
+          { action: 'onboarding_pending', session_id: 'neondeck-main' },
+        ]);
+      } finally {
+        database.close();
+      }
+    } finally {
+      await rm(home, { recursive: true, force: true });
+    }
+  });
+
+  it('prunes expired retained PR review outputs during initialization', async () => {
+    const home = await mkdtemp(join(tmpdir(), 'neondeck-app-db-'));
+    const databasePath = join(home, 'neondeck.db');
+    try {
+      initializeAppDatabase(databasePath);
+      const database = openDb(databasePath);
+      try {
+        database
+          .prepare(
+            `INSERT INTO pr_review_workspace_outputs (
+               output_ref, scope_key, source, payload, byte_size, line_count,
+               created_at, expires_at
+             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?);`,
+          )
+          .run(
+            'expired-output',
+            'review:expired',
+            'diff',
+            'payload',
+            7,
+            1,
+            '2026-01-01T00:00:00.000Z',
+            '2026-01-02T00:00:00.000Z',
+          );
+      } finally {
+        database.close();
+      }
+
+      initializeAppDatabase(databasePath);
+      const after = openDb(databasePath, { readOnly: true });
+      try {
+        expect(
+          after
+            .prepare(
+              `SELECT COUNT(*) AS count FROM pr_review_workspace_outputs;`,
+            )
+            .get(),
+        ).toEqual({ count: 0 });
+      } finally {
+        after.close();
       }
     } finally {
       await rm(home, { recursive: true, force: true });

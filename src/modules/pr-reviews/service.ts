@@ -16,6 +16,7 @@ import { resolvePullRequestTarget, type PullRequestTarget } from '../pr-events';
 import { publishPrReviewEvent } from './events';
 import {
   listPrReviews,
+  pruneExpiredSubmittedPrReviews,
   readPrReview,
   readPrReviewByRunId,
   readPrReviewForTarget,
@@ -38,6 +39,11 @@ export type StartPrReviewDependencies = {
     ref: string;
     reviewId: string;
     attemptId: string;
+    repoFullName: string;
+    prNumber: number;
+    headSha: string;
+    baseSha: string;
+    baseRef: string;
   }) => Promise<{ runId: string }>;
 };
 
@@ -53,8 +59,30 @@ export type ReconcilePrReviewSubmissionDependencies = {
   }) => Promise<GitHubPullRequestReview[]>;
 };
 
+export type RefreshPrReviewRemoteStateDependencies = {
+  token?: string;
+  now?: () => Date;
+  fetchLogin?: (token: string) => Promise<string>;
+  fetchDetail?: typeof fetchPullRequestDetail;
+  fetchReviews?: typeof fetchPullRequestReviews;
+};
+
 const submissionReconcileGraceMs = 30_000;
+export const prReviewRemoteRefreshIntervalMs = 3 * 60_000;
 const activeSubmissionAttempts = new Set<string>();
+const remoteRefreshRegistry = prReviewRemoteRefreshRegistry();
+
+type PrReviewRemoteRefreshResult = {
+  changed: number;
+  inspected: number;
+  errors: string[];
+  skipped: boolean;
+};
+
+type PrReviewRemoteRefreshState = {
+  inFlight: Promise<PrReviewRemoteRefreshResult> | null;
+  lastAttemptMs: number | null;
+};
 
 export async function startPrReview(
   input: { ref: string; origin: PrReviewOrigin },
@@ -70,6 +98,12 @@ export async function startPrReview(
     paths,
   );
   const detail = await (dependencies.fetchDetail ?? defaultFetchDetail)(target);
+  const baseSha = detail.baseSha?.trim();
+  if (!baseSha) {
+    throw new Error(
+      `Pull request ${target.repoFullName}#${target.number} did not provide an exact base revision.`,
+    );
+  }
   const attemptId = randomUUID();
   const review = upsertReviewingRecord(
     { ref, origin: input.origin, target, detail, attemptId },
@@ -84,9 +118,14 @@ export async function startPrReview(
     const admission = await (
       dependencies.invokeWorkflow ?? invokeReviewPrWorkflow
     )({
-      ref: `${target.repoFullName}#${target.number}`,
+      ref: `${review.repoFullName}#${review.prNumber}`,
       reviewId: review.id,
       attemptId,
+      repoFullName: review.repoFullName,
+      prNumber: review.prNumber,
+      headSha: review.headSha,
+      baseSha,
+      baseRef: detail.baseRef,
     });
     const attached = attachPrReviewAttemptRun(
       review.id,
@@ -111,10 +150,14 @@ export async function invokeReviewPrWorkflow(input: {
   ref: string;
   reviewId: string;
   attemptId: string;
+  repoFullName: string;
+  prNumber: number;
+  headSha: string;
+  baseSha: string;
+  baseRef: string;
 }) {
-  const { invoke } = await import('@flue/runtime');
-  const workflow = await import('../../workflows/review-pr-for-human');
-  return invoke(workflow.default, { input });
+  const { admitPrReviewAssist } = await import('../pr-review-assist/admission');
+  return admitPrReviewAssist(input);
 }
 
 export function completePrReview(
@@ -248,7 +291,8 @@ export function reservePrReviewSubmission(
       .prepare(
         `UPDATE pr_reviews
          SET status = 'submitting', verdict = ?, updated_at = ?
-         WHERE id = ? AND status = 'ready' AND head_sha = ?;`,
+         WHERE id = ? AND status = 'ready' AND head_sha = ?
+           AND archived_at IS NULL;`,
       )
       .run(input.verdict, now, current.id, input.headSha);
     changed = result.changes === 1;
@@ -337,6 +381,17 @@ export async function reconcilePrReviewSubmission(
   await ensureRuntimeHome(paths);
   const current = readPrReview(input.reviewId, paths);
   if (!current) throw new Error('PR review not found.');
+  const submittedReviewId =
+    current.status === 'submitted'
+      ? githubReviewIdFromUrl(current.githubReviewUrl)
+      : null;
+  if (submittedReviewId && current.verdict) {
+    return {
+      outcome: 'submitted-existing' as const,
+      review: current,
+      githubReviewId: submittedReviewId,
+    };
+  }
   if (current.status !== 'submitting') {
     return { outcome: 'unchanged' as const, review: current };
   }
@@ -387,11 +442,19 @@ async function reconcileInactivePrReviewSubmission(
       paths,
     );
     if (submitted) {
-      return { outcome: 'submitted' as const, review: submitted };
+      return {
+        outcome: 'submitted' as const,
+        review: submitted,
+        githubReviewId: String(submittedReview.id),
+      };
     }
     const settled = readPrReview(current.id, paths);
     if (settled?.status === 'submitted') {
-      return { outcome: 'submitted' as const, review: settled };
+      return {
+        outcome: 'submitted' as const,
+        review: settled,
+        githubReviewId: String(submittedReview.id),
+      };
     }
     throw new Error('Could not settle the recovered GitHub review locally.');
   }
@@ -415,11 +478,189 @@ async function reconcileInactivePrReviewSubmission(
   throw new Error('Could not release the interrupted submission locally.');
 }
 
-export function recentPrReviews(paths = runtimePaths()) {
-  const submittedSince = new Date(
-    Date.now() - 7 * 24 * 60 * 60 * 1000,
-  ).toISOString();
+export function recentPrReviews(paths = runtimePaths(), now = Date.now()) {
+  pruneExpiredSubmittedPrReviews(paths, now);
+  const submittedSince = new Date(now - 7 * 24 * 60 * 60 * 1000).toISOString();
   return listPrReviews(paths, { submittedSince });
+}
+
+export async function refreshPrReviewRemoteState(
+  paths = runtimePaths(),
+  dependencies: RefreshPrReviewRemoteStateDependencies = {},
+  options: { force?: boolean } = {},
+) {
+  const state = remoteRefreshState(paths);
+  if (state.inFlight) return state.inFlight;
+  const now = (dependencies.now ?? (() => new Date()))();
+  if (
+    !options.force &&
+    state.lastAttemptMs !== null &&
+    now.getTime() - state.lastAttemptMs < prReviewRemoteRefreshIntervalMs
+  ) {
+    return {
+      changed: 0,
+      inspected: 0,
+      errors: [] as string[],
+      skipped: true,
+    };
+  }
+
+  state.lastAttemptMs = now.getTime();
+  state.inFlight = refreshPrReviewRemoteStateOnce(
+    paths,
+    dependencies,
+    now,
+  ).finally(() => {
+    state.inFlight = null;
+  });
+  return state.inFlight;
+}
+
+export function clearPrReviewRemoteRefreshForTests() {
+  remoteRefreshRegistry.clear();
+}
+
+export function archivePrReview(
+  input: { reviewId: string },
+  paths = runtimePaths(),
+) {
+  return setPrReviewArchived(input.reviewId, true, paths);
+}
+
+async function refreshPrReviewRemoteStateOnce(
+  paths: RuntimePaths,
+  dependencies: RefreshPrReviewRemoteStateDependencies,
+  now: Date,
+) {
+  await ensureRuntimeHome(paths);
+  const token = dependencies.token ?? process.env.GITHUB_TOKEN;
+  if (!token) {
+    return {
+      changed: 0,
+      inspected: 0,
+      errors: ['GITHUB_TOKEN is not configured.'],
+      skipped: false,
+    };
+  }
+
+  const candidates = recentPrReviews(paths, now.getTime()).filter(
+    (review) =>
+      !review.archivedAt &&
+      review.status !== 'reviewing' &&
+      review.status !== 'submitting',
+  );
+  if (candidates.length === 0) {
+    return {
+      changed: 0,
+      inspected: 0,
+      errors: [] as string[],
+      skipped: false,
+    };
+  }
+
+  let login: string;
+  try {
+    login = await (dependencies.fetchLogin ?? fetchGitHubLogin)(token);
+  } catch (error) {
+    return {
+      changed: 0,
+      inspected: 0,
+      errors: [errorMessage(error)],
+      skipped: false,
+    };
+  }
+
+  const results = await mapWithConcurrency(candidates, 3, async (review) => {
+    try {
+      const [owner, repo] = splitRepoFullName(review.repoFullName);
+      const detail = await (dependencies.fetchDetail ?? fetchPullRequestDetail)(
+        {
+          token,
+          owner,
+          repo,
+          number: review.prNumber,
+        },
+      );
+      if (detail.merged || detail.state !== 'open') {
+        const archived = archivePrReview({ reviewId: review.id }, paths);
+        return { changed: Number(archived.changed), error: null };
+      }
+      if (review.status === 'submitted') {
+        return { changed: 0, error: null };
+      }
+
+      const reviews = await (
+        dependencies.fetchReviews ?? fetchPullRequestReviews
+      )({
+        token,
+        owner,
+        repo,
+        number: review.prNumber,
+      });
+      const previousVerdict = latestReviewerVerdict(login, reviews);
+      if (!previousVerdict || previousVerdict === review.previousVerdict) {
+        return { changed: 0, error: null };
+      }
+      const changed = recordPreviousPrReviewVerdict(
+        review.id,
+        previousVerdict,
+        now.toISOString(),
+        paths,
+      );
+      return { changed: Number(changed), error: null };
+    } catch (error) {
+      return {
+        changed: 0,
+        error: `${review.repoFullName}#${review.prNumber}: ${errorMessage(error)}`,
+      };
+    }
+  });
+
+  return {
+    changed: results.reduce((total, result) => total + result.changed, 0),
+    inspected: candidates.length,
+    errors: results.flatMap((result) => (result.error ? [result.error] : [])),
+    skipped: false,
+  };
+}
+
+export function restorePrReview(
+  input: { reviewId: string },
+  paths = runtimePaths(),
+) {
+  return setPrReviewArchived(input.reviewId, false, paths);
+}
+
+function setPrReviewArchived(
+  reviewId: string,
+  archived: boolean,
+  paths: RuntimePaths,
+) {
+  const current = readPrReview(reviewId, paths);
+  if (!current) throw new Error('PR review not found.');
+  if (current.status === 'reviewing' || current.status === 'submitting') {
+    throw new Error('An active review cannot be archived.');
+  }
+  if (Boolean(current.archivedAt) === archived) {
+    return { changed: false, review: current };
+  }
+
+  const now = new Date().toISOString();
+  const database = openDb(paths.neondeckDatabase);
+  try {
+    database
+      .prepare(
+        `UPDATE pr_reviews
+         SET archived_at = ?, updated_at = ?
+         WHERE id = ?;`,
+      )
+      .run(archived ? now : null, now, current.id);
+  } finally {
+    database.close();
+  }
+  const updated = requireReview(current.id, paths);
+  publish(updated, 'changed');
+  return { changed: true, review: updated };
 }
 
 function matchingSubmittedReview(
@@ -466,6 +707,104 @@ function splitRepoFullName(repoFullName: string): [string, string] {
   return [owner, repo];
 }
 
+function githubReviewIdFromUrl(url: string | null) {
+  return url?.match(/[#/]pullrequestreview-(\d+)(?:$|[/?#])/i)?.[1] ?? null;
+}
+
+function latestReviewerVerdict(
+  login: string,
+  reviews: GitHubPullRequestReview[],
+) {
+  const latest = reviews
+    .filter(
+      (review) =>
+        review.authorLogin?.toLowerCase() === login.toLowerCase() &&
+        remoteReviewVerdict(review.state),
+    )
+    .sort(
+      (left, right) =>
+        Date.parse(right.submittedAt ?? '') -
+        Date.parse(left.submittedAt ?? ''),
+    )[0];
+  return latest ? remoteReviewVerdict(latest.state) : null;
+}
+
+function remoteReviewVerdict(state: string): PrReviewVerdict | null {
+  if (state === 'APPROVED') return 'approve';
+  if (state === 'CHANGES_REQUESTED') return 'request-changes';
+  if (state === 'COMMENTED') return 'comment';
+  return null;
+}
+
+function recordPreviousPrReviewVerdict(
+  reviewId: string,
+  verdict: PrReviewVerdict,
+  updatedAt: string,
+  paths: RuntimePaths,
+) {
+  const database = openDb(paths.neondeckDatabase);
+  let changed = false;
+  try {
+    const result = database
+      .prepare(
+        `UPDATE pr_reviews
+         SET previous_verdict = ?, updated_at = ?
+         WHERE id = ?
+           AND archived_at IS NULL
+           AND status IN ('ready', 'failed')
+           AND (previous_verdict IS NULL OR previous_verdict != ?);`,
+      )
+      .run(verdict, updatedAt, reviewId, verdict);
+    changed = result.changes === 1;
+  } finally {
+    database.close();
+  }
+  if (!changed) return false;
+  publish(requireReview(reviewId, paths), 'changed');
+  return true;
+}
+
+function remoteRefreshState(paths: RuntimePaths) {
+  const existing = remoteRefreshRegistry.get(paths.home);
+  if (existing) return existing;
+  const state: PrReviewRemoteRefreshState = {
+    inFlight: null,
+    lastAttemptMs: null,
+  };
+  remoteRefreshRegistry.set(paths.home, state);
+  return state;
+}
+
+function prReviewRemoteRefreshRegistry() {
+  const globalRegistry = globalThis as typeof globalThis & {
+    __neondeckPrReviewRemoteRefreshRegistry?: Map<
+      string,
+      PrReviewRemoteRefreshState
+    >;
+  };
+  globalRegistry.__neondeckPrReviewRemoteRefreshRegistry ??= new Map();
+  return globalRegistry.__neondeckPrReviewRemoteRefreshRegistry;
+}
+
+async function mapWithConcurrency<T, R>(
+  items: T[],
+  concurrency: number,
+  task: (item: T) => Promise<R>,
+) {
+  const results: R[] = [];
+  let nextIndex = 0;
+  await Promise.all(
+    Array.from({ length: Math.min(concurrency, items.length) }, async () => {
+      while (nextIndex < items.length) {
+        const index = nextIndex;
+        nextIndex += 1;
+        results[index] = await task(items[index]!);
+      }
+    }),
+  );
+  return results;
+}
+
 function upsertReviewingRecord(
   input: {
     ref: string;
@@ -496,12 +835,13 @@ function upsertReviewingRecord(
       .prepare(
         `INSERT INTO pr_reviews (
            id, ref, repo_full_name, pr_number, title, author, pr_url, status,
-           attempt_id, run_id, head_sha, origin, review_url, report_ids_json,
+           attempt_id, run_id, head_sha, base_sha, base_ref, origin,
+           review_url, report_ids_json,
            finding_count, seeded_count, report_only_count,
            report_only_findings_json, trust_boundary, verdict,
            previous_verdict, github_review_url, failure_message,
            created_at, updated_at, ready_at, submitted_at, failed_at
-         ) VALUES (?, ?, ?, ?, ?, ?, ?, 'reviewing', ?, NULL, ?, ?, ?, '[]',
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, 'reviewing', ?, NULL, ?, ?, ?, ?, ?, '[]',
                    0, 0, 0, '[]', ?, NULL, ?, NULL, NULL, ?, ?, NULL, NULL, NULL)
          ON CONFLICT(repo_full_name, pr_number) DO UPDATE SET
            ref = excluded.ref,
@@ -512,6 +852,8 @@ function upsertReviewingRecord(
            attempt_id = excluded.attempt_id,
            run_id = NULL,
            head_sha = excluded.head_sha,
+           base_sha = excluded.base_sha,
+           base_ref = excluded.base_ref,
            origin = excluded.origin,
            review_url = excluded.review_url,
            report_ids_json = '[]',
@@ -526,6 +868,7 @@ function upsertReviewingRecord(
            END,
            github_review_url = NULL,
            failure_message = NULL,
+           archived_at = NULL,
            ready_at = NULL,
            submitted_at = NULL,
            failed_at = NULL,
@@ -541,6 +884,8 @@ function upsertReviewingRecord(
         input.detail.url,
         input.attemptId,
         input.detail.headSha,
+        input.detail.baseSha ?? null,
+        input.detail.baseRef,
         input.origin,
         reviewUrl,
         prReviewTrustBoundary,

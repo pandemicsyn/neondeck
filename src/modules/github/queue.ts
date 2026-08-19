@@ -1,7 +1,7 @@
 import * as v from 'valibot';
 import { repoFullName } from '../repos';
 import type { RepoConfig } from '../../runtime-home';
-import { githubFetch } from './client';
+import { githubFetch, githubTokenFingerprint } from './client';
 import { fetchCheckSummary } from './checks';
 import { errorMessage } from './errors';
 import { fetchPullRequestDetail } from './pull-requests';
@@ -22,10 +22,15 @@ const defaultMaxQueueItemsToEnrich = 24;
 const searchConcurrency = 3;
 const enrichmentConcurrency = 2;
 const pullRequestQueueCacheTtlMs = 45_000;
+const pullRequestQueueCacheMaxEntries = 8;
 
 const pullRequestQueueCache = new Map<
   string,
   { expiresAt: number; value: GitHubPullRequestQueue }
+>();
+const pullRequestQueueRequestsInFlight = new Map<
+  string,
+  Promise<GitHubPullRequestQueue>
 >();
 
 export async function fetchPullRequestQueue(options: {
@@ -36,43 +41,63 @@ export async function fetchPullRequestQueue(options: {
 }): Promise<GitHubPullRequestQueue> {
   const maxItems = options.maxItems ?? defaultMaxQueueItemsToEnrich;
   const cacheKey = pullRequestQueueCacheKey(
+    options.token,
     options.login,
     options.repos,
     maxItems,
   );
   const cached = pullRequestQueueCache.get(cacheKey);
   if (cached && cached.expiresAt > Date.now()) {
+    pullRequestQueueCache.delete(cacheKey);
+    pullRequestQueueCache.set(cacheKey, cached);
     return cached.value;
   }
+  if (cached) pullRequestQueueCache.delete(cacheKey);
 
+  const existing = pullRequestQueueRequestsInFlight.get(cacheKey);
+  if (existing) return existing;
+  const request = fetchPullRequestQueueUncached(
+    options,
+    maxItems,
+    cacheKey,
+  ).finally(() => {
+    if (pullRequestQueueRequestsInFlight.get(cacheKey) === request) {
+      pullRequestQueueRequestsInFlight.delete(cacheKey);
+    }
+  });
+  pullRequestQueueRequestsInFlight.set(cacheKey, request);
+  return request;
+}
+
+async function fetchPullRequestQueueUncached(
+  options: {
+    token: string;
+    login: string;
+    repos: RepoConfig[];
+    maxItems?: number;
+  },
+  maxItems: number,
+  cacheKey: string,
+) {
   const queries = buildPullRequestQuerySpecs(options.login, options.repos);
-  const results = await mapWithConcurrency(
-    queries,
-    searchConcurrency,
-    async (query) => {
-      try {
-        return {
-          relation: query.relation,
-          result: await searchPullRequests(options.token, query.query),
-        };
-      } catch (error) {
-        return {
-          relation: query.relation,
-          result: {
-            items: [],
-            truncated: false,
-            issues: [
-              {
-                type: 'search-error' as const,
-                query: query.query,
-                message: errorMessage(error),
-              },
-            ],
-          },
-        };
-      }
-    },
+  const primaryQueries = queries.filter((query) => !query.fallbackFor);
+  const primaryResults = await fetchPullRequestSearches(
+    options.token,
+    primaryQueries,
   );
+  const primaryByQuery = new Map(
+    primaryResults.map((result) => [result.query, result.result]),
+  );
+  const fallbackQueries = queries.filter((query) => {
+    if (!query.fallbackFor) return false;
+    const primary = primaryByQuery.get(query.fallbackFor);
+    return !primary || primary.truncated || primary.issues.length > 0;
+  });
+  const fallbackResults = await fetchPullRequestSearches(
+    options.token,
+    fallbackQueries,
+  );
+  const results = [...primaryResults, ...fallbackResults];
   const flattenedResults: Array<{
     relation: PullRequestQueueRelation;
     result: PullRequestSearchResult;
@@ -140,16 +165,55 @@ export async function fetchPullRequestQueue(options: {
       sortedQueueItems.length > queueItemsToEnrich.length,
     issues,
   };
-  pullRequestQueueCache.set(cacheKey, {
-    expiresAt: Date.now() + pullRequestQueueCacheTtlMs,
-    value: queue,
-  });
+  if (!issues.some((issue) => issue.type === 'search-incomplete')) {
+    pullRequestQueueCache.set(cacheKey, {
+      expiresAt: Date.now() + pullRequestQueueCacheTtlMs,
+      value: queue,
+    });
+    while (pullRequestQueueCache.size > pullRequestQueueCacheMaxEntries) {
+      const oldestKey = pullRequestQueueCache.keys().next().value;
+      if (oldestKey === undefined) break;
+      pullRequestQueueCache.delete(oldestKey);
+    }
+  }
 
   return queue;
 }
 
+async function fetchPullRequestSearches(
+  token: string,
+  queries: ReturnType<typeof buildPullRequestQuerySpecs>,
+) {
+  return mapWithConcurrency(queries, searchConcurrency, async (query) => {
+    try {
+      return {
+        query: query.query,
+        relation: query.relation,
+        result: await searchPullRequests(token, query.query),
+      };
+    } catch (error) {
+      return {
+        query: query.query,
+        relation: query.relation,
+        result: {
+          items: [],
+          truncated: false,
+          issues: [
+            {
+              type: 'search-error' as const,
+              query: query.query,
+              message: errorMessage(error),
+            },
+          ],
+        },
+      };
+    }
+  });
+}
+
 export function clearGitHubPullRequestQueueCache() {
   pullRequestQueueCache.clear();
+  pullRequestQueueRequestsInFlight.clear();
 }
 
 export function buildPullRequestQueries(login: string, repos: RepoConfig[]) {
@@ -161,16 +225,19 @@ function buildPullRequestQuerySpecs(login: string, repos: RepoConfig[]) {
   const queries: Array<{
     query: string;
     relation: PullRequestQueueRelation;
+    fallbackFor?: string;
   }> = repos.flatMap((repo) => {
     const fullName = repoFullName(repo);
+    const authoredQuery = `is:pr is:open archived:false author:${login} repo:${fullName}`;
     return [
       {
-        query: `is:pr is:open archived:false author:${login} repo:${fullName}`,
+        query: authoredQuery,
         relation: 'authored' as const,
       },
       {
         query: `is:pr is:open archived:false author:${login} repo:${fullName} updated:<${staleCutoff}`,
         relation: 'authored' as const,
+        fallbackFor: authoredQuery,
       },
       {
         query: `is:pr is:open archived:false assignee:${login} repo:${fullName}`,
@@ -194,6 +261,7 @@ async function searchPullRequests(
 ): Promise<PullRequestSearchResult> {
   const items: GitHubPullRequest[] = [];
   let totalCount = 0;
+  let incompleteResults = false;
   for (let page = 1; page <= maxSearchPages; page += 1) {
     const params = new URLSearchParams({
       q: query,
@@ -211,21 +279,27 @@ async function searchPullRequests(
       await response.json(),
     );
     totalCount = data.total_count;
+    incompleteResults ||= data.incomplete_results;
     items.push(...data.items.map(normalizePullRequest));
     if (items.length >= data.total_count || data.items.length < searchPerPage) {
       break;
     }
   }
-  const truncated = totalCount > maxSearchItemsPerQuery;
+  const exceededItemLimit = totalCount > maxSearchItemsPerQuery;
+  const truncated = exceededItemLimit || incompleteResults;
   return {
     items,
     truncated,
     issues: truncated
       ? [
           {
-            type: 'search-truncated' as const,
+            type: incompleteResults
+              ? ('search-incomplete' as const)
+              : ('search-truncated' as const),
             query,
-            message: `GitHub search returned more than ${maxSearchItemsPerQuery} PRs for this query; showing the newest ${items.length}.`,
+            message: incompleteResults
+              ? `GitHub reported incomplete search results for this query; showing ${items.length} results and running any configured fallback.`
+              : `GitHub search returned more than ${maxSearchItemsPerQuery} PRs for this query; showing the newest ${items.length}.`,
           },
         ]
       : [],
@@ -311,11 +385,13 @@ function isStale(value: string) {
 }
 
 function pullRequestQueueCacheKey(
+  token: string,
   login: string,
   repos: RepoConfig[],
   maxItems: number,
 ) {
   return JSON.stringify({
+    token: githubTokenFingerprint(token),
     login,
     maxItems,
     repos: repos

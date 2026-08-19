@@ -295,7 +295,7 @@ export async function registerHandoffPr(
       );
       return failResult(
         'handoff_pr_register',
-        `Review workflow dispatch failed for ${ref}.`,
+        `Review agent admission failed for ${ref}.`,
         {
           changed: watchChanged || Boolean(notification),
           id: watchId ?? notificationIdFromValue(notification),
@@ -303,7 +303,7 @@ export async function registerHandoffPr(
           notification,
           audit,
           errors: [message],
-          requires: ['workflowDispatch'],
+          requires: ['reviewAgentAdmission'],
         },
       );
     }
@@ -455,9 +455,8 @@ async function externalReviewQueueAllowed(paths: RuntimePaths) {
 }
 
 async function invokeReviewPrWorkflow(input: { ref: string }) {
-  const { invoke } = await import('@flue/runtime');
-  const workflow = await import('../../workflows/review-pr-for-human');
-  return invoke(workflow.default, { input });
+  const { admitPrReviewAssist } = await import('../pr-review-assist');
+  return admitPrReviewAssist(input);
 }
 
 async function addHandoffAudit(

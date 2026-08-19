@@ -1,7 +1,7 @@
 import type { JsonValue } from '@flue/runtime';
 import type { WorkflowSummaryRecord } from '../app-state';
 import type { fetchGitHubLogin, fetchPullRequestQueue } from '../github';
-import type { CiFixRunInput, createCiFailureDossierReport } from '../autopilot';
+import type { createCiFailureDossierReport, fixPrCiRun } from '../autopilot';
 import type { PrReviewAssistInput } from '../pr-review-assist';
 import type { startPrReview } from '../pr-reviews';
 import type { addPrWatch } from '../watches';
@@ -48,7 +48,7 @@ export type CommandDependencies = {
     input: PrReviewAssistInput,
   ) => Promise<{ runId: string }>;
   startPrReview?: typeof startPrReview;
-  invokeFixCiWorkflow?: (input: CiFixRunInput) => Promise<{ runId: string }>;
+  runFixCi?: typeof fixPrCiRun;
   createCiFailureDossierReport?: typeof createCiFailureDossierReport;
   addPrWatch?: typeof addPrWatch;
 };

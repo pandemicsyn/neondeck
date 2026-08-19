@@ -13,6 +13,19 @@ export function resolveNotificationTarget(
       label: 'Open watches',
     };
   }
+  const watchId = readString(data.watchId);
+  if (watchId) {
+    return {
+      kind: 'plugin',
+      pluginId: 'active-watches',
+      label:
+        readString(data.commitSha) ||
+        readString(data.currentSha) ||
+        readString(data.worktreeId)
+          ? 'Review change'
+          : 'Open watch',
+    };
+  }
 
   const reviewUrl = readInternalPath(data.reviewUrl);
   if (reviewUrl) {
@@ -22,6 +35,11 @@ export function resolveNotificationTarget(
   const reportUrl = readInternalPath(data.reportUrl);
   if (reportUrl) {
     return { kind: 'url', href: reportUrl, label: 'Open report' };
+  }
+
+  const detailUrl = readInternalPath(data.detailUrl);
+  if (detailUrl) {
+    return { kind: 'url', href: detailUrl, label: 'View activity' };
   }
 
   const sessionId = readString(data.sessionId);
@@ -56,13 +74,13 @@ export function resolveNotificationTarget(
 
   if (
     notification.source === 'flue' ||
-    readString(data.runId) ||
-    readString(data.workflow)
+    readString(data.submissionId) ||
+    readString(data.agentName)
   ) {
     return {
       kind: 'plugin',
-      pluginId: 'workflow-observability',
-      label: 'Inspect run',
+      pluginId: 'activity',
+      label: 'View activity',
     };
   }
 

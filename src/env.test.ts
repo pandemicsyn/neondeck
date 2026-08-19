@@ -1,6 +1,7 @@
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { afterEach, describe, expect, it } from 'vitest';
 import {
   loadNeondeckEnv,
@@ -9,6 +10,7 @@ import {
   readEnvFiles,
 } from './modules/runtime';
 import { ensureRuntimeHome, runtimePaths } from './runtime-home';
+import { resolvePackageRoot } from './runtime-home/assets';
 
 const tempRoots: string[] = [];
 const originalEnv = { ...process.env };
@@ -23,6 +25,21 @@ afterEach(async () => {
 });
 
 describe('neondeck env loading', () => {
+  it('resolves the package root from source and bundled module locations', () => {
+    const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+
+    expect(
+      resolvePackageRoot(
+        pathToFileURL(join(packageRoot, 'src/runtime-home/assets.ts')).href,
+      ),
+    ).toBe(packageRoot);
+    expect(
+      resolvePackageRoot(
+        pathToFileURL(join(packageRoot, 'dist/runtime-chunk.mjs')).href,
+      ),
+    ).toBe(packageRoot);
+  });
+
   it('parses quoted dotenv values', () => {
     expect(
       parseDotEnv(`KILOCODE_API_KEY="secret value"

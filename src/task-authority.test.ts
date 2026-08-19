@@ -18,6 +18,8 @@ import { postGitHubPrComment } from './modules/pr-events';
 import { replaceRepoFile } from './repo-edit';
 import {
   commitInteractiveRepo,
+  neondeckRepoEditActions,
+  neondeckRepoReadActions,
   pushInteractiveRepo,
   repoCommitAction,
   repoPushAction,
@@ -62,27 +64,32 @@ afterEach(async () => {
 });
 
 describe('task authority', () => {
-  it('derives origin only from the Flue workflow run id', () => {
+  it('derives autonomous origin from the bounded owner agent identity', () => {
     expect(currentTaskOrigin()).toBe('interactive');
     expect(
-      runWithFlueExecutionContextForTests({ instanceId: 'chat' }, () =>
-        currentTaskOrigin(),
+      runWithFlueExecutionContextForTests(
+        { agentName: 'display-assistant', submissionId: 'chat-submission' },
+        () => currentTaskOrigin(),
       ),
     ).toBe('interactive');
     expect(
-      runWithFlueExecutionContextForTests({ runId: 'workflow-run' }, () =>
-        currentTaskOrigin(),
+      runWithFlueExecutionContextForTests(
+        {
+          agentName: 'pr-autopilot-owner',
+          submissionId: 'owner-submission',
+        },
+        () => currentTaskOrigin(),
       ),
     ).toBe('autopilot');
   });
 
-  it('keeps interactive repo actions unavailable to workflow runs', async () => {
+  it('keeps interactive repo actions unavailable to the autonomous owner', async () => {
     const commit = await runWithFlueExecutionContextForTests(
-      { runId: 'workflow-run' },
+      { agentName: 'pr-autopilot-owner', submissionId: 'owner-submission' },
       () =>
         Promise.resolve(
           repoCommitAction.run({
-            input: {
+            data: {
               repoId: 'repo',
               worktreeId: 'worktree',
               message: 'test',
@@ -91,11 +98,36 @@ describe('task authority', () => {
         ),
     );
     const push = await runWithFlueExecutionContextForTests(
-      { runId: 'workflow-run' },
-      () => Promise.resolve(repoPushAction.run({ input: {} } as never)),
+      { agentName: 'pr-autopilot-owner', submissionId: 'owner-submission' },
+      () => Promise.resolve(repoPushAction.run({ data: {} } as never)),
     );
-    expect(commit).toMatchObject({ ok: false, requires: ['interactiveOnly'] });
-    expect(push).toMatchObject({ ok: false, requires: ['interactiveOnly'] });
+    expect(commit).toMatchObject({
+      output: { ok: false, requires: ['interactiveOnly'] },
+    });
+    expect(push).toMatchObject({
+      output: { ok: false, requires: ['interactiveOnly'] },
+    });
+  });
+
+  it('gives signal deliveries only read-only repository actions', () => {
+    const signalNames = neondeckRepoReadActions.map((tool) => tool.name);
+    const interactiveNames = neondeckRepoEditActions.map((tool) => tool.name);
+
+    expect(signalNames).toEqual([
+      'neondeck_repo_file_read',
+      'neondeck_repo_file_search',
+      'neondeck_repo_diff',
+      'neondeck_repo_checkout_status',
+    ]);
+    expect(interactiveNames).toEqual(
+      expect.arrayContaining([
+        'neondeck_repo_file_write',
+        'neondeck_repo_file_replace',
+        'neondeck_repo_file_patch',
+        'neondeck_repo_commit',
+        'neondeck_repo_push',
+      ]),
+    );
   });
 
   it('classifies hardline denies separately from interactive expansions', async () => {
@@ -629,7 +661,7 @@ describe('task authority', () => {
       paths,
     );
     const autonomousLock = await runWithFlueExecutionContextForTests(
-      { runId: 'run-autopilot' },
+      { agentName: 'pr-autopilot-owner', submissionId: 'owner-submission' },
       () =>
         lockWorktree(
           {
@@ -698,7 +730,7 @@ describe('task authority', () => {
 
     expect(autonomousLock).toMatchObject({ ok: true });
     expect(autonomousLock).toMatchObject({
-      lock: { workflowRunId: 'run-autopilot' },
+      lock: { workflowRunId: 'owner-submission' },
     });
     expect(revokedLock.revokedAt).not.toBeNull();
     expect(staleMutation).toMatchObject({
@@ -706,7 +738,7 @@ describe('task authority', () => {
       error: { code: 'WORKTREE_LOCKED' },
     });
     expect(preemption).toMatchObject({ ok: true, changed: true });
-    expect(recovery?.message).toContain('run-autopilot');
+    expect(recovery?.message).toContain('owner-submission');
     expect(activeLocks.count).toBe(0);
   });
 });

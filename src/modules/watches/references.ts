@@ -39,10 +39,15 @@ export function resolvePrReference(
   );
 
   if (urlMatch) {
+    const identity = resolveConfiguredRepoIdentity(
+      registry.repos,
+      urlMatch[1],
+      urlMatch[2],
+      'watch_pr_parse',
+    );
+    if (!identity.ok) return identity;
     return okReference({
-      repoId: `${urlMatch[1]}/${urlMatch[2]}`,
-      githubOwner: urlMatch[1],
-      githubName: urlMatch[2],
+      ...identity.reference,
       prNumber: Number(urlMatch[3]),
       desiredTerminalState,
     });
@@ -50,10 +55,15 @@ export function resolvePrReference(
 
   const fullNameMatch = ref.match(/^([^/\s#]+)\/([^/\s#]+)#(\d+)$/);
   if (fullNameMatch) {
+    const identity = resolveConfiguredRepoIdentity(
+      registry.repos,
+      fullNameMatch[1],
+      fullNameMatch[2],
+      'watch_pr_parse',
+    );
+    if (!identity.ok) return identity;
     return okReference({
-      repoId: `${fullNameMatch[1]}/${fullNameMatch[2]}`,
-      githubOwner: fullNameMatch[1],
-      githubName: fullNameMatch[2],
+      ...identity.reference,
       prNumber: Number(fullNameMatch[3]),
       desiredTerminalState,
     });
@@ -119,10 +129,15 @@ export function resolveRefReference(
 
   const fullNameMatch = normalized.repo.match(/^([^/\s@]+)\/([^/\s@]+)$/);
   if (fullNameMatch) {
+    const identity = resolveConfiguredRepoIdentity(
+      registry.repos,
+      fullNameMatch[1],
+      fullNameMatch[2],
+      'watch_ref_parse',
+    );
+    if (!identity.ok) return identity;
     return okRefReference({
-      repoId: `${fullNameMatch[1]}/${fullNameMatch[2]}`,
-      githubOwner: fullNameMatch[1],
-      githubName: fullNameMatch[2],
+      ...identity.reference,
       ref: normalized.ref,
     });
   }
@@ -273,6 +288,53 @@ export function findConfiguredRepo(
         requires: ['repo'],
       },
     ),
+  };
+}
+
+function resolveConfiguredRepoIdentity(
+  repos: RepoRegistrySnapshot['repos'],
+  githubOwner: string,
+  githubName: string,
+  action: string,
+):
+  | {
+      ok: true;
+      reference: {
+        repoId: string;
+        githubOwner: string;
+        githubName: string;
+      };
+    }
+  | { ok: false; result: WatchActionResult } {
+  const fullName = `${githubOwner}/${githubName}`;
+  const matches = repos.filter(
+    (repo) => repoFullName(repo).toLowerCase() === fullName.toLowerCase(),
+  );
+  if (matches.length > 1) {
+    return {
+      ok: false,
+      result: failResult(
+        action,
+        `Repository "${fullName}" is configured more than once.`,
+        { requires: ['repo'] },
+      ),
+    };
+  }
+
+  const configured = matches[0];
+  return {
+    ok: true,
+    reference: configured
+      ? {
+          repoId: configured.id,
+          githubOwner: configured.github.owner,
+          githubName: configured.github.name,
+        }
+      : {
+          repoId: fullName,
+          githubOwner,
+          githubName,
+        },
   };
 }
 

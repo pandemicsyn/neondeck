@@ -2,10 +2,10 @@ import { useQueries, useQueryClient } from '@tanstack/react-query';
 import { useMemo } from 'react';
 import {
   getRuntimeStatus,
-  getWorkflowObservability,
+  getActivityObservability,
   type RuntimeStatus,
-  type WorkflowEventRecord,
-  type WorkflowObservability,
+  type ActivityEventRecord,
+  type ActivityObservability,
 } from '../api';
 import { Badge, EmptyState, MiniEmpty, ScrollArea } from '../components/ui';
 import { useConfigEvents } from '../lib/config-events';
@@ -23,6 +23,7 @@ const subagentSummaryDefaultConfig = {
 };
 
 const subagentLabels: Record<string, string> = {
+  explore: 'explore',
   repoResearcher: 'repo_researcher',
   ciInvestigator: 'ci_investigator',
   releaseReviewer: 'release_reviewer',
@@ -45,8 +46,8 @@ export const SubagentSummaryPlugin = {
           refetchInterval: 30_000,
         },
         {
-          queryKey: queryKeys.workflowObservability,
-          queryFn: getWorkflowObservability,
+          queryKey: queryKeys.activityObservability,
+          queryFn: getActivityObservability,
           refetchInterval: 30_000,
         },
       ],
@@ -55,7 +56,7 @@ export const SubagentSummaryPlugin = {
     useConfigEvents(() => {
       void queryClient.invalidateQueries({ queryKey: queryKeys.runtimeStatus });
       void queryClient.invalidateQueries({
-        queryKey: queryKeys.workflowObservability,
+        queryKey: queryKeys.activityObservability,
       });
     });
 
@@ -102,7 +103,7 @@ function SubagentView({
 }: {
   eventLimit: number;
   runtime: RuntimeStatus;
-  workflows: WorkflowObservability;
+  workflows: ActivityObservability;
 }) {
   const events = useMemo(
     () => subagentEvents(workflows.recentEvents),
@@ -161,7 +162,7 @@ function SubagentView({
   );
 }
 
-function EventRow({ event }: { event: WorkflowEventRecord }) {
+function EventRow({ event }: { event: ActivityEventRecord }) {
   return (
     <article className="border border-line bg-soft px-2.5 py-2">
       <div className="flex items-start justify-between gap-2">
@@ -181,7 +182,7 @@ function EventRow({ event }: { event: WorkflowEventRecord }) {
   );
 }
 
-export function subagentEvents(events: WorkflowEventRecord[]) {
+export function subagentEvents(events: ActivityEventRecord[]) {
   return events.filter((event) => {
     const structured = [event.operationKind, event.name]
       .filter(Boolean)

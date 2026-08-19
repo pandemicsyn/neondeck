@@ -1,7 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { basename } from 'node:path';
-import { fileURLToPath } from 'node:url';
 import * as v from 'valibot';
 import {
   asJsonValue,
@@ -23,6 +22,7 @@ import { readReport, writeReport, type ReportRecord } from '../reports';
 import { readRepoRegistrySnapshot, repoFullName } from '../repos';
 import { createWorktree } from '../worktrees';
 import type { RuntimePaths } from '../../runtime-home';
+import { resolveShippedAsset } from '../../runtime-home/assets';
 import { runtimePaths } from '../../runtime-home';
 import type { JsonValue } from '@flue/runtime';
 
@@ -50,8 +50,9 @@ type ReportAutomationInput = {
 
 const maxDocsToScan = 200;
 const maxSourceChangesToScan = 200;
-const neonDocsFixSkillPath = fileURLToPath(
-  new URL('../../skills/neon-docs-fix/SKILL.md', import.meta.url),
+const neonDocsFixSkillPath = resolveShippedAsset(
+  'src/skills/neon-docs-fix/SKILL.md',
+  'skills/neon-docs-fix/SKILL.md',
 );
 
 export const docsDriftStageFixInputSchema = v.object({

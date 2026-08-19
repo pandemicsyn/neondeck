@@ -1,3 +1,8 @@
+---
+const briefingPayload =
+  '{"briefingRunId":"briefing:20260818014652","profileId":"morning","status":\u2026}';
+---
+
 <div class="deck-frame" aria-label="neondeck dashboard preview">
   <div class="deck-screen">
     <div class="statusline">
@@ -38,21 +43,48 @@
           <strong>add github review-requests panel</strong>
           <small><span>● checks pass</span><span>↻ rebase</span></small>
         </div>
+        <div class="pr-row">
+          <p><span>neondeck/docs</span><span>#204 · 2d</span></p>
+          <strong>docs: autopilot delivery guards</strong>
+          <small><span>● checks pass</span><span>◆ 1 review</span></small>
+        </div>
       </section>
       <section class="chat-panel">
         <header>
-          <span>● FLUE AGENT · triage.ts</span><span>durable · ctx 18k</span>
+          <span>● FLUE AGENT · morning briefing</span><span
+            >durable · ctx 18k</span
+          >
         </header>
         <div class="chat-scroll">
-          <div class="bubble user">What needs my attention this morning?</div>
-          <div class="tool-chip">
-            workflow <span>triage_prs › step 2/4 · github.list_prs()</span>
+          <div class="bubble agent briefing">
+            <p class="brief-title">
+              <span class="brief-dot"></span>Morning briefing · Aug 18
+            </p>
+            <p class="brief-label">Failing checks (needs attention)</p>
+            <p class="brief-item">
+              <code>neondeck/core#312</code> · 1 of 15 checks failing, last updated
+              5h ago.
+            </p>
+            <p class="brief-label">Open PRs, checks green (3 of 4)</p>
+            <p class="brief-item">
+              <code>flue/harness#1284</code> has 2 reviewers waiting on you.
+              <code>#88</code> and <code>#204</code> need nothing from you.
+            </p>
+            <p class="brief-label">Watches and Autopilot</p>
+            <p class="brief-item">
+              One watch on #312, prepare-only. Nothing pending approval.
+            </p>
+            <p class="brief-next">
+              <span>Suggested next action:</span> dig into #312's failing check. Want
+              me to pull the CI details?
+            </p>
+            <p class="brief-data">
+              <span class="data-tag">DATA</span> briefing <em
+                >{briefingPayload}</em
+              >
+              <span class="data-full">full</span>
+            </p>
           </div>
-          <div class="bubble agent">
-            3 of your 4 open PRs are green. <span>neondeck/core #312</span> has 1
-            failing check. <b>flue/harness #1284</b> has 2 reviewers waiting on you.
-          </div>
-          <div class="bubble user small">fix it</div>
         </div>
         <div class="composer">
           <span>›</span><em>Message neondeck...</em><small
@@ -161,6 +193,7 @@
   .github-panel,
   .chat-panel {
     min-width: 0;
+    min-height: 0;
     border-right: 1px solid rgba(255, 255, 255, 0.08);
     background: linear-gradient(
       180deg,
@@ -202,7 +235,7 @@
   }
 
   .pr-row {
-    padding: 8px 14px;
+    padding: 7px 14px;
     border-bottom: 1px solid rgba(255, 255, 255, 0.04);
   }
 
@@ -218,7 +251,7 @@
 
   .pr-row strong {
     display: block;
-    margin: 3px 0 5px;
+    margin: 2px 0 4px;
     color: var(--body);
     font-family: 'IBM Plex Sans', sans-serif;
     font-size: clamp(8px, 1vw, 13px);
@@ -236,9 +269,11 @@
   .chat-scroll {
     display: flex;
     flex: 1;
+    min-height: 0;
     flex-direction: column;
-    gap: 11px;
-    padding: 14px 18px;
+    gap: clamp(5px, 0.9vw, 11px);
+    overflow: hidden;
+    padding: clamp(7px, 1.2vw, 14px) clamp(9px, 1.5vw, 18px);
   }
 
   .bubble {
@@ -249,17 +284,7 @@
     font-family: 'IBM Plex Sans', sans-serif;
     font-size: clamp(8px, 1vw, 13px);
     line-height: 1.55;
-    padding: 9px 13px;
-  }
-
-  .bubble.user {
-    align-self: flex-end;
-    border-color: rgba(105, 230, 255, 0.22);
-    background: rgba(105, 230, 255, 0.12);
-  }
-
-  .bubble.small {
-    max-width: 40%;
+    padding: clamp(5px, 0.75vw, 9px) clamp(7px, 1.1vw, 13px);
   }
 
   .bubble.agent {
@@ -270,22 +295,88 @@
     color: var(--pink);
   }
 
-  .bubble b {
-    color: var(--violet);
-    font-weight: 500;
+  .bubble.briefing {
+    align-self: stretch;
+    max-width: 100%;
+    font-size: clamp(7px, 0.82vw, 11.5px);
+    line-height: 1.5;
   }
 
-  .tool-chip {
-    align-self: flex-start;
-    border: 1px solid rgba(139, 77, 255, 0.28);
-    background: rgba(139, 77, 255, 0.1);
-    color: var(--violet);
-    font-size: clamp(6px, 0.8vw, 10.5px);
-    padding: 5px 10px;
+  .briefing p {
+    margin: 0;
   }
 
-  .tool-chip span {
-    color: rgba(215, 247, 255, 0.58);
+  .briefing .brief-title {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 0.45em;
+    color: var(--teal);
+    font-weight: 600;
+  }
+
+  .briefing .brief-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 999px;
+    background: var(--teal);
+    box-shadow: 0 0 8px var(--teal);
+  }
+
+  .briefing .brief-label {
+    margin-top: 0.5em;
+    color: var(--cyan);
+    font-weight: 600;
+  }
+
+  .briefing .brief-item {
+    padding-left: 1em;
+    color: rgba(215, 247, 255, 0.68);
+  }
+
+  .briefing .brief-item code {
+    color: var(--pink);
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.94em;
+  }
+
+  .briefing .brief-next {
+    margin-top: 0.7em;
+    color: rgba(215, 247, 255, 0.9);
+  }
+
+  .briefing .brief-next span {
+    color: var(--violet);
+    font-weight: 600;
+  }
+
+  .briefing .brief-data {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: 0.75em;
+    padding-top: 0.5em;
+    border-top: 1px solid rgba(255, 255, 255, 0.09);
+    color: rgba(215, 247, 255, 0.34);
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.86em;
+  }
+
+  .briefing .brief-data em {
+    flex: 1;
+    overflow: hidden;
+    font-style: normal;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .briefing .data-tag {
+    color: var(--cyan);
+    letter-spacing: 0.1em;
+  }
+
+  .briefing .data-full {
+    color: var(--violet);
   }
 
   .composer {
@@ -310,6 +401,50 @@
 
   .composer small {
     color: rgba(215, 247, 255, 0.35);
+  }
+
+  /* A 32:9 strip at phone width is a 90px sliver, so stack it and let it breathe. */
+  @media (max-width: 760px) {
+    .deck-screen {
+      aspect-ratio: auto;
+    }
+
+    .deck-body {
+      grid-template-columns: 1fr;
+      height: auto;
+    }
+
+    .github-panel {
+      border-right: 0;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    }
+
+    .chat-scroll {
+      overflow: visible;
+      padding: 12px 14px;
+    }
+
+    .statusline,
+    .github-panel header,
+    .chat-panel header,
+    .pr-row p,
+    .pr-row small,
+    .composer {
+      font-size: 10px;
+    }
+
+    .pr-row strong,
+    .bubble {
+      font-size: 12px;
+    }
+
+    .bubble.briefing {
+      font-size: 10.5px;
+    }
+  }
+
+  :global(:root[data-theme='light']) .github-panel {
+    border-bottom-color: rgba(18, 40, 55, 0.13);
   }
 
   :global(:root[data-theme='light']) .deck-frame {
@@ -338,7 +473,6 @@
   :global(:root[data-theme='light']) .chat-panel header span:last-child,
   :global(:root[data-theme='light']) .pr-row p,
   :global(:root[data-theme='light']) .pr-row small,
-  :global(:root[data-theme='light']) .tool-chip span,
   :global(:root[data-theme='light']) .composer em,
   :global(:root[data-theme='light']) .composer small {
     color: rgba(19, 23, 30, 0.58);
@@ -383,13 +517,13 @@
     background: rgba(255, 255, 255, 0.54);
   }
 
-  :global(:root[data-theme='light']) .bubble.user {
-    border-color: rgba(0, 147, 168, 0.24);
-    background: rgba(0, 147, 168, 0.12);
+  :global(:root[data-theme='light']) .briefing .brief-item,
+  :global(:root[data-theme='light']) .briefing .brief-next {
+    color: rgba(19, 23, 30, 0.78);
   }
 
-  :global(:root[data-theme='light']) .tool-chip {
-    border-color: rgba(122, 55, 230, 0.28);
-    background: rgba(122, 55, 230, 0.1);
+  :global(:root[data-theme='light']) .briefing .brief-data {
+    border-color: rgba(18, 40, 55, 0.16);
+    color: rgba(19, 23, 30, 0.5);
   }
 </style>

@@ -35,6 +35,15 @@ export function githubPrReviewRefreshSafety(input: {
   });
 }
 
+export function prReviewDraftHeadIsStale(
+  draftHeadSha: string | null | undefined,
+  currentHeadSha: string | null | undefined,
+) {
+  return Boolean(
+    draftHeadSha && currentHeadSha && draftHeadSha !== currentHeadSha,
+  );
+}
+
 export function commentAnchorLabel(comment: GitHubPrReviewDraftComment) {
   if (comment.startLine) {
     return `${comment.startSide ?? comment.side} L${comment.startLine} -> ${comment.side} L${comment.line}`;

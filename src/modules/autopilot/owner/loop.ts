@@ -1,10 +1,12 @@
 import type { JsonValue } from '@flue/runtime';
 import { asJsonValue } from '../../../lib/action-result';
+import { isTransientFlueRuntimeFailure } from '../../../lib/flue-errors';
 import type { RuntimePaths } from '../../../runtime-home';
 import { gitCurrentSha, gitStatus } from '../../../repo-edit/git';
 import { addNotification } from '../../app-state';
 import {
   bindWatchAutopilotOwner,
+  canonicalizePrWatchRepoId,
   claimWatchAutopilotTurn,
   readWatch,
   transitionWatchAutopilot,
@@ -17,9 +19,16 @@ import { dispatchAutopilotOwnerTurn } from './dispatch';
 import { buildAutopilotOwnerEnvelope } from './envelope';
 import { autopilotOwnerInstanceId } from './instance';
 import {
-  clearPendingAutopilotTurn,
+  clearPendingAutopilotTurnIfMatches,
+  recordPendingAutopilotTurnCorrelationId,
+  recordPendingAutopilotTurnError,
   registerPendingAutopilotTurn,
 } from './pending';
+import {
+  autopilotDispatchBlockedSourceId,
+  reconcileTransientAutopilotRuntimeBlocks,
+} from './runtime-recovery';
+import { watchAutopilotOwnerSettlement } from './settlement';
 
 export type AutopilotWatchEvent = {
   watchId: string;
@@ -43,8 +52,18 @@ export async function runAutopilotWatchEvent(
   let watch = readWatch(paths, event.watchId);
   if (!watch)
     return loopResult('missing', false, 'The watch no longer exists.');
-  if (watch.autopilotStatus === 'complete') {
-    return loopResult('complete', false, 'The watch is complete.');
+  watch = (await canonicalizePrWatchRepoId(paths, watch.id)) ?? watch;
+  if (
+    watch.autopilotStatus === 'complete' ||
+    watch.autopilotStatus === 'stopping'
+  ) {
+    return loopResult(
+      'complete',
+      false,
+      watch.autopilotStatus === 'stopping'
+        ? 'The watch is stopping and cleanup is in progress.'
+        : 'The watch is complete.',
+    );
   }
   if (watch.lastEventFingerprint === event.eventFingerprint) {
     return loopResult('duplicate', false, 'This event was already handled.');
@@ -210,7 +229,7 @@ export async function runAutopilotWatchEvent(
         event: event.currentFacts,
         changedCategories: event.changedCategories,
         deltas: event.deltas,
-        configuredTargetedChecks: configured.checks,
+        configuredValidationHints: configured.checks,
         worktree: {
           id: worktree.id,
           path: worktree.localPath,
@@ -219,17 +238,47 @@ export async function runAutopilotWatchEvent(
       }),
       availableCapabilities: capabilities,
     });
-    registerPendingAutopilotTurn(
+    const pendingTurn = registerPendingAutopilotTurn(
       paths.home,
       instanceId,
       event.eventFingerprint,
       bound.autopilotMode,
       'watch-event',
+      undefined,
+      { envelope, watchId: bound.id },
     );
+    try {
+      const { buildPrAutopilotOwnerRuntime } =
+        await import('../../../agents/pr-autopilot-owner');
+      await buildPrAutopilotOwnerRuntime(instanceId, paths);
+    } catch (error) {
+      clearPendingAutopilotTurnIfMatches(
+        paths.home,
+        instanceId,
+        pendingTurn.turnId,
+      );
+      throw error;
+    }
     try {
       const receipt = await (
         dependencies.dispatch ?? dispatchAutopilotOwnerTurn
-      )({ instanceId, envelope });
+      )({ instanceId, envelope, idempotencyKey: pendingTurn.turnId });
+      recordPendingAutopilotTurnCorrelationId(
+        paths.home,
+        instanceId,
+        pendingTurn.turnId,
+        receipt.submissionId,
+      );
+      if (!dependencies.dispatch) {
+        void watchAutopilotOwnerSettlement(
+          instanceId,
+          receipt.submissionId,
+          paths,
+          undefined,
+          pendingTurn.turnId,
+        );
+      }
+      await reconcileTransientRuntimeNotificationQuietly(paths, claimed.id);
       return {
         ...loopResult(
           'dispatched',
@@ -238,13 +287,55 @@ export async function runAutopilotWatchEvent(
         ),
         instanceId,
         worktreeId: worktree.id,
-        dispatchId: receipt.dispatchId,
+        dispatchId: receipt.submissionId,
       };
     } catch (error) {
-      clearPendingAutopilotTurn(paths.home, instanceId);
-      throw error;
+      if (isTransientFlueRuntimeFailure(error)) {
+        clearPendingAutopilotTurnIfMatches(
+          paths.home,
+          instanceId,
+          pendingTurn.turnId,
+        );
+        transitionWatchAutopilot(paths, claimed.id, {
+          from: 'working',
+          to: 'watching',
+        });
+        await reconcileTransientRuntimeNotificationQuietly(paths, claimed.id);
+        return loopResult(
+          'deferred',
+          false,
+          'The local runtime is temporarily unavailable; the owner turn will retry on the next eligible poll.',
+        );
+      }
+      recordPendingAutopilotTurnError(
+        paths.home,
+        instanceId,
+        pendingTurn.turnId,
+        errorMessage(error),
+      );
+      return {
+        ...loopResult(
+          'deferred',
+          false,
+          'The owner admission outcome is uncertain. The durable reservation remains claimed and will retry with the same idempotency key.',
+        ),
+        instanceId,
+        worktreeId: worktree.id,
+      };
     }
   } catch (error) {
+    if (isTransientFlueRuntimeFailure(error)) {
+      transitionWatchAutopilot(paths, claimed.id, {
+        from: 'working',
+        to: 'watching',
+      });
+      await reconcileTransientRuntimeNotificationQuietly(paths, claimed.id);
+      return loopResult(
+        'deferred',
+        false,
+        'The local runtime is temporarily unavailable; the owner turn will retry on the next eligible poll.',
+      );
+    }
     transitionWatchAutopilot(paths, claimed.id, {
       from: 'working',
       to: 'blocked',
@@ -256,7 +347,7 @@ export async function runAutopilotWatchEvent(
         title: 'Autopilot owner turn blocked',
         message,
         source: 'autopilot-owner',
-        sourceId: `${claimed.id}:dispatch-blocked`,
+        sourceId: autopilotDispatchBlockedSourceId(claimed.id),
         data: { watchId: claimed.id, eventFingerprint: event.eventFingerprint },
       },
       paths,
@@ -293,4 +384,18 @@ function loopResult(state: string, changed: boolean, message: string) {
 
 function errorMessage(error: unknown) {
   return error instanceof Error ? error.message : String(error);
+}
+
+async function reconcileTransientRuntimeNotificationQuietly(
+  paths: RuntimePaths,
+  watchId: string,
+) {
+  try {
+    await reconcileTransientAutopilotRuntimeBlocks(paths, { watchId });
+  } catch (error) {
+    console.warn(
+      '[neondeck] failed to resolve a transient Autopilot runtime notification',
+      error,
+    );
+  }
 }

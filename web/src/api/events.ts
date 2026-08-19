@@ -4,9 +4,24 @@ import type {
   ChatSessionChangeEvent,
   NotificationChangeEvent,
   PrReviewChangeEvent,
+  GitHubQueueChangeEvent,
 } from './types';
 import { dashboardEventHub } from './event-hub';
 import type { ReviewSourceRevisionEvent } from '../../../shared/review-refresh';
+
+export function openDashboardEventConnection(
+  onOpen: () => void,
+  onError?: (error?: Error | Event) => void,
+) {
+  return dashboardEventHub.subscribeConnection(onOpen, onError);
+}
+
+export function openGitHubQueueEventStream(
+  onEvent: (event: GitHubQueueChangeEvent) => void,
+  onError?: (error?: Error | Event) => void,
+) {
+  return dashboardEventHub.subscribe('github-queue-change', onEvent, onError);
+}
 
 export function openConfigEventStream(
   onEvent: (event: ConfigChangeEvent) => void,

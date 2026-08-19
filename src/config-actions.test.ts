@@ -10,15 +10,20 @@ import {
   addRepo,
   applyDashboardPreset,
   readConfig,
+  readAutopilotPrompts,
+  readPrReviewPrompts,
   readProviderConfig,
   reloadConfig,
   removeRepo,
   updateRepo,
   updateRepoAutopilotPolicy,
   updateAgentModels,
+  updateAutopilotPrompt,
+  updatePrReviewPrompt,
   updateLearningConfig,
   updateExecutionPolicy,
   updateDashboardLayout,
+  updateDashboardLayoutAction,
   updateProviderConfig,
   updateSkillRoots,
   updateWorktreePolicy,
@@ -46,6 +51,153 @@ afterEach(async () => {
 });
 
 describe('config actions', () => {
+  it('reads, overrides, and resets full Autopilot owner prompts', async () => {
+    const home = await tempDir('neondeck-home-');
+    const paths = runtimePaths(home);
+
+    const initial = await readAutopilotPrompts(paths);
+    expect(initial).toMatchObject({
+      ok: true,
+      changed: false,
+      action: 'config_read_autopilot_prompts',
+      data: {
+        overrides: {},
+        appliesAfter: 'next-owner-turn',
+      },
+    });
+    const initialData = initial.data as {
+      prompts: Record<string, string>;
+      defaults: Record<string, string>;
+    };
+    expect(initialData.prompts['prepare-only']).toBe(
+      initialData.defaults['prepare-only'],
+    );
+
+    const prompt = 'Custom owner prompt for {{mode}} from {{source}}.';
+    await expect(
+      updateAutopilotPrompt({ mode: 'prepare-only', prompt }, paths),
+    ).resolves.toMatchObject({
+      ok: true,
+      changed: true,
+      data: {
+        prompts: { 'prepare-only': prompt },
+        overrides: { 'prepare-only': prompt },
+      },
+    });
+
+    let config = parseAppConfig(
+      JSON.parse(await readFile(paths.config, 'utf8')),
+      paths.config,
+    );
+    expect(config.autopilot?.prompts?.['prepare-only']).toBe(prompt);
+
+    const reset = await updateAutopilotPrompt(
+      { mode: 'prepare-only', prompt: null },
+      paths,
+    );
+    expect(reset).toMatchObject({
+      ok: true,
+      changed: true,
+      data: { overrides: {} },
+    });
+    const resetData = reset.data as {
+      prompts: Record<string, string>;
+      defaults: Record<string, string>;
+    };
+    expect(resetData.prompts['prepare-only']).toBe(
+      resetData.defaults['prepare-only'],
+    );
+    config = parseAppConfig(
+      JSON.parse(await readFile(paths.config, 'utf8')),
+      paths.config,
+    );
+    expect(config.autopilot?.prompts).toEqual({});
+    expect(readHistory(paths.neondeckDatabase)).toMatchObject([
+      {
+        action: 'config_update_autopilot_prompt',
+        target: 'autopilot.prompts.prepare-only',
+      },
+      {
+        action: 'config_update_autopilot_prompt',
+        target: 'autopilot.prompts.prepare-only',
+      },
+    ]);
+  });
+
+  it('reads, overrides, and resets full PR reviewer prompts', async () => {
+    const home = await tempDir('neondeck-home-');
+    const paths = runtimePaths(home);
+
+    const initial = await readPrReviewPrompts(paths);
+    expect(initial).toMatchObject({
+      ok: true,
+      changed: false,
+      action: 'config_read_pr_review_prompts',
+      data: {
+        overrides: {},
+        appliesAfter: {
+          'initial-review': 'next-review-run',
+          'follow-up-reviewer': 'next-reviewer-turn',
+        },
+      },
+    });
+    const initialData = initial.data as {
+      prompts: Record<string, string>;
+      defaults: Record<string, string>;
+      tokens: Record<string, string[]>;
+    };
+    expect(initialData.prompts['initial-review']).toBe(
+      initialData.defaults['initial-review'],
+    );
+    expect(initialData.tokens['follow-up-reviewer']).toEqual([
+      '{{workspaceToolGuidance}}',
+      '{{reviewContextDeliveryGuidance}}',
+    ]);
+
+    const prompt = 'Custom initial review prompt.';
+    await expect(
+      updatePrReviewPrompt({ kind: 'initial-review', prompt }, paths),
+    ).resolves.toMatchObject({
+      ok: true,
+      changed: true,
+      data: {
+        prompts: { 'initial-review': prompt },
+        overrides: { 'initial-review': prompt },
+      },
+    });
+
+    let config = parseAppConfig(
+      JSON.parse(await readFile(paths.config, 'utf8')),
+      paths.config,
+    );
+    expect(config.prReview?.prompts?.['initial-review']).toBe(prompt);
+
+    const reset = await updatePrReviewPrompt(
+      { kind: 'initial-review', prompt: null },
+      paths,
+    );
+    expect(reset).toMatchObject({
+      ok: true,
+      changed: true,
+      data: { overrides: {} },
+    });
+    config = parseAppConfig(
+      JSON.parse(await readFile(paths.config, 'utf8')),
+      paths.config,
+    );
+    expect(config.prReview?.prompts).toEqual({});
+    expect(readHistory(paths.neondeckDatabase)).toMatchObject([
+      {
+        action: 'config_update_pr_review_prompt',
+        target: 'prReview.prompts.initial-review',
+      },
+      {
+        action: 'config_update_pr_review_prompt',
+        target: 'prReview.prompts.initial-review',
+      },
+    ]);
+  });
+
   it('adds, updates, and removes a repo through validated config operations', async () => {
     const home = await tempDir('neondeck-home-');
     const repoPath = await tempGitRepo();
@@ -308,12 +460,17 @@ describe('config actions', () => {
       updateAgentModels(
         {
           displayAssistant: 'kilocode/kilo/main',
+          prReview: 'kilocode/kilo-auto/frontier',
+          prReviewThinkingLevel: 'low',
+          prReviewTimeoutMs: 300_000,
           utility: 'kilocode/kilo/utility',
           utilityThinkingLevel: 'low',
           selfImprovement: 'kilocode/kilo/reflect',
           selfImprovementThinkingLevel: 'minimal',
           subagents: {
             default: 'kilocode/kilo/subagent',
+            explore: 'kilocode/kilo/explore',
+            exploreThinkingLevel: 'minimal',
             ciInvestigator: 'kilocode/kilo/ci',
           },
         },
@@ -336,12 +493,17 @@ describe('config actions', () => {
     );
     expect(config.models).toEqual({
       displayAssistant: 'kilocode/kilo/main',
+      prReview: 'kilocode/kilo-auto/frontier',
+      prReviewThinkingLevel: 'low',
+      prReviewTimeoutMs: 300_000,
       utility: 'kilocode/kilo/utility',
       utilityThinkingLevel: 'low',
       selfImprovement: 'kilocode/kilo/reflect',
       selfImprovementThinkingLevel: 'minimal',
       subagents: {
         default: 'kilocode/kilo/subagent',
+        explore: 'kilocode/kilo/explore',
+        exploreThinkingLevel: 'minimal',
         ciInvestigator: 'kilocode/kilo/ci',
       },
     });
@@ -366,17 +528,42 @@ describe('config actions', () => {
     );
     expect(config.models).toEqual({
       displayAssistant: 'kilocode/kilo/main',
+      prReview: 'kilocode/kilo-auto/frontier',
+      prReviewThinkingLevel: 'low',
+      prReviewTimeoutMs: 300_000,
       utility: 'kilocode/kilo/utility',
       utilityThinkingLevel: 'low',
       selfImprovement: 'kilocode/kilo/reflect',
       selfImprovementThinkingLevel: 'minimal',
       subagents: {
         default: 'kilocode/kilo/subagent',
+        explore: 'kilocode/kilo/explore',
+        exploreThinkingLevel: 'minimal',
         repoResearcher: 'kilocode/kilo/repo',
         ciInvestigator: 'kilocode/kilo/ci',
       },
     });
+
+    await expect(
+      updateAgentModels(
+        {
+          subagents: {
+            explore: null,
+            exploreThinkingLevel: null,
+          },
+        },
+        paths,
+      ),
+    ).resolves.toMatchObject({ ok: true, changed: true });
+
+    config = parseAppConfig(
+      JSON.parse(await readFile(paths.config, 'utf8')),
+      paths.config,
+    );
+    expect(config.models?.subagents).not.toHaveProperty('explore');
+    expect(config.models?.subagents).not.toHaveProperty('exploreThinkingLevel');
     expect(readHistory(paths.neondeckDatabase)).toMatchObject([
+      { action: 'config_update_agent_models', target: 'models' },
       { action: 'config_update_agent_models', target: 'models' },
       { action: 'config_update_agent_models', target: 'models' },
     ]);
@@ -426,19 +613,20 @@ describe('config actions', () => {
     ]);
   });
 
-  it('clears utility model config through the typed action', async () => {
+  it('clears specialized model config through the typed action', async () => {
     const home = await tempDir('neondeck-home-');
     const paths = runtimePaths(home);
 
     await updateAgentModels(
       {
         displayAssistant: 'kilocode/kilo/main',
+        prReview: 'kilocode/kilo-auto/frontier',
         utility: 'kilocode/kilo/utility',
       },
       paths,
     );
     await expect(
-      updateAgentModels({ utility: null }, paths),
+      updateAgentModels({ prReview: null, utility: null }, paths),
     ).resolves.toMatchObject({
       ok: true,
       changed: true,
@@ -537,7 +725,10 @@ describe('config actions', () => {
       },
       paths.dashboard,
     );
-    await expect(updateDashboardLayout(next, paths)).resolves.toMatchObject({
+    const { $schema: _schema, ...toolCompatibleNext } = next;
+    await expect(
+      updateDashboardLayout(toolCompatibleNext, paths),
+    ).resolves.toMatchObject({
       ok: true,
       changed: true,
       action: 'config_update_dashboard_layout',
@@ -548,11 +739,20 @@ describe('config actions', () => {
       JSON.parse(await readFile(paths.dashboard, 'utf8')),
       paths.dashboard,
     );
+    expect(dashboard.$schema).toBe('./dashboard.schema.json');
     expect(dashboard.statusline?.position).toBe('bottom');
     expect(readHistory(paths.neondeckDatabase)).toMatchObject([
       { action: 'config_apply_dashboard_preset', target: 'classic' },
       { action: 'config_update_dashboard_layout', target: 'layout' },
     ]);
+  });
+
+  it('keeps provider-incompatible JSON Schema metadata out of the dashboard tool input', () => {
+    const input = updateDashboardLayoutAction.input as unknown as {
+      entries: Record<string, unknown>;
+    };
+
+    expect(input.entries).not.toHaveProperty('$schema');
   });
 
   it('can apply a dashboard preset over an invalid existing dashboard file', async () => {
@@ -598,7 +798,7 @@ describe('config actions', () => {
       'memory',
       'learning',
       'runtime',
-      'workflows',
+      'activity',
       'subagents',
     ]);
   });
@@ -629,11 +829,29 @@ describe('config actions', () => {
       ok: false,
       changed: false,
       action: 'config_update_agent_models',
-      message: 'Invalid action input.',
+      message: 'Model strings reference unconfigured providers: ollama.',
     });
 
     await expect(
       updateAgentModels({ displayAssistant: 'kilo-auto' }, paths),
+    ).resolves.toMatchObject({
+      ok: false,
+      changed: false,
+      action: 'config_update_agent_models',
+      message: 'Invalid action input.',
+    });
+
+    await expect(
+      updateAgentModels({ prReviewTimeoutMs: 9_999 }, paths),
+    ).resolves.toMatchObject({
+      ok: false,
+      changed: false,
+      action: 'config_update_agent_models',
+      message: 'Invalid action input.',
+    });
+
+    await expect(
+      updateAgentModels({ prReviewTimeoutMs: 30 * 60 * 1_000 + 1 }, paths),
     ).resolves.toMatchObject({
       ok: false,
       changed: false,
@@ -789,7 +1007,7 @@ describe('config actions', () => {
     ).resolves.toMatchObject({
       ok: false,
       changed: false,
-      message: 'anthropic provider does not support organizationIdEnv.',
+      message: 'Invalid action input.',
     });
 
     config = parseAppConfig(
@@ -851,6 +1069,106 @@ describe('config actions', () => {
     });
 
     expect(readHistory(paths.neondeckDatabase)).toEqual([]);
+  });
+
+  it('adds and removes validated OpenAI-compatible providers', async () => {
+    const home = await tempDir('neondeck-home-');
+    const paths = runtimePaths(home);
+
+    await expect(
+      updateProviderConfig(
+        {
+          provider: 'openai-compatible',
+          id: 'openrouter',
+          enabled: true,
+          baseUrl: 'https://openrouter.ai/api/v1',
+          apiKeyEnv: 'OPENROUTER_API_KEY',
+          api: 'openai-completions',
+        },
+        paths,
+      ),
+    ).resolves.toMatchObject({
+      ok: true,
+      changed: true,
+      data: {
+        providers: {
+          openaiCompatible: [
+            {
+              id: 'openrouter',
+              baseUrl: 'https://openrouter.ai/api/v1',
+              apiKeyEnv: 'OPENROUTER_API_KEY',
+            },
+          ],
+        },
+      },
+    });
+
+    await expect(
+      updateAgentModels(
+        { displayAssistant: 'openrouter/openai/gpt-5.5' },
+        paths,
+      ),
+    ).resolves.toMatchObject({ ok: true, changed: true });
+
+    await expect(
+      updateProviderConfig(
+        {
+          provider: 'openai-compatible',
+          id: 'openrouter',
+          remove: true,
+        },
+        paths,
+      ),
+    ).resolves.toMatchObject({ ok: true, changed: true });
+  });
+
+  it('rejects unsafe compatible endpoints and reserved provider ids', async () => {
+    const home = await tempDir('neondeck-home-');
+    const paths = runtimePaths(home);
+
+    for (const input of [
+      {
+        provider: 'openai-compatible' as const,
+        id: 'openrouter',
+        baseUrl: 'http://openrouter.ai/api/v1',
+      },
+      {
+        provider: 'openai-compatible' as const,
+        id: 'openrouter',
+        baseUrl: 'https://user:secret@example.com/v1',
+      },
+      {
+        provider: 'openai-compatible' as const,
+        id: 'openai',
+        baseUrl: 'https://example.com/v1',
+      },
+    ]) {
+      await expect(updateProviderConfig(input, paths)).resolves.toMatchObject({
+        ok: false,
+        changed: false,
+        message: 'Invalid action input.',
+      });
+    }
+  });
+
+  it('rejects provider-specific fields on the wrong provider variant', async () => {
+    const home = await tempDir('neondeck-home-');
+    const paths = runtimePaths(home);
+
+    for (const input of [
+      { provider: 'openai', organizationIdEnv: 'OPENAI_ORG' },
+      { provider: 'openai-codex', apiKeyEnv: 'OPENAI_API_KEY' },
+      {
+        provider: 'kilocode',
+        baseUrl: 'https://example.com/v1',
+      },
+    ]) {
+      await expect(updateProviderConfig(input, paths)).resolves.toMatchObject({
+        ok: false,
+        changed: false,
+        message: 'Invalid action input.',
+      });
+    }
   });
 
   it('updates execution approval policy through audited config', async () => {

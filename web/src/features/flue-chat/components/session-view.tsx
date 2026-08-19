@@ -1,7 +1,7 @@
 // The multiline composer intentionally implements the WAI-ARIA combobox
 // pattern; replacing it with a single-line input would remove message editing.
 /* oxlint-disable jsx-a11y/prefer-tag-over-role */
-import { useFlueAgent, useFlueClient } from '@flue/react';
+import { useFlueAgent } from '@flue/react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   useEffect,
@@ -23,9 +23,11 @@ import {
   getChatSessionActivity,
   getChatSessionCommandEvents,
   getNeonCommands,
+  neonCommandRunId,
   openChatSessionCommandEventStream,
   openChatSessionEventStream,
   runBriefing,
+  runNeonCommand,
   updateChatSessionCommandEvent,
 } from '../../../api';
 import {
@@ -35,9 +37,11 @@ import {
   ScrollArea,
   Textarea,
 } from '../../../components/ui';
+import { useDashboardEventConnectionState } from '../../../lib/dashboard-connection';
+import { createNeondeckConversationClient } from '../../../lib/flue';
 import { queryKeys } from '../../../lib/query';
 import { CommandResultSummary, CommandTypeahead } from './command-controls';
-import { ChatTimelineItems } from './chat-timeline';
+import { ChatResponseProgress, ChatTimelineItems } from './chat-timeline';
 import { errorMessage } from './message-parts';
 import {
   clampCommandIndex,
@@ -51,6 +55,7 @@ import {
   sessionActivityForLinkedWatch,
   sessionTimelineItems,
 } from '../lib/timeline';
+import { useChatAutoScroll } from '../lib/use-chat-auto-scroll';
 import type {
   FlueChatCommand,
   FlueChatConfig,
@@ -64,6 +69,7 @@ export function FlueChatSessionView({
   messageEnabled = true,
   messageLabel = 'Message Neon',
   onReferenceDraftConsumed,
+  onSendMessage,
   quickCommands,
   referenceDraft,
   session,
@@ -75,11 +81,15 @@ export function FlueChatSessionView({
   messageEnabled?: boolean;
   messageLabel?: string;
   onReferenceDraftConsumed?: () => void;
+  onSendMessage?: (
+    message: string,
+  ) => Promise<{ submissionId?: string } | void>;
   quickCommands: FlueChatConfig['quickCommands'];
   referenceDraft?: string;
   session: FlueChatSession | undefined;
   sessionState: NeonSessionState | undefined;
 }) {
+  const eventConnection = useDashboardEventConnectionState();
   const [input, setInput] = useState('');
   const [commandEvents, setCommandEvents] = useState<CommandEvent[]>([]);
   const [runningCommand, setRunningCommand] = useState<string>();
@@ -87,15 +97,22 @@ export function FlueChatSessionView({
   const [requestedCommandIndex, setRequestedCommandIndex] = useState(0);
   const [dismissedCommandInput, setDismissedCommandInput] = useState('');
   const [sendingMessage, setSendingMessage] = useState(false);
+  const [externalSubmissionIds, setExternalSubmissionIds] = useState<string[]>(
+    [],
+  );
   const [submitError, setSubmitError] = useState<string>();
   const commandSubmitLockRef = useRef(false);
   const commandTypeaheadId = useId();
   const queryClient = useQueryClient();
-  const flue = useFlueClient();
-  const agent = useFlueAgent({
-    name: agentName,
-    id: session?.id,
-  });
+  const conversationClient = useMemo(
+    () =>
+      session?.id
+        ? createNeondeckConversationClient(agentName, session.id)
+        : undefined,
+    [agentName, session?.id],
+  );
+  const agent = useFlueAgent({ client: conversationClient });
+  const refreshAgent = agent.refresh;
   const messages = useMemo(
     () => chatMessagesForRender(agent.messages),
     [agent.messages],
@@ -127,6 +144,31 @@ export function FlueChatSessionView({
   const activeCommand = visibleCommands[activeCommandIndex];
   const historyInputBlocked = Boolean(session?.id) && !agent.historyReady;
   const commandBusy = commandSubmitting || Boolean(runningCommand);
+  const settlements = agent.settlements ?? [];
+  const pendingExternalSubmissionIds = externalSubmissionIds.filter(
+    (submissionId) =>
+      !settlements.some(
+        (settlement) => settlement.submissionId === submissionId,
+      ),
+  );
+  const externalSubmissionStreaming = pendingExternalSubmissionIds.some(
+    (submissionId) =>
+      messages.some(
+        (message) =>
+          message.role === 'assistant' && message.submissionId === submissionId,
+      ),
+  );
+  const responseProgress = sendingMessage
+    ? 'admitting'
+    : externalSubmissionStreaming
+      ? 'streaming'
+      : pendingExternalSubmissionIds.length > 0
+        ? 'submitted'
+        : agent.status === 'submitted'
+          ? 'submitted'
+          : agent.status === 'streaming'
+            ? 'streaming'
+            : undefined;
   const inputPlaceholder = !session
     ? 'Resolving active session...'
     : !messageEnabled
@@ -146,7 +188,7 @@ export function FlueChatSessionView({
     queryFn: ({ signal }) =>
       getChatSessionActivity(session?.id ?? '', { signal }),
     enabled: Boolean(session?.id && linkedWatchId),
-    refetchInterval: 30_000,
+    refetchInterval: eventConnection === 'open' ? false : 30_000,
   });
   const activity = useMemo(
     () =>
@@ -157,6 +199,7 @@ export function FlueChatSessionView({
     () => sessionTimelineItems(messages, activity),
     [activity, messages],
   );
+  const chatAutoScroll = useChatAutoScroll(session?.id);
 
   useEffect(() => {
     setRequestedCommandIndex(0);
@@ -164,7 +207,15 @@ export function FlueChatSessionView({
 
   useEffect(() => {
     setCommandEvents([]);
+    setExternalSubmissionIds([]);
   }, [agentName, session?.id]);
+
+  useEffect(() => {
+    if (pendingExternalSubmissionIds.length === externalSubmissionIds.length) {
+      return;
+    }
+    setExternalSubmissionIds(pendingExternalSubmissionIds);
+  }, [externalSubmissionIds, pendingExternalSubmissionIds]);
 
   useEffect(() => {
     setCommandEvents(commandEventsQuery.data?.events ?? []);
@@ -179,25 +230,22 @@ export function FlueChatSessionView({
     };
     const refreshSessionQueries = () => {
       refreshCommandEvents();
+      refreshAgent();
       void queryClient.invalidateQueries({
         queryKey: queryKeys.chatSessionActivity(session.id, linkedWatchId),
       });
     };
-    const closeSessionEvents = openChatSessionEventStream(
-      (event) => {
-        if (event.session.id === session.id) refreshSessionQueries();
-      },
-      undefined,
-      refreshSessionQueries,
-    );
+    const closeSessionEvents = openChatSessionEventStream((event) => {
+      if (event.session.id === session.id) refreshSessionQueries();
+    });
     const closeCommandEvents = openChatSessionCommandEventStream((event) => {
-      if (event.sessionId === session.id) refreshCommandEvents();
+      if (event.sessionId === session.id) refreshSessionQueries();
     });
     return () => {
       closeCommandEvents();
       closeSessionEvents();
     };
-  }, [linkedWatchId, queryClient, session?.id]);
+  }, [linkedWatchId, queryClient, refreshAgent, session?.id]);
 
   useEffect(() => {
     if (!referenceDraft) return;
@@ -251,16 +299,10 @@ export function FlueChatSessionView({
             trigger: 'manual',
           });
           if (!admitted.ok) throw new Error(admitted.message);
-          if (admitted.workflowRunId) {
-            updateCommandEvent(createdEvent.id, {
-              flueRunId: admitted.workflowRunId,
-            });
-            await updateChatSessionCommandEvent(session.id, createdEvent.id, {
-              status: 'running',
-              flueRunId: admitted.workflowRunId,
-              reason: 'dashboard-briefing-workflow-admitted',
-            });
-          }
+          refreshAgent();
+          await queryClient.invalidateQueries({
+            queryKey: queryKeys.chatSessionCommandEvents(session.id),
+          });
           setInput('');
           return;
         }
@@ -360,7 +402,16 @@ export function FlueChatSessionView({
 
     setSendingMessage(true);
     try {
-      await agent.sendMessage(message);
+      const receipt = await (onSendMessage?.(message) ??
+        agent.sendMessage(message));
+      const submissionId = receipt?.submissionId;
+      if (submissionId) {
+        setExternalSubmissionIds((submissionIds) =>
+          submissionIds.includes(submissionId)
+            ? submissionIds
+            : [...submissionIds, submissionId],
+        );
+      }
       setInput('');
     } catch (error) {
       setSubmitError(errorMessage(error));
@@ -408,18 +459,12 @@ export function FlueChatSessionView({
   async function runCommand(command: string) {
     setRunningCommand(command);
     try {
-      const run = await flue.workflows.invoke('command-run', {
-        input: {
-          command,
-          ...(session?.id ? { sessionId: session.id } : {}),
-          surface: 'dashboard',
-        },
-        wait: 'result',
+      const result = await runNeonCommand({
+        command,
+        ...(session?.id ? { sessionId: session.id } : {}),
+        surface: 'dashboard',
       });
-      return {
-        ...(run.result as NeonCommandResult),
-        flueRunId: run.runId,
-      };
+      return { ...result, flueRunId: neonCommandRunId(result) };
     } finally {
       setRunningCommand(undefined);
     }
@@ -473,90 +518,109 @@ export function FlueChatSessionView({
   }
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
-      <ScrollArea
-        aria-label="Chat transcript"
-        aria-live="polite"
-        className="chat-log flex-1"
-      >
-        <div className="flex min-h-full flex-col gap-3 px-[18px] py-3.5">
-          <div className="flex items-center justify-between font-mono text-[10.5px] text-muted">
-            <span className="text-primary">
-              {session?.id ?? 'loading session'}
-            </span>
-            <Badge>{agent.status}</Badge>
-          </div>
-          {sessionState?.stale ? (
-            <div
-              className="border border-accent/60 bg-soft px-2.5 py-2 text-[10.5px] leading-4 text-muted"
-              role="alert"
-            >
-              <div className="flex items-center justify-between gap-2 font-mono">
-                <span className="text-accent">CONTEXT STALE</span>
-                <Badge className="border-accent text-accent">
-                  {sessionState.staleReasons.length}
-                </Badge>
-              </div>
-              <p className="mt-1 line-clamp-2">
-                {sessionState.staleReasons[0]?.message ??
-                  'Start a new session to reload runtime context.'}
-              </p>
-            </div>
-          ) : null}
-          {agent.error ? (
-            <div
-              className="border border-accent/60 bg-soft px-2.5 py-2 text-[10.5px] leading-4 text-muted"
-              role="alert"
-            >
-              <div className="flex items-center justify-between gap-2 font-mono">
-                <span className="text-accent">SESSION CONNECTION FAILED</span>
-              </div>
-              <p className="mt-1 line-clamp-2">{agent.error.message}</p>
-            </div>
-          ) : null}
-          {allowCommands && commandEventsQuery.error ? (
-            <div
-              className="border border-accent/60 bg-soft px-2.5 py-2 font-mono text-[10.5px] leading-4 text-accent"
-              role="alert"
-            >
-              COMMAND HISTORY UNAVAILABLE ·{' '}
-              {errorMessage(commandEventsQuery.error)}
-            </div>
-          ) : null}
-          {linkedWatchId && activityQuery.error ? (
-            <div
-              className="border border-accent/60 bg-soft px-2.5 py-2 font-mono text-[10.5px] leading-4 text-accent"
-              role="alert"
-            >
-              SESSION ACTIVITY UNAVAILABLE · {errorMessage(activityQuery.error)}
-            </div>
-          ) : null}
-          {timelineItems.length > 0 ? (
-            <div className="chat-workflow px-2.5 py-1 font-mono text-[10.5px]">
-              <span>workflow</span>
-              <span className="text-muted">
-                session · {messages.length} messages
-                {activity.length > 0
-                  ? ` · ${activity.length} activity records`
-                  : ''}
+    <div className="flex h-full min-h-0 flex-1 flex-col">
+      <div className="relative min-h-0 flex-1">
+        <ScrollArea
+          aria-label="Chat transcript"
+          aria-live="polite"
+          className="chat-log h-full"
+          onScroll={chatAutoScroll.handleScroll}
+          ref={chatAutoScroll.transcriptRef}
+        >
+          <div className="flex min-h-full flex-col gap-3 px-[18px] py-3.5">
+            <div className="flex items-center justify-between font-mono text-[10.5px] text-muted">
+              <span className="text-primary">
+                {session?.id ?? 'loading session'}
               </span>
+              <Badge>{agent.status}</Badge>
             </div>
-          ) : null}
-          {commandEvents.filter(isDeterministicCommandEvent).map((event) => (
-            <CommandResultSummary
-              event={event}
-              key={event.id}
-              onAsk={
-                event.result ? () => void askAboutCommand(event) : undefined
-              }
+            {sessionState?.stale ? (
+              <div
+                className="border border-accent/60 bg-soft px-2.5 py-2 text-[10.5px] leading-4 text-muted"
+                role="alert"
+              >
+                <div className="flex items-center justify-between gap-2 font-mono">
+                  <span className="text-accent">CONTEXT STALE</span>
+                  <Badge className="border-accent text-accent">
+                    {sessionState.staleReasons.length}
+                  </Badge>
+                </div>
+                <p className="mt-1 line-clamp-2">
+                  {sessionState.staleReasons[0]?.message ??
+                    'Start a new session to reload runtime context.'}
+                </p>
+              </div>
+            ) : null}
+            {agent.error ? (
+              <div
+                className="border border-accent/60 bg-soft px-2.5 py-2 text-[10.5px] leading-4 text-muted"
+                role="alert"
+              >
+                <div className="flex items-center justify-between gap-2 font-mono">
+                  <span className="text-accent">SESSION CONNECTION FAILED</span>
+                </div>
+                <p className="mt-1 line-clamp-2">{agent.error.message}</p>
+              </div>
+            ) : null}
+            {allowCommands && commandEventsQuery.error ? (
+              <div
+                className="border border-accent/60 bg-soft px-2.5 py-2 font-mono text-[10.5px] leading-4 text-accent"
+                role="alert"
+              >
+                COMMAND HISTORY UNAVAILABLE ·{' '}
+                {errorMessage(commandEventsQuery.error)}
+              </div>
+            ) : null}
+            {linkedWatchId && activityQuery.error ? (
+              <div
+                className="border border-accent/60 bg-soft px-2.5 py-2 font-mono text-[10.5px] leading-4 text-accent"
+                role="alert"
+              >
+                SESSION ACTIVITY UNAVAILABLE ·{' '}
+                {errorMessage(activityQuery.error)}
+              </div>
+            ) : null}
+            {timelineItems.length > 0 ? (
+              <div className="chat-workflow px-2.5 py-1 font-mono text-[10.5px]">
+                <span>workflow</span>
+                <span className="text-muted">
+                  session · {messages.length} messages
+                  {activity.length > 0
+                    ? ` · ${activity.length} activity records`
+                    : ''}
+                </span>
+              </div>
+            ) : null}
+            {commandEvents.filter(isDeterministicCommandEvent).map((event) => (
+              <CommandResultSummary
+                event={event}
+                key={event.id}
+                onAsk={
+                  event.result ? () => void askAboutCommand(event) : undefined
+                }
+              />
+            ))}
+            <ChatTimelineItems
+              hasSession={Boolean(session)}
+              items={timelineItems}
             />
-          ))}
-          <ChatTimelineItems
-            hasSession={Boolean(session)}
-            items={timelineItems}
-          />
-        </div>
-      </ScrollArea>
+            {responseProgress ? (
+              <ChatResponseProgress phase={responseProgress} />
+            ) : null}
+          </div>
+        </ScrollArea>
+        {!chatAutoScroll.followsLatest ? (
+          <Button
+            aria-label="Jump to latest chat activity"
+            className="absolute right-3 bottom-3 min-h-7 gap-1.5 bg-panel px-2.5 py-1 font-mono text-[10.5px] shadow-[0_3px_8px_rgba(0,0,0,0.28)]"
+            onClick={chatAutoScroll.jumpToLatest}
+            type="button"
+          >
+            {chatAutoScroll.hasNewActivity ? 'New activity' : 'Jump to latest'}
+            <span aria-hidden="true">↓</span>
+          </Button>
+        ) : null}
+      </div>
       <div className="relative shrink-0 border-t border-line bg-field">
         {allowCommands ? (
           <CommandTypeahead

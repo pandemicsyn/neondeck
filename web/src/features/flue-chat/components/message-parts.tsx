@@ -114,12 +114,14 @@ function partStatus(record: Record<string, unknown> | undefined, type: string) {
 function partPreview(record: Record<string, unknown> | undefined) {
   if (!record) return undefined;
   const candidates = [
+    'errorText',
+    'data',
+    'output',
+    'result',
     'input',
     'args',
     'arguments',
     'parameters',
-    'result',
-    'output',
     'error',
   ];
   for (const key of candidates) {

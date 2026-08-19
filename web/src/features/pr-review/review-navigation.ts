@@ -284,6 +284,21 @@ export function reviewNavigationPublicationMatches(
   );
 }
 
+export function nextDraftCommentTarget(
+  targets: readonly ReviewCursorTarget[],
+  commentIds: ReadonlySet<string>,
+  selectedAnnotationId: string | null,
+) {
+  const draftTargets = targets.filter(
+    (target) => target.kind === 'local-draft' && commentIds.has(target.id),
+  );
+  if (draftTargets.length === 0) return null;
+  const currentIndex = selectedAnnotationId
+    ? draftTargets.findIndex((target) => target.id === selectedAnnotationId)
+    : -1;
+  return draftTargets[(currentIndex + 1) % draftTargets.length] ?? null;
+}
+
 export function selectedReviewContext({
   activePath,
   composer,

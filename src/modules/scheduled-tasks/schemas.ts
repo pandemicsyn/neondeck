@@ -12,8 +12,7 @@ export type ScheduledTaskSpec =
   | {
       kind: 'run-agent-instruction';
       prompt: string;
-      target:
-        { kind: 'workflow' } | { kind: 'agent-session'; sessionId: string };
+      target: { kind: 'agent' } | { kind: 'agent-session'; sessionId: string };
       repoId?: string;
       cwd?: string;
       skills: string[];
@@ -38,14 +37,21 @@ export type ScheduledTaskRunRecord = {
   status: 'claimed' | 'active' | 'completed' | 'failed';
   outcome: 'recorded' | 'silent' | 'failed';
   message: string;
-  workflowRunId: string | null;
+  submissionId: string | null;
   sessionId: string | null;
+  dispatchKey: string | null;
+  dispatchPayload: ScheduledInstructionDispatchPayload | null;
   result: JsonValue | null;
   error: string | null;
   startedAt: string;
   completedAt: string | null;
   createdAt: string;
   updatedAt: string;
+};
+
+export type ScheduledInstructionDispatchPayload = {
+  prompt: string;
+  taskId: string;
 };
 
 export const nonEmptyStringSchema = v.pipe(v.string(), v.minLength(1));
@@ -78,7 +84,7 @@ export const scheduledTaskSpecSchema = v.variant('kind', [
     kind: v.literal('run-agent-instruction'),
     prompt: v.pipe(v.string(), v.minLength(1), v.maxLength(8_000)),
     target: v.variant('kind', [
-      v.object({ kind: v.literal('workflow') }),
+      v.object({ kind: v.literal('agent') }),
       v.object({
         kind: v.literal('agent-session'),
         sessionId: nonEmptyStringSchema,

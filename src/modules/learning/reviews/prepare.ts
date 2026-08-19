@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import * as v from 'valibot';
 import { readAutomationHealth } from '../automation-health';
 import { readAgentModelSelectionSync } from '../../runtime';
@@ -53,6 +54,7 @@ import {
 export async function prepareConversationReflection(
   input: ConversationReviewInput = {},
   paths = runtimePaths(),
+  options: { reviewId?: string } = {},
 ): Promise<PreparedLearningReview | FailedLearningReview> {
   await ensureRuntimeHome(paths);
   const parsed = v.safeParse(conversationReviewInputSchema, input);
@@ -102,6 +104,7 @@ export async function prepareConversationReflection(
     reviewedSession,
     paths,
   );
+  const skillSnippets = await readLearningSkillSnippets(paths);
   const models = readAgentModelSelectionSync(paths);
   const inputSummary = compactJson({
     kind: 'conversation',
@@ -131,23 +134,10 @@ export async function prepareConversationReflection(
           .reference?.transcript?.available === false,
     },
     activeMemories: summarizeMemories(memories),
+    skillSnippets,
   });
-  const reviewId = startLearningReview(
-    {
-      kind: 'conversation',
-      model: models.selfImprovement,
-      thinkingLevel: models.selfImprovementThinkingLevel,
-      trigger: {
-        type: parsed.output.trigger ?? 'manual',
-        sessionId: reviewedSession.id,
-        turnCount: parsed.output.turnCount ?? null,
-      },
-      inputSummary,
-    },
-    paths,
-  );
-
-  return {
+  const reviewId = options.reviewId ?? randomUUID();
+  const prepared: PreparedLearningReview = {
     ok: true,
     reviewId,
     kind: 'conversation',
@@ -162,17 +152,38 @@ export async function prepareConversationReflection(
       config.memoryWriteMode,
     ),
     allowedMemoryIds: memories.map((memory) => memory.id),
+    memorySnapshots: learningMemorySnapshots(memories),
     allowedProjectRepoIds: conversationProjectRepoIds(
       reviewedSession,
       memories,
     ),
-    allowedSkillIds: ['neondeck'],
+    allowedSkillIds: skillSnippets.map((skill) => skill.id),
+    skillSnapshots: learningSkillSnapshots(skillSnippets),
   };
+  startLearningReview(
+    {
+      id: reviewId,
+      kind: 'conversation',
+      model: models.selfImprovement,
+      thinkingLevel: models.selfImprovementThinkingLevel,
+      trigger: {
+        type: parsed.output.trigger ?? 'manual',
+        sessionId: reviewedSession.id,
+        turnCount: parsed.output.turnCount ?? null,
+      },
+      inputSummary,
+      prepared,
+      agentId: `learning-review:${reviewId}`,
+    },
+    paths,
+  );
+  return prepared;
 }
 
 export async function prepareMemoryCurationReview(
   input: CurationReviewInput = {},
   paths = runtimePaths(),
+  options: { reviewId?: string } = {},
 ): Promise<PreparedLearningReview | FailedLearningReview> {
   await ensureRuntimeHome(paths);
   const parsed = v.safeParse(curationReviewInputSchema, input);
@@ -210,6 +221,7 @@ export async function prepareMemoryCurationReview(
 
   const memories = await listActiveLearningMemories(paths);
   const events = await listMemoryEvents({ limit: 40 }, paths);
+  const skillSnippets = await readLearningSkillSnippets(paths);
   const models = readAgentModelSelectionSync(paths);
   const inputSummary = compactJson({
     kind: 'curation',
@@ -230,23 +242,10 @@ export async function prepareMemoryCurationReview(
         createdAt: event.createdAt,
       }),
     ),
+    skillSnippets,
   });
-  const reviewId = startLearningReview(
-    {
-      kind: 'curation',
-      model: models.selfImprovement,
-      thinkingLevel: models.selfImprovementThinkingLevel,
-      trigger: {
-        type: trigger,
-        mode,
-        turnCount: parsed.output.turnCount ?? null,
-      },
-      inputSummary,
-    },
-    paths,
-  );
-
-  return {
+  const reviewId = options.reviewId ?? randomUUID();
+  const prepared: PreparedLearningReview = {
     ok: true,
     reviewId,
     kind: 'curation',
@@ -257,14 +256,35 @@ export async function prepareMemoryCurationReview(
     inputSummary,
     prompt: learningPrompt('curation', inputSummary, mode),
     allowedMemoryIds: memories.map((memory) => memory.id),
+    memorySnapshots: learningMemorySnapshots(memories),
     allowedProjectRepoIds: projectRepoIdsFromMemories(memories),
-    allowedSkillIds: ['neondeck'],
+    allowedSkillIds: skillSnippets.map((skill) => skill.id),
+    skillSnapshots: learningSkillSnapshots(skillSnippets),
   };
+  startLearningReview(
+    {
+      id: reviewId,
+      kind: 'curation',
+      model: models.selfImprovement,
+      thinkingLevel: models.selfImprovementThinkingLevel,
+      trigger: {
+        type: trigger,
+        mode,
+        turnCount: parsed.output.turnCount ?? null,
+      },
+      inputSummary,
+      prepared,
+      agentId: `learning-review:${reviewId}`,
+    },
+    paths,
+  );
+  return prepared;
 }
 
 export async function preparePrBatchLearningReview(
   input: PrBatchReviewInput = {},
   paths = runtimePaths(),
+  options: { reviewId?: string } = {},
 ): Promise<PreparedLearningReview | FailedLearningReview> {
   await ensureRuntimeHome(paths);
   const parsed = v.safeParse(prBatchReviewInputSchema, input);
@@ -351,22 +371,8 @@ export async function preparePrBatchLearningReview(
     activeMemories: summarizeMemories(memories),
     skillSnippets,
   });
-  const reviewId = startLearningReview(
-    {
-      kind: 'pr-batch',
-      model: models.selfImprovement,
-      thinkingLevel: models.selfImprovementThinkingLevel,
-      trigger: {
-        type: trigger,
-        repoId: parsed.output.repoId ?? null,
-        handledEventIds: handledEvents.map((event) => event.id),
-      },
-      inputSummary,
-    },
-    paths,
-  );
-
-  return {
+  const reviewId = options.reviewId ?? randomUUID();
+  const prepared: PreparedLearningReview = {
     ok: true,
     reviewId,
     kind: 'pr-batch',
@@ -377,11 +383,55 @@ export async function preparePrBatchLearningReview(
     inputSummary,
     prompt: learningPrompt('pr-batch', inputSummary, config.memoryWriteMode),
     allowedMemoryIds: memories.map((memory) => memory.id),
+    memorySnapshots: learningMemorySnapshots(memories),
     allowedProjectRepoIds: uniqueRepoIds([
       null,
       ...handledEvents.map((event) => event.repoId),
       ...projectRepoIdsFromMemories(memories),
     ]),
     allowedSkillIds: skillSnippets.map((skill) => skill.id),
+    skillSnapshots: learningSkillSnapshots(skillSnippets),
   };
+  startLearningReview(
+    {
+      id: reviewId,
+      kind: 'pr-batch',
+      model: models.selfImprovement,
+      thinkingLevel: models.selfImprovementThinkingLevel,
+      trigger: {
+        type: trigger,
+        repoId: parsed.output.repoId ?? null,
+        handledEventIds: handledEvents.map((event) => event.id),
+      },
+      inputSummary,
+      prepared,
+      agentId: `learning-review:${reviewId}`,
+    },
+    paths,
+  );
+  return prepared;
+}
+
+function learningMemorySnapshots(
+  memories: Array<{
+    id: string;
+    scope: 'user' | 'local' | 'project';
+    key: string;
+    repoId: string | null;
+    updatedAt: string;
+  }>,
+): PreparedLearningReview['memorySnapshots'] {
+  return memories.map(({ id, scope, key, repoId, updatedAt }) => ({
+    id,
+    scope,
+    key,
+    repoId,
+    updatedAt,
+  }));
+}
+
+function learningSkillSnapshots(
+  skills: Array<{ id: string; sha256: string }>,
+): PreparedLearningReview['skillSnapshots'] {
+  return skills.map(({ id, sha256 }) => ({ id, sha256 }));
 }

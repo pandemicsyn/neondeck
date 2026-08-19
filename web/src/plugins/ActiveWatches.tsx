@@ -1,23 +1,39 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
 import {
+  approvePrAutopilotChange,
   getPrWatches,
   configurePrAutopilot,
   controlPrAutopilot,
+  messagePrAutopilotOwner,
   type PrWatch,
+  type PrWatchMutationResponse,
 } from '../api';
 import { Badge, Button, ScrollArea } from '../components/ui';
 import { FlueChatSessionView } from '../features/flue-chat/components/session-view';
 import { configEventTouchesFile, useConfigEvents } from '../lib/config-events';
 import { relativeTime } from '../lib/format';
 import { queryErrorMessage, queryKeys } from '../lib/query';
-import { prWatchAttentionReason } from '../lib/watch-status';
+import {
+  isCompletedPrWatch,
+  prWatchAttentionReason,
+} from '../lib/watch-status';
 import type { DisplayPlugin } from '../types';
-import { WorktreeDiffReview } from '../features/diff-viewer/surfaces';
+import {
+  WorktreeDiffReview,
+  type WorktreeDiffReviewState,
+} from '../features/diff-viewer/surfaces';
 import { parsePositiveIntegerConfig } from './config';
 
 type ActiveWatchesConfig = {
   limit: number;
+};
+
+export type PrWatchStopOutcome = Pick<
+  PrWatchMutationResponse,
+  'message' | 'detachedWorktreeId' | 'cleanupRecovery'
+> & {
+  watchId: string;
 };
 
 const activeWatchesDefaultConfig = {
@@ -33,6 +49,9 @@ export const ActiveWatchesPlugin = {
     parsePositiveIntegerConfig(activeWatchesDefaultConfig, config),
   Component({ config }) {
     const queryClient = useQueryClient();
+    const [stopOutcome, setStopOutcome] = useState<PrWatchStopOutcome | null>(
+      null,
+    );
     const { data, error, isLoading } = useQuery({
       queryKey: queryKeys.prWatches,
       queryFn: getPrWatches,
@@ -48,7 +67,7 @@ export const ActiveWatchesPlugin = {
       }
     });
 
-    const watches = data?.watches ?? [];
+    const watches = activePrWatches(data?.watches ?? []);
     const visible = watches.slice(0, config.limit);
 
     return (
@@ -59,6 +78,12 @@ export const ActiveWatchesPlugin = {
         </header>
         <ScrollArea className="flex-1">
           <div className="space-y-2 p-3">
+            {stopOutcome ? (
+              <StopOutcomeNotice
+                onDismiss={() => setStopOutcome(null)}
+                outcome={stopOutcome}
+              />
+            ) : null}
             {isLoading ? (
               <WatchState
                 title="Loading watches"
@@ -75,7 +100,13 @@ export const ActiveWatchesPlugin = {
                 detail="PR watches will appear here after they are created."
               />
             ) : (
-              visible.map((watch) => <WatchRow key={watch.id} watch={watch} />)
+              visible.map((watch) => (
+                <WatchRow
+                  key={watch.id}
+                  onStopOutcome={setStopOutcome}
+                  watch={watch}
+                />
+              ))
             )}
           </div>
         </ScrollArea>
@@ -84,17 +115,38 @@ export const ActiveWatchesPlugin = {
   },
 } satisfies DisplayPlugin<ActiveWatchesConfig>;
 
-export function WatchRow({ watch }: { watch: PrWatch }) {
+export function activePrWatches(watches: PrWatch[]) {
+  return watches.filter((watch) => !isCompletedPrWatch(watch));
+}
+
+export function WatchRow({
+  watch,
+  onStopOutcome,
+}: {
+  watch: PrWatch;
+  onStopOutcome?: (outcome: PrWatchStopOutcome) => void;
+}) {
   const [confirmingStop, setConfirmingStop] = useState(false);
   const [confirmingMode, setConfirmingMode] = useState<
     PrWatch['autopilotMode'] | null
   >(null);
   const [reviewingDiff, setReviewingDiff] = useState(false);
   const [reviewingOwner, setReviewingOwner] = useState(false);
+  const [confirmingApproval, setConfirmingApproval] = useState(false);
+  const [reviewedRevisionKey, setReviewedRevisionKey] = useState<string | null>(
+    null,
+  );
   const queryClient = useQueryClient();
   const stopMutation = useMutation({
-    mutationFn: () => controlPrAutopilot(watch.id, 'stop'),
-    onSuccess() {
+    mutationFn: () =>
+      controlPrAutopilot(watch.id, 'stop', { confirmPreparedDiff: true }),
+    onSuccess(result) {
+      onStopOutcome?.({
+        watchId: watch.id,
+        message: result.message,
+        detachedWorktreeId: result.detachedWorktreeId,
+        cleanupRecovery: result.cleanupRecovery,
+      });
       setConfirmingStop(false);
       void queryClient.invalidateQueries({ queryKey: queryKeys.prWatches });
       void queryClient.invalidateQueries({
@@ -123,6 +175,10 @@ export function WatchRow({ watch }: { watch: PrWatch }) {
     watch.lastSnapshot?.updatedAt ?? watch.updatedAt,
   )}`;
   const attentionReason = prWatchAttentionReason(watch);
+  const reviewLabel = reviewDecisionLabel(watch.lastSnapshot?.reviewDecision);
+  const mergedChecksPending =
+    watch.lastSnapshot?.merged === true &&
+    watch.lastSnapshot.checks?.status === 'pending';
   const configureMutation = useMutation({
     mutationFn: (input: { mode: PrWatch['autopilotMode']; confirm: boolean }) =>
       configurePrAutopilot({
@@ -145,6 +201,54 @@ export function WatchRow({ watch }: { watch: PrWatch }) {
       void queryClient.invalidateQueries({ queryKey: queryKeys.prWatches });
     },
   });
+  const ownerMessageMutation = useMutation({
+    mutationFn: (message: string) => messagePrAutopilotOwner(watch.id, message),
+    onSuccess() {
+      setConfirmingApproval(false);
+      setReviewingOwner(true);
+      void queryClient.invalidateQueries({ queryKey: queryKeys.prWatches });
+      void queryClient.invalidateQueries({
+        queryKey: queryKeys.autopilotState,
+      });
+    },
+  });
+  const approvalMutation = useMutation({
+    mutationFn: (expectedRevisionKey: string) =>
+      approvePrAutopilotChange(watch.id, expectedRevisionKey),
+    onSuccess() {
+      setConfirmingApproval(false);
+      setReviewingOwner(true);
+      void queryClient.invalidateQueries({ queryKey: queryKeys.prWatches });
+      void queryClient.invalidateQueries({
+        queryKey: queryKeys.autopilotState,
+      });
+    },
+    onError() {
+      setConfirmingApproval(false);
+      setReviewedRevisionKey(null);
+      void queryClient.invalidateQueries({
+        queryKey: ['diff-viewer', 'repo-diff'],
+      });
+    },
+  });
+  const handleDiffReviewState = useCallback(
+    (state: WorktreeDiffReviewState) => {
+      setConfirmingApproval(false);
+      setReviewedRevisionKey(
+        state.status === 'reviewable' ? state.revisionKey : null,
+      );
+    },
+    [],
+  );
+  const approvalAvailable =
+    watch.autopilotMode === 'autofix-with-approval' &&
+    watch.autopilotStatus === 'waiting' &&
+    Boolean(
+      watch.ownerInstanceId &&
+      watch.worktreeId &&
+      watch.worktreeHeadSha &&
+      reviewedRevisionKey,
+    );
   return (
     <article className="border border-line bg-soft px-2.5 py-2">
       <div className="flex items-start justify-between gap-2">
@@ -162,13 +266,23 @@ export function WatchRow({ watch }: { watch: PrWatch }) {
           ) : null}
         </div>
         <div className="flex flex-col items-end gap-1">
-          <Badge className={statusClass(watch.status)}>{watch.status}</Badge>
-          <Badge className={autopilotStatusClass(watch.autopilotStatus)}>
-            {watch.autopilotStatus}
+          <Badge
+            className={
+              mergedChecksPending
+                ? 'border-warn text-warn'
+                : statusClass(watch.status)
+            }
+          >
+            {mergedChecksPending ? 'merged · checks pending' : watch.status}
           </Badge>
+          {watch.autopilotStatus !== 'watching' ? (
+            <Badge className={autopilotStatusClass(watch.autopilotStatus)}>
+              {watch.autopilotStatus}
+            </Badge>
+          ) : null}
         </div>
       </div>
-      <div className="mt-2 flex items-center gap-2 font-mono text-[10px] text-muted">
+      <div className="mt-1 flex items-center gap-2 font-mono text-[10px] text-muted">
         <span>mode</span>
         <select
           aria-label={`Autopilot mode for ${watch.id}`}
@@ -187,10 +301,14 @@ export function WatchRow({ watch }: { watch: PrWatch }) {
           }}
           value={watch.autopilotMode}
         >
-          <option value="notify-only">notify-only</option>
-          <option value="prepare-only">prepare-only</option>
-          <option value="autofix-with-approval">autofix-with-approval</option>
-          <option value="autofix-push-when-safe">autofix-push-when-safe</option>
+          <option value="notify-only">Notify only · no coding</option>
+          <option value="prepare-only">Prepare commit · never push</option>
+          <option value="autofix-with-approval">
+            Prepare commit · push after approval
+          </option>
+          <option value="autofix-push-when-safe">
+            Autonomous judgment + delivery
+          </option>
         </select>
       </div>
       {confirmingMode ? (
@@ -198,9 +316,7 @@ export function WatchRow({ watch }: { watch: PrWatch }) {
           <p className="text-accent">
             Increase Autopilot authority to {confirmingMode}?
           </p>
-          <p className="mt-1 leading-4">
-            This expands what the continuing PR owner may do on future turns.
-          </p>
+          <p className="mt-1 leading-4">{autopilotModeHelp(confirmingMode)}</p>
           <span className="mt-1.5 flex gap-1.5">
             <Button
               className="min-h-[28px] border-accent bg-transparent px-2 py-1 text-[10px] text-accent"
@@ -233,7 +349,9 @@ export function WatchRow({ watch }: { watch: PrWatch }) {
       ) : null}
       <div className="mt-2 flex items-center justify-between gap-2 font-mono text-[10px] text-muted">
         <span className="min-w-0 truncate">
-          until {watch.desiredTerminalState} · {checkedLabel} · {nextPollLabel}
+          until {watch.desiredTerminalState}
+          {reviewLabel ? ` · ${reviewLabel}` : ''} · {checkedLabel} ·{' '}
+          {nextPollLabel}
           {' · '}
           {activityLabel}
           {sourceLabel}
@@ -297,7 +415,11 @@ export function WatchRow({ watch }: { watch: PrWatch }) {
           {watch.worktreeId && watch.worktreeHeadSha ? (
             <Button
               className="min-h-[28px] border-primary bg-transparent px-2 py-1 text-[10px] text-primary"
-              onClick={() => setReviewingDiff((current) => !current)}
+              onClick={() => {
+                setReviewedRevisionKey(null);
+                setConfirmingApproval(false);
+                setReviewingDiff((current) => !current);
+              }}
               type="button"
             >
               {reviewingDiff ? 'hide diff' : 'review diff'}
@@ -315,8 +437,12 @@ export function WatchRow({ watch }: { watch: PrWatch }) {
       </div>
       {confirmingStop ? (
         <div className="mt-2 border border-accent/50 bg-field px-2 py-1.5 font-mono text-[10px] text-muted">
-          <div className="flex items-center justify-between gap-2">
-            <span className="text-accent">Stop this Autopilot watch?</span>
+          <div className="flex items-start justify-between gap-2">
+            <span className="text-accent">
+              Stop this Autopilot watch? Eligible Neondeck-managed worktrees
+              will be deleted. If one holds an unpushed prepared commit, this
+              confirms that you reviewed and want to discard it.
+            </span>
             <span className="flex gap-1.5">
               <Button
                 className="min-h-[28px] border-accent bg-transparent px-2 py-1 text-[10px] text-accent"
@@ -344,18 +470,77 @@ export function WatchRow({ watch }: { watch: PrWatch }) {
         </div>
       ) : null}
       {reviewingDiff && watch.worktreeId && watch.worktreeHeadSha ? (
-        <div className="mt-2 max-h-[32rem] overflow-auto border border-line bg-field">
-          <WorktreeDiffReview
-            base={watch.worktreeHeadSha}
-            detail={`${watch.autopilotMode} · ${watch.autopilotStatus}`}
-            repoId={watch.repoId}
-            title={`${watch.repoFullName}#${watch.prNumber} Autopilot change`}
-            worktreeId={watch.worktreeId}
-          />
+        <div className="mt-2 border border-line bg-field">
+          <div className="max-h-[28rem] overflow-auto">
+            <WorktreeDiffReview
+              base={watch.worktreeHeadSha}
+              detail={`${watch.autopilotMode} · ${watch.autopilotStatus}`}
+              onReviewStateChange={handleDiffReviewState}
+              repoId={watch.repoId}
+              title={`${watch.repoFullName}#${watch.prNumber} Autopilot change`}
+              worktreeId={watch.worktreeId}
+            />
+          </div>
+          {approvalAvailable ? (
+            <div className="border-t border-line bg-panel px-2.5 py-2">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <p className="max-w-[62ch] text-[10.5px] leading-4 text-muted">
+                  Approving sends a direct human instruction to this PR owner.
+                  Push authority and current-branch guards are checked again
+                  before delivery.
+                </p>
+                <Button
+                  className="min-h-[28px] shrink-0 border-primary bg-transparent px-2 py-1 font-mono text-[10px] text-primary"
+                  disabled={approvalMutation.isPending}
+                  onClick={() => setConfirmingApproval(true)}
+                  type="button"
+                >
+                  approve &amp; push
+                </Button>
+              </div>
+              {confirmingApproval ? (
+                <div className="mt-2 border border-primary/60 bg-field px-2 py-1.5 font-mono text-[10px] text-muted">
+                  <p className="text-primary">
+                    Approve this prepared commit and ask the owner to push it to
+                    the linked PR branch?
+                  </p>
+                  <div className="mt-1.5 flex gap-1.5">
+                    <Button
+                      className="min-h-[28px] border-primary bg-transparent px-2 py-1 text-[10px] text-primary"
+                      disabled={approvalMutation.isPending}
+                      onClick={() =>
+                        reviewedRevisionKey
+                          ? approvalMutation.mutate(reviewedRevisionKey)
+                          : undefined
+                      }
+                      type="button"
+                    >
+                      {approvalMutation.isPending
+                        ? 'sending approval'
+                        : 'confirm approval'}
+                    </Button>
+                    <Button
+                      className="min-h-[28px] bg-transparent px-2 py-1 text-[10px] text-muted"
+                      disabled={approvalMutation.isPending}
+                      onClick={() => setConfirmingApproval(false)}
+                      type="button"
+                    >
+                      cancel
+                    </Button>
+                  </div>
+                  {approvalMutation.error ? (
+                    <p className="mt-1 text-accent">
+                      {queryErrorMessage(approvalMutation.error)}
+                    </p>
+                  ) : null}
+                </div>
+              ) : null}
+            </div>
+          ) : null}
         </div>
       ) : null}
       {reviewingOwner && watch.ownerInstanceId ? (
-        <div className="mt-2 h-[28rem] min-h-0 overflow-hidden border border-line bg-field">
+        <div className="mt-2 flex h-[28rem] min-h-0 flex-col overflow-hidden border border-line bg-field">
           <FlueChatSessionView
             activeRecord={undefined}
             agentName="pr-autopilot-owner"
@@ -366,6 +551,12 @@ export function WatchRow({ watch }: { watch: PrWatch }) {
               watch.autopilotStatus === 'waiting'
             }
             messageLabel={`Message owner for ${watch.repoFullName} pull request ${watch.prNumber}`}
+            onSendMessage={async (message) => {
+              const result = await ownerMessageMutation.mutateAsync(message);
+              return {
+                submissionId: result.dispatchId ?? undefined,
+              };
+            }}
             quickCommands={[]}
             session={{
               id: watch.ownerInstanceId,
@@ -373,7 +564,7 @@ export function WatchRow({ watch }: { watch: PrWatch }) {
               placeholder:
                 watch.autopilotMode === 'autofix-with-approval' &&
                 watch.autopilotStatus === 'waiting'
-                  ? 'approved, push — or ask for one more focused edit'
+                  ? 'ask for one more focused edit or request discard'
                   : 'Owner messages are available while approval mode is waiting.',
             }}
             sessionState={undefined}
@@ -381,6 +572,48 @@ export function WatchRow({ watch }: { watch: PrWatch }) {
         </div>
       ) : null}
     </article>
+  );
+}
+
+export function StopOutcomeNotice({
+  outcome,
+  onDismiss,
+}: {
+  outcome: PrWatchStopOutcome;
+  onDismiss: () => void;
+}) {
+  const retained = Boolean(outcome.cleanupRecovery);
+  return (
+    <div
+      className={`border bg-field px-2 py-2 font-mono text-[10px] leading-4 ${
+        retained ? 'border-accent/70 text-accent' : 'border-primary/60 text-ink'
+      }`}
+      role={retained ? 'alert' : 'status'}
+    >
+      <div className="flex items-start justify-between gap-2">
+        <div>
+          <p className="font-semibold">
+            {retained ? 'Worktree retained for recovery' : 'Autopilot stopped'}
+          </p>
+          <p className="mt-1 text-muted">
+            {outcome.cleanupRecovery ?? outcome.message}
+          </p>
+          {outcome.detachedWorktreeId ? (
+            <p className="mt-1 text-ink">
+              Recovery worktree: {outcome.detachedWorktreeId}
+            </p>
+          ) : null}
+        </div>
+        <Button
+          aria-label={`Dismiss stop outcome for ${outcome.watchId}`}
+          className="min-h-[24px] bg-transparent px-1.5 py-0.5 text-[9px] text-muted"
+          onClick={onDismiss}
+          type="button"
+        >
+          dismiss
+        </Button>
+      </div>
+    </div>
   );
 }
 
@@ -397,11 +630,27 @@ function WatchState({ title, detail }: { title: string; detail: string }) {
 }
 
 function statusClass(status: string) {
-  if (status === 'green') return 'border-primary text-primary';
+  if (status === 'green' || status === 'ready')
+    return 'border-primary text-primary';
   if (status === 'attention-needed') return 'border-accent text-accent';
   if (status === 'closed' || status === 'merged')
     return 'border-line text-muted';
   return '';
+}
+
+function reviewDecisionLabel(
+  decision: NonNullable<PrWatch['lastSnapshot']>['reviewDecision'],
+) {
+  switch (decision) {
+    case 'APPROVED':
+      return 'review approved';
+    case 'CHANGES_REQUESTED':
+      return 'changes requested';
+    case 'REVIEW_REQUIRED':
+      return 'review required';
+    default:
+      return null;
+  }
 }
 
 function autopilotStatusClass(status: PrWatch['autopilotStatus']) {
@@ -419,4 +668,17 @@ function autopilotModeRank(mode: PrWatch['autopilotMode']) {
     'autofix-with-approval',
     'autofix-push-when-safe',
   ].indexOf(mode);
+}
+
+function autopilotModeHelp(mode: PrWatch['autopilotMode']) {
+  switch (mode) {
+    case 'notify-only':
+      return 'Reports meaningful changes without starting a coding turn.';
+    case 'prepare-only':
+      return 'Codes, validates, and commits locally for your review; it cannot push or respond to the PR.';
+    case 'autofix-with-approval':
+      return 'Does the same work, then waits for Review diff → Approve & push. Owner chat can guide edits or discard the held change, but cannot authorize delivery.';
+    case 'autofix-push-when-safe':
+      return 'Delegates semantic engineering judgment: the owner validates proportionately and may push/respond when it judges the change sound.';
+  }
 }

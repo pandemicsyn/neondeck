@@ -41,10 +41,14 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
         <p>
           <code>data/neondeck.db</code> stores app state: watches, scheduled tasks,
           notifications, memories, workflow summaries, config history, and execution
-          approvals. <code>data/flue.db</code> stores Flue runtime state. Neondeck
-          app database migrations are shipped with the package and apply automatically
-          before the app opens <code>data/neondeck.db</code>. Pre-migration
-          backups are retained in <code>data/backups/</code>.
+          approvals, and ChatGPT OAuth credentials.
+          <code>data/flue.db</code> stores Flue runtime state. On POSIX systems, Neondeck
+          protects the <code>data/</code> directory and the Neondeck database, including
+          existing WAL and shared-memory sidecars, before accessing OAuth credentials.
+          Neondeck app database migrations are shipped with the package and apply
+          automatically before the app opens
+          <code>data/neondeck.db</code>. Pre-migration backups are retained in
+          <code>data/backups/</code>.
         </p>
 
         <h2>Secrets</h2>
@@ -61,60 +65,301 @@ ANTHROPIC_API_KEY=...
 GITHUB_TOKEN=...
 GITHUB_LOGIN=...</code></pre>
 
-        <h2>Models and providers</h2>
+        <h2 id="trusted-origins">Trusted dashboard origins</h2>
         <p>
-          Agent model choices live in <code>config.json</code>. Model strings
-          must be provider-qualified and use allowlisted providers:
-          <code>kilocode</code>, <code>openai</code>, or <code>anthropic</code>.
+          Neondeck accepts dashboard API traffic from loopback hosts by default.
+          To run the dashboard behind an authenticated reverse proxy, add each
+          externally visible browser origin to <code>server.trustedOrigins</code
+          >
+          in <code>config.json</code>. Merge this block into the existing file;
+          preserve its generated <code>localApi.token</code> and other settings:
         </p>
         <pre><code>&#123;
   "version": 1,
+  "server": &#123;
+    "trustedOrigins": ["https://example.exe.xyz"]
+  &#125;
+&#125;</code></pre>
+        <p>
+          Origins are exact scheme, host, and port matches. Wildcards,
+          credentials, paths, query strings, and fragments are rejected.
+          Non-loopback origins must use HTTPS. Restart Neondeck after changing
+          this startup-time setting.
+        </p>
+        <aside class="docs-note">
+          <strong>Security boundary:</strong> A trusted origin can read runtime state
+          and use the operator dashboard. Configure one only behind an authenticated
+          transport you control; the setting does not add Neondeck user accounts or
+          multi-user authorization.
+        </aside>
+
+        <h2>Models and providers</h2>
+        <p>
+          Agent model choices and provider registration live in
+          <code>config.json</code>. Model strings must be provider-qualified and
+          use a built-in or explicitly configured provider:
+          <code>kilocode</code>, <code>openai</code>,
+          <code>anthropic</code>, <code>openai-codex</code>, or a validated
+          OpenAI-compatible provider id.
+        </p>
+
+        <h3 id="model-selection">Choose models</h3>
+        <pre><code>&#123;
   "models": &#123;
-    "displayAssistant": "kilocode/kilo-auto/balanced",
+    "displayAssistant": "openai-codex/gpt-5.6-sol",
     "displayAssistantThinkingLevel": "medium",
-    "utility": "kilocode/kilo-auto/fast",
-    "utilityThinkingLevel": "low",
-    "selfImprovement": "kilocode/kilo-auto/fast",
-    "selfImprovementThinkingLevel": "low",
+    "prReview": "openai/gpt-5.5",
+    "prReviewThinkingLevel": "medium",
+    "prReviewTimeoutMs": 1800000,
     "subagents": &#123;
-      "default": "kilocode/kilo-auto/balanced",
-      "defaultThinkingLevel": "medium",
-      "repoResearcher": "kilocode/kilo-auto/balanced",
-      "repoResearcherThinkingLevel": "medium",
-      "ciInvestigator": "kilocode/kilo-auto/balanced",
-      "ciInvestigatorThinkingLevel": "medium",
-      "releaseReviewer": "kilocode/kilo-auto/balanced",
-      "releaseReviewerThinkingLevel": "medium"
+      "explore": "openai/gpt-5.6-terra",
+      "exploreThinkingLevel": "medium"
     &#125;
-  &#125;,
+  &#125;
+&#125;</code></pre>
+
+        <h3 id="provider-registration">Register providers</h3>
+        <pre><code>&#123;
   "providers": &#123;
-    "kilocode": &#123;
-      "enabled": true,
-      "apiKeyEnv": "KILOCODE_API_KEY",
-      "organizationIdEnv": "KILOCODE_ORGANIZATION_ID"
-    &#125;,
     "openai": &#123;
       "enabled": true,
       "apiKeyEnv": "OPENAI_API_KEY"
     &#125;,
-    "anthropic": &#123;
-      "enabled": true,
-      "apiKeyEnv": "ANTHROPIC_API_KEY"
+    "openaiCodex": &#123;
+      "enabled": true
+    &#125;,
+    "openaiCompatible": [
+      &#123;
+        "id": "openrouter",
+        "enabled": true,
+        "baseUrl": "https://openrouter.ai/api/v1",
+        "apiKeyEnv": "OPENROUTER_API_KEY",
+        "api": "openai-completions",
+        "contextWindow": 200000,
+        "maxTokens": 8192
+      &#125;
+    ]
+  &#125;
+&#125;</code></pre>
+
+        <h3 id="compatible-endpoints">Compatible endpoint rules</h3>
+        <ul>
+          <li>
+            <strong>Credentials:</strong> provider config stores environment variable
+            names, never raw secrets. <code>apiKeyEnv</code> is optional, so keyless
+            loopback servers work too.
+          </li>
+          <li>
+            <strong>Limits:</strong>
+            <code>contextWindow</code> and
+            <code>maxTokens</code> are optional positive integers describing the selected
+            service and model.
+          </li>
+          <li>
+            <strong>URLs:</strong> endpoints require HTTPS except for loopback HTTP.
+            URL credentials, query strings, fragments, reserved ids, and duplicate
+            ids are rejected.
+          </li>
+          <li>
+            <strong>Ownership:</strong> endpoint definitions may be changed through
+            setup or the local access-controlled dashboard/API, never through a model-callable
+            config action.
+          </li>
+        </ul>
+        <p>
+          ChatGPT OAuth tokens live in the local app database and are managed
+          with
+          <code>neondeck auth ... openai-codex</code>.
+        </p>
+
+        <h3 id="model-roles">Model roles and fallbacks</h3>
+        <div
+          class="docs-table-wrap"
+          role="region"
+          aria-label="Model roles and fallbacks"
+          tabindex="0"
+        >
+          <table>
+            <thead>
+              <tr>
+                <th scope="col">Setting</th>
+                <th scope="col">Work it powers</th>
+                <th scope="col">Default behavior</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <th scope="row"><code>displayAssistant</code></th>
+                <td>Chat and model-backed Autopilot owners</td>
+                <td>Primary model</td>
+              </tr>
+              <tr>
+                <th scope="row"><code>prReview</code></th>
+                <td>Initial and follow-up read-only PR review</td>
+                <td>Uses <code>displayAssistant</code></td>
+              </tr>
+              <tr>
+                <th scope="row"><code>utility</code></th>
+                <td>Titles, labels, notifications, and compact summaries</td>
+                <td>Uses <code>displayAssistant</code></td>
+              </tr>
+              <tr>
+                <th scope="row"><code>selfImprovement</code></th>
+                <td>Reflection, memory curation, and retrospectives</td>
+                <td
+                  >Uses <code>utility</code>, then <code>displayAssistant</code
+                  ></td
+                >
+              </tr>
+              <tr>
+                <th scope="row"><code>subagents.explore</code></th>
+                <td>
+                  Focused read-only repository investigation for chat, PR
+                  review, and Autopilot
+                </td>
+                <td>Uses <code>displayAssistant</code></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <aside class="docs-note">
+          <strong>Autopilot model:</strong> watched-PR owners use
+          <code>models.displayAssistant</code>. <code>models.prReview</code> belongs
+          only to the fresh bounded human-review agent. Autopilot modes change the
+          available tools, not the owner model.
+        </aside>
+
+        <h3 id="provider-runtime-behavior">Reasoning and runtime behavior</h3>
+        <ul>
+          <li>
+            <code>thinkingLevel</code> accepts <code>off</code>,
+            <code>minimal</code>, <code>low</code>, <code>medium</code>,
+            <code>high</code>, or <code>xhigh</code>.
+          </li>
+          <li>
+            <code>prReviewTimeoutMs</code> defaults to 1,800,000 milliseconds and
+            accepts values from 10,000 through 1,800,000. Initial and follow-up reviewers
+            may delegate focused evidence gathering to
+            <code>explore</code>; the parent reviewer still owns the final
+            review or response.
+          </li>
+          <li>
+            Provider registration and standalone CLI ChatGPT login or logout
+            require a server restart.
+          </li>
+        </ul>
+
+        <h3 id="explore-subagent">Explore subagent</h3>
+        <p>
+          <code>explore</code> is a shared Flue subagent available to the display
+          assistant, initial and follow-up code reviewers, and active Autopilot owners.
+          It runs in a fresh context and receives only the complete task briefing
+          written by its parent. Its model and reasoning level are independently configurable
+          through <code>models.subagents.explore</code>
+          and <code>models.subagents.exploreThinkingLevel</code>.
+        </p>
+        <p>
+          When those settings are absent, Explore uses the display-assistant
+          model and reasoning level. During <code>neondeck init</code>, setup
+          offers an optional cheaper model for this role and recommends a fast
+          profile such as OpenAI Luna with high reasoning or OpenAI Terra with
+          medium reasoning.
+        </p>
+        <p>
+          Parent agents use one Explore task for narrow or dependent research.
+          When several investigations are independent, they may launch up to
+          three distinct Explore tasks in one tool-call batch; Flue runs that
+          batch concurrently, and the parent reconciles the returned evidence
+          before it acts or answers.
+        </p>
+        <aside class="docs-note">
+          <strong>Access follows the parent:</strong> chat exploration receives only
+          configured-repository read tools, while PR review receives exact-revision
+          read-only tools. An Autopilot delegate shares the owner's trusted local
+          worktree shell because Flue subagents inherit their parent's sandbox. Its
+          no-mutation rule is behavioral, not OS isolation; edits and delivery remain
+          the parent owner's responsibility.
+        </aside>
+
+        <h2>PR reviewer prompts</h2>
+        <p>
+          Human review has two independently configurable full system prompts:
+          <code>initial-review</code> for each fresh bounded review submission and
+          <code>follow-up-reviewer</code> for the durable read-only reviewer chat.
+          Inspect, replace, or reset either prompt in the dashboard's <strong
+            >Runtime</strong
+          > panel, through typed config tools, or through the local access-controlled
+          API.
+        </p>
+        <pre><code>&#123;
+  "prReview": &#123;
+    "prompts": &#123;
+      "initial-review": "Complete replacement prompt…",
+      "follow-up-reviewer": "&#123;&#123;reviewContextDeliveryGuidance&#125;&#125;\n&#123;&#123;workspaceToolGuidance&#125;&#125;"
     &#125;
   &#125;
 &#125;</code></pre>
         <p>
-          Provider config stores environment variable names, not raw secrets or
-          arbitrary endpoints. <code>thinkingLevel</code> values use Flue's exposed
-          reasoning tiers. The utility model is optional and falls back to the display
-          assistant when omitted, but a low-cost utility model is recommended for
-          titles, labels, notifications, and compact summaries. The self-improvement
-          model is optional and falls back through the utility model and display assistant.
-          It is used for bounded conversation reflection, memory curation, and PR/autopilot
-          retrospective workflows. Supported thinking levels are
-          <code>off</code>, <code>minimal</code>, <code>low</code>,
-          <code>medium</code>, <code>high</code>, or <code>xhigh</code>.
-          Provider registration changes require a server restart.
+          Overrides are non-empty strings up to 40,000 characters. The initial
+          prompt receives PR facts separately as untrusted JSON and has no
+          template tokens. The follow-up prompt supports <code
+            >{'{{workspaceToolGuidance}}'}</code
+          >
+          and <code>{'{{reviewContextDeliveryGuidance}}'}</code>. These expand
+          to stable policy explaining the workspace tools and per-question
+          signal delivery; mutable review facts are delivered separately in the <code
+            >review-context</code
+          > signal. Initial changes apply to the next review run; follow-up changes
+          apply to the next turn, including an existing reviewer conversation. There
+          is no prompt versioning or stale-session state.
+        </p>
+        <p>
+          Set a prompt to <code>null</code> through
+          <code>neondeck_config_update_pr_review_prompt</code> or
+          <code>POST /api/pr-review/prompts</code> to restore its built-in default.
+          The override replaces the whole shipped prompt, including its safety and
+          review guidance. That footgun is intentional. The read-only workspace tools,
+          structured result schema, and GitHub delivery boundary are still selected
+          and enforced by the server rather than by prompt text.
+        </p>
+
+        <h2>Autopilot owner prompts</h2>
+        <p>
+          Full owner system prompts are configurable independently for
+          <code>prepare-only</code>, <code>autofix-with-approval</code>, and
+          <code>autofix-push-when-safe</code>. Use the prompt editor in the
+          dashboard's <strong>Runtime</strong> panel, ask Neon through the typed config
+          actions, or use the local access-controlled API. The editor shows the effective
+          prompt and can reset an override to the built-in default. <code
+            >notify-only</code
+          > has no template because it never starts an owner mutation turn.
+        </p>
+        <pre><code>&#123;
+  "autopilot": &#123;
+    "prompts": &#123;
+      "prepare-only": "Complete replacement prompt using &#123;&#123;mode&#125;&#125; and &#123;&#123;workspaceInstructions&#125;&#125;",
+      "autofix-with-approval": "Complete replacement prompt…",
+      "autofix-push-when-safe": "Complete replacement prompt…"
+    &#125;
+  &#125;
+&#125;</code></pre>
+        <p>
+          Overrides are non-empty strings up to 20,000 characters. Supported
+          substitutions are <code>{'{{source}}'}</code>,
+          <code>{'{{mode}}'}</code>, <code>{'{{status}}'}</code>,
+          <code>{'{{capabilities}}'}</code>, and
+          <code>{'{{workspaceInstructions}}'}</code>. Existing owners use a
+          saved change on their next turn; no prompt versioning or stale-owner
+          state is created. Set a mode's prompt to <code>null</code> through
+          <code>neondeck_config_update_autopilot_prompt</code> or
+          <code>POST /api/autopilot/prompts</code> to restore the default.
+        </p>
+        <p>
+          The override replaces the entire shipped owner prompt. This is a
+          powerful local footgun by design. Prompt text still cannot expand the
+          tools supplied for the current turn or bypass server-side delivery
+          guards; those capabilities are derived from current watch state and
+          enforced outside the model prompt.
         </p>
 
         <h2>Learning</h2>
@@ -147,12 +392,11 @@ GITHUB_LOGIN=...</code></pre>
           and do not expose the token to the browser.
         </p>
         <p>
-          Existing-VM <code>exe.dev</code> repo execution uses
-          <code>execution.exeDev.remoteRoot</code>, optional per-repo
-          <code>execution.exeDev.repos</code>, and per-checkout
-          <code>execution.exeDev.checkouts</code> config. Env forwarding is opt-in
-          and can combine repo-relative <code>.env</code> files, config vars, and
-          explicit host env mappings.
+          <strong>Work in progress:</strong> exe.dev settings describe an experimental
+          approved-command backend for an existing VM. They do not select a remote
+          workspace for chat, schedules, reviews, managed worktrees, or Autopilot.
+          Keep local execution as the default unless you are deliberately testing
+          that limited command path.
         </p>
 
         <h2>Dashboard</h2>
@@ -193,8 +437,12 @@ GITHUB_LOGIN=...</code></pre>
           <code>config.json</code> plus any repository override in
           <code>repos.json</code>. Configure repository policy through the typed
           Autopilot policy action rather than editing metadata in chat. The
-          <a href="/docs/autopilot/">Autopilot guide</a> includes an exact
-          <code>guardrails.requiredChecks</code> and unattended execution-policy example.
+          <a href="/docs/autopilot/">Autopilot guide</a> explains the mode-specific
+          delivery ceiling and semantic autonomous judgment. Effective
+          <code>guardrails.requiredChecks</code> values are optional hints for the
+          continuing owner; they are not an autonomous delivery prerequisite. The
+          same setting remains enforceable in separate `/fix-ci`, Kilo, and prepared-diff
+          verification flows.
         </p>
 
         <h2>SOUL and skills</h2>

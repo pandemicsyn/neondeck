@@ -179,7 +179,7 @@ describe('agent handoff service', () => {
     expect(addPrWatch).not.toHaveBeenCalled();
   });
 
-  it('audits failed review workflow dispatch after bounded side effects', async () => {
+  it('audits failed review agent admission after bounded side effects', async () => {
     const paths = await tempPaths();
     await writeRepoRegistry(paths.repos);
     const addPrWatch = vi.fn<NonNullable<HandoffDependencies['addPrWatch']>>(
@@ -222,7 +222,7 @@ describe('agent handoff service', () => {
         },
       },
       errors: ['workflow runtime unavailable'],
-      requires: ['workflowDispatch'],
+      requires: ['reviewAgentAdmission'],
     });
   });
 

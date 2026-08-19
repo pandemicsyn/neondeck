@@ -1,7 +1,8 @@
 import { rm, mkdtemp, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import type { ToolStep } from '@flue/runtime';
 import {
   addPrReviewDraftComment,
   readLivePrReviewDraft,
@@ -12,15 +13,21 @@ import {
   type GitHubPullRequestFile,
 } from './modules/github';
 import {
+  createSubmitPrReviewTool,
+  createReviewDurableEffectRunner,
   reviewFactsForPrompt,
   reviewPrForHuman,
   type ReviewAssistFacts,
 } from './modules/pr-review-assist';
 import { upsertMemory } from './modules/memory';
 import { listReports, readReportHtml } from './modules/reports';
+import { listNotifications, listWorkflowSummaries } from './modules/app-state';
 import { ensureRuntimeHome, runtimePaths } from './runtime-home';
 import { reportDocumentFromSummary } from '../shared/report-document';
 import { reportDeckFromSummary } from '../shared/report-deck';
+import { openDb } from './lib/sqlite';
+import * as v from 'valibot';
+import { prReviewAgentInitialDataSchema } from './modules/pr-review-assist/schemas';
 
 const tempRoots: string[] = [];
 
@@ -33,6 +40,228 @@ afterEach(async () => {
 });
 
 describe('PR review assist', () => {
+  it('accepts persisted initial-review data created before Explore was captured', () => {
+    const legacyInitialData = {
+      model: 'faux/faux-1',
+      thinkingLevel: 'low',
+      instructions: 'Review the bounded change.',
+      prepared: {
+        input: { ref: 'pandemicsyn/neondeck#10' },
+        facts: {},
+        promptContext: {},
+      },
+      workspace: { available: false, reason: 'fixture has no workspace' },
+      prompt: '{"task":"Review this pull request."}',
+    };
+
+    expect(
+      v.safeParse(prReviewAgentInitialDataSchema, legacyInitialData).success,
+    ).toBe(true);
+    expect(
+      v.safeParse(prReviewAgentInitialDataSchema, {
+        ...legacyInitialData,
+        exploreModel: 'faux/faux-1',
+      }).success,
+    ).toBe(false);
+    expect(
+      v.safeParse(prReviewAgentInitialDataSchema, {
+        ...legacyInitialData,
+        schema: 'neondeck.pr-review-agent-context.v2',
+        exploreModel: 'faux/faux-1',
+        exploreThinkingLevel: 'minimal',
+      }).success,
+    ).toBe(true);
+  });
+
+  it('declares typed review submission as a durable non-harness Flue tool', () => {
+    const tool = createSubmitPrReviewTool(
+      { ref: 'pandemicsyn/neondeck#10' },
+      async () => {
+        throw new Error('The declaration test must not load review context.');
+      },
+    );
+    expect(tool).toMatchObject({ durable: true });
+    expect(tool).not.toHaveProperty('harness', true);
+  });
+
+  it('checkpoints durable effect failures and propagates outer aborts', async () => {
+    const recorded = new Map<string, unknown>();
+    const step: ToolStep = {
+      async do<T>(name: string, effect: () => T | Promise<T>) {
+        if (recorded.has(name)) return recorded.get(name) as T;
+        const value = await effect();
+        recorded.set(name, value);
+        return value;
+      },
+    };
+    const runEffect = createReviewDurableEffectRunner(step);
+    let attempts = 0;
+    await expect(
+      runEffect('transient-operation', async () => {
+        attempts += 1;
+        throw new Error('record this failure');
+      }),
+    ).rejects.toThrow('record this failure');
+    await expect(
+      runEffect('transient-operation', async () => {
+        attempts += 1;
+        return 'unexpected recovery success';
+      }),
+    ).rejects.toThrow('record this failure');
+    expect(attempts).toBe(1);
+
+    const controller = new AbortController();
+    controller.abort(new DOMException('operator cancelled', 'AbortError'));
+    let abortedStepCalls = 0;
+    const abortedStep: ToolStep = {
+      async do<T>(_name: string, _effect: () => T | Promise<T>): Promise<T> {
+        abortedStepCalls += 1;
+        throw new Error('The aborted step must not execute.');
+      },
+    };
+    const abortedEffect = vi.fn<() => Promise<string>>();
+    await expect(
+      createReviewDurableEffectRunner(abortedStep, controller.signal)(
+        'must-not-run',
+        abortedEffect,
+      ),
+    ).rejects.toMatchObject({ name: 'AbortError' });
+    expect(abortedStepCalls).toBe(0);
+    expect(abortedEffect).not.toHaveBeenCalled();
+
+    const inFlightController = new AbortController();
+    let releaseEffect!: () => void;
+    const effectGate = new Promise<void>((resolve) => {
+      releaseEffect = resolve;
+    });
+    const inFlightEffect = vi.fn(async () => {
+      await effectGate;
+      return 'finished after cancellation';
+    });
+    const inFlightStep: ToolStep = {
+      async do<T>(_name: string, effect: () => T | Promise<T>): Promise<T> {
+        return effect();
+      },
+    };
+    const inFlightResult = createReviewDurableEffectRunner(
+      inFlightStep,
+      inFlightController.signal,
+    )('in-flight-operation', inFlightEffect);
+    await vi.waitFor(() => expect(inFlightEffect).toHaveBeenCalledOnce());
+    inFlightController.abort(
+      new DOMException('operator cancelled in flight', 'AbortError'),
+    );
+    releaseEffect();
+    await expect(inFlightResult).rejects.toMatchObject({ name: 'AbortError' });
+  });
+
+  it('stops the review before application effects when cancellation arrives in flight', async () => {
+    const paths = await tempPaths();
+    const controller = new AbortController();
+    let releaseFacts!: () => void;
+    const factsGate = new Promise<void>((resolve) => {
+      releaseFacts = resolve;
+    });
+    const fetchFacts = vi.fn(async () => {
+      await factsGate;
+      return reviewFacts();
+    });
+    const reviewer = vi.fn(() => reviewOutputWithOneFinding());
+    const step: ToolStep = {
+      async do<T>(_name: string, effect: () => T | Promise<T>): Promise<T> {
+        return effect();
+      },
+    };
+    const result = reviewPrForHuman({ ref: 'pandemicsyn/neondeck#10' }, paths, {
+      signal: controller.signal,
+      runEffect: createReviewDurableEffectRunner(step, controller.signal),
+      fetchFacts,
+      reviewer,
+    });
+    await vi.waitFor(() => expect(fetchFacts).toHaveBeenCalledOnce());
+    controller.abort(new DOMException('operator cancelled', 'AbortError'));
+    releaseFacts();
+
+    await expect(result).rejects.toMatchObject({ name: 'AbortError' });
+    expect(reviewer).not.toHaveBeenCalled();
+    await expect(listReports(paths, { kind: 'pr-review' })).resolves.toEqual(
+      [],
+    );
+    await expect(
+      listNotifications(paths, { includeResolved: true }),
+    ).resolves.toEqual([]);
+    await expect(listWorkflowSummaries(paths)).resolves.toEqual([]);
+    expect(
+      readLivePrReviewDraft({
+        databasePath: paths.neondeckDatabase,
+        repo: 'pandemicsyn/neondeck',
+        prNumber: 10,
+      }),
+    ).toBeNull();
+  });
+
+  it('preserves an existing Neon draft when cancellation arrives during validation', async () => {
+    const paths = await tempPaths();
+    const original = upsertPrReviewDraft({
+      databasePath: paths.neondeckDatabase,
+      repo: 'pandemicsyn/neondeck',
+      prNumber: 10,
+      headSha: 'previous-head',
+    });
+    addPrReviewDraftComment({
+      id: 'existing-neon-comment',
+      databasePath: paths.neondeckDatabase,
+      draftId: original.id,
+      path: 'src/app.ts',
+      side: 'RIGHT',
+      line: 2,
+      body: 'Existing Neon draft comment',
+      origin: 'neon',
+      sourceFindingId: 'existing-finding',
+    });
+    const before = readLivePrReviewDraft({
+      databasePath: paths.neondeckDatabase,
+      repo: 'pandemicsyn/neondeck',
+      prNumber: 10,
+    });
+    const controller = new AbortController();
+    let releaseValidation!: () => void;
+    const validationGate = new Promise<void>((resolve) => {
+      releaseValidation = resolve;
+    });
+    const validateReviewFiles = vi.fn(async (facts: ReviewAssistFacts) => {
+      await validationGate;
+      return facts.files;
+    });
+    const step: ToolStep = {
+      async do<T>(_name: string, effect: () => T | Promise<T>): Promise<T> {
+        return effect();
+      },
+    };
+    const result = reviewPrForHuman({ ref: 'pandemicsyn/neondeck#10' }, paths, {
+      signal: controller.signal,
+      runEffect: createReviewDurableEffectRunner(step, controller.signal),
+      fetchFacts: async () => reviewFacts(),
+      reviewer: async () => reviewOutputWithOneFinding(),
+      validateReviewFiles,
+    });
+    await vi.waitFor(() => expect(validateReviewFiles).toHaveBeenCalledOnce());
+    controller.abort(new DOMException('operator cancelled', 'AbortError'));
+    releaseValidation();
+
+    await expect(result).rejects.toMatchObject({ name: 'AbortError' });
+    expect(
+      readLivePrReviewDraft({
+        databasePath: paths.neondeckDatabase,
+        repo: 'pandemicsyn/neondeck',
+        prNumber: 10,
+      }),
+    ).toEqual(before);
+    await expect(listReports(paths, { kind: 'pr-review' })).resolves.toEqual(
+      [],
+    );
+  });
+
   it('defaults human draft comment origin and preserves explicit Neon origin', async () => {
     const paths = await tempPaths();
     const draft = upsertPrReviewDraft({
@@ -60,11 +289,28 @@ describe('PR review assist', () => {
       origin: 'neon',
       sourceFindingId: 'prf_seeded_finding',
     });
+    const alreadyPrefixed = addPrReviewDraftComment({
+      databasePath: paths.neondeckDatabase,
+      draftId: draft.id,
+      path: 'src/app.ts',
+      side: 'RIGHT',
+      line: 4,
+      body: 'bot: Existing attribution',
+      origin: 'neon',
+    });
 
-    expect(withHuman.comments.at(-1)).toMatchObject({ origin: 'human' });
+    expect(withHuman.comments.at(-1)).toMatchObject({
+      origin: 'human',
+      body: 'Human draft',
+    });
     expect(withNeon.comments.at(-1)).toMatchObject({
       origin: 'neon',
+      body: 'bot: Neon draft',
       sourceFindingId: 'prf_seeded_finding',
+    });
+    expect(alreadyPrefixed.comments.at(-1)).toMatchObject({
+      origin: 'neon',
+      body: 'bot: Existing attribution',
     });
   });
 
@@ -147,7 +393,11 @@ describe('PR review assist', () => {
         line: 2,
         origin: 'neon',
         sourceFindingId: expect.stringMatching(/^prf_[a-f0-9]{24}$/),
-        body: expect.stringContaining('Generated by Neon'),
+        body: [
+          'bot: Validate the new branch.',
+          '',
+          'Suggested fix: Add an explicit guard.',
+        ].join('\n'),
       },
     ]);
 
@@ -169,13 +419,34 @@ describe('PR review assist', () => {
       version: 2,
       summaryMarkdown: 'Review <script>alert(1)</script>',
     });
+    expect(overviewDeck?.eyebrow).toBe('PR REVIEW · OVERVIEW');
     expect(overviewDeck?.slides).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ kind: 'summary', title: 'Review brief' }),
-        expect.objectContaining({ kind: 'facts', title: 'PR facts' }),
+        expect.objectContaining({
+          kind: 'facts',
+          title: 'PR facts',
+          items: [
+            { label: 'Base', value: 'main', href: null },
+            { label: 'Head', value: 'head123', href: null },
+            { label: 'Author', value: 'unknown', href: null },
+            { label: 'Additions', value: '2', href: null },
+            { label: 'Deletions', value: '0', href: null },
+            { label: 'Checks', value: '0 passing / 0 failing', href: null },
+            { label: 'Mergeable', value: 'clean', href: null },
+            expect.objectContaining({ label: 'Generated' }),
+          ],
+        }),
         expect.objectContaining({
           kind: 'change-map',
-          items: expect.any(Array),
+          totalFiles: 1,
+          items: [
+            expect.objectContaining({
+              path: 'src/app.ts',
+              additions: 2,
+              deletions: 0,
+            }),
+          ],
         }),
       ]),
     );
@@ -189,6 +460,7 @@ describe('PR review assist', () => {
     );
     const issuesDeck = reportDeckFromSummary(issues?.summary);
     expect(issuesDeck).toMatchObject({ version: 2 });
+    expect(issuesDeck?.eyebrow).toBe('PR REVIEW · ISSUES');
     expect(issuesDeck?.slides).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ kind: 'summary', title: 'Review brief' }),
@@ -395,7 +667,10 @@ describe('PR review assist', () => {
     expect(okResult.data).toMatchObject({
       seededCount: 0,
       reportOnlyCount: 1,
-      skippedSeedingReason: 'truncated-file-patches',
+      skippedSeedingReason: null,
+      reportOnlyFindings: [
+        expect.objectContaining({ reason: 'file-diff-truncated' }),
+      ],
     });
     expect(
       readLivePrReviewDraft({
@@ -404,6 +679,60 @@ describe('PR review assist', () => {
         prNumber: 10,
       }),
     ).toBeNull();
+  });
+
+  it('still anchors findings in complete files when another file is truncated', async () => {
+    const paths = await tempPaths();
+    const facts = reviewFacts();
+    facts.files.push({
+      ...facts.files[0]!,
+      path: 'generated/snapshot.json',
+      patch: '{"large":true}',
+      truncated: true,
+      generatedLike: true,
+      message: 'Local git patch exceeded the configured size limit.',
+    });
+
+    const result = await reviewPrForHuman(
+      { ref: 'pandemicsyn/neondeck#10' },
+      paths,
+      {
+        fetchFacts: async () => facts,
+        reviewer: async () => reviewOutputWithOneFinding(),
+      },
+    );
+
+    expect(requireReviewAssistOk(result).data).toMatchObject({
+      seededCount: 1,
+      reportOnlyCount: 0,
+      skippedSeedingReason: null,
+    });
+  });
+
+  it('still seeds review findings when GitHub Checks are unavailable', async () => {
+    const paths = await tempPaths();
+    const facts = reviewFacts();
+    facts.state.checkSuites = [];
+    facts.state.checkRuns = [];
+    facts.state.checkSuitesUnavailableReason =
+      'GitHub request failed with 403: Resource not accessible by personal access token';
+    facts.state.checkRunsUnavailableReason =
+      facts.state.checkSuitesUnavailableReason;
+
+    const result = await reviewPrForHuman(
+      { ref: 'pandemicsyn/neondeck#10' },
+      paths,
+      {
+        fetchFacts: async () => facts,
+        reviewer: async () => reviewOutputWithOneFinding(),
+      },
+    );
+
+    expect(requireReviewAssistOk(result).data).toMatchObject({
+      seededCount: 1,
+      reportOnlyCount: 0,
+      skippedSeedingReason: null,
+    });
   });
 
   it('includes typed PR context and explicit limitations in review prompt facts', () => {
@@ -460,9 +789,27 @@ describe('PR review assist', () => {
     facts.state.requestedChangesReviews = [requestedChange];
 
     const promptFacts = reviewFactsForPrompt(facts, {
-      memoryContext: {
-        memoryIds: ['memory-1'],
-        text: 'Structured memory background context:\nproject:\n- review-style: focus on error handling',
+      learningMemoryContext: {
+        memoryIds: ['memory-1', 'memory-2'],
+        memories: [
+          {
+            id: 'memory-1',
+            scope: 'project',
+            key: 'review-style',
+            repoId: 'neondeck',
+            value: 'Focus on error handling.',
+          },
+          {
+            id: 'memory-2',
+            scope: 'user',
+            key: 'duplicate-review-style',
+            repoId: null,
+            value: 'Focus on error handling.',
+          },
+        ],
+        text: 'Learning memories background context:\n- memory-1 [project:review-style repo=neondeck] Focus on error handling.',
+        available: true,
+        truncated: false,
       },
     });
 
@@ -477,13 +824,12 @@ describe('PR review assist', () => {
       isOutOfDate: false,
     });
     expect(promptFacts.linkedIssueReferenceHints).toEqual(['#123']);
-    expect(promptFacts.backgroundContext).toEqual({
-      structuredMemory:
-        'Structured memory background context:\nproject:\n- review-style: focus on error handling',
-      memoryIds: ['memory-1'],
-      usage:
-        'Treat memory as durable background guidance, not current PR evidence. Fetched PR facts and workflow bounds win on conflict.',
-    });
+    expect(promptFacts.backgroundContext).toBe(
+      'Focus on error handling.\n\nTreat this learned memory as durable background guidance, not current PR evidence. Fetched PR facts and bounded review rules win on conflict.',
+    );
+    expect(JSON.stringify(promptFacts)).not.toContain('memory-1');
+    expect(JSON.stringify(promptFacts)).not.toContain('memory-2');
+    expect(JSON.stringify(promptFacts)).not.toContain('review-style');
     expect(promptFacts.commits).toMatchObject([{ sha: 'head123' }]);
     expect(promptFacts.reviewThreads).toMatchObject([
       {
@@ -548,20 +894,95 @@ describe('PR review assist', () => {
     const okResult = requireReviewAssistOk(result);
     const memoryId = (memory as { memory: { id: string } }).memory.id;
     const capturedFacts = promptFacts as unknown as {
-      memories: Array<Record<string, unknown>>;
+      backgroundContext: string;
+      memories?: unknown;
     };
 
-    expect(capturedFacts.memories).toEqual([
-      expect.objectContaining({
-        id: memoryId,
-        repoId: 'neondeck',
-        value: expect.stringContaining('flaky e2e shard'),
-      }),
-    ]);
+    expect(capturedFacts.backgroundContext).toContain('flaky e2e shard');
+    expect(capturedFacts).not.toHaveProperty('memories');
+    expect(JSON.stringify(promptFacts)).not.toContain(memoryId);
+    expect(JSON.stringify(promptFacts)).not.toContain('e2e-shard');
     expect(JSON.stringify(promptFacts)).not.toContain('other-repo');
     expect(okResult.workflowSummary.summary).toMatchObject({
       memoryIds: [memoryId],
     });
+  });
+
+  it('lets exact-revision tools own changed-file discovery in the model seed', () => {
+    const facts = reviewFacts();
+    const promptFacts = reviewFactsForPrompt(facts, {
+      workspace: {
+        available: true,
+        repoId: 'neondeck',
+        repoFullName: 'pandemicsyn/neondeck',
+        repoPath: '/tmp/neondeck',
+        headSha: 'head123',
+        baseSha: 'base123',
+        mergeBase: 'base123',
+        tools: [],
+      },
+    });
+
+    expect(promptFacts.workspace).toMatchObject({
+      available: true,
+      access: 'exact-revision-read-only-tools',
+    });
+    expect(promptFacts).not.toHaveProperty('files');
+    expect(JSON.stringify(promptFacts)).not.toContain('+const added = true;');
+  });
+
+  it('keeps actionable CI details while compacting successful checks', () => {
+    const facts = reviewFacts();
+    facts.state.checkSuites = [
+      {
+        id: 5001,
+        headSha: 'head123',
+        status: 'completed',
+        conclusion: 'success',
+        appSlug: 'github-actions',
+        url: null,
+        htmlUrl: null,
+        createdAt: '2026-07-05T11:00:00.000Z',
+        updatedAt: '2026-07-05T11:01:00.000Z',
+      },
+    ];
+    facts.state.checkRuns = [
+      checkRun(6001, 'unit', 'completed', 'success'),
+      checkRun(6002, 'docs', 'completed', 'skipped'),
+      checkRun(6003, 'integration', 'in_progress', null),
+      checkRun(6004, 'lint', 'completed', 'failure'),
+    ];
+    facts.state.checkSuitesTruncated = true;
+    facts.state.checkRunsTruncated = false;
+
+    const promptFacts = reviewFactsForPrompt(facts);
+    expect(promptFacts.checks).toEqual({
+      summary: {
+        suites: 1,
+        runs: 4,
+        suitesTruncated: true,
+        runsTruncated: false,
+        suitesUnavailableReason: null,
+        runsUnavailableReason: null,
+        successful: 2,
+        skipped: 1,
+        neutral: 0,
+        pending: 1,
+        failed: 1,
+      },
+      successfulRuns: {
+        count: 1,
+        names: ['unit'],
+        truncated: false,
+      },
+      pending: [
+        expect.objectContaining({ name: 'integration', status: 'in_progress' }),
+      ],
+      failed: [
+        expect.objectContaining({ name: 'lint', conclusion: 'failure' }),
+      ],
+    });
+    expect(JSON.stringify(promptFacts.checks)).not.toContain('docs');
   });
 
   it('rejects malformed structured output before writing reports or drafts', async () => {
@@ -587,6 +1008,164 @@ describe('PR review assist', () => {
         prNumber: 10,
       }),
     ).toBeNull();
+  });
+
+  it('rejects facts that drift from the immutable admitted revision', async () => {
+    const paths = await tempPaths();
+    let reviewed = false;
+    const result = await reviewPrForHuman(
+      {
+        reviewId: 'review-1',
+        attemptId: 'attempt-1',
+        ref: 'pandemicsyn/neondeck#10',
+        repoFullName: 'pandemicsyn/neondeck',
+        repo: 'pandemicsyn/neondeck',
+        prNumber: 10,
+        headSha: 'admitted-head',
+        baseSha: 'base123',
+        baseRef: 'main',
+      },
+      paths,
+      {
+        fetchFacts: async () => reviewFacts(),
+        reviewer: async () => {
+          reviewed = true;
+          return reviewOutputWithOneFinding();
+        },
+      },
+    );
+
+    expect(result).toMatchObject({
+      ok: false,
+      message: expect.stringContaining('moved from the exact revision'),
+    });
+    expect(reviewed).toBe(false);
+    await expect(listReports(paths)).resolves.toEqual([]);
+  });
+
+  it('replays a crashed report step without duplicating artifacts', async () => {
+    const paths = await tempPaths();
+    const steps = new Map<string, unknown>();
+    let interruptReportRecording = true;
+    const runEffect = async <T>(
+      name: string,
+      effect: () => T | Promise<T>,
+    ): Promise<T> => {
+      if (steps.has(name)) return steps.get(name) as T;
+      const value = await effect();
+      if (name === 'write-review-reports' && interruptReportRecording) {
+        interruptReportRecording = false;
+        throw new Error('simulated crash after report writes');
+      }
+      steps.set(name, value);
+      return value;
+    };
+    const options = {
+      effectId: 'review-1:attempt-1',
+      runEffect,
+      fetchFacts: async () => reviewFacts(),
+      reviewer: async () => reviewOutputWithOneFinding(),
+    };
+
+    await expect(
+      reviewPrForHuman({ ref: 'pandemicsyn/neondeck#10' }, paths, options),
+    ).rejects.toThrow('simulated crash');
+    const firstReports = await listReports(paths, { kind: 'pr-review' });
+    expect(firstReports).toHaveLength(2);
+
+    const replayed = requireReviewAssistOk(
+      await reviewPrForHuman(
+        { ref: 'pandemicsyn/neondeck#10' },
+        paths,
+        options,
+      ),
+    );
+    const replayedReports = await listReports(paths, { kind: 'pr-review' });
+    expect(replayedReports).toHaveLength(2);
+    expect(replayed.data.reports.map((report) => report.id).sort()).toEqual(
+      firstReports.map((report) => report.id).sort(),
+    );
+  });
+
+  it('replays crashed draft seeding without orphaning its seed ledger', async () => {
+    const paths = await tempPaths();
+    const steps = new Map<string, unknown>();
+    let interruptSeedRecording = true;
+    const runEffect = async <T>(
+      name: string,
+      effect: () => T | Promise<T>,
+    ): Promise<T> => {
+      if (steps.has(name)) return steps.get(name) as T;
+      const value = await effect();
+      if (name === 'seed-draft-comments' && interruptSeedRecording) {
+        interruptSeedRecording = false;
+        throw new Error('simulated crash after draft seeding');
+      }
+      steps.set(name, value);
+      return value;
+    };
+    const options = {
+      effectId: 'review-seed:attempt-1',
+      runEffect,
+      fetchFacts: async () => reviewFacts(),
+      reviewer: async () => reviewOutputWithOneFinding(),
+    };
+
+    await expect(
+      reviewPrForHuman({ ref: 'pandemicsyn/neondeck#10' }, paths, options),
+    ).rejects.toThrow('simulated crash');
+    expect(reviewSeedCounts(paths.neondeckDatabase)).toEqual({
+      comments: 1,
+      seeds: 1,
+    });
+
+    await expect(
+      reviewPrForHuman({ ref: 'pandemicsyn/neondeck#10' }, paths, options),
+    ).resolves.toMatchObject({ ok: true });
+    expect(reviewSeedCounts(paths.neondeckDatabase)).toEqual({
+      comments: 1,
+      seeds: 1,
+    });
+  });
+
+  it('replays a crashed notification step without duplicate user effects', async () => {
+    const paths = await tempPaths();
+    const steps = new Map<string, unknown>();
+    let interruptNotificationRecording = true;
+    const runEffect = async <T>(
+      name: string,
+      effect: () => T | Promise<T>,
+    ): Promise<T> => {
+      if (steps.has(name)) return steps.get(name) as T;
+      const value = await effect();
+      if (name === 'notify-review-ready' && interruptNotificationRecording) {
+        interruptNotificationRecording = false;
+        throw new Error('simulated crash after notification write');
+      }
+      steps.set(name, value);
+      return value;
+    };
+    const options = {
+      effectId: 'review-2:attempt-1',
+      runEffect,
+      fetchFacts: async () => reviewFacts(),
+      reviewer: async () => reviewOutputWithOneFinding(),
+    };
+
+    await expect(
+      reviewPrForHuman({ ref: 'pandemicsyn/neondeck#10' }, paths, options),
+    ).rejects.toThrow('simulated crash');
+    await expect(
+      reviewPrForHuman({ ref: 'pandemicsyn/neondeck#10' }, paths, options),
+    ).resolves.toMatchObject({ ok: true });
+
+    const notifications = await listNotifications(paths, {
+      includeResolved: true,
+    });
+    expect(notifications).toMatchObject([
+      { source: 'review-pr-for-human', occurrenceCount: 1 },
+    ]);
+    await expect(listWorkflowSummaries(paths)).resolves.toHaveLength(1);
   });
 });
 
@@ -699,6 +1278,27 @@ function reviewFacts(): ReviewAssistFacts {
     state,
     files,
     diffSummary,
+    source: 'local',
+  };
+}
+
+function checkRun(
+  id: number,
+  name: string,
+  status: string,
+  conclusion: string | null,
+): GitHubPullRequestEventState['checkRuns'][number] {
+  return {
+    id,
+    name,
+    headSha: 'head123',
+    status,
+    conclusion,
+    url: null,
+    htmlUrl: null,
+    detailsUrl: null,
+    startedAt: '2026-07-05T11:00:00.000Z',
+    completedAt: status === 'completed' ? '2026-07-05T11:01:00.000Z' : null,
   };
 }
 
@@ -727,4 +1327,21 @@ function reviewOutputWithOneFinding() {
       },
     ],
   };
+}
+
+function reviewSeedCounts(databasePath: string) {
+  const database = openDb(databasePath, { readOnly: true });
+  try {
+    const comments = database
+      .prepare(
+        "SELECT count(*) AS count FROM pr_review_draft_comments WHERE origin = 'neon';",
+      )
+      .get() as { count: number };
+    const seeds = database
+      .prepare('SELECT count(*) AS count FROM pr_review_neon_seeded_comments;')
+      .get() as { count: number };
+    return { comments: comments.count, seeds: seeds.count };
+  } finally {
+    database.close();
+  }
 }

@@ -8,62 +8,59 @@ describe('chatMessagesForRender', () => {
       {
         id: 'live',
         role: 'assistant',
+        purpose: 'assistant',
+        display: 'visible',
         parts: [{ type: 'text', state: 'streaming', text: 'live' }],
       },
     ];
     expect(chatMessagesForRender(messages)).toBe(messages);
   });
 
-  it('keeps deterministic briefing grounding in Flue while rendering a compact turn', () => {
+  it('hides typed dispatch/control messages while preserving visible replies', () => {
     const messages: FlueConversationMessage[] = [
       {
         id: 'briefing-input',
-        role: 'user',
+        role: 'system',
+        purpose: 'dispatch',
+        display: 'hidden',
+        signal: { attributes: { briefingRunId: 'briefing:1' } },
         parts: [
           {
             type: 'text',
             state: 'done',
-            text: JSON.stringify(
-              '[NEONDECK_INTERNAL_BRIEFING_INPUT v1 trigger=manual run=briefing:1]\n\nNeondeck fact snapshot:\n{...}',
-            ),
+            text: 'Briefing briefing:1 is ready.',
           },
         ],
       },
       {
         id: 'assistant-output',
         role: 'assistant',
+        purpose: 'assistant',
+        display: 'visible',
         parts: [{ type: 'text', state: 'done', text: 'Today needs review.' }],
       },
     ];
 
-    expect(chatMessagesForRender(messages)).toEqual([
-      expect.objectContaining({
-        id: 'briefing-input',
-        parts: [{ type: 'text', state: 'done', text: '/briefing' }],
-      }),
-      messages[1],
-    ]);
+    expect(chatMessagesForRender(messages)).toEqual([messages[1]]);
   });
 
-  it('labels background occurrences without exposing their internal prompt', () => {
+  it('does not expose diagnostic runtime advisories in the chat lane', () => {
     const messages: FlueConversationMessage[] = [
       {
         id: 'scheduled-input',
-        role: 'user',
+        role: 'system',
+        purpose: 'advisory',
+        display: 'diagnostic',
         parts: [
           {
             type: 'text',
             state: 'done',
-            text: '[NEONDECK_INTERNAL_BRIEFING_INPUT v1 trigger=scheduled run=briefing:2]\n\nprivate grounding',
+            text: 'Runtime diagnostic detail.',
           },
         ],
       },
     ];
 
-    expect(chatMessagesForRender(messages)[0]).toMatchObject({
-      parts: [
-        { type: 'text', state: 'done', text: 'Scheduled morning briefing' },
-      ],
-    });
+    expect(chatMessagesForRender(messages)).toEqual([]);
   });
 });

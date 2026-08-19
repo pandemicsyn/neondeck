@@ -339,7 +339,7 @@ async function runExeDevExecution(input: {
         : {}),
       maxOutputBytes: outputLimit * 2,
     });
-    const env = await sandbox.createSessionEnv({
+    const env = await sandbox.createSandbox({
       id: input.input.sessionId ?? input.approvalId,
     });
     dispose = () => disposeExeDevSessionEnv(env);

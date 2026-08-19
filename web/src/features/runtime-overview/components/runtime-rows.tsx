@@ -6,6 +6,7 @@ import {
   logoutMcpServer,
   resolveMcpApproval,
   startMcpLogin,
+  updateMcpApprovalMode,
   type KiloTaskRecord,
   type McpApproval,
   type McpServer,
@@ -16,8 +17,8 @@ import {
   RuntimeSkill,
   RuntimeSkillsResponse,
   ScheduledTask,
-  WorkflowEventRecord,
-  WorkflowObservability,
+  ActivityEventRecord,
+  ActivityObservability,
   WorktreeCleanupFailure,
   WorktreeLockRecord,
   WorktreeRecord,
@@ -53,7 +54,7 @@ export function McpServerRow({
   onRefresh: () => void;
   server: McpServer;
 }) {
-  const [busy, setBusy] = useState<'login' | 'logout' | null>(null);
+  const [busy, setBusy] = useState<'login' | 'logout' | 'policy' | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   async function startLogin() {
@@ -77,6 +78,48 @@ export function McpServerRow({
     setError(null);
     try {
       await logoutMcpServer(server.id);
+      onRefresh();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function changeApprovalMode(
+    approvalMode: 'prompt' | 'writes' | 'approve',
+  ) {
+    setBusy('policy');
+    setError(null);
+    try {
+      await updateMcpApprovalMode(
+        server.id,
+        approvalMode,
+        server.toolOverrides,
+      );
+      onRefresh();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function changeToolOverride(
+    toolName: string,
+    mode: 'inherit' | 'prompt' | 'approve' | 'deny',
+  ) {
+    const toolOverrides = { ...server.toolOverrides };
+    if (mode === 'inherit') delete toolOverrides[toolName];
+    else toolOverrides[toolName] = mode;
+    setBusy('policy');
+    setError(null);
+    try {
+      await updateMcpApprovalMode(
+        server.id,
+        server.approvalMode,
+        toolOverrides,
+      );
       onRefresh();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
@@ -133,6 +176,61 @@ export function McpServerRow({
           </button>
         ) : null}
       </div>
+      <label className="mt-1.5 flex items-center justify-between gap-2 font-mono text-[10px] text-muted">
+        <span>server default</span>
+        <select
+          aria-label={`Tool approval mode for ${server.id}`}
+          className="border border-line bg-panel px-1.5 py-0.5 text-ink disabled:opacity-50"
+          disabled={busy !== null}
+          onChange={(event) =>
+            void changeApprovalMode(
+              event.target.value as 'prompt' | 'writes' | 'approve',
+            )
+          }
+          value={server.approvalMode}
+        >
+          <option value="writes">ask for writes</option>
+          <option value="prompt">ask every time</option>
+          <option value="approve">allow all</option>
+        </select>
+      </label>
+      {Object.entries(server.toolOverrides).length > 0 ? (
+        <div className="mt-1.5 border-t border-line pt-1.5">
+          <p className="font-mono text-[10px] text-muted">tool overrides</p>
+          <div className="mt-1 space-y-1">
+            {Object.entries(server.toolOverrides)
+              .sort(([left], [right]) => left.localeCompare(right))
+              .map(([toolName, mode]) => (
+                <label
+                  className="flex items-center justify-between gap-2 font-mono text-[10px] text-muted"
+                  key={toolName}
+                >
+                  <span className="min-w-0 flex-1 truncate" title={toolName}>
+                    {toolName}
+                  </span>
+                  <select
+                    aria-label={`Tool override for ${server.id}/${toolName}`}
+                    className="border border-line bg-panel px-1.5 py-0.5 text-ink disabled:opacity-50"
+                    disabled={busy !== null}
+                    onChange={(event) =>
+                      void changeToolOverride(
+                        toolName,
+                        event.target.value as
+                          'inherit' | 'prompt' | 'approve' | 'deny',
+                      )
+                    }
+                    value={mode}
+                  >
+                    <option value="inherit">inherit default</option>
+                    <option value="prompt">ask</option>
+                    <option value="approve">allow</option>
+                    <option value="deny">deny</option>
+                  </select>
+                </label>
+              ))}
+          </div>
+        </div>
+      ) : null}
       {error ? (
         <p className="mt-1.5 line-clamp-2 text-[10.5px] leading-4 text-accent">
           {error}
@@ -149,10 +247,12 @@ export function McpApprovalRow({
   approval: McpApproval;
   onRefresh: () => void;
 }) {
-  const [busy, setBusy] = useState<'approve' | 'deny' | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  async function resolve(decision: 'approve' | 'deny') {
+  async function resolve(
+    decision: 'allow-once' | 'allow-chat' | 'allow-always' | 'deny',
+  ) {
     setBusy(decision);
     setError(null);
     try {
@@ -188,19 +288,43 @@ export function McpApprovalRow({
       </div>
       <div className="mt-1.5 flex items-center gap-1.5 font-mono text-[10px] text-muted">
         <span className="min-w-0 flex-1 truncate">
-          {approval.status === 'approved' && !approval.usedAt
-            ? `approved ${relativeTime(approval.resolvedAt ?? approval.updatedAt)} · not yet used`
-            : `${relativeTime(approval.updatedAt)} · expires ${relativeTime(approval.expiresAt)}`}
+          {approval.status === 'approved' &&
+          approval.approvalDecision === 'allow-chat'
+            ? `allowed for this chat ${relativeTime(approval.resolvedAt ?? approval.updatedAt)}`
+            : approval.status === 'approved' &&
+                approval.approvalDecision === 'allow-always'
+              ? `always allowed ${relativeTime(approval.resolvedAt ?? approval.updatedAt)}`
+              : approval.status === 'approved' && !approval.usedAt
+                ? `allowed once ${relativeTime(approval.resolvedAt ?? approval.updatedAt)} · not yet used`
+                : `${relativeTime(approval.updatedAt)} · expires ${relativeTime(approval.expiresAt)}`}
         </span>
         {approval.status === 'pending' ? (
-          <>
+          <div className="flex flex-wrap justify-end gap-1">
             <button
               className="shrink-0 border border-line px-1.5 py-0.5 text-muted disabled:opacity-50"
               disabled={busy !== null}
-              onClick={() => void resolve('approve')}
+              onClick={() => void resolve('allow-once')}
               type="button"
             >
-              approve
+              once
+            </button>
+            {approval.sessionId ? (
+              <button
+                className="shrink-0 border border-line px-1.5 py-0.5 text-muted disabled:opacity-50"
+                disabled={busy !== null}
+                onClick={() => void resolve('allow-chat')}
+                type="button"
+              >
+                this chat
+              </button>
+            ) : null}
+            <button
+              className="shrink-0 border border-line px-1.5 py-0.5 text-muted disabled:opacity-50"
+              disabled={busy !== null}
+              onClick={() => void resolve('allow-always')}
+              type="button"
+            >
+              always
             </button>
             <button
               className="shrink-0 border border-accent px-1.5 py-0.5 text-accent disabled:opacity-50"
@@ -210,7 +334,7 @@ export function McpApprovalRow({
             >
               deny
             </button>
-          </>
+          </div>
         ) : null}
       </div>
       {error ? (
@@ -493,50 +617,48 @@ export function WorktreeCleanupRow({
   );
 }
 
-export function ActiveRunRow({
-  run,
+export function ActiveSubmissionRow({
+  submission,
 }: {
-  run: WorkflowObservability['activeRuns'][number];
+  submission: ActivityObservability['activeSubmissions'][number];
 }) {
   return (
     <article className="border border-primary/60 bg-soft px-2.5 py-2">
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
-          {run.runUrl ? (
+          {submission.detailUrl ? (
             <a
               className="truncate font-mono text-[11px] text-ink hover:text-primary"
-              href={run.runUrl}
-              rel="noreferrer"
-              target="_blank"
+              href={submission.detailUrl}
             >
-              {run.workflow}
+              {submission.agentName ?? 'agent submission'}
             </a>
           ) : (
             <span className="block truncate font-mono text-[11px] text-ink">
-              {run.workflow}
+              {submission.agentName ?? 'agent submission'}
             </span>
           )}
           <p className="mt-0.5 line-clamp-2 text-[10.5px] leading-4 text-muted">
-            {run.lastMessage}
+            {submission.lastMessage}
           </p>
         </div>
         <Badge className="border-primary text-primary">
-          {run.eventCount} events
+          {submission.eventCount} events
         </Badge>
       </div>
       <div className="mt-1.5 flex justify-between gap-2 font-mono text-[10px] text-muted">
-        <span className="truncate">{run.runId}</span>
-        <span className="shrink-0">{relativeTime(run.lastEventAt)}</span>
+        <span className="truncate">{submission.submissionId}</span>
+        <span className="shrink-0">{relativeTime(submission.lastEventAt)}</span>
       </div>
     </article>
   );
 }
 
-export function WorkflowEventRow({
+export function ActivityEventRow({
   event,
   rawLabel = false,
 }: {
-  event: WorkflowEventRecord;
+  event: ActivityEventRecord;
   rawLabel?: boolean;
 }) {
   const content = (
@@ -544,7 +666,7 @@ export function WorkflowEventRow({
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
           <p className="truncate font-mono text-[11px] text-ink">
-            {event.name ?? event.workflow ?? event.eventType}
+            {event.name ?? event.agentName ?? event.eventType}
           </p>
           <p className="mt-0.5 line-clamp-2 text-[10.5px] leading-4 text-muted">
             {event.message}
@@ -556,22 +678,20 @@ export function WorkflowEventRow({
       </div>
       <div className="mt-1.5 flex justify-between gap-2 font-mono text-[10px] text-muted">
         <span className="truncate">
-          {rawLabel && event.runUrl
-            ? 'raw run inspection'
-            : (event.runId ?? event.operationId ?? 'local')}
+          {rawLabel && event.detailUrl
+            ? 'submission activity'
+            : (event.submissionId ?? event.operationId ?? 'local')}
         </span>
         <span className="shrink-0">{relativeTime(event.createdAt)}</span>
       </div>
     </>
   );
 
-  if (event.runUrl) {
+  if (event.detailUrl) {
     return (
       <a
         className="block border border-line bg-soft px-2.5 py-2 hover:border-primary/70"
-        href={event.runUrl}
-        rel="noreferrer"
-        target="_blank"
+        href={event.detailUrl}
       >
         {content}
       </a>

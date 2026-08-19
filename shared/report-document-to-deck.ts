@@ -64,6 +64,7 @@ export function reportDocumentToDeck(
     version: 2,
     eyebrow: document.eyebrow ? bounded(document.eyebrow, 200) : null,
     title: bounded(document.title, 200),
+    subtitle: null,
     summaryMarkdown,
     generatedAt,
     links: [],

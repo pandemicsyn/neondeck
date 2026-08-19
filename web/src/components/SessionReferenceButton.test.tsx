@@ -18,8 +18,8 @@ describe('SessionReferenceButton', () => {
       </QueryClientProvider>,
     );
 
-    expect(html).toContain('aria-label="Reference Watch neondeck#140 in chat"');
-    expect(html).toContain('>Reference</button>');
+    expect(html).toContain('aria-label="Open chat for Watch neondeck#140"');
+    expect(html).toContain('>chat</button>');
     expect(html).not.toContain('>session</button>');
   });
 });

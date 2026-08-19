@@ -7,15 +7,14 @@ under `docs/` carries the detailed user-facing guides.
 ## Requirements
 
 - Node 26.4.0 or newer
-- A KiloCode, OpenAI, or Anthropic API key for the configured Flue model
-  provider
+- A KiloCode, OpenAI, Anthropic, or OpenAI-compatible API key, or a ChatGPT
+  subscription login, for the configured Flue model provider
 - A GitHub token for GitHub-backed panels and workflows
 
-Use any Node installer or version manager. With `fnm`, that looks like:
+Use any Node installer or version manager, then confirm the active version:
 
 ```sh
-fnm install 26.4.0
-fnm use 26.4.0
+node --version
 ```
 
 Then install dependencies:
@@ -41,11 +40,12 @@ The CLI is also the base for direct command-and-control surfaces:
 
 ```sh
 npm run cli -- status
+npm run cli -- auth login openai-codex
+npm run cli -- auth status openai-codex
 npm run cli -- doctor
 npm run cli -- db status
 npm run cli -- repo add ~/dev/neondeck
 npm run cli -- watch-pr pandemicsyn/neondeck#123
-npm run cli -- tui
 ```
 
 ## Runtime Home And Secrets
@@ -109,14 +109,8 @@ The dev command runs the Flue/Hono backend and Vite dashboard together. Runtime
 home, repository, MCP server/approval, scheduler, and skill state are visible in
 the Runtime Overview panel.
 
-Neon command workflows can be run from dashboard controls, typed into chat, or
-invoked through Flue:
-
-```sh
-curl -X POST 'http://127.0.0.1:5173/api/flue/workflows/command-run?wait=result' \
-  -H 'Content-Type: application/json' \
-  -d '{"input":{"command":"/briefing"}}'
-```
+Neon commands can be run from dashboard controls, typed into chat, or chosen
+from the chat input's slash-command suggestions.
 
 Common commands include `/repo-status`, `/review-queue`, `/review-pr <ref>`,
 `/fix-ci [ref]`, `/explain-ci [--report] [ref]`, `/summarize-pr [ref]`,
@@ -146,10 +140,7 @@ npm run cli -- watch-pr <repo#number>
 npm run cli -- note "message"
 npm run cli -- register-pr <repo#number>
 npm run cli -- doctor
-npm run cli -- tui
 ```
-
-The `tui` command exists as the future OpenTUI entrypoint.
 
 ## Checks
 
@@ -181,7 +172,7 @@ npm run verify
 `npm run check` is the fast local loop: lint, import-layer check, database
 migration check, typecheck, and the unit Vitest suite. The slower
 serial Git/performance/docs-drift group lives under `npm run test:git`; the
-workflow-heavy worktree/Kilo/autopilot group lives under
+operation-heavy worktree/Kilo/autopilot group lives under
 `npm run test:integration`. `npm run test:all` runs every Vitest suite.
 `npm run verify` keeps the full pre-release path: lint, import-layer check,
 database migration check, typecheck, all tests, production builds, npm package
@@ -214,12 +205,26 @@ npm run release:app
 npm run release:npm:check
 ```
 
-After a production build or package install:
+After a production build or package install, either run Neondeck in the
+foreground:
+
+```sh
+neondeck serve
+```
+
+Or install and start the macOS or Linux login service:
 
 ```sh
 neondeck service install
+```
+
+Then, from another terminal if using `serve`, open the default dashboard or a
+named window profile:
+
+```sh
 neondeck open
 neondeck open sidebar
+neondeck open xeneon
 ```
 
 `neondeck service install` creates a macOS launchd agent or Linux systemd user
@@ -232,6 +237,12 @@ supported Chromium browser is available.
 `neondeck serve` and the login service run the built Flue server entry from
 `dist/server.mjs`; from a source checkout, use `npm run dev` for the fast loop
 or run `npm run build:server` before testing the packaged path.
+
+Production logs include state-changing API requests, failed and slow requests,
+agent submission lifecycle activity, dashboard event-stream connections, and
+runtime-service lifecycle events. Routine successful reads are suppressed to
+keep dashboard polling quiet; use `neondeck serve --verbose` or set
+`NEONDECK_LOG_LEVEL=debug` to include them.
 
 ## Marketing And Docs Site
 

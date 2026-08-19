@@ -1,6 +1,5 @@
 import { spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
-import { delimiter, join } from 'node:path';
 import {
   parseDashboardConfig,
   readRuntimeJson,
@@ -22,13 +21,6 @@ export type WindowProfileOverrides = {
   x?: number;
   y?: number;
   kiosk?: boolean;
-};
-
-export type BrowserCandidate = {
-  id: string;
-  name: string;
-  paths: string[];
-  executableNames: string[];
 };
 
 export type BrowserMatch = {
@@ -76,7 +68,6 @@ type CommandSpawner = (
 type OpenDependencies = {
   fetch?: typeof fetch;
   exists?: (path: string) => boolean;
-  env?: NodeJS.ProcessEnv;
   platform?: NodeJS.Platform;
   spawn?: CommandSpawner;
 };
@@ -111,12 +102,10 @@ export async function openDashboard(
       errors: [error instanceof Error ? error.message : String(error)],
     };
   }
-  const browser = findChromiumBrowser({
-    platform: deps.platform,
-    env: deps.env,
-    exists: deps.exists,
-    explicitPath: options.browserPath,
-  });
+  const browser = resolveExplicitChromiumBrowser(
+    options.browserPath,
+    deps.exists,
+  );
 
   if (options.browserPath && !browser) {
     return {
@@ -253,9 +242,11 @@ export async function openDashboard(
       browser: { strategy: 'default-browser', geometryApplied: false },
     });
   }
-  warnings.push(
-    'No Chromium-family browser was found, so geometry flags were not applied. Install the PWA to keep dedicated window bounds.',
-  );
+  if (hasGeometry(geometry)) {
+    warnings.push(
+      'Window geometry and kiosk settings were not applied because the default browser was used. Pass --browser <path> to launch a Chromium app-mode window, or install the PWA to keep dedicated window bounds.',
+    );
+  }
   return {
     ok: true,
     action: 'dashboard_open',
@@ -296,78 +287,12 @@ export function resolveWindowProfile(
   return resolved;
 }
 
-export function chromiumCandidates(
-  platform: NodeJS.Platform = process.platform,
-  env: NodeJS.ProcessEnv = process.env,
-): BrowserCandidate[] {
-  const home = env.HOME;
-  if (platform === 'darwin') {
-    const appRoots = ['/Applications'];
-    if (home) appRoots.push(join(home, 'Applications'));
-    return [
-      macApp('chrome', 'Google Chrome', 'Google Chrome.app', appRoots),
-      macApp('edge', 'Microsoft Edge', 'Microsoft Edge.app', appRoots),
-      macApp('brave', 'Brave Browser', 'Brave Browser.app', appRoots),
-      macApp('chromium', 'Chromium', 'Chromium.app', appRoots),
-    ];
-  }
-
-  if (platform === 'win32') {
-    const roots = [
-      env.LOCALAPPDATA,
-      env.PROGRAMFILES,
-      env['PROGRAMFILES(X86)'],
-    ].filter((value): value is string => Boolean(value));
-    return [
-      windowsApp('chrome', 'Google Chrome', roots, [
-        ['Google', 'Chrome', 'Application', 'chrome.exe'],
-      ]),
-      windowsApp('edge', 'Microsoft Edge', roots, [
-        ['Microsoft', 'Edge', 'Application', 'msedge.exe'],
-      ]),
-      windowsApp('brave', 'Brave Browser', roots, [
-        ['BraveSoftware', 'Brave-Browser', 'Application', 'brave.exe'],
-      ]),
-    ];
-  }
-
-  return [
-    linuxApp('chrome', 'Google Chrome', 'google-chrome'),
-    linuxApp('edge', 'Microsoft Edge', 'microsoft-edge'),
-    linuxApp('brave', 'Brave Browser', 'brave-browser'),
-    linuxApp('chromium', 'Chromium', 'chromium'),
-    linuxApp('chromium-browser', 'Chromium', 'chromium-browser'),
-  ];
-}
-
-export function findChromiumBrowser(
-  options: {
-    platform?: NodeJS.Platform;
-    env?: NodeJS.ProcessEnv;
-    exists?: (path: string) => boolean;
-    explicitPath?: string;
-  } = {},
+export function resolveExplicitChromiumBrowser(
+  explicitPath: string | undefined,
+  exists: (path: string) => boolean = existsSync,
 ): BrowserMatch | null {
-  const exists = options.exists ?? existsSync;
-  if (options.explicitPath) {
-    return exists(options.explicitPath)
-      ? { id: 'custom', name: 'Custom Chromium', path: options.explicitPath }
-      : null;
-  }
-
-  const env = options.env ?? process.env;
-  for (const candidate of chromiumCandidates(options.platform, env)) {
-    for (const path of candidate.paths) {
-      if (exists(path)) {
-        return { id: candidate.id, name: candidate.name, path };
-      }
-    }
-    for (const executable of candidate.executableNames) {
-      const found = findOnPath(executable, env, exists);
-      if (found) return { id: candidate.id, name: candidate.name, path: found };
-    }
-  }
-  return null;
+  if (!explicitPath || !exists(explicitPath)) return null;
+  return { id: 'custom', name: 'Custom Chromium', path: explicitPath };
 }
 
 export async function waitForHealth(
@@ -633,58 +558,6 @@ function hasGeometry(profile: WindowProfile) {
     (profile.x !== undefined && profile.y !== undefined) ||
     profile.kiosk,
   );
-}
-
-function macApp(
-  id: string,
-  name: string,
-  appName: string,
-  roots: string[],
-): BrowserCandidate {
-  return {
-    id,
-    name,
-    paths: roots.map((root) =>
-      join(root, appName, 'Contents', 'MacOS', appName.replace(/\.app$/, '')),
-    ),
-    executableNames: [],
-  };
-}
-
-function windowsApp(
-  id: string,
-  name: string,
-  roots: string[],
-  relativePaths: string[][],
-): BrowserCandidate {
-  return {
-    id,
-    name,
-    paths: roots.flatMap((root) =>
-      relativePaths.map((path) => join(root, ...path)),
-    ),
-    executableNames: [],
-  };
-}
-
-function linuxApp(
-  id: string,
-  name: string,
-  executable: string,
-): BrowserCandidate {
-  return { id, name, paths: [], executableNames: [executable] };
-}
-
-function findOnPath(
-  executable: string,
-  env: NodeJS.ProcessEnv,
-  exists: (path: string) => boolean,
-) {
-  for (const directory of (env.PATH ?? '').split(delimiter).filter(Boolean)) {
-    const candidate = join(directory, executable);
-    if (exists(candidate)) return candidate;
-  }
-  return null;
 }
 
 function stripUndefined(profile: WindowProfile): WindowProfile {

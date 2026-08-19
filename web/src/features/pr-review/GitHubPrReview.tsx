@@ -90,6 +90,7 @@ import {
   clearCompletedEditor,
   githubPrReviewRefreshSafety,
   isCurrentReviewOperation,
+  prReviewDraftHeadIsStale,
   refreshOrientationTargetSettled,
   selectionAnchorMatchesPatch,
 } from './review-ui-helpers';
@@ -98,6 +99,7 @@ import {
   createImperativeReviewPathJump,
   createPrReviewNavigationData,
   moveReviewCursorFromPath,
+  nextDraftCommentTarget,
   resolveHunkTraversal,
   reviewNavigationAnnouncement,
   reviewNavigationKindLabel,
@@ -445,12 +447,15 @@ export function GitHubPrReview({
     () => new Set([...staleCommentIds, ...submitFailedCommentIds]),
     [staleCommentIds, submitFailedCommentIds],
   );
-  const cleanCommentIds = useMemo(
+  const cleanDraftComments = useMemo(
     () =>
-      draft?.comments
-        .filter((comment) => !blockedCommentIds.has(comment.id))
-        .map((comment) => comment.id) ?? [],
+      draft?.comments.filter((comment) => !blockedCommentIds.has(comment.id)) ??
+      [],
     [blockedCommentIds, draft],
+  );
+  const cleanCommentIds = useMemo(
+    () => cleanDraftComments.map((comment) => comment.id),
+    [cleanDraftComments],
   );
   const staleDraftComments = useMemo(
     () =>
@@ -1717,17 +1722,31 @@ export function GitHubPrReview({
       failOperation(operationToken, error);
     }
   };
-  const focusNextPendingComment = () => {
-    const comments =
-      draft?.comments.filter((comment) => !blockedCommentIds.has(comment.id)) ??
-      [];
-    if (comments.length === 0) return;
-    const currentIndex = comments.findIndex(
-      (comment) => comment.path === activePath,
+  const showDraftComment = (comment: GitHubPrReviewDraftComment) => {
+    const targets = reviewCursorTargets(navigationData.model, 'local-draft');
+    const target = targets.find((item) => item.id === comment.id);
+    if (!target) {
+      setStatusMessage(
+        `Draft comment on ${comment.path} L${comment.line} is unavailable on this revision.`,
+      );
+      return;
+    }
+    setNavigationKind('local-draft');
+    activateNavigationTarget(target, targets);
+    setStatusMessage(
+      `Showing draft comment on ${comment.path} L${comment.line}.`,
     );
-    const next = comments[(currentIndex + 1) % comments.length] ?? comments[0];
-    jumpToReviewPath(next.path);
-    setStatusMessage(`Showing draft comment on ${next.path} L${next.line}.`);
+  };
+  const focusNextPendingComment = () => {
+    const targets = reviewCursorTargets(navigationData.model, 'local-draft');
+    const next = nextDraftCommentTarget(
+      targets,
+      new Set(cleanCommentIds),
+      selectedContext.selectedAnnotationId,
+    );
+    if (!next) return;
+    const comment = cleanDraftComments.find((item) => item.id === next.id);
+    if (comment) showDraftComment(comment);
   };
   const openPopout = () => {
     const url = new URL('/review', window.location.origin);
@@ -1748,6 +1767,7 @@ export function GitHubPrReview({
     activePath,
     cleanCommentCount: cleanCommentIds.length,
     draft,
+    draftComments: cleanDraftComments,
     files,
     isDeleting: mutations.deleteComment.isPending,
     isDismissingFinding: (findingId: string) =>
@@ -1763,12 +1783,16 @@ export function GitHubPrReview({
     neonFindings,
     onChooseLine: beginAnchorFinding,
     onDelete: deleteDraftComment,
+    onDraftChanged: () => {
+      void draftQuery.refetch();
+    },
     onDismissFinding: dismissNeonFinding,
     onPromoteFinding: promoteNeonFinding,
     promoteLabel: 'Add to local draft',
     promotionDisabledReason: promotionUnavailableReason,
     onReanchor: (comment: GitHubPrReviewDraftComment) =>
       beginReanchorComment(comment.id, comment.path),
+    onSelectDraftComment: showDraftComment,
     onSelectFinding: selectNeonFinding,
     review: reviewRecord,
     reviewThreads,
@@ -1959,7 +1983,7 @@ export function GitHubPrReview({
           label={`Review draft unavailable: ${queryErrorMessage(draftQuery.error)}`}
         />
       ) : null}
-      {draft && draft.headSha !== currentHeadSha ? (
+      {prReviewDraftHeadIsStale(draft?.headSha, currentHeadSha) ? (
         <div className="pr-review-stale-banner">
           <span>
             PR updated since your draft. {staleCommentIds.size} comment

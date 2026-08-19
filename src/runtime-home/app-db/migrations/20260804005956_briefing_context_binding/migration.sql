@@ -1,0 +1,1 @@
+ALTER TABLE `briefing_runs` ADD `context_binding_json` text;

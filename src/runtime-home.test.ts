@@ -13,6 +13,8 @@ import { initializeAppDatabase } from './runtime-home/app-db/index.ts';
 import {
   ConfigValidationError,
   ensureRuntimeHome,
+  openAiCompatibleBaseUrlIssue,
+  openAiCompatibleProviderIdIssue,
   parseAppConfig,
   parseDashboardConfig,
   parseRepoRegistry,
@@ -20,6 +22,7 @@ import {
   readRuntimeJson,
   resolveRuntimeHome,
   runtimePaths,
+  trustedOriginIssue,
 } from './runtime-home';
 
 const tempRoots: string[] = [];
@@ -33,6 +36,65 @@ afterEach(async () => {
 });
 
 describe('runtime home', () => {
+  it('shares compatible endpoint validation with onboarding', () => {
+    expect(openAiCompatibleProviderIdIssue('openrouter')).toBeUndefined();
+    expect(openAiCompatibleProviderIdIssue('openai')).toContain('reserved');
+    expect(openAiCompatibleProviderIdIssue('OpenRouter')).toContain(
+      'lowercase',
+    );
+    expect(
+      openAiCompatibleBaseUrlIssue('https://openrouter.ai/api/v1'),
+    ).toBeUndefined();
+    expect(
+      openAiCompatibleBaseUrlIssue('http://localhost:11434/v1'),
+    ).toBeUndefined();
+    expect(openAiCompatibleBaseUrlIssue('http://example.com/v1')).toContain(
+      'HTTPS',
+    );
+    expect(
+      openAiCompatibleBaseUrlIssue('https://user:secret@example.com/v1'),
+    ).toContain('without credentials');
+  });
+
+  it('validates and normalizes exact trusted dashboard origins', () => {
+    expect(trustedOriginIssue('https://neondeck.exe.xyz')).toBeUndefined();
+    expect(trustedOriginIssue('http://localhost:8000')).toBeUndefined();
+    expect(trustedOriginIssue('http://neondeck.exe.xyz')).toContain('HTTPS');
+    expect(trustedOriginIssue('https://*.exe.xyz')).toContain('exact HTTPS');
+    expect(trustedOriginIssue('https://neondeck.exe.xyz/dashboard')).toContain(
+      'without credentials, path, query, or fragment',
+    );
+
+    expect(
+      parseAppConfig(
+        {
+          version: 1,
+          server: {
+            trustedOrigins: ['https://neondeck.exe.xyz/'],
+          },
+        },
+        'config.json',
+      ).server?.trustedOrigins,
+    ).toEqual(['https://neondeck.exe.xyz']);
+  });
+
+  it('rejects duplicate trusted dashboard origins after normalization', () => {
+    expect(() =>
+      parseAppConfig(
+        {
+          version: 1,
+          server: {
+            trustedOrigins: [
+              'https://neondeck.exe.xyz',
+              'https://neondeck.exe.xyz/',
+            ],
+          },
+        },
+        'config.json',
+      ),
+    ).toThrow(ConfigValidationError);
+  });
+
   it('resolves NEONDECK_HOME before XDG and HOME defaults', () => {
     expect(
       resolveRuntimeHome({
@@ -330,12 +392,17 @@ describe('runtime home', () => {
           models: {
             default: 'kilocode/kilo-auto/balanced',
             displayAssistant: 'kilocode/kilo/main',
+            prReview: 'kilocode/kilo-auto/frontier',
+            prReviewThinkingLevel: 'low',
+            prReviewTimeoutMs: 300_000,
             utility: 'kilocode/kilo/utility',
             utilityThinkingLevel: 'low',
             selfImprovement: 'kilocode/kilo/reflect',
             selfImprovementThinkingLevel: 'minimal',
             subagents: {
               default: 'kilocode/kilo/subagent',
+              explore: 'openai/gpt-5.6-terra',
+              exploreThinkingLevel: 'high',
               repoResearcher: 'kilocode/kilo/repo',
               ciInvestigator: 'kilocode/kilo/ci',
               releaseReviewer: 'kilocode/kilo/release',
@@ -352,8 +419,12 @@ describe('runtime home', () => {
     ).resolves.toMatchObject({
       models: {
         displayAssistant: 'kilocode/kilo/main',
+        prReview: 'kilocode/kilo-auto/frontier',
+        prReviewThinkingLevel: 'low',
+        prReviewTimeoutMs: 300_000,
         utility: 'kilocode/kilo/utility',
         subagents: {
+          explore: 'openai/gpt-5.6-terra',
           repoResearcher: 'kilocode/kilo/repo',
           ciInvestigator: 'kilocode/kilo/ci',
           releaseReviewer: 'kilocode/kilo/release',
@@ -363,18 +434,26 @@ describe('runtime home', () => {
     expect(readAgentModelSelectionSync(paths)).toEqual({
       displayAssistant: 'kilocode/kilo/main',
       displayAssistantThinkingLevel: 'medium',
+      prReview: 'kilocode/kilo-auto/frontier',
+      prReviewConfigured: true,
+      prReviewThinkingLevel: 'low',
+      prReviewTimeoutMs: 300_000,
       utility: 'kilocode/kilo/utility',
       utilityConfigured: true,
       utilityThinkingLevel: 'low',
       selfImprovement: 'kilocode/kilo/reflect',
       selfImprovementConfigured: true,
       selfImprovementThinkingLevel: 'minimal',
+      exploreConfigured: true,
+      exploreThinkingConfigured: true,
       subagents: {
+        explore: 'openai/gpt-5.6-terra',
         repoResearcher: 'kilocode/kilo/repo',
         ciInvestigator: 'kilocode/kilo/ci',
         releaseReviewer: 'kilocode/kilo/release',
       },
       subagentThinkingLevels: {
+        explore: 'high',
         repoResearcher: 'medium',
         ciInvestigator: 'medium',
         releaseReviewer: 'medium',
@@ -400,13 +479,65 @@ describe('runtime home', () => {
 
     expect(readAgentModelSelectionSync(paths)).toMatchObject({
       displayAssistant: 'openai/gpt-5-mini',
+      prReview: 'openai/gpt-5-mini',
+      prReviewConfigured: false,
+      prReviewThinkingLevel: 'medium',
+      prReviewTimeoutMs: 30 * 60 * 1_000,
       utility: 'openai/gpt-5-mini',
       utilityConfigured: false,
       utilityThinkingLevel: 'low',
       selfImprovement: 'openai/gpt-5-mini',
       selfImprovementConfigured: false,
       selfImprovementThinkingLevel: 'low',
+      exploreConfigured: false,
+      exploreThinkingConfigured: false,
+      subagents: {
+        explore: 'openai/gpt-5-mini',
+      },
+      subagentThinkingLevels: {
+        explore: 'medium',
+      },
     });
+  });
+
+  it('defaults Explore reasoning to medium independently of the display assistant', () => {
+    expect(
+      resolveAgentModelSelection(
+        {
+          models: {
+            displayAssistant: 'openai/gpt-5.5',
+            displayAssistantThinkingLevel: 'high',
+          },
+        },
+        {},
+      ),
+    ).toMatchObject({
+      displayAssistantThinkingLevel: 'high',
+      exploreThinkingConfigured: false,
+      subagents: { explore: 'openai/gpt-5.5' },
+      subagentThinkingLevels: { explore: 'medium' },
+    });
+  });
+
+  it('accepts the thirty-minute PR review ceiling', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'neondeck-home-'));
+    tempRoots.push(root);
+    const paths = runtimePaths(root);
+
+    await ensureRuntimeHome(paths);
+    await writeFile(
+      paths.config,
+      JSON.stringify({
+        version: 1,
+        models: {
+          prReviewTimeoutMs: 30 * 60 * 1_000,
+        },
+      }),
+    );
+
+    expect(readAgentModelSelectionSync(paths).prReviewTimeoutMs).toBe(
+      30 * 60 * 1_000,
+    );
   });
 
   it('falls back self-improvement model through utility and env settings', () => {

@@ -44,10 +44,17 @@ import {
   validateSkillPatch,
 } from './support';
 
+const appliedSkillPatchMessage =
+  'Applied skill patch. Start a new Neon session for changed guidance to enter prompt context.';
+
 export async function proposeSkillPatch(
   input: v.InferInput<typeof skillPatchProposeInputSchema>,
   paths = runtimePaths(),
-  options: { source?: SkillPatchMutationSource } = {},
+  options: {
+    source?: SkillPatchMutationSource;
+    candidateId?: string;
+    expectedBeforeHash?: string;
+  } = {},
 ) {
   await ensureRuntimeHome(paths);
   const parsed = v.safeParse(skillPatchProposeInputSchema, input);
@@ -57,10 +64,41 @@ export async function proposeSkillPatch(
   const policy = await skillPatchPolicyResult(paths, options.source ?? 'user');
   if (!policy.ok) return { ...policy.result, action: 'skill_patch_propose' };
 
+  if (options.candidateId) {
+    const database = openDb(paths.neondeckDatabase, { readOnly: true });
+    try {
+      const candidate = readSkillPatchCandidateById(
+        database,
+        options.candidateId,
+      );
+      if (candidate) {
+        return {
+          ok: true,
+          action: 'skill_patch_propose',
+          changed: false,
+          candidate,
+          message: 'Skill patch candidate was already proposed.',
+        };
+      }
+    } finally {
+      database.close();
+    }
+  }
+
   const target = await resolvePatchableSkill(parsed.output.skillId, paths);
   if (!target.ok) return target.result;
 
   const beforeContent = await readFile(target.skill.path, 'utf8');
+  if (
+    options.expectedBeforeHash &&
+    sha256(beforeContent) !== options.expectedBeforeHash
+  ) {
+    return failedSkillPatch(
+      'skill_patch_propose',
+      'Skill content changed after the learning review was prepared. Prepare a fresh review before proposing a patch.',
+      ['stale-skill-content'],
+    );
+  }
   const afterContent = applyPatchOperation(
     beforeContent,
     parsed.output.operation,
@@ -97,7 +135,7 @@ export async function proposeSkillPatch(
     appliesAfter: 'new-session',
   });
   const candidate: SkillPatchCandidateRecord = {
-    id: randomUUID(),
+    id: options.candidateId ?? randomUUID(),
     target: 'skill',
     status: 'proposed',
     action: 'patch',
@@ -111,12 +149,14 @@ export async function proposeSkillPatch(
 
   const database = openDb(paths.neondeckDatabase);
   try {
-    insertSkillPatchCandidate(database, candidate);
-    recordLearningEvent(database, {
-      type: 'skill_patch_proposed',
-      source: options.source ?? 'user',
-      data: { candidateId: candidate.id, skillId: candidate.skillId },
-      createdAt: now,
+    withImmediateTransaction(database, () => {
+      insertSkillPatchCandidate(database, candidate);
+      recordLearningEvent(database, {
+        type: 'skill_patch_proposed',
+        source: options.source ?? 'user',
+        data: { candidateId: candidate.id, skillId: candidate.skillId },
+        createdAt: now,
+      });
     });
   } finally {
     database.close();
@@ -185,7 +225,7 @@ export async function listSkillPatchCandidates(
 export async function applySkillPatchCandidate(
   input: v.InferInput<typeof skillPatchDecideInputSchema>,
   paths = runtimePaths(),
-  options: { source?: SkillPatchMutationSource } = {},
+  options: { source?: SkillPatchMutationSource; idempotent?: boolean } = {},
 ) {
   await ensureRuntimeHome(paths);
   const parsed = v.safeParse(skillPatchDecideInputSchema, input);
@@ -204,6 +244,31 @@ export async function applySkillPatchCandidate(
         ['id'],
       );
     }
+    const journalKey = `skill-patch-apply-intent:${candidate.id}`;
+    const journalRow = database
+      .prepare('SELECT value FROM app_metadata WHERE key = ?;')
+      .get(journalKey) as { value?: unknown } | undefined;
+    const journal =
+      typeof journalRow?.value === 'string'
+        ? (JSON.parse(journalRow.value) as {
+            source: SkillPatchMutationSource;
+            reason: string | null;
+          })
+        : null;
+    if (candidate.status === 'applied' && options.idempotent) {
+      database
+        .prepare('DELETE FROM app_metadata WHERE key = ?;')
+        .run(journalKey);
+      return {
+        ok: true,
+        action: 'skill_patch_apply',
+        changed: true,
+        candidateId: candidate.id,
+        skillId: candidate.skillId,
+        appliesAfter: 'new-session',
+        message: appliedSkillPatchMessage,
+      };
+    }
     if (candidate.status !== 'proposed') {
       return failedSkillPatch(
         'skill_patch_apply',
@@ -213,10 +278,13 @@ export async function applySkillPatchCandidate(
     }
 
     const patch = parsePatchPayload(candidate.patch);
-    if ((options.source ?? 'user') !== 'user') {
+    const effectiveSource = journal?.source ?? options.source ?? 'user';
+    const effectiveReason =
+      journal?.reason ?? parsed.output.reason ?? candidate.reason;
+    if (!journal && effectiveSource !== 'user') {
       const policy = await skillPatchApplyPolicyResult(
         paths,
-        options.source ?? 'user',
+        effectiveSource,
         patch,
       );
       if (!policy.ok) return { ...policy.result, action: 'skill_patch_apply' };
@@ -232,22 +300,83 @@ export async function applySkillPatchCandidate(
     }
 
     const currentContent = await readFile(target.skill.path, 'utf8');
-    if (sha256(currentContent) !== patch.beforeHash) {
+    const currentHash = sha256(currentContent);
+    if (
+      currentHash !== patch.beforeHash &&
+      !(journal && currentHash === patch.afterHash)
+    ) {
       return failedSkillPatch(
         'skill_patch_apply',
         'Skill content changed after this patch was proposed. Reject this candidate and create a fresh patch.',
         ['stale-skill-content'],
       );
     }
-    const validation = validateSkillPatch(currentContent, patch.afterContent);
+    const validation = validateSkillPatch(
+      patch.beforeContent,
+      patch.afterContent,
+    );
     if (!validation.ok) {
       return failedSkillPatch('skill_patch_apply', validation.message, [
         'valid-skill-patch',
       ]);
     }
 
-    let fileChanged = false;
+    if (!journal) {
+      let claimed = false;
+      try {
+        claimed = withImmediateTransaction(database, () => {
+          const currentCandidate = readSkillPatchCandidateById(
+            database,
+            candidate.id,
+          );
+          if (currentCandidate?.status !== 'proposed') {
+            throw new Error('Skill patch candidate was already decided.');
+          }
+          const latestContent = readFileSync(target.skill.path, 'utf8');
+          if (sha256(latestContent) !== patch.beforeHash) {
+            throw new Error(
+              'Skill content changed while this patch was being journaled.',
+            );
+          }
+          return (
+            database
+              .prepare(
+                `INSERT INTO app_metadata (key, value, updated_at)
+                 VALUES (?, ?, ?)
+                 ON CONFLICT(key) DO NOTHING;`,
+              )
+              .run(
+                journalKey,
+                JSON.stringify({
+                  source: effectiveSource,
+                  reason: effectiveReason,
+                }),
+                now,
+              ).changes === 1
+          );
+        });
+      } catch (error) {
+        return failedSkillPatch(
+          'skill_patch_apply',
+          `Skill patch was not applied. ${errorMessage(error)}`,
+          ['skill-patch-state'],
+        );
+      }
+      if (!claimed) {
+        return failedSkillPatch(
+          'skill_patch_apply',
+          'Skill patch application is already in progress.',
+          ['skill-patch-state'],
+        );
+      }
+    }
+
+    let fileChanged = currentHash === patch.afterHash;
     try {
+      if (currentHash === patch.beforeHash) {
+        writeFileAtomicallySync(target.skill.path, patch.afterContent);
+        fileChanged = true;
+      }
       withImmediateTransaction(database, () => {
         const currentCandidate = readSkillPatchCandidateById(
           database,
@@ -257,13 +386,11 @@ export async function applySkillPatchCandidate(
           throw new Error('Skill patch candidate was already decided.');
         }
         const latestContent = readFileSync(target.skill.path, 'utf8');
-        if (sha256(latestContent) !== patch.beforeHash) {
+        if (sha256(latestContent) !== patch.afterHash) {
           throw new Error(
-            'Skill content changed while this patch was being applied.',
+            'Skill content changed before this patch could be audited.',
           );
         }
-        writeFileAtomicallySync(target.skill.path, patch.afterContent);
-        fileChanged = true;
         const update = database
           .prepare(
             `
@@ -278,13 +405,13 @@ export async function applySkillPatchCandidate(
         }
         recordLearningEvent(database, {
           type: 'skill_patch_applied',
-          source: options.source ?? 'user',
+          source: effectiveSource,
           data: {
             candidateId: candidate.id,
             skillId: candidate.skillId,
             beforeHash: patch.beforeHash,
             afterHash: patch.afterHash,
-            reason: parsed.output.reason ?? candidate.reason,
+            reason: effectiveReason,
           },
           createdAt: now,
         });
@@ -303,8 +430,30 @@ export async function applySkillPatchCandidate(
           },
           changedAt: now,
         });
+        database
+          .prepare('DELETE FROM app_metadata WHERE key = ?;')
+          .run(journalKey);
       });
     } catch (error) {
+      const finalized = readSkillPatchCandidateById(database, candidate.id);
+      if (finalized?.status === 'applied') {
+        if (options.idempotent) {
+          return {
+            ok: true,
+            action: 'skill_patch_apply',
+            changed: true,
+            candidateId: candidate.id,
+            skillId: candidate.skillId,
+            appliesAfter: 'new-session',
+            message: appliedSkillPatchMessage,
+          };
+        }
+        return failedSkillPatch(
+          'skill_patch_apply',
+          'Skill patch candidate was already decided.',
+          ['id'],
+        );
+      }
       let compensated = true;
       if (fileChanged) {
         compensated = await restoreFileIfHashMatches(
@@ -341,8 +490,7 @@ export async function applySkillPatchCandidate(
       candidateId: candidate.id,
       skillId: candidate.skillId,
       appliesAfter: 'new-session',
-      message:
-        'Applied skill patch. Start a new Neon session for changed guidance to enter prompt context.',
+      message: appliedSkillPatchMessage,
     };
   } finally {
     database.close();

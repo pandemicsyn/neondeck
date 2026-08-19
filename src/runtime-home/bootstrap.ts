@@ -1,7 +1,6 @@
-import { existsSync, mkdirSync } from 'node:fs';
+import { existsSync, mkdirSync, rmSync } from 'node:fs';
 import { mkdir } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
 
 import {
   initializeAppDatabase,
@@ -29,30 +28,35 @@ import {
   defaultSoulPath,
   runtimePaths,
 } from './paths.ts';
+import { resolveShippedAsset } from './assets.ts';
 
 const seededRuntimeSkills = [
   {
     id: 'neon-pr-review',
-    source: fileURLToPath(
-      new URL('../skills/neon-pr-review/SKILL.md', import.meta.url),
+    source: resolveShippedAsset(
+      'src/skills/neon-pr-review/SKILL.md',
+      'skills/neon-pr-review/SKILL.md',
     ),
   },
   {
     id: 'neon-ci-fix',
-    source: fileURLToPath(
-      new URL('../skills/neon-ci-fix/SKILL.md', import.meta.url),
+    source: resolveShippedAsset(
+      'src/skills/neon-ci-fix/SKILL.md',
+      'skills/neon-ci-fix/SKILL.md',
     ),
   },
   {
     id: 'neon-docs-fix',
-    source: fileURLToPath(
-      new URL('../skills/neon-docs-fix/SKILL.md', import.meta.url),
+    source: resolveShippedAsset(
+      'src/skills/neon-docs-fix/SKILL.md',
+      'skills/neon-docs-fix/SKILL.md',
     ),
   },
   {
     id: 'neon-issue-triage',
-    source: fileURLToPath(
-      new URL('../skills/neon-issue-triage/SKILL.md', import.meta.url),
+    source: resolveShippedAsset(
+      'src/skills/neon-issue-triage/SKILL.md',
+      'skills/neon-issue-triage/SKILL.md',
     ),
   },
 ];
@@ -94,6 +98,7 @@ async function initializeRuntimeHome(paths = runtimePaths()) {
   await copyIfMissing(defaultDashboardSchemaPath, paths.dashboardSchema);
   await copyIfMissing(defaultSoulPath, paths.soul);
   await seedRuntimeSkills(paths);
+  await ensureOnboardingPendingMarker(paths);
   await ensureRuntimeDatabases(paths);
 }
 
@@ -113,6 +118,7 @@ export function ensureRuntimeHomeSync(paths = runtimePaths()) {
   copyIfMissingSync(defaultDashboardSchemaPath, paths.dashboardSchema);
   copyIfMissingSync(defaultSoulPath, paths.soul);
   seedRuntimeSkillsSync(paths);
+  ensureOnboardingPendingMarkerSync(paths);
   ensureRuntimeDatabasesSync(paths);
 }
 
@@ -146,8 +152,32 @@ function ensureRuntimeDatabasesSync(paths = runtimePaths()) {
 }
 
 function initializeRuntimeDatabases(paths = runtimePaths()) {
-  initializeAppDatabase(paths.neondeckDatabase);
+  const onboardingPendingMarker = onboardingPendingMarkerPath(paths);
+  initializeAppDatabase(paths.neondeckDatabase, {
+    onboardingPending: existsSync(onboardingPendingMarker),
+  });
+  rmSync(onboardingPendingMarker, { force: true });
   initializeFlueDatabase(paths.flueDatabase);
+}
+
+async function ensureOnboardingPendingMarker(paths = runtimePaths()) {
+  if (existsSync(paths.neondeckDatabase)) return;
+  await writeFileIfMissing(
+    onboardingPendingMarkerPath(paths),
+    'Neondeck onboarding is pending. This file is managed automatically.\n',
+  );
+}
+
+function ensureOnboardingPendingMarkerSync(paths = runtimePaths()) {
+  if (existsSync(paths.neondeckDatabase)) return;
+  writeFileIfMissingSync(
+    onboardingPendingMarkerPath(paths),
+    'Neondeck onboarding is pending. This file is managed automatically.\n',
+  );
+}
+
+function onboardingPendingMarkerPath(paths = runtimePaths()) {
+  return join(paths.home, '.onboarding-pending');
 }
 
 async function seedRuntimeSkills(paths = runtimePaths()) {

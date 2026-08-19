@@ -612,6 +612,31 @@ describe('Autopilot readiness facts', () => {
     });
   });
 
+  it('treats configured checks as optional owner hints rather than autonomous delivery readiness', async () => {
+    const { paths } = await readinessFixture();
+    await writeFile(
+      paths.config,
+      JSON.stringify({ version: 1, guardrails: { requiredChecks: [] } }),
+    );
+
+    const readiness = await readAutopilotReadiness(
+      {
+        repoId: 'sample',
+        prNumber: 7,
+        mode: 'autofix-push-when-safe',
+      },
+      paths,
+      { remoteChecks: false, env: {} },
+    );
+
+    expect(readiness.facts['check-commands']).toMatchObject({
+      status: 'not-required',
+      required: false,
+      message: expect.stringContaining('proportionate repository-native'),
+    });
+    expect(readiness.blocking).not.toContain('check-commands');
+  });
+
   it('does not claim API permission readiness when branch facts are unknown', async () => {
     const { paths } = await readinessFixture();
     const readiness = await readAutopilotReadiness(
@@ -648,6 +673,43 @@ describe('Autopilot readiness facts', () => {
 
     expect(readiness.facts.api).toMatchObject({ status: 'blocked' });
     expect(readiness.facts.api.message).toContain('permission facts');
+  });
+
+  it('blocks Autopilot readiness when GitHub Checks are unavailable', async () => {
+    const { paths } = await readinessFixture();
+    const readiness = await readAutopilotReadiness(
+      { repoId: 'sample', prNumber: 7, mode: 'prepare-only' },
+      paths,
+      {
+        env: { GITHUB_TOKEN: 'api-token' },
+        fetchGitHub: async (_token, url) =>
+          new Response(
+            JSON.stringify(
+              url.endsWith('/user')
+                ? { login: 'automation' }
+                : { private: false, permissions: { push: true } },
+            ),
+          ),
+        fetchEventState: async () =>
+          eventState({
+            checkRunsUnavailableReason:
+              'GitHub request failed with 403: Resource not accessible by personal access token',
+          }),
+        probeExactHead: async () => ({
+          baseRemote: 'origin',
+          fetchSource: 'origin',
+          fetchRef: 'refs/pull/7/head',
+          temporaryRef: 'refs/neondeck/autopilot/pr-7',
+          fork: false,
+          resolvedSha: 'a'.repeat(40),
+        }),
+        runCommand: async () => ({ stdout: '', stderr: '' }),
+      },
+    );
+
+    expect(readiness.ready).toBe(false);
+    expect(readiness.facts.api).toMatchObject({ status: 'blocked' });
+    expect(readiness.facts.api.message).toContain('checkRuns');
   });
 
   it('blocks mismatched Git/API actors and warns for an unbound SSH actor', async () => {

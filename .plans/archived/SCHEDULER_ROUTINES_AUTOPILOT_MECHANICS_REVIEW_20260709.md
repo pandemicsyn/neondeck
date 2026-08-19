@@ -1,8 +1,8 @@
 # Scheduler, Routines, and Autopilot Mechanics Review
 
 Status: superseded and archived. Scheduler/admission findings that remain relevant
-are carried forward in `.plans/AUTOPILOT_IMPLEMENTATION_PLAN.md`; the current
-evidence review is `.plans/AUTOPILOT_END_TO_END_REVIEW.html`.
+are carried forward in `.plans/archived/AUTOPILOT_IMPLEMENTATION_PLAN.md`; the current
+evidence review is `.plans/archived/AUTOPILOT_END_TO_END_REVIEW.html`.
 
 Date: 2026-07-09
 Baseline: `origin/main` at `7ec91b96` (`Polish repository README`)

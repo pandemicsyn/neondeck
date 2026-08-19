@@ -1,4 +1,5 @@
 import { QueryClient } from '@tanstack/react-query';
+import { ApiError } from '../api/http';
 
 const chatSessionActivityRoot = ['chat-session-activity'] as const;
 
@@ -40,6 +41,7 @@ export const queryKeys = {
     ] as const,
   neonCommands: ['neon-commands'] as const,
   autopilotState: ['autopilot-state'] as const,
+  autopilotPrompts: ['autopilot-prompts'] as const,
   autopilotReadiness: (
     repoId: string | undefined,
     prNumber: number | undefined,
@@ -53,6 +55,7 @@ export const queryKeys = {
     ] as const,
   prWatches: ['pr-watches'] as const,
   prReviews: ['pr-reviews'] as const,
+  prReviewsLocal: ['pr-reviews-local'] as const,
   prReviewTarget: (repo: string, prNumber: number) =>
     ['pr-reviews', repo, prNumber] as const,
   repoHealth: ['repo-health'] as const,
@@ -65,11 +68,37 @@ export const queryKeys = {
   scheduledTasks: ['scheduled-tasks'] as const,
   subagents: ['subagents'] as const,
   notifications: ['notifications'] as const,
-  workflowObservability: ['workflow-observability'] as const,
-  workflowSummaries: ['workflow-summaries'] as const,
+  activityObservability: ['activity-observability'] as const,
+  activitySubmission: (submissionId: string) =>
+    ['activity-submission', submissionId] as const,
+  operationSummaries: ['operation-summaries'] as const,
   worktrees: ['worktrees'] as const,
 };
 
 export function queryErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : String(error);
+}
+
+export function actionErrorMessage(error: unknown) {
+  const message = queryErrorMessage(error);
+  if (!(error instanceof ApiError) || !isRecord(error.data)) return message;
+
+  const errors = stringArray(error.data.errors);
+  const requires = stringArray(error.data.requires);
+  const details = [
+    ...errors,
+    ...(requires.length > 0 ? [`Requires: ${requires.join(', ')}`] : []),
+  ].filter((detail) => detail !== message);
+
+  return details.length > 0 ? `${message} ${details.join(' ')}` : message;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === 'object';
+}
+
+function stringArray(value: unknown) {
+  return Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === 'string')
+    : [];
 }

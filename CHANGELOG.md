@@ -1,5 +1,228 @@
 # Changelog
 
+## 1.0.0-beta.33
+
+### Patch Changes
+
+- [#291](https://github.com/pandemicsyn/neondeck/pull/291) [`9218208`](https://github.com/pandemicsyn/neondeck/commit/9218208cbe619512763f2efdf932c6a91f4b3901) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Add production API, agent activity, dashboard connection, and runtime lifecycle logs, and show the underlying GitHub diagnostics when starting a pull request review fails.
+
+- [#285](https://github.com/pandemicsyn/neondeck/pull/285) [`291fdca`](https://github.com/pandemicsyn/neondeck/commit/291fdca1c37aa65fa3d3f94b0bafb97bf6a1d2a4) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Harden pull request review previews against nested HTML tags.
+
+## 1.0.0-beta.32
+
+### Patch Changes
+
+- [#278](https://github.com/pandemicsyn/neondeck/pull/278) [`7bfed49`](https://github.com/pandemicsyn/neondeck/commit/7bfed49aad5905ac7b9da34994b380bec5d863dd) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Remove the unsupported Raycast extension and its development commands.
+
+## 1.0.0-beta.31
+
+### Minor Changes
+
+- [#263](https://github.com/pandemicsyn/neondeck/pull/263) [`bcd583c`](https://github.com/pandemicsyn/neondeck/commit/bcd583cc59948013ae8e93644d1e67bb4507b963) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Separate PR reviewer activity metrics from delegated Explore work and show concurrent subagent progress.
+
+- [#261](https://github.com/pandemicsyn/neondeck/pull/261) [`36efc8e`](https://github.com/pandemicsyn/neondeck/commit/36efc8ea00e39b3a55858c637e4f56e429fde4d7) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Add a configurable shared Explore subagent for chat, PR review, and Autopilot repository investigation.
+
+- [#258](https://github.com/pandemicsyn/neondeck/pull/258) [`4081a40`](https://github.com/pandemicsyn/neondeck/commit/4081a40964155782a73b67dea95d8b9c3c4c7091) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Let the revision-bound PR reviewer chat create, edit, re-anchor, and delete local draft comments while keeping GitHub submission human-owned.
+
+- [#266](https://github.com/pandemicsyn/neondeck/pull/266) [`a69bb1b`](https://github.com/pandemicsyn/neondeck/commit/a69bb1b631a7321b407d4cd004326623f4da1ad9) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Refine the PR review deck: named step-bar navigation with per-slide badges, a single consolidated header in the artifacts overlay, change-map churn columns, severity-railed findings, and keyboard jumps that no longer get swallowed by slide scroll regions.
+
+- [#260](https://github.com/pandemicsyn/neondeck/pull/260) [`242b172`](https://github.com/pandemicsyn/neondeck/commit/242b172c1762e1a21bc2f4b1df04fce9d5e2f9c6) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Let PR reviewers discover exact-revision changes with bounded Git-native tools, compact their initial context, and expose useful exploration progress in Activity.
+
+### Patch Changes
+
+- [#262](https://github.com/pandemicsyn/neondeck/pull/262) [`7ac477d`](https://github.com/pandemicsyn/neondeck/commit/7ac477d4c005daadc4faee3974ac5db8a0a11ab9) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Let chat, PR review, and Autopilot fan independent Explore investigations out concurrently while keeping dependent work and mutations sequential.
+
+## 1.0.0-beta.30
+
+### Minor Changes
+
+- [#247](https://github.com/pandemicsyn/neondeck/pull/247) [`d9e8a70`](https://github.com/pandemicsyn/neondeck/commit/d9e8a7052842d80fe833976a0420259958df5005) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Migrate Neondeck to Flue 2 agents, tools, conversation clients, submissions, and runtime persistence while replacing removed Flue workflows and actions with durable app-owned operations.
+
+- [#255](https://github.com/pandemicsyn/neondeck/pull/255) [`eab8c85`](https://github.com/pandemicsyn/neondeck/commit/eab8c855e7f7ae355cbd5ea04504c239cab03d9e) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Add server-level MCP approval modes, exact per-tool overrides, and once, chat, or always approval decisions, with read-only annotated tools allowed by default.
+
+### Patch Changes
+
+- [#247](https://github.com/pandemicsyn/neondeck/pull/247) [`d9e8a70`](https://github.com/pandemicsyn/neondeck/commit/d9e8a7052842d80fe833976a0420259958df5005) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Prevent learning reviews from recursively invoking their submission tool, and reject skill patches prepared against stale guidance.
+
+- [`9e4069a`](https://github.com/pandemicsyn/neondeck/commit/9e4069a39439105a65db5774b45f6722b26e1843) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Bind the Flue development server to the same IPv4 loopback address used by the dashboard proxy, and isolate the web server's Vite dependency cache so the two development servers cannot invalidate each other's optimized modules.
+
+- [#247](https://github.com/pandemicsyn/neondeck/pull/247) [`d9e8a70`](https://github.com/pandemicsyn/neondeck/commit/d9e8a7052842d80fe833976a0420259958df5005) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Prefix Neondeck-generated PR review drafts and conversation comments with `bot:` so their automated origin is visible before submission and on GitHub.
+
+- [#247](https://github.com/pandemicsyn/neondeck/pull/247) [`d9e8a70`](https://github.com/pandemicsyn/neondeck/commit/d9e8a7052842d80fe833976a0420259958df5005) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Run initial PR reviews as one bounded Flue submission with exact-revision tools and a typed durable result, avoiding the nested five-minute model timeout that left reviews unfinished.
+
+- [`9e4069a`](https://github.com/pandemicsyn/neondeck/commit/9e4069a39439105a65db5774b45f6722b26e1843) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Restore visible chat response progress and allow typed agent actions to configure dynamic OAuth on safe HTTP MCP servers without client secrets.
+
+- [`9e4069a`](https://github.com/pandemicsyn/neondeck/commit/9e4069a39439105a65db5774b45f6722b26e1843) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Keep dashboard JSON Schema metadata out of model-facing tool arguments while preserving the canonical schema reference in written dashboard configuration.
+
+## 1.0.0-beta.29
+
+### Minor Changes
+
+- [#240](https://github.com/pandemicsyn/neondeck/pull/240) [`b997e63`](https://github.com/pandemicsyn/neondeck/commit/b997e63de6bf2dc162154b984cf00c7a8e7044b6) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Detect incomplete Git commit identity during `neondeck init`, warn before Autopilot can inherit an OS-generated identity, and offer to configure a fail-closed global identity.
+
+## 1.0.0-beta.28
+
+### Patch Changes
+
+- [#234](https://github.com/pandemicsyn/neondeck/pull/234) [`3a38233`](https://github.com/pandemicsyn/neondeck/commit/3a38233ab101f37573892241fb8f2c5f770750f6) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Keep bounded PR reviews within a configurable five-minute ceiling and prevent initial reviewers from duplicating work through generic child-task delegation.
+
+## 1.0.0-beta.27
+
+### Minor Changes
+
+- [#233](https://github.com/pandemicsyn/neondeck/pull/233) [`db75850`](https://github.com/pandemicsyn/neondeck/commit/db758508cfae8ada63f7b154b969174409f964b4) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Show live, run-scoped workflow event timelines in the workflow inspector.
+
+### Patch Changes
+
+- [#236](https://github.com/pandemicsyn/neondeck/pull/236) [`9009312`](https://github.com/pandemicsyn/neondeck/commit/900931232520cebc85f8b21d444cc13804e6d8e1) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Fetch only new workflow observations while polling an active run inspector.
+
+## 1.0.0-beta.26
+
+### Minor Changes
+
+- [#231](https://github.com/pandemicsyn/neondeck/pull/231) [`5060291`](https://github.com/pandemicsyn/neondeck/commit/5060291582f7faae31aa4a9e0102c4fc4a07b8f7) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Add inline edit and confirmed archive controls to durable memory cards in the dashboard.
+
+### Patch Changes
+
+- [#229](https://github.com/pandemicsyn/neondeck/pull/229) [`944564a`](https://github.com/pandemicsyn/neondeck/commit/944564a4cf427b5647d642386075bbabef9aa124) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Make watched-PR owner transcripts scroll correctly, expose a revision-bound diff approval action only after a current nonempty diff loads, route prepared-change notifications to Watches, and identify the workflow, agent session, or watched PR behind workflow activity.
+
+- [#230](https://github.com/pandemicsyn/neondeck/pull/230) [`74d49e4`](https://github.com/pandemicsyn/neondeck/commit/74d49e44f3bd77b440b95d00b5263ac47137559f) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Verify submitted PR review comments through their exact GitHub comment records when the review comment list omits line anchors.
+
+- [#227](https://github.com/pandemicsyn/neondeck/pull/227) [`db9b593`](https://github.com/pandemicsyn/neondeck/commit/db9b5930fa2b1f5744953699f772859d640268c5) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Complete ChatGPT subscription authentication through Pi's provider auth contract and cancel the manual browser fallback prompt when the OAuth callback succeeds.
+
+## 1.0.0-beta.25
+
+### Patch Changes
+
+- [#225](https://github.com/pandemicsyn/neondeck/pull/225) [`a0498d4`](https://github.com/pandemicsyn/neondeck/commit/a0498d4e3dfa6f08e25fabfeecc7873427b9c7b3) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Raise the exact-revision PR review workspace limit so large pull requests can be inspected thoroughly.
+
+## 1.0.0-beta.24
+
+### Patch Changes
+
+- [#222](https://github.com/pandemicsyn/neondeck/pull/222) [`10b4efe`](https://github.com/pandemicsyn/neondeck/commit/10b4efecfa3c82b84ebde8dba3c482ace98a3029) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Keep scheduled and manual morning briefings in their persistent conversation when runtime context changes, explicitly acknowledge the in-place context transition instead of failing the briefing, and ignore dashboard-only layout changes when evaluating conversation context.
+
+## 1.0.0-beta.23
+
+### Minor Changes
+
+- [#214](https://github.com/pandemicsyn/neondeck/pull/214) [`3f5a67c`](https://github.com/pandemicsyn/neondeck/commit/3f5a67c0c58ca72a94a064bb51d93e3de761538e) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Allow exact authenticated reverse-proxy origins for the dashboard API and MCP OAuth callbacks, and document nginx and SSH setups for running packaged Neondeck on exe.dev.
+
+### Patch Changes
+
+- [#219](https://github.com/pandemicsyn/neondeck/pull/219) [`0c7cef4`](https://github.com/pandemicsyn/neondeck/commit/0c7cef42ecd8972dfb882b2242c3fba635a93343) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Pin the documentation site's Astro dependency to the compatible release so npm
+  package verification can build the bundled docs successfully.
+
+## 1.0.0-beta.22
+
+### Patch Changes
+
+- [#211](https://github.com/pandemicsyn/neondeck/pull/211) [`9c6ceaa`](https://github.com/pandemicsyn/neondeck/commit/9c6ceaa8bc4fe840ab35e3b2c67462a3f7e7bfa9) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Clarify the setup wizard dashboard preset descriptions so review surfaces and the differences between Cockpit and Classic are explicit.
+
+- [#213](https://github.com/pandemicsyn/neondeck/pull/213) [`6248d14`](https://github.com/pandemicsyn/neondeck/commit/6248d1405ad5ceb420aa824b098a42e760dc5ddf) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Clarify fresh-install launch instructions and identify the foreground production server as Neondeck instead of exposing Flue's generic startup banner.
+
+- [#211](https://github.com/pandemicsyn/neondeck/pull/211) [`9c6ceaa`](https://github.com/pandemicsyn/neondeck/commit/9c6ceaa8bc4fe840ab35e3b2c67462a3f7e7bfa9) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Default new ChatGPT subscription setups to GPT-5.6 Sol and recommend the current GPT-5.6 subscription model family.
+
+## 1.0.0-beta.21
+
+### Patch Changes
+
+- [#206](https://github.com/pandemicsyn/neondeck/pull/206) [`c61ec64`](https://github.com/pandemicsyn/neondeck/commit/c61ec6425b09d8e6c9f976250203e7dfefbfd78b) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Explain the always-scanned local runtime skill path, configured external roots, and expected skill folder layout during setup.
+
+## 1.0.0-beta.20
+
+### Minor Changes
+
+- [#205](https://github.com/pandemicsyn/neondeck/pull/205) [`c67dee6`](https://github.com/pandemicsyn/neondeck/commit/c67dee62f6004ad85bd6cdf790b8f822c6b0e701) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Expand onboarding command preapprovals with Yarn, filesystem utilities, and
+  local process inspection while clarifying that the available commands are
+  safe-ish.
+
+## 1.0.0-beta.19
+
+### Minor Changes
+
+- [#203](https://github.com/pandemicsyn/neondeck/pull/203) [`d6e2cd7`](https://github.com/pandemicsyn/neondeck/commit/d6e2cd7ecb582569df6494bfa4a46b04b9930390) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Add ChatGPT subscription OAuth and validated generic OpenAI-compatible model providers to setup, runtime registration, status, and provider controls.
+
+### Patch Changes
+
+- [`619883a`](https://github.com/pandemicsyn/neondeck/commit/619883a20d200ca646f22a0ef752f3ae3acc524d) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Load seeded draft comments into reviewer conversations even when GitHub repository casing differs between review and draft records.
+
+- [`e42f0ef`](https://github.com/pandemicsyn/neondeck/commit/e42f0ef771637c6237a980637c899dd73b984dbf) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Align draft and published PR review comment actions, and distinguish editable
+  drafts with explicit state labels and violet-tinted surfaces. Avoid briefly
+  showing the stale-draft warning while the current PR head is still loading.
+
+- [#202](https://github.com/pandemicsyn/neondeck/pull/202) [`435d0d0`](https://github.com/pandemicsyn/neondeck/commit/435d0d0dc107e4504dd051d7b204918dc571eca8) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Reconnect continuing Autopilot owners and human PR reviews to bounded learning memory and idempotent handled-PR retrospective evidence.
+
+## 1.0.0-beta.18
+
+### Patch Changes
+
+- [#196](https://github.com/pandemicsyn/neondeck/pull/196) [`1d266ed`](https://github.com/pandemicsyn/neondeck/commit/1d266ed8366ad6261cd49bd09279b50da140f745) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Run the TypeScript setup entrypoint through the project loader and add a
+  repeatable QA check for releases installed from the npm registry.
+
+## 1.0.0-beta.17
+
+### Patch Changes
+
+- [`7e6f2bd`](https://github.com/pandemicsyn/neondeck/commit/7e6f2bd8f5a0e50bb5f361bf5f14ac0c6f0527f5) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Keep PR reviews on the exact read-only repository tools and bound workspace exploration so reviews finish instead of wandering into an empty sandbox.
+
+- [`7e6f2bd`](https://github.com/pandemicsyn/neondeck/commit/7e6f2bd8f5a0e50bb5f361bf5f14ac0c6f0527f5) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Load built-in skills correctly from packaged server bundles and keep the primary chat session current after a successful fresh installation.
+
+- [`7e6f2bd`](https://github.com/pandemicsyn/neondeck/commit/7e6f2bd8f5a0e50bb5f361bf5f14ac0c6f0527f5) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Surface local PR review draft comments in the review sidebar and make draft and attention navigation select and scroll to the exact target.
+
+- [`7e6f2bd`](https://github.com/pandemicsyn/neondeck/commit/7e6f2bd8f5a0e50bb5f361bf5f14ac0c6f0527f5) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Show each pull request in only one review-inbox section after a durable review starts, and keep generated draft comments free of Neondeck attribution.
+
+- [`7e6f2bd`](https://github.com/pandemicsyn/neondeck/commit/7e6f2bd8f5a0e50bb5f361bf5f14ac0c6f0527f5) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Show prior GitHub review activity on prepared reviews and automatically archive settled reviews after their pull request closes or merges.
+
+## 1.0.0-beta.16
+
+### Patch Changes
+
+- [`2d238a7`](https://github.com/pandemicsyn/neondeck/commit/2d238a7c323106e3f009e8a2977327e7058d1980) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Keep newly started reviews visible, surface watched PR approval as a ready state, keep watch cards focused on actionable state, recover review status and recent notifications after dropped dashboard events, cleanly replace live streams and scheduler loops during development reloads, and defer and recover scheduler or Autopilot owner work while the local runtime starts.
+
+- [`2d238a7`](https://github.com/pandemicsyn/neondeck/commit/2d238a7c323106e3f009e8a2977327e7058d1980) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Move the GitHub pull request inbox to a server-managed snapshot with a three-minute refresh floor, retain the last complete queue through partial failures, and update the dashboard through the shared event stream without requiring tab switches.
+
+- [`2d238a7`](https://github.com/pandemicsyn/neondeck/commit/2d238a7c323106e3f009e8a2977327e7058d1980) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Bound Autopilot owner shell commands, preserve cancellation through the local executor, and ignore generated Flue and Drizzle paths that caused redundant development reloads.
+
+- [`2d238a7`](https://github.com/pandemicsyn/neondeck/commit/2d238a7c323106e3f009e8a2977327e7058d1980) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Show the dashboard status-line clock at minute precision without a blinking
+  seconds ticker.
+
+## 1.0.0-beta.15
+
+### Minor Changes
+
+- [`3b5227d`](https://github.com/pandemicsyn/neondeck/commit/3b5227df08cecdee6dad049198cc267eaf74ed6d) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Add dedicated configurable model, reasoning-level, and timeout settings for PR review workflows.
+
+- [`2fe2e03`](https://github.com/pandemicsyn/neondeck/commit/2fe2e030a8b9c7c0051080cfe587c168858fb144) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Give PR reviews exact-revision read-only repository traversal, bounded per-file anchor validation, configurable full prompts for initial and follow-up reviewers, a revision-scoped durable reviewer conversation with connection recovery, and clearer inline GitHub threads.
+
+  Keep packaged React runtime dependencies on one exact patch version so fresh installs boot reliably.
+
+### Patch Changes
+
+- [`2fe2e03`](https://github.com/pandemicsyn/neondeck/commit/2fe2e030a8b9c7c0051080cfe587c168858fb144) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Keep active chat transcripts pinned to streaming messages while preserving manual scrollback and offering a jump-to-latest control for new offscreen activity.
+
+- [`2fe2e03`](https://github.com/pandemicsyn/neondeck/commit/2fe2e030a8b9c7c0051080cfe587c168858fb144) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Prevent dashboard event streams and non-runtime workspace files from blocking or unnecessarily triggering Flue development reloads.
+
+- [`2fe2e03`](https://github.com/pandemicsyn/neondeck/commit/2fe2e030a8b9c7c0051080cfe587c168858fb144) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Resolve configured GitHub full names and URLs to their local repository IDs before Autopilot worktree operations, including legacy watch repair on retry.
+
+- [`2fe2e03`](https://github.com/pandemicsyn/neondeck/commit/2fe2e030a8b9c7c0051080cfe587c168858fb144) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Simplify the chat session header, clarify changed context, and rename cross-chat context actions in user-facing terms.
+
+- [`2fe2e03`](https://github.com/pandemicsyn/neondeck/commit/2fe2e030a8b9c7c0051080cfe587c168858fb144) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Remove duplicate idle watch badges and clarify which Autopilot modes can deliver a prepared commit.
+
+- [`2fe2e03`](https://github.com/pandemicsyn/neondeck/commit/2fe2e030a8b9c7c0051080cfe587c168858fb144) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Expose full per-mode Autopilot owner prompts in Runtime config, with typed local API and action support for editing or resetting each template. Existing owners read prompt changes on their next turn.
+
+- [`2fe2e03`](https://github.com/pandemicsyn/neondeck/commit/2fe2e030a8b9c7c0051080cfe587c168858fb144) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Label linked-session actions as chat, distinguish viewing a PR diff from running a Neon review, and render row actions with consistent compact sizing.
+
+- [`2fe2e03`](https://github.com/pandemicsyn/neondeck/commit/2fe2e030a8b9c7c0051080cfe587c168858fb144) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Open workflow inspections in a structured Neondeck page with readable run facts and formatted payloads instead of navigating directly to token-bearing raw Flue JSON.
+
+- [`2fe2e03`](https://github.com/pandemicsyn/neondeck/commit/2fe2e030a8b9c7c0051080cfe587c168858fb144) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Add reversible PR review archiving in the review inbox and physically delete submitted review records from SQLite after fourteen days.
+
+## 1.0.0-beta.14
+
+### Patch Changes
+
+- [#179](https://github.com/pandemicsyn/neondeck/pull/179) [`a52801e`](https://github.com/pandemicsyn/neondeck/commit/a52801e40fecb53f2451b611a8d376b432d5658e) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Give every fixing Autopilot mode a full managed-worktree coding workspace and let autonomous mode deliver through semantic engineering judgment without requiring configured checks, while retaining mechanical mode, head, destination, credential, commit, and non-force push guards.
+
 ## 1.0.0-beta.13
 
 ### Minor Changes

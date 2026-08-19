@@ -22,7 +22,7 @@ export function supportedCommands() {
       name: 'fix-ci',
       usage: '/fix-ci [repo#number|owner/repo#number]',
       description:
-        'Queue a bounded CI fix workflow for a PR with failing checks.',
+        'Queue a bounded app-owned CI fix operation for a PR with failing checks.',
     },
     {
       name: 'explain-ci',

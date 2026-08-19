@@ -1,0 +1,1 @@
+ALTER TABLE `pr_reviews` ADD `archived_at` text;

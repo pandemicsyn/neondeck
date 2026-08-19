@@ -1,0 +1,1 @@
+ALTER TABLE `briefing_runs` ADD `context_snapshot_id` text;

@@ -1,6 +1,12 @@
-import { dispatch, type DispatchReceipt } from '@flue/runtime';
+import type { DispatchReceipt } from '@flue/runtime';
+import { createFlueClient } from '@flue/sdk';
 import { addNotification } from '../app-state';
-import { runtimePaths, type RuntimePaths } from '../../runtime-home';
+import {
+  parseAppConfig,
+  readRuntimeJson,
+  runtimePaths,
+  type RuntimePaths,
+} from '../../runtime-home';
 import {
   createChatSessionCommandEvent,
   updateChatSessionCommandEvent,
@@ -11,10 +17,39 @@ type ApprovalNudgeDispatch = (input: {
   agent: 'display-assistant';
   id: string;
   input: string;
+  paths: RuntimePaths;
 }) => Promise<DispatchReceipt>;
 
-let approvalNudgeDispatch: ApprovalNudgeDispatch = (input) =>
-  dispatch(input) as Promise<DispatchReceipt>;
+let approvalNudgeDispatch: ApprovalNudgeDispatch = async (input) => {
+  const config = await readRuntimeJson(input.paths.config, parseAppConfig);
+  const rawPort = process.env.NEONDECK_PORT ?? process.env.PORT ?? '3583';
+  const port = Number(rawPort);
+  if (!Number.isInteger(port) || port < 1 || port > 65_535) {
+    throw new Error(
+      `Cannot dispatch approval nudge with invalid port ${rawPort}.`,
+    );
+  }
+  const client = createFlueClient({
+    url: `http://127.0.0.1:${port}/api/flue/agents/display-assistant/${encodeURIComponent(input.id)}`,
+    headers: {
+      'x-neondeck-api-token': config.localApi?.token ?? '',
+    },
+  });
+  const admission = await client.send({
+    message: {
+      kind: 'signal',
+      type: 'neondeck.approval.resolved',
+      tagName: 'approval-resolution',
+      body: input.input,
+      attributes: { agent: input.agent },
+    },
+  });
+  return {
+    submissionId: admission.submissionId,
+    acceptedAt: new Date().toISOString(),
+    uid: admission.uid,
+  };
+};
 
 export function setApprovalNudgeDispatchForTests(
   dispatchFn: ApprovalNudgeDispatch,
@@ -70,6 +105,7 @@ export async function createApprovalResolutionNudge(
           agent: 'display-assistant',
           id: sessionId,
           input: message,
+          paths,
         }).catch((error) => {
           errors.push(error instanceof Error ? error.message : String(error));
           return null;

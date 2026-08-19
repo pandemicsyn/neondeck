@@ -15,6 +15,27 @@ Use this format:
 - Follow-up: What remains, who/what should handle it, or `None`.
 ```
 
+## 2026-07-27 - ChatGPT OAuth And OpenAI-Compatible Providers
+
+- Roadmap item: Phase 13 / provider configuration and safety
+- Decision: Expanded the provider boundary with first-class `openai-codex` ChatGPT subscription OAuth and a typed list of generic OpenAI-compatible endpoints. OAuth credentials are stored in the Neondeck app database, refreshed ahead of expiry, and never exposed through status; the app database directory is private and existing database/WAL/SHM files are restricted before credential access. Refresh persistence uses refresh-token compare-and-swap so logout or a newer login cannot be overwritten by stale in-flight work; startup waits at most five seconds before continuing with background refresh. Status separates stored credentials from valid, usable credentials. Compatible endpoints use validated non-reserved ids, HTTPS or loopback HTTP URLs without embedded credentials/query/fragment, an explicit Chat Completions or Responses protocol, and environment-variable key references. Arbitrary endpoint creation, URL/key-reference changes, enabling, and removal are user-owned through setup or the authenticated local dashboard/API and are intentionally excluded from model-callable actions. The dashboard exposes the complete compatible-provider lifecycle rather than only registration toggles. Setup, CLI auth lifecycle commands, runtime registration, readiness, dashboard provider selection, tests, and docs use the same configuration model.
+- Reason: ChatGPT subscriptions should not be treated as OpenAI API keys, and users need providers such as OpenRouter and local compatible servers without opening config to unvalidated provider fields or raw secrets.
+- Follow-up: Add dashboard-owned ChatGPT login/logout controls if a signed user-intent OAuth surface is introduced; the current login lifecycle intentionally remains user-owned CLI state.
+
+## 2026-07-25 - PR Learning Evidence Boundaries
+
+- Roadmap item: Wrap Up the Learning Flywheel / handled PR evidence
+- Decision: Reverse the earlier deferral for `/review-pr` preparation and count completed `review-pr-for-human` assistance once per exact PR head as a distinct `pr_handled` signal. Count the later human-submitted verdict separately by durable GitHub review identity, including submission reconciliation after interruption.
+- Reason: Review preparation and human submission are different high-signal outcomes. Separating them preserves that distinction while reconnecting both paths to the existing idempotent retrospective cadence without treating draft edits, dismissals, or finding promotions as terminal evidence.
+- Follow-up: Draft edits, dismissals, and finding promotions remain future evidence signals unless they can be wired through an existing typed durable result without broadening the review event model.
+
+## 2026-07-20 - Autopilot Trusted Coding Workspace And Semantic Safety
+
+- Roadmap item: Phase 19 / PR Event Autopilot and Phase 20 / Autopilot Policy And UX Hardening
+- Decision: Correct the delivered minimal owner loop so every fixing mode receives a trusted repo-scoped coding workspace with ordinary command execution. Treat mode as the delivery-authority ceiling: prepare modes cannot push, approval mode receives delivery authority only from a direct-human waiting turn, and `autofix-push-when-safe` autonomously delivers when the continuing owner judges the requested change sane, appropriately scoped, and sufficiently validated. Remove configured-check and deterministic diff-risk approval gates from that autonomous delivery tool while retaining exact-head, bound-destination, clean-commit, credential, and non-force guards.
+- Reason: PR #172 interpreted “safe” as mechanically preapproved command execution and safe Git delivery. That prevented the coding owner from running normal repository tests, formatters, typechecks, generators, or non-Node compilers and contradicted the intended meaning: trust the model to decide whether requested feedback is a safe and sound engineering change.
+- Follow-up: Land one focused implementation PR for the workspace, owner contract, delivery simplification, product wording, and focused regression tests. Do not reopen the removed coordinator/admission architecture.
+
 ## 2026-07-20 - Minimal Autopilot Owner Archival
 
 - Roadmap item: Phase 19 / Autopilot Simplification PR 2 complete minimal loop
@@ -26,7 +47,7 @@ Use this format:
 
 - Roadmap item: Phase 19 / PR event Autopilot reset
 - Decision: Forward-delete the abandoned admission/coordinator runtime while preserving complete GitHub feedback fingerprints, exact-head worktrees, bounded Git behavior, generic watches and worktrees, the diff viewer, readiness facts, and reusable private owner/Flue seams. Keep every historical migration already on `main` and add one generated forward cleanup migration that removes the abandoned tables and watch generation column from upgraded runtime homes.
-- Reason: The Package 1–4 migrations are already in the shipped `main` history and were not proven unshipped, so rewriting them would make upgrades unsafe. The coordinator also duplicated workflow-engine responsibilities and is explicitly superseded by `.plans/AUTOPILOT_IMPLEMENTATION_PLAN.md`.
+- Reason: The Package 1–4 migrations are already in the shipped `main` history and were not proven unshipped, so rewriting them would make upgrades unsafe. The coordinator also duplicated workflow-engine responsibilities and is explicitly superseded by `.plans/archived/AUTOPILOT_IMPLEMENTATION_PLAN.md`.
 - Follow-up: Implement the replacement minimal loop in PR 2 only after this reset is reviewed and merged. Do not restore admissions, stage ledgers, owner generations, grounding snapshots, queues/coalescing, submission leases, or workflow-observation continuation.
 
 ## 2026-07-19 - Kilo Reconciliation Fixture Process Inspection
@@ -546,7 +567,7 @@ Use this format:
 
 - Roadmap item: Phases 19–21 / watched-PR Autopilot product closure.
 - Decision: Reopened the Phase 19 and 20 completion claims, added
-  `.plans/AUTOPILOT_IMPLEMENTATION_PLAN.md` as the implementation source of truth,
+  `.plans/archived/AUTOPILOT_IMPLEMENTATION_PLAN.md` as the implementation source of truth,
   retained the HTML end-to-end review as evidence, and archived the superseded
   partial loop-wiring plan and July 9 scheduler/Autopilot mechanics review. The
   consolidated plan selects one continuing Neon PR-owner session and managed

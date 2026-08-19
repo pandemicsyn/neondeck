@@ -3,6 +3,7 @@ import {
   fetchCheckSummary,
   fetchPullRequestDetail,
   fetchPullRequestEventState,
+  fetchPullRequestReviewDecision,
 } from '../github';
 import { readRepoRegistrySnapshot } from '../repos';
 import type { RuntimePaths } from '../../runtime-home';
@@ -73,12 +74,17 @@ export async function defaultWatchFetcher(reference: ResolvedPrReference) {
     throw new Error('GITHUB_TOKEN is not configured');
   }
 
-  return fetchPullRequestDetail({
+  const options = {
     token,
     owner: reference.githubOwner,
     repo: reference.githubName,
     number: reference.prNumber,
-  });
+  };
+  const [detail, reviewDecision] = await Promise.all([
+    fetchPullRequestDetail(options),
+    fetchPullRequestReviewDecision(options),
+  ]);
+  return { ...detail, reviewDecision };
 }
 
 export async function defaultPrWatchInitialEventBaselineFetcher(
@@ -168,6 +174,7 @@ export async function snapshotFromDetail(
     state: detail.state,
     merged: detail.merged,
     mergeCommitSha: detail.mergeCommitSha,
+    reviewDecision: detail.reviewDecision ?? null,
     checks,
     title: detail.title,
     url: detail.url,
@@ -212,8 +219,9 @@ export function statusFromSnapshot(
   ) {
     return 'merged';
   }
-  if (snapshot.checks?.status === 'success') return 'green';
   if (snapshot.checks?.status === 'failure') return 'attention-needed';
+  if (snapshot.reviewDecision === 'APPROVED') return 'ready';
+  if (snapshot.checks?.status === 'success') return 'green';
   if (snapshot.state === 'closed' && snapshot.merged) return 'watching';
   if (snapshot.state === 'closed') return 'closed';
   if (snapshot.state === 'open') return 'watching';
@@ -246,6 +254,7 @@ export function meaningfulPrSnapshot(snapshot: PrWatchSnapshot | null) {
     state: snapshot.state,
     merged: snapshot.merged,
     mergeCommitSha: snapshot.mergeCommitSha,
+    reviewDecision: snapshot.reviewDecision ?? null,
     checks: snapshot.checks ? semanticCheckFingerprint(snapshot.checks) : null,
     title: snapshot.title,
     url: snapshot.url,

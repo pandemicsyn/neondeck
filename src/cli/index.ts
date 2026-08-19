@@ -1,6 +1,6 @@
 #!/usr/bin/env -S node --import=tsx
 import { Command } from 'commander';
-import { runInit } from './onboarding';
+import { configureProviderSecret, runInit } from './onboarding';
 import { decideLearningCandidateCli } from './learning';
 import { registerMcpCommands } from './mcp';
 import {
@@ -77,6 +77,7 @@ program
   .command('serve')
   .description('Start the production Neondeck server in the foreground.')
   .option('--port <port>', 'override the configured/default API port')
+  .option('--verbose', 'log successful API reads in addition to activity')
   .action(async (options: ServeOptions) => {
     const { ensureRuntimeHome } = await runtimeHomeModule();
     const { runBuiltNeondeckServer } = await serverModule();
@@ -86,19 +87,23 @@ program
     await runBuiltNeondeckServer({
       paths,
       port: options.port,
+      verbose: options.verbose,
     });
   });
 
 program
   .command('open [profile]')
-  .description('Ensure Neondeck is running and open the dashboard window.')
+  .description('Ensure Neondeck is running and open the dashboard.')
   .option('--port <port>', 'override the configured/default API port')
   .option('--width <pixels>', 'override Chromium app-mode window width')
   .option('--height <pixels>', 'override Chromium app-mode window height')
   .option('--x <pixels>', 'override Chromium app-mode window x position')
   .option('--y <pixels>', 'override Chromium app-mode window y position')
   .option('--kiosk', 'launch Chromium app-mode in kiosk mode')
-  .option('--browser <path>', 'use a specific Chromium-family executable')
+  .option(
+    '--browser <path>',
+    'use a Chromium-family executable in app mode instead of the OS default browser',
+  )
   .action(async (profile: string | undefined, options: OpenOptions) => {
     const { ensureRuntimeHome } = await runtimeHomeModule();
     const { openDashboard } = await openModule();
@@ -207,6 +212,112 @@ program
     }
 
     printStatus(status);
+  });
+
+const auth = program
+  .command('auth')
+  .description('Manage model-provider authentication.');
+
+auth
+  .command('login <provider>')
+  .description('Sign in to a subscription-backed model provider.')
+  .action(async (provider: string) => {
+    if (provider !== 'openai-codex') {
+      throw new Error(
+        `Unsupported OAuth provider "${provider}". Use openai-codex.`,
+      );
+    }
+    const paths = await pathsFromOptions(program.opts<GlobalOptions>());
+    const { ensureRuntimeHome } = await runtimeHomeModule();
+    const { updateProviderConfig } = await configActionsModule();
+    await ensureRuntimeHome(paths);
+    await configureProviderSecret('openai-codex', new Map(), paths);
+    await updateProviderConfig(
+      { provider: 'openai-codex', enabled: true },
+      paths,
+    );
+    const result = {
+      ok: true,
+      action: 'provider_auth_login',
+      changed: true,
+      provider,
+      appliesAfter: 'server-restart',
+      message:
+        'Signed in with your ChatGPT subscription. Restart Neondeck to use the new credentials.',
+    };
+    if (program.opts<GlobalOptions>().json) {
+      console.log(JSON.stringify(result, null, 2));
+      return;
+    }
+    console.log('Restart Neondeck to use the new credentials.');
+  });
+
+auth
+  .command('status [provider]')
+  .description('Show subscription authentication status.')
+  .action(async (provider = 'openai-codex') => {
+    if (provider !== 'openai-codex') {
+      throw new Error(
+        `Unsupported OAuth provider "${provider}". Use openai-codex.`,
+      );
+    }
+    const paths = await pathsFromOptions(program.opts<GlobalOptions>());
+    const { ensureRuntimeHome } = await runtimeHomeModule();
+    const { openAiCodexAuthStatus } = await reposModule();
+    await ensureRuntimeHome(paths);
+    const status = openAiCodexAuthStatus(paths);
+    if (program.opts<GlobalOptions>().json) {
+      console.log(JSON.stringify({ provider, ...status }, null, 2));
+      return;
+    }
+    console.log(
+      [
+        `provider       ${provider}`,
+        `state          ${status.state}`,
+        `stored         ${status.authenticated ? 'yes' : 'no'}`,
+        `usable         ${status.usable ? 'yes' : 'no'}`,
+        `expires        ${status.expiresAt ?? 'n/a'}`,
+        ...(status.lastError ? [`last error     ${status.lastError}`] : []),
+      ].join('\n'),
+    );
+  });
+
+auth
+  .command('logout <provider>')
+  .description('Remove stored subscription credentials.')
+  .action(async (provider: string) => {
+    if (provider !== 'openai-codex') {
+      throw new Error(
+        `Unsupported OAuth provider "${provider}". Use openai-codex.`,
+      );
+    }
+    const paths = await pathsFromOptions(program.opts<GlobalOptions>());
+    const { logoutOpenAiCodexSubscription } = await reposModule();
+    const changed = await logoutOpenAiCodexSubscription(paths);
+    if (program.opts<GlobalOptions>().json) {
+      console.log(
+        JSON.stringify(
+          {
+            ok: true,
+            action: 'provider_auth_logout',
+            changed,
+            provider,
+            appliesAfter: 'server-restart',
+            message: changed
+              ? 'Removed ChatGPT subscription credentials. Restart Neondeck to stop the running process from using its current token.'
+              : 'No ChatGPT subscription credentials were stored.',
+          },
+          null,
+          2,
+        ),
+      );
+      return;
+    }
+    console.log(
+      changed
+        ? 'Removed ChatGPT subscription credentials. Restart Neondeck to stop the running process from using its current token.'
+        : 'No ChatGPT subscription credentials were stored.',
+    );
   });
 
 const repo = program
@@ -587,9 +698,15 @@ program
 
 program
   .command('dev')
-  .description('Start the local web dashboard and backend.')
+  .description('Show source-checkout development instructions.')
   .action(() => {
-    console.log('Run `npm run dev` for the current local web dashboard.');
+    console.log(
+      [
+        '`neondeck dev` does not start a server.',
+        'For a packaged install, run `neondeck open` (normal use) or `neondeck serve` (foreground).',
+        'From a source checkout, run `npm run dev`.',
+      ].join('\n'),
+    );
   });
 
 await program.parseAsync(process.argv);

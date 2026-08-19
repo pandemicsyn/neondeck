@@ -18,6 +18,8 @@ import {
   openChatSessionCommandEventStream,
   openChatSessionEventStream,
   openConfigEventStream,
+  openDashboardEventConnection,
+  openGitHubQueueEventStream,
 } from './api';
 import { BootState, Card, EmptyState } from './components/ui';
 import {
@@ -33,6 +35,7 @@ import type {
   ReviewPopoutTarget,
 } from './features/pr-review/PrReviewPopoutPage';
 import { NotificationController } from './features/notifications/controller';
+import { ActivitySubmissionPage } from './features/activity/ActivitySubmissionPage';
 import type {
   DashboardConfig,
   DashboardDensity,
@@ -67,7 +70,9 @@ if (typeof window !== 'undefined' && window.location.pathname === '/review') {
 export function App() {
   const queryClient = useQueryClient();
   const reviewRoute = useMemo(readReviewPopoutRoute, []);
-  const isDashboardRoute = reviewRoute.kind === 'none';
+  const activityRoute = useMemo(readActivityRoute, []);
+  const isDashboardRoute =
+    reviewRoute.kind === 'none' && activityRoute.kind === 'none';
   const {
     data: config,
     error,
@@ -79,25 +84,52 @@ export function App() {
 
   useEffect(() => {
     if (!isDashboardRoute) return;
-    return openConfigEventStream(
-      (event) => {
-        dispatchConfigChangeEvent(event);
-        if (
-          event.action === 'config_reload' ||
-          configEventTouchesFile(event, 'dashboard.json')
-        ) {
-          void queryClient.invalidateQueries({
-            queryKey: queryKeys.dashboardConfig,
-          });
-        }
-      },
-      undefined,
-      () => {
+    let hasOpened = false;
+    return openDashboardEventConnection(() => {
+      if (!hasOpened) {
+        hasOpened = true;
+        return;
+      }
+      void Promise.all([
+        queryClient.invalidateQueries({
+          queryKey: queryKeys.dashboardConfig,
+        }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.neonSession }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.chatSessions }),
+        queryClient.invalidateQueries({
+          queryKey: queryKeys.prReviewsLocal,
+        }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.notifications }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.runtimeStatus }),
+        queryClient.invalidateQueries({
+          queryKey: queryKeys.chatSessionActivityRoot,
+        }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.prWatches }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.githubPrs }),
+      ]);
+    });
+  }, [isDashboardRoute, queryClient]);
+
+  useEffect(() => {
+    if (!isDashboardRoute) return;
+    return openGitHubQueueEventStream((event) => {
+      queryClient.setQueryData(queryKeys.githubPrs, event.snapshot);
+    });
+  }, [isDashboardRoute, queryClient]);
+
+  useEffect(() => {
+    if (!isDashboardRoute) return;
+    return openConfigEventStream((event) => {
+      dispatchConfigChangeEvent(event);
+      if (
+        event.action === 'config_reload' ||
+        configEventTouchesFile(event, 'dashboard.json')
+      ) {
         void queryClient.invalidateQueries({
           queryKey: queryKeys.dashboardConfig,
         });
-      },
-    );
+      }
+    }, undefined);
   }, [isDashboardRoute, queryClient]);
 
   useEffect(() => {
@@ -110,11 +142,7 @@ export function App() {
         queryKey: queryKeys.chatSessions,
       });
     };
-    const closeSessionEvents = openChatSessionEventStream(
-      refreshSessions,
-      undefined,
-      refreshSessions,
-    );
+    const closeSessionEvents = openChatSessionEventStream(refreshSessions);
     const closeCommandEvents =
       openChatSessionCommandEventStream(refreshSessions);
     return () => {
@@ -172,7 +200,34 @@ export function App() {
     );
   }
 
-  if (error) {
+  if (activityRoute.kind === 'target') {
+    const style = {
+      '--deck-text-scale': reviewAppearance.textScale.toString(),
+    } as CSSProperties;
+    return (
+      <main
+        className={`dashboard-grid deck-density-${reviewAppearance.density} h-screen overflow-hidden bg-bg text-ink`}
+        data-deck-arrangement="activity"
+        data-deck-profile="activity"
+        data-display-preset="activity"
+        style={style}
+      >
+        <ActivitySubmissionPage submissionId={activityRoute.submissionId} />
+      </main>
+    );
+  }
+
+  if (activityRoute.kind === 'invalid') {
+    return (
+      <BootState
+        detail={activityRoute.message}
+        title="Invalid activity route"
+        tone="alert"
+      />
+    );
+  }
+
+  if (error && !config) {
     return (
       <BootState
         title="Dashboard config failed"
@@ -699,6 +754,11 @@ type ReviewPopoutRoute =
   | { kind: 'invalid'; message: string }
   | { kind: 'target'; target: ReviewPopoutTarget };
 
+type ActivityRoute =
+  | { kind: 'none' }
+  | { kind: 'invalid'; message: string }
+  | { kind: 'target'; submissionId: string };
+
 function ReviewPopoutLoadingPage({
   appearance,
 }: {
@@ -774,6 +834,23 @@ function readReviewPopoutRoute(): ReviewPopoutRoute {
       title: params.get('title')?.trim() || null,
     },
   };
+}
+
+function readActivityRoute(
+  location: Pick<Location, 'pathname' | 'search'> = window.location,
+): ActivityRoute {
+  if (location.pathname !== '/activity') return { kind: 'none' };
+  const submissionId = new URLSearchParams(location.search)
+    .get('submissionId')
+    ?.trim();
+  if (!submissionId) {
+    return {
+      kind: 'invalid',
+      message:
+        'A submission id is required, for example /activity?submissionId=sub_123.',
+    };
+  }
+  return { kind: 'target', submissionId };
 }
 
 function resolveAppearance(config: DashboardConfig): {

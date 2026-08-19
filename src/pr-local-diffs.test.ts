@@ -2,13 +2,26 @@ import { execFile } from 'node:child_process';
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
 import { promisify } from 'node:util';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   readLocalPullRequestFileDiff,
   readLocalPullRequestFiles,
 } from './modules/pr-local-diffs';
-import { runtimePaths, type RuntimePaths } from './runtime-home';
+import {
+  createDeferredPrReviewerWorkspaceTools,
+  createPrReviewerWorkspaceTools,
+  prReviewerWorkspaceToolCallLimit,
+  retainPrReviewWorkspaceOutput,
+  resolvePrReviewerWorkspace,
+} from './modules/pr-reviewer';
+import {
+  ensureRuntimeHome,
+  runtimePaths,
+  type RuntimePaths,
+} from './runtime-home';
+import { prReviewWorkspaceOutputGlobalMaxEntries } from './runtime-home/app-db/reconcile';
 
 const gitDiffMock = vi.hoisted(() =>
   vi.fn<typeof import('./repo-edit/git').gitDiff>(),
@@ -90,6 +103,612 @@ describe('local PR diffs', () => {
     expect(patch.diff).toContain('diff --git a/src/app.ts b/src/app.ts');
     expect(metadataDiffCalls()).toHaveLength(1);
     expect(patchDiffCalls()).toHaveLength(1);
+  });
+
+  it('gives the reviewer read-only traversal at the exact reviewed revision', async () => {
+    const { baseSha, headSha, paths, repo } = await fixture();
+    await writeFile(join(repo, 'src/app.ts'), 'export const value = 3;\n');
+    await commitAll(repo, 'later local commit');
+
+    const workspace = await resolvePrReviewerWorkspace(
+      {
+        repoFullName: 'example/sample',
+        prNumber: 42,
+        headSha,
+        baseSha,
+        baseRef: 'main',
+      },
+      paths,
+    );
+
+    expect(workspace.available).toBe(true);
+    if (!workspace.available) return;
+    const readTool = workspace.tools.find(
+      (tool) => tool.name === 'neondeck_review_workspace_read',
+    );
+    const searchTool = workspace.tools.find(
+      (tool) => tool.name === 'neondeck_review_workspace_search',
+    );
+    const diffTool = workspace.tools.find(
+      (tool) => tool.name === 'neondeck_review_workspace_diff',
+    );
+
+    await expect(
+      readTool?.run({ data: { path: 'src/app.ts' } } as never),
+    ).resolves.toMatchObject({
+      output: {
+        revision: headSha,
+        path: 'src/app.ts',
+        content: expect.stringContaining('export const value = 2;'),
+      },
+    });
+    await expect(
+      searchTool?.run({ data: { query: 'value = 3' } } as never),
+    ).resolves.toMatchObject({ output: { matches: [] } });
+    await expect(
+      diffTool?.run({ data: { path: 'src/app.ts' } } as never),
+    ).resolves.toMatchObject({
+      output: {
+        available: true,
+        base: baseSha,
+        head: headSha,
+        patch: expect.stringContaining('+export const value = 2;'),
+      },
+    });
+    await expect(
+      diffTool?.run({
+        data: { path: 'src/app.ts', rightLine: 1, contextLines: 2 },
+      } as never),
+    ).resolves.toMatchObject({
+      output: {
+        targetChanged: true,
+        rightLine: 1,
+        lines: expect.arrayContaining([
+          expect.objectContaining({
+            kind: 'addition',
+            rightLine: 1,
+            text: 'export const value = 2;',
+          }),
+        ]),
+      },
+    });
+  });
+
+  it('mounts exact-revision tools before deferred reviewer intake resolves', async () => {
+    const { baseSha, headSha, repo } = await fixture();
+    let resolveCalls = 0;
+    const resolve = async () => {
+      resolveCalls += 1;
+      return {
+        available: true as const,
+        repoPath: repo,
+        headSha,
+        mergeBase: baseSha,
+      };
+    };
+    const tools = createDeferredPrReviewerWorkspaceTools(resolve);
+
+    expect(resolveCalls).toBe(0);
+    expect(tools.map((tool) => tool.name)).toEqual([
+      'neondeck_review_workspace_output',
+      'neondeck_review_workspace_changes',
+      'neondeck_review_workspace_list',
+      'neondeck_review_workspace_read',
+      'neondeck_review_workspace_search',
+      'neondeck_review_workspace_diff',
+      'neondeck_review_workspace_diff_hunks',
+      'neondeck_review_workspace_history',
+      'neondeck_review_workspace_blame',
+    ]);
+
+    const searchTool = tools.find(
+      (tool) => tool.name === 'neondeck_review_workspace_search',
+    );
+    await expect(
+      searchTool?.run({ data: { query: 'value = 2' } } as never),
+    ).resolves.toMatchObject({
+      output: {
+        revision: headSha,
+        matches: ['src/app.ts:1:export const value = 2;'],
+      },
+    });
+    expect(resolveCalls).toBe(1);
+  });
+
+  it('lets the reviewer discover scope and choose exact-revision Git evidence', async () => {
+    const { baseSha, headSha, paths } = await fixture();
+    const workspace = await resolvePrReviewerWorkspace(
+      {
+        repoFullName: 'example/sample',
+        prNumber: 42,
+        headSha,
+        baseSha,
+        baseRef: 'main',
+      },
+      paths,
+    );
+
+    expect(workspace.available).toBe(true);
+    if (!workspace.available) return;
+    const tool = (name: string) =>
+      workspace.tools.find((candidate) => candidate.name === name);
+
+    await expect(
+      tool('neondeck_review_workspace_changes')?.run({
+        data: { limit: 1 },
+      } as never),
+    ).resolves.toMatchObject({
+      output: {
+        available: true,
+        base: baseSha,
+        head: headSha,
+        summary: { files: 2, additions: 2, deletions: 1 },
+        files: [
+          expect.objectContaining({
+            path: 'src/added.ts',
+            status: 'added',
+            additions: 1,
+            deletions: 0,
+          }),
+        ],
+        nextCursor: 1,
+        truncated: true,
+      },
+    });
+    await expect(
+      tool('neondeck_review_workspace_changes')?.run({
+        data: { cursor: 1, limit: 1 },
+      } as never),
+    ).resolves.toMatchObject({
+      output: {
+        files: [
+          expect.objectContaining({
+            path: 'src/app.ts',
+            status: 'modified',
+            additions: 1,
+            deletions: 1,
+          }),
+        ],
+        nextCursor: null,
+        truncated: false,
+      },
+    });
+    await expect(
+      tool('neondeck_review_workspace_read')?.run({
+        data: { path: 'src/app.ts', revision: 'base' },
+      } as never),
+    ).resolves.toMatchObject({
+      output: {
+        revision: baseSha,
+        revisionKind: 'base',
+        content: expect.stringContaining('value = 1'),
+      },
+    });
+    await expect(
+      tool('neondeck_review_workspace_diff_hunks')?.run({
+        data: { path: 'src/app.ts' },
+      } as never),
+    ).resolves.toMatchObject({
+      output: {
+        path: 'src/app.ts',
+        totalHunks: 1,
+        hunks: [
+          expect.objectContaining({
+            leftStart: 1,
+            leftCount: 1,
+            rightStart: 1,
+            rightCount: 1,
+          }),
+        ],
+      },
+    });
+    await expect(
+      tool('neondeck_review_workspace_history')?.run({
+        data: { limit: 1 },
+      } as never),
+    ).resolves.toMatchObject({
+      output: {
+        scope: 'pull-request',
+        commits: [expect.objectContaining({ subject: 'head' })],
+        truncated: false,
+      },
+    });
+    await expect(
+      tool('neondeck_review_workspace_blame')?.run({
+        data: { path: 'src/app.ts', startLine: 1 },
+      } as never),
+    ).resolves.toMatchObject({
+      output: {
+        revision: headSha,
+        revisionKind: 'head',
+        lines: [
+          expect.objectContaining({
+            line: 1,
+            author: 'Test',
+            text: 'export const value = 2;',
+          }),
+        ],
+      },
+    });
+    await expect(
+      tool('neondeck_review_workspace_list')?.run({
+        data: { path: 'src/*.ts', limit: 10 },
+      } as never),
+    ).resolves.toMatchObject({ output: { paths: [] } });
+    await expect(
+      tool('neondeck_review_workspace_search')?.run({
+        data: { query: 'export', path: 'src/*.ts', limit: 10 },
+      } as never),
+    ).resolves.toMatchObject({ output: { matches: [] } });
+    await expect(
+      tool('neondeck_review_workspace_diff')?.run({
+        data: { path: 'src/*.ts' },
+      } as never),
+    ).resolves.toMatchObject({ output: { patch: '' } });
+  });
+
+  it('forwards the Flue tool abort signal into deferred workspace resolution', async () => {
+    const controller = new AbortController();
+    const resolve = vi.fn<
+      (signal?: AbortSignal) => Promise<{
+        available: false;
+        reason: string;
+      }>
+    >(async (signal) => {
+      signal?.throwIfAborted();
+      return { available: false, reason: 'not reached' };
+    });
+    const tools = createDeferredPrReviewerWorkspaceTools(resolve);
+    const listTool = tools.find(
+      (tool) => tool.name === 'neondeck_review_workspace_list',
+    );
+    controller.abort(new DOMException('Tool stopped.', 'AbortError'));
+
+    await expect(
+      listTool?.run({
+        data: { limit: 1 },
+        signal: controller.signal,
+      } as never),
+    ).rejects.toMatchObject({ name: 'AbortError' });
+    expect(resolve).toHaveBeenCalledWith(controller.signal);
+  });
+
+  it('retries a deferred workspace after transient unavailability', async () => {
+    const { headSha, repo } = await fixture();
+    let available = false;
+    const tools = createDeferredPrReviewerWorkspaceTools(async () =>
+      available
+        ? { available: true, repoPath: repo, headSha, mergeBase: null }
+        : { available: false, reason: 'Repository refresh is in progress.' },
+    );
+    const listTool = tools.find(
+      (tool) => tool.name === 'neondeck_review_workspace_list',
+    );
+
+    const unavailableResult = (await listTool?.run({
+      data: { limit: 1 },
+    } as never)) as { output: Record<string, unknown> };
+    expect(unavailableResult).toMatchObject({
+      output: {
+        available: false,
+        reason: 'Repository refresh is in progress.',
+      },
+    });
+    expect(unavailableResult.output).not.toHaveProperty(
+      'workspaceToolCallsRemaining',
+    );
+
+    available = true;
+    await expect(
+      listTool?.run({ data: { limit: 1 } } as never),
+    ).resolves.toMatchObject({
+      output: {
+        revision: headSha,
+        workspaceToolCallsRemaining: prReviewerWorkspaceToolCallLimit - 1,
+      },
+    });
+  });
+
+  it('retains truncated workspace outputs for targeted follow-up reads', async () => {
+    const { headSha, paths, repo } = await fixture();
+    await ensureRuntimeHome(paths);
+    const retainedOutput = { key: 'review:test:head', paths };
+    const firstRenderTools = createPrReviewerWorkspaceTools(
+      { repoPath: repo, headSha, mergeBase: null },
+      { retainedOutput },
+    );
+    const listTool = firstRenderTools.find(
+      (tool) => tool.name === 'neondeck_review_workspace_list',
+    );
+
+    const listed = (await listTool?.run({
+      data: { limit: 1 },
+    } as never)) as {
+      output: { outputRef: string };
+    };
+    expect(listed).toMatchObject({
+      output: {
+        truncated: true,
+        outputRetained: true,
+        outputRef: expect.any(String),
+        outputHint: expect.stringContaining('neondeck_review_workspace_output'),
+      },
+    });
+    const nextRenderTools = createPrReviewerWorkspaceTools(
+      { repoPath: repo, headSha, mergeBase: null },
+      { retainedOutput },
+    );
+    const outputTool = nextRenderTools.find(
+      (tool) => tool.name === 'neondeck_review_workspace_output',
+    );
+    await expect(
+      outputTool?.run({
+        data: { outputRef: listed.output.outputRef, query: 'src/app.ts' },
+      } as never),
+    ).resolves.toMatchObject({
+      output: {
+        available: true,
+        source: 'list',
+        totalMatches: 1,
+        matches: [expect.stringContaining('src/app.ts')],
+        truncated: false,
+      },
+    });
+
+    const longLine = retainPrReviewWorkspaceOutput({
+      scope: retainedOutput,
+      source: 'diff',
+      text: 'x'.repeat(100 * 1024),
+    });
+    expect(longLine.outputRetained).toBe(true);
+    if (!longLine.outputRetained) return;
+    const bounded = (await outputTool?.run({
+      data: { outputRef: longLine.outputRef, startLine: 1, endLine: 1 },
+    } as never)) as {
+      output: { available: boolean; oversizedLine: number; reason: string };
+    };
+    expect(bounded.output).toMatchObject({
+      available: false,
+      oversizedLine: 1,
+      reason: expect.stringContaining('Search this outputRef'),
+    });
+
+    const manyLines = retainPrReviewWorkspaceOutput({
+      scope: retainedOutput,
+      source: 'diff',
+      text: Array.from(
+        { length: 400 },
+        (_, index) => `${index + 1}:${'x'.repeat(1_024)}`,
+      ).join('\n'),
+    });
+    expect(manyLines.outputRetained).toBe(true);
+    if (!manyLines.outputRetained) return;
+    const ranged = (await outputTool?.run({
+      data: { outputRef: manyLines.outputRef, startLine: 1, endLine: 400 },
+    } as never)) as {
+      output: {
+        endLine: number;
+        endLineComplete: boolean;
+        nextStartLine: number | null;
+        truncated: boolean;
+      };
+    };
+    expect(ranged.output).toMatchObject({
+      endLineComplete: true,
+      nextStartLine: ranged.output.endLine + 1,
+      truncated: true,
+    });
+    expect(ranged.output.endLine).toBeLessThan(400);
+
+    const pagedLines = retainPrReviewWorkspaceOutput({
+      scope: retainedOutput,
+      source: 'diff',
+      text: Array.from({ length: 500 }, (_, index) => `line ${index + 1}`).join(
+        '\n',
+      ),
+    });
+    expect(pagedLines.outputRetained).toBe(true);
+    if (!pagedLines.outputRetained) return;
+    await expect(
+      outputTool?.run({
+        data: {
+          outputRef: pagedLines.outputRef,
+          startLine: 1,
+          endLine: 400,
+        },
+      } as never),
+    ).resolves.toMatchObject({
+      output: {
+        available: true,
+        endLine: 400,
+        endLineComplete: true,
+        nextStartLine: 401,
+        truncated: true,
+      },
+    });
+
+    const unavailableDatabase = join(paths.data, 'retention-db-directory');
+    await mkdir(unavailableDatabase);
+    const fallbackTools = createPrReviewerWorkspaceTools(
+      { repoPath: repo, headSha, mergeBase: null },
+      {
+        retainedOutput: {
+          key: 'review:test:retention-failure',
+          paths: { ...paths, neondeckDatabase: unavailableDatabase },
+        },
+      },
+    );
+    const fallbackList = fallbackTools.find(
+      (tool) => tool.name === 'neondeck_review_workspace_list',
+    );
+    await expect(
+      fallbackList?.run({ data: { limit: 1 } } as never),
+    ).resolves.toMatchObject({
+      output: {
+        paths: [expect.any(String)],
+        truncated: true,
+        outputRetained: false,
+        outputHint: expect.stringContaining('bounded preview is still valid'),
+      },
+    });
+  });
+
+  it('bounds retained workspace outputs across review scopes', async () => {
+    const { paths } = await fixture();
+    await ensureRuntimeHome(paths);
+    for (
+      let index = 0;
+      index < prReviewWorkspaceOutputGlobalMaxEntries + 1;
+      index += 1
+    ) {
+      retainPrReviewWorkspaceOutput({
+        scope: { key: `review:${index}`, paths },
+        source: 'search',
+        text: `output ${index}`,
+      });
+    }
+    const database = new DatabaseSync(paths.neondeckDatabase, {
+      readOnly: true,
+    });
+    try {
+      expect(
+        database
+          .prepare(`SELECT COUNT(*) AS count FROM pr_review_workspace_outputs;`)
+          .get(),
+      ).toEqual({ count: prReviewWorkspaceOutputGlobalMaxEntries });
+    } finally {
+      database.close();
+    }
+  });
+
+  it('bounds exact-revision workspace exploration across all review tools', async () => {
+    const { baseSha, headSha, paths } = await fixture();
+    const workspace = await resolvePrReviewerWorkspace(
+      {
+        repoFullName: 'example/sample',
+        prNumber: 42,
+        headSha,
+        baseSha,
+        baseRef: 'main',
+      },
+      paths,
+    );
+
+    expect(workspace.available).toBe(true);
+    if (!workspace.available) return;
+    const listTool = workspace.tools.find(
+      (tool) => tool.name === 'neondeck_review_workspace_list',
+    );
+    const readTool = workspace.tools.find(
+      (tool) => tool.name === 'neondeck_review_workspace_read',
+    );
+    const searchTool = workspace.tools.find(
+      (tool) => tool.name === 'neondeck_review_workspace_search',
+    );
+    for (
+      let index = 0;
+      index < prReviewerWorkspaceToolCallLimit - 1;
+      index += 1
+    ) {
+      await expect(
+        listTool?.run({ data: { limit: 1 } } as never),
+      ).resolves.toMatchObject({
+        output: {
+          workspaceToolCallsRemaining:
+            prReviewerWorkspaceToolCallLimit - index - 1,
+        },
+      });
+    }
+    await expect(
+      readTool?.run({ data: { path: 'src/app.ts' } } as never),
+    ).resolves.toMatchObject({
+      output: {
+        workspaceToolCallsRemaining: 0,
+        content: expect.stringContaining('export const value = 2;'),
+      },
+    });
+
+    await expect(
+      searchTool?.run({ data: { query: 'value' } } as never),
+    ).resolves.toMatchObject({
+      output: {
+        available: false,
+        workspaceToolCallsRemaining: 0,
+        reason: expect.stringContaining('exploration budget'),
+      },
+    });
+  });
+
+  it('keeps a supplied workspace budget across reconstructed tool arrays', async () => {
+    const { headSha, repo } = await fixture();
+    let remaining = 1;
+    const consumeToolCall = () => {
+      if (remaining === 0) return null;
+      remaining -= 1;
+      return remaining;
+    };
+    const input = { repoPath: repo, headSha, mergeBase: null };
+    const first = createPrReviewerWorkspaceTools(input, { consumeToolCall });
+    const second = createPrReviewerWorkspaceTools(input, { consumeToolCall });
+    const firstList = first.find(
+      (tool) => tool.name === 'neondeck_review_workspace_list',
+    );
+    const secondList = second.find(
+      (tool) => tool.name === 'neondeck_review_workspace_list',
+    );
+
+    await expect(
+      firstList?.run({ data: { limit: 1 } } as never),
+    ).resolves.toMatchObject({
+      output: { workspaceToolCallsRemaining: 0 },
+    });
+    await expect(
+      secondList?.run({ data: { limit: 1 } } as never),
+    ).resolves.toMatchObject({
+      output: {
+        available: false,
+        workspaceToolCallsRemaining: 0,
+        reason: expect.stringContaining('exploration budget'),
+      },
+    });
+  });
+
+  it('verifies a target line without buffering a diff larger than 16 MiB', async () => {
+    const { baseSha, headSha, paths } = await largeLineFixture();
+    const workspace = await resolvePrReviewerWorkspace(
+      {
+        repoFullName: 'example/sample',
+        prNumber: 45,
+        headSha,
+        baseSha,
+        baseRef: 'main',
+      },
+      paths,
+    );
+
+    expect(workspace.available).toBe(true);
+    if (!workspace.available) return;
+    const diffTool = workspace.tools.find(
+      (tool) => tool.name === 'neondeck_review_workspace_diff',
+    );
+
+    await expect(
+      diffTool?.run({
+        data: { path: 'src/large.ts', rightLine: 1, contextLines: 0 },
+      } as never),
+    ).resolves.toMatchObject({
+      output: {
+        targetChanged: true,
+        truncated: true,
+        lines: [
+          expect.objectContaining({
+            kind: 'addition',
+            rightLine: 1,
+            textTruncated: true,
+          }),
+        ],
+      },
+    });
   });
 
   it('single-flights metadata across concurrent per-file patch reads', async () => {
@@ -191,6 +810,100 @@ describe('local PR diffs', () => {
     expect(patch.file?.path).toBe('src/new-name.ts');
     expect(patch.diff).toContain('rename from src/old-name.ts');
     expect(patch.diff).toContain('rename to src/new-name.ts');
+
+    const workspace = await resolvePrReviewerWorkspace(
+      {
+        repoFullName: 'example/sample',
+        prNumber: 43,
+        headSha,
+        baseSha,
+        baseRef: 'main',
+      },
+      paths,
+    );
+    expect(workspace.available).toBe(true);
+    if (!workspace.available) return;
+    const changesTool = workspace.tools.find(
+      (tool) => tool.name === 'neondeck_review_workspace_changes',
+    );
+    const historyTool = workspace.tools.find(
+      (tool) => tool.name === 'neondeck_review_workspace_history',
+    );
+    const diffTool = workspace.tools.find(
+      (tool) => tool.name === 'neondeck_review_workspace_diff',
+    );
+
+    await expect(
+      changesTool?.run({ data: { limit: 10 } } as never),
+    ).resolves.toMatchObject({
+      output: {
+        summary: { files: 1, additions: 1, deletions: 1 },
+        files: [
+          expect.objectContaining({
+            path: 'src/new-name.ts',
+            previousPath: 'src/old-name.ts',
+            status: 'renamed',
+            additions: 1,
+            deletions: 1,
+          }),
+        ],
+      },
+    });
+    await expect(
+      historyTool?.run({
+        data: { path: 'src/new-name.ts', limit: 10 },
+      } as never),
+    ).resolves.toMatchObject({
+      output: {
+        scope: 'file',
+        commits: [
+          expect.objectContaining({ subject: 'head' }),
+          expect.objectContaining({ subject: 'base' }),
+        ],
+        truncated: false,
+      },
+    });
+
+    await expect(
+      diffTool?.run({
+        data: {
+          path: 'src/new-name.ts',
+          rightLine: 1,
+          contextLines: 1,
+        },
+      } as never),
+    ).resolves.toMatchObject({
+      output: {
+        targetChanged: false,
+        lines: expect.arrayContaining([
+          expect.objectContaining({
+            kind: 'context',
+            rightLine: 1,
+            text: 'export const one = 1;',
+          }),
+        ]),
+      },
+    });
+    await expect(
+      diffTool?.run({
+        data: {
+          path: 'src/new-name.ts',
+          rightLine: 2,
+          contextLines: 1,
+        },
+      } as never),
+    ).resolves.toMatchObject({
+      output: {
+        targetChanged: true,
+        lines: expect.arrayContaining([
+          expect.objectContaining({
+            kind: 'addition',
+            rightLine: 2,
+            text: 'export const two = 22;',
+          }),
+        ]),
+      },
+    });
   });
 
   it('fetches base refs into the Neondeck namespace', async () => {
@@ -385,6 +1098,32 @@ async function fetchRefFixture() {
 
   await writeRepoRegistry(paths, repo);
   return { baseSha, headSha, movedBaseSha, paths, repo };
+}
+
+async function largeLineFixture() {
+  const home = await mkdtemp(join(tmpdir(), 'neondeck-home-'));
+  const repo = await mkdtemp(join(tmpdir(), 'neondeck-large-diff-'));
+  tempRoots.push(home, repo);
+  const paths = runtimePaths(home);
+  await mkdir(join(repo, 'src'), { recursive: true });
+  await writeFile(join(repo, 'README.md'), '# sample\n');
+  await git(repo, ['init', '-b', 'main']);
+  await git(repo, [
+    'remote',
+    'add',
+    'origin',
+    'git@github.com:example/sample.git',
+  ]);
+  await commitAll(repo, 'base');
+  const baseSha = await git(repo, ['rev-parse', 'HEAD']);
+  await writeFile(
+    join(repo, 'src/large.ts'),
+    `export const payload = '${'x'.repeat(17 * 1024 * 1024)}';\n`,
+  );
+  await commitAll(repo, 'large head');
+  const headSha = await git(repo, ['rev-parse', 'HEAD']);
+  await writeRepoRegistry(paths, repo);
+  return { baseSha, headSha, paths };
 }
 
 async function commitAll(repo: string, message: string) {

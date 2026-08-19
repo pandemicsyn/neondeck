@@ -1,5 +1,10 @@
 import * as v from 'valibot';
-import { encodePathSegment, githubFetch, nextLink } from './client';
+import {
+  encodePathSegment,
+  githubFetch,
+  githubGraphqlFetch,
+  nextLink,
+} from './client';
 import {
   fetchCheckRunDetailsWithMetadata,
   fetchCheckSuitesWithMetadata,
@@ -12,6 +17,7 @@ import {
   fetchPullRequestReviewsWithMetadata,
   requestedChangesStateFromReviews,
 } from './reviews';
+import { errorMessage, isGitHubChecksAccessError } from './errors';
 import {
   createPullRequestEventFetchBudget,
   type PullRequestEventFetchBudget,
@@ -32,7 +38,34 @@ import type {
   GitHubPullRequestFile,
   GitHubPullRequestFileApiItem,
   GitHubPullRequestFiles,
+  GitHubPullRequestReviewDecision,
 } from './schemas';
+
+const pullRequestReviewDecisionQuery = `
+  query NeondeckPullRequestReviewDecision($owner: String!, $name: String!, $number: Int!) {
+    repository(owner: $owner, name: $name) {
+      pullRequest(number: $number) {
+        reviewDecision
+      }
+    }
+  }
+`;
+
+const pullRequestReviewDecisionResponseSchema = v.object({
+  data: v.object({
+    repository: v.nullable(
+      v.object({
+        pullRequest: v.nullable(
+          v.object({
+            reviewDecision: v.nullable(
+              v.picklist(['APPROVED', 'CHANGES_REQUESTED', 'REVIEW_REQUIRED']),
+            ),
+          }),
+        ),
+      }),
+    ),
+  }),
+});
 
 export async function fetchPullRequestDetail(options: {
   token: string;
@@ -81,6 +114,25 @@ export async function fetchPullRequestDetail(options: {
   };
 }
 
+export async function fetchPullRequestReviewDecision(options: {
+  token: string;
+  owner: string;
+  repo: string;
+  number: number;
+}): Promise<GitHubPullRequestReviewDecision | null> {
+  const response = await githubGraphqlFetch(
+    options.token,
+    pullRequestReviewDecisionQuery,
+    {
+      owner: options.owner,
+      name: options.repo,
+      number: options.number,
+    },
+  );
+  const parsed = v.parse(pullRequestReviewDecisionResponseSchema, response);
+  return parsed.data.repository?.pullRequest?.reviewDecision ?? null;
+}
+
 export async function fetchPullRequestEventState(options: {
   token: string;
   owner: string;
@@ -96,8 +148,7 @@ export async function fetchPullRequestEventState(options: {
     reviewDetails,
     reviewThreadDetails,
     conversationCommentDetails,
-    checkSuiteDetails,
-    checkRunDetails,
+    checkDetails,
     branchPermissions,
     behindBy,
   ] = await Promise.all([
@@ -105,17 +156,8 @@ export async function fetchPullRequestEventState(options: {
     fetchPullRequestReviewsWithMetadata({ ...options, eventBudget }),
     fetchPullRequestReviewThreadsWithMetadata({ ...options, eventBudget }),
     listPullRequestCommentsWithMetadata({ ...options, eventBudget }),
-    fetchCheckSuitesWithMetadata({
-      token: options.token,
-      owner: options.owner,
-      repo: options.repo,
-      ref: detail.headSha,
-      eventBudget,
-    }),
-    fetchCheckRunDetailsWithMetadata({
-      token: options.token,
-      owner: options.owner,
-      repo: options.repo,
+    fetchOptionalPullRequestChecks({
+      ...options,
       ref: detail.headSha,
       eventBudget,
     }),
@@ -137,6 +179,7 @@ export async function fetchPullRequestEventState(options: {
     url: detail.url,
     title: detail.title,
     body: detail.body ?? null,
+    author: detail.author ?? null,
     state: detail.state,
     draft: detail.draft ?? false,
     merged: detail.merged,
@@ -165,10 +208,18 @@ export async function fetchPullRequestEventState(options: {
     conversationComments: conversationCommentDetails.comments,
     conversationCommentsTruncated: conversationCommentDetails.truncated,
     reviewsTruncated: reviewDetails.truncated,
-    checkSuites: checkSuiteDetails.checkSuites,
-    checkSuitesTruncated: checkSuiteDetails.truncated,
-    checkRuns: checkRunDetails.checkRuns,
-    checkRunsTruncated: checkRunDetails.truncated,
+    checkSuites: checkDetails.suites.checkSuites,
+    checkSuitesTruncated: checkDetails.suites.truncated,
+    ...(checkDetails.suites.unavailableReason
+      ? {
+          checkSuitesUnavailableReason: checkDetails.suites.unavailableReason,
+        }
+      : {}),
+    checkRuns: checkDetails.runs.checkRuns,
+    checkRunsTruncated: checkDetails.runs.truncated,
+    ...(checkDetails.runs.unavailableReason
+      ? { checkRunsUnavailableReason: checkDetails.runs.unavailableReason }
+      : {}),
     branchPermissions,
     isOutOfDate: isOutOfDateState(behindBy, detail.mergeableState),
     fetchedAt: new Date().toISOString(),
@@ -176,6 +227,57 @@ export async function fetchPullRequestEventState(options: {
   return enforcePullRequestEventStateBudget(state, {
     ...eventBudget.snapshot(),
   });
+}
+
+async function fetchOptionalPullRequestChecks(options: {
+  token: string;
+  owner: string;
+  repo: string;
+  number: number;
+  ref: string;
+  eventBudget: PullRequestEventFetchBudget;
+}) {
+  const [suiteResult, runResult] = await Promise.allSettled([
+    fetchCheckSuitesWithMetadata(options),
+    fetchCheckRunDetailsWithMetadata(options),
+  ]);
+  const rejected = [suiteResult, runResult].filter(
+    (result): result is PromiseRejectedResult => result.status === 'rejected',
+  );
+  const fatal = rejected.find(
+    (result) => !isGitHubChecksAccessError(result.reason),
+  );
+  if (fatal) throw fatal.reason;
+
+  const suites =
+    suiteResult.status === 'fulfilled'
+      ? { ...suiteResult.value, unavailableReason: null }
+      : {
+          checkSuites: [],
+          truncated: false,
+          unavailableReason: errorMessage(suiteResult.reason),
+        };
+  const runs =
+    runResult.status === 'fulfilled'
+      ? { ...runResult.value, unavailableReason: null }
+      : {
+          checkRuns: [],
+          truncated: false,
+          unavailableReason: errorMessage(runResult.reason),
+        };
+
+  if (rejected.length > 0) {
+    console.warn(
+      '[neondeck] GitHub Checks unavailable; continuing with partial PR event state',
+      {
+        repo: `${options.owner}/${options.repo}`,
+        prNumber: options.number,
+        checkSuites: suites.unavailableReason,
+        checkRuns: runs.unavailableReason,
+      },
+    );
+  }
+  return { suites, runs };
 }
 
 export const defaultPullRequestEventStateBudget = {

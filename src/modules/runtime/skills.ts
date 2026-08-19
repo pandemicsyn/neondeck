@@ -1,4 +1,4 @@
-import { defineSkill, type SkillReference } from '@flue/runtime';
+import { defineSkill, type SkillDefinition } from '@flue/runtime';
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { readdir, readFile, stat } from 'node:fs/promises';
 import { homedir } from 'node:os';
@@ -59,6 +59,17 @@ export type LoadedRuntimeSkill = RuntimeSkillMetadata & {
   content: string;
 };
 
+export type RuntimeSkillSessionSnapshot = {
+  name: string;
+  description: string;
+  instructions: string;
+  files: Array<{
+    path: string;
+    encoding: 'utf8' | 'base64';
+    content: string;
+  }>;
+};
+
 const skillNameSchema = v.pipe(
   v.string(),
   v.minLength(1),
@@ -75,13 +86,8 @@ const sensitiveSkillResourceNames = new Set([
   'id_ecdsa',
   'id_ed25519',
 ]);
-const applicationSkillPaths = [
-  fileURLToPath(new URL('../../skills/neondeck/SKILL.md', import.meta.url)),
-  fileURLToPath(
-    new URL('../../skills/neondeck-handoff/SKILL.md', import.meta.url),
-  ),
-  fileURLToPath(new URL('../../skills/github-gh/SKILL.md', import.meta.url)),
-];
+const applicationSkillIds = ['neondeck', 'neondeck-handoff', 'github-gh'];
+const applicationSkillPaths = resolveApplicationSkillPaths();
 const reservedBuiltInSkillIds = new Set(
   applicationSkillPaths.map((path) => basename(dirname(path))),
 );
@@ -91,6 +97,23 @@ const workflowRuntimeSkillIds = new Set([
   'neon-docs-fix',
   'neon-issue-triage',
 ]);
+
+export function resolveApplicationSkillPaths(moduleUrl = import.meta.url) {
+  const moduleDirectory = dirname(fileURLToPath(moduleUrl));
+  const candidateRoots = [
+    resolve(moduleDirectory, 'skills'),
+    resolve(moduleDirectory, '..', 'skills'),
+    resolve(moduleDirectory, '..', '..', 'skills'),
+  ];
+  const root =
+    candidateRoots.find((candidate) =>
+      applicationSkillIds.every((id) =>
+        existsSync(join(candidate, id, 'SKILL.md')),
+      ),
+    ) ?? candidateRoots.at(-1)!;
+
+  return applicationSkillIds.map((id) => join(root, id, 'SKILL.md'));
+}
 
 export async function listRuntimeSkills(paths = runtimePaths()) {
   await ensureRuntimeHome(paths);
@@ -147,7 +170,7 @@ export async function reloadRuntimeSkills(paths = runtimePaths()) {
 
 export function runtimeSkillReferencesSync(
   paths = runtimePaths(),
-): SkillReference[] {
+): SkillDefinition[] {
   ensureRuntimeHomeSync(paths);
   const roots = runtimeSkillRootsSafeSync(paths);
   const inventory = discoverRuntimeSkillsSync(
@@ -165,10 +188,48 @@ export function runtimeSkillReferencesSync(
     .map((skill) => runtimeSkillReference(skill));
 }
 
+export function runtimeSkillSessionSnapshotsSync(
+  paths = runtimePaths(),
+): RuntimeSkillSessionSnapshot[] {
+  ensureRuntimeHomeSync(paths);
+  const roots = runtimeSkillRootsSafeSync(paths);
+  const inventory = discoverRuntimeSkillsSync(
+    paths,
+    roots.roots,
+    roots.ignored,
+  );
+  return inventory.skills
+    .filter(
+      (skill) =>
+        skill.status === 'active' &&
+        skill.source !== 'built-in' &&
+        !workflowRuntimeSkillIds.has(skill.id),
+    )
+    .map(runtimeSkillSessionSnapshot);
+}
+
+export function runtimeSkillFromSessionSnapshot(
+  snapshot: RuntimeSkillSessionSnapshot,
+): SkillDefinition {
+  return defineSkill({
+    name: snapshot.name,
+    description: snapshot.description,
+    instructions: snapshot.instructions,
+    files: Object.fromEntries(
+      snapshot.files.map((file) => [
+        file.path,
+        file.encoding === 'utf8'
+          ? file.content
+          : new Uint8Array(Buffer.from(file.content, 'base64')),
+      ]),
+    ),
+  });
+}
+
 export function runtimeSkillReferenceByIdSync(
   id: string,
   paths = runtimePaths(),
-): SkillReference | undefined {
+): SkillDefinition | undefined {
   ensureRuntimeHomeSync(paths);
   const roots = runtimeSkillRootsSafeSync(paths);
   const inventory = discoverRuntimeSkillsSync(
@@ -621,17 +682,30 @@ function errorMessage(error: unknown) {
   return error instanceof Error ? error.message : String(error);
 }
 
-function runtimeSkillReference(skill: RuntimeSkillMetadata): SkillReference {
+function runtimeSkillReference(skill: RuntimeSkillMetadata): SkillDefinition {
+  return runtimeSkillFromSessionSnapshot(runtimeSkillSessionSnapshot(skill));
+}
+
+function runtimeSkillSessionSnapshot(
+  skill: RuntimeSkillMetadata,
+): RuntimeSkillSessionSnapshot {
   const source = readFileSync(skill.path, 'utf8');
   const metadata = parseFrontmatter(source);
   const files = collectSupportingFilesSync(skill.directory);
 
-  return defineSkill({
+  return {
     name: skill.id,
     description: skill.description,
     instructions: metadata.ok ? metadata.body : source,
-    files,
-  });
+    files: Object.entries(files).map(([path, content]) => ({
+      path,
+      encoding: typeof content === 'string' ? 'utf8' : 'base64',
+      content:
+        typeof content === 'string'
+          ? content
+          : Buffer.from(content).toString('base64'),
+    })),
+  };
 }
 
 function collectSupportingFilesSync(directory: string) {

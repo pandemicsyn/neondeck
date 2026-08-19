@@ -1,3 +1,4 @@
+import { openAiCodexModels } from '../../model-defaults';
 import { registeredProviderIds, type RegisteredProviderId } from './providers';
 
 export type DiscoveredModel = {
@@ -78,6 +79,18 @@ export function suggestedModels(
         1,
       ),
     ];
+  }
+
+  if (provider === 'openai-codex') {
+    return openAiCodexModels.map((model, recommendedIndex) =>
+      suggestedModel(
+        'openai-codex',
+        model.id,
+        model.name,
+        true,
+        recommendedIndex,
+      ),
+    );
   }
 
   return [

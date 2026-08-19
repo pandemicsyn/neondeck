@@ -1,8 +1,47 @@
 import { describe, expect, it } from 'vitest';
 import type { PrReviewRecord, PrReviewsResponse } from '../api';
-import { applyPrReviewChange } from './ReviewsPanel';
+import {
+  applyPrReviewChange,
+  applyPrReviewSnapshot,
+  reviewReadyDetail,
+} from './ReviewsPanel';
 
 describe('ReviewsPanel review events', () => {
+  it('distinguishes a previous approval from pending local drafts', () => {
+    const approved = {
+      ...review('ready'),
+      previousVerdict: 'approve' as const,
+      seededCount: 2,
+    };
+
+    expect(reviewReadyDetail(approved)).toBe(
+      'You previously approved this PR on GitHub. 2 local draft comments are not submitted.',
+    );
+    expect(
+      reviewReadyDetail({
+        ...approved,
+        seededCount: 0,
+        findingCount: 0,
+        reportOnlyCount: 0,
+      }),
+    ).toBe(
+      'You previously approved this PR on GitHub. Nothing new is pending locally.',
+    );
+  });
+
+  it('removes an awaiting queue row when its durable review starts', () => {
+    const current = responseWith(review('ready'));
+    current.groups.awaiting = [awaitingItem(null)];
+
+    const response = applyPrReviewChange(current, {
+      ...review('reviewing'),
+      repoFullName: 'Other/Project',
+    });
+
+    expect(response.groups.awaiting).toEqual([]);
+    expect(response.groups.inProgress).toHaveLength(1);
+  });
+
   it('moves one durable record through lifecycle groups without duplication', () => {
     let response = responseWith(review('reviewing'));
     response = applyPrReviewChange(response, review('ready'));
@@ -25,8 +64,79 @@ describe('ReviewsPanel review events', () => {
     expect(response.groups.submitted).toMatchObject([
       { id: 'review-1', status: 'submitted' },
     ]);
+
+    response = applyPrReviewChange(response, {
+      ...review('submitted'),
+      archivedAt: '2026-07-14T20:03:00.000Z',
+    });
+    expect(response.groups.submitted).toEqual([]);
+    expect(response.groups.archived).toMatchObject([
+      { id: 'review-1', status: 'submitted' },
+    ]);
+  });
+
+  it('merges an authoritative local snapshot without losing GitHub queue context', () => {
+    const current = responseWith(review('ready'));
+    current.groups.awaiting = [awaitingItem(current.items[0]!)];
+    current.queueIssues = ['GitHub queue warning'];
+    const started = {
+      ...review('reviewing'),
+      id: 'review-2',
+      ref: 'other/project#43',
+      prNumber: 43,
+      updatedAt: '2026-07-14T20:02:00.000Z',
+    };
+    const snapshot = responseWith(started);
+
+    const response = applyPrReviewSnapshot(current, snapshot);
+
+    expect(response.groups.inProgress).toEqual([started]);
+    expect(response.groups.needsAction).toEqual([]);
+    expect(response.groups.awaiting[0]?.review).toBeNull();
+    expect(response.queueIssues).toEqual(['GitHub queue warning']);
+  });
+
+  it('removes an awaiting queue row claimed by a local snapshot', () => {
+    const current = responseWith(review('ready'));
+    current.groups.awaiting = [awaitingItem(null)];
+    const started = {
+      ...review('reviewing'),
+      repoFullName: 'Other/Project',
+    };
+
+    const response = applyPrReviewSnapshot(current, responseWith(started));
+
+    expect(response.groups.awaiting).toEqual([]);
+    expect(response.groups.inProgress).toEqual([started]);
   });
 });
+
+function awaitingItem(reviewRecord: PrReviewRecord | null) {
+  return {
+    pullRequest: {
+      id: 42,
+      repo: 'other/project',
+      number: 42,
+      title: 'Review this change',
+      author: 'contributor',
+      url: 'https://github.com/other/project/pull/42',
+      state: 'open' as const,
+      draft: false,
+      comments: 0,
+      headSha: 'head-1',
+      baseSha: 'base-1',
+      baseRef: 'main',
+      createdAt: '2026-07-14T19:00:00.000Z',
+      updatedAt: '2026-07-14T20:01:00.000Z',
+      ageDays: 0,
+      stale: false,
+      relations: ['review-requested' as const],
+      checks: null,
+      labels: [],
+    },
+    review: reviewRecord,
+  };
+}
 
 function responseWith(record: PrReviewRecord): PrReviewsResponse {
   return {
@@ -42,6 +152,7 @@ function responseWith(record: PrReviewRecord): PrReviewsResponse {
           : [],
       needsAction: [],
       submitted: [],
+      archived: [],
     },
   };
 }
@@ -58,6 +169,8 @@ function review(status: PrReviewRecord['status']): PrReviewRecord {
     status,
     runId: 'run-1',
     headSha: 'head-1',
+    baseSha: null,
+    baseRef: null,
     origin: 'chat',
     reviewUrl: '/review?repo=other%2Fproject&number=42',
     reportIds: status === 'reviewing' ? [] : ['overview', 'issues'],
@@ -78,5 +191,6 @@ function review(status: PrReviewRecord['status']): PrReviewRecord {
     readyAt: status === 'ready' ? '2026-07-14T20:01:00.000Z' : null,
     submittedAt: status === 'submitted' ? '2026-07-14T20:02:00.000Z' : null,
     failedAt: null,
+    archivedAt: null,
   };
 }

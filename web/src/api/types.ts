@@ -129,6 +129,8 @@ export type PrReviewRecord = {
   status: PrReviewStatus;
   runId: string | null;
   headSha: string;
+  baseSha: string | null;
+  baseRef: string | null;
   origin: 'chat' | 'panel' | 'api';
   reviewUrl: string;
   reportIds: string[];
@@ -146,6 +148,7 @@ export type PrReviewRecord = {
   readyAt: string | null;
   submittedAt: string | null;
   failedAt: string | null;
+  archivedAt: string | null;
 };
 
 export type PrReviewAwaitingItem = {
@@ -163,6 +166,7 @@ export type PrReviewsResponse = {
     inProgress: PrReviewRecord[];
     needsAction: PrReviewRecord[];
     submitted: PrReviewRecord[];
+    archived: PrReviewRecord[];
   };
   queueIssues?: string[];
 };
@@ -187,6 +191,7 @@ export type PrReviewChangeEvent = {
 export type GitHubQueueIssue = {
   type:
     | 'search-truncated'
+    | 'search-incomplete'
     | 'search-error'
     | 'enrichment-error'
     | 'queue-truncated';
@@ -204,6 +209,18 @@ export type GitHubPullRequestResponse = {
   truncated?: boolean;
   issues?: GitHubQueueIssue[];
   error?: string;
+  revision?: string;
+  status?: 'loading' | 'ready' | 'degraded' | 'unavailable';
+  lastAttemptAt?: string | null;
+  lastCompleteAt?: string | null;
+};
+
+export type GitHubQueueChangeEvent = {
+  id: string;
+  action: 'changed';
+  revision: string;
+  snapshot: GitHubPullRequestResponse;
+  changedAt: string;
 };
 
 export type GitHubPullRequestDetailResponse = {
@@ -608,6 +625,7 @@ export type RuntimeStatus = {
       kilo: boolean;
       openai: boolean;
       anthropic: boolean;
+      openaiCodex: boolean;
       github: boolean;
     };
     configs: {
@@ -628,17 +646,43 @@ export type RuntimeStatus = {
         apiKeyEnv: string;
         apiKeyPresent: boolean;
       };
+      openaiCodex: {
+        enabled: boolean;
+        state: 'missing' | 'valid' | 'refresh-needed' | 'error';
+        authenticated: boolean;
+        usable: boolean;
+        expiresAt: string | null;
+        needsRefresh: boolean;
+        lastError: string | null;
+      };
+      openaiCompatible: Array<{
+        id: string;
+        enabled: boolean;
+        baseUrl: string;
+        apiKeyEnv: string | null;
+        apiKeyPresent: boolean;
+        api: 'openai-completions' | 'openai-responses';
+        contextWindow: number | null;
+        maxTokens: number | null;
+      }>;
     };
   };
   models: {
     displayAssistant: string;
     displayAssistantProvider: string;
     displayAssistantThinkingLevel: string;
+    prReview: string;
+    prReviewProvider: string;
+    prReviewThinkingLevel: string;
+    prReviewConfigured: boolean;
+    prReviewTimeoutMs: number;
     utility: string;
     utilityProvider: string;
     utilityThinkingLevel: string;
     utilityConfigured: boolean;
     utilityRecommendation: string | null;
+    exploreConfigured: boolean;
+    exploreThinkingConfigured: boolean;
     subagents: Record<string, string>;
     subagentThinkingLevels: Record<string, string>;
   };
@@ -744,6 +788,8 @@ export type McpServer = {
   id: string;
   transport: 'http' | 'stdio';
   enabled: boolean;
+  approvalMode: 'prompt' | 'writes' | 'approve';
+  toolOverrides: Record<string, 'prompt' | 'approve' | 'deny'>;
   status: McpServerStatus;
   auth: {
     kind: 'none' | 'header' | 'oauth';
@@ -772,6 +818,8 @@ export type McpApproval = {
   argumentsHash: string;
   argumentsPreview: string;
   status: 'pending' | 'approved' | 'denied' | 'used' | 'expired';
+  approvalDecision:
+    'allow-once' | 'allow-chat' | 'allow-always' | 'deny' | null;
   approverSurface: string | null;
   sessionId: string | null;
   createdAt: string;
@@ -1129,13 +1177,50 @@ export type ConfigActionResult = {
   requires?: string[];
 };
 
+export type AutopilotOwnerPromptMode =
+  'prepare-only' | 'autofix-with-approval' | 'autofix-push-when-safe';
+
+export type AutopilotPromptConfigData = {
+  prompts: Record<AutopilotOwnerPromptMode, string>;
+  defaults: Record<AutopilotOwnerPromptMode, string>;
+  overrides: Partial<Record<AutopilotOwnerPromptMode, string>>;
+  tokens: string[];
+  appliesAfter: 'next-owner-turn';
+};
+
+export type AutopilotPromptConfigResponse = Omit<ConfigActionResult, 'data'> & {
+  data: AutopilotPromptConfigData;
+};
+
+export type PrReviewPromptKind = 'initial-review' | 'follow-up-reviewer';
+
+export type PrReviewPromptConfigData = {
+  prompts: Record<PrReviewPromptKind, string>;
+  defaults: Record<PrReviewPromptKind, string>;
+  overrides: Partial<Record<PrReviewPromptKind, string>>;
+  tokens: Record<PrReviewPromptKind, string[]>;
+  appliesAfter: Record<
+    PrReviewPromptKind,
+    'next-review-run' | 'next-reviewer-turn'
+  >;
+};
+
+export type PrReviewPromptConfigResponse = Omit<ConfigActionResult, 'data'> & {
+  data: PrReviewPromptConfigData;
+};
+
 export type AgentModelUpdate = {
   displayAssistant?: string;
   displayAssistantThinkingLevel?: string;
+  prReview?: string | null;
+  prReviewThinkingLevel?: string;
+  prReviewTimeoutMs?: number;
   utility?: string | null;
   utilityThinkingLevel?: string;
   subagents?: {
     defaultThinkingLevel?: string;
+    explore?: string | null;
+    exploreThinkingLevel?: string | null;
     repoResearcher?: string;
     repoResearcherThinkingLevel?: string;
     ciInvestigator?: string;
@@ -1145,11 +1230,41 @@ export type AgentModelUpdate = {
   };
 };
 
-export type ProviderUpdate = {
-  enabled?: boolean;
-  apiKeyEnv?: string | null;
-  organizationIdEnv?: string | null;
-};
+export type ProviderUpdate =
+  | {
+      provider: 'kilocode';
+      input: {
+        enabled?: boolean;
+        apiKeyEnv?: string | null;
+        organizationIdEnv?: string | null;
+      };
+    }
+  | {
+      provider: 'openai' | 'anthropic';
+      input: {
+        enabled?: boolean;
+        apiKeyEnv?: string | null;
+      };
+    }
+  | {
+      provider: 'openai-codex';
+      input: {
+        enabled?: boolean;
+      };
+    }
+  | {
+      provider: 'openai-compatible';
+      input: {
+        id: string;
+        enabled?: boolean;
+        baseUrl?: string;
+        apiKeyEnv?: string | null;
+        api?: 'openai-completions' | 'openai-responses';
+        contextWindow?: number | null;
+        maxTokens?: number | null;
+        remove?: boolean;
+      };
+    };
 
 export type ChatSessionKind =
   'main' | 'scratch' | 'general' | 'repo' | 'watch' | 'task' | 'briefing';
@@ -1287,10 +1402,9 @@ export type ChatSessionCommandChangeEvent = {
   changedAt: string;
 };
 
-export type WorkflowEventRecord = {
+export type ActivityEventRecord = {
   id: number;
-  runId: string | null;
-  workflow: string | null;
+  submissionId: string | null;
   eventType: string;
   eventIndex: number | null;
   level: string | null;
@@ -1298,31 +1412,69 @@ export type WorkflowEventRecord = {
   name: string | null;
   operationKind: string | null;
   operationId: string | null;
+  agentName: string | null;
+  instanceId: string | null;
+  conversationId: string | null;
   durationMs: number | null;
   isError: boolean;
   summary: unknown;
   createdAt: string;
-  runUrl: string | null;
+  detailUrl: string | null;
 };
 
-export type WorkflowObservability = {
+export type ActivityObservability = {
   ok: boolean;
-  action: 'workflow_observability_read';
-  activeRuns: Array<{
-    runId: string;
-    workflow: string;
-    startedAt: string;
+  action: 'activity_observability_read';
+  activeSubmissions: Array<{
+    submissionId: string;
+    kind: string;
+    agentName: string | null;
+    instanceId: string | null;
+    status: 'queued' | 'running';
+    queuedAt: string;
+    startedAt: string | null;
     lastEventAt: string;
     lastMessage: string;
     eventCount: number;
-    runUrl: string | null;
+    attemptCount: number;
+    detailUrl: string;
   }>;
-  recentFailures: WorkflowEventRecord[];
-  recentData: WorkflowEventRecord[];
-  recentLogs: WorkflowEventRecord[];
-  recentTools: WorkflowEventRecord[];
-  recentOperations: WorkflowEventRecord[];
-  recentEvents: WorkflowEventRecord[];
+  recentFailures: ActivityEventRecord[];
+  recentSettlements: ActivityEventRecord[];
+  recentLogs: ActivityEventRecord[];
+  recentTools: ActivityEventRecord[];
+  recentOperations: ActivityEventRecord[];
+  recentEvents: ActivityEventRecord[];
+  fetchedAt: string;
+};
+
+export type ActivitySubmissionRecord = {
+  submissionId: string;
+  kind: string;
+  agentName: string | null;
+  instanceId: string | null;
+  status: 'queued' | 'running' | 'completed' | 'failed' | 'aborted';
+  queuedAt: string;
+  startedAt: string | null;
+  settledAt: string | null;
+  lastEventAt: string;
+  lastMessage: string;
+  eventCount: number;
+  attemptCount: number;
+  isError: boolean;
+  detailUrl: string;
+};
+
+export type ActivitySubmissionResponse = {
+  ok: true;
+  action: 'activity_submission_read';
+  submission: ActivitySubmissionRecord;
+  events: ActivityEventRecord[];
+  eventHistory: {
+    totalEventCount: number;
+    retainedEventCount: number;
+    isTruncated: boolean;
+  };
   fetchedAt: string;
 };
 
@@ -1417,7 +1569,9 @@ export type LearningReviewRecord = {
   inputSummary: unknown;
   result: unknown;
   error: string | null;
-  flueRunId: string | null;
+  agentId: string | null;
+  submissionId: string | null;
+  dispatchError: string | null;
   startedAt: string;
   completedAt: string | null;
 };
@@ -1573,7 +1727,9 @@ export type BriefingMutationResponse = {
   message: string;
   profile?: BriefingProfile;
   run?: BriefingRun;
-  workflowRunId?: string;
+  briefingRunId?: string;
+  submissionId?: string;
+  sessionId?: string;
   errors?: string[];
 };
 
@@ -1701,7 +1857,8 @@ export type PrWatch = {
     | 'prepare-only'
     | 'autofix-with-approval'
     | 'autofix-push-when-safe';
-  autopilotStatus: 'watching' | 'working' | 'waiting' | 'blocked' | 'complete';
+  autopilotStatus:
+    'watching' | 'working' | 'waiting' | 'blocked' | 'stopping' | 'complete';
   ownerInstanceId: string | null;
   worktreeId: string | null;
   worktreeHeadSha?: string | null;
@@ -1716,6 +1873,7 @@ export type PrWatchSnapshot = {
   state: string;
   merged: boolean;
   mergeCommitSha: string | null;
+  reviewDecision?: 'APPROVED' | 'CHANGES_REQUESTED' | 'REVIEW_REQUIRED' | null;
   checks: {
     status: 'success' | 'failure' | 'pending' | 'none';
     total: number;
@@ -1744,8 +1902,11 @@ export type PrWatchMutationResponse = {
   action: string;
   changed: boolean;
   message: string;
+  dispatchId?: string | null;
   watch?: PrWatch;
   watches?: PrWatch[];
+  detachedWorktreeId?: string | null;
+  cleanupRecovery?: string | null;
   requires?: string[];
   errors?: string[];
 };

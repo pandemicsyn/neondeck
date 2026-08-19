@@ -179,6 +179,46 @@ describe('reports', () => {
     ).resolves.toEqual([]);
   });
 
+  it('rolls back a committed report when cancellation arrives during pruning', async () => {
+    const paths = runtimePaths(await tempDir());
+    const controller = new AbortController();
+    let releasePrune!: () => void;
+    const pruneGate = new Promise<void>((resolve) => {
+      releasePrune = resolve;
+    });
+    let pruningStarted = false;
+    const result = writeReport(
+      {
+        id: 'cancelled-report',
+        signal: controller.signal,
+        ...reportInput(
+          'pr-review',
+          'cancelled review',
+          '2026-07-05T00:00:00.000Z',
+        ),
+      },
+      paths,
+      {
+        prune: async () => {
+          pruningStarted = true;
+          await pruneGate;
+          return { deleted: 0 };
+        },
+      },
+    );
+    await expect.poll(() => pruningStarted).toBe(true);
+    controller.abort(new DOMException('operator cancelled', 'AbortError'));
+    releasePrune();
+
+    await expect(result).rejects.toMatchObject({ name: 'AbortError' });
+    await expect(listReports(paths, { kind: 'pr-review' })).resolves.toEqual(
+      [],
+    );
+    await expect(
+      readdir(resolveReportFilePath(paths, 'pr-review')),
+    ).resolves.toEqual([]);
+  });
+
   it('serves report listings and HTML through local routes', async () => {
     const paths = runtimePaths(await tempDir());
     const report = await writeReport(
@@ -283,6 +323,9 @@ describe('reports', () => {
     expect(servedHtml).toContain(
       `<script>${REPORT_DECK_CONTROLLER_SOURCE}</script>`,
     );
+    expect(servedHtml).toContain('data-deck-chrome="full"');
+    expect(servedHtml).toContain(representativeReportDeckFixture.title);
+    expect(servedHtml).toContain(representativeReportDeckFixture.subtitle);
   });
 
   it('keeps report paths under the runtime reports root', async () => {

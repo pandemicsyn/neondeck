@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { defineAction, defineTool } from '@flue/runtime';
+import { defineTool } from '@flue/runtime';
 import { openDb } from '../lib/sqlite';
 import { currentTaskOrigin } from '../modules/flue/origin';
 import {
@@ -62,108 +62,108 @@ import {
   type RepoPushInput,
 } from './schemas';
 
-export const repoFileReadAction = defineAction({
+export const repoFileReadAction = defineTool({
   name: 'neondeck_repo_file_read',
   description:
     'Read one text file from a configured Neondeck repo using a repo-relative path. Never prompts inside declared workspaces.',
   input: repoReadInputSchema,
   output: repoEditOutputSchema,
-  async run({ input }) {
-    return readRepoFile(input);
+  async run({ data: input }) {
+    return { output: await readRepoFile(input) };
   },
 });
 
-export const repoFileSearchAction = defineAction({
+export const repoFileSearchAction = defineTool({
   name: 'neondeck_repo_file_search',
   description:
     'Search text files in a configured Neondeck repo using rg-style deterministic search.',
   input: repoSearchInputSchema,
   output: repoEditOutputSchema,
-  async run({ input }) {
-    return searchRepoFiles(input);
+  async run({ data: input }) {
+    return { output: await searchRepoFiles(input) };
   },
 });
 
-export const repoFileWriteAction = defineAction({
+export const repoFileWriteAction = defineTool({
   name: 'neondeck_repo_file_write',
   description:
     'Write a complete text file inside a configured Neondeck repo. Use for generated files or deliberate full rewrites.',
   input: repoWriteInputSchema,
   output: repoEditOutputSchema,
-  async run({ input }) {
-    return writeRepoFile(input);
+  async run({ data: input }) {
+    return { output: await writeRepoFile(input) };
   },
 });
 
-export const repoFileReplaceAction = defineAction({
+export const repoFileReplaceAction = defineTool({
   name: 'neondeck_repo_file_replace',
   description:
     'Replace an exact or safe fuzzy old string with a new string inside one configured repo file.',
   input: repoReplaceInputSchema,
   output: repoEditOutputSchema,
-  async run({ input }) {
-    return replaceRepoFile(input);
+  async run({ data: input }) {
+    return { output: await replaceRepoFile(input) };
   },
 });
 
-export const repoFilePatchAction = defineAction({
+export const repoFilePatchAction = defineTool({
   name: 'neondeck_repo_file_patch',
   description:
     'Apply a V4A/Codex-style multi-file patch inside a configured Neondeck repo. Validates all files before mutating.',
   input: repoPatchInputSchema,
   output: repoEditOutputSchema,
-  async run({ input }) {
-    return patchRepoFiles(input);
+  async run({ data: input }) {
+    return { output: await patchRepoFiles(input) };
   },
 });
 
-export const repoDiffAction = defineAction({
+export const repoDiffAction = defineTool({
   name: 'neondeck_repo_diff',
   description:
     'Return git-backed diff summary and optional patch content for a configured Neondeck repo.',
   input: repoDiffInputSchema,
   output: repoEditOutputSchema,
-  async run({ input }) {
-    return readRepoDiff(input);
+  async run({ data: input }) {
+    return { output: await readRepoDiff(input) };
   },
 });
 
-export const repoStatusAction = defineAction({
+export const repoStatusAction = defineTool({
   name: 'neondeck_repo_checkout_status',
   description:
     'Return branch, upstream, ahead/behind, and changed file status for a configured Neondeck repo.',
   input: repoStatusInputSchema,
   output: repoEditOutputSchema,
-  async run({ input }) {
-    return readRepoCheckoutStatus(input);
+  async run({ data: input }) {
+    return { output: await readRepoCheckoutStatus(input) };
   },
 });
 
-export const repoCommitAction = defineAction({
+export const repoCommitAction = defineTool({
   name: 'neondeck_repo_commit',
   description:
     'Commit selected or all changes in a declared managed worktree. Interactive sessions only; never creates an execution approval.',
   input: repoCommitInputSchema,
   output: repoEditOutputSchema,
-  async run({ input }) {
+  async run({ data: input }) {
     if (currentTaskOrigin() === 'autopilot') {
-      return originFailure('repo_commit', 'interactiveOnly');
+      return { output: await originFailure('repo_commit', 'interactiveOnly') };
     }
-    return commitInteractiveRepo(input);
+    return { output: await commitInteractiveRepo(input) };
   },
 });
 
-export const repoPushAction = defineAction({
+export const repoPushAction = defineTool({
   name: 'neondeck_repo_push',
   description:
     'Push the current managed worktree HEAD to its linked PR head. Interactive sessions only; guardrail expansions require one effect-based confirmation.',
   input: repoPushInputSchema,
   output: repoEditOutputSchema,
-  async run({ input }) {
+  async run({ data: input }) {
     if (currentTaskOrigin() === 'autopilot') {
-      return originFailure('repo_push', 'interactiveOnly');
+      return { output: await originFailure('repo_push', 'interactiveOnly') };
     }
-    return pushInteractiveRepo(input);
+    return { output: await pushInteractiveRepo(input) };
   },
 });
 
@@ -214,6 +214,8 @@ export async function pushInteractiveRepo(
     resolveContext?: typeof resolveInteractiveRepoContext;
     contextDependencies?: Parameters<typeof resolveInteractiveRepoContext>[2];
     pushGit?: typeof gitPushHead;
+    authorizePush?: () => boolean | Promise<boolean>;
+    expectedRemoteSha?: string;
   } = {},
 ) {
   await ensureRuntimeHome(paths);
@@ -316,12 +318,23 @@ export async function pushInteractiveRepo(
             database.close();
           }
         }
+        if (
+          dependencies.authorizePush &&
+          !(await dependencies.authorizePush())
+        ) {
+          return requirementFailure(
+            'repo_push',
+            'Current authority no longer permits this push.',
+            'currentAuthority',
+          );
+        }
         const push = await (dependencies.pushGit ?? gitPushHead)(
           context.worktree.localPath,
           {
             remote: context.pushRemote,
             branch: context.pushBranch,
             sha: commitSha,
+            expectedRemoteSha: dependencies.expectedRemoteSha,
           },
         );
         await recordWorktreePushSucceeded(
@@ -356,8 +369,8 @@ export const repoDiffTool = defineTool({
   description: 'Read git diff summary for a configured Neondeck repo.',
   input: repoDiffInputSchema,
   output: repoEditOutputSchema,
-  async run({ input }) {
-    return readRepoDiff(input);
+  async run({ data: input }) {
+    return { output: await readRepoDiff(input) };
   },
 });
 
@@ -366,8 +379,8 @@ export const repoStatusTool = defineTool({
   description: 'Read checkout status for a configured Neondeck repo.',
   input: repoStatusInputSchema,
   output: repoEditOutputSchema,
-  async run({ input }) {
-    return readRepoCheckoutStatus(input);
+  async run({ data: input }) {
+    return { output: await readRepoCheckoutStatus(input) };
   },
 });
 
@@ -379,6 +392,21 @@ export const neondeckRepoEditActions = [
   repoFilePatchAction,
   repoDiffAction,
   repoStatusAction,
+  repoCommitAction,
+  repoPushAction,
+];
+
+export const neondeckRepoReadActions = [
+  repoFileReadAction,
+  repoFileSearchAction,
+  repoDiffAction,
+  repoStatusAction,
+];
+
+export const neondeckRepoMutationActions = [
+  repoFileWriteAction,
+  repoFileReplaceAction,
+  repoFilePatchAction,
   repoCommitAction,
   repoPushAction,
 ];
