@@ -36,10 +36,16 @@ describe('Explore delegation prompts', () => {
 
   it('teaches initial and follow-up reviewers to batch only independent research', () => {
     expect(defaultPrReviewPromptTemplates['initial-review']).toContain(
-      concurrentGuidance,
+      'Launch up to three Explore tasks together',
     );
     expect(defaultPrReviewPromptTemplates['follow-up-reviewer']).toContain(
-      concurrentGuidance,
+      'Launch up to three tasks together for genuinely independent domains',
+    );
+    expect(defaultPrReviewPromptTemplates['initial-review']).toContain(
+      'do not prefer a particular count',
+    );
+    expect(defaultPrReviewPromptTemplates['follow-up-reviewer']).toContain(
+      'without preferring a particular count',
     );
     expect(prReviewAssistantOperationInstructions).toContain(
       concurrentGuidance,

@@ -585,6 +585,27 @@ export const prReviewWorkspaceBudgets = sqliteTable(
   ],
 );
 
+export const prReviewWorkspaceOutputs = sqliteTable(
+  'pr_review_workspace_outputs',
+  {
+    outputRef: text('output_ref').primaryKey(),
+    scopeKey: text('scope_key').notNull(),
+    source: text('source').notNull(),
+    payload: text('payload').notNull(),
+    byteSize: integer('byte_size').notNull(),
+    lineCount: integer('line_count').notNull(),
+    createdAt: text('created_at').notNull(),
+    expiresAt: text('expires_at').notNull(),
+  },
+  (table) => [
+    index('idx_pr_review_workspace_outputs_scope').on(
+      table.scopeKey,
+      table.createdAt,
+    ),
+    index('idx_pr_review_workspace_outputs_expires').on(table.expiresAt),
+  ],
+);
+
 export const prReviewDrafts = sqliteTable(
   'pr_review_drafts',
   {

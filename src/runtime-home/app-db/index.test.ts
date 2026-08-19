@@ -58,6 +58,52 @@ describe('app database initialization', () => {
       await rm(home, { recursive: true, force: true });
     }
   });
+
+  it('prunes expired retained PR review outputs during initialization', async () => {
+    const home = await mkdtemp(join(tmpdir(), 'neondeck-app-db-'));
+    const databasePath = join(home, 'neondeck.db');
+    try {
+      initializeAppDatabase(databasePath);
+      const database = openDb(databasePath);
+      try {
+        database
+          .prepare(
+            `INSERT INTO pr_review_workspace_outputs (
+               output_ref, scope_key, source, payload, byte_size, line_count,
+               created_at, expires_at
+             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?);`,
+          )
+          .run(
+            'expired-output',
+            'review:expired',
+            'diff',
+            'payload',
+            7,
+            1,
+            '2026-01-01T00:00:00.000Z',
+            '2026-01-02T00:00:00.000Z',
+          );
+      } finally {
+        database.close();
+      }
+
+      initializeAppDatabase(databasePath);
+      const after = openDb(databasePath, { readOnly: true });
+      try {
+        expect(
+          after
+            .prepare(
+              `SELECT COUNT(*) AS count FROM pr_review_workspace_outputs;`,
+            )
+            .get(),
+        ).toEqual({ count: 0 });
+      } finally {
+        after.close();
+      }
+    } finally {
+      await rm(home, { recursive: true, force: true });
+    }
+  });
 });
 
 function pragmaValue(database: DatabaseSync, pragma: string) {

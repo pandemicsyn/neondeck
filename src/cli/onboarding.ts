@@ -39,7 +39,7 @@ import { preapprovalGroups, type PreapprovalGroupId } from './preapprovals';
 
 const defaultModel = 'kilocode/kilo-auto/balanced';
 export const exploreModelRecommendation =
-  'Recommended: OpenAI Luna at high reasoning or OpenAI Terra at medium.';
+  'Recommended: OpenAI Luna or OpenAI Terra at medium reasoning.';
 type SetupModelProvider =
   'kilocode' | 'openai' | 'anthropic' | 'openai-codex' | 'openai-compatible';
 
@@ -482,7 +482,11 @@ export async function chooseExploreModel(
   });
 
   if (mode === 'default') {
-    return { explore: null, exploreThinkingLevel: null };
+    const thinkingLevel = await promptThinkingLevel({
+      message: 'Explore thinking level',
+      initialValue: 'medium',
+    });
+    return { explore: null, exploreThinkingLevel: thinkingLevel };
   }
   const model =
     provider === 'kilocode'

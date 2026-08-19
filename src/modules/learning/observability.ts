@@ -1,4 +1,5 @@
 import { type FlueObservation, type JsonValue } from '@flue/runtime';
+import { createHash } from 'node:crypto';
 import type { DatabaseSync } from 'node:sqlite';
 import { openDb } from '../../lib/sqlite';
 import { ensureRuntimeHome, runtimePaths } from '../../runtime-home';
@@ -375,6 +376,7 @@ function summarizeObservation(event: FlueObservation): {
         {
           taskId: event.taskId,
           agent: event.agent ?? null,
+          ...taskPromptMetadata(event.prompt),
         },
       );
     case 'task':
@@ -382,7 +384,13 @@ function summarizeObservation(event: FlueObservation): {
         `Task ${event.taskId} ${event.isError ? 'failed' : 'completed'} in ${formatDuration(event.durationMs)}.`,
         event.agent ?? null,
         event.isError,
-        { taskId: event.taskId, agent: event.agent ?? null },
+        compactJsonRecord({
+          taskId: event.taskId,
+          agent: event.agent ?? null,
+          resultHash:
+            event.result === undefined ? null : privacyHash(event.result),
+          resultBytes: jsonByteLength(event.result),
+        }),
         null,
         event.durationMs,
       );
@@ -438,6 +446,67 @@ function activitySummary(
   return { message, name, operationKind, durationMs, isError, summary };
 }
 
+function taskPromptMetadata(prompt: string): Record<string, JsonValue> {
+  const question = taskPromptField(prompt, 'Question');
+  const revision = taskPromptField(prompt, 'Revision');
+  const scope = taskPromptField(prompt, 'Scope');
+  const exclusions = taskPromptField(prompt, 'Exclusions');
+  const expectedEvidence = taskPromptField(prompt, 'Expected evidence');
+  const thoroughness = taskPromptField(prompt, 'Thoroughness')?.toLowerCase();
+  return compactJsonRecord({
+    promptHash: privacyHash(prompt),
+    promptLength: prompt.length,
+    questionHash: question ? privacyHash(question) : undefined,
+    revisionHash: revision ? privacyHash(revision) : undefined,
+    scopeHash: scope ? privacyHash(scope) : undefined,
+    scopeItemCount: scope ? scopeItemCount(scope) : undefined,
+    exclusionsHash: exclusions ? privacyHash(exclusions) : undefined,
+    exclusionItemCount: exclusions ? scopeItemCount(exclusions) : undefined,
+    expectedEvidenceHash: expectedEvidence
+      ? privacyHash(expectedEvidence)
+      : undefined,
+    thoroughness: safeEnum(thoroughness, ['quick', 'medium', 'very thorough']),
+  });
+}
+
+function taskPromptField(prompt: string, label: string) {
+  const escaped = label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return new RegExp(`^${escaped}:\\s*(.+?)\\s*$`, 'im')
+    .exec(prompt)?.[1]
+    ?.trim();
+}
+
+function scopeItemCount(value: string) {
+  return value
+    .split(/[,;]+/)
+    .map((item) => item.trim())
+    .filter(Boolean).length;
+}
+
+function privacyHash(value: unknown) {
+  let serialized: string;
+  try {
+    serialized = JSON.stringify(canonicalHashValue(value)) ?? 'null';
+  } catch {
+    serialized = String(value);
+  }
+  return `sha256:${createHash('sha256').update(serialized).digest('hex')}`;
+}
+
+function canonicalHashValue(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(canonicalHashValue);
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(
+      Object.entries(value as Record<string, unknown>)
+        .sort(([left], [right]) => left.localeCompare(right))
+        .map(([key, entry]) => [key, canonicalHashValue(entry)]),
+    );
+  }
+  if (typeof value === 'bigint') return value.toString();
+  if (value === undefined) return null;
+  return value;
+}
+
 const reviewWorkspaceToolPrefix = 'neondeck_review_workspace_';
 
 function summarizeToolStart(
@@ -467,6 +536,7 @@ function summarizeToolStart(
       operation: reviewOperation,
       phase: 'started',
       origin: event.origin ?? null,
+      inputHash: privacyHash(event.args),
       ...args,
     },
   );
@@ -505,6 +575,9 @@ function summarizeToolCompletion(
       category: 'review-workspace',
       operation: reviewOperation,
       phase: event.isError ? 'failed' : 'completed',
+      resultHash: privacyHash(
+        stableReviewWorkspaceResult(event.effectiveResult ?? event.result),
+      ),
       ...result,
       error: event.errorInfo?.message ? summarizeError(event.errorInfo) : null,
     },
@@ -526,6 +599,8 @@ function reviewWorkspaceArgs(value: unknown): Record<string, JsonValue> {
     path: safeActivityPath(record.path),
     queryLength:
       typeof record.query === 'string' ? record.query.length : undefined,
+    queryHash:
+      typeof record.query === 'string' ? privacyHash(record.query) : undefined,
     revision: safeEnum(record.revision, ['head', 'base']),
     startLine: optionalNumber(record.startLine),
     endLine: optionalNumber(record.endLine),
@@ -553,6 +628,8 @@ function reviewWorkspaceResult(
     path: safeActivityPath(record.path),
     queryLength:
       typeof record.query === 'string' ? record.query.length : undefined,
+    queryHash:
+      typeof record.query === 'string' ? privacyHash(record.query) : undefined,
     revisionKind: safeEnum(record.revisionKind, ['head', 'base']),
     scope: safeEnum(record.scope, ['file', 'pull-request']),
     available:
@@ -574,6 +651,13 @@ function reviewWorkspaceResult(
     returnedLines: lines?.length,
     returnedCommits: commits?.length,
     totalHunks: optionalNumber(record.totalHunks),
+    totalMatches: optionalNumber(record.totalMatches),
+    outputRetained:
+      typeof record.outputRetained === 'boolean'
+        ? record.outputRetained
+        : undefined,
+    outputBytes: optionalNumber(record.outputBytes),
+    outputLines: optionalNumber(record.outputLines),
     totalFiles: optionalNumber(summary?.files),
     additions: optionalNumber(summary?.additions),
     deletions: optionalNumber(summary?.deletions),
@@ -587,6 +671,19 @@ function reviewWorkspaceResult(
     workspaceToolCallLimit: optionalNumber(record.workspaceToolCallLimit),
     operation,
   });
+}
+
+function stableReviewWorkspaceResult(value: unknown) {
+  const record = objectRecord(value);
+  if (!record) return value;
+  return Object.fromEntries(
+    Object.entries(record).filter(
+      ([key]) =>
+        key !== 'workspaceToolCallsRemaining' &&
+        key !== 'outputRef' &&
+        key !== 'outputHint',
+    ),
+  );
 }
 
 function objectRecord(value: unknown) {

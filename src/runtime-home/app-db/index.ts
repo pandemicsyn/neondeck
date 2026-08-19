@@ -9,6 +9,7 @@ import {
   reconcileActiveChatSession,
   reconcileActiveWorktreeLocks,
   reconcileExistingNotificationDuplicates,
+  prunePrReviewWorkspaceOutputs,
   pruneExpiredSubmittedPrReviewRows,
 } from './reconcile.ts';
 
@@ -34,6 +35,7 @@ export function initializeAppDatabase(
     reconcileActiveWorktreeLocks(database);
     reconcileExistingNotificationDuplicates(database);
     pruneExpiredSubmittedPrReviewRows(database);
+    prunePrReviewWorkspaceOutputs(database);
 
     withImmediateTransaction(database, () => {
       database

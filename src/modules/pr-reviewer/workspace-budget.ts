@@ -18,7 +18,10 @@ export function consumePrReviewWorkspaceBudget(
         `INSERT INTO pr_review_workspace_budgets (
           budget_key, calls_used, call_limit, updated_at
         ) VALUES (?, 0, ?, ?)
-        ON CONFLICT(budget_key) DO NOTHING;`,
+        ON CONFLICT(budget_key) DO UPDATE SET
+          call_limit = excluded.call_limit,
+          updated_at = excluded.updated_at
+        WHERE pr_review_workspace_budgets.call_limit <> excluded.call_limit;`,
       )
       .run(budget.key, budget.limit, now);
     const row = database
