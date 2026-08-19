@@ -1,0 +1,405 @@
+---
+import CampaignCommand from '../../components/CampaignCommand.astro';
+import CampaignFooter from '../../components/CampaignFooter.astro';
+import CampaignNav from '../../components/CampaignNav.astro';
+import ReviewMockup from '../../components/ReviewMockup.astro';
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import '../../styles/campaign.css';
+
+// Placeholder until each question gets its own Discussion thread.
+const discussions = 'https://github.com/pandemicsyn/neondeck/discussions';
+
+const questions = [
+  {
+    n: '#01',
+    signal: 'cyan',
+    title: 'Should the agent approve the small stuff for you?',
+    body: 'Assume it can tell whether a change is complex enough to need a human. Do you want it waving the safe ones through, or do you want eyes on every change?',
+  },
+  {
+    n: '#02',
+    signal: 'pink',
+    title: 'What earns your attention in 40,000 machine-written lines?',
+    body: 'Tell us what you actually look at, and where an agent should help. Does the diff still matter? Is anyone reviewing line by line any more?',
+  },
+  {
+    n: '#03',
+    signal: 'violet',
+    title: "Should the agent's findings be labelled as the agent's?",
+    body: 'Marked as machine-generated, or submitted under your name as if you found them yourself? It changes how much weight the author gives them.',
+  },
+  {
+    n: '#04',
+    signal: 'teal',
+    title: 'Guided tours, risk maps, diagrams: which would you use?',
+    body: 'Walkthroughs of the change, flagged high-risk areas, code maps, mermaid diagrams. We can build all of it. Tell us which you would actually open twice.',
+  },
+];
+
+const steps = [
+  { n: '1', label: 'install', code: '$ npm install --global neondeck@next' },
+  { n: '2', label: 'setup', code: '$ neondeck init' },
+  { n: '3', label: 'start', code: '$ neondeck serve' },
+  { n: '4', label: 'open the deck', code: '$ neondeck open' },
+];
+---
+
+<BaseLayout
+  title="Help us build the review setup that doesn't suck · neondeck"
+  description="Agents increased the review load and reviews haven't evolved. Neondeck is a local-first review bench, early enough that your opinion still changes its shape."
+>
+  <div class="campaign-shell open-call">
+    <CampaignNav campaign="pr-review" context="open call" />
+    <main>
+      <header class="campaign-container campaign-hero">
+        <p class="campaign-kicker">call for reviewers</p>
+        <h1>
+          Help us build the review setup that <span>doesn't suck.</span>
+        </h1>
+        <p class="campaign-hero__copy">
+          Neondeck is a local-first review bench, and it is early enough that
+          your opinion still changes the shape of it. Run it on one real pull
+          request this week.
+        </p>
+        <p class="campaign-hero__copy">
+          Then come argue with us about what review should even be, now that
+          most of the diff was written by a machine.
+        </p>
+        <div class="campaign-hero__actions">
+          <a class="oc-primary" href={discussions}>join the discussion →</a>
+          <CampaignCommand placement="hero" />
+        </div>
+        <p class="campaign-hero__note">
+          100% open source (MIT) · npm · runs on your machine · bring your own
+          provider
+        </p>
+      </header>
+
+      <section class="campaign-container campaign-preview-wrap">
+        <ReviewMockup />
+      </section>
+
+      <section class="campaign-container oc-section">
+        <p class="campaign-kicker">why we are asking</p>
+        <h2>Agents increased the review load. Reviews haven't evolved.</h2>
+        <p class="oc-lead">
+          More PRs. Bigger changes. Agents are helping us write more code than
+          ever, but we're all feeling the review pressure. Help us figure out
+          what reviews become, while reviews are still needed.
+        </p>
+        <div class="oc-board">
+          {
+            questions.map((q) => (
+              <a class="oc-question" href={discussions}>
+                <span class:list={['oc-num', q.signal]}>{q.n}</span>
+                <span class="oc-question__body">
+                  <strong>{q.title}</strong>
+                  <span>{q.body}</span>
+                </span>
+                <span class="oc-thread">open thread →</span>
+              </a>
+            ))
+          }
+        </div>
+      </section>
+
+      <section class="campaign-container oc-section">
+        <div class="oc-help">
+          <div>
+            <p class="campaign-kicker">how to help</p>
+            <h2 class="oc-help__title">
+              Run it on a real PR. Tell us where it broke.
+            </h2>
+            <p class="oc-lead">
+              Node 26+ and a GitHub token. Everything runs local from there. The
+              useful report is not "it worked", it is the pull request where the
+              briefing missed the thing that actually mattered.
+            </p>
+            <a class="campaign-link-button oc-help__cta" href={discussions}
+              >start a thread →</a
+            >
+          </div>
+          <ol class="oc-steps">
+            {
+              steps.map((s) => (
+                <li>
+                  <span class="oc-step__n">{s.n}</span>
+                  <div>
+                    <small>{s.label}</small>
+                    <code>{s.code}</code>
+                  </div>
+                </li>
+              ))
+            }
+            <li>
+              <span class="oc-step__n cyan">5</span>
+              <div>
+                <small class="cyan">tell us</small>
+                <span class="oc-step__prose"
+                  >what the briefing missed, and on which PR</span
+                >
+              </div>
+            </li>
+          </ol>
+        </div>
+      </section>
+    </main>
+    <CampaignFooter />
+  </div>
+</BaseLayout>
+
+<style>
+  /* Warmer ground than the ad pages: this one leads with the ask, not the demo. */
+  .open-call {
+    background:
+      linear-gradient(var(--campaign-line-soft) 1px, transparent 1px),
+      linear-gradient(90deg, var(--campaign-line-soft) 1px, transparent 1px),
+      radial-gradient(
+        circle at 11% 5%,
+        rgba(255, 79, 184, 0.09),
+        transparent 31%
+      ),
+      radial-gradient(
+        circle at 76% 2%,
+        rgba(139, 77, 255, 0.08),
+        transparent 27%
+      ),
+      var(--campaign-bg);
+    background-size:
+      64px 64px,
+      64px 64px,
+      auto,
+      auto,
+      auto;
+  }
+
+  .open-call :global(.campaign-kicker) {
+    color: var(--pink);
+  }
+
+  .open-call .campaign-hero h1 span {
+    color: var(--pink);
+  }
+
+  .open-call .campaign-hero__copy + .campaign-hero__copy {
+    margin-top: 18px;
+  }
+
+  .oc-primary {
+    display: inline-flex;
+    min-height: 54px;
+    align-items: center;
+    padding-inline: 22px;
+    background: var(--pink);
+    box-shadow: 0 0 26px rgba(255, 79, 184, 0.32);
+    color: #090a0f;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    transition: transform 150ms ease;
+  }
+
+  .oc-primary:hover {
+    color: #090a0f;
+    transform: translateY(-1px);
+  }
+
+  .oc-section {
+    padding-bottom: clamp(64px, 8vw, 98px);
+  }
+
+  .oc-section h2 {
+    max-width: 22ch;
+    margin: 0 0 18px;
+    color: var(--campaign-ink);
+    font-family: 'Chakra Petch', sans-serif;
+    font-size: clamp(2.1rem, 4.5vw, 3.55rem);
+    font-weight: 700;
+    line-height: 1.02;
+    text-transform: uppercase;
+    text-wrap: balance;
+  }
+
+  .oc-lead {
+    max-width: 62ch;
+    margin: 0 0 42px;
+    color: var(--campaign-muted);
+    font-size: 16px;
+    line-height: 1.7;
+  }
+
+  /* Solid panel: on the bare grid the 64px lines cut straight through the copy. */
+  .oc-board {
+    border: 1px solid var(--campaign-line);
+    background:
+      linear-gradient(180deg, rgba(255, 79, 184, 0.05), transparent 58%),
+      var(--campaign-panel);
+  }
+
+  .oc-question {
+    display: grid;
+    grid-template-columns: 92px minmax(0, 1fr) 150px;
+    gap: 20px;
+    align-items: baseline;
+    padding: 22px 24px;
+    border-bottom: 1px solid var(--campaign-line);
+    color: inherit;
+    transition: background 150ms ease;
+  }
+
+  .oc-question:last-child {
+    border-bottom: 0;
+  }
+
+  .oc-question:hover {
+    background: rgba(255, 79, 184, 0.04);
+    color: inherit;
+  }
+
+  .oc-num {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 0.08em;
+  }
+
+  .oc-num.cyan {
+    color: var(--cyan);
+  }
+  .oc-num.pink {
+    color: var(--pink);
+  }
+  .oc-num.violet {
+    color: #b59cff;
+  }
+  .oc-num.teal {
+    color: var(--teal);
+  }
+
+  .oc-question__body strong {
+    display: block;
+    color: var(--campaign-ink);
+    font-family: 'Chakra Petch', sans-serif;
+    font-size: 19px;
+    font-weight: 600;
+  }
+
+  .oc-question__body > span {
+    display: block;
+    max-width: 68ch;
+    margin-top: 6px;
+    color: var(--campaign-muted);
+    font-size: 15px;
+    line-height: 1.65;
+  }
+
+  .oc-thread {
+    justify-self: end;
+    color: var(--cyan);
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.06em;
+    white-space: nowrap;
+  }
+
+  .oc-help {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: clamp(28px, 4vw, 52px);
+    align-items: start;
+    padding: clamp(30px, 4vw, 48px);
+    border: 1px solid var(--campaign-line);
+    background:
+      linear-gradient(180deg, rgba(0, 183, 199, 0.065), transparent 62%),
+      var(--campaign-panel);
+  }
+
+  .oc-help__title {
+    max-width: 18ch;
+    font-size: clamp(2rem, 3.6vw, 3.1rem);
+  }
+
+  .oc-help__cta {
+    min-height: 44px;
+    padding-inline: 20px;
+  }
+
+  .oc-steps {
+    display: flex;
+    flex-direction: column;
+    margin: 0;
+    padding: 0;
+    border: 1px solid var(--campaign-line);
+    list-style: none;
+  }
+
+  .oc-steps li {
+    display: grid;
+    grid-template-columns: 34px minmax(0, 1fr);
+    gap: 14px;
+    padding: 15px 18px;
+    border-bottom: 1px solid var(--campaign-line);
+  }
+
+  .oc-steps li:last-child {
+    border-bottom: 0;
+  }
+
+  .oc-step__n {
+    color: var(--campaign-faint);
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 11px;
+  }
+
+  .oc-step__n.cyan,
+  .oc-steps small.cyan {
+    color: var(--cyan);
+  }
+
+  .oc-steps small {
+    display: block;
+    color: var(--campaign-muted);
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 9.5px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+  }
+
+  .oc-steps code {
+    color: var(--campaign-ink);
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 13px;
+  }
+
+  .oc-step__prose {
+    color: var(--campaign-ink);
+    font-size: 14px;
+  }
+
+  /* Miami hues at 10px fail AA on the light paper ground; darken just these two. */
+  :global(:root[data-theme='light']) .open-call .campaign-kicker {
+    color: color-mix(in srgb, var(--pink) 72%, #000000);
+  }
+
+  :global(:root[data-theme='light']) .oc-thread {
+    color: color-mix(in srgb, var(--teal) 74%, #000000);
+  }
+
+  @media (max-width: 900px) {
+    .oc-help {
+      grid-template-columns: minmax(0, 1fr);
+    }
+
+    .oc-question {
+      grid-template-columns: 54px minmax(0, 1fr);
+      gap: 12px;
+      row-gap: 10px;
+    }
+
+    .oc-thread {
+      grid-column: 2;
+      justify-self: start;
+    }
+  }
+</style>

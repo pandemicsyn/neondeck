@@ -1,9 +1,10 @@
 ---
 type Props = {
   campaign: 'pr-review' | 'pr-autopilot';
+  context?: string;
 };
 
-const { campaign } = Astro.props;
+const { campaign, context } = Astro.props;
 ---
 
 <nav class="campaign-nav" aria-label="Campaign navigation">
@@ -13,7 +14,7 @@ const { campaign } = Astro.props;
       <span>neondeck</span>
     </a>
     <span class="campaign-nav__context">
-      {campaign === 'pr-review' ? 'review mode' : 'pr auto pilot'}
+      {context ?? (campaign === 'pr-review' ? 'review mode' : 'pr auto pilot')}
     </span>
     <a
       class="campaign-link-button campaign-nav__cta"
