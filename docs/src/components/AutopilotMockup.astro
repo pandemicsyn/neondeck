@@ -1,0 +1,488 @@
+---
+// Token classes: k keyword, t type, p property, s string, f call, v binding, m punctuation.
+// Rendered via set:html so the template's own indentation never lands inside `white-space: pre`.
+const esc = (text) =>
+  text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+const codeHtml = (tokens) =>
+  tokens
+    .map(([text, cls]) => `<span class="${cls}">${esc(text)}</span>`)
+    .join('');
+
+const diff = [
+  [
+    41,
+    ' ',
+    [
+      ['  constructor', 'f'],
+      ['(', 'm'],
+      ['opts', 'v'],
+      [') {', 'm'],
+    ],
+  ],
+  [
+    42,
+    ' ',
+    [
+      ['    this', 'k'],
+      ['.pending = [];', 'm'],
+    ],
+  ],
+  [
+    43,
+    '-',
+    [
+      ['    this', 'k'],
+      ['.budget = ', 'm'],
+      ['opts', 'v'],
+      ['.retry;', 'm'],
+    ],
+  ],
+  [
+    43,
+    '+',
+    [
+      ['    this', 'k'],
+      ['.budget = ', 'm'],
+      ['opts', 'v'],
+      ['.retry ?? ', 'm'],
+      ['DEFAULT_RETRY', 't'],
+      [';', 'm'],
+    ],
+  ],
+  [
+    44,
+    '+',
+    [
+      ['    if ', 'k'],
+      ['(', 'm'],
+      ['this', 'k'],
+      ['.budget < ', 'm'],
+      ['1', 's'],
+      [') ', 'm'],
+      ['this', 'k'],
+      ['.budget = ', 'm'],
+      ['1', 's'],
+      [';', 'm'],
+    ],
+  ],
+  [45, ' ', [['  }', 'm']]],
+  [46, ' ', [['', 'm']]],
+  [47, '+', [['  // cold-start safe default', 'm']]],
+  [
+    48,
+    '+',
+    [
+      ['  const ', 'k'],
+      ['DEFAULT_RETRY', 't'],
+      [' = ', 'm'],
+      ['3', 's'],
+      [';', 'm'],
+    ],
+  ],
+  [49, ' ', [['', 'm']]],
+  [
+    50,
+    ' ',
+    [
+      ['  enqueue', 'f'],
+      ['(', 'm'],
+      ['job', 'v'],
+      [') {', 'm'],
+    ],
+  ],
+  [
+    51,
+    ' ',
+    [
+      ['    this', 'k'],
+      ['.pending.', 'm'],
+      ['push', 'f'],
+      ['(', 'm'],
+      ['job', 'v'],
+      [');', 'm'],
+    ],
+  ],
+];
+
+const log = [
+  {
+    tone: 'ok',
+    text: 'Fixed CI. Retry budget was unset on cold start.',
+    commit: 'a3f9c1',
+    note: 'checks green',
+  },
+  {
+    tone: 'ok',
+    text: 'Reviewer nit: "add debug logging on reject." Handled.',
+    commit: 'b7c2e9',
+    note: 'thread resolved',
+  },
+  {
+    tone: 'hold',
+    text: 'Reviewer flagged the retry design as a correctness risk.',
+    note: 'architectural call, flagged for you, not touched',
+  },
+];
+---
+
+<div class="ap-frame" aria-label="neondeck Autopilot activity preview">
+  <div class="ap-screen">
+    <header class="ap-top">
+      <div class="ap-ident">
+        <p class="ap-crumb">AUTOPILOT · flue/harness#482</p>
+        <p class="ap-title">Add retry budget to fetcher queue</p>
+      </div>
+      <div class="ap-chips">
+        <span class="ap-chip mode">autofix-push-when-safe</span>
+        <span class="ap-chip ok">driving to green</span>
+        <span class="ap-chip">+4 -1</span>
+        <span class="ap-chip">2m ago</span>
+      </div>
+    </header>
+
+    <div class="ap-body">
+      <section class="ap-log">
+        <header><span>owner activity</span><span>3 events</span></header>
+        <ul>
+          {
+            log.map((row) => (
+              <li class={row.tone}>
+                <em class="ap-glyph">{row.tone === 'ok' ? '✓' : '◆'}</em>
+                <span class="ap-line">
+                  {row.text}
+                  {row.commit && <code>{row.commit}</code>}
+                  <small>{row.note}</small>
+                </span>
+              </li>
+            ))
+          }
+        </ul>
+        <footer>2 fixes shipped · 1 flagged for you</footer>
+      </section>
+
+      <section class="ap-diff-pane">
+        <header>
+          <span class="ap-path">src/fetcher/queue.ts</span>
+          <span class="ap-add">+4 -1</span>
+        </header>
+        <div class="ap-diff">
+          {
+            diff.map(([n, sign, tokens]) => (
+              <p class:list={[sign === '+' && 'add', sign === '-' && 'del']}>
+                <em>{n}</em>
+                <i>{sign}</i>
+                <code set:html={codeHtml(tokens)} />
+              </p>
+            ))
+          }
+        </div>
+      </section>
+    </div>
+
+    <footer class="ap-foot">
+      Delivered on its own: checks green, no force-push. The judgment call is
+      flagged for you rather than guessed.
+    </footer>
+  </div>
+</div>
+
+<style>
+  .ap-frame {
+    overflow: hidden;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    background: #05060a;
+    padding: 10px;
+  }
+
+  .ap-screen {
+    display: flex;
+    aspect-ratio: 16 / 5;
+    width: 100%;
+    min-width: 0;
+    overflow: hidden;
+    flex-direction: column;
+    background: #0a0b10;
+    font-family: 'IBM Plex Mono', monospace;
+  }
+
+  .ap-top {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 14px;
+    padding: clamp(6px, 0.8vw, 10px) clamp(8px, 1.1vw, 14px);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+    background: #070810;
+  }
+
+  .ap-ident p {
+    margin: 0;
+  }
+
+  .ap-crumb {
+    color: var(--cyan);
+    font-size: clamp(5px, 0.68vw, 9.5px);
+    letter-spacing: 0.14em;
+  }
+
+  .ap-title {
+    margin-top: 2px !important;
+    color: var(--body);
+    font-family: 'IBM Plex Sans', sans-serif;
+    font-size: clamp(7px, 0.92vw, 12.5px);
+    font-weight: 600;
+  }
+
+  .ap-chips {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 4px;
+  }
+
+  .ap-chip {
+    padding: 2px 6px;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    color: rgba(215, 247, 255, 0.55);
+    font-size: clamp(4px, 0.6vw, 8.5px);
+    white-space: nowrap;
+  }
+
+  .ap-chip.ok {
+    border-color: rgba(0, 183, 199, 0.45);
+    color: var(--teal);
+  }
+
+  .ap-chip.mode {
+    border-color: rgba(139, 77, 255, 0.45);
+    color: var(--violet);
+  }
+
+  .ap-body {
+    display: grid;
+    flex: 1;
+    min-height: 0;
+    grid-template-columns: 6fr 7fr;
+  }
+
+  .ap-log,
+  .ap-diff-pane {
+    min-width: 0;
+    min-height: 0;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .ap-log {
+    border-right: 1px solid rgba(255, 255, 255, 0.08);
+    background: linear-gradient(
+      180deg,
+      rgba(139, 77, 255, 0.05),
+      transparent 34%
+    );
+  }
+
+  .ap-log > header,
+  .ap-diff-pane > header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 6px clamp(6px, 0.9vw, 12px);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+    color: rgba(215, 247, 255, 0.5);
+    font-size: clamp(4px, 0.64vw, 9px);
+    letter-spacing: 0.12em;
+  }
+
+  .ap-log ul {
+    flex: 1;
+    margin: 0;
+    padding: clamp(5px, 0.8vw, 10px) 0;
+    list-style: none;
+  }
+
+  .ap-log li {
+    display: flex;
+    gap: clamp(5px, 0.8vw, 10px);
+    padding: clamp(4px, 0.6vw, 7px) clamp(6px, 0.9vw, 12px);
+    color: rgba(215, 247, 255, 0.78);
+    font-family: 'IBM Plex Sans', sans-serif;
+    font-size: clamp(5px, 0.76vw, 10.4px);
+    line-height: 1.5;
+  }
+
+  .ap-glyph {
+    flex-shrink: 0;
+    font-family: 'IBM Plex Mono', monospace;
+    font-style: normal;
+  }
+
+  .ap-log .ok .ap-glyph {
+    color: var(--teal);
+  }
+
+  .ap-log .hold .ap-glyph {
+    color: var(--pink);
+  }
+
+  .ap-log code {
+    margin-left: 5px;
+    color: var(--cyan);
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.92em;
+  }
+
+  .ap-log small {
+    display: block;
+    color: rgba(215, 247, 255, 0.42);
+    font-size: 0.88em;
+  }
+
+  .ap-log .hold small {
+    color: var(--pink);
+    opacity: 0.85;
+  }
+
+  .ap-log > footer,
+  .ap-foot {
+    padding: clamp(5px, 0.8vw, 9px) clamp(6px, 0.9vw, 12px);
+    border-top: 1px solid rgba(255, 255, 255, 0.07);
+    color: rgba(215, 247, 255, 0.42);
+    font-size: clamp(4px, 0.64vw, 9px);
+  }
+
+  .ap-path {
+    margin-right: auto;
+    overflow: hidden;
+    color: rgba(215, 247, 255, 0.78);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .ap-add {
+    color: var(--teal);
+  }
+
+  .ap-diff {
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  .ap-diff p {
+    display: flex;
+    gap: clamp(4px, 0.6vw, 8px);
+    margin: 0;
+    padding: 0 clamp(6px, 0.9vw, 12px);
+    font-size: clamp(5px, 0.78vw, 9.9px);
+    line-height: 1.72;
+  }
+
+  .ap-diff em,
+  .ap-diff i {
+    flex-shrink: 0;
+    color: rgba(215, 247, 255, 0.3);
+    font-style: normal;
+  }
+
+  .ap-diff p.add {
+    background: rgba(0, 183, 199, 0.09);
+  }
+
+  .ap-diff p.del {
+    background: rgba(255, 79, 184, 0.09);
+  }
+
+  .ap-diff p.add em,
+  .ap-diff p.add i {
+    color: rgba(0, 183, 199, 0.8);
+  }
+
+  .ap-diff p.del em,
+  .ap-diff p.del i {
+    color: rgba(255, 79, 184, 0.75);
+  }
+
+  .ap-diff code {
+    overflow: hidden;
+    font-family: inherit;
+    text-overflow: ellipsis;
+    white-space: pre;
+  }
+
+  .ap-diff p.del code {
+    opacity: 0.72;
+  }
+
+  .ap-diff code :global(.k) {
+    color: var(--pink);
+  }
+
+  .ap-diff code :global(.t) {
+    color: var(--violet);
+  }
+
+  .ap-diff code :global(.p) {
+    color: var(--cyan);
+  }
+
+  .ap-diff code :global(.s) {
+    color: var(--teal);
+  }
+
+  .ap-diff code :global(.f) {
+    color: #9ad6ff;
+  }
+
+  .ap-diff code :global(.v) {
+    color: rgba(215, 247, 255, 0.92);
+  }
+
+  .ap-diff code :global(.m) {
+    color: rgba(215, 247, 255, 0.45);
+  }
+
+  /* Two panes at phone width is unreadable, so stack and let it grow. */
+  @media (max-width: 760px) {
+    .ap-screen {
+      aspect-ratio: auto;
+    }
+
+    .ap-body {
+      grid-template-columns: 1fr;
+    }
+
+    .ap-log {
+      border-right: 0;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    }
+
+    .ap-top {
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 8px;
+    }
+
+    .ap-chips {
+      justify-content: flex-start;
+    }
+
+    .ap-crumb,
+    .ap-chip,
+    .ap-diff p,
+    .ap-log > header,
+    .ap-diff-pane > header,
+    .ap-log > footer,
+    .ap-foot {
+      font-size: 9px;
+    }
+
+    .ap-title,
+    .ap-log li {
+      font-size: 11.5px;
+    }
+  }
+</style>

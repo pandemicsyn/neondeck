@@ -1,0 +1,156 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+import '../styles/campaign.css';
+import CampaignCommand from './CampaignCommand.astro';
+import CampaignFooter from './CampaignFooter.astro';
+import CampaignNav from './CampaignNav.astro';
+import CampaignProductPreview from './CampaignProductPreview.astro';
+import CampaignQuickstart from './CampaignQuickstart.astro';
+import MarketingConsent from './MarketingConsent.astro';
+
+type Campaign = 'pr-review' | 'pr-autopilot';
+
+type Step = {
+  title: string;
+  code?: string;
+  body: string;
+  signal: 'teal' | 'pink' | 'violet' | 'cyan';
+};
+
+type Props = {
+  campaign: Campaign;
+  title: string;
+  description: string;
+  kicker: string;
+  headlineLead: string;
+  headlineAccent: string;
+  headlineTail: string;
+  heroCopy: string;
+  microcopy: string;
+  sectionKicker: string;
+  sectionTitle: string;
+  steps: Step[];
+};
+
+const {
+  campaign,
+  title,
+  description,
+  kicker,
+  headlineLead,
+  headlineAccent,
+  headlineTail,
+  heroCopy,
+  microcopy,
+  sectionKicker,
+  sectionTitle,
+  steps,
+} = Astro.props;
+---
+
+<BaseLayout title={title} description={description} marketingPage={campaign}>
+  <div class:list={['campaign-shell', campaign]}>
+    <CampaignNav campaign={campaign} />
+    <main>
+      <header class="campaign-container campaign-hero">
+        <div class="campaign-badges">
+          <span
+            class:list={[
+              'campaign-pill',
+              campaign === 'pr-autopilot' && 'violet',
+            ]}
+          >
+            <i></i>feature · {kicker}
+          </span>
+          <a
+            class:list={['campaign-pill', campaign === 'pr-review' && 'violet']}
+            href="https://github.com/pandemicsyn/neondeck"
+            data-marketing-event="github_click"
+            data-marketing-placement="hero-badge"><i></i>100% open source</a
+          >
+        </div>
+        <h1>
+          {headlineLead}
+          <span>{headlineAccent}</span>
+          {headlineTail}
+        </h1>
+        <p class="campaign-hero__copy">{heroCopy}</p>
+        <div class="campaign-hero__actions">
+          <CampaignCommand placement="hero" />
+          <a
+            class="campaign-source-button"
+            href="https://github.com/pandemicsyn/neondeck"
+            data-marketing-event="github_click"
+            data-marketing-placement="hero">view source →</a
+          >
+        </div>
+        <p class="campaign-hero__note">{microcopy}</p>
+      </header>
+
+      <section class="campaign-container campaign-preview-wrap">
+        <CampaignProductPreview campaign={campaign} />
+      </section>
+
+      {
+        campaign === 'pr-review' && (
+          <section class="campaign-container campaign-big-diffs">
+            <div>
+              <p class="campaign-kicker">built for big diffs</p>
+              <h2>GitHub chokes on a 50,000-line diff. This doesn't.</h2>
+              <p>
+                Built on <code>@pierre/diffs</code>: Neondeck loads the shape of
+                a changeset first, then fetches only the code you're inspecting.
+                Local Git-backed diffs, revision-aware caching, and virtualized
+                rendering keep reviews responsive — even across hundreds of
+                changed files.
+              </p>
+            </div>
+            <div class="campaign-proof-list">
+              <strong class="teal">Metadata first, patches on demand</strong>
+              <strong class="pink">The active file gets priority</strong>
+              <strong class="violet">
+                Local Git objects, not GitHub limits
+              </strong>
+              <strong class="cyan">Virtualized past 2,000 lines</strong>
+              <small>
+                measured: first patch visible at a <b>798 ms</b> median on a
+                real 1,019-file PR.
+              </small>
+            </div>
+          </section>
+        )
+      }
+
+      <section
+        class="campaign-container campaign-section campaign-steps"
+        aria-labelledby="steps-heading"
+      >
+        <p class="campaign-kicker">{sectionKicker}</p>
+        <h2 id="steps-heading">{sectionTitle}</h2>
+        <ol
+          class:list={[
+            'campaign-step-grid',
+            campaign === 'pr-autopilot' && 'four-up',
+          ]}
+        >
+          {
+            steps.map((step, index) => (
+              <li class={step.signal}>
+                <span>{String(index + 1).padStart(2, '0')}</span>
+                <h3>{step.title}</h3>
+                {step.code && <code>{step.code}</code>}
+                <p>{step.body}</p>
+              </li>
+            ))
+          }
+        </ol>
+      </section>
+
+      <div class="campaign-container">
+        <CampaignQuickstart campaign={campaign} />
+      </div>
+    </main>
+    <CampaignFooter />
+    <MarketingConsent />
+  </div>
+</BaseLayout>

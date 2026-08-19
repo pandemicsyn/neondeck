@@ -1,0 +1,12 @@
+---
+import AutopilotMockup from './AutopilotMockup.astro';
+import ReviewMockup from './ReviewMockup.astro';
+
+type Props = {
+  campaign: 'pr-review' | 'pr-autopilot';
+};
+
+const { campaign } = Astro.props;
+---
+
+{campaign === 'pr-review' ? <ReviewMockup /> : <AutopilotMockup />}

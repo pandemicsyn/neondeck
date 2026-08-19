@@ -1,0 +1,199 @@
+<aside
+  class="marketing-consent"
+  data-marketing-consent
+  aria-label="Advertising measurement choice"
+  hidden
+>
+  <div>
+    <strong>Help us measure this campaign?</strong>
+    <p>
+      If you allow it, Reddit can receive visits and key CTA clicks on these
+      campaign pages. The Neondeck app remains telemetry-free.
+    </p>
+    <a href="/privacy/">What gets shared</a>
+  </div>
+  <div class="marketing-consent__actions">
+    <button type="button" data-marketing-consent-choice="declined">
+      no thanks
+    </button>
+    <button type="button" data-marketing-consent-choice="allowed">
+      allow measurement
+    </button>
+  </div>
+</aside>
+
+<script is:inline>
+  (() => {
+    const pixelId = 't2_4ljtr';
+    const storageKey = 'neondeck-marketing-consent';
+    const consent = document.querySelector('[data-marketing-consent]');
+    let pixelStarted = false;
+
+    function readChoice() {
+      try {
+        return window.localStorage.getItem(storageKey);
+      } catch {
+        return null;
+      }
+    }
+
+    function saveChoice(choice) {
+      try {
+        window.localStorage.setItem(storageKey, choice);
+      } catch {
+        // The choice still applies to this page when storage is unavailable.
+      }
+    }
+
+    function startRedditPixel() {
+      if (pixelStarted) return;
+      pixelStarted = true;
+
+      if (!window.rdt) {
+        const rdt = (window.rdt = function () {
+          if (rdt.sendEvent) {
+            rdt.sendEvent.apply(rdt, arguments);
+          } else {
+            rdt.callQueue.push(arguments);
+          }
+        });
+        rdt.callQueue = [];
+
+        const script = document.createElement('script');
+        script.src = `https://www.redditstatic.com/ads/pixel.js?pixel_id=${pixelId}`;
+        script.async = true;
+        const firstScript = document.getElementsByTagName('script')[0];
+        firstScript.parentNode.insertBefore(script, firstScript);
+      }
+
+      window.rdt('init', pixelId);
+      window.rdt('track', 'PageVisit');
+    }
+
+    function trackRedditConversion(event) {
+      if (!pixelStarted || !window.rdt) return;
+      const customEventName = {
+        install_command_copy: 'InstallCommandCopy',
+        github_click: 'GitHubClick',
+      }[event.detail?.name];
+      if (!customEventName) return;
+      window.rdt('track', 'Custom', { customEventName });
+    }
+
+    window.addEventListener('neondeck:marketing', trackRedditConversion);
+
+    const existingChoice = readChoice();
+    if (existingChoice === 'allowed') {
+      startRedditPixel();
+    } else if (existingChoice !== 'declined' && consent) {
+      consent.hidden = false;
+    }
+
+    consent?.addEventListener('click', (event) => {
+      if (!(event.target instanceof Element)) return;
+      const button = event.target.closest('[data-marketing-consent-choice]');
+      if (!button) return;
+      const choice = button.dataset.marketingConsentChoice;
+      saveChoice(choice);
+      consent.hidden = true;
+      if (choice === 'allowed') startRedditPixel();
+    });
+  })();
+</script>
+
+<style>
+  .marketing-consent {
+    position: fixed;
+    right: 18px;
+    bottom: 18px;
+    z-index: 40;
+    display: flex;
+    width: min(680px, calc(100vw - 36px));
+    align-items: end;
+    gap: 24px;
+    padding: 18px;
+    border: 1px solid var(--cyan);
+    background: #080910;
+    color: #d7f7ff;
+  }
+
+  .marketing-consent[hidden] {
+    display: none;
+  }
+
+  .marketing-consent strong {
+    font-family: 'Chakra Petch', sans-serif;
+    font-size: 16px;
+  }
+
+  .marketing-consent p {
+    max-width: 52ch;
+    margin: 5px 0 7px;
+    color: #a9bec5;
+    font-size: 13px;
+    line-height: 1.55;
+  }
+
+  .marketing-consent a {
+    color: var(--cyan);
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+  }
+
+  .marketing-consent__actions {
+    display: flex;
+    flex: none;
+    gap: 8px;
+  }
+
+  .marketing-consent button {
+    min-height: 38px;
+    padding-inline: 12px;
+    border: 1px solid rgba(215, 247, 255, 0.18);
+    border-radius: 0;
+    background: transparent;
+    color: #d7f7ff;
+    cursor: pointer;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+  }
+
+  .marketing-consent button:last-child {
+    border-color: var(--pink);
+    background: var(--pink);
+    color: #090a0f;
+  }
+
+  .marketing-consent button:focus-visible,
+  .marketing-consent a:focus-visible {
+    outline: 2px solid var(--cyan);
+    outline-offset: 3px;
+  }
+
+  @media (max-width: 680px) {
+    .marketing-consent {
+      right: 12px;
+      bottom: 12px;
+      width: calc(100vw - 24px);
+      align-items: stretch;
+      flex-direction: column;
+      gap: 14px;
+    }
+
+    .marketing-consent__actions {
+      display: grid;
+      grid-template-columns: 1fr 1.35fr;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .marketing-consent * {
+      scroll-behavior: auto;
+    }
+  }
+</style>
