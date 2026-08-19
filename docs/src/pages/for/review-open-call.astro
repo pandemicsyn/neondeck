@@ -70,7 +70,7 @@ const steps = [
           <CampaignCommand placement="hero" />
         </div>
         <p class="campaign-hero__note">
-          100% open source (MIT) · npm · runs on your machine · bring your own
+          100% open source (MIT) · runs on your machine · bring your own
           provider
         </p>
       </header>
@@ -377,13 +377,24 @@ const steps = [
     font-size: 14px;
   }
 
-  /* Miami hues at 10px fail AA on the light paper ground; darken just these two. */
-  :global(:root[data-theme='light']) .open-call .campaign-kicker {
+  /* Miami hues at 9-11px fall under 4.5:1 on the light paper ground, so darken
+     them there. Fully :global() because the signal classes are applied through
+     class:list at runtime, and Astro prunes scoped selectors it cannot match
+     against the template. */
+  :global(:root[data-theme='light'] .open-call .campaign-kicker),
+  :global(:root[data-theme='light'] .oc-num.pink) {
     color: color-mix(in srgb, var(--pink) 72%, #000000);
   }
 
-  :global(:root[data-theme='light']) .oc-thread {
+  :global(:root[data-theme='light'] .oc-thread),
+  :global(:root[data-theme='light'] .oc-num.cyan),
+  :global(:root[data-theme='light'] .oc-num.teal),
+  :global(:root[data-theme='light'] .oc-steps small.cyan) {
     color: color-mix(in srgb, var(--teal) 74%, #000000);
+  }
+
+  :global(:root[data-theme='light'] .oc-num.violet) {
+    color: var(--violet);
   }
 
   @media (max-width: 900px) {

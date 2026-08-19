@@ -264,7 +264,7 @@
 
 .campaign-hero__note {
   margin: 15px 0 0;
-  color: var(--campaign-faint);
+  color: var(--campaign-muted);
   font-family: 'IBM Plex Mono', monospace;
   font-size: 10px;
   letter-spacing: 0.07em;
