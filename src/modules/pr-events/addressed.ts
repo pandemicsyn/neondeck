@@ -1,10 +1,19 @@
 import { openDb } from '../../lib/sqlite';
 import type { RuntimePaths } from '../../runtime-home';
+import * as v from 'valibot';
 
 export type AddressedPrFeedback = {
   reviewThreadFingerprints: Map<string, string>;
   reviewCommentFingerprints: Map<string, string>;
 };
+
+const addressedFeedbackRowsSchema = v.array(
+  v.object({
+    item_kind: v.picklist(['review-thread', 'review-comment']),
+    item_id: v.string(),
+    item_fingerprint: v.string(),
+  }),
+);
 
 export function readAddressedPrFeedback(
   repoFullName: string,
@@ -13,27 +22,26 @@ export function readAddressedPrFeedback(
 ): AddressedPrFeedback {
   const database = openDb(paths.neondeckDatabase, { readOnly: true });
   try {
-    const rows = database
-      .prepare(
-        `SELECT item_kind, item_id, item_fingerprint
+    const rows = v.parse(
+      addressedFeedbackRowsSchema,
+      database
+        .prepare(
+          `SELECT item_kind, item_id, item_fingerprint
          FROM pr_feedback_addressing
          WHERE repo_full_name = ? AND pr_number = ?;`,
-      )
-      .all(repoFullName, prNumber) as Array<{
-      item_kind: unknown;
-      item_id: unknown;
-      item_fingerprint: unknown;
-    }>;
+        )
+        .all(repoFullName, prNumber),
+    );
     return {
       reviewThreadFingerprints: new Map(
         rows
           .filter((row) => row.item_kind === 'review-thread')
-          .map((row) => [String(row.item_id), String(row.item_fingerprint)]),
+          .map((row) => [row.item_id, row.item_fingerprint]),
       ),
       reviewCommentFingerprints: new Map(
         rows
           .filter((row) => row.item_kind === 'review-comment')
-          .map((row) => [String(row.item_id), String(row.item_fingerprint)]),
+          .map((row) => [row.item_id, row.item_fingerprint]),
       ),
     };
   } finally {

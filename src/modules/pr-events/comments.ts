@@ -1,4 +1,3 @@
-import type { JsonValue } from '@flue/runtime';
 import { createHmac } from 'node:crypto';
 import * as v from 'valibot';
 import { prefixBotComment } from '../../../shared/bot-comments';
@@ -7,6 +6,7 @@ import {
   listPullRequestComments,
   postPullRequestComment,
   pullRequestEventStateIncompleteness,
+  type GitHubPullRequestComment,
   type GitHubPullRequestEventState,
 } from '../github';
 import {
@@ -18,6 +18,7 @@ import {
 } from '../../runtime-home';
 import {
   prCommentInputSchema,
+  prEventJsonValueSchema,
   type PrEventActionResult,
   type PrEventStateDependencies,
   type PullRequestTarget,
@@ -133,7 +134,7 @@ export async function postGitHubPrComment(
           `PR comment already exists on ${resolved.target.repoFullName}#${resolved.target.number}.`,
           {
             target: eventTargetJson(resolved.target),
-            comment: existing as unknown as JsonValue,
+            comment: pullRequestCommentPayload(existing),
             metadata: {
               idempotentReplay: true,
               addressedReviewThreadIds:
@@ -191,7 +192,7 @@ export async function postGitHubPrComment(
       `Posted PR comment on ${resolved.target.repoFullName}#${resolved.target.number}.`,
       {
         target: eventTargetJson(resolved.target),
-        comment: comment as unknown as JsonValue,
+        comment: pullRequestCommentPayload(comment),
         metadata: {
           addressedReviewThreadIds:
             parsed.output.addressedReviewThreadIds ?? [],
@@ -275,40 +276,24 @@ function addressedFeedbackFingerprints(state: GitHubPullRequestEventState) {
   const watermark = watermarksFromEventState('addressed-feedback', state).find(
     (item) => item.category === 'review_threads',
   )?.value;
-  const payload =
-    watermark && typeof watermark === 'object' && !Array.isArray(watermark)
-      ? (watermark as Record<string, unknown>)
-      : {};
-  const threads = Array.isArray(payload.threads) ? payload.threads : [];
-  for (const value of threads) {
-    if (!value || typeof value !== 'object' || Array.isArray(value)) continue;
-    const thread = value as Record<string, unknown>;
-    const threadId = typeof thread.id === 'string' ? thread.id : null;
-    const comments = Array.isArray(thread.comments) ? thread.comments : [];
+  const parsed = v.safeParse(addressedFeedbackWatermarkSchema, watermark);
+  if (!parsed.success) {
+    return { reviewThreads, reviewComments, reviewCommentsByThread };
+  }
+  for (const thread of parsed.output.threads ?? []) {
+    const threadId = thread.id ?? null;
+    const comments = thread.comments ?? [];
     const commentIds: string[] = [];
     let latestFingerprint: string | null = null;
     let latestUpdatedAt = '';
-    for (const commentValue of comments) {
-      if (
-        !commentValue ||
-        typeof commentValue !== 'object' ||
-        Array.isArray(commentValue)
-      ) {
-        continue;
-      }
-      const comment = commentValue as Record<string, unknown>;
-      const id =
-        typeof comment.id === 'string' || typeof comment.id === 'number'
-          ? String(comment.id)
-          : null;
-      const fingerprint =
-        typeof comment.fingerprint === 'string' ? comment.fingerprint : null;
+    for (const comment of comments) {
+      const id = comment.id === undefined ? null : String(comment.id);
+      const fingerprint = comment.fingerprint ?? null;
       if (id && fingerprint) {
         reviewComments.set(id, fingerprint);
         commentIds.push(id);
       }
-      const updatedAt =
-        typeof comment.updatedAt === 'string' ? comment.updatedAt : '';
+      const updatedAt = comment.updatedAt ?? '';
       if (fingerprint && updatedAt >= latestUpdatedAt) {
         latestFingerprint = fingerprint;
         latestUpdatedAt = updatedAt;
@@ -320,4 +305,40 @@ function addressedFeedbackFingerprints(state: GitHubPullRequestEventState) {
     }
   }
   return { reviewThreads, reviewComments, reviewCommentsByThread };
+}
+
+const addressedFeedbackWatermarkSchema = v.looseObject({
+  threads: v.optional(
+    v.array(
+      v.looseObject({
+        id: v.optional(v.string()),
+        comments: v.optional(
+          v.array(
+            v.looseObject({
+              id: v.optional(v.union([v.string(), v.number()])),
+              fingerprint: v.optional(v.string()),
+              updatedAt: v.optional(v.string()),
+            }),
+          ),
+        ),
+      }),
+    ),
+  ),
+});
+
+function pullRequestCommentPayload(comment: GitHubPullRequestComment) {
+  const payload: GitHubPullRequestComment = {
+    id: comment.id,
+    nodeId: comment.nodeId,
+    url: comment.url,
+    authorLogin: comment.authorLogin,
+    body: comment.body,
+    createdAt: comment.createdAt,
+    updatedAt: comment.updatedAt,
+  };
+  if (comment.authorType !== undefined) payload.authorType = comment.authorType;
+  if (comment.authorIsBot !== undefined) {
+    payload.authorIsBot = comment.authorIsBot;
+  }
+  return v.parse(prEventJsonValueSchema, payload);
 }

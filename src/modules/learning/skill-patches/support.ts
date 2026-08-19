@@ -1,6 +1,6 @@
 import type { JsonValue } from '@flue/runtime';
 import { asJsonValue } from '../../../lib/action-result';
-import { isJsonValue } from '../../execution/utils';
+import { isJsonValue } from '../../execution';
 import { createHash, randomUUID } from 'node:crypto';
 import { realpath } from 'node:fs/promises';
 import type { DatabaseSync, SQLOutputValue } from 'node:sqlite';

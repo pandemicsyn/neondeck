@@ -11,7 +11,7 @@ import type {
   PreparedLearningReview,
 } from './schemas';
 import { preparedLearningReviewSchema } from './schemas';
-import { isJsonValue } from '../../sessions/schemas';
+import { isJsonValue } from '../../sessions';
 
 const externalValueSchema = v.unknown();
 const databaseRowSchema = v.record(v.string(), externalValueSchema);

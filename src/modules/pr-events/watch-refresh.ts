@@ -12,6 +12,8 @@ import {
 import { persistWatchEventRefresh } from '../watches';
 import {
   prEventTargetInputSchema,
+  parsePrEventJsonValue,
+  prEventJsonValueSchema,
   prWatchEventWatermarkListInputSchema,
   type PrEventActionResult,
   type PrEventStateDependencies,
@@ -110,8 +112,9 @@ export async function refreshPrWatchEventState(
         (record) => record.category === item.category,
       );
       return (
-        stableJson(comparableWatermark(item.category, existing?.watermark)) !==
-        stableJson(comparableWatermark(item.category, item.value))
+        stableJson(
+          comparableWatermark(item.category, existing?.watermark ?? null),
+        ) !== stableJson(comparableWatermark(item.category, item.value))
       );
     })
     .map((item) => item.category);
@@ -139,8 +142,8 @@ export async function refreshPrWatchEventState(
       watchId: watch.id,
       target: eventTargetJson(resolved.target),
       changedCategories,
-      previousWatermarks: previous as unknown as JsonValue,
-      watermarks: currentWatermarks as unknown as JsonValue,
+      previousWatermarks: parsePrEventJsonValue(previous),
+      watermarks: parsePrEventJsonValue(currentWatermarks),
     },
   );
 }
@@ -172,22 +175,36 @@ function candidateWatermarkRecords(
   }));
 }
 
-function comparableWatermark(category: string, value: unknown) {
-  if (category !== 'mergeability') return value ?? null;
-  if (!value || typeof value !== 'object' || Array.isArray(value)) {
-    return value ?? null;
-  }
-  const record = value as Record<string, unknown>;
-  return {
-    state: record.state,
-    draft: typeof record.draft === 'boolean' ? record.draft : false,
-    merged: record.merged,
-    mergeable: record.mergeable,
-    mergeableState: record.mergeableState,
-    mergeCommitSha: record.mergeCommitSha,
-    headSha: record.headSha,
-    baseSha: record.baseSha,
+function comparableWatermark(
+  category: PrWatchEventWatermarkRecord['category'],
+  value: JsonValue,
+) {
+  if (category !== 'mergeability') return value;
+  const parsed = v.safeParse(mergeabilityWatermarkSchema, value);
+  if (!parsed.success) return value;
+  const comparable: MergeabilityComparableWatermark = {
+    draft: parsed.output.draft ?? false,
   };
+  if (parsed.output.state !== undefined) comparable.state = parsed.output.state;
+  if (parsed.output.merged !== undefined) {
+    comparable.merged = parsed.output.merged;
+  }
+  if (parsed.output.mergeable !== undefined) {
+    comparable.mergeable = parsed.output.mergeable;
+  }
+  if (parsed.output.mergeableState !== undefined) {
+    comparable.mergeableState = parsed.output.mergeableState;
+  }
+  if (parsed.output.mergeCommitSha !== undefined) {
+    comparable.mergeCommitSha = parsed.output.mergeCommitSha;
+  }
+  if (parsed.output.headSha !== undefined) {
+    comparable.headSha = parsed.output.headSha;
+  }
+  if (parsed.output.baseSha !== undefined) {
+    comparable.baseSha = parsed.output.baseSha;
+  }
+  return comparable;
 }
 
 export async function listPrWatchEventWatermarks(
@@ -209,6 +226,27 @@ export async function listPrWatchEventWatermarks(
     'pr_watch_event_watermarks_list',
     false,
     `Listed ${watermarks.length} PR watch event watermark(s).`,
-    { watermarks: watermarks as unknown as JsonValue },
+    { watermarks: parsePrEventJsonValue(watermarks) },
   );
 }
+
+type MergeabilityComparableWatermark = {
+  draft: boolean;
+  state?: JsonValue;
+  merged?: JsonValue;
+  mergeable?: JsonValue;
+  mergeableState?: JsonValue;
+  mergeCommitSha?: JsonValue;
+  headSha?: JsonValue;
+  baseSha?: JsonValue;
+};
+const mergeabilityWatermarkSchema = v.looseObject({
+  draft: v.optional(v.boolean()),
+  state: v.optional(prEventJsonValueSchema),
+  merged: v.optional(prEventJsonValueSchema),
+  mergeable: v.optional(prEventJsonValueSchema),
+  mergeableState: v.optional(prEventJsonValueSchema),
+  mergeCommitSha: v.optional(prEventJsonValueSchema),
+  headSha: v.optional(prEventJsonValueSchema),
+  baseSha: v.optional(prEventJsonValueSchema),
+});

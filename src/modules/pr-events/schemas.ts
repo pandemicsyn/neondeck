@@ -27,6 +27,7 @@ import {
   parseWatchPrReference,
   type PrWatch,
 } from '../watches';
+import { isJsonValue } from '../sessions';
 
 export type PrEventActionResult<TData extends JsonValue = JsonValue> = {
   ok: boolean;
@@ -125,6 +126,11 @@ export const prEventJsonValueSchema = v.custom<JsonValue>(
   isJsonValue,
   'Value must be JSON-safe.',
 );
+
+export function parsePrEventJsonValue<T>(value: T): JsonValue {
+  const serialized = JSON.stringify(value);
+  return v.parse(prEventJsonValueSchema, JSON.parse(serialized));
+}
 export const prWatchEventWatermarkRecordSchema = v.strictObject({
   watchId: nonEmptyStringSchema,
   category: prWatchEventWatermarkCategorySchema,
@@ -147,21 +153,6 @@ export const prEventTargetInputSchema = v.object({
   prNumber: v.optional(v.pipe(v.number(), v.integer(), v.minValue(1))),
 });
 
-function isJsonValue(value: unknown): boolean {
-  if (value === null) return true;
-  if (
-    typeof value === 'string' ||
-    typeof value === 'boolean' ||
-    typeof value === 'number'
-  ) {
-    return typeof value !== 'number' || Number.isFinite(value);
-  }
-  if (Array.isArray(value)) return value.every(isJsonValue);
-  if (typeof value === 'object') {
-    return Object.values(value).every(isJsonValue);
-  }
-  return false;
-}
 export const prFilesInputSchema = v.object({
   watchId: v.optional(nonEmptyStringSchema),
   ref: v.optional(nonEmptyStringSchema),

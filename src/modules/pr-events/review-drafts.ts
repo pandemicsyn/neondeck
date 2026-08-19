@@ -1,4 +1,3 @@
-import type { JsonValue } from '@flue/runtime';
 import * as v from 'valibot';
 import {
   addPrReviewDraftComment,
@@ -21,6 +20,7 @@ import {
   runtimePaths,
 } from '../../runtime-home';
 import {
+  parsePrEventJsonValue,
   prEventTargetInputSchema,
   prReviewDraftCommentInputSchema,
   prReviewDraftCommentUpdateInputSchema,
@@ -69,7 +69,7 @@ export async function getGitHubPrReviewDraft(
       : `No review draft for ${resolved.target.repoFullName}#${resolved.target.number}.`,
     {
       target: eventTargetJson(resolved.target),
-      draft: draft as unknown as JsonValue,
+      draft: parsePrEventJsonValue(draft),
     },
   );
 }
@@ -171,7 +171,7 @@ export async function putGitHubPrReviewDraft(
     `Saved review draft for ${resolved.target.repoFullName}#${resolved.target.number}.`,
     {
       target: eventTargetJson(resolved.target),
-      draft: draft as unknown as JsonValue,
+      draft: parsePrEventJsonValue(draft),
     },
   );
 }
@@ -257,7 +257,7 @@ export async function postGitHubPrReviewDraftComment(
       'github_pr_review_draft_comment_post',
       true,
       'Saved PR review draft comment.',
-      { draft: draft as unknown as JsonValue },
+      { draft: parsePrEventJsonValue(draft) },
     );
   } catch (error) {
     return failResult(
@@ -347,27 +347,28 @@ export async function patchGitHubPrReviewDraftComment(
   if (invalidAnchor) return invalidAnchor;
 
   try {
-    const draft = updatePrReviewDraftComment({
+    const commentUpdate: Parameters<typeof updatePrReviewDraftComment>[0] = {
       databasePath: paths.neondeckDatabase,
       commentId,
       body: parsed.output.body,
       expectedHeadSha: metadata.expectedHeadSha,
       origin: metadata.origin,
-      ...('path' in parsed.output ? { path: parsed.output.path } : {}),
-      ...('side' in parsed.output ? { side: parsed.output.side } : {}),
-      ...('line' in parsed.output ? { line: parsed.output.line } : {}),
-      ...('startLine' in parsed.output
-        ? { startLine: parsed.output.startLine ?? null }
-        : {}),
-      ...('startSide' in parsed.output
-        ? { startSide: parsed.output.startSide ?? null }
-        : {}),
-    });
+    };
+    if ('path' in parsed.output) commentUpdate.path = parsed.output.path;
+    if ('side' in parsed.output) commentUpdate.side = parsed.output.side;
+    if ('line' in parsed.output) commentUpdate.line = parsed.output.line;
+    if ('startLine' in parsed.output) {
+      commentUpdate.startLine = parsed.output.startLine ?? null;
+    }
+    if ('startSide' in parsed.output) {
+      commentUpdate.startSide = parsed.output.startSide ?? null;
+    }
+    const draft = updatePrReviewDraftComment(commentUpdate);
     return okResult(
       'github_pr_review_draft_comment_patch',
       true,
       'Updated PR review draft comment.',
-      { draft: draft as unknown as JsonValue },
+      { draft: parsePrEventJsonValue(draft) },
     );
   } catch (error) {
     return failResult(
@@ -428,7 +429,7 @@ export async function deleteGitHubPrReviewDraftComment(
       'github_pr_review_draft_comment_delete',
       true,
       'Deleted PR review draft comment.',
-      { draft: draft as unknown as JsonValue },
+      { draft: parsePrEventJsonValue(draft) },
     );
   } catch (error) {
     return failResult(
@@ -473,7 +474,7 @@ export async function deleteGitHubPrReviewDraft(
       : `No review draft for ${resolved.target.repoFullName}#${resolved.target.number}.`,
     {
       target: eventTargetJson(resolved.target),
-      draft: draft as unknown as JsonValue,
+      draft: parsePrEventJsonValue(draft),
     },
   );
 }

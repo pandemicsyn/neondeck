@@ -22,10 +22,24 @@ import {
 } from '../watches';
 import {
   watermarkCategories,
+  parsePrEventJsonValue,
+  prEventJsonValueSchema,
   type PrWatchEventWatermarkCategory,
   type PrWatchEventWatermarkRecord,
 } from './schemas';
 import { isFailingConclusion, maxString } from './utils';
+
+const feedbackJsonArraySchema = v.array(prEventJsonValueSchema);
+const feedbackJsonRecordSchema = v.record(v.string(), prEventJsonValueSchema);
+const watermarkRowSchema = v.object({
+  watch_id: v.string(),
+  category: v.string(),
+  watermark_json: v.nullable(v.string()),
+  source_updated_at: v.nullable(v.string()),
+  checked_at: v.string(),
+  created_at: v.string(),
+  updated_at: v.string(),
+});
 
 export function watermarksFromEventState(
   watchId: string,
@@ -232,36 +246,46 @@ export function watermarksFromEventState(
           .sort((a, b) => a.id - b.id),
       },
     ),
-    categoryWatermark(watchId, 'check_suites', latestSuiteUpdate, {
-      total: checkSuites.length,
-      truncated: state.checkSuitesTruncated ?? false,
-      ...(state.checkSuitesUnavailableReason
-        ? { unavailableReason: state.checkSuitesUnavailableReason }
-        : {}),
-      suiteIds: checkSuites.map((suite) => suite.id),
-      failingSuiteIds: checkSuites
-        .filter((suite) => isFailingConclusion(suite.conclusion))
-        .map((suite) => suite.id),
-      pendingSuiteIds: checkSuites
-        .filter((suite) => suite.status !== 'completed')
-        .map((suite) => suite.id),
-      suites: checkSuites,
-    }),
-    categoryWatermark(watchId, 'check_runs', latestRunUpdate, {
-      total: checkRuns.length,
-      truncated: state.checkRunsTruncated ?? false,
-      ...(state.checkRunsUnavailableReason
-        ? { unavailableReason: state.checkRunsUnavailableReason }
-        : {}),
-      runIds: checkRuns.map((run) => run.id),
-      failingRunIds: checkRuns
-        .filter((run) => isFailingConclusion(run.conclusion))
-        .map((run) => run.id),
-      pendingRunIds: checkRuns
-        .filter((run) => run.status !== 'completed')
-        .map((run) => run.id),
-      runs: checkRuns,
-    }),
+    categoryWatermark(
+      watchId,
+      'check_suites',
+      latestSuiteUpdate,
+      checkSuiteWatermark(
+        {
+          total: checkSuites.length,
+          truncated: state.checkSuitesTruncated ?? false,
+          suiteIds: checkSuites.map((suite) => suite.id),
+          failingSuiteIds: checkSuites
+            .filter((suite) => isFailingConclusion(suite.conclusion))
+            .map((suite) => suite.id),
+          pendingSuiteIds: checkSuites
+            .filter((suite) => suite.status !== 'completed')
+            .map((suite) => suite.id),
+          suites: checkSuites,
+        },
+        state.checkSuitesUnavailableReason,
+      ),
+    ),
+    categoryWatermark(
+      watchId,
+      'check_runs',
+      latestRunUpdate,
+      checkRunWatermark(
+        {
+          total: checkRuns.length,
+          truncated: state.checkRunsTruncated ?? false,
+          runIds: checkRuns.map((run) => run.id),
+          failingRunIds: checkRuns
+            .filter((run) => isFailingConclusion(run.conclusion))
+            .map((run) => run.id),
+          pendingRunIds: checkRuns
+            .filter((run) => run.status !== 'completed')
+            .map((run) => run.id),
+          runs: checkRuns,
+        },
+        state.checkRunsUnavailableReason,
+      ),
+    ),
     categoryWatermark(watchId, 'mergeability', state.fetchedAt, {
       state: state.state,
       draft: state.draft,
@@ -314,7 +338,7 @@ function feedbackReviewWatermark(
   };
 }
 
-function feedbackFingerprint(value: unknown) {
+function feedbackFingerprint<T>(value: T) {
   return createHash('sha256').update(stableFeedbackJson(value)).digest('hex');
 }
 
@@ -377,20 +401,42 @@ export function reviewThreadCommentDeliveryFingerprint(
   });
 }
 
-function stableFeedbackJson(value: unknown): string {
-  if (Array.isArray(value)) {
-    return `[${value.map((item) => stableFeedbackJson(item)).join(',')}]`;
+function stableFeedbackJson<T>(value: T): string {
+  return stableFeedbackJsonValue(parsePrEventJsonValue(value));
+}
+
+function stableFeedbackJsonValue(value: JsonValue): string {
+  const array = v.safeParse(feedbackJsonArraySchema, value);
+  if (array.success) {
+    return `[${array.output.map(stableFeedbackJsonValue).join(',')}]`;
   }
-  if (value && typeof value === 'object') {
-    return `{${Object.entries(value as Record<string, unknown>)
-      .filter(([, item]) => item !== undefined)
+  const record = v.safeParse(feedbackJsonRecordSchema, value);
+  if (record.success) {
+    return `{${Object.entries(record.output)
       .sort(([left], [right]) => left.localeCompare(right))
       .map(
-        ([key, item]) => `${JSON.stringify(key)}:${stableFeedbackJson(item)}`,
+        ([key, item]) =>
+          `${JSON.stringify(key)}:${stableFeedbackJsonValue(item)}`,
       )
       .join(',')}}`;
   }
-  return JSON.stringify(value ?? null);
+  return JSON.stringify(value);
+}
+
+function checkSuiteWatermark<T extends object>(
+  watermark: T,
+  unavailableReason: string | null | undefined,
+) {
+  if (!unavailableReason) return watermark;
+  return Object.assign(watermark, { unavailableReason });
+}
+
+function checkRunWatermark<T extends object>(
+  watermark: T,
+  unavailableReason: string | null | undefined,
+) {
+  if (!unavailableReason) return watermark;
+  return Object.assign(watermark, { unavailableReason });
 }
 
 export function categoryWatermark(
@@ -482,26 +528,21 @@ export function upsertWatermarks(
   }
 }
 
-export function readWatermarkRow(row: unknown): PrWatchEventWatermarkRecord {
-  const record = row as Record<string, unknown>;
-  const category = String(record.category);
+export function readWatermarkRow<T>(row: T): PrWatchEventWatermarkRecord {
+  const record = v.parse(watermarkRowSchema, row);
+  const parsedCategory = v.safeParse(
+    v.picklist(watermarkCategories),
+    record.category,
+  );
   return {
-    watchId: String(record.watch_id),
-    category: watermarkCategories.includes(
-      category as PrWatchEventWatermarkCategory,
-    )
-      ? (category as PrWatchEventWatermarkCategory)
-      : 'commits',
-    watermark:
-      typeof record.watermark_json === 'string'
-        ? (JSON.parse(record.watermark_json) as JsonValue)
-        : null,
-    sourceUpdatedAt:
-      typeof record.source_updated_at === 'string'
-        ? record.source_updated_at
-        : null,
-    checkedAt: String(record.checked_at),
-    createdAt: String(record.created_at),
-    updatedAt: String(record.updated_at),
+    watchId: record.watch_id,
+    category: parsedCategory.success ? parsedCategory.output : 'commits',
+    watermark: record.watermark_json
+      ? parsePrEventJsonValue(JSON.parse(record.watermark_json))
+      : null,
+    sourceUpdatedAt: record.source_updated_at,
+    checkedAt: record.checked_at,
+    createdAt: record.created_at,
+    updatedAt: record.updated_at,
   };
 }

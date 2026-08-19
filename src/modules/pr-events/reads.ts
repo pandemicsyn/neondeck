@@ -1,4 +1,3 @@
-import type { JsonValue } from '@flue/runtime';
 import * as v from 'valibot';
 import {
   fetchPullRequestFiles,
@@ -19,6 +18,7 @@ import {
 } from '../../runtime-home';
 import {
   prEventTargetInputSchema,
+  prEventJsonValueSchema,
   prFileDiffInputSchema,
   prFilesInputSchema,
   type PrEventActionResult,
@@ -50,7 +50,7 @@ export async function getGitHubPrEventState(
     `Fetched PR event state for ${resolved.target.repoFullName}#${resolved.target.number}.`,
     {
       target: eventTargetJson(resolved.target),
-      state: resolved.state as unknown as JsonValue,
+      state: serializedJsonPayload(resolved.state),
     },
   );
 }
@@ -130,17 +130,18 @@ export async function getGitHubPrReviewThreads(
     options.surface
       ? {
           headSha,
-          reviewThreads: threads as unknown as JsonValue,
+          reviewThreads: serializedJsonPayload(threads),
           reviewThreadsTruncated: truncated,
         }
       : {
           target: eventTargetJson(resolved.target),
           headSha,
-          reviewThreads: threads as unknown as JsonValue,
+          reviewThreads: serializedJsonPayload(threads),
           reviewThreadsTruncated: truncated,
-          unresolvedReviewThreads: unresolvedThreads as unknown as JsonValue,
-          unresolvedReviewComments:
-            unresolvedReviewComments as unknown as JsonValue,
+          unresolvedReviewThreads: serializedJsonPayload(unresolvedThreads),
+          unresolvedReviewComments: serializedJsonPayload(
+            unresolvedReviewComments,
+          ),
         },
   );
 }
@@ -195,8 +196,8 @@ export async function getGitHubPrFiles(
         `Fetched ${diff.files.length} local PR file diff(s) for ${resolved.target.repoFullName}#${resolved.target.number}.`,
         {
           target: eventTargetJson(resolved.target),
-          files: diff.files as unknown as JsonValue,
-          diffSummary: diff.diffSummary as unknown as JsonValue,
+          files: serializedJsonPayload(diff.files),
+          diffSummary: serializedJsonPayload(diff.diffSummary),
           fetchedAt: diff.fetchedAt,
           source: 'local',
           revision: githubFileRevision(parsed.output),
@@ -247,8 +248,8 @@ export async function getGitHubPrFiles(
       `Fetched ${diff.files.length} PR file diff(s) for ${resolved.target.repoFullName}#${resolved.target.number}.`,
       {
         target: eventTargetJson(resolved.target),
-        files: diff.files as unknown as JsonValue,
-        diffSummary: diff.diffSummary as unknown as JsonValue,
+        files: serializedJsonPayload(diff.files),
+        diffSummary: serializedJsonPayload(diff.diffSummary),
         fetchedAt: diff.fetchedAt,
         source: 'github',
         revision: githubFileRevision(parsed.output),
@@ -319,9 +320,9 @@ export async function getGitHubPrFileDiff(
           : `No local PR diff found for ${parsed.output.path}.`,
         {
           target: eventTargetJson(resolved.target),
-          file: diff.file as unknown as JsonValue,
+          file: serializedJsonPayload(diff.file),
           diff: diff.diff,
-          diffSummary: diff.diffSummary as unknown as JsonValue,
+          diffSummary: serializedJsonPayload(diff.diffSummary),
           fetchedAt: diff.fetchedAt,
           source: 'local',
           revision: githubFileRevision(parsed.output),
@@ -375,9 +376,9 @@ export async function getGitHubPrFileDiff(
         : `No GitHub PR diff found for ${parsed.output.path}.`,
       {
         target: eventTargetJson(resolved.target),
-        file: file as unknown as JsonValue,
+        file: serializedJsonPayload(file),
         diff: file?.patch ?? '',
-        diffSummary: diff.diffSummary as unknown as JsonValue,
+        diffSummary: serializedJsonPayload(diff.diffSummary),
         fetchedAt: diff.fetchedAt,
         source: 'github',
         revision: githubFileRevision(parsed.output),
@@ -430,10 +431,12 @@ export async function getGitHubPrRequestedChanges(
     `Fetched ${resolved.state.requestedChangesReviews.length} requested-changes review(s) for ${resolved.target.repoFullName}#${resolved.target.number}.`,
     {
       target: eventTargetJson(resolved.target),
-      requestedChangesReviews: resolved.state
-        .requestedChangesReviews as unknown as JsonValue,
-      requestedChangesState: resolved.state
-        .requestedChangesState as unknown as JsonValue,
+      requestedChangesReviews: serializedJsonPayload(
+        resolved.state.requestedChangesReviews,
+      ),
+      requestedChangesState: serializedJsonPayload(
+        resolved.state.requestedChangesState,
+      ),
     },
   );
 }
@@ -457,8 +460,17 @@ export async function getGitHubPrBranchPermissions(
     `Fetched branch permission facts for ${resolved.target.repoFullName}#${resolved.target.number}.`,
     {
       target: eventTargetJson(resolved.target),
-      branchPermissions: resolved.state
-        .branchPermissions as unknown as JsonValue,
+      branchPermissions: serializedJsonPayload(
+        resolved.state.branchPermissions,
+      ),
     },
   );
+}
+
+function serializedJsonPayload<T>(value: T) {
+  const serialized = JSON.stringify(value);
+  if (serialized === undefined) {
+    throw new TypeError('PR event payload is not JSON-serializable.');
+  }
+  return v.parse(prEventJsonValueSchema, JSON.parse(serialized));
 }

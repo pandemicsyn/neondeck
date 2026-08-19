@@ -1,7 +1,7 @@
 import type { JsonValue } from '@flue/runtime';
 import * as v from 'valibot';
 import type { ThinkingLevel } from '../../../runtime-home';
-import { isJsonValue } from '../../sessions/schemas';
+import { isJsonValue } from '../../sessions';
 
 export type LearningReviewKind = 'conversation' | 'curation' | 'pr-batch';
 export type LearningReviewStatus = 'running' | 'completed' | 'failed';

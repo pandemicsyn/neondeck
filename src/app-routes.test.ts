@@ -1091,7 +1091,13 @@ describe('app API safety routes', () => {
       );
       const body = (await response.json()) as {
         ok: boolean;
-        data?: { comment?: { id?: number } };
+        data?: {
+          comment?: {
+            id?: number;
+            authorType?: string | null;
+            authorIsBot?: boolean;
+          };
+        };
       };
 
       expect(response.status).toBe(200);
@@ -1099,6 +1105,8 @@ describe('app API safety routes', () => {
         ok: true,
         data: { comment: { id: 77 } },
       });
+      expect(body.data?.comment).toHaveProperty('authorType', null);
+      expect(body.data?.comment).not.toHaveProperty('authorIsBot');
     } finally {
       globalThis.fetch = previousFetch;
       if (token === undefined) {

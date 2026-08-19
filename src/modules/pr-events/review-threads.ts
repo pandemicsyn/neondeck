@@ -1,4 +1,3 @@
-import type { JsonValue } from '@flue/runtime';
 import * as v from 'valibot';
 import {
   fetchPullRequestReviewThread,
@@ -14,6 +13,7 @@ import {
   runtimePaths,
 } from '../../runtime-home';
 import {
+  parsePrEventJsonValue,
   prEventTargetInputSchema,
   prReviewThreadReplyInputSchema,
   type PrEventActionResult,
@@ -139,7 +139,7 @@ export async function postGitHubPrThreadReply(
       paths,
     );
     return okResult(action, true, 'Posted review thread reply.', {
-      thread: thread as unknown as JsonValue,
+      thread: parsePrEventJsonValue(thread),
     });
   } catch (error) {
     return failResult(action, 'Could not post review thread reply.', {
@@ -225,7 +225,7 @@ export async function postGitHubPrThreadResolution(
       action,
       true,
       resolved ? 'Resolved review thread.' : 'Unresolved review thread.',
-      { thread: thread as unknown as JsonValue },
+      { thread: parsePrEventJsonValue(thread) },
     );
   } catch (error) {
     return failResult(

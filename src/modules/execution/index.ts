@@ -5,3 +5,4 @@ export * from './run';
 export * from './schemas';
 export * from './exedev/checkouts';
 export * from './exedev/context';
+export { isJsonValue } from './utils';

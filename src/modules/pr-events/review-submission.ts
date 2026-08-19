@@ -1,4 +1,3 @@
-import type { JsonValue } from '@flue/runtime';
 import * as v from 'valibot';
 import {
   fetchPullRequestReviewComments,
@@ -14,6 +13,7 @@ import {
   runtimePaths,
 } from '../../runtime-home';
 import {
+  parsePrEventJsonValue,
   prEventTargetInputSchema,
   prReviewSubmitInputSchema,
   type PrEventActionResult,
@@ -156,13 +156,13 @@ export async function postGitHubPrReview(
       `Submitted PR review for ${resolved.target.repoFullName}#${resolved.target.number}.`,
       {
         target: eventTargetJson(resolved.target),
-        draft: result.draft as unknown as JsonValue,
-        review: result.review as unknown as JsonValue,
+        draft: parsePrEventJsonValue(result.draft),
+        review: parsePrEventJsonValue(result.review),
       },
     );
   } catch (error) {
     if (error instanceof GitHubPrReviewSubmitError) {
-      return {
+      const failureResult: PrEventActionResult = {
         ok: false,
         action: 'github_pr_review_post',
         changed: false,
@@ -171,8 +171,11 @@ export async function postGitHubPrReview(
           code: error.failure.code,
           failingCommentIds: error.failure.failingCommentIds ?? [],
         },
-        ...(error.failure.requires ? { requires: error.failure.requires } : {}),
       };
+      if (error.failure.requires) {
+        failureResult.requires = error.failure.requires;
+      }
+      return failureResult;
     }
     return failResult('github_pr_review_post', 'Could not submit PR review.', {
       errors: [errorMessage(error)],
@@ -193,8 +196,8 @@ function unverifiedSubmittedReviewResult(
       'Submitted PR review but could not uniquely verify its durable delivery identity.',
     data: {
       target: eventTargetJson(target),
-      draft: result.draft as unknown as JsonValue,
-      review: result.review as unknown as JsonValue,
+      draft: parsePrEventJsonValue(result.draft),
+      review: parsePrEventJsonValue(result.review),
       deliveryIdentityVerified: false,
     },
     requires: ['deliveryIdentity'],

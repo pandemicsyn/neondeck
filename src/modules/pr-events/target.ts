@@ -126,16 +126,14 @@ export async function resolvePullRequestTarget(
       };
     }
     const watch = watches.find((item) => item.id === parsed.reference.id);
-    return {
-      ok: true,
-      target: {
-        repoFullName: parsed.reference.repoFullName,
-        owner: parsed.reference.githubOwner,
-        repo: parsed.reference.githubName,
-        number: parsed.reference.prNumber,
-        ...(watch ? { watch } : {}),
-      },
+    const target: PullRequestTarget = {
+      repoFullName: parsed.reference.repoFullName,
+      owner: parsed.reference.githubOwner,
+      repo: parsed.reference.githubName,
+      number: parsed.reference.prNumber,
     };
+    if (watch) target.watch = watch;
+    return { ok: true, target };
   }
 
   if (!input.repo || !input.prNumber) {
@@ -163,16 +161,14 @@ export async function resolvePullRequestTarget(
         item.repoFullName.toLowerCase() === fullName.toLowerCase() &&
         item.prNumber === input.prNumber,
     );
-    return {
-      ok: true,
-      target: {
-        repoFullName: fullName,
-        owner: repo.github.owner,
-        repo: repo.github.name,
-        number: input.prNumber,
-        ...(watch ? { watch } : {}),
-      },
+    const target: PullRequestTarget = {
+      repoFullName: fullName,
+      owner: repo.github.owner,
+      repo: repo.github.name,
+      number: input.prNumber,
     };
+    if (watch) target.watch = watch;
+    return { ok: true, target };
   }
 
   const match = input.repo.match(/^([^/\s]+)\/([^/\s]+)$/);

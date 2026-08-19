@@ -2,7 +2,7 @@ import { type FlueObservation, type JsonValue } from '@flue/runtime';
 import { createHash } from 'node:crypto';
 import type { DatabaseSync, SQLOutputValue } from 'node:sqlite';
 import * as v from 'valibot';
-import { isJsonValue } from '../execution/utils';
+import { isJsonValue } from '../execution';
 import { openDb } from '../../lib/sqlite';
 import { ensureRuntimeHome, runtimePaths } from '../../runtime-home';
 

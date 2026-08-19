@@ -50,14 +50,15 @@ export function failResult(
   message: string,
   details: Pick<PrEventActionResult, 'errors' | 'requires'> = {},
 ): PrEventActionResult {
-  return {
+  const result: PrEventActionResult = {
     ok: false,
     action,
     changed: false,
     message,
-    ...(details.requires ? { requires: details.requires } : {}),
-    ...(details.errors ? { errors: details.errors } : {}),
   };
+  if (details.requires) result.requires = details.requires;
+  if (details.errors) result.errors = details.errors;
+  return result;
 }
 
 export function maxString(values: Array<string | null | undefined>) {
@@ -66,7 +67,7 @@ export function maxString(values: Array<string | null | undefined>) {
   return filtered.sort((a, b) => b.localeCompare(a))[0];
 }
 
-export function stableJson(value: unknown) {
+export function stableJson(value: JsonValue | undefined) {
   return JSON.stringify(value);
 }
 
@@ -80,6 +81,7 @@ export function isFailingConclusion(value: string | null) {
   ].includes(value ?? '');
 }
 
-export function errorMessage(error: unknown) {
-  return error instanceof Error ? error.message : String(error);
+export function errorMessage<T>(error: T) {
+  const parsed = v.safeParse(v.instance(Error), error);
+  return parsed.success ? parsed.output.message : String(error);
 }

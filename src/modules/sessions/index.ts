@@ -7,6 +7,7 @@ export * from './events';
 export * from './queries';
 export * from './references';
 export * from './repo-context';
+export { isJsonValue } from './schemas';
 export * from './schemas';
 export * from './service';
 export * from './summaries';

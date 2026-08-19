@@ -2,7 +2,7 @@ import { openDb } from '../../lib/sqlite.ts';
 import type { JsonValue } from '@flue/runtime';
 import type { DatabaseSync } from 'node:sqlite';
 import * as v from 'valibot';
-import { isJsonValue } from '../execution/utils';
+import { isJsonValue } from '../execution';
 import { ensureRuntimeHome, runtimePaths } from '../../runtime-home';
 
 export const automationHealthDefaultWindowDays = 30;

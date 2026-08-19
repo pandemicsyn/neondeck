@@ -14,6 +14,7 @@ import {
 } from './modules/github';
 import {
   getGitHubPrBranchPermissions,
+  getGitHubPrEventState,
   getGitHubPrFiles,
   getGitHubPrRequestedChanges,
   getGitHubPrReviewDraft,
@@ -545,13 +546,40 @@ describe('PR event state watermarks', () => {
     const paths = runtimePaths(home);
     await writeRepoRegistry(paths.repos);
 
+    const eventState = prEventState();
+    eventState.reviewThreads[0].comments[0].authorType = undefined;
+    eventState.reviewThreads[0].comments[0].authorIsBot = undefined;
+    eventState.requestedChangesReviews[0].authorType = undefined;
+    eventState.requestedChangesReviews[0].authorIsBot = undefined;
     const dependencies = {
-      fetchPullRequestEventState: async () => prEventState(),
+      fetchPullRequestEventState: async () => eventState,
       fetchPullRequestReviewThreads: async () => ({
-        reviewThreads: prEventState().reviewThreads,
+        reviewThreads: eventState.reviewThreads,
         truncated: false,
       }),
     };
+
+    await expect(
+      getGitHubPrEventState(
+        { repo: 'neondeck', prNumber: 123 },
+        paths,
+        dependencies,
+      ),
+    ).resolves.toMatchObject({
+      ok: true,
+      data: {
+        state: {
+          reviewThreads: [
+            {
+              comments: [
+                expect.not.objectContaining({ authorIsBot: undefined }),
+              ],
+            },
+            expect.any(Object),
+          ],
+        },
+      },
+    });
 
     await expect(
       getGitHubPrReviewThreads(
@@ -783,6 +811,8 @@ describe('PR event state watermarks', () => {
       nodeId: 'comment-node-88',
       url: 'https://github.com/pandemicsyn/neondeck/pull/123#issuecomment-88',
       authorLogin: 'neon',
+      authorType: undefined,
+      authorIsBot: undefined,
       body: postedBody ?? '',
       createdAt: '2026-06-30T21:00:00Z',
       updatedAt: '2026-06-30T21:00:00Z',
@@ -813,16 +843,29 @@ describe('PR event state watermarks', () => {
       idempotencyKey: 'prepared-diff:pd-1:pushed:abc123',
     };
 
-    await expect(
-      postGitHubPrComment(input, paths, dependencies),
-    ).resolves.toMatchObject({ ok: true, changed: true });
+    const posted = await postGitHubPrComment(input, paths, dependencies);
+    expect(posted).toMatchObject({
+      ok: true,
+      changed: true,
+      data: {
+        comment: expect.not.objectContaining({
+          authorType: undefined,
+          authorIsBot: undefined,
+        }),
+      },
+    });
     process.env.GITHUB_TOKEN = 'token-after-rotation';
-    await expect(
-      postGitHubPrComment(input, paths, dependencies),
-    ).resolves.toMatchObject({
+    const replayed = await postGitHubPrComment(input, paths, dependencies);
+    expect(replayed).toMatchObject({
       ok: true,
       changed: false,
-      data: { metadata: { idempotentReplay: true } },
+      data: {
+        comment: expect.not.objectContaining({
+          authorType: undefined,
+          authorIsBot: undefined,
+        }),
+        metadata: { idempotentReplay: true },
+      },
     });
     expect(postCount).toBe(1);
     expect(listedWithTokens).toEqual([
