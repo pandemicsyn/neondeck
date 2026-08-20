@@ -60,18 +60,24 @@ export type ActivitySubmissionEventHistory = {
 export type ActivityEventQuery = { afterEventId?: number };
 
 type ActivityUsage = {
-  inputTokens: number;
-  outputTokens: number;
-  cacheReadTokens: number;
-  cacheWriteTokens: number;
-  totalTokens: number;
+  inputTokens: number | null;
+  outputTokens: number | null;
+  cacheReadTokens: number | null;
+  cacheWriteTokens: number | null;
+  totalTokens: number | null;
   cost: {
-    input: number;
-    output: number;
-    cacheRead: number;
-    cacheWrite: number;
-    total: number;
+    input: number | null;
+    output: number | null;
+    cacheRead: number | null;
+    cacheWrite: number | null;
+    total: number | null;
   } | null;
+  complete: boolean;
+};
+
+type ActivityUsageAccumulator = {
+  turns: number;
+  usage: ActivityUsage;
 };
 
 type ReviewTaskPerformance = {
@@ -146,6 +152,7 @@ export type PrReviewPerformanceProjection = {
 };
 
 const maxActivityEventRows = 5_000;
+const taskBriefSchemaVersion = 1;
 const redacted = '[redacted]';
 const persistedEventTypes = new Set<FlueObservation['type']>([
   'submission_queued',
@@ -722,13 +729,22 @@ function projectPrReviewPerformance(input: {
       child: metricsAvailable ? childTools : null,
     },
     usage: {
-      parent: metricsAvailable ? parentUsage : null,
-      child: metricsAvailable ? childUsage : null,
+      parent: metricsAvailable ? parentUsage.usage : null,
+      child: metricsAvailable ? childUsage.usage : null,
     },
     taskBriefs: {
       allRequiredFieldsPresent: !metricsAvailable
         ? null
-        : taskList.length
+        : taskList.length &&
+            taskList.every((task) => {
+              const start = taskStarts.get(task.taskId);
+              return (
+                summaryNumber(
+                  start?.summary ?? null,
+                  'taskBriefSchemaVersion',
+                ) === taskBriefSchemaVersion
+              );
+            })
           ? taskList.every((task) => {
               const start = taskStarts.get(task.taskId);
               return [
@@ -776,6 +792,11 @@ function summaryBoolean(summary: JsonValue | null, key: string) {
   return typeof value === 'boolean' ? value : null;
 }
 
+function summaryNumber(summary: JsonValue | null, key: string) {
+  const value = objectRecord(summary)?.[key];
+  return typeof value === 'number' && Number.isFinite(value) ? value : null;
+}
+
 function taskStopReason(summary: JsonValue | null) {
   const value = summaryString(summary, 'stopReason');
   return value === 'answered' ||
@@ -799,62 +820,110 @@ function elapsedMs(start: string | null, end: string | null) {
     : null;
 }
 
-function emptyUsage(): ActivityUsage {
+function emptyUsage(): ActivityUsageAccumulator {
   return {
-    inputTokens: 0,
-    outputTokens: 0,
-    cacheReadTokens: 0,
-    cacheWriteTokens: 0,
-    totalTokens: 0,
-    cost: null,
+    turns: 0,
+    usage: {
+      inputTokens: 0,
+      outputTokens: 0,
+      cacheReadTokens: 0,
+      cacheWriteTokens: 0,
+      totalTokens: 0,
+      cost: null,
+      complete: true,
+    },
   };
 }
 
 function usageFromSummary(summary: JsonValue | null): ActivityUsage {
   const usage = objectRecord(objectRecord(summary)?.usage);
   const cost = objectRecord(usage?.cost);
-  return {
-    inputTokens: numberOrZero(usage?.inputTokens),
-    outputTokens: numberOrZero(usage?.outputTokens),
-    cacheReadTokens: numberOrZero(usage?.cacheReadTokens),
-    cacheWriteTokens: numberOrZero(usage?.cacheWriteTokens),
-    totalTokens: numberOrZero(usage?.totalTokens),
+  const result: ActivityUsage = {
+    inputTokens: numberOrNull(usage?.inputTokens),
+    outputTokens: numberOrNull(usage?.outputTokens),
+    cacheReadTokens: numberOrNull(usage?.cacheReadTokens),
+    cacheWriteTokens: numberOrNull(usage?.cacheWriteTokens),
+    totalTokens: numberOrNull(usage?.totalTokens),
     cost: cost
       ? {
-          input: numberOrZero(cost.input),
-          output: numberOrZero(cost.output),
-          cacheRead: numberOrZero(cost.cacheRead),
-          cacheWrite: numberOrZero(cost.cacheWrite),
-          total: numberOrZero(cost.total),
+          input: numberOrNull(cost.input),
+          output: numberOrNull(cost.output),
+          cacheRead: numberOrNull(cost.cacheRead),
+          cacheWrite: numberOrNull(cost.cacheWrite),
+          total: numberOrNull(cost.total),
         }
       : null,
+    complete: false,
   };
+  result.complete =
+    result.inputTokens !== null &&
+    result.outputTokens !== null &&
+    result.cacheReadTokens !== null &&
+    result.cacheWriteTokens !== null &&
+    result.totalTokens !== null &&
+    result.cost !== null &&
+    Object.values(result.cost).every((value) => value !== null);
+  return result;
 }
 
-function addUsage(target: ActivityUsage, source: ActivityUsage) {
-  target.inputTokens += source.inputTokens;
-  target.outputTokens += source.outputTokens;
-  target.cacheReadTokens += source.cacheReadTokens;
-  target.cacheWriteTokens += source.cacheWriteTokens;
-  target.totalTokens += source.totalTokens;
-  if (!source.cost) return;
-  if (!target.cost)
-    target.cost = {
-      input: 0,
-      output: 0,
-      cacheRead: 0,
-      cacheWrite: 0,
-      total: 0,
-    };
-  target.cost.input += source.cost.input;
-  target.cost.output += source.cost.output;
-  target.cost.cacheRead += source.cost.cacheRead;
-  target.cost.cacheWrite += source.cost.cacheWrite;
-  target.cost.total += source.cost.total;
+function addUsage(target: ActivityUsageAccumulator, source: ActivityUsage) {
+  const firstTurn = target.turns === 0;
+  target.turns += 1;
+  target.usage.inputTokens = addKnownNumbers(
+    target.usage.inputTokens,
+    source.inputTokens,
+  );
+  target.usage.outputTokens = addKnownNumbers(
+    target.usage.outputTokens,
+    source.outputTokens,
+  );
+  target.usage.cacheReadTokens = addKnownNumbers(
+    target.usage.cacheReadTokens,
+    source.cacheReadTokens,
+  );
+  target.usage.cacheWriteTokens = addKnownNumbers(
+    target.usage.cacheWriteTokens,
+    source.cacheWriteTokens,
+  );
+  target.usage.totalTokens = addKnownNumbers(
+    target.usage.totalTokens,
+    source.totalTokens,
+  );
+  if (firstTurn) {
+    target.usage.cost = source.cost ? { ...source.cost } : null;
+  } else if (!target.usage.cost || !source.cost) {
+    target.usage.cost = null;
+  } else {
+    target.usage.cost.input = addKnownNumbers(
+      target.usage.cost.input,
+      source.cost.input,
+    );
+    target.usage.cost.output = addKnownNumbers(
+      target.usage.cost.output,
+      source.cost.output,
+    );
+    target.usage.cost.cacheRead = addKnownNumbers(
+      target.usage.cost.cacheRead,
+      source.cost.cacheRead,
+    );
+    target.usage.cost.cacheWrite = addKnownNumbers(
+      target.usage.cost.cacheWrite,
+      source.cost.cacheWrite,
+    );
+    target.usage.cost.total = addKnownNumbers(
+      target.usage.cost.total,
+      source.cost.total,
+    );
+  }
+  target.usage.complete = target.usage.complete && source.complete;
 }
 
-function numberOrZero(value: unknown) {
-  return typeof value === 'number' && Number.isFinite(value) ? value : 0;
+function addKnownNumbers(left: number | null, right: number | null) {
+  return left === null || right === null ? null : left + right;
+}
+
+function numberOrNull(value: unknown) {
+  return typeof value === 'number' && Number.isFinite(value) ? value : null;
 }
 
 function addTool(
@@ -1100,6 +1169,7 @@ function taskPromptMetadata(prompt: string): Record<string, JsonValue> {
   const expectedEvidence = taskPromptField(prompt, 'Expected evidence');
   const thoroughness = taskPromptField(prompt, 'Thoroughness')?.toLowerCase();
   return compactJsonRecord({
+    taskBriefSchemaVersion,
     promptHash: privacyHash(prompt),
     promptLength: prompt.length,
     questionHash: question ? privacyHash(question) : undefined,

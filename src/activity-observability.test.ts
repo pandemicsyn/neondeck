@@ -316,6 +316,7 @@ describe('Flue v3 activity observability', () => {
       summary: {
         taskId: 'task-1',
         agent: 'explore',
+        taskBriefSchemaVersion: 1,
         promptLength: prompt.length,
         promptHash: expect.stringMatching(/^sha256:[0-9a-f]{64}$/),
         questionHash: expect.stringMatching(/^sha256:[0-9a-f]{64}$/),
@@ -324,6 +325,7 @@ describe('Flue v3 activity observability', () => {
         scopeItemCount: 2,
         exclusionsHash: expect.stringMatching(/^sha256:[0-9a-f]{64}$/),
         exclusionItemCount: 2,
+        knownFactsHash: expect.stringMatching(/^sha256:[0-9a-f]{64}$/),
         expectedEvidenceHash: expect.stringMatching(/^sha256:[0-9a-f]{64}$/),
         thoroughness: 'medium',
       },
@@ -385,6 +387,100 @@ describe('Flue v3 activity observability', () => {
           cacheRead: 0.003,
           cacheWrite: 0.004,
           total: 0.037,
+        },
+      },
+    });
+  });
+
+  it('keeps incomplete provider usage unknown in review aggregates', async () => {
+    const paths = await tempPaths();
+    await ensureReviewBinding(paths);
+    await recordFlueObservation(queued(1), paths);
+    await recordFlueObservation(
+      {
+        ...base(2),
+        type: 'turn',
+        purpose: 'agent',
+        turnId: 'turn-1',
+        durationMs: 1_000,
+        isError: false,
+        request: { providerId: 'provider', requestedModel: 'model' },
+        response: {
+          usage: {
+            input: 10,
+            output: 5,
+            cacheRead: 2,
+            cacheWrite: 1,
+            totalTokens: 18,
+            cost: {
+              input: 1,
+              output: 2,
+              cacheRead: 3,
+              cacheWrite: 4,
+              total: 10,
+            },
+          },
+        },
+      } as never,
+      paths,
+    );
+    await recordFlueObservation(
+      {
+        ...base(3),
+        type: 'turn',
+        purpose: 'agent',
+        turnId: 'turn-2',
+        durationMs: 1_000,
+        isError: false,
+        request: { providerId: 'provider', requestedModel: 'model' },
+        response: { usage: { input: 4, totalTokens: 4 } },
+      } as never,
+      paths,
+    );
+
+    await expect(
+      readPrReviewPerformance('review-1', paths),
+    ).resolves.toMatchObject({
+      turns: { parent: 2 },
+      usage: {
+        parent: {
+          inputTokens: 14,
+          outputTokens: null,
+          cacheReadTokens: null,
+          cacheWriteTokens: null,
+          totalTokens: 22,
+          cost: null,
+          complete: false,
+        },
+      },
+    });
+
+    await recordFlueObservation(
+      {
+        ...base(4),
+        type: 'turn',
+        purpose: 'agent',
+        turnId: 'turn-3',
+        durationMs: 1_000,
+        isError: false,
+        request: { providerId: 'provider', requestedModel: 'model' },
+        response: {},
+      } as never,
+      paths,
+    );
+    await expect(
+      readPrReviewPerformance('review-1', paths),
+    ).resolves.toMatchObject({
+      turns: { parent: 3 },
+      usage: {
+        parent: {
+          inputTokens: null,
+          outputTokens: null,
+          cacheReadTokens: null,
+          cacheWriteTokens: null,
+          totalTokens: null,
+          cost: null,
+          complete: false,
         },
       },
     });
@@ -532,6 +628,24 @@ describe('Flue v3 activity observability', () => {
       action: 'pr_review_performance_read',
       review: { reviewId: 'review-1', attemptId: 'attempt-1' },
       taskWaves: [{ taskCount: 2 }],
+    });
+
+    const legacyDatabase = openDb(paths.neondeckDatabase);
+    try {
+      legacyDatabase
+        .prepare(
+          `UPDATE activity_events
+           SET summary_json = json_remove(summary_json, '$.taskBriefSchemaVersion')
+           WHERE submission_id = ? AND event_type = 'task_start';`,
+        )
+        .run('submission-1');
+    } finally {
+      legacyDatabase.close();
+    }
+    await expect(
+      readPrReviewPerformance('review-1', paths),
+    ).resolves.toMatchObject({
+      taskBriefs: { allRequiredFieldsPresent: null },
     });
 
     const database = openDb(paths.neondeckDatabase);
