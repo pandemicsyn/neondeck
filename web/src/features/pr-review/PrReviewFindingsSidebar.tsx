@@ -168,7 +168,6 @@ function FindingsPanels(props: PrReviewFindingsSidebarProps) {
         )}
       />
       <DraftCommentPanel
-        activePath={props.activePath}
         comments={props.draftComments}
         isDeleting={props.isDeleting}
         onDelete={props.onDelete}
@@ -207,14 +206,12 @@ function FindingsPanels(props: PrReviewFindingsSidebarProps) {
 }
 
 function DraftCommentPanel({
-  activePath,
   comments,
   isDeleting,
   onDelete,
   onSelect,
   selectedAnnotationId,
 }: {
-  activePath: string | null;
   comments: GitHubPrReviewDraftComment[];
   isDeleting: boolean;
   onDelete: (commentId: string) => void;
@@ -224,7 +221,6 @@ function DraftCommentPanel({
   if (comments.length === 0) return null;
   const ordered = [...comments].sort(
     (left, right) =>
-      Number(right.path === activePath) - Number(left.path === activePath) ||
       left.path.localeCompare(right.path) ||
       left.line - right.line ||
       left.id.localeCompare(right.id),
