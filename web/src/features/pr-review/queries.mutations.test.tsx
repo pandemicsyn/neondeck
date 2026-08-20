@@ -30,6 +30,52 @@ describe('useGitHubPrReviewMutations', () => {
     vi.restoreAllMocks();
   });
 
+  it('clears the live draft cache after discard returns its historical record', async () => {
+    const pr = pullRequest();
+    const queryClient = new QueryClient({
+      defaultOptions: {
+        mutations: { retry: false },
+        queries: { retry: false },
+      },
+    });
+    queryClient.setQueryData(prReviewQueryKeys.draft(pr), reviewDraft('draft'));
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          ok: true,
+          action: 'github_pr_review_draft_delete',
+          changed: true,
+          message: 'Discarded review draft.',
+          data: { draft: reviewDraft('discarded') },
+        }),
+        { headers: { 'content-type': 'application/json' } },
+      ),
+    );
+
+    let mutations: ReturnType<typeof useGitHubPrReviewMutations> | null = null;
+    function Harness() {
+      mutations = useGitHubPrReviewMutations(pr);
+      return null;
+    }
+
+    act(() =>
+      root.render(
+        <QueryClientProvider client={queryClient}>
+          <Harness />
+        </QueryClientProvider>,
+      ),
+    );
+
+    await act(async () => {
+      await mutations!.discardDraft.mutateAsync({
+        repo: pr.repo,
+        number: pr.number,
+      });
+    });
+
+    expect(queryClient.getQueryData(prReviewQueryKeys.draft(pr))).toBeNull();
+  });
+
   it('clears the live draft cache after GitHub accepts the review', async () => {
     const pr = pullRequest();
     const liveDraft = reviewDraft('draft');

@@ -50,6 +50,7 @@ describe('PrReviewCommentComposer', () => {
         editingCommentId={null}
         isAddingComment={false}
         isDeletingComment={false}
+        isLocked={false}
         isReplyingToThread={false}
         isResolvingThread={false}
         isSavingDraft={false}
@@ -116,6 +117,7 @@ describe('PrReviewCommentComposer', () => {
         editingCommentId={null}
         isAddingComment={false}
         isDeletingComment={false}
+        isLocked={false}
         isReplyingToThread={false}
         isResolvingThread={false}
         isSavingDraft={false}
@@ -149,6 +151,56 @@ describe('PrReviewCommentComposer', () => {
     expect(html).toContain('@bob');
     expect(html).toContain('Fixed in the latest push.');
     expect(html).toContain('Open on GitHub');
+  });
+
+  it('disables the inline editor for the whole revision-apply transaction', () => {
+    const html = renderToStaticMarkup(
+      <PrReviewCommentComposer
+        annotation={{
+          side: 'additions',
+          lineNumber: 42,
+          metadata: {
+            id: 'composer-1',
+            kind: 'composer',
+            title: 'RIGHT L42',
+            body: '',
+          },
+        }}
+        composerBody="Draft on the old revision"
+        draft={null}
+        editingBody=""
+        editingCommentId={null}
+        isAddingComment={false}
+        isDeletingComment={false}
+        isLocked
+        isReplyingToThread={false}
+        isResolvingThread={false}
+        isSavingDraft={false}
+        isUpdatingComment={false}
+        onCancelComposer={noop}
+        onCancelEdit={noop}
+        onCancelReply={noop}
+        onComposerBodyChange={noop}
+        onDeleteComment={noop}
+        onEditingBodyChange={noop}
+        onReanchorComment={noop}
+        onReplyBodyChange={noop}
+        onSetThreadResolution={noop}
+        onStartEdit={noop}
+        onStartReply={noop}
+        onSubmitComposer={noop}
+        onSubmitEdit={noop}
+        onSubmitReply={noop}
+        reanchoringCommentId={null}
+        replyingThreadId={null}
+        replyBody=""
+        reviewThreads={[]}
+      />,
+    );
+
+    expect(html).toMatch(/<textarea[^>]*disabled=""/);
+    expect(html).toMatch(/<button[^>]*disabled=""[^>]*type="submit"/);
+    expect(html).toContain('<button disabled="" type="button">Cancel</button>');
   });
 });
 

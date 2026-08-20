@@ -65,6 +65,7 @@ describe('PR review findings sidebar', () => {
             reason: 'No finding.',
           })}
           isDeleting={false}
+          isLocked={false}
           isDismissingFinding={() => false}
           isLoadingThreads={false}
           isPromotingFinding={() => false}
@@ -149,6 +150,7 @@ describe('PR review findings sidebar', () => {
         reason: 'No finding.',
       }),
       isDeleting: false,
+      isLocked: false,
       isDismissingFinding: () => false,
       isLoadingThreads: false,
       isPromotingFinding: () => false,
@@ -177,9 +179,7 @@ describe('PR review findings sidebar', () => {
       ),
     );
     const draftCommentSummaries = () =>
-      [
-        ...container.querySelectorAll('.pr-review-neon-finding-summary'),
-      ].map(
+      [...container.querySelectorAll('.pr-review-neon-finding-summary')].map(
         (element) =>
           element.querySelector('.pr-review-neon-finding-copy')?.textContent,
       );

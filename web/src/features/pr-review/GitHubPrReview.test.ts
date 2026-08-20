@@ -45,6 +45,7 @@ import {
   prReviewDraftHeadIsStale,
   reanchorDraftToRevision,
   refreshOrientationTargetSettled,
+  sameReviewDraftRevision,
   selectionAnchorMatchesPatch,
 } from './review-ui-helpers';
 import capturedReviewPatch from './fixtures/captured-review.patch?raw';
@@ -75,6 +76,35 @@ describe('GitHubPrReview helpers', () => {
     expect(prReviewDraftHeadIsStale('draft-head', null)).toBe(false);
   });
 
+  it('revalidates the same draft and head before moving it to a new revision', () => {
+    const expected = { id: 'draft-1', headSha: 'head-a' };
+
+    expect(
+      sameReviewDraftRevision(expected, { ...expected, status: 'draft' }),
+    ).toBe(true);
+    expect(
+      sameReviewDraftRevision(expected, {
+        id: 'draft-2',
+        headSha: 'head-a',
+        status: 'draft',
+      }),
+    ).toBe(false);
+    expect(
+      sameReviewDraftRevision(expected, {
+        id: 'draft-1',
+        headSha: 'head-b',
+        status: 'draft',
+      }),
+    ).toBe(false);
+    expect(
+      sameReviewDraftRevision(expected, {
+        ...expected,
+        status: 'discarded',
+      }),
+    ).toBe(false);
+    expect(sameReviewDraftRevision(expected, null)).toBe(false);
+  });
+
   it('updates the draft to the validated candidate revision without consulting a stale queue snapshot', async () => {
     const candidateHeadSha = 'candidate-head';
     const saveDraft = vi.fn<
@@ -87,6 +117,8 @@ describe('GitHubPrReview helpers', () => {
     await reanchorDraftToRevision({
       repo: 'pandemicsyn/neondeck',
       number: 66,
+      draftId: 'draft-1',
+      expectedHeadSha: 'original-head',
       headSha: candidateHeadSha,
       saveDraft,
       invalidateReviewSources,
@@ -95,6 +127,8 @@ describe('GitHubPrReview helpers', () => {
     expect(saveDraft).toHaveBeenCalledWith({
       repo: 'pandemicsyn/neondeck',
       number: 66,
+      expectedDraftId: 'draft-1',
+      expectedHeadSha: 'original-head',
       headSha: candidateHeadSha,
       reanchorHeadSha: true,
     });

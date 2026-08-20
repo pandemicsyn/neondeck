@@ -1,6 +1,7 @@
 import type { SelectedLineRange } from '@pierre/diffs/react';
 import type { ReviewCursorTarget } from '../../../../shared/review-navigation';
 import type {
+  GitHubPrReviewDraft,
   GitHubPrReviewDraftComment,
   GitHubPullRequestReviewThread,
 } from '../../api';
@@ -44,13 +45,30 @@ export function prReviewDraftHeadIsStale(
   );
 }
 
+export function sameReviewDraftRevision(
+  expected: Pick<GitHubPrReviewDraft, 'headSha' | 'id'>,
+  current:
+    Pick<GitHubPrReviewDraft, 'headSha' | 'id' | 'status'> | null | undefined,
+) {
+  return Boolean(
+    current &&
+    current.status === 'draft' &&
+    current.id === expected.id &&
+    current.headSha === expected.headSha,
+  );
+}
+
 export async function reanchorDraftToRevision(input: {
   repo: string;
   number: number;
+  draftId: string;
+  expectedHeadSha: string;
   headSha: string;
   saveDraft: (draft: {
     repo: string;
     number: number;
+    expectedDraftId: string;
+    expectedHeadSha: string;
     headSha: string;
     reanchorHeadSha: true;
   }) => Promise<unknown>;
@@ -60,6 +78,8 @@ export async function reanchorDraftToRevision(input: {
   await input.saveDraft({
     repo: input.repo,
     number: input.number,
+    expectedDraftId: input.draftId,
+    expectedHeadSha: input.expectedHeadSha,
     headSha: input.headSha,
     reanchorHeadSha: true,
   });

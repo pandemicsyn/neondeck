@@ -383,7 +383,7 @@ export function useGitHubPrReviewMutations(pr: GitHubPullRequest) {
     }),
     discardDraft: useMutation({
       mutationFn: deleteGitHubPrReviewDraft,
-      onSuccess: updateDraftCache,
+      onSuccess: () => updateDraftCache(null),
     }),
     submitReview: useMutation({
       mutationFn: postGitHubPrReview,

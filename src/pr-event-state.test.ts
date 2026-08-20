@@ -1647,6 +1647,48 @@ describe('PR event state watermarks', () => {
     });
   });
 
+  it('rejects draft reanchoring unless the expected live draft still matches', async () => {
+    const home = await tempHome();
+    const paths = runtimePaths(home);
+    await writeRepoRegistry(paths.repos);
+    const created = await putGitHubPrReviewDraft(
+      { repo: 'neondeck', prNumber: 123 },
+      { headSha: 'head-before' },
+      paths,
+    );
+    const draftId = (created.data as { draft?: { id?: string } } | undefined)
+      ?.draft?.id;
+    expect(draftId).toEqual(expect.any(String));
+
+    await expect(
+      putGitHubPrReviewDraft(
+        { repo: 'neondeck', prNumber: 123 },
+        {
+          headSha: 'head-after',
+          reanchorHeadSha: true,
+          expectedDraftId: draftId,
+          expectedHeadSha: 'wrong-head',
+        },
+        paths,
+      ),
+    ).resolves.toMatchObject({ ok: false, requires: ['currentDraft'] });
+    await expect(
+      putGitHubPrReviewDraft(
+        { repo: 'neondeck', prNumber: 123 },
+        {
+          headSha: 'head-after',
+          reanchorHeadSha: true,
+          expectedDraftId: draftId,
+          expectedHeadSha: 'head-before',
+        },
+        paths,
+      ),
+    ).resolves.toMatchObject({
+      ok: true,
+      data: { draft: { id: draftId, headSha: 'head-after' } },
+    });
+  });
+
   it('coalesces parallel review draft PUTs into one live draft', async () => {
     const home = await tempHome();
     const paths = runtimePaths(home);

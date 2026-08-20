@@ -148,6 +148,31 @@ describe('PrReviewReviewerChat', () => {
     expect(textarea?.value).toBe('');
   });
 
+  it('locks new reviewer requests during a revision update', () => {
+    useFlueAgentMock.mockReturnValue({
+      messages: [],
+      status: 'idle',
+      historyReady: true,
+      error: undefined,
+      failedSends: [],
+      settlements: [],
+      sendMessage: vi.fn<UseFlueAgentResult['sendMessage']>(),
+      refresh: vi.fn<() => void>(),
+    });
+    const review = {
+      id: 'review-123',
+      headSha: 'a'.repeat(40),
+      status: 'ready',
+    } as PrReviewRecord;
+
+    act(() => root.render(<PrReviewReviewerChat isLocked review={review} />));
+
+    expect(container.querySelector('textarea')?.disabled).toBe(true);
+    expect(container.querySelector('textarea')?.placeholder).toBe(
+      'Wait for the PR revision update to finish.',
+    );
+  });
+
   it('reports successful local draft mutations once so the review can refresh', () => {
     const onDraftChanged = vi.fn<() => void>();
     useFlueAgentMock.mockReturnValue({

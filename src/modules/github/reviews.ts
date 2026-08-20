@@ -347,6 +347,46 @@ export function upsertPrReviewDraft(options: {
   }
 }
 
+export function reanchorPrReviewDraft(options: {
+  databasePath: string;
+  repo: string;
+  prNumber: number;
+  draftId: string;
+  expectedHeadSha: string;
+  headSha: string;
+}): GitHubPrReviewDraft | null {
+  const database = openDb(options.databasePath);
+  const now = new Date().toISOString();
+  try {
+    const result = database
+      .prepare(
+        `
+        UPDATE pr_review_drafts
+        SET head_sha = ?,
+            updated_at = ?
+        WHERE id = ?
+          AND repo = ? COLLATE NOCASE
+          AND pr_number = ?
+          AND status = 'draft'
+          AND head_sha = ?;
+      `,
+      )
+      .run(
+        options.headSha,
+        now,
+        options.draftId,
+        options.repo,
+        options.prNumber,
+        options.expectedHeadSha,
+      );
+    return Number(result.changes) === 1
+      ? readDraftWithCommentsById(database, options.draftId)
+      : null;
+  } finally {
+    database.close();
+  }
+}
+
 export function discardPrReviewDraft(options: {
   databasePath: string;
   repo: string;
