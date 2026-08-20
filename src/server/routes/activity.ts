@@ -3,6 +3,7 @@ import {
   readActivityObservability,
   readActivitySubmission,
   readActivitySubmissionEvents,
+  readPrReviewPerformance,
 } from '../../modules/learning';
 import type { RuntimePaths } from '../../runtime-home';
 
@@ -41,6 +42,16 @@ export function createActivityRoutes(paths: RuntimePaths) {
       },
       fetchedAt: new Date().toISOString(),
     });
+  });
+
+  routes.get('/pr-reviews/:reviewId/performance', async (c) => {
+    const report = await readPrReviewPerformance(
+      c.req.param('reviewId'),
+      paths,
+    );
+    return report
+      ? c.json(report)
+      : c.json({ error: 'PR review performance data not found.' }, 404);
   });
 
   return routes;

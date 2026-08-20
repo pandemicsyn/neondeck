@@ -6,10 +6,13 @@ import {
   readActivityObservability,
   readActivitySubmission,
   readActivitySubmissionEvents,
+  readPrReviewPerformance,
   recordFlueObservation,
 } from './modules/learning';
+import { openDb } from './lib/sqlite';
 import { prReviewerWorkspaceToolCallLimit } from './modules/pr-reviewer';
 import { runtimePaths, type RuntimePaths } from './runtime-home';
+import { createActivityRoutes } from './server/routes/activity';
 
 const roots: string[] = [];
 
@@ -313,6 +316,7 @@ describe('Flue v3 activity observability', () => {
       summary: {
         taskId: 'task-1',
         agent: 'explore',
+        taskBriefSchemaVersion: 1,
         promptLength: prompt.length,
         promptHash: expect.stringMatching(/^sha256:[0-9a-f]{64}$/),
         questionHash: expect.stringMatching(/^sha256:[0-9a-f]{64}$/),
@@ -321,6 +325,7 @@ describe('Flue v3 activity observability', () => {
         scopeItemCount: 2,
         exclusionsHash: expect.stringMatching(/^sha256:[0-9a-f]{64}$/),
         exclusionItemCount: 2,
+        knownFactsHash: expect.stringMatching(/^sha256:[0-9a-f]{64}$/),
         expectedEvidenceHash: expect.stringMatching(/^sha256:[0-9a-f]{64}$/),
         thoroughness: 'medium',
       },
@@ -384,6 +389,325 @@ describe('Flue v3 activity observability', () => {
           total: 0.037,
         },
       },
+    });
+  });
+
+  it('keeps incomplete provider usage unknown in review aggregates', async () => {
+    const paths = await tempPaths();
+    await ensureReviewBinding(paths);
+    await recordFlueObservation(queued(1), paths);
+    await recordFlueObservation(
+      {
+        ...base(2),
+        type: 'turn',
+        purpose: 'agent',
+        turnId: 'turn-1',
+        durationMs: 1_000,
+        isError: false,
+        request: { providerId: 'provider', requestedModel: 'model' },
+        response: {
+          usage: {
+            input: 10,
+            output: 5,
+            cacheRead: 2,
+            cacheWrite: 1,
+            totalTokens: 18,
+            cost: {
+              input: 1,
+              output: 2,
+              cacheRead: 3,
+              cacheWrite: 4,
+              total: 10,
+            },
+          },
+        },
+      } as never,
+      paths,
+    );
+    await recordFlueObservation(
+      {
+        ...base(3),
+        type: 'turn',
+        purpose: 'agent',
+        turnId: 'turn-2',
+        durationMs: 1_000,
+        isError: false,
+        request: { providerId: 'provider', requestedModel: 'model' },
+        response: { usage: { input: 4, totalTokens: 4 } },
+      } as never,
+      paths,
+    );
+
+    await expect(
+      readPrReviewPerformance('review-1', paths),
+    ).resolves.toMatchObject({
+      turns: { parent: 2 },
+      usage: {
+        parent: {
+          inputTokens: 14,
+          outputTokens: null,
+          cacheReadTokens: null,
+          cacheWriteTokens: null,
+          totalTokens: 22,
+          cost: null,
+          complete: false,
+        },
+      },
+    });
+
+    await recordFlueObservation(
+      {
+        ...base(4),
+        type: 'turn',
+        purpose: 'agent',
+        turnId: 'turn-3',
+        durationMs: 1_000,
+        isError: false,
+        request: { providerId: 'provider', requestedModel: 'model' },
+        response: {},
+      } as never,
+      paths,
+    );
+    await expect(
+      readPrReviewPerformance('review-1', paths),
+    ).resolves.toMatchObject({
+      turns: { parent: 3 },
+      usage: {
+        parent: {
+          inputTokens: null,
+          outputTokens: null,
+          cacheReadTokens: null,
+          cacheWriteTokens: null,
+          totalTokens: null,
+          cost: null,
+          complete: false,
+        },
+      },
+    });
+  });
+
+  it('derives concurrent Explore critical paths from sanitized review activity', async () => {
+    const paths = await tempPaths();
+    await ensureReviewBinding(paths);
+    await recordFlueObservation(
+      { ...queued(1), instanceId: 'pr-review:review-1:attempt-1' },
+      paths,
+    );
+    await recordFlueObservation(
+      {
+        ...base(2),
+        instanceId: 'pr-review:review-1:attempt-1',
+        type: 'turn_start',
+        purpose: 'agent',
+        turnId: 'parent-turn-1',
+      } as never,
+      paths,
+    );
+    const prompt = [
+      'Question: Check one bounded concern.',
+      'Revision: head against merge-base',
+      'Scope: src/app.ts',
+      'Exclusions: docs/',
+      'Known facts: one changed file',
+      'Expected evidence: changed-line evidence',
+      'Thoroughness: medium',
+    ].join('\n');
+    for (const taskId of ['task-1', 'task-2']) {
+      await recordFlueObservation(
+        {
+          ...base(taskId === 'task-1' ? 3 : 4),
+          type: 'task_start',
+          taskId,
+          agent: 'explore',
+          prompt,
+          turnId: 'parent-turn-1',
+        } as never,
+        paths,
+      );
+      await recordFlueObservation(
+        {
+          ...base(taskId === 'task-1' ? 5 : 6),
+          type: 'turn',
+          taskId,
+          purpose: 'agent',
+          turnId: `${taskId}-turn`,
+          durationMs: 100,
+          isError: false,
+          request: {
+            providerId: 'provider',
+            requestedModel: 'explore-model',
+            reasoningLevel: 'medium',
+          },
+          response: {
+            usage: {
+              input: 10,
+              output: 5,
+              cacheRead: 0,
+              cacheWrite: 0,
+              totalTokens: 15,
+              cost: {
+                input: 1,
+                output: 2,
+                cacheRead: 0,
+                cacheWrite: 0,
+                total: 3,
+              },
+            },
+          },
+        } as never,
+        paths,
+      );
+      await recordFlueObservation(
+        {
+          ...base(taskId === 'task-1' ? 7 : 8),
+          type: 'task',
+          taskId,
+          agent: 'explore',
+          durationMs: taskId === 'task-1' ? 4_000 : 5_000,
+          isError: false,
+          result:
+            'Answer: yes\nEvidence:\n- src/app.ts:1 — app — observed\nUnresolved: none\nInspected: src/app.ts\nStop reason: answered',
+        } as never,
+        paths,
+      );
+    }
+    await recordFlueObservation(
+      {
+        ...base(9),
+        type: 'tool_start',
+        toolName: 'neondeck_submit_pr_review',
+        origin: 'model',
+        args: {},
+      } as never,
+      paths,
+    );
+
+    await expect(
+      readPrReviewPerformance('review-1', paths),
+    ).resolves.toMatchObject({
+      review: {
+        attemptId: 'attempt-1',
+        headSha: 'head-sha',
+        baseSha: 'base-sha',
+        mergeBase: null,
+      },
+      correlation: {
+        retainedObservationComplete: true,
+        observedSubmissionQueued: true,
+        metricsCoverage: 'anchored-best-effort',
+        waveCorrelationAvailable: true,
+      },
+      models: {
+        explore: { models: ['explore-model'], thinkingLevels: ['medium'] },
+      },
+      taskWaves: [
+        {
+          taskCount: 2,
+          summedTaskDurationMs: 9_000,
+          concurrencyEfficiency: expect.any(Number),
+        },
+      ],
+      tasks: [
+        { taskId: 'task-1', resultContract: true, stopReason: 'answered' },
+        { taskId: 'task-2', resultContract: true, stopReason: 'answered' },
+      ],
+      turns: { child: 2 },
+      usage: { child: { totalTokens: 30, cost: { total: 6 } } },
+      taskBriefs: { allRequiredFieldsPresent: true },
+      timings: {
+        admittedToFirstParentTurnMs: 1_000,
+        finalTaskToReviewSubmitMs: expect.any(Number),
+      },
+    });
+
+    const response = await createActivityRoutes(paths).request(
+      '/pr-reviews/review-1/performance',
+    );
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      action: 'pr_review_performance_read',
+      review: { reviewId: 'review-1', attemptId: 'attempt-1' },
+      taskWaves: [{ taskCount: 2 }],
+    });
+
+    const legacyDatabase = openDb(paths.neondeckDatabase);
+    try {
+      legacyDatabase
+        .prepare(
+          `UPDATE activity_events
+           SET summary_json = json_remove(summary_json, '$.taskBriefSchemaVersion')
+           WHERE submission_id = ? AND event_type = 'task_start';`,
+        )
+        .run('submission-1');
+    } finally {
+      legacyDatabase.close();
+    }
+    await expect(
+      readPrReviewPerformance('review-1', paths),
+    ).resolves.toMatchObject({
+      taskBriefs: { allRequiredFieldsPresent: null },
+    });
+
+    const database = openDb(paths.neondeckDatabase);
+    try {
+      database
+        .prepare(
+          `UPDATE activity_submissions SET event_count = event_count + 1
+           WHERE submission_id = ?;`,
+        )
+        .run('submission-1');
+    } finally {
+      database.close();
+    }
+    await expect(
+      readPrReviewPerformance('review-1', paths),
+    ).resolves.toMatchObject({
+      correlation: {
+        retainedObservationComplete: false,
+        observedSubmissionQueued: true,
+        metricsCoverage: 'partial',
+        retainedEventCount: 9,
+        observedEventCount: 10,
+      },
+      taskWaves: null,
+      tasks: null,
+      turns: { parent: null, child: null },
+      usage: { parent: null, child: null },
+      repetition: {
+        promptHashesWithinAttempt: null,
+        repeatedWorkspaceQueries: null,
+        parentReplaySignals: null,
+      },
+    });
+
+    const incompleteDatabase = openDb(paths.neondeckDatabase);
+    try {
+      incompleteDatabase
+        .prepare(
+          `UPDATE activity_submissions SET event_count = event_count - 1
+           WHERE submission_id = ?;`,
+        )
+        .run('submission-1');
+      incompleteDatabase
+        .prepare(
+          `UPDATE activity_events SET event_type = 'log'
+           WHERE submission_id = ? AND event_type = 'submission_queued';`,
+        )
+        .run('submission-1');
+    } finally {
+      incompleteDatabase.close();
+    }
+    await expect(
+      readPrReviewPerformance('review-1', paths),
+    ).resolves.toMatchObject({
+      correlation: {
+        retainedObservationComplete: true,
+        observedSubmissionQueued: false,
+        metricsCoverage: 'partial',
+      },
+      taskWaves: null,
+      tasks: null,
+      turns: { parent: null, child: null },
     });
   });
 
@@ -496,4 +820,40 @@ function queued(eventIndex: number) {
     type: 'submission_queued' as const,
     kind: 'dispatch' as const,
   };
+}
+
+async function ensureReviewBinding(paths: RuntimePaths) {
+  await (await import('./runtime-home')).ensureRuntimeHome(paths);
+  const database = openDb(paths.neondeckDatabase);
+  try {
+    database
+      .prepare(
+        `INSERT INTO pr_reviews (
+      id, ref, repo_full_name, pr_number, title, pr_url, status, attempt_id,
+      run_id, head_sha, base_sha, base_ref, origin, review_url, trust_boundary,
+      created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
+      )
+      .run(
+        'review-1',
+        'example/project#1',
+        'example/project',
+        1,
+        'Example',
+        'https://example.test/pr/1',
+        'ready',
+        'attempt-1',
+        'submission-1',
+        'head-sha',
+        'base-sha',
+        'main',
+        'api',
+        '/reviews/review-1',
+        'local only',
+        '2026-08-01T10:00:00.000Z',
+        '2026-08-01T10:00:09.000Z',
+      );
+  } finally {
+    database.close();
+  }
 }
