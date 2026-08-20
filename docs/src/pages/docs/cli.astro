@@ -77,13 +77,22 @@ neondeck auth logout openai-codex</code></pre>
 
         <h2>Database</h2>
         <pre><code>neondeck db status
+neondeck db backup
+neondeck db backups
+neondeck db restore &lt;backup-name&gt;
 neondeck --json db status</code></pre>
         <p>
           Database status reads the Neondeck app database migration journal,
           shipped migration head, pending entries, unknown newer entries, hash
-          mismatches, and latest pre-migration backup path. There is no manual
-          migrate command; migrations apply automatically before app code opens
-          <code>data/neondeck.db</code>.
+          mismatches, and latest pre-migration backup path. <code
+            >db backup</code
+          >
+          creates a consistent manual snapshot; <code>db backups</code> lists the
+          recognized snapshots newest first; and <code>db restore</code> validates
+          a named snapshot, safeguards the current database, and restores it. Stop
+          Neondeck before restoring. There is no manual migrate command; migrations
+          apply automatically before app code opens <code>data/neondeck.db</code
+          >.
         </p>
 
         <h2>Serve, service, and open</h2>

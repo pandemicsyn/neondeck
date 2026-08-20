@@ -35,6 +35,8 @@ import {
 } from './options';
 import {
   printActionResult,
+  printDbBackupResult,
+  printDbBackups,
   printDbMigrationStatus,
   printLearningState,
   printRepoDiffResult,
@@ -423,6 +425,34 @@ db.command('status')
     const paths = await pathsFromOptions(program.opts<GlobalOptions>());
     const status = readAppDbMigrationStatus(paths.neondeckDatabase);
     printDbMigrationStatus(status);
+  });
+
+db.command('backup')
+  .description('Create a consistent manual app database backup.')
+  .action(async () => {
+    const { createAppDbBackup } = await appDbModule();
+    const paths = await pathsFromOptions(program.opts<GlobalOptions>());
+    printDbBackupResult(await createAppDbBackup(paths.neondeckDatabase));
+  });
+
+db.command('backups')
+  .description('List recognized app database backups, newest first.')
+  .action(async () => {
+    const { listAppDbBackups } = await appDbModule();
+    const paths = await pathsFromOptions(program.opts<GlobalOptions>());
+    printDbBackups(listAppDbBackups(paths.neondeckDatabase));
+  });
+
+db.command('restore <backup>')
+  .description(
+    'Restore one app database backup after creating a safety backup.',
+  )
+  .action(async (backup: string) => {
+    const { restoreAppDbBackup } = await appDbModule();
+    const paths = await pathsFromOptions(program.opts<GlobalOptions>());
+    printDbBackupResult(
+      await restoreAppDbBackup(paths.neondeckDatabase, backup),
+    );
   });
 
 const learning = program
