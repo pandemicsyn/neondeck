@@ -11,6 +11,7 @@
 
 - `DIFF_IMPROVEMENTS_PLAN.md` — phases C–E remain planned after the completed Phase B milestone.
 - `PR_REVIEW_PERF_PLAN.md` — completed remediation record with explicit unresolved cold-path performance deferrals.
+- `PR_REVIEW_SUBAGENT_IMPROVEMENT_PLAN.md` — proposed Explore trust policy, result contract, critical-path observability, and live-model review eval work.
 - `PR_REVIEW_REPORT_DECK_PLAN.md` — proposed agent-authored review presentation work.
 - `EXEDEV_WORKSPACE_MODE_PLAN.md` — proposed exe.dev workspace-location mode.
 - `FLUE_2_USAGE_FOLLOWUP_BRIEFING.md` — non-blocking idiomatic cleanup and capability-surface reductions after the completed migration.
