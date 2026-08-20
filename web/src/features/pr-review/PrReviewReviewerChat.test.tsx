@@ -75,6 +75,24 @@ describe('PrReviewReviewerChat', () => {
     expect(useFlueAgentMock.mock.calls.length).toBeGreaterThan(1);
   });
 
+  it('explains that revision-bound chat reconnects after a re-review', () => {
+    const review = {
+      id: 'review-123',
+      headSha: 'b'.repeat(40),
+      status: 'reviewing',
+    } as PrReviewRecord;
+
+    act(() => root.render(<PrReviewReviewerChat review={review} />));
+
+    expect(container.textContent).toContain(
+      'Neon is reviewing the current PR revision.',
+    );
+    expect(container.textContent).toContain(
+      'conversation will reconnect when it finishes',
+    );
+    expect(useFlueAgentMock).not.toHaveBeenCalled();
+  });
+
   it('submits with Enter while preserving Shift+Enter for newlines', async () => {
     const sendMessage = vi.fn<UseFlueAgentResult['sendMessage']>(
       async () => undefined,

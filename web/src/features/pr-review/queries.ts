@@ -11,7 +11,6 @@ import { assertReviewRevisionCurrent } from '../../../../shared/review-refresh';
 import {
   deleteGitHubPrReviewDraft,
   deleteGitHubPrReviewDraftComment,
-  getGitHubPullRequests,
   getGitHubPrReviewDraft,
   getGitHubPrReviewThreads,
   getGitHubPullRequestFileDiff,
@@ -349,17 +348,6 @@ export function useGitHubPrReviewMutations(pr: GitHubPullRequest) {
       (current) => upsertReviewThread(current, thread),
     );
   };
-  const refetchPullRequestHeadSha = async () => {
-    const queue = await queryClient.fetchQuery({
-      queryKey: queryKeys.githubPrs,
-      queryFn: getGitHubPullRequests,
-    });
-    return (
-      queue.items.find(
-        (item) => item.repo === pr.repo && item.number === pr.number,
-      )?.headSha ?? null
-    );
-  };
   const invalidateReviewSources = () =>
     Promise.all([
       queryClient.invalidateQueries({
@@ -416,7 +404,6 @@ export function useGitHubPrReviewMutations(pr: GitHubPullRequest) {
       mutationFn: postGitHubPrThreadResolution,
       onSuccess: updateThreadCache,
     }),
-    refetchPullRequestHeadSha,
     invalidateReviewSources,
   };
 }

@@ -34,12 +34,12 @@ export function PrReviewReviewerChat({
   }
   if (review.status === 'reviewing') {
     return (
-      <ReviewerUnavailable copy="The reviewer conversation will be available when the initial review finishes." />
+      <ReviewerUnavailable copy="Neon is reviewing the current PR revision. The reviewer conversation will reconnect when it finishes." />
     );
   }
   if (review.status === 'failed') {
     return (
-      <ReviewerUnavailable copy="The initial review failed. Retry it before asking the reviewer follow-up questions." />
+      <ReviewerUnavailable copy="The Neon review run failed. Retry it before asking follow-up questions." />
     );
   }
 

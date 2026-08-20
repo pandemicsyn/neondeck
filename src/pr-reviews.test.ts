@@ -18,6 +18,7 @@ import {
   releasePrReviewSubmission,
   restorePrReview,
   reservePrReviewSubmission,
+  startBoundPrReview,
   startPrReview,
   submitPrReview,
   subscribePrReviewEvents,
@@ -665,6 +666,159 @@ describe('durable PR reviews', () => {
       runId: started.runId,
       headSha: 'head-1',
     });
+  });
+
+  it('atomically admits one bound re-review when both requests finish fetching together', async () => {
+    const paths = await tempPaths();
+    const target = async () => ({
+      repoFullName: 'other/project',
+      owner: 'other',
+      repo: 'project',
+      number: 42,
+    });
+    const original = await startPrReview(
+      { ref: 'other/project#42', origin: 'panel' },
+      paths,
+      {
+        resolveTarget: target,
+        fetchDetail: async () => detail('head-1'),
+        invokeWorkflow: async () => ({ runId: 'run-original' }),
+      },
+    );
+    completePrReview(
+      {
+        reviewId: original.reviewId,
+        runId: original.runId,
+        headSha: 'head-1',
+        reportIds: [],
+        reviewUrl: original.review.reviewUrl,
+        findingCount: 0,
+        seededCount: 0,
+        reportOnlyCount: 0,
+        reportOnlyFindings: [],
+      },
+      paths,
+    );
+
+    let fetched = 0;
+    let releaseFetches!: () => void;
+    const bothFetched = new Promise<void>((resolve) => {
+      releaseFetches = resolve;
+    });
+    let releaseAdmission!: (value: { runId: string }) => void;
+    const admission = new Promise<{ runId: string }>((resolve) => {
+      releaseAdmission = resolve;
+    });
+    const attempts: string[] = [];
+    const dependencies = {
+      resolveTarget: target,
+      fetchDetail: async () => {
+        fetched += 1;
+        if (fetched === 2) releaseFetches();
+        await bothFetched;
+        return detail('head-2');
+      },
+      invokeWorkflow: async (input: { attemptId: string }) => {
+        attempts.push(input.attemptId);
+        return admission;
+      },
+    };
+    const input = {
+      ref: 'other/project#42',
+      origin: 'chat' as const,
+      expectedReview: { id: original.reviewId, headSha: 'head-1' },
+      returnExistingInProgress: true as const,
+    };
+
+    const first = startBoundPrReview(input, paths, dependencies);
+    const second = startBoundPrReview(input, paths, dependencies);
+    await vi.waitFor(() => expect(attempts).toHaveLength(1));
+    releaseAdmission({ runId: 'run-rereview' });
+    const results = await Promise.all([first, second]);
+
+    expect(attempts).toHaveLength(1);
+    expect(results).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ started: true, runId: 'run-rereview' }),
+        expect.objectContaining({ started: false }),
+      ]),
+    );
+    expect(readPrReviewForTarget('other/project', 42, paths)).toMatchObject({
+      status: 'reviewing',
+      runId: 'run-rereview',
+      headSha: 'head-2',
+    });
+  });
+
+  it('returns a typed bound-start result when submission wins during detail fetch', async () => {
+    const paths = await tempPaths();
+    const target = async () => ({
+      repoFullName: 'other/project',
+      owner: 'other',
+      repo: 'project',
+      number: 42,
+    });
+    const original = await startPrReview(
+      { ref: 'other/project#42', origin: 'panel' },
+      paths,
+      {
+        resolveTarget: target,
+        fetchDetail: async () => detail('head-1'),
+        invokeWorkflow: async () => ({ runId: 'run-original' }),
+      },
+    );
+    completePrReview(
+      {
+        reviewId: original.reviewId,
+        runId: original.runId,
+        headSha: 'head-1',
+        reportIds: [],
+        reviewUrl: original.review.reviewUrl,
+        findingCount: 0,
+        seededCount: 0,
+        reportOnlyCount: 0,
+        reportOnlyFindings: [],
+      },
+      paths,
+    );
+    const invokeWorkflow =
+      vi.fn<NonNullable<StartPrReviewDependencies['invokeWorkflow']>>();
+
+    await expect(
+      startBoundPrReview(
+        {
+          ref: 'other/project#42',
+          origin: 'chat',
+          expectedReview: { id: original.reviewId, headSha: 'head-1' },
+          returnExistingInProgress: true,
+        },
+        paths,
+        {
+          resolveTarget: target,
+          fetchDetail: async () => {
+            const database = openDb(paths.neondeckDatabase);
+            try {
+              database
+                .prepare(
+                  `UPDATE pr_reviews SET status = 'submitting' WHERE id = ?;`,
+                )
+                .run(original.reviewId);
+            } finally {
+              database.close();
+            }
+            return detail('head-2');
+          },
+          invokeWorkflow,
+        },
+      ),
+    ).resolves.toMatchObject({
+      reviewId: original.reviewId,
+      runId: null,
+      started: false,
+      reason: 'submitting',
+      review: { status: 'submitting' },
+    });
+    expect(invokeWorkflow).not.toHaveBeenCalled();
   });
 
   it('reserves a submit against concurrent re-review and can release failures', async () => {

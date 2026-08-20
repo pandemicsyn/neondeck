@@ -40,7 +40,10 @@ import { Badge, MiniEmpty } from '../../components/ui';
 import { queryErrorMessage } from '../../lib/query';
 import { firstRenderablePath, patchHasContent } from '../diff-viewer/helpers';
 import type { DiffNavigationScrollRequest } from '../diff-viewer/DiffViewer';
-import { GitHubPrRevisionNotice } from './GitHubPrRevisionNotice';
+import {
+  GitHubPrDraftRevisionNotice,
+  GitHubPrRevisionNotice,
+} from './GitHubPrRevisionNotice';
 import type { DiffFilePatch, DiffReviewAnnotation } from '../diff-viewer/types';
 import { githubPrReviewSource } from '../diff-viewer/review-source';
 import { PrReviewCommentComposer } from './PrReviewCommentComposer';
@@ -91,6 +94,7 @@ import {
   githubPrReviewRefreshSafety,
   isCurrentReviewOperation,
   prReviewDraftHeadIsStale,
+  reanchorDraftToRevision,
   refreshOrientationTargetSettled,
   selectionAnchorMatchesPatch,
 } from './review-ui-helpers';
@@ -964,8 +968,15 @@ export function GitHubPrReview({
       target,
     };
     const savedComposer = composer;
+    const shouldMoveDraft = Boolean(
+      draft && draft.headSha !== incomingPr.headSha,
+    );
     setIsApplyingRevision(true);
-    setStatusMessage('Loading the available PR revision.');
+    setStatusMessage(
+      shouldMoveDraft
+        ? 'Loading the new PR revision and updating the local draft.'
+        : 'Loading the new PR revision.',
+    );
     try {
       const nextFileList = await primeGitHubPullRequestFileList(
         queryClient,
@@ -1025,6 +1036,16 @@ export function GitHubPrReview({
         );
         return;
       }
+      if (shouldMoveDraft) {
+        await reanchorDraftToRevision({
+          repo: incomingPr.repo,
+          number: incomingPr.number,
+          headSha: incomingPr.headSha ?? '',
+          saveDraft: mutations.saveDraft.mutateAsync,
+          invalidateReviewSources: mutations.invalidateReviewSources,
+        });
+        setSubmitFailedCommentIds(new Set());
+      }
       refreshOrientationRef.current = {
         ...savedOrientation,
         nextPath,
@@ -1049,11 +1070,14 @@ export function GitHubPrReview({
   }, [
     activePath,
     composer,
+    draft,
     filesByPath,
     hasAvailableRevision,
     incomingPr,
     incomingPrRevisionKey,
     isApplyingRevision,
+    mutations.invalidateReviewSources,
+    mutations.saveDraft.mutateAsync,
     navigationData.model.guidedFilePaths,
     navigationTargetKey,
     navigationTargets,
@@ -1329,16 +1353,17 @@ export function GitHubPrReview({
     if (!draft) return;
     const operationToken = beginOperation();
     try {
-      const refreshedHeadSha = await mutations
-        .refetchPullRequestHeadSha()
-        .catch(() => null);
-      const nextHeadSha = refreshedHeadSha ?? currentHeadSha;
-      await saveDraft({ reanchorHeadSha: true }, nextHeadSha);
-      await mutations.invalidateReviewSources();
+      await reanchorDraftToRevision({
+        repo: pr.repo,
+        number: pr.number,
+        headSha: currentHeadSha,
+        saveDraft: mutations.saveDraft.mutateAsync,
+        invalidateReviewSources: mutations.invalidateReviewSources,
+      });
       setSubmitFailedCommentIds(new Set());
       finishOperation(
         operationToken,
-        'Draft head updated to the current PR revision.',
+        'Draft updated to the mounted PR revision.',
       );
     } catch (error) {
       failOperation(operationToken, error);
@@ -1961,6 +1986,15 @@ export function GitHubPrReview({
           safety={refreshSafety}
         />
       ) : null}
+      {!hasAvailableRevision &&
+      prReviewDraftHeadIsStale(draft?.headSha, currentHeadSha) ? (
+        <GitHubPrDraftRevisionNotice
+          disabled={!canExplicitlyApplyReviewRefresh(refreshSafety)}
+          headSha={currentHeadSha}
+          onApply={() => void refreshDraftHead()}
+          safety={refreshSafety}
+        />
+      ) : null}
       {reanchoringCommentId ? (
         <div className="pr-review-stale-banner">
           Re-anchor mode is active. Select the new diff line or range for this
@@ -1982,22 +2016,6 @@ export function GitHubPrReview({
         <MiniEmpty
           label={`Review draft unavailable: ${queryErrorMessage(draftQuery.error)}`}
         />
-      ) : null}
-      {prReviewDraftHeadIsStale(draft?.headSha, currentHeadSha) ? (
-        <div className="pr-review-stale-banner">
-          <span>
-            PR updated since your draft. {staleCommentIds.size} comment
-            {staleCommentIds.size === 1 ? '' : 's'} need re-anchoring or will be
-            skipped on submit.
-          </span>
-          <button
-            disabled={mutations.saveDraft.isPending}
-            onClick={refreshDraftHead}
-            type="button"
-          >
-            Update draft head
-          </button>
-        </div>
       ) : null}
       <PrReviewDiffPane
         activePath={activePath}

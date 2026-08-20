@@ -44,6 +44,28 @@ export function prReviewDraftHeadIsStale(
   );
 }
 
+export async function reanchorDraftToRevision(input: {
+  repo: string;
+  number: number;
+  headSha: string;
+  saveDraft: (draft: {
+    repo: string;
+    number: number;
+    headSha: string;
+    reanchorHeadSha: true;
+  }) => Promise<unknown>;
+  invalidateReviewSources: () => Promise<unknown>;
+}) {
+  if (!input.headSha) throw new Error('PR head SHA is unavailable.');
+  await input.saveDraft({
+    repo: input.repo,
+    number: input.number,
+    headSha: input.headSha,
+    reanchorHeadSha: true,
+  });
+  await input.invalidateReviewSources();
+}
+
 export function commentAnchorLabel(comment: GitHubPrReviewDraftComment) {
   if (comment.startLine) {
     return `${comment.startSide ?? comment.side} L${comment.startLine} -> ${comment.side} L${comment.line}`;
