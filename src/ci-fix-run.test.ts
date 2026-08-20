@@ -398,6 +398,70 @@ describe('CI fix run', () => {
     expect(releasedStatus).toBe('failed');
   });
 
+  it('records the missing-worktree failure when preparation omits optional data', async () => {
+    const home = await tempDir('neondeck-home-');
+    const paths = runtimePaths(home);
+    await writeRepoRegistry(paths.repos);
+    let startedKilo = false;
+    let releasedStatus: string | null = null;
+
+    const result = await fixPrCiRun({ ref: 'pandemicsyn/neondeck#10' }, paths, {
+      ...testDependencies(),
+      lockWorktree: async () =>
+        ({
+          ok: true,
+          action: 'worktree_lock',
+          changed: true,
+          message: 'locked',
+          lock: { id: 'ci-fix-lock' },
+        }) as never,
+      preparePrWorktree: async () =>
+        ({
+          ok: true,
+          action: 'autopilot_prepare_pr_worktree',
+          changed: false,
+          message: 'prepared without result data',
+        }) as never,
+      releaseWorktreeLock: async (input) => {
+        releasedStatus =
+          typeof input === 'object' &&
+          input !== null &&
+          'finalStatus' in input &&
+          typeof input.finalStatus === 'string'
+            ? input.finalStatus
+            : null;
+        return { ok: true } as never;
+      },
+      startKiloTask: async () => {
+        startedKilo = true;
+        throw new Error('should not start Kilo');
+      },
+    });
+
+    expect(result).toMatchObject({
+      ok: false,
+      requires: ['worktreeId'],
+      workflowSummary: {
+        workflow: 'ci_fix_run',
+        status: 'failed',
+        summary: expect.objectContaining({
+          outcome: 'worktree-id-missing',
+          requires: ['worktreeId'],
+        }),
+      },
+    });
+    expect(startedKilo).toBe(false);
+    expect(releasedStatus).toBe('failed');
+    await expect(listNotifications(paths)).resolves.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          level: 'attention',
+          title: 'CI fix needs attention',
+        }),
+      ]),
+    );
+  });
+
   it('creates the CI fix workflow summary before Kilo can finish', async () => {
     const home = await tempDir('neondeck-home-');
     const paths = runtimePaths(home);

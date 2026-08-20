@@ -59,7 +59,11 @@ import {
   replaceRepoFilesAtomically,
 } from '../../repo-edit';
 import { parseV4APatch } from '../../repo-edit/patch-parser';
-import { repoRelativePathSchema } from '../../repo-edit/schemas';
+import {
+  fileStampSchema,
+  repoRelativePathSchema,
+  type FileStamp,
+} from '../../repo-edit/schemas';
 import {
   type RuntimePaths,
   parseAppConfig,
@@ -109,6 +113,87 @@ import {
   unique,
 } from './utils';
 
+const nullableStringSchema = v.nullable(v.string());
+const nullableNumberSchema = v.nullable(v.number());
+const reviewCommentExtensionsSchema = v.object({
+  authorType: v.optional(nullableStringSchema),
+  authorIsBot: v.optional(v.boolean()),
+  side: v.optional(nullableStringSchema),
+  startLine: v.optional(nullableNumberSchema),
+  startSide: v.optional(nullableStringSchema),
+  bodyTruncated: v.optional(v.boolean()),
+});
+const reviewThreadExtensionsSchema = v.object({
+  originalLine: v.optional(nullableNumberSchema),
+  diffSide: v.optional(nullableStringSchema),
+  pullRequestRepo: v.optional(nullableStringSchema),
+  pullRequestNumber: v.optional(nullableNumberSchema),
+  comments: v.array(reviewCommentExtensionsSchema),
+});
+const reviewExtensionsSchema = v.object({
+  authorType: v.optional(nullableStringSchema),
+  authorIsBot: v.optional(v.boolean()),
+  body: v.optional(nullableStringSchema),
+  bodyTruncated: v.optional(v.boolean()),
+});
+const eventStateExtensionsSchema = v.object({
+  body: nullableStringSchema,
+  author: v.optional(nullableStringSchema),
+  reviewThreads: v.array(reviewThreadExtensionsSchema),
+  requestedChangesReviews: v.array(reviewExtensionsSchema),
+  requestedChangesState: v.object({
+    active: v.array(reviewExtensionsSchema),
+    latestByReviewer: v.array(reviewExtensionsSchema),
+    history: v.array(reviewExtensionsSchema),
+  }),
+  conversationComments: v.optional(
+    v.array(
+      v.object({
+        authorType: v.optional(nullableStringSchema),
+        authorIsBot: v.optional(v.boolean()),
+      }),
+    ),
+  ),
+  checkSuites: v.array(
+    v.object({
+      appSlug: nullableStringSchema,
+      url: nullableStringSchema,
+      htmlUrl: nullableStringSchema,
+      createdAt: nullableStringSchema,
+      updatedAt: nullableStringSchema,
+    }),
+  ),
+  checkRuns: v.array(
+    v.object({
+      url: nullableStringSchema,
+      htmlUrl: nullableStringSchema,
+      detailsUrl: nullableStringSchema,
+      startedAt: nullableStringSchema,
+      completedAt: nullableStringSchema,
+    }),
+  ),
+  eventBudget: v.optional(
+    v.object({
+      maxItems: v.number(),
+      maxBytes: v.number(),
+      maxElapsedMs: v.number(),
+      retainedItems: v.number(),
+      retainedBytes: v.number(),
+      elapsedMs: v.number(),
+      exhausted: v.boolean(),
+      exhaustedCategories: v.array(v.string()),
+    }),
+  ),
+});
+
+export const fullGitHubPullRequestEventStateSchema =
+  v.custom<GitHubPullRequestEventState>(
+    (value) =>
+      v.is(prReviewEventStateSchema, value) &&
+      v.is(eventStateExtensionsSchema, value),
+    'Invalid GitHub pull request event state.',
+  );
+
 export async function fetchReviewEventState(
   owner: string,
   repo: string,
@@ -132,7 +217,7 @@ export async function fetchReviewEventState(
     repo,
     number,
   });
-  const parsed = v.safeParse(prReviewEventStateSchema, state);
+  const parsed = v.safeParse(fullGitHubPullRequestEventStateSchema, state);
   if (!parsed.success) {
     return failResult(
       'autopilot_fix_pr_review_feedback',
@@ -140,7 +225,7 @@ export async function fetchReviewEventState(
       { errors: [v.summarize(parsed.issues)] },
     );
   }
-  return parsed.output as GitHubPullRequestEventState;
+  return parsed.output;
 }
 
 export type ReviewCommentFact = {
@@ -265,7 +350,7 @@ export function buildReviewFixPlan(
       lineHints: unique(
         group.comments
           .map((comment) => comment.line ?? comment.threadLine)
-          .filter((line): line is number => typeof line === 'number')
+          .filter((line): line is number => line !== null)
           .map((line) => String(line)),
       ).map(Number),
       summaries: group.comments.map((comment) => summarizeComment(comment)),
@@ -302,7 +387,9 @@ export function plannedEditPaths(
   return [...paths].sort();
 }
 
-export function worktreeStatusDirty(status: unknown) {
+export function worktreeStatusDirty(
+  status: Awaited<ReturnType<typeof readWorktreeStatus>>,
+) {
   const git = objectField(status, 'git');
   return Boolean(booleanField(git, 'dirty'));
 }
@@ -317,9 +404,7 @@ export async function readReviewTargetFiles(
   const targetPaths = unique(
     groups
       .map((group) => group.path)
-      .filter(
-        (path): path is string => typeof path === 'string' && path !== '',
-      ),
+      .filter((path): path is string => path !== null && path !== ''),
   );
   const reads = [];
   for (const path of targetPaths) {
@@ -363,11 +448,11 @@ export async function applyReviewEdits(
   paths: RuntimePaths,
 ) {
   const results: unknown[] = [];
-  const stamps = new Map(
-    input.fileReads
-      .filter((read) => read.stamp)
-      .map((read) => [read.path, read.stamp!]),
-  );
+  const stamps = new Map<string, FileStamp>();
+  for (const read of input.fileReads) {
+    const parsedStamp = v.safeParse(fileStampSchema, read.stamp);
+    if (parsedStamp.success) stamps.set(read.path, parsedStamp.output);
+  }
   const readPaths = new Set(input.fileReads.map((read) => read.path));
 
   const unreadReplacementPaths = unique(
@@ -390,7 +475,7 @@ export async function applyReviewEdits(
           worktreeId: input.worktreeId,
           worktreeLockId: input.lockId,
           replacements: input.replacements,
-          expectedStamps: Object.fromEntries(stamps) as Record<string, any>,
+          expectedStamps: Object.fromEntries(stamps),
           dryRun: input.dryRun,
           reason: 'fix_pr_review_feedback',
         },

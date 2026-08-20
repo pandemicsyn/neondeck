@@ -1,4 +1,5 @@
 import { AgentRunError, init, type FlueObservation } from '@flue/runtime';
+import * as v from 'valibot';
 import type { RuntimePaths } from '../../../runtime-home';
 import { gitCurrentSha, gitStatus } from '../../../repo-edit/git';
 import { addNotification } from '../../app-state';
@@ -39,26 +40,39 @@ import {
   type OwnerSettlementContext,
   type OwnerSettlementLearningDependencies,
 } from './settlement-learning';
+import { prEventJsonValueSchema } from '../../pr-events';
 
-type OwnerTerminalObservation = Extract<
-  FlueObservation,
-  { type: 'agent_end' | 'operation' | 'submission_settled' }
+const ownerTerminalObservationSchema = v.object({
+  v: v.literal(3),
+  type: v.literal('submission_settled'),
+  eventIndex: v.number(),
+  timestamp: v.string(),
+  agentName: v.optional(v.string()),
+  instanceId: v.optional(v.string()),
+  submissionId: v.optional(v.string()),
+  operationId: v.optional(v.string()),
+  turnId: v.optional(v.string()),
+  outcome: v.picklist(['completed', 'failed', 'aborted']),
+});
+type OwnerTerminalObservation = v.InferOutput<
+  typeof ownerTerminalObservationSchema
 >;
+const reportableErrorSchema = v.union([v.instance(Error), v.string()]);
 
 export async function settleAutopilotOwnerObservation(
-  event: OwnerTerminalObservation,
+  rawEvent: FlueObservation | OwnerTerminalObservation,
   paths: RuntimePaths,
   dependencies: OwnerSettlementLearningDependencies = {},
 ) {
-  if (event.type !== 'submission_settled') return null;
+  const parsedEvent = v.safeParse(ownerTerminalObservationSchema, rawEvent);
+  if (!parsedEvent.success) return null;
+  const event = parsedEvent.output;
   if (
     (event.agentName && event.agentName !== 'pr-autopilot-owner') ||
     !event.instanceId
   ) {
     return null;
   }
-  const observation = event as unknown as Record<string, unknown>;
-  if (observation.taskId || observation.parentSession) return null;
   const watch = readWatchByOwnerInstanceId(paths, event.instanceId);
   if (!watch || !watch.worktreeId) return null;
   let registeredPending = readPendingAutopilotTurn(
@@ -179,8 +193,12 @@ export async function settleAutopilotOwnerObservation(
       paths,
       eventWatermarksFromPendingTurn(pending),
     );
-  } catch (error) {
-    const message = `${watch.repoFullName}#${watch.prNumber} could not be settled safely: ${errorMessage(error)}`;
+  } catch (caught) {
+    const parsedError = v.safeParse(reportableErrorSchema, caught);
+    const failure = parsedError.success
+      ? errorMessage(parsedError.output)
+      : 'The settlement failure could not be identified.';
+    const message = `${watch.repoFullName}#${watch.prNumber} could not be settled safely: ${failure}`;
     await recordOutcome({
       eventType: 'autopilot-owner-settlement-failed',
       outcome: 'failed',
@@ -209,7 +227,7 @@ export async function recoverInterruptedAutopilotOwners(
   dependencies: {
     dispatchTurn?: typeof dispatchAutopilotOwnerTurn;
     dispatchMessage?: typeof dispatchAutopilotOwnerMessage;
-    prepareTurn?: (instanceId: string, paths: RuntimePaths) => Promise<unknown>;
+    prepareTurn?: (instanceId: string, paths: RuntimePaths) => Promise<void>;
     readSettlement?: typeof readAutopilotOwnerSettlement;
     reclaimSettling?: boolean;
   } = {},
@@ -274,12 +292,15 @@ export async function recoverInterruptedAutopilotOwners(
           submissionId,
         );
         recovered += 1;
-      } catch (error) {
+      } catch (caught) {
+        const parsedError = v.safeParse(reportableErrorSchema, caught);
         recordPendingAutopilotTurnError(
           paths.home,
           turn.instanceId,
           turn.turnId,
-          errorMessage(error),
+          parsedError.success
+            ? errorMessage(parsedError.output)
+            : 'The recovery admission failure could not be identified.',
         );
         continue;
       }
@@ -352,28 +373,17 @@ export function watchAutopilotOwnerSettlement(
     ) {
       return;
     }
-    await settleAutopilotOwnerObservation(
-      {
-        v: 3,
-        type: 'submission_settled',
-        eventIndex: 0,
-        timestamp: new Date().toISOString(),
-        agentName: 'pr-autopilot-owner',
-        instanceId,
-        submissionId,
-        outcome: outcome.failed ? 'failed' : 'completed',
-        ...(outcome.failed
-          ? {
-              error: {
-                type: 'agent_run_error',
-                name: 'AgentRunError',
-                message: outcome.error,
-              },
-            }
-          : {}),
-      } as OwnerTerminalObservation,
-      paths,
-    );
+    const terminalEvent: OwnerTerminalObservation = {
+      v: 3,
+      type: 'submission_settled',
+      eventIndex: 0,
+      timestamp: new Date().toISOString(),
+      agentName: 'pr-autopilot-owner',
+      instanceId,
+      submissionId,
+      outcome: outcome.failed ? 'failed' : 'completed',
+    };
+    await settleAutopilotOwnerObservation(terminalEvent, paths);
   })()
     .catch((error) => {
       console.warn('[neondeck] failed to observe owner settlement', error);
@@ -440,14 +450,15 @@ function commitOwnerSettlementDecision(
       to: 'blocked',
     });
   }
-  return decision.transition
-    ? transitionWatchAutopilot(paths, watch.id, {
-        ...decision.transition,
-        ...(eventWatermarks
-          ? { eventWatermarks, markInitialEventProcessed: true }
-          : {}),
-      })
-    : watch;
+  if (!decision.transition) return watch;
+  const transition: Parameters<typeof transitionWatchAutopilot>[2] = {
+    ...decision.transition,
+  };
+  if (eventWatermarks) {
+    transition.eventWatermarks = eventWatermarks;
+    transition.markInitialEventProcessed = true;
+  }
+  return transitionWatchAutopilot(paths, watch.id, transition);
 }
 
 /**
@@ -461,37 +472,37 @@ function eventWatermarksFromPendingTurn(
 ) {
   if (pending?.source !== 'watch-event' || !pending.envelope) return undefined;
   const facts = objectValue(pending.envelope.facts);
-  const event = objectValue(facts?.event);
+  const event = facts ? objectValue(facts.event) : undefined;
   const values = event?.watermarks;
   if (!Array.isArray(values)) return undefined;
   const watermarks = values.flatMap((value) => {
-    const record = objectValue(value);
-    if (
-      !record ||
-      typeof record.category !== 'string' ||
-      !record.category ||
-      !('watermark' in record) ||
-      !('sourceUpdatedAt' in record) ||
-      (record.sourceUpdatedAt !== null &&
-        typeof record.sourceUpdatedAt !== 'string')
-    ) {
-      return [];
-    }
-    return [
-      {
-        category: record.category,
-        value: record.watermark as PrWatchInitialWatermark['value'],
-        sourceUpdatedAt: record.sourceUpdatedAt,
-      },
-    ];
+    const record = v.safeParse(
+      v.object({
+        category: v.pipe(v.string(), v.minLength(1)),
+        watermark: prEventJsonValueSchema,
+        sourceUpdatedAt: v.nullable(v.string()),
+      }),
+      value,
+    );
+    return record.success
+      ? [
+          {
+            category: record.output.category,
+            value: record.output.watermark,
+            sourceUpdatedAt: record.output.sourceUpdatedAt,
+          },
+        ]
+      : [];
   });
   return watermarks.length > 0 ? watermarks : undefined;
 }
 
-function objectValue(value: unknown) {
-  return value && typeof value === 'object' && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : undefined;
+function objectValue(value: import('@flue/runtime').JsonValue) {
+  const parsed = v.safeParse(
+    v.record(v.string(), prEventJsonValueSchema),
+    value,
+  );
+  return parsed.success ? parsed.output : undefined;
 }
 
 function addOwnerBlockNotification(
@@ -519,16 +530,17 @@ async function addOwnerBlockNotificationQuietly(
 ) {
   try {
     await addOwnerBlockNotification(watchId, message, paths);
-  } catch (error) {
+  } catch (caught) {
+    const parsedError = v.safeParse(reportableErrorSchema, caught);
     console.error(
       '[neondeck] failed to record Autopilot owner block notification',
-      error,
+      parsedError.success ? parsedError.output : caught,
     );
   }
 }
 
-function errorMessage(error: unknown) {
-  return error instanceof Error ? error.message : String(error);
+function errorMessage(error: v.InferOutput<typeof reportableErrorSchema>) {
+  return error instanceof Error ? error.message : error;
 }
 
 function recoveredSettlementContext(
@@ -557,7 +569,7 @@ function strongObservationCorrelation(event: OwnerTerminalObservation) {
     ['operation', event.operationId],
     ['turn', event.turnId],
   ] as const) {
-    if (typeof value === 'string' && value) return { kind, id: value };
+    if (value) return { kind, id: value };
   }
   return null;
 }

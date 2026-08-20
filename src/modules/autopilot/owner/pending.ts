@@ -1,8 +1,12 @@
 import { randomUUID } from 'node:crypto';
+import * as v from 'valibot';
 import { openDb, withImmediateTransaction } from '../../../lib/sqlite';
 import { runtimePaths, type ThinkingLevel } from '../../../runtime-home';
 import type { PrWatch } from '../../watches';
-import type { AutopilotOwnerEnvelope } from './envelope';
+import {
+  parseAutopilotOwnerEnvelope,
+  type AutopilotOwnerEnvelope,
+} from './envelope';
 
 export type AutopilotOwnerTurnSource = 'watch-event' | 'direct-human';
 
@@ -52,6 +56,135 @@ export type PendingAutopilotTurn = {
   watchId: string;
 };
 
+const autopilotModeSchema = v.picklist([
+  'notify-only',
+  'prepare-only',
+  'autofix-with-approval',
+  'autofix-push-when-safe',
+]);
+const turnSourceSchema = v.picklist(['watch-event', 'direct-human']);
+const turnStatusSchema = v.picklist([
+  'reserved',
+  'admitted',
+  'settling',
+  'settled',
+]);
+const nullableStringSchema = v.nullable(v.string());
+const storedTurnRowSchema = v.object({
+  approved_revision_key: nullableStringSchema,
+  submission_id: nullableStringSchema,
+  envelope_json: nullableStringSchema,
+  error: nullableStringSchema,
+  event_fingerprint: nullableStringSchema,
+  idempotency_key: nullableStringSchema,
+  instance_id: v.string(),
+  learning_memory_available: v.number(),
+  learning_memory_loaded: v.number(),
+  learning_memory_ids_json: nullableStringSchema,
+  learning_memory_text: nullableStringSchema,
+  message_body: nullableStringSchema,
+  mode: autopilotModeSchema,
+  prepared_json: nullableStringSchema,
+  source: turnSourceSchema,
+  status: turnStatusSchema,
+  turn_id: v.string(),
+  watch_id: v.string(),
+});
+
+const persistedSnapshotSchema = v.nullable(
+  v.custom<NonNullable<PrWatch['lastSnapshot']>>(
+    (value) =>
+      v.safeParse(
+        v.object({
+          state: v.string(),
+          merged: v.boolean(),
+          mergeCommitSha: nullableStringSchema,
+          checks: v.nullable(v.unknown()),
+          title: v.string(),
+          url: v.string(),
+          updatedAt: v.string(),
+          headSha: v.string(),
+          baseRef: v.string(),
+        }),
+        value,
+      ).success,
+    'Stored PR snapshot is malformed.',
+  ),
+);
+
+const persistedWatchSchema = v.object({
+  id: v.string(),
+  repoId: v.string(),
+  repoFullName: v.string(),
+  githubOwner: v.string(),
+  githubName: v.string(),
+  prNumber: v.number(),
+  desiredTerminalState: v.picklist(['checks', 'merged']),
+  status: v.picklist([
+    'watching',
+    'ready',
+    'merged',
+    'closed',
+    'green',
+    'attention-needed',
+    'unknown',
+  ]),
+  prState: nullableStringSchema,
+  title: nullableStringSchema,
+  url: nullableStringSchema,
+  mergeCommitSha: nullableStringSchema,
+  lastSnapshot: persistedSnapshotSchema,
+  lastOutcome: v.nullable(
+    v.picklist(['created', 'updated', 'removed', 'silent']),
+  ),
+  lastCheckedAt: nullableStringSchema,
+  createdBy: nullableStringSchema,
+  processExisting: v.boolean(),
+  initialEventProcessedAt: nullableStringSchema,
+  eventWatermarkVersion: v.number(),
+  autopilotMode: autopilotModeSchema,
+  autopilotStatus: v.picklist([
+    'watching',
+    'working',
+    'waiting',
+    'blocked',
+    'stopping',
+    'complete',
+  ]),
+  ownerInstanceId: nullableStringSchema,
+  worktreeId: nullableStringSchema,
+  lastEventFingerprint: nullableStringSchema,
+  createdAt: v.string(),
+  updatedAt: v.string(),
+});
+
+const persistedPreparedContextSchema = v.union([
+  v.object({
+    schema: v.literal('neondeck.autopilot-owner-prepared.v1'),
+    model: v.string(),
+    thinkingLevel: v.picklist(['off', 'low', 'medium', 'high', 'xhigh']),
+    instructions: v.string(),
+    workspaceContext: v.nullable(
+      v.object({ path: v.string(), home: v.string() }),
+    ),
+    capabilities: v.array(v.string()),
+    watch: persistedWatchSchema,
+  }),
+  v.object({
+    schema: v.literal('neondeck.autopilot-owner-prepared.v2'),
+    model: v.string(),
+    thinkingLevel: v.picklist(['off', 'low', 'medium', 'high', 'xhigh']),
+    instructions: v.string(),
+    workspaceContext: v.nullable(
+      v.object({ path: v.string(), home: v.string() }),
+    ),
+    capabilities: v.array(v.string()),
+    watch: persistedWatchSchema,
+    exploreModel: v.string(),
+    exploreThinkingLevel: v.picklist(['off', 'low', 'medium', 'high', 'xhigh']),
+  }),
+]);
+
 export function registerPendingAutopilotTurn(
   home: string,
   instanceId: string,
@@ -81,7 +214,8 @@ export function registerPendingAutopilotTurn(
             `SELECT * FROM autopilot_owner_turns WHERE instance_id = ? AND event_fingerprint = ? AND status IN ('reserved', 'admitted', 'settling') LIMIT 1;`,
           )
           .get(instanceId, eventFingerprint);
-        if (existing) return readTurnRow(existing);
+        if (existing)
+          return readTurnRow(v.parse(storedTurnRowSchema, existing));
       }
       if (options.idempotencyKey) {
         const existing = database
@@ -89,7 +223,8 @@ export function registerPendingAutopilotTurn(
             `SELECT * FROM autopilot_owner_turns WHERE instance_id = ? AND idempotency_key = ? LIMIT 1;`,
           )
           .get(instanceId, options.idempotencyKey);
-        if (existing) return readTurnRow(existing);
+        if (existing)
+          return readTurnRow(v.parse(storedTurnRowSchema, existing));
       }
       database
         .prepare(
@@ -140,7 +275,7 @@ export function readPendingAutopilotTurn(home: string, instanceId: string) {
       `,
       )
       .get(instanceId);
-    return row ? readTurnRow(row) : undefined;
+    return row ? readTurnRow(v.parse(storedTurnRowSchema, row)) : undefined;
   } finally {
     database.close();
   }
@@ -154,7 +289,7 @@ export function listRecoverableAutopilotTurns(home: string) {
         `SELECT * FROM autopilot_owner_turns WHERE status IN ('reserved', 'admitted', 'settling') ORDER BY created_at ASC;`,
       )
       .all()
-      .map(readTurnRow);
+      .map((row) => readTurnRow(v.parse(storedTurnRowSchema, row)));
   } finally {
     database.close();
   }
@@ -172,7 +307,7 @@ export function readAutopilotTurnBySubmissionId(
         `SELECT * FROM autopilot_owner_turns WHERE instance_id = ? AND submission_id = ? ORDER BY created_at DESC LIMIT 1;`,
       )
       .get(instanceId, submissionId);
-    return row ? readTurnRow(row) : undefined;
+    return row ? readTurnRow(v.parse(storedTurnRowSchema, row)) : undefined;
   } finally {
     database.close();
   }
@@ -338,53 +473,40 @@ function readTurnById(database: ReturnType<typeof openDb>, turnId: string) {
   const row = database
     .prepare('SELECT * FROM autopilot_owner_turns WHERE turn_id = ?;')
     .get(turnId);
-  return row ? readTurnRow(row) : null;
+  return row ? readTurnRow(v.parse(storedTurnRowSchema, row)) : null;
 }
 
-function readTurnRow(row: unknown): PendingAutopilotTurn {
-  const value = row as Record<string, unknown>;
+function readTurnRow(
+  row: v.InferOutput<typeof storedTurnRowSchema>,
+): PendingAutopilotTurn {
+  const envelope = row.envelope_json
+    ? parseAutopilotOwnerEnvelope(row.envelope_json)
+    : undefined;
+  const learningMemoryIds = row.learning_memory_ids_json
+    ? v.parse(v.array(v.string()), JSON.parse(row.learning_memory_ids_json))
+    : [];
+  const prepared = row.prepared_json
+    ? v.parse(persistedPreparedContextSchema, JSON.parse(row.prepared_json))
+    : undefined;
   return {
-    approvedRevisionKey:
-      typeof value.approved_revision_key === 'string'
-        ? value.approved_revision_key
-        : undefined,
-    correlationId:
-      typeof value.submission_id === 'string' ? value.submission_id : undefined,
-    envelope:
-      typeof value.envelope_json === 'string'
-        ? (JSON.parse(value.envelope_json) as AutopilotOwnerEnvelope)
-        : undefined,
-    error: typeof value.error === 'string' ? value.error : undefined,
-    eventFingerprint:
-      typeof value.event_fingerprint === 'string'
-        ? value.event_fingerprint
-        : undefined,
-    idempotencyKey:
-      typeof value.idempotency_key === 'string'
-        ? value.idempotency_key
-        : undefined,
-    instanceId: String(value.instance_id),
-    learningMemoryAvailable: value.learning_memory_available === 1,
-    learningMemoryLoaded: value.learning_memory_loaded === 1,
-    learningMemoryIds:
-      typeof value.learning_memory_ids_json === 'string'
-        ? (JSON.parse(value.learning_memory_ids_json) as string[])
-        : [],
-    learningMemoryText:
-      typeof value.learning_memory_text === 'string'
-        ? value.learning_memory_text
-        : null,
-    messageBody:
-      typeof value.message_body === 'string' ? value.message_body : undefined,
-    mode: value.mode as PrWatch['autopilotMode'],
-    prepared:
-      typeof value.prepared_json === 'string'
-        ? (JSON.parse(value.prepared_json) as PersistedAutopilotOwnerContext)
-        : undefined,
-    settling: value.status === 'settling',
-    source: value.source as AutopilotOwnerTurnSource,
-    status: value.status as PendingAutopilotTurn['status'],
-    turnId: String(value.turn_id),
-    watchId: String(value.watch_id),
+    approvedRevisionKey: row.approved_revision_key ?? undefined,
+    correlationId: row.submission_id ?? undefined,
+    envelope,
+    error: row.error ?? undefined,
+    eventFingerprint: row.event_fingerprint ?? undefined,
+    idempotencyKey: row.idempotency_key ?? undefined,
+    instanceId: row.instance_id,
+    learningMemoryAvailable: row.learning_memory_available === 1,
+    learningMemoryLoaded: row.learning_memory_loaded === 1,
+    learningMemoryIds,
+    learningMemoryText: row.learning_memory_text,
+    messageBody: row.message_body ?? undefined,
+    mode: row.mode,
+    prepared,
+    settling: row.status === 'settling',
+    source: row.source,
+    status: row.status,
+    turnId: row.turn_id,
+    watchId: row.watch_id,
   };
 }

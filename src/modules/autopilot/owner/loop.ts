@@ -1,4 +1,5 @@
 import type { JsonValue } from '@flue/runtime';
+import * as v from 'valibot';
 import { asJsonValue } from '../../../lib/action-result';
 import { isTransientFlueRuntimeFailure } from '../../../lib/flue-errors';
 import type { RuntimePaths } from '../../../runtime-home';
@@ -139,11 +140,18 @@ export async function runAutopilotWatchEvent(
         unpublishedCommit &&
         (watch.autopilotMode === 'prepare-only' ||
           watch.autopilotMode === 'autofix-with-approval');
-      transitionWatchAutopilot(paths, watch.id, {
-        from: 'watching',
-        to: reviewable ? 'waiting' : 'blocked',
-        ...(reviewable ? { eventFingerprint: event.eventFingerprint } : {}),
-      });
+      if (reviewable) {
+        transitionWatchAutopilot(paths, watch.id, {
+          from: 'watching',
+          to: 'waiting',
+          eventFingerprint: event.eventFingerprint,
+        });
+      } else {
+        transitionWatchAutopilot(paths, watch.id, {
+          from: 'watching',
+          to: 'blocked',
+        });
+      }
       await addNotification(
         {
           level: 'attention',
@@ -251,13 +259,13 @@ export async function runAutopilotWatchEvent(
       const { buildPrAutopilotOwnerRuntime } =
         await import('../../../agents/pr-autopilot-owner');
       await buildPrAutopilotOwnerRuntime(instanceId, paths);
-    } catch (error) {
+    } catch (caught) {
       clearPendingAutopilotTurnIfMatches(
         paths.home,
         instanceId,
         pendingTurn.turnId,
       );
-      throw error;
+      throw caught;
     }
     try {
       const receipt = await (
@@ -289,8 +297,8 @@ export async function runAutopilotWatchEvent(
         worktreeId: worktree.id,
         dispatchId: receipt.submissionId,
       };
-    } catch (error) {
-      if (isTransientFlueRuntimeFailure(error)) {
+    } catch (caught) {
+      if (isTransientFlueRuntimeFailure(caught)) {
         clearPendingAutopilotTurnIfMatches(
           paths.home,
           instanceId,
@@ -307,11 +315,17 @@ export async function runAutopilotWatchEvent(
           'The local runtime is temporarily unavailable; the owner turn will retry on the next eligible poll.',
         );
       }
+      const parsedError = v.safeParse(
+        v.union([v.instance(Error), v.string()]),
+        caught,
+      );
       recordPendingAutopilotTurnError(
         paths.home,
         instanceId,
         pendingTurn.turnId,
-        errorMessage(error),
+        parsedError.success
+          ? errorMessage(parsedError.output)
+          : 'The owner admission error could not be identified.',
       );
       return {
         ...loopResult(
@@ -323,8 +337,12 @@ export async function runAutopilotWatchEvent(
         worktreeId: worktree.id,
       };
     }
-  } catch (error) {
-    if (isTransientFlueRuntimeFailure(error)) {
+  } catch (caught) {
+    const parsedError = v.safeParse(
+      v.union([v.instance(Error), v.string()]),
+      caught,
+    );
+    if (isTransientFlueRuntimeFailure(caught)) {
       transitionWatchAutopilot(paths, claimed.id, {
         from: 'working',
         to: 'watching',
@@ -340,7 +358,7 @@ export async function runAutopilotWatchEvent(
       from: 'working',
       to: 'blocked',
     });
-    const message = `Autopilot could not start the owner turn: ${errorMessage(error)}`;
+    const message = `Autopilot could not start the owner turn: ${parsedError.success ? errorMessage(parsedError.output) : 'The startup error could not be identified.'}`;
     await addNotification(
       {
         level: 'attention',
@@ -368,22 +386,28 @@ function preparedBaseSha(data: JsonValue | undefined) {
   return nestedString(data, 'pr', 'baseSha');
 }
 
-function nestedString(value: unknown, objectKey: string, key: string) {
-  if (!value || typeof value !== 'object' || Array.isArray(value))
-    return undefined;
-  const nested = (value as Record<string, unknown>)[objectKey];
-  if (!nested || typeof nested !== 'object' || Array.isArray(nested))
-    return undefined;
-  const result = (nested as Record<string, unknown>)[key];
-  return typeof result === 'string' && result ? result : undefined;
+function nestedString(
+  value: JsonValue | undefined,
+  objectKey: string,
+  key: string,
+) {
+  const parsed = v.safeParse(
+    v.object({
+      [objectKey]: v.optional(v.object({ [key]: v.optional(v.string()) })),
+    }),
+    value,
+  );
+  if (!parsed.success) return undefined;
+  const nested = parsed.output[objectKey];
+  return nested?.[key] || undefined;
 }
 
 function loopResult(state: string, changed: boolean, message: string) {
   return { ok: state !== 'missing', state, changed, message };
 }
 
-function errorMessage(error: unknown) {
-  return error instanceof Error ? error.message : String(error);
+function errorMessage(error: Error | string) {
+  return error instanceof Error ? error.message : error;
 }
 
 async function reconcileTransientRuntimeNotificationQuietly(
@@ -392,10 +416,14 @@ async function reconcileTransientRuntimeNotificationQuietly(
 ) {
   try {
     await reconcileTransientAutopilotRuntimeBlocks(paths, { watchId });
-  } catch (error) {
+  } catch (caught) {
+    const parsedError = v.safeParse(
+      v.union([v.instance(Error), v.string()]),
+      caught,
+    );
     console.warn(
       '[neondeck] failed to resolve a transient Autopilot runtime notification',
-      error,
+      parsedError.success ? parsedError.output : caught,
     );
   }
 }

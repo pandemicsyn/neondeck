@@ -5,6 +5,7 @@ import {
   type NotificationRecord,
 } from '../../app-state';
 import { readWatch, transitionWatchAutopilot } from '../../watches';
+import * as v from 'valibot';
 
 const autopilotOwnerNotificationSource = 'autopilot-owner';
 const dispatchBlockedSuffix = ':dispatch-blocked';
@@ -71,14 +72,11 @@ function hasOtherUnresolvedOwnerBlock(
 }
 
 function notificationWatchId(notification: NotificationRecord) {
-  if (
-    notification.data &&
-    typeof notification.data === 'object' &&
-    !Array.isArray(notification.data) &&
-    typeof notification.data.watchId === 'string'
-  ) {
-    return notification.data.watchId;
-  }
+  const data = v.safeParse(
+    v.object({ watchId: v.optional(v.string()) }),
+    notification.data,
+  );
+  if (data.success && data.output.watchId) return data.output.watchId;
   return notification.sourceId?.endsWith(dispatchBlockedSuffix)
     ? notification.sourceId.slice(0, -dispatchBlockedSuffix.length)
     : null;

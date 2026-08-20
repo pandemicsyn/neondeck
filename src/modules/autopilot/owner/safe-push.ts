@@ -17,6 +17,8 @@ import {
 } from '../../watches';
 import type { RuntimePaths } from '../../../runtime-home';
 import { gitCurrentSha, gitPushHead, gitStatus } from '../../../repo-edit/git';
+import type { JsonValue } from '@flue/runtime';
+import * as v from 'valibot';
 import { readPendingAutopilotTurn } from './pending';
 
 export async function safePushAutopilotOwner(
@@ -190,13 +192,17 @@ export async function safePushAutopilotOwner(
       commitSha,
       push,
     };
-  } catch (error) {
+  } catch (caught) {
     const watch = readWatch(paths, binding.id);
-    if (!watch) throw error;
+    if (!watch) throw caught;
+    const parsedError = v.safeParse(reportableErrorSchema, caught);
+    const message = parsedError.success
+      ? errorMessage(parsedError.output)
+      : 'The push attempt failed with an unrecognized error.';
     return blockSafePush(
       watch,
       binding.worktreeId,
-      `Automatic push is uncertain and requires human inspection: ${errorMessage(error)}`,
+      `Automatic push is uncertain and requires human inspection: ${message}`,
       ['humanInspection'],
       paths,
     );
@@ -233,7 +239,7 @@ async function blockSafePush(
   message: string,
   requires: string[],
   paths: RuntimePaths,
-  data?: unknown,
+  data?: JsonValue,
 ) {
   transitionWatchAutopilot(paths, watch.id, {
     from: ['working', 'watching'],
@@ -265,6 +271,8 @@ async function blockSafePush(
   };
 }
 
-function errorMessage(error: unknown) {
-  return error instanceof Error ? error.message : String(error);
+const reportableErrorSchema = v.union([v.instance(Error), v.string()]);
+
+function errorMessage(error: v.InferOutput<typeof reportableErrorSchema>) {
+  return error instanceof Error ? error.message : error;
 }

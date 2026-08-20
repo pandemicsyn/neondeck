@@ -1,4 +1,9 @@
-import { dispatch, init, type DispatchReceipt } from '@flue/runtime';
+import {
+  dispatch,
+  init,
+  type AgentHandleDispatchRequest,
+  type DispatchReceipt,
+} from '@flue/runtime';
 import {
   autopilotOwnerInitialData,
   serializeAutopilotOwnerEnvelope,
@@ -76,11 +81,8 @@ async function dispatchOwnerAgent(request: {
   const { PrAutopilotOwner } =
     await import('../../../agents/pr-autopilot-owner');
   const handle = init(PrAutopilotOwner, { id: request.id });
-  return handle.dispatch({
-    message: request.message,
-    ...(request.initialData ? { initialData: request.initialData } : {}),
-    ...(request.idempotencyKey
-      ? { idempotencyKey: request.idempotencyKey }
-      : {}),
-  });
+  const admission: AgentHandleDispatchRequest = { message: request.message };
+  if (request.initialData) admission.initialData = request.initialData;
+  if (request.idempotencyKey) admission.idempotencyKey = request.idempotencyKey;
+  return handle.dispatch(admission);
 }

@@ -72,8 +72,9 @@ export function buildAutopilotOwnerToolRegistry(input: {
     status: watch.autopilotStatus,
   });
   const capabilities = input.capabilities
-    ? input.capabilities.filter((capability) =>
-        capabilityCeiling.includes(capability as AutopilotOwnerCapability),
+    ? input.capabilities.filter(
+        (capability): capability is AutopilotOwnerCapability =>
+          capabilityCeiling.some((allowed) => allowed === capability),
       )
     : capabilityCeiling;
   const enabled = new Set(capabilities);

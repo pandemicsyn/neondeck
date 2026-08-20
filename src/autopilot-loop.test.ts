@@ -26,6 +26,7 @@ import {
   runAutopilotWatchEvent,
   settleAutopilotOwnerObservation,
 } from './modules/autopilot';
+import { dependenciesWithAutopilotFixture } from './modules/autopilot/fixtures';
 import { reviewRevisionKey } from '../shared/review-source';
 import { safePushAutopilotOwner } from './modules/autopilot/owner/safe-push';
 import { recordOwnerOutcomeQuietly } from './modules/autopilot/owner/settlement-learning';
@@ -113,6 +114,140 @@ afterEach(async () => {
 });
 
 describe('minimal Autopilot watch loop', () => {
+  it('preserves validated fixture review and check metadata', async () => {
+    const fixtureRoot = await mkdtemp(join(tmpdir(), 'neondeck-fixture-'));
+    tempRoots.push(fixtureRoot);
+    const fixturePath = join(fixtureRoot, 'autopilot.json');
+    await writeFile(
+      fixturePath,
+      JSON.stringify({
+        eventStates: [
+          {
+            repo: 'octo/repo',
+            number: 7,
+            url: 'https://github.com/octo/repo/pull/7',
+            title: 'Preserve metadata',
+            body: 'Fixture body',
+            author: 'fixture-author',
+            state: 'OPEN',
+            draft: false,
+            merged: false,
+            mergeCommitSha: null,
+            headSha: 'a'.repeat(40),
+            headRef: 'feature/metadata',
+            baseRef: 'main',
+            baseSha: 'b'.repeat(40),
+            mergeable: true,
+            mergeableState: 'CLEAN',
+            maintainerCanModify: true,
+            commits: [],
+            reviewThreads: [
+              {
+                id: 'thread-1',
+                isResolved: false,
+                isOutdated: false,
+                path: 'src/app.ts',
+                line: 4,
+                comments: [
+                  {
+                    id: 'comment-1',
+                    databaseId: 1,
+                    authorLogin: 'review-bot',
+                    authorType: 'Bot',
+                    authorIsBot: true,
+                    body: 'Please update this.',
+                    url: 'https://github.com/octo/repo/pull/7#discussion_r1',
+                    path: 'src/app.ts',
+                    side: 'RIGHT',
+                    line: 4,
+                    startLine: 3,
+                    startSide: 'RIGHT',
+                    originalLine: 4,
+                    diffHunk: '@@',
+                    reviewId: 1,
+                    createdAt: '2026-01-01T00:00:00.000Z',
+                    updatedAt: '2026-01-01T00:00:00.000Z',
+                  },
+                ],
+              },
+            ],
+            requestedChangesReviews: [],
+            requestedChangesState: {
+              active: [],
+              latestByReviewer: [],
+              history: [],
+            },
+            checkSuites: [
+              {
+                id: 1,
+                headSha: 'a'.repeat(40),
+                status: 'completed',
+                conclusion: 'success',
+                appSlug: 'github-actions',
+                url: 'https://api.github.com/check-suites/1',
+                htmlUrl: 'https://github.com/octo/repo/runs/1',
+                createdAt: '2026-01-01T00:00:00.000Z',
+                updatedAt: '2026-01-01T00:01:00.000Z',
+              },
+            ],
+            checkRuns: [
+              {
+                id: 2,
+                name: 'test',
+                headSha: 'a'.repeat(40),
+                status: 'completed',
+                conclusion: 'success',
+                url: 'https://api.github.com/check-runs/2',
+                htmlUrl: 'https://github.com/octo/repo/runs/2',
+                detailsUrl: 'https://github.com/octo/repo/actions/runs/2',
+                startedAt: '2026-01-01T00:00:00.000Z',
+                completedAt: '2026-01-01T00:01:00.000Z',
+              },
+            ],
+            branchPermissions: {
+              headRepoFullName: 'octo/repo',
+              baseRepoFullName: 'octo/repo',
+              isFork: false,
+              maintainerCanModify: true,
+              headRepoPush: true,
+              baseRepoPush: true,
+              canLikelyPush: true,
+              checkedAt: '2026-01-01T00:00:00.000Z',
+            },
+            isOutOfDate: false,
+            fetchedAt: '2026-01-01T00:01:00.000Z',
+          },
+        ],
+      }),
+    );
+    vi.stubEnv('NEONDECK_AUTOPILOT_FIXTURE_PATH', fixturePath);
+    vi.stubEnv('NEONDECK_AUTOPILOT_FIXTURE_ENABLE', '1');
+
+    const dependencies = await dependenciesWithAutopilotFixture({});
+    const state = await dependencies.fetchPullRequestEventState?.({
+      token: 'fixture-token',
+      owner: 'octo',
+      repo: 'repo',
+      number: 7,
+    });
+
+    expect(state?.reviewThreads[0]?.comments[0]).toMatchObject({
+      authorType: 'Bot',
+      authorIsBot: true,
+      side: 'RIGHT',
+      startLine: 3,
+    });
+    expect(state?.checkSuites[0]).toMatchObject({
+      appSlug: 'github-actions',
+      url: 'https://api.github.com/check-suites/1',
+      updatedAt: '2026-01-01T00:01:00.000Z',
+    });
+    expect(state?.checkRuns[0]).toMatchObject({
+      detailsUrl: 'https://github.com/octo/repo/actions/runs/2',
+      completedAt: '2026-01-01T00:01:00.000Z',
+    });
+  });
+
   it('keeps immutable owner creation data limited to the stable watch identity', () => {
     const envelope = buildAutopilotOwnerEnvelope({
       watchId: 'pandemicsyn/neondeck#123',
@@ -573,6 +708,15 @@ describe('minimal Autopilot watch loop', () => {
         instanceId,
         envelope: secondEnvelope,
         idempotencyKey: secondTurn.turnId,
+      });
+      const retryReceipt = await dispatchAutopilotOwnerTurn({
+        instanceId,
+        envelope: secondEnvelope,
+        idempotencyKey: secondTurn.turnId,
+      });
+      expect(retryReceipt).toMatchObject({
+        submissionId: receipt.submissionId,
+        deduplicated: true,
       });
       recordPendingAutopilotTurnCorrelationId(
         paths.home,

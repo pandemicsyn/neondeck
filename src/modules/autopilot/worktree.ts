@@ -1,3 +1,4 @@
+import { type JsonValue } from '@flue/runtime';
 import * as v from 'valibot';
 import { checkAutopilotConcurrency } from '../autopilot-policy';
 import { readRepoRegistrySnapshot, repoFullName } from '../repos';
@@ -20,23 +21,33 @@ import {
 import {
   AutopilotActionResult,
   AutopilotDependencies,
-  prFactsSchema,
   preparePrWorktreeInputSchema,
 } from './schemas';
 import {
   asJsonValue,
+  errorMessage,
   failResult,
   lowerLevelFailure,
-  parseInput,
   objectField,
+  parseInput,
   stringField,
-  errorMessage,
 } from './utils';
 import { dependenciesWithAutopilotFixture } from './fixtures';
 import { fetchPreparedPrFacts, fetchPreparedCheckFacts } from './github-facts';
 
+export type PreparePrWorktreeInput = v.InferInput<
+  typeof preparePrWorktreeInputSchema
+>;
+
+type PreparedWorktreeArtifacts = {
+  worktree: JsonValue | null;
+  lock: JsonValue | null;
+  status: JsonValue | null;
+  exactHeadFetch: JsonValue | null;
+};
+
 export async function preparePrWorktree(
-  rawInput: unknown,
+  rawInput: PreparePrWorktreeInput,
   paths: RuntimePaths = runtimePaths(),
   dependencies: AutopilotDependencies = {},
 ): Promise<AutopilotActionResult> {
@@ -67,16 +78,16 @@ export async function preparePrWorktree(
       input.prNumber,
       dependencies,
     );
-    if ('ok' in pr && !pr.ok) return pr;
+    if ('ok' in pr) return pr;
 
-    const prFacts = pr as v.InferOutput<typeof prFactsSchema>;
+    const prFacts = pr;
     const checks = await fetchPreparedCheckFacts(
       repo.github.owner,
       repo.github.name,
       prFacts.headSha,
       dependencies,
     );
-    if ('ok' in checks && !checks.ok) return checks;
+    if ('ok' in checks) return checks;
 
     const concurrency = await checkAutopilotConcurrency(
       {
@@ -99,10 +110,12 @@ export async function preparePrWorktree(
       };
     }
 
-    let worktree: unknown = null;
-    let lock: unknown = null;
-    let status: unknown = null;
-    let exactHeadFetch: unknown = null;
+    const artifacts: PreparedWorktreeArtifacts = {
+      worktree: null,
+      lock: null,
+      status: null,
+      exactHeadFetch: null,
+    };
     const createEnabled = input.createWorktree ?? true;
 
     if (createEnabled) {
@@ -159,16 +172,18 @@ export async function preparePrWorktree(
         const fetcher =
           dependencies.fetchExactPullRequestHead ?? fetchExactPullRequestHead;
         try {
-          exactHeadFetch = await fetcher({
-            sourceRepoPath: repo.path,
-            baseRepoFullName: prFacts.baseRepoFullName ?? repoFullName(repo),
-            headRepoFullName:
-              prFacts.headRepoFullName ??
-              `${prFacts.headOwner ?? repo.github.owner}/${prFacts.headName ?? repo.github.name}`,
-            prNumber: input.prNumber,
-            headRef: prFacts.headRef ?? prFacts.headSha,
-            headSha: prFacts.headSha,
-          });
+          artifacts.exactHeadFetch = asJsonValue(
+            await fetcher({
+              sourceRepoPath: repo.path,
+              baseRepoFullName: prFacts.baseRepoFullName ?? repoFullName(repo),
+              headRepoFullName:
+                prFacts.headRepoFullName ??
+                `${prFacts.headOwner ?? repo.github.owner}/${prFacts.headName ?? repo.github.name}`,
+              prNumber: input.prNumber,
+              headRef: prFacts.headRef ?? prFacts.headSha,
+              headSha: prFacts.headSha,
+            }),
+          );
         } catch (error) {
           return failResult(
             'autopilot_prepare_pr_worktree',
@@ -207,7 +222,9 @@ export async function preparePrWorktree(
               synced,
             );
           }
-          worktree = objectField(synced, 'worktree') ?? existing;
+          artifacts.worktree = asJsonValue(
+            objectField(synced, 'worktree') ?? existing,
+          );
         } else {
           const created = await createWorktree(
             {
@@ -229,8 +246,8 @@ export async function preparePrWorktree(
               created,
             );
           }
-          worktree = objectField(created, 'worktree');
-          const createdWorktreeId = stringField(worktree, 'id');
+          artifacts.worktree = asJsonValue(objectField(created, 'worktree'));
+          const createdWorktreeId = stringField(artifacts.worktree, 'id');
           if (!createdWorktreeId) {
             return failResult(
               'autopilot_prepare_pr_worktree',
@@ -255,10 +272,12 @@ export async function preparePrWorktree(
               synced,
             );
           }
-          worktree = objectField(synced, 'worktree') ?? worktree;
+          artifacts.worktree = asJsonValue(
+            objectField(synced, 'worktree') ?? artifacts.worktree,
+          );
         }
 
-        const worktreeId = stringField(worktree, 'id');
+        const worktreeId = stringField(artifacts.worktree, 'id');
         if (!worktreeId) {
           return failResult(
             'autopilot_prepare_pr_worktree',
@@ -266,9 +285,11 @@ export async function preparePrWorktree(
             { errors: ['Missing worktree id.'] },
           );
         }
-        status = await readWorktreeStatus({ worktreeId }, paths);
+        artifacts.status = asJsonValue(
+          await readWorktreeStatus({ worktreeId }, paths),
+        );
         const checkedOutSha = stringField(
-          objectField(status, 'git'),
+          objectField(artifacts.status, 'git'),
           'headSha',
         );
         if (checkedOutSha !== prFacts.headSha) {
@@ -284,7 +305,7 @@ export async function preparePrWorktree(
           'pr_head_verified',
           'ready',
           `Verified exact PR head ${prFacts.headSha.slice(0, 12)} before checkout.`,
-          exactHeadFetch,
+          artifacts.exactHeadFetch,
           paths,
         );
       } finally {
@@ -301,7 +322,7 @@ export async function preparePrWorktree(
       }
 
       if (input.lock === true) {
-        const worktreeId = stringField(worktree, 'id');
+        const worktreeId = stringField(artifacts.worktree, 'id');
         if (worktreeId) {
           const retainedLock = await lockWorktree(
             {
@@ -319,7 +340,7 @@ export async function preparePrWorktree(
               retainedLock,
             );
           }
-          lock = objectField(retainedLock, 'lock');
+          artifacts.lock = asJsonValue(objectField(retainedLock, 'lock'));
         }
       }
     }
@@ -327,8 +348,8 @@ export async function preparePrWorktree(
     return {
       ok: true,
       action: 'autopilot_prepare_pr_worktree',
-      changed: Boolean(worktree),
-      message: worktree
+      changed: Boolean(artifacts.worktree),
+      message: artifacts.worktree
         ? `Prepared PR worktree for ${repoFullName(repo)}#${input.prNumber}.`
         : `Gathered PR facts for ${repoFullName(repo)}#${input.prNumber}.`,
       data: asJsonValue({
@@ -341,10 +362,10 @@ export async function preparePrWorktree(
         pr: prFacts,
         checks,
         concurrency,
-        worktree,
-        lock,
-        status,
-        exactHeadFetch,
+        worktree: artifacts.worktree,
+        lock: artifacts.lock,
+        status: artifacts.status,
+        exactHeadFetch: artifacts.exactHeadFetch,
         eventId: input.eventId ?? null,
         runLinkage: {
           owningWorkflowRunIdAttached: false,

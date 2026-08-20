@@ -26,6 +26,8 @@
       "files": [
         "src/activity-observability.test.ts",
         "src/learning-review-admission.test.ts",
+        "src/modules/autopilot/**/*.ts",
+        "src/modules/autopilot/**/*.tsx",
         "src/modules/learning/**/*.ts",
         "src/modules/learning/**/*.tsx",
         "src/modules/pr-events/**/*.ts",

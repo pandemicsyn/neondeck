@@ -1,4 +1,4 @@
-import { defineTool } from '@flue/runtime';
+import { type JsonValue, defineTool } from '@flue/runtime';
 import * as v from 'valibot';
 import type { RuntimePaths } from '../../runtime-home';
 import { runtimePaths } from '../../runtime-home';
@@ -16,6 +16,7 @@ import type {
   CheckFetcher,
   PrWatch,
   PrWatchInitialEventBaselineFetcher,
+  WatchActionResult,
   WatchFetcher,
 } from '../watches';
 import { modeSchema } from '../autopilot-policy';
@@ -36,6 +37,30 @@ import {
 import { watchAutopilotOwnerSettlement } from './owner/settlement';
 
 const nonEmptyString = v.pipe(v.string(), v.minLength(1));
+
+const autopilotWatchResultSchema = v.object({
+  id: nonEmptyString,
+  updatedAt: nonEmptyString,
+  autopilotMode: v.picklist([
+    'notify-only',
+    'prepare-only',
+    'autofix-with-approval',
+    'autofix-push-when-safe',
+  ]),
+  autopilotStatus: v.picklist([
+    'watching',
+    'working',
+    'waiting',
+    'blocked',
+    'stopping',
+    'complete',
+  ]),
+});
+
+type StopAutopilotOptions = {
+  explicitStop: true;
+  confirmPreparedDiff?: true;
+};
 
 export const configurePrAutopilotInputSchema = v.object({
   ref: nonEmptyString,
@@ -129,12 +154,11 @@ export async function configurePrAutopilot(
         ? `Rearming completed Autopilot in ${parsed.output.mode} mode requires explicit confirmation.`
         : `Increasing Autopilot from ${existing.autopilotMode} to ${parsed.output.mode} requires explicit confirmation.`
       : `Enabling Autopilot in ${parsed.output.mode} mode requires explicit confirmation.`;
-    return {
+    const confirmationRequired = {
       ok: false,
       action: 'autopilot_configure_pr',
       changed: false,
       message,
-      ...(existing ? { watch: existing } : {}),
       requires: ['confirmAutopilotMode'],
       errors: [
         rearmsCompletedAuthority
@@ -144,6 +168,19 @@ export async function configurePrAutopilot(
             : 'Set confirm=true only after the user explicitly confirms this autonomy level.',
       ],
     };
+    return existing
+      ? { ...confirmationRequired, watch: existing }
+      : confirmationRequired;
+  }
+
+  const addWatchOptions: NonNullable<Parameters<typeof addPrWatch>[5]> = {
+    expectedExisting: existing ? autopilotWatchFence(existing) : null,
+  };
+  if (existing?.autopilotStatus === 'complete') {
+    addWatchOptions.rearmAutopilotMode = parsed.output.mode;
+  }
+  if (dependencies.upsertPollingTask) {
+    addWatchOptions.upsertPollingTask = dependencies.upsertPollingTask;
   }
 
   const watchResult = await (dependencies.addWatch ?? addPrWatch)(
@@ -158,15 +195,7 @@ export async function configurePrAutopilot(
     dependencies.fetcher,
     dependencies.checkFetcher,
     dependencies.initialEventBaselineFetcher,
-    {
-      expectedExisting: existing ? autopilotWatchFence(existing) : null,
-      ...(existing?.autopilotStatus === 'complete'
-        ? { rearmAutopilotMode: parsed.output.mode }
-        : {}),
-      ...(dependencies.upsertPollingTask
-        ? { upsertPollingTask: dependencies.upsertPollingTask }
-        : {}),
-    },
+    addWatchOptions,
   );
   if (!watchResult.ok) {
     return { ...watchResult, action: 'autopilot_configure_pr' };
@@ -269,14 +298,13 @@ export async function controlPrAutopilot(
     return setPrWatchPolling({ id: resolved.id, enabled: true }, paths);
   }
   if (parsed.output.operation === 'stop') {
+    const stopOptions: StopAutopilotOptions = { explicitStop: true };
+    if (parsed.output.confirmPreparedDiff === true) {
+      stopOptions.confirmPreparedDiff = true;
+    }
     const stopped = await (
       dependencies.complete ?? completeAutopilotWatchIfTerminal
-    )(resolved.id, paths, {
-      explicitStop: true,
-      ...(parsed.output.confirmPreparedDiff === true
-        ? { confirmPreparedDiff: true }
-        : {}),
-    });
+    )(resolved.id, paths, stopOptions);
     if (stopped.reason === 'prepared-diff-confirmation-required') {
       return {
         ...failure(
@@ -667,34 +695,18 @@ export const neondeckPrAutopilotWatchActions = [
   prAutopilotOwnerMessageAction,
 ];
 
-function watchIdFromResult(result: { watch?: unknown }) {
-  if (!result.watch || typeof result.watch !== 'object') return undefined;
-  const id = (result.watch as Record<string, unknown>).id;
-  return typeof id === 'string' ? id : undefined;
+function watchIdFromResult(result: Pick<WatchActionResult, 'watch'>) {
+  return parsedAutopilotWatch(result.watch)?.id;
 }
 
-function watchFenceFromResult(result: { watch?: unknown }) {
-  if (!result.watch || typeof result.watch !== 'object') return undefined;
-  const watch = result.watch as Record<string, unknown>;
-  if (
-    typeof watch.updatedAt !== 'string' ||
-    ![
-      'notify-only',
-      'prepare-only',
-      'autofix-with-approval',
-      'autofix-push-when-safe',
-    ].includes(String(watch.autopilotMode)) ||
-    !['watching', 'working', 'waiting', 'blocked', 'complete'].includes(
-      String(watch.autopilotStatus),
-    )
-  ) {
-    return undefined;
-  }
-  return {
-    updatedAt: watch.updatedAt,
-    autopilotMode: watch.autopilotMode as PrWatch['autopilotMode'],
-    autopilotStatus: watch.autopilotStatus as PrWatch['autopilotStatus'],
-  };
+function watchFenceFromResult(result: Pick<WatchActionResult, 'watch'>) {
+  const watch = parsedAutopilotWatch(result.watch);
+  return watch ? autopilotWatchFence(watch) : undefined;
+}
+
+function parsedAutopilotWatch(watch: JsonValue | undefined) {
+  const parsed = v.safeParse(autopilotWatchResultSchema, watch);
+  return parsed.success ? parsed.output : undefined;
 }
 
 function autopilotWatchFence(

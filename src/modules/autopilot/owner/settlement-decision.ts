@@ -147,12 +147,13 @@ export function deriveOwnerSettlementDecision(input: {
   if (watch.autopilotStatus !== 'working') return { outcome: null };
 
   if (pushed) {
+    const transition: OwnerWatchTransition = {
+      from: 'working',
+      to: 'watching',
+    };
+    if (eventFingerprint) transition.eventFingerprint = eventFingerprint;
     return {
-      transition: {
-        from: 'working',
-        to: 'watching',
-        ...(eventFingerprint ? { eventFingerprint } : {}),
-      },
+      transition,
       notification: {
         level: 'ready',
         title: 'Autopilot pushed a focused change',
@@ -169,12 +170,14 @@ export function deriveOwnerSettlementDecision(input: {
     const waiting =
       watch.autopilotMode === 'prepare-only' ||
       watch.autopilotMode === 'autofix-with-approval';
+    const transition: OwnerWatchTransition = {
+      from: 'working',
+      to: waiting ? 'waiting' : 'blocked',
+    };
+    if (waiting && eventFingerprint)
+      transition.eventFingerprint = eventFingerprint;
     return {
-      transition: {
-        from: 'working',
-        to: waiting ? 'waiting' : 'blocked',
-        ...(waiting && eventFingerprint ? { eventFingerprint } : {}),
-      },
+      transition,
       worktreePushBlocked: {
         message: waiting
           ? 'Autopilot prepared a committed change for human review.'
@@ -227,12 +230,10 @@ export function deriveOwnerSettlementDecision(input: {
     };
   }
 
+  const transition: OwnerWatchTransition = { from: 'working', to: 'watching' };
+  if (eventFingerprint) transition.eventFingerprint = eventFingerprint;
   return {
-    transition: {
-      from: 'working',
-      to: 'watching',
-      ...(eventFingerprint ? { eventFingerprint } : {}),
-    },
+    transition,
     outcome: {
       eventType: 'autopilot-owner-no-change',
       outcome: 'no-change',

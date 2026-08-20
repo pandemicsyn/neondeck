@@ -1,5 +1,6 @@
 import type { JsonValue } from '@flue/runtime';
 import * as v from 'valibot';
+import { prEventJsonValueSchema } from '../../pr-events';
 
 export const autopilotOwnerInitialDataSchema = v.object({
   schema: v.literal('neondeck.autopilot-owner-instance.v2'),
@@ -25,6 +26,22 @@ export type AutopilotOwnerEnvelope = {
   facts: JsonValue;
   availableCapabilities: string[];
 };
+
+const autopilotOwnerEnvelopeSchema = v.object({
+  schema: v.literal('neondeck.autopilot-owner-envelope.v1'),
+  watchId: v.pipe(v.string(), v.minLength(1)),
+  repoId: v.pipe(v.string(), v.minLength(1)),
+  repoFullName: v.pipe(v.string(), v.minLength(1)),
+  prNumber: v.pipe(v.number(), v.integer()),
+  worktreeId: v.string(),
+  worktreePath: v.string(),
+  headSha: v.string(),
+  baseSha: v.string(),
+  eventFingerprint: v.pipe(v.string(), v.minLength(1)),
+  mode: v.string(),
+  facts: prEventJsonValueSchema,
+  availableCapabilities: v.array(v.string()),
+});
 
 /**
  * Builds the transport envelope for a continuing PR owner without persisting a
@@ -55,16 +72,5 @@ export function autopilotOwnerInitialData(
 }
 
 export function parseAutopilotOwnerEnvelope(value: string) {
-  const parsed = JSON.parse(value) as AutopilotOwnerEnvelope;
-  if (
-    parsed.schema !== 'neondeck.autopilot-owner-envelope.v1' ||
-    !parsed.watchId ||
-    !parsed.repoId ||
-    !parsed.repoFullName ||
-    !Number.isInteger(parsed.prNumber) ||
-    !parsed.eventFingerprint
-  ) {
-    throw new Error('Invalid Autopilot owner delivery envelope.');
-  }
-  return parsed;
+  return v.parse(autopilotOwnerEnvelopeSchema, JSON.parse(value));
 }

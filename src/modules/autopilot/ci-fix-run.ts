@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
+import { type JsonValue } from '@flue/runtime';
 import * as v from 'valibot';
 import { asJsonValue } from '../../lib/action-result';
 import { renderReportHtml } from '../../lib/report-html';
@@ -16,12 +17,7 @@ import {
   findWorkflowSummaryByKiloTaskId,
   updateWorkflowSummary,
 } from '../app-state';
-import {
-  fetchFailingCheckFacts,
-  pullRequestEventStateIncompleteness,
-  type GitHubFailingCheckFact,
-  type GitHubPullRequestEventState,
-} from '../github';
+import { fetchFailingCheckFacts, type GitHubFailingCheckFact } from '../github';
 import { startKiloTask } from '../kilo';
 import { loadAutomationLearningMemoryContext } from '../learning';
 import { writeReport, type ReportRecord } from '../reports';
@@ -63,12 +59,82 @@ export type CiFixRunOutput = Awaited<ReturnType<typeof runCiFix>>;
 
 export type CiFixDossier = {
   target: PullRequestTarget;
-  state: GitHubPullRequestEventState;
+  state: CiFixEventState;
   repo: RepoConfig | null;
   failingChecks: GitHubFailingCheckFact[];
   failingCheckFactsError: string | null;
   likelyCommands: string[];
   fetchedAt: string;
+};
+
+const ciFixCheckRunSchema = v.object({
+  id: v.number(),
+  name: v.string(),
+  headSha: v.string(),
+  status: v.string(),
+  conclusion: v.nullable(v.string()),
+  url: v.nullable(v.string()),
+  htmlUrl: v.nullable(v.string()),
+  detailsUrl: v.nullable(v.string()),
+  startedAt: v.nullable(v.string()),
+  completedAt: v.nullable(v.string()),
+});
+
+const ciFixEventStateSchema = v.object({
+  title: v.string(),
+  state: v.string(),
+  url: v.string(),
+  headSha: v.string(),
+  baseRef: v.string(),
+  commits: v.array(
+    v.object({
+      sha: v.string(),
+      url: v.string(),
+      authorLogin: v.nullable(v.string()),
+      committedAt: v.nullable(v.string()),
+    }),
+  ),
+  checkRuns: v.array(ciFixCheckRunSchema),
+  commitsTruncated: v.optional(v.boolean()),
+  reviewThreadsTruncated: v.optional(v.boolean()),
+  reviewThreads: v.array(
+    v.object({
+      commentsTruncated: v.optional(v.boolean()),
+      comments: v.array(v.object({ bodyTruncated: v.optional(v.boolean()) })),
+    }),
+  ),
+  reviewsTruncated: v.optional(v.boolean()),
+  requestedChangesState: v.object({
+    history: v.array(v.object({ bodyTruncated: v.optional(v.boolean()) })),
+  }),
+  conversationCommentsTruncated: v.optional(v.boolean()),
+  checkSuitesTruncated: v.optional(v.boolean()),
+  checkSuitesUnavailableReason: v.optional(v.nullable(v.string())),
+  checkRunsTruncated: v.optional(v.boolean()),
+  checkRunsUnavailableReason: v.optional(v.nullable(v.string())),
+});
+
+const ciFixEventStateEnvelopeSchema = v.object({
+  target: v.object({
+    repoFullName: nonEmptyStringSchema,
+    owner: nonEmptyStringSchema,
+    repo: nonEmptyStringSchema,
+    number: positiveIntegerSchema,
+  }),
+  state: ciFixEventStateSchema,
+});
+
+type CiFixEventState = v.InferOutput<typeof ciFixEventStateSchema>;
+
+type CiFixFailureResult = {
+  ok: false;
+  action: 'ci_fix_run';
+  changed: false;
+  message: string;
+  errors?: string[];
+  requires?: string[];
+  data?: JsonValue;
+  workflowSummary?: unknown;
 };
 
 export type CiFixRunDependencies = {
@@ -158,9 +224,7 @@ export async function runCiFix(
     };
   }
 
-  const stateIncompleteness = pullRequestEventStateIncompleteness(
-    dossier.state,
-  );
+  const stateIncompleteness = ciFixEventStateIncompleteness(dossier.state);
   if (stateIncompleteness.any) {
     const message =
       'CI fix handoff requires complete PR event facts; wrote the dossier report but did not start Kilo because GitHub data was incomplete.';
@@ -375,7 +439,9 @@ export async function runCiFix(
       });
     }
 
-    const preparedWorktree = objectField(objectField(prepared.data).worktree);
+    const preparedData =
+      prepared.data === undefined ? {} : asJsonValue(prepared.data);
+    const preparedWorktree = objectField(objectField(preparedData).worktree);
     const worktreeId = stringField(preparedWorktree.id);
     if (!worktreeId) {
       releaseStatus = 'failed';
@@ -503,7 +569,7 @@ export async function runCiFix(
         {
           status: 'failed',
           summary: {
-            ...objectField(workflowSummary.summary),
+            ...objectField(asJsonValue(workflowSummary.summary)),
             outcome: 'kilo-start-failed',
             error: kilo.message,
           },
@@ -514,7 +580,7 @@ export async function runCiFix(
     }
 
     const startedKiloTaskId =
-      stringField(objectField(kilo).taskId) ?? kiloTaskId;
+      stringField(objectField(asJsonValue(kilo)).taskId) ?? kiloTaskId;
     const currentWorkflowSummary =
       (await findWorkflowSummaryByKiloTaskId(
         'ci_fix_run',
@@ -645,15 +711,19 @@ export async function readCiFixDossier(
       }),
     };
   }
-  const stateData = objectField(stateResult.data);
-  const target = targetField(stateData.target);
-  const state = stateData.state as GitHubPullRequestEventState | undefined;
-  if (!target || !state) {
+  const eventState = v.safeParse(
+    ciFixEventStateEnvelopeSchema,
+    stateResult.data,
+  );
+  if (!eventState.success) {
     return {
       ok: false,
-      result: failure('GitHub PR event state response was incomplete.'),
+      result: failure('GitHub PR event state response was incomplete.', {
+        errors: [v.summarize(eventState.issues)],
+      }),
     };
   }
+  const { target, state } = eventState.output;
 
   const token = process.env.GITHUB_TOKEN;
   if (!token) {
@@ -714,9 +784,7 @@ export async function writeCiFixDossierReport(
 ) {
   const ref = sourceRef(dossier);
   const generatedAt = new Date();
-  const stateIncompleteness = pullRequestEventStateIncompleteness(
-    dossier.state,
-  );
+  const stateIncompleteness = ciFixEventStateIncompleteness(dossier.state);
   const failingCheckLogFactsError =
     incompleteFailingCheckLogFactsError(dossier);
   return writeReport(
@@ -1102,7 +1170,7 @@ function dossierSummary(dossier: CiFixDossier) {
     errorLines: extractedErrorLines(dossier).slice(0, 10),
     suspectFiles: suspectFiles(dossier),
     likelyCommands: dossier.likelyCommands.slice(0, 5),
-    truncation: pullRequestEventStateIncompleteness(dossier.state),
+    truncation: ciFixEventStateIncompleteness(dossier.state),
   };
 }
 
@@ -1297,38 +1365,65 @@ function failure(
     workflowSummary?: unknown;
   } = {},
 ) {
-  return {
+  const result: CiFixFailureResult = {
     ok: false,
     action: 'ci_fix_run' as const,
     changed: false,
     message,
-    ...(options.errors ? { errors: options.errors } : {}),
-    ...(options.requires ? { requires: options.requires } : {}),
-    ...(options.data ? { data: asJsonValue(options.data) } : {}),
-    ...(options.workflowSummary
-      ? { workflowSummary: options.workflowSummary }
-      : {}),
   };
+  if (options.errors) result.errors = options.errors;
+  if (options.requires) result.requires = options.requires;
+  if (options.data) result.data = asJsonValue(options.data);
+  if (options.workflowSummary) result.workflowSummary = options.workflowSummary;
+  return result;
 }
 
-function objectField(value: unknown): Record<string, unknown> {
-  return value && typeof value === 'object' && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : {};
+const jsonObjectSchema = v.custom<Record<string, JsonValue>>(
+  (value) => v.is(v.record(v.string(), v.unknown()), value),
+  'Value must be a JSON object.',
+);
+
+function objectField(value: JsonValue | undefined) {
+  const parsed = v.safeParse(jsonObjectSchema, value);
+  return parsed.success ? parsed.output : {};
 }
 
-function stringField(value: unknown) {
-  return typeof value === 'string' && value.trim() ? value : undefined;
+function stringField(value: JsonValue | undefined) {
+  const parsed = v.safeParse(nonEmptyStringSchema, value);
+  return parsed.success ? parsed.output : undefined;
 }
 
-function targetField(value: unknown): PullRequestTarget | null {
-  const target = objectField(value);
-  const repoFullName = stringField(target.repoFullName);
-  const owner = stringField(target.owner);
-  const repo = stringField(target.repo);
-  const number = typeof target.number === 'number' ? target.number : null;
-  if (!repoFullName || !owner || !repo || !number) return null;
-  return { repoFullName, owner, repo, number };
+function ciFixEventStateIncompleteness(state: CiFixEventState) {
+  const incomplete = {
+    commits: Boolean(state.commitsTruncated),
+    reviewThreads:
+      Boolean(state.reviewThreadsTruncated) ||
+      state.reviewThreads.some(
+        (thread) =>
+          Boolean(thread.commentsTruncated) ||
+          thread.comments.some((comment) => Boolean(comment.bodyTruncated)),
+      ),
+    reviews:
+      Boolean(state.reviewsTruncated) ||
+      state.requestedChangesState.history.some((review) =>
+        Boolean(review.bodyTruncated),
+      ),
+    conversationComments: Boolean(state.conversationCommentsTruncated),
+    checkSuites:
+      Boolean(state.checkSuitesTruncated) ||
+      Boolean(state.checkSuitesUnavailableReason),
+    checkRuns:
+      Boolean(state.checkRunsTruncated) ||
+      Boolean(state.checkRunsUnavailableReason),
+  };
+  const categories = Object.entries(incomplete)
+    .filter(([, value]) => value)
+    .map(([category]) => category);
+  return {
+    ...incomplete,
+    any: categories.length > 0,
+    categories,
+  };
 }
 
 function truncate(value: string, maxLength: number) {

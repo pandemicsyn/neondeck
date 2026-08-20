@@ -1,15 +1,28 @@
 /* eslint-disable no-unused-vars */
-import { type JsonValue } from '@flue/runtime';
 import * as v from 'valibot';
+import { asJsonValue as serializeJsonValue } from '../../lib/action-result';
 import { type GitHubPullRequestEventState } from '../github';
 import { readRepoRegistrySnapshot } from '../repos';
-import { AutopilotActionResult } from './schemas';
+import { AutopilotActionResult, autopilotOutputSchema } from './schemas';
+
+const untrustedInputSchema = v.unknown();
+const looseObjectSchema = v.looseObject({});
+const errorInstanceSchema = v.instance(Error);
+const errorTextSchema = v.string();
+const errorObjectSchema = v.object({ message: v.string() });
+
+type UntrustedInput = v.InferInput<typeof untrustedInputSchema>;
+type LowerLevelFailureError = {
+  sourceAction: string;
+  sourceMessage: string;
+  sourceError?: ReturnType<typeof serializeJsonValue>;
+};
 
 export function parseInput<
   TSchema extends v.BaseSchema<unknown, unknown, v.BaseIssue<unknown>>,
 >(
   schema: TSchema,
-  rawInput: unknown,
+  rawInput: UntrustedInput,
   action: string,
 ):
   | { ok: true; input: v.InferOutput<TSchema> }
@@ -29,38 +42,40 @@ export function failResult(
   message: string,
   details: Pick<AutopilotActionResult, 'errors' | 'requires'> = {},
 ): AutopilotActionResult {
-  return {
+  const result: AutopilotActionResult = {
     ok: false,
     action,
     changed: false,
     message,
-    ...(details.errors ? { errors: details.errors } : {}),
-    ...(details.requires ? { requires: details.requires } : {}),
   };
+  if (details.errors) result.errors = details.errors;
+  if (details.requires) result.requires = details.requires;
+  return result;
 }
 
 export function lowerLevelFailure(
   action: string,
   sourceAction: string,
-  result: unknown,
+  result: UntrustedInput,
 ): AutopilotActionResult {
   const message =
     stringField(result, 'message') ??
     `Could not prepare PR worktree because ${sourceAction} failed.`;
+  const error: LowerLevelFailureError = {
+    sourceAction,
+    sourceMessage: message,
+  };
+  const sourceError = fieldInput(result, 'error');
+  if (sourceError !== undefined) {
+    error.sourceError = serializeJsonValue(sourceError);
+  }
   return {
     ok: false,
     action,
     changed: Boolean(booleanField(result, 'changed')),
     message,
     errors: [message],
-    error: asJsonValue({
-      sourceAction,
-      sourceMessage: message,
-      sourceError:
-        result && typeof result === 'object'
-          ? (result as Record<string, unknown>).error
-          : undefined,
-    }),
+    error: serializeJsonValue(error),
   };
 }
 
@@ -85,61 +100,54 @@ export function unique(values: string[]) {
   return [...new Set(values.map((value) => value.trim()).filter(Boolean))];
 }
 
-export function objectField(value: unknown, key: string) {
-  if (!value || typeof value !== 'object') return undefined;
-  const field = (value as Record<string, unknown>)[key];
-  return field && typeof field === 'object' ? field : undefined;
+function fieldInput(value: UntrustedInput, key: string) {
+  const parsed = v.safeParse(looseObjectSchema, value);
+  return parsed.success ? parsed.output[key] : undefined;
 }
 
-export function stringField(value: unknown, key: string) {
-  if (!value || typeof value !== 'object') return undefined;
-  const field = (value as Record<string, unknown>)[key];
-  return typeof field === 'string' ? field : undefined;
+export function objectField(value: UntrustedInput, key: string) {
+  const parsed = v.safeParse(looseObjectSchema, fieldInput(value, key));
+  return parsed.success ? parsed.output : undefined;
 }
 
-export function booleanField(value: unknown, key: string) {
-  if (!value || typeof value !== 'object') return undefined;
-  const field = (value as Record<string, unknown>)[key];
-  return typeof field === 'boolean' ? field : undefined;
+export function stringField(value: UntrustedInput, key: string) {
+  const parsed = v.safeParse(v.string(), fieldInput(value, key));
+  return parsed.success ? parsed.output : undefined;
 }
 
-export function numberField(value: unknown, key: string) {
-  if (!value || typeof value !== 'object') return undefined;
-  const field = (value as Record<string, unknown>)[key];
-  return typeof field === 'number' ? field : undefined;
+export function booleanField(value: UntrustedInput, key: string) {
+  const parsed = v.safeParse(v.boolean(), fieldInput(value, key));
+  return parsed.success ? parsed.output : undefined;
 }
 
-export function arrayField(value: unknown, key: string) {
-  if (!value || typeof value !== 'object') return [];
-  const field = (value as Record<string, unknown>)[key];
-  return Array.isArray(field)
-    ? field.filter((item): item is string => typeof item === 'string')
-    : [];
+export function numberField(value: UntrustedInput, key: string) {
+  const parsed = v.safeParse(v.number(), fieldInput(value, key));
+  return parsed.success ? parsed.output : undefined;
 }
 
-export function numberArrayField(value: unknown, key: string) {
-  if (!value || typeof value !== 'object') return [];
-  const field = (value as Record<string, unknown>)[key];
-  return Array.isArray(field)
-    ? field.filter((item): item is number => typeof item === 'number')
-    : [];
+export function arrayField(value: UntrustedInput, key: string) {
+  const parsed = v.safeParse(v.array(v.string()), fieldInput(value, key));
+  return parsed.success ? parsed.output : [];
+}
+
+export function numberArrayField(value: UntrustedInput, key: string) {
+  const parsed = v.safeParse(v.array(v.number()), fieldInput(value, key));
+  return parsed.success ? parsed.output : [];
 }
 
 export function isAutopilotActionResult(
   value: GitHubPullRequestEventState | AutopilotActionResult,
 ): value is AutopilotActionResult {
-  return (
-    Boolean(value) &&
-    typeof value === 'object' &&
-    'ok' in value &&
-    'action' in value
-  );
+  return v.safeParse(autopilotOutputSchema, value).success;
 }
 
-export function asJsonValue(value: unknown): JsonValue {
-  return value as JsonValue;
-}
+export { serializeJsonValue as asJsonValue };
 
-export function errorMessage(error: unknown) {
-  return error instanceof Error ? error.message : String(error);
+export function errorMessage(error: UntrustedInput) {
+  const instance = v.safeParse(errorInstanceSchema, error);
+  if (instance.success) return instance.output.message;
+  const text = v.safeParse(errorTextSchema, error);
+  if (text.success) return text.output;
+  const object = v.safeParse(errorObjectSchema, error);
+  return object.success ? object.output.message : String(error);
 }

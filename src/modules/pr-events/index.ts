@@ -5,6 +5,7 @@ export type {
   PrWatchEventWatermarkRecord,
   PullRequestTarget,
 } from './schemas';
+export { prEventJsonValueSchema } from './schemas';
 export {
   githubPrEventStateGetAction,
   githubPrFileDiffGetAction,

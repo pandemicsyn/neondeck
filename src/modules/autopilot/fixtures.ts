@@ -31,6 +31,7 @@ import { runApprovedExecution } from '../execution';
 import {
   getGitHubPrBranchPermissions,
   postGitHubPrComment,
+  type PrEventActionResult,
 } from '../pr-events';
 import {
   ensurePreparedDiffForWorktree,
@@ -50,6 +51,7 @@ import {
   gitPushHead,
   gitStatus,
   type GitCommitResult,
+  type GitPushResult,
 } from '../../repo-edit/git';
 import {
   patchRepoFiles,
@@ -80,9 +82,13 @@ import {
 } from '../worktrees';
 const execFileAsync = promisify(execFile);
 import { AutopilotDependencies, autopilotFixtureSchema } from './schemas';
+import { fullGitHubPullRequestEventStateSchema } from './review-support';
 import { stringField } from './utils';
 
-type AutopilotFixture = v.InferOutput<typeof autopilotFixtureSchema>;
+type ParsedAutopilotFixture = v.InferOutput<typeof autopilotFixtureSchema>;
+type AutopilotFixture = Omit<ParsedAutopilotFixture, 'eventStates'> & {
+  eventStates?: GitHubPullRequestEventState[];
+};
 
 let cachedAutopilotFixture:
   { path: string; fixture: AutopilotFixture } | undefined;
@@ -126,7 +132,7 @@ export async function dependenciesWithAutopilotFixture(
             'Autopilot fixture branch permissions require a repo.',
           );
         }
-        if (typeof prNumber !== 'number') {
+        if (prNumber === undefined) {
           throw new Error(
             'Autopilot fixture branch permissions require a PR number.',
           );
@@ -160,15 +166,31 @@ async function readAutopilotFixture(path: string): Promise<AutopilotFixture> {
     return cachedAutopilotFixture.fixture;
   }
 
-  const parsedJson = JSON.parse(await readFile(path, 'utf8')) as unknown;
+  const parsedJson = JSON.parse(await readFile(path, 'utf8'));
   const parsed = v.safeParse(autopilotFixtureSchema, parsedJson);
   if (!parsed.success) {
     throw new Error(
       `Invalid autopilot fixture ${path}: ${v.summarize(parsed.issues)}`,
     );
   }
-  cachedAutopilotFixture = { path, fixture: parsed.output };
-  return parsed.output;
+  const eventStates = v.safeParse(
+    v.object({
+      eventStates: v.optional(v.array(fullGitHubPullRequestEventStateSchema)),
+    }),
+    parsedJson,
+  );
+  if (!eventStates.success) {
+    throw new Error(
+      `Invalid autopilot fixture ${path}: ${v.summarize(eventStates.issues)}`,
+    );
+  }
+  const { eventStates: ignoredEventStates, ...fixtureFields } = parsed.output;
+  const fixture: AutopilotFixture = fixtureFields;
+  if (eventStates.output.eventStates) {
+    fixture.eventStates = eventStates.output.eventStates;
+  }
+  cachedAutopilotFixture = { path, fixture };
+  return fixture;
 }
 
 function findFixturePullRequest(
@@ -226,7 +248,7 @@ function findFixtureFailingChecks(
       `Autopilot fixture is missing failing check facts for ${fullName}@${ref}.`,
     );
   }
-  return checks.checks as GitHubFailingCheckFact[];
+  return checks.checks;
 }
 
 function findFixtureEventState(
@@ -244,14 +266,14 @@ function findFixtureEventState(
       `Autopilot fixture is missing event state for ${fullName}#${number}.`,
     );
   }
-  return state as GitHubPullRequestEventState;
+  return state;
 }
 
 function fixtureBranchPermissionResult(
   fixture: AutopilotFixture,
   repo: string,
   prNumber: number,
-) {
+): PrEventActionResult {
   const permissions = fixture.branchPermissions?.find(
     (candidate) => candidate.repo === repo && candidate.prNumber === prNumber,
   );
@@ -261,6 +283,9 @@ function fixtureBranchPermissionResult(
     );
   }
   const [owner, name] = repo.split('/');
+  if (!owner || !name) {
+    throw new Error(`Autopilot fixture requires an owner/repo name: ${repo}.`);
+  }
   return {
     ok: true,
     action: 'github_pr_branch_permissions_get',
@@ -270,10 +295,31 @@ function fixtureBranchPermissionResult(
       target: { repoFullName: repo, owner, repo: name, number: prNumber },
       branchPermissions: permissions.branchPermissions,
     },
-  } as never;
+  };
 }
 
-function fixtureExecutionResult(fixture: AutopilotFixture, input: unknown) {
+type FixtureExecutionInput = Parameters<
+  NonNullable<AutopilotDependencies['runExecution']>
+>[0];
+type FixtureExecutionResult = {
+  ok: boolean;
+  action: 'execution_run';
+  changed: boolean;
+  message: string;
+  result: { exitCode: number };
+  requires: string[];
+};
+type FixturePrCommentInput = Parameters<
+  NonNullable<AutopilotDependencies['postPullRequestComment']>
+>[0];
+type FixturePrCommentResult = Awaited<
+  ReturnType<NonNullable<AutopilotDependencies['postPullRequestComment']>>
+>;
+
+function fixtureExecutionResult(
+  fixture: AutopilotFixture,
+  input: FixtureExecutionInput,
+): FixtureExecutionResult {
   const command = stringField(input, 'command') ?? '';
   const configured =
     fixture.execution?.commands?.[command] ?? fixture.execution?.default ?? {};
@@ -288,10 +334,13 @@ function fixtureExecutionResult(fixture: AutopilotFixture, input: unknown) {
       (ok ? 'Fixture execution passed.' : 'Fixture execution failed.'),
     result: { exitCode: configured.exitCode ?? (ok ? 0 : 1) },
     requires,
-  } as never;
+  };
 }
 
-function fixturePrCommentResult(fixture: AutopilotFixture, input: unknown) {
+function fixturePrCommentResult(
+  fixture: AutopilotFixture,
+  input: FixturePrCommentInput,
+): FixturePrCommentResult {
   const body = stringField(input, 'body') ?? '';
   return (
     fixture.comments?.[0] ?? {
@@ -310,7 +359,7 @@ async function fixturePushGit(
   fixture: AutopilotFixture,
   cwd: string,
   input: { remote: string; branch: string; force?: boolean },
-) {
+): Promise<GitPushResult> {
   const fullName = fullNameFromGitHubRemote(input.remote);
   const remote = fixture.pushRemotes?.find(
     (candidate) => candidate.repo === fullName,
@@ -332,7 +381,7 @@ async function fixturePushGit(
     branch: input.branch,
     force: Boolean(input.force),
     stdout: '',
-  } as never;
+  };
 }
 
 function fullNameFromGitHubRemote(remote: string) {

@@ -135,16 +135,21 @@ export async function completeAutopilotWatchIfTerminal(
           detachedWorktreeId = worktree.id;
           cleanupRecovery = `Managed worktree ${worktree.id} held an unpushed prepared commit and was retained without cleanup confirmation, then detached for manual recovery.`;
         } else {
-          cleanup = await (options.cleanup ?? cleanupWorktrees)(
-            {
-              worktreeId: worktree.id,
-              force: true,
-              ...(options.explicitStop && options.confirmPreparedDiff === true
-                ? { confirmPreparedDiff: true }
-                : {}),
-            },
-            paths,
-          );
+          if (options.explicitStop && options.confirmPreparedDiff === true) {
+            cleanup = await (options.cleanup ?? cleanupWorktrees)(
+              {
+                worktreeId: worktree.id,
+                force: true,
+                confirmPreparedDiff: true,
+              },
+              paths,
+            );
+          } else {
+            cleanup = await (options.cleanup ?? cleanupWorktrees)(
+              { worktreeId: worktree.id, force: true },
+              paths,
+            );
+          }
           const results = 'results' in cleanup ? cleanup.results : [];
           const outcome = results.find(
             (result) => result.worktreeId === worktree.id,
