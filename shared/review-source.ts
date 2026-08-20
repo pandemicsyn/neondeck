@@ -1,11 +1,7 @@
 export const reviewSourceSchemaVersion = 2 as const;
 
 export type ReviewSourceKind =
-  | 'github-pr'
-  | 'prepared-diff'
-  | 'kilo-result'
-  | 'skill-patch'
-  | 'repo-edit-event';
+  'github-pr' | 'prepared-diff' | 'skill-patch' | 'repo-edit-event';
 
 export type ReviewRevisionKind =
   'git-commit' | 'worktree-diff' | 'retained-patch';

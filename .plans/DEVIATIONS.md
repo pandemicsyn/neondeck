@@ -672,3 +672,10 @@ Use this format:
 - Verification detail: The sequential closure fixture does run the production deterministic review fixer twice against a real temporary Git repository and managed worktree, including a local commit on the first turn, a persisted config-history plus repo-policy downgrade, and an uncommitted prepared-diff update on the second turn. Only the live Flue process/provider boundary remains simulated by accepted dispatch receipts and reconstructed dependency closures.
 - Verification limitation: The compaction unit test verifies the configured `reserveTokens`/`keepRecentTokens` relationship and the version-matched Flue contract only. It does not run a live model/provider through enough canonical history to empirically observe reconstructed-input compaction; that remains part of Package 8's live Flue product-path smoke once the long-suite prohibition is lifted.
 - Follow-up: Package 5 must consume `fix-prepared` owner settlements for verification/approval/push/comment/cleanup. Package 8 retains the real process-restart and live Flue product-path smoke obligations when the long-suite prohibition is lifted.
+
+## 2026-08-19 - Remove Delegated Kilo Worker Direction
+
+- Roadmap item: Phase 21 / KiloCode handoff runner and related delegated-task direction.
+- Decision: Reverse the delegated-Kilo-worker product direction. Remove Phase 21, its active handoff research and plan index entry, Kilo task/operator guidance, and public delegated-task setup and troubleshooting documentation. Retain KiloCode only as an allowlisted model provider, including its credential and model configuration references. Generic external-agent handoff remains supported independently of Kilo delegation.
+- Reason: Neondeck's product boundary is a single Neon runtime with typed local services, managed worktrees, and bounded Autopilot behavior. A separate delegated Kilo worker lane adds a second orchestration and task-state model without advancing that boundary.
+- Follow-up: None.

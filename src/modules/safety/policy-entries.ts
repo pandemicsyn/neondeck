@@ -230,12 +230,6 @@ export const entries: SafetyPolicyEntry[] = [
     readOnly,
     'Reads one bounded process-ephemeral review surface snapshot and its associated local findings without patch bodies.',
   ),
-  tool(
-    'neondeck_kilo_tasks_lookup',
-    'Read Kilo handoff tasks',
-    readOnly,
-    'Reads persisted Kilo handoff task metadata without starting or cancelling work.',
-  ),
   action(
     'neondeck_execution_policy_check',
     'Check host execution policy',
@@ -564,16 +558,6 @@ export const entries: SafetyPolicyEntry[] = [
         'learning_reviews/learning_candidates/memories/memory_events/config_history/activity_events',
     },
     'Reviews one immutable evidence snapshot and applies or proposes memory and skill changes only through typed, audited Neondeck policy actions.',
-  ),
-  action(
-    'neondeck_autopilot_ci_fix_run',
-    'Run bounded PR CI fix',
-    {
-      ...hostExecution,
-      auditTarget:
-        'reports/worktrees/worktree_locks/kilo_tasks/kilo_task_events/prepared_diffs/notifications/workflow_summaries/activity_events',
-    },
-    'Creates a local CI dossier report, prepares a managed PR worktree, and starts a bounded Kilo fix task. It may create a local prepared diff, but it never pushes, comments, or submits a GitHub review.',
   ),
   action(
     'neondeck_config_add_repo',
@@ -1201,129 +1185,6 @@ export const entries: SafetyPolicyEntry[] = [
     'Releases a lock and records the final bounded-work status.',
   ),
   action(
-    'neondeck_kilo_task_start',
-    'Start Kilo handoff',
-    {
-      ...hostExecution,
-      auditTarget: 'kilo_tasks/kilo_task_events',
-    },
-    'Starts Kilo only after an explicit user handoff request and only inside a declared repo or Neondeck-managed worktree.',
-  ),
-  action(
-    'neondeck_kilo_task_status',
-    'Read Kilo task status',
-    readOnly,
-    'Reads one persisted Kilo task status record.',
-  ),
-  action(
-    'neondeck_kilo_task_events',
-    'Read Kilo task events',
-    readOnly,
-    'Reads captured Kilo stdout/stderr and JSON event summaries.',
-  ),
-  action(
-    'neondeck_kilo_task_abort',
-    'Abort Kilo handoff',
-    {
-      ...destructiveMutation,
-      auditTarget: 'kilo_tasks/kilo_task_events',
-    },
-    'Terminates a running delegated Kilo process and marks the task cancelled.',
-  ),
-  action(
-    'neondeck_kilo_task_sessions',
-    'Read Kilo task sessions',
-    readOnly,
-    'Reads root and child Kilo session ids linked to one task.',
-  ),
-  action(
-    'neondeck_kilo_task_diff',
-    'Read Kilo task diff',
-    readOnly,
-    'Reads a git diff summary for the workspace used by a Kilo task.',
-  ),
-  action(
-    'neondeck_kilo_task_reconcile',
-    'Reconcile Kilo task',
-    {
-      ...safeMutation,
-      auditTarget: 'kilo_tasks/kilo_task_events/worktree_events',
-    },
-    'Reconciles persisted Kilo task state after restart by inspecting detached process, session, and diff facts.',
-  ),
-  action(
-    'neondeck_kilo_sessions_search',
-    'Search Kilo sessions',
-    readOnly,
-    'Searches linked task metadata and Kilo CLI session metadata.',
-  ),
-  action(
-    'neondeck_kilo_session_read',
-    'Read Kilo session',
-    readOnly,
-    'Reads normalized Kilo session metadata without reading storage directly.',
-  ),
-  action(
-    'neondeck_kilo_session_messages',
-    'Read Kilo session messages',
-    readOnly,
-    'Audits transcript-read intent; the CLI MVP reports transcript adapter availability.',
-  ),
-  action(
-    'neondeck_kilo_session_children',
-    'Read Kilo child sessions',
-    readOnly,
-    'Reads child session ids captured from Kilo task events.',
-  ),
-  action(
-    'neondeck_kilo_session_todos',
-    'Read Kilo todos',
-    readOnly,
-    'Reports Kilo todo adapter availability through the typed Kilo surface.',
-  ),
-  action(
-    'neondeck_kilo_session_diff',
-    'Read Kilo session diff',
-    readOnly,
-    'Reads the linked task workspace diff summary for a Kilo session.',
-  ),
-  action(
-    'neondeck_kilo_session_summarize',
-    'Summarize Kilo session',
-    {
-      ...safeMutation,
-      auditTarget: 'kilo_tasks/kilo_task_events',
-    },
-    'Summarizes linked Kilo session metadata and recent task events, persisting the bounded summary on the task when available.',
-  ),
-  action(
-    'neondeck_kilo_result_review',
-    'Review Kilo result',
-    {
-      ...safeMutation,
-      auditTarget: 'kilo_result_state/kilo_result_events/prepared_diffs',
-    },
-    'Classifies a Kilo-produced diff with deterministic facts and autopilot policy, then records review state.',
-  ),
-  action(
-    'neondeck_kilo_result_verify',
-    'Verify Kilo result',
-    {
-      ...hostExecution,
-      auditTarget: 'kilo_result_state/kilo_result_events/execution_approvals',
-    },
-    'Runs checks for a Kilo task worktree through the Neondeck execution approval policy.',
-  ),
-  action(
-    'neondeck_kilo_result_promote',
-    'Promote Kilo result',
-    {
-      ...safeMutation,
-      auditTarget: 'kilo_result_state/kilo_result_events',
-    },
-    'Records the safe promotion admission decision without committing, pushing, or commenting.',
-  ),
-  action(
     'neondeck_skills_reload',
     'Reload runtime skills',
     {
@@ -1553,16 +1414,6 @@ export const entries: SafetyPolicyEntry[] = [
     'Report metadata API',
     readOnly,
     'Reads one local report metadata record by durable report id for dashboard and local clients.',
-  ),
-  route(
-    '/api/reports/:id/stage-docs-fix',
-    'Stage docs drift fix API',
-    {
-      ...hostExecution,
-      auditTarget:
-        'reports/worktrees/worktree_locks/kilo_tasks/kilo_task_events',
-    },
-    'Starts a bounded docs-only Kilo handoff from a docs-drift report. It creates local worktree state only and never pushes or comments.',
   ),
   route(
     '/api/scheduled-tasks',
@@ -2084,16 +1935,6 @@ export const entries: SafetyPolicyEntry[] = [
       auditTarget: 'config_history',
     },
     'GET reads full per-mode prompt templates; POST replaces one template or resets it to the built-in default.',
-  ),
-  route(
-    '/api/kilo/*',
-    'Kilo handoff API',
-    {
-      ...hostExecution,
-      auditTarget:
-        'kilo_tasks/kilo_task_events/kilo_result_state/kilo_result_events',
-    },
-    'Starts, reads, searches, cancels, reviews, verifies, and records promotion admission for explicit Kilo handoff tasks through app-owned SQLite state.',
   ),
   route(
     '/api/handoff/*',

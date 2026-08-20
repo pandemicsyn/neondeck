@@ -68,14 +68,6 @@ export async function ensurePreparedDiffForWorktree(
   const shouldResetDecisionState = Boolean(
     existing && input.resetDecisionState,
   );
-  if (
-    existing?.status === 'abandoned' &&
-    shouldResetDecisionState &&
-    shouldKeepAbandonedRevision(existing.summary, input.createdBy)
-  ) {
-    updateWorktreeLifecycle(existing.worktreeId, 'cleanup-pending', paths);
-    return existing;
-  }
   if (existing && shouldResetDecisionState) {
     supersedeApprovals(
       existing.id,
@@ -690,22 +682,8 @@ function failure(action: string, message: string, code: string) {
   };
 }
 
-function shouldKeepAbandonedRevision(
-  summary: unknown,
-  createdBy: string | undefined,
-) {
-  if (!createdBy?.startsWith('kilo:')) return false;
-  const taskId = createdBy.slice('kilo:'.length);
-  const run = objectField(objectField(summary).revisionRun);
-  return stringField(run.kiloTaskId) === taskId;
-}
-
 function objectField(value: unknown): Record<string, unknown> {
   return value && typeof value === 'object' && !Array.isArray(value)
     ? (value as Record<string, unknown>)
     : {};
-}
-
-function stringField(value: unknown) {
-  return typeof value === 'string' && value.trim() ? value : undefined;
 }

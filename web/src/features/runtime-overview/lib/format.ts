@@ -1,6 +1,5 @@
 import type {
   ExecutionApproval,
-  KiloTaskRecord,
   McpApproval,
   McpServer,
   NotificationRecord,
@@ -68,28 +67,6 @@ export function repoEditEventClass(event: RepoEditEvent) {
     return 'border-accent text-accent';
   }
   if (event.status === 'preview') return 'border-violet text-violet';
-  return '';
-}
-
-export function kiloTaskStatusClass(status: KiloTaskRecord['status']) {
-  if (
-    status === 'succeeded' ||
-    status === 'ready-to-verify' ||
-    status === 'ready-to-push'
-  ) {
-    return 'border-primary text-primary';
-  }
-  if (status === 'failed' || status === 'unknown') {
-    return 'border-accent text-accent';
-  }
-  if (
-    status === 'needs-reconcile' ||
-    status === 'needs-review' ||
-    status === 'discarded'
-  ) {
-    return 'border-violet text-violet';
-  }
-  if (status === 'running') return 'border-primary text-primary';
   return '';
 }
 

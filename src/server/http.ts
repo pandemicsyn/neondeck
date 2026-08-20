@@ -33,19 +33,6 @@ export function queryBoolean(value: string | undefined) {
   return undefined;
 }
 
-export function kiloSessionQuery(c: Context) {
-  return {
-    limit: queryNumber(c.req.query('limit')),
-    offset: queryNumber(c.req.query('offset')),
-    maxBytes: queryNumber(c.req.query('maxBytes')),
-    includeFullTranscript: queryBoolean(c.req.query('includeFullTranscript')),
-    includeToolOutput: queryBoolean(c.req.query('includeToolOutput')),
-    includeDiff: queryBoolean(c.req.query('includeDiff')),
-    requesterSurface: c.req.query('requesterSurface') ?? 'dashboard',
-    readReason: c.req.query('readReason') ?? 'dashboard-kilo-session-read',
-  };
-}
-
 export function preparedDiffHttpStatus(result: {
   ok: boolean;
   error?: { code?: string };

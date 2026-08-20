@@ -7,7 +7,6 @@ import {
   resolveMcpApproval,
   startMcpLogin,
   updateMcpApprovalMode,
-  type KiloTaskRecord,
   type McpApproval,
   type McpServer,
   MemoryRecord,
@@ -25,7 +24,6 @@ import {
 } from '../../../api';
 import {
   formatInterval,
-  kiloTaskStatusClass,
   mcpApprovalClass,
   mcpStatusClass,
   relativeTime,
@@ -34,12 +32,6 @@ import {
   shortPath,
   worktreeStatusClass,
 } from '../lib/format';
-
-const KiloTaskDiffReview = lazy(() =>
-  import('../../diff-viewer/surfaces').then((module) => ({
-    default: module.KiloTaskDiffReview,
-  })),
-);
 
 const RepoEditEventDiffReview = lazy(() =>
   import('../../diff-viewer/surfaces').then((module) => ({
@@ -391,133 +383,6 @@ export function RepoEditEventRow({ event }: { event: RepoEditEvent }) {
             <RepoEditEventDiffReview event={event} />
           </Suspense>
         </div>
-      ) : null}
-    </article>
-  );
-}
-
-export function KiloTaskRow({ task }: { task: KiloTaskRecord }) {
-  const [isViewingDiff, setIsViewingDiff] = useState(false);
-  const diffPanelId = useId();
-  const changed =
-    task.diff && task.diff.ok
-      ? `${task.diff.fileCount} files +${task.diff.additions} -${task.diff.deletions}`
-      : task.diff?.error
-        ? task.diff.error
-        : 'diff not read';
-  const childLabel =
-    task.childSessionIds.length > 0
-      ? `${task.childSessionIds.length} child session${task.childSessionIds.length === 1 ? '' : 's'}`
-      : 'no child sessions';
-  const sessionLabel = task.rootSessionId ?? 'session pending';
-  const notificationFacts = task.notificationFacts ?? [];
-  const latestNotification = notificationFacts[0];
-  const placeholders = task.resultPlaceholders ?? [];
-
-  return (
-    <article className="border border-line bg-soft px-2.5 py-2">
-      <div className="flex items-start justify-between gap-2">
-        <div className="min-w-0">
-          <p className="truncate font-mono text-[11px] text-ink">
-            {task.repoId} · {task.title}
-          </p>
-          <p className="mt-0.5 line-clamp-2 text-[10.5px] leading-4 text-muted">
-            {sessionLabel} · {childLabel} · {changed}
-          </p>
-        </div>
-        <Badge className={kiloTaskStatusClass(task.status)}>
-          {task.status}
-        </Badge>
-      </div>
-      <div className="mt-1.5 flex justify-between gap-2 font-mono text-[10px] text-muted">
-        <span className="truncate">
-          {task.worktreeId
-            ? `worktree ${task.worktreeId}`
-            : shortPath(task.cwd)}
-        </span>
-        <span className="flex shrink-0 items-center gap-1.5">
-          <SessionReferenceButton
-            kind="task"
-            linkedRepoId={task.repoId}
-            linkedTaskId={task.id}
-            summary={`${task.title}: Kilo task ${task.status}. ${task.summary ?? changed}.`}
-            title={`Kilo ${task.title}`}
-            uiMetadata={{
-              source: 'kilo-task',
-              taskId: task.id,
-              repoFullName: task.repoFullName,
-              worktreeId: task.worktreeId,
-              rootSessionId: task.rootSessionId,
-              childSessionIds: task.childSessionIds,
-              status: task.status,
-            }}
-          />
-          <Button
-            aria-controls={diffPanelId}
-            aria-expanded={isViewingDiff}
-            className="min-h-[24px] px-2 py-0 font-mono text-[10px]"
-            onClick={() => setIsViewingDiff((current) => !current)}
-            type="button"
-          >
-            {isViewingDiff ? 'hide diff' : 'view diff'}
-          </Button>
-          {relativeTime(task.updatedAt)}
-        </span>
-      </div>
-      {isViewingDiff ? (
-        <div className="mt-1.5" id={diffPanelId}>
-          <Suspense fallback={<MiniEmpty label="Loading diff viewer." />}>
-            <KiloTaskDiffReview task={task} />
-          </Suspense>
-        </div>
-      ) : null}
-      <div className="mt-1.5 grid grid-cols-2 gap-1.5 font-mono text-[10px] text-muted">
-        <div className="border border-line bg-field px-2 py-1">
-          verify {task.verificationState ?? 'not-run'}
-        </div>
-        <div className="border border-line bg-field px-2 py-1">
-          approvals {task.pendingApprovals?.length ?? 0}
-        </div>
-      </div>
-      <div className="mt-1.5 grid grid-cols-2 gap-1.5 font-mono text-[10px] text-muted">
-        <div className="border border-line bg-field px-2 py-1">
-          review {task.reviewClassification ?? 'pending'}
-        </div>
-        <div className="border border-line bg-field px-2 py-1">
-          promote {task.promotionState ?? 'not-requested'}
-        </div>
-      </div>
-      {latestNotification || placeholders.length > 0 ? (
-        <div className="mt-1.5 space-y-1">
-          {latestNotification ? (
-            <p className="line-clamp-2 border border-line bg-field px-2 py-1 text-[10px] leading-4 text-muted">
-              notify {latestNotification.state}: {latestNotification.message}
-            </p>
-          ) : null}
-          {placeholders.slice(0, 2).map((placeholder) => (
-            <p
-              className="line-clamp-2 border border-line bg-field px-2 py-1 text-[10px] leading-4 text-muted"
-              key={`${placeholder.type}:${placeholder.workflow}`}
-            >
-              {placeholder.type} {placeholder.status}: {placeholder.reason}
-            </p>
-          ))}
-        </div>
-      ) : null}
-      {task.childSessionIds.length > 0 ? (
-        <div className="mt-1.5 flex flex-wrap gap-1">
-          {task.childSessionIds.slice(0, 3).map((id) => (
-            <Badge key={id}>child {id}</Badge>
-          ))}
-          {task.childSessionIds.length > 3 ? (
-            <Badge>+{task.childSessionIds.length - 3}</Badge>
-          ) : null}
-        </div>
-      ) : null}
-      {task.error ? (
-        <p className="mt-1.5 line-clamp-2 text-[10.5px] leading-4 text-accent">
-          {task.error}
-        </p>
       ) : null}
     </article>
   );

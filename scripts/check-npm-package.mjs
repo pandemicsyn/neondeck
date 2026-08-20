@@ -48,8 +48,6 @@ for (const requiredPath of [
   'config/dashboard.schema.json',
   'dist/server.mjs',
   'dist/skills/neon-pr-review/SKILL.md',
-  'dist/skills/neon-ci-fix/SKILL.md',
-  'dist/skills/neon-docs-fix/SKILL.md',
   'dist/skills/neon-issue-triage/SKILL.md',
   'web/dist/index.html',
   'web/dist/manifest.webmanifest',

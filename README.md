@@ -10,7 +10,7 @@ A note from me, the human:
 This thing does 3 things
 
 1. Helps me review _alot_ of PRs without having to ever open up Github.
-2. Manages my PR's for me. Kilo/codex hand off changes to Neon, and neon takes care of them through merge. Reviews are basically the only time I look at code at this point.
+2. Manages my PR's for me. Neon watches changes, prepares fixes, and keeps them moving through merge. Reviews are basically the only time I look at code at this point.
 3. Sends me a morning briefing to help me keep up with the stuff all my EU coworkers have shipped.
 
 ## From the robots
@@ -54,8 +54,8 @@ Neon watches your PRs, prepares fixes, and keeps things moving.
   discovers the merge-base diff itself, can inspect bounded patches, raw files,
   hunk indexes, history, and blame at the reviewed revisions, and keeps a durable
   chat available for follow-up questions.
-- **Handoff, both directions.** Delegate work to agents like Kilo or Codex, then
-  let the finished PR come back to Neon for checks and deployment follow-through.
+- **Handoff back to Neon.** Local agents and hooks can register finished PR work
+  with Neon for review and deployment follow-through.
 - **Conversational briefings and scheduled instructions.** Neon grounds a
   durable Morning Briefing conversation in an inspectable local snapshot, then
   can enrich it with any relevant configured MCP source under normal login and

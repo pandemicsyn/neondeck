@@ -21,7 +21,6 @@ import {
 import {
   ActiveSubmissionRow,
   JobRow,
-  KiloTaskRow,
   MemoryRow,
   McpApprovalRow,
   McpServerRow,
@@ -62,22 +61,6 @@ export function RuntimeView({
     (approval) => approval.status === 'pending',
   );
   const recentMcpApprovals = snapshot.mcpApprovals.approvals.slice(0, 5);
-  const activeKiloTasks = snapshot.kiloTasks.tasks.filter((task) =>
-    [
-      'running',
-      'needs-reconcile',
-      'needs-review',
-      'ready-to-verify',
-      'ready-to-push',
-      'unknown',
-    ].includes(task.status),
-  );
-  const recentKiloTasks = [
-    ...activeKiloTasks,
-    ...snapshot.kiloTasks.tasks.filter(
-      (task) => !activeKiloTasks.some((active) => active.id === task.id),
-    ),
-  ].slice(0, 5);
   const healthByRepoId = new Map(
     snapshot.repoHealth.repos.map((repo) => [repo.id, repo]),
   );
@@ -314,20 +297,6 @@ export function RuntimeView({
               ))}
               {recentExecutionApprovals.length === 0 ? (
                 <MiniEmpty label="No execution approvals recorded." />
-              ) : null}
-            </div>
-          </RuntimeSection>
-          <RuntimeSection
-            count={activeKiloTasks.length}
-            title="KILO WORK"
-            tone={activeKiloTasks.length > 0 ? 'accent' : 'violet'}
-          >
-            <div className="space-y-1.5">
-              {recentKiloTasks.map((task) => (
-                <KiloTaskRow key={task.id} task={task} />
-              ))}
-              {recentKiloTasks.length === 0 ? (
-                <MiniEmpty label="No delegated Kilo work recorded." />
               ) : null}
             </div>
           </RuntimeSection>

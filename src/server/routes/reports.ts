@@ -5,10 +5,8 @@ import {
   withReportThemeBootstrap,
 } from '../../../shared/theme-bootstrap';
 import { REPORT_DECK_CONTROLLER_SOURCE } from '../../lib/report-deck-controller';
-import { stageDocsDriftFix } from '../../modules/docs-drift';
 import { listReports, readReport, readReportHtml } from '../../modules/reports';
 import type { RuntimePaths } from '../../runtime-home';
-import { safeJsonObject } from '../http';
 
 export const REPORT_DECK_CONTROLLER_HASH = createHash('sha256')
   .update(REPORT_DECK_CONTROLLER_SOURCE)
@@ -110,14 +108,6 @@ export function createReportApiRoutes(paths: RuntimePaths) {
         400,
       );
     }
-  });
-
-  routes.post('/reports/:id/stage-docs-fix', async (c) => {
-    const result = await stageDocsDriftFix(
-      { ...(await safeJsonObject(c)), reportId: c.req.param('id') },
-      paths,
-    );
-    return c.json(result, result.ok ? 200 : 400);
   });
 
   return routes;

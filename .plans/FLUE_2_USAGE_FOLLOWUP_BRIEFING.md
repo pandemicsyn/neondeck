@@ -278,7 +278,7 @@ symbol scans, and focused regression tests.
 ### Keep Product Orchestration In Neondeck
 
 Morning Briefing runs, scheduled tasks, watches, review attempts, learning
-decisions, and Kilo operations need product-specific inspection, policy,
+decisions need product-specific inspection, policy,
 reconciliation, and audit. They should remain application-owned.
 
 Use a Flue durable Tool only for a short checkpointed sequence inside one agent

@@ -77,8 +77,7 @@ pr-autopilot-owner</code></pre>
           <code>pr-autopilot-owner</code> agent per PR rather than a chain of transition
           jobs. Every fixing turn runs in that PR's managed-worktree coding workspace;
           current mode and turn source add or withhold the separate push and PR-response
-          tools. The manual <code>/fix-ci</code> command remains a separate app-owned
-          operation that prepares a CI dossier and may start a bounded Kilo task.
+          tools.
         </p>
         <p>
           That owner resolves the current display-assistant model and thinking
@@ -134,10 +133,10 @@ pr-autopilot-owner</code></pre>
           not copied wholesale into the prompt, and a large generated-file patch no
           longer disables anchoring for unrelated files. A persistent reviewer conversation
           can inspect the same saved revision for follow-up questions without gaining
-          mutation or GitHub-delivery authority. <code>/fix-ci</code> writes a CI
-          failure dossier and, when a bounded Kilo run creates commits, returns through
-          the prepared diff review loop. <code>/explain-ci --report</code> writes
-          the dossier without attempting a fix.
+          mutation or GitHub-delivery authority. <code
+            >/explain-ci --report</code
+          >
+          writes a CI dossier without attempting a fix.
         </p>
         <p>
           The initial review and follow-up reviewer use separate, complete

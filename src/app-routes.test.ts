@@ -162,10 +162,6 @@ describe('app API safety routes', () => {
           primitive: 'tool',
         }),
         expect.objectContaining({
-          id: 'neondeck_autopilot_ci_fix_run',
-          primitive: 'action',
-        }),
-        expect.objectContaining({
           id: 'neondeck_autopilot_watch_status',
           primitive: 'action',
         }),
@@ -261,21 +257,6 @@ describe('app API safety routes', () => {
     );
 
     expect(response.status).toBe(404);
-  });
-
-  it('exposes Kilo summarization through the app-owned API', async () => {
-    const response = await app.request(
-      'http://localhost/api/kilo/sessions/summarize',
-      {
-        method: 'POST',
-        headers: { host: 'localhost', 'content-type': 'application/json' },
-        body: '{}',
-      },
-    );
-    const body = (await response.json()) as { action: string };
-
-    expect(response.status).toBe(404);
-    expect(body.action).toBe('summarize_kilo_session');
   });
 
   it('returns prepared-diff API validation errors as bad requests', async () => {

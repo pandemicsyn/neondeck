@@ -18,7 +18,6 @@ import {
   devDoctorCommand,
   draftPrDescriptionCommand,
   explainCiCommand,
-  fixCiCommand,
   memoryCommand,
   preparePrCommand,
   reasoningCommand,
@@ -99,10 +98,6 @@ async function executeCommand(
 
   if (command.name === 'review-pr') {
     return reviewPrCommand(command, paths, dependencies);
-  }
-
-  if (command.name === 'fix-ci') {
-    return fixCiCommand(command, paths, dependencies);
   }
 
   if (command.name === 'explain-ci') {

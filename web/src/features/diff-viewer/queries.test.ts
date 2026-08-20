@@ -54,7 +54,7 @@ describe('diff viewer revision query families', () => {
     queryClient.clear();
   });
 
-  it('invalidates only Kilo metadata across a 305-file refresh and retains cached patch bodies', async () => {
+  it('invalidates managed-worktree metadata without invalidating cached patch bodies', async () => {
     const queryClient = new QueryClient();
     const metadataKey = diffViewerQueryKeys.repoDiff({
       repoId: 'repo-1',

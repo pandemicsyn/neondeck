@@ -177,16 +177,3 @@ export const defaultAutopilotConcurrency: AutopilotConcurrencyPolicy = {
   singleMutationPerPr: true,
   localExecutionLimit: 1,
 };
-
-export const autopilotWorkflowNames = new Set([
-  'fix-pr-ci',
-  'fix_pr_ci',
-  'ci-fix-run',
-  'ci_fix_run',
-]);
-export const mutationWorkflowNames = new Set([
-  'fix-pr-ci',
-  'fix_pr_ci',
-  'ci-fix-run',
-  'ci_fix_run',
-]);

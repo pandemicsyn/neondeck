@@ -2,7 +2,7 @@ import { defineTool } from '@flue/runtime';
 import * as v from 'valibot';
 import { listWorkflowSummaries } from '../app-state';
 import { runNeonCommand } from './runner';
-import { parseNeonCommand, supportedCommands } from './registry';
+import { supportedCommands } from './registry';
 import {
   commandActionOutputSchema,
   commandRunInputSchema,
@@ -18,25 +18,9 @@ export const commandRunAction = defineTool({
   async run({ data: input, log }) {
     log.info('Neon command requested', { command: input.command });
 
-    const parsed = parseNeonCommand(input.command);
-    if (parsed.ok && modelCallableCommandDenylist.has(parsed.command.name)) {
-      return {
-        output: {
-          ok: false,
-          command: parsed.command.name,
-          input: input.command,
-          status: 'failed' as const,
-          message: `${parsed.command.raw} starts a host-executing app operation and cannot run through model-callable neondeck_command_run. Use the dashboard control or another direct human admission surface.`,
-          requires: ['humanOperationAdmission'],
-        },
-      };
-    }
-
     return { output: await runCommandAction(input, log) };
   },
 });
-
-const modelCallableCommandDenylist = new Set(['fix-ci']);
 
 async function runCommandAction(
   input: v.InferOutput<typeof commandRunInputSchema>,

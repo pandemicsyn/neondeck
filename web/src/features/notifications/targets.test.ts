@@ -40,15 +40,6 @@ describe('notification target resolution', () => {
       },
     ],
     [
-      'Kilo task',
-      note({ source: 'kilo', data: { taskId: 'task-1' } }),
-      {
-        kind: 'plugin',
-        pluginId: 'runtime-overview',
-        label: 'Open tasks',
-      },
-    ],
-    [
       'briefing session',
       note({ source: 'briefing', data: { sessionId: 'session-1' } }),
       { kind: 'session', sessionId: 'session-1', label: 'Open session' },

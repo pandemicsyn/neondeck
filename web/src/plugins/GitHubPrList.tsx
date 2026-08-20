@@ -3,14 +3,11 @@ import { lazy, Suspense, useId, useState } from 'react';
 import {
   getPrWatches,
   getGitHubPullRequests,
-  getOperationSummaries,
   getRepoRegistry,
-  neonCommandRunId,
   runNeonCommand,
   startPrReview,
   type GitHubPullRequest,
   type ActivityObservability,
-  type WorkflowSummaryResponse,
 } from '../api';
 import { SessionReferenceButton } from '../components/SessionReferenceButton';
 import { StopPrWatchButton } from '../components/StopPrWatchButton';
@@ -236,7 +233,6 @@ function PrRow({
             }}
           />
           <NeonReviewButton item={item} />
-          {isCiFixCandidate(item) ? <FixCiButton item={item} /> : null}
           <WatchPrButton item={item} />
           <a
             className="inline-flex min-h-[28px] shrink-0 items-center border border-line px-2 py-1 text-muted hover:border-primary hover:text-primary focus:outline-none focus:ring-1 focus:ring-primary"
@@ -302,147 +298,6 @@ function NeonReviewButton({ item }: { item: GitHubPullRequest }) {
           : neonReviewActionLabel()}
     </Button>
   );
-}
-
-function FixCiButton({ item }: { item: GitHubPullRequest }) {
-  const queryClient = useQueryClient();
-  const mutation = useMutation({
-    mutationFn: async () => {
-      const result = await runNeonCommand({
-        command: `/fix-ci ${item.repo}#${item.number}`,
-        surface: 'dashboard',
-      });
-      if (!result.ok) throw new Error(result.message);
-      const runId = neonCommandRunId(result);
-      if (!runId) throw new Error('CI fix admission returned no operation id.');
-      return {
-        runId,
-        ref: `${item.repo}#${item.number}`,
-      } satisfies FixCiWorkflowAdmission;
-    },
-    onSuccess(run) {
-      void queryClient.invalidateQueries({
-        queryKey: queryKeys.activityObservability,
-      });
-      void queryClient.invalidateQueries({
-        queryKey: queryKeys.operationSummaries,
-      });
-      void queryClient.invalidateQueries({ queryKey: queryKeys.reports });
-      scheduleCiFixCompletionRefresh(queryClient, run.runId);
-    },
-  });
-
-  return (
-    <Button
-      className="min-h-[28px] shrink-0 border-line bg-transparent px-2 py-1 text-[10px] text-muted"
-      disabled={mutation.isPending}
-      onClick={() => mutation.mutate()}
-      title={
-        mutation.error
-          ? queryErrorMessage(mutation.error)
-          : mutation.data
-            ? `Queued CI fix workflow run ${mutation.data.runId}. Reports and prepared-diff state will refresh when the run completes.`
-            : 'Create a CI dossier and start a bounded local fix workflow'
-      }
-      type="button"
-    >
-      {mutation.isPending ? 'queuing' : mutation.data ? 'queued' : 'fix CI'}
-    </Button>
-  );
-}
-
-function scheduleCiFixCompletionRefresh(
-  queryClient: ReturnType<typeof useQueryClient>,
-  operationId: string,
-) {
-  let sawActiveOperation = false;
-  let done = false;
-  const refresh = () => {
-    void queryClient.invalidateQueries({ queryKey: queryKeys.reports });
-    void queryClient.invalidateQueries({ queryKey: queryKeys.notifications });
-    void queryClient.invalidateQueries({ queryKey: queryKeys.kiloTasks });
-    void queryClient.invalidateQueries({ queryKey: queryKeys.autopilotState });
-    void queryClient.invalidateQueries({ queryKey: queryKeys.worktrees });
-    void queryClient.invalidateQueries({
-      queryKey: queryKeys.activityObservability,
-    });
-    void queryClient.invalidateQueries({
-      queryKey: queryKeys.operationSummaries,
-    });
-  };
-  const scheduleActiveFollowUp = () => {
-    window.setTimeout(
-      () => void observe(true),
-      reviewCompletionActiveFollowUpDelay,
-    );
-  };
-  const observe = async (forceRefresh: boolean) => {
-    if (done) return;
-    try {
-      const operations = await queryClient.fetchQuery({
-        queryKey: queryKeys.operationSummaries,
-        queryFn: getOperationSummaries,
-        staleTime: 0,
-      });
-      const state = ciFixOperationRefreshDecision(
-        operations,
-        operationId,
-        sawActiveOperation,
-        forceRefresh,
-      );
-      sawActiveOperation = state.sawActiveOperation;
-      if (state.shouldRefresh) refresh();
-      if (state.done) {
-        done = true;
-        return;
-      }
-      if (forceRefresh && state.sawActiveOperation) scheduleActiveFollowUp();
-    } catch {
-      if (forceRefresh && !sawActiveOperation) {
-        refresh();
-        done = true;
-        return;
-      }
-      if (forceRefresh) scheduleActiveFollowUp();
-    }
-  };
-  for (const delay of reviewCompletionPollDelays) {
-    window.setTimeout(
-      () => void observe(delay === reviewCompletionPollDelays.at(-1)),
-      delay,
-    );
-  }
-}
-
-export function ciFixOperationRefreshDecision(
-  operations: WorkflowSummaryResponse,
-  operationId: string,
-  sawActiveOperation: boolean,
-  forceRefresh: boolean,
-) {
-  const matching = operations.items.find(
-    (operation) =>
-      operation.workflow === 'ci_fix_run' && operation.id === operationId,
-  );
-  const active =
-    matching?.status === 'running' || matching?.status === 'queued';
-  const terminal = Boolean(matching && !active);
-  const sawActive = sawActiveOperation || active;
-  const disappeared = sawActiveOperation && !matching;
-  const shouldFallbackRefresh = forceRefresh && !sawActive;
-  return {
-    terminal,
-    sawActiveOperation: sawActive,
-    shouldRefresh: terminal || disappeared || shouldFallbackRefresh,
-    done: terminal || disappeared || shouldFallbackRefresh,
-  };
-}
-
-const reviewCompletionPollDelays = [15_000, 45_000, 90_000, 150_000, 210_000];
-const reviewCompletionActiveFollowUpDelay = 60_000;
-
-export function isCiFixCandidate(item: GitHubPullRequest) {
-  return item.checks?.status === 'failure' || item.checkError !== undefined;
 }
 
 export function prDiffActionLabel(showing: boolean) {
@@ -562,11 +417,6 @@ function WatchPrButton({ item }: { item: GitHubPullRequest }) {
 export function isTerminalWatchStatus(status: string | null | undefined) {
   return status === 'closed' || status === 'merged' || status === 'green';
 }
-
-type FixCiWorkflowAdmission = {
-  runId: string;
-  ref: string;
-};
 
 function PrSkeleton() {
   return (

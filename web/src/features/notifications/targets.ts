@@ -48,18 +48,6 @@ export function resolveNotificationTarget(
   }
 
   if (
-    readString(data.taskId) ||
-    readString(data.kiloTaskId) ||
-    notification.source === 'kilo'
-  ) {
-    return {
-      kind: 'plugin',
-      pluginId: 'runtime-overview',
-      label: 'Open tasks',
-    };
-  }
-
-  if (
     readString(data.approvalId) ||
     notification.source?.includes('approval') ||
     notification.source === 'execution' ||

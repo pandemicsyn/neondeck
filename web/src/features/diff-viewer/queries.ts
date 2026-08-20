@@ -1,6 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
 import {
-  getKiloTaskDiff,
   getPreparedDiffFileDiff,
   getPreparedDiffFiles,
   getRepoDiff,
@@ -24,8 +23,6 @@ export const diffViewerQueryKeys = {
       revisionKey,
       path,
     ] as const,
-  kiloTaskDiff: (taskId: string) =>
-    ['diff-viewer', 'kilo-task-diff', taskId] as const,
   repoDiff: (input: {
     repoId: string;
     worktreeId?: string | null;
@@ -83,14 +80,6 @@ export function usePreparedDiffFilePatch(
     },
     staleTime: Infinity,
     enabled: preparedDiffId.length > 0 && Boolean(path) && Boolean(revisionKey),
-  });
-}
-
-export function useKiloTaskDiff(taskId: string) {
-  return useQuery({
-    queryKey: diffViewerQueryKeys.kiloTaskDiff(taskId),
-    queryFn: ({ signal }) => getKiloTaskDiff(taskId, { signal }),
-    enabled: taskId.length > 0,
   });
 }
 

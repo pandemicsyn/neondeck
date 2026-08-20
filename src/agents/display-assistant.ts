@@ -38,8 +38,6 @@ import { neondeckDevDoctorActions } from '../modules/runtime';
 import { neondeckExeDevCheckoutActions } from '../modules/execution';
 import { neondeckExecutionActions } from '../modules/execution';
 import { executionPolicyCheckAction } from '../modules/execution';
-import { neondeckKiloActions } from '../modules/kilo';
-import { neondeckKiloResultActions } from '../modules/kilo/results';
 import { neondeckLearningOperatorActions } from '../modules/learning';
 import {
   mcpAgentToolsForSessionSync,
@@ -231,12 +229,11 @@ export function DisplayAssistant({ id }: AgentProps) {
     'When the active chat session has linked repo, watch, task, PR, or summary metadata, treat that linked entity as the default subject for ambiguous follow-up questions. If the user asks "this", "that PR", "what happened", or similar without naming a target, call neondeck_session_status and use activeChatSession.summary, linked ids, and uiMetadata before answering.',
     'For active session or stale context requests, use neondeck_session_status. Create a new session with neondeck_session_create using activate=true when changed SOUL, skills, memory, or model config must enter prompt context. Switching sessions changes which Flue display-assistant session id receives future messages; it does not delete or copy history. Do not describe this as a server restart.',
     'For GitHub facts, use neondeck_github_pr_queue_lookup and neondeck_github_check_summary_lookup before reasoning over PR queues or check status. If GitHub API, check logs, PR details, or GitHub mutations require GitHub CLI, use gh through neondeck_execution_run after verifying policy.',
-    'For PR assistant requests, run /review-pr, /explain-ci, /summarize-pr, /draft-pr-description, /prepare-pr, or /review-local through neondeck_command_run. These commands return deterministic GitHub or local repo facts first; reason from those facts and clearly label inference. /fix-ci starts a host-executing app operation and must use an explicit human admission surface such as the dashboard Fix CI button.',
+    'For PR assistant requests, run /review-pr, /explain-ci, /summarize-pr, /draft-pr-description, /prepare-pr, or /review-local through neondeck_command_run. These commands return deterministic GitHub or local repo facts first; reason from those facts and clearly label inference.',
     'For runtime skills, use neondeck_runtime_skills_lookup and neondeck_runtime_skill_load to inspect user-provided procedural guidance, and neondeck_skills_reload when a rescan is explicitly requested.',
     'For local repository status, use neondeck_repo_status_lookup when you need deterministic git facts without a persisted command summary.',
     'For interactive repository work, use neondeck_repo_file_read, neondeck_repo_file_search, neondeck_repo_file_replace, neondeck_repo_file_patch, neondeck_repo_file_write, neondeck_repo_diff, and neondeck_repo_checkout_status, then neondeck_repo_commit and neondeck_repo_push. These capabilities operate only inside declared Neondeck repo/worktree boundaries and routine edits, commits, and linked-PR-head pushes never create execution approvals. If neondeck_repo_push returns confirmPush, explain its effect and call it once more with acknowledgeExpansion=true and the returned confirmationToken only after the user confirms. Prefer replace for small edits and V4A patches for multi-file edits.',
     'For autonomous or delegated code changes, use Neondeck-managed worktrees as the isolation boundary. Create, sync, inspect, lock, release, and clean them up with neondeck_worktree_* tools. When editing inside an isolated worktree, pass worktreeId to repo-edit tools; do not mutate the user primary checkout for autonomous fix work.',
-    'For KiloCode handoff, only delegate when the user explicitly asks for Kilo or a future repo policy opts in. Use neondeck_kilo_task_start for explicit handoff, then neondeck_kilo_task_status, neondeck_kilo_task_events, neondeck_kilo_task_sessions, neondeck_kilo_task_reconcile, neondeck_kilo_sessions_search, and neondeck_kilo_session_read to supervise and summarize results. Use neondeck_kilo_result_review to classify completed Kilo diffs, neondeck_kilo_result_verify to run checks through execution policy, and neondeck_kilo_result_promote to run the safe promotion admission layer. Kilo result promotion remains a separate explicitly gated path from watched-PR Autopilot; PR comments remain separate. Do not read Kilo storage directly, do not make Kilo the default agent path, and do not use --auto unless the user explicitly confirms it.',
     'For local development diagnostics, use neondeck_dev_doctor_run or run /dev-doctor through neondeck_command_run and summarize concrete issues first.',
     'For durable user preferences, local machine/tool facts, and project/repo conventions, use neondeck_memory_learn, neondeck_memory_rewrite, neondeck_memory_merge, neondeck_memory_archive, and review-mode memory candidate tools. Memory writes are limited to user, local, and project scopes. Memory rows are current guidance, not an evidence graph. Memory writes are durable immediately but active session context changes only on a new session or explicit refresh.',
     'For learning operator status, use neondeck_learning_operator_state_lookup to inspect learning reviews, candidates, memory decisions, skill patch decisions, and audit history before summarizing what Neon learned or what needs review.',
@@ -245,7 +242,7 @@ export function DisplayAssistant({ id }: AgentProps) {
     'For follow-up questions about prior command runs, use neondeck_workflow_summaries_lookup to read legacy-named operation summaries instead of relying only on chat transcript.',
     displayAssistantDelegationInstructions,
     'When a user sends /briefing, call neondeck_briefing_run_now and pass the current display-assistant session id when it is available. The briefing must stay in the conversational briefing path, not the generic command path.',
-    'When a user sends a slash command such as /repo-status, /review-queue, /review-pr, /explain-ci, /summarize-pr, /draft-pr-description, /prepare-pr, /review-local, /reasoning, /memory, /watch-pr, or /dev-doctor, call neondeck_command_run and summarize its persisted operation result. Do not run /fix-ci through neondeck_command_run.',
+    'When a user sends a slash command such as /repo-status, /review-queue, /review-pr, /explain-ci, /summarize-pr, /draft-pr-description, /prepare-pr, /review-local, /reasoning, /memory, /watch-pr, or /dev-doctor, call neondeck_command_run and summarize its persisted operation result.',
   ]
     .filter(Boolean)
     .join('\n\n');
@@ -280,8 +277,6 @@ export function DisplayAssistant({ id }: AgentProps) {
     ...neondeckMemoryActions,
     ...repoActions,
     ...neondeckWorktreeActions,
-    ...neondeckKiloActions,
-    ...neondeckKiloResultActions,
   ]) {
     useTool(tool);
   }

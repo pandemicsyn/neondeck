@@ -9,7 +9,6 @@ import {
   reviewRevisionKey,
   reviewSourceSchemaVersion,
   type ReviewRevision,
-  type ReviewSourceKind,
 } from '../shared/review-source';
 import { reviewSurfaceSchemaVersion } from '../shared/review-surface';
 import { createReviewRefreshStatus } from '../shared/review-refresh';
@@ -179,22 +178,19 @@ describe('prepared-diff finding promotion', () => {
     const promote = createDefaultReviewSurfacePromotionTarget(paths, {
       requestPreparedRevision: requestRevision,
     });
-    for (const sourceKind of ['prepared-diff', 'kilo-result'] as const) {
-      await expect(
-        promote(
-          promotionCandidate({
-            sourceKind,
-            preparedDiffId: prepared.id,
-            revision: currentRevision.revision!,
-            revisionKey: currentRevisionKey!,
-          }),
-        ),
-      ).resolves.toMatchObject({
-        ok: true,
-        promotion: { targetId: 'revision-approval' },
-      });
-    }
-    expect(requestRevision).toHaveBeenCalledTimes(2);
+    await expect(
+      promote(
+        promotionCandidate({
+          preparedDiffId: prepared.id,
+          revision: currentRevision.revision!,
+          revisionKey: currentRevisionKey!,
+        }),
+      ),
+    ).resolves.toMatchObject({
+      ok: true,
+      promotion: { targetId: 'revision-approval' },
+    });
+    expect(requestRevision).toHaveBeenCalledTimes(1);
     const currentFindingPromotion = {
       ...findingPromotion,
       revisionKey: currentRevisionKey!,
@@ -261,19 +257,15 @@ describe('prepared-diff finding promotion', () => {
 });
 
 function promotionCandidate(input: {
-  sourceKind: Extract<ReviewSourceKind, 'prepared-diff' | 'kilo-result'>;
   preparedDiffId: string;
   revision: ReviewRevision;
   revisionKey: string;
 }): ValidatedReviewSurfaceFindingPromotion {
-  const sourceId =
-    input.sourceKind === 'prepared-diff'
-      ? `prepared-diff:${input.preparedDiffId}`
-      : 'kilo-result:task-1';
-  const surfaceId = `surface:${input.sourceKind}`;
+  const sourceId = `prepared-diff:${input.preparedDiffId}`;
+  const surfaceId = 'surface:prepared-diff';
   const finding = {
     schemaVersion: 2 as const,
-    id: `finding:${input.sourceKind}`,
+    id: 'finding:prepared-diff',
     surfaceId,
     sourceId,
     revisionKey: input.revisionKey,
@@ -309,7 +301,7 @@ function promotionCandidate(input: {
       source: {
         schemaVersion: reviewSourceSchemaVersion,
         id: sourceId,
-        kind: input.sourceKind,
+        kind: 'prepared-diff',
         title: 'Prepared promotion fixture',
         revision: input.revision,
         repository: {
@@ -365,7 +357,7 @@ function promotionCandidate(input: {
       sourceId,
       revisionKey: input.revisionKey,
       findingId: finding.id,
-      requestId: `request:${input.sourceKind}`,
+      requestId: 'request:prepared-diff',
       destination: 'prepared-diff-revision',
       anchor: { side: 'additions', startLine: 2, endLine: 2 },
       confirm: true,

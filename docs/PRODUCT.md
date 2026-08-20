@@ -57,7 +57,7 @@ an isolated remote environment.
 
 Durable chat sessions, schedules, morning briefings, memory, runtime skills,
 notifications, readiness checks, self-configuration, release watches, and
-handoffs to coding agents support the PR loop. They should be presented as
+external-agent handoff registration support the PR loop. They should be presented as
 supporting capabilities rather than separate products competing for equal
 attention. GitHub is currently the primary PR and check integration, the web
 dashboard is the current operator surface, and release watching follows GitHub
@@ -99,7 +99,7 @@ runs remotely because an experimental sandbox integration exists.
   state, Autopilot owner, prepared diff, review findings, and blocked work
   should feel concrete.
 - Lead with keeping PRs moving. Watching, Autopilot, and human review are the
-  primary product story; chat, schedules, memory, and handoffs support it.
+  primary product story; chat, schedules, memory, and handoff registration support it.
 - Make authority legible: users should be able to see what Neon may do, what
   needs approval, what was delivered, and why work was held.
 - Keep human review human-owned: Neon may investigate and draft, but the

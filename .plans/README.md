@@ -18,7 +18,6 @@
 ## Durable Research
 
 - `HERMES_RESEARCH.md` — product and agent-system inspiration.
-- `KILOCODE_HANDOFF_RESEARCH.md` — Kilo integration research supporting the remaining Phase 21 work.
 
 ## Archive Policy
 

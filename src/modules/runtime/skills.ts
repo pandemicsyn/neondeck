@@ -91,7 +91,9 @@ const applicationSkillPaths = resolveApplicationSkillPaths();
 const reservedBuiltInSkillIds = new Set(
   applicationSkillPaths.map((path) => basename(dirname(path))),
 );
-const workflowRuntimeSkillIds = new Set([
+// Keep retired seeded skill ids excluded so copies left in an existing runtime
+// home do not re-enter the display assistant as ordinary user skills.
+const excludedSessionRuntimeSkillIds = new Set([
   'neon-pr-review',
   'neon-ci-fix',
   'neon-docs-fix',
@@ -183,7 +185,7 @@ export function runtimeSkillReferencesSync(
       (skill) =>
         skill.status === 'active' &&
         skill.source !== 'built-in' &&
-        !workflowRuntimeSkillIds.has(skill.id),
+        !excludedSessionRuntimeSkillIds.has(skill.id),
     )
     .map((skill) => runtimeSkillReference(skill));
 }
@@ -203,7 +205,7 @@ export function runtimeSkillSessionSnapshotsSync(
       (skill) =>
         skill.status === 'active' &&
         skill.source !== 'built-in' &&
-        !workflowRuntimeSkillIds.has(skill.id),
+        !excludedSessionRuntimeSkillIds.has(skill.id),
     )
     .map(runtimeSkillSessionSnapshot);
 }

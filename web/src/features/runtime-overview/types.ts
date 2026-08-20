@@ -1,6 +1,5 @@
 import type {
   ExecutionApprovalsResponse,
-  KiloTasksResponse,
   MemoryRecord,
   McpApprovalsResponse,
   McpServersResponse,
@@ -40,7 +39,6 @@ export type RuntimeSnapshot = {
   mcpApprovals: McpApprovalsResponse;
   safety: SafetyPolicy;
   activity: ActivityObservability;
-  kiloTasks: KiloTasksResponse;
   repoEditEvents: RepoEditEventsResponse;
   worktrees: WorktreesResponse;
   secondaryErrors: string[];

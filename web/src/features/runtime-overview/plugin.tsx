@@ -1,7 +1,6 @@
 import { useQueries, useQueryClient } from '@tanstack/react-query';
 import {
   getExecutionApprovals,
-  getKiloTasks,
   getMemories,
   getMcpApprovals,
   getMcpServers,
@@ -53,7 +52,6 @@ export const RuntimeOverviewPlugin = {
       mcpApprovalsQuery,
       safetyQuery,
       activityQuery,
-      kiloTasksQuery,
       repoEditEventsQuery,
       worktreesQuery,
     ] = useQueries({
@@ -121,11 +119,6 @@ export const RuntimeOverviewPlugin = {
           refetchInterval: 30_000,
         },
         {
-          queryKey: queryKeys.kiloTasks,
-          queryFn: getKiloTasks,
-          refetchInterval: 15_000,
-        },
-        {
           queryKey: queryKeys.repoEditEvents,
           queryFn: getRepoEditEvents,
           refetchInterval: 30_000,
@@ -181,7 +174,6 @@ export const RuntimeOverviewPlugin = {
       mcpApprovals: mcpApprovalsQuery,
       safety: safetyQuery,
       activity: activityQuery,
-      kiloTasks: kiloTasksQuery,
       repoEditEvents: repoEditEventsQuery,
       worktrees: worktreesQuery,
     });

@@ -1,7 +1,6 @@
 import type {
   PreparedDiffRecord,
   GitHubPullRequest,
-  KiloTaskRecord,
   LearningCandidate,
   RepoEditEvent,
 } from '../../api';
@@ -122,49 +121,6 @@ export function preparedDiffReviewSource(
         'The prepared-diff worktree fingerprint has not loaded.',
       ),
     title: diff.title,
-  });
-}
-
-export function kiloResultReviewSource(
-  task: KiloTaskRecord,
-  files: DiffFilePatch[],
-  revision: ReviewRevision | undefined,
-  options: PatchStateOptions = {},
-) {
-  const liveWorktree = Boolean(task.repoId && task.worktreeId);
-  return reviewSource({
-    ...options,
-    capabilities: [
-      ...(task.preparedDiffId ? (['request-revision'] as const) : []),
-      ...(liveWorktree
-        ? (['context-expansion', 'open-in-editor', 'refresh'] as const)
-        : []),
-    ],
-    promotionTargets: task.preparedDiffId
-      ? [
-          {
-            destination: 'prepared-diff-revision',
-            preparedDiffId: task.preparedDiffId,
-          },
-        ]
-      : [],
-    files,
-    id: `kilo-result:${task.id}`,
-    kind: 'kilo-result',
-    repository: {
-      repoId: task.repoId,
-      repoFullName: task.repoFullName,
-      worktreeId: task.worktreeId,
-      localPath: task.cwd,
-      localAccess: true,
-    },
-    revision:
-      revision ??
-      unavailableReviewRevision(
-        'worktree-diff',
-        'The Kilo result worktree fingerprint is unavailable.',
-      ),
-    title: task.title,
   });
 }
 

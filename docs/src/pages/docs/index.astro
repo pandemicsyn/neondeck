@@ -150,7 +150,6 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
         <pre><code>/repo-status [repo-id]
 /review-queue
 /review-pr &lt;repo#number|owner/repo#number|url&gt;
-/fix-ci [repo#number|owner/repo#number]
 /explain-ci [--report] [repo#number|owner/repo#number]
 /summarize-pr [repo#number|owner/repo#number]
 /draft-pr-description [repo-id|owner/repo]
@@ -239,8 +238,7 @@ pr-autopilot-owner</code></pre>
         <p>
           Watched-PR Autopilot is a continuing
           <code>pr-autopilot-owner</code> agent controlled through typed tools, not
-          a job for every transition. The separate manual
-          <code>/fix-ci</code> path remains available as an explicit app-owned operation.
+          a job for every transition.
         </p>
 
         <h2 id="observability">Activity and submission observability</h2>

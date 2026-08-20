@@ -34,7 +34,6 @@ import { createConfigRoutes } from './routes/config';
 import { createExecutionRoutes } from './routes/execution';
 import { createGitHubRoutes } from './routes/github';
 import { createHandoffRoutes } from './routes/handoff';
-import { createKiloRoutes } from './routes/kilo';
 import { createLearningRoutes } from './routes/learning';
 import { createMemoryRoutes } from './routes/memory';
 import { createMetricsRoutes } from './routes/metrics';
@@ -159,7 +158,6 @@ export async function createApp(options: CreateAppOptions = {}) {
   app.route('/api/repos', createReposRoutes(paths));
   app.route('/api', createRepoEditRoutes(paths));
   app.route('/api', createWorktreeRoutes(paths));
-  app.route('/api/kilo', createKiloRoutes(paths));
   app.route('/api', createPreparedDiffRoutes(paths));
   app.route('/api', createBriefingRoutes(paths));
   app.route('/api', createHandoffRoutes(paths));

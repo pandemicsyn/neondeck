@@ -2,7 +2,7 @@
 
 Status: active; Phase A is complete in PR #143, Phase B is complete after the final audit, implementation is paused at the user-selected Phase B stopping milestone, Phases C–E remain planned, and the specialized PR review performance workstream is complete for now with measured misses explicitly deferred
 
-Final Phase B audit note (2026-07-18): the shared source, surface, navigation, finding, promotion, and refresh contracts and the focused GitHub PR, prepared-diff, and prepared-backed Kilo/worktree surfaces were independently reconciled against every Phase B acceptance criterion and the changes in PRs #145, #146, #149, #150, #152, #153, and #154. Source/revision binding, targeted invalidation, availability versus application, dirty-state guards, explicit apply, orientation preservation/degradation, stale finding/draft trust, promotion authority boundaries, accessible navigation, and the absence of Phase C behavior are covered by focused unit, API, and component tests. The audit corrected one bounded gap: a failed background prepared-diff metadata refresh now leaves the applied review and its approval/recovery context mounted while reporting the refresh error. No Phase C, D, or E work was started.
+Final Phase B audit note (2026-07-18): the shared source, surface, navigation, finding, promotion, and refresh contracts and the focused GitHub PR, prepared-diff, and managed-worktree surfaces were independently reconciled against every Phase B acceptance criterion and the changes in PRs #145, #146, #149, #150, #152, #153, and #154. Source/revision binding, targeted invalidation, availability versus application, dirty-state guards, explicit apply, orientation preservation/degradation, stale finding/draft trust, promotion authority boundaries, accessible navigation, and the absence of Phase C behavior are covered by focused unit, API, and component tests. The audit corrected one bounded gap: a failed background prepared-diff metadata refresh now leaves the applied review and its approval/recovery context mounted while reporting the refresh error. No Phase C, D, or E work was started.
 
 Final Phase B performance note (2026-07-18): the lead's Node 26.4.0 rerun of `npm run bench:review-fixtures` recorded large committed-PR fixture medians of 41.9 ms for the tree, 163.7 ms for the first patch, and 0 ms for the in-process thread projection, all within the 500/1,000/500 ms fixture budgets; this harness exercises `pr-local-diffs` only. A separate 305-changed-file worktree approximation measured at the pre-final PR #154 measurement commit `aa8716783874fdf9c38bfa5fdd396b00df779788` (120 modified, 30 deleted, 25 renamed, 130 added) exercised the production Phase B step 5 paths. Across five warm Node 26.4.0 arm64 samples, repo/prepared unscoped metadata medians were 140.9/137.0 ms and repo/prepared scoped active-patch medians were 179.1/177.2 ms, all within the 500 ms tree and 1,000 ms first-patch budgets. It exercised `readRepoDiff`, `readPreparedDiffChangedFiles`, `readStableDiffMetadata`, `gitWorktreeRevision`, and expected-revision checks before and after scoped patch reads. The final PR #154 change after that measurement affected prepared-summary stable-read coverage, not those measured paths.
 
@@ -10,7 +10,7 @@ Progress note (2026-07-18): the specialized large-PR work now has real registere
 
 Historical sequencing correction (2026-07-17): retain the completed Phase A foundation and PR #143, but do not advance into Phase B yet. Phase A was selected while the specialized performance plan still had partial acceptance; that ordering change was not an implicit deferral of the remaining measured misses. Resume the real registered-PR performance work first, beginning with review-thread latency, then reconcile tree visibility and the cold-fetch decision. This pause was lifted on 2026-07-18 after the remaining misses were explicitly deferred with recorded rationale; the original correction remains here for audit history.
 
-Contract note (2026-07-18): `shared/review-source.ts` now defines the versioned source, revision, repository, capability, ordered-file, and explicit patch-state vocabulary used by every current web diff surface. GitHub PRs use head SHA identity; prepared and Kilo/repo worktree views receive content-addressed changed-path fingerprints from metadata reads; skill patches and historical repo-edit events use retained content hashes. Missing identities remain explicitly unavailable rather than falling back to timestamps. The current viewers expose source/revision metadata on their mounted roots, ready for the Phase A registration and navigation event layer. On a synthetic 305-file changed worktree, metadata plus revision identity measured 335.5 ms median versus 243.0 ms for metadata alone (92.5 ms added), within the 500 ms warm-tree budget.
+Contract note (2026-07-18): `shared/review-source.ts` now defines the versioned source, revision, repository, capability, ordered-file, and explicit patch-state vocabulary used by every current web diff surface. GitHub PRs use head SHA identity; prepared and repo worktree views receive content-addressed changed-path fingerprints from metadata reads; skill patches and historical repo-edit events use retained content hashes. Missing identities remain explicitly unavailable rather than falling back to timestamps. The current viewers expose source/revision metadata on their mounted roots, ready for the Phase A registration and navigation event layer. On a synthetic 305-file changed worktree, metadata plus revision identity measured 335.5 ms median versus 243.0 ms for metadata alone (92.5 ms added), within the 500 ms warm-tree budget.
 
 Surface note (2026-07-18): `shared/review-surface.ts` and the local `/api/review-surfaces` surface now provide versioned, bounded, process-ephemeral registration and context snapshots, metadata-free 15-second browser heartbeats, 45-second expiry, explicit close cleanup, revision-aware targeted file navigation, and lightweight acknowledgements over the existing multiplexed app event stream. Each mounted viewer receives a distinct surface id even when multiple windows show the same source; no selection or viewport state is written to SQLite, and the SSE stream signals context changes without rebroadcasting full large-review snapshots.
 
@@ -20,9 +20,9 @@ Navigation note (2026-07-18): the focused PR workbench now uses the shared canon
 
 Finding note (2026-07-18): Phase B step 3 is complete. The focused PR workbench consumes the shared process-ephemeral typed finding contract and targeted surface event stream, projects only current-revision active findings into Pierre inline annotations, the canonical finding cursor, and semantic tree counts/severity, and keeps stale, resolved, dismissed, promoted, and currently unanchorable findings truthful in the inspector with full retained provenance. Local dismissal uses the existing source/revision-bound endpoint and does not create GitHub comments or prepared-diff mutations. File filtering now matches current path, previous path, and active finding title/explanation without replacing Pierre virtualization or canonical navigation order. A bounded 305-file/200-finding unit fixture emits annotations only for loaded, validated anchors. The retained Node 26.4.0 arm64 fixture harness was rerun with large-case medians of 74.9 ms for the tree, 282.5 ms for the first patch, and 0 ms for the in-process thread projection; all targets pass. Those run results are recorded here while `benchmarks/results/review-fixture-baseline.json` remains unchanged to preserve its prior historical samples. Explicit GitHub draft/prepared-revision promotion remains Phase B step 4, and broader refresh/orientation behavior remains Phase B step 5.
 
-Promotion note (2026-07-18): Phase B step 4 is complete. The versioned source and finding contracts now declare bounded destination metadata, and one source/revision/surface/finding-bound API validates lifecycle, capability, exact line or resolved-hunk anchor, confirmation, and durable target before marking a finding promoted. GitHub findings seed the existing local review draft/comment store with preserved single- or multi-line anchors and Neon provenance; submission remains a separate existing action. Prepared and prepared-backed Kilo findings reuse the existing typed prepared-diff revision request transition, retain its authority/approval/recovery path, and cannot start a revision run. Exact retries reuse the recorded destination, target failures remain retryable, delayed completions cannot regress a newer lifecycle, and only the targeted surface receives the bounded lifecycle event. The focused PR workbench and prepared/prepared-backed Kilo viewers expose descriptive, pending-safe controls and retain promoted findings as history while active counts drop; unsupported Kilo results explain that findings remain local-only. Each promotion loads at most one requested patch. Prepared promotion also recomputes the current worktree revision from changed-file identity metadata immediately before transition, without eagerly loading the changeset's patches.
+Promotion note (2026-07-18): Phase B step 4 is complete. The versioned source and finding contracts now declare bounded destination metadata, and one source/revision/surface/finding-bound API validates lifecycle, capability, exact line or resolved-hunk anchor, confirmation, and durable target before marking a finding promoted. GitHub findings seed the existing local review draft/comment store with preserved single- or multi-line anchors and Neon provenance; submission remains a separate existing action. Prepared and managed-worktree findings reuse the existing typed prepared-diff revision request transition, retain its authority/approval/recovery path, and cannot start a revision run. Exact retries reuse the recorded destination, target failures remain retryable, delayed completions cannot regress a newer lifecycle, and only the targeted surface receives the bounded lifecycle event. The focused PR workbench and prepared/worktree viewers expose descriptive, pending-safe controls and retain promoted findings as history while active counts drop; unsupported sources explain that findings remain local-only. Each promotion loads at most one requested patch. Prepared promotion also recomputes the current worktree revision from changed-file identity metadata immediately before transition, without eagerly loading the changeset's patches.
 
-Refresh note (2026-07-18): Phase B step 5 is complete and the final Phase B audit confirmed its acceptance criteria. GitHub file lists and patches remain head/base-SHA bound, while prepared and Kilo/worktree metadata and per-file patch reads now carry and enforce the authoritative worktree fingerprint. Late revision responses are rejected; patch caches remain immutable under revision-keyed entries. The shared review-surface snapshot publishes bounded availability, pause reasons, application state, and preserved/degraded/failed orientation outcomes, and the multiplexed app event stream targets source revisions by source/repository/worktree/PR identity. Mounted prepared and Kilo metadata also performs a bounded 30-second fingerprint check so external worktree edits become visible without loading patch bodies. Clean surfaces may apply automatically; dirty editors, re-anchor/revision flows, mutations, stale drafts, and active selections pause automatic application, with deliberate application available only where the mounted state can be preserved. GitHub local draft-head validation remains authoritative, stale findings stay historical, exact rename metadata preserves moved files, and removed targets use a deterministic nearest review-order neighbor. Static retained sources explicitly remain static. A focused 305-file fixture loads only the active Kilo patch during refresh, and exact metadata invalidation leaves all 305 cached old-revision patch entries reusable and unrelabeled. The retained Node 26.4.0 arm64 fixture harness was rerun with large-case medians of 75.6 ms for the tree, 284.7 ms for the first patch, and 0 ms for thread projection; all targets pass. These measurements are recorded here while `benchmarks/results/review-fixture-baseline.json` remains unchanged to preserve its historical samples.
+Refresh note (2026-07-18): Phase B step 5 is complete and the final Phase B audit confirmed its acceptance criteria. GitHub file lists and patches remain head/base-SHA bound, while prepared and worktree metadata and per-file patch reads now carry and enforce the authoritative worktree fingerprint. Late revision responses are rejected; patch caches remain immutable under revision-keyed entries. The shared review-surface snapshot publishes bounded availability, pause reasons, application state, and preserved/degraded/failed orientation outcomes, and the multiplexed app event stream targets source revisions by source/repository/worktree/PR identity. Mounted prepared and worktree metadata also performs a bounded 30-second fingerprint check so external worktree edits become visible without loading patch bodies. Clean surfaces may apply automatically; dirty editors, re-anchor/revision flows, mutations, stale drafts, and active selections pause automatic application, with deliberate application available only where the mounted state can be preserved. GitHub local draft-head validation remains authoritative, stale findings stay historical, exact rename metadata preserves moved files, and removed targets use a deterministic nearest review-order neighbor. Static retained sources explicitly remain static. A focused 305-file fixture loads only the active worktree patch during refresh, and exact metadata invalidation leaves all 305 cached old-revision patch entries reusable and unrelabeled. The retained Node 26.4.0 arm64 fixture harness was rerun with large-case medians of 75.6 ms for the tree, 284.7 ms for the first patch, and 0 ms for thread projection; all targets pass. These measurements are recorded here while `benchmarks/results/review-fixture-baseline.json` remains unchanged to preserve its historical samples.
 
 Refresh limitation qualification (2026-07-18): “bounded 30-second fingerprint check” above refers only to cadence, changed-path query scope, and the absence of patch-body loading. `gitWorktreeRevision` hashes the full content of every changed regular file, so the fingerprint poll remains byte- and time-unbounded for pathological huge changed files. Phase B does not claim byte-bounded fingerprint work. Adding caching or a hard byte/time limit is explicitly deferred until the lead and product owner discuss the identity/truthfulness tradeoff.
 
@@ -43,7 +43,7 @@ Research source: `/Users/syn/projects/research-only/hunk` at `hunkdiff` 0.17.0.
 Neondeck already renders and acts on diffs across several operator workflows. The next step is not
 to replace the current Pierre viewer or imitate a terminal diff tool. It is to turn the existing
 viewer into a coherent, addressable review surface that works across the dashboard, focused
-popouts, prepared fixes, Kilo results, learning patches, repo-edit history, and a future TUI.
+popouts, prepared fixes, managed-worktree diffs, learning patches, repo-edit history, and a future TUI.
 
 This document is the single prioritized product plan for those improvements. Large-review
 performance is in scope as a cross-cutting delivery gate. The specialized implementation details
@@ -58,7 +58,7 @@ layers:
 
 - Neondeck uses `@pierre/diffs/react` and `@pierre/trees` inside a web dashboard and focused review
   workbench. It is already stronger in durable workflow integration: GitHub review drafts and
-  submission, thread actions, prepared-diff approvals and revisions, Kilo review, learning review,
+  submission, thread actions, prepared-diff approvals and revisions, managed-worktree review, learning review,
   reports, notifications, and recovery.
 - Hunk uses Pierre as the parsing/rendering foundation for a custom OpenTUI review application. Its
   strongest transferable ideas are interaction mechanics: one continuous changeset stream,
@@ -94,7 +94,7 @@ the delivery sequence below describe the current Phase B stopping point.
   detection and re-anchoring, summary verdicts, and durable submission recovery.
 - Durable Neon PR reviews, report-only findings, report artifact overlays, and manual promotion of a
   report finding into an inline draft.
-- Shared diff rendering for prepared autopilot diffs, pending approvals, Kilo results, skill-patch
+- Shared diff rendering for prepared autopilot diffs, pending approvals, managed-worktree diffs, skill-patch
   candidates, and retained repo-edit events.
 - Prepared-diff verification, approval, revision, worktree inspection, resync, retry, and cleanup
   workflows surrounding the visible diff.
@@ -114,7 +114,7 @@ the delivery sequence below describe the current Phase B stopping point.
   its current focus, steer it, or batch-place temporary annotations.
 - Neon findings that cannot be submitted automatically live in a separate inspector/report flow
   until the user manually chooses an anchor.
-- Prepared, Kilo, and local diff queries can become stale while background work changes their source
+- Prepared, managed-worktree, and local diff queries can become stale while background work changes their source
   worktree; the viewer has no common revision fingerprint or refresh-preservation contract.
 - Collapsed unchanged context cannot be expanded from source, even when Neondeck owns the local
   worktree.
@@ -124,7 +124,7 @@ the delivery sequence below describe the current Phase B stopping point.
 
 ## Product Principles
 
-1. **One review model, many sources.** GitHub PRs, prepared diffs, Kilo results, skill patches, and
+1. **One review model, many sources.** GitHub PRs, prepared diffs, managed-worktree diffs, skill patches, and
    repo-edit events should normalize into one review-surface contract without erasing source-specific
    capabilities.
 2. **The embedded view and focused workbench have different jobs.** Embedded dashboard views stay
@@ -174,7 +174,6 @@ Normalize the following sources:
 
 - `github-pr`
 - `prepared-diff`
-- `kilo-result`
 - `skill-patch`
 - `repo-edit-event`
 
@@ -344,7 +343,7 @@ Rich content should remain schema-backed, bounded, and renderable across web and
 
 ### Goal
 
-Keep reviews truthful while PR heads, prepared fixes, and Kilo worktrees change in the background.
+Keep reviews truthful while PR heads, prepared fixes, and managed worktrees change in the background.
 
 ### Behavior
 
@@ -417,7 +416,7 @@ Offer a focused, systematic way to read a complete changeset without selecting f
 
 Implement source expansion in capability order:
 
-1. Prepared diffs and Kilo results backed by Neondeck-managed worktrees.
+1. Prepared diffs and managed-worktree diffs.
 2. Registered local repo/PR revisions once the local PR diff provider is available.
 3. GitHub blob fallback for remote-only PRs when exact base/head source can be proven.
 4. Static retained patches remain non-expandable unless matching source is available.
@@ -543,7 +542,7 @@ before relaxing a gate.
 
 ## Surface Coverage at the Phase B Stopping Point
 
-| Capability                   | Embedded PR        | Focused PR popout       | Prepared diff           | Kilo result           | Skill/repo-edit patch | Future TUI             |
+| Capability                   | Embedded PR        | Focused PR popout       | Prepared diff           | Managed-worktree diff | Skill/repo-edit patch | Future TUI             |
 | ---------------------------- | ------------------ | ----------------------- | ----------------------- | --------------------- | --------------------- | ---------------------- |
 | File-focused diff            | Yes                | Yes                     | Yes                     | Yes                   | Yes                   | Contract               |
 | Review map/navigation        | Compact subset     | Full                    | Review map + findings   | Review map + findings | Basic                 | Planned                |
@@ -578,7 +577,7 @@ before relaxing a gate.
    prefetch.
 3. Preserve anchors across stream/file and unified/split mode changes.
 4. Pass the large-review performance gates before remembering or defaulting to changeset mode.
-5. Extract a generic focused diff popout for prepared/Kilo sources if the PR workbench proves the
+5. Extract a generic focused diff popout for prepared and managed-worktree sources if the PR workbench proves the
    interaction model.
 
 ### Phase D — Source-aware depth
