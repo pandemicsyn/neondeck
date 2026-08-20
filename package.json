@@ -40,7 +40,7 @@
     "dev": "concurrently -n server,web -c blue,green \"vite dev\" \"vite --config web/vite.config.ts --host 127.0.0.1\"",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "lint": "oxlint src web/src vite.config.ts web/vite.config.ts vitest.config.ts vitest.unit.config.ts vitest.integration.config.ts vitest.git.config.ts vitest.shared.ts --react-plugin --jsx-a11y-plugin --vitest-plugin --import-plugin --no-error-on-unmatched-pattern",
+    "lint": "oxlint src web/src vite.config.ts web/vite.config.ts vitest.config.ts vitest.unit.config.ts vitest.integration.config.ts vitest.git.config.ts vitest.pr-review-evals.config.ts vitest.shared.ts --react-plugin --jsx-a11y-plugin --vitest-plugin --import-plugin --no-error-on-unmatched-pattern",
     "lint:fix": "npm run lint -- --fix",
     "prepack": "npm run build:dashboard",
     "prepare": "git config core.hooksPath .githooks || true",
@@ -83,6 +83,7 @@
     "docs:deploy": "npm --workspace @neondeck/docs-site run deploy",
     "docs:dev": "npm --workspace @neondeck/docs-site run dev",
     "docs:astro-dev": "npm --workspace @neondeck/docs-site run astro-dev",
+    "eval:pr-review": "vitest run --config vitest.pr-review-evals.config.ts",
     "docs:preview": "npm --workspace @neondeck/docs-site run preview"
   },
   "keywords": [

@@ -59,6 +59,92 @@ export type ActivitySubmissionEventHistory = {
 
 export type ActivityEventQuery = { afterEventId?: number };
 
+type ActivityUsage = {
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadTokens: number;
+  cacheWriteTokens: number;
+  totalTokens: number;
+  cost: {
+    input: number;
+    output: number;
+    cacheRead: number;
+    cacheWrite: number;
+    total: number;
+  } | null;
+};
+
+type ReviewTaskPerformance = {
+  taskId: string;
+  wave: number;
+  thoroughness: string | null;
+  startedAt: string | null;
+  endedAt: string | null;
+  durationMs: number | null;
+  outcome: 'completed' | 'failed' | 'unknown';
+  resultContract: boolean | null;
+  stopReason: 'answered' | 'insufficient evidence' | 'blocked' | null;
+};
+
+export type PrReviewPerformanceProjection = {
+  ok: true;
+  action: 'pr_review_performance_read';
+  review: {
+    reviewId: string;
+    attemptId: string;
+    submissionId: string | null;
+    headSha: string;
+    baseSha: string | null;
+    mergeBase: string | null;
+    status: string;
+  };
+  correlation: {
+    taskCorrelationAvailable: boolean;
+    waveCorrelationAvailable: boolean;
+    retainedObservationComplete: boolean;
+    observedSubmissionQueued: boolean;
+    metricsCoverage: 'anchored-best-effort' | 'partial';
+    retainedEventCount: number;
+    observedEventCount: number | null;
+    limitations: string[];
+  };
+  models: {
+    parent: { models: string[]; thinkingLevels: string[] } | null;
+    explore: { models: string[]; thinkingLevels: string[] } | null;
+  };
+  timings: {
+    admittedToFirstParentTurnMs: number | null;
+    firstParentTurnToFirstTaskWaveMs: number | null;
+    finalTaskToReviewSubmitMs: number | null;
+    admittedToSettlementMs: number | null;
+  };
+  taskWaves: Array<{
+    wave: number;
+    taskCount: number;
+    taskIds: string[];
+    startedAt: string | null;
+    endedAt: string | null;
+    criticalPathMs: number | null;
+    summedTaskDurationMs: number;
+    concurrencyEfficiency: number | null;
+  }> | null;
+  tasks: ReviewTaskPerformance[] | null;
+  turns: { parent: number | null; child: number | null };
+  workspaceTools: {
+    parent: Record<string, { calls: number; durationMs: number }> | null;
+    child: Record<string, { calls: number; durationMs: number }> | null;
+  };
+  usage: { parent: ActivityUsage | null; child: ActivityUsage | null };
+  taskBriefs: { allRequiredFieldsPresent: boolean | null };
+  repetition: {
+    promptHashesWithinAttempt: string[] | null;
+    promptHashesAcrossExactRevision: string[] | null;
+    repeatedWorkspaceQueries: number | null;
+    retainedOutputReuses: number | null;
+    parentReplaySignals: number | null;
+  };
+};
+
 const maxActivityEventRows = 5_000;
 const redacted = '[redacted]';
 const persistedEventTypes = new Set<FlueObservation['type']>([
@@ -87,7 +173,7 @@ export async function recordFlueObservation(
 ) {
   if (!persistedEventTypes.has(event.type)) return;
   await ensureRuntimeHome(paths);
-  const summary = summarizeObservation(event);
+  const summary = withCorrelationMetadata(event, summarizeObservation(event));
   const database = openDb(paths.neondeckDatabase);
   const createdAt = event.timestamp ?? new Date().toISOString();
 
@@ -256,6 +342,547 @@ export async function readActivitySubmission(
   }
 }
 
+/**
+ * Derives a content-free PR-review performance report from retained activity.
+ * It deliberately uses terminal turn events for usage: Flue operation usage is
+ * a roll-up of those same leaf events and must not be added again.
+ */
+export async function readPrReviewPerformance(
+  reviewId: string,
+  paths = runtimePaths(),
+): Promise<PrReviewPerformanceProjection | null> {
+  await ensureRuntimeHome(paths);
+  const database = openDb(paths.neondeckDatabase, { readOnly: true });
+  try {
+    const review = database
+      .prepare(
+        `SELECT id, attempt_id, run_id, head_sha, base_sha, status,
+                ready_at, failed_at FROM pr_reviews WHERE id = ? LIMIT 1;`,
+      )
+      .get(reviewId.trim()) as Record<string, unknown> | undefined;
+    if (!review) return null;
+
+    const submissionId = stringOrNull(review.run_id);
+    const submission = submissionId
+      ? (database
+          .prepare(
+            `SELECT event_count, queued_at, settled_at
+             FROM activity_submissions WHERE submission_id = ? LIMIT 1;`,
+          )
+          .get(submissionId) as Record<string, unknown> | undefined)
+      : undefined;
+    const events = submissionId
+      ? database
+          .prepare(
+            `SELECT * FROM activity_events WHERE submission_id = ? ORDER BY id ASC;`,
+          )
+          .all(submissionId)
+          .map(readActivityEventRow)
+          .sort(compareActivityEvents)
+      : [];
+    return projectPrReviewPerformance({
+      review: {
+        reviewId: String(review.id),
+        attemptId: String(review.attempt_id),
+        submissionId,
+        headSha: String(review.head_sha),
+        baseSha: stringOrNull(review.base_sha),
+        status: String(review.status),
+        readyAt: stringOrNull(review.ready_at),
+        failedAt: stringOrNull(review.failed_at),
+      },
+      submission: submission
+        ? {
+            eventCount: Number(submission.event_count),
+            queuedAt: String(submission.queued_at),
+            settledAt: stringOrNull(submission.settled_at),
+          }
+        : null,
+      events,
+    });
+  } finally {
+    database.close();
+  }
+}
+
+function projectPrReviewPerformance(input: {
+  review: {
+    reviewId: string;
+    attemptId: string;
+    submissionId: string | null;
+    headSha: string;
+    baseSha: string | null;
+    status: string;
+    readyAt: string | null;
+    failedAt: string | null;
+  };
+  submission: {
+    eventCount: number;
+    queuedAt: string;
+    settledAt: string | null;
+  } | null;
+  events: ActivityEventRecord[];
+}): PrReviewPerformanceProjection {
+  const { events } = input;
+  const taskStarts = new Map<string, ActivityEventRecord>();
+  const tasks = new Map<string, ReviewTaskPerformance>();
+  const taskWaveKeys = new Map<string, number>();
+  const parentModels = new Set<string>();
+  const childModels = new Set<string>();
+  const parentThinking = new Set<string>();
+  const childThinking = new Set<string>();
+  const parentTools: Record<string, { calls: number; durationMs: number }> = {};
+  const childTools: Record<string, { calls: number; durationMs: number }> = {};
+  const parentUsage = emptyUsage();
+  const childUsage = emptyUsage();
+  const taskPromptHashes: string[] = [];
+  const workspaceStarts: Array<{
+    event: ActivityEventRecord;
+    taskId: string | null;
+    inputHash: string | null;
+  }> = [];
+  let parentTurns = 0;
+  let childTurns = 0;
+
+  for (const event of events) {
+    const taskId = summaryString(event.summary, 'taskId');
+    const isChild = taskId !== null;
+    if (event.eventType === 'task_start') {
+      const id = summaryString(event.summary, 'taskId');
+      if (!id) continue;
+      taskStarts.set(id, event);
+      const promptHash = summaryString(event.summary, 'promptHash');
+      if (promptHash) taskPromptHashes.push(promptHash);
+      const waveKey = summaryString(event.summary, 'turnId');
+      if (waveKey && !taskWaveKeys.has(waveKey))
+        taskWaveKeys.set(waveKey, taskWaveKeys.size + 1);
+      tasks.set(id, {
+        taskId: id,
+        wave: waveKey ? (taskWaveKeys.get(waveKey) ?? 0) : 0,
+        thoroughness: summaryString(event.summary, 'thoroughness'),
+        startedAt: event.createdAt,
+        endedAt: null,
+        durationMs: null,
+        outcome: 'unknown',
+        resultContract: null,
+        stopReason: taskStopReason(event.summary),
+      });
+      continue;
+    }
+    if (event.eventType === 'task') {
+      const id = summaryString(event.summary, 'taskId');
+      const task = id ? tasks.get(id) : undefined;
+      if (!task) continue;
+      task.endedAt = event.createdAt;
+      task.durationMs = event.durationMs;
+      task.outcome = event.isError ? 'failed' : 'completed';
+      task.resultContract = summaryBoolean(event.summary, 'resultContract');
+      task.stopReason = taskStopReason(event.summary);
+      continue;
+    }
+    if (event.eventType === 'turn') {
+      const model =
+        summaryString(event.summary, 'responseModel') ??
+        summaryString(event.summary, 'requestedModel');
+      const thinking = summaryString(event.summary, 'reasoningLevel');
+      if (isChild) {
+        childTurns += 1;
+        if (model) childModels.add(model);
+        if (thinking) childThinking.add(thinking);
+        addUsage(childUsage, usageFromSummary(event.summary));
+      } else {
+        parentTurns += 1;
+        if (model) parentModels.add(model);
+        if (thinking) parentThinking.add(thinking);
+        addUsage(parentUsage, usageFromSummary(event.summary));
+      }
+      continue;
+    }
+    if (
+      event.eventType === 'tool' &&
+      event.name?.startsWith(reviewWorkspaceToolPrefix)
+    ) {
+      addTool(
+        isChild ? childTools : parentTools,
+        event.name,
+        event.durationMs ?? 0,
+      );
+      continue;
+    }
+    if (
+      event.eventType === 'tool_start' &&
+      event.name?.startsWith(reviewWorkspaceToolPrefix)
+    ) {
+      workspaceStarts.push({
+        event,
+        taskId,
+        inputHash: summaryString(event.summary, 'inputHash'),
+      });
+    }
+  }
+
+  // A task call batch shares its parent model turn. If Flue correlation was not
+  // retained, each task remains visible but no concurrency claim is made.
+  const taskList = [...tasks.values()].sort(
+    (a, b) => dateMs(a.startedAt) - dateMs(b.startedAt),
+  );
+  const waves = new Map<number, ReviewTaskPerformance[]>();
+  for (const task of taskList) {
+    const key = task.wave || -(taskList.indexOf(task) + 1);
+    const wave = waves.get(key) ?? [];
+    wave.push(task);
+    waves.set(key, wave);
+  }
+  const taskWaves = [...waves.values()].map((wave, index) => {
+    const starts = wave
+      .map((task) => dateMs(task.startedAt))
+      .filter(Number.isFinite);
+    const ends = wave
+      .map((task) => dateMs(task.endedAt))
+      .filter(Number.isFinite);
+    const durations = wave.map((task) => task.durationMs ?? 0);
+    const start = starts.length ? Math.min(...starts) : null;
+    const end = ends.length ? Math.max(...ends) : null;
+    const criticalPathMs =
+      start !== null && end !== null ? Math.max(0, end - start) : null;
+    const summedTaskDurationMs = durations.reduce(
+      (sum, duration) => sum + duration,
+      0,
+    );
+    return {
+      wave: index + 1,
+      taskCount: wave.length,
+      taskIds: wave.map((task) => task.taskId),
+      startedAt: start === null ? null : new Date(start).toISOString(),
+      endedAt: end === null ? null : new Date(end).toISOString(),
+      criticalPathMs,
+      summedTaskDurationMs,
+      concurrencyEfficiency:
+        criticalPathMs && criticalPathMs > 0
+          ? summedTaskDurationMs / criticalPathMs
+          : null,
+    };
+  });
+
+  const firstParentTurn = events.find(
+    (event) =>
+      event.eventType === 'turn_start' &&
+      !summaryString(event.summary, 'taskId'),
+  );
+  const firstTask = taskList[0];
+  const finalTask = taskList
+    .filter((task) => task.endedAt)
+    .sort((left, right) => dateMs(left.endedAt) - dateMs(right.endedAt))
+    .at(-1);
+  const submitStart = events.find(
+    (event) =>
+      event.eventType === 'tool_start' &&
+      event.name === 'neondeck_submit_pr_review',
+  );
+  const taskHashCounts = countValues(taskPromptHashes);
+  const childSuccessfulAt = Math.max(
+    ...taskList
+      .filter((task) => task.outcome === 'completed')
+      .map((task) => dateMs(task.endedAt)),
+    Number.NEGATIVE_INFINITY,
+  );
+  const childQueryHashes = new Set(
+    workspaceStarts
+      .filter((entry) => entry.taskId)
+      .map((entry) => entry.inputHash)
+      .filter(Boolean),
+  );
+  const parentReplaySignals = workspaceStarts.filter(
+    (entry) =>
+      !entry.taskId &&
+      dateMs(entry.event.createdAt) >= childSuccessfulAt &&
+      entry.inputHash &&
+      childQueryHashes.has(entry.inputHash),
+  ).length;
+  const limitations: string[] = [];
+  const observedEventCount = input.submission?.eventCount ?? null;
+  const retainedObservationComplete =
+    observedEventCount !== null && observedEventCount === events.length;
+  const observedSubmissionQueued = events.some(
+    (event) => event.eventType === 'submission_queued',
+  );
+  const metricsAvailable =
+    retainedObservationComplete && observedSubmissionQueued;
+  if (!input.review.submissionId)
+    limitations.push('The admitted review has no Flue submission binding.');
+  else if (!input.submission)
+    limitations.push(
+      'The bound Flue submission has no retained lifecycle projection.',
+    );
+  else if (!retainedObservationComplete)
+    limitations.push(
+      `Only ${events.length} of ${input.submission.eventCount} observed submission events remain; event-derived task, turn, tool, usage, and replay metrics are unavailable.`,
+    );
+  if (!observedSubmissionQueued)
+    limitations.push(
+      'The live observer did not retain the submission_queued anchor, so event-derived metrics are unavailable.',
+    );
+  if (taskList.some((task) => task.wave === 0))
+    limitations.push(
+      'Some task events lacked a parent turn correlation; they are shown as separate waves without inferred concurrency.',
+    );
+  const childActivityCorrelated = events.some(
+    (event) =>
+      (event.eventType === 'turn' || event.eventType === 'tool') &&
+      summaryString(event.summary, 'taskId') !== null,
+  );
+  if (taskList.length > 0 && !childActivityCorrelated)
+    limitations.push(
+      'No child turn or tool rows carried task correlation, so child activity totals are unavailable.',
+    );
+  if (events.length === 0 && input.review.submissionId && !input.submission)
+    limitations.push(
+      'No retained activity rows are available for the bound submission.',
+    );
+  limitations.push(
+    'Flue observe() is live-only; even anchored retained coverage is best-effort and cannot rule out an unobserved process gap.',
+  );
+  limitations.push(
+    'The resolved workspace merge base and immutable prior-attempt bindings are not persisted, so exact-revision cross-attempt prompt comparison is unavailable.',
+  );
+  const settlementAt =
+    input.review.readyAt ??
+    input.review.failedAt ??
+    input.submission?.settledAt ??
+    null;
+  const admissionAt =
+    input.submission?.queuedAt ??
+    events.find(
+      (event) =>
+        event.eventType === 'submission_queued' ||
+        event.eventType === 'submission_running',
+    )?.createdAt ??
+    null;
+
+  return {
+    ok: true,
+    action: 'pr_review_performance_read',
+    review: {
+      reviewId: input.review.reviewId,
+      attemptId: input.review.attemptId,
+      submissionId: input.review.submissionId,
+      headSha: input.review.headSha,
+      baseSha: input.review.baseSha,
+      mergeBase: null,
+      status: input.review.status,
+    },
+    correlation: {
+      taskCorrelationAvailable:
+        metricsAvailable && (taskList.length === 0 || childActivityCorrelated),
+      waveCorrelationAvailable:
+        metricsAvailable && taskList.every((task) => task.wave > 0),
+      retainedObservationComplete,
+      observedSubmissionQueued,
+      metricsCoverage: metricsAvailable ? 'anchored-best-effort' : 'partial',
+      retainedEventCount: events.length,
+      observedEventCount,
+      limitations,
+    },
+    models: {
+      parent: metricsAvailable
+        ? {
+            models: [...parentModels],
+            thinkingLevels: [...parentThinking],
+          }
+        : null,
+      explore: metricsAvailable
+        ? { models: [...childModels], thinkingLevels: [...childThinking] }
+        : null,
+    },
+    timings: {
+      admittedToFirstParentTurnMs: metricsAvailable
+        ? elapsedMs(admissionAt, firstParentTurn?.createdAt ?? null)
+        : null,
+      firstParentTurnToFirstTaskWaveMs: metricsAvailable
+        ? elapsedMs(
+            firstParentTurn?.createdAt ?? null,
+            firstTask?.startedAt ?? null,
+          )
+        : null,
+      finalTaskToReviewSubmitMs: metricsAvailable
+        ? elapsedMs(finalTask?.endedAt ?? null, submitStart?.createdAt ?? null)
+        : null,
+      admittedToSettlementMs: metricsAvailable
+        ? elapsedMs(admissionAt, settlementAt)
+        : null,
+    },
+    taskWaves: metricsAvailable ? taskWaves : null,
+    tasks: metricsAvailable ? taskList : null,
+    turns: {
+      parent: metricsAvailable ? parentTurns : null,
+      child: metricsAvailable ? childTurns : null,
+    },
+    workspaceTools: {
+      parent: metricsAvailable ? parentTools : null,
+      child: metricsAvailable ? childTools : null,
+    },
+    usage: {
+      parent: metricsAvailable ? parentUsage : null,
+      child: metricsAvailable ? childUsage : null,
+    },
+    taskBriefs: {
+      allRequiredFieldsPresent: !metricsAvailable
+        ? null
+        : taskList.length
+          ? taskList.every((task) => {
+              const start = taskStarts.get(task.taskId);
+              return [
+                'questionHash',
+                'revisionHash',
+                'scopeHash',
+                'exclusionsHash',
+                'knownFactsHash',
+                'expectedEvidenceHash',
+                'thoroughness',
+              ].every(
+                (key) => summaryString(start?.summary ?? null, key) !== null,
+              );
+            })
+          : null,
+    },
+    repetition: {
+      promptHashesWithinAttempt: metricsAvailable
+        ? Object.entries(taskHashCounts)
+            .filter(([, count]) => count > 1)
+            .map(([hash]) => hash)
+        : null,
+      promptHashesAcrossExactRevision: null,
+      repeatedWorkspaceQueries: metricsAvailable
+        ? repeatedCount(workspaceStarts.map((entry) => entry.inputHash))
+        : null,
+      retainedOutputReuses: metricsAvailable
+        ? workspaceStarts.filter(
+            (entry) =>
+              entry.event.name === `${reviewWorkspaceToolPrefix}output`,
+          ).length
+        : null,
+      parentReplaySignals: metricsAvailable ? parentReplaySignals : null,
+    },
+  };
+}
+
+function summaryString(summary: JsonValue | null, key: string) {
+  const value = objectRecord(summary)?.[key];
+  return typeof value === 'string' ? value : null;
+}
+
+function summaryBoolean(summary: JsonValue | null, key: string) {
+  const value = objectRecord(summary)?.[key];
+  return typeof value === 'boolean' ? value : null;
+}
+
+function taskStopReason(summary: JsonValue | null) {
+  const value = summaryString(summary, 'stopReason');
+  return value === 'answered' ||
+    value === 'insufficient evidence' ||
+    value === 'blocked'
+    ? value
+    : null;
+}
+
+function dateMs(value: string | null) {
+  if (!value) return Number.NaN;
+  const result = Date.parse(value);
+  return Number.isFinite(result) ? result : Number.NaN;
+}
+
+function elapsedMs(start: string | null, end: string | null) {
+  const startMs = dateMs(start);
+  const endMs = dateMs(end);
+  return Number.isFinite(startMs) && Number.isFinite(endMs)
+    ? Math.max(0, endMs - startMs)
+    : null;
+}
+
+function emptyUsage(): ActivityUsage {
+  return {
+    inputTokens: 0,
+    outputTokens: 0,
+    cacheReadTokens: 0,
+    cacheWriteTokens: 0,
+    totalTokens: 0,
+    cost: null,
+  };
+}
+
+function usageFromSummary(summary: JsonValue | null): ActivityUsage {
+  const usage = objectRecord(objectRecord(summary)?.usage);
+  const cost = objectRecord(usage?.cost);
+  return {
+    inputTokens: numberOrZero(usage?.inputTokens),
+    outputTokens: numberOrZero(usage?.outputTokens),
+    cacheReadTokens: numberOrZero(usage?.cacheReadTokens),
+    cacheWriteTokens: numberOrZero(usage?.cacheWriteTokens),
+    totalTokens: numberOrZero(usage?.totalTokens),
+    cost: cost
+      ? {
+          input: numberOrZero(cost.input),
+          output: numberOrZero(cost.output),
+          cacheRead: numberOrZero(cost.cacheRead),
+          cacheWrite: numberOrZero(cost.cacheWrite),
+          total: numberOrZero(cost.total),
+        }
+      : null,
+  };
+}
+
+function addUsage(target: ActivityUsage, source: ActivityUsage) {
+  target.inputTokens += source.inputTokens;
+  target.outputTokens += source.outputTokens;
+  target.cacheReadTokens += source.cacheReadTokens;
+  target.cacheWriteTokens += source.cacheWriteTokens;
+  target.totalTokens += source.totalTokens;
+  if (!source.cost) return;
+  if (!target.cost)
+    target.cost = {
+      input: 0,
+      output: 0,
+      cacheRead: 0,
+      cacheWrite: 0,
+      total: 0,
+    };
+  target.cost.input += source.cost.input;
+  target.cost.output += source.cost.output;
+  target.cost.cacheRead += source.cost.cacheRead;
+  target.cost.cacheWrite += source.cost.cacheWrite;
+  target.cost.total += source.cost.total;
+}
+
+function numberOrZero(value: unknown) {
+  return typeof value === 'number' && Number.isFinite(value) ? value : 0;
+}
+
+function addTool(
+  target: Record<string, { calls: number; durationMs: number }>,
+  toolName: string,
+  durationMs: number,
+) {
+  const entry = target[toolName] ?? { calls: 0, durationMs: 0 };
+  entry.calls += 1;
+  entry.durationMs += durationMs;
+  target[toolName] = entry;
+}
+
+function countValues(values: string[]) {
+  return values.reduce<Record<string, number>>((counts, value) => {
+    counts[value] = (counts[value] ?? 0) + 1;
+    return counts;
+  }, {});
+}
+
+function repeatedCount(values: Array<string | null>) {
+  return Object.values(
+    countValues(values.filter((value): value is string => value !== null)),
+  )
+    .filter((count) => count > 1)
+    .reduce((total, count) => total + count - 1, 0);
+}
+
 function summarizeObservation(event: FlueObservation): {
   message: string;
   name: string | null;
@@ -361,6 +988,7 @@ function summarizeObservation(event: FlueObservation): {
         {
           providerId: event.request.providerId,
           requestedModel: event.request.requestedModel,
+          reasoningLevel: event.request.reasoningLevel ?? null,
           responseModel: event.response.responseModel ?? null,
           finishReason: event.response.finishReason ?? null,
           usage: summarizeUsage(event.response.usage),
@@ -390,6 +1018,7 @@ function summarizeObservation(event: FlueObservation): {
           resultHash:
             event.result === undefined ? null : privacyHash(event.result),
           resultBytes: jsonByteLength(event.result),
+          ...taskResultMetadata(event.result),
         }),
         null,
         event.durationMs,
@@ -446,11 +1075,28 @@ function activitySummary(
   return { message, name, operationKind, durationMs, isError, summary };
 }
 
+function withCorrelationMetadata(
+  event: FlueObservation,
+  activity: ReturnType<typeof activitySummary>,
+) {
+  const summary = objectRecord(activity.summary);
+  if (!summary) return activity;
+  return {
+    ...activity,
+    summary: compactJsonRecord({
+      ...summary,
+      taskId: event.taskId ?? undefined,
+      turnId: event.turnId ?? undefined,
+    }),
+  };
+}
+
 function taskPromptMetadata(prompt: string): Record<string, JsonValue> {
   const question = taskPromptField(prompt, 'Question');
   const revision = taskPromptField(prompt, 'Revision');
   const scope = taskPromptField(prompt, 'Scope');
   const exclusions = taskPromptField(prompt, 'Exclusions');
+  const knownFacts = taskPromptField(prompt, 'Known facts');
   const expectedEvidence = taskPromptField(prompt, 'Expected evidence');
   const thoroughness = taskPromptField(prompt, 'Thoroughness')?.toLowerCase();
   return compactJsonRecord({
@@ -462,11 +1108,46 @@ function taskPromptMetadata(prompt: string): Record<string, JsonValue> {
     scopeItemCount: scope ? scopeItemCount(scope) : undefined,
     exclusionsHash: exclusions ? privacyHash(exclusions) : undefined,
     exclusionItemCount: exclusions ? scopeItemCount(exclusions) : undefined,
+    knownFactsHash: knownFacts ? privacyHash(knownFacts) : undefined,
     expectedEvidenceHash: expectedEvidence
       ? privacyHash(expectedEvidence)
       : undefined,
     thoroughness: safeEnum(thoroughness, ['quick', 'medium', 'very thorough']),
   });
+}
+
+function taskResultMetadata(result: unknown): Record<string, JsonValue> {
+  if (typeof result !== 'string') return {};
+  const requiredFields = ['Answer', 'Evidence', 'Unresolved', 'Inspected'];
+  const allRequiredFields = requiredFields.every((field) =>
+    resultContractSectionHasContent(result, field),
+  );
+  const stopReason = taskPromptField(result, 'Stop reason')?.toLowerCase();
+  return compactJsonRecord({
+    resultContract:
+      allRequiredFields &&
+      safeEnum(stopReason, ['answered', 'insufficient evidence', 'blocked']) !==
+        undefined,
+    stopReason: safeEnum(stopReason, [
+      'answered',
+      'insufficient evidence',
+      'blocked',
+    ]),
+  });
+}
+
+function resultContractSectionHasContent(result: string, label: string) {
+  const escaped = label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const header = new RegExp(`^${escaped}:[ \\t]*(.*)$`, 'im').exec(result);
+  if (!header) return false;
+  if (header[1]?.trim()) return true;
+  const tail = result.slice((header.index ?? 0) + header[0].length);
+  const nextHeader = tail.search(
+    /^(?:Answer|Evidence|Unresolved|Inspected|Stop reason):/im,
+  );
+  return (
+    tail.slice(0, nextHeader < 0 ? undefined : nextHeader).trim().length > 0
+  );
 }
 
 function taskPromptField(prompt: string, label: string) {
