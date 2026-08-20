@@ -357,6 +357,7 @@ export function printDbBackupResult(result: {
   restoredBackup?: DbBackup;
   safetyBackup?: DbBackup;
   errors?: string[];
+  warnings?: string[];
 }) {
   if (jsonOutput) {
     console.log(JSON.stringify(result, null, 2));
@@ -371,6 +372,9 @@ export function printDbBackupResult(result: {
   if (result.safetyBackup) printDbBackupMetadata('safety', result.safetyBackup);
   if (result.errors?.length) {
     for (const error of result.errors) console.log(`error: ${error}`);
+  }
+  if (result.warnings?.length) {
+    for (const warning of result.warnings) console.log(`warning: ${warning}`);
   }
   if (!result.ok) process.exitCode = 1;
 }

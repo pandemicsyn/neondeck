@@ -1,5 +1,5 @@
 import {
-  copyFileSync,
+  closeSync,
   existsSync,
   fsyncSync,
   mkdirSync,
@@ -8,7 +8,6 @@ import {
   readdirSync,
   rmSync,
   statSync,
-  closeSync,
   writeFileSync,
 } from 'node:fs';
 import { basename, dirname, join } from 'node:path';
@@ -76,6 +75,7 @@ export type AppDbBackupResult = {
   restoredBackup?: AppDbBackup;
   safetyBackup?: AppDbBackup;
   errors?: string[];
+  warnings?: string[];
 };
 
 export class AppDbMigrationError extends Error {
@@ -272,7 +272,12 @@ export function applyAppDbMigrations(
     const shouldBackupPending = journalExisted;
 
     if (pending.length > 0 && !backupPath && shouldBackupPending) {
-      backupPath = backupDatabase(databasePath, pending[0].name, options.now);
+      backupPath = backupDatabase(
+        database,
+        databasePath,
+        pending[0].name,
+        options.now,
+      );
     }
 
     for (const migration of pending) {
@@ -408,6 +413,22 @@ export async function restoreAppDbBackup(
     liveDatabase = new DatabaseSync(databasePath, { timeout: 0 });
     try {
       liveDatabase.exec('PRAGMA busy_timeout = 0;');
+      const lockingMode = liveDatabase
+        .prepare('PRAGMA locking_mode = EXCLUSIVE;')
+        .get() as { locking_mode?: unknown };
+      if (lockingMode.locking_mode !== 'exclusive') {
+        throw new AppDbMigrationError(
+          'SQLite did not enter exclusive locking mode.',
+        );
+      }
+      const journalMode = liveDatabase
+        .prepare('PRAGMA journal_mode = DELETE;')
+        .get() as { journal_mode?: unknown };
+      if (journalMode.journal_mode !== 'delete') {
+        throw new AppDbMigrationError(
+          `SQLite did not leave WAL mode (current mode: ${String(journalMode.journal_mode)}).`,
+        );
+      }
       liveDatabase.exec('BEGIN EXCLUSIVE;');
       transactionOpen = true;
     } catch (error) {
@@ -429,13 +450,23 @@ export async function restoreAppDbBackup(
     liveDatabase.close();
     liveDatabase = undefined;
 
+    // Clear the old database's checkpointed sidecars before installing the new
+    // main file. Leaving them beside the replacement, even briefly, could make
+    // SQLite interpret an old WAL as belonging to the restored database.
+    removeDatabaseSidecars(databasePath);
     (restoreReplacementHook ?? replaceDatabaseAtomically)(
       stagedPath,
       databasePath,
     );
     stagedPath = undefined;
-    removeDatabaseSidecars(databasePath);
-    rotateBackups(join(dirname(databasePath), 'backups'));
+    let warnings: string[] | undefined;
+    try {
+      rotateBackups(join(dirname(databasePath), 'backups'));
+    } catch (error) {
+      warnings = [
+        `The database was restored, but backup retention cleanup failed: ${errorMessage(error)}.`,
+      ];
+    }
 
     return {
       ok: true,
@@ -444,6 +475,7 @@ export async function restoreAppDbBackup(
       restoredBackup,
       safetyBackup,
       message: `Restored ${restoredBackup.name}. The replaced database was saved as ${safetyBackup.path}.`,
+      ...(warnings ? { warnings } : {}),
     };
   } catch (error) {
     return failedAppDbBackup(
@@ -636,7 +668,6 @@ function validateAppDbBackup(path: string): AppDbBackup {
       `Backup database is incompatible with this Neondeck package: ${status.message}`,
     );
   }
-
   const metadata = readBackupMetadata(path);
   if (!metadata) {
     return {
@@ -692,6 +723,7 @@ function failedAppDbBackup(
 }
 
 function backupDatabase(
+  database: DatabaseSync,
   databasePath: string,
   nextMigrationName: string,
   now = new Date(),
@@ -703,11 +735,17 @@ function backupDatabase(
     `pre-${nextMigrationName}`,
     now,
   );
-  copyIfExists(databasePath, backupPath);
-  copyIfExists(`${databasePath}-wal`, `${backupPath}-wal`);
-  copyIfExists(`${databasePath}-shm`, `${backupPath}-shm`);
-  rotateBackups(backupsDir);
-  return backupPath;
+  try {
+    // BEGIN IMMEDIATE is already held and no migration statements have run yet.
+    // Serialize the logical image so WAL-resident pages become one standalone
+    // SQLite file instead of copying a live database/WAL/SHM set piecemeal.
+    writeSerializedSnapshot(database, backupPath);
+    rotateBackups(backupsDir);
+    return backupPath;
+  } catch (error) {
+    removeBackupSet(backupPath);
+    throw error;
+  }
 }
 
 function rotateBackups(backupsDir: string) {
@@ -814,10 +852,6 @@ function migrationStatusMessage(input: {
     return `Database has pending migrations: ${input.pending.join(', ')}.`;
   }
   return 'App database migration journal is not current.';
-}
-
-function copyIfExists(from: string, to: string) {
-  if (existsSync(from)) copyFileSync(from, to);
 }
 
 function listUserTables(database: DatabaseSync) {
