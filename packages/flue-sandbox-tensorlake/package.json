@@ -1,0 +1,58 @@
+{
+  "name": "@neondeck/flue-sandbox-tensorlake",
+  "version": "0.0.0",
+  "description": "Tensorlake sandbox adapter for Flue",
+  "keywords": [
+    "flue",
+    "tensorlake",
+    "sandbox",
+    "agent"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/pandemicsyn/neondeck.git",
+    "directory": "packages/flue-sandbox-tensorlake"
+  },
+  "homepage": "https://github.com/pandemicsyn/neondeck#readme",
+  "bugs": {
+    "url": "https://github.com/pandemicsyn/neondeck/issues"
+  },
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist/",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=22.19.0"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true,
+    "registry": "https://registry.npmjs.org/"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "check": "npm run typecheck && npm run test && npm run pack:check",
+    "pack:check": "npm pack --dry-run --cache .npm-cache",
+    "prepack": "npm run build",
+    "test": "vitest run --config vitest.config.ts",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "peerDependencies": {
+    "@flue/runtime": "^2.0.3",
+    "tensorlake": ">=0.5.107 <0.6.0"
+  },
+  "devDependencies": {
+    "@flue/runtime": "2.0.3",
+    "tensorlake": "0.5.107"
+  }
+}
