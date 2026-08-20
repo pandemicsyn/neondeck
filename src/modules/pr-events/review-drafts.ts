@@ -9,6 +9,7 @@ import {
   readLivePrReviewDraft,
   readPrReviewDraft,
   readPrReviewDraftForComment,
+  reanchorPrReviewDraft,
   updatePrReviewDraftComment,
   upsertPrReviewDraft,
   type GitHubPrReviewDraft,
@@ -97,6 +98,50 @@ export async function putGitHubPrReviewDraft(
   );
   if (!resolved.ok) return resolved.result;
 
+  if (parsedDraft.output.reanchorHeadSha) {
+    const { expectedDraftId, expectedHeadSha } = parsedDraft.output;
+    if (!expectedDraftId || !expectedHeadSha) {
+      return failResult(
+        'github_pr_review_draft_put',
+        'Re-anchoring a review draft requires its expected draft and head revision.',
+        { requires: ['expectedDraftId', 'expectedHeadSha'] },
+      );
+    }
+    let draft: ReturnType<typeof reanchorPrReviewDraft>;
+    try {
+      draft = reanchorPrReviewDraft({
+        databasePath: paths.neondeckDatabase,
+        repo: resolved.target.repoFullName,
+        prNumber: resolved.target.number,
+        draftId: expectedDraftId,
+        expectedHeadSha,
+        headSha: parsedDraft.output.headSha,
+      });
+    } catch (error) {
+      return failResult(
+        'github_pr_review_draft_put',
+        'Could not re-anchor review draft.',
+        { errors: [errorMessage(error)] },
+      );
+    }
+    if (!draft) {
+      return failResult(
+        'github_pr_review_draft_put',
+        'The review draft changed before it could be re-anchored. Refresh and try again.',
+        { requires: ['currentDraft'] },
+      );
+    }
+    return okResult(
+      'github_pr_review_draft_put',
+      true,
+      `Re-anchored review draft for ${resolved.target.repoFullName}#${resolved.target.number}.`,
+      {
+        target: eventTargetJson(resolved.target),
+        draft: draft as unknown as JsonValue,
+      },
+    );
+  }
+
   const draftUpdate: Parameters<typeof upsertPrReviewDraft>[0] = {
     databasePath: paths.neondeckDatabase,
     repo: resolved.target.repoFullName,
@@ -108,9 +153,6 @@ export async function putGitHubPrReviewDraft(
   }
   if ('body' in parsedDraft.output) {
     draftUpdate.body = parsedDraft.output.body ?? null;
-  }
-  if (parsedDraft.output.reanchorHeadSha) {
-    draftUpdate.reanchorHeadSha = true;
   }
   let draft: ReturnType<typeof upsertPrReviewDraft>;
   try {

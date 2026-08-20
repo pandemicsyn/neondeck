@@ -26,6 +26,7 @@ import {
   pullRequestEventStateIncompleteness,
   pullRequestEventStateTruncation,
   readLivePrReviewDraft,
+  reanchorPrReviewDraft,
   recordPrReviewNeonSeed,
   deletePrReviewDraftComment,
   replyToPullRequestReviewThread,
@@ -1757,6 +1758,48 @@ describe('github foundation', () => {
         prNumber: 123,
       })?.id,
     ).toBe(first.id);
+  });
+
+  it('reanchors only the expected live review draft revision', async () => {
+    const paths = runtimePaths(await tempHome());
+    await ensureRuntimeHome(paths);
+    const original = upsertPrReviewDraft({
+      databasePath: paths.neondeckDatabase,
+      repo: 'pandemicsyn/neondeck',
+      prNumber: 123,
+      headSha: 'head-before',
+    });
+
+    expect(
+      reanchorPrReviewDraft({
+        databasePath: paths.neondeckDatabase,
+        repo: 'pandemicsyn/neondeck',
+        prNumber: 123,
+        draftId: original.id,
+        expectedHeadSha: 'different-head',
+        headSha: 'head-after',
+      }),
+    ).toBeNull();
+    expect(
+      reanchorPrReviewDraft({
+        databasePath: paths.neondeckDatabase,
+        repo: 'pandemicsyn/neondeck',
+        prNumber: 123,
+        draftId: original.id,
+        expectedHeadSha: 'head-before',
+        headSha: 'head-after',
+      }),
+    ).toMatchObject({ id: original.id, headSha: 'head-after' });
+    expect(
+      reanchorPrReviewDraft({
+        databasePath: paths.neondeckDatabase,
+        repo: 'pandemicsyn/neondeck',
+        prNumber: 123,
+        draftId: original.id,
+        expectedHeadSha: 'head-before',
+        headSha: 'head-after-race',
+      }),
+    ).toBeNull();
   });
 
   it('finds and reuses live review drafts across repository casing', async () => {

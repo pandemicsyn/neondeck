@@ -22,6 +22,7 @@ import { readPrReview } from '../modules/pr-reviews';
 import {
   createDeferredPrReviewerWorkspaceTools,
   createPrReviewerDraftTools,
+  createPrReviewerReReviewTool,
   consumePrReviewWorkspaceBudget,
   prReviewWorkspaceBudgetKey,
   prReviewerWorkspaceToolCallLimit,
@@ -176,6 +177,10 @@ export async function buildPrReviewerRuntime(
     reviewerWorkspace: workspace,
     tools: [
       ...workspace.tools,
+      createPrReviewerReReviewTool(
+        { reviewId: review.id, headSha: review.headSha },
+        paths,
+      ),
       ...createPrReviewerDraftTools(
         { reviewId: review.id, headSha: review.headSha },
         paths,
@@ -266,6 +271,12 @@ export function PrReviewer({ id }: AgentProps) {
     }),
   );
   if (conversation.headSha) {
+    useTool(
+      createPrReviewerReReviewTool(
+        { reviewId: conversation.reviewId, headSha: conversation.headSha },
+        paths,
+      ),
+    );
     for (const tool of createPrReviewerDraftTools(
       { reviewId: conversation.reviewId, headSha: conversation.headSha },
       paths,

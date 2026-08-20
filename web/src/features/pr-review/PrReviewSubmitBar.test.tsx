@@ -35,4 +35,37 @@ describe('PrReviewSubmitBar accessibility', () => {
     expect(html).toContain('id="pr-review-summary-body"');
     expect(html).toContain('>Submit</button>');
   });
+
+  it('locks summary and submission controls during a revision update', () => {
+    const html = renderToStaticMarkup(
+      <PrReviewSubmitBar
+        cleanCommentCount={1}
+        draft={null}
+        isBusy
+        isDurableReviewReady
+        isHeadAvailable
+        isSubmitting={false}
+        onBodyBlur={vi.fn<() => void>()}
+        onBodyChange={vi.fn<(value: string) => void>()}
+        onBodyFocus={vi.fn<() => void>()}
+        onDiscard={vi.fn<() => void>()}
+        onPendingCountClick={vi.fn<() => void>()}
+        onSubmit={vi.fn<() => void>()}
+        onVerdictChange={vi.fn<
+          (value: 'comment' | 'approve' | 'request-changes') => void
+        >()}
+        reviewBody="Summary"
+        staleCommentCount={0}
+        statusMessage={null}
+        trustBoundary={null}
+        verdict="comment"
+      />,
+    );
+
+    expect(html).toMatch(/<textarea[^>]*disabled=""/);
+    expect(html).toContain(
+      '<button class="pr-review-count" disabled="" title="Cycle through pending draft comments" type="button">1 pending</button>',
+    );
+    expect(html).toContain('<button disabled="" type="button">Submit</button>');
+  });
 });

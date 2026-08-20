@@ -1,5 +1,5 @@
 import type { SelectedLineRange } from '@pierre/diffs/react';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
   createReviewNavigationModel,
   reviewCursorTargets,
@@ -43,7 +43,9 @@ import {
   githubPrReviewRefreshSafety,
   isCurrentReviewOperation,
   prReviewDraftHeadIsStale,
+  reanchorDraftToRevision,
   refreshOrientationTargetSettled,
+  sameReviewDraftRevision,
   selectionAnchorMatchesPatch,
 } from './review-ui-helpers';
 import capturedReviewPatch from './fixtures/captured-review.patch?raw';
@@ -66,11 +68,71 @@ describe('GitHubPrReview helpers', () => {
     );
   });
 
-  it('does not mark a draft stale while the current PR head is loading', () => {
+  it('detects an initially stale draft even when no newer diff revision is pending', () => {
+    expect(prReviewDraftHeadIsStale('draft-head', 'mounted-head')).toBe(true);
+    expect(prReviewDraftHeadIsStale('mounted-head', 'mounted-head')).toBe(
+      false,
+    );
     expect(prReviewDraftHeadIsStale('draft-head', null)).toBe(false);
-    expect(prReviewDraftHeadIsStale('draft-head', '')).toBe(false);
-    expect(prReviewDraftHeadIsStale('draft-head', 'draft-head')).toBe(false);
-    expect(prReviewDraftHeadIsStale('draft-head', 'new-head')).toBe(true);
+  });
+
+  it('revalidates the same draft and head before moving it to a new revision', () => {
+    const expected = { id: 'draft-1', headSha: 'head-a' };
+
+    expect(
+      sameReviewDraftRevision(expected, { ...expected, status: 'draft' }),
+    ).toBe(true);
+    expect(
+      sameReviewDraftRevision(expected, {
+        id: 'draft-2',
+        headSha: 'head-a',
+        status: 'draft',
+      }),
+    ).toBe(false);
+    expect(
+      sameReviewDraftRevision(expected, {
+        id: 'draft-1',
+        headSha: 'head-b',
+        status: 'draft',
+      }),
+    ).toBe(false);
+    expect(
+      sameReviewDraftRevision(expected, {
+        ...expected,
+        status: 'discarded',
+      }),
+    ).toBe(false);
+    expect(sameReviewDraftRevision(expected, null)).toBe(false);
+  });
+
+  it('updates the draft to the validated candidate revision without consulting a stale queue snapshot', async () => {
+    const candidateHeadSha = 'candidate-head';
+    const saveDraft = vi.fn<
+      Parameters<typeof reanchorDraftToRevision>[0]['saveDraft']
+    >(async () => undefined);
+    const invalidateReviewSources = vi.fn<
+      Parameters<typeof reanchorDraftToRevision>[0]['invalidateReviewSources']
+    >(async () => undefined);
+
+    await reanchorDraftToRevision({
+      repo: 'pandemicsyn/neondeck',
+      number: 66,
+      draftId: 'draft-1',
+      expectedHeadSha: 'original-head',
+      headSha: candidateHeadSha,
+      saveDraft,
+      invalidateReviewSources,
+    });
+
+    expect(saveDraft).toHaveBeenCalledWith({
+      repo: 'pandemicsyn/neondeck',
+      number: 66,
+      expectedDraftId: 'draft-1',
+      expectedHeadSha: 'original-head',
+      headSha: candidateHeadSha,
+      reanchorHeadSha: true,
+    });
+    expect(invalidateReviewSources).toHaveBeenCalledOnce();
   });
 
   it.each([

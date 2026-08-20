@@ -71,6 +71,7 @@ export {
   readLivePrReviewDraft,
   readPrReviewDraft,
   readPrReviewDraftForComment,
+  reanchorPrReviewDraft,
   recordPrReviewNeonSeed,
   replyToPullRequestReviewThread,
   resolvePullRequestReviewThread,

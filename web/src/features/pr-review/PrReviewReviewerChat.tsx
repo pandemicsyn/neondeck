@@ -19,9 +19,11 @@ import { useChatAutoScroll } from '../flue-chat/lib/use-chat-auto-scroll';
 import { createNeondeckConversationClient } from '../../lib/flue';
 
 export function PrReviewReviewerChat({
+  isLocked = false,
   onDraftChanged,
   review,
 }: {
+  isLocked?: boolean;
   onDraftChanged?: () => void;
   review: PrReviewRecord | null;
 }) {
@@ -34,12 +36,12 @@ export function PrReviewReviewerChat({
   }
   if (review.status === 'reviewing') {
     return (
-      <ReviewerUnavailable copy="The reviewer conversation will be available when the initial review finishes." />
+      <ReviewerUnavailable copy="Neon is reviewing the current PR revision. The reviewer conversation will reconnect when it finishes." />
     );
   }
   if (review.status === 'failed') {
     return (
-      <ReviewerUnavailable copy="The initial review failed. Retry it before asking the reviewer follow-up questions." />
+      <ReviewerUnavailable copy="The Neon review run failed. Retry it before asking follow-up questions." />
     );
   }
 
@@ -47,6 +49,7 @@ export function PrReviewReviewerChat({
   return (
     <ReviewerConversation
       agentId={agentId}
+      isLocked={isLocked}
       key={`${agentId}:${connectionAttempt}`}
       onDraftChanged={onDraftChanged}
       onReconnect={() => setConnectionAttempt((attempt) => attempt + 1)}
@@ -56,10 +59,12 @@ export function PrReviewReviewerChat({
 
 function ReviewerConversation({
   agentId,
+  isLocked,
   onDraftChanged,
   onReconnect,
 }: {
   agentId: string;
+  isLocked: boolean;
   onDraftChanged?: () => void;
   onReconnect: () => void;
 }) {
@@ -84,7 +89,7 @@ function ReviewerConversation({
     agent.status === 'connecting' ||
     agent.status === 'submitted' ||
     agent.status === 'streaming';
-  const ready = agent.historyReady && !connectionError && !busy;
+  const ready = agent.historyReady && !connectionError && !busy && !isLocked;
 
   useEffect(() => {
     let changed = false;
@@ -178,13 +183,15 @@ function ReviewerConversation({
           onChange={(event) => setInput(event.currentTarget.value)}
           onKeyDown={handleKeyDown}
           placeholder={
-            connectionError
-              ? 'Reviewer connection unavailable.'
-              : agent.historyReady
-                ? busy
-                  ? 'Reviewer is working…'
-                  : 'Ask why this is an issue…'
-                : 'Loading reviewer history…'
+            isLocked
+              ? 'Wait for the PR revision update to finish.'
+              : connectionError
+                ? 'Reviewer connection unavailable.'
+                : agent.historyReady
+                  ? busy
+                    ? 'Reviewer is working…'
+                    : 'Ask why this is an issue…'
+                  : 'Loading reviewer history…'
           }
           rows={3}
           value={input}
@@ -196,7 +203,7 @@ function ReviewerConversation({
               : sendError || 'Enter send · Shift+Enter newline'}
           </span>
           {connectionError ? (
-            <button onClick={onReconnect} type="button">
+            <button disabled={isLocked} onClick={onReconnect} type="button">
               Reconnect
             </button>
           ) : (

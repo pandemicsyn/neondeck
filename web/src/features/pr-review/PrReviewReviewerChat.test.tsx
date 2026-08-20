@@ -75,6 +75,24 @@ describe('PrReviewReviewerChat', () => {
     expect(useFlueAgentMock.mock.calls.length).toBeGreaterThan(1);
   });
 
+  it('explains that revision-bound chat reconnects after a re-review', () => {
+    const review = {
+      id: 'review-123',
+      headSha: 'b'.repeat(40),
+      status: 'reviewing',
+    } as PrReviewRecord;
+
+    act(() => root.render(<PrReviewReviewerChat review={review} />));
+
+    expect(container.textContent).toContain(
+      'Neon is reviewing the current PR revision.',
+    );
+    expect(container.textContent).toContain(
+      'conversation will reconnect when it finishes',
+    );
+    expect(useFlueAgentMock).not.toHaveBeenCalled();
+  });
+
   it('submits with Enter while preserving Shift+Enter for newlines', async () => {
     const sendMessage = vi.fn<UseFlueAgentResult['sendMessage']>(
       async () => undefined,
@@ -128,6 +146,31 @@ describe('PrReviewReviewerChat', () => {
 
     expect(sendMessage).toHaveBeenCalledWith('What changed?');
     expect(textarea?.value).toBe('');
+  });
+
+  it('locks new reviewer requests during a revision update', () => {
+    useFlueAgentMock.mockReturnValue({
+      messages: [],
+      status: 'idle',
+      historyReady: true,
+      error: undefined,
+      failedSends: [],
+      settlements: [],
+      sendMessage: vi.fn<UseFlueAgentResult['sendMessage']>(),
+      refresh: vi.fn<() => void>(),
+    });
+    const review = {
+      id: 'review-123',
+      headSha: 'a'.repeat(40),
+      status: 'ready',
+    } as PrReviewRecord;
+
+    act(() => root.render(<PrReviewReviewerChat isLocked review={review} />));
+
+    expect(container.querySelector('textarea')?.disabled).toBe(true);
+    expect(container.querySelector('textarea')?.placeholder).toBe(
+      'Wait for the PR revision update to finish.',
+    );
   });
 
   it('reports successful local draft mutations once so the review can refresh', () => {

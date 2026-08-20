@@ -2,15 +2,23 @@ import type { ReviewRefreshSafety } from '../../../../shared/review-refresh';
 import { reviewRefreshPauseMessage } from '../../../../shared/review-refresh';
 
 export function ReviewRefreshNotice({
+  actionAriaLabel = 'Apply the available review revision',
+  actionLabel = 'Apply revision',
   availableLabel,
   disabled,
   onApply,
+  readyLabel = 'It is safe to refresh now.',
   safety,
+  title = 'New revision available',
 }: {
+  actionAriaLabel?: string;
+  actionLabel?: string;
   availableLabel: string;
   disabled: boolean;
   onApply: () => void;
+  readyLabel?: string;
   safety: ReviewRefreshSafety;
+  title?: string;
 }) {
   const pauseMessage = reviewRefreshPauseMessage(safety.reasons);
   return (
@@ -21,19 +29,19 @@ export function ReviewRefreshNotice({
       className="review-refresh-notice"
     >
       <div className="min-w-0">
-        <p className="review-refresh-title">New revision available</p>
+        <p className="review-refresh-title">{title}</p>
         <p className="review-refresh-copy">
           {availableLabel}
-          {pauseMessage ? ` ${pauseMessage}` : ' It is safe to refresh now.'}
+          {pauseMessage ? ` ${pauseMessage}` : ` ${readyLabel}`}
         </p>
       </div>
       <button
-        aria-label="Apply the available review revision"
+        aria-label={actionAriaLabel}
         disabled={disabled}
         onClick={onApply}
         type="button"
       >
-        Apply revision
+        {actionLabel}
       </button>
     </section>
   );

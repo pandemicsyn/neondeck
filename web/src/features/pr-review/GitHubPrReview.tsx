@@ -31,6 +31,7 @@ import type { NeonReviewFinding } from '../../../../shared/review-finding';
 import {
   dismissReviewSurfaceFindings,
   promoteReviewSurfaceFinding,
+  type GitHubPrReviewDraft,
   type GitHubPrReviewDraftComment,
   type GitHubPrReviewVerdict,
   type GitHubPullRequest,
@@ -40,7 +41,10 @@ import { Badge, MiniEmpty } from '../../components/ui';
 import { queryErrorMessage } from '../../lib/query';
 import { firstRenderablePath, patchHasContent } from '../diff-viewer/helpers';
 import type { DiffNavigationScrollRequest } from '../diff-viewer/DiffViewer';
-import { GitHubPrRevisionNotice } from './GitHubPrRevisionNotice';
+import {
+  GitHubPrDraftRevisionNotice,
+  GitHubPrRevisionNotice,
+} from './GitHubPrRevisionNotice';
 import type { DiffFilePatch, DiffReviewAnnotation } from '../diff-viewer/types';
 import { githubPrReviewSource } from '../diff-viewer/review-source';
 import { PrReviewCommentComposer } from './PrReviewCommentComposer';
@@ -57,6 +61,7 @@ import {
   useGitHubPullRequestFilePatches,
   primeGitHubPullRequestFilePatch,
   primeGitHubPullRequestFileList,
+  prReviewQueryKeys,
 } from './queries';
 import {
   commentAnchorExists,
@@ -91,7 +96,9 @@ import {
   githubPrReviewRefreshSafety,
   isCurrentReviewOperation,
   prReviewDraftHeadIsStale,
+  reanchorDraftToRevision,
   refreshOrientationTargetSettled,
+  sameReviewDraftRevision,
   selectionAnchorMatchesPatch,
 } from './review-ui-helpers';
 import { usePrReviewRecord } from './usePrReviewRecord';
@@ -700,13 +707,15 @@ export function GitHubPrReview({
   );
   const selectPathFromWorkbench = useCallback(
     (path: string) => {
+      if (isApplyingRevision) return;
       jumpToReviewPath(path);
       setNavigationAnnouncement(`${path}, file selected from the file tree.`);
     },
-    [jumpToReviewPath],
+    [isApplyingRevision, jumpToReviewPath],
   );
   const handleFileFilterChange = useCallback(
     (query: string | null, paths: string[] | null) => {
+      if (isApplyingRevision) return;
       setFileFilter((current) => {
         if (current.query === query && sameStringArray(current.paths, paths)) {
           return current;
@@ -714,7 +723,7 @@ export function GitHubPrReview({
         return { paths, query };
       });
     },
-    [],
+    [isApplyingRevision],
   );
   const handleReviewSurfaceIdChange = useCallback(
     (surfaceId: string | null) => {
@@ -736,6 +745,7 @@ export function GitHubPrReview({
       status?: string | null,
       selectionAuthority: ReviewNavigationAuthority = 'explicit',
     ) => {
+      if (isApplyingRevision) return;
       const publication = reviewNavigationPublication(
         target,
         navigationData.anchors,
@@ -768,10 +778,11 @@ export function GitHubPrReview({
         ),
       );
     },
-    [navigationData.anchors],
+    [isApplyingRevision, navigationData.anchors],
   );
   const performHunkTraversal = useCallback(
     (direction: ReviewCursorDirection, remainingLoads: number) => {
+      if (isApplyingRevision) return;
       const result = resolveHunkTraversal({
         activePath,
         availability: patchNavigationState,
@@ -841,6 +852,7 @@ export function GitHubPrReview({
     [
       activePath,
       activateNavigationTarget,
+      isApplyingRevision,
       navigationCurrentIndex,
       navigationFiles,
       navigationTargetKey,
@@ -851,7 +863,7 @@ export function GitHubPrReview({
   );
   const navigateReview = useCallback(
     (direction: ReviewCursorDirection) => {
-      if (pendingHunkNavigation) return;
+      if (isApplyingRevision || pendingHunkNavigation) return;
       if (navigationKind === 'hunk') {
         setNavigationAuthority('explicit');
         performHunkTraversal(direction, maxLazyHunkLoadsPerMove);
@@ -895,6 +907,7 @@ export function GitHubPrReview({
       activePath,
       activateNavigationTarget,
       fileFilter.query,
+      isApplyingRevision,
       navigationData.model.canonicalFilePaths,
       navigationKind,
       navigationTargetKey,
@@ -905,6 +918,7 @@ export function GitHubPrReview({
   );
   const selectNeonFinding = useCallback(
     (finding: NeonReviewFinding) => {
+      if (isApplyingRevision) return;
       setPendingHunkNavigation(null);
       setNavigationKind('finding');
       const selection = resolveNeonFindingSelection(
@@ -940,7 +954,13 @@ export function GitHubPrReview({
         );
       }
     },
-    [activateNavigationTarget, fileFilter.paths, files, navigationData.model],
+    [
+      activateNavigationTarget,
+      fileFilter.paths,
+      files,
+      isApplyingRevision,
+      navigationData.model,
+    ],
   );
   const applyAvailableRevision = useCallback(async () => {
     if (
@@ -964,8 +984,17 @@ export function GitHubPrReview({
       target,
     };
     const savedComposer = composer;
+    const draftToMove =
+      draft && draft.headSha !== incomingPr.headSha
+        ? { id: draft.id, headSha: draft.headSha }
+        : null;
+    const shouldMoveDraft = Boolean(draftToMove);
     setIsApplyingRevision(true);
-    setStatusMessage('Loading the available PR revision.');
+    setStatusMessage(
+      shouldMoveDraft
+        ? 'Loading the new PR revision and updating the local draft.'
+        : 'Loading the new PR revision.',
+    );
     try {
       const nextFileList = await primeGitHubPullRequestFileList(
         queryClient,
@@ -1025,6 +1054,27 @@ export function GitHubPrReview({
         );
         return;
       }
+      if (draftToMove) {
+        const liveDraft = queryClient.getQueryData<GitHubPrReviewDraft | null>(
+          prReviewQueryKeys.draft(incomingPr),
+        );
+        if (!sameReviewDraftRevision(draftToMove, liveDraft)) {
+          setStatusMessage(
+            'Refresh paused because the local draft changed while the revision was loading.',
+          );
+          return;
+        }
+        await reanchorDraftToRevision({
+          repo: incomingPr.repo,
+          number: incomingPr.number,
+          draftId: draftToMove.id,
+          expectedHeadSha: draftToMove.headSha,
+          headSha: incomingPr.headSha ?? '',
+          saveDraft: mutations.saveDraft.mutateAsync,
+          invalidateReviewSources: mutations.invalidateReviewSources,
+        });
+        setSubmitFailedCommentIds(new Set());
+      }
       refreshOrientationRef.current = {
         ...savedOrientation,
         nextPath,
@@ -1049,11 +1099,14 @@ export function GitHubPrReview({
   }, [
     activePath,
     composer,
+    draft,
     filesByPath,
     hasAvailableRevision,
     incomingPr,
     incomingPrRevisionKey,
     isApplyingRevision,
+    mutations.invalidateReviewSources,
+    mutations.saveDraft.mutateAsync,
     navigationData.model.guidedFilePaths,
     navigationTargetKey,
     navigationTargets,
@@ -1302,6 +1355,7 @@ export function GitHubPrReview({
   };
   const ensureDraft = async () => draft ?? (await saveDraft());
   const beginReanchorComment = (commentId: string, path: string | null) => {
+    if (isApplyingRevision) return;
     setAnchoringFinding(null);
     setComposer(null);
     setReanchoringCommentId(commentId);
@@ -1313,6 +1367,7 @@ export function GitHubPrReview({
     setStatusMessage('Select a new diff line to re-anchor the draft comment.');
   };
   const beginAnchorFinding = (finding: PrReviewReportOnlyFinding) => {
+    if (isApplyingRevision) return;
     setComposer(null);
     setReanchoringCommentId(null);
     setAnchoringFinding(finding);
@@ -1329,23 +1384,26 @@ export function GitHubPrReview({
     if (!draft) return;
     const operationToken = beginOperation();
     try {
-      const refreshedHeadSha = await mutations
-        .refetchPullRequestHeadSha()
-        .catch(() => null);
-      const nextHeadSha = refreshedHeadSha ?? currentHeadSha;
-      await saveDraft({ reanchorHeadSha: true }, nextHeadSha);
-      await mutations.invalidateReviewSources();
+      await reanchorDraftToRevision({
+        repo: pr.repo,
+        number: pr.number,
+        draftId: draft.id,
+        expectedHeadSha: draft.headSha,
+        headSha: currentHeadSha,
+        saveDraft: mutations.saveDraft.mutateAsync,
+        invalidateReviewSources: mutations.invalidateReviewSources,
+      });
       setSubmitFailedCommentIds(new Set());
       finishOperation(
         operationToken,
-        'Draft head updated to the current PR revision.',
+        'Draft updated to the mounted PR revision.',
       );
     } catch (error) {
       failOperation(operationToken, error);
     }
   };
   const onSelectionChange = (selection: SelectedLineRange | null) => {
-    if (!selection || !activePath) return;
+    if (isApplyingRevision || !selection || !activePath) return;
     setPendingHunkNavigation(null);
     setNavigationTargetKey(null);
     setNavigationAuthority('automatic');
@@ -1403,6 +1461,7 @@ export function GitHubPrReview({
   };
   const submitComposer = async (event: FormEvent) => {
     event.preventDefault();
+    if (isApplyingRevision) return;
     const submittedComposer = composer;
     if (!submittedComposer || submittedComposer.body.trim().length === 0)
       return;
@@ -1440,6 +1499,7 @@ export function GitHubPrReview({
   };
   const submitEdit = async (event: FormEvent) => {
     event.preventDefault();
+    if (isApplyingRevision) return;
     const submittedEditor = commentEditor;
     if (!submittedEditor || submittedEditor.body.trim().length === 0) return;
     const operationToken = beginOperation();
@@ -1460,6 +1520,7 @@ export function GitHubPrReview({
   };
   const submitReply = async (threadId: string, event: FormEvent) => {
     event.preventDefault();
+    if (isApplyingRevision) return;
     const submittedEditor = replyEditor;
     if (
       !submittedEditor ||
@@ -1484,6 +1545,7 @@ export function GitHubPrReview({
     }
   };
   const deleteDraftComment = (commentId: string) => {
+    if (isApplyingRevision) return;
     const operationToken = beginOperation();
     mutations.deleteComment.mutate(
       {
@@ -1499,6 +1561,7 @@ export function GitHubPrReview({
     );
   };
   const dismissNeonFinding = async (finding: NeonReviewFinding) => {
+    if (isApplyingRevision) return;
     if (!reviewSurfaceId || !currentReviewRevisionKey) {
       setStatusMessage(
         'The focused review surface is not ready for dismissal.',
@@ -1526,6 +1589,9 @@ export function GitHubPrReview({
     }
   };
   const promotionUnavailableReason = (finding: NeonReviewFinding) => {
+    if (isApplyingRevision) {
+      return 'Wait for the PR revision update to finish.';
+    }
     const resolution = neonFindingResolutions.get(finding.id);
     if (!reviewSurfaceId || !currentReviewRevisionKey) {
       return 'The focused review surface is still connecting.';
@@ -1548,6 +1614,7 @@ export function GitHubPrReview({
     return null;
   };
   const promoteNeonFinding = async (finding: NeonReviewFinding) => {
+    if (isApplyingRevision) return;
     const resolution = neonFindingResolutions.get(finding.id);
     const disabledReason = promotionUnavailableReason(finding);
     if (
@@ -1597,7 +1664,7 @@ export function GitHubPrReview({
   const renderAnnotation = (annotation: DiffReviewAnnotation) =>
     annotation.metadata.kind === 'finding' && annotation.metadata.finding ? (
       <PrReviewNeonFindingAnnotation
-        actionsLocked={findingActionsLocked}
+        actionsLocked={findingActionsLocked || isApplyingRevision}
         compact={!isStandalone}
         finding={annotation.metadata.finding}
         isDismissing={dismissingFindingIds.has(annotation.metadata.finding.id)}
@@ -1621,17 +1688,21 @@ export function GitHubPrReview({
         editingCommentId={commentEditor?.commentId ?? null}
         isAddingComment={mutations.addComment.isPending}
         isDeletingComment={mutations.deleteComment.isPending}
+        isLocked={isApplyingRevision}
         isReplyingToThread={mutations.replyToThread.isPending}
         isResolvingThread={mutations.setThreadResolution.isPending}
         isSavingDraft={mutations.saveDraft.isPending}
         isUpdatingComment={mutations.updateComment.isPending}
         onCancelComposer={() => {
+          if (isApplyingRevision) return;
           setComposer(null);
         }}
         onCancelEdit={() => {
+          if (isApplyingRevision) return;
           setCommentEditor(null);
         }}
         onCancelReply={() => {
+          if (isApplyingRevision) return;
           setReplyEditor(null);
         }}
         onComposerBodyChange={(body) =>
@@ -1652,6 +1723,7 @@ export function GitHubPrReview({
           )
         }
         onSetThreadResolution={(thread) => {
+          if (isApplyingRevision) return;
           const operationToken = beginOperation();
           const resolved = !thread.isResolved;
           mutations.setThreadResolution.mutate(
@@ -1672,6 +1744,7 @@ export function GitHubPrReview({
           );
         }}
         onStartEdit={(commentId, body) => {
+          if (isApplyingRevision) return;
           setCommentEditor({
             body,
             commentId,
@@ -1679,6 +1752,7 @@ export function GitHubPrReview({
           });
         }}
         onStartReply={(threadId) => {
+          if (isApplyingRevision) return;
           setReplyEditor({ body: '', threadId, token: createEditorToken() });
         }}
         onSubmitComposer={submitComposer}
@@ -1694,7 +1768,7 @@ export function GitHubPrReview({
       />
     );
   const submitReview = async () => {
-    if (!currentHeadSha) return;
+    if (isApplyingRevision || !currentHeadSha) return;
     if (!isDurableReviewReady) {
       setStatusMessage(
         'Wait for the durable Neon review to be ready before submitting.',
@@ -1723,6 +1797,7 @@ export function GitHubPrReview({
     }
   };
   const showDraftComment = (comment: GitHubPrReviewDraftComment) => {
+    if (isApplyingRevision) return;
     const targets = reviewCursorTargets(navigationData.model, 'local-draft');
     const target = targets.find((item) => item.id === comment.id);
     if (!target) {
@@ -1763,13 +1838,14 @@ export function GitHubPrReview({
     );
   };
   const findingsSidebar = {
-    actionsLocked: () => findingActionsLocked,
+    actionsLocked: () => findingActionsLocked || isApplyingRevision,
     activePath,
     cleanCommentCount: cleanCommentIds.length,
     draft,
     draftComments: cleanDraftComments,
     files,
     isDeleting: mutations.deleteComment.isPending,
+    isLocked: isApplyingRevision,
     isDismissingFinding: (findingId: string) =>
       dismissingFindingIds.has(findingId),
     isPromotingFinding: (findingId: string) =>
@@ -1843,9 +1919,11 @@ export function GitHubPrReview({
               disabled={
                 restartReview.isPending ||
                 reconcileSubmission.isPending ||
+                isApplyingRevision ||
                 reviewRecord.status === 'reviewing'
               }
               onClick={() => {
+                if (isApplyingRevision) return;
                 const operationToken = beginOperation();
                 if (reviewRecord.status === 'submitting') {
                   reconcileSubmission.mutate(reviewRecord.id, {
@@ -1885,8 +1963,9 @@ export function GitHubPrReview({
           {!reviewRecord && reviewRecordQuery.isSuccess ? (
             <button
               className="pr-review-popout-button"
-              disabled={startReview.isPending}
+              disabled={startReview.isPending || isApplyingRevision}
               onClick={() => {
+                if (isApplyingRevision) return;
                 const operationToken = beginOperation();
                 startReview.mutate(undefined, {
                   onError: (error) => failOperation(operationToken, error),
@@ -1933,10 +2012,14 @@ export function GitHubPrReview({
           currentIndex={navigationCurrentIndex}
           currentTarget={selectedNavigationTarget}
           filter={fileFilter.query}
-          isBusy={Boolean(pendingHunkNavigation)}
+          isBusy={isApplyingRevision || Boolean(pendingHunkNavigation)}
           kind={navigationKind}
-          onClearFilter={() => setFileFilter({ paths: null, query: null })}
+          onClearFilter={() => {
+            if (isApplyingRevision) return;
+            setFileFilter({ paths: null, query: null });
+          }}
           onKindChange={(nextKind) => {
+            if (isApplyingRevision) return;
             setPendingHunkNavigation(null);
             setNavigationKind(nextKind);
             setNavigationTargetKey(null);
@@ -1961,6 +2044,15 @@ export function GitHubPrReview({
           safety={refreshSafety}
         />
       ) : null}
+      {!hasAvailableRevision &&
+      prReviewDraftHeadIsStale(draft?.headSha, currentHeadSha) ? (
+        <GitHubPrDraftRevisionNotice
+          disabled={!canExplicitlyApplyReviewRefresh(refreshSafety)}
+          headSha={currentHeadSha}
+          onApply={() => void refreshDraftHead()}
+          safety={refreshSafety}
+        />
+      ) : null}
       {reanchoringCommentId ? (
         <div className="pr-review-stale-banner">
           Re-anchor mode is active. Select the new diff line or range for this
@@ -1982,22 +2074,6 @@ export function GitHubPrReview({
         <MiniEmpty
           label={`Review draft unavailable: ${queryErrorMessage(draftQuery.error)}`}
         />
-      ) : null}
-      {prReviewDraftHeadIsStale(draft?.headSha, currentHeadSha) ? (
-        <div className="pr-review-stale-banner">
-          <span>
-            PR updated since your draft. {staleCommentIds.size} comment
-            {staleCommentIds.size === 1 ? '' : 's'} need re-anchoring or will be
-            skipped on submit.
-          </span>
-          <button
-            disabled={mutations.saveDraft.isPending}
-            onClick={refreshDraftHead}
-            type="button"
-          >
-            Update draft head
-          </button>
-        </div>
       ) : null}
       <PrReviewDiffPane
         activePath={activePath}
@@ -2029,7 +2105,11 @@ export function GitHubPrReview({
         <PrReviewSubmitBar
           cleanCommentCount={cleanCommentIds.length}
           draft={draft}
-          isBusy={isDraftMutationPending || isThreadMutationPending}
+          isBusy={
+            isApplyingRevision ||
+            isDraftMutationPending ||
+            isThreadMutationPending
+          }
           isDurableReviewReady={isDurableReviewReady}
           isHeadAvailable={currentHeadSha.length > 0}
           onBodyBlur={() => {

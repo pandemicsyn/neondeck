@@ -6,6 +6,8 @@ export const prReviewerDraftToolNames = [
   'neondeck_pr_review_draft_comment_delete',
 ] as const;
 
+export const prReviewerReReviewToolName = 'neondeck_pr_review_restart' as const;
+
 export type PrReviewerDraftToolName = (typeof prReviewerDraftToolNames)[number];
 
 export function isPrReviewerDraftToolName(

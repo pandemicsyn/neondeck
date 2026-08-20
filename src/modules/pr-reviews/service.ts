@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { openDb } from '../../lib/sqlite';
+import { openDb, withImmediateTransaction } from '../../lib/sqlite';
 import {
   ensureRuntimeHome,
   runtimePaths,
@@ -47,6 +47,60 @@ export type StartPrReviewDependencies = {
   }) => Promise<{ runId: string }>;
 };
 
+type StartPrReviewInput = {
+  ref: string;
+  origin: PrReviewOrigin;
+};
+
+type BoundStartPrReviewInput = StartPrReviewInput & {
+  expectedReview: {
+    id: string;
+    headSha: string;
+  };
+  returnExistingInProgress: true;
+};
+
+type StartedPrReview = {
+  review: PrReviewRecord;
+  reviewId: string;
+  runId: string;
+};
+
+type BoundStartPrReviewResult =
+  | {
+      review: PrReviewRecord;
+      reviewId: string;
+      runId: string;
+      started: true;
+      reason: null;
+    }
+  | {
+      review: PrReviewRecord;
+      reviewId: string;
+      runId: string | null;
+      started: false;
+      reason: 'in_progress';
+    }
+  | {
+      review: PrReviewRecord | null;
+      reviewId: string;
+      runId: null;
+      started: false;
+      reason: 'missing' | 'stale' | 'submitting';
+    };
+
+type ReviewingReservation =
+  | {
+      review: PrReviewRecord;
+      acquired: true;
+      reason: null;
+    }
+  | {
+      review: PrReviewRecord | null;
+      acquired: false;
+      reason: 'in_progress' | 'missing' | 'stale' | 'submitting';
+    };
+
 export type ReconcilePrReviewSubmissionDependencies = {
   token?: string;
   now?: () => number;
@@ -85,10 +139,36 @@ type PrReviewRemoteRefreshState = {
 };
 
 export async function startPrReview(
-  input: { ref: string; origin: PrReviewOrigin },
+  input: StartPrReviewInput,
   paths = runtimePaths(),
   dependencies: StartPrReviewDependencies = {},
-) {
+): Promise<StartedPrReview> {
+  return startPrReviewInternal(input, paths, dependencies);
+}
+
+export async function startBoundPrReview(
+  input: BoundStartPrReviewInput,
+  paths = runtimePaths(),
+  dependencies: StartPrReviewDependencies = {},
+): Promise<BoundStartPrReviewResult> {
+  return startPrReviewInternal(input, paths, dependencies);
+}
+
+function startPrReviewInternal(
+  input: BoundStartPrReviewInput,
+  paths: RuntimePaths,
+  dependencies: StartPrReviewDependencies,
+): Promise<BoundStartPrReviewResult>;
+function startPrReviewInternal(
+  input: StartPrReviewInput,
+  paths: RuntimePaths,
+  dependencies: StartPrReviewDependencies,
+): Promise<StartedPrReview>;
+async function startPrReviewInternal(
+  input: StartPrReviewInput | BoundStartPrReviewInput,
+  paths: RuntimePaths,
+  dependencies: StartPrReviewDependencies,
+): Promise<StartedPrReview | BoundStartPrReviewResult> {
   await ensureRuntimeHome(paths);
   const ref = input.ref.trim();
   if (!ref) throw new Error('A pull request reference is required.');
@@ -105,10 +185,46 @@ export async function startPrReview(
     );
   }
   const attemptId = randomUUID();
-  const review = upsertReviewingRecord(
-    { ref, origin: input.origin, target, detail, attemptId },
+  const expectedReview =
+    'expectedReview' in input ? input.expectedReview : undefined;
+  const reservation = reserveReviewingRecord(
+    {
+      ref,
+      origin: input.origin,
+      target,
+      detail,
+      attemptId,
+      expectedReview,
+      returnExistingInProgress:
+        'returnExistingInProgress' in input && input.returnExistingInProgress,
+    },
     paths,
   );
+  const review = reservation.review;
+  if (!reservation.acquired) {
+    if (reservation.reason !== 'in_progress') {
+      return {
+        review,
+        reviewId: expectedReview?.id ?? review?.id ?? '',
+        runId: null,
+        started: false,
+        reason: reservation.reason,
+      };
+    }
+    if (!review) {
+      throw new Error('The in-progress PR review could not be read.');
+    }
+    return {
+      review,
+      reviewId: review.id,
+      runId: review.runId,
+      started: false,
+      reason: 'in_progress',
+    };
+  }
+  if (!review) {
+    throw new Error('The reserved PR review could not be read.');
+  }
   publish(
     review,
     review.createdAt === review.updatedAt ? 'created' : 'changed',
@@ -136,7 +252,14 @@ export async function startPrReview(
     if (!attached) {
       throw new Error('This review attempt was superseded by a newer start.');
     }
-    return { review: attached, reviewId: attached.id, runId: admission.runId };
+    return {
+      review: attached,
+      reviewId: attached.id,
+      runId: admission.runId,
+      ...('returnExistingInProgress' in input
+        ? { started: true, reason: null }
+        : {}),
+    };
   } catch (error) {
     failPrReview(
       { reviewId: review.id, attemptId, message: errorMessage(error) },
@@ -805,35 +928,98 @@ async function mapWithConcurrency<T, R>(
   return results;
 }
 
-function upsertReviewingRecord(
+function reserveReviewingRecord(
   input: {
     ref: string;
     origin: PrReviewOrigin;
     target: PullRequestTarget;
     detail: GitHubPullRequestDetail;
     attemptId: string;
+    expectedReview?: {
+      id: string;
+      headSha: string;
+    };
+    returnExistingInProgress: boolean;
   },
   paths: RuntimePaths,
-) {
+): ReviewingReservation {
   const repoFullName = input.target.repoFullName.toLowerCase();
-  const existing = readPrReviewForTarget(
-    repoFullName,
-    input.target.number,
-    paths,
-  );
-  if (existing?.status === 'reviewing' || existing?.status === 'submitting') {
-    throw new Error(
-      `A review is already ${existing.status === 'submitting' ? 'being submitted' : 'in progress'} for ${repoFullName}#${input.target.number}.`,
-    );
-  }
-  const id = existing?.id ?? randomUUID();
   const now = new Date().toISOString();
   const reviewUrl = reviewSurfaceUrl(repoFullName, input.target.number);
   const database = openDb(paths.neondeckDatabase);
+  let reservation!:
+    | { id: string; acquired: true; reason: null }
+    | {
+        id: string | null;
+        acquired: false;
+        reason: 'in_progress' | 'missing' | 'stale' | 'submitting';
+      };
   try {
-    database
-      .prepare(
-        `INSERT INTO pr_reviews (
+    reservation = withImmediateTransaction(database, () => {
+      const existingRow = database
+        .prepare(
+          `SELECT id, status, head_sha, verdict, previous_verdict, created_at
+           FROM pr_reviews
+           WHERE lower(repo_full_name) = lower(?) AND pr_number = ?
+           LIMIT 1;`,
+        )
+        .get(repoFullName, input.target.number) as
+        | {
+            id: string;
+            status: PrReviewRecord['status'];
+            head_sha: string;
+            verdict: PrReviewVerdict | null;
+            previous_verdict: PrReviewVerdict | null;
+            created_at: string;
+          }
+        | undefined;
+
+      if (existingRow?.status === 'reviewing') {
+        if (input.returnExistingInProgress) {
+          if (
+            input.expectedReview &&
+            existingRow.id !== input.expectedReview.id
+          ) {
+            return { id: existingRow.id, acquired: false, reason: 'stale' };
+          }
+          return {
+            id: existingRow.id,
+            acquired: false,
+            reason: 'in_progress',
+          };
+        }
+        throw new Error(
+          `A review is already in progress for ${repoFullName}#${input.target.number}.`,
+        );
+      }
+      if (existingRow?.status === 'submitting') {
+        if (input.returnExistingInProgress) {
+          return {
+            id: existingRow.id,
+            acquired: false,
+            reason: 'submitting',
+          };
+        }
+        throw new Error(
+          `A review is already being submitted for ${repoFullName}#${input.target.number}.`,
+        );
+      }
+      if (
+        input.expectedReview &&
+        (existingRow?.id !== input.expectedReview.id ||
+          existingRow.head_sha !== input.expectedReview.headSha)
+      ) {
+        return {
+          id: existingRow?.id ?? null,
+          acquired: false,
+          reason: existingRow ? 'stale' : 'missing',
+        };
+      }
+
+      const id = existingRow?.id ?? randomUUID();
+      database
+        .prepare(
+          `INSERT INTO pr_reviews (
            id, ref, repo_full_name, pr_number, title, author, pr_url, status,
            attempt_id, run_id, head_sha, base_sha, base_ref, origin,
            review_url, report_ids_json,
@@ -873,30 +1059,43 @@ function upsertReviewingRecord(
            submitted_at = NULL,
            failed_at = NULL,
            updated_at = excluded.updated_at;`,
-      )
-      .run(
-        id,
-        input.ref,
-        repoFullName,
-        input.target.number,
-        input.detail.title,
-        input.detail.author ?? null,
-        input.detail.url,
-        input.attemptId,
-        input.detail.headSha,
-        input.detail.baseSha ?? null,
-        input.detail.baseRef,
-        input.origin,
-        reviewUrl,
-        prReviewTrustBoundary,
-        existing?.verdict ?? existing?.previousVerdict ?? null,
-        existing?.createdAt ?? now,
-        now,
-      );
+        )
+        .run(
+          id,
+          input.ref,
+          repoFullName,
+          input.target.number,
+          input.detail.title,
+          input.detail.author ?? null,
+          input.detail.url,
+          input.attemptId,
+          input.detail.headSha,
+          input.detail.baseSha ?? null,
+          input.detail.baseRef,
+          input.origin,
+          reviewUrl,
+          prReviewTrustBoundary,
+          existingRow?.verdict ?? existingRow?.previous_verdict ?? null,
+          existingRow?.created_at ?? now,
+          now,
+        );
+      return { id, acquired: true, reason: null };
+    });
   } finally {
     database.close();
   }
-  return requireReview(id, paths);
+  if (reservation.acquired) {
+    return {
+      review: requireReview(reservation.id, paths),
+      acquired: true,
+      reason: null,
+    };
+  }
+  return {
+    review: reservation.id ? requireReview(reservation.id, paths) : null,
+    acquired: false,
+    reason: reservation.reason,
+  };
 }
 
 export function attachPrReviewAttemptRun(

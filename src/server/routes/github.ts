@@ -149,7 +149,10 @@ export function createGitHubRoutes(
       (await safeJsonBody(c)) as Parameters<typeof putGitHubPrReviewDraft>[1],
       paths,
     );
-    return c.json(result, result.ok ? 200 : 400);
+    return c.json(
+      result,
+      result.ok ? 200 : result.requires?.includes('currentDraft') ? 409 : 400,
+    );
   });
 
   routes.post('/prs/:owner/:repo/:number/review-draft/comments', async (c) => {
@@ -340,7 +343,6 @@ export function createGitHubRoutes(
               ? reviewInputObject.body
               : null,
           verdict,
-          reanchorHeadSha: true,
         },
         paths,
       );

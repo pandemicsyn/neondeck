@@ -93,12 +93,13 @@ export function PrReviewNavigationBar({
         return;
       }
       if (event.key !== '[' && event.key !== ']') return;
+      if (isBusy) return;
       event.preventDefault();
       onMove(event.key === '[' ? 'previous' : 'next');
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [helpOpen, onMove, openHelp]);
+  }, [helpOpen, isBusy, onMove, openHelp]);
   const positionText = navigationPositionText({
     boundary,
     canMove,
@@ -120,6 +121,7 @@ export function PrReviewNavigationBar({
         <div className="pr-review-navigation-mode">
           <label htmlFor="pr-review-traversal-kind">Traverse</label>
           <select
+            disabled={isBusy}
             id="pr-review-traversal-kind"
             onChange={(event) =>
               onKindChange(event.currentTarget.value as ReviewCursorKind)
@@ -157,6 +159,7 @@ export function PrReviewNavigationBar({
         {filter ? (
           <button
             className="pr-review-navigation-filter"
+            disabled={isBusy}
             onClick={onClearFilter}
             title={`Clear file-tree filter: ${filter}`}
             type="button"
