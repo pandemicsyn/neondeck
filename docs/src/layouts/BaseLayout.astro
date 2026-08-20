@@ -2,16 +2,22 @@
 type Props = {
   description?: string;
   marketingPage?: string;
+  ogImage?: string;
+  ogImageAlt?: string;
   title?: string;
 };
 
 const {
-  description = 'A local-first autonomous developer assistant for companion displays, vertical panels, and sensor-panel style decks.',
+  description = "An autonomous developer assistant. It puts the PRs you opened on Autopilot, works beside you while you review everyone else's, and briefs you each morning on what actually needs you.",
   marketingPage,
+  ogImage = '/og/default.png',
+  ogImageAlt = 'neondeck — an autonomous dev assistant',
   title = 'neondeck',
 } = Astro.props;
 
 const canonical = new URL(Astro.url.pathname, 'https://neondeck.dev');
+// LinkedIn and X both reject relative image paths, so resolve against the origin.
+const socialImage = new URL(ogImage, 'https://neondeck.dev');
 ---
 
 <!doctype html>
@@ -23,11 +29,22 @@ const canonical = new URL(Astro.url.pathname, 'https://neondeck.dev');
       content="width=device-width, initial-scale=1, viewport-fit=cover"
     />
     <meta name="description" content={description} />
+    <meta property="og:site_name" content="neondeck" />
     <meta property="og:title" content={title} />
     <meta property="og:description" content={description} />
     <meta property="og:type" content="website" />
     <meta property="og:url" content={canonical.href} />
+    <meta property="og:locale" content="en_US" />
+    <meta property="og:image" content={socialImage.href} />
+    <meta property="og:image:type" content="image/png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:image:alt" content={ogImageAlt} />
     <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content={title} />
+    <meta name="twitter:description" content={description} />
+    <meta name="twitter:image" content={socialImage.href} />
+    <meta name="twitter:image:alt" content={ogImageAlt} />
     <link rel="canonical" href={canonical.href} />
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
