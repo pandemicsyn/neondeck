@@ -338,6 +338,74 @@ export function printDbMigrationStatus(status: {
   console.log(`status    ${status.message}`);
 }
 
+type DbBackup = {
+  name: string;
+  path: string;
+  createdAt: string;
+  sizeBytes: number;
+  walBytes: number | null;
+  shmBytes: number | null;
+  kind: string;
+};
+
+export function printDbBackupResult(result: {
+  ok: boolean;
+  action: string;
+  changed: boolean;
+  message: string;
+  backup?: DbBackup;
+  restoredBackup?: DbBackup;
+  safetyBackup?: DbBackup;
+  errors?: string[];
+}) {
+  if (jsonOutput) {
+    console.log(JSON.stringify(result, null, 2));
+    if (!result.ok) process.exitCode = 1;
+    return;
+  }
+
+  console.log(result.ok ? `✓ ${result.message}` : `✗ ${result.message}`);
+  if (result.backup) printDbBackupMetadata('backup', result.backup);
+  if (result.restoredBackup)
+    printDbBackupMetadata('restored', result.restoredBackup);
+  if (result.safetyBackup) printDbBackupMetadata('safety', result.safetyBackup);
+  if (result.errors?.length) {
+    for (const error of result.errors) console.log(`error: ${error}`);
+  }
+  if (!result.ok) process.exitCode = 1;
+}
+
+export function printDbBackups(backups: DbBackup[]) {
+  const result = { ok: true, action: 'db_backups', backups };
+  if (jsonOutput) {
+    console.log(JSON.stringify(result, null, 2));
+    return;
+  }
+
+  if (backups.length === 0) {
+    console.log('No recognized app database backups.');
+    return;
+  }
+
+  for (const backup of backups) {
+    console.log(
+      `${backup.createdAt} ${backup.kind.padEnd(14)} ${formatBytes(backup.sizeBytes).padStart(9)} ${backup.name}`,
+    );
+  }
+}
+
+function printDbBackupMetadata(label: string, backup: DbBackup) {
+  console.log(`${label}    ${backup.path}`);
+  console.log(`created   ${backup.createdAt}`);
+  console.log(`size      ${formatBytes(backup.sizeBytes)}`);
+}
+
+function formatBytes(bytes: number) {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KiB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MiB`;
+}
+
 export function objectField(value: unknown) {
   return value && typeof value === 'object' && !Array.isArray(value)
     ? (value as Record<string, unknown>)

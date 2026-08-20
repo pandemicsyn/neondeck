@@ -48,7 +48,10 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
           Neondeck app database migrations are shipped with the package and apply
           automatically before the app opens
           <code>data/neondeck.db</code>. Pre-migration backups are retained in
-          <code>data/backups/</code>.
+          <code>data/backups/</code>; Neondeck retains the latest two recognized
+          backup sets. Use <code>neondeck db backup</code> to make a snapshot and
+          <code>neondeck db restore &lt;backup-name&gt;</code> only after stopping
+          Neondeck.
         </p>
 
         <h2>Secrets</h2>

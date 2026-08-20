@@ -1,14 +1,19 @@
-import { cp, mkdir, mkdtemp, readdir, rm } from 'node:fs/promises';
+import { existsSync } from 'node:fs';
+import { cp, mkdir, mkdtemp, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { afterEach, describe, expect, it } from 'vitest';
 import {
   AppDbMigrationError,
   appDbMigrationsFolder,
   applyAppDbMigrations,
+  createAppDbBackup,
+  listAppDbBackups,
   readAppDbMigrationFiles,
   readAppDbMigrationStatus,
+  restoreAppDbBackup,
+  setAppDbRestoreReplacementHookForTests,
 } from './migrate.ts';
 
 const tempRoots: string[] = [];
@@ -223,12 +228,212 @@ describe('app database migrator', () => {
       after.close();
     }
   });
+
+  it('retains the newest two pre-migration backup sets', async () => {
+    const root = await tempDir();
+    const databasePath = join(root, 'neondeck.db');
+    const migrations = join(root, 'migrations');
+    const backups = join(root, 'backups');
+    await writeMigration(
+      migrations,
+      '20260819000000_create_widgets',
+      'CREATE TABLE widgets (id INTEGER PRIMARY KEY);',
+    );
+    applyAppDbMigrations(databasePath, { migrationsFolder: migrations });
+
+    await mkdir(backups, { recursive: true });
+    await writeFile(join(backups, 'unrelated.db'), 'keep');
+    await writeFile(join(backups, 'neondeck-personal.db'), 'keep');
+    await writeFile(join(backups, 'notes.txt'), 'keep');
+
+    const backupPaths: string[] = [];
+    for (const [index, now] of [
+      new Date('2026-08-19T10:00:00.000Z'),
+      new Date('2026-08-19T11:00:00.000Z'),
+      new Date('2026-08-19T12:00:00.000Z'),
+    ].entries()) {
+      await writeMigration(
+        migrations,
+        `2026081900000${index + 1}_add_widget_column`,
+        `ALTER TABLE widgets ADD COLUMN value_${index} TEXT;`,
+      );
+      const { backupPath } = applyAppDbMigrations(databasePath, {
+        migrationsFolder: migrations,
+        now,
+      });
+      expect(backupPath).not.toBeNull();
+      backupPaths.push(backupPath!);
+      await writeFile(`${backupPath}-wal`, 'wal sidecar');
+      await writeFile(`${backupPath}-shm`, 'shm sidecar');
+    }
+
+    const [oldest = '', secondNewest = '', newest = ''] = backupPaths.map(
+      (path) => basename(path),
+    );
+    const backupNames = (await readdir(backups)).sort();
+    expect(backupNames).toEqual(
+      [
+        'unrelated.db',
+        'neondeck-personal.db',
+        'notes.txt',
+        secondNewest,
+        `${secondNewest}-wal`,
+        `${secondNewest}-shm`,
+        newest,
+        `${newest}-wal`,
+        `${newest}-shm`,
+      ].sort(),
+    );
+    expect(backupNames).not.toContain(oldest);
+    expect(
+      (await readdir(backups)).filter((name) => /^neondeck-.+\.db$/.test(name)),
+    ).toHaveLength(3);
+    expect(listAppDbBackups(databasePath).map((backup) => backup.name)).toEqual(
+      [newest, secondNewest],
+    );
+  });
+
+  it('creates a consistent manual backup and restores it with a safety backup', async () => {
+    const root = await tempDir();
+    const databasePath = join(root, 'neondeck.db');
+    applyAppDbMigrations(databasePath);
+    setRestoreValue(databasePath, 'before backup');
+
+    const backup = await createAppDbBackup(databasePath, {
+      now: new Date('2026-08-19T13:00:00.000Z'),
+    });
+    expect(backup).toMatchObject({ ok: true, action: 'db_backup' });
+    expect(backup.backup).toMatchObject({ kind: 'manual', walBytes: null });
+    setRestoreValue(databasePath, 'after backup');
+
+    const restored = await restoreAppDbBackup(
+      databasePath,
+      backup.backup!.name,
+    );
+    expect(restored).toMatchObject({
+      ok: true,
+      action: 'db_restore',
+      restoredBackup: { name: backup.backup!.name },
+      safetyBackup: { kind: 'restore-safety' },
+    });
+    expect(readRestoreValue(databasePath)).toBe('before backup');
+    expect(existsSync(`${databasePath}-wal`)).toBe(false);
+    expect(existsSync(`${databasePath}-shm`)).toBe(false);
+    expect(listAppDbBackups(databasePath)).toHaveLength(2);
+  });
+
+  it('refuses unreadable backup candidates without changing the live database', async () => {
+    const root = await tempDir();
+    const databasePath = join(root, 'neondeck.db');
+    applyAppDbMigrations(databasePath);
+    setRestoreValue(databasePath, 'live value');
+    const backups = join(root, 'backups');
+    await mkdir(backups, { recursive: true });
+    const invalid = 'neondeck-2026-08-19T140000Z-manual.db';
+    await writeFile(join(backups, invalid), 'not a sqlite database');
+
+    const restored = await restoreAppDbBackup(databasePath, invalid);
+
+    expect(restored).toMatchObject({ ok: false, action: 'db_restore' });
+    expect(restored.message).toContain('not readable');
+    expect(readRestoreValue(databasePath)).toBe('live value');
+  });
+
+  it('preserves the selected backup when atomic replacement fails', async () => {
+    const root = await tempDir();
+    const databasePath = join(root, 'neondeck.db');
+    applyAppDbMigrations(databasePath);
+    setRestoreValue(databasePath, 'before backup');
+    const backup = await createAppDbBackup(databasePath, {
+      now: new Date('2026-08-19T15:00:00.000Z'),
+    });
+    setRestoreValue(databasePath, 'live value');
+    const restoreReplacement = setAppDbRestoreReplacementHookForTests(() => {
+      throw new Error('simulated replacement failure');
+    });
+
+    try {
+      const restored = await restoreAppDbBackup(
+        databasePath,
+        backup.backup!.name,
+      );
+      expect(restored).toMatchObject({ ok: false, action: 'db_restore' });
+    } finally {
+      restoreReplacement();
+    }
+
+    expect(readRestoreValue(databasePath)).toBe('live value');
+    expect(listAppDbBackups(databasePath).map((item) => item.name)).toEqual([
+      backup.backup!.name,
+    ]);
+  });
+
+  it('refuses restore while the live database is exclusively locked', async () => {
+    const root = await tempDir();
+    const databasePath = join(root, 'neondeck.db');
+    applyAppDbMigrations(databasePath);
+    setRestoreValue(databasePath, 'live value');
+    const backup = await createAppDbBackup(databasePath);
+    const lock = new DatabaseSync(databasePath, { timeout: 0 });
+    lock.exec('BEGIN EXCLUSIVE;');
+
+    try {
+      const restored = await restoreAppDbBackup(
+        databasePath,
+        backup.backup!.name,
+      );
+      expect(restored).toMatchObject({ ok: false, action: 'db_restore' });
+      expect(restored.message).toContain('exclusively lock');
+    } finally {
+      lock.exec('ROLLBACK;');
+      lock.close();
+    }
+
+    expect(readRestoreValue(databasePath)).toBe('live value');
+  });
 });
 
 async function tempDir() {
   const path = await mkdtemp(join(tmpdir(), 'neondeck-migrate-'));
   tempRoots.push(path);
   return path;
+}
+
+async function writeMigration(root: string, name: string, sql: string) {
+  const directory = join(root, name);
+  await mkdir(directory, { recursive: true });
+  await writeFile(join(directory, 'migration.sql'), sql);
+}
+
+function setRestoreValue(databasePath: string, value: string) {
+  const database = new DatabaseSync(databasePath);
+  try {
+    database.exec(
+      'CREATE TABLE IF NOT EXISTS restore_values (id INTEGER PRIMARY KEY, value TEXT NOT NULL);',
+    );
+    database
+      .prepare(
+        'INSERT INTO restore_values (id, value) VALUES (1, ?) ON CONFLICT(id) DO UPDATE SET value = excluded.value;',
+      )
+      .run(value);
+  } finally {
+    database.close();
+  }
+}
+
+function readRestoreValue(databasePath: string) {
+  const database = new DatabaseSync(databasePath, { readOnly: true });
+  try {
+    return String(
+      (
+        database
+          .prepare('SELECT value FROM restore_values WHERE id = 1;')
+          .get() as { value: unknown }
+      ).value,
+    );
+  } finally {
+    database.close();
+  }
 }
 
 function tableExists(database: DatabaseSync, table: string) {

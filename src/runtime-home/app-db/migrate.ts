@@ -1,13 +1,18 @@
 import {
   copyFileSync,
   existsSync,
+  fsyncSync,
   mkdirSync,
+  openSync,
+  renameSync,
   readdirSync,
   rmSync,
   statSync,
+  closeSync,
+  writeFileSync,
 } from 'node:fs';
-import { dirname, join } from 'node:path';
-import { DatabaseSync } from 'node:sqlite';
+import { basename, dirname, join } from 'node:path';
+import { backup as sqliteBackup, DatabaseSync } from 'node:sqlite';
 import { readMigrationFiles } from 'drizzle-orm/migrator';
 import { defaultSqliteBusyTimeoutMs } from '../../lib/sqlite';
 import { resolveShippedAsset } from '../assets';
@@ -17,7 +22,11 @@ const defaultMigrationsFolder = resolveShippedAsset(
   'src/runtime-home/app-db/migrations',
   'assets/migrations',
 );
-const backupRetention = 5;
+const backupRetention = 2;
+const backupNamePattern =
+  /^neondeck-\d{4}-\d{2}-\d{2}T\d{6}Z-(?:pre-[a-z0-9][a-z0-9_-]*|manual|restore-safety)(?:-\d+)?\.db$/i;
+let restoreReplacementHook:
+  ((stagedPath: string, databasePath: string) => void) | undefined;
 
 type DrizzleMigration = ReturnType<typeof readMigrationFiles>[number];
 
@@ -46,6 +55,27 @@ export type AppDbMigrationStatus = {
   journalHead: string | null;
   lastBackup: string | null;
   message: string;
+};
+
+export type AppDbBackup = {
+  name: string;
+  path: string;
+  createdAt: string;
+  sizeBytes: number;
+  walBytes: number | null;
+  shmBytes: number | null;
+  kind: 'manual' | 'pre-migration' | 'restore-safety' | 'automatic';
+};
+
+export type AppDbBackupResult = {
+  ok: boolean;
+  action: 'db_backup' | 'db_restore';
+  changed: boolean;
+  message: string;
+  backup?: AppDbBackup;
+  restoredBackup?: AppDbBackup;
+  safetyBackup?: AppDbBackup;
+  errors?: string[];
 };
 
 export class AppDbMigrationError extends Error {
@@ -289,6 +319,147 @@ export function readAppDbMigrationFiles(
   return migrations;
 }
 
+export function setAppDbRestoreReplacementHookForTests(
+  hook: ((stagedPath: string, databasePath: string) => void) | undefined,
+) {
+  const previous = restoreReplacementHook;
+  restoreReplacementHook = hook;
+  return () => {
+    restoreReplacementHook = previous;
+  };
+}
+
+export function listAppDbBackups(databasePath: string): AppDbBackup[] {
+  const backupsDir = join(dirname(databasePath), 'backups');
+  if (!existsSync(backupsDir)) return [];
+
+  return readBackupEntries(backupsDir).flatMap(({ path }) => {
+    const backup = readBackupMetadata(path);
+    return backup ? [backup] : [];
+  });
+}
+
+export async function createAppDbBackup(
+  databasePath: string,
+  options: { now?: Date } = {},
+): Promise<AppDbBackupResult> {
+  if (!existsSync(databasePath)) {
+    return failedAppDbBackup(
+      'db_backup',
+      'Neondeck app database is missing; there is nothing to back up.',
+    );
+  }
+
+  let database: DatabaseSync | undefined;
+  try {
+    database = new DatabaseSync(databasePath, {
+      readOnly: true,
+      timeout: defaultSqliteBusyTimeoutMs,
+    });
+    const backup = await createSnapshotFromDatabase(database, databasePath, {
+      now: options.now,
+      kind: 'manual',
+    });
+    return {
+      ok: true,
+      action: 'db_backup',
+      changed: true,
+      backup,
+      message: `Created a consistent app database backup at ${backup.path}.`,
+    };
+  } catch (error) {
+    return failedAppDbBackup(
+      'db_backup',
+      `Could not create an app database backup: ${errorMessage(error)}.`,
+    );
+  } finally {
+    database?.close();
+  }
+}
+
+export async function restoreAppDbBackup(
+  databasePath: string,
+  backupName: string,
+): Promise<AppDbBackupResult> {
+  const backupPath = resolveBackupPath(databasePath, backupName);
+  if (!backupPath) {
+    return failedAppDbBackup(
+      'db_restore',
+      `Backup "${backupName}" is not a recognized backup in the Neondeck backups directory.`,
+    );
+  }
+  if (!existsSync(databasePath)) {
+    return failedAppDbBackup(
+      'db_restore',
+      'Neondeck app database is missing; restore requires a current database to safeguard first.',
+    );
+  }
+
+  let stagedPath: string | undefined;
+  let safetyBackupPath: string | undefined;
+  let liveDatabase: DatabaseSync | undefined;
+  let transactionOpen = false;
+  try {
+    const restoredBackup = validateAppDbBackup(backupPath);
+    stagedPath = `${databasePath}.restore-${process.pid}-${Date.now()}.tmp`;
+    await materializeBackup(backupPath, stagedPath);
+    validateAppDbBackup(stagedPath);
+
+    liveDatabase = new DatabaseSync(databasePath, { timeout: 0 });
+    try {
+      liveDatabase.exec('PRAGMA busy_timeout = 0;');
+      liveDatabase.exec('BEGIN EXCLUSIVE;');
+      transactionOpen = true;
+    } catch (error) {
+      throw new AppDbMigrationError(
+        `Could not exclusively lock the current app database. Stop Neondeck and any other SQLite clients before restoring. ${errorMessage(error)}`,
+      );
+    }
+
+    const safetyBackup = await createSnapshotFromDatabase(
+      liveDatabase,
+      databasePath,
+      // `sqliteBackup` cannot run from an active exclusive transaction. Node 26's
+      // serializer captures the locked connection's current SQLite image instead.
+      { kind: 'restore-safety', prune: false, serialize: true },
+    );
+    safetyBackupPath = safetyBackup.path;
+    liveDatabase.exec('ROLLBACK;');
+    transactionOpen = false;
+    liveDatabase.close();
+    liveDatabase = undefined;
+
+    (restoreReplacementHook ?? replaceDatabaseAtomically)(
+      stagedPath,
+      databasePath,
+    );
+    stagedPath = undefined;
+    removeDatabaseSidecars(databasePath);
+    rotateBackups(join(dirname(databasePath), 'backups'));
+
+    return {
+      ok: true,
+      action: 'db_restore',
+      changed: true,
+      restoredBackup,
+      safetyBackup,
+      message: `Restored ${restoredBackup.name}. The replaced database was saved as ${safetyBackup.path}.`,
+    };
+  } catch (error) {
+    return failedAppDbBackup(
+      'db_restore',
+      `Could not restore app database: ${errorMessage(error)}.`,
+    );
+  } finally {
+    if (transactionOpen && liveDatabase) rollback(liveDatabase);
+    liveDatabase?.close();
+    if (stagedPath) rmSync(stagedPath, { force: true });
+    if (stagedPath && safetyBackupPath) {
+      removeBackupSet(safetyBackupPath);
+    }
+  }
+}
+
 function createJournalTable(database: DatabaseSync) {
   database.exec(`
     CREATE TABLE IF NOT EXISTS "${drizzleMigrationsTable}" (
@@ -377,6 +548,149 @@ function insertJournalRow(database: DatabaseSync, migration: DrizzleMigration) {
     );
 }
 
+async function createSnapshotFromDatabase(
+  database: DatabaseSync,
+  databasePath: string,
+  options: {
+    now?: Date;
+    kind: 'manual' | 'restore-safety';
+    prune?: boolean;
+    serialize?: boolean;
+  },
+): Promise<AppDbBackup> {
+  const backupsDir = join(dirname(databasePath), 'backups');
+  mkdirSync(backupsDir, { recursive: true });
+  const backupPath = nextBackupPath(backupsDir, options.kind, options.now);
+  try {
+    if (options.serialize) {
+      writeSerializedSnapshot(database, backupPath);
+    } else {
+      await sqliteBackup(database, backupPath);
+    }
+    if (options.prune !== false) rotateBackups(backupsDir);
+    const metadata = readBackupMetadata(backupPath);
+    if (!metadata) {
+      throw new AppDbMigrationError(
+        `Snapshot backup ${backupPath} was not created.`,
+      );
+    }
+    return metadata;
+  } catch (error) {
+    rmSync(backupPath, { force: true });
+    throw error;
+  }
+}
+
+function writeSerializedSnapshot(database: DatabaseSync, backupPath: string) {
+  writeFileSync(backupPath, database.serialize(), { flag: 'wx' });
+  const descriptor = openSync(backupPath, 'r');
+  try {
+    fsyncSync(descriptor);
+  } finally {
+    closeSync(descriptor);
+  }
+}
+
+async function materializeBackup(sourcePath: string, targetPath: string) {
+  let source: DatabaseSync | undefined;
+  try {
+    source = new DatabaseSync(sourcePath, {
+      readOnly: true,
+      timeout: defaultSqliteBusyTimeoutMs,
+    });
+    await sqliteBackup(source, targetPath);
+  } finally {
+    source?.close();
+  }
+}
+
+function validateAppDbBackup(path: string): AppDbBackup {
+  let database: DatabaseSync | undefined;
+  try {
+    database = new DatabaseSync(path, {
+      readOnly: true,
+      timeout: defaultSqliteBusyTimeoutMs,
+    });
+    const integrity = database.prepare('PRAGMA integrity_check;').all();
+    if (
+      integrity.length !== 1 ||
+      (integrity[0] as { integrity_check?: unknown }).integrity_check !== 'ok'
+    ) {
+      throw new AppDbMigrationError('Backup database integrity check failed.');
+    }
+  } catch (error) {
+    throw new AppDbMigrationError(
+      `Backup database is not readable: ${errorMessage(error)}.`,
+    );
+  } finally {
+    database?.close();
+  }
+
+  const status = readAppDbMigrationStatus(path);
+  if (
+    status.applied.length === 0 ||
+    status.unknown.length > 0 ||
+    status.changed.length > 0
+  ) {
+    throw new AppDbMigrationError(
+      `Backup database is incompatible with this Neondeck package: ${status.message}`,
+    );
+  }
+
+  const metadata = readBackupMetadata(path);
+  if (!metadata) {
+    return {
+      name: path,
+      path,
+      createdAt: new Date().toISOString(),
+      sizeBytes: statSync(path).size,
+      walBytes: null,
+      shmBytes: null,
+      kind: 'automatic',
+    };
+  }
+  return metadata;
+}
+
+function resolveBackupPath(databasePath: string, backupName: string) {
+  if (
+    backupName !== basename(backupName) ||
+    !isRecognizedBackupName(backupName)
+  ) {
+    return null;
+  }
+  const path = join(dirname(databasePath), 'backups', backupName);
+  return existsSync(path) ? path : null;
+}
+
+function replaceDatabaseAtomically(stagedPath: string, databasePath: string) {
+  try {
+    renameSync(stagedPath, databasePath);
+  } catch (error) {
+    throw new AppDbMigrationError(
+      `Could not atomically replace ${databasePath}: ${errorMessage(error)}.`,
+    );
+  }
+}
+
+function removeDatabaseSidecars(databasePath: string) {
+  rmSync(`${databasePath}-wal`, { force: true });
+  rmSync(`${databasePath}-shm`, { force: true });
+}
+
+function removeBackupSet(backupPath: string) {
+  rmSync(backupPath, { force: true });
+  rmSync(`${backupPath}-wal`, { force: true });
+  rmSync(`${backupPath}-shm`, { force: true });
+}
+
+function failedAppDbBackup(
+  action: AppDbBackupResult['action'],
+  message: string,
+): AppDbBackupResult {
+  return { ok: false, action, changed: false, message, errors: [message] };
+}
+
 function backupDatabase(
   databasePath: string,
   nextMigrationName: string,
@@ -384,13 +698,10 @@ function backupDatabase(
 ) {
   const backupsDir = join(dirname(databasePath), 'backups');
   mkdirSync(backupsDir, { recursive: true });
-  const stamp = now
-    .toISOString()
-    .replace(/\.\d{3}Z$/, 'Z')
-    .replace(/[:]/g, '');
-  const backupPath = join(
+  const backupPath = nextBackupPath(
     backupsDir,
-    `neondeck-${stamp}-pre-${nextMigrationName}.db`,
+    `pre-${nextMigrationName}`,
+    now,
   );
   copyIfExists(databasePath, backupPath);
   copyIfExists(`${databasePath}-wal`, `${backupPath}-wal`);
@@ -400,13 +711,7 @@ function backupDatabase(
 }
 
 function rotateBackups(backupsDir: string) {
-  const backups = readdirSync(backupsDir)
-    .filter((name) => /^neondeck-.+\.db$/.test(name))
-    .map((name) => {
-      const path = join(backupsDir, name);
-      return { path, name, mtimeMs: statSync(path).mtimeMs };
-    })
-    .sort((a, b) => b.mtimeMs - a.mtimeMs || b.name.localeCompare(a.name));
+  const backups = readBackupEntries(backupsDir);
 
   for (const backup of backups.slice(backupRetention)) {
     rmSync(backup.path, { force: true });
@@ -415,16 +720,78 @@ function rotateBackups(backupsDir: string) {
   }
 }
 
+function nextBackupPath(backupsDir: string, kind: string, now = new Date()) {
+  const stamp = now
+    .toISOString()
+    .replace(/\.\d{3}Z$/, 'Z')
+    .replace(/[:]/g, '');
+  const base = `neondeck-${stamp}-${kind}`;
+  let suffix = 0;
+  while (true) {
+    const name = `${base}${suffix ? `-${suffix}` : ''}.db`;
+    const path = join(backupsDir, name);
+    if (!existsSync(path)) return path;
+    suffix += 1;
+  }
+}
+
+function readBackupEntries(backupsDir: string) {
+  return readdirSync(backupsDir)
+    .filter(isRecognizedBackupName)
+    .flatMap((name) => {
+      const path = join(backupsDir, name);
+      try {
+        const stat = statSync(path);
+        return stat.isFile() ? [{ path, name, mtimeMs: stat.mtimeMs }] : [];
+      } catch {
+        return [];
+      }
+    })
+    .sort((a, b) => b.mtimeMs - a.mtimeMs || b.name.localeCompare(a.name));
+}
+
+function readBackupMetadata(path: string): AppDbBackup | null {
+  try {
+    const stat = statSync(path);
+    if (!stat.isFile()) return null;
+    return {
+      name: basename(path),
+      path,
+      createdAt: stat.mtime.toISOString(),
+      sizeBytes: stat.size,
+      walBytes: sidecarSize(`${path}-wal`),
+      shmBytes: sidecarSize(`${path}-shm`),
+      kind: backupKind(basename(path)),
+    };
+  } catch {
+    return null;
+  }
+}
+
+function sidecarSize(path: string) {
+  try {
+    const stat = statSync(path);
+    return stat.isFile() ? stat.size : null;
+  } catch {
+    return null;
+  }
+}
+
+function backupKind(name: string): AppDbBackup['kind'] {
+  if (name.includes('-restore-safety')) return 'restore-safety';
+  if (name.includes('-manual')) return 'manual';
+  if (name.includes('-pre-')) return 'pre-migration';
+  return 'automatic';
+}
+
+function isRecognizedBackupName(name: string) {
+  return backupNamePattern.test(name);
+}
+
 function latestBackupPath(dataDir: string) {
   const backupsDir = join(dataDir, 'backups');
   if (!existsSync(backupsDir)) return null;
-  const latest = readdirSync(backupsDir)
-    .filter((name) => /^neondeck-.+\.db$/.test(name))
-    .map((name) => {
-      const path = join(backupsDir, name);
-      return { path, name, mtimeMs: statSync(path).mtimeMs };
-    })
-    .sort((a, b) => b.mtimeMs - a.mtimeMs || b.name.localeCompare(a.name))[0];
+  const latest = readBackupEntries(backupsDir)[0];
   return latest?.path ?? null;
 }
 
