@@ -391,6 +391,10 @@ export function useGitHubPrReviewMutations(pr: GitHubPullRequest) {
       // The submission is already settled; a later view refresh can retry.
     });
   };
+  const reconcileDraftConflict = (error: unknown) => {
+    const currentDraft = currentDraftFromConflict(error);
+    if (currentDraft !== undefined) updateDraftCache(currentDraft);
+  };
   const invalidateThreads = () =>
     queryClient.invalidateQueries({
       queryKey: prReviewQueryKeys.reviewThreads(pr),
@@ -421,6 +425,7 @@ export function useGitHubPrReviewMutations(pr: GitHubPullRequest) {
     saveDraft: useMutation({
       mutationFn: putGitHubPrReviewDraft,
       onMutate: cancelDraftQuery,
+      onError: reconcileDraftConflict,
       onSuccess: (draft, input) =>
         updateDraftCache(draft, {
           preserveDifferentDraft: Boolean(input.draftId),
@@ -429,18 +434,21 @@ export function useGitHubPrReviewMutations(pr: GitHubPullRequest) {
     addComment: useMutation({
       mutationFn: postGitHubPrReviewDraftComment,
       onMutate: cancelDraftQuery,
+      onError: reconcileDraftConflict,
       onSuccess: (draft) =>
         updateDraftCache(draft, { preserveDifferentDraft: true }),
     }),
     updateComment: useMutation({
       mutationFn: patchGitHubPrReviewDraftComment,
       onMutate: cancelDraftQuery,
+      onError: reconcileDraftConflict,
       onSuccess: (draft) =>
         updateDraftCache(draft, { preserveDifferentDraft: true }),
     }),
     deleteComment: useMutation({
       mutationFn: deleteGitHubPrReviewDraftComment,
       onMutate: cancelDraftQuery,
+      onError: reconcileDraftConflict,
       onSuccess: (draft) =>
         updateDraftCache(draft, { preserveDifferentDraft: true }),
     }),
@@ -480,6 +488,14 @@ export function useGitHubPrReviewMutations(pr: GitHubPullRequest) {
     }),
     invalidateReviewSources,
   };
+}
+
+function currentDraftFromConflict(error: unknown) {
+  if (!(error instanceof ApiError) || error.status !== 409) return undefined;
+  const result = error.data as
+    { data?: { currentDraft?: GitHubPrReviewDraft | null } } | undefined;
+  if (!result?.data || !('currentDraft' in result.data)) return undefined;
+  return result.data.currentDraft ?? null;
 }
 
 export function newerDraftSnapshot(

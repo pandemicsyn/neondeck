@@ -1,6 +1,7 @@
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   addPrReviewDraftComment,
@@ -1805,6 +1806,99 @@ describe('github foundation', () => {
     ).toBeNull();
   });
 
+  it('keeps draft revisions monotonic when reanchoring after a future-dated write', async () => {
+    const paths = runtimePaths(await tempHome());
+    await ensureRuntimeHome(paths);
+    const original = upsertPrReviewDraft({
+      databasePath: paths.neondeckDatabase,
+      repo: 'pandemicsyn/neondeck',
+      prNumber: 123,
+      headSha: 'head-before',
+    });
+    const futureUpdatedAt = '2099-01-01T00:00:00.000Z';
+    const database = new DatabaseSync(paths.neondeckDatabase);
+    try {
+      database
+        .prepare('UPDATE pr_review_drafts SET updated_at = ? WHERE id = ?;')
+        .run(futureUpdatedAt, original.id);
+    } finally {
+      database.close();
+    }
+
+    const reanchored = reanchorPrReviewDraft({
+      databasePath: paths.neondeckDatabase,
+      repo: 'pandemicsyn/neondeck',
+      prNumber: 123,
+      draftId: original.id,
+      expectedHeadSha: 'head-before',
+      headSha: 'head-after',
+    });
+
+    expect(reanchored).toMatchObject({
+      id: original.id,
+      headSha: 'head-after',
+    });
+    expect(Date.parse(reanchored?.updatedAt ?? '')).toBeGreaterThan(
+      Date.parse(futureUpdatedAt),
+    );
+  });
+
+  it('rejects reordered edit and delete writes against a stale draft revision', async () => {
+    const paths = runtimePaths(await tempHome());
+    await ensureRuntimeHome(paths);
+    const draft = upsertPrReviewDraft({
+      databasePath: paths.neondeckDatabase,
+      repo: 'pandemicsyn/neondeck',
+      prNumber: 123,
+      headSha: 'head123',
+    });
+    const withComment = addPrReviewDraftComment({
+      databasePath: paths.neondeckDatabase,
+      draftId: draft.id,
+      expectedDraftUpdatedAt: draft.updatedAt,
+      path: 'src/app.ts',
+      side: 'RIGHT',
+      line: 12,
+      body: 'Original body.',
+    });
+    const commentId = withComment.comments[0]!.id;
+    const firstEdit = updatePrReviewDraftComment({
+      databasePath: paths.neondeckDatabase,
+      commentId,
+      expectedDraftId: withComment.id,
+      expectedDraftUpdatedAt: withComment.updatedAt,
+      body: 'First edit wins.',
+    });
+
+    expect(() =>
+      updatePrReviewDraftComment({
+        databasePath: paths.neondeckDatabase,
+        commentId,
+        expectedDraftId: withComment.id,
+        expectedDraftUpdatedAt: withComment.updatedAt,
+        body: 'Stale edit must lose.',
+      }),
+    ).toThrow(/draft changed/i);
+    expect(() =>
+      deletePrReviewDraftComment({
+        databasePath: paths.neondeckDatabase,
+        commentId,
+        expectedDraftId: withComment.id,
+        expectedDraftUpdatedAt: withComment.updatedAt,
+      }),
+    ).toThrow(/draft changed/i);
+    expect(firstEdit.comments[0]).toMatchObject({
+      id: commentId,
+      body: 'First edit wins.',
+    });
+    expect(
+      readPrReviewDraft({
+        databasePath: paths.neondeckDatabase,
+        draftId: draft.id,
+      })?.comments[0],
+    ).toMatchObject({ id: commentId, body: 'First edit wins.' });
+  });
+
   it('does not recreate a discarded draft when saving by its explicit id', async () => {
     const paths = runtimePaths(await tempHome());
     await ensureRuntimeHome(paths);
@@ -2384,6 +2478,22 @@ describe('github foundation', () => {
       state: 'CHANGES_REQUESTED',
       body: 'Please address these.',
     });
+    const followupDatabase = new DatabaseSync(paths.neondeckDatabase, {
+      readOnly: true,
+    });
+    try {
+      expect(
+        followupDatabase
+          .prepare(
+            `SELECT status
+             FROM pr_review_submission_followups
+             WHERE id = ?;`,
+          )
+          .get('pr-review-delivery:pandemicsyn/neondeck#123:9001'),
+      ).toMatchObject({ status: 'pending' });
+    } finally {
+      followupDatabase.close();
+    }
     expect(requests).toHaveLength(1);
     expect(requests[0]).toMatchObject({
       url: 'https://api.github.com/repos/pandemicsyn/neondeck/pulls/123/reviews',

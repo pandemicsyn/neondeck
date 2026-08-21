@@ -668,6 +668,7 @@ export const prReviewSubmissionFollowups = sqliteTable(
     payloadJson: text('payload_json').notNull(),
     status: text('status').notNull(),
     attemptCount: integer('attempt_count').default(0).notNull(),
+    nextAttemptAt: text('next_attempt_at').notNull(),
     lastError: text('last_error'),
     createdAt: text('created_at').notNull(),
     updatedAt: text('updated_at').notNull(),

@@ -294,12 +294,13 @@ async function promoteToGitHubDraft(
   } else {
     const draftResult = await (
       dependencies.putGitHubDraft ?? putGitHubPrReviewDraft
-    )(targetInput, { headSha: revision.id }, paths);
+    )(targetInput, { headSha: revision.id, expectedAbsent: true }, paths);
     if (!draftResult.ok) return { ok: false, message: draftResult.message };
     draft = objectField(objectField(draftResult.data).draft);
   }
   const draftId = stringField(draft.id);
-  if (!draftId || stringField(draft.headSha) !== revision.id)
+  const draftUpdatedAt = stringField(draft.updatedAt);
+  if (!draftId || !draftUpdatedAt || stringField(draft.headSha) !== revision.id)
     return {
       ok: false,
       message:
@@ -332,6 +333,7 @@ async function promoteToGitHubDraft(
     targetInput,
     {
       draftId,
+      expectedUpdatedAt: draftUpdatedAt,
       path: candidate.finding.file,
       side,
       line: candidate.request.anchor.endLine,

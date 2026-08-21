@@ -25,10 +25,9 @@ import {
   requestedChangesReviewDeliveryFingerprint,
   reviewThreadCommentDeliveryFingerprint,
 } from './watermarks';
-import { recordNeondeckPrDeliveries } from './deliveries';
+import { recordNeondeckPrDeliveriesAndCompleteFollowup } from './deliveries';
 import {
   claimPrReviewSubmissionFollowup,
-  completePrReviewSubmissionFollowup,
   listPendingPrReviewSubmissionFollowupIds,
   recoverProcessingPrReviewSubmissionFollowups,
   retryPrReviewSubmissionFollowup,
@@ -199,13 +198,42 @@ async function processPrReviewDeliveryFollowup(
       token,
       paths,
       dependencies,
+      followup.id,
     );
-    completePrReviewSubmissionFollowup(followup.id, paths);
     return true;
   } catch (error) {
-    retryPrReviewSubmissionFollowup(followup.id, error, paths);
+    const retryDelayMs = retryPrReviewSubmissionFollowup(
+      followup.id,
+      error,
+      paths,
+    );
+    scheduleDeliveryFollowupRetry(
+      followup.id,
+      paths,
+      dependencies,
+      retryDelayMs,
+    );
     return false;
   }
+}
+
+function scheduleDeliveryFollowupRetry(
+  id: string,
+  paths: RuntimePaths,
+  dependencies: PrEventStateDependencies,
+  retryDelayMs: number,
+) {
+  const timer = setTimeout(() => {
+    void processPrReviewDeliveryFollowup(id, paths, dependencies).catch(
+      (error) => {
+        console.error(
+          '[neondeck] failed to retry submitted-review delivery follow-up',
+          error,
+        );
+      },
+    );
+  }, retryDelayMs);
+  timer.unref?.();
 }
 
 function submittedDeliveryFollowupId(
@@ -223,6 +251,7 @@ async function verifyAndRecordSubmittedReviewDelivery(
   token: string,
   paths: RuntimePaths,
   dependencies: PrEventStateDependencies,
+  followupId: string,
 ) {
   const selectedCommentIds = commentIds ? new Set(commentIds) : null;
   const submittedDraftComments = result.draft.comments.filter(
@@ -245,7 +274,7 @@ async function verifyAndRecordSubmittedReviewDelivery(
     deliveredComments,
   );
   if (deliveryIdentityError) throw new Error(deliveryIdentityError);
-  recordNeondeckPrDeliveries(
+  recordNeondeckPrDeliveriesAndCompleteFollowup(
     [
       {
         repoFullName: target.repoFullName,
@@ -264,6 +293,7 @@ async function verifyAndRecordSubmittedReviewDelivery(
         itemFingerprint: reviewThreadCommentDeliveryFingerprint(comment),
       })),
     ],
+    followupId,
     paths,
   );
 }

@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import {
   getGitHubPullRequest,
+  readLivePrReviewDraft,
   readPrReviewDraft,
   readGitHubQueueSnapshot,
 } from '../../modules/github';
@@ -152,7 +153,7 @@ export function createGitHubRoutes(
       paths,
     );
     return c.json(
-      result,
+      withCurrentDraftOnConflict(result, target.input, paths),
       result.ok ? 200 : result.requires?.includes('currentDraft') ? 409 : 400,
     );
   });
@@ -171,7 +172,10 @@ export function createGitHubRoutes(
       >[1],
       paths,
     );
-    return c.json(result, result.ok ? 200 : 400);
+    return c.json(
+      withCurrentDraftOnConflict(result, target.input, paths),
+      result.ok ? 200 : result.requires?.includes('currentDraft') ? 409 : 400,
+    );
   });
 
   routes.patch(
@@ -191,7 +195,10 @@ export function createGitHubRoutes(
         >[2],
         paths,
       );
-      return c.json(result, result.ok ? 200 : 400);
+      return c.json(
+        withCurrentDraftOnConflict(result, target.input, paths),
+        result.ok ? 200 : result.requires?.includes('currentDraft') ? 409 : 400,
+      );
     },
   );
 
@@ -208,8 +215,15 @@ export function createGitHubRoutes(
         target.input,
         c.req.param('id'),
         paths,
+        {
+          draftId: c.req.query('draftId'),
+          expectedUpdatedAt: c.req.query('expectedUpdatedAt'),
+        },
       );
-      return c.json(result, result.ok ? 200 : 400);
+      return c.json(
+        withCurrentDraftOnConflict(result, target.input, paths),
+        result.ok ? 200 : result.requires?.includes('currentDraft') ? 409 : 400,
+      );
     },
   );
 
@@ -609,6 +623,24 @@ export function createGitHubRoutes(
   });
 
   return routes;
+}
+
+function withCurrentDraftOnConflict<
+  T extends { data?: unknown; requires?: string[] },
+>(result: T, target: { repo: string; prNumber: number }, paths: RuntimePaths) {
+  if (!result.requires?.includes('currentDraft')) return result;
+  const currentDraft = readLivePrReviewDraft({
+    databasePath: paths.neondeckDatabase,
+    repo: target.repo,
+    prNumber: target.prNumber,
+  });
+  const data =
+    result.data &&
+    typeof result.data === 'object' &&
+    !Array.isArray(result.data)
+      ? result.data
+      : {};
+  return { ...result, data: { ...data, currentDraft } };
 }
 
 function unverifiedAcceptedReview(result: {

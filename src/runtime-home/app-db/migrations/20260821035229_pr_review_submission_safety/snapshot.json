@@ -1,7 +1,7 @@
 {
   "version": "7",
   "dialect": "sqlite",
-  "id": "d7c15dfc-5e2e-422b-bc65-a99781b686d7",
+  "id": "effcd255-4b4d-4a15-b3ac-a9d561fb63ae",
   "prevIds": [
     "e84051d2-d565-4368-9d5a-58fb1ce069f9"
   ],
@@ -4533,6 +4533,16 @@
       "default": "0",
       "generated": null,
       "name": "attempt_count",
+      "entityType": "columns",
+      "table": "pr_review_submission_followups"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "next_attempt_at",
       "entityType": "columns",
       "table": "pr_review_submission_followups"
     },

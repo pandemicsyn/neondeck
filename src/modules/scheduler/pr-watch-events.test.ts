@@ -301,6 +301,45 @@ describe('per-item PR feedback deltas', () => {
     ).toEqual([expect.objectContaining({ itemId: '901' })]);
   });
 
+  it('suppresses a pending Neondeck review and its comments until delivery verification completes', () => {
+    const current = [
+      watermark('requested_changes_reviews', {
+        reviews: [
+          {
+            id: '901',
+            fingerprint: 'pending-self-review',
+            authorLogin: 'neon',
+            body: 'Automated review body',
+            actionable: true,
+            bodyTruncated: false,
+          },
+          {
+            id: '902',
+            fingerprint: 'human-review',
+            authorLogin: 'maintainer',
+            body: 'Please cover the human edge case.',
+            actionable: true,
+            bodyTruncated: false,
+          },
+        ],
+      }),
+      watermark('review_threads', {
+        threads: [
+          thread(
+            comment('101', 'pending-self-comment', { reviewId: 901 }),
+            comment('102', 'human-comment', { reviewId: 902 }),
+          ),
+        ],
+      }),
+    ];
+
+    expect(
+      initialActionableDeltas(current, {
+        neondeckPendingReviewIds: new Set(['901']),
+      }).map((delta) => delta.itemId),
+    ).toEqual(['102', '902']);
+  });
+
   it('emits no metadata delta when every changed item is a known Neondeck delivery', () => {
     const previous = [watermark('conversation_comments', { comments: [] })];
     const current = [

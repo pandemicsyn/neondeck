@@ -67,7 +67,24 @@ async function processPrReviewEvidenceFollowup(
     completePrReviewSubmissionFollowup(followup.id, paths);
     return true;
   } catch (error) {
-    retryPrReviewSubmissionFollowup(followup.id, error, paths);
+    const retryDelayMs = retryPrReviewSubmissionFollowup(
+      followup.id,
+      error,
+      paths,
+    );
+    const timer = setTimeout(() => {
+      void processPrReviewEvidenceFollowup(
+        followup.id,
+        paths,
+        recordEvidence,
+      ).catch((retryError) => {
+        console.error(
+          '[neondeck] failed to retry submitted-review evidence follow-up',
+          retryError,
+        );
+      });
+    }, retryDelayMs);
+    timer.unref?.();
     return false;
   }
 }

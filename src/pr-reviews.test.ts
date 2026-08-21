@@ -36,7 +36,6 @@ import { openDb } from './lib/sqlite';
 import { readPrReviewDraft, upsertPrReviewDraft } from './modules/github';
 import { ensureRuntimeHome, runtimePaths } from './runtime-home';
 import { createGitHubRoutes } from './server/routes/github';
-import { recoverPrReviewEvidenceFollowups } from './server/pr-review-submission-followups';
 import { createReviewRoutes } from './server/routes/reviews';
 
 const roots: string[] = [];
@@ -1209,10 +1208,15 @@ describe('durable PR reviews', () => {
     });
     const recording = Promise.withResolvers<void>();
     const release = Promise.withResolvers<void>();
+    let evidenceAttempts = 0;
     const recordHandled = vi.fn(async () => {
-      recording.resolve();
-      await release.promise;
-      return null;
+      evidenceAttempts += 1;
+      if (evidenceAttempts === 1) {
+        recording.resolve();
+        await release.promise;
+        return null;
+      }
+      return { recorded: true };
     });
     const postGitHubPrReview = vi.fn(async () => ({
       ok: false,
@@ -1277,16 +1281,17 @@ describe('durable PR reviews', () => {
         ),
       ).toBe('pending'),
     );
-    const retryEvidence = vi.fn(async () => ({ recorded: true }));
-    await expect(
-      recoverPrReviewEvidenceFollowups(paths, retryEvidence as never),
-    ).resolves.toEqual([true]);
-    expect(
-      prReviewSubmissionFollowupStatus(
-        paths,
-        `pr-review-evidence:${started.reviewId}:9001`,
-      ),
-    ).toBe('completed');
+    await vi.waitFor(
+      () =>
+        expect(
+          prReviewSubmissionFollowupStatus(
+            paths,
+            `pr-review-evidence:${started.reviewId}:9001`,
+          ),
+        ).toBe('completed'),
+      { timeout: 2_500 },
+    );
+    expect(recordHandled).toHaveBeenCalledTimes(2);
     expect(recordHandled).toHaveBeenCalledWith(paths, {
       origin: 'submission',
       repoFullName: 'other/project',
@@ -1377,6 +1382,44 @@ describe('durable PR reviews', () => {
         draftId: exactDraft.id,
       }),
     ).toMatchObject({ status: 'draft' });
+  });
+
+  it('returns the authoritative draft with a create-if-absent conflict', async () => {
+    const paths = await tempPaths();
+    const currentDraft = upsertPrReviewDraft({
+      databasePath: paths.neondeckDatabase,
+      repo: 'other/project',
+      prNumber: 42,
+      headSha: 'head-1',
+      body: 'Saved by another client.',
+    });
+    const routes = createGitHubRoutes(paths);
+
+    const response = await routes.request(
+      '/prs/other/project/42/review-draft',
+      {
+        method: 'PUT',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          headSha: 'head-1',
+          body: 'Stale local body.',
+          expectedAbsent: true,
+        }),
+      },
+    );
+
+    expect(response.status).toBe(409);
+    await expect(response.json()).resolves.toMatchObject({
+      ok: false,
+      requires: ['currentDraft'],
+      data: {
+        currentDraft: {
+          id: currentDraft.id,
+          body: 'Saved by another client.',
+          updatedAt: currentDraft.updatedAt,
+        },
+      },
+    });
   });
 });
 

@@ -25,6 +25,7 @@ export function deltasFromChangedCategories(
     addressedReviewCommentFingerprints?: ReadonlyMap<string, string>;
     neondeckReviewCommentFingerprints?: ReadonlyMap<string, string>;
     neondeckRequestedChangesReviewFingerprints?: ReadonlyMap<string, string>;
+    neondeckPendingReviewIds?: ReadonlySet<string>;
     neondeckConversationCommentFingerprints?: ReadonlyMap<string, string>;
     neondeckCommitShas?: ReadonlySet<string>;
   } = {},
@@ -80,6 +81,7 @@ export function initialActionableDeltas(
     addressedReviewCommentFingerprints?: ReadonlyMap<string, string>;
     neondeckReviewCommentFingerprints?: ReadonlyMap<string, string>;
     neondeckRequestedChangesReviewFingerprints?: ReadonlyMap<string, string>;
+    neondeckPendingReviewIds?: ReadonlySet<string>;
     neondeckConversationCommentFingerprints?: ReadonlyMap<string, string>;
   } = {},
 ) {
@@ -109,6 +111,7 @@ function reviewCommentDeltas(
     addressedReviewThreadFingerprints?: ReadonlyMap<string, string>;
     addressedReviewCommentFingerprints?: ReadonlyMap<string, string>;
     neondeckReviewCommentFingerprints?: ReadonlyMap<string, string>;
+    neondeckPendingReviewIds?: ReadonlySet<string>;
   },
 ) {
   const previous = feedbackFingerprintMap(
@@ -127,6 +130,10 @@ function reviewCommentDeltas(
     }
     const fingerprint = stringField(item.fingerprint);
     const deliveryFingerprint = stringField(item.deliveryFingerprint);
+    const reviewId =
+      typeof item.reviewId === 'string' || typeof item.reviewId === 'number'
+        ? String(item.reviewId)
+        : undefined;
     const addressedCommentFingerprint =
       filters.addressedReviewCommentFingerprints?.get(id);
     const neondeckDeliveryFingerprint =
@@ -144,6 +151,10 @@ function reviewCommentDeltas(
           neondeckDeliveryFingerprint === deliveryFingerprint) ||
         addressedThreadFingerprint === fingerprint)
     ) {
+      suppressed = true;
+      return [];
+    }
+    if (reviewId && filters.neondeckPendingReviewIds?.has(reviewId)) {
       suppressed = true;
       return [];
     }
@@ -189,6 +200,7 @@ function requestedChangesDeltas(
   previousPayload: Record<string, unknown>,
   filters: {
     neondeckRequestedChangesReviewFingerprints?: ReadonlyMap<string, string>;
+    neondeckPendingReviewIds?: ReadonlySet<string>;
   },
 ) {
   const previous = feedbackFingerprintMap(recordArray(previousPayload.reviews));
@@ -200,9 +212,10 @@ function requestedChangesDeltas(
     const change = feedbackChange(item, previous.get(id));
     if (!change) return [];
     if (
-      fingerprint &&
-      filters.neondeckRequestedChangesReviewFingerprints?.get(id) ===
-        fingerprint
+      filters.neondeckPendingReviewIds?.has(id) ||
+      (fingerprint &&
+        filters.neondeckRequestedChangesReviewFingerprints?.get(id) ===
+          fingerprint)
     ) {
       suppressed = true;
       return [];

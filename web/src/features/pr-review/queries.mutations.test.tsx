@@ -80,6 +80,70 @@ describe('useGitHubPrReviewMutations', () => {
     expect(queryClient.getQueryData(prReviewQueryKeys.draft(pr))).toBeNull();
   });
 
+  it('reconciles the authoritative draft returned by a CAS conflict', async () => {
+    const pr = pullRequest();
+    const staleDraft = reviewDraft('draft');
+    const currentDraft = {
+      ...staleDraft,
+      body: 'Saved by the popout client.',
+      updatedAt: '2026-08-19T12:00:00.000Z',
+    };
+    const queryClient = new QueryClient({
+      defaultOptions: {
+        mutations: { retry: false },
+        queries: { retry: false },
+      },
+    });
+    queryClient.setQueryData(prReviewQueryKeys.draft(pr), staleDraft);
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          ok: false,
+          action: 'github_pr_review_draft_put',
+          changed: false,
+          message: 'The review draft changed.',
+          requires: ['currentDraft'],
+          data: { currentDraft },
+        }),
+        {
+          status: 409,
+          headers: { 'content-type': 'application/json' },
+        },
+      ),
+    );
+
+    let mutations: ReturnType<typeof useGitHubPrReviewMutations> | null = null;
+    function Harness() {
+      mutations = useGitHubPrReviewMutations(pr);
+      return null;
+    }
+
+    act(() =>
+      root.render(
+        <QueryClientProvider client={queryClient}>
+          <Harness />
+        </QueryClientProvider>,
+      ),
+    );
+
+    await act(async () => {
+      await expect(
+        mutations!.saveDraft.mutateAsync({
+          repo: pr.repo,
+          number: pr.number,
+          draftId: staleDraft.id,
+          expectedUpdatedAt: staleDraft.updatedAt,
+          headSha: staleDraft.headSha,
+          body: 'Stale local edit.',
+        }),
+      ).rejects.toThrow('The review draft changed.');
+    });
+
+    expect(queryClient.getQueryData(prReviewQueryKeys.draft(pr))).toEqual(
+      currentDraft,
+    );
+  });
+
   it('clears the live draft cache after GitHub accepts the review', async () => {
     const pr = pullRequest();
     const liveDraft = reviewDraft('draft');

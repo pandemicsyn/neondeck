@@ -20,11 +20,11 @@ export function enqueuePrReviewSubmissionFollowup(
       .prepare(
         `INSERT INTO pr_review_submission_followups (
            id, kind, payload_json, status, attempt_count,
-           last_error, created_at, updated_at, completed_at
-         ) VALUES (?, ?, ?, 'pending', 0, NULL, ?, ?, NULL)
+           next_attempt_at, last_error, created_at, updated_at, completed_at
+         ) VALUES (?, ?, ?, 'pending', 0, ?, NULL, ?, ?, NULL)
          ON CONFLICT(id) DO NOTHING;`,
       )
-      .run(input.id, input.kind, JSON.stringify(input.payload), now, now);
+      .run(input.id, input.kind, JSON.stringify(input.payload), now, now, now);
   } finally {
     database.close();
   }
@@ -71,18 +71,20 @@ export function claimPrReviewSubmissionFollowup(
               `SELECT id, kind, payload_json
              FROM pr_review_submission_followups
              WHERE id = ? AND status = 'pending' AND kind = ?
+               AND next_attempt_at <= ?
              LIMIT 1;`,
             )
-            .get(id, kind)
+            .get(id, kind, now)
         : database
             .prepare(
               `SELECT id, kind, payload_json
              FROM pr_review_submission_followups
              WHERE status = 'pending' AND kind = ?
+               AND next_attempt_at <= ?
              ORDER BY created_at ASC
              LIMIT 1;`,
             )
-            .get(kind)
+            .get(kind, now)
     ) as { id?: unknown; kind?: unknown; payload_json?: unknown } | undefined;
     if (!row || typeof row.id !== 'string') {
       database.exec('COMMIT;');
@@ -149,12 +151,39 @@ export function retryPrReviewSubmissionFollowup(
   error: unknown,
   paths: RuntimePaths,
 ) {
-  settleFollowup(
-    id,
-    'pending',
-    error instanceof Error ? error.message : String(error),
-    paths,
-  );
+  const database = openDb(paths.neondeckDatabase);
+  const now = new Date();
+  try {
+    const row = database
+      .prepare(
+        `SELECT attempt_count
+         FROM pr_review_submission_followups
+         WHERE id = ? AND status = 'processing';`,
+      )
+      .get(id) as { attempt_count?: unknown } | undefined;
+    const attemptCount =
+      typeof row?.attempt_count === 'number' ? row.attempt_count : 1;
+    const retryDelayMs = Math.min(
+      1_000 * 2 ** Math.max(0, attemptCount - 1),
+      30_000,
+    );
+    database
+      .prepare(
+        `UPDATE pr_review_submission_followups
+         SET status = 'pending', last_error = ?, updated_at = ?,
+             next_attempt_at = ?, completed_at = NULL
+         WHERE id = ? AND status = 'processing';`,
+      )
+      .run(
+        error instanceof Error ? error.message : String(error),
+        now.toISOString(),
+        new Date(now.getTime() + retryDelayMs).toISOString(),
+        id,
+      );
+    return retryDelayMs;
+  } finally {
+    database.close();
+  }
 }
 
 export function recoverProcessingPrReviewSubmissionFollowups(
@@ -165,10 +194,10 @@ export function recoverProcessingPrReviewSubmissionFollowups(
     database
       .prepare(
         `UPDATE pr_review_submission_followups
-         SET status = 'pending', updated_at = ?
-         WHERE status = 'processing';`,
+         SET status = 'pending', updated_at = ?, next_attempt_at = ?
+         WHERE status IN ('pending', 'processing');`,
       )
-      .run(new Date().toISOString());
+      .run(new Date().toISOString(), new Date().toISOString());
   } finally {
     database.close();
   }
@@ -187,10 +216,11 @@ function settleFollowup(
       .prepare(
         `UPDATE pr_review_submission_followups
          SET status = ?, last_error = ?, updated_at = ?,
+             next_attempt_at = ?,
              completed_at = CASE WHEN ? = 'completed' THEN ? ELSE NULL END
          WHERE id = ? AND status = 'processing';`,
       )
-      .run(status, lastError, now, status, now, id);
+      .run(status, lastError, now, now, status, now, id);
   } finally {
     database.close();
   }

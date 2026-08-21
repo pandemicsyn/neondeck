@@ -59,5 +59,6 @@ export {
 } from './addressed';
 export {
   readNeondeckPrDeliveries,
+  readPendingNeondeckPrReviewIds,
   recordNeondeckPrDelivery,
 } from './deliveries';

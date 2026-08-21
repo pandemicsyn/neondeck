@@ -32,7 +32,7 @@ import {
   putGitHubPrReviewDraft,
   readAddressedPrFeedback,
   readNeondeckPrDeliveries,
-  recoverPrReviewDeliveryFollowups,
+  readPendingNeondeckPrReviewIds,
   reviewThreadCommentDeliveryFingerprint,
   refreshPrWatchEventState,
 } from './modules/pr-events';
@@ -932,12 +932,19 @@ describe('PR event state watermarks', () => {
         headSha: 'head123',
         verdict: 'comment',
         body: 'Review body',
+        expectedAbsent: true,
       },
       paths,
     );
     const draft = (
       draftResult.data as
-        | { draft?: { id?: string; comments?: Array<{ id?: string }> } }
+        | {
+            draft?: {
+              id?: string;
+              updatedAt?: string;
+              comments?: Array<{ id?: string }>;
+            };
+          }
         | undefined
     )?.draft;
     expect(draft?.id).toEqual(expect.any(String));
@@ -948,6 +955,7 @@ describe('PR event state watermarks', () => {
         { repo: 'neondeck', prNumber: 123 },
         {
           draftId: draft?.id ?? '',
+          expectedUpdatedAt: draft?.updatedAt ?? '',
           path: 'src/app.ts',
           side: 'RIGHT',
           line: 99,
@@ -967,6 +975,7 @@ describe('PR event state watermarks', () => {
         { repo: 'neondeck', prNumber: 123 },
         {
           draftId: draft?.id ?? '',
+          expectedUpdatedAt: draft?.updatedAt ?? '',
           path: 'src/app.ts',
           side: 'RIGHT',
           line: 99,
@@ -985,6 +994,7 @@ describe('PR event state watermarks', () => {
       { repo: 'neondeck', prNumber: 123 },
       {
         draftId: draft?.id ?? '',
+        expectedUpdatedAt: draft?.updatedAt ?? '',
         path: 'src/app.ts',
         side: 'RIGHT',
         line: 12,
@@ -994,10 +1004,18 @@ describe('PR event state watermarks', () => {
       cachedFiles,
     );
     expect(commentResult).toMatchObject({ ok: true });
-    const commentId = (
+    const savedDraft = (
       commentResult.data as
-        { draft?: { comments?: Array<{ id?: string }> } } | undefined
-    )?.draft?.comments?.[0]?.id;
+        | {
+            draft?: {
+              id?: string;
+              updatedAt?: string;
+              comments?: Array<{ id?: string }>;
+            };
+          }
+        | undefined
+    )?.draft;
+    const commentId = savedDraft?.comments?.[0]?.id;
     expect(commentId).toEqual(expect.any(String));
 
     await expect(
@@ -1005,6 +1023,8 @@ describe('PR event state watermarks', () => {
         { repo: 'neondeck', prNumber: 123 },
         commentId ?? '',
         {
+          draftId: savedDraft?.id ?? '',
+          expectedUpdatedAt: savedDraft?.updatedAt ?? '',
           path: 'src/next.ts',
           side: 'LEFT',
           line: 8,
@@ -1032,12 +1052,19 @@ describe('PR event state watermarks', () => {
         headSha: 'head123',
         verdict: 'comment',
         body: 'Review body',
+        expectedAbsent: true,
       },
       paths,
     );
     const draft = (
       draftResult.data as
-        | { draft?: { id?: string; comments?: Array<{ id?: string }> } }
+        | {
+            draft?: {
+              id?: string;
+              updatedAt?: string;
+              comments?: Array<{ id?: string }>;
+            };
+          }
         | undefined
     )?.draft;
     expect(draft?.id).toEqual(expect.any(String));
@@ -1047,6 +1074,7 @@ describe('PR event state watermarks', () => {
         { repo: 'neondeck', prNumber: 124 },
         {
           draftId: draft?.id ?? '',
+          expectedUpdatedAt: draft?.updatedAt ?? '',
           path: 'src/app.ts',
           side: 'RIGHT',
           line: 12,
@@ -1065,6 +1093,7 @@ describe('PR event state watermarks', () => {
         { repo: 'neondeck', prNumber: 123 },
         {
           draftId: draft?.id ?? '',
+          expectedUpdatedAt: draft?.updatedAt ?? '',
           path: 'src/app.ts',
           side: 'RIGHT',
           line: 99,
@@ -1084,6 +1113,7 @@ describe('PR event state watermarks', () => {
       { repo: 'neondeck', prNumber: 123 },
       {
         draftId: draft?.id ?? '',
+        expectedUpdatedAt: draft?.updatedAt ?? '',
         path: 'src/app.ts',
         side: 'RIGHT',
         line: 12,
@@ -1092,17 +1122,29 @@ describe('PR event state watermarks', () => {
       paths,
       anchorValidationDependencies(),
     );
-    const commentId = (
+    const savedDraft = (
       commentResult.data as
-        { draft?: { comments?: Array<{ id?: string }> } } | undefined
-    )?.draft?.comments?.[0]?.id;
+        | {
+            draft?: {
+              id?: string;
+              updatedAt?: string;
+              comments?: Array<{ id?: string }>;
+            };
+          }
+        | undefined
+    )?.draft;
+    const commentId = savedDraft?.comments?.[0]?.id;
     expect(commentId).toEqual(expect.any(String));
 
     await expect(
       patchGitHubPrReviewDraftComment(
         { repo: 'neondeck', prNumber: 124 },
         commentId ?? '',
-        { body: 'Wrong PR edit.' },
+        {
+          draftId: savedDraft?.id ?? '',
+          expectedUpdatedAt: savedDraft?.updatedAt ?? '',
+          body: 'Wrong PR edit.',
+        },
         paths,
       ),
     ).resolves.toMatchObject({
@@ -1116,6 +1158,8 @@ describe('PR event state watermarks', () => {
         { repo: 'neondeck', prNumber: 123 },
         commentId ?? '',
         {
+          draftId: savedDraft?.id ?? '',
+          expectedUpdatedAt: savedDraft?.updatedAt ?? '',
           path: 'src/next.ts',
           side: 'LEFT',
           line: 8,
@@ -1150,6 +1194,10 @@ describe('PR event state watermarks', () => {
         { repo: 'neondeck', prNumber: 124 },
         commentId ?? '',
         paths,
+        {
+          draftId: savedDraft?.id ?? '',
+          expectedUpdatedAt: savedDraft?.updatedAt ?? '',
+        },
       ),
     ).resolves.toMatchObject({
       ok: false,
@@ -1326,6 +1374,7 @@ describe('PR event state watermarks', () => {
 
     const delayedVerification =
       Promise.withResolvers<GitHubPullRequestReviewThreadComment[]>();
+    let delayedVerificationAttempts = 0;
     await expect(
       postGitHubPrReview(
         { repo: 'neondeck', prNumber: 123 },
@@ -1342,8 +1391,12 @@ describe('PR event state watermarks', () => {
             draft: { ...submittedDraft, id: 'draft-2' },
             review: { ...review, id: 9002, nodeId: 'review-node-9002' },
           }),
-          fetchPullRequestReviewComments: async () =>
-            delayedVerification.promise,
+          fetchPullRequestReviewComments: async () => {
+            delayedVerificationAttempts += 1;
+            return delayedVerificationAttempts === 1
+              ? delayedVerification.promise
+              : [{ ...deliveredComment, reviewId: 9002 }];
+          },
         },
       ),
     ).resolves.toMatchObject({
@@ -1367,6 +1420,9 @@ describe('PR event state watermarks', () => {
         'pr-review-delivery:pandemicsyn/neondeck#123:9002',
       ),
     ).toBe('processing');
+    expect(
+      readPendingNeondeckPrReviewIds('pandemicsyn/neondeck', 123, paths),
+    ).toEqual(new Set(['9002']));
     delayedVerification.resolve([]);
     await vi.waitFor(() =>
       expect(
@@ -1376,20 +1432,20 @@ describe('PR event state watermarks', () => {
         ),
       ).toBe('pending'),
     );
-    await expect(
-      recoverPrReviewDeliveryFollowups(paths, {
-        token: 'test-token',
-        fetchPullRequestReviewComments: async () => [
-          { ...deliveredComment, reviewId: 9002 },
-        ],
-      }),
-    ).resolves.toEqual([true]);
+    await vi.waitFor(
+      () =>
+        expect(
+          prReviewSubmissionFollowupStatus(
+            paths.neondeckDatabase,
+            'pr-review-delivery:pandemicsyn/neondeck#123:9002',
+          ),
+        ).toBe('completed'),
+      { timeout: 2_500 },
+    );
+    expect(delayedVerificationAttempts).toBe(2);
     expect(
-      prReviewSubmissionFollowupStatus(
-        paths.neondeckDatabase,
-        'pr-review-delivery:pandemicsyn/neondeck#123:9002',
-      ),
-    ).toBe('completed');
+      readPendingNeondeckPrReviewIds('pandemicsyn/neondeck', 123, paths),
+    ).toEqual(new Set());
 
     await expect(
       postGitHubPrReview(
@@ -1632,17 +1688,17 @@ describe('PR event state watermarks', () => {
     const paths = runtimePaths(home);
     await writeRepoRegistry(paths.repos);
 
-    await expect(
-      putGitHubPrReviewDraft(
-        { repo: 'neondeck', prNumber: 123 },
-        {
-          headSha: 'head123',
-          verdict: 'comment',
-          body: 'Initial body',
-        },
-        paths,
-      ),
-    ).resolves.toMatchObject({
+    const created = await putGitHubPrReviewDraft(
+      { repo: 'neondeck', prNumber: 123 },
+      {
+        headSha: 'head123',
+        verdict: 'comment',
+        body: 'Initial body',
+        expectedAbsent: true,
+      },
+      paths,
+    );
+    expect(created).toMatchObject({
       ok: true,
       data: {
         draft: {
@@ -1651,17 +1707,22 @@ describe('PR event state watermarks', () => {
         },
       },
     });
+    const initialDraft = (
+      created.data as
+        { draft?: { id?: string; updatedAt?: string } } | undefined
+    )?.draft;
 
-    await expect(
-      putGitHubPrReviewDraft(
-        { repo: 'neondeck', prNumber: 123 },
-        {
-          headSha: 'head123',
-          body: 'Edited body',
-        },
-        paths,
-      ),
-    ).resolves.toMatchObject({
+    const edited = await putGitHubPrReviewDraft(
+      { repo: 'neondeck', prNumber: 123 },
+      {
+        draftId: initialDraft?.id,
+        expectedUpdatedAt: initialDraft?.updatedAt,
+        headSha: 'head123',
+        body: 'Edited body',
+      },
+      paths,
+    );
+    expect(edited).toMatchObject({
       ok: true,
       data: {
         draft: {
@@ -1670,11 +1731,16 @@ describe('PR event state watermarks', () => {
         },
       },
     });
+    const editedDraft = (
+      edited.data as { draft?: { id?: string; updatedAt?: string } } | undefined
+    )?.draft;
 
     await expect(
       putGitHubPrReviewDraft(
         { repo: 'neondeck', prNumber: 123 },
         {
+          draftId: editedDraft?.id,
+          expectedUpdatedAt: editedDraft?.updatedAt,
           headSha: 'head123',
           verdict: 'request-changes',
         },
@@ -1697,7 +1763,7 @@ describe('PR event state watermarks', () => {
     await writeRepoRegistry(paths.repos);
     const created = await putGitHubPrReviewDraft(
       { repo: 'neondeck', prNumber: 123 },
-      { headSha: 'head-before' },
+      { headSha: 'head-before', expectedAbsent: true },
       paths,
     );
     const draftId = (created.data as { draft?: { id?: string } } | undefined)
@@ -1733,7 +1799,7 @@ describe('PR event state watermarks', () => {
     });
   });
 
-  it('coalesces parallel review draft PUTs into one live draft', async () => {
+  it('allows only one parallel create-if-absent review draft PUT', async () => {
     const home = await tempHome();
     const paths = runtimePaths(home);
     await writeRepoRegistry(paths.repos);
@@ -1745,27 +1811,33 @@ describe('PR event state watermarks', () => {
           {
             headSha: 'head123',
             body: `Body ${index}`,
+            expectedAbsent: true,
           },
           paths,
         ),
       ),
     );
 
-    const draftIds = results.map((result) => {
-      expect(result.ok).toBe(true);
-      const draft = (result.data as { draft?: { id?: string } } | undefined)
-        ?.draft;
-      expect(draft?.id).toEqual(expect.any(String));
-      return draft?.id;
-    });
-    expect(new Set(draftIds).size).toBe(1);
+    const accepted = results.filter((result) => result.ok);
+    const rejected = results.filter((result) => !result.ok);
+    expect(accepted).toHaveLength(1);
+    expect(rejected).toHaveLength(5);
+    expect(rejected).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ requires: ['currentDraft'] }),
+      ]),
+    );
+    const draftId = (
+      accepted[0]?.data as { draft?: { id?: string } } | undefined
+    )?.draft?.id;
+    expect(draftId).toEqual(expect.any(String));
     await expect(
       getGitHubPrReviewDraft({ repo: 'neondeck', prNumber: 123 }, paths),
     ).resolves.toMatchObject({
       ok: true,
       data: {
         draft: {
-          id: draftIds[0],
+          id: draftId,
           headSha: 'head123',
         },
       },

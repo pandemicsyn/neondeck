@@ -1405,27 +1405,23 @@ export function GitHubPrReview({
     next: Partial<{
       body: string | null;
       verdict: GitHubPrReviewVerdict | null;
-      reanchorHeadSha: boolean;
     }> = {},
     headSha = currentHeadSha,
   ) => {
     if (!headSha) throw new Error('PR head SHA is unavailable.');
     const currentDraft = draftRef.current;
     const saved = await mutations.saveDraft.mutateAsync({
-      ...(draftIdRef.current
+      ...(currentDraft
         ? {
-            draftId: draftIdRef.current,
-            ...(currentDraft?.id === draftIdRef.current
-              ? { expectedUpdatedAt: currentDraft.updatedAt }
-              : {}),
+            draftId: currentDraft.id,
+            expectedUpdatedAt: currentDraft.updatedAt,
           }
-        : {}),
+        : { expectedAbsent: true }),
       repo: pr.repo,
       number: pr.number,
       headSha,
       ...('verdict' in next ? { verdict: next.verdict } : {}),
       ...('body' in next ? { body: next.body } : {}),
-      ...(next.reanchorHeadSha ? { reanchorHeadSha: true } : {}),
     });
     acceptDraftSnapshot(saved);
     return saved;
@@ -1434,7 +1430,6 @@ export function GitHubPrReview({
     next: Partial<{
       body: string | null;
       verdict: GitHubPrReviewVerdict | null;
-      reanchorHeadSha: boolean;
     }> = {},
     headSha = currentHeadSha,
   ) => {
@@ -1452,7 +1447,6 @@ export function GitHubPrReview({
     next: Partial<{
       body: string | null;
       verdict: GitHubPrReviewVerdict | null;
-      reanchorHeadSha: boolean;
     }>,
     headSha: string,
   ) => {
@@ -1469,7 +1463,6 @@ export function GitHubPrReview({
         headSha,
         ...('verdict' in next ? { verdict: next.verdict } : {}),
         ...('body' in next ? { body: next.body } : {}),
-        ...(next.reanchorHeadSha ? { reanchorHeadSha: true } : {}),
       }),
     );
     acceptDraftSnapshot(saved);
@@ -1565,12 +1558,16 @@ export function GitHubPrReview({
       }
       const operationToken = beginOperation();
       const editorKey = `reanchor:${reanchoringCommentId}`;
+      const mutationDraft = draftRef.current;
+      if (!mutationDraft) return;
       inFlightDraftEditorKeysRef.current.add(editorKey);
       trackDraftMutation(
         mutations.updateComment.mutateAsync({
           repo: pr.repo,
           number: pr.number,
           id: reanchoringCommentId,
+          draftId: mutationDraft.id,
+          expectedUpdatedAt: mutationDraft.updatedAt,
           path: activePath,
           ...input,
           body: comment.body,
@@ -1632,6 +1629,7 @@ export function GitHubPrReview({
           repo: pr.repo,
           number: pr.number,
           draftId: nextDraft.id,
+          expectedUpdatedAt: nextDraft.updatedAt,
           path: submittedComposer.path,
           ...input,
           body: submittedComposer.body,
@@ -1656,6 +1654,8 @@ export function GitHubPrReview({
     const submittedEditor = commentEditor;
     if (!submittedEditor || submittedEditor.body.trim().length === 0) return;
     const operationToken = beginOperation();
+    const mutationDraft = draftRef.current;
+    if (!mutationDraft) return;
     const editorKey = `comment:${submittedEditor.token}`;
     inFlightDraftEditorKeysRef.current.add(editorKey);
     try {
@@ -1664,6 +1664,8 @@ export function GitHubPrReview({
           repo: pr.repo,
           number: pr.number,
           id: submittedEditor.commentId,
+          draftId: mutationDraft.id,
+          expectedUpdatedAt: mutationDraft.updatedAt,
           body: submittedEditor.body,
         }),
       );
@@ -1711,12 +1713,16 @@ export function GitHubPrReview({
   };
   const deleteDraftComment = (commentId: string) => {
     if (isApplyingRevision || reviewSubmissionPendingRef.current) return;
+    const mutationDraft = draftRef.current;
+    if (!mutationDraft) return;
     const operationToken = beginOperation();
     void trackDraftMutation(
       mutations.deleteComment.mutateAsync({
         repo: pr.repo,
         number: pr.number,
         id: commentId,
+        draftId: mutationDraft.id,
+        expectedUpdatedAt: mutationDraft.updatedAt,
       }),
     )
       .then((updated) => {
@@ -1999,7 +2005,7 @@ export function GitHubPrReview({
       }
       const settledDraft = await saveDraftAgainstSnapshot(
         refreshedDraft,
-        { body: normalizedBody, reanchorHeadSha: true, verdict },
+        { body: normalizedBody, verdict },
         currentHeadSha,
       );
       const settledUnknownPatchCommentIds = draftCommentIdsWithUnknownPatch(
