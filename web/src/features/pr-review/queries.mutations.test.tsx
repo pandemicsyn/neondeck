@@ -774,6 +774,151 @@ describe('useGitHubPrReviewMutations', () => {
     );
   });
 
+  it('does not clear a replacement draft with a delayed null conflict', async () => {
+    const pr = pullRequest();
+    const original = reviewDraft('draft');
+    const replacement = {
+      ...original,
+      id: 'draft-2',
+      body: 'Replacement draft.',
+      comments: [],
+      updatedAt: '2026-08-18T03:16:00.000Z',
+    } satisfies GitHubPrReviewDraft;
+    const queryClient = new QueryClient({
+      defaultOptions: {
+        mutations: { retry: false },
+        queries: { retry: false },
+      },
+    });
+    queryClient.setQueryData(prReviewQueryKeys.draft(pr), original);
+    const conflictResponse = Promise.withResolvers<Response>();
+    vi.spyOn(globalThis, 'fetch').mockImplementation(
+      () => conflictResponse.promise,
+    );
+    let mutations: ReturnType<typeof useGitHubPrReviewMutations> | null = null;
+    function Harness() {
+      mutations = useGitHubPrReviewMutations(pr);
+      return null;
+    }
+    act(() =>
+      root.render(
+        <QueryClientProvider client={queryClient}>
+          <Harness />
+        </QueryClientProvider>,
+      ),
+    );
+
+    let saving!: Promise<unknown>;
+    act(() => {
+      saving = mutations!.saveDraft.mutateAsync({
+        draftId: original.id,
+        expectedRevision: original.revision,
+        repo: pr.repo,
+        number: pr.number,
+        headSha: pr.headSha!,
+        body: 'Stale save.',
+      });
+    });
+    await vi.waitFor(() => expect(globalThis.fetch).toHaveBeenCalledOnce());
+    act(() => {
+      queryClient.setQueryData(prReviewQueryKeys.draft(pr), replacement);
+    });
+    conflictResponse.resolve(
+      new Response(
+        JSON.stringify({
+          ok: false,
+          action: 'github_pr_review_draft_put',
+          changed: false,
+          message: 'The review draft changed.',
+          requires: ['currentDraft'],
+          data: { currentDraft: null },
+        }),
+        {
+          status: 409,
+          headers: { 'content-type': 'application/json' },
+        },
+      ),
+    );
+    await act(async () => {
+      await expect(saving).rejects.toThrow('The review draft changed.');
+    });
+
+    expect(queryClient.getQueryData(prReviewQueryKeys.draft(pr))).toEqual(
+      replacement,
+    );
+  });
+
+  it('does not clear a recovered same-id draft with a delayed null conflict', async () => {
+    const pr = pullRequest();
+    const original = reviewDraft('draft');
+    const recovered = {
+      ...original,
+      updatedAt: '2026-08-18T03:16:00.000Z',
+    } satisfies GitHubPrReviewDraft;
+    const queryClient = new QueryClient({
+      defaultOptions: {
+        mutations: { retry: false },
+        queries: { retry: false },
+      },
+    });
+    queryClient.setQueryData(prReviewQueryKeys.draft(pr), original);
+    const conflictResponse = Promise.withResolvers<Response>();
+    vi.spyOn(globalThis, 'fetch').mockImplementation(
+      () => conflictResponse.promise,
+    );
+    let mutations: ReturnType<typeof useGitHubPrReviewMutations> | null = null;
+    function Harness() {
+      mutations = useGitHubPrReviewMutations(pr);
+      return null;
+    }
+    act(() =>
+      root.render(
+        <QueryClientProvider client={queryClient}>
+          <Harness />
+        </QueryClientProvider>,
+      ),
+    );
+
+    let saving!: Promise<unknown>;
+    act(() => {
+      saving = mutations!.saveDraft.mutateAsync({
+        draftId: original.id,
+        expectedRevision: original.revision,
+        repo: pr.repo,
+        number: pr.number,
+        headSha: pr.headSha!,
+        body: 'Stale save.',
+      });
+    });
+    await vi.waitFor(() => expect(globalThis.fetch).toHaveBeenCalledOnce());
+    act(() => {
+      queryClient.setQueryData(prReviewQueryKeys.draft(pr), recovered);
+    });
+    conflictResponse.resolve(
+      new Response(
+        JSON.stringify({
+          ok: false,
+          action: 'github_pr_review_draft_put',
+          changed: false,
+          message: 'The review draft changed.',
+          requires: ['currentDraft'],
+          data: { currentDraft: null },
+        }),
+        {
+          status: 409,
+          headers: { 'content-type': 'application/json' },
+        },
+      ),
+    );
+    await act(async () => {
+      await expect(saving).rejects.toThrow('The review draft changed.');
+    });
+
+    expect(queryClient.getQueryData(prReviewQueryKeys.draft(pr))).toEqual(
+      recovered,
+    );
+  });
+
   it('keeps a newer draft snapshot when mutation responses arrive out of order', () => {
     const older = reviewDraft('draft');
     const newer = {

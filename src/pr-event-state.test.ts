@@ -1043,6 +1043,45 @@ describe('PR event state watermarks', () => {
     });
   });
 
+  it('mutates a canonicalized draft through a mixed-case configured target', async () => {
+    const home = await tempHome();
+    const paths = runtimePaths(home);
+    await writeRepoRegistry(paths.repos, {
+      owner: 'Acme-Org',
+      name: 'Widgets',
+    });
+    const created = await putGitHubPrReviewDraft(
+      { repo: 'neondeck', prNumber: 123 },
+      { headSha: 'head123', expectedAbsent: true },
+      paths,
+    );
+    const draft = (
+      created.data as
+        | { draft?: { id?: string; repo?: string; revision?: number } }
+        | undefined
+    )?.draft;
+    expect(draft).toMatchObject({ repo: 'acme-org/widgets' });
+
+    await expect(
+      postGitHubPrReviewDraftComment(
+        { repo: 'neondeck', prNumber: 123 },
+        {
+          draftId: draft?.id ?? '',
+          expectedRevision: draft?.revision ?? 0,
+          path: 'src/app.ts',
+          side: 'RIGHT',
+          line: 12,
+          body: 'The configured target still owns this draft.',
+        },
+        paths,
+        anchorValidationDependencies(),
+      ),
+    ).resolves.toMatchObject({
+      ok: true,
+      data: { draft: { repo: 'acme-org/widgets' } },
+    });
+  });
+
   it('keeps PR review draft comment mutations scoped to the route PR', async () => {
     const home = await tempHome();
     const paths = runtimePaths(home);
@@ -1895,14 +1934,17 @@ async function tempHome() {
   return home;
 }
 
-async function writeRepoRegistry(path: string) {
+async function writeRepoRegistry(
+  path: string,
+  github = { owner: 'pandemicsyn', name: 'neondeck' },
+) {
   await writeFile(
     path,
     `${JSON.stringify({
       repos: [
         {
           id: 'neondeck',
-          github: { owner: 'pandemicsyn', name: 'neondeck' },
+          github,
           path: '/src/neondeck',
           defaultBranch: 'main',
         },

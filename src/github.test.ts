@@ -34,6 +34,7 @@ import {
   settlePrReviewDraftSubmission,
   submitPullRequestReview,
   unresolvePullRequestReviewThread,
+  upsertPrReviewDraft as upsertPrReviewDraftStrict,
 } from './modules/github';
 import {
   addPrReviewDraftComment,
@@ -2050,7 +2051,7 @@ describe('github foundation', () => {
     });
   });
 
-  it('finds and reuses live review drafts across repository casing', async () => {
+  it('canonicalizes repository casing before the live-draft uniqueness fence', async () => {
     const paths = runtimePaths(await tempHome());
     await ensureRuntimeHome(paths);
 
@@ -2060,6 +2061,16 @@ describe('github foundation', () => {
       prNumber: 4763,
       headSha: 'head4763',
     });
+    expect(draft.repo).toBe('acme-org/widgets');
+    expect(() =>
+      upsertPrReviewDraftStrict({
+        databasePath: paths.neondeckDatabase,
+        expectedAbsent: true,
+        repo: 'ACME-ORG/widgets',
+        prNumber: 4763,
+        headSha: 'head4763',
+      }),
+    ).toThrow('A review draft appeared before creation.');
     const withComment = addPrReviewDraftComment({
       databasePath: paths.neondeckDatabase,
       draftId: draft.id,

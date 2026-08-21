@@ -580,7 +580,8 @@ function draftMatchesTarget(
   target: PullRequestTarget,
 ) {
   return (
-    draft?.repo === target.repoFullName && draft.prNumber === target.number
+    draft?.repo.toLowerCase() === target.repoFullName.toLowerCase() &&
+    draft.prNumber === target.number
   );
 }
 

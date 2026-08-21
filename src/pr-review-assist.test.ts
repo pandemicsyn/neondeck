@@ -525,6 +525,82 @@ describe('PR review assist', () => {
     ).toEqual([]);
   });
 
+  it('atomically rolls back a seed comment when its ledger insert fails', async () => {
+    const paths = await tempPaths();
+    const database = openDb(paths.neondeckDatabase);
+    try {
+      database.exec(`
+        CREATE TRIGGER reject_neon_seed_ledger
+        BEFORE INSERT ON pr_review_neon_seeded_comments
+        BEGIN
+          SELECT RAISE(ABORT, 'seed ledger rejected');
+        END;
+      `);
+    } finally {
+      database.close();
+    }
+
+    await expect(
+      reviewPrForHuman({ ref: 'pandemicsyn/neondeck#10' }, paths, {
+        fetchFacts: async () => reviewFacts(),
+        reviewer: async () => reviewOutputWithOneFinding(),
+      }),
+    ).rejects.toThrow('seed ledger rejected');
+
+    expect(reviewSeedCounts(paths.neondeckDatabase)).toEqual({
+      comments: 0,
+      seeds: 0,
+    });
+  });
+
+  it('preserves both seed comment and ledger when rollback keeps losing the CAS', async () => {
+    const paths = await tempPaths();
+    const database = openDb(paths.neondeckDatabase);
+    try {
+      database.exec(`
+        CREATE TRIGGER reject_second_seed_comment
+        BEFORE INSERT ON pr_review_draft_comments
+        WHEN (SELECT count(*) FROM pr_review_draft_comments) > 0
+        BEGIN
+          SELECT RAISE(ABORT, 'second seed comment rejected');
+        END;
+
+        CREATE TRIGGER advance_revision_before_seed_cleanup
+        BEFORE DELETE ON pr_review_draft_comments
+        BEGIN
+          UPDATE pr_review_drafts
+          SET revision = revision + 1
+          WHERE id = OLD.draft_id;
+        END;
+      `);
+    } finally {
+      database.close();
+    }
+    const output = reviewOutputWithOneFinding();
+
+    await expect(
+      reviewPrForHuman({ ref: 'pandemicsyn/neondeck#10' }, paths, {
+        fetchFacts: async () => reviewFacts(),
+        reviewer: async () => ({
+          ...output,
+          findings: [
+            ...output.findings,
+            {
+              ...output.findings[0]!,
+              summary: 'Validate the second branch.',
+              suggestedFix: 'Add a second explicit guard.',
+            },
+          ],
+        }),
+      }),
+    ).rejects.toThrow('second seed comment rejected');
+
+    expect(reviewSeedCounts(paths.neondeckDatabase)).toEqual({
+      comments: 1,
+      seeds: 1,
+    });
+  });
+
   it('reanchors an emptied Neon draft when the reviewed head advances', async () => {
     const paths = await tempPaths();
     const firstFacts = reviewFacts();

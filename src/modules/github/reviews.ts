@@ -381,6 +381,7 @@ export function upsertPrReviewDraft(
       now,
     );
     const id = randomUUID();
+    const canonicalRepo = options.repo.toLowerCase();
     try {
       database
         .prepare(
@@ -401,7 +402,7 @@ export function upsertPrReviewDraft(
         )
         .run(
           id,
-          options.repo,
+          canonicalRepo,
           options.prNumber,
           options.headSha,
           options.verdict ?? null,
@@ -521,6 +522,11 @@ export function addPrReviewDraftComment(options: {
   body: string;
   origin?: GitHubPrReviewDraftCommentOrigin;
   sourceFindingId?: string | null;
+  neonSeed?: {
+    severity: GitHubPrReviewNeonSeedSeverity;
+    summary: string;
+    source: string;
+  };
 }): GitHubPrReviewDraft {
   const database = openDb(options.databasePath);
   const now = new Date().toISOString();
@@ -529,6 +535,9 @@ export function addPrReviewDraftComment(options: {
     origin === 'neon'
       ? prefixBotComment(unbrandedGeneratedCommentBody(options.body))
       : options.body.trim();
+  if (options.neonSeed && origin !== 'neon') {
+    throw new Error('Only Neon draft comments can record a seed ledger row.');
+  }
   try {
     const repository = new ReviewDraftRepository(database);
     return repository.withEditableMutation(
@@ -545,49 +554,72 @@ export function addPrReviewDraftComment(options: {
             'SELECT draft_id FROM pr_review_draft_comments WHERE id = ? LIMIT 1;',
           )
           .get(id) as { draft_id?: unknown } | undefined;
+        let added = false;
         if (existing) {
           if (existing.draft_id !== options.draftId) {
             throw new Error(
               'Review draft comment id belongs to another draft.',
             );
           }
-          return false;
-        }
-        database
-          .prepare(
-            `
-            INSERT INTO pr_review_draft_comments (
+        } else {
+          database
+            .prepare(
+              `
+              INSERT INTO pr_review_draft_comments (
+                id,
+                draft_id,
+                path,
+                side,
+                line,
+                start_line,
+                start_side,
+                body,
+                origin,
+                source_finding_id,
+                created_at,
+                updated_at
+              )
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+            `,
+            )
+            .run(
               id,
-              draft_id,
-              path,
-              side,
-              line,
-              start_line,
-              start_side,
+              options.draftId,
+              options.path,
+              options.side,
+              options.line,
+              options.startLine ?? null,
+              options.startSide ?? null,
               body,
               origin,
-              source_finding_id,
-              created_at,
-              updated_at
-            )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
-          `,
-          )
-          .run(
-            id,
+              options.sourceFindingId ?? null,
+              now,
+              now,
+            );
+          added = true;
+        }
+        if (options.neonSeed) {
+          const seededDraft = readDraftWithCommentsById(
+            database,
             options.draftId,
-            options.path,
-            options.side,
-            options.line,
-            options.startLine ?? null,
-            options.startSide ?? null,
-            body,
-            origin,
-            options.sourceFindingId ?? null,
-            now,
+          );
+          const seededComment = seededDraft.comments.find(
+            (comment) => comment.id === id && comment.origin === 'neon',
+          );
+          if (!seededComment) {
+            throw new Error('Neon review seed comment was not recorded.');
+          }
+          recordPrReviewNeonSeedInDatabase(
+            database,
+            {
+              draft: seededDraft,
+              comment: seededComment,
+              ...options.neonSeed,
+            },
             now,
           );
-        return true;
+        }
+        return added;
       },
       () => readDraftWithCommentsById(database, options.draftId),
       now,
@@ -797,48 +829,62 @@ export function recordPrReviewNeonSeed(options: {
   const database = openDb(options.databasePath);
   const now = new Date().toISOString();
   try {
-    database
-      .prepare(
-        `
-        INSERT OR IGNORE INTO pr_review_neon_seeded_comments (
-          comment_id,
-          draft_id,
-          repo,
-          pr_number,
-          head_sha,
-          path,
-          side,
-          line,
-          start_line,
-          start_side,
-          severity,
-          summary,
-          source,
-          seeded_at
-        )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
-      `,
-      )
-      .run(
-        options.comment.id,
-        options.draft.id,
-        options.draft.repo,
-        options.draft.prNumber,
-        options.draft.headSha,
-        options.comment.path,
-        options.comment.side,
-        options.comment.line,
-        options.comment.startLine,
-        options.comment.startSide,
-        options.severity,
-        truncateSeedSummary(options.summary),
-        options.source,
-        now,
-      );
-    return readNeonSeedByCommentId(database, options.comment.id);
+    return recordPrReviewNeonSeedInDatabase(database, options, now);
   } finally {
     database.close();
   }
+}
+
+function recordPrReviewNeonSeedInDatabase(
+  database: ReturnType<typeof openDb>,
+  options: {
+    draft: GitHubPrReviewDraft;
+    comment: GitHubPrReviewDraftComment;
+    severity: GitHubPrReviewNeonSeedSeverity;
+    summary: string;
+    source: string;
+  },
+  seededAt: string,
+) {
+  database
+    .prepare(
+      `
+      INSERT OR IGNORE INTO pr_review_neon_seeded_comments (
+        comment_id,
+        draft_id,
+        repo,
+        pr_number,
+        head_sha,
+        path,
+        side,
+        line,
+        start_line,
+        start_side,
+        severity,
+        summary,
+        source,
+        seeded_at
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+    `,
+    )
+    .run(
+      options.comment.id,
+      options.draft.id,
+      options.draft.repo,
+      options.draft.prNumber,
+      options.draft.headSha,
+      options.comment.path,
+      options.comment.side,
+      options.comment.line,
+      options.comment.startLine,
+      options.comment.startSide,
+      options.severity,
+      truncateSeedSummary(options.summary),
+      options.source,
+      seededAt,
+    );
+  return readNeonSeedByCommentId(database, options.comment.id);
 }
 
 export function deletePrReviewNeonSeedsForComments(options: {
