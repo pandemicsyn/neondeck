@@ -7,13 +7,19 @@ import {
 } from '../../runtime-home';
 import {
   fetchGitHubLogin,
+  fetchPullRequestReviewComments,
   fetchPullRequestDetail,
   fetchPullRequestReviews,
+  readPrReviewDraft,
   settlePrReviewDraftSubmission,
   type GitHubPullRequestReview,
   type GitHubPullRequestDetail,
 } from '../github';
-import { resolvePullRequestTarget, type PullRequestTarget } from '../pr-events';
+import {
+  enqueueRecoveredPrReviewDeliveryFollowup,
+  resolvePullRequestTarget,
+  type PullRequestTarget,
+} from '../pr-events';
 import { publishPrReviewEvent } from './events';
 import {
   listPrReviews,
@@ -112,6 +118,7 @@ export type ReconcilePrReviewSubmissionDependencies = {
     repo: string;
     number: number;
   }) => Promise<GitHubPullRequestReview[]>;
+  fetchReviewComments?: typeof fetchPullRequestReviewComments;
 };
 
 export type RefreshPrReviewRemoteStateDependencies = {
@@ -568,6 +575,27 @@ async function reconcileInactivePrReviewSubmission(
   ]);
   const submittedReview = matchingSubmittedReview(current, login, reviews);
   if (submittedReview) {
+    const recoveredDraft = current.submissionDraftId
+      ? readPrReviewDraft({
+          databasePath: paths.neondeckDatabase,
+          draftId: current.submissionDraftId,
+        })
+      : null;
+    enqueueRecoveredPrReviewDeliveryFollowup(
+      {
+        target: {
+          repoFullName: current.repoFullName,
+          owner,
+          repo,
+          number: current.prNumber,
+        },
+        draft: recoveredDraft,
+        review: { ...submittedReview, body: submittedReview.body ?? null },
+        token,
+        fetchPullRequestReviewComments: dependencies.fetchReviewComments,
+      },
+      paths,
+    );
     if (!settleReservedDraft(current, paths, true)) {
       throw new Error('Could not settle the recovered review draft locally.');
     }

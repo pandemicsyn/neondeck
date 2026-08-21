@@ -6,6 +6,7 @@ import {
   invalidatePullRequestReviewSurfaceThreadCache,
   submitPullRequestReview,
   type GitHubPrReviewDraft,
+  type GitHubPullRequestReview,
   type GitHubPullRequestReviewThreadComment,
 } from '../github';
 import {
@@ -28,6 +29,7 @@ import {
 import { recordNeondeckPrDeliveriesAndCompleteFollowup } from './deliveries';
 import {
   claimPrReviewSubmissionFollowup,
+  enqueuePrReviewSubmissionFollowup,
   listPendingPrReviewSubmissionFollowupIds,
   recoverProcessingPrReviewSubmissionFollowups,
   retryPrReviewSubmissionFollowup,
@@ -165,9 +167,54 @@ export async function postGitHubPrReview(
 
 type SubmittedDeliveryFollowupPayload = {
   target: PullRequestTarget;
-  result: Awaited<ReturnType<typeof submitPullRequestReview>>;
+  result: {
+    draft: GitHubPrReviewDraft | null;
+    review: GitHubPullRequestReview;
+  };
   commentIds?: string[];
+  verifyByReviewIdentityOnly?: boolean;
 };
+
+export function enqueueRecoveredPrReviewDeliveryFollowup(
+  input: {
+    target: PullRequestTarget;
+    draft: GitHubPrReviewDraft | null;
+    review: GitHubPullRequestReview;
+    token: string;
+    fetchPullRequestReviewComments?: typeof fetchPullRequestReviewComments;
+  },
+  paths: RuntimePaths,
+) {
+  const id = submittedDeliveryFollowupId(
+    input.target.repoFullName,
+    input.target.number,
+    input.review.id,
+  );
+  enqueuePrReviewSubmissionFollowup(
+    {
+      id,
+      kind: 'delivery',
+      payload: {
+        target: input.target,
+        result: { draft: input.draft, review: input.review },
+        // The original local selection is unavailable after a lost response.
+        // GitHub's exact review-comments endpoint is authoritative here.
+        verifyByReviewIdentityOnly: true,
+      } satisfies SubmittedDeliveryFollowupPayload,
+    },
+    paths,
+  );
+  void processPrReviewDeliveryFollowup(id, paths, {
+    token: input.token,
+    fetchPullRequestReviewComments: input.fetchPullRequestReviewComments,
+  }).catch((error) => {
+    console.error(
+      '[neondeck] failed to start recovered-review delivery follow-up',
+      error,
+    );
+  });
+  return id;
+}
 
 export async function recoverPrReviewDeliveryFollowups(
   paths: RuntimePaths,
@@ -195,6 +242,7 @@ async function processPrReviewDeliveryFollowup(
       payload.target,
       payload.result,
       payload.commentIds,
+      payload.verifyByReviewIdentityOnly === true,
       token,
       paths,
       dependencies,
@@ -246,15 +294,16 @@ function submittedDeliveryFollowupId(
 
 async function verifyAndRecordSubmittedReviewDelivery(
   target: PullRequestTarget,
-  result: Awaited<ReturnType<typeof submitPullRequestReview>>,
+  result: SubmittedDeliveryFollowupPayload['result'],
   commentIds: string[] | undefined,
+  verifyByReviewIdentityOnly: boolean,
   token: string,
   paths: RuntimePaths,
   dependencies: PrEventStateDependencies,
   followupId: string,
 ) {
   const selectedCommentIds = commentIds ? new Set(commentIds) : null;
-  const submittedDraftComments = result.draft.comments.filter(
+  const submittedDraftComments = (result.draft?.comments ?? []).filter(
     (comment) =>
       selectedCommentIds === null || selectedCommentIds.has(comment.id),
   );
@@ -268,11 +317,13 @@ async function verifyAndRecordSubmittedReviewDelivery(
     number: target.number,
     reviewId: result.review.id,
   });
-  const deliveryIdentityError = submittedReviewDeliveryIdentityError(
-    result.review.id,
-    submittedDraftComments,
-    deliveredComments,
-  );
+  const deliveryIdentityError = verifyByReviewIdentityOnly
+    ? submittedReviewCommentIdsError(result.review.id, deliveredComments)
+    : submittedReviewDeliveryIdentityError(
+        result.review.id,
+        submittedDraftComments,
+        deliveredComments,
+      );
   if (deliveryIdentityError) throw new Error(deliveryIdentityError);
   recordNeondeckPrDeliveriesAndCompleteFollowup(
     [
@@ -303,17 +354,8 @@ function submittedReviewDeliveryIdentityError(
   expected: GitHubPrReviewDraft['comments'],
   delivered: GitHubPullRequestReviewThreadComment[],
 ) {
-  if (
-    delivered.some(
-      (comment) => comment.databaseId === null || comment.reviewId !== reviewId,
-    )
-  ) {
-    return `GitHub returned a comment without an exact database id for submitted review ${reviewId}.`;
-  }
-  const deliveredIds = delivered.map((comment) => comment.databaseId!);
-  if (new Set(deliveredIds).size !== deliveredIds.length) {
-    return `GitHub returned duplicate comment ids for submitted review ${reviewId}.`;
-  }
+  const commentIdsError = submittedReviewCommentIdsError(reviewId, delivered);
+  if (commentIdsError) return commentIdsError;
   const expectedSignatures = expected
     .map(submittedDraftCommentSignature)
     .sort();
@@ -327,6 +369,24 @@ function submittedReviewDeliveryIdentityError(
     )
   ) {
     return `GitHub comments for submitted review ${reviewId} do not exactly match the submitted draft comments.`;
+  }
+  return null;
+}
+
+function submittedReviewCommentIdsError(
+  reviewId: number,
+  delivered: GitHubPullRequestReviewThreadComment[],
+) {
+  if (
+    delivered.some(
+      (comment) => comment.databaseId === null || comment.reviewId !== reviewId,
+    )
+  ) {
+    return `GitHub returned a comment without an exact database id for submitted review ${reviewId}.`;
+  }
+  const deliveredIds = delivered.map((comment) => comment.databaseId!);
+  if (new Set(deliveredIds).size !== deliveredIds.length) {
+    return `GitHub returned duplicate comment ids for submitted review ${reviewId}.`;
   }
   return null;
 }

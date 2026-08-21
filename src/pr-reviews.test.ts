@@ -34,6 +34,10 @@ import {
 } from './modules/pr-review-assist';
 import { openDb } from './lib/sqlite';
 import { readPrReviewDraft, upsertPrReviewDraft } from './modules/github';
+import {
+  readNeondeckPrDeliveries,
+  readPendingNeondeckPrReviewIds,
+} from './modules/pr-events';
 import { ensureRuntimeHome, runtimePaths } from './runtime-home';
 import { createGitHubRoutes } from './server/routes/github';
 import { createReviewRoutes } from './server/routes/reviews';
@@ -932,12 +936,21 @@ describe('durable PR reviews', () => {
       },
       paths,
     );
+    const recoveryDraft = upsertPrReviewDraft({
+      databasePath: paths.neondeckDatabase,
+      repo: 'other/project',
+      prNumber: 42,
+      headSha: 'head-1',
+      verdict: 'approve',
+    });
     const reserved = reservePrReviewSubmission(
       {
         repoFullName: 'other/project',
         prNumber: 42,
         headSha: 'head-1',
         verdict: 'approve',
+        draftId: recoveryDraft.id,
+        draftUpdatedAt: recoveryDraft.updatedAt,
       },
       paths,
     );
@@ -945,7 +958,20 @@ describe('durable PR reviews', () => {
       status: 'submitting',
       verdict: 'approve',
     });
+    const leasedDraftDatabase = openDb(paths.neondeckDatabase);
+    try {
+      leasedDraftDatabase
+        .prepare(
+          `UPDATE pr_review_drafts
+           SET status = 'submitting'
+           WHERE id = ? AND updated_at = ?;`,
+        )
+        .run(recoveryDraft.id, recoveryDraft.updatedAt);
+    } finally {
+      leasedDraftDatabase.close();
+    }
 
+    const deliveryVerification = Promise.withResolvers<never[]>();
     const recovered = await reconcilePrReviewSubmission(
       { reviewId: started.reviewId },
       paths,
@@ -963,6 +989,7 @@ describe('durable PR reviews', () => {
             url: 'https://github.com/other/project/pull/42#pullrequestreview-7',
           },
         ],
+        fetchReviewComments: async () => deliveryVerification.promise,
       },
     );
     expect(recovered).toMatchObject({
@@ -975,6 +1002,27 @@ describe('durable PR reviews', () => {
           'https://github.com/other/project/pull/42#pullrequestreview-7',
       },
     });
+    expect(readPendingNeondeckPrReviewIds('other/project', 42, paths)).toEqual(
+      new Set(['7']),
+    );
+    expect(
+      prReviewSubmissionFollowupStatus(
+        paths,
+        'pr-review-delivery:other/project#42:7',
+      ),
+    ).toBe('processing');
+    deliveryVerification.resolve([]);
+    await vi.waitFor(() =>
+      expect(
+        prReviewSubmissionFollowupStatus(
+          paths,
+          'pr-review-delivery:other/project#42:7',
+        ),
+      ).toBe('completed'),
+    );
+    expect(
+      readNeondeckPrDeliveries('other/project', 42, paths).reviewFingerprints,
+    ).toEqual(new Map([['7', expect.any(String)]]));
     await expect(
       reconcilePrReviewSubmission({ reviewId: started.reviewId }, paths, {
         fetchLogin: async () => {
