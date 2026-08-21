@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import * as v from 'valibot';
 import type {
   ReviewCursorDirection,
   ReviewCursorKind,
@@ -123,9 +124,20 @@ export function PrReviewNavigationBar({
           <select
             disabled={isBusy}
             id="pr-review-traversal-kind"
-            onChange={(event) =>
-              onKindChange(event.currentTarget.value as ReviewCursorKind)
-            }
+            onChange={(event) => {
+              const parsed = v.safeParse(
+                v.picklist([
+                  'file',
+                  'hunk',
+                  'review-thread',
+                  'local-draft',
+                  'finding',
+                  'attention',
+                ]),
+                event.currentTarget.value,
+              );
+              if (parsed.success) onKindChange(parsed.output);
+            }}
             value={kind}
           >
             {traversalKinds.map((item) => (

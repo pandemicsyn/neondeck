@@ -5,6 +5,13 @@ import type {
   MemoryResponse,
 } from './types';
 import { getJson, postJson, type ApiRequestOptions } from './http';
+import type { WebExternalValue } from './schemas';
+
+type ArchiveMemoryBody = {
+  reason: string;
+  confirm: true;
+  expectedUpdatedAt?: string;
+};
 
 export async function getMemories(
   input: {
@@ -28,7 +35,7 @@ export async function getMemories(
 export async function upsertMemory(input: {
   scope: ActiveMemoryScope;
   key: string;
-  value: unknown;
+  value: WebExternalValue;
   repoId?: string;
   expectedUpdatedAt?: string;
   reason?: string;
@@ -52,6 +59,13 @@ export async function archiveMemory(
     reason?: string;
   } = {},
 ) {
+  const body: ArchiveMemoryBody = {
+    reason: options.reason ?? 'Archived from the Memory dashboard.',
+    confirm: true,
+  };
+  if (options.expectedUpdatedAt) {
+    body.expectedUpdatedAt = options.expectedUpdatedAt;
+  }
   const result = await postJson<{
     ok: boolean;
     action: string;
@@ -60,13 +74,7 @@ export async function archiveMemory(
     memory?: MemoryRecord;
     errors?: string[];
     requires?: string[];
-  }>(`/api/memories/${encodeURIComponent(id)}/archive`, {
-    reason: options.reason ?? 'Archived from the Memory dashboard.',
-    confirm: true,
-    ...(options.expectedUpdatedAt
-      ? { expectedUpdatedAt: options.expectedUpdatedAt }
-      : {}),
-  });
+  }>(`/api/memories/${encodeURIComponent(id)}/archive`, body);
   return successfulMemoryMutation(result);
 }
 

@@ -6,6 +6,11 @@ import type {
 } from './types';
 import { getJson, patchJson, postJson, type ApiRequestOptions } from './http';
 
+type McpApprovalModeTools = {
+  approvalMode: 'prompt' | 'writes' | 'approve';
+  overrides?: Record<string, 'prompt' | 'approve' | 'deny'>;
+};
+
 export async function getMcpServers(options: ApiRequestOptions = {}) {
   return getJson<McpServersResponse>('/api/mcp/servers', options);
 }
@@ -54,6 +59,8 @@ export async function updateMcpApprovalMode(
   approvalMode: 'prompt' | 'writes' | 'approve',
   toolOverrides: Record<string, 'prompt' | 'approve' | 'deny'>,
 ) {
+  const tools: McpApprovalModeTools = { approvalMode };
+  if (Object.keys(toolOverrides).length > 0) tools.overrides = toolOverrides;
   return patchJson<{
     ok: boolean;
     action: string;
@@ -61,12 +68,7 @@ export async function updateMcpApprovalMode(
     message: string;
   }>(`/api/mcp/servers/${id}`, {
     server: {
-      tools: {
-        approvalMode,
-        ...(Object.keys(toolOverrides).length > 0
-          ? { overrides: toolOverrides }
-          : {}),
-      },
+      tools,
     },
   });
 }

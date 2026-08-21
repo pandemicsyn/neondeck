@@ -8,6 +8,8 @@ import { createCiFailureDossierReport, fixPrCiRun } from '../../autopilot';
 import { readRepoRegistrySnapshot } from '../../repos';
 import { listPrWatchRecords } from '../../watches';
 import { startPrReview } from '../../pr-reviews';
+import * as v from 'valibot';
+import type { JsonValue } from '@flue/runtime';
 import type { RuntimePaths } from '../../../runtime-home';
 import type {
   CommandDependencies,
@@ -22,6 +24,18 @@ import {
   runningCommand,
 } from '../summaries';
 import { errorMessage } from '../utils';
+
+type FixCiOperationData = {
+  operation: string;
+  ref: string;
+  queued: boolean;
+  result: JsonValue;
+  reportUrlHint: string;
+  trustBoundary: string;
+  assistantBrief: string;
+  runId?: string;
+  operationSummaryId?: string;
+};
 
 export async function reviewQueueCommand(
   command: ParsedNeonCommand,
@@ -201,39 +215,42 @@ async function runFixCiOperation(
   }
 
   const operationSummaryId = workflowSummaryId(run);
+  const operationData: FixCiOperationData = {
+    operation: 'fix-pr-ci',
+    ref,
+    queued: objectString(run.data, 'outcome') === 'kilo-started',
+    result: run.data,
+    reportUrlHint: '/reports',
+    trustBoundary:
+      'The operation can create local reports, a managed local worktree, a Kilo task, and a prepared diff only; it does not push, comment, or submit a GitHub review.',
+    assistantBrief:
+      'Track the returned operation summary id. The dossier report is local; any code changes must pass through the prepared-diff review loop.',
+  };
+  if (operationSummaryId) {
+    operationData.runId = operationSummaryId;
+    operationData.operationSummaryId = operationSummaryId;
+  }
   return completedCommand(
     command.name,
     command.raw,
     `Started CI fix operation${operationSummaryId ? ` ${operationSummaryId}` : ''} for ${ref}.`,
-    {
-      operation: 'fix-pr-ci',
-      ...(operationSummaryId
-        ? { runId: operationSummaryId, operationSummaryId }
-        : {}),
-      ref,
-      queued: objectString(run.data, 'outcome') === 'kilo-started',
-      result: run.data,
-      reportUrlHint: '/reports',
-      trustBoundary:
-        'The operation can create local reports, a managed local worktree, a Kilo task, and a prepared diff only; it does not push, comment, or submit a GitHub review.',
-      assistantBrief:
-        'Track the returned operation summary id. The dossier report is local; any code changes must pass through the prepared-diff review loop.',
-    },
+    operationData,
   );
 }
 
-function workflowSummaryId(result: { workflowSummary?: unknown }) {
-  if (!result.workflowSummary || typeof result.workflowSummary !== 'object') {
-    return null;
-  }
-  const id = 'id' in result.workflowSummary ? result.workflowSummary.id : null;
-  return typeof id === 'string' && id.trim() ? id : null;
+function workflowSummaryId<TValue>(result: { workflowSummary?: TValue }) {
+  const parsed = v.safeParse(
+    v.looseObject({ id: v.string() }),
+    result.workflowSummary,
+  );
+  return parsed.success && parsed.output.id.trim() ? parsed.output.id : null;
 }
 
-function objectString(value: unknown, key: string) {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
-  const item = key in value ? value[key as keyof typeof value] : null;
-  return typeof item === 'string' ? item : null;
+function objectString<TValue>(value: TValue, key: string) {
+  const parsed = v.safeParse(v.looseObject({}), value);
+  if (!parsed.success) return null;
+  const item = v.safeParse(v.string(), parsed.output[key]);
+  return item.success ? item.output : null;
 }
 
 export async function explainCiCommand(

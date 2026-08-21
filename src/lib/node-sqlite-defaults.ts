@@ -5,11 +5,9 @@ import { defaultSqliteBusyTimeoutMs } from './sqlite.ts';
 const configuredPrototypeSymbol = Symbol.for(
   'neondeck.node-sqlite-defaults.prototype',
 );
-const prototype = DatabaseSync.prototype as typeof DatabaseSync.prototype & {
-  [key: symbol]: unknown;
-};
+const prototype = DatabaseSync.prototype;
 
-if (!prototype[configuredPrototypeSymbol]) {
+if (!Object.getOwnPropertyDescriptor(prototype, configuredPrototypeSymbol)) {
   // Flue beta.9 owns its DatabaseSync handle and does not expose connection
   // options. Configure that handle immediately before its first SQL operation;
   // app-state connections still use openDb() directly.
@@ -33,5 +31,5 @@ if (!prototype[configuredPrototypeSymbol]) {
     ensureConfigured(this);
     return originalPrepare.call(this, sql);
   };
-  prototype[configuredPrototypeSymbol] = true;
+  Object.defineProperty(prototype, configuredPrototypeSymbol, { value: true });
 }

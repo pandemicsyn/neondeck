@@ -1,4 +1,5 @@
 import { openDb } from '../../lib/sqlite';
+import * as v from 'valibot';
 import { runBoundedGit, runBoundedGitLines } from '../../lib/git';
 import { renderReportHtml } from '../../lib/report-html';
 import type { AutomationExecutionResult } from '../app-state';
@@ -11,6 +12,23 @@ import { readRepoRegistrySnapshot, repoFullName } from '../repos';
 import { listPrWatchRecords } from '../watches';
 import { listWorktrees } from '../worktrees';
 import type { RuntimePaths } from '../../runtime-home';
+
+const untrustedInputSchema = v.unknown();
+const looseRecordSchema = v.record(v.string(), untrustedInputSchema);
+const nonBlankStringSchema = v.pipe(v.string(), v.trim(), v.minLength(1));
+const finiteNumberSchema = v.pipe(v.number(), v.finite());
+const errorInstanceSchema = v.instance(Error);
+const executionApprovalRowSchema = v.object({
+  id: v.string(),
+  command: v.string(),
+  backend: v.string(),
+  cwd: v.nullable(v.string()),
+  created_at: v.string(),
+  resolved_at: v.nullable(v.string()),
+  updated_at: v.string(),
+});
+const countRowSchema = v.object({ count: v.optional(v.number()) });
+type UntrustedInput = v.InferInput<typeof untrustedInputSchema>;
 
 type HygieneItem = {
   kind: string;
@@ -339,7 +357,7 @@ async function stalledPreparedDiffItems(
 function unusedExecutionApprovalItems(paths: RuntimePaths) {
   const database = openDb(paths.neondeckDatabase, { readOnly: true });
   try {
-    const rows = database
+    const rawRows = database
       .prepare(
         `
         SELECT id, command, backend, cwd, created_at, resolved_at, updated_at
@@ -350,15 +368,11 @@ function unusedExecutionApprovalItems(paths: RuntimePaths) {
         LIMIT 40;
       `,
       )
-      .all() as Array<{
-      id: string;
-      command: string;
-      backend: string;
-      cwd: string | null;
-      created_at: string;
-      resolved_at: string | null;
-      updated_at: string;
-    }>;
+      .all();
+    const rows = rawRows.flatMap((row) => {
+      const parsed = v.safeParse(executionApprovalRowSchema, row);
+      return parsed.success ? [parsed.output] : [];
+    });
     return rows.map((row) => ({
       kind: 'unused-execution-approval',
       label: row.id,
@@ -372,7 +386,7 @@ function unusedExecutionApprovalItems(paths: RuntimePaths) {
 function countUnusedExecutionApprovals(paths: RuntimePaths) {
   const database = openDb(paths.neondeckDatabase, { readOnly: true });
   try {
-    const row = database
+    const rawRow = database
       .prepare(
         `
         SELECT COUNT(*) AS count
@@ -381,8 +395,9 @@ function countUnusedExecutionApprovals(paths: RuntimePaths) {
           AND used_at IS NULL;
       `,
       )
-      .get() as { count?: number } | undefined;
-    return typeof row?.count === 'number' ? row.count : 0;
+      .get();
+    const row = v.safeParse(countRowSchema, rawRow);
+    return row.success ? (row.output.count ?? 0) : 0;
   } finally {
     database.close();
   }
@@ -420,10 +435,14 @@ async function todoAgingItems(
     ]).catch(() => []);
     if (lines.length === 0) continue;
 
-    const paths = [...new Set(lines.map(todoPath).filter(Boolean))].slice(
-      0,
-      30,
-    ) as string[];
+    const paths = [
+      ...new Set(
+        lines.flatMap((line) => {
+          const path = todoPath(line);
+          return path === null ? [] : [path];
+        }),
+      ),
+    ].slice(0, 30);
     let oldest: { path: string; date: string } | null = null;
     for (const path of paths) {
       const date = await git(repo.path, [
@@ -475,22 +494,24 @@ async function git(cwd: string, args: string[]) {
   return runBoundedGit(cwd, args);
 }
 
-function stringConfig(value: unknown) {
-  return typeof value === 'string' && value.trim() ? value.trim() : null;
+function stringConfig(value: UntrustedInput) {
+  const parsed = v.safeParse(nonBlankStringSchema, value);
+  return parsed.success ? parsed.output : null;
 }
 
-function numberConfig(value: unknown, fallback: number) {
-  return typeof value === 'number' && Number.isFinite(value) ? value : fallback;
+function numberConfig(value: UntrustedInput, fallback: number) {
+  const parsed = v.safeParse(finiteNumberSchema, value);
+  return parsed.success ? parsed.output : fallback;
 }
 
-function objectConfig(value: unknown) {
-  return value && typeof value === 'object' && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : {};
+function objectConfig(value: UntrustedInput) {
+  const parsed = v.safeParse(looseRecordSchema, value);
+  return parsed.success ? parsed.output : {};
 }
 
-function errorMessage(error: unknown) {
-  return error instanceof Error ? error.message : String(error);
+function errorMessage(error: UntrustedInput) {
+  const parsed = v.safeParse(errorInstanceSchema, error);
+  return parsed.success ? parsed.output.message : String(error);
 }
 
 function failed(

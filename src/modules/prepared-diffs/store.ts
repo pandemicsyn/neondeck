@@ -25,6 +25,12 @@ import {
   type WorktreeRecordLike,
 } from './schemas';
 
+const untrustedInputSchema = v.unknown();
+const summaryObjectSchema = v.record(v.string(), untrustedInputSchema);
+
+type UntrustedInput = v.InferInput<typeof untrustedInputSchema>;
+type SummaryObject = v.InferInput<typeof summaryObjectSchema>;
+
 export function listPreparedDiffRecords(
   input: v.InferOutput<typeof listInputSchema>,
   paths: RuntimePaths,
@@ -341,7 +347,7 @@ export function updatePreparedDiffVerificationWithLease(
   input: {
     lockId: string;
     status: 'passed' | 'failed';
-    verification: Record<string, unknown>;
+    verification: SummaryObject;
   },
   paths: RuntimePaths,
 ) {
@@ -736,9 +742,9 @@ export function updateWorktreeLifecycle(
   }
 }
 
-export function readPreparedDiffRow(row: unknown): PreparedDiffRecord {
+export function readPreparedDiffRow(row: UntrustedInput): PreparedDiffRecord {
   const item = v.parse(preparedDiffRowSchema, row);
-  return v.parse(preparedDiffRecordSchema, {
+  const parsed = v.parse(preparedDiffRecordSchema, {
     id: item.id,
     worktreeId: item.worktree_id,
     repoId: item.repo_id,
@@ -755,16 +761,22 @@ export function readPreparedDiffRow(row: unknown): PreparedDiffRecord {
     summary:
       item.summary_json === null
         ? null
-        : (JSON.parse(item.summary_json) as JsonValue),
+        : asJsonValue(JSON.parse(item.summary_json)),
     sourceOfTruth: 'worktree',
     createdBy: item.created_by,
     createdAt: item.created_at,
     updatedAt: item.updated_at,
     abandonedAt: item.abandoned_at,
-  }) as PreparedDiffRecord;
+  });
+  return {
+    ...parsed,
+    summary: parsed.summary === null ? null : asJsonValue(parsed.summary),
+  };
 }
 
-export function readApprovalRow(row: unknown): PreparedDiffApprovalRecord {
+export function readApprovalRow(
+  row: UntrustedInput,
+): PreparedDiffApprovalRecord {
   const item = v.parse(approvalRowSchema, row);
   return {
     id: item.id,
@@ -798,7 +810,7 @@ export function readApprovalRow(row: unknown): PreparedDiffApprovalRecord {
   };
 }
 
-export function readWorktreeRow(row: unknown): WorktreeRecordLike {
+export function readWorktreeRow(row: UntrustedInput): WorktreeRecordLike {
   const item = v.parse(worktreeRowSchema, row);
   return {
     id: item.id,
@@ -813,14 +825,9 @@ export function readWorktreeRow(row: unknown): WorktreeRecordLike {
   };
 }
 
-export function mergeSummary(
-  current: JsonValue | null,
-  next: Record<string, unknown>,
-) {
-  const base =
-    current && typeof current === 'object' && !Array.isArray(current)
-      ? (current as Record<string, unknown>)
-      : {};
+export function mergeSummary(current: JsonValue | null, next: SummaryObject) {
+  const parsed = v.safeParse(summaryObjectSchema, current);
+  const base = parsed.success ? parsed.output : {};
   return asJsonValue({ ...base, ...next });
 }
 

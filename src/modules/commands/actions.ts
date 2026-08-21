@@ -40,10 +40,7 @@ const modelCallableCommandDenylist = new Set(['fix-ci']);
 
 async function runCommandAction(
   input: v.InferOutput<typeof commandRunInputSchema>,
-  log: {
-    info(message: string, data?: unknown): void;
-    warn(message: string, data?: unknown): void;
-  },
+  log: CommandActionLog,
 ) {
   const result = await runNeonCommand(input);
   const payload = {
@@ -61,6 +58,19 @@ async function runCommandAction(
 
   return result;
 }
+
+type CommandActionLog = {
+  info(message: string, data?: CommandActionLogData): void;
+  warn(message: string, data?: CommandActionLogData): void;
+};
+
+type CommandActionLogData = {
+  status: string;
+  ok: boolean;
+  command: string;
+  message: string;
+  workflowSummaryId: string | null;
+};
 
 export const commandsListAction = defineTool({
   name: 'neondeck_commands_list',

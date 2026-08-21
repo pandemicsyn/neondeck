@@ -1,4 +1,5 @@
 import { openDb } from '../lib/sqlite.ts';
+import * as v from 'valibot';
 import { createHash, randomUUID } from 'node:crypto';
 import {
   ensureRuntimeHome,
@@ -11,6 +12,12 @@ import {
   unavailableReviewRevision,
 } from '../../shared/review-source';
 import { publishReviewSourceRevision } from '../modules/review-refresh';
+
+const untrustedInputSchema = v.unknown();
+const recordSchema = v.record(v.string(), untrustedInputSchema);
+const errorJsonSchema = v.unknown();
+type UntrustedInput = v.InferInput<typeof untrustedInputSchema>;
+type InputRecord = v.InferOutput<typeof recordSchema>;
 
 export type RepoEditEventInput = {
   repoId: string;
@@ -148,8 +155,8 @@ export async function listRepoEditEvents(paths: RuntimePaths = runtimePaths()) {
   }
 }
 
-function readRepoEditEventRow(row: unknown) {
-  const item = row as Record<string, unknown>;
+function readRepoEditEventRow(row: UntrustedInput) {
+  const item = recordValue(row);
   const diffPatch = nullableString(item.diff_patch);
   return {
     id: String(item.id),
@@ -181,22 +188,30 @@ function readRepoEditEventRow(row: unknown) {
   };
 }
 
-function nullableString(value: unknown) {
-  return typeof value === 'string' ? value : null;
+function recordValue(value: UntrustedInput): InputRecord {
+  const parsed = v.safeParse(recordSchema, value);
+  return parsed.success ? parsed.output : {};
 }
 
-function parseJson(value: unknown) {
-  if (typeof value !== 'string' || !value) return null;
+function nullableString(value: UntrustedInput) {
+  const parsed = v.safeParse(v.string(), value);
+  return parsed.success ? parsed.output : null;
+}
+
+function parseJson(value: UntrustedInput) {
+  const source = nullableString(value);
+  if (!source) return null;
   try {
-    return JSON.parse(value) as unknown;
+    return v.parse(errorJsonSchema, JSON.parse(source));
   } catch {
     return null;
   }
 }
 
-function parseJsonArray(value: unknown) {
+function parseJsonArray(value: UntrustedInput) {
   const parsed = parseJson(value);
-  return Array.isArray(parsed) ? parsed : [];
+  const array = v.safeParse(v.array(v.string()), parsed);
+  return array.success ? array.output : [];
 }
 
 function cap(value: string | null) {

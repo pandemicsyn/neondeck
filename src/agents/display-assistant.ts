@@ -17,12 +17,12 @@ import {
 import type { MiddlewareHandler } from 'hono';
 import { Bash, InMemoryFs } from 'just-bash';
 import { createHash } from 'node:crypto';
+import * as v from 'valibot';
 import {
   readAgentModelSelectionSync,
   runtimeSkillFromSessionSnapshot,
   runtimeSkillSessionSnapshotsSync,
   type AgentModelSelection,
-  type RuntimeSkillSessionSnapshot,
 } from '../modules/runtime';
 import {
   type BriefingDisplayContextBinding,
@@ -46,7 +46,6 @@ import {
   mcpInstructionsSync,
   mcpToolSessionSnapshotsSync,
   neondeckMcpActions,
-  type McpToolSessionSnapshot,
 } from '../domains/mcp';
 import { neondeckMemoryActions } from '../modules/memory';
 import { neondeckPrEventActions } from '../modules/pr-events';
@@ -70,6 +69,7 @@ import {
 } from './support/autopilot';
 import { neondeckWatchActions } from '../modules/watches';
 import { neondeckWorktreeActions } from '../modules/worktrees';
+import { thinkingLevelSchema } from '../runtime-home';
 import githubGh from '../skills/github-gh/SKILL.md';
 import neondeck from '../skills/neondeck/SKILL.md';
 
@@ -81,32 +81,92 @@ export const displayAssistantDelegationInstructions =
 
 export const route: MiddlewareHandler = async (_c, next) => next();
 
-type DisplayAssistantSessionContext = {
-  version: 2;
-  snapshotId: string;
-  capturedAt: string;
-  baselineSnapshotId: string | null;
-  baselineLoadedAt: string;
-  sessionContextFence: string;
-  configHistoryId: number;
-  memoryEventSequence: number;
-  pendingBriefingRunId: string | null;
-  models: AgentModelSelection;
-  soul: string;
-  memory: string;
-  memoryIds: string[];
-  mcp: string;
-  mcpTools: McpToolSessionSnapshot[];
-  session: string;
-  linkedContext: {
-    repoId: string | null;
-    watchId: string | null;
-    taskId: string | null;
-  };
-  refreshBriefingContext: boolean;
-  skillCatalogVersion: string;
-  skills: RuntimeSkillSessionSnapshot[];
-};
+const subagentModelsSchema = v.object({
+  explore: v.string(),
+  repoResearcher: v.string(),
+  ciInvestigator: v.string(),
+  releaseReviewer: v.string(),
+});
+const subagentThinkingLevelsSchema = v.object({
+  explore: thinkingLevelSchema,
+  repoResearcher: thinkingLevelSchema,
+  ciInvestigator: thinkingLevelSchema,
+  releaseReviewer: thinkingLevelSchema,
+});
+const agentModelSelectionSchema = v.object({
+  displayAssistant: v.string(),
+  displayAssistantThinkingLevel: thinkingLevelSchema,
+  prReview: v.string(),
+  prReviewConfigured: v.boolean(),
+  prReviewThinkingLevel: thinkingLevelSchema,
+  prReviewTimeoutMs: v.number(),
+  utility: v.string(),
+  utilityConfigured: v.boolean(),
+  utilityThinkingLevel: thinkingLevelSchema,
+  selfImprovement: v.string(),
+  selfImprovementConfigured: v.boolean(),
+  selfImprovementThinkingLevel: thinkingLevelSchema,
+  exploreConfigured: v.boolean(),
+  exploreThinkingConfigured: v.boolean(),
+  subagents: subagentModelsSchema,
+  subagentThinkingLevels: subagentThinkingLevelsSchema,
+});
+const linkedContextSchema = v.object({
+  repoId: v.nullable(v.string()),
+  watchId: v.nullable(v.string()),
+  taskId: v.nullable(v.string()),
+});
+const mcpToolSessionSnapshotSchema = v.object({
+  serverId: v.string(),
+  toolName: v.string(),
+  adaptedName: v.string(),
+  description: v.string(),
+  inputSchema: v.unknown(),
+  outputSchema: v.unknown(),
+  annotations: v.unknown(),
+});
+const runtimeSkillSessionSnapshotSchema = v.object({
+  name: v.string(),
+  description: v.string(),
+  instructions: v.string(),
+  files: v.array(
+    v.object({
+      path: v.string(),
+      encoding: v.picklist(['utf8', 'base64']),
+      content: v.string(),
+    }),
+  ),
+});
+const displayAssistantSessionContextSchema = v.object({
+  version: v.literal(2),
+  snapshotId: v.string(),
+  capturedAt: v.string(),
+  baselineSnapshotId: v.nullable(v.string()),
+  baselineLoadedAt: v.string(),
+  sessionContextFence: v.string(),
+  configHistoryId: v.number(),
+  memoryEventSequence: v.number(),
+  pendingBriefingRunId: v.nullable(v.string()),
+  models: agentModelSelectionSchema,
+  soul: v.string(),
+  memory: v.string(),
+  memoryIds: v.array(v.string()),
+  mcp: v.string(),
+  mcpTools: v.array(mcpToolSessionSnapshotSchema),
+  session: v.string(),
+  linkedContext: linkedContextSchema,
+  refreshBriefingContext: v.boolean(),
+  skillCatalogVersion: v.string(),
+  skills: v.array(runtimeSkillSessionSnapshotSchema),
+});
+type DisplayAssistantSessionContext = v.InferOutput<
+  typeof displayAssistantSessionContextSchema
+>;
+const displayAssistantMetadataSchema = v.looseObject({
+  neondeckDisplayAssistant: v.optional(
+    v.object({ model: v.string(), thinkingLevel: v.string() }),
+  ),
+});
 
 export function DisplayAssistant({ id }: AgentProps) {
   const delivery = useDelivery();
@@ -299,15 +359,15 @@ export function DisplayAssistant({ id }: AgentProps) {
 DisplayAssistant.agentName = 'display-assistant';
 
 export function displayAssistantContextModelWasAdopted(
-  metadata: Record<string, unknown>,
+  metadata: v.InferInput<typeof displayAssistantMetadataSchema>,
   models: Pick<
     AgentModelSelection,
     'displayAssistant' | 'displayAssistantThinkingLevel'
   >,
 ) {
-  const value = metadata.neondeckDisplayAssistant;
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
-  const started = value as Record<string, unknown>;
+  const parsed = v.safeParse(displayAssistantMetadataSchema, metadata);
+  if (!parsed.success || !parsed.output.neondeckDisplayAssistant) return false;
+  const started = parsed.output.neondeckDisplayAssistant;
   return (
     started.model === models.displayAssistant &&
     started.thinkingLevel === models.displayAssistantThinkingLevel
@@ -375,7 +435,10 @@ function briefingBindingFromDisplayContext(
 function displayContextFromBriefingBinding(
   binding: BriefingDisplayContextBinding,
 ) {
-  const context = binding.agentContext as DisplayAssistantSessionContext;
+  const context = v.parse(
+    displayAssistantSessionContextSchema,
+    binding.agentContext,
+  );
   if (context.snapshotId !== binding.snapshotId || context.version !== 2) {
     throw new Error('Briefing display-context binding is invalid.');
   }

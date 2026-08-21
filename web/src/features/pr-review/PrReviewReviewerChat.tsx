@@ -7,6 +7,7 @@ import {
   type FormEvent,
   type KeyboardEvent,
 } from 'react';
+import * as v from 'valibot';
 import {
   isPrReviewerDraftToolName,
   prReviewerConversationId,
@@ -220,13 +221,9 @@ function ReviewerConversation({
   );
 }
 
-function draftMutationSucceeded(output: unknown) {
-  return Boolean(
-    output &&
-    typeof output === 'object' &&
-    'ok' in output &&
-    output.ok === true,
-  );
+function draftMutationSucceeded(cause: unknown) {
+  const parsed = v.safeParse(v.looseObject({ ok: v.boolean() }), cause);
+  return parsed.success && parsed.output.ok;
 }
 
 function ReviewerUnavailable({ copy }: { copy: string }) {

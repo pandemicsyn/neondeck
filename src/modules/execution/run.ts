@@ -2,7 +2,11 @@ import { execFile } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { promisify } from 'node:util';
 import * as v from 'valibot';
-import { disposeExeDevSessionEnv, exedev } from '../../sandboxes/exedev';
+import {
+  disposeExeDevSessionEnv,
+  exedev,
+  type ExeDevAdapterOptions,
+} from '../../sandboxes/exedev';
 import { currentFlueExecutionContext } from '../flue/execution-context';
 import {
   ensureRuntimeHome,
@@ -48,8 +52,8 @@ import {
 
 const execFileAsync = promisify(execFile);
 
-export async function runApprovedExecution(
-  rawInput: unknown,
+export async function runApprovedExecution<TRawInput>(
+  rawInput: TRawInput,
   paths = runtimePaths(),
 ) {
   await ensureRuntimeHome(paths);
@@ -332,13 +336,14 @@ async function runExeDevExecution(input: {
         input.paths,
       );
     }
-    const sandbox = exedev(host, {
-      ...(privateKeyPath ? { privateKeyPath } : {}),
-      ...(!privateKeyPath && process.env.SSH_AUTH_SOCK
-        ? { agent: process.env.SSH_AUTH_SOCK }
-        : {}),
+    const sandboxOptions: ExeDevAdapterOptions = {
       maxOutputBytes: outputLimit * 2,
-    });
+    };
+    if (privateKeyPath) sandboxOptions.privateKeyPath = privateKeyPath;
+    if (!privateKeyPath && process.env.SSH_AUTH_SOCK) {
+      sandboxOptions.agent = process.env.SSH_AUTH_SOCK;
+    }
+    const sandbox = exedev(host, sandboxOptions);
     const env = await sandbox.createSandbox({
       id: input.input.sessionId ?? input.approvalId,
     });

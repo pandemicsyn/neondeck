@@ -249,7 +249,7 @@ async function mapConcurrent<T, R>(
   concurrency: number,
   mapper: (item: T) => Promise<R>,
 ) {
-  const results = Array.from({ length: items.length }) as R[];
+  const results: R[] = [];
   let nextIndex = 0;
   await Promise.all(
     Array.from({ length: Math.min(concurrency, items.length) }, async () => {

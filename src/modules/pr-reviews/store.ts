@@ -1,4 +1,5 @@
 import { openDb } from '../../lib/sqlite';
+import * as v from 'valibot';
 import type { RuntimePaths } from '../../runtime-home';
 import { pruneExpiredSubmittedPrReviewRows } from '../../runtime-home/app-db/reconcile';
 import type {
@@ -9,6 +10,22 @@ import type {
   PrReviewVerdict,
 } from './types';
 import { prReviewFindingSourceId } from './finding-id';
+
+const untrustedInputSchema = v.unknown();
+const sqliteRowSchema = v.record(v.string(), untrustedInputSchema);
+const reportOnlyFindingSchema = v.object({
+  severity: v.picklist(['critical', 'major', 'minor', 'nit']),
+  path: v.string(),
+  line: v.nullable(v.number()),
+  summary: v.string(),
+  suggestedFix: v.string(),
+  reason: v.string(),
+  sourceId: v.optional(v.string()),
+});
+const numberOrStringSchema = v.union([v.number(), v.string()]);
+
+type UntrustedInput = v.InferInput<typeof untrustedInputSchema>;
+type SqliteRow = v.InferOutput<typeof sqliteRowSchema>;
 
 export function readPrReview(id: string, paths: RuntimePaths) {
   return readOne('id = ?', id.trim(), paths);
@@ -23,19 +40,20 @@ export function readPrReviewAdmissionBinding(id: string, paths: RuntimePaths) {
                 head_sha, base_sha, base_ref
          FROM pr_reviews WHERE id = ? LIMIT 1;`,
       )
-      .get(id.trim()) as Record<string, unknown> | undefined;
-    if (!row) return null;
+      .get(id.trim());
+    const value = objectValue(row);
+    if (!value) return null;
     return {
-      id: stringValue(row.id),
-      ref: stringValue(row.ref),
-      repoFullName: stringValue(row.repo_full_name),
-      prNumber: numberValue(row.pr_number),
-      attemptId: nullableString(row.attempt_id),
-      runId: nullableString(row.run_id),
-      status: statusValue(row.status),
-      headSha: stringValue(row.head_sha),
-      baseSha: nullableString(row.base_sha),
-      baseRef: nullableString(row.base_ref),
+      id: stringValue(value.id),
+      ref: stringValue(value.ref),
+      repoFullName: stringValue(value.repo_full_name),
+      prNumber: numberValue(value.pr_number),
+      attemptId: nullableString(value.attempt_id),
+      runId: nullableString(value.run_id),
+      status: statusValue(value.status),
+      headSha: stringValue(value.head_sha),
+      baseSha: nullableString(value.base_sha),
+      baseRef: nullableString(value.base_ref),
     };
   } finally {
     database.close();
@@ -59,8 +77,9 @@ export function listPrReviewAssistSettlementCandidates(paths: RuntimePaths) {
          ORDER BY updated_at ASC;`,
       )
       .all()
-      .map((row) => {
-        const value = row as Record<string, unknown>;
+      .flatMap((row) => {
+        const value = objectValue(row);
+        if (!value) return [];
         return {
           reviewId: stringValue(value.id),
           ref: `${stringValue(value.repo_full_name)}#${numberValue(value.pr_number)}`,
@@ -142,8 +161,8 @@ export function pruneExpiredSubmittedPrReviews(
   }
 }
 
-export function readPrReviewRow(row: unknown): PrReviewRecord {
-  const value = row as Record<string, unknown>;
+export function readPrReviewRow(row: UntrustedInput): PrReviewRecord {
+  const value = objectValue(row) ?? {};
   return {
     id: stringValue(value.id),
     ref: stringValue(value.ref),
@@ -190,58 +209,69 @@ function readOne(where: string, value: string, paths: RuntimePaths) {
   }
 }
 
-function stringValue(value: unknown) {
-  return typeof value === 'string' ? value : '';
+function objectValue(value: UntrustedInput): SqliteRow | null {
+  const parsed = v.safeParse(sqliteRowSchema, value);
+  return parsed.success ? parsed.output : null;
 }
 
-function nullableString(value: unknown) {
-  return typeof value === 'string' ? value : null;
+function stringValue(value: UntrustedInput) {
+  const parsed = v.safeParse(v.string(), value);
+  return parsed.success ? parsed.output : '';
 }
 
-function numberValue(value: unknown) {
-  return typeof value === 'number' ? value : Number(value) || 0;
+function nullableString(value: UntrustedInput) {
+  const parsed = v.safeParse(v.string(), value);
+  return parsed.success ? parsed.output : null;
 }
 
-function statusValue(value: unknown): PrReviewStatus {
-  return value === 'ready' ||
-    value === 'submitting' ||
-    value === 'submitted' ||
-    value === 'failed' ||
-    value === 'reviewing'
-    ? value
-    : 'failed';
+function numberValue(value: UntrustedInput) {
+  const parsed = v.safeParse(numberOrStringSchema, value);
+  return parsed.success ? Number(parsed.output) || 0 : 0;
 }
 
-function originValue(value: unknown): PrReviewOrigin {
-  return value === 'chat' || value === 'panel' || value === 'api'
-    ? value
-    : 'api';
+function statusValue(value: UntrustedInput): PrReviewStatus {
+  const parsed = v.safeParse(
+    v.picklist(['ready', 'submitting', 'submitted', 'failed', 'reviewing']),
+    value,
+  );
+  return parsed.success ? parsed.output : 'failed';
 }
 
-function verdictValue(value: unknown): PrReviewVerdict | null {
-  return value === 'comment' ||
-    value === 'approve' ||
-    value === 'request-changes'
-    ? value
-    : null;
+function originValue(value: UntrustedInput): PrReviewOrigin {
+  const parsed = v.safeParse(v.picklist(['chat', 'panel', 'api']), value);
+  return parsed.success ? parsed.output : 'api';
 }
 
-function stringArray(value: unknown): string[] {
+function verdictValue(value: UntrustedInput): PrReviewVerdict | null {
+  const parsed = v.safeParse(
+    v.picklist(['comment', 'approve', 'request-changes']),
+    value,
+  );
+  return parsed.success ? parsed.output : null;
+}
+
+function stringArray(value: UntrustedInput): string[] {
   try {
-    const parsed = JSON.parse(stringValue(value));
-    return Array.isArray(parsed)
-      ? parsed.filter((item): item is string => typeof item === 'string')
-      : [];
+    const parsed: UntrustedInput = JSON.parse(stringValue(value));
+    const array = v.safeParse(v.array(untrustedInputSchema), parsed);
+    if (!array.success) return [];
+    return array.output.flatMap((item) => {
+      const itemParsed = v.safeParse(v.string(), item);
+      return itemParsed.success ? [itemParsed.output] : [];
+    });
   } catch {
     return [];
   }
 }
 
-function reportOnlyFindings(value: unknown): PrReviewReportOnlyFinding[] {
+function reportOnlyFindings(
+  value: UntrustedInput,
+): PrReviewReportOnlyFinding[] {
   try {
-    const parsed = JSON.parse(stringValue(value));
-    if (!Array.isArray(parsed)) return [];
-    return parsed.flatMap((item) => {
+    const parsed: UntrustedInput = JSON.parse(stringValue(value));
+    const array = v.safeParse(v.array(untrustedInputSchema), parsed);
+    if (!array.success) return [];
+    return array.output.flatMap((item) => {
       const finding = reportOnlyFinding(item);
       return finding ? [finding] : [];
     });
@@ -250,24 +280,12 @@ function reportOnlyFindings(value: unknown): PrReviewReportOnlyFinding[] {
   }
 }
 
-function reportOnlyFinding(value: unknown): PrReviewReportOnlyFinding | null {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
-  const item = value as Record<string, unknown>;
-  if (
-    !(
-      item.severity === 'critical' ||
-      item.severity === 'major' ||
-      item.severity === 'minor' ||
-      item.severity === 'nit'
-    ) ||
-    typeof item.path !== 'string' ||
-    !(item.line === null || typeof item.line === 'number') ||
-    typeof item.summary !== 'string' ||
-    typeof item.suggestedFix !== 'string' ||
-    typeof item.reason !== 'string'
-  ) {
-    return null;
-  }
+function reportOnlyFinding(
+  value: UntrustedInput,
+): PrReviewReportOnlyFinding | null {
+  const parsed = v.safeParse(reportOnlyFindingSchema, value);
+  if (!parsed.success) return null;
+  const item = parsed.output;
   const finding: Omit<PrReviewReportOnlyFinding, 'sourceId'> = {
     severity: item.severity,
     path: item.path,
@@ -278,9 +296,8 @@ function reportOnlyFinding(value: unknown): PrReviewReportOnlyFinding | null {
   };
   return {
     ...finding,
-    sourceId:
-      typeof item.sourceId === 'string' && item.sourceId.trim().length > 0
-        ? item.sourceId
-        : prReviewFindingSourceId(finding),
+    sourceId: item.sourceId?.trim()
+      ? item.sourceId
+      : prReviewFindingSourceId(finding),
   };
 }

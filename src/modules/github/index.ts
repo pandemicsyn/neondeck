@@ -102,6 +102,11 @@ export {
   fetchPullRequestReviewThreadsWithMetadata,
   invalidatePullRequestReviewSurfaceThreadCache,
 } from './comments';
+export {
+  githubPullRequestFileSchema,
+  githubPullRequestReviewThreadCommentSchema,
+  githubPullRequestReviewThreadSchema,
+} from './schemas';
 export type {
   GitHubBranchPushPermissions,
   GitHubCheckAnnotation,

@@ -19,6 +19,14 @@ import {
   type ReviewSourceRepository,
   type ReviewSourceSnapshot,
 } from '../../../../shared/review-source';
+
+type ReviewSourceDataAttributes = {
+  'data-review-source-id': string;
+  'data-review-source-kind': ReviewSourceSnapshot['kind'];
+  'data-review-revision-state': ReviewSourceSnapshot['revision']['state'];
+  'data-review-revision-id'?: string;
+  'data-review-revision-kind'?: string;
+};
 import { patchHasContent } from './helpers';
 import type { DiffFilePatch } from './types';
 
@@ -213,17 +221,16 @@ export function repoEditEventReviewSource(
 }
 
 export function reviewSourceDataAttributes(source: ReviewSourceSnapshot) {
-  return {
+  const attributes: ReviewSourceDataAttributes = {
     'data-review-source-id': source.id,
     'data-review-source-kind': source.kind,
     'data-review-revision-state': source.revision.state,
-    ...(source.revision.state === 'resolved'
-      ? {
-          'data-review-revision-id': source.revision.id,
-          'data-review-revision-kind': source.revision.kind,
-        }
-      : {}),
   };
+  if (source.revision.state === 'resolved') {
+    attributes['data-review-revision-id'] = source.revision.id;
+    attributes['data-review-revision-kind'] = source.revision.kind;
+  }
+  return attributes;
 }
 
 function reviewSource(input: SourceInput): ReviewSourceSnapshot {

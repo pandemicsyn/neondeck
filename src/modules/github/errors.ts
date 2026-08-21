@@ -1,7 +1,11 @@
-export class GitHubApiError extends Error {
+import * as v from 'valibot';
+
+const githubErrorDetailSchema = v.looseObject({ message: v.string() });
+
+export class GitHubApiError<TData> extends Error {
   constructor(
     readonly status: number,
-    readonly data: unknown,
+    readonly data: TData,
     message: string,
   ) {
     super(message);
@@ -9,7 +13,7 @@ export class GitHubApiError extends Error {
   }
 }
 
-export function githubErrorMessage(response: Response, data?: unknown) {
+export function githubErrorMessage<TData>(response: Response, data?: TData) {
   const rateLimitRemaining = response.headers.get('x-ratelimit-remaining');
   const rateLimitReset = response.headers.get('x-ratelimit-reset');
   const retryAfter = response.headers.get('retry-after');
@@ -30,11 +34,11 @@ export function githubErrorMessage(response: Response, data?: unknown) {
   return `GitHub request failed with ${response.status}${detail ? `: ${detail}` : ''}`;
 }
 
-export function errorMessage(error: unknown) {
+export function errorMessage<TError>(error: TError) {
   return error instanceof Error ? error.message : String(error);
 }
 
-export function isGitHubChecksAccessError(error: unknown) {
+export function isGitHubChecksAccessError<TError>(error: TError) {
   if (!(error instanceof GitHubApiError) || error.status !== 403) return false;
   const detail = githubResponseDetail(error.data)?.toLowerCase();
   return (
@@ -43,17 +47,14 @@ export function isGitHubChecksAccessError(error: unknown) {
   );
 }
 
-export function isRequestTimeout(error: unknown) {
+export function isRequestTimeout<TError>(error: TError) {
   return (
     error instanceof Error &&
     (error.name === 'TimeoutError' || error.name === 'AbortError')
   );
 }
 
-function githubResponseDetail(data: unknown) {
-  if (!data || typeof data !== 'object') return null;
-  if ('message' in data && typeof data.message === 'string') {
-    return data.message;
-  }
-  return null;
+function githubResponseDetail<TData>(data: TData) {
+  const parsed = v.safeParse(githubErrorDetailSchema, data);
+  return parsed.success ? parsed.output.message : null;
 }

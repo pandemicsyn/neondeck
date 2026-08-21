@@ -530,7 +530,7 @@ function lineSelection(
   side: SelectedLineRange['side'],
   line: number,
 ): SelectedLineRange {
-  return { side, start: line, end: line } as SelectedLineRange;
+  return { side, start: line, end: line } satisfies SelectedLineRange;
 }
 
 function draftCommentSelection(
@@ -546,7 +546,7 @@ function draftCommentSelection(
         : 'additions',
     end: comment.line,
     endSide,
-  } as SelectedLineRange;
+  } satisfies SelectedLineRange;
 }
 
 function navigationSelectionEquals(
@@ -564,7 +564,7 @@ function navigationSelectionEquals(
 }
 
 function positiveLine(value: number | null | undefined) {
-  return typeof value === 'number' && value > 0 ? value : null;
+  return value !== null && value !== undefined && value > 0 ? value : null;
 }
 
 function isSettledPatch(state: ReviewPatchNavigationState | undefined) {

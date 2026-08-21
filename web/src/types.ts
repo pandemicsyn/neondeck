@@ -1,5 +1,6 @@
 import type { ComponentType } from 'react';
 import type { DashboardRegion } from './api/types';
+import type { WebJsonRecord } from './api/schemas';
 export type {
   DashboardConfig,
   DashboardDensity,
@@ -11,29 +12,23 @@ export type {
   DashboardToastConfig,
 } from './api/types';
 
-export type DisplayPluginProps<
-  TConfig extends Record<string, unknown> = Record<string, unknown>,
-> = {
+export type DisplayPluginProps<TConfig extends object = object> = {
   region: DashboardRegion;
   config: TConfig;
 };
 
-export type PluginConfigParseResult<
-  TConfig extends Record<string, unknown> = Record<string, unknown>,
-> = {
+export type PluginConfigParseResult<TConfig extends object = object> = {
   config: TConfig;
   issues: string[];
 };
 
-export type DisplayPlugin<
-  TConfig extends Record<string, unknown> = Record<string, unknown>,
-> = {
+export type DisplayPlugin<TConfig extends object = object> = {
   id: string;
   title: string;
   kind: 'data' | 'agent' | 'status';
   defaultConfig: TConfig;
   parseConfig?: (
-    config: Record<string, unknown> | undefined,
+    config: WebJsonRecord | undefined,
   ) => PluginConfigParseResult<TConfig>;
   Component: ComponentType<DisplayPluginProps<TConfig>>;
 };

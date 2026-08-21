@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import { defineTool } from '@flue/runtime';
+import * as v from 'valibot';
 import { openDb } from '../lib/sqlite';
 import { currentTaskOrigin } from '../modules/flue/origin';
 import {
@@ -18,7 +19,6 @@ import {
   releaseWorktreeLock,
   revokeWorktreeLockLease,
   WORKTREE_LOCK_REVOCATION_GRACE_MS,
-  type WorktreeLockRecord,
   type WorktreeRecord,
 } from '../modules/worktrees';
 import {
@@ -61,6 +61,14 @@ import {
   type RepoCommitInput,
   type RepoPushInput,
 } from './schemas';
+
+const untrustedInputSchema = v.unknown();
+const errorInstanceSchema = v.instance(Error);
+const worktreeLockSchema = v.object({
+  id: v.string(),
+  workflowRunId: v.nullable(v.string()),
+});
+type UntrustedInput = v.InferInput<typeof untrustedInputSchema>;
 
 export const repoFileReadAction = defineTool({
   name: 'neondeck_repo_file_read',
@@ -432,8 +440,9 @@ function requirementFailure(action: string, message: string, requires: string) {
   };
 }
 
-function actionFailure(action: string, error: unknown) {
-  const message = error instanceof Error ? error.message : String(error);
+function actionFailure(action: string, error: UntrustedInput) {
+  const parsed = v.safeParse(errorInstanceSchema, error);
+  const message = parsed.success ? parsed.output.message : String(error);
   return {
     ok: false,
     action,
@@ -462,25 +471,27 @@ async function withInteractiveWorktreeLock<T>(
     paths,
   );
   if (!locked.ok) {
-    const active =
-      'lock' in locked ? (locked.lock as WorktreeLockRecord) : null;
-    if (!active?.workflowRunId) {
+    const active = v.safeParse(
+      worktreeLockSchema,
+      'lock' in locked ? locked.lock : undefined,
+    );
+    if (!active.success || !active.output.workflowRunId) {
       return requirementFailure(action, locked.message, 'worktreeLock');
     }
-    await revokeWorktreeLockLease(active.id, paths);
+    await revokeWorktreeLockLease(active.output.id, paths);
     await recordWorktreePushBlocked(
       worktree.id,
       {
-        message: `Interactive session preempted autopilot run ${active.workflowRunId}; recover from the retained prepared diff before resuming.`,
+        message: `Interactive session preempted autopilot run ${active.output.workflowRunId}; recover from the retained prepared diff before resuming.`,
         data: {
-          preemptedWorkflowRunId: active.workflowRunId,
+          preemptedWorkflowRunId: active.output.workflowRunId,
           preemptedBy: owner,
           recoveryRequired: true,
         },
       },
       paths,
     );
-    await waitForWorktreeLockHandoff(active.id, paths);
+    await waitForWorktreeLockHandoff(active.output.id, paths);
     locked = await lockWorktree(
       {
         worktreeId: worktree.id,

@@ -26,6 +26,15 @@ import { resolveShippedAsset } from '../../runtime-home/assets';
 import { runtimePaths } from '../../runtime-home';
 import type { JsonValue } from '@flue/runtime';
 
+const untrustedInputSchema = v.unknown();
+const recordSchema = v.record(v.string(), untrustedInputSchema);
+const nonBlankStringValueSchema = v.pipe(v.string(), v.trim(), v.minLength(1));
+const nonNegativeIntegerSchema = v.pipe(v.number(), v.integer(), v.minValue(0));
+const integerSchema = v.pipe(v.number(), v.integer());
+const errorInstanceSchema = v.instance(Error);
+type UntrustedInput = v.InferInput<typeof untrustedInputSchema>;
+type InputRecord = v.InferOutput<typeof recordSchema>;
+
 type ChangedPath = {
   path: string;
   previousPath: string | null;
@@ -256,7 +265,7 @@ async function runDocsDriftReportInner(
 }
 
 export async function stageDocsDriftFix(
-  rawInput: unknown,
+  rawInput: v.InferInput<typeof docsDriftStageFixInputSchema>,
   paths = runtimePaths(),
   dependencies: DocsDriftStageFixDependencies = {},
 ) {
@@ -443,11 +452,8 @@ function docsDriftSummary(report: ReportRecord): DocsDriftSummary | null {
         const changedPath = stringConfig(record.changedPath);
         const status = stringConfig(record.status);
         const excerpt = stringConfig(record.excerpt);
-        const line =
-          typeof record.line === 'number' && Number.isInteger(record.line)
-            ? record.line
-            : null;
-        if (!docPath || !changedPath || !status || !excerpt || line === null) {
+        const line = v.safeParse(integerSchema, record.line);
+        if (!docPath || !changedPath || !status || !excerpt || !line.success) {
           return [];
         }
         return [
@@ -456,7 +462,7 @@ function docsDriftSummary(report: ReportRecord): DocsDriftSummary | null {
             changedPath,
             previousPath: stringConfig(record.previousPath),
             status,
-            line,
+            line: line.output,
             excerpt,
           },
         ];
@@ -797,51 +803,50 @@ async function git(cwd: string, args: string[]) {
   return runBoundedGit(cwd, args);
 }
 
-function lastScannedCommit(value: unknown) {
+function lastScannedCommit(value: UntrustedInput) {
   const result = objectConfig(value);
   const commit = result.scannedCommit;
-  return typeof commit === 'string' && commit.trim() ? commit : null;
+  return stringConfig(commit);
 }
 
-function docsDriftCursor(value: unknown, target: string) {
+function docsDriftCursor(value: UntrustedInput, target: string) {
   const result = objectConfig(value);
   const cursor = objectConfig(result.cursor);
   if (cursor.target !== target) return null;
   const base = stringConfig(cursor.base);
-  const sourceOffset =
-    typeof cursor.sourceOffset === 'number' &&
-    Number.isInteger(cursor.sourceOffset) &&
-    cursor.sourceOffset >= 0
-      ? cursor.sourceOffset
-      : null;
-  const docOffset =
-    typeof cursor.docOffset === 'number' &&
-    Number.isInteger(cursor.docOffset) &&
-    cursor.docOffset >= 0
-      ? cursor.docOffset
-      : null;
+  const sourceOffset = numberConfig(cursor.sourceOffset);
+  const docOffset = numberConfig(cursor.docOffset);
   if (!base || sourceOffset === null || docOffset === null) return null;
   return { base, target, sourceOffset, docOffset };
 }
 
-function stringConfig(value: unknown) {
-  return typeof value === 'string' && value.trim() ? value.trim() : null;
+function stringConfig(value: UntrustedInput) {
+  const parsed = v.safeParse(nonBlankStringValueSchema, value);
+  return parsed.success ? parsed.output : null;
 }
 
-function stringArrayConfig(value: unknown) {
-  return Array.isArray(value)
-    ? value.filter((item): item is string => typeof item === 'string')
-    : [];
+function numberConfig(value: UntrustedInput) {
+  const parsed = v.safeParse(nonNegativeIntegerSchema, value);
+  return parsed.success ? parsed.output : null;
 }
 
-function objectConfig(value: unknown) {
-  return value && typeof value === 'object' && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : {};
+function stringArrayConfig(value: UntrustedInput) {
+  const parsed = v.safeParse(v.array(untrustedInputSchema), value);
+  if (!parsed.success) return [];
+  return parsed.output.flatMap((item) => {
+    const string = v.safeParse(v.string(), item);
+    return string.success ? [string.output] : [];
+  });
 }
 
-function errorMessage(error: unknown) {
-  return error instanceof Error ? error.message : String(error);
+function objectConfig(value: UntrustedInput): InputRecord {
+  const parsed = v.safeParse(recordSchema, value);
+  return parsed.success ? parsed.output : {};
+}
+
+function errorMessage(error: UntrustedInput) {
+  const parsed = v.safeParse(errorInstanceSchema, error);
+  return parsed.success ? parsed.output.message : String(error);
 }
 
 function failed(

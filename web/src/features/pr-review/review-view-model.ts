@@ -1,4 +1,5 @@
 import type { SelectedLineRange } from '@pierre/diffs/react';
+import * as v from 'valibot';
 import {
   ApiError,
   type DiffSummary,
@@ -368,23 +369,26 @@ function threadAnchor(thread: GitHubPullRequestReviewThread) {
 }
 
 function positiveLine(value: number | null | undefined) {
-  return typeof value === 'number' && value > 0 ? value : null;
+  return value !== null && value !== undefined && value > 0 ? value : null;
 }
 
 export function mutationErrorMessage(
-  error: unknown,
+  cause: unknown,
   draft: GitHubPrReviewDraft | null,
 ) {
-  if (!error) return null;
-  const message = actionErrorMessage(error);
-  if (error instanceof ApiError) {
-    const data = error.data as {
-      data?: { failingCommentIds?: unknown };
-    } | null;
-    const failingCommentIds = Array.isArray(data?.data?.failingCommentIds)
-      ? data.data.failingCommentIds.filter(
-          (id): id is string => typeof id === 'string',
-        )
+  if (!cause) return null;
+  const message = actionErrorMessage(cause);
+  if (cause instanceof ApiError) {
+    const parsed = v.safeParse(
+      v.looseObject({
+        data: v.optional(
+          v.looseObject({ failingCommentIds: v.optional(v.array(v.string())) }),
+        ),
+      }),
+      cause.data,
+    );
+    const failingCommentIds = parsed.success
+      ? (parsed.output.data?.failingCommentIds ?? [])
       : [];
     if (failingCommentIds.length > 0) {
       return `${message} Failing comments: ${failingCommentLabels(

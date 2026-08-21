@@ -1,4 +1,5 @@
 import type { JsonValue } from '@flue/runtime';
+import * as v from 'valibot';
 import type { MemoryScope } from '../memory';
 import type { ThinkingLevel } from '../../runtime-home';
 
@@ -92,22 +93,25 @@ export function isActiveMemoryScope(
 
 export function parseMemoryValue(raw: string): JsonValue {
   try {
-    return JSON.parse(raw) as JsonValue;
+    return JSON.parse(raw);
   } catch {
     return raw;
   }
 }
 
-export function readStringArrayProperty(
-  value: unknown,
+const stringArrayPropertySchema = v.looseObject({});
+
+export function readStringArrayProperty<TValue>(
+  value: TValue,
   key: string,
 ): string[] | undefined {
-  if (!value || typeof value !== 'object' || !(key in value)) return undefined;
-  const property = (value as Record<string, unknown>)[key];
-  if (!Array.isArray(property)) return undefined;
-  return property.filter((item): item is string => typeof item === 'string');
+  const parsed = v.safeParse(stringArrayPropertySchema, value);
+  if (!parsed.success) return undefined;
+  const property = parsed.output[key];
+  const array = v.safeParse(v.array(v.string()), property);
+  return array.success ? array.output : undefined;
 }
 
-export function errorMessage(error: unknown) {
+export function errorMessage<TError>(error: TError) {
   return error instanceof Error ? error.message : String(error);
 }

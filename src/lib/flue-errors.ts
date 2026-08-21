@@ -1,6 +1,11 @@
 import { FlueError } from '@flue/runtime';
+import * as v from 'valibot';
 
-export function isTransientFlueRuntimeFailure(error: unknown) {
+const runtimeUnavailableErrorSchema = v.looseObject({
+  type: v.literal('runtime_unavailable'),
+});
+
+export function isTransientFlueRuntimeFailure<TError>(error: TError) {
   const seen = new Set<unknown>();
   let current: unknown = error;
 
@@ -12,11 +17,7 @@ export function isTransientFlueRuntimeFailure(error: unknown) {
     ) {
       return true;
     }
-    if (
-      typeof current === 'object' &&
-      !Array.isArray(current) &&
-      (current as Record<string, unknown>).type === 'runtime_unavailable'
-    ) {
+    if (v.safeParse(runtimeUnavailableErrorSchema, current).success) {
       return true;
     }
     current = current instanceof Error ? current.cause : undefined;

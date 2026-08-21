@@ -52,6 +52,17 @@ import {
   upsertPreparedDiff,
 } from './store';
 
+const untrustedInputSchema = v.unknown();
+const looseObjectSchema = v.looseObject({});
+const nonBlankStringSchema = v.pipe(v.string(), v.trim(), v.minLength(1));
+
+type UntrustedInput = v.InferInput<typeof untrustedInputSchema>;
+type LooseObject = v.InferOutput<typeof looseObjectSchema>;
+type RevisionSummaryUpdate = {
+  revisionReason?: string;
+  findingPromotion?: PreparedDiffRecord['summary'];
+};
+
 export async function ensurePreparedDiffForWorktree(
   worktree: WorktreeRecordLike,
   paths: RuntimePaths = runtimePaths(),
@@ -164,7 +175,7 @@ export async function recordPreparedDiffVerification(
     worktreeId?: string;
     lockId?: string;
     status: Extract<PreparedDiffVerificationStatus, 'passed' | 'failed'>;
-    summary?: Record<string, unknown>;
+    summary?: LooseObject;
   },
   paths: RuntimePaths = runtimePaths(),
 ) {
@@ -257,7 +268,7 @@ export function markPreparedDiffPushed(
 }
 
 export async function listPreparedDiffs(
-  rawInput: unknown = {},
+  rawInput: UntrustedInput = {},
   paths: RuntimePaths = runtimePaths(),
 ): Promise<PreparedDiffActionResult> {
   const parsed = parseInput(listInputSchema, rawInput, 'prepared_diff_list');
@@ -285,7 +296,7 @@ export async function listPreparedDiffs(
 }
 
 export async function readPreparedDiffSummary(
-  rawInput: unknown,
+  rawInput: UntrustedInput,
   paths: RuntimePaths = runtimePaths(),
   dependencies: StableDiffMetadataDependencies = {},
 ): Promise<PreparedDiffActionResult> {
@@ -327,7 +338,7 @@ export async function readPreparedDiffSummary(
 }
 
 export async function readPreparedDiffChangedFiles(
-  rawInput: unknown,
+  rawInput: UntrustedInput,
   paths: RuntimePaths = runtimePaths(),
   dependencies: StableDiffMetadataDependencies = {},
 ): Promise<PreparedDiffActionResult> {
@@ -380,7 +391,7 @@ function stalePreparedDiffMetadata(
 }
 
 export async function readPreparedDiffFileDiff(
-  rawInput: unknown,
+  rawInput: UntrustedInput,
   paths: RuntimePaths = runtimePaths(),
   dependencies: {
     gitDiff?: typeof gitDiff;
@@ -466,7 +477,7 @@ function stalePreparedDiffPatch(
 }
 
 export async function requestPreparedDiffRevision(
-  rawInput: unknown,
+  rawInput: UntrustedInput,
   paths: RuntimePaths = runtimePaths(),
   dependencies: {
     readCurrentRevision?: (
@@ -563,17 +574,18 @@ export async function requestPreparedDiffRevision(
     ['prepared', 'verification-requested', 'push-approved', 'push-blocked'],
   );
   if (!transition.ok) return transition.result;
+  const revisionSummary: RevisionSummaryUpdate = {
+    revisionReason: parsed.input.reason,
+  };
+  if (parsed.input.findingPromotion) {
+    revisionSummary.findingPromotion = parsed.input.findingPromotion;
+  }
   const updated = updatePreparedDiffState(
     current.record.id,
     {
       status: 'revision-requested',
       pushApprovalStatus: 'rejected',
-      summary: mergeSummary(current.record.summary, {
-        revisionReason: parsed.input.reason,
-        ...(parsed.input.findingPromotion
-          ? { findingPromotion: parsed.input.findingPromotion }
-          : {}),
-      }),
+      summary: mergeSummary(current.record.summary, revisionSummary),
     },
     paths,
   );
@@ -618,7 +630,7 @@ async function preparedDiffWorktreeRevision(record: PreparedDiffRecord) {
 
 function parseInput<T>(
   schema: v.GenericSchema<T>,
-  input: unknown,
+  input: UntrustedInput,
   action: string,
 ):
   | { ok: true; input: T }
@@ -640,7 +652,7 @@ function parseInput<T>(
 }
 
 async function loadPreparedDiff(
-  rawInput: unknown,
+  rawInput: UntrustedInput,
   action: string,
   paths: RuntimePaths,
 ): Promise<
@@ -691,7 +703,7 @@ function failure(action: string, message: string, code: string) {
 }
 
 function shouldKeepAbandonedRevision(
-  summary: unknown,
+  summary: UntrustedInput,
   createdBy: string | undefined,
 ) {
   if (!createdBy?.startsWith('kilo:')) return false;
@@ -700,12 +712,12 @@ function shouldKeepAbandonedRevision(
   return stringField(run.kiloTaskId) === taskId;
 }
 
-function objectField(value: unknown): Record<string, unknown> {
-  return value && typeof value === 'object' && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : {};
+function objectField(value: UntrustedInput): LooseObject {
+  const parsed = v.safeParse(looseObjectSchema, value);
+  return parsed.success ? parsed.output : {};
 }
 
-function stringField(value: unknown) {
-  return typeof value === 'string' && value.trim() ? value : undefined;
+function stringField(value: UntrustedInput) {
+  const parsed = v.safeParse(nonBlankStringSchema, value);
+  return parsed.success ? parsed.output : undefined;
 }

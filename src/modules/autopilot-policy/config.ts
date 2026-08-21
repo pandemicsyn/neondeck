@@ -32,7 +32,7 @@ export function mergeAutopilotConcurrency(
 }
 
 export function globalAutopilotPolicy(
-  appConfig: unknown,
+  appConfig: v.InferInput<typeof appAutopilotSchema>,
 ): AutopilotPolicyConfig {
   const parsed = v.safeParse(appAutopilotSchema, appConfig);
   const raw = parsed.success ? parsed.output.autopilot : undefined;
@@ -51,7 +51,11 @@ export function readRepoAutopilotConfig(
   if (!repo?.metadata) return undefined;
   const parsed = v.safeParse(metadataSchema, repo.metadata);
   if (!parsed.success) return undefined;
-  return parsed.output.autopilot as RepoAutopilotConfig | undefined;
+  const autopilot = v.safeParse(
+    v.optional(appAutopilotSchema.entries.autopilot),
+    parsed.output.autopilot,
+  );
+  return autopilot.success ? autopilot.output : undefined;
 }
 
 export function repoAutopilotPolicy(

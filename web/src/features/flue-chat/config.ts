@@ -1,3 +1,4 @@
+import * as v from 'valibot';
 import { plainConfigRecord } from '../../plugins/config';
 import {
   flueChatDefaultConfig,
@@ -5,8 +6,23 @@ import {
   type FlueChatSession,
 } from './types';
 
+const nonBlankStringSchema = v.pipe(
+  v.string(),
+  v.check((value) => value.trim().length > 0),
+);
+const sessionSchema = v.object({
+  id: nonBlankStringSchema,
+  label: nonBlankStringSchema,
+  placeholder: nonBlankStringSchema,
+});
+const commandSchema = v.object({
+  label: nonBlankStringSchema,
+  command: nonBlankStringSchema,
+  description: v.optional(v.string()),
+});
+
 export function parseFlueChatConfig(
-  config: Record<string, unknown> | undefined,
+  config: Parameters<typeof plainConfigRecord>[0],
 ) {
   const source = plainConfigRecord(config);
   const issues: string[] = [];
@@ -21,7 +37,10 @@ export function parseFlueChatConfig(
   };
 }
 
-function parseAgentName(value: unknown, issues: string[]) {
+function parseAgentName(
+  value: Parameters<typeof v.safeParse>[1],
+  issues: string[],
+) {
   if (value === undefined || value === flueChatDefaultConfig.agentName) {
     return flueChatDefaultConfig.agentName;
   }
@@ -29,81 +48,47 @@ function parseAgentName(value: unknown, issues: string[]) {
   return flueChatDefaultConfig.agentName;
 }
 
-function parseSessions(value: unknown, issues: string[]) {
+function parseSessions(
+  value: Parameters<typeof v.safeParse>[1],
+  issues: string[],
+): FlueChatSession[] {
   if (value === undefined) return flueChatDefaultConfig.sessions;
-  if (!Array.isArray(value)) {
+  const array = v.safeParse(v.array(v.unknown()), value);
+  if (!array.success) {
     issues.push('sessions must be an array.');
     return flueChatDefaultConfig.sessions;
   }
-
-  const sessions = value.flatMap((item, index): FlueChatSession[] => {
-    if (!item || typeof item !== 'object' || Array.isArray(item)) {
-      issues.push(`sessions[${index}] must be an object.`);
-      return [];
-    }
-    const record = item as Record<string, unknown>;
-    if (
-      typeof record.id !== 'string' ||
-      typeof record.label !== 'string' ||
-      typeof record.placeholder !== 'string' ||
-      record.id.trim().length === 0 ||
-      record.label.trim().length === 0 ||
-      record.placeholder.trim().length === 0
-    ) {
-      issues.push(
-        `sessions[${index}] must include non-empty id, label, and placeholder strings.`,
-      );
-      return [];
-    }
-    return [
-      {
-        id: record.id,
-        label: record.label,
-        placeholder: record.placeholder,
-      },
-    ];
+  const sessions = array.output.flatMap((item, index) => {
+    const parsed = v.safeParse(sessionSchema, item);
+    if (parsed.success) return [parsed.output];
+    issues.push(
+      `sessions[${index}] must include non-empty id, label, and placeholder strings.`,
+    );
+    return [];
   });
-
   if (sessions.length > 0) return sessions;
   issues.push('sessions did not contain any usable entries.');
   return flueChatDefaultConfig.sessions;
 }
 
-function parseQuickCommands(value: unknown, issues: string[]) {
+function parseQuickCommands(
+  value: Parameters<typeof v.safeParse>[1],
+  issues: string[],
+): FlueChatCommand[] {
   if (value === undefined) return flueChatDefaultConfig.quickCommands;
-  if (!Array.isArray(value)) {
+  const array = v.safeParse(v.array(v.unknown()), value);
+  if (!array.success) {
     issues.push('quickCommands must be an array.');
     return flueChatDefaultConfig.quickCommands;
   }
-
-  const commands = value.flatMap((item, index): FlueChatCommand[] => {
-    if (!item || typeof item !== 'object' || Array.isArray(item)) {
-      issues.push(`quickCommands[${index}] must be an object.`);
-      return [];
-    }
-    const record = item as Record<string, unknown>;
-    if (
-      typeof record.label !== 'string' ||
-      typeof record.command !== 'string' ||
-      record.label.trim().length === 0 ||
-      record.command.trim().length === 0
-    ) {
-      issues.push(
-        `quickCommands[${index}] must include non-empty label and command strings.`,
-      );
-      return [];
-    }
-    return [
-      {
-        label: record.label,
-        command: record.command,
-        ...(typeof record.description === 'string'
-          ? { description: record.description }
-          : {}),
-      },
-    ];
+  const commands = array.output.flatMap((item, index) => {
+    const parsed = v.safeParse(commandSchema, item);
+    if (parsed.success) return [parsed.output];
+    issues.push(
+      `quickCommands[${index}] must include non-empty label and command strings.`,
+    );
+    return [];
   });
-
   if (commands.length > 0) return commands;
   issues.push('quickCommands did not contain any usable entries.');
   return flueChatDefaultConfig.quickCommands;

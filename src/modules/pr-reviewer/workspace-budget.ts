@@ -1,5 +1,11 @@
 import { openDb } from '../../lib/sqlite';
+import * as v from 'valibot';
 import { runtimePaths, type RuntimePaths } from '../../runtime-home';
+
+const budgetRowSchema = v.object({
+  calls_used: v.number(),
+  call_limit: v.number(),
+});
 
 export type PrReviewWorkspaceBudget = {
   key: string;
@@ -24,16 +30,16 @@ export function consumePrReviewWorkspaceBudget(
         WHERE pr_review_workspace_budgets.call_limit <> excluded.call_limit;`,
       )
       .run(budget.key, budget.limit, now);
-    const row = database
+    const rawRow = database
       .prepare(
         `UPDATE pr_review_workspace_budgets
          SET calls_used = calls_used + 1, updated_at = ?
          WHERE budget_key = ? AND calls_used < call_limit
          RETURNING calls_used, call_limit;`,
       )
-      .get(now, budget.key) as
-      { calls_used: number; call_limit: number } | undefined;
-    return row ? row.call_limit - row.calls_used : null;
+      .get(now, budget.key);
+    const row = v.safeParse(budgetRowSchema, rawRow);
+    return row.success ? row.output.call_limit - row.output.calls_used : null;
   } finally {
     database.close();
   }

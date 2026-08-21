@@ -260,8 +260,7 @@ function PrRow({
 }
 
 function readReviewPopoutTarget() {
-  if (typeof window === 'undefined') return null;
-  const params = new URLSearchParams(window.location.search);
+  const params = new URLSearchParams(globalThis.window?.location.search ?? '');
   const repo = params.get('prReviewRepo')?.trim();
   const number = Number(params.get('prReviewNumber'));
   if (!repo || !Number.isInteger(number) || number < 1) return null;

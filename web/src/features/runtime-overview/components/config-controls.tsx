@@ -11,12 +11,28 @@ import {
   updatePrReviewPrompt,
   updateProvider,
   type AutopilotOwnerPromptMode,
+  type AgentModelUpdate,
   type AutopilotPromptConfigData,
   type PrReviewPromptConfigData,
   type PrReviewPromptKind,
   type ProviderUpdate,
   type RuntimeStatus,
 } from '../../../api';
+import * as v from 'valibot';
+
+const compatibleApiSchema = v.picklist([
+  'openai-completions',
+  'openai-responses',
+]);
+const prReviewPromptKindSchema = v.picklist([
+  'initial-review',
+  'follow-up-reviewer',
+]);
+const autopilotOwnerPromptModeSchema = v.picklist([
+  'prepare-only',
+  'autofix-with-approval',
+  'autofix-push-when-safe',
+]);
 
 export function RuntimeConfigControls({
   onRefresh,
@@ -623,9 +639,7 @@ export function RuntimeConfigControls({
               label="protocol"
               onChange={(value) => {
                 setProviderDirty(true);
-                setCompatibleApi(
-                  value as 'openai-completions' | 'openai-responses',
-                );
+                setCompatibleApi(v.parse(compatibleApiSchema, value));
               }}
               options={['openai-completions', 'openai-responses']}
               value={compatibleApi}
@@ -803,7 +817,7 @@ export function PrReviewPromptControls() {
           className="min-w-0 border border-line bg-field px-2 py-1 text-[10.5px] text-ink outline-none focus:border-violet"
           disabled={loading || saving}
           onChange={(event) =>
-            selectKind(event.target.value as PrReviewPromptKind)
+            selectKind(v.parse(prReviewPromptKindSchema, event.target.value))
           }
           value={kind}
         >
@@ -933,7 +947,9 @@ export function AutopilotPromptControls() {
           className="min-w-0 border border-line bg-field px-2 py-1 text-[10.5px] text-ink outline-none focus:border-violet"
           disabled={loading || saving}
           onChange={(event) =>
-            selectMode(event.target.value as AutopilotOwnerPromptMode)
+            selectMode(
+              v.parse(autopilotOwnerPromptModeSchema, event.target.value),
+            )
           }
           value={mode}
         >
@@ -1013,17 +1029,8 @@ function modelUpdateInput(
   const ciThinking = values.ciThinking.trim();
   const releaseReviewer = values.releaseReviewer.trim();
   const releaseThinking = values.releaseThinking.trim();
-  const subagents: Record<string, string | null> = {};
-  const input: {
-    displayAssistant?: string;
-    displayAssistantThinkingLevel?: string;
-    prReview?: string | null;
-    prReviewThinkingLevel?: string;
-    prReviewTimeoutMs?: number;
-    utility?: string | null;
-    utilityThinkingLevel?: string;
-    subagents?: Record<string, string | null>;
-  } = {};
+  const subagents: NonNullable<AgentModelUpdate['subagents']> = {};
+  const input: AgentModelUpdate = {};
 
   if (displayAssistant !== status.models.displayAssistant) {
     input.displayAssistant = displayAssistant;

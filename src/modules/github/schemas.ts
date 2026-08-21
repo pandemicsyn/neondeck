@@ -45,6 +45,65 @@ export type GitHubPullRequestQueue = {
   issues: GitHubQueueIssue[];
 };
 
+export const githubCheckSummarySchema = v.object({
+  status: v.picklist(['success', 'failure', 'pending', 'none']),
+  total: v.number(),
+  successful: v.number(),
+  failed: v.number(),
+  pending: v.number(),
+  statusContexts: v.optional(v.number()),
+  truncated: v.optional(v.boolean()),
+  checkedAt: v.string(),
+});
+
+export const githubPullRequestSchema = v.object({
+  id: v.number(),
+  title: v.string(),
+  repo: v.string(),
+  number: v.number(),
+  url: v.string(),
+  state: v.string(),
+  draft: v.optional(v.boolean()),
+  author: v.string(),
+  labels: v.array(v.string()),
+  comments: v.number(),
+  updatedAt: v.string(),
+  createdAt: v.string(),
+  relations: v.array(
+    v.picklist(['authored', 'assigned', 'review-requested', 'configured-repo']),
+  ),
+  ageDays: v.number(),
+  stale: v.boolean(),
+  headSha: v.nullable(v.string()),
+  baseSha: v.optional(v.nullable(v.string())),
+  baseRef: v.nullable(v.string()),
+  checks: v.nullable(githubCheckSummarySchema),
+  checkError: v.optional(v.string()),
+});
+
+export const githubQueueIssueSchema = v.object({
+  type: v.picklist([
+    'search-truncated',
+    'search-incomplete',
+    'search-error',
+    'enrichment-error',
+    'queue-truncated',
+  ]),
+  message: v.string(),
+  query: v.optional(v.string()),
+  repo: v.optional(v.string()),
+  number: v.optional(v.number()),
+});
+
+export const githubPullRequestQueueSchema = v.object({
+  login: v.string(),
+  repos: v.array(v.string()),
+  items: v.array(githubPullRequestSchema),
+  fetchedAt: v.string(),
+  truncated: v.boolean(),
+  issues: v.array(githubQueueIssueSchema),
+});
+
 export type PullRequestQueueRelation =
   'authored' | 'assigned' | 'review-requested' | 'configured-repo';
 
@@ -214,6 +273,41 @@ export type GitHubPullRequestReviewThreadComment = {
   updatedAt: string;
   bodyTruncated?: boolean;
 };
+
+export const githubPullRequestReviewThreadCommentSchema = v.object({
+  id: v.string(),
+  databaseId: v.nullable(v.number()),
+  authorLogin: v.nullable(v.string()),
+  authorType: v.optional(v.nullable(v.string())),
+  authorIsBot: v.optional(v.boolean()),
+  body: v.string(),
+  url: v.nullable(v.string()),
+  path: v.nullable(v.string()),
+  side: v.optional(v.nullable(v.string())),
+  line: v.nullable(v.number()),
+  startLine: v.optional(v.nullable(v.number())),
+  startSide: v.optional(v.nullable(v.string())),
+  originalLine: v.nullable(v.number()),
+  diffHunk: v.nullable(v.string()),
+  reviewId: v.nullable(v.number()),
+  createdAt: v.string(),
+  updatedAt: v.string(),
+  bodyTruncated: v.optional(v.boolean()),
+});
+
+export const githubPullRequestReviewThreadSchema = v.object({
+  id: v.string(),
+  isResolved: v.boolean(),
+  isOutdated: v.boolean(),
+  path: v.nullable(v.string()),
+  line: v.nullable(v.number()),
+  originalLine: v.optional(v.nullable(v.number())),
+  diffSide: v.optional(v.nullable(v.string())),
+  pullRequestRepo: v.optional(v.nullable(v.string())),
+  pullRequestNumber: v.optional(v.nullable(v.number())),
+  commentsTruncated: v.optional(v.boolean()),
+  comments: v.array(githubPullRequestReviewThreadCommentSchema),
+});
 
 export type GitHubCheckSuiteDetail = {
   id: number;

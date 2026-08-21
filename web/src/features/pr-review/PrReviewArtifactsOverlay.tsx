@@ -99,11 +99,11 @@ export function PrReviewArtifactsOverlay({
         }
         setLoadState({ document, key: loadKey, status: 'loaded' });
       })
-      .catch((error: unknown) => {
+      .catch((cause: unknown) => {
         if (controller.signal.aborted) return;
         setLoadState({
           key: loadKey,
-          message: error instanceof Error ? error.message : String(error),
+          message: cause instanceof Error ? cause.message : String(cause),
           status: 'error',
         });
       });

@@ -19,6 +19,7 @@ import {
   defaultBriefingProfileId,
   defaultBriefingSchedule,
   briefingSnapshotSchema,
+  briefingDisplayContextBindingSchema,
 } from './schemas';
 import { readScheduledTask } from '../scheduled-tasks';
 import {
@@ -245,7 +246,7 @@ export async function writeBriefingProfileAndTask(
     const triggerJson = JSON.stringify(asJsonValue(trigger));
     const nextRunAt =
       beforeTask && beforeTask.trigger_json === triggerJson
-        ? (beforeTask.next_run_at as string | null)
+        ? beforeTask.next_run_at
         : nextOccurrence(trigger, now);
     database
       .prepare(
@@ -379,14 +380,21 @@ export async function createBriefingRun(
   const database = openDb(paths.neondeckDatabase);
   try {
     database.exec('BEGIN IMMEDIATE;');
-    const active = database
+    const activeRow = database
       .prepare(
         `SELECT id FROM briefing_runs
          WHERE session_id = ? AND status = 'queued'
          ORDER BY created_at ASC
          LIMIT 1;`,
       )
-      .get(input.sessionId) as { id: string } | undefined;
+      .get(input.sessionId);
+    const active = activeRow
+      ? parsePersisted(
+          v.object({ id: v.string() }),
+          activeRow,
+          'active briefing run',
+        )
+      : undefined;
     if (active) {
       database.exec('ROLLBACK;');
       throw new BriefingAdmissionConflictError(active.id, input.sessionId);
@@ -784,7 +792,10 @@ export async function listBriefingRunMetadata(
   }
 }
 
-function readProfileRow(row: unknown, compatibility: boolean): BriefingProfile {
+function readProfileRow(
+  row: Parameters<typeof parsePersisted>[1],
+  compatibility: boolean,
+): BriefingProfile {
   const value = parsePersisted(persistedProfileSchema, row, 'briefing profile');
   return {
     id: value.id,
@@ -801,14 +812,11 @@ function readProfileRow(row: unknown, compatibility: boolean): BriefingProfile {
   };
 }
 
-function readRunRow(row: unknown): BriefingRun {
+function readRunRow(row: Parameters<typeof parsePersisted>[1]): BriefingRun {
   const value = parsePersisted(persistedRunSchema, row, 'briefing run');
   let snapshot: BriefingSnapshot;
   try {
-    snapshot = v.parse(
-      briefingSnapshotSchema,
-      JSON.parse(value.snapshot_json),
-    ) as BriefingSnapshot;
+    snapshot = v.parse(briefingSnapshotSchema, JSON.parse(value.snapshot_json));
   } catch (error) {
     throw new Error(`Invalid persisted briefing snapshot for ${value.id}.`, {
       cause: error,
@@ -836,7 +844,9 @@ function readRunRow(row: unknown): BriefingRun {
   };
 }
 
-function readRunMetadataRow(row: unknown): BriefingRunMetadata {
+function readRunMetadataRow(
+  row: Parameters<typeof parsePersisted>[1],
+): BriefingRunMetadata {
   const value = parsePersisted(
     v.object({
       ...persistedRunMetadataSchema.entries,
@@ -879,7 +889,7 @@ function parseBriefingContextBinding(
 ): BriefingDisplayContextBinding | null {
   if (!value) return null;
   try {
-    return JSON.parse(value) as BriefingDisplayContextBinding;
+    return v.parse(briefingDisplayContextBindingSchema, JSON.parse(value));
   } catch {
     return null;
   }
@@ -887,7 +897,11 @@ function parseBriefingContextBinding(
 
 function parsePersisted<
   TSchema extends v.BaseSchema<unknown, unknown, v.BaseIssue<unknown>>,
->(schema: TSchema, value: unknown, label: string): v.InferOutput<TSchema> {
+>(
+  schema: TSchema,
+  value: Parameters<typeof v.parse>[1],
+  label: string,
+): v.InferOutput<TSchema> {
   try {
     return v.parse(schema, value);
   } catch (error) {

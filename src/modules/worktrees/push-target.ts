@@ -1,5 +1,11 @@
 import type { WorktreeRecord } from './schemas';
+import * as v from 'valibot';
 import { deriveForkRemote, resolveRegisteredRepositoryRemote } from './pr-head';
+
+const untrustedInputSchema = v.unknown();
+const branchPermissionsSchema = v.record(v.string(), untrustedInputSchema);
+
+type BranchPermissions = v.InferInput<typeof branchPermissionsSchema>;
 
 export type PrPushTarget = {
   repoFullName: string;
@@ -14,7 +20,7 @@ export function resolvePrPushTarget(input: {
   baseRepoFullName: string;
   headRepoFullName: string;
   headRef: string;
-  branchPermissions: unknown;
+  branchPermissions: BranchPermissions;
   remote?: string;
 }): PrPushTarget {
   const permissionHead = stringField(
@@ -68,7 +74,7 @@ export async function resolvePrPushTargetForCheckout(
     baseRepoFullName: string;
     headRepoFullName: string;
     headRef: string;
-    branchPermissions: unknown;
+    branchPermissions: BranchPermissions;
   },
   dependencies: {
     runGit?: (cwd: string, args: string[]) => Promise<string>;
@@ -90,7 +96,7 @@ export async function resolvePrPushTargetForCheckout(
 
 export function pushTargetForWorktree(
   worktree: WorktreeRecord,
-  branchPermissions: unknown,
+  branchPermissions: BranchPermissions,
 ) {
   return resolvePrPushTarget({
     baseRepoFullName: worktree.repoFullName,
@@ -106,7 +112,7 @@ export function pushTargetForWorktree(
 
 export function remoteForPush(
   worktree: WorktreeRecord,
-  branchPermissions: unknown,
+  branchPermissions: BranchPermissions,
 ) {
   return pushTargetForWorktree(worktree, branchPermissions).remote;
 }
@@ -127,20 +133,18 @@ export function githubRemoteUrl(fullName: string) {
   return `https://github.com/${fullName}.git`;
 }
 
-function stringField(value: unknown, key: string) {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) {
-    return undefined;
-  }
-  const field = (value as Record<string, unknown>)[key];
-  return typeof field === 'string' ? field : undefined;
+function stringField(value: BranchPermissions, key: string) {
+  const record = v.safeParse(branchPermissionsSchema, value);
+  if (!record.success) return undefined;
+  const parsed = v.safeParse(v.string(), record.output[key]);
+  return parsed.success ? parsed.output : undefined;
 }
 
-function booleanField(value: unknown, key: string) {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) {
-    return undefined;
-  }
-  const field = (value as Record<string, unknown>)[key];
-  return typeof field === 'boolean' ? field : undefined;
+function booleanField(value: BranchPermissions, key: string) {
+  const record = v.safeParse(branchPermissionsSchema, value);
+  if (!record.success) return undefined;
+  const parsed = v.safeParse(v.boolean(), record.output[key]);
+  return parsed.success ? parsed.output : undefined;
 }
 
 function safeBranch(value: string) {

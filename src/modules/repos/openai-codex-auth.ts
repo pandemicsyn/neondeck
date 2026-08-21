@@ -7,6 +7,7 @@ import {
 } from '@earendil-works/pi-ai';
 import { openaiCodexProvider } from '@earendil-works/pi-ai/providers/openai-codex';
 import { chmod } from 'node:fs/promises';
+import * as v from 'valibot';
 import { openDb } from '../../lib/sqlite';
 import {
   ensureRuntimeHome,
@@ -15,6 +16,10 @@ import {
 } from '../../runtime-home';
 
 export type OpenAiCodexLoginMethod = 'browser' | 'device-code';
+type OpenAiCodexPromptOptions = {
+  placeholder?: string;
+  signal?: AbortSignal;
+};
 export type OpenAiCodexLoginCallbacks = {
   onAuth?: (info: { url: string; instructions?: string }) => void;
   onDeviceCode?: (info: { userCode: string; verificationUri: string }) => void;
@@ -81,12 +86,10 @@ function openAiCodexLoginInteraction(
       if (prompt.type === 'select') {
         return method === 'device-code' ? 'device_code' : 'browser';
       }
-      return (
-        callbacks.onPrompt?.(prompt.message, {
-          ...(prompt.placeholder ? { placeholder: prompt.placeholder } : {}),
-          ...(prompt.signal ? { signal: prompt.signal } : {}),
-        }) ?? ''
-      );
+      const options: OpenAiCodexPromptOptions = {};
+      if (prompt.placeholder) options.placeholder = prompt.placeholder;
+      if (prompt.signal) options.signal = prompt.signal;
+      return callbacks.onPrompt?.(prompt.message, options) ?? '';
     },
     notify(event) {
       switch (event.type) {
@@ -290,9 +293,18 @@ function canonicalOAuthCredential(
 function readCredential(paths: RuntimePaths): StoredCredential | undefined {
   const database = openDb(paths.neondeckDatabase, { readOnly: true });
   try {
-    const row = database
-      .prepare(
-        `
+    const row = v.safeParse(
+      v.object({
+        access_token: v.string(),
+        refresh_token: v.string(),
+        expires_at: v.number(),
+        last_error: v.nullable(v.string()),
+        created_at: v.string(),
+        updated_at: v.string(),
+      }),
+      database
+        .prepare(
+          `
         SELECT
           access_token,
           refresh_token,
@@ -303,25 +315,17 @@ function readCredential(paths: RuntimePaths): StoredCredential | undefined {
         FROM provider_oauth_credentials
         WHERE provider_id = ?;
       `,
-      )
-      .get(providerId) as
-      | {
-          access_token: string;
-          refresh_token: string;
-          expires_at: number;
-          last_error: string | null;
-          created_at: string;
-          updated_at: string;
-        }
-      | undefined;
-    return row
+        )
+        .get(providerId),
+    );
+    return row.success
       ? {
-          access: row.access_token,
-          refresh: row.refresh_token,
-          expires: row.expires_at,
-          lastError: row.last_error,
-          createdAt: row.created_at,
-          updatedAt: row.updated_at,
+          access: row.output.access_token,
+          refresh: row.output.refresh_token,
+          expires: row.output.expires_at,
+          lastError: row.output.last_error,
+          createdAt: row.output.created_at,
+          updatedAt: row.output.updated_at,
         }
       : undefined;
   } finally {
@@ -425,7 +429,7 @@ function writeCredentialError(
   }
 }
 
-function errorMessage(error: unknown) {
+function errorMessage<TError>(error: TError) {
   return error instanceof Error ? error.message : String(error);
 }
 
@@ -448,10 +452,7 @@ async function chmodIfPresent(path: string, mode: number) {
     await chmod(path, mode);
   } catch (error) {
     if (
-      error &&
-      typeof error === 'object' &&
-      'code' in error &&
-      error.code === 'ENOENT'
+      v.safeParse(v.looseObject({ code: v.literal('ENOENT') }), error).success
     ) {
       return;
     }

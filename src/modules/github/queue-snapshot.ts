@@ -6,6 +6,12 @@ import type {
   GitHubPullRequestQueue,
   GitHubQueueIssue,
 } from './schemas';
+import { githubPullRequestQueueSchema } from './schemas';
+import * as v from 'valibot';
+
+const githubQueueActionDataSchema = v.object({
+  queue: githubPullRequestQueueSchema,
+});
 
 export const githubQueueRefreshIntervalMs = 3 * 60_000;
 
@@ -48,6 +54,11 @@ type GitHubQueueSnapshotRegistry = {
   listeners: Set<(event: GitHubQueueSnapshotEvent) => void>;
   states: Map<string, GitHubQueueSnapshotState>;
 };
+
+declare global {
+  var __neondeckGitHubQueueSnapshotRegistry:
+    GitHubQueueSnapshotRegistry | undefined;
+}
 
 const registry = githubQueueSnapshotRegistry();
 
@@ -139,7 +150,7 @@ async function refreshGitHubQueueSnapshotOnce(
           .join(' ')
       : undefined;
 
-    next = withRevision({
+    const nextInput: Omit<GitHubQueueSnapshot, 'revision'> = {
       login: source.login,
       repos: source.repos,
       items: source.items,
@@ -149,8 +160,9 @@ async function refreshGitHubQueueSnapshotOnce(
       status,
       lastAttemptAt: attemptedAt,
       lastCompleteAt: unreliableSearch ? previous.lastCompleteAt : attemptedAt,
-      ...(error ? { error } : {}),
-    });
+    };
+    if (error) nextInput.error = error;
+    next = withRevision(nextInput);
   } else {
     const message = result.message || 'Could not refresh GitHub PR queue.';
     const issues: GitHubQueueIssue[] = (
@@ -206,7 +218,7 @@ function stateFor(paths: RuntimePaths) {
 
 function initialSnapshot(): GitHubQueueSnapshot {
   const tokenMissing = !process.env.GITHUB_TOKEN;
-  return withRevision({
+  const snapshot: Omit<GitHubQueueSnapshot, 'revision'> = {
     login: '',
     repos: [],
     items: [],
@@ -223,19 +235,17 @@ function initialSnapshot(): GitHubQueueSnapshot {
     status: tokenMissing ? 'unavailable' : 'loading',
     lastAttemptAt: null,
     lastCompleteAt: null,
-    ...(tokenMissing ? { error: 'GITHUB_TOKEN is not configured.' } : {}),
-  });
+  };
+  if (tokenMissing) snapshot.error = 'GITHUB_TOKEN is not configured.';
+  return withRevision(snapshot);
 }
 
 function readQueue(
   result: Awaited<ReturnType<typeof listGitHubPrQueue>>,
 ): GitHubPullRequestQueue | null {
-  if (!result.ok || !result.data || typeof result.data !== 'object') {
-    return null;
-  }
-  const queue = (result.data as { queue?: unknown }).queue;
-  if (!queue || typeof queue !== 'object') return null;
-  return queue as GitHubPullRequestQueue;
+  if (!result.ok) return null;
+  const parsed = v.safeParse(githubQueueActionDataSchema, result.data);
+  return parsed.success ? parsed.output.queue : null;
 }
 
 function withRevision(
@@ -276,12 +286,9 @@ function materialPullRequest(item: GitHubPullRequest) {
 }
 
 function githubQueueSnapshotRegistry(): GitHubQueueSnapshotRegistry {
-  const globalRegistry = globalThis as typeof globalThis & {
-    __neondeckGitHubQueueSnapshotRegistry?: GitHubQueueSnapshotRegistry;
-  };
-  globalRegistry.__neondeckGitHubQueueSnapshotRegistry ??= {
+  globalThis.__neondeckGitHubQueueSnapshotRegistry ??= {
     listeners: new Set(),
     states: new Map(),
   };
-  return globalRegistry.__neondeckGitHubQueueSnapshotRegistry;
+  return globalThis.__neondeckGitHubQueueSnapshotRegistry;
 }

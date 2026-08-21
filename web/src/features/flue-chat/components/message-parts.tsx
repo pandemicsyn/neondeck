@@ -1,26 +1,92 @@
+import type { FlueConversationPart } from '@flue/sdk';
 import type { ReactNode } from 'react';
 import { MarkdownMessage } from '../../../components/MarkdownMessage';
 import { OperationalValue } from '../../../components/OperationalValue';
 
-export function errorMessage(error: unknown) {
-  return error instanceof Error ? error.message : String(error);
+type LegacyToolResultPart = {
+  type: 'tool-result';
+  name: string;
+  output: string;
+};
+
+type DynamicToolRenderPart = {
+  type: 'dynamic-tool';
+  toolName: string;
+  toolCallId?: string;
+  state: 'input-available' | 'output-available' | 'output-error';
+  input: Parameters<typeof JSON.stringify>[0];
+  output?: Parameters<typeof JSON.stringify>[0];
+  errorText?: string;
+};
+
+export function errorMessage(cause: unknown) {
+  return cause instanceof Error ? cause.message : String(cause);
 }
 
-export function renderMessagePart(part: unknown, key: string): ReactNode {
-  const record = asRecord(part);
-  const type = readString(record?.type) ?? 'part';
-  if (type === 'text') {
-    const text = readString(record?.text);
-    return text ? <MarkdownMessage key={key}>{text}</MarkdownMessage> : null;
+export function renderMessagePart(
+  part: FlueConversationPart | LegacyToolResultPart | DynamicToolRenderPart,
+  key: string,
+): ReactNode {
+  if (part.type === 'tool-result') {
+    return (
+      <ChatPartEvent
+        key={key}
+        kind="tool"
+        name={part.name}
+        preview={part.output}
+      />
+    );
   }
-
+  if (part.type === 'text') {
+    return part.text ? (
+      <MarkdownMessage key={key}>{part.text}</MarkdownMessage>
+    ) : null;
+  }
+  if (part.type === 'reasoning') {
+    return (
+      <ChatPartEvent
+        key={key}
+        kind="reasoning"
+        name="reasoning"
+        preview={part.text}
+        status={part.state}
+      />
+    );
+  }
+  if (part.type === 'file') {
+    return (
+      <ChatPartEvent
+        key={key}
+        kind="file"
+        name={part.filename ?? 'attachment'}
+        preview={part.url}
+        status={part.mediaType}
+      />
+    );
+  }
+  if (part.type === 'dynamic-tool') {
+    const preview =
+      part.state === 'output-available'
+        ? JSON.stringify(part.output)
+        : part.state === 'output-error'
+          ? (part.errorText ?? 'Tool failed.')
+          : JSON.stringify(part.input);
+    return (
+      <ChatPartEvent
+        key={key}
+        kind="tool"
+        name={part.toolName}
+        preview={preview}
+        status={part.state}
+      />
+    );
+  }
   return (
     <ChatPartEvent
-      kind={partKind(type)}
       key={key}
-      name={partName(record) ?? humanizePartType(type)}
-      preview={partPreview(record)}
-      status={partStatus(record, type)}
+      kind="data"
+      name={part.type.slice(5)}
+      preview={JSON.stringify(part.data)}
     />
   );
 }
@@ -65,86 +131,4 @@ export function ChatPartEvent({
       ) : null}
     </div>
   );
-}
-
-function asRecord(value: unknown): Record<string, unknown> | undefined {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) {
-    return undefined;
-  }
-
-  return value as Record<string, unknown>;
-}
-
-function readString(value: unknown) {
-  return typeof value === 'string' && value.trim() ? value : undefined;
-}
-
-function partKind(type: string) {
-  const lower = type.toLowerCase();
-  if (lower.includes('tool')) return 'tool';
-  if (lower.includes('action')) return 'action';
-  if (lower.includes('data')) return 'data';
-  return 'event';
-}
-
-function partName(record: Record<string, unknown> | undefined) {
-  if (!record) return undefined;
-  return (
-    readString(record.name) ??
-    readString(record.toolName) ??
-    readString(record.actionName) ??
-    readString(record.tool) ??
-    readString(record.action) ??
-    readString(record.id) ??
-    readString(record.toolCallId) ??
-    readString(record.callId)
-  );
-}
-
-function partStatus(record: Record<string, unknown> | undefined, type: string) {
-  if (!record) return humanizePartType(type);
-  return (
-    readString(record.status) ??
-    readString(record.state) ??
-    readString(record.outcome) ??
-    humanizePartType(type)
-  );
-}
-
-function partPreview(record: Record<string, unknown> | undefined) {
-  if (!record) return undefined;
-  const candidates = [
-    'errorText',
-    'data',
-    'output',
-    'result',
-    'input',
-    'args',
-    'arguments',
-    'parameters',
-    'error',
-  ];
-  for (const key of candidates) {
-    if (key in record) return stringifyPreview(record[key]);
-  }
-
-  return undefined;
-}
-
-function stringifyPreview(value: unknown) {
-  if (value === undefined || value === null) return undefined;
-  if (typeof value === 'string') return value.trim() ? value : undefined;
-  if (typeof value === 'number' || typeof value === 'boolean') {
-    return String(value);
-  }
-
-  try {
-    return JSON.stringify(value);
-  } catch {
-    return undefined;
-  }
-}
-
-function humanizePartType(type: string) {
-  return type.replace(/[_-]+/g, ' ');
 }

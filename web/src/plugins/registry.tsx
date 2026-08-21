@@ -12,34 +12,64 @@ import { RuntimeOverviewPlugin } from './RuntimeOverview';
 import { SubagentSummaryPlugin } from './SubagentSummary';
 import { ActivityPanelPlugin } from './ActivityPanel';
 import type { DisplayPlugin } from '../types';
+import type { WebJsonRecord } from '../api/schemas';
+import type { DashboardRegion } from '../api/types';
+import type { ReactNode } from 'react';
+
+type RegisteredPlugin = Pick<DisplayPlugin, 'id' | 'title' | 'kind'> & {
+  render(
+    region: DashboardRegion,
+    config: WebJsonRecord | undefined,
+  ): { content: ReactNode; issues: string[] };
+};
 
 export const plugins = [
-  ReviewsPanelPlugin,
-  GitHubPrListPlugin,
-  ActiveWatchesPlugin,
-  ReportsPanelPlugin,
-  RuntimeOverviewPlugin,
-  BriefingPanelPlugin,
-  MemoryPanelPlugin,
-  LearningOperatorPanelPlugin,
-  SubagentSummaryPlugin,
-  ActivityPanelPlugin,
-  FlueChatPlugin,
-  HostMetricsPlugin,
-  ClockStatusPlugin,
-] satisfies DisplayPlugin<any>[];
+  registerPlugin(ReviewsPanelPlugin),
+  registerPlugin(GitHubPrListPlugin),
+  registerPlugin(ActiveWatchesPlugin),
+  registerPlugin(ReportsPanelPlugin),
+  registerPlugin(RuntimeOverviewPlugin),
+  registerPlugin(BriefingPanelPlugin),
+  registerPlugin(MemoryPanelPlugin),
+  registerPlugin(LearningOperatorPanelPlugin),
+  registerPlugin(SubagentSummaryPlugin),
+  registerPlugin(ActivityPanelPlugin),
+  registerPlugin(FlueChatPlugin),
+  registerPlugin(HostMetricsPlugin),
+  registerPlugin(ClockStatusPlugin),
+] as const;
 
-export const pluginRegistry = Object.fromEntries(
-  plugins.map((plugin) => [plugin.id, plugin]),
-) as Record<string, DisplayPlugin<any>>;
+export const pluginRegistry = Object.fromEntries(plugins.map(pluginEntry));
 
-export function resolvePluginConfig<TConfig extends Record<string, unknown>>(
+function pluginEntry(plugin: RegisteredPlugin): [string, RegisteredPlugin] {
+  return [plugin.id, plugin];
+}
+
+function registerPlugin<TConfig extends object>(
   plugin: DisplayPlugin<TConfig>,
-  config: Record<string, unknown> | undefined,
+): RegisteredPlugin {
+  return {
+    id: plugin.id,
+    title: plugin.title,
+    kind: plugin.kind,
+    render(region, config) {
+      const resolved = resolvePluginConfig(plugin, config);
+      const PluginComponent = plugin.Component;
+      return {
+        issues: resolved.issues,
+        content: <PluginComponent config={resolved.config} region={region} />,
+      };
+    },
+  };
+}
+
+export function resolvePluginConfig<TConfig extends object>(
+  plugin: DisplayPlugin<TConfig>,
+  config: WebJsonRecord | undefined,
 ) {
   if (plugin.parseConfig) return plugin.parseConfig(config);
 
-  if (!config || typeof config !== 'object' || Array.isArray(config)) {
+  if (!config) {
     return { config: plugin.defaultConfig, issues: [] };
   }
 

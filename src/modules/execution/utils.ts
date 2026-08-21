@@ -1,4 +1,5 @@
 import { type JsonValue } from '@flue/runtime';
+import * as v from 'valibot';
 import { safeEnvKeys } from './schemas';
 
 export function splitCommand(
@@ -61,18 +62,21 @@ function redactOutput(value: string) {
     .replace(/xox[baprs]-[A-Za-z0-9-]+/g, '[redacted-token]');
 }
 
-export function commandError(error: unknown) {
-  const record =
-    error && typeof error === 'object'
-      ? (error as Record<string, unknown>)
-      : {};
-  const code = record.code;
-  const signal = record.signal;
-  const exitCode = typeof code === 'number' ? code : null;
+const commandErrorSchema = v.looseObject({
+  code: v.optional(v.number()),
+  signal: v.optional(v.string()),
+  stdout: v.optional(v.string()),
+  stderr: v.optional(v.string()),
+});
+
+export function commandError<TError>(error: TError) {
+  const parsed = v.safeParse(commandErrorSchema, error);
+  const record = parsed.success ? parsed.output : {};
+  const exitCode = record.code ?? null;
   const message =
     error instanceof Error
       ? error.message
-      : `Command failed${signal ? ` with signal ${String(signal)}` : ''}.`;
+      : `Command failed${record.signal ? ` with signal ${record.signal}` : ''}.`;
   return {
     message,
     exitCode,
@@ -95,7 +99,9 @@ export function failedResult(
   };
 }
 
-export function isJsonValue(value: unknown): value is JsonValue {
+export function isJsonValue<TValue>(
+  value: TValue,
+): value is TValue & JsonValue {
   try {
     JSON.stringify(value);
     return true;

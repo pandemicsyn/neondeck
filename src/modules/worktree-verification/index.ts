@@ -1,4 +1,5 @@
 import { runApprovedExecution } from '../execution';
+import * as v from 'valibot';
 import { recordPreparedDiffVerification } from '../prepared-diffs';
 import { readRepoRegistrySnapshot, repoFullName } from '../repos';
 import {
@@ -14,6 +15,10 @@ import {
   releaseWorktreeLock,
   type WorktreeRecord,
 } from '../worktrees';
+
+const untrustedInputSchema = v.unknown();
+const recordSchema = v.record(v.string(), untrustedInputSchema);
+type UntrustedInput = v.InferInput<typeof untrustedInputSchema>;
 
 type VerificationExecutionResult = Awaited<
   ReturnType<typeof runApprovedExecution>
@@ -235,22 +240,25 @@ function unique(values: string[]) {
   return [...new Set(values.map((value) => value.trim()).filter(Boolean))];
 }
 
-function objectField(value: unknown, key: string) {
-  if (!value || typeof value !== 'object') return undefined;
-  return (value as Record<string, unknown>)[key];
+function objectField(value: UntrustedInput, key: string) {
+  const parsed = v.safeParse(recordSchema, value);
+  return parsed.success ? parsed.output[key] : undefined;
 }
 
-function stringField(value: unknown, key: string) {
+function stringField(value: UntrustedInput, key: string) {
   const field = objectField(value, key);
-  return typeof field === 'string' ? field : undefined;
+  const parsed = v.safeParse(v.string(), field);
+  return parsed.success ? parsed.output : undefined;
 }
 
-function numberField(value: unknown, key: string) {
+function numberField(value: UntrustedInput, key: string) {
   const field = objectField(value, key);
-  return typeof field === 'number' ? field : undefined;
+  const parsed = v.safeParse(v.number(), field);
+  return parsed.success ? parsed.output : undefined;
 }
 
-function arrayField(value: unknown, key: string) {
+function arrayField(value: UntrustedInput, key: string) {
   const field = objectField(value, key);
-  return Array.isArray(field) ? field.map(String) : [];
+  const parsed = v.safeParse(v.array(untrustedInputSchema), field);
+  return parsed.success ? parsed.output.map(String) : [];
 }

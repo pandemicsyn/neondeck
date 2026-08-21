@@ -3,9 +3,9 @@ import * as v from 'valibot';
 export type ParseInputResult<TInput, TResult> =
   { ok: true; input: TInput } | { ok: false; result: TResult };
 
-export function parseInput<TInput, TResult>(
+export function parseInput<TInput, TResult, TRawInput>(
   schema: v.GenericSchema<unknown, TInput>,
-  rawInput: unknown,
+  rawInput: TRawInput,
   invalidResult: (
     message: string,
     issues: [v.BaseIssue<unknown>, ...v.BaseIssue<unknown>[]],
@@ -16,13 +16,9 @@ export function parseInput<TInput, TResult>(
 ): ParseInputResult<TInput, TResult> {
   const parsed = v.safeParse(schema, rawInput);
   if (parsed.success) return { ok: true, input: parsed.output };
-  const issues = parsed.issues as [
-    v.BaseIssue<unknown>,
-    ...v.BaseIssue<unknown>[],
-  ];
   return {
     ok: false,
-    result: invalidResult(messageForIssues(issues), issues),
+    result: invalidResult(messageForIssues(parsed.issues), parsed.issues),
   };
 }
 

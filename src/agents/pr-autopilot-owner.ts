@@ -65,6 +65,15 @@ export const description =
 
 // Operator inspection remains available through authenticated local GET routes.
 // Direct messages are accepted only for the held approval turn.
+const ownerMessageRequestSchema = v.looseObject({
+  body: v.optional(v.unknown()),
+  idempotencyKey: v.optional(v.unknown()),
+  message: v.optional(v.unknown()),
+});
+const nestedOwnerMessageSchema = v.looseObject({
+  body: v.optional(v.unknown()),
+});
+
 export const route: MiddlewareHandler = async (context, next) => {
   if (context.req.method === 'GET') return next();
   const instanceId = context.req.param('id');
@@ -81,36 +90,46 @@ export const route: MiddlewareHandler = async (context, next) => {
     watch?.autopilotMode === 'autofix-with-approval' &&
     watch.autopilotStatus === 'waiting'
   ) {
-    const requestPayload = (await context.req.raw
-      .clone()
-      .json()
-      .catch(() => null)) as {
-      body?: unknown;
-      idempotencyKey?: unknown;
-      message?: { body?: unknown };
-    } | null;
-    if (!requestPayload) {
+    const requestPayload = v.safeParse(
+      ownerMessageRequestSchema,
+      await context.req.raw
+        .clone()
+        .json()
+        .catch(() => null),
+    );
+    if (!requestPayload.success) {
       return context.json(
         { ok: false, error: 'A valid JSON owner message is required.' },
         400,
       );
     }
-    const messageBody =
-      typeof requestPayload.body === 'string'
-        ? requestPayload.body
-        : typeof requestPayload.message?.body === 'string'
-          ? requestPayload.message.body
-          : null;
+    const topLevelBody = v.safeParse(v.string(), requestPayload.output.body);
+    const nestedMessage = v.safeParse(
+      nestedOwnerMessageSchema,
+      requestPayload.output.message,
+    );
+    const nestedBody = v.safeParse(
+      v.string(),
+      nestedMessage.success ? nestedMessage.output.body : undefined,
+    );
+    const messageBody = topLevelBody.success
+      ? topLevelBody.output
+      : nestedBody.success
+        ? nestedBody.output
+        : null;
     if (!messageBody) {
       return context.json(
         { ok: false, error: 'A direct-human owner message is required.' },
         400,
       );
     }
+    const parsedIdempotencyKey = v.safeParse(
+      v.string(),
+      requestPayload.output.idempotencyKey,
+    );
     const idempotencyKey =
-      typeof requestPayload.idempotencyKey === 'string' &&
-      requestPayload.idempotencyKey.trim()
-        ? requestPayload.idempotencyKey
+      parsedIdempotencyKey.success && parsedIdempotencyKey.output.trim()
+        ? parsedIdempotencyKey.output
         : null;
     if (!idempotencyKey) {
       return context.json(

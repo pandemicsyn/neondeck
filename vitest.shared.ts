@@ -4,7 +4,7 @@ import type { Plugin } from 'vite';
 export function flueMarkdownImportsForTests(): Plugin {
   const plugin = markdownImportPlugin();
   const transform = plugin.transform;
-  if (!transform || typeof transform === 'function') return plugin;
+  if (!transform || transform instanceof Function) return plugin;
 
   return {
     ...plugin,
@@ -15,7 +15,7 @@ export function flueMarkdownImportsForTests(): Plugin {
         code: { include: [/\.md/] },
       },
     },
-  } as Plugin;
+  } satisfies Plugin;
 }
 
 export const baseExclude = [

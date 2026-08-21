@@ -1,4 +1,5 @@
 import type { GitHubPullRequestEventState } from './schemas';
+import * as v from 'valibot';
 
 export const maxPrEventFeedbackBodyLength = 65_536;
 
@@ -71,15 +72,15 @@ export function pullRequestEventStateIncompleteness(
   };
 }
 
-export function prEventWatermarkTruncationCategories(
-  watermarks: Array<{ category: string; value: unknown }>,
+export function prEventWatermarkTruncationCategories<TValue>(
+  watermarks: Array<{ category: string; value: TValue }>,
 ) {
   return watermarks.flatMap((watermark) => {
     const value = recordValue(watermark.value);
     if (
       !value ||
       value.truncated === true ||
-      typeof value.unavailableReason === 'string'
+      value.unavailableReason !== undefined
     ) {
       return [watermark.category];
     }
@@ -115,13 +116,24 @@ export function prEventWatermarkTruncationCategories(
   });
 }
 
-function recordValue(value: unknown) {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : null;
+const truncationRecordSchema = v.looseObject({
+  truncated: v.optional(v.boolean()),
+  unavailableReason: v.optional(v.string()),
+  threads: v.optional(v.unknown()),
+  comments: v.optional(v.unknown()),
+  reviews: v.optional(v.unknown()),
+  latestByReviewer: v.optional(v.unknown()),
+  history: v.optional(v.unknown()),
+  commentsTruncated: v.optional(v.boolean()),
+  bodyTruncated: v.optional(v.boolean()),
+});
+
+function recordValue<TValue>(value: TValue) {
+  const parsed = v.safeParse(truncationRecordSchema, value);
+  return parsed.success ? parsed.output : null;
 }
 
-function recordArray(value: unknown) {
+function recordArray<TValue>(value: TValue) {
   return Array.isArray(value)
     ? value.flatMap((item) => {
         const record = recordValue(item);

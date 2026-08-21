@@ -195,17 +195,17 @@ export async function resolveExeDevForwardedEnv(
   return { env, sources };
 }
 
-export function parseEnvFile(source: string): Record<string, string> {
-  const env: Record<string, string> = {};
+export function parseEnvFile(source: string) {
+  const entries: Array<[string, string]> = [];
   for (const line of source.split(/\r?\n/)) {
     const trimmed = line.trim();
     if (!trimmed || trimmed.startsWith('#')) continue;
     const match = envFileLine.exec(line);
     if (!match) continue;
     const [, key, rawValue = ''] = match;
-    env[key] = unquoteEnvValue(rawValue.trim());
+    entries.push([key, unquoteEnvValue(rawValue.trim())]);
   }
-  return env;
+  return Object.fromEntries(entries);
 }
 
 export function shellArg(value: string): string {

@@ -9,6 +9,7 @@ import {
   useState,
 } from 'react';
 import type { CSSProperties } from 'react';
+import * as v from 'valibot';
 import {
   RESOLVED_THEME_STORAGE_KEY,
   THEME_PREFERENCE_STORAGE_KEY,
@@ -29,7 +30,7 @@ import {
 import type { DeckArrangement } from './lib/deck-profile';
 import { useDeckProfile } from './lib/deck-profile';
 import { queryErrorMessage, queryKeys } from './lib/query';
-import { pluginRegistry, resolvePluginConfig } from './plugins/registry';
+import { pluginRegistry } from './plugins/registry';
 import type {
   ReviewPopoutAppearance,
   ReviewPopoutTarget,
@@ -63,7 +64,13 @@ const defaultReviewAppearance: ReviewPopoutAppearance = {
   textScale: 1.12,
 };
 
-if (typeof window !== 'undefined' && window.location.pathname === '/review') {
+type DeckStyle = CSSProperties & { '--deck-text-scale': string };
+type DashboardNavigationDetail = { pluginId?: string };
+const dashboardNavigationDetailSchema = v.looseObject({
+  pluginId: v.optional(v.string()),
+});
+
+if (globalThis.window?.location.pathname === '/review') {
   void loadPrReviewPopout();
 }
 
@@ -201,9 +208,9 @@ export function App() {
   }
 
   if (activityRoute.kind === 'target') {
-    const style = {
+    const style: DeckStyle = {
       '--deck-text-scale': reviewAppearance.textScale.toString(),
-    } as CSSProperties;
+    };
     return (
       <main
         className={`dashboard-grid deck-density-${reviewAppearance.density} h-screen overflow-hidden bg-bg text-ink`}
@@ -260,9 +267,9 @@ function DashboardShell({ config }: { config: DashboardConfig }) {
   const layoutMode = config.layout.mode ?? 'auto';
   const { ref: shellRef, profile, arrangement } = useDeckProfile(layoutMode);
   const gridStyle = useMemo(() => {
-    const style: CSSProperties = {
+    const style: DeckStyle = {
       '--deck-text-scale': appearance.textScale.toString(),
-    } as CSSProperties;
+    };
     if (arrangement === 'grid') {
       style.gridTemplateColumns = `repeat(${config.layout.columns}, minmax(0, 1fr))`;
       style.gridTemplateRows = config.statusline
@@ -383,8 +390,10 @@ function StatuslinePanel({
     );
   }
 
-  const resolvedConfig = resolvePluginConfig(plugin, statusline.config);
-  const PluginComponent = plugin.Component;
+  const rendered = plugin.render(
+    statuslineRegion(statusline),
+    statusline.config,
+  );
 
   return (
     <PanelFrame
@@ -393,11 +402,8 @@ function StatuslinePanel({
       title="Statusline"
       variant="statusline"
     >
-      <ConfigIssues issues={resolvedConfig.issues} />
-      <PluginComponent
-        config={resolvedConfig.config}
-        region={statuslineRegion(statusline)}
-      />
+      <ConfigIssues issues={rendered.issues} />
+      {rendered.content}
     </PanelFrame>
   );
 }
@@ -445,15 +451,16 @@ function DashboardPanel({
 
   useEffect(() => {
     function handleNavigation(event: Event) {
-      const detail = (
-        event as CustomEvent<{ pluginId?: string; handled?: boolean }>
-      ).detail;
+      if (!(event instanceof CustomEvent)) return;
+      const parsed = v.safeParse(dashboardNavigationDetailSchema, event.detail);
+      if (!parsed.success) return;
+      const detail: DashboardNavigationDetail = parsed.output;
       const targetPluginId = detail?.pluginId ?? 'flue-chat';
       const tab = region.tabs.find(
         (entry) => entry.pluginId === targetPluginId,
       );
       if (!tab) return;
-      detail.handled = true;
+      event.preventDefault();
       setActiveTabId(tab.id);
       setFocusPulse(true);
       if (focusPulseTimeoutRef.current !== null) {
@@ -547,8 +554,10 @@ function DashboardPanel({
     );
   }
 
-  const resolvedConfig = resolvePluginConfig(plugin, activeTab.config);
-  const PluginComponent = plugin.Component;
+  const rendered = plugin.render(
+    tabRegion(region, activeTab),
+    activeTab.config,
+  );
 
   return (
     <PanelFrame
@@ -567,7 +576,7 @@ function DashboardPanel({
           tabIdPrefix={tabIdPrefix}
           tabs={region.tabs}
         />
-        <ConfigIssues issues={resolvedConfig.issues} />
+        <ConfigIssues issues={rendered.issues} />
         <div
           aria-label={region.tabs.length <= 1 ? activeTab.title : undefined}
           aria-labelledby={
@@ -583,10 +592,7 @@ function DashboardPanel({
           role="tabpanel"
           tabIndex={0}
         >
-          <PluginComponent
-            config={resolvedConfig.config}
-            region={tabRegion(region, activeTab)}
-          />
+          {rendered.content}
         </div>
       </div>
     </PanelFrame>
@@ -764,9 +770,9 @@ function ReviewPopoutLoadingPage({
 }: {
   appearance: ReviewPopoutAppearance;
 }) {
-  const style = {
+  const style: DeckStyle = {
     '--deck-text-scale': appearance.textScale.toString(),
-  } as CSSProperties;
+  };
   return (
     <section
       className={`dashboard-grid deck-density-${appearance.density} pr-review-popout-page`}
@@ -853,16 +859,13 @@ function readActivityRoute(
   return { kind: 'target', submissionId };
 }
 
-function resolveAppearance(config: DashboardConfig): {
-  density: DashboardDensity;
-  textScale: number;
-} {
+function resolveAppearance(config: DashboardConfig): ReviewPopoutAppearance {
   const density = config.appearance?.density ?? 'comfortable';
-  const densityScale: Record<DashboardDensity, number> = {
+  const densityScale = {
     compact: 1,
     comfortable: 1.12,
     large: 1.24,
-  };
+  } satisfies Record<DashboardDensity, number>;
   return {
     density,
     textScale: config.appearance?.textScale ?? densityScale[density],

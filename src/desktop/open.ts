@@ -561,9 +561,13 @@ function hasGeometry(profile: WindowProfile) {
 }
 
 function stripUndefined(profile: WindowProfile): WindowProfile {
-  return Object.fromEntries(
-    Object.entries(profile).filter(([, value]) => value !== undefined),
-  ) as WindowProfile;
+  const result: WindowProfile = {};
+  if (profile.width !== undefined) result.width = profile.width;
+  if (profile.height !== undefined) result.height = profile.height;
+  if (profile.x !== undefined) result.x = profile.x;
+  if (profile.y !== undefined) result.y = profile.y;
+  if (profile.kiosk !== undefined) result.kiosk = profile.kiosk;
+  return result;
 }
 
 function sleep(ms: number) {

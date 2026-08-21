@@ -7,6 +7,7 @@ import {
   shellArg,
 } from './context';
 import { runApprovedExecution } from '../run';
+import { runExecutionInputSchema } from '../schemas';
 import {
   ensureRuntimeHome,
   runtimePaths,
@@ -50,6 +51,33 @@ const outputSchema = v.looseObject({
   changed: v.boolean(),
   message: v.string(),
 });
+const executionActionResultSchema = v.looseObject({
+  ok: v.boolean(),
+  message: v.optional(v.string()),
+  requires: v.optional(v.array(v.string())),
+  approval: v.optional(
+    v.looseObject({
+      id: v.optional(v.string()),
+      status: v.optional(v.string()),
+      executedAt: v.optional(v.nullable(v.string())),
+    }),
+  ),
+  result: v.optional(
+    v.looseObject({
+      exitCode: v.optional(v.nullable(v.number())),
+      stdout: v.optional(v.string()),
+    }),
+  ),
+});
+
+type ExecutionActionResult = v.InferOutput<typeof executionActionResultSchema>;
+type CheckoutSyncStep = {
+  step: v.InferOutput<typeof syncStepSchema>;
+  command: string;
+  ok: boolean;
+  approvalId: string | null;
+  message: string;
+};
 
 export const exedevCheckoutSyncAction = defineTool({
   name: 'neondeck_exedev_checkout_sync',
@@ -66,13 +94,13 @@ export const neondeckExeDevCheckoutActions = [exedevCheckoutSyncAction];
 
 type SyncDependencies = {
   runExecution?: (
-    rawInput: unknown,
+    rawInput: v.InferInput<typeof runExecutionInputSchema>,
     paths?: RuntimePaths,
-  ) => Promise<Record<string, unknown>>;
+  ) => Promise<v.InferInput<typeof executionActionResultSchema>>;
 };
 
-export async function syncExeDevCheckout(
-  rawInput: unknown,
+export async function syncExeDevCheckout<TRawInput>(
+  rawInput: TRawInput,
   paths: RuntimePaths = runtimePaths(),
   dependencies: SyncDependencies = {},
 ) {
@@ -95,31 +123,34 @@ export async function syncExeDevCheckout(
       return failure('A repoId or worktreeId is required.', ['repoId']);
     const runExecution = dependencies.runExecution ?? runApprovedExecution;
     const ref = input.ref ?? checkoutRefForTarget(target);
-    const steps: unknown[] = [];
+    const steps: CheckoutSyncStep[] = [];
     const runStep = async (
       step: v.InferOutput<typeof syncStepSchema>,
       command: string,
     ) => {
-      const result = await runExecution(
-        {
-          command,
-          backend: 'exe.dev',
-          approvalId: input.approvals?.[step],
-          context: input.context ?? 'interactive',
-          sessionId: input.sessionId,
-          timeoutMs: input.timeoutMs,
-          maxOutputBytes: input.maxOutputBytes,
-          forwardEnv: false,
-          requestContext: {
-            action: 'exedev_checkout_sync',
-            step,
-            repoId: target.repo.id,
-            repoFullName: target.repoFullName,
-            worktreeId: target.worktree?.id ?? null,
-            remotePath: target.remotePath,
+      const result = v.parse(
+        executionActionResultSchema,
+        await runExecution(
+          {
+            command,
+            backend: 'exe.dev',
+            approvalId: input.approvals?.[step],
+            context: input.context ?? 'interactive',
+            sessionId: input.sessionId,
+            timeoutMs: input.timeoutMs,
+            maxOutputBytes: input.maxOutputBytes,
+            forwardEnv: false,
+            requestContext: {
+              action: 'exedev_checkout_sync',
+              step,
+              repoId: target.repo.id,
+              repoFullName: target.repoFullName,
+              worktreeId: target.worktree?.id ?? null,
+              remotePath: target.remotePath,
+            },
           },
-        },
-        paths,
+          paths,
+        ),
       );
       steps.push({
         step,
@@ -234,9 +265,9 @@ function unattendedRemoteGit(command: string) {
 
 function blocked(
   step: string,
-  result: Record<string, unknown>,
+  result: ExecutionActionResult,
   target: NonNullable<Awaited<ReturnType<typeof resolveExeDevCheckoutTarget>>>,
-  steps: unknown[],
+  steps: CheckoutSyncStep[],
 ) {
   return {
     ok: false,
@@ -246,7 +277,7 @@ function blocked(
       result,
       'message',
     )}`,
-    requires: Array.isArray(result.requires) ? result.requires : ['approval'],
+    requires: result.requires ?? ['approval'],
     checkout: {
       repoId: target.repo.id,
       repoFullName: target.repoFullName,
@@ -300,9 +331,9 @@ function worktreeHeadRemoteUrl(
 }
 
 function unreachableWorktreeHead(
-  result: Record<string, unknown>,
+  result: ExecutionActionResult,
   target: NonNullable<Awaited<ReturnType<typeof resolveExeDevCheckoutTarget>>>,
-  steps: unknown[],
+  steps: CheckoutSyncStep[],
 ) {
   return {
     ok: false,
@@ -322,8 +353,8 @@ function unreachableWorktreeHead(
   };
 }
 
-function executionFinished(result: unknown) {
-  const approval = objectField(result, 'approval');
+function executionFinished(result: ExecutionActionResult) {
+  const approval = result.approval;
   if (
     approval?.status === 'executed' ||
     approval?.status === 'failed' ||
@@ -331,36 +362,17 @@ function executionFinished(result: unknown) {
   ) {
     return true;
   }
-  const executionResult = objectField(result, 'result');
-  return typeof executionResult?.exitCode === 'number';
+  return result.result?.exitCode !== undefined;
 }
 
-function approvalId(result: unknown) {
-  const approval = objectField(result, 'approval');
-  return typeof approval?.id === 'string' ? approval.id : null;
+function approvalId(result: ExecutionActionResult) {
+  return result.approval?.id ?? null;
 }
 
-function stdout(result: unknown) {
-  const executionResult = objectField(result, 'result');
-  return typeof executionResult?.stdout === 'string'
-    ? executionResult.stdout
-    : '';
+function stdout(result: ExecutionActionResult) {
+  return result.result?.stdout ?? '';
 }
 
-function stringField(value: unknown, key: string) {
-  const object = objectField(value, undefined);
-  const field = key && object ? object[key] : undefined;
-  return typeof field === 'string' ? field : '';
-}
-
-function objectField(value: unknown, key: string | undefined) {
-  const object =
-    value && typeof value === 'object'
-      ? (value as Record<string, unknown>)
-      : null;
-  if (!object || key === undefined) return object;
-  const field = object[key];
-  return field && typeof field === 'object'
-    ? (field as Record<string, unknown>)
-    : null;
+function stringField(value: ExecutionActionResult, key: 'message') {
+  return key === 'message' ? (value.message ?? '') : '';
 }

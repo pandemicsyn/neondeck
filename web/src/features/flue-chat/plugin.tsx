@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
+import * as v from 'valibot';
 import {
   archiveChatSession,
   createChatSession,
@@ -496,19 +497,13 @@ function linkedContextPlaceholder(session: ChatSessionRecord | undefined) {
 
 function linkedContextLabel(session: ChatSessionRecord) {
   const metadata = objectMetadata(session.uiMetadata);
-  if (metadata?.source === 'github-pr' && typeof metadata.repo === 'string') {
+  if (metadata?.source === 'github-pr' && metadata.repo) {
     return `${metadata.repo}#${metadata.prNumber}`;
   }
-  if (
-    metadata?.source === 'pr-watch' &&
-    typeof metadata.repoFullName === 'string'
-  ) {
+  if (metadata?.source === 'pr-watch' && metadata.repoFullName) {
     return `${metadata.repoFullName}#${metadata.prNumber} watch`;
   }
-  if (
-    typeof metadata?.repoFullName === 'string' &&
-    typeof metadata.prNumber === 'number'
-  ) {
+  if (metadata?.repoFullName && metadata.prNumber !== undefined) {
     return `${metadata.repoFullName}#${metadata.prNumber}`;
   }
   if (session.linkedTaskId) return session.linkedTaskId;
@@ -519,11 +514,18 @@ function linkedContextLabel(session: ChatSessionRecord) {
 
 function linkedContextUrl(session: ChatSessionRecord) {
   const metadata = objectMetadata(session.uiMetadata);
-  return typeof metadata?.url === 'string' ? metadata.url : undefined;
+  return metadata?.url;
 }
 
-function objectMetadata(value: unknown) {
-  return value && typeof value === 'object'
-    ? (value as Record<string, unknown>)
-    : undefined;
+const linkedMetadataSchema = v.looseObject({
+  source: v.optional(v.picklist(['github-pr', 'pr-watch'])),
+  repo: v.optional(v.string()),
+  repoFullName: v.optional(v.string()),
+  prNumber: v.optional(v.number()),
+  url: v.optional(v.string()),
+});
+
+function objectMetadata(value: ChatSessionRecord['uiMetadata']) {
+  const parsed = v.safeParse(linkedMetadataSchema, value);
+  return parsed.success ? parsed.output : undefined;
 }

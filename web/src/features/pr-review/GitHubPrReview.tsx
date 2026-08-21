@@ -45,7 +45,7 @@ import {
   GitHubPrDraftRevisionNotice,
   GitHubPrRevisionNotice,
 } from './GitHubPrRevisionNotice';
-import type { DiffFilePatch, DiffReviewAnnotation } from '../diff-viewer/types';
+import type { DiffReviewAnnotation } from '../diff-viewer/types';
 import { githubPrReviewSource } from '../diff-viewer/review-source';
 import { PrReviewCommentComposer } from './PrReviewCommentComposer';
 import { PrReviewDiffPane } from './PrReviewDiffPane';
@@ -283,10 +283,10 @@ export function GitHubPrReview({
       setStatusMessageState(message);
     }
   };
-  const failOperation = (token: number, error: unknown) => {
+  const failOperation = (token: number, cause: unknown) => {
     if (!isCurrentReviewOperation(nextOperationToken.current, token)) return;
     setStatusMessageState(
-      mutationErrorMessage(error, draft) ?? 'The operation failed.',
+      mutationErrorMessage(cause, draft) ?? 'The operation failed.',
     );
   };
   const setStatusMessage = (message: string | null) => {
@@ -294,7 +294,7 @@ export function GitHubPrReview({
     setStatusMessageState(message);
   };
   const fileList = useMemo(
-    () => (filesQuery.data?.files ?? []) as DiffFilePatch[],
+    () => filesQuery.data?.files ?? [],
     [filesQuery.data?.files],
   );
   const reviewThreads = useMemo(
@@ -1344,14 +1344,15 @@ export function GitHubPrReview({
     headSha = currentHeadSha,
   ) => {
     if (!headSha) throw new Error('PR head SHA is unavailable.');
-    return mutations.saveDraft.mutateAsync({
+    const input: Parameters<typeof mutations.saveDraft.mutateAsync>[0] = {
       repo: pr.repo,
       number: pr.number,
       headSha,
-      ...('verdict' in next ? { verdict: next.verdict } : {}),
-      ...('body' in next ? { body: next.body } : {}),
-      ...(next.reanchorHeadSha ? { reanchorHeadSha: true } : {}),
-    });
+    };
+    if ('verdict' in next) input.verdict = next.verdict;
+    if ('body' in next) input.body = next.body;
+    if (next.reanchorHeadSha) input.reanchorHeadSha = true;
+    return mutations.saveDraft.mutateAsync(input);
   };
   const ensureDraft = async () => draft ?? (await saveDraft());
   const beginReanchorComment = (commentId: string, path: string | null) => {
@@ -2183,8 +2184,8 @@ function sameStringArray(
 }
 
 function createPromotionRequestId() {
-  return typeof crypto !== 'undefined' && 'randomUUID' in crypto
-    ? `finding-promotion:${crypto.randomUUID()}`
+  return globalThis.crypto?.randomUUID
+    ? `finding-promotion:${globalThis.crypto.randomUUID()}`
     : `finding-promotion:${Date.now().toString(36)}:${Math.random().toString(36).slice(2)}`;
 }
 

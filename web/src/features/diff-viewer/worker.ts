@@ -34,6 +34,9 @@ export const diffHighlighterOptions = {
 } satisfies WorkerInitializationRenderOptions;
 
 function workerPoolSize() {
-  if (typeof navigator === 'undefined') return 2;
-  return Math.max(1, Math.min(4, navigator.hardwareConcurrency || 2));
+  if (!('navigator' in globalThis)) return 2;
+  return Math.max(
+    1,
+    Math.min(4, globalThis.navigator.hardwareConcurrency || 2),
+  );
 }

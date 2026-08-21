@@ -6,6 +6,8 @@ export type OpenDbOptions = DatabaseSyncOptions;
 
 export const defaultSqliteBusyTimeoutMs = 5000;
 
+const thenableSchema = v.looseObject({ then: v.function() });
+
 export function openDb(path: string, options: OpenDbOptions = {}) {
   const busyTimeoutMs = options.timeout ?? defaultSqliteBusyTimeoutMs;
   return configureDb(
@@ -49,12 +51,7 @@ export function withTransaction<T>(
     database.exec(mode === 'immediate' ? 'BEGIN IMMEDIATE;' : 'BEGIN;');
     transactionOpen = true;
     const result = operation();
-    if (
-      result !== null &&
-      typeof result === 'object' &&
-      'then' in result &&
-      typeof result.then === 'function'
-    ) {
+    if (v.safeParse(thenableSchema, result).success) {
       throw new Error(
         'SQLite transaction callbacks must be synchronous; do not hold an app database transaction across await.',
       );
@@ -75,7 +72,7 @@ export function withImmediateTransaction<T>(
   return withTransaction(database, operation, 'immediate');
 }
 
-export function isSqliteBusy(error: unknown) {
+export function isSqliteBusy<TError>(error: TError) {
   const message = error instanceof Error ? error.message : String(error);
   return (
     message.includes('SQLITE_BUSY') ||
@@ -84,8 +81,8 @@ export function isSqliteBusy(error: unknown) {
   );
 }
 
-export function parseRow<T>(
-  row: unknown,
+export function parseRow<T, TRow>(
+  row: TRow,
   schema: v.GenericSchema<unknown, T>,
   context: string,
 ): T {
@@ -94,16 +91,18 @@ export function parseRow<T>(
   throw new Error(`${context}: ${v.summarize(parsed.issues)}`);
 }
 
-export function readJsonColumn<T = unknown>(value: string | null): T | null {
+export function readJsonColumn<T = never>(value: string | null): T | null {
   if (value === null) return null;
-  return JSON.parse(value) as T;
+  return JSON.parse(value);
 }
 
-export function writeJsonColumn(value: unknown): string {
+export function writeJsonColumn<TValue>(value: TValue): string {
   return JSON.stringify(asJsonValue(value));
 }
 
-export function writeNullableJsonColumn(value: unknown | null | undefined) {
+export function writeNullableJsonColumn<TValue>(
+  value: TValue | null | undefined,
+) {
   return value == null ? null : writeJsonColumn(value);
 }
 
@@ -111,7 +110,7 @@ export const nullableStringColumnSchema = v.nullable(v.string());
 export const nullableNumberColumnSchema = v.nullable(v.number());
 export const nullableBooleanColumnSchema = v.nullable(v.boolean());
 
-export function isUniqueConstraintError(error: unknown) {
+export function isUniqueConstraintError<TError>(error: TError) {
   return (
     error instanceof Error && /UNIQUE constraint failed/i.test(error.message)
   );

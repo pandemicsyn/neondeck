@@ -10,6 +10,8 @@ import { EmptyState } from '../../components/ui';
 import { queryErrorMessage, queryKeys } from '../../lib/query';
 import { GitHubPrReview } from './GitHubPrReview';
 
+type ReviewPopoutStyle = CSSProperties & { '--deck-text-scale': string };
+
 export type ReviewPopoutTarget = {
   repo: string;
   number: number;
@@ -55,9 +57,9 @@ export function PrReviewPopoutPage({
     [queryClient, target.number, target.repo],
   );
   const pullRequest = prQuery.data ?? optimisticPullRequest(target);
-  const style = {
+  const style: ReviewPopoutStyle = {
     '--deck-text-scale': appearance.textScale.toString(),
-  } as CSSProperties;
+  };
 
   return (
     <section
@@ -91,9 +93,9 @@ export function PrReviewPopoutErrorPage({
   detail: string;
   title: string;
 }) {
-  const style = {
+  const style: ReviewPopoutStyle = {
     '--deck-text-scale': appearance.textScale.toString(),
-  } as CSSProperties;
+  };
   return (
     <section
       className={`dashboard-grid deck-density-${appearance.density} pr-review-popout-page`}

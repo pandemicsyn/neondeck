@@ -13,6 +13,16 @@ export type PrReviewAssistSettlementReader = (input: {
   submissionId: string;
 }) => Promise<{ failed: boolean }>;
 
+type PrReviewSettlementWatcherRegistry = Map<
+  string,
+  Promise<ReturnType<typeof failPrReview>>
+>;
+
+declare global {
+  var __neondeckPrReviewSettlementWatchers:
+    PrReviewSettlementWatcherRegistry | undefined;
+}
+
 const settlementWatchers = prReviewSettlementWatchers();
 const settlementRetryDelayMs = 1_000;
 
@@ -184,13 +194,8 @@ export function settlePrReviewAssistObservation(
 }
 
 function prReviewSettlementWatchers() {
-  const target = globalThis as typeof globalThis & {
-    __neondeckPrReviewSettlementWatchers?: Map<
-      string,
-      Promise<ReturnType<typeof failPrReview>>
-    >;
-  };
-  return (target.__neondeckPrReviewSettlementWatchers ??= new Map());
+  globalThis.__neondeckPrReviewSettlementWatchers ??= new Map();
+  return globalThis.__neondeckPrReviewSettlementWatchers;
 }
 
 function delay(milliseconds: number) {

@@ -1,5 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useId, useRef, useState, type FormEvent } from 'react';
+import type { JsonValue } from '@flue/runtime';
+import * as v from 'valibot';
 import {
   archiveMemory,
   getMemories,
@@ -9,6 +11,24 @@ import {
   type MemoryScope,
 } from '../api';
 import { OperationalValue } from '../components/OperationalValue';
+
+const memoryJsonValueSchema = v.custom<JsonValue>(
+  (value) =>
+    v.is(
+      v.lazy(() =>
+        v.union([
+          v.null(),
+          v.string(),
+          v.boolean(),
+          v.number(),
+          v.array(v.unknown()),
+          v.record(v.string(), v.unknown()),
+        ]),
+      ),
+      value,
+    ),
+  'Value must be JSON.',
+);
 import {
   Badge,
   Button,
@@ -148,17 +168,18 @@ function MemoryRow({
   };
   const editMutation = useMutation({
     mutationFn: async (input: {
-      nextValue: unknown;
+      nextValue: Parameters<typeof upsertMemory>[0]['value'];
       expectedUpdatedAt: string;
     }) => {
-      const result = await upsertMemory({
+      const request: Parameters<typeof upsertMemory>[0] = {
         scope: memory.scope,
         key: memory.key,
         value: input.nextValue,
-        ...(memory.repoId ? { repoId: memory.repoId } : {}),
         expectedUpdatedAt: input.expectedUpdatedAt,
         reason: 'Edited from the Memory dashboard.',
-      });
+      };
+      if (memory.repoId) request.repoId = memory.repoId;
+      const result = await upsertMemory(request);
       if (!result.ok) throw new Error(result.message);
       return result;
     },
@@ -394,23 +415,35 @@ function updateMemoryCache(
   );
 }
 
-export function memoryEditorText(value: unknown) {
-  return typeof value === 'string' ? value : JSON.stringify(value, null, 2);
+export function memoryEditorText(
+  value: Parameters<typeof upsertMemory>[0]['value'],
+) {
+  const parsed = v.safeParse(v.string(), value);
+  return parsed.success ? parsed.output : JSON.stringify(value, null, 2);
 }
 
-function memoryEditorValueKind(value: unknown): MemoryEditorValueKind {
-  return typeof value === 'string' ? 'text' : 'json';
+function memoryEditorValueKind(
+  value: Parameters<typeof upsertMemory>[0]['value'],
+): MemoryEditorValueKind {
+  return v.safeParse(v.string(), value).success ? 'text' : 'json';
 }
 
 export function parseMemoryEditorValue(
   value: string,
   valueKind: MemoryEditorValueKind,
-): { ok: true; value: unknown } | { ok: false; message: string } {
+):
+  | { ok: true; value: Parameters<typeof upsertMemory>[0]['value'] }
+  | { ok: false; message: string } {
   if (valueKind === 'text') {
     return { ok: true, value };
   }
   try {
-    return { ok: true, value: JSON.parse(value) as unknown };
+    const parsed = v.safeParse(memoryJsonValueSchema, JSON.parse(value));
+    if (parsed.success) return { ok: true, value: parsed.output };
+    return {
+      ok: false,
+      message: 'Enter valid JSON before saving this memory.',
+    };
   } catch {
     return {
       ok: false,
@@ -419,11 +452,13 @@ export function parseMemoryEditorValue(
   }
 }
 
-function memoryPreview(value: unknown) {
-  if (typeof value === 'string') return value;
-  if (typeof value === 'number' || typeof value === 'boolean') {
-    return String(value);
-  }
+function memoryPreview(value: Parameters<typeof upsertMemory>[0]['value']) {
+  const string = v.safeParse(v.string(), value);
+  if (string.success) return string.output;
+  const number = v.safeParse(v.number(), value);
+  if (number.success) return String(number.output);
+  const boolean = v.safeParse(v.boolean(), value);
+  if (boolean.success) return String(boolean.output);
   if (value === null || value === undefined) return '';
   return JSON.stringify(value) ?? String(value);
 }

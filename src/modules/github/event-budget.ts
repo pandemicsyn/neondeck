@@ -1,6 +1,10 @@
 export type PullRequestEventFetchBudget = {
   canFetch: (category: string) => boolean;
-  admit: (category: string, value: unknown, itemCount?: number) => boolean;
+  admit: <TValue>(
+    category: string,
+    value: TValue,
+    itemCount?: number,
+  ) => boolean;
   exhausted: (category: string) => boolean;
   snapshot: () => {
     maxItems: number;

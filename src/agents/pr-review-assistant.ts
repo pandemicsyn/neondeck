@@ -75,7 +75,7 @@ export function PrReviewAssistant({ id }: AgentProps) {
     },
   );
   const input = context.prepared.input;
-  const executionState: { failure?: Error; completed?: boolean } = {};
+  const executionState: PrReviewExecutionState = {};
   const [corrections, setCorrections] = usePersistentState(
     'pr-review-corrections',
     0,
@@ -186,6 +186,8 @@ export function PrReviewAssistant({ id }: AgentProps) {
   });
   return `${context.instructions}\n\n${prReviewAssistantOperationInstructions}`;
 }
+
+type PrReviewExecutionState = { failure?: Error; completed?: boolean };
 
 PrReviewAssistant.agentName = 'pr-review-assistant';
 PrReviewAssistant.initialData = prReviewAgentInitialDataSchema;

@@ -1,4 +1,5 @@
 import type { ReviewRevision } from '../../../shared/review-source';
+import type { WebJsonRecord, WebJsonValue } from './schemas';
 
 export type DashboardTheme = 'light' | 'dark' | 'system';
 export type DashboardDensity = 'compact' | 'comfortable' | 'large';
@@ -49,7 +50,7 @@ export type DashboardWindowProfile = {
 export type DashboardStatusline = {
   position: 'top' | 'bottom';
   pluginId: string;
-  config?: Record<string, unknown>;
+  config?: WebJsonRecord;
 };
 
 export type DashboardRegion = {
@@ -67,7 +68,7 @@ export type DashboardTab = {
   id: string;
   title: string;
   pluginId: string;
-  config?: Record<string, unknown>;
+  config?: WebJsonRecord;
 };
 
 export type GitHubPullRequest = {
@@ -479,8 +480,8 @@ export type RepoConfig = {
   worktreeRoot?: 'home' | 'repo-local';
   productionTarget?: string;
   packageScripts?: Record<string, string>;
-  metadata?: Record<string, unknown>;
-  watchRules?: unknown[];
+  metadata?: WebJsonRecord;
+  watchRules?: WebJsonValue[];
   activeWorktrees?: WorktreeLink[];
 };
 
@@ -569,7 +570,7 @@ export type AutopilotReadinessFact = {
   required: boolean;
   message: string;
   action: string | null;
-  details?: Record<string, unknown>;
+  details?: WebJsonRecord;
 };
 
 export type AutopilotReadiness = {

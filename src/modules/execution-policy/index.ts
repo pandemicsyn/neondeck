@@ -1,4 +1,5 @@
 import { type JsonValue } from '@flue/runtime';
+import { asJsonValue } from '../../lib/action-result';
 import * as v from 'valibot';
 import {
   type AppConfig,
@@ -289,23 +290,17 @@ export function mergeExecutionConfig(
   current: ExecutionConfig | undefined,
   input: v.InferOutput<typeof executionPolicyUpdateSchema>,
 ): ExecutionConfig {
-  return {
-    ...(current ? current : {}),
-    ...(input.defaultBackend !== undefined
-      ? { defaultBackend: input.defaultBackend }
-      : {}),
-    ...(input.enabledBackends !== undefined
-      ? { enabledBackends: uniqueBackends(input.enabledBackends) }
-      : {}),
-    ...(input.approvalMode !== undefined
-      ? { approvalMode: input.approvalMode }
-      : {}),
-    ...(input.unattended !== undefined ? { unattended: input.unattended } : {}),
-    ...(input.preapprovedCommands !== undefined
-      ? { preapprovedCommands: input.preapprovedCommands }
-      : {}),
-    ...(input.exeDev !== undefined ? { exeDev: input.exeDev } : {}),
-  };
+  const next: ExecutionConfig = { ...current };
+  if (input.defaultBackend !== undefined)
+    next.defaultBackend = input.defaultBackend;
+  if (input.enabledBackends !== undefined)
+    next.enabledBackends = uniqueBackends(input.enabledBackends);
+  if (input.approvalMode !== undefined) next.approvalMode = input.approvalMode;
+  if (input.unattended !== undefined) next.unattended = input.unattended;
+  if (input.preapprovedCommands !== undefined)
+    next.preapprovedCommands = input.preapprovedCommands;
+  if (input.exeDev !== undefined) next.exeDev = input.exeDev;
+  return next;
 }
 
 export function hasExecutionPolicyUpdate(
@@ -326,7 +321,7 @@ export function defaultExecutionPreapprovals() {
 }
 
 export function asExecutionPolicyData(policy: ExecutionPolicy): JsonValue {
-  return JSON.parse(JSON.stringify(policy)) as JsonValue;
+  return asJsonValue(policy);
 }
 
 function checkResult(
@@ -341,7 +336,7 @@ function checkResult(
     requires?: string[];
   },
 ): ExecutionPolicyCheck {
-  return {
+  const base = {
     ok: decision !== 'deny',
     action: 'execution_policy_check',
     changed: false,
@@ -351,11 +346,19 @@ function checkResult(
     decision,
     risk,
     reason: details.reason,
-    ...(details.matchedPreapproval
-      ? { matchedPreapproval: details.matchedPreapproval }
-      : {}),
-    ...(details.requires ? { requires: details.requires } : {}),
-  };
+  } satisfies ExecutionPolicyCheck;
+  if (details.matchedPreapproval && details.requires) {
+    return {
+      ...base,
+      matchedPreapproval: details.matchedPreapproval,
+      requires: details.requires,
+    };
+  }
+  if (details.matchedPreapproval) {
+    return { ...base, matchedPreapproval: details.matchedPreapproval };
+  }
+  if (details.requires) return { ...base, requires: details.requires };
+  return base;
 }
 
 function preapproval(

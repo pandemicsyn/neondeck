@@ -107,7 +107,7 @@ export function resolveNeonFindingAnchor(
         side,
         start: finding.anchor.startLine,
         end: finding.anchor.endLine,
-      } as SelectedLineRange,
+      } satisfies SelectedLineRange,
       side,
     };
   }
@@ -138,7 +138,7 @@ export function resolveNeonFindingAnchor(
       side,
       start: lineNumber,
       end: lineNumber,
-    } as SelectedLineRange,
+    } satisfies SelectedLineRange,
     side,
   };
 }

@@ -23,7 +23,7 @@ export function ToastViewport({
   pendingIds: ReadonlySet<string>;
   statuslinePosition?: 'top' | 'bottom';
 }) {
-  if (typeof document === 'undefined' || items.length === 0) return null;
+  if (!('document' in globalThis) || items.length === 0) return null;
 
   return createPortal(
     <aside
@@ -45,6 +45,6 @@ export function ToastViewport({
         />
       ))}
     </aside>,
-    document.body,
+    globalThis.document.body,
   );
 }

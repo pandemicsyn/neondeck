@@ -191,6 +191,8 @@ export function UnifiedPatchView({
           renderAnnotation={
             renderAnnotation
               ? (annotation) =>
+                  // SAFETY: this CodeView contains only the diff item built
+                  // above, whose annotation collection is DiffReviewAnnotation[].
                   renderAnnotation(annotation as DiffReviewAnnotation)
               : undefined
           }
@@ -286,6 +288,8 @@ function useResolvedDiffTheme(): ResolvedDiffTheme {
 }
 
 function readResolvedDiffTheme(): ResolvedDiffTheme {
-  if (typeof document === 'undefined') return 'dark';
-  return document.documentElement.dataset.theme === 'light' ? 'light' : 'dark';
+  if (!('document' in globalThis)) return 'dark';
+  return globalThis.document.documentElement.dataset.theme === 'light'
+    ? 'light'
+    : 'dark';
 }

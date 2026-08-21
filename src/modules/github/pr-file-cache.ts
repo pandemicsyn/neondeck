@@ -17,6 +17,11 @@ type CacheRow = {
   fetched_at: string;
 };
 
+const cacheRowSchema = v.object({
+  payload: v.string(),
+  fetched_at: v.string(),
+});
+
 type PullRequestHeadShaFetcher = (options: {
   token: string;
   owner: string;
@@ -176,19 +181,22 @@ export function readCachedPullRequestFiles(options: {
   const revisionCacheKey = pullRequestRevisionCacheKey(options);
   const database = openDb(options.databasePath);
   try {
-    const row = database
-      .prepare(
-        `
+    const parsedRow = v.safeParse(
+      cacheRowSchema,
+      database
+        .prepare(
+          `
           SELECT payload, fetched_at
           FROM github_pr_file_cache
           WHERE repo = ?
             AND pr_number = ?
             AND head_sha = ?
         `,
-      )
-      .get(options.repo, options.number, revisionCacheKey) as
-      CacheRow | undefined;
-    if (!row) return null;
+        )
+        .get(options.repo, options.number, revisionCacheKey),
+    );
+    if (!parsedRow.success) return null;
+    const row: CacheRow = parsedRow.output;
 
     const files = parseCachedFiles(row.payload);
     if (!files) {

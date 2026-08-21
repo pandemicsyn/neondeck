@@ -25,6 +25,18 @@ import {
   type FileStamp,
 } from './schemas';
 
+const untrustedInputSchema = v.unknown();
+const inputRecordSchema = v.record(v.string(), untrustedInputSchema);
+const fileStampRowSchema = v.object({
+  mtime_ms: v.number(),
+  size: v.number(),
+  sha256: v.string(),
+});
+const errorInstanceSchema = v.instance(Error);
+
+type UntrustedInput = v.InferInput<typeof untrustedInputSchema>;
+type InputRecord = v.InferOutput<typeof inputRecordSchema>;
+
 export type TextFile = {
   content: string;
   stamp: FileStamp;
@@ -164,7 +176,7 @@ async function latestReadStamp(
   await ensureRuntimeHome(paths);
   const database = openDb(paths.neondeckDatabase, { readOnly: true });
   try {
-    const row = database
+    const rawRow = database
       .prepare(
         `
         SELECT mtime_ms, size, sha256
@@ -177,9 +189,10 @@ async function latestReadStamp(
         LIMIT 1;
       `,
       )
-      .get(sessionId, repoId, worktreeId ?? null, path) as
-      { mtime_ms: number; size: number; sha256: string } | undefined;
-    if (!row) return undefined;
+      .get(sessionId, repoId, worktreeId ?? null, path);
+    const parsed = v.safeParse(fileStampRowSchema, rawRow);
+    if (!parsed.success) return undefined;
+    const row = parsed.output;
     return {
       mtimeMs: row.mtime_ms,
       size: row.size,
@@ -256,8 +269,8 @@ export function lockKey(
 }
 
 export function parseInput<T>(
-  schema: v.GenericSchema<unknown, T>,
-  rawInput: unknown,
+  schema: v.GenericSchema<UntrustedInput, T>,
+  rawInput: UntrustedInput,
   action: string,
 ):
   | { ok: true; input: T }
@@ -273,17 +286,17 @@ export function parseInput<T>(
   };
 }
 
-function errorResult(action: string, error: unknown) {
+function errorResult(action: string, error: UntrustedInput) {
+  const record = v.safeParse(inputRecordSchema, error);
+  const errorInstance = v.safeParse(errorInstanceSchema, error);
   const converted =
-    error && typeof error === 'object' && 'code' in error
+    record.success && record.output.code !== undefined
       ? {
-          code: String((error as { code: unknown }).code),
-          message: error instanceof Error ? error.message : String(error),
-          path:
-            'path' in error &&
-            typeof (error as { path?: unknown }).path === 'string'
-              ? (error as { path: string }).path
-              : undefined,
+          code: String(record.output.code),
+          message: errorInstance.success
+            ? errorInstance.output.message
+            : String(error),
+          path: stringField(record.output.path),
         }
       : toRepoEditError(error);
   return failedResult(action, converted.message, {
@@ -295,9 +308,9 @@ function errorResult(action: string, error: unknown) {
 
 export async function failureResult(
   action: string,
-  error: unknown,
+  error: UntrustedInput,
   paths: RuntimePaths,
-  rawInput: unknown,
+  rawInput: UntrustedInput,
 ) {
   await recordFailureEvent(
     action.replace(/^repo_file_/, ''),
@@ -320,26 +333,18 @@ export async function resolveSessionId(
 
 export async function recordFailureEvent(
   action: string,
-  error: unknown,
+  error: UntrustedInput,
   paths: RuntimePaths,
-  rawInput: unknown,
+  rawInput: UntrustedInput,
 ) {
-  const input = rawInput && typeof rawInput === 'object' ? rawInput : {};
-  const repoId =
-    'repoId' in input && typeof input.repoId === 'string'
-      ? input.repoId
-      : undefined;
+  const input = inputRecord(rawInput);
+  const repoId = stringField(input.repoId);
   if (!repoId) return;
-  const worktreeId =
-    'worktreeId' in input && typeof input.worktreeId === 'string'
-      ? input.worktreeId
-      : undefined;
+  const worktreeId = stringField(input.worktreeId);
   const converted = toRepoEditError(error);
   const requestedPaths = extractRequestedPaths(input);
   const sessionId =
-    'sessionId' in input && typeof input.sessionId === 'string'
-      ? input.sessionId
-      : await resolveSessionId(undefined, paths);
+    stringField(input.sessionId) ?? (await resolveSessionId(undefined, paths));
   await recordRepoEditEvent(
     {
       repoId,
@@ -358,11 +363,28 @@ export async function recordFailureEvent(
   ).catch(() => undefined);
 }
 
-function extractRequestedPaths(input: object) {
+function inputRecord(value: UntrustedInput): InputRecord {
+  const parsed = v.safeParse(inputRecordSchema, value);
+  return parsed.success ? parsed.output : {};
+}
+
+function stringField(value: UntrustedInput): string | undefined {
+  const parsed = v.safeParse(v.string(), value);
+  return parsed.success ? parsed.output : undefined;
+}
+
+function extractRequestedPaths(input: InputRecord) {
   const paths: string[] = [];
-  if ('path' in input && typeof input.path === 'string') paths.push(input.path);
-  if ('paths' in input && Array.isArray(input.paths)) {
-    paths.push(...input.paths.filter((path) => typeof path === 'string'));
+  const path = stringField(input.path);
+  if (path) paths.push(path);
+  const parsed = v.safeParse(v.array(untrustedInputSchema), input.paths);
+  if (parsed.success) {
+    paths.push(
+      ...parsed.output.flatMap((value) => {
+        const path = stringField(value);
+        return path === undefined ? [] : [path];
+      }),
+    );
   }
   return paths;
 }

@@ -29,6 +29,10 @@ import {
 } from './service';
 import { resolvePrReviewerWorkspace } from '../pr-reviewer';
 
+const untrustedInputSchema = v.unknown();
+const errorInstanceSchema = v.instance(Error);
+type UntrustedInput = v.InferInput<typeof untrustedInputSchema>;
+
 export type PrReviewToolExecutionState = {
   failure?: Error;
   completed?: boolean;
@@ -330,12 +334,14 @@ export function createReviewDurableEffectRunner(
   };
 }
 
-function abortReason(signal: AbortSignal, fallback?: unknown) {
-  if (signal.reason instanceof Error) return signal.reason;
+function abortReason(signal: AbortSignal, fallback?: UntrustedInput) {
+  const signalError = v.safeParse(errorInstanceSchema, signal.reason);
+  if (signalError.success) return signalError.output;
   if (signal.reason !== undefined) {
     return new DOMException(String(signal.reason), 'AbortError');
   }
-  if (fallback instanceof Error) return fallback;
+  const fallbackError = v.safeParse(errorInstanceSchema, fallback);
+  if (fallbackError.success) return fallbackError.output;
   return new DOMException('The PR review was aborted.', 'AbortError');
 }
 
@@ -392,12 +398,11 @@ export function reviewFactsForPrompt(
 ) {
   const backgroundContext = reviewBackgroundContext(context);
   const workspace = context?.workspace;
-  return {
+  const prompt = {
     target: {
       repoFullName: facts.target.repoFullName,
       number: facts.target.number,
     },
-    ...(backgroundContext ? { backgroundContext } : {}),
     pullRequest: {
       title: facts.state.title,
       body: truncate(facts.state.body ?? '', 20_000),
@@ -466,27 +471,33 @@ export function reviewFactsForPrompt(
     },
     requestedChangesReviews: facts.state.requestedChangesReviews,
     branchPermissions: facts.state.branchPermissions,
-    ...(workspace?.available
-      ? {}
-      : {
-          files: facts.files.map((file) => ({
-            path: file.path,
-            previousPath: file.previousPath,
-            status: file.status,
-            additions: file.additions,
-            deletions: file.deletions,
-            changes: file.changes,
-            binary: file.binary,
-            generatedLike: file.generatedLike,
-            truncated: file.truncated,
-            patch: truncate(file.patch ?? '', 12_000),
-            message: file.message,
-          })),
-        }),
     limitations: [
       'Linked issue relationships are not currently typed separately in GitHubPullRequestEventState; linkedIssueReferenceHints are extracted from PR title/body text only.',
     ],
   };
+  const withFiles = workspace?.available
+    ? prompt
+    : {
+        ...prompt,
+        files: facts.files.map((file) => ({
+          path: file.path,
+          previousPath: file.previousPath,
+          status: file.status,
+          additions: file.additions,
+          deletions: file.deletions,
+          changes: file.changes,
+          binary: file.binary,
+          generatedLike: file.generatedLike,
+          truncated: file.truncated,
+          patch: truncate(file.patch ?? '', 12_000),
+          message: file.message,
+        })),
+      };
+  const result: typeof withFiles & { backgroundContext?: string } = {
+    ...withFiles,
+  };
+  if (backgroundContext) result.backgroundContext = backgroundContext;
+  return result;
 }
 
 type ReviewFactsPromptContext = Partial<
@@ -573,7 +584,8 @@ function issueReferenceHints(value: string) {
   const pattern =
     /\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)\s+((?:[\w.-]+\/[\w.-]+)?#\d+)/gi;
   for (const match of value.matchAll(pattern)) {
-    if (typeof match[1] === 'string') matches.add(match[1]);
+    const reference = match[1];
+    if (reference) matches.add(reference);
   }
   return [...matches].slice(0, 20);
 }

@@ -1,7 +1,19 @@
 import { randomUUID } from 'node:crypto';
 import { openDb, withImmediateTransaction } from '../../lib/sqlite';
+import * as v from 'valibot';
 import { runtimePaths, type RuntimePaths } from '../../runtime-home';
 import { prunePrReviewWorkspaceOutputs } from '../../runtime-home/app-db/reconcile';
+
+const retainedOutputRowSchema = v.object({
+  output_ref: v.string(),
+  byte_size: v.number(),
+});
+const retainedOutputPayloadSchema = v.object({
+  source: v.picklist(['diff', 'list', 'search']),
+  payload: v.string(),
+  byte_size: v.number(),
+  line_count: v.number(),
+});
 
 export const prReviewWorkspaceOutputMaxEntries = 24;
 export const prReviewWorkspaceOutputMaxBytes = 32 * 1024 * 1024;
@@ -56,17 +68,18 @@ export function retainPrReviewWorkspaceOutput(
           `DELETE FROM pr_review_workspace_outputs WHERE expires_at <= ?;`,
         )
         .run(createdAt);
-      const rows = database
+      const rawRows = database
         .prepare(
           `SELECT output_ref, byte_size
            FROM pr_review_workspace_outputs
            WHERE scope_key = ?
            ORDER BY created_at ASC, output_ref ASC;`,
         )
-        .all(input.scope.key) as Array<{
-        output_ref: string;
-        byte_size: number;
-      }>;
+        .all(input.scope.key);
+      const rows = rawRows.flatMap((row) => {
+        const parsed = v.safeParse(retainedOutputRowSchema, row);
+        return parsed.success ? [parsed.output] : [];
+      });
       let retainedBytes = rows.reduce((total, row) => total + row.byte_size, 0);
       while (
         rows.length >= prReviewWorkspaceOutputMaxEntries ||
@@ -128,26 +141,20 @@ export function readPrReviewWorkspaceOutput(
     { readOnly: true },
   );
   try {
-    const row = database
+    const rawRow = database
       .prepare(
         `SELECT source, payload, byte_size, line_count
          FROM pr_review_workspace_outputs
          WHERE output_ref = ? AND scope_key = ? AND expires_at > ?;`,
       )
-      .get(input.outputRef, input.scope.key, now.toISOString()) as
-      | {
-          source: PrReviewWorkspaceOutputSource;
-          payload: string;
-          byte_size: number;
-          line_count: number;
-        }
-      | undefined;
-    return row
+      .get(input.outputRef, input.scope.key, now.toISOString());
+    const row = v.safeParse(retainedOutputPayloadSchema, rawRow);
+    return row.success
       ? {
-          source: row.source,
-          text: row.payload,
-          bytes: row.byte_size,
-          lines: row.line_count,
+          source: row.output.source,
+          text: row.output.payload,
+          bytes: row.output.byte_size,
+          lines: row.output.line_count,
         }
       : null;
   } finally {

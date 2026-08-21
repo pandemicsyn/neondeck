@@ -1,5 +1,6 @@
 import * as v from 'valibot';
 
+const untrustedInputSchema = v.unknown();
 const nonEmptyString = v.pipe(v.string(), v.trim(), v.minLength(1));
 
 export const prReviewAssistInputSchema = v.pipe(
@@ -243,7 +244,9 @@ export const reviewAssistStructuredOutputSchema = v.looseObject({
   presentation: v.optional(v.unknown()),
 });
 
-export function parseReviewPresentationPlan(value: unknown) {
+export function parseReviewPresentationPlan(
+  value: v.InferInput<typeof untrustedInputSchema>,
+) {
   const result = v.safeParse(reviewPresentationPlanSchema, value);
   return result.success ? result.output : null;
 }

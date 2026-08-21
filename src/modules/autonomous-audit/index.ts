@@ -1,5 +1,15 @@
 import { type JsonValue } from '@flue/runtime';
+import * as v from 'valibot';
 import { type PreparedDiffRecord } from '../prepared-diffs';
+import { asJsonValue } from '../../lib/action-result';
+
+const untrustedInputSchema = v.unknown();
+const looseObjectSchema = v.looseObject({});
+const nonBlankStringSchema = v.pipe(v.string(), v.trim(), v.minLength(1));
+const finiteNumberSchema = v.pipe(v.number(), v.finite());
+
+type UntrustedInput = v.InferInput<typeof untrustedInputSchema>;
+type LooseObject = v.InferOutput<typeof looseObjectSchema>;
 
 export type AutonomousCheckSummary = {
   name: string;
@@ -37,7 +47,7 @@ export function buildPreparedDiffAuditSummary(
   const diffSummary = objectField(summary.diffSummary);
   const checkRunIds = checks
     .map((check) => check.checkRunId)
-    .filter((id): id is number => typeof id === 'number');
+    .filter((id): id is number => id !== undefined);
 
   const lines = [
     `Neon autopilot result for ${record.repoFullName}#${record.prNumber ?? 'worktree'}: ${status}.`,
@@ -70,7 +80,7 @@ export function buildPreparedDiffAuditSummary(
       commitSha: commitSha ?? null,
       addressedReviewCommentIds: reviewCommentIds,
       addressedReviewThreadIds: reviewThreadIds,
-      checksRun: checks as unknown as JsonValue,
+      checksRun: asJsonValue(checks),
       checkRunIds,
       remainingManualAsks: manualAsks,
       resultUrl: input.resultUrl ?? null,
@@ -107,7 +117,7 @@ function statusFromPreparedDiff(status: PreparedDiffRecord['status']) {
   }
 }
 
-function checksFromSummary(summary: Record<string, unknown>) {
+function checksFromSummary(summary: LooseObject) {
   const storedChecks = arrayOfObjects(summary.checksRun);
   if (storedChecks && storedChecks.length > 0) {
     return storedChecks.map((item) => ({
@@ -189,37 +199,40 @@ function unique(values: string[]) {
   return [...new Set(values.map((value) => value.trim()).filter(Boolean))];
 }
 
-function objectField(value: unknown): Record<string, unknown> {
-  return value && typeof value === 'object' && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : {};
+function objectField(value: UntrustedInput): LooseObject {
+  const parsed = v.safeParse(looseObjectSchema, value);
+  return parsed.success ? parsed.output : {};
 }
 
-function arrayOfStrings(value: unknown) {
-  return Array.isArray(value)
-    ? value.filter((item): item is string => typeof item === 'string')
-    : undefined;
+function arrayOfStrings(value: UntrustedInput) {
+  const array = v.safeParse(v.array(untrustedInputSchema), value);
+  if (!array.success) return undefined;
+  return array.output.flatMap((item) => {
+    const parsed = v.safeParse(v.string(), item);
+    return parsed.success ? [parsed.output] : [];
+  });
 }
 
-function arrayOfObjects(value: unknown) {
-  return Array.isArray(value)
-    ? value.filter(
-        (item): item is Record<string, unknown> =>
-          Boolean(item) && typeof item === 'object' && !Array.isArray(item),
-      )
-    : undefined;
+function arrayOfObjects(value: UntrustedInput) {
+  const array = v.safeParse(v.array(untrustedInputSchema), value);
+  if (!array.success) return undefined;
+  return array.output.flatMap((item) => {
+    const parsed = v.safeParse(looseObjectSchema, item);
+    return parsed.success ? [parsed.output] : [];
+  });
 }
 
-function stringField(value: unknown) {
-  return typeof value === 'string' && value.trim() ? value : undefined;
+function stringField(value: UntrustedInput) {
+  const parsed = v.safeParse(nonBlankStringSchema, value);
+  return parsed.success ? parsed.output : undefined;
 }
 
-function numberField(value: unknown) {
-  return typeof value === 'number' && Number.isFinite(value)
-    ? value
-    : undefined;
+function numberField(value: UntrustedInput) {
+  const parsed = v.safeParse(finiteNumberSchema, value);
+  return parsed.success ? parsed.output : undefined;
 }
 
-function booleanField(value: unknown) {
-  return typeof value === 'boolean' ? value : undefined;
+function booleanField(value: UntrustedInput) {
+  const parsed = v.safeParse(v.boolean(), value);
+  return parsed.success ? parsed.output : undefined;
 }

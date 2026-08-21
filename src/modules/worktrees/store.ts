@@ -17,6 +17,11 @@ import {
   worktreeRowSchema,
 } from './schemas';
 
+const untrustedInputSchema = v.unknown();
+const stringSchema = v.string();
+
+type UntrustedInput = v.InferInput<typeof untrustedInputSchema>;
+
 export function recordWorktreeCreating(
   input: {
     id: string;
@@ -163,7 +168,7 @@ export async function recordWorktreeEvent(
   eventType: string,
   status: WorktreeLifecycleStatus,
   message: string,
-  data: unknown,
+  data: UntrustedInput,
   paths: RuntimePaths,
 ) {
   const database = openDb(paths.neondeckDatabase);
@@ -326,7 +331,7 @@ export function listCleanupFailures(paths: RuntimePaths) {
   }
 }
 
-export function readWorktreeRow(row: unknown): WorktreeRecord {
+export function readWorktreeRow(row: UntrustedInput): WorktreeRecord {
   const item = parseDatabaseRow(worktreeRowSchema, row, 'worktree');
   return {
     id: item.id,
@@ -355,7 +360,7 @@ export function readWorktreeRow(row: unknown): WorktreeRecord {
   };
 }
 
-export function readLockRow(row: unknown): WorktreeLockRecord {
+export function readLockRow(row: UntrustedInput): WorktreeLockRecord {
   const item = parseDatabaseRow(lockRowSchema, row, 'worktree lock');
   return {
     id: item.id,
@@ -375,7 +380,7 @@ export function readLockRow(row: unknown): WorktreeLockRecord {
   };
 }
 
-function readCleanupAttemptRow(row: unknown) {
+function readCleanupAttemptRow(row: UntrustedInput) {
   const item = parseDatabaseRow(
     cleanupAttemptRowSchema,
     row,
@@ -394,10 +399,11 @@ function readCleanupAttemptRow(row: unknown) {
   };
 }
 
-function parseCleanupPolicy(value: unknown): WorktreeCleanupPolicy {
-  if (typeof value !== 'string') return cleanupPolicy();
+function parseCleanupPolicy(value: UntrustedInput): WorktreeCleanupPolicy {
+  const stored = v.safeParse(stringSchema, value);
+  if (!stored.success) return cleanupPolicy();
   try {
-    const parsed = JSON.parse(value) as unknown;
+    const parsed: UntrustedInput = JSON.parse(stored.output);
     const policy = v.safeParse(worktreeCleanupPolicySchema, parsed);
     if (!policy.success) {
       throw new Error(v.summarize(policy.issues));
@@ -411,14 +417,14 @@ function parseCleanupPolicy(value: unknown): WorktreeCleanupPolicy {
   }
 }
 
-function normalizeStatus(value: unknown): WorktreeLifecycleStatus {
+function normalizeStatus(value: UntrustedInput): WorktreeLifecycleStatus {
   const parsed = v.safeParse(lifecycleStatusSchema, value);
   return parsed.success ? parsed.output : 'failed';
 }
 
 function parseDatabaseRow<T>(
-  schema: v.GenericSchema<unknown, T>,
-  row: unknown,
+  schema: v.GenericSchema<UntrustedInput, T>,
+  row: UntrustedInput,
   label: string,
 ) {
   const parsed = v.safeParse(schema, row);

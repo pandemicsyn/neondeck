@@ -1,4 +1,7 @@
 import * as v from 'valibot';
+
+const untrustedInputSchema = v.unknown();
+type UntrustedInput = v.InferInput<typeof untrustedInputSchema>;
 import {
   REPORT_DECK_LIMITS,
   reportDeckDocumentSchema,
@@ -64,7 +67,7 @@ export function buildReviewReportDecks(input: ReviewReportDeckInput) {
     return {
       overview: fallbackOverview,
       issues: fallbackIssues,
-      presentationWarnings: [] as string[],
+      presentationWarnings: [],
     };
   }
 
@@ -902,7 +905,7 @@ function primaryLinks(url: string): ReportDeckDocument['links'] {
   return href ? [{ kind: 'primary', label: 'Open PR', href }] : [];
 }
 
-function parseBuiltDeck(value: unknown) {
+function parseBuiltDeck(value: UntrustedInput) {
   return v.parse(reportDeckDocumentSchema, value);
 }
 

@@ -325,20 +325,23 @@ export function FlueChatSessionView({
         });
 
         try {
+          const commandUpdate: Parameters<
+            typeof updateChatSessionCommandEvent
+          >[2] = {
+            status,
+            result,
+            flueRunId: result.flueRunId ?? null,
+            workflowSummaryId: result.workflowSummary?.id ?? null,
+            reason:
+              status === 'running'
+                ? 'dashboard-slash-command-admitted'
+                : 'dashboard-slash-command-complete',
+          };
+          if (completedAt) commandUpdate.completedAt = completedAt;
           const updated = await updateChatSessionCommandEvent(
             session.id,
             createdEvent.id,
-            {
-              status,
-              result,
-              flueRunId: result.flueRunId ?? null,
-              workflowSummaryId: result.workflowSummary?.id ?? null,
-              ...(completedAt ? { completedAt } : {}),
-              reason:
-                status === 'running'
-                  ? 'dashboard-slash-command-admitted'
-                  : 'dashboard-slash-command-complete',
-            },
+            commandUpdate,
           );
           if (updated.event)
             updateCommandEvent(updated.event.id, updated.event);
@@ -459,11 +462,12 @@ export function FlueChatSessionView({
   async function runCommand(command: string) {
     setRunningCommand(command);
     try {
-      const result = await runNeonCommand({
+      const request: Parameters<typeof runNeonCommand>[0] = {
         command,
-        ...(session?.id ? { sessionId: session.id } : {}),
         surface: 'dashboard',
-      });
+      };
+      if (session?.id) request.sessionId = session.id;
+      const result = await runNeonCommand(request);
       return { ...result, flueRunId: neonCommandRunId(result) };
     } finally {
       setRunningCommand(undefined);
@@ -719,15 +723,15 @@ function isDeterministicCommandEvent(event: CommandEvent) {
 
 function commandFailureResult(
   command: string,
-  error: unknown,
+  cause: unknown,
 ): CommandRunResult {
   return {
     ok: false,
     command: commandNameFromInput(command),
     input: command,
     status: 'failed',
-    message: errorMessage(error),
-    errors: [errorMessage(error)],
+    message: errorMessage(cause),
+    errors: [errorMessage(cause)],
   };
 }
 

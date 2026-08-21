@@ -1,5 +1,6 @@
 import type { JsonValue } from '@flue/runtime';
 import * as v from 'valibot';
+import { appStateJsonValueSchema } from '../app-state/schemas';
 
 export const defaultBriefingProfileId = 'morning';
 export const defaultBriefingInstructions =
@@ -55,7 +56,7 @@ export const briefingSnapshotSchema = v.object({
       fetchedAt: nonEmptyStringSchema,
       truncated: v.boolean(),
       error: v.optional(v.string()),
-      data: v.nullable(v.unknown()),
+      data: v.nullable(appStateJsonValueSchema),
     }),
   ),
 });
@@ -135,6 +136,26 @@ export type BriefingDisplayContextBinding = {
   };
   agentContext: JsonValue;
 };
+
+export const briefingDisplayContextBindingSchema = v.object({
+  snapshotId: nonEmptyStringSchema,
+  capturedAt: nonEmptyStringSchema,
+  baselineSnapshotId: v.nullable(nonEmptyStringSchema),
+  baselineLoadedAt: nonEmptyStringSchema,
+  sessionContextFence: nonEmptyStringSchema,
+  configHistoryId: v.number(),
+  memoryEventSequence: v.number(),
+  refreshRequired: v.boolean(),
+  model: nonEmptyStringSchema,
+  thinkingLevel: nonEmptyStringSchema,
+  memoryIds: v.array(nonEmptyStringSchema),
+  linkedContext: v.object({
+    repoId: v.nullable(nonEmptyStringSchema),
+    watchId: v.nullable(nonEmptyStringSchema),
+    taskId: v.nullable(nonEmptyStringSchema),
+  }),
+  agentContext: appStateJsonValueSchema,
+});
 
 export type BriefingRun = {
   id: string;

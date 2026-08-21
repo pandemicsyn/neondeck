@@ -33,7 +33,9 @@ export function mergeGuardrails(
   };
 }
 
-export function globalRepoGuardrails(appConfig: unknown): RepoGuardrails {
+export function globalRepoGuardrails<TAppConfig>(
+  appConfig: TAppConfig,
+): RepoGuardrails {
   const parsed = v.safeParse(appGuardrailsContainerSchema, appConfig);
   return mergeGuardrails(
     defaultRepoGuardrails,
@@ -47,7 +49,7 @@ export function readRepoGuardrailsConfig(
   if (!repo?.metadata?.guardrails) return undefined;
   const parsed = v.safeParse(repoGuardrailsSchema, repo.metadata.guardrails);
   if (!parsed.success) return undefined;
-  return parsed.output as RepoGuardrailsConfig;
+  return parsed.output;
 }
 
 export function repoGuardrails(

@@ -1,9 +1,30 @@
 import type { NotificationRecord, PrWatch } from '../api';
+import type { WebExternalValue } from '../api/schemas';
+import * as v from 'valibot';
 
-type WatchStatusFacts = Pick<
-  PrWatch,
-  'id' | 'status' | 'prState' | 'lastSnapshot'
->;
+const watchStatusFactsSchema = v.object({
+  id: v.string(),
+  status: v.string(),
+  prState: v.optional(v.nullable(v.string()), null),
+  lastSnapshot: v.optional(
+    v.nullable(
+      v.object({
+        merged: v.optional(v.boolean()),
+        checks: v.optional(
+          v.nullable(
+            v.object({
+              failed: v.optional(v.number()),
+              total: v.optional(v.number()),
+            }),
+          ),
+          null,
+        ),
+      }),
+    ),
+    null,
+  ),
+});
+type WatchStatusFacts = v.InferOutput<typeof watchStatusFactsSchema>;
 
 export function isCompletedPrWatch(watch: Pick<PrWatch, 'autopilotStatus'>) {
   return watch.autopilotStatus === 'complete';
@@ -15,8 +36,8 @@ export function prWatchAttentionReason(watch: WatchStatusFacts) {
   const failed = checks?.failed;
   const total = checks?.total;
   const failedLabel =
-    typeof failed === 'number' && failed > 0
-      ? typeof total === 'number' && total > 0
+    failed !== undefined && failed > 0
+      ? total !== undefined && total > 0
         ? `${failed} of ${total} ${total === 1 ? 'check' : 'checks'} failed`
         : `${failed} ${failed === 1 ? 'check' : 'checks'} failed`
       : 'checks are failing';
@@ -39,19 +60,7 @@ export function notificationDisplayMessage(notification: NotificationRecord) {
   return reason ? `${watch.id}: ${reason}` : notification.message;
 }
 
-function watchFacts(value: unknown): WatchStatusFacts | null {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
-  const record = value as Record<string, unknown>;
-  if (typeof record.id !== 'string' || typeof record.status !== 'string') {
-    return null;
-  }
-  return {
-    id: record.id,
-    status: record.status,
-    prState: typeof record.prState === 'string' ? record.prState : null,
-    lastSnapshot:
-      record.lastSnapshot && typeof record.lastSnapshot === 'object'
-        ? (record.lastSnapshot as PrWatch['lastSnapshot'])
-        : null,
-  };
+function watchFacts(value: WebExternalValue): WatchStatusFacts | null {
+  const parsed = v.safeParse(watchStatusFactsSchema, value);
+  return parsed.success ? parsed.output : null;
 }

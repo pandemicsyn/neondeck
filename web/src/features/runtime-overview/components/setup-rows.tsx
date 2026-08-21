@@ -25,6 +25,8 @@ import {
   shortPath,
 } from '../lib/format';
 import type { SetupStep } from '../types';
+import { externalRecord, type WebExternalValue } from '../../../api/schemas';
+import * as v from 'valibot';
 
 export function RuntimeSection({
   children,
@@ -278,10 +280,14 @@ export function NotificationRow({
   );
 }
 
-function notificationSessionId(data: unknown) {
-  if (!data || typeof data !== 'object' || Array.isArray(data)) return null;
-  const sessionId = (data as Record<string, unknown>).sessionId;
-  return typeof sessionId === 'string' && sessionId ? sessionId : null;
+function notificationSessionId(data: WebExternalValue) {
+  const record = externalRecord(data);
+  if (!record) return null;
+  const sessionId = v.safeParse(
+    v.pipe(v.string(), v.nonEmpty()),
+    record.sessionId,
+  );
+  return sessionId.success ? sessionId.output : null;
 }
 
 export function SafetyPolicyRow({ entry }: { entry: SafetyPolicyEntry }) {

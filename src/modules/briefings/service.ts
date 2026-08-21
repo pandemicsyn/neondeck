@@ -44,6 +44,31 @@ import {
   writeBriefingProfileAndTask,
 } from './store';
 import { settleDisplaySessionContextSnapshotSync } from '../sessions';
+import type { JsonValue } from '@flue/runtime';
+
+const briefingRotateSchema = v.object({ id: v.optional(v.string()) });
+const briefingSettlementObservationSchema = v.object({
+  v: v.literal(3),
+  type: v.literal('submission_settled'),
+  eventIndex: v.number(),
+  timestamp: v.string(),
+  agentName: v.optional(v.string()),
+  instanceId: v.optional(v.string()),
+  submissionId: v.optional(v.string()),
+  taskId: v.optional(v.string()),
+  parentSession: v.optional(v.string()),
+  error: v.optional(v.looseObject({ message: v.string() })),
+  outcome: v.picklist(['completed', 'failed', 'aborted']),
+});
+const settlementErrorSchema = v.union([
+  v.instance(Error),
+  v.looseObject({ message: v.optional(v.string()) }),
+]);
+const displayAssistantMetadataSchema = v.looseObject({
+  neondeckDisplayAssistant: v.optional(
+    v.object({ model: v.string(), thinkingLevel: v.string() }),
+  ),
+});
 
 type BriefingServiceDependencies = BriefingSnapshotDependencies & {
   dispatchAgent?: (request: {
@@ -120,13 +145,10 @@ export async function readBriefingState(paths: RuntimePaths = runtimePaths()) {
 }
 
 export async function rotateBriefingSession(
-  rawInput: unknown,
+  rawInput: v.InferInput<typeof briefingRotateSchema>,
   paths: RuntimePaths = runtimePaths(),
 ) {
-  const parsed = v.safeParse(
-    v.object({ id: v.optional(v.string()) }),
-    rawInput,
-  );
+  const parsed = v.safeParse(briefingRotateSchema, rawInput);
   if (!parsed.success) {
     return {
       ok: false,
@@ -209,7 +231,7 @@ export async function readBriefingRunDetails(
 }
 
 export async function updateBriefingProfile(
-  rawInput: unknown,
+  rawInput: v.InferInput<typeof briefingProfileUpdateSchema>,
   paths: RuntimePaths = runtimePaths(),
 ) {
   const parsed = v.safeParse(briefingProfileUpdateSchema, rawInput);
@@ -259,7 +281,7 @@ export async function updateBriefingProfile(
 }
 
 export async function runBriefingNow(
-  rawInput: unknown,
+  rawInput: v.InferInput<typeof briefingRunNowSchema>,
   paths: RuntimePaths = runtimePaths(),
   dependencies: BriefingServiceDependencies = {},
 ) {
@@ -668,12 +690,11 @@ async function reconcileBriefingSettlementFromHistory(
   );
 }
 
-function settlementError(error: unknown, outcome: 'failed' | 'aborted') {
-  if (error instanceof Error) return error.message;
-  if (error && typeof error === 'object' && 'message' in error) {
-    const message = (error as { message?: unknown }).message;
-    if (typeof message === 'string') return message;
-  }
+function settlementError(cause: unknown, outcome: 'failed' | 'aborted') {
+  const parsed = v.safeParse(settlementErrorSchema, cause);
+  if (!parsed.success) return `Briefing submission ${outcome}.`;
+  if (parsed.output instanceof Error) return parsed.output.message;
+  if (parsed.output.message) return parsed.output.message;
   return `Briefing submission ${outcome}.`;
 }
 
@@ -701,22 +722,23 @@ async function dispatchBriefingSignal(input: {
 }
 
 export async function settleBriefingObservation(
-  event: Extract<FlueObservation, { type: 'submission_settled' }>,
+  rawEvent: FlueObservation,
   paths: RuntimePaths = runtimePaths(),
 ) {
+  const parsedEvent = v.safeParse(
+    briefingSettlementObservationSchema,
+    rawEvent,
+  );
+  if (!parsedEvent.success) return null;
+  const event = parsedEvent.output;
   if (!event.submissionId) return null;
-  const observation = event as unknown as Record<string, unknown>;
-  if (observation.taskId || observation.parentSession) return null;
-  if (
-    typeof observation.agentName === 'string' &&
-    observation.agentName !== 'display-assistant'
-  ) {
+  if (event.taskId || event.parentSession) return null;
+  if (event.agentName && event.agentName !== 'display-assistant') {
     return null;
   }
   const failed = event.outcome !== 'completed';
   const error = failed ? briefingObservationError(event) : null;
-  const instanceId =
-    typeof observation.instanceId === 'string' ? observation.instanceId : '';
+  const instanceId = event.instanceId ?? '';
   let correlated = await readBriefingRunByDispatch(event.submissionId, paths);
   if (!correlated) {
     rememberPendingBriefingTerminal(paths, event.submissionId, {
@@ -838,12 +860,12 @@ async function readBriefingReplyMetadata(
 }
 
 export function briefingContextModelWasAdopted(
-  metadata: Record<string, unknown> | undefined,
+  metadata: v.InferInput<typeof displayAssistantMetadataSchema> | undefined,
   binding: Pick<BriefingDisplayContextBinding, 'model' | 'thinkingLevel'>,
 ) {
-  const value = metadata?.neondeckDisplayAssistant;
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
-  const started = value as Record<string, unknown>;
+  const parsed = v.safeParse(displayAssistantMetadataSchema, metadata);
+  if (!parsed.success || !parsed.output.neondeckDisplayAssistant) return false;
+  const started = parsed.output.neondeckDisplayAssistant;
   return (
     started.model === binding.model &&
     started.thinkingLevel === binding.thinkingLevel
@@ -851,7 +873,7 @@ export function briefingContextModelWasAdopted(
 }
 
 function briefingObservationError(
-  event: Extract<FlueObservation, { type: 'submission_settled' }>,
+  event: v.InferOutput<typeof briefingSettlementObservationSchema>,
 ) {
   return event.error?.message ?? `Briefing submission ${event.outcome}.`;
 }
@@ -903,14 +925,17 @@ export async function prepareBriefingAgentDelivery(
 }
 
 export function briefingClientData(run: BriefingRun): BriefingClientData {
-  const sourceHealth = Object.entries(run.snapshot.sources).map(
-    ([name, source]) => ({
+  const sourceHealth: BriefingClientData['sourceHealth'] = Object.entries(
+    run.snapshot.sources,
+  ).map(([name, source]): BriefingClientData['sourceHealth'][number] => {
+    const item: BriefingClientData['sourceHealth'][number] = {
       name,
       status: source.status,
       truncated: source.truncated,
-      ...(source.error ? { error: source.error } : {}),
-    }),
-  );
+    };
+    if (source.error) item.error = source.error;
+    return item;
+  });
   return {
     briefingRunId: run.id,
     profileId: run.profileId,
@@ -950,22 +975,36 @@ function briefingTopActions(run: BriefingRun) {
   return [...new Set(actions)];
 }
 
-function objectValue(value: unknown) {
-  return value && typeof value === 'object' && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
+const jsonObjectSchema = v.custom<Record<string, JsonValue>>(
+  (value) => v.is(v.record(v.string(), v.unknown()), value),
+  'Value must be a JSON object.',
+);
+
+function objectValue(value: JsonValue | null | undefined) {
+  const parsed = v.safeParse(jsonObjectSchema, value);
+  return parsed.success ? parsed.output : null;
+}
+
+const jsonArraySchema = v.custom<JsonValue[]>(
+  (value) => v.is(v.array(v.unknown()), value),
+  'Value must be a JSON array.',
+);
+
+function arrayValue(value: JsonValue | null | undefined) {
+  const parsed = v.safeParse(jsonArraySchema, value);
+  return parsed.success ? parsed.output : [];
+}
+
+function stringValue(value: JsonValue | undefined) {
+  const parsed = v.safeParse(v.string(), value);
+  return parsed.success && parsed.output.trim() ? parsed.output.trim() : null;
+}
+
+function numberValue(value: JsonValue | undefined) {
+  const parsed = v.safeParse(v.number(), value);
+  return parsed.success && Number.isFinite(parsed.output)
+    ? parsed.output
     : null;
-}
-
-function arrayValue(value: unknown) {
-  return Array.isArray(value) ? value : [];
-}
-
-function stringValue(value: unknown) {
-  return typeof value === 'string' && value.trim() ? value.trim() : null;
-}
-
-function numberValue(value: unknown) {
-  return typeof value === 'number' && Number.isFinite(value) ? value : null;
 }
 
 function pendingTerminalKey(paths: RuntimePaths, dispatchId: string) {

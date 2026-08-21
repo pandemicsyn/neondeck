@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { currentFlueExecutionContext } from '../flue';
 import { realpath } from 'node:fs/promises';
-import type * as v from 'valibot';
+import * as v from 'valibot';
 import { invalidInputAction } from '../../lib/action-result';
 import { parseInput as parseActionInput } from '../../lib/valibot';
 import { ensurePreparedDiffForWorktree } from '../prepared-diffs';
@@ -54,8 +54,11 @@ import {
   upsertWorktree,
 } from './store';
 
+const untrustedInputSchema = v.unknown();
+type UntrustedInput = v.InferInput<typeof untrustedInputSchema>;
+
 export async function createWorktree(
-  rawInput: unknown,
+  rawInput: UntrustedInput,
   paths: RuntimePaths = runtimePaths(),
 ) {
   const parsed = parseInput(createInputSchema, rawInput, 'worktree_create');
@@ -250,7 +253,7 @@ async function availableManagedWorktreePath(
 }
 
 export async function syncWorktree(
-  rawInput: unknown,
+  rawInput: UntrustedInput,
   paths: RuntimePaths = runtimePaths(),
 ) {
   const parsed = parseInput(syncInputSchema, rawInput, 'worktree_sync');
@@ -359,7 +362,7 @@ export async function syncWorktree(
 }
 
 export async function readWorktreeStatus(
-  rawInput: unknown,
+  rawInput: UntrustedInput,
   paths: RuntimePaths = runtimePaths(),
 ) {
   const parsed = parseInput(statusInputSchema, rawInput, 'worktree_status');
@@ -393,7 +396,7 @@ export async function readWorktreeStatus(
 }
 
 export async function lockWorktree(
-  rawInput: unknown,
+  rawInput: UntrustedInput,
   paths: RuntimePaths = runtimePaths(),
 ) {
   const parsed = parseInput(lockInputSchema, rawInput, 'worktree_lock');
@@ -525,7 +528,7 @@ export function readWorktreeLock(
 }
 
 export async function releaseWorktreeLock(
-  rawInput: unknown,
+  rawInput: UntrustedInput,
   paths: RuntimePaths = runtimePaths(),
 ) {
   const parsed = parseInput(releaseInputSchema, rawInput, 'worktree_release');
@@ -589,7 +592,7 @@ export async function releaseWorktreeLock(
 }
 
 export async function cleanupWorktrees(
-  rawInput: unknown,
+  rawInput: UntrustedInput,
   paths: RuntimePaths = runtimePaths(),
 ) {
   const parsed = parseInput(cleanupInputSchema, rawInput, 'worktree_cleanup');
@@ -744,8 +747,8 @@ export async function cleanupWorktrees(
 }
 
 function parseInput<T>(
-  schema: v.GenericSchema<unknown, T>,
-  rawInput: unknown,
+  schema: v.GenericSchema<UntrustedInput, T>,
+  rawInput: UntrustedInput,
   action: string,
 ):
   | { ok: true; input: T }

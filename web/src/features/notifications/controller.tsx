@@ -147,7 +147,7 @@ export function NotificationController({
             notificationChimeRef.current?.play();
           }
         })
-        .catch((error: unknown) => {
+        .catch((error) => {
           if (!active) return;
           console.warn(
             '[neondeck] notification reconciliation failed; retrying after reconnect',
@@ -290,8 +290,13 @@ export function replayableNotifications(
 
 export function dispatchPluginNavigation(pluginId: string) {
   const detail = { pluginId, handled: false };
-  window.dispatchEvent(new CustomEvent('neondeck:navigate', { detail }));
-  return detail.handled;
+  const dispatched = window.dispatchEvent(
+    new CustomEvent('neondeck:navigate', {
+      cancelable: true,
+      detail,
+    }),
+  );
+  return detail.handled || !dispatched;
 }
 
 function sameToastConfig(

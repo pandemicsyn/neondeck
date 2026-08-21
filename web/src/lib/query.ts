@@ -1,5 +1,11 @@
 import { QueryClient } from '@tanstack/react-query';
 import { ApiError } from '../api/http';
+import {
+  externalErrorMessage,
+  externalRecord,
+  type WebExternalValue,
+} from '../api/schemas';
+import * as v from 'valibot';
 
 const chatSessionActivityRoot = ['chat-session-activity'] as const;
 
@@ -75,16 +81,18 @@ export const queryKeys = {
   worktrees: ['worktrees'] as const,
 };
 
-export function queryErrorMessage(error: unknown) {
-  return error instanceof Error ? error.message : String(error);
+export function queryErrorMessage(error: WebExternalValue) {
+  return externalErrorMessage(error);
 }
 
-export function actionErrorMessage(error: unknown) {
+export function actionErrorMessage(error: WebExternalValue) {
   const message = queryErrorMessage(error);
-  if (!(error instanceof ApiError) || !isRecord(error.data)) return message;
+  if (!(error instanceof ApiError)) return message;
+  const data = externalRecord(error.data);
+  if (!data) return message;
 
-  const errors = stringArray(error.data.errors);
-  const requires = stringArray(error.data.requires);
+  const errors = stringArray(data.errors);
+  const requires = stringArray(data.requires);
   const details = [
     ...errors,
     ...(requires.length > 0 ? [`Requires: ${requires.join(', ')}`] : []),
@@ -93,12 +101,7 @@ export function actionErrorMessage(error: unknown) {
   return details.length > 0 ? `${message} ${details.join(' ')}` : message;
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return Boolean(value) && typeof value === 'object';
-}
-
-function stringArray(value: unknown) {
-  return Array.isArray(value)
-    ? value.filter((item): item is string => typeof item === 'string')
-    : [];
+function stringArray(value: WebExternalValue) {
+  const parsed = v.safeParse(v.array(v.string()), value);
+  return parsed.success ? parsed.output : [];
 }

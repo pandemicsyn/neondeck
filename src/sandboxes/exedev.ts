@@ -28,6 +28,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { Client as SSHClient } from 'ssh2';
 import type { ConnectConfig, SFTPWrapper } from 'ssh2';
+import * as v from 'valibot';
 
 export interface ExeDevVm {
   /** VM hostname, e.g. "maple-dune.exe.xyz". */
@@ -52,6 +53,13 @@ export interface ExeDevAdapterOptions {
   /** Maximum combined stdout/stderr bytes to retain before closing the stream. */
   maxOutputBytes?: number;
 }
+
+export type ResolvedSshAuth = {
+  privateKey?: string | Buffer;
+  agent?: string;
+};
+
+type SshAuthAttempt = { source: string; path: string; reason: string };
 
 export interface ExeDevLifecycleOptions {
   /** exe.dev HTTPS API bearer token (exe0.* or exe1.*). */
@@ -87,9 +95,7 @@ export class ExeDevError extends Error {
 
   constructor(message: string) {
     super(message);
-    if (typeof Error.captureStackTrace === 'function') {
-      Error.captureStackTrace(this, ExeDevError);
-    }
+    Error.captureStackTrace?.(this, ExeDevError);
   }
 }
 
@@ -99,6 +105,18 @@ const defaultMaxOutputBytes = 1024 * 1024;
 const vmName = /^[A-Za-z0-9][A-Za-z0-9-]*$/;
 const shellEnvName = /^[A-Za-z_][A-Za-z0-9_]*$/;
 const disposers = new WeakMap<Sandbox, () => void>();
+const exeVmResponseSchema = v.looseObject({
+  vm_name: v.optional(v.string()),
+  name: v.optional(v.string()),
+  vm: v.optional(v.string()),
+  ssh_dest: v.optional(v.string()),
+  ssh_port: v.optional(v.number()),
+});
+const sshErrorSchema = v.looseObject({
+  code: v.optional(v.string()),
+  errno: v.optional(v.string()),
+  message: v.optional(v.string()),
+});
 
 async function exeApi(token: string, command: string): Promise<string> {
   const res = await fetch(exeApiUrl, {
@@ -121,41 +139,27 @@ async function exeApi(token: string, command: string): Promise<string> {
 }
 
 export function parseVmResponse(output: string): ExeDevVm & { name: string } {
-  let data: {
-    vm_name?: unknown;
-    name?: unknown;
-    vm?: unknown;
-    ssh_dest?: unknown;
-    ssh_port?: unknown;
-  };
+  let raw: ReturnType<typeof JSON.parse>;
   try {
-    data = JSON.parse(output);
+    raw = JSON.parse(output);
   } catch {
     throw new ExeDevError(
       'exe.dev HTTPS API returned non-JSON output:\n' +
         `  ${output.slice(0, 200)}`,
     );
   }
-  const name =
-    typeof data.vm_name === 'string'
-      ? data.vm_name
-      : typeof data.name === 'string'
-        ? data.name
-        : typeof data.vm === 'string'
-          ? data.vm
-          : undefined;
+  const parsed = v.safeParse(exeVmResponseSchema, raw);
+  const data = parsed.success ? parsed.output : {};
+  const name = data.vm_name ?? data.name ?? data.vm;
   if (!name) {
     throw new ExeDevError(
       'exe.dev HTTPS API response missing `vm_name`:\n' +
         `  ${JSON.stringify(data).slice(0, 200)}`,
     );
   }
-  const host =
-    typeof data.ssh_dest === 'string' && data.ssh_dest
-      ? data.ssh_dest
-      : `${name}.exe.xyz`;
+  const host = data.ssh_dest || `${name}.exe.xyz`;
   const port =
-    typeof data.ssh_port === 'number' && Number.isFinite(data.ssh_port)
+    data.ssh_port !== undefined && Number.isFinite(data.ssh_port)
       ? data.ssh_port
       : undefined;
   return { name, host, port };
@@ -219,10 +223,10 @@ function shellEnvAssignment(name: string, value: string): string {
 export function resolveAuth(
   opts: ExeDevAdapterOptions,
   env: NodeJS.ProcessEnv = process.env,
-): { privateKey?: string | Buffer; agent?: string } {
+): ResolvedSshAuth {
   if (opts.privateKey) return { privateKey: opts.privateKey };
 
-  const tried: { source: string; path: string; reason: string }[] = [];
+  const tried: SshAuthAttempt[] = [];
 
   const tryPath = (
     keyPath: string,
@@ -231,7 +235,11 @@ export function resolveAuth(
     try {
       return fs.readFileSync(keyPath);
     } catch (err) {
-      const code = (err as NodeJS.ErrnoException).code ?? 'ERROR';
+      const parsed = v.safeParse(
+        v.looseObject({ code: v.optional(v.string()) }),
+        err,
+      );
+      const code = parsed.success ? (parsed.output.code ?? 'ERROR') : 'ERROR';
       tried.push({ source, path: keyPath, reason: code });
       return undefined;
     }
@@ -287,17 +295,18 @@ const retryableErrorCodes = new Set([
   'ENETUNREACH',
 ]);
 
-export function isRetryableSshError(err: unknown): boolean {
-  if (!err || typeof err !== 'object') return false;
-  const e = err as { code?: unknown; errno?: unknown; message?: unknown };
-  if (typeof e.code === 'string' && retryableErrorCodes.has(e.code)) {
+export function isRetryableSshError<TError>(err: TError): boolean {
+  const parsed = v.safeParse(sshErrorSchema, err);
+  if (!parsed.success) return false;
+  const e = parsed.output;
+  if (e.code && retryableErrorCodes.has(e.code)) {
     return true;
   }
-  if (typeof e.errno === 'string' && retryableErrorCodes.has(e.errno)) {
+  if (e.errno && retryableErrorCodes.has(e.errno)) {
     return true;
   }
   return (
-    typeof e.message === 'string' &&
+    e.message !== undefined &&
     /\b(ENOTFOUND|EAI_AGAIN|ECONNREFUSED|ECONNRESET|ETIMEDOUT|EHOSTUNREACH|ENETUNREACH)\b/.test(
       e.message,
     )
@@ -318,10 +327,14 @@ async function sshConnectWithRetry(
       lastErr = err;
       if (!isRetryableSshError(err)) throw err;
       if (Date.now() - start > timeoutMs) {
+        const parsedLastError = v.safeParse(sshErrorSchema, lastErr);
+        const lastMessage = parsedLastError.success
+          ? parsedLastError.output.message
+          : undefined;
         throw new ExeDevError(
           `Timed out after ${Math.round((Date.now() - start) / 1000)}s waiting ` +
             `for ${vm.host} to become SSH-able.\n` +
-            `  Last error: ${(lastErr as Error)?.message ?? String(lastErr)}`,
+            `  Last error: ${lastMessage ?? String(lastErr)}`,
         );
       }
       await new Promise((resolve) => setTimeout(resolve, 1000));
@@ -354,19 +367,21 @@ async function sshConnect(
 }
 
 export interface SshLike {
-  sftp(cb: (err: Error | undefined, sftp: SFTPWrapper) => void): unknown;
+  sftp(cb: (err: Error | undefined, sftp: SFTPWrapper) => void): void;
   exec(
     command: string,
-    options: object,
+    options: SshExecOptions,
     cb: (err: Error | undefined, stream: SshExecStream) => void,
-  ): unknown;
+  ): void;
 }
 
+export type SshExecOptions = Record<string, never>;
+
 export interface SshExecStream {
-  on(event: 'data', listener: (data: Buffer) => void): unknown;
-  on(event: 'close', listener: (code: number) => void): unknown;
-  on(event: 'error', listener: (err: Error) => void): unknown;
-  stderr: { on(event: 'data', listener: (data: Buffer) => void): unknown };
+  on(event: 'data', listener: (data: Buffer) => void): void;
+  on(event: 'close', listener: (code: number) => void): void;
+  on(event: 'error', listener: (err: Error) => void): void;
+  stderr: { on(event: 'data', listener: (data: Buffer) => void): void };
   close(): void;
 }
 
@@ -430,10 +445,7 @@ export class ExeDevSandboxApi implements SandboxDriver {
     filePath: string,
     content: string | Uint8Array,
   ): Promise<void> {
-    const buf =
-      typeof content === 'string'
-        ? Buffer.from(content, 'utf-8')
-        : Buffer.from(content);
+    const buf = Buffer.from(content);
     const sftp = await this.getSftp();
     return new Promise<void>((resolve, reject) => {
       const stream = sftp.createWriteStream(filePath);
@@ -599,7 +611,7 @@ export class ExeDevSandboxApi implements SandboxDriver {
         }
         options?.signal?.addEventListener('abort', abort, { once: true });
 
-        if (typeof options?.timeoutMs === 'number') {
+        if (options?.timeoutMs !== undefined) {
           timer = setTimeout(() => {
             stream.close();
             finish({
@@ -634,7 +646,7 @@ export function exedev(
   vm: ExeDevVm | string,
   options?: ExeDevAdapterOptions,
 ): SandboxFactory {
-  const resolvedVm = typeof vm === 'string' ? { host: vm } : vm;
+  const resolvedVm = v.is(v.string(), vm) ? { host: vm } : vm;
   return {
     async createSandbox(_options): Promise<Sandbox> {
       const { env } = await createExeDevSessionEnv(resolvedVm, options);
@@ -647,7 +659,7 @@ export async function createExeDevSessionEnv(
   vm: ExeDevVm | string,
   options?: ExeDevAdapterOptions,
 ): Promise<{ env: Sandbox; dispose: () => void }> {
-  const resolvedVm = typeof vm === 'string' ? { host: vm } : vm;
+  const resolvedVm = v.is(v.string(), vm) ? { host: vm } : vm;
   const { ssh, disconnect } = await sshConnect(resolvedVm, options ?? {});
   const api = new ExeDevSandboxApi(
     ssh,

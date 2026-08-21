@@ -214,7 +214,7 @@ async function git(cwd: string, args: string[]) {
   return stdout;
 }
 
-function errorMessage(error: unknown) {
+function errorMessage<TError>(error: TError) {
   return error instanceof Error ? error.message : String(error);
 }
 

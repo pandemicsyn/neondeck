@@ -1,4 +1,5 @@
 import { runUnattendedGit } from '../../lib/git';
+import * as v from 'valibot';
 import {
   gitDiff,
   type RepoDiffFile,
@@ -441,6 +442,11 @@ function unavailable(message: string) {
   return new LocalPrDiffUnavailableError(message);
 }
 
-function errorMessage(error: unknown) {
-  return error instanceof Error ? error.message : String(error);
+const untrustedInputSchema = v.unknown();
+const errorInstanceSchema = v.instance(Error);
+type UntrustedInput = v.InferInput<typeof untrustedInputSchema>;
+
+function errorMessage(error: UntrustedInput) {
+  const parsed = v.safeParse(errorInstanceSchema, error);
+  return parsed.success ? parsed.output.message : String(error);
 }

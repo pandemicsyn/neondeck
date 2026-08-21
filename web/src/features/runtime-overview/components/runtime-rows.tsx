@@ -23,6 +23,8 @@ import {
   WorktreeLockRecord,
   WorktreeRecord,
 } from '../../../api';
+import type { WebExternalValue } from '../../../api/schemas';
+import * as v from 'valibot';
 import {
   formatInterval,
   kiloTaskStatusClass,
@@ -46,6 +48,14 @@ const RepoEditEventDiffReview = lazy(() =>
     default: module.RepoEditEventDiffReview,
   })),
 );
+
+const mcpApprovalModeSchema = v.picklist(['prompt', 'writes', 'approve']);
+const mcpToolOverrideModeSchema = v.picklist([
+  'inherit',
+  'prompt',
+  'approve',
+  'deny',
+]);
 
 export function McpServerRow({
   onRefresh,
@@ -184,7 +194,7 @@ export function McpServerRow({
           disabled={busy !== null}
           onChange={(event) =>
             void changeApprovalMode(
-              event.target.value as 'prompt' | 'writes' | 'approve',
+              v.parse(mcpApprovalModeSchema, event.target.value),
             )
           }
           value={server.approvalMode}
@@ -215,8 +225,7 @@ export function McpServerRow({
                     onChange={(event) =>
                       void changeToolOverride(
                         toolName,
-                        event.target.value as
-                          'inherit' | 'prompt' | 'approve' | 'deny',
+                        v.parse(mcpToolOverrideModeSchema, event.target.value),
                       )
                     }
                     value={mode}
@@ -832,13 +841,14 @@ export function MemoryRow({ memory }: { memory: MemoryRecord }) {
   );
 }
 
-function memoryPreview(value: unknown) {
-  if (typeof value === 'string') return value;
-  if (typeof value === 'number' || typeof value === 'boolean') {
-    return String(value);
-  }
+function memoryPreview(value: WebExternalValue) {
+  const scalar = v.safeParse(
+    v.union([v.string(), v.number(), v.boolean()]),
+    value,
+  );
+  if (scalar.success) return String(scalar.output);
   if (value === null || value === undefined) return 'empty';
-  return JSON.stringify(value);
+  return JSON.stringify(value) ?? 'empty';
 }
 
 export function SkillIssues({ skills }: { skills: RuntimeSkillsResponse }) {

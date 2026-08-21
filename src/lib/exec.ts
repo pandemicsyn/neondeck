@@ -1,5 +1,6 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
+import * as v from 'valibot';
 
 const execFileAsync = promisify(execFile);
 
@@ -67,42 +68,70 @@ export async function runExecFile(
   }
 }
 
-export function normalizeExecFileError(
-  error: unknown,
+const nodeSignalSchema = v.picklist([
+  'SIGHUP',
+  'SIGINT',
+  'SIGQUIT',
+  'SIGILL',
+  'SIGTRAP',
+  'SIGABRT',
+  'SIGIOT',
+  'SIGBUS',
+  'SIGFPE',
+  'SIGKILL',
+  'SIGUSR1',
+  'SIGSEGV',
+  'SIGUSR2',
+  'SIGPIPE',
+  'SIGALRM',
+  'SIGTERM',
+  'SIGCHLD',
+  'SIGSTKFLT',
+  'SIGCONT',
+  'SIGSTOP',
+  'SIGTSTP',
+  'SIGTTIN',
+  'SIGTTOU',
+  'SIGURG',
+  'SIGXCPU',
+  'SIGXFSZ',
+  'SIGVTALRM',
+  'SIGPROF',
+  'SIGWINCH',
+  'SIGIO',
+  'SIGPOLL',
+  'SIGPWR',
+  'SIGSYS',
+  'SIGBREAK',
+  'SIGLOST',
+  'SIGINFO',
+]);
+
+const execFileErrorSchema = v.looseObject({
+  message: v.optional(v.string()),
+  code: v.optional(v.union([v.string(), v.number(), v.null()])),
+  signal: v.optional(nodeSignalSchema),
+  stdout: v.optional(v.union([v.string(), v.instance(Buffer)])),
+  stderr: v.optional(v.union([v.string(), v.instance(Buffer)])),
+  killed: v.optional(v.boolean()),
+});
+
+export function normalizeExecFileError<TError>(
+  error: TError,
   file = 'command',
   args: string[] = [],
 ) {
   if (error instanceof ExecFileError) return error;
-  if (error && typeof error === 'object') {
-    const record = error as {
-      message?: unknown;
-      code?: unknown;
-      signal?: unknown;
-      stdout?: unknown;
-      stderr?: unknown;
-      killed?: unknown;
-    };
+  const parsed = v.safeParse(execFileErrorSchema, error);
+  if (parsed.success) {
+    const record = parsed.output;
     return new ExecFileError(
-      typeof record.message === 'string'
-        ? record.message
-        : `${[file, ...args].join(' ')} failed.`,
+      record.message ?? `${[file, ...args].join(' ')} failed.`,
       {
-        code:
-          typeof record.code === 'string' || typeof record.code === 'number'
-            ? record.code
-            : null,
-        signal:
-          typeof record.signal === 'string'
-            ? (record.signal as NodeJS.Signals)
-            : null,
-        stdout:
-          typeof record.stdout === 'string' || Buffer.isBuffer(record.stdout)
-            ? record.stdout
-            : '',
-        stderr:
-          typeof record.stderr === 'string' || Buffer.isBuffer(record.stderr)
-            ? record.stderr
-            : '',
+        code: record.code ?? null,
+        signal: record.signal ?? null,
+        stdout: record.stdout ?? '',
+        stderr: record.stderr ?? '',
         timedOut: record.killed === true && record.signal === 'SIGTERM',
         cause: error,
       },
@@ -114,5 +143,5 @@ export function normalizeExecFileError(
 }
 
 function outputText(value: string | Buffer | undefined) {
-  return typeof value === 'string' ? value : (value?.toString('utf8') ?? '');
+  return Buffer.isBuffer(value) ? value.toString('utf8') : (value ?? '');
 }

@@ -2,7 +2,8 @@ import { randomUUID } from 'node:crypto';
 import { mkdir, readFile, unlink, writeFile } from 'node:fs/promises';
 import { join, resolve, sep } from 'node:path';
 import { asJsonValue } from '../../lib/action-result';
-import { openDb } from '../../lib/sqlite';
+import { openDb, parseRow } from '../../lib/sqlite';
+import * as v from 'valibot';
 import {
   ensureRuntimeHome,
   runtimePaths,
@@ -38,6 +39,27 @@ export type WriteReportInput = {
   createdBy: string;
   createdAt?: string | Date;
 };
+
+const persistedReportSchema = v.object({
+  id: v.string(),
+  kind: v.string(),
+  title: v.string(),
+  repo_id: v.nullable(v.string()),
+  source_ref: v.nullable(v.string()),
+  html_path: v.string(),
+  summary_json: v.nullable(v.string()),
+  created_by: v.string(),
+  created_at: v.string(),
+});
+
+const reportPathRowSchema = v.object({
+  id: v.string(),
+  html_path: v.string(),
+});
+
+const reportKindRowSchema = v.object({ kind: v.string() });
+
+const nodeErrorSchema = v.looseObject({ code: v.optional(v.string()) });
 
 export async function writeReport(
   input: WriteReportInput,
@@ -221,7 +243,9 @@ export async function listReports(
           `,
             )
             .all(limit);
-    return rows.map(readReportRow);
+    return rows.map((row) =>
+      readReportRow(parseRow(row, persistedReportSchema, 'report row')),
+    );
   } finally {
     database.close();
   }
@@ -237,7 +261,9 @@ export async function readReport(
     const row = database
       .prepare('SELECT * FROM reports WHERE id = ? LIMIT 1;')
       .get(id.trim());
-    return row ? readReportRow(row) : null;
+    return row
+      ? readReportRow(parseRow(row, persistedReportSchema, 'report row'))
+      : null;
   } finally {
     database.close();
   }
@@ -288,18 +314,19 @@ export async function pruneReports(
         WHERE created_at < ?;
       `,
       )
-      .all(cutoff) as Array<{ id: string; html_path: string }>;
+      .all(cutoff)
+      .map((row) => parseRow(row, reportPathRowSchema, 'report path row'));
     for (const row of ageRows) {
       if (!preserved.has(row.id)) toDelete.set(row.id, row.html_path);
     }
 
     const kinds = options.kind
       ? [normalizeReportKind(options.kind)]
-      : (
-          database
-            .prepare('SELECT DISTINCT kind FROM reports;')
-            .all() as Array<{ kind: string }>
-        ).map((row) => row.kind);
+      : database
+          .prepare('SELECT DISTINCT kind FROM reports;')
+          .all()
+          .map((row) => parseRow(row, reportKindRowSchema, 'report kind row'))
+          .map((row) => row.kind);
 
     for (const kind of kinds) {
       const overflowRows = database
@@ -312,7 +339,8 @@ export async function pruneReports(
           LIMIT -1 OFFSET ?;
         `,
         )
-        .all(kind, maxPerKind) as Array<{ id: string; html_path: string }>;
+        .all(kind, maxPerKind)
+        .map((row) => parseRow(row, reportPathRowSchema, 'report path row'));
       for (const row of overflowRows) {
         if (!preserved.has(row.id)) toDelete.set(row.id, row.html_path);
       }
@@ -346,21 +374,21 @@ export function resolveReportFilePath(paths: RuntimePaths, htmlPath: string) {
   return target;
 }
 
-function readReportRow(row: unknown): ReportRecord {
-  const record = row as Record<string, unknown>;
+function readReportRow(
+  record: v.InferOutput<typeof persistedReportSchema>,
+): ReportRecord {
   return {
-    id: String(record.id),
-    kind: String(record.kind),
-    title: String(record.title),
-    repoId: typeof record.repo_id === 'string' ? record.repo_id : null,
-    sourceRef: typeof record.source_ref === 'string' ? record.source_ref : null,
-    htmlPath: String(record.html_path),
-    summary:
-      typeof record.summary_json === 'string'
-        ? JSON.parse(record.summary_json)
-        : null,
-    createdBy: String(record.created_by),
-    createdAt: String(record.created_at),
+    id: record.id,
+    kind: record.kind,
+    title: record.title,
+    repoId: record.repo_id,
+    sourceRef: record.source_ref,
+    htmlPath: record.html_path,
+    summary: record.summary_json
+      ? asJsonValue(JSON.parse(record.summary_json))
+      : null,
+    createdBy: record.created_by,
+    createdAt: record.created_at,
   };
 }
 
@@ -382,13 +410,9 @@ function normalizeReportId(value: string) {
   return id;
 }
 
-function isNodeErrorCode(error: unknown, code: string) {
-  return (
-    error !== null &&
-    typeof error === 'object' &&
-    'code' in error &&
-    (error as { code?: unknown }).code === code
-  );
+function isNodeErrorCode(cause: unknown, code: string) {
+  const parsed = v.safeParse(nodeErrorSchema, cause);
+  return parsed.success && parsed.output.code === code;
 }
 
 function nullableTrim(value: string | null | undefined) {

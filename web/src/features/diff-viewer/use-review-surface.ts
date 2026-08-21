@@ -38,6 +38,13 @@ type UseReviewSurfaceInput = {
   refresh?: ReviewRefreshStatus;
 };
 
+type ReviewSurfaceNavigationResolution = {
+  status: ReviewSurfaceNavigationAckStatus;
+  revisionKey: string | null;
+  resolvedPath: string | null;
+  message: string | null;
+};
+
 export function useReviewSurface(input: UseReviewSurfaceInput | null) {
   const surfaceIdRef = useRef<string | null>(null);
   if (!surfaceIdRef.current && input) {
@@ -262,12 +269,7 @@ export function createReviewSurfaceSnapshot(
 export function resolveReviewSurfaceNavigation(
   surface: ReviewSurfaceSnapshot,
   command: ReviewSurfaceNavigationCommand,
-): {
-  status: ReviewSurfaceNavigationAckStatus;
-  revisionKey: string | null;
-  resolvedPath: string | null;
-  message: string | null;
-} {
+): ReviewSurfaceNavigationResolution {
   const revisionKey = reviewRevisionKey(surface.source.revision);
   if (command.revisionKey && command.revisionKey !== revisionKey) {
     return {
@@ -295,8 +297,8 @@ export function resolveReviewSurfaceNavigation(
 }
 
 function createReviewSurfaceId() {
-  if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) {
-    return `review-surface:${crypto.randomUUID()}`;
+  if ('crypto' in globalThis && 'randomUUID' in globalThis.crypto) {
+    return `review-surface:${globalThis.crypto.randomUUID()}`;
   }
   fallbackSurfaceId += 1;
   return `review-surface:${Date.now().toString(36)}:${fallbackSurfaceId.toString(36)}`;

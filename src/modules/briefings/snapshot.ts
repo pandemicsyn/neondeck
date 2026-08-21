@@ -1,4 +1,6 @@
 import { asJsonValue } from '../../lib/action-result';
+import type { JsonValue } from '@flue/runtime';
+import * as v from 'valibot';
 import type { RuntimePaths } from '../../runtime-home';
 import { listNotifications } from '../app-state';
 import type { CommandDependencies } from '../commands/schemas';
@@ -39,16 +41,16 @@ export async function collectBriefingSnapshot(
           })),
         );
       }),
-      capture('reviewQueue', async () => {
+      capture<JsonValue>('reviewQueue', async () => {
         const result = await readReviewQueue(paths, dependencies);
         if (!result.ok) {
           return {
-            data: {
+            data: asJsonValue({
               available: false,
               message: result.message,
               requires: result.requires ?? [],
               errors: result.errors ?? [],
-            },
+            }),
             partial: true,
           };
         }
@@ -63,11 +65,11 @@ export async function collectBriefingSnapshot(
         }));
         return {
           ...boundedList(items),
-          data: {
+          data: asJsonValue({
             ...boundedList(items).data,
             issues: result.queue.issues.slice(0, 12),
             fetchedAt: result.queue.fetchedAt,
-          },
+          }),
           partial: result.queue.truncated || result.queue.issues.length > 0,
         };
       }),
@@ -146,18 +148,19 @@ export async function collectBriefingSnapshot(
   const sizedInitial = withByteSize(initial);
   if (sizedInitial.byteSize <= snapshotByteLimit) return sizedInitial;
 
-  const compactSources = Object.fromEntries(
-    Object.entries(sources).map(([name, source]) => [
-      name,
-      {
-        ...source,
-        status: source.status === 'unavailable' ? 'unavailable' : 'partial',
-        truncated: true,
-        ...(source.error ? { error: truncateText(source.error, 1_000) } : {}),
-        data: asJsonValue(compactData(source.data)),
-      },
-    ]),
-  ) as Record<string, BriefingSnapshotSource>;
+  const compactSources = Object.entries(sources).reduce<
+    Record<string, BriefingSnapshotSource>
+  >((result, [name, source]) => {
+    const compactSource: BriefingSnapshotSource = {
+      ...source,
+      status: source.status === 'unavailable' ? 'unavailable' : 'partial',
+      truncated: true,
+      data: compactData(source.data),
+    };
+    if (source.error) compactSource.error = truncateText(source.error, 1_000);
+    result[name] = compactSource;
+    return result;
+  }, {});
   const compact = {
     version: 1 as const,
     collectedAt,
@@ -183,10 +186,10 @@ export async function collectBriefingSnapshot(
   });
 }
 
-async function capture(
+async function capture<TData>(
   _name: string,
   read: () => Promise<{
-    data: unknown;
+    data: TData;
     truncated?: boolean;
     partial?: boolean;
   }>,
@@ -238,18 +241,21 @@ function boundedList<T>(items: T[]) {
   };
 }
 
-function compactData(data: unknown, depth = 0): unknown {
-  if (typeof data === 'string') {
-    return data.length > 300 ? `${data.slice(0, 297)}...` : data;
+const jsonObjectSchema = v.custom<Record<string, JsonValue>>(
+  (value) => v.is(v.record(v.string(), v.unknown()), value),
+  'Value must be a JSON object.',
+);
+
+function compactData(data: JsonValue, depth = 0): JsonValue {
+  const string = v.safeParse(v.string(), data);
+  if (string.success) {
+    return string.output.length > 300
+      ? `${string.output.slice(0, 297)}...`
+      : string.output;
   }
-  if (
-    data === null ||
-    typeof data === 'number' ||
-    typeof data === 'boolean' ||
-    data === undefined
-  ) {
-    return data ?? null;
-  }
+  if (data === null) return null;
+  if (v.safeParse(v.number(), data).success) return data;
+  if (v.safeParse(v.boolean(), data).success) return data;
   if (depth >= 3) {
     return Array.isArray(data)
       ? { total: data.length, truncated: true }
@@ -258,9 +264,9 @@ function compactData(data: unknown, depth = 0): unknown {
   if (Array.isArray(data)) {
     return data.slice(0, 3).map((value) => compactData(value, depth + 1));
   }
-  if (typeof data !== 'object') return String(data);
+  const object = v.parse(jsonObjectSchema, data);
   return Object.fromEntries(
-    Object.entries(data)
+    Object.entries(object)
       .slice(0, 3)
       .map(([key, value]) => [key, compactData(value, depth + 1)]),
   );

@@ -20,6 +20,10 @@ import {
   type PrReviewWorkspaceOutputScope,
 } from './workspace-outputs';
 
+const untrustedInputSchema = v.unknown();
+const errorInstanceSchema = v.instance(Error);
+type UntrustedInput = v.InferInput<typeof untrustedInputSchema>;
+
 export type PrReviewerWorkspaceTarget = {
   repoFullName: string;
   prNumber: number;
@@ -229,10 +233,7 @@ function createResolvedPrReviewerWorkspaceTools(
       remainingToolCalls -= 1;
       return remainingToolCalls;
     });
-  const budgeted = <T extends Record<string, unknown>>(
-    result: T,
-    remaining: number,
-  ) => ({
+  const budgeted = <T extends object>(result: T, remaining: number) => ({
     ...result,
     workspaceToolCallsRemaining: remaining,
     workspaceToolCallLimit: prReviewerWorkspaceToolCallLimit,
@@ -502,13 +503,20 @@ function createResolvedPrReviewerWorkspaceTools(
           preview.truncated || preview.items.length < allPaths.length;
         return {
           output: await budgeted(
-            {
-              revision: revision.sha,
-              revisionKind: revision.kind,
-              paths: preview.items,
-              truncated,
-              ...(truncated ? retainOutput('list', allPaths.join('\n')) : {}),
-            },
+            truncated
+              ? {
+                  revision: revision.sha,
+                  revisionKind: revision.kind,
+                  paths: preview.items,
+                  truncated,
+                  ...retainOutput('list', allPaths.join('\n')),
+                }
+              : {
+                  revision: revision.sha,
+                  revisionKind: revision.kind,
+                  paths: preview.items,
+                  truncated,
+                },
             remaining,
           ),
         };
@@ -666,16 +674,22 @@ function createResolvedPrReviewerWorkspaceTools(
           preview.truncated || preview.items.length < allMatches.length;
         return {
           output: await budgeted(
-            {
-              revision: revision.sha,
-              revisionKind: revision.kind,
-              query: toolInput.query,
-              matches: preview.items,
-              truncated,
-              ...(truncated
-                ? retainOutput('search', allMatches.join('\n'))
-                : {}),
-            },
+            truncated
+              ? {
+                  revision: revision.sha,
+                  revisionKind: revision.kind,
+                  query: toolInput.query,
+                  matches: preview.items,
+                  truncated,
+                  ...retainOutput('search', allMatches.join('\n')),
+                }
+              : {
+                  revision: revision.sha,
+                  revisionKind: revision.kind,
+                  query: toolInput.query,
+                  matches: preview.items,
+                  truncated,
+                },
             remaining,
           ),
         };
@@ -774,15 +788,24 @@ function createResolvedPrReviewerWorkspaceTools(
         const bounded = boundWorkspacePreview(patch);
         return {
           output: await budgeted(
-            {
-              available: true,
-              base: mergeBase,
-              head: headSha,
-              path: toolInput.path,
-              patch: bounded.text,
-              truncated: bounded.truncated,
-              ...(bounded.truncated ? retainOutput('diff', patch) : {}),
-            },
+            bounded.truncated
+              ? {
+                  available: true,
+                  base: mergeBase,
+                  head: headSha,
+                  path: toolInput.path,
+                  patch: bounded.text,
+                  truncated: bounded.truncated,
+                  ...retainOutput('diff', patch),
+                }
+              : {
+                  available: true,
+                  base: mergeBase,
+                  head: headSha,
+                  path: toolInput.path,
+                  patch: bounded.text,
+                  truncated: bounded.truncated,
+                },
             remaining,
           ),
         };
@@ -1712,7 +1735,7 @@ function boundCompleteLineItems(items: string[], requestedLimit: number) {
   };
 }
 
-function isNoMatchesError(error: unknown) {
+function isNoMatchesError(error: UntrustedInput) {
   return /(?:exited|failed) with code 1\b/i.test(errorMessage(error));
 }
 
@@ -1720,6 +1743,7 @@ function unavailable(reason: string): UnavailablePrReviewerWorkspace {
   return { available: false, reason, tools: [] };
 }
 
-function errorMessage(error: unknown) {
-  return error instanceof Error ? error.message : String(error);
+function errorMessage(error: UntrustedInput) {
+  const parsed = v.safeParse(errorInstanceSchema, error);
+  return parsed.success ? parsed.output.message : String(error);
 }

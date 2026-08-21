@@ -433,7 +433,7 @@ export async function runBoundedGitLines(cwd: string, args: string[]) {
     .filter(Boolean);
 }
 
-function redactGitError(error: unknown) {
+function redactGitError<TError>(error: TError) {
   if (error instanceof ExecFileError) {
     return new ExecFileError(redactGitText(error.message), {
       code: error.code,

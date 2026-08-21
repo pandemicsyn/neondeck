@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import { asJsonValue } from '../../lib/action-result';
+import type { JsonValue } from '@flue/runtime';
 import { parseInput } from '../../lib/valibot';
 import {
   ensureRuntimeHome,
@@ -10,14 +11,14 @@ import {
 } from '../../runtime-home';
 import { addNotification, addWorkflowSummary } from '../app-state';
 import { readRepoRegistrySnapshot, repoFullName } from '../repos';
-import { addPrWatch, resolvePrReference, type PrWatch } from '../watches';
+import { addPrWatch, resolvePrReference } from '../watches';
 import {
   handoffNoteInputSchema,
   handoffRegisterPrInputSchema,
   handoffWatchPrInputSchema,
   type HandoffActionResult,
 } from './schemas';
-import type * as v from 'valibot';
+import * as v from 'valibot';
 
 export type HandoffDependencies = {
   addPrWatch?: typeof addPrWatch;
@@ -63,15 +64,16 @@ export async function registerHandoffWatchPr(
   if (!prLink.ok) return prLink.result;
 
   const desiredTerminalState = parsed.input.desiredTerminalState ?? 'checks';
+  const watchInput: Parameters<typeof addPrWatch>[0] = {
+    ref: prLink.link.ref.id,
+    desiredTerminalState,
+    createdBy: source,
+  };
+  if (parsed.input.intervalSeconds !== undefined) {
+    watchInput.intervalSeconds = parsed.input.intervalSeconds;
+  }
   const watchResult = await (dependencies.addPrWatch ?? addPrWatch)(
-    {
-      ref: prLink.link.ref.id,
-      desiredTerminalState,
-      ...(parsed.input.intervalSeconds !== undefined
-        ? { intervalSeconds: parsed.input.intervalSeconds }
-        : {}),
-      createdBy: source,
-    },
+    watchInput,
     paths,
   );
   if (!watchResult.ok) {
@@ -286,7 +288,7 @@ export async function registerHandoffPr(
           watch: watchEnabled,
           watchId: watchId ?? null,
           note: Boolean(input.note),
-          notificationId: notificationIdFromValue(notification),
+          notificationId: notificationIdFromValue(notification) ?? null,
           review: true,
           error: message,
         },
@@ -318,12 +320,12 @@ export async function registerHandoffPr(
       watch: watchEnabled,
       watchId: watchId ?? null,
       note: Boolean(input.note),
-      notificationId: notificationIdFromValue(notification),
+      notificationId: notificationIdFromValue(notification) ?? null,
       review: input.review === true,
-      reviewRunId,
+      reviewRunId: reviewRunId ?? null,
     },
     paths,
-    reviewRunId ? { runId: reviewRunId } : {},
+    reviewRunId ? { runId: reviewRunId } : undefined,
   );
 
   const changed = watchChanged || Boolean(notification) || Boolean(review);
@@ -352,12 +354,12 @@ export function normalizeHandoffSource(
   return normalized.slice(0, 120);
 }
 
-function parseHandoffInput<T>(
-  schema: v.GenericSchema<unknown, T>,
-  input: unknown,
+function parseHandoffInput<TSchema extends v.GenericSchema<unknown, unknown>>(
+  schema: TSchema,
+  input: v.InferInput<TSchema>,
   action: string,
 ):
-  | { ok: true; input: T }
+  | { ok: true; input: v.InferOutput<TSchema> }
   | {
       ok: false;
       result: HandoffActionResult;
@@ -460,19 +462,17 @@ async function invokeReviewPrWorkflow(input: { ref: string }) {
 }
 
 async function addHandoffAudit(
-  summary: Record<string, unknown>,
+  summary: Record<string, JsonValue>,
   paths: RuntimePaths,
   options: { status?: string; runId?: string } = {},
 ) {
-  return addWorkflowSummary(
-    {
-      workflow: 'agent_handoff',
-      status: options.status ?? 'completed',
-      ...(options.runId ? { runId: options.runId } : {}),
-      summary,
-    },
-    paths,
-  );
+  const input: Parameters<typeof addWorkflowSummary>[0] = {
+    workflow: 'agent_handoff',
+    status: options.status ?? 'completed',
+    summary,
+  };
+  if (options.runId) input.runId = options.runId;
+  return addWorkflowSummary(input, paths);
 }
 
 function okResult(
@@ -481,28 +481,27 @@ function okResult(
   message: string,
   data: {
     id?: string;
-    watch?: unknown;
-    notification?: unknown;
-    release?: unknown;
-    review?: unknown;
-    audit?: unknown;
+    watch?: JsonValue;
+    notification?: JsonValue;
+    release?: JsonValue;
+    review?: JsonValue;
+    audit?: JsonValue;
   } = {},
 ): HandoffActionResult {
-  return {
+  const result: HandoffActionResult = {
     ok: true,
     action,
     changed,
     message,
-    ...(data.id ? { id: data.id } : {}),
     deckUrl,
-    ...(data.watch ? { watch: asJsonValue(data.watch) } : {}),
-    ...(data.notification
-      ? { notification: asJsonValue(data.notification) }
-      : {}),
-    ...(data.release ? { release: asJsonValue(data.release) } : {}),
-    ...(data.review ? { review: asJsonValue(data.review) } : {}),
-    ...(data.audit ? { audit: asJsonValue(data.audit) } : {}),
   };
+  if (data.id) result.id = data.id;
+  if (data.watch) result.watch = asJsonValue(data.watch);
+  if (data.notification) result.notification = asJsonValue(data.notification);
+  if (data.release) result.release = asJsonValue(data.release);
+  if (data.review) result.review = asJsonValue(data.review);
+  if (data.audit) result.audit = asJsonValue(data.audit);
+  return result;
 }
 
 function failResult(
@@ -511,41 +510,39 @@ function failResult(
   data: {
     changed?: boolean;
     id?: string;
-    watch?: unknown;
-    notification?: unknown;
-    release?: unknown;
-    review?: unknown;
-    audit?: unknown;
+    watch?: JsonValue;
+    notification?: JsonValue;
+    release?: JsonValue;
+    review?: JsonValue;
+    audit?: JsonValue;
     errors?: string[];
     requires?: string[];
   } = {},
 ): HandoffActionResult {
-  return {
+  const result: HandoffActionResult = {
     ok: false,
     action,
     changed: data.changed ?? false,
     message,
-    ...(data.id ? { id: data.id } : {}),
     deckUrl,
-    ...(data.watch ? { watch: asJsonValue(data.watch) } : {}),
-    ...(data.notification
-      ? { notification: asJsonValue(data.notification) }
-      : {}),
-    ...(data.release ? { release: asJsonValue(data.release) } : {}),
-    ...(data.review ? { review: asJsonValue(data.review) } : {}),
-    ...(data.audit ? { audit: asJsonValue(data.audit) } : {}),
-    ...(data.errors ? { errors: data.errors } : {}),
-    ...(data.requires ? { requires: data.requires } : {}),
   };
+  if (data.id) result.id = data.id;
+  if (data.watch) result.watch = asJsonValue(data.watch);
+  if (data.notification) result.notification = asJsonValue(data.notification);
+  if (data.release) result.release = asJsonValue(data.release);
+  if (data.review) result.review = asJsonValue(data.review);
+  if (data.audit) result.audit = asJsonValue(data.audit);
+  if (data.errors) result.errors = data.errors;
+  if (data.requires) result.requires = data.requires;
+  return result;
 }
 
 function displaySource(source: string) {
   return source.replace(/^(?:external|ci):/, '');
 }
 
-function errorMessage(error: unknown) {
-  if (error instanceof Error) return error.message;
-  return String(error);
+function errorMessage(cause: unknown) {
+  return cause instanceof Error ? cause.message : String(cause);
 }
 
 function noteSourceId(input: {
@@ -567,20 +564,20 @@ function noteSourceId(input: {
     .slice(0, 32);
 }
 
-function watchIdFromValue(value: unknown) {
-  if (!value || typeof value !== 'object') return undefined;
-  const id = (value as Partial<PrWatch>).id;
-  return typeof id === 'string' ? id : undefined;
+const handoffIdSchema = v.looseObject({ id: v.optional(v.string()) });
+const handoffRunIdSchema = v.looseObject({ runId: v.optional(v.string()) });
+
+function watchIdFromValue(value: JsonValue | undefined) {
+  const parsed = v.safeParse(handoffIdSchema, value);
+  return parsed.success ? parsed.output.id : undefined;
 }
 
-function notificationIdFromValue(value: unknown) {
-  if (!value || typeof value !== 'object') return undefined;
-  const id = (value as { id?: unknown }).id;
-  return typeof id === 'string' ? id : undefined;
+function notificationIdFromValue(value: JsonValue | undefined) {
+  const parsed = v.safeParse(handoffIdSchema, value);
+  return parsed.success ? parsed.output.id : undefined;
 }
 
-function reviewRunIdFromValue(value: unknown) {
-  if (!value || typeof value !== 'object') return undefined;
-  const runId = (value as { runId?: unknown }).runId;
-  return typeof runId === 'string' ? runId : undefined;
+function reviewRunIdFromValue(value: JsonValue | undefined) {
+  const parsed = v.safeParse(handoffRunIdSchema, value);
+  return parsed.success ? parsed.output.runId : undefined;
 }

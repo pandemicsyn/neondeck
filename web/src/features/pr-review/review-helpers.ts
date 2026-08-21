@@ -3,8 +3,8 @@ import {
   ApiError,
   type GitHubPrReviewDraft,
   type GitHubPrReviewVerdict,
-  type GitHubPrReviewSubmitResponse,
 } from '../../api';
+import * as v from 'valibot';
 import {
   buildPatchAnchorIndex,
   commentAnchorExists,
@@ -54,12 +54,22 @@ export function staleDraftCommentIds(
   return stale;
 }
 
-export function failingCommentIdsFromError(error: unknown) {
-  if (!(error instanceof ApiError)) return [];
-  const data = error.data as GitHubPrReviewSubmitResponse | undefined;
+const failedCommentIdsSchema = v.looseObject({
+  data: v.optional(
+    v.looseObject({
+      code: v.optional(v.string()),
+      failingCommentIds: v.optional(v.array(v.string())),
+    }),
+  ),
+});
+
+export function failingCommentIdsFromError(cause: unknown) {
+  if (!(cause instanceof ApiError)) return [];
+  const parsed = v.safeParse(failedCommentIdsSchema, cause.data);
+  if (!parsed.success) return [];
+  const data = parsed.output;
   if (data?.data?.code !== 'github-review-submit-failed') return [];
-  const ids = data.data.failingCommentIds;
-  return Array.isArray(ids) ? ids.filter((id) => typeof id === 'string') : [];
+  return data.data.failingCommentIds ?? [];
 }
 
 export function normalizeReviewBody(value: string | null | undefined) {

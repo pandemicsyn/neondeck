@@ -1,4 +1,5 @@
 import { type JsonValue } from '@flue/runtime';
+import * as v from 'valibot';
 import { asJsonValue } from '../../lib/action-result';
 import type { RuntimePaths } from '../../runtime-home';
 import {
@@ -25,9 +26,21 @@ export type ExecutionScope = {
   forwardEnv: boolean;
   envSources: ReturnType<typeof envSourceAuditMetadata>;
 };
+const executionScopeContextObjectSchema = v.looseObject({
+  neondeckExecutionScope: v.optional(v.unknown()),
+});
+const executionScopeContextSchema = v.pipe(
+  v.unknown(),
+  v.check(
+    (value) =>
+      !Array.isArray(value) && v.is(executionScopeContextObjectSchema, value),
+    'Execution request context must be a non-array object.',
+  ),
+  v.transform((value) => v.parse(executionScopeContextObjectSchema, value)),
+);
 
-export async function authorizeExecutionScope(
-  userContext: unknown,
+export async function authorizeExecutionScope<TContext>(
+  userContext: TContext,
   input: ScopedExecutionInput,
   policyCheck: ExecutionPolicyCheck,
   paths: RuntimePaths,
@@ -86,30 +99,29 @@ async function resolveExecutionScope(
   };
 }
 
-function mergeExecutionScope(
-  userContext: unknown,
+function mergeExecutionScope<TContext>(
+  userContext: TContext,
   scope: ExecutionScope | null,
 ): JsonValue | undefined {
   const context =
     userContext === undefined ? undefined : sanitizeRequestContext(userContext);
   if (!scope) return context;
-  if (context && typeof context === 'object' && !Array.isArray(context)) {
-    return { ...context, neondeckExecutionScope: scope };
+  const parsed = v.safeParse(executionScopeContextSchema, context);
+  if (parsed.success) {
+    return asJsonValue({ ...parsed.output, neondeckExecutionScope: scope });
   }
   if (context === undefined) return { neondeckExecutionScope: scope };
   return { requestContext: context, neondeckExecutionScope: scope };
 }
 
-function sanitizeRequestContext(userContext: unknown): JsonValue {
+function sanitizeRequestContext<TContext>(userContext: TContext): JsonValue {
   const context = asJsonValue(userContext);
-  if (!context || typeof context !== 'object' || Array.isArray(context)) {
+  const parsed = v.safeParse(executionScopeContextSchema, context);
+  if (!parsed.success) {
     return context;
   }
-  const { neondeckExecutionScope: _reserved, ...rest } = context as Record<
-    string,
-    JsonValue
-  >;
-  return rest;
+  const { neondeckExecutionScope: _reserved, ...rest } = parsed.output;
+  return asJsonValue(rest);
 }
 
 export function executionScopeKey(scope: ExecutionScope | JsonValue | null) {
@@ -119,11 +131,10 @@ export function executionScopeKey(scope: ExecutionScope | JsonValue | null) {
 
 export function approvalExecutionScopeKey(approval: ExecutionApprovalRecord) {
   const context = approval.requestContext;
-  if (!context || typeof context !== 'object' || Array.isArray(context)) {
-    return null;
-  }
-  const scope = (context as Record<string, JsonValue>).neondeckExecutionScope;
-  return scope === undefined ? null : executionScopeKey(scope);
+  const parsed = v.safeParse(executionScopeContextSchema, context);
+  return parsed.success && parsed.output.neondeckExecutionScope !== undefined
+    ? executionScopeKey(asJsonValue(parsed.output.neondeckExecutionScope))
+    : null;
 }
 
 export function envSourceAuditMetadata(sources: ExeDevEnvSourceAudit[]) {

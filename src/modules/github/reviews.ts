@@ -37,6 +37,15 @@ export type GitHubPrReviewDraftCommentSide = 'RIGHT' | 'LEFT';
 
 export type GitHubPrReviewDraftCommentOrigin = 'human' | 'neon';
 
+type GitHubReviewCommentPayload = {
+  path: string;
+  side: GitHubPrReviewDraftCommentSide;
+  line: number;
+  start_line?: number;
+  start_side?: GitHubPrReviewDraftCommentSide;
+  body: string;
+};
+
 export type GitHubPrReviewDraftComment = {
   id: string;
   draftId: string;
@@ -142,6 +151,21 @@ const draftRowSchema = v.object({
   created_at: v.string(),
   updated_at: v.string(),
   submitted_at: v.nullable(v.string()),
+});
+const draftIdRowSchema = v.looseObject({ draft_id: v.string() });
+const draftStatusRowSchema = v.looseObject({
+  status: draftStatusSchema,
+  head_sha: v.string(),
+});
+const draftCommentAnchorRowSchema = v.object({
+  path: v.string(),
+  side: reviewCommentSideSchema,
+  line: v.number(),
+  start_line: v.nullable(v.number()),
+  start_side: v.nullable(reviewCommentSideSchema),
+});
+const githubErrorItemsSchema = v.looseObject({
+  errors: v.optional(v.array(v.looseObject({}))),
 });
 
 const draftCommentRowSchema = v.object({
@@ -255,10 +279,13 @@ export function readPrReviewDraftForComment(options: {
 }): GitHubPrReviewDraft | null {
   const database = openDb(options.databasePath);
   try {
-    const row = database
-      .prepare('SELECT draft_id FROM pr_review_draft_comments WHERE id = ?;')
-      .get(options.commentId) as { draft_id?: unknown } | undefined;
-    const draftId = typeof row?.draft_id === 'string' ? row.draft_id : null;
+    const parsed = v.safeParse(
+      draftIdRowSchema,
+      database
+        .prepare('SELECT draft_id FROM pr_review_draft_comments WHERE id = ?;')
+        .get(options.commentId),
+    );
+    const draftId = parsed.success ? parsed.output.draft_id : null;
     return draftId ? readDraftWithCommentsById(database, draftId) : null;
   } finally {
     database.close();
@@ -454,13 +481,16 @@ export function addPrReviewDraftComment(options: {
       () => {
         assertValidReviewCommentAnchor(options);
         const id = options.id?.trim() || randomUUID();
-        const existing = database
-          .prepare(
-            'SELECT draft_id FROM pr_review_draft_comments WHERE id = ? LIMIT 1;',
-          )
-          .get(id) as { draft_id?: unknown } | undefined;
-        if (existing) {
-          if (existing.draft_id !== options.draftId) {
+        const existing = v.safeParse(
+          draftIdRowSchema,
+          database
+            .prepare(
+              'SELECT draft_id FROM pr_review_draft_comments WHERE id = ? LIMIT 1;',
+            )
+            .get(id),
+        );
+        if (existing.success) {
+          if (existing.output.draft_id !== options.draftId) {
             throw new Error(
               'Review draft comment id belongs to another draft.',
             );
@@ -530,46 +560,45 @@ export function updatePrReviewDraftComment(options: {
       ? prefixBotComment(unbrandedGeneratedCommentBody(options.body))
       : options.body.trim();
   try {
-    const row = database
-      .prepare('SELECT draft_id FROM pr_review_draft_comments WHERE id = ?;')
-      .get(options.commentId) as { draft_id?: unknown } | undefined;
-    const draftId = typeof row?.draft_id === 'string' ? row.draft_id : null;
+    const row = v.safeParse(
+      draftIdRowSchema,
+      database
+        .prepare('SELECT draft_id FROM pr_review_draft_comments WHERE id = ?;')
+        .get(options.commentId),
+    );
+    const draftId = row.success ? row.output.draft_id : null;
     if (!draftId) throw new Error('Review draft comment not found.');
     return withEditableDraftWrite(
       database,
       draftId,
       options.expectedHeadSha,
       () => {
-        const existing = database
-          .prepare(
-            `
+        const existing = v.safeParse(
+          draftCommentAnchorRowSchema,
+          database
+            .prepare(
+              `
             SELECT path, side, line, start_line, start_side
             FROM pr_review_draft_comments
             WHERE id = ?;
           `,
-          )
-          .get(options.commentId) as
-          | {
-              path: string;
-              side: GitHubPrReviewDraftCommentSide;
-              line: number;
-              start_line: number | null;
-              start_side: GitHubPrReviewDraftCommentSide | null;
-            }
-          | undefined;
-        if (!existing) throw new Error('Review draft comment not found.');
+            )
+            .get(options.commentId),
+        );
+        if (!existing.success)
+          throw new Error('Review draft comment not found.');
         const nextAnchor = {
-          path: options.path ?? existing.path,
-          side: options.side ?? existing.side,
-          line: options.line ?? existing.line,
+          path: options.path ?? existing.output.path,
+          side: options.side ?? existing.output.side,
+          line: options.line ?? existing.output.line,
           startLine:
             'startLine' in options
               ? (options.startLine ?? null)
-              : existing.start_line,
+              : existing.output.start_line,
           startSide:
             'startSide' in options
               ? (options.startSide ?? null)
-              : existing.start_side,
+              : existing.output.start_side,
         };
         assertValidReviewCommentAnchor(nextAnchor);
         database
@@ -639,10 +668,13 @@ export function deletePrReviewDraftComment(options: {
   const database = openDb(options.databasePath);
   const now = new Date().toISOString();
   try {
-    const row = database
-      .prepare('SELECT draft_id FROM pr_review_draft_comments WHERE id = ?;')
-      .get(options.commentId) as { draft_id?: unknown } | undefined;
-    const draftId = typeof row?.draft_id === 'string' ? row.draft_id : null;
+    const row = v.safeParse(
+      draftIdRowSchema,
+      database
+        .prepare('SELECT draft_id FROM pr_review_draft_comments WHERE id = ?;')
+        .get(options.commentId),
+    );
+    const draftId = row.success ? row.output.draft_id : null;
     if (!draftId) throw new Error('Review draft comment not found.');
     return withEditableDraftWrite(
       database,
@@ -1023,7 +1055,7 @@ function readNeonSeedsForDraft(
     .map(readNeonSeedRow);
 }
 
-function readNeonSeedRow(row: unknown): GitHubPrReviewNeonSeededComment {
+function readNeonSeedRow<TRow>(row: TRow): GitHubPrReviewNeonSeededComment {
   const parsed = v.parse(neonSeedRowSchema, row);
   return {
     commentId: parsed.comment_id,
@@ -1164,7 +1196,8 @@ async function mapWithConcurrency<T, R>(
   concurrency: number,
   task: (item: T) => Promise<R>,
 ) {
-  const results = Array.from({ length: items.length }) as R[];
+  const results: R[] = [];
+  results.length = items.length;
   let nextIndex = 0;
   await Promise.all(
     Array.from({ length: Math.min(concurrency, items.length) }, async () => {
@@ -1336,9 +1369,9 @@ function compareReviewAge(
   return leftTime - rightTime || left.id - right.id;
 }
 
-function readDraftWithComments(
+function readDraftWithComments<TRow>(
   database: ReturnType<typeof openDb>,
-  row: unknown,
+  row: TRow,
 ) {
   const draft = readDraftRow(row);
   return {
@@ -1347,9 +1380,9 @@ function readDraftWithComments(
   };
 }
 
-function updateExistingReviewDraft(
+function updateExistingReviewDraft<TRow>(
   database: ReturnType<typeof openDb>,
-  row: unknown,
+  row: TRow,
   options: {
     headSha?: string;
     verdict?: GitHubPrReviewVerdict | null;
@@ -1397,7 +1430,7 @@ function readDraftWithCommentsById(
   return readDraftWithComments(database, row);
 }
 
-function readDraftRow(row: unknown): Omit<GitHubPrReviewDraft, 'comments'> {
+function readDraftRow<TRow>(row: TRow): Omit<GitHubPrReviewDraft, 'comments'> {
   const parsed = v.parse(draftRowSchema, row);
   return {
     id: parsed.id,
@@ -1467,13 +1500,16 @@ function assertDraftIsLive(
   draftId: string,
   expectedHeadSha?: string,
 ) {
-  const row = database
-    .prepare('SELECT status, head_sha FROM pr_review_drafts WHERE id = ?;')
-    .get(draftId) as { status?: unknown; head_sha?: unknown } | undefined;
-  if (row?.status !== 'draft') {
+  const row = v.safeParse(
+    draftStatusRowSchema,
+    database
+      .prepare('SELECT status, head_sha FROM pr_review_drafts WHERE id = ?;')
+      .get(draftId),
+  );
+  if (!row.success || row.output.status !== 'draft') {
     throw new Error('Review draft is not editable.');
   }
-  if (expectedHeadSha && row.head_sha !== expectedHeadSha) {
+  if (expectedHeadSha && row.output.head_sha !== expectedHeadSha) {
     throw new Error(
       'Review draft no longer matches the expected head revision.',
     );
@@ -1614,8 +1650,7 @@ async function createPullRequestReview(options: {
     submittedAt: review.submitted_at ?? null,
     commitId: review.commit_id ?? null,
     url: review.html_url ?? null,
-    body:
-      'body' in review && typeof review.body === 'string' ? review.body : null,
+    body: reviewBody(review),
   };
 }
 
@@ -1625,15 +1660,23 @@ function reviewEvent(verdict: GitHubPrReviewVerdict) {
   return 'COMMENT';
 }
 
-function reviewCommentPayload(comment: GitHubPrReviewDraftComment) {
-  return {
+function reviewBody<TReview>(review: TReview) {
+  const parsed = v.safeParse(v.looseObject({ body: v.string() }), review);
+  return parsed.success ? parsed.output.body : null;
+}
+
+function reviewCommentPayload(
+  comment: GitHubPrReviewDraftComment,
+): GitHubReviewCommentPayload {
+  const payload: GitHubReviewCommentPayload = {
     path: comment.path,
     side: comment.side,
     line: comment.line,
-    ...(comment.startLine ? { start_line: comment.startLine } : {}),
-    ...(comment.startSide ? { start_side: comment.startSide } : {}),
     body: comment.body,
   };
+  if (comment.startLine) payload.start_line = comment.startLine;
+  if (comment.startSide) payload.start_side = comment.startSide;
+  return payload;
 }
 
 function assertValidReviewCommentAnchor(options: {
@@ -1664,15 +1707,18 @@ function normalizeNullableBody(value: string | null | undefined) {
   return trimmed.length > 0 ? trimmed : null;
 }
 
-function isLikelyInsufficientScopeError(error: unknown, message: string) {
+function isLikelyInsufficientScopeError<TError>(
+  error: TError,
+  message: string,
+) {
   if (error instanceof GitHubApiError && error.status === 403) return true;
   return /Resource not accessible by integration|pull request write access/i.test(
     message,
   );
 }
 
-function failingReviewCommentIdsFromGitHubError(
-  error: unknown,
+function failingReviewCommentIdsFromGitHubError<TError>(
+  error: TError,
   comments: GitHubPrReviewDraftComment[],
 ) {
   if (!(error instanceof GitHubApiError)) {
@@ -1692,11 +1738,14 @@ function failingReviewCommentIdsFromGitHubError(
     : comments.map((comment) => comment.id);
 }
 
-function failingReviewCommentIndexes(data: unknown) {
+function failingReviewCommentIndexes<TData>(data: TData) {
   const indexes = new Set<number>();
   for (const item of githubErrorItems(data)) {
     const text = Object.values(item)
-      .filter((value) => typeof value === 'string' || typeof value === 'number')
+      .flatMap((value) => {
+        const parsed = v.safeParse(v.union([v.string(), v.number()]), value);
+        return parsed.success ? [parsed.output] : [];
+      })
       .join(' ');
     for (const match of text.matchAll(/comments\[(\d+)]/gi)) {
       indexes.add(Number(match[1]));
@@ -1705,8 +1754,8 @@ function failingReviewCommentIndexes(data: unknown) {
   return indexes;
 }
 
-function githubErrorDataMentionsComment(
-  data: unknown,
+function githubErrorDataMentionsComment<TData>(
+  data: TData,
   comment: GitHubPrReviewDraftComment,
 ) {
   const lineNeedles = [
@@ -1724,17 +1773,12 @@ function githubErrorDataMentionsComment(
   });
 }
 
-function githubErrorItems(data: unknown): Array<Record<string, unknown>> {
-  if (!data || typeof data !== 'object') return [];
-  const errors = 'errors' in data ? data.errors : null;
-  if (!Array.isArray(errors)) return [];
-  return errors.filter(
-    (item): item is Record<string, unknown> =>
-      Boolean(item) && typeof item === 'object',
-  );
+function githubErrorItems<TData>(data: TData) {
+  const parsed = v.safeParse(githubErrorItemsSchema, data);
+  return parsed.success ? (parsed.output.errors ?? []) : [];
 }
 
-function rewriteThreadMutationError(error: unknown) {
+function rewriteThreadMutationError<TError>(error: TError) {
   const message = errorMessage(error);
   if (isLikelyInsufficientScopeError(error, message)) {
     return new Error(

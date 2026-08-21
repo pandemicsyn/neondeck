@@ -71,8 +71,8 @@ export async function reanchorDraftToRevision(input: {
     expectedHeadSha: string;
     headSha: string;
     reanchorHeadSha: true;
-  }) => Promise<unknown>;
-  invalidateReviewSources: () => Promise<unknown>;
+  }) => Promise<GitHubPrReviewDraft | undefined>;
+  invalidateReviewSources: () => Promise<readonly void[] | undefined>;
 }) {
   if (!input.headSha) throw new Error('PR head SHA is unavailable.');
   await input.saveDraft({

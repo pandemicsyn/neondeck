@@ -1,4 +1,5 @@
 import { assertWorktreeMutationAllowed } from '../modules/worktrees';
+import * as v from 'valibot';
 import {
   reviewRevisionKey,
   type ReviewRevision,
@@ -48,7 +49,18 @@ import {
   staleResult,
 } from './support';
 
-export async function readRepoFile(rawInput: unknown, paths = runtimePaths()) {
+const untrustedInputSchema = v.unknown();
+type UntrustedInput = v.InferInput<typeof untrustedInputSchema>;
+type RepoRawInput = Readonly<Record<string, UntrustedInput>>;
+const execErrorSchema = v.object({
+  stdout: v.optional(v.unknown()),
+  code: v.optional(v.unknown()),
+});
+
+export async function readRepoFile(
+  rawInput: RepoRawInput,
+  paths = runtimePaths(),
+) {
   const parsed = parseInput(repoReadInputSchema, rawInput, 'repo_file_read');
   if (!parsed.ok) return parsed.result;
 
@@ -116,7 +128,7 @@ export async function readRepoFile(rawInput: unknown, paths = runtimePaths()) {
 }
 
 export async function searchRepoFiles(
-  rawInput: unknown,
+  rawInput: RepoRawInput,
   paths = runtimePaths(),
 ) {
   const parsed = parseInput(
@@ -149,15 +161,11 @@ export async function searchRepoFiles(
       ...safeGlobs(parsed.input.globs).flatMap((glob) => ['--glob', glob]),
     ];
     const output = await execRg(root, args).catch((error) => {
-      if (error && typeof error === 'object' && 'stdout' in error) {
-        return String((error as { stdout?: unknown }).stdout ?? '');
+      const execError = v.safeParse(execErrorSchema, error);
+      if (execError.success && execError.output.stdout !== undefined) {
+        return String(execError.output.stdout);
       }
-      if (
-        error &&
-        typeof error === 'object' &&
-        'code' in error &&
-        (error as { code?: unknown }).code === 'ENOENT'
-      ) {
+      if (execError.success && execError.output.code === 'ENOENT') {
         return fallbackSearch(root, parsed.input.query, maxResults);
       }
       throw error;
@@ -203,7 +211,10 @@ export async function searchRepoFiles(
   }
 }
 
-export async function writeRepoFile(rawInput: unknown, paths = runtimePaths()) {
+export async function writeRepoFile(
+  rawInput: RepoRawInput,
+  paths = runtimePaths(),
+) {
   const parsed = parseInput(repoWriteInputSchema, rawInput, 'repo_file_write');
   if (!parsed.ok) return parsed.result;
   const input = parsed.input;
@@ -303,7 +314,7 @@ export async function writeRepoFile(rawInput: unknown, paths = runtimePaths()) {
 }
 
 export async function replaceRepoFile(
-  rawInput: unknown,
+  rawInput: RepoRawInput,
   paths = runtimePaths(),
 ) {
   const parsed = parseInput(
@@ -675,7 +686,7 @@ export async function replaceRepoFilesAtomically(
 }
 
 export async function readRepoDiff(
-  rawInput: unknown,
+  rawInput: RepoRawInput,
   paths = runtimePaths(),
   dependencies: {
     gitDiff?: typeof gitDiff;
@@ -800,7 +811,7 @@ function staleRepoDiffPatch(
 }
 
 export async function readRepoCheckoutStatus(
-  rawInput: unknown,
+  rawInput: RepoRawInput,
   paths = runtimePaths(),
 ) {
   const parsed = parseInput(

@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import * as v from 'valibot';
 import { openDb, withImmediateTransaction } from '../../lib/sqlite';
 import {
   ensureRuntimeHome,
@@ -21,6 +22,27 @@ import {
   readPrReviewByRunId,
   readPrReviewForTarget,
 } from './store';
+
+const untrustedInputSchema = v.unknown();
+const errorInstanceSchema = v.instance(Error);
+const existingReviewRowSchema = v.object({
+  id: v.string(),
+  status: v.picklist([
+    'ready',
+    'submitting',
+    'submitted',
+    'failed',
+    'reviewing',
+  ]),
+  head_sha: v.string(),
+  verdict: v.nullable(v.picklist(['comment', 'approve', 'request-changes'])),
+  previous_verdict: v.nullable(
+    v.picklist(['comment', 'approve', 'request-changes']),
+  ),
+  created_at: v.string(),
+});
+const runIdRowSchema = v.object({ run_id: v.optional(v.string()) });
+type UntrustedInput = v.InferInput<typeof untrustedInputSchema>;
 import {
   prReviewTrustBoundary,
   type PrReviewOrigin,
@@ -124,7 +146,6 @@ export type RefreshPrReviewRemoteStateDependencies = {
 const submissionReconcileGraceMs = 30_000;
 export const prReviewRemoteRefreshIntervalMs = 3 * 60_000;
 const activeSubmissionAttempts = new Set<string>();
-const remoteRefreshRegistry = prReviewRemoteRefreshRegistry();
 
 type PrReviewRemoteRefreshResult = {
   changed: number;
@@ -137,6 +158,15 @@ type PrReviewRemoteRefreshState = {
   inFlight: Promise<PrReviewRemoteRefreshResult> | null;
   lastAttemptMs: number | null;
 };
+
+type PrReviewRemoteRefreshRegistry = Map<string, PrReviewRemoteRefreshState>;
+
+declare global {
+  var __neondeckPrReviewRemoteRefreshRegistry:
+    PrReviewRemoteRefreshRegistry | undefined;
+}
+
+const remoteRefreshRegistry = prReviewRemoteRefreshRegistry();
 
 export async function startPrReview(
   input: StartPrReviewInput,
@@ -252,14 +282,15 @@ async function startPrReviewInternal(
     if (!attached) {
       throw new Error('This review attempt was superseded by a newer start.');
     }
-    return {
+    const started = {
       review: attached,
       reviewId: attached.id,
       runId: admission.runId,
-      ...('returnExistingInProgress' in input
-        ? { started: true, reason: null }
-        : {}),
     };
+    if ('returnExistingInProgress' in input) {
+      return { ...started, started: true, reason: null };
+    }
+    return started;
   } catch (error) {
     failPrReview(
       { reviewId: review.id, attemptId, message: errorMessage(error) },
@@ -623,7 +654,7 @@ export async function refreshPrReviewRemoteState(
     return {
       changed: 0,
       inspected: 0,
-      errors: [] as string[],
+      errors: [],
       skipped: true,
     };
   }
@@ -676,7 +707,7 @@ async function refreshPrReviewRemoteStateOnce(
     return {
       changed: 0,
       inspected: 0,
-      errors: [] as string[],
+      errors: [],
       skipped: false,
     };
   }
@@ -899,14 +930,8 @@ function remoteRefreshState(paths: RuntimePaths) {
 }
 
 function prReviewRemoteRefreshRegistry() {
-  const globalRegistry = globalThis as typeof globalThis & {
-    __neondeckPrReviewRemoteRefreshRegistry?: Map<
-      string,
-      PrReviewRemoteRefreshState
-    >;
-  };
-  globalRegistry.__neondeckPrReviewRemoteRefreshRegistry ??= new Map();
-  return globalRegistry.__neondeckPrReviewRemoteRefreshRegistry;
+  globalThis.__neondeckPrReviewRemoteRefreshRegistry ??= new Map();
+  return globalThis.__neondeckPrReviewRemoteRefreshRegistry;
 }
 
 async function mapWithConcurrency<T, R>(
@@ -956,23 +981,21 @@ function reserveReviewingRecord(
       };
   try {
     reservation = withImmediateTransaction(database, () => {
-      const existingRow = database
+      const rawExistingRow = database
         .prepare(
           `SELECT id, status, head_sha, verdict, previous_verdict, created_at
            FROM pr_reviews
            WHERE lower(repo_full_name) = lower(?) AND pr_number = ?
            LIMIT 1;`,
         )
-        .get(repoFullName, input.target.number) as
-        | {
-            id: string;
-            status: PrReviewRecord['status'];
-            head_sha: string;
-            verdict: PrReviewVerdict | null;
-            previous_verdict: PrReviewVerdict | null;
-            created_at: string;
-          }
-        | undefined;
+        .get(repoFullName, input.target.number);
+      const existingParsed = v.safeParse(
+        existingReviewRowSchema,
+        rawExistingRow,
+      );
+      const existingRow = existingParsed.success
+        ? existingParsed.output
+        : undefined;
 
       if (existingRow?.status === 'reviewing') {
         if (input.returnExistingInProgress) {
@@ -1118,13 +1141,14 @@ export function attachPrReviewAttemptRun(
       publish(updated, 'changed');
       return updated;
     }
-    const row = database
+    const rawRow = database
       .prepare(
         `SELECT run_id FROM pr_reviews
          WHERE id = ? AND attempt_id = ? LIMIT 1;`,
       )
-      .get(id, attemptId) as { run_id?: unknown } | undefined;
-    if (row?.run_id !== runId) return null;
+      .get(id, attemptId);
+    const row = v.safeParse(runIdRowSchema, rawRow);
+    if (!row.success || row.output.run_id !== runId) return null;
   } finally {
     database.close();
   }
@@ -1194,6 +1218,7 @@ function reviewSurfaceUrl(repoFullName: string, prNumber: number) {
   return `/review?${params.toString()}`;
 }
 
-function errorMessage(error: unknown) {
-  return error instanceof Error ? error.message : String(error);
+function errorMessage(error: UntrustedInput) {
+  const parsed = v.safeParse(errorInstanceSchema, error);
+  return parsed.success ? parsed.output.message : String(error);
 }

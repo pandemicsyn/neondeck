@@ -78,9 +78,12 @@ export async function fetchGitHubIssues(input: FetchGitHubIssuesInput) {
         number: item.number,
         title: item.title,
         url: item.html_url,
-        labels: (item.labels ?? []).map((label) =>
-          typeof label === 'string' ? label : label.name,
-        ),
+        labels: (item.labels ?? []).map((label) => {
+          const parsedLabel = v.safeParse(v.string(), label);
+          return parsedLabel.success
+            ? parsedLabel.output
+            : v.parse(v.looseObject({ name: v.string() }), label).name;
+        }),
         authorLogin: item.user?.login ?? null,
         assigneeLogins: (item.assignees ?? []).map(
           (assignee) => assignee.login,

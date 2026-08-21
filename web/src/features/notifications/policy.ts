@@ -5,12 +5,12 @@ import type {
 } from '../../api';
 import { DEFAULT_TOAST_CONFIG } from './types';
 
-export const notificationLevelRank: Record<NotificationLevel, number> = {
+export const notificationLevelRank = {
   info: 0,
   ready: 1,
   attention: 2,
   urgent: 3,
-};
+} satisfies Record<NotificationLevel, number>;
 
 export function resolveToastConfig(
   config: Partial<DashboardToastConfig> | undefined,

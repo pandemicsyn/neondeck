@@ -14,6 +14,7 @@ import {
   type GitHubPrReviewDraft,
   type GitHubPullRequestEventState,
   type GitHubPullRequestFile,
+  githubPullRequestFileSchema,
 } from '../github';
 import { getGitHubPrEventState, getGitHubPrFiles } from '../pr-events';
 import type { PrEventStateDependencies, PullRequestTarget } from '../pr-events';
@@ -46,6 +47,38 @@ import {
 import { buildReviewReportDecks } from './report-deck';
 import { prReviewFindingSourceId } from '../pr-reviews/finding-id';
 
+const untrustedInputSchema = v.unknown();
+const dataRecordSchema = v.record(v.string(), untrustedInputSchema);
+const pullRequestTargetSchema = v.object({
+  repoFullName: v.string(),
+  owner: v.string(),
+  repo: v.string(),
+  number: v.pipe(v.number(), v.integer(), v.minValue(1)),
+});
+const eventStateSchema = v.custom<GitHubPullRequestEventState>(
+  (value) =>
+    v.safeParse(
+      v.object({
+        headSha: v.string(),
+        baseSha: v.nullable(v.string()),
+        baseRef: v.string(),
+        title: v.string(),
+        body: v.nullable(v.string()),
+        state: v.string(),
+        url: v.string(),
+      }),
+      value,
+    ).success,
+);
+const diffSummarySchema = v.object({
+  files: v.number(),
+  additions: v.number(),
+  deletions: v.number(),
+  binaryFiles: v.number(),
+});
+type UntrustedInput = v.InferInput<typeof untrustedInputSchema>;
+type DataRecord = v.InferOutput<typeof dataRecordSchema>;
+
 export type ReviewAssistFacts = {
   target: PullRequestTarget;
   state: GitHubPullRequestEventState;
@@ -73,7 +106,7 @@ export type ReviewAssistDependencies = {
   reviewer?: (
     facts: ReviewAssistFacts,
     context: ReviewAssistPromptContext,
-  ) => Promise<unknown> | unknown;
+  ) => Promise<UntrustedInput> | UntrustedInput;
   prEventDependencies?: PrEventStateDependencies;
   workflowRunId?: string;
   effectId?: string;
@@ -95,6 +128,13 @@ type SeededFinding = {
   finding: ReviewAssistFinding;
   anchor: ReviewCommentAnchor;
   commentId: string;
+};
+
+type SeedDraftCommentsResult = {
+  draft: GitHubPrReviewDraft | null;
+  seeded: SeededFinding[];
+  reportOnly: ReportOnlyFinding[];
+  skippedReason: string | null;
 };
 
 type ReportOnlyFinding = {
@@ -178,7 +218,7 @@ export async function preparePrReviewForHuman(
 
 export async function completePreparedPrReviewForHuman(
   prepared: PreparedPrReviewAssist,
-  rawOutput: unknown,
+  rawOutput: UntrustedInput,
   paths = runtimePaths(),
   dependencies: Pick<
     ReviewAssistDependencies,
@@ -228,32 +268,32 @@ export async function completePreparedPrReviewForHuman(
       signal: dependencies.signal,
     }),
   );
+  const workflowSummaryInput = {
+    id: stableEffectId(dependencies.effectId, 'workflow-summary'),
+    signal: dependencies.signal,
+    workflow: 'review-pr-for-human' as const,
+    status: 'completed' as const,
+    summary: {
+      message: `Prepared review reports for ${facts.target.repoFullName}#${facts.target.number}.`,
+      repoId,
+      repoFullName: facts.target.repoFullName,
+      prNumber: facts.target.number,
+      headSha: facts.state.headSha,
+      findingCount: reviewed.output.findings.length,
+      seededCount: seedResult.seeded.length,
+      reportOnlyCount: seedResult.reportOnly.length,
+      skippedSeedingReason: seedResult.skippedReason,
+      reportIds: reports.map((report) => report.id),
+      memoryIds: promptContext.learningMemoryContext.memoryIds,
+    },
+  };
   const workflowSummary = await runEffect('write-workflow-summary', () =>
-    addWorkflowSummary(
-      {
-        id: stableEffectId(dependencies.effectId, 'workflow-summary'),
-        signal: dependencies.signal,
-        workflow: 'review-pr-for-human',
-        ...(dependencies.workflowRunId
-          ? { runId: dependencies.workflowRunId }
-          : {}),
-        status: 'completed',
-        summary: {
-          message: `Prepared review reports for ${facts.target.repoFullName}#${facts.target.number}.`,
-          repoId,
-          repoFullName: facts.target.repoFullName,
-          prNumber: facts.target.number,
-          headSha: facts.state.headSha,
-          findingCount: reviewed.output.findings.length,
-          seededCount: seedResult.seeded.length,
-          reportOnlyCount: seedResult.reportOnly.length,
-          skippedSeedingReason: seedResult.skippedReason,
-          reportIds: reports.map((report) => report.id),
-          memoryIds: promptContext.learningMemoryContext.memoryIds,
-        },
-      },
-      paths,
-    ),
+    dependencies.workflowRunId
+      ? addWorkflowSummary(
+          { ...workflowSummaryInput, runId: dependencies.workflowRunId },
+          paths,
+        )
+      : addWorkflowSummary(workflowSummaryInput, paths),
   );
   await runEffect('notify-review-ready', () =>
     addNotification(
@@ -346,7 +386,8 @@ async function readReviewFacts(
   }
   const stateData = objectField(stateResult.data);
   const target = targetField(stateData.target);
-  const state = stateData.state as GitHubPullRequestEventState | undefined;
+  const parsedState = v.safeParse(eventStateSchema, stateData.state);
+  const state = parsedState.success ? parsedState.output : null;
   if (!target || !state) {
     return {
       ok: false,
@@ -369,10 +410,18 @@ async function readReviewFacts(
     return { ok: false, result: fromPrEventFailure(filesResult) };
   }
   const filesData = objectField(filesResult.data);
-  const files = Array.isArray(filesData.files)
-    ? (filesData.files as GitHubPullRequestFile[])
+  const parsedFiles = v.safeParse(
+    v.array(githubPullRequestFileSchema),
+    filesData.files,
+  );
+  const files = parsedFiles.success ? parsedFiles.output : null;
+  const parsedDiffSummary = v.safeParse(
+    diffSummarySchema,
+    filesData.diffSummary,
+  );
+  const diffSummary = parsedDiffSummary.success
+    ? parsedDiffSummary.output
     : null;
-  const diffSummary = filesData.diffSummary as GitHubDiffSummary | undefined;
   const source = filesData.source === 'local' ? 'local' : 'github';
   if (!files || !diffSummary) {
     return {
@@ -439,7 +488,7 @@ async function seedDraftComments(
   effectId?: string,
   signal?: AbortSignal,
   validateReviewFiles = reviewValidationFiles,
-) {
+): Promise<SeedDraftCommentsResult> {
   let existing = readLivePrReviewDraft({
     databasePath: paths.neondeckDatabase,
     repo: facts.target.repoFullName,
@@ -448,7 +497,7 @@ async function seedDraftComments(
   if (seedingBlockedReason) {
     return {
       draft: existing,
-      seeded: [] as SeededFinding[],
+      seeded: [],
       reportOnly: output.findings.map((finding) => ({
         finding,
         reason: seedingBlockedReason,
@@ -459,7 +508,7 @@ async function seedDraftComments(
   if (existing && draftHasHumanWork(existing)) {
     return {
       draft: existing,
-      seeded: [] as SeededFinding[],
+      seeded: [],
       reportOnly: output.findings.map((finding) => ({
         finding,
         reason: 'existing-human-draft',
@@ -477,7 +526,7 @@ async function seedDraftComments(
   if (existing && draftHasHumanWork(existing)) {
     return {
       draft: existing,
-      seeded: [] as SeededFinding[],
+      seeded: [],
       reportOnly: output.findings.map((finding) => ({
         finding,
         reason: 'existing-human-draft',
@@ -503,7 +552,7 @@ async function seedDraftComments(
   if (existing && existing.comments.length > 0) {
     return {
       draft: existing,
-      seeded: [] as SeededFinding[],
+      seeded: [],
       reportOnly: output.findings.map((finding) => ({
         finding,
         reason: 'existing-draft-comments',
@@ -539,7 +588,7 @@ async function seedDraftComments(
       draft: existing,
       seeded,
       reportOnly,
-      skippedReason: null as string | null,
+      skippedReason: null,
     };
   }
 
@@ -612,7 +661,7 @@ async function seedDraftComments(
     throw error;
   }
 
-  return { draft, seeded, reportOnly, skippedReason: null as string | null };
+  return { draft, seeded, reportOnly, skippedReason: null };
 }
 
 async function reviewValidationFiles(
@@ -951,19 +1000,12 @@ function failure(
   };
 }
 
-function objectField(value: unknown): Record<string, unknown> {
-  return value && typeof value === 'object' && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : {};
+function objectField(value: UntrustedInput): DataRecord {
+  const parsed = v.safeParse(dataRecordSchema, value);
+  return parsed.success ? parsed.output : {};
 }
 
-function targetField(value: unknown): PullRequestTarget | null {
-  const target = objectField(value);
-  const repoFullName =
-    typeof target.repoFullName === 'string' ? target.repoFullName : null;
-  const owner = typeof target.owner === 'string' ? target.owner : null;
-  const repo = typeof target.repo === 'string' ? target.repo : null;
-  const number = typeof target.number === 'number' ? target.number : null;
-  if (!repoFullName || !owner || !repo || !number) return null;
-  return { repoFullName, owner, repo, number };
+function targetField(value: UntrustedInput): PullRequestTarget | null {
+  const parsed = v.safeParse(pullRequestTargetSchema, value);
+  return parsed.success ? parsed.output : null;
 }

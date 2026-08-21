@@ -1,4 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import type { JsonValue } from '@flue/runtime';
+import * as v from 'valibot';
 import { getReports, stageDocsDriftFix, type ReportRecord } from '../api';
 import { Badge, EmptyState, ScrollArea } from '../components/ui';
 import { relativeTime } from '../lib/format';
@@ -131,22 +133,38 @@ function ReportRow({ report }: { report: ReportRecord }) {
   );
 }
 
-function reportSummary(value: unknown): string | null {
+const reportJsonObjectSchema = v.custom<Record<string, JsonValue>>(
+  (value) => v.is(v.record(v.string(), v.unknown()), value),
+  'Value must be a JSON object.',
+);
+const reportJsonArraySchema = v.custom<JsonValue[]>(
+  (value) => v.is(v.array(v.unknown()), value),
+  'Value must be a JSON array.',
+);
+
+function reportSummary(
+  value: Parameters<typeof JSON.stringify>[0],
+): string | null {
   if (value === null || value === undefined) return null;
-  if (typeof value === 'string') return value;
-  if (typeof value === 'number' || typeof value === 'boolean') {
-    return String(value);
-  }
-  if (Array.isArray(value)) {
-    return value
+  const string = v.safeParse(v.string(), value);
+  if (string.success) return string.output;
+  const number = v.safeParse(v.number(), value);
+  if (number.success) return String(number.output);
+  const boolean = v.safeParse(v.boolean(), value);
+  if (boolean.success) return String(boolean.output);
+  const array = v.safeParse(reportJsonArraySchema, value);
+  if (array.success) {
+    return array.output
       .map((item) => reportSummary(item))
       .filter(Boolean)
       .join(' · ');
   }
-  if (typeof value === 'object') {
-    const record = value as Record<string, unknown>;
+  const object = v.safeParse(reportJsonObjectSchema, value);
+  if (object.success) {
+    const record = object.output;
     const summary = record.summary ?? record.message ?? record.title;
-    if (typeof summary === 'string') return summary;
+    const summaryText = v.safeParse(v.string(), summary);
+    if (summaryText.success) return summaryText.output;
     return Object.entries(record)
       .slice(0, 3)
       .map(([key, item]) => `${key}: ${reportSummary(item) ?? 'n/a'}`)

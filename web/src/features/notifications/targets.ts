@@ -1,5 +1,11 @@
 import type { NotificationRecord } from '../../api';
+import {
+  externalRecord,
+  type WebExternalRecord,
+  type WebExternalValue,
+} from '../../api/schemas';
 import type { NotificationTarget } from './types';
+import * as v from 'valibot';
 
 export function resolveNotificationTarget(
   notification: NotificationRecord,
@@ -102,17 +108,16 @@ export function resolveNotificationTarget(
   };
 }
 
-function asRecord(value: unknown): Record<string, unknown> {
-  return value !== null && typeof value === 'object' && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : {};
+function asRecord(value: WebExternalValue): WebExternalRecord {
+  return externalRecord(value) ?? {};
 }
 
-function readString(value: unknown) {
-  return typeof value === 'string' && value.trim() ? value.trim() : undefined;
+function readString(value: WebExternalValue) {
+  const parsed = v.safeParse(v.pipe(v.string(), v.trim(), v.nonEmpty()), value);
+  return parsed.success ? parsed.output : undefined;
 }
 
-function readInternalPath(value: unknown) {
+function readInternalPath(value: WebExternalValue) {
   const path = readString(value);
   return path?.startsWith('/') && !path.startsWith('//') ? path : undefined;
 }

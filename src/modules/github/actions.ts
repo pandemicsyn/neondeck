@@ -1,6 +1,6 @@
 import { type JsonValue } from '@flue/runtime';
 import * as v from 'valibot';
-import { failedAction } from '../../lib/action-result';
+import { asJsonValue, failedAction } from '../../lib/action-result';
 import { fetchCheckSummary } from './checks';
 import { fetchGitHubLogin } from './client';
 import { fetchGitHubIssues } from './issues';
@@ -76,7 +76,7 @@ export async function listGitHubPrQueue(
     return okResult(
       'github_pr_queue_list',
       `Fetched ${queue.items.length} GitHub pull requests.`,
-      { queue: queue as unknown as JsonValue },
+      asJsonValue({ queue }),
     );
   } catch (error) {
     return failResult(
@@ -137,7 +137,7 @@ export async function getGitHubPullRequest(
       owner,
       repo,
       ref: detail.headSha,
-    }).catch((error: unknown) => {
+    }).catch((error) => {
       checkError = errorMessage(error);
       return null;
     });
@@ -161,13 +161,13 @@ export async function getGitHubPullRequest(
       baseSha: detail.baseSha ?? null,
       baseRef: detail.baseRef,
       checks,
-      ...(checkError ? { checkError } : {}),
     };
+    if (checkError) pullRequest.checkError = checkError;
 
     return okResult(
       'github_pull_request_get',
       `Fetched ${pullRequest.repo}#${pullRequest.number}.`,
-      { pullRequest: pullRequest as unknown as JsonValue },
+      asJsonValue({ pullRequest }),
     );
   } catch (error) {
     return failResult(
@@ -234,7 +234,7 @@ export async function getGitHubCheckSummary(
         repo: repo.id,
         repoFullName: repoFullName(repo),
         ref,
-        checks: checks as unknown as JsonValue,
+        checks: asJsonValue(checks),
       },
     );
   } catch (error) {
@@ -293,7 +293,7 @@ export async function listGitHubIssues(
       {
         repo: repo.id,
         repoFullName: repoFullName(repo),
-        issues: issues as unknown as JsonValue,
+        issues: asJsonValue(issues),
       },
     );
   } catch (error) {
@@ -321,7 +321,7 @@ const failResult = failedAction<
   Pick<GitHubActionResult, 'errors' | 'requires'>
 >;
 
-function errorMessage(error: unknown) {
+function errorMessage<TError>(error: TError) {
   return error instanceof Error ? error.message : String(error);
 }
 

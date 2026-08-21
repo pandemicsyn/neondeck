@@ -1,5 +1,6 @@
 import type { FlueConversationMessage } from '@flue/react';
 import type { ChatSessionActivityItem } from '../../../api';
+import * as v from 'valibot';
 
 export type SessionTimelineItem =
   | {
@@ -33,10 +34,7 @@ export function sessionTimelineItems(
       kind: 'message',
       id: `message:${message.id}`,
       order: index,
-      timestamp:
-        typeof message.metadata?.timestamp === 'string'
-          ? message.metadata.timestamp
-          : undefined,
+      timestamp: metadataTimestamp(message.metadata),
       message,
     })),
     ...activity.map((item, index): SessionTimelineItem => ({
@@ -47,6 +45,14 @@ export function sessionTimelineItems(
       activity: item,
     })),
   ].sort(compareTimelineItems);
+}
+
+function metadataTimestamp(metadata: FlueConversationMessage['metadata']) {
+  const parsed = v.safeParse(
+    v.looseObject({ timestamp: v.optional(v.string()) }),
+    metadata,
+  );
+  return parsed.success ? parsed.output.timestamp : undefined;
 }
 
 function compareTimelineItems(

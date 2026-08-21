@@ -1,5 +1,6 @@
 import { openAiCodexModels } from '../../model-defaults';
 import { registeredProviderIds, type RegisteredProviderId } from './providers';
+import * as v from 'valibot';
 
 export type DiscoveredModel = {
   id: string;
@@ -19,17 +20,21 @@ export type ModelDiscoveryResult = {
   error?: string;
 };
 
-type KiloRawModel = {
-  id?: unknown;
-  name?: unknown;
-  context_length?: unknown;
-  architecture?: {
-    output_modalities?: unknown;
-  };
-  supported_parameters?: unknown;
-  preferredIndex?: unknown;
-  isFree?: unknown;
-};
+const kiloRawModelSchema = v.looseObject({
+  id: v.string(),
+  name: v.optional(v.unknown()),
+  context_length: v.optional(v.unknown()),
+  architecture: v.optional(v.unknown()),
+  supported_parameters: v.array(v.unknown()),
+  preferredIndex: v.optional(v.unknown()),
+  isFree: v.optional(v.unknown()),
+});
+const kiloModelsResponseSchema = v.looseObject({
+  data: v.array(v.unknown()),
+});
+const kiloArchitectureSchema = v.looseObject({
+  output_modalities: v.optional(v.array(v.unknown()), []),
+});
 
 const kiloApiBase = 'https://api.kilo.ai';
 const kiloFetchTimeoutMs = 10_000;
@@ -108,7 +113,7 @@ export function suggestedModels(
 export function isDiscoverableProvider(
   provider: string,
 ): provider is RegisteredProviderId {
-  return registeredProviderIds.includes(provider as RegisteredProviderId);
+  return registeredProviderIds.some((id) => id === provider);
 }
 
 async function discoverKilocodeModels(input: {
@@ -122,15 +127,9 @@ async function discoverKilocodeModels(input: {
     ? `${kiloApiBase}/api/organizations/${encodeURIComponent(organizationId)}`
     : `${kiloApiBase}/api/openrouter`;
   const response: Response | Error = await fetch(`${baseUrl}/models`, {
-    headers: {
-      'Content-Type': 'application/json',
-      ...(input.apiKey ? { Authorization: `Bearer ${input.apiKey}` } : {}),
-      ...(organizationId
-        ? { 'X-KiloCode-OrganizationId': organizationId }
-        : {}),
-    },
+    headers: kiloHeaders(input.apiKey, organizationId),
     signal: combinedSignal(input.signal),
-  }).catch((error: unknown) =>
+  }).catch((error) =>
     error instanceof Error ? error : new Error(String(error)),
   );
 
@@ -156,11 +155,11 @@ async function discoverKilocodeModels(input: {
     };
   }
 
-  const data = (await response.json().catch(() => null)) as {
-    data?: unknown;
-  } | null;
-  const rows = Array.isArray(data?.data) ? data.data : null;
-  if (!rows) {
+  const parsedResponse = v.safeParse(
+    kiloModelsResponseSchema,
+    await response.json().catch(() => null),
+  );
+  if (!parsedResponse.success) {
     return {
       ok: false,
       provider: 'kilocode',
@@ -169,7 +168,7 @@ async function discoverKilocodeModels(input: {
     };
   }
 
-  const models = rows
+  const models = parsedResponse.output.data
     .map((row) => kiloModel(row))
     .filter((model): model is DiscoveredModel => Boolean(model))
     .sort(compareModels);
@@ -181,22 +180,23 @@ async function discoverKilocodeModels(input: {
   };
 }
 
-function kiloModel(row: unknown): DiscoveredModel | null {
-  const model = row as KiloRawModel;
-  if (typeof model.id !== 'string' || model.id.trim().length === 0) {
+function kiloModel<TModel>(row: TModel): DiscoveredModel | null {
+  const parsed = v.safeParse(kiloRawModelSchema, row);
+  if (!parsed.success || parsed.output.id.trim().length === 0) {
     return null;
   }
 
-  const outputModalities = model.architecture?.output_modalities;
-  if (Array.isArray(outputModalities) && outputModalities.includes('image')) {
+  const model = parsed.output;
+  const architecture = v.safeParse(kiloArchitectureSchema, model.architecture);
+  const outputModalities = architecture.success
+    ? architecture.output.output_modalities
+    : [];
+  if (outputModalities.includes('image')) {
     return null;
   }
 
   const supportedParameters = model.supported_parameters;
-  if (
-    !Array.isArray(supportedParameters) ||
-    !supportedParameters.includes('tools')
-  ) {
+  if (!supportedParameters.includes('tools')) {
     return null;
   }
 
@@ -204,14 +204,30 @@ function kiloModel(row: unknown): DiscoveredModel | null {
     id: `kilocode/${model.id}`,
     provider: 'kilocode',
     model: model.id,
-    name: typeof model.name === 'string' ? model.name : model.id,
-    contextLength:
-      typeof model.context_length === 'number' ? model.context_length : null,
+    name: metadataValue(v.string(), model.name) ?? model.id,
+    contextLength: metadataValue(v.number(), model.context_length),
     reasoning: supportedParameters.includes('reasoning'),
-    isFree: typeof model.isFree === 'boolean' ? model.isFree : null,
-    recommendedIndex:
-      typeof model.preferredIndex === 'number' ? model.preferredIndex : null,
+    isFree: metadataValue(v.boolean(), model.isFree),
+    recommendedIndex: metadataValue(v.number(), model.preferredIndex),
   };
+}
+
+function metadataValue<TOutput>(
+  schema: v.GenericSchema<unknown, TOutput>,
+  value: Parameters<typeof v.safeParse>[1],
+) {
+  const parsed = v.safeParse(schema, value);
+  return parsed.success ? parsed.output : null;
+}
+
+function kiloHeaders(
+  apiKey: string | undefined,
+  organizationId: string | undefined,
+) {
+  const headers = new Headers({ 'Content-Type': 'application/json' });
+  if (apiKey) headers.set('Authorization', `Bearer ${apiKey}`);
+  if (organizationId) headers.set('X-KiloCode-OrganizationId', organizationId);
+  return headers;
 }
 
 function suggestedModel(

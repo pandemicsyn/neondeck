@@ -1,4 +1,5 @@
 import { constants } from 'node:fs';
+import * as v from 'valibot';
 import { access, readFile, rename, rm } from 'node:fs/promises';
 import { assertWorktreeMutationAllowed } from '../modules/worktrees';
 import {
@@ -32,6 +33,10 @@ import {
   stageWrite,
 } from './support';
 
+const untrustedInputSchema = v.unknown();
+type UntrustedInput = v.InferInput<typeof untrustedInputSchema>;
+type RepoPatchRawInput = Readonly<Record<string, UntrustedInput>>;
+
 type SimulatedFileState = {
   target: ResolvedRepoPath;
   content: string;
@@ -42,7 +47,7 @@ type SimulatedFileState = {
 };
 
 export async function patchRepoFiles(
-  rawInput: unknown,
+  rawInput: RepoPatchRawInput,
   paths = runtimePaths(),
   dependencies: {
     beforeExternalMutation?: (effect: {

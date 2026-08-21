@@ -6,6 +6,7 @@ import {
 import { getSingularPatch } from '@pierre/diffs';
 import { CodeView, Virtualizer, type CodeViewItem } from '@pierre/diffs/react';
 import { memo, Profiler, useMemo, useState, type ChangeEvent } from 'react';
+import * as v from 'valibot';
 import { Badge, Card } from '../components/ui';
 import { MarkdownMessage } from '../components/MarkdownMessage';
 import {
@@ -28,9 +29,11 @@ import {
   recordMarkdownRender,
   recordQueryAbort,
   recordQueryRequest,
+  type BenchmarkMetrics,
 } from './metrics';
 
 export type BenchmarkConfig = ReturnType<typeof readBenchmarkConfig>;
+export type BenchmarkFixtureMetadata = BenchmarkMetrics['fixture'];
 
 export function readBenchmarkConfig(search: string) {
   const params = new URLSearchParams(search);
@@ -45,7 +48,7 @@ export function readBenchmarkConfig(search: string) {
 
 export function benchmarkFixtureMetadata(
   config: BenchmarkConfig,
-): Record<string, string | number | boolean> {
+): BenchmarkFixtureMetadata {
   if (config.surface === 'chat') {
     return { messages: config.count ?? positiveInteger(config.tier) ?? 100 };
   }
@@ -204,9 +207,12 @@ function DiffBenchmark({ tier, variant }: { tier: string; variant: string }) {
             ...neondeckCodeViewOptions('dark'),
             unsafeCSS: neondeckDiffUnsafeCss,
           }}
-          renderAnnotation={(annotation) =>
-            renderBenchmarkAnnotation(annotation as DiffReviewAnnotation)
-          }
+          renderAnnotation={(annotation) => {
+            const parsed = v.safeParse(benchmarkAnnotationSchema, annotation);
+            return parsed.success
+              ? renderParsedBenchmarkAnnotation(parsed.output)
+              : null;
+          }}
         />
       ) : variant === 'virtualized' ? (
         <Virtualizer
@@ -409,7 +415,21 @@ async function mockRuntimeQuery(name: string, signal: AbortSignal) {
   });
 }
 
+const benchmarkAnnotationSchema = v.object({
+  metadata: v.object({
+    title: v.optional(v.string()),
+    kind: v.optional(v.string()),
+    body: v.optional(v.string()),
+  }),
+});
+
 function renderBenchmarkAnnotation(annotation: DiffReviewAnnotation) {
+  return renderParsedBenchmarkAnnotation(annotation);
+}
+
+function renderParsedBenchmarkAnnotation(
+  annotation: v.InferOutput<typeof benchmarkAnnotationSchema>,
+) {
   return (
     <div data-neondeck-review-annotation>
       <div data-neondeck-review-annotation-title>

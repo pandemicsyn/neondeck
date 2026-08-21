@@ -21,7 +21,15 @@ type PrReviewAssistAdmissionDependencies = {
   fetchFacts?: ReviewAssistDependencies['fetchFacts'];
   resolveWorkspace?: typeof resolvePrReviewerWorkspace;
   runtime?: ReturnType<typeof buildPrReviewAssistantRuntime>;
-  watchSettlement?: typeof watchPrReviewAssistSettlement;
+  watchSettlement?: (
+    ...args: Parameters<typeof watchPrReviewAssistSettlement>
+  ) => ReturnType<typeof watchPrReviewAssistSettlement> | Promise<void> | void;
+};
+
+type PrReviewAssistSignalAttributes = {
+  operation: 'pr-review-assist';
+  reviewId?: string;
+  attemptId?: string;
 };
 
 export async function readPrReviewAssistSettlement(input: {
@@ -124,24 +132,25 @@ export async function admitPrReviewAssist(
     },
   );
   const handle = init(PrReviewAssistant, { id: instanceId, uid: null });
-  const receipt = await handle.dispatch({
-    ...(parsed.reviewId && parsed.attemptId
-      ? {
+  const attributes: PrReviewAssistSignalAttributes = {
+    operation: 'pr-review-assist',
+  };
+  if (parsed.reviewId) attributes.reviewId = parsed.reviewId;
+  if (parsed.attemptId) attributes.attemptId = parsed.attemptId;
+  const message = {
+    kind: 'signal' as const,
+    type: 'neondeck.pr-review.requested' as const,
+    body: 'Prepare the bound pull-request review artifacts for human review.',
+    attributes,
+  };
+  const receipt =
+    parsed.reviewId && parsed.attemptId
+      ? await handle.dispatch({
           idempotencyKey: `pr-review-assist:${parsed.reviewId}:${parsed.attemptId}`,
-        }
-      : {}),
-    initialData: preparedInitialData,
-    message: {
-      kind: 'signal',
-      type: 'neondeck.pr-review.requested',
-      body: 'Prepare the bound pull-request review artifacts for human review.',
-      attributes: {
-        operation: 'pr-review-assist',
-        ...(parsed.reviewId ? { reviewId: parsed.reviewId } : {}),
-        ...(parsed.attemptId ? { attemptId: parsed.attemptId } : {}),
-      },
-    },
-  });
+          initialData: preparedInitialData,
+          message,
+        })
+      : await handle.dispatch({ initialData: preparedInitialData, message });
   if (parsed.reviewId && parsed.attemptId) {
     void (dependencies.watchSettlement ?? watchPrReviewAssistSettlement)(
       {

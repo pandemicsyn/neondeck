@@ -1,4 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import * as v from 'valibot';
 import { useCallback, useState } from 'react';
 import {
   approvePrAutopilotChange,
@@ -289,7 +290,17 @@ export function WatchRow({
           className="min-h-[28px] min-w-0 flex-1 border border-line bg-field px-2 text-[10px] text-ink"
           disabled={configureMutation.isPending}
           onChange={(event) => {
-            const mode = event.target.value as PrWatch['autopilotMode'];
+            const parsed = v.safeParse(
+              v.picklist([
+                'notify-only',
+                'prepare-only',
+                'autofix-with-approval',
+                'autofix-push-when-safe',
+              ]),
+              event.target.value,
+            );
+            if (!parsed.success) return;
+            const mode = parsed.output;
             if (
               autopilotModeRank(mode) > autopilotModeRank(watch.autopilotMode)
             ) {

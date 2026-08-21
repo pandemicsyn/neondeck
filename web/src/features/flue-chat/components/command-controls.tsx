@@ -3,6 +3,7 @@
 /* oxlint-disable jsx-a11y/prefer-tag-over-role */
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
+import * as v from 'valibot';
 import {
   getPrReview,
   openPrReviewEventStream,
@@ -182,15 +183,11 @@ function reviewIdFromResult(
   result: (NeonCommandResult & { flueRunId?: string }) | null | undefined,
 ) {
   if (!result || result.command !== 'review-pr') return null;
-  if (
-    !result.data ||
-    typeof result.data !== 'object' ||
-    Array.isArray(result.data)
-  ) {
-    return null;
-  }
-  const reviewId = (result.data as { reviewId?: unknown }).reviewId;
-  return typeof reviewId === 'string' && reviewId.trim() ? reviewId : null;
+  const parsed = v.safeParse(
+    v.looseObject({ reviewId: v.pipe(v.string(), v.trim(), v.minLength(1)) }),
+    result.data,
+  );
+  return parsed.success ? (parsed.output.reviewId ?? null) : null;
 }
 
 export function CommandTypeahead({

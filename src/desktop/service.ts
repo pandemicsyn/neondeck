@@ -1,4 +1,5 @@
 import { existsSync } from 'node:fs';
+import * as v from 'valibot';
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
@@ -10,6 +11,15 @@ import {
   resolveServerPort,
 } from '../server/serve';
 import type { RuntimePaths } from '../runtime-home';
+
+const untrustedInputSchema = v.unknown();
+const errorInstanceSchema = v.instance(Error);
+const processErrorSchema = v.looseObject({
+  message: v.optional(v.string()),
+  stdout: v.optional(v.string()),
+  stderr: v.optional(v.string()),
+});
+type UntrustedInput = v.InferInput<typeof untrustedInputSchema>;
 
 export const launchdLabel = 'dev.neondeck.server';
 export const systemdUnitName = 'neondeck.service';
@@ -618,7 +628,7 @@ function serviceStateError(status: ServiceStatus, expected: string) {
 
 function serviceCommandError(
   action: string,
-  error: unknown,
+  error: UntrustedInput,
   changed = false,
   files?: string[],
 ): ServiceCommandResult {
@@ -628,7 +638,7 @@ function serviceCommandError(
     changed,
     message: `${serviceActionTitle(action)} failed.`,
     files,
-    errors: [error instanceof Error ? error.message : String(error)],
+    errors: [errorText(error)],
   };
 }
 
@@ -640,8 +650,9 @@ function resolveStatusPort(value: string | undefined, warnings: string[]) {
   try {
     return resolveServerPort(value);
   } catch (error) {
+    const message = errorText(error);
     warnings.push(
-      `Embedded service port is invalid; falling back to ${defaultServerPort}. ${error instanceof Error ? error.message : String(error)}`,
+      `Embedded service port is invalid; falling back to ${defaultServerPort}. ${message}`,
     );
     return defaultServerPort;
   }
@@ -651,7 +662,7 @@ function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-function isMissingServiceError(error: unknown) {
+function isMissingServiceError(error: UntrustedInput) {
   const text = errorText(error).toLowerCase();
   return (
     text.includes('no such process') ||
@@ -661,7 +672,7 @@ function isMissingServiceError(error: unknown) {
   );
 }
 
-function isAlreadyLoadedError(error: unknown) {
+function isAlreadyLoadedError(error: UntrustedInput) {
   const text = errorText(error).toLowerCase();
   return (
     text.includes('service already loaded') ||
@@ -670,18 +681,18 @@ function isAlreadyLoadedError(error: unknown) {
   );
 }
 
-function errorText(error: unknown) {
-  if (!error || typeof error !== 'object') {
-    return error instanceof Error ? error.message : String(error);
+function errorText(error: UntrustedInput) {
+  const processError = v.safeParse(processErrorSchema, error);
+  if (processError.success) {
+    const messages = [
+      processError.output.message,
+      processError.output.stdout,
+      processError.output.stderr,
+    ].filter((value): value is string => value !== undefined);
+    if (messages.length > 0) return messages.join('\n');
   }
-  const record = error as {
-    message?: unknown;
-    stdout?: unknown;
-    stderr?: unknown;
-  };
-  return [record.message, record.stdout, record.stderr]
-    .filter((value): value is string => typeof value === 'string')
-    .join('\n');
+  const errorInstance = v.safeParse(errorInstanceSchema, error);
+  return errorInstance.success ? errorInstance.output.message : String(error);
 }
 
 async function readPlatformRuntimeStatus(
@@ -787,7 +798,7 @@ function extractLaunchdEnvironment(source: string) {
   const match = source.match(
     /<key>EnvironmentVariables<\/key>\s*<dict>([\s\S]*?)<\/dict>/,
   );
-  if (!match) return {} as Record<string, string>;
+  if (!match) return {};
   const env: Record<string, string> = {};
   const pairs = [
     ...match[1].matchAll(

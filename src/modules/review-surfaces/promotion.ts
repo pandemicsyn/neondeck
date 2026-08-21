@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import * as v from 'valibot';
 import {
   neonReviewFindingLimits,
   type NeonReviewFinding,
@@ -26,6 +27,12 @@ import {
   type ValidatedReviewSurfaceFindingPromotion,
   ReviewSurfaceRegistry,
 } from './registry';
+
+const untrustedInputSchema = v.unknown();
+const recordSchema = v.record(v.string(), untrustedInputSchema);
+const nonEmptyStringSchema = v.pipe(v.string(), v.minLength(1));
+type UntrustedInput = v.InferInput<typeof untrustedInputSchema>;
+type InputRecord = v.InferOutput<typeof recordSchema>;
 
 export type ReviewSurfacePromotionTargetResult =
   | {
@@ -202,7 +209,8 @@ export class ReviewSurfaceFindingPromotionService {
         result,
       });
       if (this.completed.size > 400) {
-        this.completed.delete(this.completed.keys().next().value as string);
+        const [oldest] = this.completed.keys();
+        if (oldest) this.completed.delete(oldest);
       }
     }
     return result;
@@ -608,16 +616,17 @@ function promotionError(
   };
 }
 
-function objectField(value: unknown): Record<string, unknown> {
-  return value && typeof value === 'object' && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : {};
+function objectField(value: UntrustedInput): InputRecord {
+  const parsed = v.safeParse(recordSchema, value);
+  return parsed.success ? parsed.output : {};
 }
 
-function arrayField(value: unknown): unknown[] {
-  return Array.isArray(value) ? value : [];
+function arrayField(value: UntrustedInput): UntrustedInput[] {
+  const parsed = v.safeParse(v.array(untrustedInputSchema), value);
+  return parsed.success ? parsed.output : [];
 }
 
-function stringField(value: unknown) {
-  return typeof value === 'string' && value.length > 0 ? value : null;
+function stringField(value: UntrustedInput) {
+  const parsed = v.safeParse(nonEmptyStringSchema, value);
+  return parsed.success ? parsed.output : null;
 }

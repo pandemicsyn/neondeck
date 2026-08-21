@@ -18,6 +18,24 @@ import {
   type ApiRequestOptions,
 } from './http';
 
+type GitHubPrReviewDraftUpdateBody = {
+  headSha: string;
+  verdict?: GitHubPrReviewVerdict | null;
+  body?: string | null;
+  reanchorHeadSha?: boolean;
+  expectedDraftId?: string;
+  expectedHeadSha?: string;
+};
+
+type GitHubPrReviewDraftCommentUpdateBody = {
+  body: string;
+  path?: string;
+  side?: 'RIGHT' | 'LEFT';
+  line?: number;
+  startLine?: number | null;
+  startSide?: 'RIGHT' | 'LEFT' | null;
+};
+
 export async function getGitHubPullRequests(options: ApiRequestOptions = {}) {
   return getJson<GitHubPullRequestResponse>('/api/github/prs', options);
 }
@@ -133,14 +151,7 @@ export async function putGitHubPrReviewDraft(input: {
   expectedHeadSha?: string;
 }) {
   const [owner, name] = parseRepo(input.repo);
-  const body: {
-    headSha: string;
-    verdict?: GitHubPrReviewVerdict | null;
-    body?: string | null;
-    reanchorHeadSha?: boolean;
-    expectedDraftId?: string;
-    expectedHeadSha?: string;
-  } = { headSha: input.headSha };
+  const body: GitHubPrReviewDraftUpdateBody = { headSha: input.headSha };
   if ('verdict' in input) body.verdict = input.verdict ?? null;
   if ('body' in input) body.body = input.body ?? null;
   if (input.reanchorHeadSha) {
@@ -198,14 +209,7 @@ export async function patchGitHubPrReviewDraftComment(input: {
   startSide?: 'RIGHT' | 'LEFT' | null;
 }) {
   const [owner, name] = parseRepo(input.repo);
-  const body: {
-    body: string;
-    path?: string;
-    side?: 'RIGHT' | 'LEFT';
-    line?: number;
-    startLine?: number | null;
-    startSide?: 'RIGHT' | 'LEFT' | null;
-  } = { body: input.body };
+  const body: GitHubPrReviewDraftCommentUpdateBody = { body: input.body };
   if ('path' in input) body.path = input.path;
   if ('side' in input) body.side = input.side;
   if ('line' in input) body.line = input.line;

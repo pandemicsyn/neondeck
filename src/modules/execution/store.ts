@@ -1,4 +1,3 @@
-import { type JsonValue } from '@flue/runtime';
 import { asJsonValue } from '../../lib/action-result';
 import { openDb, withImmediateTransaction } from '../../lib/sqlite';
 import { randomUUID } from 'node:crypto';
@@ -21,6 +20,51 @@ import type {
 } from './schemas';
 import * as v from 'valibot';
 import { runExecutionInputSchema } from './schemas';
+
+const executionApprovalRowSchema = v.object({
+  id: v.string(),
+  command: v.string(),
+  backend: v.picklist(['local', 'exe.dev']),
+  cwd: v.nullable(v.string()),
+  context: v.picklist(['interactive', 'unattended']),
+  risk: v.picklist([
+    'read-only',
+    'safe-mutation',
+    'destructive-mutation',
+    'hardline',
+  ]),
+  policy_decision: v.picklist(['allow', 'ask', 'deny']),
+  status: v.picklist([
+    'pending',
+    'approved',
+    'denied',
+    'executed',
+    'failed',
+    'blocked',
+  ]),
+  approval_decision: v.nullable(
+    v.picklist([
+      'preapproved',
+      'allow-once',
+      'allow-session',
+      'allow-always',
+      'deny',
+    ]),
+  ),
+  approver_surface: v.nullable(v.string()),
+  session_id: v.nullable(v.string()),
+  request_context_json: v.nullable(v.string()),
+  result_json: v.nullable(v.string()),
+  exit_code: v.nullable(v.number()),
+  stdout_preview: v.nullable(v.string()),
+  stderr_preview: v.nullable(v.string()),
+  error: v.nullable(v.string()),
+  created_at: v.string(),
+  resolved_at: v.nullable(v.string()),
+  used_at: v.nullable(v.string()),
+  executed_at: v.nullable(v.string()),
+  updated_at: v.string(),
+});
 
 export function insertApproval(
   paths: RuntimePaths,
@@ -385,52 +429,39 @@ export function markApprovalUsed(
   return record;
 }
 
-export function readExecutionApprovalRow(
-  row: unknown,
+export function readExecutionApprovalRow<TRow>(
+  row: TRow,
 ): ExecutionApprovalRecord {
-  const record = row as Record<string, unknown>;
+  const record = v.parse(executionApprovalRowSchema, row);
   return {
-    id: String(record.id),
-    command: String(record.command),
-    backend: String(record.backend) as ExecutionBackend,
-    cwd: typeof record.cwd === 'string' ? record.cwd : null,
-    context: String(record.context) as ExecutionContext,
-    risk: String(record.risk) as ExecutionRisk,
-    policyDecision: String(record.policy_decision) as ExecutionDecision,
-    status: String(record.status) as ExecutionApprovalStatus,
-    approvalDecision:
-      typeof record.approval_decision === 'string'
-        ? (record.approval_decision as ExecutionApprovalDecision)
-        : null,
-    approverSurface:
-      typeof record.approver_surface === 'string'
-        ? record.approver_surface
-        : null,
-    sessionId:
-      typeof record.session_id === 'string'
-        ? (nonEmpty(record.session_id) ?? null)
-        : null,
+    id: record.id,
+    command: record.command,
+    backend: record.backend,
+    cwd: record.cwd,
+    context: record.context,
+    risk: record.risk,
+    policyDecision: record.policy_decision,
+    status: record.status,
+    approvalDecision: record.approval_decision,
+    approverSurface: record.approver_surface,
+    sessionId: record.session_id ? (nonEmpty(record.session_id) ?? null) : null,
     requestContext:
-      typeof record.request_context_json === 'string'
-        ? (JSON.parse(record.request_context_json) as JsonValue)
+      record.request_context_json !== null
+        ? asJsonValue(JSON.parse(record.request_context_json))
         : null,
     result:
-      typeof record.result_json === 'string'
-        ? (JSON.parse(record.result_json) as JsonValue)
+      record.result_json !== null
+        ? asJsonValue(JSON.parse(record.result_json))
         : null,
-    exitCode: typeof record.exit_code === 'number' ? record.exit_code : null,
-    stdoutPreview:
-      typeof record.stdout_preview === 'string' ? record.stdout_preview : null,
-    stderrPreview:
-      typeof record.stderr_preview === 'string' ? record.stderr_preview : null,
-    error: typeof record.error === 'string' ? record.error : null,
-    createdAt: String(record.created_at),
-    resolvedAt:
-      typeof record.resolved_at === 'string' ? record.resolved_at : null,
-    usedAt: typeof record.used_at === 'string' ? record.used_at : null,
-    executedAt:
-      typeof record.executed_at === 'string' ? record.executed_at : null,
-    updatedAt: String(record.updated_at),
+    exitCode: record.exit_code,
+    stdoutPreview: record.stdout_preview,
+    stderrPreview: record.stderr_preview,
+    error: record.error,
+    createdAt: record.created_at,
+    resolvedAt: record.resolved_at,
+    usedAt: record.used_at,
+    executedAt: record.executed_at,
+    updatedAt: record.updated_at,
   };
 }
 

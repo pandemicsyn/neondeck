@@ -1,4 +1,5 @@
 import { lstat, realpath } from 'node:fs/promises';
+import * as v from 'valibot';
 import { dirname, isAbsolute, relative, resolve } from 'node:path';
 import type { RepoConfig, RuntimePaths } from '../runtime-home';
 import {
@@ -33,6 +34,15 @@ const deniedExtensions = new Set(['.pem', '.key', '.p12']);
 const sensitiveExactNames = new Set(['.env']);
 const sensitiveFragments = ['secret', 'secrets', 'token', 'tokens'];
 const generatedExtensions = new Set(['.lock']);
+const untrustedInputSchema = v.unknown();
+const repoEditErrorDataSchema = v.looseObject({
+  code: v.optional(v.string()),
+  path: v.optional(v.string()),
+  details: v.optional(v.unknown()),
+});
+const errorInstanceSchema = v.instance(Error);
+
+type UntrustedInput = v.InferInput<typeof untrustedInputSchema>;
 const generatedNames = new Set([
   'package-lock.json',
   'pnpm-lock.yaml',
@@ -231,7 +241,7 @@ function assertAllowedSegments(path: string) {
   }
 }
 
-export function toRepoEditError(error: unknown): RepoEditError {
+export function toRepoEditError(error: UntrustedInput): RepoEditError {
   if (error instanceof RepoPathPolicyError) {
     return {
       code: error.code,
@@ -241,32 +251,29 @@ export function toRepoEditError(error: unknown): RepoEditError {
     };
   }
 
+  const parsed = v.safeParse(repoEditErrorDataSchema, error);
+  const errorInstance = v.safeParse(errorInstanceSchema, error);
   if (
-    error &&
-    typeof error === 'object' &&
-    'code' in error &&
-    typeof (error as { code?: unknown }).code === 'string' &&
-    isRepoEditErrorCode((error as { code: string }).code)
+    parsed.success &&
+    parsed.output.code &&
+    isRepoEditErrorCode(parsed.output.code)
   ) {
-    const code = (error as { code: RepoEditError['code'] }).code;
+    const code = parsed.output.code;
     return {
       code,
-      message: error instanceof Error ? error.message : String(error),
-      path:
-        'path' in error &&
-        typeof (error as { path?: unknown }).path === 'string'
-          ? (error as { path: string }).path
-          : undefined,
-      details:
-        'details' in error
-          ? (error as { details?: unknown }).details
-          : undefined,
+      message: errorInstance.success
+        ? errorInstance.output.message
+        : String(error),
+      path: parsed.output.path,
+      details: parsed.output.details,
     };
   }
 
   return {
     code: 'IO_ERROR',
-    message: error instanceof Error ? error.message : String(error),
+    message: errorInstance.success
+      ? errorInstance.output.message
+      : String(error),
   };
 }
 

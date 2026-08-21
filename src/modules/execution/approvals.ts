@@ -59,8 +59,8 @@ export async function listExecutionApprovals(
   }
 }
 
-export async function requestExecutionApproval(
-  rawInput: unknown,
+export async function requestExecutionApproval<TRawInput>(
+  rawInput: TRawInput,
   paths = runtimePaths(),
 ) {
   await ensureRuntimeHome(paths);
@@ -151,8 +151,8 @@ export async function requestExecutionApproval(
   };
 }
 
-export async function resolveExecutionApproval(
-  rawInput: unknown,
+export async function resolveExecutionApproval<TRawInput>(
+  rawInput: TRawInput,
   paths = runtimePaths(),
 ) {
   await ensureRuntimeHome(paths);
@@ -233,6 +233,20 @@ export async function resolveExecutionApproval(
       paths,
     );
     if (!nudge.ok) nudgeErrors = nudge.errors;
+    if (nudgeErrors.length > 0) {
+      return {
+        ok: true,
+        action: 'execution_resolve_approval',
+        changed: true,
+        message:
+          input.decision === 'deny'
+            ? 'Denied execution approval.'
+            : `Approved execution ${input.decision.replace('-', ' ')}.`,
+        approval,
+        requires: ['approvalNudge'],
+        errors: nudgeErrors,
+      };
+    }
     return {
       ok: true,
       action: 'execution_resolve_approval',
@@ -242,9 +256,6 @@ export async function resolveExecutionApproval(
           ? 'Denied execution approval.'
           : `Approved execution ${input.decision.replace('-', ' ')}.`,
       approval,
-      ...(nudgeErrors.length > 0
-        ? { requires: ['approvalNudge'], errors: nudgeErrors }
-        : {}),
     };
   } finally {
     releasePendingApprovalResolution(paths, existing.id, claim.claimedSurface);

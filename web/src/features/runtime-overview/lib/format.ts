@@ -131,7 +131,7 @@ export function worktreeStatusClass(status: WorktreeRecord['lifecycleStatus']) {
 
 export function setupStep(check: RuntimeStatusCheck): SetupStep {
   const docsBase = 'https://neondeck.dev/docs/getting-started/';
-  const steps: Record<string, SetupStep> = {
+  const steps = {
     config: {
       action: 'neondeck_config_validate',
       docsHref: `${docsBase}#runtime-home`,
@@ -243,10 +243,14 @@ export function setupStep(check: RuntimeStatusCheck): SetupStep {
       surface: 'shell',
       detail: 'Initialize or repair the Flue runtime database.',
     },
-  };
+  } satisfies Record<string, SetupStep>;
+
+  const configuredStep = Object.entries(steps).find(
+    ([id]) => id === check.id,
+  )?.[1];
 
   return (
-    steps[check.id] ?? {
+    configuredStep ?? {
       action: 'neondeck_runtime_status_lookup',
       docsHref: `${docsBase}#runtime-home`,
       docsLabel: 'docs',

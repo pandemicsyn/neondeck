@@ -31,6 +31,13 @@ import {
 } from './handlers';
 import { compactCommandSummary, failedCommand } from './summaries';
 
+type WorkflowSummaryInput = {
+  workflow: string;
+  runId?: string;
+  status: string;
+  summary: ReturnType<typeof compactCommandSummary>;
+};
+
 export async function runNeonCommand(
   input: v.InferInput<typeof commandRunInputSchema>,
   paths = runtimePaths(),
@@ -67,15 +74,13 @@ export async function runNeonCommand(
     context,
   );
   const runId = commandWorkflowRunId(result);
-  const workflowSummary = await addWorkflowSummary(
-    {
-      workflow: `command:${parsed.command.name}`,
-      ...(runId ? { runId } : {}),
-      status: result.status,
-      summary: compactCommandSummary(result),
-    },
-    paths,
-  );
+  const workflowInput: WorkflowSummaryInput = {
+    workflow: `command:${parsed.command.name}`,
+    status: result.status,
+    summary: compactCommandSummary(result),
+  };
+  if (runId) workflowInput.runId = runId;
+  const workflowSummary = await addWorkflowSummary(workflowInput, paths);
 
   return {
     ...result,
@@ -145,8 +150,10 @@ async function executeCommand(
 }
 
 function commandWorkflowRunId(result: NeonCommandResult) {
-  if (!result.data || typeof result.data !== 'object') return null;
-  if (!('runId' in result.data)) return null;
-  const runId = result.data.runId;
-  return typeof runId === 'string' && runId.trim() ? runId : null;
+  const parsed = v.safeParse(
+    v.looseObject({ runId: v.optional(v.string()) }),
+    result.data,
+  );
+  if (!parsed.success || !parsed.output.runId?.trim()) return null;
+  return parsed.output.runId;
 }

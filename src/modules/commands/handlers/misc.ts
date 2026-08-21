@@ -1,4 +1,5 @@
 import { readAgentModelSelectionSync, isThinkingLevel } from '../../runtime';
+import type { JsonValue } from '@flue/runtime';
 import { updateAgentModels } from '../../config';
 import { runDevDoctor } from '../../runtime';
 import { archiveMemory, listMemories, upsertMemory } from '../../memory';
@@ -9,6 +10,9 @@ import {
   type ChatSessionRecord,
 } from '../../sessions';
 import { addPrWatch } from '../../watches';
+import * as v from 'valibot';
+
+type WatchCommandData = { watch: JsonValue | undefined; inferredRef?: string };
 import { collectBriefingSnapshot } from '../../briefings';
 import type { RuntimePaths } from '../../../runtime-home';
 import type {
@@ -270,10 +274,9 @@ export async function watchPrCommand(
     });
   }
 
-  return completedCommand(command.name, command.raw, watch.message, {
-    watch: watch.watch,
-    ...(inferredRef ? { inferredRef } : {}),
-  });
+  const data: WatchCommandData = { watch: watch.watch };
+  if (inferredRef) data.inferredRef = inferredRef;
+  return completedCommand(command.name, command.raw, watch.message, data);
 }
 
 async function inferWatchPrReferenceFromContext(
@@ -318,14 +321,15 @@ export function inferWatchPrReferenceFromSession(
     .match(/^github-pr:([^#\s]+\/[^#\s]+#\d+)$/);
   if (linkedTaskMatch) return linkedTaskMatch[1];
 
-  if (isRecord(session.uiMetadata)) {
+  const metadata = v.safeParse(metadataRecordSchema, session.uiMetadata);
+  if (metadata.success) {
     const repo =
-      readMetadataString(session.uiMetadata.repo) ??
-      readMetadataString(session.uiMetadata.repoFullName);
-    const prNumber = readMetadataPrNumber(session.uiMetadata.prNumber);
+      readMetadataString(metadata.output.repo) ??
+      readMetadataString(metadata.output.repoFullName);
+    const prNumber = readMetadataPrNumber(metadata.output.prNumber);
     if (repo && prNumber) return `${repo}#${prNumber}`;
 
-    const url = readMetadataString(session.uiMetadata.url);
+    const url = readMetadataString(metadata.output.url);
     if (
       url &&
       /^https:\/\/github\.com\/[^/\s]+\/[^/\s]+\/pull\/\d+\/?$/i.test(url)
@@ -337,24 +341,21 @@ export function inferWatchPrReferenceFromSession(
   return null;
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return Boolean(value && typeof value === 'object' && !Array.isArray(value));
+const metadataRecordSchema = v.looseObject({});
+
+function readMetadataString<TValue>(value: TValue) {
+  const parsed = v.safeParse(v.string(), value);
+  return parsed.success && parsed.output.trim() ? parsed.output.trim() : null;
 }
 
-function readMetadataString(value: unknown) {
-  return typeof value === 'string' && value.trim() ? value.trim() : null;
-}
-
-function readMetadataPrNumber(value: unknown) {
-  if (typeof value === 'number' && Number.isInteger(value) && value > 0) {
-    return value;
-  }
-
-  if (typeof value === 'string' && /^\d+$/.test(value.trim())) {
-    return Number(value.trim());
-  }
-
-  return null;
+function readMetadataPrNumber<TValue>(value: TValue) {
+  const number = v.safeParse(v.number(), value);
+  if (number.success && Number.isInteger(number.output) && number.output > 0)
+    return number.output;
+  const text = v.safeParse(v.string(), value);
+  return text.success && /^\d+$/.test(text.output.trim())
+    ? Number(text.output.trim())
+    : null;
 }
 
 export async function devDoctorCommand(

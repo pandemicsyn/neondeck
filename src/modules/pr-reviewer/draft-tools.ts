@@ -1,4 +1,4 @@
-import { defineTool, type JsonValue } from '@flue/runtime';
+import { defineTool } from '@flue/runtime';
 import * as v from 'valibot';
 import {
   prReviewerDraftToolNames,
@@ -20,9 +20,11 @@ import {
 import {
   nonEmptyStringSchema,
   prEventOutputSchema,
+  prReviewDraftCommentUpdateInputSchema,
 } from '../pr-events/schemas';
 import { readPrReview, type PrReviewRecord } from '../pr-reviews';
 import { runtimePaths, type RuntimePaths } from '../../runtime-home';
+import { asJsonValue } from '../../lib/action-result';
 
 const draftCommentSideSchema = v.picklist(['RIGHT', 'LEFT']);
 const draftCommentBodySchema = v.pipe(
@@ -32,6 +34,38 @@ const draftCommentBodySchema = v.pipe(
   v.maxLength(65_536),
 );
 const draftCommentLineSchema = v.pipe(v.number(), v.integer(), v.minValue(1));
+const untrustedInputSchema = v.unknown();
+const looseObjectSchema = v.looseObject({});
+const draftCommentSchema = v.object({
+  id: v.string(),
+  draftId: v.string(),
+  path: v.string(),
+  side: draftCommentSideSchema,
+  line: draftCommentLineSchema,
+  startLine: v.nullable(draftCommentLineSchema),
+  startSide: v.nullable(draftCommentSideSchema),
+  body: v.string(),
+  origin: v.picklist(['human', 'neon']),
+  sourceFindingId: v.nullable(v.string()),
+  createdAt: v.string(),
+  updatedAt: v.string(),
+});
+const draftSchema = v.object({
+  id: v.string(),
+  repo: v.string(),
+  prNumber: v.number(),
+  headSha: v.string(),
+  verdict: v.nullable(v.picklist(['comment', 'approve', 'request-changes'])),
+  body: v.nullable(v.string()),
+  status: v.picklist(['draft', 'submitted', 'discarded']),
+  createdAt: v.string(),
+  updatedAt: v.string(),
+  submittedAt: v.nullable(v.string()),
+  comments: v.array(draftCommentSchema),
+});
+
+type UntrustedInput = v.InferInput<typeof untrustedInputSchema>;
+type LooseObject = v.InferOutput<typeof looseObjectSchema>;
 
 const createDraftCommentInputSchema = v.object({
   path: nonEmptyStringSchema,
@@ -180,21 +214,20 @@ export function createPrReviewerDraftTools(
             );
             if (!comment.ok) return comment.result;
 
+            const patch: v.InferInput<
+              typeof prReviewDraftCommentUpdateInputSchema
+            > = {
+              body: data.body ?? comment.comment.body,
+            };
+            if ('path' in data) patch.path = data.path;
+            if ('side' in data) patch.side = data.side;
+            if ('line' in data) patch.line = data.line;
+            if ('startLine' in data) patch.startLine = data.startLine ?? null;
+            if ('startSide' in data) patch.startSide = data.startSide ?? null;
             const result = await dependencies.patchComment(
               reviewTarget(bound.review),
               data.commentId,
-              {
-                body: data.body ?? comment.comment.body,
-                ...('path' in data ? { path: data.path } : {}),
-                ...('side' in data ? { side: data.side } : {}),
-                ...('line' in data ? { line: data.line } : {}),
-                ...('startLine' in data
-                  ? { startLine: data.startLine ?? null }
-                  : {}),
-                ...('startSide' in data
-                  ? { startSide: data.startSide ?? null }
-                  : {}),
-              },
+              patch,
               paths,
               {},
               {
@@ -352,10 +385,8 @@ function reviewTarget(review: PrReviewRecord) {
 
 function draftFromResult(result: PrEventActionResult) {
   const data = asRecord(result.data);
-  const draft = data?.draft;
-  return draft && typeof draft === 'object'
-    ? (draft as GitHubPrReviewDraft)
-    : null;
+  const parsed = v.safeParse(draftSchema, data?.draft);
+  return parsed.success ? parsed.output : null;
 }
 
 function compactResult(
@@ -377,7 +408,7 @@ function compactResult(
       draftId: draft?.id ?? null,
       headSha: draft?.headSha ?? null,
       commentCount: draft?.comments.length ?? null,
-      comment: comment ? (comment as unknown as JsonValue) : null,
+      comment: comment ? asJsonValue(comment) : null,
     },
   };
 }
@@ -412,17 +443,16 @@ function failure(
   message: string,
   requires?: string[],
 ): PrEventActionResult {
-  return {
+  const base = {
     ok: false,
     action,
     changed: false,
     message,
-    ...(requires ? { requires } : {}),
   };
+  return requires ? { ...base, requires } : base;
 }
 
-function asRecord(value: unknown): Record<string, unknown> | null {
-  return value && typeof value === 'object' && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : null;
+function asRecord(value: UntrustedInput): LooseObject | null {
+  const parsed = v.safeParse(looseObjectSchema, value);
+  return parsed.success ? parsed.output : null;
 }

@@ -7,6 +7,7 @@ import {
   type UseQueryResult,
 } from '@tanstack/react-query';
 import { useCallback, useEffect, useMemo, useRef } from 'react';
+import * as v from 'valibot';
 import { assertReviewRevisionCurrent } from '../../../../shared/review-refresh';
 import {
   deleteGitHubPrReviewDraft,
@@ -23,7 +24,6 @@ import {
   putGitHubPrReviewDraft,
   ApiError,
   type GitHubPrReviewDraft,
-  type GitHubPrReviewSubmitResponse,
   type GitHubPullRequest,
   type GitHubPullRequestReviewThread,
 } from '../../api';
@@ -408,13 +408,25 @@ export function useGitHubPrReviewMutations(pr: GitHubPullRequest) {
   };
 }
 
-export function submittedReviewWasAccepted(error: unknown) {
-  return submittedReviewDraftFromError(error) !== null;
+const submittedReviewResponseSchema = v.looseObject({
+  changed: v.boolean(),
+  data: v.optional(
+    v.looseObject({
+      review: v.optional(v.unknown()),
+      draft: v.optional(v.looseObject({ id: v.string(), status: v.string() })),
+    }),
+  ),
+});
+
+export function submittedReviewWasAccepted(cause: unknown) {
+  return submittedReviewDraftFromError(cause) !== null;
 }
 
-function submittedReviewDraftFromError(error: unknown) {
-  if (!(error instanceof ApiError)) return null;
-  const result = error.data as GitHubPrReviewSubmitResponse | undefined;
+function submittedReviewDraftFromError(cause: unknown) {
+  if (!(cause instanceof ApiError)) return null;
+  const parsed = v.safeParse(submittedReviewResponseSchema, cause.data);
+  if (!parsed.success) return null;
+  const result = parsed.output;
   const draft = result?.data?.draft;
   if (
     !result?.changed ||

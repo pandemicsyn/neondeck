@@ -88,9 +88,10 @@ export type DeckProfileState = {
  * non-reactive contract is part of the type.
  */
 export function useDeckProfile(mode?: DashboardLayoutMode): DeckProfileState {
+  const browserWindow = 'window' in globalThis ? globalThis.window : null;
   const sizeRef = useRef<DeckSize>({
-    width: typeof window === 'undefined' ? 0 : window.innerWidth,
-    height: typeof window === 'undefined' ? 0 : window.innerHeight,
+    width: browserWindow?.innerWidth ?? 0,
+    height: browserWindow?.innerHeight ?? 0,
   });
   // modeRef lets the ResizeObserver callback see the latest mode without
   // re-creating the observer; it is updated inside the mode effect below so the
@@ -121,8 +122,8 @@ export function useDeckProfile(mode?: DashboardLayoutMode): DeckProfileState {
       sizeRef.current = { width: rect.width, height: rect.height };
       apply();
 
-      if (typeof ResizeObserver === 'undefined') return;
-      const observer = new ResizeObserver((entries) => {
+      if (!('ResizeObserver' in globalThis)) return;
+      const observer = new globalThis.ResizeObserver((entries) => {
         const entry = entries[0];
         if (!entry) return;
         sizeRef.current = {

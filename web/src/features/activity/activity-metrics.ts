@@ -208,18 +208,18 @@ function maxConcurrentDelegates(delegates: ActivityDelegateMetrics[]) {
   return maximum;
 }
 
-function record(value: unknown) {
-  return value && typeof value === 'object' && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : null;
+function record(value: WebExternalValue): WebExternalRecord | null {
+  return externalRecord(value);
 }
 
-function number(value: unknown) {
-  return typeof value === 'number' && Number.isFinite(value) ? value : null;
+function number(value: WebExternalValue) {
+  const parsed = v.safeParse(v.pipe(v.number(), v.finite()), value);
+  return parsed.success ? parsed.output : null;
 }
 
-function string(value: unknown) {
-  return typeof value === 'string' ? value : null;
+function string(value: WebExternalValue) {
+  const parsed = v.safeParse(v.string(), value);
+  return parsed.success ? parsed.output : null;
 }
 
 function duration(value: number | null) {
@@ -230,3 +230,9 @@ function timestamp(value: string) {
   const parsed = Date.parse(value);
   return Number.isNaN(parsed) ? 0 : parsed;
 }
+import {
+  externalRecord,
+  type WebExternalRecord,
+  type WebExternalValue,
+} from '../../api/schemas';
+import * as v from 'valibot';

@@ -1,9 +1,10 @@
 type AudioContextConstructor = new () => AudioContext;
 
-type AudioWindow = Window & {
-  AudioContext?: AudioContextConstructor;
-  webkitAudioContext?: AudioContextConstructor;
-};
+declare global {
+  interface Window {
+    webkitAudioContext?: AudioContextConstructor;
+  }
+}
 
 export type NotificationChime = {
   unlock: () => void;
@@ -18,9 +19,8 @@ export function createNotificationChime(): NotificationChime {
   const getContext = () => {
     if (closed) return null;
     if (context) return context;
-    const audioWindow = window as AudioWindow;
     const AudioContextClass =
-      audioWindow.AudioContext ?? audioWindow.webkitAudioContext;
+      globalThis.window.AudioContext ?? globalThis.window.webkitAudioContext;
     if (!AudioContextClass) return null;
     try {
       context = new AudioContextClass();

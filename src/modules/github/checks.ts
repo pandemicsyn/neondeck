@@ -426,7 +426,7 @@ export async function fetchFailingCheckFacts(options: {
           token: options.token,
           owner,
           repo,
-          checkRunId: typeof run.id === 'number' ? run.id : null,
+          checkRunId: run.id ?? null,
           detailsUrl: run.details_url ?? null,
           maxLogBytes: options.maxLogBytes,
         }),

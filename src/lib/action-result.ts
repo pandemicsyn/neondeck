@@ -10,6 +10,15 @@ type FailedActionLike = ActionDetails & {
   message: string;
 };
 
+type FailedActionResult = {
+  ok: false;
+  action: string;
+  changed: false;
+  message: string;
+  errors?: string[];
+  requires?: string[];
+};
+
 export class ActionResultError extends Error {
   readonly action?: string;
   readonly errors?: string[];
@@ -24,15 +33,15 @@ export class ActionResultError extends Error {
   }
 }
 
-export function actionResultErrorDetails(error: unknown): ActionDetails {
+export function actionResultErrorDetails<TError>(error: TError): ActionDetails {
   if (!(error instanceof ActionResultError)) return {};
-  return {
-    ...(error.errors ? { errors: error.errors } : {}),
-    ...(error.requires ? { requires: error.requires } : {}),
-  };
+  const details: ActionDetails = {};
+  if (error.errors) details.errors = error.errors;
+  if (error.requires) details.requires = error.requires;
+  return details;
 }
 
-export function okAction<TExtra extends Record<string, unknown> = never>(
+export function okAction<TExtra extends object = never>(
   action: string,
   changed: boolean,
   message: string,
@@ -50,16 +59,17 @@ export function okAction<TExtra extends Record<string, unknown> = never>(
 export function failedAction<TDetails extends ActionDetails = ActionDetails>(
   action: string,
   message: string,
-  details: TDetails = {} as TDetails,
+  details?: TDetails,
 ) {
-  return {
+  const result: FailedActionResult = {
     ok: false as const,
     action,
     changed: false as const,
     message,
-    ...(details.errors ? { errors: details.errors } : {}),
-    ...(details.requires ? { requires: details.requires } : {}),
   };
+  if (details?.errors) result.errors = details.errors;
+  if (details?.requires) result.requires = details.requires;
+  return result;
 }
 
 export function invalidInputAction(action: string, message: string) {
@@ -73,6 +83,6 @@ export function invalidInputAction(action: string, message: string) {
   };
 }
 
-export function asJsonValue(value: unknown): JsonValue {
-  return JSON.parse(JSON.stringify(value)) as JsonValue;
+export function asJsonValue<TValue>(value: TValue): JsonValue {
+  return JSON.parse(JSON.stringify(value));
 }

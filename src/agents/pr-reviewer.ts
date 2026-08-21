@@ -9,15 +9,14 @@ import {
   useTool,
 } from '@flue/runtime';
 import type { MiddlewareHandler } from 'hono';
+import * as v from 'valibot';
 import { parsePrReviewerConversationId } from '../../shared/pr-reviewer-session';
 import {
+  githubPullRequestReviewThreadSchema,
   readLivePrReviewDraft,
   type GitHubPullRequestReviewThread,
 } from '../modules/github';
-import {
-  getGitHubPrReviewThreads,
-  type PrEventActionResult,
-} from '../modules/pr-events';
+import { getGitHubPrReviewThreads } from '../modules/pr-events';
 import { readPrReview } from '../modules/pr-reviews';
 import {
   createDeferredPrReviewerWorkspaceTools,
@@ -29,6 +28,7 @@ import {
   readPrReviewerHandoff,
   resolvePrReviewerWorkspace,
   type PrReviewerHandoff,
+  type UnavailablePrReviewerWorkspace,
 } from '../modules/pr-reviewer';
 import {
   exploreSubagent,
@@ -100,6 +100,11 @@ const reviewerThreadLimit = 100;
 const reviewerThreadCommentLimit = 12;
 const reviewerThreadCommentBodyLimit = 2_000;
 const reviewerThreadContextBudget = 96_000;
+const liveReviewThreadsDataSchema = v.object({
+  reviewThreads: v.optional(v.array(githubPullRequestReviewThreadSchema), []),
+  reviewThreadsTruncated: v.optional(v.boolean(), false),
+  headSha: v.optional(v.string()),
+});
 
 type PrReviewerRuntimeDependencies = {
   getReviewThreads?: typeof getGitHubPrReviewThreads;
@@ -312,11 +317,7 @@ function unavailableReviewerRuntime(
         'Explain that the review context is unavailable and do not infer repository or GitHub conversation facts.',
     }),
     contextAvailable: false,
-    reviewerWorkspace: {
-      available: false as const,
-      reason,
-      tools: [] as [],
-    },
+    reviewerWorkspace: unavailableReviewerWorkspace(reason),
     tools: [],
     actions: [],
     subagents: [],
@@ -456,18 +457,24 @@ async function readLiveReviewThreads(
     };
   }
 
-  const data = resultData(result);
-  const threads = Array.isArray(data?.reviewThreads)
-    ? (data.reviewThreads as unknown as GitHubPullRequestReviewThread[])
-    : [];
+  const parsedData = v.safeParse(liveReviewThreadsDataSchema, result.data);
+  if (!parsedData.success) {
+    return {
+      available: false,
+      reason: 'GitHub returned an invalid review-thread response.',
+      errors: [],
+    };
+  }
+  const data = parsedData.output;
+  const threads = data.reviewThreads;
   const bounded = boundedReviewThreads(threads);
-  const headSha = typeof data?.headSha === 'string' ? data.headSha : null;
+  const headSha = data.headSha ?? null;
   const revisionMatch = headSha ? headSha === review.headSha : null;
   const anchorsIncluded = revisionMatch === true;
   return {
     available: true,
     truncated:
-      data?.reviewThreadsTruncated === true ||
+      data.reviewThreadsTruncated ||
       bounded.omitted > 0 ||
       bounded.commentsOmitted > 0,
     totalFetched: threads.length,
@@ -516,20 +523,14 @@ export async function resolvePrReviewerWorkspaceForConversation(
   const conversation = parsePrReviewerConversationId(id);
   const review = readPrReview(conversation.reviewId, paths);
   if (!review) {
-    return {
-      available: false as const,
-      reason:
-        'This reviewer instance is not bound to a durable Neondeck PR review.',
-      tools: [] as [],
-    };
+    return unavailableReviewerWorkspace(
+      'This reviewer instance is not bound to a durable Neondeck PR review.',
+    );
   }
   if (conversation.headSha && conversation.headSha !== review.headSha) {
-    return {
-      available: false as const,
-      reason:
-        'This reviewer conversation belongs to an older PR revision. Open the reviewer conversation for the current completed review.',
-      tools: [] as [],
-    };
+    return unavailableReviewerWorkspace(
+      'This reviewer conversation belongs to an older PR revision. Open the reviewer conversation for the current completed review.',
+    );
   }
   const workspace = await resolvePrReviewerWorkspace(
     {
@@ -545,12 +546,10 @@ export async function resolvePrReviewerWorkspaceForConversation(
   return workspace;
 }
 
-function resultData(result: PrEventActionResult) {
-  return result.data &&
-    typeof result.data === 'object' &&
-    !Array.isArray(result.data)
-    ? (result.data as Record<string, unknown>)
-    : null;
+function unavailableReviewerWorkspace(
+  reason: string,
+): UnavailablePrReviewerWorkspace {
+  return { available: false, reason, tools: [] };
 }
 
 function boundedReviewThreads(

@@ -1,7 +1,12 @@
 import { reportDocumentFromSummary } from '../../../shared/report-document';
+import * as v from 'valibot';
 import type { RuntimePaths } from '../../runtime-home';
 import { readReport, type ReportRecord } from '../reports';
 import type { PrReviewRecord } from '../pr-reviews';
+
+const untrustedInputSchema = v.unknown();
+const recordSchema = v.record(v.string(), untrustedInputSchema);
+type UntrustedInput = v.InferInput<typeof untrustedInputSchema>;
 
 const overviewSummaryLimit = 4_000;
 const changeMapBudget = 16_000;
@@ -113,10 +118,9 @@ function boundedItems(items: readonly PrReviewerHandoffItem[], budget: number) {
   };
 }
 
-function objectRecord(value: unknown) {
-  return value && typeof value === 'object' && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : null;
+function objectRecord(value: UntrustedInput) {
+  const parsed = v.safeParse(recordSchema, value);
+  return parsed.success ? parsed.output : null;
 }
 
 function truncate(value: string, limit: number) {

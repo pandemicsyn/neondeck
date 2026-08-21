@@ -312,7 +312,7 @@ export function isRegisteredProvider(
   config?: Pick<AppConfig, 'providers'>,
 ): boolean {
   return (
-    registeredProviderIds.includes(provider as RegisteredProviderId) ||
+    registeredProviderIds.some((id) => id === provider) ||
     resolveOpenAiCompatibleProviderStatuses(config).some(
       (candidate) => candidate.id === provider,
     )

@@ -1,4 +1,4 @@
-import { defineTool, type JsonValue } from '@flue/runtime';
+import { defineTool } from '@flue/runtime';
 import * as v from 'valibot';
 import { prReviewerReReviewToolName } from '../../../shared/pr-reviewer-session';
 import { runtimePaths, type RuntimePaths } from '../../runtime-home';
@@ -146,7 +146,7 @@ function success(
       previousHeadSha,
       headSha: review.headSha,
       revisionChanged: previousHeadSha !== review.headSha,
-    } as JsonValue,
+    },
   };
 }
 

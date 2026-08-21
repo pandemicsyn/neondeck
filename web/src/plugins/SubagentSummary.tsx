@@ -22,12 +22,12 @@ const subagentSummaryDefaultConfig = {
   eventLimit: 5,
 };
 
-const subagentLabels: Record<string, string> = {
-  explore: 'explore',
-  repoResearcher: 'repo_researcher',
-  ciInvestigator: 'ci_investigator',
-  releaseReviewer: 'release_reviewer',
-};
+const subagentLabels = new Map<string, string>([
+  ['explore', 'explore'],
+  ['repoResearcher', 'repo_researcher'],
+  ['ciInvestigator', 'ci_investigator'],
+  ['releaseReviewer', 'release_reviewer'],
+]);
 
 export const SubagentSummaryPlugin = {
   id: 'subagent-summary',
@@ -133,7 +133,7 @@ function SubagentView({
                   key={key}
                 >
                   <p className="truncate font-mono text-[11px] text-ink">
-                    {subagentLabels[key] ?? key}
+                    {subagentLabels.get(key) ?? key}
                   </p>
                   <p className="mt-0.5 truncate font-mono text-[10px] text-muted">
                     {model}

@@ -2,6 +2,12 @@ import {
   dashboardEventStreamPath,
   dashboardHeartbeatEventName,
 } from '../../../shared/dashboard-events';
+import {
+  externalErrorMessage,
+  webExternalValueSchema,
+  type WebExternalValue,
+} from './schemas';
+import * as v from 'valibot';
 
 type EventSubscriber<T> = {
   onError?: (error?: Error | Event) => void;
@@ -45,7 +51,7 @@ export function createDashboardEventHub(
     options.reconnectBaseDelayMs ?? defaultReconnectBaseDelayMs;
   const reconnectMaxDelayMs =
     options.reconnectMaxDelayMs ?? defaultReconnectMaxDelayMs;
-  const subscribers = new Map<string, Set<EventSubscriber<unknown>>>();
+  const subscribers = new Map<string, Set<EventSubscriber<WebExternalValue>>>();
   const connectionSubscribers = new Set<ConnectionSubscriber>();
   const connectionStateSubscribers = new Set<() => void>();
   const boundEventNames = new Set<string>();
@@ -133,6 +139,8 @@ export function createDashboardEventHub(
       recordActivity();
       const topicSubscribers = subscribers.get(eventName);
       if (!topicSubscribers?.size) return;
+      // SAFETY: EventSource dispatches named server events as MessageEvent
+      // instances whose data field contains the serialized event payload.
       const parsed = parseEventData(eventName, event as MessageEvent<string>);
       if (parsed instanceof Error) {
         let handled = false;
@@ -180,7 +188,7 @@ export function createDashboardEventHub(
       source ||
       reconnectTimer ||
       (createSource === createNativeEventSource &&
-        typeof EventSource === 'undefined')
+        !('EventSource' in globalThis))
     ) {
       return;
     }
@@ -211,7 +219,7 @@ export function createDashboardEventHub(
     ) {
       if (
         createSource === createNativeEventSource &&
-        typeof EventSource === 'undefined'
+        !('EventSource' in globalThis)
       ) {
         return () => {};
       }
@@ -235,28 +243,35 @@ export function createDashboardEventHub(
     ) {
       if (
         createSource === createNativeEventSource &&
-        typeof EventSource === 'undefined'
+        !('EventSource' in globalThis)
       ) {
         return () => {};
       }
-      const subscriber: EventSubscriber<T> = { onEvent, onError, onOpen };
+      const subscriber: EventSubscriber<WebExternalValue> = {
+        // SAFETY: subscribe<T> binds T to this event name at the call site; the
+        // hub preserves that pairing and never sends one topic to another.
+        onEvent: (event) => onEvent(event as T),
+        onError,
+        onOpen,
+      };
       const topicSubscribers =
-        subscribers.get(eventName) ?? new Set<EventSubscriber<unknown>>();
-      topicSubscribers.add(subscriber as EventSubscriber<unknown>);
+        subscribers.get(eventName) ??
+        new Set<EventSubscriber<WebExternalValue>>();
+      topicSubscribers.add(subscriber);
       subscribers.set(eventName, topicSubscribers);
       connect();
       bindEventName(eventName);
 
       if (isOpen && onOpen) {
         queueMicrotask(() => {
-          if (topicSubscribers.has(subscriber as EventSubscriber<unknown>)) {
+          if (topicSubscribers.has(subscriber)) {
             invokeSubscriber(onOpen);
           }
         });
       }
 
       return () => {
-        topicSubscribers.delete(subscriber as EventSubscriber<unknown>);
+        topicSubscribers.delete(subscriber);
         if (topicSubscribers.size === 0) subscribers.delete(eventName);
       };
     },
@@ -277,10 +292,10 @@ export function createDashboardEventHub(
 
 function parseEventData(eventName: string, event: MessageEvent<string>) {
   try {
-    return JSON.parse(event.data) as unknown;
+    return v.parse(webExternalValueSchema, JSON.parse(event.data));
   } catch (cause) {
     return new Error(
-      `Invalid ${eventName} event payload: ${cause instanceof Error ? cause.message : String(cause)}`,
+      `Invalid ${eventName} event payload: ${externalErrorMessage(cause)}`,
     );
   }
 }

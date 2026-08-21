@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import type { JsonValue } from '@flue/runtime';
 import * as v from 'valibot';
 import { githubGraphqlBaseResponseSchema } from './schemas';
 import { GitHubApiError, githubErrorMessage, isRequestTimeout } from './errors';
@@ -19,15 +20,17 @@ type CachedGitHubResponse = {
 
 const githubValidatorCache = new Map<string, CachedGitHubResponse>();
 const githubGetRequestsInFlight = new Map<string, Promise<Response>>();
-const githubGraphqlQueriesInFlight = new Map<string, Promise<unknown>>();
-const githubLoginCache = new Map<
-  string,
-  { expiresAt: number | null; value: Promise<string> }
->();
+const githubGraphqlQueriesInFlight = new Map<string, Promise<JsonValue>>();
+type GitHubLoginCacheEntry = {
+  expiresAt: number | null;
+  value: Promise<string>;
+};
+type GitHubGraphqlVariables = Record<string, JsonValue>;
+const githubLoginCache = new Map<string, GitHubLoginCacheEntry>();
 const githubReadGenerations = new Map<string, number>();
 const githubRequestWaiters: Array<{
   resolve: () => void;
-  reject: (reason: unknown) => void;
+  reject: <TReason>(reason: TReason) => void;
   signal: AbortSignal;
   onAbort: () => void;
 }> = [];
@@ -51,7 +54,7 @@ export async function fetchGitHubLogin(
   }
   if (cached) githubLoginCache.delete(key);
 
-  const entry: { expiresAt: number | null; value: Promise<string> } = {
+  const entry: GitHubLoginCacheEntry = {
     expiresAt: null,
     value: Promise.resolve(''),
   };
@@ -83,7 +86,7 @@ async function fetchGitHubLoginUncached(token: string) {
 export async function githubGraphqlFetch(
   token: string,
   query: string,
-  variables: Record<string, unknown>,
+  variables: GitHubGraphqlVariables,
   options: { signal?: AbortSignal } = {},
 ) {
   const mutation = isGraphqlMutation(query);
@@ -126,7 +129,7 @@ export async function githubGraphqlFetch(
 async function executeGitHubGraphqlFetch(
   token: string,
   query: string,
-  variables: Record<string, unknown>,
+  variables: GitHubGraphqlVariables,
   options: { signal?: AbortSignal },
   mutation: boolean,
 ) {
@@ -315,12 +318,12 @@ function githubRequestHeaders(token: string, init: RequestInit) {
       'GitHub Authorization must be supplied through the token argument.',
     );
   }
-  const headers: Record<string, string> = {
-    Accept: 'application/vnd.github+json',
-    Authorization: `Bearer ${token}`,
-    'User-Agent': 'neondeck',
-    'X-GitHub-Api-Version': '2022-11-28',
-  };
+  const headers = Object.fromEntries([
+    ['Accept', 'application/vnd.github+json'],
+    ['Authorization', `Bearer ${token}`],
+    ['User-Agent', 'neondeck'],
+    ['X-GitHub-Api-Version', '2022-11-28'],
+  ]);
   if (init.body) headers['Content-Type'] = 'application/json';
   for (const [name, value] of requestedHeaders) {
     setHeader(headers, name, value);

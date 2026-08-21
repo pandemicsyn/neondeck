@@ -210,20 +210,18 @@ export async function fetchPullRequestEventState(options: {
     reviewsTruncated: reviewDetails.truncated,
     checkSuites: checkDetails.suites.checkSuites,
     checkSuitesTruncated: checkDetails.suites.truncated,
-    ...(checkDetails.suites.unavailableReason
-      ? {
-          checkSuitesUnavailableReason: checkDetails.suites.unavailableReason,
-        }
-      : {}),
     checkRuns: checkDetails.runs.checkRuns,
     checkRunsTruncated: checkDetails.runs.truncated,
-    ...(checkDetails.runs.unavailableReason
-      ? { checkRunsUnavailableReason: checkDetails.runs.unavailableReason }
-      : {}),
     branchPermissions,
     isOutOfDate: isOutOfDateState(behindBy, detail.mergeableState),
     fetchedAt: new Date().toISOString(),
   };
+  if (checkDetails.suites.unavailableReason) {
+    state.checkSuitesUnavailableReason = checkDetails.suites.unavailableReason;
+  }
+  if (checkDetails.runs.unavailableReason) {
+    state.checkRunsUnavailableReason = checkDetails.runs.unavailableReason;
+  }
   return enforcePullRequestEventStateBudget(state, {
     ...eventBudget.snapshot(),
   });
@@ -286,6 +284,45 @@ export const defaultPullRequestEventStateBudget = {
   maxElapsedMs: 30_000,
 } as const;
 
+type BudgetCandidate = {
+  itemCost: number;
+  byteCost: number;
+  retain: () => void;
+};
+
+type BudgetBucket = {
+  category: string;
+  candidate: (index: number) => BudgetCandidate | null;
+};
+
+type RetainedBudgetBucket<TItem> = {
+  budget: BudgetBucket;
+  retained: TItem[];
+};
+
+function createBudgetBucket<TItem>(
+  category: string,
+  source: readonly TItem[],
+  itemCost: (item: TItem) => number,
+): RetainedBudgetBucket<TItem> {
+  const retained: TItem[] = [];
+  return {
+    retained,
+    budget: {
+      category,
+      candidate(index) {
+        const item = source[index];
+        if (item === undefined) return null;
+        return {
+          itemCost: itemCost(item),
+          byteCost: Buffer.byteLength(JSON.stringify(item), 'utf8'),
+          retain: () => retained.push(item),
+        };
+      },
+    },
+  };
+}
+
 export function enforcePullRequestEventStateBudget(
   state: GitHubPullRequestEventState,
   options: {
@@ -307,57 +344,35 @@ export function enforcePullRequestEventStateBudget(
   let retainedBytes = 0;
   const exhaustedCategories = new Set<string>();
 
-  type BudgetBucket = {
-    category: string;
-    source: unknown[];
-    retained: unknown[];
-    itemCost: (value: unknown) => number;
-  };
-  const buckets: BudgetBucket[] = [
-    {
-      category: 'commits',
-      source: state.commits,
-      retained: [],
-      itemCost: () => 1,
-    },
-    {
-      category: 'review_threads',
-      source: state.reviewThreads,
-      retained: [],
-      itemCost: (value) =>
-        1 +
-        (Array.isArray(
-          (value as GitHubPullRequestEventState['reviewThreads'][number])
-            .comments,
-        )
-          ? (value as GitHubPullRequestEventState['reviewThreads'][number])
-              .comments.length
-          : 0),
-    },
-    {
-      category: 'requested_changes_reviews',
-      source: state.requestedChangesState.history,
-      retained: [],
-      itemCost: () => 1,
-    },
-    {
-      category: 'conversation_comments',
-      source: state.conversationComments ?? [],
-      retained: [],
-      itemCost: () => 1,
-    },
-    {
-      category: 'check_suites',
-      source: state.checkSuites,
-      retained: [],
-      itemCost: () => 1,
-    },
-    {
-      category: 'check_runs',
-      source: state.checkRuns,
-      retained: [],
-      itemCost: () => 1,
-    },
+  const commits = createBudgetBucket('commits', state.commits, () => 1);
+  const reviewThreads = createBudgetBucket(
+    'review_threads',
+    state.reviewThreads,
+    (thread) => 1 + thread.comments.length,
+  );
+  const requestedChangesReviews = createBudgetBucket(
+    'requested_changes_reviews',
+    state.requestedChangesState.history,
+    () => 1,
+  );
+  const conversationComments = createBudgetBucket(
+    'conversation_comments',
+    state.conversationComments ?? [],
+    () => 1,
+  );
+  const checkSuites = createBudgetBucket(
+    'check_suites',
+    state.checkSuites,
+    () => 1,
+  );
+  const checkRuns = createBudgetBucket('check_runs', state.checkRuns, () => 1);
+  const buckets = [
+    commits.budget,
+    reviewThreads.budget,
+    requestedChangesReviews.budget,
+    conversationComments.budget,
+    checkSuites.budget,
+    checkRuns.budget,
   ];
 
   if (timeExhausted) {
@@ -369,44 +384,35 @@ export function enforcePullRequestEventStateBudget(
       remaining = false;
       for (const bucket of buckets) {
         const offset = offsets.get(bucket.category) ?? 0;
-        const item = bucket.source[offset];
-        if (item === undefined) continue;
+        const candidate = bucket.candidate(offset);
+        if (!candidate) continue;
         remaining = true;
         offsets.set(bucket.category, offset + 1);
-        const itemCost = bucket.itemCost(item);
-        const byteCost = Buffer.byteLength(JSON.stringify(item), 'utf8');
         if (
-          retainedItems + itemCost > limits.maxItems ||
-          retainedBytes + byteCost > limits.maxBytes
+          retainedItems + candidate.itemCost > limits.maxItems ||
+          retainedBytes + candidate.byteCost > limits.maxBytes
         ) {
           exhaustedCategories.add(bucket.category);
           continue;
         }
-        bucket.retained.push(item);
-        retainedItems += itemCost;
-        retainedBytes += byteCost;
+        candidate.retain();
+        retainedItems += candidate.itemCost;
+        retainedBytes += candidate.byteCost;
       }
     }
   }
 
-  const retained = new Map(
-    buckets.map((bucket) => [bucket.category, bucket.retained]),
+  const requestedChangesState = requestedChangesStateFromReviews(
+    requestedChangesReviews.retained,
   );
-  const retainedReviews = retained.get(
-    'requested_changes_reviews',
-  ) as GitHubPullRequestEventState['requestedChangesState']['history'];
-  const requestedChangesState =
-    requestedChangesStateFromReviews(retainedReviews);
   const exhausted = exhaustedCategories.size > 0;
 
   return {
     ...state,
-    commits: retained.get('commits') as GitHubPullRequestEventState['commits'],
+    commits: commits.retained,
     commitsTruncated:
       Boolean(state.commitsTruncated) || exhaustedCategories.has('commits'),
-    reviewThreads: retained.get(
-      'review_threads',
-    ) as GitHubPullRequestEventState['reviewThreads'],
+    reviewThreads: reviewThreads.retained,
     reviewThreadsTruncated:
       Boolean(state.reviewThreadsTruncated) ||
       exhaustedCategories.has('review_threads'),
@@ -415,21 +421,15 @@ export function enforcePullRequestEventStateBudget(
     reviewsTruncated:
       Boolean(state.reviewsTruncated) ||
       exhaustedCategories.has('requested_changes_reviews'),
-    conversationComments: retained.get('conversation_comments') as NonNullable<
-      GitHubPullRequestEventState['conversationComments']
-    >,
+    conversationComments: conversationComments.retained,
     conversationCommentsTruncated:
       Boolean(state.conversationCommentsTruncated) ||
       exhaustedCategories.has('conversation_comments'),
-    checkSuites: retained.get(
-      'check_suites',
-    ) as GitHubPullRequestEventState['checkSuites'],
+    checkSuites: checkSuites.retained,
     checkSuitesTruncated:
       Boolean(state.checkSuitesTruncated) ||
       exhaustedCategories.has('check_suites'),
-    checkRuns: retained.get(
-      'check_runs',
-    ) as GitHubPullRequestEventState['checkRuns'],
+    checkRuns: checkRuns.retained,
     checkRunsTruncated:
       Boolean(state.checkRunsTruncated) ||
       exhaustedCategories.has('check_runs'),

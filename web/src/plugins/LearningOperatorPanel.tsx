@@ -18,6 +18,8 @@ import {
   type LearningOperatorState,
   type LearningReviewRecord,
 } from '../api';
+import type { JsonValue } from '@flue/runtime';
+import * as v from 'valibot';
 import {
   Badge,
   Button,
@@ -568,33 +570,40 @@ function statusClass(status: string) {
   return '';
 }
 
-function skillPatchSummary(value: unknown) {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
-  return value as {
-    summary?: string | null;
-    diff?: string | null;
-    afterHash?: string | null;
-    restoreFromAudit?: boolean;
-  };
+const skillPatchSummarySchema = v.looseObject({
+  summary: v.optional(v.nullable(v.string())),
+  diff: v.optional(v.nullable(v.string())),
+  afterHash: v.optional(v.nullable(v.string())),
+  restoreFromAudit: v.optional(v.boolean()),
+});
+const learningJsonObjectSchema = v.custom<Record<string, JsonValue>>(
+  (value) => v.is(v.record(v.string(), v.unknown()), value),
+  'Value must be a JSON object.',
+);
+
+function skillPatchSummary(value: Parameters<typeof JSON.stringify>[0]) {
+  const parsed = v.safeParse(skillPatchSummarySchema, value);
+  return parsed.success ? parsed.output : null;
 }
 
-function reviewSummary(value: unknown) {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) {
-    return valuePreview(value);
-  }
-  const record = value as Record<string, unknown>;
+function reviewSummary(value: Parameters<typeof JSON.stringify>[0]) {
+  const parsed = v.safeParse(learningJsonObjectSchema, value);
+  if (!parsed.success) return valuePreview(value);
+  const record = parsed.output;
   return valuePreview(record.summary ?? record.message ?? record);
 }
 
-function auditPreview(value: unknown) {
+function auditPreview(value: Parameters<typeof JSON.stringify>[0]) {
   return valuePreview(value) || 'No audit detail.';
 }
 
-function valuePreview(value: unknown) {
-  if (typeof value === 'string') return value;
-  if (typeof value === 'number' || typeof value === 'boolean') {
-    return String(value);
-  }
+function valuePreview(value: Parameters<typeof JSON.stringify>[0]) {
+  const string = v.safeParse(v.string(), value);
+  if (string.success) return string.output;
+  const number = v.safeParse(v.number(), value);
+  if (number.success) return String(number.output);
+  const boolean = v.safeParse(v.boolean(), value);
+  if (boolean.success) return String(boolean.output);
   if (value === null || value === undefined) return '';
   return JSON.stringify(value);
 }
