@@ -44,7 +44,7 @@ const memoryRowSchema = v.object({
   key: v.string(),
   value_json: v.string(),
   repo_id: nullableStringSchema,
-  status: memoryStatusSchema,
+  status: v.unknown(),
   use_count: v.number(),
   last_used_at: nullableStringSchema,
   created_at: v.string(),
@@ -356,18 +356,27 @@ export async function memoryCandidatePolicyResult(
 
 export function readMemoryRow(row: MemoryExternalValue): MemoryRecord {
   const record = v.parse(memoryRowSchema, row);
+  const status = v.safeParse(memoryStatusSchema, record.status);
   return {
     id: record.id,
     scope: record.scope,
     key: record.key,
     value: v.parse(jsonValueSchema, JSON.parse(record.value_json)),
     repoId: record.repo_id,
-    status: record.status,
+    status: status.success ? status.output : 'active',
     useCount: record.use_count,
     lastUsedAt: record.last_used_at,
     createdAt: record.created_at,
     updatedAt: record.updated_at,
   };
+}
+
+export function safeReadMemoryRow(row: MemoryExternalValue) {
+  try {
+    return [readMemoryRow(row)];
+  } catch {
+    return [];
+  }
 }
 
 export function readMemoryEventRow(

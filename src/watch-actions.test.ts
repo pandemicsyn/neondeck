@@ -3,7 +3,10 @@ import type { JsonValue } from '@flue/runtime';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { listScheduledTasks } from './modules/scheduled-tasks';
+import {
+  listScheduledTasks,
+  readLatestScheduledTaskRun,
+} from './modules/scheduled-tasks';
 import {
   addRefWatch,
   addPrWatch as addPrWatchWithoutBaseline,
@@ -220,6 +223,75 @@ describe('PR watch actions', () => {
         expect.objectContaining({ id: 'watch:pandemicsyn/neondeck#123' }),
       ]),
     );
+  });
+
+  it('skips malformed persisted watch and scheduled-task rows', async () => {
+    const home = await tempHome();
+    const paths = runtimePaths(home);
+    await writeRepoRegistry(paths.repos);
+    await addPrWatch({ ref: 'neondeck#123' }, paths, async () => prDetail());
+    const database = openDb(paths.neondeckDatabase);
+    try {
+      database
+        .prepare('UPDATE pr_watches SET status = ? WHERE id = ?;')
+        .run('legacy-status', 'pandemicsyn/neondeck#123');
+    } finally {
+      database.close();
+    }
+
+    await expect(listPrWatches(paths)).resolves.toMatchObject({ watches: [] });
+
+    const taskDatabase = openDb(paths.neondeckDatabase);
+    try {
+      taskDatabase
+        .prepare(
+          `INSERT INTO scheduled_task_runs (
+             id, task_id, status, outcome, message,
+             started_at, completed_at, created_at, updated_at
+           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);`,
+        )
+        .run(
+          'valid-run',
+          'watch:pandemicsyn/neondeck#123',
+          'completed',
+          'recorded',
+          'valid run',
+          '2026-08-21T00:00:00.000Z',
+          '2026-08-21T00:00:01.000Z',
+          '2026-08-21T00:00:00.000Z',
+          '2026-08-21T00:00:01.000Z',
+        );
+      taskDatabase
+        .prepare(
+          `INSERT INTO scheduled_task_runs (
+             id, task_id, status, outcome, message,
+             started_at, completed_at, created_at, updated_at
+           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);`,
+        )
+        .run(
+          'malformed-run',
+          'watch:pandemicsyn/neondeck#123',
+          'completed',
+          'recorded',
+          'malformed run',
+          '2026-08-21T00:01:00.000Z',
+          '2026-08-21T00:01:01.000Z',
+          '2026-08-21T00:01:00.000Z',
+          '2026-08-21T00:01:01.000Z',
+        );
+      taskDatabase
+        .prepare('UPDATE scheduled_task_runs SET result_json = ? WHERE id = ?;')
+        .run('{', 'malformed-run');
+      taskDatabase
+        .prepare('UPDATE scheduled_tasks SET trigger_json = ? WHERE id = ?;')
+        .run('{', 'watch:pandemicsyn/neondeck#123');
+    } finally {
+      taskDatabase.close();
+    }
+    await expect(
+      readLatestScheduledTaskRun('watch:pandemicsyn/neondeck#123', paths),
+    ).resolves.toMatchObject({ id: 'valid-run' });
+    await expect(listScheduledTasks(paths)).resolves.toEqual([]);
   });
 
   it('ignores refreshed check observation timestamps for unchanged merged PRs', async () => {

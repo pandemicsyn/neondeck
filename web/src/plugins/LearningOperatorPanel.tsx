@@ -18,8 +18,8 @@ import {
   type LearningOperatorState,
   type LearningReviewRecord,
 } from '../api';
-import type { JsonValue } from '@flue/runtime';
 import * as v from 'valibot';
+import { webExternalRecordSchema } from '../api/schemas';
 import {
   Badge,
   Button,
@@ -576,18 +576,13 @@ const skillPatchSummarySchema = v.looseObject({
   afterHash: v.optional(v.nullable(v.string())),
   restoreFromAudit: v.optional(v.boolean()),
 });
-const learningJsonObjectSchema = v.custom<Record<string, JsonValue>>(
-  (value) => v.is(v.record(v.string(), v.unknown()), value),
-  'Value must be a JSON object.',
-);
-
 function skillPatchSummary(value: Parameters<typeof JSON.stringify>[0]) {
   const parsed = v.safeParse(skillPatchSummarySchema, value);
   return parsed.success ? parsed.output : null;
 }
 
-function reviewSummary(value: Parameters<typeof JSON.stringify>[0]) {
-  const parsed = v.safeParse(learningJsonObjectSchema, value);
+export function reviewSummary(value: Parameters<typeof JSON.stringify>[0]) {
+  const parsed = v.safeParse(webExternalRecordSchema, value);
   if (!parsed.success) return valuePreview(value);
   const record = parsed.output;
   return valuePreview(record.summary ?? record.message ?? record);

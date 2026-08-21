@@ -4,8 +4,9 @@ export const webExternalValueSchema = v.unknown();
 export type WebExternalValue = v.InferInput<typeof webExternalValueSchema>;
 
 export const webExternalRecordSchema = v.pipe(
-  v.record(v.string(), webExternalValueSchema),
+  webExternalValueSchema,
   v.check((value) => !Array.isArray(value), 'Expected an object record.'),
+  v.record(v.string(), webExternalValueSchema),
 );
 export type WebExternalRecord = v.InferOutput<typeof webExternalRecordSchema>;
 

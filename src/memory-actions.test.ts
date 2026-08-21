@@ -19,6 +19,8 @@ import {
   upsertMemory,
 } from './modules/memory';
 import { updateLearningConfig } from './modules/config';
+import { readMemoryRow } from './modules/memory/store';
+import { openDb } from './lib/sqlite';
 import { runtimePaths } from './runtime-home';
 
 const tempRoots: string[] = [];
@@ -32,6 +34,60 @@ afterEach(async () => {
 });
 
 describe('structured memory actions', () => {
+  it('keeps legacy memory rows active when their status is unrecognized', () => {
+    expect(
+      readMemoryRow({
+        id: 'memory-legacy',
+        scope: 'local',
+        key: 'legacy-status',
+        value_json: '"guidance"',
+        repo_id: null,
+        status: 'legacy-value',
+        use_count: 0,
+        last_used_at: null,
+        created_at: '2026-08-21T00:00:00.000Z',
+        updated_at: '2026-08-21T00:00:00.000Z',
+      }),
+    ).toMatchObject({
+      id: 'memory-legacy',
+      status: 'active',
+      value: 'guidance',
+    });
+  });
+
+  it('includes legacy-status memory rows in normal lists and prompt context', async () => {
+    const paths = runtimePaths(await tempHome());
+    const created = await upsertMemory(
+      {
+        scope: 'local',
+        key: 'legacy-status',
+        value: 'keep this guidance',
+      },
+      paths,
+    );
+    if (!('memory' in created)) throw new Error('Expected memory creation.');
+    const database = openDb(paths.neondeckDatabase);
+    try {
+      database
+        .prepare('UPDATE memories SET status = ? WHERE id = ?;')
+        .run('legacy-value', created.memory.id);
+    } finally {
+      database.close();
+    }
+
+    await expect(listMemories({}, paths)).resolves.toMatchObject({
+      memories: [
+        expect.objectContaining({
+          id: created.memory.id,
+          status: 'active',
+        }),
+      ],
+    });
+    expect(buildMemoryPromptSnapshotSync(paths).memoryIds).toContain(
+      created.memory.id,
+    );
+  });
+
   it('upserts and lists active durable scoped memories', async () => {
     const paths = runtimePaths(await tempHome());
 

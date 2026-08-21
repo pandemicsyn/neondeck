@@ -398,7 +398,7 @@ export function markLoadedMemoriesUsed(
         SET use_count = use_count + 1,
           last_used_at = ?
         WHERE id = ?
-          AND status = 'active';
+          AND status != 'archived';
       `,
       )
       .run(usedAt, id);

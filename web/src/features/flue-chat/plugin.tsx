@@ -495,12 +495,20 @@ function linkedContextPlaceholder(session: ChatSessionRecord | undefined) {
   return `Ask about ${label}...`;
 }
 
-function linkedContextLabel(session: ChatSessionRecord) {
+export function linkedContextLabel(session: ChatSessionRecord) {
   const metadata = objectMetadata(session.uiMetadata);
-  if (metadata?.source === 'github-pr' && metadata.repo) {
+  if (
+    metadata?.source === 'github-pr' &&
+    metadata.repo &&
+    metadata.prNumber !== undefined
+  ) {
     return `${metadata.repo}#${metadata.prNumber}`;
   }
-  if (metadata?.source === 'pr-watch' && metadata.repoFullName) {
+  if (
+    metadata?.source === 'pr-watch' &&
+    metadata.repoFullName &&
+    metadata.prNumber !== undefined
+  ) {
     return `${metadata.repoFullName}#${metadata.prNumber} watch`;
   }
   if (metadata?.repoFullName && metadata.prNumber !== undefined) {
@@ -517,15 +525,21 @@ function linkedContextUrl(session: ChatSessionRecord) {
   return metadata?.url;
 }
 
-const linkedMetadataSchema = v.looseObject({
-  source: v.optional(v.picklist(['github-pr', 'pr-watch'])),
-  repo: v.optional(v.string()),
-  repoFullName: v.optional(v.string()),
-  prNumber: v.optional(v.number()),
-  url: v.optional(v.string()),
-});
+const linkedMetadataSourceSchema = v.picklist(['github-pr', 'pr-watch']);
 
 function objectMetadata(value: ChatSessionRecord['uiMetadata']) {
-  const parsed = v.safeParse(linkedMetadataSchema, value);
-  return parsed.success ? parsed.output : undefined;
+  const parsed = v.safeParse(v.record(v.string(), v.unknown()), value);
+  if (!parsed.success || Array.isArray(value)) return undefined;
+  const source = v.safeParse(linkedMetadataSourceSchema, parsed.output.source);
+  const repo = v.safeParse(v.string(), parsed.output.repo);
+  const repoFullName = v.safeParse(v.string(), parsed.output.repoFullName);
+  const prNumber = v.safeParse(v.number(), parsed.output.prNumber);
+  const url = v.safeParse(v.string(), parsed.output.url);
+  return {
+    source: source.success ? source.output : undefined,
+    repo: repo.success ? repo.output : undefined,
+    repoFullName: repoFullName.success ? repoFullName.output : undefined,
+    prNumber: prNumber.success ? prNumber.output : undefined,
+    url: url.success ? url.output : undefined,
+  };
 }

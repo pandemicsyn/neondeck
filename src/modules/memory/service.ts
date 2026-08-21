@@ -25,7 +25,7 @@ import {
   readMemoryById,
   readMemoryByScopeKey,
   readMemoryEventRow,
-  readMemoryRow,
+  safeReadMemoryRow,
   recordLearningEvent,
   recordMemoryEvent,
   resolveMemory,
@@ -260,11 +260,13 @@ export async function listMemories(
       filters.push('repo_id = ?');
       params.push(parsed.output.repoId);
     }
-    if (parsed.output.status) {
+    if (parsed.output.status === 'active') {
+      filters.push("status != 'archived'");
+    } else if (parsed.output.status) {
       filters.push('status = ?');
       params.push(parsed.output.status);
     } else if (!parsed.output.includeArchived) {
-      filters.push("status = 'active'");
+      filters.push("status != 'archived'");
     }
     const where = filters.length > 0 ? `WHERE ${filters.join(' AND ')}` : '';
     const memories = database
@@ -277,7 +279,7 @@ export async function listMemories(
       `,
       )
       .all(...params)
-      .map(readMemoryRow);
+      .flatMap(safeReadMemoryRow);
 
     return {
       ok: true,
@@ -955,7 +957,7 @@ export async function markMemoriesUsed(
               last_used_at = ?,
               updated_at = updated_at
             WHERE id = ?
-              AND status = 'active'
+              AND status != 'archived'
               AND scope IN ('user', 'local', 'project');
           `,
           )

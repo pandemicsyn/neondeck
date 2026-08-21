@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import type { SQLOutputValue } from 'node:sqlite';
 import { asJsonValue } from '../../lib/action-result';
-import { openDb, parseRow } from '../../lib/sqlite';
+import { collectValidRowsInBatches, openDb, parseRow } from '../../lib/sqlite';
 import { ensureRuntimeHome, runtimePaths } from '../../runtime-home';
 import { publishNotificationEvent } from './notification-events';
 import type { NotificationLevel, NotificationRecord } from './types';
@@ -16,18 +16,20 @@ export async function listNotifications(
   const database = openDb(paths.neondeckDatabase);
 
   try {
-    return database
-      .prepare(
-        `
-        SELECT *
-        FROM notifications
-        ${options.includeResolved ? '' : 'WHERE resolved_at IS NULL'}
-        ORDER BY updated_at DESC, occurrence_count DESC, created_at DESC
-        LIMIT 100;
-      `,
-      )
-      .all()
-      .map(readNotificationRow);
+    return collectValidRowsInBatches(
+      100,
+      (limit, offset) =>
+        database
+          .prepare(
+            `SELECT *
+             FROM notifications
+             ${options.includeResolved ? '' : 'WHERE resolved_at IS NULL'}
+             ORDER BY updated_at DESC, occurrence_count DESC, created_at DESC
+             LIMIT ? OFFSET ?;`,
+          )
+          .all(limit, offset),
+      safeNotificationRow,
+    );
   } finally {
     database.close();
   }
@@ -272,4 +274,12 @@ export function readNotificationRow(
     createdAt: record.created_at,
     updatedAt: record.updated_at ?? record.created_at,
   };
+}
+
+function safeNotificationRow(row: Record<string, SQLOutputValue>) {
+  try {
+    return [readNotificationRow(row)];
+  } catch {
+    return [];
+  }
 }

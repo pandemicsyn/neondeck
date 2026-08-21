@@ -173,7 +173,7 @@ function readLearningSummary(database: DatabaseSync) {
   const targetCounts = countsBy(database, 'learning_candidates', 'target');
   const activeMemories = scalarCount(
     database,
-    "SELECT COUNT(*) AS count FROM memories WHERE status = 'active';",
+    "SELECT COUNT(*) AS count FROM memories WHERE status != 'archived';",
   );
   const archivedMemories = scalarCount(
     database,

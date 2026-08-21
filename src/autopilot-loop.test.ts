@@ -833,6 +833,76 @@ describe('minimal Autopilot watch loop', () => {
     });
   });
 
+  it('ignores submission settlements correlated to nested task sessions', async () => {
+    const { paths } = await gitFixturePaths();
+    await configurePrAutopilot(
+      {
+        ref: 'neondeck#123',
+        mode: 'prepare-only',
+        processExisting: false,
+        confirm: true,
+      },
+      paths,
+      fixtureDependencies(repositorySeed?.featureSha ?? undefined),
+    );
+    const created = await createWorktree(
+      { repoId: 'neondeck', prNumber: 123, headRef: 'feature' },
+      paths,
+    );
+    const worktree = worktreeFrom(created);
+    const instanceId = 'nested-settlement-owner';
+    const submissionId = 'nested-settlement-submission';
+    bindWatchAutopilotOwner(paths, 'pandemicsyn/neondeck#123', {
+      ownerInstanceId: instanceId,
+      worktreeId: worktree.id,
+    });
+    claimWatchAutopilotTurn(
+      paths,
+      'pandemicsyn/neondeck#123',
+      'nested-settlement-event',
+    );
+    registerCorrelatedPendingAutopilotTurn(
+      paths.home,
+      instanceId,
+      'nested-settlement-event',
+      'prepare-only',
+      'watch-event',
+      submissionId,
+    );
+    const beforeNestedSettlements = readPendingAutopilotTurn(
+      paths.home,
+      instanceId,
+    );
+
+    await expect(
+      settleAutopilotOwnerObservation(
+        {
+          ...ownerPromptSuccess(instanceId, submissionId),
+          taskId: 'child-task',
+        },
+        paths,
+      ),
+    ).resolves.toBeNull();
+    await expect(
+      settleAutopilotOwnerObservation(
+        {
+          ...ownerPromptSuccess(instanceId, submissionId),
+          parentSession: 'parent-session',
+        },
+        paths,
+      ),
+    ).resolves.toBeNull();
+    expect(readPendingAutopilotTurn(paths.home, instanceId)).toEqual(
+      beforeNestedSettlements,
+    );
+
+    await settleAutopilotOwnerObservation(
+      ownerPromptSuccess(instanceId, submissionId),
+      paths,
+    );
+    expect(readPendingAutopilotTurn(paths.home, instanceId)).toBeUndefined();
+  });
+
   it('acknowledges first-poll facts from the durable owner envelope on settlement', async () => {
     const { paths } = await gitFixturePaths();
     const watchId = 'pandemicsyn/neondeck#123';

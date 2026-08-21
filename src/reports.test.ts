@@ -13,6 +13,7 @@ import { renderReportHtml } from './lib/report-html';
 import {
   listReports,
   pruneReports,
+  readReport,
   reportsRoot,
   resolveReportFilePath,
   writeReport,
@@ -35,6 +36,43 @@ afterEach(async () => {
 });
 
 describe('reports', () => {
+  it('skips malformed persisted report rows while listing valid reports', async () => {
+    const paths = runtimePaths(await tempDir());
+    const malformed = await writeReport(
+      {
+        kind: 'test-report',
+        title: 'Malformed later',
+        html: '<p>malformed later</p>',
+        summary: { state: 'before-corruption' },
+        createdBy: 'test',
+      },
+      paths,
+    );
+    const valid = await writeReport(
+      {
+        kind: 'test-report',
+        title: 'Still valid',
+        html: '<p>valid</p>',
+        summary: { state: 'valid' },
+        createdBy: 'test',
+      },
+      paths,
+    );
+    const database = new DatabaseSync(paths.neondeckDatabase);
+    try {
+      database
+        .prepare('UPDATE reports SET summary_json = ? WHERE id = ?;')
+        .run('{', malformed.id);
+    } finally {
+      database.close();
+    }
+
+    await expect(listReports(paths)).resolves.toMatchObject([
+      { id: valid.id, title: 'Still valid' },
+    ]);
+    await expect(readReport(malformed.id, paths)).resolves.toBeNull();
+  });
+
   it('writes escaped self-contained HTML and lists the report record', async () => {
     const paths = runtimePaths(await tempDir());
     const html = renderReportHtml({

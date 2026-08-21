@@ -648,7 +648,7 @@ export function readWatches(paths: RuntimePaths): PrWatch[] {
       `,
       )
       .all()
-      .map(readWatchRow);
+      .flatMap(safeWatchRow);
   } finally {
     database.close();
   }
@@ -922,7 +922,7 @@ export function readRefWatches(paths: RuntimePaths): RefWatch[] {
       `,
       )
       .all()
-      .map(readRefWatchRow);
+      .flatMap(safeRefWatchRow);
   } finally {
     database.close();
   }
@@ -1114,6 +1114,22 @@ export function readWatchRow(row: SqliteExternalValue): PrWatch {
     createdAt: record.created_at,
     updatedAt: record.updated_at,
   };
+}
+
+function safeWatchRow(row: SqliteExternalValue) {
+  try {
+    return [readWatchRow(row)];
+  } catch {
+    return [];
+  }
+}
+
+function safeRefWatchRow(row: SqliteExternalValue) {
+  try {
+    return [readRefWatchRow(row)];
+  } catch {
+    return [];
+  }
 }
 
 export function markWatchInitialEventProcessed(

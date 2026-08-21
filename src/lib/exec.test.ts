@@ -55,4 +55,24 @@ describe('exec helpers', () => {
       timedOut: false,
     });
   });
+
+  it('preserves valid diagnostics when one exec error field is malformed', () => {
+    const error = normalizeExecFileError({
+      message: 'spawn failed',
+      code: 'ENOENT',
+      signal: 'SIG_NOT_FROM_NODE_TYPES',
+      stdout: null,
+      stderr: 'command not found',
+      killed: false,
+    });
+
+    expect(error).toMatchObject({
+      message: 'spawn failed',
+      code: 'ENOENT',
+      signal: null,
+      stdout: '',
+      stderr: 'command not found',
+      timedOut: false,
+    });
+  });
 });

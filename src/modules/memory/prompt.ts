@@ -1,11 +1,11 @@
-import { openDb } from '../../lib/sqlite.ts';
+import { collectValidRowsInBatches, openDb } from '../../lib/sqlite.ts';
 import { runtimePaths } from '../../runtime-home';
 import type { ActiveMemoryScope, MemoryRecord } from './schemas';
 import {
   isActiveLearningMemory,
   memoryLine,
   readLearningConfigSync,
-  readMemoryRow,
+  safeReadMemoryRow,
 } from './store';
 
 type MemoryScopeBudgets = {
@@ -86,7 +86,7 @@ export function markMemoryBackgroundContextUsedSync(
           SET use_count = use_count + 1,
             last_used_at = ?
           WHERE id = ?
-            AND status = 'active';
+            AND status != 'archived';
         `,
         )
         .run(usedAt, id);
@@ -107,33 +107,35 @@ export function buildMemoryPromptSnapshotSync(
   try {
     const config = readLearningConfigSync(paths);
     const repoId = options.repoId ?? null;
-    const memories = database
-      .prepare(
-        `
-        SELECT *
-        FROM memories
-        WHERE status = 'active'
-          AND scope IN ('user', 'local', 'project')
-          AND (
-            scope != 'project'
-            OR repo_id IS NULL
-            OR repo_id = ?
+    const memories = collectValidRowsInBatches(
+      config.memoryMaxActiveItems,
+      (limit, offset) =>
+        database
+          .prepare(
+            `SELECT *
+             FROM memories
+             WHERE status != 'archived'
+               AND scope IN ('user', 'local', 'project')
+               AND (
+                 scope != 'project'
+                 OR repo_id IS NULL
+                 OR repo_id = ?
+               )
+             ORDER BY
+               CASE scope
+                 WHEN 'user' THEN 0
+                 WHEN 'local' THEN 1
+                 WHEN 'project' THEN 2
+                 ELSE 3
+               END,
+               use_count DESC,
+               updated_at DESC,
+               key ASC
+             LIMIT ? OFFSET ?;`,
           )
-        ORDER BY
-          CASE scope
-            WHEN 'user' THEN 0
-            WHEN 'local' THEN 1
-            WHEN 'project' THEN 2
-            ELSE 3
-          END,
-          use_count DESC,
-          updated_at DESC,
-          key ASC
-        LIMIT ?;
-      `,
-      )
-      .all(repoId, config.memoryMaxActiveItems)
-      .map(readMemoryRow);
+          .all(repoId, limit, offset),
+      safeReadMemoryRow,
+    );
 
     if (memories.length === 0) {
       return {

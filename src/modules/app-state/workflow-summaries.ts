@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import type { SQLOutputValue } from 'node:sqlite';
 import { asJsonValue } from '../../lib/action-result';
-import { openDb, parseRow } from '../../lib/sqlite';
+import { collectValidRowsInBatches, openDb, parseRow } from '../../lib/sqlite';
 import {
   ensureRuntimeHome,
   runtimePaths,
@@ -161,17 +161,19 @@ export async function listWorkflowSummaries(paths = runtimePaths()) {
   const database = openDb(paths.neondeckDatabase);
 
   try {
-    return database
-      .prepare(
-        `
-        SELECT *
-        FROM workflow_summaries
-        ORDER BY created_at DESC
-        LIMIT 100;
-      `,
-      )
-      .all()
-      .map(readWorkflowSummaryRow);
+    return collectValidRowsInBatches(
+      100,
+      (limit, offset) =>
+        database
+          .prepare(
+            `SELECT *
+             FROM workflow_summaries
+             ORDER BY created_at DESC
+             LIMIT ? OFFSET ?;`,
+          )
+          .all(limit, offset),
+      safeWorkflowSummaryRow,
+    );
   } finally {
     database.close();
   }
@@ -186,18 +188,20 @@ export async function findWorkflowSummaryByKiloTaskId(
   const database = openDb(paths.neondeckDatabase);
 
   try {
-    const rows = database
-      .prepare(
-        `
-        SELECT *
-        FROM workflow_summaries
-        WHERE workflow = ?
-        ORDER BY created_at DESC
-        LIMIT 200;
-      `,
-      )
-      .all(workflow)
-      .map(readWorkflowSummaryRow);
+    const rows = collectValidRowsInBatches(
+      200,
+      (limit, offset) =>
+        database
+          .prepare(
+            `SELECT *
+             FROM workflow_summaries
+             WHERE workflow = ?
+             ORDER BY created_at DESC
+             LIMIT ? OFFSET ?;`,
+          )
+          .all(workflow, limit, offset),
+      safeWorkflowSummaryRow,
+    );
     return (
       rows.find((row) => {
         const summary = v.safeParse(kiloTaskSummarySchema, row.summary);
@@ -229,4 +233,12 @@ function readWorkflowSummaryRow(
     createdAt: record.created_at,
     updatedAt: record.updated_at,
   };
+}
+
+function safeWorkflowSummaryRow(row: Record<string, SQLOutputValue>) {
+  try {
+    return [readWorkflowSummaryRow(row)];
+  } catch {
+    return [];
+  }
 }

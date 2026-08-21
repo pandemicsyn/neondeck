@@ -144,6 +144,34 @@ describe('exe.dev checkout sync', () => {
     ]);
   });
 
+  it('does not treat a null-exit probe failure as a missing checkout', async () => {
+    const paths = runtimePaths(await tempDir());
+    await ensureRuntimeHome(paths);
+    await writeRepo(paths);
+    const calls: Array<Record<string, unknown>> = [];
+
+    const result = await syncExeDevCheckout({ repoId: 'app' }, paths, {
+      async runExecution(input: unknown) {
+        calls.push(input as Record<string, unknown>);
+        if (calls.length === 1) return executedOk();
+        return {
+          ok: false,
+          action: 'execution_run',
+          changed: true,
+          message: 'exe.dev command failed before producing an exit code.',
+          result: { exitCode: null, stdout: '', stderr: 'spawn ENOENT' },
+        };
+      },
+    });
+
+    expect(result).toMatchObject({
+      ok: false,
+      blockedStep: 'probe',
+      execution: { result: { exitCode: null } },
+    });
+    expect(calls).toHaveLength(2);
+  });
+
   it('passes per-step approval ids when retrying a blocked sync step', async () => {
     const paths = runtimePaths(await tempDir());
     await ensureRuntimeHome(paths);

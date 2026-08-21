@@ -52,6 +52,8 @@ const ownerTerminalObservationSchema = v.object({
   submissionId: v.optional(v.string()),
   operationId: v.optional(v.string()),
   turnId: v.optional(v.string()),
+  taskId: v.optional(v.string()),
+  parentSession: v.optional(v.string()),
   outcome: v.picklist(['completed', 'failed', 'aborted']),
 });
 type OwnerTerminalObservation = v.InferOutput<
@@ -67,6 +69,7 @@ export async function settleAutopilotOwnerObservation(
   const parsedEvent = v.safeParse(ownerTerminalObservationSchema, rawEvent);
   if (!parsedEvent.success) return null;
   const event = parsedEvent.output;
+  if (event.taskId || event.parentSession) return null;
   if (
     (event.agentName && event.agentName !== 'pr-autopilot-owner') ||
     !event.instanceId

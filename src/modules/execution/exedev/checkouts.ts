@@ -362,7 +362,7 @@ function executionFinished(result: ExecutionActionResult) {
   ) {
     return true;
   }
-  return result.result?.exitCode !== undefined;
+  return v.safeParse(v.number(), result.result?.exitCode).success;
 }
 
 function approvalId(result: ExecutionActionResult) {

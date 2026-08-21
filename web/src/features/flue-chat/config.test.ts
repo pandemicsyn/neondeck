@@ -17,4 +17,19 @@ describe('parseFlueChatConfig', () => {
       issues: ['agentName must be "display-assistant".'],
     });
   });
+
+  it('falls back to defaults for non-object plugin configuration', () => {
+    expect(parseFlueChatConfig(['not', 'a', 'config'])).toMatchObject({
+      config: {
+        agentName: 'display-assistant',
+      },
+      issues: [],
+    });
+    expect(parseFlueChatConfig('not-a-config')).toMatchObject({
+      config: {
+        agentName: 'display-assistant',
+      },
+      issues: [],
+    });
+  });
 });

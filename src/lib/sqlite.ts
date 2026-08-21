@@ -91,6 +91,29 @@ export function parseRow<T, TRow>(
   throw new Error(`${context}: ${v.summarize(parsed.issues)}`);
 }
 
+export function collectValidRowsInBatches<TInput, TOutput>(
+  limit: number,
+  readBatch: (limit: number, offset: number) => TInput[],
+  hydrate: (row: TInput) => readonly TOutput[],
+) {
+  if (limit <= 0) return [];
+  const output: TOutput[] = [];
+  const batchSize = Math.max(1, limit);
+  let offset = 0;
+  while (output.length < limit) {
+    const rows = readBatch(batchSize, offset);
+    for (const row of rows) {
+      for (const value of hydrate(row)) {
+        output.push(value);
+        if (output.length === limit) return output;
+      }
+    }
+    if (rows.length < batchSize) break;
+    offset += rows.length;
+  }
+  return output;
+}
+
 export function readJsonColumn<T = never>(value: string | null): T | null {
   if (value === null) return null;
   return JSON.parse(value);

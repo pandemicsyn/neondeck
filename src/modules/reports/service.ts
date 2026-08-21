@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { mkdir, readFile, unlink, writeFile } from 'node:fs/promises';
 import { join, resolve, sep } from 'node:path';
 import { asJsonValue } from '../../lib/action-result';
-import { openDb, parseRow } from '../../lib/sqlite';
+import { collectValidRowsInBatches, openDb, parseRow } from '../../lib/sqlite';
 import * as v from 'valibot';
 import {
   ensureRuntimeHome,
@@ -60,6 +60,8 @@ const reportPathRowSchema = v.object({
 const reportKindRowSchema = v.object({ kind: v.string() });
 
 const nodeErrorSchema = v.looseObject({ code: v.optional(v.string()) });
+const reportExternalValueSchema = v.unknown();
+type ReportExternalValue = v.InferInput<typeof reportExternalValueSchema>;
 
 export async function writeReport(
   input: WriteReportInput,
@@ -209,42 +211,38 @@ export async function listReports(
     : null;
   const database = openDb(paths.neondeckDatabase);
   try {
-    const rows = kind
-      ? database
+    return collectValidRowsInBatches(
+      limit,
+      (batchLimit, offset) => {
+        if (kind) {
+          return database
+            .prepare(
+              `SELECT * FROM reports
+               WHERE kind = ?
+               ORDER BY created_at DESC
+               LIMIT ? OFFSET ?;`,
+            )
+            .all(kind, batchLimit, offset);
+        }
+        if (excludeKind) {
+          return database
+            .prepare(
+              `SELECT * FROM reports
+               WHERE kind != ?
+               ORDER BY created_at DESC
+               LIMIT ? OFFSET ?;`,
+            )
+            .all(excludeKind, batchLimit, offset);
+        }
+        return database
           .prepare(
-            `
-            SELECT *
-            FROM reports
-            WHERE kind = ?
-            ORDER BY created_at DESC
-            LIMIT ?;
-          `,
+            `SELECT * FROM reports
+             ORDER BY created_at DESC
+             LIMIT ? OFFSET ?;`,
           )
-          .all(kind, limit)
-      : excludeKind
-        ? database
-            .prepare(
-              `
-              SELECT *
-              FROM reports
-              WHERE kind != ?
-              ORDER BY created_at DESC
-              LIMIT ?;
-            `,
-            )
-            .all(excludeKind, limit)
-        : database
-            .prepare(
-              `
-            SELECT *
-            FROM reports
-            ORDER BY created_at DESC
-            LIMIT ?;
-          `,
-            )
-            .all(limit);
-    return rows.map((row) =>
-      readReportRow(parseRow(row, persistedReportSchema, 'report row')),
+          .all(batchLimit, offset);
+      },
+      safeReportRow,
     );
   } finally {
     database.close();
@@ -261,9 +259,7 @@ export async function readReport(
     const row = database
       .prepare('SELECT * FROM reports WHERE id = ? LIMIT 1;')
       .get(id.trim());
-    return row
-      ? readReportRow(parseRow(row, persistedReportSchema, 'report row'))
-      : null;
+    return row ? (safeReportRow(row)[0] ?? null) : null;
   } finally {
     database.close();
   }
@@ -390,6 +386,16 @@ function readReportRow(
     createdBy: record.created_by,
     createdAt: record.created_at,
   };
+}
+
+function safeReportRow(row: ReportExternalValue) {
+  const parsed = v.safeParse(persistedReportSchema, row);
+  if (!parsed.success) return [];
+  try {
+    return [readReportRow(parsed.output)];
+  } catch {
+    return [];
+  }
 }
 
 function normalizeReportKind(value: string) {

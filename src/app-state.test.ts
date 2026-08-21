@@ -4,7 +4,9 @@ import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import {
   addNotification,
+  addWorkflowSummary,
   listNotifications,
+  listWorkflowSummaries,
   markNotificationRead,
   resolveNotification,
 } from './modules/app-state';
@@ -13,6 +15,7 @@ import {
   type NotificationEvent,
 } from './modules/app-state';
 import { runtimePaths } from './runtime-home';
+import { openDb } from './lib/sqlite';
 
 const tempRoots: string[] = [];
 
@@ -25,6 +28,60 @@ afterEach(async () => {
 });
 
 describe('app state notifications', () => {
+  it('skips malformed persisted rows without hiding valid app state', async () => {
+    const paths = runtimePaths(await tempDir());
+    const malformedNotification = await addNotification(
+      {
+        level: 'info',
+        title: 'Malformed later',
+        message: 'This row will be corrupted.',
+      },
+      paths,
+    );
+    await addNotification(
+      {
+        level: 'ready',
+        title: 'Still visible',
+        message: 'This row remains valid.',
+      },
+      paths,
+    );
+    const malformedSummary = await addWorkflowSummary(
+      {
+        workflow: 'test',
+        status: 'failed',
+        summary: { message: 'will be corrupted' },
+      },
+      paths,
+    );
+    await addWorkflowSummary(
+      {
+        workflow: 'test',
+        status: 'completed',
+        summary: { message: 'still visible' },
+      },
+      paths,
+    );
+    const database = openDb(paths.neondeckDatabase);
+    try {
+      database
+        .prepare('UPDATE notifications SET level = ? WHERE id = ?;')
+        .run('legacy-level', malformedNotification.id);
+      database
+        .prepare('UPDATE workflow_summaries SET summary_json = ? WHERE id = ?;')
+        .run('{', malformedSummary.id);
+    } finally {
+      database.close();
+    }
+
+    await expect(listNotifications(paths)).resolves.toMatchObject([
+      { title: 'Still visible' },
+    ]);
+    await expect(listWorkflowSummaries(paths)).resolves.toMatchObject([
+      { status: 'completed', summary: { message: 'still visible' } },
+    ]);
+  });
+
   it('reconciles unresolved notifications by source and source id', async () => {
     const paths = runtimePaths(await tempDir());
     const first = await addNotification(

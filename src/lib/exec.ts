@@ -108,13 +108,18 @@ const nodeSignalSchema = v.picklist([
 ]);
 
 const execFileErrorSchema = v.looseObject({
-  message: v.optional(v.string()),
-  code: v.optional(v.union([v.string(), v.number(), v.null()])),
-  signal: v.optional(v.nullable(nodeSignalSchema)),
-  stdout: v.optional(v.union([v.string(), v.instance(Buffer)])),
-  stderr: v.optional(v.union([v.string(), v.instance(Buffer)])),
-  killed: v.optional(v.boolean()),
+  message: v.optional(v.unknown()),
+  code: v.optional(v.unknown()),
+  signal: v.optional(v.unknown()),
+  stdout: v.optional(v.unknown()),
+  stderr: v.optional(v.unknown()),
+  killed: v.optional(v.unknown()),
 });
+const execMessageSchema = v.string();
+const execCodeSchema = v.union([v.string(), v.number(), v.null()]);
+const execSignalSchema = v.nullable(nodeSignalSchema);
+const execOutputSchema = v.union([v.string(), v.instance(Buffer)]);
+const execKilledSchema = v.boolean();
 
 export function normalizeExecFileError<TError>(
   error: TError,
@@ -125,14 +130,24 @@ export function normalizeExecFileError<TError>(
   const parsed = v.safeParse(execFileErrorSchema, error);
   if (parsed.success) {
     const record = parsed.output;
+    const message = v.safeParse(execMessageSchema, record.message);
+    const code = v.safeParse(execCodeSchema, record.code);
+    const signal = v.safeParse(execSignalSchema, record.signal);
+    const stdout = v.safeParse(execOutputSchema, record.stdout);
+    const stderr = v.safeParse(execOutputSchema, record.stderr);
+    const killed = v.safeParse(execKilledSchema, record.killed);
     return new ExecFileError(
-      record.message ?? `${[file, ...args].join(' ')} failed.`,
+      message.success ? message.output : `${[file, ...args].join(' ')} failed.`,
       {
-        code: record.code ?? null,
-        signal: record.signal ?? null,
-        stdout: record.stdout ?? '',
-        stderr: record.stderr ?? '',
-        timedOut: record.killed === true && record.signal === 'SIGTERM',
+        code: code.success ? code.output : null,
+        signal: signal.success ? signal.output : null,
+        stdout: stdout.success ? stdout.output : '',
+        stderr: stderr.success ? stderr.output : '',
+        timedOut:
+          killed.success &&
+          killed.output &&
+          signal.success &&
+          signal.output === 'SIGTERM',
         cause: error,
       },
     );

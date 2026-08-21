@@ -1,14 +1,19 @@
 import type { PluginConfigParseResult } from '../types';
-import type { WebJsonRecord, WebJsonValue } from '../api/schemas';
+import {
+  webExternalRecordSchema,
+  type WebExternalValue,
+  type WebJsonValue,
+} from '../api/schemas';
 import * as v from 'valibot';
 
-export function plainConfigRecord(value: WebJsonRecord | undefined) {
-  return value ?? {};
+export function plainConfigRecord(value: WebExternalValue) {
+  const parsed = v.safeParse(webExternalRecordSchema, value);
+  return parsed.success ? parsed.output : {};
 }
 
 export function parsePositiveIntegerConfig<T extends Record<string, number>>(
   defaults: T,
-  value: WebJsonRecord | undefined,
+  value: WebExternalValue,
 ): PluginConfigParseResult<T> {
   const source = plainConfigRecord(value);
   const config = { ...defaults };

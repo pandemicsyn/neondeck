@@ -1,6 +1,10 @@
 import { randomUUID } from 'node:crypto';
 import { asJsonValue } from '../../lib/action-result';
-import { openDb, rollbackQuietly } from '../../lib/sqlite';
+import {
+  collectValidRowsInBatches,
+  openDb,
+  rollbackQuietly,
+} from '../../lib/sqlite';
 import { ensureRuntimeHome, runtimePaths } from '../../runtime-home';
 import {
   scheduledInstructionDispatchPayloadSchema,
@@ -71,7 +75,7 @@ export async function listScheduledTasks(paths = runtimePaths()) {
       `,
       )
       .all()
-      .map(readScheduledTaskRow);
+      .flatMap(safeScheduledTaskRow);
   } finally {
     database.close();
   }
@@ -97,18 +101,21 @@ export async function readLatestScheduledTaskRun(
   await ensureRuntimeHome(paths);
   const database = openDb(paths.neondeckDatabase);
   try {
-    const row = database
-      .prepare(
-        `
-        SELECT *
-        FROM scheduled_task_runs
-        WHERE task_id = ? AND status IN ('completed', 'failed')
-        ORDER BY created_at DESC
-        LIMIT 1;
-      `,
-      )
-      .get(taskId);
-    return row ? readScheduledTaskRunRow(row) : undefined;
+    const rows = collectValidRowsInBatches(
+      1,
+      (limit, offset) =>
+        database
+          .prepare(
+            `SELECT *
+             FROM scheduled_task_runs
+             WHERE task_id = ? AND status IN ('completed', 'failed')
+             ORDER BY created_at DESC
+             LIMIT ? OFFSET ?;`,
+          )
+          .all(taskId, limit, offset),
+      safeScheduledTaskRunRow,
+    );
+    return rows[0];
   } finally {
     database.close();
   }
@@ -365,27 +372,29 @@ export async function claimDueScheduledTasks(
       `,
       )
       .run(nowIso, nowIso);
-    const due = database
-      .prepare(
-        `
-        SELECT *
-        FROM scheduled_tasks
-        WHERE enabled = 1
-          AND next_run_at IS NOT NULL
-          AND next_run_at <= ?
-          AND (claim_expires_at IS NULL OR claim_expires_at <= ?)
-          AND NOT EXISTS (
-            SELECT 1
-            FROM scheduled_task_runs
-            WHERE scheduled_task_runs.task_id = scheduled_tasks.id
-              AND scheduled_task_runs.status = 'active'
+    const due = collectValidRowsInBatches(
+      limit,
+      (batchLimit, offset) =>
+        database
+          .prepare(
+            `SELECT *
+             FROM scheduled_tasks
+             WHERE enabled = 1
+               AND next_run_at IS NOT NULL
+               AND next_run_at <= ?
+               AND (claim_expires_at IS NULL OR claim_expires_at <= ?)
+               AND NOT EXISTS (
+                 SELECT 1
+                 FROM scheduled_task_runs
+                 WHERE scheduled_task_runs.task_id = scheduled_tasks.id
+                   AND scheduled_task_runs.status = 'active'
+               )
+             ORDER BY next_run_at ASC, id ASC
+             LIMIT ? OFFSET ?;`,
           )
-        ORDER BY next_run_at ASC, id ASC
-        LIMIT ?;
-      `,
-      )
-      .all(nowIso, nowIso, limit)
-      .map(readScheduledTaskRow);
+          .all(nowIso, nowIso, batchLimit, offset),
+      safeScheduledTaskRow,
+    );
 
     for (const task of due) {
       const claimId = `scheduled-task-claim:${randomUUID()}`;
@@ -701,7 +710,7 @@ export async function listActiveScheduledInstructionRuns(
       `,
       )
       .all()
-      .map(readScheduledTaskRunRow);
+      .flatMap(safeScheduledTaskRunRow);
   } finally {
     database.close();
   }
@@ -977,6 +986,22 @@ function readScheduledTaskRunRow(
     createdAt: record.created_at,
     updatedAt: record.updated_at,
   };
+}
+
+function safeScheduledTaskRow(row: ScheduledTaskExternalValue) {
+  try {
+    return [readScheduledTaskRow(row)];
+  } catch {
+    return [];
+  }
+}
+
+function safeScheduledTaskRunRow(row: ScheduledTaskExternalValue) {
+  try {
+    return [readScheduledTaskRunRow(row)];
+  } catch {
+    return [];
+  }
 }
 
 function sameTrigger(left: AutomationTrigger, right: AutomationTrigger) {
