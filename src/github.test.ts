@@ -8,6 +8,7 @@ import {
   clearGitHubRequestCache,
   clearGitHubPullRequestQueueCache,
   clearPullRequestReviewSurfaceThreadCache,
+  discardPrReviewDraft,
   deletePrReviewNeonSeedsForComments,
   fetchFailingCheckFacts,
   fetchGitHubIssues,
@@ -1798,6 +1799,41 @@ describe('github foundation', () => {
         draftId: original.id,
         expectedHeadSha: 'head-before',
         headSha: 'head-after-race',
+      }),
+    ).toBeNull();
+  });
+
+  it('does not recreate a discarded draft when saving by its explicit id', async () => {
+    const paths = runtimePaths(await tempHome());
+    await ensureRuntimeHome(paths);
+    const draft = upsertPrReviewDraft({
+      databasePath: paths.neondeckDatabase,
+      repo: 'pandemicsyn/neondeck',
+      prNumber: 123,
+      headSha: 'head123',
+      body: 'Initial body',
+    });
+    discardPrReviewDraft({
+      databasePath: paths.neondeckDatabase,
+      repo: draft.repo,
+      prNumber: draft.prNumber,
+    });
+
+    expect(() =>
+      upsertPrReviewDraft({
+        databasePath: paths.neondeckDatabase,
+        draftId: draft.id,
+        repo: draft.repo,
+        prNumber: draft.prNumber,
+        headSha: draft.headSha,
+        body: 'Late save',
+      }),
+    ).toThrow('Review draft is not editable.');
+    expect(
+      readLivePrReviewDraft({
+        databasePath: paths.neondeckDatabase,
+        repo: draft.repo,
+        prNumber: draft.prNumber,
       }),
     ).toBeNull();
   });

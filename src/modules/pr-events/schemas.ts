@@ -208,6 +208,7 @@ export const prReviewVerdictSchema = v.picklist([
   'request-changes',
 ]);
 export const prReviewDraftInputSchema = v.object({
+  draftId: v.optional(nonEmptyStringSchema),
   headSha: nonEmptyStringSchema,
   verdict: v.optional(v.nullable(prReviewVerdictSchema)),
   body: v.optional(v.nullable(v.string())),

@@ -148,6 +148,9 @@ export async function putGitHubPrReviewDraft(
     prNumber: resolved.target.number,
     headSha: parsedDraft.output.headSha,
   };
+  if (parsedDraft.output.draftId) {
+    draftUpdate.draftId = parsedDraft.output.draftId;
+  }
   if ('verdict' in parsedDraft.output) {
     draftUpdate.verdict = parsedDraft.output.verdict ?? null;
   }

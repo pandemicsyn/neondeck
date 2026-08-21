@@ -192,6 +192,11 @@ export function GitHubPrReview({
   } = usePrReviewRecord(pr);
   const nextEditorToken = useRef(0);
   const nextOperationToken = useRef(0);
+  const draftIdRef = useRef<string | null>(null);
+  const draftRef = useRef<GitHubPrReviewDraft | null>(null);
+  const inFlightDraftMutationsRef = useRef(new Set<Promise<unknown>>());
+  const pendingDraftSavesRef = useRef<Promise<void>>(Promise.resolve());
+  const reviewSubmissionPendingRef = useRef(false);
   const [activePath, setActivePath] = useState<string | null>(null);
   const [composer, setComposer] = useState<ComposerState | null>(null);
   const [commentEditor, setCommentEditor] = useState<CommentEditorState | null>(
@@ -201,6 +206,8 @@ export function GitHubPrReview({
   const [reviewBody, setReviewBody] = useState('');
   const [isReviewBodyFocused, setIsReviewBodyFocused] = useState(false);
   const [hasPendingReviewBodyEdit, setHasPendingReviewBodyEdit] =
+    useState(false);
+  const [isReviewSubmissionPending, setIsReviewSubmissionPending] =
     useState(false);
   const [seededDraftId, setSeededDraftId] = useState<string | null>(null);
   const [verdict, setVerdict] = useState<GitHubPrReviewVerdict>('comment');
@@ -221,7 +228,8 @@ export function GitHubPrReview({
   const [promotingFindingIds, setPromotingFindingIds] = useState<Set<string>>(
     () => new Set(),
   );
-  const findingActionsLocked = promotingFindingIds.size > 0;
+  const findingActionsLocked =
+    isReviewSubmissionPending || promotingFindingIds.size > 0;
   const [navigationKind, setNavigationKind] =
     useState<ReviewCursorKind>('file');
   const [navigationTargetKey, setNavigationTargetKey] = useState<string | null>(
@@ -1307,6 +1315,11 @@ export function GitHubPrReview({
   }, [activePath, appliedPrRevisionKey, fileList, filesQuery.isLoading]);
 
   useEffect(() => {
+    draftIdRef.current = draft?.id ?? null;
+    draftRef.current = draft;
+  }, [draft]);
+
+  useEffect(() => {
     const nextDraftId = draft?.id ?? null;
     if (seededDraftId !== nextDraftId) {
       setReviewBody(draft?.body ?? '');
@@ -1335,6 +1348,19 @@ export function GitHubPrReview({
   }, [draft?.comments]);
 
   const summary = filesQuery.data?.diffSummary;
+  const trackDraftMutation = <T,>(mutation: Promise<T>) => {
+    inFlightDraftMutationsRef.current.add(mutation);
+    void mutation.then(
+      () => inFlightDraftMutationsRef.current.delete(mutation),
+      () => inFlightDraftMutationsRef.current.delete(mutation),
+    );
+    return mutation;
+  };
+  const waitForDraftMutations = async () => {
+    while (inFlightDraftMutationsRef.current.size > 0) {
+      await Promise.allSettled(inFlightDraftMutationsRef.current);
+    }
+  };
   const saveDraft = async (
     next: Partial<{
       body: string | null;
@@ -1344,18 +1370,42 @@ export function GitHubPrReview({
     headSha = currentHeadSha,
   ) => {
     if (!headSha) throw new Error('PR head SHA is unavailable.');
-    return mutations.saveDraft.mutateAsync({
-      repo: pr.repo,
-      number: pr.number,
-      headSha,
-      ...('verdict' in next ? { verdict: next.verdict } : {}),
-      ...('body' in next ? { body: next.body } : {}),
-      ...(next.reanchorHeadSha ? { reanchorHeadSha: true } : {}),
-    });
+    const saved = await trackDraftMutation(
+      mutations.saveDraft.mutateAsync({
+        ...(draftIdRef.current ? { draftId: draftIdRef.current } : {}),
+        repo: pr.repo,
+        number: pr.number,
+        headSha,
+        ...('verdict' in next ? { verdict: next.verdict } : {}),
+        ...('body' in next ? { body: next.body } : {}),
+        ...(next.reanchorHeadSha ? { reanchorHeadSha: true } : {}),
+      }),
+    );
+    draftIdRef.current = saved.id;
+    draftRef.current = saved;
+    return saved;
   };
-  const ensureDraft = async () => draft ?? (await saveDraft());
+  const enqueueDraftSave = (
+    next: Partial<{
+      body: string | null;
+      verdict: GitHubPrReviewVerdict | null;
+      reanchorHeadSha: boolean;
+    }> = {},
+    headSha = currentHeadSha,
+  ) => {
+    const queued = pendingDraftSavesRef.current.then(() =>
+      saveDraft(next, headSha),
+    );
+    pendingDraftSavesRef.current = queued.then(
+      () => undefined,
+      () => undefined,
+    );
+    return queued;
+  };
+  const ensureDraft = async () =>
+    draftRef.current ?? (await enqueueDraftSave());
   const beginReanchorComment = (commentId: string, path: string | null) => {
-    if (isApplyingRevision) return;
+    if (isApplyingRevision || reviewSubmissionPendingRef.current) return;
     setAnchoringFinding(null);
     setComposer(null);
     setReanchoringCommentId(commentId);
@@ -1367,7 +1417,7 @@ export function GitHubPrReview({
     setStatusMessage('Select a new diff line to re-anchor the draft comment.');
   };
   const beginAnchorFinding = (finding: PrReviewReportOnlyFinding) => {
-    if (isApplyingRevision) return;
+    if (isApplyingRevision || reviewSubmissionPendingRef.current) return;
     setComposer(null);
     setReanchoringCommentId(null);
     setAnchoringFinding(finding);
@@ -1380,30 +1430,43 @@ export function GitHubPrReview({
       'Choose a changed diff line or range for this report-only finding.',
     );
   };
-  const refreshDraftHead = async () => {
-    if (!draft) return;
+  const refreshDraftHead = () => {
+    if (!draft || isApplyingRevision || reviewSubmissionPendingRef.current)
+      return;
     const operationToken = beginOperation();
-    try {
-      await reanchorDraftToRevision({
-        repo: pr.repo,
-        number: pr.number,
-        draftId: draft.id,
-        expectedHeadSha: draft.headSha,
-        headSha: currentHeadSha,
-        saveDraft: mutations.saveDraft.mutateAsync,
-        invalidateReviewSources: mutations.invalidateReviewSources,
-      });
-      setSubmitFailedCommentIds(new Set());
-      finishOperation(
-        operationToken,
-        'Draft updated to the mounted PR revision.',
-      );
-    } catch (error) {
-      failOperation(operationToken, error);
-    }
+    void trackDraftMutation(
+      (async () => {
+        if (reviewSubmissionPendingRef.current) return false;
+        await reanchorDraftToRevision({
+          repo: pr.repo,
+          number: pr.number,
+          draftId: draft.id,
+          expectedHeadSha: draft.headSha,
+          headSha: currentHeadSha,
+          saveDraft: mutations.saveDraft.mutateAsync,
+          invalidateReviewSources: mutations.invalidateReviewSources,
+        });
+        return true;
+      })(),
+    )
+      .then((updated) => {
+        if (!updated) return;
+        setSubmitFailedCommentIds(new Set());
+        finishOperation(
+          operationToken,
+          'Draft updated to the mounted PR revision.',
+        );
+      })
+      .catch((error) => failOperation(operationToken, error));
   };
   const onSelectionChange = (selection: SelectedLineRange | null) => {
-    if (isApplyingRevision || !selection || !activePath) return;
+    if (
+      isApplyingRevision ||
+      !selection ||
+      !activePath ||
+      reviewSubmissionPendingRef.current
+    )
+      return;
     setPendingHunkNavigation(null);
     setNavigationTargetKey(null);
     setNavigationAuthority('automatic');
@@ -1426,16 +1489,18 @@ export function GitHubPrReview({
         return;
       }
       const operationToken = beginOperation();
-      mutations.updateComment
-        .mutateAsync({
+      trackDraftMutation(
+        mutations.updateComment.mutateAsync({
           repo: pr.repo,
           number: pr.number,
           id: reanchoringCommentId,
           path: activePath,
           ...input,
           body: comment.body,
-        })
-        .then(() => {
+        }),
+      )
+        .then((updated) => {
+          draftRef.current = updated;
           setSubmitFailedCommentIds((current) => {
             const next = new Set(current);
             next.delete(reanchoringCommentId);
@@ -1461,7 +1526,7 @@ export function GitHubPrReview({
   };
   const submitComposer = async (event: FormEvent) => {
     event.preventDefault();
-    if (isApplyingRevision) return;
+    if (isApplyingRevision || reviewSubmissionPendingRef.current) return;
     const submittedComposer = composer;
     if (!submittedComposer || submittedComposer.body.trim().length === 0)
       return;
@@ -1480,15 +1545,18 @@ export function GitHubPrReview({
         );
         return;
       }
-      await mutations.addComment.mutateAsync({
-        repo: pr.repo,
-        number: pr.number,
-        draftId: nextDraft.id,
-        path: submittedComposer.path,
-        ...input,
-        body: submittedComposer.body,
-        sourceFindingId: submittedComposer.sourceFindingId,
-      });
+      const updated = await trackDraftMutation(
+        mutations.addComment.mutateAsync({
+          repo: pr.repo,
+          number: pr.number,
+          draftId: nextDraft.id,
+          path: submittedComposer.path,
+          ...input,
+          body: submittedComposer.body,
+          sourceFindingId: submittedComposer.sourceFindingId,
+        }),
+      );
+      draftRef.current = updated;
       setComposer((current) =>
         clearCompletedEditor(current, submittedComposer.token),
       );
@@ -1499,17 +1567,20 @@ export function GitHubPrReview({
   };
   const submitEdit = async (event: FormEvent) => {
     event.preventDefault();
-    if (isApplyingRevision) return;
+    if (isApplyingRevision || reviewSubmissionPendingRef.current) return;
     const submittedEditor = commentEditor;
     if (!submittedEditor || submittedEditor.body.trim().length === 0) return;
     const operationToken = beginOperation();
     try {
-      await mutations.updateComment.mutateAsync({
-        repo: pr.repo,
-        number: pr.number,
-        id: submittedEditor.commentId,
-        body: submittedEditor.body,
-      });
+      const updated = await trackDraftMutation(
+        mutations.updateComment.mutateAsync({
+          repo: pr.repo,
+          number: pr.number,
+          id: submittedEditor.commentId,
+          body: submittedEditor.body,
+        }),
+      );
+      draftRef.current = updated;
       setCommentEditor((current) =>
         clearCompletedEditor(current, submittedEditor.token),
       );
@@ -1545,23 +1616,23 @@ export function GitHubPrReview({
     }
   };
   const deleteDraftComment = (commentId: string) => {
-    if (isApplyingRevision) return;
+    if (isApplyingRevision || reviewSubmissionPendingRef.current) return;
     const operationToken = beginOperation();
-    mutations.deleteComment.mutate(
-      {
+    void trackDraftMutation(
+      mutations.deleteComment.mutateAsync({
         repo: pr.repo,
         number: pr.number,
         id: commentId,
-      },
-      {
-        onError: (error) => failOperation(operationToken, error),
-        onSuccess: () =>
-          finishOperation(operationToken, 'Draft comment deleted.'),
-      },
-    );
+      }),
+    )
+      .then((updated) => {
+        draftRef.current = updated;
+        finishOperation(operationToken, 'Draft comment deleted.');
+      })
+      .catch((error) => failOperation(operationToken, error));
   };
   const dismissNeonFinding = async (finding: NeonReviewFinding) => {
-    if (isApplyingRevision) return;
+    if (isApplyingRevision || reviewSubmissionPendingRef.current) return;
     if (!reviewSurfaceId || !currentReviewRevisionKey) {
       setStatusMessage(
         'The focused review surface is not ready for dismissal.',
@@ -1593,6 +1664,9 @@ export function GitHubPrReview({
       return 'Wait for the PR revision update to finish.';
     }
     const resolution = neonFindingResolutions.get(finding.id);
+    if (reviewSubmissionPendingRef.current) {
+      return 'Review submission is in progress.';
+    }
     if (!reviewSurfaceId || !currentReviewRevisionKey) {
       return 'The focused review surface is still connecting.';
     }
@@ -1629,27 +1703,30 @@ export function GitHubPrReview({
     const operationToken = beginOperation();
     setPromotingFindingIds((current) => new Set(current).add(finding.id));
     try {
-      const result = await promoteReviewSurfaceFinding(reviewSurfaceId, {
-        sourceId: reviewSource.id,
-        revisionKey: currentReviewRevisionKey,
-        findingId: finding.id,
-        requestId: createPromotionRequestId(),
-        destination: 'github-review-draft',
-        anchor: {
-          side: resolution.side,
-          startLine: Math.min(
-            resolution.selection.start,
-            resolution.selection.end,
-          ),
-          endLine: Math.max(
-            resolution.selection.start,
-            resolution.selection.end,
-          ),
-        },
-        confirm: false,
-        reason: null,
-      });
-      await draftQuery.refetch();
+      const result = await trackDraftMutation(
+        promoteReviewSurfaceFinding(reviewSurfaceId, {
+          sourceId: reviewSource.id,
+          revisionKey: currentReviewRevisionKey,
+          findingId: finding.id,
+          requestId: createPromotionRequestId(),
+          destination: 'github-review-draft',
+          anchor: {
+            side: resolution.side,
+            startLine: Math.min(
+              resolution.selection.start,
+              resolution.selection.end,
+            ),
+            endLine: Math.max(
+              resolution.selection.start,
+              resolution.selection.end,
+            ),
+          },
+          confirm: false,
+          reason: null,
+        }),
+      );
+      const refreshed = await trackDraftMutation(draftQuery.refetch());
+      draftRef.current = refreshed.data ?? null;
       finishOperation(operationToken, result.message);
     } catch (error) {
       failOperation(operationToken, error);
@@ -1692,6 +1769,7 @@ export function GitHubPrReview({
         isReplyingToThread={mutations.replyToThread.isPending}
         isResolvingThread={mutations.setThreadResolution.isPending}
         isSavingDraft={mutations.saveDraft.isPending}
+        isSubmissionPending={isReviewSubmissionPending}
         isUpdatingComment={mutations.updateComment.isPending}
         onCancelComposer={() => {
           if (isApplyingRevision) return;
@@ -1768,23 +1846,36 @@ export function GitHubPrReview({
       />
     );
   const submitReview = async () => {
-    if (isApplyingRevision || !currentHeadSha) return;
+    if (
+      isApplyingRevision ||
+      !currentHeadSha ||
+      reviewSubmissionPendingRef.current
+    )
+      return;
     if (!isDurableReviewReady) {
       setStatusMessage(
         'Wait for the durable Neon review to be ready before submitting.',
       );
       return;
     }
+    reviewSubmissionPendingRef.current = true;
+    setIsReviewSubmissionPending(true);
     const operationToken = beginOperation();
     try {
+      await pendingDraftSavesRef.current;
+      await waitForDraftMutations();
       const normalizedBody = normalizeReviewBody(reviewBody);
+      const submittedCommentIds =
+        draftRef.current?.comments
+          .filter((comment) => !blockedCommentIds.has(comment.id))
+          .map((comment) => comment.id) ?? [];
       await mutations.submitReview.mutateAsync({
         repo: pr.repo,
         number: pr.number,
         headSha: currentHeadSha,
         body: normalizedBody,
         verdict,
-        commentIds: cleanCommentIds,
+        commentIds: submittedCommentIds,
       });
       setSubmitFailedCommentIds(new Set());
       finishOperation(operationToken, 'Review submitted.');
@@ -1794,6 +1885,9 @@ export function GitHubPrReview({
         setSubmitFailedCommentIds(new Set(failingIds));
       }
       failOperation(operationToken, error);
+    } finally {
+      reviewSubmissionPendingRef.current = false;
+      setIsReviewSubmissionPending(false);
     }
   };
   const showDraftComment = (comment: GitHubPrReviewDraftComment) => {
@@ -2107,6 +2201,7 @@ export function GitHubPrReview({
           draft={draft}
           isBusy={
             isApplyingRevision ||
+            isReviewSubmissionPending ||
             isDraftMutationPending ||
             isThreadMutationPending
           }
@@ -2114,10 +2209,14 @@ export function GitHubPrReview({
           isHeadAvailable={currentHeadSha.length > 0}
           onBodyBlur={() => {
             setIsReviewBodyFocused(false);
+            if (reviewSubmissionPendingRef.current) {
+              setHasPendingReviewBodyEdit(false);
+              return;
+            }
             const normalizedBody = normalizeReviewBody(reviewBody);
             if ((draft?.body ?? null) !== normalizedBody) {
               const operationToken = beginOperation();
-              void saveDraft({ body: normalizedBody })
+              void enqueueDraftSave({ body: normalizedBody })
                 .then(() => {
                   setHasPendingReviewBodyEdit(false);
                   finishOperation(operationToken, 'Review summary saved.');
@@ -2133,33 +2232,36 @@ export function GitHubPrReview({
           }}
           onBodyFocus={() => setIsReviewBodyFocused(true)}
           onDiscard={() => {
-            if (!draft) return;
+            if (!draft || reviewSubmissionPendingRef.current) return;
             const confirmed = window.confirm('Discard this PR review draft?');
             if (confirmed) {
               const operationToken = beginOperation();
-              mutations.discardDraft.mutate(
-                {
+              void trackDraftMutation(
+                mutations.discardDraft.mutateAsync({
                   repo: pr.repo,
                   number: pr.number,
-                },
-                {
-                  onError: (error) => failOperation(operationToken, error),
-                  onSuccess: () =>
-                    finishOperation(operationToken, 'Review draft discarded.'),
-                },
-              );
+                }),
+              )
+                .then((discarded) => {
+                  draftRef.current = discarded;
+                  finishOperation(operationToken, 'Review draft discarded.');
+                })
+                .catch((error) => failOperation(operationToken, error));
             }
           }}
           onSubmit={submitReview}
           onPendingCountClick={focusNextPendingComment}
           onVerdictChange={(next) => {
+            if (reviewSubmissionPendingRef.current) return;
             setVerdict(next);
             const operationToken = beginOperation();
-            void saveDraft({ verdict: next })
+            void enqueueDraftSave({ verdict: next })
               .then(() => finishOperation(operationToken, 'Verdict saved.'))
               .catch((error) => failOperation(operationToken, error));
           }}
-          isSubmitting={mutations.submitReview.isPending}
+          isSubmitting={
+            isReviewSubmissionPending || mutations.submitReview.isPending
+          }
           reviewBody={reviewBody}
           staleCommentCount={blockedCommentIds.size}
           statusMessage={reviewBarStatusMessage}

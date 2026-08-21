@@ -316,27 +316,43 @@ export function useGitHubPrReviewMutations(pr: GitHubPullRequest) {
   const updateDraftCache = (draft: GitHubPrReviewDraft | null) => {
     queryClient.setQueryData(prReviewQueryKeys.draft(pr), draft);
   };
-  const reconcileSubmittedReview = async (submittedDraftId: string | null) => {
+  const reconcileSubmittedReview = (submittedDraftId: string | null) => {
     const queryKey = prReviewQueryKeys.draft(pr);
-    await queryClient.cancelQueries({
+    void queryClient.cancelQueries({
       exact: true,
       queryKey,
     });
-    const liveDraft = await getGitHubPrReviewDraft({
-      repo: pr.repo,
-      number: pr.number,
-    }).catch(() => null);
     queryClient.setQueryData<GitHubPrReviewDraft | null>(queryKey, (current) =>
       current?.status === 'draft' &&
       submittedDraftId !== null &&
       current.id !== submittedDraftId
         ? current
-        : liveDraft,
+        : null,
     );
-    await Promise.all([
+    void getGitHubPrReviewDraft({
+      repo: pr.repo,
+      number: pr.number,
+    })
+      .then((liveDraft) => {
+        queryClient.setQueryData<GitHubPrReviewDraft | null>(
+          queryKey,
+          (current) =>
+            current?.status === 'draft' &&
+            submittedDraftId !== null &&
+            current.id !== submittedDraftId
+              ? current
+              : liveDraft,
+        );
+      })
+      .catch(() => {
+        // The submission response is authoritative; retry on a later read.
+      });
+    void Promise.all([
       invalidateThreads(),
       invalidateSubmittedReviewQueries(queryClient, pr),
-    ]);
+    ]).catch(() => {
+      // The submission is already settled; a later view refresh can retry.
+    });
   };
   const invalidateThreads = () =>
     queryClient.invalidateQueries({

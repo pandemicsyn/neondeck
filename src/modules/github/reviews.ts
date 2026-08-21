@@ -267,6 +267,7 @@ export function readPrReviewDraftForComment(options: {
 
 export function upsertPrReviewDraft(options: {
   databasePath: string;
+  draftId?: string;
   repo: string;
   prNumber: number;
   headSha: string;
@@ -278,6 +279,28 @@ export function upsertPrReviewDraft(options: {
   const now = new Date().toISOString();
   const body = normalizeNullableBody(options.body);
   try {
+    if (options.draftId) {
+      const existing = database
+        .prepare(
+          `
+          SELECT *
+          FROM pr_review_drafts
+          WHERE id = ?
+            AND repo = ? COLLATE NOCASE
+            AND pr_number = ?
+          LIMIT 1;
+        `,
+        )
+        .get(options.draftId, options.repo, options.prNumber);
+      if (!existing) {
+        throw new Error('Review draft does not belong to this pull request.');
+      }
+      if (readDraftRow(existing).status !== 'draft') {
+        throw new Error('Review draft is not editable.');
+      }
+      return updateExistingReviewDraft(database, existing, options, now);
+    }
+
     const existing = database
       .prepare(
         `
@@ -1363,7 +1386,7 @@ function updateExistingReviewDraft(
     'verdict' in options ? (options.verdict ?? null) : draft.verdict;
   const nextBody =
     'body' in options ? normalizeNullableBody(options.body) : draft.body;
-  database
+  const updated = database
     .prepare(
       `
       UPDATE pr_review_drafts
@@ -1371,7 +1394,8 @@ function updateExistingReviewDraft(
           verdict = ?,
           body = ?,
           updated_at = ?
-      WHERE id = ?;
+      WHERE id = ?
+        AND status = 'draft';
     `,
     )
     .run(
@@ -1383,6 +1407,9 @@ function updateExistingReviewDraft(
       updatedAt,
       draft.id,
     );
+  if (updated.changes !== 1) {
+    throw new Error('Review draft is not editable.');
+  }
   return readDraftWithCommentsById(database, draft.id);
 }
 

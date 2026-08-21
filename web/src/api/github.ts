@@ -123,6 +123,7 @@ export async function getGitHubPrReviewDraft(
 }
 
 export async function putGitHubPrReviewDraft(input: {
+  draftId?: string;
   repo: string;
   number: number;
   headSha: string;
@@ -134,6 +135,7 @@ export async function putGitHubPrReviewDraft(input: {
 }) {
   const [owner, name] = parseRepo(input.repo);
   const body: {
+    draftId?: string;
     headSha: string;
     verdict?: GitHubPrReviewVerdict | null;
     body?: string | null;
@@ -141,6 +143,7 @@ export async function putGitHubPrReviewDraft(input: {
     expectedDraftId?: string;
     expectedHeadSha?: string;
   } = { headSha: input.headSha };
+  if (input.draftId) body.draftId = input.draftId;
   if ('verdict' in input) body.verdict = input.verdict ?? null;
   if ('body' in input) body.body = input.body ?? null;
   if (input.reanchorHeadSha) {
