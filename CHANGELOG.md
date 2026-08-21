@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.0.0-beta.36
+
+### Patch Changes
+
+- [#314](https://github.com/pandemicsyn/neondeck/pull/314) [`fc7c50b`](https://github.com/pandemicsyn/neondeck/commit/fc7c50b4ae7ae9b9eef2694d1696374ff7c379a0) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Prevent failed PR revision refreshes from repeatedly retrying in the dashboard.
+
+- [#313](https://github.com/pandemicsyn/neondeck/pull/313) [`00edd05`](https://github.com/pandemicsyn/neondeck/commit/00edd053ead4a856283e3a363c1bc7de05769062) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Use numeric revisions for PR review draft writes so concurrent clients receive deterministic conflicts instead of racing timestamp-based saves.
+
+- [#311](https://github.com/pandemicsyn/neondeck/pull/311) [`da61bcf`](https://github.com/pandemicsyn/neondeck/commit/da61bcf4df7410b6f0056b3c8a91f6869a51ce8f) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Prevent late or concurrent PR-review draft writes from being lost during GitHub submission, keep submitted-draft cache reconciliation responsive, and keep reviewer follow-up messages available while the reviewer is responding.
+
 ## 1.0.0-beta.35
 
 ### Minor Changes
