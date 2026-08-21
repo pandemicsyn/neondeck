@@ -29,6 +29,7 @@ export type PrReviewFindingsSidebarProps = {
   draftComments: GitHubPrReviewDraftComment[];
   files: DiffFilePatch[];
   isDeleting: boolean;
+  isLocked: boolean;
   isLoadingThreads: boolean;
   isDismissingFinding: (findingId: string) => boolean;
   isPromotingFinding: (findingId: string) => boolean;
@@ -146,6 +147,7 @@ export function PrReviewFindingsSidebar({
         </>
       ) : (
         <PrReviewReviewerChat
+          isLocked={props.isLocked}
           onDraftChanged={props.onDraftChanged}
           review={props.review}
         />
@@ -168,9 +170,9 @@ function FindingsPanels(props: PrReviewFindingsSidebarProps) {
         )}
       />
       <DraftCommentPanel
-        activePath={props.activePath}
         comments={props.draftComments}
         isDeleting={props.isDeleting}
+        isLocked={props.isLocked}
         onDelete={props.onDelete}
         onSelect={props.onSelectDraftComment}
         selectedAnnotationId={props.selectedAnnotationId}
@@ -178,12 +180,14 @@ function FindingsPanels(props: PrReviewFindingsSidebarProps) {
       <StaleDraftCommentPanel
         comments={props.staleDraftComments}
         isDeleting={props.isDeleting}
+        isLocked={props.isLocked}
         onDelete={props.onDelete}
         onReanchor={props.onReanchor}
         selectedAnnotationId={props.selectedAnnotationId}
       />
       <ReportOnlyFindingPanel
         draft={props.draft}
+        isLocked={props.isLocked}
         onChooseLine={props.onChooseLine}
         review={props.review}
         selectedAnnotationId={props.selectedAnnotationId}
@@ -207,16 +211,16 @@ function FindingsPanels(props: PrReviewFindingsSidebarProps) {
 }
 
 function DraftCommentPanel({
-  activePath,
   comments,
   isDeleting,
+  isLocked,
   onDelete,
   onSelect,
   selectedAnnotationId,
 }: {
-  activePath: string | null;
   comments: GitHubPrReviewDraftComment[];
   isDeleting: boolean;
+  isLocked: boolean;
   onDelete: (commentId: string) => void;
   onSelect: (comment: GitHubPrReviewDraftComment) => void;
   selectedAnnotationId: string | null;
@@ -224,7 +228,6 @@ function DraftCommentPanel({
   if (comments.length === 0) return null;
   const ordered = [...comments].sort(
     (left, right) =>
-      Number(right.path === activePath) - Number(left.path === activePath) ||
       left.path.localeCompare(right.path) ||
       left.line - right.line ||
       left.id.localeCompare(right.id),
@@ -258,11 +261,15 @@ function DraftCommentPanel({
                 {reviewCommentPreview(comment.body)}
               </p>
               <div className="pr-review-inline-actions">
-                <button onClick={() => onSelect(comment)} type="button">
+                <button
+                  disabled={isLocked}
+                  onClick={() => onSelect(comment)}
+                  type="button"
+                >
                   Show comment
                 </button>
                 <button
-                  disabled={isDeleting}
+                  disabled={isDeleting || isLocked}
                   onClick={() => onDelete(comment.id)}
                   type="button"
                 >
@@ -376,12 +383,14 @@ function ReviewThreadPanel({
 function StaleDraftCommentPanel({
   comments,
   isDeleting,
+  isLocked,
   onDelete,
   onReanchor,
   selectedAnnotationId,
 }: {
   comments: GitHubPrReviewDraftComment[];
   isDeleting: boolean;
+  isLocked: boolean;
   onDelete: (commentId: string) => void;
   onReanchor: (comment: GitHubPrReviewDraftComment) => void;
   selectedAnnotationId: string | null;
@@ -417,11 +426,15 @@ function StaleDraftCommentPanel({
               {reviewCommentPreview(comment.body)}
             </p>
             <div className="pr-review-inline-actions mt-1.5">
-              <button onClick={() => onReanchor(comment)} type="button">
+              <button
+                disabled={isLocked}
+                onClick={() => onReanchor(comment)}
+                type="button"
+              >
                 Re-anchor
               </button>
               <button
-                disabled={isDeleting}
+                disabled={isDeleting || isLocked}
                 onClick={() => onDelete(comment.id)}
                 type="button"
               >
@@ -437,11 +450,13 @@ function StaleDraftCommentPanel({
 
 function ReportOnlyFindingPanel({
   draft,
+  isLocked,
   onChooseLine,
   review,
   selectedAnnotationId,
 }: {
   draft: GitHubPrReviewDraft | null;
+  isLocked: boolean;
   onChooseLine: (finding: PrReviewReportOnlyFinding) => void;
   review: PrReviewRecord | null;
   selectedAnnotationId: string | null;
@@ -490,7 +505,7 @@ function ReportOnlyFindingPanel({
               </p>
               <button
                 className="mt-1.5 border border-line px-1.5 py-1 font-mono text-[10px] text-muted hover:border-primary hover:text-primary disabled:opacity-50"
-                disabled={drafted}
+                disabled={drafted || isLocked}
                 onClick={() => onChooseLine(finding)}
                 type="button"
               >

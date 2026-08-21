@@ -65,6 +65,7 @@ describe('PR review findings sidebar', () => {
             reason: 'No finding.',
           })}
           isDeleting={false}
+          isLocked={false}
           isDismissingFinding={() => false}
           isLoadingThreads={false}
           isPromotingFinding={() => false}
@@ -106,6 +107,93 @@ describe('PR review findings sidebar', () => {
     );
     act(() => selectedShowButton!.click());
     expect(onSelectDraftComment).toHaveBeenCalledWith(neon);
+  });
+
+  it('keeps draft comment order stable when the active file changes', () => {
+    const comments = [
+      {
+        ...draftComment({
+          body: 'Third.',
+          id: 'third',
+          line: 30,
+          origin: 'human',
+        }),
+        path: 'src/b.ts',
+      },
+      {
+        ...draftComment({
+          body: 'Second.',
+          id: 'second',
+          line: 20,
+          origin: 'human',
+        }),
+        path: 'src/a.ts',
+      },
+      {
+        ...draftComment({
+          body: 'First.',
+          id: 'first',
+          line: 10,
+          origin: 'human',
+        }),
+        path: 'src/a.ts',
+      },
+    ];
+    const sidebarProps = {
+      actionsLocked: () => false,
+      cleanCommentCount: 3,
+      draft: null,
+      draftComments: comments,
+      files: [],
+      findingResolution: () => ({
+        state: 'unavailable' as const,
+        reason: 'No finding.',
+      }),
+      isDeleting: false,
+      isLocked: false,
+      isDismissingFinding: () => false,
+      isLoadingThreads: false,
+      isPromotingFinding: () => false,
+      neonFindings: [],
+      onChooseLine: vi.fn<(finding: PrReviewReportOnlyFinding) => void>(),
+      onDelete: vi.fn<(commentId: string) => void>(),
+      onDismissFinding: vi.fn<(finding: NeonReviewFinding) => void>(),
+      onPromoteFinding: vi.fn<(finding: NeonReviewFinding) => void>(),
+      onReanchor: vi.fn<(comment: GitHubPrReviewDraftComment) => void>(),
+      onSelectDraftComment:
+        vi.fn<(comment: GitHubPrReviewDraftComment) => void>(),
+      onSelectFinding: vi.fn<(finding: NeonReviewFinding) => void>(),
+      promoteLabel: 'Add to local draft',
+      promotionDisabledReason: () => null,
+      review: null,
+      reviewThreads: [],
+      selectedAnnotationId: null,
+      staleCommentCount: 0,
+      staleDraftComments: [],
+      unresolvedThreads: [],
+      variant: 'embedded' as const,
+    };
+    act(() =>
+      root.render(
+        <PrReviewFindingsSidebar {...sidebarProps} activePath="src/a.ts" />,
+      ),
+    );
+    const draftCommentSummaries = () =>
+      [...container.querySelectorAll('.pr-review-neon-finding-summary')].map(
+        (element) =>
+          element.querySelector('.pr-review-neon-finding-copy')?.textContent,
+      );
+    const initialOrder = draftCommentSummaries();
+
+    act(() =>
+      root.render(
+        <PrReviewFindingsSidebar {...sidebarProps} activePath="src/b.ts" />,
+      ),
+    );
+    const updatedOrder = draftCommentSummaries();
+
+    expect(initialOrder).toEqual(['First.', 'Second.', 'Third.']);
+    expect(updatedOrder).toEqual(initialOrder);
   });
 });
 

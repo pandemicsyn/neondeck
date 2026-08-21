@@ -1,7 +1,9 @@
 import { execFile } from 'node:child_process';
+import { existsSync } from 'node:fs';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
 import { promisify } from 'node:util';
 import { afterEach, describe, expect, it } from 'vitest';
 import { ensureRuntimeHome, runtimePaths } from './runtime-home';
@@ -51,6 +53,62 @@ describe('database CLI adapter', () => {
     expect(parsed.message).toBe('Neondeck app database is missing.');
     expect(parsed.databasePath).toBe(join(home, 'data', 'neondeck.db'));
   });
+
+  it('backs up, lists, and restores the app database without bootstrapping first', async () => {
+    const home = await tempHome();
+    const paths = runtimePaths(home);
+    await ensureRuntimeHome(paths);
+    setRestoreValue(paths.neondeckDatabase, 'before backup');
+
+    const backup = JSON.parse(
+      (await runCli(home, ['--json', 'db', 'backup'])).stdout,
+    );
+    expect(backup).toMatchObject({
+      ok: true,
+      action: 'db_backup',
+      backup: { kind: 'manual' },
+    });
+    const listed = JSON.parse(
+      (await runCli(home, ['--json', 'db', 'backups'])).stdout,
+    );
+    expect(listed).toMatchObject({
+      ok: true,
+      action: 'db_backups',
+      backups: [expect.objectContaining({ name: backup.backup.name })],
+    });
+
+    setRestoreValue(paths.neondeckDatabase, 'after backup');
+    const restored = JSON.parse(
+      (await runCli(home, ['--json', 'db', 'restore', backup.backup.name]))
+        .stdout,
+    );
+    expect(restored).toMatchObject({
+      ok: true,
+      action: 'db_restore',
+      restoredBackup: { name: backup.backup.name },
+      safetyBackup: { kind: 'restore-safety' },
+    });
+    expect(readRestoreValue(paths.neondeckDatabase)).toBe('before backup');
+  });
+
+  it('does not bootstrap a runtime home for failing database backup commands', async () => {
+    const home = await tempHome();
+
+    let error: unknown;
+    try {
+      await runCli(home, ['--json', 'db', 'backup']);
+    } catch (caught) {
+      error = caught;
+    }
+
+    expect(error).toMatchObject({ code: 1 });
+    expect(JSON.parse((error as { stdout: string }).stdout)).toMatchObject({
+      ok: false,
+      action: 'db_backup',
+    });
+    expect(existsSync(join(home, 'data', 'neondeck.db'))).toBe(false);
+    expect(existsSync(join(home, 'config.json'))).toBe(false);
+  });
 });
 
 async function tempHome() {
@@ -78,4 +136,35 @@ function runCli(home: string, args: string[]) {
       },
     },
   );
+}
+
+function setRestoreValue(databasePath: string, value: string) {
+  const database = new DatabaseSync(databasePath);
+  try {
+    database.exec(
+      'CREATE TABLE IF NOT EXISTS cli_restore_values (id INTEGER PRIMARY KEY, value TEXT NOT NULL);',
+    );
+    database
+      .prepare(
+        'INSERT INTO cli_restore_values (id, value) VALUES (1, ?) ON CONFLICT(id) DO UPDATE SET value = excluded.value;',
+      )
+      .run(value);
+  } finally {
+    database.close();
+  }
+}
+
+function readRestoreValue(databasePath: string) {
+  const database = new DatabaseSync(databasePath, { readOnly: true });
+  try {
+    return String(
+      (
+        database
+          .prepare('SELECT value FROM cli_restore_values WHERE id = 1;')
+          .get() as { value: unknown }
+      ).value,
+    );
+  } finally {
+    database.close();
+  }
 }

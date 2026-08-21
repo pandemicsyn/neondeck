@@ -9,6 +9,7 @@ import {
   readLivePrReviewDraft,
   readPrReviewDraft,
   readPrReviewDraftForComment,
+  reanchorPrReviewDraft,
   updatePrReviewDraftComment,
   upsertPrReviewDraft,
   type GitHubPrReviewDraft,
@@ -23,6 +24,7 @@ import {
   prEventTargetInputSchema,
   prReviewDraftCommentInputSchema,
   prReviewDraftCommentUpdateInputSchema,
+  prReviewDraftDiscardInputSchema,
   prReviewDraftInputSchema,
   type PrEventActionResult,
   type PrEventStateDependencies,
@@ -97,29 +99,97 @@ export async function putGitHubPrReviewDraft(
   );
   if (!resolved.ok) return resolved.result;
 
-  const draftUpdate: Parameters<typeof upsertPrReviewDraft>[0] = {
+  if (parsedDraft.output.reanchorHeadSha) {
+    const { expectedDraftId, expectedHeadSha, expectedRevision } =
+      parsedDraft.output;
+    if (!expectedDraftId || !expectedHeadSha || !expectedRevision) {
+      return failResult(
+        'github_pr_review_draft_put',
+        'Re-anchoring a review draft requires its expected draft and head revision.',
+        {
+          requires: ['expectedDraftId', 'expectedHeadSha', 'expectedRevision'],
+        },
+      );
+    }
+    let draft: ReturnType<typeof reanchorPrReviewDraft>;
+    try {
+      draft = reanchorPrReviewDraft({
+        databasePath: paths.neondeckDatabase,
+        repo: resolved.target.repoFullName,
+        prNumber: resolved.target.number,
+        draftId: expectedDraftId,
+        expectedRevision,
+        expectedHeadSha,
+        headSha: parsedDraft.output.headSha,
+      });
+    } catch (error) {
+      return failResult(
+        'github_pr_review_draft_put',
+        'Could not re-anchor review draft.',
+        { errors: [errorMessage(error)] },
+      );
+    }
+    if (!draft) {
+      return failResult(
+        'github_pr_review_draft_put',
+        'The review draft changed before it could be re-anchored. Refresh and try again.',
+        { requires: ['currentDraft'] },
+      );
+    }
+    return okResult(
+      'github_pr_review_draft_put',
+      true,
+      `Re-anchored review draft for ${resolved.target.repoFullName}#${resolved.target.number}.`,
+      {
+        target: eventTargetJson(resolved.target),
+        draft: draft as unknown as JsonValue,
+      },
+    );
+  }
+
+  const hasCreateIdentity =
+    parsedDraft.output.expectedAbsent === true &&
+    !parsedDraft.output.draftId &&
+    parsedDraft.output.expectedRevision === undefined;
+  const hasUpdateIdentity = Boolean(
+    parsedDraft.output.draftId &&
+    parsedDraft.output.expectedRevision &&
+    !parsedDraft.output.expectedAbsent,
+  );
+  if (!hasCreateIdentity && !hasUpdateIdentity) {
+    return failResult(
+      'github_pr_review_draft_put',
+      'Saving a review draft requires an exact create or update identity.',
+      { requires: ['currentDraft'] },
+    );
+  }
+
+  const draftValues = {
     databasePath: paths.neondeckDatabase,
     repo: resolved.target.repoFullName,
     prNumber: resolved.target.number,
     headSha: parsedDraft.output.headSha,
+    ...('verdict' in parsedDraft.output
+      ? { verdict: parsedDraft.output.verdict ?? null }
+      : {}),
+    ...('body' in parsedDraft.output
+      ? { body: parsedDraft.output.body ?? null }
+      : {}),
   };
-  if ('verdict' in parsedDraft.output) {
-    draftUpdate.verdict = parsedDraft.output.verdict ?? null;
-  }
-  if ('body' in parsedDraft.output) {
-    draftUpdate.body = parsedDraft.output.body ?? null;
-  }
-  if (parsedDraft.output.reanchorHeadSha) {
-    draftUpdate.reanchorHeadSha = true;
-  }
   let draft: ReturnType<typeof upsertPrReviewDraft>;
   try {
-    draft = upsertPrReviewDraft(draftUpdate);
+    draft = parsedDraft.output.expectedAbsent
+      ? upsertPrReviewDraft({ ...draftValues, expectedAbsent: true })
+      : upsertPrReviewDraft({
+          ...draftValues,
+          draftId: parsedDraft.output.draftId!,
+          expectedRevision: parsedDraft.output.expectedRevision!,
+        });
   } catch (error) {
     return failResult(
       'github_pr_review_draft_put',
       'Could not save review draft.',
-      { errors: [errorMessage(error)] },
+      draftWriteFailure(error),
     );
   }
 
@@ -179,6 +249,13 @@ export async function postGitHubPrReviewDraftComment(
       { requires: ['draftId'] },
     );
   }
+  if (draft.revision !== parsed.output.expectedRevision) {
+    return failResult(
+      'github_pr_review_draft_comment_post',
+      'The review draft changed before the comment could be saved.',
+      { requires: ['currentDraft'] },
+    );
+  }
 
   const invalidAnchor = await validateDraftCommentAnchor(
     'github_pr_review_draft_comment_post',
@@ -201,6 +278,7 @@ export async function postGitHubPrReviewDraftComment(
       id: metadata.id,
       databasePath: paths.neondeckDatabase,
       draftId: parsed.output.draftId,
+      expectedDraftRevision: parsed.output.expectedRevision,
       expectedHeadSha: metadata.expectedHeadSha,
       path: parsed.output.path,
       side: parsed.output.side,
@@ -221,7 +299,7 @@ export async function postGitHubPrReviewDraftComment(
     return failResult(
       'github_pr_review_draft_comment_post',
       'Could not save PR review draft comment.',
-      { errors: [errorMessage(error)] },
+      draftWriteFailure(error),
     );
   }
 }
@@ -272,13 +350,22 @@ export async function patchGitHubPrReviewDraftComment(
       { requires: ['commentId'] },
     );
   }
-
   const existing = draft.comments.find((comment) => comment.id === commentId);
   if (!existing) {
     return failResult(
       'github_pr_review_draft_comment_patch',
       'Review draft comment was not found.',
       { requires: ['commentId'] },
+    );
+  }
+  if (
+    draft.id !== parsed.output.draftId ||
+    draft.revision !== parsed.output.expectedRevision
+  ) {
+    return failResult(
+      'github_pr_review_draft_comment_patch',
+      'The review draft changed before the comment could be updated.',
+      { requires: ['currentDraft'] },
     );
   }
   const nextAnchor = {
@@ -309,6 +396,8 @@ export async function patchGitHubPrReviewDraftComment(
       databasePath: paths.neondeckDatabase,
       commentId,
       body: parsed.output.body,
+      expectedDraftId: parsed.output.draftId,
+      expectedDraftRevision: parsed.output.expectedRevision,
       expectedHeadSha: metadata.expectedHeadSha,
       origin: metadata.origin,
       ...('path' in parsed.output ? { path: parsed.output.path } : {}),
@@ -331,7 +420,7 @@ export async function patchGitHubPrReviewDraftComment(
     return failResult(
       'github_pr_review_draft_comment_patch',
       'Could not update PR review draft comment.',
-      { errors: [errorMessage(error)] },
+      draftWriteFailure(error),
     );
   }
 }
@@ -340,7 +429,11 @@ export async function deleteGitHubPrReviewDraftComment(
   targetInput: v.InferInput<typeof prEventTargetInputSchema>,
   commentId: string,
   paths: RuntimePaths = runtimePaths(),
-  metadata: { expectedHeadSha?: string } = {},
+  metadata: {
+    draftId?: string;
+    expectedRevision?: number;
+    expectedHeadSha?: string;
+  } = {},
 ): Promise<PrEventActionResult> {
   await ensureRuntimeHome(paths);
   const parsedTarget = v.safeParse(prEventTargetInputSchema, targetInput);
@@ -375,11 +468,25 @@ export async function deleteGitHubPrReviewDraftComment(
       { requires: ['commentId'] },
     );
   }
+  if (
+    !metadata.draftId ||
+    metadata.expectedRevision === undefined ||
+    draft?.id !== metadata.draftId ||
+    draft.revision !== metadata.expectedRevision
+  ) {
+    return failResult(
+      'github_pr_review_draft_comment_delete',
+      'The review draft changed before the comment could be deleted.',
+      { requires: ['currentDraft'] },
+    );
+  }
 
   try {
     const draft = deletePrReviewDraftComment({
       databasePath: paths.neondeckDatabase,
       commentId,
+      expectedDraftId: metadata.draftId,
+      expectedDraftRevision: metadata.expectedRevision,
       expectedHeadSha: metadata.expectedHeadSha,
     });
     return okResult(
@@ -392,13 +499,14 @@ export async function deleteGitHubPrReviewDraftComment(
     return failResult(
       'github_pr_review_draft_comment_delete',
       'Could not delete PR review draft comment.',
-      { errors: [errorMessage(error)] },
+      draftWriteFailure(error),
     );
   }
 }
 
 export async function deleteGitHubPrReviewDraft(
   input: v.InferInput<typeof prEventTargetInputSchema>,
+  identity: v.InferInput<typeof prReviewDraftDiscardInputSchema>,
   paths: RuntimePaths = runtimePaths(),
 ): Promise<PrEventActionResult> {
   await ensureRuntimeHome(paths);
@@ -408,6 +516,14 @@ export async function deleteGitHubPrReviewDraft(
       'github_pr_review_draft_delete',
       'Invalid PR draft delete input.',
       { errors: [v.summarize(parsed.issues)] },
+    );
+  }
+  const parsedIdentity = v.safeParse(prReviewDraftDiscardInputSchema, identity);
+  if (!parsedIdentity.success) {
+    return failResult(
+      'github_pr_review_draft_delete',
+      'An exact PR review draft identity is required.',
+      { errors: [v.summarize(parsedIdentity.issues)] },
     );
   }
 
@@ -420,20 +536,40 @@ export async function deleteGitHubPrReviewDraft(
 
   const draft = discardPrReviewDraft({
     databasePath: paths.neondeckDatabase,
+    draftId: parsedIdentity.output.draftId,
+    expectedRevision: parsedIdentity.output.expectedRevision,
     repo: resolved.target.repoFullName,
     prNumber: resolved.target.number,
   });
+  if (!draft) {
+    return failResult(
+      'github_pr_review_draft_delete',
+      'Review draft changed or is no longer editable. Refresh and try again.',
+    );
+  }
   return okResult(
     'github_pr_review_draft_delete',
-    draft !== null,
-    draft
-      ? `Discarded review draft for ${resolved.target.repoFullName}#${resolved.target.number}.`
-      : `No review draft for ${resolved.target.repoFullName}#${resolved.target.number}.`,
+    true,
+    `Discarded review draft for ${resolved.target.repoFullName}#${resolved.target.number}.`,
     {
       target: eventTargetJson(resolved.target),
       draft: draft as unknown as JsonValue,
     },
   );
+}
+
+function draftWriteFailure(error: unknown) {
+  const message = errorMessage(error);
+  const changed =
+    message.includes('Review draft changed') ||
+    message.includes('Review draft is not editable') ||
+    message.includes('Review draft no longer matches') ||
+    message.includes('review draft appeared') ||
+    message.includes('Review draft is being submitted');
+  return {
+    errors: [message],
+    ...(changed ? { requires: ['currentDraft'] } : {}),
+  };
 }
 
 function draftMatchesTarget(
@@ -444,7 +580,8 @@ function draftMatchesTarget(
   target: PullRequestTarget,
 ) {
   return (
-    draft?.repo === target.repoFullName && draft.prNumber === target.number
+    draft?.repo.toLowerCase() === target.repoFullName.toLowerCase() &&
+    draft.prNumber === target.number
   );
 }
 

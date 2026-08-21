@@ -294,12 +294,13 @@ async function promoteToGitHubDraft(
   } else {
     const draftResult = await (
       dependencies.putGitHubDraft ?? putGitHubPrReviewDraft
-    )(targetInput, { headSha: revision.id }, paths);
+    )(targetInput, { headSha: revision.id, expectedAbsent: true }, paths);
     if (!draftResult.ok) return { ok: false, message: draftResult.message };
     draft = objectField(objectField(draftResult.data).draft);
   }
   const draftId = stringField(draft.id);
-  if (!draftId || stringField(draft.headSha) !== revision.id)
+  const draftRevision = positiveIntegerField(draft.revision);
+  if (!draftId || !draftRevision || stringField(draft.headSha) !== revision.id)
     return {
       ok: false,
       message:
@@ -332,6 +333,7 @@ async function promoteToGitHubDraft(
     targetInput,
     {
       draftId,
+      expectedRevision: draftRevision,
       path: candidate.finding.file,
       side,
       line: candidate.request.anchor.endLine,
@@ -620,4 +622,10 @@ function arrayField(value: unknown): unknown[] {
 
 function stringField(value: unknown) {
   return typeof value === 'string' && value.length > 0 ? value : null;
+}
+
+function positiveIntegerField(value: unknown) {
+  return typeof value === 'number' && Number.isInteger(value) && value > 0
+    ? value
+    : null;
 }

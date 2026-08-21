@@ -21,6 +21,18 @@ describe('runtime subagents', () => {
     expect(definition.agent()).toBe(exploreSubagentInstructions);
   });
 
+  it('requires the compact, evidence-backed Explore result contract', () => {
+    expect(exploreSubagentInstructions).toContain(
+      'Finish with exactly this compact result contract:',
+    );
+    expect(exploreSubagentInstructions).toContain(
+      'Answer:\nEvidence:\n- path:line — symbol — observed fact\nUnresolved:\nInspected:\nStop reason: answered | insufficient evidence | blocked',
+    );
+    expect(exploreSubagentInstructions).toContain(
+      'Answer the delegated question directly instead of writing a second full PR review.',
+    );
+  });
+
   it('uses current Explore defaults only when restored work has no captured selection', () => {
     const fallback = {
       model: 'openai/gpt-5.6-terra',

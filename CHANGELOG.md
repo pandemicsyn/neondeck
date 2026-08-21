@@ -1,5 +1,30 @@
 # Changelog
 
+## 1.0.0-beta.36
+
+### Patch Changes
+
+- [#314](https://github.com/pandemicsyn/neondeck/pull/314) [`fc7c50b`](https://github.com/pandemicsyn/neondeck/commit/fc7c50b4ae7ae9b9eef2694d1696374ff7c379a0) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Prevent failed PR revision refreshes from repeatedly retrying in the dashboard.
+
+- [#313](https://github.com/pandemicsyn/neondeck/pull/313) [`00edd05`](https://github.com/pandemicsyn/neondeck/commit/00edd053ead4a856283e3a363c1bc7de05769062) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Use numeric revisions for PR review draft writes so concurrent clients receive deterministic conflicts instead of racing timestamp-based saves.
+
+- [#311](https://github.com/pandemicsyn/neondeck/pull/311) [`da61bcf`](https://github.com/pandemicsyn/neondeck/commit/da61bcf4df7410b6f0056b3c8a91f6869a51ce8f) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Prevent late or concurrent PR-review draft writes from being lost during GitHub submission, keep submitted-draft cache reconciliation responsive, and keep reviewer follow-up messages available while the reviewer is responding.
+
+## 1.0.0-beta.35
+
+### Minor Changes
+
+- [#309](https://github.com/pandemicsyn/neondeck/pull/309) [`7f9ae27`](https://github.com/pandemicsyn/neondeck/commit/7f9ae27e3766ff940a453486293309df14ce3c43) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Improve PR review exploration with non-duplicative evidence handoffs, review-level performance reporting, and a separate live-model evaluation harness.
+
+- [#307](https://github.com/pandemicsyn/neondeck/pull/307) [`d13fdb5`](https://github.com/pandemicsyn/neondeck/commit/d13fdb5ece4bc59d2fb5e6ce7759eb16696c9f14) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Add guarded app database backup, listing, and restore commands, and retain at
+  most two recognized backup sets.
+
+### Patch Changes
+
+- [#304](https://github.com/pandemicsyn/neondeck/pull/304) [`73f3c69`](https://github.com/pandemicsyn/neondeck/commit/73f3c69ab55675432b2a25d784c668e53f839a4e) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Keep draft comments in a stable order while navigating the pull request review diff.
+
+- [#310](https://github.com/pandemicsyn/neondeck/pull/310) [`f793983`](https://github.com/pandemicsyn/neondeck/commit/f7939839c5d859bfc291fec9c4d810e952eb64dd) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Update pull request diffs and local drafts together against the validated revision so stale queue snapshots cannot trap reviews in a refresh loop, and let the revision-bound reviewer chat start a fresh Neon review when explicitly requested.
+
 ## 1.0.0-beta.34
 
 ### Minor Changes

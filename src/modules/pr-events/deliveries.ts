@@ -14,6 +14,14 @@ export type NeondeckPrDeliveries = {
   reviewCommentFingerprints: Map<string, string>;
 };
 
+type NeondeckPrDeliveryInput = {
+  repoFullName: string;
+  prNumber: number;
+  itemKind: 'conversation-comment' | 'review' | 'review-comment';
+  itemId: string | number;
+  itemFingerprint: string;
+};
+
 export function readNeondeckPrDeliveries(
   repoFullName: string,
   prNumber: number,
@@ -56,26 +64,71 @@ export function readNeondeckPrDeliveries(
 }
 
 export function recordNeondeckPrDelivery(
-  input: {
-    repoFullName: string;
-    prNumber: number;
-    itemKind: 'conversation-comment' | 'review' | 'review-comment';
-    itemId: string | number;
-    itemFingerprint: string;
-  },
+  input: NeondeckPrDeliveryInput,
   paths: RuntimePaths,
 ) {
   recordNeondeckPrDeliveries([input], paths);
 }
 
 export function recordNeondeckPrDeliveries(
-  inputs: Array<{
-    repoFullName: string;
-    prNumber: number;
-    itemKind: 'conversation-comment' | 'review' | 'review-comment';
-    itemId: string | number;
-    itemFingerprint: string;
-  }>,
+  inputs: NeondeckPrDeliveryInput[],
+  paths: RuntimePaths,
+) {
+  recordNeondeckPrDeliveriesTransaction(inputs, null, paths);
+}
+
+export function recordNeondeckPrDeliveriesAndCompleteFollowup(
+  inputs: NeondeckPrDeliveryInput[],
+  followupId: string,
+  paths: RuntimePaths,
+) {
+  recordNeondeckPrDeliveriesTransaction(inputs, followupId, paths);
+}
+
+export function readPendingNeondeckPrReviewIds(
+  repoFullName: string,
+  prNumber: number,
+  paths: RuntimePaths,
+) {
+  const database = openDb(paths.neondeckDatabase, { readOnly: true });
+  try {
+    const rows = database
+      .prepare(
+        `SELECT payload_json
+         FROM pr_review_submission_followups
+         WHERE kind = 'delivery' AND status IN ('pending', 'processing');`,
+      )
+      .all() as Array<{ payload_json?: unknown }>;
+    const result = new Set<string>();
+    for (const row of rows) {
+      try {
+        const payload = JSON.parse(String(row.payload_json)) as {
+          target?: { repoFullName?: unknown; number?: unknown };
+          result?: { review?: { id?: unknown } };
+        };
+        if (
+          typeof payload.target?.repoFullName === 'string' &&
+          payload.target.repoFullName.toLowerCase() ===
+            repoFullName.toLowerCase() &&
+          payload.target.number === prNumber &&
+          (typeof payload.result?.review?.id === 'string' ||
+            typeof payload.result?.review?.id === 'number')
+        ) {
+          result.add(String(payload.result.review.id));
+        }
+      } catch {
+        // Invalid rows are surfaced when the follow-up worker claims them.
+      }
+    }
+    return result;
+  } finally {
+    database.close();
+  }
+}
+
+function recordNeondeckPrDeliveriesTransaction(
+  inputs: NeondeckPrDeliveryInput[],
+  completedFollowupId: string | null,
   paths: RuntimePaths,
 ) {
   if (inputs.length === 0) return;
@@ -102,6 +155,19 @@ export function recordNeondeckPrDeliveries(
           input.itemFingerprint,
           now,
         );
+      }
+      if (completedFollowupId) {
+        const completed = database
+          .prepare(
+            `UPDATE pr_review_submission_followups
+             SET status = 'completed', last_error = NULL,
+                 updated_at = ?, next_attempt_at = ?, completed_at = ?
+             WHERE id = ? AND status = 'processing';`,
+          )
+          .run(now, now, now, completedFollowupId);
+        if (completed.changes !== 1) {
+          throw new Error('Submitted-review delivery fence was not claimed.');
+        }
       }
       database.exec('COMMIT;');
     } catch (error) {

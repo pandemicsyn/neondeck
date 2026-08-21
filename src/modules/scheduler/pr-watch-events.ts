@@ -10,6 +10,7 @@ import {
   listPrWatchEventWatermarks,
   readAddressedPrFeedback,
   readNeondeckPrDeliveries,
+  readPendingNeondeckPrReviewIds,
   refreshPrWatchEventState,
   type PrWatchEventWatermarkCategory,
   type PrWatchEventWatermarkRecord,
@@ -177,6 +178,11 @@ async function refreshOneWatchEvent(
     addressedReviewCommentFingerprints: addressed.reviewCommentFingerprints,
     neondeckReviewCommentFingerprints: deliveries.reviewCommentFingerprints,
     neondeckRequestedChangesReviewFingerprints: deliveries.reviewFingerprints,
+    neondeckPendingReviewIds: readPendingNeondeckPrReviewIds(
+      watch.repoFullName,
+      watch.prNumber,
+      paths,
+    ),
     neondeckConversationCommentFingerprints:
       deliveries.conversationCommentFingerprints,
     neondeckCommitShas: await selfPushedCommitShas(watch, paths, dependencies),

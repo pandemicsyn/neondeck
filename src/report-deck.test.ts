@@ -119,9 +119,10 @@ describe('report deck contract', () => {
     // Regression guard: persisted report rows were written before `subtitle`,
     // `totalFiles`, `additions`, `deletions`, and `revision` existed, so those
     // keys are absent from the stored JSON rather than present-and-null.
-    const legacy = structuredClone(
-      representativeReportDeckFixture,
-    ) as Record<string, unknown>;
+    const legacy = structuredClone(representativeReportDeckFixture) as Record<
+      string,
+      unknown
+    >;
     delete legacy.subtitle;
     for (const slide of legacy.slides as Array<Record<string, unknown>>) {
       if (slide.kind === 'change-map') {

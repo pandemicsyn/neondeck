@@ -118,7 +118,7 @@ export function createPrReviewerDraftTools(
             if (!draft) {
               const created = await dependencies.putDraft(
                 reviewTarget(bound.review),
-                { headSha: bound.review.headSha },
+                { headSha: bound.review.headSha, expectedAbsent: true },
                 paths,
               );
               if (!created.ok) return reframeResult(createName, created);
@@ -137,6 +137,7 @@ export function createPrReviewerDraftTools(
               reviewTarget(bound.review),
               {
                 draftId: draft.id,
+                expectedRevision: draft.revision,
                 path: data.path,
                 side: data.side,
                 line: data.line,
@@ -184,6 +185,8 @@ export function createPrReviewerDraftTools(
               reviewTarget(bound.review),
               data.commentId,
               {
+                draftId: comment.draft.id,
+                expectedRevision: comment.draft.revision,
                 body: data.body ?? comment.comment.body,
                 ...('path' in data ? { path: data.path } : {}),
                 ...('side' in data ? { side: data.side } : {}),
@@ -256,7 +259,11 @@ export function createPrReviewerDraftTools(
               reviewTarget(bound.review),
               data.commentId,
               paths,
-              { expectedHeadSha: bound.review.headSha },
+              {
+                draftId: draft.id,
+                expectedRevision: draft.revision,
+                expectedHeadSha: bound.review.headSha,
+              },
             );
             return compactResult(deleteName, result);
           },
@@ -314,7 +321,11 @@ function boundComment(
   paths: RuntimePaths,
   dependencies: PrReviewerDraftToolDependencies,
 ):
-  | { ok: true; comment: GitHubPrReviewDraftComment }
+  | {
+      ok: true;
+      draft: GitHubPrReviewDraft;
+      comment: GitHubPrReviewDraftComment;
+    }
   | { ok: false; result: PrEventActionResult } {
   const draft = dependencies.readDraftForComment({
     databasePath: paths.neondeckDatabase,
@@ -331,7 +342,7 @@ function boundComment(
       ),
     };
   }
-  return { ok: true, comment };
+  return { ok: true, draft, comment };
 }
 
 function draftMatchesReview(

@@ -1,6 +1,15 @@
 # PR Review Subagent Improvement Plan
 
-Status: proposed
+Status: in progress
+
+Implementation note: Phase 1 and the within-attempt Phase 2 projection are
+implemented on the feature branch. Exact-revision cross-attempt comparison
+remains unavailable until Neondeck persists immutable attempt/run/revision
+bindings instead of only the current review run. Phase 3 now has a separate
+runnable live-model harness and the complete scenario catalog; representative
+immutable fixture repositories and their semantic expectations remain pending
+the real-review baseline described in steps 5 and 6 of the recommended
+implementation order.
 
 Date: 2026-08-20
 

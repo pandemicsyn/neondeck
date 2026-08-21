@@ -6,6 +6,7 @@ export function PrReviewSubmitBar({
   isBusy,
   isDurableReviewReady,
   isHeadAvailable,
+  isLocked,
   isSubmitting,
   onBodyBlur,
   onBodyChange,
@@ -25,6 +26,7 @@ export function PrReviewSubmitBar({
   isBusy: boolean;
   isDurableReviewReady: boolean;
   isHeadAvailable: boolean;
+  isLocked: boolean;
   isSubmitting: boolean;
   onBodyBlur: () => void;
   onBodyChange: (value: string) => void;
@@ -43,7 +45,8 @@ export function PrReviewSubmitBar({
   const canSubmit =
     isHeadAvailable &&
     isDurableReviewReady &&
-    !isBusy &&
+    !isLocked &&
+    !isSubmitting &&
     (verdict === 'approve' || cleanCommentCount > 0 || hasBody);
 
   return (
@@ -56,7 +59,7 @@ export function PrReviewSubmitBar({
       <div className="pr-review-bar-main">
         <button
           className="pr-review-count"
-          disabled={cleanCommentCount === 0}
+          disabled={cleanCommentCount === 0 || isBusy}
           onClick={onPendingCountClick}
           title="Cycle through pending draft comments"
           type="button"
@@ -88,7 +91,7 @@ export function PrReviewSubmitBar({
       </label>
       <textarea
         id="pr-review-summary-body"
-        disabled={!isHeadAvailable}
+        disabled={!isHeadAvailable || isBusy}
         onBlur={onBodyBlur}
         onChange={(event) => onBodyChange(event.currentTarget.value)}
         onFocus={onBodyFocus}

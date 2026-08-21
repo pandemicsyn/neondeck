@@ -207,6 +207,27 @@ describe('PR review navigation controls', () => {
     });
     expect(container.textContent).toContain('Loading hunks for src/b.ts.');
   });
+
+  it('ignores navigation changes while a revision transaction is busy', () => {
+    const onClearFilter = vi.fn<() => void>();
+    const onKindChange = vi.fn<() => void>();
+    renderBar(root, onMove, {
+      filter: 'src/',
+      isBusy: true,
+      onClearFilter,
+      onKindChange,
+    });
+
+    expect(select('Traversal kind').disabled).toBe(true);
+    const filterButton = button('filter: src/ · clear');
+    expect(filterButton.disabled).toBe(true);
+    act(() => filterButton.click());
+    act(() => dispatchKey(document.body, ']'));
+
+    expect(onClearFilter).not.toHaveBeenCalled();
+    expect(onKindChange).not.toHaveBeenCalled();
+    expect(onMove).not.toHaveBeenCalled();
+  });
 });
 
 const draftTarget: ReviewCursorTarget = {

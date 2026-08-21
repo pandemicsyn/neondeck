@@ -207,14 +207,29 @@ export const prReviewVerdictSchema = v.picklist([
   'approve',
   'request-changes',
 ]);
+const prReviewDraftRevisionSchema = v.pipe(
+  v.number(),
+  v.integer(),
+  v.minValue(1),
+);
 export const prReviewDraftInputSchema = v.object({
+  draftId: v.optional(nonEmptyStringSchema),
+  expectedRevision: v.optional(prReviewDraftRevisionSchema),
+  expectedAbsent: v.optional(v.boolean()),
   headSha: nonEmptyStringSchema,
   verdict: v.optional(v.nullable(prReviewVerdictSchema)),
   body: v.optional(v.nullable(v.string())),
   reanchorHeadSha: v.optional(v.boolean()),
+  expectedDraftId: v.optional(nonEmptyStringSchema),
+  expectedHeadSha: v.optional(nonEmptyStringSchema),
+});
+export const prReviewDraftDiscardInputSchema = v.object({
+  draftId: nonEmptyStringSchema,
+  expectedRevision: prReviewDraftRevisionSchema,
 });
 export const prReviewDraftCommentInputSchema = v.object({
   draftId: nonEmptyStringSchema,
+  expectedRevision: prReviewDraftRevisionSchema,
   path: nonEmptyStringSchema,
   side: v.picklist(['RIGHT', 'LEFT']),
   line: v.pipe(v.number(), v.integer(), v.minValue(1)),
@@ -228,6 +243,8 @@ export const prReviewDraftCommentInputSchema = v.object({
   ),
 });
 export const prReviewDraftCommentUpdateInputSchema = v.object({
+  draftId: nonEmptyStringSchema,
+  expectedRevision: prReviewDraftRevisionSchema,
   body: v.pipe(v.string(), v.trim(), v.minLength(1), v.maxLength(65_536)),
   path: v.optional(nonEmptyStringSchema),
   side: v.optional(v.picklist(['RIGHT', 'LEFT'])),
@@ -239,6 +256,7 @@ export const prReviewDraftCommentUpdateInputSchema = v.object({
 });
 export const prReviewSubmitInputSchema = v.object({
   draftId: nonEmptyStringSchema,
+  expectedDraftRevision: prReviewDraftRevisionSchema,
   headSha: nonEmptyStringSchema,
   commentIds: v.optional(v.array(nonEmptyStringSchema)),
 });

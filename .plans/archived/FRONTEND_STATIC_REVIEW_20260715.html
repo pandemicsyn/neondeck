@@ -23,8 +23,8 @@
         --amber: #ffc76b;
         --green: #8fe3a3;
         --red: #ff778c;
-        --mono: "IBM Plex Mono", "SFMono-Regular", Consolas, monospace;
-        --sans: "IBM Plex Sans", Inter, system-ui, -apple-system, sans-serif;
+        --mono: 'IBM Plex Mono', 'SFMono-Regular', Consolas, monospace;
+        --sans: 'IBM Plex Sans', Inter, system-ui, -apple-system, sans-serif;
       }
 
       * {
@@ -287,11 +287,21 @@
         font-size: 11px;
       }
 
-      .p0 { color: var(--red); }
-      .p1 { color: var(--pink); }
-      .p2 { color: var(--amber); }
-      .p3 { color: var(--violet); }
-      .good { color: var(--green); }
+      .p0 {
+        color: var(--red);
+      }
+      .p1 {
+        color: var(--pink);
+      }
+      .p2 {
+        color: var(--amber);
+      }
+      .p3 {
+        color: var(--violet);
+      }
+      .good {
+        color: var(--green);
+      }
 
       .architecture {
         display: grid;
@@ -379,7 +389,7 @@
         font-size: 11px;
       }
 
-      input[type="search"] {
+      input[type='search'] {
         width: 100%;
         min-height: 42px;
         border: 1px solid var(--line-strong);
@@ -408,7 +418,7 @@
         font-size: 11px;
       }
 
-      .filter-row button[aria-pressed="true"] {
+      .filter-row button[aria-pressed='true'] {
         border-color: var(--cyan);
         color: var(--cyan);
       }
@@ -447,13 +457,13 @@
       }
 
       summary::after {
-        content: "+";
+        content: '+';
         color: var(--faint);
         font-family: var(--mono);
       }
 
       details[open] summary::after {
-        content: "−";
+        content: '−';
         color: var(--cyan);
       }
 
@@ -483,15 +493,15 @@
         white-space: nowrap;
       }
 
-      .finding[data-status="completed"] {
+      .finding[data-status='completed'] {
         border-color: var(--green);
       }
 
-      .finding[data-status="completed"] summary {
+      .finding[data-status='completed'] summary {
         background: var(--panel);
       }
 
-      .finding[data-status="measured"] {
+      .finding[data-status='measured'] {
         border-left: 3px solid var(--cyan);
       }
 
@@ -774,13 +784,17 @@
           <p class="eyebrow">NEONDECK / FRONTEND STATIC REVIEW / 2026-07-15</p>
           <h1>Bug hunt and performance review</h1>
           <p class="lede">
-            Four independent static reviews of the React dashboard, API and Flue boundary,
-            UI/UX system, and render/query performance. Performance is reported first and
-            deliberately left unmodified for discussion. A 2026-07-16 measurement supplement
-            now adds repeatable fixture results and direct Chrome traces.
+            Four independent static reviews of the React dashboard, API and Flue
+            boundary, UI/UX system, and render/query performance. Performance is
+            reported first and deliberately left unmodified for discussion. A
+            2026-07-16 measurement supplement now adds repeatable fixture
+            results and direct Chrome traces.
           </p>
         </div>
-        <div class="head-score" aria-label="Consolidated audit health score 12 out of 20">
+        <div
+          class="head-score"
+          aria-label="Consolidated audit health score 12 out of 20"
+        >
           <strong>12/20</strong>
           <span>Acceptable · significant work needed</span>
         </div>
@@ -816,134 +830,164 @@
           <div class="gate">
             <div class="gate-mark">MEASURED</div>
             <p>
-              <strong>Performance gate:</strong> the fixture and trace pass is complete, and the
-              first-wave production optimizations now isolate stable chat history from composer
-              updates and route patches with at least 2,000 changed rows through Pierre CodeView.
-              The retained baselines strongly confirm the original large-diff and chat findings,
-              confirm duplicated review DOM at low present cost, and lower the urgency of Runtime
-              query topology. A real 1,019-file PR trace confirmed request-identity churn,
-              repeated local metadata work, and active-patch contention in the review path. The
-              approved request-path and active-priority fixes are complete; cold-object fetch,
-              Runtime, and bundle changes remain deferred pending separate workload evidence.
+              <strong>Performance gate:</strong> the fixture and trace pass is
+              complete, and the first-wave production optimizations now isolate
+              stable chat history from composer updates and route patches with
+              at least 2,000 changed rows through Pierre CodeView. The retained
+              baselines strongly confirm the original large-diff and chat
+              findings, confirm duplicated review DOM at low present cost, and
+              lower the urgency of Runtime query topology. A real 1,019-file PR
+              trace confirmed request-identity churn, repeated local metadata
+              work, and active-patch contention in the review path. The approved
+              request-path and active-priority fixes are complete; cold-object
+              fetch, Runtime, and bundle changes remain deferred pending
+              separate workload evidence.
             </p>
           </div>
 
           <div class="gate completion-note">
             <div class="gate-mark">COMPLETE</div>
             <p>
-              <strong>Measurement status:</strong> the retained five-part plan ran against a
-              production-built React/Pierre fixture lab with three samples per scenario, React's
-              profiling renderer, DOM/shadow-DOM and heap probes, accelerated Query polling, and
-              direct Chrome performance traces. Backend request concurrency is now also measured
-              end to end against a registered 1,019-file pull request.
+              <strong>Measurement status:</strong> the retained five-part plan
+              ran against a production-built React/Pierre fixture lab with three
+              samples per scenario, React's profiling renderer, DOM/shadow-DOM
+              and heap probes, accelerated Query polling, and direct Chrome
+              performance traces. Backend request concurrency is now also
+              measured end to end against a registered 1,019-file pull request.
             </p>
           </div>
 
           <div class="gate completion-note">
             <div class="gate-mark">CHAT OPTIMIZED</div>
             <p>
-              <strong>First-wave performance status:</strong> chat render isolation is complete.
-              At 500 messages, eleven typed characters now cause zero historical Markdown
-              renders instead of 5,500; median React commit p95 fell from 102.9 ms to 0.5 ms and
-              typing p95 fell from 109.6 ms to 8.6 ms while retaining the same 9,034-node fixture.
-              The original finding and baseline remain below for audit history.
+              <strong>First-wave performance status:</strong> chat render
+              isolation is complete. At 500 messages, eleven typed characters
+              now cause zero historical Markdown renders instead of 5,500;
+              median React commit p95 fell from 102.9 ms to 0.5 ms and typing
+              p95 fell from 109.6 ms to 8.6 ms while retaining the same
+              9,034-node fixture. The original finding and baseline remain below
+              for audit history.
             </p>
           </div>
 
           <div class="gate completion-note">
             <div class="gate-mark">DIFFS OPTIMIZED</div>
             <p>
-              <strong>Second first-wave performance status:</strong> large-diff rendering is
-              complete behind a measured 2,000-row threshold. At 10,000 changed rows, median ready
-              time fell from 500.6 ms to 115.8 ms, mounted DOM fell from 40,099 to 719 nodes, and
-              405 ms of long tasks fell to zero while scroll p95 held at 12.8 ms. Selection and all
-              50 review annotations passed production-shaped verification. The original finding
-              and baseline remain below for audit history.
+              <strong>Second first-wave performance status:</strong> large-diff
+              rendering is complete behind a measured 2,000-row threshold. At
+              10,000 changed rows, median ready time fell from 500.6 ms to 115.8
+              ms, mounted DOM fell from 40,099 to 719 nodes, and 405 ms of long
+              tasks fell to zero while scroll p95 held at 12.8 ms. Selection and
+              all 50 review annotations passed production-shaped verification.
+              The original finding and baseline remain below for audit history.
             </p>
           </div>
 
           <div class="gate completion-note">
             <div class="gate-mark">REAL PR OPTIMIZED</div>
             <p>
-              <strong>Review-path status:</strong> the production app was measured against open
-              <code>Kilo-Org/kilocode#12204</code> with 1,019 files and 47 review threads. Warm
-              browser tree, first-patch, and threads medians were 869 ms, 1,971 ms, and 2,183 ms;
-              all missed the original targets despite healthy 876 ms LCP, 0.0012 CLS, and zero
-              long tasks. That baseline remains retained. Stable thread identity, local metadata
-              reuse, and active-patch-first scheduling now produce one thread request, zero
-              abandoned patches, and a 798 ms first-patch median that passes all three samples.
-              The final thread-surface pass keeps the full Flue action intact while using an
-              84.7% smaller web query plus a bounded 15-second cache; warm thread visibility now
-              measures 459 ms median and passes its target. The original results remain retained.
+              <strong>Review-path status:</strong> the production app was
+              measured against open <code>Kilo-Org/kilocode#12204</code> with
+              1,019 files and 47 review threads. Warm browser tree, first-patch,
+              and threads medians were 869 ms, 1,971 ms, and 2,183 ms; all
+              missed the original targets despite healthy 876 ms LCP, 0.0012
+              CLS, and zero long tasks. That baseline remains retained. Stable
+              thread identity, local metadata reuse, and active-patch-first
+              scheduling now produce one thread request, zero abandoned patches,
+              and a 798 ms first-patch median that passes all three samples. The
+              final thread-surface pass keeps the full Flue action intact while
+              using an 84.7% smaller web query plus a bounded 15-second cache;
+              warm thread visibility now measures 459 ms median and passes its
+              target. The original results remain retained.
             </p>
           </div>
 
           <div class="gate completion-note">
             <div class="gate-mark">DELIVERED</div>
             <p>
-              <strong>Implementation status:</strong> recommended steps 1–3 are complete in the
-              UI-hardening pull request. The original findings remain below as the audit baseline
-              and are marked completed; severity counts and score are intentionally unchanged
-              until the planned re-audit.
+              <strong>Implementation status:</strong> recommended steps 1–3 are
+              complete in the UI-hardening pull request. The original findings
+              remain below as the audit baseline and are marked completed;
+              severity counts and score are intentionally unchanged until the
+              planned re-audit.
             </p>
           </div>
 
           <div class="gate completion-note">
             <div class="gate-mark">STACKED</div>
             <p>
-              <strong>Correctness status:</strong> recommended steps 4–5 are complete in the
-              stacked Flue/session and query-correctness pull request. Its original findings are
-              retained and marked completed below; the performance gate remains unchanged.
+              <strong>Correctness status:</strong> recommended steps 4–5 are
+              complete in the stacked Flue/session and query-correctness pull
+              request. Its original findings are retained and marked completed
+              below; the performance gate remains unchanged.
             </p>
           </div>
 
           <div class="gate completion-note">
             <div class="gate-mark">PHASE B COMPLETE</div>
             <p>
-              <strong>Guided-review outcome (2026-07-18):</strong> PRs #145, #146, #150, #152,
-              #153, and #154 now provide one revision-bound review model, visible and keyboard
-              navigation, typed inline Neon findings, explicit promotion into existing draft or
-              revision-request workflows, and guarded live refresh across the focused GitHub PR,
-              prepared-diff, and prepared-backed Kilo/worktree surfaces. The final audit corrected
-              one remaining availability/application gap: a failed background prepared-diff
-              metadata refresh now reports the error without unmounting the applied review or its
-              approval/recovery context. PR #149 supplied the sandbox-safe test runner used by the
-              landed test coverage. Phase B is the stopping milestone; Phases C–E remain later and
+              <strong>Guided-review outcome (2026-07-18):</strong> PRs #145,
+              #146, #150, #152, #153, and #154 now provide one revision-bound
+              review model, visible and keyboard navigation, typed inline Neon
+              findings, explicit promotion into existing draft or
+              revision-request workflows, and guarded live refresh across the
+              focused GitHub PR, prepared-diff, and prepared-backed
+              Kilo/worktree surfaces. The final audit corrected one remaining
+              availability/application gap: a failed background prepared-diff
+              metadata refresh now reports the error without unmounting the
+              applied review or its approval/recovery context. PR #149 supplied
+              the sandbox-safe test runner used by the landed test coverage.
+              Phase B is the stopping milestone; Phases C–E remain later and
               were not started.
             </p>
           </div>
 
           <div class="stats" aria-label="Finding counts by severity">
-            <div class="stat"><span class="label">P0 BLOCKING</span><strong class="p0">0</strong></div>
-            <div class="stat"><span class="label">P1 MAJOR</span><strong class="p1">11</strong></div>
-            <div class="stat"><span class="label">P2 MINOR</span><strong class="p2">16</strong></div>
-            <div class="stat"><span class="label">P3 POLISH</span><strong class="p3">5</strong></div>
-            <div class="stat"><span class="label">ANTI-PATTERN VERDICT</span><strong class="good">PASS</strong></div>
+            <div class="stat">
+              <span class="label">P0 BLOCKING</span
+              ><strong class="p0">0</strong>
+            </div>
+            <div class="stat">
+              <span class="label">P1 MAJOR</span><strong class="p1">11</strong>
+            </div>
+            <div class="stat">
+              <span class="label">P2 MINOR</span><strong class="p2">16</strong>
+            </div>
+            <div class="stat">
+              <span class="label">P3 POLISH</span><strong class="p3">5</strong>
+            </div>
+            <div class="stat">
+              <span class="label">ANTI-PATTERN VERDICT</span
+              ><strong class="good">PASS</strong>
+            </div>
           </div>
 
           <div class="three-col" style="margin-top: 14px">
             <article class="panel-block">
               <h3>Release risks</h3>
               <p>
-                Light-theme semantic text and placeholders fail WCAG AA; compact review hides
-                verdict and summary while keeping Submit; narrow chat can clip core actions.
+                Light-theme semantic text and placeholders fail WCAG AA; compact
+                review hides verdict and summary while keeping Submit; narrow
+                chat can clip core actions.
               </p>
             </article>
             <article class="panel-block">
               <h3>Correctness risks</h3>
               <p>
-                Session operations can settle into the wrong session, durable command events can
-                stay stale, PR review state can remain submit-ready, and Autopilot confirmations
-                can outlive server authorization.
+                Session operations can settle into the wrong session, durable
+                command events can stay stale, PR review state can remain
+                submit-ready, and Autopilot confirmations can outlive server
+                authorization.
               </p>
             </article>
             <article class="panel-block">
               <h3>Performance risks</h3>
               <p>
-                The large-patch, chat render, repeated metadata, and warm review-thread
-                bottlenecks are now mitigated. Remaining risks are the 642 ms tree median,
-                one-time cold object/thread reads, Runtime endpoint cost and invalidation bursts,
-                and the eager plugin registry pending explicit budgets.
+                The large-patch, chat render, repeated metadata, and warm
+                review-thread bottlenecks are now mitigated. Remaining risks are
+                the 642 ms tree median, one-time cold object/thread reads,
+                Runtime endpoint cost and invalidation bursts, and the eager
+                plugin registry pending explicit budgets.
               </p>
             </article>
           </div>
@@ -955,42 +999,59 @@
             <span class="chip">targeting map used before delegation</span>
           </div>
           <p class="section-note">
-            The review scopes were chosen from this flow. The dashboard is not a route-heavy SPA;
-            it is a config-driven plugin shell with two server-state transports and one focused PR
-            review route.
+            The review scopes were chosen from this flow. The dashboard is not a
+            route-heavy SPA; it is a config-driven plugin shell with two
+            server-state transports and one focused PR review route.
           </p>
           <div class="architecture" aria-label="Frontend architecture flow">
             <div>
               <span class="arrow" aria-hidden="true">→</span>
               <h3>1 · Root providers</h3>
-              <p><code>main.tsx</code> creates one TanStack Query client and one Flue SDK client mounted at <code>/api/flue</code>.</p>
+              <p>
+                <code>main.tsx</code> creates one TanStack Query client and one
+                Flue SDK client mounted at <code>/api/flue</code>.
+              </p>
             </div>
             <div>
               <span class="arrow" aria-hidden="true">→</span>
               <h3>2 · Shell + config</h3>
-              <p><code>App.tsx</code> loads dashboard JSON, applies theme/density, classifies the measured deck, and renders regions.</p>
+              <p>
+                <code>App.tsx</code> loads dashboard JSON, applies
+                theme/density, classifies the measured deck, and renders
+                regions.
+              </p>
             </div>
             <div>
               <span class="arrow" aria-hidden="true">→</span>
               <h3>3 · Plugin registry</h3>
-              <p>Each active region mounts one typed plugin. Inactive tabs unmount; the registry itself eagerly imports every plugin.</p>
+              <p>
+                Each active region mounts one typed plugin. Inactive tabs
+                unmount; the registry itself eagerly imports every plugin.
+              </p>
             </div>
             <div>
               <span class="arrow" aria-hidden="true">→</span>
               <h3>4 · Server state</h3>
-              <p>TanStack Query owns app reads/mutations; a singleton SSE hub multiplexes config, notification, session, and review events.</p>
+              <p>
+                TanStack Query owns app reads/mutations; a singleton SSE hub
+                multiplexes config, notification, session, and review events.
+              </p>
             </div>
             <div>
               <h3>5 · Agent + diffs</h3>
-              <p><code>@flue/react</code> owns live agent sessions. Heavy PR/diff surfaces lazy-load Pierre React workers and renderers.</p>
+              <p>
+                <code>@flue/react</code> owns live agent sessions. Heavy PR/diff
+                surfaces lazy-load Pierre React workers and renderers.
+              </p>
             </div>
           </div>
 
           <div class="callout" style="margin-top: 14px">
-            <strong>Diff lens.</strong> The working tree has no diff. The performance reviewer used
-            <code>8c972c0^..HEAD</code> instead: 20 frontend files and about 1,325 added lines across
-            the PR workbench, Reviews backfill, multiplexed events/report overlays, and notification
-            sound.
+            <strong>Diff lens.</strong> The working tree has no diff. The
+            performance reviewer used <code>8c972c0^..HEAD</code> instead: 20
+            frontend files and about 1,325 added lines across the PR workbench,
+            Reviews backfill, multiplexed events/report overlays, and
+            notification sound.
           </div>
         </section>
 
@@ -1000,153 +1061,691 @@
             <span class="chip p1">3 P1 · 3 P2</span>
           </div>
           <p class="section-note">
-            These began as static call-path findings. The 2026-07-16–17 supplements measure the
-            highest-risk paths; the rows below retain the original baselines and add verified
-            production-shaped and real-PR results. Times are machine-local medians from three
-            isolated Chromium contexts unless identified as a direct trace; they are decision
-            evidence, not CI budgets.
+            These began as static call-path findings. The 2026-07-16–17
+            supplements measure the highest-risk paths; the rows below retain
+            the original baselines and add verified production-shaped and
+            real-PR results. Times are machine-local medians from three isolated
+            Chromium contexts unless identified as a direct trace; they are
+            decision evidence, not CI budgets.
           </p>
 
           <div class="callout" style="margin-bottom: 14px">
-            <strong>Decision snapshot.</strong> Chat render isolation and thresholded Pierre
-            CodeView are implemented and verified. The real large-PR backend/browser trace is also
-            complete. The two approved request-path fixes are now implemented and remeasured:
-            review-thread identity is stable and immutable local PR metadata is reused across
-            patch reads. Active-patch prioritization is also implemented and remeasured: the
-            selected patch now passes the one-second target in all three retained samples. The
-            production-only thread pass is complete: a lean cancellable query and short-lived
-            mutation-aware cache reduce warm thread visibility to 459 ms median. Keep tree and
-            cold-fetch changes, Runtime aggregation, review-subtree consolidation, and registry
-            splitting behind workload and budget evidence.
+            <strong>Decision snapshot.</strong> Chat render isolation and
+            thresholded Pierre CodeView are implemented and verified. The real
+            large-PR backend/browser trace is also complete. The two approved
+            request-path fixes are now implemented and remeasured: review-thread
+            identity is stable and immutable local PR metadata is reused across
+            patch reads. Active-patch prioritization is also implemented and
+            remeasured: the selected patch now passes the one-second target in
+            all three retained samples. The production-only thread pass is
+            complete: a lean cancellable query and short-lived mutation-aware
+            cache reduce warm thread visibility to 459 ms median. Keep tree and
+            cold-fetch changes, Runtime aggregation, review-subtree
+            consolidation, and registry splitting behind workload and budget
+            evidence.
           </div>
 
           <div class="table-scroll" style="margin-bottom: 18px">
             <table class="compact-table">
               <thead>
-                <tr><th>Fixture</th><th>Ready / commit</th><th>DOM / heap</th><th>Interaction / evidence</th><th>Verdict</th></tr>
+                <tr>
+                  <th>Fixture</th>
+                  <th>Ready / commit</th>
+                  <th>DOM / heap</th>
+                  <th>Interaction / evidence</th>
+                  <th>Verdict</th>
+                </tr>
               </thead>
               <tbody>
-                <tr><td>Pierre · 400 changed lines</td><td>114.3 ms · 7.0 ms mount</td><td>7,299 nodes · 18.2 MiB</td><td>8.5 ms scroll p95 · no long task</td><td>Within exploratory target</td></tr>
-                <tr><td>Pierre · 5,000 changed lines</td><td>285.9 ms · 9.6 ms mount</td><td>20,099 nodes · 20.3 MiB</td><td>204 ms total long tasks</td><td>DOM pressure begins</td></tr>
-                <tr><td>Pierre · 10,000 changed lines</td><td>492.6 ms · 12.7 ms mount</td><td>40,099 nodes · 22.6 MiB</td><td>401 ms total long tasks · 10.8 ms scroll p95</td><td>Confirmed bottleneck</td></tr>
-                <tr><td>Pierre · 10,000 virtualized</td><td>110.5 ms · 12.9 ms mount</td><td>1,202 nodes · 13.6 MiB</td><td>0 long tasks · 18.4 ms scroll p95</td><td>97% fewer nodes; tune scrolling</td></tr>
-                <tr><td>Pierre · 5,000 CodeView</td><td>107.7 ms · 9.4 ms mount</td><td>668 nodes · 11.2 MiB</td><td>0 long tasks · 10.7 ms scroll p95</td><td>Completed · thresholded production path</td></tr>
-                <tr><td>Pierre · 10,000 CodeView auto</td><td>115.8 ms · 16.6 ms mount</td><td>719 nodes · 12.9 MiB</td><td>0 long tasks · 12.8 ms scroll p95</td><td>Completed · 98.2% fewer nodes</td></tr>
-                <tr><td>Pierre · 5,000 + 50 annotations auto</td><td>112.1 ms · 12.1 ms mount</td><td>1,019 nodes · 11.6 MiB</td><td>12.4 ms scroll p95 · 50 annotations mounted</td><td>Completed · behavior gate passed</td></tr>
-                <tr><td>Chat · 10 / 100 / 500 messages</td><td>11.3 / 44.6 / 105.2 ms typing commit p95</td><td>214 / 1,834 / 9,034 nodes</td><td>110 / 1,100 / 5,500 Markdown renders for 11 keys</td><td>Confirmed linear rerender</td></tr>
-                <tr><td>Chat isolated · 10 / 100 / 500 messages</td><td>0.4 / 0.4 / 0.5 ms typing commit p95</td><td>214 / 1,834 / 9,034 nodes</td><td>0 / 0 / 0 historical Markdown renders for 11 keys</td><td>Completed · scale-independent typing</td></tr>
-                <tr><td>Runtime · 1 / 2 / 4 panels</td><td>0.6 / 0.8 / 1.1 ms poll commit p95</td><td>79 / 128 / 226 nodes</td><td>49 accelerated requests in every case</td><td>Query dedupe holds</td></tr>
-                <tr><td>Review · 50 threads</td><td>20.9 ms ready · 1.8 ms mount</td><td>942 total · 469 hidden</td><td>455 nodes in each mounted detail copy</td><td>Confirmed, low measured cost</td></tr>
-                <tr><td>Real PR · warm backend</td><td>311 ms list · 643 ms sequential patch</td><td>1,019 files · 295 kB metadata</td><td>Four concurrent patches: 1,952 ms wall</td><td>Per-call targets pass; contention confirmed</td></tr>
-                <tr><td>Real PR · production browser</td><td>869 ms tree · 1,971 ms first patch</td><td>876 ms LCP · 0.0012 CLS</td><td>2,183 ms threads · zero long tasks</td><td>Targets miss; discuss request fixes</td></tr>
-                <tr><td>Real PR · remediated backend</td><td>90 ms list · 303 ms sequential patch</td><td>Same 1,019-file complete metadata</td><td>Four concurrent patches: 1,055 ms wall</td><td>Approved backend fixes completed</td></tr>
-                <tr><td>Real PR · remediated browser</td><td>622 ms tree · 1,195 ms first patch</td><td>628 ms LCP · 0.0012 CLS</td><td>1,946 ms threads · zero long tasks</td><td>Faster; active patch still 195 ms over target</td></tr>
-                <tr><td>Real PR · request stability</td><td>1 thread request · 0 aborted patches</td><td>381 kB thread · 743 kB total API</td><td>Last API response: 2,782 ms</td><td>Duplicate and settlement churn eliminated</td></tr>
-                <tr><td>Real PR · active-patch priority</td><td>612 ms tree · 798 ms first patch</td><td>620 ms LCP · 0.0012 CLS</td><td>1,724 ms threads · zero long tasks</td><td>Completed · first patch passes all samples</td></tr>
-                <tr><td>Real PR · prioritized requests</td><td>1 thread request · 4 patch requests</td><td>381 kB thread · 724 kB total API</td><td>0 aborted · last API response 2,021 ms</td><td>Active read settles before background fanout</td></tr>
-                <tr><td>Real PR · lean threads, uncached</td><td>639 ms tree · 924 ms first patch</td><td>58 kB thread · 401 kB total API</td><td>1,511 ms threads · 16.8 ms post-response render</td><td>Payload fixed; GitHub latency remains</td></tr>
-                <tr><td>Real PR · lean threads, warm</td><td>642 ms tree · 934 ms first patch</td><td>530 ms traced LCP · 0.00 CLS</td><td>459 ms threads · 6.8 ms backend cache hit</td><td>Completed · warm thread target passes</td></tr>
-                <tr><td>Phase B fixture · large committed PR</td><td>41.9 ms tree · 163.7 ms first patch</td><td>305-file deterministic fixture</td><td>0 ms in-process thread projection</td><td>Pass · <code>pr-local-diffs</code> harness only</td></tr>
-                <tr><td>Phase B B5 · repo worktree</td><td>140.9 ms metadata · 179.1 ms active patch</td><td>305 changed files · five warm samples</td><td>Expected-revision pre/post checks</td><td>Pass · production B5 functions</td></tr>
-                <tr><td>Phase B B5 · prepared worktree</td><td>137.0 ms metadata · 177.2 ms active patch</td><td>120 modified · 30 deleted · 25 renamed · 130 added</td><td>Stable metadata + full-content fingerprint</td><td>Pass · production B5 functions</td></tr>
-                <tr><td>Real PR · cold local / GitHub</td><td>4,978 / 3,894 ms</td><td>295 / 765 kB metadata</td><td>0 / 1 truncated files</td><td>Both miss cold target; local is complete</td></tr>
-                <tr><td>Production initial preload</td><td>194.6 kB gzip</td><td>157.7 kB entry · 21.6 kB ccount</td><td>Focused-review wrapper 0.77 kB gzip</td><td>Track; no budget miss declared</td></tr>
+                <tr>
+                  <td>Pierre · 400 changed lines</td>
+                  <td>114.3 ms · 7.0 ms mount</td>
+                  <td>7,299 nodes · 18.2 MiB</td>
+                  <td>8.5 ms scroll p95 · no long task</td>
+                  <td>Within exploratory target</td>
+                </tr>
+                <tr>
+                  <td>Pierre · 5,000 changed lines</td>
+                  <td>285.9 ms · 9.6 ms mount</td>
+                  <td>20,099 nodes · 20.3 MiB</td>
+                  <td>204 ms total long tasks</td>
+                  <td>DOM pressure begins</td>
+                </tr>
+                <tr>
+                  <td>Pierre · 10,000 changed lines</td>
+                  <td>492.6 ms · 12.7 ms mount</td>
+                  <td>40,099 nodes · 22.6 MiB</td>
+                  <td>401 ms total long tasks · 10.8 ms scroll p95</td>
+                  <td>Confirmed bottleneck</td>
+                </tr>
+                <tr>
+                  <td>Pierre · 10,000 virtualized</td>
+                  <td>110.5 ms · 12.9 ms mount</td>
+                  <td>1,202 nodes · 13.6 MiB</td>
+                  <td>0 long tasks · 18.4 ms scroll p95</td>
+                  <td>97% fewer nodes; tune scrolling</td>
+                </tr>
+                <tr>
+                  <td>Pierre · 5,000 CodeView</td>
+                  <td>107.7 ms · 9.4 ms mount</td>
+                  <td>668 nodes · 11.2 MiB</td>
+                  <td>0 long tasks · 10.7 ms scroll p95</td>
+                  <td>Completed · thresholded production path</td>
+                </tr>
+                <tr>
+                  <td>Pierre · 10,000 CodeView auto</td>
+                  <td>115.8 ms · 16.6 ms mount</td>
+                  <td>719 nodes · 12.9 MiB</td>
+                  <td>0 long tasks · 12.8 ms scroll p95</td>
+                  <td>Completed · 98.2% fewer nodes</td>
+                </tr>
+                <tr>
+                  <td>Pierre · 5,000 + 50 annotations auto</td>
+                  <td>112.1 ms · 12.1 ms mount</td>
+                  <td>1,019 nodes · 11.6 MiB</td>
+                  <td>12.4 ms scroll p95 · 50 annotations mounted</td>
+                  <td>Completed · behavior gate passed</td>
+                </tr>
+                <tr>
+                  <td>Chat · 10 / 100 / 500 messages</td>
+                  <td>11.3 / 44.6 / 105.2 ms typing commit p95</td>
+                  <td>214 / 1,834 / 9,034 nodes</td>
+                  <td>110 / 1,100 / 5,500 Markdown renders for 11 keys</td>
+                  <td>Confirmed linear rerender</td>
+                </tr>
+                <tr>
+                  <td>Chat isolated · 10 / 100 / 500 messages</td>
+                  <td>0.4 / 0.4 / 0.5 ms typing commit p95</td>
+                  <td>214 / 1,834 / 9,034 nodes</td>
+                  <td>0 / 0 / 0 historical Markdown renders for 11 keys</td>
+                  <td>Completed · scale-independent typing</td>
+                </tr>
+                <tr>
+                  <td>Runtime · 1 / 2 / 4 panels</td>
+                  <td>0.6 / 0.8 / 1.1 ms poll commit p95</td>
+                  <td>79 / 128 / 226 nodes</td>
+                  <td>49 accelerated requests in every case</td>
+                  <td>Query dedupe holds</td>
+                </tr>
+                <tr>
+                  <td>Review · 50 threads</td>
+                  <td>20.9 ms ready · 1.8 ms mount</td>
+                  <td>942 total · 469 hidden</td>
+                  <td>455 nodes in each mounted detail copy</td>
+                  <td>Confirmed, low measured cost</td>
+                </tr>
+                <tr>
+                  <td>Real PR · warm backend</td>
+                  <td>311 ms list · 643 ms sequential patch</td>
+                  <td>1,019 files · 295 kB metadata</td>
+                  <td>Four concurrent patches: 1,952 ms wall</td>
+                  <td>Per-call targets pass; contention confirmed</td>
+                </tr>
+                <tr>
+                  <td>Real PR · production browser</td>
+                  <td>869 ms tree · 1,971 ms first patch</td>
+                  <td>876 ms LCP · 0.0012 CLS</td>
+                  <td>2,183 ms threads · zero long tasks</td>
+                  <td>Targets miss; discuss request fixes</td>
+                </tr>
+                <tr>
+                  <td>Real PR · remediated backend</td>
+                  <td>90 ms list · 303 ms sequential patch</td>
+                  <td>Same 1,019-file complete metadata</td>
+                  <td>Four concurrent patches: 1,055 ms wall</td>
+                  <td>Approved backend fixes completed</td>
+                </tr>
+                <tr>
+                  <td>Real PR · remediated browser</td>
+                  <td>622 ms tree · 1,195 ms first patch</td>
+                  <td>628 ms LCP · 0.0012 CLS</td>
+                  <td>1,946 ms threads · zero long tasks</td>
+                  <td>Faster; active patch still 195 ms over target</td>
+                </tr>
+                <tr>
+                  <td>Real PR · request stability</td>
+                  <td>1 thread request · 0 aborted patches</td>
+                  <td>381 kB thread · 743 kB total API</td>
+                  <td>Last API response: 2,782 ms</td>
+                  <td>Duplicate and settlement churn eliminated</td>
+                </tr>
+                <tr>
+                  <td>Real PR · active-patch priority</td>
+                  <td>612 ms tree · 798 ms first patch</td>
+                  <td>620 ms LCP · 0.0012 CLS</td>
+                  <td>1,724 ms threads · zero long tasks</td>
+                  <td>Completed · first patch passes all samples</td>
+                </tr>
+                <tr>
+                  <td>Real PR · prioritized requests</td>
+                  <td>1 thread request · 4 patch requests</td>
+                  <td>381 kB thread · 724 kB total API</td>
+                  <td>0 aborted · last API response 2,021 ms</td>
+                  <td>Active read settles before background fanout</td>
+                </tr>
+                <tr>
+                  <td>Real PR · lean threads, uncached</td>
+                  <td>639 ms tree · 924 ms first patch</td>
+                  <td>58 kB thread · 401 kB total API</td>
+                  <td>1,511 ms threads · 16.8 ms post-response render</td>
+                  <td>Payload fixed; GitHub latency remains</td>
+                </tr>
+                <tr>
+                  <td>Real PR · lean threads, warm</td>
+                  <td>642 ms tree · 934 ms first patch</td>
+                  <td>530 ms traced LCP · 0.00 CLS</td>
+                  <td>459 ms threads · 6.8 ms backend cache hit</td>
+                  <td>Completed · warm thread target passes</td>
+                </tr>
+                <tr>
+                  <td>Phase B fixture · large committed PR</td>
+                  <td>41.9 ms tree · 163.7 ms first patch</td>
+                  <td>305-file deterministic fixture</td>
+                  <td>0 ms in-process thread projection</td>
+                  <td>Pass · <code>pr-local-diffs</code> harness only</td>
+                </tr>
+                <tr>
+                  <td>Phase B B5 · repo worktree</td>
+                  <td>140.9 ms metadata · 179.1 ms active patch</td>
+                  <td>305 changed files · five warm samples</td>
+                  <td>Expected-revision pre/post checks</td>
+                  <td>Pass · production B5 functions</td>
+                </tr>
+                <tr>
+                  <td>Phase B B5 · prepared worktree</td>
+                  <td>137.0 ms metadata · 177.2 ms active patch</td>
+                  <td>120 modified · 30 deleted · 25 renamed · 130 added</td>
+                  <td>Stable metadata + full-content fingerprint</td>
+                  <td>Pass · production B5 functions</td>
+                </tr>
+                <tr>
+                  <td>Real PR · cold local / GitHub</td>
+                  <td>4,978 / 3,894 ms</td>
+                  <td>295 / 765 kB metadata</td>
+                  <td>0 / 1 truncated files</td>
+                  <td>Both miss cold target; local is complete</td>
+                </tr>
+                <tr>
+                  <td>Production initial preload</td>
+                  <td>194.6 kB gzip</td>
+                  <td>157.7 kB entry · 21.6 kB ccount</td>
+                  <td>Focused-review wrapper 0.77 kB gzip</td>
+                  <td>Track; no budget miss declared</td>
+                </tr>
               </tbody>
             </table>
           </div>
 
           <div class="callout" style="margin-bottom: 18px">
-            <strong>Phase B fingerprint limitation.</strong> The prepared/Kilo poll is bounded to a
-            30-second cadence and changed-path metadata query, and it does not load patch bodies.
-            Its content work is not byte- or time-bounded: <code>gitWorktreeRevision</code> hashes
-            every changed regular file in full. Pathological huge changed files remain an explicit
-            deferred performance limitation; caching or a hard bound requires lead/product-owner
-            discussion because it changes revision identity and freshness semantics.
+            <strong>Phase B fingerprint limitation.</strong> The prepared/Kilo
+            poll is bounded to a 30-second cadence and changed-path metadata
+            query, and it does not load patch bodies. Its content work is not
+            byte- or time-bounded: <code>gitWorktreeRevision</code> hashes every
+            changed regular file in full. Pathological huge changed files remain
+            an explicit deferred performance limitation; caching or a hard bound
+            requires lead/product-owner discussion because it changes revision
+            identity and freshness semantics.
           </div>
 
           <div class="callout" style="margin-bottom: 18px">
-            <strong>Direct Chrome evidence.</strong> The 10,000-line baseline reached 40,089
-            browser-reported elements, one parent with 10,000 children, a 119 ms layout, and 143
-            ms plus 107 ms style recalculations. The 500-message typing trace measured 159 ms INP:
-            5 ms input delay, 151 ms processing, and 3 ms presentation. The 400-line baseline had
-            a 7 ms forced reflow in Pierre's custom-element connection path; Chrome estimated no
-            user-visible savings from that isolated event. A local cold trace of the production
-            10,000-row CodeView path measured 82 ms LCP and 0.00 CLS. Twenty synthetic full-document
-            jumps held scroll extent stable and accumulated 35 ms of row-height reconciliation
-            reflow; selection and annotation behavior were also verified. These are local lab and
-            synthetic results, not field metrics. The real-PR production trace measured 805 ms
-            LCP, 0.00 CLS, no long tasks, and 39 ms total forced reflow with no estimated savings.
-            Its complete request trace transferred 1.10 MB of API data, including two 381 kB
-            review-thread responses and two abandoned patch reads that were later reissued.
-            After the two approved remediations, the same three-sample run produced exactly one
-            thread request and zero aborted patch reads in every sample. A final direct trace
-            measured 551 ms LCP, 0.00 CLS, and the same 39 ms total Pierre forced reflow with no
-            estimated savings. After active-patch prioritization, the browser median reached 798
-            ms to first patch and a direct trace measured 498 ms LCP, 0.00 CLS, and 36 ms total
-            Pierre forced reflow with no estimated savings. The final production-only thread
-            pass measured 459 ms median thread visibility, 58 kB per thread response, 6.5 ms
-            post-response rendering, zero aborted/failed API requests, 530 ms traced LCP, and
-            0.00 CLS. Its initial uncached GitHub read remains outside the warm target.
+            <strong>Direct Chrome evidence.</strong> The 10,000-line baseline
+            reached 40,089 browser-reported elements, one parent with 10,000
+            children, a 119 ms layout, and 143 ms plus 107 ms style
+            recalculations. The 500-message typing trace measured 159 ms INP: 5
+            ms input delay, 151 ms processing, and 3 ms presentation. The
+            400-line baseline had a 7 ms forced reflow in Pierre's
+            custom-element connection path; Chrome estimated no user-visible
+            savings from that isolated event. A local cold trace of the
+            production 10,000-row CodeView path measured 82 ms LCP and 0.00 CLS.
+            Twenty synthetic full-document jumps held scroll extent stable and
+            accumulated 35 ms of row-height reconciliation reflow; selection and
+            annotation behavior were also verified. These are local lab and
+            synthetic results, not field metrics. The real-PR production trace
+            measured 805 ms LCP, 0.00 CLS, no long tasks, and 39 ms total forced
+            reflow with no estimated savings. Its complete request trace
+            transferred 1.10 MB of API data, including two 381 kB review-thread
+            responses and two abandoned patch reads that were later reissued.
+            After the two approved remediations, the same three-sample run
+            produced exactly one thread request and zero aborted patch reads in
+            every sample. A final direct trace measured 551 ms LCP, 0.00 CLS,
+            and the same 39 ms total Pierre forced reflow with no estimated
+            savings. After active-patch prioritization, the browser median
+            reached 798 ms to first patch and a direct trace measured 498 ms
+            LCP, 0.00 CLS, and 36 ms total Pierre forced reflow with no
+            estimated savings. The final production-only thread pass measured
+            459 ms median thread visibility, 58 kB per thread response, 6.5 ms
+            post-response rendering, zero aborted/failed API requests, 530 ms
+            traced LCP, and 0.00 CLS. Its initial uncached GitHub read remains
+            outside the warm target.
           </div>
 
           <div class="finding-list">
-            <details class="finding" data-severity="p1" data-category="performance" data-status="completed" open>
-              <summary><span class="severity p1">P1</span><span class="finding-title">Large Pierre patches render without virtualization or a client cap</span> <span class="chip">COMPLETED</span></summary>
+            <details
+              class="finding"
+              data-severity="p1"
+              data-category="performance"
+              data-status="completed"
+              open
+            >
+              <summary>
+                <span class="severity p1">P1</span
+                ><span class="finding-title"
+                  >Large Pierre patches render without virtualization or a
+                  client cap</span
+                >
+                <span class="chip">COMPLETED</span>
+              </summary>
               <div class="finding-body">
-                <div><h3>Impact and trigger</h3><p>Opening a very large file or long wrapped patch could mount excessive DOM and syntax-highlight work, degrading scroll, resize, memory, and open-to-highlight latency. CSS overflow created a scroll container but did not reduce mounted rows. This original condition is retained for audit history.</p><h3>Measurement result</h3><p><strong>Confirmed, compared, then fixed.</strong> The retained 10,000-line baseline mounted about 40,099 nodes and accumulated about 400 ms of long tasks. The lower-level native virtualizer removed mount pressure but missed the 16.7 ms scroll target at 17.7 ms in the final comparison. The production-shaped CodeView path reduced 5,000-row ready time 63.3%, DOM 96.7%, and heap 51.3%. At 10,000 rows it reduced ready time 76.9%, DOM 98.2%, and heap 43.4%, removed 405 ms of long tasks, and held scroll p95 at 12.8 ms.</p><h3>Completed implementation</h3><p>Patches below 2,000 changed rows retain the lower-overhead PatchDiff path; larger patches use Pierre CodeView with calibrated line and header geometry, the worker pool, theme and wrap options, selection mapping, and review annotations. The production-shaped harness verified selected deletion rows and all 50 annotations. Ordinary-patch measurements confirmed why the threshold remains necessary.</p></div>
-                <div><h3>Evidence</h3><p class="source">web/src/features/diff-viewer/DiffViewer.tsx<br />web/src/features/diff-viewer/helpers.ts<br />web/src/features/diff-viewer/helpers.test.ts<br />web/src/features/diff-viewer/theme.ts<br />web/src/perf/benchmark-app.tsx<br />benchmarks/frontend-performance.mjs<br />benchmarks/results/pierre-codeview-final-local.json (gitignored local evidence)</p><span class="chip">measured: strong</span> <span class="chip">status: completed</span></div>
+                <div>
+                  <h3>Impact and trigger</h3>
+                  <p>
+                    Opening a very large file or long wrapped patch could mount
+                    excessive DOM and syntax-highlight work, degrading scroll,
+                    resize, memory, and open-to-highlight latency. CSS overflow
+                    created a scroll container but did not reduce mounted rows.
+                    This original condition is retained for audit history.
+                  </p>
+                  <h3>Measurement result</h3>
+                  <p>
+                    <strong>Confirmed, compared, then fixed.</strong> The
+                    retained 10,000-line baseline mounted about 40,099 nodes and
+                    accumulated about 400 ms of long tasks. The lower-level
+                    native virtualizer removed mount pressure but missed the
+                    16.7 ms scroll target at 17.7 ms in the final comparison.
+                    The production-shaped CodeView path reduced 5,000-row ready
+                    time 63.3%, DOM 96.7%, and heap 51.3%. At 10,000 rows it
+                    reduced ready time 76.9%, DOM 98.2%, and heap 43.4%, removed
+                    405 ms of long tasks, and held scroll p95 at 12.8 ms.
+                  </p>
+                  <h3>Completed implementation</h3>
+                  <p>
+                    Patches below 2,000 changed rows retain the lower-overhead
+                    PatchDiff path; larger patches use Pierre CodeView with
+                    calibrated line and header geometry, the worker pool, theme
+                    and wrap options, selection mapping, and review annotations.
+                    The production-shaped harness verified selected deletion
+                    rows and all 50 annotations. Ordinary-patch measurements
+                    confirmed why the threshold remains necessary.
+                  </p>
+                </div>
+                <div>
+                  <h3>Evidence</h3>
+                  <p class="source">
+                    web/src/features/diff-viewer/DiffViewer.tsx<br />web/src/features/diff-viewer/helpers.ts<br />web/src/features/diff-viewer/helpers.test.ts<br />web/src/features/diff-viewer/theme.ts<br />web/src/perf/benchmark-app.tsx<br />benchmarks/frontend-performance.mjs<br />benchmarks/results/pierre-codeview-final-local.json
+                    (gitignored local evidence)
+                  </p>
+                  <span class="chip">measured: strong</span>
+                  <span class="chip">status: completed</span>
+                </div>
               </div>
             </details>
 
-            <details class="finding" data-severity="p1" data-category="performance" data-status="completed" open>
-              <summary><span class="severity p1">P1</span><span class="finding-title">Review open can fan out patch requests across every unresolved-thread and draft path</span> <span class="chip">COMPLETED</span></summary>
+            <details
+              class="finding"
+              data-severity="p1"
+              data-category="performance"
+              data-status="completed"
+              open
+            >
+              <summary>
+                <span class="severity p1">P1</span
+                ><span class="finding-title"
+                  >Review open can fan out patch requests across every
+                  unresolved-thread and draft path</span
+                >
+                <span class="chip">COMPLETED</span>
+              </summary>
               <div class="finding-body">
-                <div><h3>Impact and trigger</h3><p>Many unresolved threads or draft comments across large files create a burst of independent requests. Every response rebuilds maps, merged file arrays, and anchor indexes, increasing network, backend, CPU, and cache cost. AbortSignals are now passed after the correctness PR, so the original “uncancelled” detail is retained as historical context but no longer applies.</p><h3>Measurement result</h3><p><strong>Confirmed and refined with a real trace.</strong> Open <code>Kilo-Org/kilocode#12204</code> had 1,019 files, 47 threads, and only two unresolved paths, so it did not reproduce the modeled 50-path maximum. It exposed two stronger costs. First, every scripted browser sample started two review-thread requests because the optimistic and authoritative PR records had different <code>updatedAt</code>-based query keys; one run transferred both 381 kB payloads, and complete traces abandoned then reissued two unresolved-path reads. Second, every local patch request recomputed metadata for all 1,019 files before the path diff. A sequential patch took 643 ms median while four real active/neighbor/unresolved paths took 1,952 ms concurrently. Production medians were 869 ms to tree, 1,971 ms to first patch, and 2,183 ms to threads.</p><h3>Recommendation after measurement</h3><p>Do not broaden the patch cap yet. First prevent optimistic-to-authoritative review-thread key churn while retaining explicit invalidation. Then cache or single-flight immutable local metadata by repo/merge-base/head and remeasure. Only if the active patch still loses to background work should neighbor and unresolved-path prefetch wait for it to settle. Cold local object fetch also missed its target at 4.98 seconds, but should be separated from repeat-path work before changing fetch behavior or the budget.</p><h3>Completed remediation</h3><p>Review threads now use a stable PR-scoped query key while mutations and later authoritative activity changes explicitly refresh it. Metadata-only local diffs use a bounded 10-minute, eight-revision LRU keyed by repo path, merge-base, and head; concurrent misses single-flight and failed reads are not cached. Patch text remains on demand. The active patch now runs separately; neighbor, draft-comment, and unresolved-thread reads wait until it settles and remain cancellable on selection changes. Deferred draft anchors stay unknown without masking removed-file staleness. On the retained target, browser first patch improved from 1,195 to 798 ms and passed all three samples, patch reads fell from six to four, the last API response moved from 2,782 to 2,021 ms, and every sample retained one thread request and zero abandoned patches.</p><h3>Retained follow-up</h3><p>The original broad many-path risk remains in this audit history, but it no longer competes with the initial selected patch. The one-time 4.98-second cold object fetch, 612 ms tree median, and 1,724 ms thread median remain separate measurement decisions rather than blockers for this completed item.</p></div>
-                <div><h3>Evidence</h3><p class="source">web/src/features/pr-review/GitHubPrReview.tsx<br />web/src/features/pr-review/GitHubPrReview.test.ts<br />web/src/features/pr-review/PrReviewPopoutPage.tsx<br />web/src/features/pr-review/queries.ts<br />web/src/features/pr-review/review-view-model.ts<br />src/modules/pr-local-diffs/index.ts<br />src/pr-local-diffs.test.ts<br />benchmarks/pr-review-performance.mjs<br />.plans/PR_REVIEW_PERF_PLAN.md<br />benchmarks/results/pr-12204-real-local.json (gitignored baseline)<br />benchmarks/results/pr-12204-remediation-local.json (gitignored remediation)<br />benchmarks/results/pr-12204-active-priority-local.json (gitignored active-priority run)</p><span class="chip">measured: strong</span> <span class="chip">status: completed</span></div>
+                <div>
+                  <h3>Impact and trigger</h3>
+                  <p>
+                    Many unresolved threads or draft comments across large files
+                    create a burst of independent requests. Every response
+                    rebuilds maps, merged file arrays, and anchor indexes,
+                    increasing network, backend, CPU, and cache cost.
+                    AbortSignals are now passed after the correctness PR, so the
+                    original “uncancelled” detail is retained as historical
+                    context but no longer applies.
+                  </p>
+                  <h3>Measurement result</h3>
+                  <p>
+                    <strong>Confirmed and refined with a real trace.</strong>
+                    Open <code>Kilo-Org/kilocode#12204</code> had 1,019 files,
+                    47 threads, and only two unresolved paths, so it did not
+                    reproduce the modeled 50-path maximum. It exposed two
+                    stronger costs. First, every scripted browser sample started
+                    two review-thread requests because the optimistic and
+                    authoritative PR records had different
+                    <code>updatedAt</code>-based query keys; one run transferred
+                    both 381 kB payloads, and complete traces abandoned then
+                    reissued two unresolved-path reads. Second, every local
+                    patch request recomputed metadata for all 1,019 files before
+                    the path diff. A sequential patch took 643 ms median while
+                    four real active/neighbor/unresolved paths took 1,952 ms
+                    concurrently. Production medians were 869 ms to tree, 1,971
+                    ms to first patch, and 2,183 ms to threads.
+                  </p>
+                  <h3>Recommendation after measurement</h3>
+                  <p>
+                    Do not broaden the patch cap yet. First prevent
+                    optimistic-to-authoritative review-thread key churn while
+                    retaining explicit invalidation. Then cache or single-flight
+                    immutable local metadata by repo/merge-base/head and
+                    remeasure. Only if the active patch still loses to
+                    background work should neighbor and unresolved-path prefetch
+                    wait for it to settle. Cold local object fetch also missed
+                    its target at 4.98 seconds, but should be separated from
+                    repeat-path work before changing fetch behavior or the
+                    budget.
+                  </p>
+                  <h3>Completed remediation</h3>
+                  <p>
+                    Review threads now use a stable PR-scoped query key while
+                    mutations and later authoritative activity changes
+                    explicitly refresh it. Metadata-only local diffs use a
+                    bounded 10-minute, eight-revision LRU keyed by repo path,
+                    merge-base, and head; concurrent misses single-flight and
+                    failed reads are not cached. Patch text remains on demand.
+                    The active patch now runs separately; neighbor,
+                    draft-comment, and unresolved-thread reads wait until it
+                    settles and remain cancellable on selection changes.
+                    Deferred draft anchors stay unknown without masking
+                    removed-file staleness. On the retained target, browser
+                    first patch improved from 1,195 to 798 ms and passed all
+                    three samples, patch reads fell from six to four, the last
+                    API response moved from 2,782 to 2,021 ms, and every sample
+                    retained one thread request and zero abandoned patches.
+                  </p>
+                  <h3>Retained follow-up</h3>
+                  <p>
+                    The original broad many-path risk remains in this audit
+                    history, but it no longer competes with the initial selected
+                    patch. The one-time 4.98-second cold object fetch, 612 ms
+                    tree median, and 1,724 ms thread median remain separate
+                    measurement decisions rather than blockers for this
+                    completed item.
+                  </p>
+                </div>
+                <div>
+                  <h3>Evidence</h3>
+                  <p class="source">
+                    web/src/features/pr-review/GitHubPrReview.tsx<br />web/src/features/pr-review/GitHubPrReview.test.ts<br />web/src/features/pr-review/PrReviewPopoutPage.tsx<br />web/src/features/pr-review/queries.ts<br />web/src/features/pr-review/review-view-model.ts<br />src/modules/pr-local-diffs/index.ts<br />src/pr-local-diffs.test.ts<br />benchmarks/pr-review-performance.mjs<br />.plans/PR_REVIEW_PERF_PLAN.md<br />benchmarks/results/pr-12204-real-local.json
+                    (gitignored baseline)<br />benchmarks/results/pr-12204-remediation-local.json
+                    (gitignored remediation)<br />benchmarks/results/pr-12204-active-priority-local.json
+                    (gitignored active-priority run)
+                  </p>
+                  <span class="chip">measured: strong</span>
+                  <span class="chip">status: completed</span>
+                </div>
               </div>
             </details>
 
-            <details class="finding" data-severity="p1" data-category="performance" data-status="completed" open>
-              <summary><span class="severity p1">P1</span><span class="finding-title">Chat typing rerenders and reparses the full non-windowed Markdown timeline</span> <span class="chip">COMPLETED</span></summary>
+            <details
+              class="finding"
+              data-severity="p1"
+              data-category="performance"
+              data-status="completed"
+              open
+            >
+              <summary>
+                <span class="severity p1">P1</span
+                ><span class="finding-title"
+                  >Chat typing rerenders and reparses the full non-windowed
+                  Markdown timeline</span
+                >
+                <span class="chip">COMPLETED</span>
+              </summary>
               <div class="finding-body">
-                <div><h3>Impact and trigger</h3><p>Composer state shared a component with the complete durable timeline. Each keystroke remapped the timeline and revisited every Markdown message; fresh Markdown config props defeated cheap memo boundaries. Latency and GC scaled with history length. This original condition is retained for audit history.</p><h3>Measurement result</h3><p><strong>Confirmed, then fixed.</strong> The retained baseline still produces 110, 1,100, and 5,500 Markdown renders at 10, 100, and 500 messages. The isolated production-shaped fixture produces zero historical Markdown renders at every tier. At 500 messages, median typing p95 fell from 109.6 ms to 8.6 ms (92.2%) and React commit p95 fell from 102.9 ms to 0.5 ms (99.5%), with the mounted transcript unchanged at 9,034 nodes.</p><h3>Completed implementation</h3><p>Stable message, activity, and timeline derivations are memoized; the timeline and each message row now have stable memo boundaries. A regression test verifies identical parent renders skip all messages and appending one message renders only the new row. Timeline paging or TanStack virtualization remains unnecessary unless a separate mount or scroll profile justifies it.</p></div>
-                <div><h3>Evidence</h3><p class="source">web/src/features/flue-chat/components/session-view.tsx<br />web/src/features/flue-chat/components/chat-timeline.tsx<br />web/src/features/flue-chat/components/chat-timeline.test.tsx<br />web/src/features/flue-chat/lib/timeline.ts<br />web/src/perf/benchmark-app.tsx<br />benchmarks/results/chat-render-isolation-local.json (gitignored local evidence)</p><span class="chip">measured: strong</span> <span class="chip">status: completed</span></div>
+                <div>
+                  <h3>Impact and trigger</h3>
+                  <p>
+                    Composer state shared a component with the complete durable
+                    timeline. Each keystroke remapped the timeline and revisited
+                    every Markdown message; fresh Markdown config props defeated
+                    cheap memo boundaries. Latency and GC scaled with history
+                    length. This original condition is retained for audit
+                    history.
+                  </p>
+                  <h3>Measurement result</h3>
+                  <p>
+                    <strong>Confirmed, then fixed.</strong> The retained
+                    baseline still produces 110, 1,100, and 5,500 Markdown
+                    renders at 10, 100, and 500 messages. The isolated
+                    production-shaped fixture produces zero historical Markdown
+                    renders at every tier. At 500 messages, median typing p95
+                    fell from 109.6 ms to 8.6 ms (92.2%) and React commit p95
+                    fell from 102.9 ms to 0.5 ms (99.5%), with the mounted
+                    transcript unchanged at 9,034 nodes.
+                  </p>
+                  <h3>Completed implementation</h3>
+                  <p>
+                    Stable message, activity, and timeline derivations are
+                    memoized; the timeline and each message row now have stable
+                    memo boundaries. A regression test verifies identical parent
+                    renders skip all messages and appending one message renders
+                    only the new row. Timeline paging or TanStack virtualization
+                    remains unnecessary unless a separate mount or scroll
+                    profile justifies it.
+                  </p>
+                </div>
+                <div>
+                  <h3>Evidence</h3>
+                  <p class="source">
+                    web/src/features/flue-chat/components/session-view.tsx<br />web/src/features/flue-chat/components/chat-timeline.tsx<br />web/src/features/flue-chat/components/chat-timeline.test.tsx<br />web/src/features/flue-chat/lib/timeline.ts<br />web/src/perf/benchmark-app.tsx<br />benchmarks/results/chat-render-isolation-local.json
+                    (gitignored local evidence)
+                  </p>
+                  <span class="chip">measured: strong</span>
+                  <span class="chip">status: completed</span>
+                </div>
               </div>
             </details>
 
-            <details class="finding" data-severity="p2" data-category="performance" data-status="measured">
-              <summary><span class="severity p2">P2</span><span class="finding-title">Runtime Overview creates synchronized polling and invalidation bursts</span></summary>
+            <details
+              class="finding"
+              data-severity="p2"
+              data-category="performance"
+              data-status="measured"
+            >
+              <summary>
+                <span class="severity p2">P2</span
+                ><span class="finding-title"
+                  >Runtime Overview creates synchronized polling and
+                  invalidation bursts</span
+                >
+              </summary>
               <div class="finding-body">
-                <div><h3>Impact and trigger</h3><p>The active Runtime tab registers fifteen queries: fourteen at 30 seconds and one at 15 seconds. Any config event invalidates the whole set, while default stale time is zero. This creates synchronized idle traffic and snapshot commits.</p><h3>Measurement result</h3><p><strong>Partly softened.</strong> A 100×-accelerated 1.2-second window produced 49 requests with one, two, or four identical panels: TanStack Query deduplicated shared keys. Poll-update commit p95 stayed at 0.6/0.8/1.1 ms with no long tasks. The real cadence is an initial 15 requests followed by about 32 requests per active minute; endpoint cost and config-event invalidation were not represented.</p><h3>Recommendation after measurement</h3><p>Do not build an aggregate endpoint from this fixture alone. Capture real endpoint duration/bytes and config-event bursts first; favor event-specific invalidation or staggered polling only if those traces miss an agreed idle budget.</p></div>
-                <div><h3>Evidence</h3><p class="source">web/src/features/runtime-overview/plugin.tsx:41-141<br />web/src/features/runtime-overview/queries.ts:40-172<br />web/src/lib/query.ts:5-11<br />web/src/perf/benchmark-app.tsx:226-358</p><span class="chip">measured: accelerated</span> <span class="chip">priority: monitor</span></div>
+                <div>
+                  <h3>Impact and trigger</h3>
+                  <p>
+                    The active Runtime tab registers fifteen queries: fourteen
+                    at 30 seconds and one at 15 seconds. Any config event
+                    invalidates the whole set, while default stale time is zero.
+                    This creates synchronized idle traffic and snapshot commits.
+                  </p>
+                  <h3>Measurement result</h3>
+                  <p>
+                    <strong>Partly softened.</strong> A 100×-accelerated
+                    1.2-second window produced 49 requests with one, two, or
+                    four identical panels: TanStack Query deduplicated shared
+                    keys. Poll-update commit p95 stayed at 0.6/0.8/1.1 ms with
+                    no long tasks. The real cadence is an initial 15 requests
+                    followed by about 32 requests per active minute; endpoint
+                    cost and config-event invalidation were not represented.
+                  </p>
+                  <h3>Recommendation after measurement</h3>
+                  <p>
+                    Do not build an aggregate endpoint from this fixture alone.
+                    Capture real endpoint duration/bytes and config-event bursts
+                    first; favor event-specific invalidation or staggered
+                    polling only if those traces miss an agreed idle budget.
+                  </p>
+                </div>
+                <div>
+                  <h3>Evidence</h3>
+                  <p class="source">
+                    web/src/features/runtime-overview/plugin.tsx:41-141<br />web/src/features/runtime-overview/queries.ts:40-172<br />web/src/lib/query.ts:5-11<br />web/src/perf/benchmark-app.tsx:226-358
+                  </p>
+                  <span class="chip">measured: accelerated</span>
+                  <span class="chip">priority: monitor</span>
+                </div>
               </div>
             </details>
 
-            <details class="finding" data-severity="p2" data-category="performance" data-status="measured">
-              <summary><span class="severity p2">P2</span><span class="finding-title">Standalone review mounts two copies of its detail panels</span></summary>
+            <details
+              class="finding"
+              data-severity="p2"
+              data-category="performance"
+              data-status="measured"
+            >
+              <summary>
+                <span class="severity p2">P2</span
+                ><span class="finding-title"
+                  >Standalone review mounts two copies of its detail
+                  panels</span
+                >
+              </summary>
               <div class="finding-body">
-                <div><h3>Impact and trigger</h3><p>Inspector and compact copies of threads, stale drafts, and report findings both remain mounted; CSS only hides one. Large review metadata therefore doubles DOM, handlers, and reconciliation.</p><h3>Measurement result</h3><p><strong>Confirmed, but cheap at 50 threads.</strong> Desktop and narrow layouts both mounted 942 nodes; 469 were hidden. Each detail copy contained 455 nodes, with CSS switching visibility between them. Ready time was about 20.9 ms, mount commit p95 1.8 ms, and no long task appeared.</p><h3>Recommendation after measurement</h3><p>Keep this as a cleanup target, not a first-wave optimization. Revisit if real reviews carry substantially heavier Markdown, handlers, or hundreds of threads; otherwise the responsive simplicity may be worth the small measured cost.</p></div>
-                <div><h3>Evidence</h3><p class="source">web/src/features/pr-review/PrReviewDiffPane.tsx:56-81<br />web/src/features/pr-review/PrReviewFindingsSidebar.tsx:34-74<br />web/src/styles.css:1089, 1421-1431<br />web/src/perf/benchmark-app.tsx:268-326</p><span class="chip">measured: strong</span> <span class="chip">priority: defer</span></div>
+                <div>
+                  <h3>Impact and trigger</h3>
+                  <p>
+                    Inspector and compact copies of threads, stale drafts, and
+                    report findings both remain mounted; CSS only hides one.
+                    Large review metadata therefore doubles DOM, handlers, and
+                    reconciliation.
+                  </p>
+                  <h3>Measurement result</h3>
+                  <p>
+                    <strong>Confirmed, but cheap at 50 threads.</strong> Desktop
+                    and narrow layouts both mounted 942 nodes; 469 were hidden.
+                    Each detail copy contained 455 nodes, with CSS switching
+                    visibility between them. Ready time was about 20.9 ms, mount
+                    commit p95 1.8 ms, and no long task appeared.
+                  </p>
+                  <h3>Recommendation after measurement</h3>
+                  <p>
+                    Keep this as a cleanup target, not a first-wave
+                    optimization. Revisit if real reviews carry substantially
+                    heavier Markdown, handlers, or hundreds of threads;
+                    otherwise the responsive simplicity may be worth the small
+                    measured cost.
+                  </p>
+                </div>
+                <div>
+                  <h3>Evidence</h3>
+                  <p class="source">
+                    web/src/features/pr-review/PrReviewDiffPane.tsx:56-81<br />web/src/features/pr-review/PrReviewFindingsSidebar.tsx:34-74<br />web/src/styles.css:1089,
+                    1421-1431<br />web/src/perf/benchmark-app.tsx:268-326
+                  </p>
+                  <span class="chip">measured: strong</span>
+                  <span class="chip">priority: defer</span>
+                </div>
               </div>
             </details>
 
-            <details class="finding" data-severity="p2" data-category="performance" data-status="measured">
-              <summary><span class="severity p2">P2</span><span class="finding-title">The eager plugin registry undermines route and configuration code splitting</span></summary>
+            <details
+              class="finding"
+              data-severity="p2"
+              data-category="performance"
+              data-status="measured"
+            >
+              <summary>
+                <span class="severity p2">P2</span
+                ><span class="finding-title"
+                  >The eager plugin registry undermines route and configuration
+                  code splitting</span
+                >
+              </summary>
               <div class="finding-body">
-                <div><h3>Impact and trigger</h3><p>Every cold dashboard and focused review loads the static registry, which imports all plugins. Flue Chat pulls Markdown/GFM transitively even when chat is not configured or active.</p><h3>Measurement result</h3><p><strong>Confirmed structure; budget undecided.</strong> The original production HTML preloaded about 194.6 kB gzip: 157.7 kB entry, 21.6 kB <code>ccount</code>, 11.1 kB CSS, 3.2 kB review support, and small runtime/Kilo chunks. The focused-review wrapper was only 0.77 kB gzip while review symbols remained in the entry. The CodeView implementation leaves the heavy Pierre boundary lazy; its <code>MultiFileView</code> chunk is now 218.5 kB gzip versus the retained 197.1 kB baseline, while the current entry is 156.9 kB gzip and the worker remains 299.7 kB gzip.</p><h3>Recommendation after measurement</h3><p>Set a cold-shell transfer/parse budget before changing the registry. A lazy plugin spike is justified if the cold preload or its evaluation time misses that budget; retain the existing Pierre lazy boundary regardless.</p></div>
-                <div><h3>Evidence</h3><p class="source">web/src/App.tsx:17<br />web/src/plugins/registry.tsx:1-32<br />web/src/components/MarkdownMessage.tsx:1-2<br />web/dist/index.html (measured build)<br />benchmarks/frontend-performance.mjs</p><span class="chip">measured: build output</span> <span class="chip">needs budget</span></div>
+                <div>
+                  <h3>Impact and trigger</h3>
+                  <p>
+                    Every cold dashboard and focused review loads the static
+                    registry, which imports all plugins. Flue Chat pulls
+                    Markdown/GFM transitively even when chat is not configured
+                    or active.
+                  </p>
+                  <h3>Measurement result</h3>
+                  <p>
+                    <strong>Confirmed structure; budget undecided.</strong> The
+                    original production HTML preloaded about 194.6 kB gzip:
+                    157.7 kB entry, 21.6 kB <code>ccount</code>, 11.1 kB CSS,
+                    3.2 kB review support, and small runtime/Kilo chunks. The
+                    focused-review wrapper was only 0.77 kB gzip while review
+                    symbols remained in the entry. The CodeView implementation
+                    leaves the heavy Pierre boundary lazy; its
+                    <code>MultiFileView</code> chunk is now 218.5 kB gzip versus
+                    the retained 197.1 kB baseline, while the current entry is
+                    156.9 kB gzip and the worker remains 299.7 kB gzip.
+                  </p>
+                  <h3>Recommendation after measurement</h3>
+                  <p>
+                    Set a cold-shell transfer/parse budget before changing the
+                    registry. A lazy plugin spike is justified if the cold
+                    preload or its evaluation time misses that budget; retain
+                    the existing Pierre lazy boundary regardless.
+                  </p>
+                </div>
+                <div>
+                  <h3>Evidence</h3>
+                  <p class="source">
+                    web/src/App.tsx:17<br />web/src/plugins/registry.tsx:1-32<br />web/src/components/MarkdownMessage.tsx:1-2<br />web/dist/index.html
+                    (measured build)<br />benchmarks/frontend-performance.mjs
+                  </p>
+                  <span class="chip">measured: build output</span>
+                  <span class="chip">needs budget</span>
+                </div>
               </div>
             </details>
           </div>
 
-          <h3 style="margin-top: 24px">Measurement plan before implementation</h3>
+          <h3 style="margin-top: 24px">
+            Measurement plan before implementation
+          </h3>
           <ol class="ordered">
-            <li class="completed-action"><span class="completion">COMPLETED · FIXTURE PASS</span> <strong>Diff:</strong> typical, 180-file, 10,000-line baseline/native-virtualizer pair, long-wrapped-line, and 50-thread fixtures; ready time, scroll p95, long tasks, nodes, heap, workers, and direct Chrome layout/style evidence. The hazardous 50,000-line baseline remains opt-in, and backend request bytes/concurrency remain covered by the separate large-PR plan.</li>
-            <li class="completed-action"><span class="completion">COMPLETED · DIRECT TRACE</span> <strong>Chat:</strong> 10, 100, and 500 messages with code and tables; typing INP/p95, React commit duration, Markdown render count, nodes, and heap.</li>
-            <li class="completed-action"><span class="completion">COMPLETED · APPROXIMATION</span> <strong>Runtime:</strong> 100×-accelerated polling with one, two, and four panels; request deduplication, React commits, DOM, heap, and long tasks. Real endpoint bytes and config-event bursts remain follow-up evidence, not an optimization prerequisite.</li>
-            <li class="completed-action"><span class="completion">COMPLETED · BUILD OUTPUT</span> <strong>Bundle:</strong> production dashboard entry/preloads, focused-review wrapper, compressed chunks, and retained lazy Pierre worker/viewer boundaries. No lazy-registry implementation was made.</li>
-            <li class="completed-action"><span class="completion">COMPLETED · TWO VIEWPORTS</span> <strong>Responsive review:</strong> desktop and 430 px profiles with 50 threads quantify total, hidden, and per-copy nodes plus mount cost.</li>
-            <li class="completed-action"><span class="completion">COMPLETED · REAL PR TRACE</span> <strong>Review backend:</strong> cold/warm local and GitHub fallback calls, production tree/patch/thread readiness, request count/concurrency/bytes, Web Vitals, and abandoned requests measured on a registered 1,019-file PR. Budgets and proposed remediations are retained in <code>.plans/PR_REVIEW_PERF_PLAN.md</code>.</li>
+            <li class="completed-action">
+              <span class="completion">COMPLETED · FIXTURE PASS</span>
+              <strong>Diff:</strong> typical, 180-file, 10,000-line
+              baseline/native-virtualizer pair, long-wrapped-line, and 50-thread
+              fixtures; ready time, scroll p95, long tasks, nodes, heap,
+              workers, and direct Chrome layout/style evidence. The hazardous
+              50,000-line baseline remains opt-in, and backend request
+              bytes/concurrency remain covered by the separate large-PR plan.
+            </li>
+            <li class="completed-action">
+              <span class="completion">COMPLETED · DIRECT TRACE</span>
+              <strong>Chat:</strong> 10, 100, and 500 messages with code and
+              tables; typing INP/p95, React commit duration, Markdown render
+              count, nodes, and heap.
+            </li>
+            <li class="completed-action">
+              <span class="completion">COMPLETED · APPROXIMATION</span>
+              <strong>Runtime:</strong> 100×-accelerated polling with one, two,
+              and four panels; request deduplication, React commits, DOM, heap,
+              and long tasks. Real endpoint bytes and config-event bursts remain
+              follow-up evidence, not an optimization prerequisite.
+            </li>
+            <li class="completed-action">
+              <span class="completion">COMPLETED · BUILD OUTPUT</span>
+              <strong>Bundle:</strong> production dashboard entry/preloads,
+              focused-review wrapper, compressed chunks, and retained lazy
+              Pierre worker/viewer boundaries. No lazy-registry implementation
+              was made.
+            </li>
+            <li class="completed-action">
+              <span class="completion">COMPLETED · TWO VIEWPORTS</span>
+              <strong>Responsive review:</strong> desktop and 430 px profiles
+              with 50 threads quantify total, hidden, and per-copy nodes plus
+              mount cost.
+            </li>
+            <li class="completed-action">
+              <span class="completion">COMPLETED · REAL PR TRACE</span>
+              <strong>Review backend:</strong> cold/warm local and GitHub
+              fallback calls, production tree/patch/thread readiness, request
+              count/concurrency/bytes, Web Vitals, and abandoned requests
+              measured on a registered 1,019-file PR. Budgets and proposed
+              remediations are retained in
+              <code>.plans/PR_REVIEW_PERF_PLAN.md</code>.
+            </li>
           </ol>
         </section>
 
@@ -1156,22 +1755,58 @@
             <span class="chip">12 / 20 · Acceptable</span>
           </div>
           <p class="section-note">
-            The UI specialist scored 13/20 in isolation. The dedicated performance review lowers
-            Performance from 3 to 2 because large-patch and long-chat risks are systemic, producing
-            the consolidated 12/20 score.
+            The UI specialist scored 13/20 in isolation. The dedicated
+            performance review lowers Performance from 3 to 2 because
+            large-patch and long-chat risks are systemic, producing the
+            consolidated 12/20 score.
           </p>
           <div class="score-grid">
-            <div class="panel-block"><span class="score-label">ACCESSIBILITY</span><strong class="score-value">2/4</strong><p>Contrast, names, tabs, status messages, and landmarks have major gaps.</p></div>
-            <div class="panel-block"><span class="score-label">PERFORMANCE</span><strong class="score-value">2/4</strong><p>Good lazy/worker foundations, but non-windowed scale and render coupling remain.</p></div>
-            <div class="panel-block"><span class="score-label">RESPONSIVE</span><strong class="score-value">2/4</strong><p>Narrow chat clips controls; compact review hides consequential state.</p></div>
-            <div class="panel-block"><span class="score-label">THEMING</span><strong class="score-value">2/4</strong><p>Centralized tokens are applied consistently, but several roles fail AA.</p></div>
-            <div class="panel-block"><span class="score-label">ANTI-PATTERNS</span><strong class="score-value">4/4</strong><p>Distinctive, restrained cockpit; no generic AI-dashboard tells.</p></div>
+            <div class="panel-block">
+              <span class="score-label">ACCESSIBILITY</span
+              ><strong class="score-value">2/4</strong>
+              <p>
+                Contrast, names, tabs, status messages, and landmarks have major
+                gaps.
+              </p>
+            </div>
+            <div class="panel-block">
+              <span class="score-label">PERFORMANCE</span
+              ><strong class="score-value">2/4</strong>
+              <p>
+                Good lazy/worker foundations, but non-windowed scale and render
+                coupling remain.
+              </p>
+            </div>
+            <div class="panel-block">
+              <span class="score-label">RESPONSIVE</span
+              ><strong class="score-value">2/4</strong>
+              <p>
+                Narrow chat clips controls; compact review hides consequential
+                state.
+              </p>
+            </div>
+            <div class="panel-block">
+              <span class="score-label">THEMING</span
+              ><strong class="score-value">2/4</strong>
+              <p>
+                Centralized tokens are applied consistently, but several roles
+                fail AA.
+              </p>
+            </div>
+            <div class="panel-block">
+              <span class="score-label">ANTI-PATTERNS</span
+              ><strong class="score-value">4/4</strong>
+              <p>
+                Distinctive, restrained cockpit; no generic AI-dashboard tells.
+              </p>
+            </div>
           </div>
 
           <div class="callout" style="margin-top: 14px">
-            <strong>Anti-pattern verdict: PASS.</strong> Neondeck consistently preserves flat,
-            zero-radius surfaces, restrained signal color, no decorative glass/shadows, and a clear
-            mono-chrome versus prose vocabulary. The visual direction should be repaired, not replaced.
+            <strong>Anti-pattern verdict: PASS.</strong> Neondeck consistently
+            preserves flat, zero-radius surfaces, restrained signal color, no
+            decorative glass/shadows, and a clear mono-chrome versus prose
+            vocabulary. The visual direction should be repaired, not replaced.
           </div>
         </section>
 
@@ -1181,153 +1816,1143 @@
             <span class="chip">26 findings</span>
           </div>
           <p class="section-note">
-            Use search and severity controls to narrow the report. P1 findings open by default;
-            every item includes impact, source evidence, and a concrete next step.
+            Use search and severity controls to narrow the report. P1 findings
+            open by default; every item includes impact, source evidence, and a
+            concrete next step.
           </p>
 
           <div class="controls" aria-label="Finding filters">
-            <label class="search-label">SEARCH FINDINGS<input id="finding-search" type="search" placeholder="Try: session, contrast, tabs, review…" /></label>
-            <div class="filter-row" role="group" aria-label="Filter by severity">
-              <button type="button" data-filter="all" aria-pressed="true">All</button>
-              <button type="button" data-filter="p1" aria-pressed="false">P1</button>
-              <button type="button" data-filter="p2" aria-pressed="false">P2</button>
-              <button type="button" data-filter="p3" aria-pressed="false">P3</button>
+            <label class="search-label"
+              >SEARCH FINDINGS<input
+                id="finding-search"
+                type="search"
+                placeholder="Try: session, contrast, tabs, review…"
+            /></label>
+            <div
+              class="filter-row"
+              role="group"
+              aria-label="Filter by severity"
+            >
+              <button type="button" data-filter="all" aria-pressed="true">
+                All
+              </button>
+              <button type="button" data-filter="p1" aria-pressed="false">
+                P1
+              </button>
+              <button type="button" data-filter="p2" aria-pressed="false">
+                P2
+              </button>
+              <button type="button" data-filter="p3" aria-pressed="false">
+                P3
+              </button>
             </div>
           </div>
 
-          <p id="filter-count" class="meta" aria-live="polite">Showing 26 findings.</p>
+          <p id="filter-count" class="meta" aria-live="polite">
+            Showing 26 findings.
+          </p>
           <div id="nonperf-findings" class="finding-list">
-            <details class="finding" data-severity="p1" data-category="ui theming accessibility" data-status="completed" open>
-              <summary><span class="severity p1">P1</span><span class="completion">COMPLETED · PR 1</span><span class="finding-title">Semantic colors and placeholder tokens fail AA in both themes</span></summary>
-              <div class="finding-body"><div><h3>Impact</h3><p>Small labels, links, errors, statuses, placeholders, and some focus indicators are difficult to read, especially in light theme.</p><h3>Measured ratios</h3><p>Light primary 3.31:1 on panel / 2.97:1 on field; strong primary 2.21:1 / 1.98:1; accent 4.17:1 / 3.74:1; light faint placeholder 2.83:1; dark faint 3.46:1; dark violet 4.31:1.</p><h3>Recommendation</h3><p>Darken light cyan/strong/accent and dark violet, create a separate AA placeholder token, and verify every semantic token on panel, field, soft, and tinted surfaces. WCAG 1.4.3 and 1.4.11.</p></div><div><h3>Evidence</h3><p class="source">web/src/styles.css:25-91, 420-426, 1247-1250, 1521-1523<br />web/src/features/runtime-overview/components/runtime-view.tsx:87-97<br />web/src/plugins/AutopilotPanel.tsx:245-254</p><span class="chip">$impeccable colorize</span></div></div>
+            <details
+              class="finding"
+              data-severity="p1"
+              data-category="ui theming accessibility"
+              data-status="completed"
+              open
+            >
+              <summary>
+                <span class="severity p1">P1</span
+                ><span class="completion">COMPLETED · PR 1</span
+                ><span class="finding-title"
+                  >Semantic colors and placeholder tokens fail AA in both
+                  themes</span
+                >
+              </summary>
+              <div class="finding-body">
+                <div>
+                  <h3>Impact</h3>
+                  <p>
+                    Small labels, links, errors, statuses, placeholders, and
+                    some focus indicators are difficult to read, especially in
+                    light theme.
+                  </p>
+                  <h3>Measured ratios</h3>
+                  <p>
+                    Light primary 3.31:1 on panel / 2.97:1 on field; strong
+                    primary 2.21:1 / 1.98:1; accent 4.17:1 / 3.74:1; light faint
+                    placeholder 2.83:1; dark faint 3.46:1; dark violet 4.31:1.
+                  </p>
+                  <h3>Recommendation</h3>
+                  <p>
+                    Darken light cyan/strong/accent and dark violet, create a
+                    separate AA placeholder token, and verify every semantic
+                    token on panel, field, soft, and tinted surfaces. WCAG 1.4.3
+                    and 1.4.11.
+                  </p>
+                </div>
+                <div>
+                  <h3>Evidence</h3>
+                  <p class="source">
+                    web/src/styles.css:25-91, 420-426, 1247-1250, 1521-1523<br />web/src/features/runtime-overview/components/runtime-view.tsx:87-97<br />web/src/plugins/AutopilotPanel.tsx:245-254
+                  </p>
+                  <span class="chip">$impeccable colorize</span>
+                </div>
+              </div>
             </details>
 
-            <details class="finding" data-severity="p1" data-category="ui accessibility" data-status="completed" open>
-              <summary><span class="severity p1">P1</span><span class="completion">COMPLETED · PR 1</span><span class="finding-title">Chat, rename, and Autopilot revision fields have no accessible name</span></summary>
-              <div class="finding-body"><div><h3>Impact</h3><p>Screen-reader and voice-control users encounter unnamed textboxes; placeholder text is not a persistent label.</p><h3>Recommendation</h3><p>Add associated labels or exact accessible names: “Message Neon,” “Session title,” and “Revision reason.” WCAG 1.3.1, 3.3.2, 4.1.2.</p></div><div><h3>Evidence</h3><p class="source">web/src/features/flue-chat/components/session-view.tsx:628-647<br />web/src/features/flue-chat/plugin.tsx:317-330<br />web/src/plugins/AutopilotPanel.tsx:727-734</p><span class="chip">$impeccable harden</span></div></div>
+            <details
+              class="finding"
+              data-severity="p1"
+              data-category="ui accessibility"
+              data-status="completed"
+              open
+            >
+              <summary>
+                <span class="severity p1">P1</span
+                ><span class="completion">COMPLETED · PR 1</span
+                ><span class="finding-title"
+                  >Chat, rename, and Autopilot revision fields have no
+                  accessible name</span
+                >
+              </summary>
+              <div class="finding-body">
+                <div>
+                  <h3>Impact</h3>
+                  <p>
+                    Screen-reader and voice-control users encounter unnamed
+                    textboxes; placeholder text is not a persistent label.
+                  </p>
+                  <h3>Recommendation</h3>
+                  <p>
+                    Add associated labels or exact accessible names: “Message
+                    Neon,” “Session title,” and “Revision reason.” WCAG 1.3.1,
+                    3.3.2, 4.1.2.
+                  </p>
+                </div>
+                <div>
+                  <h3>Evidence</h3>
+                  <p class="source">
+                    web/src/features/flue-chat/components/session-view.tsx:628-647<br />web/src/features/flue-chat/plugin.tsx:317-330<br />web/src/plugins/AutopilotPanel.tsx:727-734
+                  </p>
+                  <span class="chip">$impeccable harden</span>
+                </div>
+              </div>
             </details>
 
-            <details class="finding" data-severity="p1" data-category="ui accessibility" data-status="completed" open>
-              <summary><span class="severity p1">P1</span><span class="completion">COMPLETED · PR 1</span><span class="finding-title">Slash-command autocomplete is not exposed as a combobox/listbox</span></summary>
-              <div class="finding-body"><div><h3>Impact</h3><p>Keyboard behavior exists, but assistive technology cannot discover the suggestion popup, active option, or selection state.</p><h3>Recommendation</h3><p>Implement the ARIA combobox pattern with <code>aria-controls</code>, <code>aria-expanded</code>, <code>aria-activedescendant</code>, listbox/option roles, stable IDs, and <code>aria-selected</code>.</p></div><div><h3>Evidence</h3><p class="source">web/src/features/flue-chat/components/session-view.tsx:630-647<br />web/src/features/flue-chat/components/command-controls.tsx:191-233</p><span class="chip">WCAG 1.3.1 / 4.1.2</span></div></div>
+            <details
+              class="finding"
+              data-severity="p1"
+              data-category="ui accessibility"
+              data-status="completed"
+              open
+            >
+              <summary>
+                <span class="severity p1">P1</span
+                ><span class="completion">COMPLETED · PR 1</span
+                ><span class="finding-title"
+                  >Slash-command autocomplete is not exposed as a
+                  combobox/listbox</span
+                >
+              </summary>
+              <div class="finding-body">
+                <div>
+                  <h3>Impact</h3>
+                  <p>
+                    Keyboard behavior exists, but assistive technology cannot
+                    discover the suggestion popup, active option, or selection
+                    state.
+                  </p>
+                  <h3>Recommendation</h3>
+                  <p>
+                    Implement the ARIA combobox pattern with
+                    <code>aria-controls</code>, <code>aria-expanded</code>,
+                    <code>aria-activedescendant</code>, listbox/option roles,
+                    stable IDs, and <code>aria-selected</code>.
+                  </p>
+                </div>
+                <div>
+                  <h3>Evidence</h3>
+                  <p class="source">
+                    web/src/features/flue-chat/components/session-view.tsx:630-647<br />web/src/features/flue-chat/components/command-controls.tsx:191-233
+                  </p>
+                  <span class="chip">WCAG 1.3.1 / 4.1.2</span>
+                </div>
+              </div>
             </details>
 
-            <details class="finding" data-severity="p1" data-category="ui accessibility" data-status="completed" open>
-              <summary><span class="severity p1">P1</span><span class="completion">COMPLETED · PR 1</span><span class="finding-title">Tabs and stateful filters expose selection only visually</span></summary>
-              <div class="finding-body"><div><h3>Impact</h3><p>Screen-reader users cannot determine the active dashboard tab or filter; dashboard tabs also lack tab-to-panel relations and standard arrow/Home/End behavior.</p><h3>Recommendation</h3><p>Use tablist/tab/tabpanel semantics and roving focus for tabs; use named groups with <code>aria-pressed</code> or radio semantics for filters.</p></div><div><h3>Evidence</h3><p class="source">web/src/App.tsx:454-483<br />web/src/plugins/LearningOperatorPanel.tsx:169-180<br />web/src/plugins/WorkflowObservabilityPanel.tsx:139-153</p><span class="chip">WCAG 1.3.1 / 4.1.2</span></div></div>
+            <details
+              class="finding"
+              data-severity="p1"
+              data-category="ui accessibility"
+              data-status="completed"
+              open
+            >
+              <summary>
+                <span class="severity p1">P1</span
+                ><span class="completion">COMPLETED · PR 1</span
+                ><span class="finding-title"
+                  >Tabs and stateful filters expose selection only
+                  visually</span
+                >
+              </summary>
+              <div class="finding-body">
+                <div>
+                  <h3>Impact</h3>
+                  <p>
+                    Screen-reader users cannot determine the active dashboard
+                    tab or filter; dashboard tabs also lack tab-to-panel
+                    relations and standard arrow/Home/End behavior.
+                  </p>
+                  <h3>Recommendation</h3>
+                  <p>
+                    Use tablist/tab/tabpanel semantics and roving focus for
+                    tabs; use named groups with <code>aria-pressed</code> or
+                    radio semantics for filters.
+                  </p>
+                </div>
+                <div>
+                  <h3>Evidence</h3>
+                  <p class="source">
+                    web/src/App.tsx:454-483<br />web/src/plugins/LearningOperatorPanel.tsx:169-180<br />web/src/plugins/WorkflowObservabilityPanel.tsx:139-153
+                  </p>
+                  <span class="chip">WCAG 1.3.1 / 4.1.2</span>
+                </div>
+              </div>
             </details>
 
-            <details class="finding" data-severity="p1" data-category="ui accessibility" data-status="completed" open>
-              <summary><span class="severity p1">P1</span><span class="completion">COMPLETED · PR 1</span><span class="finding-title">Major panels and runtime sections lack navigable semantic structure</span></summary>
-              <div class="finding-body"><div><h3>Impact</h3><p>Generic div/span labels do not create headings or landmarks, so screen-reader users cannot jump among Work, Neon, Runtime, Config, Approvals, Memory, and other areas.</p><h3>Recommendation</h3><p>Add a hidden dashboard h1; make panel frames named sections/regions; render plugin titles as h2 and nested titles as h3 while preserving visuals.</p></div><div><h3>Evidence</h3><p class="source">web/src/App.tsx:485-526<br />web/src/features/runtime-overview/components/runtime-view.tsx:85-98<br />web/src/features/runtime-overview/components/setup-rows.tsx:28-54<br />web/src/plugins/AutopilotPanel.tsx:260-287</p><span class="chip">WCAG 1.3.1 / 2.4.6</span></div></div>
+            <details
+              class="finding"
+              data-severity="p1"
+              data-category="ui accessibility"
+              data-status="completed"
+              open
+            >
+              <summary>
+                <span class="severity p1">P1</span
+                ><span class="completion">COMPLETED · PR 1</span
+                ><span class="finding-title"
+                  >Major panels and runtime sections lack navigable semantic
+                  structure</span
+                >
+              </summary>
+              <div class="finding-body">
+                <div>
+                  <h3>Impact</h3>
+                  <p>
+                    Generic div/span labels do not create headings or landmarks,
+                    so screen-reader users cannot jump among Work, Neon,
+                    Runtime, Config, Approvals, Memory, and other areas.
+                  </p>
+                  <h3>Recommendation</h3>
+                  <p>
+                    Add a hidden dashboard h1; make panel frames named
+                    sections/regions; render plugin titles as h2 and nested
+                    titles as h3 while preserving visuals.
+                  </p>
+                </div>
+                <div>
+                  <h3>Evidence</h3>
+                  <p class="source">
+                    web/src/App.tsx:485-526<br />web/src/features/runtime-overview/components/runtime-view.tsx:85-98<br />web/src/features/runtime-overview/components/setup-rows.tsx:28-54<br />web/src/plugins/AutopilotPanel.tsx:260-287
+                  </p>
+                  <span class="chip">WCAG 1.3.1 / 2.4.6</span>
+                </div>
+              </div>
             </details>
 
-            <details class="finding" data-severity="p1" data-category="ui accessibility state" data-status="completed" open>
-              <summary><span class="severity p1">P1</span><span class="completion">COMPLETED · PR 1</span><span class="finding-title">Action feedback is inconsistent, sometimes silent, and often unannounced</span></summary>
-              <div class="finding-body"><div><h3>Impact</h3><p>The shared “session” mutation can fail as an apparent no-op. Screen-reader users may miss chat errors, save confirmations, and generic loading/error transitions.</p><h3>Recommendation</h3><p>Create one inline feedback primitive: alert for errors, polite status for progress/success. Render row-local errors and keep actions retryable. WCAG 3.3.1 and 4.1.3.</p></div><div><h3>Evidence</h3><p class="source">web/src/components/SessionReferenceButton.tsx:28-68<br />web/src/features/flue-chat/plugin.tsx:299-315<br />web/src/features/flue-chat/components/session-view.tsx:623-627<br />web/src/components/ui.tsx:112-133</p><span class="chip">$impeccable harden</span></div></div>
+            <details
+              class="finding"
+              data-severity="p1"
+              data-category="ui accessibility state"
+              data-status="completed"
+              open
+            >
+              <summary>
+                <span class="severity p1">P1</span
+                ><span class="completion">COMPLETED · PR 1</span
+                ><span class="finding-title"
+                  >Action feedback is inconsistent, sometimes silent, and often
+                  unannounced</span
+                >
+              </summary>
+              <div class="finding-body">
+                <div>
+                  <h3>Impact</h3>
+                  <p>
+                    The shared “session” mutation can fail as an apparent no-op.
+                    Screen-reader users may miss chat errors, save
+                    confirmations, and generic loading/error transitions.
+                  </p>
+                  <h3>Recommendation</h3>
+                  <p>
+                    Create one inline feedback primitive: alert for errors,
+                    polite status for progress/success. Render row-local errors
+                    and keep actions retryable. WCAG 3.3.1 and 4.1.3.
+                  </p>
+                </div>
+                <div>
+                  <h3>Evidence</h3>
+                  <p class="source">
+                    web/src/components/SessionReferenceButton.tsx:28-68<br />web/src/features/flue-chat/plugin.tsx:299-315<br />web/src/features/flue-chat/components/session-view.tsx:623-627<br />web/src/components/ui.tsx:112-133
+                  </p>
+                  <span class="chip">$impeccable harden</span>
+                </div>
+              </div>
             </details>
 
-            <details class="finding" data-severity="p1" data-category="ui responsive" data-status="completed" open>
-              <summary><span class="severity p1">P1</span><span class="completion">COMPLETED · PR 1</span><span class="finding-title">Flue chat clips essential controls in supported narrow layouts</span></summary>
-              <div class="finding-body"><div><h3>Impact</h3><p>The fixed header must fit session selection plus Rename, Pin, Archive, Ref, New, and context state in one clipped row. The composer can collapse or overflow, blocking a core task.</p><h3>Recommendation</h3><p>Keep session selection/New, move secondary actions into a standard overflow or second row, allow header growth, add <code>min-width: 0</code> to the textarea, and provide a compact Send control.</p></div><div><h3>Evidence</h3><p class="source">web/src/features/flue-chat/plugin.tsx:224-298<br />web/src/features/flue-chat/components/session-view.tsx:615-674<br />web/src/App.tsx:514-525<br />web/src/lib/deck-profile.ts:26-69</p><span class="chip">$impeccable adapt</span></div></div>
+            <details
+              class="finding"
+              data-severity="p1"
+              data-category="ui responsive"
+              data-status="completed"
+              open
+            >
+              <summary>
+                <span class="severity p1">P1</span
+                ><span class="completion">COMPLETED · PR 1</span
+                ><span class="finding-title"
+                  >Flue chat clips essential controls in supported narrow
+                  layouts</span
+                >
+              </summary>
+              <div class="finding-body">
+                <div>
+                  <h3>Impact</h3>
+                  <p>
+                    The fixed header must fit session selection plus Rename,
+                    Pin, Archive, Ref, New, and context state in one clipped
+                    row. The composer can collapse or overflow, blocking a core
+                    task.
+                  </p>
+                  <h3>Recommendation</h3>
+                  <p>
+                    Keep session selection/New, move secondary actions into a
+                    standard overflow or second row, allow header growth, add
+                    <code>min-width: 0</code> to the textarea, and provide a
+                    compact Send control.
+                  </p>
+                </div>
+                <div>
+                  <h3>Evidence</h3>
+                  <p class="source">
+                    web/src/features/flue-chat/plugin.tsx:224-298<br />web/src/features/flue-chat/components/session-view.tsx:615-674<br />web/src/App.tsx:514-525<br />web/src/lib/deck-profile.ts:26-69
+                  </p>
+                  <span class="chip">$impeccable adapt</span>
+                </div>
+              </div>
             </details>
 
-            <details class="finding" data-severity="p1" data-category="ui responsive review" data-status="completed" open>
-              <summary><span class="severity p1">P1</span><span class="completion">COMPLETED · PR 1</span><span class="finding-title">Compact PR review hides verdict and summary while leaving Submit active</span></summary>
-              <div class="finding-body"><div><h3>Impact</h3><p>Users cannot inspect or change the verdict/body immediately before a consequential GitHub submission and can submit hidden stale state.</p><h3>Recommendation</h3><p>Keep verdict and summary in the stacked footer, expose them in an explicit Review details disclosure, or require the focused review surface for submission.</p></div><div><h3>Evidence</h3><p class="source">web/src/features/pr-review/GitHubPrReview.tsx:1471-1506<br />web/src/styles.css:1323-1331</p><span class="chip">$impeccable adapt</span></div></div>
+            <details
+              class="finding"
+              data-severity="p1"
+              data-category="ui responsive review"
+              data-status="completed"
+              open
+            >
+              <summary>
+                <span class="severity p1">P1</span
+                ><span class="completion">COMPLETED · PR 1</span
+                ><span class="finding-title"
+                  >Compact PR review hides verdict and summary while leaving
+                  Submit active</span
+                >
+              </summary>
+              <div class="finding-body">
+                <div>
+                  <h3>Impact</h3>
+                  <p>
+                    Users cannot inspect or change the verdict/body immediately
+                    before a consequential GitHub submission and can submit
+                    hidden stale state.
+                  </p>
+                  <h3>Recommendation</h3>
+                  <p>
+                    Keep verdict and summary in the stacked footer, expose them
+                    in an explicit Review details disclosure, or require the
+                    focused review surface for submission.
+                  </p>
+                </div>
+                <div>
+                  <h3>Evidence</h3>
+                  <p class="source">
+                    web/src/features/pr-review/GitHubPrReview.tsx:1471-1506<br />web/src/styles.css:1323-1331
+                  </p>
+                  <span class="chip">$impeccable adapt</span>
+                </div>
+              </div>
             </details>
 
-            <details class="finding" data-severity="p2" data-category="ui accessibility" data-status="completed" open>
-              <summary><span class="severity p2">P2</span><span class="completion">COMPLETED · COPY/DISCLOSURE</span><span class="finding-title">Important operational text is irreversibly truncated without disclosure</span></summary>
-              <div class="finding-body"><div><h3>Impact</h3><p>Tool details, commands, paths, and memory values disappear exactly when needed for diagnosis; some are hard-trimmed before CSS, so resizing cannot recover them.</p><h3>Recommendation</h3><p>Add selective expandable detail/copy affordances and tooltips for truly truncated identifiers, not every obvious text button.</p><h3>Implemented</h3><p>Long or lossy tool details, approval commands and paths, worktree revisions and paths, and memory values now retain their complete value behind a native disclosure with a contextual copy action. Short values remain plain text.</p></div><div><h3>Evidence</h3><p class="source">web/src/components/OperationalValue.tsx<br />web/src/features/flue-chat/components/message-parts.tsx<br />web/src/features/runtime-overview/components/setup-rows.tsx<br />web/src/features/runtime-overview/components/runtime-rows.tsx<br />web/src/plugins/MemoryPanel.tsx</p><span class="chip">$impeccable clarify</span></div></div>
+            <details
+              class="finding"
+              data-severity="p2"
+              data-category="ui accessibility"
+              data-status="completed"
+              open
+            >
+              <summary>
+                <span class="severity p2">P2</span
+                ><span class="completion">COMPLETED · COPY/DISCLOSURE</span
+                ><span class="finding-title"
+                  >Important operational text is irreversibly truncated without
+                  disclosure</span
+                >
+              </summary>
+              <div class="finding-body">
+                <div>
+                  <h3>Impact</h3>
+                  <p>
+                    Tool details, commands, paths, and memory values disappear
+                    exactly when needed for diagnosis; some are hard-trimmed
+                    before CSS, so resizing cannot recover them.
+                  </p>
+                  <h3>Recommendation</h3>
+                  <p>
+                    Add selective expandable detail/copy affordances and
+                    tooltips for truly truncated identifiers, not every obvious
+                    text button.
+                  </p>
+                  <h3>Implemented</h3>
+                  <p>
+                    Long or lossy tool details, approval commands and paths,
+                    worktree revisions and paths, and memory values now retain
+                    their complete value behind a native disclosure with a
+                    contextual copy action. Short values remain plain text.
+                  </p>
+                </div>
+                <div>
+                  <h3>Evidence</h3>
+                  <p class="source">
+                    web/src/components/OperationalValue.tsx<br />web/src/features/flue-chat/components/message-parts.tsx<br />web/src/features/runtime-overview/components/setup-rows.tsx<br />web/src/features/runtime-overview/components/runtime-rows.tsx<br />web/src/plugins/MemoryPanel.tsx
+                  </p>
+                  <span class="chip">$impeccable clarify</span>
+                </div>
+              </div>
             </details>
 
-            <details class="finding" data-severity="p2" data-category="ui accessibility flue" data-status="completed" open>
-              <summary><span class="severity p2">P2</span><span class="completion">COMPLETED · COPY/DISCLOSURE</span><span class="finding-title">Repeated controls have ambiguous, context-free accessible names</span></summary>
-              <div class="finding-body"><div><h3>Impact</h3><p>Button-list navigation presents repeated “session” controls; “Ref” is jargon; approval action “session” does not communicate permission scope.</p><h3>Recommendation</h3><p>Use row-specific accessible names, display “Reference,” and rename approvals to “Allow once,” “Allow for session,” “Always allow,” and “Deny.”</p><h3>Implemented</h3><p>Linked-chat controls now display “Reference” and include the row title in their accessible name. Session selection names the switching action, and execution approvals spell out the duration and consequence of each decision.</p></div><div><h3>Evidence</h3><p class="source">web/src/components/SessionReferenceButton.tsx<br />web/src/features/flue-chat/components/session-select.tsx<br />web/src/features/runtime-overview/components/setup-rows.tsx</p><span class="chip">$impeccable clarify</span></div></div>
+            <details
+              class="finding"
+              data-severity="p2"
+              data-category="ui accessibility flue"
+              data-status="completed"
+              open
+            >
+              <summary>
+                <span class="severity p2">P2</span
+                ><span class="completion">COMPLETED · COPY/DISCLOSURE</span
+                ><span class="finding-title"
+                  >Repeated controls have ambiguous, context-free accessible
+                  names</span
+                >
+              </summary>
+              <div class="finding-body">
+                <div>
+                  <h3>Impact</h3>
+                  <p>
+                    Button-list navigation presents repeated “session” controls;
+                    “Ref” is jargon; approval action “session” does not
+                    communicate permission scope.
+                  </p>
+                  <h3>Recommendation</h3>
+                  <p>
+                    Use row-specific accessible names, display “Reference,” and
+                    rename approvals to “Allow once,” “Allow for session,”
+                    “Always allow,” and “Deny.”
+                  </p>
+                  <h3>Implemented</h3>
+                  <p>
+                    Linked-chat controls now display “Reference” and include the
+                    row title in their accessible name. Session selection names
+                    the switching action, and execution approvals spell out the
+                    duration and consequence of each decision.
+                  </p>
+                </div>
+                <div>
+                  <h3>Evidence</h3>
+                  <p class="source">
+                    web/src/components/SessionReferenceButton.tsx<br />web/src/features/flue-chat/components/session-select.tsx<br />web/src/features/runtime-overview/components/setup-rows.tsx
+                  </p>
+                  <span class="chip">$impeccable clarify</span>
+                </div>
+              </div>
             </details>
 
-            <details class="finding" data-severity="p2" data-category="ui accessibility" data-status="completed">
-              <summary><span class="severity p2">P2</span><span class="completion">COMPLETED · PR 1</span><span class="finding-title">Disclosure controls omit expanded state and controlled-content relationships</span></summary>
-              <div class="finding-body"><div><h3>Impact</h3><p>Text changes visually, but assistive technology gets no durable expanded/collapsed state or relationship to the revealed diff/editor.</p><h3>Recommendation</h3><p>Add stable panel IDs, <code>aria-expanded</code>, and <code>aria-controls</code>; move focus only when it improves the workflow.</p></div><div><h3>Evidence</h3><p class="source">web/src/features/runtime-overview/components/runtime-rows.tsx:243-266, 327-343<br />web/src/plugins/LearningOperatorPanel.tsx:348-367<br />web/src/features/flue-chat/plugin.tsx:238-245</p><span class="chip">WCAG 4.1.2</span></div></div>
+            <details
+              class="finding"
+              data-severity="p2"
+              data-category="ui accessibility"
+              data-status="completed"
+            >
+              <summary>
+                <span class="severity p2">P2</span
+                ><span class="completion">COMPLETED · PR 1</span
+                ><span class="finding-title"
+                  >Disclosure controls omit expanded state and
+                  controlled-content relationships</span
+                >
+              </summary>
+              <div class="finding-body">
+                <div>
+                  <h3>Impact</h3>
+                  <p>
+                    Text changes visually, but assistive technology gets no
+                    durable expanded/collapsed state or relationship to the
+                    revealed diff/editor.
+                  </p>
+                  <h3>Recommendation</h3>
+                  <p>
+                    Add stable panel IDs, <code>aria-expanded</code>, and
+                    <code>aria-controls</code>; move focus only when it improves
+                    the workflow.
+                  </p>
+                </div>
+                <div>
+                  <h3>Evidence</h3>
+                  <p class="source">
+                    web/src/features/runtime-overview/components/runtime-rows.tsx:243-266,
+                    327-343<br />web/src/plugins/LearningOperatorPanel.tsx:348-367<br />web/src/features/flue-chat/plugin.tsx:238-245
+                  </p>
+                  <span class="chip">WCAG 4.1.2</span>
+                </div>
+              </div>
             </details>
 
-            <details class="finding" data-severity="p2" data-category="ui responsive accessibility" data-status="completed">
-              <summary><span class="severity p2">P2</span><span class="completion">COMPLETED · PR 1</span><span class="finding-title">Coarse-pointer targets stop at 40px and tab strips clip the override</span></summary>
-              <div class="finding-body"><div><h3>Impact</h3><p>The touchscreen companion surface receives targets below the stronger 44px comfort target; 28–36px clipped tab strips can reduce effective size further.</p><h3>Recommendation</h3><p>Use at least 44px for consequential controls on coarse pointers, raise the tab-strip token at the same breakpoint, and make overflow horizontally scrollable with visible focus.</p></div><div><h3>Evidence</h3><p class="source">web/src/components/ui.tsx:33-45<br />web/src/styles.css:132-137, 346-404<br />web/src/App.tsx:465-481</p><span class="chip">WCAG 2.5.5 comfort target</span></div></div>
+            <details
+              class="finding"
+              data-severity="p2"
+              data-category="ui responsive accessibility"
+              data-status="completed"
+            >
+              <summary>
+                <span class="severity p2">P2</span
+                ><span class="completion">COMPLETED · PR 1</span
+                ><span class="finding-title"
+                  >Coarse-pointer targets stop at 40px and tab strips clip the
+                  override</span
+                >
+              </summary>
+              <div class="finding-body">
+                <div>
+                  <h3>Impact</h3>
+                  <p>
+                    The touchscreen companion surface receives targets below the
+                    stronger 44px comfort target; 28–36px clipped tab strips can
+                    reduce effective size further.
+                  </p>
+                  <h3>Recommendation</h3>
+                  <p>
+                    Use at least 44px for consequential controls on coarse
+                    pointers, raise the tab-strip token at the same breakpoint,
+                    and make overflow horizontally scrollable with visible
+                    focus.
+                  </p>
+                </div>
+                <div>
+                  <h3>Evidence</h3>
+                  <p class="source">
+                    web/src/components/ui.tsx:33-45<br />web/src/styles.css:132-137,
+                    346-404<br />web/src/App.tsx:465-481
+                  </p>
+                  <span class="chip">WCAG 2.5.5 comfort target</span>
+                </div>
+              </div>
             </details>
 
-            <details class="finding" data-severity="p2" data-category="state review" data-status="completed">
-              <summary><span class="severity p2">P2</span><span class="completion">COMPLETED · PR 2</span><span class="finding-title">Successful review submission can leave the workbench pre-submit cache state</span></summary>
-              <div class="finding-body"><div><h3>Impact</h3><p>If the review SSE event is missed, the durable review remains cached as <code>ready</code>, controls stay enabled, and a second submit reaches a backend state guard.</p><h3>Recommendation</h3><p>On submit success invalidate the durable review target and review inbox, in addition to draft/thread caches.</p></div><div><h3>Evidence</h3><p class="source">web/src/features/pr-review/queries.ts:272-277<br />web/src/features/pr-review/GitHubPrReview.tsx:83-90, 729-750</p><span class="chip">correctness</span></div></div>
+            <details
+              class="finding"
+              data-severity="p2"
+              data-category="state review"
+              data-status="completed"
+            >
+              <summary>
+                <span class="severity p2">P2</span
+                ><span class="completion">COMPLETED · PR 2</span
+                ><span class="finding-title"
+                  >Successful review submission can leave the workbench
+                  pre-submit cache state</span
+                >
+              </summary>
+              <div class="finding-body">
+                <div>
+                  <h3>Impact</h3>
+                  <p>
+                    If the review SSE event is missed, the durable review
+                    remains cached as <code>ready</code>, controls stay enabled,
+                    and a second submit reaches a backend state guard.
+                  </p>
+                  <h3>Recommendation</h3>
+                  <p>
+                    On submit success invalidate the durable review target and
+                    review inbox, in addition to draft/thread caches.
+                  </p>
+                </div>
+                <div>
+                  <h3>Evidence</h3>
+                  <p class="source">
+                    web/src/features/pr-review/queries.ts:272-277<br />web/src/features/pr-review/GitHubPrReview.tsx:83-90,
+                    729-750
+                  </p>
+                  <span class="chip">correctness</span>
+                </div>
+              </div>
             </details>
 
-            <details class="finding" data-severity="p2" data-category="state review" data-status="completed" open>
-              <summary><span class="severity p2">P2</span><span class="completion">COMPLETED · PR #140</span><span class="finding-title">Switching editors during a mutation can erase newly entered text</span></summary>
-              <div class="finding-body"><div><h3>Impact</h3><p>Submit a reply/edit on item A, start item B while A is pending, and A’s completion unconditionally closes and clears B’s shared editor state.</p><h3>Recommendation</h3><p>Disable other editor entry while pending or store drafts per entity and clear only when the completed request still matches the open entity ID.</p><h3>Implemented</h3><p>New-comment, draft-edit, and thread-reply state now keep target, body, and a generation token together. Async completion clears only the exact editor generation that submitted, preserving a newer editor even when it targets the same entity.</p></div><div><h3>Evidence</h3><p class="source">web/src/features/pr-review/GitHubPrReview.tsx<br />web/src/features/pr-review/review-ui-helpers.ts<br />web/src/features/pr-review/GitHubPrReview.test.ts</p><span class="chip">race condition</span></div></div>
+            <details
+              class="finding"
+              data-severity="p2"
+              data-category="state review"
+              data-status="completed"
+              open
+            >
+              <summary>
+                <span class="severity p2">P2</span
+                ><span class="completion">COMPLETED · PR #140</span
+                ><span class="finding-title"
+                  >Switching editors during a mutation can erase newly entered
+                  text</span
+                >
+              </summary>
+              <div class="finding-body">
+                <div>
+                  <h3>Impact</h3>
+                  <p>
+                    Submit a reply/edit on item A, start item B while A is
+                    pending, and A’s completion unconditionally closes and
+                    clears B’s shared editor state.
+                  </p>
+                  <h3>Recommendation</h3>
+                  <p>
+                    Disable other editor entry while pending or store drafts per
+                    entity and clear only when the completed request still
+                    matches the open entity ID.
+                  </p>
+                  <h3>Implemented</h3>
+                  <p>
+                    New-comment, draft-edit, and thread-reply state now keep
+                    target, body, and a generation token together. Async
+                    completion clears only the exact editor generation that
+                    submitted, preserving a newer editor even when it targets
+                    the same entity.
+                  </p>
+                </div>
+                <div>
+                  <h3>Evidence</h3>
+                  <p class="source">
+                    web/src/features/pr-review/GitHubPrReview.tsx<br />web/src/features/pr-review/review-ui-helpers.ts<br />web/src/features/pr-review/GitHubPrReview.test.ts
+                  </p>
+                  <span class="chip">race condition</span>
+                </div>
+              </div>
             </details>
 
-            <details class="finding" data-severity="p2" data-category="state autopilot" data-status="completed">
-              <summary><span class="severity p2">P2</span><span class="completion">COMPLETED · PR 2</span><span class="finding-title">Autopilot confirmation can execute after the server withdraws the option</span></summary>
-              <div class="finding-body"><div><h3>Impact</h3><p>A cleanup/revision action stays confirmable after refreshed recovery options remove it. The backend may reject it, but the UI represents stale authority.</p><h3>Recommendation</h3><p>Reconcile confirmation/revision state against the latest option IDs and close any action no longer present; keep backend rejection.</p></div><div><h3>Evidence</h3><p class="source">web/src/plugins/AutopilotPanel.tsx:426-449, 488-548</p><span class="chip">trust boundary</span></div></div>
+            <details
+              class="finding"
+              data-severity="p2"
+              data-category="state autopilot"
+              data-status="completed"
+            >
+              <summary>
+                <span class="severity p2">P2</span
+                ><span class="completion">COMPLETED · PR 2</span
+                ><span class="finding-title"
+                  >Autopilot confirmation can execute after the server withdraws
+                  the option</span
+                >
+              </summary>
+              <div class="finding-body">
+                <div>
+                  <h3>Impact</h3>
+                  <p>
+                    A cleanup/revision action stays confirmable after refreshed
+                    recovery options remove it. The backend may reject it, but
+                    the UI represents stale authority.
+                  </p>
+                  <h3>Recommendation</h3>
+                  <p>
+                    Reconcile confirmation/revision state against the latest
+                    option IDs and close any action no longer present; keep
+                    backend rejection.
+                  </p>
+                </div>
+                <div>
+                  <h3>Evidence</h3>
+                  <p class="source">
+                    web/src/plugins/AutopilotPanel.tsx:426-449, 488-548
+                  </p>
+                  <span class="chip">trust boundary</span>
+                </div>
+              </div>
             </details>
 
-            <details class="finding" data-severity="p2" data-category="state api events flue" data-status="completed">
-              <summary><span class="severity p2">P2</span><span class="completion">COMPLETED · PR 2</span><span class="finding-title">Chat/session caches do not resynchronize after SSE reconnect</span></summary>
-              <div class="finding-body"><div><h3>Impact</h3><p>Session changes or messages missed during disconnect can remain absent until a later chat event. Config replays; review refetches on open; chat has neither mechanism.</p><h3>Recommendation</h3><p>Expose <code>onOpen</code> for the chat stream and invalidate session/index plus refresh active history once at the app-level subscriber.</p></div><div><h3>Evidence</h3><p class="source">web/src/api/events.ts:23-27<br />web/src/App.tsx:83-93<br />web/src/features/flue-chat/components/session-view.tsx:162-175<br />src/server/events/event-stream.ts:63-81</p><span class="chip">reconnect convergence</span></div></div>
+            <details
+              class="finding"
+              data-severity="p2"
+              data-category="state api events flue"
+              data-status="completed"
+            >
+              <summary>
+                <span class="severity p2">P2</span
+                ><span class="completion">COMPLETED · PR 2</span
+                ><span class="finding-title"
+                  >Chat/session caches do not resynchronize after SSE
+                  reconnect</span
+                >
+              </summary>
+              <div class="finding-body">
+                <div>
+                  <h3>Impact</h3>
+                  <p>
+                    Session changes or messages missed during disconnect can
+                    remain absent until a later chat event. Config replays;
+                    review refetches on open; chat has neither mechanism.
+                  </p>
+                  <h3>Recommendation</h3>
+                  <p>
+                    Expose <code>onOpen</code> for the chat stream and
+                    invalidate session/index plus refresh active history once at
+                    the app-level subscriber.
+                  </p>
+                </div>
+                <div>
+                  <h3>Evidence</h3>
+                  <p class="source">
+                    web/src/api/events.ts:23-27<br />web/src/App.tsx:83-93<br />web/src/features/flue-chat/components/session-view.tsx:162-175<br />src/server/events/event-stream.ts:63-81
+                  </p>
+                  <span class="chip">reconnect convergence</span>
+                </div>
+              </div>
             </details>
 
-            <details class="finding" data-severity="p2" data-category="api flue performance" data-status="completed">
-              <summary><span class="severity p2">P2</span><span class="completion">COMPLETED · PR 2</span><span class="finding-title">Manual history reads duplicate useFlueAgent and can block a healthy chat</span></summary>
-              <div class="finding-body"><div><h3>Impact</h3><p>Every attach hydrates through the hook and then materializes full history again. Metadata events retrigger the read; a transient redundant-read error disables sending; length-based arbitration can prefer an older same-length snapshot.</p><h3>Recommendation</h3><p>Remove the second transcript owner and manual history cycle. Render <code>agent.messages</code> and use <code>historyReady</code>, status, and error from the installed Flue hook contract.</p></div><div><h3>Evidence</h3><p class="source">web/src/features/flue-chat/components/session-view.tsx:85-97, 119-128, 151-217, 365-371<br />web/src/features/flue-chat/lib/messages.ts:5<br />@flue/sdk docs/guide/react.md:81-85</p><span class="chip">Flue primitive misuse</span></div></div>
+            <details
+              class="finding"
+              data-severity="p2"
+              data-category="api flue performance"
+              data-status="completed"
+            >
+              <summary>
+                <span class="severity p2">P2</span
+                ><span class="completion">COMPLETED · PR 2</span
+                ><span class="finding-title"
+                  >Manual history reads duplicate useFlueAgent and can block a
+                  healthy chat</span
+                >
+              </summary>
+              <div class="finding-body">
+                <div>
+                  <h3>Impact</h3>
+                  <p>
+                    Every attach hydrates through the hook and then materializes
+                    full history again. Metadata events retrigger the read; a
+                    transient redundant-read error disables sending;
+                    length-based arbitration can prefer an older same-length
+                    snapshot.
+                  </p>
+                  <h3>Recommendation</h3>
+                  <p>
+                    Remove the second transcript owner and manual history cycle.
+                    Render <code>agent.messages</code> and use
+                    <code>historyReady</code>, status, and error from the
+                    installed Flue hook contract.
+                  </p>
+                </div>
+                <div>
+                  <h3>Evidence</h3>
+                  <p class="source">
+                    web/src/features/flue-chat/components/session-view.tsx:85-97,
+                    119-128, 151-217, 365-371<br />web/src/features/flue-chat/lib/messages.ts:5<br />@flue/sdk
+                    docs/guide/react.md:81-85
+                  </p>
+                  <span class="chip">Flue primitive misuse</span>
+                </div>
+              </div>
             </details>
 
-            <details class="finding" data-severity="p2" data-category="api flue ui correctness" data-status="completed">
-              <summary><span class="severity p2">P2</span><span class="completion">COMPLETED · PR 2</span><span class="finding-title">“Ref” always references the active session into itself</span></summary>
-              <div class="finding-body"><div><h3>Impact</h3><p>Clicking Ref supplies the same ID as source and target, records an audited self-reference, and pastes the current session’s own summary back into itself.</p><h3>Recommendation</h3><p>Move Reference to a session browser that chooses a non-active target. Until target selection exists, remove or disable the active-session action.</p></div><div><h3>Evidence</h3><p class="source">web/src/features/flue-chat/plugin.tsx:132-161<br />src/modules/sessions/references.ts:64</p><span class="chip">app integration</span></div></div>
+            <details
+              class="finding"
+              data-severity="p2"
+              data-category="api flue ui correctness"
+              data-status="completed"
+            >
+              <summary>
+                <span class="severity p2">P2</span
+                ><span class="completion">COMPLETED · PR 2</span
+                ><span class="finding-title"
+                  >“Ref” always references the active session into itself</span
+                >
+              </summary>
+              <div class="finding-body">
+                <div>
+                  <h3>Impact</h3>
+                  <p>
+                    Clicking Ref supplies the same ID as source and target,
+                    records an audited self-reference, and pastes the current
+                    session’s own summary back into itself.
+                  </p>
+                  <h3>Recommendation</h3>
+                  <p>
+                    Move Reference to a session browser that chooses a
+                    non-active target. Until target selection exists, remove or
+                    disable the active-session action.
+                  </p>
+                </div>
+                <div>
+                  <h3>Evidence</h3>
+                  <p class="source">
+                    web/src/features/flue-chat/plugin.tsx:132-161<br />src/modules/sessions/references.ts:64
+                  </p>
+                  <span class="chip">app integration</span>
+                </div>
+              </div>
             </details>
 
-            <details class="finding" data-severity="p2" data-category="api flue state" data-status="completed">
-              <summary><span class="severity p2">P2</span><span class="completion">COMPLETED · PR 2</span><span class="finding-title">In-flight sends/workflows leak operation state across session switches</span></summary>
-              <div class="finding-body"><div><h3>Impact</h3><p>Start a slow command in A, switch to B, and B inherits A’s busy/input/error state. A’s completion can clear B’s draft or show A’s error.</p><h3>Recommendation</h3><p>Key the session view by agent/session ID, fence async completion against a current-session ref, and abort the UI wait on unmount when supported.</p></div><div><h3>Evidence</h3><p class="source">web/src/features/flue-chat/plugin.tsx:232, 357-365<br />web/src/features/flue-chat/components/session-view.tsx:151-156, 219-444</p><span class="chip">session identity</span></div></div>
+            <details
+              class="finding"
+              data-severity="p2"
+              data-category="api flue state"
+              data-status="completed"
+            >
+              <summary>
+                <span class="severity p2">P2</span
+                ><span class="completion">COMPLETED · PR 2</span
+                ><span class="finding-title"
+                  >In-flight sends/workflows leak operation state across session
+                  switches</span
+                >
+              </summary>
+              <div class="finding-body">
+                <div>
+                  <h3>Impact</h3>
+                  <p>
+                    Start a slow command in A, switch to B, and B inherits A’s
+                    busy/input/error state. A’s completion can clear B’s draft
+                    or show A’s error.
+                  </p>
+                  <h3>Recommendation</h3>
+                  <p>
+                    Key the session view by agent/session ID, fence async
+                    completion against a current-session ref, and abort the UI
+                    wait on unmount when supported.
+                  </p>
+                </div>
+                <div>
+                  <h3>Evidence</h3>
+                  <p class="source">
+                    web/src/features/flue-chat/plugin.tsx:232, 357-365<br />web/src/features/flue-chat/components/session-view.tsx:151-156,
+                    219-444
+                  </p>
+                  <span class="chip">session identity</span>
+                </div>
+              </div>
             </details>
 
-            <details class="finding" data-severity="p2" data-category="api flue events state" data-status="completed">
-              <summary><span class="severity p2">P2</span><span class="completion">COMPLETED · PR 2</span><span class="finding-title">Server-created command events never converge into the mounted dashboard</span></summary>
-              <div class="finding-body"><div><h3>Impact</h3><p>Approval nudges and background workflows create/update durable command rows without publishing an event. With no polling, the open dashboard stays stale until remount or an unrelated session event.</p><h3>Recommendation</h3><p>Publish a typed <code>chat-session-command-change</code> event through the multiplex hub and invalidate only the affected session command-event key.</p></div><div><h3>Evidence</h3><p class="source">web/src/features/flue-chat/components/session-view.tsx:130-174<br />src/modules/sessions/service.ts:572, 653-759<br />src/modules/sessions/approval-nudges.ts:62<br />src/workflows/briefing.ts:31</p><span class="chip">durable state convergence</span></div></div>
+            <details
+              class="finding"
+              data-severity="p2"
+              data-category="api flue events state"
+              data-status="completed"
+            >
+              <summary>
+                <span class="severity p2">P2</span
+                ><span class="completion">COMPLETED · PR 2</span
+                ><span class="finding-title"
+                  >Server-created command events never converge into the mounted
+                  dashboard</span
+                >
+              </summary>
+              <div class="finding-body">
+                <div>
+                  <h3>Impact</h3>
+                  <p>
+                    Approval nudges and background workflows create/update
+                    durable command rows without publishing an event. With no
+                    polling, the open dashboard stays stale until remount or an
+                    unrelated session event.
+                  </p>
+                  <h3>Recommendation</h3>
+                  <p>
+                    Publish a typed
+                    <code>chat-session-command-change</code> event through the
+                    multiplex hub and invalidate only the affected session
+                    command-event key.
+                  </p>
+                </div>
+                <div>
+                  <h3>Evidence</h3>
+                  <p class="source">
+                    web/src/features/flue-chat/components/session-view.tsx:130-174<br />src/modules/sessions/service.ts:572,
+                    653-759<br />src/modules/sessions/approval-nudges.ts:62<br />src/workflows/briefing.ts:31
+                  </p>
+                  <span class="chip">durable state convergence</span>
+                </div>
+              </div>
             </details>
 
-            <details class="finding" data-severity="p2" data-category="api performance tanstack" data-status="completed">
-              <summary><span class="severity p2">P2</span><span class="completion">COMPLETED · PR 2</span><span class="finding-title">TanStack query cancellation is systematically discarded</span></summary>
-              <div class="finding-body"><div><h3>Impact</h3><p>Close or switch a heavy diff/runtime surface and abandoned reads continue transferring, doing backend work, and populating unused cache entries.</p><h3>Recommendation</h3><p>Standardize API read options with AbortSignal and use <code>queryFn: ({ signal }) =&gt; apiCall(input, { signal })</code>, starting with patches, diffs, runtime fan-out, session activity, and PR records.</p></div><div><h3>Evidence</h3><p class="source">web/src/api/http.ts:13<br />web/src/features/diff-viewer/queries.ts:32<br />web/src/features/pr-review/queries.ts:76<br />web/src/features/runtime-overview/plugin.tsx:59<br />web/src/api/github.ts:31</p><span class="chip">TanStack Query 5.101.2</span></div></div>
+            <details
+              class="finding"
+              data-severity="p2"
+              data-category="api performance tanstack"
+              data-status="completed"
+            >
+              <summary>
+                <span class="severity p2">P2</span
+                ><span class="completion">COMPLETED · PR 2</span
+                ><span class="finding-title"
+                  >TanStack query cancellation is systematically discarded</span
+                >
+              </summary>
+              <div class="finding-body">
+                <div>
+                  <h3>Impact</h3>
+                  <p>
+                    Close or switch a heavy diff/runtime surface and abandoned
+                    reads continue transferring, doing backend work, and
+                    populating unused cache entries.
+                  </p>
+                  <h3>Recommendation</h3>
+                  <p>
+                    Standardize API read options with AbortSignal and use
+                    <code
+                      >queryFn: ({ signal }) =&gt; apiCall(input, { signal
+                      })</code
+                    >, starting with patches, diffs, runtime fan-out, session
+                    activity, and PR records.
+                  </p>
+                </div>
+                <div>
+                  <h3>Evidence</h3>
+                  <p class="source">
+                    web/src/api/http.ts:13<br />web/src/features/diff-viewer/queries.ts:32<br />web/src/features/pr-review/queries.ts:76<br />web/src/features/runtime-overview/plugin.tsx:59<br />web/src/api/github.ts:31
+                  </p>
+                  <span class="chip">TanStack Query 5.101.2</span>
+                </div>
+              </div>
             </details>
 
-            <details class="finding" data-severity="p3" data-category="ui polish" data-status="completed" open>
-              <summary><span class="severity p3">P3</span><span class="completion">COMPLETED · FINAL PASS</span><span class="finding-title">Shared live metrics do not consistently use tabular numerals</span></summary>
-              <div class="finding-body"><div><h3>Impact</h3><p>Refetched counts subtly change width and create jitter, contrary to the design system’s Tabular-Numbers Rule.</p><h3>Recommendation</h3><p>Add tabular numerals to Metric and numeric StatusPill values.</p><h3>Implemented</h3><p>The shared Metric and StatusPill value slots now use tabular numerals, covering Runtime Overview and Workflow Observability without one-off caller styles.</p></div><div><h3>Evidence</h3><p class="source">web/src/components/ui.tsx<br />web/src/components/ui.test.tsx</p><span class="chip">$impeccable polish</span></div></div>
+            <details
+              class="finding"
+              data-severity="p3"
+              data-category="ui polish"
+              data-status="completed"
+              open
+            >
+              <summary>
+                <span class="severity p3">P3</span
+                ><span class="completion">COMPLETED · FINAL PASS</span
+                ><span class="finding-title"
+                  >Shared live metrics do not consistently use tabular
+                  numerals</span
+                >
+              </summary>
+              <div class="finding-body">
+                <div>
+                  <h3>Impact</h3>
+                  <p>
+                    Refetched counts subtly change width and create jitter,
+                    contrary to the design system’s Tabular-Numbers Rule.
+                  </p>
+                  <h3>Recommendation</h3>
+                  <p>
+                    Add tabular numerals to Metric and numeric StatusPill
+                    values.
+                  </p>
+                  <h3>Implemented</h3>
+                  <p>
+                    The shared Metric and StatusPill value slots now use tabular
+                    numerals, covering Runtime Overview and Workflow
+                    Observability without one-off caller styles.
+                  </p>
+                </div>
+                <div>
+                  <h3>Evidence</h3>
+                  <p class="source">
+                    web/src/components/ui.tsx<br />web/src/components/ui.test.tsx
+                  </p>
+                  <span class="chip">$impeccable polish</span>
+                </div>
+              </div>
             </details>
 
-            <details class="finding" data-severity="p3" data-category="state review" data-status="completed" open>
-              <summary><span class="severity p3">P3</span><span class="completion">COMPLETED · FINAL PASS</span><span class="finding-title">Old mutation errors permanently mask later success messages</span></summary>
-              <div class="finding-body"><div><h3>Impact</h3><p>A failed operation’s persistent mutation error wins over later success status, making correct state look broken.</p><h3>Recommendation</h3><p>Reset superseded mutation errors or use one operation-scoped status/error channel.</p><h3>Implemented</h3><p>The review workbench now owns one generation-scoped status channel. Starting newer work supersedes older status, and late success or failure callbacks update the UI only when their operation generation is still current.</p></div><div><h3>Evidence</h3><p class="source">web/src/features/pr-review/GitHubPrReview.tsx<br />web/src/features/pr-review/review-ui-helpers.ts<br />web/src/features/pr-review/GitHubPrReview.test.ts</p><span class="chip">status ownership</span></div></div>
+            <details
+              class="finding"
+              data-severity="p3"
+              data-category="state review"
+              data-status="completed"
+              open
+            >
+              <summary>
+                <span class="severity p3">P3</span
+                ><span class="completion">COMPLETED · FINAL PASS</span
+                ><span class="finding-title"
+                  >Old mutation errors permanently mask later success
+                  messages</span
+                >
+              </summary>
+              <div class="finding-body">
+                <div>
+                  <h3>Impact</h3>
+                  <p>
+                    A failed operation’s persistent mutation error wins over
+                    later success status, making correct state look broken.
+                  </p>
+                  <h3>Recommendation</h3>
+                  <p>
+                    Reset superseded mutation errors or use one operation-scoped
+                    status/error channel.
+                  </p>
+                  <h3>Implemented</h3>
+                  <p>
+                    The review workbench now owns one generation-scoped status
+                    channel. Starting newer work supersedes older status, and
+                    late success or failure callbacks update the UI only when
+                    their operation generation is still current.
+                  </p>
+                </div>
+                <div>
+                  <h3>Evidence</h3>
+                  <p class="source">
+                    web/src/features/pr-review/GitHubPrReview.tsx<br />web/src/features/pr-review/review-ui-helpers.ts<br />web/src/features/pr-review/GitHubPrReview.test.ts
+                  </p>
+                  <span class="chip">status ownership</span>
+                </div>
+              </div>
             </details>
 
-            <details class="finding" data-severity="p3" data-category="state review" data-status="completed" open>
-              <summary><span class="severity p3">P3</span><span class="completion">COMPLETED · FINAL PASS</span><span class="finding-title">Report-only findings use body substring matching as identity</span></summary>
-              <div class="finding-body"><div><h3>Impact</h3><p>Overlapping summaries can mark unrelated findings drafted; editing generated text can make a drafted finding appear available again.</p><h3>Recommendation</h3><p>Persist a stable source-finding ID; until then match the exact generated template plus path.</p><h3>Implemented</h3><p>Review assist now assigns a deterministic source ID to each finding and persists it on generated draft comments. The sidebar compares that provenance rather than display text; legacy records use exact generated-body plus path matching.</p></div><div><h3>Evidence</h3><p class="source">src/modules/pr-reviews/finding-id.ts<br />src/modules/pr-review-assist/service.ts<br />src/modules/github/reviews.ts<br />src/runtime-home/app-db/schema.ts<br />web/src/features/pr-review/PrReviewFindingsSidebar.tsx</p><span class="chip">identity</span></div></div>
+            <details
+              class="finding"
+              data-severity="p3"
+              data-category="state review"
+              data-status="completed"
+              open
+            >
+              <summary>
+                <span class="severity p3">P3</span
+                ><span class="completion">COMPLETED · FINAL PASS</span
+                ><span class="finding-title"
+                  >Report-only findings use body substring matching as
+                  identity</span
+                >
+              </summary>
+              <div class="finding-body">
+                <div>
+                  <h3>Impact</h3>
+                  <p>
+                    Overlapping summaries can mark unrelated findings drafted;
+                    editing generated text can make a drafted finding appear
+                    available again.
+                  </p>
+                  <h3>Recommendation</h3>
+                  <p>
+                    Persist a stable source-finding ID; until then match the
+                    exact generated template plus path.
+                  </p>
+                  <h3>Implemented</h3>
+                  <p>
+                    Review assist now assigns a deterministic source ID to each
+                    finding and persists it on generated draft comments. The
+                    sidebar compares that provenance rather than display text;
+                    legacy records use exact generated-body plus path matching.
+                  </p>
+                </div>
+                <div>
+                  <h3>Evidence</h3>
+                  <p class="source">
+                    src/modules/pr-reviews/finding-id.ts<br />src/modules/pr-review-assist/service.ts<br />src/modules/github/reviews.ts<br />src/runtime-home/app-db/schema.ts<br />web/src/features/pr-review/PrReviewFindingsSidebar.tsx
+                  </p>
+                  <span class="chip">identity</span>
+                </div>
+              </div>
             </details>
 
-            <details class="finding" data-severity="p3" data-category="state ui" data-status="completed" open>
-              <summary><span class="severity p3">P3</span><span class="completion">COMPLETED · FINAL PASS</span><span class="finding-title">Navigation highlight timers race and survive panel unmount</span></summary>
-              <div class="finding-body"><div><h3>Impact</h3><p>Rapid navigation lets the first timeout clear the second highlight early; stale timers survive unmount.</p><h3>Recommendation</h3><p>Store the timer ID in a ref, clear before rescheduling, and clean up on effect teardown.</p><h3>Implemented</h3><p>The tab-region navigation effect now keeps the pulse timer in a ref, cancels the previous timer before rescheduling, and clears the timer during effect teardown.</p></div><div><h3>Evidence</h3><p class="source">web/src/App.tsx</p><span class="chip">timer cleanup</span></div></div>
+            <details
+              class="finding"
+              data-severity="p3"
+              data-category="state ui"
+              data-status="completed"
+              open
+            >
+              <summary>
+                <span class="severity p3">P3</span
+                ><span class="completion">COMPLETED · FINAL PASS</span
+                ><span class="finding-title"
+                  >Navigation highlight timers race and survive panel
+                  unmount</span
+                >
+              </summary>
+              <div class="finding-body">
+                <div>
+                  <h3>Impact</h3>
+                  <p>
+                    Rapid navigation lets the first timeout clear the second
+                    highlight early; stale timers survive unmount.
+                  </p>
+                  <h3>Recommendation</h3>
+                  <p>
+                    Store the timer ID in a ref, clear before rescheduling, and
+                    clean up on effect teardown.
+                  </p>
+                  <h3>Implemented</h3>
+                  <p>
+                    The tab-region navigation effect now keeps the pulse timer
+                    in a ref, cancels the previous timer before rescheduling,
+                    and clears the timer during effect teardown.
+                  </p>
+                </div>
+                <div>
+                  <h3>Evidence</h3>
+                  <p class="source">web/src/App.tsx</p>
+                  <span class="chip">timer cleanup</span>
+                </div>
+              </div>
             </details>
 
-            <details class="finding" data-severity="p3" data-category="api flue config" data-status="completed" open>
-              <summary><span class="severity p3">P3</span><span class="completion">COMPLETED · FINAL PASS</span><span class="finding-title">Config accepts agent names incompatible with the session model and exposed routes</span></summary>
-              <div class="finding-body"><div><h3>Impact</h3><p>Set another agent name and the selector still supplies display-assistant session IDs; history appears missing and sends fail because other agents are not exposed.</p><h3>Recommendation</h3><p>Validate the literal <code>display-assistant</code> or remove the option until agent identity is modeled in session selection and routing.</p><h3>Implemented</h3><p>The Flue chat config type and parser now accept only <code>display-assistant</code>. Unsupported values produce a visible config issue and safely fall back to the routed agent.</p></div><div><h3>Evidence</h3><p class="source">web/src/features/flue-chat/config.ts<br />web/src/features/flue-chat/config.test.ts<br />web/src/features/flue-chat/types.ts</p><span class="chip">config contract</span></div></div>
+            <details
+              class="finding"
+              data-severity="p3"
+              data-category="api flue config"
+              data-status="completed"
+              open
+            >
+              <summary>
+                <span class="severity p3">P3</span
+                ><span class="completion">COMPLETED · FINAL PASS</span
+                ><span class="finding-title"
+                  >Config accepts agent names incompatible with the session
+                  model and exposed routes</span
+                >
+              </summary>
+              <div class="finding-body">
+                <div>
+                  <h3>Impact</h3>
+                  <p>
+                    Set another agent name and the selector still supplies
+                    display-assistant session IDs; history appears missing and
+                    sends fail because other agents are not exposed.
+                  </p>
+                  <h3>Recommendation</h3>
+                  <p>
+                    Validate the literal <code>display-assistant</code> or
+                    remove the option until agent identity is modeled in session
+                    selection and routing.
+                  </p>
+                  <h3>Implemented</h3>
+                  <p>
+                    The Flue chat config type and parser now accept only
+                    <code>display-assistant</code>. Unsupported values produce a
+                    visible config issue and safely fall back to the routed
+                    agent.
+                  </p>
+                </div>
+                <div>
+                  <h3>Evidence</h3>
+                  <p class="source">
+                    web/src/features/flue-chat/config.ts<br />web/src/features/flue-chat/config.test.ts<br />web/src/features/flue-chat/types.ts
+                  </p>
+                  <span class="chip">config contract</span>
+                </div>
+              </div>
             </details>
           </div>
-          <div id="empty-filter" class="empty-filter">No findings match this filter.</div>
+          <div id="empty-filter" class="empty-filter">
+            No findings match this filter.
+          </div>
         </section>
 
         <section id="hunk" aria-labelledby="hunk-title">
@@ -1336,42 +2961,107 @@
             <span class="chip">comparative evidence</span>
           </div>
           <div class="callout">
-            Hunk uses <code>@pierre/diffs</code> core 1.2.2 with OpenTUI; Neondeck uses
-            Pierre React 1.2.12. The rendering implementations are not equivalent. Transfer the
-            discipline: benchmarks, identity stability, and prefetch policy, not terminal-specific code.
+            Hunk uses <code>@pierre/diffs</code> core 1.2.2 with OpenTUI;
+            Neondeck uses Pierre React 1.2.12. The rendering implementations are
+            not equivalent. Transfer the discipline: benchmarks, identity
+            stability, and prefetch policy, not terminal-specific code.
           </div>
           <div class="two-col" style="margin-top: 14px">
             <article class="panel-block">
               <h3>Transferable patterns</h3>
               <ul>
-                <li>Benchmark realistic tiers: Hunk includes 180×120 and 1,000-file/300-line fixtures plus a 50,000-line file.</li>
-                <li>Measure selected-file startup, next-file readiness, and adjacent readiness separately.</li>
-                <li>Track cold/warm first frame, windowed scroll ticks, interaction latency, and memory.</li>
-                <li>Use explicit file/row geometry and spacer preservation when windowing.</li>
-                <li>Keep callbacks stable at memoized section/row boundaries using latest-value refs and caches.</li>
+                <li>
+                  Benchmark realistic tiers: Hunk includes 180×120 and
+                  1,000-file/300-line fixtures plus a 50,000-line file.
+                </li>
+                <li>
+                  Measure selected-file startup, next-file readiness, and
+                  adjacent readiness separately.
+                </li>
+                <li>
+                  Track cold/warm first frame, windowed scroll ticks,
+                  interaction latency, and memory.
+                </li>
+                <li>
+                  Use explicit file/row geometry and spacer preservation when
+                  windowing.
+                </li>
+                <li>
+                  Keep callbacks stable at memoized section/row boundaries using
+                  latest-value refs and caches.
+                </li>
               </ul>
             </article>
             <article class="panel-block">
               <h3>Neondeck already aligns</h3>
               <ul>
-                <li>First and adjacent PR patch prefetch is already present.</li>
-                <li>Pierre worker configuration is module-scoped and stable.</li>
-                <li>Heavy review/diff surfaces have targeted lazy boundaries.</li>
+                <li>
+                  First and adjacent PR patch prefetch is already present.
+                </li>
+                <li>
+                  Pierre worker configuration is module-scoped and stable.
+                </li>
+                <li>
+                  Heavy review/diff surfaces have targeted lazy boundaries.
+                </li>
                 <li>Artifact overlay aborts superseded/unmounted fetches.</li>
-                <li>App-domain EventSource traffic is multiplexed without replacing Flue realtime.</li>
+                <li>
+                  App-domain EventSource traffic is multiplexed without
+                  replacing Flue realtime.
+                </li>
               </ul>
             </article>
           </div>
           <div class="table-scroll" style="margin-top: 14px">
             <table class="compact-table">
-              <thead><tr><th>Hunk evidence</th><th>Lesson</th></tr></thead>
+              <thead>
+                <tr>
+                  <th>Hunk evidence</th>
+                  <th>Lesson</th>
+                </tr>
+              </thead>
               <tbody>
-                <tr><td class="source">benchmarks/README.md:3-23, 97-103</td><td>Define scale tiers and budgets before optimizing.</td></tr>
-                <tr><td class="source">benchmarks/highlight-prefetch.ts:101-154</td><td>Separate selected, next, and adjacent readiness metrics.</td></tr>
-                <tr><td class="source">benchmarks/large-stream.ts:84-123</td><td>Measure cold, warm, and scrolling paths.</td></tr>
-                <tr><td class="source">src/ui/diff/rowWindowing.ts:16-175</td><td>Binary-search visible rows and preserve geometry with spacers.</td></tr>
-                <tr><td class="source">src/ui/components/panes/DiffSection.tsx:147-180</td><td>Use deliberate memo boundaries and stable upstream identities.</td></tr>
-                <tr><td class="source">src/ui/components/panes/DiffPane.tsx:303-347</td><td>Cache per-file callbacks while reading latest handlers through refs.</td></tr>
+                <tr>
+                  <td class="source">benchmarks/README.md:3-23, 97-103</td>
+                  <td>Define scale tiers and budgets before optimizing.</td>
+                </tr>
+                <tr>
+                  <td class="source">
+                    benchmarks/highlight-prefetch.ts:101-154
+                  </td>
+                  <td>
+                    Separate selected, next, and adjacent readiness metrics.
+                  </td>
+                </tr>
+                <tr>
+                  <td class="source">benchmarks/large-stream.ts:84-123</td>
+                  <td>Measure cold, warm, and scrolling paths.</td>
+                </tr>
+                <tr>
+                  <td class="source">src/ui/diff/rowWindowing.ts:16-175</td>
+                  <td>
+                    Binary-search visible rows and preserve geometry with
+                    spacers.
+                  </td>
+                </tr>
+                <tr>
+                  <td class="source">
+                    src/ui/components/panes/DiffSection.tsx:147-180
+                  </td>
+                  <td>
+                    Use deliberate memo boundaries and stable upstream
+                    identities.
+                  </td>
+                </tr>
+                <tr>
+                  <td class="source">
+                    src/ui/components/panes/DiffPane.tsx:303-347
+                  </td>
+                  <td>
+                    Cache per-file callbacks while reading latest handlers
+                    through refs.
+                  </td>
+                </tr>
               </tbody>
             </table>
           </div>
@@ -1383,23 +3073,111 @@
             <span class="chip">report → discuss → implement</span>
           </div>
           <ol class="ordered">
-            <li class="completed-action"><span class="completion">COMPLETED · PR 1</span> <strong>P1 · Accessibility hardening:</strong> accessible names, combobox, tabs/filters/disclosures, panel landmarks, and shared status/error feedback. Suggested command: <code>$impeccable harden</code>.</li>
-            <li class="completed-action"><span class="completion">COMPLETED · PR 1</span> <strong>P1 · Color repair:</strong> correct semantic and placeholder contrast in both themes, then validate focus non-text contrast. Suggested command: <code>$impeccable colorize</code>.</li>
-            <li class="completed-action"><span class="completion">COMPLETED · PR 1</span> <strong>P1 · Responsive task completion:</strong> preserve PR verdict/summary and restructure narrow chat controls. Suggested command: <code>$impeccable adapt</code>.</li>
-            <li class="completed-action"><span class="completion">COMPLETED · PR 2</span> <strong>P2 · Flue/session correctness:</strong> remove duplicate history ownership, key async state by session, fix self-reference, and publish typed command-change events.</li>
-            <li class="completed-action"><span class="completion">COMPLETED · PR 2</span> <strong>P2 · Query correctness:</strong> pass AbortSignals, repair reconnect convergence, invalidate durable review state, and reconcile stale Autopilot confirmations.</li>
-            <li class="completed-action"><span class="completion">COMPLETED · MEASUREMENT + FIRST WAVE</span> <strong>Performance measurement gate:</strong> the five-part fixture pass, chat isolation, thresholded Pierre CodeView, and real registered-PR trace are complete. Runtime topology, duplicate review DOM, and lazy registry remain deferred behind workload/budget evidence.</li>
-            <li class="completed-action"><span class="completion">COMPLETED · REQUEST-PATH REMEDIATION</span> <strong>P1 · Real PR request path:</strong> discuss the measured duplicate review-thread identity and repeated local metadata work, then implement only the approved fixes and repeat <code>npm run bench:pr-review</code>. The stable thread key and bounded revision-metadata cache are implemented and verified on the retained target.</li>
-            <li class="completed-action"><span class="completion">COMPLETED · ACTIVE PATCH PRIORITY</span> <strong>P1 · Active patch priority:</strong> discuss whether neighbor and unresolved-path prefetch should wait for the active patch. The retained remediated trace was 195 ms over target; the implemented active-first schedule now reaches a 798 ms median and passes all three samples while preserving zero abandoned reads.</li>
-            <li class="completed-action"><span class="completion">COMPLETED · WARM THREAD PATH</span> <strong>P1 · Review-thread latency:</strong> correct the harness's production-mode detection, measure request versus render cost, slim the web-only GitHub query, and add only a bounded 15-second mutation-aware cache after the lean query remained too slow. Warm thread visibility now reaches 459 ms median with an 84.7% smaller response; cold GitHub latency remains explicit.</li>
-            <li class="completed-action"><span class="completion">COMPLETED · COPY/DISCLOSURE</span> <strong>P2 · Copy/disclosure:</strong> row-specific action names and full-value affordances for operational text. Suggested command: <code>$impeccable clarify</code>.</li>
-            <li class="completed-action"><span class="completion">COMPLETED · PR #140</span> <strong>P2 · Editor state ownership:</strong> keep new-comment, draft-edit, and thread-reply bodies scoped to their editor generation so older async completions cannot clear newer work.</li>
-            <li class="completed-action"><span class="completion">COMPLETED · FINAL PASS</span> <strong>P3 · Final pass:</strong> tabular metrics, timer cleanup, operation-scoped status, stable finding IDs, and config tightening. Suggested command: <code>$impeccable polish</code>.</li>
-            <li class="completed-action"><span class="completion">COMPLETED · CLOSING GATE</span> <strong>Re-audit:</strong> repeat the static audit, then run focused runtime and accessibility checks against the agreed fixtures.</li>
-            <li class="completed-action"><span class="completion">COMPLETED · DIFF PHASE B AUDIT</span> <strong>Guided review stopping handoff:</strong> reconcile source/revision consistency, navigation and accessibility, typed finding trust, explicit promotion, and guarded refresh across GitHub, prepared, and prepared-backed Kilo surfaces; retain measured misses and pause before Phases C–E.</li>
+            <li class="completed-action">
+              <span class="completion">COMPLETED · PR 1</span>
+              <strong>P1 · Accessibility hardening:</strong> accessible names,
+              combobox, tabs/filters/disclosures, panel landmarks, and shared
+              status/error feedback. Suggested command:
+              <code>$impeccable harden</code>.
+            </li>
+            <li class="completed-action">
+              <span class="completion">COMPLETED · PR 1</span>
+              <strong>P1 · Color repair:</strong> correct semantic and
+              placeholder contrast in both themes, then validate focus non-text
+              contrast. Suggested command: <code>$impeccable colorize</code>.
+            </li>
+            <li class="completed-action">
+              <span class="completion">COMPLETED · PR 1</span>
+              <strong>P1 · Responsive task completion:</strong> preserve PR
+              verdict/summary and restructure narrow chat controls. Suggested
+              command: <code>$impeccable adapt</code>.
+            </li>
+            <li class="completed-action">
+              <span class="completion">COMPLETED · PR 2</span>
+              <strong>P2 · Flue/session correctness:</strong> remove duplicate
+              history ownership, key async state by session, fix self-reference,
+              and publish typed command-change events.
+            </li>
+            <li class="completed-action">
+              <span class="completion">COMPLETED · PR 2</span>
+              <strong>P2 · Query correctness:</strong> pass AbortSignals, repair
+              reconnect convergence, invalidate durable review state, and
+              reconcile stale Autopilot confirmations.
+            </li>
+            <li class="completed-action">
+              <span class="completion"
+                >COMPLETED · MEASUREMENT + FIRST WAVE</span
+              >
+              <strong>Performance measurement gate:</strong> the five-part
+              fixture pass, chat isolation, thresholded Pierre CodeView, and
+              real registered-PR trace are complete. Runtime topology, duplicate
+              review DOM, and lazy registry remain deferred behind
+              workload/budget evidence.
+            </li>
+            <li class="completed-action">
+              <span class="completion"
+                >COMPLETED · REQUEST-PATH REMEDIATION</span
+              >
+              <strong>P1 · Real PR request path:</strong> discuss the measured
+              duplicate review-thread identity and repeated local metadata work,
+              then implement only the approved fixes and repeat
+              <code>npm run bench:pr-review</code>. The stable thread key and
+              bounded revision-metadata cache are implemented and verified on
+              the retained target.
+            </li>
+            <li class="completed-action">
+              <span class="completion">COMPLETED · ACTIVE PATCH PRIORITY</span>
+              <strong>P1 · Active patch priority:</strong> discuss whether
+              neighbor and unresolved-path prefetch should wait for the active
+              patch. The retained remediated trace was 195 ms over target; the
+              implemented active-first schedule now reaches a 798 ms median and
+              passes all three samples while preserving zero abandoned reads.
+            </li>
+            <li class="completed-action">
+              <span class="completion">COMPLETED · WARM THREAD PATH</span>
+              <strong>P1 · Review-thread latency:</strong> correct the harness's
+              production-mode detection, measure request versus render cost,
+              slim the web-only GitHub query, and add only a bounded 15-second
+              mutation-aware cache after the lean query remained too slow. Warm
+              thread visibility now reaches 459 ms median with an 84.7% smaller
+              response; cold GitHub latency remains explicit.
+            </li>
+            <li class="completed-action">
+              <span class="completion">COMPLETED · COPY/DISCLOSURE</span>
+              <strong>P2 · Copy/disclosure:</strong> row-specific action names
+              and full-value affordances for operational text. Suggested
+              command: <code>$impeccable clarify</code>.
+            </li>
+            <li class="completed-action">
+              <span class="completion">COMPLETED · PR #140</span>
+              <strong>P2 · Editor state ownership:</strong> keep new-comment,
+              draft-edit, and thread-reply bodies scoped to their editor
+              generation so older async completions cannot clear newer work.
+            </li>
+            <li class="completed-action">
+              <span class="completion">COMPLETED · FINAL PASS</span>
+              <strong>P3 · Final pass:</strong> tabular metrics, timer cleanup,
+              operation-scoped status, stable finding IDs, and config
+              tightening. Suggested command: <code>$impeccable polish</code>.
+            </li>
+            <li class="completed-action">
+              <span class="completion">COMPLETED · CLOSING GATE</span>
+              <strong>Re-audit:</strong> repeat the static audit, then run
+              focused runtime and accessibility checks against the agreed
+              fixtures.
+            </li>
+            <li class="completed-action">
+              <span class="completion">COMPLETED · DIFF PHASE B AUDIT</span>
+              <strong>Guided review stopping handoff:</strong> reconcile
+              source/revision consistency, navigation and accessibility, typed
+              finding trust, explicit promotion, and guarded refresh across
+              GitHub, prepared, and prepared-backed Kilo surfaces; retain
+              measured misses and pause before Phases C–E.
+            </li>
           </ol>
           <p class="section-note">
-            You can ask to run these one at a time, all at once, or in any order. Re-run
+            You can ask to run these one at a time, all at once, or in any
+            order. Re-run
             <code>$impeccable audit</code> after fixes to see the score improve.
           </p>
         </section>
@@ -1413,44 +3191,111 @@
             <article class="panel-block">
               <h3>Independent assignments</h3>
               <ul>
-                <li><strong>State/correctness:</strong> async effects, races, identity, mutation/cache behavior, cleanup.</li>
-                <li><strong>API/Flue:</strong> installed beta.9 docs/types, SDK hooks, route boundary, SSE, Query contracts.</li>
-                <li><strong>UI/UX:</strong> Impeccable audit criteria, PRODUCT/DESIGN, WCAG, themes, semantics, responsive tasks.</li>
-                <li><strong>Performance:</strong> recent frontend delta, Pierre/diff path, React render coupling, Query fan-out, bundle and Hunk comparison.</li>
+                <li>
+                  <strong>State/correctness:</strong> async effects, races,
+                  identity, mutation/cache behavior, cleanup.
+                </li>
+                <li>
+                  <strong>API/Flue:</strong> installed beta.9 docs/types, SDK
+                  hooks, route boundary, SSE, Query contracts.
+                </li>
+                <li>
+                  <strong>UI/UX:</strong> Impeccable audit criteria,
+                  PRODUCT/DESIGN, WCAG, themes, semantics, responsive tasks.
+                </li>
+                <li>
+                  <strong>Performance:</strong> recent frontend delta,
+                  Pierre/diff path, React render coupling, Query fan-out, bundle
+                  and Hunk comparison.
+                </li>
               </ul>
             </article>
             <article class="panel-block">
               <h3>Limits</h3>
               <ul>
-                <li>The original 2026-07-15 review was static-only. The 2026-07-16 supplement ran a production build, deterministic browser fixtures, React profiling, and direct Chrome traces.</li>
-                <li>The harness imports real Neondeck/Pierre components but uses mock patches, messages, queries, and review threads; it is not a live GitHub/backend end-to-end test.</li>
-                <li>Backend patch concurrency/bytes are modeled from query descriptors. Real repository timing remains in <code>.plans/PR_REVIEW_PERF_PLAN.md</code>.</li>
-                <li>The 50,000-line unvirtualized fixture remains opt-in because it can exhaust local memory; the repeatable matrix stops at 10,000 lines and includes the 50,000-line generator.</li>
-                <li><strong>Historical measurement-pass limit:</strong> no production optimization was implemented in the measurement branch; harness code and this retained report were its only product-repository changes. A later approved remediation pass added the stable thread key and bounded revision-metadata cache while retaining these original notes.</li>
-                <li>Contrast ratios were computed from committed sRGB tokens and alpha compositing.</li>
-                <li>The static baseline targeted clean <code>e51337e</code>; measurement ran after the two corrective PRs merged to <code>main</code>.</li>
+                <li>
+                  The original 2026-07-15 review was static-only. The 2026-07-16
+                  supplement ran a production build, deterministic browser
+                  fixtures, React profiling, and direct Chrome traces.
+                </li>
+                <li>
+                  The harness imports real Neondeck/Pierre components but uses
+                  mock patches, messages, queries, and review threads; it is not
+                  a live GitHub/backend end-to-end test.
+                </li>
+                <li>
+                  Backend patch concurrency/bytes are modeled from query
+                  descriptors. Real repository timing remains in
+                  <code>.plans/PR_REVIEW_PERF_PLAN.md</code>.
+                </li>
+                <li>
+                  The 50,000-line unvirtualized fixture remains opt-in because
+                  it can exhaust local memory; the repeatable matrix stops at
+                  10,000 lines and includes the 50,000-line generator.
+                </li>
+                <li>
+                  <strong>Historical measurement-pass limit:</strong> no
+                  production optimization was implemented in the measurement
+                  branch; harness code and this retained report were its only
+                  product-repository changes. A later approved remediation pass
+                  added the stable thread key and bounded revision-metadata
+                  cache while retaining these original notes.
+                </li>
+                <li>
+                  Contrast ratios were computed from committed sRGB tokens and
+                  alpha compositing.
+                </li>
+                <li>
+                  The static baseline targeted clean <code>e51337e</code>;
+                  measurement ran after the two corrective PRs merged to
+                  <code>main</code>.
+                </li>
               </ul>
             </article>
           </div>
 
           <h3 style="margin-top: 24px">Practices worth preserving</h3>
           <div class="three-col">
-            <article class="panel-block"><h3>Architecture</h3><p>Correct <code>/api/flue</code> client mount, one provider, app-owned multiplexed SSE, revision-aware PR keys, typed plugin parsing, separate Flue/app event responsibilities.</p></article>
-            <article class="panel-block"><h3>Interaction</h3><p>Strong notification semantics and timer pause behavior, native review dialog focus restoration, named PR comment inputs, visible focus, and global reduced motion.</p></article>
-            <article class="panel-block"><h3>Performance foundations</h3><p>Inactive tabs unmount, heavy diff surfaces lazy-load, workers are stable, adjacent patches prefetch, artifact fetches abort, and deck ResizeObserver commits only threshold changes.</p></article>
+            <article class="panel-block">
+              <h3>Architecture</h3>
+              <p>
+                Correct <code>/api/flue</code> client mount, one provider,
+                app-owned multiplexed SSE, revision-aware PR keys, typed plugin
+                parsing, separate Flue/app event responsibilities.
+              </p>
+            </article>
+            <article class="panel-block">
+              <h3>Interaction</h3>
+              <p>
+                Strong notification semantics and timer pause behavior, native
+                review dialog focus restoration, named PR comment inputs,
+                visible focus, and global reduced motion.
+              </p>
+            </article>
+            <article class="panel-block">
+              <h3>Performance foundations</h3>
+              <p>
+                Inactive tabs unmount, heavy diff surfaces lazy-load, workers
+                are stable, adjacent patches prefetch, artifact fetches abort,
+                and deck ResizeObserver commits only threshold changes.
+              </p>
+            </article>
           </div>
         </section>
       </main>
 
       <footer>
-        Generated from four independent static reviews · Neondeck e51337e · report artifact only · 2026-07-15 America/Chicago
+        Generated from four independent static reviews · Neondeck e51337e ·
+        report artifact only · 2026-07-15 America/Chicago
       </footer>
     </div>
 
     <script>
       const search = document.querySelector('#finding-search');
       const buttons = [...document.querySelectorAll('[data-filter]')];
-      const findings = [...document.querySelectorAll('#nonperf-findings .finding')];
+      const findings = [
+        ...document.querySelectorAll('#nonperf-findings .finding'),
+      ];
       const count = document.querySelector('#filter-count');
       const empty = document.querySelector('#empty-filter');
       let activeSeverity = 'all';
@@ -1459,8 +3304,11 @@
         const query = search.value.trim().toLowerCase();
         let visible = 0;
         for (const finding of findings) {
-          const severityMatches = activeSeverity === 'all' || finding.dataset.severity === activeSeverity;
-          const textMatches = !query || finding.textContent.toLowerCase().includes(query);
+          const severityMatches =
+            activeSeverity === 'all' ||
+            finding.dataset.severity === activeSeverity;
+          const textMatches =
+            !query || finding.textContent.toLowerCase().includes(query);
           finding.hidden = !(severityMatches && textMatches);
           if (!finding.hidden) visible += 1;
         }
@@ -1471,7 +3319,8 @@
       for (const button of buttons) {
         button.addEventListener('click', () => {
           activeSeverity = button.dataset.filter;
-          for (const item of buttons) item.setAttribute('aria-pressed', String(item === button));
+          for (const item of buttons)
+            item.setAttribute('aria-pressed', String(item === button));
           applyFilters();
         });
       }

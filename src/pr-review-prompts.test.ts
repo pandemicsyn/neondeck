@@ -3,10 +3,16 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { prReviewerConversationId } from '../shared/pr-reviewer-session';
-import { buildPrReviewAssistantRuntime } from './agents/pr-review-assistant';
+import {
+  buildPrReviewAssistantRuntime,
+  prReviewAssistantOperationInstructions,
+} from './agents/pr-review-assistant';
 import { buildPrReviewerRuntime } from './agents/pr-reviewer';
 import { updatePrReviewPrompt } from './modules/config';
-import { addPrReviewDraftComment, upsertPrReviewDraft } from './modules/github';
+import {
+  addPrReviewDraftComment,
+  upsertPrReviewDraft,
+} from './testing/pr-review-draft-fixtures';
 import { completePrReview, startPrReview } from './modules/pr-reviews';
 import {
   defaultPrReviewPromptTemplates,
@@ -45,6 +51,26 @@ describe('PR review prompts', () => {
     );
     expect(defaultPrReviewPromptTemplates['initial-review']).toContain(
       'Treat the durable shared 500-call workspace budget as a safety ceiling, not a target.',
+    );
+    for (const prompt of Object.values(defaultPrReviewPromptTemplates)) {
+      expect(prompt).toContain(
+        'To avoid redundant work, do not explore the same problem that Explore has already covered. Typically trust Explore’s results without additional verification. Verify only the smallest evidence\nneeded for a mutation, external effect, security conclusion, or final review\nfinding. You may still inspect the code yourself to gain context needed to synthesize the review, but do not repeat the delegated investigation.',
+      );
+      expect(prompt).toContain(
+        'Answer:\nEvidence:\n- path:line — symbol — observed fact\nUnresolved:\nInspected:\nStop reason: answered | insufficient evidence | blocked',
+      );
+    }
+    expect(defaultPrReviewPromptTemplates['initial-review']).toContain(
+      'If Explore did not already establish the exact RIGHT-side changed line, verify only that smallest anchor',
+    );
+    expect(defaultPrReviewPromptTemplates['follow-up-reviewer']).toContain(
+      'Before another investigation wave, decide whether the question is already answerable from verified evidence.',
+    );
+    expect(prReviewAssistantOperationInstructions).toContain(
+      'Typically trust Explore without replaying its investigation; verify only the smallest evidence needed',
+    );
+    expect(prReviewAssistantOperationInstructions).not.toContain(
+      'verify its evidence',
     );
 
     await updatePrReviewPrompt(
@@ -147,12 +173,16 @@ describe('PR review prompts', () => {
     expect(first.instructions).toBe(second.instructions);
     expect(first.tools.map((tool) => tool.name)).toEqual(
       expect.arrayContaining([
+        'neondeck_pr_review_restart',
         'neondeck_pr_review_draft_comment_create',
         'neondeck_pr_review_draft_comment_update',
         'neondeck_pr_review_draft_comment_delete',
       ]),
     );
     expect(first.instructions).toContain('use the matching mounted draft tool');
+    expect(first.instructions).toContain(
+      'explicitly asks to re-review the pull request',
+    );
     expect(first.instructions).toContain(
       'Flue framework narration signals with reserved types',
     );

@@ -67,7 +67,7 @@ describe('PR reviewer local draft tools', () => {
     });
     expect(putDraft).toHaveBeenCalledWith(
       { repo: review.repoFullName, prNumber: review.prNumber },
-      { headSha: review.headSha },
+      { headSha: review.headSha, expectedAbsent: true },
       expect.any(Object),
     );
     expect(postComment.mock.calls[0]?.[0]).toEqual({
@@ -76,6 +76,7 @@ describe('PR reviewer local draft tools', () => {
     });
     expect(postComment.mock.calls[0]?.[1]).toMatchObject({
       draftId: emptyDraft.id,
+      expectedRevision: emptyDraft.revision,
       path: 'src/app.ts',
       line: 12,
     });
@@ -139,6 +140,8 @@ describe('PR reviewer local draft tools', () => {
       prNumber: review.prNumber,
     });
     expect(patchComment.mock.calls[0]?.[2]).toMatchObject({
+      draftId: draft.id,
+      expectedRevision: draft.revision,
       body: draft.comments[0]!.body,
       path: 'src/next.ts',
       side: 'RIGHT',
@@ -185,6 +188,8 @@ describe('PR reviewer local draft tools', () => {
     } as never);
 
     expect(patchComment.mock.calls[0]?.[2]).toMatchObject({
+      draftId: draft.id,
+      expectedRevision: draft.revision,
       body: humanComment.body,
       line: 18,
     });
@@ -299,7 +304,9 @@ describe('PR reviewer local draft tools', () => {
     ).resolves.toMatchObject({ output: { ok: true, changed: false } });
     expect(deleteComment).toHaveBeenCalledTimes(1);
     expect(deleteComment.mock.calls[0]?.[3]).toEqual({
+      draftId: draft.id,
       expectedHeadSha: review.headSha,
+      expectedRevision: draft.revision,
     });
   });
 });
@@ -357,6 +364,7 @@ function reviewDraft(
     verdict: null,
     body: null,
     status: 'draft',
+    revision: 1,
     createdAt: review.createdAt,
     updatedAt: review.updatedAt,
     submittedAt: null,

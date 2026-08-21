@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
   <head>
     <meta charset="utf-8" />
@@ -27,8 +27,8 @@
         --warning-bg: color-mix(in srgb, #69e6ff 11%, #0a0b10);
         --success-bg: color-mix(in srgb, #00b7c7 12%, #0a0b10);
         --max: 1440px;
-        --mono: "IBM Plex Mono", "SFMono-Regular", Consolas, monospace;
-        --sans: "IBM Plex Sans", Inter, ui-sans-serif, system-ui, sans-serif;
+        --mono: 'IBM Plex Mono', 'SFMono-Regular', Consolas, monospace;
+        --sans: 'IBM Plex Sans', Inter, ui-sans-serif, system-ui, sans-serif;
       }
 
       * {
@@ -573,7 +573,7 @@
       }
 
       .journey article::before {
-        content: "→";
+        content: '→';
         color: var(--cyan);
         font-family: var(--mono);
         font-size: 13px;
@@ -796,8 +796,8 @@
           <p class="kicker">Neondeck engineering review · 2026-07-18</p>
           <h1>PR Autopilot end-to-end usability review</h1>
           <p class="lede">
-            A complete trace of setup, watch polling, event classification,
-            Flue workflow admission, worktree preparation, fix generation,
+            A complete trace of setup, watch polling, event classification, Flue
+            workflow admission, worktree preparation, fix generation,
             verification, approval, push-back, PR comments, recovery, and the
             operator experience.
           </p>
@@ -812,17 +812,19 @@
             <span class="tag high">11 high-severity defects</span>
             <span class="tag">5 medium defects</span>
             <span class="tag good">strong safety primitives</span>
-            <a class="tag good" href="./AUTOPILOT_IMPLEMENTATION_PLAN.md">implementation plan</a>
+            <a class="tag good" href="./AUTOPILOT_IMPLEMENTATION_PLAN.md"
+              >implementation plan</a
+            >
           </div>
         </div>
         <aside class="verdict" aria-label="Executive verdict">
           <strong>Verdict: not usable as an autopilot</strong>
           <p>
             The automatic watched-PR path ends after creating a managed
-            worktree. It never spawns or briefs a coding agent, generates a
-            fix, verifies it, requests/uses approval, pushes, comments, or
-            cleans up. Today this is a notification and checkout-preparation
-            foundation with individually implemented downstream primitives.
+            worktree. It never spawns or briefs a coding agent, generates a fix,
+            verifies it, requests/uses approval, pushes, comments, or cleans up.
+            Today this is a notification and checkout-preparation foundation
+            with individually implemented downstream primitives.
           </p>
         </aside>
       </div>
@@ -989,7 +991,10 @@
               <ul>
                 <li>
                   Scheduler event refresh and triage admission:
-                  <code>src/modules/scheduler/pr-watch-events.ts:322-364, 482-579</code>
+                  <code
+                    >src/modules/scheduler/pr-watch-events.ts:322-364,
+                    482-579</code
+                  >
                 </li>
                 <li>
                   Only continuation after triage:
@@ -1001,16 +1006,22 @@
                 </li>
                 <li>
                   Scheduler workflow invoker only knows triage and prepare:
-                  <code>src/modules/scheduler/workflow-invocation.ts:23-35</code>
+                  <code
+                    >src/modules/scheduler/workflow-invocation.ts:23-35</code
+                  >
                 </li>
                 <li>
                   Admission states and terminal facts stop at prepared:
-                  <code>src/modules/autopilot/admissions.ts:17-51, 612-645</code>
+                  <code
+                    >src/modules/autopilot/admissions.ts:17-51, 612-645</code
+                  >
                 </li>
                 <li>
                   Repository plan explicitly calls later stages “bounded,
                   explicit operations”:
-                  <code>.plans/archived/AUTOPILOT_LOOP_WIRING_PLAN.md:52-57</code>
+                  <code
+                    >.plans/archived/AUTOPILOT_LOOP_WIRING_PLAN.md:52-57</code
+                  >
                 </li>
               </ul>
             </div>
@@ -1094,9 +1105,9 @@
                 <h3>Approve, verify, and push a prepared diff</h3>
                 <p>
                   These controls work only after some separate path creates a
-                  prepared diff. The automatic watcher never reaches this
-                  state. Prepare-only diffs still receive push approvals that
-                  cannot succeed under their mode.
+                  prepared diff. The automatic watcher never reaches this state.
+                  Prepare-only diffs still receive push approvals that cannot
+                  succeed under their mode.
                 </p>
               </div>
               <div class="result">Downstream primitive only</div>
@@ -1107,8 +1118,8 @@
                 <p>
                   Pause controls polling only. Stop deletes the watch/task but
                   does not cancel admitted runs, abandon diffs, remove
-                  worktrees, or purge admissions. The confirmation copy does
-                  not explain that distinction.
+                  worktrees, or purge admissions. The confirmation copy does not
+                  explain that distinction.
                 </p>
               </div>
               <div class="result">Control semantics are misleading</div>
@@ -1155,7 +1166,9 @@
                   <td>Not applicable</td>
                   <td>Not applicable</td>
                   <td>Not applicable</td>
-                  <td>Notification only, except current state is lost on baseline.</td>
+                  <td>
+                    Notification only, except current state is lost on baseline.
+                  </td>
                 </tr>
                 <tr>
                   <td><code>prepare-only</code></td>
@@ -1215,10 +1228,10 @@
                     replacements or patches. Without edits, no fix is applied.
                   </p>
                   <p>
-                    <strong>User impact:</strong> the core promise, “watch this PR
-                    and keep it moving,” cannot complete. There is no worker to
-                    brief about the checkout, GitHub, branch, tools, checks, or
-                    authority because no worker is spawned.
+                    <strong>User impact:</strong> the core promise, “watch this
+                    PR and keep it moving,” cannot complete. There is no worker
+                    to brief about the checkout, GitHub, branch, tools, checks,
+                    or authority because no worker is spawned.
                   </p>
                 </div>
                 <div class="evidence">
@@ -1228,7 +1241,9 @@
                     <li><code>server/learning-hooks.ts:272-302</code></li>
                     <li><code>autopilot/admissions.ts:17-51</code></li>
                     <li><code>autopilot/schemas.ts:427-479</code></li>
-                    <li><code>autopilot/review-feedback.ts:223-229, 587-609</code></li>
+                    <li>
+                      <code>autopilot/review-feedback.ts:223-229, 587-609</code>
+                    </li>
                     <li><code>autopilot/ci-fix.ts:637-669</code></li>
                     <li><code>.plans/DEVIATIONS.md:406-418</code></li>
                   </ul>
@@ -1240,17 +1255,19 @@
               <header>
                 <span class="id">F2</span>
                 <span class="severity">High</span>
-                <h3>Existing feedback and the watch-creation race are discarded</h3>
+                <h3>
+                  Existing feedback and the watch-creation race are discarded
+                </h3>
               </header>
               <div class="finding-body">
                 <div>
                   <p>
                     Watch creation does not seed event watermarks. The first
                     scheduler event refresh sees no previous watermarks, stores
-                    the current state as a baseline, and returns without
-                    triage, even if the PR already has failing CI, requested
-                    changes, or unresolved threads. Feedback arriving between
-                    watch creation and the first poll is lost the same way.
+                    the current state as a baseline, and returns without triage,
+                    even if the PR already has failing CI, requested changes, or
+                    unresolved threads. Feedback arriving between watch creation
+                    and the first poll is lost the same way.
                   </p>
                   <p>
                     Manual event refresh only refreshes state; it does not run
@@ -1280,17 +1297,17 @@
               <div class="finding-body">
                 <div>
                   <p>
-                    Preparation calls <code>git worktree add --detach ...
-                    &lt;headSha&gt;</code> before the optional sync/fetch step. The
-                    scheduler does not pass <code>fetch: true</code>, and even if
-                    it did, the fetch would happen after creation. A common
-                    newest PR/fork SHA that is not already present locally
-                    cannot be checked out.
+                    Preparation calls
+                    <code>git worktree add --detach ... &lt;headSha&gt;</code>
+                    before the optional sync/fetch step. The scheduler does not
+                    pass <code>fetch: true</code>, and even if it did, the fetch
+                    would happen after creation. A common newest PR/fork SHA
+                    that is not already present locally cannot be checked out.
                   </p>
                   <p>
-                    <strong>Required correction:</strong> fetch the exact PR head
-                    ref/SHA into the source repo before worktree creation, with
-                    fork-aware remotes and a bounded failure message.
+                    <strong>Required correction:</strong> fetch the exact PR
+                    head ref/SHA into the source repo before worktree creation,
+                    with fork-aware remotes and a bounded failure message.
                   </p>
                 </div>
                 <div class="evidence">
@@ -1318,14 +1335,15 @@
                     <code>prepare-only</code>. Watch creation accepts no mode.
                     Onboarding never asks. CLI and slash commands expose only
                     watch creation. Dashboard watch copy promises checks
-                    tracking, not autonomy. A typed config action exists, but
-                    it is not surfaced in settings, CLI, docs, or a composite
+                    tracking, not autonomy. A typed config action exists, but it
+                    is not surfaced in settings, CLI, docs, or a composite
                     “watch + mode” action.
                   </p>
                   <p>
                     Watch overrides replace the entire override array, and any
                     override-array change requires confirmation, even when
-                    reducing authority. This makes conversational updates brittle.
+                    reducing authority. This makes conversational updates
+                    brittle.
                   </p>
                 </div>
                 <div class="evidence">
@@ -1335,7 +1353,9 @@
                     <li><code>watches/schemas.ts:116-121</code></li>
                     <li><code>cli/index.ts:437-468</code></li>
                     <li><code>config/actions.ts:213-220</code></li>
-                    <li><code>config/mutations/repos.ts:397-414, 424-506</code></li>
+                    <li>
+                      <code>config/mutations/repos.ts:397-414, 424-506</code>
+                    </li>
                   </ul>
                 </div>
               </div>
@@ -1379,7 +1399,10 @@
               <header>
                 <span class="id">F6</span>
                 <span class="severity">High</span>
-                <h3>Important PR feedback is detected incompletely or loses its text</h3>
+                <h3>
+                  Important PR feedback is detected incompletely or loses its
+                  text
+                </h3>
               </header>
               <div class="finding-body">
                 <div>
@@ -1438,7 +1461,9 @@
                     <li><code>watches/store.ts:273-280</code></li>
                     <li><code>autopilot/state.ts:85-103</code></li>
                     <li><code>autopilot/state-mappers.ts:454-475</code></li>
-                    <li><code>web/src/plugins/ActiveWatches.tsx:86-229</code></li>
+                    <li>
+                      <code>web/src/plugins/ActiveWatches.tsx:86-229</code>
+                    </li>
                   </ul>
                 </div>
               </div>
@@ -1470,7 +1495,9 @@
                   <strong>Evidence</strong>
                   <ul>
                     <li><code>autopilot/admissions.ts:69-84, 161-186</code></li>
-                    <li><code>autopilot/admissions.ts:269-302, 472-493</code></li>
+                    <li>
+                      <code>autopilot/admissions.ts:269-302, 472-493</code>
+                    </li>
                     <li><code>autopilot/admissions.ts:701-784</code></li>
                     <li><code>scheduler/pr-watch-events.ts:93-155</code></li>
                   </ul>
@@ -1482,7 +1509,10 @@
               <header>
                 <span class="id">F9</span>
                 <span class="severity">High</span>
-                <h3>Approval, safe-push, and result-comment semantics are internally inconsistent</h3>
+                <h3>
+                  Approval, safe-push, and result-comment semantics are
+                  internally inconsistent
+                </h3>
               </header>
               <div class="finding-body">
                 <div>
@@ -1500,8 +1530,8 @@
                     Even after a successful manual push, the result only
                     advertises <code>comment_pr_autofix_result</code> as a
                     deferred next workflow. No observer invokes it, so the PR
-                    result comment is not automatic. If manually invoked after
-                    a real push, it compares GitHub’s now-updated head with the
+                    result comment is not automatic. If manually invoked after a
+                    real push, it compares GitHub’s now-updated head with the
                     prepared diff’s pre-fix <code>headSha</code> before reading
                     the stored pushed commit SHA, so the intended success
                     comment is rejected as stale.
@@ -1513,7 +1543,9 @@
                     <li><code>prepared-diffs/service.ts:92-149</code></li>
                     <li><code>prepared-diffs/service.ts:239-261</code></li>
                     <li><code>autopilot/approvals.ts:35-58</code></li>
-                    <li><code>server/autopilot-push-dispatch.ts:29-71</code></li>
+                    <li>
+                      <code>server/autopilot-push-dispatch.ts:29-71</code>
+                    </li>
                     <li><code>autopilot/push.ts:343-366, 560-576</code></li>
                     <li><code>autopilot/comments.ts:223-276</code></li>
                     <li><code>verify-then-push-pr-autofix.ts:49-80</code></li>
@@ -1526,18 +1558,23 @@
               <header>
                 <span class="id">F10</span>
                 <span class="severity">High</span>
-                <h3>API permission readiness is disconnected from git push readiness</h3>
+                <h3>
+                  API permission readiness is disconnected from git push
+                  readiness
+                </h3>
               </header>
               <div class="finding-body">
                 <div>
                   <p>
                     Onboarding/readiness validates <code>GITHUB_TOKEN</code> for
                     API identity and later reads branch permission facts. Actual
-                    push uses plain <code>git push https://github.com/…</code>
-                    with inherited host credentials. The token is not wired to
-                    git, <code>gh auth setup-git</code> is not checked, and there
-                    is no noninteractive prompt guard or timeout. Commit also
-                    depends on ambient <code>user.name</code>/<code>user.email</code>.
+                    push uses plain
+                    <code>git push https://github.com/…</code> with inherited
+                    host credentials. The token is not wired to git,
+                    <code>gh auth setup-git</code> is not checked, and there is
+                    no noninteractive prompt guard or timeout. Commit also
+                    depends on ambient
+                    <code>user.name</code>/<code>user.email</code>.
                   </p>
                   <p>
                     <strong>Integration risk:</strong> a host can appear
@@ -1562,7 +1599,9 @@
               <header>
                 <span class="id">F11</span>
                 <span class="severity">High</span>
-                <h3>The operator queue is misleading, duplicated, and incomplete</h3>
+                <h3>
+                  The operator queue is misleading, duplicated, and incomplete
+                </h3>
               </header>
               <div class="finding-body">
                 <div>
@@ -1586,9 +1625,15 @@
                   <strong>Evidence</strong>
                   <ul>
                     <li><code>autopilot/state.ts:145-200, 221-239</code></li>
-                    <li><code>autopilot/state-mappers.ts:183-206, 463-475</code></li>
-                    <li><code>web/src/plugins/AutopilotPanel.tsx:124-130</code></li>
-                    <li><code>web/src/plugins/AutopilotPanel.tsx:148-223</code></li>
+                    <li>
+                      <code>autopilot/state-mappers.ts:183-206, 463-475</code>
+                    </li>
+                    <li>
+                      <code>web/src/plugins/AutopilotPanel.tsx:124-130</code>
+                    </li>
+                    <li>
+                      <code>web/src/plugins/AutopilotPanel.tsx:148-223</code>
+                    </li>
                   </ul>
                 </div>
               </div>
@@ -1604,8 +1649,8 @@
                 <div>
                   <p>
                     Backend recovery exposes abandon and manual-follow-up
-                    operations, but the panel’s explicit whitelist omits both.
-                    A user cannot abandon a prepared diff or record a manual
+                    operations, but the panel’s explicit whitelist omits both. A
+                    user cannot abandon a prepared diff or record a manual
                     fallback from the principal operator surface, even though
                     the underlying state and copy imply those outcomes exist.
                   </p>
@@ -1618,8 +1663,12 @@
                   <strong>Evidence</strong>
                   <ul>
                     <li><code>autopilot/notifications.ts:159-199</code></li>
-                    <li><code>web/src/plugins/AutopilotPanel.tsx:468-512</code></li>
-                    <li><code>web/src/plugins/AutopilotPanel.tsx:623-634</code></li>
+                    <li>
+                      <code>web/src/plugins/AutopilotPanel.tsx:468-512</code>
+                    </li>
+                    <li>
+                      <code>web/src/plugins/AutopilotPanel.tsx:623-634</code>
+                    </li>
                   </ul>
                 </div>
               </div>
@@ -1629,7 +1678,10 @@
               <header>
                 <span class="id">F13</span>
                 <span class="severity">Medium</span>
-                <h3>Failure notification and attention accounting miss important states</h3>
+                <h3>
+                  Failure notification and attention accounting miss important
+                  states
+                </h3>
               </header>
               <div class="finding-body">
                 <div>
@@ -1645,15 +1697,19 @@
                     Actionable watch notifications use source
                     <code>watch-pr-events</code>, while the Autopilot unread and
                     recent-activity filters count only source
-                    <code>autopilot</code>, undercounting the events that started
-                    the flow.
+                    <code>autopilot</code>, undercounting the events that
+                    started the flow.
                   </p>
                 </div>
                 <div class="evidence">
                   <strong>Evidence</strong>
                   <ul>
-                    <li><code>server/learning-hooks.ts:81-109, 168-186</code></li>
-                    <li><code>scheduler/pr-watch-event-deltas.ts:288-330</code></li>
+                    <li>
+                      <code>server/learning-hooks.ts:81-109, 168-186</code>
+                    </li>
+                    <li>
+                      <code>scheduler/pr-watch-event-deltas.ts:288-330</code>
+                    </li>
                     <li><code>autopilot/state.ts:139-144, 201-216</code></li>
                   </ul>
                 </div>
@@ -1664,7 +1720,10 @@
               <header>
                 <span class="id">F14</span>
                 <span class="severity">Medium</span>
-                <h3>Review deltas can re-admit old feedback; watch status disagrees with event state</h3>
+                <h3>
+                  Review deltas can re-admit old feedback; watch status
+                  disagrees with event state
+                </h3>
               </header>
               <div class="finding-body">
                 <div>
@@ -1698,7 +1757,9 @@
               <header>
                 <span class="id">F15</span>
                 <span class="severity">Medium</span>
-                <h3>Cleanup and lifecycle closure are not implemented end to end</h3>
+                <h3>
+                  Cleanup and lifecycle closure are not implemented end to end
+                </h3>
               </header>
               <div class="finding-body">
                 <div>
@@ -1721,7 +1782,10 @@
                     <li><code>.plans/ROADMAP.md:396-405</code></li>
                     <li><code>worktrees/service.ts:560-707</code></li>
                     <li><code>watches/store.ts:273-280</code></li>
-                    <li><code>autopilot/admissions.ts</code> (no delete/archive path)</li>
+                    <li>
+                      <code>autopilot/admissions.ts</code> (no delete/archive
+                      path)
+                    </li>
                   </ul>
                 </div>
               </div>
@@ -1754,9 +1818,15 @@
                   <ul>
                     <li><code>README.md:21-24</code></li>
                     <li><code>.plans/ROADMAP.md:1266-1364</code></li>
-                    <li><code>.plans/archived/AUTOPILOT_LOOP_WIRING_PLAN.md:52-57</code></li>
+                    <li>
+                      <code
+                        >.plans/archived/AUTOPILOT_LOOP_WIRING_PLAN.md:52-57</code
+                      >
+                    </li>
                     <li><code>.plans/DEVIATIONS.md:384-418</code></li>
-                    <li><code>docs/src/pages/docs/configuration.astro</code></li>
+                    <li>
+                      <code>docs/src/pages/docs/configuration.astro</code>
+                    </li>
                   </ul>
                 </div>
               </div>
@@ -1766,18 +1836,20 @@
               <header>
                 <span class="id">F17</span>
                 <span class="severity">Medium</span>
-                <h3>Operator accessibility and troubleshooting are incomplete</h3>
+                <h3>
+                  Operator accessibility and troubleshooting are incomplete
+                </h3>
               </header>
               <div class="finding-body">
                 <div>
                   <p>
                     The panel has good semantic section labeling and live
-                    mutation output, but some controls override the shared
-                    28px button to 22–24px, recovery descriptions live only in
-                    hover titles, and the polling “Needs attention” banner has
-                    no live/status semantics. Check rows compute a run URL but
-                    do not render it; activity omits timestamps; attention
-                    counts are not actionable.
+                    mutation output, but some controls override the shared 28px
+                    button to 22–24px, recovery descriptions live only in hover
+                    titles, and the polling “Needs attention” banner has no
+                    live/status semantics. Check rows compute a run URL but do
+                    not render it; activity omits timestamps; attention counts
+                    are not actionable.
                   </p>
                   <p>
                     These defects are especially relevant on a companion/touch
@@ -1800,8 +1872,13 @@
         </section>
 
         <section id="permissions">
-          <p class="section-label">Agent briefing, environment, and permissions</p>
-          <h2>The expected continuing PR-owner agent instance and briefing do not exist</h2>
+          <p class="section-label">
+            Agent briefing, environment, and permissions
+          </p>
+          <h2>
+            The expected continuing PR-owner agent instance and briefing do not
+            exist
+          </h2>
           <p>
             No coding worker is spawned in the watched-PR path. The configured
             Flue workflows name <code>displayAssistant</code> as their agent but
@@ -1830,75 +1907,98 @@
                 <tr>
                   <td>PR/branch identity</td>
                   <td class="partial">Facts exist in services</td>
-                  <td>Repo, PR, head/base refs and SHAs, fork/permission facts</td>
+                  <td>
+                    Repo, PR, head/base refs and SHAs, fork/permission facts
+                  </td>
                 </tr>
                 <tr>
                   <td>Review/bug request</td>
                   <td class="partial">Inline facts only; no planner</td>
-                  <td>Full review body, threads, comments, author, addressed IDs</td>
+                  <td>
+                    Full review body, threads, comments, author, addressed IDs
+                  </td>
                 </tr>
                 <tr>
                   <td>Available tools</td>
                   <td class="no">No capability inventory</td>
-                  <td>Repo-edit actions, mediated execution, gh/API availability</td>
+                  <td>
+                    Repo-edit actions, mediated execution, gh/API availability
+                  </td>
                 </tr>
                 <tr>
                   <td>GitHub authentication</td>
                   <td class="partial">API token only</td>
-                  <td>Separate API scopes and noninteractive git push readiness</td>
+                  <td>
+                    Separate API scopes and noninteractive git push readiness
+                  </td>
                 </tr>
                 <tr>
                   <td>Verification</td>
                   <td class="partial">Service can resolve commands</td>
-                  <td>Required checks, preapproval result, timeout, expected outputs</td>
+                  <td>
+                    Required checks, preapproval result, timeout, expected
+                    outputs
+                  </td>
                 </tr>
                 <tr>
                   <td>Authority boundaries</td>
                   <td class="partial">Policy service exists</td>
-                  <td>Mode, guardrails, denied/high-risk paths, no primary checkout</td>
+                  <td>
+                    Mode, guardrails, denied/high-risk paths, no primary
+                    checkout
+                  </td>
                 </tr>
                 <tr>
                   <td>Output contract</td>
                   <td class="no">No planner output</td>
-                  <td>Typed replacements/patch + addressed feedback + confidence/risk</td>
+                  <td>
+                    Typed replacements/patch + addressed feedback +
+                    confidence/risk
+                  </td>
                 </tr>
               </tbody>
             </table>
           </div>
 
           <div class="callout success">
-            <h3>Target lifecycle: one Neon instance and workspace per watched PR</h3>
+            <h3>
+              Target lifecycle: one Neon instance and workspace per watched PR
+            </h3>
             <p>
-              The first actionable event should lazily create one narrowly scoped
+              The first actionable event should lazily create one narrowly
+              scoped
               <strong>PR-owner Neon agent instance</strong> (the durable
               <code>dispatch</code> target, addressed by
               <code>flue_instance_id</code>) and one managed worktree. Later
               feedback, CI failures, and PR state changes should be delivered as
               fresh authoritative event envelopes to that same instance, with
-              same-PR turns serialized by the durable controller. A routine event
-              must not create another Neon instance. The owner instance and
-              workspace remain until the PR reaches its configured terminal state or
-              the user explicitly stops Autopilot.
+              same-PR turns serialized by the durable controller. A routine
+              event must not create another Neon instance. The owner instance
+              and workspace remain until the PR reaches its configured terminal
+              state or the user explicitly stops Autopilot.
             </p>
             <p>
               Two continuity concerns must not be conflated. Flue
-              <code>CompactionConfig</code> bounds model-visible context input for
-              a long PR, not the persisted canonical stream, transcript storage, or
-              replay cost; it is not an instance-rotation policy. Neondeck's own
-              <code>staleReasons</code> signal is separate: it reports
-              grounding drift (a <code>config_history</code> or relevant
+              <code>CompactionConfig</code> bounds model-visible context input
+              for a long PR, not the persisted canonical stream, transcript
+              storage, or replay cost; it is not an instance-rotation policy.
+              Neondeck's own <code>staleReasons</code> signal is separate: it
+              reports grounding drift (a <code>config_history</code> or relevant
               in-context <code>memory</code> change measured against the owner's
-              persisted config and memory cursors; <code>contextLoadedAt</code> is
-              chat metadata only) and fires on routine operator edits —
-              notably a mid-flight mode change, which is a
-              <code>config_update_repo_autopilot_policy</code> action. The owner
-              must therefore <em>not</em> reuse the briefings throw-on-stale gate.
-              Memory and explicitly classified, completely covered repo/config drift
-              re-ground in place through the next authoritative envelope; unknown or
-              future config drift blocks or triggers audited instance rotation. Only
-              <code>model</code>/<code>provider</code>/<code>skill</code>/<code>soul</code>
-              drift always rotates. Any rotation is explicit, audited, and carries
-              forward a compact handoff.
+              persisted config and memory cursors;
+              <code>contextLoadedAt</code> is chat metadata only) and fires on
+              routine operator edits — notably a mid-flight mode change, which
+              is a <code>config_update_repo_autopilot_policy</code> action. The
+              owner must therefore <em>not</em> reuse the briefings
+              throw-on-stale gate. Memory and explicitly classified, completely
+              covered repo/config drift re-ground in place through the next
+              authoritative envelope; unknown or future config drift blocks or
+              triggers audited instance rotation. Only
+              <code>model</code>/<code>provider</code>/<code>skill</code>/<code
+                >soul</code
+              >
+              drift always rotates. Any rotation is explicit, audited, and
+              carries forward a compact handoff.
             </p>
           </div>
 
@@ -1931,7 +2031,10 @@
                 <tr>
                   <td>Production call-graph trace</td>
                   <td class="no">Stops at prepare</td>
-                  <td>Confirmed from both scheduler and Flue observer continuations.</td>
+                  <td>
+                    Confirmed from both scheduler and Flue observer
+                    continuations.
+                  </td>
                 </tr>
                 <tr>
                   <td>Workflow/action schemas</td>
@@ -1941,7 +2044,10 @@
                 <tr>
                   <td>User-surface reachability</td>
                   <td class="no">Review fixer unreachable</td>
-                  <td>Interactive action rejects; no dashboard/CLI workflow trigger.</td>
+                  <td>
+                    Interactive action rejects; no dashboard/CLI workflow
+                    trigger.
+                  </td>
                 </tr>
                 <tr>
                   <td>Dashboard preset trace</td>
@@ -1951,17 +2057,26 @@
                 <tr>
                   <td>Existing test inventory</td>
                   <td class="partial">Primitive-level</td>
-                  <td>Strong policy/fixer/push fixtures; no watcher-to-outcome test.</td>
+                  <td>
+                    Strong policy/fixer/push fixtures; no watcher-to-outcome
+                    test.
+                  </td>
                 </tr>
                 <tr>
                   <td>Targeted Vitest execution</td>
                   <td class="partial">Environment blocked</td>
-                  <td><code>vitest: command not found</code>; node_modules is absent.</td>
+                  <td>
+                    <code>vitest: command not found</code>; node_modules is
+                    absent.
+                  </td>
                 </tr>
                 <tr>
                   <td>Credentialed GitHub/git push</td>
                   <td class="partial">Not executed</td>
-                  <td>Reported as an integration risk, not a reproduced push failure.</td>
+                  <td>
+                    Reported as an integration risk, not a reproduced push
+                    failure.
+                  </td>
                 </tr>
               </tbody>
             </table>
@@ -2003,10 +2118,10 @@ exit code: 127</code></pre>
           <p class="section-label">Architecture to retain</p>
           <h2>The foundations are valuable</h2>
           <p>
-            The failure is primarily missing orchestration, planning, activation,
-            and product closure, not an absence of safety infrastructure. The
-            following pieces should be preserved and composed into the finished
-            loop:
+            The failure is primarily missing orchestration, planning,
+            activation, and product closure, not an absence of safety
+            infrastructure. The following pieces should be preserved and
+            composed into the finished loop:
           </p>
           <div class="roadmap">
             <article>
@@ -2048,9 +2163,9 @@ exit code: 127</code></pre>
               <span class="phase">Operator review</span>
               <h3>Prepared diff and recovery services</h3>
               <p>
-                Diff inspection, verification records, revisions, retry,
-                resync, cleanup, and result notifications provide a solid
-                backend for one web/TUI runtime.
+                Diff inspection, verification records, revisions, retry, resync,
+                cleanup, and result notifications provide a solid backend for
+                one web/TUI runtime.
               </p>
             </article>
             <article>
@@ -2071,10 +2186,12 @@ exit code: 127</code></pre>
           <div class="callout success">
             <h3>Implementation source of truth</h3>
             <p>
-              The executable work packages, state model, PR-owner agent-instance/event
-              briefing,
-              verification matrix, and package exit gates live in
-              <a href="./AUTOPILOT_IMPLEMENTATION_PLAN.md">AUTOPILOT_IMPLEMENTATION_PLAN.md</a>.
+              The executable work packages, state model, PR-owner
+              agent-instance/event briefing, verification matrix, and package
+              exit gates live in
+              <a href="./AUTOPILOT_IMPLEMENTATION_PLAN.md"
+                >AUTOPILOT_IMPLEMENTATION_PLAN.md</a
+              >.
             </p>
           </div>
           <div class="roadmap">
@@ -2082,20 +2199,42 @@ exit code: 127</code></pre>
               <span class="phase">Gate 1 · Core coordinator</span>
               <h3>Add a durable planner/fixer stage</h3>
               <ul>
-                <li>Extend admissions through plan/fix, verify, approval, push, comment, cleanup.</li>
-                <li>Create/reuse one continuing PR-owner Neon agent instance; bound and audit each event turn.</li>
-                <li>Feed typed patch/replacement output into existing deterministic fixers.</li>
-                <li>Branch correctly by mode; never create a push approval in prepare-only.</li>
+                <li>
+                  Extend admissions through plan/fix, verify, approval, push,
+                  comment, cleanup.
+                </li>
+                <li>
+                  Create/reuse one continuing PR-owner Neon agent instance;
+                  bound and audit each event turn.
+                </li>
+                <li>
+                  Feed typed patch/replacement output into existing
+                  deterministic fixers.
+                </li>
+                <li>
+                  Branch correctly by mode; never create a push approval in
+                  prepare-only.
+                </li>
               </ul>
             </article>
             <article>
               <span class="phase">Gate 2 · Activation</span>
               <h3>Create one first-class setup operation</h3>
               <ul>
-                <li>Add <code>autopilot_watch_pr_configure(ref, mode, processExisting)</code>.</li>
+                <li>
+                  Add
+                  <code
+                    >autopilot_watch_pr_configure(ref, mode,
+                    processExisting)</code
+                  >.
+                </li>
                 <li>Expose it in chat, dashboard, CLI, and docs.</li>
-                <li>Put Autopilot in recommended dashboard presets and onboarding.</li>
-                <li>Make current mode and polling state visible beside each watch.</li>
+                <li>
+                  Put Autopilot in recommended dashboard presets and onboarding.
+                </li>
+                <li>
+                  Make current mode and polling state visible beside each watch.
+                </li>
               </ul>
             </article>
             <article>
@@ -2104,8 +2243,13 @@ exit code: 127</code></pre>
               <ul>
                 <li>Fetch the PR head before worktree creation.</li>
                 <li>Validate full feedback availability and token scopes.</li>
-                <li>Verify noninteractive git credentials and commit identity.</li>
-                <li>Resolve required checks and unattended preapproval before admission.</li>
+                <li>
+                  Verify noninteractive git credentials and commit identity.
+                </li>
+                <li>
+                  Resolve required checks and unattended preapproval before
+                  admission.
+                </li>
               </ul>
             </article>
             <article>
@@ -2113,29 +2257,56 @@ exit code: 127</code></pre>
               <h3>Make work cancellable and finite</h3>
               <ul>
                 <li>Expire attached but lost/stuck runs.</li>
-                <li>Add exponential backoff, attempt caps, and explicit resume.</li>
-                <li>Separate pause watch, cancel turn, abandon diff, archive agent instance, and cleanup worktree.</li>
-                <li>Archive terminal admissions and purge/supersede on watch removal.</li>
+                <li>
+                  Add exponential backoff, attempt caps, and explicit resume.
+                </li>
+                <li>
+                  Separate pause watch, cancel turn, abandon diff, archive agent
+                  instance, and cleanup worktree.
+                </li>
+                <li>
+                  Archive terminal admissions and purge/supersede on watch
+                  removal.
+                </li>
               </ul>
             </article>
             <article>
               <span class="phase">Gate 5 · Product verification</span>
               <h3>Test the user promise, not the primitives alone</h3>
               <ul>
-                <li>Drive a scheduled watch from baseline through a new review delta.</li>
-                <li>Use a real Flue agent-instance dispatch boundary and a continuing fake planning agent.</li>
-                <li>Assert diff, checks, approval/push, comment, notifications, and cleanup.</li>
-                <li>Test restarts, duplicates, stale SHAs, forks, permissions, and cancellation.</li>
+                <li>
+                  Drive a scheduled watch from baseline through a new review
+                  delta.
+                </li>
+                <li>
+                  Use a real Flue agent-instance dispatch boundary and a
+                  continuing fake planning agent.
+                </li>
+                <li>
+                  Assert diff, checks, approval/push, comment, notifications,
+                  and cleanup.
+                </li>
+                <li>
+                  Test restarts, duplicates, stale SHAs, forks, permissions, and
+                  cancellation.
+                </li>
               </ul>
             </article>
             <article>
               <span class="phase">Documentation</span>
               <h3>Align claims with shipped behavior</h3>
               <ul>
-                <li>Publish prerequisites, modes, trust boundaries, and exact setup recipes.</li>
+                <li>
+                  Publish prerequisites, modes, trust boundaries, and exact
+                  setup recipes.
+                </li>
                 <li>Document initial baseline/process-existing behavior.</li>
-                <li>Explain approval side effects, stop semantics, and recovery.</li>
-                <li>Mark the roadmap complete only after acceptance tests pass.</li>
+                <li>
+                  Explain approval side effects, stop semantics, and recovery.
+                </li>
+                <li>
+                  Mark the roadmap complete only after acceptance tests pass.
+                </li>
               </ul>
             </article>
           </div>
@@ -2157,11 +2328,11 @@ exit code: 127</code></pre>
               baseline-only behavior is also selectable and clearly explained.
             </li>
             <li>
-              The first actionable review event starts one PR-owner Neon agent instance
-              with the exact managed worktree path, repo/PR/branch/SHAs, full
-              feedback, available tools, checks, and policy limits. Later feedback
-              is injected into that same agent instance and workspace with refreshed,
-              authoritative facts.
+              The first actionable review event starts one PR-owner Neon agent
+              instance with the exact managed worktree path,
+              repo/PR/branch/SHAs, full feedback, available tools, checks, and
+              policy limits. Later feedback is injected into that same agent
+              instance and workspace with refreshed, authoritative facts.
             </li>
             <li>
               Overall requested-changes review bodies and supported PR
@@ -2169,18 +2340,19 @@ exit code: 127</code></pre>
               an explicit “unsupported/manual” outcome.
             </li>
             <li>
-              A new or fork PR head absent from the local clone is fetched before
-              checkout and produces a usable worktree without touching the
-              primary checkout.
+              A new or fork PR head absent from the local clone is fetched
+              before checkout and produces a usable worktree without touching
+              the primary checkout.
             </li>
             <li>
               Prepare-only produces a real inspectable diff, never creates a
-              push approval, and stops with review/revise/abandon/cleanup actions.
+              push approval, and stops with review/revise/abandon/cleanup
+              actions.
             </li>
             <li>
               Autofix-with-approval produces and verifies a diff, explains the
-              effect of approval, pushes only after explicit approval, then posts
-              one fact-grounded result comment.
+              effect of approval, pushes only after explicit approval, then
+              posts one fact-grounded result comment.
             </li>
             <li>
               Safe-push mode automatically verifies, checks credentials and
@@ -2193,9 +2365,9 @@ exit code: 127</code></pre>
               precise setup instruction and no retry storm.
             </li>
             <li>
-              Pause, stop watching, cancel active work, abandon a diff, and clean
-              a worktree are distinct controls with accurate confirmation copy
-              and durable audit state.
+              Pause, stop watching, cancel active work, abandon a diff, and
+              clean a worktree are distinct controls with accurate confirmation
+              copy and durable audit state.
             </li>
             <li>
               Restart during every stage reconciles exactly once; attached lost
@@ -2209,9 +2381,10 @@ exit code: 127</code></pre>
             </li>
             <li>
               A fixture-backed product test executes watch delta → triage →
-              continuing owner-agent-instance turn → prepared diff → verification →
-              approval/push → later feedback in the same agent instance → terminal
-              archive/cleanup, and the smoke command actually runs it.
+              continuing owner-agent-instance turn → prepared diff →
+              verification → approval/push → later feedback in the same agent
+              instance → terminal archive/cleanup, and the smoke command
+              actually runs it.
             </li>
           </ol>
         </section>
@@ -2238,13 +2411,18 @@ exit code: 127</code></pre>
                 </tr>
                 <tr>
                   <td>Chat action</td>
-                  <td><code>neondeck_config_update_repo_autopilot_policy</code></td>
+                  <td>
+                    <code>neondeck_config_update_repo_autopilot_policy</code>
+                  </td>
                   <td class="partial">Technically</td>
                   <td>Separate, hidden policy mutation.</td>
                 </tr>
                 <tr>
                   <td>Slash / dashboard / CLI</td>
-                  <td><code>/watch-pr</code>, Watch button, <code>neondeck watch-pr</code></td>
+                  <td>
+                    <code>/watch-pr</code>, Watch button,
+                    <code>neondeck watch-pr</code>
+                  </td>
                   <td class="yes">Yes</td>
                   <td>Creates notify-inheriting watch.</td>
                 </tr>
@@ -2310,9 +2488,14 @@ exit code: 127</code></pre>
                 </tr>
                 <tr>
                   <td>Local API</td>
-                  <td><code>/api/autopilot/*</code>, <code>/api/prepared-diffs/*</code></td>
+                  <td>
+                    <code>/api/autopilot/*</code>,
+                    <code>/api/prepared-diffs/*</code>
+                  </td>
                   <td class="partial">Developer/operator</td>
-                  <td>Exposes primitives; not an end-user orchestration API.</td>
+                  <td>
+                    Exposes primitives; not an end-user orchestration API.
+                  </td>
                 </tr>
               </tbody>
             </table>
@@ -2326,11 +2509,11 @@ exit code: 127</code></pre>
                 Neondeck product/design register. It covered roadmap intent,
                 README/public docs, defaults/onboarding, chat actions and
                 instructions, command/CLI/dashboard watch surfaces, scheduler
-                dispatch, PR event/watermark logic, admission persistence,
-                Flue workflow observation, worktree creation/sync, review and CI
-                fix services, verification, prepared-diff approvals, push,
-                comments, notifications/recovery, operator read models, and
-                test/smoke coverage.
+                dispatch, PR event/watermark logic, admission persistence, Flue
+                workflow observation, worktree creation/sync, review and CI fix
+                services, verification, prepared-diff approvals, push, comments,
+                notifications/recovery, operator read models, and test/smoke
+                coverage.
               </p>
               <p>
                 Three parallel read-only audits focused on backend durability,

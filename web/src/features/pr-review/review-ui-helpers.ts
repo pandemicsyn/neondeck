@@ -1,6 +1,7 @@
 import type { SelectedLineRange } from '@pierre/diffs/react';
 import type { ReviewCursorTarget } from '../../../../shared/review-navigation';
 import type {
+  GitHubPrReviewDraft,
   GitHubPrReviewDraftComment,
   GitHubPullRequestReviewThread,
 } from '../../api';
@@ -44,6 +45,53 @@ export function prReviewDraftHeadIsStale(
   );
 }
 
+export function sameReviewDraftRevision(
+  expected: Pick<GitHubPrReviewDraft, 'headSha' | 'id' | 'revision'>,
+  current:
+    | Pick<GitHubPrReviewDraft, 'headSha' | 'id' | 'revision' | 'status'>
+    | null
+    | undefined,
+) {
+  return Boolean(
+    current &&
+    current.status === 'draft' &&
+    current.id === expected.id &&
+    current.revision === expected.revision &&
+    current.headSha === expected.headSha,
+  );
+}
+
+export async function reanchorDraftToRevision(input: {
+  repo: string;
+  number: number;
+  draftId: string;
+  expectedRevision: number;
+  expectedHeadSha: string;
+  headSha: string;
+  saveDraft: (draft: {
+    repo: string;
+    number: number;
+    expectedDraftId: string;
+    expectedRevision: number;
+    expectedHeadSha: string;
+    headSha: string;
+    reanchorHeadSha: true;
+  }) => Promise<unknown>;
+  invalidateReviewSources: () => Promise<unknown>;
+}) {
+  if (!input.headSha) throw new Error('PR head SHA is unavailable.');
+  await input.saveDraft({
+    repo: input.repo,
+    number: input.number,
+    expectedDraftId: input.draftId,
+    expectedRevision: input.expectedRevision,
+    expectedHeadSha: input.expectedHeadSha,
+    headSha: input.headSha,
+    reanchorHeadSha: true,
+  });
+  await input.invalidateReviewSources();
+}
+
 export function commentAnchorLabel(comment: GitHubPrReviewDraftComment) {
   if (comment.startLine) {
     return `${comment.startSide ?? comment.side} L${comment.startLine} -> ${comment.side} L${comment.line}`;
@@ -73,6 +121,24 @@ export function isCurrentReviewOperation(
   completedToken: number,
 ) {
   return currentToken === completedToken;
+}
+
+export function shouldAutomaticallyApplyGitHubRevision({
+  attemptedRevisionKey,
+  candidateRevisionKey,
+  isApplyingRevision,
+  safety,
+}: {
+  attemptedRevisionKey: string | null;
+  candidateRevisionKey: string;
+  isApplyingRevision: boolean;
+  safety: ReviewRefreshSafety;
+}) {
+  return (
+    safety.safe &&
+    !isApplyingRevision &&
+    attemptedRevisionKey !== candidateRevisionKey
+  );
 }
 
 export function canCommitGitHubRevisionRefresh(input: {

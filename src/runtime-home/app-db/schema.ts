@@ -552,6 +552,9 @@ export const prReviews = sqliteTable(
       .notNull(),
     trustBoundary: text('trust_boundary').notNull(),
     verdict: text('verdict'),
+    submissionDraftId: text('submission_draft_id'),
+    submissionDraftRevision: integer('submission_draft_revision'),
+    submissionDraftUpdatedAt: text('submission_draft_updated_at'),
     previousVerdict: text('previous_verdict'),
     githubReviewUrl: text('github_review_url'),
     failureMessage: text('failure_message'),
@@ -616,6 +619,7 @@ export const prReviewDrafts = sqliteTable(
     verdict: text('verdict'),
     body: text('body'),
     status: text('status').notNull(),
+    revision: integer('revision').default(1).notNull(),
     createdAt: text('created_at').notNull(),
     updatedAt: text('updated_at').notNull(),
     submittedAt: text('submitted_at'),
@@ -623,7 +627,7 @@ export const prReviewDrafts = sqliteTable(
   (table) => [
     uniqueIndex('idx_pr_review_drafts_live')
       .on(table.repo, table.prNumber)
-      .where(sql`${table.status} = 'draft'`),
+      .where(sql`${table.status} IN ('draft', 'submitting')`),
     index('idx_pr_review_drafts_pr').on(
       table.repo,
       table.prNumber,
@@ -654,6 +658,29 @@ export const prReviewDraftComments = sqliteTable(
     index('idx_pr_review_draft_comments_draft').on(
       table.draftId,
       sql`${table.createdAt} ASC`,
+    ),
+  ],
+);
+
+export const prReviewSubmissionFollowups = sqliteTable(
+  'pr_review_submission_followups',
+  {
+    id: text('id').primaryKey(),
+    kind: text('kind').notNull(),
+    payloadJson: text('payload_json').notNull(),
+    status: text('status').notNull(),
+    attemptCount: integer('attempt_count').default(0).notNull(),
+    nextAttemptAt: text('next_attempt_at').notNull(),
+    lastError: text('last_error'),
+    createdAt: text('created_at').notNull(),
+    updatedAt: text('updated_at').notNull(),
+    completedAt: text('completed_at'),
+  },
+  (table) => [
+    index('idx_pr_review_submission_followups_pending').on(
+      table.status,
+      table.kind,
+      table.createdAt,
     ),
   ],
 );

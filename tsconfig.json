@@ -14,7 +14,8 @@
     "shared/**/*.ts",
     "shared/**/*.tsx",
     "agents/**/*.ts",
-    ".flue/**/*.ts"
+    ".flue/**/*.ts",
+    "vitest.pr-review-evals.config.ts"
   ],
   "exclude": ["dist"]
 }

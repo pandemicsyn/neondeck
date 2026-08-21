@@ -240,6 +240,10 @@ it('resumes pre-Explore review data with the current configured Explore selectio
       tools: [],
     }),
   });
+  expect(current.prompt).toContain(
+    'typically trust its result without replaying the investigation',
+  );
+  expect(current.prompt).not.toContain('must verify the evidence');
   const {
     schema: _schema,
     exploreModel: _exploreModel,
