@@ -59,14 +59,14 @@ describe('GitHubPrReview helpers', () => {
   it('binds submission to the exact post-barrier draft revision', () => {
     expect(
       draftSnapshotMatches(
-        { id: 'draft-1', updatedAt: '2026-08-18T03:15:00.000Z' },
-        { id: 'draft-1', updatedAt: '2026-08-18T03:15:00.000Z' },
+        { id: 'draft-1', revision: 3 },
+        { id: 'draft-1', revision: 3 },
       ),
     ).toBe(true);
     expect(
       draftSnapshotMatches(
-        { id: 'draft-1', updatedAt: '2026-08-18T03:15:00.000Z' },
-        { id: 'draft-1', updatedAt: '2026-08-18T03:16:00.000Z' },
+        { id: 'draft-1', revision: 3 },
+        { id: 'draft-1', revision: 4 },
       ),
     ).toBe(false);
   });
@@ -112,7 +112,7 @@ describe('GitHubPrReview helpers', () => {
   });
 
   it('revalidates the same draft and head before moving it to a new revision', () => {
-    const expected = { id: 'draft-1', headSha: 'head-a' };
+    const expected = { id: 'draft-1', revision: 3, headSha: 'head-a' };
 
     expect(
       sameReviewDraftRevision(expected, { ...expected, status: 'draft' }),
@@ -120,6 +120,7 @@ describe('GitHubPrReview helpers', () => {
     expect(
       sameReviewDraftRevision(expected, {
         id: 'draft-2',
+        revision: 3,
         headSha: 'head-a',
         status: 'draft',
       }),
@@ -127,6 +128,7 @@ describe('GitHubPrReview helpers', () => {
     expect(
       sameReviewDraftRevision(expected, {
         id: 'draft-1',
+        revision: 3,
         headSha: 'head-b',
         status: 'draft',
       }),
@@ -153,6 +155,7 @@ describe('GitHubPrReview helpers', () => {
       repo: 'pandemicsyn/neondeck',
       number: 66,
       draftId: 'draft-1',
+      expectedRevision: 3,
       expectedHeadSha: 'original-head',
       headSha: candidateHeadSha,
       saveDraft,
@@ -163,6 +166,7 @@ describe('GitHubPrReview helpers', () => {
       repo: 'pandemicsyn/neondeck',
       number: 66,
       expectedDraftId: 'draft-1',
+      expectedRevision: 3,
       expectedHeadSha: 'original-head',
       headSha: candidateHeadSha,
       reanchorHeadSha: true,
@@ -971,6 +975,7 @@ function draftWithComments(
     verdict: 'comment',
     body: null,
     status: 'draft',
+    revision: 1,
     createdAt: '2026-07-05T00:00:00Z',
     updatedAt: '2026-07-05T00:00:00Z',
     submittedAt: null,

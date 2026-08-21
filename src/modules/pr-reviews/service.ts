@@ -406,7 +406,7 @@ export function reservePrReviewSubmission(
     headSha: string;
     verdict: PrReviewVerdict;
     draftId?: string;
-    draftUpdatedAt?: string;
+    draftRevision?: number;
   },
   paths = runtimePaths(),
 ) {
@@ -424,14 +424,15 @@ export function reservePrReviewSubmission(
       .prepare(
         `UPDATE pr_reviews
          SET status = 'submitting', verdict = ?, submission_draft_id = ?,
-             submission_draft_updated_at = ?, updated_at = ?
+             submission_draft_revision = ?, submission_draft_updated_at = NULL,
+             updated_at = ?
          WHERE id = ? AND status = 'ready' AND head_sha = ?
            AND archived_at IS NULL;`,
       )
       .run(
         input.verdict,
         input.draftId ?? null,
-        input.draftUpdatedAt ?? null,
+        input.draftRevision ?? null,
         now,
         current.id,
         input.headSha,
@@ -458,6 +459,7 @@ export function releasePrReviewSubmission(
       .prepare(
         `UPDATE pr_reviews
          SET status = 'ready', verdict = NULL, submission_draft_id = NULL,
+             submission_draft_revision = NULL,
              submission_draft_updated_at = NULL, updated_at = ?
          WHERE id = ? AND status = 'submitting' AND head_sha = ?;`,
       )
@@ -654,13 +656,26 @@ function settleReservedDraft(
   paths: RuntimePaths,
   submitted: boolean,
 ) {
-  if (!review.submissionDraftId || !review.submissionDraftUpdatedAt) {
+  if (!review.submissionDraftId) {
     return true;
   }
+  let expectedRevision = review.submissionDraftRevision ?? null;
+  if (expectedRevision === null && review.submissionDraftUpdatedAt) {
+    // One-release compatibility for submissions reserved before numeric draft
+    // revisions existed. New reservations never use the timestamp as a token.
+    const legacyDraft = readPrReviewDraft({
+      databasePath: paths.neondeckDatabase,
+      draftId: review.submissionDraftId,
+    });
+    if (legacyDraft?.updatedAt !== review.submissionDraftUpdatedAt)
+      return false;
+    expectedRevision = legacyDraft.revision;
+  }
+  if (expectedRevision === null) return false;
   return settlePrReviewDraftSubmission({
     databasePath: paths.neondeckDatabase,
     draftId: review.submissionDraftId,
-    expectedUpdatedAt: review.submissionDraftUpdatedAt,
+    expectedRevision,
     submitted,
   });
 }
@@ -1090,10 +1105,11 @@ function reserveReviewingRecord(
            finding_count, seeded_count, report_only_count,
            report_only_findings_json, trust_boundary, verdict,
            previous_verdict, github_review_url, failure_message,
-           submission_draft_id, submission_draft_updated_at,
+           submission_draft_id, submission_draft_revision,
+           submission_draft_updated_at,
            created_at, updated_at, ready_at, submitted_at, failed_at
          ) VALUES (?, ?, ?, ?, ?, ?, ?, 'reviewing', ?, NULL, ?, ?, ?, ?, ?, '[]',
-                   0, 0, 0, '[]', ?, NULL, ?, NULL, NULL, NULL, NULL,
+                   0, 0, 0, '[]', ?, NULL, ?, NULL, NULL, NULL, NULL, NULL,
                    ?, ?, NULL, NULL, NULL)
          ON CONFLICT(repo_full_name, pr_number) DO UPDATE SET
            ref = excluded.ref,
@@ -1115,6 +1131,7 @@ function reserveReviewingRecord(
            report_only_findings_json = '[]',
            verdict = NULL,
            submission_draft_id = NULL,
+           submission_draft_revision = NULL,
            submission_draft_updated_at = NULL,
            previous_verdict = CASE
              WHEN pr_reviews.verdict IS NOT NULL THEN pr_reviews.verdict

@@ -100,12 +100,15 @@ export async function putGitHubPrReviewDraft(
   if (!resolved.ok) return resolved.result;
 
   if (parsedDraft.output.reanchorHeadSha) {
-    const { expectedDraftId, expectedHeadSha } = parsedDraft.output;
-    if (!expectedDraftId || !expectedHeadSha) {
+    const { expectedDraftId, expectedHeadSha, expectedRevision } =
+      parsedDraft.output;
+    if (!expectedDraftId || !expectedHeadSha || !expectedRevision) {
       return failResult(
         'github_pr_review_draft_put',
         'Re-anchoring a review draft requires its expected draft and head revision.',
-        { requires: ['expectedDraftId', 'expectedHeadSha'] },
+        {
+          requires: ['expectedDraftId', 'expectedHeadSha', 'expectedRevision'],
+        },
       );
     }
     let draft: ReturnType<typeof reanchorPrReviewDraft>;
@@ -115,6 +118,7 @@ export async function putGitHubPrReviewDraft(
         repo: resolved.target.repoFullName,
         prNumber: resolved.target.number,
         draftId: expectedDraftId,
+        expectedRevision,
         expectedHeadSha,
         headSha: parsedDraft.output.headSha,
       });
@@ -146,10 +150,10 @@ export async function putGitHubPrReviewDraft(
   const hasCreateIdentity =
     parsedDraft.output.expectedAbsent === true &&
     !parsedDraft.output.draftId &&
-    !parsedDraft.output.expectedUpdatedAt;
+    parsedDraft.output.expectedRevision === undefined;
   const hasUpdateIdentity = Boolean(
     parsedDraft.output.draftId &&
-    parsedDraft.output.expectedUpdatedAt &&
+    parsedDraft.output.expectedRevision &&
     !parsedDraft.output.expectedAbsent,
   );
   if (!hasCreateIdentity && !hasUpdateIdentity) {
@@ -160,30 +164,27 @@ export async function putGitHubPrReviewDraft(
     );
   }
 
-  const draftUpdate: Parameters<typeof upsertPrReviewDraft>[0] = {
+  const draftValues = {
     databasePath: paths.neondeckDatabase,
     repo: resolved.target.repoFullName,
     prNumber: resolved.target.number,
     headSha: parsedDraft.output.headSha,
+    ...('verdict' in parsedDraft.output
+      ? { verdict: parsedDraft.output.verdict ?? null }
+      : {}),
+    ...('body' in parsedDraft.output
+      ? { body: parsedDraft.output.body ?? null }
+      : {}),
   };
-  if (parsedDraft.output.draftId) {
-    draftUpdate.draftId = parsedDraft.output.draftId;
-  }
-  if (parsedDraft.output.expectedUpdatedAt) {
-    draftUpdate.expectedUpdatedAt = parsedDraft.output.expectedUpdatedAt;
-  }
-  if (parsedDraft.output.expectedAbsent) {
-    draftUpdate.expectedAbsent = true;
-  }
-  if ('verdict' in parsedDraft.output) {
-    draftUpdate.verdict = parsedDraft.output.verdict ?? null;
-  }
-  if ('body' in parsedDraft.output) {
-    draftUpdate.body = parsedDraft.output.body ?? null;
-  }
   let draft: ReturnType<typeof upsertPrReviewDraft>;
   try {
-    draft = upsertPrReviewDraft(draftUpdate);
+    draft = parsedDraft.output.expectedAbsent
+      ? upsertPrReviewDraft({ ...draftValues, expectedAbsent: true })
+      : upsertPrReviewDraft({
+          ...draftValues,
+          draftId: parsedDraft.output.draftId!,
+          expectedRevision: parsedDraft.output.expectedRevision!,
+        });
   } catch (error) {
     return failResult(
       'github_pr_review_draft_put',
@@ -248,7 +249,7 @@ export async function postGitHubPrReviewDraftComment(
       { requires: ['draftId'] },
     );
   }
-  if (draft.updatedAt !== parsed.output.expectedUpdatedAt) {
+  if (draft.revision !== parsed.output.expectedRevision) {
     return failResult(
       'github_pr_review_draft_comment_post',
       'The review draft changed before the comment could be saved.',
@@ -277,7 +278,7 @@ export async function postGitHubPrReviewDraftComment(
       id: metadata.id,
       databasePath: paths.neondeckDatabase,
       draftId: parsed.output.draftId,
-      expectedDraftUpdatedAt: parsed.output.expectedUpdatedAt,
+      expectedDraftRevision: parsed.output.expectedRevision,
       expectedHeadSha: metadata.expectedHeadSha,
       path: parsed.output.path,
       side: parsed.output.side,
@@ -359,7 +360,7 @@ export async function patchGitHubPrReviewDraftComment(
   }
   if (
     draft.id !== parsed.output.draftId ||
-    draft.updatedAt !== parsed.output.expectedUpdatedAt
+    draft.revision !== parsed.output.expectedRevision
   ) {
     return failResult(
       'github_pr_review_draft_comment_patch',
@@ -396,7 +397,7 @@ export async function patchGitHubPrReviewDraftComment(
       commentId,
       body: parsed.output.body,
       expectedDraftId: parsed.output.draftId,
-      expectedDraftUpdatedAt: parsed.output.expectedUpdatedAt,
+      expectedDraftRevision: parsed.output.expectedRevision,
       expectedHeadSha: metadata.expectedHeadSha,
       origin: metadata.origin,
       ...('path' in parsed.output ? { path: parsed.output.path } : {}),
@@ -430,7 +431,7 @@ export async function deleteGitHubPrReviewDraftComment(
   paths: RuntimePaths = runtimePaths(),
   metadata: {
     draftId?: string;
-    expectedUpdatedAt?: string;
+    expectedRevision?: number;
     expectedHeadSha?: string;
   } = {},
 ): Promise<PrEventActionResult> {
@@ -469,9 +470,9 @@ export async function deleteGitHubPrReviewDraftComment(
   }
   if (
     !metadata.draftId ||
-    !metadata.expectedUpdatedAt ||
+    metadata.expectedRevision === undefined ||
     draft?.id !== metadata.draftId ||
-    draft.updatedAt !== metadata.expectedUpdatedAt
+    draft.revision !== metadata.expectedRevision
   ) {
     return failResult(
       'github_pr_review_draft_comment_delete',
@@ -485,7 +486,7 @@ export async function deleteGitHubPrReviewDraftComment(
       databasePath: paths.neondeckDatabase,
       commentId,
       expectedDraftId: metadata.draftId,
-      expectedDraftUpdatedAt: metadata.expectedUpdatedAt,
+      expectedDraftRevision: metadata.expectedRevision,
       expectedHeadSha: metadata.expectedHeadSha,
     });
     return okResult(
@@ -536,7 +537,7 @@ export async function deleteGitHubPrReviewDraft(
   const draft = discardPrReviewDraft({
     databasePath: paths.neondeckDatabase,
     draftId: parsedIdentity.output.draftId,
-    expectedUpdatedAt: parsedIdentity.output.expectedUpdatedAt,
+    expectedRevision: parsedIdentity.output.expectedRevision,
     repo: resolved.target.repoFullName,
     prNumber: resolved.target.number,
   });

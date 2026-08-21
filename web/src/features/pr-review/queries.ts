@@ -318,14 +318,26 @@ export function useGitHubPrReviewMutations(pr: GitHubPullRequest) {
     draftQueryKey,
   );
   const draftUpdatedAtFrontierRef = useRef(initialDraft?.updatedAt ?? null);
+  const advanceDraftUpdatedAtFrontier = (updatedAt: string) => {
+    if (
+      draftUpdatedAtFrontierRef.current === null ||
+      Date.parse(updatedAt) >= Date.parse(draftUpdatedAtFrontierRef.current)
+    ) {
+      draftUpdatedAtFrontierRef.current = updatedAt;
+    }
+  };
   const cancelDraftQuery = () =>
     queryClient.cancelQueries({ exact: true, queryKey: draftQueryKey });
   const updateDraftCache = (
     draft: GitHubPrReviewDraft | null,
     options: { preserveDifferentDraft?: boolean } = {},
   ) => {
+    const cachedDraft = queryClient.getQueryData<GitHubPrReviewDraft | null>(
+      draftQueryKey,
+    );
     if (
       draft &&
+      cachedDraft?.id !== draft.id &&
       draftUpdatedAtFrontierRef.current !== null &&
       Date.parse(draft.updatedAt) <
         Date.parse(draftUpdatedAtFrontierRef.current)
@@ -333,7 +345,7 @@ export function useGitHubPrReviewMutations(pr: GitHubPullRequest) {
       return;
     }
     if (draft) {
-      draftUpdatedAtFrontierRef.current = draft.updatedAt;
+      advanceDraftUpdatedAtFrontier(draft.updatedAt);
     }
     queryClient.setQueryData<GitHubPrReviewDraft | null>(
       draftQueryKey,
@@ -360,6 +372,7 @@ export function useGitHubPrReviewMutations(pr: GitHubPullRequest) {
           }
           if (
             incoming &&
+            current?.id !== incoming.id &&
             draftUpdatedAtFrontierRef.current !== null &&
             Date.parse(incoming.updatedAt) <
               Date.parse(draftUpdatedAtFrontierRef.current)
@@ -367,7 +380,7 @@ export function useGitHubPrReviewMutations(pr: GitHubPullRequest) {
             return current ?? null;
           }
           if (incoming) {
-            draftUpdatedAtFrontierRef.current = incoming.updatedAt;
+            advanceDraftUpdatedAtFrontier(incoming.updatedAt);
           }
           return newerDraftSnapshot(current, incoming);
         },
@@ -456,7 +469,7 @@ export function useGitHubPrReviewMutations(pr: GitHubPullRequest) {
       mutationFn: deleteGitHubPrReviewDraft,
       onMutate: cancelDraftQuery,
       onSuccess: (discardedDraft) => {
-        draftUpdatedAtFrontierRef.current = discardedDraft.updatedAt;
+        advanceDraftUpdatedAtFrontier(discardedDraft.updatedAt);
         queryClient.setQueryData<GitHubPrReviewDraft | null>(
           draftQueryKey,
           (current) =>
@@ -503,6 +516,14 @@ export function newerDraftSnapshot(
   incoming: GitHubPrReviewDraft | null,
 ) {
   if (!incoming || !current) return incoming;
+  if (incoming.id === current.id) {
+    if (incoming.revision !== current.revision) {
+      return incoming.revision > current.revision ? incoming : current;
+    }
+    return Date.parse(incoming.updatedAt) >= Date.parse(current.updatedAt)
+      ? incoming
+      : current;
+  }
   return Date.parse(incoming.updatedAt) >= Date.parse(current.updatedAt)
     ? incoming
     : current;

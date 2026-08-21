@@ -489,6 +489,7 @@ async function seedDraftComments(
     existing = clearPrReviewNeonDraftComments({
       databasePath: paths.neondeckDatabase,
       draftId: existing.id,
+      expectedDraftRevision: existing.revision,
     });
   }
   if (existing && existing.headSha !== facts.state.headSha) {
@@ -496,6 +497,8 @@ async function seedDraftComments(
       databasePath: paths.neondeckDatabase,
       repo: facts.target.repoFullName,
       prNumber: facts.target.number,
+      draftId: existing.id,
+      expectedRevision: existing.revision,
       headSha: facts.state.headSha,
       reanchorHeadSha: true,
     });
@@ -543,13 +546,15 @@ async function seedDraftComments(
     };
   }
 
-  let draft = upsertPrReviewDraft({
-    databasePath: paths.neondeckDatabase,
-    repo: facts.target.repoFullName,
-    prNumber: facts.target.number,
-    headSha: facts.state.headSha,
-    reanchorHeadSha: true,
-  });
+  let draft =
+    existing ??
+    upsertPrReviewDraft({
+      databasePath: paths.neondeckDatabase,
+      repo: facts.target.repoFullName,
+      prNumber: facts.target.number,
+      headSha: facts.state.headSha,
+      expectedAbsent: true,
+    });
   const addedIds: string[] = [];
   try {
     for (const [index, item] of seedable.entries()) {
@@ -565,6 +570,7 @@ async function seedDraftComments(
         ),
         databasePath: paths.neondeckDatabase,
         draftId: draft.id,
+        expectedDraftRevision: draft.revision,
         path: item.finding.path,
         side: item.anchor.side,
         line: item.anchor.line,
@@ -601,9 +607,11 @@ async function seedDraftComments(
     }
     for (const id of addedIds) {
       try {
-        deletePrReviewDraftComment({
+        draft = deletePrReviewDraftComment({
           databasePath: paths.neondeckDatabase,
           commentId: id,
+          expectedDraftId: draft.id,
+          expectedDraftRevision: draft.revision,
         });
       } catch {
         // Preserve the original seeding failure.

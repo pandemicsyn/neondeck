@@ -1402,6 +1402,7 @@ describe('review surface registry', () => {
         data: {
           draft: {
             id: 'draft-1',
+            revision: 1,
             headSha: 'head-sha',
             updatedAt: '2026-08-05T12:00:00.000Z',
             comments: [],
@@ -1425,6 +1426,7 @@ describe('review surface registry', () => {
       data: {
         draft: {
           id: 'draft-1',
+          revision: 2,
           comments: [
             {
               id: 'comment-1',
@@ -1469,7 +1471,7 @@ describe('review surface registry', () => {
     );
     expect(postComment.mock.calls[0]?.[1]).toMatchObject({
       draftId: 'draft-1',
-      expectedUpdatedAt: '2026-08-05T12:00:00.000Z',
+      expectedRevision: 1,
       path: 'src/app.ts',
       side: 'RIGHT',
       line: 11,

@@ -267,7 +267,18 @@ export function GitHubPrReview({
   );
   const acceptDraftSnapshot = useCallback(
     (nextDraft: GitHubPrReviewDraft) => {
+      const currentDraft = draftRef.current;
       if (
+        currentDraft?.id === nextDraft.id &&
+        (nextDraft.revision < currentDraft.revision ||
+          (nextDraft.revision === currentDraft.revision &&
+            Date.parse(nextDraft.updatedAt) <
+              Date.parse(currentDraft.updatedAt)))
+      ) {
+        return false;
+      }
+      if (
+        currentDraft?.id !== nextDraft.id &&
         !draftSnapshotIsAtOrBeyondFrontier(
           draftUpdatedAtFrontierRef.current,
           nextDraft.updatedAt,
@@ -1032,7 +1043,7 @@ export function GitHubPrReview({
     const savedComposer = composer;
     const draftToMove =
       draft && draft.headSha !== incomingPr.headSha
-        ? { id: draft.id, headSha: draft.headSha }
+        ? { id: draft.id, revision: draft.revision, headSha: draft.headSha }
         : null;
     const shouldMoveDraft = Boolean(draftToMove);
     setIsApplyingRevision(true);
@@ -1114,6 +1125,7 @@ export function GitHubPrReview({
           repo: incomingPr.repo,
           number: incomingPr.number,
           draftId: draftToMove.id,
+          expectedRevision: draftToMove.revision,
           expectedHeadSha: draftToMove.headSha,
           headSha: incomingPr.headSha ?? '',
           saveDraft: mutations.saveDraft.mutateAsync,
@@ -1414,7 +1426,7 @@ export function GitHubPrReview({
       ...(currentDraft
         ? {
             draftId: currentDraft.id,
-            expectedUpdatedAt: currentDraft.updatedAt,
+            expectedRevision: currentDraft.revision,
           }
         : { expectedAbsent: true }),
       repo: pr.repo,
@@ -1455,7 +1467,7 @@ export function GitHubPrReview({
         ...(snapshot
           ? {
               draftId: snapshot.id,
-              expectedUpdatedAt: snapshot.updatedAt,
+              expectedRevision: snapshot.revision,
             }
           : { expectedAbsent: true }),
         repo: pr.repo,
@@ -1508,6 +1520,7 @@ export function GitHubPrReview({
           repo: pr.repo,
           number: pr.number,
           draftId: draft.id,
+          expectedRevision: draft.revision,
           expectedHeadSha: draft.headSha,
           headSha: currentHeadSha,
           saveDraft: mutations.saveDraft.mutateAsync,
@@ -1567,7 +1580,7 @@ export function GitHubPrReview({
           number: pr.number,
           id: reanchoringCommentId,
           draftId: mutationDraft.id,
-          expectedUpdatedAt: mutationDraft.updatedAt,
+          expectedRevision: mutationDraft.revision,
           path: activePath,
           ...input,
           body: comment.body,
@@ -1629,7 +1642,7 @@ export function GitHubPrReview({
           repo: pr.repo,
           number: pr.number,
           draftId: nextDraft.id,
-          expectedUpdatedAt: nextDraft.updatedAt,
+          expectedRevision: nextDraft.revision,
           path: submittedComposer.path,
           ...input,
           body: submittedComposer.body,
@@ -1665,7 +1678,7 @@ export function GitHubPrReview({
           number: pr.number,
           id: submittedEditor.commentId,
           draftId: mutationDraft.id,
-          expectedUpdatedAt: mutationDraft.updatedAt,
+          expectedRevision: mutationDraft.revision,
           body: submittedEditor.body,
         }),
       );
@@ -1722,7 +1735,7 @@ export function GitHubPrReview({
         number: pr.number,
         id: commentId,
         draftId: mutationDraft.id,
-        expectedUpdatedAt: mutationDraft.updatedAt,
+        expectedRevision: mutationDraft.revision,
       }),
     )
       .then((updated) => {
@@ -2022,7 +2035,7 @@ export function GitHubPrReview({
       });
       await mutations.submitReview.mutateAsync({
         draftId: settledDraft.id,
-        expectedDraftUpdatedAt: settledDraft.updatedAt,
+        expectedDraftRevision: settledDraft.revision,
         repo: pr.repo,
         number: pr.number,
         headSha: currentHeadSha,
@@ -2398,7 +2411,7 @@ export function GitHubPrReview({
                   repo: pr.repo,
                   number: pr.number,
                   draftId: draft.id,
-                  expectedUpdatedAt: draft.updatedAt,
+                  expectedRevision: draft.revision,
                 }),
               )
                 .then((discardedDraft) => {

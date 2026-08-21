@@ -92,7 +92,7 @@ export async function postGitHubPrReview(
       paths,
       draftId: parsedReview.output.draftId,
       headSha: parsedReview.output.headSha,
-      expectedDraftUpdatedAt: parsedReview.output.expectedDraftUpdatedAt,
+      expectedDraftRevision: parsedReview.output.expectedDraftRevision,
       commentIds: parsedReview.output.commentIds,
       fetchHeadSha: dependencies.fetchPullRequestHeadSha,
     });

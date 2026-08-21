@@ -4,14 +4,16 @@ import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { ToolStep } from '@flue/runtime';
 import {
-  addPrReviewDraftComment,
   readLivePrReviewDraft,
-  updatePrReviewDraftComment,
-  upsertPrReviewDraft,
   type GitHubDiffSummary,
   type GitHubPullRequestEventState,
   type GitHubPullRequestFile,
 } from './modules/github';
+import {
+  addPrReviewDraftComment,
+  updatePrReviewDraftComment,
+  upsertPrReviewDraft,
+} from './testing/pr-review-draft-fixtures';
 import {
   createSubmitPrReviewTool,
   createReviewDurableEffectRunner,

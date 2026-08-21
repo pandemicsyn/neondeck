@@ -4,7 +4,6 @@ import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
-  addPrReviewDraftComment,
   buildPullRequestQueries,
   clearGitHubRequestCache,
   clearGitHubPullRequestQueueCache,
@@ -28,18 +27,21 @@ import {
   pullRequestEventStateIncompleteness,
   pullRequestEventStateTruncation,
   readLivePrReviewDraft,
-  reanchorPrReviewDraft,
   readPrReviewDraft,
   recordPrReviewNeonSeed,
-  deletePrReviewDraftComment,
   replyToPullRequestReviewThread,
   resolvePullRequestReviewThread,
   settlePrReviewDraftSubmission,
   submitPullRequestReview,
   unresolvePullRequestReviewThread,
+} from './modules/github';
+import {
+  addPrReviewDraftComment,
+  deletePrReviewDraftComment,
+  reanchorPrReviewDraft,
   updatePrReviewDraftComment,
   upsertPrReviewDraft,
-} from './modules/github';
+} from './testing/pr-review-draft-fixtures';
 import { listWorkflowSummaries } from './modules/app-state/workflow-summaries';
 import type { RepoConfig } from './runtime-home';
 import { ensureRuntimeHome, runtimePaths } from './runtime-home';
@@ -1620,11 +1622,14 @@ describe('github foundation', () => {
       prNumber: 123,
       headSha: 'head123',
       body: ' First pass ',
+      expectedAbsent: true,
     });
     const second = upsertPrReviewDraft({
       databasePath: paths.neondeckDatabase,
       repo: 'pandemicsyn/neondeck',
       prNumber: 123,
+      draftId: first.id,
+      expectedRevision: first.revision,
       headSha: 'head456',
       verdict: 'request-changes',
       body: 'Needs changes',
@@ -1633,6 +1638,7 @@ describe('github foundation', () => {
     expect(second.id).toBe(first.id);
     expect(second).toMatchObject({
       headSha: 'head123',
+      revision: first.revision + 1,
       verdict: 'request-changes',
       body: 'Needs changes',
       comments: [],
@@ -1641,6 +1647,8 @@ describe('github foundation', () => {
       databasePath: paths.neondeckDatabase,
       repo: 'pandemicsyn/neondeck',
       prNumber: 123,
+      draftId: second.id,
+      expectedRevision: second.revision,
       headSha: 'head456',
       reanchorHeadSha: true,
     });
@@ -1654,6 +1662,7 @@ describe('github foundation', () => {
     const withComment = addPrReviewDraftComment({
       databasePath: paths.neondeckDatabase,
       draftId: explicitReanchor.id,
+      expectedDraftRevision: explicitReanchor.revision,
       path: 'src/app.ts',
       side: 'RIGHT',
       line: 12,
@@ -1670,6 +1679,8 @@ describe('github foundation', () => {
     const updated = updatePrReviewDraftComment({
       databasePath: paths.neondeckDatabase,
       commentId: commentId ?? '',
+      expectedDraftId: withComment.id,
+      expectedDraftRevision: withComment.revision,
       body: 'Prefer an early return.',
     });
     expect(updated.comments[0]).toMatchObject({
@@ -1680,6 +1691,8 @@ describe('github foundation', () => {
     const neonUpdated = updatePrReviewDraftComment({
       databasePath: paths.neondeckDatabase,
       commentId: commentId ?? '',
+      expectedDraftId: updated.id,
+      expectedDraftRevision: updated.revision,
       body: 'Neon revised this local draft.',
       origin: 'neon',
     });
@@ -1692,6 +1705,8 @@ describe('github foundation', () => {
     const reanchored = updatePrReviewDraftComment({
       databasePath: paths.neondeckDatabase,
       commentId: commentId ?? '',
+      expectedDraftId: neonUpdated.id,
+      expectedDraftRevision: neonUpdated.revision,
       path: 'src/next.ts',
       side: 'LEFT',
       line: 8,
@@ -1713,6 +1728,8 @@ describe('github foundation', () => {
       updatePrReviewDraftComment({
         databasePath: paths.neondeckDatabase,
         commentId: commentId ?? '',
+        expectedDraftId: reanchored.id,
+        expectedDraftRevision: reanchored.revision,
         side: 'LEFT',
         line: 6,
         startLine: 8,
@@ -1724,6 +1741,8 @@ describe('github foundation', () => {
     const leftToRightRange = updatePrReviewDraftComment({
       databasePath: paths.neondeckDatabase,
       commentId: commentId ?? '',
+      expectedDraftId: reanchored.id,
+      expectedDraftRevision: reanchored.revision,
       side: 'RIGHT',
       line: 10,
       startLine: 8,
@@ -1742,6 +1761,8 @@ describe('github foundation', () => {
       updatePrReviewDraftComment({
         databasePath: paths.neondeckDatabase,
         commentId: commentId ?? '',
+        expectedDraftId: leftToRightRange.id,
+        expectedDraftRevision: leftToRightRange.revision,
         side: 'LEFT',
         line: 8,
         startLine: 10,
@@ -1753,6 +1774,8 @@ describe('github foundation', () => {
     const deleted = deletePrReviewDraftComment({
       databasePath: paths.neondeckDatabase,
       commentId: commentId ?? '',
+      expectedDraftId: leftToRightRange.id,
+      expectedDraftRevision: leftToRightRange.revision,
     });
     expect(deleted.comments).toEqual([]);
     expect(
@@ -1772,6 +1795,7 @@ describe('github foundation', () => {
       repo: 'pandemicsyn/neondeck',
       prNumber: 123,
       headSha: 'head-before',
+      expectedAbsent: true,
     });
 
     expect(
@@ -1780,6 +1804,7 @@ describe('github foundation', () => {
         repo: 'pandemicsyn/neondeck',
         prNumber: 123,
         draftId: original.id,
+        expectedRevision: original.revision,
         expectedHeadSha: 'different-head',
         headSha: 'head-after',
       }),
@@ -1790,6 +1815,7 @@ describe('github foundation', () => {
         repo: 'pandemicsyn/neondeck',
         prNumber: 123,
         draftId: original.id,
+        expectedRevision: original.revision,
         expectedHeadSha: 'head-before',
         headSha: 'head-after',
       }),
@@ -1800,6 +1826,7 @@ describe('github foundation', () => {
         repo: 'pandemicsyn/neondeck',
         prNumber: 123,
         draftId: original.id,
+        expectedRevision: original.revision + 1,
         expectedHeadSha: 'head-before',
         headSha: 'head-after-race',
       }),
@@ -1814,6 +1841,7 @@ describe('github foundation', () => {
       repo: 'pandemicsyn/neondeck',
       prNumber: 123,
       headSha: 'head-before',
+      expectedAbsent: true,
     });
     const futureUpdatedAt = '2099-01-01T00:00:00.000Z';
     const database = new DatabaseSync(paths.neondeckDatabase);
@@ -1830,6 +1858,7 @@ describe('github foundation', () => {
       repo: 'pandemicsyn/neondeck',
       prNumber: 123,
       draftId: original.id,
+      expectedRevision: original.revision,
       expectedHeadSha: 'head-before',
       headSha: 'head-after',
     });
@@ -1841,6 +1870,56 @@ describe('github foundation', () => {
     expect(Date.parse(reanchored?.updatedAt ?? '')).toBeGreaterThan(
       Date.parse(futureUpdatedAt),
     );
+  });
+
+  it('uses numeric draft revisions instead of timestamps as write tokens', async () => {
+    const paths = runtimePaths(await tempHome());
+    await ensureRuntimeHome(paths);
+    const original = upsertPrReviewDraft({
+      databasePath: paths.neondeckDatabase,
+      repo: 'pandemicsyn/neondeck',
+      prNumber: 123,
+      headSha: 'head-before',
+      expectedAbsent: true,
+    });
+    const futureUpdatedAt = '2099-01-01T00:00:00.000Z';
+    const database = new DatabaseSync(paths.neondeckDatabase);
+    try {
+      database
+        .prepare('UPDATE pr_review_drafts SET updated_at = ? WHERE id = ?;')
+        .run(futureUpdatedAt, original.id);
+    } finally {
+      database.close();
+    }
+
+    const saved = upsertPrReviewDraft({
+      databasePath: paths.neondeckDatabase,
+      repo: original.repo,
+      prNumber: original.prNumber,
+      draftId: original.id,
+      expectedRevision: original.revision,
+      headSha: original.headSha,
+      body: 'Saved against the numeric revision.',
+    });
+
+    expect(saved).toMatchObject({
+      body: 'Saved against the numeric revision.',
+      revision: original.revision + 1,
+    });
+    expect(Date.parse(saved.updatedAt)).toBeGreaterThan(
+      Date.parse(futureUpdatedAt),
+    );
+    expect(() =>
+      upsertPrReviewDraft({
+        databasePath: paths.neondeckDatabase,
+        repo: original.repo,
+        prNumber: original.prNumber,
+        draftId: original.id,
+        expectedRevision: original.revision,
+        headSha: original.headSha,
+        body: 'A stale writer must lose.',
+      }),
+    ).toThrow(/draft changed/i);
   });
 
   it('rejects reordered edit and delete writes against a stale draft revision', async () => {
@@ -1855,7 +1934,7 @@ describe('github foundation', () => {
     const withComment = addPrReviewDraftComment({
       databasePath: paths.neondeckDatabase,
       draftId: draft.id,
-      expectedDraftUpdatedAt: draft.updatedAt,
+      expectedDraftRevision: draft.revision,
       path: 'src/app.ts',
       side: 'RIGHT',
       line: 12,
@@ -1866,7 +1945,7 @@ describe('github foundation', () => {
       databasePath: paths.neondeckDatabase,
       commentId,
       expectedDraftId: withComment.id,
-      expectedDraftUpdatedAt: withComment.updatedAt,
+      expectedDraftRevision: withComment.revision,
       body: 'First edit wins.',
     });
 
@@ -1875,7 +1954,7 @@ describe('github foundation', () => {
         databasePath: paths.neondeckDatabase,
         commentId,
         expectedDraftId: withComment.id,
-        expectedDraftUpdatedAt: withComment.updatedAt,
+        expectedDraftRevision: withComment.revision,
         body: 'Stale edit must lose.',
       }),
     ).toThrow(/draft changed/i);
@@ -1884,7 +1963,7 @@ describe('github foundation', () => {
         databasePath: paths.neondeckDatabase,
         commentId,
         expectedDraftId: withComment.id,
-        expectedDraftUpdatedAt: withComment.updatedAt,
+        expectedDraftRevision: withComment.revision,
       }),
     ).toThrow(/draft changed/i);
     expect(firstEdit.comments[0]).toMatchObject({
@@ -1912,7 +1991,7 @@ describe('github foundation', () => {
     discardPrReviewDraft({
       databasePath: paths.neondeckDatabase,
       draftId: draft.id,
-      expectedUpdatedAt: draft.updatedAt,
+      expectedRevision: draft.revision,
       repo: draft.repo,
       prNumber: draft.prNumber,
     });
@@ -2462,7 +2541,7 @@ describe('github foundation', () => {
       databasePath: paths.neondeckDatabase,
       paths,
       draftId: draft.id,
-      expectedDraftUpdatedAt: saved.updatedAt,
+      expectedDraftRevision: saved.revision,
       headSha: 'head123',
       commentIds: [right?.id ?? '', range?.id ?? ''],
       fetchHeadSha: async () => 'head123',
@@ -2630,7 +2709,7 @@ describe('github foundation', () => {
       databasePath: paths.neondeckDatabase,
       paths,
       draftId: draft.id,
-      expectedDraftUpdatedAt: withoutSeeded.updatedAt,
+      expectedDraftRevision: withoutSeeded.revision,
       headSha: 'head123',
       fetchHeadSha: async () => 'head123',
     });
@@ -2730,7 +2809,7 @@ describe('github foundation', () => {
       databasePath: paths.neondeckDatabase,
       paths,
       draftId: draft.id,
-      expectedDraftUpdatedAt: withoutSeeded.updatedAt,
+      expectedDraftRevision: withoutSeeded.revision,
       headSha: 'head123',
       fetchHeadSha: async () => 'head123',
     });
@@ -2781,7 +2860,7 @@ describe('github foundation', () => {
         databasePath: paths.neondeckDatabase,
         paths,
         draftId: draft.id,
-        expectedDraftUpdatedAt: withComment.updatedAt,
+        expectedDraftRevision: withComment.revision,
         headSha: 'head456',
         fetchHeadSha: async () => 'head456',
       }),
@@ -2855,7 +2934,7 @@ describe('github foundation', () => {
         databasePath: paths.neondeckDatabase,
         paths,
         draftId: draft.id,
-        expectedDraftUpdatedAt: refreshedDraft.updatedAt,
+        expectedDraftRevision: refreshedDraft.revision,
         headSha: 'head456',
         commentIds: [commentId],
         fetchHeadSha: async () => 'head456',
@@ -2930,7 +3009,7 @@ describe('github foundation', () => {
         databasePath: paths.neondeckDatabase,
         paths,
         draftId: draft.id,
-        expectedDraftUpdatedAt: withComment.updatedAt,
+        expectedDraftRevision: withComment.revision,
         headSha: 'head123',
         commentIds: failingCommentId ? [failingCommentId] : [],
         fetchHeadSha: async () => 'head123',
@@ -2984,7 +3063,7 @@ describe('github foundation', () => {
       databasePath: paths.neondeckDatabase,
       paths,
       draftId: draft.id,
-      expectedDraftUpdatedAt: draft.updatedAt,
+      expectedDraftRevision: draft.revision,
       headSha: 'head123',
       fetchHeadSha: async () => {
         headLookupStarted.resolve();
@@ -3016,7 +3095,7 @@ describe('github foundation', () => {
       discardPrReviewDraft({
         databasePath: paths.neondeckDatabase,
         draftId: draft.id,
-        expectedUpdatedAt: draft.updatedAt,
+        expectedRevision: draft.revision,
         repo: draft.repo,
         prNumber: draft.prNumber,
       }),
@@ -3057,7 +3136,7 @@ describe('github foundation', () => {
         databasePath: paths.neondeckDatabase,
         paths,
         draftId: draft.id,
-        expectedDraftUpdatedAt: draft.updatedAt,
+        expectedDraftRevision: draft.revision,
         headSha: 'head123',
         fetchHeadSha: async () => 'head123',
       }),
@@ -3097,7 +3176,7 @@ describe('github foundation', () => {
         databasePath: paths.neondeckDatabase,
         paths,
         draftId: draft.id,
-        expectedDraftUpdatedAt: draft.updatedAt,
+        expectedDraftRevision: draft.revision,
         headSha: 'head123',
         fetchHeadSha: async () => 'head123',
       }),
@@ -3126,7 +3205,7 @@ describe('github foundation', () => {
       settlePrReviewDraftSubmission({
         databasePath: paths.neondeckDatabase,
         draftId: draft.id,
-        expectedUpdatedAt: draft.updatedAt,
+        expectedRevision: draft.revision,
         submitted: false,
       }),
     ).toBe(true);
@@ -3167,7 +3246,7 @@ describe('github foundation', () => {
           databasePath: paths.neondeckDatabase,
           paths,
           draftId: draft.id,
-          expectedDraftUpdatedAt: draft.updatedAt,
+          expectedDraftRevision: draft.revision,
           headSha: draft.headSha,
           fetchHeadSha: async () => draft.headSha,
         }),
@@ -3197,7 +3276,7 @@ describe('github foundation', () => {
       discardPrReviewDraft({
         databasePath: paths.neondeckDatabase,
         draftId: original.id,
-        expectedUpdatedAt: original.updatedAt,
+        expectedRevision: original.revision,
         repo: original.repo,
         prNumber: original.prNumber,
       }),
@@ -3215,7 +3294,7 @@ describe('github foundation', () => {
       discardPrReviewDraft({
         databasePath: paths.neondeckDatabase,
         draftId: original.id,
-        expectedUpdatedAt: original.updatedAt,
+        expectedRevision: original.revision,
         repo: original.repo,
         prNumber: original.prNumber,
       }),
@@ -3286,7 +3365,7 @@ describe('github foundation', () => {
         databasePath: paths.neondeckDatabase,
         paths,
         draftId: draft.id,
-        expectedDraftUpdatedAt: withComment.updatedAt,
+        expectedDraftRevision: withComment.revision,
         headSha: 'head123',
         fetchHeadSha: async () => 'head123',
       }),
@@ -3341,7 +3420,7 @@ describe('github foundation', () => {
         databasePath: paths.neondeckDatabase,
         paths,
         draftId: draft.id,
-        expectedDraftUpdatedAt: withComment.updatedAt,
+        expectedDraftRevision: withComment.revision,
         headSha: 'head123',
         fetchHeadSha: async () => 'head123',
       }),
@@ -3382,7 +3461,7 @@ describe('github foundation', () => {
         databasePath: paths.neondeckDatabase,
         paths,
         draftId: draft.id,
-        expectedDraftUpdatedAt: draft.updatedAt,
+        expectedDraftRevision: draft.revision,
         headSha: 'head123',
         fetchHeadSha: async () => 'head123',
       }),

@@ -840,6 +840,7 @@ function reviewDraft(): GitHubPrReviewDraft {
     verdict: 'comment',
     body: null,
     status: 'draft',
+    revision: 1,
     createdAt: '2026-07-18T00:00:00.000Z',
     updatedAt: '2026-07-18T00:00:00.000Z',
     submittedAt: null,

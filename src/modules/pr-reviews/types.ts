@@ -38,6 +38,7 @@ export type PrReviewRecord = {
   trustBoundary: string;
   verdict: PrReviewVerdict | null;
   submissionDraftId?: string | null;
+  submissionDraftRevision?: number | null;
   submissionDraftUpdatedAt?: string | null;
   previousVerdict: PrReviewVerdict | null;
   githubReviewUrl: string | null;
