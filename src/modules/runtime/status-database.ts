@@ -7,6 +7,26 @@ import {
   type AppDbMigrationStatus,
 } from '../../runtime-home/app-db/migrate';
 import type { RuntimeStatus } from './status-schema';
+import { runtimeErrorSchema, type RuntimeExternalValue } from './value-schemas';
+import * as v from 'valibot';
+
+const nullableTextColumnSchema = v.nullable(v.string());
+const countRowSchema = v.object({ count: v.number() });
+const workflowErrorRowSchema = v.object({
+  id: v.string(),
+  workflow: v.string(),
+  run_id: nullableTextColumnSchema,
+  summary_json: nullableTextColumnSchema,
+  created_at: v.string(),
+});
+const notificationErrorRowSchema = v.object({
+  id: v.string(),
+  title: v.string(),
+  message: v.string(),
+  source_id: nullableTextColumnSchema,
+  created_at: v.string(),
+});
+const workflowSummarySchema = v.object({ message: v.string() });
 
 type AppDatabaseSnapshot = {
   ok: boolean;
@@ -198,56 +218,44 @@ function emptyDatabaseSnapshot(
 }
 
 function count(database: DatabaseSync, sql: string, ...values: string[]) {
-  const row = database.prepare(sql).get(...values) as
-    { count?: unknown } | undefined;
-  return Number(row?.count ?? 0);
+  return v.parse(countRowSchema, database.prepare(sql).get(...values)).count;
 }
 
-function readWorkflowErrorRow(row: unknown) {
-  const record = row as Record<string, unknown>;
+function readWorkflowErrorRow(row: RuntimeExternalValue) {
+  const record = v.parse(workflowErrorRowSchema, row);
   return {
-    id: String(record.id),
+    id: record.id,
     source: 'workflow-summary' as const,
-    title: String(record.workflow),
+    title: record.workflow,
     message: workflowSummaryMessage(record.summary_json, record.workflow),
-    runId: typeof record.run_id === 'string' ? record.run_id : null,
-    createdAt: String(record.created_at),
+    runId: record.run_id,
+    createdAt: record.created_at,
   };
 }
 
-function readNotificationErrorRow(row: unknown) {
-  const record = row as Record<string, unknown>;
+function readNotificationErrorRow(row: RuntimeExternalValue) {
+  const record = v.parse(notificationErrorRowSchema, row);
   return {
-    id: String(record.id),
+    id: record.id,
     source: 'notification' as const,
-    title: String(record.title),
-    message: String(record.message),
-    runId: typeof record.source_id === 'string' ? record.source_id : null,
-    createdAt: String(record.created_at),
+    title: record.title,
+    message: record.message,
+    runId: record.source_id,
+    createdAt: record.created_at,
   };
 }
 
-function workflowSummaryMessage(summaryJson: unknown, workflow: unknown) {
-  if (typeof summaryJson === 'string') {
-    try {
-      const summary = JSON.parse(summaryJson) as unknown;
-      if (
-        summary &&
-        typeof summary === 'object' &&
-        !Array.isArray(summary) &&
-        typeof (summary as { message?: unknown }).message === 'string'
-      ) {
-        return (summary as { message: string }).message;
-      }
-    } catch {
-      return `${String(workflow)} failed.`;
-    }
+function workflowSummaryMessage(summaryJson: string | null, workflow: string) {
+  if (summaryJson === null) return `${workflow} failed.`;
+  try {
+    const summary = v.safeParse(workflowSummarySchema, JSON.parse(summaryJson));
+    return summary.success ? summary.output.message : `${workflow} failed.`;
+  } catch {
+    return `${workflow} failed.`;
   }
-
-  return `${String(workflow)} failed.`;
 }
 
-function errorMessage(error: unknown) {
-  if (error instanceof Error) return error.message;
-  return String(error);
+function errorMessage(error: RuntimeExternalValue) {
+  const parsed = v.safeParse(runtimeErrorSchema, error);
+  return parsed.success ? parsed.output.message : String(error);
 }

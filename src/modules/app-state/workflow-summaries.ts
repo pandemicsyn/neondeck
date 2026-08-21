@@ -1,12 +1,19 @@
 import { randomUUID } from 'node:crypto';
+import type { SQLOutputValue } from 'node:sqlite';
 import { asJsonValue } from '../../lib/action-result';
-import { openDb } from '../../lib/sqlite';
+import { openDb, parseRow } from '../../lib/sqlite';
 import {
   ensureRuntimeHome,
   runtimePaths,
   type RuntimePaths,
 } from '../../runtime-home';
 import type { WorkflowSummaryRecord } from './types';
+import * as v from 'valibot';
+import {
+  appStateJsonValueSchema,
+  kiloTaskSummarySchema,
+  workflowSummaryRowSchema,
+} from './schemas';
 
 export async function addWorkflowSummary(
   input: {
@@ -193,8 +200,8 @@ export async function findWorkflowSummaryByKiloTaskId(
       .map(readWorkflowSummaryRow);
     return (
       rows.find((row) => {
-        const summary = objectField(row.summary);
-        return summary.kiloTaskId === kiloTaskId;
+        const summary = v.safeParse(kiloTaskSummarySchema, row.summary);
+        return summary.success && summary.output.kiloTaskId === kiloTaskId;
       }) ?? null
     );
   } finally {
@@ -202,24 +209,24 @@ export async function findWorkflowSummaryByKiloTaskId(
   }
 }
 
-function readWorkflowSummaryRow(row: unknown): WorkflowSummaryRecord {
-  const record = row as Record<string, unknown>;
+function readWorkflowSummaryRow(
+  row: Record<string, SQLOutputValue>,
+): WorkflowSummaryRecord {
+  const record = parseRow(
+    row,
+    workflowSummaryRowSchema,
+    'Invalid workflow summary',
+  );
   return {
-    id: String(record.id),
-    workflow: String(record.workflow),
-    runId: typeof record.run_id === 'string' ? record.run_id : null,
-    status: String(record.status),
+    id: record.id,
+    workflow: record.workflow,
+    runId: record.run_id,
+    status: record.status,
     summary:
-      typeof record.summary_json === 'string'
-        ? JSON.parse(record.summary_json)
+      record.summary_json !== null
+        ? v.parse(appStateJsonValueSchema, JSON.parse(record.summary_json))
         : null,
-    createdAt: String(record.created_at),
-    updatedAt: String(record.updated_at),
+    createdAt: record.created_at,
+    updatedAt: record.updated_at,
   };
-}
-
-function objectField(value: unknown): Record<string, unknown> {
-  return value && typeof value === 'object' && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : {};
 }

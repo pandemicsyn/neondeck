@@ -1,24 +1,27 @@
 import { asJsonValue } from '../../lib/action-result';
 import type { RuntimePaths } from '../../runtime-home';
 import * as v from 'valibot';
-import type { ConfigActionResult } from './schemas';
+import type { ConfigActionResult, ConfigExternalValue } from './schemas';
+
+const errorSchema = v.instance(Error);
 
 export function okResult(
   action: string,
   changed: boolean,
   paths: RuntimePaths,
   files: string[],
-  details: { message: string; data?: unknown },
+  details: { message: string; data?: ConfigExternalValue },
 ): ConfigActionResult {
-  return {
+  const result: ConfigActionResult = {
     ok: true,
     action,
     changed,
     message: details.message,
     home: paths.home,
     files,
-    ...(details.data === undefined ? {} : { data: asJsonValue(details.data) }),
   };
+  if (details.data !== undefined) result.data = asJsonValue(details.data);
+  return result;
 }
 
 export function failResult(
@@ -27,21 +30,22 @@ export function failResult(
   files: string[],
   details: Pick<ConfigActionResult, 'message' | 'errors' | 'requires'>,
 ): ConfigActionResult {
-  return {
+  const result: ConfigActionResult = {
     ok: false,
     action,
     changed: false,
     message: details.message,
     home: paths.home,
     files,
-    ...(details.errors ? { errors: details.errors } : {}),
-    ...(details.requires ? { requires: details.requires } : {}),
   };
+  if (details.errors) result.errors = details.errors;
+  if (details.requires) result.requires = details.requires;
+  return result;
 }
 
 export function parseActionInput<T>(
-  schema: v.GenericSchema<unknown, T>,
-  input: unknown,
+  schema: v.GenericSchema<ConfigExternalValue, T>,
+  input: ConfigExternalValue,
   action: string,
   paths: RuntimePaths,
   files: string[],
@@ -61,6 +65,7 @@ export function parseActionInput<T>(
   };
 }
 
-export function errorMessage(error: unknown) {
-  return error instanceof Error ? error.message : String(error);
+export function errorMessage(error: ConfigExternalValue) {
+  const parsed = v.safeParse(errorSchema, error);
+  return parsed.success ? parsed.output.message : String(error);
 }

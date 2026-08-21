@@ -6,7 +6,9 @@ import {
   runtimePaths,
   type RuntimePaths,
   type ThinkingLevel,
+  thinkingLevelSchema,
 } from '../../runtime-home';
+import * as v from 'valibot';
 import {
   defaultPrReviewTimeoutMs,
   maxPrReviewTimeoutMs,
@@ -199,7 +201,8 @@ function firstOptionalThinkingLevel(...values: Array<string | undefined>) {
   const value = values
     .find((item) => item && isThinkingLevel(item.trim()))
     ?.trim();
-  return value ? (value as ThinkingLevel) : undefined;
+  if (!value) return undefined;
+  return v.parse(thinkingLevelSchema, value);
 }
 
 export function isThinkingLevel(value: string): value is ThinkingLevel {

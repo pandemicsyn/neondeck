@@ -1,5 +1,7 @@
 import os from 'node:os';
 import si from 'systeminformation';
+import * as v from 'valibot';
+import { runtimeFiniteNumberSchema } from './value-schemas';
 
 const CACHE_TTL_MS = 1_000;
 
@@ -173,11 +175,13 @@ function summarizeNetwork(
 }
 
 function validRate(value: number | null | undefined): value is number {
-  return typeof value === 'number' && Number.isFinite(value) && value >= 0;
+  const parsed = v.safeParse(runtimeFiniteNumberSchema, value);
+  return parsed.success && parsed.output >= 0;
 }
 
 function positiveRate(value: number | null | undefined) {
-  return typeof value === 'number' && Number.isFinite(value) && value > 0;
+  const parsed = v.safeParse(runtimeFiniteNumberSchema, value);
+  return parsed.success && parsed.output > 0;
 }
 
 function sumRates(values: Array<number | null | undefined>) {
@@ -194,8 +198,8 @@ function sumRates(values: Array<number | null | undefined>) {
 }
 
 function finiteNumber(value: number | null | undefined) {
-  if (typeof value !== 'number' || !Number.isFinite(value)) return null;
-  return value;
+  const parsed = v.safeParse(runtimeFiniteNumberSchema, value);
+  return parsed.success ? parsed.output : null;
 }
 
 function finitePercent(value: number | null | undefined) {

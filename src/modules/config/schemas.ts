@@ -19,6 +19,31 @@ import {
 
 export type ConfigTarget = 'all' | 'config' | 'mcp' | 'repos' | 'dashboard';
 
+export const configExternalValueSchema = v.unknown();
+export type ConfigExternalValue = v.InferInput<
+  typeof configExternalValueSchema
+>;
+const jsonScalarSchema = v.union([
+  v.null(),
+  v.string(),
+  v.pipe(v.number(), v.finite()),
+  v.boolean(),
+]);
+export const configJsonValueSchema: v.GenericSchema<
+  ConfigExternalValue,
+  JsonValue
+> = v.lazy(() =>
+  v.union([
+    jsonScalarSchema,
+    v.array(configJsonValueSchema),
+    v.record(v.string(), configJsonValueSchema),
+  ]),
+);
+export const configJsonRecordSchema = v.record(
+  v.string(),
+  configJsonValueSchema,
+);
+
 export type ConfigActionResult = {
   ok: boolean;
   action: string;
@@ -37,7 +62,10 @@ export const configTargetSchema = v.optional(
 );
 
 export const stringRecordSchema = v.record(v.string(), v.string());
-export const unknownRecordSchema = v.record(v.string(), v.unknown());
+export const unknownRecordSchema = v.record(
+  v.string(),
+  configExternalValueSchema,
+);
 export const nonEmptyStringSchema = v.pipe(v.string(), v.minLength(1));
 export const providerQualifiedModelSchema = v.pipe(
   nonEmptyStringSchema,

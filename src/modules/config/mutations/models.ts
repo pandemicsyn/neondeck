@@ -21,6 +21,8 @@ import {
   updateSkillRootsInputSchema,
   updateWorktreePolicyInputSchema,
   type ConfigActionResult,
+  type ConfigExternalValue,
+  unknownRecordSchema,
 } from '../schemas';
 
 export async function updateAgentModels(
@@ -105,10 +107,13 @@ export async function updateAgentModels(
   );
 }
 
-function modelValues(value: unknown): string[] {
-  if (typeof value === 'string') return [value];
-  if (!value || typeof value !== 'object') return [];
-  return Object.entries(value).flatMap(([key, nested]) =>
+function modelValues(value: ConfigExternalValue): string[] {
+  const parsedString = v.safeParse(v.string(), value);
+  if (parsedString.success) return [parsedString.output];
+  if (Array.isArray(value)) return value.flatMap(modelValues);
+  const parsedRecord = v.safeParse(unknownRecordSchema, value);
+  if (!parsedRecord.success) return [];
+  return Object.entries(parsedRecord.output).flatMap(([key, nested]) =>
     key.toLowerCase().includes('think') || key.endsWith('TimeoutMs')
       ? []
       : modelValues(nested),
@@ -398,7 +403,7 @@ function hasHandoffConfigUpdate(
 function hasWorktreePolicyUpdate(
   input: Omit<v.InferOutput<typeof updateWorktreePolicyInputSchema>, 'confirm'>,
 ) {
-  const cleanup = input.cleanup as WorktreeCleanupConfig | undefined;
+  const cleanup = input.cleanup;
   return Boolean(
     input.defaultStorage !== undefined ||
     cleanup?.retainFailed !== undefined ||
@@ -412,8 +417,8 @@ function worktreePolicyDeletesSooner(
   current: AppConfig['worktrees'] | undefined,
   input: Omit<v.InferOutput<typeof updateWorktreePolicyInputSchema>, 'confirm'>,
 ) {
-  const currentCleanup = (current?.cleanup ?? {}) as WorktreeCleanupConfig;
-  const nextCleanup = (input.cleanup ?? {}) as WorktreeCleanupConfig;
+  const currentCleanup: WorktreeCleanupConfig = current?.cleanup ?? {};
+  const nextCleanup: WorktreeCleanupConfig = input.cleanup ?? {};
   if (
     currentCleanup.retainFailed !== false &&
     nextCleanup.retainFailed === false
@@ -448,50 +453,82 @@ function mergeAgentModelConfig(
   if (input.prReview === null) delete currentModels.prReview;
   if (input.utility === null) delete currentModels.utility;
   if (input.selfImprovement === null) delete currentModels.selfImprovement;
-  const subagents = {
+  const subagents: NonNullable<AgentModelConfig['subagents']> = {
     ...current?.subagents,
-    ...input.subagents,
-  } as NonNullable<AgentModelConfig['subagents']>;
-  if (input.subagents?.explore === null) delete subagents.explore;
-  if (input.subagents?.exploreThinkingLevel === null) {
+  };
+  const inputSubagents = input.subagents;
+  if (inputSubagents?.default !== undefined) {
+    subagents.default = inputSubagents.default;
+  }
+  if (inputSubagents?.defaultThinkingLevel !== undefined) {
+    subagents.defaultThinkingLevel = inputSubagents.defaultThinkingLevel;
+  }
+  if (inputSubagents?.explore === null) delete subagents.explore;
+  else if (inputSubagents?.explore !== undefined) {
+    subagents.explore = inputSubagents.explore;
+  }
+  if (inputSubagents?.exploreThinkingLevel === null) {
     delete subagents.exploreThinkingLevel;
+  } else if (inputSubagents?.exploreThinkingLevel !== undefined) {
+    subagents.exploreThinkingLevel = inputSubagents.exploreThinkingLevel;
+  }
+  if (inputSubagents?.repoResearcher !== undefined) {
+    subagents.repoResearcher = inputSubagents.repoResearcher;
+  }
+  if (inputSubagents?.repoResearcherThinkingLevel !== undefined) {
+    subagents.repoResearcherThinkingLevel =
+      inputSubagents.repoResearcherThinkingLevel;
+  }
+  if (inputSubagents?.ciInvestigator !== undefined) {
+    subagents.ciInvestigator = inputSubagents.ciInvestigator;
+  }
+  if (inputSubagents?.ciInvestigatorThinkingLevel !== undefined) {
+    subagents.ciInvestigatorThinkingLevel =
+      inputSubagents.ciInvestigatorThinkingLevel;
+  }
+  if (inputSubagents?.releaseReviewer !== undefined) {
+    subagents.releaseReviewer = inputSubagents.releaseReviewer;
+  }
+  if (inputSubagents?.releaseReviewerThinkingLevel !== undefined) {
+    subagents.releaseReviewerThinkingLevel =
+      inputSubagents.releaseReviewerThinkingLevel;
   }
 
-  return {
-    ...currentModels,
-    ...(input.default !== undefined ? { default: input.default } : {}),
-    ...(input.defaultThinkingLevel !== undefined
-      ? { defaultThinkingLevel: input.defaultThinkingLevel }
-      : {}),
-    ...(input.displayAssistant !== undefined
-      ? { displayAssistant: input.displayAssistant }
-      : {}),
-    ...(input.displayAssistantThinkingLevel !== undefined
-      ? { displayAssistantThinkingLevel: input.displayAssistantThinkingLevel }
-      : {}),
-    ...(input.prReview !== undefined && input.prReview !== null
-      ? { prReview: input.prReview }
-      : {}),
-    ...(input.prReviewThinkingLevel !== undefined
-      ? { prReviewThinkingLevel: input.prReviewThinkingLevel }
-      : {}),
-    ...(input.prReviewTimeoutMs !== undefined
-      ? { prReviewTimeoutMs: input.prReviewTimeoutMs }
-      : {}),
-    ...(input.utility !== undefined && input.utility !== null
-      ? { utility: input.utility }
-      : {}),
-    ...(input.utilityThinkingLevel !== undefined
-      ? { utilityThinkingLevel: input.utilityThinkingLevel }
-      : {}),
-    ...(input.selfImprovement !== undefined && input.selfImprovement !== null
-      ? { selfImprovement: input.selfImprovement }
-      : {}),
-    ...(input.selfImprovementThinkingLevel !== undefined
-      ? { selfImprovementThinkingLevel: input.selfImprovementThinkingLevel }
-      : {}),
-    ...(Object.keys(subagents).length > 0 ? { subagents } : {}),
-  };
+  if (input.default !== undefined) currentModels.default = input.default;
+  if (input.defaultThinkingLevel !== undefined) {
+    currentModels.defaultThinkingLevel = input.defaultThinkingLevel;
+  }
+  if (input.displayAssistant !== undefined) {
+    currentModels.displayAssistant = input.displayAssistant;
+  }
+  if (input.displayAssistantThinkingLevel !== undefined) {
+    currentModels.displayAssistantThinkingLevel =
+      input.displayAssistantThinkingLevel;
+  }
+  if (input.prReview !== undefined && input.prReview !== null) {
+    currentModels.prReview = input.prReview;
+  }
+  if (input.prReviewThinkingLevel !== undefined) {
+    currentModels.prReviewThinkingLevel = input.prReviewThinkingLevel;
+  }
+  if (input.prReviewTimeoutMs !== undefined) {
+    currentModels.prReviewTimeoutMs = input.prReviewTimeoutMs;
+  }
+  if (input.utility !== undefined && input.utility !== null) {
+    currentModels.utility = input.utility;
+  }
+  if (input.utilityThinkingLevel !== undefined) {
+    currentModels.utilityThinkingLevel = input.utilityThinkingLevel;
+  }
+  if (input.selfImprovement !== undefined && input.selfImprovement !== null) {
+    currentModels.selfImprovement = input.selfImprovement;
+  }
+  if (input.selfImprovementThinkingLevel !== undefined) {
+    currentModels.selfImprovementThinkingLevel =
+      input.selfImprovementThinkingLevel;
+  }
+  if (Object.keys(subagents).length > 0) currentModels.subagents = subagents;
+  return currentModels;
 }
 
 function mergeLearningConfig(

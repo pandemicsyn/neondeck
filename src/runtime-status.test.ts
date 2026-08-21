@@ -110,6 +110,33 @@ describe('runtime status', () => {
     );
   });
 
+  it('reports failed workflow rows with a null summary', async () => {
+    const home = await tempDir();
+    const paths = runtimePaths(home);
+    await addWorkflowSummary(
+      {
+        workflow: 'command:no-summary',
+        runId: 'run_no_summary',
+        status: 'failed',
+      },
+      paths,
+    );
+
+    const appDatabase = inspectAppDatabase(paths);
+
+    expect(appDatabase.ok).toBe(true);
+    expect(appDatabase.counts.recentFailedWorkflowSummaries).toBe(1);
+    expect(appDatabase.errors).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          source: 'workflow-summary',
+          runId: 'run_no_summary',
+          message: 'command:no-summary failed.',
+        }),
+      ]),
+    );
+  });
+
   it('returns partial readiness when config files are invalid', async () => {
     const home = await tempDir();
     const paths = runtimePaths(home);

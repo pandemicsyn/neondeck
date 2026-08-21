@@ -27,10 +27,13 @@ import {
   updateRepoAutopilotPolicyInputSchema,
   updateRepoInputSchema,
   type ConfigActionResult,
+  type ConfigExternalValue,
+  unknownRecordSchema,
 } from '../schemas';
 import {
   repoGuardrails,
   repoAutopilotPolicy,
+  metadataSchema,
   type AutopilotMode,
   type RepoGuardrailsConfig,
   type RepoAutopilotConfig,
@@ -107,15 +110,13 @@ export async function addRepo(
     },
     path: repoPath,
     defaultBranch,
-    ...(input.worktreeRoot ? { worktreeRoot: input.worktreeRoot } : {}),
-    ...(input.productionTarget
-      ? { productionTarget: input.productionTarget }
-      : {}),
     packageScripts:
       input.packageScripts ?? (await readPackageScripts(repoPath)),
-    ...(input.metadata ? { metadata: input.metadata } : {}),
-    ...(input.watchRules ? { watchRules: input.watchRules } : {}),
   };
+  if (input.worktreeRoot) repo.worktreeRoot = input.worktreeRoot;
+  if (input.productionTarget) repo.productionTarget = input.productionTarget;
+  if (input.metadata) repo.metadata = input.metadata;
+  if (input.watchRules) repo.watchRules = input.watchRules;
 
   const next = parseRepoRegistry(
     {
@@ -199,30 +200,27 @@ export async function updateRepo(
       name: input.githubName ?? current.github.name,
     },
     defaultBranch: input.defaultBranch ?? current.defaultBranch,
-    ...(input.worktreeRoot !== undefined
-      ? { worktreeRoot: input.worktreeRoot }
-      : {}),
-    ...(input.productionTarget !== undefined
-      ? { productionTarget: input.productionTarget }
-      : {}),
-    ...(input.packageScripts !== undefined
-      ? { packageScripts: input.packageScripts }
-      : {}),
-    ...(input.metadata !== undefined
-      ? {
-          metadata: {
-            ...input.metadata,
-            ...(current.metadata?.autopilot !== undefined
-              ? { autopilot: current.metadata.autopilot }
-              : {}),
-            ...(current.metadata?.guardrails !== undefined
-              ? { guardrails: current.metadata.guardrails }
-              : {}),
-          },
-        }
-      : {}),
-    ...(input.watchRules !== undefined ? { watchRules: input.watchRules } : {}),
   };
+  if (input.worktreeRoot !== undefined) {
+    nextRepo.worktreeRoot = input.worktreeRoot;
+  }
+  if (input.productionTarget !== undefined) {
+    nextRepo.productionTarget = input.productionTarget;
+  }
+  if (input.packageScripts !== undefined) {
+    nextRepo.packageScripts = input.packageScripts;
+  }
+  if (input.metadata !== undefined) {
+    const metadata = { ...input.metadata };
+    if (current.metadata?.autopilot !== undefined) {
+      metadata.autopilot = current.metadata.autopilot;
+    }
+    if (current.metadata?.guardrails !== undefined) {
+      metadata.guardrails = current.metadata.guardrails;
+    }
+    nextRepo.metadata = metadata;
+  }
+  if (input.watchRules !== undefined) nextRepo.watchRules = input.watchRules;
   const nextRepos = registry.repos.with(index, nextRepo);
   const next = parseRepoRegistry(
     { ...registry, repos: nextRepos },
@@ -367,7 +365,9 @@ export async function updateRepoAutopilotPolicy(
   );
 }
 
-function hasAutopilotMetadata(metadata: Record<string, unknown> | undefined) {
+function hasAutopilotMetadata(
+  metadata: v.InferOutput<typeof unknownRecordSchema> | undefined,
+) {
   return (
     metadata?.autopilot !== undefined || metadata?.guardrails !== undefined
   );
@@ -383,15 +383,8 @@ function hasAutopilotPolicyUpdate(
 }
 
 function readAutopilotMetadata(repo: RepoConfig): RepoAutopilotConfig {
-  const metadata = repo.metadata;
-  if (
-    !metadata ||
-    typeof metadata.autopilot !== 'object' ||
-    !metadata.autopilot
-  ) {
-    return {};
-  }
-  return metadata.autopilot as RepoAutopilotConfig;
+  const parsed = v.safeParse(metadataSchema, repo.metadata);
+  return parsed.success ? (parsed.output.autopilot ?? {}) : {};
 }
 
 function mergeRepoAutopilotConfig(
@@ -401,24 +394,21 @@ function mergeRepoAutopilotConfig(
     'repoId' | 'confirm'
   >,
 ): RepoAutopilotConfig {
-  return {
-    ...current,
-    ...(input.mode !== undefined ? { mode: input.mode } : {}),
-    ...(input.reason !== undefined ? { reason: input.reason } : {}),
-    ...(input.concurrency !== undefined
-      ? { concurrency: { ...current.concurrency, ...input.concurrency } }
-      : {}),
-    ...(input.watchOverrides !== undefined
-      ? { watchOverrides: input.watchOverrides }
-      : {}),
-  };
+  const next: RepoAutopilotConfig = { ...current };
+  if (input.mode !== undefined) next.mode = input.mode;
+  if (input.reason !== undefined) next.reason = input.reason;
+  if (input.concurrency !== undefined) {
+    next.concurrency = { ...current.concurrency, ...input.concurrency };
+  }
+  if (input.watchOverrides !== undefined) {
+    next.watchOverrides = input.watchOverrides;
+  }
+  return next;
 }
 
 function readGuardrailsMetadata(repo: RepoConfig): RepoGuardrailsConfig {
-  const guardrails = repo.metadata?.guardrails;
-  return guardrails && typeof guardrails === 'object'
-    ? (guardrails as RepoGuardrailsConfig)
-    : {};
+  const parsed = v.safeParse(metadataSchema, repo.metadata);
+  return parsed.success ? (parsed.output.guardrails ?? {}) : {};
 }
 
 function autopilotAuthorityIncreases(
@@ -586,7 +576,7 @@ async function discoverGitRepo(path: string) {
   return { ok: true as const, repo: { github, defaultBranch } };
 }
 
-function repoDiscoveryFailure(error: unknown) {
+function repoDiscoveryFailure(error: ConfigExternalValue) {
   return {
     ok: false as const,
     message: 'Repository path could not be added because it failed validation.',
@@ -633,16 +623,16 @@ async function readPackageScripts(path: string) {
   try {
     await access(packageJsonPath, constants.R_OK);
     const source = await readFile(packageJsonPath, 'utf8');
-    const parsed = JSON.parse(source) as { scripts?: unknown };
-
-    if (!parsed.scripts || typeof parsed.scripts !== 'object') {
-      return {};
-    }
-
+    const parsed = v.safeParse(
+      v.object({ scripts: v.optional(unknownRecordSchema) }),
+      JSON.parse(source),
+    );
+    if (!parsed.success || !parsed.output.scripts) return {};
     return Object.fromEntries(
-      Object.entries(parsed.scripts).filter(
-        (entry): entry is [string, string] => typeof entry[1] === 'string',
-      ),
+      Object.entries(parsed.output.scripts).flatMap(([name, command]) => {
+        const parsedCommand = v.safeParse(v.string(), command);
+        return parsedCommand.success ? [[name, parsedCommand.output]] : [];
+      }),
     );
   } catch {
     return {};

@@ -1,8 +1,14 @@
 import { readFile } from 'node:fs/promises';
+import { asJsonValue } from '../../../lib/action-result';
+import type { JsonValue } from '@flue/runtime';
 import { parseActionInput, okResult, errorMessage } from '../result';
 import { recordConfigChange } from '../history';
 import { writeJson } from '../files';
-import { dashboardPresetSchema, type ConfigActionResult } from '../schemas';
+import {
+  dashboardPresetSchema,
+  type ConfigActionResult,
+  type ConfigExternalValue,
+} from '../schemas';
 import {
   type DashboardConfig,
   dashboardSchemaVersion,
@@ -14,7 +20,7 @@ import {
 } from '../../../runtime-home';
 
 export async function updateDashboardLayout(
-  rawInput: unknown,
+  rawInput: ConfigExternalValue,
   paths = runtimePaths(),
 ): Promise<ConfigActionResult> {
   await ensureRuntimeHome(paths);
@@ -60,7 +66,7 @@ export async function updateDashboardLayout(
 }
 
 export async function applyDashboardPreset(
-  rawInput: unknown,
+  rawInput: ConfigExternalValue,
   paths = runtimePaths(),
 ): Promise<ConfigActionResult> {
   await ensureRuntimeHome(paths);
@@ -108,12 +114,16 @@ export async function applyDashboardPreset(
   );
 }
 
-async function readDashboardForHistory(paths: RuntimePaths): Promise<unknown> {
+async function readDashboardForHistory(
+  paths: RuntimePaths,
+): Promise<JsonValue> {
   const source = await readFile(paths.dashboard, 'utf8').catch(() => undefined);
   if (!source) return null;
 
   try {
-    return parseDashboardConfig(JSON.parse(source), paths.dashboard);
+    return asJsonValue(
+      parseDashboardConfig(JSON.parse(source), paths.dashboard),
+    );
   } catch (error) {
     return {
       invalidDashboard: paths.dashboard,

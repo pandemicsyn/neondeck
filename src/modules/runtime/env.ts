@@ -3,6 +3,7 @@ import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { type RuntimePaths, runtimePaths } from '../../runtime-home';
 import { resolvePackageRoot } from '../../runtime-home/assets';
+import * as v from 'valibot';
 
 export type EnvFile = {
   id: 'runtime' | 'dev';
@@ -71,8 +72,8 @@ export function unquoteEnvValue(value: string) {
   const trimmed = value.trim();
   if (trimmed.startsWith('"') && trimmed.endsWith('"')) {
     try {
-      const parsed = JSON.parse(trimmed) as unknown;
-      if (typeof parsed === 'string') return parsed;
+      const parsed = v.safeParse(v.string(), JSON.parse(trimmed));
+      if (parsed.success) return parsed.output;
     } catch {
       return trimmed.slice(1, -1);
     }

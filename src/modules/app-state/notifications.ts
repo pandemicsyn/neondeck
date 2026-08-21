@@ -1,9 +1,12 @@
 import { randomUUID } from 'node:crypto';
+import type { SQLOutputValue } from 'node:sqlite';
 import { asJsonValue } from '../../lib/action-result';
-import { openDb } from '../../lib/sqlite';
+import { openDb, parseRow } from '../../lib/sqlite';
 import { ensureRuntimeHome, runtimePaths } from '../../runtime-home';
 import { publishNotificationEvent } from './notification-events';
 import type { NotificationLevel, NotificationRecord } from './types';
+import * as v from 'valibot';
+import { appStateJsonValueSchema, notificationRowSchema } from './schemas';
 
 export async function listNotifications(
   paths = runtimePaths(),
@@ -248,27 +251,25 @@ export async function resolveNotification(id: string, paths = runtimePaths()) {
   }
 }
 
-export function readNotificationRow(row: unknown): NotificationRecord {
-  const record = row as Record<string, unknown>;
+export function readNotificationRow(
+  row: Record<string, SQLOutputValue>,
+): NotificationRecord {
+  const record = parseRow(row, notificationRowSchema, 'Invalid notification');
   return {
-    id: String(record.id),
-    level: String(record.level) as NotificationLevel,
-    title: String(record.title),
-    message: String(record.message),
-    source: typeof record.source === 'string' ? record.source : null,
-    sourceId: typeof record.source_id === 'string' ? record.source_id : null,
+    id: record.id,
+    level: record.level,
+    title: record.title,
+    message: record.message,
+    source: record.source,
+    sourceId: record.source_id,
     data:
-      typeof record.data_json === 'string'
-        ? JSON.parse(record.data_json)
+      record.data_json !== null
+        ? v.parse(appStateJsonValueSchema, JSON.parse(record.data_json))
         : null,
-    readAt: typeof record.read_at === 'string' ? record.read_at : null,
-    resolvedAt:
-      typeof record.resolved_at === 'string' ? record.resolved_at : null,
-    occurrenceCount: Number(record.occurrence_count ?? 1),
-    createdAt: String(record.created_at),
-    updatedAt:
-      typeof record.updated_at === 'string'
-        ? record.updated_at
-        : String(record.created_at),
+    readAt: record.read_at,
+    resolvedAt: record.resolved_at,
+    occurrenceCount: record.occurrence_count ?? 1,
+    createdAt: record.created_at,
+    updatedAt: record.updated_at ?? record.created_at,
   };
 }

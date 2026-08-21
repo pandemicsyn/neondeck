@@ -14,6 +14,7 @@ import {
   readRuntimeJsonSync,
   runtimePaths,
 } from '../../runtime-home';
+import { runtimeErrorSchema, type RuntimeExternalValue } from './value-schemas';
 
 type RuntimeSkillSource = 'built-in' | 'user' | 'external';
 
@@ -70,11 +71,28 @@ export type RuntimeSkillSessionSnapshot = {
   }>;
 };
 
+type RuntimeSkillRootsRead = {
+  roots: RuntimeSkillRoot[];
+  ignored: IgnoredRuntimeSkill[];
+};
+
+type RuntimeSkillRootRead = {
+  directories: string[];
+  ignored: IgnoredRuntimeSkill[];
+};
+
 const skillNameSchema = v.pipe(
   v.string(),
   v.minLength(1),
   v.maxLength(64),
   v.regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/),
+);
+const skillDescriptionSchema = v.pipe(
+  v.string(),
+  v.check(
+    (description) =>
+      description.trim().length > 0 && description.length <= 1024,
+  ),
 );
 export const skillLoadInputSchema = v.object({
   id: v.pipe(v.string(), v.minLength(1)),
@@ -253,11 +271,13 @@ function runtimeSkillRootsSync(paths: RuntimePaths) {
   return buildRuntimeSkillRoots(paths, config.skillRoots ?? []);
 }
 
-async function runtimeSkillRootsSafe(paths: RuntimePaths) {
+async function runtimeSkillRootsSafe(
+  paths: RuntimePaths,
+): Promise<RuntimeSkillRootsRead> {
   try {
     return {
       roots: await runtimeSkillRoots(paths),
-      ignored: [] as IgnoredRuntimeSkill[],
+      ignored: [],
     };
   } catch (error) {
     return {
@@ -267,11 +287,11 @@ async function runtimeSkillRootsSafe(paths: RuntimePaths) {
   }
 }
 
-function runtimeSkillRootsSafeSync(paths: RuntimePaths) {
+function runtimeSkillRootsSafeSync(paths: RuntimePaths): RuntimeSkillRootsRead {
   try {
     return {
       roots: runtimeSkillRootsSync(paths),
-      ignored: [] as IgnoredRuntimeSkill[],
+      ignored: [],
     };
   } catch (error) {
     return {
@@ -367,7 +387,9 @@ function readApplicationSkillCandidates() {
   );
 }
 
-async function readSkillRoot(root: RuntimeSkillRoot) {
+async function readSkillRoot(
+  root: RuntimeSkillRoot,
+): Promise<RuntimeSkillRootRead> {
   try {
     const rootStat = await stat(root.path);
     if (!rootStat.isDirectory()) {
@@ -382,7 +404,7 @@ async function readSkillRoot(root: RuntimeSkillRoot) {
       directories: entries
         .filter((entry) => entry.isDirectory())
         .map((entry) => join(root.path, entry.name)),
-      ignored: [] as IgnoredRuntimeSkill[],
+      ignored: [],
     };
   } catch {
     return {
@@ -392,7 +414,7 @@ async function readSkillRoot(root: RuntimeSkillRoot) {
   }
 }
 
-function readSkillRootSync(root: RuntimeSkillRoot) {
+function readSkillRootSync(root: RuntimeSkillRoot): RuntimeSkillRootRead {
   try {
     const rootStat = statSync(root.path);
     if (!rootStat.isDirectory()) {
@@ -406,7 +428,7 @@ function readSkillRootSync(root: RuntimeSkillRoot) {
       directories: readdirSync(root.path, { withFileTypes: true })
         .filter((entry) => entry.isDirectory())
         .map((entry) => join(root.path, entry.name)),
-      ignored: [] as IgnoredRuntimeSkill[],
+      ignored: [],
     };
   } catch {
     return {
@@ -529,11 +551,11 @@ function parseSkillFile(
     };
   }
 
-  if (
-    typeof metadata.data.description !== 'string' ||
-    metadata.data.description.trim().length === 0 ||
-    metadata.data.description.length > 1024
-  ) {
+  const descriptionResult = v.safeParse(
+    skillDescriptionSchema,
+    metadata.data.description,
+  );
+  if (!descriptionResult.success) {
     return {
       ok: false,
       ignored: ignoredSkill(
@@ -549,7 +571,7 @@ function parseSkillFile(
     ok: true,
     skill: {
       id: nameResult.output,
-      description: metadata.data.description.trim(),
+      description: descriptionResult.output.trim(),
       path,
       directory: resolve(path, '..'),
       root: root.path,
@@ -678,8 +700,9 @@ function expandRuntimePath(path: string) {
   return resolve(path);
 }
 
-function errorMessage(error: unknown) {
-  return error instanceof Error ? error.message : String(error);
+function errorMessage(error: RuntimeExternalValue) {
+  const parsed = v.safeParse(runtimeErrorSchema, error);
+  return parsed.success ? parsed.output.message : String(error);
 }
 
 function runtimeSkillReference(skill: RuntimeSkillMetadata): SkillDefinition {
@@ -697,14 +720,24 @@ function runtimeSkillSessionSnapshot(
     name: skill.id,
     description: skill.description,
     instructions: metadata.ok ? metadata.body : source,
-    files: Object.entries(files).map(([path, content]) => ({
-      path,
-      encoding: typeof content === 'string' ? 'utf8' : 'base64',
-      content:
-        typeof content === 'string'
-          ? content
-          : Buffer.from(content).toString('base64'),
-    })),
+    files: Object.entries(files).map(runtimeSkillSnapshotFile),
+  };
+}
+
+function runtimeSkillSnapshotFile(
+  entry: [string, string | Uint8Array],
+): RuntimeSkillSessionSnapshot['files'][number] {
+  const [path, content] = entry;
+  const text = v.safeParse(v.string(), content);
+  if (text.success) {
+    return { path, encoding: 'utf8', content: text.output };
+  }
+
+  const bytes = v.parse(v.instance(Uint8Array), content);
+  return {
+    path,
+    encoding: 'base64',
+    content: Buffer.from(bytes).toString('base64'),
   };
 }
 

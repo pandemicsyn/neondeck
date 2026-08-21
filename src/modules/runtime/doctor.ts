@@ -32,6 +32,11 @@ import {
   type AppConfig,
 } from '../../runtime-home';
 import { resolvePackageRoot } from '../../runtime-home/assets';
+import {
+  runtimeErrorSchema,
+  type RuntimeExternalValue,
+  runtimeJsonValueSchema,
+} from './value-schemas';
 
 type DoctorStatus = 'ok' | 'attention';
 
@@ -73,6 +78,17 @@ type PackageSnapshot = {
   path: string;
   scripts: Record<string, string>;
   error?: string;
+};
+
+type PackageScriptSummary = {
+  path: string;
+  scripts: number;
+  error?: string;
+};
+
+type EnvCheckResult = {
+  missing: string[];
+  check: DoctorCheck;
 };
 
 type EnvRequirement = {
@@ -296,11 +312,14 @@ function packageScriptsCheck(
   const missing = requiredRootScripts.filter(
     (script) => !rootPackage.scripts[script],
   );
-  const repoScriptCounts = repoPackages.map((item) => ({
-    path: item.path,
-    scripts: Object.keys(item.scripts).length,
-    ...(item.error ? { error: item.error } : {}),
-  }));
+  const repoScriptCounts = repoPackages.map((item): PackageScriptSummary => {
+    const summary: PackageScriptSummary = {
+      path: item.path,
+      scripts: Object.keys(item.scripts).length,
+    };
+    if (item.error) summary.error = item.error;
+    return summary;
+  });
 
   return {
     id: 'package-scripts',
@@ -347,10 +366,7 @@ function envCheck(
   localEnv: Map<string, string>,
   config: AppConfig | undefined,
   repos: Awaited<ReturnType<typeof readRepoHealthSnapshot>>,
-): {
-  missing: string[];
-  check: DoctorCheck;
-} {
+): EnvCheckResult {
   const requirements = envRequirements(localEnv, config, repos);
   const missing = requirements
     .filter(
@@ -468,10 +484,11 @@ function providerEnvRequirement(
 }
 
 function mergedEnv(localEnv: Map<string, string>): NodeJS.ProcessEnv {
-  return {
+  const env: NodeJS.ProcessEnv = {
     ...Object.fromEntries(localEnv),
     ...process.env,
-  } as NodeJS.ProcessEnv;
+  };
+  return env;
 }
 
 function portsCheck(ports: Array<{ id: string; port: number; open: boolean }>) {
@@ -610,11 +627,13 @@ function readTextIfExists(path: string) {
   return readFileSync(path, 'utf8');
 }
 
-function asJsonValue(value: unknown): JsonValue {
-  if (value === undefined) return null;
-  return JSON.parse(JSON.stringify(value)) as JsonValue;
+function asJsonValue(value: RuntimeExternalValue): JsonValue {
+  const serialized = v.safeParse(v.string(), JSON.stringify(value));
+  if (!serialized.success) return null;
+  return v.parse(runtimeJsonValueSchema, JSON.parse(serialized.output));
 }
 
-function errorMessage(error: unknown) {
-  return error instanceof Error ? error.message : String(error);
+function errorMessage(error: RuntimeExternalValue) {
+  const parsed = v.safeParse(runtimeErrorSchema, error);
+  return parsed.success ? parsed.output.message : String(error);
 }

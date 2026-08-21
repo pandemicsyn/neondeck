@@ -1,4 +1,5 @@
 import { resolveAgentModelSelection } from './agent-config';
+import * as v from 'valibot';
 import {
   configuredProviderIds,
   isRegisteredProvider,
@@ -28,6 +29,7 @@ import {
   type RuntimeStatusCheck,
   type RuntimeStatusLevel,
 } from './status-schema';
+import { runtimeErrorSchema, type RuntimeExternalValue } from './value-schemas';
 
 type SafeResult<T> = { ok: true; value: T } | { ok: false; error: string };
 
@@ -580,7 +582,7 @@ function providerEnabled(provider: string, statuses: Record<string, boolean>) {
   return statuses[provider];
 }
 
-function errorMessage(error: unknown) {
-  if (error instanceof Error) return error.message;
-  return String(error);
+function errorMessage(error: RuntimeExternalValue) {
+  const parsed = v.safeParse(runtimeErrorSchema, error);
+  return parsed.success ? parsed.output.message : String(error);
 }

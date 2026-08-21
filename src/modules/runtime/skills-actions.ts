@@ -91,21 +91,20 @@ async function loadRuntimeSkillAction(
 ): Promise<RuntimeSkillActionResult> {
   const result = await loadRuntimeSkill(input, paths);
   if (!result.ok) {
-    return {
+    const actionResult: RuntimeSkillActionResult = {
       ok: false,
       action: 'skill_load',
       changed: false,
       message: result.error,
-      ...(result.requires ? { requires: result.requires } : {}),
-      ...(result.issues ? { errors: result.issues } : {}),
-      ...(result.inventory
-        ? {
-            skills: result.inventory.skills.map(asJsonValue),
-            duplicates: result.inventory.duplicates.map(asJsonValue),
-            ignored: result.inventory.ignored.map(asJsonValue),
-          }
-        : {}),
     };
+    if (result.requires) actionResult.requires = result.requires;
+    if (result.issues) actionResult.errors = result.issues;
+    if (result.inventory) {
+      actionResult.skills = result.inventory.skills.map(asJsonValue);
+      actionResult.duplicates = result.inventory.duplicates.map(asJsonValue);
+      actionResult.ignored = result.inventory.ignored.map(asJsonValue);
+    }
+    return actionResult;
   }
 
   return okResult('skill_load', `Loaded runtime skill "${result.skill.id}".`, {
@@ -127,7 +126,7 @@ function okResult(
   message: string,
   inventory: RuntimeSkillInventory & { skill?: LoadedRuntimeSkill },
 ): RuntimeSkillActionResult {
-  return {
+  const result: RuntimeSkillActionResult = {
     ok: true,
     action,
     changed: false,
@@ -136,6 +135,7 @@ function okResult(
     skills: inventory.skills.map(asJsonValue),
     duplicates: inventory.duplicates.map(asJsonValue),
     ignored: inventory.ignored.map(asJsonValue),
-    ...(inventory.skill ? { skill: asJsonValue(inventory.skill) } : {}),
   };
+  if (inventory.skill) result.skill = asJsonValue(inventory.skill);
+  return result;
 }

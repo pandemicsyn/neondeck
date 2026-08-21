@@ -7,6 +7,7 @@ import {
   type ProviderConfig,
   ensureRuntimeHome,
   parseAppConfig,
+  providerConfigSchema,
   readRuntimeJson,
   runtimePaths,
 } from '../../../runtime-home';
@@ -17,7 +18,11 @@ import {
   resolveOpenAiCompatibleProviderStatuses,
   resolveOpenAiProviderStatus,
 } from '../../repos';
-import { updateProviderInputSchema, type ConfigActionResult } from '../schemas';
+import {
+  updateProviderInputSchema,
+  type ConfigActionResult,
+  type ConfigExternalValue,
+} from '../schemas';
 
 export async function readProviderConfig(
   paths = runtimePaths(),
@@ -37,7 +42,7 @@ export async function readProviderConfig(
 }
 
 export async function updateProviderConfig(
-  rawInput: unknown,
+  rawInput: ConfigExternalValue,
   paths = runtimePaths(),
 ): Promise<ConfigActionResult> {
   await ensureRuntimeHome(paths);
@@ -135,61 +140,73 @@ function mergeProviderConfig(
       };
     }
     const currentProvider = existing.find((provider) => provider.id === id);
-    const provider = {
+    const provider: NonNullable<ProviderConfig['openaiCompatible']>[number] = {
       ...currentProvider,
       id,
       baseUrl: input.baseUrl ?? currentProvider?.baseUrl ?? '',
-      ...(input.enabled !== undefined ? { enabled: input.enabled } : {}),
-      ...(input.apiKeyEnv ? { apiKeyEnv: input.apiKeyEnv } : {}),
-      ...(input.api !== undefined ? { api: input.api } : {}),
-      ...(input.contextWindow !== undefined && input.contextWindow !== null
-        ? { contextWindow: input.contextWindow }
-        : {}),
-      ...(input.maxTokens !== undefined && input.maxTokens !== null
-        ? { maxTokens: input.maxTokens }
-        : {}),
     };
+    if (input.enabled !== undefined) provider.enabled = input.enabled;
+    if (input.apiKeyEnv) provider.apiKeyEnv = input.apiKeyEnv;
+    if (input.api !== undefined) provider.api = input.api;
+    if (input.contextWindow !== undefined && input.contextWindow !== null) {
+      provider.contextWindow = input.contextWindow;
+    }
+    if (input.maxTokens !== undefined && input.maxTokens !== null) {
+      provider.maxTokens = input.maxTokens;
+    }
     if (input.apiKeyEnv === null) delete provider.apiKeyEnv;
     if (input.contextWindow === null) delete provider.contextWindow;
     if (input.maxTokens === null) delete provider.maxTokens;
-    return {
+    return v.parse(providerConfigSchema, {
       ...current,
       openaiCompatible: [
         ...existing.filter((candidate) => candidate.id !== id),
         provider,
       ],
-    };
+    });
   }
 
-  const configKey =
-    input.provider === 'openai-codex' ? 'openaiCodex' : input.provider;
+  if (input.provider === 'openai-codex') {
+    const provider = { ...current?.openaiCodex };
+    if (input.enabled !== undefined) provider.enabled = input.enabled;
+    return v.parse(providerConfigSchema, {
+      ...current,
+      openaiCodex: provider,
+    });
+  }
+  if (input.provider === 'kilocode') {
+    const provider = { ...current?.kilocode };
+    if (input.enabled !== undefined) provider.enabled = input.enabled;
+    if (input.apiKeyEnv !== undefined && input.apiKeyEnv !== null) {
+      provider.apiKeyEnv = input.apiKeyEnv;
+    }
+    if (
+      input.organizationIdEnv !== undefined &&
+      input.organizationIdEnv !== null
+    ) {
+      provider.organizationIdEnv = input.organizationIdEnv;
+    }
+    if (input.apiKeyEnv === null) delete provider.apiKeyEnv;
+    if (input.organizationIdEnv === null) delete provider.organizationIdEnv;
+    return v.parse(providerConfigSchema, { ...current, kilocode: provider });
+  }
+  const configKey = input.provider;
   const existing = current?.[configKey] ?? {};
   const provider = {
     ...existing,
-    ...(input.enabled !== undefined ? { enabled: input.enabled } : {}),
-    ...(input.provider !== 'openai-codex' && input.apiKeyEnv !== undefined
-      ? input.apiKeyEnv === null
-        ? {}
-        : { apiKeyEnv: input.apiKeyEnv }
-      : {}),
-    ...(input.provider === 'kilocode' && input.organizationIdEnv !== undefined
-      ? input.organizationIdEnv === null
-        ? {}
-        : { organizationIdEnv: input.organizationIdEnv }
-      : {}),
   };
-
-  if (input.provider !== 'openai-codex' && input.apiKeyEnv === null) {
+  if (input.enabled !== undefined) provider.enabled = input.enabled;
+  if (input.apiKeyEnv !== undefined && input.apiKeyEnv !== null) {
+    provider.apiKeyEnv = input.apiKeyEnv;
+  }
+  if (input.apiKeyEnv === null) {
     delete provider.apiKeyEnv;
   }
-  if (input.provider === 'kilocode' && input.organizationIdEnv === null) {
-    delete provider.organizationIdEnv;
-  }
 
-  return {
+  return v.parse(providerConfigSchema, {
     ...current,
     [configKey]: provider,
-  };
+  });
 }
 
 export function effectiveProviderConfig(

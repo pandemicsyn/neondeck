@@ -24,6 +24,7 @@ import {
   fetchPullRequestEventState,
   githubFetch,
   pullRequestEventStateIncompleteness,
+  type GitHubBranchPushPermissions,
   type GitHubPullRequestEventState,
 } from '../github';
 import {
@@ -31,6 +32,13 @@ import {
   resolvePrPushTargetForCheckout,
   type PrPushTarget,
 } from '../worktrees';
+import {
+  runtimeErrorSchema,
+  runtimeExternalRecordSchema,
+  runtimeJsonValueSchema,
+  type RuntimeExternalValue,
+  type RuntimeJsonRecord,
+} from './value-schemas';
 
 export type AutopilotMode =
   | 'notify-only'
@@ -47,6 +55,12 @@ const githubRepositoryMetadataSchema = v.object({
 const githubIdentitySchema = v.object({
   login: v.pipe(v.string(), v.minLength(1)),
 });
+const autopilotModeSchema = v.picklist([
+  'notify-only',
+  'prepare-only',
+  'autofix-with-approval',
+  'autofix-push-when-safe',
+]);
 
 export type AutopilotReadinessFactId =
   | 'runtime-home'
@@ -70,7 +84,7 @@ export type AutopilotReadinessFact = {
   required: boolean;
   message: string;
   action: string | null;
-  details?: Record<string, unknown>;
+  details?: RuntimeJsonRecord;
 };
 
 export type AutopilotReadiness = {
@@ -94,14 +108,7 @@ export type AutopilotReadiness = {
 export const autopilotReadinessInputSchema = v.object({
   repoId: v.pipe(v.string(), v.minLength(1)),
   prNumber: v.optional(v.pipe(v.number(), v.integer(), v.minValue(1))),
-  mode: v.optional(
-    v.picklist([
-      'notify-only',
-      'prepare-only',
-      'autofix-with-approval',
-      'autofix-push-when-safe',
-    ]),
-  ),
+  mode: v.optional(autopilotModeSchema),
 });
 
 const factStatusSchema = v.picklist([
@@ -130,7 +137,19 @@ const readinessFactSchema = v.object({
   required: v.boolean(),
   message: v.string(),
   action: v.nullable(v.string()),
-  details: v.optional(v.record(v.string(), v.unknown())),
+  details: v.optional(v.record(v.string(), runtimeJsonValueSchema)),
+});
+const readinessFactsSchema = v.object({
+  'runtime-home': readinessFactSchema,
+  'worktree-root': readinessFactSchema,
+  'source-repo': readinessFactSchema,
+  api: readinessFactSchema,
+  fetch: readinessFactSchema,
+  'git-push': readinessFactSchema,
+  comment: readinessFactSchema,
+  identity: readinessFactSchema,
+  'check-commands': readinessFactSchema,
+  gh: readinessFactSchema,
 });
 
 export const autopilotReadinessSchema = v.object({
@@ -149,7 +168,7 @@ export const autopilotReadinessSchema = v.object({
     'autofix-with-approval',
     'autofix-push-when-safe',
   ]),
-  facts: v.record(v.string(), readinessFactSchema),
+  facts: readinessFactsSchema,
   blocking: v.array(factIdSchema),
   warnings: v.array(factIdSchema),
   pushTarget: v.nullable(
@@ -622,13 +641,11 @@ async function identityFact(
   );
 }
 
-function branchPermissionFactsKnown(value: unknown) {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
-  const permissions = value as Record<string, unknown>;
+function branchPermissionFactsKnown(value: GitHubBranchPushPermissions) {
   return (
-    typeof permissions.baseRepoPush === 'boolean' &&
-    typeof permissions.headRepoPush === 'boolean' &&
-    typeof permissions.canLikelyPush === 'boolean'
+    value.baseRepoPush !== null &&
+    value.headRepoPush !== null &&
+    value.canLikelyPush !== null
   );
 }
 
@@ -836,26 +853,20 @@ function readinessRequiredChecks(repo: RepoConfig, appConfig: AppConfig) {
     repoGuardrailsSchema,
     objectValue(repo.metadata)?.guardrails,
   );
-  return {
-    ...defaultRepoGuardrails,
-    ...(appGuardrails.success ? appGuardrails.output : {}),
-    ...(repoGuardrails.success ? repoGuardrails.output : {}),
-  }.requiredChecks;
+  const guardrails = { ...defaultRepoGuardrails };
+  if (appGuardrails.success) Object.assign(guardrails, appGuardrails.output);
+  if (repoGuardrails.success) Object.assign(guardrails, repoGuardrails.output);
+  return guardrails.requiredChecks;
 }
 
-function isAutopilotMode(value: unknown): value is AutopilotMode {
-  return (
-    value === 'notify-only' ||
-    value === 'prepare-only' ||
-    value === 'autofix-with-approval' ||
-    value === 'autofix-push-when-safe'
-  );
+function isAutopilotMode(value: RuntimeExternalValue): value is AutopilotMode {
+  return v.safeParse(autopilotModeSchema, value).success;
 }
 
-function objectValue(value: unknown) {
-  return value && typeof value === 'object' && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : null;
+function objectValue(value: RuntimeExternalValue) {
+  if (Array.isArray(value)) return null;
+  const parsed = v.safeParse(runtimeExternalRecordSchema, value);
+  return parsed.success ? parsed.output : null;
 }
 
 function modeFact(
@@ -905,16 +916,16 @@ function fact(
   required: boolean,
   message: string,
   action: string | null,
-  details?: Record<string, unknown>,
+  details?: RuntimeJsonRecord,
 ): AutopilotReadinessFact {
   return { id, label, status, required, message, action, details };
 }
 
 function indexFacts(facts: AutopilotReadinessFact[]) {
-  return Object.fromEntries(facts.map((item) => [item.id, item])) as Record<
-    AutopilotReadinessFactId,
-    AutopilotReadinessFact
-  >;
+  return v.parse(
+    readinessFactsSchema,
+    Object.fromEntries(facts.map((item) => [item.id, item])),
+  );
 }
 
 async function defaultCommandRunner(
@@ -931,6 +942,7 @@ async function defaultCommandRunner(
   return { stdout: result.stdout, stderr: result.stderr };
 }
 
-function errorMessage(error: unknown) {
-  return error instanceof Error ? error.message : String(error);
+function errorMessage(error: RuntimeExternalValue) {
+  const parsed = v.safeParse(runtimeErrorSchema, error);
+  return parsed.success ? parsed.output.message : String(error);
 }
