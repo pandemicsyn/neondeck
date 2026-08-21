@@ -137,7 +137,7 @@ export async function putGitHubPrReviewDraft(
       `Re-anchored review draft for ${resolved.target.repoFullName}#${resolved.target.number}.`,
       {
         target: eventTargetJson(resolved.target),
-        draft: draft as unknown as JsonValue,
+        draft: parsePrEventJsonValue(draft),
       },
     );
   }

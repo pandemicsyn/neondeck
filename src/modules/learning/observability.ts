@@ -169,6 +169,21 @@ const scalarSchema = v.union([
   v.null(),
 ]);
 const activeSubmissionStatusSchema = v.picklist(['queued', 'running']);
+const prReviewPerformanceRowSchema = v.object({
+  id: v.string(),
+  attempt_id: v.string(),
+  run_id: v.nullable(v.string()),
+  head_sha: v.string(),
+  base_sha: v.nullable(v.string()),
+  status: v.string(),
+  ready_at: v.nullable(v.string()),
+  failed_at: v.nullable(v.string()),
+});
+const activitySubmissionPerformanceRowSchema = v.object({
+  event_count: v.number(),
+  queued_at: v.string(),
+  settled_at: v.nullable(v.string()),
+});
 const maxNormalizedActivityDepth = 8;
 const maxNormalizedActivityEntries = 24;
 const maxNormalizedActivityNodes = 128;
@@ -395,22 +410,31 @@ export async function readPrReviewPerformance(
   await ensureRuntimeHome(paths);
   const database = openDb(paths.neondeckDatabase, { readOnly: true });
   try {
-    const review = database
+    const reviewRow = database
       .prepare(
         `SELECT id, attempt_id, run_id, head_sha, base_sha, status,
                 ready_at, failed_at FROM pr_reviews WHERE id = ? LIMIT 1;`,
       )
-      .get(reviewId.trim()) as Record<string, unknown> | undefined;
-    if (!review) return null;
+      .get(reviewId.trim());
+    const parsedReview = v.safeParse(prReviewPerformanceRowSchema, reviewRow);
+    if (!parsedReview.success) return null;
+    const review = parsedReview.output;
 
     const submissionId = stringOrNull(review.run_id);
-    const submission = submissionId
-      ? (database
+    const submissionRow = submissionId
+      ? database
           .prepare(
             `SELECT event_count, queued_at, settled_at
              FROM activity_submissions WHERE submission_id = ? LIMIT 1;`,
           )
-          .get(submissionId) as Record<string, unknown> | undefined)
+          .get(submissionId)
+      : undefined;
+    const parsedSubmission = v.safeParse(
+      activitySubmissionPerformanceRowSchema,
+      submissionRow,
+    );
+    const submission = parsedSubmission.success
+      ? parsedSubmission.output
       : undefined;
     const events = submissionId
       ? database
@@ -818,17 +842,17 @@ function projectPrReviewPerformance(input: {
 
 function summaryString(summary: JsonValue | null, key: string) {
   const value = objectRecord(summary)?.[key];
-  return typeof value === 'string' ? value : null;
+  return stringOrNull(value);
 }
 
 function summaryBoolean(summary: JsonValue | null, key: string) {
   const value = objectRecord(summary)?.[key];
-  return typeof value === 'boolean' ? value : null;
+  return booleanOrUndefined(value) ?? null;
 }
 
 function summaryNumber(summary: JsonValue | null, key: string) {
   const value = objectRecord(summary)?.[key];
-  return typeof value === 'number' && Number.isFinite(value) ? value : null;
+  return finiteNumberOrNull(value);
 }
 
 function taskStopReason(summary: JsonValue | null) {
@@ -956,8 +980,8 @@ function addKnownNumbers(left: number | null, right: number | null) {
   return left === null || right === null ? null : left + right;
 }
 
-function numberOrNull(value: unknown) {
-  return typeof value === 'number' && Number.isFinite(value) ? value : null;
+function numberOrNull(value: JsonValue | undefined) {
+  return finiteNumberOrNull(value);
 }
 
 function addTool(
@@ -1227,13 +1251,14 @@ function taskPromptMetadata(prompt: string): Record<string, JsonValue> {
   });
 }
 
-function taskResultMetadata(result: unknown): Record<string, JsonValue> {
-  if (typeof result !== 'string') return {};
+function taskResultMetadata(result: JsonValue): Record<string, JsonValue> {
+  const text = stringOrNull(result);
+  if (text === null) return {};
   const requiredFields = ['Answer', 'Evidence', 'Unresolved', 'Inspected'];
   const allRequiredFields = requiredFields.every((field) =>
-    resultContractSectionHasContent(result, field),
+    resultContractSectionHasContent(text, field),
   );
-  const stopReason = taskPromptField(result, 'Stop reason')?.toLowerCase();
+  const stopReason = taskPromptField(text, 'Stop reason')?.toLowerCase();
   return compactJsonRecord({
     resultContract:
       allRequiredFields &&
