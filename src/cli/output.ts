@@ -1,4 +1,35 @@
+import type { JsonValue } from '@flue/runtime';
+import * as v from 'valibot';
+import type { readLearningOperatorState } from '../modules/learning';
+import type { RepoDiffFile } from '../repo-edit/git';
 import type { RuntimeStatus } from './types';
+
+type LearningOperatorStateResult = Awaited<
+  ReturnType<typeof readLearningOperatorState>
+>;
+const cliExternalValueSchema = v.unknown();
+type CliExternalValue = v.InferInput<typeof cliExternalValueSchema>;
+const cliObjectSchema = v.record(v.string(), cliExternalValueSchema);
+const cliArraySchema = v.array(cliExternalValueSchema);
+const repoDiffFileSchema: v.GenericSchema<unknown, RepoDiffFile> = v.object({
+  path: v.string(),
+  previousPath: v.optional(v.nullable(v.string())),
+  status: v.string(),
+  additions: v.optional(v.number(), 0),
+  deletions: v.optional(v.number(), 0),
+  binary: v.optional(v.boolean(), false),
+  generatedLike: v.optional(v.boolean(), false),
+  patch: v.optional(v.string()),
+  truncated: v.optional(v.boolean()),
+});
+const diffSummarySchema = v.object({
+  files: v.optional(v.number(), 0),
+  additions: v.optional(v.number(), 0),
+  deletions: v.optional(v.number(), 0),
+});
+const configDataSchema = v.object({
+  config: v.optional(v.object({ skillRoots: v.optional(v.array(v.string())) })),
+});
 
 let jsonOutput = false;
 
@@ -97,92 +128,71 @@ export function printServiceResult(result: {
 }
 
 export function printLearningState(
-  result: unknown,
+  result: LearningOperatorStateResult,
   view: 'status' | 'reviews' | 'candidates' | 'events',
 ) {
   if (jsonOutput) {
     console.log(JSON.stringify(result, null, 2));
     return;
   }
-  if (!result || typeof result !== 'object') {
-    console.log('Learning state unavailable.');
-    process.exitCode = 1;
-    return;
-  }
-  const state = result as Record<string, unknown>;
-  if (state.ok === false) {
+  if (!result.ok) {
     printActionResult({
       ok: false,
-      message:
-        typeof state.message === 'string'
-          ? state.message
-          : 'Learning state failed.',
+      message: result.message,
     });
     return;
   }
 
-  const summary = objectField(state.summary);
+  const summary = result.summary;
   if (view === 'status') {
     console.log('learning:ready');
-    console.log(`pending   ${numberField(summary, 'pendingDecisions')}`);
-    console.log(`failed    ${numberField(summary, 'failedReviews')}`);
-    console.log(`memories  ${numberField(summary, 'activeMemories')} active`);
-    console.log(`PR events ${numberField(summary, 'handledPrEvents')}`);
+    console.log(`pending   ${summary.pendingDecisions}`);
+    console.log(`failed    ${summary.failedReviews}`);
+    console.log(`memories  ${summary.activeMemories} active`);
+    console.log(`PR events ${summary.handledPrEvents}`);
   }
 
   if (view === 'status' || view === 'reviews') {
-    const reviews = arrayField(state.reviews);
+    const reviews = result.reviews;
     if (view === 'reviews') console.log(`reviews ${reviews.length}`);
     for (const review of reviews.slice(
       0,
       view === 'status' ? 5 : reviews.length,
     )) {
-      const item = objectField(review);
       console.log(
-        `${stringField(item, 'startedAt')} ${stringField(item, 'status').padEnd(9)} ${stringField(item, 'kind').padEnd(12)} ${stringField(item, 'id')}`,
+        `${review.startedAt} ${review.status.padEnd(9)} ${review.kind.padEnd(12)} ${review.id}`,
       );
     }
   }
 
   if (view === 'status' || view === 'candidates') {
-    const candidates = arrayField(state.candidates);
+    const candidates = result.candidates;
     if (view === 'candidates') console.log(`candidates ${candidates.length}`);
     for (const candidate of candidates.slice(
       0,
       view === 'status' ? 8 : candidates.length,
     )) {
-      const item = objectField(candidate);
       const label =
-        stringField(item, 'skillId') ||
-        [stringField(item, 'scope'), stringField(item, 'key')]
-          .filter(Boolean)
-          .join(':') ||
-        stringField(item, 'id');
+        candidate.skillId ||
+        [candidate.scope, candidate.key].filter(Boolean).join(':') ||
+        candidate.id;
       console.log(
-        `${stringField(item, 'createdAt')} ${stringField(item, 'status').padEnd(9)} ${stringField(item, 'target').padEnd(6)} ${label}`,
+        `${candidate.createdAt} ${candidate.status.padEnd(9)} ${candidate.target.padEnd(6)} ${label}`,
       );
-      const reason = stringField(item, 'reason');
+      const reason = candidate.reason;
       if (reason) console.log(`  ${reason}`);
     }
   }
 
   if (view === 'events') {
-    const events = [
-      ...arrayField(state.learningEvents),
-      ...arrayField(state.memoryEvents),
-    ]
-      .map(objectField)
-      .sort(
-        (a, b) =>
-          Date.parse(stringField(b, 'createdAt')) -
-          Date.parse(stringField(a, 'createdAt')),
-      );
+    const events = [...result.learningEvents, ...result.memoryEvents].sort(
+      (a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt),
+    );
     console.log(`events ${events.length}`);
     for (const event of events) {
-      const label = stringField(event, 'type') || stringField(event, 'action');
-      console.log(
-        `${stringField(event, 'createdAt')} ${label.padEnd(26)} ${stringField(event, 'source') || stringField(event, 'actor')}`,
-      );
+      const label = 'type' in event ? event.type : event.action;
+      const source = 'source' in event ? event.source : event.actor;
+      console.log(`${event.createdAt} ${label.padEnd(26)} ${source}`);
     }
   }
 }
@@ -190,7 +200,7 @@ export function printLearningState(
 export function printRepoDiffResult(result: {
   ok: boolean;
   message: string;
-  files?: unknown[];
+  files?: CliExternalValue[];
   diffSummary?: {
     files: number;
     additions: number;
@@ -234,24 +244,9 @@ export function printRepoDiffResult(result: {
   }
 }
 
-export function repoDiffFileFromUnknown(value: unknown) {
-  if (!value || typeof value !== 'object') return [];
-  const item = value as Record<string, unknown>;
-  if (typeof item.path !== 'string' || typeof item.status !== 'string') {
-    return [];
-  }
-  return [
-    {
-      path: item.path,
-      status: item.status,
-      additions: typeof item.additions === 'number' ? item.additions : 0,
-      deletions: typeof item.deletions === 'number' ? item.deletions : 0,
-      binary: item.binary === true,
-      generatedLike: item.generatedLike === true,
-      patch: typeof item.patch === 'string' ? item.patch : undefined,
-      truncated: item.truncated === true,
-    },
-  ];
+export function repoDiffFileFromUnknown(value: CliExternalValue) {
+  const parsed = v.safeParse(repoDiffFileSchema, value);
+  return parsed.success ? [parsed.output] : [];
 }
 
 export function printRepoEditEventsResult(result: {
@@ -292,19 +287,10 @@ export function printRepoEditEventsResult(result: {
   }
 }
 
-export function diffSummaryText(value: unknown) {
-  if (!value || typeof value !== 'object') return '';
-  const summary = value as {
-    files?: unknown;
-    additions?: unknown;
-    deletions?: unknown;
-  };
-  const files = typeof summary.files === 'number' ? summary.files : 0;
-  const additions =
-    typeof summary.additions === 'number' ? summary.additions : 0;
-  const deletions =
-    typeof summary.deletions === 'number' ? summary.deletions : 0;
-  return files > 0 ? `${files} files +${additions} -${deletions}` : '';
+export function diffSummaryText(value: CliExternalValue) {
+  const summary = v.safeParse(diffSummarySchema, value);
+  if (!summary.success || summary.output.files === 0) return '';
+  return `${summary.output.files} files +${summary.output.additions} -${summary.output.deletions}`;
 }
 
 export function printDbMigrationStatus(status: {
@@ -410,24 +396,30 @@ function formatBytes(bytes: number) {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MiB`;
 }
 
-export function objectField(value: unknown) {
-  return value && typeof value === 'object' && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : {};
+export function objectField(value: CliExternalValue) {
+  const parsed = v.safeParse(cliObjectSchema, value);
+  return parsed.success && !Array.isArray(value) ? parsed.output : {};
 }
 
-export function arrayField(value: unknown) {
-  return Array.isArray(value) ? value : [];
+export function arrayField(value: CliExternalValue) {
+  const parsed = v.safeParse(cliArraySchema, value);
+  return parsed.success ? parsed.output : [];
 }
 
-export function stringField(record: Record<string, unknown>, key: string) {
-  const value = record[key];
-  return typeof value === 'string' ? value : '';
+export function stringField(
+  record: v.InferOutput<typeof cliObjectSchema>,
+  key: string,
+) {
+  const value = v.safeParse(v.string(), record[key]);
+  return value.success ? value.output : '';
 }
 
-export function numberField(record: Record<string, unknown>, key: string) {
-  const value = record[key];
-  return typeof value === 'number' ? value : 0;
+export function numberField(
+  record: v.InferOutput<typeof cliObjectSchema>,
+  key: string,
+) {
+  const value = v.safeParse(v.number(), record[key]);
+  return value.success ? value.output : 0;
 }
 
 export function printStatus(status: RuntimeStatus) {
@@ -471,10 +463,7 @@ export function printStatus(status: RuntimeStatus) {
   }
 }
 
-export function readConfigData(result: { data?: unknown }) {
-  const data = result.data;
-  if (!data || typeof data !== 'object') return {};
-  const record = data as { config?: unknown };
-  if (!record.config || typeof record.config !== 'object') return {};
-  return record.config as { skillRoots?: string[] };
+export function readConfigData(result: { data?: JsonValue }) {
+  const parsed = v.safeParse(configDataSchema, result.data);
+  return parsed.success ? (parsed.output.config ?? {}) : {};
 }

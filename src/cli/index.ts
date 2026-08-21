@@ -56,6 +56,25 @@ import type {
   WatchPrOptions,
 } from './types';
 
+type OpenDashboardInput = Parameters<
+  Awaited<ReturnType<typeof openModule>>['openDashboard']
+>[0];
+type AddRepoInput = Parameters<
+  Awaited<ReturnType<typeof configActionsModule>>['addRepo']
+>[0];
+type ConfigurePrAutopilotInput = Parameters<
+  Awaited<ReturnType<typeof autopilotModule>>['configurePrAutopilot']
+>[0];
+type AddPrWatchInput = Parameters<
+  Awaited<ReturnType<typeof watchActionsModule>>['addPrWatch']
+>[0];
+type CreateHandoffNoteInput = Parameters<
+  Awaited<ReturnType<typeof handoffModule>>['createHandoffNote']
+>[0];
+type RegisterHandoffPrInput = Parameters<
+  Awaited<ReturnType<typeof handoffModule>>['registerHandoffPr']
+>[0];
+
 const program = new Command()
   .name('neondeck')
   .description('Local developer cockpit and Flue agent control CLI.')
@@ -112,18 +131,19 @@ program
     const paths = await pathsFromOptions(program.opts<GlobalOptions>());
     await ensureRuntimeHome(paths);
     loadEnvForPaths(paths);
+    const overrides: NonNullable<OpenDashboardInput['overrides']> = {
+      width: parseOptionalPositiveIntegerFlag('--width', options.width),
+      height: parseOptionalPositiveIntegerFlag('--height', options.height),
+      x: parseOptionalIntegerFlag('--x', options.x),
+      y: parseOptionalIntegerFlag('--y', options.y),
+    };
+    if (options.kiosk) overrides.kiosk = true;
     const result = await openDashboard({
       paths,
       profile,
       port: options.port,
       browserPath: options.browser,
-      overrides: {
-        width: parseOptionalPositiveIntegerFlag('--width', options.width),
-        height: parseOptionalPositiveIntegerFlag('--height', options.height),
-        x: parseOptionalIntegerFlag('--x', options.x),
-        y: parseOptionalIntegerFlag('--y', options.y),
-        ...(options.kiosk ? { kiosk: true } : {}),
-      },
+      overrides,
     });
     printActionResult(result);
   });
@@ -340,21 +360,15 @@ repo
     const { addRepo } = await configActionsModule();
     const paths = await pathsFromOptions(program.opts<GlobalOptions>());
     loadEnvForPaths(paths);
-    const result = await addRepo(
-      {
-        path: repoPath,
-        ...(options.id ? { id: options.id } : {}),
-        ...(options.githubOwner ? { githubOwner: options.githubOwner } : {}),
-        ...(options.githubName ? { githubName: options.githubName } : {}),
-        ...(options.defaultBranch
-          ? { defaultBranch: options.defaultBranch }
-          : {}),
-        ...(options.productionTarget
-          ? { productionTarget: options.productionTarget }
-          : {}),
-      },
-      paths,
-    );
+    const input: AddRepoInput = { path: repoPath };
+    if (options.id) input.id = options.id;
+    if (options.githubOwner) input.githubOwner = options.githubOwner;
+    if (options.githubName) input.githubName = options.githubName;
+    if (options.defaultBranch) input.defaultBranch = options.defaultBranch;
+    if (options.productionTarget) {
+      input.productionTarget = options.productionTarget;
+    }
+    const result = await addRepo(input, paths);
     printActionResult(result);
   });
 
@@ -608,33 +622,32 @@ program
     const result = options.mode
       ? await (async () => {
           const { configurePrAutopilot } = await autopilotModule();
-          return configurePrAutopilot(
-            {
-              ref,
-              mode: parseAutopilotModeFlag(options.mode)!,
-              processExisting: Boolean(options.processExisting),
-              confirm: Boolean(options.confirmAutopilot),
-              desiredTerminalState,
-              ...(intervalSeconds !== undefined ? { intervalSeconds } : {}),
-              ...(options.from
-                ? { createdBy: normalizeHandoffSource(options.from) }
-                : {}),
-            },
-            paths,
-          );
-        })()
-      : await addPrWatch(
-          {
+          const input: ConfigurePrAutopilotInput = {
             ref,
+            mode: parseAutopilotModeFlag(options.mode)!,
+            processExisting: Boolean(options.processExisting),
+            confirm: Boolean(options.confirmAutopilot),
             desiredTerminalState,
-            ...(intervalSeconds !== undefined ? { intervalSeconds } : {}),
-            ...(options.from
-              ? { createdBy: normalizeHandoffSource(options.from) }
-              : {}),
-            ...(options.processExisting ? { processExisting: true } : {}),
-          },
-          paths,
-        );
+          };
+          if (intervalSeconds !== undefined) {
+            input.intervalSeconds = intervalSeconds;
+          }
+          if (options.from) {
+            input.createdBy = normalizeHandoffSource(options.from);
+          }
+          return configurePrAutopilot(input, paths);
+        })()
+      : await (async () => {
+          const input: AddPrWatchInput = { ref, desiredTerminalState };
+          if (intervalSeconds !== undefined) {
+            input.intervalSeconds = intervalSeconds;
+          }
+          if (options.from) {
+            input.createdBy = normalizeHandoffSource(options.from);
+          }
+          if (options.processExisting) input.processExisting = true;
+          return addPrWatch(input, paths);
+        })();
     printActionResult(result);
   });
 
@@ -653,20 +666,14 @@ program
     const { createHandoffNote, normalizeHandoffSource } = await handoffModule();
     const paths = await pathsFromOptions(program.opts<GlobalOptions>());
     loadEnvForPaths(paths);
-    printActionResult(
-      await createHandoffNote(
-        {
-          text: text.join(' '),
-          source: normalizeHandoffSource(options.from),
-          ...(options.repo ? { repo: options.repo } : {}),
-          ...(options.pr ? { pr: options.pr } : {}),
-          ...(options.level
-            ? { level: parseHandoffNoteLevel(options.level) }
-            : {}),
-        },
-        paths,
-      ),
-    );
+    const input: CreateHandoffNoteInput = {
+      text: text.join(' '),
+      source: normalizeHandoffSource(options.from),
+    };
+    if (options.repo) input.repo = options.repo;
+    if (options.pr) input.pr = options.pr;
+    if (options.level) input.level = parseHandoffNoteLevel(options.level);
+    printActionResult(await createHandoffNote(input, paths));
   });
 
 program
@@ -684,18 +691,14 @@ program
     const { registerHandoffPr, normalizeHandoffSource } = await handoffModule();
     const paths = await pathsFromOptions(program.opts<GlobalOptions>());
     loadEnvForPaths(paths);
-    printActionResult(
-      await registerHandoffPr(
-        {
-          ref,
-          source: normalizeHandoffSource(options.from),
-          watch: options.watch,
-          ...(options.review ? { review: true } : {}),
-          ...(options.note ? { note: options.note } : {}),
-        },
-        paths,
-      ),
-    );
+    const input: RegisterHandoffPrInput = {
+      ref,
+      source: normalizeHandoffSource(options.from),
+      watch: options.watch,
+    };
+    if (options.review) input.review = true;
+    if (options.note) input.note = options.note;
+    printActionResult(await registerHandoffPr(input, paths));
   });
 
 program

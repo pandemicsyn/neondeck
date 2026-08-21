@@ -21,7 +21,11 @@ import {
   memoryCandidateDecideInputSchema,
   memoryCandidateListInputSchema,
   memoryCurateInputSchema,
+  jsonValueSchema,
+  memoryMergeInputSchema,
 } from './schemas';
+
+const jsonRecordSchema = v.record(v.string(), jsonValueSchema);
 import {
   archiveMemory,
   listMemories,
@@ -394,9 +398,9 @@ export async function curateMemoryStore(
   const applied = [];
   for (const proposal of proposals) {
     if (proposal.action !== 'archive') continue;
-    const memoryId = patchString(proposal.patch as JsonValue, 'memoryId');
+    const memoryId = patchString(proposal.patch ?? null, 'memoryId');
     const expectedUpdatedAt = patchString(
-      proposal.patch as JsonValue,
+      proposal.patch ?? null,
       'expectedUpdatedAt',
     );
     if (!memoryId) continue;
@@ -453,7 +457,7 @@ async function applyMemoryCandidate(
         key: candidate.key,
         value: candidate.value,
         repoId: candidate.repoId ?? undefined,
-        ...(expectedUpdatedAt === undefined ? {} : { expectedUpdatedAt }),
+        expectedUpdatedAt,
         reason: candidate.reason ?? undefined,
         actor: 'workflow',
       },
@@ -476,7 +480,7 @@ async function applyMemoryCandidate(
       {
         id: memoryId,
         value: candidate.value,
-        ...(expectedUpdatedAt ? { expectedUpdatedAt } : {}),
+        expectedUpdatedAt,
         reason: candidate.reason ?? undefined,
         actor: 'workflow',
       },
@@ -498,7 +502,7 @@ async function applyMemoryCandidate(
     return archiveMemory(
       {
         id: memoryId,
-        ...(expectedUpdatedAt ? { expectedUpdatedAt } : {}),
+        expectedUpdatedAt,
         reason: candidate.reason ?? undefined,
         actor: 'workflow',
       },
@@ -520,26 +524,23 @@ async function applyMemoryCandidate(
     );
   }
   if (!expectedUpdatedAts) return missingCandidateRevision('merge');
-  return mergeMemories(
-    {
-      targetId,
-      sourceIds,
-      ...(expectedUpdatedAts ? { expectedUpdatedAts } : {}),
-      ...(candidate.value === null ? {} : { value: candidate.value }),
-      reason: candidate.reason ?? undefined,
-      actor: 'workflow',
-    },
-    paths,
-    { source },
-  );
+  const mergeInput: v.InferInput<typeof memoryMergeInputSchema> = {
+    targetId,
+    sourceIds,
+    expectedUpdatedAts,
+    reason: candidate.reason ?? undefined,
+    actor: 'workflow',
+  };
+  if (candidate.value !== null) mergeInput.value = candidate.value;
+  return mergeMemories(mergeInput, paths, { source });
 }
 
 function curationProposals(
   memories: MemoryRecord[],
   maxActiveItems: number,
-): Array<v.InferInput<typeof memoryCandidateCreateInputSchema>> {
+): Array<v.InferOutput<typeof memoryCandidateCreateInputSchema>> {
   const proposals: Array<
-    v.InferInput<typeof memoryCandidateCreateInputSchema>
+    v.InferOutput<typeof memoryCandidateCreateInputSchema>
   > = [];
   const sortedOldest = [...memories].sort(
     (a, b) =>
@@ -593,11 +594,10 @@ function memoryCandidateRevisionPatch(
   input: v.InferOutput<typeof memoryCandidateCreateInputSchema>,
   paths: RuntimePaths,
 ): { ok: true; patch: JsonValue } | { ok: false; message: string } {
+  const parsedPatch = v.safeParse(jsonRecordSchema, input.patch);
   const patch =
-    input.patch &&
-    typeof input.patch === 'object' &&
-    !Array.isArray(input.patch)
-      ? { ...(input.patch as Record<string, JsonValue>) }
+    parsedPatch.success && !Array.isArray(input.patch)
+      ? { ...parsedPatch.output }
       : {};
   const database = openDb(paths.neondeckDatabase, { readOnly: true });
   try {
@@ -609,11 +609,11 @@ function memoryCandidateRevisionPatch(
         };
       }
       const supplied = Object.hasOwn(patch, 'expectedUpdatedAt');
-      if (
-        supplied &&
-        patch.expectedUpdatedAt !== null &&
-        typeof patch.expectedUpdatedAt !== 'string'
-      ) {
+      const suppliedRevision = v.safeParse(
+        v.nullable(v.string()),
+        patch.expectedUpdatedAt,
+      );
+      if (supplied && !suppliedRevision.success) {
         return invalidCandidateRevision('upsert');
       }
       const existing = readMemoryByScopeKey(
@@ -622,13 +622,15 @@ function memoryCandidateRevisionPatch(
         input.key,
         input.repoId ?? null,
       );
+      let expectedUpdatedAt = existing?.updatedAt ?? null;
+      if (supplied && suppliedRevision.success) {
+        expectedUpdatedAt = suppliedRevision.output;
+      }
       return {
         ok: true,
         patch: {
           ...patch,
-          expectedUpdatedAt: supplied
-            ? (patch.expectedUpdatedAt as string | null)
-            : (existing?.updatedAt ?? null),
+          expectedUpdatedAt,
         },
       };
     }
@@ -642,7 +644,8 @@ function memoryCandidateRevisionPatch(
         };
       }
       const supplied = Object.hasOwn(patch, 'expectedUpdatedAt');
-      if (supplied && typeof patch.expectedUpdatedAt !== 'string') {
+      const suppliedRevision = v.safeParse(v.string(), patch.expectedUpdatedAt);
+      if (supplied && !suppliedRevision.success) {
         return invalidCandidateRevision(input.action);
       }
       const memory = readMemoryById(database, memoryId);
@@ -652,13 +655,21 @@ function memoryCandidateRevisionPatch(
           message: `Memory ${input.action} candidate target was not found.`,
         };
       }
+      let expectedUpdatedAt = memory?.updatedAt;
+      if (supplied && suppliedRevision.success) {
+        expectedUpdatedAt = suppliedRevision.output;
+      }
+      if (!expectedUpdatedAt) {
+        return {
+          ok: false,
+          message: `Memory ${input.action} candidate target was not found.`,
+        };
+      }
       return {
         ok: true,
         patch: {
           ...patch,
-          expectedUpdatedAt: supplied
-            ? (patch.expectedUpdatedAt as string)
-            : memory!.updatedAt,
+          expectedUpdatedAt,
         },
       };
     }
@@ -693,9 +704,11 @@ function memoryCandidateRevisionPatch(
           message: 'Memory merge candidate target was not found.',
         };
       }
-      expectedUpdatedAts[id] = supplied
-        ? suppliedRevisions![id]!
-        : memory!.updatedAt;
+      const expectedUpdatedAt = supplied
+        ? suppliedRevisions?.[id]
+        : memory?.updatedAt;
+      if (!expectedUpdatedAt) return invalidCandidateRevision('merge');
+      expectedUpdatedAts[id] = expectedUpdatedAt;
     }
     return { ok: true, patch: { ...patch, expectedUpdatedAts } };
   } finally {

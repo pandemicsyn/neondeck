@@ -12,7 +12,7 @@ import {
   readChatSessionInternal,
   recordSessionAudit,
 } from './store';
-import { sessionReferenceInputSchema, type ChatSessionRecord } from './schemas';
+import { sessionReferenceInputSchema } from './schemas';
 
 export async function referenceChatSession(
   input: v.InferInput<typeof sessionReferenceInputSchema>,
@@ -53,8 +53,10 @@ export async function referenceChatSession(
       paths,
     );
     refreshedSummary = Boolean(refreshed.ok);
+    const refreshedSession =
+      'session' in refreshed ? refreshed.session : undefined;
     target =
-      (refreshed as { session?: ChatSessionRecord }).session ??
+      refreshedSession ??
       (await readChatSessionInternal(parsed.output.id, paths)) ??
       target;
   }

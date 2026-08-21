@@ -1,119 +1,79 @@
 export async function configActionsModule() {
-  return import(
-    new URL('../modules/config/index.ts', import.meta.url).href
-  ) as Promise<typeof import('../modules/config')>;
+  return import('../modules/config/index.ts');
 }
 
 export async function githubModule() {
-  return import(
-    new URL('../modules/github/index.ts', import.meta.url).href
-  ) as Promise<typeof import('../modules/github')>;
+  return import('../modules/github/index.ts');
 }
 
 export async function handoffModule() {
-  return import(
-    new URL('../modules/handoff/index.ts', import.meta.url).href
-  ) as Promise<typeof import('../modules/handoff')>;
+  return import('../modules/handoff/index.ts');
 }
 
 export async function devDoctorModule() {
-  return import(
-    new URL('../modules/runtime/index.ts', import.meta.url).href
-  ) as Promise<typeof import('../modules/runtime')>;
+  return import('../modules/runtime/index.ts');
 }
 
 export async function appDbModule() {
-  return import(
-    new URL('../runtime-home/app-db/migrate.ts', import.meta.url).href
-  ) as Promise<typeof import('../runtime-home/app-db/migrate')>;
+  return import('../runtime-home/app-db/migrate.ts');
 }
 
 export async function autopilotModule() {
-  return import(
-    new URL('../modules/autopilot/index.ts', import.meta.url).href
-  ) as Promise<typeof import('../modules/autopilot')>;
+  return import('../modules/autopilot/index.ts');
 }
 
 export async function learningOperatorModule() {
-  return import(
-    new URL('../modules/learning/index.ts', import.meta.url).href
-  ) as Promise<typeof import('../modules/learning')>;
+  return import('../modules/learning/index.ts');
 }
 
 export async function openModule() {
-  return import(new URL('../desktop/open.ts', import.meta.url).href) as Promise<
-    typeof import('../desktop/open')
-  >;
+  return import('../desktop/open.ts');
 }
 
 export async function memoryActionsModule() {
-  return import(
-    new URL('../modules/memory/index.ts', import.meta.url).href
-  ) as Promise<typeof import('../modules/memory')>;
+  return import('../modules/memory/index.ts');
 }
 
 export async function mcpModule() {
-  return import(
-    new URL('../domains/mcp/index.ts', import.meta.url).href
-  ) as Promise<typeof import('../domains/mcp')>;
+  return import('../domains/mcp/index.ts');
 }
 
 export async function modelDiscoveryModule() {
-  return import(
-    new URL('../modules/repos/index.ts', import.meta.url).href
-  ) as Promise<typeof import('../modules/repos')>;
+  return import('../modules/repos/index.ts');
 }
 
 export async function reposModule() {
-  return import(
-    new URL('../modules/repos/index.ts', import.meta.url).href
-  ) as Promise<typeof import('../modules/repos')>;
+  return import('../modules/repos/index.ts');
 }
 
 export async function repoEditModule() {
-  return import(
-    new URL('../repo-edit/index.ts', import.meta.url).href
-  ) as Promise<typeof import('../repo-edit')>;
+  return import('../repo-edit/index.ts');
 }
 
 export async function runtimeHomeModule() {
-  return import(
-    new URL('../runtime-home/index.ts', import.meta.url).href
-  ) as Promise<typeof import('../runtime-home')>;
+  return import('../runtime-home/index.ts');
 }
 
 export async function runtimeStatusModule() {
-  return import(
-    new URL('../modules/runtime/index.ts', import.meta.url).href
-  ) as Promise<typeof import('../modules/runtime')>;
+  return import('../modules/runtime/index.ts');
 }
 
 export async function serverModule() {
-  return import(new URL('../server/serve.ts', import.meta.url).href) as Promise<
-    typeof import('../server/serve')
-  >;
+  return import('../server/serve.ts');
 }
 
 export async function sessionsModule() {
-  return import(
-    new URL('../modules/sessions/index.ts', import.meta.url).href
-  ) as Promise<typeof import('../modules/sessions')>;
+  return import('../modules/sessions/index.ts');
 }
 
 export async function serviceModule() {
-  return import(
-    new URL('../desktop/service.ts', import.meta.url).href
-  ) as Promise<typeof import('../desktop/service')>;
+  return import('../desktop/service.ts');
 }
 
 export async function skillPatchesModule() {
-  return import(
-    new URL('../modules/learning/skill-patches/index.ts', import.meta.url).href
-  ) as Promise<typeof import('../modules/learning/skill-patches')>;
+  return import('../modules/learning/skill-patches/index.ts');
 }
 
 export async function watchActionsModule() {
-  return import(
-    new URL('../modules/watches/index.ts', import.meta.url).href
-  ) as Promise<typeof import('../modules/watches')>;
+  return import('../modules/watches/index.ts');
 }

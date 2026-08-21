@@ -1,4 +1,5 @@
 import { intro, log, note, outro, spinner } from '@clack/prompts';
+import type { InferInput } from 'valibot';
 import { existsSync } from 'node:fs';
 import { writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
@@ -42,6 +43,13 @@ export const exploreModelRecommendation =
   'Recommended: OpenAI Luna or OpenAI Terra at medium reasoning.';
 type SetupModelProvider =
   'kilocode' | 'openai' | 'anthropic' | 'openai-codex' | 'openai-compatible';
+type UpdateAgentModelsInput = Parameters<
+  Awaited<ReturnType<typeof configActionsModule>>['updateAgentModels']
+>[0];
+type ConfigActionsModule = Awaited<ReturnType<typeof configActionsModule>>;
+type UpdateProviderConfigInput = InferInput<
+  ConfigActionsModule['updateProviderInputSchema']
+>;
 
 export type SetupGitIdentityResult = {
   status: 'ready' | 'configured' | 'skipped' | 'unavailable';
@@ -438,24 +446,23 @@ export async function configureProviderAndModels(paths: RuntimePaths) {
   );
 
   await updateProviderConfig(configInput, paths);
-  await updateAgentModels(
-    {
-      displayAssistant: model,
-      displayAssistantThinkingLevel: thinkingLevel,
-      ...(utilityModel
-        ? { utility: utilityModel, utilityThinkingLevel: 'low' }
-        : {}),
-      subagents: {
-        default: model,
-        defaultThinkingLevel: thinkingLevel,
-        ...exploreModel,
-        repoResearcher: model,
-        ciInvestigator: model,
-        releaseReviewer: model,
-      },
+  const agentModels: UpdateAgentModelsInput = {
+    displayAssistant: model,
+    displayAssistantThinkingLevel: thinkingLevel,
+    subagents: {
+      default: model,
+      defaultThinkingLevel: thinkingLevel,
+      ...exploreModel,
+      repoResearcher: model,
+      ciInvestigator: model,
+      releaseReviewer: model,
     },
-    paths,
-  );
+  };
+  if (utilityModel) {
+    agentModels.utility = utilityModel;
+    agentModels.utilityThinkingLevel = 'low';
+  }
+  await updateAgentModels(agentModels, paths);
 }
 
 export async function chooseExploreModel(
@@ -862,16 +869,17 @@ async function configureOpenAiCompatibleProvider(
   await writeDotEnvFile(paths.env, env);
   log.success(`Wrote ${paths.env}`);
 
+  const configInput: UpdateProviderConfigInput = {
+    provider: 'openai-compatible',
+    id,
+    enabled: true,
+    baseUrl,
+    api,
+  };
+  if (apiKeyEnv) configInput.apiKeyEnv = apiKeyEnv;
   return {
     id,
-    configInput: {
-      provider: 'openai-compatible' as const,
-      id,
-      enabled: true,
-      baseUrl,
-      ...(apiKeyEnv ? { apiKeyEnv } : {}),
-      api,
-    },
+    configInput,
   };
 }
 

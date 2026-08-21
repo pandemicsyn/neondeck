@@ -1,5 +1,5 @@
 import type { DatabaseSync } from 'node:sqlite';
-import type { NeonSessionStaleReason } from './schemas';
+import type { NeonSessionStaleReason, SessionExternalValue } from './schemas';
 import * as v from 'valibot';
 
 const configChangeRowSchema = v.looseObject({
@@ -16,6 +16,10 @@ const memoryChangeRowSchema = v.looseObject({
   created_at: v.string(),
   before_json: v.nullable(v.string()),
   after_json: v.nullable(v.string()),
+});
+const memoryEventSnapshotSchema = v.object({
+  scope: v.string(),
+  key: v.string(),
 });
 
 export type ConfigHistoryChange = {
@@ -140,22 +144,22 @@ export function staleReasonType(
   return 'config';
 }
 
-function readConfigChange(row: unknown): ConfigHistoryChange {
+function readConfigChange(row: SessionExternalValue): ConfigHistoryChange {
   const value = v.parse(configChangeRowSchema, row);
   return {
     id: Number(value.id),
     action: String(value.action),
-    target: typeof value.target === 'string' ? value.target : null,
+    target: value.target,
     changedAt: String(value.changed_at),
   };
 }
 
-function readMemoryChange(row: unknown): MemoryEventChange {
+function readMemoryChange(row: SessionExternalValue): MemoryEventChange {
   const value = v.parse(memoryChangeRowSchema, row);
   return {
     sequence: Number(value.event_sequence),
     id: String(value.id),
-    memoryId: typeof value.memory_id === 'string' ? value.memory_id : null,
+    memoryId: value.memory_id,
     action: String(value.action),
     createdAt: String(value.created_at),
     target: memoryEventTarget(value.after_json, value.before_json),
@@ -196,22 +200,20 @@ function staleReasonLabel(
   return target ?? 'Runtime config';
 }
 
-function memoryEventTarget(afterJson: unknown, beforeJson: unknown) {
+function memoryEventTarget(
+  afterJson: string | null,
+  beforeJson: string | null,
+) {
   const snapshot =
     parseMemoryEventSnapshot(afterJson) ?? parseMemoryEventSnapshot(beforeJson);
   return snapshot ? `${snapshot.scope}:${snapshot.key}` : null;
 }
 
-function parseMemoryEventSnapshot(value: unknown) {
-  if (typeof value !== 'string') return null;
+function parseMemoryEventSnapshot(value: string | null) {
+  if (value === null) return null;
   try {
-    const parsed = JSON.parse(value) as unknown;
-    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed))
-      return null;
-    const record = parsed as Record<string, unknown>;
-    return typeof record.scope === 'string' && typeof record.key === 'string'
-      ? { scope: record.scope, key: record.key }
-      : null;
+    const parsed = v.safeParse(memoryEventSnapshotSchema, JSON.parse(value));
+    return parsed.success ? parsed.output : null;
   } catch {
     return null;
   }

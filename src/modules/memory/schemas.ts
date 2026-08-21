@@ -5,6 +5,10 @@ export type ActiveMemoryScope = 'user' | 'local' | 'project';
 export type MemoryScope = ActiveMemoryScope;
 export type MemoryStatus = 'active' | 'archived';
 export type MemoryMutationSource = 'user' | 'neon' | 'workflow';
+export const memoryExternalValueSchema = v.unknown();
+export type MemoryExternalValue = v.InferInput<
+  typeof memoryExternalValueSchema
+>;
 
 export type MemoryRecord = {
   id: string;
@@ -64,10 +68,23 @@ export const memoryIdentifierSchema = v.object({
   key: v.optional(nonEmptyStringSchema),
   repoId: v.optional(nonEmptyStringSchema),
 });
-export const jsonValueSchema = v.pipe(
-  v.unknown(),
-  v.check(isJsonValue, 'Value must be JSON-safe.'),
-);
+const jsonScalarSchema = v.union([
+  v.null(),
+  v.string(),
+  v.pipe(v.number(), v.finite()),
+  v.boolean(),
+]);
+export const jsonValueSchema: v.GenericSchema<MemoryExternalValue, JsonValue> =
+  v.lazy(() =>
+    v.union(
+      [
+        jsonScalarSchema,
+        v.array(jsonValueSchema),
+        v.record(v.string(), jsonValueSchema),
+      ],
+      'Value must be JSON-safe.',
+    ),
+  );
 
 export const memoryListInputSchema = v.object({
   scope: v.optional(allMemoryScopeSchema),
@@ -155,22 +172,3 @@ export const memoryActionOutputSchema = v.looseObject({
   changed: v.boolean(),
   message: v.string(),
 });
-
-function isJsonValue(value: unknown): boolean {
-  if (
-    value === null ||
-    typeof value === 'string' ||
-    typeof value === 'number' ||
-    typeof value === 'boolean'
-  ) {
-    return Number.isFinite(value) || typeof value !== 'number';
-  }
-
-  if (Array.isArray(value)) return value.every(isJsonValue);
-
-  if (typeof value === 'object') {
-    return Object.values(value).every(isJsonValue);
-  }
-
-  return false;
-}

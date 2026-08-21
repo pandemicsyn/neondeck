@@ -1,20 +1,29 @@
 import { type JsonValue } from '@flue/runtime';
 import * as v from 'valibot';
 
-export function isJsonValue(value: unknown): boolean {
-  if (value === null) return true;
-  if (
-    typeof value === 'string' ||
-    typeof value === 'number' ||
-    typeof value === 'boolean'
-  ) {
-    return Number.isFinite(value) || typeof value !== 'number';
-  }
-  if (Array.isArray(value)) return value.every(isJsonValue);
-  if (typeof value === 'object') {
-    return Object.values(value).every(isJsonValue);
-  }
-  return false;
+export const sessionExternalValueSchema = v.unknown();
+export type SessionExternalValue = v.InferInput<
+  typeof sessionExternalValueSchema
+>;
+const jsonScalarSchema = v.union([
+  v.null(),
+  v.string(),
+  v.pipe(v.number(), v.finite()),
+  v.boolean(),
+]);
+const recursiveJsonValueSchema: v.GenericSchema<
+  SessionExternalValue,
+  JsonValue
+> = v.lazy(() =>
+  v.union([
+    jsonScalarSchema,
+    v.array(recursiveJsonValueSchema),
+    v.record(v.string(), recursiveJsonValueSchema),
+  ]),
+);
+
+export function isJsonValue(value: SessionExternalValue): value is JsonValue {
+  return v.safeParse(recursiveJsonValueSchema, value).success;
 }
 
 export type ChatSessionKind =
@@ -123,10 +132,7 @@ export const persistedStaleReasonSchema = v.object({
   target: v.nullable(v.string()),
 });
 export const persistedStaleReasonsSchema = v.array(persistedStaleReasonSchema);
-export const persistedJsonValueSchema = v.pipe(
-  v.unknown(),
-  v.check(isJsonValue, 'Value must be JSON-safe.'),
-);
+export const persistedJsonValueSchema = recursiveJsonValueSchema;
 export const titleSchema = v.pipe(v.string(), v.minLength(1), v.maxLength(96));
 export const surfaceSchema = v.pipe(
   v.string(),
@@ -134,10 +140,7 @@ export const surfaceSchema = v.pipe(
   v.maxLength(64),
 );
 export const nullableLinkSchema = v.optional(v.nullable(nonEmptyStringSchema));
-export const jsonValueSchema = v.pipe(
-  v.unknown(),
-  v.check(isJsonValue, 'Value must be JSON-safe.'),
-);
+export const jsonValueSchema = recursiveJsonValueSchema;
 export const sessionListInputSchema = v.object({
   includeArchived: v.optional(v.boolean()),
   kind: v.optional(chatSessionKindSchema),

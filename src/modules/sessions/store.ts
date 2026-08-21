@@ -5,16 +5,57 @@ import { asJsonValue } from '../../lib/action-result';
 import { openDb } from '../../lib/sqlite';
 import { type RuntimePaths, ensureRuntimeHome } from '../../runtime-home';
 import {
+  chatSessionKindSchema,
   persistedJsonValueSchema,
   persistedStaleReasonsSchema,
+  summarySourceSchema,
   type ChatSessionCommandEvent,
   type ChatSessionKind,
   type ChatSessionRecord,
   type ChatSessionSummarySource,
   type ChatSessionSummaryStatus,
   type NeonSessionStaleReason,
+  type SessionExternalValue,
 } from './schemas';
 import { readStaleReasonChanges } from './stale-reasons';
+
+const nullableStringSchema = v.nullable(v.string());
+const activeSessionRowSchema = v.object({ session_id: v.string() });
+const chatSessionRowSchema = v.object({
+  id: v.string(),
+  title: v.string(),
+  agent_name: v.string(),
+  kind: v.string(),
+  pinned: v.number(),
+  archived_at: nullableStringSchema,
+  linked_repo_id: nullableStringSchema,
+  linked_watch_id: nullableStringSchema,
+  linked_task_id: nullableStringSchema,
+  stale_reasons_json: nullableStringSchema,
+  ui_metadata_json: nullableStringSchema,
+  summary: nullableStringSchema,
+  summary_generated_at: nullableStringSchema,
+  summary_source: nullableStringSchema,
+  summary_refresh_note: nullableStringSchema,
+  context_loaded_at: nullableStringSchema,
+  context_memory_ids_json: nullableStringSchema,
+  created_at: v.string(),
+  updated_at: v.string(),
+  last_active_at: v.string(),
+});
+const commandEventRowSchema = v.object({
+  id: v.string(),
+  session_id: v.string(),
+  input: v.string(),
+  status: v.string(),
+  result_json: nullableStringSchema,
+  flue_run_id: nullableStringSchema,
+  workflow_summary_id: nullableStringSchema,
+  created_at: v.string(),
+  completed_at: nullableStringSchema,
+  updated_at: v.string(),
+});
+const stringArraySchema = v.array(v.string());
 
 export async function readChatSessionInternal(
   id: string,
@@ -65,8 +106,9 @@ export function readActiveSessionId(database: DatabaseSync, surface: string) {
       WHERE surface = ?;
     `,
     )
-    .get(surface) as { session_id?: unknown } | undefined;
-  return typeof row?.session_id === 'string' ? row.session_id : null;
+    .get(surface);
+  const parsed = v.safeParse(activeSessionRowSchema, row);
+  return parsed.success ? parsed.output.session_id : null;
 }
 
 export function setActiveSession(
@@ -212,18 +254,15 @@ export function findLinkedChatSession(
 }
 
 export function readChatSessionRow(
-  row: unknown,
+  row: SessionExternalValue,
   database: DatabaseSync,
 ): ChatSessionRecord {
-  const record = row as Record<string, unknown>;
+  const record = v.parse(chatSessionRowSchema, row);
   const persistedReasons = parsePersistedStaleReasons(
     record.stale_reasons_json,
   );
-  const lastActiveAt = String(record.last_active_at);
-  const contextLoadedAt =
-    typeof record.context_loaded_at === 'string'
-      ? record.context_loaded_at
-      : String(record.created_at);
+  const lastActiveAt = record.last_active_at;
+  const contextLoadedAt = record.context_loaded_at ?? record.created_at;
   const contextMemoryIds = parsePersistedStringArray(
     record.context_memory_ids_json,
   );
@@ -232,28 +271,19 @@ export function readChatSessionRow(
     contextLoadedAt,
     contextMemoryIds,
   );
-  const summaryGeneratedAt =
-    typeof record.summary_generated_at === 'string'
-      ? record.summary_generated_at
-      : null;
-  const summary = typeof record.summary === 'string' ? record.summary : null;
+  const summaryGeneratedAt = record.summary_generated_at;
+  const summary = record.summary;
 
   return {
-    id: String(record.id),
-    title: String(record.title),
-    agentName: String(record.agent_name),
+    id: record.id,
+    title: record.title,
+    agentName: record.agent_name,
     kind: chatSessionKind(record.kind),
     pinned: Boolean(record.pinned),
-    archivedAt:
-      typeof record.archived_at === 'string' ? record.archived_at : null,
-    linkedRepoId:
-      typeof record.linked_repo_id === 'string' ? record.linked_repo_id : null,
-    linkedWatchId:
-      typeof record.linked_watch_id === 'string'
-        ? record.linked_watch_id
-        : null,
-    linkedTaskId:
-      typeof record.linked_task_id === 'string' ? record.linked_task_id : null,
+    archivedAt: record.archived_at,
+    linkedRepoId: record.linked_repo_id,
+    linkedWatchId: record.linked_watch_id,
+    linkedTaskId: record.linked_task_id,
     staleReasons: [...dynamicReasons, ...persistedReasons].sort(
       (a, b) => Date.parse(b.changedAt) - Date.parse(a.changedAt),
     ),
@@ -261,60 +291,64 @@ export function readChatSessionRow(
     summary,
     summaryGeneratedAt,
     summarySource: chatSessionSummarySource(record.summary_source),
-    summaryRefreshNote:
-      typeof record.summary_refresh_note === 'string'
-        ? record.summary_refresh_note
-        : null,
+    summaryRefreshNote: record.summary_refresh_note,
     summaryStatus: summaryStatus(summary, summaryGeneratedAt),
     contextLoadedAt,
     contextMemoryIds,
-    createdAt: String(record.created_at),
-    updatedAt: String(record.updated_at),
+    createdAt: record.created_at,
+    updatedAt: record.updated_at,
     lastActiveAt,
   };
 }
 
 export function readChatSessionCommandEventRow(
-  row: unknown,
+  row: SessionExternalValue,
 ): ChatSessionCommandEvent {
-  const record = row as Record<string, unknown>;
+  const record = v.parse(commandEventRowSchema, row);
   return {
-    id: String(record.id),
-    sessionId: String(record.session_id),
-    input: String(record.input),
+    id: record.id,
+    sessionId: record.session_id,
+    input: record.input,
     status:
       record.status === 'completed' || record.status === 'failed'
         ? record.status
         : 'running',
     result: parsePersistedJsonValue(record.result_json),
-    flueRunId:
-      typeof record.flue_run_id === 'string' ? record.flue_run_id : null,
-    workflowSummaryId:
-      typeof record.workflow_summary_id === 'string'
-        ? record.workflow_summary_id
-        : null,
-    createdAt: String(record.created_at),
-    completedAt:
-      typeof record.completed_at === 'string' ? record.completed_at : null,
-    updatedAt: String(record.updated_at),
+    flueRunId: record.flue_run_id,
+    workflowSummaryId: record.workflow_summary_id,
+    createdAt: record.created_at,
+    completedAt: record.completed_at,
+    updatedAt: record.updated_at,
   };
 }
 
-function parsePersistedStaleReasons(value: unknown): NeonSessionStaleReason[] {
-  if (typeof value !== 'string') return [];
+function parsePersistedStaleReasons(
+  value: SessionExternalValue,
+): NeonSessionStaleReason[] {
+  const text = v.safeParse(v.string(), value);
+  if (!text.success) return [];
   try {
-    const parsed = v.safeParse(persistedStaleReasonsSchema, JSON.parse(value));
+    const parsed = v.safeParse(
+      persistedStaleReasonsSchema,
+      JSON.parse(text.output),
+    );
     return parsed.success ? parsed.output : [];
   } catch {
     return [];
   }
 }
 
-function parsePersistedJsonValue(value: unknown): JsonValue | null {
-  if (typeof value !== 'string') return null;
+function parsePersistedJsonValue(
+  value: SessionExternalValue,
+): JsonValue | null {
+  const text = v.safeParse(v.string(), value);
+  if (!text.success) return null;
   try {
-    const parsed = v.safeParse(persistedJsonValueSchema, JSON.parse(value));
-    return parsed.success ? (parsed.output as JsonValue) : null;
+    const parsed = v.safeParse(
+      persistedJsonValueSchema,
+      JSON.parse(text.output),
+    );
+    return parsed.success ? parsed.output : null;
   } catch {
     return null;
   }
@@ -336,13 +370,12 @@ function readStaleReasons(
   }).reasons;
 }
 
-function parsePersistedStringArray(value: unknown) {
-  if (typeof value !== 'string') return [];
+function parsePersistedStringArray(value: SessionExternalValue) {
+  const text = v.safeParse(v.string(), value);
+  if (!text.success) return [];
   try {
-    const parsed = JSON.parse(value) as unknown;
-    return Array.isArray(parsed)
-      ? parsed.filter((item): item is string => typeof item === 'string')
-      : [];
+    const parsed = v.safeParse(stringArraySchema, JSON.parse(text.output));
+    return parsed.success ? parsed.output : [];
   } catch {
     return [];
   }
@@ -375,7 +408,7 @@ export function recordSessionAudit(
     sessionId?: string | null;
     surface?: string | null;
     reason?: string | null;
-    metadata?: unknown;
+    metadata?: SessionExternalValue;
   },
 ) {
   database
@@ -404,33 +437,16 @@ export function recordSessionAudit(
     );
 }
 
-function chatSessionKind(value: unknown): ChatSessionKind {
-  if (
-    value === 'main' ||
-    value === 'scratch' ||
-    value === 'general' ||
-    value === 'repo' ||
-    value === 'watch' ||
-    value === 'task' ||
-    value === 'briefing'
-  ) {
-    return value;
-  }
-  return 'general';
+function chatSessionKind(value: SessionExternalValue): ChatSessionKind {
+  const parsed = v.safeParse(chatSessionKindSchema, value);
+  return parsed.success ? parsed.output : 'general';
 }
 
 function chatSessionSummarySource(
-  value: unknown,
+  value: SessionExternalValue,
 ): ChatSessionSummarySource | null {
-  if (
-    value === 'manual' ||
-    value === 'metadata' ||
-    value === 'agent' ||
-    value === 'transcript-summary'
-  ) {
-    return value;
-  }
-  return null;
+  const parsed = v.safeParse(summarySourceSchema, value);
+  return parsed.success ? parsed.output : null;
 }
 
 function summaryStatus(

@@ -8,6 +8,12 @@ import {
   readMemoryRow,
 } from './store';
 
+type MemoryScopeBudgets = {
+  user: number;
+  local: number;
+  project: number;
+};
+
 export type MemoryBackgroundContext = {
   memoryIds: string[];
   text: string;
@@ -144,7 +150,7 @@ export function buildMemoryPromptSnapshotSync(
       project: config.projectMemoryBudgetChars,
     };
     const selected: Array<MemoryRecord & { scope: ActiveMemoryScope }> = [];
-    const usedByScope: Record<ActiveMemoryScope, number> = {
+    const usedByScope: MemoryScopeBudgets = {
       user: 0,
       local: 0,
       project: 0,

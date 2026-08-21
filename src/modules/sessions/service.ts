@@ -42,6 +42,11 @@ import {
 } from './schemas';
 import type { ChatSessionEventAction } from './events';
 
+const sessionIdRowSchema = v.object({ id: v.string() });
+const workflowSummaryResultSchema = v.looseObject({
+  workflowSummary: v.object({ id: v.string() }),
+});
+
 /**
  * A brand-new runtime home creates its primary session before onboarding writes
  * provider, model, execution, and skill configuration. Move that empty
@@ -143,9 +148,7 @@ export async function createChatSession(
   const kind = parsed.output.kind ?? inferSessionKind(parsed.output);
   const surface = parsed.output.surface ?? 'dashboard';
   const activate = parsed.output.activate ?? true;
-  const uiMetadata = sessionUiMetadata(
-    parsed.output.uiMetadata as JsonValue | null | undefined,
-  );
+  const uiMetadata = sessionUiMetadata(parsed.output.uiMetadata);
   const summary = parsed.output.summary?.trim() || null;
   const summaryGeneratedAt = summary ? now : null;
   const summarySource = summary
@@ -437,7 +440,7 @@ export async function archiveChatSession(
     }
 
     if (readActiveSessionId(database, surface) === parsed.output.id) {
-      const replacement = database
+      const replacementRow = database
         .prepare(
           `
           SELECT id
@@ -448,8 +451,9 @@ export async function archiveChatSession(
           LIMIT 1;
         `,
         )
-        .get(parsed.output.id) as { id?: unknown } | undefined;
-      if (typeof replacement?.id !== 'string') {
+        .get(parsed.output.id);
+      const replacement = v.safeParse(sessionIdRowSchema, replacementRow);
+      if (!replacement.success) {
         database.exec('ROLLBACK;');
         return failedSessionResult(
           'session_archive',
@@ -457,7 +461,7 @@ export async function archiveChatSession(
         );
       }
 
-      setActiveSession(database, surface, replacement.id, now);
+      setActiveSession(database, surface, replacement.output.id, now);
     }
     database
       .prepare(
@@ -772,12 +776,13 @@ export async function updateChatSessionCommandEvent(
       : parsed.output.status;
     const nextResult = existingIsTerminal
       ? existing.result
-      : owns(parsed.output, 'result')
+      : 'result' in parsed.output
         ? (parsed.output.result ?? null)
         : existing.result;
-    const requestedFlueRunId = owns(parsed.output, 'flueRunId')
-      ? (parsed.output.flueRunId ?? null)
-      : existing.flueRunId;
+    const requestedFlueRunId =
+      'flueRunId' in parsed.output
+        ? (parsed.output.flueRunId ?? null)
+        : existing.flueRunId;
     const nextFlueRunId = existingIsTerminal
       ? (existing.flueRunId ?? requestedFlueRunId)
       : requestedFlueRunId;
@@ -920,23 +925,9 @@ function sessionUiMetadata(metadata: JsonValue | null | undefined) {
   return metadata === undefined ? null : metadata;
 }
 
-function owns<T extends object, K extends PropertyKey>(
-  value: T,
-  key: K,
-): value is T & Record<K, unknown> {
-  return Object.prototype.hasOwnProperty.call(value, key);
-}
-
-function workflowSummaryIdFromResult(result: unknown) {
-  if (!result || typeof result !== 'object' || Array.isArray(result)) {
-    return null;
-  }
-  const summary = (result as Record<string, unknown>).workflowSummary;
-  if (!summary || typeof summary !== 'object' || Array.isArray(summary)) {
-    return null;
-  }
-  const id = (summary as Record<string, unknown>).id;
-  return typeof id === 'string' ? id : null;
+function workflowSummaryIdFromResult(result: JsonValue | null) {
+  const parsed = v.safeParse(workflowSummaryResultSchema, result);
+  return parsed.success ? parsed.output.workflowSummary.id : null;
 }
 
 function compactTimestamp(value: string) {

@@ -24,14 +24,20 @@
   "overrides": [
     {
       "files": [
+        "src/cli/**/*.ts",
+        "src/cli/**/*.tsx",
         "src/modules/autopilot/**/*.ts",
         "src/modules/autopilot/**/*.tsx",
         "src/modules/kilo/**/*.ts",
         "src/modules/kilo/**/*.tsx",
         "src/modules/learning/**/*.ts",
         "src/modules/learning/**/*.tsx",
+        "src/modules/memory/**/*.ts",
+        "src/modules/memory/**/*.tsx",
         "src/modules/pr-events/**/*.ts",
         "src/modules/pr-events/**/*.tsx",
+        "src/modules/sessions/**/*.ts",
+        "src/modules/sessions/**/*.tsx",
         "src/server/**/*.ts",
         "src/server/**/*.tsx"
       ],

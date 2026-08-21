@@ -33,12 +33,12 @@ export async function decideLearningCandidateCli(
       );
 }
 
-export function memoryCandidateWasNotFound(result: unknown) {
-  if (!result || typeof result !== 'object') return false;
-  const record = result as { message?: unknown; requires?: unknown };
+export function memoryCandidateWasNotFound(result: {
+  message?: string;
+  requires?: readonly string[];
+}) {
   return (
-    record.message === 'Memory candidate was not found.' &&
-    Array.isArray(record.requires) &&
-    record.requires.includes('id')
+    result.message === 'Memory candidate was not found.' &&
+    result.requires?.includes('id') === true
   );
 }

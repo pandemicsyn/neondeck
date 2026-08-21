@@ -10,6 +10,7 @@ import { failedSessionResult } from './utils';
 import { publishSessionEvent } from './events';
 import { findChatSession, recordSessionAudit } from './store';
 import {
+  persistedJsonValueSchema,
   sessionRefreshSummaryInputSchema,
   type ChatSessionRecord,
 } from './schemas';
@@ -118,11 +119,21 @@ function buildMetadataSummary(session: ChatSessionRecord) {
 }
 
 function readableMetadata(value: JsonValue | null) {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
-  const entries = Object.entries(value)
-    .filter(([, entry]) =>
-      ['string', 'number', 'boolean'].includes(typeof entry),
-    )
+  const parsed = v.safeParse(
+    v.record(v.string(), persistedJsonValueSchema),
+    value,
+  );
+  if (!parsed.success || Array.isArray(value)) return null;
+  const readableScalarSchema = v.union([
+    v.string(),
+    v.pipe(v.number(), v.finite()),
+    v.boolean(),
+  ]);
+  const entries = Object.entries(parsed.output)
+    .flatMap(([key, entry]) => {
+      const scalar = v.safeParse(readableScalarSchema, entry);
+      return scalar.success ? [[key, scalar.output] as const] : [];
+    })
     .slice(0, 6)
     .map(([key, entry]) => `${key}=${String(entry)}`);
   return entries.length > 0 ? entries.join(', ') : null;

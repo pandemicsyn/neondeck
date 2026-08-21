@@ -6,12 +6,15 @@ import { ensureRuntimeHome, runtimePaths } from '../../runtime-home';
 import type { MemoryMutationSource, MemoryRecord } from './schemas';
 import {
   memoryArchiveInputSchema,
+  allMemoryScopeSchema,
+  jsonValueSchema,
   memoryEventsInputSchema,
   memoryLearnInputSchema,
   memoryListInputSchema,
   memoryMarkUsedInputSchema,
   memoryMergeInputSchema,
   memoryRewriteInputSchema,
+  memoryStatusSchema,
 } from './schemas';
 import {
   boundedRejectedAfter,
@@ -32,19 +35,99 @@ type MemoryMutationOptions = {
   source?: MemoryMutationSource;
   effectId?: string;
 };
+const appMetadataValueRowSchema = v.object({ value: v.string() });
+const replayMemoryRecordSchema = v.object({
+  id: v.string(),
+  scope: allMemoryScopeSchema,
+  key: v.string(),
+  value: jsonValueSchema,
+  repoId: v.nullable(v.string()),
+  status: memoryStatusSchema,
+  useCount: v.number(),
+  lastUsedAt: v.nullable(v.string()),
+  createdAt: v.string(),
+  updatedAt: v.string(),
+});
+const memoryEffectFailureSchema = v.object({
+  ok: v.literal(false),
+  action: v.string(),
+  changed: v.literal(false),
+  message: v.string(),
+  errors: v.array(v.string()),
+  requires: v.optional(v.array(v.string())),
+});
+const memoryUpsertEffectResultSchema = v.union([
+  v.object({
+    ok: v.literal(true),
+    action: v.literal('memory_learn'),
+    changed: v.boolean(),
+    message: v.string(),
+    memory: replayMemoryRecordSchema,
+    appliesAfter: v.literal('new-session'),
+  }),
+  memoryEffectFailureSchema,
+]);
+const memoryRewriteEffectResultSchema = v.union([
+  v.object({
+    ok: v.literal(true),
+    action: v.literal('memory_rewrite'),
+    changed: v.boolean(),
+    message: v.string(),
+    memory: replayMemoryRecordSchema,
+    appliesAfter: v.literal('new-session'),
+  }),
+  memoryEffectFailureSchema,
+]);
+const memoryMergeEffectResultSchema = v.union([
+  v.object({
+    ok: v.literal(true),
+    action: v.literal('memory_merge'),
+    changed: v.boolean(),
+    message: v.string(),
+    memory: replayMemoryRecordSchema,
+    archivedSourceIds: v.array(v.string()),
+    appliesAfter: v.literal('new-session'),
+  }),
+  memoryEffectFailureSchema,
+]);
+const memoryArchiveEffectResultSchema = v.union([
+  v.object({
+    ok: v.literal(true),
+    action: v.literal('memory_archive'),
+    changed: v.boolean(),
+    message: v.string(),
+    memory: v.optional(replayMemoryRecordSchema),
+    appliesAfter: v.literal('new-session'),
+  }),
+  memoryEffectFailureSchema,
+]);
+type MemoryUpsertEffectResult = v.InferOutput<
+  typeof memoryUpsertEffectResultSchema
+>;
+type MemoryRewriteEffectResult = v.InferOutput<
+  typeof memoryRewriteEffectResultSchema
+>;
+type MemoryMergeEffectResult = v.InferOutput<
+  typeof memoryMergeEffectResultSchema
+>;
+type MemoryArchiveEffectResult = v.InferOutput<
+  typeof memoryArchiveEffectResultSchema
+>;
 
 function withRecordedMemoryEffect<T>(
   database: ReturnType<typeof openDb>,
   effectId: string | undefined,
+  resultSchema: v.GenericSchema<unknown, T>,
   effect: () => T,
 ): T {
   if (!effectId) return effect();
   const key = `learning-review-effect:${effectId}`;
-  const recorded = database
+  const recordedRow = database
     .prepare('SELECT value FROM app_metadata WHERE key = ?;')
-    .get(key) as { value?: unknown } | undefined;
-  if (typeof recorded?.value === 'string') {
-    return JSON.parse(recorded.value) as T;
+    .get(key);
+  const recorded = v.safeParse(appMetadataValueRowSchema, recordedRow);
+  if (recorded.success) {
+    return v.parse(resultSchema, JSON.parse(recorded.output.value));
   }
   const result = effect();
   const now = new Date().toISOString();
@@ -58,23 +141,76 @@ function withRecordedMemoryEffect<T>(
   return result;
 }
 
-function readRecordedMemoryEffect(
+function readRecordedMemoryEffect<T>(
   paths: ReturnType<typeof runtimePaths>,
   effectId: string | undefined,
-): unknown | undefined {
+  resultSchema: v.GenericSchema<unknown, T>,
+): T | undefined {
   if (!effectId) return undefined;
   const database = openDb(paths.neondeckDatabase, { readOnly: true });
   try {
-    const recorded = database
+    const recordedRow = database
       .prepare('SELECT value FROM app_metadata WHERE key = ?;')
-      .get(`learning-review-effect:${effectId}`) as
-      { value?: unknown } | undefined;
-    return typeof recorded?.value === 'string'
-      ? JSON.parse(recorded.value)
+      .get(`learning-review-effect:${effectId}`);
+    const recorded = v.safeParse(appMetadataValueRowSchema, recordedRow);
+    return recorded.success
+      ? v.parse(resultSchema, JSON.parse(recorded.output.value))
       : undefined;
   } finally {
     database.close();
   }
+}
+
+function withRecordedUpsertEffect(
+  database: ReturnType<typeof openDb>,
+  effectId: string | undefined,
+  effect: () => MemoryUpsertEffectResult,
+) {
+  return withRecordedMemoryEffect(
+    database,
+    effectId,
+    memoryUpsertEffectResultSchema,
+    effect,
+  );
+}
+
+function withRecordedRewriteEffect(
+  database: ReturnType<typeof openDb>,
+  effectId: string | undefined,
+  effect: () => MemoryRewriteEffectResult,
+) {
+  return withRecordedMemoryEffect(
+    database,
+    effectId,
+    memoryRewriteEffectResultSchema,
+    effect,
+  );
+}
+
+function withRecordedMergeEffect(
+  database: ReturnType<typeof openDb>,
+  effectId: string | undefined,
+  effect: () => MemoryMergeEffectResult,
+) {
+  return withRecordedMemoryEffect(
+    database,
+    effectId,
+    memoryMergeEffectResultSchema,
+    effect,
+  );
+}
+
+function withRecordedArchiveEffect(
+  database: ReturnType<typeof openDb>,
+  effectId: string | undefined,
+  effect: () => MemoryArchiveEffectResult,
+) {
+  return withRecordedMemoryEffect(
+    database,
+    effectId,
+    memoryArchiveEffectResultSchema,
+    effect,
+  );
 }
 
 function nextMemoryUpdatedAt(
@@ -165,8 +301,12 @@ export async function upsertMemory(
   if (!parsed.success) {
     return failedMemoryMutation('memory_learn', v.summarize(parsed.issues));
   }
-  const recorded = readRecordedMemoryEffect(paths, options.effectId);
-  if (recorded !== undefined) return recorded as never;
+  const recorded = readRecordedMemoryEffect(
+    paths,
+    options.effectId,
+    memoryUpsertEffectResultSchema,
+  );
+  if (recorded !== undefined) return recorded;
   const mutationSource = options.source ?? 'user';
   const policy = await memoryWritePolicyResult(paths, mutationSource);
   if (!policy.ok) return policy.result;
@@ -195,7 +335,7 @@ export async function upsertMemory(
 
   try {
     return withImmediateTransaction(database, () =>
-      withRecordedMemoryEffect(database, options.effectId, () => {
+      withRecordedUpsertEffect(database, options.effectId, () => {
         const existing = readMemoryByScopeKey(
           database,
           parsed.output.scope,
@@ -310,6 +450,13 @@ export async function upsertMemory(
           parsed.output.key,
           parsed.output.repoId ?? null,
         );
+        if (!memory) {
+          return failedMemoryMutation(
+            'memory_learn',
+            'Memory could not be read after it was saved.',
+            ['memory'],
+          );
+        }
         const after = memory ? memoryToJson(memory) : null;
         const changed = JSON.stringify(before) !== JSON.stringify(after);
         if (memory && changed) {
@@ -326,7 +473,11 @@ export async function upsertMemory(
             type: 'memory_applied',
             source: parsed.output.actor ?? mutationSource,
             repoId: memory.repoId,
-            data: { memoryId: memory.id, scope: memory.scope, key: memory.key },
+            data: {
+              memoryId: memory.id,
+              scope: memory.scope,
+              key: memory.key,
+            },
             createdAt: now,
           });
         }
@@ -358,8 +509,12 @@ export async function rewriteMemory(
   if (!parsed.success) {
     return failedMemoryMutation('memory_rewrite', v.summarize(parsed.issues));
   }
-  const recorded = readRecordedMemoryEffect(paths, options.effectId);
-  if (recorded !== undefined) return recorded as never;
+  const recorded = readRecordedMemoryEffect(
+    paths,
+    options.effectId,
+    memoryRewriteEffectResultSchema,
+  );
+  if (recorded !== undefined) return recorded;
   const mutationSource = options.source ?? 'user';
   const policy = await memoryWritePolicyResult(paths, mutationSource);
   if (!policy.ok) return { ...policy.result, action: 'memory_rewrite' };
@@ -374,7 +529,7 @@ export async function rewriteMemory(
 
   try {
     return withImmediateTransaction(database, () =>
-      withRecordedMemoryEffect(database, options.effectId, () => {
+      withRecordedRewriteEffect(database, options.effectId, () => {
         const existing = resolveMemory(database, parsed.output);
         if (!existing) {
           return failedMemoryMutation(
@@ -485,8 +640,12 @@ export async function mergeMemories(
   if (!parsed.success) {
     return failedMemoryMutation('memory_merge', v.summarize(parsed.issues));
   }
-  const recorded = readRecordedMemoryEffect(paths, options.effectId);
-  if (recorded !== undefined) return recorded as never;
+  const recorded = readRecordedMemoryEffect(
+    paths,
+    options.effectId,
+    memoryMergeEffectResultSchema,
+  );
+  if (recorded !== undefined) return recorded;
   const mutationSource = options.source ?? 'user';
   const policy = await memoryWritePolicyResult(paths, mutationSource);
   if (!policy.ok) return { ...policy.result, action: 'memory_merge' };
@@ -502,7 +661,7 @@ export async function mergeMemories(
 
   try {
     return withImmediateTransaction(database, () =>
-      withRecordedMemoryEffect(database, options.effectId, () => {
+      withRecordedMergeEffect(database, options.effectId, () => {
         const target = readMemoryById(database, parsed.output.targetId);
         if (!target) {
           return failedMemoryMutation(
@@ -656,8 +815,12 @@ export async function archiveMemory(
   if (!parsed.success) {
     return failedMemoryMutation('memory_archive', v.summarize(parsed.issues));
   }
-  const recorded = readRecordedMemoryEffect(paths, options.effectId);
-  if (recorded !== undefined) return recorded as never;
+  const recorded = readRecordedMemoryEffect(
+    paths,
+    options.effectId,
+    memoryArchiveEffectResultSchema,
+  );
+  if (recorded !== undefined) return recorded;
   const source = options.source ?? 'user';
   const policy = await memoryWritePolicyResult(paths, source);
   if (!policy.ok) return { ...policy.result, action: 'memory_archive' };
@@ -667,7 +830,7 @@ export async function archiveMemory(
 
   try {
     return withImmediateTransaction(database, () =>
-      withRecordedMemoryEffect(database, options.effectId, () => {
+      withRecordedArchiveEffect(database, options.effectId, () => {
         const existing = resolveMemory(database, parsed.output);
         if (!existing) {
           if (parsed.output.expectedUpdatedAt !== undefined) {
@@ -734,17 +897,22 @@ export async function archiveMemory(
           );
         }
         const memory = readMemoryById(database, existing.id);
-        if (memory) {
-          recordMemoryEvent(database, {
-            memoryId: memory.id,
-            action: 'archived',
-            actor: parsed.output.actor ?? source,
-            reason: parsed.output.reason ?? null,
-            before: memoryToJson(existing),
-            after: memoryToJson(memory),
-            createdAt: now,
-          });
+        if (!memory) {
+          return failedMemoryMutation(
+            'memory_archive',
+            'Memory could not be read after it was archived.',
+            ['memory'],
+          );
         }
+        recordMemoryEvent(database, {
+          memoryId: memory.id,
+          action: 'archived',
+          actor: parsed.output.actor ?? source,
+          reason: parsed.output.reason ?? null,
+          before: memoryToJson(existing),
+          after: memoryToJson(memory),
+          createdAt: now,
+        });
 
         return {
           ok: true,

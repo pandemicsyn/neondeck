@@ -16,6 +16,7 @@ import type {
   MemoryMutationSource,
   MemoryRecord,
   MemoryScope,
+  MemoryExternalValue,
 } from './schemas';
 import {
   activeMemoryScopeSchema,
@@ -23,21 +24,88 @@ import {
   memoryActorSchema,
   memoryCandidateActionSchema,
   memoryIdentifierSchema,
+  jsonValueSchema,
+  memoryStatusSchema,
 } from './schemas';
+
+export type FailedMemoryMutation = {
+  ok: false;
+  action: string;
+  changed: false;
+  message: string;
+  errors: string[];
+  requires?: string[];
+};
+
+const nullableStringSchema = v.nullable(v.string());
+const memoryRowSchema = v.object({
+  id: v.string(),
+  scope: allMemoryScopeSchema,
+  key: v.string(),
+  value_json: v.string(),
+  repo_id: nullableStringSchema,
+  status: memoryStatusSchema,
+  use_count: v.number(),
+  last_used_at: nullableStringSchema,
+  created_at: v.string(),
+  updated_at: v.string(),
+});
+const memoryEventActionSchema = v.picklist([
+  'created',
+  'updated',
+  'rewritten',
+  'merged',
+  'archived',
+  'rejected',
+]);
+const memoryEventRowSchema = v.object({
+  id: v.string(),
+  memory_id: nullableStringSchema,
+  action: memoryEventActionSchema,
+  actor: memoryActorSchema,
+  reason: nullableStringSchema,
+  before_json: nullableStringSchema,
+  after_json: nullableStringSchema,
+  created_at: v.string(),
+});
+const memoryCandidateStatusSchema = v.picklist([
+  'proposed',
+  'applied',
+  'rejected',
+  'archived',
+]);
+const memoryCandidateRowSchema = v.object({
+  id: v.string(),
+  status: memoryCandidateStatusSchema,
+  action: memoryCandidateActionSchema,
+  scope: v.nullable(v.string()),
+  key: nullableStringSchema,
+  value_json: nullableStringSchema,
+  repo_id: nullableStringSchema,
+  reason: nullableStringSchema,
+  review_id: nullableStringSchema,
+  patch_json: nullableStringSchema,
+  created_at: v.string(),
+  decided_at: nullableStringSchema,
+});
+const jsonRecordSchema = v.record(v.string(), jsonValueSchema);
+const stringArraySchema = v.array(v.string());
+const stringRecordSchema = v.record(v.string(), v.string());
 
 export function failedMemoryMutation(
   action: string,
   message: string,
   requires?: string[],
 ) {
-  return {
+  const result: FailedMemoryMutation = {
     ok: false,
     action,
     changed: false,
     message,
     errors: [message],
-    ...(requires ? { requires } : {}),
   };
+  if (requires) result.requires = requires;
+  return result;
 }
 
 export function resolveMemory(
@@ -286,88 +354,64 @@ export async function memoryCandidatePolicyResult(
   return { ok: true as const };
 }
 
-export function readMemoryRow(row: unknown): MemoryRecord {
-  if (!row || typeof row !== 'object') {
-    throw new Error('Memory row is missing.');
-  }
-  const record = row as Record<string, unknown>;
+export function readMemoryRow(row: MemoryExternalValue): MemoryRecord {
+  const record = v.parse(memoryRowSchema, row);
   return {
-    id: String(record.id),
-    scope: v.parse(allMemoryScopeSchema, record.scope),
-    key: String(record.key),
-    value: JSON.parse(String(record.value_json)) as JsonValue,
-    repoId: typeof record.repo_id === 'string' ? record.repo_id : null,
-    status:
-      record.status === 'archived' || record.status === 'active'
-        ? record.status
-        : 'active',
-    useCount: Number(record.use_count ?? 0),
-    lastUsedAt:
-      typeof record.last_used_at === 'string' ? record.last_used_at : null,
-    createdAt: String(record.created_at),
-    updatedAt: String(record.updated_at),
+    id: record.id,
+    scope: record.scope,
+    key: record.key,
+    value: v.parse(jsonValueSchema, JSON.parse(record.value_json)),
+    repoId: record.repo_id,
+    status: record.status,
+    useCount: record.use_count,
+    lastUsedAt: record.last_used_at,
+    createdAt: record.created_at,
+    updatedAt: record.updated_at,
   };
 }
 
-export function readMemoryEventRow(row: unknown): MemoryEventRecord {
-  const record = row as Record<string, unknown>;
+export function readMemoryEventRow(
+  row: MemoryExternalValue,
+): MemoryEventRecord {
+  const record = v.parse(memoryEventRowSchema, row);
   return {
-    id: String(record.id),
-    memoryId: typeof record.memory_id === 'string' ? record.memory_id : null,
-    action: v.parse(
-      v.picklist([
-        'created',
-        'updated',
-        'rewritten',
-        'merged',
-        'archived',
-        'rejected',
-      ]),
-      record.action,
-    ),
-    actor: v.parse(memoryActorSchema, record.actor),
-    reason: typeof record.reason === 'string' ? record.reason : null,
-    before:
-      typeof record.before_json === 'string'
-        ? (JSON.parse(record.before_json) as JsonValue)
-        : null,
-    after:
-      typeof record.after_json === 'string'
-        ? (JSON.parse(record.after_json) as JsonValue)
-        : null,
-    createdAt: String(record.created_at),
+    id: record.id,
+    memoryId: record.memory_id,
+    action: record.action,
+    actor: record.actor,
+    reason: record.reason,
+    before: parseNullableJson(record.before_json),
+    after: parseNullableJson(record.after_json),
+    createdAt: record.created_at,
   };
 }
 
-export function readMemoryCandidateRow(row: unknown): MemoryCandidateRecord {
-  const record = row as Record<string, unknown>;
+export function readMemoryCandidateRow(
+  row: MemoryExternalValue,
+): MemoryCandidateRecord {
+  const record = v.parse(memoryCandidateRowSchema, row);
   return {
-    id: String(record.id),
+    id: record.id,
     target: 'memory',
-    status: v.parse(
-      v.picklist(['proposed', 'applied', 'rejected', 'archived']),
-      record.status,
-    ),
-    action: v.parse(memoryCandidateActionSchema, record.action),
+    status: record.status,
+    action: record.action,
     scope:
-      typeof record.scope === 'string'
+      record.scope !== null
         ? v.parse(activeMemoryScopeSchema, record.scope)
         : null,
-    key: typeof record.key === 'string' ? record.key : null,
-    value:
-      typeof record.value_json === 'string'
-        ? (JSON.parse(record.value_json) as JsonValue)
-        : null,
-    repoId: typeof record.repo_id === 'string' ? record.repo_id : null,
-    reason: typeof record.reason === 'string' ? record.reason : null,
-    reviewId: typeof record.review_id === 'string' ? record.review_id : null,
-    patch:
-      typeof record.patch_json === 'string'
-        ? (JSON.parse(record.patch_json) as JsonValue)
-        : null,
-    createdAt: String(record.created_at),
-    decidedAt: typeof record.decided_at === 'string' ? record.decided_at : null,
+    key: record.key,
+    value: parseNullableJson(record.value_json),
+    repoId: record.repo_id,
+    reason: record.reason,
+    reviewId: record.review_id,
+    patch: parseNullableJson(record.patch_json),
+    createdAt: record.created_at,
+    decidedAt: record.decided_at,
   };
+}
+
+function parseNullableJson(value: string | null): JsonValue | null {
+  return value === null ? null : v.parse(jsonValueSchema, JSON.parse(value));
 }
 
 export function memoryToJson(memory: MemoryRecord): JsonValue {
@@ -434,7 +478,8 @@ export function memoryValuePreview(value: JsonValue) {
 }
 
 export function memoryValueText(value: JsonValue) {
-  return typeof value === 'string' ? value : JSON.stringify(value);
+  const text = v.safeParse(v.string(), value);
+  return text.success ? text.output : JSON.stringify(value);
 }
 
 export function memoryLine(memory: MemoryRecord) {
@@ -442,8 +487,11 @@ export function memoryLine(memory: MemoryRecord) {
   return `- ${memory.key}${repo}: ${memoryValuePreview(memory.value)}`;
 }
 
-export function memoryRejectionReason(value: unknown) {
-  const text = typeof value === 'string' ? value : JSON.stringify(value);
+export function memoryRejectionReason(value: MemoryExternalValue) {
+  const parsedText = v.safeParse(v.string(), value);
+  const text = parsedText.success
+    ? parsedText.output
+    : (JSON.stringify(value) ?? String(value));
   if (/(api[_-]?key|token|secret|password)\s*[:=]/i.test(text)) {
     return 'Rejected memory because it appears to contain a secret or credential.';
   }
@@ -461,44 +509,31 @@ export function memoryRejectionReason(value: unknown) {
 }
 
 export function patchString(value: JsonValue | null, key: string) {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) {
-    return undefined;
-  }
-  const item = (value as Record<string, unknown>)[key];
-  return typeof item === 'string' ? item : undefined;
+  const record = v.safeParse(jsonRecordSchema, value);
+  if (!record.success || Array.isArray(value)) return undefined;
+  const item = v.safeParse(v.string(), record.output[key]);
+  return item.success ? item.output : undefined;
 }
 
 export function patchStringArray(value: JsonValue | null, key: string) {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) {
-    return [];
-  }
-  const item = (value as Record<string, unknown>)[key];
-  return Array.isArray(item)
-    ? item.filter((entry): entry is string => typeof entry === 'string')
-    : [];
+  const record = v.safeParse(jsonRecordSchema, value);
+  if (!record.success || Array.isArray(value)) return [];
+  const item = v.safeParse(stringArraySchema, record.output[key]);
+  return item.success ? item.output : [];
 }
 
 export function patchNullableString(value: JsonValue | null, key: string) {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) {
-    return undefined;
-  }
-  const item = (value as Record<string, unknown>)[key];
-  return typeof item === 'string' || item === null ? item : undefined;
+  const record = v.safeParse(jsonRecordSchema, value);
+  if (!record.success || Array.isArray(value)) return undefined;
+  const item = v.safeParse(v.nullable(v.string()), record.output[key]);
+  return item.success ? item.output : undefined;
 }
 
 export function patchStringRecord(value: JsonValue | null, key: string) {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) {
-    return undefined;
-  }
-  const item = (value as Record<string, unknown>)[key];
-  if (!item || typeof item !== 'object' || Array.isArray(item)) {
-    return undefined;
-  }
-  const entries = Object.entries(item);
-  if (entries.some(([, revision]) => typeof revision !== 'string')) {
-    return undefined;
-  }
-  return Object.fromEntries(entries) as Record<string, string>;
+  const record = v.safeParse(jsonRecordSchema, value);
+  if (!record.success || Array.isArray(value)) return undefined;
+  const item = v.safeParse(stringRecordSchema, record.output[key]);
+  return item.success ? item.output : undefined;
 }
 
 export function readLearningConfigSync(paths: RuntimePaths) {

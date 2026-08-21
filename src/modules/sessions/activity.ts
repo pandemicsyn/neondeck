@@ -6,12 +6,29 @@ import {
 } from '../../runtime-home';
 import * as v from 'valibot';
 import {
-  isJsonValue,
+  persistedJsonValueSchema,
   sessionActivityListInputSchema,
   type ChatSessionActivityItem,
+  type SessionExternalValue,
 } from './schemas';
 import { findChatSession } from './store';
 import { failedSessionResult } from './utils';
+
+const nullableStringSchema = v.nullable(v.string());
+const activityRowSchema = v.object({
+  id: v.string(),
+  level: v.string(),
+  title: v.string(),
+  message: v.string(),
+  source: nullableStringSchema,
+  source_id: nullableStringSchema,
+  data_json: nullableStringSchema,
+  read_at: nullableStringSchema,
+  resolved_at: nullableStringSchema,
+  occurrence_count: v.number(),
+  created_at: v.string(),
+  updated_at: nullableStringSchema,
+});
 
 export async function listChatSessionActivity(
   input: v.InferInput<typeof sessionActivityListInputSchema>,
@@ -81,41 +98,45 @@ export async function listChatSessionActivity(
   }
 }
 
-function readActivityRow(row: unknown): ChatSessionActivityItem {
-  const record = row as Record<string, unknown>;
-  const createdAt = String(record.created_at);
+function readActivityRow(row: SessionExternalValue): ChatSessionActivityItem {
+  const record = v.parse(activityRowSchema, row);
+  const createdAt = record.created_at;
   return {
-    id: String(record.id),
+    id: record.id,
     kind: 'notification',
     level: notificationLevel(record.level),
-    title: String(record.title),
-    message: String(record.message),
-    source: typeof record.source === 'string' ? record.source : null,
-    sourceId: typeof record.source_id === 'string' ? record.source_id : null,
+    title: record.title,
+    message: record.message,
+    source: record.source,
+    sourceId: record.source_id,
     data: parseJsonValue(record.data_json),
-    readAt: typeof record.read_at === 'string' ? record.read_at : null,
-    resolvedAt:
-      typeof record.resolved_at === 'string' ? record.resolved_at : null,
-    occurrenceCount: Number(record.occurrence_count ?? 1),
+    readAt: record.read_at,
+    resolvedAt: record.resolved_at,
+    occurrenceCount: record.occurrence_count,
     createdAt,
-    updatedAt:
-      typeof record.updated_at === 'string' ? record.updated_at : createdAt,
+    updatedAt: record.updated_at ?? createdAt,
   };
 }
 
-function notificationLevel(value: unknown): ChatSessionActivityItem['level'] {
+function notificationLevel(
+  value: SessionExternalValue,
+): ChatSessionActivityItem['level'] {
   return value === 'ready' || value === 'attention' || value === 'urgent'
     ? value
     : 'info';
 }
 
-function parseJsonValue(value: unknown): ChatSessionActivityItem['data'] {
-  if (typeof value !== 'string') return null;
+function parseJsonValue(
+  value: SessionExternalValue,
+): ChatSessionActivityItem['data'] {
+  const text = v.safeParse(v.string(), value);
+  if (!text.success) return null;
   try {
-    const parsed: unknown = JSON.parse(value);
-    return isJsonValue(parsed)
-      ? (parsed as ChatSessionActivityItem['data'])
-      : null;
+    const parsed = v.safeParse(
+      persistedJsonValueSchema,
+      JSON.parse(text.output),
+    );
+    return parsed.success ? parsed.output : null;
   } catch {
     return null;
   }

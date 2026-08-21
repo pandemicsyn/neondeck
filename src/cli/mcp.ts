@@ -41,6 +41,11 @@ type McpApprovalOptions = {
 type McpRegistry = ReturnType<
   Awaited<ReturnType<typeof mcpModule>>['getMcpRegistry']
 >;
+type McpConfig = Awaited<
+  ReturnType<Awaited<ReturnType<typeof mcpModule>>['readMcpConfig']>
+>;
+type McpServerConfig = McpConfig['servers'][string];
+type McpToolPolicy = NonNullable<McpServerConfig['tools']>;
 
 export function registerMcpCommands(program: Command) {
   const mcp = program.command('mcp').description('Manage MCP servers.');
@@ -172,15 +177,14 @@ export function registerMcpCommands(program: Command) {
           if (mode === 'inherit') delete overrides[toolName];
           else overrides[toolName] = mode;
         }
+        const tools: McpToolPolicy = { approvalMode };
+        if (Object.keys(overrides).length > 0) tools.overrides = overrides;
         printActionResult(
           await updateMcpServer(
             {
               id,
               server: {
-                tools: {
-                  approvalMode,
-                  ...(Object.keys(overrides).length > 0 ? { overrides } : {}),
-                },
+                tools,
               },
             },
             paths,
@@ -372,7 +376,7 @@ function collectOption(value: string, previous: string[]) {
   return [...previous, value];
 }
 
-function mcpServerFromAddOptions(options: McpAddOptions) {
+function mcpServerFromAddOptions(options: McpAddOptions): McpServerConfig {
   const timeoutMs = parseOptionalPositiveInteger(
     options.timeoutMs,
     '--timeout-ms',
@@ -384,32 +388,34 @@ function mcpServerFromAddOptions(options: McpAddOptions) {
   }
 
   if (options.url) {
-    return {
+    const server: McpServerConfig = {
       transport: 'http' as const,
       url: options.url,
       enabled: !options.disabled,
-      ...(timeoutMs !== undefined ? { timeoutMs } : {}),
-      ...(tools ? { tools } : {}),
       auth: mcpAuthFromOptions(options),
     };
+    if (timeoutMs !== undefined) server.timeoutMs = timeoutMs;
+    server.tools = tools;
+    return server;
   }
 
   if (options.command) {
     if (options.oauth || options.header?.length) {
       throw new Error('--oauth and --header are only valid with --url.');
     }
-    return {
+    const server: McpServerConfig = {
       transport: 'stdio' as const,
       command: options.command,
       args: options.arg ?? [],
-      ...(options.cwd ? { cwd: expandHome(options.cwd) } : {}),
       enabled: !options.disabled,
-      ...(timeoutMs !== undefined ? { timeoutMs } : {}),
-      ...(tools ? { tools } : {}),
-      ...(options.env?.length
-        ? { env: Object.fromEntries(options.env.map(parseEnvRefPair)) }
-        : {}),
     };
+    if (options.cwd) server.cwd = expandHome(options.cwd);
+    if (timeoutMs !== undefined) server.timeoutMs = timeoutMs;
+    server.tools = tools;
+    if (options.env?.length) {
+      server.env = Object.fromEntries(options.env.map(parseEnvRefPair));
+    }
+    return server;
   }
 
   throw new Error('MCP add requires --url or --command.');
@@ -426,15 +432,16 @@ function mcpAuthFromOptions(options: McpAddOptions) {
   return { kind: 'none' as const };
 }
 
-function mcpToolPolicy(options: McpAddOptions) {
+function mcpToolPolicy(options: McpAddOptions): McpToolPolicy {
   const approvalMode = parseApprovalMode(options.approvalMode ?? 'writes');
-  const overrides = Object.fromEntries(
-    (options.tool ?? []).map((entry) => parseToolOverride(entry, false)),
-  );
-  return {
-    approvalMode,
-    ...(Object.keys(overrides).length > 0 ? { overrides } : {}),
-  };
+  const overrides: NonNullable<McpToolPolicy['overrides']> = {};
+  for (const entry of options.tool ?? []) {
+    const [toolName, mode] = parseToolOverride(entry, false);
+    if (mode !== 'inherit') overrides[toolName] = mode;
+  }
+  const policy: McpToolPolicy = { approvalMode };
+  if (Object.keys(overrides).length > 0) policy.overrides = overrides;
+  return policy;
 }
 
 function parseApprovalMode(value: string) {
