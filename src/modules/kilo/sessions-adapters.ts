@@ -12,7 +12,11 @@ import {
   sessionsSearchInputSchema,
 } from './schemas';
 import { listLinkedKiloSessionTasks, type KiloTaskRecord } from './store';
-import { isRecord, numberOrDateField, stringField } from './utils';
+import {
+  type KiloUntrustedInput,
+  numberOrDateField,
+  stringField,
+} from './utils';
 import {
   type KiloConfig,
   type RuntimePaths,
@@ -21,6 +25,27 @@ import {
 } from '../../runtime-home';
 
 const execFileAsync = promisify(execFile);
+const untrustedInputSchema = v.unknown();
+const looseObjectSchema = v.looseObject({});
+const callableSchema = v.function();
+const sessionArraySchema = v.array(kiloSessionSchema);
+const sessionsApiSchema = v.looseObject({
+  search: v.optional(callableSchema),
+  list: v.optional(callableSchema),
+});
+const sdkModuleSchema = v.looseObject({
+  default: v.optional(untrustedInputSchema),
+  createClient: v.optional(callableSchema),
+  KiloClient: v.optional(callableSchema),
+});
+const tableNameRowSchema = v.object({ name: v.string() });
+
+type SessionsSearchInput = v.InferOutput<typeof sessionsSearchInputSchema>;
+type NormalizedKiloSession = v.InferOutput<typeof normalizedKiloSessionSchema>;
+type KiloSessionSearchResult = {
+  ok: true;
+  sessions: NormalizedKiloSession[];
+};
 
 function resolveKiloConfig(config: KiloConfig | undefined) {
   return {
@@ -29,9 +54,9 @@ function resolveKiloConfig(config: KiloConfig | undefined) {
 }
 
 export async function searchKiloSessionsWithCli(
-  input: v.InferOutput<typeof sessionsSearchInputSchema>,
+  input: SessionsSearchInput,
   paths: RuntimePaths,
-) {
+): Promise<KiloSessionSearchResult> {
   const config = await readRuntimeJson(paths.config, parseAppConfig);
   const kilo = resolveKiloConfig(config.kilo);
   const args = ['session', 'list', '--format', 'json', '--all'];
@@ -43,51 +68,54 @@ export async function searchKiloSessionsWithCli(
     timeout: 15_000,
     maxBuffer: 1024 * 1024 * 5,
   });
-  const raw = JSON.parse(stdout) as unknown;
-  const parsed = v.parse(v.array(kiloSessionSchema), raw);
+  const parsed = v.parse(sessionArraySchema, JSON.parse(stdout));
   return {
-    ok: true as const,
+    ok: true,
     sessions: parsed.map((session) => normalizeKiloSession(session)),
   };
 }
 
 export async function searchKiloSessionsWithManagedSdk(
-  input: v.InferOutput<typeof sessionsSearchInputSchema>,
+  input: SessionsSearchInput,
   _paths: RuntimePaths,
-) {
+): Promise<KiloSessionSearchResult> {
   const sdk = await optionalImport('@kilocode/sdk/v2');
   const client = createOptionalKiloSdkClient(sdk);
-  const sessionsApi = isRecord(client) ? client.sessions : undefined;
-  if (!isRecord(sessionsApi)) {
+  const parsedClient = v.safeParse(looseObjectSchema, client);
+  const parsedSessionsApi = v.safeParse(
+    sessionsApiSchema,
+    parsedClient.success ? parsedClient.output.sessions : undefined,
+  );
+  if (!parsedSessionsApi.success) {
     throw new Error(
       'Kilo managed SDK is not installed or exposes no sessions API.',
     );
   }
-  const search =
-    typeof sessionsApi.search === 'function'
-      ? sessionsApi.search
-      : typeof sessionsApi.list === 'function'
-        ? sessionsApi.list
-        : undefined;
+  const sessionsApi = parsedSessionsApi.output;
+  const search = sessionsApi.search ?? sessionsApi.list;
   if (!search) {
     throw new Error('Kilo managed SDK sessions API cannot search sessions.');
   }
-  const raw = (await search.call(sessionsApi, {
-    query: input.query,
-    repoId: input.repoId,
-    taskId: input.taskId,
-    limit: input.limit ?? 50,
-  })) as unknown;
+  const raw = v.parse(
+    untrustedInputSchema,
+    await search.call(sessionsApi, {
+      query: input.query,
+      repoId: input.repoId,
+      taskId: input.taskId,
+      limit: input.limit ?? 50,
+    }),
+  );
+  const envelope = v.safeParse(looseObjectSchema, raw);
   const items = Array.isArray(raw)
     ? raw
-    : isRecord(raw) && Array.isArray(raw.sessions)
-      ? raw.sessions
-      : isRecord(raw) && Array.isArray(raw.items)
-        ? raw.items
+    : envelope.success && Array.isArray(envelope.output.sessions)
+      ? envelope.output.sessions
+      : envelope.success && Array.isArray(envelope.output.items)
+        ? envelope.output.items
         : [];
-  const parsed = v.parse(v.array(kiloSessionSchema), items);
+  const parsed = v.parse(sessionArraySchema, items);
   return {
-    ok: true as const,
+    ok: true,
     sessions: parsed.map((session) =>
       normalizeSession({
         ...normalizeKiloSession(session),
@@ -98,10 +126,10 @@ export async function searchKiloSessionsWithManagedSdk(
 }
 
 export async function searchKiloSessionsWithDisk(
-  input: v.InferOutput<typeof sessionsSearchInputSchema>,
-) {
+  input: SessionsSearchInput,
+): Promise<KiloSessionSearchResult> {
   const paths = await discoverKiloSqlitePaths();
-  const sessions: Array<v.InferOutput<typeof normalizedKiloSessionSchema>> = [];
+  const sessions: NormalizedKiloSession[] = [];
   for (const path of paths) {
     sessions.push(...readKiloSessionsFromSqlite(path, input));
     if (sessions.length >= (input.limit ?? 50)) break;
@@ -112,27 +140,34 @@ export async function searchKiloSessionsWithDisk(
     );
   }
   return {
-    ok: true as const,
+    ok: true,
     sessions: sessions.slice(0, input.limit ?? 50),
   };
 }
 
-async function optionalImport(specifier: string): Promise<unknown> {
-  const importer = new Function('specifier', 'return import(specifier)') as (
-    specifier: string,
-  ) => Promise<unknown>;
-  return importer(specifier);
+async function optionalImport(specifier: string): Promise<KiloUntrustedInput> {
+  const importer = v.parse(
+    callableSchema,
+    new Function('specifier', 'return import(specifier)'),
+  );
+  return v.parse(untrustedInputSchema, await importer(specifier));
 }
 
-function createOptionalKiloSdkClient(sdk: unknown) {
-  if (!isRecord(sdk)) return undefined;
-  if (isRecord(sdk.default)) return createOptionalKiloSdkClient(sdk.default);
-  if (typeof sdk.createClient === 'function') return sdk.createClient();
-  if (typeof sdk.KiloClient === 'function') {
-    const Client = sdk.KiloClient as new () => unknown;
-    return new Client();
+function createOptionalKiloSdkClient(sdk: KiloUntrustedInput) {
+  const parsedSdk = v.safeParse(sdkModuleSchema, sdk);
+  if (!parsedSdk.success) return undefined;
+  const nestedDefault = v.safeParse(
+    looseObjectSchema,
+    parsedSdk.output.default,
+  );
+  if (nestedDefault.success) {
+    return createOptionalKiloSdkClient(nestedDefault.output);
   }
-  return sdk;
+  if (parsedSdk.output.createClient) return parsedSdk.output.createClient();
+  if (parsedSdk.output.KiloClient) {
+    return Reflect.construct(parsedSdk.output.KiloClient, []);
+  }
+  return parsedSdk.output;
 }
 
 async function discoverKiloSqlitePaths() {
@@ -178,10 +213,7 @@ function looksLikeSqlitePath(path: string) {
   return /\.(db|sqlite|sqlite3)$/i.test(path) || basename(path) === 'state';
 }
 
-function readKiloSessionsFromSqlite(
-  path: string,
-  input: v.InferOutput<typeof sessionsSearchInputSchema>,
-) {
+function readKiloSessionsFromSqlite(path: string, input: SessionsSearchInput) {
   const database = openDb(path, { readOnly: true });
   try {
     const table = findSessionTable(database);
@@ -209,14 +241,14 @@ function findSessionTable(database: DatabaseSync) {
       "SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name;",
     )
     .all()
-    .flatMap((row) =>
-      isRecord(row) && typeof row.name === 'string' ? [row.name] : [],
-    );
+    .flatMap((row) => {
+      const parsedRow = v.safeParse(tableNameRowSchema, row);
+      return parsedRow.success ? [parsedRow.output.name] : [];
+    });
   return tables.find((table) => /session|conversation/i.test(table));
 }
 
-function normalizeDiskSession(row: unknown) {
-  if (!isRecord(row)) return null;
+function normalizeDiskSession(row: KiloUntrustedInput) {
   const id = stringField(row, ['id', 'session_id', 'sessionID']);
   if (!id) return null;
   const title = stringField(row, ['title', 'name', 'summary']) ?? id;
@@ -236,8 +268,8 @@ function normalizeDiskSession(row: unknown) {
 }
 
 export function sessionMatchesSearch(
-  session: v.InferOutput<typeof normalizedKiloSessionSchema>,
-  input: v.InferOutput<typeof sessionsSearchInputSchema>,
+  session: NormalizedKiloSession,
+  input: SessionsSearchInput,
 ) {
   if (input.query) {
     const query = input.query.toLowerCase();
@@ -255,7 +287,7 @@ export function sessionMatchesSearch(
 }
 
 export function searchLinkedSessionsSync(
-  input: v.InferOutput<typeof sessionsSearchInputSchema>,
+  input: SessionsSearchInput,
   paths: RuntimePaths,
 ) {
   return listLinkedKiloSessionTasks(
@@ -273,7 +305,7 @@ export function searchLinkedSessionsSync(
 }
 
 export function taskToSessions(task: KiloTaskRecord) {
-  const sessions: Array<v.InferOutput<typeof normalizedKiloSessionSchema>> = [];
+  const sessions: NormalizedKiloSession[] = [];
   if (task.rootSessionId) {
     sessions.push(
       normalizeSession({
@@ -318,27 +350,25 @@ function normalizeKiloSession(
   });
 }
 
-function normalizeSession(value: unknown) {
+function normalizeSession(value: KiloUntrustedInput) {
   return v.parse(normalizedKiloSessionSchema, value);
 }
 
-function normalizeSessionProject(value: unknown) {
-  if (!isRecord(value)) return null;
+function normalizeSessionProject(value: KiloUntrustedInput) {
+  const parsedValue = v.safeParse(looseObjectSchema, value);
+  if (!parsedValue.success) return null;
   return {
-    id: typeof value.id === 'string' ? value.id : undefined,
-    name: typeof value.name === 'string' ? value.name : undefined,
-    worktree: typeof value.worktree === 'string' ? value.worktree : undefined,
+    id: stringField(parsedValue.output, ['id']),
+    name: stringField(parsedValue.output, ['name']),
+    worktree: stringField(parsedValue.output, ['worktree']),
   };
 }
 
-export function dedupeSessions(
-  sessions: Array<v.InferOutput<typeof normalizedKiloSessionSchema>>,
-) {
+export function dedupeSessions(sessions: NormalizedKiloSession[]) {
   const seen = new Set<string>();
   return sessions.filter((session) => {
-    const id = typeof session.id === 'string' ? session.id : undefined;
-    if (!id || seen.has(id)) return false;
-    seen.add(id);
+    if (seen.has(session.id)) return false;
+    seen.add(session.id);
     return true;
   });
 }

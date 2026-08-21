@@ -14,6 +14,20 @@ import {
   type KiloResultState,
   type KiloVerificationStatus,
 } from './schemas';
+import { type KiloUntrustedInput } from '../utils';
+
+const preparedDiffRowSchema = v.object({
+  id: v.string(),
+  push_approval_status: v.string(),
+});
+const preparedDiffApprovalRowSchema = v.object({
+  id: v.string(),
+  worktree_id: v.string(),
+  status: v.string(),
+  push_approval_status: v.string(),
+  verification_status: v.string(),
+});
+const looseObjectSchema = v.looseObject({});
 
 export function listStateRows(
   input: { taskId?: string; limit?: number },
@@ -93,12 +107,12 @@ export function readPreparedDiffByWorktree(
         WHERE worktree_id = ?;
       `,
       )
-      .get(worktreeId) as
-      { id: string; push_approval_status: string } | undefined;
-    return row
+      .get(worktreeId);
+    const parsedRow = v.safeParse(preparedDiffRowSchema, row);
+    return parsedRow.success
       ? {
-          id: row.id,
-          pushApprovalStatus: row.push_approval_status,
+          id: parsedRow.output.id,
+          pushApprovalStatus: parsedRow.output.push_approval_status,
         }
       : null;
   } finally {
@@ -122,20 +136,13 @@ export function resetPreparedDiffApproval(
         WHERE id = ?;
       `,
       )
-      .get(preparedDiffId) as
-      | {
-          id: string;
-          worktree_id: string;
-          status: string;
-          push_approval_status: string;
-          verification_status: string;
-        }
-      | undefined;
+      .get(preparedDiffId);
+    const parsedRow = v.safeParse(preparedDiffApprovalRowSchema, row);
     if (
-      !row ||
-      (row.push_approval_status === 'pending' &&
-        row.status === 'prepared' &&
-        row.verification_status === 'not-run')
+      !parsedRow.success ||
+      (parsedRow.output.push_approval_status === 'pending' &&
+        parsedRow.output.status === 'prepared' &&
+        parsedRow.output.verification_status === 'not-run')
     ) {
       return;
     }
@@ -174,7 +181,14 @@ export function resetPreparedDiffApproval(
         VALUES (?, ?, ?, 'push', 'pending', ?, 'kilo_result_review', ?, NULL, ?);
       `,
       )
-      .run(randomUUID(), preparedDiffId, row.worktree_id, reason, now, now);
+      .run(
+        randomUUID(),
+        preparedDiffId,
+        parsedRow.output.worktree_id,
+        reason,
+        now,
+        now,
+      );
   } finally {
     database.close();
   }
@@ -308,9 +322,8 @@ function stateField<TKey extends keyof KiloResultState>(
   key: TKey,
   fallback: KiloResultState[TKey],
 ): KiloResultState[TKey] {
-  return Object.prototype.hasOwnProperty.call(input, key)
-    ? (input[key] as KiloResultState[TKey])
-    : fallback;
+  const value = input[key];
+  return value === undefined ? fallback : value;
 }
 
 export function updateKiloTaskStatus(
@@ -338,7 +351,7 @@ export function insertKiloResultEvent(
   taskId: string,
   eventType: string,
   summary: string,
-  data: unknown,
+  data: KiloUntrustedInput,
   paths: RuntimePaths,
 ) {
   const now = new Date().toISOString();
@@ -368,7 +381,7 @@ export function insertKiloResultEvent(
   }
 }
 
-export function readStateRow(row: unknown): KiloResultState {
+export function readStateRow(row: KiloUntrustedInput): KiloResultState {
   const parsed = v.parse(stateRowSchema, row);
   return {
     taskId: parsed.task_id,
@@ -414,9 +427,7 @@ export function pendingApprovalsFor(
   return approvals;
 }
 
-export function errorMessage(error: unknown) {
-  return error instanceof Error ? error.message : String(error);
-}
+export { errorMessage } from '../utils';
 
 function parseClassification(value: string): KiloResultClassification {
   const parsed = v.safeParse(
@@ -442,11 +453,13 @@ function parsePromotionStatus(value: string): KiloPromotionStatus {
   return parsed.success ? parsed.output : 'not-requested';
 }
 
-export function parseInput<T>(
-  schema: v.GenericSchema<unknown, T>,
-  rawInput: unknown,
+export function parseInput<TSchema extends v.GenericSchema>(
+  schema: TSchema,
+  rawInput: KiloUntrustedInput,
   action: string,
-): { ok: true; input: T } | { ok: false; result: KiloResultActionResult } {
+):
+  | { ok: true; input: v.InferOutput<TSchema> }
+  | { ok: false; result: KiloResultActionResult } {
   const parsed = v.safeParse(schema, rawInput);
   if (parsed.success) return { ok: true, input: parsed.output };
   return {
@@ -474,16 +487,18 @@ export function notFound(
   };
 }
 
-export function jsonBoolean(value: unknown, path: string[]) {
+export function jsonBoolean(value: KiloUntrustedInput, path: string[]) {
   let cursor = value;
   for (const key of path) {
-    if (!cursor || typeof cursor !== 'object' || !(key in cursor)) return null;
-    cursor = (cursor as Record<string, unknown>)[key];
+    const parsedCursor = v.safeParse(looseObjectSchema, cursor);
+    if (!parsedCursor.success || !(key in parsedCursor.output)) return null;
+    cursor = parsedCursor.output[key];
   }
-  return typeof cursor === 'boolean' ? cursor : null;
+  const parsedBoolean = v.safeParse(v.boolean(), cursor);
+  return parsedBoolean.success ? parsedBoolean.output : null;
 }
 
-function jsonOrNull(value: unknown) {
+function jsonOrNull(value: KiloUntrustedInput) {
   return value === null || value === undefined
     ? null
     : JSON.stringify(asJsonValue(value));

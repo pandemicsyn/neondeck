@@ -48,7 +48,13 @@ import {
   updateKiloTaskSummary,
   type KiloHandoffMode,
 } from './store';
-import { errorMessage, failResult, notFoundResult, parseInput } from './utils';
+import {
+  errorMessage,
+  failResult,
+  notFoundResult,
+  parseInput,
+  type KiloUntrustedInput,
+} from './utils';
 import {
   type KiloConfig,
   type RepoConfig,
@@ -64,7 +70,7 @@ import { lockWorktree, readManagedWorktree } from '../worktrees';
 import { readKiloResultStateSummary } from './results';
 
 export async function startKiloTask(
-  rawInput: unknown,
+  rawInput: KiloUntrustedInput,
   paths: RuntimePaths = runtimePaths(),
 ) {
   const parsed = parseInput(startInputSchema, rawInput, 'kilo_task_start');
@@ -233,7 +239,7 @@ export async function startKiloTask(
 }
 
 export async function listKiloTasks(
-  rawInput: unknown = {},
+  rawInput: KiloUntrustedInput = {},
   paths: RuntimePaths = runtimePaths(),
 ) {
   const parsed = parseInput(tasksListInputSchema, rawInput, 'kilo_tasks_list');
@@ -278,7 +284,7 @@ export async function listKiloTasks(
 }
 
 export async function readKiloTaskStatus(
-  rawInput: unknown,
+  rawInput: KiloUntrustedInput,
   paths: RuntimePaths = runtimePaths(),
 ) {
   const parsed = parseInput(taskIdInputSchema, rawInput, 'kilo_task_status');
@@ -307,7 +313,7 @@ export async function readKiloTaskStatus(
 }
 
 export async function readKiloTaskEvents(
-  rawInput: unknown,
+  rawInput: KiloUntrustedInput,
   paths: RuntimePaths = runtimePaths(),
 ) {
   const parsed = parseInput(eventsInputSchema, rawInput, 'kilo_task_events');
@@ -335,7 +341,7 @@ export async function readKiloTaskEvents(
 }
 
 export async function abortKiloTask(
-  rawInput: unknown,
+  rawInput: KiloUntrustedInput,
   paths: RuntimePaths = runtimePaths(),
 ) {
   const parsed = parseInput(taskIdInputSchema, rawInput, 'kilo_task_abort');
@@ -439,7 +445,7 @@ async function waitForKiloExit(completed: Promise<void>, timeoutMs: number) {
 }
 
 export async function readKiloTaskSessions(
-  rawInput: unknown,
+  rawInput: KiloUntrustedInput,
   paths: RuntimePaths = runtimePaths(),
 ) {
   const parsed = parseInput(taskIdInputSchema, rawInput, 'kilo_task_sessions');
@@ -465,7 +471,7 @@ export async function readKiloTaskSessions(
 }
 
 export async function readKiloTaskDiff(
-  rawInput: unknown,
+  rawInput: KiloUntrustedInput,
   paths: RuntimePaths = runtimePaths(),
 ) {
   const parsed = parseInput(taskIdInputSchema, rawInput, 'kilo_task_diff');
@@ -488,7 +494,7 @@ export async function readKiloTaskDiff(
 }
 
 export async function reconcileKiloTask(
-  rawInput: unknown,
+  rawInput: KiloUntrustedInput,
   paths: RuntimePaths = runtimePaths(),
 ) {
   const parsed = parseInput(
@@ -517,19 +523,19 @@ export async function reconcileKiloTask(
     ? JSON.stringify(before) !== JSON.stringify(after)
     : true;
 
-  return {
+  const result = {
     ok: true,
     action: 'kilo_task_reconcile',
     changed,
     message: parsed.input.taskId
       ? `Reconciled Kilo task ${parsed.input.taskId}.`
       : 'Reconciled persisted Kilo tasks.',
-    ...(after ? { task: after } : {}),
   };
+  return after ? { ...result, task: after } : result;
 }
 
 export async function summarizeKiloSession(
-  rawInput: unknown,
+  rawInput: KiloUntrustedInput,
   paths: RuntimePaths = runtimePaths(),
 ) {
   const parsed = parseInput(

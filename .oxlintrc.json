@@ -24,16 +24,22 @@
   "overrides": [
     {
       "files": [
-        "src/activity-observability.test.ts",
-        "src/learning-review-admission.test.ts",
         "src/modules/autopilot/**/*.ts",
         "src/modules/autopilot/**/*.tsx",
+        "src/modules/kilo/**/*.ts",
+        "src/modules/kilo/**/*.tsx",
         "src/modules/learning/**/*.ts",
         "src/modules/learning/**/*.tsx",
         "src/modules/pr-events/**/*.ts",
         "src/modules/pr-events/**/*.tsx",
         "src/server/**/*.ts",
         "src/server/**/*.tsx"
+      ],
+      "excludeFiles": [
+        "**/*.test.ts",
+        "**/*.test.tsx",
+        "**/*.spec.ts",
+        "**/*.spec.tsx"
       ],
       "rules": {
         "anti-slop/no-chained-type-assertions": "error",

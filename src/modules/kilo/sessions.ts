@@ -15,7 +15,12 @@ import {
   type KiloTaskEventRecord,
   type KiloTaskRecord,
 } from './store';
-import { errorMessage, failResult, parseInput } from './utils';
+import {
+  errorMessage,
+  failResult,
+  parseInput,
+  type KiloUntrustedInput,
+} from './utils';
 import {
   type RuntimePaths,
   ensureRuntimeHome,
@@ -31,7 +36,7 @@ import {
 } from './sessions-adapters';
 
 export async function searchKiloSessions(
-  rawInput: unknown,
+  rawInput: KiloUntrustedInput,
   paths: RuntimePaths = runtimePaths(),
 ) {
   const parsed = parseInput(
@@ -80,7 +85,7 @@ export async function searchKiloSessions(
 }
 
 export async function readKiloSession(
-  rawInput: unknown,
+  rawInput: KiloUntrustedInput,
   paths: RuntimePaths = runtimePaths(),
 ) {
   const parsed = parseInput(
@@ -119,7 +124,7 @@ export async function readKiloSession(
 }
 
 export async function readKiloSessionMessages(
-  rawInput: unknown,
+  rawInput: KiloUntrustedInput,
   paths: RuntimePaths = runtimePaths(),
 ) {
   const parsed = parseInput(
@@ -151,7 +156,7 @@ export async function readKiloSessionMessages(
 }
 
 export async function readKiloSessionChildren(
-  rawInput: unknown,
+  rawInput: KiloUntrustedInput,
   paths: RuntimePaths = runtimePaths(),
 ) {
   const parsed = parseInput(
@@ -187,7 +192,7 @@ export async function readKiloSessionChildren(
 }
 
 export async function readUnavailableSessionAdapter(
-  rawInput: unknown,
+  rawInput: KiloUntrustedInput,
   adapter: string,
   paths: RuntimePaths = runtimePaths(),
 ) {
@@ -215,7 +220,7 @@ export async function readUnavailableSessionAdapter(
 }
 
 export async function readKiloSessionDiff(
-  rawInput: unknown,
+  rawInput: KiloUntrustedInput,
   paths: RuntimePaths = runtimePaths(),
 ) {
   const parsed = parseInput(

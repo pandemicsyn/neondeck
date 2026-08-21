@@ -40,11 +40,12 @@ import {
   type KiloResultActionResult,
   type KiloResultState,
 } from './schemas';
+import { type KiloUntrustedInput } from '../utils';
 
 export { verifyKiloResult } from './verify';
 
 export async function reviewKiloResult(
-  rawInput: unknown,
+  rawInput: KiloUntrustedInput,
   paths: RuntimePaths = runtimePaths(),
 ): Promise<KiloResultActionResult> {
   const parsed = parseInput(taskIdInputSchema, rawInput, 'kilo_result_review');
@@ -285,7 +286,7 @@ export async function reviewKiloResult(
 }
 
 export async function promoteKiloResult(
-  rawInput: unknown,
+  rawInput: KiloUntrustedInput,
   paths: RuntimePaths = runtimePaths(),
 ): Promise<KiloResultActionResult> {
   const parsed = parseInput(
@@ -467,7 +468,7 @@ export async function promoteKiloResult(
 }
 
 export async function listKiloResultStates(
-  rawInput: unknown = {},
+  rawInput: KiloUntrustedInput = {},
   paths: RuntimePaths = runtimePaths(),
 ): Promise<KiloResultActionResult & { resultStates?: KiloResultState[] }> {
   const parsed = parseInput(

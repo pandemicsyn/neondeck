@@ -31,9 +31,10 @@ import {
   type KiloResultClassification,
   type KiloVerificationStatus,
 } from './schemas';
+import { type KiloUntrustedInput } from '../utils';
 
 export async function verifyKiloResult(
-  rawInput: unknown,
+  rawInput: KiloUntrustedInput,
   paths: RuntimePaths = runtimePaths(),
 ): Promise<KiloResultActionResult> {
   const parsed = parseInput(verifyInputSchema, rawInput, 'kilo_result_verify');
@@ -314,7 +315,7 @@ export async function verifyKiloResult(
     paths,
   );
 
-  return {
+  const response: KiloResultActionResult = {
     ok: result.ok,
     action: 'kilo_result_verify',
     changed: true,
@@ -322,7 +323,8 @@ export async function verifyKiloResult(
     task: readKiloTask(task.id, paths) ?? task,
     resultState: state,
     data: asJsonValue({ verification: result }),
-    ...(result.requires ? { requires: result.requires } : {}),
-    ...(result.errors ? { errors: result.errors } : {}),
   };
+  if (result.requires) response.requires = result.requires;
+  if (result.errors) response.errors = result.errors;
+  return response;
 }

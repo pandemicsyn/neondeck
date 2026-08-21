@@ -12,6 +12,7 @@ import {
   runtimePaths,
   type RuntimePaths,
 } from '../../runtime-home';
+import { type KiloUntrustedInput } from './utils';
 
 export type KiloNotificationState =
   | 'started'
@@ -254,7 +255,7 @@ function titleForKiloState(state: KiloNotificationState) {
   return 'Kilo result promoted';
 }
 
-function readNotificationFact(row: unknown): KiloNotificationFact {
+function readNotificationFact(row: KiloUntrustedInput): KiloNotificationFact {
   const parsed = v.parse(notificationRowSchema, row);
   const parts = parsed.source_id.split(':');
   const taskId = parts[1] ?? '';
@@ -276,19 +277,20 @@ function readNotificationFact(row: unknown): KiloNotificationFact {
   };
 }
 
-function asJsonValue(value: unknown): JsonValue {
-  if (
-    value === null ||
-    typeof value === 'string' ||
-    typeof value === 'number' ||
-    typeof value === 'boolean'
-  ) {
-    return value;
-  }
+function asJsonValue(value: KiloUntrustedInput): JsonValue {
+  const scalar = v.safeParse(
+    v.union([v.null(), v.string(), v.number(), v.boolean()]),
+    value,
+  );
+  if (scalar.success) return scalar.output;
   if (Array.isArray(value)) return value.map(asJsonValue);
-  if (typeof value === 'object' && value) {
+  const object = v.safeParse(v.looseObject({}), value);
+  if (object.success) {
     return Object.fromEntries(
-      Object.entries(value).map(([key, entry]) => [key, asJsonValue(entry)]),
+      Object.entries(object.output).map(([key, entry]) => [
+        key,
+        asJsonValue(entry),
+      ]),
     );
   }
   return null;

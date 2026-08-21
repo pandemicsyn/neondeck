@@ -1,7 +1,9 @@
 import { openDb } from '../../lib/sqlite.ts';
 import { asJsonValue } from '../../lib/action-result';
+import * as v from 'valibot';
 import { ensureRuntimeHome, type RuntimePaths } from '../../runtime-home';
 import type { RepoDiffSummary } from '../repos';
+import type { KiloUntrustedInput } from './utils';
 
 export type DocsDriftFixTaskBoundary = {
   taskId: string;
@@ -21,6 +23,16 @@ export type DocsDriftFixDiffViolation = {
 };
 
 const keyPrefix = 'docs-drift.fix-task.';
+const boundaryRecordSchema = v.object({
+  taskId: v.string(),
+  reportId: v.string(),
+  repoId: v.string(),
+  repoFullName: v.string(),
+  worktreeId: v.string(),
+  allowedDocsPaths: v.array(v.unknown()),
+  createdAt: v.string(),
+});
+const metadataRowSchema = v.object({ value: v.string() });
 
 export async function recordDocsDriftFixTaskBoundary(
   input: Omit<DocsDriftFixTaskBoundary, 'createdAt'>,
@@ -105,46 +117,37 @@ function readDocsDriftFixTaskBoundary(
 function parseBoundary(value: string | undefined) {
   if (!value) return null;
   try {
-    const parsed = JSON.parse(value) as unknown;
-    if (!isRecord(parsed)) return null;
-    const allowedDocsPaths = Array.isArray(parsed.allowedDocsPaths)
-      ? normalizeAllowedPaths(parsed.allowedDocsPaths)
-      : [];
-    if (
-      typeof parsed.taskId !== 'string' ||
-      typeof parsed.reportId !== 'string' ||
-      typeof parsed.repoId !== 'string' ||
-      typeof parsed.repoFullName !== 'string' ||
-      typeof parsed.worktreeId !== 'string' ||
-      typeof parsed.createdAt !== 'string' ||
-      allowedDocsPaths.length === 0
-    ) {
-      return null;
-    }
+    const parsed = v.safeParse(boundaryRecordSchema, JSON.parse(value));
+    if (!parsed.success) return null;
+    const allowedDocsPaths = normalizeAllowedPaths(
+      parsed.output.allowedDocsPaths,
+    );
+    if (allowedDocsPaths.length === 0) return null;
 
     return {
-      taskId: parsed.taskId,
-      reportId: parsed.reportId,
-      repoId: parsed.repoId,
-      repoFullName: parsed.repoFullName,
-      worktreeId: parsed.worktreeId,
+      taskId: parsed.output.taskId,
+      reportId: parsed.output.reportId,
+      repoId: parsed.output.repoId,
+      repoFullName: parsed.output.repoFullName,
+      worktreeId: parsed.output.worktreeId,
       allowedDocsPaths,
-      createdAt: parsed.createdAt,
+      createdAt: parsed.output.createdAt,
     };
   } catch {
     return null;
   }
 }
 
-function normalizeAllowedPaths(paths: unknown[]) {
+function normalizeAllowedPaths(paths: KiloUntrustedInput[]) {
   return [
     ...new Set(paths.flatMap((path) => normalizeRelativePath(path) ?? [])),
   ].sort();
 }
 
-function normalizeRelativePath(value: unknown) {
-  if (typeof value !== 'string') return null;
-  const path = value
+function normalizeRelativePath(value: KiloUntrustedInput) {
+  const parsed = v.safeParse(v.string(), value);
+  if (!parsed.success) return null;
+  const path = parsed.output
     .replaceAll('\\', '/')
     .replace(/^\.\/+/, '')
     .trim();
@@ -164,15 +167,11 @@ function boundaryKey(taskId: string) {
 }
 
 function isDocsDriftFixTask(title: string | null | undefined) {
-  return typeof title === 'string' && title.startsWith('Docs drift fix:');
+  const parsed = v.safeParse(v.string(), title);
+  return parsed.success && parsed.output.startsWith('Docs drift fix:');
 }
 
-function readMetadataValue(row: unknown) {
-  if (!row || typeof row !== 'object' || !('value' in row)) return undefined;
-  const value = (row as { value: unknown }).value;
-  return typeof value === 'string' ? value : undefined;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+function readMetadataValue(row: KiloUntrustedInput) {
+  const parsed = v.safeParse(metadataRowSchema, row);
+  return parsed.success ? parsed.output.value : undefined;
 }

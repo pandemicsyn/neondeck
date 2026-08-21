@@ -358,7 +358,7 @@ async function recoverMissingSessionId(taskId: string, paths: RuntimePaths) {
     }).catch(() => ({ ok: false as const, sessions: [] }));
     id = disk.sessions[0]?.id;
   }
-  if (!id || typeof id !== 'string') return false;
+  if (!id) return false;
   updateKiloTaskSessions(taskId, id, [], paths);
   addKiloTaskEvent(
     taskId,
@@ -492,14 +492,16 @@ export async function releaseKiloTaskLock(
     ReturnType<typeof ciFixRunWorktreeReleaseStatusForKiloTask>
   >,
 ) {
-  await releaseWorktreeLock(
-    {
-      lockId,
-      ...(owner ? { owner } : {}),
-      finalStatus: finalStatus ?? worktreeStatusForKiloStatus(status, diff),
-    },
-    paths,
-  );
+  const releaseStatus =
+    finalStatus ?? worktreeStatusForKiloStatus(status, diff);
+  if (owner) {
+    await releaseWorktreeLock(
+      { lockId, owner, finalStatus: releaseStatus },
+      paths,
+    );
+    return;
+  }
+  await releaseWorktreeLock({ lockId, finalStatus: releaseStatus }, paths);
 }
 
 type KiloTaskDiff = {

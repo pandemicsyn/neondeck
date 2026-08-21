@@ -1,4 +1,5 @@
 import { asJsonValue } from '../../lib/action-result';
+import * as v from 'valibot';
 import {
   addNotification,
   findWorkflowSummaryByKiloTaskId,
@@ -14,7 +15,16 @@ import {
 import type { KiloTaskRecord, KiloTaskStatus } from './store';
 import { gitCurrentSha } from '../../repo-edit/git';
 import { runtimePaths, type RuntimePaths } from '../../runtime-home';
-import { splitRepoFullName } from './utils';
+import {
+  type KiloUntrustedInput,
+  errorMessage,
+  splitRepoFullName,
+} from './utils';
+
+const looseObjectSchema = v.looseObject({});
+const stringSchema = v.string();
+const numberSchema = v.number();
+type SummaryData = v.InferOutput<typeof looseObjectSchema>;
 
 type CiFixTaskDiff = {
   ok: boolean;
@@ -239,7 +249,7 @@ export async function reconcileCiFixRunForKiloTask(
 
 async function ciFixCompletionFacts(
   input: CiFixKiloCompletionInput,
-  summaryData: Record<string, unknown>,
+  summaryData: SummaryData,
 ) {
   const worktreeId =
     input.task.worktreeId ?? stringField(summaryData.worktreeId);
@@ -280,20 +290,19 @@ function isPreparedDiffStatus(status: KiloTaskStatus) {
   );
 }
 
-function objectField(value: unknown): Record<string, unknown> {
-  return value && typeof value === 'object' && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : {};
+function objectField(value: KiloUntrustedInput): SummaryData {
+  const parsed = v.safeParse(looseObjectSchema, value);
+  return parsed.success ? parsed.output : {};
 }
 
-function stringField(value: unknown) {
-  return typeof value === 'string' && value.trim() ? value : null;
+function stringField(value: KiloUntrustedInput) {
+  const parsed = v.safeParse(stringSchema, value);
+  return parsed.success && parsed.output.trim() ? parsed.output : null;
 }
 
-function numberField(value: unknown) {
-  return typeof value === 'number' && Number.isFinite(value) ? value : null;
-}
-
-function errorMessage(error: unknown) {
-  return error instanceof Error ? error.message : String(error);
+function numberField(value: KiloUntrustedInput) {
+  const parsed = v.safeParse(numberSchema, value);
+  return parsed.success && Number.isFinite(parsed.output)
+    ? parsed.output
+    : null;
 }

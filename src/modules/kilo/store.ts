@@ -1,9 +1,11 @@
 import { openDb } from '../../lib/sqlite.ts';
 import { type JsonValue } from '@flue/runtime';
+import { asJsonValue } from '../../lib/action-result';
 import { randomUUID } from 'node:crypto';
 import type { SQLInputValue } from 'node:sqlite';
 import * as v from 'valibot';
 import { type RuntimePaths } from '../../runtime-home';
+import { type KiloUntrustedInput } from './utils';
 
 export type KiloTaskStatus =
   | 'running'
@@ -139,6 +141,15 @@ const eventRowSchema = v.object({
   summary: v.string(),
   data_json: rowNullableStringSchema,
   created_at: v.string(),
+});
+const nextEventIndexRowSchema = v.object({
+  next_index: v.optional(v.number()),
+});
+const runningTaskCountRowSchema = v.object({ count: v.optional(v.number()) });
+const worktreeRowSchema = v.object({
+  repo_id: v.string(),
+  local_path: v.string(),
+  lifecycle_status: v.string(),
 });
 
 export function insertKiloTask(task: KiloTaskRecord, paths: RuntimePaths) {
@@ -456,7 +467,7 @@ export function addKiloTaskEvent(
     sessionId?: string | null;
     childSessionId?: string | null;
     summary: string;
-    data: unknown;
+    data: KiloUntrustedInput;
   },
   paths: RuntimePaths,
 ) {
@@ -471,8 +482,11 @@ export function addKiloTaskEvent(
         WHERE task_id = ?;
       `,
       )
-      .get(taskId) as { next_index?: number } | undefined;
-    const eventIndex = row?.next_index ?? 0;
+      .get(taskId);
+    const parsedRow = v.safeParse(nextEventIndexRowSchema, row);
+    const eventIndex = parsedRow.success
+      ? (parsedRow.output.next_index ?? 0)
+      : 0;
     database
       .prepare(
         `
@@ -591,8 +605,9 @@ export function countRunningKiloTasks(paths: RuntimePaths) {
       .prepare(
         "SELECT COUNT(*) AS count FROM kilo_tasks WHERE status IN ('running', 'needs-reconcile');",
       )
-      .get() as { count?: number } | undefined;
-    return row?.count ?? 0;
+      .get();
+    const parsedRow = v.safeParse(runningTaskCountRowSchema, row);
+    return parsedRow.success ? (parsedRow.output.count ?? 0) : 0;
   } finally {
     database.close();
   }
@@ -609,17 +624,16 @@ export function readKiloTaskWorktree(id: string, paths: RuntimePaths) {
         WHERE id = ?;
       `,
       )
-      .get(id) as
-      | { repo_id: string; local_path: string; lifecycle_status: string }
-      | undefined;
-    if (!row) throw new Error(`Worktree ${id} was not found.`);
-    return row;
+      .get(id);
+    const parsedRow = v.safeParse(worktreeRowSchema, row);
+    if (!parsedRow.success) throw new Error(`Worktree ${id} was not found.`);
+    return parsedRow.output;
   } finally {
     database.close();
   }
 }
 
-function readTaskRow(row: unknown): KiloTaskRecord {
+function readTaskRow(row: KiloUntrustedInput): KiloTaskRecord {
   const parsed = v.parse(taskRowSchema, row);
   return {
     id: parsed.id,
@@ -650,7 +664,7 @@ function readTaskRow(row: unknown): KiloTaskRecord {
   };
 }
 
-function readEventRow(row: unknown): KiloTaskEventRecord {
+function readEventRow(row: KiloUntrustedInput): KiloTaskEventRecord {
   const parsed = v.parse(eventRowSchema, row);
   return {
     id: parsed.id,
@@ -683,8 +697,4 @@ function parseStringArray(source: string): string[] {
 
 function truncate(value: string, max: number) {
   return value.length <= max ? value : `${value.slice(0, max - 1)}…`;
-}
-
-function asJsonValue(value: unknown): JsonValue {
-  return value as JsonValue;
 }
