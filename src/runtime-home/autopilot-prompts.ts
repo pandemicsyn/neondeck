@@ -9,10 +9,11 @@ export const autopilotOwnerPromptModes = [
 export type AutopilotOwnerPromptMode =
   (typeof autopilotOwnerPromptModes)[number];
 
-export type AutopilotOwnerPromptTemplates = Record<
-  AutopilotOwnerPromptMode,
-  string
->;
+export type AutopilotOwnerPromptTemplates = {
+  'prepare-only': string;
+  'autofix-with-approval': string;
+  'autofix-push-when-safe': string;
+};
 
 const commonPrompt = `You are the private continuing Neondeck owner for exactly one watched pull request.
 
@@ -32,21 +33,24 @@ Current facts in the newest turn override stale conversation facts. Report uncer
 
 Never claim a push or PR response succeeded unless the corresponding bounded tool returned success.`;
 
-const modeInstructions: AutopilotOwnerPromptTemplates = {
+const modeInstructions = {
   'prepare-only':
     'Make the smallest justified change and commit when a change is warranted. This mode prepares work for human review and must not deliver it.',
   'autofix-with-approval':
     'Make the smallest justified change and commit when a change is warranted. A watch-event turn must hold the commit for review. A direct-human turn may deliver only when the instruction and the available mode-scoped tools authorize that effect.',
   'autofix-push-when-safe':
     'This is autonomous engineering authority. Judge whether the feedback is reasonable, relevant, technically sound, appropriately scoped, and sufficiently validated. When it is, implement the smallest justified change, validate proportionately, commit, push with the owner push tool, and respond with what changed and what you ran. When it is absurd, ambiguous, scope-exploding, technically unsound, or cannot be validated well enough, do not push: retain any useful committed work and clearly explain why human review is needed. Do not invent a mechanical safety classifier.',
-};
+} satisfies AutopilotOwnerPromptTemplates;
 
-export const defaultAutopilotOwnerPromptTemplates = Object.fromEntries(
-  autopilotOwnerPromptModes.map((mode) => [
-    mode,
-    commonPrompt.replace('{{modeInstructions}}', modeInstructions[mode]),
-  ]),
-) as AutopilotOwnerPromptTemplates;
+function defaultPromptForMode(mode: AutopilotOwnerPromptMode) {
+  return commonPrompt.replace('{{modeInstructions}}', modeInstructions[mode]);
+}
+
+export const defaultAutopilotOwnerPromptTemplates = {
+  'prepare-only': defaultPromptForMode('prepare-only'),
+  'autofix-with-approval': defaultPromptForMode('autofix-with-approval'),
+  'autofix-push-when-safe': defaultPromptForMode('autofix-push-when-safe'),
+} satisfies AutopilotOwnerPromptTemplates;
 
 export const autopilotOwnerPromptTokens = [
   '{{source}}',
@@ -59,19 +63,23 @@ export const autopilotOwnerPromptTokens = [
 export function isAutopilotOwnerPromptMode(
   mode: string,
 ): mode is AutopilotOwnerPromptMode {
-  return autopilotOwnerPromptModes.includes(mode as AutopilotOwnerPromptMode);
+  return new Set<string>(autopilotOwnerPromptModes).has(mode);
 }
 
 export function effectiveAutopilotOwnerPromptTemplates(
   config: Pick<AppConfig, 'autopilot'>,
 ): AutopilotOwnerPromptTemplates {
-  return Object.fromEntries(
-    autopilotOwnerPromptModes.map((mode) => [
-      mode,
-      config.autopilot?.prompts?.[mode] ??
-        defaultAutopilotOwnerPromptTemplates[mode],
-    ]),
-  ) as AutopilotOwnerPromptTemplates;
+  return {
+    'prepare-only':
+      config.autopilot?.prompts?.['prepare-only'] ??
+      defaultAutopilotOwnerPromptTemplates['prepare-only'],
+    'autofix-with-approval':
+      config.autopilot?.prompts?.['autofix-with-approval'] ??
+      defaultAutopilotOwnerPromptTemplates['autofix-with-approval'],
+    'autofix-push-when-safe':
+      config.autopilot?.prompts?.['autofix-push-when-safe'] ??
+      defaultAutopilotOwnerPromptTemplates['autofix-push-when-safe'],
+  };
 }
 
 export function renderAutopilotOwnerPrompt(

@@ -8,11 +8,24 @@ import {
   type CallToolResult,
   type Tool,
 } from '@modelcontextprotocol/sdk/types.js';
-import { defineTool, type ToolDefinition } from '@flue/runtime';
+import { defineTool, type JsonValue, type ToolDefinition } from '@flue/runtime';
 import Ajv, { type ValidateFunction } from 'ajv';
 import * as v from 'valibot';
 import { adaptedMcpToolName } from './format';
-import type { McpServerConfig } from './schemas';
+import {
+  mcpExternalRecordSchema,
+  mcpJsonValueSchema,
+  type McpExternalRecord,
+  type McpExternalValue,
+  type McpServerConfig,
+} from './schemas';
+
+type McpJsonSchema = Tool['inputSchema'] | NonNullable<Tool['outputSchema']>;
+
+const toolInputSchemaSchema = v.custom<Tool['inputSchema']>((input) => {
+  if (Array.isArray(input)) return false;
+  return v.safeParse(mcpExternalRecordSchema, input).success;
+});
 
 export type McpSdkConnection = {
   serverId: string;
@@ -26,19 +39,19 @@ export type McpSdkToolCatalog = {
   toolName: string;
   adaptedName: string;
   description: string;
-  inputSchema: unknown;
-  outputSchema: unknown;
-  annotations: unknown;
+  inputSchema: McpExternalValue;
+  outputSchema: McpExternalValue;
+  annotations: McpExternalValue;
 };
 
 export type McpToolDelegate = (context: {
-  input: Record<string, unknown>;
+  input: McpExternalRecord;
   signal?: AbortSignal;
 }) => Promise<McpToolDelegateResult>;
 
 export type McpToolDelegateResult = {
   text: string;
-  structuredContent?: Record<string, unknown>;
+  structuredContent?: McpExternalRecord;
   raw: CallToolResult;
 };
 
@@ -48,17 +61,23 @@ export type McpToolEnvelope = {
   server: string;
   tool: string;
   untrusted: boolean;
-  [key: string]: unknown;
+  adaptedName?: string;
+  content?: string;
+  structuredContent?: JsonValue | null;
+  approvalId?: string;
+  argumentsHash?: string;
+  argumentsPreview?: string;
+  message?: string;
 };
 
 export type McpToolGate = (input: {
   serverId: string;
   toolName: string;
   adaptedName: string;
-  annotations: unknown;
+  annotations: McpExternalValue;
   run: McpToolDelegate;
   context: {
-    input: Record<string, unknown>;
+    input: McpExternalRecord;
     signal?: AbortSignal;
   };
 }) => Promise<McpToolEnvelope>;
@@ -203,17 +222,19 @@ function createMcpToolDefinition(input: {
             signal: context.signal,
           },
           run: async ({ input: args, signal }) => {
-            const result = (await input.client.callTool(
-              {
-                name: input.tool.name,
-                arguments: args,
-              },
-              CallToolResultSchema,
-              {
-                ...input.requestOptions,
-                signal,
-              },
-            )) as CallToolResult;
+            const result = CallToolResultSchema.parse(
+              await input.client.callTool(
+                {
+                  name: input.tool.name,
+                  arguments: args,
+                },
+                CallToolResultSchema,
+                {
+                  ...input.requestOptions,
+                  signal,
+                },
+              ),
+            );
             const text = formatMcpResult(result);
             if (result.isError) {
               throw new Error(text);
@@ -290,13 +311,13 @@ function assertUniqueAdaptedNames(serverId: string, tools: Tool[]) {
   }
 }
 
-function compileJsonSchema(schema: object): ValidateFunction {
+function compileJsonSchema(schema: McpJsonSchema): ValidateFunction {
   return ajv.compile(schema);
 }
 
 function assertJsonSchema(
   validate: ValidateFunction,
-  value: unknown,
+  value: McpExternalValue,
   label: string,
 ) {
   if (validate(value)) return;
@@ -307,11 +328,11 @@ function assertJsonSchema(
   throw new Error(`${label} does not match declared JSON Schema: ${detail}`);
 }
 
-export function mcpInputSchemaToValibot(schema: unknown) {
-  const normalized =
-    schema && typeof schema === 'object'
-      ? (schema as Tool['inputSchema'])
-      : ({ type: 'object', properties: {} } as Tool['inputSchema']);
+export function mcpInputSchemaToValibot(schema: McpExternalValue) {
+  const parsed = v.safeParse(toolInputSchemaSchema, schema);
+  const normalized = parsed.success
+    ? parsed.output
+    : v.parse(toolInputSchemaSchema, { type: 'object', properties: {} });
   return inputSchemaToValibot(normalized, compileJsonSchema(normalized));
 }
 
@@ -337,8 +358,11 @@ function inputSchemaToValibot(
   );
 }
 
-function jsonSchemaToValibot(schema: object): v.GenericSchema {
-  const record = schema as Record<string, unknown>;
+function jsonSchemaToValibot(schema: McpExternalValue): v.GenericSchema {
+  if (Array.isArray(schema)) return v.unknown();
+  const parsedRecord = v.safeParse(mcpExternalRecordSchema, schema);
+  if (!parsedRecord.success) return v.unknown();
+  const record = parsedRecord.output;
   const enumValues = Array.isArray(record.enum) ? record.enum : undefined;
   if (enumValues?.length) {
     return v.pipe(
@@ -357,17 +381,15 @@ function jsonSchemaToValibot(schema: object): v.GenericSchema {
   if (type === 'integer') return v.pipe(v.number(), v.integer());
   if (type === 'boolean') return v.boolean();
   if (type === 'array') {
-    const itemSchema =
-      record.items && typeof record.items === 'object'
-        ? jsonSchemaToValibot(record.items)
-        : v.unknown();
+    const itemSchema = jsonSchemaToValibot(record.items);
     return v.array(itemSchema);
   }
   if (type === 'object' || record.properties) {
-    const properties =
-      record.properties && typeof record.properties === 'object'
-        ? (record.properties as Record<string, object>)
-        : {};
+    const parsedProperties = v.safeParse(
+      mcpExternalRecordSchema,
+      record.properties,
+    );
+    const properties = parsedProperties.success ? parsedProperties.output : {};
     const required = new Set(
       Array.isArray(record.required) ? record.required.map(String) : [],
     );
@@ -445,11 +467,13 @@ function truncateMcpOutputPart(value: string) {
   return `${value.slice(0, maxMcpOutputPartChars - 22)}\n[truncated output]`;
 }
 
-function boundedStructuredContent(value: unknown) {
-  if (value === undefined) return undefined;
-  const json = JSON.stringify(value);
+function boundedStructuredContent(value: McpExternalValue) {
+  const serialized = v.safeParse(v.string(), JSON.stringify(value));
+  if (!serialized.success) return undefined;
+  const json = serialized.output;
   if (json.length <= maxMcpOutputPartChars) {
-    return isRecord(value) ? value : { value };
+    const normalized = v.parse(mcpJsonValueSchema, JSON.parse(json));
+    return isRecord(normalized) ? normalized : { value: normalized };
   }
   return {
     truncated: true,
@@ -458,6 +482,7 @@ function boundedStructuredContent(value: unknown) {
   };
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+function isRecord(value: McpExternalValue): value is McpExternalRecord {
+  if (Array.isArray(value)) return false;
+  return v.safeParse(mcpExternalRecordSchema, value).success;
 }

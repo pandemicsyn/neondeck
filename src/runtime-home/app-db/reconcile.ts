@@ -1,4 +1,21 @@
 import type { DatabaseSync } from 'node:sqlite';
+import * as v from 'valibot';
+
+const workspaceOutputRowSchema = v.object({
+  output_ref: v.string(),
+  byte_size: v.number(),
+});
+const sessionIdRowSchema = v.object({ session_id: v.string() });
+const idRowSchema = v.object({ id: v.string() });
+const notificationGroupRowSchema = v.object({
+  source: v.string(),
+  source_id: v.string(),
+  count: v.number(),
+});
+const worktreeLockGroupRowSchema = v.object({
+  scope_key: v.string(),
+  count: v.number(),
+});
 
 export const submittedPrReviewRetentionMs = 14 * 24 * 60 * 60 * 1_000;
 export const prReviewWorkspaceOutputGlobalMaxEntries = 96;
@@ -26,7 +43,8 @@ export function prunePrReviewWorkspaceOutputs(
        FROM pr_review_workspace_outputs
        ORDER BY created_at ASC, output_ref ASC;`,
     )
-    .all() as Array<{ output_ref: string; byte_size: number }>;
+    .all()
+    .map((row) => v.parse(workspaceOutputRowSchema, row));
   let retainedBytes = rows.reduce((total, row) => total + row.byte_size, 0);
   while (
     rows.length + reserveEntries > prReviewWorkspaceOutputGlobalMaxEntries ||
@@ -62,18 +80,21 @@ export function pruneExpiredSubmittedPrReviewRows(
 }
 
 export function reconcileActiveChatSession(database: DatabaseSync) {
-  const active = database
-    .prepare(
-      `
+  const active = v.safeParse(
+    sessionIdRowSchema,
+    database
+      .prepare(
+        `
       SELECT session_id
       FROM chat_session_surfaces
       WHERE surface = 'dashboard'
       LIMIT 1;
     `,
-    )
-    .get() as { session_id?: unknown } | undefined;
+      )
+      .get(),
+  );
 
-  if (typeof active?.session_id === 'string') {
+  if (active.success) {
     const row = database
       .prepare(
         `
@@ -83,23 +104,26 @@ export function reconcileActiveChatSession(database: DatabaseSync) {
           AND archived_at IS NULL;
       `,
       )
-      .get(active.session_id);
+      .get(active.output.session_id);
     if (row) return;
   }
 
-  const fallback = database
-    .prepare(
-      `
+  const fallback = v.safeParse(
+    idRowSchema,
+    database
+      .prepare(
+        `
       SELECT id
       FROM chat_sessions
       WHERE archived_at IS NULL
       ORDER BY pinned DESC, last_active_at DESC, created_at DESC
       LIMIT 1;
     `,
-    )
-    .get() as { id?: unknown } | undefined;
+      )
+      .get(),
+  );
 
-  if (typeof fallback?.id !== 'string') return;
+  if (!fallback.success) return;
   database
     .prepare(
       `
@@ -110,7 +134,7 @@ export function reconcileActiveChatSession(database: DatabaseSync) {
         updated_at = excluded.updated_at;
     `,
     )
-    .run(fallback.id);
+    .run(fallback.output.id);
 }
 
 export function reconcileExistingNotificationDuplicates(
@@ -129,11 +153,8 @@ export function reconcileExistingNotificationDuplicates(
       HAVING COUNT(*) > 1;
     `,
     )
-    .all() as Array<{
-    source: string;
-    source_id: string;
-    count: number;
-  }>;
+    .all()
+    .map((row) => v.parse(notificationGroupRowSchema, row));
 
   for (const group of groups) {
     const rows = database
@@ -147,7 +168,8 @@ export function reconcileExistingNotificationDuplicates(
         ORDER BY updated_at DESC, created_at DESC;
       `,
       )
-      .all(group.source, group.source_id) as Array<{ id: string }>;
+      .all(group.source, group.source_id)
+      .map((row) => v.parse(idRowSchema, row));
     const [active, ...duplicates] = rows;
     if (!active || duplicates.length === 0) continue;
 
@@ -186,7 +208,8 @@ export function reconcileActiveWorktreeLocks(database: DatabaseSync) {
       HAVING COUNT(*) > 1;
     `,
     )
-    .all() as Array<{ scope_key: string; count: number }>;
+    .all()
+    .map((row) => v.parse(worktreeLockGroupRowSchema, row));
 
   for (const group of groups) {
     const rows = database
@@ -199,7 +222,8 @@ export function reconcileActiveWorktreeLocks(database: DatabaseSync) {
         ORDER BY expires_at DESC, created_at DESC;
       `,
       )
-      .all(group.scope_key) as Array<{ id: string }>;
+      .all(group.scope_key)
+      .map((row) => v.parse(idRowSchema, row));
     for (const row of rows.slice(1)) {
       database
         .prepare(

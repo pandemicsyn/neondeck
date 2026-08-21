@@ -5,6 +5,8 @@ import {
   writeJsonAtomic,
   writeJsonAtomicSync,
 } from './files.ts';
+import type { RuntimeHomeExternalRecord } from './schemas.ts';
+import * as v from 'valibot';
 
 export const dashboardSchemaVersion = 1;
 
@@ -28,14 +30,14 @@ export function migrateDashboardConfigSync(path: string) {
 }
 
 export function migrateDashboardConfigValue(
-  current: Record<string, unknown> | null,
+  current: RuntimeHomeExternalRecord | null,
 ) {
   if (!current) return null;
-  const version =
-    typeof current.schemaVersion === 'number' &&
-    Number.isInteger(current.schemaVersion)
-      ? current.schemaVersion
-      : 0;
+  const parsedVersion = v.safeParse(
+    v.pipe(v.number(), v.integer()),
+    current.schemaVersion,
+  );
+  const version = parsedVersion.success ? parsedVersion.output : 0;
   if (version >= dashboardSchemaVersion) return null;
 
   const layout = isRecord(current.layout) ? current.layout : null;
@@ -93,9 +95,10 @@ export function migrateDashboardConfigValue(
     }
   }
 
-  return {
+  const migrated: RuntimeHomeExternalRecord = {
     ...current,
     schemaVersion: dashboardSchemaVersion,
-    ...(nextLayout ? { layout: nextLayout } : {}),
   };
+  if (nextLayout) migrated.layout = nextLayout;
+  return migrated;
 }

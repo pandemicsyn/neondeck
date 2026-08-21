@@ -7,7 +7,11 @@ import {
 } from '../../runtime-home';
 import * as v from 'valibot';
 import { stableJson, truncateText } from './format';
-import { mcpApprovalResolveInputSchema } from './schemas';
+import {
+  mcpApprovalResolveInputSchema,
+  mcpJsonValueSchema,
+  type McpExternalValue,
+} from './schemas';
 import { createApprovalResolutionNudge } from '../../modules/sessions';
 import { promoteMcpToolAlways, readMcpConfig } from './config';
 
@@ -16,9 +20,9 @@ export type McpToolCatalogRecord = {
   toolName: string;
   adaptedName: string;
   description: string;
-  inputSchema: unknown;
-  outputSchema: unknown;
-  annotations: unknown;
+  inputSchema: McpExternalValue;
+  outputSchema: McpExternalValue;
+  annotations: McpExternalValue;
   status: 'available' | 'unavailable';
   updatedAt: string;
 };
@@ -62,6 +66,55 @@ export type McpAuditRecord = {
 };
 
 const defaultApprovalTtlMs = 15 * 60 * 1000;
+const nullableStringSchema = v.nullable(v.string());
+const mcpCatalogRowSchema = v.object({
+  server_id: v.string(),
+  tool_name: v.string(),
+  adapted_name: v.string(),
+  description: v.string(),
+  input_schema_json: nullableStringSchema,
+  output_schema_json: nullableStringSchema,
+  annotations_json: nullableStringSchema,
+  status: v.picklist(['available', 'unavailable']),
+  updated_at: v.string(),
+});
+const mcpApprovalRowSchema = v.object({
+  id: v.string(),
+  server_id: v.string(),
+  tool_name: v.string(),
+  adapted_name: v.string(),
+  arguments_hash: v.string(),
+  arguments_preview: v.string(),
+  status: v.picklist(['pending', 'approved', 'denied', 'used', 'expired']),
+  approval_decision: v.nullable(
+    v.picklist(['allow-once', 'allow-chat', 'allow-always', 'deny']),
+  ),
+  approver_surface: nullableStringSchema,
+  expires_at: v.string(),
+  created_at: v.string(),
+  resolved_at: nullableStringSchema,
+  used_at: nullableStringSchema,
+  session_id: v.optional(nullableStringSchema),
+  updated_at: v.string(),
+});
+const mcpAuditRowSchema = v.object({
+  id: v.string(),
+  server_id: v.string(),
+  tool_name: v.string(),
+  adapted_name: v.string(),
+  arguments_hash: v.string(),
+  decision: v.string(),
+  approval_id: nullableStringSchema,
+  duration_ms: v.nullable(v.number()),
+  ok: v.picklist([0, 1]),
+  result_preview: nullableStringSchema,
+  error: nullableStringSchema,
+  created_at: v.string(),
+});
+
+type McpCatalogRow = v.InferOutput<typeof mcpCatalogRowSchema>;
+type McpApprovalRow = v.InferOutput<typeof mcpApprovalRowSchema>;
+type McpAuditRow = v.InferOutput<typeof mcpAuditRowSchema>;
 
 type McpCatalogReplaceTestHookInput = {
   serverId: string;
@@ -84,7 +137,7 @@ export function setMcpCatalogReplaceHookForTests(
   };
 }
 
-export function hashMcpArguments(value: unknown) {
+export function hashMcpArguments(value: McpExternalValue) {
   return createHash('sha256').update(stableJson(value)).digest('hex');
 }
 
@@ -232,7 +285,7 @@ export async function listMcpToolCatalog(
             `,
             )
             .all()
-    ) as McpCatalogRow[];
+    ).map((row) => v.parse(mcpCatalogRowSchema, row));
     return rows.map(readCatalogRow);
   } finally {
     database.close();
@@ -255,9 +308,10 @@ export async function findUsableMcpApproval(
   try {
     const sessionId = nonEmpty(input.sessionId);
     const chatRow = sessionId
-      ? (database
-          .prepare(
-            `
+      ? optionalApprovalRow(
+          database
+            .prepare(
+              `
             SELECT *
             FROM mcp_tool_approvals
             WHERE server_id = ?
@@ -269,15 +323,16 @@ export async function findUsableMcpApproval(
             ORDER BY resolved_at DESC
             LIMIT 1;
           `,
-          )
-          .get(input.serverId, input.toolName, input.adaptedName, sessionId) as
-          McpApprovalRow | undefined)
+            )
+            .get(input.serverId, input.toolName, input.adaptedName, sessionId),
+        )
       : undefined;
     if (chatRow) return readApprovalRow(chatRow);
 
-    const row = database
-      .prepare(
-        `
+    const row = optionalApprovalRow(
+      database
+        .prepare(
+          `
         SELECT *
         FROM mcp_tool_approvals
         WHERE server_id = ?
@@ -291,15 +346,16 @@ export async function findUsableMcpApproval(
         ORDER BY resolved_at ASC
         LIMIT 1;
       `,
-      )
-      .get(
-        input.serverId,
-        input.toolName,
-        input.adaptedName,
-        input.argumentsHash,
-        nonEmpty(input.sessionId) ?? '',
-        new Date().toISOString(),
-      ) as McpApprovalRow | undefined;
+        )
+        .get(
+          input.serverId,
+          input.toolName,
+          input.adaptedName,
+          input.argumentsHash,
+          nonEmpty(input.sessionId) ?? '',
+          new Date().toISOString(),
+        ),
+    );
     return row ? readApprovalRow(row) : null;
   } finally {
     database.close();
@@ -326,9 +382,10 @@ export async function consumeUsableMcpApproval(
     transactionStarted = true;
     const sessionId = nonEmpty(input.sessionId);
     const chatRow = sessionId
-      ? (database
-          .prepare(
-            `
+      ? optionalApprovalRow(
+          database
+            .prepare(
+              `
             SELECT *
             FROM mcp_tool_approvals
             WHERE server_id = ?
@@ -340,18 +397,19 @@ export async function consumeUsableMcpApproval(
             ORDER BY resolved_at DESC
             LIMIT 1;
           `,
-          )
-          .get(input.serverId, input.toolName, input.adaptedName, sessionId) as
-          McpApprovalRow | undefined)
+            )
+            .get(input.serverId, input.toolName, input.adaptedName, sessionId),
+        )
       : undefined;
     if (chatRow) {
       database.exec('COMMIT;');
       transactionStarted = false;
       return readApprovalRow(chatRow);
     }
-    const row = database
-      .prepare(
-        `
+    const row = optionalApprovalRow(
+      database
+        .prepare(
+          `
         SELECT *
         FROM mcp_tool_approvals
         WHERE server_id = ?
@@ -365,15 +423,16 @@ export async function consumeUsableMcpApproval(
         ORDER BY resolved_at ASC
         LIMIT 1;
       `,
-      )
-      .get(
-        input.serverId,
-        input.toolName,
-        input.adaptedName,
-        input.argumentsHash,
-        sessionId ?? '',
-        now,
-      ) as McpApprovalRow | undefined;
+        )
+        .get(
+          input.serverId,
+          input.toolName,
+          input.adaptedName,
+          input.argumentsHash,
+          sessionId ?? '',
+          now,
+        ),
+    );
     if (!row) {
       database.exec('COMMIT;');
       return null;
@@ -432,9 +491,10 @@ export async function createMcpApprovalRequest(
   const sessionId = nonEmpty(input.sessionId);
 
   try {
-    const existing = database
-      .prepare(
-        `
+    const existing = optionalApprovalRow(
+      database
+        .prepare(
+          `
         SELECT *
         FROM mcp_tool_approvals
         WHERE server_id = ?
@@ -447,15 +507,16 @@ export async function createMcpApprovalRequest(
         ORDER BY created_at DESC
         LIMIT 1;
       `,
-      )
-      .get(
-        input.serverId,
-        input.toolName,
-        input.adaptedName,
-        input.argumentsHash,
-        sessionId ?? '',
-        nowIso,
-      ) as McpApprovalRow | undefined;
+        )
+        .get(
+          input.serverId,
+          input.toolName,
+          input.adaptedName,
+          input.argumentsHash,
+          sessionId ?? '',
+          nowIso,
+        ),
+    );
     if (existing) {
       return readApprovalRow(existing);
     }
@@ -524,13 +585,13 @@ export async function consumeMcpApproval(id: string, paths = runtimePaths()) {
   }
 }
 
-export async function resolveMcpApproval(rawInput: unknown) {
+export async function resolveMcpApproval(rawInput: McpExternalValue) {
   const paths = runtimePaths();
   return resolveMcpApprovalWithPaths(rawInput, paths);
 }
 
 export async function resolveMcpApprovalWithPaths(
-  rawInput: unknown,
+  rawInput: McpExternalValue,
   paths = runtimePaths(),
 ) {
   await ensureRuntimeHome(paths);
@@ -636,9 +697,11 @@ export async function resolveMcpApprovalWithPaths(
   try {
     database.exec('BEGIN IMMEDIATE;');
     transactionStarted = true;
-    const existingRow = database
-      .prepare('SELECT * FROM mcp_tool_approvals WHERE id = ?;')
-      .get(input.id) as McpApprovalRow | undefined;
+    const existingRow = optionalApprovalRow(
+      database
+        .prepare('SELECT * FROM mcp_tool_approvals WHERE id = ?;')
+        .get(input.id),
+    );
     if (!existingRow) {
       database.exec('COMMIT;');
       transactionStarted = false;
@@ -684,7 +747,7 @@ export async function resolveMcpApprovalWithPaths(
       };
     }
 
-    const result = database
+    const updateResult = database
       .prepare(
         `
         UPDATE mcp_tool_approvals
@@ -708,25 +771,28 @@ export async function resolveMcpApprovalWithPaths(
         ...(resolutionClaim ? [resolutionClaim] : []),
       );
 
-    if (result.changes !== 1) {
-      const currentRow = database
-        .prepare('SELECT * FROM mcp_tool_approvals WHERE id = ?;')
-        .get(input.id) as McpApprovalRow | undefined;
+    if (updateResult.changes !== 1) {
+      const currentRow = optionalApprovalRow(
+        database
+          .prepare('SELECT * FROM mcp_tool_approvals WHERE id = ?;')
+          .get(input.id),
+      );
       const current = currentRow ? readApprovalRow(currentRow) : null;
       database.exec('COMMIT;');
       transactionStarted = false;
       if (resolutionClaim) {
         releaseMcpApprovalResolution(paths, input.id, resolutionClaim);
       }
-      return {
+      const response = {
         ok: false,
         action: 'mcp_approval_resolve',
         changed: false,
         message: current
           ? `MCP approval "${input.id}" is already ${current.status}.`
           : `MCP approval "${input.id}" was not found.`,
-        ...(current ? { approval: current } : { requires: ['id'] }),
       };
+      if (current) return { ...response, approval: current };
+      return { ...response, requires: ['id'] };
     }
 
     const approval = readApprovalRow({
@@ -754,7 +820,7 @@ export async function resolveMcpApprovalWithPaths(
       paths,
     );
     const nudgeErrors = nudge.ok ? [] : nudge.errors;
-    return {
+    const response = {
       ok: true,
       action: 'mcp_approval_resolve',
       changed: true,
@@ -767,9 +833,12 @@ export async function resolveMcpApprovalWithPaths(
               : `Always allowed MCP tool "${approval.toolName}" on server "${approval.serverId}". Retry the tool call.`
           : `Denied MCP tool call "${input.id}".`,
       approval,
-      ...(nudgeErrors.length > 0
-        ? { requires: ['approvalNudge'], errors: nudgeErrors }
-        : {}),
+    };
+    if (nudgeErrors.length === 0) return response;
+    return {
+      ...response,
+      requires: ['approvalNudge'],
+      errors: nudgeErrors,
     };
   } catch (error) {
     if (transactionStarted) database.exec('ROLLBACK;');
@@ -847,7 +916,8 @@ export async function listMcpApprovals(
         LIMIT 100;
       `,
       )
-      .all() as McpApprovalRow[];
+      .all()
+      .map((row) => v.parse(mcpApprovalRowSchema, row));
     return rows.map(readApprovalRow);
   } finally {
     database.close();
@@ -944,7 +1014,7 @@ export async function listMcpAudit(
             `,
             )
             .all(limit)
-    ) as McpAuditRow[];
+    ).map((row) => v.parse(mcpAuditRowSchema, row));
     return rows.map(readAuditRow);
   } finally {
     database.close();
@@ -954,9 +1024,11 @@ export async function listMcpAudit(
 function readApproval(paths: RuntimePaths, id: string) {
   const database = openDb(paths.neondeckDatabase, { readOnly: true });
   try {
-    const row = database
-      .prepare('SELECT * FROM mcp_tool_approvals WHERE id = ?;')
-      .get(id) as McpApprovalRow | undefined;
+    const row = optionalApprovalRow(
+      database
+        .prepare('SELECT * FROM mcp_tool_approvals WHERE id = ?;')
+        .get(id),
+    );
     return row ? readApprovalRow(row) : null;
   } finally {
     database.close();
@@ -983,51 +1055,6 @@ function expireOldApprovals(paths: RuntimePaths) {
     database.close();
   }
 }
-
-type McpCatalogRow = {
-  server_id: string;
-  tool_name: string;
-  adapted_name: string;
-  description: string;
-  input_schema_json: string | null;
-  output_schema_json: string | null;
-  annotations_json: string | null;
-  status: 'available' | 'unavailable';
-  updated_at: string;
-};
-
-type McpApprovalRow = {
-  id: string;
-  server_id: string;
-  tool_name: string;
-  adapted_name: string;
-  arguments_hash: string;
-  arguments_preview: string;
-  status: McpApprovalStatus;
-  approval_decision: McpApprovalDecision | null;
-  approver_surface: string | null;
-  expires_at: string;
-  created_at: string;
-  resolved_at: string | null;
-  used_at: string | null;
-  session_id?: string | null;
-  updated_at: string;
-};
-
-type McpAuditRow = {
-  id: string;
-  server_id: string;
-  tool_name: string;
-  adapted_name: string;
-  arguments_hash: string;
-  decision: string;
-  approval_id: string | null;
-  duration_ms: number | null;
-  ok: 0 | 1;
-  result_preview: string | null;
-  error: string | null;
-  created_at: string;
-};
 
 function readCatalogRow(row: McpCatalogRow): McpToolCatalogRecord {
   return {
@@ -1083,10 +1110,15 @@ function readAuditRow(row: McpAuditRow): McpAuditRecord {
 function parseJson(value: string | null) {
   if (!value) return null;
   try {
-    return JSON.parse(value) as unknown;
+    return v.parse(mcpJsonValueSchema, JSON.parse(value));
   } catch {
     return null;
   }
+}
+
+function optionalApprovalRow(value: McpExternalValue) {
+  const parsed = v.safeParse(mcpApprovalRowSchema, value);
+  return parsed.success ? parsed.output : undefined;
 }
 
 function nonEmpty(value: string | null | undefined) {

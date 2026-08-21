@@ -5,18 +5,26 @@ import {
   type OAuthClientProvider,
   type OAuthDiscoveryState,
 } from '@modelcontextprotocol/sdk/client/auth.js';
-import type {
+import {
+  OAuthClientInformationFullSchema,
+  OAuthClientInformationSchema,
   OAuthClientInformationMixed,
   OAuthClientMetadata,
   OAuthTokens,
 } from '@modelcontextprotocol/sdk/shared/auth.js';
+import * as v from 'valibot';
 import {
   ensureRuntimeHome,
   runtimePaths,
   type RuntimePaths,
 } from '../../runtime-home';
 import { readMcpConfig } from './config';
-import type { McpServerConfig } from './schemas';
+import {
+  mcpErrorSchema,
+  mcpExternalRecordSchema,
+  type McpExternalValue,
+  type McpServerConfig,
+} from './schemas';
 import {
   expireMcpServerApprovals,
   expireMcpServerApprovalsSync,
@@ -68,6 +76,60 @@ type TokenState = {
 
 const defaultCallbackUrl = 'http://127.0.0.1:3583/api/mcp/oauth/callback';
 const loginTtlMs = 10 * 60 * 1000;
+const nullableStringSchema = v.nullable(v.string());
+const oauthLoginStatusSchema = v.picklist([
+  'pending',
+  'redirect',
+  'authorized',
+  'failed',
+  'expired',
+]);
+const oauthLoginRowSchema = v.object({
+  id: v.string(),
+  server_id: v.string(),
+  server_identity: nullableStringSchema,
+  state: v.string(),
+  status: oauthLoginStatusSchema,
+  redirect_url: v.string(),
+  authorization_url: nullableStringSchema,
+  discovery_state_json: nullableStringSchema,
+  code_verifier: nullableStringSchema,
+  error: nullableStringSchema,
+  created_at: v.string(),
+  expires_at: v.string(),
+  completed_at: nullableStringSchema,
+  updated_at: v.string(),
+});
+const oauthLoginStateRowSchema = v.object({
+  code_verifier: nullableStringSchema,
+  discovery_state_json: nullableStringSchema,
+});
+const oauthTokenRowSchema = v.object({
+  server_identity: nullableStringSchema,
+  access_token: nullableStringSchema,
+  refresh_token: nullableStringSchema,
+  token_type: nullableStringSchema,
+  id_token: nullableStringSchema,
+  expires_at: nullableStringSchema,
+  scopes_json: nullableStringSchema,
+  client_information_json: nullableStringSchema,
+  discovery_state_json: nullableStringSchema,
+  code_verifier: nullableStringSchema,
+  updated_at: v.string(),
+});
+const oauthClientInformationSchema = v.custom<OAuthClientInformationMixed>(
+  (input) =>
+    OAuthClientInformationSchema.safeParse(input).success ||
+    OAuthClientInformationFullSchema.safeParse(input).success,
+);
+const oauthDiscoveryStateSchema = v.custom<OAuthDiscoveryState>((input) => {
+  if (Array.isArray(input)) return false;
+  const record = v.safeParse(mcpExternalRecordSchema, input);
+  return (
+    record.success &&
+    v.safeParse(v.string(), record.output.authorizationServerUrl).success
+  );
+});
 
 export type McpOAuthLoginOptions = {
   trustedOrigins?: readonly string[];
@@ -133,15 +195,14 @@ export async function startMcpOAuthLogin(
     };
   } catch (error) {
     if (login) await failOAuthLogin(login.id, errorMessage(error), paths);
-    return {
+    const result = {
       ok: false,
       action: 'mcp_login_start',
       changed: false,
       message: `Failed to start MCP OAuth login for "${input.id}": ${errorMessage(error)}`,
-      ...(login
-        ? { login: await readPublicMcpOAuthLogin(login.id, paths) }
-        : {}),
     };
+    if (!login) return result;
+    return { ...result, login: await readPublicMcpOAuthLogin(login.id, paths) };
   }
 }
 
@@ -364,9 +425,9 @@ export async function readMcpOAuthLogin(id: string, paths = runtimePaths()) {
   expireOldOAuthLogins(paths);
   const database = openDb(paths.neondeckDatabase, { readOnly: true });
   try {
-    const row = database
-      .prepare('SELECT * FROM mcp_oauth_logins WHERE id = ?;')
-      .get(id) as McpOAuthLoginRow | undefined;
+    const row = optionalLoginRow(
+      database.prepare('SELECT * FROM mcp_oauth_logins WHERE id = ?;').get(id),
+    );
     return row ? readLoginRow(row) : null;
   } finally {
     database.close();
@@ -388,9 +449,11 @@ export async function readMcpOAuthLoginByState(
   expireOldOAuthLogins(paths);
   const database = openDb(paths.neondeckDatabase, { readOnly: true });
   try {
-    const row = database
-      .prepare('SELECT * FROM mcp_oauth_logins WHERE state = ?;')
-      .get(state) as McpOAuthLoginRow | undefined;
+    const row = optionalLoginRow(
+      database
+        .prepare('SELECT * FROM mcp_oauth_logins WHERE state = ?;')
+        .get(state),
+    );
     return row ? readLoginRow(row) : null;
   } finally {
     database.close();
@@ -481,16 +544,15 @@ class NeondeckMcpOAuthProvider implements OAuthClientProvider {
   tokens() {
     const state = this.currentTokenState();
     if (!state.accessToken || !state.tokenType) return undefined;
-    return {
+    const tokens: OAuthTokens = {
       access_token: state.accessToken,
       token_type: state.tokenType,
-      ...(state.refreshToken ? { refresh_token: state.refreshToken } : {}),
-      ...(state.idToken ? { id_token: state.idToken } : {}),
-      ...(state.expiresAt
-        ? { expires_in: expiresInSeconds(state.expiresAt) }
-        : {}),
-      ...(state.scopes.length > 0 ? { scope: state.scopes.join(' ') } : {}),
-    } satisfies OAuthTokens;
+    };
+    if (state.refreshToken) tokens.refresh_token = state.refreshToken;
+    if (state.idToken) tokens.id_token = state.idToken;
+    if (state.expiresAt) tokens.expires_in = expiresInSeconds(state.expiresAt);
+    if (state.scopes.length > 0) tokens.scope = state.scopes.join(' ');
+    return tokens;
   }
 
   saveTokens(tokens: OAuthTokens) {
@@ -617,10 +679,11 @@ function configuredClientInformation(server: McpServerConfig) {
   if (!clientId) return undefined;
   const secretRef = server.auth.clientSecret;
   const secret = secretRef ? process.env[secretRef.env] : undefined;
-  return {
+  const clientInformation: OAuthClientInformationMixed = {
     client_id: clientId,
-    ...(secret ? { client_secret: secret } : {}),
-  } satisfies OAuthClientInformationMixed;
+  };
+  if (secret) clientInformation.client_secret = secret;
+  return clientInformation;
 }
 
 function oauthServerIdentity(server: McpServerConfig) {
@@ -760,19 +823,24 @@ function writeLoginStateByState(
 function readLoginStateByState(paths: RuntimePaths, state: string) {
   const database = openDb(paths.neondeckDatabase, { readOnly: true });
   try {
-    const row = database
-      .prepare(
-        `
+    const row = optionalLoginStateRow(
+      database
+        .prepare(
+          `
         SELECT code_verifier, discovery_state_json
         FROM mcp_oauth_logins
         WHERE state = ?;
       `,
-      )
-      .get(state) as McpOAuthLoginStateRow | undefined;
+        )
+        .get(state),
+    );
     if (!row) return null;
     return {
       codeVerifier: row.code_verifier,
-      discoveryState: parseJson<OAuthDiscoveryState>(row.discovery_state_json),
+      discoveryState: parseJson(
+        row.discovery_state_json,
+        oauthDiscoveryStateSchema,
+      ),
     };
   } finally {
     database.close();
@@ -856,9 +924,11 @@ function expireOldOAuthLogins(paths: RuntimePaths) {
 function readTokenState(paths: RuntimePaths, serverId: string): TokenState {
   const database = openDb(paths.neondeckDatabase, { readOnly: true });
   try {
-    const row = database
-      .prepare('SELECT * FROM mcp_oauth_tokens WHERE server_id = ?;')
-      .get(serverId) as McpOAuthTokenRow | undefined;
+    const row = optionalTokenRow(
+      database
+        .prepare('SELECT * FROM mcp_oauth_tokens WHERE server_id = ?;')
+        .get(serverId),
+    );
     if (!row) return emptyTokenState();
     return {
       serverIdentity: row.server_identity,
@@ -868,8 +938,14 @@ function readTokenState(paths: RuntimePaths, serverId: string): TokenState {
       idToken: row.id_token,
       expiresAt: row.expires_at,
       scopes: parseStringArray(row.scopes_json),
-      clientInformation: parseJson(row.client_information_json),
-      discoveryState: parseJson(row.discovery_state_json),
+      clientInformation: parseJson(
+        row.client_information_json,
+        oauthClientInformationSchema,
+      ),
+      discoveryState: parseJson(
+        row.discovery_state_json,
+        oauthDiscoveryStateSchema,
+      ),
       codeVerifier: row.code_verifier,
       updatedAt: row.updated_at,
     };
@@ -974,41 +1050,7 @@ function usableAccessToken(state: TokenState) {
   return Date.parse(state.expiresAt) > Date.now();
 }
 
-type McpOAuthTokenRow = {
-  server_identity: string | null;
-  access_token: string | null;
-  refresh_token: string | null;
-  token_type: string | null;
-  id_token: string | null;
-  expires_at: string | null;
-  scopes_json: string | null;
-  client_information_json: string | null;
-  discovery_state_json: string | null;
-  code_verifier: string | null;
-  updated_at: string;
-};
-
-type McpOAuthLoginRow = {
-  id: string;
-  server_id: string;
-  server_identity: string | null;
-  state: string;
-  status: McpOAuthLoginStatus;
-  redirect_url: string;
-  authorization_url: string | null;
-  discovery_state_json: string | null;
-  code_verifier: string | null;
-  error: string | null;
-  created_at: string;
-  expires_at: string;
-  completed_at: string | null;
-  updated_at: string;
-};
-
-type McpOAuthLoginStateRow = {
-  code_verifier: string | null;
-  discovery_state_json: string | null;
-};
+type McpOAuthLoginRow = v.InferOutput<typeof oauthLoginRowSchema>;
 
 function readLoginRow(row: McpOAuthLoginRow): McpOAuthLoginRecord {
   return {
@@ -1028,19 +1070,34 @@ function readLoginRow(row: McpOAuthLoginRow): McpOAuthLoginRecord {
 }
 
 function parseStringArray(value: string | null) {
-  const parsed = parseJson(value);
-  return Array.isArray(parsed)
-    ? parsed.filter((item): item is string => typeof item === 'string')
-    : [];
+  return parseJson(value, v.array(v.string())) ?? [];
 }
 
-function parseJson<T = unknown>(value: string | null): T | null {
+function parseJson<T>(
+  value: string | null,
+  schema: v.GenericSchema<McpExternalValue, T>,
+): T | null {
   if (!value) return null;
   try {
-    return JSON.parse(value) as T;
+    return v.parse(schema, JSON.parse(value));
   } catch {
     return null;
   }
+}
+
+function optionalLoginRow(value: McpExternalValue) {
+  const parsed = v.safeParse(oauthLoginRowSchema, value);
+  return parsed.success ? parsed.output : undefined;
+}
+
+function optionalLoginStateRow(value: McpExternalValue) {
+  const parsed = v.safeParse(oauthLoginStateRowSchema, value);
+  return parsed.success ? parsed.output : undefined;
+}
+
+function optionalTokenRow(value: McpExternalValue) {
+  const parsed = v.safeParse(oauthTokenRowSchema, value);
+  return parsed.success ? parsed.output : undefined;
 }
 
 function expiresInSeconds(expiresAt: string) {
@@ -1083,6 +1140,7 @@ export function isAllowedMcpOAuthRedirectUrl(
   });
 }
 
-function errorMessage(error: unknown) {
-  return error instanceof Error ? error.message : String(error);
+function errorMessage(error: McpExternalValue) {
+  const parsed = v.safeParse(mcpErrorSchema, error);
+  return parsed.success ? parsed.output.message : String(error);
 }

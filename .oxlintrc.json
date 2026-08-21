@@ -26,6 +26,8 @@
       "files": [
         "src/cli/**/*.ts",
         "src/cli/**/*.tsx",
+        "src/domains/mcp/**/*.ts",
+        "src/domains/mcp/**/*.tsx",
         "src/modules/app-state/**/*.ts",
         "src/modules/app-state/**/*.tsx",
         "src/modules/autopilot/**/*.ts",
@@ -50,6 +52,8 @@
         "src/modules/sessions/**/*.tsx",
         "src/modules/watches/**/*.ts",
         "src/modules/watches/**/*.tsx",
+        "src/runtime-home/**/*.ts",
+        "src/runtime-home/**/*.tsx",
         "src/server/**/*.ts",
         "src/server/**/*.tsx"
       ],

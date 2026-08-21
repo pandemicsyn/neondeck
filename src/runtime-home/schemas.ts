@@ -10,7 +10,18 @@ function hasShellOperator(value: string) {
   return /(?:\n|&&|\|\||[;&|<>`]|\$\()/.test(value);
 }
 
-const unknownRecordSchema = v.record(v.string(), v.unknown());
+export const runtimeHomeExternalValueSchema = v.unknown();
+export type RuntimeHomeExternalValue = v.InferInput<
+  typeof runtimeHomeExternalValueSchema
+>;
+export const runtimeHomeExternalRecordSchema = v.record(
+  v.string(),
+  runtimeHomeExternalValueSchema,
+);
+export type RuntimeHomeExternalRecord = v.InferOutput<
+  typeof runtimeHomeExternalRecordSchema
+>;
+const unknownRecordSchema = runtimeHomeExternalRecordSchema;
 const nonEmptyStringSchema = v.pipe(v.string(), v.minLength(1));
 const positiveIntegerSchema = v.pipe(v.number(), v.integer(), v.minValue(1));
 const dashboardDensitySchema = v.picklist(['compact', 'comfortable', 'large']);
@@ -623,20 +634,29 @@ export class ConfigValidationError extends Error {
   }
 }
 
-export function parseAppConfig(value: unknown, path: string): AppConfig {
+export function parseAppConfig(
+  value: RuntimeHomeExternalValue,
+  path: string,
+): AppConfig {
   return parseSchema(appConfigSchema, value, path);
 }
 
-export function parseMcpConfig(value: unknown, path: string): McpConfig {
+export function parseMcpConfig(
+  value: RuntimeHomeExternalValue,
+  path: string,
+): McpConfig {
   return parseSchema(mcpConfigSchema, value, path);
 }
 
-export function parseRepoRegistry(value: unknown, path: string): RepoRegistry {
+export function parseRepoRegistry(
+  value: RuntimeHomeExternalValue,
+  path: string,
+): RepoRegistry {
   return parseSchema(repoRegistrySchema, value, path);
 }
 
 export function parseDashboardConfig(
-  value: unknown,
+  value: RuntimeHomeExternalValue,
   path: string,
 ): DashboardConfig {
   const config = parseSchema(dashboardConfigSchema, value, path);
@@ -693,8 +713,8 @@ function validateDashboardConfig(config: DashboardConfig, path: string) {
 }
 
 function parseSchema<T>(
-  schema: v.GenericSchema<unknown, T>,
-  value: unknown,
+  schema: v.GenericSchema<RuntimeHomeExternalValue, T>,
+  value: RuntimeHomeExternalValue,
   path: string,
 ): T {
   const result = v.safeParse(schema, value);

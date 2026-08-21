@@ -11,15 +11,22 @@ import {
   insertMcpAudit,
 } from './store';
 import type { McpToolDelegate, McpToolEnvelope } from './stdio';
+import * as v from 'valibot';
+import {
+  mcpErrorSchema,
+  type McpExternalRecord,
+  type McpExternalValue,
+  mcpJsonValueSchema,
+} from './schemas';
 
 export type McpGateInput = {
   serverId: string;
   toolName: string;
   adaptedName: string;
-  annotations?: unknown;
+  annotations?: McpExternalValue;
   run: McpToolDelegate;
   context: {
-    input: Record<string, unknown>;
+    input: McpExternalRecord;
     signal?: AbortSignal;
     sessionId?: string;
   };
@@ -149,7 +156,10 @@ export async function runMcpToolThroughGate(
       structuredContent: jsonValueOrNull(result.structuredContent),
     };
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
+    const parsedError = v.safeParse(mcpErrorSchema, error);
+    const message = parsedError.success
+      ? parsedError.output.message
+      : String(error);
     await insertMcpAudit(
       {
         serverId: input.serverId,
@@ -185,7 +195,8 @@ function elapsed(startedAt: number) {
   return Math.round(performance.now() - startedAt);
 }
 
-function jsonValueOrNull(value: unknown) {
-  if (value === undefined) return null;
-  return JSON.parse(JSON.stringify(value)) as unknown;
+function jsonValueOrNull(value: McpExternalValue) {
+  const serialized = v.safeParse(v.string(), JSON.stringify(value));
+  if (!serialized.success) return null;
+  return v.parse(mcpJsonValueSchema, JSON.parse(serialized.output));
 }

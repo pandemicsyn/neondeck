@@ -20,6 +20,10 @@ import {
   mcpServerIdSchema,
   mcpServerRemoveInputSchema,
   mcpServerUpdateInputSchema,
+  mcpExternalRecordSchema,
+  type McpExternalRecord,
+  type McpExternalValue,
+  type McpServerConfig,
 } from './schemas';
 import { resolveMcpApprovalWithPaths } from './store';
 import { runtimePaths } from '../../runtime-home';
@@ -266,14 +270,7 @@ export const neondeckMcpActions = [
   mcpStatusAction,
 ];
 
-function guardAgentMcpServerConfig(
-  server: {
-    transport: string;
-    auth?: { kind?: string; clientSecret?: unknown };
-    tools?: unknown;
-  },
-  action: string,
-) {
+function guardAgentMcpServerConfig(server: McpServerConfig, action: string) {
   if (server.transport === 'stdio') {
     return blockedAgentMcpAction(
       action,
@@ -303,7 +300,7 @@ function guardAgentMcpServerConfig(
 
 async function guardAgentMcpServerUpdate(
   id: string,
-  patch: Record<string, unknown>,
+  patch: McpExternalRecord,
   paths: ReturnType<typeof runtimePaths>,
 ) {
   const config = await readMcpConfig(paths);
@@ -346,13 +343,17 @@ async function guardAgentMcpServerUpdate(
   return null;
 }
 
-function isSafeAgentOAuthPatch(auth: unknown) {
-  if (!auth || typeof auth !== 'object' || Array.isArray(auth)) return false;
-  const value = auth as Record<string, unknown>;
-  return value.kind === 'oauth' && !Object.hasOwn(value, 'clientSecret');
+function isSafeAgentOAuthPatch(auth: McpExternalValue) {
+  if (Array.isArray(auth)) return false;
+  const parsed = v.safeParse(mcpExternalRecordSchema, auth);
+  return (
+    parsed.success &&
+    parsed.output.kind === 'oauth' &&
+    !Object.hasOwn(parsed.output, 'clientSecret')
+  );
 }
 
-function hasUserOwnedMcpUpdateField(patch: Record<string, unknown>) {
+function hasUserOwnedMcpUpdateField(patch: McpExternalRecord) {
   return ['transport', 'url', 'tools', 'command', 'args', 'cwd', 'env'].some(
     (key) => Object.hasOwn(patch, key),
   );

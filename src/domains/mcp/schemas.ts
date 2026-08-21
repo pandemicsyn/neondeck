@@ -1,4 +1,28 @@
 import * as v from 'valibot';
+import type { JsonValue } from '@flue/runtime';
+
+export const mcpExternalValueSchema = v.unknown();
+export type McpExternalValue = v.InferInput<typeof mcpExternalValueSchema>;
+export const mcpExternalRecordSchema = v.record(
+  v.string(),
+  mcpExternalValueSchema,
+);
+export type McpExternalRecord = v.InferOutput<typeof mcpExternalRecordSchema>;
+const mcpJsonScalarSchema = v.union([
+  v.null(),
+  v.string(),
+  v.pipe(v.number(), v.finite()),
+  v.boolean(),
+]);
+export const mcpJsonValueSchema: v.GenericSchema<McpExternalValue, JsonValue> =
+  v.lazy(() =>
+    v.union([
+      mcpJsonScalarSchema,
+      v.array(mcpJsonValueSchema),
+      v.record(v.string(), mcpJsonValueSchema),
+    ]),
+  );
+export const mcpErrorSchema = v.instance(Error);
 
 const nonEmptyStringSchema = v.pipe(v.string(), v.minLength(1));
 export const mcpServerIdSchema = v.pipe(
@@ -115,7 +139,7 @@ export const mcpServerAddInputSchema = v.object({
 
 export const mcpServerUpdateInputSchema = v.object({
   id: mcpServerIdSchema,
-  server: v.record(v.string(), v.unknown()),
+  server: mcpExternalRecordSchema,
 });
 
 export const mcpServerRemoveInputSchema = v.object({
@@ -157,7 +181,10 @@ export type McpToolApprovalMode = v.InferOutput<
 export type McpAuthConfig = v.InferOutput<typeof mcpAuthConfigSchema>;
 export type McpEnvRef = v.InferOutput<typeof mcpEnvRefSchema>;
 
-export function parseMcpConfig(value: unknown, path: string): McpConfig {
+export function parseMcpConfig(
+  value: McpExternalValue,
+  path: string,
+): McpConfig {
   const result = v.safeParse(mcpConfigSchema, value);
   if (!result.success) {
     throw new Error(`${path}: ${v.summarize(result.issues)}`);

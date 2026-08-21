@@ -1,4 +1,9 @@
-import type { McpServerConfig } from './schemas';
+import * as v from 'valibot';
+import {
+  mcpExternalRecordSchema,
+  type McpExternalValue,
+  type McpServerConfig,
+} from './schemas';
 
 export function adaptedMcpToolName(serverId: string, toolName: string) {
   return `mcp__${sanitizeMcpNamePart(serverId)}__${sanitizeMcpNamePart(toolName)}`;
@@ -20,15 +25,16 @@ export function truncateText(value: string, maxLength: number) {
   return `${value.slice(0, Math.max(0, maxLength - 3))}...`;
 }
 
-export function stableJson(value: unknown) {
+export function stableJson(value: McpExternalValue) {
   return JSON.stringify(sortJson(value));
 }
 
-function sortJson(value: unknown): unknown {
+function sortJson(value: McpExternalValue): McpExternalValue {
   if (Array.isArray(value)) return value.map(sortJson);
-  if (!value || typeof value !== 'object') return value;
+  const record = v.safeParse(mcpExternalRecordSchema, value);
+  if (!record.success) return value;
   return Object.fromEntries(
-    Object.entries(value as Record<string, unknown>)
+    Object.entries(record.output)
       .sort(([left], [right]) => left.localeCompare(right))
       .map(([key, item]) => [key, sortJson(item)]),
   );

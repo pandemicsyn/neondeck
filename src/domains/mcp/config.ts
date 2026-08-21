@@ -19,12 +19,16 @@ import {
   mcpServerAddInputSchema,
   mcpServerConfigSchema,
   mcpServerEnabled,
+  mcpExternalRecordSchema,
   mcpServerIdSchema,
   mcpServerRemoveInputSchema,
   mcpServerUpdateInputSchema,
   parseMcpConfig,
   type McpConfig,
+  type McpExternalRecord,
+  type McpExternalValue,
   type McpServerConfig,
+  mcpErrorSchema,
 } from './schemas';
 import { expireMcpServerApprovals } from './approval-state';
 
@@ -35,7 +39,7 @@ export type McpConfigActionResult = {
   message: string;
   home: string;
   files: string[];
-  data?: unknown;
+  data?: McpExternalValue;
   errors?: string[];
   requires?: string[];
 };
@@ -60,7 +64,10 @@ export async function listMcpServers(paths = runtimePaths()) {
   };
 }
 
-export async function addMcpServer(rawInput: unknown, paths = runtimePaths()) {
+export async function addMcpServer(
+  rawInput: McpExternalValue,
+  paths = runtimePaths(),
+) {
   await ensureRuntimeHome(paths);
   const parsed = v.safeParse(mcpServerAddInputSchema, rawInput);
   if (!parsed.success) {
@@ -105,7 +112,7 @@ export async function addMcpServer(rawInput: unknown, paths = runtimePaths()) {
 }
 
 export async function updateMcpServer(
-  rawInput: unknown,
+  rawInput: McpExternalValue,
   paths = runtimePaths(),
   options: { preserveApprovalId?: string } = {},
 ) {
@@ -161,7 +168,7 @@ export async function promoteMcpToolAlways(
 }
 
 async function updateMcpServerParsed(
-  input: { id: string; server: Record<string, unknown> },
+  input: { id: string; server: McpExternalRecord },
   paths: RuntimePaths,
   options: { preserveApprovalId?: string },
 ) {
@@ -176,10 +183,10 @@ async function updateMcpServerParsed(
     );
   }
 
-  const mergedRaw: Record<string, unknown> = {
+  const mergedRaw = v.parse(mcpExternalRecordSchema, {
     ...existing,
     ...input.server,
-  };
+  });
   replaceOptionalField(mergedRaw, input.server, 'auth');
   replaceOptionalField(mergedRaw, input.server, 'tools');
 
@@ -270,7 +277,7 @@ async function withMcpServerConfigLock<T>(
 }
 
 export async function setMcpServerEnabled(
-  rawInput: unknown,
+  rawInput: McpExternalValue,
   enabled: boolean,
   paths = runtimePaths(),
 ) {
@@ -287,7 +294,7 @@ export async function setMcpServerEnabled(
 }
 
 export async function removeMcpServer(
-  rawInput: unknown,
+  rawInput: McpExternalValue,
   paths = runtimePaths(),
 ) {
   await ensureRuntimeHome(paths);
@@ -349,7 +356,7 @@ export async function validateMcpConfig(paths = runtimePaths()) {
   }
 }
 
-function parseConfig(value: unknown, paths: RuntimePaths): McpConfig {
+function parseConfig(value: McpExternalValue, paths: RuntimePaths): McpConfig {
   const result = v.safeParse(mcpConfigSchema, value);
   if (!result.success) {
     throw new Error(`${paths.mcp}: ${v.summarize(result.issues)}`);
@@ -358,7 +365,7 @@ function parseConfig(value: unknown, paths: RuntimePaths): McpConfig {
 }
 
 function parseServerConfig(
-  value: unknown,
+  value: McpExternalValue,
   paths: RuntimePaths,
 ): McpServerConfig {
   const result = v.safeParse(mcpServerConfigSchema, value);
@@ -384,7 +391,7 @@ async function writeChangedConfig(
   });
 }
 
-async function writeJson(path: string, value: unknown) {
+async function writeJson(path: string, value: McpExternalValue) {
   await mkdir(dirname(path), { recursive: true });
   const tempPath = `${path}.${process.pid}.${Date.now()}.${randomUUID()}.tmp`;
   await writeFile(tempPath, `${JSON.stringify(value, null, 2)}\n`, 'utf8');
@@ -530,13 +537,13 @@ function mcpOAuthIdentityChanged(
   );
 }
 
-function jsonChanged(before: unknown, after: unknown) {
+function jsonChanged(before: McpExternalValue, after: McpExternalValue) {
   return JSON.stringify(before ?? null) !== JSON.stringify(after ?? null);
 }
 
 function replaceOptionalField(
-  target: Record<string, unknown>,
-  patch: Record<string, unknown>,
+  target: McpExternalRecord,
+  patch: McpExternalRecord,
   key: string,
 ) {
   if (!Object.hasOwn(patch, key)) return;
@@ -552,17 +559,18 @@ function okResult(
   action: string,
   changed: boolean,
   paths: RuntimePaths,
-  extra: { message: string; data?: unknown },
+  extra: { message: string; data?: McpExternalValue },
 ): McpConfigActionResult {
-  return {
+  const result: McpConfigActionResult = {
     ok: true,
     action,
     changed,
     message: extra.message,
     home: paths.home,
     files: [paths.mcp],
-    ...(extra.data !== undefined ? { data: extra.data } : {}),
   };
+  if (extra.data !== undefined) result.data = extra.data;
+  return result;
 }
 
 function failedResult(
@@ -571,19 +579,21 @@ function failedResult(
   message: string,
   requires: string[],
 ): McpConfigActionResult {
-  return {
+  const result: McpConfigActionResult = {
     ok: false,
     action,
     changed: false,
     message,
     home: paths.home,
     files: [paths.mcp],
-    ...(requires.length > 0 ? { requires } : {}),
   };
+  if (requires.length > 0) result.requires = requires;
+  return result;
 }
 
-function errorMessage(error: unknown) {
-  return error instanceof Error ? error.message : String(error);
+function errorMessage(error: McpExternalValue) {
+  const parsed = v.safeParse(mcpErrorSchema, error);
+  return parsed.success ? parsed.output.message : String(error);
 }
 
 export async function readRawMcpConfigFile(paths = runtimePaths()) {

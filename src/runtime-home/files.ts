@@ -9,6 +9,7 @@ import {
 import { copyFile, mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { randomBytes } from 'node:crypto';
 import { dirname } from 'node:path';
+import * as v from 'valibot';
 
 import { generateLocalApiToken } from './defaults.ts';
 import { runtimePaths } from './paths.ts';
@@ -18,11 +19,17 @@ import {
   parseDashboardConfig,
   parseMcpConfig,
   parseRepoRegistry,
+  runtimeHomeExternalRecordSchema,
+  type RuntimeHomeExternalRecord,
+  type RuntimeHomeExternalValue,
 } from './schemas.ts';
+
+const alreadyExistsErrorSchema = v.object({ code: v.literal('EEXIST') });
+const runtimeHomeErrorSchema = v.instance(Error);
 
 export async function readRuntimeJson<T>(
   path: string,
-  parse: (value: unknown, path: string) => T,
+  parse: (value: RuntimeHomeExternalValue, path: string) => T,
 ): Promise<T> {
   const source = await readFile(path, 'utf8');
   return parseJson(source, path, parse);
@@ -30,7 +37,7 @@ export async function readRuntimeJson<T>(
 
 export function readRuntimeJsonSync<T>(
   path: string,
-  parse: (value: unknown, path: string) => T,
+  parse: (value: RuntimeHomeExternalValue, path: string) => T,
 ): T {
   const source = readFileSync(path, 'utf8');
   return parseJson(source, path, parse);
@@ -74,7 +81,9 @@ export function ensureLocalApiConfigSync(path: string) {
 
 export async function readJsonObjectLenient(path: string) {
   try {
-    const value = JSON.parse(await readFile(path, 'utf8')) as unknown;
+    const value: RuntimeHomeExternalValue = JSON.parse(
+      await readFile(path, 'utf8'),
+    );
     return isRecord(value) ? value : null;
   } catch {
     return null;
@@ -83,35 +92,47 @@ export async function readJsonObjectLenient(path: string) {
 
 export function readJsonObjectLenientSync(path: string) {
   try {
-    const value = JSON.parse(readFileSync(path, 'utf8')) as unknown;
+    const value: RuntimeHomeExternalValue = JSON.parse(
+      readFileSync(path, 'utf8'),
+    );
     return isRecord(value) ? value : null;
   } catch {
     return null;
   }
 }
 
-function readLocalApiTokenValue(value: Record<string, unknown>) {
+function readLocalApiTokenValue(value: RuntimeHomeExternalRecord) {
   const localApi = value.localApi;
   if (!isRecord(localApi)) return undefined;
   return localApi.token;
 }
 
-function isValidLocalApiToken(value: unknown) {
-  return typeof value === 'string' && /^[A-Za-z0-9_-]{32,}$/.test(value);
+function isValidLocalApiToken(value: RuntimeHomeExternalValue) {
+  return v.safeParse(v.pipe(v.string(), v.regex(/^[A-Za-z0-9_-]{32,}$/)), value)
+    .success;
 }
 
-export function isRecord(value: unknown): value is Record<string, unknown> {
-  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+export function isRecord(
+  value: RuntimeHomeExternalValue,
+): value is RuntimeHomeExternalRecord {
+  if (Array.isArray(value)) return false;
+  return v.safeParse(runtimeHomeExternalRecordSchema, value).success;
 }
 
-export async function writeJsonAtomic(path: string, value: unknown) {
+export async function writeJsonAtomic(
+  path: string,
+  value: RuntimeHomeExternalValue,
+) {
   await mkdir(dirname(path), { recursive: true });
   const tempPath = temporaryJsonPath(path);
   await writeFile(tempPath, `${JSON.stringify(value, null, 2)}\n`, 'utf8');
   await rename(tempPath, path);
 }
 
-export function writeJsonAtomicSync(path: string, value: unknown) {
+export function writeJsonAtomicSync(
+  path: string,
+  value: RuntimeHomeExternalValue,
+) {
   mkdirSync(dirname(path), { recursive: true });
   const tempPath = temporaryJsonPath(path);
   writeFileSync(tempPath, `${JSON.stringify(value, null, 2)}\n`, 'utf8');
@@ -122,11 +143,17 @@ function temporaryJsonPath(path: string) {
   return `${path}.${process.pid}.${randomBytes(8).toString('hex')}.tmp`;
 }
 
-export async function writeJsonIfMissing(path: string, value: unknown) {
+export async function writeJsonIfMissing(
+  path: string,
+  value: RuntimeHomeExternalValue,
+) {
   await writeFileIfMissing(path, `${JSON.stringify(value, null, 2)}\n`);
 }
 
-export function writeJsonIfMissingSync(path: string, value: unknown) {
+export function writeJsonIfMissingSync(
+  path: string,
+  value: RuntimeHomeExternalValue,
+) {
   writeFileIfMissingSync(path, `${JSON.stringify(value, null, 2)}\n`);
 }
 
@@ -166,28 +193,31 @@ export function copyIfMissingSync(source: string, target: string) {
   }
 }
 
-function isAlreadyExistsError(error: unknown) {
-  return (
-    typeof error === 'object' &&
-    error !== null &&
-    'code' in error &&
-    error.code === 'EEXIST'
-  );
+function isAlreadyExistsError(error: RuntimeHomeExternalValue) {
+  return v.safeParse(alreadyExistsErrorSchema, error).success;
 }
 
 function parseJson<T>(
   source: string,
   path: string,
-  parse: (value: unknown, path: string) => T,
+  parse: (value: RuntimeHomeExternalValue, path: string) => T,
 ) {
   try {
-    return parse(JSON.parse(source) as unknown, path);
+    const value: RuntimeHomeExternalValue = JSON.parse(source);
+    return parse(value, path);
   } catch (error) {
-    if (error instanceof ConfigValidationError) {
-      throw error;
+    const validationError = v.safeParse(
+      v.instance(ConfigValidationError),
+      error,
+    );
+    if (validationError.success) {
+      throw validationError.output;
     }
 
-    const message = error instanceof Error ? error.message : String(error);
+    const parsedError = v.safeParse(runtimeHomeErrorSchema, error);
+    const message = parsedError.success
+      ? parsedError.output.message
+      : String(error);
     throw new ConfigValidationError(path, message);
   }
 }

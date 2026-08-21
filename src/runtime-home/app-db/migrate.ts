@@ -13,8 +13,10 @@ import {
 import { basename, dirname, join } from 'node:path';
 import { backup as sqliteBackup, DatabaseSync } from 'node:sqlite';
 import { readMigrationFiles } from 'drizzle-orm/migrator';
+import * as v from 'valibot';
 import { defaultSqliteBusyTimeoutMs } from '../../lib/sqlite';
 import { resolveShippedAsset } from '../assets';
+import type { RuntimeHomeExternalValue } from '../schemas';
 
 const drizzleMigrationsTable = '__drizzle_migrations';
 const defaultMigrationsFolder = resolveShippedAsset(
@@ -28,6 +30,22 @@ let restoreReplacementHook:
   ((stagedPath: string, databasePath: string) => void) | undefined;
 
 type DrizzleMigration = ReturnType<typeof readMigrationFiles>[number];
+
+const lockingModeRowSchema = v.object({
+  locking_mode: v.literal('exclusive'),
+});
+const journalModeRowSchema = v.object({ journal_mode: v.string() });
+const migrationJournalRowSchema = v.object({
+  id: v.number(),
+  hash: v.string(),
+  created_at: v.number(),
+  name: v.nullable(v.string()),
+});
+const integrityCheckRowSchema = v.object({
+  integrity_check: v.literal('ok'),
+});
+const tableNameRowSchema = v.object({ name: v.string() });
+const migrationErrorSchema = v.instance(Error);
 
 export type AppDbMigrationRecord = {
   id: number;
@@ -172,9 +190,7 @@ export function readAppDbMigrationStatus(
       return Boolean(local && local.hash !== row.hash);
     });
     const appliedNames = new Set(
-      applied
-        .map((row) => row.name)
-        .filter((name): name is string => typeof name === 'string'),
+      applied.flatMap((row) => (row.name === null ? [] : [row.name])),
     );
     const pending = migrations
       .filter((migration) => !appliedNames.has(migration.name))
@@ -262,9 +278,7 @@ export function applyAppDbMigrations(
     assertJournalMatchesLocalMigrations(appliedRows, localByName);
 
     const appliedNames = new Set(
-      appliedRows
-        .map((row) => row.name)
-        .filter((name): name is string => typeof name === 'string'),
+      appliedRows.flatMap((row) => (row.name === null ? [] : [row.name])),
     );
     const pending = migrations.filter(
       (migration) => !appliedNames.has(migration.name),
@@ -413,17 +427,19 @@ export async function restoreAppDbBackup(
     liveDatabase = new DatabaseSync(databasePath, { timeout: 0 });
     try {
       liveDatabase.exec('PRAGMA busy_timeout = 0;');
-      const lockingMode = liveDatabase
-        .prepare('PRAGMA locking_mode = EXCLUSIVE;')
-        .get() as { locking_mode?: unknown };
-      if (lockingMode.locking_mode !== 'exclusive') {
+      const lockingMode = v.safeParse(
+        lockingModeRowSchema,
+        liveDatabase.prepare('PRAGMA locking_mode = EXCLUSIVE;').get(),
+      );
+      if (!lockingMode.success) {
         throw new AppDbMigrationError(
           'SQLite did not enter exclusive locking mode.',
         );
       }
-      const journalMode = liveDatabase
-        .prepare('PRAGMA journal_mode = DELETE;')
-        .get() as { journal_mode?: unknown };
+      const journalMode = v.parse(
+        journalModeRowSchema,
+        liveDatabase.prepare('PRAGMA journal_mode = DELETE;').get(),
+      );
       if (journalMode.journal_mode !== 'delete') {
         throw new AppDbMigrationError(
           `SQLite did not leave WAL mode (current mode: ${String(journalMode.journal_mode)}).`,
@@ -468,15 +484,16 @@ export async function restoreAppDbBackup(
       ];
     }
 
-    return {
+    const result: AppDbBackupResult = {
       ok: true,
       action: 'db_restore',
       changed: true,
       restoredBackup,
       safetyBackup,
       message: `Restored ${restoredBackup.name}. The replaced database was saved as ${safetyBackup.path}.`,
-      ...(warnings ? { warnings } : {}),
     };
+    if (warnings) result.warnings = warnings;
+    return result;
   } catch (error) {
     return failedAppDbBackup(
       'db_restore',
@@ -515,15 +532,13 @@ function readJournal(database: DatabaseSync): AppDbMigrationRecord[] {
     `,
     )
     .all()
-    .map((row) => {
-      const record = row as Record<string, unknown>;
-      return {
-        id: Number(record.id),
-        hash: String(record.hash),
-        createdAt: Number(record.created_at),
-        name: typeof record.name === 'string' ? record.name : null,
-      };
-    });
+    .map((row) => v.parse(migrationJournalRowSchema, row))
+    .map((record) => ({
+      id: record.id,
+      hash: record.hash,
+      createdAt: record.created_at,
+      name: record.name,
+    }));
 }
 
 function assertJournalMatchesLocalMigrations(
@@ -646,7 +661,7 @@ function validateAppDbBackup(path: string): AppDbBackup {
     const integrity = database.prepare('PRAGMA integrity_check;').all();
     if (
       integrity.length !== 1 ||
-      (integrity[0] as { integrity_check?: unknown }).integrity_check !== 'ok'
+      !v.safeParse(integrityCheckRowSchema, integrity[0]).success
     ) {
       throw new AppDbMigrationError('Backup database integrity check failed.');
     }
@@ -866,7 +881,7 @@ function listUserTables(database: DatabaseSync) {
     `,
     )
     .all(drizzleMigrationsTable)
-    .map((row) => String((row as { name: unknown }).name));
+    .map((row) => v.parse(tableNameRowSchema, row).name);
 }
 
 function tableExists(database: DatabaseSync, table: string) {
@@ -893,7 +908,7 @@ function rollback(database: DatabaseSync) {
   }
 }
 
-function errorMessage(error: unknown) {
-  if (error instanceof Error) return error.message;
-  return String(error);
+function errorMessage(error: RuntimeHomeExternalValue) {
+  const parsed = v.safeParse(migrationErrorSchema, error);
+  return parsed.success ? parsed.output.message : String(error);
 }

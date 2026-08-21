@@ -1,8 +1,15 @@
 import {
   mcpServerApprovalMode,
   type McpConfig,
+  type McpExternalValue,
   type McpToolApprovalMode,
 } from './schemas';
+import * as v from 'valibot';
+
+const mcpToolAnnotationsSchema = v.object({
+  readOnlyHint: v.optional(v.boolean()),
+  destructiveHint: v.optional(v.boolean()),
+});
 
 export type McpPolicyDecision = 'allow' | 'ask' | 'deny';
 
@@ -10,7 +17,7 @@ export function decideMcpToolPolicy(input: {
   config: McpConfig;
   serverId: string;
   toolName: string;
-  annotations?: unknown;
+  annotations?: McpExternalValue;
 }): McpPolicyDecision {
   const server = input.config.servers[input.serverId];
   if (!server) return 'deny';
@@ -29,14 +36,11 @@ function decisionForToolMode(mode: McpToolApprovalMode): McpPolicyDecision {
   return 'ask';
 }
 
-export function isExplicitlyReadOnly(annotations: unknown) {
-  if (
-    !annotations ||
-    typeof annotations !== 'object' ||
-    Array.isArray(annotations)
-  ) {
-    return false;
-  }
-  const value = annotations as Record<string, unknown>;
-  return value.readOnlyHint === true && value.destructiveHint !== true;
+export function isExplicitlyReadOnly(annotations: McpExternalValue) {
+  const parsed = v.safeParse(mcpToolAnnotationsSchema, annotations);
+  return (
+    parsed.success &&
+    parsed.output.readOnlyHint === true &&
+    parsed.output.destructiveHint !== true
+  );
 }
