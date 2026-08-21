@@ -11,6 +11,7 @@ describe('PrReviewSubmitBar accessibility', () => {
         isBusy={false}
         isDurableReviewReady
         isHeadAvailable
+        isLocked={false}
         isSubmitting={false}
         onBodyBlur={vi.fn<() => void>()}
         onBodyChange={vi.fn<(value: string) => void>()}
@@ -44,6 +45,7 @@ describe('PrReviewSubmitBar accessibility', () => {
         isBusy
         isDurableReviewReady
         isHeadAvailable
+        isLocked
         isSubmitting={false}
         onBodyBlur={vi.fn<() => void>()}
         onBodyChange={vi.fn<(value: string) => void>()}
@@ -67,5 +69,35 @@ describe('PrReviewSubmitBar accessibility', () => {
       '<button class="pr-review-count" disabled="" title="Cycle through pending draft comments" type="button">1 pending</button>',
     );
     expect(html).toContain('<button disabled="" type="button">Submit</button>');
+  });
+
+  it('keeps Submit enabled while an admitted draft autosave is pending', () => {
+    const html = renderToStaticMarkup(
+      <PrReviewSubmitBar
+        cleanCommentCount={0}
+        draft={null}
+        isBusy
+        isDurableReviewReady
+        isHeadAvailable
+        isLocked={false}
+        isSubmitting={false}
+        onBodyBlur={vi.fn<() => void>()}
+        onBodyChange={vi.fn<(value: string) => void>()}
+        onBodyFocus={vi.fn<() => void>()}
+        onDiscard={vi.fn<() => void>()}
+        onPendingCountClick={vi.fn<() => void>()}
+        onSubmit={vi.fn<() => void>()}
+        onVerdictChange={vi.fn<
+          (value: 'comment' | 'approve' | 'request-changes') => void
+        >()}
+        reviewBody="Saved by blur"
+        staleCommentCount={0}
+        statusMessage={null}
+        trustBoundary={null}
+        verdict="comment"
+      />,
+    );
+
+    expect(html).toMatch(/<button(?![^>]*disabled)[^>]*>Submit<\/button>/);
   });
 });

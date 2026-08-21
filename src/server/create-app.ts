@@ -59,9 +59,11 @@ import { createSessionRoutes } from './routes/sessions';
 import { createSkillRoutes } from './routes/skills';
 import { createWatchRoutes } from './routes/watches';
 import { createWorktreeRoutes } from './routes/worktrees';
+import { recoverPrReviewEvidenceFollowups } from './pr-review-submission-followups';
 import { logApiRequests, logFlueActivity } from './request-logging';
 import { recoverInterruptedAutopilotOwners } from '../modules/autopilot/owner/settlement';
 import { refreshGitHubQueueSnapshot } from '../modules/github';
+import { recoverPrReviewDeliveryFollowups } from '../modules/pr-events';
 import { refreshPrReviewRemoteState } from '../modules/pr-reviews';
 import {
   installBriefingConversationHistoryReader,
@@ -311,6 +313,21 @@ function startFlueRuntimeScheduler(input: FlueRuntimeServiceInput) {
 
 async function recoverFlueRuntimeServices(input: FlueRuntimeServiceInput) {
   const failures: Error[] = [];
+  await captureRuntimeStartupFailure(
+    'PR review submission follow-up recovery',
+    failures,
+    async () => {
+      const deliveryResults = await recoverPrReviewDeliveryFollowups(
+        input.paths,
+      );
+      const evidenceResults = await recoverPrReviewEvidenceFollowups(
+        input.paths,
+      );
+      if ([...deliveryResults, ...evidenceResults].includes(false)) {
+        throw new Error('One or more submission follow-ups remain pending.');
+      }
+    },
+  );
   await captureRuntimeStartupFailure('Autopilot owner recovery', failures, () =>
     recoverInterruptedAutopilotOwners(input.paths),
   );

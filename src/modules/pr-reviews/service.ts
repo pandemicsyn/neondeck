@@ -8,12 +8,19 @@ import {
 } from '../../runtime-home';
 import {
   fetchGitHubLogin,
+  fetchPullRequestReviewComments,
   fetchPullRequestDetail,
   fetchPullRequestReviews,
+  readPrReviewDraft,
+  settlePrReviewDraftSubmission,
   type GitHubPullRequestReview,
   type GitHubPullRequestDetail,
 } from '../github';
-import { resolvePullRequestTarget, type PullRequestTarget } from '../pr-events';
+import {
+  enqueueRecoveredPrReviewDeliveryFollowup,
+  resolvePullRequestTarget,
+  type PullRequestTarget,
+} from '../pr-events';
 import { publishPrReviewEvent } from './events';
 import {
   listPrReviews,
@@ -133,6 +140,7 @@ export type ReconcilePrReviewSubmissionDependencies = {
     repo: string;
     number: number;
   }) => Promise<GitHubPullRequestReview[]>;
+  fetchReviewComments?: typeof fetchPullRequestReviewComments;
 };
 
 export type RefreshPrReviewRemoteStateDependencies = {
@@ -428,6 +436,8 @@ export function reservePrReviewSubmission(
     prNumber: number;
     headSha: string;
     verdict: PrReviewVerdict;
+    draftId?: string;
+    draftRevision?: number;
   },
   paths = runtimePaths(),
 ) {
@@ -444,11 +454,20 @@ export function reservePrReviewSubmission(
     const result = database
       .prepare(
         `UPDATE pr_reviews
-         SET status = 'submitting', verdict = ?, updated_at = ?
+         SET status = 'submitting', verdict = ?, submission_draft_id = ?,
+             submission_draft_revision = ?, submission_draft_updated_at = NULL,
+             updated_at = ?
          WHERE id = ? AND status = 'ready' AND head_sha = ?
            AND archived_at IS NULL;`,
       )
-      .run(input.verdict, now, current.id, input.headSha);
+      .run(
+        input.verdict,
+        input.draftId ?? null,
+        input.draftRevision ?? null,
+        now,
+        current.id,
+        input.headSha,
+      );
     changed = result.changes === 1;
   } finally {
     database.close();
@@ -470,7 +489,9 @@ export function releasePrReviewSubmission(
     const result = database
       .prepare(
         `UPDATE pr_reviews
-         SET status = 'ready', verdict = NULL, updated_at = ?
+         SET status = 'ready', verdict = NULL, submission_draft_id = NULL,
+             submission_draft_revision = NULL,
+             submission_draft_updated_at = NULL, updated_at = ?
          WHERE id = ? AND status = 'submitting' AND head_sha = ?;`,
       )
       .run(now, input.reviewId, input.headSha);
@@ -587,6 +608,30 @@ async function reconcileInactivePrReviewSubmission(
   ]);
   const submittedReview = matchingSubmittedReview(current, login, reviews);
   if (submittedReview) {
+    const recoveredDraft = current.submissionDraftId
+      ? readPrReviewDraft({
+          databasePath: paths.neondeckDatabase,
+          draftId: current.submissionDraftId,
+        })
+      : null;
+    enqueueRecoveredPrReviewDeliveryFollowup(
+      {
+        target: {
+          repoFullName: current.repoFullName,
+          owner,
+          repo,
+          number: current.prNumber,
+        },
+        draft: recoveredDraft,
+        review: { ...submittedReview, body: submittedReview.body ?? null },
+        token,
+        fetchPullRequestReviewComments: dependencies.fetchReviewComments,
+      },
+      paths,
+    );
+    if (!settleReservedDraft(current, paths, true)) {
+      throw new Error('Could not settle the recovered review draft locally.');
+    }
     const submitted = submitPrReview(
       {
         reviewId: current.id,
@@ -622,14 +667,48 @@ async function reconcileInactivePrReviewSubmission(
     return { outcome: 'pending' as const, review: current };
   }
 
+  if (!settleReservedDraft(current, paths, false)) {
+    throw new Error('Could not release the interrupted review draft locally.');
+  }
   const released = releasePrReviewSubmission(
     { reviewId: current.id, headSha: current.headSha },
     paths,
   );
-  if (released) return { outcome: 'ready' as const, review: released };
+  if (released) {
+    return { outcome: 'ready' as const, review: released };
+  }
   const settled = readPrReview(current.id, paths);
   if (settled) return { outcome: 'unchanged' as const, review: settled };
   throw new Error('Could not release the interrupted submission locally.');
+}
+
+function settleReservedDraft(
+  review: PrReviewRecord,
+  paths: RuntimePaths,
+  submitted: boolean,
+) {
+  if (!review.submissionDraftId) {
+    return true;
+  }
+  let expectedRevision = review.submissionDraftRevision ?? null;
+  if (expectedRevision === null && review.submissionDraftUpdatedAt) {
+    // One-release compatibility for submissions reserved before numeric draft
+    // revisions existed. New reservations never use the timestamp as a token.
+    const legacyDraft = readPrReviewDraft({
+      databasePath: paths.neondeckDatabase,
+      draftId: review.submissionDraftId,
+    });
+    if (legacyDraft?.updatedAt !== review.submissionDraftUpdatedAt)
+      return false;
+    expectedRevision = legacyDraft.revision;
+  }
+  if (expectedRevision === null) return false;
+  return settlePrReviewDraftSubmission({
+    databasePath: paths.neondeckDatabase,
+    draftId: review.submissionDraftId,
+    expectedRevision,
+    submitted,
+  });
 }
 
 export function recentPrReviews(paths = runtimePaths(), now = Date.now()) {
@@ -1049,9 +1128,12 @@ function reserveReviewingRecord(
            finding_count, seeded_count, report_only_count,
            report_only_findings_json, trust_boundary, verdict,
            previous_verdict, github_review_url, failure_message,
+           submission_draft_id, submission_draft_revision,
+           submission_draft_updated_at,
            created_at, updated_at, ready_at, submitted_at, failed_at
          ) VALUES (?, ?, ?, ?, ?, ?, ?, 'reviewing', ?, NULL, ?, ?, ?, ?, ?, '[]',
-                   0, 0, 0, '[]', ?, NULL, ?, NULL, NULL, ?, ?, NULL, NULL, NULL)
+                   0, 0, 0, '[]', ?, NULL, ?, NULL, NULL, NULL, NULL, NULL,
+                   ?, ?, NULL, NULL, NULL)
          ON CONFLICT(repo_full_name, pr_number) DO UPDATE SET
            ref = excluded.ref,
            title = excluded.title,
@@ -1071,6 +1153,9 @@ function reserveReviewingRecord(
            report_only_count = 0,
            report_only_findings_json = '[]',
            verdict = NULL,
+           submission_draft_id = NULL,
+           submission_draft_revision = NULL,
+           submission_draft_updated_at = NULL,
            previous_verdict = CASE
              WHEN pr_reviews.verdict IS NOT NULL THEN pr_reviews.verdict
              ELSE pr_reviews.previous_verdict

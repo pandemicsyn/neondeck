@@ -9,7 +9,10 @@ import {
 } from './agents/pr-review-assistant';
 import { buildPrReviewerRuntime } from './agents/pr-reviewer';
 import { updatePrReviewPrompt } from './modules/config';
-import { addPrReviewDraftComment, upsertPrReviewDraft } from './modules/github';
+import {
+  addPrReviewDraftComment,
+  upsertPrReviewDraft,
+} from './testing/pr-review-draft-fixtures';
 import { completePrReview, startPrReview } from './modules/pr-reviews';
 import {
   defaultPrReviewPromptTemplates,

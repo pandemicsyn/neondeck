@@ -46,14 +46,17 @@ export function prReviewDraftHeadIsStale(
 }
 
 export function sameReviewDraftRevision(
-  expected: Pick<GitHubPrReviewDraft, 'headSha' | 'id'>,
+  expected: Pick<GitHubPrReviewDraft, 'headSha' | 'id' | 'revision'>,
   current:
-    Pick<GitHubPrReviewDraft, 'headSha' | 'id' | 'status'> | null | undefined,
+    | Pick<GitHubPrReviewDraft, 'headSha' | 'id' | 'revision' | 'status'>
+    | null
+    | undefined,
 ) {
   return Boolean(
     current &&
     current.status === 'draft' &&
     current.id === expected.id &&
+    current.revision === expected.revision &&
     current.headSha === expected.headSha,
   );
 }
@@ -62,12 +65,14 @@ export async function reanchorDraftToRevision(input: {
   repo: string;
   number: number;
   draftId: string;
+  expectedRevision: number;
   expectedHeadSha: string;
   headSha: string;
   saveDraft: (draft: {
     repo: string;
     number: number;
     expectedDraftId: string;
+    expectedRevision: number;
     expectedHeadSha: string;
     headSha: string;
     reanchorHeadSha: true;
@@ -79,6 +84,7 @@ export async function reanchorDraftToRevision(input: {
     repo: input.repo,
     number: input.number,
     expectedDraftId: input.draftId,
+    expectedRevision: input.expectedRevision,
     expectedHeadSha: input.expectedHeadSha,
     headSha: input.headSha,
     reanchorHeadSha: true,
@@ -115,6 +121,24 @@ export function isCurrentReviewOperation(
   completedToken: number,
 ) {
   return currentToken === completedToken;
+}
+
+export function shouldAutomaticallyApplyGitHubRevision({
+  attemptedRevisionKey,
+  candidateRevisionKey,
+  isApplyingRevision,
+  safety,
+}: {
+  attemptedRevisionKey: string | null;
+  candidateRevisionKey: string;
+  isApplyingRevision: boolean;
+  safety: ReviewRefreshSafety;
+}) {
+  return (
+    safety.safe &&
+    !isApplyingRevision &&
+    attemptedRevisionKey !== candidateRevisionKey
+  );
 }
 
 export function canCommitGitHubRevisionRefresh(input: {

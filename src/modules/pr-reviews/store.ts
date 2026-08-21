@@ -185,6 +185,9 @@ export function readPrReviewRow(row: UntrustedInput): PrReviewRecord {
     reportOnlyFindings: reportOnlyFindings(value.report_only_findings_json),
     trustBoundary: stringValue(value.trust_boundary),
     verdict: verdictValue(value.verdict),
+    submissionDraftId: nullableString(value.submission_draft_id),
+    submissionDraftRevision: nullableNumber(value.submission_draft_revision),
+    submissionDraftUpdatedAt: nullableString(value.submission_draft_updated_at),
     previousVerdict: verdictValue(value.previous_verdict),
     githubReviewUrl: nullableString(value.github_review_url),
     failureMessage: nullableString(value.failure_message),
@@ -221,6 +224,11 @@ function stringValue(value: UntrustedInput) {
 
 function nullableString(value: UntrustedInput) {
   const parsed = v.safeParse(v.string(), value);
+  return parsed.success ? parsed.output : null;
+}
+
+function nullableNumber(value: UntrustedInput) {
+  const parsed = v.safeParse(v.number(), value);
   return parsed.success ? parsed.output : null;
 }
 

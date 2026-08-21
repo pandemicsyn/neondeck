@@ -18,11 +18,16 @@ import {
   buildPatchAnchorIndex,
   commentAnchorExists,
   commentInputFromSelection,
+  draftCommentIdsForSubmission,
+  draftSnapshotIsAtOrBeyondFrontier,
+  draftSnapshotMatches,
   failingCommentIdsFromError,
+  hasUnsettledDraftEditor,
   normalizeReviewBody,
   reviewDraftNeedsSubmitSave,
   reviewCommentPreview,
   staleDraftCommentIds,
+  waitForPendingDraftMutations,
 } from './review-helpers';
 import {
   annotationsFromDraft,
@@ -47,10 +52,41 @@ import {
   refreshOrientationTargetSettled,
   sameReviewDraftRevision,
   selectionAnchorMatchesPatch,
+  shouldAutomaticallyApplyGitHubRevision,
 } from './review-ui-helpers';
 import capturedReviewPatch from './fixtures/captured-review.patch?raw';
 
 describe('GitHubPrReview helpers', () => {
+  it('binds submission to the exact post-barrier draft revision', () => {
+    expect(
+      draftSnapshotMatches(
+        { id: 'draft-1', revision: 3 },
+        { id: 'draft-1', revision: 3 },
+      ),
+    ).toBe(true);
+    expect(
+      draftSnapshotMatches(
+        { id: 'draft-1', revision: 3 },
+        { id: 'draft-1', revision: 4 },
+      ),
+    ).toBe(false);
+  });
+
+  it('rejects delayed replacement-draft snapshots behind the target frontier', () => {
+    expect(
+      draftSnapshotIsAtOrBeyondFrontier(
+        '2026-08-18T03:16:00.000Z',
+        '2026-08-18T03:15:00.000Z',
+      ),
+    ).toBe(false);
+    expect(
+      draftSnapshotIsAtOrBeyondFrontier(
+        '2026-08-18T03:16:00.000Z',
+        '2026-08-18T03:17:00.000Z',
+      ),
+    ).toBe(true);
+  });
+
   it('shows structured GitHub diagnostics for failed review operations', () => {
     const error = new ApiError(
       'Could not fetch GitHub PR event state.',
@@ -77,7 +113,7 @@ describe('GitHubPrReview helpers', () => {
   });
 
   it('revalidates the same draft and head before moving it to a new revision', () => {
-    const expected = { id: 'draft-1', headSha: 'head-a' };
+    const expected = { id: 'draft-1', revision: 3, headSha: 'head-a' };
 
     expect(
       sameReviewDraftRevision(expected, { ...expected, status: 'draft' }),
@@ -85,6 +121,7 @@ describe('GitHubPrReview helpers', () => {
     expect(
       sameReviewDraftRevision(expected, {
         id: 'draft-2',
+        revision: 3,
         headSha: 'head-a',
         status: 'draft',
       }),
@@ -92,6 +129,7 @@ describe('GitHubPrReview helpers', () => {
     expect(
       sameReviewDraftRevision(expected, {
         id: 'draft-1',
+        revision: 3,
         headSha: 'head-b',
         status: 'draft',
       }),
@@ -118,6 +156,7 @@ describe('GitHubPrReview helpers', () => {
       repo: 'pandemicsyn/neondeck',
       number: 66,
       draftId: 'draft-1',
+      expectedRevision: 3,
       expectedHeadSha: 'original-head',
       headSha: candidateHeadSha,
       saveDraft,
@@ -128,6 +167,7 @@ describe('GitHubPrReview helpers', () => {
       repo: 'pandemicsyn/neondeck',
       number: 66,
       expectedDraftId: 'draft-1',
+      expectedRevision: 3,
       expectedHeadSha: 'original-head',
       headSha: candidateHeadSha,
       reanchorHeadSha: true,
@@ -196,6 +236,35 @@ describe('GitHubPrReview helpers', () => {
         safety,
       }),
     ).toBe(false);
+  });
+
+  it('does not automatically retry the same failed revision refresh', () => {
+    const safety = evaluateReviewRefreshSafety({});
+
+    expect(
+      shouldAutomaticallyApplyGitHubRevision({
+        attemptedRevisionKey: null,
+        candidateRevisionKey: 'git-commit:base:head-b',
+        isApplyingRevision: false,
+        safety,
+      }),
+    ).toBe(true);
+    expect(
+      shouldAutomaticallyApplyGitHubRevision({
+        attemptedRevisionKey: 'git-commit:base:head-b',
+        candidateRevisionKey: 'git-commit:base:head-b',
+        isApplyingRevision: false,
+        safety,
+      }),
+    ).toBe(false);
+    expect(
+      shouldAutomaticallyApplyGitHubRevision({
+        attemptedRevisionKey: 'git-commit:base:head-b',
+        candidateRevisionKey: 'git-commit:base:head-c',
+        isApplyingRevision: false,
+        safety,
+      }),
+    ).toBe(true);
   });
 
   it('preserves a composer only when the selected patch lines remain identical', () => {
@@ -532,6 +601,90 @@ describe('GitHubPrReview helpers', () => {
     ).toEqual(['comment-1', 'comment-2']);
   });
 
+  it('recomputes submission comment ids from the settled draft', () => {
+    const patchIndexes = new Map([
+      [
+        'src/app.ts',
+        buildPatchAnchorIndex(
+          [
+            'diff --git a/src/app.ts b/src/app.ts',
+            '--- a/src/app.ts',
+            '+++ b/src/app.ts',
+            '@@ -10,3 +10,3 @@',
+            ' line 10',
+            '+line 11',
+            '+line 12',
+          ].join('\n'),
+        ),
+      ],
+    ]);
+    const settledDraft = draftWithComments([
+      {
+        id: 'reanchored',
+        path: 'src/app.ts',
+        side: 'RIGHT',
+        line: 11,
+        startLine: null,
+        startSide: null,
+      },
+      {
+        id: 'still-failed',
+        path: 'src/app.ts',
+        side: 'RIGHT',
+        line: 12,
+        startLine: null,
+        startSide: null,
+      },
+    ]);
+
+    expect(
+      draftCommentIdsForSubmission({
+        draft: settledDraft,
+        failedCommentIds: new Set(['still-failed']),
+        patchIndexesByPath: patchIndexes,
+        unknownPatchCommentIds: new Set(),
+      }),
+    ).toEqual(['reanchored']);
+  });
+
+  it('rejects submission barriers when an admitted draft mutation fails', async () => {
+    const pending = new Set<Promise<unknown>>();
+    const mutation = Promise.reject(new Error('Draft save failed.'));
+    pending.add(mutation);
+    void mutation.catch(() => pending.delete(mutation));
+
+    await expect(waitForPendingDraftMutations(pending)).rejects.toThrow(
+      'Draft save failed.',
+    );
+  });
+
+  it('blocks only draft editors that are neither saving nor already settled', () => {
+    expect(
+      hasUnsettledDraftEditor({
+        completedEditorKeys: new Set(),
+        editorKeys: ['composer:1'],
+        hasPendingAnchor: false,
+        inFlightEditorKeys: new Set(),
+      }),
+    ).toBe(true);
+    expect(
+      hasUnsettledDraftEditor({
+        completedEditorKeys: new Set(['comment:2']),
+        editorKeys: ['composer:1', 'comment:2'],
+        hasPendingAnchor: false,
+        inFlightEditorKeys: new Set(['composer:1']),
+      }),
+    ).toBe(false);
+    expect(
+      hasUnsettledDraftEditor({
+        completedEditorKeys: new Set(),
+        editorKeys: [],
+        hasPendingAnchor: true,
+        inFlightEditorKeys: new Set(),
+      }),
+    ).toBe(true);
+  });
+
   it('normalizes blank review bodies to null before draft comparisons', () => {
     expect(normalizeReviewBody('  \n ')).toBeNull();
     expect(normalizeReviewBody(null)).toBeNull();
@@ -852,6 +1005,7 @@ function draftWithComments(
     verdict: 'comment',
     body: null,
     status: 'draft',
+    revision: 1,
     createdAt: '2026-07-05T00:00:00Z',
     updatedAt: '2026-07-05T00:00:00Z',
     submittedAt: null,

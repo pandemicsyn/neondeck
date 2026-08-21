@@ -31,6 +31,7 @@ import {
 const untrustedInputSchema = v.unknown();
 const recordSchema = v.record(v.string(), untrustedInputSchema);
 const nonEmptyStringSchema = v.pipe(v.string(), v.minLength(1));
+const positiveIntegerSchema = v.pipe(v.number(), v.integer(), v.minValue(1));
 type UntrustedInput = v.InferInput<typeof untrustedInputSchema>;
 type InputRecord = v.InferOutput<typeof recordSchema>;
 
@@ -302,12 +303,13 @@ async function promoteToGitHubDraft(
   } else {
     const draftResult = await (
       dependencies.putGitHubDraft ?? putGitHubPrReviewDraft
-    )(targetInput, { headSha: revision.id }, paths);
+    )(targetInput, { headSha: revision.id, expectedAbsent: true }, paths);
     if (!draftResult.ok) return { ok: false, message: draftResult.message };
     draft = objectField(objectField(draftResult.data).draft);
   }
   const draftId = stringField(draft.id);
-  if (!draftId || stringField(draft.headSha) !== revision.id)
+  const draftRevision = positiveIntegerField(draft.revision);
+  if (!draftId || !draftRevision || stringField(draft.headSha) !== revision.id)
     return {
       ok: false,
       message:
@@ -340,6 +342,7 @@ async function promoteToGitHubDraft(
     targetInput,
     {
       draftId,
+      expectedRevision: draftRevision,
       path: candidate.finding.file,
       side,
       line: candidate.request.anchor.endLine,
@@ -628,5 +631,10 @@ function arrayField(value: UntrustedInput): UntrustedInput[] {
 
 function stringField(value: UntrustedInput) {
   const parsed = v.safeParse(nonEmptyStringSchema, value);
+  return parsed.success ? parsed.output : null;
+}
+
+function positiveIntegerField(value: UntrustedInput) {
+  const parsed = v.safeParse(positiveIntegerSchema, value);
   return parsed.success ? parsed.output : null;
 }

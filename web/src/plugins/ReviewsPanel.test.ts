@@ -3,10 +3,20 @@ import type { PrReviewRecord, PrReviewsResponse } from '../api';
 import {
   applyPrReviewChange,
   applyPrReviewSnapshot,
+  prReviewRefKey,
   reviewReadyDetail,
 } from './ReviewsPanel';
 
 describe('ReviewsPanel review events', () => {
+  it('normalizes equivalent pull request references to one target key', () => {
+    expect(prReviewRefKey('Other/Project#042')).toBe('other/project#42');
+    expect(
+      prReviewRefKey(
+        'https://github.com/OTHER/PROJECT.git/pull/42?from=reviews',
+      ),
+    ).toBe('other/project#42');
+  });
+
   it('distinguishes a previous approval from pending local drafts', () => {
     const approved = {
       ...review('ready'),

@@ -57,7 +57,8 @@ const draftSchema = v.object({
   headSha: v.string(),
   verdict: v.nullable(v.picklist(['comment', 'approve', 'request-changes'])),
   body: v.nullable(v.string()),
-  status: v.picklist(['draft', 'submitted', 'discarded']),
+  status: v.picklist(['draft', 'submitting', 'submitted', 'discarded']),
+  revision: v.number(),
   createdAt: v.string(),
   updatedAt: v.string(),
   submittedAt: v.nullable(v.string()),
@@ -152,7 +153,7 @@ export function createPrReviewerDraftTools(
             if (!draft) {
               const created = await dependencies.putDraft(
                 reviewTarget(bound.review),
-                { headSha: bound.review.headSha },
+                { headSha: bound.review.headSha, expectedAbsent: true },
                 paths,
               );
               if (!created.ok) return reframeResult(createName, created);
@@ -171,6 +172,7 @@ export function createPrReviewerDraftTools(
               reviewTarget(bound.review),
               {
                 draftId: draft.id,
+                expectedRevision: draft.revision,
                 path: data.path,
                 side: data.side,
                 line: data.line,
@@ -217,6 +219,8 @@ export function createPrReviewerDraftTools(
             const patch: v.InferInput<
               typeof prReviewDraftCommentUpdateInputSchema
             > = {
+              draftId: comment.draft.id,
+              expectedRevision: comment.draft.revision,
               body: data.body ?? comment.comment.body,
             };
             if ('path' in data) patch.path = data.path;
@@ -289,7 +293,11 @@ export function createPrReviewerDraftTools(
               reviewTarget(bound.review),
               data.commentId,
               paths,
-              { expectedHeadSha: bound.review.headSha },
+              {
+                draftId: draft.id,
+                expectedRevision: draft.revision,
+                expectedHeadSha: bound.review.headSha,
+              },
             );
             return compactResult(deleteName, result);
           },
@@ -347,7 +355,11 @@ function boundComment(
   paths: RuntimePaths,
   dependencies: PrReviewerDraftToolDependencies,
 ):
-  | { ok: true; comment: GitHubPrReviewDraftComment }
+  | {
+      ok: true;
+      draft: GitHubPrReviewDraft;
+      comment: GitHubPrReviewDraftComment;
+    }
   | { ok: false; result: PrEventActionResult } {
   const draft = dependencies.readDraftForComment({
     databasePath: paths.neondeckDatabase,
@@ -364,7 +376,7 @@ function boundComment(
       ),
     };
   }
-  return { ok: true, comment };
+  return { ok: true, draft, comment };
 }
 
 function draftMatchesReview(

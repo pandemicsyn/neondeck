@@ -63,9 +63,65 @@ const failedCommentIdsSchema = v.looseObject({
   ),
 });
 
-export function failingCommentIdsFromError(cause: unknown) {
-  if (!(cause instanceof ApiError)) return [];
-  const parsed = v.safeParse(failedCommentIdsSchema, cause.data);
+export function draftCommentIdsForSubmission({
+  draft,
+  failedCommentIds,
+  patchIndexesByPath,
+  unknownPatchCommentIds,
+}: {
+  draft: GitHubPrReviewDraft | null;
+  failedCommentIds: ReadonlySet<string>;
+  patchIndexesByPath: Map<string, PatchAnchorIndex>;
+  unknownPatchCommentIds: ReadonlySet<string>;
+}) {
+  const blockedCommentIds = staleDraftCommentIds(draft, patchIndexesByPath);
+  for (const commentId of unknownPatchCommentIds) {
+    blockedCommentIds.delete(commentId);
+  }
+  for (const commentId of failedCommentIds) {
+    blockedCommentIds.add(commentId);
+  }
+  return (
+    draft?.comments
+      .filter((comment) => !blockedCommentIds.has(comment.id))
+      .map((comment) => comment.id) ?? []
+  );
+}
+
+export async function waitForPendingDraftMutations(
+  pendingMutations: ReadonlySet<Promise<unknown>>,
+) {
+  while (pendingMutations.size > 0) {
+    const results = await Promise.allSettled(pendingMutations);
+    const rejected = results.find(
+      (result): result is PromiseRejectedResult => result.status === 'rejected',
+    );
+    if (rejected) throw rejected.reason;
+  }
+}
+
+export function hasUnsettledDraftEditor({
+  completedEditorKeys,
+  editorKeys,
+  hasPendingAnchor,
+  inFlightEditorKeys,
+}: {
+  completedEditorKeys: ReadonlySet<string>;
+  editorKeys: readonly string[];
+  hasPendingAnchor: boolean;
+  inFlightEditorKeys: ReadonlySet<string>;
+}) {
+  return (
+    hasPendingAnchor ||
+    editorKeys.some(
+      (key) => !inFlightEditorKeys.has(key) && !completedEditorKeys.has(key),
+    )
+  );
+}
+
+export function failingCommentIdsFromError<TError>(error: TError) {
+  if (!(error instanceof ApiError)) return [];
+  const parsed = v.safeParse(failedCommentIdsSchema, error.data);
   if (!parsed.success) return [];
   const data = parsed.output;
   if (data?.data?.code !== 'github-review-submit-failed') return [];
@@ -75,6 +131,22 @@ export function failingCommentIdsFromError(cause: unknown) {
 export function normalizeReviewBody(value: string | null | undefined) {
   const trimmed = value?.trim() ?? '';
   return trimmed.length > 0 ? trimmed : null;
+}
+
+export function draftSnapshotMatches(
+  left: Pick<GitHubPrReviewDraft, 'id' | 'revision'> | null,
+  right: Pick<GitHubPrReviewDraft, 'id' | 'revision'> | null,
+) {
+  return left?.id === right?.id && left?.revision === right?.revision;
+}
+
+export function draftSnapshotIsAtOrBeyondFrontier(
+  frontier: string | null,
+  incomingUpdatedAt: string,
+) {
+  return (
+    frontier === null || Date.parse(incomingUpdatedAt) >= Date.parse(frontier)
+  );
 }
 
 export function reviewDraftNeedsSubmitSave(

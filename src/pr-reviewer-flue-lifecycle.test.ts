@@ -6,7 +6,10 @@ import { init, type ConversationStreamChunk } from '@flue/runtime';
 import { start } from '@flue/runtime/node';
 import { afterEach, expect, it } from 'vitest';
 import { prReviewerConversationId } from '../shared/pr-reviewer-session';
-import { addPrReviewDraftComment, upsertPrReviewDraft } from './modules/github';
+import {
+  addPrReviewDraftComment,
+  upsertPrReviewDraft,
+} from './testing/pr-review-draft-fixtures';
 import { completePrReview, startPrReview } from './modules/pr-reviews';
 import { ensureRuntimeHome, runtimePaths } from './runtime-home';
 

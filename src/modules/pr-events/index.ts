@@ -10,6 +10,10 @@ export {
   prWatchEventWatermarkRecordSchema,
 } from './schemas';
 export {
+  enqueueRecoveredPrReviewDeliveryFollowup,
+  recoverPrReviewDeliveryFollowups,
+} from './review-submission';
+export {
   githubPrEventStateGetAction,
   githubPrFileDiffGetAction,
   githubPrFilesGetAction,
@@ -62,5 +66,6 @@ export {
 } from './addressed';
 export {
   readNeondeckPrDeliveries,
+  readPendingNeondeckPrReviewIds,
   recordNeondeckPrDelivery,
 } from './deliveries';

@@ -313,30 +313,123 @@ export function useGitHubPrReviewDraft(pr: GitHubPullRequest) {
 
 export function useGitHubPrReviewMutations(pr: GitHubPullRequest) {
   const queryClient = useQueryClient();
-  const updateDraftCache = (draft: GitHubPrReviewDraft | null) => {
-    queryClient.setQueryData(prReviewQueryKeys.draft(pr), draft);
+  const draftQueryKey = prReviewQueryKeys.draft(pr);
+  const initialDraft = queryClient.getQueryData<GitHubPrReviewDraft | null>(
+    draftQueryKey,
+  );
+  const draftUpdatedAtFrontierRef = useRef(initialDraft?.updatedAt ?? null);
+  const advanceDraftUpdatedAtFrontier = (updatedAt: string) => {
+    if (
+      draftUpdatedAtFrontierRef.current === null ||
+      Date.parse(updatedAt) >= Date.parse(draftUpdatedAtFrontierRef.current)
+    ) {
+      draftUpdatedAtFrontierRef.current = updatedAt;
+    }
   };
-  const reconcileSubmittedReview = async (submittedDraftId: string | null) => {
-    const queryKey = prReviewQueryKeys.draft(pr);
-    await queryClient.cancelQueries({
-      exact: true,
-      queryKey,
-    });
-    const liveDraft = await getGitHubPrReviewDraft({
+  const cancelDraftQuery = () =>
+    queryClient.cancelQueries({ exact: true, queryKey: draftQueryKey });
+  const admitDraftMutation = async () => {
+    await cancelDraftQuery();
+    return {
+      admittedDraft:
+        queryClient.getQueryData<GitHubPrReviewDraft | null>(draftQueryKey) ??
+        null,
+    };
+  };
+  const updateDraftCache = (
+    draft: GitHubPrReviewDraft | null,
+    options: { preserveDifferentDraft?: boolean } = {},
+  ) => {
+    const cachedDraft = queryClient.getQueryData<GitHubPrReviewDraft | null>(
+      draftQueryKey,
+    );
+    if (
+      draft &&
+      cachedDraft?.id !== draft.id &&
+      draftUpdatedAtFrontierRef.current !== null &&
+      Date.parse(draft.updatedAt) <
+        Date.parse(draftUpdatedAtFrontierRef.current)
+    ) {
+      return;
+    }
+    if (draft) {
+      advanceDraftUpdatedAtFrontier(draft.updatedAt);
+    }
+    queryClient.setQueryData<GitHubPrReviewDraft | null>(
+      draftQueryKey,
+      (current) =>
+        options.preserveDifferentDraft &&
+        current &&
+        draft &&
+        current.id !== draft.id
+          ? current
+          : newerDraftSnapshot(current, draft),
+    );
+  };
+  const reconcileSubmittedReview = (submittedDraftId: string | null) => {
+    const reconcileDraftCache = (incoming: GitHubPrReviewDraft | null) => {
+      queryClient.setQueryData<GitHubPrReviewDraft | null>(
+        draftQueryKey,
+        (current) => {
+          if (
+            current?.status === 'draft' &&
+            submittedDraftId !== null &&
+            current.id !== submittedDraftId
+          ) {
+            return current;
+          }
+          if (
+            incoming &&
+            current?.id !== incoming.id &&
+            draftUpdatedAtFrontierRef.current !== null &&
+            Date.parse(incoming.updatedAt) <
+              Date.parse(draftUpdatedAtFrontierRef.current)
+          ) {
+            return current ?? null;
+          }
+          if (incoming) {
+            advanceDraftUpdatedAtFrontier(incoming.updatedAt);
+          }
+          return newerDraftSnapshot(current, incoming);
+        },
+      );
+    };
+    reconcileDraftCache(null);
+    void getGitHubPrReviewDraft({
       repo: pr.repo,
       number: pr.number,
-    }).catch(() => null);
-    queryClient.setQueryData<GitHubPrReviewDraft | null>(queryKey, (current) =>
-      current?.status === 'draft' &&
-      submittedDraftId !== null &&
-      current.id !== submittedDraftId
-        ? current
-        : liveDraft,
-    );
-    await Promise.all([
+    })
+      .then((liveDraft) => {
+        reconcileDraftCache(liveDraft);
+      })
+      .catch(() => {
+        // The submission response is authoritative; retry on a later read.
+      });
+    void Promise.all([
       invalidateThreads(),
       invalidateSubmittedReviewQueries(queryClient, pr),
-    ]);
+    ]).catch(() => {
+      // The submission is already settled; a later view refresh can retry.
+    });
+  };
+  const reconcileDraftConflict = <TError>(
+    error: TError,
+    admission: { admittedDraft: GitHubPrReviewDraft | null } | undefined,
+  ) => {
+    const currentDraft = currentDraftFromConflict(error);
+    if (currentDraft === undefined) return;
+    if (currentDraft === null) {
+      const cachedDraft = queryClient.getQueryData<GitHubPrReviewDraft | null>(
+        draftQueryKey,
+      );
+      if (
+        !admission ||
+        !sameDraftAdmission(cachedDraft, admission.admittedDraft)
+      ) {
+        return;
+      }
+    }
+    updateDraftCache(currentDraft);
   };
   const invalidateThreads = () =>
     queryClient.invalidateQueries({
@@ -367,30 +460,59 @@ export function useGitHubPrReviewMutations(pr: GitHubPullRequest) {
   return {
     saveDraft: useMutation({
       mutationFn: putGitHubPrReviewDraft,
-      onSuccess: updateDraftCache,
+      onMutate: admitDraftMutation,
+      onError: (error, _input, admission) =>
+        reconcileDraftConflict(error, admission),
+      onSuccess: (draft, input) =>
+        updateDraftCache(draft, {
+          preserveDifferentDraft: Boolean(input.draftId),
+        }),
     }),
     addComment: useMutation({
       mutationFn: postGitHubPrReviewDraftComment,
-      onSuccess: updateDraftCache,
+      onMutate: admitDraftMutation,
+      onError: (error, _input, admission) =>
+        reconcileDraftConflict(error, admission),
+      onSuccess: (draft) =>
+        updateDraftCache(draft, { preserveDifferentDraft: true }),
     }),
     updateComment: useMutation({
       mutationFn: patchGitHubPrReviewDraftComment,
-      onSuccess: updateDraftCache,
+      onMutate: admitDraftMutation,
+      onError: (error, _input, admission) =>
+        reconcileDraftConflict(error, admission),
+      onSuccess: (draft) =>
+        updateDraftCache(draft, { preserveDifferentDraft: true }),
     }),
     deleteComment: useMutation({
       mutationFn: deleteGitHubPrReviewDraftComment,
-      onSuccess: updateDraftCache,
+      onMutate: admitDraftMutation,
+      onError: (error, _input, admission) =>
+        reconcileDraftConflict(error, admission),
+      onSuccess: (draft) =>
+        updateDraftCache(draft, { preserveDifferentDraft: true }),
     }),
     discardDraft: useMutation({
       mutationFn: deleteGitHubPrReviewDraft,
-      onSuccess: () => updateDraftCache(null),
+      onMutate: cancelDraftQuery,
+      onSuccess: (discardedDraft) => {
+        advanceDraftUpdatedAtFrontier(discardedDraft.updatedAt);
+        queryClient.setQueryData<GitHubPrReviewDraft | null>(
+          draftQueryKey,
+          (current) =>
+            current && current.id !== discardedDraft.id ? current : null,
+        );
+      },
     }),
     submitReview: useMutation({
       mutationFn: postGitHubPrReview,
-      onError: async (error) => {
+      onMutate: cancelDraftQuery,
+      onError: (error, input) => {
         const submittedDraft = submittedReviewDraftFromError(error);
         if (submittedDraft) {
-          await reconcileSubmittedReview(submittedDraft.id);
+          reconcileSubmittedReview(submittedDraft.id);
+        } else if (submissionOutcomeIsUncertain(error)) {
+          reconcileSubmittedReview(input.draftId);
         }
       },
       onSuccess: (result) =>
@@ -408,21 +530,107 @@ export function useGitHubPrReviewMutations(pr: GitHubPullRequest) {
   };
 }
 
+const reviewDraftCommentSchema = v.looseObject({
+  id: v.string(),
+  draftId: v.string(),
+  path: v.string(),
+  side: v.picklist(['RIGHT', 'LEFT']),
+  line: v.number(),
+  startLine: v.nullable(v.number()),
+  startSide: v.nullable(v.picklist(['RIGHT', 'LEFT'])),
+  body: v.string(),
+  origin: v.picklist(['human', 'neon']),
+  sourceFindingId: v.optional(v.nullable(v.string())),
+  createdAt: v.string(),
+  updatedAt: v.string(),
+});
+const reviewDraftSchema = v.looseObject({
+  id: v.string(),
+  repo: v.string(),
+  prNumber: v.number(),
+  headSha: v.string(),
+  verdict: v.nullable(v.picklist(['comment', 'approve', 'request-changes'])),
+  body: v.nullable(v.string()),
+  status: v.picklist(['draft', 'submitting', 'submitted', 'discarded']),
+  revision: v.number(),
+  createdAt: v.string(),
+  updatedAt: v.string(),
+  submittedAt: v.nullable(v.string()),
+  comments: v.array(reviewDraftCommentSchema),
+});
 const submittedReviewResponseSchema = v.looseObject({
   changed: v.boolean(),
   data: v.optional(
     v.looseObject({
-      review: v.optional(v.unknown()),
-      draft: v.optional(v.looseObject({ id: v.string(), status: v.string() })),
+      code: v.optional(v.string()),
+      review: v.optional(
+        v.looseObject({ id: v.union([v.string(), v.number()]) }),
+      ),
+      draft: v.optional(reviewDraftSchema),
     }),
   ),
 });
+const currentDraftConflictSchema = v.looseObject({
+  data: v.optional(
+    v.looseObject({ currentDraft: v.optional(v.nullable(reviewDraftSchema)) }),
+  ),
+});
 
-export function submittedReviewWasAccepted(cause: unknown) {
-  return submittedReviewDraftFromError(cause) !== null;
+function currentDraftFromConflict<TError>(error: TError) {
+  if (!(error instanceof ApiError) || error.status !== 409) return undefined;
+  const result = v.safeParse(currentDraftConflictSchema, error.data);
+  if (
+    !result.success ||
+    !result.output.data ||
+    !('currentDraft' in result.output.data)
+  ) {
+    return undefined;
+  }
+  return result.output.data.currentDraft ?? null;
 }
 
-function submittedReviewDraftFromError(cause: unknown) {
+export function newerDraftSnapshot(
+  current: GitHubPrReviewDraft | null | undefined,
+  incoming: GitHubPrReviewDraft | null,
+) {
+  if (!incoming || !current) return incoming;
+  if (incoming.id === current.id) {
+    if (incoming.revision !== current.revision) {
+      return incoming.revision > current.revision ? incoming : current;
+    }
+    return Date.parse(incoming.updatedAt) >= Date.parse(current.updatedAt)
+      ? incoming
+      : current;
+  }
+  return Date.parse(incoming.updatedAt) >= Date.parse(current.updatedAt)
+    ? incoming
+    : current;
+}
+
+function sameDraftAdmission(
+  current: GitHubPrReviewDraft | null | undefined,
+  admitted: GitHubPrReviewDraft | null,
+) {
+  if (!current || !admitted) return !current && !admitted;
+  return (
+    current.id === admitted.id &&
+    current.revision === admitted.revision &&
+    current.status === admitted.status &&
+    current.updatedAt === admitted.updatedAt
+  );
+}
+
+function submissionOutcomeIsUncertain<TError>(error: TError) {
+  if (!(error instanceof ApiError)) return false;
+  const result = v.safeParse(submittedReviewResponseSchema, error.data);
+  return result.success && result.output.data?.code === 'submission-uncertain';
+}
+
+export function submittedReviewWasAccepted<TError>(error: TError) {
+  return submittedReviewDraftFromError(error) !== null;
+}
+
+function submittedReviewDraftFromError<TCause>(cause: TCause) {
   if (!(cause instanceof ApiError)) return null;
   const parsed = v.safeParse(submittedReviewResponseSchema, cause.data);
   if (!parsed.success) return null;

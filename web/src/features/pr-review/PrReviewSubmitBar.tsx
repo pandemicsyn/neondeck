@@ -6,6 +6,7 @@ export function PrReviewSubmitBar({
   isBusy,
   isDurableReviewReady,
   isHeadAvailable,
+  isLocked,
   isSubmitting,
   onBodyBlur,
   onBodyChange,
@@ -25,6 +26,7 @@ export function PrReviewSubmitBar({
   isBusy: boolean;
   isDurableReviewReady: boolean;
   isHeadAvailable: boolean;
+  isLocked: boolean;
   isSubmitting: boolean;
   onBodyBlur: () => void;
   onBodyChange: (value: string) => void;
@@ -43,7 +45,8 @@ export function PrReviewSubmitBar({
   const canSubmit =
     isHeadAvailable &&
     isDurableReviewReady &&
-    !isBusy &&
+    !isLocked &&
+    !isSubmitting &&
     (verdict === 'approve' || cleanCommentCount > 0 || hasBody);
 
   return (

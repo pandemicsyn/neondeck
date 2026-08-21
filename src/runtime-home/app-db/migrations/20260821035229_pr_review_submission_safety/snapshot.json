@@ -1,8 +1,8 @@
 {
   "version": "7",
   "dialect": "sqlite",
-  "id": "e84051d2-d565-4368-9d5a-58fb1ce069f9",
-  "prevIds": ["a2f5c5d3-a3ac-4214-9714-07ece3007469"],
+  "id": "effcd255-4b4d-4a15-b3ac-a9d561fb63ae",
+  "prevIds": ["e84051d2-d565-4368-9d5a-58fb1ce069f9"],
   "ddl": [
     {
       "name": "activity_events",
@@ -142,6 +142,10 @@
     },
     {
       "name": "pr_review_neon_seeded_comments",
+      "entityType": "tables"
+    },
+    {
+      "name": "pr_review_submission_followups",
       "entityType": "tables"
     },
     {
@@ -4486,6 +4490,106 @@
       "autoincrement": false,
       "default": null,
       "generated": null,
+      "name": "id",
+      "entityType": "columns",
+      "table": "pr_review_submission_followups"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "kind",
+      "entityType": "columns",
+      "table": "pr_review_submission_followups"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "payload_json",
+      "entityType": "columns",
+      "table": "pr_review_submission_followups"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "status",
+      "entityType": "columns",
+      "table": "pr_review_submission_followups"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "0",
+      "generated": null,
+      "name": "attempt_count",
+      "entityType": "columns",
+      "table": "pr_review_submission_followups"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "next_attempt_at",
+      "entityType": "columns",
+      "table": "pr_review_submission_followups"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "last_error",
+      "entityType": "columns",
+      "table": "pr_review_submission_followups"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "created_at",
+      "entityType": "columns",
+      "table": "pr_review_submission_followups"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "updated_at",
+      "entityType": "columns",
+      "table": "pr_review_submission_followups"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "completed_at",
+      "entityType": "columns",
+      "table": "pr_review_submission_followups"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
       "name": "budget_key",
       "entityType": "columns",
       "table": "pr_review_workspace_budgets"
@@ -4817,6 +4921,26 @@
       "default": null,
       "generated": null,
       "name": "verdict",
+      "entityType": "columns",
+      "table": "pr_reviews"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "submission_draft_id",
+      "entityType": "columns",
+      "table": "pr_reviews"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "submission_draft_updated_at",
       "entityType": "columns",
       "table": "pr_reviews"
     },
@@ -7265,6 +7389,13 @@
       "entityType": "pks"
     },
     {
+      "columns": ["id"],
+      "nameExplicit": false,
+      "name": "pr_review_submission_followups_pk",
+      "table": "pr_review_submission_followups",
+      "entityType": "pks"
+    },
+    {
       "columns": ["budget_key"],
       "nameExplicit": false,
       "name": "pr_review_workspace_budgets_pk",
@@ -8120,7 +8251,7 @@
         }
       ],
       "isUnique": true,
-      "where": "\"pr_review_drafts\".\"status\" = 'draft'",
+      "where": "\"pr_review_drafts\".\"status\" IN ('draft', 'submitting')",
       "origin": "manual",
       "name": "idx_pr_review_drafts_live",
       "entityType": "indexes",
@@ -8187,6 +8318,28 @@
       "name": "idx_pr_review_neon_seeded_comments_pr",
       "entityType": "indexes",
       "table": "pr_review_neon_seeded_comments"
+    },
+    {
+      "columns": [
+        {
+          "value": "status",
+          "isExpression": false
+        },
+        {
+          "value": "kind",
+          "isExpression": false
+        },
+        {
+          "value": "created_at",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "idx_pr_review_submission_followups_pending",
+      "entityType": "indexes",
+      "table": "pr_review_submission_followups"
     },
     {
       "columns": [

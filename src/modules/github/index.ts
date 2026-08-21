@@ -75,6 +75,7 @@ export {
   recordPrReviewNeonSeed,
   replyToPullRequestReviewThread,
   resolvePullRequestReviewThread,
+  settlePrReviewDraftSubmission,
   submitPullRequestReview,
   unresolvePullRequestReviewThread,
   updatePrReviewDraftComment,
@@ -89,6 +90,7 @@ export type {
   GitHubPrReviewDraftStatus,
   GitHubPrReviewSubmitFailure,
   GitHubPrReviewVerdict,
+  PrReviewDraftWriteBase,
 } from './reviews';
 export {
   clearPullRequestReviewSurfaceThreadCache,
