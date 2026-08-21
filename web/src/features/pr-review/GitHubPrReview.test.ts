@@ -18,11 +18,16 @@ import {
   buildPatchAnchorIndex,
   commentAnchorExists,
   commentInputFromSelection,
+  draftCommentIdsForSubmission,
+  draftSnapshotIsAtOrBeyondFrontier,
+  draftSnapshotMatches,
   failingCommentIdsFromError,
+  hasUnsettledDraftEditor,
   normalizeReviewBody,
   reviewDraftNeedsSubmitSave,
   reviewCommentPreview,
   staleDraftCommentIds,
+  waitForPendingDraftMutations,
 } from './review-helpers';
 import {
   annotationsFromDraft,
@@ -51,6 +56,36 @@ import {
 import capturedReviewPatch from './fixtures/captured-review.patch?raw';
 
 describe('GitHubPrReview helpers', () => {
+  it('binds submission to the exact post-barrier draft revision', () => {
+    expect(
+      draftSnapshotMatches(
+        { id: 'draft-1', updatedAt: '2026-08-18T03:15:00.000Z' },
+        { id: 'draft-1', updatedAt: '2026-08-18T03:15:00.000Z' },
+      ),
+    ).toBe(true);
+    expect(
+      draftSnapshotMatches(
+        { id: 'draft-1', updatedAt: '2026-08-18T03:15:00.000Z' },
+        { id: 'draft-1', updatedAt: '2026-08-18T03:16:00.000Z' },
+      ),
+    ).toBe(false);
+  });
+
+  it('rejects delayed replacement-draft snapshots behind the target frontier', () => {
+    expect(
+      draftSnapshotIsAtOrBeyondFrontier(
+        '2026-08-18T03:16:00.000Z',
+        '2026-08-18T03:15:00.000Z',
+      ),
+    ).toBe(false);
+    expect(
+      draftSnapshotIsAtOrBeyondFrontier(
+        '2026-08-18T03:16:00.000Z',
+        '2026-08-18T03:17:00.000Z',
+      ),
+    ).toBe(true);
+  });
+
   it('shows structured GitHub diagnostics for failed review operations', () => {
     const error = new ApiError(
       'Could not fetch GitHub PR event state.',
@@ -530,6 +565,90 @@ describe('GitHubPrReview helpers', () => {
         }),
       ),
     ).toEqual(['comment-1', 'comment-2']);
+  });
+
+  it('recomputes submission comment ids from the settled draft', () => {
+    const patchIndexes = new Map([
+      [
+        'src/app.ts',
+        buildPatchAnchorIndex(
+          [
+            'diff --git a/src/app.ts b/src/app.ts',
+            '--- a/src/app.ts',
+            '+++ b/src/app.ts',
+            '@@ -10,3 +10,3 @@',
+            ' line 10',
+            '+line 11',
+            '+line 12',
+          ].join('\n'),
+        ),
+      ],
+    ]);
+    const settledDraft = draftWithComments([
+      {
+        id: 'reanchored',
+        path: 'src/app.ts',
+        side: 'RIGHT',
+        line: 11,
+        startLine: null,
+        startSide: null,
+      },
+      {
+        id: 'still-failed',
+        path: 'src/app.ts',
+        side: 'RIGHT',
+        line: 12,
+        startLine: null,
+        startSide: null,
+      },
+    ]);
+
+    expect(
+      draftCommentIdsForSubmission({
+        draft: settledDraft,
+        failedCommentIds: new Set(['still-failed']),
+        patchIndexesByPath: patchIndexes,
+        unknownPatchCommentIds: new Set(),
+      }),
+    ).toEqual(['reanchored']);
+  });
+
+  it('rejects submission barriers when an admitted draft mutation fails', async () => {
+    const pending = new Set<Promise<unknown>>();
+    const mutation = Promise.reject(new Error('Draft save failed.'));
+    pending.add(mutation);
+    void mutation.catch(() => pending.delete(mutation));
+
+    await expect(waitForPendingDraftMutations(pending)).rejects.toThrow(
+      'Draft save failed.',
+    );
+  });
+
+  it('blocks only draft editors that are neither saving nor already settled', () => {
+    expect(
+      hasUnsettledDraftEditor({
+        completedEditorKeys: new Set(),
+        editorKeys: ['composer:1'],
+        hasPendingAnchor: false,
+        inFlightEditorKeys: new Set(),
+      }),
+    ).toBe(true);
+    expect(
+      hasUnsettledDraftEditor({
+        completedEditorKeys: new Set(['comment:2']),
+        editorKeys: ['composer:1', 'comment:2'],
+        hasPendingAnchor: false,
+        inFlightEditorKeys: new Set(['composer:1']),
+      }),
+    ).toBe(false);
+    expect(
+      hasUnsettledDraftEditor({
+        completedEditorKeys: new Set(),
+        editorKeys: [],
+        hasPendingAnchor: true,
+        inFlightEditorKeys: new Set(),
+      }),
+    ).toBe(true);
   });
 
   it('normalizes blank review bodies to null before draft comparisons', () => {

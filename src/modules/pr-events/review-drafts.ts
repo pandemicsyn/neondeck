@@ -24,6 +24,7 @@ import {
   prEventTargetInputSchema,
   prReviewDraftCommentInputSchema,
   prReviewDraftCommentUpdateInputSchema,
+  prReviewDraftDiscardInputSchema,
   prReviewDraftInputSchema,
   type PrEventActionResult,
   type PrEventStateDependencies,
@@ -150,6 +151,12 @@ export async function putGitHubPrReviewDraft(
   };
   if (parsedDraft.output.draftId) {
     draftUpdate.draftId = parsedDraft.output.draftId;
+  }
+  if (parsedDraft.output.expectedUpdatedAt) {
+    draftUpdate.expectedUpdatedAt = parsedDraft.output.expectedUpdatedAt;
+  }
+  if (parsedDraft.output.expectedAbsent) {
+    draftUpdate.expectedAbsent = true;
   }
   if ('verdict' in parsedDraft.output) {
     draftUpdate.verdict = parsedDraft.output.verdict ?? null;
@@ -444,6 +451,7 @@ export async function deleteGitHubPrReviewDraftComment(
 
 export async function deleteGitHubPrReviewDraft(
   input: v.InferInput<typeof prEventTargetInputSchema>,
+  identity: v.InferInput<typeof prReviewDraftDiscardInputSchema>,
   paths: RuntimePaths = runtimePaths(),
 ): Promise<PrEventActionResult> {
   await ensureRuntimeHome(paths);
@@ -453,6 +461,14 @@ export async function deleteGitHubPrReviewDraft(
       'github_pr_review_draft_delete',
       'Invalid PR draft delete input.',
       { errors: [v.summarize(parsed.issues)] },
+    );
+  }
+  const parsedIdentity = v.safeParse(prReviewDraftDiscardInputSchema, identity);
+  if (!parsedIdentity.success) {
+    return failResult(
+      'github_pr_review_draft_delete',
+      'An exact PR review draft identity is required.',
+      { errors: [v.summarize(parsedIdentity.issues)] },
     );
   }
 
@@ -465,15 +481,21 @@ export async function deleteGitHubPrReviewDraft(
 
   const draft = discardPrReviewDraft({
     databasePath: paths.neondeckDatabase,
+    draftId: parsedIdentity.output.draftId,
+    expectedUpdatedAt: parsedIdentity.output.expectedUpdatedAt,
     repo: resolved.target.repoFullName,
     prNumber: resolved.target.number,
   });
+  if (!draft) {
+    return failResult(
+      'github_pr_review_draft_delete',
+      'Review draft changed or is no longer editable. Refresh and try again.',
+    );
+  }
   return okResult(
     'github_pr_review_draft_delete',
-    draft !== null,
-    draft
-      ? `Discarded review draft for ${resolved.target.repoFullName}#${resolved.target.number}.`
-      : `No review draft for ${resolved.target.repoFullName}#${resolved.target.number}.`,
+    true,
+    `Discarded review draft for ${resolved.target.repoFullName}#${resolved.target.number}.`,
     {
       target: eventTargetJson(resolved.target),
       draft: draft as unknown as JsonValue,

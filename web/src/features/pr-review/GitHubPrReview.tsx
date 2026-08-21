@@ -66,10 +66,15 @@ import {
 import {
   commentAnchorExists,
   commentInputFromSelection,
+  draftCommentIdsForSubmission,
+  draftSnapshotIsAtOrBeyondFrontier,
+  draftSnapshotMatches,
   failingCommentIdsFromError,
+  hasUnsettledDraftEditor,
   normalizeReviewBody,
   patchAnchorIndexesByPath,
   staleDraftCommentIds,
+  waitForPendingDraftMutations,
 } from './review-helpers';
 import {
   annotationFromSelection,
@@ -194,9 +199,13 @@ export function GitHubPrReview({
   const nextOperationToken = useRef(0);
   const draftIdRef = useRef<string | null>(null);
   const draftRef = useRef<GitHubPrReviewDraft | null>(null);
+  const draftUpdatedAtFrontierRef = useRef<string | null>(null);
   const inFlightDraftMutationsRef = useRef(new Set<Promise<unknown>>());
+  const inFlightDraftEditorKeysRef = useRef(new Set<string>());
+  const completedDraftEditorKeysRef = useRef(new Set<string>());
   const pendingDraftSavesRef = useRef<Promise<void>>(Promise.resolve());
   const reviewSubmissionPendingRef = useRef(false);
+  const submitFailedCommentIdsRef = useRef<Set<string>>(new Set());
   const [activePath, setActivePath] = useState<string | null>(null);
   const [composer, setComposer] = useState<ComposerState | null>(null);
   const [commentEditor, setCommentEditor] = useState<CommentEditorState | null>(
@@ -244,6 +253,35 @@ export function GitHubPrReview({
   >(null);
   const [navigationScroll, setNavigationScroll] =
     useState<DiffNavigationScrollRequest | null>(null);
+  const recordDraftSnapshotRevision = useCallback(
+    (nextDraft: GitHubPrReviewDraft) => {
+      if (
+        draftUpdatedAtFrontierRef.current === null ||
+        Date.parse(nextDraft.updatedAt) >=
+          Date.parse(draftUpdatedAtFrontierRef.current)
+      ) {
+        draftUpdatedAtFrontierRef.current = nextDraft.updatedAt;
+      }
+    },
+    [],
+  );
+  const acceptDraftSnapshot = useCallback(
+    (nextDraft: GitHubPrReviewDraft) => {
+      if (
+        !draftSnapshotIsAtOrBeyondFrontier(
+          draftUpdatedAtFrontierRef.current,
+          nextDraft.updatedAt,
+        )
+      ) {
+        return false;
+      }
+      recordDraftSnapshotRevision(nextDraft);
+      draftIdRef.current = nextDraft.id;
+      draftRef.current = nextDraft;
+      return true;
+    },
+    [recordDraftSnapshotRevision],
+  );
   const navigationScrollTokenRef = useRef(0);
   const [navigationBoundary, setNavigationBoundary] = useState<
     'start' | 'end' | null
@@ -1315,9 +1353,13 @@ export function GitHubPrReview({
   }, [activePath, appliedPrRevisionKey, fileList, filesQuery.isLoading]);
 
   useEffect(() => {
-    draftIdRef.current = draft?.id ?? null;
-    draftRef.current = draft;
-  }, [draft]);
+    if (draft) {
+      acceptDraftSnapshot(draft);
+    } else {
+      draftIdRef.current = null;
+      draftRef.current = null;
+    }
+  }, [acceptDraftSnapshot, draft]);
 
   useEffect(() => {
     const nextDraftId = draft?.id ?? null;
@@ -1339,12 +1381,15 @@ export function GitHubPrReview({
   ]);
 
   useEffect(() => {
-    setSubmitFailedCommentIds((current) => {
-      if (current.size === 0) return current;
+    const current = submitFailedCommentIdsRef.current;
+    if (current.size > 0) {
       const liveIds = new Set(draft?.comments.map((comment) => comment.id));
       const next = new Set([...current].filter((id) => liveIds.has(id)));
-      return next.size === current.size ? current : next;
-    });
+      if (next.size !== current.size) {
+        submitFailedCommentIdsRef.current = next;
+        setSubmitFailedCommentIds(next);
+      }
+    }
   }, [draft?.comments]);
 
   const summary = filesQuery.data?.diffSummary;
@@ -1356,11 +1401,6 @@ export function GitHubPrReview({
     );
     return mutation;
   };
-  const waitForDraftMutations = async () => {
-    while (inFlightDraftMutationsRef.current.size > 0) {
-      await Promise.allSettled(inFlightDraftMutationsRef.current);
-    }
-  };
   const saveDraft = async (
     next: Partial<{
       body: string | null;
@@ -1370,19 +1410,24 @@ export function GitHubPrReview({
     headSha = currentHeadSha,
   ) => {
     if (!headSha) throw new Error('PR head SHA is unavailable.');
-    const saved = await trackDraftMutation(
-      mutations.saveDraft.mutateAsync({
-        ...(draftIdRef.current ? { draftId: draftIdRef.current } : {}),
-        repo: pr.repo,
-        number: pr.number,
-        headSha,
-        ...('verdict' in next ? { verdict: next.verdict } : {}),
-        ...('body' in next ? { body: next.body } : {}),
-        ...(next.reanchorHeadSha ? { reanchorHeadSha: true } : {}),
-      }),
-    );
-    draftIdRef.current = saved.id;
-    draftRef.current = saved;
+    const currentDraft = draftRef.current;
+    const saved = await mutations.saveDraft.mutateAsync({
+      ...(draftIdRef.current
+        ? {
+            draftId: draftIdRef.current,
+            ...(currentDraft?.id === draftIdRef.current
+              ? { expectedUpdatedAt: currentDraft.updatedAt }
+              : {}),
+          }
+        : {}),
+      repo: pr.repo,
+      number: pr.number,
+      headSha,
+      ...('verdict' in next ? { verdict: next.verdict } : {}),
+      ...('body' in next ? { body: next.body } : {}),
+      ...(next.reanchorHeadSha ? { reanchorHeadSha: true } : {}),
+    });
+    acceptDraftSnapshot(saved);
     return saved;
   };
   const enqueueDraftSave = (
@@ -1393,8 +1438,8 @@ export function GitHubPrReview({
     }> = {},
     headSha = currentHeadSha,
   ) => {
-    const queued = pendingDraftSavesRef.current.then(() =>
-      saveDraft(next, headSha),
+    const queued = trackDraftMutation(
+      pendingDraftSavesRef.current.then(() => saveDraft(next, headSha)),
     );
     pendingDraftSavesRef.current = queued.then(
       () => undefined,
@@ -1402,10 +1447,39 @@ export function GitHubPrReview({
     );
     return queued;
   };
+  const saveDraftAgainstSnapshot = async (
+    snapshot: GitHubPrReviewDraft | null,
+    next: Partial<{
+      body: string | null;
+      verdict: GitHubPrReviewVerdict | null;
+      reanchorHeadSha: boolean;
+    }>,
+    headSha: string,
+  ) => {
+    const saved = await trackDraftMutation(
+      mutations.saveDraft.mutateAsync({
+        ...(snapshot
+          ? {
+              draftId: snapshot.id,
+              expectedUpdatedAt: snapshot.updatedAt,
+            }
+          : { expectedAbsent: true }),
+        repo: pr.repo,
+        number: pr.number,
+        headSha,
+        ...('verdict' in next ? { verdict: next.verdict } : {}),
+        ...('body' in next ? { body: next.body } : {}),
+        ...(next.reanchorHeadSha ? { reanchorHeadSha: true } : {}),
+      }),
+    );
+    acceptDraftSnapshot(saved);
+    return saved;
+  };
   const ensureDraft = async () =>
     draftRef.current ?? (await enqueueDraftSave());
   const beginReanchorComment = (commentId: string, path: string | null) => {
     if (isApplyingRevision || reviewSubmissionPendingRef.current) return;
+    completedDraftEditorKeysRef.current.delete(`reanchor:${commentId}`);
     setAnchoringFinding(null);
     setComposer(null);
     setReanchoringCommentId(commentId);
@@ -1451,6 +1525,7 @@ export function GitHubPrReview({
     )
       .then((updated) => {
         if (!updated) return;
+        submitFailedCommentIdsRef.current = new Set();
         setSubmitFailedCommentIds(new Set());
         finishOperation(
           operationToken,
@@ -1489,6 +1564,8 @@ export function GitHubPrReview({
         return;
       }
       const operationToken = beginOperation();
+      const editorKey = `reanchor:${reanchoringCommentId}`;
+      inFlightDraftEditorKeysRef.current.add(editorKey);
       trackDraftMutation(
         mutations.updateComment.mutateAsync({
           repo: pr.repo,
@@ -1500,16 +1577,19 @@ export function GitHubPrReview({
         }),
       )
         .then((updated) => {
-          draftRef.current = updated;
-          setSubmitFailedCommentIds((current) => {
-            const next = new Set(current);
-            next.delete(reanchoringCommentId);
-            return next;
-          });
+          acceptDraftSnapshot(updated);
+          const nextFailedCommentIds = new Set(
+            submitFailedCommentIdsRef.current,
+          );
+          nextFailedCommentIds.delete(reanchoringCommentId);
+          submitFailedCommentIdsRef.current = nextFailedCommentIds;
+          setSubmitFailedCommentIds(nextFailedCommentIds);
+          completedDraftEditorKeysRef.current.add(editorKey);
           setReanchoringCommentId(null);
           finishOperation(operationToken, 'Draft comment re-anchored.');
         })
-        .catch((error) => failOperation(operationToken, error));
+        .catch((error) => failOperation(operationToken, error))
+        .then(() => inFlightDraftEditorKeysRef.current.delete(editorKey));
       return;
     }
     const annotation = annotationFromSelection(selection, index);
@@ -1531,6 +1611,8 @@ export function GitHubPrReview({
     if (!submittedComposer || submittedComposer.body.trim().length === 0)
       return;
     const operationToken = beginOperation();
+    const editorKey = `composer:${submittedComposer.token}`;
+    inFlightDraftEditorKeysRef.current.add(editorKey);
     try {
       const nextDraft = await ensureDraft();
       const index = patchIndexesByPath.get(submittedComposer.path);
@@ -1556,13 +1638,16 @@ export function GitHubPrReview({
           sourceFindingId: submittedComposer.sourceFindingId,
         }),
       );
-      draftRef.current = updated;
+      acceptDraftSnapshot(updated);
+      completedDraftEditorKeysRef.current.add(editorKey);
       setComposer((current) =>
         clearCompletedEditor(current, submittedComposer.token),
       );
       finishOperation(operationToken, 'Draft comment saved.');
     } catch (error) {
       failOperation(operationToken, error);
+    } finally {
+      inFlightDraftEditorKeysRef.current.delete(editorKey);
     }
   };
   const submitEdit = async (event: FormEvent) => {
@@ -1571,6 +1656,8 @@ export function GitHubPrReview({
     const submittedEditor = commentEditor;
     if (!submittedEditor || submittedEditor.body.trim().length === 0) return;
     const operationToken = beginOperation();
+    const editorKey = `comment:${submittedEditor.token}`;
+    inFlightDraftEditorKeysRef.current.add(editorKey);
     try {
       const updated = await trackDraftMutation(
         mutations.updateComment.mutateAsync({
@@ -1580,13 +1667,20 @@ export function GitHubPrReview({
           body: submittedEditor.body,
         }),
       );
-      draftRef.current = updated;
+      acceptDraftSnapshot(updated);
+      const nextFailedCommentIds = new Set(submitFailedCommentIdsRef.current);
+      nextFailedCommentIds.delete(submittedEditor.commentId);
+      submitFailedCommentIdsRef.current = nextFailedCommentIds;
+      setSubmitFailedCommentIds(nextFailedCommentIds);
+      completedDraftEditorKeysRef.current.add(editorKey);
       setCommentEditor((current) =>
         clearCompletedEditor(current, submittedEditor.token),
       );
       finishOperation(operationToken, 'Draft comment updated.');
     } catch (error) {
       failOperation(operationToken, error);
+    } finally {
+      inFlightDraftEditorKeysRef.current.delete(editorKey);
     }
   };
   const submitReply = async (threadId: string, event: FormEvent) => {
@@ -1626,7 +1720,7 @@ export function GitHubPrReview({
       }),
     )
       .then((updated) => {
-        draftRef.current = updated;
+        acceptDraftSnapshot(updated);
         finishOperation(operationToken, 'Draft comment deleted.');
       })
       .catch((error) => failOperation(operationToken, error));
@@ -1726,7 +1820,12 @@ export function GitHubPrReview({
         }),
       );
       const refreshed = await trackDraftMutation(draftQuery.refetch());
-      draftRef.current = refreshed.data ?? null;
+      if (refreshed.data) {
+        acceptDraftSnapshot(refreshed.data);
+      } else {
+        draftIdRef.current = null;
+        draftRef.current = null;
+      }
       finishOperation(operationToken, result.message);
     } catch (error) {
       failOperation(operationToken, error);
@@ -1858,18 +1957,66 @@ export function GitHubPrReview({
       );
       return;
     }
+    const openEditorKeys = [
+      ...(composer ? [`composer:${composer.token}`] : []),
+      ...(commentEditor ? [`comment:${commentEditor.token}`] : []),
+      ...(reanchoringCommentId ? [`reanchor:${reanchoringCommentId}`] : []),
+    ];
+    if (
+      hasUnsettledDraftEditor({
+        completedEditorKeys: completedDraftEditorKeysRef.current,
+        editorKeys: openEditorKeys,
+        hasPendingAnchor: Boolean(anchoringFinding),
+        inFlightEditorKeys: inFlightDraftEditorKeysRef.current,
+      })
+    ) {
+      setStatusMessage(
+        'Finish or cancel the open draft editor before submitting the review.',
+      );
+      return;
+    }
     reviewSubmissionPendingRef.current = true;
     setIsReviewSubmissionPending(true);
     const operationToken = beginOperation();
     try {
-      await pendingDraftSavesRef.current;
-      await waitForDraftMutations();
+      await waitForPendingDraftMutations(inFlightDraftMutationsRef.current);
+      const barrierDraft = draftRef.current;
       const normalizedBody = normalizeReviewBody(reviewBody);
-      const submittedCommentIds =
-        draftRef.current?.comments
-          .filter((comment) => !blockedCommentIds.has(comment.id))
-          .map((comment) => comment.id) ?? [];
+      const refreshedDraftResult = await draftQuery.refetch({
+        throwOnError: true,
+      });
+      const refreshedDraft = refreshedDraftResult.data ?? null;
+      if (refreshedDraft) {
+        acceptDraftSnapshot(refreshedDraft);
+      } else {
+        draftIdRef.current = null;
+        draftRef.current = null;
+      }
+      if (!draftSnapshotMatches(refreshedDraft, barrierDraft)) {
+        throw new Error(
+          'The review draft changed after pending edits settled. Review it and submit again.',
+        );
+      }
+      const settledDraft = await saveDraftAgainstSnapshot(
+        refreshedDraft,
+        { body: normalizedBody, reanchorHeadSha: true, verdict },
+        currentHeadSha,
+      );
+      const settledUnknownPatchCommentIds = draftCommentIdsWithUnknownPatch(
+        settledDraft,
+        files,
+        patchQueryByPath,
+        deferredPatchPaths,
+      );
+      const submittedCommentIds = draftCommentIdsForSubmission({
+        draft: settledDraft,
+        failedCommentIds: submitFailedCommentIdsRef.current,
+        patchIndexesByPath,
+        unknownPatchCommentIds: settledUnknownPatchCommentIds,
+      });
       await mutations.submitReview.mutateAsync({
+        draftId: settledDraft.id,
+        expectedDraftUpdatedAt: settledDraft.updatedAt,
         repo: pr.repo,
         number: pr.number,
         headSha: currentHeadSha,
@@ -1877,12 +2024,15 @@ export function GitHubPrReview({
         verdict,
         commentIds: submittedCommentIds,
       });
+      submitFailedCommentIdsRef.current = new Set();
       setSubmitFailedCommentIds(new Set());
       finishOperation(operationToken, 'Review submitted.');
     } catch (error) {
       const failingIds = failingCommentIdsFromError(error);
       if (failingIds.length > 0) {
-        setSubmitFailedCommentIds(new Set(failingIds));
+        const nextFailedCommentIds = new Set(failingIds);
+        submitFailedCommentIdsRef.current = nextFailedCommentIds;
+        setSubmitFailedCommentIds(nextFailedCommentIds);
       }
       failOperation(operationToken, error);
     } finally {
@@ -2207,6 +2357,7 @@ export function GitHubPrReview({
           }
           isDurableReviewReady={isDurableReviewReady}
           isHeadAvailable={currentHeadSha.length > 0}
+          isLocked={isApplyingRevision}
           onBodyBlur={() => {
             setIsReviewBodyFocused(false);
             if (reviewSubmissionPendingRef.current) {
@@ -2240,10 +2391,18 @@ export function GitHubPrReview({
                 mutations.discardDraft.mutateAsync({
                   repo: pr.repo,
                   number: pr.number,
+                  draftId: draft.id,
+                  expectedUpdatedAt: draft.updatedAt,
                 }),
               )
-                .then((discarded) => {
-                  draftRef.current = discarded;
+                .then((discardedDraft) => {
+                  recordDraftSnapshotRevision(discardedDraft);
+                  submitFailedCommentIdsRef.current = new Set();
+                  setSubmitFailedCommentIds(new Set());
+                  setComposer(null);
+                  setCommentEditor(null);
+                  setReanchoringCommentId(null);
+                  setAnchoringFinding(null);
                   finishOperation(operationToken, 'Review draft discarded.');
                 })
                 .catch((error) => failOperation(operationToken, error));

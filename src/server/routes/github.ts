@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import {
   getGitHubPullRequest,
+  readPrReviewDraft,
   readGitHubQueueSnapshot,
 } from '../../modules/github';
 import {
@@ -31,6 +32,7 @@ import {
 } from '../../modules/pr-reviews';
 import { queryNumber, safeJsonBody } from '../http';
 import { recordHumanReviewSubmittedApiEvidence } from '../learning-hooks';
+import { schedulePrReviewEvidenceFollowup } from '../pr-review-submission-followups';
 
 export function createGitHubRoutes(
   paths: RuntimePaths,
@@ -218,7 +220,14 @@ export function createGitHubRoutes(
       c.req.param('number'),
     );
     if (!target.ok) return c.json(target.result, 400);
-    const result = await deleteGitHubPrReviewDraft(target.input, paths);
+    const result = await deleteGitHubPrReviewDraft(
+      target.input,
+      {
+        draftId: c.req.query('draftId') ?? '',
+        expectedUpdatedAt: c.req.query('expectedUpdatedAt') ?? '',
+      },
+      paths,
+    );
     return c.json(result, result.ok ? 200 : 400);
   });
 
@@ -235,16 +244,68 @@ export function createGitHubRoutes(
       typeof reviewInputObject.headSha === 'string'
         ? reviewInputObject.headSha
         : null;
+    const requestedDraftId =
+      typeof reviewInputObject.draftId === 'string'
+        ? reviewInputObject.draftId
+        : null;
+    const expectedDraftUpdatedAt =
+      typeof reviewInputObject.expectedDraftUpdatedAt === 'string'
+        ? reviewInputObject.expectedDraftUpdatedAt
+        : null;
+    if (!requestedDraftId || !expectedDraftUpdatedAt) {
+      return c.json(
+        {
+          ok: false,
+          action: 'github_pr_review_post',
+          changed: false,
+          message: 'An exact review draft identity is required.',
+        },
+        400,
+      );
+    }
+    const exactDraft = readPrReviewDraft({
+      databasePath: paths.neondeckDatabase,
+      draftId: requestedDraftId,
+    });
+    if (
+      !exactDraft ||
+      exactDraft.status !== 'draft' ||
+      exactDraft.repo.toLowerCase() !== target.input.repo.toLowerCase() ||
+      exactDraft.prNumber !== target.input.prNumber ||
+      exactDraft.updatedAt !== expectedDraftUpdatedAt ||
+      exactDraft.headSha !== requestedHeadSha
+    ) {
+      return c.json(
+        {
+          ok: false,
+          action: 'github_pr_review_post',
+          changed: false,
+          message: 'The exact review draft changed before submission.',
+        },
+        409,
+      );
+    }
     const durableReview = readPrReviewForTarget(
       target.input.repo,
       target.input.prNumber,
       paths,
     );
+    if (!durableReview) {
+      return c.json(
+        {
+          ok: false,
+          action: 'github_pr_review_post',
+          changed: false,
+          message:
+            'Start and finish the durable Neon review before submitting.',
+        },
+        409,
+      );
+    }
     if (
-      durableReview &&
-      (durableReview.status !== 'ready' ||
-        !requestedHeadSha ||
-        durableReview.headSha !== requestedHeadSha)
+      durableReview.status !== 'ready' ||
+      !requestedHeadSha ||
+      durableReview.headSha !== requestedHeadSha
     ) {
       return c.json(
         {
@@ -276,19 +337,31 @@ export function createGitHubRoutes(
         400,
       );
     }
+    const draftVerdict = exactDraft.verdict ?? 'comment';
+    if (draftVerdict !== verdict) {
+      return c.json(
+        {
+          ok: false,
+          action: 'github_pr_review_post',
+          changed: false,
+          message: 'The submitted verdict does not match the exact draft.',
+        },
+        409,
+      );
+    }
 
-    const reserved = durableReview
-      ? reservePrReviewSubmission(
-          {
-            repoFullName: target.input.repo,
-            prNumber: target.input.prNumber,
-            headSha: requestedHeadSha ?? '',
-            verdict,
-          },
-          paths,
-        )
-      : null;
-    if (durableReview && !reserved) {
+    const reserved = reservePrReviewSubmission(
+      {
+        repoFullName: target.input.repo,
+        prNumber: target.input.prNumber,
+        headSha: requestedHeadSha ?? '',
+        verdict: draftVerdict,
+        draftId: exactDraft.id,
+        draftUpdatedAt: exactDraft.updatedAt,
+      },
+      paths,
+    );
+    if (!reserved) {
       return c.json(
         {
           ok: false,
@@ -313,64 +386,40 @@ export function createGitHubRoutes(
     const endSubmissionAttempt = reserved
       ? beginPrReviewSubmissionAttempt(reserved.id)
       : () => {};
-    const recordSubmittedReviewEvidence = (
+    const scheduleSubmittedReviewEvidence = (
       submittedVerdict: 'comment' | 'approve' | 'request-changes',
       review: Record<string, unknown>,
-    ) =>
-      (
+    ) => {
+      const githubReviewId = identifier(review.id);
+      schedulePrReviewEvidenceFollowup(
+        {
+          id: `pr-review-evidence:${reserved.id}:${githubReviewId ?? 'unknown'}`,
+          evidence: {
+            origin: 'submission',
+            repoFullName: target.input.repo,
+            prNumber: target.input.prNumber,
+            headSha: requestedHeadSha ?? '',
+            reviewId: githubReviewId,
+            reviewUrl: typeof review.url === 'string' ? review.url : null,
+            verdict: submittedVerdict,
+          },
+        },
+        paths,
         dependencies.recordHumanReviewSubmittedApiEvidence ??
-        recordHumanReviewSubmittedApiEvidence
-      )(paths, {
-        origin: 'submission',
-        repoFullName: target.input.repo,
-        prNumber: target.input.prNumber,
-        headSha: requestedHeadSha ?? '',
-        reviewId: identifier(review.id),
-        reviewUrl: typeof review.url === 'string' ? review.url : null,
-        verdict: submittedVerdict,
-      });
+          recordHumanReviewSubmittedApiEvidence,
+      );
+    };
 
     let githubAccepted = false;
     try {
-      const savedDraftResult = await (
-        dependencies.putGitHubPrReviewDraft ?? putGitHubPrReviewDraft
-      )(
-        target.input,
-        {
-          headSha: requestedHeadSha ?? '',
-          body:
-            typeof reviewInputObject.body === 'string'
-              ? reviewInputObject.body
-              : null,
-          verdict,
-        },
-        paths,
-      );
-      if (!savedDraftResult.ok) {
-        releaseReservation();
-        return c.json(savedDraftResult, 400);
-      }
-      const savedDraft = objectField(objectField(savedDraftResult.data).draft);
-      if (typeof savedDraft.id !== 'string') {
-        releaseReservation();
-        return c.json(
-          {
-            ok: false,
-            action: 'github_pr_review_post',
-            changed: false,
-            message: 'Review draft could not be saved before submission.',
-          },
-          409,
-        );
-      }
-
       const result = await (
         dependencies.postGitHubPrReview ?? postGitHubPrReview
       )(
         target.input,
         {
-          draftId: savedDraft.id,
+          draftId: requestedDraftId,
           headSha: requestedHeadSha ?? '',
+          expectedDraftUpdatedAt,
           commentIds: Array.isArray(reviewInputObject.commentIds)
             ? reviewInputObject.commentIds.filter(
                 (id): id is string => typeof id === 'string',
@@ -380,28 +429,29 @@ export function createGitHubRoutes(
         paths,
       );
       if (!result.ok) {
+        if (objectField(result.data).code === 'submission-uncertain') {
+          return c.json(result, 409);
+        }
         const acceptedReview = unverifiedAcceptedReview(result);
         if (acceptedReview) {
           githubAccepted = true;
           const submittedVerdict =
             prReviewVerdict(acceptedReview.draft.verdict) ?? verdict;
-          await recordSubmittedReviewEvidence(
+          const submitted = submitPrReview(
+            {
+              reviewId: reserved.id,
+              verdict: submittedVerdict,
+              githubReviewUrl:
+                typeof acceptedReview.review.url === 'string'
+                  ? acceptedReview.review.url
+                  : null,
+            },
+            paths,
+          );
+          scheduleSubmittedReviewEvidence(
             submittedVerdict,
             acceptedReview.review,
           );
-          const submitted = reserved
-            ? submitPrReview(
-                {
-                  reviewId: reserved.id,
-                  verdict: submittedVerdict,
-                  githubReviewUrl:
-                    typeof acceptedReview.review.url === 'string'
-                      ? acceptedReview.review.url
-                      : null,
-                },
-                paths,
-              )
-            : null;
           return c.json(
             reserved && !submitted
               ? {
@@ -422,19 +472,16 @@ export function createGitHubRoutes(
       const draft = objectField(data.draft);
       const review = objectField(data.review);
       const submittedVerdict = prReviewVerdict(draft.verdict) ?? verdict;
-      await recordSubmittedReviewEvidence(submittedVerdict, review);
-      const submitted = reserved
-        ? submitPrReview(
-            {
-              reviewId: reserved.id,
-              verdict: submittedVerdict,
-              githubReviewUrl:
-                typeof review.url === 'string' ? review.url : null,
-            },
-            paths,
-          )
-        : null;
-      if (reserved && !submitted) {
+      const submitted = submitPrReview(
+        {
+          reviewId: reserved.id,
+          verdict: submittedVerdict,
+          githubReviewUrl: typeof review.url === 'string' ? review.url : null,
+        },
+        paths,
+      );
+      scheduleSubmittedReviewEvidence(submittedVerdict, review);
+      if (!submitted) {
         return c.json(
           {
             ok: false,

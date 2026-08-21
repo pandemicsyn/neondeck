@@ -2,10 +2,11 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type {
   GitHubPullRequestDetail,
   GitHubPullRequestEventState,
+  GitHubPullRequestReviewThreadComment,
   GitHubPullRequestReviewThread,
 } from './modules/github';
 import {
@@ -31,6 +32,7 @@ import {
   putGitHubPrReviewDraft,
   readAddressedPrFeedback,
   readNeondeckPrDeliveries,
+  recoverPrReviewDeliveryFollowups,
   reviewThreadCommentDeliveryFingerprint,
   refreshPrWatchEventState,
 } from './modules/pr-events';
@@ -1167,7 +1169,11 @@ describe('PR event state watermarks', () => {
     await expect(
       postGitHubPrReview(
         { repo: 'external/private-repo', prNumber: 5 },
-        { draftId: 'draft-1', headSha: 'head123' },
+        {
+          draftId: 'draft-1',
+          expectedDraftUpdatedAt: '2026-08-18T03:15:00.000Z',
+          headSha: 'head123',
+        },
         paths,
         {
           submitPullRequestReview: async () => {
@@ -1279,6 +1285,7 @@ describe('PR event state watermarks', () => {
         { repo: 'neondeck', prNumber: 123 },
         {
           draftId: submittedDraft.id,
+          expectedDraftUpdatedAt: submittedDraft.updatedAt,
           headSha: submittedDraft.headSha,
           commentIds: [draftComment.id],
         },
@@ -1299,6 +1306,12 @@ describe('PR event state watermarks', () => {
       ok: true,
       action: 'github_pr_review_post',
     });
+    await vi.waitFor(() =>
+      expect(
+        readNeondeckPrDeliveries('pandemicsyn/neondeck', 123, paths)
+          .reviewFingerprints,
+      ).toEqual(new Map([['9001', expect.any(String)]])),
+    );
     const deliveries = readNeondeckPrDeliveries(
       'pandemicsyn/neondeck',
       123,
@@ -1311,11 +1324,14 @@ describe('PR event state watermarks', () => {
       new Map([['112', expect.any(String)]]),
     );
 
+    const delayedVerification =
+      Promise.withResolvers<GitHubPullRequestReviewThreadComment[]>();
     await expect(
       postGitHubPrReview(
         { repo: 'neondeck', prNumber: 123 },
         {
           draftId: 'draft-2',
+          expectedDraftUpdatedAt: submittedDraft.updatedAt,
           headSha: submittedDraft.headSha,
           commentIds: [draftComment.id],
         },
@@ -1326,20 +1342,17 @@ describe('PR event state watermarks', () => {
             draft: { ...submittedDraft, id: 'draft-2' },
             review: { ...review, id: 9002, nodeId: 'review-node-9002' },
           }),
-          fetchPullRequestReviewComments: async () => {
-            throw new Error('GitHub comment verification timed out.');
-          },
+          fetchPullRequestReviewComments: async () =>
+            delayedVerification.promise,
         },
       ),
     ).resolves.toMatchObject({
-      ok: false,
+      ok: true,
       action: 'github_pr_review_post',
       changed: true,
       data: {
         review: { id: 9002 },
-        deliveryIdentityVerified: false,
       },
-      requires: ['deliveryIdentity'],
     });
     expect(
       readNeondeckPrDeliveries(
@@ -1348,11 +1361,44 @@ describe('PR event state watermarks', () => {
         paths,
       ).reviewFingerprints.has('9002'),
     ).toBe(false);
+    expect(
+      prReviewSubmissionFollowupStatus(
+        paths.neondeckDatabase,
+        'pr-review-delivery:pandemicsyn/neondeck#123:9002',
+      ),
+    ).toBe('processing');
+    delayedVerification.resolve([]);
+    await vi.waitFor(() =>
+      expect(
+        prReviewSubmissionFollowupStatus(
+          paths.neondeckDatabase,
+          'pr-review-delivery:pandemicsyn/neondeck#123:9002',
+        ),
+      ).toBe('pending'),
+    );
+    await expect(
+      recoverPrReviewDeliveryFollowups(paths, {
+        token: 'test-token',
+        fetchPullRequestReviewComments: async () => [
+          { ...deliveredComment, reviewId: 9002 },
+        ],
+      }),
+    ).resolves.toEqual([true]);
+    expect(
+      prReviewSubmissionFollowupStatus(
+        paths.neondeckDatabase,
+        'pr-review-delivery:pandemicsyn/neondeck#123:9002',
+      ),
+    ).toBe('completed');
 
     await expect(
       postGitHubPrReview(
         { repo: 'neondeck', prNumber: 123 },
-        { draftId: 'draft-3', headSha: submittedDraft.headSha },
+        {
+          draftId: 'draft-3',
+          expectedDraftUpdatedAt: submittedDraft.updatedAt,
+          headSha: submittedDraft.headSha,
+        },
         paths,
         {
           token: 'test-token',
@@ -1375,13 +1421,11 @@ describe('PR event state watermarks', () => {
         },
       ),
     ).resolves.toMatchObject({
-      ok: false,
+      ok: true,
       changed: true,
       data: {
         review: { id: 9003 },
-        deliveryIdentityVerified: false,
       },
-      requires: ['deliveryIdentity'],
     });
     expect(
       readNeondeckPrDeliveries(
@@ -2025,6 +2069,18 @@ function rewriteMergeabilityWatermark(
       `,
       )
       .run(JSON.stringify(rewrite(watermark)), 'pandemicsyn/neondeck#123');
+  } finally {
+    database.close();
+  }
+}
+
+function prReviewSubmissionFollowupStatus(databasePath: string, id: string) {
+  const database = new DatabaseSync(databasePath, { readOnly: true });
+  try {
+    const row = database
+      .prepare('SELECT status FROM pr_review_submission_followups WHERE id = ?')
+      .get(id) as { status?: unknown } | undefined;
+    return typeof row?.status === 'string' ? row.status : null;
   } finally {
     database.close();
   }

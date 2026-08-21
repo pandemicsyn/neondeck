@@ -124,6 +124,8 @@ export async function getGitHubPrReviewDraft(
 
 export async function putGitHubPrReviewDraft(input: {
   draftId?: string;
+  expectedUpdatedAt?: string;
+  expectedAbsent?: boolean;
   repo: string;
   number: number;
   headSha: string;
@@ -136,6 +138,8 @@ export async function putGitHubPrReviewDraft(input: {
   const [owner, name] = parseRepo(input.repo);
   const body: {
     draftId?: string;
+    expectedUpdatedAt?: string;
+    expectedAbsent?: boolean;
     headSha: string;
     verdict?: GitHubPrReviewVerdict | null;
     body?: string | null;
@@ -144,6 +148,10 @@ export async function putGitHubPrReviewDraft(input: {
     expectedHeadSha?: string;
   } = { headSha: input.headSha };
   if (input.draftId) body.draftId = input.draftId;
+  if (input.expectedUpdatedAt) {
+    body.expectedUpdatedAt = input.expectedUpdatedAt;
+  }
+  if (input.expectedAbsent) body.expectedAbsent = true;
   if ('verdict' in input) body.verdict = input.verdict ?? null;
   if ('body' in input) body.body = input.body ?? null;
   if (input.reanchorHeadSha) {
@@ -238,15 +246,24 @@ export async function deleteGitHubPrReviewDraftComment(input: {
 export async function deleteGitHubPrReviewDraft(input: {
   repo: string;
   number: number;
+  draftId: string;
+  expectedUpdatedAt: string;
 }) {
   const [owner, name] = parseRepo(input.repo);
+  const query = new URLSearchParams({
+    draftId: input.draftId,
+    expectedUpdatedAt: input.expectedUpdatedAt,
+  });
   const response = await deleteJson<GitHubPrReviewDraftResponse>(
-    `/api/github/prs/${encodeURIComponent(owner)}/${encodeURIComponent(name)}/${input.number}/review-draft`,
+    `/api/github/prs/${encodeURIComponent(owner)}/${encodeURIComponent(name)}/${input.number}/review-draft?${query.toString()}`,
   );
-  return response.data?.draft ?? null;
+  if (!response.data?.draft) throw new Error(response.message);
+  return response.data.draft;
 }
 
 export async function postGitHubPrReview(input: {
+  draftId: string;
+  expectedDraftUpdatedAt: string;
   repo: string;
   number: number;
   headSha: string;
@@ -258,6 +275,8 @@ export async function postGitHubPrReview(input: {
   const response = await postJson<GitHubPrReviewSubmitResponse>(
     `/api/github/prs/${encodeURIComponent(owner)}/${encodeURIComponent(name)}/${input.number}/reviews`,
     {
+      draftId: input.draftId,
+      expectedDraftUpdatedAt: input.expectedDraftUpdatedAt,
       headSha: input.headSha,
       body: input.body,
       verdict: input.verdict,

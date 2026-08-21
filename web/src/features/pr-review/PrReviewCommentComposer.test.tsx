@@ -178,6 +178,7 @@ describe('PrReviewCommentComposer', () => {
         isReplyingToThread={false}
         isResolvingThread={false}
         isSavingDraft={false}
+        isSubmissionPending={false}
         isUpdatingComment={false}
         onCancelComposer={noop}
         onCancelEdit={noop}

@@ -209,12 +209,18 @@ export const prReviewVerdictSchema = v.picklist([
 ]);
 export const prReviewDraftInputSchema = v.object({
   draftId: v.optional(nonEmptyStringSchema),
+  expectedUpdatedAt: v.optional(nonEmptyStringSchema),
+  expectedAbsent: v.optional(v.boolean()),
   headSha: nonEmptyStringSchema,
   verdict: v.optional(v.nullable(prReviewVerdictSchema)),
   body: v.optional(v.nullable(v.string())),
   reanchorHeadSha: v.optional(v.boolean()),
   expectedDraftId: v.optional(nonEmptyStringSchema),
   expectedHeadSha: v.optional(nonEmptyStringSchema),
+});
+export const prReviewDraftDiscardInputSchema = v.object({
+  draftId: nonEmptyStringSchema,
+  expectedUpdatedAt: nonEmptyStringSchema,
 });
 export const prReviewDraftCommentInputSchema = v.object({
   draftId: nonEmptyStringSchema,
@@ -242,6 +248,7 @@ export const prReviewDraftCommentUpdateInputSchema = v.object({
 });
 export const prReviewSubmitInputSchema = v.object({
   draftId: nonEmptyStringSchema,
+  expectedDraftUpdatedAt: nonEmptyStringSchema,
   headSha: nonEmptyStringSchema,
   commentIds: v.optional(v.array(nonEmptyStringSchema)),
 });

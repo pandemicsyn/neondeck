@@ -75,6 +75,7 @@ export {
   recordPrReviewNeonSeed,
   replyToPullRequestReviewThread,
   resolvePullRequestReviewThread,
+  settlePrReviewDraftSubmission,
   submitPullRequestReview,
   unresolvePullRequestReviewThread,
   updatePrReviewDraftComment,

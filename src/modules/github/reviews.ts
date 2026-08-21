@@ -31,7 +31,8 @@ import type { PullRequestEventFetchBudget } from './event-budget';
 
 export type GitHubPrReviewVerdict = 'comment' | 'approve' | 'request-changes';
 
-export type GitHubPrReviewDraftStatus = 'draft' | 'submitted' | 'discarded';
+export type GitHubPrReviewDraftStatus =
+  'draft' | 'submitting' | 'submitted' | 'discarded';
 
 export type GitHubPrReviewDraftCommentSide = 'RIGHT' | 'LEFT';
 
@@ -98,6 +99,7 @@ export type GitHubPrReviewSubmitFailure = {
     | 'draft-not-found'
     | 'stale-draft'
     | 'insufficient-scope'
+    | 'submission-uncertain'
     | 'github-review-submit-failed';
   message: string;
   failingCommentIds?: string[];
@@ -129,7 +131,12 @@ const reviewNeonSeedOutcomeSchema = v.picklist([
   'skipped',
   'deleted',
 ]);
-const draftStatusSchema = v.picklist(['draft', 'submitted', 'discarded']);
+const draftStatusSchema = v.picklist([
+  'draft',
+  'submitting',
+  'submitted',
+  'discarded',
+]);
 
 const draftRowSchema = v.object({
   id: v.string(),
@@ -274,12 +281,17 @@ export function upsertPrReviewDraft(options: {
   verdict?: GitHubPrReviewVerdict | null;
   body?: string | null;
   reanchorHeadSha?: boolean;
+  expectedUpdatedAt?: string;
+  expectedAbsent?: boolean;
 }): GitHubPrReviewDraft {
   const database = openDb(options.databasePath);
   const now = new Date().toISOString();
   const body = normalizeNullableBody(options.body);
   try {
     if (options.draftId) {
+      if (options.expectedAbsent) {
+        throw new Error('Review draft identity is contradictory.');
+      }
       const existing = database
         .prepare(
           `
@@ -308,16 +320,39 @@ export function upsertPrReviewDraft(options: {
         FROM pr_review_drafts
         WHERE repo = ? COLLATE NOCASE
           AND pr_number = ?
-          AND status = 'draft'
+          AND status IN ('draft', 'submitting')
         LIMIT 1;
       `,
       )
       .get(options.repo, options.prNumber);
 
     if (existing) {
+      if (options.expectedAbsent) {
+        throw new Error('A review draft appeared before creation.');
+      }
+      if (readDraftRow(existing).status !== 'draft') {
+        throw new Error('Review draft is being submitted and is not editable.');
+      }
       return updateExistingReviewDraft(database, existing, options, now);
     }
 
+    const latest = database
+      .prepare(
+        `
+        SELECT updated_at
+        FROM pr_review_drafts
+        WHERE repo = ? COLLATE NOCASE
+          AND pr_number = ?
+        ORDER BY updated_at DESC
+        LIMIT 1;
+      `,
+      )
+      .get(options.repo, options.prNumber) as
+      { updated_at?: unknown } | undefined;
+    const createdAt = nextDraftUpdatedAt(
+      typeof latest?.updated_at === 'string' ? latest.updated_at : null,
+      now,
+    );
     const id = randomUUID();
     try {
       database
@@ -344,11 +379,14 @@ export function upsertPrReviewDraft(options: {
           options.headSha,
           options.verdict ?? null,
           body,
-          now,
-          now,
+          createdAt,
+          createdAt,
         );
     } catch (error) {
       if (!isUniqueConstraintError(error)) throw error;
+      if (options.expectedAbsent) {
+        throw new Error('A review draft appeared before creation.');
+      }
       const winner = database
         .prepare(
           `
@@ -356,12 +394,15 @@ export function upsertPrReviewDraft(options: {
           FROM pr_review_drafts
           WHERE repo = ? COLLATE NOCASE
             AND pr_number = ?
-            AND status = 'draft'
+            AND status IN ('draft', 'submitting')
           LIMIT 1;
         `,
         )
         .get(options.repo, options.prNumber);
       if (!winner) throw error;
+      if (readDraftRow(winner).status !== 'draft') {
+        throw new Error('Review draft is being submitted and is not editable.');
+      }
       return updateExistingReviewDraft(database, winner, options, now);
     }
     return readDraftWithCommentsById(database, id);
@@ -412,6 +453,8 @@ export function reanchorPrReviewDraft(options: {
 
 export function discardPrReviewDraft(options: {
   databasePath: string;
+  draftId: string;
+  expectedUpdatedAt: string;
   repo: string;
   prNumber: number;
 }): GitHubPrReviewDraft | null {
@@ -423,25 +466,36 @@ export function discardPrReviewDraft(options: {
         `
         SELECT *
         FROM pr_review_drafts
-        WHERE repo = ? COLLATE NOCASE
+        WHERE id = ?
+          AND repo = ? COLLATE NOCASE
           AND pr_number = ?
           AND status = 'draft'
+          AND updated_at = ?
         LIMIT 1;
       `,
       )
-      .get(options.repo, options.prNumber);
+      .get(
+        options.draftId,
+        options.repo,
+        options.prNumber,
+        options.expectedUpdatedAt,
+      );
     if (!row) return null;
     const draft = readDraftRow(row);
-    database
+    const discardedAt = nextDraftUpdatedAt(draft.updatedAt, now);
+    const updated = database
       .prepare(
         `
         UPDATE pr_review_drafts
         SET status = 'discarded',
             updated_at = ?
-        WHERE id = ?;
+        WHERE id = ?
+          AND status = 'draft'
+          AND updated_at = ?;
       `,
       )
-      .run(now, draft.id);
+      .run(discardedAt, draft.id, options.expectedUpdatedAt);
+    if (updated.changes !== 1) return null;
     return readDraftWithCommentsById(database, draft.id);
   } finally {
     database.close();
@@ -637,18 +691,19 @@ export function clearPrReviewNeonDraftComments(options: {
   const database = openDb(options.databasePath);
   const now = new Date().toISOString();
   try {
-    assertDraftIsLive(database, options.draftId);
-    const result = database
-      .prepare(
-        `
-        DELETE FROM pr_review_draft_comments
-        WHERE draft_id = ?
-          AND origin = 'neon';
-      `,
-      )
-      .run(options.draftId);
-    if (result.changes > 0) touchDraft(database, options.draftId, now);
-    return readDraftWithCommentsById(database, options.draftId);
+    return withEditableDraftWrite(database, options.draftId, undefined, () => {
+      const result = database
+        .prepare(
+          `
+            DELETE FROM pr_review_draft_comments
+            WHERE draft_id = ?
+              AND origin = 'neon';
+          `,
+        )
+        .run(options.draftId);
+      if (result.changes > 0) touchDraft(database, options.draftId, now);
+      return readDraftWithCommentsById(database, options.draftId);
+    });
   } finally {
     database.close();
   }
@@ -771,6 +826,7 @@ export async function submitPullRequestReview(options: {
   paths: RuntimePaths;
   draftId: string;
   headSha: string;
+  expectedDraftUpdatedAt: string;
   commentIds?: string[];
   fetchHeadSha?: (options: {
     token: string;
@@ -782,66 +838,63 @@ export async function submitPullRequestReview(options: {
   draft: GitHubPrReviewDraft;
   review: GitHubSubmittedPullRequestReview;
 }> {
-  const draft = readPrReviewDraft({
+  const expectedRepo = `${options.owner}/${options.repo}`;
+  const draft = leaseDraftForSubmission({
     databasePath: options.databasePath,
     draftId: options.draftId,
+    expectedRepo,
+    expectedPrNumber: options.number,
+    expectedUpdatedAt: options.expectedDraftUpdatedAt,
   });
-  if (!draft || draft.status !== 'draft') {
-    throw new GitHubPrReviewSubmitError({
-      code: 'draft-not-found',
-      message: 'Review draft was not found.',
-    });
-  }
-
-  const expectedRepo = `${options.owner}/${options.repo}`;
-  if (draft.repo !== expectedRepo || draft.prNumber !== options.number) {
-    throw new GitHubPrReviewSubmitError({
-      code: 'draft-not-found',
-      message: 'Review draft does not belong to this pull request.',
-    });
-  }
-
-  const currentHeadSha = await readCurrentPullRequestHeadSha(options);
-  if (draft.headSha !== currentHeadSha || options.headSha !== currentHeadSha) {
-    throw new GitHubPrReviewSubmitError({
-      code: 'stale-draft',
-      message: 'PR changed since this review draft was anchored.',
-      failingCommentIds: draft.comments.map((comment) => comment.id),
-    });
-  }
-
-  const selectedCommentIds = options.commentIds
-    ? new Set(options.commentIds)
-    : null;
-  const comments =
-    selectedCommentIds === null
-      ? draft.comments
-      : draft.comments.filter((comment) => selectedCommentIds.has(comment.id));
-  const missingCommentIds = options.commentIds
-    ? options.commentIds.filter(
-        (id) => !draft.comments.some((comment) => comment.id === id),
-      )
-    : [];
-  if (missingCommentIds.length > 0) {
-    throw new GitHubPrReviewSubmitError({
-      code: 'invalid-review',
-      message: 'Review draft comment ids do not belong to this draft.',
-      failingCommentIds: missingCommentIds,
-    });
-  }
-
-  const verdict = draft.verdict ?? 'comment';
-  const body = draft.body?.trim() ?? '';
-  if (verdict !== 'approve' && body.length === 0 && comments.length === 0) {
-    throw new GitHubPrReviewSubmitError({
-      code: 'invalid-review',
-      message: 'Review body or inline comments are required.',
-    });
-  }
-
-  let review: GitHubSubmittedPullRequestReview;
+  let githubRequestStarted = false;
+  let attemptedComments = draft.comments;
   try {
-    review = await createPullRequestReview({
+    const currentHeadSha = await readCurrentPullRequestHeadSha(options);
+    if (
+      draft.headSha !== currentHeadSha ||
+      options.headSha !== currentHeadSha
+    ) {
+      throw new GitHubPrReviewSubmitError({
+        code: 'stale-draft',
+        message: 'PR changed since this review draft was anchored.',
+        failingCommentIds: draft.comments.map((comment) => comment.id),
+      });
+    }
+
+    const selectedCommentIds = options.commentIds
+      ? new Set(options.commentIds)
+      : null;
+    const comments =
+      selectedCommentIds === null
+        ? draft.comments
+        : draft.comments.filter((comment) =>
+            selectedCommentIds.has(comment.id),
+          );
+    attemptedComments = comments;
+    const missingCommentIds = options.commentIds
+      ? options.commentIds.filter(
+          (id) => !draft.comments.some((comment) => comment.id === id),
+        )
+      : [];
+    if (missingCommentIds.length > 0) {
+      throw new GitHubPrReviewSubmitError({
+        code: 'invalid-review',
+        message: 'Review draft comment ids do not belong to this draft.',
+        failingCommentIds: missingCommentIds,
+      });
+    }
+
+    const verdict = draft.verdict ?? 'comment';
+    const body = draft.body?.trim() ?? '';
+    if (verdict !== 'approve' && body.length === 0 && comments.length === 0) {
+      throw new GitHubPrReviewSubmitError({
+        code: 'invalid-review',
+        message: 'Review body or inline comments are required.',
+      });
+    }
+
+    githubRequestStarted = true;
+    const review = await createPullRequestReview({
       token: options.token,
       owner: options.owner,
       repo: options.repo,
@@ -851,7 +904,41 @@ export async function submitPullRequestReview(options: {
       body,
       comments,
     });
+
+    const neonDraftOutcome = markNeonDraftSeedOutcomes(
+      options.databasePath,
+      draft,
+      comments,
+    );
+    const submitted = markDraftSubmitted(options.databasePath, draft.id);
+    await addWorkflowSummary(
+      {
+        workflow: 'github_pr_review',
+        runId: `github-pr-review:${draft.repo}#${draft.prNumber}:${review.id}`,
+        status: 'submitted',
+        summary: {
+          repo: draft.repo,
+          prNumber: draft.prNumber,
+          verdict,
+          commentCount: comments.length,
+          skippedCommentCount: draft.comments.length - comments.length,
+          neonDraftOutcome,
+          reviewUrl: review.url,
+          headSha: currentHeadSha,
+        },
+      },
+      options.paths,
+    );
+
+    return { draft: submitted, review };
   } catch (error) {
+    const definitelyRejected =
+      error instanceof GitHubApiError &&
+      githubReviewSubmissionWasDefinitelyRejected(error);
+    if (!githubRequestStarted || definitelyRejected) {
+      releaseDraftSubmissionLease(options.databasePath, draft.id);
+    }
+    if (error instanceof GitHubPrReviewSubmitError) throw error;
     const message = errorMessage(error);
     if (isLikelyInsufficientScopeError(error, message)) {
       throw new GitHubPrReviewSubmitError({
@@ -861,42 +948,26 @@ export async function submitPullRequestReview(options: {
         requires: ['pull_requests:write'],
       });
     }
+    if (
+      !(error instanceof GitHubApiError) ||
+      !githubReviewSubmissionWasDefinitelyRejected(error)
+    ) {
+      throw new GitHubPrReviewSubmitError({
+        code: 'submission-uncertain',
+        message:
+          'GitHub review submission could not be confirmed. Reconcile before retrying.',
+        requires: ['submissionReconciliation'],
+      });
+    }
     throw new GitHubPrReviewSubmitError({
       code: 'github-review-submit-failed',
       message,
       failingCommentIds: failingReviewCommentIdsFromGitHubError(
         error,
-        comments,
+        attemptedComments,
       ),
     });
   }
-
-  const neonDraftOutcome = markNeonDraftSeedOutcomes(
-    options.databasePath,
-    draft,
-    comments,
-  );
-  const submitted = markDraftSubmitted(options.databasePath, draft.id);
-  await addWorkflowSummary(
-    {
-      workflow: 'github_pr_review',
-      runId: `github-pr-review:${draft.repo}#${draft.prNumber}:${review.id}`,
-      status: 'submitted',
-      summary: {
-        repo: draft.repo,
-        prNumber: draft.prNumber,
-        verdict,
-        commentCount: comments.length,
-        skippedCommentCount: draft.comments.length - comments.length,
-        neonDraftOutcome,
-        reviewUrl: review.url,
-        headSha: currentHeadSha,
-      },
-    },
-    options.paths,
-  );
-
-  return { draft: submitted, review };
 }
 
 function markNeonDraftSeedOutcomes(
@@ -1378,6 +1449,7 @@ function updateExistingReviewDraft(
     verdict?: GitHubPrReviewVerdict | null;
     body?: string | null;
     reanchorHeadSha?: boolean;
+    expectedUpdatedAt?: string;
   },
   updatedAt: string,
 ) {
@@ -1386,6 +1458,20 @@ function updateExistingReviewDraft(
     'verdict' in options ? (options.verdict ?? null) : draft.verdict;
   const nextBody =
     'body' in options ? normalizeNullableBody(options.body) : draft.body;
+  const nextUpdatedAt = nextDraftUpdatedAt(draft.updatedAt, updatedAt);
+  const expectedUpdatedAtPredicate = options.expectedUpdatedAt
+    ? 'AND updated_at = ?'
+    : '';
+  const parameters = [
+    options.reanchorHeadSha
+      ? (options.headSha ?? draft.headSha)
+      : draft.headSha,
+    nextVerdict,
+    nextBody,
+    nextUpdatedAt,
+    draft.id,
+    ...(options.expectedUpdatedAt ? [options.expectedUpdatedAt] : []),
+  ];
   const updated = database
     .prepare(
       `
@@ -1395,20 +1481,17 @@ function updateExistingReviewDraft(
           body = ?,
           updated_at = ?
       WHERE id = ?
-        AND status = 'draft';
+        AND status = 'draft'
+        ${expectedUpdatedAtPredicate};
     `,
     )
-    .run(
-      options.reanchorHeadSha
-        ? (options.headSha ?? draft.headSha)
-        : draft.headSha,
-      nextVerdict,
-      nextBody,
-      updatedAt,
-      draft.id,
-    );
+    .run(...parameters);
   if (updated.changes !== 1) {
-    throw new Error('Review draft is not editable.');
+    throw new Error(
+      options.expectedUpdatedAt
+        ? 'Review draft changed before it could be saved.'
+        : 'Review draft is not editable.',
+    );
   }
   return readDraftWithCommentsById(database, draft.id);
 }
@@ -1513,10 +1596,6 @@ function withEditableDraftWrite<T>(
   expectedHeadSha: string | undefined,
   write: () => T,
 ) {
-  if (!expectedHeadSha) {
-    assertDraftIsLive(database, draftId);
-    return write();
-  }
   database.exec('BEGIN IMMEDIATE;');
   try {
     assertDraftIsLive(database, draftId, expectedHeadSha);
@@ -1538,9 +1617,26 @@ function touchDraft(
   draftId: string,
   updatedAt: string,
 ) {
+  const row = database
+    .prepare('SELECT updated_at FROM pr_review_drafts WHERE id = ?;')
+    .get(draftId) as { updated_at?: unknown } | undefined;
+  const nextUpdatedAt = nextDraftUpdatedAt(
+    typeof row?.updated_at === 'string' ? row.updated_at : null,
+    updatedAt,
+  );
   database
     .prepare('UPDATE pr_review_drafts SET updated_at = ? WHERE id = ?;')
-    .run(updatedAt, draftId);
+    .run(nextUpdatedAt, draftId);
+}
+
+function nextDraftUpdatedAt(current: string | null, candidate: string) {
+  if (!current) return candidate;
+  const currentTime = Date.parse(current);
+  const candidateTime = Date.parse(candidate);
+  if (!Number.isFinite(currentTime) || candidateTime > currentTime) {
+    return candidate;
+  }
+  return new Date(currentTime + 1).toISOString();
 }
 
 function markDraftSubmitted(
@@ -1550,21 +1646,199 @@ function markDraftSubmitted(
   const database = openDb(databasePath);
   const now = new Date().toISOString();
   try {
-    database
+    const current = database
+      .prepare('SELECT updated_at FROM pr_review_drafts WHERE id = ?;')
+      .get(draftId) as { updated_at?: unknown } | undefined;
+    const submittedAt = nextDraftUpdatedAt(
+      typeof current?.updated_at === 'string' ? current.updated_at : null,
+      now,
+    );
+    const updated = database
       .prepare(
         `
         UPDATE pr_review_drafts
         SET status = 'submitted',
             submitted_at = ?,
             updated_at = ?
-        WHERE id = ?;
+        WHERE id = ?
+          AND status = 'submitting';
       `,
       )
-      .run(now, now, draftId);
+      .run(submittedAt, submittedAt, draftId);
+    if (updated.changes !== 1) {
+      throw new Error('Review draft submission lease was lost.');
+    }
     return readDraftWithCommentsById(database, draftId);
   } finally {
     database.close();
   }
+}
+
+function leaseDraftForSubmission(options: {
+  databasePath: string;
+  draftId: string;
+  expectedRepo: string;
+  expectedPrNumber: number;
+  expectedUpdatedAt: string;
+}) {
+  const database = openDb(options.databasePath);
+  try {
+    database.exec('BEGIN IMMEDIATE;');
+    const row = database
+      .prepare(
+        `
+        SELECT *
+        FROM pr_review_drafts
+        WHERE id = ?
+          AND repo = ? COLLATE NOCASE
+          AND pr_number = ?
+          AND status = 'draft'
+          AND updated_at = ?
+        LIMIT 1;
+      `,
+      )
+      .get(
+        options.draftId,
+        options.expectedRepo,
+        options.expectedPrNumber,
+        options.expectedUpdatedAt,
+      );
+    if (!row) {
+      throw new GitHubPrReviewSubmitError({
+        code: 'draft-not-found',
+        message: 'Review draft changed or is no longer editable.',
+      });
+    }
+    const updated = database
+      .prepare(
+        `
+        UPDATE pr_review_drafts
+        SET status = 'submitting'
+        WHERE id = ?
+          AND status = 'draft'
+          AND updated_at = ?;
+      `,
+      )
+      .run(options.draftId, options.expectedUpdatedAt);
+    if (updated.changes !== 1) {
+      throw new GitHubPrReviewSubmitError({
+        code: 'draft-not-found',
+        message: 'Review draft changed before submission could start.',
+      });
+    }
+    const draft = readDraftWithCommentsById(database, options.draftId);
+    database.exec('COMMIT;');
+    return draft;
+  } catch (error) {
+    try {
+      database.exec('ROLLBACK;');
+    } catch {
+      // Preserve the lease failure if SQLite already ended the transaction.
+    }
+    throw error;
+  } finally {
+    database.close();
+  }
+}
+
+function releaseDraftSubmissionLease(databasePath: string, draftId: string) {
+  const database = openDb(databasePath);
+  try {
+    database
+      .prepare(
+        `
+        UPDATE pr_review_drafts
+        SET status = 'draft'
+        WHERE id = ?
+          AND status = 'submitting';
+      `,
+      )
+      .run(draftId);
+  } finally {
+    database.close();
+  }
+}
+
+export function settlePrReviewDraftSubmission(options: {
+  databasePath: string;
+  draftId: string;
+  expectedUpdatedAt: string;
+  submitted: boolean;
+}) {
+  const database = openDb(options.databasePath);
+  const now = new Date().toISOString();
+  try {
+    database.exec('BEGIN IMMEDIATE;');
+    const current = database
+      .prepare(
+        `SELECT status, updated_at
+         FROM pr_review_drafts
+         WHERE id = ?;`,
+      )
+      .get(options.draftId) as
+      { status?: unknown; updated_at?: unknown } | undefined;
+    const desiredStatus = options.submitted ? 'submitted' : 'draft';
+    if (current?.status === desiredStatus) {
+      database.exec('COMMIT;');
+      return true;
+    }
+    if (
+      current?.status !== 'submitting' ||
+      current.updated_at !== options.expectedUpdatedAt
+    ) {
+      database.exec('COMMIT;');
+      return false;
+    }
+    const settledAt = nextDraftUpdatedAt(
+      typeof current.updated_at === 'string' ? current.updated_at : null,
+      now,
+    );
+    const result = database
+      .prepare(
+        `
+        UPDATE pr_review_drafts
+        SET status = ?,
+            submitted_at = CASE WHEN ? = 'submitted' THEN ? ELSE NULL END,
+            updated_at = ?
+        WHERE id = ?
+          AND status = 'submitting'
+          AND updated_at = ?;
+      `,
+      )
+      .run(
+        desiredStatus,
+        desiredStatus,
+        settledAt,
+        settledAt,
+        options.draftId,
+        options.expectedUpdatedAt,
+      );
+    database.exec('COMMIT;');
+    return result.changes === 1;
+  } catch (error) {
+    try {
+      database.exec('ROLLBACK;');
+    } catch {
+      // Preserve the settlement failure if SQLite ended the transaction.
+    }
+    throw error;
+  } finally {
+    database.close();
+  }
+}
+
+function githubReviewSubmissionWasDefinitelyRejected(error: GitHubApiError) {
+  if (/rate limit|secondary rate|abuse detection/i.test(error.message)) {
+    return false;
+  }
+  return (
+    error.status >= 400 &&
+    error.status < 500 &&
+    error.status !== 408 &&
+    error.status !== 409 &&
+    error.status !== 425 &&
+    error.status !== 429
+  );
 }
 
 async function readCurrentPullRequestHeadSha(options: {
@@ -1692,7 +1966,13 @@ function normalizeNullableBody(value: string | null | undefined) {
 }
 
 function isLikelyInsufficientScopeError(error: unknown, message: string) {
-  if (error instanceof GitHubApiError && error.status === 403) return true;
+  if (
+    error instanceof GitHubApiError &&
+    error.status === 403 &&
+    !/rate limit|secondary rate|abuse detection/i.test(message)
+  ) {
+    return true;
+  }
   return /Resource not accessible by integration|pull request write access/i.test(
     message,
   );

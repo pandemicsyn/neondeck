@@ -5,6 +5,7 @@ export type {
   PrWatchEventWatermarkRecord,
   PullRequestTarget,
 } from './schemas';
+export { recoverPrReviewDeliveryFollowups } from './review-submission';
 export {
   githubPrEventStateGetAction,
   githubPrFileDiffGetAction,
