@@ -2174,7 +2174,7 @@ export function GitHubPrReview({
           </p>
         </div>
         <div className="flex shrink-0 flex-wrap justify-end gap-1">
-          <Badge>{pr.author ? `@${pr.author}` : 'author unknown'}</Badge>
+          <Badge>@{pr.author}</Badge>
           <Badge className={checkBadgeClass(pr)}>{checkLabel(pr)}</Badge>
           <Badge>{pr.baseRef ?? 'base unknown'}</Badge>
           <Badge>

@@ -1,4 +1,9 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import {
+  useMutation,
+  useMutationState,
+  useQuery,
+  useQueryClient,
+} from '@tanstack/react-query';
 import {
   Children,
   useCallback,
@@ -68,6 +73,7 @@ export const ReviewsPanelPlugin = {
       [queryClient],
     );
     const startMutation = useMutation({
+      mutationKey: panelMutationKey('start'),
       mutationFn: (reviewRef: string) =>
         startPrReview({ ref: reviewRef, origin: 'panel' }),
       async onMutate() {
@@ -83,29 +89,40 @@ export const ReviewsPanelPlugin = {
       },
     });
     const restartMutation = useMutation({
+      mutationKey: panelMutationKey('restart'),
       mutationFn: (id: string) => restartPrReview(id),
       onSuccess(result) {
         updateReviewCaches(result.review);
       },
     });
     const reconcileMutation = useMutation({
+      mutationKey: panelMutationKey('reconcile'),
       mutationFn: (id: string) => reconcilePrReviewSubmission(id),
       onSuccess(result) {
         updateReviewCaches(result.review);
       },
     });
     const archiveMutation = useMutation({
+      mutationKey: panelMutationKey('archive'),
       mutationFn: (id: string) => archivePrReview(id),
       onSuccess(result) {
         updateReviewCaches(result.review);
       },
     });
     const restoreMutation = useMutation({
+      mutationKey: panelMutationKey('restore'),
       mutationFn: (id: string) => restorePrReview(id),
       onSuccess(result) {
         updateReviewCaches(result.review);
       },
     });
+    const pendingStartRefs = usePendingVariables(panelMutationKey('start'));
+    const pendingRestartIds = usePendingVariables(panelMutationKey('restart'));
+    const pendingReconcileIds = usePendingVariables(
+      panelMutationKey('reconcile'),
+    );
+    const pendingArchiveIds = usePendingVariables(panelMutationKey('archive'));
+    const pendingRestoreIds = usePendingVariables(panelMutationKey('restore'));
 
     useEffect(
       () =>
@@ -153,10 +170,12 @@ export const ReviewsPanelPlugin = {
               value={ref}
             />
             <Button
-              disabled={!ref.trim() || startMutation.isPending}
+              disabled={!ref.trim() || pendingStartRefs.includes(ref.trim())}
               type="submit"
             >
-              {startMutation.isPending ? 'starting' : 'start'}
+              {ref.trim() && pendingStartRefs.includes(ref.trim())
+                ? 'starting'
+                : 'start'}
             </Button>
           </form>
         ) : null}
@@ -202,11 +221,11 @@ export const ReviewsPanelPlugin = {
                     onRestart={(id) => restartMutation.mutate(id)}
                     onStart={(reviewRef) => startMutation.mutate(reviewRef)}
                     pending={
-                      (startMutation.isPending &&
-                        startMutation.variables ===
-                          `${item.pullRequest.repo}#${item.pullRequest.number}`) ||
-                      (restartMutation.isPending &&
-                        restartMutation.variables === item.review?.id)
+                      pendingStartRefs.includes(
+                        `${item.pullRequest.repo}#${item.pullRequest.number}`,
+                      ) ||
+                      (item.review !== null &&
+                        pendingRestartIds.includes(item.review.id))
                     }
                   />
                 ))}
@@ -215,18 +234,21 @@ export const ReviewsPanelPlugin = {
                 empty="No reviews are running."
                 title="IN PROGRESS"
               >
-                {startMutation.isPending &&
-                startMutation.variables &&
-                !data.groups.inProgress.some(
-                  (review) => review.ref === startMutation.variables,
-                ) ? (
-                  <StartingReviewRow reviewRef={startMutation.variables} />
-                ) : null}
+                {pendingStartRefs
+                  .filter(
+                    (reviewRef) =>
+                      !data.groups.inProgress.some(
+                        (review) => review.ref === reviewRef,
+                      ),
+                  )
+                  .map((reviewRef) => (
+                    <StartingReviewRow key={reviewRef} reviewRef={reviewRef} />
+                  ))}
                 {data.groups.inProgress.map((review) => (
                   <ReviewRow
                     key={review.id}
                     onReconcile={(id) => reconcileMutation.mutate(id)}
-                    pending={reconcileMutation.isPending}
+                    pending={pendingReconcileIds.includes(review.id)}
                     review={review}
                   />
                 ))}
@@ -241,10 +263,8 @@ export const ReviewsPanelPlugin = {
                     onArchive={(id) => archiveMutation.mutate(id)}
                     onRestart={(id) => restartMutation.mutate(id)}
                     pending={
-                      (restartMutation.isPending &&
-                        restartMutation.variables === review.id) ||
-                      (archiveMutation.isPending &&
-                        archiveMutation.variables === review.id)
+                      pendingRestartIds.includes(review.id) ||
+                      pendingArchiveIds.includes(review.id)
                     }
                     review={review}
                   />
@@ -261,10 +281,7 @@ export const ReviewsPanelPlugin = {
                       <ReviewRow
                         key={review.id}
                         onArchive={(id) => archiveMutation.mutate(id)}
-                        pending={
-                          archiveMutation.isPending &&
-                          archiveMutation.variables === review.id
-                        }
+                        pending={pendingArchiveIds.includes(review.id)}
                         review={review}
                       />
                     ))
@@ -286,10 +303,7 @@ export const ReviewsPanelPlugin = {
                       <ReviewRow
                         key={review.id}
                         onRestore={(id) => restoreMutation.mutate(id)}
-                        pending={
-                          restoreMutation.isPending &&
-                          restoreMutation.variables === review.id
-                        }
+                        pending={pendingRestoreIds.includes(review.id)}
                         review={review}
                       />
                     ))
@@ -307,6 +321,19 @@ export const ReviewsPanelPlugin = {
     );
   },
 } satisfies DisplayPlugin<Record<string, never>>;
+
+function panelMutationKey(
+  action: 'archive' | 'reconcile' | 'restart' | 'restore' | 'start',
+) {
+  return ['reviews-panel', action];
+}
+
+function usePendingVariables(mutationKey: ReturnType<typeof panelMutationKey>) {
+  return useMutationState<string>({
+    filters: { mutationKey, status: 'pending' },
+    select: (mutation) => mutation.state.variables as string,
+  });
+}
 
 function ReviewSection({
   children,
