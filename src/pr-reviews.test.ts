@@ -33,7 +33,8 @@ import {
   type PrReviewAssistAdmission,
 } from './modules/pr-review-assist';
 import { openDb } from './lib/sqlite';
-import { readPrReviewDraft, upsertPrReviewDraft } from './modules/github';
+import { readPrReviewDraft } from './modules/github';
+import { upsertPrReviewDraft } from './testing/pr-review-draft-fixtures';
 import {
   readNeondeckPrDeliveries,
   readPendingNeondeckPrReviewIds,
@@ -950,7 +951,7 @@ describe('durable PR reviews', () => {
         headSha: 'head-1',
         verdict: 'approve',
         draftId: recoveryDraft.id,
-        draftUpdatedAt: recoveryDraft.updatedAt,
+        draftRevision: recoveryDraft.revision,
       },
       paths,
     );
@@ -1297,7 +1298,7 @@ describe('durable PR reviews', () => {
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
         draftId: exactDraft.id,
-        expectedDraftUpdatedAt: exactDraft.updatedAt,
+        expectedDraftRevision: exactDraft.revision,
         headSha: 'head-1',
         verdict: 'approve',
       }),
@@ -1354,7 +1355,7 @@ describe('durable PR reviews', () => {
       { repo: 'other/project', prNumber: 42 },
       {
         draftId: exactDraft.id,
-        expectedDraftUpdatedAt: exactDraft.updatedAt,
+        expectedDraftRevision: exactDraft.revision,
         headSha: 'head-1',
         commentIds: undefined,
       },
@@ -1383,7 +1384,7 @@ describe('durable PR reviews', () => {
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
         draftId: exactDraft.id,
-        expectedDraftUpdatedAt: exactDraft.updatedAt,
+        expectedDraftRevision: exactDraft.revision,
         headSha: exactDraft.headSha,
         verdict: 'approve',
       }),
@@ -1416,7 +1417,7 @@ describe('durable PR reviews', () => {
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
         draftId: exactDraft.id,
-        expectedDraftUpdatedAt: exactDraft.updatedAt,
+        expectedDraftRevision: exactDraft.revision,
         headSha: exactDraft.headSha,
         verdict: 'approve',
       }),

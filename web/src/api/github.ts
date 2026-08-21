@@ -124,7 +124,7 @@ export async function getGitHubPrReviewDraft(
 
 export async function putGitHubPrReviewDraft(input: {
   draftId?: string;
-  expectedUpdatedAt?: string;
+  expectedRevision?: number;
   expectedAbsent?: boolean;
   repo: string;
   number: number;
@@ -138,7 +138,7 @@ export async function putGitHubPrReviewDraft(input: {
   const [owner, name] = parseRepo(input.repo);
   const body: {
     draftId?: string;
-    expectedUpdatedAt?: string;
+    expectedRevision?: number;
     expectedAbsent?: boolean;
     headSha: string;
     verdict?: GitHubPrReviewVerdict | null;
@@ -148,8 +148,8 @@ export async function putGitHubPrReviewDraft(input: {
     expectedHeadSha?: string;
   } = { headSha: input.headSha };
   if (input.draftId) body.draftId = input.draftId;
-  if (input.expectedUpdatedAt) {
-    body.expectedUpdatedAt = input.expectedUpdatedAt;
+  if (input.expectedRevision !== undefined) {
+    body.expectedRevision = input.expectedRevision;
   }
   if (input.expectedAbsent) body.expectedAbsent = true;
   if ('verdict' in input) body.verdict = input.verdict ?? null;
@@ -171,7 +171,7 @@ export async function postGitHubPrReviewDraftComment(input: {
   repo: string;
   number: number;
   draftId: string;
-  expectedUpdatedAt: string;
+  expectedRevision: number;
   path: string;
   side: 'RIGHT' | 'LEFT';
   line: number;
@@ -185,7 +185,7 @@ export async function postGitHubPrReviewDraftComment(input: {
     `/api/github/prs/${encodeURIComponent(owner)}/${encodeURIComponent(name)}/${input.number}/review-draft/comments`,
     {
       draftId: input.draftId,
-      expectedUpdatedAt: input.expectedUpdatedAt,
+      expectedRevision: input.expectedRevision,
       path: input.path,
       side: input.side,
       line: input.line,
@@ -204,7 +204,7 @@ export async function patchGitHubPrReviewDraftComment(input: {
   number: number;
   id: string;
   draftId: string;
-  expectedUpdatedAt: string;
+  expectedRevision: number;
   body: string;
   path?: string;
   side?: 'RIGHT' | 'LEFT';
@@ -216,7 +216,7 @@ export async function patchGitHubPrReviewDraftComment(input: {
   const body: {
     body: string;
     draftId: string;
-    expectedUpdatedAt: string;
+    expectedRevision: number;
     path?: string;
     side?: 'RIGHT' | 'LEFT';
     line?: number;
@@ -225,7 +225,7 @@ export async function patchGitHubPrReviewDraftComment(input: {
   } = {
     body: input.body,
     draftId: input.draftId,
-    expectedUpdatedAt: input.expectedUpdatedAt,
+    expectedRevision: input.expectedRevision,
   };
   if ('path' in input) body.path = input.path;
   if ('side' in input) body.side = input.side;
@@ -245,12 +245,12 @@ export async function deleteGitHubPrReviewDraftComment(input: {
   number: number;
   id: string;
   draftId: string;
-  expectedUpdatedAt: string;
+  expectedRevision: number;
 }) {
   const [owner, name] = parseRepo(input.repo);
   const query = new URLSearchParams({
     draftId: input.draftId,
-    expectedUpdatedAt: input.expectedUpdatedAt,
+    expectedRevision: String(input.expectedRevision),
   });
   const response = await deleteJson<GitHubPrReviewDraftResponse>(
     `/api/github/prs/${encodeURIComponent(owner)}/${encodeURIComponent(name)}/${input.number}/review-draft/comments/${encodeURIComponent(input.id)}?${query.toString()}`,
@@ -263,12 +263,12 @@ export async function deleteGitHubPrReviewDraft(input: {
   repo: string;
   number: number;
   draftId: string;
-  expectedUpdatedAt: string;
+  expectedRevision: number;
 }) {
   const [owner, name] = parseRepo(input.repo);
   const query = new URLSearchParams({
     draftId: input.draftId,
-    expectedUpdatedAt: input.expectedUpdatedAt,
+    expectedRevision: String(input.expectedRevision),
   });
   const response = await deleteJson<GitHubPrReviewDraftResponse>(
     `/api/github/prs/${encodeURIComponent(owner)}/${encodeURIComponent(name)}/${input.number}/review-draft?${query.toString()}`,
@@ -279,7 +279,7 @@ export async function deleteGitHubPrReviewDraft(input: {
 
 export async function postGitHubPrReview(input: {
   draftId: string;
-  expectedDraftUpdatedAt: string;
+  expectedDraftRevision: number;
   repo: string;
   number: number;
   headSha: string;
@@ -292,7 +292,7 @@ export async function postGitHubPrReview(input: {
     `/api/github/prs/${encodeURIComponent(owner)}/${encodeURIComponent(name)}/${input.number}/reviews`,
     {
       draftId: input.draftId,
-      expectedDraftUpdatedAt: input.expectedDraftUpdatedAt,
+      expectedDraftRevision: input.expectedDraftRevision,
       headSha: input.headSha,
       body: input.body,
       verdict: input.verdict,

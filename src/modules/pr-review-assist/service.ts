@@ -7,7 +7,7 @@ import {
   deletePrReviewNeonSeedsForComments,
   deletePrReviewDraftComment,
   readLivePrReviewDraft,
-  recordPrReviewNeonSeed,
+  readPrReviewDraft,
   pullRequestEventStateTruncation,
   upsertPrReviewDraft,
   type GitHubDiffSummary,
@@ -489,6 +489,7 @@ async function seedDraftComments(
     existing = clearPrReviewNeonDraftComments({
       databasePath: paths.neondeckDatabase,
       draftId: existing.id,
+      expectedDraftRevision: existing.revision,
     });
   }
   if (existing && existing.headSha !== facts.state.headSha) {
@@ -496,6 +497,8 @@ async function seedDraftComments(
       databasePath: paths.neondeckDatabase,
       repo: facts.target.repoFullName,
       prNumber: facts.target.number,
+      draftId: existing.id,
+      expectedRevision: existing.revision,
       headSha: facts.state.headSha,
       reanchorHeadSha: true,
     });
@@ -543,13 +546,15 @@ async function seedDraftComments(
     };
   }
 
-  let draft = upsertPrReviewDraft({
-    databasePath: paths.neondeckDatabase,
-    repo: facts.target.repoFullName,
-    prNumber: facts.target.number,
-    headSha: facts.state.headSha,
-    reanchorHeadSha: true,
-  });
+  let draft =
+    existing ??
+    upsertPrReviewDraft({
+      databasePath: paths.neondeckDatabase,
+      repo: facts.target.repoFullName,
+      prNumber: facts.target.number,
+      headSha: facts.state.headSha,
+      expectedAbsent: true,
+    });
   const addedIds: string[] = [];
   try {
     for (const [index, item] of seedable.entries()) {
@@ -565,6 +570,7 @@ async function seedDraftComments(
         ),
         databasePath: paths.neondeckDatabase,
         draftId: draft.id,
+        expectedDraftRevision: draft.revision,
         path: item.finding.path,
         side: item.anchor.side,
         line: item.anchor.line,
@@ -573,46 +579,67 @@ async function seedDraftComments(
         body: seededCommentBody(item.finding),
         origin: 'neon',
         sourceFindingId,
+        neonSeed: {
+          severity: item.finding.severity,
+          summary: item.finding.summary,
+          source: 'review-pr-for-human',
+        },
       });
       const added = draft.comments.find(
         (comment) => !beforeIds.has(comment.id),
       );
       if (added) {
         addedIds.push(added.id);
-        recordPrReviewNeonSeed({
-          databasePath: paths.neondeckDatabase,
-          draft,
-          comment: added,
-          severity: item.finding.severity,
-          summary: item.finding.summary,
-          source: 'review-pr-for-human',
-        });
         seeded.push({ ...item, commentId: added.id });
       }
     }
   } catch (error) {
-    try {
-      deletePrReviewNeonSeedsForComments({
-        databasePath: paths.neondeckDatabase,
-        commentIds: addedIds,
-      });
-    } catch {
-      // Preserve the original seeding failure.
-    }
-    for (const id of addedIds) {
-      try {
-        deletePrReviewDraftComment({
-          databasePath: paths.neondeckDatabase,
-          commentId: id,
-        });
-      } catch {
-        // Preserve the original seeding failure.
-      }
-    }
+    rollbackSeededDraftComments(paths.neondeckDatabase, draft.id, addedIds);
     throw error;
   }
 
   return { draft, seeded, reportOnly, skippedReason: null as string | null };
+}
+
+function rollbackSeededDraftComments(
+  databasePath: string,
+  draftId: string,
+  commentIds: string[],
+) {
+  for (const commentId of commentIds) {
+    // A concurrent editor can advance the draft between any two seeded
+    // comments. Retry against a fresh revision, but preserve the seed ledger
+    // if cleanup keeps losing the CAS so the surviving comment remains
+    // auditable.
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      try {
+        const current = readPrReviewDraft({ databasePath, draftId });
+        const comment = current?.comments.find((item) => item.id === commentId);
+        if (!current || !comment) {
+          deletePrReviewNeonSeedsForComments({
+            databasePath,
+            commentIds: [commentId],
+          });
+          break;
+        }
+        if (current.status !== 'draft' || comment.origin !== 'neon') break;
+        deletePrReviewDraftComment({
+          databasePath,
+          commentId,
+          expectedDraftId: draftId,
+          expectedDraftRevision: current.revision,
+        });
+        deletePrReviewNeonSeedsForComments({
+          databasePath,
+          commentIds: [commentId],
+        });
+        break;
+      } catch {
+        // Preserve the original seeding failure. A later retry uses a fresh
+        // revision; after the final attempt the comment and ledger stay paired.
+      }
+    }
+  }
 }
 
 async function reviewValidationFiles(

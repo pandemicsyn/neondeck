@@ -76,7 +76,7 @@ describe('PR reviewer local draft tools', () => {
     });
     expect(postComment.mock.calls[0]?.[1]).toMatchObject({
       draftId: emptyDraft.id,
-      expectedUpdatedAt: emptyDraft.updatedAt,
+      expectedRevision: emptyDraft.revision,
       path: 'src/app.ts',
       line: 12,
     });
@@ -141,7 +141,7 @@ describe('PR reviewer local draft tools', () => {
     });
     expect(patchComment.mock.calls[0]?.[2]).toMatchObject({
       draftId: draft.id,
-      expectedUpdatedAt: draft.updatedAt,
+      expectedRevision: draft.revision,
       body: draft.comments[0]!.body,
       path: 'src/next.ts',
       side: 'RIGHT',
@@ -189,7 +189,7 @@ describe('PR reviewer local draft tools', () => {
 
     expect(patchComment.mock.calls[0]?.[2]).toMatchObject({
       draftId: draft.id,
-      expectedUpdatedAt: draft.updatedAt,
+      expectedRevision: draft.revision,
       body: humanComment.body,
       line: 18,
     });
@@ -306,7 +306,7 @@ describe('PR reviewer local draft tools', () => {
     expect(deleteComment.mock.calls[0]?.[3]).toEqual({
       draftId: draft.id,
       expectedHeadSha: review.headSha,
-      expectedUpdatedAt: draft.updatedAt,
+      expectedRevision: draft.revision,
     });
   });
 });
@@ -364,6 +364,7 @@ function reviewDraft(
     verdict: null,
     body: null,
     status: 'draft',
+    revision: 1,
     createdAt: review.createdAt,
     updatedAt: review.updatedAt,
     submittedAt: null,

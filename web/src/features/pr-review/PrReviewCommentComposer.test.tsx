@@ -27,6 +27,7 @@ describe('PrReviewCommentComposer', () => {
           verdict: null,
           body: null,
           status: 'draft',
+          revision: 1,
           createdAt: '2026-07-21T20:00:00.000Z',
           updatedAt: '2026-07-21T20:00:00.000Z',
           submittedAt: null,

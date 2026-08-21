@@ -167,6 +167,7 @@ export function readPrReviewRow(row: unknown): PrReviewRecord {
     trustBoundary: stringValue(value.trust_boundary),
     verdict: verdictValue(value.verdict),
     submissionDraftId: nullableString(value.submission_draft_id),
+    submissionDraftRevision: nullableNumber(value.submission_draft_revision),
     submissionDraftUpdatedAt: nullableString(value.submission_draft_updated_at),
     previousVerdict: verdictValue(value.previous_verdict),
     githubReviewUrl: nullableString(value.github_review_url),
@@ -198,6 +199,10 @@ function stringValue(value: unknown) {
 
 function nullableString(value: unknown) {
   return typeof value === 'string' ? value : null;
+}
+
+function nullableNumber(value: unknown) {
+  return typeof value === 'number' ? value : null;
 }
 
 function numberValue(value: unknown) {

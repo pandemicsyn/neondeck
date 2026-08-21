@@ -941,6 +941,7 @@ describe('PR event state watermarks', () => {
         | {
             draft?: {
               id?: string;
+              revision?: number;
               updatedAt?: string;
               comments?: Array<{ id?: string }>;
             };
@@ -955,7 +956,7 @@ describe('PR event state watermarks', () => {
         { repo: 'neondeck', prNumber: 123 },
         {
           draftId: draft?.id ?? '',
-          expectedUpdatedAt: draft?.updatedAt ?? '',
+          expectedRevision: draft?.revision ?? 0,
           path: 'src/app.ts',
           side: 'RIGHT',
           line: 99,
@@ -975,7 +976,7 @@ describe('PR event state watermarks', () => {
         { repo: 'neondeck', prNumber: 123 },
         {
           draftId: draft?.id ?? '',
-          expectedUpdatedAt: draft?.updatedAt ?? '',
+          expectedRevision: draft?.revision ?? 0,
           path: 'src/app.ts',
           side: 'RIGHT',
           line: 99,
@@ -994,7 +995,7 @@ describe('PR event state watermarks', () => {
       { repo: 'neondeck', prNumber: 123 },
       {
         draftId: draft?.id ?? '',
-        expectedUpdatedAt: draft?.updatedAt ?? '',
+        expectedRevision: draft?.revision ?? 0,
         path: 'src/app.ts',
         side: 'RIGHT',
         line: 12,
@@ -1009,6 +1010,7 @@ describe('PR event state watermarks', () => {
         | {
             draft?: {
               id?: string;
+              revision?: number;
               updatedAt?: string;
               comments?: Array<{ id?: string }>;
             };
@@ -1024,7 +1026,7 @@ describe('PR event state watermarks', () => {
         commentId ?? '',
         {
           draftId: savedDraft?.id ?? '',
-          expectedUpdatedAt: savedDraft?.updatedAt ?? '',
+          expectedRevision: savedDraft?.revision ?? 0,
           path: 'src/next.ts',
           side: 'LEFT',
           line: 8,
@@ -1038,6 +1040,45 @@ describe('PR event state watermarks', () => {
     ).resolves.toMatchObject({
       ok: true,
       action: 'github_pr_review_draft_comment_patch',
+    });
+  });
+
+  it('mutates a canonicalized draft through a mixed-case configured target', async () => {
+    const home = await tempHome();
+    const paths = runtimePaths(home);
+    await writeRepoRegistry(paths.repos, {
+      owner: 'Acme-Org',
+      name: 'Widgets',
+    });
+    const created = await putGitHubPrReviewDraft(
+      { repo: 'neondeck', prNumber: 123 },
+      { headSha: 'head123', expectedAbsent: true },
+      paths,
+    );
+    const draft = (
+      created.data as
+        | { draft?: { id?: string; repo?: string; revision?: number } }
+        | undefined
+    )?.draft;
+    expect(draft).toMatchObject({ repo: 'acme-org/widgets' });
+
+    await expect(
+      postGitHubPrReviewDraftComment(
+        { repo: 'neondeck', prNumber: 123 },
+        {
+          draftId: draft?.id ?? '',
+          expectedRevision: draft?.revision ?? 0,
+          path: 'src/app.ts',
+          side: 'RIGHT',
+          line: 12,
+          body: 'The configured target still owns this draft.',
+        },
+        paths,
+        anchorValidationDependencies(),
+      ),
+    ).resolves.toMatchObject({
+      ok: true,
+      data: { draft: { repo: 'acme-org/widgets' } },
     });
   });
 
@@ -1061,6 +1102,7 @@ describe('PR event state watermarks', () => {
         | {
             draft?: {
               id?: string;
+              revision?: number;
               updatedAt?: string;
               comments?: Array<{ id?: string }>;
             };
@@ -1074,7 +1116,7 @@ describe('PR event state watermarks', () => {
         { repo: 'neondeck', prNumber: 124 },
         {
           draftId: draft?.id ?? '',
-          expectedUpdatedAt: draft?.updatedAt ?? '',
+          expectedRevision: draft?.revision ?? 0,
           path: 'src/app.ts',
           side: 'RIGHT',
           line: 12,
@@ -1093,7 +1135,7 @@ describe('PR event state watermarks', () => {
         { repo: 'neondeck', prNumber: 123 },
         {
           draftId: draft?.id ?? '',
-          expectedUpdatedAt: draft?.updatedAt ?? '',
+          expectedRevision: draft?.revision ?? 0,
           path: 'src/app.ts',
           side: 'RIGHT',
           line: 99,
@@ -1113,7 +1155,7 @@ describe('PR event state watermarks', () => {
       { repo: 'neondeck', prNumber: 123 },
       {
         draftId: draft?.id ?? '',
-        expectedUpdatedAt: draft?.updatedAt ?? '',
+        expectedRevision: draft?.revision ?? 0,
         path: 'src/app.ts',
         side: 'RIGHT',
         line: 12,
@@ -1127,6 +1169,7 @@ describe('PR event state watermarks', () => {
         | {
             draft?: {
               id?: string;
+              revision?: number;
               updatedAt?: string;
               comments?: Array<{ id?: string }>;
             };
@@ -1142,7 +1185,7 @@ describe('PR event state watermarks', () => {
         commentId ?? '',
         {
           draftId: savedDraft?.id ?? '',
-          expectedUpdatedAt: savedDraft?.updatedAt ?? '',
+          expectedRevision: savedDraft?.revision ?? 0,
           body: 'Wrong PR edit.',
         },
         paths,
@@ -1159,7 +1202,7 @@ describe('PR event state watermarks', () => {
         commentId ?? '',
         {
           draftId: savedDraft?.id ?? '',
-          expectedUpdatedAt: savedDraft?.updatedAt ?? '',
+          expectedRevision: savedDraft?.revision ?? 0,
           path: 'src/next.ts',
           side: 'LEFT',
           line: 8,
@@ -1196,7 +1239,7 @@ describe('PR event state watermarks', () => {
         paths,
         {
           draftId: savedDraft?.id ?? '',
-          expectedUpdatedAt: savedDraft?.updatedAt ?? '',
+          expectedRevision: savedDraft?.revision ?? 0,
         },
       ),
     ).resolves.toMatchObject({
@@ -1219,7 +1262,7 @@ describe('PR event state watermarks', () => {
         { repo: 'external/private-repo', prNumber: 5 },
         {
           draftId: 'draft-1',
-          expectedDraftUpdatedAt: '2026-08-18T03:15:00.000Z',
+          expectedDraftRevision: 1,
           headSha: 'head123',
         },
         paths,
@@ -1322,6 +1365,7 @@ describe('PR event state watermarks', () => {
       verdict: 'request-changes' as const,
       body: review.body,
       status: 'submitted' as const,
+      revision: 1,
       createdAt: '2026-07-19T00:00:00.000Z',
       updatedAt: '2026-07-19T00:01:00.000Z',
       submittedAt: '2026-07-19T00:01:00.000Z',
@@ -1333,7 +1377,7 @@ describe('PR event state watermarks', () => {
         { repo: 'neondeck', prNumber: 123 },
         {
           draftId: submittedDraft.id,
-          expectedDraftUpdatedAt: submittedDraft.updatedAt,
+          expectedDraftRevision: submittedDraft.revision,
           headSha: submittedDraft.headSha,
           commentIds: [draftComment.id],
         },
@@ -1380,7 +1424,7 @@ describe('PR event state watermarks', () => {
         { repo: 'neondeck', prNumber: 123 },
         {
           draftId: 'draft-2',
-          expectedDraftUpdatedAt: submittedDraft.updatedAt,
+          expectedDraftRevision: submittedDraft.revision,
           headSha: submittedDraft.headSha,
           commentIds: [draftComment.id],
         },
@@ -1452,7 +1496,7 @@ describe('PR event state watermarks', () => {
         { repo: 'neondeck', prNumber: 123 },
         {
           draftId: 'draft-3',
-          expectedDraftUpdatedAt: submittedDraft.updatedAt,
+          expectedDraftRevision: submittedDraft.revision,
           headSha: submittedDraft.headSha,
         },
         paths,
@@ -1709,14 +1753,15 @@ describe('PR event state watermarks', () => {
     });
     const initialDraft = (
       created.data as
-        { draft?: { id?: string; updatedAt?: string } } | undefined
+        | { draft?: { id?: string; revision?: number; updatedAt?: string } }
+        | undefined
     )?.draft;
 
     const edited = await putGitHubPrReviewDraft(
       { repo: 'neondeck', prNumber: 123 },
       {
         draftId: initialDraft?.id,
-        expectedUpdatedAt: initialDraft?.updatedAt,
+        expectedRevision: initialDraft?.revision,
         headSha: 'head123',
         body: 'Edited body',
       },
@@ -1732,7 +1777,9 @@ describe('PR event state watermarks', () => {
       },
     });
     const editedDraft = (
-      edited.data as { draft?: { id?: string; updatedAt?: string } } | undefined
+      edited.data as
+        | { draft?: { id?: string; revision?: number; updatedAt?: string } }
+        | undefined
     )?.draft;
 
     await expect(
@@ -1740,7 +1787,7 @@ describe('PR event state watermarks', () => {
         { repo: 'neondeck', prNumber: 123 },
         {
           draftId: editedDraft?.id,
-          expectedUpdatedAt: editedDraft?.updatedAt,
+          expectedRevision: editedDraft?.revision,
           headSha: 'head123',
           verdict: 'request-changes',
         },
@@ -1766,8 +1813,10 @@ describe('PR event state watermarks', () => {
       { headSha: 'head-before', expectedAbsent: true },
       paths,
     );
-    const draftId = (created.data as { draft?: { id?: string } } | undefined)
-      ?.draft?.id;
+    const createdDraft = (
+      created.data as { draft?: { id?: string; revision?: number } } | undefined
+    )?.draft;
+    const draftId = createdDraft?.id;
     expect(draftId).toEqual(expect.any(String));
 
     await expect(
@@ -1777,6 +1826,7 @@ describe('PR event state watermarks', () => {
           headSha: 'head-after',
           reanchorHeadSha: true,
           expectedDraftId: draftId,
+          expectedRevision: createdDraft?.revision,
           expectedHeadSha: 'wrong-head',
         },
         paths,
@@ -1789,6 +1839,7 @@ describe('PR event state watermarks', () => {
           headSha: 'head-after',
           reanchorHeadSha: true,
           expectedDraftId: draftId,
+          expectedRevision: createdDraft?.revision,
           expectedHeadSha: 'head-before',
         },
         paths,
@@ -1883,14 +1934,17 @@ async function tempHome() {
   return home;
 }
 
-async function writeRepoRegistry(path: string) {
+async function writeRepoRegistry(
+  path: string,
+  github = { owner: 'pandemicsyn', name: 'neondeck' },
+) {
   await writeFile(
     path,
     `${JSON.stringify({
       repos: [
         {
           id: 'neondeck',
-          github: { owner: 'pandemicsyn', name: 'neondeck' },
+          github,
           path: '/src/neondeck',
           defaultBranch: 'main',
         },

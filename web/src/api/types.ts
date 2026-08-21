@@ -384,6 +384,7 @@ export type GitHubPrReviewDraft = {
   verdict: GitHubPrReviewVerdict | null;
   body: string | null;
   status: 'draft' | 'submitting' | 'submitted' | 'discarded';
+  revision: number;
   createdAt: string;
   updatedAt: string;
   submittedAt: string | null;

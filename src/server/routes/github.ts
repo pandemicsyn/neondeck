@@ -217,7 +217,7 @@ export function createGitHubRoutes(
         paths,
         {
           draftId: c.req.query('draftId'),
-          expectedUpdatedAt: c.req.query('expectedUpdatedAt'),
+          expectedRevision: queryInteger(c.req.query('expectedRevision')),
         },
       );
       return c.json(
@@ -238,7 +238,8 @@ export function createGitHubRoutes(
       target.input,
       {
         draftId: c.req.query('draftId') ?? '',
-        expectedUpdatedAt: c.req.query('expectedUpdatedAt') ?? '',
+        expectedRevision:
+          queryInteger(c.req.query('expectedRevision')) ?? Number.NaN,
       },
       paths,
     );
@@ -262,11 +263,11 @@ export function createGitHubRoutes(
       typeof reviewInputObject.draftId === 'string'
         ? reviewInputObject.draftId
         : null;
-    const expectedDraftUpdatedAt =
-      typeof reviewInputObject.expectedDraftUpdatedAt === 'string'
-        ? reviewInputObject.expectedDraftUpdatedAt
+    const expectedDraftRevision =
+      typeof reviewInputObject.expectedDraftRevision === 'number'
+        ? reviewInputObject.expectedDraftRevision
         : null;
-    if (!requestedDraftId || !expectedDraftUpdatedAt) {
+    if (!requestedDraftId || !expectedDraftRevision) {
       return c.json(
         {
           ok: false,
@@ -286,7 +287,7 @@ export function createGitHubRoutes(
       exactDraft.status !== 'draft' ||
       exactDraft.repo.toLowerCase() !== target.input.repo.toLowerCase() ||
       exactDraft.prNumber !== target.input.prNumber ||
-      exactDraft.updatedAt !== expectedDraftUpdatedAt ||
+      exactDraft.revision !== expectedDraftRevision ||
       exactDraft.headSha !== requestedHeadSha
     ) {
       return c.json(
@@ -371,7 +372,7 @@ export function createGitHubRoutes(
         headSha: requestedHeadSha ?? '',
         verdict: draftVerdict,
         draftId: exactDraft.id,
-        draftUpdatedAt: exactDraft.updatedAt,
+        draftRevision: exactDraft.revision,
       },
       paths,
     );
@@ -433,7 +434,7 @@ export function createGitHubRoutes(
         {
           draftId: requestedDraftId,
           headSha: requestedHeadSha ?? '',
-          expectedDraftUpdatedAt,
+          expectedDraftRevision,
           commentIds: Array.isArray(reviewInputObject.commentIds)
             ? reviewInputObject.commentIds.filter(
                 (id): id is string => typeof id === 'string',
@@ -694,6 +695,12 @@ function identifier(value: unknown) {
     : typeof value === 'number' && Number.isFinite(value)
       ? String(value)
       : '';
+}
+
+function queryInteger(value: string | undefined) {
+  if (value === undefined) return undefined;
+  const parsed = Number(value);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : undefined;
 }
 
 function prTargetFromParams(owner: string, repo: string, numberText: string) {

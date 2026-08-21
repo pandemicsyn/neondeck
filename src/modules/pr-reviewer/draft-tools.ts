@@ -137,7 +137,7 @@ export function createPrReviewerDraftTools(
               reviewTarget(bound.review),
               {
                 draftId: draft.id,
-                expectedUpdatedAt: draft.updatedAt,
+                expectedRevision: draft.revision,
                 path: data.path,
                 side: data.side,
                 line: data.line,
@@ -186,7 +186,7 @@ export function createPrReviewerDraftTools(
               data.commentId,
               {
                 draftId: comment.draft.id,
-                expectedUpdatedAt: comment.draft.updatedAt,
+                expectedRevision: comment.draft.revision,
                 body: data.body ?? comment.comment.body,
                 ...('path' in data ? { path: data.path } : {}),
                 ...('side' in data ? { side: data.side } : {}),
@@ -261,7 +261,7 @@ export function createPrReviewerDraftTools(
               paths,
               {
                 draftId: draft.id,
-                expectedUpdatedAt: draft.updatedAt,
+                expectedRevision: draft.revision,
                 expectedHeadSha: bound.review.headSha,
               },
             );

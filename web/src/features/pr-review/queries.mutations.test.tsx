@@ -73,7 +73,7 @@ describe('useGitHubPrReviewMutations', () => {
         repo: pr.repo,
         number: pr.number,
         draftId: liveDraft.id,
-        expectedUpdatedAt: liveDraft.updatedAt,
+        expectedRevision: liveDraft.revision,
       });
     });
 
@@ -132,7 +132,7 @@ describe('useGitHubPrReviewMutations', () => {
           repo: pr.repo,
           number: pr.number,
           draftId: staleDraft.id,
-          expectedUpdatedAt: staleDraft.updatedAt,
+          expectedRevision: staleDraft.revision,
           headSha: staleDraft.headSha,
           body: 'Stale local edit.',
         }),
@@ -180,7 +180,7 @@ describe('useGitHubPrReviewMutations', () => {
     await act(async () => {
       await mutations!.submitReview.mutateAsync({
         draftId: liveDraft.id,
-        expectedDraftUpdatedAt: liveDraft.updatedAt,
+        expectedDraftRevision: liveDraft.revision,
         repo: pr.repo,
         number: pr.number,
         headSha: pr.headSha!,
@@ -238,7 +238,7 @@ describe('useGitHubPrReviewMutations', () => {
     act(() => {
       submission = mutations!.submitReview.mutateAsync({
         draftId: liveDraft.id,
-        expectedDraftUpdatedAt: liveDraft.updatedAt,
+        expectedDraftRevision: liveDraft.revision,
         repo: pr.repo,
         number: pr.number,
         headSha: pr.headSha!,
@@ -297,7 +297,7 @@ describe('useGitHubPrReviewMutations', () => {
     await act(async () => {
       await mutations!.submitReview.mutateAsync({
         draftId: liveDraft.id,
-        expectedDraftUpdatedAt: liveDraft.updatedAt,
+        expectedDraftRevision: liveDraft.revision,
         repo: pr.repo,
         number: pr.number,
         headSha: pr.headSha!,
@@ -346,7 +346,7 @@ describe('useGitHubPrReviewMutations', () => {
       await expect(
         mutations!.submitReview.mutateAsync({
           draftId: 'draft-1',
-          expectedDraftUpdatedAt: reviewDraft('draft').updatedAt,
+          expectedDraftRevision: reviewDraft('draft').revision,
           repo: pr.repo,
           number: pr.number,
           headSha: pr.headSha!,
@@ -401,7 +401,7 @@ describe('useGitHubPrReviewMutations', () => {
     await act(async () => {
       await mutations!.submitReview.mutateAsync({
         draftId: 'draft-1',
-        expectedDraftUpdatedAt: reviewDraft('draft').updatedAt,
+        expectedDraftRevision: reviewDraft('draft').revision,
         repo: pr.repo,
         number: pr.number,
         headSha: pr.headSha!,
@@ -482,7 +482,7 @@ describe('useGitHubPrReviewMutations', () => {
     act(() => {
       submission = mutations!.submitReview.mutateAsync({
         draftId: submittedDraft.id,
-        expectedDraftUpdatedAt: submittedDraft.updatedAt,
+        expectedDraftRevision: submittedDraft.revision,
         repo: pr.repo,
         number: pr.number,
         headSha: pr.headSha!,
@@ -560,7 +560,7 @@ describe('useGitHubPrReviewMutations', () => {
       await expect(
         mutations!.submitReview.mutateAsync({
           draftId: original.id,
-          expectedDraftUpdatedAt: original.updatedAt,
+          expectedDraftRevision: original.revision,
           repo: pr.repo,
           number: pr.number,
           headSha: pr.headSha!,
@@ -573,7 +573,7 @@ describe('useGitHubPrReviewMutations', () => {
     await act(async () => {
       await mutations!.saveDraft.mutateAsync({
         draftId: original.id,
-        expectedUpdatedAt: original.updatedAt,
+        expectedRevision: original.revision,
         repo: pr.repo,
         number: pr.number,
         headSha: pr.headSha!,
@@ -637,7 +637,7 @@ describe('useGitHubPrReviewMutations', () => {
         repo: pr.repo,
         number: pr.number,
         draftId: liveDraft.id,
-        expectedUpdatedAt: liveDraft.updatedAt,
+        expectedRevision: liveDraft.revision,
       });
     });
     expect(queryClient.getQueryData(prReviewQueryKeys.draft(pr))).toBeNull();
@@ -696,7 +696,7 @@ describe('useGitHubPrReviewMutations', () => {
         repo: pr.repo,
         number: pr.number,
         draftId: original.id,
-        expectedUpdatedAt: original.updatedAt,
+        expectedRevision: original.revision,
       });
     });
     await vi.waitFor(() => expect(globalThis.fetch).toHaveBeenCalledOnce());
@@ -749,7 +749,7 @@ describe('useGitHubPrReviewMutations', () => {
     act(() => {
       saving = mutations!.saveDraft.mutateAsync({
         draftId: original.id,
-        expectedUpdatedAt: original.updatedAt,
+        expectedRevision: original.revision,
         repo: pr.repo,
         number: pr.number,
         headSha: pr.headSha!,
@@ -774,22 +774,243 @@ describe('useGitHubPrReviewMutations', () => {
     );
   });
 
+  it('does not clear a replacement draft with a delayed null conflict', async () => {
+    const pr = pullRequest();
+    const original = reviewDraft('draft');
+    const replacement = {
+      ...original,
+      id: 'draft-2',
+      body: 'Replacement draft.',
+      comments: [],
+      updatedAt: '2026-08-18T03:16:00.000Z',
+    } satisfies GitHubPrReviewDraft;
+    const queryClient = new QueryClient({
+      defaultOptions: {
+        mutations: { retry: false },
+        queries: { retry: false },
+      },
+    });
+    queryClient.setQueryData(prReviewQueryKeys.draft(pr), original);
+    const conflictResponse = Promise.withResolvers<Response>();
+    vi.spyOn(globalThis, 'fetch').mockImplementation(
+      () => conflictResponse.promise,
+    );
+    let mutations: ReturnType<typeof useGitHubPrReviewMutations> | null = null;
+    function Harness() {
+      mutations = useGitHubPrReviewMutations(pr);
+      return null;
+    }
+    act(() =>
+      root.render(
+        <QueryClientProvider client={queryClient}>
+          <Harness />
+        </QueryClientProvider>,
+      ),
+    );
+
+    let saving!: Promise<unknown>;
+    act(() => {
+      saving = mutations!.saveDraft.mutateAsync({
+        draftId: original.id,
+        expectedRevision: original.revision,
+        repo: pr.repo,
+        number: pr.number,
+        headSha: pr.headSha!,
+        body: 'Stale save.',
+      });
+    });
+    await vi.waitFor(() => expect(globalThis.fetch).toHaveBeenCalledOnce());
+    act(() => {
+      queryClient.setQueryData(prReviewQueryKeys.draft(pr), replacement);
+    });
+    conflictResponse.resolve(
+      new Response(
+        JSON.stringify({
+          ok: false,
+          action: 'github_pr_review_draft_put',
+          changed: false,
+          message: 'The review draft changed.',
+          requires: ['currentDraft'],
+          data: { currentDraft: null },
+        }),
+        {
+          status: 409,
+          headers: { 'content-type': 'application/json' },
+        },
+      ),
+    );
+    await act(async () => {
+      await expect(saving).rejects.toThrow('The review draft changed.');
+    });
+
+    expect(queryClient.getQueryData(prReviewQueryKeys.draft(pr))).toEqual(
+      replacement,
+    );
+  });
+
+  it('does not clear a recovered same-id draft with a delayed null conflict', async () => {
+    const pr = pullRequest();
+    const original = reviewDraft('draft');
+    const recovered = {
+      ...original,
+      updatedAt: '2026-08-18T03:16:00.000Z',
+    } satisfies GitHubPrReviewDraft;
+    const queryClient = new QueryClient({
+      defaultOptions: {
+        mutations: { retry: false },
+        queries: { retry: false },
+      },
+    });
+    queryClient.setQueryData(prReviewQueryKeys.draft(pr), original);
+    const conflictResponse = Promise.withResolvers<Response>();
+    vi.spyOn(globalThis, 'fetch').mockImplementation(
+      () => conflictResponse.promise,
+    );
+    let mutations: ReturnType<typeof useGitHubPrReviewMutations> | null = null;
+    function Harness() {
+      mutations = useGitHubPrReviewMutations(pr);
+      return null;
+    }
+    act(() =>
+      root.render(
+        <QueryClientProvider client={queryClient}>
+          <Harness />
+        </QueryClientProvider>,
+      ),
+    );
+
+    let saving!: Promise<unknown>;
+    act(() => {
+      saving = mutations!.saveDraft.mutateAsync({
+        draftId: original.id,
+        expectedRevision: original.revision,
+        repo: pr.repo,
+        number: pr.number,
+        headSha: pr.headSha!,
+        body: 'Stale save.',
+      });
+    });
+    await vi.waitFor(() => expect(globalThis.fetch).toHaveBeenCalledOnce());
+    act(() => {
+      queryClient.setQueryData(prReviewQueryKeys.draft(pr), recovered);
+    });
+    conflictResponse.resolve(
+      new Response(
+        JSON.stringify({
+          ok: false,
+          action: 'github_pr_review_draft_put',
+          changed: false,
+          message: 'The review draft changed.',
+          requires: ['currentDraft'],
+          data: { currentDraft: null },
+        }),
+        {
+          status: 409,
+          headers: { 'content-type': 'application/json' },
+        },
+      ),
+    );
+    await act(async () => {
+      await expect(saving).rejects.toThrow('The review draft changed.');
+    });
+
+    expect(queryClient.getQueryData(prReviewQueryKeys.draft(pr))).toEqual(
+      recovered,
+    );
+  });
+
   it('keeps a newer draft snapshot when mutation responses arrive out of order', () => {
     const older = reviewDraft('draft');
     const newer = {
       ...older,
       body: 'Newest body',
+      revision: older.revision + 1,
       updatedAt: '2026-08-18T03:16:00.000Z',
     } satisfies GitHubPrReviewDraft;
 
     expect(newerDraftSnapshot(newer, older)).toBe(newer);
     expect(newerDraftSnapshot(older, newer)).toBe(newer);
+    const higherRevisionWithOlderMetadata = {
+      ...older,
+      body: 'Revision wins for the same draft.',
+      revision: older.revision + 1,
+      updatedAt: '2026-08-18T03:14:00.000Z',
+    } satisfies GitHubPrReviewDraft;
+    expect(newerDraftSnapshot(older, higherRevisionWithOlderMetadata)).toBe(
+      higherRevisionWithOlderMetadata,
+    );
+    expect(
+      newerDraftSnapshot({ ...newer, revision: older.revision }, older),
+    ).toMatchObject({ body: 'Newest body' });
     expect(
       newerDraftSnapshot(
         { ...newer, id: 'replacement-draft' },
         { ...older, id: 'delayed-original-draft' },
       ),
     ).toMatchObject({ id: 'replacement-draft' });
+  });
+
+  it('does not move the cross-draft frontier backward for a newer revision', async () => {
+    const pr = pullRequest();
+    const original = reviewDraft('draft');
+    const higherRevision = {
+      ...original,
+      body: 'Higher revision with older metadata.',
+      revision: original.revision + 1,
+      updatedAt: '2026-08-18T03:14:00.000Z',
+    } satisfies GitHubPrReviewDraft;
+    const delayedReplacement = {
+      ...original,
+      id: 'delayed-replacement',
+      body: 'Older replacement response.',
+      revision: 1,
+      updatedAt: '2026-08-18T03:14:30.000Z',
+    } satisfies GitHubPrReviewDraft;
+    const queryClient = new QueryClient({
+      defaultOptions: {
+        mutations: { retry: false },
+        queries: { retry: false },
+      },
+    });
+    queryClient.setQueryData(prReviewQueryKeys.draft(pr), original);
+    vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(liveDraftResponse(higherRevision))
+      .mockResolvedValueOnce(liveDraftResponse(delayedReplacement));
+
+    let mutations: ReturnType<typeof useGitHubPrReviewMutations> | null = null;
+    function Harness() {
+      mutations = useGitHubPrReviewMutations(pr);
+      return null;
+    }
+    act(() =>
+      root.render(
+        <QueryClientProvider client={queryClient}>
+          <Harness />
+        </QueryClientProvider>,
+      ),
+    );
+
+    await act(async () => {
+      await mutations!.saveDraft.mutateAsync({
+        draftId: original.id,
+        expectedRevision: original.revision,
+        repo: pr.repo,
+        number: pr.number,
+        headSha: pr.headSha!,
+        body: higherRevision.body,
+      });
+      await mutations!.saveDraft.mutateAsync({
+        expectedAbsent: true,
+        repo: pr.repo,
+        number: pr.number,
+        headSha: pr.headSha!,
+        body: delayedReplacement.body,
+      });
+    });
+
+    expect(queryClient.getQueryData(prReviewQueryKeys.draft(pr))).toEqual(
+      higherRevision,
+    );
   });
 
   it('does not restore an older save response after discard completes', async () => {
@@ -833,7 +1054,7 @@ describe('useGitHubPrReviewMutations', () => {
     act(() => {
       save = mutations!.saveDraft.mutateAsync({
         draftId: liveDraft.id,
-        expectedUpdatedAt: liveDraft.updatedAt,
+        expectedRevision: liveDraft.revision,
         repo: pr.repo,
         number: pr.number,
         headSha: pr.headSha!,
@@ -848,7 +1069,7 @@ describe('useGitHubPrReviewMutations', () => {
         repo: pr.repo,
         number: pr.number,
         draftId: liveDraft.id,
-        expectedUpdatedAt: liveDraft.updatedAt,
+        expectedRevision: liveDraft.revision,
       });
     });
     delayedSave.resolve(liveDraftResponse(liveDraft));
@@ -982,6 +1203,7 @@ function reviewDraft(
     verdict: 'approve',
     body: null,
     status,
+    revision: 1,
     createdAt: '2026-08-18T03:00:00.000Z',
     updatedAt: '2026-08-18T03:15:00.000Z',
     submittedAt: status === 'submitted' ? '2026-08-18T03:15:00.000Z' : null,

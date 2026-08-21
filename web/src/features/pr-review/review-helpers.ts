@@ -124,10 +124,10 @@ export function normalizeReviewBody(value: string | null | undefined) {
 }
 
 export function draftSnapshotMatches(
-  left: Pick<GitHubPrReviewDraft, 'id' | 'updatedAt'> | null,
-  right: Pick<GitHubPrReviewDraft, 'id' | 'updatedAt'> | null,
+  left: Pick<GitHubPrReviewDraft, 'id' | 'revision'> | null,
+  right: Pick<GitHubPrReviewDraft, 'id' | 'revision'> | null,
 ) {
-  return left?.id === right?.id && left?.updatedAt === right?.updatedAt;
+  return left?.id === right?.id && left?.revision === right?.revision;
 }
 
 export function draftSnapshotIsAtOrBeyondFrontier(
