@@ -117,6 +117,24 @@ export function isCurrentReviewOperation(
   return currentToken === completedToken;
 }
 
+export function shouldAutomaticallyApplyGitHubRevision({
+  attemptedRevisionKey,
+  candidateRevisionKey,
+  isApplyingRevision,
+  safety,
+}: {
+  attemptedRevisionKey: string | null;
+  candidateRevisionKey: string;
+  isApplyingRevision: boolean;
+  safety: ReviewRefreshSafety;
+}) {
+  return (
+    safety.safe &&
+    !isApplyingRevision &&
+    attemptedRevisionKey !== candidateRevisionKey
+  );
+}
+
 export function canCommitGitHubRevisionRefresh(input: {
   candidateRevisionKey: string;
   currentCandidateRevisionKey: string;

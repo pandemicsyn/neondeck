@@ -52,6 +52,7 @@ import {
   refreshOrientationTargetSettled,
   sameReviewDraftRevision,
   selectionAnchorMatchesPatch,
+  shouldAutomaticallyApplyGitHubRevision,
 } from './review-ui-helpers';
 import capturedReviewPatch from './fixtures/captured-review.patch?raw';
 
@@ -231,6 +232,35 @@ describe('GitHubPrReview helpers', () => {
         safety,
       }),
     ).toBe(false);
+  });
+
+  it('does not automatically retry the same failed revision refresh', () => {
+    const safety = evaluateReviewRefreshSafety({});
+
+    expect(
+      shouldAutomaticallyApplyGitHubRevision({
+        attemptedRevisionKey: null,
+        candidateRevisionKey: 'git-commit:base:head-b',
+        isApplyingRevision: false,
+        safety,
+      }),
+    ).toBe(true);
+    expect(
+      shouldAutomaticallyApplyGitHubRevision({
+        attemptedRevisionKey: 'git-commit:base:head-b',
+        candidateRevisionKey: 'git-commit:base:head-b',
+        isApplyingRevision: false,
+        safety,
+      }),
+    ).toBe(false);
+    expect(
+      shouldAutomaticallyApplyGitHubRevision({
+        attemptedRevisionKey: 'git-commit:base:head-b',
+        candidateRevisionKey: 'git-commit:base:head-c',
+        isApplyingRevision: false,
+        safety,
+      }),
+    ).toBe(true);
   });
 
   it('preserves a composer only when the selected patch lines remain identical', () => {
