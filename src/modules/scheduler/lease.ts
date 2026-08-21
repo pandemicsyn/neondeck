@@ -2,12 +2,16 @@ import { randomUUID } from 'node:crypto';
 import { isSqliteBusy, openDb, rollbackQuietly } from '../../lib/sqlite';
 import type { RuntimePaths } from '../../runtime-home';
 import type {
-  SchedulerTickLease,
   SchedulerTickLeaseRenewResult,
   SchedulerTickLeaseResult,
 } from './schemas';
-import { schedulerTickLeaseKey } from './schemas';
+import { schedulerTickLeaseKey, schedulerTickLeaseSchema } from './schemas';
 import { errorMessage } from './utils';
+import * as v from 'valibot';
+
+const sqliteExternalValueSchema = v.unknown();
+type SqliteExternalValue = v.InferInput<typeof sqliteExternalValueSchema>;
+const metadataValueRowSchema = v.object({ value: v.string() });
 
 export function acquireSchedulerTickLease(
   paths: RuntimePaths,
@@ -28,11 +32,11 @@ export function acquireSchedulerTickLease(
     }
 
     const acquiredAt = now.toISOString();
-    const lease: SchedulerTickLease = {
+    const lease = v.parse(schedulerTickLeaseSchema, {
       owner: `pid-${process.pid}-${randomUUID()}`,
       acquiredAt,
       expiresAt: new Date(now.getTime() + ttlMs).toISOString(),
-    };
+    });
     database
       .prepare(
         `
@@ -198,28 +202,16 @@ export function parseSchedulerTickLease(value: string | undefined) {
   if (!value) return;
 
   try {
-    const parsed = JSON.parse(value) as Partial<SchedulerTickLease>;
-    if (
-      typeof parsed.owner === 'string' &&
-      typeof parsed.acquiredAt === 'string' &&
-      typeof parsed.expiresAt === 'string'
-    ) {
-      return {
-        owner: parsed.owner,
-        acquiredAt: parsed.acquiredAt,
-        expiresAt: parsed.expiresAt,
-      };
-    }
+    const parsed = v.safeParse(schedulerTickLeaseSchema, JSON.parse(value));
+    return parsed.success ? parsed.output : undefined;
   } catch {
     return;
   }
 }
 
-export function readMetadataValue(row: unknown) {
-  if (row && typeof row === 'object' && 'value' in row) {
-    const value = row.value;
-    return typeof value === 'string' ? value : undefined;
-  }
+export function readMetadataValue(row: SqliteExternalValue) {
+  const parsed = v.safeParse(metadataValueRowSchema, row);
+  return parsed.success ? parsed.output.value : undefined;
 }
 
 export function sleep(ms: number) {

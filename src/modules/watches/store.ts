@@ -9,18 +9,93 @@ import {
   type NotificationRecord,
 } from '../app-state';
 import type {
-  DesiredTerminalState,
   PrWatch,
   PrWatchInitialWatermark,
   PrWatchRemovalFence,
   PrWatchStateFence,
-  PrWatchSnapshot,
-  PrWatchStatus,
   RefWatch,
-  RefWatchSnapshot,
-  RefWatchStatus,
-  WatchOutcome,
 } from './schemas';
+import {
+  autopilotModeSchema,
+  autopilotWatchStatusSchema,
+  desiredTerminalStateValueSchema,
+  prWatchSnapshotSchema,
+  prWatchStatusSchema,
+  refWatchSnapshotSchema,
+  refWatchStatusSchema,
+  watchOutcomeSchema,
+} from './schemas';
+import * as v from 'valibot';
+
+const sqliteExternalValueSchema = v.unknown();
+type SqliteExternalValue = v.InferInput<typeof sqliteExternalValueSchema>;
+const nullableTextColumnSchema = v.nullable(v.string());
+const refWatchRowSchema = v.object({
+  id: v.string(),
+  repo_id: v.string(),
+  repo_full_name: v.string(),
+  github_owner: v.string(),
+  github_name: v.string(),
+  ref: v.string(),
+  status: refWatchStatusSchema,
+  title: nullableTextColumnSchema,
+  url: nullableTextColumnSchema,
+  last_snapshot_json: nullableTextColumnSchema,
+  last_outcome: v.nullable(watchOutcomeSchema),
+  last_checked_at: nullableTextColumnSchema,
+  created_at: v.string(),
+  updated_at: v.string(),
+});
+const prWatchRowSchema = v.object({
+  id: v.string(),
+  repo_id: v.string(),
+  repo_full_name: v.string(),
+  github_owner: v.string(),
+  github_name: v.string(),
+  pr_number: v.number(),
+  desired_terminal_state: desiredTerminalStateValueSchema,
+  status: prWatchStatusSchema,
+  pr_state: nullableTextColumnSchema,
+  title: nullableTextColumnSchema,
+  url: nullableTextColumnSchema,
+  merge_commit_sha: nullableTextColumnSchema,
+  last_snapshot_json: nullableTextColumnSchema,
+  last_outcome: v.nullable(watchOutcomeSchema),
+  last_checked_at: nullableTextColumnSchema,
+  created_by: nullableTextColumnSchema,
+  process_existing: v.number(),
+  initial_event_processed_at: nullableTextColumnSchema,
+  event_watermark_version: v.number(),
+  autopilot_mode: autopilotModeSchema,
+  autopilot_status: autopilotWatchStatusSchema,
+  owner_instance_id: nullableTextColumnSchema,
+  worktree_id: nullableTextColumnSchema,
+  last_event_fingerprint: nullableTextColumnSchema,
+  created_at: v.string(),
+  updated_at: v.string(),
+});
+const matchedWatchRowSchema = v.object({ autopilot_status: v.string() });
+const pollingTaskRowSchema = v.object({
+  enabled: v.number(),
+  trigger_json: v.string(),
+  next_run_at: nullableTextColumnSchema,
+  claim_id: nullableTextColumnSchema,
+  claim_expires_at: nullableTextColumnSchema,
+  last_run_at: nullableTextColumnSchema,
+  created_at: v.string(),
+});
+const pollingEnabledRowSchema = v.object({ enabled: v.number() });
+const intervalTriggerSchema = v.object({
+  kind: v.literal('interval'),
+  everySeconds: v.number(),
+});
+const watchStateRowSchema = v.object({
+  updated_at: v.string(),
+  process_existing: v.number(),
+  initial_event_processed_at: nullableTextColumnSchema,
+  event_watermark_version: v.number(),
+});
+type WatchStateRow = v.InferOutput<typeof watchStateRowSchema>;
 
 export function insertWatch(
   paths: RuntimePaths,
@@ -328,9 +403,11 @@ export async function upsertWatchPollingTask(
   const database = openDb(paths.neondeckDatabase);
   try {
     database.exec('BEGIN IMMEDIATE;');
-    const matchedWatch = database
-      .prepare(
-        `SELECT autopilot_status
+    const matchedWatch = v.parse(
+      v.optional(matchedWatchRowSchema),
+      database
+        .prepare(
+          `SELECT autopilot_status
          FROM pr_watches
          WHERE id = ?
            AND updated_at = ?
@@ -339,16 +416,17 @@ export async function upsertWatchPollingTask(
            AND event_watermark_version = ?
            AND autopilot_mode = ?
            AND autopilot_status = ?;`,
-      )
-      .get(
-        watch.id,
-        watch.updatedAt,
-        watch.processExisting ? 1 : 0,
-        watch.initialEventProcessedAt,
-        watch.eventWatermarkVersion,
-        watch.autopilotMode,
-        watch.autopilotStatus,
-      ) as { autopilot_status?: string } | undefined;
+        )
+        .get(
+          watch.id,
+          watch.updatedAt,
+          watch.processExisting ? 1 : 0,
+          watch.initialEventProcessedAt,
+          watch.eventWatermarkVersion,
+          watch.autopilotMode,
+          watch.autopilotStatus,
+        ),
+    );
     if (
       !matchedWatch ||
       matchedWatch.autopilot_status === 'stopping' ||
@@ -359,24 +437,17 @@ export async function upsertWatchPollingTask(
     }
 
     const taskId = watchPollingTaskId(watch.id);
-    const current = database
-      .prepare(
-        `SELECT enabled, trigger_json, next_run_at, claim_id,
+    const current = v.parse(
+      v.optional(pollingTaskRowSchema),
+      database
+        .prepare(
+          `SELECT enabled, trigger_json, next_run_at, claim_id,
                 claim_expires_at, last_run_at, created_at
          FROM scheduled_tasks
          WHERE id = ?;`,
-      )
-      .get(taskId) as
-      | {
-          enabled: number;
-          trigger_json: string;
-          next_run_at: string | null;
-          claim_id: string | null;
-          claim_expires_at: string | null;
-          last_run_at: string | null;
-          created_at: string;
-        }
-      | undefined;
+        )
+        .get(taskId),
+    );
     const repairPending = Boolean(
       database
         .prepare('SELECT 1 FROM app_metadata WHERE key = ?;')
@@ -388,13 +459,12 @@ export async function upsertWatchPollingTask(
     let sameTrigger = false;
     if (current) {
       try {
-        const parsed = JSON.parse(current.trigger_json) as {
-          kind?: string;
-          everySeconds?: number;
-        };
+        const parsed = v.safeParse(
+          intervalTriggerSchema,
+          JSON.parse(current.trigger_json),
+        );
         sameTrigger =
-          parsed.kind === trigger.kind &&
-          parsed.everySeconds === trigger.everySeconds;
+          parsed.success && parsed.output.everySeconds === trigger.everySeconds;
       } catch {
         sameTrigger = false;
       }
@@ -524,9 +594,12 @@ export function beginWatchAutopilotCompletion(
          WHERE id = ?;`,
       )
       .run(now, watchPollingTaskId(id));
-    const pollingTask = database
-      .prepare('SELECT enabled FROM scheduled_tasks WHERE id = ?;')
-      .get(watchPollingTaskId(id)) as { enabled?: number } | undefined;
+    const pollingTask = v.parse(
+      v.optional(pollingEnabledRowSchema),
+      database
+        .prepare('SELECT enabled FROM scheduled_tasks WHERE id = ?;')
+        .get(watchPollingTaskId(id)),
+    );
     if (pollingTask?.enabled === 1) {
       throw new Error('The persisted polling task remained enabled.');
     }
@@ -981,103 +1054,65 @@ export function watchParams(watch: PrWatch) {
   ];
 }
 
-export function readRefWatchRow(row: unknown): RefWatch {
-  const record = row as Record<string, unknown>;
+export function readRefWatchRow(row: SqliteExternalValue): RefWatch {
+  const record = v.parse(refWatchRowSchema, row);
   const snapshot =
-    typeof record.last_snapshot_json === 'string'
-      ? (JSON.parse(record.last_snapshot_json) as RefWatchSnapshot)
+    record.last_snapshot_json !== null
+      ? v.parse(refWatchSnapshotSchema, JSON.parse(record.last_snapshot_json))
       : null;
 
   return {
-    id: String(record.id),
-    repoId: String(record.repo_id),
-    repoFullName: String(record.repo_full_name),
-    githubOwner: String(record.github_owner),
-    githubName: String(record.github_name),
-    ref: String(record.ref),
-    status: String(record.status) as RefWatchStatus,
-    title: typeof record.title === 'string' ? String(record.title) : null,
-    url: typeof record.url === 'string' ? String(record.url) : null,
+    id: record.id,
+    repoId: record.repo_id,
+    repoFullName: record.repo_full_name,
+    githubOwner: record.github_owner,
+    githubName: record.github_name,
+    ref: record.ref,
+    status: record.status,
+    title: record.title,
+    url: record.url,
     lastSnapshot: snapshot,
-    lastOutcome:
-      typeof record.last_outcome === 'string'
-        ? (String(record.last_outcome) as WatchOutcome)
-        : null,
-    lastCheckedAt:
-      typeof record.last_checked_at === 'string'
-        ? String(record.last_checked_at)
-        : null,
-    createdAt: String(record.created_at),
-    updatedAt: String(record.updated_at),
+    lastOutcome: record.last_outcome,
+    lastCheckedAt: record.last_checked_at,
+    createdAt: record.created_at,
+    updatedAt: record.updated_at,
   };
 }
 
-export function readWatchRow(row: unknown): PrWatch {
-  const record = row as Record<string, unknown>;
+export function readWatchRow(row: SqliteExternalValue): PrWatch {
+  const record = v.parse(prWatchRowSchema, row);
   const snapshot =
-    typeof record.last_snapshot_json === 'string'
-      ? (JSON.parse(record.last_snapshot_json) as PrWatchSnapshot)
+    record.last_snapshot_json !== null
+      ? v.parse(prWatchSnapshotSchema, JSON.parse(record.last_snapshot_json))
       : null;
 
   return {
-    id: String(record.id),
-    repoId: String(record.repo_id),
-    repoFullName: String(record.repo_full_name),
-    githubOwner: String(record.github_owner),
-    githubName: String(record.github_name),
-    prNumber: Number(record.pr_number),
-    desiredTerminalState: String(
-      record.desired_terminal_state,
-    ) as DesiredTerminalState,
-    status: String(record.status) as PrWatchStatus,
-    prState:
-      typeof record.pr_state === 'string' ? String(record.pr_state) : null,
-    title: typeof record.title === 'string' ? String(record.title) : null,
-    url: typeof record.url === 'string' ? String(record.url) : null,
-    mergeCommitSha:
-      typeof record.merge_commit_sha === 'string'
-        ? String(record.merge_commit_sha)
-        : null,
+    id: record.id,
+    repoId: record.repo_id,
+    repoFullName: record.repo_full_name,
+    githubOwner: record.github_owner,
+    githubName: record.github_name,
+    prNumber: record.pr_number,
+    desiredTerminalState: record.desired_terminal_state,
+    status: record.status,
+    prState: record.pr_state,
+    title: record.title,
+    url: record.url,
+    mergeCommitSha: record.merge_commit_sha,
     lastSnapshot: snapshot,
-    lastOutcome:
-      typeof record.last_outcome === 'string'
-        ? (String(record.last_outcome) as WatchOutcome)
-        : null,
-    lastCheckedAt:
-      typeof record.last_checked_at === 'string'
-        ? String(record.last_checked_at)
-        : null,
-    createdBy:
-      typeof record.created_by === 'string' ? String(record.created_by) : null,
+    lastOutcome: record.last_outcome,
+    lastCheckedAt: record.last_checked_at,
+    createdBy: record.created_by,
     processExisting: record.process_existing === 1,
-    initialEventProcessedAt:
-      typeof record.initial_event_processed_at === 'string'
-        ? record.initial_event_processed_at
-        : null,
-    eventWatermarkVersion:
-      typeof record.event_watermark_version === 'number'
-        ? record.event_watermark_version
-        : 1,
-    autopilotMode:
-      typeof record.autopilot_mode === 'string'
-        ? (record.autopilot_mode as PrWatch['autopilotMode'])
-        : 'notify-only',
-    autopilotStatus:
-      typeof record.autopilot_status === 'string'
-        ? (record.autopilot_status as PrWatch['autopilotStatus'])
-        : 'watching',
-    ownerInstanceId:
-      typeof record.owner_instance_id === 'string'
-        ? record.owner_instance_id
-        : null,
-    worktreeId:
-      typeof record.worktree_id === 'string' ? record.worktree_id : null,
-    lastEventFingerprint:
-      typeof record.last_event_fingerprint === 'string'
-        ? record.last_event_fingerprint
-        : null,
-    createdAt: String(record.created_at),
-    updatedAt: String(record.updated_at),
+    initialEventProcessedAt: record.initial_event_processed_at,
+    eventWatermarkVersion: record.event_watermark_version,
+    autopilotMode: record.autopilot_mode,
+    autopilotStatus: record.autopilot_status,
+    ownerInstanceId: record.owner_instance_id,
+    worktreeId: record.worktree_id,
+    lastEventFingerprint: record.last_event_fingerprint,
+    createdAt: record.created_at,
+    updatedAt: record.updated_at,
   };
 }
 
@@ -1122,17 +1157,20 @@ export function persistWatchEventRefresh(
   try {
     database.exec('BEGIN IMMEDIATE;');
     try {
-      const watch = database
-        .prepare(
-          `SELECT
+      const watch = v.parse(
+        v.optional(watchStateRowSchema),
+        database
+          .prepare(
+            `SELECT
              updated_at,
              process_existing,
              initial_event_processed_at,
              event_watermark_version
            FROM pr_watches
            WHERE id = ?;`,
-        )
-        .get(watchId) as WatchStateRow | undefined;
+          )
+          .get(watchId),
+      );
       if (!watch) {
         rollbackQuietly(database);
         return {
@@ -1296,13 +1334,6 @@ export function persistWatchEventRefresh(
     notification: persistedNotification,
   };
 }
-
-type WatchStateRow = {
-  updated_at: unknown;
-  process_existing: unknown;
-  initial_event_processed_at: unknown;
-  event_watermark_version: unknown;
-};
 
 function watchStateMatchesFence(
   row: WatchStateRow,

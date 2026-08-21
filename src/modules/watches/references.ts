@@ -218,12 +218,14 @@ export function normalizeRefInput(input: {
   };
 }
 
-export function okRefReference(
-  input: Omit<ResolvedRefReference, 'id' | 'repoFullName'>,
-): {
+type ResolvedRefReferenceResult = {
   ok: true;
   reference: ResolvedRefReference;
-} {
+};
+
+export function okRefReference(
+  input: Omit<ResolvedRefReference, 'id' | 'repoFullName'>,
+): ResolvedRefReferenceResult {
   const repoFullNameValue = `${input.githubOwner}/${input.githubName}`;
   const reference = {
     ...input,
@@ -241,7 +243,7 @@ export function readDesiredTerminalState(input: string) {
   const rawState = match[1].toLowerCase();
   const state: DesiredTerminalState = rawState.startsWith('merge')
     ? 'merged'
-    : (rawState as DesiredTerminalState);
+    : 'checks';
 
   return {
     ref: input.slice(0, match.index).trim(),
@@ -338,12 +340,14 @@ function resolveConfiguredRepoIdentity(
   };
 }
 
-export function okReference(
-  input: Omit<ResolvedPrReference, 'id' | 'repoFullName'>,
-): {
+type ResolvedPrReferenceResult = {
   ok: true;
   reference: ResolvedPrReference;
-} {
+};
+
+export function okReference(
+  input: Omit<ResolvedPrReference, 'id' | 'repoFullName'>,
+): ResolvedPrReferenceResult {
   const repoFullNameValue = `${input.githubOwner}/${input.githubName}`;
   const reference = {
     ...input,

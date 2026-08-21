@@ -1,6 +1,27 @@
 import type { JsonValue } from '@flue/runtime';
 import * as v from 'valibot';
 
+export const scheduledTaskExternalValueSchema = v.unknown();
+export type ScheduledTaskExternalValue = v.InferInput<
+  typeof scheduledTaskExternalValueSchema
+>;
+const jsonScalarSchema = v.union([
+  v.null(),
+  v.string(),
+  v.pipe(v.number(), v.finite()),
+  v.boolean(),
+]);
+export const scheduledTaskJsonValueSchema: v.GenericSchema<
+  ScheduledTaskExternalValue,
+  JsonValue
+> = v.lazy(() =>
+  v.union([
+    jsonScalarSchema,
+    v.array(scheduledTaskJsonValueSchema),
+    v.record(v.string(), scheduledTaskJsonValueSchema),
+  ]),
+);
+
 export type AutomationTrigger =
   | { kind: 'interval'; everySeconds: number }
   | { kind: 'once'; at: string }
@@ -94,4 +115,19 @@ export const scheduledTaskSpecSchema = v.variant('kind', [
     cwd: v.optional(nonEmptyStringSchema),
     skills: v.array(nonEmptyStringSchema),
   }),
+]);
+export const scheduledInstructionDispatchPayloadSchema = v.object({
+  prompt: v.string(),
+  taskId: v.string(),
+});
+export const scheduledTaskRunStatusSchema = v.picklist([
+  'claimed',
+  'active',
+  'completed',
+  'failed',
+]);
+export const scheduledTaskRunOutcomeSchema = v.picklist([
+  'recorded',
+  'silent',
+  'failed',
 ]);

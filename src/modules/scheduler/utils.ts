@@ -2,12 +2,34 @@ import type { JsonValue } from '@flue/runtime';
 import { failedAction } from '../../lib/action-result';
 import { asJsonValue } from '../../lib/action-result';
 import { parseInput as parseSharedInput } from '../../lib/valibot';
+import { jsonValueSchema } from '../sessions';
 import type { SchedulerResult } from './schemas';
-import type * as v from 'valibot';
+import * as v from 'valibot';
+
+const schedulerExternalValueSchema = v.unknown();
+export type SchedulerExternalValue = v.InferInput<
+  typeof schedulerExternalValueSchema
+>;
+const schedulerExternalRecordSchema = v.record(
+  v.string(),
+  schedulerExternalValueSchema,
+);
+const schedulerOptionalJsonRecordSchema = v.record(
+  v.string(),
+  v.optional(jsonValueSchema),
+);
+const schedulerJsonRecordSchema = v.record(v.string(), jsonValueSchema);
+export type SchedulerJsonRecord = v.InferOutput<
+  typeof schedulerJsonRecordSchema
+>;
+const schedulerExternalArraySchema = v.array(schedulerExternalValueSchema);
+const nonBlankStringSchema = v.pipe(v.string(), v.trim(), v.minLength(1));
+const finiteNumberSchema = v.pipe(v.number(), v.finite());
+const errorSchema = v.instance(Error);
 
 export function parseActionInput<T>(
-  schema: v.GenericSchema<unknown, T>,
-  input: unknown,
+  schema: v.GenericSchema<SchedulerExternalValue, T>,
+  input: SchedulerExternalValue,
   action: string,
 ) {
   return parseSharedInput(schema, input, (message) =>
@@ -23,84 +45,96 @@ export function okResult(
   outcome: string | undefined,
   message: string,
   data: {
-    tasks?: unknown[];
-    notifications?: unknown[];
-    extra?: unknown;
+    tasks?: SchedulerExternalValue[];
+    notifications?: SchedulerExternalValue[];
+    extra?: SchedulerExternalValue;
   } = {},
 ): SchedulerResult {
-  return {
+  const result: SchedulerResult = {
     ok: true,
     action,
     changed,
-    ...(outcome ? { outcome } : {}),
     message,
-    ...(data.tasks ? { tasks: data.tasks.map(asJsonValue) } : {}),
-    ...(data.notifications
-      ? { notifications: data.notifications.map(asJsonValue) }
-      : {}),
-    ...(data.extra ? { extra: asJsonValue(data.extra) } : {}),
-  } as SchedulerResult;
+  };
+  if (outcome) result.outcome = outcome;
+  if (data.tasks) result.tasks = data.tasks.map(asJsonValue);
+  if (data.notifications) {
+    result.notifications = data.notifications.map(asJsonValue);
+  }
+  if (data.extra !== undefined) result.extra = asJsonValue(data.extra);
+  return result;
 }
 
 export const failResult = failedAction<
   Pick<SchedulerResult, 'errors' | 'requires'>
 >;
 
-export function errorMessage(error: unknown) {
-  return error instanceof Error ? error.message : String(error);
+export function errorMessage(error: SchedulerExternalValue) {
+  const parsedError = v.safeParse(errorSchema, error);
+  return parsedError.success ? parsedError.output.message : String(error);
 }
 
-export function readObjectConfig(config: unknown) {
-  if (!config || typeof config !== 'object' || Array.isArray(config)) return {};
-  return config as Record<string, unknown>;
+export function readObjectConfig(config: SchedulerExternalValue) {
+  if (Array.isArray(config)) return {};
+  const parsed = v.safeParse(schedulerExternalRecordSchema, config);
+  return parsed.success ? parsed.output : {};
 }
 
-export function compactObject(value: Record<string, unknown>) {
+export function compactObject(
+  value: v.InferInput<typeof schedulerOptionalJsonRecordSchema>,
+) {
   return Object.fromEntries(
     Object.entries(value).filter(([, item]) => item !== undefined),
   );
 }
 
-export function jsonRecord(value: Record<string, unknown>) {
-  return compactObject(value) as Record<string, JsonValue>;
+export function jsonRecord(
+  value: v.InferInput<typeof schedulerOptionalJsonRecordSchema>,
+) {
+  return v.parse(schedulerJsonRecordSchema, compactObject(value));
 }
 
-export function readJsonRecord(value: unknown) {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
-  return value as Record<string, JsonValue>;
+export function readJsonRecord(value: SchedulerExternalValue) {
+  if (Array.isArray(value)) return null;
+  const parsed = v.safeParse(schedulerJsonRecordSchema, value);
+  return parsed.success ? parsed.output : null;
 }
 
-export function readJsonArray(value: unknown) {
-  return Array.isArray(value) ? value : [];
+export function readJsonArray(value: SchedulerExternalValue) {
+  const parsed = v.safeParse(v.array(jsonValueSchema), value);
+  return parsed.success ? parsed.output : [];
 }
 
-export function arrayField(value: unknown) {
-  return Array.isArray(value) ? value : [];
+export function arrayField(value: SchedulerExternalValue) {
+  const parsed = v.safeParse(schedulerExternalArraySchema, value);
+  return parsed.success ? parsed.output : [];
 }
 
-export function stringField(value: unknown) {
-  return typeof value === 'string' && value.trim() ? value.trim() : undefined;
+export function stringField(value: SchedulerExternalValue) {
+  const parsed = v.safeParse(nonBlankStringSchema, value);
+  return parsed.success ? parsed.output : undefined;
 }
 
-export function numberField(value: unknown) {
-  return typeof value === 'number' && Number.isFinite(value)
-    ? value
-    : undefined;
+export function numberField(value: SchedulerExternalValue) {
+  const parsed = v.safeParse(finiteNumberSchema, value);
+  return parsed.success ? parsed.output : undefined;
 }
 
-export function booleanField(value: unknown) {
-  return typeof value === 'boolean' ? value : undefined;
+export function booleanField(value: SchedulerExternalValue) {
+  const parsed = v.safeParse(v.boolean(), value);
+  return parsed.success ? parsed.output : undefined;
 }
 
-export function stableJson(value: unknown): string {
+export function stableJson(value: JsonValue | undefined): string {
   if (Array.isArray(value)) {
     return `[${value.map((item) => stableJson(item)).join(',')}]`;
   }
-  if (value && typeof value === 'object') {
-    return `{${Object.entries(value)
+  const record = readJsonRecord(value);
+  if (record) {
+    return `{${Object.entries(record)
       .sort(([left], [right]) => left.localeCompare(right))
       .map(([key, item]) => `${JSON.stringify(key)}:${stableJson(item)}`)
       .join(',')}}`;
   }
-  return JSON.stringify(value);
+  return value === undefined ? 'undefined' : JSON.stringify(value);
 }

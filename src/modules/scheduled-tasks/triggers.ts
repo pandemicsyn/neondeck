@@ -1,8 +1,14 @@
 import { Cron } from 'croner';
 import * as v from 'valibot';
-import { automationTriggerSchema, type AutomationTrigger } from './schemas';
+import {
+  automationTriggerSchema,
+  type AutomationTrigger,
+  type ScheduledTaskExternalValue,
+} from './schemas';
 
-export function validateAutomationTrigger(input: unknown) {
+const errorSchema = v.instance(Error);
+
+export function validateAutomationTrigger(input: ScheduledTaskExternalValue) {
   const parsed = v.safeParse(automationTriggerSchema, input);
   if (!parsed.success) {
     return { ok: false as const, message: v.summarize(parsed.issues) };
@@ -82,6 +88,7 @@ function isIanaTimezone(value: string) {
   }
 }
 
-function errorMessage(error: unknown) {
-  return error instanceof Error ? error.message : String(error);
+function errorMessage(error: ScheduledTaskExternalValue) {
+  const parsed = v.safeParse(errorSchema, error);
+  return parsed.success ? parsed.output.message : String(error);
 }

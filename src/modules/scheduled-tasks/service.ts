@@ -6,6 +6,8 @@ import {
   automationTriggerSchema,
   nonEmptyStringSchema,
   scheduledTaskSpecSchema,
+  type ScheduledTaskExternalValue,
+  type ScheduledTaskRecord,
 } from './schemas';
 import {
   deleteScheduledTask,
@@ -24,6 +26,7 @@ const agentTargetSchema = v.variant('kind', [
     sessionId: nonEmptyStringSchema,
   }),
 ]);
+const errorSchema = v.instance(Error);
 
 export const briefingTaskInputSchema = v.object({
   id: nonEmptyStringSchema,
@@ -58,13 +61,13 @@ export type ScheduledTaskActionResult = {
 };
 
 export async function createBriefingTask(
-  rawInput: unknown,
+  rawInput: ScheduledTaskExternalValue,
   paths = runtimePaths(),
 ): Promise<ScheduledTaskActionResult> {
   await ensureRuntimeHome(paths);
   const parsed = v.safeParse(briefingTaskInputSchema, rawInput);
   if (!parsed.success)
-    return invalidResult('scheduled_task_briefing_create', parsed);
+    return invalidResult('scheduled_task_briefing_create', parsed.issues);
   const triggerError = pastOneShotTriggerMessage(parsed.output.trigger);
   if (triggerError)
     return failure('scheduled_task_briefing_create', triggerError);
@@ -89,13 +92,13 @@ export async function createBriefingTask(
 }
 
 export async function createAgentInstructionTask(
-  rawInput: unknown,
+  rawInput: ScheduledTaskExternalValue,
   paths = runtimePaths(),
 ): Promise<ScheduledTaskActionResult> {
   await ensureRuntimeHome(paths);
   const parsed = v.safeParse(agentInstructionTaskInputSchema, rawInput);
   if (!parsed.success) {
-    return invalidResult('scheduled_task_instruction_create', parsed);
+    return invalidResult('scheduled_task_instruction_create', parsed.issues);
   }
   const input = parsed.output;
   const triggerError = pastOneShotTriggerMessage(input.trigger);
@@ -129,8 +132,8 @@ export async function createAgentInstructionTask(
           kind: 'run-agent-instruction',
           prompt: input.prompt,
           target: input.target ?? { kind: 'agent' },
-          ...(input.repoId ? { repoId: input.repoId } : {}),
-          ...(input.cwd ? { cwd: input.cwd } : {}),
+          repoId: input.repoId,
+          cwd: input.cwd,
           skills: input.skills ?? [],
         }),
         trigger: input.trigger,
@@ -248,7 +251,7 @@ export async function removeTask(id: string, paths = runtimePaths()) {
 
 function success(
   action: string,
-  task: unknown,
+  task: ScheduledTaskRecord,
   message: string,
 ): ScheduledTaskActionResult {
   return { ok: true, action, changed: true, message, task: asJsonValue(task) };
@@ -256,33 +259,27 @@ function success(
 
 function invalidResult(
   action: string,
-  parsed: { issues?: v.BaseIssue<unknown>[] },
+  issues: [v.BaseIssue<unknown>, ...v.BaseIssue<unknown>[]],
 ): ScheduledTaskActionResult {
   return {
     ok: false,
     action,
     changed: false,
     message: 'Invalid scheduled task input.',
-    errors:
-      parsed.issues && parsed.issues.length > 0
-        ? [
-            v.summarize(
-              parsed.issues as [
-                v.BaseIssue<unknown>,
-                ...v.BaseIssue<unknown>[],
-              ],
-            ),
-          ]
-        : undefined,
+    errors: [v.summarize(issues)],
   };
 }
 
-function failure(action: string, error: unknown): ScheduledTaskActionResult {
+function failure(
+  action: string,
+  error: ScheduledTaskExternalValue,
+): ScheduledTaskActionResult {
+  const parsedError = v.safeParse(errorSchema, error);
   return {
     ok: false,
     action,
     changed: false,
-    message: error instanceof Error ? error.message : String(error),
+    message: parsedError.success ? parsedError.output.message : String(error),
   };
 }
 

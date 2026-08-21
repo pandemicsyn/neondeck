@@ -20,7 +20,10 @@ import type {
   WatchFetcher,
 } from './schemas';
 import { resolvePrReference, resolveRefReference } from './references';
-import { errorMessage, failResult } from './utils';
+import { errorMessage, failResult, type WatchExternalValue } from './utils';
+import * as v from 'valibot';
+
+const errorSchema = v.instance(Error);
 
 export async function resolveWatchId(
   input: { id?: string; ref?: string },
@@ -134,26 +137,30 @@ export async function fetchWatchDetail(
   }
 }
 
-export function watchFetchFailure(action: string, error: unknown) {
+export function watchFetchFailure(action: string, error: WatchExternalValue) {
+  const parsedError = v.safeParse(errorSchema, error);
   return {
     ok: false as const,
     result: failResult(action, 'Could not fetch GitHub PR state.', {
       errors: [errorMessage(error)],
       requires:
-        error instanceof Error && error.message.includes('GITHUB_TOKEN')
+        parsedError.success &&
+        parsedError.output.message.includes('GITHUB_TOKEN')
           ? ['GITHUB_TOKEN']
           : undefined,
     }),
   };
 }
 
-export function refFetchFailure(action: string, error: unknown) {
+export function refFetchFailure(action: string, error: WatchExternalValue) {
+  const parsedError = v.safeParse(errorSchema, error);
   return {
     ok: false as const,
     result: failResult(action, 'Could not fetch GitHub ref checks.', {
       errors: [errorMessage(error)],
       requires:
-        error instanceof Error && error.message.includes('GITHUB_TOKEN')
+        parsedError.success &&
+        parsedError.output.message.includes('GITHUB_TOKEN')
           ? ['GITHUB_TOKEN']
           : undefined,
     }),

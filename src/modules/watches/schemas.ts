@@ -157,8 +157,76 @@ export type CheckFetcher = (
 ) => Promise<GitHubCheckSummary>;
 
 export const nonEmptyStringSchema = v.pipe(v.string(), v.minLength(1));
+export const watchOutcomeSchema = v.picklist([
+  'created',
+  'updated',
+  'removed',
+  'silent',
+]);
+export const prWatchStatusSchema = v.picklist([
+  'watching',
+  'ready',
+  'merged',
+  'closed',
+  'green',
+  'attention-needed',
+  'unknown',
+]);
+export const refWatchStatusSchema = v.picklist([
+  'watching',
+  'green',
+  'attention-needed',
+  'unknown',
+]);
+export const desiredTerminalStateValueSchema = v.picklist(['checks', 'merged']);
+export const autopilotWatchStatusSchema = v.picklist([
+  'watching',
+  'working',
+  'waiting',
+  'blocked',
+  'stopping',
+  'complete',
+]);
+export const autopilotModeSchema = v.picklist([
+  'notify-only',
+  'prepare-only',
+  'autofix-with-approval',
+  'autofix-push-when-safe',
+]);
+const githubCheckSummarySchema = v.object({
+  status: v.picklist(['success', 'failure', 'pending', 'none']),
+  total: v.number(),
+  successful: v.number(),
+  failed: v.number(),
+  pending: v.number(),
+  statusContexts: v.optional(v.number()),
+  truncated: v.optional(v.boolean()),
+  checkedAt: v.string(),
+});
+export const prWatchSnapshotSchema = v.object({
+  state: v.string(),
+  merged: v.boolean(),
+  mergeCommitSha: v.nullable(v.string()),
+  reviewDecision: v.optional(
+    v.nullable(
+      v.picklist(['APPROVED', 'CHANGES_REQUESTED', 'REVIEW_REQUIRED']),
+    ),
+  ),
+  checks: v.nullable(githubCheckSummarySchema),
+  title: v.string(),
+  url: v.string(),
+  updatedAt: v.string(),
+  headSha: v.string(),
+  baseRef: v.string(),
+});
+export const refWatchSnapshotSchema = v.object({
+  ref: v.string(),
+  checks: githubCheckSummarySchema,
+  url: v.string(),
+  checkedAt: v.string(),
+});
 export const desiredTerminalStateSchema = v.optional(
-  v.picklist(['checks', 'merged']),
+  desiredTerminalStateValueSchema,
 );
 
 export const watchPrAddInputSchema = v.object({

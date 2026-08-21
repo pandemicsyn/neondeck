@@ -5,6 +5,40 @@ import { refreshPrWatch } from '../watches';
 import { completeAutopilotWatchIfTerminal } from '../autopilot';
 import type { SchedulerDependencies } from './schemas';
 import { refreshWatchJobEvents } from './pr-watch-events';
+import * as v from 'valibot';
+
+const watchNotificationFactsSchema = v.object({
+  id: v.optional(v.string()),
+  repoFullName: v.optional(v.string()),
+  prNumber: v.optional(v.number()),
+  status: v.optional(v.string()),
+  prState: v.optional(v.nullable(v.string())),
+  lastSnapshot: v.optional(
+    v.nullable(
+      v.object({
+        merged: v.optional(v.boolean()),
+        reviewDecision: v.optional(v.nullable(v.string())),
+        checks: v.optional(
+          v.nullable(
+            v.object({
+              status: v.optional(v.string()),
+              total: v.optional(v.number()),
+              failed: v.optional(v.number()),
+              pending: v.optional(v.number()),
+            }),
+          ),
+        ),
+      }),
+    ),
+  ),
+});
+type WatchNotificationFacts = v.InferOutput<
+  typeof watchNotificationFactsSchema
+>;
+type WatchRefreshResultData = {
+  results: Awaited<ReturnType<typeof refreshPrWatch>>[];
+  eventResults?: Awaited<ReturnType<typeof refreshWatchJobEvents>>;
+};
 
 export async function refreshWatchTask(
   watchId: string,
@@ -62,6 +96,8 @@ export async function refreshWatchTask(
   const persistedNotifications = eventResults.flatMap(
     (item) => item.persistedNotifications ?? [],
   );
+  const resultData: WatchRefreshResultData = { results: [result] };
+  if (eventResults.length > 0) resultData.eventResults = eventResults;
   return {
     outcome:
       eventFailures.length > 0
@@ -74,10 +110,7 @@ export async function refreshWatchTask(
       eventChanges.length,
       eventFailures.length,
     ),
-    result: {
-      results: [result],
-      ...(eventResults.length > 0 ? { eventResults } : {}),
-    },
+    result: resultData,
     notifications,
     persistedNotifications,
   };
@@ -87,7 +120,8 @@ function notificationFromWatchResult(
   result: Awaited<ReturnType<typeof refreshPrWatch>>,
   watchId: string,
 ) {
-  const watch = result.watch as WatchNotificationFacts | undefined;
+  const parsedWatch = v.safeParse(watchNotificationFactsSchema, result.watch);
+  const watch = parsedWatch.success ? parsedWatch.output : undefined;
   const level: NotificationLevel =
     watch?.status === 'closed' || watch?.status === 'attention-needed'
       ? 'attention'
@@ -107,24 +141,6 @@ function notificationFromWatchResult(
   };
 }
 
-type WatchNotificationFacts = {
-  id?: string;
-  repoFullName?: string;
-  prNumber?: number;
-  status?: string;
-  prState?: string | null;
-  lastSnapshot?: {
-    merged?: boolean;
-    reviewDecision?: string | null;
-    checks?: {
-      status?: string;
-      total?: number;
-      failed?: number;
-      pending?: number;
-    } | null;
-  } | null;
-};
-
 export function watchNotificationCopy(
   watch: WatchNotificationFacts | undefined,
   fallbackMessage: string,
@@ -141,8 +157,8 @@ export function watchNotificationCopy(
     const failed = checks?.failed;
     const total = checks?.total;
     const failedLabel =
-      typeof failed === 'number' && failed > 0
-        ? typeof total === 'number' && total > 0
+      failed !== undefined && failed > 0
+        ? total !== undefined && total > 0
           ? `${failed} of ${total} ${total === 1 ? 'check' : 'checks'} failed`
           : `${failed} ${failed === 1 ? 'check' : 'checks'} failed`
         : 'checks are failing';
@@ -162,7 +178,7 @@ export function watchNotificationCopy(
     return {
       title: `${titleSubject} checks passed`,
       message:
-        typeof total === 'number' && total > 0
+        total !== undefined && total > 0
           ? `${subject}: all ${total} ${total === 1 ? 'check' : 'checks'} passed.`
           : `${subject}: all checks passed.`,
     };

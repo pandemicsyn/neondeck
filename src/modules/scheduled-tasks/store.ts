@@ -3,6 +3,11 @@ import { asJsonValue } from '../../lib/action-result';
 import { openDb, rollbackQuietly } from '../../lib/sqlite';
 import { ensureRuntimeHome, runtimePaths } from '../../runtime-home';
 import {
+  scheduledInstructionDispatchPayloadSchema,
+  scheduledTaskExternalValueSchema,
+  scheduledTaskJsonValueSchema,
+  scheduledTaskRunOutcomeSchema,
+  scheduledTaskRunStatusSchema,
   scheduledTaskSpecSchema,
   type AutomationTrigger,
   type ScheduledInstructionDispatchPayload,
@@ -14,6 +19,44 @@ import * as v from 'valibot';
 
 const defaultClaimTtlMs = 5 * 60 * 1_000;
 export const maxActiveScheduledSubmissions = 10;
+type ScheduledTaskExternalValue = v.InferInput<
+  typeof scheduledTaskExternalValueSchema
+>;
+const nullableTextColumnSchema = v.nullable(v.string());
+const scheduledTaskRowSchema = v.object({
+  id: v.string(),
+  payload_json: v.string(),
+  trigger_json: v.string(),
+  enabled: v.number(),
+  next_run_at: nullableTextColumnSchema,
+  claim_id: nullableTextColumnSchema,
+  claim_expires_at: nullableTextColumnSchema,
+  last_run_at: nullableTextColumnSchema,
+  created_at: v.string(),
+  updated_at: v.string(),
+});
+const scheduledTaskRunRowSchema = v.object({
+  id: v.string(),
+  task_id: v.string(),
+  status: scheduledTaskRunStatusSchema,
+  outcome: scheduledTaskRunOutcomeSchema,
+  message: v.string(),
+  submission_id: nullableTextColumnSchema,
+  session_id: nullableTextColumnSchema,
+  dispatch_key: nullableTextColumnSchema,
+  dispatch_payload_json: nullableTextColumnSchema,
+  result_json: nullableTextColumnSchema,
+  error: nullableTextColumnSchema,
+  started_at: v.string(),
+  completed_at: nullableTextColumnSchema,
+  created_at: v.string(),
+  updated_at: v.string(),
+});
+const briefingRunIdRowSchema = v.object({
+  briefing_run_id: nullableTextColumnSchema,
+});
+const watchStatusRowSchema = v.object({ autopilot_status: v.string() });
+const countRowSchema = v.object({ count: v.number() });
 
 export async function listScheduledTasks(paths = runtimePaths()) {
   await ensureRuntimeHome(paths);
@@ -92,13 +135,10 @@ export async function listRecoverableScheduledBriefingRuns(
       )
       .all()
       .map((row) => {
-        const record = row as Record<string, unknown>;
+        const record = v.parse(briefingRunIdRowSchema, row);
         return {
-          run: readScheduledTaskRunRow(record),
-          briefingRunId:
-            typeof record.briefing_run_id === 'string'
-              ? record.briefing_run_id
-              : null,
+          run: readScheduledTaskRunRow(row),
+          briefingRunId: record.briefing_run_id,
         };
       });
   } finally {
@@ -214,14 +254,16 @@ export async function setScheduledTaskEnabled(
   try {
     database.exec('BEGIN IMMEDIATE;');
     if (options.watchGuard) {
-      const watch = database
-        .prepare('SELECT autopilot_status FROM pr_watches WHERE id = ?;')
-        .get(options.watchGuard.id) as
-        { autopilot_status?: string } | undefined;
+      const watch = v.parse(
+        v.optional(watchStatusRowSchema),
+        database
+          .prepare('SELECT autopilot_status FROM pr_watches WHERE id = ?;')
+          .get(options.watchGuard.id),
+      );
       if (
         !watch ||
         options.watchGuard.disallowAutopilotStatuses.includes(
-          String(watch.autopilot_status),
+          watch.autopilot_status,
         )
       ) {
         database.exec('COMMIT;');
@@ -568,16 +610,19 @@ export async function canAdmitScheduledSubmission(
       )
       .get(taskId);
     if (activeForTask) return false;
-    const row = database
-      .prepare(
-        `
+    const row = v.parse(
+      countRowSchema,
+      database
+        .prepare(
+          `
         SELECT COUNT(*) AS count
         FROM scheduled_task_runs
         WHERE status = 'active';
       `,
-      )
-      .get() as { count?: unknown } | undefined;
-    return Number(row?.count ?? 0) < maximumActiveRuns;
+        )
+        .get(),
+    );
+    return row.count < maximumActiveRuns;
   } finally {
     database.close();
   }
@@ -876,74 +921,61 @@ export async function settleScheduledTaskRun(
   }
 }
 
-function readScheduledTaskRow(row: unknown): ScheduledTaskRecord {
-  const record = row as Record<string, unknown>;
+function readScheduledTaskRow(
+  row: ScheduledTaskExternalValue,
+): ScheduledTaskRecord {
+  const record = v.parse(scheduledTaskRowSchema, row);
   const spec = v.parse(
     scheduledTaskSpecSchema,
-    JSON.parse(String(record.payload_json)),
+    JSON.parse(record.payload_json),
   );
   const triggerResult = validateAutomationTrigger(
-    JSON.parse(String(record.trigger_json)),
+    JSON.parse(record.trigger_json),
   );
   if (!triggerResult.ok) throw new Error(triggerResult.message);
   return {
-    id: String(record.id),
+    id: record.id,
     spec,
     trigger: triggerResult.trigger,
-    enabled: Boolean(record.enabled),
-    nextRunAt:
-      typeof record.next_run_at === 'string' ? record.next_run_at : null,
-    claimId: typeof record.claim_id === 'string' ? record.claim_id : null,
-    claimExpiresAt:
-      typeof record.claim_expires_at === 'string'
-        ? record.claim_expires_at
-        : null,
-    lastRunAt:
-      typeof record.last_run_at === 'string' ? record.last_run_at : null,
-    createdAt: String(record.created_at),
-    updatedAt: String(record.updated_at),
+    enabled: record.enabled === 1,
+    nextRunAt: record.next_run_at,
+    claimId: record.claim_id,
+    claimExpiresAt: record.claim_expires_at,
+    lastRunAt: record.last_run_at,
+    createdAt: record.created_at,
+    updatedAt: record.updated_at,
   };
 }
 
-function readScheduledTaskRunRow(row: unknown): ScheduledTaskRunRecord {
-  const record = row as Record<string, unknown>;
+function readScheduledTaskRunRow(
+  row: ScheduledTaskExternalValue,
+): ScheduledTaskRunRecord {
+  const record = v.parse(scheduledTaskRunRowSchema, row);
   return {
-    id: String(record.id),
-    taskId: String(record.task_id),
-    status: v.parse(
-      v.picklist(['claimed', 'active', 'completed', 'failed']),
-      record.status,
-    ),
-    outcome: v.parse(
-      v.picklist(['recorded', 'silent', 'failed']),
-      record.outcome,
-    ),
-    message: String(record.message),
-    submissionId:
-      typeof record.submission_id === 'string' ? record.submission_id : null,
-    sessionId: typeof record.session_id === 'string' ? record.session_id : null,
-    dispatchKey:
-      typeof record.dispatch_key === 'string' ? record.dispatch_key : null,
+    id: record.id,
+    taskId: record.task_id,
+    status: record.status,
+    outcome: record.outcome,
+    message: record.message,
+    submissionId: record.submission_id,
+    sessionId: record.session_id,
+    dispatchKey: record.dispatch_key,
     dispatchPayload:
-      typeof record.dispatch_payload_json === 'string'
+      record.dispatch_payload_json !== null
         ? v.parse(
-            v.object({
-              prompt: v.string(),
-              taskId: v.string(),
-            }),
+            scheduledInstructionDispatchPayloadSchema,
             JSON.parse(record.dispatch_payload_json),
           )
         : null,
     result:
-      typeof record.result_json === 'string'
-        ? (JSON.parse(record.result_json) as ScheduledTaskRunRecord['result'])
+      record.result_json !== null
+        ? v.parse(scheduledTaskJsonValueSchema, JSON.parse(record.result_json))
         : null,
-    error: typeof record.error === 'string' ? record.error : null,
-    startedAt: String(record.started_at),
-    completedAt:
-      typeof record.completed_at === 'string' ? record.completed_at : null,
-    createdAt: String(record.created_at),
-    updatedAt: String(record.updated_at),
+    error: record.error,
+    startedAt: record.started_at,
+    completedAt: record.completed_at,
+    createdAt: record.created_at,
+    updatedAt: record.updated_at,
   };
 }
 

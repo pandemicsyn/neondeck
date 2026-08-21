@@ -11,6 +11,7 @@ import {
   readAddressedPrFeedback,
   readNeondeckPrDeliveries,
   refreshPrWatchEventState,
+  prWatchEventWatermarkRecordSchema,
   type PrWatchEventWatermarkCategory,
   type PrWatchEventWatermarkRecord,
 } from '../pr-events';
@@ -30,7 +31,13 @@ import {
   shouldAdmitTriageForDeltas,
   snapshotFromWatermarks,
 } from './pr-watch-event-deltas';
-import { readJsonArray, readObjectConfig, stringField } from './utils';
+import {
+  readJsonArray,
+  readObjectConfig,
+  stringField,
+  type SchedulerExternalValue,
+} from './utils';
+import * as v from 'valibot';
 
 type WatchJobEventResult = {
   ok: boolean;
@@ -121,7 +128,7 @@ async function refreshOneWatchEvent(
       repoFullName: watch.repoFullName,
       prNumber: watch.prNumber,
       message: refresh.message,
-      refresh: refresh as unknown as JsonValue,
+      refresh: asJsonValue(refresh),
       notifications: [
         {
           level: 'attention',
@@ -158,7 +165,7 @@ async function refreshOneWatchEvent(
       repoFullName: watch.repoFullName,
       prNumber: watch.prNumber,
       message: refresh.message,
-      refresh: refresh as unknown as JsonValue,
+      refresh: asJsonValue(refresh),
     };
   }
 
@@ -258,7 +265,7 @@ async function refreshOneWatchEvent(
   if (!persisted.persisted) {
     return staleWatchEventPersistenceResult(watch, refresh);
   }
-  return {
+  const result: WatchJobEventResult = {
     ok: true,
     changed: Boolean(notification),
     watchId: watch.id,
@@ -269,12 +276,13 @@ async function refreshOneWatchEvent(
     changedCategories,
     deltas,
     message: refresh.message,
-    refresh: refresh as unknown as JsonValue,
-    ...(autopilot ? { autopilot: autopilot as unknown as JsonValue } : {}),
-    ...(persisted.notification
-      ? { persistedNotifications: [persisted.notification] }
-      : {}),
+    refresh: asJsonValue(refresh),
   };
+  if (autopilot) result.autopilot = asJsonValue(autopilot);
+  if (persisted.notification) {
+    result.persistedNotifications = [persisted.notification];
+  }
+  return result;
 }
 
 async function selfPushedCommitShas(
@@ -310,7 +318,7 @@ function staleWatchEventPersistenceResult(
     repoFullName: watch.repoFullName,
     prNumber: watch.prNumber,
     message,
-    refresh: refresh as unknown as JsonValue,
+    refresh: asJsonValue(refresh),
     requires: ['currentWatchState'],
     notifications: [
       {
@@ -342,13 +350,13 @@ function watermarksForPersistence(watermarks: PrWatchEventWatermarkRecord[]) {
   }));
 }
 
-function watchIdFromResult(value: unknown) {
+function watchIdFromResult(value: SchedulerExternalValue) {
   const result = readObjectConfig(value);
   const watch = readObjectConfig(result.watch);
   return stringField(watch.id) ?? stringField(result.id);
 }
 
-function changedCategoriesFromActionResult(value: unknown) {
+function changedCategoriesFromActionResult(value: SchedulerExternalValue) {
   const result = readObjectConfig(value);
   const data = readObjectConfig(result.data);
   const categories = readJsonArray(
@@ -370,16 +378,13 @@ function changedCategoriesFromActionResult(value: unknown) {
   return [...new Set(categories)];
 }
 
-function watermarksFromActionResult(value: unknown) {
+function watermarksFromActionResult(value: SchedulerExternalValue) {
   const result = readObjectConfig(value);
   const data = readObjectConfig(result.data);
   return readJsonArray(result.watermarks ?? data.watermarks)
     .map((item) => {
-      const record = readObjectConfig(item);
-      const category = stringField(record.category);
-      const watchId = stringField(record.watchId);
-      if (!category || !watchId) return null;
-      return record as unknown as PrWatchEventWatermarkRecord;
+      const parsed = v.safeParse(prWatchEventWatermarkRecordSchema, item);
+      return parsed.success ? parsed.output : null;
     })
     .filter((record): record is PrWatchEventWatermarkRecord => Boolean(record));
 }

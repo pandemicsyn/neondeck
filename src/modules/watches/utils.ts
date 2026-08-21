@@ -7,11 +7,15 @@ import type {
   WatchActionResult,
   WatchOutcome,
 } from './schemas';
-import type * as v from 'valibot';
+import * as v from 'valibot';
+
+const watchExternalValueSchema = v.unknown();
+export type WatchExternalValue = v.InferInput<typeof watchExternalValueSchema>;
+const errorSchema = v.instance(Error);
 
 export function parseActionInput<T>(
-  schema: v.GenericSchema<unknown, T>,
-  input: unknown,
+  schema: v.GenericSchema<WatchExternalValue, T>,
+  input: WatchExternalValue,
   action: string,
 ) {
   return parseSharedInput(schema, input, (message) =>
@@ -27,25 +31,27 @@ export function okResult(
   outcome: WatchOutcome | undefined,
   message: string,
   data: {
-    watch?: PrWatch | RefWatch | Record<string, unknown>;
-    watches?: Array<PrWatch | RefWatch | Record<string, unknown>>;
+    watch?: PrWatch | RefWatch | WatchExternalValue;
+    watches?: Array<PrWatch | RefWatch | WatchExternalValue>;
   } = {},
 ): WatchActionResult {
-  return {
+  const result: WatchActionResult = {
     ok: true,
     action,
     changed,
-    ...(outcome ? { outcome } : {}),
     message,
-    ...(data.watch ? { watch: asJsonValue(data.watch) } : {}),
-    ...(data.watches ? { watches: data.watches.map(asJsonValue) } : {}),
   };
+  if (outcome) result.outcome = outcome;
+  if (data.watch !== undefined) result.watch = asJsonValue(data.watch);
+  if (data.watches) result.watches = data.watches.map(asJsonValue);
+  return result;
 }
 
 export const failResult = failedAction<
   Pick<WatchActionResult, 'errors' | 'requires'>
 >;
 
-export function errorMessage(error: unknown) {
-  return error instanceof Error ? error.message : String(error);
+export function errorMessage(error: WatchExternalValue) {
+  const parsed = v.safeParse(errorSchema, error);
+  return parsed.success ? parsed.output.message : String(error);
 }

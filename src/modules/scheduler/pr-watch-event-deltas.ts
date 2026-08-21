@@ -11,9 +11,11 @@ import {
   compactObject,
   jsonRecord,
   numberField,
-  readObjectConfig,
+  readJsonRecord,
   stableJson,
   stringField,
+  type SchedulerExternalValue,
+  type SchedulerJsonRecord,
 } from './utils';
 
 export function deltasFromChangedCategories(
@@ -103,8 +105,8 @@ export function initialActionableDeltas(
 }
 
 function reviewCommentDeltas(
-  payload: Record<string, unknown>,
-  previousPayload: Record<string, unknown>,
+  payload: SchedulerJsonRecord,
+  previousPayload: SchedulerJsonRecord,
   filters: {
     addressedReviewThreadFingerprints?: ReadonlyMap<string, string>;
     addressedReviewCommentFingerprints?: ReadonlyMap<string, string>;
@@ -185,8 +187,8 @@ function reviewCommentDeltas(
 }
 
 function requestedChangesDeltas(
-  payload: Record<string, unknown>,
-  previousPayload: Record<string, unknown>,
+  payload: SchedulerJsonRecord,
+  previousPayload: SchedulerJsonRecord,
   filters: {
     neondeckRequestedChangesReviewFingerprints?: ReadonlyMap<string, string>;
   },
@@ -246,8 +248,8 @@ function requestedChangesDeltas(
 }
 
 function conversationCommentDeltas(
-  payload: Record<string, unknown>,
-  previousPayload: Record<string, unknown>,
+  payload: SchedulerJsonRecord,
+  previousPayload: SchedulerJsonRecord,
   filters: {
     neondeckConversationCommentFingerprints?: ReadonlyMap<string, string>;
   },
@@ -307,8 +309,8 @@ function conversationCommentDeltas(
 
 function checkDeltas(
   category: 'check_suites' | 'check_runs',
-  payload: Record<string, unknown>,
-  previousPayload: Record<string, unknown>,
+  payload: SchedulerJsonRecord,
+  previousPayload: SchedulerJsonRecord,
 ) {
   const key = category === 'check_suites' ? 'suites' : 'runs';
   const previous = feedbackFingerprintMap(recordArray(previousPayload[key]));
@@ -362,22 +364,21 @@ function incompleteCollectionDelta(category: PrWatchEventWatermarkCategory) {
   });
 }
 
-function feedbackItemsFromThreads(payload: Record<string, unknown>) {
+function feedbackItemsFromThreads(payload: SchedulerJsonRecord) {
   return recordArray(payload.threads).flatMap((thread) =>
-    recordArray(thread.comments).map(
-      (comment) =>
-        ({
-          ...comment,
-          threadId: stringField(thread.id),
-          isResolved: thread.isResolved === true,
-          isOutdated: thread.isOutdated === true,
-          commentsTruncated: thread.commentsTruncated === true,
-        }) as Record<string, unknown>,
+    recordArray(thread.comments).map((comment) =>
+      jsonRecord({
+        ...comment,
+        threadId: stringField(thread.id),
+        isResolved: thread.isResolved === true,
+        isOutdated: thread.isOutdated === true,
+        commentsTruncated: thread.commentsTruncated === true,
+      }),
     ),
   );
 }
 
-function feedbackFingerprintMap(items: Array<Record<string, unknown>>) {
+function feedbackFingerprintMap(items: SchedulerJsonRecord[]) {
   return new Map(
     items.flatMap((item) => {
       const id = feedbackItemId(item);
@@ -386,14 +387,12 @@ function feedbackFingerprintMap(items: Array<Record<string, unknown>>) {
   );
 }
 
-function feedbackItemId(item: Record<string, unknown>) {
-  return typeof item.id === 'string' || typeof item.id === 'number'
-    ? String(item.id)
-    : undefined;
+function feedbackItemId(item: SchedulerJsonRecord) {
+  return stringField(item.id) ?? numberField(item.id)?.toString();
 }
 
 function feedbackChange(
-  item: Record<string, unknown>,
+  item: SchedulerJsonRecord,
   previousFingerprint: string | undefined,
 ) {
   const fingerprint = stringField(item.fingerprint);
@@ -407,8 +406,8 @@ function feedbackChange(
  * hiding a human commit that arrived during an approval window.
  */
 function isExactNeondeckCommit(
-  payload: Record<string, unknown>,
-  previousPayload: Record<string, unknown>,
+  payload: SchedulerJsonRecord,
+  previousPayload: SchedulerJsonRecord,
   neondeckCommitShas: ReadonlySet<string> | undefined,
 ) {
   if (
@@ -428,16 +427,16 @@ function isExactNeondeckCommit(
   );
 }
 
-function recordArray(value: unknown) {
-  return Array.isArray(value)
-    ? value.map(readObjectConfig).filter((item) => Object.keys(item).length > 0)
-    : [];
+function recordArray(value: SchedulerExternalValue) {
+  return arrayField(value)
+    .map(readJsonRecord)
+    .filter((item): item is SchedulerJsonRecord => item !== null);
 }
 
 function deltaFromWatermark(
   category: PrWatchEventWatermarkCategory,
-  payload: Record<string, unknown>,
-  previousPayload: Record<string, unknown>,
+  payload: SchedulerJsonRecord,
+  previousPayload: SchedulerJsonRecord,
 ) {
   if (category === 'commits') {
     return jsonRecord({
@@ -599,9 +598,7 @@ function deltaFromWatermark(
   });
 }
 
-export function shouldAdmitTriageForDeltas(
-  deltas: Array<Record<string, unknown>>,
-) {
+export function shouldAdmitTriageForDeltas(deltas: SchedulerJsonRecord[]) {
   return deltas.some((delta) => {
     if (
       delta.actionable === true ||
@@ -623,7 +620,7 @@ export function shouldAdmitTriageForDeltas(
 
 export function shouldRetainPendingTriage(
   currentWatermarks: PrWatchEventWatermarkRecord[],
-  deltas: Array<Record<string, unknown>>,
+  deltas: SchedulerJsonRecord[],
 ) {
   return (
     shouldAdmitTriageForDeltas(deltas) ||
@@ -706,8 +703,11 @@ function watermarkPayload(
   watermarks: PrWatchEventWatermarkRecord[],
   category: PrWatchEventWatermarkCategory,
 ) {
-  return readObjectConfig(
-    watermarks.find((watermark) => watermark.category === category)?.watermark,
+  return (
+    readJsonRecord(
+      watermarks.find((watermark) => watermark.category === category)
+        ?.watermark,
+    ) ?? {}
   );
 }
 
@@ -715,7 +715,7 @@ export function prEventNotification(
   watch: PrWatch,
   categories: PrWatchEventWatermarkCategory[],
   watermarks: PrWatchEventWatermarkRecord[],
-  deltas: Array<Record<string, unknown>>,
+  deltas: SchedulerJsonRecord[],
   mode: AutopilotMode,
 ) {
   const incomplete = deltas.some(

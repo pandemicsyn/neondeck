@@ -260,12 +260,7 @@ export async function addPrWatch(
           ? task.trigger.everySeconds
           : undefined),
     );
-    if (
-      polling &&
-      typeof polling === 'object' &&
-      'matched' in polling &&
-      polling.matched === false
-    ) {
+    if (!polling.matched) {
       return staleWatchUpdateResult('watch_pr_add', watch.id);
     }
     if (options.upsertPollingTask) {
@@ -746,16 +741,14 @@ export async function removePrWatch(
   );
   if (!deleted) {
     const current = readWatch(paths, idResult.id);
-    return {
-      ...failResult(
-        'watch_pr_remove',
-        current
-          ? `Watch "${watch.id}" changed before removal. Review its current state and retry.`
-          : `Watch "${watch.id}" was removed by another operation before this request completed.`,
-        { requires: ['currentWatchState'] },
-      ),
-      ...(current ? { watch: asJsonValue(current) } : {}),
-    };
+    const result = failResult(
+      'watch_pr_remove',
+      current
+        ? `Watch "${watch.id}" changed before removal. Review its current state and retry.`
+        : `Watch "${watch.id}" was removed by another operation before this request completed.`,
+      { requires: ['currentWatchState'] },
+    );
+    return current ? { ...result, watch: asJsonValue(current) } : result;
   }
   return okResult(
     'watch_pr_remove',

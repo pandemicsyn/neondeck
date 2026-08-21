@@ -40,6 +40,11 @@ import {
   recoverRegisteredInterruptedBriefingAdmissions,
 } from '../briefings';
 
+declare global {
+  var __neondeckScheduledSettlementWatchers:
+    Map<string, Promise<void>> | undefined;
+}
+
 const scheduledSettlementWatchers = settlementWatchers();
 
 export async function runSchedulerTick(
@@ -482,10 +487,7 @@ function watchScheduledInstructionSettlement(
 }
 
 function settlementWatchers() {
-  const target = globalThis as typeof globalThis & {
-    __neondeckScheduledSettlementWatchers?: Map<string, Promise<void>>;
-  };
-  return (target.__neondeckScheduledSettlementWatchers ??= new Map());
+  return (globalThis.__neondeckScheduledSettlementWatchers ??= new Map());
 }
 
 export function startSchedulerLoop(

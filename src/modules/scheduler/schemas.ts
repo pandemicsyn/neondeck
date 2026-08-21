@@ -73,6 +73,11 @@ export type SchedulerTickLeaseRenewResult = 'renewed' | 'lost' | 'busy';
 export const schedulerTickLeaseKey = 'scheduler.tick.lease';
 export const defaultSchedulerTickLeaseTtlMs = 5 * 60 * 1000;
 export const nonEmptyStringSchema = v.pipe(v.string(), v.minLength(1));
+export const schedulerTickLeaseSchema = v.object({
+  owner: nonEmptyStringSchema,
+  acquiredAt: nonEmptyStringSchema,
+  expiresAt: nonEmptyStringSchema,
+});
 export const schedulerActionOutputSchema = v.looseObject({
   ok: v.boolean(),
   action: v.string(),
