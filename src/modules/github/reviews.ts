@@ -166,16 +166,12 @@ const draftRowSchema = v.object({
   submitted_at: v.nullable(v.string()),
 });
 const draftIdRowSchema = v.looseObject({ draft_id: v.string() });
-const updatedAtRowSchema = v.looseObject({ updated_at: v.string() });
-const draftSettlementRowSchema = v.looseObject({
+const draftUpdatedAtRowSchema = v.object({ updated_at: v.string() });
+const draftSettlementRowSchema = v.object({
   status: draftStatusSchema,
   revision: v.number(),
   updated_at: v.string(),
 });
-const githubReviewExternalValueSchema = v.unknown();
-type GitHubReviewExternalValue = v.InferInput<
-  typeof githubReviewExternalValueSchema
->;
 const draftCommentAnchorRowSchema = v.object({
   path: v.string(),
   side: reviewCommentSideSchema,
@@ -311,7 +307,7 @@ export function readPrReviewDraftForComment(options: {
   }
 }
 
-export type PrReviewDraftWriteBase = {
+type PrReviewDraftWriteBase = {
   databasePath: string;
   repo: string;
   prNumber: number;
@@ -397,7 +393,7 @@ export function upsertPrReviewDraft(
     }
 
     const latest = v.safeParse(
-      updatedAtRowSchema,
+      draftUpdatedAtRowSchema,
       database
         .prepare(
           `
@@ -1738,14 +1734,14 @@ function markDraftSubmitted(options: {
   databasePath: string;
   draftId: string;
   deliveryFollowupId: string;
-  deliveryPayload: (draft: GitHubPrReviewDraft) => GitHubReviewExternalValue;
+  deliveryPayload: (draft: GitHubPrReviewDraft) => object;
 }): GitHubPrReviewDraft {
   const database = openDb(options.databasePath);
   const now = new Date().toISOString();
   try {
     database.exec('BEGIN IMMEDIATE;');
     const current = v.safeParse(
-      updatedAtRowSchema,
+      draftUpdatedAtRowSchema,
       database
         .prepare('SELECT updated_at FROM pr_review_drafts WHERE id = ?;')
         .get(options.draftId),

@@ -14,8 +14,8 @@ import {
   runtimePaths,
 } from '../../runtime-home';
 import {
-  parsePrEventJsonValue,
   prEventTargetInputSchema,
+  parsePrEventJsonValue,
   prReviewSubmitInputSchema,
   type PrEventActionResult,
   type PrEventStateDependencies,
@@ -147,7 +147,7 @@ export async function postGitHubPrReview(
   } catch (error) {
     if (error instanceof GitHubPrReviewSubmitError) {
       const uncertain = error.failure.code === 'submission-uncertain';
-      const failureResult: PrEventActionResult = {
+      const failure: PrEventActionResult = {
         ok: false,
         action: 'github_pr_review_post',
         changed: uncertain,
@@ -157,10 +157,8 @@ export async function postGitHubPrReview(
           failingCommentIds: error.failure.failingCommentIds ?? [],
         },
       };
-      if (error.failure.requires) {
-        failureResult.requires = error.failure.requires;
-      }
-      return failureResult;
+      if (error.failure.requires) failure.requires = error.failure.requires;
+      return failure;
     }
     return failResult('github_pr_review_post', 'Could not submit PR review.', {
       errors: [errorMessage(error)],
@@ -168,20 +166,7 @@ export async function postGitHubPrReview(
   }
 }
 
-const submittedReviewSchema = v.looseObject({
-  id: v.number(),
-  nodeId: v.nullable(v.string()),
-  state: v.string(),
-  authorLogin: v.nullable(v.string()),
-  authorType: v.optional(v.nullable(v.string())),
-  authorIsBot: v.optional(v.boolean()),
-  submittedAt: v.nullable(v.string()),
-  commitId: v.nullable(v.string()),
-  url: v.nullable(v.string()),
-  body: v.optional(v.nullable(v.string())),
-  bodyTruncated: v.optional(v.boolean()),
-});
-const submittedDraftCommentSchema = v.looseObject({
+const submittedDraftCommentSchema = v.object({
   id: v.string(),
   draftId: v.string(),
   path: v.string(),
@@ -195,7 +180,7 @@ const submittedDraftCommentSchema = v.looseObject({
   createdAt: v.string(),
   updatedAt: v.string(),
 });
-const submittedDraftSchema = v.looseObject({
+const submittedDraftSchema = v.object({
   id: v.string(),
   repo: v.string(),
   prNumber: v.number(),
@@ -209,20 +194,34 @@ const submittedDraftSchema = v.looseObject({
   submittedAt: v.nullable(v.string()),
   comments: v.array(submittedDraftCommentSchema),
 });
-const submittedDeliveryFollowupPayloadSchema = v.looseObject({
-  target: v.looseObject({
+const submittedReviewSchema = v.object({
+  id: v.number(),
+  nodeId: v.nullable(v.string()),
+  state: v.string(),
+  authorLogin: v.nullable(v.string()),
+  authorType: v.optional(v.nullable(v.string())),
+  authorIsBot: v.optional(v.boolean()),
+  submittedAt: v.nullable(v.string()),
+  commitId: v.nullable(v.string()),
+  url: v.nullable(v.string()),
+  body: v.optional(v.nullable(v.string())),
+  bodyTruncated: v.optional(v.boolean()),
+});
+const submittedDeliveryFollowupPayloadSchema = v.object({
+  target: v.object({
     repoFullName: v.string(),
     owner: v.string(),
     repo: v.string(),
     number: v.number(),
   }),
-  result: v.looseObject({
+  result: v.object({
     draft: v.nullable(submittedDraftSchema),
     review: submittedReviewSchema,
   }),
   commentIds: v.optional(v.array(v.string())),
   verifyByReviewIdentityOnly: v.optional(v.boolean()),
 });
+
 type SubmittedDeliveryFollowupPayload = v.InferOutput<
   typeof submittedDeliveryFollowupPayloadSchema
 >;

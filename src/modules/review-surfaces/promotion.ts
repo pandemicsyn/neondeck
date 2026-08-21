@@ -31,7 +31,6 @@ import {
 const untrustedInputSchema = v.unknown();
 const recordSchema = v.record(v.string(), untrustedInputSchema);
 const nonEmptyStringSchema = v.pipe(v.string(), v.minLength(1));
-const positiveIntegerSchema = v.pipe(v.number(), v.integer(), v.minValue(1));
 type UntrustedInput = v.InferInput<typeof untrustedInputSchema>;
 type InputRecord = v.InferOutput<typeof recordSchema>;
 
@@ -635,6 +634,9 @@ function stringField(value: UntrustedInput) {
 }
 
 function positiveIntegerField(value: UntrustedInput) {
-  const parsed = v.safeParse(positiveIntegerSchema, value);
+  const parsed = v.safeParse(
+    v.pipe(v.number(), v.integer(), v.minValue(1)),
+    value,
+  );
   return parsed.success ? parsed.output : null;
 }

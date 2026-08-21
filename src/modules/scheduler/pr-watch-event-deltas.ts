@@ -5,7 +5,6 @@ import type {
   PrWatchEventWatermarkRecord,
 } from '../pr-events';
 import type { PrWatch } from '../watches';
-import * as v from 'valibot';
 import {
   arrayField,
   booleanField,
@@ -133,13 +132,11 @@ function reviewCommentDeltas(
     }
     const fingerprint = stringField(item.fingerprint);
     const deliveryFingerprint = stringField(item.deliveryFingerprint);
-    const parsedReviewId = v.safeParse(
-      v.union([v.string(), v.number()]),
-      item.reviewId,
-    );
-    const reviewId = parsedReviewId.success
-      ? String(parsedReviewId.output)
-      : undefined;
+    const stringReviewId = stringField(item.reviewId);
+    const numericReviewId = numberField(item.reviewId);
+    const reviewId =
+      stringReviewId ??
+      (numericReviewId === undefined ? undefined : String(numericReviewId));
     const addressedCommentFingerprint =
       filters.addressedReviewCommentFingerprints?.get(id);
     const neondeckDeliveryFingerprint =

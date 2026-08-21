@@ -13,7 +13,6 @@ import {
   upsertPrReviewDraft,
   type GitHubPrReviewDraft,
   type GitHubPrReviewDraftComment,
-  type PrReviewDraftWriteBase,
 } from '../github';
 import {
   type RuntimePaths,
@@ -37,6 +36,20 @@ import {
   commentAnchorExists,
 } from '../../../shared/patch-anchors';
 import { errorMessage, eventTargetJson, failResult, okResult } from './utils';
+
+type DraftWriteValues = {
+  databasePath: string;
+  repo: string;
+  prNumber: number;
+  headSha: string;
+  verdict?: GitHubPrReviewDraft['verdict'];
+  body?: string | null;
+};
+
+type DraftWriteFailure = {
+  errors: string[];
+  requires?: string[];
+};
 
 export async function getGitHubPrReviewDraft(
   input: v.InferInput<typeof prEventTargetInputSchema>,
@@ -165,7 +178,7 @@ export async function putGitHubPrReviewDraft(
     );
   }
 
-  const draftValues: PrReviewDraftWriteBase = {
+  const draftValues: DraftWriteValues = {
     databasePath: paths.neondeckDatabase,
     repo: resolved.target.repoFullName,
     prNumber: resolved.target.number,
@@ -179,24 +192,13 @@ export async function putGitHubPrReviewDraft(
   }
   let draft: ReturnType<typeof upsertPrReviewDraft>;
   try {
-    if (parsedDraft.output.expectedAbsent) {
-      draft = upsertPrReviewDraft({ ...draftValues, expectedAbsent: true });
-    } else {
-      const draftId = parsedDraft.output.draftId;
-      const expectedRevision = parsedDraft.output.expectedRevision;
-      if (!draftId || expectedRevision === undefined) {
-        return failResult(
-          'github_pr_review_draft_put',
-          'Saving a review draft requires an exact update identity.',
-          { requires: ['currentDraft'] },
-        );
-      }
-      draft = upsertPrReviewDraft({
-        ...draftValues,
-        draftId,
-        expectedRevision,
-      });
-    }
+    draft = parsedDraft.output.expectedAbsent
+      ? upsertPrReviewDraft({ ...draftValues, expectedAbsent: true })
+      : upsertPrReviewDraft({
+          ...draftValues,
+          draftId: parsedDraft.output.draftId!,
+          expectedRevision: parsedDraft.output.expectedRevision!,
+        });
   } catch (error) {
     return failResult(
       'github_pr_review_draft_put',
@@ -571,12 +573,7 @@ export async function deleteGitHubPrReviewDraft(
   );
 }
 
-type DraftWriteFailure = {
-  errors: string[];
-  requires?: string[];
-};
-
-function draftWriteFailure<TError>(error: TError) {
+function draftWriteFailure<TError>(error: TError): DraftWriteFailure {
   const message = errorMessage(error);
   const changed =
     message.includes('Review draft changed') ||
@@ -584,11 +581,11 @@ function draftWriteFailure<TError>(error: TError) {
     message.includes('Review draft no longer matches') ||
     message.includes('review draft appeared') ||
     message.includes('Review draft is being submitted');
-  const result: DraftWriteFailure = {
+  const failure: DraftWriteFailure = {
     errors: [message],
   };
-  if (changed) result.requires = ['currentDraft'];
-  return result;
+  if (changed) failure.requires = ['currentDraft'];
+  return failure;
 }
 
 function draftMatchesTarget(

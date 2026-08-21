@@ -47,6 +47,7 @@ export function createGitHubRoutes(
   paths: RuntimePaths,
   dependencies: {
     postGitHubPrReview?: typeof postGitHubPrReview;
+    putGitHubPrReviewDraft?: typeof putGitHubPrReviewDraft;
     recordHumanReviewSubmittedApiEvidence?: typeof recordHumanReviewSubmittedApiEvidence;
   } = {},
 ) {
@@ -271,12 +272,11 @@ export function createGitHubRoutes(
     const requestedDraftId = isJsonString(reviewInputObject.draftId)
       ? reviewInputObject.draftId
       : null;
-    const expectedDraftRevision =
-      isJsonNumber(reviewInputObject.expectedDraftRevision) &&
-      Number.isInteger(reviewInputObject.expectedDraftRevision) &&
-      reviewInputObject.expectedDraftRevision > 0
-        ? reviewInputObject.expectedDraftRevision
-        : null;
+    const expectedDraftRevision = isJsonNumber(
+      reviewInputObject.expectedDraftRevision,
+    )
+      ? reviewInputObject.expectedDraftRevision
+      : null;
     if (!requestedDraftId || !expectedDraftRevision) {
       return c.json(
         {
@@ -477,7 +477,7 @@ export function createGitHubRoutes(
             acceptedReview.review,
           );
           return c.json(
-            reserved && !submitted
+            !submitted
               ? {
                   ...result,
                   message:
@@ -651,9 +651,11 @@ type GitHubActionResult = {
   errors?: string[];
 };
 
+type ReviewTargetIdentity = { repo: string; prNumber: number };
+
 function withCurrentDraftOnConflict<T extends GitHubActionResult>(
   result: T,
-  target: { repo: string; prNumber: number },
+  target: ReviewTargetIdentity,
   paths: RuntimePaths,
 ) {
   if (!result.requires?.includes('currentDraft')) return result;

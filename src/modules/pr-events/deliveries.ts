@@ -7,14 +7,14 @@ const deliveryRowSchema = v.strictObject({
   item_id: v.pipe(v.string(), v.minLength(1)),
   item_fingerprint: v.pipe(v.string(), v.regex(/^[a-f0-9]{64}$/)),
 });
-const pendingDeliveryRowSchema = v.looseObject({ payload_json: v.string() });
-const pendingDeliveryPayloadSchema = v.looseObject({
-  target: v.looseObject({
+const pendingPayloadRowSchema = v.object({ payload_json: v.string() });
+const pendingDeliveryPayloadSchema = v.object({
+  target: v.object({
     repoFullName: v.string(),
     number: v.number(),
   }),
-  result: v.looseObject({
-    review: v.looseObject({ id: v.union([v.string(), v.number()]) }),
+  result: v.object({
+    review: v.object({ id: v.union([v.string(), v.number()]) }),
   }),
 });
 
@@ -108,15 +108,14 @@ export function readPendingNeondeckPrReviewIds(
          FROM pr_review_submission_followups
          WHERE kind = 'delivery' AND status IN ('pending', 'processing');`,
       )
-      .all();
+      .all()
+      .map((row) => v.parse(pendingPayloadRowSchema, row));
     const result = new Set<string>();
     for (const row of rows) {
-      const parsedRow = v.safeParse(pendingDeliveryRowSchema, row);
-      if (!parsedRow.success) continue;
       try {
         const payload = v.parse(
           pendingDeliveryPayloadSchema,
-          JSON.parse(parsedRow.output.payload_json),
+          JSON.parse(row.payload_json),
         );
         if (
           payload.target.repoFullName.toLowerCase() ===

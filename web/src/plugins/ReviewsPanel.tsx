@@ -4,6 +4,7 @@ import {
   useQuery,
   useQueryClient,
 } from '@tanstack/react-query';
+import * as v from 'valibot';
 import {
   Children,
   useCallback,
@@ -12,7 +13,6 @@ import {
   type FormEvent,
   type ReactNode,
 } from 'react';
-import * as v from 'valibot';
 import {
   archivePrReview,
   getPrReviews,
@@ -31,7 +31,6 @@ import { relativeTime } from '../lib/format';
 import { useDashboardEventConnectionState } from '../lib/dashboard-connection';
 import { actionErrorMessage, queryErrorMessage, queryKeys } from '../lib/query';
 import type { DisplayPlugin } from '../types';
-import type { WebExternalValue } from '../api/schemas';
 
 export const ReviewsPanelPlugin = {
   id: 'reviews-panel',
@@ -87,10 +86,10 @@ export const ReviewsPanelPlugin = {
       [],
     );
     const recordActionError = useCallback(
-      (
+      <TError,>(
         action: PanelMutationAction,
         variables: string,
-        error: WebExternalValue,
+        error: TError,
       ) => {
         setActionError({
           error,
@@ -383,7 +382,7 @@ type PanelMutationAction =
   'archive' | 'reconcile' | 'restart' | 'restore' | 'start';
 
 type PanelActionError = {
-  error: WebExternalValue;
+  error: unknown;
   targetKey: string;
 };
 
@@ -392,10 +391,11 @@ function panelMutationKey(action: PanelMutationAction) {
 }
 
 function usePendingVariables(mutationKey: ReturnType<typeof panelMutationKey>) {
+  const stringSchema = v.string();
   const variables = useMutationState<string | undefined>({
     filters: { mutationKey, status: 'pending' },
     select: (mutation) => {
-      const parsed = v.safeParse(v.string(), mutation.state.variables);
+      const parsed = v.safeParse(stringSchema, mutation.state.variables);
       return parsed.success ? parsed.output : undefined;
     },
   });

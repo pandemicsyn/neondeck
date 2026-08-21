@@ -145,7 +145,7 @@ export async function getGitHubPrReviewDraft(
   return response.data?.draft ?? null;
 }
 
-export type PutGitHubPrReviewDraftInput = {
+export async function putGitHubPrReviewDraft(input: {
   draftId?: string;
   expectedRevision?: number;
   expectedAbsent?: boolean;
@@ -157,11 +157,7 @@ export type PutGitHubPrReviewDraftInput = {
   reanchorHeadSha?: boolean;
   expectedDraftId?: string;
   expectedHeadSha?: string;
-};
-
-export async function putGitHubPrReviewDraft(
-  input: PutGitHubPrReviewDraftInput,
-) {
+}) {
   const [owner, name] = parseRepo(input.repo);
   const body: GitHubPrReviewDraftUpdateBody = { headSha: input.headSha };
   if (input.draftId) body.draftId = input.draftId;

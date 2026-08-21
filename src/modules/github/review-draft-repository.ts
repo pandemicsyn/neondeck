@@ -51,7 +51,7 @@ export class ReviewDraftRepository {
   }
 
   requireEditable(identity: EditableDraftIdentity) {
-    const row = v.safeParse(
+    const parsed = v.safeParse(
       draftStateRowSchema,
       this.database
         .prepare(
@@ -61,21 +61,22 @@ export class ReviewDraftRepository {
         )
         .get(identity.draftId),
     );
-    if (!row.success || row.output.status !== 'draft') {
+    if (!parsed.success) {
       throw new Error('Review draft is not editable.');
     }
-    if (row.output.revision !== identity.expectedRevision) {
+    const row = parsed.output;
+    if (row.status !== 'draft') {
+      throw new Error('Review draft is not editable.');
+    }
+    if (row.revision !== identity.expectedRevision) {
       throw new Error('Review draft changed before the mutation.');
     }
-    if (
-      identity.expectedHeadSha &&
-      row.output.head_sha !== identity.expectedHeadSha
-    ) {
+    if (identity.expectedHeadSha && row.head_sha !== identity.expectedHeadSha) {
       throw new Error(
         'Review draft no longer matches the expected head revision.',
       );
     }
-    return row.output;
+    return row;
   }
 }
 

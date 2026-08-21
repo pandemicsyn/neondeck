@@ -36,7 +36,6 @@ import {
   type GitHubPrReviewVerdict,
   type GitHubPullRequest,
   type PrReviewReportOnlyFinding,
-  type PutGitHubPrReviewDraftInput,
 } from '../../api';
 import { Badge, MiniEmpty } from '../../components/ui';
 import { queryErrorMessage } from '../../lib/query';
@@ -1479,7 +1478,7 @@ export function GitHubPrReview({
     }>,
     headSha: string,
   ) => {
-    const input: PutGitHubPrReviewDraftInput = {
+    const input: Parameters<typeof mutations.saveDraft.mutateAsync>[0] = {
       repo: pr.repo,
       number: pr.number,
       headSha,

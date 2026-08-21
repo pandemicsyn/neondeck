@@ -530,7 +530,7 @@ export function useGitHubPrReviewMutations(pr: GitHubPullRequest) {
   };
 }
 
-const reviewDraftCommentSchema = v.looseObject({
+const reviewDraftCommentSchema = v.object({
   id: v.string(),
   draftId: v.string(),
   path: v.string(),
@@ -544,7 +544,7 @@ const reviewDraftCommentSchema = v.looseObject({
   createdAt: v.string(),
   updatedAt: v.string(),
 });
-const reviewDraftSchema = v.looseObject({
+const reviewDraftSchema = v.object({
   id: v.string(),
   repo: v.string(),
   prNumber: v.number(),
@@ -563,29 +563,24 @@ const submittedReviewResponseSchema = v.looseObject({
   data: v.optional(
     v.looseObject({
       code: v.optional(v.string()),
-      review: v.optional(
-        v.looseObject({ id: v.union([v.string(), v.number()]) }),
-      ),
-      draft: v.optional(reviewDraftSchema),
+      review: v.optional(v.unknown()),
+      draft: v.optional(v.looseObject({ id: v.string(), status: v.string() })),
     }),
   ),
 });
 const currentDraftConflictSchema = v.looseObject({
   data: v.optional(
-    v.looseObject({ currentDraft: v.optional(v.nullable(reviewDraftSchema)) }),
+    v.looseObject({
+      currentDraft: v.optional(v.nullable(reviewDraftSchema)),
+    }),
   ),
 });
 
 function currentDraftFromConflict<TError>(error: TError) {
   if (!(error instanceof ApiError) || error.status !== 409) return undefined;
   const result = v.safeParse(currentDraftConflictSchema, error.data);
-  if (
-    !result.success ||
-    !result.output.data ||
-    !('currentDraft' in result.output.data)
-  ) {
-    return undefined;
-  }
+  if (!result.success || !result.output.data) return undefined;
+  if (!('currentDraft' in result.output.data)) return undefined;
   return result.output.data.currentDraft ?? null;
 }
 
@@ -630,7 +625,7 @@ export function submittedReviewWasAccepted<TError>(error: TError) {
   return submittedReviewDraftFromError(error) !== null;
 }
 
-function submittedReviewDraftFromError<TCause>(cause: TCause) {
+function submittedReviewDraftFromError<TError>(cause: TError) {
   if (!(cause instanceof ApiError)) return null;
   const parsed = v.safeParse(submittedReviewResponseSchema, cause.data);
   if (!parsed.success) return null;

@@ -1,34 +1,22 @@
-import type { JsonValue } from '@flue/runtime';
 import { openDb } from '../../lib/sqlite';
 import type { RuntimePaths } from '../../runtime-home';
-import { jsonValueSchema } from '../sessions';
 import * as v from 'valibot';
 
-const followupRowSchema = v.looseObject({
+const claimedFollowupRowSchema = v.object({
   id: v.string(),
   kind: v.picklist(['delivery', 'evidence']),
   payload_json: v.string(),
 });
-const followupIdRowSchema = v.looseObject({ id: v.string() });
-const followupAttemptRowSchema = v.looseObject({ attempt_count: v.number() });
-const errorSchema = v.instance(Error);
-const followupExternalValueSchema = v.unknown();
-type PrReviewFollowupExternalValue = v.InferInput<
-  typeof followupExternalValueSchema
->;
+const followupIdRowSchema = v.object({ id: v.string() });
+const attemptCountRowSchema = v.object({ attempt_count: v.number() });
 
 export type PrReviewSubmissionFollowupKind = 'delivery' | 'evidence';
 
 export type PrReviewSubmissionFollowup = {
   id: string;
   kind: PrReviewSubmissionFollowupKind;
-  payload: PrReviewFollowupExternalValue;
+  payload: unknown;
 };
-
-type ClaimedPrReviewSubmissionFollowup = Omit<
-  PrReviewSubmissionFollowup,
-  'payload'
-> & { payload: JsonValue };
 
 export function enqueuePrReviewSubmissionFollowup(
   input: PrReviewSubmissionFollowup,
@@ -37,8 +25,6 @@ export function enqueuePrReviewSubmissionFollowup(
   const database = openDb(paths.neondeckDatabase);
   const now = new Date().toISOString();
   try {
-    const payloadJson = v.parse(v.string(), JSON.stringify(input.payload));
-    v.parse(jsonValueSchema, JSON.parse(payloadJson));
     database
       .prepare(
         `INSERT INTO pr_review_submission_followups (
@@ -47,7 +33,7 @@ export function enqueuePrReviewSubmissionFollowup(
          ) VALUES (?, ?, ?, 'pending', 0, ?, NULL, ?, ?, NULL)
          ON CONFLICT(id) DO NOTHING;`,
       )
-      .run(input.id, input.kind, payloadJson, now, now, now);
+      .run(input.id, input.kind, JSON.stringify(input.payload), now, now, now);
   } finally {
     database.close();
   }
@@ -82,12 +68,12 @@ export function claimPrReviewSubmissionFollowup(
   kind: PrReviewSubmissionFollowupKind,
   paths: RuntimePaths,
   id?: string,
-): ClaimedPrReviewSubmissionFollowup | null {
+): PrReviewSubmissionFollowup | null {
   const database = openDb(paths.neondeckDatabase);
   const now = new Date().toISOString();
   try {
     database.exec('BEGIN IMMEDIATE;');
-    const row = id
+    const rawRow = id
       ? database
           .prepare(
             `SELECT id, kind, payload_json
@@ -107,15 +93,13 @@ export function claimPrReviewSubmissionFollowup(
              LIMIT 1;`,
           )
           .get(kind, now);
-    const parsedRow = v.safeParse(followupRowSchema, row);
+    const parsedRow = v.safeParse(claimedFollowupRowSchema, rawRow);
     if (!parsedRow.success) {
       database.exec('COMMIT;');
       return null;
     }
-    const payload = v.parse(
-      jsonValueSchema,
-      JSON.parse(parsedRow.output.payload_json),
-    );
+    const row = parsedRow.output;
+    const payload = JSON.parse(row.payload_json);
     const claimed = database
       .prepare(
         `UPDATE pr_review_submission_followups
@@ -123,11 +107,11 @@ export function claimPrReviewSubmissionFollowup(
              updated_at = ?
          WHERE id = ? AND status = 'pending';`,
       )
-      .run(now, parsedRow.output.id);
+      .run(now, row.id);
     database.exec('COMMIT;');
     if (claimed.changes !== 1) return null;
     return {
-      id: parsedRow.output.id,
+      id: row.id,
       kind,
       payload,
     };
@@ -157,10 +141,7 @@ export function listPendingPrReviewSubmissionFollowupIds(
            ORDER BY created_at ASC;`,
       )
       .all(kind)
-      .flatMap((row) => {
-        const parsed = v.safeParse(followupIdRowSchema, row);
-        return parsed.success ? [parsed.output.id] : [];
-      });
+      .map((row) => v.parse(followupIdRowSchema, row).id);
   } finally {
     database.close();
   }
@@ -182,7 +163,7 @@ export function retryPrReviewSubmissionFollowup<TError>(
   const now = new Date();
   try {
     const parsedRow = v.safeParse(
-      followupAttemptRowSchema,
+      attemptCountRowSchema,
       database
         .prepare(
           `SELECT attempt_count
@@ -204,7 +185,7 @@ export function retryPrReviewSubmissionFollowup<TError>(
          WHERE id = ? AND status = 'processing';`,
       )
       .run(
-        errorMessage(error),
+        error instanceof Error ? error.message : String(error),
         now.toISOString(),
         new Date(now.getTime() + retryDelayMs).toISOString(),
         id,
@@ -213,11 +194,6 @@ export function retryPrReviewSubmissionFollowup<TError>(
   } finally {
     database.close();
   }
-}
-
-function errorMessage<TError>(error: TError) {
-  const parsed = v.safeParse(errorSchema, error);
-  return parsed.success ? parsed.output.message : String(error);
 }
 
 export function recoverProcessingPrReviewSubmissionFollowups(

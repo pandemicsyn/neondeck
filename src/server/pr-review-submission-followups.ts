@@ -2,6 +2,7 @@ import {
   humanReviewSubmittedEvidenceSchema,
   type HumanReviewSubmittedEvidenceInput,
 } from '../modules/learning/reviews/pr-evidence';
+import * as v from 'valibot';
 import {
   claimPrReviewSubmissionFollowup,
   completePrReviewSubmissionFollowup,
@@ -12,7 +13,6 @@ import {
 } from '../modules/pr-reviews/submission-followups';
 import type { RuntimePaths } from '../runtime-home';
 import { recordHumanReviewSubmittedApiEvidence } from './learning-hooks';
-import * as v from 'valibot';
 
 type EvidenceRecorder = typeof recordHumanReviewSubmittedApiEvidence;
 
@@ -61,10 +61,11 @@ async function processPrReviewEvidenceFollowup(
   const followup = claimPrReviewSubmissionFollowup('evidence', paths, id);
   if (!followup) return false;
   try {
-    const result = await recordEvidence(
-      paths,
-      v.parse(humanReviewSubmittedEvidenceSchema, followup.payload),
+    const evidence = v.parse(
+      humanReviewSubmittedEvidenceSchema,
+      followup.payload,
     );
+    const result = await recordEvidence(paths, evidence);
     if (result === null) {
       throw new Error('Submitted-review evidence was not recorded.');
     }
