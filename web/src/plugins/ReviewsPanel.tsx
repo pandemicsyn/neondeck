@@ -41,6 +41,9 @@ export const ReviewsPanelPlugin = {
     const eventConnection = useDashboardEventConnectionState();
     const [adding, setAdding] = useState(false);
     const [ref, setRef] = useState('');
+    const [actionError, setActionError] = useState<PanelActionError | null>(
+      null,
+    );
     const { data, error, isLoading } = useQuery({
       queryKey: queryKeys.prReviews,
       queryFn: ({ signal }) => getPrReviews({}, { signal }),
@@ -72,15 +75,37 @@ export const ReviewsPanelPlugin = {
       },
       [queryClient],
     );
+    const clearActionError = useCallback(
+      (action: PanelMutationAction, variables: string) => {
+        const targetKey = panelMutationTargetKey(action, variables);
+        setActionError((current) =>
+          current?.targetKey === targetKey ? null : current,
+        );
+      },
+      [],
+    );
+    const recordActionError = useCallback(
+      (action: PanelMutationAction, variables: string, error: unknown) => {
+        setActionError({
+          error,
+          targetKey: panelMutationTargetKey(action, variables),
+        });
+      },
+      [],
+    );
     const startMutation = useMutation({
       mutationKey: panelMutationKey('start'),
       mutationFn: (reviewRef: string) =>
         startPrReview({ ref: reviewRef, origin: 'panel' }),
-      async onMutate() {
+      async onMutate(reviewRef) {
+        clearActionError('start', reviewRef);
         await Promise.all([
           queryClient.cancelQueries({ queryKey: queryKeys.prReviews }),
           queryClient.cancelQueries({ queryKey: queryKeys.prReviewsLocal }),
         ]);
+      },
+      onError(error, reviewRef) {
+        recordActionError('start', reviewRef, error);
       },
       onSuccess(result) {
         updateReviewCaches(result.review);
@@ -91,6 +116,12 @@ export const ReviewsPanelPlugin = {
     const restartMutation = useMutation({
       mutationKey: panelMutationKey('restart'),
       mutationFn: (id: string) => restartPrReview(id),
+      onMutate(id) {
+        clearActionError('restart', id);
+      },
+      onError(error, id) {
+        recordActionError('restart', id, error);
+      },
       onSuccess(result) {
         updateReviewCaches(result.review);
       },
@@ -98,6 +129,12 @@ export const ReviewsPanelPlugin = {
     const reconcileMutation = useMutation({
       mutationKey: panelMutationKey('reconcile'),
       mutationFn: (id: string) => reconcilePrReviewSubmission(id),
+      onMutate(id) {
+        clearActionError('reconcile', id);
+      },
+      onError(error, id) {
+        recordActionError('reconcile', id, error);
+      },
       onSuccess(result) {
         updateReviewCaches(result.review);
       },
@@ -105,6 +142,12 @@ export const ReviewsPanelPlugin = {
     const archiveMutation = useMutation({
       mutationKey: panelMutationKey('archive'),
       mutationFn: (id: string) => archivePrReview(id),
+      onMutate(id) {
+        clearActionError('archive', id);
+      },
+      onError(error, id) {
+        recordActionError('archive', id, error);
+      },
       onSuccess(result) {
         updateReviewCaches(result.review);
       },
@@ -112,6 +155,12 @@ export const ReviewsPanelPlugin = {
     const restoreMutation = useMutation({
       mutationKey: panelMutationKey('restore'),
       mutationFn: (id: string) => restorePrReview(id),
+      onMutate(id) {
+        clearActionError('restore', id);
+      },
+      onError(error, id) {
+        recordActionError('restore', id, error);
+      },
       onSuccess(result) {
         updateReviewCaches(result.review);
       },
@@ -123,6 +172,8 @@ export const ReviewsPanelPlugin = {
     );
     const pendingArchiveIds = usePendingVariables(panelMutationKey('archive'));
     const pendingRestoreIds = usePendingVariables(panelMutationKey('restore'));
+    const pendingStartKeys = new Set(pendingStartRefs.map(prReviewRefKey));
+    const uniquePendingStartRefs = uniqueReviewRefs(pendingStartRefs);
 
     useEffect(
       () =>
@@ -170,28 +221,23 @@ export const ReviewsPanelPlugin = {
               value={ref}
             />
             <Button
-              disabled={!ref.trim() || pendingStartRefs.includes(ref.trim())}
+              disabled={
+                !ref.trim() || pendingStartKeys.has(prReviewRefKey(ref))
+              }
               type="submit"
             >
-              {ref.trim() && pendingStartRefs.includes(ref.trim())
+              {ref.trim() && pendingStartKeys.has(prReviewRefKey(ref))
                 ? 'starting'
                 : 'start'}
             </Button>
           </form>
         ) : null}
-        {startMutation.error ||
-        restartMutation.error ||
-        reconcileMutation.error ||
-        archiveMutation.error ||
-        restoreMutation.error ? (
-          <p className="border-b border-accent/60 px-3 py-1.5 font-mono text-[10px] text-accent">
-            {actionErrorMessage(
-              startMutation.error ??
-                restartMutation.error ??
-                reconcileMutation.error ??
-                archiveMutation.error ??
-                restoreMutation.error,
-            )}
+        {actionError ? (
+          <p
+            className="border-b border-accent/60 px-3 py-1.5 font-mono text-[10px] text-accent"
+            role="alert"
+          >
+            {actionErrorMessage(actionError.error)}
           </p>
         ) : null}
         {isLoading ? (
@@ -221,8 +267,11 @@ export const ReviewsPanelPlugin = {
                     onRestart={(id) => restartMutation.mutate(id)}
                     onStart={(reviewRef) => startMutation.mutate(reviewRef)}
                     pending={
-                      pendingStartRefs.includes(
-                        `${item.pullRequest.repo}#${item.pullRequest.number}`,
+                      pendingStartKeys.has(
+                        prReviewTargetKey(
+                          item.pullRequest.repo,
+                          item.pullRequest.number,
+                        ),
                       ) ||
                       (item.review !== null &&
                         pendingRestartIds.includes(item.review.id))
@@ -234,11 +283,13 @@ export const ReviewsPanelPlugin = {
                 empty="No reviews are running."
                 title="IN PROGRESS"
               >
-                {pendingStartRefs
+                {uniquePendingStartRefs
                   .filter(
                     (reviewRef) =>
                       !data.groups.inProgress.some(
-                        (review) => review.ref === reviewRef,
+                        (review) =>
+                          prReviewRefKey(review.ref) ===
+                          prReviewRefKey(reviewRef),
                       ),
                   )
                   .map((reviewRef) => (
@@ -322,16 +373,63 @@ export const ReviewsPanelPlugin = {
   },
 } satisfies DisplayPlugin<Record<string, never>>;
 
-function panelMutationKey(
-  action: 'archive' | 'reconcile' | 'restart' | 'restore' | 'start',
-) {
+type PanelMutationAction =
+  'archive' | 'reconcile' | 'restart' | 'restore' | 'start';
+
+type PanelActionError = {
+  error: unknown;
+  targetKey: string;
+};
+
+function panelMutationKey(action: PanelMutationAction) {
   return ['reviews-panel', action];
 }
 
 function usePendingVariables(mutationKey: ReturnType<typeof panelMutationKey>) {
-  return useMutationState<string>({
+  const variables = useMutationState<string | undefined>({
     filters: { mutationKey, status: 'pending' },
-    select: (mutation) => mutation.state.variables as string,
+    select: (mutation) =>
+      typeof mutation.state.variables === 'string'
+        ? mutation.state.variables
+        : undefined,
+  });
+  return variables.filter((value): value is string => value !== undefined);
+}
+
+function panelMutationTargetKey(
+  action: PanelMutationAction,
+  variables: string,
+) {
+  return `${action}:${action === 'start' ? prReviewRefKey(variables) : variables}`;
+}
+
+export function prReviewRefKey(ref: string) {
+  const trimmed = ref.trim();
+  const url = trimmed.match(/github\.com\/([^/\s]+)\/([^/\s]+)\/pull\/(\d+)/i);
+  if (url) {
+    return prReviewTargetKey(
+      `${url[1]}/${url[2].replace(/\.git$/i, '')}`,
+      Number(url[3]),
+    );
+  }
+
+  const hash = trimmed.match(/^([A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+)#(\d+)$/);
+  if (hash) return prReviewTargetKey(hash[1], Number(hash[2]));
+
+  return trimmed.toLowerCase();
+}
+
+function prReviewTargetKey(repo: string, number: number) {
+  return `${repo.toLowerCase()}#${number}`;
+}
+
+function uniqueReviewRefs(refs: string[]) {
+  const seen = new Set<string>();
+  return refs.filter((ref) => {
+    const key = prReviewRefKey(ref);
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
   });
 }
 

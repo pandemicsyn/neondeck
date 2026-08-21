@@ -116,7 +116,101 @@ describe('ReviewsPanel concurrent row mutations', () => {
 
     expect(reviewButtons()).toHaveLength(0);
   });
+
+  it('keeps an earlier concurrent failure visible after a later start succeeds', async () => {
+    const firstStart = deferred<PrReviewMutationResponse>();
+    const secondStart = deferred<PrReviewMutationResponse>();
+    let startCount = 0;
+    api.startPrReview.mockImplementation(() => {
+      startCount += 1;
+      return startCount === 1 ? firstStart.promise : secondStart.promise;
+    });
+    await renderPanel();
+
+    await act(async () => {
+      reviewButtons()[0]!.click();
+    });
+    await settle();
+    await act(async () => {
+      reviewButtons()[1]!.click();
+    });
+    await settle();
+
+    await act(async () => {
+      firstStart.reject(new Error('First review failed'));
+    });
+    await settle();
+
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain(
+      'First review failed',
+    );
+    expect(reviewButtons()[0]?.disabled).toBe(false);
+    expect(reviewButtons()[1]?.disabled).toBe(true);
+
+    await act(async () => {
+      secondStart.resolve(startedResponse('owner/project', 2));
+    });
+    await settle();
+
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain(
+      'First review failed',
+    );
+  });
+
+  it('matches a pending GitHub URL to its canonical awaiting row', async () => {
+    const start = deferred<PrReviewMutationResponse>();
+    api.startPrReview.mockReturnValue(start.promise);
+    await renderPanel();
+
+    await act(async () => {
+      buttonWithText('+ review a PR').click();
+    });
+    const input = container.querySelector('input')!;
+    await act(async () => {
+      setInputValue(
+        input,
+        'https://github.com/OWNER/PROJECT/pull/1?from=reviews',
+      );
+    });
+    await settle();
+    await act(async () => {
+      buttonWithText('start').click();
+    });
+    await settle();
+
+    expect(api.startPrReview).toHaveBeenCalledWith({
+      origin: 'panel',
+      ref: 'https://github.com/OWNER/PROJECT/pull/1?from=reviews',
+    });
+    expect(reviewButtons()[0]?.disabled).toBe(true);
+    expect(reviewButtons()[0]?.textContent).toBe('starting…');
+    expect(reviewButtons()[1]?.disabled).toBe(false);
+    expect(buttonWithText('starting').disabled).toBe(true);
+
+    await act(async () => {
+      start.resolve(startedResponse('owner/project', 1));
+    });
+    await settle();
+  });
 });
+
+async function renderPanel() {
+  const queryClient = new QueryClient({
+    defaultOptions: {
+      mutations: { retry: false },
+      queries: { retry: false },
+    },
+  });
+  const Component = ReviewsPanelPlugin.Component;
+  await act(async () => {
+    root.render(
+      <QueryClientProvider client={queryClient}>
+        <Component />
+      </QueryClientProvider>,
+    );
+  });
+  await settle();
+}
 
 async function settle() {
   await act(async () => {
@@ -133,12 +227,32 @@ function reviewButtons() {
   );
 }
 
+function buttonWithText(text: string) {
+  const button = [...container.querySelectorAll('button')].find(
+    (candidate) => candidate.textContent === text,
+  );
+  if (!button) throw new Error(`Button not found: ${text}`);
+  return button;
+}
+
+function setInputValue(input: HTMLInputElement, value: string) {
+  const setter = Object.getOwnPropertyDescriptor(
+    HTMLInputElement.prototype,
+    'value',
+  )?.set;
+  if (!setter) throw new Error('HTMLInputElement value setter not found.');
+  setter.call(input, value);
+  input.dispatchEvent(new Event('input', { bubbles: true }));
+}
+
 function deferred<T>() {
   let resolve!: (value: T) => void;
-  const promise = new Promise<T>((res) => {
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((res, rej) => {
     resolve = res;
+    reject = rej;
   });
-  return { promise, resolve };
+  return { promise, reject, resolve };
 }
 
 function startedResponse(
