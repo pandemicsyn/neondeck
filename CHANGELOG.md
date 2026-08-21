@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.0.0-beta.37
+
+### Patch Changes
+
+- [#315](https://github.com/pandemicsyn/neondeck/pull/315) [`bedbb8c`](https://github.com/pandemicsyn/neondeck/commit/bedbb8c804094fef1cd91fadb10cb529a2f942a5) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Keep concurrent PR review actions scoped to their target and preserve an earlier failure when another request settles.
+
 ## 1.0.0-beta.36
 
 ### Patch Changes
