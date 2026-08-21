@@ -202,7 +202,11 @@ export const ReviewsPanelPlugin = {
                     onRestart={(id) => restartMutation.mutate(id)}
                     onStart={(reviewRef) => startMutation.mutate(reviewRef)}
                     pending={
-                      startMutation.isPending || restartMutation.isPending
+                      (startMutation.isPending &&
+                        startMutation.variables ===
+                          `${item.pullRequest.repo}#${item.pullRequest.number}`) ||
+                      (restartMutation.isPending &&
+                        restartMutation.variables === item.review?.id)
                     }
                   />
                 ))}
@@ -237,7 +241,10 @@ export const ReviewsPanelPlugin = {
                     onArchive={(id) => archiveMutation.mutate(id)}
                     onRestart={(id) => restartMutation.mutate(id)}
                     pending={
-                      restartMutation.isPending || archiveMutation.isPending
+                      (restartMutation.isPending &&
+                        restartMutation.variables === review.id) ||
+                      (archiveMutation.isPending &&
+                        archiveMutation.variables === review.id)
                     }
                     review={review}
                   />
@@ -254,7 +261,10 @@ export const ReviewsPanelPlugin = {
                       <ReviewRow
                         key={review.id}
                         onArchive={(id) => archiveMutation.mutate(id)}
-                        pending={archiveMutation.isPending}
+                        pending={
+                          archiveMutation.isPending &&
+                          archiveMutation.variables === review.id
+                        }
                         review={review}
                       />
                     ))
@@ -276,7 +286,10 @@ export const ReviewsPanelPlugin = {
                       <ReviewRow
                         key={review.id}
                         onRestore={(id) => restoreMutation.mutate(id)}
-                        pending={restoreMutation.isPending}
+                        pending={
+                          restoreMutation.isPending &&
+                          restoreMutation.variables === review.id
+                        }
                         review={review}
                       />
                     ))
@@ -389,7 +402,7 @@ function AwaitingRow({
             onClick={() => onRestart(review.id)}
             type="button"
           >
-            re-review
+            {pending ? 'starting…' : 're-review'}
           </Button>
         ) : review?.status === 'reviewing' ||
           review?.status === 'submitting' ? (
@@ -400,7 +413,7 @@ function AwaitingRow({
             onClick={() => onStart(`${pullRequest.repo}#${pullRequest.number}`)}
             type="button"
           >
-            review
+            {pending ? 'starting…' : 'review'}
           </Button>
         )}
       </div>
