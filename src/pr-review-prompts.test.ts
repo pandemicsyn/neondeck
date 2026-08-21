@@ -146,6 +146,9 @@ describe('PR review prompts', () => {
       getReviewThreads: async () =>
         reviewThreadsResult('future-reviewer', 'b'.repeat(40)),
     });
+    const unavailableHead = await buildPrReviewerRuntime(id, paths, {
+      getReviewThreads: async () => reviewThreadsResult('unknown-head', null),
+    });
     const newerDraft = upsertPrReviewDraft({
       databasePath: paths.neondeckDatabase,
       repo: 'other/project',
@@ -227,6 +230,22 @@ describe('PR review prompts', () => {
         ],
       },
     });
+    expect(JSON.parse(unavailableHead.context)).toMatchObject({
+      liveGitHubReviewThreads: {
+        available: true,
+        headSha: null,
+        revisionMatch: null,
+        repositoryCorrelation: 'unverified',
+        anchorsIncluded: false,
+        threads: [
+          {
+            path: null,
+            line: null,
+            comments: [{ path: null, line: null }],
+          },
+        ],
+      },
+    });
     expect(JSON.parse(mismatchedDraft.context)).toMatchObject({
       localDraftRevision: {
         available: true,
@@ -260,7 +279,10 @@ describe('PR review prompts', () => {
   });
 });
 
-function reviewThreadsResult(authorLogin: string, headSha = 'a'.repeat(40)) {
+function reviewThreadsResult(
+  authorLogin: string,
+  headSha: string | null = 'a'.repeat(40),
+) {
   return {
     ok: true,
     action: 'github_pr_review_threads_get',

@@ -63,25 +63,29 @@ function redactOutput(value: string) {
 }
 
 const commandErrorSchema = v.looseObject({
-  code: v.optional(v.number()),
-  signal: v.optional(v.string()),
-  stdout: v.optional(v.string()),
-  stderr: v.optional(v.string()),
+  code: v.optional(v.unknown()),
+  signal: v.optional(v.unknown()),
+  stdout: v.optional(v.unknown()),
+  stderr: v.optional(v.unknown()),
 });
 
 export function commandError<TError>(error: TError) {
   const parsed = v.safeParse(commandErrorSchema, error);
   const record = parsed.success ? parsed.output : {};
-  const exitCode = record.code ?? null;
+  const code = v.safeParse(v.number(), record.code);
+  const signal = v.safeParse(v.string(), record.signal);
+  const stdout = v.safeParse(v.string(), record.stdout);
+  const stderr = v.safeParse(v.string(), record.stderr);
+  const exitCode = code.success ? code.output : null;
   const message =
     error instanceof Error
       ? error.message
-      : `Command failed${record.signal ? ` with signal ${record.signal}` : ''}.`;
+      : `Command failed${signal.success ? ` with signal ${signal.output}` : ''}.`;
   return {
     message,
     exitCode,
-    stdout: record.stdout ?? '',
-    stderr: record.stderr ?? '',
+    stdout: stdout.success ? stdout.output : '',
+    stderr: stderr.success ? stderr.output : '',
   };
 }
 

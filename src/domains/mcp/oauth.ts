@@ -1070,7 +1070,11 @@ function readLoginRow(row: McpOAuthLoginRow): McpOAuthLoginRecord {
 }
 
 function parseStringArray(value: string | null) {
-  return parseJson(value, v.array(v.string())) ?? [];
+  const parsed = parseJson(value, v.array(v.unknown())) ?? [];
+  return parsed.flatMap((item) => {
+    const parsedItem = v.safeParse(v.string(), item);
+    return parsedItem.success ? [parsedItem.output] : [];
+  });
 }
 
 function parseJson<T>(

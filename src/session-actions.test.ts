@@ -769,6 +769,25 @@ describe('session actions', () => {
       false,
     );
 
+    const database = new DatabaseSync(paths.neondeckDatabase);
+    try {
+      database
+        .prepare(
+          'UPDATE chat_sessions SET context_memory_ids_json = ? WHERE id = ?;',
+        )
+        .run(
+          JSON.stringify([(loaded as { memory: { id: string } }).memory.id, 7]),
+          state.activeChatSession.id,
+        );
+    } finally {
+      database.close();
+    }
+
+    state = await readNeonSessionState(paths);
+    expect(state.activeChatSession.contextMemoryIds).toEqual([
+      (loaded as { memory: { id: string } }).memory.id,
+    ]);
+
     await rewriteMemory(
       {
         id: (loaded as { memory: { id: string } }).memory.id,

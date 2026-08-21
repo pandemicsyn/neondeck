@@ -55,7 +55,7 @@ const commandEventRowSchema = v.object({
   completed_at: nullableStringSchema,
   updated_at: v.string(),
 });
-const stringArraySchema = v.array(v.string());
+const stringArraySchema = v.array(v.unknown());
 
 export async function readChatSessionInternal(
   id: string,
@@ -375,7 +375,11 @@ function parsePersistedStringArray(value: SessionExternalValue) {
   if (!text.success) return [];
   try {
     const parsed = v.safeParse(stringArraySchema, JSON.parse(text.output));
-    return parsed.success ? parsed.output : [];
+    if (!parsed.success) return [];
+    return parsed.output.flatMap((item) => {
+      const parsedItem = v.safeParse(v.string(), item);
+      return parsedItem.success ? [parsedItem.output] : [];
+    });
   } catch {
     return [];
   }

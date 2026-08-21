@@ -103,7 +103,7 @@ const reviewerThreadContextBudget = 96_000;
 const liveReviewThreadsDataSchema = v.object({
   reviewThreads: v.optional(v.array(githubPullRequestReviewThreadSchema), []),
   reviewThreadsTruncated: v.optional(v.boolean(), false),
-  headSha: v.optional(v.string()),
+  headSha: v.optional(v.nullable(v.string())),
 });
 
 type PrReviewerRuntimeDependencies = {

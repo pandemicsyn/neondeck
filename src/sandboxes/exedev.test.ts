@@ -3,7 +3,13 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { ExeDevSandboxApi, resolveAuth, type SshExecStream } from './exedev';
+import {
+  ExeDevSandboxApi,
+  isRetryableSshError,
+  parseVmResponse,
+  resolveAuth,
+  type SshExecStream,
+} from './exedev';
 
 const tempRoots: string[] = [];
 
@@ -44,6 +50,26 @@ describe('exe.dev sandbox adapter', () => {
       stderr: expect.stringContaining('Output exceeded 8 bytes'),
       exitCode: 124,
     });
+  });
+
+  it('retains valid VM fields when optional API fields are null', () => {
+    expect(
+      parseVmResponse(JSON.stringify({ vm_name: 'worker-1', ssh_port: null })),
+    ).toEqual({
+      name: 'worker-1',
+      host: 'worker-1.exe.xyz',
+      port: undefined,
+    });
+  });
+
+  it('retries socket errors whose numeric errno accompanies a valid code', () => {
+    expect(
+      isRetryableSshError({
+        code: 'ECONNREFUSED',
+        errno: -61,
+        message: 'connect ECONNREFUSED',
+      }),
+    ).toBe(true);
   });
 });
 

@@ -2719,6 +2719,7 @@ describe('github foundation', () => {
         {
           message: 'Validation failed',
           errors: [
+            'unexpected sibling payload',
             {
               resource: 'PullRequestReviewComment',
               field: 'comments[1].line',

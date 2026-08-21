@@ -106,16 +106,16 @@ const vmName = /^[A-Za-z0-9][A-Za-z0-9-]*$/;
 const shellEnvName = /^[A-Za-z_][A-Za-z0-9_]*$/;
 const disposers = new WeakMap<Sandbox, () => void>();
 const exeVmResponseSchema = v.looseObject({
-  vm_name: v.optional(v.string()),
-  name: v.optional(v.string()),
-  vm: v.optional(v.string()),
-  ssh_dest: v.optional(v.string()),
-  ssh_port: v.optional(v.number()),
+  vm_name: v.optional(v.unknown()),
+  name: v.optional(v.unknown()),
+  vm: v.optional(v.unknown()),
+  ssh_dest: v.optional(v.unknown()),
+  ssh_port: v.optional(v.unknown()),
 });
 const sshErrorSchema = v.looseObject({
-  code: v.optional(v.string()),
-  errno: v.optional(v.string()),
-  message: v.optional(v.string()),
+  code: v.optional(v.unknown()),
+  errno: v.optional(v.unknown()),
+  message: v.optional(v.unknown()),
 });
 
 async function exeApi(token: string, command: string): Promise<string> {
@@ -150,17 +150,26 @@ export function parseVmResponse(output: string): ExeDevVm & { name: string } {
   }
   const parsed = v.safeParse(exeVmResponseSchema, raw);
   const data = parsed.success ? parsed.output : {};
-  const name = data.vm_name ?? data.name ?? data.vm;
+  const vmName = v.safeParse(v.string(), data.vm_name);
+  const fallbackName = v.safeParse(v.string(), data.name);
+  const legacyName = v.safeParse(v.string(), data.vm);
+  const name =
+    (vmName.success ? vmName.output : undefined) ??
+    (fallbackName.success ? fallbackName.output : undefined) ??
+    (legacyName.success ? legacyName.output : undefined);
   if (!name) {
     throw new ExeDevError(
       'exe.dev HTTPS API response missing `vm_name`:\n' +
         `  ${JSON.stringify(data).slice(0, 200)}`,
     );
   }
-  const host = data.ssh_dest || `${name}.exe.xyz`;
+  const parsedHost = v.safeParse(v.string(), data.ssh_dest);
+  const host =
+    (parsedHost.success ? parsedHost.output : '') || `${name}.exe.xyz`;
+  const parsedPort = v.safeParse(v.number(), data.ssh_port);
   const port =
-    data.ssh_port !== undefined && Number.isFinite(data.ssh_port)
-      ? data.ssh_port
+    parsedPort.success && Number.isFinite(parsedPort.output)
+      ? parsedPort.output
       : undefined;
   return { name, host, port };
 }
@@ -299,16 +308,19 @@ export function isRetryableSshError<TError>(err: TError): boolean {
   const parsed = v.safeParse(sshErrorSchema, err);
   if (!parsed.success) return false;
   const e = parsed.output;
-  if (e.code && retryableErrorCodes.has(e.code)) {
+  const code = v.safeParse(v.string(), e.code);
+  const errno = v.safeParse(v.string(), e.errno);
+  const message = v.safeParse(v.string(), e.message);
+  if (code.success && retryableErrorCodes.has(code.output)) {
     return true;
   }
-  if (e.errno && retryableErrorCodes.has(e.errno)) {
+  if (errno.success && retryableErrorCodes.has(errno.output)) {
     return true;
   }
   return (
-    e.message !== undefined &&
+    message.success &&
     /\b(ENOTFOUND|EAI_AGAIN|ECONNREFUSED|ECONNRESET|ETIMEDOUT|EHOSTUNREACH|ENETUNREACH)\b/.test(
-      e.message,
+      message.output,
     )
   );
 }
@@ -328,8 +340,12 @@ async function sshConnectWithRetry(
       if (!isRetryableSshError(err)) throw err;
       if (Date.now() - start > timeoutMs) {
         const parsedLastError = v.safeParse(sshErrorSchema, lastErr);
-        const lastMessage = parsedLastError.success
-          ? parsedLastError.output.message
+        const parsedLastMessage = v.safeParse(
+          v.string(),
+          parsedLastError.success ? parsedLastError.output.message : undefined,
+        );
+        const lastMessage = parsedLastMessage.success
+          ? parsedLastMessage.output
           : undefined;
         throw new ExeDevError(
           `Timed out after ${Math.round((Date.now() - start) / 1000)}s waiting ` +

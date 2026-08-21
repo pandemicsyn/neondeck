@@ -165,7 +165,7 @@ const draftCommentAnchorRowSchema = v.object({
   start_side: v.nullable(reviewCommentSideSchema),
 });
 const githubErrorItemsSchema = v.looseObject({
-  errors: v.optional(v.array(v.looseObject({}))),
+  errors: v.optional(v.array(v.unknown())),
 });
 
 const draftCommentRowSchema = v.object({
@@ -1775,7 +1775,11 @@ function githubErrorDataMentionsComment<TData>(
 
 function githubErrorItems<TData>(data: TData) {
   const parsed = v.safeParse(githubErrorItemsSchema, data);
-  return parsed.success ? (parsed.output.errors ?? []) : [];
+  if (!parsed.success) return [];
+  return (parsed.output.errors ?? []).flatMap((item) => {
+    const parsedItem = v.safeParse(v.looseObject({}), item);
+    return parsedItem.success ? [parsedItem.output] : [];
+  });
 }
 
 function rewriteThreadMutationError<TError>(error: TError) {

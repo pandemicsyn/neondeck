@@ -1923,7 +1923,7 @@ describe('MCP support', () => {
           oauthServerIdentity('https://mcp.example.test/mcp'),
           'token-1',
           'Bearer',
-          JSON.stringify(['read']),
+          JSON.stringify(['read', 7, 'write']),
           new Date().toISOString(),
         );
     } finally {
@@ -1932,6 +1932,7 @@ describe('MCP support', () => {
 
     await expect(readMcpOAuthStatus('remote', paths)).resolves.toMatchObject({
       authorized: true,
+      scopes: ['read', 'write'],
     });
     await updateMcpServer(
       {

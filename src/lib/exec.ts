@@ -110,7 +110,7 @@ const nodeSignalSchema = v.picklist([
 const execFileErrorSchema = v.looseObject({
   message: v.optional(v.string()),
   code: v.optional(v.union([v.string(), v.number(), v.null()])),
-  signal: v.optional(nodeSignalSchema),
+  signal: v.optional(v.nullable(nodeSignalSchema)),
   stdout: v.optional(v.union([v.string(), v.instance(Buffer)])),
   stderr: v.optional(v.union([v.string(), v.instance(Buffer)])),
   killed: v.optional(v.boolean()),

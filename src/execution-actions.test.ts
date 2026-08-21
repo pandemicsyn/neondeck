@@ -12,6 +12,7 @@ import {
   runApprovedExecution,
 } from './modules/execution';
 import { checkExecutionPolicy } from './modules/execution';
+import { commandError } from './modules/execution/utils';
 import {
   createChatSession,
   listChatSessionCommandEvents,
@@ -32,6 +33,22 @@ afterEach(async () => {
 });
 
 describe('execution actions', () => {
+  it('preserves command diagnostics when the process signal is null', () => {
+    const error = Object.assign(new Error('command failed'), {
+      code: 7,
+      signal: null,
+      stdout: 'partial output',
+      stderr: 'failure detail',
+    });
+
+    expect(commandError(error)).toEqual({
+      message: 'command failed',
+      exitCode: 7,
+      stdout: 'partial output',
+      stderr: 'failure detail',
+    });
+  });
+
   it('does not expose approval resolution as a model-callable action', () => {
     expect(neondeckExecutionActions.map((action) => action.name)).toEqual([
       'neondeck_execution_request_approval',

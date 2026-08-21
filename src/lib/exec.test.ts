@@ -35,4 +35,24 @@ describe('exec helpers', () => {
       timedOut: true,
     });
   });
+
+  it('preserves output from normal nonzero exits with a null signal', () => {
+    const error = normalizeExecFileError({
+      message: 'exited with code 2',
+      code: 2,
+      signal: null,
+      stdout: 'out',
+      stderr: 'err',
+      killed: false,
+    });
+
+    expect(error).toMatchObject({
+      message: 'exited with code 2',
+      code: 2,
+      signal: null,
+      stdout: 'out',
+      stderr: 'err',
+      timedOut: false,
+    });
+  });
 });
