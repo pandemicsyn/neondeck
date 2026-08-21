@@ -105,6 +105,7 @@ import {
   refreshOrientationTargetSettled,
   sameReviewDraftRevision,
   selectionAnchorMatchesPatch,
+  shouldAutomaticallyApplyGitHubRevision,
 } from './review-ui-helpers';
 import { usePrReviewRecord } from './usePrReviewRecord';
 import {
@@ -315,6 +316,7 @@ export function GitHubPrReview({
     inputSignature: string;
     safety: ReviewRefreshSafety;
   } | null>(null);
+  const automaticRefreshAttemptRevisionRef = useRef<string | null>(null);
   const createEditorToken = () => {
     nextEditorToken.current += 1;
     return nextEditorToken.current;
@@ -1173,14 +1175,27 @@ export function GitHubPrReview({
   }, [hasAvailableRevision, incomingPr, pr]);
 
   useEffect(() => {
-    if (hasAvailableRevision && refreshSafety.safe && !isApplyingRevision) {
-      void applyAvailableRevision();
+    if (!hasAvailableRevision) {
+      automaticRefreshAttemptRevisionRef.current = null;
+      return;
     }
+    if (
+      !shouldAutomaticallyApplyGitHubRevision({
+        attemptedRevisionKey: automaticRefreshAttemptRevisionRef.current,
+        candidateRevisionKey: incomingPrRevisionKey,
+        isApplyingRevision,
+        safety: refreshSafety,
+      })
+    )
+      return;
+    automaticRefreshAttemptRevisionRef.current = incomingPrRevisionKey;
+    void applyAvailableRevision();
   }, [
     applyAvailableRevision,
     hasAvailableRevision,
+    incomingPrRevisionKey,
     isApplyingRevision,
-    refreshSafety.safe,
+    refreshSafety,
   ]);
 
   useEffect(() => {
