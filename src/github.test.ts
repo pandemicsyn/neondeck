@@ -1,6 +1,7 @@
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   addPrReviewDraftComment,
@@ -8,6 +9,7 @@ import {
   clearGitHubRequestCache,
   clearGitHubPullRequestQueueCache,
   clearPullRequestReviewSurfaceThreadCache,
+  discardPrReviewDraft,
   deletePrReviewNeonSeedsForComments,
   fetchFailingCheckFacts,
   fetchGitHubIssues,
@@ -27,10 +29,12 @@ import {
   pullRequestEventStateTruncation,
   readLivePrReviewDraft,
   reanchorPrReviewDraft,
+  readPrReviewDraft,
   recordPrReviewNeonSeed,
   deletePrReviewDraftComment,
   replyToPullRequestReviewThread,
   resolvePullRequestReviewThread,
+  settlePrReviewDraftSubmission,
   submitPullRequestReview,
   unresolvePullRequestReviewThread,
   updatePrReviewDraftComment,
@@ -1802,6 +1806,171 @@ describe('github foundation', () => {
     ).toBeNull();
   });
 
+  it('keeps draft revisions monotonic when reanchoring after a future-dated write', async () => {
+    const paths = runtimePaths(await tempHome());
+    await ensureRuntimeHome(paths);
+    const original = upsertPrReviewDraft({
+      databasePath: paths.neondeckDatabase,
+      repo: 'pandemicsyn/neondeck',
+      prNumber: 123,
+      headSha: 'head-before',
+    });
+    const futureUpdatedAt = '2099-01-01T00:00:00.000Z';
+    const database = new DatabaseSync(paths.neondeckDatabase);
+    try {
+      database
+        .prepare('UPDATE pr_review_drafts SET updated_at = ? WHERE id = ?;')
+        .run(futureUpdatedAt, original.id);
+    } finally {
+      database.close();
+    }
+
+    const reanchored = reanchorPrReviewDraft({
+      databasePath: paths.neondeckDatabase,
+      repo: 'pandemicsyn/neondeck',
+      prNumber: 123,
+      draftId: original.id,
+      expectedHeadSha: 'head-before',
+      headSha: 'head-after',
+    });
+
+    expect(reanchored).toMatchObject({
+      id: original.id,
+      headSha: 'head-after',
+    });
+    expect(Date.parse(reanchored?.updatedAt ?? '')).toBeGreaterThan(
+      Date.parse(futureUpdatedAt),
+    );
+  });
+
+  it('rejects reordered edit and delete writes against a stale draft revision', async () => {
+    const paths = runtimePaths(await tempHome());
+    await ensureRuntimeHome(paths);
+    const draft = upsertPrReviewDraft({
+      databasePath: paths.neondeckDatabase,
+      repo: 'pandemicsyn/neondeck',
+      prNumber: 123,
+      headSha: 'head123',
+    });
+    const withComment = addPrReviewDraftComment({
+      databasePath: paths.neondeckDatabase,
+      draftId: draft.id,
+      expectedDraftUpdatedAt: draft.updatedAt,
+      path: 'src/app.ts',
+      side: 'RIGHT',
+      line: 12,
+      body: 'Original body.',
+    });
+    const commentId = withComment.comments[0]!.id;
+    const firstEdit = updatePrReviewDraftComment({
+      databasePath: paths.neondeckDatabase,
+      commentId,
+      expectedDraftId: withComment.id,
+      expectedDraftUpdatedAt: withComment.updatedAt,
+      body: 'First edit wins.',
+    });
+
+    expect(() =>
+      updatePrReviewDraftComment({
+        databasePath: paths.neondeckDatabase,
+        commentId,
+        expectedDraftId: withComment.id,
+        expectedDraftUpdatedAt: withComment.updatedAt,
+        body: 'Stale edit must lose.',
+      }),
+    ).toThrow(/draft changed/i);
+    expect(() =>
+      deletePrReviewDraftComment({
+        databasePath: paths.neondeckDatabase,
+        commentId,
+        expectedDraftId: withComment.id,
+        expectedDraftUpdatedAt: withComment.updatedAt,
+      }),
+    ).toThrow(/draft changed/i);
+    expect(firstEdit.comments[0]).toMatchObject({
+      id: commentId,
+      body: 'First edit wins.',
+    });
+    expect(
+      readPrReviewDraft({
+        databasePath: paths.neondeckDatabase,
+        draftId: draft.id,
+      })?.comments[0],
+    ).toMatchObject({ id: commentId, body: 'First edit wins.' });
+  });
+
+  it('does not recreate a discarded draft when saving by its explicit id', async () => {
+    const paths = runtimePaths(await tempHome());
+    await ensureRuntimeHome(paths);
+    const draft = upsertPrReviewDraft({
+      databasePath: paths.neondeckDatabase,
+      repo: 'pandemicsyn/neondeck',
+      prNumber: 123,
+      headSha: 'head123',
+      body: 'Initial body',
+    });
+    discardPrReviewDraft({
+      databasePath: paths.neondeckDatabase,
+      draftId: draft.id,
+      expectedUpdatedAt: draft.updatedAt,
+      repo: draft.repo,
+      prNumber: draft.prNumber,
+    });
+
+    expect(() =>
+      upsertPrReviewDraft({
+        databasePath: paths.neondeckDatabase,
+        draftId: draft.id,
+        repo: draft.repo,
+        prNumber: draft.prNumber,
+        headSha: draft.headSha,
+        body: 'Late save',
+      }),
+    ).toThrow('Review draft is not editable.');
+    expect(
+      readLivePrReviewDraft({
+        databasePath: paths.neondeckDatabase,
+        repo: draft.repo,
+        prNumber: draft.prNumber,
+      }),
+    ).toBeNull();
+  });
+
+  it('does not adopt a concurrently created draft when creation expected absence', async () => {
+    const paths = runtimePaths(await tempHome());
+    await ensureRuntimeHome(paths);
+    const concurrent = upsertPrReviewDraft({
+      databasePath: paths.neondeckDatabase,
+      repo: 'pandemicsyn/neondeck',
+      prNumber: 123,
+      headSha: 'head123',
+      verdict: 'comment',
+      body: 'Created in another tab.',
+    });
+
+    expect(() =>
+      upsertPrReviewDraft({
+        databasePath: paths.neondeckDatabase,
+        expectedAbsent: true,
+        repo: concurrent.repo,
+        prNumber: concurrent.prNumber,
+        headSha: concurrent.headSha,
+        verdict: 'approve',
+      }),
+    ).toThrow('A review draft appeared before creation.');
+    expect(
+      readLivePrReviewDraft({
+        databasePath: paths.neondeckDatabase,
+        repo: concurrent.repo,
+        prNumber: concurrent.prNumber,
+      }),
+    ).toMatchObject({
+      id: concurrent.id,
+      body: 'Created in another tab.',
+      verdict: 'comment',
+    });
+  });
+
   it('finds and reuses live review drafts across repository casing', async () => {
     const paths = runtimePaths(await tempHome());
     await ensureRuntimeHome(paths);
@@ -2293,6 +2462,7 @@ describe('github foundation', () => {
       databasePath: paths.neondeckDatabase,
       paths,
       draftId: draft.id,
+      expectedDraftUpdatedAt: saved.updatedAt,
       headSha: 'head123',
       commentIds: [right?.id ?? '', range?.id ?? ''],
       fetchHeadSha: async () => 'head123',
@@ -2308,6 +2478,22 @@ describe('github foundation', () => {
       state: 'CHANGES_REQUESTED',
       body: 'Please address these.',
     });
+    const followupDatabase = new DatabaseSync(paths.neondeckDatabase, {
+      readOnly: true,
+    });
+    try {
+      expect(
+        followupDatabase
+          .prepare(
+            `SELECT status
+             FROM pr_review_submission_followups
+             WHERE id = ?;`,
+          )
+          .get('pr-review-delivery:pandemicsyn/neondeck#123:9001'),
+      ).toMatchObject({ status: 'pending' });
+    } finally {
+      followupDatabase.close();
+    }
     expect(requests).toHaveLength(1);
     expect(requests[0]).toMatchObject({
       url: 'https://api.github.com/repos/pandemicsyn/neondeck/pulls/123/reviews',
@@ -2417,7 +2603,7 @@ describe('github foundation', () => {
       summary: 'Seeded issue summary.',
       source: 'test',
     });
-    deletePrReviewDraftComment({
+    const withoutSeeded = deletePrReviewDraftComment({
       databasePath: paths.neondeckDatabase,
       commentId: seeded.id,
     });
@@ -2444,6 +2630,7 @@ describe('github foundation', () => {
       databasePath: paths.neondeckDatabase,
       paths,
       draftId: draft.id,
+      expectedDraftUpdatedAt: withoutSeeded.updatedAt,
       headSha: 'head123',
       fetchHeadSha: async () => 'head123',
     });
@@ -2516,7 +2703,7 @@ describe('github foundation', () => {
         commentIds: [seeded.id],
       }),
     ).toBe(1);
-    deletePrReviewDraftComment({
+    const withoutSeeded = deletePrReviewDraftComment({
       databasePath: paths.neondeckDatabase,
       commentId: seeded.id,
     });
@@ -2543,6 +2730,7 @@ describe('github foundation', () => {
       databasePath: paths.neondeckDatabase,
       paths,
       draftId: draft.id,
+      expectedDraftUpdatedAt: withoutSeeded.updatedAt,
       headSha: 'head123',
       fetchHeadSha: async () => 'head123',
     });
@@ -2593,6 +2781,7 @@ describe('github foundation', () => {
         databasePath: paths.neondeckDatabase,
         paths,
         draftId: draft.id,
+        expectedDraftUpdatedAt: withComment.updatedAt,
         headSha: 'head456',
         fetchHeadSha: async () => 'head456',
       }),
@@ -2633,7 +2822,7 @@ describe('github foundation', () => {
       line: 14,
       body: 'New anchor.',
     });
-    upsertPrReviewDraft({
+    const refreshedDraft = upsertPrReviewDraft({
       databasePath: paths.neondeckDatabase,
       repo: 'pandemicsyn/neondeck',
       prNumber: 123,
@@ -2666,6 +2855,7 @@ describe('github foundation', () => {
         databasePath: paths.neondeckDatabase,
         paths,
         draftId: draft.id,
+        expectedDraftUpdatedAt: refreshedDraft.updatedAt,
         headSha: 'head456',
         commentIds: [commentId],
         fetchHeadSha: async () => 'head456',
@@ -2721,7 +2911,7 @@ describe('github foundation', () => {
           errors: [
             {
               resource: 'PullRequestReviewComment',
-              field: 'comments[1].line',
+              field: 'comments[0].line',
               code: 'invalid',
               message: 'line must have a valid diff anchor',
             },
@@ -2740,7 +2930,9 @@ describe('github foundation', () => {
         databasePath: paths.neondeckDatabase,
         paths,
         draftId: draft.id,
+        expectedDraftUpdatedAt: withComment.updatedAt,
         headSha: 'head123',
+        commentIds: failingCommentId ? [failingCommentId] : [],
         fetchHeadSha: async () => 'head123',
       }),
     ).rejects.toMatchObject({
@@ -2756,6 +2948,285 @@ describe('github foundation', () => {
         prNumber: 123,
       }),
     ).toMatchObject({ id: draft.id, status: 'draft' });
+  });
+
+  it('leases the exact draft while GitHub submission is in flight', async () => {
+    const paths = runtimePaths(await tempHome());
+    await ensureRuntimeHome(paths);
+    const draft = upsertPrReviewDraft({
+      databasePath: paths.neondeckDatabase,
+      repo: 'pandemicsyn/neondeck',
+      prNumber: 123,
+      headSha: 'head123',
+      verdict: 'approve',
+    });
+    const headLookupStarted = Promise.withResolvers<void>();
+    const headLookup = Promise.withResolvers<string>();
+    globalThis.fetch = vi.fn<typeof fetch>(async () =>
+      jsonResponse({
+        id: 9004,
+        node_id: 'review-node-9004',
+        state: 'APPROVED',
+        user: { login: 'neon' },
+        submitted_at: '2026-07-05T16:00:00Z',
+        commit_id: 'head123',
+        html_url:
+          'https://github.com/pandemicsyn/neondeck/pull/123#pullrequestreview-9004',
+        body: null,
+      }),
+    );
+
+    const submission = submitPullRequestReview({
+      token: 'token',
+      owner: 'pandemicsyn',
+      repo: 'neondeck',
+      number: 123,
+      databasePath: paths.neondeckDatabase,
+      paths,
+      draftId: draft.id,
+      expectedDraftUpdatedAt: draft.updatedAt,
+      headSha: 'head123',
+      fetchHeadSha: async () => {
+        headLookupStarted.resolve();
+        return headLookup.promise;
+      },
+    });
+    await headLookupStarted.promise;
+
+    expect(() =>
+      addPrReviewDraftComment({
+        databasePath: paths.neondeckDatabase,
+        draftId: draft.id,
+        path: 'src/app.ts',
+        side: 'RIGHT',
+        line: 12,
+        body: 'Too late.',
+      }),
+    ).toThrow('Review draft is not editable.');
+    expect(() =>
+      upsertPrReviewDraft({
+        databasePath: paths.neondeckDatabase,
+        repo: draft.repo,
+        prNumber: draft.prNumber,
+        headSha: draft.headSha,
+        body: 'A reviewer chat raced the submission.',
+      }),
+    ).toThrow('Review draft is being submitted');
+    expect(
+      discardPrReviewDraft({
+        databasePath: paths.neondeckDatabase,
+        draftId: draft.id,
+        expectedUpdatedAt: draft.updatedAt,
+        repo: draft.repo,
+        prNumber: draft.prNumber,
+      }),
+    ).toBeNull();
+
+    headLookup.resolve('head123');
+    await expect(submission).resolves.toMatchObject({
+      draft: { id: draft.id, status: 'submitted' },
+    });
+  });
+
+  it('rejects a stale draft revision before contacting GitHub', async () => {
+    const paths = runtimePaths(await tempHome());
+    await ensureRuntimeHome(paths);
+    const draft = upsertPrReviewDraft({
+      databasePath: paths.neondeckDatabase,
+      repo: 'pandemicsyn/neondeck',
+      prNumber: 123,
+      headSha: 'head123',
+      verdict: 'approve',
+    });
+    const changed = addPrReviewDraftComment({
+      databasePath: paths.neondeckDatabase,
+      draftId: draft.id,
+      path: 'src/app.ts',
+      side: 'RIGHT',
+      line: 12,
+      body: 'Concurrent change.',
+    });
+    globalThis.fetch = vi.fn<typeof fetch>();
+
+    await expect(
+      submitPullRequestReview({
+        token: 'token',
+        owner: 'pandemicsyn',
+        repo: 'neondeck',
+        number: 123,
+        databasePath: paths.neondeckDatabase,
+        paths,
+        draftId: draft.id,
+        expectedDraftUpdatedAt: draft.updatedAt,
+        headSha: 'head123',
+        fetchHeadSha: async () => 'head123',
+      }),
+    ).rejects.toMatchObject({
+      failure: { code: 'draft-not-found' },
+    });
+    expect(globalThis.fetch).not.toHaveBeenCalled();
+    expect(
+      readLivePrReviewDraft({
+        databasePath: paths.neondeckDatabase,
+        repo: changed.repo,
+        prNumber: changed.prNumber,
+      }),
+    ).toMatchObject({ id: draft.id, status: 'draft' });
+  });
+
+  it('keeps an ambiguous GitHub submission leased until reconciliation', async () => {
+    const paths = runtimePaths(await tempHome());
+    await ensureRuntimeHome(paths);
+    const draft = upsertPrReviewDraft({
+      databasePath: paths.neondeckDatabase,
+      repo: 'pandemicsyn/neondeck',
+      prNumber: 123,
+      headSha: 'head123',
+      verdict: 'approve',
+    });
+    globalThis.fetch = vi.fn<typeof fetch>(async () => {
+      throw new TypeError('Connection closed before a response arrived.');
+    });
+
+    await expect(
+      submitPullRequestReview({
+        token: 'token',
+        owner: 'pandemicsyn',
+        repo: 'neondeck',
+        number: 123,
+        databasePath: paths.neondeckDatabase,
+        paths,
+        draftId: draft.id,
+        expectedDraftUpdatedAt: draft.updatedAt,
+        headSha: 'head123',
+        fetchHeadSha: async () => 'head123',
+      }),
+    ).rejects.toMatchObject({
+      failure: {
+        code: 'submission-uncertain',
+        requires: ['submissionReconciliation'],
+      },
+    });
+    expect(
+      readPrReviewDraft({
+        databasePath: paths.neondeckDatabase,
+        draftId: draft.id,
+      }),
+    ).toMatchObject({ status: 'submitting' });
+    expect(() =>
+      upsertPrReviewDraft({
+        databasePath: paths.neondeckDatabase,
+        repo: draft.repo,
+        prNumber: draft.prNumber,
+        headSha: draft.headSha,
+        body: 'A late reviewer-chat write.',
+      }),
+    ).toThrow('Review draft is being submitted');
+    expect(
+      settlePrReviewDraftSubmission({
+        databasePath: paths.neondeckDatabase,
+        draftId: draft.id,
+        expectedUpdatedAt: draft.updatedAt,
+        submitted: false,
+      }),
+    ).toBe(true);
+    expect(
+      readLivePrReviewDraft({
+        databasePath: paths.neondeckDatabase,
+        repo: draft.repo,
+        prNumber: draft.prNumber,
+      }),
+    ).toMatchObject({ id: draft.id, status: 'draft' });
+  });
+
+  it.each([429, 502])(
+    'keeps a GitHub %s response leased for reconciliation',
+    async (status) => {
+      const paths = runtimePaths(await tempHome());
+      await ensureRuntimeHome(paths);
+      const draft = upsertPrReviewDraft({
+        databasePath: paths.neondeckDatabase,
+        repo: 'pandemicsyn/neondeck',
+        prNumber: 123,
+        headSha: 'head123',
+        verdict: 'approve',
+      });
+      globalThis.fetch = vi.fn<typeof fetch>(async () =>
+        jsonResponse(
+          { message: 'Upstream response is not conclusive.' },
+          status,
+        ),
+      );
+
+      await expect(
+        submitPullRequestReview({
+          token: 'token',
+          owner: 'pandemicsyn',
+          repo: 'neondeck',
+          number: 123,
+          databasePath: paths.neondeckDatabase,
+          paths,
+          draftId: draft.id,
+          expectedDraftUpdatedAt: draft.updatedAt,
+          headSha: draft.headSha,
+          fetchHeadSha: async () => draft.headSha,
+        }),
+      ).rejects.toMatchObject({
+        failure: { code: 'submission-uncertain' },
+      });
+      expect(
+        readPrReviewDraft({
+          databasePath: paths.neondeckDatabase,
+          draftId: draft.id,
+        }),
+      ).toMatchObject({ status: 'submitting' });
+    },
+  );
+
+  it('does not discard a replacement draft using stale identity', async () => {
+    const paths = runtimePaths(await tempHome());
+    await ensureRuntimeHome(paths);
+    const original = upsertPrReviewDraft({
+      databasePath: paths.neondeckDatabase,
+      repo: 'pandemicsyn/neondeck',
+      prNumber: 123,
+      headSha: 'head123',
+      verdict: 'approve',
+    });
+    expect(
+      discardPrReviewDraft({
+        databasePath: paths.neondeckDatabase,
+        draftId: original.id,
+        expectedUpdatedAt: original.updatedAt,
+        repo: original.repo,
+        prNumber: original.prNumber,
+      }),
+    ).toMatchObject({ id: original.id, status: 'discarded' });
+    const replacement = upsertPrReviewDraft({
+      databasePath: paths.neondeckDatabase,
+      repo: original.repo,
+      prNumber: original.prNumber,
+      headSha: original.headSha,
+      verdict: 'comment',
+      body: 'Replacement',
+    });
+
+    expect(
+      discardPrReviewDraft({
+        databasePath: paths.neondeckDatabase,
+        draftId: original.id,
+        expectedUpdatedAt: original.updatedAt,
+        repo: original.repo,
+        prNumber: original.prNumber,
+      }),
+    ).toBeNull();
+    expect(
+      readLivePrReviewDraft({
+        databasePath: paths.neondeckDatabase,
+        repo: replacement.repo,
+        prNumber: replacement.prNumber,
+      }),
+    ).toMatchObject({ id: replacement.id, status: 'draft' });
   });
 
   it('maps GitHub review validation errors by path and line when no comment index is returned', async () => {
@@ -2815,6 +3286,7 @@ describe('github foundation', () => {
         databasePath: paths.neondeckDatabase,
         paths,
         draftId: draft.id,
+        expectedDraftUpdatedAt: withComment.updatedAt,
         headSha: 'head123',
         fetchHeadSha: async () => 'head123',
       }),
@@ -2869,6 +3341,7 @@ describe('github foundation', () => {
         databasePath: paths.neondeckDatabase,
         paths,
         draftId: draft.id,
+        expectedDraftUpdatedAt: withComment.updatedAt,
         headSha: 'head123',
         fetchHeadSha: async () => 'head123',
       }),
@@ -2909,6 +3382,7 @@ describe('github foundation', () => {
         databasePath: paths.neondeckDatabase,
         paths,
         draftId: draft.id,
+        expectedDraftUpdatedAt: draft.updatedAt,
         headSha: 'head123',
         fetchHeadSha: async () => 'head123',
       }),

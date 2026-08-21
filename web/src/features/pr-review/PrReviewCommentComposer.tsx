@@ -18,6 +18,7 @@ export type PrReviewCommentComposerProps = {
   isReplyingToThread: boolean;
   isResolvingThread: boolean;
   isSavingDraft: boolean;
+  isSubmissionPending: boolean;
   isUpdatingComment: boolean;
   onCancelComposer: () => void;
   onCancelEdit: () => void;
@@ -52,6 +53,7 @@ export function PrReviewCommentComposer({
   isReplyingToThread,
   isResolvingThread,
   isSavingDraft,
+  isSubmissionPending,
   isUpdatingComment,
   onCancelComposer,
   onCancelEdit,
@@ -81,7 +83,7 @@ export function PrReviewCommentComposer({
         id="pr-review-new-comment"
         isAnnotationRoot
         isLocked={isLocked}
-        isPending={isAddingComment || isSavingDraft}
+        isPending={isSubmissionPending || isAddingComment || isSavingDraft}
         label="Draft review comment"
         onBodyChange={onComposerBodyChange}
         onCancel={onCancelComposer}
@@ -130,8 +132,8 @@ export function PrReviewCommentComposer({
                   ? 'Select a new diff line to re-anchor this comment.'
                   : null
               }
-              isPending={isUpdatingComment}
               isLocked={isLocked}
+              isPending={isSubmissionPending || isUpdatingComment}
               label="Edit draft review comment"
               onBodyChange={onEditingBodyChange}
               onCancel={onCancelEdit}
@@ -146,7 +148,7 @@ export function PrReviewCommentComposer({
             </div>
             <div className="pr-review-inline-actions">
               <button
-                disabled={isLocked}
+                disabled={isLocked || isSubmissionPending}
                 onClick={() =>
                   onStartEdit(metadata.id, comment?.body ?? metadata.body)
                 }
@@ -155,7 +157,7 @@ export function PrReviewCommentComposer({
                 Edit
               </button>
               <button
-                disabled={isDeletingComment || isLocked}
+                disabled={isLocked || isSubmissionPending || isDeletingComment}
                 onClick={() => onDeleteComment(metadata.id)}
                 type="button"
               >
@@ -163,7 +165,9 @@ export function PrReviewCommentComposer({
               </button>
               {metadata.isStale && comment ? (
                 <button
-                  disabled={isUpdatingComment || isLocked}
+                  disabled={
+                    isLocked || isSubmissionPending || isUpdatingComment
+                  }
                   onClick={() => onReanchorComment(comment)}
                   type="button"
                 >
@@ -233,8 +237,8 @@ export function PrReviewCommentComposer({
       {isReplying ? (
         <CommentForm
           body={replyBody}
-          isPending={isReplyingToThread}
           isLocked={isLocked}
+          isPending={isSubmissionPending || isReplyingToThread}
           label="Reply to this thread"
           onBodyChange={onReplyBodyChange}
           onCancel={onCancelReply}
@@ -245,7 +249,7 @@ export function PrReviewCommentComposer({
       ) : (
         <div className="pr-review-inline-actions">
           <button
-            disabled={isLocked}
+            disabled={isLocked || isSubmissionPending}
             onClick={() => onStartReply(metadata.id)}
             type="button"
           >
@@ -253,7 +257,7 @@ export function PrReviewCommentComposer({
           </button>
           {thread ? (
             <button
-              disabled={isResolvingThread || isLocked}
+              disabled={isLocked || isSubmissionPending || isResolvingThread}
               onClick={() => onSetThreadResolution(thread)}
               type="button"
             >
@@ -322,7 +326,7 @@ function CommentForm({
       ) : null}
       <textarea
         {...(id ? { id } : { 'aria-label': label })}
-        disabled={isLocked}
+        disabled={isLocked || isPending}
         onChange={(event) => onBodyChange(event.currentTarget.value)}
         placeholder={placeholder}
         value={body}
@@ -338,7 +342,11 @@ function CommentForm({
               : 'Saving'
             : submitLabel}
         </button>
-        <button disabled={isLocked} onClick={onCancel} type="button">
+        <button
+          disabled={isLocked || isPending}
+          onClick={onCancel}
+          type="button"
+        >
           Cancel
         </button>
       </div>

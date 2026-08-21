@@ -33,6 +33,11 @@ import {
   type PrReviewAssistAdmission,
 } from './modules/pr-review-assist';
 import { openDb } from './lib/sqlite';
+import { readPrReviewDraft, upsertPrReviewDraft } from './modules/github';
+import {
+  readNeondeckPrDeliveries,
+  readPendingNeondeckPrReviewIds,
+} from './modules/pr-events';
 import { ensureRuntimeHome, runtimePaths } from './runtime-home';
 import { createGitHubRoutes } from './server/routes/github';
 import { createReviewRoutes } from './server/routes/reviews';
@@ -931,12 +936,21 @@ describe('durable PR reviews', () => {
       },
       paths,
     );
+    const recoveryDraft = upsertPrReviewDraft({
+      databasePath: paths.neondeckDatabase,
+      repo: 'other/project',
+      prNumber: 42,
+      headSha: 'head-1',
+      verdict: 'approve',
+    });
     const reserved = reservePrReviewSubmission(
       {
         repoFullName: 'other/project',
         prNumber: 42,
         headSha: 'head-1',
         verdict: 'approve',
+        draftId: recoveryDraft.id,
+        draftUpdatedAt: recoveryDraft.updatedAt,
       },
       paths,
     );
@@ -944,7 +958,20 @@ describe('durable PR reviews', () => {
       status: 'submitting',
       verdict: 'approve',
     });
+    const leasedDraftDatabase = openDb(paths.neondeckDatabase);
+    try {
+      leasedDraftDatabase
+        .prepare(
+          `UPDATE pr_review_drafts
+           SET status = 'submitting'
+           WHERE id = ? AND updated_at = ?;`,
+        )
+        .run(recoveryDraft.id, recoveryDraft.updatedAt);
+    } finally {
+      leasedDraftDatabase.close();
+    }
 
+    const deliveryVerification = Promise.withResolvers<never[]>();
     const recovered = await reconcilePrReviewSubmission(
       { reviewId: started.reviewId },
       paths,
@@ -962,6 +989,7 @@ describe('durable PR reviews', () => {
             url: 'https://github.com/other/project/pull/42#pullrequestreview-7',
           },
         ],
+        fetchReviewComments: async () => deliveryVerification.promise,
       },
     );
     expect(recovered).toMatchObject({
@@ -974,6 +1002,27 @@ describe('durable PR reviews', () => {
           'https://github.com/other/project/pull/42#pullrequestreview-7',
       },
     });
+    expect(readPendingNeondeckPrReviewIds('other/project', 42, paths)).toEqual(
+      new Set(['7']),
+    );
+    expect(
+      prReviewSubmissionFollowupStatus(
+        paths,
+        'pr-review-delivery:other/project#42:7',
+      ),
+    ).toBe('processing');
+    deliveryVerification.resolve([]);
+    await vi.waitFor(() =>
+      expect(
+        prReviewSubmissionFollowupStatus(
+          paths,
+          'pr-review-delivery:other/project#42:7',
+        ),
+      ).toBe('completed'),
+    );
+    expect(
+      readNeondeckPrDeliveries('other/project', 42, paths).reviewFingerprints,
+    ).toEqual(new Map([['7', expect.any(String)]]));
     await expect(
       reconcilePrReviewSubmission({ reviewId: started.reviewId }, paths, {
         fetchLogin: async () => {
@@ -1198,61 +1247,61 @@ describe('durable PR reviews', () => {
   it('settles and records a GitHub-accepted review when delivery verification is ambiguous', async () => {
     const paths = await tempPaths();
     const started = await startReadyReview(paths, 'review-run-ambiguous');
+    const exactDraft = upsertPrReviewDraft({
+      databasePath: paths.neondeckDatabase,
+      repo: 'other/project',
+      prNumber: 42,
+      headSha: 'head-1',
+      verdict: 'approve',
+    });
     const recording = Promise.withResolvers<void>();
     const release = Promise.withResolvers<void>();
+    let evidenceAttempts = 0;
     const recordHandled = vi.fn(async () => {
-      recording.resolve();
-      await release.promise;
+      evidenceAttempts += 1;
+      if (evidenceAttempts === 1) {
+        recording.resolve();
+        await release.promise;
+        return null;
+      }
       return { recorded: true };
     });
+    const postGitHubPrReview = vi.fn(async () => ({
+      ok: false,
+      action: 'github_pr_review_post',
+      changed: true,
+      message:
+        'Submitted PR review but could not uniquely verify its durable delivery identity.',
+      data: {
+        target: { repoFullName: 'other/project', number: 42 },
+        draft: {
+          id: 'draft-ambiguous',
+          headSha: 'head-1',
+          verdict: 'approve',
+        },
+        review: {
+          id: 9001,
+          url: 'https://github.com/other/project/pull/42#pullrequestreview-9001',
+        },
+        deliveryIdentityVerified: false,
+      },
+      requires: ['deliveryIdentity'],
+    }));
     const routes = createGitHubRoutes(paths, {
-      putGitHubPrReviewDraft: vi.fn(async () => ({
-        ok: true,
-        action: 'github_pr_review_draft_put',
-        changed: true,
-        message: 'Saved review draft.',
-        data: {
-          draft: {
-            id: 'draft-ambiguous',
-            headSha: 'head-1',
-            verdict: 'approve',
-          },
-        },
-      })) as never,
-      postGitHubPrReview: vi.fn(async () => ({
-        ok: false,
-        action: 'github_pr_review_post',
-        changed: true,
-        message:
-          'Submitted PR review but could not uniquely verify its durable delivery identity.',
-        data: {
-          target: { repoFullName: 'other/project', number: 42 },
-          draft: {
-            id: 'draft-ambiguous',
-            headSha: 'head-1',
-            verdict: 'approve',
-          },
-          review: {
-            id: 9001,
-            url: 'https://github.com/other/project/pull/42#pullrequestreview-9001',
-          },
-          deliveryIdentityVerified: false,
-        },
-        requires: ['deliveryIdentity'],
-      })) as never,
+      postGitHubPrReview: postGitHubPrReview as never,
       recordHumanReviewSubmittedApiEvidence: recordHandled as never,
     });
 
     const responsePromise = routes.request('/prs/other/project/42/reviews', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ headSha: 'head-1', verdict: 'approve' }),
+      body: JSON.stringify({
+        draftId: exactDraft.id,
+        expectedDraftUpdatedAt: exactDraft.updatedAt,
+        headSha: 'head-1',
+        verdict: 'approve',
+      }),
     });
-    await recording.promise;
-    expect(readPrReviewForTarget('other/project', 42, paths)?.status).toBe(
-      'submitting',
-    );
-    release.resolve();
     const response = await responsePromise;
 
     expect(response.status).toBe(409);
@@ -1263,6 +1312,34 @@ describe('durable PR reviews', () => {
       githubReviewUrl:
         'https://github.com/other/project/pull/42#pullrequestreview-9001',
     });
+    await recording.promise;
+    expect(
+      prReviewSubmissionFollowupStatus(
+        paths,
+        `pr-review-evidence:${started.reviewId}:9001`,
+      ),
+    ).toBe('processing');
+    release.resolve();
+    await vi.waitFor(() => expect(recordHandled).toHaveBeenCalledOnce());
+    await vi.waitFor(() =>
+      expect(
+        prReviewSubmissionFollowupStatus(
+          paths,
+          `pr-review-evidence:${started.reviewId}:9001`,
+        ),
+      ).toBe('pending'),
+    );
+    await vi.waitFor(
+      () =>
+        expect(
+          prReviewSubmissionFollowupStatus(
+            paths,
+            `pr-review-evidence:${started.reviewId}:9001`,
+          ),
+        ).toBe('completed'),
+      { timeout: 2_500 },
+    );
+    expect(recordHandled).toHaveBeenCalledTimes(2);
     expect(recordHandled).toHaveBeenCalledWith(paths, {
       origin: 'submission',
       repoFullName: 'other/project',
@@ -1273,6 +1350,124 @@ describe('durable PR reviews', () => {
         'https://github.com/other/project/pull/42#pullrequestreview-9001',
       verdict: 'approve',
     });
+    expect(postGitHubPrReview).toHaveBeenCalledWith(
+      { repo: 'other/project', prNumber: 42 },
+      {
+        draftId: exactDraft.id,
+        expectedDraftUpdatedAt: exactDraft.updatedAt,
+        headSha: 'head-1',
+        commentIds: undefined,
+      },
+      paths,
+    );
+  });
+
+  it('rejects a verdict that does not match the exact draft before reserving', async () => {
+    const paths = await tempPaths();
+    await startReadyReview(paths, 'review-run-verdict-mismatch');
+    const exactDraft = upsertPrReviewDraft({
+      databasePath: paths.neondeckDatabase,
+      repo: 'other/project',
+      prNumber: 42,
+      headSha: 'head-1',
+      verdict: 'comment',
+      body: 'A comment-only review.',
+    });
+    const postGitHubPrReview = vi.fn();
+    const routes = createGitHubRoutes(paths, {
+      postGitHubPrReview: postGitHubPrReview as never,
+    });
+
+    const response = await routes.request('/prs/other/project/42/reviews', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        draftId: exactDraft.id,
+        expectedDraftUpdatedAt: exactDraft.updatedAt,
+        headSha: exactDraft.headSha,
+        verdict: 'approve',
+      }),
+    });
+
+    expect(response.status).toBe(409);
+    expect(postGitHubPrReview).not.toHaveBeenCalled();
+    expect(readPrReviewForTarget('other/project', 42, paths)).toMatchObject({
+      status: 'ready',
+      verdict: null,
+    });
+  });
+
+  it('rejects submission without a durable review before leasing the draft', async () => {
+    const paths = await tempPaths();
+    const exactDraft = upsertPrReviewDraft({
+      databasePath: paths.neondeckDatabase,
+      repo: 'other/project',
+      prNumber: 42,
+      headSha: 'head-1',
+      verdict: 'approve',
+    });
+    const postGitHubPrReview = vi.fn();
+    const routes = createGitHubRoutes(paths, {
+      postGitHubPrReview: postGitHubPrReview as never,
+    });
+
+    const response = await routes.request('/prs/other/project/42/reviews', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        draftId: exactDraft.id,
+        expectedDraftUpdatedAt: exactDraft.updatedAt,
+        headSha: exactDraft.headSha,
+        verdict: 'approve',
+      }),
+    });
+
+    expect(response.status).toBe(409);
+    expect(postGitHubPrReview).not.toHaveBeenCalled();
+    expect(
+      readPrReviewDraft({
+        databasePath: paths.neondeckDatabase,
+        draftId: exactDraft.id,
+      }),
+    ).toMatchObject({ status: 'draft' });
+  });
+
+  it('returns the authoritative draft with a create-if-absent conflict', async () => {
+    const paths = await tempPaths();
+    const currentDraft = upsertPrReviewDraft({
+      databasePath: paths.neondeckDatabase,
+      repo: 'other/project',
+      prNumber: 42,
+      headSha: 'head-1',
+      body: 'Saved by another client.',
+    });
+    const routes = createGitHubRoutes(paths);
+
+    const response = await routes.request(
+      '/prs/other/project/42/review-draft',
+      {
+        method: 'PUT',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          headSha: 'head-1',
+          body: 'Stale local body.',
+          expectedAbsent: true,
+        }),
+      },
+    );
+
+    expect(response.status).toBe(409);
+    await expect(response.json()).resolves.toMatchObject({
+      ok: false,
+      requires: ['currentDraft'],
+      data: {
+        currentDraft: {
+          id: currentDraft.id,
+          body: 'Saved by another client.',
+          updatedAt: currentDraft.updatedAt,
+        },
+      },
+    });
   });
 });
 
@@ -1282,6 +1477,21 @@ async function tempPaths() {
   const paths = runtimePaths(home);
   await ensureRuntimeHome(paths);
   return paths;
+}
+
+function prReviewSubmissionFollowupStatus(
+  paths: Awaited<ReturnType<typeof tempPaths>>,
+  id: string,
+) {
+  const database = openDb(paths.neondeckDatabase, { readOnly: true });
+  try {
+    const row = database
+      .prepare('SELECT status FROM pr_review_submission_followups WHERE id = ?')
+      .get(id) as { status?: unknown } | undefined;
+    return typeof row?.status === 'string' ? row.status : null;
+  } finally {
+    database.close();
+  }
 }
 
 async function startReadyReview(

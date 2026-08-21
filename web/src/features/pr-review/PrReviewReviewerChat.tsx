@@ -84,11 +84,7 @@ function ReviewerConversation({
   const items = useMemo(() => sessionTimelineItems(messages, []), [messages]);
   const autoScroll = useChatAutoScroll(agentId);
   const connectionError = agent.error?.message ?? null;
-  const busy =
-    sending ||
-    agent.status === 'connecting' ||
-    agent.status === 'submitted' ||
-    agent.status === 'streaming';
+  const busy = sending || agent.status === 'connecting';
   const ready = agent.historyReady && !connectionError && !busy && !isLocked;
 
   useEffect(() => {
@@ -116,10 +112,11 @@ function ReviewerConversation({
     if (!message || !ready) return;
     setSendError(null);
     setSending(true);
+    setInput('');
     try {
       await agent.sendMessage(message);
-      setInput('');
     } catch (cause) {
+      setInput((current) => current || message);
       setSendError(cause instanceof Error ? cause.message : String(cause));
     } finally {
       setSending(false);
@@ -189,7 +186,7 @@ function ReviewerConversation({
                 ? 'Reviewer connection unavailable.'
                 : agent.historyReady
                   ? busy
-                    ? 'Reviewer is working…'
+                    ? 'Connecting to reviewer…'
                     : 'Ask why this is an issue…'
                   : 'Loading reviewer history…'
           }
@@ -199,7 +196,7 @@ function ReviewerConversation({
         <div className="pr-reviewer-chat-actions">
           <span aria-live="polite" id="pr-reviewer-chat-shortcut">
             {agent.status === 'streaming'
-              ? 'Reviewer is responding…'
+              ? 'Reviewer is responding · follow-ups are queued'
               : sendError || 'Enter send · Shift+Enter newline'}
           </span>
           {connectionError ? (

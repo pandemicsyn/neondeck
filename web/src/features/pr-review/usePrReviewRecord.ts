@@ -52,7 +52,15 @@ export function usePrReviewRecord(
   });
   const reconcileSubmission = useMutation({
     mutationFn: (id: string) => reconcilePrReviewSubmission(id),
-    onSuccess: (result) => updateReview(result.review),
+    onSuccess: (result) => {
+      updateReview(result.review);
+      if (
+        result.review.status === 'ready' ||
+        result.review.status === 'failed'
+      ) {
+        void queryClient.invalidateQueries({ queryKey: draftQueryKey });
+      }
+    },
   });
 
   useEffect(
@@ -75,8 +83,7 @@ export function usePrReviewRecord(
   );
 
   return {
-    isDurableReviewReady:
-      query.isSuccess && (!review || review.status === 'ready'),
+    isDurableReviewReady: query.isSuccess && review?.status === 'ready',
     query,
     reconcileSubmission,
     restart,

@@ -173,6 +173,52 @@ describe('PrReviewReviewerChat', () => {
     );
   });
 
+  it('admits a follow-up while the reviewer is streaming', async () => {
+    const sendMessage = vi.fn<UseFlueAgentResult['sendMessage']>(
+      async () => undefined,
+    );
+    useFlueAgentMock.mockReturnValue({
+      messages: [],
+      status: 'streaming',
+      historyReady: true,
+      error: undefined,
+      failedSends: [],
+      settlements: [],
+      sendMessage,
+      refresh: vi.fn<() => void>(),
+    });
+    const review = {
+      id: 'review-123',
+      headSha: 'a'.repeat(40),
+      status: 'ready',
+    } as PrReviewRecord;
+
+    act(() => root.render(<PrReviewReviewerChat review={review} />));
+
+    const textarea = container.querySelector('textarea');
+    expect(textarea).not.toBeNull();
+    expect(textarea?.disabled).toBe(false);
+    expect(container.textContent).toContain(
+      'Reviewer is responding · follow-ups are queued',
+    );
+
+    await act(async () => {
+      setTextareaValue(textarea!, 'Please also inspect the retry path.');
+      textarea!.dispatchEvent(
+        new KeyboardEvent('keydown', {
+          bubbles: true,
+          cancelable: true,
+          key: 'Enter',
+        }),
+      );
+      await Promise.resolve();
+    });
+
+    expect(sendMessage).toHaveBeenCalledWith(
+      'Please also inspect the retry path.',
+    );
+  });
+
   it('reports successful local draft mutations once so the review can refresh', () => {
     const onDraftChanged = vi.fn<() => void>();
     useFlueAgentMock.mockReturnValue({

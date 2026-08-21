@@ -166,6 +166,8 @@ export function readPrReviewRow(row: unknown): PrReviewRecord {
     reportOnlyFindings: reportOnlyFindings(value.report_only_findings_json),
     trustBoundary: stringValue(value.trust_boundary),
     verdict: verdictValue(value.verdict),
+    submissionDraftId: nullableString(value.submission_draft_id),
+    submissionDraftUpdatedAt: nullableString(value.submission_draft_updated_at),
     previousVerdict: verdictValue(value.previous_verdict),
     githubReviewUrl: nullableString(value.github_review_url),
     failureMessage: nullableString(value.failure_message),

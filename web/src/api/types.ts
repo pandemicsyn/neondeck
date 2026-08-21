@@ -383,7 +383,7 @@ export type GitHubPrReviewDraft = {
   headSha: string;
   verdict: GitHubPrReviewVerdict | null;
   body: string | null;
-  status: 'draft' | 'submitted' | 'discarded';
+  status: 'draft' | 'submitting' | 'submitted' | 'discarded';
   createdAt: string;
   updatedAt: string;
   submittedAt: string | null;

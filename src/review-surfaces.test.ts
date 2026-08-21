@@ -1400,7 +1400,12 @@ describe('review surface registry', () => {
         changed: true,
         message: 'saved',
         data: {
-          draft: { id: 'draft-1', headSha: 'head-sha', comments: [] },
+          draft: {
+            id: 'draft-1',
+            headSha: 'head-sha',
+            updatedAt: '2026-08-05T12:00:00.000Z',
+            comments: [],
+          },
         },
       }),
     );
@@ -1459,11 +1464,12 @@ describe('review surface registry', () => {
     });
     expect(putDraft).toHaveBeenCalledWith(
       { repo: 'example/repo', prNumber: 42 },
-      { headSha: 'head-sha' },
+      { headSha: 'head-sha', expectedAbsent: true },
       expect.any(Object),
     );
     expect(postComment.mock.calls[0]?.[1]).toMatchObject({
       draftId: 'draft-1',
+      expectedUpdatedAt: '2026-08-05T12:00:00.000Z',
       path: 'src/app.ts',
       side: 'RIGHT',
       line: 11,
