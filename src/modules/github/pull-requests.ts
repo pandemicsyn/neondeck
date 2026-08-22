@@ -16,7 +16,7 @@ import {
 import {
   fetchPullRequestReviewsWithMetadata,
   requestedChangesStateFromReviews,
-} from './reviews';
+} from './review-remote';
 import { errorMessage, isGitHubChecksAccessError } from './errors';
 import {
   createPullRequestEventFetchBudget,

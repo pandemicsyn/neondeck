@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { mapWithConcurrency } from '../../lib/concurrency';
 import { openDb, withImmediateTransaction } from '../../lib/sqlite';
 import {
   ensureRuntimeHome,
@@ -986,25 +987,6 @@ function prReviewRemoteRefreshRegistry() {
   };
   globalRegistry.__neondeckPrReviewRemoteRefreshRegistry ??= new Map();
   return globalRegistry.__neondeckPrReviewRemoteRefreshRegistry;
-}
-
-async function mapWithConcurrency<T, R>(
-  items: T[],
-  concurrency: number,
-  task: (item: T) => Promise<R>,
-) {
-  const results: R[] = [];
-  let nextIndex = 0;
-  await Promise.all(
-    Array.from({ length: Math.min(concurrency, items.length) }, async () => {
-      while (nextIndex < items.length) {
-        const index = nextIndex;
-        nextIndex += 1;
-        results[index] = await task(items[index]!);
-      }
-    }),
-  );
-  return results;
 }
 
 function reserveReviewingRecord(
