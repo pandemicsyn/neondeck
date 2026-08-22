@@ -301,13 +301,19 @@ export async function updateRepoAutopilotPolicy(
     ...currentGuardrailOverride,
     ...input.guardrails,
   };
+  const preserveAutopilotOverride =
+    hasAutopilotOverrideUpdate(input) ||
+    hasValidAutopilotMetadata(current.metadata);
+  const preserveGuardrailOverride =
+    input.guardrails !== undefined ||
+    hasValidGuardrailsMetadata(current.metadata);
+  const nextMetadata = { ...current.metadata };
+  if (preserveAutopilotOverride) nextMetadata.autopilot = nextOverride;
+  if (preserveGuardrailOverride)
+    nextMetadata.guardrails = nextGuardrailOverride;
   const nextRepo: RepoConfig = {
     ...current,
-    metadata: {
-      ...current.metadata,
-      autopilot: nextOverride,
-      guardrails: nextGuardrailOverride,
-    },
+    metadata: nextMetadata,
   };
   const nextPolicy = repoAutopilotPolicy(nextRepo, appConfig);
   const nextGuardrails = repoGuardrails(nextRepo, appConfig);
@@ -382,9 +388,47 @@ function hasAutopilotPolicyUpdate(
   return Object.values(input).some((value) => value !== undefined);
 }
 
+function hasAutopilotOverrideUpdate(
+  input: Omit<
+    v.InferOutput<typeof updateRepoAutopilotPolicyInputSchema>,
+    'repoId' | 'confirm'
+  >,
+) {
+  return (
+    input.mode !== undefined ||
+    input.reason !== undefined ||
+    input.concurrency !== undefined ||
+    input.watchOverrides !== undefined
+  );
+}
+
+function hasValidAutopilotMetadata(
+  metadata: v.InferOutput<typeof unknownRecordSchema> | undefined,
+) {
+  return (
+    metadata?.autopilot !== undefined &&
+    v.safeParse(metadataSchema.entries.autopilot, metadata.autopilot).success
+  );
+}
+
+function hasValidGuardrailsMetadata(
+  metadata: v.InferOutput<typeof unknownRecordSchema> | undefined,
+) {
+  return (
+    metadata?.guardrails !== undefined &&
+    v.safeParse(metadataSchema.entries.guardrails, metadata.guardrails).success
+  );
+}
+
 function readAutopilotMetadata(repo: RepoConfig): RepoAutopilotConfig {
-  const parsed = v.safeParse(metadataSchema, repo.metadata);
-  return parsed.success ? (parsed.output.autopilot ?? {}) : {};
+  // Repository metadata is extensible and may contain legacy values. A bad
+  // guardrail value must not make us discard an otherwise valid autopilot
+  // override when applying a policy update.
+  const parsed = v.safeParse(
+    metadataSchema.entries.autopilot,
+    repo.metadata?.autopilot,
+  );
+  return parsed.success ? (parsed.output ?? {}) : {};
 }
 
 function mergeRepoAutopilotConfig(
@@ -407,8 +451,14 @@ function mergeRepoAutopilotConfig(
 }
 
 function readGuardrailsMetadata(repo: RepoConfig): RepoGuardrailsConfig {
-  const parsed = v.safeParse(metadataSchema, repo.metadata);
-  return parsed.success ? (parsed.output.guardrails ?? {}) : {};
+  // Parse this independently for the same reason as the autopilot override:
+  // preserving a valid restrictive guardrail is safer than dropping it due to
+  // an unrelated malformed metadata field.
+  const parsed = v.safeParse(
+    metadataSchema.entries.guardrails,
+    repo.metadata?.guardrails,
+  );
+  return parsed.success ? (parsed.output ?? {}) : {};
 }
 
 function autopilotAuthorityIncreases(

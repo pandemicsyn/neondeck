@@ -157,7 +157,7 @@ export function readApproval(paths: RuntimePaths, id: string) {
       `,
       )
       .get(id);
-    return row ? readExecutionApprovalRow(row) : undefined;
+    return row ? tryReadExecutionApprovalRow(row) : undefined;
   } finally {
     database.close();
   }
@@ -180,6 +180,19 @@ export function claimPendingApprovalResolution(
   const database = openDb(paths.neondeckDatabase);
   try {
     return withImmediateTransaction(database, () => {
+      const beforeClaim = database
+        .prepare('SELECT * FROM execution_approvals WHERE id = ?;')
+        .get(id);
+      const readableApproval = beforeClaim
+        ? tryReadExecutionApprovalRow(beforeClaim)
+        : undefined;
+      if (!readableApproval) {
+        return {
+          claimed: false,
+          claimedSurface,
+          approval: undefined,
+        };
+      }
       database
         .prepare(
           `
@@ -206,7 +219,7 @@ export function claimPendingApprovalResolution(
       const row = database
         .prepare('SELECT * FROM execution_approvals WHERE id = ?;')
         .get(id);
-      const approval = row ? readExecutionApprovalRow(row) : undefined;
+      const approval = row ? tryReadExecutionApprovalRow(row) : undefined;
       return {
         claimed: claimed.changes === 1,
         claimedSurface,
@@ -233,6 +246,12 @@ export function completePendingApprovalResolution(
   const database = openDb(paths.neondeckDatabase);
   try {
     return withImmediateTransaction(database, () => {
+      const beforeComplete = database
+        .prepare('SELECT * FROM execution_approvals WHERE id = ?;')
+        .get(input.id);
+      if (!beforeComplete || !tryReadExecutionApprovalRow(beforeComplete)) {
+        return { changed: false, approval: undefined };
+      }
       const update = database
         .prepare(
           `
@@ -266,7 +285,7 @@ export function completePendingApprovalResolution(
         .get(input.id);
       return {
         changed: update.changes === 1,
-        approval: row ? readExecutionApprovalRow(row) : undefined,
+        approval: row ? tryReadExecutionApprovalRow(row) : undefined,
       };
     });
   } finally {
@@ -332,7 +351,7 @@ export function findSessionApproval(
         input.sessionId,
       );
     return rows
-      .map(readExecutionApprovalRow)
+      .flatMap(safeReadExecutionApprovalRow)
       .find((approval) =>
         approvalMatches(approval, policyCheck, input.cwd, expectedScope),
       );
@@ -463,6 +482,23 @@ export function readExecutionApprovalRow<TRow>(
     executedAt: record.executed_at,
     updatedAt: record.updated_at,
   };
+}
+
+function tryReadExecutionApprovalRow<TRow>(
+  row: TRow,
+): ExecutionApprovalRecord | undefined {
+  try {
+    return readExecutionApprovalRow(row);
+  } catch {
+    return undefined;
+  }
+}
+
+export function safeReadExecutionApprovalRow<TRow>(
+  row: TRow,
+): ExecutionApprovalRecord[] {
+  const approval = tryReadExecutionApprovalRow(row);
+  return approval ? [approval] : [];
 }
 
 export function approvalMatches(

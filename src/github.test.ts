@@ -26,6 +26,7 @@ import {
   postPullRequestComment,
   pullRequestEventStateIncompleteness,
   pullRequestEventStateTruncation,
+  prEventWatermarkTruncationCategories,
   readLivePrReviewDraft,
   readPrReviewDraft,
   recordPrReviewNeonSeed,
@@ -3743,6 +3744,17 @@ async function tempHome() {
   tempRoots.push(home);
   return home;
 }
+
+describe('watermark truncation decoding', () => {
+  it('treats null unavailableReason as available and arrays as malformed', () => {
+    expect(
+      prEventWatermarkTruncationCategories([
+        { category: 'checks', value: { unavailableReason: null } },
+        { category: 'runs', value: [] },
+      ]),
+    ).toEqual(['runs']);
+  });
+});
 
 function reviewThreadComment(id: string, databaseId: number) {
   return {

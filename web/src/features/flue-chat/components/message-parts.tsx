@@ -1,94 +1,145 @@
-import type { FlueConversationPart } from '@flue/sdk';
 import type { ReactNode } from 'react';
+import * as v from 'valibot';
+import type { WebExternalValue } from '../../../api/schemas';
 import { MarkdownMessage } from '../../../components/MarkdownMessage';
 import { OperationalValue } from '../../../components/OperationalValue';
 
-type LegacyToolResultPart = {
-  type: 'tool-result';
-  name: string;
-  output: string;
-};
-
-type DynamicToolRenderPart = {
-  type: 'dynamic-tool';
-  toolName: string;
-  toolCallId?: string;
-  state: 'input-available' | 'output-available' | 'output-error';
-  input: Parameters<typeof JSON.stringify>[0];
-  output?: Parameters<typeof JSON.stringify>[0];
-  errorText?: string;
-};
+const textPartSchema = v.looseObject({
+  type: v.literal('text'),
+  text: v.string(),
+  state: v.optional(v.picklist(['streaming', 'done'])),
+});
+const reasoningPartSchema = v.looseObject({
+  type: v.literal('reasoning'),
+  text: v.string(),
+  state: v.optional(v.picklist(['streaming', 'done'])),
+});
+const filePartSchema = v.looseObject({
+  type: v.literal('file'),
+  filename: v.optional(v.string()),
+  url: v.optional(v.string()),
+  mediaType: v.optional(v.string()),
+});
+const dynamicToolPartSchema = v.looseObject({
+  type: v.literal('dynamic-tool'),
+  toolName: v.optional(v.string()),
+  state: v.picklist(['input-available', 'output-available', 'output-error']),
+  input: v.optional(v.unknown()),
+  output: v.optional(v.unknown()),
+  errorText: v.optional(v.string()),
+});
+const legacyToolResultPartSchema = v.looseObject({
+  type: v.literal('tool-result'),
+  name: v.optional(v.string()),
+  output: v.optional(v.unknown()),
+});
+const dataPartSchema = v.looseObject({
+  type: v.string(),
+  data: v.optional(v.unknown()),
+});
+const typedPartSchema = v.looseObject({ type: v.string() });
 
 export function errorMessage(cause: unknown) {
   return cause instanceof Error ? cause.message : String(cause);
 }
 
 export function renderMessagePart(
-  part: FlueConversationPart | LegacyToolResultPart | DynamicToolRenderPart,
+  part: WebExternalValue,
   key: string,
 ): ReactNode {
-  if (part.type === 'tool-result') {
+  const legacyToolResult = v.safeParse(legacyToolResultPartSchema, part);
+  if (legacyToolResult.success) {
     return (
       <ChatPartEvent
         key={key}
         kind="tool"
-        name={part.name}
-        preview={part.output}
+        name={legacyToolResult.output.name ?? 'tool'}
+        preview={legacyToolPreview(legacyToolResult.output.output)}
       />
     );
   }
-  if (part.type === 'text') {
-    return part.text ? (
-      <MarkdownMessage key={key}>{part.text}</MarkdownMessage>
+  const textPart = v.safeParse(textPartSchema, part);
+  if (textPart.success) {
+    return textPart.output.text ? (
+      <MarkdownMessage key={key}>{textPart.output.text}</MarkdownMessage>
     ) : null;
   }
-  if (part.type === 'reasoning') {
+  const reasoningPart = v.safeParse(reasoningPartSchema, part);
+  if (reasoningPart.success) {
     return (
       <ChatPartEvent
         key={key}
         kind="reasoning"
         name="reasoning"
-        preview={part.text}
-        status={part.state}
+        preview={reasoningPart.output.text}
+        status={reasoningPart.output.state}
       />
     );
   }
-  if (part.type === 'file') {
+  const filePart = v.safeParse(filePartSchema, part);
+  if (filePart.success) {
     return (
       <ChatPartEvent
         key={key}
         kind="file"
-        name={part.filename ?? 'attachment'}
-        preview={part.url}
-        status={part.mediaType}
+        name={filePart.output.filename ?? 'attachment'}
+        preview={filePart.output.url}
+        status={filePart.output.mediaType}
       />
     );
   }
-  if (part.type === 'dynamic-tool') {
+  const dynamicToolPart = v.safeParse(dynamicToolPartSchema, part);
+  if (dynamicToolPart.success) {
+    const tool = dynamicToolPart.output;
     const preview =
-      part.state === 'output-available'
-        ? JSON.stringify(part.output)
-        : part.state === 'output-error'
-          ? (part.errorText ?? 'Tool failed.')
-          : JSON.stringify(part.input);
+      tool.state === 'output-available'
+        ? previewValue(tool.output)
+        : tool.state === 'output-error'
+          ? (tool.errorText ?? 'Tool failed.')
+          : previewValue(tool.input);
     return (
       <ChatPartEvent
         key={key}
         kind="tool"
-        name={part.toolName}
+        name={tool.toolName ?? 'tool'}
         preview={preview}
-        status={part.state}
+        status={tool.state}
       />
     );
   }
+  const dataPart = v.safeParse(dataPartSchema, part);
+  if (dataPart.success && dataPart.output.type.startsWith('data-')) {
+    return (
+      <ChatPartEvent
+        key={key}
+        kind="data"
+        name={dataPart.output.type.slice(5) || 'payload'}
+        preview={previewValue(dataPart.output.data)}
+      />
+    );
+  }
+  const typedPart = v.safeParse(typedPartSchema, part);
   return (
     <ChatPartEvent
       key={key}
-      kind="data"
-      name={part.type.slice(5)}
-      preview={JSON.stringify(part.data)}
+      kind="event"
+      name={typedPart.success ? typedPart.output.type : 'invalid message part'}
+      preview="Message part data is unavailable."
     />
   );
+}
+
+function previewValue(value: WebExternalValue) {
+  try {
+    return JSON.stringify(value) ?? 'undefined';
+  } catch {
+    return '[unserializable data]';
+  }
+}
+
+function legacyToolPreview(value: WebExternalValue) {
+  const text = v.safeParse(v.string(), value);
+  return text.success ? text.output : previewValue(value);
 }
 
 export function ChatPartEvent({

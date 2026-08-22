@@ -126,13 +126,23 @@ export function numberField(value: UntrustedInput, key: string) {
 }
 
 export function arrayField(value: UntrustedInput, key: string) {
-  const parsed = v.safeParse(v.array(v.string()), fieldInput(value, key));
-  return parsed.success ? parsed.output : [];
+  const raw = v.safeParse(v.array(v.unknown()), fieldInput(value, key));
+  return raw.success
+    ? raw.output.flatMap((item) => {
+        const parsed = v.safeParse(v.string(), item);
+        return parsed.success ? [parsed.output] : [];
+      })
+    : [];
 }
 
 export function numberArrayField(value: UntrustedInput, key: string) {
-  const parsed = v.safeParse(v.array(v.number()), fieldInput(value, key));
-  return parsed.success ? parsed.output : [];
+  const raw = v.safeParse(v.array(v.unknown()), fieldInput(value, key));
+  return raw.success
+    ? raw.output.flatMap((item) => {
+        const parsed = v.safeParse(v.number(), item);
+        return parsed.success ? [parsed.output] : [];
+      })
+    : [];
 }
 
 export function isAutopilotActionResult(

@@ -6,6 +6,7 @@ import { describe, expect, it } from 'vitest';
 import * as v from 'valibot';
 import {
   defaultSqliteBusyTimeoutMs,
+  collectValidRowsInBatches,
   isUniqueConstraintError,
   openDb,
   parseRow,
@@ -43,6 +44,38 @@ describe('sqlite helpers', () => {
       isUniqueConstraintError(new Error('UNIQUE constraint failed: table.id')),
     ).toBe(true);
     expect(isUniqueConstraintError(new Error('other failure'))).toBe(false);
+  });
+
+  it('bounds malformed-row recovery while retaining an older valid row', () => {
+    const rows = Array.from({ length: 129 }, (_, index) => index);
+    const recoveryBatches: Array<{ limit: number; offset: number }> = [];
+
+    const recovered = collectValidRowsInBatches(
+      1,
+      (limit, offset) => {
+        recoveryBatches.push({ limit, offset });
+        return rows.slice(offset, offset + limit);
+      },
+      (row) => (row === 127 ? [row] : []),
+    );
+
+    expect(recovered).toEqual([127]);
+    expect(recoveryBatches).toHaveLength(128);
+    expect(recoveryBatches.at(-1)).toEqual({ limit: 1, offset: 127 });
+
+    const corruptBatches: Array<{ limit: number; offset: number }> = [];
+    expect(
+      collectValidRowsInBatches(
+        1,
+        (limit, offset) => {
+          corruptBatches.push({ limit, offset });
+          return rows.slice(offset, offset + limit);
+        },
+        () => [],
+      ),
+    ).toEqual([]);
+    expect(corruptBatches).toHaveLength(128);
+    expect(corruptBatches.at(-1)).toEqual({ limit: 1, offset: 127 });
   });
 
   it('applies safe defaults to app and direct Node SQLite connections', () => {

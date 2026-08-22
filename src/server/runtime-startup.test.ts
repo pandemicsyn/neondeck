@@ -16,6 +16,18 @@ describe('Flue runtime startup', () => {
     expect(probe).toHaveBeenCalledTimes(2);
   });
 
+  it('also retries string runtime-not-configured failures', async () => {
+    const probe = vi
+      .fn<() => Promise<void>>()
+      .mockRejectedValueOnce(
+        '[flue] getAgentInstance() called before runtime was configured.',
+      )
+      .mockResolvedValueOnce();
+
+    await expect(waitForFlueRuntime(probe, 0)).resolves.toBe(true);
+    expect(probe).toHaveBeenCalledTimes(2);
+  });
+
   it('reports an already-configured runtime so reloads wait for app activation', async () => {
     const probe = vi.fn<() => Promise<void>>().mockResolvedValueOnce();
 

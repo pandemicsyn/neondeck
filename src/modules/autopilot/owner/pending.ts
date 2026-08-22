@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import type { SQLOutputValue } from 'node:sqlite';
 import * as v from 'valibot';
 import { openDb, withImmediateTransaction } from '../../../lib/sqlite';
 import { runtimePaths, type ThinkingLevel } from '../../../runtime-home';
@@ -162,7 +163,14 @@ const persistedPreparedContextSchema = v.union([
   v.object({
     schema: v.literal('neondeck.autopilot-owner-prepared.v1'),
     model: v.string(),
-    thinkingLevel: v.picklist(['off', 'low', 'medium', 'high', 'xhigh']),
+    thinkingLevel: v.picklist([
+      'off',
+      'minimal',
+      'low',
+      'medium',
+      'high',
+      'xhigh',
+    ]),
     instructions: v.string(),
     workspaceContext: v.nullable(
       v.object({ path: v.string(), home: v.string() }),
@@ -173,7 +181,14 @@ const persistedPreparedContextSchema = v.union([
   v.object({
     schema: v.literal('neondeck.autopilot-owner-prepared.v2'),
     model: v.string(),
-    thinkingLevel: v.picklist(['off', 'low', 'medium', 'high', 'xhigh']),
+    thinkingLevel: v.picklist([
+      'off',
+      'minimal',
+      'low',
+      'medium',
+      'high',
+      'xhigh',
+    ]),
     instructions: v.string(),
     workspaceContext: v.nullable(
       v.object({ path: v.string(), home: v.string() }),
@@ -181,7 +196,14 @@ const persistedPreparedContextSchema = v.union([
     capabilities: v.array(v.string()),
     watch: persistedWatchSchema,
     exploreModel: v.string(),
-    exploreThinkingLevel: v.picklist(['off', 'low', 'medium', 'high', 'xhigh']),
+    exploreThinkingLevel: v.picklist([
+      'off',
+      'minimal',
+      'low',
+      'medium',
+      'high',
+      'xhigh',
+    ]),
   }),
 ]);
 
@@ -289,7 +311,7 @@ export function listRecoverableAutopilotTurns(home: string) {
         `SELECT * FROM autopilot_owner_turns WHERE status IN ('reserved', 'admitted', 'settling') ORDER BY created_at ASC;`,
       )
       .all()
-      .map((row) => readTurnRow(v.parse(storedTurnRowSchema, row)));
+      .flatMap(safeReadTurnRow);
   } finally {
     database.close();
   }
@@ -509,4 +531,16 @@ function readTurnRow(
     turnId: row.turn_id,
     watchId: row.watch_id,
   };
+}
+
+function safeReadTurnRow(
+  row: Record<string, SQLOutputValue>,
+): PendingAutopilotTurn[] {
+  try {
+    return [readTurnRow(v.parse(storedTurnRowSchema, row))];
+  } catch {
+    // A persisted recovery row is advisory. Skip a malformed legacy row so it
+    // cannot prevent the scheduler from recovering other pending turns.
+    return [];
+  }
 }

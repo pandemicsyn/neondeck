@@ -4,7 +4,7 @@ import { openDb, rollbackQuietly } from '../../lib/sqlite';
 import type { RuntimePaths } from '../../runtime-home';
 import {
   publishNotificationEvent,
-  readNotificationRow,
+  tryReadNotificationRow,
   type AutomationExecutionResult,
   type NotificationRecord,
 } from '../app-state';
@@ -1244,8 +1244,10 @@ export function persistWatchEventRefresh(
              LIMIT 1;`,
           )
           .get(source, sourceId);
-        if (existing) {
-          const previous = readNotificationRow(existing);
+        const previous = existing
+          ? tryReadNotificationRow(existing)
+          : undefined;
+        if (previous) {
           database
             .prepare(
               `UPDATE notifications

@@ -134,15 +134,12 @@ function ReportRow({ report }: { report: ReportRecord }) {
 }
 
 const reportJsonObjectSchema = v.custom<Record<string, JsonValue>>(
-  (value) => v.is(v.record(v.string(), v.unknown()), value),
+  (value) =>
+    !Array.isArray(value) && v.is(v.record(v.string(), v.unknown()), value),
   'Value must be a JSON object.',
 );
-const reportJsonArraySchema = v.custom<JsonValue[]>(
-  (value) => v.is(v.array(v.unknown()), value),
-  'Value must be a JSON array.',
-);
 
-function reportSummary(
+export function reportSummary(
   value: Parameters<typeof JSON.stringify>[0],
 ): string | null {
   if (value === null || value === undefined) return null;
@@ -152,9 +149,8 @@ function reportSummary(
   if (number.success) return String(number.output);
   const boolean = v.safeParse(v.boolean(), value);
   if (boolean.success) return String(boolean.output);
-  const array = v.safeParse(reportJsonArraySchema, value);
-  if (array.success) {
-    return array.output
+  if (Array.isArray(value)) {
+    return value
       .map((item) => reportSummary(item))
       .filter(Boolean)
       .join(' · ');

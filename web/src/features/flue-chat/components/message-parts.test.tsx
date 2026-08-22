@@ -79,4 +79,36 @@ describe('renderMessagePart', () => {
     expect(container.textContent).toContain('Workspace unavailable.');
     expect(container.textContent).not.toContain('README.md');
   });
+
+  it('degrades malformed, null, and legacy network parts without throwing', () => {
+    expect(() =>
+      act(() =>
+        root.render(
+          <>
+            {renderMessagePart(null, 'null')}
+            {renderMessagePart({ type: 'text', text: null }, 'malformed-text')}
+            {renderMessagePart(
+              {
+                type: 'dynamic-tool',
+                toolName: 'legacy-tool',
+                state: 'output-available',
+                input: null,
+                output: 1n,
+              },
+              'unserializable-output',
+            )}
+            {renderMessagePart(
+              { type: 'tool-result', name: 'legacy-tool', output: 'complete' },
+              'legacy-tool-result',
+            )}
+          </>,
+        ),
+      ),
+    ).not.toThrow();
+
+    expect(container.textContent).toContain('invalid message part');
+    expect(container.textContent).toContain('[unserializable data]');
+    expect(container.textContent).toContain('legacy-tool');
+    expect(container.textContent).toContain('complete');
+  });
 });

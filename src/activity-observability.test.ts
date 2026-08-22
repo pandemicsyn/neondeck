@@ -139,6 +139,37 @@ describe('Flue v3 activity observability', () => {
     );
   });
 
+  it('preserves JSON null values in scalar activity summaries', async () => {
+    const paths = await tempPaths();
+    await recordFlueObservation(queued(1), paths);
+    await recordFlueObservation(
+      {
+        ...base(2),
+        type: 'log',
+        level: 'info',
+        message: 'Null metadata is intentional.',
+        attributes: { nullable: null },
+      },
+      paths,
+    );
+    await recordFlueObservation(
+      {
+        ...base(3),
+        type: 'tool_start',
+        toolName: 'inspect_context',
+        origin: 'model',
+        args: null,
+      },
+      paths,
+    );
+
+    const history = await readActivitySubmissionEvents('submission-1', paths);
+    expect(history.events[1]?.summary).toMatchObject({
+      attributes: { nullable: null },
+    });
+    expect(history.events[2]?.summary).toMatchObject({ args: null });
+  });
+
   it('records cyclic and hostile Flue payloads as safe activity summaries', async () => {
     const paths = await tempPaths();
     const getter = vi.fn<() => never>(() => {

@@ -56,7 +56,8 @@ export async function addNotification(
       const row = database
         .prepare('SELECT * FROM notifications WHERE id = ? LIMIT 1;')
         .get(input.id.trim());
-      if (row) return readNotificationRow(row);
+      const existing = row ? tryReadNotificationRow(row) : undefined;
+      if (existing) return existing;
     } finally {
       database.close();
     }
@@ -99,8 +100,10 @@ export async function addNotification(
             .get(source, sourceId)
         : undefined;
 
-    if (existing) {
-      const existingRecord = readNotificationRow(existing);
+    const existingRecord = existing
+      ? tryReadNotificationRow(existing)
+      : undefined;
+    if (existingRecord) {
       database
         .prepare(
           `
@@ -207,11 +210,12 @@ export async function markNotificationRead(id: string, paths = runtimePaths()) {
     const row = database
       .prepare('SELECT * FROM notifications WHERE id = ?;')
       .get(id);
-    if (row) {
+    const notification = row ? tryReadNotificationRow(row) : undefined;
+    if (notification) {
       publishNotificationEvent({
         id,
         action: 'read',
-        notification: readNotificationRow(row),
+        notification,
         changedAt: now,
       });
     }
@@ -240,11 +244,12 @@ export async function resolveNotification(id: string, paths = runtimePaths()) {
     const row = database
       .prepare('SELECT * FROM notifications WHERE id = ?;')
       .get(id);
-    if (row) {
+    const notification = row ? tryReadNotificationRow(row) : undefined;
+    if (notification) {
       publishNotificationEvent({
         id,
         action: 'resolved',
-        notification: readNotificationRow(row),
+        notification,
         changedAt: now,
       });
     }
@@ -277,9 +282,16 @@ export function readNotificationRow(
 }
 
 function safeNotificationRow(row: Record<string, SQLOutputValue>) {
+  const notification = tryReadNotificationRow(row);
+  return notification ? [notification] : [];
+}
+
+export function tryReadNotificationRow(
+  row: Record<string, SQLOutputValue>,
+): NotificationRecord | undefined {
   try {
-    return [readNotificationRow(row)];
+    return readNotificationRow(row);
   } catch {
-    return [];
+    return undefined;
   }
 }

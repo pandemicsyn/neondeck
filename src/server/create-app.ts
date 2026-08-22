@@ -407,10 +407,8 @@ async function captureRuntimeStartupFailure<T>(
 }
 
 function isRuntimeNotConfiguredError(error: Error | string) {
-  return (
-    error instanceof Error &&
-    error.message.includes('before runtime was configured')
-  );
+  const message = error instanceof Error ? error.message : error;
+  return message.includes('before runtime was configured');
 }
 
 function startupDelay(delayMs: number) {

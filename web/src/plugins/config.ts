@@ -1,13 +1,20 @@
 import type { PluginConfigParseResult } from '../types';
 import {
   webExternalRecordSchema,
+  webJsonValueSchema,
   type WebExternalValue,
+  type WebJsonRecord,
   type WebJsonValue,
 } from '../api/schemas';
 import * as v from 'valibot';
 
-export function plainConfigRecord(value: WebExternalValue) {
-  const parsed = v.safeParse(webExternalRecordSchema, value);
+const plainConfigRecordSchema = v.pipe(
+  webExternalRecordSchema,
+  v.record(v.string(), webJsonValueSchema),
+);
+
+export function plainConfigRecord(value: WebExternalValue): WebJsonRecord {
+  const parsed = v.safeParse(plainConfigRecordSchema, value);
   return parsed.success ? parsed.output : {};
 }
 

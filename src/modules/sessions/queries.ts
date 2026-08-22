@@ -1,5 +1,5 @@
 import * as v from 'valibot';
-import { openDb } from '../../lib/sqlite';
+import { collectValidRowsInBatches, openDb } from '../../lib/sqlite';
 import {
   type RuntimePaths,
   ensureRuntimeHome,
@@ -9,8 +9,8 @@ import { failedSessionResult, escapeLike } from './utils';
 import {
   findChatSession,
   readActiveSessionId,
-  readChatSessionRow,
   recordSessionAudit,
+  safeReadChatSessionRow,
 } from './store';
 import {
   sessionListInputSchema,
@@ -40,19 +40,26 @@ export async function listChatSessions(
     }
 
     const limit = parsed.output.limit ?? 50;
-    const sessions = database
-      .prepare(
-        `
+    const sessions = collectValidRowsInBatches(
+      limit,
+      (batchLimit, offset) =>
+        database
+          .prepare(
+            `
         SELECT *
         FROM chat_sessions
         WHERE ${filters.join(' AND ')}
         ORDER BY pinned DESC, last_active_at DESC, created_at DESC
-        LIMIT ?;
+        LIMIT ? OFFSET ?;
       `,
-      )
-      .all(...params, limit)
-      .map((row) => readChatSessionRow(row, database));
-    const activeSessionId = readActiveSessionId(
+          )
+          .all(...params, batchLimit, offset),
+      (row) => {
+        const session = safeReadChatSessionRow(row, database);
+        return session ? [session] : [];
+      },
+    );
+    const activeSessionId = readAvailableActiveSessionId(
       database,
       parsed.output.surface ?? 'dashboard',
     );
@@ -69,6 +76,25 @@ export async function listChatSessions(
   } finally {
     database.close();
   }
+}
+
+function readAvailableActiveSessionId(
+  database: ReturnType<typeof openDb>,
+  surface: string,
+) {
+  const activeId = readActiveSessionId(database, surface);
+  if (!activeId) return null;
+  const row = database
+    .prepare(
+      `
+      SELECT *
+      FROM chat_sessions
+      WHERE id = ?;
+    `,
+    )
+    .get(activeId);
+  const active = row ? safeReadChatSessionRow(row, database) : undefined;
+  return active && !active.archivedAt ? active.id : null;
 }
 
 export async function searchChatSessions(
@@ -99,18 +125,25 @@ export async function searchChatSessions(
     ];
     if (!parsed.output.includeArchived) filters.push('archived_at IS NULL');
     const limit = parsed.output.limit ?? 20;
-    const sessions = database
-      .prepare(
-        `
+    const sessions = collectValidRowsInBatches(
+      limit,
+      (batchLimit, offset) =>
+        database
+          .prepare(
+            `
         SELECT *
         FROM chat_sessions
         WHERE ${filters.join(' AND ')}
         ORDER BY pinned DESC, last_active_at DESC, created_at DESC
-        LIMIT ?;
+        LIMIT ? OFFSET ?;
       `,
-      )
-      .all(...params, limit)
-      .map((row) => readChatSessionRow(row, database));
+          )
+          .all(...params, batchLimit, offset),
+      (row) => {
+        const session = safeReadChatSessionRow(row, database);
+        return session ? [session] : [];
+      },
+    );
 
     recordSessionAudit(database, {
       action: 'search',

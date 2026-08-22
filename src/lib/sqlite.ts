@@ -98,10 +98,17 @@ export function collectValidRowsInBatches<TInput, TOutput>(
 ) {
   if (limit <= 0) return [];
   const output: TOutput[] = [];
-  const batchSize = Math.max(1, limit);
+  // Permit recovery through a modest amount of malformed history without
+  // letting an all-corrupt table turn a bounded list request into a full scan.
+  // The minimum crosses the existing 51-session and 101-approval recovery
+  // windows; larger requests may inspect up to twice their requested output.
+  const scanBudget = Math.max(128, limit * 2);
   let offset = 0;
-  while (output.length < limit) {
+  let scanned = 0;
+  while (output.length < limit && scanned < scanBudget) {
+    const batchSize = Math.min(Math.max(1, limit), scanBudget - scanned);
     const rows = readBatch(batchSize, offset);
+    scanned += rows.length;
     for (const row of rows) {
       for (const value of hydrate(row)) {
         output.push(value);

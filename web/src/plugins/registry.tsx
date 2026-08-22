@@ -12,9 +12,10 @@ import { RuntimeOverviewPlugin } from './RuntimeOverview';
 import { SubagentSummaryPlugin } from './SubagentSummary';
 import { ActivityPanelPlugin } from './ActivityPanel';
 import type { DisplayPlugin } from '../types';
-import type { WebJsonRecord } from '../api/schemas';
+import type { WebExternalValue, WebJsonRecord } from '../api/schemas';
 import type { DashboardRegion } from '../api/types';
 import type { ReactNode } from 'react';
+import { plainConfigRecord } from './config';
 
 type RegisteredPlugin = Pick<DisplayPlugin, 'id' | 'title' | 'kind'> & {
   render(
@@ -65,16 +66,13 @@ function registerPlugin<TConfig extends object>(
 
 export function resolvePluginConfig<TConfig extends object>(
   plugin: DisplayPlugin<TConfig>,
-  config: WebJsonRecord | undefined,
+  config: WebExternalValue,
 ) {
-  if (plugin.parseConfig) return plugin.parseConfig(config);
-
-  if (!config) {
-    return { config: plugin.defaultConfig, issues: [] };
-  }
+  const source = config === undefined ? undefined : plainConfigRecord(config);
+  if (plugin.parseConfig) return plugin.parseConfig(source);
 
   return {
-    config: { ...plugin.defaultConfig, ...config },
+    config: { ...plugin.defaultConfig, ...source },
     issues: [],
   };
 }

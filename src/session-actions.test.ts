@@ -62,6 +62,94 @@ describe('session actions', () => {
     expect(state.sessions).toHaveLength(1);
   });
 
+  it('skips corrupt session rows and falls back from a corrupt active session', async () => {
+    const paths = runtimePaths(await tempDir());
+    await readNeonSessionState(paths);
+    const created = await createChatSession(
+      { title: 'Corrupt active session', activate: true },
+      paths,
+    );
+    const corruptId = (created as { session: ChatSessionRecord }).session.id;
+    const database = new DatabaseSync(paths.neondeckDatabase);
+    try {
+      database
+        .prepare(
+          'UPDATE chat_sessions SET title = CAST(? AS BLOB) WHERE id = ?;',
+        )
+        .run('corrupt', corruptId);
+    } finally {
+      database.close();
+    }
+
+    await expect(
+      listChatSessions({ includeArchived: true }, paths),
+    ).resolves.toMatchObject({
+      ok: true,
+      activeSessionId: null,
+      sessions: [expect.objectContaining({ id: 'neondeck-main' })],
+    });
+    await expect(readNeonSessionState(paths)).resolves.toMatchObject({
+      ok: true,
+      activeSessionId: 'neondeck-main',
+      activeChatSession: { id: 'neondeck-main' },
+      sessions: [expect.objectContaining({ id: 'neondeck-main' })],
+    });
+  });
+
+  it('finds older valid sessions after more corrupt rows than collection caps', async () => {
+    const paths = runtimePaths(await tempDir());
+    await readNeonSessionState(paths);
+    const valid = await createChatSession(
+      {
+        title: 'Starvation survivor',
+        linkedTaskId: 'starvation-valid',
+        activate: false,
+      },
+      paths,
+    );
+    const validId = (valid as { session: ChatSessionRecord }).session.id;
+    for (let index = 0; index < 51; index += 1) {
+      await createChatSession(
+        {
+          title: `Corrupt starvation ${index}`,
+          linkedTaskId: `starvation-corrupt-${index}`,
+          activate: false,
+        },
+        paths,
+      );
+    }
+    const database = new DatabaseSync(paths.neondeckDatabase);
+    try {
+      database
+        .prepare(
+          `UPDATE chat_sessions
+           SET title = zeroblob(1), pinned = 1
+           WHERE linked_task_id LIKE 'starvation-corrupt-%';`,
+        )
+        .run();
+    } finally {
+      database.close();
+    }
+
+    await expect(listChatSessions({}, paths)).resolves.toMatchObject({
+      sessions: expect.arrayContaining([
+        expect.objectContaining({ id: validId }),
+      ]),
+    });
+    await expect(
+      searchChatSessions({ query: 'starvation' }, paths),
+    ).resolves.toMatchObject({
+      sessions: expect.arrayContaining([
+        expect.objectContaining({ id: validId }),
+      ]),
+    });
+    await expect(readNeonSessionState(paths)).resolves.toMatchObject({
+      sessions: expect.arrayContaining([
+        expect.objectContaining({ id: 'neondeck-main' }),
+      ]),
+    });
+  });
+
   it('starts a new active session and keeps previous sessions indexed', async () => {
     const paths = runtimePaths(await tempDir());
 
@@ -380,6 +468,114 @@ describe('session actions', () => {
           title: 'PR watch event changed',
         }),
       ],
+    });
+  });
+
+  it('skips corrupt activity rows while retaining valid linked notifications', async () => {
+    const paths = runtimePaths(await tempDir());
+    const watchId = 'Acme-Org/widgets#4481';
+    const created = await createChatSession(
+      { title: 'Watch activity', kind: 'watch', linkedWatchId: watchId },
+      paths,
+    );
+    const sessionId = (created as { session: ChatSessionRecord }).session.id;
+    const corrupt = await addNotification(
+      {
+        level: 'attention',
+        title: 'Corrupt me',
+        message: 'This row will be malformed.',
+        source: 'watch-pr',
+        sourceId: watchId,
+        data: { id: watchId },
+      },
+      paths,
+    );
+    await addNotification(
+      {
+        level: 'ready',
+        title: 'Still visible',
+        message: 'This linked notification remains valid.',
+        source: 'watch-pr-events',
+        sourceId: `${watchId}:event-1`,
+        data: { watchId },
+      },
+      paths,
+    );
+    const database = new DatabaseSync(paths.neondeckDatabase);
+    try {
+      database
+        .prepare(
+          'UPDATE notifications SET title = CAST(? AS BLOB) WHERE id = ?;',
+        )
+        .run('corrupt', corrupt.id);
+    } finally {
+      database.close();
+    }
+
+    await expect(
+      listChatSessionActivity({ sessionId }, paths),
+    ).resolves.toMatchObject({
+      ok: true,
+      items: [expect.objectContaining({ title: 'Still visible' })],
+    });
+  });
+
+  it('recovers older activity after more corrupt rows than the requested limit', async () => {
+    const paths = runtimePaths(await tempDir());
+    const watchId = 'Acme-Org/widgets#4482';
+    const created = await createChatSession(
+      {
+        title: 'Watch activity recovery',
+        kind: 'watch',
+        linkedWatchId: watchId,
+      },
+      paths,
+    );
+    const sessionId = (created as { session: ChatSessionRecord }).session.id;
+    const valid = await addNotification(
+      {
+        level: 'ready',
+        title: 'Older activity survives',
+        message: 'This valid notification follows corrupt history.',
+        source: 'watch-pr-events',
+        sourceId: `${watchId}:valid`,
+        data: { watchId },
+      },
+      paths,
+    );
+    for (let index = 0; index < 51; index += 1) {
+      await addNotification(
+        {
+          level: 'info',
+          title: `Corrupt activity ${index}`,
+          message: 'This row will be malformed.',
+          source: 'watch-pr-events',
+          sourceId: `${watchId}:corrupt-${index}`,
+          data: { watchId },
+        },
+        paths,
+      );
+    }
+    const database = new DatabaseSync(paths.neondeckDatabase);
+    try {
+      database
+        .prepare(
+          `
+          UPDATE notifications
+          SET title = zeroblob(1), updated_at = '2099-01-01T00:00:00.000Z'
+          WHERE source_id LIKE ?;
+        `,
+        )
+        .run(`${watchId}:corrupt-%`);
+    } finally {
+      database.close();
+    }
+
+    await expect(
+      listChatSessionActivity({ sessionId }, paths),
+    ).resolves.toMatchObject({
+      ok: true,
+      items: [expect.objectContaining({ id: valid.id })],
     });
   });
 
@@ -1054,6 +1250,81 @@ describe('session actions', () => {
         result: expect.objectContaining({ message: 'Repository is clean.' }),
         completedAt: expect.any(String),
       },
+    });
+  });
+
+  it('skips corrupt command event rows while retaining valid history', async () => {
+    const paths = runtimePaths(await tempDir());
+    const created = await createChatSession(
+      { title: 'Command history' },
+      paths,
+    );
+    const sessionId = (created as { session: ChatSessionRecord }).session.id;
+    const corrupt = await createChatSessionCommandEvent(
+      { sessionId, input: '/corrupt' },
+      paths,
+    );
+    await createChatSessionCommandEvent({ sessionId, input: '/valid' }, paths);
+    const corruptId = (corrupt as { event: { id: string } }).event.id;
+    const database = new DatabaseSync(paths.neondeckDatabase);
+    try {
+      database
+        .prepare(
+          'UPDATE chat_session_command_events SET input = CAST(? AS BLOB) WHERE id = ?;',
+        )
+        .run('corrupt', corruptId);
+    } finally {
+      database.close();
+    }
+
+    await expect(
+      listChatSessionCommandEvents({ sessionId }, paths),
+    ).resolves.toMatchObject({
+      ok: true,
+      events: [expect.objectContaining({ input: '/valid' })],
+    });
+  });
+
+  it('recovers older command history after more corrupt rows than the requested limit', async () => {
+    const paths = runtimePaths(await tempDir());
+    const created = await createChatSession(
+      { title: 'Command history recovery' },
+      paths,
+    );
+    const sessionId = (created as { session: ChatSessionRecord }).session.id;
+    const valid = await createChatSessionCommandEvent(
+      { sessionId, input: '/survivor' },
+      paths,
+    );
+    const validId = (valid as { event: { id: string } }).event.id;
+    for (let index = 0; index < 31; index += 1) {
+      await createChatSessionCommandEvent(
+        { sessionId, input: `/corrupt-${index}` },
+        paths,
+      );
+    }
+    const database = new DatabaseSync(paths.neondeckDatabase);
+    try {
+      database
+        .prepare(
+          `
+          UPDATE chat_session_command_events
+          SET input = zeroblob(1),
+            created_at = '2099-01-01T00:00:00.000Z',
+            updated_at = '2099-01-01T00:00:00.000Z'
+          WHERE session_id = ? AND id != ?;
+        `,
+        )
+        .run(sessionId, validId);
+    } finally {
+      database.close();
+    }
+
+    await expect(
+      listChatSessionCommandEvents({ sessionId }, paths),
+    ).resolves.toMatchObject({
+      ok: true,
+      events: [expect.objectContaining({ id: validId, input: '/survivor' })],
     });
   });
 

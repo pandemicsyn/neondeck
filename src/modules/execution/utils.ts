@@ -107,9 +107,30 @@ export function isJsonValue<TValue>(
   value: TValue,
 ): value is TValue & JsonValue {
   try {
-    JSON.stringify(value);
-    return true;
+    return v.safeParse(executionJsonValueSchema, value).success;
   } catch {
     return false;
   }
 }
+
+const executionJsonValueSchema: v.GenericSchema<unknown, JsonValue> = v.lazy(
+  () =>
+    v.union([
+      v.null(),
+      v.boolean(),
+      v.pipe(v.number(), v.finite()),
+      v.string(),
+      v.array(executionJsonValueSchema),
+      v.pipe(
+        v.unknown(),
+        v.check((value) => {
+          if (Array.isArray(value)) return false;
+          const record = v.safeParse(v.record(v.string(), v.unknown()), value);
+          if (!record.success) return false;
+          const prototype = Object.getPrototypeOf(value);
+          return prototype === Object.prototype || prototype === null;
+        }, 'Value must be a plain JSON object.'),
+        v.record(v.string(), executionJsonValueSchema),
+      ),
+    ]),
+);

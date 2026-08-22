@@ -80,7 +80,8 @@ export function prEventWatermarkTruncationCategories<TValue>(
     if (
       !value ||
       value.truncated === true ||
-      value.unavailableReason !== undefined
+      (value.unavailableReason !== undefined &&
+        value.unavailableReason !== null)
     ) {
       return [watermark.category];
     }
@@ -118,7 +119,7 @@ export function prEventWatermarkTruncationCategories<TValue>(
 
 const truncationRecordSchema = v.looseObject({
   truncated: v.optional(v.boolean()),
-  unavailableReason: v.optional(v.string()),
+  unavailableReason: v.optional(v.nullable(v.string())),
   threads: v.optional(v.unknown()),
   comments: v.optional(v.unknown()),
   reviews: v.optional(v.unknown()),
@@ -129,6 +130,7 @@ const truncationRecordSchema = v.looseObject({
 });
 
 function recordValue<TValue>(value: TValue) {
+  if (Array.isArray(value)) return null;
   const parsed = v.safeParse(truncationRecordSchema, value);
   return parsed.success ? parsed.output : null;
 }

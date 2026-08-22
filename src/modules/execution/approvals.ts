@@ -1,4 +1,4 @@
-import { openDb } from '../../lib/sqlite';
+import { collectValidRowsInBatches, openDb } from '../../lib/sqlite';
 import { updateExecutionPolicy } from '../config';
 import { randomUUID } from 'node:crypto';
 import { currentFlueExecutionContext } from '../flue/execution-context';
@@ -16,8 +16,8 @@ import {
   claimPendingApprovalResolution,
   completePendingApprovalResolution,
   insertApproval,
-  readExecutionApprovalRow,
   releasePendingApprovalResolution,
+  safeReadExecutionApprovalRow,
 } from './store';
 import { createApprovalResolutionNudge } from '../sessions';
 import {
@@ -40,18 +40,22 @@ export async function listExecutionApprovals(
       ok: true,
       action: 'execution_approvals_list',
       changed: false,
-      approvals: database
-        .prepare(
-          `
+      approvals: collectValidRowsInBatches(
+        100,
+        (batchLimit, offset) =>
+          database
+            .prepare(
+              `
           SELECT *
           FROM execution_approvals
           ${options.includeResolved ? '' : "WHERE status = 'pending'"}
           ORDER BY updated_at DESC, created_at DESC
-          LIMIT 100;
+          LIMIT ? OFFSET ?;
         `,
-        )
-        .all()
-        .map(readExecutionApprovalRow),
+            )
+            .all(batchLimit, offset),
+        safeReadExecutionApprovalRow,
+      ),
       fetchedAt: new Date().toISOString(),
     };
   } finally {

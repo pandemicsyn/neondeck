@@ -1,4 +1,4 @@
-import { openDb } from '../../lib/sqlite';
+import { collectValidRowsInBatches, openDb } from '../../lib/sqlite';
 import {
   ensureRuntimeHome,
   runtimePaths,
@@ -55,35 +55,33 @@ export async function listChatSessionActivity(
 
     const watchId = session.linkedWatchId;
     const items = watchId
-      ? database
-          .prepare(
-            `
-            SELECT *
-            FROM (
-              SELECT *
-              FROM notifications
-              WHERE source_id = ?
-                OR CASE
-                  WHEN json_valid(data_json) THEN
-                    json_extract(data_json, '$.watchId') = ?
-                    OR (
-                      source = 'watch-pr'
-                      AND json_extract(data_json, '$.id') = ?
-                    )
-                  ELSE 0
-                END
-              ORDER BY COALESCE(updated_at, created_at) DESC,
-                created_at DESC,
-                id DESC
-              LIMIT ?
-            )
-            ORDER BY COALESCE(updated_at, created_at) ASC,
-              created_at ASC,
-              id ASC;
-          `,
-          )
-          .all(watchId, watchId, watchId, parsed.output.limit ?? 50)
-          .map(readActivityRow)
+      ? collectValidRowsInBatches(
+          parsed.output.limit ?? 50,
+          (limit, offset) =>
+            database
+              .prepare(
+                `
+                SELECT *
+                FROM notifications
+                WHERE source_id = ?
+                  OR CASE
+                    WHEN json_valid(data_json) THEN
+                      json_extract(data_json, '$.watchId') = ?
+                      OR (
+                        source = 'watch-pr'
+                        AND json_extract(data_json, '$.id') = ?
+                      )
+                    ELSE 0
+                  END
+                ORDER BY COALESCE(updated_at, created_at) DESC,
+                  created_at DESC,
+                  id DESC
+                LIMIT ? OFFSET ?;
+              `,
+              )
+              .all(watchId, watchId, watchId, limit, offset),
+          safeReadActivityRow,
+        ).reverse()
       : [];
 
     return {
@@ -116,6 +114,16 @@ function readActivityRow(row: SessionExternalValue): ChatSessionActivityItem {
     createdAt,
     updatedAt: record.updated_at ?? createdAt,
   };
+}
+
+function safeReadActivityRow(
+  row: SessionExternalValue,
+): ChatSessionActivityItem[] {
+  try {
+    return [readActivityRow(row)];
+  } catch {
+    return [];
+  }
 }
 
 function notificationLevel(

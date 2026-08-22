@@ -45,9 +45,10 @@ export function buildPreparedDiffAuditSummary(
   const reviewCommentIds = arrayOfStrings(addressed.reviewCommentIds) ?? [];
   const reviewThreadIds = arrayOfStrings(addressed.reviewThreadIds) ?? [];
   const diffSummary = objectField(summary.diffSummary);
-  const checkRunIds = checks
-    .map((check) => check.checkRunId)
-    .filter((id): id is number => id !== undefined);
+  const checkRunIds = checks.flatMap((check) => {
+    const parsed = v.safeParse(finiteNumberSchema, check.checkRunId);
+    return parsed.success ? [parsed.output] : [];
+  });
 
   const lines = [
     `Neon autopilot result for ${record.repoFullName}#${record.prNumber ?? 'worktree'}: ${status}.`,

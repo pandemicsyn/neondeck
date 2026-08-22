@@ -1930,7 +1930,7 @@ function sanitizeRecord(value: JsonValue | undefined): JsonValue {
       .map((entry) => [entry[0], safeScalar(entry[1])] as const)
       .filter(
         (entry): entry is readonly [string, string | number | boolean | null] =>
-          entry[1] !== null,
+          entry[1] !== undefined,
       )
       .map(([key, entry]) => [key, summarizeScalar(entry)])
       .slice(0, 12),
@@ -1940,7 +1940,7 @@ function sanitizeRecord(value: JsonValue | undefined): JsonValue {
 function summarizeUnknown(value: JsonValue | undefined): JsonValue {
   if (value === undefined) return null;
   const scalar = safeScalar(value);
-  if (scalar !== null) return summarizeScalar(scalar);
+  if (scalar !== undefined) return summarizeScalar(scalar);
   if (Array.isArray(value)) return { type: 'array', length: value.length };
   const record = objectRecord(value);
   if (record) {
@@ -2029,7 +2029,7 @@ function summarizeScalar(value: string | number | boolean | null): JsonValue {
 
 function safeScalar(value: JsonValue) {
   const parsed = v.safeParse(scalarSchema, value);
-  return parsed.success ? parsed.output : null;
+  return parsed.success ? parsed.output : undefined;
 }
 
 function isSensitiveKey(key: string) {

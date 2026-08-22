@@ -2,7 +2,7 @@ import { type JsonValue } from '@flue/runtime';
 import type { DatabaseSync } from 'node:sqlite';
 import * as v from 'valibot';
 import { asJsonValue } from '../../lib/action-result';
-import { openDb } from '../../lib/sqlite';
+import { collectValidRowsInBatches, openDb } from '../../lib/sqlite';
 import { type RuntimePaths, ensureRuntimeHome } from '../../runtime-home';
 import {
   chatSessionKindSchema,
@@ -73,28 +73,35 @@ export async function readChatSessionInternal(
 
 export function readActiveChatSession(database: DatabaseSync, surface: string) {
   const activeId = readActiveSessionId(database, surface);
-  const active = activeId ? findChatSession(database, activeId) : undefined;
+  const active = activeId ? safeFindChatSession(database, activeId) : undefined;
   if (active && !active.archivedAt) return active;
 
-  const fallback = database
-    .prepare(
-      `
+  const fallback = collectValidRowsInBatches(
+    1,
+    (batchLimit, offset) =>
+      database
+        .prepare(
+          `
       SELECT *
       FROM chat_sessions
       WHERE agent_name = 'display-assistant'
         AND archived_at IS NULL
       ORDER BY pinned DESC, last_active_at DESC, created_at DESC
-      LIMIT 1;
+      LIMIT ? OFFSET ?;
     `,
-    )
-    .get();
+        )
+        .all(batchLimit, offset),
+    (row) => {
+      const session = safeReadChatSessionRow(row, database);
+      return session ? [session] : [];
+    },
+  )[0];
   if (!fallback) {
     throw new Error('No active Neon session is configured.');
   }
 
-  const session = readChatSessionRow(fallback, database);
-  setActiveSession(database, surface, session.id, new Date().toISOString());
-  return session;
+  setActiveSession(database, surface, fallback.id, new Date().toISOString());
+  return fallback;
 }
 
 export function readActiveSessionId(database: DatabaseSync, surface: string) {
@@ -152,6 +159,19 @@ export function findChatSession(database: DatabaseSync, id: string) {
   return row ? readChatSessionRow(row, database) : undefined;
 }
 
+function safeFindChatSession(database: DatabaseSync, id: string) {
+  const row = database
+    .prepare(
+      `
+      SELECT *
+      FROM chat_sessions
+      WHERE id = ?;
+    `,
+    )
+    .get(id);
+  return row ? safeReadChatSessionRow(row, database) : undefined;
+}
+
 export function findChatSessionCommandEvent(
   database: DatabaseSync,
   id: string,
@@ -173,19 +193,22 @@ export function listChatSessionCommandEventRows(
   sessionId: string,
   limit = 30,
 ) {
-  return database
-    .prepare(
-      `
-      SELECT *
-      FROM chat_session_command_events
-      WHERE session_id = ?
-      ORDER BY created_at DESC, id DESC
-      LIMIT ?;
-    `,
-    )
-    .all(sessionId, limit)
-    .map(readChatSessionCommandEventRow)
-    .reverse();
+  return collectValidRowsInBatches(
+    limit,
+    (batchLimit, offset) =>
+      database
+        .prepare(
+          `
+          SELECT *
+          FROM chat_session_command_events
+          WHERE session_id = ?
+          ORDER BY created_at DESC, id DESC
+          LIMIT ? OFFSET ?;
+        `,
+        )
+        .all(sessionId, batchLimit, offset),
+    safeReadChatSessionCommandEventRow,
+  ).reverse();
 }
 
 export function findLinkedChatSession(
@@ -301,6 +324,17 @@ export function readChatSessionRow(
   };
 }
 
+export function safeReadChatSessionRow(
+  row: SessionExternalValue,
+  database: DatabaseSync,
+): ChatSessionRecord | undefined {
+  try {
+    return readChatSessionRow(row, database);
+  } catch {
+    return undefined;
+  }
+}
+
 export function readChatSessionCommandEventRow(
   row: SessionExternalValue,
 ): ChatSessionCommandEvent {
@@ -320,6 +354,16 @@ export function readChatSessionCommandEventRow(
     completedAt: record.completed_at,
     updatedAt: record.updated_at,
   };
+}
+
+function safeReadChatSessionCommandEventRow(
+  row: SessionExternalValue,
+): ChatSessionCommandEvent[] {
+  try {
+    return [readChatSessionCommandEventRow(row)];
+  } catch {
+    return [];
+  }
 }
 
 function parsePersistedStaleReasons(

@@ -1,11 +1,11 @@
-import { openDb } from '../../lib/sqlite';
+import { collectValidRowsInBatches, openDb } from '../../lib/sqlite';
 import {
   type RuntimePaths,
   ensureRuntimeHome,
   runtimePaths,
 } from '../../runtime-home';
 import type { NeonSessionState } from './schemas';
-import { readActiveChatSession, readChatSessionRow } from './store';
+import { readActiveChatSession, safeReadChatSessionRow } from './store';
 
 export async function readNeonSessionState(
   paths: RuntimePaths = runtimePaths(),
@@ -16,18 +16,25 @@ export async function readNeonSessionState(
 
   try {
     const active = readActiveChatSession(database, surface);
-    const sessions = database
-      .prepare(
-        `
+    const sessions = collectValidRowsInBatches(
+      30,
+      (batchLimit, offset) =>
+        database
+          .prepare(
+            `
         SELECT *
         FROM chat_sessions
         WHERE agent_name = 'display-assistant'
         ORDER BY pinned DESC, archived_at IS NULL DESC, last_active_at DESC, created_at DESC
-        LIMIT 30;
+        LIMIT ? OFFSET ?;
       `,
-      )
-      .all()
-      .map((row) => readChatSessionRow(row, database));
+          )
+          .all(batchLimit, offset),
+      (row) => {
+        const session = safeReadChatSessionRow(row, database);
+        return session ? [session] : [];
+      },
+    );
 
     return {
       ok: true,

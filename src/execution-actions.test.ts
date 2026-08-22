@@ -13,6 +13,7 @@ import {
 } from './modules/execution';
 import { checkExecutionPolicy } from './modules/execution';
 import { commandError } from './modules/execution/utils';
+import { claimPendingApprovalResolution } from './modules/execution/store';
 import {
   createChatSession,
   listChatSessionCommandEvents,
@@ -84,6 +85,75 @@ describe('execution actions', () => {
     expect(approvals.approvals).toEqual([
       expect.objectContaining({ command: 'pwd', status: 'executed' }),
     ]);
+  });
+
+  it('skips corrupt historical approvals while retaining valid approval history', async () => {
+    const paths = runtimePaths(await tempDir());
+    await ensureRuntimeHome(paths);
+    const corrupt = await runApprovedExecution(
+      { command: 'pwd', cwd: paths.home },
+      paths,
+    );
+    await requestExecutionApproval(
+      { command: 'node --version', cwd: paths.home },
+      paths,
+    );
+    const corruptId = readApprovalId(corrupt);
+    const database = new DatabaseSync(paths.neondeckDatabase);
+    try {
+      database
+        .prepare(
+          'UPDATE execution_approvals SET command = zeroblob(1) WHERE id = ?;',
+        )
+        .run(corruptId);
+    } finally {
+      database.close();
+    }
+
+    await expect(
+      listExecutionApprovals(paths, { includeResolved: true }),
+    ).resolves.toMatchObject({
+      ok: true,
+      approvals: [expect.objectContaining({ command: 'node --version' })],
+    });
+  });
+
+  it('finds older valid approvals after more corrupt rows than the list cap', async () => {
+    const paths = runtimePaths(await tempDir());
+    await ensureRuntimeHome(paths);
+    const valid = await runApprovedExecution(
+      { command: 'pwd', cwd: paths.home },
+      paths,
+    );
+    const validId = readApprovalId(valid);
+    const database = new DatabaseSync(paths.neondeckDatabase);
+    try {
+      const insert = database.prepare(
+        `INSERT INTO execution_approvals (
+           id, command, backend, cwd, context, risk, policy_decision, status,
+           approval_decision, approver_surface, session_id, request_context_json,
+           result_json, error, created_at, updated_at
+         ) VALUES (?, 'corrupt', 'local', NULL, 'interactive', 'safe-mutation',
+           'ask', 'approved', NULL, NULL, NULL, NULL, NULL, NULL, ?, ?);`,
+      );
+      const now = new Date().toISOString();
+      for (let index = 0; index < 101; index += 1) {
+        insert.run(`corrupt-approval-${index}`, now, now);
+      }
+      database
+        .prepare(
+          "UPDATE execution_approvals SET command = zeroblob(1) WHERE id LIKE 'corrupt-approval-%';",
+        )
+        .run();
+    } finally {
+      database.close();
+    }
+
+    await expect(
+      listExecutionApprovals(paths, { includeResolved: true }),
+    ).resolves.toMatchObject({
+      approvals: [expect.objectContaining({ id: validId, command: 'pwd' })],
+    });
   });
 
   it('requires approval for non-preapproved interactive commands and reuses session approvals', async () => {
@@ -269,6 +339,69 @@ describe('execution actions', () => {
       requires: ['approval'],
       approval: { id: approvalId, usedAt: expect.any(String) },
     });
+  });
+
+  it('fails closed for malformed approval records without breaking resolution or session reuse', async () => {
+    const paths = runtimePaths(await tempDir());
+    await ensureRuntimeHome(paths);
+    const session = await createChatSession(
+      { title: 'Malformed approval' },
+      paths,
+    );
+    const sessionId = (session as { session: ChatSessionRecord }).session.id;
+    const pending = await requestExecutionApproval(
+      { command: 'node --version', cwd: paths.home, sessionId },
+      paths,
+    );
+    const pendingId = readApprovalId(pending);
+    const database = new DatabaseSync(paths.neondeckDatabase);
+    try {
+      database
+        .prepare(
+          'UPDATE execution_approvals SET request_context_json = ? WHERE id = ?;',
+        )
+        .run('{', pendingId);
+    } finally {
+      database.close();
+    }
+
+    expect(() =>
+      claimPendingApprovalResolution(paths, pendingId, 'malformed-claim'),
+    ).not.toThrow();
+    expect(
+      claimPendingApprovalResolution(paths, pendingId, 'malformed-claim'),
+    ).toMatchObject({ claimed: false, approval: undefined });
+    await expect(
+      resolveExecutionApproval(
+        { id: pendingId, decision: 'allow-session' },
+        paths,
+      ),
+    ).resolves.toMatchObject({ ok: false, changed: false });
+
+    const reusable = await requestExecutionApproval(
+      { command: 'node --version', cwd: paths.home, sessionId },
+      paths,
+    );
+    const reusableId = readApprovalId(reusable);
+    await resolveExecutionApproval(
+      { id: reusableId, decision: 'allow-session' },
+      paths,
+    );
+    const secondDatabase = new DatabaseSync(paths.neondeckDatabase);
+    try {
+      secondDatabase
+        .prepare('UPDATE execution_approvals SET result_json = ? WHERE id = ?;')
+        .run('{', reusableId);
+    } finally {
+      secondDatabase.close();
+    }
+
+    await expect(
+      runApprovedExecution(
+        { command: 'node --version', cwd: paths.home, sessionId },
+        paths,
+      ),
+    ).resolves.toMatchObject({ ok: false, requires: ['approval'] });
   });
 
   it('surfaces approval nudge delivery failures after resolving execution approval', async () => {

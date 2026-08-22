@@ -389,6 +389,90 @@ describe('config actions', () => {
     });
   });
 
+  it('preserves a valid autopilot override when unrelated guardrails are malformed', async () => {
+    const home = await tempDir('neondeck-home-');
+    const repoPath = await tempGitRepo();
+    const paths = runtimePaths(home);
+    await addRepo({ path: repoPath }, paths);
+    await updateRepoAutopilotPolicy(
+      {
+        repoId: 'neondeck',
+        mode: 'prepare-only',
+        reason: 'Keep worktree preparation enabled.',
+        confirm: true,
+      },
+      paths,
+    );
+
+    const persisted = JSON.parse(await readFile(paths.repos, 'utf8'));
+    persisted.repos[0].metadata.guardrails = 'legacy malformed value';
+    await writeFile(paths.repos, JSON.stringify(persisted));
+
+    await expect(
+      updateRepoAutopilotPolicy(
+        {
+          repoId: 'neondeck',
+          reason: 'Retain the existing preparation authority.',
+          confirm: true,
+        },
+        paths,
+      ),
+    ).resolves.toMatchObject({ ok: true, changed: true });
+
+    const [repo] = parseRepoRegistry(
+      JSON.parse(await readFile(paths.repos, 'utf8')),
+      paths.repos,
+    ).repos;
+    expect(repo?.metadata).toMatchObject({
+      autopilot: {
+        mode: 'prepare-only',
+        reason: 'Retain the existing preparation authority.',
+      },
+      guardrails: 'legacy malformed value',
+    });
+  });
+
+  it('preserves valid guardrails when unrelated autopilot metadata is malformed', async () => {
+    const home = await tempDir('neondeck-home-');
+    const repoPath = await tempGitRepo();
+    const paths = runtimePaths(home);
+    await addRepo({ path: repoPath }, paths);
+    await updateRepoAutopilotPolicy(
+      {
+        repoId: 'neondeck',
+        guardrails: { deniedFileGlobs: ['private/**'] },
+        reason: 'Keep private files out of bounds.',
+        confirm: true,
+      },
+      paths,
+    );
+
+    const persisted = JSON.parse(await readFile(paths.repos, 'utf8'));
+    persisted.repos[0].metadata.autopilot = 'legacy malformed value';
+    await writeFile(paths.repos, JSON.stringify(persisted));
+
+    await expect(
+      updateRepoAutopilotPolicy(
+        {
+          repoId: 'neondeck',
+          guardrails: { maxFilesChanged: 2 },
+          reason: 'Keep the file-change limit tight.',
+          confirm: true,
+        },
+        paths,
+      ),
+    ).resolves.toMatchObject({ ok: true, changed: true });
+
+    const [repo] = parseRepoRegistry(
+      JSON.parse(await readFile(paths.repos, 'utf8')),
+      paths.repos,
+    ).repos;
+    expect(repo?.metadata?.guardrails).toMatchObject({
+      deniedFileGlobs: ['private/**'],
+      maxFilesChanged: 2,
+    });
+  });
+
   it('returns structured failures for invalid repo paths', async () => {
     const home = await tempDir('neondeck-home-');
     const paths = runtimePaths(home);
