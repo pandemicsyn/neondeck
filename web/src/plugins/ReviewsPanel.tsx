@@ -17,7 +17,6 @@ import {
   archivePrReview,
   getPrReviews,
   openPrReviewEventStream,
-  reconcilePrReviewSubmission,
   restartPrReview,
   restorePrReview,
   startPrReview,
@@ -144,19 +143,6 @@ export const ReviewsPanelPlugin = {
         updateReviewCaches(result.review);
       },
     });
-    const reconcileMutation = useMutation({
-      mutationKey: panelMutationKey('reconcile'),
-      mutationFn: (id: string) => reconcilePrReviewSubmission(id),
-      onMutate(id) {
-        clearActionError('reconcile', id);
-      },
-      onError(error, id) {
-        recordActionError('reconcile', id, error);
-      },
-      onSuccess(result) {
-        updateReviewCaches(result.review);
-      },
-    });
     const archiveMutation = useMutation({
       mutationKey: panelMutationKey('archive'),
       mutationFn: (id: string) => archivePrReview(id),
@@ -185,9 +171,6 @@ export const ReviewsPanelPlugin = {
     });
     const pendingStartRefs = usePendingVariables(panelMutationKey('start'));
     const pendingRestartIds = usePendingVariables(panelMutationKey('restart'));
-    const pendingReconcileIds = usePendingVariables(
-      panelMutationKey('reconcile'),
-    );
     const pendingArchiveIds = usePendingVariables(panelMutationKey('archive'));
     const pendingRestoreIds = usePendingVariables(panelMutationKey('restore'));
     const pendingStartKeys = new Set(pendingStartRefs.map(prReviewRefKey));
@@ -322,10 +305,8 @@ export const ReviewsPanelPlugin = {
                 {data.groups.inProgress.map((review) => (
                   <ReviewRow
                     key={review.id}
-                    onReconcile={(id) => reconcileMutation.mutate(id)}
                     onOpenBriefing={setBriefingReviewId}
                     onReviewChange={updateReviewCaches}
-                    pending={pendingReconcileIds.includes(review.id)}
                     review={review}
                   />
                 ))}
@@ -414,8 +395,7 @@ export const ReviewsPanelPlugin = {
 
 const emptyPrReviewRecords: readonly PrReviewRecord[] = [];
 
-type PanelMutationAction =
-  'archive' | 'reconcile' | 'restart' | 'restore' | 'start';
+type PanelMutationAction = 'archive' | 'restart' | 'restore' | 'start';
 
 type PanelActionError = {
   error: unknown;
@@ -590,7 +570,6 @@ function AwaitingRow({
 function ReviewRow({
   onArchive,
   onOpenBriefing,
-  onReconcile,
   onReviewChange,
   onRestart,
   onRestore,
@@ -599,7 +578,6 @@ function ReviewRow({
 }: {
   onArchive?: (id: string) => void;
   onOpenBriefing: (id: string) => void;
-  onReconcile?: (id: string) => void;
   onReviewChange: (review: PrReviewRecord) => void;
   onRestart?: (id: string) => void;
   onRestore?: (id: string) => void;
@@ -679,14 +657,11 @@ function ReviewRow({
             retry
           </Button>
         ) : null}
-        {review.status === 'submitting' && onReconcile ? (
-          <Button
-            disabled={pending}
-            onClick={() => onReconcile(review.id)}
-            type="button"
-          >
-            {pending ? 'checking' : 'recover submission'}
-          </Button>
+        {review.status === 'submitting' ? (
+          <ReviewRowRecoverSubmission
+            onReviewChange={onReviewChange}
+            review={review}
+          />
         ) : null}
         {onArchive ? (
           <Button
@@ -708,6 +683,42 @@ function ReviewRow({
         ) : null}
       </div>
     </article>
+  );
+}
+
+function ReviewRowRecoverSubmission({
+  onReviewChange,
+  review,
+}: {
+  onReviewChange: (review: PrReviewRecord) => void;
+  review: PrReviewRecord;
+}) {
+  const [error, setError] = useState<unknown>(null);
+  const draftQuery = useGitHubPrReviewDraft(
+    { repo: review.repoFullName, number: review.prNumber },
+    prReviewDraftQueryOptions(review),
+  );
+  const actions = usePrReviewBriefingActions(review, draftQuery, {
+    onReviewChange,
+  });
+  return (
+    <>
+      {error ? (
+        <span className="text-accent" role="alert">
+          {queryErrorMessage(error)}
+        </span>
+      ) : null}
+      <Button
+        disabled={actions.busy}
+        onClick={() => {
+          setError(null);
+          void actions.recoverSubmission().catch(setError);
+        }}
+        type="button"
+      >
+        {actions.busy ? 'checking GitHub…' : 'recover submission'}
+      </Button>
+    </>
   );
 }
 
@@ -741,11 +752,19 @@ function ReviewRowQuickApprove({
         : null;
   const queryUnavailable = draftQuery.isError || draftQuery.isRefetchError;
   const approvalUnavailable = queryUnavailable || (draftKnown && !draftMatches);
+  const rejectedCommentCount = Math.min(
+    actions.rejectedCommentCount,
+    commentCount ?? 0,
+  );
+  const submittedCommentCount =
+    commentCount === null ? null : commentCount - rejectedCommentCount;
   const label = approvalUnavailable
     ? 'approval unavailable'
-    : commentCount === null
+    : submittedCommentCount === null
       ? 'loading draft…'
-      : `approve & submit ${commentCount}`;
+      : `approve & submit ${submittedCommentCount}${
+          rejectedCommentCount ? ` · omit ${rejectedCommentCount} rejected` : ''
+        }`;
 
   return (
     <>

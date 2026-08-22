@@ -20,15 +20,22 @@ import { queryKeys } from '../../lib/query';
 import { prReviewQueryKeys, useGitHubPrReviewMutations } from './queries';
 import { reportOnlyFindingBody } from './PrReviewFindingsSidebar';
 import {
+  failingCommentIdsFromError,
   normalizeReviewBody,
   settleAndSubmitPrReview,
   submissionMayHaveBeenAccepted,
   waitForPendingDraftMutations,
 } from './review-helpers';
 
-const submissionLocks = new Set<string>();
+type SubmissionLockState = 'active' | 'recovery-needed';
+
+const submissionLocks = new Map<string, SubmissionLockState>();
 const submissionLockListeners = new Map<string, Set<() => void>>();
 const pendingDraftMutations = new Map<string, Set<Promise<unknown>>>();
+const failedSubmissionComments = new Map<
+  string,
+  { draftId: string; fingerprints: Map<string, string> }
+>();
 
 export function usePrReviewBriefingActions(
   review: PrReviewRecord,
@@ -52,10 +59,15 @@ export function usePrReviewBriefingActions(
     },
     [submissionKey],
   );
-  const submissionLocked = useSyncExternalStore(
+  const submissionLockState = useSyncExternalStore(
     subscribeToSubmissionLock,
-    () => submissionLocks.has(submissionKey),
-    () => false,
+    () => submissionLocks.get(submissionKey) ?? null,
+    () => null,
+  );
+  const rejectedCommentCount = useSyncExternalStore(
+    subscribeToSubmissionLock,
+    () => failedSubmissionComments.get(submissionKey)?.fingerprints.size ?? 0,
+    () => 0,
   );
   const queryClient = useQueryClient();
   const mutations = useGitHubPrReviewMutations(target);
@@ -105,7 +117,10 @@ export function usePrReviewBriefingActions(
   const draftRef = useRef(draftQuery.data ?? null);
   useEffect(() => {
     draftRef.current = draftQuery.data ?? null;
-  }, [draftQuery.data, review.id]);
+    if (draftQuery.data) {
+      synchronizeFailedSubmissionComments(submissionKey, draftQuery.data);
+    }
+  }, [draftQuery.data, review.id, submissionKey]);
   useEffect(() => {
     synchronizePrReviewSubmissionLock(review);
     if (review.status !== 'ready' && submissionPendingRef.current) {
@@ -115,6 +130,7 @@ export function usePrReviewBriefingActions(
   }, [review, submissionKey]);
   const acceptDraft = (draft: GitHubPrReviewDraft) => {
     draftRef.current = draft;
+    synchronizeFailedSubmissionComments(submissionKey, draft);
     return draft;
   };
   const trackMutation = <T>(promise: Promise<T>) => {
@@ -163,10 +179,15 @@ export function usePrReviewBriefingActions(
   };
 
   return {
+    rejectedCommentCount,
     submitting:
-      submissionPending || submissionLocked || mutations.submitReview.isPending,
+      submissionPending ||
+      submissionLockState !== null ||
+      mutations.submitReview.isPending,
     busy:
-      submissionLocked ||
+      submissionLockState === 'active' ||
+      (submissionLockState === 'recovery-needed' &&
+        review.status !== 'submitting') ||
       submissionPending ||
       mutations.saveDraft.isPending ||
       mutations.addComment.isPending ||
@@ -191,7 +212,7 @@ export function usePrReviewBriefingActions(
       const draft = mutableDraft();
       const normalized = body.trim();
       if (!normalized) throw new Error('Draft comment text is required.');
-      acceptDraft(
+      const updated = acceptDraft(
         await trackMutation(
           mutations.updateComment.mutateAsync({
             ...target,
@@ -202,6 +223,7 @@ export function usePrReviewBriefingActions(
           }),
         ),
       );
+      clearFailedSubmissionComment(submissionKey, updated.id, commentId);
     },
     promoteFinding(
       finding: PrReviewReportOnlyFinding,
@@ -245,10 +267,18 @@ export function usePrReviewBriefingActions(
           pendingDraftMutations.get(submissionKey) ?? new Set(),
         );
         const barrierDraft = draftRef.current;
-        await settleAndSubmitPrReview({
+        const settledDraft = await settleAndSubmitPrReview({
           barrierDraft,
           body: normalizeReviewBody(body),
-          commentIds: (draft) => draft.comments.map((comment) => comment.id),
+          commentIds: (draft) => {
+            synchronizeFailedSubmissionComments(submissionKey, draft);
+            const failedIds =
+              failedSubmissionComments.get(submissionKey)?.fingerprints ??
+              new Map();
+            return draft.comments
+              .filter((comment) => !failedIds.has(comment.id))
+              .map((comment) => comment.id);
+          },
           headSha: review.headSha,
           number: review.prNumber,
           onSubmitStart: () => {
@@ -266,8 +296,17 @@ export function usePrReviewBriefingActions(
           submitReview: mutations.submitReview.mutateAsync,
           verdict: 'approve',
         });
+        clearFailedSubmissionComments(submissionKey, settledDraft.id);
         lockRetention = 'confirmed';
       } catch (error) {
+        const failingIds = failingCommentIdsFromError(error);
+        if (failingIds.length > 0) {
+          recordFailedSubmissionComments(
+            submissionKey,
+            draftRef.current,
+            failingIds,
+          );
+        }
         lockRetention = submissionMayHaveBeenAccepted(error)
           ? 'confirmed'
           : submissionStarted &&
@@ -294,6 +333,10 @@ export function usePrReviewBriefingActions(
             submissionPendingRef.current = false;
             setSubmissionPending(false);
             releaseSubmissionLock(submissionKey);
+          } else {
+            submissionPendingRef.current = false;
+            setSubmissionPending(false);
+            markSubmissionRecoveryNeeded(submissionKey);
           }
         }
       }
@@ -302,7 +345,7 @@ export function usePrReviewBriefingActions(
       if (review.status !== 'submitting') {
         throw new Error('Only an interrupted submission can be recovered.');
       }
-      if (!acquireSubmissionLock(submissionKey)) return;
+      if (!acquireSubmissionRecoveryLock(submissionKey)) return;
       submissionPendingRef.current = true;
       setSubmissionPending(true);
       try {
@@ -318,9 +361,22 @@ export function usePrReviewBriefingActions(
 
 function acquireSubmissionLock(key: string) {
   if (submissionLocks.has(key)) return false;
-  submissionLocks.add(key);
+  submissionLocks.set(key, 'active');
   notifySubmissionLock(key);
   return true;
+}
+
+function acquireSubmissionRecoveryLock(key: string) {
+  if (submissionLocks.get(key) === 'active') return false;
+  submissionLocks.set(key, 'active');
+  notifySubmissionLock(key);
+  return true;
+}
+
+function markSubmissionRecoveryNeeded(key: string) {
+  if (!submissionLocks.has(key)) return;
+  submissionLocks.set(key, 'recovery-needed');
+  notifySubmissionLock(key);
 }
 
 function releaseSubmissionLock(key: string) {
@@ -335,10 +391,103 @@ function notifySubmissionLock(key: string) {
 export function synchronizePrReviewSubmissionLock(
   review: Pick<PrReviewRecord, 'prNumber' | 'repoFullName' | 'status'>,
 ) {
-  if (review.status === 'ready') return;
-  releaseSubmissionLock(
-    `${review.repoFullName.toLowerCase()}#${review.prNumber}`,
+  const key = `${review.repoFullName.toLowerCase()}#${review.prNumber}`;
+  if (review.status === 'submitting') return;
+  if (review.status === 'ready') {
+    if (submissionLocks.get(key) === 'recovery-needed') {
+      releaseSubmissionLock(key);
+    }
+    return;
+  }
+  releaseSubmissionLock(key);
+}
+
+function synchronizeFailedSubmissionComments(
+  key: string,
+  draft: GitHubPrReviewDraft,
+) {
+  const current = failedSubmissionComments.get(key);
+  if (!current) return;
+  if (current.draftId !== draft.id) {
+    failedSubmissionComments.delete(key);
+    notifySubmissionLock(key);
+    return;
+  }
+  const liveComments = new Map(
+    draft.comments.map((comment) => [comment.id, comment]),
   );
+  const nextFingerprints = new Map(
+    [...current.fingerprints].filter(([id, fingerprint]) => {
+      const comment = liveComments.get(id);
+      return comment && submissionCommentFingerprint(comment) === fingerprint;
+    }),
+  );
+  if (nextFingerprints.size === current.fingerprints.size) return;
+  if (nextFingerprints.size === 0) failedSubmissionComments.delete(key);
+  else {
+    failedSubmissionComments.set(key, {
+      ...current,
+      fingerprints: nextFingerprints,
+    });
+  }
+  notifySubmissionLock(key);
+}
+
+function recordFailedSubmissionComments(
+  key: string,
+  draft: GitHubPrReviewDraft | null,
+  commentIds: readonly string[],
+) {
+  if (!draft) return;
+  const current = failedSubmissionComments.get(key);
+  const fingerprints =
+    current?.draftId === draft.id
+      ? new Map(current.fingerprints)
+      : new Map<string, string>();
+  for (const commentId of commentIds) {
+    const comment = draft.comments.find((item) => item.id === commentId);
+    if (comment) {
+      fingerprints.set(commentId, submissionCommentFingerprint(comment));
+    }
+  }
+  failedSubmissionComments.set(key, { draftId: draft.id, fingerprints });
+  synchronizeFailedSubmissionComments(key, draft);
+  notifySubmissionLock(key);
+}
+
+function clearFailedSubmissionComment(
+  key: string,
+  draftId: string,
+  commentId: string,
+) {
+  const current = failedSubmissionComments.get(key);
+  if (!current || current.draftId !== draftId) return;
+  const fingerprints = new Map(current.fingerprints);
+  if (!fingerprints.delete(commentId)) return;
+  if (fingerprints.size === 0) failedSubmissionComments.delete(key);
+  else failedSubmissionComments.set(key, { draftId, fingerprints });
+  notifySubmissionLock(key);
+}
+
+function clearFailedSubmissionComments(key: string, draftId: string) {
+  const current = failedSubmissionComments.get(key);
+  if (!current || current.draftId !== draftId) return;
+  failedSubmissionComments.delete(key);
+  notifySubmissionLock(key);
+}
+
+function submissionCommentFingerprint(
+  comment: GitHubPrReviewDraft['comments'][number],
+) {
+  return JSON.stringify([
+    comment.updatedAt,
+    comment.path,
+    comment.side,
+    comment.line,
+    comment.startSide,
+    comment.startLine,
+    comment.body,
+  ]);
 }
 
 function assertReadyReview(review: PrReviewRecord) {
@@ -357,6 +506,7 @@ function assertReadyReview(review: PrReviewRecord) {
 
 export type PrReviewBriefingActions = {
   busy: boolean;
+  rejectedCommentCount: number;
   submitting: boolean;
   dismissComment: (commentId: string) => Promise<unknown>;
   editComment: (commentId: string, body: string) => Promise<unknown>;

@@ -37,7 +37,10 @@ vi.mock('./queries', () => ({
   useGitHubPrReviewMutations: mutationHook.useGitHubPrReviewMutations,
 }));
 
-import { usePrReviewBriefingActions } from './usePrReviewBriefingActions';
+import {
+  synchronizePrReviewSubmissionLock,
+  usePrReviewBriefingActions,
+} from './usePrReviewBriefingActions';
 
 describe('usePrReviewBriefingActions', () => {
   let container: HTMLDivElement;
@@ -230,6 +233,266 @@ describe('usePrReviewBriefingActions', () => {
 
     expect(mutations.submitReview.mutateAsync).toHaveBeenCalledOnce();
     expect(draftQuery.refetch).toHaveBeenCalledOnce();
+  });
+
+  it('keeps the cross-surface lock while authoritative state is submitting', async () => {
+    const mutations = mutationFixture();
+    const draft = draftFixture(1);
+    const submitBarrier = deferred<unknown>();
+    mutations.saveDraft.mutateAsync.mockResolvedValue({
+      ...draft,
+      revision: 2,
+    });
+    mutations.submitReview.mutateAsync.mockImplementation(
+      () => submitBarrier.promise,
+    );
+    mutationHook.useGitHubPrReviewMutations.mockReturnValue(mutations);
+    api.getPrReview.mockRejectedValueOnce(new Error('refresh unavailable'));
+    let rowActions: ReturnType<typeof usePrReviewBriefingActions> | null = null;
+    let staleBriefingActions: ReturnType<
+      typeof usePrReviewBriefingActions
+    > | null = null;
+    function Harness() {
+      rowActions = usePrReviewBriefingActions(reviewFixture(), {
+        data: draft,
+        refetch: vi.fn(async () => ({ data: draft })),
+      } as never);
+      staleBriefingActions = usePrReviewBriefingActions(reviewFixture(), {
+        data: draft,
+        refetch: vi.fn(async () => ({ data: draft })),
+      } as never);
+      return null;
+    }
+    renderHarness(root, queryClient, <Harness />);
+
+    let submission!: Promise<unknown>;
+    act(() => {
+      submission = rowActions!.submitApproval('');
+    });
+    await vi.waitFor(() =>
+      expect(mutations.submitReview.mutateAsync).toHaveBeenCalledOnce(),
+    );
+    act(() => synchronizePrReviewSubmissionLock(reviewFixture('submitting')));
+
+    expect(staleBriefingActions!.submitting).toBe(true);
+    await staleBriefingActions!.submitApproval('duplicate');
+    expect(mutations.submitReview.mutateAsync).toHaveBeenCalledOnce();
+
+    submitBarrier.resolve({});
+    await act(async () => submission);
+    act(() => synchronizePrReviewSubmissionLock(reviewFixture('submitted')));
+    expect(staleBriefingActions!.submitting).toBe(false);
+  });
+
+  it('shares and accumulates rejected comments across submission surfaces', async () => {
+    const mutations = mutationFixture();
+    let draft = {
+      ...draftFixture(1),
+      comments: [
+        draftFixture(1).comments[0],
+        {
+          ...draftFixture(1).comments[0],
+          id: 'comment-2',
+          body: 'Second draft body',
+        },
+      ],
+    };
+    mutations.saveDraft.mutateAsync.mockImplementation(async () => {
+      draft = { ...draft, revision: draft.revision + 1 };
+      return draft;
+    });
+    mutations.submitReview.mutateAsync
+      .mockRejectedValueOnce(
+        new ApiError('One inline comment was rejected.', 422, '/review', {
+          ok: false,
+          changed: false,
+          data: {
+            code: 'github-review-submit-failed',
+            failingCommentIds: ['comment-1'],
+          },
+        }),
+      )
+      .mockRejectedValueOnce(
+        new ApiError('Another inline comment was rejected.', 422, '/review', {
+          ok: false,
+          changed: false,
+          data: {
+            code: 'github-review-submit-failed',
+            failingCommentIds: ['comment-2'],
+          },
+        }),
+      )
+      .mockResolvedValueOnce({});
+    mutationHook.useGitHubPrReviewMutations.mockReturnValue(mutations);
+    api.getPrReview.mockRejectedValue(new Error('refresh unavailable'));
+    const refetch = vi.fn(async () => ({ data: draft }));
+    let rowActions: ReturnType<typeof usePrReviewBriefingActions> | null = null;
+    let briefingActions: ReturnType<typeof usePrReviewBriefingActions> | null =
+      null;
+    function Harness() {
+      rowActions = usePrReviewBriefingActions(reviewFixture(), {
+        data: draft,
+        refetch,
+      } as never);
+      briefingActions = usePrReviewBriefingActions(reviewFixture(), {
+        data: draft,
+        refetch,
+      } as never);
+      return null;
+    }
+    renderHarness(root, queryClient, <Harness />);
+
+    await expect(
+      act(async () => rowActions!.submitApproval('')),
+    ).rejects.toThrow('One inline comment was rejected.');
+    renderHarness(root, queryClient, <Harness />);
+    expect(briefingActions!.rejectedCommentCount).toBe(1);
+    await expect(
+      act(async () => briefingActions!.submitApproval('retry')),
+    ).rejects.toThrow('Another inline comment was rejected.');
+    renderHarness(root, queryClient, <Harness />);
+    expect(rowActions!.rejectedCommentCount).toBe(2);
+    await act(async () => rowActions!.submitApproval('final retry'));
+
+    expect(mutations.submitReview.mutateAsync).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({ commentIds: ['comment-1', 'comment-2'] }),
+    );
+    expect(mutations.submitReview.mutateAsync).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({ commentIds: ['comment-2'] }),
+    );
+    expect(mutations.submitReview.mutateAsync).toHaveBeenNthCalledWith(
+      3,
+      expect.objectContaining({ commentIds: [] }),
+    );
+    expect(rowActions!.rejectedCommentCount).toBe(0);
+    act(() => synchronizePrReviewSubmissionLock(reviewFixture('submitted')));
+  });
+
+  it('resubmits a rejected comment after the briefing edits it', async () => {
+    const mutations = mutationFixture();
+    let draft = {
+      ...draftFixture(1),
+      comments: [
+        draftFixture(1).comments[0],
+        {
+          ...draftFixture(1).comments[0],
+          id: 'comment-2',
+          body: 'Second draft body',
+        },
+      ],
+    };
+    mutations.saveDraft.mutateAsync.mockImplementation(async () => {
+      draft = { ...draft, revision: draft.revision + 1 };
+      return draft;
+    });
+    mutations.updateComment.mutateAsync.mockImplementation(async (input) => {
+      draft = {
+        ...draft,
+        revision: draft.revision + 1,
+        comments: draft.comments.map((comment) =>
+          comment.id === input.id ? { ...comment, body: input.body } : comment,
+        ),
+      };
+      return draft;
+    });
+    mutations.submitReview.mutateAsync
+      .mockRejectedValueOnce(
+        new ApiError('One inline comment was rejected.', 422, '/review', {
+          ok: false,
+          changed: false,
+          data: {
+            code: 'github-review-submit-failed',
+            failingCommentIds: ['comment-1'],
+          },
+        }),
+      )
+      .mockResolvedValueOnce({});
+    mutationHook.useGitHubPrReviewMutations.mockReturnValue(mutations);
+    api.getPrReview.mockRejectedValue(new Error('refresh unavailable'));
+    const refetch = vi.fn(async () => ({ data: draft }));
+    let actions: ReturnType<typeof usePrReviewBriefingActions> | null = null;
+    function Harness() {
+      actions = usePrReviewBriefingActions(reviewFixture(), {
+        data: draft,
+        refetch,
+      } as never);
+      return null;
+    }
+    renderHarness(root, queryClient, <Harness />);
+
+    await expect(act(async () => actions!.submitApproval(''))).rejects.toThrow(
+      'One inline comment was rejected.',
+    );
+    renderHarness(root, queryClient, <Harness />);
+    expect(actions!.rejectedCommentCount).toBe(1);
+    await act(async () => actions!.editComment('comment-1', 'Fixed body'));
+    expect(actions!.rejectedCommentCount).toBe(0);
+    await act(async () => actions!.submitApproval('retry'));
+
+    expect(mutations.submitReview.mutateAsync).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({ commentIds: ['comment-1', 'comment-2'] }),
+    );
+    act(() => synchronizePrReviewSubmissionLock(reviewFixture('submitted')));
+  });
+
+  it('resubmits a rejected comment after an external draft edit', async () => {
+    const mutations = mutationFixture();
+    let draft = draftFixture(1);
+    mutations.saveDraft.mutateAsync.mockImplementation(async () => {
+      draft = { ...draft, revision: draft.revision + 1 };
+      return draft;
+    });
+    mutations.submitReview.mutateAsync
+      .mockRejectedValueOnce(
+        new ApiError('The inline comment was rejected.', 422, '/review', {
+          ok: false,
+          changed: false,
+          data: {
+            code: 'github-review-submit-failed',
+            failingCommentIds: ['comment-1'],
+          },
+        }),
+      )
+      .mockResolvedValueOnce({});
+    mutationHook.useGitHubPrReviewMutations.mockReturnValue(mutations);
+    api.getPrReview.mockRejectedValue(new Error('refresh unavailable'));
+    const refetch = vi.fn(async () => ({ data: draft }));
+    let actions: ReturnType<typeof usePrReviewBriefingActions> | null = null;
+    function Harness() {
+      actions = usePrReviewBriefingActions(reviewFixture(), {
+        data: draft,
+        refetch,
+      } as never);
+      return null;
+    }
+    renderHarness(root, queryClient, <Harness />);
+
+    await expect(act(async () => actions!.submitApproval(''))).rejects.toThrow(
+      'The inline comment was rejected.',
+    );
+    expect(actions!.rejectedCommentCount).toBe(1);
+
+    draft = {
+      ...draft,
+      revision: draft.revision + 1,
+      comments: draft.comments.map((comment) => ({
+        ...comment,
+        body: 'Corrected in the workbench.',
+        updatedAt: '2026-08-22T18:05:00.000Z',
+      })),
+    };
+    renderHarness(root, queryClient, <Harness />);
+
+    expect(actions!.rejectedCommentCount).toBe(0);
+    await act(async () => actions!.submitApproval('retry'));
+    expect(mutations.submitReview.mutateAsync).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({ commentIds: ['comment-1'] }),
+    );
+    act(() => synchronizePrReviewSubmissionLock(reviewFixture('submitted')));
   });
 
   it('keeps a no-draft promotion pending across draft creation and comment insertion', async () => {
@@ -514,6 +777,82 @@ describe('usePrReviewBriefingActions', () => {
     review = reviewFixture('submitted');
     renderHarness(root, queryClient, <Harness />);
     expect(actions!.submitting).toBe(false);
+  });
+
+  it('makes a settled ambiguous submission recoverable after it reaches submitting', async () => {
+    const mutations = mutationFixture();
+    const draft = draftFixture(1);
+    mutations.saveDraft.mutateAsync.mockResolvedValue({
+      ...draft,
+      revision: 2,
+    });
+    mutations.submitReview.mutateAsync.mockRejectedValue(
+      new TypeError('Failed to fetch'),
+    );
+    mutationHook.useGitHubPrReviewMutations.mockReturnValue(mutations);
+    api.getPrReview.mockResolvedValue({
+      review: reviewFixture('submitting'),
+    });
+    api.reconcilePrReviewSubmission.mockResolvedValue({
+      review: reviewFixture('submitted'),
+    });
+    let review = reviewFixture();
+    let actions: ReturnType<typeof usePrReviewBriefingActions> | null = null;
+    function Harness() {
+      actions = usePrReviewBriefingActions(review, {
+        data: draft,
+        refetch: vi.fn(async () => ({ data: draft })),
+      } as never);
+      return null;
+    }
+    renderHarness(root, queryClient, <Harness />);
+
+    await expect(act(async () => actions!.submitApproval(''))).rejects.toThrow(
+      'Failed to fetch',
+    );
+    review = reviewFixture('submitting');
+    renderHarness(root, queryClient, <Harness />);
+
+    expect(actions!.busy).toBe(false);
+    await act(async () => actions!.recoverSubmission());
+    expect(api.reconcilePrReviewSubmission).toHaveBeenCalledWith('review-1');
+    expect(actions!.submitting).toBe(false);
+  });
+
+  it('releases a recoverable ambiguous lock when later state proves ready', async () => {
+    const mutations = mutationFixture();
+    let draft = draftFixture(1);
+    mutations.saveDraft.mutateAsync.mockImplementation(async () => {
+      draft = { ...draft, revision: draft.revision + 1 };
+      return draft;
+    });
+    mutations.submitReview.mutateAsync
+      .mockRejectedValueOnce(new TypeError('Failed to fetch'))
+      .mockResolvedValueOnce({});
+    mutationHook.useGitHubPrReviewMutations.mockReturnValue(mutations);
+    api.getPrReview.mockRejectedValueOnce(new Error('refresh unavailable'));
+    const refetch = vi.fn(async () => ({ data: draft }));
+    const readyReview = reviewFixture();
+    let actions: ReturnType<typeof usePrReviewBriefingActions> | null = null;
+    function Harness() {
+      actions = usePrReviewBriefingActions(readyReview, {
+        data: draft,
+        refetch,
+      } as never);
+      return null;
+    }
+    renderHarness(root, queryClient, <Harness />);
+
+    await expect(act(async () => actions!.submitApproval(''))).rejects.toThrow(
+      'Failed to fetch',
+    );
+    expect(actions!.submitting).toBe(true);
+
+    act(() => synchronizePrReviewSubmissionLock(reviewFixture('ready')));
+    expect(actions!.submitting).toBe(false);
+    await act(async () => actions!.submitApproval('retry'));
+    expect(mutations.submitReview.mutateAsync).toHaveBeenCalledTimes(2);
+    act(() => synchronizePrReviewSubmissionLock(reviewFixture('submitted')));
   });
 
   it('releases an ambiguous-attempt lock when authoritative state returns ready', async () => {

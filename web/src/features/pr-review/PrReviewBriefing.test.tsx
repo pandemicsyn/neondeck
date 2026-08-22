@@ -421,6 +421,16 @@ describe('PR review briefing', () => {
     expect(container.textContent).toContain('with note + 1 comment, as you');
   });
 
+  it('warns when a rejected draft comment will be omitted', () => {
+    const actions = actionFixture();
+    actions.rejectedCommentCount = 1;
+    renderBriefing(root, reviewFixture('approve'), draftFixture(), actions);
+
+    expect(container.textContent).toContain(
+      'approve & submit 0 comments · 1 rejected draft omitted until edited',
+    );
+  });
+
   it('does not label a local draft mutation as a GitHub submission', () => {
     const actions = actionFixture();
     actions.busy = true;
@@ -473,6 +483,7 @@ describe('PR review briefing', () => {
 function actionFixture() {
   return {
     busy: false,
+    rejectedCommentCount: 0,
     submitting: false,
     dismissComment: vi.fn(async () => undefined),
     editComment: vi.fn(async () => undefined),

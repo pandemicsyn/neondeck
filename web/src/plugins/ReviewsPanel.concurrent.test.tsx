@@ -23,6 +23,7 @@ const reviewDraftQueries = vi.hoisted(() => ({
   useGitHubPrReviewDraft: vi.fn(),
 }));
 const reviewActions = vi.hoisted(() => ({
+  recoverSubmission: vi.fn(),
   submitApproval: vi.fn(),
   usePrReviewBriefingActions: vi.fn(),
 }));
@@ -90,8 +91,11 @@ describe('ReviewsPanel concurrent row mutations', () => {
       refetch: vi.fn(),
     });
     reviewActions.submitApproval.mockResolvedValue(undefined);
+    reviewActions.recoverSubmission.mockResolvedValue(undefined);
     reviewActions.usePrReviewBriefingActions.mockReturnValue({
       busy: false,
+      rejectedCommentCount: 0,
+      recoverSubmission: reviewActions.recoverSubmission,
       submitting: false,
       submitApproval: reviewActions.submitApproval,
     });
@@ -188,6 +192,85 @@ describe('ReviewsPanel concurrent row mutations', () => {
     await act(async () => buttonWithText('approve & submit 0').click());
 
     expect(reviewActions.submitApproval).toHaveBeenCalledWith('');
+  });
+
+  it('labels rejected draft comments that quick approval will omit', async () => {
+    const approve = readyRecord('owner/project', 1, true);
+    api.getPrReviews.mockResolvedValue({
+      ...reviewsResponse(),
+      items: [approve],
+      groups: {
+        awaiting: [],
+        inProgress: [],
+        needsAction: [approve],
+        submitted: [],
+        archived: [],
+      },
+    });
+    reviewDraftQueries.useGitHubPrReviewDraft.mockReturnValue({
+      data: { status: 'draft', headSha: approve.headSha, comments: [{}, {}] },
+      error: null,
+      isError: false,
+      isLoading: false,
+      isRefetchError: false,
+      refetch: vi.fn(),
+    });
+    reviewActions.usePrReviewBriefingActions.mockReturnValue({
+      busy: false,
+      rejectedCommentCount: 1,
+      submitting: false,
+      submitApproval: reviewActions.submitApproval,
+    });
+
+    await renderPanel();
+
+    expect(container.textContent).toContain(
+      'approve & submit 1 · omit 1 rejected',
+    );
+  });
+
+  it('disables row recovery while submission is active and enables it once recoverable', async () => {
+    const submitting = {
+      ...readyRecord('owner/project', 1, true),
+      status: 'submitting' as const,
+      submissionDraftId: 'draft-1',
+    };
+    api.getPrReviews.mockResolvedValue({
+      ...reviewsResponse(),
+      items: [submitting],
+      groups: {
+        awaiting: [],
+        inProgress: [submitting],
+        needsAction: [],
+        submitted: [],
+        archived: [],
+      },
+    });
+    reviewActions.usePrReviewBriefingActions.mockReturnValue({
+      busy: true,
+      rejectedCommentCount: 0,
+      recoverSubmission: reviewActions.recoverSubmission,
+      submitting: true,
+      submitApproval: reviewActions.submitApproval,
+    });
+
+    await renderPanel();
+
+    expect(buttonWithText('checking GitHub…').disabled).toBe(true);
+
+    reviewActions.usePrReviewBriefingActions.mockReturnValue({
+      busy: false,
+      rejectedCommentCount: 0,
+      recoverSubmission: reviewActions.recoverSubmission,
+      submitting: true,
+      submitApproval: reviewActions.submitApproval,
+    });
+    await renderPanel();
+
+    const recover = buttonWithText('recover submission');
+    expect(recover.disabled).toBe(false);
+    await act(async () => recover.click());
+    expect(reviewActions.recoverSubmission).toHaveBeenCalledOnce();
   });
 
   it('turns a submitted row into a durable receipt with its GitHub link', async () => {

@@ -134,10 +134,18 @@ export function PrReviewBriefing({
     : null;
   const submitted = review.status === 'submitted';
   const submitting = review.status === 'submitting';
-  const commentPayload = `${comments.length} comment${comments.length === 1 ? '' : 's'}`;
+  const rejectedCommentCount = Math.min(
+    actions?.rejectedCommentCount ?? 0,
+    comments.length,
+  );
+  const submittedCommentCount = comments.length - rejectedCommentCount;
+  const commentPayload = `${submittedCommentCount} comment${submittedCommentCount === 1 ? '' : 's'}`;
+  const rejectedCommentWarning = rejectedCommentCount
+    ? ` · ${rejectedCommentCount} rejected draft${rejectedCommentCount === 1 ? '' : 's'} omitted until edited`
+    : '';
   const payloadLabel = approvalNote.trim()
-    ? `note + ${commentPayload}`
-    : commentPayload;
+    ? `note + ${commentPayload}${rejectedCommentWarning}`
+    : `${commentPayload}${rejectedCommentWarning}`;
   const archived = review.archivedAt !== null;
   const actionable =
     Boolean(actions) &&
