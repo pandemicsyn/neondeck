@@ -1,0 +1,130 @@
+{
+  "artboards": [
+    {
+      "file": "Main.dc.html",
+      "title": "Today · deck",
+      "x": 0,
+      "y": 0,
+      "w": 1440,
+      "h": 920,
+      "page": "page-1"
+    },
+    {
+      "file": "Refinement.dc.html",
+      "title": "A · Briefing rail",
+      "x": 1560,
+      "y": 0,
+      "w": 1440,
+      "h": 920,
+      "page": "page-1"
+    },
+    {
+      "file": "Rethink.dc.html",
+      "title": "B · Review queue",
+      "x": 3120,
+      "y": 0,
+      "w": 1440,
+      "h": 920,
+      "page": "page-1"
+    },
+    {
+      "file": "ApproveB.dc.html",
+      "title": "B · Recommend approve",
+      "x": 0,
+      "y": 0,
+      "w": 1440,
+      "h": 920,
+      "page": "page-2"
+    },
+    {
+      "file": "EscalateB.dc.html",
+      "title": "B · Needs a human",
+      "x": 1560,
+      "y": 0,
+      "w": 1440,
+      "h": 920,
+      "page": "page-2"
+    },
+    {
+      "file": "PanelRow.dc.html",
+      "title": "Reviews panel · with verdicts",
+      "x": 3120,
+      "y": 0,
+      "w": 560,
+      "h": 920,
+      "page": "page-2"
+    }
+  ],
+  "annotations": [
+    {
+      "id": "note-today",
+      "x": 0,
+      "y": -230,
+      "w": 460,
+      "text": "TODAY — recreated from shared/report-deck-view.tsx + report-deck-styles.ts, so the comparison is fair. Click through it.\n\nWhat it costs you:\n· Two decks behind one switcher, and slide 1 of each is the SAME Review brief.\n· A facts sidebar takes ~28% of the brief and pins the prose column at 74ch on a 1440px surface.\n· Findings and change map paginate into \"part 1 / 2\" — you page rather than scan, and the footnote under three rows still reads \"9 of 9 files\".\n· Guidance — the one section that tells you what to do — is slide 3 of 5, buried between facts and file lists.",
+      "page": "page-1"
+    },
+    {
+      "id": "note-a",
+      "x": 1560,
+      "y": -230,
+      "w": 460,
+      "text": "A — REFINEMENT. Same content, same components, better spine.\n\n· The footer step strip becomes a persistent left rail, so you see the whole briefing's shape before you walk it.\n· One briefing, not two decks — the overview/issues switcher and the duplicated brief slide both disappear.\n· Order is BRIEF → FOR YOU → EVIDENCE. Guidance outranks raw facts.\n· Facts move to a strip above the brief so the prose gets full width.\n· Sections scroll; no more \"part 1 / 2\".\n· Draft comments vs report-only notes are finally labelled as different things.\n\nTradeoff: still a document you read. It does not help you act.",
+      "page": "page-1"
+    },
+    {
+      "id": "note-b",
+      "x": 3120,
+      "y": -230,
+      "w": 460,
+      "text": "B — RETHOUGHT. The briefing stops being a presentation and becomes a worklist.\n\n· Brief stays, as the lede — kept whole.\n· Everything else becomes one triage queue: severity-ordered decisions, each expandable, each with open-in-diff / edit comment / dismiss.\n· The sidebar is now only WHY I'M UNSURE — the risks that drive the verdict — plus a handoff to the workbench chat. The checklist and the what-I-checked roll-up are gone: both restated things the queue and the brief already said.\n· Progress is \"2 of 4 cleared\", not \"slide 3 of 7\".\n· Change map demotes to context behind the EVERYTHING filter.\n· It ends on the real next step: open the workbench and submit.\n\nTradeoff: further from the current code, and it presumes triage state the review record does not store yet.",
+      "page": "page-1"
+    },
+    {
+      "id": "note-frame",
+      "x": 0,
+      "y": 990,
+      "w": 700,
+      "text": "All three are the Reviews-panel overlay at 1440×920 (its real max size), dark theme, in the shipped neondeck system — Chakra Petch / IBM Plex Sans / IBM Plex Mono, square borders, #00b7c7 primary on #0a0b10.\n\nUse the theme tweak above each artboard to check the light palette.\n\nSample data is a composite: the real files and churn from #315, with plausible findings in the same subsystem. A and B both lift --panel one step off --canvas so the frame reads as a surface rather than a hairline — in dark theme today they resolve to the same #0a0b10.",
+      "page": "page-1"
+    },
+    {
+      "id": "note-approve",
+      "page": "page-2",
+      "x": 0,
+      "y": -250,
+      "w": 460,
+      "text": "B · RECOMMEND APPROVE — sample PR #314.\n\nTWO verdicts, not three: approve, or needs a human. That is the real decision — can this merge without a human reading the diff.\n\n· Nothing to triage, so the findings are a MANIFEST of what is about to be sent: same card and same three verbs as the needs-a-human board, rendered compact.\n· The button states its whole payload, verdict and comment count together. Never a bare \"Approve\".\n· \"+ add a note with your approval\" is the HUMAN's, written by you, posting as the review body. Neon does not draft it — an agent asked whether anything is worth flagging will find something every time, and that noise would go out under your name.\n· Press Approve: the briefing becomes a receipt rather than closing. No undo, and the footer says so.\n\nThe sidebar's one \"double-check this\" item comes from overview.risks, which can legitimately be empty. It stays inside the briefing and never enters the published review — say the word if you think it has the same bias problem."
+    },
+    {
+      "id": "note-escalate",
+      "page": "page-2",
+      "x": 1560,
+      "y": -250,
+      "w": 460,
+      "text": "B · NEEDS A HUMAN — sample PR #315, the same one on the Directions page.\n\nSame layout, different defaults. Verdict bar turns, filter defaults to BLOCKERS, blockers open expanded, sidebar leads with WHY I'M ESCALATING.\n\n· The brief answers a different question: not \"why is this safe\" but \"what makes this hard\". Same slot, same length, different job — that is a prompt change in pr-review-prompts.ts, not just a UI one.\n· Card actions are open in diff / edit comment / dismiss. Edit opens the draft in place; dismiss is the only thing that changes state, so the two are no longer ambiguous.\n· Approve is NOT hidden. A de-emphasized \"Approve anyway\" opens an acknowledgement band naming what you are overriding — and carrying the note field, because approving over a recommendation is exactly when you want to say why.\n· Chat is deliberately absent: the sidebar routes to the workbench instead."
+    },
+    {
+      "id": "note-panel",
+      "page": "page-2",
+      "x": 3120,
+      "y": -250,
+      "w": 460,
+      "text": "REVIEWS PANEL — the surface that matters most if the verdicts are any good.\n\nBuilt on the shipped panel: same section headers (bg-field, 10px mono, right-aligned count), same row anatomy, same Badge and Button.\n\n· Two verdicts on the rows, each with its one-line reason. Approve one and the row becomes a receipt without the briefing ever opening.\n· The two report buttons (overview / issues) collapse into one \"briefing\".\n· A needs-a-human row has no approve button at all. The override exists, but inside the briefing next to the reasoning, not out here where it would be a reflex.\n\nIf this works the briefing gets less traffic, not more. Worth designing for on purpose."
+    }
+  ],
+  "launch": {
+    "view": "canvas",
+    "page": "page-2"
+  },
+  "pages": [
+    {
+      "id": "page-1",
+      "name": "Directions"
+    },
+    {
+      "id": "page-2",
+      "name": "Auto-verdict"
+    }
+  ]
+}

@@ -1,6 +1,11 @@
 # Agent-Authored PR Review Report Deck
 
-Status: proposed
+Status: superseded by `../new-review/PLAN.md`
+
+The slide-deck direction proposed here was explored and dropped. The review
+briefing is a scrolling brief plus a triage queue, not a deck. `ReportDeck`
+remains in use for other report kinds. Retained for decision history; do not
+treat anything below as current.
 
 ## Goal
 

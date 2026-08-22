@@ -1,0 +1,305 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+  <style>
+    body { margin: 0; background: #05060a; }
+    .shell, .shell * { box-sizing: border-box; }
+    .shell {
+      --bg: #0c0d12; --canvas: #0a0b10; --panel: #0c0d12; --field: #070810;
+      --line: rgba(255,255,255,0.07); --line-up: rgba(255,255,255,0.12);
+      --ink: #d7f7ff; --muted: #91a8b0;
+      --primary: #00b7c7; --primary-strong: #69e6ff; --primary-ink: #070810;
+      --accent: #ff4fb8; --good: #4dd6a8; --warning: #f0b95b; --danger: #ff6b7a;
+      font: 14px/1.55 "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
+      color: var(--ink);
+    }
+    .shell[data-theme="light"] {
+      --bg: #edf5f8; --canvas: #edf5f8; --panel: #f7fbfd; --field: #dbeaef;
+      --line: rgba(20,45,60,0.18); --line-up: rgba(20,45,60,0.26);
+      --ink: #19232e; --muted: #435965;
+      --primary: #007f91; --primary-strong: #005b69; --primary-ink: #edf5f8;
+      --accent: #b31170; --good: #157a5f; --warning: #8a5b00; --danger: #b42335;
+    }
+    .mono { font-family: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace; }
+    .disp { font-family: "Chakra Petch", ui-sans-serif, system-ui, sans-serif; }
+    .shell a { color: var(--primary-strong); text-decoration-color: color-mix(in srgb, var(--primary-strong) 54%, transparent); text-underline-offset: 0.18em; }
+    .shell a:hover { text-decoration-color: currentColor; }
+    .shell button { font: inherit; cursor: pointer; border-radius: 0; }
+    .chip {
+      border: 1px solid var(--line-up); background: transparent; color: var(--muted);
+      padding: 4px 8px; font: 400 10px/1.2 "IBM Plex Mono", ui-monospace, monospace;
+    }
+    .chip:hover { border-color: var(--primary); color: var(--primary); }
+    .chip[data-strong="true"] { border-color: var(--primary); color: var(--primary); }
+    .seg {
+      display: flex; align-items: center; gap: 7px; border: 0; border-right: 1px solid var(--line);
+      background: transparent; padding: 7px 14px; color: var(--muted);
+      font: 400 11px/1.2 "IBM Plex Mono", ui-monospace, monospace; letter-spacing: 0.04em;
+    }
+    .seg:last-child { border-right: 0; }
+    .seg:hover { color: var(--ink); }
+    .seg[data-on="true"] { background: color-mix(in srgb, var(--primary) 14%, transparent); color: var(--primary-strong); box-shadow: inset 0 -2px 0 var(--primary); }
+    .seg span[data-n] { font-variant-numeric: tabular-nums; opacity: 0.72; }
+    .prose p { margin: 0 0 0.9em; }
+    .prose p:last-child { margin-bottom: 0; }
+    .prose code { background: var(--field); padding: 1px 4px; font-family: "IBM Plex Mono", ui-monospace, monospace; font-size: 0.86em; }
+    .card { border: 1px solid var(--line); border-left: 2px solid var(--muted); background: var(--panel); }
+    .card[data-sev="major"] { border-left-color: var(--danger); }
+    .card[data-sev="minor"] { border-left-color: var(--warning); }
+    .card[data-done="true"] { opacity: 0.44; }
+    .card + .card { margin-top: 10px; }
+    .cardhead { display: flex; width: 100%; align-items: center; gap: 10px; border: 0; background: transparent; padding: 12px 14px; text-align: start; color: inherit; }
+    .sev { display: inline-flex; flex: none; min-height: 20px; align-items: center; border: 1px solid currentColor; padding: 2px 6px; font: 600 9px/1 "IBM Plex Mono", ui-monospace, monospace; letter-spacing: 0.04em; color: var(--warning); }
+    .sev[data-sev="major"] { color: var(--danger); }
+    .sev[data-sev="nit"] { color: var(--muted); }
+    .tag { display: inline-flex; flex: none; align-items: center; border: 1px solid var(--line-up); padding: 2px 6px; font: 400 9px/1.35 "IBM Plex Mono", ui-monospace, monospace; letter-spacing: 0.04em; color: var(--muted); }
+    .tag[data-kind="draft"] { border-color: color-mix(in srgb, var(--primary) 60%, transparent); color: var(--primary-strong); }
+    .act { border: 1px solid var(--line-up); background: transparent; color: var(--muted); padding: 4px 9px; font: 400 10px/1.2 "IBM Plex Mono", ui-monospace, monospace; }
+    .act:hover { border-color: var(--primary); color: var(--primary); }
+    .act[data-kind="keep"]:hover { border-color: var(--good); color: var(--good); }
+    .act[data-kind="dismiss"]:hover { border-color: var(--danger); color: var(--danger); }
+    .check {
+      display: flex; width: 100%; align-items: flex-start; gap: 9px; border: 0; background: transparent;
+      padding: 10px 0; text-align: start; color: var(--ink); font-size: 12.5px; line-height: 1.5;
+    }
+    .check + .check { border-top: 1px solid var(--line); }
+    .box { display: flex; width: 13px; height: 13px; flex: none; align-items: center; justify-content: center; margin-top: 3px; border: 1px solid var(--line-up); font-size: 9px; color: var(--primary-ink); }
+    .check[data-done="true"] .box { border-color: var(--good); background: var(--good); }
+    .check[data-done="true"] span[data-label] { color: var(--muted); text-decoration: line-through; }
+    .guidehead { display: flex; align-items: center; gap: 8px; margin: 0; padding: 14px 16px 0; font: 400 9px/1.2 "IBM Plex Mono", ui-monospace, monospace; letter-spacing: 0.12em; color: var(--muted); }
+    .dot { width: 5px; height: 5px; flex: none; background: var(--muted); }
+    .dot[data-tone="good"] { background: var(--good); }
+    .dot[data-tone="risk"] { background: var(--warning); }
+    .dot[data-tone="primary"] { background: var(--primary); }
+  </style>
+</helmet>
+<div class="shell" data-theme="{{theme}}" style="display: flex; width: 1440px; height: 920px; flex-direction: column; border: 1px solid var(--line-up); background: var(--canvas); overflow: hidden;">
+
+  <header style="display: flex; min-height: 44px; align-items: center; justify-content: space-between; gap: 16px; border-bottom: 1px solid var(--line); background: var(--panel); padding: 8px 14px;">
+    <div style="min-width: 0;">
+      <p class="mono" style="margin: 0; font-size: 10px; letter-spacing: 0.12em; color: var(--primary);">REVIEW BRIEFING &middot; PANDEMICSYN/NEONDECK#315 &middot; 4F2C9AB</p>
+      <h1 class="disp" style="margin: 1px 0 0; font-size: 16px; font-weight: 600; color: var(--ink);">Fix Reviews panel per-PR pending state and show PR author</h1>
+    </div>
+    <div class="mono" style="display: flex; flex: none; align-items: center; gap: 8px; font-size: 10px;">
+      <button class="chip" type="button">pop out</button>
+      <button class="chip" type="button">workbench</button>
+      <button class="chip" data-strong="true" type="button">close</button>
+    </div>
+  </header>
+
+  <div style="display: flex; align-items: stretch; justify-content: space-between; gap: 16px; border-bottom: 1px solid var(--line); background: var(--panel);">
+    <div style="display: flex; align-items: center; gap: 12px; padding: 0 14px;">
+      <span class="mono" style="display: inline-flex; align-items: center; gap: 7px; border: 1px solid var(--danger); padding: 5px 9px; font-size: 10px; font-weight: 600; letter-spacing: 0.06em; color: var(--danger);">NEEDS A LOOK</span>
+      <span class="mono" style="font-size: 11px; color: var(--muted);">5 findings &middot; 2 of them blockers &middot; 9 files &middot; +733 / &minus;80</span>
+    </div>
+    <div style="display: flex; align-items: stretch; border-left: 1px solid var(--line);">
+      <sc-for list="{{filters}}" as="filter" hint-placeholder-count="3">
+        <button class="seg" data-on="{{filter.on}}" onClick="{{filter.go}}" type="button">
+          {{filter.label}}<span data-n="">{{filter.count}}</span>
+        </button>
+      </sc-for>
+    </div>
+  </div>
+
+  <div style="display: grid; min-height: 0; flex: 1 1 auto; grid-template-columns: minmax(0, 1fr) 340px;">
+
+    <div style="min-height: 0; overflow: auto; padding: 26px 30px 30px;">
+
+      <section style="max-width: 78ch;">
+        <p class="mono" style="margin: 0 0 12px; font-size: 9px; letter-spacing: 0.14em; color: var(--muted);">THE BRIEF</p>
+        <div class="prose" style="font-size: 16.5px; line-height: 1.7; text-wrap: pretty;">
+          <p>This PR replaces the Reviews panel's single panel-wide <code>pending</code> flag with per-review pending state, and surfaces the PR author on each row. The regression it fixes showed up whenever two reviews were in flight: archiving one review disabled every other row's controls until the mutation settled.</p>
+          <p>The change is mostly contained to <code>ReviewsPanel.tsx</code>, alongside a new 349-line concurrent test that drives two reviews through archive, restart, and reconcile at the same time. Three supporting files touch the report deck so the artifacts overlay keeps its own switcher state when the panel refetches.</p>
+          <p>Worth a human eye: per-row state now lives inside the row component, so anything that re-keys the list on refetch will drop it mid-flight. The rest reads as a clean, well-tested fix.</p>
+        </div>
+        <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 20px;">
+          <a class="mono" href="#" style="display: inline-flex; min-height: 32px; align-items: center; border: 1px solid var(--primary); padding: 6px 12px; font-size: 10px; font-weight: 600; text-decoration: none;">Open PR</a>
+          <span class="mono" style="font-size: 10px; color: var(--muted);">open &middot; base main &middot; head 4f2c9ab &middot; author pandemicsyn &middot; generated 12:04</span>
+        </div>
+      </section>
+
+      <div style="display: flex; align-items: baseline; gap: 12px; margin: 30px 0 14px; border-top: 1px solid var(--line); padding-top: 20px;">
+        <h2 class="mono" style="margin: 0; font-size: 12px; font-weight: 600; letter-spacing: 0.1em; color: var(--primary-strong);">DECISIONS</h2>
+        <p style="margin: 0; font-size: 11px; color: var(--muted);">{{queueNote}}</p>
+        <span class="mono" style="margin-inline-start: auto; font-size: 10px; font-variant-numeric: tabular-nums; color: var(--muted);">{{decidedLabel}}</span>
+      </div>
+
+      <sc-for list="{{queue}}" as="item" hint-placeholder-count="4">
+        <div class="card" data-done="{{item.done}}" data-sev="{{item.severity}}">
+          <button class="cardhead" onClick="{{item.toggle}}" type="button">
+            <span class="sev" data-sev="{{item.severity}}">{{item.severityLabel}}</span>
+            <span class="mono" style="overflow: hidden; min-width: 0; flex: 1 1 auto; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; color: var(--primary-strong);">{{item.location}}</span>
+            <span class="tag" data-kind="{{item.kind}}">{{item.kindLabel}}</span>
+            <span class="mono" style="flex: none; font-size: 10px; color: var(--muted);">{{item.caret}}</span>
+          </button>
+          <div style="padding: 0 14px 12px 14px;">
+            <p style="margin: 0; font-size: 14px; line-height: 1.6;">{{item.summary}}</p>
+            <sc-if value="{{item.open}}" hint-placeholder-val="{{true}}">
+              <div style="margin-top: 12px; border-top: 1px solid var(--line); padding-top: 11px;">
+                <p class="mono" style="margin: 0 0 5px; font-size: 9px; letter-spacing: 0.08em; color: var(--muted);">SUGGESTED FIX &middot; {{item.confidence}}</p>
+                <p style="margin: 0; font-size: 13px; line-height: 1.6; color: var(--muted);">{{item.fix}}</p>
+              </div>
+            </sc-if>
+            <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 7px; margin-top: 12px;">
+              <button class="act" type="button">open in diff</button>
+              <button class="act" data-kind="keep" onClick="{{item.edit}}" type="button">{{item.editLabel}}</button>
+              <button class="act" data-kind="dismiss" onClick="{{item.dismiss}}" type="button">dismiss</button>
+              <sc-if value="{{item.isDone}}" hint-placeholder-val="{{true}}">
+                <button class="act" onClick="{{item.undo}}" style="border-color: var(--danger); color: var(--danger);" type="button">dismissed &middot; undo</button>
+              </sc-if>
+            </div>
+          </div>
+        </div>
+      </sc-for>
+
+      <sc-if value="{{showContext}}" hint-placeholder-val="{{true}}">
+        <div style="margin-top: 26px; border-top: 1px solid var(--line); padding-top: 18px;">
+          <h2 class="mono" style="margin: 0 0 12px; font-size: 12px; font-weight: 600; letter-spacing: 0.1em; color: var(--muted);">CONTEXT &middot; 9 FILES</h2>
+          <sc-for list="{{changes}}" as="change" hint-placeholder-count="9">
+            <div style="display: grid; grid-template-columns: minmax(0, 1fr) 92px; gap: 14px; border-bottom: 1px solid var(--line); padding: 9px 0;">
+              <div style="min-width: 0;">
+                <a class="mono" href="#" style="font-size: 11px;">{{change.path}}</a>
+                <p style="margin: 3px 0 0; font-size: 12px; line-height: 1.5; color: var(--muted);">{{change.summary}}</p>
+              </div>
+              <div class="mono" style="text-align: end; font-size: 11px; font-variant-numeric: tabular-nums;">
+                <span style="color: var(--good);">{{change.add}}</span> <span style="color: var(--danger);">{{change.del}}</span>
+              </div>
+            </div>
+          </sc-for>
+        </div>
+      </sc-if>
+
+    </div>
+
+    <aside style="display: flex; min-height: 0; flex-direction: column; border-left: 1px solid var(--line); background: var(--panel);" aria-label="Reviewer guidance">
+      <div style="border-bottom: 1px solid var(--line); padding: 14px 16px;">
+        <p class="mono" style="margin: 0; font-size: 10px; font-weight: 600; letter-spacing: 0.12em; color: var(--warning);">WHY I'M UNSURE</p>
+        <p style="margin: 5px 0 0; font-size: 11.5px; line-height: 1.5; color: var(--muted);">The two things I could not settle. They stay here while you work the queue.</p>
+      </div>
+
+      <div style="min-height: 0; flex: 1 1 auto; overflow: auto;">
+        <p class="guidehead" style="padding-top: 14px;"><span class="dot" data-tone="risk"></span>RISKS I COULD NOT SETTLE<span style="margin-inline-start: auto; font-variant-numeric: tabular-nums;">2</span></p>
+        <div style="padding: 10px 16px 16px;">
+          <sc-for list="{{risks}}" as="risk" hint-placeholder-count="2">
+            <div style="border-left: 2px solid var(--warning); padding: 2px 0 2px 10px; margin-bottom: 14px;">
+              <p style="margin: 0; font-size: 12.5px; line-height: 1.55;">{{risk.text}}</p>
+              <a class="mono" href="#" style="display: inline-block; margin-top: 5px; font-size: 10px;">{{risk.jump}}</a>
+            </div>
+          </sc-for>
+        </div>
+        <div style="border-top: 1px solid var(--line); margin: 4px 16px 20px; padding-top: 16px;">
+          <p class="mono" style="margin: 0; font-size: 9px; letter-spacing: 0.12em; color: var(--muted);">GOT A QUESTION?</p>
+          <p style="margin: 7px 0 0; font-size: 12.5px; line-height: 1.55; color: var(--muted);">The workbench has the full diff and the review chat. Asking there keeps the answer next to the code it is about.</p>
+          <a class="mono" href="#" style="display: inline-flex; min-height: 32px; align-items: center; margin-top: 10px; border: 1px solid var(--line-up); padding: 6px 10px; font-size: 10px; text-decoration: none;">Ask Neon in the workbench &rarr;</a>
+        </div>
+      </div>
+    </aside>
+  </div>
+
+  <footer style="display: flex; min-height: 46px; align-items: center; justify-content: space-between; gap: 16px; border-top: 1px solid var(--line); background: var(--panel); padding: 8px 14px;">
+    <div style="display: flex; align-items: center; gap: 12px;">
+      <div style="width: 140px; height: 3px; background: color-mix(in srgb, var(--line) 90%, transparent);">
+        <div style="width: {{decidedPct}}; height: 100%; background: var(--primary); transition: width 180ms cubic-bezier(0.22, 1, 0.36, 1);"></div>
+      </div>
+      <span class="mono" style="font-size: 10px; color: var(--muted); font-variant-numeric: tabular-nums;">{{footerLabel}}</span>
+    </div>
+    <div style="display: flex; align-items: center; gap: 8px;">
+      <span class="mono" style="font-size: 10px; color: var(--muted);">verdict and submission stay in the workbench</span>
+      <a class="mono" href="#" style="display: inline-flex; min-height: 32px; align-items: center; border: 1px solid var(--primary); padding: 6px 12px; font-size: 10px; font-weight: 600; text-decoration: none;">Open workbench &rarr;</a>
+    </div>
+  </footer>
+</div>
+</x-dc>
+<script data-dc-script data-props='{"theme":{"editor":"enum","options":["dark","light"],"default":"dark","section":"Theme"},"$preview":{"width":1440,"height":920}}'>
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    this.state = {
+      filter: 'look',
+      open: { 'f1': true },
+      decided: {},
+      editing: {},
+    };
+  }
+
+  items() {
+    return [
+      { id: 'f1', tier: 0, severity: 'major', severityLabel: 'MAJOR', kind: 'draft', kindLabel: 'draft comment', confidence: 'high confidence', location: 'web/src/plugins/ReviewsPanel.tsx:118', summary: 'onReconcile still reads the shared panel flag, so recovering one submission disables archive on every other row.', fix: 'Key the reconcile mutation by review id the same way archive and restart now are.' },
+      { id: 'f2', tier: 0, severity: 'major', severityLabel: 'MAJOR', kind: 'draft', kindLabel: 'draft comment', confidence: 'medium confidence', location: 'shared/report-deck-view.tsx:97', summary: 'restoreFocusRef is armed before setActiveIndex, so two fast navigations in one frame can pull focus out of the footer.', fix: 'Capture the containment check and the target index together, then apply once per commit.' },
+      { id: 'f3', tier: 1, severity: 'minor', severityLabel: 'MINOR', kind: 'draft', kindLabel: 'draft comment', confidence: 'high confidence', location: 'web/src/api/reviews.ts:44', summary: 'author is optional on the record type but read unguarded at the row call site.', fix: 'Fall back to the repo owner, or make the field required end to end.' },
+      { id: 'f4', tier: 1, severity: 'minor', severityLabel: 'MINOR', kind: 'note', kindLabel: 'note only', confidence: 'medium confidence', location: 'web/src/plugins/ReviewsPanel.concurrent.test.tsx:210', summary: 'The test asserts on button order rather than accessible name, so it keeps passing if the labels swap.', fix: 'Query by role and name instead of index.' },
+      { id: 'f5', tier: 2, severity: 'nit', severityLabel: 'NIT', kind: 'note', kindLabel: 'note only', confidence: 'low confidence', location: 'shared/report-deck-styles.ts:812', summary: 'In dark theme --rd-panel and --rd-canvas resolve to the same value, so the slide frame reads as a bare hairline.', fix: 'Lift the panel one step, or drop the frame border.' },
+    ];
+  }
+
+  renderVals() {
+    const all = this.items();
+    const tiers = { blockers: 0, look: 1, all: 2 };
+    const activeTier = tiers[this.state.filter];
+    const queue = all.filter((item) => item.tier <= activeTier);
+    const decidedCount = queue.filter((item) => Boolean(this.state.decided[item.id])).length;
+
+
+    return {
+      theme: this.props.theme ?? 'dark',
+      filters: [
+        { label: 'BLOCKERS', count: '2', on: this.state.filter === 'blockers' ? 'true' : 'false', go: () => this.setState({ filter: 'blockers' }) },
+        { label: 'WORTH A LOOK', count: '4', on: this.state.filter === 'look' ? 'true' : 'false', go: () => this.setState({ filter: 'look' }) },
+        { label: 'EVERYTHING', count: '5', on: this.state.filter === 'all' ? 'true' : 'false', go: () => this.setState({ filter: 'all' }) },
+      ],
+      queueNote: this.state.filter === 'blockers'
+        ? 'only what the agent thinks blocks a verdict'
+        : 'sorted by what blocks you, not by file order',
+      decidedLabel: `${decidedCount} of ${queue.length} decided`,
+      decidedPct: `${queue.length === 0 ? 0 : Math.round((decidedCount / queue.length) * 100)}%`,
+      footerLabel: `${decidedCount} of ${queue.length} decided · 3 comments drafted`,
+      showContext: this.state.filter === 'all',
+      queue: queue.map((item) => {
+        const open = Boolean(this.state.open[item.id]);
+        const verdict = this.state.decided[item.id] ?? null;
+        const setVerdict = (next) =>
+          this.setState({ decided: { ...this.state.decided, [item.id]: next } });
+        return {
+          ...item,
+          open,
+          isDone: verdict !== null,
+          done: verdict === null ? 'false' : 'true',
+          editing: Boolean(this.state.editing[item.id]),
+          caret: open ? '−' : '+',
+          editLabel: this.state.editing[item.id]
+            ? 'done editing'
+            : (item.kind === 'draft' ? 'edit comment' : 'draft a comment'),
+          toggle: () => this.setState({ open: { ...this.state.open, [item.id]: !open } }),
+          edit: () => this.setState({ editing: { ...this.state.editing, [item.id]: !this.state.editing[item.id] } }),
+          dismiss: () => setVerdict('dismissed'),
+          undo: () => setVerdict(null),
+        };
+      }),
+      risks: [
+        { text: 'Per-row pending state lives in the row component, so a list re-key on refetch drops it mid-flight.', jump: 'ReviewsPanel.tsx:564' },
+        { text: 'The overlay switcher and the panel report buttons both own an active index and can disagree after a refetch.', jump: 'PrReviewArtifactsOverlay.tsx:41' },
+      ],
+      changes: [
+        { path: 'web/src/plugins/ReviewsPanel.tsx', add: '+182', del: '−31', summary: 'Per-review pending state and the new author line.' },
+        { path: 'web/src/plugins/ReviewsPanel.concurrent.test.tsx', add: '+349', del: '−0', summary: 'Two reviews archived, restarted, and reconciled concurrently.' },
+        { path: 'web/src/features/pr-review/PrReviewArtifactsOverlay.tsx', add: '+64', del: '−18', summary: 'Keeps the report switcher index stable across refetches.' },
+        { path: 'shared/report-deck-view.tsx', add: '+47', del: '−12', summary: 'Restores focus onto the incoming slide.' },
+        { path: 'shared/report-deck-styles.ts', add: '+38', del: '−9', summary: 'Tightens the footer step strip at narrow widths.' },
+        { path: 'shared/report-deck.ts', add: '+28', del: '−4', summary: 'Adds the author fact to the summary contract.' },
+        { path: 'web/src/api/reviews.ts', add: '+19', del: '−6', summary: 'Threads the optional author field through.' },
+        { path: '.changeset/calm-reviews-panel.md', add: '+5', del: '−0', summary: 'Patch changeset.' },
+        { path: 'web/src/features/pr-review/GitHubPrReview.tsx', add: '+1', del: '−0', summary: 'Passes the author through to the header.' },
+      ],
+    };
+  }
+}
+</script>
+</body>
+</html>
