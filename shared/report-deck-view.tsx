@@ -82,13 +82,12 @@ export function ReportDeck({
     const incomingSlide = articleRef.current?.querySelector(
       `[data-deck-slide-index="${activeIndex}"]`,
     );
+    const scrollRegion = incomingSlide?.querySelector(
+      '[data-deck-scroll-region]',
+    );
     const target =
-      (incomingSlide?.querySelector(
-        '[data-deck-scroll-region]',
-      ) as HTMLElement | null) ?? articleRef.current;
-    if (target && typeof target.focus === 'function') {
-      target.focus();
-    }
+      scrollRegion instanceof HTMLElement ? scrollRegion : articleRef.current;
+    target?.focus();
   }, [activeIndex]);
 
   const navigate = (nextIndex: number) => {

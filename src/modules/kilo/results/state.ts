@@ -3,7 +3,7 @@ import { asJsonValue } from '../../../lib/action-result';
 import { randomUUID } from 'node:crypto';
 import * as v from 'valibot';
 import { checkAutopilotPolicy } from '../../autopilot-policy';
-import { openDb } from '../../../lib/sqlite';
+import { collectValidRowsInBatches, openDb } from '../../../lib/sqlite';
 import { type RuntimePaths } from '../../../runtime-home';
 import {
   stateRowSchema,
@@ -35,20 +35,26 @@ export function listStateRows(
 ) {
   const database = openDb(paths.neondeckDatabase, { readOnly: true });
   try {
-    return input.taskId
-      ? database
-          .prepare('SELECT * FROM kilo_result_state WHERE task_id = ?;')
-          .all(input.taskId)
-      : database
-          .prepare(
-            `
-            SELECT *
-            FROM kilo_result_state
-            ORDER BY updated_at DESC
-            LIMIT ?;
-          `,
-          )
-          .all(input.limit ?? 50);
+    if (input.taskId) {
+      return database
+        .prepare('SELECT * FROM kilo_result_state WHERE task_id = ?;')
+        .all(input.taskId)
+        .flatMap(safeReadStateRow);
+    }
+    const limit = input.limit ?? 50;
+    const statement = database.prepare(
+      `
+      SELECT *
+      FROM kilo_result_state
+      ORDER BY updated_at DESC, task_id DESC
+      LIMIT ? OFFSET ?;
+    `,
+    );
+    return collectValidRowsInBatches(
+      limit,
+      (batchLimit, offset) => statement.all(batchLimit, offset),
+      safeReadStateRow,
+    );
   } finally {
     database.close();
   }
@@ -403,6 +409,14 @@ export function readStateRow(row: KiloUntrustedInput): KiloResultState {
     verifiedAt: parsed.verified_at,
     promotedAt: parsed.promoted_at,
   };
+}
+
+function safeReadStateRow(row: KiloUntrustedInput): KiloResultState[] {
+  try {
+    return [readStateRow(row)];
+  } catch {
+    return [];
+  }
 }
 
 export function pendingApprovalsFor(

@@ -7,13 +7,11 @@ export type AddressedPrFeedback = {
   reviewCommentFingerprints: Map<string, string>;
 };
 
-const addressedFeedbackRowsSchema = v.array(
-  v.object({
-    item_kind: v.picklist(['review-thread', 'review-comment']),
-    item_id: v.string(),
-    item_fingerprint: v.string(),
-  }),
-);
+const addressedFeedbackRowSchema = v.object({
+  item_kind: v.picklist(['review-thread', 'review-comment']),
+  item_id: v.string(),
+  item_fingerprint: v.string(),
+});
 
 export function readAddressedPrFeedback(
   repoFullName: string,
@@ -22,16 +20,17 @@ export function readAddressedPrFeedback(
 ): AddressedPrFeedback {
   const database = openDb(paths.neondeckDatabase, { readOnly: true });
   try {
-    const rows = v.parse(
-      addressedFeedbackRowsSchema,
-      database
-        .prepare(
-          `SELECT item_kind, item_id, item_fingerprint
+    const rows = database
+      .prepare(
+        `SELECT item_kind, item_id, item_fingerprint
          FROM pr_feedback_addressing
          WHERE repo_full_name = ? AND pr_number = ?;`,
-        )
-        .all(repoFullName, prNumber),
-    );
+      )
+      .all(repoFullName, prNumber)
+      .flatMap((row) => {
+        const parsed = v.safeParse(addressedFeedbackRowSchema, row);
+        return parsed.success ? [parsed.output] : [];
+      });
     return {
       reviewThreadFingerprints: new Map(
         rows

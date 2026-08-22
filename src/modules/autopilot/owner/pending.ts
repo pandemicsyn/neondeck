@@ -96,6 +96,12 @@ const storedTurnRowSchema = v.object({
   watch_id: v.string(),
 });
 const storedTurnIdentitySchema = v.object({ turn_id: v.string() });
+const storedTurnFenceSchema = v.object({
+  created_at: v.string(),
+  status: turnStatusSchema,
+  turn_id: v.string(),
+});
+const malformedTurnFenceMs = 60 * 60_000;
 
 const persistedSnapshotSchema = v.nullable(
   v.custom<NonNullable<PrWatch['lastSnapshot']>>(
@@ -243,6 +249,7 @@ export function registerPendingAutopilotTurn(
           .get(instanceId, eventFingerprint);
         const existingTurn = tryReadTurnRow(existing);
         if (existingTurn) return existingTurn;
+        preserveRecentMalformedTurnFence(existing, now);
         quarantineMalformedTurn(database, existing, now);
       }
       if (options.idempotencyKey) {
@@ -253,6 +260,7 @@ export function registerPendingAutopilotTurn(
           .get(instanceId, options.idempotencyKey);
         const existingTurn = tryReadTurnRow(existing);
         if (existingTurn) return existingTurn;
+        preserveRecentMalformedTurnFence(existing, now);
         quarantineMalformedTurn(database, existing, now);
       }
       database
@@ -512,7 +520,12 @@ function readTurnRow(
     ? parseAutopilotOwnerEnvelope(row.envelope_json)
     : undefined;
   const learningMemoryIds = row.learning_memory_ids_json
-    ? v.parse(v.array(v.string()), JSON.parse(row.learning_memory_ids_json))
+    ? v
+        .parse(v.array(v.unknown()), JSON.parse(row.learning_memory_ids_json))
+        .flatMap((item) => {
+          const id = v.safeParse(v.string(), item);
+          return id.success ? [id.output] : [];
+        })
     : [];
   const prepared = row.prepared_json
     ? v.parse(persistedPreparedContextSchema, JSON.parse(row.prepared_json))
@@ -578,4 +591,24 @@ function quarantineMalformedTurn(
        WHERE turn_id = ?;`,
     )
     .run(now, now, identity.output.turn_id);
+}
+
+function preserveRecentMalformedTurnFence(
+  row: PendingTurnExternalValue,
+  now: string,
+) {
+  const fence = v.safeParse(storedTurnFenceSchema, row);
+  if (!fence.success || fence.output.status === 'settled') return;
+  const createdAt = Date.parse(fence.output.created_at);
+  const currentTime = Date.parse(now);
+  if (
+    Number.isFinite(createdAt) &&
+    Number.isFinite(currentTime) &&
+    currentTime - createdAt >= malformedTurnFenceMs
+  ) {
+    return;
+  }
+  throw new Error(
+    `Autopilot owner turn ${fence.output.turn_id} is malformed but may still be active; refusing a duplicate reservation.`,
+  );
 }

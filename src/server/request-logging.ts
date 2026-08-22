@@ -15,8 +15,7 @@ type ResponseDiagnostics = {
 type ServerLogWriter = (level: ServerLogLevel, message: string) => void;
 
 const serializedFlueErrorIdentitySchema = v.object({
-  name: v.string(),
-  message: v.string(),
+  name: v.optional(v.string()),
   type: v.optional(v.string()),
 });
 

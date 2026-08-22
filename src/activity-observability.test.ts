@@ -257,6 +257,59 @@ describe('Flue v3 activity observability', () => {
     expect(JSON.stringify(history.events).length).toBeLessThan(20_000);
   });
 
+  it('labels built-in containers and does not classify shared references as cycles', async () => {
+    const paths = await tempPaths();
+    const shared = { files: 12 };
+
+    await recordFlueObservation(queued(1), paths);
+    await recordFlueObservation(
+      {
+        ...base(2),
+        type: 'tool_start',
+        toolName: 'inspect_map',
+        origin: 'model',
+        args: new Map([['files', 12]]),
+      },
+      paths,
+    );
+    await recordFlueObservation(
+      {
+        ...base(3),
+        type: 'task',
+        taskId: 'shared-result',
+        durationMs: 1,
+        isError: false,
+        result: { left: shared, right: shared },
+      },
+      paths,
+    );
+    await recordFlueObservation(
+      {
+        ...base(4),
+        type: 'task',
+        taskId: 'copied-result',
+        durationMs: 1,
+        isError: false,
+        result: { left: { files: 12 }, right: { files: 12 } },
+      },
+      paths,
+    );
+
+    const history = await readActivitySubmissionEvents('submission-1', paths);
+    expect(history.events[1]?.summary).toMatchObject({
+      args: { type: 'object', keys: ['type'] },
+    });
+    const sharedHash = v.parse(
+      v.object({ resultHash: v.string() }),
+      history.events[2]?.summary,
+    ).resultHash;
+    const copiedHash = v.parse(
+      v.object({ resultHash: v.string() }),
+      history.events[3]?.summary,
+    ).resultHash;
+    expect(sharedHash).toBe(copiedHash);
+  });
+
   it('normalizes review ingress and error metadata before reading fields', async () => {
     const paths = await tempPaths();
     const getter = vi.fn<() => never>(() => {

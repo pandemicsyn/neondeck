@@ -693,6 +693,43 @@ describe('structured memory actions', () => {
     });
   });
 
+  it('retains valid memory candidates when a sibling row is malformed', async () => {
+    const paths = runtimePaths(await tempHome());
+    const valid = await createMemoryCandidate(
+      { action: 'upsert', scope: 'local', key: 'valid', value: 'keep me' },
+      paths,
+      { source: 'workflow' },
+    );
+    const malformed = await createMemoryCandidate(
+      { action: 'upsert', scope: 'local', key: 'legacy', value: 'skip me' },
+      paths,
+      { source: 'workflow' },
+    );
+    if (!valid.ok || !malformed.ok) {
+      throw new Error('Expected memory candidate fixtures to be created.');
+    }
+    const database = openDb(paths.neondeckDatabase);
+    try {
+      database
+        .prepare(
+          'UPDATE learning_candidates SET action = ?, created_at = ? WHERE id = ?;',
+        )
+        .run(
+          'legacy-action',
+          '2099-01-01T00:00:00.000Z',
+          malformed.candidate.id,
+        );
+    } finally {
+      database.close();
+    }
+
+    await expect(
+      listMemoryCandidates({ status: 'proposed', limit: 1 }, paths),
+    ).resolves.toMatchObject({
+      candidates: [expect.objectContaining({ id: valid.candidate.id })],
+    });
+  });
+
   it('revision-fences deterministic curation candidates before approval', async () => {
     const paths = runtimePaths(await tempHome());
     await updateLearningConfig(

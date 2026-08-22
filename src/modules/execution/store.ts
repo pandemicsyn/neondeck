@@ -363,9 +363,10 @@ export function updateApprovalResult(
 ) {
   const now = new Date().toISOString();
   const database = openDb(paths.neondeckDatabase);
+  let changes = 0;
 
   try {
-    database
+    const result = database
       .prepare(
         `
         UPDATE execution_approvals
@@ -394,13 +395,13 @@ export function updateApprovalResult(
         now,
         id,
       );
+    changes = Number(result.changes);
   } finally {
     database.close();
   }
 
-  const record = readApproval(paths, id);
-  if (!record) throw new Error(`Execution approval ${id} was not found.`);
-  return record;
+  if (changes !== 1) throw new Error(`Execution approval ${id} was not found.`);
+  return readApproval(paths, id);
 }
 
 export function markApprovalUsed(
@@ -430,10 +431,26 @@ export function markApprovalUsed(
     database.close();
   }
 
-  const record = readApproval(paths, id);
-  if (!record) throw new Error(`Execution approval ${id} was not found.`);
-  if (changes !== 1) return undefined;
-  return record;
+  if (changes !== 1) {
+    if (!executionApprovalExists(paths, id)) {
+      throw new Error(`Execution approval ${id} was not found.`);
+    }
+    return undefined;
+  }
+  return readApproval(paths, id);
+}
+
+function executionApprovalExists(paths: RuntimePaths, id: string) {
+  const database = openDb(paths.neondeckDatabase, { readOnly: true });
+  try {
+    return Boolean(
+      database
+        .prepare('SELECT 1 FROM execution_approvals WHERE id = ?;')
+        .get(id),
+    );
+  } finally {
+    database.close();
+  }
 }
 
 export function readExecutionApprovalRow<TRow>(

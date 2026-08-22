@@ -27,7 +27,6 @@ import {
   readKiloResultState,
   readKiloTask,
   readPreparedDiffByWorktree,
-  readStateRow,
   resetPreparedDiffApproval,
   insertKiloResultEvent,
   updateKiloTaskStatus,
@@ -478,8 +477,7 @@ export async function listKiloResultStates(
   );
   if (!parsed.ok) return parsed.result;
   await ensureRuntimeHome(paths);
-  const rows = listStateRows(parsed.input, paths);
-  const resultStates = rows.map(readStateRow);
+  const resultStates = listStateRows(parsed.input, paths);
   return {
     ok: true,
     action: 'kilo_result_state',

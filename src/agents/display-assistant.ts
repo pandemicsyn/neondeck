@@ -435,12 +435,15 @@ function briefingBindingFromDisplayContext(
 function displayContextFromBriefingBinding(
   binding: BriefingDisplayContextBinding,
 ) {
-  const context = v.parse(
+  const parsedContext = v.safeParse(
     displayAssistantSessionContextSchema,
     binding.agentContext,
   );
-  if (context.snapshotId !== binding.snapshotId || context.version !== 2) {
+  if (
+    !parsedContext.success ||
+    parsedContext.output.snapshotId !== binding.snapshotId
+  ) {
     throw new Error('Briefing display-context binding is invalid.');
   }
-  return context;
+  return parsedContext.output;
 }

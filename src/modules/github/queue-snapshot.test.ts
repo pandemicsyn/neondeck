@@ -153,6 +153,35 @@ describe('GitHub queue snapshot', () => {
     );
     unsubscribe();
   });
+
+  it('retains valid queue items when a sibling item is malformed', async () => {
+    const paths = runtimePaths('/tmp/neondeck-github-snapshot-mixed');
+    const mixed = queue('Valid PR');
+    mixed.items.push({ id: 'malformed' } as never);
+
+    const refreshed = await refreshGitHubQueueSnapshot(
+      paths,
+      {
+        listGitHubPrQueue: vi.fn<typeof listGitHubPrQueue>(async () =>
+          queueResult(mixed),
+        ),
+        now: () => new Date('2026-07-23T15:00:00.000Z'),
+      },
+      { force: true },
+    );
+
+    expect(refreshed.snapshot.status).toBe('degraded');
+    expect(refreshed.snapshot.truncated).toBe(true);
+    expect(refreshed.snapshot.issues).toEqual([
+      expect.objectContaining({
+        type: 'enrichment-error',
+        message: expect.stringContaining('Skipped 1 malformed'),
+      }),
+    ]);
+    expect(refreshed.snapshot.items.map((item) => item.title)).toEqual([
+      'Valid PR',
+    ]);
+  });
 });
 
 function queue(title: string): GitHubPullRequestQueue {

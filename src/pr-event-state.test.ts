@@ -838,6 +838,73 @@ describe('PR event state watermarks', () => {
     ).toEqual(new Map([['valid-review', 'a'.repeat(64)]]));
   });
 
+  it('isolates malformed watermark and addressed-feedback rows', async () => {
+    const home = await tempHome();
+    const paths = runtimePaths(home);
+    await ensureRuntimeHome(paths);
+    const database = new DatabaseSync(paths.neondeckDatabase);
+    const now = new Date().toISOString();
+    try {
+      database
+        .prepare(
+          `INSERT INTO pr_watch_event_watermarks (
+             watch_id, category, watermark_json, source_updated_at,
+             checked_at, created_at, updated_at
+           ) VALUES (?, ?, ?, NULL, ?, ?, ?), (?, ?, ?, NULL, ?, ?, ?);`,
+        )
+        .run(
+          'pandemicsyn/neondeck#123',
+          'commits',
+          JSON.stringify({ latest: 'abc123' }),
+          now,
+          now,
+          now,
+          'pandemicsyn/neondeck#123',
+          'review_threads',
+          '{',
+          now,
+          now,
+          now,
+        );
+      database
+        .prepare(
+          `INSERT INTO pr_feedback_addressing (
+             repo_full_name, pr_number, item_kind, item_id,
+             item_fingerprint, addressed_at
+           ) VALUES (?, ?, ?, ?, ?, ?), (?, ?, ?, ?, ?, ?);`,
+        )
+        .run(
+          'pandemicsyn/neondeck',
+          123,
+          'review-thread',
+          'valid-thread',
+          'valid-fingerprint',
+          now,
+          'pandemicsyn/neondeck',
+          123,
+          'review-comment',
+          'malformed-comment',
+          Buffer.from('invalid'),
+          now,
+        );
+    } finally {
+      database.close();
+    }
+
+    expect((await listPrWatchEventWatermarks({}, paths)).data).toMatchObject({
+      watermarks: [expect.objectContaining({ category: 'commits' })],
+    });
+    const addressed = readAddressedPrFeedback(
+      'pandemicsyn/neondeck',
+      123,
+      paths,
+    );
+    expect(addressed.reviewThreadFingerprints).toEqual(
+      new Map([['valid-thread', 'valid-fingerprint']]),
+    );
+    expect(addressed.reviewCommentFingerprints).toEqual(new Map());
+  });
+
   it('reuses an existing PR comment after the GitHub token rotates', async () => {
     process.env.GITHUB_TOKEN = 'token-before-rotation';
     const home = await tempHome();

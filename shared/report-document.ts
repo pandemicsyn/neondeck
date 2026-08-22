@@ -1,91 +1,51 @@
-export type ReportDocumentItem = {
-  label: string | null;
-  value: string;
-};
+import * as v from 'valibot';
 
-export type ReportDocumentSection = {
-  title: string;
-  body: string | null;
-  items: ReportDocumentItem[];
-};
+const reportDocumentItemSchema = v.object({
+  label: v.nullable(v.string()),
+  value: v.string(),
+});
 
-export type ReportDocument = {
-  eyebrow: string | null;
-  title: string;
-  summary: string | null;
-  generatedAt: string;
-  sections: ReportDocumentSection[];
-};
+const reportDocumentSectionSchema = v.object({
+  title: v.string(),
+  body: v.nullable(v.string()),
+  items: v.array(reportDocumentItemSchema),
+});
+
+const reportDocumentSchema = v.object({
+  eyebrow: v.nullable(v.string()),
+  title: v.string(),
+  summary: v.nullable(v.string()),
+  generatedAt: v.string(),
+  sections: v.array(reportDocumentSectionSchema),
+});
+
+const reportDocumentExternalValueSchema = v.unknown();
+type ReportDocumentExternalValue = v.InferInput<
+  typeof reportDocumentExternalValueSchema
+>;
+
+export type ReportDocumentItem = v.InferOutput<typeof reportDocumentItemSchema>;
+export type ReportDocumentSection = v.InferOutput<
+  typeof reportDocumentSectionSchema
+>;
+export type ReportDocument = v.InferOutput<typeof reportDocumentSchema>;
 
 export function reportDocumentFromSummary(
-  summary: unknown,
+  summary: ReportDocumentExternalValue,
 ): ReportDocument | null {
   const summaryRecord = objectRecord(summary);
   return parseReportDocument(summaryRecord?.document);
 }
 
-export function parseReportDocument(value: unknown): ReportDocument | null {
-  const record = objectRecord(value);
-  if (
-    !record ||
-    !nullableString(record.eyebrow) ||
-    typeof record.title !== 'string' ||
-    !nullableString(record.summary) ||
-    typeof record.generatedAt !== 'string' ||
-    !Array.isArray(record.sections)
-  ) {
-    return null;
-  }
-
-  const sections = record.sections.map(parseSection);
-  if (sections.some((section) => section === null)) return null;
-
-  return {
-    eyebrow: record.eyebrow,
-    title: record.title,
-    summary: record.summary,
-    generatedAt: record.generatedAt,
-    sections: sections as ReportDocumentSection[],
-  };
+export function parseReportDocument(
+  value: ReportDocumentExternalValue,
+): ReportDocument | null {
+  const parsed = v.safeParse(reportDocumentSchema, value);
+  return parsed.success ? parsed.output : null;
 }
 
-function parseSection(value: unknown): ReportDocumentSection | null {
-  const record = objectRecord(value);
-  if (
-    !record ||
-    typeof record.title !== 'string' ||
-    !nullableString(record.body) ||
-    !Array.isArray(record.items)
-  ) {
-    return null;
-  }
-  const items = record.items.map(parseItem);
-  if (items.some((item) => item === null)) return null;
-  return {
-    title: record.title,
-    body: record.body,
-    items: items as ReportDocumentItem[],
-  };
-}
-
-function parseItem(value: unknown): ReportDocumentItem | null {
-  const record = objectRecord(value);
-  if (
-    !record ||
-    !nullableString(record.label) ||
-    typeof record.value !== 'string'
-  ) {
-    return null;
-  }
-  return { label: record.label, value: record.value };
-}
-
-function objectRecord(value: unknown) {
-  return value && typeof value === 'object' && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : null;
-}
-
-function nullableString(value: unknown): value is string | null {
-  return value === null || typeof value === 'string';
+function objectRecord(value: ReportDocumentExternalValue) {
+  if (Array.isArray(value)) return null;
+  const parsed = v.safeParse(v.record(v.string(), v.unknown()), value);
+  return parsed.success ? parsed.output : null;
 }

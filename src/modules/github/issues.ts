@@ -67,7 +67,12 @@ export async function fetchGitHubIssues(input: FetchGitHubIssuesInput) {
   while (url && issues.length < limit && pageCount < maxPages) {
     pageCount += 1;
     const response = await githubFetch(input.token, url);
-    const page = v.parse(v.array(issueSchema), await response.json());
+    const page = v
+      .parse(v.array(v.unknown()), await response.json())
+      .flatMap((item) => {
+        const issue = v.safeParse(issueSchema, item);
+        return issue.success ? [issue.output] : [];
+      });
     for (const item of page) {
       if (item.pull_request) continue;
       if (issues.length >= limit) {

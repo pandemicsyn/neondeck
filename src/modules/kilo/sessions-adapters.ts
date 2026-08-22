@@ -34,7 +34,11 @@ const identityObjectSchema = v.custom<v.InferOutput<typeof looseObjectSchema>>(
   },
 );
 const callableSchema = v.function();
-const sessionArraySchema = v.array(kiloSessionSchema);
+const sdkClientSchema = v.object({ sessions: v.optional(v.unknown()) });
+const sessionsApiSchema = v.object({
+  search: v.optional(v.unknown()),
+  list: v.optional(v.unknown()),
+});
 const tableNameRowSchema = v.object({ name: v.string() });
 
 type SessionsSearchInput = v.InferOutput<typeof sessionsSearchInputSchema>;
@@ -65,7 +69,7 @@ export async function searchKiloSessionsWithCli(
     timeout: 15_000,
     maxBuffer: 1024 * 1024 * 5,
   });
-  const parsed = v.parse(sessionArraySchema, JSON.parse(stdout));
+  const parsed = parseKiloSessionItems(JSON.parse(stdout));
   return {
     ok: true,
     sessions: parsed.map((session) => normalizeKiloSession(session)),
@@ -78,7 +82,7 @@ export async function searchKiloSessionsWithManagedSdk(
 ): Promise<KiloSessionSearchResult> {
   const sdk = await optionalImport('@kilocode/sdk/v2');
   const client = createOptionalKiloSdkClient(sdk);
-  const parsedClient = v.safeParse(looseObjectSchema, client);
+  const parsedClient = v.safeParse(sdkClientSchema, client);
   const sessionsApi = parsedClient.success
     ? parsedClient.output.sessions
     : undefined;
@@ -105,7 +109,7 @@ export async function searchKiloSessionsWithManagedSdk(
       : envelope.success && Array.isArray(envelope.output.items)
         ? envelope.output.items
         : [];
-  const parsed = v.parse(sessionArraySchema, items);
+  const parsed = parseKiloSessionItems(items);
   return {
     ok: true,
     sessions: parsed.map((session) =>
@@ -177,12 +181,19 @@ function resolveKiloSdkClient(
 export function resolveKiloSessionsSearchMethod(
   sessionsApi: KiloUntrustedInput,
 ) {
-  const parsed = v.safeParse(looseObjectSchema, sessionsApi);
+  const parsed = v.safeParse(sessionsApiSchema, sessionsApi);
   if (!parsed.success) return null;
   const search = v.safeParse(callableSchema, parsed.output.search);
   if (search.success) return search.output;
   const list = v.safeParse(callableSchema, parsed.output.list);
   return list.success ? list.output : null;
+}
+
+function parseKiloSessionItems(value: KiloUntrustedInput) {
+  return v.parse(v.array(v.unknown()), value).flatMap((item) => {
+    const session = v.safeParse(kiloSessionSchema, item);
+    return session.success ? [session.output] : [];
+  });
 }
 
 async function discoverKiloSqlitePaths() {

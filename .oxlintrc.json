@@ -26,6 +26,8 @@
       "files": [
         "src/**/*.ts",
         "src/**/*.tsx",
+        "shared/**/*.ts",
+        "shared/**/*.tsx",
         "web/src/**/*.ts",
         "web/src/**/*.tsx",
         "vite.config.ts",

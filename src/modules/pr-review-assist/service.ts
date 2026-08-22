@@ -410,11 +410,13 @@ async function readReviewFacts(
     return { ok: false, result: fromPrEventFailure(filesResult) };
   }
   const filesData = objectField(filesResult.data);
-  const parsedFiles = v.safeParse(
-    v.array(githubPullRequestFileSchema),
-    filesData.files,
-  );
-  const files = parsedFiles.success ? parsedFiles.output : null;
+  const parsedFiles = v.safeParse(v.array(v.unknown()), filesData.files);
+  const files = parsedFiles.success
+    ? parsedFiles.output.flatMap((item) => {
+        const file = v.safeParse(githubPullRequestFileSchema, item);
+        return file.success ? [file.output] : [];
+      })
+    : null;
   const parsedDiffSummary = v.safeParse(
     diffSummarySchema,
     filesData.diffSummary,

@@ -395,6 +395,14 @@ export function readMemoryEventRow(
   };
 }
 
+export function safeReadMemoryEventRow(row: MemoryExternalValue) {
+  try {
+    return [readMemoryEventRow(row)];
+  } catch {
+    return [];
+  }
+}
+
 export function readMemoryCandidateRow(
   row: MemoryExternalValue,
 ): MemoryCandidateRecord {

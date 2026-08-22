@@ -10,6 +10,9 @@ import {
   collectBriefingSnapshot,
   composeBriefingInput,
   createBriefingRun,
+  listBriefingRunMetadata,
+  listBriefingRuns,
+  listQueuedBriefingRuns,
   prepareBriefingAgentDelivery,
   recoverInterruptedBriefingAdmissions,
   readBriefingProfile,
@@ -116,6 +119,23 @@ describe('conversational briefings', () => {
     });
     expect(snapshot.sources.notifications.status).toBe('ok');
     expect(snapshot.byteSize).toBeGreaterThan(0);
+    expect(snapshot.byteSize).toBeLessThanOrEqual(96_000);
+  });
+
+  it('degrades oversized snapshot fields containing runtime undefined values', async () => {
+    const paths = runtimePaths(await tempDir());
+    const snapshot = await collectBriefingSnapshot(paths, {
+      readRepos: async () =>
+        ({
+          repos: Array.from({ length: 30 }, (_, index) => ({
+            id: `repo-${index}`,
+            github: { owner: 'owner', name: `repo-${index}` },
+            path: index === 0 ? undefined : 'x'.repeat(10_000),
+          })),
+        }) as never,
+    });
+
+    expect(snapshot.truncated).toBe(true);
     expect(snapshot.byteSize).toBeLessThanOrEqual(96_000);
   });
 
@@ -1262,6 +1282,55 @@ describe('conversational briefings', () => {
     await expect(readBriefingRunDetails(run.id, paths)).rejects.toThrow(
       `Invalid persisted briefing snapshot for ${run.id}.`,
     );
+  });
+
+  it('retains valid briefing runs when a sibling row is malformed', async () => {
+    const paths = runtimePaths(await tempDir());
+    const profile = await readBriefingProfile('morning', paths);
+    const snapshot = await collectBriefingSnapshot(paths);
+    const valid = await createBriefingRun(
+      {
+        profileId: profile.id,
+        trigger: 'scheduled',
+        snapshot,
+        instructions: profile.instructions,
+        instructionsVersion: profile.instructionsVersion,
+        sessionId: 'briefing-valid-session',
+      },
+      paths,
+    );
+    const malformed = await createBriefingRun(
+      {
+        profileId: profile.id,
+        trigger: 'scheduled',
+        snapshot,
+        instructions: profile.instructions,
+        instructionsVersion: profile.instructionsVersion,
+        sessionId: 'briefing-malformed-session',
+      },
+      paths,
+    );
+    if (!valid || !malformed) throw new Error('Expected briefing fixtures.');
+    const database = openDb(paths.neondeckDatabase);
+    try {
+      database
+        .prepare(
+          'UPDATE briefing_runs SET snapshot_json = ?, created_at = ? WHERE id = ?;',
+        )
+        .run('{"version":99}', '2099-01-01T00:00:00.000Z', malformed.id);
+    } finally {
+      database.close();
+    }
+
+    await expect(listQueuedBriefingRuns(paths)).resolves.toMatchObject([
+      { id: valid.id },
+    ]);
+    await expect(listBriefingRuns(paths, 1)).resolves.toMatchObject([
+      { id: valid.id },
+    ]);
+    await expect(listBriefingRunMetadata(paths, 1)).resolves.toMatchObject([
+      { id: valid.id },
+    ]);
   });
 });
 

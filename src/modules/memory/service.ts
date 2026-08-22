@@ -1,4 +1,8 @@
-import { openDb, withImmediateTransaction } from '../../lib/sqlite.ts';
+import {
+  collectValidRowsInBatches,
+  openDb,
+  withImmediateTransaction,
+} from '../../lib/sqlite.ts';
 import { asJsonValue } from '../../lib/action-result';
 import { randomUUID } from 'node:crypto';
 import * as v from 'valibot';
@@ -24,7 +28,7 @@ import {
   memoryWritePolicyResult,
   readMemoryById,
   readMemoryByScopeKey,
-  readMemoryEventRow,
+  safeReadMemoryEventRow,
   safeReadMemoryRow,
   recordLearningEvent,
   recordMemoryEvent,
@@ -994,21 +998,22 @@ export async function listMemoryEvents(
 
   const database = openDb(paths.neondeckDatabase);
   try {
-    const events = database
-      .prepare(
-        `
+    const limit = parsed.output.limit ?? 100;
+    const statement = database.prepare(
+      `
         SELECT *
         FROM memory_events
         ${parsed.output.memoryId ? 'WHERE memory_id = ?' : ''}
-        ORDER BY created_at DESC
-        LIMIT ?;
+        ORDER BY created_at DESC, id DESC
+        LIMIT ? OFFSET ?;
       `,
-      )
-      .all(
-        ...(parsed.output.memoryId ? [parsed.output.memoryId] : []),
-        parsed.output.limit ?? 100,
-      )
-      .map(readMemoryEventRow);
+    );
+    const params = parsed.output.memoryId ? [parsed.output.memoryId] : [];
+    const events = collectValidRowsInBatches(
+      limit,
+      (batchLimit, offset) => statement.all(...params, batchLimit, offset),
+      safeReadMemoryEventRow,
+    );
     return {
       ok: true,
       action: 'memory_events',

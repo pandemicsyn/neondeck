@@ -57,9 +57,9 @@ describe('persisted Autopilot owner turns', () => {
     try {
       database
         .prepare(
-          'UPDATE autopilot_owner_turns SET prepared_json = ? WHERE turn_id = ?;',
+          'UPDATE autopilot_owner_turns SET prepared_json = ?, created_at = ? WHERE turn_id = ?;',
         )
-        .run('{', malformed.turnId);
+        .run('{', '2020-01-01T00:00:00.000Z', malformed.turnId);
     } finally {
       database.close();
     }
@@ -92,9 +92,9 @@ describe('persisted Autopilot owner turns', () => {
     try {
       database
         .prepare(
-          'UPDATE autopilot_owner_turns SET prepared_json = ? WHERE turn_id = ?;',
+          'UPDATE autopilot_owner_turns SET prepared_json = ?, created_at = ? WHERE turn_id = ?;',
         )
-        .run('{', malformed.turnId);
+        .run('{', '2020-01-01T00:00:00.000Z', malformed.turnId);
     } finally {
       database.close();
     }
@@ -113,6 +113,54 @@ describe('persisted Autopilot owner turns', () => {
     expect(readPendingAutopilotTurn(paths.home, 'owner')?.turnId).toBe(
       replacement.turnId,
     );
+  });
+
+  it('keeps a recent malformed active turn as an idempotency fence', async () => {
+    const paths = runtimePaths(await tempDir());
+    await ensureRuntimeHome(paths);
+    const existing = registerPendingAutopilotTurn(
+      paths.home,
+      'owner',
+      undefined,
+      'prepare-only',
+      'watch-event',
+      undefined,
+      { idempotencyKey: 'owner:active-revision' },
+    );
+    const database = openDb(paths.neondeckDatabase);
+    try {
+      database
+        .prepare(
+          'UPDATE autopilot_owner_turns SET prepared_json = ? WHERE turn_id = ?;',
+        )
+        .run('{', existing.turnId);
+    } finally {
+      database.close();
+    }
+
+    expect(() =>
+      registerPendingAutopilotTurn(
+        paths.home,
+        'owner',
+        undefined,
+        'prepare-only',
+        'watch-event',
+        undefined,
+        { idempotencyKey: 'owner:active-revision' },
+      ),
+    ).toThrow('refusing a duplicate reservation');
+
+    const verification = openDb(paths.neondeckDatabase, { readOnly: true });
+    try {
+      const count = verification
+        .prepare(
+          'SELECT COUNT(*) AS count FROM autopilot_owner_turns WHERE instance_id = ?;',
+        )
+        .get('owner');
+      expect(count).toMatchObject({ count: 1 });
+    } finally {
+      verification.close();
+    }
   });
 });
 

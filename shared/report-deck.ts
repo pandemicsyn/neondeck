@@ -26,7 +26,7 @@ const safeUrlSchema = v.pipe(
   v.string(),
   v.maxLength(REPORT_MARKDOWN_LIMITS.urlCharacters),
   v.check((value) => safeReportUrl(value) !== null, 'Invalid report URL.'),
-  v.transform((value) => safeReportUrl(value) as string),
+  v.transform((value) => safeReportUrl(value) ?? value),
 );
 const nullableSafeUrlSchema = v.nullable(safeUrlSchema);
 const churnSchema = v.nullable(v.pipe(v.number(), v.integer(), v.minValue(0)));
@@ -244,13 +244,18 @@ export type ReportDeckFindingItem = v.InferOutput<
 export type ReportDeckSlide = v.InferOutput<typeof reportDeckSlideSchema>;
 export type ReportDeckDocument = v.InferOutput<typeof reportDeckDocumentSchema>;
 
-export function reportDeckFromSummary(summary: unknown) {
+const reportDeckExternalValueSchema = v.unknown();
+type ReportDeckExternalValue = v.InferInput<
+  typeof reportDeckExternalValueSchema
+>;
+
+export function reportDeckFromSummary(summary: ReportDeckExternalValue) {
   const summaryRecord = objectRecord(summary);
   return parseReportDeckDocument(summaryRecord?.deck);
 }
 
 export function parseReportDeckDocument(
-  value: unknown,
+  value: ReportDeckExternalValue,
 ): ReportDeckDocument | null {
   const parsed = v.safeParse(reportDeckDocumentSchema, value);
   return parsed.success ? parsed.output : null;
@@ -337,8 +342,8 @@ function boundedNonEmptyArray<
   return v.pipe(v.array(item), v.minLength(1), v.maxLength(maxLength));
 }
 
-function objectRecord(value: unknown) {
-  return value && typeof value === 'object' && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : null;
+function objectRecord(value: ReportDeckExternalValue) {
+  if (Array.isArray(value)) return null;
+  const parsed = v.safeParse(v.record(v.string(), v.unknown()), value);
+  return parsed.success ? parsed.output : null;
 }

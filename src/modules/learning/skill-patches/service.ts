@@ -1,4 +1,8 @@
-import { openDb, withImmediateTransaction } from '../../../lib/sqlite.ts';
+import {
+  collectValidRowsInBatches,
+  openDb,
+  withImmediateTransaction,
+} from '../../../lib/sqlite.ts';
 import { asJsonValue } from '../../../lib/action-result';
 import { randomUUID } from 'node:crypto';
 import {
@@ -199,26 +203,40 @@ export async function listSkillPatchCandidates(
       filters.push('skill_id = ?');
       params.push(parsed.output.skillId);
     }
+    const limit = parsed.output.limit ?? 100;
+    const statement = database.prepare(
+      `
+      SELECT *
+      FROM learning_candidates
+      WHERE ${filters.join(' AND ')}
+      ORDER BY created_at DESC, id DESC
+      LIMIT ? OFFSET ?;
+    `,
+    );
+    const candidates = collectValidRowsInBatches(
+      limit,
+      (batchLimit, offset) => statement.all(...params, batchLimit, offset),
+      safeReadSkillPatchCandidateRow,
+    );
     return {
       ok: true,
       action: 'skill_patch_list',
       changed: false,
-      candidates: database
-        .prepare(
-          `
-          SELECT *
-          FROM learning_candidates
-          WHERE ${filters.join(' AND ')}
-          ORDER BY created_at DESC
-          LIMIT ?;
-        `,
-        )
-        .all(...params, parsed.output.limit ?? 100)
-        .map(readSkillPatchCandidateRow),
+      candidates,
       fetchedAt: new Date().toISOString(),
     };
   } finally {
     database.close();
+  }
+}
+
+function safeReadSkillPatchCandidateRow(
+  row: Parameters<typeof readSkillPatchCandidateRow>[0],
+): SkillPatchCandidateRecord[] {
+  try {
+    return [readSkillPatchCandidateRow(row)];
+  } catch {
+    return [];
   }
 }
 

@@ -1,4 +1,4 @@
-import { openDb } from '../../lib/sqlite.ts';
+import { collectValidRowsInBatches, openDb } from '../../lib/sqlite.ts';
 import { type JsonValue } from '@flue/runtime';
 import { asJsonValue } from '../../lib/action-result';
 import { randomUUID } from 'node:crypto';
@@ -214,22 +214,24 @@ export function listKiloTaskRows(
     clauses.push('repo_id = ?');
     values.push(filters.repoId);
   }
-  values.push(filters.limit);
   const database = openDb(paths.neondeckDatabase, { readOnly: true });
 
   try {
-    return database
-      .prepare(
-        `
+    const statement = database.prepare(
+      `
         SELECT *
         FROM kilo_tasks
         ${clauses.length ? `WHERE ${clauses.join(' AND ')}` : ''}
-        ORDER BY updated_at DESC, created_at DESC
-        LIMIT ?;
+        ORDER BY updated_at DESC, created_at DESC, id DESC
+        LIMIT ? OFFSET ?;
       `,
-      )
-      .all(...values)
-      .map(readTaskRow);
+    );
+    const limit = filters.limit;
+    return collectValidRowsInBatches(
+      limit,
+      (batchLimit, offset) => statement.all(...values, batchLimit, offset),
+      safeReadTaskRow,
+    );
   } finally {
     database.close();
   }
@@ -307,21 +309,21 @@ export function listLinkedKiloSessionTasks(
       `%${filters.query}%`,
     );
   }
-  values.push(filters.limit);
-
   try {
-    return database
-      .prepare(
-        `
+    const statement = database.prepare(
+      `
         SELECT *
         FROM kilo_tasks
         ${clauses.length ? `WHERE ${clauses.join(' AND ')}` : ''}
-        ORDER BY updated_at DESC
-        LIMIT ?;
+        ORDER BY updated_at DESC, id DESC
+        LIMIT ? OFFSET ?;
       `,
-      )
-      .all(...values)
-      .map(readTaskRow);
+    );
+    return collectValidRowsInBatches(
+      filters.limit,
+      (batchLimit, offset) => statement.all(...values, batchLimit, offset),
+      safeReadTaskRow,
+    );
   } finally {
     database.close();
   }
@@ -582,19 +584,20 @@ export function listKiloTaskEvents(
 ) {
   const database = openDb(paths.neondeckDatabase, { readOnly: true });
   try {
-    return database
-      .prepare(
-        `
+    const statement = database.prepare(
+      `
         SELECT *
         FROM kilo_task_events
         WHERE task_id = ?
         ORDER BY event_index DESC
-        LIMIT ?;
+        LIMIT ? OFFSET ?;
       `,
-      )
-      .all(taskId, limit)
-      .map(readEventRow)
-      .reverse();
+    );
+    return collectValidRowsInBatches(
+      limit,
+      (batchLimit, offset) => statement.all(taskId, batchLimit, offset),
+      safeReadEventRow,
+    ).reverse();
   } finally {
     database.close();
   }
@@ -690,6 +693,14 @@ function readEventRow(row: KiloUntrustedInput): KiloTaskEventRecord {
   };
 }
 
+function safeReadEventRow(row: KiloUntrustedInput): KiloTaskEventRecord[] {
+  try {
+    return [readEventRow(row)];
+  } catch {
+    return [];
+  }
+}
+
 function parseMode(value: string): KiloHandoffMode {
   const parsed = v.safeParse(handoffModeSchema, value);
   return parsed.success ? parsed.output : 'patch-proposal';
@@ -701,8 +712,12 @@ function parseTaskStatus(value: string): KiloTaskStatus {
 }
 
 function parseStringArray(source: string): string[] {
-  const parsed = v.safeParse(v.array(v.string()), JSON.parse(source));
-  return parsed.success ? parsed.output : [];
+  const parsed = v.safeParse(v.array(v.unknown()), JSON.parse(source));
+  if (!parsed.success) return [];
+  return parsed.output.flatMap((item) => {
+    const string = v.safeParse(v.string(), item);
+    return string.success ? [string.output] : [];
+  });
 }
 
 function truncate(value: string, max: number) {

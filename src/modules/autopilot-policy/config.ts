@@ -2,7 +2,11 @@ import * as v from 'valibot';
 import { type AppConfig, type RepoConfig } from '../../runtime-home';
 import {
   appAutopilotSchema,
+  autopilotConcurrencySchema,
   defaultAutopilotConcurrency,
+  modeSchema,
+  nonEmptyStringSchema,
+  watchOverrideSchema,
   type AutopilotConcurrencyPolicy,
   type AutopilotPolicyConfig,
   type RepoGuardrails,
@@ -15,6 +19,13 @@ import {
   readRepoGuardrailsConfig,
   repoGuardrails,
 } from '../repo-guardrails/config';
+
+const repoAutopilotConfigInputSchema = v.looseObject({
+  mode: v.optional(modeSchema),
+  reason: v.optional(nonEmptyStringSchema),
+  concurrency: v.optional(autopilotConcurrencySchema),
+  watchOverrides: v.optional(v.array(v.unknown())),
+});
 
 export {
   globalRepoGuardrails,
@@ -49,10 +60,17 @@ export function readRepoAutopilotConfig(
 ): RepoAutopilotConfig | undefined {
   if (!repo?.metadata) return undefined;
   const autopilot = v.safeParse(
-    v.optional(appAutopilotSchema.entries.autopilot),
+    v.optional(repoAutopilotConfigInputSchema),
     repo.metadata.autopilot,
   );
-  return autopilot.success ? autopilot.output : undefined;
+  if (!autopilot.success || !autopilot.output) return undefined;
+  const { watchOverrides: rawWatchOverrides, ...config } = autopilot.output;
+  const watchOverrides = (rawWatchOverrides ?? []).flatMap((value) => {
+    const parsed = v.safeParse(watchOverrideSchema, value);
+    return parsed.success ? [parsed.output] : [];
+  });
+  if (rawWatchOverrides === undefined) return config;
+  return { ...config, watchOverrides };
 }
 
 export function repoAutopilotPolicy(

@@ -470,7 +470,7 @@ export function readWatermarks(
       watchId
         ? database.prepare(query).all(watchId)
         : database.prepare(query).all()
-    ).map(readWatermarkRow);
+    ).flatMap(safeReadWatermarkRow);
   } finally {
     database.close();
   }
@@ -545,4 +545,12 @@ export function readWatermarkRow<T>(row: T): PrWatchEventWatermarkRecord {
     createdAt: record.created_at,
     updatedAt: record.updated_at,
   };
+}
+
+function safeReadWatermarkRow<T>(row: T): PrWatchEventWatermarkRecord[] {
+  try {
+    return [readWatermarkRow(row)];
+  } catch {
+    return [];
+  }
 }

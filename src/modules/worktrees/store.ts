@@ -1,4 +1,4 @@
-import { openDb } from '../../lib/sqlite.ts';
+import { collectValidRowsInBatches, openDb } from '../../lib/sqlite.ts';
 import { randomUUID } from 'node:crypto';
 import * as v from 'valibot';
 import type { RepoConfig, RuntimePaths } from '../../runtime-home';
@@ -305,7 +305,7 @@ export function listWorktreeRecords(paths: RuntimePaths) {
       `,
       )
       .all()
-      .map(readWorktreeRow);
+      .flatMap(safeReadWorktreeRow);
   } finally {
     database.close();
   }
@@ -314,18 +314,20 @@ export function listWorktreeRecords(paths: RuntimePaths) {
 export function listCleanupFailures(paths: RuntimePaths) {
   const database = openDb(paths.neondeckDatabase, { readOnly: true });
   try {
-    return database
-      .prepare(
-        `
+    const statement = database.prepare(
+      `
         SELECT *
         FROM worktree_cleanup_attempts
         WHERE outcome = 'failed'
-        ORDER BY attempted_at DESC
-        LIMIT 50;
+        ORDER BY attempted_at DESC, id DESC
+        LIMIT ? OFFSET ?;
       `,
-      )
-      .all()
-      .map(readCleanupAttemptRow);
+    );
+    return collectValidRowsInBatches(
+      50,
+      (batchLimit, offset) => statement.all(batchLimit, offset),
+      safeReadCleanupAttemptRow,
+    );
   } finally {
     database.close();
   }
@@ -358,6 +360,14 @@ export function readWorktreeRow(row: UntrustedInput): WorktreeRecord {
     createdAt: item.created_at,
     updatedAt: item.updated_at,
   };
+}
+
+function safeReadWorktreeRow(row: UntrustedInput): WorktreeRecord[] {
+  try {
+    return [readWorktreeRow(row)];
+  } catch {
+    return [];
+  }
 }
 
 export function readLockRow(row: UntrustedInput): WorktreeLockRecord {
@@ -397,6 +407,16 @@ function readCleanupAttemptRow(row: UntrustedInput) {
     deleted: item.deleted === 1,
     attemptedAt: item.attempted_at,
   };
+}
+
+function safeReadCleanupAttemptRow(
+  row: UntrustedInput,
+): ReturnType<typeof readCleanupAttemptRow>[] {
+  try {
+    return [readCleanupAttemptRow(row)];
+  } catch {
+    return [];
+  }
 }
 
 function parseCleanupPolicy(value: UntrustedInput): WorktreeCleanupPolicy {

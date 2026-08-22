@@ -1969,6 +1969,54 @@ describe('learning review orchestration', () => {
     });
   });
 
+  it('retains valid skill patch candidates when a sibling row is malformed', async () => {
+    const paths = runtimePaths(await tempHome());
+    await writeUserSkill(paths.home, 'mixed-candidates');
+    for (const heading of ['First', 'Second']) {
+      await expect(
+        proposeSkillPatch(
+          {
+            skillId: 'mixed-candidates',
+            summary: `Add ${heading.toLowerCase()} guidance.`,
+            operation: {
+              type: 'append-section',
+              heading,
+              content: `- ${heading} valid candidate.\n`,
+            },
+          },
+          paths,
+        ),
+      ).resolves.toMatchObject({ ok: true, changed: true });
+    }
+    const before = await listSkillPatchCandidates(
+      { skillId: 'mixed-candidates' },
+      paths,
+    );
+    expect(before.candidates).toHaveLength(2);
+    const malformedId = before.candidates[0]?.id;
+    const validId = before.candidates[1]?.id;
+    if (!malformedId || !validId) {
+      throw new Error('Expected two skill patch candidate fixtures.');
+    }
+    const database = openDb(paths.neondeckDatabase);
+    try {
+      database
+        .prepare('UPDATE learning_candidates SET status = ? WHERE id = ?;')
+        .run('legacy-status', malformedId);
+    } finally {
+      database.close();
+    }
+
+    await expect(
+      listSkillPatchCandidates(
+        { skillId: 'mixed-candidates', limit: 1 },
+        paths,
+      ),
+    ).resolves.toMatchObject({
+      candidates: [expect.objectContaining({ id: validId })],
+    });
+  });
+
   it('finalizes an audited skill patch after a crash following file replacement', async () => {
     const paths = runtimePaths(await tempHome());
     await writeUserSkill(paths.home, 'journaled-skill');

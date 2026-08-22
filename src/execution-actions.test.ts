@@ -14,6 +14,10 @@ import {
 import { checkExecutionPolicy } from './modules/execution';
 import { commandError } from './modules/execution/utils';
 import {
+  markApprovalUsed,
+  updateApprovalResult,
+} from './modules/execution/store';
+import {
   createChatSession,
   listChatSessionCommandEvents,
   setApprovalNudgeDispatchForTests,
@@ -395,6 +399,52 @@ describe('execution actions', () => {
         paths,
       ),
     ).resolves.toMatchObject({ ok: false, requires: ['approval'] });
+  });
+
+  it('records result and usage write-backs for malformed legacy approvals', async () => {
+    const paths = runtimePaths(await tempDir());
+    await ensureRuntimeHome(paths);
+    const pending = await requestExecutionApproval(
+      { command: 'node --version', cwd: paths.home },
+      paths,
+    );
+    const id = readApprovalId(pending);
+    const database = new DatabaseSync(paths.neondeckDatabase);
+    try {
+      database
+        .prepare('UPDATE execution_approvals SET backend = ? WHERE id = ?;')
+        .run('legacy-runner', id);
+    } finally {
+      database.close();
+    }
+
+    expect(
+      updateApprovalResult(paths, id, {
+        status: 'failed',
+        error: 'legacy command failed',
+        result: { ok: false },
+      }),
+    ).toBeUndefined();
+    expect(markApprovalUsed(paths, id)).toBeUndefined();
+
+    const verification = new DatabaseSync(paths.neondeckDatabase, {
+      readOnly: true,
+    });
+    try {
+      expect(
+        verification
+          .prepare(
+            'SELECT error, result_json, used_at FROM execution_approvals WHERE id = ?;',
+          )
+          .get(id),
+      ).toMatchObject({
+        error: 'legacy command failed',
+        result_json: JSON.stringify({ ok: false }),
+        used_at: expect.any(String),
+      });
+    } finally {
+      verification.close();
+    }
   });
 
   it('surfaces approval nudge delivery failures after resolving execution approval', async () => {

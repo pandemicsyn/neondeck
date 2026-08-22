@@ -13,9 +13,11 @@ import {
   fetchFailingCheckFacts,
   fetchGitHubIssues,
   fetchCheckSummary,
+  fetchPullRequestCommitsWithMetadata,
   fetchPullRequestEventState,
   fetchPullRequestFiles,
   fetchPullRequestReviewComments,
+  fetchPullRequestReviewsWithMetadata,
   fetchPullRequestReviewSurfaceThreadsFreshWithMetadata,
   fetchPullRequestReviewSurfaceThreadsWithMetadata,
   fetchPullRequestReviewThreads,
@@ -66,6 +68,57 @@ afterEach(async () => {
 });
 
 describe('github foundation', () => {
+  it('retains valid commits and reviews from mixed GitHub arrays', async () => {
+    globalThis.fetch = vi.fn<typeof fetch>(async (input) => {
+      const url = String(input);
+      if (url.includes('/commits')) {
+        return jsonResponse([
+          {
+            sha: 'commit-valid',
+            html_url: 'https://github.com/owner/repo/commit/commit-valid',
+            author: { login: 'syn' },
+            commit: { committer: { date: '2026-08-21T00:00:00.000Z' } },
+          },
+          { sha: 7 },
+        ]);
+      }
+      return jsonResponse([
+        {
+          id: 101,
+          state: 'CHANGES_REQUESTED',
+          user: { login: 'reviewer', type: 'User' },
+          submitted_at: '2026-08-21T00:00:00.000Z',
+        },
+        { id: 'malformed-review' },
+      ]);
+    });
+
+    await expect(
+      fetchPullRequestCommitsWithMetadata({
+        token: 'token',
+        owner: 'owner',
+        repo: 'repo',
+        number: 1,
+      }),
+    ).resolves.toEqual({
+      commits: [
+        expect.objectContaining({ sha: 'commit-valid', authorLogin: 'syn' }),
+      ],
+      truncated: true,
+    });
+    await expect(
+      fetchPullRequestReviewsWithMetadata({
+        token: 'token',
+        owner: 'owner',
+        repo: 'repo',
+        number: 1,
+      }),
+    ).resolves.toEqual({
+      reviews: [expect.objectContaining({ id: 101, authorLogin: 'reviewer' })],
+      truncated: true,
+    });
+  });
+
   it('builds authored PR queries scoped to configured repos', () => {
     const repos: RepoConfig[] = [
       {
@@ -1549,6 +1602,7 @@ describe('github foundation', () => {
             patch:
               '@@ -1,3 +1,7 @@\n-old\n+new\n+added\n+added\n+added\n+added',
           },
+          { sha: 7 },
         ],
         200,
         {
@@ -2248,6 +2302,7 @@ describe('github foundation', () => {
             updated_at: '2026-07-19T00:00:00.000Z',
             html_url: `https://github.com/pandemicsyn/neondeck/pull/123#discussion_r${secondPage ? 112 : 111}`,
           },
+          { id: 'malformed-comment' },
         ],
         200,
         secondPage

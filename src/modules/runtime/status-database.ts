@@ -133,7 +133,7 @@ export function inspectAppDatabase(paths: RuntimePaths): AppDatabaseSnapshot {
         `,
         )
         .all(cutoff)
-        .map(readWorkflowErrorRow),
+        .flatMap(safeReadWorkflowErrorRow),
       ...database
         .prepare(
           `
@@ -146,7 +146,7 @@ export function inspectAppDatabase(paths: RuntimePaths): AppDatabaseSnapshot {
         `,
         )
         .all()
-        .map(readNotificationErrorRow),
+        .flatMap(safeReadNotificationErrorRow),
     ]
       .sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt))
       .slice(0, 5);
@@ -243,6 +243,22 @@ function readNotificationErrorRow(row: RuntimeExternalValue) {
     runId: record.source_id,
     createdAt: record.created_at,
   };
+}
+
+function safeReadWorkflowErrorRow(row: RuntimeExternalValue) {
+  try {
+    return [readWorkflowErrorRow(row)];
+  } catch {
+    return [];
+  }
+}
+
+function safeReadNotificationErrorRow(row: RuntimeExternalValue) {
+  try {
+    return [readNotificationErrorRow(row)];
+  } catch {
+    return [];
+  }
 }
 
 function workflowSummaryMessage(summaryJson: string | null, workflow: string) {

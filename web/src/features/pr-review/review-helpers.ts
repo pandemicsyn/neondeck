@@ -58,7 +58,7 @@ const failedCommentIdsSchema = v.looseObject({
   data: v.optional(
     v.looseObject({
       code: v.optional(v.string()),
-      failingCommentIds: v.optional(v.array(v.string())),
+      failingCommentIds: v.optional(v.array(v.unknown())),
     }),
   ),
 });
@@ -125,7 +125,10 @@ export function failingCommentIdsFromError<TError>(error: TError) {
   if (!parsed.success) return [];
   const data = parsed.output;
   if (data?.data?.code !== 'github-review-submit-failed') return [];
-  return data.data.failingCommentIds ?? [];
+  return (data.data.failingCommentIds ?? []).flatMap((item) => {
+    const parsedId = v.safeParse(v.string(), item);
+    return parsedId.success ? [parsedId.output] : [];
+  });
 }
 
 export function normalizeReviewBody(value: string | null | undefined) {

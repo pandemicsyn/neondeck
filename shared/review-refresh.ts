@@ -313,7 +313,7 @@ function sameCursorIdentity(
 
 export function reviewRefreshPauseMessage(reasons: ReviewRefreshPauseReason[]) {
   if (reasons.length === 0) return null;
-  const labels: Record<ReviewRefreshPauseReason, string> = {
+  const labels = {
     'dirty-editor': 'an editor contains unsaved text',
     'active-selection': 'a line, range, or annotation selection is active',
     'stale-draft': 'the local GitHub draft belongs to the older head',
@@ -321,7 +321,7 @@ export function reviewRefreshPauseMessage(reasons: ReviewRefreshPauseReason[]) {
     'revision-confirmation-open': 'a revision confirmation is open',
     'mutation-pending': 'a related mutation is still running',
     'safety-uncertain': 'refresh safety could not be proven',
-  };
+  } satisfies Record<ReviewRefreshPauseReason, string>;
   return `Automatic refresh is paused because ${reasons
     .map((reason) => labels[reason])
     .join(', ')}.`;

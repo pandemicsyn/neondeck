@@ -13,7 +13,7 @@ export type PrReviewerDraftToolName = (typeof prReviewerDraftToolNames)[number];
 export function isPrReviewerDraftToolName(
   value: string,
 ): value is PrReviewerDraftToolName {
-  return (prReviewerDraftToolNames as readonly string[]).includes(value);
+  return prReviewerDraftToolNames.some((toolName) => toolName === value);
 }
 
 export function prReviewerConversationId(reviewId: string, headSha: string) {

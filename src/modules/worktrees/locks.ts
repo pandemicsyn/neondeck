@@ -49,6 +49,8 @@ export function acquireLock(
   const database = openDb(paths.neondeckDatabase);
   try {
     return withImmediateTransaction(database, () => {
+      // Active locks are authority state. A malformed row must fail closed;
+      // skipping it could permit a conflicting mutation.
       const activeRows = database
         .prepare(
           `
@@ -173,6 +175,8 @@ export function activeLocksForWorktree(
 export function listLockRecords(paths: RuntimePaths) {
   const database = openDb(paths.neondeckDatabase, { readOnly: true });
   try {
+    // This list feeds assertNoForeignActiveLock, so corrupt lock state must
+    // remain a hard failure instead of disappearing from authorization.
     return database
       .prepare(
         `

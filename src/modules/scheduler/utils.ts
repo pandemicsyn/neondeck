@@ -101,8 +101,12 @@ export function readJsonRecord(value: SchedulerExternalValue) {
 }
 
 export function readJsonArray(value: SchedulerExternalValue) {
-  const parsed = v.safeParse(v.array(jsonValueSchema), value);
-  return parsed.success ? parsed.output : [];
+  const parsed = v.safeParse(schedulerExternalArraySchema, value);
+  if (!parsed.success) return [];
+  return parsed.output.flatMap((item) => {
+    const json = v.safeParse(jsonValueSchema, item);
+    return json.success ? [json.output] : [];
+  });
 }
 
 export function arrayField(value: SchedulerExternalValue) {

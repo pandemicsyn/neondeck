@@ -268,6 +268,9 @@ function writeCachedPullRequestFiles(options: {
 
 function parseCachedFiles(payload: string): GitHubPullRequestFile[] | null {
   try {
+    // A cache row is one coherent revision snapshot. Rejecting any malformed
+    // member invalidates and refetches the whole snapshot; it must not expose a
+    // partial file list as complete data.
     return v.parse(v.array(githubPullRequestFileSchema), JSON.parse(payload));
   } catch {
     return null;

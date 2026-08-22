@@ -145,6 +145,12 @@ describe('PR review prompts', () => {
     const second = await buildPrReviewerRuntime(id, paths, {
       getReviewThreads: async () => reviewThreadsResult('second-reviewer'),
     });
+    const mixedThreads = reviewThreadsResult('retained-reviewer');
+    mixedThreads.data.reviewThreads[0]?.comments.push({ id: 7 } as never);
+    mixedThreads.data.reviewThreads.push({ id: 8 } as never);
+    const mixed = await buildPrReviewerRuntime(id, paths, {
+      getReviewThreads: async () => mixedThreads,
+    });
     const movedHead = await buildPrReviewerRuntime(id, paths, {
       getReviewThreads: async () =>
         reviewThreadsResult('future-reviewer', 'b'.repeat(40)),
@@ -194,6 +200,23 @@ describe('PR review prompts', () => {
     expect(first.context).toContain('Is the local draft redundant?');
     expect(second.context).toContain('second-reviewer');
     expect(second.context).not.toContain('iscekic');
+    expect(JSON.parse(mixed.context)).toMatchObject({
+      liveGitHubReviewThreads: {
+        available: true,
+        truncated: true,
+        totalFetched: 2,
+        omitted: 1,
+        commentsOmitted: 1,
+        threads: [
+          {
+            id: 'thread-1',
+            comments: [
+              expect.objectContaining({ authorLogin: 'retained-reviewer' }),
+            ],
+          },
+        ],
+      },
+    });
     expect(JSON.parse(movedHead.context)).toMatchObject({
       liveGitHubReviewThreads: {
         headSha: 'b'.repeat(40),

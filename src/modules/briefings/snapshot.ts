@@ -253,6 +253,7 @@ function compactData(data: JsonValue, depth = 0): JsonValue {
       ? `${string.output.slice(0, 297)}...`
       : string.output;
   }
+  if (data === undefined) return null;
   if (data === null) return null;
   if (v.safeParse(v.number(), data).success) return data;
   if (v.safeParse(v.boolean(), data).success) return data;

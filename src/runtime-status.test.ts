@@ -137,6 +137,78 @@ describe('runtime status', () => {
     );
   });
 
+  it('keeps database counts and valid errors when sibling error rows are malformed', async () => {
+    const home = await tempDir();
+    const paths = runtimePaths(home);
+    const validSummary = await addWorkflowSummary(
+      {
+        workflow: 'command:valid',
+        runId: 'run_valid',
+        status: 'failed',
+        summary: { message: 'Valid workflow failure.' },
+      },
+      paths,
+    );
+    const malformedSummary = await addWorkflowSummary(
+      {
+        workflow: 'command:malformed',
+        runId: 'run_malformed',
+        status: 'failed',
+      },
+      paths,
+    );
+    const validNotification = await addNotification(
+      {
+        level: 'attention',
+        title: 'Valid notification',
+        message: 'Valid notification failure.',
+        source: 'flue',
+        sourceId: 'notification-valid',
+      },
+      paths,
+    );
+    const malformedNotification = await addNotification(
+      {
+        level: 'attention',
+        title: 'Malformed notification',
+        message: 'Malformed notification failure.',
+        source: 'flue',
+        sourceId: 'notification-malformed',
+      },
+      paths,
+    );
+    const database = new DatabaseSync(paths.neondeckDatabase);
+    try {
+      database
+        .prepare('UPDATE workflow_summaries SET workflow = ? WHERE id = ?;')
+        .run(Buffer.from('invalid'), malformedSummary.id);
+      database
+        .prepare('UPDATE notifications SET title = ? WHERE id = ?;')
+        .run(Buffer.from('invalid'), malformedNotification.id);
+    } finally {
+      database.close();
+    }
+
+    const appDatabase = inspectAppDatabase(paths);
+    expect(appDatabase.ok).toBe(true);
+    expect(appDatabase.counts).toMatchObject({
+      recentFailedWorkflowSummaries: 2,
+      unreadFlueFailureNotifications: 2,
+    });
+    expect(appDatabase.errors).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: validSummary.id }),
+        expect.objectContaining({ id: validNotification.id }),
+      ]),
+    );
+    expect(appDatabase.errors).not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: malformedSummary.id }),
+        expect.objectContaining({ id: malformedNotification.id }),
+      ]),
+    );
+  });
+
   it('returns partial readiness when config files are invalid', async () => {
     const home = await tempDir();
     const paths = runtimePaths(home);

@@ -26,4 +26,15 @@ describe('actionErrorMessage', () => {
       'Request failed.',
     );
   });
+
+  it('retains valid diagnostic strings from mixed arrays', () => {
+    const error = new ApiError('Request failed.', 400, '/api/reviews', {
+      errors: ['Actionable detail.', null],
+      requires: [7, 'repository'],
+    });
+
+    expect(actionErrorMessage(error)).toBe(
+      'Request failed. Actionable detail. Requires: repository',
+    );
+  });
 });

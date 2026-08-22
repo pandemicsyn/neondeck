@@ -1813,6 +1813,10 @@ function normalizeActivityValue(
     if (symbol.success) return { type: 'symbol' };
     if (v.is(v.function(), current)) return { type: 'function' };
     if (!isObjectReference(current)) return { type: 'unsupported-value' };
+    if (current instanceof Map) return { type: 'map' };
+    if (current instanceof Set) return { type: 'set' };
+    if (current instanceof Date) return { type: 'date' };
+    if (current instanceof RegExp) return { type: 'regexp' };
     if (seen.has(current)) return { type: 'cycle' };
     seen.add(current);
 
@@ -1840,6 +1844,8 @@ function normalizeActivityValue(
       return output;
     } catch {
       return { type: 'uninspectable-object' };
+    } finally {
+      seen.delete(current);
     }
   }
 

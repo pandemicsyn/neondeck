@@ -1274,7 +1274,7 @@ function readNeonSeedsForDraft(
     `,
     )
     .all(draftId)
-    .map(readNeonSeedRow);
+    .flatMap(safeReadNeonSeedRow);
 }
 
 function readNeonSeedRow<TRow>(row: TRow): GitHubPrReviewNeonSeededComment {
@@ -1297,6 +1297,16 @@ function readNeonSeedRow<TRow>(row: TRow): GitHubPrReviewNeonSeededComment {
     outcomeAt: parsed.outcome_at,
     seededAt: parsed.seeded_at,
   };
+}
+
+function safeReadNeonSeedRow<TRow>(
+  row: TRow,
+): GitHubPrReviewNeonSeededComment[] {
+  try {
+    return [readNeonSeedRow(row)];
+  } catch {
+    return [];
+  }
 }
 
 function truncateSeedSummary(value: string) {
@@ -1381,10 +1391,15 @@ export async function fetchPullRequestReviewComments(options: {
     `https://api.github.com/repos/${encodePathSegment(options.owner)}/${encodePathSegment(options.repo)}/pulls/${options.number}/reviews/${options.reviewId}/comments?per_page=100`;
   for (let page = 0; nextUrl && page < 100; page += 1) {
     const response = await githubFetch(options.token, nextUrl);
-    const data = v.parse(
-      v.array(githubPullRequestReviewCommentApiItemSchema),
-      await response.json(),
-    );
+    const data = v
+      .parse(v.array(v.unknown()), await response.json())
+      .flatMap((item) => {
+        const comment = v.safeParse(
+          githubPullRequestReviewCommentApiItemSchema,
+          item,
+        );
+        return comment.success ? [comment.output] : [];
+      });
     comments.push(...data);
     nextUrl = nextLink(response.headers.get('link'));
   }
@@ -1500,6 +1515,7 @@ export async function fetchPullRequestReviewsWithMetadata(options: {
   eventBudget?: PullRequestEventFetchBudget;
 }): Promise<{ reviews: GitHubPullRequestReview[]; truncated: boolean }> {
   const reviews: GitHubPullRequestReviewApiItem[] = [];
+  let malformedItems = false;
   let nextUrl: string | undefined =
     `https://api.github.com/repos/${encodePathSegment(options.owner)}/${encodePathSegment(options.repo)}/pulls/${options.number}/reviews?per_page=100`;
   let pageCount = 0;
@@ -1511,10 +1527,12 @@ export async function fetchPullRequestReviewsWithMetadata(options: {
   ) {
     pageCount += 1;
     const response = await githubFetch(options.token, nextUrl);
-    const data = v.parse(
-      v.array(githubPullRequestReviewApiItemSchema),
-      await response.json(),
-    );
+    const rawData = v.parse(v.array(v.unknown()), await response.json());
+    const data = rawData.flatMap((item) => {
+      const review = v.safeParse(githubPullRequestReviewApiItemSchema, item);
+      return review.success ? [review.output] : [];
+    });
+    malformedItems ||= data.length !== rawData.length;
     let admittedPage = true;
     for (const review of data) {
       if (
@@ -1548,6 +1566,7 @@ export async function fetchPullRequestReviewsWithMetadata(options: {
       bodyTruncated: false,
     })),
     truncated:
+      malformedItems ||
       Boolean(nextUrl) ||
       Boolean(options.eventBudget?.exhausted('requested_changes_reviews')),
   };

@@ -111,13 +111,13 @@ export type ReviewCursorResult = {
   boundary: 'start' | 'end' | null;
 };
 
-const targetKindOrder: Record<ReviewNavigationTargetKind, number> = {
+const targetKindOrder = {
   file: 0,
   hunk: 1,
   'review-thread': 2,
   'local-draft': 3,
   finding: 4,
-};
+} satisfies Record<ReviewNavigationTargetKind, number>;
 
 export function createReviewNavigationModel(
   input: ReviewNavigationInput,
@@ -266,12 +266,13 @@ export function moveReviewCursor(
     return cursorResult(targets, index, 'initial', null);
   }
 
-  const currentKey = typeof current === 'string' ? current : current.key;
+  const currentIsKey = isCursorKey(current);
+  const currentKey = currentIsKey ? current : current.key;
   const currentIndex = targets.findIndex((target) => target.key === currentKey);
   if (currentIndex < 0) {
     const nearestIndex = nearestTargetIndex(
       targets,
-      typeof current === 'string' ? null : current,
+      currentIsKey ? null : current,
     );
     return cursorResult(targets, nearestIndex, 'nearest', null);
   }
@@ -380,7 +381,11 @@ function itemPosition(item: ReviewNavigationItem, inputIndex: number) {
 }
 
 function positiveNumber(value: number | null | undefined) {
-  return typeof value === 'number' && value >= 0 ? value : null;
+  return value !== null && value !== undefined && value >= 0 ? value : null;
+}
+
+function isCursorKey(value: string | ReviewCursorTarget): value is string {
+  return v.safeParse(v.string(), value).success;
 }
 
 function targetKey(kind: ReviewNavigationTargetKind, id: string) {
@@ -514,3 +519,4 @@ function cursorResult(
     total: targets.length,
   };
 }
+import * as v from 'valibot';

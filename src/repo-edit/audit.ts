@@ -210,8 +210,12 @@ function parseJson(value: UntrustedInput) {
 
 function parseJsonArray(value: UntrustedInput) {
   const parsed = parseJson(value);
-  const array = v.safeParse(v.array(v.string()), parsed);
-  return array.success ? array.output : [];
+  const array = v.safeParse(v.array(v.unknown()), parsed);
+  if (!array.success) return [];
+  return array.output.flatMap((item) => {
+    const string = v.safeParse(v.string(), item);
+    return string.success ? [string.output] : [];
+  });
 }
 
 function cap(value: string | null) {

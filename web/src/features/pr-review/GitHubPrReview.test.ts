@@ -104,6 +104,18 @@ describe('GitHubPrReview helpers', () => {
     );
   });
 
+  it('retains valid failing comment IDs from mixed error details', () => {
+    const error = apiError({
+      data: {
+        code: 'github-review-submit-failed',
+        failingCommentIds: ['comment-1', null],
+      },
+    });
+
+    expect(failingCommentIdsFromError(error)).toEqual(['comment-1']);
+    expect(mutationErrorMessage(error, null)).toContain('Failing comments:');
+  });
+
   it('detects an initially stale draft even when no newer diff revision is pending', () => {
     expect(prReviewDraftHeadIsStale('draft-head', 'mounted-head')).toBe(true);
     expect(prReviewDraftHeadIsStale('mounted-head', 'mounted-head')).toBe(

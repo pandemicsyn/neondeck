@@ -5,7 +5,11 @@ import { randomUUID } from 'node:crypto';
 import * as v from 'valibot';
 import { addNotification } from '../app-state';
 import { buildPreparedDiffAuditSummary } from '../autonomous-audit';
-import { openDb, withImmediateTransaction } from '../../lib/sqlite';
+import {
+  collectValidRowsInBatches,
+  openDb,
+  withImmediateTransaction,
+} from '../../lib/sqlite';
 import { gitCurrentSha, gitDiff, type RepoDiffFile } from '../../repo-edit/git';
 import {
   type RuntimePaths,
@@ -50,18 +54,20 @@ export function listPreparedDiffRecords(
       args.push(input.repoId);
     }
     const where = clauses.length ? `WHERE ${clauses.join(' AND ')}` : '';
-    return database
-      .prepare(
-        `
+    const statement = database.prepare(
+      `
         SELECT *
         FROM prepared_diffs
         ${where}
-        ORDER BY updated_at DESC, created_at DESC
-        LIMIT 100;
+        ORDER BY updated_at DESC, created_at DESC, id DESC
+        LIMIT ? OFFSET ?;
       `,
-      )
-      .all(...args)
-      .map(readPreparedDiffRow);
+    );
+    return collectValidRowsInBatches(
+      100,
+      (batchLimit, offset) => statement.all(...args, batchLimit, offset),
+      safeReadPreparedDiffRow,
+    );
   } finally {
     database.close();
   }
@@ -678,18 +684,20 @@ export function listApprovalRecords(
       args.push(...input.preparedDiffIds);
     }
     const where = clauses.length ? `WHERE ${clauses.join(' AND ')}` : '';
-    return database
-      .prepare(
-        `
+    const statement = database.prepare(
+      `
         SELECT *
         FROM prepared_diff_approvals
         ${where}
-        ORDER BY updated_at DESC
-        LIMIT 100;
+        ORDER BY updated_at DESC, id DESC
+        LIMIT ? OFFSET ?;
       `,
-      )
-      .all(...args)
-      .map(readApprovalRow);
+    );
+    return collectValidRowsInBatches(
+      100,
+      (batchLimit, offset) => statement.all(...args, batchLimit, offset),
+      safeReadApprovalRow,
+    );
   } finally {
     database.close();
   }
@@ -774,6 +782,14 @@ export function readPreparedDiffRow(row: UntrustedInput): PreparedDiffRecord {
   };
 }
 
+function safeReadPreparedDiffRow(row: UntrustedInput): PreparedDiffRecord[] {
+  try {
+    return [readPreparedDiffRow(row)];
+  } catch {
+    return [];
+  }
+}
+
 export function readApprovalRow(
   row: UntrustedInput,
 ): PreparedDiffApprovalRecord {
@@ -808,6 +824,16 @@ export function readApprovalRow(
     resolvedAt: item.resolved_at,
     updatedAt: item.updated_at,
   };
+}
+
+function safeReadApprovalRow(
+  row: UntrustedInput,
+): PreparedDiffApprovalRecord[] {
+  try {
+    return [readApprovalRow(row)];
+  } catch {
+    return [];
+  }
 }
 
 export function readWorktreeRow(row: UntrustedInput): WorktreeRecordLike {

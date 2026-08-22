@@ -1,4 +1,8 @@
-import { openDb, withImmediateTransaction } from '../../../lib/sqlite.ts';
+import {
+  collectValidRowsInBatches,
+  openDb,
+  withImmediateTransaction,
+} from '../../../lib/sqlite.ts';
 import type { JsonValue } from '@flue/runtime';
 import { randomUUID } from 'node:crypto';
 import type { DatabaseSync } from 'node:sqlite';
@@ -51,22 +55,26 @@ export function listLearningReviews(
       params.push(input.status);
     }
     const where = filters.length ? `WHERE ${filters.join(' AND ')}` : '';
+    const limit = input.limit ?? 50;
+    const statement = database.prepare(
+      `
+      SELECT *
+      FROM learning_reviews
+      ${where}
+      ORDER BY started_at DESC, id DESC
+      LIMIT ? OFFSET ?;
+    `,
+    );
+    const reviews = collectValidRowsInBatches(
+      limit,
+      (batchLimit, offset) => statement.all(...params, batchLimit, offset),
+      safeReadLearningReviewRow,
+    );
     return {
       ok: true,
       action: 'learning_review_list',
       changed: false,
-      reviews: database
-        .prepare(
-          `
-          SELECT *
-          FROM learning_reviews
-          ${where}
-          ORDER BY started_at DESC
-          LIMIT ?;
-        `,
-        )
-        .all(...params, input.limit ?? 50)
-        .map(readLearningReviewRow),
+      reviews,
     };
   } finally {
     database.close();
@@ -188,6 +196,8 @@ export function listPendingLearningReviewAdmissionIntents(
 ) {
   const database = openDb(paths.neondeckDatabase);
   try {
+    // Admission intents authorize dispatch. Malformed input must stop
+    // admission rather than disappear from the coordination queue.
     return database
       .prepare(
         `
@@ -575,6 +585,14 @@ export function readLearningReviewRow(
       ? record.completed_at
       : null,
   };
+}
+
+function safeReadLearningReviewRow(row: ExternalValue): LearningReviewRecord[] {
+  try {
+    return [readLearningReviewRow(row)];
+  } catch {
+    return [];
+  }
 }
 
 function readLearningReviewAdmissionIntentRow(

@@ -6,11 +6,20 @@ import type {
   GitHubPullRequestQueue,
   GitHubQueueIssue,
 } from './schemas';
-import { githubPullRequestQueueSchema } from './schemas';
+import {
+  githubPullRequestQueueSchema,
+  githubPullRequestSchema,
+  githubQueueIssueSchema,
+} from './schemas';
 import * as v from 'valibot';
 
 const githubQueueActionDataSchema = v.object({
-  queue: githubPullRequestQueueSchema,
+  queue: v.object({
+    ...githubPullRequestQueueSchema.entries,
+    repos: v.array(v.unknown()),
+    items: v.array(v.unknown()),
+    issues: v.array(v.unknown()),
+  }),
 });
 
 export const githubQueueRefreshIntervalMs = 3 * 60_000;
@@ -245,7 +254,41 @@ function readQueue(
 ): GitHubPullRequestQueue | null {
   if (!result.ok) return null;
   const parsed = v.safeParse(githubQueueActionDataSchema, result.data);
-  return parsed.success ? parsed.output.queue : null;
+  if (!parsed.success) return null;
+  const queue = parsed.output.queue;
+  const repos = queue.repos.flatMap((item) => {
+    const repo = v.safeParse(v.string(), item);
+    return repo.success ? [repo.output] : [];
+  });
+  const items = queue.items.flatMap((item) => {
+    const pullRequest = v.safeParse(githubPullRequestSchema, item);
+    return pullRequest.success ? [pullRequest.output] : [];
+  });
+  const issues = queue.issues.flatMap((item) => {
+    const issue = v.safeParse(githubQueueIssueSchema, item);
+    return issue.success ? [issue.output] : [];
+  });
+  const skippedItems =
+    queue.repos.length -
+    repos.length +
+    (queue.items.length - items.length) +
+    (queue.issues.length - issues.length);
+  return {
+    ...queue,
+    repos,
+    items,
+    truncated: queue.truncated || skippedItems > 0,
+    issues:
+      skippedItems === 0
+        ? issues
+        : [
+            ...issues,
+            {
+              type: 'enrichment-error' as const,
+              message: `Skipped ${skippedItems} malformed GitHub queue entr${skippedItems === 1 ? 'y' : 'ies'}.`,
+            },
+          ],
+  };
 }
 
 function withRevision(

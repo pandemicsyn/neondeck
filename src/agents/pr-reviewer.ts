@@ -12,6 +12,7 @@ import type { MiddlewareHandler } from 'hono';
 import * as v from 'valibot';
 import { parsePrReviewerConversationId } from '../../shared/pr-reviewer-session';
 import {
+  githubPullRequestReviewThreadCommentSchema,
   githubPullRequestReviewThreadSchema,
   readLivePrReviewDraft,
   type GitHubPullRequestReviewThread,
@@ -101,7 +102,7 @@ const reviewerThreadCommentLimit = 12;
 const reviewerThreadCommentBodyLimit = 2_000;
 const reviewerThreadContextBudget = 96_000;
 const liveReviewThreadsDataSchema = v.object({
-  reviewThreads: v.optional(v.array(githubPullRequestReviewThreadSchema), []),
+  reviewThreads: v.optional(v.array(v.unknown()), []),
   reviewThreadsTruncated: v.optional(v.boolean(), false),
   headSha: v.optional(v.nullable(v.string())),
 });
@@ -466,7 +467,38 @@ async function readLiveReviewThreads(
     };
   }
   const data = parsedData.output;
-  const threads = data.reviewThreads;
+  let malformedThreadCount = 0;
+  let malformedCommentCount = 0;
+  const threads = data.reviewThreads.flatMap((item) => {
+    const thread = v.safeParse(
+      v.object({
+        ...githubPullRequestReviewThreadSchema.entries,
+        comments: v.array(v.unknown()),
+      }),
+      item,
+    );
+    if (!thread.success) {
+      malformedThreadCount += 1;
+      return [];
+    }
+    const comments = thread.output.comments.flatMap((comment) => {
+      const parsedComment = v.safeParse(
+        githubPullRequestReviewThreadCommentSchema,
+        comment,
+      );
+      if (!parsedComment.success) {
+        malformedCommentCount += 1;
+        return [];
+      }
+      return [parsedComment.output];
+    });
+    return [
+      {
+        ...thread.output,
+        comments,
+      },
+    ];
+  });
   const bounded = boundedReviewThreads(threads);
   const headSha = data.headSha ?? null;
   const revisionMatch = headSha ? headSha === review.headSha : null;
@@ -475,12 +507,14 @@ async function readLiveReviewThreads(
     available: true,
     truncated:
       data.reviewThreadsTruncated ||
+      malformedThreadCount > 0 ||
+      malformedCommentCount > 0 ||
       bounded.omitted > 0 ||
       bounded.commentsOmitted > 0,
-    totalFetched: threads.length,
+    totalFetched: data.reviewThreads.length,
     included: bounded.threads.length,
-    omitted: bounded.omitted,
-    commentsOmitted: bounded.commentsOmitted,
+    omitted: bounded.omitted + malformedThreadCount,
+    commentsOmitted: bounded.commentsOmitted + malformedCommentCount,
     headSha,
     revisionMatch,
     repositoryCorrelation:

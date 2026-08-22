@@ -219,7 +219,7 @@ export async function listReports(
             .prepare(
               `SELECT * FROM reports
                WHERE kind = ?
-               ORDER BY created_at DESC
+               ORDER BY created_at DESC, id DESC
                LIMIT ? OFFSET ?;`,
             )
             .all(kind, batchLimit, offset);
@@ -229,7 +229,7 @@ export async function listReports(
             .prepare(
               `SELECT * FROM reports
                WHERE kind != ?
-               ORDER BY created_at DESC
+               ORDER BY created_at DESC, id DESC
                LIMIT ? OFFSET ?;`,
             )
             .all(excludeKind, batchLimit, offset);
@@ -237,7 +237,7 @@ export async function listReports(
         return database
           .prepare(
             `SELECT * FROM reports
-             ORDER BY created_at DESC
+             ORDER BY created_at DESC, id DESC
              LIMIT ? OFFSET ?;`,
           )
           .all(batchLimit, offset);

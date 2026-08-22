@@ -191,6 +191,26 @@ describe('Flue activity logging', () => {
     });
   });
 
+  it('preserves type-only Flue runtime error identities', () => {
+    expect(
+      formatFlueActivity({
+        v: 3,
+        type: 'operation',
+        eventIndex: 4,
+        timestamp: '2026-08-17T19:00:04.000Z',
+        operationId: 'operation-2',
+        operationKind: 'prompt',
+        durationMs: 10,
+        isError: true,
+        error: { type: 'runtime_unavailable' },
+      } as FlueObservation),
+    ).toEqual({
+      level: 'warn',
+      message:
+        '[neondeck] ACTIVITY operation failed operation=prompt duration=10ms error=runtime_unavailable',
+    });
+  });
+
   it('ignores noisy nested log events', () => {
     // SAFETY: this fixture is a complete Flue log observation.
     expect(

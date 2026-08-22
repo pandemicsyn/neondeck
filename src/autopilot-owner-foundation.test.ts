@@ -10,9 +10,30 @@ import {
   buildAutopilotOwnerToolRegistry,
 } from './modules/autopilot/owner/tools';
 import type { PrWatch } from './modules/watches';
+import { repoAutopilotPolicyForWatch } from './modules/autopilot-policy';
 import { runtimePaths } from './runtime-home';
 
 describe('continuing Autopilot owner foundations', () => {
+  it('retains valid watch overrides beside malformed entries', () => {
+    const policy = repoAutopilotPolicyForWatch(
+      {
+        metadata: {
+          autopilot: {
+            mode: 'notify-only',
+            watchOverrides: [
+              { prNumber: 'invalid', mode: 'autofix-push-when-safe' },
+              { prNumber: 164, mode: 'prepare-only' },
+            ],
+          },
+        },
+      } as never,
+      {} as never,
+      { prNumber: 164 },
+    );
+
+    expect(policy.mode).toBe('prepare-only');
+  });
+
   it('derives one stable Flue instance id per watch without generations', () => {
     const first = autopilotOwnerInstanceId('pandemicsyn/neondeck#164');
     expect(first).toBe(autopilotOwnerInstanceId('pandemicsyn/neondeck#164'));

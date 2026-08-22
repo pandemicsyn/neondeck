@@ -73,6 +73,44 @@ describe('reports', () => {
     await expect(readReport(malformed.id, paths)).resolves.toBeNull();
   });
 
+  it('uses report IDs as a stable pagination tie-breaker', async () => {
+    const paths = runtimePaths(await tempDir());
+    const createdAt = '2026-07-05T12:00:00.000Z';
+    for (let index = 0; index < 60; index += 1) {
+      await writeReport(
+        {
+          id: `report-${String(index).padStart(3, '0')}`,
+          kind: 'pagination',
+          title: `Report ${index}`,
+          html: `<p>${index}</p>`,
+          summary: { index },
+          createdBy: 'test',
+          createdAt,
+        },
+        paths,
+      );
+    }
+    const database = new DatabaseSync(paths.neondeckDatabase);
+    try {
+      database
+        .prepare(
+          `UPDATE reports SET summary_json = '{'
+           WHERE id >= 'report-050';`,
+        )
+        .run();
+    } finally {
+      database.close();
+    }
+
+    const reports = await listReports(paths, { kind: 'pagination', limit: 50 });
+    expect(reports.map((report) => report.id)).toEqual(
+      Array.from(
+        { length: 50 },
+        (_, index) => `report-${String(49 - index).padStart(3, '0')}`,
+      ),
+    );
+  });
+
   it('writes escaped self-contained HTML and lists the report record', async () => {
     const paths = runtimePaths(await tempDir());
     const html = renderReportHtml({

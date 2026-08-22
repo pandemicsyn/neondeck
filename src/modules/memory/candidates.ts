@@ -1,4 +1,8 @@
-import { openDb, withImmediateTransaction } from '../../lib/sqlite.ts';
+import {
+  collectValidRowsInBatches,
+  openDb,
+  withImmediateTransaction,
+} from '../../lib/sqlite.ts';
 import type { JsonValue } from '@flue/runtime';
 import { asJsonValue } from '../../lib/action-result';
 import { randomUUID } from 'node:crypto';
@@ -188,22 +192,23 @@ export async function listMemoryCandidates(
 
   const database = openDb(paths.neondeckDatabase);
   try {
-    const candidates = database
-      .prepare(
-        `
+    const limit = parsed.output.limit ?? 100;
+    const statement = database.prepare(
+      `
         SELECT *
         FROM learning_candidates
         WHERE target = 'memory'
           ${parsed.output.status ? 'AND status = ?' : ''}
-        ORDER BY created_at DESC
-        LIMIT ?;
+        ORDER BY created_at DESC, id DESC
+        LIMIT ? OFFSET ?;
       `,
-      )
-      .all(
-        ...(parsed.output.status ? [parsed.output.status] : []),
-        parsed.output.limit ?? 100,
-      )
-      .map(readMemoryCandidateRow);
+    );
+    const params = parsed.output.status ? [parsed.output.status] : [];
+    const candidates = collectValidRowsInBatches(
+      limit,
+      (batchLimit, offset) => statement.all(...params, batchLimit, offset),
+      safeReadMemoryCandidateRow,
+    );
     return {
       ok: true,
       action: 'memory_candidate_list',
@@ -213,6 +218,16 @@ export async function listMemoryCandidates(
     };
   } finally {
     database.close();
+  }
+}
+
+function safeReadMemoryCandidateRow(
+  row: Parameters<typeof readMemoryCandidateRow>[0],
+): MemoryCandidateRecord[] {
+  try {
+    return [readMemoryCandidateRow(row)];
+  } catch {
+    return [];
   }
 }
 

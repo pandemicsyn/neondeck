@@ -39,10 +39,9 @@ export const REPORT_MARKDOWN_ALLOWED_ELEMENTS = [
 const absoluteHttpUrl = /^https?:\/\//iu;
 const unsafeUrlCharacters = /[\u0000-\u001f\u007f\s]/u;
 
-export function safeReportUrl(value: unknown): string | null {
+export function safeReportUrl(value: string | null | undefined): string | null {
   if (
-    typeof value !== 'string' ||
-    value.length === 0 ||
+    !value ||
     value.length > REPORT_MARKDOWN_LIMITS.urlCharacters ||
     unsafeUrlCharacters.test(value) ||
     !absoluteHttpUrl.test(value)

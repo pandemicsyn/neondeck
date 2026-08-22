@@ -382,13 +382,18 @@ export function mutationErrorMessage(
     const parsed = v.safeParse(
       v.looseObject({
         data: v.optional(
-          v.looseObject({ failingCommentIds: v.optional(v.array(v.string())) }),
+          v.looseObject({
+            failingCommentIds: v.optional(v.array(v.unknown())),
+          }),
         ),
       }),
       cause.data,
     );
     const failingCommentIds = parsed.success
-      ? (parsed.output.data?.failingCommentIds ?? [])
+      ? (parsed.output.data?.failingCommentIds ?? []).flatMap((item) => {
+          const parsedId = v.safeParse(v.string(), item);
+          return parsedId.success ? [parsedId.output] : [];
+        })
       : [];
     if (failingCommentIds.length > 0) {
       return `${message} Failing comments: ${failingCommentLabels(

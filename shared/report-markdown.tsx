@@ -3,6 +3,7 @@ import ReactMarkdown, {
   type Components,
 } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import * as v from 'valibot';
 import {
   REPORT_MARKDOWN_ALLOWED_ELEMENTS,
   REPORT_MARKDOWN_LIMITS,
@@ -85,9 +86,7 @@ const reportMarkdownComponents: Components = {
     return <li>{children}</li>;
   },
   ol({ children, start }) {
-    return (
-      <ol start={typeof start === 'number' ? start : undefined}>{children}</ol>
-    );
+    return <ol start={start}>{children}</ol>;
   },
   p({ children }) {
     return <p>{children}</p>;
@@ -223,38 +222,38 @@ function descendants(element: MarkdownNode, tagName: string): MarkdownNode[] {
 }
 
 function childElements(node: MarkdownNode): MarkdownNode[] {
-  if (!Array.isArray(node.children)) return [];
-  return node.children.filter(
-    (child): child is MarkdownNode =>
-      Boolean(child) &&
-      typeof child === 'object' &&
-      'tagName' in child &&
-      typeof child.tagName === 'string',
-  );
+  return (node.children ?? []).flatMap((child) => {
+    const parsed = v.safeParse(markdownNodeSchema, child);
+    return parsed.success && parsed.output.tagName ? [parsed.output] : [];
+  });
 }
 
 function textContent(node: MarkdownNode): string {
-  if (!Array.isArray(node.children)) return '';
-  return node.children
+  return (node.children ?? [])
     .map((child) => {
-      if (!child || typeof child !== 'object') return '';
-      if ('value' in child && typeof child.value === 'string') {
-        return child.value;
-      }
-      return textContent(child as MarkdownNode);
+      const parsed = v.safeParse(markdownContentNodeSchema, child);
+      if (!parsed.success) return '';
+      if (parsed.output.value !== undefined) return parsed.output.value;
+      return textContent(parsed.output);
     })
     .join('');
 }
 
 function safeAlignment(
-  value: unknown,
+  value: string | undefined,
 ): 'left' | 'center' | 'right' | undefined {
   return value === 'left' || value === 'center' || value === 'right'
     ? value
     : undefined;
 }
 
-type MarkdownNode = {
-  tagName?: string;
-  children?: readonly unknown[];
-};
+const markdownContentNodeSchema = v.looseObject({
+  tagName: v.optional(v.string()),
+  value: v.optional(v.string()),
+  children: v.optional(v.array(v.unknown())),
+});
+const markdownNodeSchema = v.pipe(
+  markdownContentNodeSchema,
+  v.check((node) => node.tagName !== undefined),
+);
+type MarkdownNode = v.InferOutput<typeof markdownContentNodeSchema>;

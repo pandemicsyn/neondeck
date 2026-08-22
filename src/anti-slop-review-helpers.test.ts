@@ -8,6 +8,7 @@ import {
   createOptionalKiloSdkClient,
   resolveKiloSessionsSearchMethod,
 } from './modules/kilo/sessions-adapters';
+import { readJsonArray } from './modules/scheduler/utils';
 
 describe('anti-slop helper compatibility regressions', () => {
   it('retains valid elements from mixed external arrays', () => {
@@ -18,6 +19,9 @@ describe('anti-slop helper compatibility regressions', () => {
 
     expect(arrayField(value, 'requires')).toEqual(['repository', 'worktree']);
     expect(numberArrayField(value, 'checkRunIds')).toEqual([101, 202]);
+    expect(
+      readJsonArray(['commits', undefined, { category: 'checks' }]),
+    ).toEqual(['commits', { category: 'checks' }]);
   });
 
   it('keeps null unavailable reasons out of truncation categories', () => {
@@ -87,6 +91,17 @@ describe('anti-slop helper compatibility regressions', () => {
 
     expect(client).toBeInstanceOf(KiloClient);
     expect(resolveKiloSessionsSearchMethod({ search: null, list })).toBe(list);
+  });
+
+  it('finds Kilo session methods inherited from a class prototype', () => {
+    class SessionsApi {
+      search() {
+        return [];
+      }
+    }
+
+    const api = new SessionsApi();
+    expect(resolveKiloSessionsSearchMethod(api)).toBe(api.search);
   });
 
   it('preserves the SDK module receiver when creating a Kilo client', () => {

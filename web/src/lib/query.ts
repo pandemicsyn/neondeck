@@ -102,6 +102,10 @@ export function actionErrorMessage(error: WebExternalValue) {
 }
 
 function stringArray(value: WebExternalValue) {
-  const parsed = v.safeParse(v.array(v.string()), value);
-  return parsed.success ? parsed.output : [];
+  const parsed = v.safeParse(v.array(v.unknown()), value);
+  if (!parsed.success) return [];
+  return parsed.output.flatMap((item) => {
+    const string = v.safeParse(v.string(), item);
+    return string.success ? [string.output] : [];
+  });
 }

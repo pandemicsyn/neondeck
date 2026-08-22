@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import * as v from 'valibot';
 import { asJsonValue } from '../../lib/action-result';
-import { openDb } from '../../lib/sqlite';
+import { collectValidRowsInBatches, openDb } from '../../lib/sqlite';
 import {
   ensureRuntimeHome,
   runtimePaths,
@@ -575,7 +575,7 @@ export async function listQueuedBriefingRuns(
          ORDER BY created_at ASC;`,
       )
       .all()
-      .map(readRunRow);
+      .flatMap(safeReadRunRow);
   } finally {
     database.close();
   }
@@ -754,10 +754,14 @@ export async function listBriefingRuns(
   await ensureRuntimeHome(paths);
   const database = openDb(paths.neondeckDatabase);
   try {
-    return database
-      .prepare('SELECT * FROM briefing_runs ORDER BY created_at DESC LIMIT ?;')
-      .all(limit)
-      .map(readRunRow);
+    const statement = database.prepare(
+      'SELECT * FROM briefing_runs ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?;',
+    );
+    return collectValidRowsInBatches(
+      limit,
+      (batchLimit, offset) => statement.all(batchLimit, offset),
+      safeReadRunRow,
+    );
   } finally {
     database.close();
   }
@@ -770,9 +774,8 @@ export async function listBriefingRunMetadata(
   await ensureRuntimeHome(paths);
   const database = openDb(paths.neondeckDatabase);
   try {
-    return database
-      .prepare(
-        `SELECT
+    const statement = database.prepare(
+      `SELECT
           id, profile_id, trigger, instructions_version, session_id,
           command_event_id, dispatch_id, workflow_run_id, context_snapshot_id,
           context_binding_json, status, error,
@@ -782,11 +785,14 @@ export async function listBriefingRunMetadata(
           json_extract(snapshot_json, '$.byteSize') AS snapshot_byte_size,
           json_extract(snapshot_json, '$.truncated') AS snapshot_truncated
         FROM briefing_runs
-        ORDER BY created_at DESC
-        LIMIT ?;`,
-      )
-      .all(limit)
-      .map(readRunMetadataRow);
+        ORDER BY created_at DESC, id DESC
+        LIMIT ? OFFSET ?;`,
+    );
+    return collectValidRowsInBatches(
+      limit,
+      (batchLimit, offset) => statement.all(batchLimit, offset),
+      safeReadRunMetadataRow,
+    );
   } finally {
     database.close();
   }
@@ -882,6 +888,24 @@ function readRunMetadataRow(
       truncated: value.snapshot_truncated === 1,
     },
   };
+}
+
+function safeReadRunRow(row: Parameters<typeof readRunRow>[0]): BriefingRun[] {
+  try {
+    return [readRunRow(row)];
+  } catch {
+    return [];
+  }
+}
+
+function safeReadRunMetadataRow(
+  row: Parameters<typeof readRunMetadataRow>[0],
+): BriefingRunMetadata[] {
+  try {
+    return [readRunMetadataRow(row)];
+  } catch {
+    return [];
+  }
 }
 
 function parseBriefingContextBinding(
