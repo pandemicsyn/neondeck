@@ -36,6 +36,27 @@ afterEach(async () => {
 });
 
 describe('runtime home', () => {
+  it('rejects the reserved local workspace provider id at config IO', () => {
+    expect(() =>
+      parseAppConfig(
+        {
+          version: 1,
+          workspaces: {
+            providers: {
+              local: {
+                driver: 'ssh',
+                hostEnv: 'SSH_HOST',
+                privateKeyEnv: 'SSH_KEY',
+                remoteRoot: '/workspaces',
+              },
+            },
+          },
+        },
+        'test-config.json',
+      ),
+    ).toThrow(/reserved/i);
+  });
+
   it('shares compatible endpoint validation with onboarding', () => {
     expect(openAiCompatibleProviderIdIssue('openrouter')).toBeUndefined();
     expect(openAiCompatibleProviderIdIssue('openai')).toContain('reserved');

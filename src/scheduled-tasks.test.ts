@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
@@ -6,16 +6,30 @@ import type { FlueObservation } from '@flue/runtime';
 import {
   activateScheduledTaskSubmission,
   attachScheduledTaskSubmissionId,
+  boundedContent,
   canAdmitScheduledSubmission,
   claimDueScheduledTasks,
+  clearScheduledWorkspaceQuarantine,
   createAgentInstructionTask,
   createBriefingTask,
+  listTaskRecords,
   nextOccurrence,
+  listScheduledRunArtifacts,
+  maxPersistedScheduledRunResultBytes,
+  maxScheduledArtifactBytes,
+  quarantinePhysicalWorkspace,
+  sanitizedBoundedContent,
+  sanitizedScheduledRunResult,
+  scheduleTaskNow,
   readLatestScheduledTaskRun,
   readScheduledTask,
+  readScheduledTaskRun,
   releaseUnstartedScheduledTaskClaim,
+  removeTask,
   settleScheduledTaskRun,
   settleScheduledTaskSubmission,
+  settleScheduledTaskObservation,
+  setScheduledTaskEnabled,
   upsertScheduledTask,
   validateAutomationTrigger,
 } from './modules/scheduled-tasks';
@@ -57,6 +71,438 @@ describe('scheduled task triggers', () => {
 });
 
 describe('scheduled task storage', () => {
+  it('deletes a pending manual marker with its task before deterministic id reuse', async () => {
+    const home = await mkdtemp(join(tmpdir(), 'neondeck-manual-delete-'));
+    const paths = runtimePaths(home);
+    const task = {
+      id: 'instruction:manual-delete',
+      spec: {
+        kind: 'run-agent-instruction' as const,
+        prompt: 'Do not leak this occurrence.',
+        target: { kind: 'agent' as const },
+        skills: [],
+        workspace: { kind: 'virtual' as const },
+      },
+      trigger: { kind: 'interval' as const, everySeconds: 300 },
+      enabled: false,
+      nextRunAt: '2026-08-17T20:00:00.000Z',
+    };
+    try {
+      await upsertScheduledTask(task, paths);
+      await scheduleTaskNow(task.id, paths);
+      await expect(removeTask(task.id, paths)).resolves.toMatchObject({
+        ok: true,
+        changed: true,
+      });
+      await upsertScheduledTask(task, paths);
+      await expect(
+        claimDueScheduledTasks(paths, new Date('2026-08-17T19:00:00.000Z')),
+      ).resolves.toEqual([]);
+    } finally {
+      await rm(home, { recursive: true, force: true });
+    }
+  });
+
+  it('queues a manual occurrence without resuming a paused recurring task', async () => {
+    const home = await mkdtemp(join(tmpdir(), 'neondeck-manual-paused-'));
+    const paths = runtimePaths(home);
+    try {
+      await upsertScheduledTask(
+        {
+          id: 'instruction:paused-manual',
+          spec: {
+            kind: 'run-agent-instruction',
+            prompt: 'Run once while paused.',
+            target: { kind: 'agent' },
+            skills: [],
+            workspace: { kind: 'virtual' },
+          },
+          trigger: { kind: 'interval', everySeconds: 300 },
+          enabled: true,
+          nextRunAt: '2026-08-17T20:00:00.000Z',
+        },
+        paths,
+      );
+      await setScheduledTaskEnabled('instruction:paused-manual', false, paths);
+      await expect(
+        scheduleTaskNow('instruction:paused-manual', paths),
+      ).resolves.toMatchObject({ ok: true, changed: true });
+      const [claim] = await claimDueScheduledTasks(
+        paths,
+        new Date('2026-08-17T19:00:00.000Z'),
+      );
+      expect(claim?.run.result).toEqual({ reason: 'manual-occurrence' });
+      expect(claim?.task.enabled).toBe(false);
+      expect(claim?.task.nextRunAt).toBe('2026-08-17T20:00:00.000Z');
+      await expect(
+        readScheduledTask('instruction:paused-manual', paths),
+      ).resolves.toMatchObject({ enabled: false });
+    } finally {
+      await rm(home, { recursive: true, force: true });
+    }
+  });
+
+  it('requires confirmation for recurring shell and network authority', async () => {
+    const home = await mkdtemp(join(tmpdir(), 'neondeck-scheduled-confirm-'));
+    const paths = runtimePaths(home);
+    try {
+      await expect(
+        createAgentInstructionTask(
+          {
+            prompt: 'Run arbitrary shell commands.',
+            trigger: { kind: 'interval', everySeconds: 300 },
+            workspace: {
+              kind: 'repository',
+              repoId: 'repo',
+              providerId: 'local',
+              resource: { lifecycle: 'per-run' },
+              revision: { ref: 'main', mode: 'latest-each-run' },
+              git: { mode: 'run-branch' },
+              authority: 'trusted-workspace',
+            },
+          },
+          paths,
+        ),
+      ).resolves.toMatchObject({ ok: false, requires: ['confirm'] });
+    } finally {
+      await rm(home, { recursive: true, force: true });
+    }
+  });
+
+  it('projects the current active run in scheduled task lists', async () => {
+    const home = await mkdtemp(join(tmpdir(), 'neondeck-scheduled-active-'));
+    const paths = runtimePaths(home);
+    try {
+      await upsertScheduledTask(
+        {
+          id: 'instruction:active-list',
+          spec: {
+            kind: 'run-agent-instruction',
+            prompt: 'Stay active.',
+            target: { kind: 'agent' },
+            skills: [],
+          },
+          trigger: { kind: 'interval', everySeconds: 300 },
+          nextRunAt: '2026-08-16T12:00:00.000Z',
+        },
+        paths,
+      );
+      const [claim] = await claimDueScheduledTasks(
+        paths,
+        new Date('2026-08-16T12:00:00.000Z'),
+      );
+      await activateScheduledTaskSubmission(
+        {
+          taskId: claim!.task.id,
+          runId: claim!.run.id,
+          claimId: claim!.task.claimId ?? '',
+          sessionId: 'session:active-list',
+          dispatchKey: claim!.run.id,
+          dispatchPayload: {
+            prompt: 'Stay active.',
+            taskId: claim!.task.id,
+            runId: claim!.run.id,
+          },
+        },
+        paths,
+      );
+      await expect(listTaskRecords(paths)).resolves.toMatchObject({
+        tasks: [
+          {
+            id: 'instruction:active-list',
+            activeRun: { id: claim!.run.id, status: 'active' },
+          },
+        ],
+      });
+    } finally {
+      await rm(home, { recursive: true, force: true });
+    }
+  });
+  it('bounds UTF-8 output without emitting a partial code point', () => {
+    expect(boundedContent('🙂🙂', 5)).toEqual({
+      content: '🙂',
+      truncated: true,
+    });
+  });
+
+  it('redacts secrets before UTF-8 byte bounding and reports both facts', () => {
+    const result = sanitizedBoundedContent(
+      'github_pat_abcdefghijklmnopqrstuvwxyz🙂',
+      12,
+    );
+    expect(result).toMatchObject({ redacted: true, truncated: true });
+    expect(result.content).not.toContain('github_pat_');
+    expect(Buffer.byteLength(result.content, 'utf8')).toBeLessThanOrEqual(12);
+  });
+
+  it('redacts and byte-bounds persisted scheduled run result JSON', () => {
+    const secret = 'github_pat_abcdefghijklmnopqrstuvwxyz';
+    const result = sanitizedScheduledRunResult({
+      error: secret,
+      output: '\"\\🙂'.repeat(100_000),
+    });
+    const encoded = JSON.stringify(result);
+    expect(encoded).not.toContain(secret);
+    expect(Buffer.byteLength(encoded, 'utf8')).toBeLessThanOrEqual(
+      maxPersistedScheduledRunResultBytes,
+    );
+    expect(result).toMatchObject({ truncated: true });
+  });
+
+  it('rejects duplicate scheduled skill ids at both public and persisted boundaries', async () => {
+    const home = await mkdtemp(join(tmpdir(), 'neondeck-scheduled-skills-'));
+    const paths = runtimePaths(home);
+    try {
+      await expect(
+        createAgentInstructionTask(
+          {
+            prompt: 'Use the selected skill.',
+            trigger: {
+              kind: 'once',
+              at: new Date(Date.now() + 60_000).toISOString(),
+            },
+            skills: ['review', 'review'],
+          },
+          paths,
+        ),
+      ).resolves.toMatchObject({ ok: false });
+      await expect(
+        upsertScheduledTask(
+          {
+            id: 'instruction:duplicate-skills',
+            spec: {
+              kind: 'run-agent-instruction',
+              prompt: 'Use the selected skill.',
+              target: { kind: 'agent' },
+              skills: ['review', 'review'],
+            },
+            trigger: { kind: 'interval', everySeconds: 300 },
+          },
+          paths,
+        ),
+      ).rejects.toThrow(/skill ids must be unique/i);
+    } finally {
+      await rm(home, { recursive: true, force: true });
+    }
+  });
+
+  it('rejects unknown repository and provider references before saving a task', async () => {
+    const home = await mkdtemp(join(tmpdir(), 'neondeck-scheduled-refs-'));
+    const paths = runtimePaths(home);
+    try {
+      const workspace = {
+        kind: 'repository' as const,
+        repoId: 'missing-repo',
+        providerId: 'missing-provider',
+        resource: { lifecycle: 'per-run' as const },
+        revision: { ref: 'main', mode: 'latest-each-run' as const },
+        git: { mode: 'run-branch' as const },
+        authority: 'read-only' as const,
+      };
+      await expect(
+        createAgentInstructionTask(
+          {
+            prompt: 'Inspect missing configuration.',
+            trigger: {
+              kind: 'once',
+              at: new Date(Date.now() + 60_000).toISOString(),
+            },
+            workspace,
+          },
+          paths,
+        ),
+      ).resolves.toMatchObject({
+        ok: false,
+        message: expect.stringContaining('missing-repo'),
+      });
+      await writeFile(
+        paths.repos,
+        JSON.stringify({
+          repos: [
+            {
+              id: 'missing-repo',
+              github: { owner: 'example', name: 'repo' },
+              path: home,
+              defaultBranch: 'main',
+            },
+          ],
+        }),
+      );
+      await expect(
+        createAgentInstructionTask(
+          {
+            prompt: 'Inspect missing provider.',
+            trigger: {
+              kind: 'once',
+              at: new Date(Date.now() + 60_000).toISOString(),
+            },
+            workspace,
+          },
+          paths,
+        ),
+      ).resolves.toMatchObject({
+        ok: false,
+        message: expect.stringContaining('missing-provider'),
+      });
+    } finally {
+      await rm(home, { recursive: true, force: true });
+    }
+  });
+
+  it('requires explicit operator attestation before clearing a durable quarantine', async () => {
+    const home = await mkdtemp(join(tmpdir(), 'neondeck-quarantine-clear-'));
+    const paths = runtimePaths(home);
+    const physicalResourceKey = 'ssh://runner@example.com:22/workspaces/run';
+    try {
+      await quarantinePhysicalWorkspace(
+        {
+          physicalResourceKey,
+          providerId: 'build-box',
+          source: 'approved-execution',
+          sourceId: 'approval-one',
+          reason: 'Remote command settlement is uncertain.',
+        },
+        paths,
+      );
+      await expect(
+        clearScheduledWorkspaceQuarantine({ physicalResourceKey }, paths),
+      ).resolves.toMatchObject({ ok: false, requires: ['confirm'] });
+      await expect(
+        clearScheduledWorkspaceQuarantine(
+          { physicalResourceKey, confirm: true },
+          paths,
+        ),
+      ).resolves.toMatchObject({ ok: true, changed: true });
+    } finally {
+      await rm(home, { recursive: true, force: true });
+    }
+  });
+
+  it('captures a virtual instruction response before terminal settlement', async () => {
+    const home = await mkdtemp(join(tmpdir(), 'neondeck-virtual-output-'));
+    const paths = runtimePaths(home);
+    const oversizedResponse =
+      'github_pat_abcdefghijklmnopqrstuvwxyz ' +
+      'é'.repeat(maxScheduledArtifactBytes);
+    let resolveSettlement:
+      ((value: { failed: boolean; response: string }) => void) | undefined;
+    try {
+      await upsertScheduledTask(
+        {
+          id: 'instruction:virtual-output',
+          spec: {
+            kind: 'run-agent-instruction',
+            prompt: 'Return a concise answer.',
+            target: { kind: 'agent' },
+            skills: [],
+            workspace: { kind: 'virtual' },
+          },
+          trigger: { kind: 'interval', everySeconds: 300 },
+          nextRunAt: '2026-07-10T00:00:00.000Z',
+        },
+        paths,
+      );
+      await runSchedulerTick(paths, new Date('2026-07-10T00:00:00.000Z'), {
+        dispatchInstruction: async (input) => ({
+          submissionId: 'submission:virtual-output',
+          sessionId: input.sessionId,
+        }),
+        readInstructionSettlement: async () =>
+          new Promise((resolve) => {
+            resolveSettlement = resolve;
+          }),
+      });
+      await expect(
+        settleScheduledTaskObservation(
+          { submissionId: 'submission:virtual-output', failed: false },
+          paths,
+        ),
+      ).resolves.toBe(false);
+      resolveSettlement?.({
+        failed: false,
+        response: oversizedResponse,
+      });
+      await vi.waitFor(async () => {
+        expect(
+          await readLatestScheduledTaskRun('instruction:virtual-output', paths),
+        ).toMatchObject({
+          status: 'completed',
+          result: expect.objectContaining({
+            responseTruncated: true,
+            responseRedacted: true,
+          }),
+        });
+      });
+      const run = await readLatestScheduledTaskRun(
+        'instruction:virtual-output',
+        paths,
+      );
+      expect(
+        Buffer.byteLength(JSON.stringify(run!.result), 'utf8'),
+      ).toBeLessThanOrEqual(maxPersistedScheduledRunResultBytes);
+      expect(
+        Buffer.byteLength(
+          (run!.result as { response: string | null }).response ?? '',
+          'utf8',
+        ),
+      ).toBeLessThanOrEqual(maxScheduledArtifactBytes);
+      expect(
+        (run!.result as { response: string | null }).response,
+      ).not.toContain('github_pat_');
+      expect(await listScheduledRunArtifacts(run!.id, paths)).toEqual([
+        expect.objectContaining({
+          kind: 'response',
+          workspaceId: null,
+          truncated: true,
+          redacted: true,
+        }),
+      ]);
+      expect(
+        Buffer.byteLength(
+          (await listScheduledRunArtifacts(run!.id, paths))[0]!.content ?? '',
+          'utf8',
+        ),
+      ).toBeLessThanOrEqual(maxScheduledArtifactBytes);
+    } finally {
+      await rm(home, { recursive: true, force: true });
+    }
+  });
+
+  it('rejects legacy repo and cwd fields beside a repository workspace', async () => {
+    const home = await mkdtemp(join(tmpdir(), 'neondeck-canonical-workspace-'));
+    const paths = runtimePaths(home);
+    try {
+      await expect(
+        createAgentInstructionTask(
+          {
+            prompt: 'Use canonical workspace context.',
+            trigger: {
+              kind: 'once',
+              at: new Date(Date.now() + 60_000).toISOString(),
+            },
+            repoId: 'legacy-repo',
+            cwd: '/legacy/path',
+            workspace: {
+              kind: 'repository',
+              repoId: 'workspace-repo',
+              providerId: 'local',
+              resource: { lifecycle: 'per-run' },
+              revision: { ref: 'main', mode: 'latest-each-run' },
+              git: { mode: 'run-branch' },
+              authority: 'read-only',
+            },
+          },
+          paths,
+        ),
+      ).resolves.toMatchObject({
+        ok: false,
+        message: expect.stringContaining('workspace.repoId'),
+      });
+    } finally {
+      await rm(home, { recursive: true, force: true });
+    }
+  });
+
   it('dispatches agent instructions once and settles by Flue submission id', async () => {
     const home = await mkdtemp(join(tmpdir(), 'neondeck-scheduled-tasks-'));
     const paths = runtimePaths(home);
@@ -228,6 +674,101 @@ describe('scheduled task storage', () => {
         message: 'Original successful result.',
         error: null,
       });
+    } finally {
+      await rm(home, { recursive: true, force: true });
+    }
+  });
+
+  it('drops skipped occurrences while preserving one queued occurrence', async () => {
+    const home = await mkdtemp(join(tmpdir(), 'neondeck-overlap-policy-'));
+    const paths = runtimePaths(home);
+    try {
+      for (const overlap of ['skip', 'queue-one'] as const) {
+        await upsertScheduledTask(
+          {
+            id: `instruction:${overlap}`,
+            spec: {
+              kind: 'run-agent-instruction',
+              prompt: overlap,
+              target: { kind: 'agent' },
+              skills: [],
+              workspace: {
+                kind: 'repository',
+                repoId: 'repo',
+                providerId: 'local',
+                resource: { lifecycle: 'reuse-task' },
+                revision: { ref: 'main', mode: 'continue' },
+                git: { mode: 'task-branch' },
+                authority: 'trusted-workspace',
+                overlap,
+              },
+            },
+            trigger: { kind: 'interval', everySeconds: 60 },
+            nextRunAt: '2026-07-10T00:00:00.000Z',
+          },
+          paths,
+        );
+      }
+      const initial = await claimDueScheduledTasks(
+        paths,
+        new Date('2026-07-10T00:00:00.000Z'),
+      );
+      expect(initial).toHaveLength(2);
+      for (const claim of initial) {
+        await activateScheduledTaskSubmission(
+          {
+            taskId: claim.task.id,
+            runId: claim.run.id,
+            claimId: claim.task.claimId ?? '',
+            sessionId: `session:${claim.task.id}`,
+            dispatchKey: claim.run.id,
+            dispatchPayload: { prompt: claim.task.id, taskId: claim.task.id },
+          },
+          paths,
+        );
+      }
+
+      await expect(
+        claimDueScheduledTasks(paths, new Date('2026-07-10T00:01:00.000Z')),
+      ).resolves.toEqual([]);
+      await expect(
+        readScheduledTask('instruction:skip', paths),
+      ).resolves.toMatchObject({ nextRunAt: '2026-07-10T00:02:00.000Z' });
+      await expect(
+        readScheduledTask('instruction:queue-one', paths),
+      ).resolves.toMatchObject({ nextRunAt: '2026-07-10T00:01:00.000Z' });
+      await expect(
+        readLatestScheduledTaskRun('instruction:skip', paths),
+      ).resolves.toMatchObject({
+        status: 'completed',
+        outcome: 'silent',
+        result: {
+          reason: 'overlap-skip',
+          scheduledFor: '2026-07-10T00:01:00.000Z',
+        },
+      });
+
+      const queuedInitial = initial.find(
+        (claim) => claim.task.id === 'instruction:queue-one',
+      )!;
+      await settleScheduledTaskRun(
+        {
+          taskId: queuedInitial.task.id,
+          runId: queuedInitial.run.id,
+          claimId: queuedInitial.task.claimId ?? '',
+          status: 'completed',
+          outcome: 'recorded',
+          message: 'settled',
+        },
+        paths,
+      );
+      const queued = await claimDueScheduledTasks(
+        paths,
+        new Date('2026-07-10T00:01:01.000Z'),
+      );
+      expect(queued.map((claim) => claim.task.id)).toEqual([
+        'instruction:queue-one',
+      ]);
     } finally {
       await rm(home, { recursive: true, force: true });
     }
@@ -474,7 +1015,14 @@ describe('scheduled task storage', () => {
           claimId: claim.task.claimId ?? '',
           sessionId: 'briefing-daily',
           dispatchKey: claim.run.id,
-          dispatchPayload: { prompt: 'Daily briefing.', taskId: claim.task.id },
+          dispatchPayload: {
+            prompt: 'Daily briefing.',
+            taskId: claim.task.id,
+            runId: claim.run.id,
+            workspaceId: 'workspace:recovery',
+            cwd: '/workspace/repo',
+            lockOwner: `scheduled-run:${claim.run.id}`,
+          },
         },
         paths,
       );
@@ -482,6 +1030,16 @@ describe('scheduled task storage', () => {
         { runId: claim.run.id, submissionId: 'workflow:briefing:active' },
         paths,
       );
+      await expect(
+        readScheduledTaskRun(claim.run.id, paths),
+      ).resolves.toMatchObject({
+        dispatchPayload: {
+          runId: claim.run.id,
+          workspaceId: 'workspace:recovery',
+          cwd: '/workspace/repo',
+          lockOwner: `scheduled-run:${claim.run.id}`,
+        },
+      });
 
       await expect(
         canAdmitScheduledSubmission(claim.task.id, paths),
@@ -758,6 +1316,19 @@ describe('scheduled task storage', () => {
           spec: { kind: 'run-briefing', briefingId: 'morning' },
         },
       });
+      await writeFile(
+        paths.repos,
+        JSON.stringify({
+          repos: [
+            {
+              id: 'repo',
+              github: { owner: 'example', name: 'repo' },
+              path: home,
+              defaultBranch: 'main',
+            },
+          ],
+        }),
+      );
       await expect(
         createAgentInstructionTask(
           {
@@ -784,6 +1355,7 @@ describe('scheduled task storage', () => {
           {
             prompt: 'Use continuity for this scheduled check.',
             trigger: { kind: 'interval', everySeconds: 3_600 },
+            confirm: true,
             target: { kind: 'agent-session', sessionId: 'missing-session' },
           },
           paths,
@@ -799,11 +1371,57 @@ describe('scheduled task storage', () => {
           {
             prompt: 'Use continuity for this scheduled check.',
             trigger: { kind: 'interval', everySeconds: 3_600 },
+            confirm: true,
             target: { kind: 'agent-session', sessionId: session.id },
           },
           paths,
         ),
       ).resolves.toMatchObject({ ok: true });
+      await expect(
+        createAgentInstructionTask(
+          {
+            prompt: 'Attach a fresh workspace to serialized worker context.',
+            trigger: { kind: 'interval', everySeconds: 3_600 },
+            confirm: true,
+            target: { kind: 'agent-session', sessionId: session.id },
+            workspace: {
+              kind: 'repository',
+              repoId: 'repo',
+              providerId: 'local',
+              resource: { lifecycle: 'per-run' },
+              revision: { ref: 'main', mode: 'latest-each-run' },
+              git: { mode: 'run-branch' },
+              authority: 'trusted-workspace',
+              overlap: 'skip',
+            },
+          },
+          paths,
+        ),
+      ).resolves.toMatchObject({ ok: true });
+      await expect(
+        createAgentInstructionTask(
+          {
+            prompt: 'Do not share a per-run sandbox across continuity.',
+            trigger: { kind: 'interval', everySeconds: 3_600 },
+            confirm: true,
+            target: { kind: 'agent-session', sessionId: session.id },
+            workspace: {
+              kind: 'repository',
+              repoId: 'repo',
+              providerId: 'local',
+              resource: { lifecycle: 'per-run' },
+              revision: { ref: 'main', mode: 'latest-each-run' },
+              git: { mode: 'run-branch' },
+              authority: 'trusted-workspace',
+              overlap: 'allow-parallel',
+            },
+          },
+          paths,
+        ),
+      ).resolves.toMatchObject({
+        ok: false,
+        message: expect.stringContaining('scheduled-worker context'),
+      });
     } finally {
       await rm(home, { recursive: true, force: true });
     }

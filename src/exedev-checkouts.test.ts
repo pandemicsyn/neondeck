@@ -2,14 +2,45 @@ import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { listExecutionApprovals } from './modules/execution';
 import { syncExeDevCheckout } from './modules/execution';
 import { ensureRuntimeHome, runtimePaths } from './runtime-home';
 
+vi.mock('./sandboxes/exedev', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./sandboxes/exedev')>();
+  return {
+    ...actual,
+    createSshSandbox: async () => ({
+      env: {
+        cwd: '/',
+        resolvePath: (path: string) => path,
+        exec: async (command: string) => {
+          if (command.startsWith('realpath ')) {
+            const candidate = command.match(/-- '([^']+)'/)?.[1] ?? '/';
+            return { stdout: `${candidate}\n`, stderr: '', exitCode: 0 };
+          }
+          return { stdout: '', stderr: '', exitCode: 0 };
+        },
+        readFile: async () => '',
+        readFileBuffer: async () => Buffer.alloc(0),
+        writeFile: async () => undefined,
+        stat: async () => ({ type: 'file', size: 0, mtimeMs: 0 }),
+        readdir: async () => [],
+        exists: async () => true,
+        mkdir: async () => undefined,
+        rm: async () => undefined,
+      },
+      dispose: () => undefined,
+    }),
+  };
+});
+
 const tempRoots: string[] = [];
 
 afterEach(async () => {
+  delete process.env.EXE_VM_HOST;
+  delete process.env.EXE_SSH_KEY;
   await Promise.all(
     tempRoots
       .splice(0)
@@ -21,6 +52,8 @@ describe('exe.dev checkout sync', () => {
   it('routes remote checkout commands through execution approval records', async () => {
     const paths = runtimePaths(await tempDir());
     await ensureRuntimeHome(paths);
+    process.env.EXE_VM_HOST = 'configured.exe.dev';
+    process.env.EXE_SSH_KEY = join(process.cwd(), 'package.json');
     const repoPath = join(paths.home, 'repo');
     await mkdir(repoPath, { recursive: true });
     await writeFile(

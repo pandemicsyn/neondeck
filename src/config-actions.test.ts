@@ -27,6 +27,7 @@ import {
   updateProviderConfig,
   updateSkillRoots,
   updateWorktreePolicy,
+  updateWorkspaceProviderConfig,
 } from './modules/config';
 import {
   subscribeConfigEvents,
@@ -38,6 +39,13 @@ import {
   parseRepoRegistry,
   runtimePaths,
 } from './runtime-home';
+import {
+  acquireWorkspaceProviderCoordinator,
+  createTaskWorkspaceRecord,
+  releaseWorkspaceProviderCoordinator,
+  upsertScheduledTask,
+} from './modules/scheduled-tasks';
+import { insertApproval as insertExecutionApproval } from './modules/execution/store';
 
 const execFileAsync = promisify(execFile);
 const tempRoots: string[] = [];
@@ -1244,6 +1252,432 @@ describe('config actions', () => {
       ok: false,
       action: 'config_update_execution_policy',
       message: 'Invalid action input.',
+    });
+  });
+
+  it('serializes execution config writes with workspace admissions', async () => {
+    const paths = runtimePaths(await tempDir('neondeck-config-coordinator-'));
+    await expect(
+      acquireWorkspaceProviderCoordinator('test-admission', paths),
+    ).resolves.toBe(true);
+    await expect(
+      updateExecutionPolicy({ defaultBackend: 'local' }, paths),
+    ).resolves.toMatchObject({ ok: false, requires: ['retry'] });
+    await releaseWorkspaceProviderCoordinator('test-admission', paths);
+    await expect(
+      updateExecutionPolicy({ defaultBackend: 'local' }, paths),
+    ).resolves.toMatchObject({ ok: true });
+  });
+
+  it('updates workspace providers using environment references only', async () => {
+    const home = await tempDir('neondeck-home-');
+    const paths = runtimePaths(home);
+    await expect(
+      updateWorkspaceProviderConfig(
+        {
+          id: 'build-box',
+          remove: true,
+          config: {
+            driver: 'ssh',
+            hostEnv: 'NEONDECK_BUILD_BOX_HOST',
+            privateKeyEnv: 'NEONDECK_BUILD_BOX_KEY',
+            remoteRoot: '/srv/neondeck/workspaces',
+          },
+          confirm: true,
+        },
+        paths,
+      ),
+    ).resolves.toMatchObject({ ok: false });
+    await expect(
+      updateWorkspaceProviderConfig(
+        {
+          id: 'build-box',
+          config: {
+            driver: 'ssh',
+            hostEnv: 'NEONDECK_BUILD_BOX_HOST',
+            privateKeyEnv: 'NEONDECK_BUILD_BOX_KEY',
+            remoteRoot: '/srv/neondeck/workspaces',
+          },
+        },
+        paths,
+      ),
+    ).resolves.toMatchObject({ ok: false, requires: ['confirm'] });
+    await expect(
+      updateWorkspaceProviderConfig(
+        {
+          id: 'build-box',
+          remove: true,
+          makeDefaultRemote: true,
+          confirm: true,
+        },
+        paths,
+      ),
+    ).resolves.toMatchObject({
+      ok: false,
+      requires: ['chooseOneMutation'],
+    });
+    await expect(
+      updateWorkspaceProviderConfig(
+        {
+          id: 'build-box',
+          config: {
+            driver: 'ssh',
+            hostEnv: 'NEONDECK_BUILD_BOX_HOST',
+            privateKeyEnv: 'NEONDECK_BUILD_BOX_KEY',
+            remoteRoot: '/srv/neondeck/workspaces',
+          },
+          makeDefaultRemote: true,
+          confirm: true,
+        },
+        paths,
+      ),
+    ).resolves.toMatchObject({
+      ok: true,
+      changed: true,
+      action: 'config_update_workspace_provider',
+      data: {
+        workspaces: {
+          defaultRemoteProvider: 'build-box',
+          providers: {
+            'build-box': {
+              driver: 'ssh',
+              hostEnv: 'NEONDECK_BUILD_BOX_HOST',
+            },
+          },
+        },
+      },
+    });
+    const config = parseAppConfig(
+      JSON.parse(await readFile(paths.config, 'utf8')),
+      paths.config,
+    );
+    expect(config.workspaces).toMatchObject({
+      defaultRemoteProvider: 'build-box',
+      providers: {
+        'build-box': {
+          driver: 'ssh',
+          hostEnv: 'NEONDECK_BUILD_BOX_HOST',
+          privateKeyEnv: 'NEONDECK_BUILD_BOX_KEY',
+          remoteRoot: '/srv/neondeck/workspaces',
+        },
+      },
+    });
+    const workspacePolicy = {
+      kind: 'repository' as const,
+      repoId: 'repo',
+      providerId: 'build-box',
+      resource: { lifecycle: 'per-run' as const },
+      revision: { ref: 'main', mode: 'latest-each-run' as const },
+      git: { mode: 'run-branch' as const },
+      authority: 'trusted-workspace' as const,
+    };
+    await upsertScheduledTask(
+      {
+        id: 'instruction:provider-dependency',
+        spec: {
+          kind: 'run-agent-instruction',
+          prompt: 'Keep provider identity durable.',
+          target: { kind: 'agent' },
+          skills: [],
+          workspace: workspacePolicy,
+        },
+        trigger: { kind: 'interval', everySeconds: 300 },
+      },
+      paths,
+    );
+    await createTaskWorkspaceRecord(
+      {
+        taskId: 'instruction:provider-dependency',
+        runId: 'scheduled-task-run:provider-dependency',
+        policy: workspacePolicy,
+        resource: {
+          providerId: 'build-box',
+          externalId: 'durable-resource',
+          root: '/srv/neondeck/workspaces/durable-resource',
+          metadata: {
+            host: 'build-box',
+            username: 'user',
+            providerRoot: '/srv/neondeck/workspaces',
+            privateHome:
+              '/srv/neondeck/workspaces/.neondeck-homes/durable-resource',
+            managedInfrastructure: false,
+          },
+        },
+        providerSnapshot: {
+          version: 1,
+          providerId: 'build-box',
+          driver: 'ssh',
+          config: {
+            driver: 'ssh',
+            hostEnv: 'NEONDECK_BUILD_BOX_HOST',
+            privateKeyEnv: 'NEONDECK_BUILD_BOX_KEY',
+            remoteRoot: '/srv/neondeck/workspaces',
+          },
+        },
+        repoSnapshot: {
+          verified: true,
+          id: 'repo',
+          github: { owner: 'owner', name: 'repo' },
+          path: '/repos/repo',
+          defaultBranch: 'main',
+        },
+        physicalResourceKey:
+          'ssh://user@build-box:22/srv/neondeck/workspaces/durable-resource',
+        status: 'retained',
+      },
+      paths,
+    );
+    await expect(
+      updateWorkspaceProviderConfig(
+        { id: 'build-box', remove: true, confirm: true },
+        paths,
+      ),
+    ).resolves.toMatchObject({
+      ok: false,
+      requires: ['workspaceCleanup'],
+    });
+    await expect(
+      updateWorkspaceProviderConfig(
+        {
+          id: 'build-box',
+          config: {
+            driver: 'exe.dev',
+            apiTokenEnv: 'NEONDECK_EXEDEV_API_TOKEN',
+            remoteRoot: '/srv/neondeck/workspaces',
+          },
+          confirm: true,
+        },
+        paths,
+      ),
+    ).resolves.toMatchObject({
+      ok: false,
+      requires: ['workspaceCleanup'],
+    });
+    await expect(
+      updateWorkspaceProviderConfig(
+        {
+          id: 'build-box',
+          config: {
+            driver: 'ssh',
+            hostEnv: 'raw-secret-is-not-an-env-name!',
+            privateKeyEnv: 'NEONDECK_BUILD_BOX_KEY',
+            remoteRoot: '/srv/neondeck/workspaces',
+          },
+        },
+        paths,
+      ),
+    ).resolves.toMatchObject({ ok: false, message: 'Invalid action input.' });
+  });
+
+  it('blocks provider removal while execution policy still references it', async () => {
+    const paths = runtimePaths(await tempDir('neondeck-provider-refs-'));
+    await writeFile(
+      paths.config,
+      JSON.stringify({
+        version: 1,
+        workspaces: {
+          providers: {
+            'build-box': {
+              driver: 'ssh',
+              hostEnv: 'NEONDECK_BUILD_BOX_HOST',
+              privateKeyEnv: 'NEONDECK_BUILD_BOX_KEY',
+              remoteRoot: '/srv/neondeck/workspaces',
+            },
+          },
+        },
+        execution: {
+          defaultBackend: 'build-box',
+          enabledBackends: ['local', 'build-box'],
+          preapprovedCommands: [
+            {
+              id: 'tests',
+              command: 'npm test',
+              match: 'exact',
+              backends: ['build-box'],
+            },
+          ],
+        },
+      }),
+    );
+    await expect(
+      updateWorkspaceProviderConfig(
+        { id: 'build-box', remove: true, confirm: true },
+        paths,
+      ),
+    ).resolves.toMatchObject({
+      ok: false,
+      requires: ['executionPolicy'],
+    });
+    await expect(
+      updateWorkspaceProviderConfig(
+        { id: 'exe.dev', remove: true, confirm: true },
+        paths,
+      ),
+    ).resolves.toMatchObject({
+      ok: false,
+      message: expect.stringContaining('cannot be removed'),
+    });
+  });
+
+  it('blocks provider removal while a task spec references it without a workspace row', async () => {
+    const paths = runtimePaths(await tempDir('neondeck-provider-task-ref-'));
+    await writeFile(
+      paths.config,
+      JSON.stringify({
+        version: 1,
+        workspaces: {
+          defaultRemoteProvider: 'build-box',
+          providers: {
+            'build-box': {
+              driver: 'ssh',
+              hostEnv: 'NEONDECK_BUILD_BOX_HOST',
+              privateKeyEnv: 'NEONDECK_BUILD_BOX_KEY',
+              remoteRoot: '/srv/neondeck/workspaces',
+            },
+          },
+        },
+      }),
+    );
+    await upsertScheduledTask(
+      {
+        id: 'instruction:provider-task-only',
+        spec: {
+          kind: 'run-agent-instruction',
+          prompt: 'Use configured remote.',
+          target: { kind: 'agent' },
+          skills: [],
+          workspace: {
+            kind: 'repository',
+            repoId: 'repo',
+            providerId: 'build-box',
+            resource: { lifecycle: 'per-run' },
+            revision: { ref: 'main', mode: 'latest-each-run' },
+            git: { mode: 'run-branch' },
+            authority: 'trusted-workspace',
+          },
+        },
+        trigger: { kind: 'interval', everySeconds: 300 },
+      },
+      paths,
+    );
+    await expect(
+      updateWorkspaceProviderConfig(
+        { id: 'build-box', remove: true, confirm: true },
+        paths,
+      ),
+    ).resolves.toMatchObject({
+      ok: false,
+      requires: ['scheduledTasks'],
+    });
+  });
+
+  it('blocks provider replacement while an execution approval is bound to its snapshot', async () => {
+    const paths = runtimePaths(
+      await tempDir('neondeck-provider-approval-ref-'),
+    );
+    await updateWorkspaceProviderConfig(
+      {
+        id: 'build-box',
+        config: {
+          driver: 'ssh',
+          hostEnv: 'NEONDECK_BUILD_BOX_HOST',
+          privateKeyEnv: 'NEONDECK_BUILD_BOX_KEY',
+          remoteRoot: '/srv/neondeck/workspaces',
+        },
+        confirm: true,
+      },
+      paths,
+    );
+    insertExecutionApproval(paths, {
+      command: 'npm test',
+      backend: 'build-box',
+      context: 'interactive',
+      risk: 'safe-mutation',
+      policyDecision: 'ask',
+      status: 'pending',
+      requestContext: {
+        neondeckExecutionScope: {
+          backend: 'build-box',
+          providerDriver: 'ssh',
+          providerSnapshotFingerprint: 'bound-snapshot',
+          physicalResourceKey:
+            'ssh://runner@example.com:22/srv/neondeck/workspaces',
+          resourceRoot: '/srv/neondeck/workspaces',
+          repoId: null,
+          repoFullName: null,
+          worktreeId: null,
+          remotePath: null,
+          forwardEnv: false,
+          envSources: [],
+        },
+      },
+    });
+    await expect(
+      updateWorkspaceProviderConfig(
+        {
+          id: 'build-box',
+          config: {
+            driver: 'ssh',
+            hostEnv: 'NEONDECK_OTHER_HOST',
+            privateKeyEnv: 'NEONDECK_BUILD_BOX_KEY',
+            remoteRoot: '/srv/neondeck/workspaces',
+          },
+          confirm: true,
+        },
+        paths,
+      ),
+    ).resolves.toMatchObject({
+      ok: false,
+      requires: ['executionApprovals'],
+    });
+  });
+
+  it('blocks repository removal while saved tasks or material workspaces still reference it', async () => {
+    const paths = runtimePaths(await tempDir('neondeck-repo-reference-'));
+    const repoPath = await tempGitRepo();
+    await expect(
+      addRepo({ id: 'repo', path: repoPath }, paths),
+    ).resolves.toMatchObject({ ok: true });
+    await upsertScheduledTask(
+      {
+        id: 'instruction:repo-reference',
+        spec: {
+          kind: 'run-agent-instruction',
+          prompt: 'Use this repository.',
+          target: { kind: 'agent' },
+          skills: [],
+          workspace: {
+            kind: 'repository',
+            repoId: 'repo',
+            providerId: 'local',
+            resource: { lifecycle: 'per-run' },
+            revision: { ref: 'main', mode: 'latest-each-run' },
+            git: { mode: 'run-branch' },
+            authority: 'read-only',
+          },
+        },
+        trigger: { kind: 'interval', everySeconds: 300 },
+      },
+      paths,
+    );
+    await expect(
+      updateRepo({ id: 'repo', githubOwner: 'other-owner' }, paths),
+    ).resolves.toMatchObject({ ok: false, requires: ['confirm'] });
+    await expect(
+      updateRepo(
+        { id: 'repo', githubOwner: 'other-owner', confirm: true },
+        paths,
+      ),
+    ).resolves.toMatchObject({
+      ok: false,
+      requires: ['scheduledTasks', 'workspaceCleanup'],
+    });
+    await expect(
+      removeRepo({ id: 'repo', confirm: true }, paths),
+    ).resolves.toMatchObject({
+      ok: false,
+      requires: ['scheduledTasks', 'workspaceCleanup'],
+      message: expect.stringContaining('saved scheduled task'),
     });
   });
 

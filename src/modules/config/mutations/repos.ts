@@ -1,10 +1,12 @@
 import { execFile } from 'node:child_process';
+import { randomUUID } from 'node:crypto';
 import { constants } from 'node:fs';
 import { access, readFile, stat } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { promisify } from 'node:util';
 import * as v from 'valibot';
+import { openDb } from '../../../lib/sqlite';
 import {
   parseActionInput,
   failResult,
@@ -35,12 +37,27 @@ import {
   type RepoGuardrailsConfig,
   type RepoAutopilotConfig,
 } from '../../autopilot-policy';
+import {
+  acquireWorkspaceProviderCoordinator,
+  releaseWorkspaceProviderCoordinator,
+  superviseWorkspaceProviderCoordinator,
+} from '../../scheduled-tasks/workspace-store';
 
 const execFileAsync = promisify(execFile);
 
 export async function addRepo(
   rawInput: v.InferInput<typeof addRepoInputSchema>,
   paths = runtimePaths(),
+): Promise<ConfigActionResult> {
+  return withRepoConfigCoordinator('config_add_repo', paths, (assertLease) =>
+    addRepoWithCoordinator(rawInput, paths, assertLease),
+  );
+}
+
+async function addRepoWithCoordinator(
+  rawInput: v.InferInput<typeof addRepoInputSchema>,
+  paths: ReturnType<typeof runtimePaths>,
+  assertLease: () => void,
 ): Promise<ConfigActionResult> {
   await ensureRuntimeHome(paths);
   const parsed = parseActionInput(
@@ -125,7 +142,9 @@ export async function addRepo(
     paths.repos,
   );
 
+  assertLease();
   await writeJson(paths.repos, next);
+  assertLease();
   recordConfigChange(paths, {
     action: 'config_add_repo',
     file: paths.repos,
@@ -143,6 +162,16 @@ export async function addRepo(
 export async function updateRepo(
   rawInput: v.InferInput<typeof updateRepoInputSchema>,
   paths = runtimePaths(),
+): Promise<ConfigActionResult> {
+  return withRepoConfigCoordinator('config_update_repo', paths, (assertLease) =>
+    updateRepoWithCoordinator(rawInput, paths, assertLease),
+  );
+}
+
+async function updateRepoWithCoordinator(
+  rawInput: v.InferInput<typeof updateRepoInputSchema>,
+  paths: ReturnType<typeof runtimePaths>,
+  assertLease: () => void,
 ): Promise<ConfigActionResult> {
   await ensureRuntimeHome(paths);
   const parsed = parseActionInput(
@@ -172,11 +201,28 @@ export async function updateRepo(
   }
 
   const current = registry.repos[index];
-  if (input.path && input.path !== current.path && input.confirm !== true) {
+  const identityChanged =
+    (input.path !== undefined &&
+      resolveUserPath(input.path) !== current.path) ||
+    (input.githubOwner !== undefined &&
+      input.githubOwner !== current.github.owner) ||
+    (input.githubName !== undefined &&
+      input.githubName !== current.github.name);
+  if (identityChanged && input.confirm !== true) {
     return failResult('config_update_repo', paths, [paths.repos], {
-      message: 'Changing a repository path requires explicit confirmation.',
+      message:
+        'Changing a repository path or GitHub owner/name identity requires explicit confirmation.',
       requires: ['confirm'],
     });
+  }
+  if (identityChanged) {
+    const reference = durableRepoReference(input.id, paths.neondeckDatabase);
+    if (reference) {
+      return failResult('config_update_repo', paths, [paths.repos], {
+        message: `Repository "${input.id}" is still referenced by ${reference}. Settle and clean up material workspaces and update or delete saved tasks before retargeting its identity.`,
+        requires: ['scheduledTasks', 'workspaceCleanup'],
+      });
+    }
   }
   const repoPath = input.path ? resolveUserPath(input.path) : current.path;
   if (input.path) {
@@ -229,7 +275,9 @@ export async function updateRepo(
     paths.repos,
   );
 
+  assertLease();
   await writeJson(paths.repos, next);
+  assertLease();
   recordConfigChange(paths, {
     action: 'config_update_repo',
     file: paths.repos,
@@ -247,6 +295,19 @@ export async function updateRepo(
 export async function updateRepoAutopilotPolicy(
   rawInput: v.InferInput<typeof updateRepoAutopilotPolicyInputSchema>,
   paths = runtimePaths(),
+): Promise<ConfigActionResult> {
+  return withRepoConfigCoordinator(
+    'config_update_repo_autopilot_policy',
+    paths,
+    (assertLease) =>
+      updateRepoAutopilotPolicyWithCoordinator(rawInput, paths, assertLease),
+  );
+}
+
+async function updateRepoAutopilotPolicyWithCoordinator(
+  rawInput: v.InferInput<typeof updateRepoAutopilotPolicyInputSchema>,
+  paths: ReturnType<typeof runtimePaths>,
+  assertLease: () => void,
 ): Promise<ConfigActionResult> {
   await ensureRuntimeHome(paths);
   const parsed = parseActionInput(
@@ -343,7 +404,9 @@ export async function updateRepoAutopilotPolicy(
   );
   const changed = JSON.stringify(current) !== JSON.stringify(nextRepo);
   if (changed) {
+    assertLease();
     await writeJson(paths.repos, next);
+    assertLease();
     recordConfigChange(paths, {
       action: 'config_update_repo_autopilot_policy',
       file: paths.repos,
@@ -545,31 +608,95 @@ export async function removeRepo(
     });
   }
 
-  const registry = await readRuntimeJson(paths.repos, parseRepoRegistry);
-  const nextRepos = registry.repos.filter((repo) => repo.id !== input.id);
-
-  if (nextRepos.length === registry.repos.length) {
+  const coordinatorOwner = `repo-config:${randomUUID()}`;
+  if (!(await acquireWorkspaceProviderCoordinator(coordinatorOwner, paths))) {
     return failResult('config_remove_repo', paths, [paths.repos], {
-      message: `Repository "${input.id}" does not exist.`,
+      message:
+        'Repository or workspace-provider configuration is busy. Retry shortly.',
+      requires: ['retry'],
     });
   }
-
-  const next = parseRepoRegistry(
-    { ...registry, repos: nextRepos },
-    paths.repos,
+  const coordinatorLease = superviseWorkspaceProviderCoordinator(
+    coordinatorOwner,
+    paths,
   );
-  await writeJson(paths.repos, next);
-  recordConfigChange(paths, {
-    action: 'config_remove_repo',
-    file: paths.repos,
-    target: input.id,
-    before: registry,
-    after: next,
-  });
+  try {
+    coordinatorLease.assertLease();
+    const registry = await readRuntimeJson(paths.repos, parseRepoRegistry);
+    const nextRepos = registry.repos.filter((repo) => repo.id !== input.id);
 
-  return okResult('config_remove_repo', true, paths, [paths.repos], {
-    message: `Removed repository "${input.id}".`,
-  });
+    if (nextRepos.length === registry.repos.length) {
+      return failResult('config_remove_repo', paths, [paths.repos], {
+        message: `Repository "${input.id}" does not exist.`,
+      });
+    }
+    const reference = durableRepoReference(input.id, paths.neondeckDatabase);
+    if (reference) {
+      return failResult('config_remove_repo', paths, [paths.repos], {
+        message: `Repository "${input.id}" is still referenced by ${reference}. Update or delete the saved task, or settle and clean up its workspace/worktree first.`,
+        requires: ['scheduledTasks', 'workspaceCleanup'],
+      });
+    }
+
+    const next = parseRepoRegistry(
+      { ...registry, repos: nextRepos },
+      paths.repos,
+    );
+    coordinatorLease.assertLease();
+    await writeJson(paths.repos, next);
+    coordinatorLease.assertLease();
+    recordConfigChange(paths, {
+      action: 'config_remove_repo',
+      file: paths.repos,
+      target: input.id,
+      before: registry,
+      after: next,
+    });
+
+    return okResult('config_remove_repo', true, paths, [paths.repos], {
+      message: `Removed repository "${input.id}".`,
+    });
+  } finally {
+    coordinatorLease.stop();
+    await releaseWorkspaceProviderCoordinator(coordinatorOwner, paths);
+  }
+}
+
+function durableRepoReference(repoId: string, databasePath: string) {
+  const database = openDb(databasePath, { readOnly: true });
+  try {
+    const task = database
+      .prepare(
+        `SELECT 1 FROM scheduled_tasks
+         WHERE json_valid(payload_json)
+           AND (
+             json_extract(payload_json, '$.workspace.repoId') = ?
+             OR json_extract(payload_json, '$.repoId') = ?
+           )
+         LIMIT 1;`,
+      )
+      .get(repoId, repoId);
+    if (task) return 'a saved scheduled task';
+    const workspace = database
+      .prepare(
+        `SELECT 1 FROM task_workspaces
+         WHERE repo_id = ? AND status <> 'deleted'
+         LIMIT 1;`,
+      )
+      .get(repoId);
+    if (workspace) return 'a material scheduled workspace';
+    const worktree = database
+      .prepare(
+        `SELECT 1 FROM worktrees
+         WHERE repo_id = ? AND lifecycle_status <> 'deleted'
+         LIMIT 1;`,
+      )
+      .get(repoId);
+    if (worktree) return 'a material local worktree';
+    return undefined;
+  } finally {
+    database.close();
+  }
 }
 
 async function discoverGitRepo(path: string) {
@@ -592,6 +719,35 @@ function repoDiscoveryFailure(error: unknown) {
     message: 'Repository path could not be added because it failed validation.',
     errors: [errorMessage(error)],
   };
+}
+
+async function withRepoConfigCoordinator(
+  action:
+    | 'config_add_repo'
+    | 'config_update_repo'
+    | 'config_update_repo_autopilot_policy',
+  paths: ReturnType<typeof runtimePaths>,
+  mutate: (assertLease: () => void) => Promise<ConfigActionResult>,
+) {
+  await ensureRuntimeHome(paths);
+  const owner = `repo-config:${randomUUID()}`;
+  if (!(await acquireWorkspaceProviderCoordinator(owner, paths))) {
+    return failResult(action, paths, [paths.repos], {
+      message:
+        'Repository or workspace-provider configuration is busy. Retry shortly.',
+      requires: ['retry'],
+    });
+  }
+  const lease = superviseWorkspaceProviderCoordinator(owner, paths);
+  try {
+    lease.assertLease();
+    const result = await mutate(lease.assertLease);
+    lease.assertLease();
+    return result;
+  } finally {
+    lease.stop();
+    await releaseWorkspaceProviderCoordinator(owner, paths);
+  }
 }
 
 async function inferDefaultBranch(path: string) {

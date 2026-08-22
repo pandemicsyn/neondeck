@@ -258,6 +258,102 @@ export const scheduledTaskRuns = sqliteTable(
   ],
 );
 
+export const taskWorkspaces = sqliteTable(
+  'task_workspaces',
+  {
+    id: text('id').primaryKey(),
+    taskId: text('task_id').notNull(),
+    owningRunId: text('owning_run_id'),
+    providerId: text('provider_id').notNull(),
+    providerResourceId: text('provider_resource_id').notNull(),
+    providerSnapshotJson: text('provider_snapshot_json').notNull(),
+    physicalResourceKey: text('physical_resource_key').notNull(),
+    resourceMetadataJson: text('resource_metadata_json').notNull(),
+    lifecycle: text('lifecycle').notNull(),
+    repoId: text('repo_id').notNull(),
+    repoSnapshotJson: text('repo_snapshot_json').notNull(),
+    workspaceRoot: text('workspace_root').notNull(),
+    requestedRef: text('requested_ref').notNull(),
+    revisionMode: text('revision_mode').notNull(),
+    gitMode: text('git_mode').notNull(),
+    branchName: text('branch_name'),
+    baseSha: text('base_sha'),
+    initialSha: text('initial_sha'),
+    finalSha: text('final_sha'),
+    dirty: integer('dirty'),
+    localWorktreeId: text('local_worktree_id'),
+    authority: text('authority').notNull(),
+    retention: text('retention').notNull(),
+    status: text('status').notNull(),
+    lockOwner: text('lock_owner'),
+    lockExpiresAt: text('lock_expires_at'),
+    collectionOwner: text('collection_owner'),
+    collectionExpiresAt: text('collection_expires_at'),
+    releaseFencedAt: text('release_fenced_at'),
+    retentionReason: text('retention_reason'),
+    providerError: text('provider_error'),
+    createdAt: text('created_at').notNull(),
+    lastUsedAt: text('last_used_at').notNull(),
+    retainedAt: text('retained_at'),
+    cleanupAttemptedAt: text('cleanup_attempted_at'),
+    deletedAt: text('deleted_at'),
+    updatedAt: text('updated_at').notNull(),
+  },
+  (table) => [
+    index('idx_task_workspaces_task').on(
+      table.taskId,
+      table.status,
+      sql`${table.updatedAt} DESC`,
+    ),
+    uniqueIndex('idx_task_workspaces_run')
+      .on(table.owningRunId)
+      .where(sql`${table.owningRunId} IS NOT NULL`),
+  ],
+);
+
+export const workspaceProviderCoordinator = sqliteTable(
+  'workspace_provider_coordinator',
+  {
+    id: text('id').primaryKey(),
+    owner: text('owner').notNull(),
+    expiresAt: text('expires_at').notNull(),
+    updatedAt: text('updated_at').notNull(),
+  },
+);
+
+export const scheduledRunArtifacts = sqliteTable(
+  'scheduled_run_artifacts',
+  {
+    id: text('id').primaryKey(),
+    runId: text('run_id').notNull(),
+    workspaceId: text('workspace_id'),
+    kind: text('kind').notNull(),
+    summary: text('summary').notNull(),
+    content: text('content'),
+    truncated: integer('truncated').default(0).notNull(),
+    redacted: integer('redacted').default(0).notNull(),
+    createdAt: text('created_at').notNull(),
+  },
+  (table) => [
+    index('idx_scheduled_run_artifacts_run').on(
+      table.runId,
+      sql`${table.createdAt} ASC`,
+    ),
+  ],
+);
+
+export const scheduledRunWorkspaceSnapshots = sqliteTable(
+  'scheduled_run_workspace_snapshots',
+  {
+    runId: text('run_id').primaryKey(),
+    workspaceId: text('workspace_id').notNull(),
+    snapshotJson: text('snapshot_json').notNull(),
+    createdAt: text('created_at').notNull(),
+    updatedAt: text('updated_at').notNull(),
+  },
+  (table) => [index('idx_scheduled_run_workspace').on(table.workspaceId)],
+);
+
 export const briefingProfiles = sqliteTable('briefing_profiles', {
   id: text('id').primaryKey(),
   name: text('name').notNull(),

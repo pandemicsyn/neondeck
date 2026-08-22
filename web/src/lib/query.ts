@@ -66,6 +66,12 @@ export const queryKeys = {
   runtimeSkills: ['runtime-skills'] as const,
   safetyPolicy: ['safety-policy'] as const,
   scheduledTasks: ['scheduled-tasks'] as const,
+  workspaceProviders: ['workspace-providers'] as const,
+  scheduledWorkspaceQuarantines: ['scheduled-workspace-quarantines'] as const,
+  scheduledTaskRuns: (id: string | undefined) =>
+    ['scheduled-task-runs', id ?? 'none'] as const,
+  scheduledTaskRun: (id: string | undefined) =>
+    ['scheduled-task-run', id ?? 'none'] as const,
   subagents: ['subagents'] as const,
   notifications: ['notifications'] as const,
   activityObservability: ['activity-observability'] as const,

@@ -8,6 +8,11 @@ import {
   listTaskRecords,
   readTaskRecord,
   removeTask,
+  cleanupTaskRunWorkspace,
+  scheduledWorkspaceCleanupInputSchema,
+  scheduledWorkspaceQuarantineClearInputSchema,
+  listScheduledWorkspaceQuarantines,
+  clearScheduledWorkspaceQuarantine,
   scheduledTaskIdInputSchema,
   setTaskEnabled,
 } from './service';
@@ -32,7 +37,7 @@ export const scheduledBriefingTaskCreateAction = defineTool({
 export const scheduledInstructionTaskCreateAction = defineTool({
   name: 'neondeck_scheduled_task_instruction_create',
   description:
-    'Create or update a scheduled bounded agent instruction. Use an agent-session target only when continuity is explicitly required.',
+    'Create a scheduled bounded agent instruction. Recurring trusted-workspace or delivery-labelled shell authority requires confirm=true after explicit operator approval.',
   input: agentInstructionTaskInputSchema,
   output: actionOutputSchema,
   async run({ data: input }) {
@@ -104,6 +109,43 @@ export const scheduledTaskDeleteAction = defineTool({
   },
 });
 
+export const scheduledWorkspaceCleanupAction = defineTool({
+  name: 'neondeck_scheduled_workspace_cleanup',
+  description:
+    'Destructively clean up a settled managed scheduled workspace, or detach an adopted existing workspace without deleting its infrastructure. Requires confirm=true.',
+  input: scheduledWorkspaceCleanupInputSchema,
+  output: actionOutputSchema,
+  async run({ data: input }) {
+    return {
+      output: await cleanupTaskRunWorkspace(input.runId, {
+        confirm: input.confirm,
+      }),
+    };
+  },
+});
+
+export const scheduledWorkspaceQuarantineListAction = defineTool({
+  name: 'neondeck_scheduled_workspace_quarantine_list',
+  description:
+    'List physical remote workspaces blocked because command or mutation settlement is uncertain.',
+  input: v.object({}),
+  output: actionOutputSchema,
+  async run() {
+    return { output: await listScheduledWorkspaceQuarantines() };
+  },
+});
+
+export const scheduledWorkspaceQuarantineClearAction = defineTool({
+  name: 'neondeck_scheduled_workspace_quarantine_clear',
+  description:
+    'Clear one durable remote-workspace quarantine only after the operator confirms no remote process is still mutating it.',
+  input: scheduledWorkspaceQuarantineClearInputSchema,
+  output: actionOutputSchema,
+  async run({ data: input }) {
+    return { output: await clearScheduledWorkspaceQuarantine(input) };
+  },
+});
+
 export const neondeckScheduledTaskActions = [
   scheduledBriefingTaskCreateAction,
   scheduledInstructionTaskCreateAction,
@@ -112,4 +154,7 @@ export const neondeckScheduledTaskActions = [
   scheduledTaskPauseAction,
   scheduledTaskResumeAction,
   scheduledTaskDeleteAction,
+  scheduledWorkspaceCleanupAction,
+  scheduledWorkspaceQuarantineListAction,
+  scheduledWorkspaceQuarantineClearAction,
 ];

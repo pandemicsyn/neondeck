@@ -1,10 +1,11 @@
 import { AgentRunError, dispatch, init, type JsonValue } from '@flue/runtime';
 import type { NotificationLevel, NotificationRecord } from '../app-state';
 import type { RuntimePaths } from '../../runtime-home';
-import { loadRuntimeSkill } from '../runtime';
+import { selectedRuntimeSkillSessionSnapshotsSync } from '../runtime';
 import { refreshWatchTask } from '../scheduler/dispatch';
 import type { SchedulerDependencies } from '../scheduler/schemas';
 import type { ScheduledTaskRecord } from './schemas';
+import { prepareScheduledWorkspace } from './workspace-service';
 
 export type ScheduledTaskExecutionResult = {
   outcome: 'recorded' | 'silent' | 'failed';
@@ -100,33 +101,74 @@ export async function prepareScheduledInstructionDispatch(
   idempotencyKey: string,
   paths: RuntimePaths,
 ) {
-  const prompt = await composeInstructionPrompt(task, paths);
+  const preparedPrompt = composeInstructionPrompt(task, paths);
+  const workspace = await prepareScheduledWorkspace(
+    task,
+    idempotencyKey,
+    paths,
+  );
   return {
     idempotencyKey,
-    sessionId:
-      task.spec.kind === 'run-agent-instruction' &&
-      task.spec.target.kind === 'agent-session'
+    sessionId: workspace
+      ? task.spec.kind === 'run-agent-instruction' &&
+        task.spec.target.kind === 'agent-session'
+        ? `scheduled-workspace-session:${task.spec.target.sessionId}:${task.id}`
+        : `scheduled-workspace:${idempotencyKey}`
+      : task.spec.kind === 'run-agent-instruction' &&
+          task.spec.target.kind === 'agent-session'
         ? task.spec.target.sessionId
         : `scheduled-instruction:${idempotencyKey}`,
-    payload: { prompt, taskId: task.id },
+    payload: {
+      prompt: preparedPrompt.prompt,
+      taskId: task.id,
+      skillSnapshots: preparedPrompt.skillSnapshots,
+      ...(workspace
+        ? {
+            runId: idempotencyKey,
+            workspaceId: workspace.workspace.id,
+            cwd: workspace.cwd,
+            lockOwner: workspace.lockOwner,
+          }
+        : {}),
+    },
   };
 }
 
 export async function dispatchScheduledInstruction(input: {
   idempotencyKey: string;
   sessionId: string;
-  payload: { prompt: string; taskId: string };
+  payload: {
+    prompt: string;
+    taskId: string;
+    runId?: string;
+    workspaceId?: string;
+    cwd?: string;
+    lockOwner?: string;
+  };
 }) {
-  const { DisplayAssistant } = await import('../../agents/display-assistant');
-  const receipt = await dispatch(DisplayAssistant, {
+  const agent = input.payload.workspaceId
+    ? (await import('../../agents/scheduled-task-worker')).ScheduledTaskWorker
+    : (await import('../../agents/display-assistant')).DisplayAssistant;
+  const receipt = await dispatch(agent, {
     id: input.sessionId,
     idempotencyKey: input.idempotencyKey,
     message: {
       kind: 'signal',
-      type: 'neondeck.scheduled-instruction',
+      type: input.payload.workspaceId
+        ? 'neondeck.scheduled-workspace-instruction'
+        : 'neondeck.scheduled-instruction',
       tagName: 'scheduled-instruction',
       body: input.payload.prompt,
-      attributes: { taskId: input.payload.taskId },
+      attributes: {
+        taskId: input.payload.taskId,
+        ...(input.payload.workspaceId
+          ? {
+              workspaceId: input.payload.workspaceId,
+              runId: input.payload.runId as string,
+              cwd: input.payload.cwd as string,
+            }
+          : {}),
+      },
     },
   });
   return {
@@ -138,19 +180,22 @@ export async function dispatchScheduledInstruction(input: {
 export async function readScheduledInstructionSettlement(input: {
   sessionId: string;
   submissionId: string;
+  workspaceId?: string;
 }) {
-  const { DisplayAssistant } = await import('../../agents/display-assistant');
-  const handle = init(DisplayAssistant, { id: input.sessionId });
+  const agent = input.workspaceId
+    ? (await import('../../agents/scheduled-task-worker')).ScheduledTaskWorker
+    : (await import('../../agents/display-assistant')).DisplayAssistant;
+  const handle = init(agent, { id: input.sessionId });
   try {
-    await handle.read(input.submissionId);
-    return { failed: false };
+    const reply = await handle.read(input.submissionId);
+    return { failed: false, response: reply.text };
   } catch (error) {
     if (error instanceof AgentRunError) return { failed: true };
     throw error;
   }
 }
 
-async function composeInstructionPrompt(
+function composeInstructionPrompt(
   task: ScheduledTaskRecord,
   paths: RuntimePaths,
 ) {
@@ -159,14 +204,25 @@ async function composeInstructionPrompt(
   }
   const context = [
     'This is a bounded scheduled Neondeck instruction. Complete the requested work, report concrete results, and do not schedule follow-up work yourself.',
-    task.spec.repoId ? `Repository id: ${task.spec.repoId}` : null,
-    task.spec.cwd ? `Requested working directory: ${task.spec.cwd}` : null,
+    task.spec.workspace?.kind === 'repository'
+      ? `Repository id: ${task.spec.workspace.repoId}`
+      : task.spec.repoId
+        ? `Repository id: ${task.spec.repoId}`
+        : null,
+    task.spec.workspace?.kind === 'repository'
+      ? task.spec.workspace.subdirectory
+        ? `Repository subdirectory: ${task.spec.workspace.subdirectory}`
+        : null
+      : task.spec.cwd
+        ? `Requested working directory: ${task.spec.cwd}`
+        : null,
   ].filter((line): line is string => Boolean(line));
-  const skills = [];
-  for (const id of task.spec.skills) {
-    const loaded = await loadRuntimeSkill({ id }, paths);
-    if (!loaded.ok) throw new Error(loaded.error);
-    skills.push(`\n\nSkill "${id}":\n${loaded.skill.content}`);
-  }
-  return `${context.join('\n')}\n\nInstruction:\n${task.spec.prompt}${skills.join('')}`;
+  const skillSnapshots = selectedRuntimeSkillSessionSnapshotsSync(
+    task.spec.skills,
+    paths,
+  );
+  return {
+    prompt: `${context.join('\n')}\n\nInstruction:\n${task.spec.prompt}`,
+    skillSnapshots,
+  };
 }

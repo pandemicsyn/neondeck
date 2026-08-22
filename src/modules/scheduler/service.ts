@@ -14,11 +14,25 @@ import {
   prepareScheduledInstructionDispatch,
   readLatestScheduledTaskRun,
   readScheduledTask,
+  readScheduledTaskRun,
   readScheduledInstructionSettlement,
   recordScheduledTaskAdmissionRetry,
   releaseUnstartedScheduledTaskClaim,
   settleScheduledTaskRun,
   settleScheduledTaskSubmission,
+  collectScheduledWorkspaceResult,
+  invalidateScheduledWorkspaceRun,
+  failScheduledWorkspaceRun,
+  listRecoverableScheduledWorkspaceCleanups,
+  listStrandedScheduledWorkspaces,
+  reconcileExpiredTerminalCollectionOwners,
+  recoverAbandonedScheduledWorkspace,
+  recoverOrphanedScheduledWorktreeProvisions,
+  retainTaskWorkspace,
+  renewTaskWorkspaceLock,
+  addScheduledRunArtifact,
+  fenceTaskWorkspacePhysicalRelease,
+  quarantinePhysicalWorkspace,
 } from '../scheduled-tasks';
 import {
   ensureRuntimeHome,
@@ -73,6 +87,9 @@ export async function runSchedulerTick(
   try {
     await recoverRegisteredInterruptedBriefingAdmissions(paths);
     await recoverScheduledBriefingSubmissions(paths);
+    await recoverOrphanedScheduledWorktreeProvisions(paths);
+    await recoverScheduledWorkspaceCleanups(paths);
+    await recoverStrandedScheduledWorkspaceRuns(paths);
     await recoverScheduledInstructionSubmissions(paths, dependencies);
     const claimedTasks = await claimDueScheduledTasks(paths, now);
     const notifications = [];
@@ -100,12 +117,22 @@ export async function runSchedulerTick(
       }
       const previous = await readLatestScheduledTaskRun(task.id, paths);
       let result: Awaited<ReturnType<typeof executeScheduledTask>>;
+      let preparedInstruction:
+        | Awaited<ReturnType<typeof prepareScheduledInstructionDispatch>>
+        | undefined;
       let admissionOutboxPrepared = false;
       try {
         const submissionTask = requiresSubmissionAdmission(task);
         if (
           submissionTask &&
-          !(await canAdmitScheduledSubmission(task.id, paths))
+          !(await canAdmitScheduledSubmission(
+            task.id,
+            paths,
+            undefined,
+            task.spec.kind === 'run-agent-instruction' &&
+              task.spec.workspace?.kind === 'repository' &&
+              task.spec.workspace.overlap === 'allow-parallel',
+          ))
         ) {
           await deferUnstartedScheduledTaskClaim(
             {
@@ -125,6 +152,7 @@ export async function runSchedulerTick(
             run.id,
             paths,
           );
+          preparedInstruction = prepared;
           await activateScheduledTaskSubmission(
             {
               taskId: task.id,
@@ -149,6 +177,9 @@ export async function runSchedulerTick(
             result: {
               submissionId: admitted.submissionId,
               sessionId: admitted.sessionId,
+              ...(prepared.payload.workspaceId
+                ? { workspaceId: prepared.payload.workspaceId }
+                : {}),
             },
           };
         } else {
@@ -178,11 +209,14 @@ export async function runSchedulerTick(
               paths,
             );
           }
-          if (submissionTask && result.sessionId) {
+          if (submissionTask && result.sessionId && preparedInstruction) {
             watchScheduledInstructionSettlement(
               {
                 submissionId: result.submissionId,
                 sessionId: result.sessionId,
+                workspaceId: preparedInstruction.payload.workspaceId,
+                runId: run.id,
+                lockOwner: preparedInstruction.payload.lockOwner,
               },
               paths,
               dependencies,
@@ -224,6 +258,22 @@ export async function runSchedulerTick(
           );
           taskChanged = true;
           continue;
+        }
+        if (
+          preparedInstruction?.payload.workspaceId &&
+          preparedInstruction.payload.runId &&
+          preparedInstruction.payload.lockOwner
+        ) {
+          await collectScheduledWorkspaceResult(
+            {
+              runId: preparedInstruction.payload.runId,
+              workspaceId: preparedInstruction.payload.workspaceId,
+              lockOwner: preparedInstruction.payload.lockOwner,
+              response: message,
+              failed: true,
+            },
+            paths,
+          );
         }
         await settleScheduledTaskRun(
           {
@@ -375,18 +425,22 @@ async function recoverScheduledInstructionSubmissions(
   for (const run of activeRuns) {
     if (run.submissionId && run.sessionId) {
       watchScheduledInstructionSettlement(
-        { submissionId: run.submissionId, sessionId: run.sessionId },
+        {
+          submissionId: run.submissionId,
+          sessionId: run.sessionId,
+          workspaceId: run.dispatchPayload?.workspaceId,
+          runId: run.id,
+          lockOwner: run.dispatchPayload?.lockOwner,
+        },
         paths,
         dependencies,
       );
       continue;
     }
     if (!run.dispatchKey || !run.dispatchPayload || !run.sessionId) {
-      await recordScheduledTaskAdmissionRetry(
-        {
-          runId: run.id,
-          message: 'The persisted scheduled instruction outbox is incomplete.',
-        },
+      await terminalizeScheduledWorkspaceRun(
+        run,
+        'The persisted scheduled instruction outbox is incomplete.',
         paths,
       );
       continue;
@@ -408,6 +462,9 @@ async function recoverScheduledInstructionSubmissions(
           result: {
             submissionId: admitted.submissionId,
             sessionId: admitted.sessionId,
+            ...(run.dispatchPayload.workspaceId
+              ? { workspaceId: run.dispatchPayload.workspaceId }
+              : {}),
           },
         },
         paths,
@@ -416,23 +473,160 @@ async function recoverScheduledInstructionSubmissions(
         {
           submissionId: admitted.submissionId,
           sessionId: admitted.sessionId,
+          workspaceId: run.dispatchPayload.workspaceId,
+          runId: run.id,
+          lockOwner: run.dispatchPayload.lockOwner,
         },
         paths,
         dependencies,
       );
     } catch (error) {
-      await recordScheduledTaskAdmissionRetry(
-        { runId: run.id, message: errorMessage(error) },
-        paths,
+      if (Date.now() - Date.parse(run.startedAt) >= 10 * 60_000) {
+        await terminalizeScheduledWorkspaceRun(
+          run,
+          `Scheduled instruction admission exhausted its retry window: ${errorMessage(error)}`,
+          paths,
+        );
+      } else {
+        await recordScheduledTaskAdmissionRetry(
+          { runId: run.id, message: errorMessage(error) },
+          paths,
+        );
+      }
+    }
+  }
+}
+
+async function recoverScheduledWorkspaceCleanups(paths: RuntimePaths) {
+  for (const workspace of await listRecoverableScheduledWorkspaceCleanups(
+    paths,
+  )) {
+    try {
+      await recoverAbandonedScheduledWorkspace(workspace.id, paths);
+    } catch (error) {
+      console.warn(
+        `[neondeck] failed to reconcile expired cleanup lease for workspace ${workspace.id}`,
+        error,
       );
     }
   }
 }
 
+async function recoverStrandedScheduledWorkspaceRuns(paths: RuntimePaths) {
+  await reconcileExpiredTerminalCollectionOwners(paths);
+  for (const { workspace } of await listStrandedScheduledWorkspaces(paths)) {
+    const runId = workspace.owningRunId;
+    if (!runId) continue;
+    const message =
+      'Recovered a scheduled workspace whose run never reached active dispatch; its workspace lifecycle was reconciled.';
+    if (workspace.providerId !== 'local' && workspace.lockOwner) {
+      const fenced = await fenceTaskWorkspacePhysicalRelease(
+        {
+          workspaceId: workspace.id,
+          runId,
+          lockOwner: workspace.lockOwner,
+        },
+        paths,
+      );
+      if (!fenced) {
+        throw new Error(
+          `Could not fence inherited remote workspace lease for ${workspace.id}.`,
+        );
+      }
+      await quarantinePhysicalWorkspace(
+        {
+          physicalResourceKey: workspace.physicalResourceKey,
+          providerId: workspace.providerId,
+          source: 'scheduled-run',
+          sourceId: runId,
+          reason:
+            'Restart recovery inherited a remote lease without confirmed operation settlement.',
+        },
+        paths,
+      );
+    }
+    if (workspace.lockOwner) {
+      await failScheduledWorkspaceRun(
+        {
+          runId,
+          workspaceId: workspace.id,
+          lockOwner: workspace.lockOwner,
+          message,
+        },
+        paths,
+      );
+    } else if (workspace.lifecycle === 'existing') {
+      await retainTaskWorkspace(
+        workspace.id,
+        runId,
+        'Recovered an abandoned adopted workspace without deleting provider infrastructure.',
+        paths,
+      );
+    } else {
+      await recoverAbandonedScheduledWorkspace(workspace.id, paths);
+    }
+    const run = await readScheduledTaskRun(runId, paths);
+    if (!run || !['claimed', 'active'].includes(run.status)) continue;
+    const task = await readScheduledTask(run.taskId, paths);
+    await settleScheduledTaskRun(
+      {
+        taskId: run.taskId,
+        runId: run.id,
+        claimId: task?.claimId ?? '',
+        status: 'failed',
+        outcome: 'failed',
+        message,
+        error: message,
+      },
+      paths,
+    );
+  }
+}
+
+async function terminalizeScheduledWorkspaceRun(
+  run: Awaited<ReturnType<typeof readScheduledTaskRun>> & {},
+  message: string,
+  paths: RuntimePaths,
+) {
+  if (!run) return;
+  const payload = run.dispatchPayload;
+  if (payload?.workspaceId && payload.runId && payload.lockOwner) {
+    await failScheduledWorkspaceRun(
+      {
+        runId: payload.runId,
+        workspaceId: payload.workspaceId,
+        lockOwner: payload.lockOwner,
+        message,
+      },
+      paths,
+    );
+  }
+  const task = await readScheduledTask(run.taskId, paths);
+  await settleScheduledTaskRun(
+    {
+      taskId: run.taskId,
+      runId: run.id,
+      claimId: task?.claimId ?? '',
+      status: 'failed',
+      outcome: 'failed',
+      message,
+      error: message,
+    },
+    paths,
+  );
+}
+
 function dispatchPreparedInstruction(
   input: {
     idempotencyKey: string;
-    payload: { prompt: string; taskId: string };
+    payload: {
+      prompt: string;
+      taskId: string;
+      runId?: string;
+      workspaceId?: string;
+      cwd?: string;
+      lockOwner?: string;
+    };
     sessionId: string;
   },
   dependencies: SchedulerDependencies,
@@ -443,12 +637,22 @@ function dispatchPreparedInstruction(
         prompt: input.payload.prompt,
         sessionId: input.sessionId,
         taskId: input.payload.taskId,
+        runId: input.payload.runId,
+        workspaceId: input.payload.workspaceId,
+        cwd: input.payload.cwd,
+        lockOwner: input.payload.lockOwner,
       })
     : dispatchScheduledInstruction(input);
 }
 
 function watchScheduledInstructionSettlement(
-  input: { submissionId: string; sessionId: string },
+  input: {
+    submissionId: string;
+    sessionId: string;
+    workspaceId?: string;
+    runId?: string;
+    lockOwner?: string;
+  },
   paths: RuntimePaths,
   dependencies: SchedulerDependencies,
 ) {
@@ -462,23 +666,114 @@ function watchScheduledInstructionSettlement(
   const readSettlement =
     dependencies.readInstructionSettlement ??
     readScheduledInstructionSettlement;
+  const stopWorkspaceHeartbeat =
+    input.workspaceId && input.runId && input.lockOwner
+      ? startScheduledWorkspaceHeartbeat(
+          {
+            workspaceId: input.workspaceId,
+            runId: input.runId,
+            owner: input.lockOwner,
+          },
+          paths,
+        )
+      : () => undefined;
   const watcher = readSettlement(input)
-    .then((settlement) =>
-      settleScheduledTaskSubmission(
-        { submissionId: input.submissionId, failed: settlement.failed },
+    .then(async (settlement) => {
+      if (input.workspaceId && input.runId && input.lockOwner) {
+        const collected = await collectScheduledWorkspaceResult(
+          {
+            runId: input.runId,
+            workspaceId: input.workspaceId,
+            lockOwner: input.lockOwner,
+            response: settlement.response,
+            failed: settlement.failed,
+          },
+          paths,
+        );
+        if (!collected) return;
+      }
+      if (!input.workspaceId && settlement.response !== undefined) {
+        await addScheduledRunArtifact(
+          {
+            runId: input.runId ?? '',
+            workspaceId: null,
+            kind: 'response',
+            summary: 'Final agent response',
+            content: settlement.response,
+            truncated: false,
+          },
+          paths,
+        );
+      }
+      await settleScheduledTaskSubmission(
+        {
+          submissionId: input.submissionId,
+          failed: settlement.failed,
+          response: settlement.response,
+        },
         paths,
-      ),
-    )
-    .catch((error) => {
+      );
+    })
+    .catch(async (error) => {
+      const message = `Scheduled instruction settlement failed: ${errorMessage(error)}`;
+      if (input.workspaceId && input.runId && input.lockOwner) {
+        await failScheduledWorkspaceRun(
+          {
+            runId: input.runId,
+            workspaceId: input.workspaceId,
+            lockOwner: input.lockOwner,
+            message,
+          },
+          paths,
+        );
+      }
+      await settleScheduledTaskSubmission(
+        { submissionId: input.submissionId, failed: true },
+        paths,
+      );
       console.warn(
         '[neondeck] scheduled instruction settlement watch failed',
         error,
       );
     })
     .finally(() => {
+      stopWorkspaceHeartbeat();
+      if (input.workspaceId && input.runId) {
+        invalidateScheduledWorkspaceRun({
+          workspaceId: input.workspaceId,
+          runId: input.runId,
+        });
+      }
       scheduledSettlementWatchers.delete(key);
     });
   scheduledSettlementWatchers.set(key, watcher);
+}
+
+function startScheduledWorkspaceHeartbeat(
+  input: { workspaceId: string; runId: string; owner: string },
+  paths: RuntimePaths,
+) {
+  const renew = () => {
+    void renewTaskWorkspaceLock(input, paths)
+      .then((renewed) => {
+        if (!renewed) {
+          clearInterval(timer);
+          invalidateScheduledWorkspaceRun(input);
+        }
+      })
+      .catch((error) => {
+        clearInterval(timer);
+        invalidateScheduledWorkspaceRun(input);
+        console.warn(
+          '[neondeck] scheduled workspace lease renewal failed',
+          error,
+        );
+      });
+  };
+  const timer = setInterval(renew, 60_000);
+  timer.unref?.();
+  renew();
+  return () => clearInterval(timer);
 }
 
 function settlementWatchers() {

@@ -52,4 +52,23 @@ describe('production static assets', () => {
     expect(await manifest.text()).toBe('{"name":"Neondeck"}\n');
     expect(await icon.text()).toBe('<svg />\n');
   });
+
+  it('does not expose the trusted scheduled worker through a public Flue router', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'neondeck-private-worker-'));
+    tempRoots.push(root);
+    const staticRoot = join(root, 'web-dist');
+    await mkdir(staticRoot, { recursive: true });
+    await writeFile(join(staticRoot, 'index.html'), '<main>app</main>\n');
+    const app = await createApp({
+      paths: runtimePaths(join(root, 'home')),
+      staticRoot,
+      scheduler: false,
+    });
+
+    const response = await app.request(
+      'http://localhost/api/flue/agents/scheduled-task-worker/forged',
+      { method: 'POST', headers: { host: 'localhost' } },
+    );
+    expect(response.status).toBe(404);
+  });
 });

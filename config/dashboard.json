@@ -188,6 +188,12 @@
             }
           },
           {
+            "id": "scheduled-tasks",
+            "title": "SCHEDULES",
+            "pluginId": "scheduled-tasks",
+            "config": {}
+          },
+          {
             "id": "activity",
             "title": "ACTIVITY",
             "pluginId": "activity",

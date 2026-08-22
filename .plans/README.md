@@ -6,6 +6,8 @@
 
 - `ROADMAP.md` — completed phases, remaining roadmap items, and product decisions.
 - `DEVIATIONS.md` — durable record of intentional departures from roadmap implementation details.
+- `SCHEDULED_TASK_WORKSPACES_PLAN.md` — implemented repository-capable schedules with reusable
+  branches/workspaces, exe.dev as the primary remote, and a provider-neutral custom sandbox seam.
 
 ## Active Or Deferred Work
 

@@ -2,7 +2,7 @@ import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { listNotifications } from './modules/app-state';
 import {
   listExecutionApprovals,
@@ -10,6 +10,8 @@ import {
   requestExecutionApproval,
   resolveExecutionApproval,
   runApprovedExecution,
+  closeWorkspaceExecutionConnection,
+  approvedExecutionResourceIdentity,
 } from './modules/execution';
 import { checkExecutionPolicy } from './modules/execution';
 import {
@@ -20,10 +22,46 @@ import {
 } from './modules/sessions';
 import { runWithFlueExecutionContextForTests } from './modules/flue/execution-context';
 import { ensureRuntimeHome, runtimePaths } from './runtime-home';
+import {
+  insertApproval as insertExecutionApproval,
+  readApproval as readExecutionApproval,
+  updateApprovalResult,
+} from './modules/execution/store';
+
+vi.mock('./sandboxes/exedev', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./sandboxes/exedev')>();
+  return {
+    ...actual,
+    createSshSandbox: async () => ({
+      env: {
+        cwd: '/',
+        resolvePath: (path: string) => path,
+        exec: async (command: string) => {
+          if (command.startsWith('realpath ')) {
+            const candidate = command.match(/-- '([^']+)'/)?.[1] ?? '/';
+            return { stdout: `${candidate}\n`, stderr: '', exitCode: 0 };
+          }
+          return { stdout: '', stderr: '', exitCode: 0 };
+        },
+        readFile: async () => '',
+        readFileBuffer: async () => Buffer.alloc(0),
+        writeFile: async () => undefined,
+        stat: async () => ({ type: 'file', size: 0, mtimeMs: 0 }),
+        readdir: async () => [],
+        exists: async () => true,
+        mkdir: async () => undefined,
+        rm: async () => undefined,
+      },
+      dispose: () => undefined,
+    }),
+  };
+});
 
 const tempRoots: string[] = [];
 
 afterEach(async () => {
+  delete process.env.EXE_VM_HOST;
+  delete process.env.EXE_SSH_KEY;
   await Promise.all(
     tempRoots
       .splice(0)
@@ -32,6 +70,122 @@ afterEach(async () => {
 });
 
 describe('execution actions', () => {
+  it('derives distinct reusable remote HOME identities from physical roots', () => {
+    expect(
+      approvedExecutionResourceIdentity('exe.dev', '/srv/checkouts/one'),
+    ).not.toBe(
+      approvedExecutionResourceIdentity('exe.dev', '/srv/checkouts/two'),
+    );
+    expect(
+      approvedExecutionResourceIdentity('exe.dev', '/srv/checkouts/one'),
+    ).toBe(approvedExecutionResourceIdentity('exe.dev', '/srv/checkouts/one'));
+  });
+  it('binds approval scope to the resolved SSH credential without persisting it', async () => {
+    const paths = runtimePaths(await tempDir());
+    await ensureRuntimeHome(paths);
+    const firstKey = join(paths.home, 'first-key');
+    const secondKey = join(paths.home, 'second-key');
+    await writeFile(firstKey, 'first-private-key');
+    await writeFile(secondKey, 'second-private-key');
+    process.env.EXE_VM_HOST = 'configured.exe.dev';
+    process.env.EXE_SSH_KEY = firstKey;
+    const first = readApproval(
+      await requestExecutionApproval(
+        { command: 'node --version', backend: 'exe.dev' },
+        paths,
+      ),
+    );
+    process.env.EXE_SSH_KEY = secondKey;
+    const second = readApproval(
+      await requestExecutionApproval(
+        { command: 'node --version', backend: 'exe.dev' },
+        paths,
+      ),
+    );
+    const firstScope = first.requestContext as {
+      neondeckExecutionScope: { providerConnectionFingerprint: string };
+    };
+    const secondScope = second.requestContext as {
+      neondeckExecutionScope: { providerConnectionFingerprint: string };
+    };
+    expect(
+      firstScope.neondeckExecutionScope.providerConnectionFingerprint,
+    ).not.toBe(
+      secondScope.neondeckExecutionScope.providerConnectionFingerprint,
+    );
+    expect(JSON.stringify(first.requestContext)).not.toContain(
+      'first-private-key',
+    );
+  });
+  it('audits provider close failures without replacing a completed result', async () => {
+    const paths = runtimePaths(await tempDir());
+    await ensureRuntimeHome(paths);
+    const approval = insertExecutionApproval(paths, {
+      command: 'npm test',
+      backend: 'local',
+      context: 'interactive',
+      risk: 'safe-mutation',
+      policyDecision: 'allow',
+      status: 'executed',
+      result: { exitCode: 0, stdout: 'passed' },
+    });
+    await expect(
+      closeWorkspaceExecutionConnection(
+        {
+          env: {} as never,
+          close: async () => {
+            throw new Error(
+              'close transport failed ghp_abcdefghijklmnopqrstuvwxyz',
+            );
+          },
+        },
+        paths,
+        approval.id,
+      ),
+    ).resolves.toBeUndefined();
+    expect(readExecutionApproval(paths, approval.id)).toMatchObject({
+      status: 'executed',
+      result: {
+        exitCode: 0,
+        stdout: 'passed',
+        transportCloseError: 'close transport failed [redacted-github-token]',
+      },
+    });
+  });
+
+  it('redacts and byte-bounds execution errors and nested durable results', async () => {
+    const paths = runtimePaths(await tempDir());
+    await ensureRuntimeHome(paths);
+    const approval = insertExecutionApproval(paths, {
+      command: 'npm test',
+      backend: 'local',
+      context: 'interactive',
+      risk: 'safe-mutation',
+      policyDecision: 'allow',
+      status: 'approved',
+    });
+    updateApprovalResult(paths, approval.id, {
+      status: 'failed',
+      error: `failed sk-${'a'.repeat(128)}${'🙂'.repeat(20_000)}`,
+      result: {
+        provider: {
+          message: `xoxb-${'b'.repeat(128)}${'界'.repeat(30_000)}`,
+        },
+      },
+    });
+    const stored = readExecutionApproval(paths, approval.id)!;
+    expect(stored.error).toContain('[redacted-api-key]');
+    expect(stored.error).not.toContain('sk-');
+    expect(Buffer.byteLength(stored.error ?? '', 'utf8')).toBeLessThanOrEqual(
+      16 * 1024,
+    );
+    const nested = (stored.result as { provider: { message: string } }).provider
+      .message;
+    expect(nested).toContain('[redacted-token]');
+    expect(nested).not.toContain('xoxb-');
+    expect(Buffer.byteLength(nested, 'utf8')).toBeLessThanOrEqual(64 * 1024);
+  });
+
   it('does not expose approval resolution as a model-callable action', () => {
     expect(neondeckExecutionActions.map((action) => action.name)).toEqual([
       'neondeck_execution_request_approval',
@@ -507,6 +661,8 @@ describe('execution actions', () => {
   });
 
   it('scopes exe.dev approvals to the requested repo/worktree and env intent', async () => {
+    process.env.EXE_VM_HOST = 'configured.exe.dev';
+    process.env.EXE_SSH_KEY = join(process.cwd(), 'package.json');
     const paths = runtimePaths(await tempDir());
     await ensureRuntimeHome(paths);
     const appPath = join(paths.home, 'app');
@@ -614,6 +770,57 @@ describe('execution actions', () => {
     });
   });
 
+  it('uses a custom provider snapshot driver and root for exe.dev approval scope', async () => {
+    process.env.EXE_VM_HOST = 'configured.exe.dev';
+    process.env.EXE_SSH_KEY = join(process.cwd(), 'package.json');
+    const paths = runtimePaths(await tempDir());
+    await ensureRuntimeHome(paths);
+    const appPath = join(paths.home, 'app');
+    await mkdir(appPath, { recursive: true });
+    await writeFile(
+      paths.repos,
+      JSON.stringify({
+        repos: [
+          {
+            id: 'app',
+            github: { owner: 'example', name: 'app' },
+            path: appPath,
+            defaultBranch: 'trunk',
+          },
+        ],
+      }),
+    );
+    await writeFile(
+      paths.config,
+      JSON.stringify({
+        version: 1,
+        workspaces: {
+          providers: {
+            'custom-exe': {
+              driver: 'exe.dev',
+              remoteRoot: '/srv/custom-checkouts',
+            },
+          },
+        },
+        execution: { enabledBackends: ['local', 'custom-exe'] },
+      }),
+    );
+    const request = await requestExecutionApproval(
+      {
+        command: 'node --version',
+        backend: 'custom-exe',
+        repoId: 'app',
+      },
+      paths,
+    );
+    expect(readApproval(request).requestContext).toMatchObject({
+      neondeckExecutionScope: {
+        backend: 'custom-exe',
+        remotePath: '/srv/custom-checkouts/example-app-repo',
+      },
+    });
+  });
+
   it('blocks hardline commands and writes a blocked audit record', async () => {
     const paths = runtimePaths(await tempDir());
     await ensureRuntimeHome(paths);
@@ -656,11 +863,7 @@ describe('execution actions', () => {
       runApprovedExecution({ command: 'pwd', backend: 'exe.dev' }, paths),
     ).resolves.toMatchObject({
       ok: false,
-      requires: ['NEONDECK_TEST_EXE_VM_HOST'],
-      approval: {
-        backend: 'exe.dev',
-        status: 'failed',
-      },
+      requires: ['NEONDECK_TEST_EXE_VM_HOST', 'NEONDECK_TEST_EXE_SSH_KEY'],
     });
   });
 });
