@@ -1,0 +1,312 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+  <style>
+    body { margin: 0; background: #05060a; }
+    .shell, .shell * { box-sizing: border-box; }
+    .shell {
+      --canvas: #0a0b10; --panel: #0c0d12; --field: #070810;
+      --line: rgba(255,255,255,0.07); --line-up: rgba(255,255,255,0.12);
+      --ink: #d7f7ff; --muted: #91a8b0;
+      --primary: #00b7c7; --primary-strong: #69e6ff; --primary-ink: #070810;
+      --good: #4dd6a8; --warning: #f0b95b; --danger: #ff6b7a;
+      font: 14px/1.55 "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
+      color: var(--ink);
+    }
+    .shell[data-theme="light"] {
+      --canvas: #edf5f8; --panel: #f7fbfd; --field: #dbeaef;
+      --line: rgba(20,45,60,0.18); --line-up: rgba(20,45,60,0.26);
+      --ink: #19232e; --muted: #435965;
+      --primary: #007f91; --primary-strong: #005b69; --primary-ink: #edf5f8;
+      --good: #157a5f; --warning: #8a5b00; --danger: #b42335;
+    }
+    .mono { font-family: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace; }
+    .disp { font-family: "Chakra Petch", ui-sans-serif, system-ui, sans-serif; }
+    .shell a { color: var(--primary-strong); text-decoration-color: color-mix(in srgb, var(--primary-strong) 54%, transparent); text-underline-offset: 0.18em; }
+    .shell a:hover { text-decoration-color: currentColor; }
+    .shell button { font: inherit; cursor: pointer; border-radius: 0; }
+    .chip { border: 1px solid var(--line-up); background: transparent; color: var(--muted); padding: 4px 8px; font: 400 10px/1.2 "IBM Plex Mono", ui-monospace, monospace; }
+    .chip:hover { border-color: var(--primary); color: var(--primary); }
+    .chip[data-strong="true"] { border-color: var(--primary); color: var(--primary); }
+    .seg { display: flex; align-items: center; gap: 7px; border: 0; border-right: 1px solid var(--line); background: transparent; padding: 7px 14px; color: var(--muted); font: 400 11px/1.2 "IBM Plex Mono", ui-monospace, monospace; letter-spacing: 0.04em; }
+    .seg:last-child { border-right: 0; }
+    .seg:hover { color: var(--ink); }
+    .seg[data-on="true"] { background: color-mix(in srgb, var(--danger) 16%, transparent); color: var(--danger); box-shadow: inset 0 -2px 0 var(--danger); }
+    .seg span[data-n] { font-variant-numeric: tabular-nums; opacity: 0.72; }
+    .prose p { margin: 0 0 0.9em; }
+    .prose p:last-child { margin-bottom: 0; }
+    .prose code { background: var(--field); padding: 1px 4px; font-family: "IBM Plex Mono", ui-monospace, monospace; font-size: 0.86em; }
+    .card { border: 1px solid var(--line); border-left: 2px solid var(--muted); background: var(--panel); }
+    .card[data-sev="major"] { border-left-color: var(--danger); }
+    .card[data-sev="minor"] { border-left-color: var(--warning); }
+    .card[data-done="true"] { opacity: 0.44; }
+    .card + .card { margin-top: 10px; }
+    .cardhead { display: flex; width: 100%; align-items: center; gap: 10px; border: 0; background: transparent; padding: 12px 14px; text-align: start; color: inherit; }
+    .sev { display: inline-flex; flex: none; min-height: 20px; align-items: center; border: 1px solid currentColor; padding: 2px 6px; font: 600 9px/1 "IBM Plex Mono", ui-monospace, monospace; letter-spacing: 0.04em; color: var(--warning); }
+    .sev[data-sev="major"] { color: var(--danger); }
+    .sev[data-sev="nit"] { color: var(--muted); }
+    .tag { display: inline-flex; flex: none; align-items: center; border: 1px solid var(--line-up); padding: 2px 6px; font: 400 9px/1.35 "IBM Plex Mono", ui-monospace, monospace; letter-spacing: 0.04em; color: var(--muted); }
+    .tag[data-kind="draft"] { border-color: color-mix(in srgb, var(--primary) 60%, transparent); color: var(--primary-strong); }
+    .act { border: 1px solid var(--line-up); background: transparent; color: var(--muted); padding: 4px 9px; font: 400 10px/1.2 "IBM Plex Mono", ui-monospace, monospace; }
+    .act:hover { border-color: var(--primary); color: var(--primary); }
+    .act[data-kind="keep"]:hover { border-color: var(--good); color: var(--good); }
+    .act[data-kind="dismiss"]:hover { border-color: var(--danger); color: var(--danger); }
+    .check { display: flex; width: 100%; align-items: flex-start; gap: 9px; border: 0; background: transparent; padding: 10px 0; text-align: start; color: var(--ink); font-size: 12.5px; line-height: 1.5; }
+    .check + .check { border-top: 1px solid var(--line); }
+    .box { display: flex; width: 13px; height: 13px; flex: none; align-items: center; justify-content: center; margin-top: 3px; border: 1px solid var(--line-up); font-size: 9px; color: var(--primary-ink); }
+    .check[data-done="true"] .box { border-color: var(--good); background: var(--good); }
+    .check[data-done="true"] span[data-label] { color: var(--muted); text-decoration: line-through; }
+    .guidehead { display: flex; align-items: center; gap: 8px; margin: 0; padding: 14px 16px 0; font: 400 9px/1.2 "IBM Plex Mono", ui-monospace, monospace; letter-spacing: 0.12em; color: var(--muted); }
+    .dot { width: 5px; height: 5px; flex: none; background: var(--muted); }
+    .dot[data-tone="good"] { background: var(--good); }
+    .dot[data-tone="risk"] { background: var(--warning); }
+    .dot[data-tone="danger"] { background: var(--danger); }
+    .dot[data-tone="primary"] { background: var(--primary); }
+    .ghost { border: 0; background: transparent; color: var(--muted); padding: 6px 4px; font: 400 10px/1.2 "IBM Plex Mono", ui-monospace, monospace; text-decoration: underline dotted; text-underline-offset: 3px; }
+    .ghost:hover { color: var(--danger); }
+  </style>
+</helmet>
+<div class="shell" data-theme="{{theme}}" style="display: flex; width: 1440px; height: 920px; flex-direction: column; border: 1px solid var(--line-up); background: var(--canvas); overflow: hidden;">
+
+  <header style="display: flex; min-height: 44px; align-items: center; justify-content: space-between; gap: 16px; border-bottom: 1px solid var(--line); background: var(--panel); padding: 8px 14px;">
+    <div style="min-width: 0;">
+      <p class="mono" style="margin: 0; font-size: 10px; letter-spacing: 0.12em; color: var(--primary);">REVIEW BRIEFING &middot; PANDEMICSYN/NEONDECK#315 &middot; 4F2C9AB</p>
+      <h1 class="disp" style="margin: 1px 0 0; font-size: 16px; font-weight: 600; color: var(--ink);">Fix Reviews panel per-PR pending state and show PR author</h1>
+    </div>
+    <div class="mono" style="display: flex; flex: none; align-items: center; gap: 8px; font-size: 10px;">
+      <button class="chip" type="button">pop out</button>
+      <button class="chip" type="button">workbench</button>
+      <button class="chip" data-strong="true" type="button">close</button>
+    </div>
+  </header>
+
+  <div style="display: flex; align-items: center; gap: 14px; border-bottom: 1px solid var(--line); background: color-mix(in srgb, var(--danger) 9%, var(--panel)); padding: 12px 14px;">
+    <span class="mono" style="display: inline-flex; flex: none; align-items: center; gap: 7px; border: 1px solid var(--danger); padding: 6px 10px; font-size: 10px; font-weight: 600; letter-spacing: 0.08em; color: var(--danger);">! NEEDS A HUMAN</span>
+    <p style="margin: 0; min-width: 0; font-size: 13.5px; line-height: 1.5;">This one needs you. Two correctness findings in shared mutation state I couldn't fully trace, and the new test doesn't reach the path I'm worried about.</p>
+    <span class="mono" style="flex: none; margin-inline-start: auto; font-size: 10px; color: var(--muted);">reviewed 4f2c9ab &middot; 12:04</span>
+  </div>
+
+  <div style="display: flex; align-items: stretch; justify-content: space-between; gap: 16px; border-bottom: 1px solid var(--line); background: var(--panel);">
+    <div style="display: flex; align-items: center; padding: 0 14px;">
+      <span class="mono" style="font-size: 11px; color: var(--muted);">5 findings &middot; 2 of them blockers &middot; 3 drafted as comments &middot; 9 files &middot; +733 / &minus;80</span>
+    </div>
+    <div style="display: flex; align-items: stretch; border-left: 1px solid var(--line);">
+      <sc-for list="{{filters}}" as="filter" hint-placeholder-count="3">
+        <button class="seg" data-on="{{filter.on}}" onClick="{{filter.go}}" type="button">
+          {{filter.label}}<span data-n="">{{filter.count}}</span>
+        </button>
+      </sc-for>
+    </div>
+  </div>
+
+  <div style="display: grid; min-height: 0; flex: 1 1 auto; grid-template-columns: minmax(0, 1fr) 340px;">
+
+    <div style="min-height: 0; overflow: auto; padding: 26px 30px 30px;">
+
+      <section style="max-width: 78ch;">
+        <p class="mono" style="margin: 0 0 12px; font-size: 9px; letter-spacing: 0.14em; color: var(--muted);">WHAT MAKES THIS HARD</p>
+        <div class="prose" style="font-size: 16.5px; line-height: 1.7; text-wrap: pretty;">
+          <p>The fix itself is right: a panel-wide <code>pending</code> flag becomes per-review state, so archiving one review stops disabling every other row. That part I'm confident about.</p>
+          <p>What I can't settle is the shape around it. Three call sites share that state and only two were converted &mdash; <code>onReconcile</code> still reads the old flag. The new 349-line concurrent test is genuinely good, but it drives archive and restart, not reconcile, so the one path I'd want covered is the one that isn't.</p>
+          <p>Underneath that, per-row state now lives in the row component. Anything that re-keys the list on refetch drops it mid-flight, and I couldn't prove from the code whether the refetch preserves keys.</p>
+        </div>
+        <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 20px;">
+          <a class="mono" href="#" style="display: inline-flex; min-height: 32px; align-items: center; border: 1px solid var(--primary); padding: 6px 12px; font-size: 10px; font-weight: 600; text-decoration: none;">Open PR</a>
+          <span class="mono" style="font-size: 10px; color: var(--muted);">open &middot; base main &middot; head 4f2c9ab &middot; author pandemicsyn</span>
+        </div>
+      </section>
+
+      <div style="display: flex; align-items: baseline; gap: 12px; margin: 30px 0 14px; border-top: 1px solid var(--line); padding-top: 20px;">
+        <h2 class="mono" style="margin: 0; font-size: 12px; font-weight: 600; letter-spacing: 0.1em; color: var(--danger);">START HERE</h2>
+        <p style="margin: 0; font-size: 11px; color: var(--muted);">{{queueNote}}</p>
+        <span class="mono" style="margin-inline-start: auto; font-size: 10px; font-variant-numeric: tabular-nums; color: var(--muted);">{{decidedLabel}}</span>
+      </div>
+
+      <sc-for list="{{queue}}" as="item" hint-placeholder-count="2">
+        <div class="card" data-done="{{item.done}}" data-sev="{{item.severity}}">
+          <button class="cardhead" onClick="{{item.toggle}}" type="button">
+            <span class="sev" data-sev="{{item.severity}}">{{item.severityLabel}}</span>
+            <span class="mono" style="overflow: hidden; min-width: 0; flex: 1 1 auto; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; color: var(--primary-strong);">{{item.location}}</span>
+            <span class="tag" data-kind="{{item.kind}}">{{item.kindLabel}}</span>
+            <span class="mono" style="flex: none; font-size: 10px; color: var(--muted);">{{item.caret}}</span>
+          </button>
+          <div style="padding: 0 14px 12px 14px;">
+            <p style="margin: 0; font-size: 14px; line-height: 1.6;">{{item.summary}}</p>
+            <sc-if value="{{item.open}}" hint-placeholder-val="{{true}}">
+              <div style="margin-top: 12px; border-top: 1px solid var(--line); padding-top: 11px;">
+                <p class="mono" style="margin: 0 0 5px; font-size: 9px; letter-spacing: 0.08em; color: var(--muted);">SUGGESTED FIX &middot; {{item.confidence}}</p>
+                <p style="margin: 0; font-size: 13px; line-height: 1.6; color: var(--muted);">{{item.fix}}</p>
+              </div>
+            </sc-if>
+            <sc-if value="{{item.editing}}" hint-placeholder-val="{{true}}">
+              <div style="margin-top: 12px; border: 1px solid var(--primary); background: var(--field); padding: 10px 12px;">
+                <p class="mono" style="margin: 0 0 7px; font-size: 9px; letter-spacing: 0.08em; color: var(--muted);">YOUR COMMENT &middot; POSTS ON {{item.locationShort}}</p>
+                <div contenteditable="true" suppressContentEditableWarning="{{true}}" style="min-height: 58px; outline: none; font-size: 13px; line-height: 1.6;">{{item.draft}}</div>
+              </div>
+            </sc-if>
+            <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 7px; margin-top: 12px;">
+              <button class="act" type="button">open in diff</button>
+              <sc-if value="{{item.showEdit}}" hint-placeholder-val="{{true}}">
+                <button class="act" data-kind="keep" onClick="{{item.edit}}" type="button">{{item.editLabel}}</button>
+              </sc-if>
+              <sc-if value="{{item.showDismiss}}" hint-placeholder-val="{{true}}">
+                <button class="act" data-kind="dismiss" onClick="{{item.dismiss}}" type="button">dismiss</button>
+              </sc-if>
+              <sc-if value="{{item.isDone}}" hint-placeholder-val="{{true}}">
+                <button class="act" onClick="{{item.undo}}" style="border-color: var(--danger); color: var(--danger);" type="button">dismissed &middot; undo</button>
+              </sc-if>
+              <sc-if value="{{item.noLine}}" hint-placeholder-val="{{true}}">
+                <span class="mono" style="font-size: 10px; color: var(--muted);">file-level note &middot; cannot be drafted as a comment</span>
+              </sc-if>
+            </div>
+          </div>
+        </div>
+      </sc-for>
+
+    </div>
+
+    <aside style="display: flex; min-height: 0; flex-direction: column; border-left: 1px solid var(--line); background: var(--panel);" aria-label="Reviewer guidance">
+      <div style="border-bottom: 1px solid var(--line); padding: 14px 16px;">
+        <p class="mono" style="margin: 0; font-size: 10px; font-weight: 600; letter-spacing: 0.12em; color: var(--danger);">WHY I'M ESCALATING</p>
+        <p style="margin: 5px 0 0; font-size: 11.5px; line-height: 1.5; color: var(--muted);">These two are the whole reason for the verdict. If you can settle them, the rest is routine.</p>
+      </div>
+      <div style="min-height: 0; flex: 1 1 auto; overflow: auto;">
+        <p class="guidehead" style="padding-top: 14px;"><span class="dot" data-tone="risk"></span>RISKS I COULD NOT SETTLE<span style="margin-inline-start: auto; font-variant-numeric: tabular-nums;">2</span></p>
+        <div style="padding: 10px 16px 16px;">
+          <sc-for list="{{risks}}" as="risk" hint-placeholder-count="2">
+            <div style="border-left: 2px solid var(--warning); padding: 2px 0 2px 10px; margin-bottom: 14px;">
+              <p style="margin: 0; font-size: 12.5px; line-height: 1.55;">{{risk.text}}</p>
+              <a class="mono" href="#" style="display: inline-block; margin-top: 5px; font-size: 10px;">{{risk.jump}}</a>
+            </div>
+          </sc-for>
+        </div>
+
+        <div style="border-top: 1px solid var(--line); margin: 4px 16px 20px; padding-top: 16px;">
+          <p class="mono" style="margin: 0; font-size: 9px; letter-spacing: 0.12em; color: var(--muted);">GOT A QUESTION?</p>
+          <p style="margin: 7px 0 0; font-size: 12.5px; line-height: 1.55; color: var(--muted);">The workbench has the full diff and the review chat. Asking there keeps the answer next to the code it is about.</p>
+          <a class="mono" href="#" style="display: inline-flex; min-height: 32px; align-items: center; margin-top: 10px; border: 1px solid var(--line-up); padding: 6px 10px; font-size: 10px; text-decoration: none;">Ask Neon in the workbench &rarr;</a>
+        </div>
+      </div>
+    </aside>
+  </div>
+
+  <sc-if value="{{overriding}}" hint-placeholder-val="{{true}}">
+    <div style="display: flex; align-items: flex-start; gap: 14px; border-top: 1px solid var(--danger); background: color-mix(in srgb, var(--danger) 12%, var(--panel)); padding: 12px 14px;">
+      <span class="mono" style="flex: none; font-size: 10px; font-weight: 600; letter-spacing: 0.06em; color: var(--danger);">HOLD ON</span>
+      <div style="min-width: 0; flex: 1 1 auto;">
+        <p style="margin: 0; font-size: 13px; line-height: 1.5;">You're overriding a needs-a-human recommendation on a change with two correctness findings I couldn't settle. Approving submits all three drafted comments alongside the approval, as you.</p>
+        <div style="margin-top: 10px; border: 1px solid var(--line-up); background: var(--field); padding: 9px 11px;">
+          <p class="mono" style="margin: 0 0 6px; font-size: 9px; letter-spacing: 0.08em; color: var(--muted);">NOTE WITH YOUR APPROVAL &middot; OPTIONAL &middot; POSTS AS THE REVIEW BODY</p>
+          <div contenteditable="true" suppressContentEditableWarning="{{true}}" style="min-height: 34px; outline: none; font-size: 13px; line-height: 1.6;">lgtm — just remember to convert the reconcile call site before the next one lands.</div>
+        </div>
+      </div>
+      <div style="display: flex; flex: none; flex-direction: column; gap: 8px;">
+        <button class="act" style="border-color: var(--danger); color: var(--danger);" type="button">approve anyway &middot; submit note + 3 comments</button>
+        <button class="act" onClick="{{cancelOverride}}" type="button">cancel</button>
+      </div>
+    </div>
+  </sc-if>
+
+  <footer style="display: flex; min-height: 52px; align-items: center; justify-content: space-between; gap: 16px; border-top: 1px solid var(--line); background: var(--panel); padding: 8px 14px;">
+    <div style="display: flex; align-items: center; gap: 12px;">
+      <div style="width: 140px; height: 3px; background: color-mix(in srgb, var(--line) 90%, transparent);">
+        <div style="width: {{decidedPct}}; height: 100%; background: var(--danger); transition: width 180ms cubic-bezier(0.22, 1, 0.36, 1);"></div>
+      </div>
+      <span class="mono" style="font-size: 10px; color: var(--muted); font-variant-numeric: tabular-nums;">{{footerLabel}}</span>
+    </div>
+    <div style="display: flex; align-items: center; gap: 12px;">
+      <button class="ghost" onClick="{{startOverride}}" type="button">Approve anyway</button>
+      <a class="mono" href="#" style="display: inline-flex; min-height: 36px; align-items: center; border: 1px solid var(--primary); padding: 7px 14px; font-size: 11px; font-weight: 600; letter-spacing: 0.04em; text-decoration: none;">Open workbench &rarr;</a>
+    </div>
+  </footer>
+</div>
+</x-dc>
+<script data-dc-script data-props='{"theme":{"editor":"enum","options":["dark","light"],"default":"dark","section":"Theme"},"$preview":{"width":1440,"height":920}}'>
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    this.state = {
+      filter: 'blockers',
+      open: { 'f1': true },
+      dismissed: {},
+      editing: {},
+      overriding: false,
+    };
+  }
+
+  items() {
+    return [
+      { id: 'f1', tier: 0, severity: 'major', severityLabel: 'MAJOR', kind: 'draft', kindLabel: 'draft comment', confidence: 'high confidence', location: 'web/src/plugins/ReviewsPanel.tsx:118', locationShort: 'ReviewsPanel.tsx:118', summary: 'onReconcile still reads the shared panel flag, so recovering one submission disables archive on every other row — the exact bug this PR set out to fix, one call site down.', fix: 'Key the reconcile mutation by review id the same way archive and restart now are.', draft: 'This call site still reads the shared flag. Archive and restart were converted to per-review keys but reconcile was not, so recovering one submission will still disable every other row.' },
+      { id: 'f2', tier: 0, severity: 'major', severityLabel: 'MAJOR', kind: 'draft', kindLabel: 'draft comment', confidence: 'medium confidence', location: 'shared/report-deck-view.tsx:97', locationShort: 'report-deck-view.tsx:97', summary: 'restoreFocusRef is armed before setActiveIndex, so two fast navigations in one frame can pull focus out of the footer.', fix: 'Capture the containment check and the target index together, then apply once per commit.', draft: 'Arming the ref before the state update means two navigations in one frame both pass the containment check, and the second steals focus from the footer button you are still on.' },
+      { id: 'f3', tier: 1, severity: 'minor', severityLabel: 'MINOR', kind: 'draft', kindLabel: 'draft comment', confidence: 'high confidence', location: 'web/src/api/reviews.ts:44', locationShort: 'reviews.ts:44', summary: 'author is optional on the record type but read unguarded at the row call site.', fix: 'Fall back to the repo owner, or make the field required end to end.', draft: 'This is optional on the type but read without a guard in the row. Either give it a fallback or make it required end to end.' },
+      { id: 'f4', tier: 1, severity: 'minor', severityLabel: 'MINOR', kind: 'note', kindLabel: 'note only', confidence: 'medium confidence', location: 'web/src/plugins/ReviewsPanel.concurrent.test.tsx:210', locationShort: 'ReviewsPanel.concurrent.test.tsx:210', summary: 'The test asserts on button order rather than accessible name, so it keeps passing if the labels swap.', fix: 'Query by role and name instead of index.', draft: 'Querying by index means this passes even if the labels swap. Query by role and name instead.' },
+      { id: 'f5', tier: 2, severity: 'nit', severityLabel: 'NIT', kind: 'note', kindLabel: 'note only', confidence: 'low confidence', line: null, location: 'shared/report-deck-styles.ts', locationShort: 'report-deck-styles.ts', summary: 'In dark theme --rd-panel and --rd-canvas resolve to the same value, so the slide frame reads as a bare hairline.', fix: 'Lift the panel one step, or drop the frame border.', draft: 'These resolve to the same value in dark, so the frame border is doing all the work on its own.' },
+    ];
+  }
+
+  renderVals() {
+    const all = this.items();
+    const tiers = { blockers: 0, look: 1, all: 2 };
+    const activeTier = tiers[this.state.filter];
+    const queue = all.filter((item) => item.tier <= activeTier);
+    const clearedCount = queue.filter((item) => Boolean(this.state.dismissed[item.id])).length;
+
+    return {
+      theme: this.props.theme ?? 'dark',
+      filters: [
+        { label: 'BLOCKERS', count: '2', on: this.state.filter === 'blockers' ? 'true' : 'false', go: () => this.setState({ filter: 'blockers' }) },
+        { label: 'WORTH A LOOK', count: '4', on: this.state.filter === 'look' ? 'true' : 'false', go: () => this.setState({ filter: 'look' }) },
+        { label: 'EVERYTHING', count: '5', on: this.state.filter === 'all' ? 'true' : 'false', go: () => this.setState({ filter: 'all' }) },
+      ],
+      queueNote: this.state.filter === 'blockers'
+        ? 'the two findings behind the verdict'
+        : 'sorted by what blocks you, not by file order',
+      decidedLabel: `${clearedCount} of ${queue.length} cleared`,
+      decidedPct: `${queue.length === 0 ? 0 : Math.round((clearedCount / queue.length) * 100)}%`,
+      footerLabel: `${clearedCount} of ${queue.length} cleared · 3 comments drafted · no verdict chosen`,
+      overriding: this.state.overriding,
+      startOverride: () => this.setState({ overriding: true }),
+      cancelOverride: () => this.setState({ overriding: false }),
+      queue: queue.map((item) => {
+        const open = Boolean(this.state.open[item.id]);
+        const editing = Boolean(this.state.editing[item.id]);
+        const dismissed = Boolean(this.state.dismissed[item.id]);
+        return {
+          ...item,
+          open,
+          editing,
+          isDone: dismissed,
+          done: dismissed ? 'true' : 'false',
+          showEdit: item.kind === 'draft' || item.line !== null,
+          showDismiss: item.kind === 'draft',
+          noLine: item.kind === 'note' && item.line === null,
+          editLabel: item.kind === 'draft'
+            ? (editing ? 'done editing' : 'edit comment')
+            : (editing ? 'done editing' : 'draft a comment from this'),
+          caret: open ? '−' : '+',
+          toggle: () => this.setState({ open: { ...this.state.open, [item.id]: !open } }),
+          edit: () => this.setState({
+            editing: { ...this.state.editing, [item.id]: !editing },
+            open: { ...this.state.open, [item.id]: true },
+          }),
+          dismiss: () => this.setState({ dismissed: { ...this.state.dismissed, [item.id]: true } }),
+          undo: () => this.setState({ dismissed: { ...this.state.dismissed, [item.id]: false } }),
+        };
+      }),
+      risks: [
+        { text: 'Three call sites share the pending state and only two were converted. I can see the third; I cannot see whether it matters at runtime.', jump: 'ReviewsPanel.tsx:118' },
+        { text: 'Per-row state lives in the row component, so a list re-key on refetch drops it mid-flight. I could not prove the refetch preserves keys.', jump: 'ReviewsPanel.tsx:564' },
+      ],
+    };
+  }
+}
+</script>
+</body>
+</html>
