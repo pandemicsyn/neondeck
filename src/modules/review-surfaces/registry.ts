@@ -501,8 +501,7 @@ export class ReviewSurfaceRegistry {
     const supportedSource =
       input.destination === 'github-review-draft'
         ? surface.source.kind === 'github-pr'
-        : surface.source.kind === 'prepared-diff' ||
-          surface.source.kind === 'kilo-result';
+        : surface.source.kind === 'prepared-diff';
     if (!supportedSource) {
       return {
         ok: false,

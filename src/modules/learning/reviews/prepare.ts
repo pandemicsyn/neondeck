@@ -42,7 +42,6 @@ import {
 import {
   listHandledPrEventsForReview,
   listPrLearningMemories,
-  listRelatedKiloResultSummaries,
   listRelatedNotificationSummaries,
   listRelatedPreparedDiffSummaries,
   listRelatedVerificationSummaries,
@@ -338,7 +337,6 @@ export async function preparePrBatchLearningReview(
     paths,
   );
   const notifications = listRelatedNotificationSummaries(handledEvents, paths);
-  const kiloResults = listRelatedKiloResultSummaries(handledEvents, paths);
   const automationHealth = await readAutomationHealth(paths);
   const skillSnippets = await readLearningSkillSnippets(paths, {
     handledEvents,
@@ -346,7 +344,6 @@ export async function preparePrBatchLearningReview(
     preparedDiffs,
     verificationResults,
     notifications,
-    kiloResults,
     automationHealth,
   });
   const models = readAgentModelSelectionSync(paths);
@@ -366,7 +363,6 @@ export async function preparePrBatchLearningReview(
     preparedDiffs,
     verificationResults,
     notifications,
-    kiloResults,
     automationHealth,
     activeMemories: summarizeMemories(memories),
     skillSnippets,

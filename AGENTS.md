@@ -102,7 +102,7 @@ npm run docs:build
 - Format: Prettier with Astro plugin.
 - Tests: Vitest.
 - `npm run test` runs the fast unit suite.
-- `npm run test:integration` runs the slower git/worktree/Kilo/autopilot workflow suites.
+- `npm run test:integration` runs the slower git/worktree/autopilot workflow suites.
 - `npm run test:all` runs every Vitest suite.
 - `npm run check` is intended to stay fast and uses the unit suite.
 - `npm run verify` includes the full Vitest suite, format check, and full build.

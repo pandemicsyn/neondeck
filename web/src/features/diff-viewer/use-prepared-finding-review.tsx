@@ -136,7 +136,7 @@ export function usePreparedFindingReview({
         sourceId: source.id,
         revisionKey,
         findingIds: [finding.id],
-        reason: `Dismissed locally from the ${source.kind === 'kilo-result' ? 'Kilo-result' : 'prepared-diff'} review surface.`,
+        reason: 'Dismissed locally from the prepared-diff review surface.',
       });
     },
     onError: (error) => setStatus(queryErrorMessage(error)),
@@ -342,10 +342,7 @@ export function usePreparedFindingReview({
   return {
     annotationsByPath,
     inspector,
-    inspectorLabel:
-      source.kind === 'kilo-result'
-        ? 'Kilo-result findings'
-        : 'Prepared-diff findings',
+    inspectorLabel: 'Prepared-diff findings',
     onReviewSurfaceFindingsChange: (
       _surfaceId: string,
       nextFindings: NeonReviewFinding[],

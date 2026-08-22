@@ -936,15 +936,6 @@ export type RepoDiffResponse = {
   requires?: string[];
 };
 
-export type KiloTaskDiffResponse = {
-  ok: boolean;
-  action: string;
-  changed: boolean;
-  message: string;
-  diff?: KiloTaskRecord['diff'];
-  errors?: string[];
-};
-
 export type WorktreeRecord = {
   id: string;
   repoId: string;
@@ -1026,120 +1017,6 @@ export type WorktreesResponse = {
   fetchedAt: string;
 };
 
-export type KiloTaskStatus =
-  | 'running'
-  | 'succeeded'
-  | 'failed'
-  | 'cancelled'
-  | 'needs-reconcile'
-  | 'needs-review'
-  | 'ready-to-verify'
-  | 'ready-to-push'
-  | 'discarded'
-  | 'unknown';
-
-export type KiloChildSessionNode = {
-  id: string;
-  title: string;
-  status: 'unknown' | 'active' | 'completed';
-  latestSummary: string | null;
-  eventCount: number;
-  collapsed: boolean;
-};
-
-export type KiloNotificationFact = {
-  id: string;
-  taskId: string;
-  state:
-    | 'started'
-    | 'progress'
-    | 'waiting-approval'
-    | 'completed'
-    | 'failed'
-    | 'timed-out'
-    | 'needs-review'
-    | 'verified'
-    | 'promote-blocked'
-    | 'promoted';
-  level: 'info' | 'ready' | 'attention' | 'urgent';
-  title: string;
-  message: string;
-  readAt: string | null;
-  resolvedAt: string | null;
-  occurrenceCount: number;
-  updatedAt: string;
-};
-
-export type KiloResultPlaceholder = {
-  type: 'review' | 'verification' | 'promotion';
-  status: 'pending' | 'blocked' | 'unavailable';
-  workflow: 'review_kilo_result' | 'verify_kilo_result' | 'promote_kilo_result';
-  reason: string;
-};
-
-export type KiloTaskRecord = {
-  id: string;
-  title: string;
-  prompt: string;
-  repoId: string;
-  repoFullName: string;
-  worktreeId: string | null;
-  lockId: string | null;
-  cwd: string;
-  mode: 'draft-fix' | 'patch-proposal' | 'direct-edit';
-  status: KiloTaskStatus;
-  explicitUserRequest: boolean;
-  autoEnabled: boolean;
-  cliPath: string;
-  args: string[];
-  pid: number | null;
-  processStartedAt: string | null;
-  rootSessionId: string | null;
-  childSessionIds: string[];
-  rawLogPath: string | null;
-  summary: string | null;
-  exitCode: number | null;
-  error: string | null;
-  createdAt: string;
-  updatedAt: string;
-  completedAt: string | null;
-  changedFiles?: string[];
-  diff?: {
-    ok: boolean;
-    repo: string;
-    path: string;
-    baseRef: string;
-    files: Array<{
-      path: string;
-      status: string;
-      additions: number;
-      deletions: number;
-    }>;
-    fileCount: number;
-    additions: number;
-    deletions: number;
-    binaryFiles: number;
-    error?: string;
-  };
-  verificationState?: string;
-  reviewClassification?: string | null;
-  promotionState?: string;
-  preparedDiffId?: string | null;
-  pendingApprovals?: unknown[];
-  notificationFacts?: KiloNotificationFact[];
-  latestNotificationState?: KiloNotificationFact['state'] | null;
-  resultPlaceholders?: KiloResultPlaceholder[];
-};
-
-export type KiloTasksResponse = {
-  ok: boolean;
-  action: 'kilo_tasks_list';
-  changed: boolean;
-  message: string;
-  tasks: KiloTaskRecord[];
-  fetchedAt: string;
-};
-
 export type PreparedDiffRecord = {
   id: string;
   repoId: string;
@@ -1153,16 +1030,6 @@ export type PreparedDiffRecord = {
   verificationStatus: string;
   sourceOfTruth: 'worktree';
   summary: string;
-  revisionRun: {
-    kiloTaskId: string | null;
-    reason: string | null;
-    startedAt: string | null;
-    completedAt: string | null;
-    outcome: string | null;
-    status: string | null;
-    title: string | null;
-    cwd: string | null;
-  } | null;
   updatedAt: string;
 };
 
@@ -1658,10 +1525,7 @@ export type NotificationRecord = {
 
 export type NotificationResponse = {
   items: NotificationRecord[];
-  policy: Record<
-    NotificationLevel | 'reconcile' | 'autopilot' | 'kilo',
-    string
-  >;
+  policy: Record<NotificationLevel | 'reconcile' | 'autopilot', string>;
   fetchedAt: string;
 };
 

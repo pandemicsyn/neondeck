@@ -113,7 +113,7 @@ Neon commands can be run from dashboard controls, typed into chat, or chosen
 from the chat input's slash-command suggestions.
 
 Common commands include `/repo-status`, `/review-queue`, `/review-pr <ref>`,
-`/fix-ci [ref]`, `/explain-ci [--report] [ref]`, `/summarize-pr [ref]`,
+`/explain-ci [--report] [ref]`, `/summarize-pr [ref]`,
 `/draft-pr-description [repo]`, `/prepare-pr [repo]`, `/review-local [repo]`,
 `/briefing`, `/reasoning [level]`, `/memory ...`, `/dev-doctor`,
 `/watch-pr <ref>`.
@@ -172,7 +172,7 @@ npm run verify
 `npm run check` is the fast local loop: lint, import-layer check, database
 migration check, typecheck, and the unit Vitest suite. The slower
 serial Git/performance/docs-drift group lives under `npm run test:git`; the
-operation-heavy worktree/Kilo/autopilot group lives under
+operation-heavy worktree/autopilot group lives under
 `npm run test:integration`. `npm run test:all` runs every Vitest suite.
 `npm run verify` keeps the full pre-release path: lint, import-layer check,
 database migration check, typecheck, all tests, production builds, npm package

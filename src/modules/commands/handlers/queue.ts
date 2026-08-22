@@ -4,7 +4,7 @@ import type {
   GitHubQueueIssue,
 } from '../../github';
 import { fetchGitHubLogin, fetchPullRequestQueue } from '../../github';
-import { createCiFailureDossierReport, fixPrCiRun } from '../../autopilot';
+import { createCiFailureDossierReport } from '../../autopilot';
 import { readRepoRegistrySnapshot } from '../../repos';
 import { listPrWatchRecords } from '../../watches';
 import { startPrReview } from '../../pr-reviews';
@@ -118,124 +118,6 @@ export async function invokeReviewPrWorkflow(input: {
   return admitPrReviewAssist(input);
 }
 
-export async function fixCiCommand(
-  command: ParsedNeonCommand,
-  paths: RuntimePaths,
-  dependencies: CommandDependencies,
-): Promise<NeonCommandResult> {
-  const explicitRef = command.args.join(' ').trim();
-  if (explicitRef) {
-    const parsed = parsePullRequestRef(explicitRef);
-    if (!parsed) {
-      return failedCommand(
-        command.name,
-        command.raw,
-        'Expected a PR reference like repo#123, owner/repo#123, or a GitHub pull request URL.',
-        { requires: ['pr'] },
-      );
-    }
-    return runFixCiOperation(
-      command,
-      `${parsed.repo}#${parsed.number}`,
-      paths,
-      dependencies,
-    );
-  }
-
-  const queue = await readReviewQueue(paths, dependencies);
-  if (!queue.ok) {
-    return needsConfigCommand(command.name, command.raw, queue.message, {
-      requires: queue.requires,
-      errors: queue.errors,
-    });
-  }
-
-  const selected = selectPullRequest(queue.queue, command.args, {
-    prefer: isCiFixCandidate,
-  });
-  if (!selected.ok) {
-    return failedCommand(command.name, command.raw, selected.message, {
-      requires: selected.requires,
-      data: {
-        available: summarizePullRequests(queue.queue.items).slice(0, 10),
-      },
-    });
-  }
-  if (!isCiFixCandidate(selected.item)) {
-    return failedCommand(
-      command.name,
-      command.raw,
-      `${selected.item.repo}#${selected.item.number} does not have failing or unknown CI checks.`,
-      {
-        requires: ['failingChecks'],
-        data: { pr: summarizePullRequests([selected.item])[0] },
-      },
-    );
-  }
-
-  const ref = `${selected.item.repo}#${selected.item.number}`;
-  return runFixCiOperation(command, ref, paths, dependencies);
-}
-
-async function runFixCiOperation(
-  command: ParsedNeonCommand,
-  ref: string,
-  paths: RuntimePaths,
-  dependencies: CommandDependencies,
-): Promise<NeonCommandResult> {
-  const run = await (dependencies.runFixCi ?? fixPrCiRun)({ ref }, paths);
-  if (!run.ok) {
-    const details = {
-      errors: 'errors' in run ? run.errors : undefined,
-      requires: 'requires' in run ? run.requires : undefined,
-      data: {
-        operation: 'fix-pr-ci',
-        ref,
-        result: run.data,
-        operationSummaryId: workflowSummaryId(run),
-      },
-    };
-    return details.requires?.includes('GITHUB_TOKEN')
-      ? needsConfigCommand(command.name, command.raw, run.message, details)
-      : failedCommand(command.name, command.raw, run.message, details);
-  }
-
-  const operationSummaryId = workflowSummaryId(run);
-  return completedCommand(
-    command.name,
-    command.raw,
-    `Started CI fix operation${operationSummaryId ? ` ${operationSummaryId}` : ''} for ${ref}.`,
-    {
-      operation: 'fix-pr-ci',
-      ...(operationSummaryId
-        ? { runId: operationSummaryId, operationSummaryId }
-        : {}),
-      ref,
-      queued: objectString(run.data, 'outcome') === 'kilo-started',
-      result: run.data,
-      reportUrlHint: '/reports',
-      trustBoundary:
-        'The operation can create local reports, a managed local worktree, a Kilo task, and a prepared diff only; it does not push, comment, or submit a GitHub review.',
-      assistantBrief:
-        'Track the returned operation summary id. The dossier report is local; any code changes must pass through the prepared-diff review loop.',
-    },
-  );
-}
-
-function workflowSummaryId(result: { workflowSummary?: unknown }) {
-  if (!result.workflowSummary || typeof result.workflowSummary !== 'object') {
-    return null;
-  }
-  const id = 'id' in result.workflowSummary ? result.workflowSummary.id : null;
-  return typeof id === 'string' && id.trim() ? id : null;
-}
-
-function objectString(value: unknown, key: string) {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
-  const item = key in value ? value[key as keyof typeof value] : null;
-  return typeof item === 'string' ? item : null;
-}
-
 export async function explainCiCommand(
   command: ParsedNeonCommand,
   paths: RuntimePaths,
@@ -270,10 +152,7 @@ export async function explainCiCommand(
   if (options.report) {
     const writer =
       dependencies.createCiFailureDossierReport ?? createCiFailureDossierReport;
-    const report = await writer(
-      { ref: `${pr.repo}#${pr.number}`, reportOnly: true },
-      paths,
-    );
+    const report = await writer({ ref: `${pr.repo}#${pr.number}` }, paths);
     if (!report.ok) {
       const requires = 'requires' in report ? report.requires : undefined;
       const errors = 'errors' in report ? report.errors : undefined;

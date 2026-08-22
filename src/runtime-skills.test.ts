@@ -66,16 +66,6 @@ describe('runtime skills', () => {
           status: 'active',
         }),
         expect.objectContaining({
-          id: 'neon-ci-fix',
-          source: 'user',
-          status: 'active',
-        }),
-        expect.objectContaining({
-          id: 'neon-docs-fix',
-          source: 'user',
-          status: 'active',
-        }),
-        expect.objectContaining({
           id: 'neon-issue-triage',
           source: 'user',
           status: 'active',

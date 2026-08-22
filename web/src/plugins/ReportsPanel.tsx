@@ -111,7 +111,7 @@ function ReportRow({ report }: { report: ReportRecord }) {
             title={
               stageDocs.error
                 ? queryErrorMessage(stageDocs.error)
-                : 'Stage a docs-only Kilo fix'
+                : 'Stage a docs-only fix'
             }
             type="button"
           >

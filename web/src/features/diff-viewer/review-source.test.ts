@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest';
 import type {
   PreparedDiffRecord,
   GitHubPullRequest,
-  KiloTaskRecord,
   LearningCandidate,
   RepoEditEvent,
 } from '../../api';
@@ -10,7 +9,6 @@ import { resolvedReviewRevision } from '../../../../shared/review-source';
 import type { DiffFilePatch } from './types';
 import {
   githubPrReviewSource,
-  kiloResultReviewSource,
   preparedDiffReviewSource,
   repoEditEventReviewSource,
   reviewSourceDataAttributes,
@@ -70,33 +68,16 @@ describe('review source adapters', () => {
     });
   });
 
-  it('uses content-addressed worktree revisions for prepared and Kilo sources', () => {
+  it('uses content-addressed worktree revisions for prepared sources', () => {
     const prepared = preparedDiffReviewSource(
       preparedDiff(),
       [unloadedFile],
       worktreeRevision,
     );
-    const kilo = kiloResultReviewSource(
-      kiloTask(),
-      [{ ...unloadedFile, patch: '@@ -1 +1 @@\n-old\n+new\n' }],
-      worktreeRevision,
-    );
-
     expect(prepared).toMatchObject({
       id: 'prepared-diff:prepared-1',
       revision: worktreeRevision,
       repository: { worktreeId: 'worktree-1', localAccess: true },
-      promotionTargets: [
-        {
-          destination: 'prepared-diff-revision',
-          preparedDiffId: 'prepared-1',
-        },
-      ],
-    });
-    expect(kilo).toMatchObject({
-      id: 'kilo-result:kilo-1',
-      revision: worktreeRevision,
-      files: [{ patchState: 'available' }],
       promotionTargets: [
         {
           destination: 'prepared-diff-revision',
@@ -193,39 +174,7 @@ function preparedDiff(): PreparedDiffRecord {
     verificationStatus: 'not-run',
     sourceOfTruth: 'worktree',
     summary: 'Prepared change',
-    revisionRun: null,
     updatedAt: '2026-07-18T00:00:00.000Z',
-  };
-}
-
-function kiloTask(): KiloTaskRecord {
-  return {
-    id: 'kilo-1',
-    title: 'Delegated change',
-    prompt: 'Fix it.',
-    repoId: 'repo-1',
-    repoFullName: 'example/repo',
-    worktreeId: 'worktree-1',
-    lockId: null,
-    cwd: '/tmp/worktree-1',
-    mode: 'direct-edit',
-    status: 'succeeded',
-    explicitUserRequest: true,
-    autoEnabled: false,
-    cliPath: 'kilo',
-    args: [],
-    pid: null,
-    processStartedAt: null,
-    rootSessionId: null,
-    childSessionIds: [],
-    rawLogPath: null,
-    summary: null,
-    exitCode: 0,
-    error: null,
-    createdAt: '2026-07-18T00:00:00.000Z',
-    updatedAt: '2026-07-18T00:00:00.000Z',
-    completedAt: '2026-07-18T00:00:00.000Z',
-    preparedDiffId: 'prepared-1',
   };
 }
 

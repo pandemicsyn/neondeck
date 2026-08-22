@@ -1,8 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import type { GitHubPullRequest, ActivityObservability } from '../api';
+import type { ActivityObservability } from '../api';
 import {
-  ciFixOperationRefreshDecision,
-  isCiFixCandidate,
   isTerminalWatchStatus,
   neonReviewActionLabel,
   prDiffActionLabel,
@@ -15,15 +13,6 @@ describe('GitHubPrList review workflow state', () => {
     expect(prDiffActionLabel(false)).toBe('view diff');
     expect(prDiffActionLabel(true)).toBe('hide diff');
     expect(neonReviewActionLabel()).toBe('run review');
-  });
-
-  it('shows the fix CI affordance only for failing or unknown check states', () => {
-    expect(isCiFixCandidate(githubPr({ checks: 'failure' }))).toBe(true);
-    expect(isCiFixCandidate(githubPr({ checkError: 'token denied' }))).toBe(
-      true,
-    );
-    expect(isCiFixCandidate(githubPr({ checks: 'success' }))).toBe(false);
-    expect(isCiFixCandidate(githubPr({ checks: 'pending' }))).toBe(false);
   });
 
   it('treats green PR watches as terminal for dashboard re-watch affordances', () => {
@@ -148,99 +137,6 @@ describe('GitHubPrList review workflow state', () => {
       done: true,
     });
   });
-
-  it('tracks CI fixes through app-owned operation summaries, not submission ids', () => {
-    const running = ciFixOperationRefreshDecision(
-      {
-        items: [
-          {
-            id: 'operation-1',
-            workflow: 'ci_fix_run',
-            runId: 'legacy-workflow-run',
-            status: 'running',
-            summary: { pr: 'pandemicsyn/neondeck#123' },
-            createdAt: '2026-08-01T10:00:00.000Z',
-            updatedAt: '2026-08-01T10:00:00.000Z',
-          },
-        ],
-        fetchedAt: '2026-08-01T10:00:01.000Z',
-      },
-      'operation-1',
-      false,
-      false,
-    );
-    expect(running).toEqual({
-      terminal: false,
-      sawActiveOperation: true,
-      shouldRefresh: false,
-      done: false,
-    });
-
-    expect(
-      ciFixOperationRefreshDecision(
-        {
-          items: [
-            {
-              id: 'operation-1',
-              workflow: 'ci_fix_run',
-              runId: 'legacy-workflow-run',
-              status: 'completed',
-              summary: { pr: 'pandemicsyn/neondeck#123' },
-              createdAt: '2026-08-01T10:00:00.000Z',
-              updatedAt: '2026-08-01T10:05:00.000Z',
-            },
-          ],
-          fetchedAt: '2026-08-01T10:05:01.000Z',
-        },
-        'operation-1',
-        true,
-        false,
-      ),
-    ).toEqual({
-      terminal: true,
-      sawActiveOperation: true,
-      shouldRefresh: true,
-      done: true,
-    });
-  });
-
-  it('keeps concurrent CI-fix pollers bound to their admitted operation', () => {
-    const decision = ciFixOperationRefreshDecision(
-      {
-        items: [
-          {
-            id: 'newer-operation',
-            workflow: 'ci_fix_run',
-            runId: null,
-            status: 'completed',
-            summary: { pr: 'pandemicsyn/neondeck#123' },
-            createdAt: '2026-08-01T10:01:00.000Z',
-            updatedAt: '2026-08-01T10:02:00.000Z',
-          },
-          {
-            id: 'admitted-operation',
-            workflow: 'ci_fix_run',
-            runId: null,
-            status: 'running',
-            summary: { pr: 'pandemicsyn/neondeck#123' },
-            createdAt: '2026-08-01T10:00:00.000Z',
-            updatedAt: '2026-08-01T10:03:00.000Z',
-          },
-        ],
-        fetchedAt: '2026-08-01T10:03:01.000Z',
-      },
-      'admitted-operation',
-      false,
-      false,
-    );
-
-    expect(decision).toEqual({
-      terminal: false,
-      sawActiveOperation: true,
-      shouldRefresh: false,
-      done: false,
-    });
-  });
 });
 
 function activityObservability(
@@ -283,44 +179,5 @@ function workflowEvent(
     createdAt: '2026-07-05T20:02:00.000Z',
     detailUrl: '/activity?submissionId=run-review',
     ...overrides,
-  };
-}
-
-function githubPr(
-  overrides: Omit<Partial<GitHubPullRequest>, 'checks'> & {
-    checks?: NonNullable<GitHubPullRequest['checks']>['status'];
-  } = {},
-): GitHubPullRequest {
-  const checks: GitHubPullRequest['checks'] =
-    overrides.checks === undefined
-      ? null
-      : {
-          status: overrides.checks,
-          total: 2,
-          successful: overrides.checks === 'success' ? 2 : 1,
-          failed: overrides.checks === 'failure' ? 1 : 0,
-          pending: overrides.checks === 'pending' ? 1 : 0,
-          statusContexts: 0,
-          checkedAt: '2026-07-05T20:00:00.000Z',
-        };
-  return {
-    id: 1,
-    title: 'Add thing',
-    repo: 'pandemicsyn/neondeck',
-    number: 10,
-    url: 'https://github.com/pandemicsyn/neondeck/pull/10',
-    state: 'open',
-    author: 'pandemicsyn',
-    labels: [],
-    comments: 0,
-    updatedAt: '2026-07-05T20:00:00.000Z',
-    createdAt: '2026-07-05T19:00:00.000Z',
-    relations: ['configured-repo'],
-    ageDays: 0,
-    stale: false,
-    headSha: 'abc123',
-    baseRef: 'main',
-    ...overrides,
-    checks,
   };
 }

@@ -1,7 +1,7 @@
 import type { JsonValue } from '@flue/runtime';
 import type { WorkflowSummaryRecord } from '../app-state';
 import type { fetchGitHubLogin, fetchPullRequestQueue } from '../github';
-import type { createCiFailureDossierReport, fixPrCiRun } from '../autopilot';
+import type { createCiFailureDossierReport } from '../autopilot';
 import type { PrReviewAssistInput } from '../pr-review-assist';
 import type { startPrReview } from '../pr-reviews';
 import type { addPrWatch } from '../watches';
@@ -11,7 +11,6 @@ export type NeonCommandName =
   | 'repo-status'
   | 'review-queue'
   | 'review-pr'
-  | 'fix-ci'
   | 'explain-ci'
   | 'summarize-pr'
   | 'draft-pr-description'
@@ -48,7 +47,6 @@ export type CommandDependencies = {
     input: PrReviewAssistInput,
   ) => Promise<{ runId: string }>;
   startPrReview?: typeof startPrReview;
-  runFixCi?: typeof fixPrCiRun;
   createCiFailureDossierReport?: typeof createCiFailureDossierReport;
   addPrWatch?: typeof addPrWatch;
 };

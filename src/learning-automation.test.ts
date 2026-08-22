@@ -1,9 +1,7 @@
-import { randomUUID } from 'node:crypto';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { addWorkflowSummary } from './modules/app-state';
 import {
   readAutomationHealth,
   loadAutomationLearningMemoryContext,
@@ -122,7 +120,7 @@ describe('learning automation context', () => {
     seedReviewAssistRows(paths.neondeckDatabase, now);
     seedRevisionRows(paths.neondeckDatabase, now);
     seedScheduledTaskRows(paths.neondeckDatabase, now);
-    const docsReport = await writeReport(
+    await writeReport(
       {
         kind: 'docs-drift',
         title: 'Docs drift',
@@ -142,29 +140,6 @@ describe('learning automation context', () => {
       },
       paths,
     );
-    const docsSummary = await addWorkflowSummary(
-      {
-        workflow: 'docs_drift_stage_fix',
-        status: 'started',
-        summary: { reportId: docsReport.id, outcome: 'kilo-started' },
-      },
-      paths,
-    );
-    updateWorkflowSummaryCreatedAt(paths.neondeckDatabase, docsSummary.id, now);
-    const retriedDocsSummary = await addWorkflowSummary(
-      {
-        workflow: 'docs_drift_stage_fix',
-        status: 'started',
-        summary: { reportId: docsReport.id, outcome: 'kilo-started' },
-      },
-      paths,
-    );
-    updateWorkflowSummaryCreatedAt(
-      paths.neondeckDatabase,
-      retriedDocsSummary.id,
-      now,
-    );
-
     const health = await readAutomationHealth(paths, {
       now: new Date(now),
       windowDays: 30,
@@ -201,8 +176,6 @@ describe('learning automation context', () => {
     });
     expect(health.driftTriage).toMatchObject({
       docsDriftReports: 1,
-      docsDriftStagedFixes: 1,
-      docsDriftActedOnRate: 1,
       issueTriageReports: 1,
       issueTriageActedOn: 0,
       issueTriageActedOnRate: 0,
@@ -235,24 +208,23 @@ describe('learning automation context', () => {
     });
     expect(health.driftTriage).toMatchObject({
       docsDriftReports: 0,
-      docsDriftActedOnRate: null,
       issueTriageReports: 0,
       issueTriageActedOnRate: null,
     });
   });
 
-  it('keeps docs drift health tied to the report creation cohort', async () => {
+  it('counts aged-out drift and triage reports in the health window', async () => {
     const paths = runtimePaths(await tempHome());
     await ensureRuntimeHome(paths);
     const now = '2026-07-06T12:00:00.000Z';
-    const currentActed = await writeHealthReport(paths, {
+    await writeHealthReport(paths, {
       kind: 'docs-drift',
-      title: 'Current acted docs drift',
+      title: 'Current docs drift',
       createdAt: now,
     });
-    const oldActed = await writeHealthReport(paths, {
+    await writeHealthReport(paths, {
       kind: 'docs-drift',
-      title: 'Old acted docs drift',
+      title: 'Old docs drift',
       createdAt: '2026-06-26T12:00:00.000Z',
     });
     await writeHealthReport(paths, {
@@ -265,19 +237,11 @@ describe('learning automation context', () => {
       title: 'Old unacted issue triage',
       createdAt: '2026-06-25T12:00:00.000Z',
     });
-    const outsideWindowActed = await writeHealthReport(paths, {
+    await writeHealthReport(paths, {
       kind: 'docs-drift',
-      title: 'Outside window acted docs drift',
+      title: 'Outside window docs drift',
       createdAt: '2026-06-01T12:00:00.000Z',
     });
-    await stageDocsFixSummary(paths.neondeckDatabase, currentActed.id, now);
-    await stageDocsFixSummary(paths.neondeckDatabase, currentActed.id, now);
-    await stageDocsFixSummary(paths.neondeckDatabase, oldActed.id, now);
-    await stageDocsFixSummary(
-      paths.neondeckDatabase,
-      outsideWindowActed.id,
-      now,
-    );
 
     const health = await readAutomationHealth(paths, {
       now: new Date(now),
@@ -286,10 +250,8 @@ describe('learning automation context', () => {
 
     expect(health.driftTriage).toMatchObject({
       docsDriftReports: 3,
-      docsDriftStagedFixes: 2,
-      docsDriftActedOnRate: 0.6667,
       issueTriageReports: 1,
-      agedOutReports: 2,
+      agedOutReports: 3,
     });
   });
 });
@@ -465,35 +427,6 @@ async function writeHealthReport(
   );
 }
 
-function stageDocsFixSummary(
-  databasePath: string,
-  reportId: string,
-  createdAt: string,
-) {
-  const database = openDb(databasePath);
-  try {
-    const id = randomUUID();
-    database
-      .prepare(
-        `
-        INSERT INTO workflow_summaries (
-          id, workflow, run_id, status, summary_json, created_at, updated_at
-        )
-        VALUES (?, 'docs_drift_stage_fix', ?, 'started', ?, ?, ?);
-      `,
-      )
-      .run(
-        `summary-docs-${id}`,
-        `run-docs-${id}`,
-        JSON.stringify({ reportId, outcome: 'kilo-started' }),
-        createdAt,
-        createdAt,
-      );
-  } finally {
-    database.close();
-  }
-}
-
 function seedScheduledTaskRows(databasePath: string, now: string) {
   const database = openDb(databasePath);
   try {
@@ -514,23 +447,6 @@ function seedScheduledTaskRows(databasePath: string, now: string) {
         )
         .run(id, status, outcome, JSON.stringify(summary), now, now, now, now);
     }
-  } finally {
-    database.close();
-  }
-}
-
-function updateWorkflowSummaryCreatedAt(
-  databasePath: string,
-  id: string,
-  createdAt: string,
-) {
-  const database = openDb(databasePath);
-  try {
-    database
-      .prepare(
-        'UPDATE workflow_summaries SET created_at = ?, updated_at = ? WHERE id = ?;',
-      )
-      .run(createdAt, createdAt, id);
   } finally {
     database.close();
   }

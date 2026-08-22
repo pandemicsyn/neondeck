@@ -51,8 +51,6 @@ export type AutomationHealthSnapshot = {
   };
   driftTriage: {
     docsDriftReports: number;
-    docsDriftStagedFixes: number;
-    docsDriftActedOnRate: number | null;
     issueTriageReports: number;
     issueTriageActedOn: number;
     issueTriageActedOnRate: number | null;
@@ -280,16 +278,6 @@ function driftTriageHealth(
 ): AutomationHealthSnapshot['driftTriage'] {
   const docsDriftReportIds = reportIds(database, 'docs-drift', window);
   const issueTriageReportIds = reportIds(database, 'issue-triage', window);
-  const actedDocsReportIds = distinctWorkflowSummaryFieldValuesUntil(
-    database,
-    'docs_drift_stage_fix',
-    'reportId',
-    window.until,
-  );
-  const docsDriftStagedFixes = intersectionCount(
-    docsDriftReportIds,
-    actedDocsReportIds,
-  );
   const agedCutoff = new Date(
     Date.parse(window.until) - 7 * 24 * 60 * 60 * 1000,
   ).toISOString();
@@ -301,14 +289,10 @@ function driftTriageHealth(
     since: window.since,
     until: agedCutoff,
   });
-  const agedOutReports =
-    [...agedDocsReportIds].filter((id) => !actedDocsReportIds.has(id)).length +
-    agedIssueReportIds.size;
+  const agedOutReports = agedDocsReportIds.size + agedIssueReportIds.size;
 
   return {
     docsDriftReports: docsDriftReportIds.size,
-    docsDriftStagedFixes,
-    docsDriftActedOnRate: rate(docsDriftStagedFixes, docsDriftReportIds.size),
     issueTriageReports: issueTriageReportIds.size,
     issueTriageActedOn: 0,
     issueTriageActedOnRate: rate(0, issueTriageReportIds.size),
@@ -367,41 +351,6 @@ function reportIds(
     )
     .all(kind, window.since, window.until) as Array<{ id: string }>;
   return new Set(rows.map((row) => row.id).filter(Boolean));
-}
-
-function distinctWorkflowSummaryFieldValuesUntil(
-  database: DatabaseSync,
-  workflow: string,
-  field: string,
-  until: string,
-) {
-  const rows = database
-    .prepare(
-      `
-      SELECT summary_json
-      FROM workflow_summaries
-      WHERE workflow = ?
-        AND created_at <= ?;
-    `,
-    )
-    .all(workflow, until) as Array<{
-    summary_json: string | null;
-  }>;
-  return new Set(
-    rows
-      .map((row) =>
-        stringField(objectField(parseJson(row.summary_json))[field]),
-      )
-      .filter((value): value is string => Boolean(value)),
-  );
-}
-
-function intersectionCount(left: Set<string>, right: Set<string>) {
-  let count = 0;
-  for (const value of left) {
-    if (right.has(value)) count += 1;
-  }
-  return count;
 }
 
 function seedOutcome(

@@ -14,8 +14,6 @@ import { compactJson, parseNullableJson, truncate } from './store';
 const learningSkillSnippetIds = [
   'neondeck',
   'neon-pr-review',
-  'neon-ci-fix',
-  'neon-docs-fix',
   'neon-issue-triage',
 ];
 
@@ -25,7 +23,6 @@ type LearningSkillSnippetEvidence = {
   preparedDiffs?: unknown[];
   verificationResults?: unknown[];
   notifications?: unknown[];
-  kiloResults?: unknown[];
   automationHealth?: unknown;
 };
 
@@ -136,16 +133,6 @@ export function relevantLearningSkillSnippetIds(
   ) {
     ids.add('neon-pr-review');
   }
-  if (
-    /\b(neon-ci-fix|ci_fix_run|fix-pr-ci|ci-failure|failing check)\b/i.test(
-      text,
-    )
-  ) {
-    ids.add('neon-ci-fix');
-  }
-  if (/\b(neon-docs-fix|docs_drift|docs-drift|docs drift)\b/i.test(text)) {
-    ids.add('neon-docs-fix');
-  }
   if (/\b(neon-issue-triage|issue-triage|issue triage)\b/i.test(text)) {
     ids.add('neon-issue-triage');
   }
@@ -167,7 +154,6 @@ function evidenceText(evidence: LearningSkillSnippetEvidence) {
     JSON.stringify(evidence.preparedDiffs ?? []),
     JSON.stringify(evidence.verificationResults ?? []),
     JSON.stringify(evidence.notifications ?? []),
-    JSON.stringify(evidence.kiloResults ?? []),
     JSON.stringify(evidence.automationHealth ?? {}),
   ].join('\n');
 }
@@ -295,72 +281,6 @@ export function listRelatedNotificationSummaries(
   }
 }
 
-export function listRelatedKiloResultSummaries(
-  events: HandledPrEventRecord[],
-  paths: RuntimePaths,
-) {
-  const needles = eventNeedles(events);
-  const database = openDb(paths.neondeckDatabase);
-  try {
-    return database
-      .prepare(
-        `
-        SELECT krs.task_id, kt.repo_id, kt.repo_full_name, wt.pr_number,
-          krs.prepared_diff_id, krs.classification, krs.verification_status,
-          krs.promotion_status, krs.review_summary_json, krs.diff_summary_json,
-          krs.verification_json, krs.promotion_json, krs.updated_at
-        FROM kilo_result_state krs
-        LEFT JOIN kilo_tasks kt ON kt.id = krs.task_id
-        LEFT JOIN worktrees wt ON wt.id = kt.worktree_id
-        ORDER BY krs.updated_at DESC
-        LIMIT 80;
-      `,
-      )
-      .all()
-      .map((row) => {
-        const record = row as Record<string, unknown>;
-        return {
-          taskId: String(record.task_id),
-          repoId: typeof record.repo_id === 'string' ? record.repo_id : null,
-          repoFullName:
-            typeof record.repo_full_name === 'string'
-              ? record.repo_full_name
-              : null,
-          prNumber:
-            typeof record.pr_number === 'number' ? record.pr_number : null,
-          preparedDiffId:
-            typeof record.prepared_diff_id === 'string'
-              ? record.prepared_diff_id
-              : null,
-          classification: String(record.classification),
-          verificationStatus: String(record.verification_status),
-          promotionStatus: String(record.promotion_status),
-          reviewSummary: summarizeJson(
-            parseNullableJson(record.review_summary_json),
-            1_000,
-          ),
-          diffSummary: summarizeJson(
-            parseNullableJson(record.diff_summary_json),
-            1_000,
-          ),
-          verification: summarizeJson(
-            parseNullableJson(record.verification_json),
-            1_000,
-          ),
-          promotion: summarizeJson(
-            parseNullableJson(record.promotion_json),
-            1_000,
-          ),
-          updatedAt: String(record.updated_at),
-        };
-      })
-      .filter((item) => containsAnyNeedle(item, needles))
-      .slice(0, 20);
-  } finally {
-    database.close();
-  }
-}
-
 export function extractHandledPrEvent(input: {
   workflow?: string | null;
   runId?: string | null;
@@ -384,8 +304,6 @@ export function extractHandledPrEvent(input: {
     objectRecord(nestedResult?.dossier) ??
     objectRecord(nestedData.dossier);
   const task = objectRecord(result.task) ?? objectRecord(data.task);
-  const resultState =
-    objectRecord(result.resultState) ?? objectRecord(data.resultState);
   const target =
     objectRecord(result.target) ??
     objectRecord(data.target) ??
@@ -469,12 +387,9 @@ export function extractHandledPrEvent(input: {
   const taskId = firstString(
     result.taskId,
     data.taskId,
-    data.kiloTaskId,
     nestedResult?.taskId,
     nestedData.taskId,
-    nestedData.kiloTaskId,
     task?.id,
-    resultState?.taskId,
   );
   const headSha = firstString(
     result.headSha,
@@ -596,7 +511,6 @@ export function isAutopilotFixOutcome(
     value.includes('review-feedback') ||
     value.includes('fix_pr_ci') ||
     value.includes('fix-pr-ci') ||
-    value.includes('ci_fix_run') ||
     value.includes('ci-failure')
   );
 }
@@ -623,7 +537,6 @@ export function handledEventType(
   if (
     value.includes('fix_pr_ci') ||
     value.includes('fix-pr-ci') ||
-    value.includes('ci_fix_run') ||
     value.includes('ci-failure')
   ) {
     return outcomeLabel(
@@ -658,27 +571,6 @@ export function handledEventType(
       'notification-recovery-completed',
       'notification-recovery-blocked',
       'notification-recovery-failed',
-    );
-  }
-  if (value.includes('kilo_result_review')) {
-    return outcomeLabel(
-      'kilo-result-reviewed',
-      'kilo-result-review-blocked',
-      'kilo-result-review-failed',
-    );
-  }
-  if (value.includes('kilo_result_promote')) {
-    return outcomeLabel(
-      'kilo-result-promoted',
-      'kilo-result-promotion-blocked',
-      'kilo-result-promotion-failed',
-    );
-  }
-  if (value.includes('kilo_result_verify')) {
-    return outcomeLabel(
-      'kilo-result-verified',
-      'kilo-result-verification-blocked',
-      'kilo-result-verification-failed',
     );
   }
   if (value.includes('pr_review_assist')) {

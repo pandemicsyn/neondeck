@@ -1211,68 +1211,6 @@ describe('learning review orchestration', () => {
     expect((queued[1] as { repoId?: unknown }).repoId).toBeUndefined();
   });
 
-  it('records nested Kilo verification results as handled PR events', async () => {
-    const paths = runtimePaths(await tempHome());
-    await updateLearningConfig({ prRetrospectiveThreshold: 1 }, paths);
-    const queued: unknown[] = [];
-
-    const result = await recordHandledPrFromWorkflowResult(
-      {
-        workflow: 'verify_kilo_result',
-        runId: 'run-kilo-verify',
-        result: {
-          ok: true,
-          action: 'kilo_result_verify',
-          changed: true,
-          message: 'Kilo result verification passed.',
-          task: {
-            id: 'kilo-task-verify',
-            repoId: 'neondeck',
-            repoFullName: 'pandemicsyn/neondeck',
-            worktreeId: 'wt-kilo',
-          },
-          data: {
-            verification: {
-              ok: true,
-              action: 'autopilot_verify_pr_worktree',
-              changed: true,
-              message: 'Verified pandemicsyn/neondeck#77.',
-              data: {
-                worktree: {
-                  id: 'wt-kilo',
-                  repoId: 'neondeck',
-                  repoFullName: 'pandemicsyn/neondeck',
-                  prNumber: 77,
-                },
-                preparedDiffVerification: {
-                  id: 'pd-kilo-verify',
-                  repoId: 'neondeck',
-                  repoFullName: 'pandemicsyn/neondeck',
-                  prNumber: 77,
-                  status: 'passed',
-                },
-              },
-            },
-          },
-        },
-      },
-      paths,
-      {
-        async invokePrBatchReview(input) {
-          queued.push(input);
-          return learningReviewAdmission('run-pr-review-kilo');
-        },
-      },
-    );
-
-    expect(result).toMatchObject({
-      recorded: true,
-      duplicate: false,
-      queued: [expect.objectContaining({ submissionId: 'run-pr-review-kilo' })],
-    });
-    expect(queued).toEqual([expect.objectContaining({ trigger: 'threshold' })]);
-  });
-
   it('records direct API action results with idempotent handled PR source ids', async () => {
     const paths = runtimePaths(await tempHome());
     await updateLearningConfig({ prRetrospectiveThreshold: 10 }, paths);
@@ -1705,10 +1643,7 @@ describe('learning review orchestration', () => {
       paths,
     );
     if (!prepared.ok) throw new Error(prepared.message);
-    expect(prepared.allowedSkillIds).toEqual(
-      expect.arrayContaining(['neondeck', 'neon-ci-fix']),
-    );
-    expect(prepared.allowedSkillIds).not.toContain('neon-docs-fix');
+    expect(prepared.allowedSkillIds).toEqual(['neondeck']);
 
     const result = await completeLearningReviewFromModelOutput(
       prepared,

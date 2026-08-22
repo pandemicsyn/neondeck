@@ -407,33 +407,6 @@ export const prReviewConfigSchema = v.looseObject({
   prompts: v.optional(prReviewPromptTemplatesSchema),
 });
 
-const kiloHandoffModeSchema = v.picklist([
-  'draft-fix',
-  'patch-proposal',
-  'direct-edit',
-]);
-const kiloAutoPolicySchema = v.picklist([
-  'never',
-  'managed-worktree-draft-fix',
-  'explicit-confirmation',
-]);
-const kiloRepoPolicySchema = v.picklist(['allow', 'deny']);
-
-export const kiloConfigSchema = v.looseObject({
-  enabled: v.optional(v.boolean()),
-  cliPath: v.optional(nonEmptyStringSchema),
-  defaultModel: v.optional(nonEmptyStringSchema),
-  defaultAgent: v.optional(nonEmptyStringSchema),
-  defaultMode: v.optional(kiloHandoffModeSchema),
-  autoPolicy: v.optional(kiloAutoPolicySchema),
-  explicitHandoffOnly: v.optional(v.boolean()),
-  concurrency: v.optional(v.pipe(v.number(), v.integer(), v.minValue(1))),
-  rawLogRetentionDays: v.optional(
-    v.pipe(v.number(), v.integer(), v.minValue(0)),
-  ),
-  repos: v.optional(v.record(v.string(), kiloRepoPolicySchema)),
-});
-
 export const localApiConfigSchema = v.strictObject({
   token: localApiTokenSchema,
 });
@@ -454,7 +427,6 @@ export const appConfigSchema = v.looseObject({
   guardrails: v.optional(repoGuardrailsSchema),
   autopilot: v.optional(autopilotConfigSchema),
   prReview: v.optional(prReviewConfigSchema),
-  kilo: v.optional(kiloConfigSchema),
   learning: v.optional(learningConfigSchema),
   handoff: v.optional(handoffConfigSchema),
 });
@@ -600,7 +572,6 @@ export type WorktreeCleanupConfig = v.InferOutput<
 >;
 export type AutopilotConfig = v.InferOutput<typeof autopilotConfigSchema>;
 export type PrReviewConfig = v.InferOutput<typeof prReviewConfigSchema>;
-export type KiloConfig = v.InferOutput<typeof kiloConfigSchema>;
 export type LocalApiConfig = v.InferOutput<typeof localApiConfigSchema>;
 export type ServerConfig = v.InferOutput<typeof serverConfigSchema>;
 export type { McpConfig };

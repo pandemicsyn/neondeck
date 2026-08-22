@@ -6,7 +6,7 @@ The near-term priority is to build Neondeck's local operating system before deep
 
 > **Current Flue 2 runtime note (August 2026):** the Flue 2 migration supersedes the older Flue beta architecture recorded throughout this roadmap. Current code uses Flue agents, tools, direct bounded agent submissions, and app-owned services/state; Flue workflows, actions, and workflow-run persistence no longer exist. Older workflow/action wording below is retained where it documents historical milestones or product workflows rather than the current framework API. See `.plans/archived/FLUE_2_MIGRATION_PLAN.md` for the completed migration record.
 
-The runtime foundation, watched-PR autonomy, and learning system are now in place. The remaining product work is concentrated in richer Kilo handoff/result promotion, targeted review and dashboard improvements, and intentionally deferred deploy-adapter and TUI work.
+The runtime foundation, watched-PR autonomy, and learning system are now in place. The remaining product work is concentrated in targeted review and dashboard improvements, plus intentionally deferred deploy-adapter and TUI work.
 
 ## Product Direction
 
@@ -24,7 +24,6 @@ Core principles:
 - Treat learning as an explicit, auditable runtime subsystem: durable memory and skill changes should be derived from high-signal evidence, reviewed when policy requires it, and applied only to new sessions or deliberate context refreshes.
 - Use deterministic watchers first and agent summarization only when a watcher detects a meaningful state change.
 - Treat worktrees as the isolation boundary for autonomous PR work. Automated fix workflows should not mutate the user's primary checkout.
-- Treat external agent harnesses such as KiloCode as delegated workers that operate inside declared repos or Neondeck-managed worktrees and report durable task state back to Neondeck.
 - Prefer bounded autopilot modes over a binary on/off switch: notify-only, prepare-only, autofix with approval, and autofix push when safe.
 - Keep one backend command/event surface so the web dashboard, future TUI, and possible companion surfaces reuse the same runtime.
 
@@ -35,7 +34,7 @@ Current Flue 2 usage boundaries:
 - Use Flue tools for model-callable deterministic operations with schema validation.
 - Use Flue skills for procedural guidance and conventions only; skills should point Neon toward tools and APIs, not execute work themselves.
 - Use Hono routes for app-owned dashboard/TUI APIs and UI-only reads. Those routes should call the same service functions as Flue tools rather than duplicating business logic.
-- Use Neondeck app SQLite for product state such as repos, watches, jobs, worktrees, approvals, notifications, memories, delegated Kilo tasks, and operation summaries. Use Flue SQLite for Flue sessions, submissions, and events.
+- Use Neondeck app SQLite for product state such as repos, watches, jobs, worktrees, approvals, notifications, memories, and operation summaries. Use Flue SQLite for Flue sessions, submissions, and events.
 - Keep long-lived coordination in Neondeck app state. Admit bounded agent work only when a deterministic state change requires model reasoning.
 
 ## Roadmap Ordering
@@ -53,9 +52,8 @@ Status markers:
 6. Dashboard panels driven by runtime state.
 7. Chat session index and session switcher.
 8. Worktree-backed PR autonomy and review-feedback autopilot.
-9. KiloCode handoff for large delegated work inside managed worktrees.
-10. Hermes-style self-improvement and learning over memory, skills, and PR/autopilot retrospectives.
-11. Later TUI/OpenTUI surface over the same backend API.
+9. Hermes-style self-improvement and learning over memory, skills, and PR/autopilot retrospectives.
+10. Later TUI/OpenTUI surface over the same backend API.
 
 ## Current Status
 
@@ -64,7 +62,6 @@ As of August 2026:
 - Phases 1–16 are complete for the current product scope.
 - Phases 18–20 are complete: managed worktrees and the watched-PR Autopilot loop are shipped.
 - Phase 22 is complete for v1: memory, learning reviews, candidates, skill patches, and operator surfaces are shipped.
-- Phase 21's Kilo CLI runner, session inspection, result review, verification, notifications, and basic dashboard/API surfaces are complete. Richer handoff/summarization orchestration, actual guarded promotion, fuller operator contracts, and the managed-server evaluation remain open.
 - Phase 10's provider-specific deploy adapters and all of Phase 17's TUI surface remain intentionally deferred.
 - Active product follow-ups live in the top level of `.plans/`; completed implementation plans and point-in-time reviews live in `.plans/archived/`. See `.plans/README.md` for the index.
 
@@ -143,7 +140,6 @@ Require confirmation for:
 - deleting or bulk-archiving sessions
 - deleting memories
 - changing worktree cleanup policy toward faster deletion
-- enabling Kilo `--auto`
 
 Do not require confirmation for ordinary validated setup and organization changes such as adding a repo after path validation, renaming a repo/session/panel, pinning or unpinning a session, dashboard layout or preset changes, adding a notify-only watch, adding memory, or reloading SOUL/skills without deleting files.
 
@@ -186,7 +182,7 @@ Decision: v1 keeps config and mutable data under one `NEONDECK_HOME` tree instea
 
 ### Runtime neondeck Skill
 
-neondeck should ship a Flue-agent-facing skill that Neon sees at runtime. This is separate from the repo’s Codex/Kilo development skills.
+neondeck should ship a Flue-agent-facing skill that Neon sees at runtime. This is separate from the repo’s development skills.
 
 The runtime skill directory should also be user-extensible. Users should be able to place additional Agent Skills-compatible skill folders under `~/.config/neondeck/skills/`, and neondeck should make those skills available to the Flue agent.
 
@@ -482,141 +478,6 @@ Runtime skill guidance:
 
 The Neondeck runtime skill should teach Neon that worktrees are the normal isolation boundary for autonomous PR work. Neon should gather deterministic PR facts first, then operate as a trusted coding agent inside the managed worktree: inspect repository guidance, edit, run the appropriate tests/formatters/typechecks/builds, and commit. The mode controls delivery authority, while the owner decides whether autonomous feedback is sane enough to implement and push. It should clearly distinguish engineering judgment from fetched GitHub/check/worktree facts.
 
-### KiloCode Handoff
-
-Neondeck should be able to delegate large or long-running chunks of work to KiloCode while keeping Neon as the supervising assistant and Neondeck as the durable runtime of record.
-
-KiloCode should be treated as a worker in the toolbox, not as a second Neondeck runtime. Neon decides when handoff is useful, Neondeck creates or selects the workspace, Neondeck records task/session state, and Neondeck owns verification, review, approvals, and push-back decisions.
-
-Decision: Kilo delegation is a minimal explicit handoff feature for exploration. Agents should not delegate to Kilo by default. The normal path is for Neon to do the work itself or delegate to Neon subagents; Neondeck delegates to Kilo when the user explicitly asks for Kilo or when a future repo/workflow policy explicitly opts into Kilo handoff.
-
-Primary use cases:
-
-- a watched PR receives substantial review feedback
-- CI failure investigation needs a larger code-reading/fixing loop
-- a user asks Neon to "take this larger task" without blocking the chat session
-- scheduled repo maintenance or upgrade work should run in the background
-- multiple repos or PRs need independent delegated work in parallel
-
-Preferred operating model:
-
-- Run Kilo inside a declared repo or Neondeck-managed worktree.
-- Prefer worktrees for autonomous mutations so the user's primary checkout is not touched.
-- Track every Neondeck handoff as a durable task in `data/neondeck.db`.
-- Capture the Kilo session id created by the handoff.
-- Capture child Kilo session ids where available.
-- Persist Kilo event summaries so the dashboard and future TUI can show progress.
-- Capture final git status and diff summary before any verification or push.
-- Keep checks, commits, pushes, and PR comments under Neondeck workflows and policy.
-- Treat the Kilo process/server supervisor as a Neondeck app service, not as a long-lived Flue workflow. Flue workflows should start, summarize, review, verify, promote, or reconcile Kilo tasks as bounded runs.
-
-Initial integration path:
-
-- Start with `kilo run --format json --dir <worktree> --title <task-title> --auto` as a background task.
-- Parse JSON-line events and store the root `sessionID` as soon as it appears.
-- Use `kilo session list --format json --all --search <task-title>` only as a recovery path if the event stream does not yield a session id.
-- Trust Kilo to operate with `--auto` in `draft-fix` when running inside a Neondeck-managed worktree. Neondeck should provide explicit task prompts, keep verification and push policy in Neondeck, and allow stricter repo policy when needed.
-
-Decision: the first Kilo integration should be CLI JSON streaming. Evaluate managed `kilo serve` plus SDK after the durable task model, event capture, and review/verification flow are proven.
-
-Target integration path:
-
-- Add a managed Kilo server supervisor around `kilo serve`.
-- Use `@kilocode/sdk/v2` or a small typed HTTP client to create sessions, call `promptAsync`, subscribe to events, abort running work, inspect messages, inspect child sessions, and read diffs.
-- Keep CLI mode as a fallback.
-- Punt ACP. Do not add a generic delegated-harness adapter until Kilo-specific handoff has proven useful and there is a concrete need.
-
-Kilo task retention and reconciliation:
-
-- Store structured Kilo event summaries in SQLite for querying and dashboard/TUI display.
-- Store raw JSONL logs under `NEONDECK_HOME/data/kilo/logs/` when raw retention is enabled.
-- Make raw log retention configurable.
-- Persist process id, start time, cwd, title, task id, known Kilo session ids, and raw log path for CLI tasks.
-- On Neondeck restart, mark in-flight CLI tasks as `needs-reconcile`.
-- Recover task/session state with `kilo session list --format json --all --search <title-or-task-id>`.
-- If the process is still running and owned by Neondeck, reattach or continue tailing the log when possible.
-- If process state cannot be proven, mark the task `unknown` or `needs-review` with the last captured event and final observed git status.
-
-Kilo concurrency should use a separate delegated-worker pool because Kilo tasks may be long-running and heavier than ordinary Flue workflow runs. Keep Kilo concurrency, local execution concurrency, and autopilot workflow concurrency separately configurable, with a global host-cap above them.
-
-Kilo config should expose enabled state, CLI path, default model, default agent, mode defaults, `--auto` policy, concurrency, raw log retention, and per-repo overrides. Kilo should not inherit Neon subagent model defaults by default; treat inheritance as a future explicit option if it becomes useful.
-
-Needed runtime state:
-
-- Kilo task id
-- source workflow/watch/command id
-- repo id and worktree id
-- target cwd
-- title and prompt preview
-- mode: `research`, `implementation`, `review-feedback-fix`, `ci-fix`, or `maintenance`
-- status: `queued`, `starting`, `running`, `completed`, `failed`, `cancelled`, `needs-review`, `ready-to-verify`, or `ready-to-push`
-- Kilo root session id
-- child session ids
-- process id or managed-server run id
-- model and agent selection
-- started/ended timestamps
-- exit code and bounded output previews
-- event counts and latest event summary
-- final diff summary
-- raw JSONL log path when raw log retention is enabled
-- reattach/reconcile status after Neondeck restart
-
-Needed actions:
-
-- `neondeck_kilo_task_start`: start a Kilo handoff in a declared repo/worktree.
-- `neondeck_kilo_task_status`: read durable task state and latest event summary.
-- `neondeck_kilo_task_events`: page through persisted task events.
-- `neondeck_kilo_task_abort`: cancel a running Kilo task and mark it cancelled.
-- `neondeck_kilo_task_sessions`: list linked root/child Kilo sessions for a task.
-- `neondeck_kilo_task_diff`: return post-handoff git status and diff summary.
-- `neondeck_kilo_sessions_search`: search Kilo sessions by title, repo, directory, time window, Neondeck task id, or Kilo session id.
-- `neondeck_kilo_session_read`: read bounded session metadata, transcript snippets, todos, children, and optional diff.
-- `neondeck_kilo_session_messages`: page through normalized session messages when a user explicitly needs transcript detail.
-- `neondeck_kilo_session_children`: list child sessions created by Kilo task/subagent tools.
-- `neondeck_kilo_session_todos`: read Kilo session todos.
-- `neondeck_kilo_session_diff`: read Kilo's session diff through SDK/API when available.
-
-Needed workflows:
-
-- `handoff_to_kilo`: resolve workspace, lock worktree, construct constrained prompt, start or admit Kilo work through the app supervisor, persist the initial task/session ids, and release the workflow when the handoff has been durably admitted or completed.
-- `reconcile_kilo_task`: poll or reattach to an existing Kilo task, persist new events, capture final git status/diff when complete, and release locks according to policy.
-- `summarize_kilo_session`: resolve and read a Kilo session, then produce a bounded summary of intent, actions, changes, blockers, and recommended next steps.
-- `review_kilo_result`: inspect changed files, summarize risk, and decide whether the result needs human review, verification, or discard.
-- `verify_kilo_result`: run configured checks through Neondeck execution policy.
-- `promote_kilo_result`: commit, push, or comment only when Neondeck autopilot policy allows.
-
-Session read/search policy:
-
-- Prefer managed Kilo SDK APIs: session list/search, get, messages, children, todos, status, and diff.
-- Use `kilo session list --format json --all --search <query>` as the CLI fallback.
-- Use direct disk reads only as an internal read-only recovery adapter when SDK and CLI access are unavailable.
-- Normalize SDK, CLI, and disk results into one schema before exposing them to Neon.
-- Return bounded transcript snippets by default for UI and context ergonomics.
-- Do not redact Kilo transcripts, tool outputs, or diffs by default; Kilo is another trusted local agent harness.
-- Use very basic audit only: record task/session ids, read type, requester surface, and timestamp for session reads.
-- Maintain a local metadata index for Kilo sessions linked to Neondeck tasks. Query Kilo on demand for broader unlinked searches because they should be rare, and cache only sessions that are referenced or linked.
-- Start disk fallback with current Kilo SQLite storage; do not add a legacy JSON compatibility adapter.
-- Teach the runtime skill that Neon should call Kilo session actions/workflows instead of reading Kilo storage directly.
-
-Child Kilo sessions should be represented as a tree under the root Kilo task. Audit records should store parent/child ids and basic event summaries. Dashboard and future TUI should show child sessions collapsed by default with title, status, and latest summary.
-
-Dashboard and future TUI needs:
-
-- active Kilo task queue
-- Kilo session ids and child sessions
-- live event preview
-- changed files and diff summary
-- verification state
-- pending review/push approvals
-- abort, retry, discard, verify, and promote controls
-- session search by title, repo, worktree, Kilo session id, or Neondeck task id
-- paginated compact transcript view
-- linked todos, child sessions, and Kilo diff summaries
-
-Research note:
-
-- `.plans/KILOCODE_HANDOFF_RESEARCH.md`
-
 ### Memory
 
 Use structured memory, not only chat transcript.
@@ -727,7 +588,7 @@ Readiness should include:
 
 - runtime home path
 - active config file paths
-- Kilo/agent provider key presence
+- configured model-provider key presence
 - GitHub token presence
 - configured display assistant model
 - configured low-cost utility model
@@ -747,8 +608,8 @@ Neondeck should treat Flue workflows as first-class smoke-test boundaries. Deter
 
 Testing layers:
 
-- Unit tests for deterministic app services, tools, actions, policy checks, parsers, path safety, GitHub normalization, worktree state machines, and Kilo event parsing.
-- Fixture-driven integration tests with temporary `NEONDECK_HOME`, temporary repos/worktrees, fake GitHub responses, fake Kilo JSONL streams, and isolated SQLite databases.
+- Unit tests for deterministic app services, tools, actions, policy checks, parsers, path safety, GitHub normalization, and worktree state machines.
+- Fixture-driven integration tests with temporary `NEONDECK_HOME`, temporary repos/worktrees, fake GitHub responses, and isolated SQLite databases.
 - Flue workflow smoke tests that invoke discovered workflows with `flue run workflow:<name>` or `@flue/sdk` `client.workflows.invoke(..., { wait: 'result' })`.
 - Workflow run inspection tests that assert workflow summaries, emitted `data` progress, run ids, and observed events are recorded in app state.
 - Local smoke scripts for the happy path: create watch, run scheduler tick, inspect workflow summary, verify notification, and confirm no-op watcher silence.
@@ -847,7 +708,7 @@ Session kinds should include:
 - `scratch`: user-created ad hoc session
 - `repo`: repo-focused working session
 - `watch`: session linked to a PR/release watch
-- `task`: session linked to a command, workflow, Kilo handoff, or autopilot task
+- `task`: session linked to a command, workflow, or autopilot task
 - `briefing`: session created from a scheduled or manual briefing
 
 Needed session operations:
@@ -862,7 +723,7 @@ Needed session operations:
 - pin or unpin session
 - archive or restore session
 - mark stale context reasons after SOUL, skill, memory, model, or provider config changes
-- create or link a session from a watch, workflow summary, repo, or delegated task
+- create or link a session from a watch, workflow summary, repo, or task
 
 Session read/search policy:
 
@@ -1231,7 +1092,7 @@ Must-haves:
 - [x] Add audit records for session reads, transcript page reads, and cross-session context use.
 - [x] Add dashboard chat-panel switcher with pinned sessions, recent sessions, archived sessions, create-new-session, rename, pin, and archive controls.
 - [x] Add dashboard affordances for "reference this session" and "open referenced session" without forcing side-by-side chat.
-- [x] Add context-aware session creation from repo rows, PR/watch rows, workflow summaries, briefing summaries, and delegated Kilo/autopilot tasks where existing data models support it.
+- [x] Add context-aware session creation from repo rows, PR/watch rows, workflow summaries, briefing summaries, and Autopilot tasks where existing data models support it.
 - [x] Add stale-context badges for sessions affected by SOUL, skill, memory, model, provider, or repo config changes where enough version/change metadata exists.
 - [x] Update runtime skill guidance so Neon can create, switch, search, read, and cite sessions intentionally instead of treating every topic as one global conversation.
 - [x] Add tests for session CRUD, active-session selection, archived filtering, session search/read policy, audit records, stale-context marking, and linked repo/watch/task sessions.
@@ -1305,104 +1166,9 @@ Must-haves:
 - [x] Update owner instructions, UI wording, runtime skill guidance, and Astro docs so autonomous mode is not described as mechanically safe-push orchestration or as requiring configured checks.
 - [x] Add focused regression coverage for repository-native command execution, delivery-authority separation, autonomous delivery without configured checks, semantic escalation, and stale-head/mode refusal.
 
-### Phase 21: KiloCode Handoff Runner
-
-- Status: partially complete. CLI task execution, reconciliation, session access, bounded transcript controls, dashboard/runtime overview rows, Kilo notification policy, notification-linked API state, review/verify/promote admission, and Kilo workflow smoke coverage have landed. Richer Kilo workflow completion, actual promote mutation through push-back, and managed `kilo serve`/SDK evaluation remain open.
-
-- [x] Add Kilo handoff config under app config:
-  - enabled flag
-  - CLI path or command name, defaulting to `kilo`
-  - default model and agent overrides
-  - default mode for direct-edit versus patch-proposal handoffs, with direct-edit enabled by default only inside Neondeck-managed worktrees
-  - `--auto` policy
-  - explicit-handoff-only default
-  - per-repo allow/deny policy
-  - concurrency limits
-  - raw log retention policy
-- [x] Add SQLite tables for Kilo task runs and Kilo task events.
-- [x] Add a Kilo task supervisor that can spawn `kilo run` as a streaming background process.
-- [x] Run Kilo only in declared repo paths or Neondeck-managed worktrees.
-- [x] Add Kilo CLI MVP command construction:
-  - `kilo run <prompt>`
-  - `--dir <worktree>`
-  - `--title <task-title>`
-  - `--format json`
-  - `--auto` by default for `draft-fix` work inside Neondeck-managed worktrees
-  - optional configured `--model`
-  - optional configured `--agent`
-- [x] Parse JSON-line output and persist:
-  - root `sessionID`
-  - event type
-  - event summary
-  - tool/text/error events
-  - child session ids where exposed by Kilo task tool metadata
-  - raw JSONL log path when configured
-- [x] Add recovery lookup with `kilo session list --format json --all --search <task-title>` when a task starts but no session id was captured.
-- [x] Add restart reconciliation for in-flight CLI Kilo tasks using persisted pid/start time/cwd/title/session ids/log path.
-- [x] Add typed Kilo actions:
-  - `neondeck_kilo_task_start`
-  - `neondeck_kilo_task_status`
-  - `neondeck_kilo_task_events`
-  - `neondeck_kilo_task_abort`
-  - `neondeck_kilo_task_sessions`
-  - `neondeck_kilo_task_diff`
-  - `neondeck_kilo_sessions_search`
-  - `neondeck_kilo_session_read`
-  - `neondeck_kilo_session_messages`
-  - `neondeck_kilo_session_children`
-  - `neondeck_kilo_session_todos`
-  - `neondeck_kilo_session_diff`
-- [x] Implement Kilo session access with layered adapters:
-  - managed SDK first
-  - CLI `kilo session list --format json` fallback
-  - read-only current SQLite disk fallback only for recovery
-- [x] Normalize Kilo session search/read results into one Valibot-validated schema before exposing them to Neon, APIs, dashboard, or TUI.
-- [x] Add transcript view controls:
-  - default bounded snippets
-  - explicit limits for transcript page size
-  - full transcript/tool output/diff access without default redaction
-  - basic audit record for session reads
-- [x] Add child Kilo session tree support with collapsed dashboard/TUI display by default.
-- [ ] Add `handoff_to_kilo` workflow. Minimal wrapper landed; richer lock/diff/status workflow completion remains open:
-  - resolve repo/worktree
-  - acquire lock
-  - construct task prompt with constraints
-  - start Kilo
-  - stream/persist progress
-  - capture final git status and diff
-  - release lock
-- [ ] Add `summarize_kilo_session` workflow. Minimal wrapper landed; richer metadata/todos/child-session/diff summarization remains open:
-  - resolve by Neondeck task id, Kilo session id, title query, repo, or worktree
-  - read metadata, messages, todos, child sessions, and optional diff through typed actions
-  - summarize intent, work performed, changed files, blockers, risk, and next steps
-  - persist the summary and link it to the Kilo task/session record
-- [x] Add `review_kilo_result` workflow to inspect the Kilo-produced diff and classify it as discard, needs-review, ready-to-verify, or ready-to-push.
-- [x] Add `verify_kilo_result` workflow to run configured checks through Neondeck execution policy.
-- [ ] Add `promote_kilo_result` workflow that can commit/push/comment only when autopilot policy allows. Admission/decision state is implemented; actual commit/push/comment mutation remains deferred to the push-back workflow.
-- [ ] Add dashboard/TUI-ready APIs for active Kilo tasks, task events, session ids, session search, transcript pages, todos, child sessions, changed files, verification state, and pending approvals. Partially complete through current task/session/result APIs, notification-linked task facts, pending approval/result placeholders, and Runtime Overview rows; keep open until todos, approvals, and richer dashboard/TUI contracts are complete.
-- [x] Add dashboard panels or Runtime Overview rows for active delegated Kilo work.
-- [x] Add notification policy for Kilo handoffs:
-  - ready when a task completes and has a reviewable diff
-  - attention when Kilo fails, stalls, or produces high-risk changes
-  - quiet no-op for cancelled/discarded tasks that were superseded
-- [x] Add runtime skill guidance that explains when Neon should hand off to Kilo and how to describe Kilo task results.
-- [x] Add runtime skill guidance that Kilo delegation is explicit-handoff only by default; Neon should normally do work itself or use Neon subagents unless the user asks for Kilo or policy opts in.
-- [x] Add runtime skill guidance that tells Neon to use Kilo session actions/workflows for session search/read/summarization and to avoid direct Kilo storage reads.
-- [x] Add docs for Kilo handoff setup, trust boundaries, worktree behavior, session tracking, cancellation, and troubleshooting.
-- [x] Add Kilo handoff smoke tests using a fake `kilo` CLI that emits JSONL events, including session id capture, child session capture, task completion, failure, abort, and restart reconciliation.
-- [x] Add Flue workflow smoke tests for `handoff_to_kilo`, `reconcile_kilo_task`, `summarize_kilo_session`, `review_kilo_result`, `verify_kilo_result`, and `promote_kilo_result` with fake Kilo event streams and temporary worktrees.
-- [ ] After CLI MVP, evaluate managed `kilo serve` plus SDK integration:
-  - server lifecycle supervisor
-  - SDK session creation and `promptAsync`
-  - event subscription
-  - `session.abort`
-  - session list/search, message/todo/children/diff inspection
-  - reattach after Neondeck restart
-- [x] Defer ACP until Kilo-specific handoff proves useful and a concrete generic-harness need exists.
-
 ### Phase 22: Self-Improvement And Learning
 
-- Status: complete for v1. The memory/learning foundation has landed: simple active/archived memory, active `user`/`local`/`project` learning scopes, audited memory events, learning schema, memory curation config/action/workflow support, self-improvement model config/fallbacks, prompt-snapshot memory id recording, session stale-context integration, safety policy entries, and memory docs. Model-backed conversation reflection, memory curation orchestration, PR/autopilot retrospective accounting/review orchestration, and audited skill patch candidates have landed for the built-in Neondeck skill and runtime-home user skills. Dedicated learning operator API/action/tool state, dashboard panel, CLI inspect/decide/restore commands, explicit audit-backed skill patch restore, opt-in learning workflow smoke coverage, and fast dashboard/CLI adapter coverage have landed. Automatic handled-PR accounting now covers Flue workflow observations plus practical direct local API action routes for autopilot, prepared-diff, recovery, and Kilo result outcomes; future provider-specific or non-action admission paths remain non-v1 follow-ups. Detailed implementation plan lives in `.plans/archived/SELF_IMPROVEMENT_LEARNING_PLAN.md`.
+- Status: complete for v1. The memory/learning foundation has landed: simple active/archived memory, active `user`/`local`/`project` learning scopes, audited memory events, learning schema, memory curation config/action/workflow support, self-improvement model config/fallbacks, prompt-snapshot memory id recording, session stale-context integration, safety policy entries, and memory docs. Model-backed conversation reflection, memory curation orchestration, PR/autopilot retrospective accounting/review orchestration, and audited skill patch candidates have landed for the built-in Neondeck skill and runtime-home user skills. Dedicated learning operator API/action/tool state, dashboard panel, CLI inspect/decide/restore commands, explicit audit-backed skill patch restore, opt-in learning workflow smoke coverage, and fast dashboard/CLI adapter coverage have landed. Automatic handled-PR accounting now covers Flue workflow observations plus practical direct local API action routes for autopilot, prepared-diff, and recovery outcomes; future provider-specific or non-action admission paths remain non-v1 follow-ups. Detailed implementation plan lives in `.plans/archived/SELF_IMPROVEMENT_LEARNING_PLAN.md`.
 
 - [x] Add Hermes-inspired memory as a first-class Neondeck subsystem, not ad hoc prompt text.
 - [x] Keep active learning memory scopes to `user`, `local`, and `project`; stop writing new `session` or `watch` memories.
@@ -1423,7 +1189,7 @@ Must-haves:
   - [x] model-backed memory curation proposals using the configured self-improvement model
   - [x] PR/autopilot retrospective after a configurable handled-PR batch, defaulting to 5
   - [x] manual PR learning review orchestration
-- [x] Add PR/autopilot handled-event accounting so recurring review, CI, verification, push-back, Kilo, and notification recovery patterns can become memory or skill patch candidates.
+- [x] Add PR/autopilot handled-event accounting so recurring review, CI, verification, push-back, and notification recovery patterns can become memory or skill patch candidates.
 - [x] Build a deliberate learning snapshot for display-assistant sessions that includes bounded, auditable `user`, `local`, and relevant `project` memories.
 - [x] Record which memory ids were loaded into a session and mark active sessions stale when relevant learned context changes.
 - [x] Add dashboard, API, and CLI surfaces for learning status, reviews, candidates, memory decisions, skill patch decisions, and audit history.

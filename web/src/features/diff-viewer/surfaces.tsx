@@ -2,8 +2,6 @@ import { useEffect, useMemo, useState, useCallback } from 'react';
 import { useIsMutating, useQueryClient } from '@tanstack/react-query';
 import {
   type PreparedDiffRecord,
-  type DiffSummary,
-  type KiloTaskRecord,
   type LearningCandidate,
   type RepoEditEvent,
   openReviewSourceRevisionEventStream,
@@ -18,17 +16,14 @@ import {
 import { MultiFileView } from './MultiFileView';
 import {
   diffViewerQueryKeys,
-  useKiloTaskDiff,
   usePreparedDiffFilePatch,
   usePreparedDiffFiles,
   useRepoDiff,
   useRepoDiffFilePatch,
 } from './queries';
-import type { DiffFilePatch } from './types';
 import { usePreparedFindingReview } from './use-prepared-finding-review';
 import { DiffWorkerProvider, UnifiedPatchView } from './DiffViewer';
 import {
-  kiloResultReviewSource,
   preparedDiffReviewSource,
   repoEditEventReviewSource,
   skillPatchReviewSource,
@@ -346,250 +341,6 @@ export function SkillPatchDiffReview({
   );
 }
 
-export function KiloTaskDiffReview({ task }: { task: KiloTaskRecord }) {
-  const sourceIdentity = `${task.id}:${task.repoId ?? ''}:${task.worktreeId ?? ''}`;
-  return <KiloTaskDiffReviewSurface key={sourceIdentity} task={task} />;
-}
-
-function KiloTaskDiffReviewSurface({ task }: { task: KiloTaskRecord }) {
-  const queryClient = useQueryClient();
-  const [activePath, setActivePath] = useState<string | null>(null);
-  const [isApplyingRevision, setIsApplyingRevision] = useState(false);
-  const [refreshOutcome, setRefreshOutcome] = useState<{
-    status: 'preserved' | 'degraded' | 'failed';
-    message: string;
-  } | null>(null);
-  const repoDiffQuery = useRepoDiff({
-    repoId: task.repoId,
-    worktreeId: task.worktreeId,
-    enabled: Boolean(task.repoId && task.worktreeId),
-  });
-  const [appliedRepoData, setAppliedRepoData] = useState(repoDiffQuery.data);
-  useEffect(() => {
-    if (!appliedRepoData && repoDiffQuery.data) {
-      setAppliedRepoData(repoDiffQuery.data);
-    }
-  }, [appliedRepoData, repoDiffQuery.data]);
-  const kiloDiffQuery = useKiloTaskDiff(task.id);
-  const repoMetadataFiles = useMemo(
-    () => appliedRepoData?.files ?? [],
-    [appliedRepoData?.files],
-  );
-  const fallbackFiles = useMemo(
-    () => kiloSummaryFiles(kiloDiffQuery.data?.diff ?? task.diff),
-    [kiloDiffQuery.data?.diff, task.diff],
-  );
-  const appliedRevisionKey = reviewRevisionKey(
-    appliedRepoData?.revision ?? {
-      state: 'unavailable',
-      kind: 'worktree-diff',
-      reason: 'Kilo worktree revision has not loaded.',
-    },
-  );
-  const repoPatchQuery = useRepoDiffFilePatch({
-    repoId: task.repoId,
-    worktreeId: task.worktreeId,
-    path: activePath,
-    revisionKey: appliedRevisionKey,
-  });
-  const repoFiles = useMemo(
-    () =>
-      repoMetadataFiles.map((file) => {
-        if (file.path !== activePath) return file;
-        const patchFile = repoPatchQuery.data?.files?.find(
-          (item) => item.path === file.path,
-        );
-        return patchFile ? { ...file, ...patchFile } : file;
-      }),
-    [activePath, repoMetadataFiles, repoPatchQuery.data?.files],
-  );
-  const files = useMemo(
-    () => (repoFiles.length > 0 ? repoFiles : fallbackFiles),
-    [fallbackFiles, repoFiles],
-  );
-  const summary =
-    appliedRepoData?.diffSummary ??
-    summaryFromKilo(kiloDiffQuery.data?.diff ?? task.diff);
-  const source = useMemo(
-    () =>
-      kiloResultReviewSource(task, files, appliedRepoData?.revision, {
-        loadingPaths:
-          activePath && repoPatchQuery.isLoading
-            ? new Set([activePath])
-            : undefined,
-        unavailablePaths:
-          activePath && repoPatchQuery.error
-            ? new Set([activePath])
-            : undefined,
-      }),
-    [
-      activePath,
-      appliedRepoData?.revision,
-      files,
-      repoPatchQuery.error,
-      repoPatchQuery.isLoading,
-      task,
-    ],
-  );
-  useEffect(() => {
-    if (activePath && files.some((file) => file.path === activePath)) return;
-    setActivePath(firstRenderablePath(files) ?? null);
-  }, [activePath, files]);
-  const findingReview = usePreparedFindingReview({
-    activePath,
-    files,
-    onActivePathChange: setActivePath,
-    source,
-  });
-  const latestRevisionKey = reviewRevisionKey(
-    repoDiffQuery.data?.revision ?? source.revision,
-  );
-  const hasAvailableRevision = Boolean(
-    source.capabilities.includes('refresh') &&
-    appliedRevisionKey &&
-    latestRevisionKey &&
-    appliedRevisionKey !== latestRevisionKey,
-  );
-  const refreshSafety = useMemo(
-    () =>
-      evaluateReviewRefreshSafety({
-        activeSelection: findingReview.refreshGuards.selectionActive,
-        revisionConfirmationOpen:
-          findingReview.refreshGuards.revisionConfirmationOpen,
-        mutationPending:
-          findingReview.refreshGuards.mutationPending || isApplyingRevision,
-      }),
-    [findingReview.refreshGuards, isApplyingRevision],
-  );
-  const applyAvailableRevision = useCallback(() => {
-    const next = repoDiffQuery.data;
-    if (!next || !hasAvailableRevision || isApplyingRevision) return;
-    setIsApplyingRevision(true);
-    const nextFiles = next.files ?? [];
-    const nextSource = kiloResultReviewSource(task, nextFiles, next.revision);
-    const nextFindingProjection = findingReview.projectRefresh(
-      nextSource,
-      nextFiles,
-    );
-    const outcome = reconcileReviewOrientation({
-      previousFiles: source.files,
-      nextFiles: nextSource.files,
-      previousOrder: source.files.map((file) => file.path),
-      nextOrder: nextSource.files.map((file) => file.path),
-      activePath,
-      previousTargets: findingReview.refreshProjection.targets,
-      nextTargets: nextFindingProjection.targets,
-      currentTargetKey: findingReview.refreshProjection.currentTargetKey,
-    });
-    setAppliedRepoData(next);
-    if (outcome.activePath) setActivePath(outcome.activePath);
-    findingReview.applyRefreshTarget(outcome.target, nextSource);
-    setRefreshOutcome({ status: outcome.status, message: outcome.message });
-    setIsApplyingRevision(false);
-  }, [
-    activePath,
-    hasAvailableRevision,
-    findingReview,
-    isApplyingRevision,
-    repoDiffQuery.data,
-    source.files,
-    task,
-  ]);
-  useEffect(() => {
-    if (hasAvailableRevision && refreshSafety.safe) applyAvailableRevision();
-  }, [applyAvailableRevision, hasAvailableRevision, refreshSafety.safe]);
-  useEffect(
-    () =>
-      openReviewSourceRevisionEventStream((event) => {
-        if (!reviewSourceRevisionEventMatches(source, event)) return;
-        void queryClient.invalidateQueries({
-          exact: true,
-          queryKey: diffViewerQueryKeys.repoDiff({
-            repoId: task.repoId,
-            worktreeId: task.worktreeId,
-          }),
-        });
-      }),
-    [queryClient, source, task.repoId, task.worktreeId],
-  );
-  const refreshStatus = createReviewRefreshStatus({
-    appliedRevision: source.revision,
-    availableRevision: hasAvailableRevision
-      ? (repoDiffQuery.data?.revision ?? null)
-      : null,
-    safety: refreshSafety,
-    state: isApplyingRevision
-      ? 'applying'
-      : hasAvailableRevision
-        ? 'available'
-        : 'current',
-    preservation: refreshOutcome?.status ?? null,
-    message: refreshOutcome?.message ?? null,
-  });
-
-  if (repoDiffQuery.isLoading && !appliedRepoData) {
-    return <MiniEmpty label="Loading Kilo diff." />;
-  }
-
-  if (repoDiffQuery.error && files.length === 0) {
-    return (
-      <MiniEmpty
-        label={`Kilo diff unavailable: ${queryErrorMessage(repoDiffQuery.error)}`}
-      />
-    );
-  }
-
-  return (
-    <>
-      {hasAvailableRevision ? (
-        <ReviewRefreshNotice
-          availableLabel="The Kilo worktree changed. Existing approval and recovery state will stay in place."
-          disabled={!canExplicitlyApplyReviewRefresh(refreshSafety)}
-          onApply={applyAvailableRevision}
-          safety={refreshSafety}
-        />
-      ) : null}
-      {refreshOutcome ? (
-        <output aria-live="polite" className="review-refresh-result">
-          {refreshOutcome.message}
-        </output>
-      ) : null}
-      {!source.capabilities.includes('refresh') ? (
-        <StaticReviewNotice label="This retained Kilo result is static; no revision-bound live refresh is available." />
-      ) : null}
-      <MultiFileView
-        activePath={activePath}
-        annotationsByPath={findingReview.annotationsByPath}
-        detail={summary ? summaryLabel(summary) : task.cwd}
-        emptyLabel="No Kilo changes to render."
-        files={files}
-        inspector={findingReview.inspector}
-        inspectorLabel={findingReview.inspectorLabel}
-        onActivePathChange={setActivePath}
-        onReviewSurfaceFindingsChange={
-          findingReview.onReviewSurfaceFindingsChange
-        }
-        onReviewSurfaceIdChange={findingReview.onReviewSurfaceIdChange}
-        patchError={
-          repoPatchQuery.error
-            ? queryErrorMessage(repoPatchQuery.error)
-            : repoDiffQuery.error
-              ? queryErrorMessage(repoDiffQuery.error)
-              : null
-        }
-        isLoadingPatch={Boolean(activePath) && repoPatchQuery.isLoading}
-        refreshStatus={refreshStatus}
-        source={source}
-        renderAnnotation={findingReview.renderAnnotation}
-        reviewMapByPath={findingReview.reviewMapByPath}
-        selectedAnnotationId={findingReview.selectedAnnotationId}
-        title={task.title}
-        tone="violet"
-      />
-    </>
-  );
-}
-
 export function RepoEditEventDiffReview({ event }: { event: RepoEditEvent }) {
   const hasStoredPatch = patchHasContent(event.diffPatch);
   const storedFiles = useMemo(
@@ -746,33 +497,4 @@ function StaticReviewNotice({ label }: { label: string }) {
       {label}
     </p>
   );
-}
-
-function kiloSummaryFiles(
-  diff: KiloTaskRecord['diff'] | undefined,
-): DiffFilePatch[] {
-  if (!diff?.ok) return [];
-  return diff.files.map((file) => ({
-    ...file,
-    binary: false,
-    generatedLike: false,
-    message: 'The Kilo diff route returned summary metadata only.',
-    patch: null,
-  }));
-}
-
-function summaryFromKilo(
-  diff: KiloTaskRecord['diff'] | undefined,
-): DiffSummary | null {
-  if (!diff?.ok) return null;
-  return {
-    additions: diff.additions,
-    binaryFiles: diff.binaryFiles,
-    deletions: diff.deletions,
-    files: diff.fileCount,
-  };
-}
-
-function summaryLabel(summary: DiffSummary) {
-  return `${summary.files} files - +${summary.additions} -${summary.deletions} - ${summary.binaryFiles} binary`;
 }

@@ -86,7 +86,6 @@ const reviewSourceSchema: v.GenericSchema<ReviewSourceSnapshot> = v.object({
   kind: v.picklist([
     'github-pr',
     'prepared-diff',
-    'kilo-result',
     'skill-patch',
     'repo-edit-event',
   ]),

@@ -10,18 +10,14 @@ import {
   type ReviewSourceSnapshot,
 } from '../../../../shared/review-source';
 import type { NeonReviewFinding } from '../../../../shared/review-finding';
-import type { KiloTaskRecord, PreparedDiffRecord } from '../../api';
+import type { PreparedDiffRecord } from '../../api';
 
 const state = vi.hoisted(() => ({
   findings: [] as NeonReviewFinding[],
   preparedError: false,
   preparedHasData: true,
   preparedRevision: 'prepared-a',
-  repoRevision: 'repo-a',
-  repoPatchError: false,
-  repoPatchLoading: false,
   fileCount: 2,
-  patchPaths: [] as Array<string | null>,
   viewProps: null as ViewProps | null,
 }));
 
@@ -66,9 +62,7 @@ vi.mock('./queries', async () => {
   return {
     diffViewerQueryKeys: {
       preparedDiffFiles: (id: string) => ['prepared', id],
-      repoDiff: (input: unknown) => ['repo', input],
     },
-    useKiloTaskDiff: () => ({ data: null, error: null, isLoading: false }),
     usePreparedDiffFiles: () => ({
       data: state.preparedHasData
         ? { files: files(), revision: revision(state.preparedRevision) }
@@ -89,38 +83,6 @@ vi.mock('./queries', async () => {
       error: null,
       isLoading: false,
     }),
-    useRepoDiff: (input: { worktreeId?: string | null }) => ({
-      data: {
-        diffSummary: {
-          additions: state.fileCount,
-          binaryFiles: 0,
-          deletions: state.fileCount,
-          files: state.fileCount,
-        },
-        files: files(input.worktreeId === 'worktree-2' ? 'next' : 'src'),
-        revision: revision(state.repoRevision),
-      },
-      error: null,
-      isLoading: false,
-    }),
-    useRepoDiffFilePatch: (input: { path: string | null }) => {
-      state.patchPaths.push(input.path);
-      return {
-        data:
-          input.path && !state.repoPatchLoading && !state.repoPatchError
-            ? {
-                files: [
-                  {
-                    path: input.path,
-                    patch: `@@ -1 +1 @@\n-old\n+${input.path}\n`,
-                  },
-                ],
-              }
-            : undefined,
-        error: state.repoPatchError ? new Error('Patch unavailable.') : null,
-        isLoading: state.repoPatchLoading,
-      };
-    },
   };
 });
 
@@ -143,9 +105,9 @@ vi.mock('./MultiFileView', () => ({
   },
 }));
 
-import { KiloTaskDiffReview, PreparedDiffReview } from './surfaces';
+import { PreparedDiffReview } from './surfaces';
 
-describe('revision-aware prepared and Kilo surfaces', () => {
+describe('revision-aware prepared surfaces', () => {
   let container: HTMLDivElement;
   let root: ReturnType<typeof createRoot>;
   let queryClient: QueryClient;
@@ -158,11 +120,7 @@ describe('revision-aware prepared and Kilo surfaces', () => {
     state.preparedError = false;
     state.preparedHasData = true;
     state.preparedRevision = 'prepared-a';
-    state.repoRevision = 'repo-a';
-    state.repoPatchError = false;
-    state.repoPatchLoading = false;
     state.fileCount = 2;
-    state.patchPaths = [];
     state.viewProps = null;
     queryClient = new QueryClient({
       defaultOptions: { queries: { retry: false } },
@@ -271,16 +229,7 @@ describe('revision-aware prepared and Kilo surfaces', () => {
     'reports a degraded prepared refresh after the selected finding becomes %s',
     async (lifecycleState) => {
       await expect(
-        expectLifecycleSelectionDegraded('prepared', lifecycleState),
-      ).resolves.toBe('degraded');
-    },
-  );
-
-  it.each(['dismissed', 'resolved', 'stale'] as const)(
-    'reports a degraded Kilo refresh after the selected finding becomes %s',
-    async (lifecycleState) => {
-      await expect(
-        expectLifecycleSelectionDegraded('kilo', lifecycleState),
+        expectLifecycleSelectionDegraded(lifecycleState),
       ).resolves.toBe('degraded');
     },
   );
@@ -389,78 +338,6 @@ describe('revision-aware prepared and Kilo surfaces', () => {
     expect(container.querySelector('[data-testid="mounted-view"]')).toBeNull();
   });
 
-  it('keeps a 305-file Kilo refresh lazy and reuses the surrounding surface', async () => {
-    state.fileCount = 305;
-    state.findings = [finding('repo-a', 'kilo-result:kilo-1')];
-    await render(<KiloTaskDiffReview task={kiloTask()} />);
-    await selectFinding();
-    const mountedView = container.querySelector('[data-testid="mounted-view"]');
-
-    state.repoRevision = 'repo-b';
-    await render(<KiloTaskDiffReview task={kiloTask()} />);
-    const apply = container.querySelector<HTMLButtonElement>(
-      'button[aria-label="Apply the available review revision"]',
-    );
-    await act(async () =>
-      apply?.dispatchEvent(new MouseEvent('click', { bubbles: true })),
-    );
-
-    const requestedPaths = new Set(state.patchPaths.filter(Boolean));
-    expect(state.viewProps?.files).toHaveLength(305);
-    expect(requestedPaths).toEqual(new Set(['src/file-000.ts']));
-    expect(
-      state.viewProps?.files.filter((file) => Boolean(file.patch)),
-    ).toHaveLength(1);
-    expect(container.querySelector('[data-testid="mounted-view"]')).toBe(
-      mountedView,
-    );
-    expect(state.viewProps?.source?.revision).toMatchObject({ id: 'repo-b' });
-  });
-
-  it('publishes truthful Kilo patch loading and failure states', async () => {
-    state.repoPatchLoading = true;
-    await render(<KiloTaskDiffReview task={kiloTask()} />);
-
-    expect(state.viewProps?.source?.files[0]).toMatchObject({
-      path: 'src/file-000.ts',
-      patchState: 'loading',
-    });
-
-    state.repoPatchLoading = false;
-    state.repoPatchError = true;
-    await render(<KiloTaskDiffReview task={kiloTask()} />);
-
-    expect(state.viewProps?.source?.files[0]).toMatchObject({
-      path: 'src/file-000.ts',
-      patchState: 'unavailable',
-    });
-  });
-
-  it('never publishes task B with task A files or revision during a source switch', async () => {
-    await render(<KiloTaskDiffReview task={kiloTask()} />);
-    expect(state.viewProps?.source).toMatchObject({
-      id: 'kilo-result:kilo-1',
-      revision: { id: 'repo-a' },
-    });
-    expect(state.viewProps?.files[0]?.path).toBe('src/file-000.ts');
-
-    state.repoRevision = 'repo-b';
-    await render(
-      <KiloTaskDiffReview
-        task={kiloTask({ id: 'kilo-2', worktreeId: 'worktree-2' })}
-      />,
-    );
-
-    expect(state.viewProps?.source).toMatchObject({
-      id: 'kilo-result:kilo-2',
-      revision: { id: 'repo-b' },
-    });
-    expect(state.viewProps?.files[0]?.path).toBe('next/file-000.ts');
-    expect(
-      state.viewProps?.files.some((file) => file.path.startsWith('src/')),
-    ).toBe(false);
-  });
-
   async function render(node: ReactNode) {
     await act(async () => {
       root.render(
@@ -480,25 +357,13 @@ describe('revision-aware prepared and Kilo surfaces', () => {
   }
 
   async function expectLifecycleSelectionDegraded(
-    surface: 'prepared' | 'kilo',
     lifecycleState: Extract<
       NeonReviewFinding['lifecycle']['state'],
       'dismissed' | 'resolved' | 'stale'
     >,
   ) {
-    const sourceId =
-      surface === 'prepared'
-        ? 'prepared-diff:prepared-1'
-        : 'kilo-result:kilo-1';
-    const revisionId = surface === 'prepared' ? 'prepared-a' : 'repo-a';
-    state.findings = [finding(revisionId, sourceId)];
-    await render(
-      surface === 'prepared' ? (
-        <PreparedDiffReview diff={preparedDiff()} />
-      ) : (
-        <KiloTaskDiffReview task={kiloTask()} />
-      ),
-    );
+    state.findings = [finding('prepared-a', 'prepared-diff:prepared-1')];
+    await render(<PreparedDiffReview diff={preparedDiff()} />);
     await selectFinding();
     const lifecycleFinding = {
       ...state.findings[0]!,
@@ -517,15 +382,8 @@ describe('revision-aware prepared and Kilo surfaces', () => {
     });
     expect(state.viewProps?.selectedAnnotationId).not.toBeNull();
 
-    if (surface === 'prepared') state.preparedRevision = 'prepared-b';
-    else state.repoRevision = 'repo-b';
-    await render(
-      surface === 'prepared' ? (
-        <PreparedDiffReview diff={preparedDiff()} />
-      ) : (
-        <KiloTaskDiffReview task={kiloTask()} />
-      ),
-    );
+    state.preparedRevision = 'prepared-b';
+    await render(<PreparedDiffReview diff={preparedDiff()} />);
     const apply = container.querySelector<HTMLButtonElement>(
       'button[aria-label="Apply the available review revision"]',
     );
@@ -553,7 +411,6 @@ function preparedDiff(): PreparedDiffRecord {
     verificationStatus: 'not-run',
     sourceOfTruth: 'worktree',
     summary: 'Waiting for approval.',
-    revisionRun: null,
     updatedAt: '2026-07-18T00:00:00.000Z',
   };
 }
@@ -589,38 +446,5 @@ function finding(revisionId: string, sourceId: string): NeonReviewFinding {
       reason: null,
       promotion: null,
     },
-  };
-}
-
-function kiloTask(
-  overrides: Partial<Pick<KiloTaskRecord, 'id' | 'worktreeId'>> = {},
-): KiloTaskRecord {
-  return {
-    id: overrides.id ?? 'kilo-1',
-    title: 'Kilo result',
-    prompt: 'Change it.',
-    repoId: 'repo-1',
-    repoFullName: 'example/repo',
-    worktreeId: overrides.worktreeId ?? 'worktree-1',
-    lockId: null,
-    cwd: '/tmp/worktree-1',
-    mode: 'direct-edit',
-    status: 'succeeded',
-    explicitUserRequest: true,
-    autoEnabled: false,
-    cliPath: 'kilo',
-    args: [],
-    pid: null,
-    processStartedAt: null,
-    rootSessionId: null,
-    childSessionIds: [],
-    rawLogPath: null,
-    summary: null,
-    exitCode: 0,
-    error: null,
-    createdAt: '2026-07-18T00:00:00.000Z',
-    updatedAt: '2026-07-18T00:00:00.000Z',
-    completedAt: '2026-07-18T00:00:00.000Z',
-    preparedDiffId: 'prepared-1',
   };
 }

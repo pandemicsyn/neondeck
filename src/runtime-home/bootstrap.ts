@@ -39,20 +39,6 @@ const seededRuntimeSkills = [
     ),
   },
   {
-    id: 'neon-ci-fix',
-    source: resolveShippedAsset(
-      'src/skills/neon-ci-fix/SKILL.md',
-      'skills/neon-ci-fix/SKILL.md',
-    ),
-  },
-  {
-    id: 'neon-docs-fix',
-    source: resolveShippedAsset(
-      'src/skills/neon-docs-fix/SKILL.md',
-      'skills/neon-docs-fix/SKILL.md',
-    ),
-  },
-  {
     id: 'neon-issue-triage',
     source: resolveShippedAsset(
       'src/skills/neon-issue-triage/SKILL.md',

@@ -1,4 +1,3 @@
-export { ciFixRunAction } from './actions';
 export {
   dispatchAutopilotOwnerTurn,
   type AutopilotOwnerDispatcher,
@@ -21,11 +20,5 @@ export {
   type AutopilotOwnerCapabilitySet,
 } from './owner/capabilities';
 export { preparePrWorktree } from './worktree';
-export {
-  createCiFailureDossierReport,
-  fixPrCiRun,
-  ciFixRunInputSchema,
-  ciFixRunOutputSchema,
-  type CiFixRunInput,
-} from './ci-fix-run';
+export { createCiFailureDossierReport } from './ci-fix-report';
 export * from './watch-service';

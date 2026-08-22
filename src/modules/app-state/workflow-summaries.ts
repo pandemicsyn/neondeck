@@ -170,38 +170,6 @@ export async function listWorkflowSummaries(paths = runtimePaths()) {
   }
 }
 
-export async function findWorkflowSummaryByKiloTaskId(
-  workflow: string,
-  kiloTaskId: string,
-  paths = runtimePaths(),
-) {
-  await ensureRuntimeHome(paths);
-  const database = openDb(paths.neondeckDatabase);
-
-  try {
-    const rows = database
-      .prepare(
-        `
-        SELECT *
-        FROM workflow_summaries
-        WHERE workflow = ?
-        ORDER BY created_at DESC
-        LIMIT 200;
-      `,
-      )
-      .all(workflow)
-      .map(readWorkflowSummaryRow);
-    return (
-      rows.find((row) => {
-        const summary = objectField(row.summary);
-        return summary.kiloTaskId === kiloTaskId;
-      }) ?? null
-    );
-  } finally {
-    database.close();
-  }
-}
-
 function readWorkflowSummaryRow(row: unknown): WorkflowSummaryRecord {
   const record = row as Record<string, unknown>;
   return {
@@ -216,10 +184,4 @@ function readWorkflowSummaryRow(row: unknown): WorkflowSummaryRecord {
     createdAt: String(record.created_at),
     updatedAt: String(record.updated_at),
   };
-}
-
-function objectField(value: unknown): Record<string, unknown> {
-  return value && typeof value === 'object' && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : {};
 }

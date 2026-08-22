@@ -8,8 +8,6 @@ import {
   listGitHubIssues,
   listGitHubPrQueue,
 } from '../../modules/github';
-import { neondeckKiloTools } from '../../modules/kilo';
-import { neondeckKiloResultTools } from '../../modules/kilo/results';
 import { neondeckLearningOperatorTools } from '../../modules/learning';
 import { listMemories } from '../../modules/memory';
 import { neondeckMcpTools } from '../../domains/mcp';
@@ -337,6 +335,4 @@ export const neondeckFactTools = [
   ...neondeckReviewSurfaceTools,
   ...neondeckRepoEditTools,
   ...neondeckWorktreeTools,
-  ...neondeckKiloTools,
-  ...neondeckKiloResultTools,
 ];

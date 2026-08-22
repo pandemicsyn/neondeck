@@ -28,8 +28,6 @@ try {
     'dist/server.mjs',
     'dist/assets/migrations',
     'dist/skills/neon-pr-review/SKILL.md',
-    'dist/skills/neon-ci-fix/SKILL.md',
-    'dist/skills/neon-docs-fix/SKILL.md',
     'dist/skills/neon-issue-triage/SKILL.md',
     'web/dist/index.html',
     'bin/neondeck.mjs',
@@ -188,7 +186,7 @@ async function assertRuntimeSkills(port) {
   }
   const status = await response.json();
   const skillsCheck = status.checks?.find((check) => check.id === 'skills');
-  if (skillsCheck?.ok !== true || !(status.counts?.activeSkills >= 7)) {
+  if (skillsCheck?.ok !== true || !(status.counts?.activeSkills >= 5)) {
     throw new Error(
       `Packed runtime could not load built-in skills.\n${JSON.stringify(
         {

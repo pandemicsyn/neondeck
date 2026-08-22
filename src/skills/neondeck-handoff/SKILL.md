@@ -28,4 +28,4 @@ HTTP handoff requests must include `source`. CLI commands default to `external:c
 
 Notes create Neondeck notifications with levels `info`, `ready`, or `attention`; external callers cannot create `urgent` notes. Linked repo or PR references must match configured repositories.
 
-Use `neondeck_config_update_handoff` to change handoff policy. Do not tell external agents to call execution, approval, push, Kilo, provider, or config mutation APIs through the handoff surface.
+Use `neondeck_config_update_handoff` to change handoff policy. Do not tell external agents to call execution, approval, push, provider, or config mutation APIs through the handoff surface.

@@ -55,7 +55,7 @@ the same backend state, actions, workflows, and event stream.
 2. **Prioritize:** turn those facts into a concise attention queue, briefing,
    or context-aware conversation.
 3. **Act:** update configuration, inspect repositories, prepare changes in
-   managed worktrees, run approved checks, or delegate explicit tasks.
+   managed worktrees, or run approved checks.
 4. **Review:** expose diffs, findings, workflow evidence, approvals, and PR
    review controls before consequential effects.
 5. **Learn:** turn high-signal conversation and PR outcomes into typed,
@@ -81,7 +81,7 @@ the same backend state, actions, workflows, and event stream.
 - Durable, context-linked Neon sessions with switching, summaries, references,
   stale-context signals, and workflow activity.
 - Local reports and operator panels for prepared work, runtime readiness,
-  workflows, notifications, memory, learning, and delegated tasks.
+  workflows, notifications, memory, learning, and active agent work.
 - Typed self-configuration for repositories, models, providers, schedules,
   skills, execution policy, and dashboard layout.
 - Extensibility through runtime skills and policy-controlled MCP servers.
@@ -98,15 +98,15 @@ the same backend state, actions, workflows, and event stream.
 - Keep interactive user-directed authority separate from unattended autopilot
   policy. An autonomous run must not infer broader authority from what an
   interactive user could do.
-- Use managed Git worktrees as the normal isolation boundary for autonomous or
-  delegated code changes. Do not mutate the user’s primary checkout.
+- Use managed Git worktrees as the normal isolation boundary for autonomous
+  code changes. Do not mutate the user’s primary checkout.
 - Keep ordinary chat and workflow shell execution mediated by an allow/ask/deny
   policy. The trusted watched-PR coding owner is the narrow exception: it gets a
   managed-worktree shell with a private credential-free home and default
   environment, while external push and PR response remain mode-scoped
   application tools.
 - Treat local-first as a data and control-plane choice, not a claim that every
-  dependency is offline. Model providers, GitHub, MCP servers, Kilo, and optional
+  dependency is offline. Model providers, GitHub, MCP servers, and optional
   exe.dev execution may be remote and must remain explicit.
 - Preserve session stability. Changes to SOUL, skills, models, providers,
   repository config, or memory should mark existing context stale rather than
@@ -128,9 +128,8 @@ the same backend state, actions, workflows, and event stream.
   typed operations rather than freestyle-editing runtime files.
 - **Use one runtime across surfaces.** The web dashboard, CLI, and future TUI
   should share backend behavior instead of creating parallel agent systems.
-- **Keep extensions bounded.** Plugins, skills, MCP tools, providers, and
-  delegated agents should have clear contracts, visible readiness, and safe
-  failure states.
+- **Keep extensions bounded.** Plugins, skills, MCP tools, and providers should
+  have clear contracts, visible readiness, and safe failure states.
 
 ## Brand Personality
 
@@ -160,8 +159,6 @@ Avoid:
 
 - Release watching currently uses GitHub checks as its primary signal;
   provider-specific deployment adapters are not yet part of the product.
-- Kilo is an explicit delegated-worker integration with durable task state, not
-  a default or general-purpose external-agent router.
 - Existing-VM exe.dev command execution is supported, but relocating the entire
   workspace and Flue sandbox to exe.dev is still planned.
 - The OpenTUI client is planned; the shared backend APIs and event model are the

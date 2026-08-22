@@ -198,8 +198,7 @@ function automationHealthReportSection(
       {
         label: 'drift and triage',
         value: [
-          `docs acted on: ${formatRate(health.driftTriage.docsDriftActedOnRate)}`,
-          `docs reports/staged fixes: ${health.driftTriage.docsDriftReports}/${health.driftTriage.docsDriftStagedFixes}`,
+          `docs drift reports: ${health.driftTriage.docsDriftReports}`,
           `issue triage reports: ${health.driftTriage.issueTriageReports}`,
           `aged-out reports: ${health.driftTriage.agedOutReports}`,
         ].join('\n'),

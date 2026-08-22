@@ -20,7 +20,6 @@ export const queryKeys = {
     ['github-pr', repo, number] as const,
   githubPrs: ['github-prs'] as const,
   hostMetrics: ['host-metrics'] as const,
-  kiloTasks: ['kilo-tasks'] as const,
   learningState: ['learning-state'] as const,
   memories: ['memories'] as const,
   mcpApprovals: ['mcp-approvals'] as const,

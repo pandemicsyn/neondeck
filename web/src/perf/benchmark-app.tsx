@@ -385,7 +385,6 @@ const runtimeQueryNames = [
   'mcp-approvals',
   'safety',
   'workflows',
-  'kilo-tasks',
   'repo-edits',
   'worktrees',
 ];

@@ -10,7 +10,6 @@ export * from './events';
 export * from './safety';
 export * from './sessions';
 export * from './activity';
-export * from './kilo';
 export * from './execution';
 export * from './mcp';
 export * from './scheduler';

@@ -29,8 +29,6 @@ export const integrationTestFiles = [
   'src/autopilot-recovery.test.ts',
   'src/autopilot-workflows.test.ts',
   'src/commands.test.ts',
-  'src/kilo-actions.test.ts',
-  'src/kilo-results.test.ts',
   'src/learning-agent-smoke.test.ts',
   'src/prepared-diffs.test.ts',
   'src/repo-edit.test.ts',

@@ -1,7 +1,6 @@
 import type { QueryClient, UseQueryResult } from '@tanstack/react-query';
 import type {
   ExecutionApprovalsResponse,
-  KiloTasksResponse,
   MemoryResponse,
   McpApprovalsResponse,
   McpServersResponse,
@@ -32,7 +31,6 @@ type RuntimeSnapshotQueries = {
   mcpApprovals: UseQueryResult<McpApprovalsResponse>;
   safety: UseQueryResult<SafetyPolicy>;
   activity: UseQueryResult<ActivityObservability>;
-  kiloTasks: UseQueryResult<KiloTasksResponse>;
   repoEditEvents: UseQueryResult<RepoEditEventsResponse>;
   worktrees: UseQueryResult<WorktreesResponse>;
 };
@@ -53,7 +51,6 @@ export function runtimeSnapshotFromQueries(
     queryResultError(queries.mcpApprovals),
     queryResultError(queries.safety),
     queryResultError(queries.activity),
-    queryResultError(queries.kiloTasks),
     queryResultError(queries.repoEditEvents),
     queryResultError(queries.worktrees),
   ].filter((error): error is string => !!error);
@@ -87,7 +84,6 @@ export function runtimeSnapshotFromQueries(
         urgent: 'Production-facing failures.',
         reconcile: 'Repeated source events are reconciled.',
         autopilot: 'Autopilot state changes create actionable notifications.',
-        kilo: 'Kilo task state changes create delegated-work notifications.',
       },
       fetchedAt: status.fetchedAt,
     },
@@ -114,14 +110,6 @@ export function runtimeSnapshotFromQueries(
     },
     safety: queries.safety.data ?? emptySafetyPolicy(status.fetchedAt),
     activity: queries.activity.data ?? emptyActivity(),
-    kiloTasks: queries.kiloTasks.data ?? {
-      ok: false,
-      action: 'kilo_tasks_list',
-      changed: false,
-      message: 'Kilo tasks unavailable.',
-      tasks: [],
-      fetchedAt: status.fetchedAt,
-    },
     repoEditEvents: queries.repoEditEvents.data ?? {
       ok: false,
       action: 'repo_edit_events_list',
@@ -161,7 +149,6 @@ export async function invalidateRuntimeQueries(queryClient: QueryClient) {
     queryClient.invalidateQueries({
       queryKey: queryKeys.activityObservability,
     }),
-    queryClient.invalidateQueries({ queryKey: queryKeys.kiloTasks }),
     queryClient.invalidateQueries({ queryKey: queryKeys.memories }),
     queryClient.invalidateQueries({ queryKey: queryKeys.notifications }),
     queryClient.invalidateQueries({ queryKey: queryKeys.executionApprovals }),

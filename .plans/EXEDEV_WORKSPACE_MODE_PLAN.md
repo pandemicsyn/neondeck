@@ -37,8 +37,6 @@ schedulers, watchers, and session state are not workspace concerns and do not mo
   - `src/repo-edit/`: filesystem ops via `node:fs` (`index.ts`), git via `execFileAsync` + one
     `spawn` (`git.ts`), path safety via `realpath`/`lstat` (`path-safety.ts`).
   - `src/repos.ts`, `src/dev-doctor.ts`: host git/fs reads for status.
-  - `src/kilo-actions.ts`: spawns the Kilo CLI on the host with streaming (`spawn`) — the one
-    consumer that is _not_ a thin exec seam.
 - **The exe.dev plumbing already exists.** `src/sandboxes/exedev.ts` implements Flue's
   `SandboxApi` over SSH/SFTP (with Neondeck's disposal fix); `execution.exeDev` config already
   carries `vmHostEnv`, `sshKeyEnv`, `apiTokenEnv`, `lifecycle`, `remoteRoot`, env forwarding, and
@@ -61,9 +59,6 @@ schedulers, watchers, and session state are not workspace concerns and do not mo
   overrides later). Mixed-location worktrees are explicitly out.
 - **No VM lifecycle management in v1.** Same `lifecycle: 'existing-vm'` posture as execution
   today: the user owns the VM. The adapter's create/clone/delete helpers stay unused.
-- **Kilo handoff does not move in v1.** Kilo needs its CLI installed remotely and streamed over
-  SSH; that is real work with its own trust questions. In `exe.dev` mode, Kilo task start returns
-  a typed `kilo-requires-host-workspace` error (see Open Questions).
 - **No second agent runtime.** This is the same Neon, same session, same actions — with the
   workspace relocated. The earlier "separate sandboxed worker agent" idea is superseded by this
   mode.
@@ -122,9 +117,8 @@ Design notes:
 - The exe.dev implementation wraps a **shared, supervised SSH connection** (see below), not a
   connection per call.
 - Streaming (`spawn`-style incremental output) is deliberately absent from v1 of the interface;
-  the two `spawn` consumers are Kilo (deferred) and repo-edit's patch-apply stdin pipe (rework to
-  write the patch to a temp file in the workspace and `git apply <file>` — same semantics, no
-  streaming needed).
+  repo-edit's patch-apply stdin pipe should be reworked to write the patch to a temp file in the
+  workspace and run `git apply <file>` — the same semantics without streaming.
 
 ### Connection supervisor
 
@@ -195,7 +189,6 @@ itself.
 | `exedev-checkouts.ts`                          | Unchanged flow, faster (shared connection); becomes the required first step per repo in `exe.dev` mode                                                                                                                                          |
 | `repos.ts` / `dev-doctor.ts`                   | Repo status facts via `WorkspaceApi` in `exe.dev` mode (or clearly labeled `host-only` where a check is inherently local)                                                                                                                       |
 | `autopilot-workflows.ts` / `prepared-diffs.ts` | No semantic change: they operate on worktrees through the worktree/repo-edit/execution services; verify they never touch `node:fs` directly on worktree paths (fix any strays found)                                                            |
-| `kilo-actions.ts`                              | Typed `kilo-requires-host-workspace` error in `exe.dev` mode (v1)                                                                                                                                                                               |
 | `agents/display-assistant.ts`                  | `sandbox: exedev(vmHost, …)` with `cwd` at `remoteRoot` when mode is `exe.dev` (initializer already reads config sync; VM host resolution must not throw at definition time — fall back to virtual sandbox + readiness warning if unresolvable) |
 | `runtime-status.ts`                            | New checks: VM reachable, toolchain (`git`, `gh`, auth), checkout sync state per configured repo, active workspace mode                                                                                                                         |
 | `safety.ts`                                    | Entries for the new workspace action/CLI/route; no class changes elsewhere (locations, not permissions, changed)                                                                                                                                |
@@ -204,7 +197,7 @@ itself.
 
 - Instruction addition (house style): in `exe.dev` workspace mode, all repo work happens on the
   configured VM; use `neondeck_exedev_checkout_sync` before repo actions on an unsynced repo;
-  the agent's own file/shell workspace is the VM; Kilo handoff is unavailable in this mode;
+  the agent's own file/shell workspace is the VM;
   never claim work happened on the host.
 - The Flue sandbox connection for chat sessions is separate from the supervisor connection
   (Flue owns its harness lifecycle). Risk: Flue never disposes it. Mitigation: the adapter gains
@@ -235,7 +228,7 @@ gated on `EXE_VM_HOST`).
 1. `repo-edit/` migration (fs, git, path-safety, patch-apply rework) — the largest single piece;
    its existing test suite runs against both implementations via the fake.
 2. `repos.ts`/`dev-doctor.ts` status facts; autopilot/prepared-diff stray-`node:fs` audit.
-3. Display-assistant sandbox wiring + instruction paragraph + Kilo typed error.
+3. Display-assistant sandbox wiring + instruction paragraph.
 4. Dashboard: workspace mode + VM health in Runtime Overview; docs page; update
    `.plans/ROADMAP.md` (workspace location under Extensibility/Execution).
 
@@ -256,15 +249,12 @@ migrated) — not more PRs.
   confirm-gated mode switch warns when active worktrees/locks/running workflows exist and lists
   them.
 - **VM as credential holder.** Push-back from the VM means repo credentials live there. This is
-  the same trust decision as running Kilo or CI on any remote machine, but it must be _explicit_:
+  the same trust decision as running CI on any remote machine, but it must be _explicit_:
   documented, surfaced in readiness ("gh authenticated as X"), never automated by Neondeck.
 - **Flue sandbox connection lifetime.** Covered by the idle-timeout mitigation above; verify no
   connection-per-message behavior in real chat before shipping PR 2.
 - **Open question — per-repo workspace override.** A `workspaceMode` field on repo config could
   pin specific repos to host. Deferred: global-only in v1; revisit if a real mixed need appears.
-- **Open question — Kilo on the VM.** Requires remote CLI install, streamed events over SSH, and
-  session storage decisions. Deferred to its own plan if wanted; the typed error keeps the
-  boundary honest meanwhile.
 
 ## Definition of Done
 

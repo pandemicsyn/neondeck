@@ -59,7 +59,7 @@ commit after the measurement changed only prepared-summary stable-read code
 and coverage, not those measured paths. Machine-local raw evidence was retained
 at `/private/tmp/neondeck-pr154-b5-results-exact-aa87167.json`.
 
-The mounted prepared/Kilo 30-second fingerprint polling cadence and changed-path
+The mounted prepared-worktree 30-second fingerprint polling cadence and changed-path
 metadata query are bounded, and patch bodies are not loaded by the poll.
 Content work is not byte- or time-bounded: `gitWorktreeRevision` hashes the full
 content of every changed regular file. Pathological huge changed files can

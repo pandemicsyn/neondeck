@@ -174,11 +174,11 @@ neondeck note "Finished local cleanup without a PR." \
   --level ready \
   --json</code></pre>
         <p>
-          Handoff commands let same-host tools such as Claude Code, Codex, Kilo,
-          and git hooks register work with Neon. They create attributed PR
-          watches and notifications; they do not grant execution, approval,
-          push, provider, or remote ingest powers.
-          <code>register-pr --review</code> is default-off per command and also respects
+          Handoff commands let same-host tools such as Claude Code, Codex, and
+          git hooks register work with Neon. They create attributed PR watches
+          and notifications; they do not grant execution, approval, push,
+          provider, or remote ingest powers. <code>register-pr --review</code> is
+          default-off per command and also respects
           <code>handoff.allowExternalReviewQueue</code> in runtime-home
           <code>config.json</code>.
         </p>
@@ -195,7 +195,6 @@ neondeck note "Finished local cleanup without a PR." \
         <pre><code>/repo-status [repo-id]
 /review-queue
 /review-pr &lt;repo#number|owner/repo#number|url&gt;
-/fix-ci [repo#number|owner/repo#number]
 /explain-ci [--report] [repo#number|owner/repo#number]
 /summarize-pr [repo#number|owner/repo#number]
 /draft-pr-description [repo-id|owner/repo]
@@ -210,10 +209,7 @@ neondeck note "Finished local cleanup without a PR." \
           Slash commands can be typed in chat, launched from dashboard buttons,
           or chosen from the chat input's slash-command suggestions.
           <code>/review-pr</code> prepares local reports and Neon-origin draft review
-          comments for a human reviewer; it does not submit a GitHub review. <code
-            >/fix-ci</code
-          > queues a bounded app-owned CI fix operation and routes any resulting code
-          change back through prepared-diff review.
+          comments for a human reviewer; it does not submit a GitHub review.
           <code>/explain-ci --report</code> writes the CI dossier without starting
           a fix attempt. In the dashboard chat, <code>/briefing</code> persists a
           local snapshot and streams a normal assistant response; it does not render
