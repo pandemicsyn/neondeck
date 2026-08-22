@@ -17,6 +17,7 @@ import {
   usePrReviewBriefingActions,
   type PrReviewBriefingActions,
 } from './usePrReviewBriefingActions';
+import { reviewRecommendationLabel } from './review-ui-helpers';
 
 type Severity = 'critical' | 'major' | 'minor' | 'nit';
 
@@ -100,38 +101,79 @@ export function PrReviewBriefing({
 }) {
   const [queueFilter, setQueueFilter] = useState<QueueFilter>('blockers');
   const [approvalNote, setApprovalNote] = useState(draft?.body ?? '');
+  const [approvalNoteOpen, setApprovalNoteOpen] = useState(
+    Boolean(draft?.body?.trim()),
+  );
   const [approvalNoteTouched, setApprovalNoteTouched] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const [overrideOpen, setOverrideOpen] = useState(false);
+  const initialQueueCountsRef = useRef<{
+    reviewRunKey: string;
+    counts: Record<QueueFilter, number>;
+  } | null>(null);
   const overview = review.briefingOverview;
   useEffect(() => {
-    if (!approvalNoteTouched) setApprovalNote(draft?.body ?? '');
+    if (!approvalNoteTouched) {
+      setApprovalNote(draft?.body ?? '');
+      if (draft?.body?.trim()) setApprovalNoteOpen(true);
+    }
   }, [approvalNoteTouched, draft?.body, draft?.id]);
   if (!overview) return null;
   const needsHuman = overview.recommendation === 'needs-human';
+  const submissionDraftUnavailable =
+    (review.status === 'submitting' || review.status === 'submitted') &&
+    !review.submissionDraftId;
   const draftKnown =
-    !draftLoading && (draftError === undefined || draftError === null);
+    !submissionDraftUnavailable &&
+    !draftLoading &&
+    (draftError === undefined || draftError === null);
   const comments = draftKnown ? (draft?.comments ?? []) : [];
   const noteOnlyFindings = draftKnown
     ? review.reportOnlyFindings.filter(
         (finding) => !isReportOnlyFindingDrafted(draft ?? null, finding),
       )
     : review.reportOnlyFindings;
-  const activeFilter = needsHuman ? queueFilter : 'all';
-  const visibleItems = reviewQueueItems(
+  const allItems = reviewQueueItems(
     comments,
     noteOnlyFindings,
-    activeFilter,
+    'all',
     review.reportOnlyFindings,
   );
-  const blockers = draftKnown
-    ? reviewQueueItems(
-        comments,
-        noteOnlyFindings,
-        'all',
-        review.reportOnlyFindings,
-      ).filter((item) => isBlocker(item.severity)).length
+  const activeFilter = needsHuman ? queueFilter : 'all';
+  const visibleItems = allItems.filter((item) =>
+    severityMatchesFilter(item.severity, activeFilter),
+  );
+  const filterCounts = {
+    blockers: allItems.filter((item) =>
+      severityMatchesFilter(item.severity, 'blockers'),
+    ).length,
+    worth: allItems.filter((item) =>
+      severityMatchesFilter(item.severity, 'worth'),
+    ).length,
+    all: allItems.length,
+  };
+  const blockers = draftKnown ? filterCounts.blockers : null;
+  const reviewRunKey = `${review.id}:${review.headSha}:${review.readyAt ?? ''}`;
+  if (
+    draftKnown &&
+    initialQueueCountsRef.current?.reviewRunKey !== reviewRunKey
+  ) {
+    initialQueueCountsRef.current = {
+      reviewRunKey,
+      counts: {
+        ...filterCounts,
+        all: Math.max(review.findingCount, filterCounts.all),
+      },
+    };
+  }
+  const activeQueueTotal = draftKnown
+    ? (initialQueueCountsRef.current?.counts[activeFilter] ??
+      filterCounts[activeFilter])
     : null;
+  const activeQueueCleared =
+    activeQueueTotal === null
+      ? null
+      : Math.max(0, activeQueueTotal - filterCounts[activeFilter]);
   const submitted = review.status === 'submitted';
   const submitting = review.status === 'submitting';
   const rejectedCommentCount = Math.min(
@@ -139,7 +181,10 @@ export function PrReviewBriefing({
     comments.length,
   );
   const submittedCommentCount = comments.length - rejectedCommentCount;
-  const commentPayload = `${submittedCommentCount} comment${submittedCommentCount === 1 ? '' : 's'}`;
+  const commentPayload =
+    submittedCommentCount === 0
+      ? 'no comments'
+      : `${submittedCommentCount} comment${submittedCommentCount === 1 ? '' : 's'}`;
   const rejectedCommentWarning = rejectedCommentCount
     ? ` · ${rejectedCommentCount} rejected draft${rejectedCommentCount === 1 ? '' : 's'} omitted until edited`
     : '';
@@ -224,15 +269,15 @@ export function PrReviewBriefing({
             }
           >
             {submitted
-              ? `submitted · ${review.verdict ?? 'review'}`
+              ? reviewRecommendationLabel(review)
               : submitting
                 ? 'submitting to GitHub'
-                : needsHuman
-                  ? 'needs human review'
-                  : 'approve'}
+                : reviewRecommendationLabel(review)}
           </span>
           <p className="max-w-[90ch] text-[12px] leading-5">
-            {overview.recommendationReason}
+            {submitted
+              ? `Submitted at ${formatReviewTime(review.submittedAt)} as one review: ${review.verdict ?? 'review'}${draftKnown ? `, ${payloadLabel} attached` : ''}. This briefing is now a receipt.`
+              : overview.recommendationReason}
           </p>
           {submitted && review.githubReviewUrl ? (
             <a
@@ -243,67 +288,121 @@ export function PrReviewBriefing({
             >
               view GitHub receipt
             </a>
+          ) : !submitted ? (
+            <span className="ml-auto shrink-0 font-mono text-[10px] text-muted">
+              reviewed {review.headSha.slice(0, 8)} ·{' '}
+              {formatReviewTime(review.readyAt)}
+            </span>
           ) : null}
         </div>
       </section>
 
+      {needsHuman ? (
+        <section className="flex shrink-0 flex-wrap items-stretch justify-between gap-x-4 border-b border-line bg-panel">
+          <p className="flex items-center px-4 py-2 font-mono text-[11px] text-muted">
+            {draftKnown ? allItems.length : '—'} findings · {blockers ?? '—'} of
+            them blockers · {draftKnown ? comments.length : '—'} drafted as
+            comments
+          </p>
+          <fieldset
+            aria-label="Review queue filter"
+            className="flex items-stretch border-l border-line font-mono text-[11px]"
+          >
+            {(['blockers', 'worth', 'all'] as const).map((filter) => (
+              <button
+                aria-pressed={queueFilter === filter}
+                className={
+                  queueFilter === filter
+                    ? 'border-r border-line bg-[color-mix(in_srgb,var(--accent)_16%,transparent)] px-3.5 py-2 text-accent shadow-[inset_0_-2px_0_var(--accent)]'
+                    : 'border-r border-line px-3.5 py-2 text-muted hover:text-ink'
+                }
+                key={filter}
+                onClick={() => setQueueFilter(filter)}
+                type="button"
+              >
+                {filter === 'worth'
+                  ? 'WORTH A LOOK'
+                  : filter === 'all'
+                    ? 'EVERYTHING'
+                    : 'BLOCKERS'}{' '}
+                <span className="ml-1 text-ink">{filterCounts[filter]}</span>
+              </button>
+            ))}
+          </fieldset>
+        </section>
+      ) : null}
+
       <div className="grid min-h-0 flex-1 grid-cols-1 overflow-y-auto xl:grid-cols-[minmax(0,1fr)_340px] xl:overflow-hidden">
-        <main className="min-h-0 px-4 py-4 xl:overflow-y-auto xl:px-6">
+        <main className="min-h-0 px-5 py-5 xl:overflow-y-auto xl:px-[30px] xl:py-[26px]">
           <SectionLabel>
-            {needsHuman ? 'What makes this hard' : 'Why this is safe'}
+            {needsHuman ? 'What makes this hard' : 'Why I think this is safe'}
           </SectionLabel>
-          <MarkdownMessage className="mt-2 max-w-[90ch] text-[13px] leading-6">
+          <MarkdownMessage
+            className="mt-3 max-w-[78ch]"
+            style={{ fontSize: '16.5px', lineHeight: 1.7, textWrap: 'pretty' }}
+          >
             {overview.summary}
           </MarkdownMessage>
+          <div className="mt-5 flex flex-wrap items-center gap-2 font-mono text-[10px]">
+            {needsHuman ? (
+              <>
+                <a
+                  className="inline-flex min-h-8 items-center border border-primary px-3 py-1.5 font-semibold text-primary no-underline hover:bg-soft focus:outline-none focus:ring-1 focus:ring-primary"
+                  href={review.prUrl}
+                  rel="noreferrer"
+                  target="_blank"
+                >
+                  Open PR
+                </a>
+                <span className="text-muted">
+                  open · base {review.baseRef} · head{' '}
+                  {review.headSha.slice(0, 7)}
+                  {review.author ? ` · author ${review.author}` : ''}
+                </span>
+              </>
+            ) : (
+              <a
+                className="inline-flex min-h-8 items-center border border-primary px-3 py-1.5 font-semibold text-primary no-underline hover:bg-soft focus:outline-none focus:ring-1 focus:ring-primary"
+                href={review.reviewUrl}
+                rel="noreferrer"
+                target="_blank"
+              >
+                Open in the workbench
+              </a>
+            )}
+            {!needsHuman ? (
+              <a
+                className="inline-flex min-h-8 items-center border border-line px-3 py-1.5 text-muted no-underline hover:border-primary hover:text-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                href={review.prUrl}
+                rel="noreferrer"
+                target="_blank"
+              >
+                Open PR on GitHub
+              </a>
+            ) : null}
+          </div>
 
-          <div className="mt-6 flex flex-wrap items-end justify-between gap-3 border-b border-line pb-2">
-            <div>
-              <SectionLabel>
-                {needsHuman ? 'Blockers first' : 'Review queue'}
-              </SectionLabel>
-              <p className="mt-1 text-[11px] text-muted">
-                {draftKnown ? comments.length : '—'} live draft
-                {draftKnown && comments.length === 1 ? '' : 's'} ·{' '}
-                {noteOnlyFindings.length} note-only
-              </p>
-            </div>
-            <span className="font-mono text-[10px] text-muted">
+          <div className="mt-[30px] flex flex-wrap items-baseline gap-x-3 gap-y-1 border-t border-line pt-5">
+            <SectionLabel>
+              {needsHuman ? 'Start here' : 'Riding along'}
+            </SectionLabel>
+            <p className="text-[11px] text-muted">
+              {needsHuman
+                ? queueFilter === 'blockers'
+                  ? 'the findings behind the verdict'
+                  : 'sorted by what blocks you, not by file order'
+                : "these submit with the approval — dismiss any you don't want sent"}
+            </p>
+            <span className="ml-auto font-mono text-[10px] tabular-nums text-muted">
               {draftLoading
                 ? 'syncing local draft…'
                 : draftError
                   ? `draft unavailable: ${queryErrorMessage(draftError)}`
-                  : draft
-                    ? `${draft.status} · revision ${draft.revision}`
-                    : 'no local draft'}
+                  : needsHuman
+                    ? `${activeQueueCleared} of ${activeQueueTotal} cleared`
+                    : `${submittedCommentCount} of ${comments.length} will be sent`}
             </span>
           </div>
-
-          {needsHuman ? (
-            <fieldset
-              aria-label="Review queue filter"
-              className="mt-3 flex flex-wrap gap-1 font-mono text-[10px]"
-            >
-              {(['blockers', 'worth', 'all'] as const).map((filter) => (
-                <button
-                  aria-pressed={queueFilter === filter}
-                  className={
-                    queueFilter === filter
-                      ? 'border border-primary bg-primary px-2 py-1 text-primary-ink'
-                      : 'border border-line px-2 py-1 text-muted hover:border-primary hover:text-primary'
-                  }
-                  key={filter}
-                  onClick={() => setQueueFilter(filter)}
-                  type="button"
-                >
-                  {filter === 'worth'
-                    ? 'worth a look'
-                    : filter === 'all'
-                      ? 'everything'
-                      : 'blockers'}
-                </button>
-              ))}
-            </fieldset>
-          ) : null}
 
           {draft && draft.headSha !== review.headSha ? (
             <p className="mt-3 border border-accent px-3 py-2 font-mono text-[10px] text-accent">
@@ -347,145 +446,129 @@ export function PrReviewBriefing({
               <div className="border border-line bg-panel px-4 py-5 text-[12px] text-muted">
                 {needsHuman && activeFilter !== 'all'
                   ? 'No findings match this filter. Broaden the queue to inspect the remaining context.'
-                  : 'No findings are queued. Validate the change map and risk notes before acting on the recommendation.'}
+                  : needsHuman
+                    ? 'No findings are queued. Open the workbench to resolve why this review still needs a human.'
+                    : 'Nothing to triage. The approval button below is the whole job.'}
               </div>
             ) : null}
           </div>
-
-          <div className="mt-7">
-            <SectionLabel>Change map</SectionLabel>
-            <div className="mt-2 divide-y divide-line border border-line bg-panel">
-              {overview.changeMap.map((item) => (
-                <article
-                  className="grid gap-1 px-3 py-2.5 sm:grid-cols-[minmax(180px,0.42fr)_1fr]"
-                  key={item.path}
-                >
-                  <code className="truncate text-[10px] text-primary">
-                    {item.path}
-                  </code>
-                  <div>
-                    <p className="text-[11px] leading-4">{item.summary}</p>
-                    {item.risk ? (
-                      <p className="mt-1 text-[10px] leading-4 text-muted">
-                        Risk: {item.risk}
-                      </p>
-                    ) : null}
-                  </div>
-                </article>
-              ))}
-            </div>
-          </div>
         </main>
 
-        <aside className="border-t border-line bg-panel px-4 py-4 xl:min-h-0 xl:overflow-y-auto xl:border-t-0 xl:border-l">
-          <SectionLabel>
-            {needsHuman ? 'Why I’m escalating' : 'Double-check this'}
-          </SectionLabel>
-          <div className="mt-3 space-y-2">
-            {overview.risks.length > 0 ? (
-              overview.risks.map((risk, index) => (
-                <div
-                  className="border-l-2 border-accent bg-soft px-3 py-2 text-[11px] leading-5"
-                  key={`${index}:${risk}`}
-                >
-                  {risk}
-                </div>
-              ))
-            ) : (
-              <p className="border border-line px-3 py-3 text-[11px] leading-5 text-muted">
-                No specific risks were recorded. That is context, not proof of
-                safety.
-              </p>
-            )}
-          </div>
-          <dl className="mt-6 grid grid-cols-2 gap-px border border-line bg-line font-mono text-[10px]">
-            <Metric
-              label="active"
-              value={
-                draftKnown ? comments.length + noteOnlyFindings.length : '—'
-              }
-            />
-            <Metric label="blockers" value={blockers ?? '—'} />
-            <Metric label="drafts" value={draftKnown ? comments.length : '—'} />
-            <Metric label="note-only" value={noteOnlyFindings.length} />
-          </dl>
-          <div className="mt-6 border border-line bg-canvas p-3">
-            <SectionLabel>Trust boundary</SectionLabel>
-            <p className="mt-2 text-[10px] leading-4 text-muted">
-              {review.trustBoundary}
-            </p>
-          </div>
-          <div className="mt-6 border-t border-line pt-4">
-            <SectionLabel>Got a question?</SectionLabel>
-            <p className="mt-2 text-[11px] leading-5 text-muted">
-              The workbench has the full diff and the review chat. Asking there
-              keeps the answer next to the code it is about.
-            </p>
-            <a
-              className="mt-3 inline-flex min-h-8 items-center border border-line px-2.5 py-1.5 font-mono text-[10px] text-ink hover:border-primary hover:text-primary focus:outline-none focus:ring-1 focus:ring-primary"
-              href={review.reviewUrl}
-              rel="noreferrer"
-              target="_blank"
+        <aside className="border-t border-line bg-panel xl:min-h-0 xl:overflow-y-auto xl:border-t-0 xl:border-l">
+          <div className="border-b border-line px-4 py-3.5">
+            <p
+              className={`font-mono text-[10px] font-semibold tracking-[0.12em] ${needsHuman ? 'text-accent' : 'text-primary'}`}
             >
-              Ask Neon in the workbench →
-            </a>
+              {needsHuman ? "WHY I'M ESCALATING" : 'NOTHING HERE NEEDS YOU'}
+            </p>
+            <p className="mt-1 text-[11.5px] leading-[1.5] text-muted">
+              {needsHuman
+                ? overview.risks.length === 1
+                  ? 'This is the reason for the verdict. Settle it, then choose in the workbench.'
+                  : 'These are the reasons for the verdict. Settle them, then choose in the workbench.'
+                : overview.risks.length
+                  ? 'One thing to glance at if you have a minute. Otherwise the button below is the whole job.'
+                  : 'There is nothing else to triage. The button below is the whole job.'}
+            </p>
           </div>
-          {actions && !submitted && !submitting && !needsHuman ? (
-            <div className="mt-6 border border-line bg-canvas p-3">
-              <SectionLabel>Approval note</SectionLabel>
-              <p className="mt-2 text-[10px] leading-4 text-muted">
-                Optional GitHub review body. Written by you; Neon does not draft
-                this note.
-              </p>
-              <textarea
-                aria-label="Approval note"
-                className="mt-3 min-h-24 w-full resize-y border border-line bg-panel px-2.5 py-2 text-[11px] leading-5 text-ink outline-none focus:border-primary"
-                disabled={!actionable || actions.busy}
-                onChange={(event) => {
-                  setApprovalNoteTouched(true);
-                  setApprovalNote(event.target.value);
-                }}
-                placeholder="Optional note posted with your GitHub approval"
-                value={approvalNote}
+          <div className="px-4 py-3.5">
+            <div className="flex items-center gap-2 font-mono text-[9px] tracking-[0.12em] text-muted">
+              <span
+                className={`h-[5px] w-[5px] ${needsHuman ? 'bg-accent' : 'bg-primary'}`}
               />
-              <p className="mt-2 text-[10px] leading-4 text-muted">
-                Submits one Approve review on {review.repoFullName}#
-                {review.prNumber} with {payloadLabel}, as you. Nothing is sent
-                until you press this button.
+              <span>
+                {needsHuman
+                  ? 'RISKS I COULD NOT SETTLE'
+                  : 'IF YOU WANT TO DOUBLE-CHECK ONE THING'}
+              </span>
+              <span className="ml-auto tabular-nums">
+                {overview.risks.length}
+              </span>
+            </div>
+            <div className="mt-3 space-y-3">
+              {overview.risks.length > 0 ? (
+                overview.risks.map((risk, index) => (
+                  <div
+                    className="border-l-2 border-accent px-3 py-0.5 text-[12.5px] leading-[1.55]"
+                    key={`${index}:${risk}`}
+                  >
+                    {risk}
+                  </div>
+                ))
+              ) : (
+                <p className="text-[11px] leading-5 text-muted">
+                  No specific risks were recorded.
+                </p>
+              )}
+            </div>
+            <div className="mt-5 border-t border-line pt-4">
+              <SectionLabel>Got a question?</SectionLabel>
+              <p className="mt-2 text-[12.5px] leading-[1.55] text-muted">
+                The workbench has the full diff and the review chat. Asking
+                there keeps the answer next to the code it is about.
               </p>
-              <button
-                className="mt-3 w-full border border-primary bg-primary px-3 py-2 font-mono text-[10px] font-semibold uppercase tracking-[0.08em] text-primary-ink disabled:cursor-not-allowed disabled:opacity-50"
-                disabled={!actionable || actions.busy}
-                onClick={() =>
-                  void runAction(() => actions.submitApproval(approvalNote))
-                }
-                type="button"
-              >
-                {actions.submitting
-                  ? 'submitting…'
-                  : actions.busy
-                    ? 'draft update in progress…'
-                    : `approve & submit ${payloadLabel}`}
-              </button>
               <a
-                className="mt-2 flex min-h-8 items-center justify-center border border-line px-3 py-1.5 font-mono text-[10px] text-muted hover:border-primary hover:text-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                className="mt-3 inline-flex min-h-8 items-center border border-line px-2.5 py-1.5 font-mono text-[10px] text-ink no-underline hover:border-primary hover:text-primary focus:outline-none focus:ring-1 focus:ring-primary"
                 href={review.reviewUrl}
                 rel="noreferrer"
                 target="_blank"
               >
-                Open workbench instead
+                Ask Neon in the workbench →
               </a>
-              {!actionable ? (
-                <p className="mt-2 font-mono text-[10px] leading-4 text-muted">
-                  {archived
-                    ? 'Restore this review from the queue before submitting.'
-                    : 'Refresh the live draft and confirm the reviewed head before submitting.'}
-                </p>
-              ) : null}
             </div>
-          ) : null}
+          </div>
         </aside>
       </div>
+
+      {actions && !submitted && !submitting && !needsHuman ? (
+        approvalNoteOpen ? (
+          <section className="shrink-0 border-t border-line bg-panel px-4 py-3">
+            <div className="flex items-center gap-3">
+              <label
+                className="font-mono text-[9px] tracking-[0.08em] text-muted"
+                htmlFor="pr-review-approval-note"
+              >
+                NOTE WITH YOUR APPROVAL · POSTS AS THE REVIEW BODY, ABOVE THE
+                COMMENTS
+              </label>
+              <button
+                className={`${cardActionClass} ml-auto shrink-0`}
+                disabled={actions.busy}
+                onClick={() => {
+                  setApprovalNoteTouched(true);
+                  setApprovalNote('');
+                  setApprovalNoteOpen(false);
+                }}
+                type="button"
+              >
+                remove note
+              </button>
+            </div>
+            <textarea
+              aria-label="Approval note"
+              className="mt-2 min-h-11 w-full resize-y border border-primary bg-field px-3 py-2 text-[13.5px] leading-[1.6] text-ink outline-none"
+              disabled={!actionable || actions.busy}
+              id="pr-review-approval-note"
+              onChange={(event) => {
+                setApprovalNoteTouched(true);
+                setApprovalNote(event.target.value);
+              }}
+              value={approvalNote}
+            />
+          </section>
+        ) : (
+          <div className="shrink-0 border-t border-line bg-panel px-4 py-2.5">
+            <button
+              className={`${cardActionClass} border-dashed`}
+              disabled={actions.busy}
+              onClick={() => setApprovalNoteOpen(true)}
+              type="button"
+            >
+              + add a note with your approval
+            </button>
+          </div>
+        )
+      ) : null}
 
       {actions && needsHuman && overrideOpen && !submitted && !submitting ? (
         <section className="flex shrink-0 flex-wrap items-start gap-3 border-t border-accent bg-[color-mix(in_srgb,var(--accent)_12%,var(--panel))] px-4 py-3">
@@ -551,22 +634,34 @@ export function PrReviewBriefing({
       ) : null}
 
       <footer className="flex min-h-12 shrink-0 flex-wrap items-center justify-between gap-3 border-t border-line bg-panel px-4 py-2 font-mono text-[10px]">
-        <span className={needsHuman ? 'text-accent' : 'text-primary'}>
-          {submitted
-            ? `Submitted as ${review.verdict ?? 'review'}${review.submittedAt ? ` · ${review.submittedAt}` : ''}`
-            : submitting
-              ? 'Submitting this review to GitHub…'
-              : blockers === null
-                ? 'Live draft state is unavailable'
-                : needsHuman
-                  ? `${blockers} blocker${blockers === 1 ? '' : 's'} ${blockers === 1 ? 'needs' : 'need'} a decision`
-                  : 'Briefing ready for your final check'}
-        </span>
-        <div className="flex items-center gap-3">
-          <span className="text-muted">
-            {draftKnown ? 'Draft state is live' : 'Draft state is unavailable'}{' '}
-            · briefing overview is fixed to this review run
+        <div className="flex min-w-0 items-center gap-3">
+          {needsHuman &&
+          !submitted &&
+          !submitting &&
+          activeQueueTotal !== null &&
+          activeQueueCleared !== null ? (
+            <div className="h-[3px] w-[140px] bg-line">
+              <div
+                className="h-full bg-accent transition-[width] duration-200 ease-out"
+                style={{
+                  width: `${activeQueueTotal ? (activeQueueCleared / activeQueueTotal) * 100 : 0}%`,
+                }}
+              />
+            </div>
+          ) : null}
+          <span className="max-w-[78ch] leading-[1.6] text-muted">
+            {submitted
+              ? 'Review submitted. A GitHub review cannot be withdrawn from here — follow-up happens on the PR.'
+              : submitting
+                ? 'Submitting this review to GitHub…'
+                : blockers === null
+                  ? 'Live draft state is unavailable'
+                  : needsHuman
+                    ? `${activeQueueCleared} of ${activeQueueTotal} cleared · ${comments.length} comments drafted · no verdict chosen`
+                    : `Submits one Approve review on ${review.repoFullName}#${review.prNumber} with ${payloadLabel} attached, as you. ${approvalNote.trim() ? 'The note posts as the review body, in your name.' : 'Nothing is sent until you press this.'}${!actionable ? (archived ? ' Restore this review from the queue before submitting.' : ' Refresh the live draft and confirm the reviewed head before submitting.') : ''}`}
           </span>
+        </div>
+        <div className="flex items-center gap-3">
           {actions &&
           needsHuman &&
           !archived &&
@@ -574,22 +669,48 @@ export function PrReviewBriefing({
           !submitted &&
           !submitting ? (
             <button
-              className="border border-line px-2 py-1.5 text-muted hover:border-accent hover:text-accent"
+              className="border-b border-dotted border-muted px-0 py-1.5 text-muted hover:border-accent hover:text-accent"
               onClick={() => setOverrideOpen(true)}
               type="button"
             >
-              approve anyway
+              Approve anyway
             </button>
           ) : null}
           {needsHuman && !submitted && !submitting ? (
             <a
-              className="inline-flex min-h-9 items-center border border-primary bg-primary px-3.5 py-1.5 font-semibold text-primary-ink focus:outline-none focus:ring-1 focus:ring-primary"
+              className="inline-flex min-h-9 items-center border border-primary px-3.5 py-1.5 text-[11px] font-semibold tracking-[0.04em] text-primary no-underline hover:bg-soft focus:outline-none focus:ring-1 focus:ring-primary"
               href={review.reviewUrl}
               rel="noreferrer"
               target="_blank"
             >
               Open workbench →
             </a>
+          ) : null}
+          {actions && !needsHuman && !submitted && !submitting ? (
+            <>
+              <a
+                className="inline-flex min-h-9 items-center border border-line px-3 py-1.5 text-muted no-underline hover:border-primary hover:text-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                href={review.reviewUrl}
+                rel="noreferrer"
+                target="_blank"
+              >
+                Open workbench instead
+              </a>
+              <button
+                className="inline-flex min-h-9 items-center border border-primary bg-[color-mix(in_srgb,var(--primary)_12%,transparent)] px-3.5 py-1.5 font-semibold tracking-[0.04em] text-primary hover:bg-[color-mix(in_srgb,var(--primary)_22%,transparent)] disabled:cursor-not-allowed disabled:opacity-50"
+                disabled={!actionable || actions.busy}
+                onClick={() =>
+                  void runAction(() => actions.submitApproval(approvalNote))
+                }
+                type="button"
+              >
+                {actions.submitting
+                  ? 'submitting…'
+                  : actions.busy
+                    ? 'draft update in progress…'
+                    : `Approve & submit ${payloadLabel}`}
+              </button>
+            </>
           ) : null}
           {actions && submitting ? (
             <button
@@ -628,6 +749,7 @@ function DraftCommentCard({
   const [editing, setEditing] = useState(false);
   const [body, setBody] = useState(comment.body);
   const [actionError, setActionError] = useState<string | null>(null);
+  const commentDetail = draftCommentDetail(comment, summary);
   useEffect(() => {
     if (!editing) setBody(comment.body);
   }, [comment.body, editing]);
@@ -656,94 +778,94 @@ function DraftCommentCard({
           {expanded ? 'collapse' : compact ? 'inspect' : 'expand'}
         </span>
       </button>
-      <p className="px-3 py-2 text-[11px] font-semibold leading-5">{summary}</p>
-      {expanded ? (
-        <>
-          {editing ? (
-            <form
-              className="border-t border-line px-3 py-3"
-              onSubmit={(event) => {
-                event.preventDefault();
+      <p className="px-3 py-2 text-[13.5px] leading-[1.55]">{summary}</p>
+      {expanded && editing ? (
+        <form
+          className="border-t border-line px-3 py-3"
+          onSubmit={(event) => {
+            event.preventDefault();
+            setActionError(null);
+            void actions
+              ?.editComment(comment.id, body)
+              .then(() => setEditing(false))
+              .catch((error) => setActionError(queryErrorMessage(error)));
+          }}
+        >
+          <textarea
+            aria-label={`Edit draft comment on ${comment.path}`}
+            className="min-h-28 w-full resize-y border border-line bg-canvas px-2.5 py-2 text-[11px] leading-5 outline-none focus:border-primary"
+            disabled={actions?.busy}
+            onChange={(event) => setBody(event.target.value)}
+            value={body}
+          />
+          <div className="mt-2 flex justify-end gap-1.5 font-mono text-[10px]">
+            <button
+              className="border border-line px-2 py-1 text-muted"
+              onClick={() => {
+                setBody(comment.body);
+                setEditing(false);
+              }}
+              type="button"
+            >
+              cancel
+            </button>
+            <button
+              className="border border-primary bg-primary px-2 py-1 text-primary-ink disabled:opacity-50"
+              disabled={actions?.busy || !body.trim()}
+              type="submit"
+            >
+              save comment
+            </button>
+          </div>
+        </form>
+      ) : expanded && commentDetail ? (
+        <div className="border-t border-line px-3 py-3">
+          <p className="mb-1.5 font-mono text-[9px] tracking-[0.08em] text-muted">
+            {comment.neonSummary ? 'SUGGESTED FIX' : 'COMMENT BODY'}
+          </p>
+          <MarkdownMessage className="text-[11px] leading-5">
+            {commentDetail}
+          </MarkdownMessage>
+        </div>
+      ) : null}
+      {actionError ? (
+        <p
+          className="border-t border-accent px-3 py-2 font-mono text-[10px] text-accent"
+          role="alert"
+        >
+          {actionError}
+        </p>
+      ) : null}
+      <CardActions href={diffHref(review, comment.path)}>
+        {actions ? (
+          <>
+            <button
+              className={cardActionClass}
+              disabled={actions.busy}
+              onClick={() => {
+                setExpanded(true);
+                setEditing(true);
+              }}
+              type="button"
+            >
+              edit comment
+            </button>
+            <button
+              className={`${cardActionClass} hover:border-accent hover:text-accent`}
+              disabled={actions.busy}
+              onClick={() => {
                 setActionError(null);
                 void actions
-                  ?.editComment(comment.id, body)
-                  .then(() => setEditing(false))
+                  .dismissComment(comment.id)
                   .catch((error) => setActionError(queryErrorMessage(error)));
               }}
+              type="button"
             >
-              <textarea
-                aria-label={`Edit draft comment on ${comment.path}`}
-                className="min-h-28 w-full resize-y border border-line bg-canvas px-2.5 py-2 text-[11px] leading-5 outline-none focus:border-primary"
-                disabled={actions?.busy}
-                onChange={(event) => setBody(event.target.value)}
-                value={body}
-              />
-              <div className="mt-2 flex justify-end gap-1.5 font-mono text-[10px]">
-                <button
-                  className="border border-line px-2 py-1 text-muted"
-                  onClick={() => {
-                    setBody(comment.body);
-                    setEditing(false);
-                  }}
-                  type="button"
-                >
-                  cancel
-                </button>
-                <button
-                  className="border border-primary bg-primary px-2 py-1 text-primary-ink disabled:opacity-50"
-                  disabled={actions?.busy || !body.trim()}
-                  type="submit"
-                >
-                  save comment
-                </button>
-              </div>
-            </form>
-          ) : summary !== comment.body ? (
-            <div className="border-t border-line px-3 py-3">
-              <MarkdownMessage className="text-[11px] leading-5">
-                {comment.body}
-              </MarkdownMessage>
-            </div>
-          ) : null}
-          {actionError ? (
-            <p
-              className="border-t border-accent px-3 py-2 font-mono text-[10px] text-accent"
-              role="alert"
-            >
-              {actionError}
-            </p>
-          ) : null}
-          <CardActions href={diffHref(review, comment.path)}>
-            {actions ? (
-              <>
-                <button
-                  className="text-primary hover:underline disabled:opacity-50"
-                  disabled={actions.busy}
-                  onClick={() => setEditing(true)}
-                  type="button"
-                >
-                  edit comment
-                </button>
-                <button
-                  className="text-accent hover:underline disabled:opacity-50"
-                  disabled={actions.busy}
-                  onClick={() => {
-                    setActionError(null);
-                    void actions
-                      .dismissComment(comment.id)
-                      .catch((error) =>
-                        setActionError(queryErrorMessage(error)),
-                      );
-                  }}
-                  type="button"
-                >
-                  dismiss
-                </button>
-              </>
-            ) : null}
-          </CardActions>
-        </>
-      ) : null}
+              dismiss
+            </button>
+          </>
+        ) : null}
+      </CardActions>
     </article>
   );
 }
@@ -784,7 +906,7 @@ function ReportOnlyFindingCard({
           note-only · {expanded ? 'collapse' : compact ? 'inspect' : 'expand'}
         </span>
       </button>
-      <p className="px-3 py-2 text-[11px] font-semibold leading-5">
+      <p className="px-3 py-2 text-[13.5px] leading-[1.55]">
         {finding.summary}
       </p>
       {expanded ? (
@@ -843,31 +965,32 @@ function ReportOnlyFindingCard({
               {actionError}
             </p>
           ) : null}
-          <CardActions href={diffHref(review, finding.path)}>
-            {actions && finding.line && finding.side ? (
-              <button
-                className="text-primary hover:underline disabled:opacity-50"
-                disabled={actions.busy}
-                onClick={() => {
-                  setActionError(null);
-                  setEditing(true);
-                }}
-                type="button"
-              >
-                draft a comment from this
-              </button>
-            ) : finding.line === null ? (
-              <span className="text-muted">
-                file-level note · cannot be drafted
-              </span>
-            ) : !finding.side ? (
-              <span className="text-muted">
-                incomplete line anchor · cannot be drafted
-              </span>
-            ) : null}
-          </CardActions>
         </>
       ) : null}
+      <CardActions href={diffHref(review, finding.path)}>
+        {actions && finding.line && finding.side ? (
+          <button
+            className={cardActionClass}
+            disabled={actions.busy}
+            onClick={() => {
+              setActionError(null);
+              setExpanded(true);
+              setEditing(true);
+            }}
+            type="button"
+          >
+            draft a comment from this
+          </button>
+        ) : finding.line === null ? (
+          <span className="text-muted">
+            file-level note · cannot be drafted
+          </span>
+        ) : !finding.side ? (
+          <span className="text-muted">
+            incomplete line anchor · cannot be drafted
+          </span>
+        ) : null}
+      </CardActions>
     </article>
   );
 }
@@ -880,16 +1003,16 @@ function CardActions({
   href: string;
 }) {
   return (
-    <div className="flex flex-wrap justify-end gap-3 border-t border-line px-3 py-1.5 font-mono text-[10px]">
-      {children}
+    <div className="flex flex-wrap justify-start gap-2 border-t border-line px-3 py-2 font-mono text-[10px]">
       <a
-        className="text-primary hover:underline"
+        className={cardActionClass}
         href={href}
         rel="noreferrer"
         target="_blank"
       >
         open in diff
       </a>
+      {children}
     </div>
   );
 }
@@ -915,13 +1038,29 @@ function SeverityBadge({ severity }: { severity: Severity }) {
   );
 }
 
-function Metric({ label, value }: { label: string; value: number | string }) {
-  return (
-    <div className="bg-panel p-2">
-      <dt className="text-muted">{label}</dt>
-      <dd className="mt-1 text-[14px] text-ink">{value}</dd>
-    </div>
-  );
+const cardActionClass =
+  'inline-flex min-h-6 items-center border border-line px-2.5 py-1 font-mono text-[10px] leading-[1.2] text-muted no-underline hover:border-primary hover:text-primary focus:outline-none focus:ring-1 focus:ring-primary disabled:cursor-not-allowed disabled:opacity-50';
+
+function draftCommentDetail(
+  comment: GitHubPrReviewDraftComment,
+  summary: string,
+) {
+  if (!comment.neonSummary) {
+    return comment.body.trim() === summary.trim() ? null : comment.body;
+  }
+  let detail = comment.body.trim().replace(/^bot:\s*/i, '');
+  if (detail.startsWith(summary)) detail = detail.slice(summary.length).trim();
+  return detail.replace(/^Suggested fix:\s*/i, '').trim() || null;
+}
+
+function formatReviewTime(value: string | null | undefined) {
+  if (!value) return 'time unavailable';
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return 'time unavailable';
+  return new Intl.DateTimeFormat(undefined, {
+    hour: 'numeric',
+    minute: '2-digit',
+  }).format(parsed);
 }
 
 function isBlocker(severity: Severity | null | undefined) {

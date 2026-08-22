@@ -557,3 +557,16 @@ the rest.
   field spent model effort on data no surface could read.
 - Follow-up: Add checks to a future versioned briefing schema only if a product
   surface is designed to persist and render them.
+
+### 2026-08-22 — Keep the change map out of the briefing composition
+
+- Phase: 2 — Briefing render
+- Decision: Continue persisting the versioned `changeMap`, but do not render a
+  separate change-map section in the briefing overlay.
+- Reason: Element-by-element validation against `ApproveB` and `EscalateB`
+  showed that both selected boards deliberately keep the main column to the
+  recommendation brief and actionable queue. The change map remains consumed by
+  the reviewer workbench handoff, where file-by-file context belongs, so it is
+  not write-only.
+- Follow-up: None. The briefing links directly to the workbench and GitHub PR
+  beneath its summary.

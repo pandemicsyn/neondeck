@@ -102,11 +102,16 @@ describe('PR review briefing', () => {
   });
 
   it('renders an approval briefing from the persisted overview and live draft', () => {
-    renderBriefing(root, reviewFixture('approve'), draftFixture());
+    renderBriefing(
+      root,
+      reviewFixture('approve'),
+      draftFixture(),
+      actionFixture(),
+    );
 
     expect(container.textContent).toContain('REVIEW BRIEFING');
-    expect(container.textContent).toContain('approve');
-    expect(container.textContent).toContain('Why this is safe');
+    expect(container.textContent).toContain('✓ RECOMMEND APPROVE');
+    expect(container.textContent).toContain('Why I think this is safe');
     expect(container.textContent).not.toContain('Live draft body');
     expect(container.textContent).toContain('Guard the empty response.');
     expect(container.textContent).toContain(
@@ -114,7 +119,9 @@ describe('PR review briefing', () => {
     );
     expect(container.textContent).toContain('minor');
     expect(container.textContent).toContain('note-only');
-    expect(container.textContent).toContain('Change map');
+    expect(container.textContent).not.toContain('Change map');
+    expect(container.textContent).not.toContain('Trust boundary');
+    expect(container.querySelector('dl')).toBeNull();
     expect(container.textContent).toContain('Got a question?');
     expect(
       [...container.querySelectorAll<HTMLAnchorElement>('a')]
@@ -134,6 +141,7 @@ describe('PR review briefing', () => {
         (link) => link.textContent === 'open in diff',
       ),
     ).toHaveLength(2);
+    expect(container.textContent).toContain('+ add a note with your approval');
     expect(container.querySelector('iframe')).toBeNull();
   });
 
@@ -149,14 +157,17 @@ describe('PR review briefing', () => {
     });
     renderBriefing(root, review, draft);
 
-    expect(container.textContent).toContain('needs human review');
+    expect(container.textContent).toContain('! NEEDS A HUMAN');
     expect(container.textContent).toContain('What makes this hard');
-    expect(container.textContent).toContain('Why I’m escalating');
+    expect(container.textContent).toContain("WHY I'M ESCALATING");
     expect(container.textContent).toContain('differen');
     expect(container.textContent?.indexOf('src/fallback.ts')).toBeLessThan(
       container.textContent?.indexOf('Blocking draft body') ?? 0,
     );
     expect(container.textContent).not.toContain('Live draft body');
+    expect(container.textContent).toContain(
+      '0 of 2 cleared · 2 comments drafted · no verdict chosen',
+    );
     expect(
       [...container.querySelectorAll<HTMLAnchorElement>('a')]
         .find((link) => link.textContent === 'Open workbench →')
@@ -164,10 +175,13 @@ describe('PR review briefing', () => {
     ).toBe('/review?repo=owner%2Frepo&number=1');
     act(() =>
       [...container.querySelectorAll('button')]
-        .find((button) => button.textContent === 'everything')
+        .find((button) => button.textContent?.startsWith('EVERYTHING'))
         ?.click(),
     );
     expect(container.textContent).not.toContain('Live draft body');
+    expect(container.textContent).toContain(
+      '0 of 3 cleared · 2 comments drafted · no verdict chosen',
+    );
     act(() =>
       [
         ...container.querySelectorAll<HTMLButtonElement>(
@@ -194,6 +208,40 @@ describe('PR review briefing', () => {
     expect(container.textContent).not.toContain('minor');
   });
 
+  it('renders a seeded Neon summary once and separates its suggested fix', () => {
+    const draft = draftFixture();
+    draft.comments[0] = {
+      ...draft.comments[0]!,
+      body: [
+        'bot: Guard the empty response.',
+        '',
+        'Suggested fix: Return before reading the missing payload.',
+      ].join('\n'),
+    };
+    renderBriefing(root, reviewFixture('approve'), draft);
+
+    expect(
+      container.textContent?.split('Guard the empty response.').length,
+    ).toBe(2);
+    act(() =>
+      [
+        ...container.querySelectorAll<HTMLButtonElement>(
+          '[aria-expanded=false]',
+        ),
+      ]
+        .find((button) => button.textContent?.includes('draft comment'))
+        ?.click(),
+    );
+    expect(
+      container.textContent?.split('Guard the empty response.').length,
+    ).toBe(2);
+    expect(container.textContent).not.toContain('bot:');
+    expect(container.textContent).toContain('SUGGESTED FIX');
+    expect(container.textContent).toContain(
+      'Return before reading the missing payload.',
+    );
+  });
+
   it('keeps a promoted blocker in the draft queue without double-counting it', () => {
     const review = reviewFixture('needs-human');
     review.reportOnlyFindings[0] = {
@@ -214,8 +262,12 @@ describe('PR review briefing', () => {
     });
     renderBriefing(root, review, draft);
 
-    expect(container.textContent).toContain('2 live drafts · 0 note-only');
-    expect(container.textContent).toContain('1 blocker needs a decision');
+    expect(container.textContent).toContain(
+      '2 findings · 1 of them blockers · 2 drafted as comments',
+    );
+    expect(container.textContent).toContain(
+      '0 of 1 cleared · 2 comments drafted · no verdict chosen',
+    );
     expect(container.textContent).toContain('Human-adjusted promoted comment.');
     expect(
       container.textContent?.split('Fallback behavior needs a manual check.')
@@ -233,8 +285,7 @@ describe('PR review briefing', () => {
         />,
       ),
     );
-    expect(container.textContent).toContain('— live drafts');
-    expect(container.textContent).not.toContain('0 live drafts');
+    expect(container.textContent).toContain('syncing local draft…');
 
     act(() =>
       root.render(
@@ -246,7 +297,6 @@ describe('PR review briefing', () => {
       ),
     );
     expect(container.textContent).toContain('draft unavailable: offline');
-    expect(container.textContent).toContain('— live drafts');
 
     act(() =>
       root.render(
@@ -260,9 +310,8 @@ describe('PR review briefing', () => {
     expect(container.textContent).toContain(
       'draft unavailable: refresh failed',
     );
-    expect(container.textContent).toContain('— live drafts');
     expect(container.textContent).not.toContain('Live draft body');
-    expect(container.textContent).toContain('Draft state is unavailable');
+    expect(container.textContent).toContain('Live draft state is unavailable');
   });
 
   it('renders submitted reviews as linked receipts', () => {
@@ -273,8 +322,8 @@ describe('PR review briefing', () => {
     review.submittedAt = '2026-08-22T19:00:00.000Z';
     renderBriefing(root, review, draftFixture());
 
-    expect(container.textContent).toContain('submitted · approve');
-    expect(container.textContent).toContain('Submitted as approve');
+    expect(container.textContent).toContain('✓ APPROVED BY YOU');
+    expect(container.textContent).toContain('as one review: approve');
     expect(
       container.querySelector<HTMLAnchorElement>('a[href*="#review-1"]')
         ?.textContent,
@@ -338,14 +387,10 @@ describe('PR review briefing', () => {
     );
     act(() =>
       [...container.querySelectorAll('button')]
-        .find((button) => button.textContent === 'everything')
+        .find((button) => button.textContent?.startsWith('EVERYTHING'))
         ?.click(),
     );
 
-    const draftToggle = [...container.querySelectorAll('button')].find(
-      (button) => button.textContent?.includes('draft comment'),
-    );
-    act(() => draftToggle?.click());
     act(() =>
       [...container.querySelectorAll('button')]
         .find((button) => button.textContent === 'edit comment')
@@ -400,7 +445,7 @@ describe('PR review briefing', () => {
         button.textContent?.includes('approve anyway & submit'),
       ),
     ).toBe(false);
-    act(() => buttonWithText(container, 'approve anyway').click());
+    act(() => buttonWithText(container, 'Approve anyway').click());
     expect(container.textContent).toContain(
       'Nothing is sent until you press the submit button.',
     );
@@ -422,18 +467,35 @@ describe('PR review briefing', () => {
     const actions = actionFixture();
     renderBriefing(root, reviewFixture('approve'), draftFixture(), actions);
 
-    expect(container.textContent).toContain('approve & submit 1 comment');
+    expect(container.textContent).toContain('Approve & submit 1 comment');
+    expect(
+      container.querySelector<HTMLTextAreaElement>(
+        'textarea[aria-label="Approval note"]',
+      ),
+    ).toBeNull();
+    act(() =>
+      buttonWithText(container, '+ add a note with your approval').click(),
+    );
     const note = container.querySelector<HTMLTextAreaElement>(
       'textarea[aria-label="Approval note"]',
     );
     act(() => setTextareaValue(note, '   '));
-    expect(container.textContent).toContain('approve & submit 1 comment');
+    expect(container.textContent).toContain('Approve & submit 1 comment');
     act(() => setTextareaValue(note, 'Reviewed manually.'));
     expect(container.textContent).toContain(
-      'approve & submit note + 1 comment',
+      'Approve & submit note + 1 comment',
     );
-    expect(container.textContent).toContain('with note + 1 comment, as you');
+    expect(container.textContent).toContain(
+      'with note + 1 comment attached, as you',
+    );
     expect(container.textContent).toContain('Open workbench instead');
+    act(() => buttonWithText(container, 'remove note').click());
+    expect(
+      container.querySelector<HTMLTextAreaElement>(
+        'textarea[aria-label="Approval note"]',
+      ),
+    ).toBeNull();
+    expect(container.textContent).toContain('Approve & submit 1 comment');
   });
 
   it('warns when a rejected draft comment will be omitted', () => {
@@ -442,7 +504,7 @@ describe('PR review briefing', () => {
     renderBriefing(root, reviewFixture('approve'), draftFixture(), actions);
 
     expect(container.textContent).toContain(
-      'approve & submit 0 comments · 1 rejected draft omitted until edited',
+      'Approve & submit no comments · 1 rejected draft omitted until edited',
     );
   });
 
@@ -485,7 +547,7 @@ describe('PR review briefing', () => {
       'Restore it from the review queue before changing its draft or submitting an approval.',
     );
     expect(
-      buttonWithText(container, 'approve & submit 1 comment').disabled,
+      buttonWithText(container, 'Approve & submit 1 comment').disabled,
     ).toBe(true);
     expect(
       [...container.querySelectorAll('button')].some(

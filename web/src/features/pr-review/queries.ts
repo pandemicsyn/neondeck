@@ -83,6 +83,17 @@ export const prReviewQueryKeys = {
       draftId,
       status,
     ] as const,
+  missingSubmissionDraft: (
+    pr: Pick<GitHubPullRequest, 'repo' | 'number'>,
+    status: 'submitting' | 'submitted',
+  ) =>
+    [
+      'pr-review',
+      'submission-draft-unavailable',
+      pr.repo,
+      pr.number,
+      status,
+    ] as const,
 };
 
 export function useGitHubPullRequestFiles(pr: GitHubPullRequest) {
@@ -328,6 +339,7 @@ export function useGitHubPrReviewDraft(
   const draftId = options.submissionStatus
     ? options.draftId?.trim() || null
     : null;
+  const missingSubmissionDraft = Boolean(options.submissionStatus && !draftId);
   return useQuery({
     queryKey:
       draftId && options.submissionStatus
@@ -336,13 +348,22 @@ export function useGitHubPrReviewDraft(
             draftId,
             options.submissionStatus,
           )
-        : prReviewQueryKeys.draft(pr),
+        : options.submissionStatus
+          ? prReviewQueryKeys.missingSubmissionDraft(
+              pr,
+              options.submissionStatus,
+            )
+          : prReviewQueryKeys.draft(pr),
     queryFn: ({ signal }) =>
       getGitHubPrReviewDraft(
         { repo: pr.repo, number: pr.number, draftId },
         { signal },
       ),
-    enabled: options.enabled !== false && pr.repo.length > 0 && pr.number > 0,
+    enabled:
+      options.enabled !== false &&
+      !missingSubmissionDraft &&
+      pr.repo.length > 0 &&
+      pr.number > 0,
     refetchInterval: options.live && !draftId ? 5_000 : false,
     refetchIntervalInBackground: options.live === true && !draftId,
   });

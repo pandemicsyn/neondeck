@@ -4,6 +4,7 @@ import type {
   GitHubPrReviewDraft,
   GitHubPrReviewDraftComment,
   GitHubPullRequestReviewThread,
+  PrReviewRecord,
 } from '../../api';
 import {
   canExplicitlyApplyReviewRefresh,
@@ -107,6 +108,20 @@ export function threadPath(thread: GitHubPullRequestReviewThread) {
 
 export function latestThreadComment(thread: GitHubPullRequestReviewThread) {
   return thread.comments.at(-1) ?? thread.comments[0] ?? null;
+}
+
+export function reviewRecommendationLabel(review: PrReviewRecord) {
+  if (review.status === 'submitted') {
+    if (review.verdict === 'approve') return '✓ APPROVED BY YOU';
+    if (review.verdict === 'request-changes') {
+      return '! CHANGES REQUESTED BY YOU';
+    }
+    if (review.verdict === 'comment') return 'COMMENTED BY YOU';
+    return 'SUBMITTED BY YOU';
+  }
+  if (review.recommendation === 'approve') return '✓ RECOMMEND APPROVE';
+  if (review.recommendation === 'needs-human') return '! NEEDS A HUMAN';
+  return null;
 }
 
 export function clearCompletedEditor<T extends { token: number }>(

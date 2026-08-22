@@ -35,6 +35,7 @@ import {
   usePrReviewBriefingActions,
 } from '../features/pr-review/usePrReviewBriefingActions';
 import { useTransientPrReviewReconciliation } from '../features/pr-review/useTransientPrReviewReconciliation';
+import { reviewRecommendationLabel as briefingRecommendationLabel } from '../features/pr-review/review-ui-helpers';
 import { relativeTime } from '../lib/format';
 import { useDashboardEventConnectionState } from '../lib/dashboard-connection';
 import { actionErrorMessage, queryErrorMessage, queryKeys } from '../lib/query';
@@ -595,7 +596,7 @@ function ReviewRow({
             {review.title}
           </p>
           <p
-            className={`mt-1 font-mono text-[10px] ${reviewRecommendationTone(review)}`}
+            className={`mt-1 font-mono text-[10px] font-semibold tracking-[0.04em] ${reviewRecommendationTone(review)}`}
           >
             {reviewRecommendationLabel(review)}
           </p>
@@ -624,7 +625,7 @@ function ReviewRow({
         ) : null}
         {review.briefingOverview && review.status !== 'submitted' ? (
           <button
-            className="border border-line px-1.5 py-1 text-muted hover:border-primary hover:text-primary focus:outline-none focus:ring-1 focus:ring-primary"
+            className={reviewRowActionClass}
             onClick={() => onOpenBriefing(review.id)}
             type="button"
           >
@@ -633,20 +634,6 @@ function ReviewRow({
         ) : null}
         {review.status === 'ready' ? (
           <OpenReviewButton review={review} />
-        ) : null}
-        {review.status === 'ready' &&
-        !review.archivedAt &&
-        review.recommendation === 'approve' &&
-        review.briefingOverview ? (
-          <ReviewRowQuickApprove
-            onReviewChange={onReviewChange}
-            review={review}
-          />
-        ) : null}
-        {review.status === 'ready' &&
-        !review.archivedAt &&
-        review.recommendation === 'needs-human' ? (
-          <span className="text-accent">no quick approve</span>
         ) : null}
         {review.status === 'failed' && onRestart ? (
           <Button
@@ -664,22 +651,38 @@ function ReviewRow({
           />
         ) : null}
         {onArchive ? (
-          <Button
+          <button
+            className={reviewRowActionClass}
             disabled={pending}
             onClick={() => onArchive(review.id)}
             type="button"
           >
             archive
-          </Button>
+          </button>
         ) : null}
         {onRestore ? (
-          <Button
+          <button
+            className={reviewRowActionClass}
             disabled={pending}
             onClick={() => onRestore(review.id)}
             type="button"
           >
             restore
-          </Button>
+          </button>
+        ) : null}
+        {review.status === 'ready' &&
+        !review.archivedAt &&
+        review.recommendation === 'approve' &&
+        review.briefingOverview ? (
+          <ReviewRowQuickApprove
+            onReviewChange={onReviewChange}
+            review={review}
+          />
+        ) : null}
+        {review.status === 'ready' &&
+        !review.archivedAt &&
+        review.recommendation === 'needs-human' ? (
+          <span className="text-accent">no quick approve</span>
         ) : null}
       </div>
     </article>
@@ -708,7 +711,8 @@ function ReviewRowRecoverSubmission({
           {queryErrorMessage(error)}
         </span>
       ) : null}
-      <Button
+      <button
+        className={reviewRowActionClass}
         disabled={actions.busy}
         onClick={() => {
           setError(null);
@@ -717,7 +721,7 @@ function ReviewRowRecoverSubmission({
         type="button"
       >
         {actions.busy ? 'checking GitHub…' : 'recover submission'}
-      </Button>
+      </button>
     </>
   );
 }
@@ -764,7 +768,11 @@ function ReviewRowQuickApprove({
     ? 'approval unavailable'
     : submittedCommentCount === null
       ? 'loading draft…'
-      : `approve & submit ${submittedCommentCount}${
+      : `${
+          submittedCommentCount === 0
+            ? 'approve with no comments'
+            : `approve & submit ${submittedCommentCount}`
+        }${
           rejectedCommentCount ? ` · omit ${rejectedCommentCount} rejected` : ''
         }`;
 
@@ -787,7 +795,7 @@ function ReviewRowQuickApprove({
       <button
         aria-label={actions.submitting ? 'submitting review' : label}
         aria-describedby={unavailableReason ? unavailableReasonId : undefined}
-        className="border border-primary bg-primary px-2 py-1 text-primary-ink focus:outline-none focus:ring-1 focus:ring-primary disabled:cursor-not-allowed disabled:opacity-50"
+        className={`${reviewRowActionClass} border-primary bg-[color-mix(in_srgb,var(--primary)_12%,transparent)] font-semibold text-primary hover:bg-[color-mix(in_srgb,var(--primary)_22%,transparent)]`}
         disabled={!draftKnown || !draftMatches || actions.busy}
         onClick={() => {
           setError(null);
@@ -810,7 +818,7 @@ function ReviewRowReceipt({ review }: { review: PrReviewRecord }) {
         recorded
       </span>
       <a
-        className="inline-flex min-h-[26px] items-center border border-primary px-2 py-1 text-primary focus:outline-none focus:ring-1 focus:ring-primary"
+        className={`${reviewRowActionClass} border-primary text-primary`}
         href={review.githubReviewUrl ?? review.prUrl}
         rel="noreferrer"
         target="_blank"
@@ -824,29 +832,22 @@ function ReviewRowReceipt({ review }: { review: PrReviewRecord }) {
 function OpenReviewButton({ review }: { review: PrReviewRecord }) {
   return (
     <a
-      className="inline-flex min-h-[26px] items-center border border-primary px-2 py-1 font-mono text-[10px] text-primary focus:outline-none focus:ring-1 focus:ring-primary"
+      className={reviewRowActionClass}
       href={review.reviewUrl}
       rel="noreferrer"
       target="_blank"
     >
-      open review
+      open
     </a>
   );
 }
 
 export function reviewRecommendationLabel(review: PrReviewRecord) {
-  if (review.status === 'submitted') {
-    if (review.verdict === 'approve') return '✓ APPROVED BY YOU';
-    if (review.verdict === 'request-changes') {
-      return '! CHANGES REQUESTED BY YOU';
-    }
-    if (review.verdict === 'comment') return 'COMMENTED BY YOU';
-    return 'SUBMITTED BY YOU';
-  }
-  if (review.recommendation === 'approve') return '✓ RECOMMEND APPROVE';
-  if (review.recommendation === 'needs-human') return '! NEEDS A HUMAN';
-  return reviewStatusLine(review);
+  return briefingRecommendationLabel(review) ?? reviewStatusLine(review);
 }
+
+const reviewRowActionClass =
+  'inline-flex min-h-[26px] items-center justify-center border border-line bg-soft px-2 py-1 font-mono text-[10px] font-normal leading-[1.2] text-muted hover:border-primary hover:text-primary focus:outline-none focus:ring-1 focus:ring-primary disabled:cursor-not-allowed disabled:opacity-50';
 
 function reviewRecommendationTone(review: PrReviewRecord) {
   if (review.status === 'submitted') {

@@ -168,7 +168,7 @@ describe('ReviewsPanel concurrent row mutations', () => {
     );
     expect(
       [...container.querySelectorAll('button')].filter((button) =>
-        button.textContent?.startsWith('approve & submit'),
+        button.textContent?.startsWith('approve '),
       ),
     ).toHaveLength(1);
     expect(reviewDraftQueries.useGitHubPrReviewDraft).toHaveBeenCalledWith(
@@ -176,6 +176,24 @@ describe('ReviewsPanel concurrent row mutations', () => {
       expect.objectContaining({ live: false }),
     );
     expect(container.textContent).toContain('no quick approve');
+    const approveRow = [...container.querySelectorAll('article')].find(
+      (article) => article.textContent?.includes('owner/project#1'),
+    );
+    expect(
+      [...(approveRow?.querySelectorAll('button,a') ?? [])].map((action) =>
+        action.textContent?.trim(),
+      ),
+    ).toEqual(['briefing', 'open', 'archive', 'approve with no comments']);
+    expect(
+      [...(approveRow?.querySelectorAll('button,a') ?? [])].every((action) =>
+        action.className.includes('min-h-[26px]'),
+      ),
+    ).toBe(true);
+    expect(
+      [...(approveRow?.querySelectorAll('p') ?? [])].find((paragraph) =>
+        paragraph.textContent?.includes('RECOMMEND APPROVE'),
+      )?.className,
+    ).toContain('font-semibold');
   });
 
   it('submits an approve recommendation from the row with no review body', async () => {
@@ -193,7 +211,7 @@ describe('ReviewsPanel concurrent row mutations', () => {
     });
     await renderPanel();
 
-    await act(async () => buttonWithText('approve & submit 0').click());
+    await act(async () => buttonWithText('approve with no comments').click());
 
     expect(reviewActions.submitApproval).toHaveBeenCalledWith('');
   });
