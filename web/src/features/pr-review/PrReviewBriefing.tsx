@@ -415,6 +415,21 @@ export function PrReviewBriefing({
               {review.trustBoundary}
             </p>
           </div>
+          <div className="mt-6 border-t border-line pt-4">
+            <SectionLabel>Got a question?</SectionLabel>
+            <p className="mt-2 text-[11px] leading-5 text-muted">
+              The workbench has the full diff and the review chat. Asking there
+              keeps the answer next to the code it is about.
+            </p>
+            <a
+              className="mt-3 inline-flex min-h-8 items-center border border-line px-2.5 py-1.5 font-mono text-[10px] text-ink hover:border-primary hover:text-primary focus:outline-none focus:ring-1 focus:ring-primary"
+              href={review.reviewUrl}
+              rel="noreferrer"
+              target="_blank"
+            >
+              Ask Neon in the workbench →
+            </a>
+          </div>
           {actions && !submitted && !submitting && !needsHuman ? (
             <div className="mt-6 border border-line bg-canvas p-3">
               <SectionLabel>Approval note</SectionLabel>
@@ -452,6 +467,14 @@ export function PrReviewBriefing({
                     ? 'draft update in progress…'
                     : `approve & submit ${payloadLabel}`}
               </button>
+              <a
+                className="mt-2 flex min-h-8 items-center justify-center border border-line px-3 py-1.5 font-mono text-[10px] text-muted hover:border-primary hover:text-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                href={review.reviewUrl}
+                rel="noreferrer"
+                target="_blank"
+              >
+                Open workbench instead
+              </a>
               {!actionable ? (
                 <p className="mt-2 font-mono text-[10px] leading-4 text-muted">
                   {archived
@@ -472,7 +495,8 @@ export function PrReviewBriefing({
           <div className="min-w-[240px] flex-1">
             <p className="text-[12px] leading-5">
               You are overriding a needs-human recommendation. Approving submits{' '}
-              {payloadLabel} on {review.repoFullName}#{review.prNumber} as you.
+              {payloadLabel} on {review.repoFullName}#{review.prNumber} as you.{' '}
+              Nothing is sent until you press the submit button.
             </p>
             <label className="mt-2 block border border-line bg-field px-2.5 py-2">
               <span className="font-mono text-[9px] uppercase tracking-[0.08em] text-muted">
@@ -556,6 +580,16 @@ export function PrReviewBriefing({
             >
               approve anyway
             </button>
+          ) : null}
+          {needsHuman && !submitted && !submitting ? (
+            <a
+              className="inline-flex min-h-9 items-center border border-primary bg-primary px-3.5 py-1.5 font-semibold text-primary-ink focus:outline-none focus:ring-1 focus:ring-primary"
+              href={review.reviewUrl}
+              rel="noreferrer"
+              target="_blank"
+            >
+              Open workbench →
+            </a>
           ) : null}
           {actions && submitting ? (
             <button

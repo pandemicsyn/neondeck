@@ -115,6 +115,12 @@ describe('PR review briefing', () => {
     expect(container.textContent).toContain('minor');
     expect(container.textContent).toContain('note-only');
     expect(container.textContent).toContain('Change map');
+    expect(container.textContent).toContain('Got a question?');
+    expect(
+      [...container.querySelectorAll<HTMLAnchorElement>('a')]
+        .find((link) => link.textContent === 'Ask Neon in the workbench →')
+        ?.getAttribute('href'),
+    ).toBe('/review?repo=owner%2Frepo&number=1');
     act(() =>
       [
         ...container.querySelectorAll<HTMLButtonElement>(
@@ -151,6 +157,11 @@ describe('PR review briefing', () => {
       container.textContent?.indexOf('Blocking draft body') ?? 0,
     );
     expect(container.textContent).not.toContain('Live draft body');
+    expect(
+      [...container.querySelectorAll<HTMLAnchorElement>('a')]
+        .find((link) => link.textContent === 'Open workbench →')
+        ?.getAttribute('href'),
+    ).toBe('/review?repo=owner%2Frepo&number=1');
     act(() =>
       [...container.querySelectorAll('button')]
         .find((button) => button.textContent === 'everything')
@@ -390,6 +401,9 @@ describe('PR review briefing', () => {
       ),
     ).toBe(false);
     act(() => buttonWithText(container, 'approve anyway').click());
+    expect(container.textContent).toContain(
+      'Nothing is sent until you press the submit button.',
+    );
     const approvalNote = container.querySelector<HTMLTextAreaElement>(
       'textarea[aria-label="Approval note"]',
     );
@@ -419,6 +433,7 @@ describe('PR review briefing', () => {
       'approve & submit note + 1 comment',
     );
     expect(container.textContent).toContain('with note + 1 comment, as you');
+    expect(container.textContent).toContain('Open workbench instead');
   });
 
   it('warns when a rejected draft comment will be omitted', () => {
