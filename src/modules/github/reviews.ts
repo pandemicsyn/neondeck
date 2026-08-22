@@ -38,6 +38,8 @@ export type GitHubPrReviewDraftComment = {
   body: string;
   origin: GitHubPrReviewDraftCommentOrigin;
   sourceFindingId: string | null;
+  neonSeverity?: GitHubPrReviewNeonSeedSeverity | null;
+  neonSummary?: string | null;
   createdAt: string;
   updatedAt: string;
 };
@@ -1404,15 +1406,27 @@ function readDraftComments(
   return database
     .prepare(
       `
-      SELECT *
-      FROM pr_review_draft_comments
-      WHERE draft_id = ?
-      ORDER BY created_at ASC;
+      SELECT
+        comments.*,
+        seeds.severity AS neon_severity,
+        seeds.summary AS neon_summary
+      FROM pr_review_draft_comments AS comments
+      LEFT JOIN pr_review_neon_seeded_comments AS seeds
+        ON seeds.comment_id = comments.id
+      WHERE comments.draft_id = ?
+      ORDER BY comments.created_at ASC;
     `,
     )
     .all(draftId)
     .map((row) => {
       const parsed = v.parse(draftCommentRowSchema, row);
+      const seed = v.parse(
+        v.object({
+          neon_severity: v.nullable(reviewNeonSeedSeveritySchema),
+          neon_summary: v.nullable(v.string()),
+        }),
+        row,
+      );
       return {
         id: parsed.id,
         draftId: parsed.draft_id,
@@ -1427,6 +1441,8 @@ function readDraftComments(
             : parsed.body,
         origin: parsed.origin,
         sourceFindingId: parsed.source_finding_id,
+        neonSeverity: seed.neon_severity,
+        neonSummary: seed.neon_summary,
         createdAt: parsed.created_at,
         updatedAt: parsed.updated_at,
       };

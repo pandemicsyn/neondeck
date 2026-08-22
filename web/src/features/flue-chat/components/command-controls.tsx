@@ -122,7 +122,7 @@ function PrReviewCommandCard({
 }
 
 function ReviewCommandResult({ review }: { review: PrReviewRecord }) {
-  const [artifactIndex, setArtifactIndex] = useState<number | null>(null);
+  const [briefingOpen, setBriefingOpen] = useState(false);
   return (
     <div className="mt-1.5">
       <p className="text-muted">
@@ -140,20 +140,15 @@ function ReviewCommandResult({ review }: { review: PrReviewRecord }) {
         <p className="mt-1 text-muted">{review.trustBoundary}</p>
       ) : null}
       <div className="mt-1.5 flex flex-wrap justify-end gap-1.5 font-mono text-[10px]">
-        {review.reportIds.map((reportId, index) => (
+        {review.briefingOverview ? (
           <button
             className="border border-line px-1.5 py-1 text-muted hover:border-primary hover:text-primary focus:outline-none focus:ring-1 focus:ring-primary"
-            key={reportId}
-            onClick={() => setArtifactIndex(index)}
+            onClick={() => setBriefingOpen(true)}
             type="button"
           >
-            {index === 0
-              ? 'overview'
-              : index === 1
-                ? 'issues'
-                : `report ${index + 1}`}
+            briefing
           </button>
-        ))}
+        ) : null}
         {(review.status === 'ready' || review.status === 'submitted') && (
           <a
             className="border border-primary px-2 py-1 text-primary focus:outline-none focus:ring-1 focus:ring-primary"
@@ -165,13 +160,10 @@ function ReviewCommandResult({ review }: { review: PrReviewRecord }) {
           </a>
         )}
       </div>
-      {artifactIndex !== null ? (
+      {briefingOpen ? (
         <PrReviewArtifactsOverlay
-          initialReportIndex={artifactIndex}
-          onClose={() => setArtifactIndex(null)}
-          reportIds={review.reportIds}
-          reviewLabel={`${review.repoFullName}#${review.prNumber}`}
-          reviewUrl={review.reviewUrl}
+          onClose={() => setBriefingOpen(false)}
+          review={review}
         />
       ) : null}
     </div>

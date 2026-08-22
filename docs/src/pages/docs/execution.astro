@@ -22,7 +22,7 @@ const boundaryDiagram = `flowchart TB
   Delta -->|Yes, fixing mode| Owner["Trusted coding owner<br/>managed worktree"]
   Owner --> Delivery["Mode-bound push and response checks"]
 
-  Review --> Findings["Local report and draft findings"]
+  Review --> Findings["Local briefing and draft findings"]
   Findings --> Human["Human reviews and submits"]`;
 ---
 
@@ -112,7 +112,7 @@ const boundaryDiagram = `flowchart TB
             <tr>
               <td>Human PR review</td>
               <td>Read-only view of one exact revision</td>
-              <td>Create local reports and draft findings</td>
+              <td>Create a local briefing and draft findings</td>
               <td
                 >Revision binding, bounded reads, and human-owned submission</td
               >
@@ -266,11 +266,11 @@ const boundaryDiagram = `flowchart TB
           guessed location.
         </p>
         <p>
-          The review run may create local reports and seed local draft comments.
-          It never submits a GitHub review. Follow-up reviewer chat stays bound
-          to the saved head revision and has the same read-only limits. A human
-          owns editing drafts, choosing a verdict, replying to threads, and
-          submitting the final review from the dashboard.
+          The review run may persist a local briefing and seed local draft
+          comments. It never submits a GitHub review. Follow-up reviewer chat
+          stays bound to the saved head revision and has the same read-only
+          limits. A human owns editing drafts, choosing a verdict, replying to
+          threads, and submitting the final review from the dashboard.
         </p>
 
         <h2>Direct host commands</h2>
@@ -314,7 +314,7 @@ const boundaryDiagram = `flowchart TB
           Neondeck keeps durable records for scheduled occurrences, agent
           submissions, app operations, watch changes, worktree events, repo
           edits, execution decisions, command outcomes, connected-service
-          approvals, and Autopilot delivery. Review reports and draft findings
+          approvals, and Autopilot delivery. Review briefings and draft findings
           remain local until a human submits them.
         </p>
         <p>

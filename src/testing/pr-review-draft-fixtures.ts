@@ -9,6 +9,21 @@ import {
   upsertPrReviewDraft as upsertDraft,
   type GitHubPrReviewVerdict,
 } from '../modules/github';
+import type { PrReviewBriefingOverview } from '../modules/pr-reviews';
+
+export function prReviewBriefingFixture(
+  overrides: Partial<PrReviewBriefingOverview> = {},
+): PrReviewBriefingOverview {
+  return {
+    schemaVersion: 1,
+    recommendation: 'needs-human',
+    recommendationReason: 'The fixture review requires a human decision.',
+    summary: 'Fixture review briefing.',
+    changeMap: [],
+    risks: [],
+    ...overrides,
+  };
+}
 
 type UpsertOptions = {
   databasePath: string;

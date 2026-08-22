@@ -80,6 +80,57 @@ describe('useGitHubPrReviewMutations', () => {
     expect(queryClient.getQueryData(prReviewQueryKeys.draft(pr))).toBeNull();
   });
 
+  it('loads the submitted receipt instead of reusing a cached submitting draft', async () => {
+    const pr = pullRequest();
+    const submittingDraft = reviewDraft('submitting');
+    const submittedDraft = reviewDraft('submitted');
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    queryClient.setQueryData(
+      prReviewQueryKeys.submissionDraft(pr, submittingDraft.id, 'submitting'),
+      submittingDraft,
+    );
+    const fetchSpy = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValue(liveDraftResponse(submittedDraft));
+
+    function Harness() {
+      useGitHubPrReviewDraft(pr, {
+        draftId: submittingDraft.id,
+        submissionStatus: 'submitted',
+      });
+      return null;
+    }
+
+    await act(async () =>
+      root.render(
+        <QueryClientProvider client={queryClient}>
+          <Harness />
+        </QueryClientProvider>,
+      ),
+    );
+    await act(async () => {
+      await queryClient.refetchQueries({
+        queryKey: prReviewQueryKeys.submissionDraft(
+          pr,
+          submittedDraft.id,
+          'submitted',
+        ),
+      });
+    });
+
+    expect(fetchSpy).toHaveBeenCalledWith(
+      expect.stringContaining('draftId=draft-1'),
+      expect.any(Object),
+    );
+    expect(
+      queryClient.getQueryData<GitHubPrReviewDraft>(
+        prReviewQueryKeys.submissionDraft(pr, submittedDraft.id, 'submitted'),
+      )?.status,
+    ).toBe('submitted');
+  });
+
   it('reconciles the authoritative draft returned by a CAS conflict', async () => {
     const pr = pullRequest();
     const staleDraft = reviewDraft('draft');

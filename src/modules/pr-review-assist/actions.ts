@@ -156,7 +156,7 @@ export function createSubmitPrReviewTool(
   return defineTool({
     name: 'neondeck_submit_pr_review',
     description:
-      'Submit the structured result of the bound exact-revision review, then durably prepare local reports and Neon-origin draft comments without submitting anything to GitHub. Call exactly once after inspecting the review facts and workspace.',
+      'Submit the structured result of the bound exact-revision review, then durably prepare its local briefing and Neon-origin draft comments without submitting anything to GitHub. Call exactly once after inspecting the review facts and workspace.',
     input: reviewAssistStructuredOutputSchema,
     output: prReviewAssistOutputSchema,
     durable: true,
@@ -351,7 +351,7 @@ function completePrReviewIdempotently(
     throw new Error('The PR review completion binding is incomplete.');
   }
   const paths = runtimePaths();
-  const reportIds = data.reports.map((report) => report.id);
+  const reportIds: string[] = [];
   const transitioned = completePrReview(
     {
       reviewId: input.reviewId,
@@ -360,6 +360,7 @@ function completePrReviewIdempotently(
       headSha: data.headSha,
       reportIds,
       reviewUrl: data.reviewUrl,
+      briefingOverview: data.briefingOverview,
       findingCount: data.findingCount,
       seededCount: data.seededCount,
       reportOnlyCount: data.reportOnlyCount,
@@ -377,6 +378,10 @@ function completePrReviewIdempotently(
     current &&
     current.headSha === data.headSha &&
     current.reviewUrl === data.reviewUrl &&
+    current.recommendation === data.recommendation &&
+    current.recommendationReason === data.recommendationReason &&
+    JSON.stringify(current.briefingOverview) ===
+      JSON.stringify(data.briefingOverview) &&
     JSON.stringify(current.reportIds) === JSON.stringify(reportIds)
   ) {
     return current;

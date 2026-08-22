@@ -81,6 +81,9 @@ it('delegates exact-revision exploration, verifies its result, and submits one b
         [
           fauxToolCall('neondeck_submit_pr_review', {
             overview: {
+              recommendation: 'approve',
+              recommendationReason:
+                'The exact-revision review found no merge-blocking issues.',
               summary: 'The exact-revision change was reviewed.',
               changeMap: [
                 { path: 'src/app.ts', summary: 'Adds the reviewed export.' },
@@ -183,6 +186,9 @@ it('delegates exact-revision exploration, verifies its result, and submits one b
       status: 'ready',
       runId: receipt.submissionId,
       headSha: repository.headSha,
+      recommendation: 'approve',
+      recommendationReason:
+        'The exact-revision review found no merge-blocking issues.',
       findingCount: 0,
     });
   } finally {
@@ -270,6 +276,9 @@ it('resumes pre-Explore review data with the current configured Explore selectio
       [
         fauxToolCall('neondeck_submit_pr_review', {
           overview: {
+            recommendation: 'approve',
+            recommendationReason:
+              'The resumed review found no merge-blocking issues.',
             summary: 'The legacy review resumed successfully.',
             changeMap: [
               { path: 'src/app.ts', summary: 'Updates the reviewed export.' },

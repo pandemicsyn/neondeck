@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -83,6 +83,17 @@ describe('runtime skills', () => {
       ]),
     );
     expect(inventory.duplicates).toEqual([]);
+
+    const reviewSkill = await readFile(
+      join(paths.skills, 'neon-pr-review', 'SKILL.md'),
+      'utf8',
+    );
+    expect(reviewSkill).toContain('version: 5');
+    expect(reviewSkill).toContain(
+      'for `approve`, answer "why is this safe to merge without a human reading the diff?"',
+    );
+    expect(reviewSkill).not.toContain('first slide');
+    expect(reviewSkill).not.toContain('presentation object');
 
     expect(
       runtimeSkillReferencesSync(paths).map((skill) => skill.name),

@@ -136,7 +136,9 @@ export function createGitHubRoutes(
       c.req.param('number'),
     );
     if (!target.ok) return c.json(target.result, 400);
-    const result = await getGitHubPrReviewDraft(target.input, paths);
+    const result = await getGitHubPrReviewDraft(target.input, paths, {
+      draftId: c.req.query('draftId')?.trim() || undefined,
+    });
     return c.json(result, result.ok ? 200 : 400);
   });
 

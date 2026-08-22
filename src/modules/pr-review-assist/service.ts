@@ -19,12 +19,10 @@ import { getGitHubPrEventState, getGitHubPrFiles } from '../pr-events';
 import type { PrEventStateDependencies, PullRequestTarget } from '../pr-events';
 import { readLocalPullRequestFileDiff } from '../pr-local-diffs';
 import { readRepoRegistrySnapshot, repoFullName } from '../repos';
-import { writeReport } from '../reports';
 import {
   loadAutomationLearningMemoryContext,
   type AutomationLearningMemoryContext,
 } from '../learning';
-import { renderReportDeckHtml } from '../../lib/report-deck-html';
 import {
   type RuntimePaths,
   ensureRuntimeHome,
@@ -35,7 +33,6 @@ import {
   commentAnchorExists,
   type ReviewCommentAnchor,
 } from '../../../shared/patch-anchors';
-import type { ReportDocument } from '../../../shared/report-document';
 import {
   prReviewAssistInputSchema,
   reviewAssistStructuredOutputSchema,
@@ -43,8 +40,11 @@ import {
   type ReviewAssistFinding,
   type ReviewAssistStructuredOutput,
 } from './schemas';
-import { buildReviewReportDecks } from './report-deck';
 import { prReviewFindingSourceId } from '../pr-reviews/finding-id';
+import type {
+  PrReviewBriefingOverview,
+  PrReviewRecommendation,
+} from '../pr-reviews/types';
 
 export type ReviewAssistFacts = {
   target: PullRequestTarget;
@@ -212,22 +212,15 @@ export async function completePreparedPrReviewForHuman(
       dependencies.validateReviewFiles,
     ),
   );
-  const generatedAt = await runEffect('review-generated-at', () =>
-    Promise.resolve(new Date().toISOString()),
-  );
-  const reports = await runEffect('write-review-reports', () =>
-    writeReviewReports({
-      facts,
-      output: reviewed.output,
-      repoId,
-      seedResult,
-      paths,
-      generatedAt,
-      overviewId: stableEffectId(dependencies.effectId, 'overview-report'),
-      issuesId: stableEffectId(dependencies.effectId, 'issues-report'),
-      signal: dependencies.signal,
-    }),
-  );
+  const recommendation = resolvePrReviewRecommendation(reviewed.output);
+  const briefingOverview: PrReviewBriefingOverview = {
+    schemaVersion: 1,
+    recommendation: recommendation.recommendation,
+    recommendationReason: recommendation.recommendationReason,
+    summary: reviewed.output.overview.summary,
+    changeMap: reviewed.output.overview.changeMap,
+    risks: reviewed.output.overview.risks,
+  };
   const workflowSummary = await runEffect('write-workflow-summary', () =>
     addWorkflowSummary(
       {
@@ -239,16 +232,17 @@ export async function completePreparedPrReviewForHuman(
           : {}),
         status: 'completed',
         summary: {
-          message: `Prepared review reports for ${facts.target.repoFullName}#${facts.target.number}.`,
+          message: `Prepared review briefing for ${facts.target.repoFullName}#${facts.target.number}.`,
           repoId,
           repoFullName: facts.target.repoFullName,
           prNumber: facts.target.number,
           headSha: facts.state.headSha,
           findingCount: reviewed.output.findings.length,
+          recommendation: recommendation.recommendation,
+          recommendationReason: recommendation.recommendationReason,
           seededCount: seedResult.seeded.length,
           reportOnlyCount: seedResult.reportOnly.length,
           skippedSeedingReason: seedResult.skippedReason,
-          reportIds: reports.map((report) => report.id),
           memoryIds: promptContext.learningMemoryContext.memoryIds,
         },
       },
@@ -262,15 +256,13 @@ export async function completePreparedPrReviewForHuman(
         signal: dependencies.signal,
         level: 'ready',
         title: 'PR review ready',
-        message: `Neon prepared ${reports.length} report${reports.length === 1 ? '' : 's'} and ${seedResult.seeded.length} draft comment${seedResult.seeded.length === 1 ? '' : 's'} for ${facts.target.repoFullName}#${facts.target.number}.`,
+        message: `Neon prepared a review briefing and ${seedResult.seeded.length} draft comment${seedResult.seeded.length === 1 ? '' : 's'} for ${facts.target.repoFullName}#${facts.target.number}.`,
         source: 'review-pr-for-human',
         sourceId: `${facts.target.repoFullName}#${facts.target.number}:${facts.state.headSha}`,
         data: {
           workflow: 'review-pr-for-human',
           repo: facts.target.repoFullName,
           prNumber: facts.target.number,
-          reportIds: reports.map((report) => report.id),
-          reportUrls: reports.map((report) => `/reports/${report.id}`),
           reviewUrl: reviewSurfaceUrl(facts.target),
           seededCount: seedResult.seeded.length,
           reportOnlyCount: seedResult.reportOnly.length,
@@ -285,7 +277,7 @@ export async function completePreparedPrReviewForHuman(
     ok: true,
     action: 'pr_review_assist' as const,
     changed: true,
-    message: `Prepared review assist artifacts for ${facts.target.repoFullName}#${facts.target.number}.`,
+    message: `Prepared review briefing for ${facts.target.repoFullName}#${facts.target.number}.`,
     data: {
       workflow: 'review-pr-for-human',
       target: {
@@ -295,13 +287,11 @@ export async function completePreparedPrReviewForHuman(
         number: facts.target.number,
       },
       headSha: facts.state.headSha,
-      reports: reports.map((report) => ({
-        id: report.id,
-        title: report.title,
-        url: `/reports/${report.id}`,
-      })),
       reviewUrl: reviewSurfaceUrl(facts.target),
       findingCount: reviewed.output.findings.length,
+      recommendation: recommendation.recommendation,
+      recommendationReason: recommendation.recommendationReason,
+      briefingOverview,
       seededCount: seedResult.seeded.length,
       reportOnlyCount: seedResult.reportOnly.length,
       reportOnlyFindings: seedResult.reportOnly.map((item) => ({
@@ -312,6 +302,10 @@ export async function completePreparedPrReviewForHuman(
         severity: item.finding.severity,
         path: item.finding.path,
         line: findingLine(item.finding),
+        side:
+          item.finding.anchor.kind === 'inline'
+            ? item.finding.anchor.side
+            : null,
         summary: item.finding.summary,
         suggestedFix: item.finding.suggestedFix,
         reason: item.reason,
@@ -412,6 +406,9 @@ function deterministicReviewPass(
   ].filter((reason): reason is string => Boolean(reason));
   return {
     overview: {
+      recommendation: 'needs-human',
+      recommendationReason:
+        'The deterministic fallback cannot assess whether this change is safe to merge without a human review.',
       summary: `${facts.state.title} changes ${facts.diffSummary.files} file${facts.diffSummary.files === 1 ? '' : 's'} with ${facts.diffSummary.additions} addition${facts.diffSummary.additions === 1 ? '' : 's'} and ${facts.diffSummary.deletions} deletion${facts.diffSummary.deletions === 1 ? '' : 's'}.`,
       changeMap,
       risks,
@@ -428,6 +425,28 @@ function deterministicReviewPass(
             : ['No failing check runs were present in fetched facts.'],
     },
     findings: [],
+  };
+}
+
+export function resolvePrReviewRecommendation(
+  output: Pick<ReviewAssistStructuredOutput, 'overview' | 'findings'>,
+): {
+  recommendation: PrReviewRecommendation;
+  recommendationReason: string;
+} {
+  const forcingFinding = output.findings.find(
+    (finding) =>
+      finding.severity === 'critical' || finding.severity === 'major',
+  );
+  if (forcingFinding) {
+    return {
+      recommendation: 'needs-human',
+      recommendationReason: `A ${forcingFinding.severity} finding requires human review.`,
+    };
+  }
+  return {
+    recommendation: output.overview.recommendation,
+    recommendationReason: output.overview.recommendationReason,
   };
 }
 
@@ -702,176 +721,6 @@ function reviewSeedingBlockedReason(facts: ReviewAssistFacts) {
       : null,
   ].filter((reason): reason is string => Boolean(reason));
   return reasons.length > 0 ? reasons.join(';') : null;
-}
-
-async function writeReviewReports(input: {
-  facts: ReviewAssistFacts;
-  output: ReviewAssistStructuredOutput;
-  repoId: string | null;
-  seedResult: Awaited<ReturnType<typeof seedDraftComments>>;
-  paths: RuntimePaths;
-  generatedAt: string;
-  overviewId?: string;
-  issuesId?: string;
-  signal?: AbortSignal;
-}) {
-  const { facts, output, repoId, seedResult, paths } = input;
-  const sourceRef = `${facts.target.repoFullName}#${facts.target.number}`;
-  const generatedAtIso = input.generatedAt;
-  const decks = buildReviewReportDecks({
-    sourceRef,
-    state: facts.state,
-    files: facts.files,
-    output,
-    seededFindings: seedResult.seeded.map((item) => ({
-      finding: item.finding,
-      line: item.anchor.line,
-    })),
-    reportOnlyFindings: seedResult.reportOnly,
-    generatedAt: generatedAtIso,
-  });
-  const overviewDocument: ReportDocument = {
-    eyebrow: 'PR REVIEW',
-    title: `PR Overview: ${sourceRef}`,
-    summary: output.overview.summary,
-    generatedAt: generatedAtIso,
-    sections: [
-      {
-        title: 'Pull Request',
-        body: null,
-        items: [
-          { label: 'title', value: facts.state.title },
-          { label: 'state', value: facts.state.state },
-          { label: 'base', value: facts.state.baseRef },
-          { label: 'head', value: facts.state.headSha },
-          { label: 'url', value: facts.state.url },
-        ],
-      },
-      {
-        title: 'Change Map',
-        body: null,
-        items: output.overview.changeMap.map((item) => ({
-          label: item.path,
-          value: [item.summary, item.risk].filter(Boolean).join('\n'),
-        })),
-      },
-      {
-        title: 'Checks, Risks, And Next Actions',
-        body: null,
-        items: [
-          ...output.overview.checks.map((check, index) => ({
-            label: `check ${index + 1}`,
-            value: check,
-          })),
-          ...output.overview.risks.map((risk, index) => ({
-            label: `risk ${index + 1}`,
-            value: risk,
-          })),
-          ...(output.overview.nextActions ?? []).map((action, index) => ({
-            label: `next action ${index + 1}`,
-            value: action,
-          })),
-        ],
-      },
-    ],
-  };
-  input.signal?.throwIfAborted();
-  const overview = await writeReport(
-    {
-      id: input.overviewId,
-      signal: input.signal,
-      kind: 'pr-review',
-      title: `PR Overview: ${sourceRef}`,
-      repoId,
-      sourceRef,
-      createdBy: 'review-pr-for-human',
-      summary: {
-        report: 'overview',
-        workflow: 'review-pr-for-human',
-        repo: facts.target.repoFullName,
-        prNumber: facts.target.number,
-        headSha: facts.state.headSha,
-        findingCount: output.findings.length,
-        deck: decks.overview.document,
-        deckOverflow: decks.overview.overflowUsed,
-        presentationWarnings: decks.presentationWarnings,
-        document: overviewDocument,
-      },
-      html: renderReportDeckHtml(decks.overview.document),
-      createdAt: generatedAtIso,
-    },
-    paths,
-  );
-  const issuesDocument: ReportDocument = {
-    eyebrow: 'PR REVIEW',
-    title: `Review Issues: ${sourceRef}`,
-    summary:
-      output.findings.length === 0
-        ? 'No structured review findings were produced.'
-        : `${output.findings.length} structured finding${output.findings.length === 1 ? '' : 's'}; ${seedResult.seeded.length} seeded as local draft comment${seedResult.seeded.length === 1 ? '' : 's'}.`,
-    generatedAt: generatedAtIso,
-    sections: [
-      {
-        title: 'Seeded Draft Comments',
-        body: seedResult.skippedReason
-          ? `Draft seeding skipped: ${seedResult.skippedReason}.`
-          : null,
-        items:
-          seedResult.seeded.length > 0
-            ? seedResult.seeded.map((item) => ({
-                label: `${item.finding.severity} ${item.finding.path}:${item.anchor.line}`,
-                value: item.finding.summary,
-              }))
-            : [{ label: 'seeded', value: 'No findings were seeded.' }],
-      },
-      {
-        title: 'Report-Only Findings',
-        body: null,
-        items:
-          seedResult.reportOnly.length > 0
-            ? seedResult.reportOnly.map((item) => ({
-                label: `${item.finding.severity} ${item.finding.path}`,
-                value: `${item.reason}\n${item.finding.summary}\nSuggested fix: ${item.finding.suggestedFix}`,
-              }))
-            : [
-                {
-                  label: 'report-only',
-                  value: 'No report-only findings.',
-                },
-              ],
-      },
-    ],
-  };
-  input.signal?.throwIfAborted();
-  const issues = await writeReport(
-    {
-      id: input.issuesId,
-      signal: input.signal,
-      kind: 'pr-review',
-      title: `Review Issues: ${sourceRef}`,
-      repoId,
-      sourceRef,
-      createdBy: 'review-pr-for-human',
-      summary: {
-        report: 'issues',
-        workflow: 'review-pr-for-human',
-        repo: facts.target.repoFullName,
-        prNumber: facts.target.number,
-        headSha: facts.state.headSha,
-        findingCount: output.findings.length,
-        seededCount: seedResult.seeded.length,
-        reportOnlyCount: seedResult.reportOnly.length,
-        deck: decks.issues.document,
-        deckOverflow: decks.issues.overflowUsed,
-        presentationWarnings: decks.presentationWarnings,
-        document: issuesDocument,
-      },
-      html: renderReportDeckHtml(decks.issues.document),
-      createdAt: generatedAtIso,
-    },
-    paths,
-  );
-  return [overview, issues];
 }
 
 function exactRevisionFailure(

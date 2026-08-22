@@ -26,11 +26,11 @@ can be re-seeded from these files. `mockups/README.md` explains how.
 
 Three boards are specifications for this work:
 
-| Board | Specifies |
-| --- | --- |
-| `PanelRow.dc.html` | Reviews panel rows carrying the recommendation, the one-click approve, and the receipt state |
-| `ApproveB.dc.html` | Briefing recommending approve: the manifest, the payload-stating button, the approval note, the receipt |
-| `EscalateB.dc.html` | Briefing recommending a human: queue defaults, card actions, guidance sidebar, the override band |
+| Board               | Specifies                                                                                               |
+| ------------------- | ------------------------------------------------------------------------------------------------------- |
+| `PanelRow.dc.html`  | Reviews panel rows carrying the recommendation, the one-click approve, and the receipt state            |
+| `ApproveB.dc.html`  | Briefing recommending approve: the manifest, the payload-stating button, the approval note, the receipt |
+| `EscalateB.dc.html` | Briefing recommending a human: queue defaults, card actions, guidance sidebar, the override band        |
 
 `Main`, `Refinement` and `Rethink` are the exploration that led here — kept for
 rationale, not as specifications.
@@ -116,11 +116,10 @@ at all.** That is a hard constraint, not a preference — see decision 15.
 
 Two verified facts close off the two obvious shortcuts:
 
-- **No backfill.** `PrReviewReportOnlyFinding.severity` is stored, but seeded
-  findings become draft comments and `prReviewDraftCommentInputSchema`
-  (`src/modules/pr-events/schemas.ts:230`) has no severity field — the severity
-  of the seeded half of any past review is unrecoverable. The clamp needs every
-  finding's severity, so it cannot be replayed over stored reviews.
+- **No recommendation backfill.** `PrReviewReportOnlyFinding.severity` is stored,
+  and the existing Neon seed ledger also retains severity for seeded comments.
+  However, the agent's independent danger/complexity judgment was never stored,
+  so the two-input recommendation cannot be reconstructed for past reviews.
 - **No cheap simulation.** The live eval harness (`src/evals/pr-review/`) is a
   contract and behavior check, not a distribution tool: its scenarios are
   explicitly metadata (`scenarios.ts:24` — "intentionally metadata, not pretend
@@ -178,7 +177,7 @@ and both begin with the same Review brief slide.
   This is the core reason a review-specific document type is worth having.
 - **v2** `ReportDeckDocument` — `shared/report-deck.ts`. `version: 2`, a
   `slides[]` variant over `summary | facts | columns | markdown | change-map |
-  findings | appendix`, with invariants (slide 0 is `summary`, `appendix` last)
+findings | appendix`, with invariants (slide 0 is `summary`, `appendix` last)
   and link budgets.
 - **Legacy HTML** — parsed back into v1 by
   `web/src/features/pr-review/legacy-report-document.ts`.
@@ -215,7 +214,7 @@ and rendered client-side. The review workbench pop-out does not go through
 
 With the briefing on the review record (decision 14), the briefing pops out the
 same way — so none of the server-rendered report machinery below applies to it.
-That section is retained because it governs the *other* report kinds, which are
+That section is retained because it governs the _other_ report kinds, which are
 unaffected by this work.
 
 ### The standalone report route already runs script
@@ -484,3 +483,65 @@ the rest.
 - Embedding the review chat in the briefing.
 - Any change to the trust boundary: drafts stay local, and nothing reaches
   GitHub until the human submits.
+
+## Deviations and Deferrals
+
+### 2026-08-22 — Expose existing Neon seed metadata on live draft reads
+
+- Phase: 2 — Briefing render
+- Decision: Enriched live draft-comment reads with optional `neonSeverity` and
+  `neonSummary` fields by joining the existing Neon seed ledger.
+- Reason: The implementation review found that seeded severity and summary were
+  already persisted for audit, contrary to the plan's original premise. Reusing
+  that ledger lets the live briefing classify Neon drafts without freezing a
+  duplicate findings snapshot. Human-authored comments remain unclassified.
+- Follow-up: None. This changes the local draft read contract only; no new
+  persistence or backfill was added, and legacy reviews still receive no
+  briefing because their agent recommendation is unrecoverable.
+
+### 2026-08-22 — Exclude local Claude worktrees from Vitest discovery
+
+- Phase: Cross-cutting validation support
+- Decision: Added `**/.claude/worktrees/**` to the shared Vitest exclusion list.
+- Reason: This checkout contains gitignored nested worktrees whose stale test
+  files were being discovered as duplicate suites, making the repository's
+  standard validation commands fail outside the implementation under review.
+- Follow-up: None.
+
+### 2026-08-22 — Preserve diff side for promotable note-only findings
+
+- Phase: 4 — Actions
+- Decision: Added the original optional `RIGHT`/`LEFT` diff side to the
+  existing report-only findings JSON and require both side and line before the
+  briefing can promote a note into a local draft comment.
+- Reason: GitHub's draft-comment mutation requires an exact side as well as a
+  line. The plan retained only the line, which is insufficient and could place
+  a deletion-side finding on the wrong side. This reuses existing JSON
+  persistence and the existing mutation; it adds no table migration or new
+  mutation surface.
+- Follow-up: None. Newly generated inline-but-unanchored findings retain their
+  original side. Findings without a complete anchor stay note-only.
+
+### 2026-08-22 — Omit an unprovable submitted-comment count from panel receipts
+
+- Phase: 5 — Reviews panel row
+- Decision: Submitted rows show the durable verdict, time, and GitHub receipt
+  link without claiming how many inline comments were sent.
+- Reason: Workbench submissions may intentionally exclude stale or failed
+  draft anchors. The submitted draft retains those skipped comments, while the
+  durable review record does not persist the selected comment-id manifest, so
+  its total cannot safely be labeled as “comments sent.”
+- Follow-up: Persist the exact submitted comment-id manifest on the durable
+  review if product validation shows that the receipt count is important.
+
+### 2026-08-22 — Exclude immutable and generated artifacts from formatting
+
+- Phase: Cross-cutting validation support
+- Decision: Excluded nested local worktrees, the read-only review mockups, and
+  generated Drizzle snapshot JSON from Prettier discovery.
+- Reason: The standard format check traversed unrelated local worktrees and
+  requested rewrites of source-of-truth mockups that this plan explicitly
+  forbids modifying. Drizzle snapshots are generator-owned artifacts and
+  should remain byte-for-byte output from the migration generator.
+- Follow-up: None. Authored migration SQL and application source remain covered
+  by formatting validation.
