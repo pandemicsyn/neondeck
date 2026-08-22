@@ -447,6 +447,47 @@ describe('ReviewsPanel concurrent row mutations', () => {
     expect(button.getAttribute('aria-describedby')).toBeTruthy();
   });
 
+  it.each(['submitting', 'submitted', 'discarded'] as const)(
+    'explains the non-editable %s draft state without claiming a head mismatch',
+    async (status) => {
+      const approve = readyRecord('owner/project', 1, true);
+      reviewDraftQueries.useGitHubPrReviewDraft.mockReturnValue({
+        data: {
+          status,
+          headSha: approve.headSha,
+          comments: [],
+        },
+        error: null,
+        isError: false,
+        isLoading: false,
+        isRefetchError: false,
+        refetch: vi.fn(),
+      });
+      api.getPrReviews.mockResolvedValue({
+        ...reviewsResponse(),
+        items: [approve],
+        groups: {
+          awaiting: [],
+          inProgress: [],
+          needsAction: [approve],
+          submitted: [],
+          archived: [],
+        },
+      });
+
+      await renderPanel();
+
+      const button = buttonWithText('approval unavailable');
+      expect(button.disabled).toBe(true);
+      expect(container.textContent).toContain(
+        `The local draft is ${status}; quick approval requires an editable draft.`,
+      );
+      expect(container.textContent).not.toContain(
+        'The local draft does not match this ready review.',
+      );
+    },
+  );
+
   it('keeps the selected briefing open as its review moves between groups', async () => {
     const ready = readyRecord('owner/project', 1, true);
     api.getPrReviews.mockResolvedValue({

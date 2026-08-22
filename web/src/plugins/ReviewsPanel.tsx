@@ -747,9 +747,11 @@ function ReviewRowQuickApprove({
   const unavailableReason =
     draftQuery.isError || draftQuery.isRefetchError
       ? queryErrorMessage(draftQuery.error)
-      : draftKnown && !draftMatches
-        ? 'The local draft does not match this ready review.'
-        : null;
+      : draftKnown && draft && draft.status !== 'draft'
+        ? `The local draft is ${draft.status}; quick approval requires an editable draft.`
+        : draftKnown && !draftMatches
+          ? 'The local draft does not match this ready review.'
+          : null;
   const queryUnavailable = draftQuery.isError || draftQuery.isRefetchError;
   const approvalUnavailable = queryUnavailable || (draftKnown && !draftMatches);
   const rejectedCommentCount = Math.min(
