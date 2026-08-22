@@ -1507,9 +1507,11 @@ describe('PR event state watermarks', () => {
         'pr-review-delivery:pandemicsyn/neondeck#123:9002',
       ),
     ).toBe('processing');
+    insertMalformedProcessingDelivery(paths.neondeckDatabase);
     expect(
       readPendingNeondeckPrReviewIds('pandemicsyn/neondeck', 123, paths),
     ).toEqual(new Set(['9002']));
+    deleteMalformedProcessingDelivery(paths.neondeckDatabase);
     delayedVerification.resolve([]);
     await vi.waitFor(() =>
       expect(
@@ -2250,6 +2252,40 @@ function prReviewSubmissionFollowupStatus(databasePath: string, id: string) {
       .prepare('SELECT status FROM pr_review_submission_followups WHERE id = ?')
       .get(id) as { status?: unknown } | undefined;
     return typeof row?.status === 'string' ? row.status : null;
+  } finally {
+    database.close();
+  }
+}
+
+function insertMalformedProcessingDelivery(databasePath: string) {
+  const database = new DatabaseSync(databasePath);
+  const now = new Date().toISOString();
+  try {
+    database
+      .prepare(
+        `INSERT INTO pr_review_submission_followups (
+           id, kind, payload_json, status, attempt_count,
+           next_attempt_at, last_error, created_at, updated_at, completed_at
+         ) VALUES (?, 'delivery', ?, 'processing', 0, ?, NULL, ?, ?, NULL);`,
+      )
+      .run(
+        'malformed-processing-delivery',
+        new Uint8Array([0xff]),
+        now,
+        now,
+        now,
+      );
+  } finally {
+    database.close();
+  }
+}
+
+function deleteMalformedProcessingDelivery(databasePath: string) {
+  const database = new DatabaseSync(databasePath);
+  try {
+    database
+      .prepare('DELETE FROM pr_review_submission_followups WHERE id = ?;')
+      .run('malformed-processing-delivery');
   } finally {
     database.close();
   }

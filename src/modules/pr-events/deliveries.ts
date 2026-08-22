@@ -108,14 +108,15 @@ export function readPendingNeondeckPrReviewIds(
          FROM pr_review_submission_followups
          WHERE kind = 'delivery' AND status IN ('pending', 'processing');`,
       )
-      .all()
-      .map((row) => v.parse(pendingPayloadRowSchema, row));
+      .all();
     const result = new Set<string>();
-    for (const row of rows) {
+    for (const rawRow of rows) {
+      const row = v.safeParse(pendingPayloadRowSchema, rawRow);
+      if (!row.success) continue;
       try {
         const payload = v.parse(
           pendingDeliveryPayloadSchema,
-          JSON.parse(row.payload_json),
+          JSON.parse(row.output.payload_json),
         );
         if (
           payload.target.repoFullName.toLowerCase() ===
