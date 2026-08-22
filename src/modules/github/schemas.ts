@@ -726,6 +726,26 @@ const githubReviewThreadPullRequestGraphqlSchema = v.object({
   }),
 });
 
+export const githubReviewThreadGraphqlNodeSchema = v.object({
+  id: v.string(),
+  isResolved: v.boolean(),
+  isOutdated: v.boolean(),
+  path: v.optional(v.nullable(v.string())),
+  line: v.optional(v.nullable(v.number())),
+  originalLine: v.optional(v.nullable(v.number())),
+  diffSide: v.optional(v.string()),
+  pullRequest: v.optional(
+    v.nullable(githubReviewThreadPullRequestGraphqlSchema),
+  ),
+  comments: v.object({
+    pageInfo: v.object({
+      hasNextPage: v.boolean(),
+      endCursor: v.nullable(v.string()),
+    }),
+    nodes: v.optional(v.array(v.unknown())),
+  }),
+});
+
 export const githubReviewThreadsGraphqlResponseSchema = v.object({
   data: v.object({
     repository: v.nullable(
@@ -738,31 +758,7 @@ export const githubReviewThreadsGraphqlResponseSchema = v.object({
                 hasNextPage: v.boolean(),
                 endCursor: v.nullable(v.string()),
               }),
-              nodes: v.optional(
-                v.array(
-                  v.object({
-                    id: v.string(),
-                    isResolved: v.boolean(),
-                    isOutdated: v.boolean(),
-                    path: v.optional(v.nullable(v.string())),
-                    line: v.optional(v.nullable(v.number())),
-                    originalLine: v.optional(v.nullable(v.number())),
-                    diffSide: v.optional(v.string()),
-                    pullRequest: v.optional(
-                      v.nullable(githubReviewThreadPullRequestGraphqlSchema),
-                    ),
-                    comments: v.object({
-                      pageInfo: v.object({
-                        hasNextPage: v.boolean(),
-                        endCursor: v.nullable(v.string()),
-                      }),
-                      nodes: v.optional(
-                        v.array(githubReviewThreadCommentGraphqlNodeSchema),
-                      ),
-                    }),
-                  }),
-                ),
-              ),
+              nodes: v.optional(v.array(v.unknown())),
             }),
           }),
         ),
@@ -770,15 +766,9 @@ export const githubReviewThreadsGraphqlResponseSchema = v.object({
     ),
   }),
 });
-export type GitHubReviewThreadGraphqlNode = NonNullable<
-  NonNullable<
-    NonNullable<
-      v.InferOutput<
-        typeof githubReviewThreadsGraphqlResponseSchema
-      >['data']['repository']
-    >['pullRequest']
-  >['reviewThreads']['nodes']
->[number];
+export type GitHubReviewThreadGraphqlNode = v.InferOutput<
+  typeof githubReviewThreadGraphqlNodeSchema
+>;
 
 export const githubReviewThreadCommentsGraphqlResponseSchema = v.object({
   data: v.object({
@@ -796,9 +786,7 @@ export const githubReviewThreadCommentsGraphqlResponseSchema = v.object({
             hasNextPage: v.boolean(),
             endCursor: v.nullable(v.string()),
           }),
-          nodes: v.optional(
-            v.array(githubReviewThreadCommentGraphqlNodeSchema),
-          ),
+          nodes: v.optional(v.array(v.unknown())),
         }),
       }),
     ),
@@ -807,29 +795,7 @@ export const githubReviewThreadCommentsGraphqlResponseSchema = v.object({
 
 export const githubReviewThreadNodeGraphqlResponseSchema = v.object({
   data: v.object({
-    node: v.nullable(
-      v.object({
-        id: v.string(),
-        isResolved: v.boolean(),
-        isOutdated: v.boolean(),
-        path: v.optional(v.nullable(v.string())),
-        line: v.optional(v.nullable(v.number())),
-        originalLine: v.optional(v.nullable(v.number())),
-        diffSide: v.optional(v.string()),
-        pullRequest: v.optional(
-          v.nullable(githubReviewThreadPullRequestGraphqlSchema),
-        ),
-        comments: v.object({
-          pageInfo: v.object({
-            hasNextPage: v.boolean(),
-            endCursor: v.nullable(v.string()),
-          }),
-          nodes: v.optional(
-            v.array(githubReviewThreadCommentGraphqlNodeSchema),
-          ),
-        }),
-      }),
-    ),
+    node: v.nullable(githubReviewThreadGraphqlNodeSchema),
   }),
 });
 export type GitHubReviewThreadNodeGraphqlNode = NonNullable<

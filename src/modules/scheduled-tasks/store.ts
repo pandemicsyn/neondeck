@@ -4,6 +4,7 @@ import {
   collectValidRowsInBatches,
   openDb,
   rollbackQuietly,
+  withTransaction,
 } from '../../lib/sqlite';
 import { ensureRuntimeHome, runtimePaths } from '../../runtime-home';
 import {
@@ -101,19 +102,21 @@ export async function readLatestScheduledTaskRun(
   await ensureRuntimeHome(paths);
   const database = openDb(paths.neondeckDatabase);
   try {
-    const rows = collectValidRowsInBatches(
-      1,
-      (limit, offset) =>
-        database
-          .prepare(
-            `SELECT *
-             FROM scheduled_task_runs
-             WHERE task_id = ? AND status IN ('completed', 'failed')
-             ORDER BY created_at DESC
-             LIMIT ? OFFSET ?;`,
-          )
-          .all(taskId, limit, offset),
-      safeScheduledTaskRunRow,
+    const rows = withTransaction(database, () =>
+      collectValidRowsInBatches(
+        1,
+        (limit, offset) =>
+          database
+            .prepare(
+              `SELECT *
+               FROM scheduled_task_runs
+               WHERE task_id = ? AND status IN ('completed', 'failed')
+               ORDER BY created_at DESC, id DESC
+               LIMIT ? OFFSET ?;`,
+            )
+            .all(taskId, limit, offset),
+        safeScheduledTaskRunRow,
+      ),
     );
     return rows[0];
   } finally {

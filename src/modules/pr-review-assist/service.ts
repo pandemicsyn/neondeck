@@ -433,7 +433,7 @@ async function readReviewFacts(
       ? summarizePullRequestFiles(files)
       : null;
   const source = filesData.source === 'local' ? 'local' : 'github';
-  if (!files || files.length === 0 || !diffSummary) {
+  if (!files || !diffSummary || (files.length === 0 && filesTruncated)) {
     return {
       ok: false,
       result: failure('GitHub PR file response was incomplete.'),

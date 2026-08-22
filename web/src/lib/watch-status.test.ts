@@ -60,4 +60,29 @@ describe('PR watch status presentation', () => {
       } satisfies NotificationRecord),
     ).toBe('Acme-Org/widgets#4480: Merged, but 1 of 50 checks failed.');
   });
+
+  it('retains valid watch identity when a nested legacy checks value is malformed', () => {
+    expect(
+      notificationDisplayMessage({
+        id: 'notification-legacy-checks',
+        level: 'attention',
+        title: 'PR watch needs attention',
+        message: 'Updated watch "Acme-Org/widgets#4480".',
+        source: 'watch-pr',
+        sourceId: watch.id,
+        data: {
+          ...watch,
+          lastSnapshot: {
+            ...watch.lastSnapshot,
+            checks: { failed: 'legacy', total: 50 },
+          },
+        },
+        readAt: null,
+        resolvedAt: null,
+        occurrenceCount: 1,
+        createdAt: '2026-07-14T08:02:35.301Z',
+        updatedAt: '2026-07-14T08:02:35.301Z',
+      } satisfies NotificationRecord),
+    ).toBe('Acme-Org/widgets#4480: Merged, but checks are failing.');
+  });
 });

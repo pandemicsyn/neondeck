@@ -401,7 +401,7 @@ export function updateApprovalResult(
   }
 
   if (changes !== 1) throw new Error(`Execution approval ${id} was not found.`);
-  return readApproval(paths, id);
+  return readApprovalAfterWrite(paths, id, 'recording its result');
 }
 
 export function markApprovalUsed(
@@ -437,7 +437,21 @@ export function markApprovalUsed(
     }
     return undefined;
   }
-  return readApproval(paths, id);
+  return readApprovalAfterWrite(paths, id, 'marking it used');
+}
+
+function readApprovalAfterWrite(
+  paths: RuntimePaths,
+  id: string,
+  operation: string,
+) {
+  const approval = readApproval(paths, id);
+  if (!approval) {
+    throw new Error(
+      `Execution approval ${id} could not be read after ${operation}.`,
+    );
+  }
+  return approval;
 }
 
 function executionApprovalExists(paths: RuntimePaths, id: string) {

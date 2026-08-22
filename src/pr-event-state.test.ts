@@ -800,6 +800,7 @@ describe('PR event state watermarks', () => {
   });
 
   it('skips malformed delivery rows while retaining valid delivery fingerprints', async () => {
+    const warning = vi.spyOn(console, 'warn').mockImplementation(() => {});
     const home = await tempHome();
     const paths = runtimePaths(home);
     await ensureRuntimeHome(paths);
@@ -836,6 +837,11 @@ describe('PR event state watermarks', () => {
       readNeondeckPrDeliveries('pandemicsyn/neondeck', 123, paths)
         .reviewFingerprints,
     ).toEqual(new Map([['valid-review', 'a'.repeat(64)]]));
+    expect(warning).toHaveBeenCalledWith(
+      '[neondeck] skipped malformed persisted PR delivery row',
+      expect.any(String),
+    );
+    warning.mockRestore();
   });
 
   it('isolates malformed watermark and addressed-feedback rows', async () => {

@@ -321,6 +321,45 @@ describe('GitHub PR file cache', () => {
     expect(readCacheRows(paths.neondeckDatabase)).toEqual([]);
   });
 
+  it('does not cache a truncated file response as a complete revision', async () => {
+    const paths = runtimePaths(await tempHome());
+    await ensureRuntimeHome(paths);
+    const truncated = {
+      ...prFiles(
+        [prFile({ path: 'src/partial.ts' })],
+        '2026-07-05T14:00:00.000Z',
+      ),
+      truncated: true,
+    };
+    const fetcher = vi.fn<() => Promise<GitHubPullRequestFiles>>(
+      async () => truncated,
+    );
+    const input = {
+      token: 'token',
+      owner: 'pandemicsyn',
+      repo: 'neondeck',
+      number: 123,
+      headSha: 'partial-head',
+      baseSha: 'partial-base',
+      databasePath: paths.neondeckDatabase,
+      fetcher,
+      fetchRevision: async () => ({
+        headSha: 'partial-head',
+        baseSha: 'partial-base',
+      }),
+    };
+
+    await expect(fetchPullRequestFilesWithCache(input)).resolves.toEqual(
+      truncated,
+    );
+    await expect(fetchPullRequestFilesWithCache(input)).resolves.toEqual(
+      truncated,
+    );
+
+    expect(fetcher).toHaveBeenCalledTimes(2);
+    expect(readCacheRows(paths.neondeckDatabase)).toEqual([]);
+  });
+
   it('prunes to the newest three cached heads per pull request', async () => {
     const paths = runtimePaths(await tempHome());
     await ensureRuntimeHome(paths);

@@ -297,7 +297,7 @@ export function resolveReviewSurfaceNavigation(
 }
 
 function createReviewSurfaceId() {
-  if ('crypto' in globalThis && 'randomUUID' in globalThis.crypto) {
+  if (globalThis.crypto?.randomUUID) {
     return `review-surface:${globalThis.crypto.randomUUID()}`;
   }
   fallbackSurfaceId += 1;

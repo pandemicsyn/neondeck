@@ -401,7 +401,7 @@ describe('execution actions', () => {
     ).resolves.toMatchObject({ ok: false, requires: ['approval'] });
   });
 
-  it('records result and usage write-backs for malformed legacy approvals', async () => {
+  it('records malformed legacy approval writes but surfaces failed post-write hydration', async () => {
     const paths = runtimePaths(await tempDir());
     await ensureRuntimeHome(paths);
     const pending = await requestExecutionApproval(
@@ -418,14 +418,16 @@ describe('execution actions', () => {
       database.close();
     }
 
-    expect(
+    expect(() =>
       updateApprovalResult(paths, id, {
         status: 'failed',
         error: 'legacy command failed',
         result: { ok: false },
       }),
-    ).toBeUndefined();
-    expect(markApprovalUsed(paths, id)).toBeUndefined();
+    ).toThrow(/could not be read after recording its result/);
+    expect(() => markApprovalUsed(paths, id)).toThrow(
+      /could not be read after marking it used/,
+    );
 
     const verification = new DatabaseSync(paths.neondeckDatabase, {
       readOnly: true,

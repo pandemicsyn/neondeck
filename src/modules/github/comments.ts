@@ -8,6 +8,8 @@ import {
 import {
   githubIssueCommentApiResponseSchema,
   githubIssueCommentsApiResponseSchema,
+  githubReviewThreadCommentGraphqlNodeSchema,
+  githubReviewThreadGraphqlNodeSchema,
   githubReviewThreadNodeGraphqlResponseSchema,
   githubReviewThreadCommentsGraphqlResponseSchema,
   githubReviewThreadsGraphqlResponseSchema,
@@ -323,6 +325,7 @@ async function fetchReviewThreadsWithQuery(
   const threads: GitHubPullRequestReviewThread[] = [];
   let cursor: string | null = null;
   let truncated = false;
+  let budgetExhausted = false;
   let headSha: string | null = null;
 
   const pageLimit = options.eventBudget ? 100 : 5;
@@ -352,21 +355,34 @@ async function fetchReviewThreadsWithQuery(
       );
     }
     headSha ??= pageHeadSha;
-    for (const thread of pullRequest.reviewThreads.nodes ?? []) {
+    for (const rawThread of pullRequest.reviewThreads.nodes ?? []) {
+      const parsedThread = v.safeParse(
+        githubReviewThreadGraphqlNodeSchema,
+        rawThread,
+      );
+      if (!parsedThread.success) {
+        truncated = true;
+        console.warn(
+          '[neondeck] skipped malformed GitHub review thread',
+          v.summarize(parsedThread.issues),
+        );
+        continue;
+      }
       const normalized = await normalizeReviewThread(
         options.token,
-        thread,
+        parsedThread.output,
         options.signal,
         options.eventBudget,
         pageHeadSha,
       );
       if (!normalized) {
         truncated = true;
+        budgetExhausted = true;
         break;
       }
       threads.push(normalized);
     }
-    if (truncated) break;
+    if (budgetExhausted) break;
 
     if (!pullRequest.reviewThreads.pageInfo.hasNextPage) break;
     if (page === pageLimit - 1) {
@@ -475,18 +491,32 @@ async function fetchAllReviewThreadComments(
 ) {
   const comments: GitHubReviewThreadCommentGraphqlNode[] = [];
   let truncated = false;
-  for (const comment of thread.comments.nodes ?? []) {
-    if (eventBudget?.admit('review_threads', comment) === false) {
+  let budgetExhausted = false;
+  for (const rawComment of thread.comments.nodes ?? []) {
+    const parsedComment = v.safeParse(
+      githubReviewThreadCommentGraphqlNodeSchema,
+      rawComment,
+    );
+    if (!parsedComment.success) {
       truncated = true;
+      console.warn(
+        '[neondeck] skipped malformed GitHub review thread comment',
+        v.summarize(parsedComment.issues),
+      );
+      continue;
+    }
+    if (eventBudget?.admit('review_threads', parsedComment.output) === false) {
+      truncated = true;
+      budgetExhausted = true;
       break;
     }
-    comments.push(comment);
+    comments.push(parsedComment.output);
   }
   let cursor = thread.comments.pageInfo.endCursor;
   let hasNextPage = thread.comments.pageInfo.hasNextPage;
 
   const pageLimit = eventBudget ? 100 : 10;
-  for (let page = 0; hasNextPage && page < pageLimit && !truncated;) {
+  for (let page = 0; hasNextPage && page < pageLimit && !budgetExhausted;) {
     page += 1;
     if (!(eventBudget?.canFetch('review_threads') ?? true)) {
       truncated = true;
@@ -517,14 +547,29 @@ async function fetchAllReviewThreadComments(
         `Pull request head changed from ${expectedHeadSha} to ${pageHeadSha} while loading review thread comments.`,
       );
     }
-    for (const comment of node.comments.nodes ?? []) {
-      if (eventBudget?.admit('review_threads', comment) === false) {
+    for (const rawComment of node.comments.nodes ?? []) {
+      const parsedComment = v.safeParse(
+        githubReviewThreadCommentGraphqlNodeSchema,
+        rawComment,
+      );
+      if (!parsedComment.success) {
         truncated = true;
+        console.warn(
+          '[neondeck] skipped malformed GitHub review thread comment',
+          v.summarize(parsedComment.issues),
+        );
+        continue;
+      }
+      if (
+        eventBudget?.admit('review_threads', parsedComment.output) === false
+      ) {
+        truncated = true;
+        budgetExhausted = true;
         break;
       }
-      comments.push(comment);
+      comments.push(parsedComment.output);
     }
-    if (truncated) break;
+    if (budgetExhausted) break;
     hasNextPage = node.comments.pageInfo.hasNextPage;
     if (!hasNextPage) break;
     cursor = node.comments.pageInfo.endCursor;

@@ -235,9 +235,9 @@ function createMcpToolDefinition(input: {
                 },
               ),
             );
-            const text = formatMcpResult(result);
+            const normalizedResult = normalizeMcpToolResult(result);
             if (result.isError) {
-              throw new Error(text);
+              throw new Error(normalizedResult.text);
             }
             if (outputValidator) {
               if (result.structuredContent === undefined) {
@@ -252,10 +252,7 @@ function createMcpToolDefinition(input: {
               );
             }
             return {
-              text,
-              structuredContent: boundedStructuredContent(
-                result.structuredContent,
-              ),
+              ...normalizedResult,
               raw: result,
             };
           },
@@ -275,6 +272,13 @@ function createMcpToolDefinition(input: {
       outputSchema: input.tool.outputSchema,
       annotations: input.tool.annotations ?? null,
     },
+  };
+}
+
+export function normalizeMcpToolResult(result: CallToolResult) {
+  return {
+    text: formatMcpResult(result),
+    structuredContent: boundedStructuredContent(result.structuredContent),
   };
 }
 
@@ -422,9 +426,10 @@ function formatMcpResult(result: CallToolResult) {
   };
 
   if (result.structuredContent !== undefined) {
-    addPart(
-      `Structured content:\n${JSON.stringify(result.structuredContent, null, 2)}`,
-    );
+    const structuredContent = serializeMcpValue(result.structuredContent, 2);
+    if (structuredContent !== undefined) {
+      addPart(`Structured content:\n${structuredContent}`);
+    }
   }
 
   for (const item of result.content ?? []) {
@@ -456,7 +461,7 @@ function formatMcpResult(result: CallToolResult) {
       addPart(`[Resource link: ${item.name} (${item.uri})${description}]`);
       continue;
     }
-    addPart(JSON.stringify(item));
+    addPart(serializeMcpValue(item) ?? '[Unsupported MCP content]');
   }
 
   return parts.filter(Boolean).join('\n\n') || '(MCP tool returned no content)';
@@ -468,9 +473,8 @@ function truncateMcpOutputPart(value: string) {
 }
 
 function boundedStructuredContent(value: McpExternalValue) {
-  const serialized = v.safeParse(v.string(), JSON.stringify(value));
-  if (!serialized.success) return undefined;
-  const json = serialized.output;
+  const json = serializeMcpValue(value);
+  if (json === undefined) return undefined;
   if (json.length <= maxMcpOutputPartChars) {
     const normalized = v.parse(mcpJsonValueSchema, JSON.parse(json));
     return isRecord(normalized) ? normalized : { value: normalized };
@@ -480,6 +484,18 @@ function boundedStructuredContent(value: McpExternalValue) {
     originalBytes: Buffer.byteLength(json, 'utf8'),
     preview: `${json.slice(0, maxMcpOutputPartChars - 22)}\n[truncated output]`,
   };
+}
+
+function serializeMcpValue(value: McpExternalValue, indentation?: number) {
+  try {
+    const serialized = v.safeParse(
+      v.string(),
+      JSON.stringify(value, null, indentation),
+    );
+    return serialized.success ? serialized.output : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 function isRecord(value: McpExternalValue): value is McpExternalRecord {

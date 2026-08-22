@@ -192,11 +192,10 @@ export function McpServerRow({
           aria-label={`Tool approval mode for ${server.id}`}
           className="border border-line bg-panel px-1.5 py-0.5 text-ink disabled:opacity-50"
           disabled={busy !== null}
-          onChange={(event) =>
-            void changeApprovalMode(
-              v.parse(mcpApprovalModeSchema, event.target.value),
-            )
-          }
+          onChange={(event) => {
+            const mode = v.safeParse(mcpApprovalModeSchema, event.target.value);
+            if (mode.success) void changeApprovalMode(mode.output);
+          }}
           value={server.approvalMode}
         >
           <option value="writes">ask for writes</option>
@@ -222,12 +221,15 @@ export function McpServerRow({
                     aria-label={`Tool override for ${server.id}/${toolName}`}
                     className="border border-line bg-panel px-1.5 py-0.5 text-ink disabled:opacity-50"
                     disabled={busy !== null}
-                    onChange={(event) =>
-                      void changeToolOverride(
-                        toolName,
-                        v.parse(mcpToolOverrideModeSchema, event.target.value),
-                      )
-                    }
+                    onChange={(event) => {
+                      const override = v.safeParse(
+                        mcpToolOverrideModeSchema,
+                        event.target.value,
+                      );
+                      if (override.success) {
+                        void changeToolOverride(toolName, override.output);
+                      }
+                    }}
                     value={mode}
                   >
                     <option value="inherit">inherit default</option>

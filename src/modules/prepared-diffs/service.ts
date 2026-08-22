@@ -54,7 +54,10 @@ import {
 
 const untrustedInputSchema = v.unknown();
 const looseObjectSchema = v.looseObject({});
-const nonBlankStringSchema = v.pipe(v.string(), v.trim(), v.minLength(1));
+const nonBlankStringSchema = v.pipe(
+  v.string(),
+  v.check((value) => value.trim().length > 0, 'Expected a non-blank string.'),
+);
 
 type UntrustedInput = v.InferInput<typeof untrustedInputSchema>;
 type LooseObject = v.InferOutput<typeof looseObjectSchema>;

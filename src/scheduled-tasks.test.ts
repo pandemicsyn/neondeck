@@ -105,6 +105,68 @@ describe('scheduled task storage', () => {
     }
   });
 
+  it('uses a stable snapshot and tie-breaker while finding the latest valid run', async () => {
+    const home = await mkdtemp(join(tmpdir(), 'neondeck-scheduled-tasks-'));
+    const paths = runtimePaths(home);
+    try {
+      await upsertScheduledTask(
+        {
+          id: 'instruction:stable-latest',
+          spec: {
+            kind: 'run-agent-instruction',
+            prompt: 'Report health.',
+            target: { kind: 'agent' },
+            skills: [],
+          },
+          trigger: { kind: 'interval', everySeconds: 300 },
+          nextRunAt: '2026-08-22T00:05:00.000Z',
+        },
+        paths,
+      );
+      const database = new DatabaseSync(paths.neondeckDatabase);
+      const createdAt = '2026-08-22T00:00:00.000Z';
+      try {
+        const insert = database.prepare(
+          `INSERT INTO scheduled_task_runs (
+             id, task_id, status, outcome, message, result_json,
+             started_at, completed_at, created_at, updated_at
+           ) VALUES (?, ?, 'completed', 'recorded', ?, ?, ?, ?, ?, ?);`,
+        );
+        insert.run(
+          'run-a-valid',
+          'instruction:stable-latest',
+          'valid result',
+          JSON.stringify({ ok: true }),
+          createdAt,
+          createdAt,
+          createdAt,
+          createdAt,
+        );
+        insert.run(
+          'run-z-malformed',
+          'instruction:stable-latest',
+          'malformed result',
+          '{',
+          createdAt,
+          createdAt,
+          createdAt,
+          createdAt,
+        );
+      } finally {
+        database.close();
+      }
+
+      await expect(
+        readLatestScheduledTaskRun('instruction:stable-latest', paths),
+      ).resolves.toMatchObject({
+        id: 'run-a-valid',
+        result: { ok: true },
+      });
+    } finally {
+      await rm(home, { recursive: true, force: true });
+    }
+  });
+
   it('dispatches agent instructions once and settles by Flue submission id', async () => {
     const home = await mkdtemp(join(tmpdir(), 'neondeck-scheduled-tasks-'));
     const paths = runtimePaths(home);

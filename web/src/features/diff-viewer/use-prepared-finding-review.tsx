@@ -462,7 +462,7 @@ function findingReason(finding: NeonReviewFinding) {
 }
 
 function createPromotionRequestId() {
-  return 'crypto' in globalThis && 'randomUUID' in globalThis.crypto
+  return globalThis.crypto?.randomUUID
     ? `finding-promotion:${globalThis.crypto.randomUUID()}`
     : `finding-promotion:${Date.now().toString(36)}:${Math.random().toString(36).slice(2)}`;
 }

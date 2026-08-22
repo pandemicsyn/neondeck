@@ -1072,6 +1072,11 @@ function reserveReviewingRecord(
         existingReviewRowSchema,
         rawExistingRow,
       );
+      if (rawExistingRow !== undefined && !existingParsed.success) {
+        throw new Error(
+          `The existing review record for ${repoFullName}#${input.target.number} is malformed; refusing to replace its in-progress fence.`,
+        );
+      }
       const existingRow = existingParsed.success
         ? existingParsed.output
         : undefined;

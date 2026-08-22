@@ -130,6 +130,54 @@ describe('PR review assist', () => {
     });
   });
 
+  it('preserves a verified empty pull-request diff', async () => {
+    const paths = await tempPaths();
+    const facts = reviewFacts();
+    const result = await preparePrReviewForHuman(
+      { ref: 'pandemicsyn/neondeck#10' },
+      paths,
+      {
+        prEventDependencies: {
+          token: 'token',
+          fetchPullRequestEventState: async () => facts.state,
+          fetchPullRequestRevision: async () => ({
+            headSha: facts.state.headSha,
+            baseSha: facts.state.baseSha,
+          }),
+          fetchPullRequestFiles: async () => ({
+            repo: facts.target.repoFullName,
+            number: facts.target.number,
+            files: [],
+            diffSummary: {
+              files: 0,
+              additions: 0,
+              deletions: 0,
+              binaryFiles: 0,
+            },
+            truncated: false,
+            fetchedAt: facts.state.fetchedAt,
+          }),
+        },
+      },
+    );
+
+    expect(result).toMatchObject({
+      ok: true,
+      prepared: {
+        facts: {
+          files: [],
+          filesTruncated: false,
+          diffSummary: {
+            files: 0,
+            additions: 0,
+            deletions: 0,
+            binaryFiles: 0,
+          },
+        },
+      },
+    });
+  });
+
   it('accepts persisted initial-review data created before Explore was captured', () => {
     const legacyInitialData = {
       model: 'faux/faux-1',

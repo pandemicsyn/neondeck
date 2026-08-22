@@ -46,10 +46,7 @@ export function readNeondeckPrDeliveries(
          WHERE repo_full_name = ? AND pr_number = ?;`,
       )
       .all(repoFullName, prNumber)
-      .flatMap((row) => {
-        const parsed = v.safeParse(deliveryRowSchema, row);
-        return parsed.success ? [parsed.output] : [];
-      });
+      .flatMap(safeReadDeliveryRow);
     const fingerprints = (
       kind: 'conversation-comment' | 'review' | 'review-comment',
     ) =>
@@ -66,6 +63,16 @@ export function readNeondeckPrDeliveries(
   } finally {
     database.close();
   }
+}
+
+function safeReadDeliveryRow<TRow>(row: TRow) {
+  const parsed = v.safeParse(deliveryRowSchema, row);
+  if (parsed.success) return [parsed.output];
+  console.warn(
+    '[neondeck] skipped malformed persisted PR delivery row',
+    v.summarize(parsed.issues),
+  );
+  return [];
 }
 
 export function recordNeondeckPrDelivery(

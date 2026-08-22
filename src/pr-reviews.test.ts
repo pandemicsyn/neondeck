@@ -674,6 +674,58 @@ describe('durable PR reviews', () => {
     });
   });
 
+  it('fails closed when an existing review fence cannot be hydrated', async () => {
+    const paths = await tempPaths();
+    const dependencies = {
+      resolveTarget: async () => ({
+        repoFullName: 'other/project',
+        owner: 'other',
+        repo: 'project',
+        number: 42,
+      }),
+      fetchDetail: async () => detail('head-1'),
+      invokeWorkflow: vi.fn<
+        NonNullable<StartPrReviewDependencies['invokeWorkflow']>
+      >(async () => ({ runId: 'run-original' })),
+    };
+    const started = await startPrReview(
+      { ref: 'other/project#42', origin: 'panel' },
+      paths,
+      dependencies,
+    );
+    const database = openDb(paths.neondeckDatabase);
+    try {
+      database
+        .prepare('UPDATE pr_reviews SET status = ? WHERE id = ?;')
+        .run('legacy-reviewing', started.reviewId);
+    } finally {
+      database.close();
+    }
+
+    await expect(
+      startPrReview(
+        { ref: 'other/project#42', origin: 'panel' },
+        paths,
+        dependencies,
+      ),
+    ).rejects.toThrow(/malformed; refusing to replace its in-progress fence/);
+    expect(dependencies.invokeWorkflow).toHaveBeenCalledOnce();
+
+    const verification = openDb(paths.neondeckDatabase, { readOnly: true });
+    try {
+      expect(
+        verification
+          .prepare('SELECT id, status FROM pr_reviews WHERE id = ?;')
+          .get(started.reviewId),
+      ).toMatchObject({
+        id: started.reviewId,
+        status: 'legacy-reviewing',
+      });
+    } finally {
+      verification.close();
+    }
+  });
+
   it('atomically admits one bound re-review when both requests finish fetching together', async () => {
     const paths = await tempPaths();
     const target = async () => ({

@@ -1046,6 +1046,67 @@ describe('github foundation', () => {
     );
   });
 
+  it('retains valid review threads and comments beside malformed siblings', async () => {
+    const warning = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    globalThis.fetch = vi.fn<typeof fetch>(async () =>
+      jsonResponse({
+        data: {
+          repository: {
+            pullRequest: {
+              headRefOid: 'review-head',
+              reviewThreads: {
+                pageInfo: { hasNextPage: false, endCursor: null },
+                nodes: [
+                  { isResolved: false },
+                  {
+                    id: 'thread-valid',
+                    isResolved: false,
+                    isOutdated: false,
+                    path: 'src/app.ts',
+                    line: 12,
+                    comments: {
+                      pageInfo: { hasNextPage: false, endCursor: null },
+                      nodes: [
+                        { body: 'missing identity' },
+                        reviewThreadComment('comment-valid', 7),
+                      ],
+                    },
+                  },
+                ],
+              },
+            },
+          },
+        },
+      }),
+    );
+
+    await expect(
+      fetchPullRequestReviewThreadsWithMetadata({
+        token: 'token',
+        owner: 'pandemicsyn',
+        repo: 'neondeck',
+        number: 123,
+      }),
+    ).resolves.toMatchObject({
+      truncated: true,
+      reviewThreads: [
+        {
+          id: 'thread-valid',
+          commentsTruncated: true,
+          comments: [expect.objectContaining({ id: 'comment-valid' })],
+        },
+      ],
+    });
+    expect(warning).toHaveBeenCalledWith(
+      '[neondeck] skipped malformed GitHub review thread',
+      expect.any(String),
+    );
+    expect(warning).toHaveBeenCalledWith(
+      '[neondeck] skipped malformed GitHub review thread comment',
+      expect.any(String),
+    );
+  });
+
   it('rejects review-thread comment pages collected after the PR head changes', async () => {
     globalThis.fetch = vi.fn<typeof fetch>(async (_input, init) => {
       const body = JSON.parse(String(init?.body ?? '{}')) as {
@@ -2599,6 +2660,33 @@ describe('github foundation', () => {
       summary: 'Range seeded finding.',
       source: 'test',
     });
+    const malformedSeedDatabase = new DatabaseSync(paths.neondeckDatabase);
+    try {
+      malformedSeedDatabase
+        .prepare(
+          `INSERT INTO pr_review_neon_seeded_comments (
+             comment_id, draft_id, repo, pr_number, head_sha, path, side,
+             line, severity, summary, source, seeded_at
+           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
+        )
+        .run(
+          'legacy-seed',
+          draft.id,
+          'pandemicsyn/neondeck',
+          123,
+          'head123',
+          'src/legacy.ts',
+          'legacy-side',
+          1,
+          'minor',
+          'Legacy malformed seed.',
+          'test',
+          '2026-07-05T13:00:00.000Z',
+        );
+    } finally {
+      malformedSeedDatabase.close();
+    }
+    const warning = vi.spyOn(console, 'warn').mockImplementation(() => {});
 
     const requests: Array<{ url: string; init?: RequestInit }> = [];
     globalThis.fetch = vi.fn<typeof fetch>(async (input, init) => {
@@ -2687,6 +2775,10 @@ describe('github foundation', () => {
       ],
     });
     expect(JSON.stringify(payload)).not.toContain('position');
+    expect(warning).toHaveBeenCalledWith(
+      '[neondeck] skipped malformed persisted Neon review seed row',
+      expect.any(String),
+    );
 
     await expect(listWorkflowSummaries(paths)).resolves.toEqual([
       expect.objectContaining({

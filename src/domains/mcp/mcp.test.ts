@@ -50,6 +50,7 @@ import {
 } from '../../modules/sessions';
 import { listNotifications } from '../../modules/app-state';
 import { runWithFlueExecutionContextForTests } from '../../modules/flue/execution-context';
+import { normalizeMcpToolResult } from './stdio';
 
 const tempRoots: string[] = [];
 
@@ -429,6 +430,23 @@ describe('MCP support', () => {
         ok: true,
         status: 'ok',
         structuredContent: null,
+      });
+    }
+  });
+
+  it('keeps the MCP transport adapter fail-soft for non-serializable structured content', () => {
+    const cyclic: Record<string, unknown> = {};
+    cyclic.self = cyclic;
+
+    for (const structuredContent of [cyclic, { value: 1n }]) {
+      expect(
+        normalizeMcpToolResult({
+          content: [{ type: 'text', text: 'successful tool output' }],
+          structuredContent,
+        }),
+      ).toEqual({
+        text: 'successful tool output',
+        structuredContent: undefined,
       });
     }
   });

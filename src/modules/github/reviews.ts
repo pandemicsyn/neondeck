@@ -1302,11 +1302,13 @@ function readNeonSeedRow<TRow>(row: TRow): GitHubPrReviewNeonSeededComment {
 function safeReadNeonSeedRow<TRow>(
   row: TRow,
 ): GitHubPrReviewNeonSeededComment[] {
-  try {
-    return [readNeonSeedRow(row)];
-  } catch {
-    return [];
-  }
+  const parsed = v.safeParse(neonSeedRowSchema, row);
+  if (parsed.success) return [readNeonSeedRow(parsed.output)];
+  console.warn(
+    '[neondeck] skipped malformed persisted Neon review seed row',
+    v.summarize(parsed.issues),
+  );
+  return [];
 }
 
 function truncateSeedSummary(value: string) {
