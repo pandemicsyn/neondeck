@@ -696,7 +696,7 @@ function ReviewRowRecoverSubmission({
   const [error, setError] = useState<unknown>(null);
   const draftQuery = useGitHubPrReviewDraft(
     { repo: review.repoFullName, number: review.prNumber },
-    prReviewDraftQueryOptions(review),
+    { ...prReviewDraftQueryOptions(review), live: false },
   );
   const actions = usePrReviewBriefingActions(review, draftQuery, {
     onReviewChange,
@@ -733,7 +733,7 @@ function ReviewRowQuickApprove({
   const unavailableReasonId = useId();
   const draftQuery = useGitHubPrReviewDraft(
     { repo: review.repoFullName, number: review.prNumber },
-    prReviewDraftQueryOptions(review),
+    { ...prReviewDraftQueryOptions(review), live: false },
   );
   const actions = usePrReviewBriefingActions(review, draftQuery, {
     onReviewChange,

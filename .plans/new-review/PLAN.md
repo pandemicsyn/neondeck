@@ -557,3 +557,16 @@ the rest.
   field spent model effort on data no surface could read.
 - Follow-up: Add checks to a future versioned briefing schema only if a product
   surface is designed to persist and render them.
+
+### 2026-08-22 — Preserve the immutable mockup citation
+
+- Phase: Cross-cutting review follow-up
+- Decision: Left the historical `PrReviewArtifactsOverlay.tsx` size citation in
+  `.plans/new-review/mockups/README.md` unchanged after the implementation
+  renamed that component to `PrReviewBriefing.tsx`.
+- Reason: The mockup directory is comparison and validation source material,
+  and the implementation request explicitly forbids modifying it. Updating the
+  citation would violate that stronger constraint; the current implementation
+  path is documented elsewhere in this plan and in the PR description.
+- Follow-up: Update the citation only if the mockup sources are made mutable by
+  a future explicit request.

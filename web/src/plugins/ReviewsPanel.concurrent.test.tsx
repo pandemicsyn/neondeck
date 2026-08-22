@@ -171,6 +171,10 @@ describe('ReviewsPanel concurrent row mutations', () => {
         button.textContent?.startsWith('approve & submit'),
       ),
     ).toHaveLength(1);
+    expect(reviewDraftQueries.useGitHubPrReviewDraft).toHaveBeenCalledWith(
+      { repo: 'owner/project', number: 1 },
+      expect.objectContaining({ live: false }),
+    );
     expect(container.textContent).toContain('no quick approve');
   });
 
