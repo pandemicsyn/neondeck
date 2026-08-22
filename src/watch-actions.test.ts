@@ -2,7 +2,7 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import type { JsonValue } from '@flue/runtime';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   listScheduledTasks,
   readLatestScheduledTaskRun,
@@ -239,7 +239,13 @@ describe('PR watch actions', () => {
       database.close();
     }
 
+    const warning = vi.spyOn(console, 'warn').mockImplementation(() => {});
     await expect(listPrWatches(paths)).resolves.toMatchObject({ watches: [] });
+    expect(warning).toHaveBeenCalledWith(
+      '[neondeck] skipped malformed persisted PR watch row',
+      expect.any(Error),
+    );
+    warning.mockRestore();
 
     const taskDatabase = openDb(paths.neondeckDatabase);
     try {

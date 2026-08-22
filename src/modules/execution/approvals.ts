@@ -173,6 +173,41 @@ export async function resolveExecutionApproval<TRawInput>(
   const claim = claimPendingApprovalResolution(paths, input.id, randomUUID());
   const existing = claim.approval;
   if (!existing) {
+    if (claim.malformed && claim.claimed && input.decision === 'deny') {
+      try {
+        const resolvedAt = new Date().toISOString();
+        const completed = completePendingApprovalResolution(paths, {
+          id: input.id,
+          claimedSurface: claim.claimedSurface,
+          status: 'denied',
+          decision: 'deny',
+          approverSurface: input.approverSurface ?? 'api',
+          result: input.note === undefined ? null : { note: input.note },
+          resolvedAt,
+        });
+        return {
+          ok: completed.changed,
+          action: 'execution_resolve_approval',
+          changed: completed.changed,
+          message: completed.changed
+            ? 'Denied malformed execution approval.'
+            : `Execution approval "${input.id}" changed while it was being resolved.`,
+          approval: completed.approval,
+        };
+      } finally {
+        releasePendingApprovalResolution(paths, input.id, claim.claimedSurface);
+      }
+    }
+    if (claim.claimed) {
+      releasePendingApprovalResolution(paths, input.id, claim.claimedSurface);
+    }
+    if (claim.malformed) {
+      return failedResult(
+        'execution_resolve_approval',
+        `Execution approval "${input.id}" is malformed and cannot be safely approved. It may still be denied.`,
+        ['validApprovalRecord'],
+      );
+    }
     return failedResult(
       'execution_resolve_approval',
       `Execution approval "${input.id}" was not found.`,

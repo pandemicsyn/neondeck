@@ -261,7 +261,9 @@ export function listReconcileableKiloTasks(
       `,
         );
 
-    return (taskId ? statement.all(taskId) : statement.all()).map(readTaskRow);
+    return (taskId ? statement.all(taskId) : statement.all()).flatMap(
+      safeReadTaskRow,
+    );
   } finally {
     database.close();
   }
@@ -662,6 +664,14 @@ function readTaskRow(row: KiloUntrustedInput): KiloTaskRecord {
     updatedAt: parsed.updated_at,
     completedAt: parsed.completed_at,
   };
+}
+
+function safeReadTaskRow(row: KiloUntrustedInput): KiloTaskRecord[] {
+  try {
+    return [readTaskRow(row)];
+  } catch {
+    return [];
+  }
 }
 
 function readEventRow(row: KiloUntrustedInput): KiloTaskEventRecord {

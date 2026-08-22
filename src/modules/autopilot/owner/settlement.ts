@@ -41,6 +41,7 @@ import {
   type OwnerSettlementLearningDependencies,
 } from './settlement-learning';
 import { prEventJsonValueSchema } from '../../pr-events';
+import { errorMessage } from '../utils';
 
 const ownerTerminalObservationSchema = v.object({
   v: v.literal(3),
@@ -59,7 +60,6 @@ const ownerTerminalObservationSchema = v.object({
 type OwnerTerminalObservation = v.InferOutput<
   typeof ownerTerminalObservationSchema
 >;
-const reportableErrorSchema = v.union([v.instance(Error), v.string()]);
 
 export async function settleAutopilotOwnerObservation(
   rawEvent: FlueObservation | OwnerTerminalObservation,
@@ -197,10 +197,7 @@ export async function settleAutopilotOwnerObservation(
       eventWatermarksFromPendingTurn(pending),
     );
   } catch (caught) {
-    const parsedError = v.safeParse(reportableErrorSchema, caught);
-    const failure = parsedError.success
-      ? errorMessage(parsedError.output)
-      : 'The settlement failure could not be identified.';
+    const failure = errorMessage(caught);
     const message = `${watch.repoFullName}#${watch.prNumber} could not be settled safely: ${failure}`;
     await recordOutcome({
       eventType: 'autopilot-owner-settlement-failed',
@@ -296,14 +293,11 @@ export async function recoverInterruptedAutopilotOwners(
         );
         recovered += 1;
       } catch (caught) {
-        const parsedError = v.safeParse(reportableErrorSchema, caught);
         recordPendingAutopilotTurnError(
           paths.home,
           turn.instanceId,
           turn.turnId,
-          parsedError.success
-            ? errorMessage(parsedError.output)
-            : 'The recovery admission failure could not be identified.',
+          errorMessage(caught),
         );
         continue;
       }
@@ -534,16 +528,11 @@ async function addOwnerBlockNotificationQuietly(
   try {
     await addOwnerBlockNotification(watchId, message, paths);
   } catch (caught) {
-    const parsedError = v.safeParse(reportableErrorSchema, caught);
     console.error(
       '[neondeck] failed to record Autopilot owner block notification',
-      parsedError.success ? parsedError.output : caught,
+      caught,
     );
   }
-}
-
-function errorMessage(error: v.InferOutput<typeof reportableErrorSchema>) {
-  return error instanceof Error ? error.message : error;
 }
 
 function recoveredSettlementContext(

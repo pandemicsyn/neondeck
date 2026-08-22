@@ -1119,7 +1119,8 @@ export function readWatchRow(row: SqliteExternalValue): PrWatch {
 function safeWatchRow(row: SqliteExternalValue) {
   try {
     return [readWatchRow(row)];
-  } catch {
+  } catch (error) {
+    console.warn('[neondeck] skipped malformed persisted PR watch row', error);
     return [];
   }
 }
@@ -1127,7 +1128,8 @@ function safeWatchRow(row: SqliteExternalValue) {
 function safeRefWatchRow(row: SqliteExternalValue) {
   try {
     return [readRefWatchRow(row)];
-  } catch {
+  } catch (error) {
+    console.warn('[neondeck] skipped malformed persisted ref watch row', error);
     return [];
   }
 }

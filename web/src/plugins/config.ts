@@ -8,14 +8,15 @@ import {
 } from '../api/schemas';
 import * as v from 'valibot';
 
-const plainConfigRecordSchema = v.pipe(
-  webExternalRecordSchema,
-  v.record(v.string(), webJsonValueSchema),
-);
-
 export function plainConfigRecord(value: WebExternalValue): WebJsonRecord {
-  const parsed = v.safeParse(plainConfigRecordSchema, value);
-  return parsed.success ? parsed.output : {};
+  const parsed = v.safeParse(webExternalRecordSchema, value);
+  if (!parsed.success) return {};
+  return Object.fromEntries(
+    Object.entries(parsed.output).flatMap(([key, item]) => {
+      const jsonValue = v.safeParse(webJsonValueSchema, item);
+      return jsonValue.success ? [[key, jsonValue.output]] : [];
+    }),
+  );
 }
 
 export function parsePositiveIntegerConfig<T extends Record<string, number>>(

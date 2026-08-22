@@ -432,6 +432,41 @@ describe('config actions', () => {
     });
   });
 
+  it('still requires confirmation for authority increases when guardrails metadata is malformed', async () => {
+    const home = await tempDir('neondeck-home-');
+    const repoPath = await tempGitRepo();
+    const paths = runtimePaths(home);
+    await addRepo({ path: repoPath }, paths);
+
+    const persisted = JSON.parse(await readFile(paths.repos, 'utf8'));
+    persisted.repos[0].metadata = {
+      autopilot: { mode: 'notify-only' },
+      guardrails: 'legacy malformed value',
+    };
+    await writeFile(paths.repos, JSON.stringify(persisted));
+
+    await expect(
+      updateRepoAutopilotPolicy(
+        {
+          repoId: 'neondeck',
+          mode: 'autofix-push-when-safe',
+          reason: 'Increase delivery authority.',
+        },
+        paths,
+      ),
+    ).resolves.toMatchObject({
+      ok: false,
+      changed: false,
+      requires: ['confirm'],
+    });
+
+    const [repo] = parseRepoRegistry(
+      JSON.parse(await readFile(paths.repos, 'utf8')),
+      paths.repos,
+    ).repos;
+    expect(repo?.metadata?.autopilot).toMatchObject({ mode: 'notify-only' });
+  });
+
   it('preserves valid guardrails when unrelated autopilot metadata is malformed', async () => {
     const home = await tempDir('neondeck-home-');
     const repoPath = await tempGitRepo();

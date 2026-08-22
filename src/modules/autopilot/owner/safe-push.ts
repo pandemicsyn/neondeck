@@ -18,8 +18,8 @@ import {
 import type { RuntimePaths } from '../../../runtime-home';
 import { gitCurrentSha, gitPushHead, gitStatus } from '../../../repo-edit/git';
 import type { JsonValue } from '@flue/runtime';
-import * as v from 'valibot';
 import { readPendingAutopilotTurn } from './pending';
+import { errorMessage } from '../utils';
 
 export async function safePushAutopilotOwner(
   binding: Pick<PrWatch, 'id' | 'repoId' | 'repoFullName' | 'prNumber'> & {
@@ -195,10 +195,7 @@ export async function safePushAutopilotOwner(
   } catch (caught) {
     const watch = readWatch(paths, binding.id);
     if (!watch) throw caught;
-    const parsedError = v.safeParse(reportableErrorSchema, caught);
-    const message = parsedError.success
-      ? errorMessage(parsedError.output)
-      : 'The push attempt failed with an unrecognized error.';
+    const message = errorMessage(caught);
     return blockSafePush(
       watch,
       binding.worktreeId,
@@ -269,10 +266,4 @@ async function blockSafePush(
     requires,
     errors: [message],
   };
-}
-
-const reportableErrorSchema = v.union([v.instance(Error), v.string()]);
-
-function errorMessage(error: v.InferOutput<typeof reportableErrorSchema>) {
-  return error instanceof Error ? error.message : error;
 }

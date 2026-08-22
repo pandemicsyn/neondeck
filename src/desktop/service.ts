@@ -692,7 +692,9 @@ function errorText(error: UntrustedInput) {
     if (messages.length > 0) return messages.join('\n');
   }
   const errorInstance = v.safeParse(errorInstanceSchema, error);
-  return errorInstance.success ? errorInstance.output.message : String(error);
+  if (errorInstance.success) return errorInstance.output.message;
+  const objectError = v.safeParse(v.record(v.string(), v.unknown()), error);
+  return objectError.success && !Array.isArray(error) ? '' : String(error);
 }
 
 async function readPlatformRuntimeStatus(

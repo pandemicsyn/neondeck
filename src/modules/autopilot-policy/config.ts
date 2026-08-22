@@ -3,7 +3,6 @@ import { type AppConfig, type RepoConfig } from '../../runtime-home';
 import {
   appAutopilotSchema,
   defaultAutopilotConcurrency,
-  metadataSchema,
   type AutopilotConcurrencyPolicy,
   type AutopilotPolicyConfig,
   type RepoGuardrails,
@@ -49,11 +48,9 @@ export function readRepoAutopilotConfig(
   repo: RepoConfig | undefined,
 ): RepoAutopilotConfig | undefined {
   if (!repo?.metadata) return undefined;
-  const parsed = v.safeParse(metadataSchema, repo.metadata);
-  if (!parsed.success) return undefined;
   const autopilot = v.safeParse(
     v.optional(appAutopilotSchema.entries.autopilot),
-    parsed.output.autopilot,
+    repo.metadata.autopilot,
   );
   return autopilot.success ? autopilot.output : undefined;
 }

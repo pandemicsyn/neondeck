@@ -534,7 +534,10 @@ function objectMetadata(value: ChatSessionRecord['uiMetadata']) {
   const repo = v.safeParse(v.string(), parsed.output.repo);
   const repoFullName = v.safeParse(v.string(), parsed.output.repoFullName);
   const prNumber = v.safeParse(v.number(), parsed.output.prNumber);
-  const url = v.safeParse(v.string(), parsed.output.url);
+  const url = v.safeParse(
+    v.pipe(v.string(), v.minLength(1)),
+    parsed.output.url,
+  );
   return {
     source: source.success ? source.output : undefined,
     repo: repo.success ? repo.output : undefined,

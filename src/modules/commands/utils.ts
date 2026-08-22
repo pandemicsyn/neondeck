@@ -108,8 +108,12 @@ export function readStringArrayProperty<TValue>(
   const parsed = v.safeParse(stringArrayPropertySchema, value);
   if (!parsed.success) return undefined;
   const property = parsed.output[key];
-  const array = v.safeParse(v.array(v.string()), property);
-  return array.success ? array.output : undefined;
+  const array = v.safeParse(v.array(v.unknown()), property);
+  if (!array.success) return undefined;
+  return array.output.flatMap((item) => {
+    const text = v.safeParse(v.string(), item);
+    return text.success ? [text.output] : [];
+  });
 }
 
 export function errorMessage<TError>(error: TError) {

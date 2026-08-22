@@ -36,8 +36,8 @@ const sensitiveFragments = ['secret', 'secrets', 'token', 'tokens'];
 const generatedExtensions = new Set(['.lock']);
 const untrustedInputSchema = v.unknown();
 const repoEditErrorDataSchema = v.looseObject({
-  code: v.optional(v.string()),
-  path: v.optional(v.string()),
+  code: v.optional(v.unknown()),
+  path: v.optional(v.unknown()),
   details: v.optional(v.unknown()),
 });
 const errorInstanceSchema = v.instance(Error);
@@ -255,7 +255,7 @@ export function toRepoEditError(error: UntrustedInput): RepoEditError {
   const errorInstance = v.safeParse(errorInstanceSchema, error);
   if (
     parsed.success &&
-    parsed.output.code &&
+    v.is(v.string(), parsed.output.code) &&
     isRepoEditErrorCode(parsed.output.code)
   ) {
     const code = parsed.output.code;
@@ -264,7 +264,9 @@ export function toRepoEditError(error: UntrustedInput): RepoEditError {
       message: errorInstance.success
         ? errorInstance.output.message
         : String(error),
-      path: parsed.output.path,
+      path: v.is(v.string(), parsed.output.path)
+        ? parsed.output.path
+        : undefined,
       details: parsed.output.details,
     };
   }

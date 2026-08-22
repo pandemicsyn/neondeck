@@ -285,7 +285,10 @@ export async function listMcpToolCatalog(
             `,
             )
             .all()
-    ).map((row) => v.parse(mcpCatalogRowSchema, row));
+    ).flatMap((row) => {
+      const parsed = v.safeParse(mcpCatalogRowSchema, row);
+      return parsed.success ? [parsed.output] : [];
+    });
     return rows.map(readCatalogRow);
   } finally {
     database.close();
@@ -917,7 +920,10 @@ export async function listMcpApprovals(
       `,
       )
       .all()
-      .map((row) => v.parse(mcpApprovalRowSchema, row));
+      .flatMap((row) => {
+        const parsed = v.safeParse(mcpApprovalRowSchema, row);
+        return parsed.success ? [parsed.output] : [];
+      });
     return rows.map(readApprovalRow);
   } finally {
     database.close();
@@ -1014,7 +1020,10 @@ export async function listMcpAudit(
             `,
             )
             .all(limit)
-    ).map((row) => v.parse(mcpAuditRowSchema, row));
+    ).flatMap((row) => {
+      const parsed = v.safeParse(mcpAuditRowSchema, row);
+      return parsed.success ? [parsed.output] : [];
+    });
     return rows.map(readAuditRow);
   } finally {
     database.close();

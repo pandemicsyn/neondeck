@@ -976,7 +976,8 @@ function briefingTopActions(run: BriefingRun) {
 }
 
 const jsonObjectSchema = v.custom<Record<string, JsonValue>>(
-  (value) => v.is(v.record(v.string(), v.unknown()), value),
+  (value) =>
+    !Array.isArray(value) && v.is(v.record(v.string(), v.unknown()), value),
   'Value must be a JSON object.',
 );
 

@@ -13,7 +13,6 @@ import {
 } from './modules/execution';
 import { checkExecutionPolicy } from './modules/execution';
 import { commandError } from './modules/execution/utils';
-import { claimPendingApprovalResolution } from './modules/execution/store';
 import {
   createChatSession,
   listChatSessionCommandEvents,
@@ -357,26 +356,20 @@ describe('execution actions', () => {
     const database = new DatabaseSync(paths.neondeckDatabase);
     try {
       database
-        .prepare(
-          'UPDATE execution_approvals SET request_context_json = ? WHERE id = ?;',
-        )
-        .run('{', pendingId);
+        .prepare('UPDATE execution_approvals SET backend = ? WHERE id = ?;')
+        .run('legacy-runner', pendingId);
     } finally {
       database.close();
     }
 
-    expect(() =>
-      claimPendingApprovalResolution(paths, pendingId, 'malformed-claim'),
-    ).not.toThrow();
-    expect(
-      claimPendingApprovalResolution(paths, pendingId, 'malformed-claim'),
-    ).toMatchObject({ claimed: false, approval: undefined });
     await expect(
-      resolveExecutionApproval(
-        { id: pendingId, decision: 'allow-session' },
-        paths,
-      ),
-    ).resolves.toMatchObject({ ok: false, changed: false });
+      resolveExecutionApproval({ id: pendingId, decision: 'deny' }, paths),
+    ).resolves.toMatchObject({
+      ok: true,
+      changed: true,
+      message: 'Denied malformed execution approval.',
+      approval: undefined,
+    });
 
     const reusable = await requestExecutionApproval(
       { command: 'node --version', cwd: paths.home, sessionId },

@@ -141,7 +141,10 @@ export function listPendingPrReviewSubmissionFollowupIds(
            ORDER BY created_at ASC;`,
       )
       .all(kind)
-      .map((row) => v.parse(followupIdRowSchema, row).id);
+      .flatMap((row) => {
+        const parsed = v.safeParse(followupIdRowSchema, row);
+        return parsed.success ? [parsed.output.id] : [];
+      });
   } finally {
     database.close();
   }

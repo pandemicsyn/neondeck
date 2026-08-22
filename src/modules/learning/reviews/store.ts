@@ -438,24 +438,26 @@ export function listRecoverableLearningReviews(paths = runtimePaths()) {
         `SELECT * FROM learning_reviews WHERE status = 'running' AND prepared_json IS NOT NULL ORDER BY started_at ASC;`,
       )
       .all()
-      .map((row) => {
-        const record = v.parse(databaseRowSchema, row);
-        const parsed = v.safeParse(
-          preparedLearningReviewSchema,
-          parseNullableJson(record.prepared_json),
-        );
-        if (!parsed.success) {
-          throw new Error(
-            `Learning review "${String(record.id)}" has an invalid prepared snapshot: ${v.summarize(parsed.issues)}`,
+      .flatMap((row) => {
+        try {
+          const record = v.parse(databaseRowSchema, row);
+          const parsed = v.safeParse(
+            preparedLearningReviewSchema,
+            parseNullableJson(record.prepared_json),
           );
+          if (!parsed.success) return [];
+          return [
+            {
+              review: readLearningReviewRow(row),
+              prepared: {
+                ...parsed.output,
+                inputSummary: compactJson(parsed.output.inputSummary),
+              },
+            },
+          ];
+        } catch {
+          return [];
         }
-        return {
-          review: readLearningReviewRow(row),
-          prepared: {
-            ...parsed.output,
-            inputSummary: compactJson(parsed.output.inputSummary),
-          },
-        };
       });
   } finally {
     database.close();

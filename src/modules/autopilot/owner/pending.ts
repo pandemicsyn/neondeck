@@ -71,6 +71,10 @@ const turnStatusSchema = v.picklist([
   'settled',
 ]);
 const nullableStringSchema = v.nullable(v.string());
+const pendingTurnExternalValueSchema = v.unknown();
+type PendingTurnExternalValue = v.InferInput<
+  typeof pendingTurnExternalValueSchema
+>;
 const storedTurnRowSchema = v.object({
   approved_revision_key: nullableStringSchema,
   submission_id: nullableStringSchema,
@@ -91,6 +95,7 @@ const storedTurnRowSchema = v.object({
   turn_id: v.string(),
   watch_id: v.string(),
 });
+const storedTurnIdentitySchema = v.object({ turn_id: v.string() });
 
 const persistedSnapshotSchema = v.nullable(
   v.custom<NonNullable<PrWatch['lastSnapshot']>>(
@@ -236,8 +241,9 @@ export function registerPendingAutopilotTurn(
             `SELECT * FROM autopilot_owner_turns WHERE instance_id = ? AND event_fingerprint = ? AND status IN ('reserved', 'admitted', 'settling') LIMIT 1;`,
           )
           .get(instanceId, eventFingerprint);
-        if (existing)
-          return readTurnRow(v.parse(storedTurnRowSchema, existing));
+        const existingTurn = tryReadTurnRow(existing);
+        if (existingTurn) return existingTurn;
+        quarantineMalformedTurn(database, existing, now);
       }
       if (options.idempotencyKey) {
         const existing = database
@@ -245,8 +251,9 @@ export function registerPendingAutopilotTurn(
             `SELECT * FROM autopilot_owner_turns WHERE instance_id = ? AND idempotency_key = ? LIMIT 1;`,
           )
           .get(instanceId, options.idempotencyKey);
-        if (existing)
-          return readTurnRow(v.parse(storedTurnRowSchema, existing));
+        const existingTurn = tryReadTurnRow(existing);
+        if (existingTurn) return existingTurn;
+        quarantineMalformedTurn(database, existing, now);
       }
       database
         .prepare(
@@ -297,7 +304,7 @@ export function readPendingAutopilotTurn(home: string, instanceId: string) {
       `,
       )
       .get(instanceId);
-    return row ? readTurnRow(v.parse(storedTurnRowSchema, row)) : undefined;
+    return tryReadTurnRow(row);
   } finally {
     database.close();
   }
@@ -329,7 +336,7 @@ export function readAutopilotTurnBySubmissionId(
         `SELECT * FROM autopilot_owner_turns WHERE instance_id = ? AND submission_id = ? ORDER BY created_at DESC LIMIT 1;`,
       )
       .get(instanceId, submissionId);
-    return row ? readTurnRow(v.parse(storedTurnRowSchema, row)) : undefined;
+    return tryReadTurnRow(row);
   } finally {
     database.close();
   }
@@ -495,7 +502,7 @@ function readTurnById(database: ReturnType<typeof openDb>, turnId: string) {
   const row = database
     .prepare('SELECT * FROM autopilot_owner_turns WHERE turn_id = ?;')
     .get(turnId);
-  return row ? readTurnRow(v.parse(storedTurnRowSchema, row)) : null;
+  return tryReadTurnRow(row) ?? null;
 }
 
 function readTurnRow(
@@ -536,11 +543,39 @@ function readTurnRow(
 function safeReadTurnRow(
   row: Record<string, SQLOutputValue>,
 ): PendingAutopilotTurn[] {
+  const turn = tryReadTurnRow(row);
+  return turn ? [turn] : [];
+}
+
+function tryReadTurnRow(
+  row: PendingTurnExternalValue,
+): PendingAutopilotTurn | undefined {
   try {
-    return [readTurnRow(v.parse(storedTurnRowSchema, row))];
+    return readTurnRow(v.parse(storedTurnRowSchema, row));
   } catch {
     // A persisted recovery row is advisory. Skip a malformed legacy row so it
     // cannot prevent the scheduler from recovering other pending turns.
-    return [];
+    return undefined;
   }
+}
+
+function quarantineMalformedTurn(
+  database: ReturnType<typeof openDb>,
+  row: PendingTurnExternalValue,
+  now: string,
+) {
+  const identity = v.safeParse(storedTurnIdentitySchema, row);
+  if (!identity.success) return;
+  database
+    .prepare(
+      `UPDATE autopilot_owner_turns
+       SET status = 'settled',
+           idempotency_key = NULL,
+           event_fingerprint = NULL,
+           settled_at = ?,
+           error = COALESCE(error, 'Malformed persisted owner turn was quarantined.'),
+           updated_at = ?
+       WHERE turn_id = ?;`,
+    )
+    .run(now, now, identity.output.turn_id);
 }

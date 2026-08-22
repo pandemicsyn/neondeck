@@ -31,7 +31,11 @@ type LearningSkillSnippetEvidence = {
 };
 
 const externalValueSchema = v.unknown();
-const evidenceRecordSchema = v.record(v.string(), externalValueSchema);
+const evidenceRecordSchema = v.pipe(
+  v.unknown(),
+  v.check((value) => !Array.isArray(value), 'Expected an evidence object.'),
+  v.record(v.string(), externalValueSchema),
+);
 type ExternalValue = v.InferInput<typeof externalValueSchema>;
 type EvidenceRecord = v.InferOutput<typeof evidenceRecordSchema>;
 

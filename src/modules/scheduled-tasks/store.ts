@@ -141,11 +141,13 @@ export async function listRecoverableScheduledBriefingRuns(
          ORDER BY scheduled_task_runs.created_at ASC;`,
       )
       .all()
-      .map((row) => {
-        const record = v.parse(briefingRunIdRowSchema, row);
+      .flatMap((row) => {
+        const record = v.safeParse(briefingRunIdRowSchema, row);
+        const run = safeScheduledTaskRunRow(row)[0];
+        if (!record.success || !run) return [];
         return {
-          run: readScheduledTaskRunRow(row),
-          briefingRunId: record.briefing_run_id,
+          run,
+          briefingRunId: record.output.briefing_run_id,
         };
       });
   } finally {

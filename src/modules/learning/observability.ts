@@ -161,7 +161,11 @@ const jsonValueSchema = v.pipe(
   v.unknown(),
   v.check(isJsonValue, 'Expected a JSON value.'),
 );
-const jsonObjectSchema = v.record(v.string(), jsonValueSchema);
+const jsonObjectSchema = v.pipe(
+  v.unknown(),
+  v.check((value) => !Array.isArray(value), 'Expected a JSON object.'),
+  v.record(v.string(), jsonValueSchema),
+);
 const scalarSchema = v.union([
   v.string(),
   v.pipe(v.number(), v.finite()),

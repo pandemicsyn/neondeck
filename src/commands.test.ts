@@ -13,6 +13,7 @@ import {
   runNeonCommand,
 } from './modules/commands';
 import type { CommandDependencies } from './modules/commands';
+import { readStringArrayProperty } from './modules/commands/utils';
 import { updateAgentModels } from './modules/config';
 import { listRepoStatus, runDevDoctor } from './modules/runtime';
 import { runtimePaths } from './runtime-home';
@@ -103,6 +104,15 @@ afterEach(async () => {
 });
 
 describe('Neon commands', () => {
+  it('keeps valid string entries in partially malformed result arrays', () => {
+    expect(
+      readStringArrayProperty(
+        { requires: ['approval', 42, 'humanInspection'] },
+        'requires',
+      ),
+    ).toEqual(['approval', 'humanInspection']);
+  });
+
   it('parses supported slash commands with quoted args', () => {
     expect(parseNeonCommand('/repo-status "main repo"')).toMatchObject({
       ok: true,

@@ -75,6 +75,45 @@ describe('persisted Autopilot owner turns', () => {
     ]);
     expect(listRecoverableAutopilotTurns(paths.home)).toHaveLength(1);
   });
+
+  it('does not let a malformed idempotency row block a replacement turn', async () => {
+    const paths = runtimePaths(await tempDir());
+    await ensureRuntimeHome(paths);
+    const malformed = registerPendingAutopilotTurn(
+      paths.home,
+      'owner',
+      undefined,
+      'prepare-only',
+      'watch-event',
+      undefined,
+      { idempotencyKey: 'owner:revision' },
+    );
+    const database = openDb(paths.neondeckDatabase);
+    try {
+      database
+        .prepare(
+          'UPDATE autopilot_owner_turns SET prepared_json = ? WHERE turn_id = ?;',
+        )
+        .run('{', malformed.turnId);
+    } finally {
+      database.close();
+    }
+
+    const replacement = registerPendingAutopilotTurn(
+      paths.home,
+      'owner',
+      undefined,
+      'prepare-only',
+      'watch-event',
+      undefined,
+      { idempotencyKey: 'owner:revision' },
+    );
+
+    expect(replacement.turnId).not.toBe(malformed.turnId);
+    expect(readPendingAutopilotTurn(paths.home, 'owner')?.turnId).toBe(
+      replacement.turnId,
+    );
+  });
 });
 
 function watchFixture(): PrWatch {

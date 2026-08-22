@@ -1,6 +1,7 @@
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
 import { describe, expect, it, vi } from 'vitest';
 import type { FlueObservation } from '@flue/runtime';
 import {
@@ -10,6 +11,7 @@ import {
   claimDueScheduledTasks,
   createAgentInstructionTask,
   createBriefingTask,
+  listRecoverableScheduledBriefingRuns,
   nextOccurrence,
   readLatestScheduledTaskRun,
   readScheduledTask,
@@ -57,6 +59,52 @@ describe('scheduled task triggers', () => {
 });
 
 describe('scheduled task storage', () => {
+  it('skips a malformed active briefing run without hiding valid recovery work', async () => {
+    const home = await mkdtemp(join(tmpdir(), 'neondeck-scheduled-tasks-'));
+    const paths = runtimePaths(home);
+    try {
+      for (const id of ['briefing:valid-recovery', 'briefing:malformed']) {
+        await upsertScheduledTask(
+          {
+            id,
+            spec: { kind: 'run-briefing', briefingId: id },
+            trigger: { kind: 'interval', everySeconds: 3_600 },
+            nextRunAt: '2026-07-10T00:00:00.000Z',
+          },
+          paths,
+        );
+      }
+      const claims = await claimDueScheduledTasks(
+        paths,
+        new Date('2026-07-10T00:00:00.000Z'),
+      );
+      const malformed = claims.find(
+        (claim) => claim.task.id === 'briefing:malformed',
+      );
+      expect(malformed).toBeDefined();
+      const database = new DatabaseSync(paths.neondeckDatabase);
+      try {
+        database
+          .prepare(
+            'UPDATE scheduled_task_runs SET dispatch_payload_json = ? WHERE id = ?;',
+          )
+          .run('{', malformed?.run.id ?? 'missing');
+      } finally {
+        database.close();
+      }
+
+      await expect(
+        listRecoverableScheduledBriefingRuns(paths),
+      ).resolves.toEqual([
+        expect.objectContaining({
+          run: expect.objectContaining({ taskId: 'briefing:valid-recovery' }),
+        }),
+      ]);
+    } finally {
+      await rm(home, { recursive: true, force: true });
+    }
+  });
+
   it('dispatches agent instructions once and settles by Flue submission id', async () => {
     const home = await mkdtemp(join(tmpdir(), 'neondeck-scheduled-tasks-'));
     const paths = runtimePaths(home);

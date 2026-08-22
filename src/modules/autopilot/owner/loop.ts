@@ -14,6 +14,7 @@ import {
 } from '../../watches';
 import { readManagedWorktree } from '../../worktrees';
 import { preparePrWorktree } from '../worktree';
+import { errorMessage } from '../utils';
 import { autopilotOwnerCapabilitySet } from './tools';
 import { configuredAutopilotChecks } from './checks';
 import { dispatchAutopilotOwnerTurn } from './dispatch';
@@ -315,17 +316,11 @@ export async function runAutopilotWatchEvent(
           'The local runtime is temporarily unavailable; the owner turn will retry on the next eligible poll.',
         );
       }
-      const parsedError = v.safeParse(
-        v.union([v.instance(Error), v.string()]),
-        caught,
-      );
       recordPendingAutopilotTurnError(
         paths.home,
         instanceId,
         pendingTurn.turnId,
-        parsedError.success
-          ? errorMessage(parsedError.output)
-          : 'The owner admission error could not be identified.',
+        errorMessage(caught),
       );
       return {
         ...loopResult(
@@ -338,10 +333,6 @@ export async function runAutopilotWatchEvent(
       };
     }
   } catch (caught) {
-    const parsedError = v.safeParse(
-      v.union([v.instance(Error), v.string()]),
-      caught,
-    );
     if (isTransientFlueRuntimeFailure(caught)) {
       transitionWatchAutopilot(paths, claimed.id, {
         from: 'working',
@@ -358,7 +349,7 @@ export async function runAutopilotWatchEvent(
       from: 'working',
       to: 'blocked',
     });
-    const message = `Autopilot could not start the owner turn: ${parsedError.success ? errorMessage(parsedError.output) : 'The startup error could not be identified.'}`;
+    const message = `Autopilot could not start the owner turn: ${errorMessage(caught)}`;
     await addNotification(
       {
         level: 'attention',
@@ -404,10 +395,6 @@ function nestedString(
 
 function loopResult(state: string, changed: boolean, message: string) {
   return { ok: state !== 'missing', state, changed, message };
-}
-
-function errorMessage(error: Error | string) {
-  return error instanceof Error ? error.message : error;
 }
 
 async function reconcileTransientRuntimeNotificationQuietly(

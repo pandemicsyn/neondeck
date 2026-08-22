@@ -186,13 +186,6 @@ export function claimPendingApprovalResolution(
       const readableApproval = beforeClaim
         ? tryReadExecutionApprovalRow(beforeClaim)
         : undefined;
-      if (!readableApproval) {
-        return {
-          claimed: false,
-          claimedSurface,
-          approval: undefined,
-        };
-      }
       database
         .prepare(
           `
@@ -223,6 +216,7 @@ export function claimPendingApprovalResolution(
       return {
         claimed: claimed.changes === 1,
         claimedSurface,
+        malformed: beforeClaim !== undefined && readableApproval === undefined,
         approval: approval ? { ...approval, approverSurface: null } : undefined,
       };
     });
@@ -246,12 +240,6 @@ export function completePendingApprovalResolution(
   const database = openDb(paths.neondeckDatabase);
   try {
     return withImmediateTransaction(database, () => {
-      const beforeComplete = database
-        .prepare('SELECT * FROM execution_approvals WHERE id = ?;')
-        .get(input.id);
-      if (!beforeComplete || !tryReadExecutionApprovalRow(beforeComplete)) {
-        return { changed: false, approval: undefined };
-      }
       const update = database
         .prepare(
           `

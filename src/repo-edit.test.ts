@@ -31,6 +31,7 @@ import {
 } from './repo-edit';
 import { gitDiff, gitPushHead, gitWorktreeRevision } from './repo-edit/git';
 import { recordRepoEditEvent } from './repo-edit/audit';
+import { toRepoEditError } from './repo-edit/path-safety';
 import { subscribeReviewSourceRevisionEvents } from './modules/review-refresh';
 import { runtimePaths } from './runtime-home';
 import {
@@ -66,6 +67,16 @@ afterEach(async () => {
 });
 
 describe('repo edit actions', () => {
+  it('preserves a recognized error code when a sibling path is malformed', () => {
+    expect(
+      toRepoEditError({
+        code: 'PATH_DENIED',
+        message: 'Denied by policy.',
+        path: 42,
+      }),
+    ).toMatchObject({ code: 'PATH_DENIED', path: undefined });
+  });
+
   it('pushes the selected commit SHA even when HEAD has moved', async () => {
     const root = await mkdtemp(join(tmpdir(), 'neondeck-exact-push-'));
     const repo = join(root, 'repo');

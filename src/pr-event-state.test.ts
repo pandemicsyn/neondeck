@@ -37,7 +37,7 @@ import {
   reviewThreadCommentDeliveryFingerprint,
   refreshPrWatchEventState,
 } from './modules/pr-events';
-import { runtimePaths } from './runtime-home';
+import { ensureRuntimeHome, runtimePaths } from './runtime-home';
 import {
   addPrWatch as addPrWatchWithoutBaseline,
   removePrWatch,
@@ -797,6 +797,45 @@ describe('PR event state watermarks', () => {
       requires: ['currentApprovedPushedRevision'],
     });
     expect(postCount).toBe(0);
+  });
+
+  it('skips malformed delivery rows while retaining valid delivery fingerprints', async () => {
+    const home = await tempHome();
+    const paths = runtimePaths(home);
+    await ensureRuntimeHome(paths);
+    await writeRepoRegistry(paths.repos);
+    const database = new DatabaseSync(paths.neondeckDatabase);
+    const now = new Date().toISOString();
+    try {
+      database
+        .prepare(
+          `INSERT INTO pr_neondeck_deliveries (
+             repo_full_name, pr_number, item_kind, item_id,
+             item_fingerprint, delivered_at
+           ) VALUES (?, ?, ?, ?, ?, ?), (?, ?, ?, ?, ?, ?);`,
+        )
+        .run(
+          'pandemicsyn/neondeck',
+          123,
+          'review',
+          'valid-review',
+          'a'.repeat(64),
+          now,
+          'pandemicsyn/neondeck',
+          123,
+          'legacy-kind',
+          'malformed-delivery',
+          'not-a-fingerprint',
+          now,
+        );
+    } finally {
+      database.close();
+    }
+
+    expect(
+      readNeondeckPrDeliveries('pandemicsyn/neondeck', 123, paths)
+        .reviewFingerprints,
+    ).toEqual(new Map([['valid-review', 'a'.repeat(64)]]));
   });
 
   it('reuses an existing PR comment after the GitHub token rotates', async () => {

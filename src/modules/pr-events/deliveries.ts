@@ -46,14 +46,9 @@ export function readNeondeckPrDeliveries(
          WHERE repo_full_name = ? AND pr_number = ?;`,
       )
       .all(repoFullName, prNumber)
-      .map((row) => {
+      .flatMap((row) => {
         const parsed = v.safeParse(deliveryRowSchema, row);
-        if (!parsed.success) {
-          throw new Error(
-            `Invalid Neondeck PR delivery row: ${v.summarize(parsed.issues)}`,
-          );
-        }
-        return parsed.output;
+        return parsed.success ? [parsed.output] : [];
       });
     const fingerprints = (
       kind: 'conversation-comment' | 'review' | 'review-comment',

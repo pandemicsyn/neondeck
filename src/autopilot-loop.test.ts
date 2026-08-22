@@ -2742,7 +2742,7 @@ describe('minimal Autopilot watch loop', () => {
       runAutopilotWatchEvent(ownerEvent('permanent-dispatch-error'), paths, {
         prepare: prepare as never,
         dispatch: (async () => {
-          throw new Error('The owner agent is misconfigured.');
+          throw { message: 'The owner agent is misconfigured.' };
         }) as never,
       }),
     ).resolves.toMatchObject({
@@ -2758,6 +2758,7 @@ describe('minimal Autopilot watch loop', () => {
     )!;
     expect(pending).toMatchObject({
       eventFingerprint: 'permanent-dispatch-error',
+      error: 'The owner agent is misconfigured.',
       status: 'reserved',
     });
     const recoveredDispatch = vi.fn(async () => ({

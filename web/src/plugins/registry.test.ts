@@ -29,4 +29,16 @@ describe('dashboard Autopilot surface', () => {
       issues: [],
     });
   });
+
+  it('retains valid plugin settings when a sibling field is not JSON-safe', () => {
+    expect(
+      resolvePluginConfig(pluginWithoutParser, {
+        label: 'configured',
+        legacyCallback: () => undefined,
+      }),
+    ).toEqual({
+      config: { label: 'configured' },
+      issues: [],
+    });
+  });
 });
