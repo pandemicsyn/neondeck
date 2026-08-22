@@ -27,7 +27,11 @@ const preparedDiffApprovalRowSchema = v.object({
   push_approval_status: v.string(),
   verification_status: v.string(),
 });
-const looseObjectSchema = v.looseObject({});
+const branchPushPermissionSchema = v.looseObject({
+  branchPermissions: v.looseObject({
+    canLikelyPush: v.boolean(),
+  }),
+});
 
 export function listStateRows(
   input: { taskId?: string; limit?: number },
@@ -501,15 +505,9 @@ export function notFound(
   };
 }
 
-export function jsonBoolean(value: KiloUntrustedInput, path: string[]) {
-  let cursor = value;
-  for (const key of path) {
-    const parsedCursor = v.safeParse(looseObjectSchema, cursor);
-    if (!parsedCursor.success || !(key in parsedCursor.output)) return null;
-    cursor = parsedCursor.output[key];
-  }
-  const parsedBoolean = v.safeParse(v.boolean(), cursor);
-  return parsedBoolean.success ? parsedBoolean.output : null;
+export function branchCanLikelyPush(value: KiloUntrustedInput) {
+  const parsed = v.safeParse(branchPushPermissionSchema, value);
+  return parsed.success ? parsed.output.branchPermissions.canLikelyPush : null;
 }
 
 function jsonOrNull(value: KiloUntrustedInput) {

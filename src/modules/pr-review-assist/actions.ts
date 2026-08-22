@@ -424,6 +424,7 @@ export function reviewFactsForPrompt(
       `${facts.state.title}\n${facts.state.body ?? ''}`,
     ),
     diffSummary: facts.diffSummary,
+    filesTruncated: Boolean(facts.filesTruncated),
     workspace: workspace?.available
       ? {
           available: true,

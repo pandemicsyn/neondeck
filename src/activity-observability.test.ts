@@ -260,6 +260,8 @@ describe('Flue v3 activity observability', () => {
   it('labels built-in containers and does not classify shared references as cycles', async () => {
     const paths = await tempPaths();
     const shared = { files: 12 };
+    const cyclic: Record<string, unknown> = {};
+    cyclic.self = cyclic;
 
     await recordFlueObservation(queued(1), paths);
     await recordFlueObservation(
@@ -294,10 +296,72 @@ describe('Flue v3 activity observability', () => {
       },
       paths,
     );
+    await recordFlueObservation(
+      {
+        ...base(5),
+        type: 'task',
+        taskId: 'built-in-result',
+        durationMs: 1,
+        isError: false,
+        result: {
+          map: new Map([['files', 12]]),
+          set: new Set(['src/app.ts', 'src/server.ts']),
+          date: new Date('2026-08-22T03:00:00.000Z'),
+          regexp: /review/gi,
+        },
+      },
+      paths,
+    );
+    await recordFlueObservation(
+      {
+        ...base(6),
+        type: 'task',
+        taskId: 'projected-built-in-result',
+        durationMs: 1,
+        isError: false,
+        result: {
+          map: {
+            type: 'map',
+            entries: [['files', 12]],
+            truncated: false,
+          },
+          set: {
+            type: 'set',
+            values: ['src/app.ts', 'src/server.ts'],
+            truncated: false,
+          },
+          date: { type: 'date', value: '2026-08-22T03:00:00.000Z' },
+          regexp: { type: 'regexp', value: '/review/gi' },
+        },
+      },
+      paths,
+    );
+    await recordFlueObservation(
+      {
+        ...base(7),
+        type: 'task',
+        taskId: 'cyclic-result',
+        durationMs: 1,
+        isError: false,
+        result: cyclic,
+      },
+      paths,
+    );
+    await recordFlueObservation(
+      {
+        ...base(8),
+        type: 'task',
+        taskId: 'projected-cycle-result',
+        durationMs: 1,
+        isError: false,
+        result: { self: { type: 'cycle' } },
+      },
+      paths,
+    );
 
     const history = await readActivitySubmissionEvents('submission-1', paths);
     expect(history.events[1]?.summary).toMatchObject({
-      args: { type: 'object', keys: ['type'] },
+      args: { type: 'map', length: 1, truncated: false },
     });
     const sharedHash = v.parse(
       v.object({ resultHash: v.string() }),
@@ -308,6 +372,24 @@ describe('Flue v3 activity observability', () => {
       history.events[3]?.summary,
     ).resultHash;
     expect(sharedHash).toBe(copiedHash);
+    const builtInHash = v.parse(
+      resultHashSummarySchema,
+      history.events[4]?.summary,
+    ).resultHash;
+    const projectedBuiltInHash = v.parse(
+      resultHashSummarySchema,
+      history.events[5]?.summary,
+    ).resultHash;
+    expect(builtInHash).toBe(projectedBuiltInHash);
+    const cyclicHash = v.parse(
+      resultHashSummarySchema,
+      history.events[6]?.summary,
+    ).resultHash;
+    const projectedCycleHash = v.parse(
+      resultHashSummarySchema,
+      history.events[7]?.summary,
+    ).resultHash;
+    expect(cyclicHash).toBe(projectedCycleHash);
   });
 
   it('normalizes review ingress and error metadata before reading fields', async () => {

@@ -256,6 +256,21 @@ describe('github foundation', () => {
     expect(issues.truncated).toBe(true);
   });
 
+  it('marks issue results truncated when malformed siblings are dropped', async () => {
+    globalThis.fetch = vi.fn<typeof fetch>(async () =>
+      jsonResponse([githubIssue(1), { number: 'invalid' }]),
+    );
+
+    const issues = await fetchGitHubIssues({
+      token: 'gho_test',
+      owner: 'pandemicsyn',
+      repo: 'neondeck',
+    });
+
+    expect(issues.items.map((issue) => issue.number)).toEqual([1]);
+    expect(issues.truncated).toBe(true);
+  });
+
   it('marks issue pagination truncated at the page cap', async () => {
     globalThis.fetch = vi.fn<typeof fetch>(async (_input) =>
       jsonResponse([githubPullRequest(1)], 200, {
@@ -1621,6 +1636,7 @@ describe('github foundation', () => {
     ).resolves.toMatchObject({
       repo: 'pandemicsyn/neondeck',
       number: 123,
+      truncated: true,
       diffSummary: {
         files: 3,
         additions: 1205,

@@ -205,6 +205,7 @@ export type GitHubPullRequestFiles = {
   number: number;
   files: GitHubPullRequestFile[];
   diffSummary: GitHubDiffSummary;
+  truncated: boolean;
   fetchedAt: string;
 };
 

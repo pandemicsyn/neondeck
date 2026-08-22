@@ -8,7 +8,8 @@ import {
   createOptionalKiloSdkClient,
   resolveKiloSessionsSearchMethod,
 } from './modules/kilo/sessions-adapters';
-import { readJsonArray } from './modules/scheduler/utils';
+import { branchCanLikelyPush } from './modules/kilo/results/state';
+import { readJsonArray, stableJson } from './modules/scheduler/utils';
 
 describe('anti-slop helper compatibility regressions', () => {
   it('retains valid elements from mixed external arrays', () => {
@@ -22,6 +23,37 @@ describe('anti-slop helper compatibility regressions', () => {
     expect(
       readJsonArray(['commits', undefined, { category: 'checks' }]),
     ).toEqual(['commits', { category: 'checks' }]);
+  });
+
+  it('canonicalizes unsupported nested scheduler values', () => {
+    const first = {
+      z: undefined,
+      a: { y: 1n, x: 'retained' },
+    };
+    const second = {
+      a: { x: 'retained', y: 2n },
+      z: undefined,
+    };
+
+    expect(stableJson(first)).toBe(stableJson(second));
+    expect(stableJson(first)).toContain('"a"');
+  });
+
+  it('reads nested Kilo booleans from prototype-backed objects', () => {
+    class PermissionData {
+      get canLikelyPush() {
+        return true;
+      }
+    }
+    class PermissionEnvelope {
+      readonly data = new PermissionData();
+    }
+
+    expect(
+      branchCanLikelyPush({
+        branchPermissions: new PermissionEnvelope().data,
+      }),
+    ).toBe(true);
   });
 
   it('keeps null unavailable reasons out of truncation categories', () => {

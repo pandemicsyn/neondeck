@@ -1813,16 +1813,16 @@ function normalizeActivityValue(
     if (symbol.success) return { type: 'symbol' };
     if (v.is(v.function(), current)) return { type: 'function' };
     if (!isObjectReference(current)) return { type: 'unsupported-value' };
-    if (current instanceof Map) return { type: 'map' };
-    if (current instanceof Set) return { type: 'set' };
-    if (current instanceof Date) return { type: 'date' };
-    if (current instanceof RegExp) return { type: 'regexp' };
     if (seen.has(current)) return { type: 'cycle' };
     seen.add(current);
 
     try {
       const isArray = Array.isArray(current);
       if (current instanceof Error) return normalizeError(current);
+      if (current instanceof Map) return normalizeMap(current, depth);
+      if (current instanceof Set) return normalizeSet(current, depth);
+      if (current instanceof Date) return normalizeDate(current);
+      if (current instanceof RegExp) return normalizeRegExp(current);
       if (isArray) return normalizeArray(current, depth);
 
       const output: Record<string, JsonValue> = {};
@@ -1890,6 +1890,90 @@ function normalizeActivityValue(
       message: sanitizeMessage(message),
     };
   }
+
+  function normalizeMap(
+    map: ReadonlyMap<ExternalValue, ExternalValue>,
+    depth: number,
+  ): JsonValue {
+    const entries: JsonValue[] = [];
+    let truncated = false;
+    let entryCount = 0;
+    for (const [key, item] of Map.prototype.entries.call(map)) {
+      if (entryCount >= maxNormalizedActivityEntries) {
+        truncated = true;
+        break;
+      }
+      entries.push([normalize(key, depth + 1), normalize(item, depth + 1)]);
+      entryCount += 1;
+    }
+    return { type: 'map', entries, truncated };
+  }
+
+  function normalizeSet(
+    set: ReadonlySet<ExternalValue>,
+    depth: number,
+  ): JsonValue {
+    const values: JsonValue[] = [];
+    let truncated = false;
+    let entryCount = 0;
+    for (const item of Set.prototype.values.call(set)) {
+      if (entryCount >= maxNormalizedActivityEntries) {
+        truncated = true;
+        break;
+      }
+      values.push(normalize(item, depth + 1));
+      entryCount += 1;
+    }
+    return { type: 'set', values, truncated };
+  }
+
+  function normalizeDate(date: Date): JsonValue {
+    try {
+      return {
+        type: 'date',
+        value: boundedActivityString(Date.prototype.toISOString.call(date)),
+      };
+    } catch {
+      return { type: 'date', value: 'invalid' };
+    }
+  }
+
+  function normalizeRegExp(regexp: RegExp): JsonValue {
+    try {
+      const sourceDescriptor = Object.getOwnPropertyDescriptor(
+        RegExp.prototype,
+        'source',
+      );
+      const source = sourceDescriptor?.get?.call(regexp);
+      if (!source) return { type: 'regexp', value: 'uninspectable' };
+      const flagProperties: ReadonlyArray<readonly [string, string]> = [
+        ['hasIndices', 'd'],
+        ['global', 'g'],
+        ['ignoreCase', 'i'],
+        ['multiline', 'm'],
+        ['dotAll', 's'],
+        ['unicode', 'u'],
+        ['unicodeSets', 'v'],
+        ['sticky', 'y'],
+      ];
+      const flags = flagProperties
+        .filter(([property]) => {
+          const descriptor = Object.getOwnPropertyDescriptor(
+            RegExp.prototype,
+            property,
+          );
+          return descriptor?.get?.call(regexp) === true;
+        })
+        .map(([, flag]) => flag)
+        .join('');
+      return {
+        type: 'regexp',
+        value: boundedActivityString(`/${source}/${flags}`),
+      };
+    } catch {
+      return { type: 'regexp', value: 'uninspectable' };
+    }
+  }
 }
 
 function trustedErrorName(error: Error) {
@@ -1954,6 +2038,24 @@ function summarizeUnknown(value: JsonValue | undefined): JsonValue {
   if (Array.isArray(value)) return { type: 'array', length: value.length };
   const record = objectRecord(value);
   if (record) {
+    const containerType = stringOrNull(record.type);
+    if (containerType === 'map' && Array.isArray(record.entries)) {
+      return {
+        type: 'map',
+        length: record.entries.length,
+        truncated: booleanOrUndefined(record.truncated) ?? false,
+      };
+    }
+    if (containerType === 'set' && Array.isArray(record.values)) {
+      return {
+        type: 'set',
+        length: record.values.length,
+        truncated: booleanOrUndefined(record.truncated) ?? false,
+      };
+    }
+    if (containerType === 'date' || containerType === 'regexp') {
+      return { type: containerType };
+    }
     return {
       type: 'object',
       keys: Object.keys(record)

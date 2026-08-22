@@ -29,7 +29,12 @@ export function readAddressedPrFeedback(
       .all(repoFullName, prNumber)
       .flatMap((row) => {
         const parsed = v.safeParse(addressedFeedbackRowSchema, row);
-        return parsed.success ? [parsed.output] : [];
+        if (parsed.success) return [parsed.output];
+        console.warn(
+          '[neondeck] skipped malformed persisted addressed PR feedback row',
+          v.summarize(parsed.issues),
+        );
+        return [];
       });
     return {
       reviewThreadFingerprints: new Map(

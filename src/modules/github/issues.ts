@@ -62,17 +62,18 @@ export async function fetchGitHubIssues(input: FetchGitHubIssuesInput) {
     `https://api.github.com/repos/${encodePathSegment(input.owner)}/${encodePathSegment(input.repo)}/issues?${params.toString()}`;
   const issues: GitHubIssue[] = [];
   let stoppedAtLimit = false;
+  let malformedItems = false;
   let pageCount = 0;
 
   while (url && issues.length < limit && pageCount < maxPages) {
     pageCount += 1;
     const response = await githubFetch(input.token, url);
-    const page = v
-      .parse(v.array(v.unknown()), await response.json())
-      .flatMap((item) => {
-        const issue = v.safeParse(issueSchema, item);
-        return issue.success ? [issue.output] : [];
-      });
+    const rawPage = v.parse(v.array(v.unknown()), await response.json());
+    const page = rawPage.flatMap((item) => {
+      const issue = v.safeParse(issueSchema, item);
+      return issue.success ? [issue.output] : [];
+    });
+    malformedItems ||= page.length !== rawPage.length;
     for (const item of page) {
       if (item.pull_request) continue;
       if (issues.length >= limit) {
@@ -112,7 +113,8 @@ export async function fetchGitHubIssues(input: FetchGitHubIssuesInput) {
   return {
     items: issues,
     fetchedAt: new Date().toISOString(),
-    truncated: stoppedAtLimit || stoppedAtPageLimit || Boolean(url),
+    truncated:
+      malformedItems || stoppedAtLimit || stoppedAtPageLimit || Boolean(url),
   };
 }
 

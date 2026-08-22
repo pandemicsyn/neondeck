@@ -19,8 +19,10 @@ export function createNotificationChime(): NotificationChime {
   const getContext = () => {
     if (closed) return null;
     if (context) return context;
+    const browserWindow = globalThis.window;
+    if (!browserWindow) return null;
     const AudioContextClass =
-      globalThis.window.AudioContext ?? globalThis.window.webkitAudioContext;
+      browserWindow.AudioContext ?? browserWindow.webkitAudioContext;
     if (!AudioContextClass) return null;
     try {
       context = new AudioContextClass();

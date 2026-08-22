@@ -196,7 +196,12 @@ function elapsed(startedAt: number) {
 }
 
 function jsonValueOrNull(value: McpExternalValue) {
-  const serialized = v.safeParse(v.string(), JSON.stringify(value));
-  if (!serialized.success) return null;
-  return v.parse(mcpJsonValueSchema, JSON.parse(serialized.output));
+  try {
+    const serialized = JSON.stringify(value);
+    if (serialized === undefined) return null;
+    const parsed = v.safeParse(mcpJsonValueSchema, JSON.parse(serialized));
+    return parsed.success ? parsed.output : null;
+  } catch {
+    return null;
+  }
 }

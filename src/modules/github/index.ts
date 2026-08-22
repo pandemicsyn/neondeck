@@ -35,6 +35,7 @@ export {
   fetchPullRequestEventState,
   fetchPullRequestFiles,
   fetchPullRequestReviewDecision,
+  summarizePullRequestFiles,
 } from './pull-requests';
 export {
   maxPrEventFeedbackBodyLength,

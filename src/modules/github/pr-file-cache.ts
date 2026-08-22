@@ -115,7 +115,7 @@ export async function fetchPullRequestFilesWithCache(options: {
       `Pull request base changed from ${baseSha} to ${currentBaseSha ?? 'unavailable'} while loading files.`,
     );
   }
-  if (diff.files.length > 0 && baseSha) {
+  if (diff.files.length > 0 && baseSha && !diff.truncated) {
     writeCachedPullRequestFiles({
       databasePath: options.databasePath,
       repo: repoFullName,
@@ -212,6 +212,7 @@ export function readCachedPullRequestFiles(options: {
       number: options.number,
       files,
       diffSummary: summarizePullRequestFiles(files),
+      truncated: false,
       fetchedAt: row.fetched_at,
     };
   } finally {

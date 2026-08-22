@@ -498,6 +498,7 @@ function prFiles(
     number: 123,
     files,
     diffSummary: summarize(files),
+    truncated: false,
     fetchedAt,
   };
 }

@@ -15,6 +15,7 @@ import {
   type GitHubPullRequestEventState,
   type GitHubPullRequestFile,
   githubPullRequestFileSchema,
+  summarizePullRequestFiles,
 } from '../github';
 import { getGitHubPrEventState, getGitHubPrFiles } from '../pr-events';
 import type { PrEventStateDependencies, PullRequestTarget } from '../pr-events';
@@ -85,6 +86,7 @@ export type ReviewAssistFacts = {
   files: GitHubPullRequestFile[];
   diffSummary: GitHubDiffSummary;
   source: 'local' | 'github';
+  filesTruncated?: boolean;
 };
 
 export type ReviewAssistPromptContext = {
@@ -417,22 +419,31 @@ async function readReviewFacts(
         return file.success ? [file.output] : [];
       })
     : null;
+  const filesTruncated =
+    filesData.truncated === true ||
+    (parsedFiles.success && files !== null
+      ? files.length !== parsedFiles.output.length
+      : false);
   const parsedDiffSummary = v.safeParse(
     diffSummarySchema,
     filesData.diffSummary,
   );
-  const diffSummary = parsedDiffSummary.success
-    ? parsedDiffSummary.output
-    : null;
+  const diffSummary =
+    parsedDiffSummary.success && files
+      ? summarizePullRequestFiles(files)
+      : null;
   const source = filesData.source === 'local' ? 'local' : 'github';
-  if (!files || !diffSummary) {
+  if (!files || files.length === 0 || !diffSummary) {
     return {
       ok: false,
       result: failure('GitHub PR file response was incomplete.'),
     };
   }
 
-  return { ok: true, facts: { target, state, files, diffSummary, source } };
+  return {
+    ok: true,
+    facts: { target, state, files, diffSummary, source, filesTruncated },
+  };
 }
 
 function deterministicReviewPass(
@@ -453,6 +464,11 @@ function deterministicReviewPass(
   const risks = changeMap
     .map((item) => item.risk)
     .filter((risk): risk is string => Boolean(risk));
+  if (facts.filesTruncated) {
+    risks.unshift(
+      'GitHub omitted one or more malformed file records; this review covers only the retained files.',
+    );
+  }
   const checkRuns = facts.state.checkRuns ?? [];
   const failedChecks = checkRuns.filter(
     (check) => check.conclusion && check.conclusion !== 'success',

@@ -1,4 +1,3 @@
-import type { JsonValue } from '@flue/runtime';
 import { failedAction } from '../../lib/action-result';
 import { asJsonValue } from '../../lib/action-result';
 import { parseInput as parseSharedInput } from '../../lib/valibot';
@@ -129,16 +128,44 @@ export function booleanField(value: SchedulerExternalValue) {
   return parsed.success ? parsed.output : undefined;
 }
 
-export function stableJson(value: JsonValue | undefined): string {
+export function stableJson(value: SchedulerExternalValue): string {
+  return stableExternalJson(value, new WeakSet());
+}
+
+function stableExternalJson(
+  value: SchedulerExternalValue,
+  ancestors: WeakSet<object>,
+): string {
+  if (value === undefined) return 'undefined';
+  if (value === null) return 'null';
+  const string = v.safeParse(v.string(), value);
+  if (string.success) return JSON.stringify(string.output);
+  const number = v.safeParse(finiteNumberSchema, value);
+  if (number.success) return JSON.stringify(number.output);
+  const boolean = v.safeParse(v.boolean(), value);
+  if (boolean.success) return JSON.stringify(boolean.output);
   if (Array.isArray(value)) {
-    return `[${value.map((item) => stableJson(item)).join(',')}]`;
+    if (ancestors.has(value)) return '"[circular]"';
+    ancestors.add(value);
+    try {
+      return `[${value.map((item) => stableExternalJson(item, ancestors)).join(',')}]`;
+    } finally {
+      ancestors.delete(value);
+    }
   }
-  const record = readJsonRecord(value);
-  if (record) {
-    return `{${Object.entries(record)
+  const record = v.safeParse(schedulerExternalRecordSchema, value);
+  if (!record.success) return '"[unsupported]"';
+  if (ancestors.has(value)) return '"[circular]"';
+  ancestors.add(value);
+  try {
+    return `{${Object.entries(record.output)
       .sort(([left], [right]) => left.localeCompare(right))
-      .map(([key, item]) => `${JSON.stringify(key)}:${stableJson(item)}`)
+      .map(
+        ([key, item]) =>
+          `${JSON.stringify(key)}:${stableExternalJson(item, ancestors)}`,
+      )
       .join(',')}}`;
+  } finally {
+    ancestors.delete(value);
   }
-  return value === undefined ? 'undefined' : JSON.stringify(value);
 }

@@ -550,7 +550,11 @@ export function readWatermarkRow<T>(row: T): PrWatchEventWatermarkRecord {
 function safeReadWatermarkRow<T>(row: T): PrWatchEventWatermarkRecord[] {
   try {
     return [readWatermarkRow(row)];
-  } catch {
+  } catch (error) {
+    console.warn(
+      '[neondeck] skipped malformed persisted PR event watermark row',
+      error,
+    );
     return [];
   }
 }

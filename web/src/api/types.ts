@@ -300,6 +300,7 @@ export type GitHubPullRequestFilesResponse = {
     };
     files: GitHubPullRequestFile[];
     diffSummary: DiffSummary;
+    truncated: boolean;
     fetchedAt: string;
     source?: 'local' | 'github';
     revision: ReviewRevision;
@@ -324,6 +325,7 @@ export type GitHubPullRequestFileDiffResponse = {
     file: GitHubPullRequestFile | null;
     diff: string;
     diffSummary: DiffSummary;
+    truncated: boolean;
     fetchedAt: string;
     source?: 'local' | 'github';
     revision: ReviewRevision;

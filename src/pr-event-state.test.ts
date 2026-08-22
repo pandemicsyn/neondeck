@@ -839,6 +839,7 @@ describe('PR event state watermarks', () => {
   });
 
   it('isolates malformed watermark and addressed-feedback rows', async () => {
+    const warning = vi.spyOn(console, 'warn').mockImplementation(() => {});
     const home = await tempHome();
     const paths = runtimePaths(home);
     await ensureRuntimeHome(paths);
@@ -903,6 +904,15 @@ describe('PR event state watermarks', () => {
       new Map([['valid-thread', 'valid-fingerprint']]),
     );
     expect(addressed.reviewCommentFingerprints).toEqual(new Map());
+    expect(warning).toHaveBeenCalledWith(
+      '[neondeck] skipped malformed persisted PR event watermark row',
+      expect.any(Error),
+    );
+    expect(warning).toHaveBeenCalledWith(
+      '[neondeck] skipped malformed persisted addressed PR feedback row',
+      expect.any(String),
+    );
+    warning.mockRestore();
   });
 
   it('reuses an existing PR comment after the GitHub token rotates', async () => {
@@ -2419,6 +2429,7 @@ function anchorValidationDependencies() {
     fetchPullRequestFiles: async () => ({
       repo: 'pandemicsyn/neondeck',
       number: 123,
+      truncated: false,
       files: [
         {
           path: 'src/app.ts',

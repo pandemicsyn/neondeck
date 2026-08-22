@@ -17,6 +17,7 @@ import {
 import {
   createSubmitPrReviewTool,
   createReviewDurableEffectRunner,
+  preparePrReviewForHuman,
   reviewFactsForPrompt,
   reviewPrForHuman,
   type ReviewAssistFacts,
@@ -42,6 +43,93 @@ afterEach(async () => {
 });
 
 describe('PR review assist', () => {
+  it('retains valid remote file facts and recomputes summaries after malformed siblings', async () => {
+    const paths = await tempPaths();
+    const facts = reviewFacts();
+    const result = await preparePrReviewForHuman(
+      { ref: 'pandemicsyn/neondeck#10' },
+      paths,
+      {
+        prEventDependencies: {
+          token: 'token',
+          fetchPullRequestEventState: async () => facts.state,
+          fetchPullRequestRevision: async () => ({
+            headSha: facts.state.headSha,
+            baseSha: facts.state.baseSha,
+          }),
+          fetchPullRequestFiles: async () => ({
+            repo: facts.target.repoFullName,
+            number: facts.target.number,
+            files: [facts.files[0]],
+            diffSummary: {
+              files: 2,
+              additions: 999,
+              deletions: 999,
+              binaryFiles: 1,
+            },
+            truncated: true,
+            fetchedAt: facts.state.fetchedAt,
+          }),
+        },
+      },
+    );
+
+    expect(result).toMatchObject({
+      ok: true,
+      prepared: {
+        facts: {
+          files: [{ path: 'src/app.ts' }],
+          filesTruncated: true,
+          diffSummary: {
+            files: 1,
+            additions: 2,
+            deletions: 0,
+            binaryFiles: 0,
+          },
+        },
+      },
+    });
+  });
+
+  it('rejects remote review facts when every supplied file is malformed', async () => {
+    const paths = await tempPaths();
+    const facts = reviewFacts();
+    const result = await preparePrReviewForHuman(
+      { ref: 'pandemicsyn/neondeck#10' },
+      paths,
+      {
+        prEventDependencies: {
+          token: 'token',
+          fetchPullRequestEventState: async () => facts.state,
+          fetchPullRequestRevision: async () => ({
+            headSha: facts.state.headSha,
+            baseSha: facts.state.baseSha,
+          }),
+          fetchPullRequestFiles: async () => ({
+            repo: facts.target.repoFullName,
+            number: facts.target.number,
+            files: [JSON.parse('{"path":"incomplete.ts"}')],
+            diffSummary: {
+              files: 1,
+              additions: 1,
+              deletions: 0,
+              binaryFiles: 0,
+            },
+            truncated: true,
+            fetchedAt: facts.state.fetchedAt,
+          }),
+        },
+      },
+    );
+
+    expect(result).toMatchObject({
+      ok: false,
+      result: {
+        message: 'GitHub PR file response was incomplete.',
+      },
+    });
+  });
+
   it('accepts persisted initial-review data created before Explore was captured', () => {
     const legacyInitialData = {
       model: 'faux/faux-1',

@@ -19,7 +19,7 @@ import {
   taskStatusForClassification,
 } from './gates';
 import {
-  jsonBoolean,
+  branchCanLikelyPush,
   listStateRows,
   notFound,
   parseInput,
@@ -386,8 +386,7 @@ export async function promoteKiloResult(
         )
       : null;
   const canLikelyPush = Boolean(
-    jsonBoolean(permissions?.data, ['branchPermissions', 'canLikelyPush']) ??
-    worktree?.directPushAllowed,
+    branchCanLikelyPush(permissions?.data) ?? worktree?.directPushAllowed,
   );
   gates.push({
     gate: 'github-permissions',

@@ -513,17 +513,18 @@ export async function fetchPullRequestFiles(options: {
   number: number;
 }): Promise<GitHubPullRequestFiles> {
   const files: GitHubPullRequestFile[] = [];
+  let malformedItems = false;
   let nextUrl: string | undefined =
     `https://api.github.com/repos/${encodePathSegment(options.owner)}/${encodePathSegment(options.repo)}/pulls/${options.number}/files?per_page=100`;
 
   while (nextUrl) {
     const response = await githubFetch(options.token, nextUrl);
-    const data = v
-      .parse(v.array(v.unknown()), await response.json())
-      .flatMap((item) => {
-        const file = v.safeParse(githubPullRequestFileApiItemSchema, item);
-        return file.success ? [file.output] : [];
-      });
+    const rawData = v.parse(v.array(v.unknown()), await response.json());
+    const data = rawData.flatMap((item) => {
+      const file = v.safeParse(githubPullRequestFileApiItemSchema, item);
+      return file.success ? [file.output] : [];
+    });
+    malformedItems ||= data.length !== rawData.length;
     files.push(...data.map(normalizePullRequestFile));
     nextUrl = nextLink(response.headers.get('link'));
   }
@@ -533,6 +534,7 @@ export async function fetchPullRequestFiles(options: {
     number: options.number,
     files,
     diffSummary: summarizePullRequestFiles(files),
+    truncated: malformedItems,
     fetchedAt: new Date().toISOString(),
   };
 }

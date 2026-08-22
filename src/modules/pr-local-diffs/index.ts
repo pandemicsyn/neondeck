@@ -145,6 +145,7 @@ async function readResolvedPullRequestFiles(
     number: input.number,
     files: result.diff.files.map(toPullRequestFile),
     diffSummary: { ...result.diff.summary },
+    truncated: false,
     fetchedAt: result.fetchedAt,
   };
 }

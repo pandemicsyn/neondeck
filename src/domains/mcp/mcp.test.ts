@@ -391,6 +391,48 @@ describe('MCP support', () => {
     );
   });
 
+  it('keeps successful MCP calls fail-soft when structured content is not serializable', async () => {
+    const home = await tempDir();
+    const paths = runtimePaths(home);
+    await ensureRuntimeHome(paths);
+    await addMcpServer(
+      {
+        id: 'fixture',
+        server: {
+          transport: 'stdio',
+          command: process.execPath,
+          tools: { overrides: { echo: 'approve' } },
+        },
+      },
+      paths,
+    );
+    const cyclic: Record<string, unknown> = {};
+    cyclic.self = cyclic;
+
+    for (const structuredContent of [cyclic, { value: 1n }]) {
+      await expect(
+        runMcpToolThroughGate(
+          {
+            serverId: 'fixture',
+            toolName: 'echo',
+            adaptedName: 'mcp__fixture__echo',
+            context: { input: { text: 'hello' } },
+            run: async () => ({
+              text: 'successful tool output',
+              structuredContent,
+              raw: { content: [] },
+            }),
+          },
+          paths,
+        ),
+      ).resolves.toMatchObject({
+        ok: true,
+        status: 'ok',
+        structuredContent: null,
+      });
+    }
+  });
+
   it('accepts MCP tool JSON Schema nullable unions through AJV validation', async () => {
     const home = await tempDir();
     const paths = runtimePaths(home);
