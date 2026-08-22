@@ -9,7 +9,7 @@ IBM Plex Sans / IBM Plex Mono, square borders, `#00b7c7` primary on `#0a0b10`.
 `theme` control for checking the light palette.
 
 The overlay's actual maximum is `min(96vw, 1440px)` × `min(92vh, 980px)`
-(`web/src/features/pr-review/PrReviewArtifactsOverlay.tsx:155`), so the boards
+(`web/src/features/pr-review/PrReviewBriefing.tsx:71`), so the boards
 are full width but 60px short of maximum height. Layouts should not depend on
 that last 60px either way — the overlay is shorter than this on most displays.
 
