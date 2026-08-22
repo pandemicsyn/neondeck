@@ -65,9 +65,6 @@ export {
   deletePrReviewNeonSeedsForComments,
   deletePrReviewDraftComment,
   discardPrReviewDraft,
-  fetchPullRequestReviewComments,
-  fetchPullRequestReviews,
-  fetchPullRequestReviewsWithMetadata,
   readLivePrReviewDraft,
   readPrReviewDraft,
   readPrReviewDraftForComment,
@@ -82,6 +79,12 @@ export {
   upsertPrReviewDraft,
   GitHubPrReviewSubmitError,
 } from './reviews';
+export {
+  fetchPullRequestReviewComments,
+  fetchPullRequestReviews,
+  fetchPullRequestReviewsWithMetadata,
+  requestedChangesStateFromReviews,
+} from './review-remote';
 export type {
   GitHubPrReviewDraft,
   GitHubPrReviewDraftComment,
