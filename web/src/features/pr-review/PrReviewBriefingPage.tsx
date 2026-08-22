@@ -4,7 +4,7 @@ import { getPrReview, openPrReviewEventStream } from '../../api';
 import { BootState } from '../../components/ui';
 import { queryErrorMessage, queryKeys } from '../../lib/query';
 import type { PrReviewRecord } from '../../api';
-import { PrReviewBriefing } from './PrReviewArtifactsOverlay';
+import { PrReviewBriefing } from './PrReviewBriefing';
 import { prReviewDraftQueryOptions, useGitHubPrReviewDraft } from './queries';
 import { usePrReviewBriefingActions } from './usePrReviewBriefingActions';
 import {

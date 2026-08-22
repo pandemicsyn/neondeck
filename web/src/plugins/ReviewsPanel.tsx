@@ -26,7 +26,7 @@ import {
   type PrReviewsResponse,
 } from '../api';
 import { Badge, Button, EmptyState, ScrollArea } from '../components/ui';
-import { PrReviewArtifactsOverlay } from '../features/pr-review/PrReviewArtifactsOverlay';
+import { PrReviewBriefingOverlay } from '../features/pr-review/PrReviewBriefing';
 import {
   prReviewDraftQueryOptions,
   useGitHubPrReviewDraft,
@@ -401,7 +401,7 @@ export const ReviewsPanelPlugin = {
           </ScrollArea>
         ) : null}
         {briefingReview?.briefingOverview ? (
-          <PrReviewArtifactsOverlay
+          <PrReviewBriefingOverlay
             onClose={() => setBriefingReviewId(null)}
             onReviewChange={updateReviewCaches}
             review={briefingReview}
@@ -733,7 +733,6 @@ function ReviewRowQuickApprove({
   const draftMatches =
     !draft || (draft.status === 'draft' && draft.headSha === review.headSha);
   const commentCount = draftKnown ? (draft?.comments.length ?? 0) : null;
-  const label = `approve & submit ${commentCount ?? '—'}`;
   const unavailableReason =
     draftQuery.isError || draftQuery.isRefetchError
       ? queryErrorMessage(draftQuery.error)
@@ -741,6 +740,12 @@ function ReviewRowQuickApprove({
         ? 'The local draft does not match this ready review.'
         : null;
   const queryUnavailable = draftQuery.isError || draftQuery.isRefetchError;
+  const approvalUnavailable = queryUnavailable || (draftKnown && !draftMatches);
+  const label = approvalUnavailable
+    ? 'approval unavailable'
+    : commentCount === null
+      ? 'loading draft…'
+      : `approve & submit ${commentCount}`;
 
   return (
     <>

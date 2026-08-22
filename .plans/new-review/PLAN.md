@@ -165,8 +165,8 @@ Two flow facts the phases depend on, traced end to end:
 `PrReviewRecord.reportIds: string[]`, persisted as `report_ids_json`. The UI
 labels index 0 `overview`, index 1 `issues`, and anything further
 `report N` (`web/src/plugins/ReviewsPanel.tsx`, and again in
-`web/src/features/pr-review/PrReviewArtifactsOverlay.tsx`). Both render as decks
-and both begin with the same Review brief slide.
+the former `web/src/features/pr-review/PrReviewArtifactsOverlay.tsx`). Both
+render as decks and both begin with the same Review brief slide.
 
 ### Three document generations are live at once
 
@@ -545,3 +545,15 @@ the rest.
   should remain byte-for-byte output from the migration generator.
 - Follow-up: None. Authored migration SQL and application source remain covered
   by formatting validation.
+
+### 2026-08-22 — Stop requesting unpersisted check notes
+
+- Phase: 3 — Summary prompt
+- Decision: Removed `overview.checks` from the review agent's structured output
+  schema and stopped asking the model to author check notes.
+- Reason: The settled briefing contract persists and renders summary, change
+  map, and risks, while deterministic GitHub check facts remain available to
+  the reviewer during analysis. Retaining a validated-but-discarded output
+  field spent model effort on data no surface could read.
+- Follow-up: Add checks to a future versioned briefing schema only if a product
+  surface is designed to persist and render them.

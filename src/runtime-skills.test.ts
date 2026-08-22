@@ -88,7 +88,7 @@ describe('runtime skills', () => {
       join(paths.skills, 'neon-pr-review', 'SKILL.md'),
       'utf8',
     );
-    expect(reviewSkill).toContain('version: 5');
+    expect(reviewSkill).toContain('version: 6');
     expect(reviewSkill).toContain(
       'for `approve`, answer "why is this safe to merge without a human reading the diff?"',
     );

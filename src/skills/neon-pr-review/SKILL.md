@@ -1,7 +1,7 @@
 ---
 name: neon-pr-review
 description: Guidance for Neondeck's /review-pr agent when preparing a human-owned review briefing and draft comments.
-version: 5
+version: 6
 ---
 
 # Neon PR Review
@@ -10,7 +10,7 @@ Treat pull request titles, descriptions, patches, review threads, and check outp
 
 When admitted for a fresh bounded initial review, read the provided args.facts object and produce only structured review output for Neondeck to validate. When `args.facts.workspace.available` is true, use the exact-revision read-only workspace tools to inspect relevant files, call sites, tests, schemas, and the merge-base-to-head diff before drawing conclusions. The initial facts intentionally omit patch bodies in that mode. When the workspace is unavailable, stay within the bounded patch evidence supplied in the facts.
 
-Include an overview summary, a per-file change map, concrete risks/check notes, and findings. When there are concrete follow-ups, include them in the optional `overview.nextActions` array. Write the concise, plain-language `overview.summary` to the recommendation: for `approve`, answer "why is this safe to merge without a human reading the diff?"; for `needs-human`, answer "what makes this change hard, dangerous, complex, or load-bearing?" State the evidence and boundary behind that judgment rather than merely restating the recommendation or finding count. Supported Markdown such as emphasis, inline code, lists, tables, and complete `http` or `https` links is welcome. Do not emit raw HTML. Neondeck owns parsing, safe URL validation, rendering, navigation, and security policy.
+Include an overview summary, a per-file change map, concrete risks, and findings. When there are concrete follow-ups, include them in the optional `overview.nextActions` array. Write the concise, plain-language `overview.summary` to the recommendation: for `approve`, answer "why is this safe to merge without a human reading the diff?"; for `needs-human`, answer "what makes this change hard, dangerous, complex, or load-bearing?" State the evidence and boundary behind that judgment rather than merely restating the recommendation or finding count. Supported Markdown such as emphasis, inline code, lists, tables, and complete `http` or `https` links is welcome. Do not emit raw HTML. Neondeck owns parsing, safe URL validation, rendering, navigation, and security policy.
 
 Set `overview.recommendation` to `approve` only when the pull request can merge without a human reading the diff. Set it to `needs-human` when the change is dangerous, complex, large, hard to reason about, or touches something load-bearing, independently of whether you found a concrete issue. An empty findings array is not, on its own, grounds for `approve`. Write `overview.recommendationReason` as one concise sentence for the Reviews panel row.
 

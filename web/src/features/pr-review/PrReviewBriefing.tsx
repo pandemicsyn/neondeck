@@ -20,7 +20,7 @@ import {
 
 type Severity = 'critical' | 'major' | 'minor' | 'nit';
 
-export function PrReviewArtifactsOverlay({
+export function PrReviewBriefingOverlay({
   onClose,
   onReviewChange,
   review,

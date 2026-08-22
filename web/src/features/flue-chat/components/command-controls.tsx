@@ -12,7 +12,7 @@ import {
 import { Badge, Button } from '../../../components/ui';
 import { useDashboardEventConnectionState } from '../../../lib/dashboard-connection';
 import { queryErrorMessage } from '../../../lib/query';
-import { PrReviewArtifactsOverlay } from '../../pr-review/PrReviewArtifactsOverlay';
+import { PrReviewBriefingOverlay } from '../../pr-review/PrReviewBriefing';
 import type { FlueChatCommand } from '../types';
 
 export function CommandResultSummary({
@@ -161,7 +161,7 @@ function ReviewCommandResult({ review }: { review: PrReviewRecord }) {
         )}
       </div>
       {briefingOpen ? (
-        <PrReviewArtifactsOverlay
+        <PrReviewBriefingOverlay
           onClose={() => setBriefingOpen(false)}
           review={review}
         />

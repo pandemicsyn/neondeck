@@ -396,14 +396,6 @@ function deterministicReviewPass(
   const risks = changeMap
     .map((item) => item.risk)
     .filter((risk): risk is string => Boolean(risk));
-  const checkRuns = facts.state.checkRuns ?? [];
-  const failedChecks = checkRuns.filter(
-    (check) => check.conclusion && check.conclusion !== 'success',
-  );
-  const unavailableChecks = [
-    facts.state.checkSuitesUnavailableReason,
-    facts.state.checkRunsUnavailableReason,
-  ].filter((reason): reason is string => Boolean(reason));
   return {
     overview: {
       recommendation: 'needs-human',
@@ -412,17 +404,6 @@ function deterministicReviewPass(
       summary: `${facts.state.title} changes ${facts.diffSummary.files} file${facts.diffSummary.files === 1 ? '' : 's'} with ${facts.diffSummary.additions} addition${facts.diffSummary.additions === 1 ? '' : 's'} and ${facts.diffSummary.deletions} deletion${facts.diffSummary.deletions === 1 ? '' : 's'}.`,
       changeMap,
       risks,
-      checks:
-        unavailableChecks.length > 0
-          ? [
-              `GitHub Checks were unavailable: ${[...new Set(unavailableChecks)].join('; ')}`,
-            ]
-          : failedChecks.length > 0
-            ? failedChecks.map(
-                (check) =>
-                  `${check.name}: ${check.conclusion ?? check.status ?? 'unknown'}`,
-              )
-            : ['No failing check runs were present in fetched facts.'],
     },
     findings: [],
   };
@@ -438,7 +419,7 @@ export function resolvePrReviewRecommendation(
     (finding) =>
       finding.severity === 'critical' || finding.severity === 'major',
   );
-  if (forcingFinding) {
+  if (forcingFinding && output.overview.recommendation === 'approve') {
     return {
       recommendation: 'needs-human',
       recommendationReason: `A ${forcingFinding.severity} finding requires human review.`,

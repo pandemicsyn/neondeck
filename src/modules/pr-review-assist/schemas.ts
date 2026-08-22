@@ -138,10 +138,6 @@ const reviewAssistStructuredOutputEntries = {
     summary: prReviewBriefingSummarySchema,
     changeMap: prReviewBriefingChangeMapSchema,
     risks: prReviewBriefingRisksSchema,
-    checks: v.pipe(
-      v.array(v.pipe(v.string(), v.trim(), v.minLength(1), v.maxLength(4_000))),
-      v.maxLength(20),
-    ),
     nextActions: v.optional(
       v.pipe(
         v.array(

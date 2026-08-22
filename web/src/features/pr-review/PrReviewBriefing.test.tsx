@@ -30,10 +30,7 @@ vi.mock('./usePrReviewBriefingActions', () => ({
   usePrReviewBriefingActions: briefingActionHook.usePrReviewBriefingActions,
 }));
 
-import {
-  PrReviewArtifactsOverlay,
-  PrReviewBriefing,
-} from './PrReviewArtifactsOverlay';
+import { PrReviewBriefingOverlay, PrReviewBriefing } from './PrReviewBriefing';
 
 describe('PR review briefing', () => {
   let container: HTMLDivElement;
@@ -74,7 +71,7 @@ describe('PR review briefing', () => {
     const review = reviewFixture('approve');
     act(() =>
       root.render(
-        <PrReviewArtifactsOverlay onClose={onClose} review={review} />,
+        <PrReviewBriefingOverlay onClose={onClose} review={review} />,
       ),
     );
 
@@ -282,7 +279,7 @@ describe('PR review briefing', () => {
     review.submissionDraftId = 'draft-1';
     act(() =>
       root.render(
-        <PrReviewArtifactsOverlay onClose={vi.fn()} review={review} />,
+        <PrReviewBriefingOverlay onClose={vi.fn()} review={review} />,
       ),
     );
 

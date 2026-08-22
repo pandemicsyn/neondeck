@@ -28,7 +28,10 @@ import { listNotifications, listWorkflowSummaries } from './modules/app-state';
 import { ensureRuntimeHome, runtimePaths } from './runtime-home';
 import { openDb } from './lib/sqlite';
 import * as v from 'valibot';
-import { prReviewAgentInitialDataSchema } from './modules/pr-review-assist/schemas';
+import {
+  prReviewAgentInitialDataSchema,
+  reviewAssistStructuredOutputSchema,
+} from './modules/pr-review-assist/schemas';
 
 const tempRoots: string[] = [];
 
@@ -71,6 +74,36 @@ describe('PR review assist', () => {
       recommendationReason:
         'The change touches a load-bearing runtime boundary.',
     });
+  });
+
+  it('preserves a conservative agent reason when a major finding is present', () => {
+    const output = reviewOutputWithOneFinding();
+    output.overview.recommendation = 'needs-human';
+    output.overview.recommendationReason =
+      'The change rewires a load-bearing submission boundary.';
+
+    expect(
+      resolvePrReviewRecommendation(
+        output as Parameters<typeof resolvePrReviewRecommendation>[0],
+      ),
+    ).toEqual({
+      recommendation: 'needs-human',
+      recommendationReason:
+        'The change rewires a load-bearing submission boundary.',
+    });
+  });
+
+  it('does not retain unrendered check notes in structured review output', () => {
+    const output = reviewOutputWithOneFinding();
+    const parsed = v.parse(reviewAssistStructuredOutputSchema, {
+      ...output,
+      overview: {
+        ...output.overview,
+        checks: ['This field is not part of the briefing contract.'],
+      },
+    });
+
+    expect(parsed.overview).not.toHaveProperty('checks');
   });
 
   it('accepts persisted initial-review data created before Explore was captured', () => {
@@ -367,7 +400,6 @@ describe('PR review assist', () => {
               },
             ],
             risks: ['Risk contains <b>markup</b>'],
-            checks: ['unit tests pending'],
           },
           findings: [
             {
@@ -1310,7 +1342,6 @@ function reviewOutputWithOneFinding() {
       summary: 'Review summary',
       changeMap: [{ path: 'src/app.ts', summary: 'Modified source file.' }],
       risks: [],
-      checks: ['No failing check runs were present in fetched facts.'],
     },
     findings: [
       {

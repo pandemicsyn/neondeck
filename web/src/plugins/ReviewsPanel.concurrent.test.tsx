@@ -34,8 +34,8 @@ vi.mock('../api', async (importOriginal) => ({
   startPrReview: api.startPrReview,
   openPrReviewEventStream: api.openPrReviewEventStream,
 }));
-vi.mock('../features/pr-review/PrReviewArtifactsOverlay', () => ({
-  PrReviewArtifactsOverlay: ({
+vi.mock('../features/pr-review/PrReviewBriefing', () => ({
+  PrReviewBriefingOverlay: ({
     onClose,
     review,
   }: {
@@ -289,10 +289,75 @@ describe('ReviewsPanel concurrent row mutations', () => {
     await renderPanel();
 
     const alert = container.querySelector<HTMLElement>('[role="alert"]');
-    const button = buttonWithText('approve & submit —');
+    const button = buttonWithText('approval unavailable');
     expect(alert?.textContent).toContain('draft service unavailable');
     expect(button.getAttribute('aria-describedby')).toBe(alert?.id);
     expect(button.disabled).toBe(true);
+  });
+
+  it('labels quick approval as loading until the draft count is known', async () => {
+    const approve = readyRecord('owner/project', 1, true);
+    reviewDraftQueries.useGitHubPrReviewDraft.mockReturnValue({
+      data: undefined,
+      error: null,
+      isError: false,
+      isLoading: true,
+      isRefetchError: false,
+      refetch: vi.fn(),
+    });
+    api.getPrReviews.mockResolvedValue({
+      ...reviewsResponse(),
+      items: [approve],
+      groups: {
+        awaiting: [],
+        inProgress: [],
+        needsAction: [approve],
+        submitted: [],
+        archived: [],
+      },
+    });
+
+    await renderPanel();
+
+    const button = buttonWithText('loading draft…');
+    expect(button.disabled).toBe(true);
+    expect(container.textContent).not.toContain('approve & submit —');
+  });
+
+  it('labels quick approval as unavailable when the draft revision mismatches', async () => {
+    const approve = readyRecord('owner/project', 1, true);
+    reviewDraftQueries.useGitHubPrReviewDraft.mockReturnValue({
+      data: {
+        status: 'draft',
+        headSha: 'different-head',
+        comments: [{ id: 'comment-1' }],
+      },
+      error: null,
+      isError: false,
+      isLoading: false,
+      isRefetchError: false,
+      refetch: vi.fn(),
+    });
+    api.getPrReviews.mockResolvedValue({
+      ...reviewsResponse(),
+      items: [approve],
+      groups: {
+        awaiting: [],
+        inProgress: [],
+        needsAction: [approve],
+        submitted: [],
+        archived: [],
+      },
+    });
+
+    await renderPanel();
+
+    const button = buttonWithText('approval unavailable');
+    expect(button.disabled).toBe(true);
+    expect(container.textContent).toContain(
+      'The local draft does not match this ready review.',
+    );
+    expect(button.getAttribute('aria-describedby')).toBeTruthy();
   });
 
   it('keeps the selected briefing open as its review moves between groups', async () => {
