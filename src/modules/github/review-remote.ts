@@ -1,4 +1,5 @@
 import * as v from 'valibot';
+import { mapWithConcurrency } from '../../lib/concurrency';
 import { encodePathSegment, githubFetch, nextLink } from './client';
 import {
   githubPullRequestReviewApiItemSchema,
@@ -162,26 +163,6 @@ export function requestedChangesStateFromReviews(
     latestByReviewer,
     history,
   };
-}
-
-async function mapWithConcurrency<T, R>(
-  items: T[],
-  concurrency: number,
-  task: (item: T) => Promise<R>,
-) {
-  const results = Array.from({ length: items.length }) as R[];
-  let nextIndex = 0;
-  await Promise.all(
-    Array.from({ length: Math.min(concurrency, items.length) }, async () => {
-      while (nextIndex < items.length) {
-        const index = nextIndex;
-        nextIndex += 1;
-        const item = items[index];
-        if (item !== undefined) results[index] = await task(item);
-      }
-    }),
-  );
-  return results;
 }
 
 async function fetchPullRequestReviewComment(

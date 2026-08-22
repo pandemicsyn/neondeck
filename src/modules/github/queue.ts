@@ -1,4 +1,5 @@
 import * as v from 'valibot';
+import { mapWithConcurrency } from '../../lib/concurrency';
 import { repoFullName } from '../repos';
 import type { RepoConfig } from '../../runtime-home';
 import { githubFetch, githubTokenFingerprint } from './client';
@@ -402,25 +403,4 @@ function pullRequestQueueCacheKey(
 
 function staleCutoffDate() {
   return new Date(Date.now() - 7 * 86_400_000).toISOString().slice(0, 10);
-}
-
-async function mapWithConcurrency<T, R>(
-  items: T[],
-  concurrency: number,
-  mapper: (item: T) => Promise<R>,
-) {
-  const results: R[] = [];
-  let nextIndex = 0;
-
-  await Promise.all(
-    Array.from({ length: Math.min(concurrency, items.length) }, async () => {
-      while (nextIndex < items.length) {
-        const currentIndex = nextIndex;
-        nextIndex += 1;
-        results[currentIndex] = await mapper(items[currentIndex]);
-      }
-    }),
-  );
-
-  return results;
 }
