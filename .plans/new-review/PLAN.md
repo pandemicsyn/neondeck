@@ -570,3 +570,17 @@ the rest.
   not write-only.
 - Follow-up: None. The briefing links directly to the workbench and GitHub PR
   beneath its summary.
+
+### 2026-08-22 — Omit confidence from finding-card suggested-fix labels
+
+- Phase: 2 — Briefing render
+- Decision: Match the selected card anatomy and suggested-fix treatment without
+  displaying a confidence suffix.
+- Reason: Existing persisted live-draft seed metadata retains severity and
+  summary, but not the model's optional confidence. Report-only findings share
+  the same durable UI contract. Inventing a confidence or showing it only on
+  report-only cards would make the live queue inconsistent and potentially
+  misleading.
+- Follow-up: Add confidence to both the Neon seed ledger and report-only finding
+  persistence together if the product decides the qualifier is useful enough
+  to version the durable contract.

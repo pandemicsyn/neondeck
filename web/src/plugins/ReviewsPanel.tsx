@@ -609,17 +609,15 @@ function ReviewRow({
               {reviewReadyDetail(review)}
             </p>
           ) : null}
-        </div>
-        <div className="flex shrink-0 flex-col items-end gap-1">
-          <Badge>{review.status}</Badge>
           {review.status === 'ready' && review.previousVerdict ? (
-            <Badge className="border-primary text-primary">
+            <Badge className="mt-1 border-primary text-primary">
               {previousReviewLabel(review.previousVerdict)}
             </Badge>
           ) : null}
         </div>
+        <Badge>{review.status}</Badge>
       </div>
-      <div className="mt-1.5 flex flex-wrap items-center justify-end gap-1.5 font-mono text-[10px]">
+      <div className="mt-1.5 flex flex-nowrap items-center justify-end gap-1 font-mono text-[10px]">
         {review.status === 'submitted' ? (
           <ReviewRowReceipt review={review} />
         ) : null}
@@ -847,7 +845,7 @@ export function reviewRecommendationLabel(review: PrReviewRecord) {
 }
 
 const reviewRowActionClass =
-  'inline-flex min-h-[26px] items-center justify-center border border-line bg-soft px-2 py-1 font-mono text-[10px] font-normal leading-[1.2] text-muted hover:border-primary hover:text-primary focus:outline-none focus:ring-1 focus:ring-primary disabled:cursor-not-allowed disabled:opacity-50';
+  'inline-flex min-h-[26px] shrink-0 items-center justify-center whitespace-nowrap border border-line bg-soft px-[7px] py-1 font-mono text-[10px] font-normal leading-[1.2] text-muted hover:border-primary hover:text-primary focus:outline-none focus:ring-1 focus:ring-primary disabled:cursor-not-allowed disabled:opacity-50';
 
 function reviewRecommendationTone(review: PrReviewRecord) {
   if (review.status === 'submitted') {

@@ -118,7 +118,14 @@ describe('PR review briefing', () => {
       'Fallback behavior needs a manual check.',
     );
     expect(container.textContent).toContain('minor');
-    expect(container.textContent).toContain('note-only');
+    expect(container.textContent).toContain('note only');
+    const minorBadge = [...container.querySelectorAll('span')].find(
+      (span) => span.textContent === 'minor',
+    );
+    expect(minorBadge?.className).toContain('text-warning');
+    expect(minorBadge?.closest('article')?.className).toContain(
+      'border-l-warning',
+    );
     expect(container.textContent).not.toContain('Change map');
     expect(container.textContent).not.toContain('Trust boundary');
     expect(container.querySelector('dl')).toBeNull();
@@ -168,6 +175,36 @@ describe('PR review briefing', () => {
     expect(container.textContent).toContain(
       '0 of 2 cleared · 2 comments drafted · no verdict chosen',
     );
+    const blockerHeader = [
+      ...container.querySelectorAll<HTMLButtonElement>(
+        'button[aria-expanded=true]',
+      ),
+    ].find((button) =>
+      button.getAttribute('aria-label')?.includes('draft comment'),
+    );
+    expect(blockerHeader?.getAttribute('aria-label')).toContain(
+      'Collapse draft comment',
+    );
+    expect(blockerHeader?.textContent).toContain('draft comment−');
+    expect(blockerHeader?.textContent).not.toContain('collapse');
+    expect(blockerHeader?.className).toContain('py-3');
+    expect(blockerHeader?.querySelector('code')?.className).toContain(
+      'text-[12px]',
+    );
+    expect(blockerHeader?.closest('article')?.className).toContain(
+      'border-l-2',
+    );
+    expect(
+      blockerHeader?.closest('article')?.querySelector(':scope > div > p')
+        ?.className,
+    ).toContain('text-[14px]');
+    const noteHeader = [
+      ...container.querySelectorAll<HTMLButtonElement>(
+        'button[aria-expanded=true]',
+      ),
+    ].find((button) => button.getAttribute('aria-label')?.includes('note on'));
+    expect(noteHeader?.textContent).toContain('note only−');
+    expect(noteHeader?.textContent).not.toContain('note-only');
     expect(
       [...container.querySelectorAll<HTMLAnchorElement>('a')]
         .find((link) => link.textContent === 'Open workbench →')

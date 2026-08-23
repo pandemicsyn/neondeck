@@ -138,6 +138,7 @@ describe('ReviewsPanel concurrent row mutations', () => {
     const approve = readyRecord('owner/project', 1, true);
     const needsHuman = {
       ...readyRecord('owner/project', 2, true),
+      previousVerdict: 'request-changes' as const,
       recommendation: 'needs-human' as const,
       recommendationReason: 'A correctness risk still needs a human decision.',
       briefingOverview: {
@@ -185,15 +186,34 @@ describe('ReviewsPanel concurrent row mutations', () => {
       ),
     ).toEqual(['briefing', 'open', 'archive', 'approve with no comments']);
     expect(
-      [...(approveRow?.querySelectorAll('button,a') ?? [])].every((action) =>
-        action.className.includes('min-h-[26px]'),
+      [...(approveRow?.querySelectorAll('button,a') ?? [])].every(
+        (action) =>
+          action.className.includes('min-h-[26px]') &&
+          action.className.includes('whitespace-nowrap') &&
+          action.className.includes('shrink-0'),
       ),
     ).toBe(true);
+    expect(
+      approveRow?.querySelector(':scope > div:last-child')?.className,
+    ).toContain('flex-nowrap');
     expect(
       [...(approveRow?.querySelectorAll('p') ?? [])].find((paragraph) =>
         paragraph.textContent?.includes('RECOMMEND APPROVE'),
       )?.className,
     ).toContain('font-semibold');
+    const needsHumanRow = [...container.querySelectorAll('article')].find(
+      (article) => article.textContent?.includes('owner/project#2'),
+    );
+    const statusBadge = [
+      ...(needsHumanRow?.querySelectorAll('span') ?? []),
+    ].find((span) => span.textContent === 'ready');
+    const previousBadge = [
+      ...(needsHumanRow?.querySelectorAll('span') ?? []),
+    ].find((span) => span.textContent === 'previously requested changes');
+    expect(statusBadge?.parentElement).toBe(
+      needsHumanRow?.querySelector(':scope > div:first-child'),
+    );
+    expect(previousBadge?.parentElement).not.toBe(statusBadge?.parentElement);
   });
 
   it('submits an approve recommendation from the row with no review body', async () => {

@@ -418,12 +418,11 @@ export function PrReviewBriefing({
             </p>
           ) : null}
 
-          <div className="mt-3 space-y-2">
+          <div className="mt-3 space-y-2.5">
             {visibleItems.map((item) =>
               item.kind === 'comment' ? (
                 <DraftCommentCard
                   actions={actionable ? actions : undefined}
-                  compact={!needsHuman}
                   comment={item.comment}
                   defaultExpanded={needsHuman && isBlocker(item.severity)}
                   key={`comment:${item.comment.id}`}
@@ -434,7 +433,6 @@ export function PrReviewBriefing({
               ) : (
                 <ReportOnlyFindingCard
                   actions={actionable ? actions : undefined}
-                  compact={!needsHuman}
                   defaultExpanded={needsHuman && isBlocker(item.severity)}
                   finding={item.finding}
                   key={`finding:${item.key}`}
@@ -731,7 +729,6 @@ export function PrReviewBriefing({
 function DraftCommentCard({
   actions,
   comment,
-  compact,
   defaultExpanded,
   review,
   severity,
@@ -739,7 +736,6 @@ function DraftCommentCard({
 }: {
   actions?: PrReviewBriefingActions;
   comment: GitHubPrReviewDraftComment;
-  compact: boolean;
   defaultExpanded: boolean;
   review: PrReviewRecord;
   severity: Severity | null | undefined;
@@ -756,129 +752,139 @@ function DraftCommentCard({
   return (
     <article className={cardClass(severity)}>
       <button
+        aria-label={`${expanded ? 'Collapse' : 'Expand'} draft comment on ${comment.path}:${comment.line}`}
         aria-expanded={expanded}
-        className="flex w-full items-center justify-between gap-2 border-b border-line px-3 py-2 text-left font-mono text-[10px]"
+        className="flex w-full items-center gap-2.5 bg-transparent px-3.5 py-3 text-left"
         onClick={() => setExpanded((current) => !current)}
         type="button"
       >
-        <span className="flex min-w-0 items-center gap-2">
-          {severity ? (
-            <SeverityBadge severity={severity} />
-          ) : (
-            <span className="border border-line px-1.5 py-0.5 uppercase text-muted">
-              comment
-            </span>
-          )}
-          <code className="truncate text-primary">
-            {comment.path}:{comment.line}
-          </code>
+        {severity ? (
+          <SeverityBadge severity={severity} />
+        ) : (
+          <span className="inline-flex min-h-5 shrink-0 items-center border border-line px-1.5 py-0.5 font-mono text-[9px] font-semibold leading-none tracking-[0.04em] text-muted uppercase">
+            comment
+          </span>
+        )}
+        <code className="min-w-0 flex-1 truncate font-mono text-[12px] text-primary-strong">
+          {comment.path}:{comment.line}
+        </code>
+        <span className="inline-flex shrink-0 items-center border border-[color-mix(in_srgb,var(--primary)_60%,transparent)] px-1.5 py-0.5 font-mono text-[9px] leading-[1.35] tracking-[0.04em] text-primary-strong">
+          draft comment
         </span>
-        <span className="shrink-0 text-muted">
-          draft comment ·{' '}
-          {expanded ? 'collapse' : compact ? 'inspect' : 'expand'}
+        <span
+          aria-hidden="true"
+          className="shrink-0 font-mono text-[10px] text-muted"
+        >
+          {expanded ? '−' : '+'}
         </span>
       </button>
-      <p className="px-3 py-2 text-[13.5px] leading-[1.55]">{summary}</p>
-      {expanded && editing ? (
-        <form
-          className="border-t border-line px-3 py-3"
-          onSubmit={(event) => {
-            event.preventDefault();
-            setActionError(null);
-            void actions
-              ?.editComment(comment.id, body)
-              .then(() => setEditing(false))
-              .catch((error) => setActionError(queryErrorMessage(error)));
-          }}
-        >
-          <textarea
-            aria-label={`Edit draft comment on ${comment.path}`}
-            className="min-h-28 w-full resize-y border border-line bg-canvas px-2.5 py-2 text-[11px] leading-5 outline-none focus:border-primary"
-            disabled={actions?.busy}
-            onChange={(event) => setBody(event.target.value)}
-            value={body}
-          />
-          <div className="mt-2 flex justify-end gap-1.5 font-mono text-[10px]">
-            <button
-              className="border border-line px-2 py-1 text-muted"
-              onClick={() => {
-                setBody(comment.body);
-                setEditing(false);
-              }}
-              type="button"
+      <div className="px-3.5 pb-3">
+        <p className="text-[14px] leading-[1.6]">{summary}</p>
+        {expanded && editing ? (
+          <form
+            className="mt-3 border border-primary bg-canvas px-3 py-2.5"
+            onSubmit={(event) => {
+              event.preventDefault();
+              setActionError(null);
+              void actions
+                ?.editComment(comment.id, body)
+                .then(() => setEditing(false))
+                .catch((error) => setActionError(queryErrorMessage(error)));
+            }}
+          >
+            <p className="mb-1.5 font-mono text-[9px] tracking-[0.08em] text-muted">
+              YOUR COMMENT · POSTS ON {comment.path}:{comment.line}
+            </p>
+            <textarea
+              aria-label={`Edit draft comment on ${comment.path}`}
+              className="min-h-20 w-full resize-y bg-transparent text-[13px] leading-[1.6] outline-none"
+              disabled={actions?.busy}
+              onChange={(event) => setBody(event.target.value)}
+              value={body}
+            />
+            <div className="mt-2 flex justify-end gap-1.5 font-mono text-[10px]">
+              <button
+                className={cardActionClass}
+                onClick={() => {
+                  setBody(comment.body);
+                  setEditing(false);
+                }}
+                type="button"
+              >
+                cancel
+              </button>
+              <button
+                className={`${cardActionClass} border-primary text-primary`}
+                disabled={actions?.busy || !body.trim()}
+                type="submit"
+              >
+                save comment
+              </button>
+            </div>
+          </form>
+        ) : expanded && commentDetail ? (
+          <div className="mt-3 border-t border-line pt-2.5">
+            <p className="mb-1.5 font-mono text-[9px] tracking-[0.08em] text-muted">
+              {comment.neonSummary ? 'SUGGESTED FIX' : 'COMMENT BODY'}
+            </p>
+            <MarkdownMessage
+              className="text-muted"
+              style={{ fontSize: '13px', lineHeight: '1.6' }}
             >
-              cancel
-            </button>
-            <button
-              className="border border-primary bg-primary px-2 py-1 text-primary-ink disabled:opacity-50"
-              disabled={actions?.busy || !body.trim()}
-              type="submit"
-            >
-              save comment
-            </button>
+              {commentDetail}
+            </MarkdownMessage>
           </div>
-        </form>
-      ) : expanded && commentDetail ? (
-        <div className="border-t border-line px-3 py-3">
-          <p className="mb-1.5 font-mono text-[9px] tracking-[0.08em] text-muted">
-            {comment.neonSummary ? 'SUGGESTED FIX' : 'COMMENT BODY'}
-          </p>
-          <MarkdownMessage className="text-[11px] leading-5">
-            {commentDetail}
-          </MarkdownMessage>
-        </div>
-      ) : null}
-      {actionError ? (
-        <p
-          className="border-t border-accent px-3 py-2 font-mono text-[10px] text-accent"
-          role="alert"
-        >
-          {actionError}
-        </p>
-      ) : null}
-      <CardActions href={diffHref(review, comment.path)}>
-        {actions ? (
-          <>
-            <button
-              className={cardActionClass}
-              disabled={actions.busy}
-              onClick={() => {
-                setExpanded(true);
-                setEditing(true);
-              }}
-              type="button"
-            >
-              edit comment
-            </button>
-            <button
-              className={`${cardActionClass} hover:border-accent hover:text-accent`}
-              disabled={actions.busy}
-              onClick={() => {
-                setActionError(null);
-                void actions
-                  .dismissComment(comment.id)
-                  .catch((error) => setActionError(queryErrorMessage(error)));
-              }}
-              type="button"
-            >
-              dismiss
-            </button>
-          </>
         ) : null}
-      </CardActions>
+        {actionError ? (
+          <p
+            className="mt-3 border border-accent px-3 py-2 font-mono text-[10px] text-accent"
+            role="alert"
+          >
+            {actionError}
+          </p>
+        ) : null}
+        <CardActions href={diffHref(review, comment.path)}>
+          {actions ? (
+            <>
+              <button
+                className={cardActionClass}
+                disabled={actions.busy}
+                onClick={() => {
+                  setExpanded(true);
+                  setEditing(true);
+                }}
+                type="button"
+              >
+                edit comment
+              </button>
+              <button
+                className={`${cardActionClass} hover:border-accent hover:text-accent`}
+                disabled={actions.busy}
+                onClick={() => {
+                  setActionError(null);
+                  void actions
+                    .dismissComment(comment.id)
+                    .catch((error) => setActionError(queryErrorMessage(error)));
+                }}
+                type="button"
+              >
+                dismiss
+              </button>
+            </>
+          ) : null}
+        </CardActions>
+      </div>
     </article>
   );
 }
 
 function ReportOnlyFindingCard({
   actions,
-  compact,
   defaultExpanded,
   finding,
   review,
 }: {
   actions?: PrReviewBriefingActions;
-  compact: boolean;
   defaultExpanded: boolean;
   finding: PrReviewReportOnlyFinding;
   review: PrReviewRecord;
@@ -887,110 +893,123 @@ function ReportOnlyFindingCard({
   const [editing, setEditing] = useState(false);
   const [body, setBody] = useState(reportOnlyFindingBody(finding));
   const [actionError, setActionError] = useState<string | null>(null);
+  const location = `${finding.path}${finding.line ? `:${finding.line}` : ''}`;
   return (
     <article className={cardClass(finding.severity)}>
       <button
+        aria-label={`${expanded ? 'Collapse' : 'Expand'} note on ${location}`}
         aria-expanded={expanded}
-        className="flex w-full items-center justify-between gap-2 border-b border-line px-3 py-2 text-left font-mono text-[10px]"
+        className="flex w-full items-center gap-2.5 bg-transparent px-3.5 py-3 text-left"
         onClick={() => setExpanded((current) => !current)}
         type="button"
       >
-        <span className="flex min-w-0 items-center gap-2">
-          <SeverityBadge severity={finding.severity} />
-          <code className="truncate text-primary">
-            {finding.path}
-            {finding.line ? `:${finding.line}` : ''}
-          </code>
+        <SeverityBadge severity={finding.severity} />
+        <code className="min-w-0 flex-1 truncate font-mono text-[12px] text-primary-strong">
+          {location}
+        </code>
+        <span className="inline-flex shrink-0 items-center border border-line px-1.5 py-0.5 font-mono text-[9px] leading-[1.35] tracking-[0.04em] text-muted">
+          note only
         </span>
-        <span className="shrink-0 text-muted">
-          note-only · {expanded ? 'collapse' : compact ? 'inspect' : 'expand'}
+        <span
+          aria-hidden="true"
+          className="shrink-0 font-mono text-[10px] text-muted"
+        >
+          {expanded ? '−' : '+'}
         </span>
       </button>
-      <p className="px-3 py-2 text-[13.5px] leading-[1.55]">
-        {finding.summary}
-      </p>
-      {expanded ? (
-        <>
-          <div className="space-y-2 border-t border-line px-3 py-3 text-[11px] leading-5">
-            <p>{finding.suggestedFix}</p>
-            <p className="font-mono text-[10px] text-muted">
-              Not drafted: {finding.reason}
-            </p>
-          </div>
-          {editing ? (
-            <form
-              className="border-t border-line px-3 py-3"
-              onSubmit={(event) => {
-                event.preventDefault();
-                setActionError(null);
-                void actions
-                  ?.promoteFinding(finding, body)
-                  .then(() => setEditing(false))
-                  .catch((error) => setActionError(queryErrorMessage(error)));
-              }}
-            >
-              <textarea
-                aria-label={`Draft a comment from note on ${finding.path}`}
-                className="min-h-28 w-full resize-y border border-line bg-canvas px-2.5 py-2 text-[11px] leading-5 outline-none focus:border-primary"
-                disabled={actions?.busy}
-                onChange={(event) => setBody(event.target.value)}
-                value={body}
-              />
-              <div className="mt-2 flex justify-end gap-1.5 font-mono text-[10px]">
-                <button
-                  className="border border-line px-2 py-1 text-muted"
-                  onClick={() => {
-                    setBody(reportOnlyFindingBody(finding));
-                    setEditing(false);
-                  }}
-                  type="button"
-                >
-                  cancel
-                </button>
-                <button
-                  className="border border-primary bg-primary px-2 py-1 text-primary-ink disabled:opacity-50"
-                  disabled={actions?.busy || !body.trim()}
-                  type="submit"
-                >
-                  add draft comment
-                </button>
-              </div>
-            </form>
-          ) : null}
-          {actionError ? (
-            <p
-              className="border-t border-accent px-3 py-2 font-mono text-[10px] text-accent"
-              role="alert"
-            >
-              {actionError}
-            </p>
-          ) : null}
-        </>
-      ) : null}
-      <CardActions href={diffHref(review, finding.path)}>
-        {actions && finding.line && finding.side ? (
-          <button
-            className={cardActionClass}
-            disabled={actions.busy}
-            onClick={() => {
-              setActionError(null);
-              setExpanded(true);
-              setEditing(true);
-            }}
-            type="button"
-          >
-            draft a comment from this
-          </button>
-        ) : finding.line === null ? (
-          <span className="text-muted">
-            file-level note · cannot be drafted
-          </span>
-        ) : !finding.side ? (
-          <span className="text-muted">
-            incomplete line anchor · cannot be drafted
-          </span>
+      <div className="px-3.5 pb-3">
+        <p className="text-[14px] leading-[1.6]">{finding.summary}</p>
+        {expanded ? (
+          <>
+            <div className="mt-3 border-t border-line pt-2.5">
+              <p className="mb-1.5 font-mono text-[9px] tracking-[0.08em] text-muted">
+                SUGGESTED FIX
+              </p>
+              <p className="text-[13px] leading-[1.6] text-muted">
+                {finding.suggestedFix}
+              </p>
+              <p className="mt-2 font-mono text-[10px] text-muted">
+                Not drafted: {finding.reason}
+              </p>
+            </div>
+            {editing ? (
+              <form
+                className="mt-3 border border-primary bg-canvas px-3 py-2.5"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  setActionError(null);
+                  void actions
+                    ?.promoteFinding(finding, body)
+                    .then(() => setEditing(false))
+                    .catch((error) => setActionError(queryErrorMessage(error)));
+                }}
+              >
+                <p className="mb-1.5 font-mono text-[9px] tracking-[0.08em] text-muted">
+                  YOUR COMMENT · POSTS ON {location}
+                </p>
+                <textarea
+                  aria-label={`Draft a comment from note on ${finding.path}`}
+                  className="min-h-20 w-full resize-y bg-transparent text-[13px] leading-[1.6] outline-none"
+                  disabled={actions?.busy}
+                  onChange={(event) => setBody(event.target.value)}
+                  value={body}
+                />
+                <div className="mt-2 flex justify-end gap-1.5 font-mono text-[10px]">
+                  <button
+                    className={cardActionClass}
+                    onClick={() => {
+                      setBody(reportOnlyFindingBody(finding));
+                      setEditing(false);
+                    }}
+                    type="button"
+                  >
+                    cancel
+                  </button>
+                  <button
+                    className={`${cardActionClass} border-primary text-primary`}
+                    disabled={actions?.busy || !body.trim()}
+                    type="submit"
+                  >
+                    add draft comment
+                  </button>
+                </div>
+              </form>
+            ) : null}
+            {actionError ? (
+              <p
+                className="mt-3 border border-accent px-3 py-2 font-mono text-[10px] text-accent"
+                role="alert"
+              >
+                {actionError}
+              </p>
+            ) : null}
+          </>
         ) : null}
-      </CardActions>
+        <CardActions href={diffHref(review, finding.path)}>
+          {actions && finding.line && finding.side ? (
+            <button
+              className={cardActionClass}
+              disabled={actions.busy}
+              onClick={() => {
+                setActionError(null);
+                setExpanded(true);
+                setEditing(true);
+              }}
+              type="button"
+            >
+              draft a comment from this
+            </button>
+          ) : finding.line === null ? (
+            <span className="text-muted">
+              file-level note · cannot be drafted as a comment
+            </span>
+          ) : !finding.side ? (
+            <span className="text-muted">
+              incomplete line anchor · cannot be drafted
+            </span>
+          ) : null}
+        </CardActions>
+      </div>
     </article>
   );
 }
@@ -1003,7 +1022,7 @@ function CardActions({
   href: string;
 }) {
   return (
-    <div className="flex flex-wrap justify-start gap-2 border-t border-line px-3 py-2 font-mono text-[10px]">
+    <div className="mt-3 flex flex-wrap items-center justify-start gap-[7px] font-mono text-[10px]">
       <a
         className={cardActionClass}
         href={href}
@@ -1029,10 +1048,12 @@ function SeverityBadge({ severity }: { severity: Severity }) {
   const className = isBlocker(severity)
     ? 'border-accent text-accent'
     : severity === 'minor'
-      ? 'border-primary text-primary'
+      ? 'border-warning text-warning'
       : 'border-line text-muted';
   return (
-    <span className={`border px-1.5 py-0.5 uppercase ${className}`}>
+    <span
+      className={`inline-flex min-h-5 shrink-0 items-center border px-1.5 py-0.5 font-mono text-[9px] font-semibold leading-none tracking-[0.04em] uppercase ${className}`}
+    >
       {severity}
     </span>
   );
@@ -1068,7 +1089,12 @@ function isBlocker(severity: Severity | null | undefined) {
 }
 
 function cardClass(severity: Severity | null | undefined) {
-  return `border bg-panel ${isBlocker(severity) ? 'border-accent' : 'border-line'}`;
+  const edgeClass = isBlocker(severity)
+    ? 'border-l-accent'
+    : severity === 'minor'
+      ? 'border-l-warning'
+      : 'border-l-muted';
+  return `border border-line border-l-2 bg-panel ${edgeClass}`;
 }
 
 type QueueFilter = 'blockers' | 'worth' | 'all';
