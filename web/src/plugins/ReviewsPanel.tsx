@@ -599,6 +599,14 @@ function ReviewRow({
             className={`mt-1 font-mono text-[10px] font-semibold tracking-[0.04em] ${reviewRecommendationTone(review)}`}
           >
             {reviewRecommendationLabel(review)}
+            {review.status === 'ready' &&
+            review.previousVerdict &&
+            review.recommendationReason ? (
+              <span className="font-normal tracking-normal text-muted">
+                {' '}
+                · you {previousReviewLabel(review.previousVerdict)}
+              </span>
+            ) : null}
           </p>
           {review.recommendationReason ? (
             <p className="mt-1 line-clamp-3 max-w-[65ch] text-[10px] leading-4 text-muted">
@@ -608,11 +616,6 @@ function ReviewRow({
             <p className="mt-1 line-clamp-3 max-w-[65ch] text-[10px] leading-4 text-muted">
               {reviewReadyDetail(review)}
             </p>
-          ) : null}
-          {review.status === 'ready' && review.previousVerdict ? (
-            <Badge className="mt-1 border-primary text-primary">
-              {previousReviewLabel(review.previousVerdict)}
-            </Badge>
           ) : null}
         </div>
         <Badge>{review.status}</Badge>

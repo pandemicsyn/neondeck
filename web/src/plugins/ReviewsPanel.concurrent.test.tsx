@@ -216,23 +216,36 @@ describe('ReviewsPanel concurrent row mutations', () => {
         ),
       )?.className,
     ).toContain('line-clamp-3');
+    const verdict = [...(needsHumanRow?.querySelectorAll('p') ?? [])].find(
+      (paragraph) => paragraph.textContent?.includes('! NEEDS A HUMAN'),
+    );
+    const priorVerdict = [...(verdict?.querySelectorAll('span') ?? [])].find(
+      (span) =>
+        span.textContent?.includes('· you previously requested changes'),
+    );
+    expect(priorVerdict?.className).toContain('text-muted');
+    expect(priorVerdict?.className).toContain('font-normal');
+    expect(
+      [...(needsHumanRow?.querySelectorAll('span') ?? [])].some(
+        (span) =>
+          span.textContent === 'previously requested changes' &&
+          span.className.includes('border'),
+      ),
+    ).toBe(false);
     const statusBadge = [
       ...(needsHumanRow?.querySelectorAll('span') ?? []),
     ].find((span) => span.textContent === 'ready');
-    const previousBadge = [
-      ...(needsHumanRow?.querySelectorAll('span') ?? []),
-    ].find((span) => span.textContent === 'previously requested changes');
     expect(statusBadge?.parentElement).toBe(
       needsHumanRow?.querySelector(':scope > div:first-child'),
     );
-    expect(previousBadge?.parentElement).not.toBe(statusBadge?.parentElement);
+    expect(statusBadge?.className).not.toContain('border-primary');
+    expect(statusBadge?.className).not.toContain('text-primary');
   });
 
   it('clamps the ready-state fallback summary', async () => {
     const fallback = {
       ...readyRecord('owner/project', 3, false),
-      trustBoundary:
-        'Local drafts remain private until the reviewer explicitly submits the GitHub review.',
+      previousVerdict: 'approve' as const,
     };
     api.getPrReviews.mockResolvedValue({
       ...reviewsResponse(),
@@ -250,9 +263,12 @@ describe('ReviewsPanel concurrent row mutations', () => {
 
     expect(
       [...container.querySelectorAll('p')].find((paragraph) =>
-        paragraph.textContent?.includes('Local drafts remain private'),
+        paragraph.textContent?.includes('You previously approved this PR'),
       )?.className,
     ).toContain('line-clamp-3');
+    expect(container.textContent?.match(/previously approved/g)).toHaveLength(
+      1,
+    );
   });
 
   it('submits an approve recommendation from the row with no review body', async () => {
