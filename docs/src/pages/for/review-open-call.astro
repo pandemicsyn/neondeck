@@ -6,7 +6,6 @@ import ReviewMockup from '../../components/ReviewMockup.astro';
 import BaseLayout from '../../layouts/BaseLayout.astro';
 import '../../styles/campaign.css';
 
-// Placeholder until each question gets its own Discussion thread.
 const discussions = 'https://github.com/pandemicsyn/neondeck/discussions';
 
 const questions = [
@@ -15,24 +14,28 @@ const questions = [
     signal: 'cyan',
     title: 'Should the agent approve the small stuff for you?',
     body: 'Assume it can tell whether a change is complex enough to need a human. Do you want it waving the safe ones through, or do you want eyes on every change?',
+    href: 'https://github.com/pandemicsyn/neondeck/discussions/326',
   },
   {
     n: '#02',
     signal: 'pink',
     title: 'What earns your attention in 40,000 machine-written lines?',
     body: 'Tell us what you actually look at, and where an agent should help. Does the diff still matter? Is anyone reviewing line by line any more?',
+    href: 'https://github.com/pandemicsyn/neondeck/discussions/327',
   },
   {
     n: '#03',
     signal: 'violet',
     title: "Should the agent's findings be labelled as the agent's?",
     body: 'Marked as machine-generated, or submitted under your name as if you found them yourself? It changes how much weight the author gives them.',
+    href: 'https://github.com/pandemicsyn/neondeck/discussions/328',
   },
   {
     n: '#04',
     signal: 'teal',
     title: 'Guided tours, risk maps, diagrams: which would you use?',
     body: 'Walkthroughs of the change, flagged high-risk areas, code maps, mermaid diagrams. We can build all of it. Tell us which you would actually open twice.',
+    href: 'https://github.com/pandemicsyn/neondeck/discussions/330',
   },
 ];
 
@@ -92,7 +95,7 @@ const steps = [
         <div class="oc-board">
           {
             questions.map((q) => (
-              <a class="oc-question" href={discussions}>
+              <a class="oc-question" href={q.href}>
                 <span class:list={['oc-num', q.signal]}>{q.n}</span>
                 <span class="oc-question__body">
                   <strong>{q.title}</strong>
