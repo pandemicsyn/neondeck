@@ -54,42 +54,36 @@ export async function readUpdateStatus(
   await ensureRuntimeHome(paths);
   const enabled = updateChecksEnabled(process.env, currentVersion);
   const database = openDb(paths.neondeckDatabase);
-  const events: NotificationEvent[] = [];
-  let status: UpdateStatus;
+  let result: { status: UpdateStatus; events: NotificationEvent[] };
   try {
-    const cached = readCachedUpdate(database);
-    status = buildUpdateStatus(enabled, currentVersion, cached, null);
-    events.push(
-      ...withImmediateTransaction(database, () =>
-        resolveMatchingUpdateNotifications(
-          database,
-          new Date().toISOString(),
-          (notification) =>
-            !enabled ||
-            (notification.sourceId !== null &&
-              parseVersion(notification.sourceId) !== null &&
-              compareVersions(notification.sourceId, currentVersion) <= 0) ||
-            (status.notificationId !== null &&
-              notification.id !== status.notificationId),
-        ),
-      ),
-    );
-    const notification = status.notificationId
-      ? database
-          .prepare('SELECT * FROM notifications WHERE id = ? LIMIT 1;')
-          .get(status.notificationId)
-      : null;
-    status = {
-      ...status,
-      dismissed: notification
-        ? Boolean(readNotificationRow(notification).resolvedAt)
-        : false,
-    };
+    result = withImmediateTransaction(database, () => {
+      const cached = readCachedUpdate(database);
+      const status = buildUpdateStatus(enabled, currentVersion, cached, null);
+      const events = resolveMatchingUpdateNotifications(
+        database,
+        new Date().toISOString(),
+        (notification) => !enabled || notification.id !== status.notificationId,
+      );
+      const notification = status.notificationId
+        ? database
+            .prepare('SELECT * FROM notifications WHERE id = ? LIMIT 1;')
+            .get(status.notificationId)
+        : null;
+      return {
+        status: {
+          ...status,
+          dismissed: notification
+            ? Boolean(readNotificationRow(notification).resolvedAt)
+            : false,
+        },
+        events,
+      };
+    });
   } finally {
     database.close();
   }
-  for (const event of events) publishNotificationEvent(event);
-  return status;
+  for (const event of result.events) publishNotificationEvent(event);
+  return result.status;
 }
 
 export async function checkForUpdates(
@@ -101,11 +95,9 @@ export async function checkForUpdates(
   } = {},
 ) {
   const currentVersion = options.currentVersion ?? neondeckVersion;
-  if (!updateChecksEnabled(process.env, currentVersion)) {
-    return readUpdateStatus(paths, currentVersion);
-  }
-  await ensureRuntimeHome(paths);
-  const channel = updateChannelForVersion(currentVersion);
+  const localStatus = await readUpdateStatus(paths, currentVersion);
+  if (!localStatus.enabled) return localStatus;
+  const channel = localStatus.channel;
   const response = await (options.fetcher ?? fetch)(
     `https://registry.npmjs.org/neondeck/${channel}`,
     {
