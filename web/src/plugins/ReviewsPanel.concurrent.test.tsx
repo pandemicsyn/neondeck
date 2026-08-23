@@ -176,7 +176,7 @@ describe('ReviewsPanel concurrent row mutations', () => {
       { repo: 'owner/project', number: 1 },
       expect.objectContaining({ live: false }),
     );
-    expect(container.textContent).toContain('no quick approve');
+    expect(container.textContent).not.toContain('no quick approve');
     const approveRow = [...container.querySelectorAll('article')].find(
       (article) => article.textContent?.includes('owner/project#1'),
     );
@@ -204,6 +204,18 @@ describe('ReviewsPanel concurrent row mutations', () => {
     const needsHumanRow = [...container.querySelectorAll('article')].find(
       (article) => article.textContent?.includes('owner/project#2'),
     );
+    expect(
+      [...(needsHumanRow?.querySelectorAll('button,a') ?? [])].map((action) =>
+        action.textContent?.trim(),
+      ),
+    ).toEqual(['briefing', 'open', 'archive']);
+    expect(
+      [...(needsHumanRow?.querySelectorAll('p') ?? [])].find((paragraph) =>
+        paragraph.textContent?.includes(
+          'A correctness risk still needs a human decision.',
+        ),
+      )?.className,
+    ).toContain('line-clamp-3');
     const statusBadge = [
       ...(needsHumanRow?.querySelectorAll('span') ?? []),
     ].find((span) => span.textContent === 'ready');
@@ -214,6 +226,33 @@ describe('ReviewsPanel concurrent row mutations', () => {
       needsHumanRow?.querySelector(':scope > div:first-child'),
     );
     expect(previousBadge?.parentElement).not.toBe(statusBadge?.parentElement);
+  });
+
+  it('clamps the ready-state fallback summary', async () => {
+    const fallback = {
+      ...readyRecord('owner/project', 3, false),
+      trustBoundary:
+        'Local drafts remain private until the reviewer explicitly submits the GitHub review.',
+    };
+    api.getPrReviews.mockResolvedValue({
+      ...reviewsResponse(),
+      items: [fallback],
+      groups: {
+        awaiting: [],
+        inProgress: [],
+        needsAction: [fallback],
+        submitted: [],
+        archived: [],
+      },
+    });
+
+    await renderPanel();
+
+    expect(
+      [...container.querySelectorAll('p')].find((paragraph) =>
+        paragraph.textContent?.includes('Local drafts remain private'),
+      )?.className,
+    ).toContain('line-clamp-3');
   });
 
   it('submits an approve recommendation from the row with no review body', async () => {

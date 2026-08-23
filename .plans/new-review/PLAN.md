@@ -584,3 +584,14 @@ the rest.
 - Follow-up: Add confidence to both the Neon seed ledger and report-only finding
   persistence together if the product decides the qualifier is useful enough
   to version the durable contract.
+
+### 2026-08-22 — Omit the redundant needs-human row action label
+
+- Phase: 3 — Reviews panel integration
+- Decision: Do not render a literal `no quick approve` label beside the
+  briefing, open, and archive actions on needs-human rows.
+- Reason: The `! NEEDS A HUMAN` verdict already communicates that quick
+  approval is unavailable. Repeating it in the action rail adds noise and
+  consumes width without providing another action or state.
+- Follow-up: None. The absence of an approval button remains the operative
+  behavior and is covered by the panel test.

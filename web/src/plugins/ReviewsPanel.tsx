@@ -601,11 +601,11 @@ function ReviewRow({
             {reviewRecommendationLabel(review)}
           </p>
           {review.recommendationReason ? (
-            <p className="mt-1 max-w-[65ch] text-[10px] leading-4 text-muted">
+            <p className="mt-1 line-clamp-3 max-w-[65ch] text-[10px] leading-4 text-muted">
               {review.recommendationReason}
             </p>
           ) : review.status === 'ready' && !review.archivedAt ? (
-            <p className="mt-1 max-w-[65ch] text-[10px] leading-4 text-muted">
+            <p className="mt-1 line-clamp-3 max-w-[65ch] text-[10px] leading-4 text-muted">
               {reviewReadyDetail(review)}
             </p>
           ) : null}
@@ -676,11 +676,6 @@ function ReviewRow({
             onReviewChange={onReviewChange}
             review={review}
           />
-        ) : null}
-        {review.status === 'ready' &&
-        !review.archivedAt &&
-        review.recommendation === 'needs-human' ? (
-          <span className="text-accent">no quick approve</span>
         ) : null}
       </div>
     </article>
