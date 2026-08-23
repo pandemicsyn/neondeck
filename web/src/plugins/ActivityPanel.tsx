@@ -156,10 +156,10 @@ function ActivityView({
       </header>
       <div className="border-b border-line px-3 py-2">
         <div className="grid grid-cols-4 gap-1.5 font-mono text-[10px] text-muted">
+          <Metric label="active" value={counts.active} />
+          <Metric label="failed" value={counts.failed} />
           <Metric label="settled" value={counts.settled} />
-          <Metric label="logs" value={counts.activity} />
           <Metric label="events" value={counts.events} />
-          <Metric label="submissions" value={counts.active} />
         </div>
         <fieldset
           aria-label="Agent activity"
@@ -295,20 +295,8 @@ export function activityItems(
     );
   }
 
-  if (filter === 'all' || filter === 'activity') {
-    addEvents(items, seen, workflows.recentLogs, 'activity', watchesByOwner);
-    addEvents(items, seen, workflows.recentTools, 'activity', watchesByOwner);
-    addEvents(
-      items,
-      seen,
-      workflows.recentOperations,
-      'activity',
-      watchesByOwner,
-    );
-  }
-
-  if (filter === 'all') {
-    addEvents(items, seen, workflows.recentEvents, 'event', watchesByOwner);
+  if (filter === 'activity') {
+    addEvents(items, seen, workflows.recentEvents, 'activity', watchesByOwner);
   }
 
   return items.sort(
@@ -382,10 +370,6 @@ function activityCounts(workflows: ActivityObservability) {
     active: workflows.activeSubmissions.length,
     failed: workflows.recentFailures.length,
     settled: workflows.recentSettlements.length,
-    activity:
-      workflows.recentLogs.length +
-      workflows.recentTools.length +
-      workflows.recentOperations.length,
     events: workflows.recentEvents.length,
   };
 }

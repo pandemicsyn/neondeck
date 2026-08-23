@@ -108,7 +108,7 @@ describe('Flue v3 activity observability', () => {
     ]);
   });
 
-  it('stores only sanitized event summaries', async () => {
+  it('redacts credentials from persisted event summaries', async () => {
     const paths = await tempPaths();
     await recordFlueObservation(queued(1), paths);
     await recordFlueObservation(
@@ -287,7 +287,7 @@ describe('Flue v3 activity observability', () => {
     expect(JSON.stringify(history.events)).not.toContain(query);
   });
 
-  it('records hashed Explore scope metadata without retaining task prompts', async () => {
+  it('retains inspectable Explore prompts with hashed scope metadata', async () => {
     const paths = await tempPaths();
     await recordFlueObservation(queued(1), paths);
     const prompt = [
@@ -316,6 +316,8 @@ describe('Flue v3 activity observability', () => {
       summary: {
         taskId: 'task-1',
         agent: 'explore',
+        prompt,
+        promptTruncated: false,
         taskBriefSchemaVersion: 1,
         promptLength: prompt.length,
         promptHash: expect.stringMatching(/^sha256:[0-9a-f]{64}$/),
@@ -330,12 +332,41 @@ describe('Flue v3 activity observability', () => {
         thoroughness: 'medium',
       },
     });
-    expect(JSON.stringify(history.events[1]?.summary)).not.toContain(
+    expect(JSON.stringify(history.events[1]?.summary)).toContain(
       'cache invalidate',
     );
-    expect(JSON.stringify(history.events[1]?.summary)).not.toContain(
+    expect(JSON.stringify(history.events[1]?.summary)).toContain(
       'src/cache.ts',
     );
+  });
+
+  it('retains task results while redacting embedded credentials', async () => {
+    const paths = await tempPaths();
+    await recordFlueObservation(queued(1), paths);
+    await recordFlueObservation(
+      {
+        ...base(2),
+        type: 'task',
+        taskId: 'task-1',
+        agent: 'explore',
+        durationMs: 500,
+        isError: false,
+        result:
+          'Answer: Found the caller.\nEvidence: src/app.ts:12\nsecret="do not store"',
+      } as never,
+      paths,
+    );
+
+    const history = await readActivitySubmissionEvents('submission-1', paths);
+    expect(history.events[1]).toMatchObject({
+      name: 'explore',
+      summary: {
+        taskId: 'task-1',
+        result:
+          'Answer: Found the caller.\nEvidence: src/app.ts:12\nsecret="[redacted]"',
+        resultTruncated: false,
+      },
+    });
   });
 
   it('projects Flue 2 usage fields and cost breakdowns', async () => {

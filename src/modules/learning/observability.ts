@@ -152,6 +152,7 @@ export type PrReviewPerformanceProjection = {
 };
 
 const maxActivityEventRows = 5_000;
+const maxActivityContentLength = 64_000;
 const taskBriefSchemaVersion = 1;
 const redacted = '[redacted]';
 const persistedEventTypes = new Set<FlueObservation['type']>([
@@ -1073,6 +1074,8 @@ function summarizeObservation(event: FlueObservation): {
         {
           taskId: event.taskId,
           agent: event.agent ?? null,
+          prompt: sanitizeActivityContent(event.prompt),
+          promptTruncated: event.prompt.length > maxActivityContentLength,
           ...taskPromptMetadata(event.prompt),
         },
       );
@@ -1087,6 +1090,14 @@ function summarizeObservation(event: FlueObservation): {
           resultHash:
             event.result === undefined ? null : privacyHash(event.result),
           resultBytes: jsonByteLength(event.result),
+          result:
+            typeof event.result === 'string'
+              ? sanitizeActivityContent(event.result)
+              : undefined,
+          resultTruncated:
+            typeof event.result === 'string'
+              ? event.result.length > maxActivityContentLength
+              : undefined,
           ...taskResultMetadata(event.result),
         }),
         null,
@@ -1459,6 +1470,36 @@ function safeActivityString(value: unknown, maxLength: number) {
   return value.length > maxLength
     ? `${value.slice(0, Math.max(0, maxLength - 3))}...`
     : value;
+}
+
+/**
+ * Activity is a trusted local operator surface, so task instructions and
+ * results remain inspectable. Redact credential-shaped values surgically
+ * instead of replacing the whole prompt, and cap unusually large payloads so
+ * one event cannot dominate the retained activity database.
+ */
+function sanitizeActivityContent(value: string) {
+  const sanitized = value
+    .replace(
+      /-----BEGIN(?: [A-Z0-9]+)* PRIVATE KEY-----[\s\S]*?-----END(?: [A-Z0-9]+)* PRIVATE KEY-----/gi,
+      '[redacted private key]',
+    )
+    .replace(/\bbearer\s+[a-z0-9._~+/=-]+/gi, 'Bearer [redacted]')
+    .replace(
+      /\b(api[_-]?key|access[_-]?token|auth[_-]?token|password|secret|credential)\b(\s*[:=]\s*)(["'])[^\r\n]*?\3/gi,
+      '$1$2$3[redacted]$3',
+    )
+    .replace(
+      /\b(api[_-]?key|access[_-]?token|auth[_-]?token|password|secret|credential)\b(\s*[:=]\s*)[^\s,"';}\]]+/gi,
+      '$1$2[redacted]',
+    )
+    .replace(
+      /\b(?:gh[pousr]_[a-z0-9]{20,}|sk-[a-z0-9_-]{20,}|xox[baprs]-[a-z0-9-]{20,})\b/gi,
+      '[redacted credential]',
+    );
+  return sanitized.length > maxActivityContentLength
+    ? `${sanitized.slice(0, maxActivityContentLength)}\n\n[truncated]`
+    : sanitized;
 }
 
 function safeActivityPath(value: unknown) {
