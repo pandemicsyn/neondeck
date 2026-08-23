@@ -1,6 +1,7 @@
 ---
 import CampaignCommand from '../../components/CampaignCommand.astro';
 import CampaignFooter from '../../components/CampaignFooter.astro';
+import MarketingConsent from '../../components/MarketingConsent.astro';
 import CampaignNav from '../../components/CampaignNav.astro';
 import ReviewMockup from '../../components/ReviewMockup.astro';
 import BaseLayout from '../../layouts/BaseLayout.astro';
@@ -52,26 +53,34 @@ const steps = [
   description="Agents increased the review load and reviews haven't evolved. Neondeck is an open source review bench with fast Git-backed diffs and an agent that reads the PR with you. Tell us what it should become."
   ogImage="/og/review-open-call.png"
   ogImageAlt="Writing code evolved. Reviewing it didn't."
+  marketingPage="review-open-call"
 >
   <div class="campaign-shell open-call">
-    <CampaignNav campaign="pr-review" context="open call" />
+    <CampaignNav campaign="pr-review" showContext={false} />
     <main>
       <header class="campaign-container campaign-hero">
         <p class="campaign-kicker">call for reviewers</p>
         <h1>
-          Help us build the review setup that <span>doesn't suck.</span>
+          Help build the review setup that <span>doesn't suck.</span>
         </h1>
         <p class="campaign-hero__copy">
-          Neondeck is a local-first review bench, and it is early enough that
-          your opinion still changes the shape of it. Run it on one real pull
-          request this week.
+          Neondeck is trying to rethink what doing reviews looks like. It works
+          with ChatGPT subs or gateways like OpenRouter or Kilo Gateway, to
+          deliver a fresh take on how you perform reviews for your coworkers or
+          agent PRs. Your opinion can help shape what it becomes.
         </p>
         <p class="campaign-hero__copy">
-          Then come argue with us about what review should even be, now that
-          most of the diff was written by a machine.
+          Run it on one real pull request this week. Then come chat with us
+          about what a review should even be, now that most of the diff is
+          written by a machine.
         </p>
         <div class="campaign-hero__actions">
-          <a class="oc-primary" href={discussions}>join the discussion →</a>
+          <a
+            class="oc-primary"
+            href={discussions}
+            data-marketing-event="github_click"
+            data-marketing-placement="discussion-hero">join the discussion →</a
+          >
           <CampaignCommand placement="hero" />
         </div>
         <p class="campaign-hero__note">
@@ -95,7 +104,12 @@ const steps = [
         <div class="oc-board">
           {
             questions.map((q) => (
-              <a class="oc-question" href={q.href}>
+              <a
+                class="oc-question"
+                href={q.href}
+                data-marketing-event="github_click"
+                data-marketing-placement="discussion-question"
+              >
                 <span class:list={['oc-num', q.signal]}>{q.n}</span>
                 <span class="oc-question__body">
                   <strong>{q.title}</strong>
@@ -120,8 +134,11 @@ const steps = [
               useful report is not "it worked", it is the pull request where the
               briefing missed the thing that actually mattered.
             </p>
-            <a class="campaign-link-button oc-help__cta" href={discussions}
-              >start a thread →</a
+            <a
+              class="campaign-link-button oc-help__cta"
+              href={discussions}
+              data-marketing-event="github_click"
+              data-marketing-placement="discussion-cta">start a thread →</a
             >
           </div>
           <ol class="oc-steps">
@@ -150,6 +167,7 @@ const steps = [
       </section>
     </main>
     <CampaignFooter />
+    <MarketingConsent />
   </div>
 </BaseLayout>
 
