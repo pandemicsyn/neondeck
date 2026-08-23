@@ -3,9 +3,15 @@ import { refreshPrReviewRemoteState } from '../modules/pr-reviews';
 import { runSchedulerTick } from '../modules/scheduler/service';
 import { recoverInterruptedAutopilotOwners } from '../modules/autopilot/owner/settlement';
 import type { RuntimePaths } from '../runtime-home';
+import { globalMap } from '../lib/global-registry';
 
-const schedulerTicksInFlight = schedulerTickRegistry();
-const schedulerLoopRegistry = schedulerLoops();
+const schedulerTicksInFlight = globalMap<
+  string,
+  ReturnType<typeof runSchedulerTick>
+>('__neondeckSchedulerTicksInFlight');
+const schedulerLoopRegistry = globalMap<string, ReturnType<typeof setInterval>>(
+  '__neondeckSchedulerLoops',
+);
 
 /**
  * Runs one deterministic scheduler tick per runtime home at a time.
@@ -65,21 +71,4 @@ export function startSchedulerLoop(
   timer.unref?.();
   schedulerLoopRegistry.set(paths.home, timer);
   return timer;
-}
-
-function schedulerTickRegistry() {
-  const target = globalThis as typeof globalThis & {
-    __neondeckSchedulerTicksInFlight?: Map<
-      string,
-      ReturnType<typeof runSchedulerTick>
-    >;
-  };
-  return (target.__neondeckSchedulerTicksInFlight ??= new Map());
-}
-
-function schedulerLoops() {
-  const target = globalThis as typeof globalThis & {
-    __neondeckSchedulerLoops?: Map<string, ReturnType<typeof setInterval>>;
-  };
-  return (target.__neondeckSchedulerLoops ??= new Map());
 }

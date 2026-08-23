@@ -68,6 +68,7 @@ describe('Neondeck update checking', () => {
       channel: 'next',
       updateAvailable: true,
       dismissed: false,
+      notificationId: 'neondeck-update:1.0.0-beta.39',
       docsUrl: 'https://neondeck.dev/docs/upgrading/',
     });
     expect(second.checkedAt).toBe('2026-08-24T12:00:00.000Z');

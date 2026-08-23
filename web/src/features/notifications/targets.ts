@@ -8,7 +8,7 @@ export function resolveNotificationTarget(
   if (notification.source === 'neondeck-update') {
     return {
       kind: 'url',
-      href: 'https://neondeck.dev/docs/upgrading/',
+      href: readHttpUrl(data.docsUrl) ?? 'https://neondeck.dev/docs/upgrading/',
       label: 'Upgrade guide',
     };
   }
@@ -122,6 +122,19 @@ function readString(value: unknown) {
 function readInternalPath(value: unknown) {
   const path = readString(value);
   return path?.startsWith('/') && !path.startsWith('//') ? path : undefined;
+}
+
+function readHttpUrl(value: unknown) {
+  const candidate = readString(value);
+  if (!candidate) return undefined;
+  try {
+    const url = new URL(candidate);
+    return url.protocol === 'https:' || url.protocol === 'http:'
+      ? url.toString()
+      : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 function isSessionSource(source: string | null) {

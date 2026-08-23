@@ -1699,6 +1699,7 @@ export type UpdateStatus = {
   channel: 'latest' | 'next';
   updateAvailable: boolean;
   dismissed: boolean;
+  notificationId: string | null;
   docsUrl: string;
   releaseUrl: string | null;
   checkedAt: string | null;

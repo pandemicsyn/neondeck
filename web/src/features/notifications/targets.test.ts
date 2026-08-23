@@ -64,10 +64,14 @@ describe('notification target resolution', () => {
     ],
     [
       'Neondeck update',
-      note({ source: 'neondeck-update', sourceId: '1.0.0-beta.39' }),
+      note({
+        source: 'neondeck-update',
+        sourceId: '1.0.0-beta.39',
+        data: { docsUrl: 'https://docs.example.test/upgrade' },
+      }),
       {
         kind: 'url',
-        href: 'https://neondeck.dev/docs/upgrading/',
+        href: 'https://docs.example.test/upgrade',
         label: 'Upgrade guide',
       },
     ],
@@ -99,6 +103,21 @@ describe('notification target resolution', () => {
         note({ source: 'unknown', data: { reviewUrl: 'https://bad.test' } }),
       ).kind,
     ).toBe('plugin');
+  });
+
+  it('falls back to the public upgrade guide for legacy update notices', () => {
+    expect(
+      resolveNotificationTarget(
+        note({
+          source: 'neondeck-update',
+          data: { docsUrl: 'javascript:alert(1)' },
+        }),
+      ),
+    ).toEqual({
+      kind: 'url',
+      href: 'https://neondeck.dev/docs/upgrading/',
+      label: 'Upgrade guide',
+    });
   });
 });
 

@@ -1,10 +1,10 @@
 import { openDb, withImmediateTransaction } from '../../lib/sqlite';
 import {
-  getNotification,
   publishNotificationEvent,
   readNotificationRow,
   resolveNotification,
   type NotificationEvent,
+  type NotificationRecord,
 } from '../app-state';
 import {
   ensureRuntimeHome,
@@ -27,6 +27,7 @@ export type UpdateStatus = {
   channel: UpdateChannel;
   updateAvailable: boolean;
   dismissed: boolean;
+  notificationId: string | null;
   docsUrl: string;
   releaseUrl: string | null;
   checkedAt: string | null;
@@ -52,31 +53,24 @@ export async function readUpdateStatus(
 ): Promise<UpdateStatus> {
   await ensureRuntimeHome(paths);
   const enabled = updateChecksEnabled();
-  const channel = updateChannelForVersion(currentVersion);
-  const cached = readCachedUpdate(paths);
-  const latestVersion =
-    cached?.channel === channel && parseVersion(cached.latestVersion)
-      ? cached.latestVersion
+  const database = openDb(paths.neondeckDatabase);
+  try {
+    const cached = readCachedUpdate(database);
+    const status = buildUpdateStatus(enabled, currentVersion, cached, null);
+    const notification = status.notificationId
+      ? database
+          .prepare('SELECT * FROM notifications WHERE id = ? LIMIT 1;')
+          .get(status.notificationId)
       : null;
-  const updateAvailable =
-    enabled &&
-    latestVersion !== null &&
-    compareVersions(latestVersion, currentVersion) > 0;
-  const notification = updateAvailable
-    ? await getNotification(updateNotificationId(latestVersion), paths)
-    : null;
-
-  return {
-    enabled,
-    currentVersion,
-    latestVersion,
-    channel,
-    updateAvailable,
-    dismissed: Boolean(notification?.resolvedAt),
-    docsUrl: updateDocsUrl,
-    releaseUrl: latestVersion ? releaseUrl(latestVersion) : null,
-    checkedAt: cached?.channel === channel ? cached.checkedAt : null,
-  };
+    return {
+      ...status,
+      dismissed: notification
+        ? Boolean(readNotificationRow(notification).resolvedAt)
+        : false,
+    };
+  } finally {
+    database.close();
+  }
 }
 
 export async function checkForUpdates(
@@ -111,13 +105,14 @@ export async function checkForUpdates(
 
   const checkedAt = (options.now ?? (() => new Date()))().toISOString();
   const updateAvailable = compareVersions(payload.version, currentVersion) > 0;
-  persistUpdateCheck(
-    { channel, latestVersion: payload.version, checkedAt },
+  const cached = { channel, latestVersion: payload.version, checkedAt };
+  const notification = persistUpdateCheck(
+    cached,
     currentVersion,
     updateAvailable,
     paths,
   );
-  return readUpdateStatus(paths, currentVersion);
+  return buildUpdateStatus(true, currentVersion, cached, notification);
 }
 
 export async function dismissUpdate(
@@ -126,11 +121,15 @@ export async function dismissUpdate(
   currentVersion = neondeckVersion,
 ) {
   const status = await readUpdateStatus(paths, currentVersion);
-  if (!status.updateAvailable || status.latestVersion !== version) {
+  if (
+    !status.updateAvailable ||
+    status.latestVersion !== version ||
+    !status.notificationId
+  ) {
     throw new Error(`Version ${version} is not the current available update.`);
   }
-  await resolveNotification(updateNotificationId(version), paths);
-  return readUpdateStatus(paths, currentVersion);
+  await resolveNotification(status.notificationId, paths);
+  return { ...status, dismissed: true };
 }
 
 export function updateNotificationId(version: string) {
@@ -143,8 +142,41 @@ export function updateChecksEnabled(env: NodeJS.ProcessEnv = process.env) {
   return env.NEONDECK_DISABLE_UPDATE_CHECK !== '1';
 }
 
-function readCachedUpdate(paths: RuntimePaths): CachedUpdate | null {
-  const database = openDb(paths.neondeckDatabase);
+function buildUpdateStatus(
+  enabled: boolean,
+  currentVersion: string,
+  cached: CachedUpdate | null,
+  notification: NotificationRecord | null,
+): UpdateStatus {
+  const channel = updateChannelForVersion(currentVersion);
+  const latestVersion =
+    cached?.channel === channel && parseVersion(cached.latestVersion)
+      ? cached.latestVersion
+      : null;
+  const updateAvailable =
+    enabled &&
+    latestVersion !== null &&
+    compareVersions(latestVersion, currentVersion) > 0;
+  return {
+    enabled,
+    currentVersion,
+    latestVersion,
+    channel,
+    updateAvailable,
+    dismissed: Boolean(notification?.resolvedAt),
+    notificationId:
+      updateAvailable && latestVersion
+        ? updateNotificationId(latestVersion)
+        : null,
+    docsUrl: updateDocsUrl,
+    releaseUrl: latestVersion ? releaseUrl(latestVersion) : null,
+    checkedAt: cached?.channel === channel ? cached.checkedAt : null,
+  };
+}
+
+function readCachedUpdate(
+  database: ReturnType<typeof openDb>,
+): CachedUpdate | null {
   try {
     const row = database
       .prepare('SELECT value FROM app_metadata WHERE key = ? LIMIT 1;')
@@ -158,8 +190,6 @@ function readCachedUpdate(paths: RuntimePaths): CachedUpdate | null {
       : null;
   } catch {
     return null;
-  } finally {
-    database.close();
   }
 }
 
@@ -174,6 +204,7 @@ function persistUpdateCheck(
     ? updateNotificationId(update.latestVersion)
     : null;
   const events: NotificationEvent[] = [];
+  let currentNotification: NotificationRecord | null = null;
   try {
     withImmediateTransaction(database, () => {
       const obsoleteRows = database
@@ -249,15 +280,17 @@ function persistUpdateCheck(
             .prepare('SELECT * FROM notifications WHERE id = ?;')
             .get(notificationId);
           if (createdRow) {
+            currentNotification = readNotificationRow(createdRow);
             events.push({
               id: notificationId,
               action: 'created',
-              notification: readNotificationRow(createdRow),
+              notification: currentNotification,
               changedAt: update.checkedAt,
             });
           }
         } else {
           const existingNotification = readNotificationRow(existing);
+          currentNotification = existingNotification;
           if (
             existingNotification.resolvedAt === null &&
             (existingNotification.title !== title ||
@@ -275,10 +308,11 @@ function persistUpdateCheck(
               .prepare('SELECT * FROM notifications WHERE id = ?;')
               .get(notificationId);
             if (reconciledRow) {
+              currentNotification = readNotificationRow(reconciledRow);
               events.push({
                 id: notificationId,
                 action: 'reconciled',
-                notification: readNotificationRow(reconciledRow),
+                notification: currentNotification,
                 changedAt: update.checkedAt,
               });
             }
@@ -300,6 +334,7 @@ function persistUpdateCheck(
     database.close();
   }
   for (const event of events) publishNotificationEvent(event);
+  return currentNotification;
 }
 
 function releaseUrl(version: string) {

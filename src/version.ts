@@ -1,20 +1,22 @@
-import { readFileSync } from 'node:fs';
+import { readPackageVersion } from './package-version';
 
 declare const __NEONDECK_VERSION__: string | undefined;
 
-export const neondeckVersion =
-  typeof __NEONDECK_VERSION__ === 'string'
-    ? __NEONDECK_VERSION__
-    : readPackageVersion();
+export const unknownNeondeckVersion = '0.0.0-unknown';
 
-function readPackageVersion() {
-  const source = readFileSync(
-    new URL('../package.json', import.meta.url),
-    'utf8',
-  );
-  const parsed = JSON.parse(source) as { version?: unknown };
-  if (typeof parsed.version !== 'string' || !parsed.version.trim()) {
-    throw new Error('package.json does not contain a valid Neondeck version.');
+export function resolveRuntimeVersion(
+  embeddedVersion: string | undefined,
+  readInstalledVersion = () =>
+    readPackageVersion(new URL('../package.json', import.meta.url)),
+) {
+  if (embeddedVersion) return embeddedVersion;
+  try {
+    return readInstalledVersion();
+  } catch {
+    return unknownNeondeckVersion;
   }
-  return parsed.version.trim();
 }
+
+export const neondeckVersion = resolveRuntimeVersion(
+  typeof __NEONDECK_VERSION__ === 'string' ? __NEONDECK_VERSION__ : undefined,
+);

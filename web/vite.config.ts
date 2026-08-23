@@ -1,22 +1,14 @@
 import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
-import { readFileSync } from 'node:fs';
 import { defineConfig } from 'vite';
-import { parseVersion } from '../src/modules/updates/version';
+import { resolveBuildVersion } from '../src/package-version';
 
 const serverPort = parsePort(process.env.NEONDECK_WEB_PORT, 5173);
 const apiProxyTarget =
   process.env.NEONDECK_API_PROXY ?? 'http://127.0.0.1:3583';
-const packageVersion = JSON.parse(
-  readFileSync(new URL('../package.json', import.meta.url), 'utf8'),
-).version as string;
-const buildVersion =
-  process.env.NEONDECK_RELEASE_VERSION?.trim() || packageVersion;
-if (!parseVersion(buildVersion)) {
-  throw new Error(
-    `NEONDECK_RELEASE_VERSION must be a valid semantic version, got ${JSON.stringify(buildVersion)}.`,
-  );
-}
+const buildVersion = resolveBuildVersion(
+  new URL('../package.json', import.meta.url),
+);
 
 export default defineConfig({
   root: 'web',

@@ -69,14 +69,29 @@ describe('UpdateBanner', () => {
     );
   });
 
+  it('marks the API-provided notification id as read', async () => {
+    status = { ...status, notificationId: 'server-provided-update-id' };
+    await render();
+    await act(async () => link('Upgrade guide')?.click());
+
+    expect(fetch).toHaveBeenCalledWith(
+      '/api/notifications/server-provided-update-id/read',
+      expect.objectContaining({ method: 'POST' }),
+    );
+  });
+
   it('dismisses only the currently advertised version', async () => {
     await render();
     const dismiss = container.querySelector<HTMLButtonElement>(
       '[aria-label="Dismiss the 1.0.0-beta.39 update notice"]',
     )!;
-    await act(async () => dismiss.click());
+    await act(async () => {
+      dismiss.click();
+      await vi.waitFor(() => {
+        expect(container.querySelector('.update-banner')).toBeNull();
+      });
+    });
 
-    expect(container.querySelector('.update-banner')).toBeNull();
     expect(fetch).toHaveBeenCalledWith(
       '/api/update-status/1.0.0-beta.39/dismiss',
       expect.objectContaining({ method: 'POST' }),
@@ -104,12 +119,16 @@ describe('UpdateBanner', () => {
     const dismiss = container.querySelector<HTMLButtonElement>(
       '[aria-label="Dismiss the 1.0.0-beta.39 update notice"]',
     )!;
-    await act(async () => dismiss.click());
+    await act(async () => {
+      dismiss.click();
+      await vi.waitFor(() => {
+        expect(container.querySelector('[role="alert"]')?.textContent).toBe(
+          'Could not dismiss this update.',
+        );
+      });
+    });
 
     expect(container.querySelector('.update-banner')).not.toBeNull();
-    expect(container.querySelector('[role="alert"]')?.textContent).toBe(
-      'Could not dismiss this update.',
-    );
   });
 
   async function render() {
@@ -140,6 +159,7 @@ function updateStatus(): UpdateStatus {
     channel: 'next',
     updateAvailable: true,
     dismissed: false,
+    notificationId: 'neondeck-update:1.0.0-beta.39',
     docsUrl: 'https://neondeck.dev/docs/upgrading/',
     releaseUrl:
       'https://github.com/pandemicsyn/neondeck/releases/tag/v1.0.0-beta.39',

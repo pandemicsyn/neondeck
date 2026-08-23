@@ -1,11 +1,17 @@
 import type { RuntimePaths } from '../../runtime-home';
+import { globalMap } from '../../lib/global-registry';
 import {
   checkForUpdates,
   updateCheckIntervalMs,
   updateChecksEnabled,
 } from './service';
 
-const updateLoops = updateLoopRegistry();
+type UpdateLoop = {
+  initial: ReturnType<typeof setTimeout>;
+  interval: ReturnType<typeof setInterval>;
+};
+
+const updateLoops = globalMap<string, UpdateLoop>('__neondeckUpdateLoops');
 
 export function startUpdateCheckLoop(
   paths: RuntimePaths,
@@ -15,12 +21,13 @@ export function startUpdateCheckLoop(
     check?: typeof checkForUpdates;
   } = {},
 ) {
-  if (!updateChecksEnabled()) return null;
   const existing = updateLoops.get(paths.home);
   if (existing) {
     clearTimeout(existing.initial);
     clearInterval(existing.interval);
+    updateLoops.delete(paths.home);
   }
+  if (!updateChecksEnabled()) return null;
   const check = options.check ?? checkForUpdates;
   const run = () => {
     void check(paths).catch((error) => {
@@ -36,17 +43,4 @@ export function startUpdateCheckLoop(
   interval.unref?.();
   updateLoops.set(paths.home, { initial, interval });
   return { initial, interval };
-}
-
-function updateLoopRegistry() {
-  const target = globalThis as typeof globalThis & {
-    __neondeckUpdateLoops?: Map<
-      string,
-      {
-        initial: ReturnType<typeof setTimeout>;
-        interval: ReturnType<typeof setInterval>;
-      }
-    >;
-  };
-  return (target.__neondeckUpdateLoops ??= new Map());
 }

@@ -1,5 +1,5 @@
-import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { useState } from 'react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import type { ReactNode } from 'react';
 import {
   dismissUpdate,
   getUpdateStatus,
@@ -13,22 +13,32 @@ export function UpdateBanner({
   dashboardVersion?: string;
 } = {}) {
   const queryClient = useQueryClient();
-  const [dismissPending, setDismissPending] = useState(false);
-  const [dismissError, setDismissError] = useState<string | null>(null);
   const { data } = useQuery({
     queryKey: queryKeys.updateStatus,
     queryFn: getUpdateStatus,
     refetchInterval: 6 * 60 * 60_000,
   });
+  const dismissMutation = useMutation({
+    mutationFn: dismissUpdate,
+    onSuccess: async (status) => {
+      queryClient.setQueryData(queryKeys.updateStatus, status);
+      await queryClient.invalidateQueries({
+        queryKey: queryKeys.notifications,
+      });
+    },
+  });
   if (!data?.enabled) return null;
   if (data.currentVersion !== dashboardVersion) {
     return (
-      <output aria-live="polite" className="update-banner">
-        <span className="update-banner-signal">updated</span>
-        <span className="update-banner-message">
-          Neondeck {data.currentVersion} is running. Reload this dashboard to
-          use the matching interface.
-        </span>
+      <BannerShell
+        message={
+          <>
+            Neondeck {data.currentVersion} is running. Reload this dashboard to
+            use the matching interface.
+          </>
+        }
+        signal="updated"
+      >
         <button
           className="update-banner-action"
           onClick={() => window.location.reload()}
@@ -36,7 +46,7 @@ export function UpdateBanner({
         >
           Reload
         </button>
-      </output>
+      </BannerShell>
     );
   }
   if (!data.updateAvailable || data.dismissed || !data.latestVersion) {
@@ -44,9 +54,9 @@ export function UpdateBanner({
   }
 
   const latestVersion = data.latestVersion;
-  const notificationId = `neondeck-update:${latestVersion}`;
   const markSeen = () => {
-    void markNotificationRead(notificationId)
+    if (!data.notificationId) return;
+    void markNotificationRead(data.notificationId)
       .catch(() => undefined)
       .finally(() => {
         void queryClient.invalidateQueries({
@@ -54,33 +64,25 @@ export function UpdateBanner({
         });
       });
   };
-  const dismiss = async () => {
-    if (dismissPending) return;
-    setDismissPending(true);
-    setDismissError(null);
-    try {
-      const status = await dismissUpdate(latestVersion);
-      queryClient.setQueryData(queryKeys.updateStatus, status);
-      await queryClient.invalidateQueries({
-        queryKey: queryKeys.notifications,
-      });
-    } catch (error) {
-      setDismissError(error instanceof Error ? error.message : String(error));
-    } finally {
-      setDismissPending(false);
-    }
-  };
+  const dismissError = dismissMutation.error
+    ? dismissMutation.error instanceof Error
+      ? dismissMutation.error.message
+      : String(dismissMutation.error)
+    : null;
 
   return (
-    <output aria-live="polite" className="update-banner">
-      <span className="update-banner-signal">update</span>
-      <span className="update-banner-message">
-        Neondeck {latestVersion} is available
-        <span className="update-banner-current">
-          {' '}
-          · running {data.currentVersion}
-        </span>
-      </span>
+    <BannerShell
+      message={
+        <>
+          Neondeck {latestVersion} is available
+          <span className="update-banner-current">
+            {' '}
+            · running {data.currentVersion}
+          </span>
+        </>
+      }
+      signal="update"
+    >
       <a
         className="update-banner-action"
         href={data.docsUrl}
@@ -109,12 +111,30 @@ export function UpdateBanner({
       <button
         aria-label={`Dismiss the ${latestVersion} update notice`}
         className="update-banner-dismiss"
-        disabled={dismissPending}
-        onClick={() => void dismiss()}
+        disabled={dismissMutation.isPending}
+        onClick={() => dismissMutation.mutate(latestVersion)}
         type="button"
       >
         ×
       </button>
+    </BannerShell>
+  );
+}
+
+function BannerShell({
+  children,
+  message,
+  signal,
+}: {
+  children: ReactNode;
+  message: ReactNode;
+  signal: string;
+}) {
+  return (
+    <output aria-live="polite" className="update-banner">
+      <span className="update-banner-signal">{signal}</span>
+      <span className="update-banner-message">{message}</span>
+      {children}
     </output>
   );
 }
