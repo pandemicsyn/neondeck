@@ -1194,6 +1194,14 @@ Must-haves:
 - [x] Add tests for local allowed commands, local approval-required commands, hardline denies, unattended denies, exe.dev policy routing, and approval persistence.
 - [x] Document trusted-local versus isolated-sandbox tradeoffs and require users to opt in before enabling `exe.dev`.
 
+#### Scheduled repository workspace extension
+
+- [x] Add provider-neutral local, exe.dev, and custom SSH workspace adapters with readiness and lifecycle separation.
+- [x] Add repository schedule policies for resource reuse, exact revision, Git branch, authority, overlap, and retention.
+- [x] Dispatch repository occurrences to a dedicated Flue worker in Neondeck-owned worktrees or remote resources.
+- [x] Persist provider/Git identity, response, command evidence, status, patch, retention, and cleanup state per run.
+- [x] Add a dedicated Scheduled Tasks dashboard with task creation, run history, output, retry, retain, and cleanup controls.
+
 ### Phase 15: Usability Hardening
 
 - Status: complete for the current usability gate.

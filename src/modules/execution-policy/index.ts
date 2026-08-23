@@ -6,6 +6,7 @@ import {
   type ExecutionConfig,
   type ExecutionPreapprovedCommand,
   executionConfigSchema,
+  workspaceProviderIdSchema,
 } from '../../runtime-home';
 
 export type ExecutionContext = 'interactive' | 'unattended';
@@ -59,7 +60,7 @@ export const executionPolicyUpdateSchema = v.partial(executionConfigSchema);
 
 export const executionPolicyCheckInputSchema = v.object({
   command: v.pipe(v.string(), v.minLength(1)),
-  backend: v.optional(v.picklist(['local', 'exe.dev'])),
+  backend: v.optional(workspaceProviderIdSchema),
   context: v.optional(v.picklist(['interactive', 'unattended'])),
 });
 
@@ -68,7 +69,6 @@ export const executionPolicyOutputSchema = v.looseObject({
   action: v.string(),
 });
 
-const supportedBackends: ExecutionBackend[] = ['local', 'exe.dev'];
 export const hardlineDescriptions = [
   'recursive delete of root, home, or system directories',
   'filesystem format commands',
@@ -189,11 +189,16 @@ const readOnlyPatterns = [
 ];
 
 export function executionPolicyFromConfig(
-  config: Pick<AppConfig, 'execution'>,
+  config: Pick<AppConfig, 'execution' | 'workspaces'>,
 ) {
   const raw = config.execution ?? {};
+  const supportedBackends = uniqueStrings([
+    'local',
+    'exe.dev',
+    ...Object.keys(config.workspaces?.providers ?? {}),
+  ]);
   const defaultBackend = raw.defaultBackend ?? 'local';
-  const enabledBackends = uniqueBackends(raw.enabledBackends ?? ['local']);
+  const enabledBackends = uniqueStrings(raw.enabledBackends ?? ['local']);
   const policy: ExecutionPolicy = {
     ok: true,
     action: 'execution_policy_read',
@@ -223,7 +228,7 @@ export function executionPolicyFromConfig(
   };
 
   if (!policy.enabledBackends.includes(policy.defaultBackend)) {
-    policy.enabledBackends = uniqueBackends([
+    policy.enabledBackends = uniqueStrings([
       policy.defaultBackend,
       ...policy.enabledBackends,
     ]);
@@ -240,6 +245,13 @@ export function evaluateExecutionPolicy(
   const backend = input.backend ?? policy.defaultBackend;
   const context = input.context ?? 'interactive';
   const hardline = detectHardline(command);
+
+  if (!policy.supportedBackends.includes(backend)) {
+    return checkResult(command, backend, context, 'deny', 'hardline', {
+      reason: `Execution backend "${backend}" is not present in the workspace provider registry.`,
+      requires: ['workspaceProvider'],
+    });
+  }
 
   if (!policy.enabledBackends.includes(backend)) {
     return checkResult(command, backend, context, 'deny', 'hardline', {
@@ -295,7 +307,7 @@ export function mergeExecutionConfig(
       ? { defaultBackend: input.defaultBackend }
       : {}),
     ...(input.enabledBackends !== undefined
-      ? { enabledBackends: uniqueBackends(input.enabledBackends) }
+      ? { enabledBackends: uniqueStrings(input.enabledBackends) }
       : {}),
     ...(input.approvalMode !== undefined
       ? { approvalMode: input.approvalMode }
@@ -386,7 +398,11 @@ function normalizePreapprovals(
 }
 
 function uniqueBackends(backends: ExecutionBackend[]) {
-  return supportedBackends.filter((backend) => backends.includes(backend));
+  return uniqueStrings(backends);
+}
+
+function uniqueStrings<T extends string>(values: T[]) {
+  return [...new Set(values)];
 }
 
 function findPreapproval(

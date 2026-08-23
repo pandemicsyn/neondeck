@@ -11,6 +11,7 @@ import {
   runtimeSkillFromSessionSnapshot,
   runtimeSkillReferencesSync,
   runtimeSkillSessionSnapshotsSync,
+  selectedRuntimeSkillSessionSnapshotsSync,
 } from './modules/runtime';
 
 const tempRoots: string[] = [];
@@ -243,6 +244,16 @@ describe('runtime skills', () => {
       files: { 'REFERENCE.md': 'reference text' },
     });
     expect(skill.files?.['asset.bin']).toEqual(new Uint8Array([0, 255]));
+    expect(
+      selectedRuntimeSkillSessionSnapshotsSync(['session-guide'], paths),
+    ).toEqual([
+      expect.objectContaining({
+        name: 'session-guide',
+        files: expect.arrayContaining([
+          expect.objectContaining({ path: 'REFERENCE.md' }),
+        ]),
+      }),
+    ]);
   });
 
   it('keeps the built-in skill visible when external root config is invalid', async () => {

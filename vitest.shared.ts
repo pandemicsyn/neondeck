@@ -39,6 +39,7 @@ export const integrationTestFiles = [
 ];
 
 export const serialUnitTestFiles = [
+  'src/scheduled-workspaces-git.test.ts',
   'src/ci-fix-run.test.ts',
   'src/docs-drift.test.ts',
   'src/pr-local-diffs.test.ts',

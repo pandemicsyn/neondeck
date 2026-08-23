@@ -8,7 +8,8 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
 const boundaryDiagram = `flowchart TB
   Request["You, a schedule, or a GitHub change"] --> Route{"What kind of work is it?"}
 
-  Route --> Chat["Chat or scheduled instruction<br/>virtual workspace"]
+  Route --> Chat["Chat or legacy scheduled instruction<br/>virtual workspace"]
+  Route --> RepoSchedule["Repository schedule<br/>declared local or remote workspace"]
   Route --> Watch["PR watch<br/>deterministic read-only poller"]
   Route --> Review["Human PR review<br/>exact-revision reader"]
 
@@ -16,6 +17,9 @@ const boundaryDiagram = `flowchart TB
   Capabilities --> State["Local state, registered repos,<br/>GitHub, and connected services"]
   Capabilities --> CommandGate["Host-command policy<br/>allow, ask, or deny"]
   CommandGate --> Host["Local host or experimental<br/>exe.dev command path"]
+
+  RepoSchedule --> ScheduledWorker["Private scheduled worker<br/>exact revision and physical lock"]
+  ScheduledWorker --> ScheduledEvidence["Bounded response, commands,<br/>Git evidence, and retention"]
 
   Watch --> Delta{"Meaningful change?"}
   Delta -->|No| Quiet["Stay quiet"]
@@ -158,23 +162,89 @@ const boundaryDiagram = `flowchart TB
           continuity is explicitly useful.
         </p>
         <p>
-          Scheduled model work uses the same virtual workspace as chat.
-          Selecting a repo or working directory supplies task context; it does
-          not mount that directory or grant a generic host shell. Any real repo,
-          service, or command access still goes through the corresponding
-          Neondeck capability.
+          Existing tasks remain compatible with the same virtual workspace as
+          chat. A repository task instead declares a workspace policy: provider,
+          fresh/reused/existing resource, latest/pinned/continuing revision,
+          run/persistent/direct branch, authority, overlap, and retention. Local
+          repository tasks receive Neondeck-managed worktrees and never use the
+          primary checkout for autonomous mutation. Remote tasks use exe.dev or
+          a configured SSH Linux provider and fail explicitly when that provider
+          is not ready; they never fall back to local execution.
         </p>
         <p>
-          The default fresh-session target cannot use the ordinary interactive
-          commit and push path. It can still use other typed capabilities
-          allowed by the task. If you deliberately target an existing agent
-          session for continuity, the turn inherits that session's interactive
-          context, including any linked repo or worktree authority. A scheduled
-          instruction should therefore be treated as automation—not as a
-          read-only reminder. Destructive configuration changes retain their
-          confirmation requirements, connected-service calls retain their own
-          allow, ask, or deny policy, and a host command marked as unattended
-          must be preapproved.
+          Neondeck resolves symbolic refs such as <code>main</code> to an exact commit
+          before dispatch. Pinned mode requires a full commit SHA. Persistent task
+          branches are continuation-only; latest-from-ref and pinned runs use a unique
+          run branch or an explicitly acknowledged direct branch. The dedicated scheduled
+          worker captures the response, bounded command output, Git status, final
+          commit, and patch before cleanup. Persisted text is secret-redacted before
+          UTF-8 byte bounds are applied, and run detail reports redaction separately
+          from truncation. Changed and failed workspaces are retained for inspection.
+          The Scheduled Tasks dashboard exposes run history, provider health, revision
+          lineage, artifacts, retry, retain, and cleanup controls.
+        </p>
+        <p>
+          Virtual tasks may target an existing display-assistant session and
+          continue that conversation. Repository tasks use a private scheduled
+          worker instead: an agent-session id selects continuing worker context,
+          not the display chat transcript. Serialized runs may attach the next
+          per-run, reusable, or existing workspace to that worker; parallel
+          repository runs always receive distinct worker identities and per-run
+          workspaces.
+        </p>
+        <p>
+          Overlap policies are distinct. <code>skip</code> advances past an occurrence
+          that becomes due while a predecessor is active;
+          <code>queue-one</code> preserves one overdue occurrence for admission after
+          settlement; and <code>allow-parallel</code> requires isolated per-run resources
+          and run branches. Tasks and active or material workspaces cannot be deleted
+          underneath an agent. Cleanup and retention controls remain disabled while
+          a workspace is active or leased. Cleanup owns an atomic lease, so a new
+          run cannot reacquire the physical resource mid-destruction. Existing resources
+          use the same control as a detach operation: Neondeck terminalizes its app
+          record but preserves provider infrastructure. Manual cleanup and detach
+          require explicit confirmation in the dashboard, API, or typed action; automatic
+          post-run cleanup remains an internal policy operation.
+        </p>
+        <p>
+          Local direct-branch mode is supported only for a dedicated reusable or
+          existing worktree. If the primary checkout already holds the
+          branch—most commonly <code>main</code>—the run is rejected without
+          touching that checkout. Shared existing workspaces are physically
+          locked across tasks and with Autopilot. Shell-enabled schedules are
+          arbitrary credential-stripped shell sessions with network access, not
+          a delivery or network sandbox. Local sessions can address host paths;
+          remote sessions therefore require a dedicated credential-free SSH
+          account. Neondeck derives a credential-free GitHub clone URL, audits
+          ambient Git and SSH credentials, installs an isolated HOME, and opens
+          disposable connections for each sandbox operation. Delivery-enabled is
+          reserved for a future separately bound delivery tool; v1 mounts no
+          such tool, but does not claim that arbitrary shell commands cannot
+          reach external services. Long-running workspace leases are renewed
+          while the Flue submission is active; every tool operation revalidates
+          the active run and lock owner before touching files. Run detail reads
+          an occurrence-specific workspace snapshot, so later reuse cannot
+          rewrite an older run's provider, branch, revision, status, or
+          artifacts.
+        </p>
+        <p>
+          SSH channel cancellation is reported conservatively as
+          orphan-possible: closing a channel does not prove that the remote
+          process group stopped. When cancellation races an SSH command,
+          timeout, or output bound, Neondeck records a durable physical-resource
+          quarantine before releasing the current owner. The quarantine survives
+          process restart and blocks scheduled and approved reuse until provider
+          cleanup confirms the resource is gone or an operator explicitly
+          attests that the remote process settled and clears it in Scheduled
+          Tasks.
+        </p>
+        <p>
+          Creating a recurring <code>trusted-workspace</code> or
+          <code>delivery-enabled</code> schedule requires explicit confirmation in
+          the API, tool, and dashboard. This confirms arbitrary credential-stripped
+          shell and network authority; it does not grant a delivery credential. Settlement
+          uses a durable, renewable collection lease so only one process captures
+          artifacts and terminalizes a workspace after a Flue submission.
         </p>
         <p>
           Briefings are narrower than general scheduled instructions. They are
@@ -293,11 +363,12 @@ const boundaryDiagram = `flowchart TB
         </p>
         <h3>Experimental: exe.dev command backend</h3>
         <p>
-          <strong>Work in progress:</strong> the exe.dev integration is not a remote
-          Neondeck workspace and is unlikely to behave as users expect from a general
-          sandbox setting today. Enabling it does not move chat, scheduled tasks,
-          PR review, managed worktrees, or watched-PR Autopilot onto the VM. Autopilot
-          continues to edit, validate, commit, and push from its local managed worktree.
+          <strong>Work in progress:</strong> selecting exe.dev as the global approved
+          command backend does not move chat, PR review, managed worktrees, watched-PR
+          Autopilot, or existing schedules onto the VM. A repository schedule can
+          independently select the exe.dev workspace provider in its own immutable
+          workspace policy. Autopilot continues to edit, validate, commit, and push
+          from its local managed worktree.
         </p>
         <p>
           The implemented portion can run one approved command over SSH on an
@@ -349,9 +420,11 @@ const boundaryDiagram = `flowchart TB
             outside the supplied facts or exploration budget.
           </li>
           <li>
-            exe.dev support is work in progress. Only explicit approved commands
-            and GitHub-reachable checkouts can use an existing VM; the main
-            agent workspace and managed worktrees remain local.
+            The global exe.dev approved-command backend remains narrower than a
+            general workspace mode. Repository schedules can independently use
+            existing or Neondeck-managed exe.dev resources, while the main chat
+            workspace, Autopilot, and local managed worktrees remain local
+            unless their own product policy explicitly selects otherwise.
           </li>
         </ul>
 

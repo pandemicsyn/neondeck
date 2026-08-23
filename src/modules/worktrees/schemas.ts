@@ -121,7 +121,9 @@ export const createInputSchema = v.object({
   adopted: v.optional(v.boolean()),
   workflowRunId: v.optional(nonEmptyStringSchema),
   directPushAllowed: v.optional(v.boolean()),
-  createdBy: v.optional(v.picklist(['neondeck', 'user', 'external'])),
+  createdBy: v.optional(
+    v.picklist(['neondeck', 'scheduled-task', 'user', 'external']),
+  ),
 });
 
 export const syncInputSchema = v.object({

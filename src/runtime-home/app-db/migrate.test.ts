@@ -13,6 +13,12 @@ import { basename, join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { afterEach, describe, expect, it } from 'vitest';
 import {
+  acquirePhysicalWorkspaceLease,
+  listPhysicalWorkspaceQuarantines,
+  readTaskWorkspaceForRun,
+} from '../../modules/scheduled-tasks/workspace-store.ts';
+import { runtimePaths } from '../paths.ts';
+import {
   AppDbMigrationError,
   appDbMigrationsFolder,
   applyAppDbMigrations,
@@ -65,6 +71,305 @@ describe('app database migrator', () => {
     } finally {
       database.close();
     }
+  });
+
+  it('preserves applied scheduled-workspace migration hashes', () => {
+    const migrations = new Map(
+      readAppDbMigrationFiles().map((migration) => [
+        migration.name,
+        migration.hash,
+      ]),
+    );
+    expect(migrations.get('20260817023609_scheduled_task_workspaces')).toBe(
+      '9d08228fd65b36dc380c987411023bbd1935c222cb0219d87828fe27b21c10df',
+    );
+    expect(
+      migrations.get('20260817063811_scheduled_workspace_required_identity'),
+    ).toBe('0436a3d007825a303df2a5a001548b5675ed6678b86ad83907e3448dc06f2a2a');
+    expect(
+      migrations.get('20260817092313_scheduled_workspace_repo_identity'),
+    ).toBe('1b3d0acb9125dd824d80dc1b90f814bee2caa84199ccecf2e22bae8d8c24a511');
+    expect(
+      migrations.get('20260817100124_scheduled_workspace_release_fence'),
+    ).toBe('68456da88828c64066c0f6fb5bed8d540d0ee83afb841ca321683d14f101283c');
+  });
+
+  it('backfills legacy SSH snapshots with fail-closed host and key references in a forward migration', () => {
+    const migration = readAppDbMigrationFiles().find((candidate) =>
+      candidate.name.includes('scheduled_workspace_forward_compatibility'),
+    );
+    expect(migration?.sql.join('\n')).toContain(
+      "'$.config.privateKeyEnv',\n  'NEONDECK_LEGACY_WORKSPACE_PRIVATE_KEY_UNAVAILABLE'",
+    );
+  });
+
+  it('backfills immutable historical workspace snapshots with a validated legacy repository identity in a forward migration', () => {
+    const migration = readAppDbMigrationFiles().find((candidate) =>
+      candidate.name.includes('scheduled_workspace_forward_compatibility'),
+    );
+    const sql = migration?.sql.join('\n') ?? '';
+    expect(sql).toContain('UPDATE `scheduled_run_workspace_snapshots`');
+    expect(sql).toContain("'$.repoSnapshot'");
+    expect(sql).toContain("'verified', json('false')");
+    expect(sql).toContain("json_extract(`snapshot_json`, '$.repoId')");
+  });
+
+  it('upgrades a database with the earlier shipped hashes through the forward compatibility migration', async () => {
+    const root = await tempDir();
+    const paths = runtimePaths(root);
+    await mkdir(paths.data, { recursive: true });
+    const databasePath = paths.neondeckDatabase;
+    const oldMigrations = join(root, 'pre-repo-identity-migrations');
+    const appliedMigrations = join(root, 'pre-forward-migrations');
+    await mkdir(oldMigrations);
+    await mkdir(appliedMigrations);
+    for (const entry of await readdir(appDbMigrationsFolder())) {
+      if (entry < '20260817092313_scheduled_workspace_repo_identity') {
+        await cp(
+          join(appDbMigrationsFolder(), entry),
+          join(oldMigrations, entry),
+          { recursive: true },
+        );
+      }
+      if (!entry.includes('scheduled_workspace_forward_compatibility')) {
+        await cp(
+          join(appDbMigrationsFolder(), entry),
+          join(appliedMigrations, entry),
+          { recursive: true },
+        );
+      }
+    }
+    applyAppDbMigrations(databasePath, { migrationsFolder: oldMigrations });
+    const before = new DatabaseSync(databasePath);
+    try {
+      const insertSnapshot = before.prepare(
+        `INSERT INTO scheduled_run_workspace_snapshots
+         (run_id, workspace_id, snapshot_json, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?);`,
+      );
+      for (const fixture of [
+        preCoordinationWorkspaceSnapshot({
+          runId: 'run:legacy-local',
+          workspaceId: 'workspace:legacy-local',
+          providerId: 'local',
+          providerResourceId: 'worktree:legacy-local',
+          resourceMetadata: {},
+          workspaceRoot: '/workspaces/legacy-local',
+          localWorktreeId: 'worktree:legacy-local',
+        }),
+        preCoordinationWorkspaceSnapshot({
+          runId: 'run:legacy-ssh',
+          workspaceId: 'workspace:legacy-ssh',
+          providerId: 'ssh-primary',
+          providerResourceId: 'remote:legacy-ssh',
+          resourceMetadata: {
+            host: 'ssh.example.test',
+            port: 2222,
+            providerRoot: '/srv/neondeck',
+            managedInfrastructure: false,
+            managedDirectory: true,
+          },
+          workspaceRoot: '/srv/neondeck/task-ssh',
+          localWorktreeId: null,
+        }),
+      ]) {
+        insertSnapshot.run(
+          fixture.runId,
+          fixture.workspaceId,
+          JSON.stringify(fixture.snapshot),
+          '2026-08-17T00:00:00.000Z',
+          '2026-08-17T00:00:00.000Z',
+        );
+      }
+      before
+        .prepare(
+          `INSERT INTO app_metadata (key, value, updated_at)
+           VALUES (?, ?, ?);`,
+        )
+        .run(
+          'workspace-resource-lease:local:/workspaces/legacy',
+          JSON.stringify({
+            owner: 'legacy-owner',
+            physicalResourceKey: 'local:/workspaces/legacy',
+            expiresAt: '2026-08-17T01:00:00.000Z',
+          }),
+          '2026-08-17T00:00:00.000Z',
+        );
+    } finally {
+      before.close();
+    }
+    applyAppDbMigrations(databasePath, {
+      migrationsFolder: appliedMigrations,
+    });
+    const collisionKey =
+      'ssh://user@ssh.example.test:2222/srv/neondeck/task-ssh';
+    const collision = new DatabaseSync(databasePath);
+    try {
+      collision
+        .prepare(
+          `INSERT INTO execution_approvals (
+             id, command, backend, context, risk, policy_decision, status,
+             created_at, updated_at
+           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);`,
+        )
+        .run(
+          'alias-collision',
+          'git status',
+          'ssh-approved-exact',
+          'migration-fixture',
+          'mutating',
+          'requires-approval',
+          'approved',
+          '2026-08-17T00:00:00.000Z',
+          '2026-08-17T00:00:00.000Z',
+        );
+      insertCurrentTaskWorkspace(collision, {
+        id: 'workspace:provider-alias',
+        providerId: 'ssh-provider-alias',
+        physicalResourceKey: collisionKey,
+      });
+      collision
+        .prepare(
+          `INSERT INTO app_metadata (key, value, updated_at)
+           VALUES (?, ?, ?);`,
+        )
+        .run(
+          `workspace-resource-lease:${collisionKey}`,
+          JSON.stringify({
+            owner: 'approved-execution:alias-collision',
+            physicalResourceKey: collisionKey,
+            expiresAt: '2020-01-01T00:00:00.000Z',
+          }),
+          '2026-08-17T00:00:00.000Z',
+        );
+    } finally {
+      collision.close();
+    }
+    const applied = new DatabaseSync(databasePath, { readOnly: true });
+    try {
+      const appliedHashes = new Map(
+        applied
+          .prepare(
+            'SELECT name, hash FROM __drizzle_migrations WHERE name LIKE ?;',
+          )
+          .all('20260817%')
+          .map((row) => {
+            const record = row as { name: string; hash: string };
+            return [record.name, record.hash] as const;
+          }),
+      );
+      for (const [name, hash] of [
+        [
+          '20260817023609_scheduled_task_workspaces',
+          '9d08228fd65b36dc380c987411023bbd1935c222cb0219d87828fe27b21c10df',
+        ],
+        [
+          '20260817063811_scheduled_workspace_required_identity',
+          '0436a3d007825a303df2a5a001548b5675ed6678b86ad83907e3448dc06f2a2a',
+        ],
+        [
+          '20260817092313_scheduled_workspace_repo_identity',
+          '1b3d0acb9125dd824d80dc1b90f814bee2caa84199ccecf2e22bae8d8c24a511',
+        ],
+        [
+          '20260817100124_scheduled_workspace_release_fence',
+          '68456da88828c64066c0f6fb5bed8d540d0ee83afb841ca321683d14f101283c',
+        ],
+      ] as const) {
+        expect(appliedHashes.get(name)).toBe(hash);
+      }
+    } finally {
+      applied.close();
+    }
+    expect(applyAppDbMigrations(databasePath)).toMatchObject({
+      applied: ['20260817111330_scheduled_workspace_forward_compatibility'],
+      pending: [],
+    });
+    const after = new DatabaseSync(databasePath, { readOnly: true });
+    try {
+      const lease = after
+        .prepare('SELECT value FROM app_metadata WHERE key = ?;')
+        .get(`workspace-resource-lease:${collisionKey}`) as {
+        value: string;
+      };
+      expect(JSON.parse(lease.value)).toMatchObject({
+        providerId: 'ssh-approved-exact',
+      });
+      expect(readAppDbMigrationStatus(databasePath)).toMatchObject({
+        ok: true,
+        pending: [],
+        changed: [],
+      });
+    } finally {
+      after.close();
+    }
+    await expect(
+      readTaskWorkspaceForRun('run:legacy-local', paths),
+    ).resolves.toMatchObject({
+      providerSnapshot: {
+        version: 1,
+        providerId: 'local',
+        driver: 'local',
+      },
+      physicalResourceKey: 'local:/workspaces/legacy-local',
+      resourceMetadata: {
+        privateHome: '/neondeck-legacy-unavailable/workspace-home',
+      },
+      collectionOwner: null,
+      collectionExpiresAt: null,
+      releaseFencedAt: null,
+    });
+    await expect(
+      readTaskWorkspaceForRun('run:legacy-ssh', paths),
+    ).resolves.toMatchObject({
+      providerSnapshot: {
+        version: 1,
+        providerId: 'ssh-primary',
+        driver: 'ssh',
+        config: {
+          driver: 'ssh',
+          hostEnv: 'NEONDECK_LEGACY_WORKSPACE_PROVIDER_UNAVAILABLE',
+          privateKeyEnv: 'NEONDECK_LEGACY_WORKSPACE_PRIVATE_KEY_UNAVAILABLE',
+          username: 'user',
+          port: 2222,
+          remoteRoot: '/srv/neondeck',
+        },
+      },
+      physicalResourceKey: collisionKey,
+      resourceMetadata: {
+        host: 'ssh.example.test',
+        port: 2222,
+        username: 'user',
+        providerRoot: '/srv/neondeck',
+        privateHome: '/neondeck-legacy-unavailable/home',
+        managedInfrastructure: false,
+        pathsCanonical: false,
+      },
+      collectionOwner: null,
+      collectionExpiresAt: null,
+      releaseFencedAt: null,
+    });
+    await expect(
+      acquirePhysicalWorkspaceLease(
+        {
+          physicalResourceKey: collisionKey,
+          providerId: 'ssh-new-request',
+          owner: 'new-owner',
+          ttlMs: 60_000,
+        },
+        paths,
+      ),
+    ).resolves.toBe(false);
+    await expect(listPhysicalWorkspaceQuarantines(paths)).resolves.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          physicalResourceKey: collisionKey,
+          providerId: 'ssh-approved-exact',
+          source: 'approved-execution',
+          sourceId: 'alias-collision',
+        }),
+      ]),
+    );
   });
 
   it('refuses an unjournaled non-empty pre-baseline database', async () => {
@@ -551,4 +856,121 @@ function tableExists(database: DatabaseSync, table: string) {
       )
       .get('table', table),
   );
+}
+
+function preCoordinationWorkspaceSnapshot(input: {
+  runId: string;
+  workspaceId: string;
+  providerId: string;
+  providerResourceId: string;
+  resourceMetadata: Record<string, unknown>;
+  workspaceRoot: string;
+  localWorktreeId: string | null;
+}) {
+  return {
+    runId: input.runId,
+    workspaceId: input.workspaceId,
+    snapshot: {
+      id: input.workspaceId,
+      taskId: `task:${input.runId}`,
+      owningRunId: input.runId,
+      providerId: input.providerId,
+      providerResourceId: input.providerResourceId,
+      resourceMetadata: input.resourceMetadata,
+      lifecycle: 'per-run',
+      repoId: 'repo',
+      workspaceRoot: input.workspaceRoot,
+      requestedRef: 'main',
+      revisionMode: 'latest-each-run',
+      gitMode: 'run-branch',
+      branchName: `neondeck/schedules/legacy/${input.runId}`,
+      baseSha: null,
+      initialSha: null,
+      finalSha: null,
+      dirty: null,
+      localWorktreeId: input.localWorktreeId,
+      authority: 'trusted-workspace',
+      retention: 'cleanup-success',
+      status: 'retained',
+      lockOwner: null,
+      lockExpiresAt: null,
+      retentionReason: null,
+      providerError: null,
+      createdAt: '2026-08-17T00:00:00.000Z',
+      lastUsedAt: '2026-08-17T00:00:00.000Z',
+      retainedAt: '2026-08-17T00:00:00.000Z',
+      cleanupAttemptedAt: null,
+      deletedAt: null,
+      updatedAt: '2026-08-17T00:00:00.000Z',
+    },
+  };
+}
+
+function insertCurrentTaskWorkspace(
+  database: DatabaseSync,
+  input: {
+    id: string;
+    providerId: string;
+    physicalResourceKey: string;
+  },
+) {
+  database
+    .prepare(
+      `INSERT INTO task_workspaces (
+         id, task_id, provider_id, provider_resource_id,
+         provider_snapshot_json, physical_resource_key, resource_metadata_json,
+         lifecycle, repo_id, repo_snapshot_json, workspace_root, requested_ref,
+         revision_mode, git_mode, authority, retention, status,
+         created_at, last_used_at, updated_at
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
+    )
+    .run(
+      input.id,
+      'task:provider-alias',
+      input.providerId,
+      'resource:provider-alias',
+      JSON.stringify({
+        version: 1,
+        providerId: input.providerId,
+        driver: 'ssh',
+        config: {
+          driver: 'ssh',
+          hostEnv: 'SSH_ALIAS_HOST',
+          privateKeyEnv: 'SSH_ALIAS_KEY',
+          username: 'user',
+          port: 2222,
+          remoteRoot: '/srv/neondeck',
+        },
+      }),
+      input.physicalResourceKey,
+      JSON.stringify({
+        host: 'ssh.example.test',
+        port: 2222,
+        username: 'user',
+        providerRoot: '/srv/neondeck',
+        privateHome: '/srv/neondeck-home/provider-alias',
+        managedInfrastructure: false,
+        managedDirectory: false,
+        pathsCanonical: true,
+      }),
+      'existing',
+      'repo',
+      JSON.stringify({
+        verified: false,
+        id: 'repo',
+        github: { owner: 'legacy-unavailable', name: 'legacy-unavailable' },
+        path: '/srv/neondeck/task-ssh',
+        defaultBranch: 'main',
+      }),
+      '/srv/neondeck/task-ssh',
+      'main',
+      'latest-each-run',
+      'direct-branch',
+      'trusted-workspace',
+      'retain-always',
+      'retained',
+      '2026-08-17T00:00:00.000Z',
+      '2026-08-17T00:00:00.000Z',
+      '2026-08-17T00:00:00.000Z',
+    );
 }

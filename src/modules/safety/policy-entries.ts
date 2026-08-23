@@ -673,10 +673,19 @@ export const entries: SafetyPolicyEntry[] = [
     'neondeck_scheduled_task_instruction_create',
     'Create scheduled instruction',
     {
-      ...safeMutation,
+      ...hostExecution,
       auditTarget: 'scheduled_tasks/scheduled_task_runs',
     },
-    'Creates or updates a bounded scheduled agent instruction with an explicit fresh or existing session target.',
+    'Creates a bounded scheduled instruction. Recurring shell/network authority requires confirm=true after explicit operator approval.',
+  ),
+  action(
+    'neondeck_config_update_workspace_provider',
+    'Update workspace provider configuration',
+    {
+      ...destructiveMutation,
+      auditTarget: 'config_history/task_workspaces',
+    },
+    'Registers, replaces, or selects a scheduled workspace provider only with confirm=true and durable admission coordination.',
   ),
   action(
     'neondeck_scheduled_task_pause',
@@ -704,6 +713,24 @@ export const entries: SafetyPolicyEntry[] = [
       auditTarget: 'scheduled_tasks/scheduled_task_runs',
     },
     'Deletes a scheduled task and its local run history after confirm=true.',
+  ),
+  action(
+    'neondeck_scheduled_workspace_cleanup',
+    'Clean up scheduled workspace',
+    {
+      ...destructiveMutation,
+      auditTarget: 'task_workspaces/worktrees',
+    },
+    'Deletes a settled Neondeck-owned workspace or detaches adopted infrastructure only after confirm=true.',
+  ),
+  action(
+    'neondeck_scheduled_workspace_quarantine_clear',
+    'Clear remote workspace quarantine',
+    {
+      ...destructiveMutation,
+      auditTarget: 'app_metadata/workspace-resource-quarantine',
+    },
+    'Re-enables a physical remote workspace after confirm=true attests that no uncertain process remains in flight.',
   ),
   action(
     'neondeck_config_update_provider',
@@ -1574,6 +1601,21 @@ export const entries: SafetyPolicyEntry[] = [
     'GET lists canonical scheduled tasks; task creation uses the typed briefing and instruction endpoints.',
   ),
   route(
+    'GET /api/workspace-providers',
+    'Workspace provider readiness API',
+    readOnly,
+    'Lists configured local and remote workspace provider capabilities and readiness without returning secret values.',
+  ),
+  route(
+    'POST /api/workspace-providers/:id',
+    'Workspace provider configuration API',
+    {
+      ...destructiveMutation,
+      auditTarget: 'config.json/config_history',
+    },
+    'Registers or updates a provider with confirm=true using environment-variable references; raw credentials are not accepted.',
+  ),
+  route(
     '/api/briefings',
     'Briefing state API',
     readOnly,
@@ -1647,6 +1689,42 @@ export const entries: SafetyPolicyEntry[] = [
       auditTarget: 'scheduled_tasks/scheduled_task_runs',
     },
     'Resumes a scheduled task without immediately executing it.',
+  ),
+  route(
+    '/api/scheduled-tasks/:id/runs',
+    'Scheduled task run history API',
+    readOnly,
+    'Lists durable occurrences for one scheduled task.',
+  ),
+  route(
+    '/api/scheduled-task-runs/:runId',
+    'Scheduled task run detail API',
+    readOnly,
+    'Reads one occurrence with provider, Git, response, command, patch, retention, and cleanup artifacts.',
+  ),
+  route(
+    'POST /api/scheduled-tasks/:id/run',
+    'Scheduled task run-now API',
+    { ...safeMutation, auditTarget: 'scheduled_tasks/scheduled_task_runs' },
+    'Makes one task immediately due and wakes the deterministic scheduler.',
+  ),
+  route(
+    'POST /api/scheduled-task-runs/:runId/retry',
+    'Scheduled task retry API',
+    { ...safeMutation, auditTarget: 'scheduled_tasks/scheduled_task_runs' },
+    'Creates a fresh occurrence for the same task; it never mutates the terminal run record.',
+  ),
+  route(
+    'POST /api/scheduled-task-runs/:runId/retain',
+    'Scheduled workspace retain API',
+    { ...safeMutation, auditTarget: 'task_workspaces' },
+    'Explicitly retains the workspace linked to an occurrence.',
+  ),
+  route(
+    'POST /api/scheduled-task-runs/:runId/cleanup',
+    'Scheduled workspace cleanup API',
+    { ...destructiveMutation, auditTarget: 'task_workspaces/worktrees' },
+    'Requires confirm=true, deletes only Neondeck-owned eligible workspaces, and never deletes adopted provider infrastructure.',
   ),
   route(
     'DELETE /api/scheduled-tasks/:id',

@@ -1,6 +1,7 @@
 import { type JsonValue } from '@flue/runtime';
 import * as v from 'valibot';
 import type { ExecutionBackend } from '../../runtime-home';
+import { workspaceProviderIdSchema } from '../../runtime-home';
 import {
   type ExecutionContext,
   type ExecutionDecision,
@@ -62,7 +63,7 @@ export const safeEnvKeys = [
   'NEONDECK_HOME',
 ];
 
-export const backendSchema = v.picklist(['local', 'exe.dev']);
+export const backendSchema = workspaceProviderIdSchema;
 export const contextSchema = v.picklist(['interactive', 'unattended']);
 export const approvalDecisionSchema = v.picklist([
   'allow-once',

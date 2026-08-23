@@ -9,6 +9,7 @@ import { MemoryPanelPlugin } from './MemoryPanel';
 import { ReportsPanelPlugin } from './ReportsPanel';
 import { ReviewsPanelPlugin } from './ReviewsPanel';
 import { RuntimeOverviewPlugin } from './RuntimeOverview';
+import { ScheduledTasksPlugin } from './ScheduledTasks';
 import { SubagentSummaryPlugin } from './SubagentSummary';
 import { ActivityPanelPlugin } from './ActivityPanel';
 import type { DisplayPlugin } from '../types';
@@ -19,6 +20,7 @@ export const plugins = [
   ActiveWatchesPlugin,
   ReportsPanelPlugin,
   RuntimeOverviewPlugin,
+  ScheduledTasksPlugin,
   BriefingPanelPlugin,
   MemoryPanelPlugin,
   LearningOperatorPanelPlugin,

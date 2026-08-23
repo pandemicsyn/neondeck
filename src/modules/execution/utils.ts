@@ -36,29 +36,54 @@ export function executionResult(input: {
   durationMs: number;
   outputLimit: number;
 }) {
-  const stdout = truncateOutput(String(input.stdout ?? ''), input.outputLimit);
-  const stderr = truncateOutput(String(input.stderr ?? ''), input.outputLimit);
+  const stdout = sanitizeOutput(String(input.stdout ?? ''), input.outputLimit);
+  const stderr = sanitizeOutput(String(input.stderr ?? ''), input.outputLimit);
   return {
     exitCode: input.exitCode,
-    stdout,
-    stderr,
-    stdoutTruncated: stdout.length < String(input.stdout ?? '').length,
-    stderrTruncated: stderr.length < String(input.stderr ?? '').length,
+    stdout: stdout.content,
+    stderr: stderr.content,
+    stdoutTruncated: stdout.truncated,
+    stderrTruncated: stderr.truncated,
+    stdoutRedacted: stdout.redacted,
+    stderrRedacted: stderr.redacted,
     durationMs: input.durationMs,
   };
 }
 
-function truncateOutput(value: string, limit: number) {
-  if (value.length <= limit) return redactOutput(value);
-  return redactOutput(value.slice(0, limit));
+export function sanitizeExecutionText(value: string, limit: number) {
+  const redacted = redactExecutionOutput(value);
+  const bytes = Buffer.from(redacted, 'utf8');
+  if (bytes.byteLength <= limit) {
+    return {
+      content: redacted,
+      truncated: false,
+      redacted: redacted !== value,
+    };
+  }
+  const decoder = new TextDecoder('utf-8', { fatal: true });
+  let end = limit;
+  while (end > 0) {
+    try {
+      return {
+        content: decoder.decode(bytes.subarray(0, end)),
+        truncated: true,
+        redacted: redacted !== value,
+      };
+    } catch {
+      end -= 1;
+    }
+  }
+  return { content: '', truncated: true, redacted: redacted !== value };
 }
 
-function redactOutput(value: string) {
+const sanitizeOutput = sanitizeExecutionText;
+
+export function redactExecutionOutput(value: string) {
   return value
-    .replace(/gh[pousr]_[A-Za-z0-9_]+/g, '[redacted-github-token]')
-    .replace(/github_pat_[A-Za-z0-9_]+/g, '[redacted-github-token]')
-    .replace(/sk-[A-Za-z0-9_-]{16,}/g, '[redacted-api-key]')
-    .replace(/xox[baprs]-[A-Za-z0-9-]+/g, '[redacted-token]');
+    .replace(/gh[pousr]_[A-Za-z0-9_]*/g, '[redacted-github-token]')
+    .replace(/github_pat_[A-Za-z0-9_]*/g, '[redacted-github-token]')
+    .replace(/sk-[A-Za-z0-9_-]*/g, '[redacted-api-key]')
+    .replace(/xox[baprs]-[A-Za-z0-9-]*/g, '[redacted-token]');
 }
 
 export function commandError(error: unknown) {
@@ -69,12 +94,12 @@ export function commandError(error: unknown) {
   const code = record.code;
   const signal = record.signal;
   const exitCode = typeof code === 'number' ? code : null;
-  const message =
+  const rawMessage =
     error instanceof Error
       ? error.message
       : `Command failed${signal ? ` with signal ${String(signal)}` : ''}.`;
   return {
-    message,
+    message: sanitizeExecutionText(rawMessage, 16 * 1024).content,
     exitCode,
     stdout: record.stdout ?? '',
     stderr: record.stderr ?? '',
@@ -90,7 +115,7 @@ export function failedResult(
     ok: false,
     action,
     changed: false,
-    message,
+    message: sanitizeExecutionText(message, 16 * 1024).content,
     requires,
   };
 }

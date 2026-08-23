@@ -21,6 +21,9 @@ import type {
 } from './schemas';
 import * as v from 'valibot';
 import { runExecutionInputSchema } from './schemas';
+import { sanitizeExecutionText } from './utils';
+
+const persistedExecutionTextBytes = 64 * 1024;
 
 export function insertApproval(
   paths: RuntimePaths,
@@ -86,8 +89,10 @@ export function insertApproval(
           : JSON.stringify(asJsonValue(input.requestContext)),
         input.result === undefined
           ? null
-          : JSON.stringify(asJsonValue(input.result)),
-        input.error ?? null,
+          : JSON.stringify(
+              sanitizePersistedExecutionValue(asJsonValue(input.result)),
+            ),
+        sanitizeOptionalExecutionText(input.error, 16 * 1024),
         now,
         now,
       );
@@ -211,7 +216,9 @@ export function completePendingApprovalResolution(
           input.approverSurface,
           input.result === null
             ? null
-            : JSON.stringify(asJsonValue(input.result)),
+            : JSON.stringify(
+                sanitizePersistedExecutionValue(asJsonValue(input.result)),
+              ),
           input.resolvedAt,
           input.resolvedAt,
           input.id,
@@ -310,6 +317,13 @@ export function updateApprovalResult(
     executedAt?: string | null;
   },
 ) {
+  const stdoutPreview = sanitizeOptionalExecutionText(input.stdoutPreview);
+  const stderrPreview = sanitizeOptionalExecutionText(input.stderrPreview);
+  const executionError = sanitizeOptionalExecutionText(input.error, 16 * 1024);
+  const result =
+    input.result === undefined
+      ? undefined
+      : sanitizePersistedExecutionValue(asJsonValue(input.result));
   const now = new Date().toISOString();
   const database = openDb(paths.neondeckDatabase);
 
@@ -333,12 +347,10 @@ export function updateApprovalResult(
       .run(
         input.status,
         input.exitCode ?? null,
-        input.stdoutPreview ?? null,
-        input.stderrPreview ?? null,
-        input.error ?? null,
-        input.result === undefined
-          ? null
-          : JSON.stringify(asJsonValue(input.result)),
+        stdoutPreview,
+        stderrPreview,
+        executionError,
+        result === undefined ? null : JSON.stringify(result),
         input.executedAt ?? null,
         now,
         id,
@@ -350,6 +362,55 @@ export function updateApprovalResult(
   const record = readApproval(paths, id);
   if (!record) throw new Error(`Execution approval ${id} was not found.`);
   return record;
+}
+
+export function recordApprovalTransportCloseError(
+  paths: RuntimePaths,
+  id: string,
+  message: string,
+) {
+  const sanitized = sanitizeExecutionText(message, 16 * 1024).content;
+  const now = new Date().toISOString();
+  const database = openDb(paths.neondeckDatabase);
+  try {
+    database
+      .prepare(
+        `UPDATE execution_approvals
+         SET result_json = json_set(
+               COALESCE(result_json, '{}'),
+               '$.transportCloseError',
+               ?
+             ),
+             updated_at = ?
+         WHERE id = ?;`,
+      )
+      .run(sanitized, now, id);
+  } finally {
+    database.close();
+  }
+}
+
+function sanitizeOptionalExecutionText(
+  value: string | null | undefined,
+  limit = persistedExecutionTextBytes,
+) {
+  return value == null ? null : sanitizeExecutionText(value, limit).content;
+}
+
+function sanitizePersistedExecutionValue(value: JsonValue): JsonValue {
+  if (typeof value === 'string') {
+    return sanitizeExecutionText(value, persistedExecutionTextBytes).content;
+  }
+  if (Array.isArray(value)) return value.map(sanitizePersistedExecutionValue);
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(
+      Object.entries(value).map(([key, item]) => [
+        key,
+        sanitizePersistedExecutionValue(item),
+      ]),
+    );
+  }
+  return value;
 }
 
 export function markApprovalUsed(
@@ -416,14 +477,29 @@ export function readExecutionApprovalRow(
         : null,
     result:
       typeof record.result_json === 'string'
-        ? (JSON.parse(record.result_json) as JsonValue)
+        ? sanitizePersistedExecutionValue(
+            JSON.parse(record.result_json) as JsonValue,
+          )
         : null,
     exitCode: typeof record.exit_code === 'number' ? record.exit_code : null,
     stdoutPreview:
-      typeof record.stdout_preview === 'string' ? record.stdout_preview : null,
+      typeof record.stdout_preview === 'string'
+        ? sanitizeExecutionText(
+            record.stdout_preview,
+            persistedExecutionTextBytes,
+          ).content
+        : null,
     stderrPreview:
-      typeof record.stderr_preview === 'string' ? record.stderr_preview : null,
-    error: typeof record.error === 'string' ? record.error : null,
+      typeof record.stderr_preview === 'string'
+        ? sanitizeExecutionText(
+            record.stderr_preview,
+            persistedExecutionTextBytes,
+          ).content
+        : null,
+    error:
+      typeof record.error === 'string'
+        ? sanitizeExecutionText(record.error, 16 * 1024).content
+        : null,
     createdAt: String(record.created_at),
     resolvedAt:
       typeof record.resolved_at === 'string' ? record.resolved_at : null,

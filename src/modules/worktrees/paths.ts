@@ -112,18 +112,21 @@ export async function ensureStorageRoot(
 
 export async function resolveDeclaredWorktreePath(input: string, root: string) {
   const candidate = isAbsolute(input) ? resolve(input) : resolve(root, input);
+  const existing = await realpath(candidate).catch(() => undefined);
+  if (existing) {
+    if (!isInside(root, existing)) {
+      throw new WorktreeError(
+        'PATH_OUTSIDE_WORKTREE_ROOT',
+        `Worktree path resolves outside declared root ${root}.`,
+      );
+    }
+    return existing;
+  }
   const parent = await nearestExistingAncestor(candidate);
-  if (!isInside(root, parent) || !isInside(root, candidate)) {
+  if (!isInside(root, parent)) {
     throw new WorktreeError(
       'PATH_OUTSIDE_WORKTREE_ROOT',
       `Worktree path must stay inside declared root ${root}.`,
-    );
-  }
-  const existing = await realpath(candidate).catch(() => undefined);
-  if (existing && !isInside(root, existing)) {
-    throw new WorktreeError(
-      'PATH_OUTSIDE_WORKTREE_ROOT',
-      `Worktree path resolves outside declared root ${root}.`,
     );
   }
   return candidate;

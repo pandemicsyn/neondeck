@@ -717,6 +717,50 @@ program
     );
   });
 
+const workspaceProvider = program
+  .command('workspace-provider')
+  .description('Manage scheduled-workspace provider configuration.');
+
+workspaceProvider
+  .command('set <id>')
+  .requiredOption('--config <json>', 'validated provider config JSON')
+  .option('--default', 'select this provider as the default remote')
+  .option('--confirm', 'confirm the provider configuration mutation')
+  .action(
+    async (
+      id: string,
+      options: { config: string; default?: boolean; confirm?: boolean },
+    ) => {
+      const { updateWorkspaceProviderConfig } = await configActionsModule();
+      const paths = await pathsFromOptions(program.opts<GlobalOptions>());
+      printActionResult(
+        await updateWorkspaceProviderConfig(
+          {
+            id,
+            config: JSON.parse(options.config),
+            makeDefaultRemote: options.default,
+            confirm: options.confirm,
+          },
+          paths,
+        ),
+      );
+    },
+  );
+
+workspaceProvider
+  .command('remove <id>')
+  .option('--confirm', 'confirm the provider configuration mutation')
+  .action(async (id: string, options: { confirm?: boolean }) => {
+    const { updateWorkspaceProviderConfig } = await configActionsModule();
+    const paths = await pathsFromOptions(program.opts<GlobalOptions>());
+    printActionResult(
+      await updateWorkspaceProviderConfig(
+        { id, remove: true, confirm: options.confirm },
+        paths,
+      ),
+    );
+  });
+
 program
   .command('tui')
   .description('Launch the future OpenTUI client.')

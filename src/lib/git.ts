@@ -412,6 +412,10 @@ export function redactGitText(value: string) {
     .replace(/(authorization:\s*(?:basic|bearer)\s+)[^\s]+/gi, '$1[redacted]')
     .replace(/\b([a-z][a-z\d+.-]*):\/\/[^/\s@]+@/gi, '$1://')
     .replace(
+      /\b([a-z][a-z\d+.-]*):\/\/[^/\s@:]+:[^/\s@]*(?:@|$)/gi,
+      '$1://[redacted]@',
+    )
+    .replace(
       /([?&](?:access[_-]?token|auth(?:orization)?|credential|oauth[_-]?token|passw(?:or)?d|token)=)[^&#\s]+/gi,
       '$1[redacted]',
     )

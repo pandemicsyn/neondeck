@@ -1,6 +1,13 @@
 # exe.dev Workspace Mode Plan
 
-Status: **active** — planning doc for a workspace-location mode: when enabled, Neon's repo
+Status: **reconciled, not implemented** — this document describes a future global workspace-location
+mode. Its Flue 1 beta adapter details and closed host/exe.dev config model are superseded by
+`.plans/SCHEDULED_TASK_WORKSPACES_PLAN.md` and the Flue 2 `WorkspaceProvider` registry. Any future
+global mode must reuse that provider/`SessionEnv` seam, application-owned lifecycle, secret
+environment references, and app-SQLite/Flue-state separation; it must not restore the beta sandbox
+API or a second remote transport. The global switch remains deferred.
+
+Original scope: planning doc for a workspace-location mode: when enabled, Neon's repo
 checkouts, worktrees, file edits, verification commands, and the agent's own workspace all live on
 a configured exe.dev VM instead of the host. Written 2026-07-03 for implementation agents; sibling
 to `.plans/archived/REFACTOR_PLAN.md` and `.plans/archived/MCP_SUPPORT_PLAN.md`, whose conventions this follows.

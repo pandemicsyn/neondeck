@@ -230,6 +230,32 @@ describe('execution policy', () => {
       requires: ['preapprovedCommands'],
     });
   });
+
+  it('rejects config whose execution backends are absent from the provider registry', async () => {
+    const paths = runtimePaths(await tempDir());
+    await ensureRuntimeHome(paths);
+    await writeFile(
+      paths.config,
+      JSON.stringify({
+        version: 1,
+        execution: {
+          defaultBackend: 'removed-provider',
+          enabledBackends: ['removed-provider'],
+          approvalMode: 'off',
+        },
+      }),
+    );
+    await expect(
+      checkExecutionPolicy(
+        {
+          command: 'npm test',
+          backend: 'removed-provider',
+          context: 'interactive',
+        },
+        paths,
+      ),
+    ).rejects.toThrow(/unconfigured workspace providers: removed-provider/i);
+  });
 });
 
 async function tempDir() {

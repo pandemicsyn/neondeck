@@ -9,6 +9,8 @@ import {
   thinkingLevelSchema,
   openAiCompatibleBaseUrlSchema,
   openAiCompatibleProviderIdSchema,
+  workspaceProviderConfigSchema,
+  remoteWorkspaceProviderIdSchema,
 } from '../../runtime-home';
 import {
   autopilotConcurrencySchema,
@@ -39,6 +41,19 @@ export const configTargetSchema = v.optional(
 export const stringRecordSchema = v.record(v.string(), v.string());
 export const unknownRecordSchema = v.record(v.string(), v.unknown());
 export const nonEmptyStringSchema = v.pipe(v.string(), v.minLength(1));
+export const updateWorkspaceProviderInputSchema = v.pipe(
+  v.strictObject({
+    id: remoteWorkspaceProviderIdSchema,
+    config: v.optional(workspaceProviderConfigSchema),
+    remove: v.optional(v.boolean()),
+    makeDefaultRemote: v.optional(v.boolean()),
+    confirm: v.optional(v.boolean()),
+  }),
+  v.check(
+    (input) => !(input.remove === true && input.config !== undefined),
+    'A workspace provider mutation cannot remove and configure the same provider in one request.',
+  ),
+);
 export const providerQualifiedModelSchema = v.pipe(
   nonEmptyStringSchema,
   v.check((value) => {
