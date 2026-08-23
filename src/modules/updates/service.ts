@@ -57,19 +57,23 @@ export async function readUpdateStatus(
   const events: NotificationEvent[] = [];
   let status: UpdateStatus;
   try {
-    events.push(
-      ...resolveMatchingUpdateNotifications(
-        database,
-        new Date().toISOString(),
-        (notification) =>
-          !enabled ||
-          (notification.sourceId !== null &&
-            parseVersion(notification.sourceId) !== null &&
-            compareVersions(notification.sourceId, currentVersion) <= 0),
-      ),
-    );
     const cached = readCachedUpdate(database);
     status = buildUpdateStatus(enabled, currentVersion, cached, null);
+    events.push(
+      ...withImmediateTransaction(database, () =>
+        resolveMatchingUpdateNotifications(
+          database,
+          new Date().toISOString(),
+          (notification) =>
+            !enabled ||
+            (notification.sourceId !== null &&
+              parseVersion(notification.sourceId) !== null &&
+              compareVersions(notification.sourceId, currentVersion) <= 0) ||
+            (status.notificationId !== null &&
+              notification.id !== status.notificationId),
+        ),
+      ),
+    );
     const notification = status.notificationId
       ? database
           .prepare('SELECT * FROM notifications WHERE id = ? LIMIT 1;')

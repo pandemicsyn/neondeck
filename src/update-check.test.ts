@@ -177,7 +177,11 @@ describe('Neondeck update checking', () => {
 
     await expect(
       readUpdateStatus(paths, '1.0.0-beta.39'),
-    ).resolves.toMatchObject({ updateAvailable: false });
+    ).resolves.toMatchObject({
+      currentVersion: '1.0.0-beta.39',
+      updateAvailable: false,
+      notificationId: null,
+    });
     await expect(
       getNotification(updateNotificationId('1.0.0-beta.39'), paths),
     ).resolves.toMatchObject({ resolvedAt: expect.any(String) });
