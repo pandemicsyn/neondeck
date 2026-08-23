@@ -213,13 +213,19 @@
 .campaign-hero__actions {
   display: flex;
   flex-wrap: wrap;
+  align-items: flex-start;
   gap: 14px;
   margin-top: 34px;
 }
 
+.campaign-install {
+  width: min(440px, 100%);
+}
+
 .campaign-command {
   display: flex;
-  min-width: min(440px, 100%);
+  width: 100%;
+  min-width: 0;
   height: 54px;
   align-items: center;
   gap: 14px;
@@ -227,6 +233,24 @@
   border: 1px solid var(--campaign-line);
   background: var(--campaign-field);
   box-shadow: 0 18px 48px rgba(0, 0, 0, 0.24);
+}
+
+.campaign-install__guide {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin: 8px 0 0;
+  color: var(--campaign-muted);
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.campaign-install__guide a {
+  color: var(--cyan);
+  text-decoration: underline;
+  text-decoration-color: color-mix(in srgb, var(--cyan) 58%, transparent);
+  text-underline-offset: 3px;
 }
 
 .campaign-command > span {
