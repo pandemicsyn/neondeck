@@ -92,6 +92,7 @@ const dashboardConfigExample = JSON.stringify(
         </p>
 
         <nav class="dashboard-jump" aria-label="On this page">
+          <a href="#in-action">In action</a>
           <a href="#responsive-layouts">Responsive layouts</a>
           <a href="#layout-controls">Layout controls</a>
           <a href="#open-and-place">Open and place</a>
@@ -105,6 +106,55 @@ const dashboardConfigExample = JSON.stringify(
           system's default browser, and lets <code>layout.mode: "auto"</code>
           respond to that browser window. Special hardware is not required.
         </aside>
+
+        <h2 id="in-action">The deck in action</h2>
+        <p>
+          The work queue and morning briefing keep review decisions in view; a
+          PR can then open into either an explicit briefing or the focused
+          review workbench.
+        </p>
+        <div class="screenshot-gallery">
+          <figure class="screenshot-card screenshot-card--wide">
+            <img
+              src="/screenshots/main-with-briefing-1440.webp"
+              srcset="/screenshots/main-with-briefing-720.webp 720w, /screenshots/main-with-briefing-1440.webp 1440w"
+              sizes="(max-width: 828px) calc(100vw - 48px), 780px"
+              alt="Neondeck dashboard with a morning briefing and PR review queue"
+              width="1440"
+              height="818"
+              fetchpriority="high"
+            />
+            <figcaption>
+              Morning briefing alongside the review queue.
+            </figcaption>
+          </figure>
+          <figure class="screenshot-card">
+            <img
+              src="/screenshots/pr-briefing-modal-1440.webp"
+              srcset="/screenshots/pr-briefing-modal-480.webp 480w, /screenshots/pr-briefing-modal-720.webp 720w, /screenshots/pr-briefing-modal-1440.webp 1440w"
+              sizes="(max-width: 640px) calc(100vw - 48px), 360px"
+              alt="Neondeck PR briefing modal with an approve recommendation"
+              width="1440"
+              height="817"
+              loading="lazy"
+            />
+            <figcaption>Review briefing before a decision.</figcaption>
+          </figure>
+          <figure class="screenshot-card">
+            <img
+              src="/screenshots/diff-pr-workbench-1440.webp"
+              srcset="/screenshots/diff-pr-workbench-480.webp 480w, /screenshots/diff-pr-workbench-720.webp 720w, /screenshots/diff-pr-workbench-1440.webp 1440w"
+              sizes="(max-width: 640px) calc(100vw - 48px), 360px"
+              alt="Neondeck PR diff workbench with an AI reviewer conversation"
+              width="1440"
+              height="815"
+              loading="lazy"
+            />
+            <figcaption>
+              Revision-aware diff and reviewer conversation.
+            </figcaption>
+          </figure>
+        </div>
 
         <h2 id="responsive-layouts">Responsive layouts</h2>
         <p>
@@ -538,6 +588,41 @@ neondeck open xeneon --browser "/path/to/chromium"</code></pre>
     margin-bottom: 6px;
   }
 
+  .screenshot-gallery {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 14px;
+    max-width: 70ch;
+    margin: 24px 0 30px;
+  }
+
+  .screenshot-card {
+    min-width: 0;
+    margin: 0;
+    overflow: hidden;
+    border: 1px solid var(--line);
+    background: var(--card);
+  }
+
+  .screenshot-card--wide {
+    grid-column: 1 / -1;
+  }
+
+  .screenshot-card img {
+    display: block;
+    width: 100%;
+    height: auto;
+  }
+
+  .screenshot-card figcaption {
+    padding: 10px 12px;
+    border-top: 1px solid var(--line);
+    color: var(--muted);
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 11px;
+    line-height: 1.5;
+  }
+
   .layout-visual {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(min(260px, 100%), 1fr));
@@ -654,6 +739,10 @@ neondeck open xeneon --browser "/path/to/chromium"</code></pre>
   }
 
   @media (max-width: 640px) {
+    .screenshot-gallery {
+      grid-template-columns: 1fr;
+    }
+
     .dashboard-jump a {
       flex: 1 1 50%;
       border-bottom: 1px solid var(--line);

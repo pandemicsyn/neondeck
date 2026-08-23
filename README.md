@@ -3,37 +3,52 @@
 A note from me, the human:
 
 - Is this vibe coded? 100% barely looked at the code. Its fine'ish.
-- Should this maybe have been vanilla Pi? Probably. This started out life has just a little companion app.
+- Should this maybe have been vanilla Pi? Probably. This started out life has just a little companion app i was gonna run on a DO.
 - Does this do well with large diffs? 110% - use this to review 50k line pr's pretty regularly at day job.
-- Is this a serious thing ? No, but it's really fucking useful.
+- Is this a serious thing ? No, but it's turned out to be really fucking useful. We ship a lot at day job and I was drowning in reviews.
 
 This thing does 3 things
 
 1. Helps me review _alot_ of PRs without having to ever open up Github.
 2. Manages my PR's for me. Kilo/codex hand off changes to Neon, and neon takes care of them through merge. Reviews are basically the only time I look at code at this point.
-3. Sends me a morning briefing to help me keep up with the stuff all my EU coworkers have shipped.
+3. Sends me a morning briefing to help me keep up with the stuff all my EU coworkers have shipped. I use the Superhuman MCP and others to get a custom briefing.
 
 ## From the robots
 
 A companion agent for keeping PRs moving, getting reviews done, and helping humans stay on task.
 
-Neon watches your PRs, tracks CI and release checks, and can configure its own
-repos, schedules, models, and deck layout through typed tools and APIs. Its current
-PR watches retain complete feedback facts and semantic watermarks, including an
-explicit choice to process or baseline existing feedback. Autopilot can bind one
-continuing Neon owner and one managed worktree to a watched PR, hold committed
-changes for review, or push after the continuing owner judges a change sound and
-sufficiently validated and the current mechanical delivery guards pass.
+Neon watches your PRs, helps you get your reviews done, an tracks CI and release checks. It can configure its own repos,
+schedules, models, and deck layout through typed tools and APIs.
+
+It works with ChatGPT subs, as well as any gateway support by Pi (Kilo gateway, open router, etc) 
 
 It is especially useful on a companion display, vertical panel, or Corsair
-Xeneon Edge-style deck, where your active work can stay visible without taking
-over your editor. The backend is Node 26, Hono, and Flue; the dashboard is Vite,
-React, and Tailwind. Neondeck can run on your machine or on a remote host, with
+Xeneon Edge-style display, where your active work can stay visible without taking
+over your editor or primary agent chat. 
+
+The backend is Node 26, Hono, and Flue; the dashboard is Vite, React, and Tailwind. Neondeck can run on your machine or on a remote host, with
 mutable state stored in SQLite under a runtime home you control.
+
+## The deck in action
+
+Neon puts the work queue, an actionable morning briefing, and the relevant
+conversation on the same screen.
+
+![Neondeck showing a morning briefing beside the PR review queue](docs/public/screenshots/main-with-briefing-1440.webp)
+
+When a PR is ready/reviewed, you get a recommendation on whether or not it requires a human look. The PR briefing gives you fast way to eval if
+you really want to review this or if this change is safe to stamp and approve.
+
+![Neondeck PR briefing modal with an approve recommendation and operational note](docs/public/screenshots/pr-briefing-modal-1440.webp)
+
+The focused workbench keeps the revision-aware diff, review actions, and a
+reviewer conversation together—without moving the work to GitHub's web UI. Its also fast as fuck even with giant PRs.
+
+![Neondeck PR diff workbench with a reviewer conversation](docs/public/screenshots/diff-pr-workbench-1440.webp)
 
 ## Built for work in progress
 
-Neon watches your PRs, prepares fixes, and keeps things moving.
+Neon watches PRs, prepares fixes and reviews, and keeps things moving.
 
 - **Your PRs, with CI status at a glance.** See open PRs across your repos in
   one panel, with live check status and stale-work flags.
@@ -188,7 +203,7 @@ neondeck open xeneon --browser "/path/to/chromium"
 
 ## Status
 
-Neondeck is active local-first infrastructure work. The roadmap lives in
+The roadmap lives in
 `.plans/ROADMAP.md`; it is the source of truth for implementation order and
 near-term priorities.
 
