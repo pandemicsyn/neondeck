@@ -34,17 +34,17 @@ mutable state stored in SQLite under a runtime home you control.
 Neon puts the work queue, an actionable morning briefing, and the relevant
 conversation on the same screen.
 
-![Neondeck showing a morning briefing beside the PR review queue](docs/public/screenshots/main-with-briefing.png)
+![Neondeck showing a morning briefing beside the PR review queue](docs/public/screenshots/main-with-briefing-1440.webp)
 
 When a PR is ready/reviewed, you get a recommendation on whether or not it requires a human look. The PR briefing gives you fast way to eval if
 you really want to review this or if this change is safe to stamp and approve.
 
-![Neondeck PR briefing modal with an approve recommendation and operational note](docs/public/screenshots/pr-briefing-modal.png)
+![Neondeck PR briefing modal with an approve recommendation and operational note](docs/public/screenshots/pr-briefing-modal-1440.webp)
 
 The focused workbench keeps the revision-aware diff, review actions, and a
 reviewer conversation together—without moving the work to GitHub's web UI. Its also fast as fuck even with giant PRs.
 
-![Neondeck PR diff workbench with a reviewer conversation](docs/public/screenshots/diff-pr-workbench.png)
+![Neondeck PR diff workbench with a reviewer conversation](docs/public/screenshots/diff-pr-workbench-1440.webp)
 
 ## Built for work in progress
 

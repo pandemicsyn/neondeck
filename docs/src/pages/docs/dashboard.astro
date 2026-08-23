@@ -109,40 +109,50 @@ const dashboardConfigExample = JSON.stringify(
 
         <h2 id="in-action">The deck in action</h2>
         <p>
-          The work queue and morning briefing keep review decisions in view;
-          a PR can then open into either an explicit briefing or the focused
+          The work queue and morning briefing keep review decisions in view; a
+          PR can then open into either an explicit briefing or the focused
           review workbench.
         </p>
         <div class="screenshot-gallery">
           <figure class="screenshot-card screenshot-card--wide">
             <img
-              src="/screenshots/main-with-briefing.png"
+              src="/screenshots/main-with-briefing-1440.webp"
+              srcset="/screenshots/main-with-briefing-720.webp 720w, /screenshots/main-with-briefing-1440.webp 1440w"
+              sizes="(max-width: 828px) calc(100vw - 48px), 780px"
               alt="Neondeck dashboard with a morning briefing and PR review queue"
-              width="3808"
-              height="2162"
-              loading="eager"
+              width="1440"
+              height="818"
+              fetchpriority="high"
             />
-            <figcaption>Morning briefing alongside the review queue.</figcaption>
+            <figcaption>
+              Morning briefing alongside the review queue.
+            </figcaption>
           </figure>
           <figure class="screenshot-card">
             <img
-              src="/screenshots/pr-briefing-modal.png"
+              src="/screenshots/pr-briefing-modal-1440.webp"
+              srcset="/screenshots/pr-briefing-modal-480.webp 480w, /screenshots/pr-briefing-modal-720.webp 720w, /screenshots/pr-briefing-modal-1440.webp 1440w"
+              sizes="(max-width: 640px) calc(100vw - 48px), 360px"
               alt="Neondeck PR briefing modal with an approve recommendation"
-              width="3806"
-              height="2160"
+              width="1440"
+              height="817"
               loading="lazy"
             />
             <figcaption>Review briefing before a decision.</figcaption>
           </figure>
           <figure class="screenshot-card">
             <img
-              src="/screenshots/diff-pr-workbench.png"
+              src="/screenshots/diff-pr-workbench-1440.webp"
+              srcset="/screenshots/diff-pr-workbench-480.webp 480w, /screenshots/diff-pr-workbench-720.webp 720w, /screenshots/diff-pr-workbench-1440.webp 1440w"
+              sizes="(max-width: 640px) calc(100vw - 48px), 360px"
               alt="Neondeck PR diff workbench with an AI reviewer conversation"
-              width="3808"
-              height="2154"
+              width="1440"
+              height="815"
               loading="lazy"
             />
-            <figcaption>Revision-aware diff and reviewer conversation.</figcaption>
+            <figcaption>
+              Revision-aware diff and reviewer conversation.
+            </figcaption>
           </figure>
         </div>
 
