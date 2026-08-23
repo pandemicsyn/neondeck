@@ -69,6 +69,7 @@ export const queryKeys = {
   scheduledTasks: ['scheduled-tasks'] as const,
   subagents: ['subagents'] as const,
   notifications: ['notifications'] as const,
+  updateStatus: ['update-status'] as const,
   activityObservability: ['activity-observability'] as const,
   activitySubmission: (submissionId: string) =>
     ['activity-submission', submissionId] as const,

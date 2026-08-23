@@ -5,6 +5,13 @@ export function resolveNotificationTarget(
   notification: NotificationRecord,
 ): NotificationTarget {
   const data = asRecord(notification.data);
+  if (notification.source === 'neondeck-update') {
+    return {
+      kind: 'url',
+      href: 'https://neondeck.dev/docs/upgrading/',
+      label: 'Upgrade guide',
+    };
+  }
   const preparedDiffId = readString(data.preparedDiffId);
   if (preparedDiffId) {
     return {

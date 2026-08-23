@@ -20,11 +20,11 @@ A companion agent for keeping PRs moving, getting reviews done, and helping huma
 Neon watches your PRs, helps you get your reviews done, an tracks CI and release checks. It can configure its own repos,
 schedules, models, and deck layout through typed tools and APIs.
 
-It works with ChatGPT subs, as well as any gateway support by Pi (Kilo gateway, open router, etc) 
+It works with ChatGPT subs, as well as any gateway support by Pi (Kilo gateway, open router, etc)
 
 It is especially useful on a companion display, vertical panel, or Corsair
 Xeneon Edge-style display, where your active work can stay visible without taking
-over your editor or primary agent chat. 
+over your editor or primary agent chat.
 
 The backend is Node 26, Hono, and Flue; the dashboard is Vite, React, and Tailwind. Neondeck can run on your machine or on a remote host, with
 mutable state stored in SQLite under a runtime home you control.
@@ -184,6 +184,8 @@ neondeck open xeneon --browser "/path/to/chromium"
 - [neondeck.dev](https://neondeck.dev): public site and product docs.
 - [Getting started](https://neondeck.dev/docs/getting-started/): install,
   secrets, runtime home, dashboard launch, and local app install.
+- [Upgrading](https://neondeck.dev/docs/upgrading/): update npm, release archive,
+  or source installations and restart the local service safely.
 - [`QA.md`](./QA.md): install and validate published npm releases on a
   persistent Linux QA host.
 - [Configuration](https://neondeck.dev/docs/configuration/): runtime config,

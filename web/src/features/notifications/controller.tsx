@@ -88,6 +88,7 @@ export function NotificationController({
         queryClient.invalidateQueries({
           queryKey: queryKeys.chatSessionActivityRoot,
         }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.updateStatus }),
       ]);
     const refreshNotificationQueries = () => {
       void queryClient.invalidateQueries({ queryKey: queryKeys.notifications });

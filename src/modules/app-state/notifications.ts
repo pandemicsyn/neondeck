@@ -30,6 +30,19 @@ export async function listNotifications(
   }
 }
 
+export async function getNotification(id: string, paths = runtimePaths()) {
+  await ensureRuntimeHome(paths);
+  const database = openDb(paths.neondeckDatabase);
+  try {
+    const row = database
+      .prepare('SELECT * FROM notifications WHERE id = ? LIMIT 1;')
+      .get(id);
+    return row ? readNotificationRow(row) : null;
+  } finally {
+    database.close();
+  }
+}
+
 export async function addNotification(
   input: {
     id?: string;

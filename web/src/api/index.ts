@@ -23,3 +23,4 @@ export * from './reviews';
 export * from './review-surfaces';
 export * from './worktrees';
 export * from './watches';
+export * from './updates';

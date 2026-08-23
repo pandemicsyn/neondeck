@@ -63,6 +63,15 @@ describe('notification target resolution', () => {
       },
     ],
     [
+      'Neondeck update',
+      note({ source: 'neondeck-update', sourceId: '1.0.0-beta.39' }),
+      {
+        kind: 'url',
+        href: 'https://neondeck.dev/docs/upgrading/',
+        label: 'Upgrade guide',
+      },
+    ],
+    [
       'fallback',
       note({ source: 'unknown', data: null }),
       {

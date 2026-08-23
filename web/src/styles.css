@@ -175,6 +175,106 @@ button:disabled {
   }
 }
 
+.update-banner {
+  display: flex;
+  min-height: 34px;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 10px;
+  border-bottom: 1px solid color-mix(in srgb, var(--primary) 42%, var(--line));
+  background: color-mix(in srgb, var(--primary) 8%, var(--canvas));
+  padding: 5px 10px 5px 14px;
+  color: var(--ink);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.25;
+}
+
+.update-banner-signal {
+  flex: 0 0 auto;
+  color: var(--primary-strong);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.update-banner-message {
+  min-width: 0;
+  flex: 1 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.update-banner-current {
+  color: var(--muted);
+}
+
+.update-banner-error {
+  max-width: 32ch;
+  overflow: hidden;
+  color: var(--accent);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.update-banner-action,
+.update-banner-dismiss {
+  flex: 0 0 auto;
+  border: 1px solid var(--line);
+  background: var(--soft);
+  color: var(--ink);
+  font: inherit;
+}
+
+.update-banner-action {
+  padding: 3px 8px;
+  text-decoration: none;
+}
+
+.update-banner-dismiss {
+  display: grid;
+  width: 24px;
+  height: 24px;
+  place-items: center;
+  padding: 0;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.update-banner-action:hover,
+.update-banner-action:focus-visible,
+.update-banner-dismiss:hover,
+.update-banner-dismiss:focus-visible {
+  border-color: var(--primary);
+  color: var(--primary-strong);
+}
+
+.update-banner-action:focus-visible,
+.update-banner-dismiss:focus-visible {
+  outline: 1px solid var(--primary);
+  outline-offset: 1px;
+}
+
+.update-banner-dismiss:disabled {
+  cursor: wait;
+  opacity: 0.45;
+}
+
+@media (max-width: 620px) {
+  .update-banner {
+    gap: 7px;
+    padding-inline: 10px 7px;
+  }
+
+  .update-banner-current,
+  .update-banner-release,
+  .update-banner-error {
+    display: none;
+  }
+}
+
 .notification-toast-viewport {
   position: fixed;
   z-index: 50;
