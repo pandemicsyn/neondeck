@@ -1,6 +1,7 @@
 import { spawn } from 'node:child_process';
 import * as v from 'valibot';
 import { ExecFileError } from './exec';
+import { redactSensitiveText } from './redaction';
 
 const schedulerGitTimeoutMs = 20_000;
 const schedulerGitMaxBuffer = 4 * 1024 * 1024;
@@ -404,16 +405,10 @@ export function evaluateGitPushAccess(
 }
 
 export function redactGitText(value: string) {
-  return value
+  return redactSensitiveText(value)
     .replace(
-      /(^|\r?\n)((?:password|passwd|oauth[_-]?token|access[_-]?token|token|authorization|credential)=)[^\r\n]*/gi,
+      /(^|\r?\n)((?:(?:password|passwd|oauth[_-]?token|access[_-]?token|token|authorization|credential)=))[^\r\n]*/gi,
       '$1$2[redacted]',
-    )
-    .replace(/(authorization:\s*(?:basic|bearer)\s+)[^\s]+/gi, '$1[redacted]')
-    .replace(/\b([a-z][a-z\d+.-]*):\/\/[^/\s@]+@/gi, '$1://')
-    .replace(
-      /([?&](?:access[_-]?token|auth(?:orization)?|credential|oauth[_-]?token|passw(?:or)?d|token)=)[^&#\s]+/gi,
-      '$1[redacted]',
     )
     .replace(/#\S*/g, '');
 }

@@ -24,11 +24,12 @@ type ActivityPanelConfig = {
   refreshSeconds: number;
 };
 
-type ActivityFilter = 'all' | 'active' | 'failed' | 'settled' | 'activity';
+type ActivityFilter =
+  'submissions' | 'active' | 'failed' | 'settled' | 'activity';
 
 type ActivityItem = {
   id: string;
-  kind: Exclude<ActivityFilter, 'all'> | 'event';
+  kind: ActivityFilter;
   title: string;
   message: string;
   createdAt: string;
@@ -53,7 +54,7 @@ const filters: Array<{
   id: ActivityFilter;
   label: string;
 }> = [
-  { id: 'all', label: 'all' },
+  { id: 'submissions', label: 'submissions' },
   { id: 'active', label: 'active' },
   { id: 'failed', label: 'failed' },
   { id: 'settled', label: 'settled' },
@@ -68,7 +69,7 @@ export const ActivityPanelPlugin = {
   parseConfig: (config) =>
     parsePositiveIntegerConfig(activityPanelDefaultConfig, config),
   Component({ config }) {
-    const [filter, setFilter] = useState<ActivityFilter>('all');
+    const [filter, setFilter] = useState<ActivityFilter>('submissions');
     const {
       data: workflows,
       error,
@@ -262,7 +263,7 @@ export function activityItems(
     ),
   );
 
-  if (filter === 'all' || filter === 'active') {
+  if (filter === 'submissions' || filter === 'active') {
     for (const submission of workflows.activeSubmissions) {
       items.push({
         id: `active:${submission.submissionId}`,
@@ -281,11 +282,11 @@ export function activityItems(
     }
   }
 
-  if (filter === 'all' || filter === 'failed') {
+  if (filter === 'submissions' || filter === 'failed') {
     addEvents(items, seen, workflows.recentFailures, 'failed', watchesByOwner);
   }
 
-  if (filter === 'all' || filter === 'settled') {
+  if (filter === 'submissions' || filter === 'settled') {
     addEvents(
       items,
       seen,

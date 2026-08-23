@@ -338,11 +338,18 @@ describe('Flue v3 activity observability', () => {
     expect(JSON.stringify(history.events[1]?.summary)).toContain(
       'src/cache.ts',
     );
+    const overview = await readActivityObservability(paths);
+    const overviewTask = overview.recentEvents.find(
+      (event) => event.eventType === 'task_start',
+    );
+    expect(overviewTask?.summary).not.toHaveProperty('prompt');
+    expect(JSON.stringify(overview)).not.toContain('cache invalidate');
   });
 
-  it('retains task results while redacting embedded credentials', async () => {
+  it('retains task results while redacting common embedded credentials', async () => {
     const paths = await tempPaths();
     await recordFlueObservation(queued(1), paths);
+    const githubToken = `github_${'pat'}_${'aA1'.repeat(12)}`;
     await recordFlueObservation(
       {
         ...base(2),
@@ -351,22 +358,368 @@ describe('Flue v3 activity observability', () => {
         agent: 'explore',
         durationMs: 500,
         isError: false,
-        result:
-          'Answer: Found the caller.\nEvidence: src/app.ts:12\nsecret="do not store"',
+        result: [
+          'Answer: Found the caller.',
+          'Evidence: src/app.ts:12',
+          'token=token-value',
+          'Authorization: Basic encoded-value',
+          `provider credential: ${githubToken}`,
+          'client_secret="client-secret-value"',
+          'OPENAI_API_KEY=provider-key-value',
+          'AWS_SECRET_ACCESS_KEY=aws-key-value',
+          'headers: { "authorization": "Basic json-encoded-value" }',
+          'config: { "client_secret": "json-client-secret" }',
+          'password=delimiter-secret&still-secret;also-secret',
+          'password=correct horse battery staple',
+          '"password": quoted key plain scalar secret',
+        ].join('\n'),
       } as never,
       paths,
     );
 
     const history = await readActivitySubmissionEvents('submission-1', paths);
-    expect(history.events[1]).toMatchObject({
-      name: 'explore',
-      summary: {
-        taskId: 'task-1',
-        result:
-          'Answer: Found the caller.\nEvidence: src/app.ts:12\nsecret="[redacted]"',
-        resultTruncated: false,
-      },
+    const completedTask = history.events[1];
+    expect(completedTask).toBeDefined();
+    const result = (completedTask!.summary as Record<string, unknown>).result;
+    expect(result).toContain('Answer: Found the caller.');
+    expect(result).toContain('token=[redacted]');
+    expect(result).toContain('Authorization: Basic [redacted]');
+    expect(result).toContain('client_secret="[redacted]"');
+    expect(result).toContain('OPENAI_API_KEY=[redacted]');
+    expect(result).toContain('AWS_SECRET_ACCESS_KEY=[redacted]');
+    expect(result).toContain('"authorization": "Basic [redacted]"');
+    expect(result).toContain('"client_secret": "[redacted]"');
+    expect(result).not.toContain('token-value');
+    expect(result).not.toContain('encoded-value');
+    expect(result).not.toContain(githubToken);
+    expect(result).not.toContain('provider-key-value');
+    expect(result).not.toContain('aws-key-value');
+    expect(result).not.toContain('json-encoded-value');
+    expect(result).not.toContain('json-client-secret');
+    expect(result).not.toContain('delimiter-secret');
+    expect(result).not.toContain('still-secret');
+    expect(result).not.toContain('also-secret');
+    expect(result).not.toContain('horse battery staple');
+    expect(result).not.toContain('quoted key plain scalar secret');
+    const overview = await readActivityObservability(paths);
+    expect(JSON.stringify(overview)).not.toContain('Found the caller');
+  });
+
+  it('bounds retained task content in UTF-8 bytes per event and submission', async () => {
+    const paths = await tempPaths();
+    await recordFlueObservation(queued(1), paths);
+    for (let index = 0; index < 8; index += 1) {
+      await recordFlueObservation(
+        {
+          ...base(index + 2),
+          type: 'task_start',
+          taskId: `task-${index}`,
+          agent: 'explore',
+          prompt: 'x'.repeat(64 * 1_024),
+        } as never,
+        paths,
+      );
+    }
+    await recordFlueObservation(
+      {
+        ...base(10),
+        type: 'task_start',
+        taskId: 'task-over-budget',
+        agent: 'explore',
+        prompt: 'not retained',
+      } as never,
+      paths,
+    );
+
+    const history = await readActivitySubmissionEvents('submission-1', paths);
+    const retainedEvent = history.events.find(
+      (event) =>
+        (event.summary as Record<string, unknown>)?.taskId === 'task-0',
+    );
+    expect(retainedEvent).toBeDefined();
+    const retainedPrompt = (retainedEvent!.summary as Record<string, unknown>)
+      .prompt;
+    expect(
+      Buffer.byteLength(String(retainedPrompt), 'utf8'),
+    ).toBeLessThanOrEqual(64 * 1_024);
+    expect(
+      history.events.find(
+        (event) =>
+          (event.summary as Record<string, unknown>)?.taskId ===
+          'task-over-budget',
+      )?.summary,
+    ).toMatchObject({
+      promptTruncated: true,
+      promptOmittedReason: 'retention_limit',
     });
+    const database = openDb(paths.neondeckDatabase, { readOnly: true });
+    try {
+      expect(
+        database
+          .prepare(
+            `SELECT scope, content_bytes FROM activity_content_counters
+             ORDER BY scope;`,
+          )
+          .all(),
+      ).toEqual([
+        { scope: 'global', content_bytes: 512 * 1_024 },
+        {
+          scope: 'submission:submission-1',
+          content_bytes: 512 * 1_024,
+        },
+      ]);
+    } finally {
+      database.close();
+    }
+  });
+
+  it('tolerates malformed legacy summaries in overview and later writes', async () => {
+    const paths = await tempPaths();
+    await recordFlueObservation(queued(1), paths);
+    const database = openDb(paths.neondeckDatabase);
+    try {
+      database
+        .prepare(
+          `UPDATE activity_events SET summary_json = '{malformed'
+           WHERE submission_id = ?;`,
+        )
+        .run('submission-1');
+    } finally {
+      database.close();
+    }
+
+    await recordFlueObservation(
+      {
+        ...base(2),
+        type: 'task_start',
+        taskId: 'task-after-legacy-row',
+        agent: 'explore',
+        prompt: 'Question: Does activity still work?',
+      } as never,
+      paths,
+    );
+
+    const overview = await readActivityObservability(paths);
+    expect(overview.recentEvents).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          eventType: 'submission_queued',
+          summary: { type: 'parse-error' },
+        }),
+      ]),
+    );
+    await expect(
+      readActivitySubmissionEvents('submission-1', paths),
+    ).resolves.toMatchObject({
+      events: [
+        { summary: { type: 'parse-error' } },
+        { eventType: 'task_start' },
+      ],
+    });
+  });
+
+  it('decrements durable content counters when retained events are pruned', async () => {
+    const paths = await tempPaths();
+    await recordFlueObservation(queued(1), paths);
+    await recordFlueObservation(
+      {
+        ...base(2),
+        type: 'task_start',
+        taskId: 'task-to-prune',
+        agent: 'explore',
+        prompt: 'retained until the event ages out',
+      } as never,
+      paths,
+    );
+    const database = openDb(paths.neondeckDatabase);
+    try {
+      database.exec(`
+        WITH RECURSIVE sequence(value) AS (
+          SELECT 1 UNION ALL SELECT value + 1 FROM sequence WHERE value < 5000
+        )
+        INSERT INTO activity_events (
+          event_type, event_index, message, summary_json, created_at
+        )
+        SELECT 'log', value, 'filler', '{}',
+               printf('2026-08-02T00:%02d:%02d.000Z', value / 60, value % 60)
+        FROM sequence;
+      `);
+    } finally {
+      database.close();
+    }
+    await recordFlueObservation(
+      {
+        ...base(3),
+        timestamp: '2026-08-03T00:00:00.000Z',
+        type: 'log',
+        level: 'info',
+        message: 'trigger pruning',
+        attributes: {},
+      },
+      paths,
+    );
+
+    const counters = openDb(paths.neondeckDatabase, { readOnly: true });
+    try {
+      expect(
+        counters
+          .prepare(
+            `SELECT content_bytes FROM activity_content_counters
+             WHERE scope = 'global';`,
+          )
+          .get(),
+      ).toEqual({ content_bytes: 0 });
+    } finally {
+      counters.close();
+    }
+  });
+
+  it('reuses content capacity released at the event retention boundary', async () => {
+    const paths = await tempPaths();
+    for (let index = 0; index < 8; index += 1) {
+      await recordFlueObservation(
+        {
+          ...base(index + 1),
+          timestamp: `2026-08-01T00:00:0${index}.000Z`,
+          type: 'task_start',
+          taskId: `old-task-${index}`,
+          agent: 'explore',
+          prompt: 'x'.repeat(64 * 1_024),
+        } as never,
+        paths,
+      );
+    }
+    await recordFlueObservation(
+      {
+        ...queued(9),
+        timestamp: '2026-08-01T12:00:00.000Z',
+      },
+      paths,
+    );
+    const database = openDb(paths.neondeckDatabase);
+    try {
+      database.exec(`
+        WITH RECURSIVE sequence(value) AS (
+          SELECT 1 UNION ALL SELECT value + 1 FROM sequence WHERE value < 4991
+        )
+        INSERT INTO activity_events (
+          event_type, event_index, message, summary_json, created_at
+        )
+        SELECT 'log', value, 'filler', '{}',
+               printf('2026-08-02T00:%02d:%02d.000Z', value / 60, value % 60)
+        FROM sequence;
+      `);
+    } finally {
+      database.close();
+    }
+
+    await recordFlueObservation(
+      {
+        ...base(10),
+        timestamp: '2026-08-03T00:00:00.000Z',
+        type: 'task_start',
+        taskId: 'replacement-task',
+        agent: 'explore',
+        prompt: 'replacement prompt',
+      } as never,
+      paths,
+    );
+
+    const history = await readActivitySubmissionEvents('submission-1', paths);
+    expect(history.events.at(-1)?.summary).toMatchObject({
+      prompt: 'replacement prompt',
+    });
+  });
+
+  it('does not evict a retained row for an event older than the retention window', async () => {
+    const paths = await tempPaths();
+    await recordFlueObservation(
+      {
+        ...queued(1),
+        timestamp: '2026-08-02T00:00:00.000Z',
+      },
+      paths,
+    );
+    const database = openDb(paths.neondeckDatabase);
+    try {
+      database.exec(`
+        WITH RECURSIVE sequence(value) AS (
+          SELECT 1 UNION ALL SELECT value + 1 FROM sequence WHERE value < 4999
+        )
+        INSERT INTO activity_events (
+          event_type, event_index, message, summary_json, created_at
+        )
+        SELECT 'log', value + 1, 'retained filler', '{}',
+               printf('2026-08-03T00:%02d:%02d.000Z', value / 60, value % 60)
+        FROM sequence;
+      `);
+    } finally {
+      database.close();
+    }
+
+    await recordFlueObservation(
+      {
+        ...base(5001),
+        timestamp: '2026-08-01T00:00:00.000Z',
+        type: 'log',
+        level: 'info',
+        message: 'too old to retain',
+        attributes: {},
+      },
+      paths,
+    );
+
+    const retained = openDb(paths.neondeckDatabase, { readOnly: true });
+    try {
+      expect(
+        retained
+          .prepare(`SELECT COUNT(*) AS count FROM activity_events;`)
+          .get(),
+      ).toEqual({ count: 5_000 });
+      expect(
+        retained
+          .prepare(
+            `SELECT COUNT(*) AS count FROM activity_events
+             WHERE message = 'retained filler';`,
+          )
+          .get(),
+      ).toEqual({ count: 4_999 });
+      expect(
+        retained
+          .prepare(
+            `SELECT COUNT(*) AS count FROM activity_events
+             WHERE message = 'too old to retain';`,
+          )
+          .get(),
+      ).toEqual({ count: 0 });
+    } finally {
+      retained.close();
+    }
+  });
+
+  it('truncates multi-byte task content without exceeding the event byte cap', async () => {
+    const paths = await tempPaths();
+    await recordFlueObservation(queued(1), paths);
+    await recordFlueObservation(
+      {
+        ...base(2),
+        type: 'task',
+        taskId: 'task-emoji',
+        agent: 'explore',
+        durationMs: 5,
+        isError: false,
+        result: '🟢'.repeat(20_000),
+      } as never,
+      paths,
+    );
+
+    const history = await readActivitySubmissionEvents('submission-1', paths);
+    const summary = history.events[1]?.summary as Record<string, unknown>;
+    expect(
+      Buffer.byteLength(String(summary.result), 'utf8'),
+    ).toBeLessThanOrEqual(64 * 1_024);
+    expect(summary.result).toMatch(/\[truncated\]$/);
+    expect(summary.resultTruncated).toBe(true);
   });
 
   it('projects Flue 2 usage fields and cost breakdowns', async () => {

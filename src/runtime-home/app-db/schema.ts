@@ -756,6 +756,7 @@ export const activityEvents = sqliteTable(
     durationMs: integer('duration_ms'),
     isError: integer('is_error').default(0).notNull(),
     summaryJson: text('summary_json'),
+    contentBytes: integer('content_bytes').default(0).notNull(),
     createdAt: text('created_at').notNull(),
   },
   (table) => [
@@ -765,6 +766,15 @@ export const activityEvents = sqliteTable(
     ),
     index('idx_activity_events_created').on(sql`${table.createdAt} DESC`),
   ],
+);
+
+export const activityContentCounters = sqliteTable(
+  'activity_content_counters',
+  {
+    scope: text('scope').primaryKey(),
+    contentBytes: integer('content_bytes').default(0).notNull(),
+    updatedAt: text('updated_at').notNull(),
+  },
 );
 
 export const activitySubmissions = sqliteTable('activity_submissions', {

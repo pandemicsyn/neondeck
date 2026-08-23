@@ -1,6 +1,10 @@
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useMemo } from 'react';
-import { getActivitySubmission, type ActivityEventRecord } from '../../api';
+import {
+  getActivitySubmission,
+  type ActivityEventRecord,
+  type ActivitySubmissionResponse,
+} from '../../api';
 import { Badge, EmptyState, MiniEmpty, ScrollArea } from '../../components/ui';
 import { queryErrorMessage, queryKeys } from '../../lib/query';
 import { activitySubmissionMetrics } from './activity-metrics';
@@ -10,9 +14,22 @@ export function ActivitySubmissionPage({
 }: {
   submissionId: string;
 }) {
+  const queryClient = useQueryClient();
+  const queryKey = queryKeys.activitySubmission(submissionId);
   const { data, error, isLoading } = useQuery({
-    queryKey: queryKeys.activitySubmission(submissionId),
-    queryFn: ({ signal }) => getActivitySubmission(submissionId, { signal }),
+    queryKey,
+    queryFn: async ({ signal }) => {
+      const previous =
+        queryClient.getQueryData<ActivitySubmissionResponse>(queryKey);
+      const afterEventId = latestActivityEventId(previous?.events ?? []);
+      const incoming = await getActivitySubmission(submissionId, {
+        signal,
+        afterEventId,
+      });
+      return previous && afterEventId !== undefined
+        ? mergeActivitySubmissionResponse(previous, incoming)
+        : incoming;
+    },
     refetchInterval: (query) => {
       const status = query.state.data?.submission.status;
       return status === 'queued' || status === 'running' ? 2_000 : false;
@@ -379,6 +396,11 @@ function ActivityEventRow({ event }: { event: ActivityEventRecord }) {
             </pre>
           </details>
         ) : null}
+        {details.contentStatus ? (
+          <p className="m-0 mt-1.5 border-t border-line/70 pt-1.5 font-mono text-[9.5px] text-muted">
+            {details.contentStatus}
+          </p>
+        ) : null}
         {details.metadata !== null ? (
           <details className="mt-1.5 border-t border-line/70 pt-1">
             <summary className="cursor-pointer font-mono text-[9.5px] text-muted hover:text-ink">
@@ -396,7 +418,7 @@ function ActivityEventRow({ event }: { event: ActivityEventRecord }) {
 
 export function activityEventDetails(event: ActivityEventRecord) {
   if (!event.summary || typeof event.summary !== 'object') {
-    return { content: null, metadata: event.summary };
+    return { content: null, contentStatus: null, metadata: event.summary };
   }
   const summary = event.summary as Record<string, unknown>;
   const contentKey =
@@ -406,8 +428,20 @@ export function activityEventDetails(event: ActivityEventRecord) {
         ? 'result'
         : null;
   const value = contentKey ? summary[contentKey] : null;
-  if (!contentKey || typeof value !== 'string') {
-    return { content: null, metadata: event.summary };
+  if (!contentKey) {
+    return { content: null, contentStatus: null, metadata: event.summary };
+  }
+  if (typeof value !== 'string') {
+    const label = contentKey === 'prompt' ? 'Task prompt' : 'Task output';
+    const omittedReason = summary[`${contentKey}OmittedReason`];
+    return {
+      content: null,
+      contentStatus:
+        omittedReason === 'retention_limit'
+          ? `${label} was omitted after the activity content retention limit was reached.`
+          : `${label} was not retained for this event.`,
+      metadata: event.summary,
+    };
   }
   const { [contentKey]: _content, ...metadata } = summary;
   return {
@@ -416,7 +450,43 @@ export function activityEventDetails(event: ActivityEventRecord) {
       value,
       truncated: summary[`${contentKey}Truncated`] === true,
     },
+    contentStatus: null,
     metadata: Object.keys(metadata).length ? metadata : null,
+  };
+}
+
+export function latestActivityEventId(events: ActivityEventRecord[]) {
+  return events.reduce<number | undefined>(
+    (latest, event) =>
+      latest === undefined ? event.id : Math.max(latest, event.id),
+    undefined,
+  );
+}
+
+export function mergeActivitySubmissionResponse(
+  previous: ActivitySubmissionResponse,
+  incoming: ActivitySubmissionResponse,
+): ActivitySubmissionResponse {
+  const eventsById = new Map(previous.events.map((event) => [event.id, event]));
+  for (const event of incoming.events) eventsById.set(event.id, event);
+  const retainedIds = new Set(
+    [...eventsById.keys()]
+      .sort((left, right) => right - left)
+      .slice(0, incoming.eventHistory.retainedEventCount),
+  );
+  return {
+    ...incoming,
+    events: [...eventsById.values()].filter((event) =>
+      retainedIds.has(event.id),
+    ),
+    eventHistory: {
+      totalEventCount: Math.max(
+        previous.eventHistory.totalEventCount,
+        incoming.eventHistory.totalEventCount,
+      ),
+      retainedEventCount: incoming.eventHistory.retainedEventCount,
+      isTruncated: incoming.eventHistory.isTruncated,
+    },
   };
 }
 
