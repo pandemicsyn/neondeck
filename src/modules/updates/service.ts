@@ -54,15 +54,28 @@ export async function readUpdateStatus(
   await ensureRuntimeHome(paths);
   const enabled = updateChecksEnabled(process.env, currentVersion);
   const database = openDb(paths.neondeckDatabase);
+  const events: NotificationEvent[] = [];
+  let status: UpdateStatus;
   try {
+    events.push(
+      ...resolveMatchingUpdateNotifications(
+        database,
+        new Date().toISOString(),
+        (notification) =>
+          !enabled ||
+          (notification.sourceId !== null &&
+            parseVersion(notification.sourceId) !== null &&
+            compareVersions(notification.sourceId, currentVersion) <= 0),
+      ),
+    );
     const cached = readCachedUpdate(database);
-    const status = buildUpdateStatus(enabled, currentVersion, cached, null);
+    status = buildUpdateStatus(enabled, currentVersion, cached, null);
     const notification = status.notificationId
       ? database
           .prepare('SELECT * FROM notifications WHERE id = ? LIMIT 1;')
           .get(status.notificationId)
       : null;
-    return {
+    status = {
       ...status,
       dismissed: notification
         ? Boolean(readNotificationRow(notification).resolvedAt)
@@ -71,6 +84,8 @@ export async function readUpdateStatus(
   } finally {
     database.close();
   }
+  for (const event of events) publishNotificationEvent(event);
+  return status;
 }
 
 export async function checkForUpdates(
@@ -215,43 +230,13 @@ function persistUpdateCheck(
   let currentNotification: NotificationRecord | null = null;
   try {
     withImmediateTransaction(database, () => {
-      const obsoleteRows = database
-        .prepare(
-          `SELECT *
-           FROM notifications
-           WHERE source = 'neondeck-update'
-             AND resolved_at IS NULL;`,
-        )
-        .all()
-        .filter((row) => readNotificationRow(row).id !== notificationId);
-      for (const row of obsoleteRows) {
-        const obsolete = readNotificationRow(row);
-        database
-          .prepare(
-            `UPDATE notifications
-             SET resolved_at = ?,
-                 read_at = COALESCE(read_at, ?),
-                 updated_at = ?
-             WHERE id = ?;`,
-          )
-          .run(
-            update.checkedAt,
-            update.checkedAt,
-            update.checkedAt,
-            obsolete.id,
-          );
-        const resolvedRow = database
-          .prepare('SELECT * FROM notifications WHERE id = ?;')
-          .get(obsolete.id);
-        if (resolvedRow) {
-          events.push({
-            id: obsolete.id,
-            action: 'resolved',
-            notification: readNotificationRow(resolvedRow),
-            changedAt: update.checkedAt,
-          });
-        }
-      }
+      events.push(
+        ...resolveMatchingUpdateNotifications(
+          database,
+          update.checkedAt,
+          (notification) => notification.id !== notificationId,
+        ),
+      );
 
       if (notificationId) {
         const title = `Neondeck ${update.latestVersion} is available`;
@@ -343,6 +328,48 @@ function persistUpdateCheck(
   }
   for (const event of events) publishNotificationEvent(event);
   return currentNotification;
+}
+
+function resolveMatchingUpdateNotifications(
+  database: ReturnType<typeof openDb>,
+  changedAt: string,
+  shouldResolve: (notification: NotificationRecord) => boolean,
+) {
+  const events: NotificationEvent[] = [];
+  const notifications = database
+    .prepare(
+      `SELECT *
+       FROM notifications
+       WHERE source = 'neondeck-update'
+         AND resolved_at IS NULL;`,
+    )
+    .all()
+    .map(readNotificationRow)
+    .filter(shouldResolve);
+  for (const notification of notifications) {
+    database
+      .prepare(
+        `UPDATE notifications
+         SET resolved_at = ?,
+             read_at = COALESCE(read_at, ?),
+             updated_at = ?
+         WHERE id = ?
+           AND resolved_at IS NULL;`,
+      )
+      .run(changedAt, changedAt, changedAt, notification.id);
+    const resolvedRow = database
+      .prepare('SELECT * FROM notifications WHERE id = ?;')
+      .get(notification.id);
+    if (resolvedRow) {
+      events.push({
+        id: notification.id,
+        action: 'resolved',
+        notification: readNotificationRow(resolvedRow),
+        changedAt,
+      });
+    }
+  }
+  return events;
 }
 
 function releaseUrl(version: string) {

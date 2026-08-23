@@ -168,6 +168,37 @@ describe('Neondeck update checking', () => {
     });
   });
 
+  it('resolves an installed update notice without another registry check', async () => {
+    const paths = runtimePaths(await tempDir());
+    await checkForUpdates(paths, {
+      currentVersion: '1.0.0-beta.38',
+      fetcher: async () => Response.json({ version: '1.0.0-beta.39' }),
+    });
+
+    await expect(
+      readUpdateStatus(paths, '1.0.0-beta.39'),
+    ).resolves.toMatchObject({ updateAvailable: false });
+    await expect(
+      getNotification(updateNotificationId('1.0.0-beta.39'), paths),
+    ).resolves.toMatchObject({ resolvedAt: expect.any(String) });
+  });
+
+  it('resolves update notices when automatic checks are disabled', async () => {
+    const paths = runtimePaths(await tempDir());
+    await checkForUpdates(paths, {
+      currentVersion: '1.0.0-beta.38',
+      fetcher: async () => Response.json({ version: '1.0.0-beta.39' }),
+    });
+
+    process.env.NEONDECK_DISABLE_UPDATE_CHECK = '1';
+    await expect(
+      readUpdateStatus(paths, '1.0.0-beta.38'),
+    ).resolves.toMatchObject({ enabled: false, updateAvailable: false });
+    await expect(
+      getNotification(updateNotificationId('1.0.0-beta.39'), paths),
+    ).resolves.toMatchObject({ resolvedAt: expect.any(String) });
+  });
+
   it('does not cache an update when its notification cannot be created', async () => {
     const paths = runtimePaths(await tempDir());
     await readUpdateStatus(paths, '1.0.0-beta.38');
