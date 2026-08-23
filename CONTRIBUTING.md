@@ -1,9 +1,9 @@
 # Contributing to Neondeck
 
-Neondeck is a personal, opinionated project maintained solely by
-[@pandemicsyn](https://github.com/pandemicsyn). The project is deliberately
-built differently from a conventional open-source project: its product
-direction, architecture, and feature work are maintained by the owner.
+Neondeck is a personal, opinionated project led by
+[@pandemicsyn](https://github.com/pandemicsyn). We welcome bug fixes and
+thoughtfully prepared feature work, while product direction and architectural
+decisions remain with the maintainer.
 
 ## What we accept
 
@@ -22,15 +22,14 @@ combine an unrelated cleanup with a fix, may be closed.
 
 ## Features and product changes
 
-Feature pull requests will be closed. This is not a judgment on the quality of
-the work; Neondeck's feature set is planned and implemented by
-[@pandemicsyn](https://github.com/pandemicsyn).
+Feature pull requests are welcome, but are unlikely to be accepted unless the
+feature has been discussed and approved before implementation. This keeps
+contributor effort focused on work that fits Neondeck's direction.
 
 If you want to propose a feature, open a **Feature specifications** GitHub
-Discussion first. Do not start implementation until there is a discussion
-outcome. We use that discussion to develop an implementation prompt; the
-maintainer runs the resulting prompt and work. A proposal should be a thorough
-specification covering:
+Discussion first. Work with the maintainer to develop a thorough specification,
+implementation prompt, and plan, then receive approval before starting the PR.
+The maintainer runs the resulting prompt and work. A proposal should cover:
 
 - the problem, who experiences it, and why the current behavior is inadequate;
 - concrete user flows and acceptance criteria;
@@ -41,13 +40,13 @@ specification covering:
 - security, privacy, operational, and maintenance implications; and
 - validation plan, including tests and documentation changes.
 
-Discussions are for design input and do not imply that a feature will be
-accepted or scheduled. When Neondeck uses a contributor's discussion or
-resulting prompt to develop a feature, that contributor will be credited for
-the feature.
+Discussions alone do not imply that a feature is accepted or scheduled. A
+feature PR without an approved discussion, prompt, and plan will likely be
+closed. When Neondeck uses a contributor's discussion or resulting prompt to
+develop a feature, that contributor will be credited for the feature.
 
 ## Maintainer authority
 
-Only [@pandemicsyn](https://github.com/pandemicsyn) is authorized to merge
-changes, make product decisions, and add features to this repository. Please
-respect final maintainer decisions on scope and direction.
+[@pandemicsyn](https://github.com/pandemicsyn) makes the final decisions on
+scope, direction, and merging. Please respect those decisions when proposing or
+implementing work.

@@ -1,6 +1,7 @@
 <!--
-Neondeck accepts evidence-backed bug fixes only. Feature PRs are closed.
-Propose features in a thorough GitHub Discussion before writing code.
+Neondeck accepts evidence-backed bug fixes and pre-approved feature work.
+Feature PRs need a thorough Discussion, implementation prompt, plan, and
+maintainer approval before development.
 -->
 
 ## Bug evidence
@@ -17,7 +18,8 @@ Describe the focused change and why it addresses the evidence.
 
 - [ ] I added or updated a test, or explained why a test is not practical.
 - [ ] I ran the relevant checks and included their results above.
-- [ ] This PR is a bug fix only; it does not introduce a feature or product change.
+- [ ] This is an evidence-backed bug fix, or it is feature work with an approved
+      Feature specifications Discussion, implementation prompt, and plan.
 
 ## AI assistance disclosure
 
@@ -26,5 +28,5 @@ used, write `None`.
 
 ## Maintainer note
 
-Only @pandemicsyn may merge changes or make product decisions. Feature PRs will
-be closed; please use a thorough GitHub Discussion specification instead.
+@pandemicsyn makes final merge and product decisions. Feature PRs without an
+approved Discussion, prompt, and plan will likely be closed.
