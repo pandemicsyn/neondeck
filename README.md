@@ -152,23 +152,26 @@ npm run build            # production dashboard/server + docs build
 npm run docs:astro-dev   # hot dev server for the docs site
 ```
 
-After a production build or package install, run Neondeck in the foreground:
-
-```sh
-neondeck serve
-```
-
-Or install and start the macOS or Linux login service:
-
-```sh
-neondeck service install
-```
-
-Then, from another terminal if using `serve`, open the dashboard in the OS
-default browser:
+After a production build or package install, start Neondeck and open the
+dashboard:
 
 ```sh
 neondeck open
+```
+
+When no login service is installed, `open` owns the server in the current
+terminal; press Ctrl-C to stop it. Or install the macOS or Linux login service
+for managed background operation:
+
+```sh
+neondeck service install
+neondeck open
+```
+
+Use `serve` when you want the foreground server without opening a browser:
+
+```sh
+neondeck serve
 ```
 
 To launch a named window profile with Chromium app-mode placement, select the
