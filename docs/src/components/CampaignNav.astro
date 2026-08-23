@@ -23,7 +23,11 @@ const { campaign, context, showContext = true } = Astro.props;
       )
     }
     <a
-      class="campaign-link-button campaign-nav__cta"
+      class:list={[
+        'campaign-link-button',
+        'campaign-nav__cta',
+        !showContext && 'campaign-nav__cta--pushed',
+      ]}
       href="https://github.com/pandemicsyn/neondeck"
       data-marketing-event="github_click"
       data-marketing-placement="nav"
