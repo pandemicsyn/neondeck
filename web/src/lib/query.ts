@@ -56,6 +56,7 @@ export const queryKeys = {
   prWatches: ['pr-watches'] as const,
   prReviews: ['pr-reviews'] as const,
   prReviewsLocal: ['pr-reviews-local'] as const,
+  prReview: (id: string) => ['pr-review', id] as const,
   prReviewTarget: (repo: string, prNumber: number) =>
     ['pr-reviews', repo, prNumber] as const,
   repoHealth: ['repo-health'] as const,

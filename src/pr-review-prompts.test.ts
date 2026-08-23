@@ -11,6 +11,7 @@ import { buildPrReviewerRuntime } from './agents/pr-reviewer';
 import { updatePrReviewPrompt } from './modules/config';
 import {
   addPrReviewDraftComment,
+  prReviewBriefingFixture,
   upsertPrReviewDraft,
 } from './testing/pr-review-draft-fixtures';
 import { completePrReview, startPrReview } from './modules/pr-reviews';
@@ -51,6 +52,21 @@ describe('PR review prompts', () => {
     );
     expect(defaultPrReviewPromptTemplates['initial-review']).toContain(
       'Treat the durable shared 500-call workspace budget as a safety ceiling, not a target.',
+    );
+    expect(defaultPrReviewPromptTemplates['initial-review']).toContain(
+      'An empty findings array is not, on its own, grounds for approve.',
+    );
+    expect(defaultPrReviewPromptTemplates['initial-review']).toContain(
+      'Set overview.recommendation to approve only when the pull request can merge without a human reading the diff.',
+    );
+    expect(defaultPrReviewPromptTemplates['initial-review']).toContain(
+      'for approve, answer "why is this safe to merge without a human reading the diff?"',
+    );
+    expect(defaultPrReviewPromptTemplates['initial-review']).toContain(
+      'for needs-human, answer "what makes this change hard, dangerous, complex, or load-bearing?"',
+    );
+    expect(defaultPrReviewPromptTemplates['initial-review']).not.toContain(
+      'first slide',
     );
     for (const prompt of Object.values(defaultPrReviewPromptTemplates)) {
       expect(prompt).toContain(
@@ -126,6 +142,7 @@ describe('PR review prompts', () => {
         headSha,
         reportIds: [],
         reviewUrl: started.review.reviewUrl,
+        briefingOverview: prReviewBriefingFixture(),
         findingCount: 1,
         seededCount: 1,
         reportOnlyCount: 0,

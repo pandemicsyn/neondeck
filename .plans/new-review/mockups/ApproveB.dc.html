@@ -1,0 +1,256 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+  <style>
+    body { margin: 0; background: #05060a; }
+    .shell, .shell * { box-sizing: border-box; }
+    .shell {
+      --canvas: #0a0b10; --panel: #0c0d12; --field: #070810;
+      --line: rgba(255,255,255,0.07); --line-up: rgba(255,255,255,0.12);
+      --ink: #d7f7ff; --muted: #91a8b0;
+      --primary: #00b7c7; --primary-strong: #69e6ff; --primary-ink: #070810;
+      --good: #4dd6a8; --warning: #f0b95b; --danger: #ff6b7a;
+      font: 14px/1.55 "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
+      color: var(--ink);
+    }
+    .shell[data-theme="light"] {
+      --canvas: #edf5f8; --panel: #f7fbfd; --field: #dbeaef;
+      --line: rgba(20,45,60,0.18); --line-up: rgba(20,45,60,0.26);
+      --ink: #19232e; --muted: #435965;
+      --primary: #007f91; --primary-strong: #005b69; --primary-ink: #edf5f8;
+      --good: #157a5f; --warning: #8a5b00; --danger: #b42335;
+    }
+    .mono { font-family: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace; }
+    .disp { font-family: "Chakra Petch", ui-sans-serif, system-ui, sans-serif; }
+    .shell a { color: var(--primary-strong); text-decoration-color: color-mix(in srgb, var(--primary-strong) 54%, transparent); text-underline-offset: 0.18em; }
+    .shell a:hover { text-decoration-color: currentColor; }
+    .shell button { font: inherit; cursor: pointer; border-radius: 0; }
+    .shell button:disabled { cursor: not-allowed; opacity: 0.5; }
+    .chip { border: 1px solid var(--line-up); background: transparent; color: var(--muted); padding: 4px 8px; font: 400 10px/1.2 "IBM Plex Mono", ui-monospace, monospace; }
+    .chip:hover { border-color: var(--primary); color: var(--primary); }
+    .chip[data-strong="true"] { border-color: var(--primary); color: var(--primary); }
+    .prose p { margin: 0 0 0.9em; }
+    .prose p:last-child { margin-bottom: 0; }
+    .prose code { background: var(--field); padding: 1px 4px; font-family: "IBM Plex Mono", ui-monospace, monospace; font-size: 0.86em; }
+    .card { border: 1px solid var(--line); border-left: 2px solid var(--muted); background: var(--panel); }
+    .card[data-done="true"] { opacity: 0.44; }
+    .card[data-done="true"] p[data-body] { text-decoration: line-through; }
+    .card + .card { margin-top: 8px; }
+    .cardhead { display: flex; align-items: center; gap: 10px; padding: 10px 14px 0 14px; }
+    .sev { display: inline-flex; flex: none; min-height: 20px; align-items: center; border: 1px solid currentColor; padding: 2px 6px; font: 600 9px/1 "IBM Plex Mono", ui-monospace, monospace; letter-spacing: 0.04em; color: var(--muted); }
+    .tag { display: inline-flex; flex: none; align-items: center; border: 1px solid var(--line-up); padding: 2px 6px; font: 400 9px/1.35 "IBM Plex Mono", ui-monospace, monospace; letter-spacing: 0.04em; color: var(--muted); }
+    .tag[data-kind="draft"] { border-color: color-mix(in srgb, var(--primary) 60%, transparent); color: var(--primary-strong); }
+    .act { border: 1px solid var(--line-up); background: transparent; color: var(--muted); padding: 4px 9px; font: 400 10px/1.2 "IBM Plex Mono", ui-monospace, monospace; }
+    .act:hover { border-color: var(--primary); color: var(--primary); }
+    .act[data-kind="dismiss"]:hover { border-color: var(--danger); color: var(--danger); }
+    .primary {
+      display: inline-flex; min-height: 36px; align-items: center; gap: 8px;
+      border: 1px solid var(--good); background: color-mix(in srgb, var(--good) 14%, transparent);
+      padding: 7px 14px; color: var(--good);
+      font: 600 11px/1.2 "IBM Plex Mono", ui-monospace, monospace; letter-spacing: 0.04em;
+    }
+    .primary:hover:not(:disabled) { background: color-mix(in srgb, var(--good) 24%, transparent); }
+    .guidehead { display: flex; align-items: center; gap: 8px; margin: 0; padding: 14px 16px 0; font: 400 9px/1.2 "IBM Plex Mono", ui-monospace, monospace; letter-spacing: 0.12em; color: var(--muted); }
+    .dot { width: 5px; height: 5px; flex: none; background: var(--warning); }
+  </style>
+</helmet>
+<div class="shell" data-theme="{{theme}}" style="display: flex; width: 1440px; height: 920px; flex-direction: column; border: 1px solid var(--line-up); background: var(--canvas); overflow: hidden;">
+
+  <header style="display: flex; min-height: 44px; align-items: center; justify-content: space-between; gap: 16px; border-bottom: 1px solid var(--line); background: var(--panel); padding: 8px 14px;">
+    <div style="min-width: 0;">
+      <p class="mono" style="margin: 0; font-size: 10px; letter-spacing: 0.12em; color: var(--primary);">REVIEW BRIEFING &middot; PANDEMICSYN/NEONDECK#314 &middot; 7B1E440</p>
+      <h1 class="disp" style="margin: 1px 0 0; font-size: 16px; font-weight: 600; color: var(--ink);">Prevent PR review refresh retry loop</h1>
+    </div>
+    <div class="mono" style="display: flex; flex: none; align-items: center; gap: 8px; font-size: 10px;">
+      <button class="chip" type="button">pop out</button>
+      <button class="chip" type="button">workbench</button>
+      <button class="chip" data-strong="true" type="button">close</button>
+    </div>
+  </header>
+
+  <sc-if value="{{isOpen}}" hint-placeholder-val="{{true}}">
+    <div style="display: flex; align-items: center; gap: 14px; border-bottom: 1px solid var(--line); background: color-mix(in srgb, var(--good) 8%, var(--panel)); padding: 12px 14px;">
+      <span class="mono" style="display: inline-flex; flex: none; align-items: center; gap: 7px; border: 1px solid var(--good); padding: 6px 10px; font-size: 10px; font-weight: 600; letter-spacing: 0.08em; color: var(--good);">&#10003; RECOMMEND APPROVE</span>
+      <p style="margin: 0; min-width: 0; font-size: 13.5px; line-height: 1.5;">I'd approve this. Three nits, nothing behavioural I couldn't account for, and the full check suite is green.</p>
+      <span class="mono" style="flex: none; margin-inline-start: auto; font-size: 10px; color: var(--muted);">reviewed 7b1e440 &middot; 12:04</span>
+    </div>
+  </sc-if>
+
+  <sc-if value="{{isSubmitted}}" hint-placeholder-val="{{true}}">
+    <div style="display: flex; align-items: center; gap: 14px; border-bottom: 1px solid var(--line); background: color-mix(in srgb, var(--good) 14%, var(--panel)); padding: 12px 14px;">
+      <span class="mono" style="display: inline-flex; flex: none; align-items: center; gap: 7px; border: 1px solid var(--good); background: var(--good); padding: 6px 10px; font-size: 10px; font-weight: 600; letter-spacing: 0.08em; color: var(--primary-ink);">&#10003; APPROVED</span>
+      <p style="margin: 0; min-width: 0; font-size: 13.5px; line-height: 1.5;">Submitted at 12:06 as one review: <strong>Approve</strong>, {{payloadLabel}} attached. This briefing is now a receipt.</p>
+      <a class="mono" href="#" style="flex: none; margin-inline-start: auto; font-size: 10px;">view on GitHub &rarr;</a>
+    </div>
+  </sc-if>
+
+  <div style="display: grid; min-height: 0; flex: 1 1 auto; grid-template-columns: minmax(0, 1fr) 340px;">
+
+    <div style="min-height: 0; overflow: auto; padding: 26px 30px 30px;">
+
+      <section style="max-width: 78ch;">
+        <p class="mono" style="margin: 0 0 12px; font-size: 9px; letter-spacing: 0.14em; color: var(--muted);">WHY I THINK THIS IS SAFE</p>
+        <div class="prose" style="font-size: 16.5px; line-height: 1.7; text-wrap: pretty;">
+          <p>Ten files and +2,759 lines looks alarming until you open them: seven are archived review HTML, regenerated snapshots, and changeset bookkeeping. The authored change is 69 lines across three files.</p>
+          <p>It adds a retry ceiling to the PR review refresh so a failing fetch stops re-arming itself, pulls the decision into <code>review-ui-helpers.ts</code> as a pure function, and covers it with a test that fails against the old code. Nothing here touches the review record, draft comments, or submission &mdash; the blast radius is one polling effect in one component.</p>
+          <p>The three notes below are naming and a magic number. I've drafted them as comments so they ride along with the approval, but none of them would change my mind.</p>
+        </div>
+        <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 20px;">
+          <a class="mono" href="#" style="display: inline-flex; min-height: 32px; align-items: center; border: 1px solid var(--primary); padding: 6px 12px; font-size: 10px; font-weight: 600; text-decoration: none;">Open the 69 lines in the workbench</a>
+          <a class="mono" href="#" style="display: inline-flex; min-height: 32px; align-items: center; border: 1px solid var(--line-up); padding: 6px 12px; font-size: 10px; color: var(--muted); text-decoration: none;">Open PR on GitHub</a>
+        </div>
+      </section>
+
+
+      <div style="display: flex; align-items: baseline; gap: 12px; margin: 30px 0 12px; border-top: 1px solid var(--line); padding-top: 20px;">
+        <h2 class="mono" style="margin: 0; font-size: 12px; font-weight: 600; letter-spacing: 0.1em; color: var(--primary-strong);">RIDING ALONG</h2>
+        <p style="margin: 0; font-size: 11px; color: var(--muted);">these submit with the approval &mdash; dismiss any you don't want sent</p>
+        <span class="mono" style="margin-inline-start: auto; font-size: 10px; font-variant-numeric: tabular-nums; color: var(--muted);">{{keptLabel}}</span>
+      </div>
+
+      <sc-for list="{{nits}}" as="nit" hint-placeholder-count="3">
+        <div class="card" data-done="{{nit.dismissed}}">
+          <div class="cardhead">
+            <span class="sev">NIT</span>
+            <a class="mono" href="#" style="overflow: hidden; min-width: 0; flex: 1 1 auto; text-overflow: ellipsis; white-space: nowrap; font-size: 12px;">{{nit.location}}</a>
+            <span class="tag" data-kind="draft">draft comment</span>
+          </div>
+          <div style="padding: 8px 14px 12px 14px;">
+            <p data-body="" style="margin: 0; font-size: 13.5px; line-height: 1.55;">{{nit.summary}}</p>
+            <sc-if value="{{nit.editing}}" hint-placeholder-val="{{true}}">
+              <div style="margin-top: 10px; border: 1px solid var(--primary); background: var(--field); padding: 10px 12px;">
+                <p class="mono" style="margin: 0 0 7px; font-size: 9px; letter-spacing: 0.08em; color: var(--muted);">YOUR COMMENT &middot; POSTS ON {{nit.locationShort}}</p>
+                <div contenteditable="true" suppressContentEditableWarning="{{true}}" style="min-height: 46px; outline: none; font-size: 13px; line-height: 1.6;">{{nit.draft}}</div>
+              </div>
+            </sc-if>
+            <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 7px; margin-top: 10px;">
+              <button class="act" type="button">open in diff</button>
+              <button class="act" onClick="{{nit.edit}}" type="button">{{nit.editLabel}}</button>
+              <button class="act" data-kind="dismiss" onClick="{{nit.dismiss}}" type="button">dismiss</button>
+              <sc-if value="{{nit.isDismissed}}" hint-placeholder-val="{{true}}">
+                <button class="act" onClick="{{nit.undo}}" style="border-color: var(--danger); color: var(--danger);" type="button">dismissed &middot; undo</button>
+              </sc-if>
+            </div>
+          </div>
+        </div>
+      </sc-for>
+
+    </div>
+
+    <aside style="display: flex; min-height: 0; flex-direction: column; border-left: 1px solid var(--line); background: var(--panel);" aria-label="Reviewer guidance">
+      <div style="border-bottom: 1px solid var(--line); padding: 14px 16px;">
+        <p class="mono" style="margin: 0; font-size: 10px; font-weight: 600; letter-spacing: 0.12em; color: var(--good);">NOTHING HERE NEEDS YOU</p>
+        <p style="margin: 5px 0 0; font-size: 11.5px; line-height: 1.5; color: var(--muted);">One thing I'd glance at if you have a minute. Otherwise the button below is the whole job.</p>
+      </div>
+      <div style="min-height: 0; flex: 1 1 auto; overflow: auto;">
+        <p class="guidehead" style="padding-top: 14px;"><span class="dot"></span>IF YOU WANT TO DOUBLE-CHECK ONE THING<span style="margin-inline-start: auto; font-variant-numeric: tabular-nums;">1</span></p>
+        <div style="padding: 10px 16px 16px;">
+          <div style="border-left: 2px solid var(--warning); padding: 2px 0 2px 10px;">
+            <p style="margin: 0; font-size: 12.5px; line-height: 1.55;">The retry ceiling is 3. I couldn't find a case where a slow first load legitimately needs a fourth attempt, but I only read the client side of it.</p>
+            <a class="mono" href="#" style="display: inline-block; margin-top: 6px; font-size: 10px;">GitHubPrReview.tsx:214</a>
+          </div>
+        </div>
+        <div style="border-top: 1px solid var(--line); margin: 4px 16px 20px; padding-top: 16px;">
+          <p class="mono" style="margin: 0; font-size: 9px; letter-spacing: 0.12em; color: var(--muted);">GOT A QUESTION?</p>
+          <p style="margin: 7px 0 0; font-size: 12.5px; line-height: 1.55; color: var(--muted);">The workbench has the full diff and the review chat. Asking there keeps the answer next to the code it is about.</p>
+          <a class="mono" href="#" style="display: inline-flex; min-height: 32px; align-items: center; margin-top: 10px; border: 1px solid var(--line-up); padding: 6px 10px; font-size: 10px; text-decoration: none;">Ask Neon in the workbench &rarr;</a>
+        </div>
+      </div>
+    </aside>
+  </div>
+
+  <sc-if value="{{showNoteRow}}" hint-placeholder-val="{{true}}">
+    <div style="border-top: 1px solid var(--line); background: var(--panel); padding: 10px 14px;">
+      <button class="act" onClick="{{openNote}}" style="border-style: dashed;" type="button">+ add a note with your approval</button>
+    </div>
+  </sc-if>
+  <sc-if value="{{showNoteBox}}" hint-placeholder-val="{{true}}">
+    <div style="border-top: 1px solid var(--line); background: var(--panel); padding: 12px 14px;">
+      <div style="display: flex; align-items: center; gap: 10px;">
+        <p class="mono" style="margin: 0; font-size: 9px; letter-spacing: 0.08em; color: var(--muted);">NOTE WITH YOUR APPROVAL &middot; POSTS AS THE REVIEW BODY, ABOVE THE COMMENTS</p>
+        <button class="act" onClick="{{closeNote}}" style="margin-inline-start: auto;" type="button">remove note</button>
+      </div>
+      <div contenteditable="true" suppressContentEditableWarning="{{true}}" style="margin-top: 8px; border: 1px solid var(--primary); background: var(--field); padding: 10px 12px; min-height: 44px; outline: none; font-size: 13.5px; line-height: 1.6;">lgtm — just remember to name that retry ceiling before the next one lands.</div>
+    </div>
+  </sc-if>
+
+  <footer style="display: flex; min-height: 52px; align-items: center; justify-content: space-between; gap: 16px; border-top: 1px solid var(--line); background: var(--panel); padding: 8px 14px;">
+    <p class="mono" style="margin: 0; max-width: 74ch; font-size: 10px; line-height: 1.6; color: var(--muted);">{{consequence}}</p>
+    <div style="display: flex; flex: none; align-items: center; gap: 8px;">
+      <sc-if value="{{isOpen}}" hint-placeholder-val="{{true}}">
+        <a class="mono" href="#" style="display: inline-flex; min-height: 36px; align-items: center; border: 1px solid var(--line-up); padding: 7px 12px; font-size: 10px; color: var(--muted); text-decoration: none;">Open workbench instead</a>
+      </sc-if>
+      <button class="primary" disabled="{{isSubmitted}}" onClick="{{approve}}" type="button">{{approveLabel}}</button>
+    </div>
+  </footer>
+</div>
+</x-dc>
+<script data-dc-script data-props='{"theme":{"editor":"enum","options":["dark","light"],"default":"dark","section":"Theme"},"$preview":{"width":1440,"height":920}}'>
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    this.state = { dismissed: {}, editing: {}, noteOpen: false, submitted: false };
+  }
+
+  renderVals() {
+    const noteOpen = this.state.noteOpen;
+
+    const nitList = [
+      { id: 'n1', location: 'web/src/features/pr-review/review-ui-helpers.ts:12', locationShort: 'review-ui-helpers.ts:12', summary: 'shouldRetryReviewRefresh reads as a yes-or-no question but returns a delay or null. Name it nextRefreshDelay.', draft: 'Small naming thing: this reads as a yes-or-no question but returns a delay or null. nextRefreshDelay would say what it does.' },
+      { id: 'n2', location: 'web/src/features/pr-review/GitHubPrReview.tsx:214', locationShort: 'GitHubPrReview.tsx:214', summary: 'The retry ceiling of 3 is a bare literal, and the third unexplained number in this file. Worth a named constant.', draft: 'Third bare number in this file. A named constant would save the next person the trip.' },
+      { id: 'n3', location: 'web/src/features/pr-review/GitHubPrReview.test.ts:41', locationShort: 'GitHubPrReview.test.ts:41', summary: 'The test is named "stops the refresh loop" but asserts on call count. The name promises more than the assertion checks.', draft: 'The name promises more than the assertion checks — it verifies a call count, not that the loop stops.' },
+    ];
+    const keptCount = nitList.filter((nit) => !this.state.dismissed[nit.id]).length;
+    const submitted = this.state.submitted;
+    const commentsLabel = keptCount === 0
+      ? 'no comments'
+      : `${keptCount} ${keptCount === 1 ? 'comment' : 'comments'}`;
+    const payloadLabel = noteOpen ? `note + ${commentsLabel}` : commentsLabel;
+
+    return {
+      theme: this.props.theme ?? 'dark',
+      isOpen: !submitted,
+      isSubmitted: submitted,
+      payloadLabel,
+      keptLabel: `${keptCount} of ${nitList.length} will be sent`,
+      showNoteRow: !submitted && !noteOpen,
+      showNoteBox: !submitted && noteOpen,
+      openNote: () => this.setState({ noteOpen: true }),
+      closeNote: () => this.setState({ noteOpen: false }),
+      approveLabel: submitted ? 'Submitted' : `Approve & submit ${payloadLabel}`,
+      consequence: submitted
+        ? 'Review submitted. A GitHub review cannot be withdrawn from here — follow-up happens on the PR.'
+        : noteOpen
+          ? `Submits one Approve review on pandemicsyn/neondeck#314 with ${payloadLabel} attached, as you. The note posts as the review body, in your name.`
+          : `Submits one Approve review on pandemicsyn/neondeck#314 with ${payloadLabel} attached, as you. Nothing is sent until you press this.`,
+      approve: () => this.setState({ submitted: true }),
+      nits: nitList.map((nit) => {
+        const dismissed = Boolean(this.state.dismissed[nit.id]);
+        const editing = Boolean(this.state.editing[nit.id]);
+        return {
+          location: nit.location,
+          locationShort: nit.locationShort,
+          summary: nit.summary,
+          draft: nit.draft,
+          editing,
+          isDismissed: dismissed,
+          dismissed: dismissed ? 'true' : 'false',
+          editLabel: editing ? 'done editing' : 'edit comment',
+          edit: () => this.setState({ editing: { ...this.state.editing, [nit.id]: !editing } }),
+          dismiss: () => this.setState({ dismissed: { ...this.state.dismissed, [nit.id]: true } }),
+          undo: () => this.setState({ dismissed: { ...this.state.dismissed, [nit.id]: false } }),
+        };
+      }),
+    };
+  }
+}
+</script>
+</body>
+</html>

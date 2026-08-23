@@ -9,6 +9,7 @@ import {
 } from '../shared/pr-reviewer-session';
 import { createPrReviewerRoute } from './agents/pr-reviewer';
 import { completePrReview, startPrReview } from './modules/pr-reviews';
+import { prReviewBriefingFixture } from './testing/pr-review-draft-fixtures';
 import { ensureRuntimeHome, runtimePaths } from './runtime-home';
 
 const tempRoots: string[] = [];
@@ -60,6 +61,7 @@ describe('PR reviewer conversation IDs', () => {
         headSha: 'a'.repeat(40),
         reportIds: [],
         reviewUrl: first.review.reviewUrl,
+        briefingOverview: prReviewBriefingFixture(),
         findingCount: 0,
         seededCount: 0,
         reportOnlyCount: 0,

@@ -108,11 +108,23 @@ export type PrReviewStatus =
 
 export type PrReviewVerdict = 'comment' | 'approve' | 'request-changes';
 
+export type PrReviewRecommendation = 'approve' | 'needs-human';
+
+export type PrReviewBriefingOverview = {
+  schemaVersion: 1;
+  recommendation: PrReviewRecommendation;
+  recommendationReason: string;
+  summary: string;
+  changeMap: Array<{ path: string; summary: string; risk?: string }>;
+  risks: string[];
+};
+
 export type PrReviewReportOnlyFinding = {
   sourceId?: string;
   severity: 'critical' | 'major' | 'minor' | 'nit';
   path: string;
   line: number | null;
+  side?: 'RIGHT' | 'LEFT' | null;
   summary: string;
   suggestedFix: string;
   reason: string;
@@ -134,12 +146,18 @@ export type PrReviewRecord = {
   origin: 'chat' | 'panel' | 'api';
   reviewUrl: string;
   reportIds: string[];
+  recommendation: PrReviewRecommendation | null;
+  recommendationReason: string | null;
+  briefingOverview: PrReviewBriefingOverview | null;
   findingCount: number;
   seededCount: number;
   reportOnlyCount: number;
   reportOnlyFindings: PrReviewReportOnlyFinding[];
   trustBoundary: string;
   verdict: PrReviewVerdict | null;
+  submissionDraftId?: string | null;
+  submissionDraftRevision?: number | null;
+  submissionDraftUpdatedAt?: string | null;
   previousVerdict: PrReviewVerdict | null;
   githubReviewUrl: string | null;
   failureMessage: string | null;
@@ -372,6 +390,8 @@ export type GitHubPrReviewDraftComment = {
   body: string;
   origin: 'human' | 'neon';
   sourceFindingId?: string | null;
+  neonSeverity?: 'critical' | 'major' | 'minor' | 'nit' | null;
+  neonSummary?: string | null;
   createdAt: string;
   updatedAt: string;
 };

@@ -1,6 +1,4 @@
-import { reportDocumentFromSummary } from '../../../shared/report-document';
 import type { RuntimePaths } from '../../runtime-home';
-import { readReport, type ReportRecord } from '../reports';
 import type { PrReviewRecord } from '../pr-reviews';
 
 const overviewSummaryLimit = 4_000;
@@ -35,51 +33,38 @@ export type PrReviewerHandoff = {
 
 export async function readPrReviewerHandoff(
   review: PrReviewRecord,
-  paths: RuntimePaths,
+  _paths: RuntimePaths,
 ) {
-  const reports = (
-    await Promise.all(
-      review.reportIds.slice(0, 8).map((id) => readReport(id, paths)),
-    )
-  ).filter((report): report is ReportRecord => report !== null);
-  return buildPrReviewerHandoff(review, reports);
+  return buildPrReviewerHandoff(review);
 }
 
 export function buildPrReviewerHandoff(
   review: PrReviewRecord,
-  reports: readonly ReportRecord[],
 ): PrReviewerHandoff {
-  const overview = reports.find((report) => {
-    const summary = objectRecord(report.summary);
-    return (
-      summary?.workflow === 'review-pr-for-human' &&
-      summary.report === 'overview' &&
-      summary.headSha === review.headSha
-    );
-  });
-  const document = overview
-    ? reportDocumentFromSummary(overview.summary)
-    : null;
+  const overview = review.briefingOverview;
   const changeMap = boundedItems(
-    document?.sections.find((section) => section.title === 'Change Map')
-      ?.items ?? [],
+    overview?.changeMap.map((item) => ({
+      label: item.path,
+      value: [item.summary, item.risk].filter(Boolean).join('\n'),
+    })) ?? [],
     changeMapBudget,
   );
   const conclusions = boundedItems(
-    document?.sections.find(
-      (section) => section.title === 'Checks, Risks, And Next Actions',
-    )?.items ?? [],
+    overview?.risks.map((risk, index) => ({
+      label: `risk ${index + 1}`,
+      value: risk,
+    })) ?? [],
     conclusionsBudget,
   );
 
   return {
-    available: document !== null,
+    available: overview !== null,
     source: 'review-pr-for-human',
     runId: review.runId,
     headSha: review.headSha,
     completedAt: review.readyAt,
-    summary: document?.summary
-      ? truncate(document.summary, overviewSummaryLimit)
+    summary: overview?.summary
+      ? truncate(overview.summary, overviewSummaryLimit)
       : null,
     changeMap: changeMap.items,
     changeMapOmitted: changeMap.omitted,
@@ -111,12 +96,6 @@ function boundedItems(items: readonly PrReviewerHandoffItem[], budget: number) {
     items: selected,
     omitted: Math.max(0, items.length - selected.length),
   };
-}
-
-function objectRecord(value: unknown) {
-  return value && typeof value === 'object' && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : null;
 }
 
 function truncate(value: string, limit: number) {

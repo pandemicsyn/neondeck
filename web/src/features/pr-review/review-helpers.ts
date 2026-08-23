@@ -118,6 +118,17 @@ export function failingCommentIdsFromError(error: unknown) {
   return Array.isArray(ids) ? ids.filter((id) => typeof id === 'string') : [];
 }
 
+export function submissionMayHaveBeenAccepted(error: unknown) {
+  if (!(error instanceof ApiError)) return false;
+  const result = error.data as GitHubPrReviewSubmitResponse | undefined;
+  if (result?.data?.code === 'submission-uncertain') return true;
+  return Boolean(
+    result?.changed &&
+    result.data?.draft?.status === 'submitted' &&
+    result.data.review,
+  );
+}
+
 export function normalizeReviewBody(value: string | null | undefined) {
   const trimmed = value?.trim() ?? '';
   return trimmed.length > 0 ? trimmed : null;
@@ -128,6 +139,75 @@ export function draftSnapshotMatches(
   right: Pick<GitHubPrReviewDraft, 'id' | 'revision'> | null,
 ) {
   return left?.id === right?.id && left?.revision === right?.revision;
+}
+
+export async function settleAndSubmitPrReview(input: {
+  barrierDraft: GitHubPrReviewDraft | null;
+  body: string | null;
+  commentIds: (draft: GitHubPrReviewDraft) => string[];
+  headSha: string;
+  number: number;
+  onSubmitStart?: () => void;
+  refetchDraft: () => Promise<GitHubPrReviewDraft | null>;
+  repo: string;
+  saveDraft: (input: {
+    body: string | null;
+    draftId?: string;
+    expectedAbsent?: boolean;
+    expectedRevision?: number;
+    headSha: string;
+    number: number;
+    repo: string;
+    verdict: GitHubPrReviewVerdict;
+  }) => Promise<GitHubPrReviewDraft>;
+  submitReview: (input: {
+    body: string | null;
+    commentIds: string[];
+    draftId: string;
+    expectedDraftRevision: number;
+    headSha: string;
+    number: number;
+    repo: string;
+    verdict: GitHubPrReviewVerdict;
+  }) => Promise<unknown>;
+  verdict: GitHubPrReviewVerdict;
+}) {
+  const refreshedDraft = await input.refetchDraft();
+  if (!draftSnapshotMatches(refreshedDraft, input.barrierDraft)) {
+    throw new Error(
+      'The review draft changed after pending edits settled. Review it and submit again.',
+    );
+  }
+  if (refreshedDraft && refreshedDraft.headSha !== input.headSha) {
+    throw new Error(
+      'The local review draft does not match the reviewed pull request head.',
+    );
+  }
+  const settledDraft = await input.saveDraft({
+    ...(refreshedDraft
+      ? {
+          draftId: refreshedDraft.id,
+          expectedRevision: refreshedDraft.revision,
+        }
+      : { expectedAbsent: true }),
+    body: input.body,
+    verdict: input.verdict,
+    headSha: input.headSha,
+    repo: input.repo,
+    number: input.number,
+  });
+  input.onSubmitStart?.();
+  await input.submitReview({
+    draftId: settledDraft.id,
+    expectedDraftRevision: settledDraft.revision,
+    repo: input.repo,
+    number: input.number,
+    headSha: input.headSha,
+    body: input.body,
+    verdict: input.verdict,
+    commentIds: input.commentIds(settledDraft),
+  });
+  return settledDraft;
 }
 
 export function draftSnapshotIsAtOrBeyondFrontier(

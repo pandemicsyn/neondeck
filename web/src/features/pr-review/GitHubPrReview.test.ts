@@ -26,6 +26,7 @@ import {
   normalizeReviewBody,
   reviewDraftNeedsSubmitSave,
   reviewCommentPreview,
+  settleAndSubmitPrReview,
   staleDraftCommentIds,
   waitForPendingDraftMutations,
 } from './review-helpers';
@@ -70,6 +71,80 @@ describe('GitHubPrReview helpers', () => {
         { id: 'draft-1', revision: 4 },
       ),
     ).toBe(false);
+  });
+
+  it('settles the review body and verdict before submitting that exact revision', async () => {
+    const barrierDraft = draftWithComments([
+      draftComment('comment-1', 'src/app.ts'),
+    ]);
+    const settledDraft = {
+      ...barrierDraft,
+      body: 'Reviewed by a human.',
+      verdict: 'approve' as const,
+      revision: 2,
+    };
+    const saveDraft = vi.fn(async () => settledDraft);
+    const submitReview = vi.fn(async () => undefined);
+
+    await expect(
+      settleAndSubmitPrReview({
+        barrierDraft,
+        body: 'Reviewed by a human.',
+        commentIds: (draft) => draft.comments.map((comment) => comment.id),
+        headSha: 'head123',
+        number: 123,
+        refetchDraft: vi.fn(async () => barrierDraft),
+        repo: 'pandemicsyn/neondeck',
+        saveDraft,
+        submitReview,
+        verdict: 'approve',
+      }),
+    ).resolves.toEqual(settledDraft);
+    expect(saveDraft).toHaveBeenCalledWith({
+      body: 'Reviewed by a human.',
+      draftId: 'draft-1',
+      expectedRevision: 1,
+      headSha: 'head123',
+      number: 123,
+      repo: 'pandemicsyn/neondeck',
+      verdict: 'approve',
+    });
+    expect(submitReview).toHaveBeenCalledWith({
+      body: 'Reviewed by a human.',
+      commentIds: ['comment-1'],
+      draftId: 'draft-1',
+      expectedDraftRevision: 2,
+      headSha: 'head123',
+      number: 123,
+      repo: 'pandemicsyn/neondeck',
+      verdict: 'approve',
+    });
+  });
+
+  it('refuses submission when the live draft changes across the barrier', async () => {
+    const barrierDraft = draftWithComments([]);
+    const saveDraft = vi.fn();
+    const submitReview = vi.fn();
+
+    await expect(
+      settleAndSubmitPrReview({
+        barrierDraft,
+        body: null,
+        commentIds: () => [],
+        headSha: 'head123',
+        number: 123,
+        refetchDraft: vi.fn(async () => ({
+          ...barrierDraft,
+          revision: 2,
+        })),
+        repo: 'pandemicsyn/neondeck',
+        saveDraft,
+        submitReview,
+        verdict: 'approve',
+      }),
+    ).rejects.toThrow('draft changed');
+    expect(saveDraft).not.toHaveBeenCalled();
+    expect(submitReview).not.toHaveBeenCalled();
   });
 
   it('rejects delayed replacement-draft snapshots behind the target frontier', () => {

@@ -34,7 +34,10 @@ import {
 } from './modules/pr-review-assist';
 import { openDb } from './lib/sqlite';
 import { readPrReviewDraft } from './modules/github';
-import { upsertPrReviewDraft } from './testing/pr-review-draft-fixtures';
+import {
+  prReviewBriefingFixture,
+  upsertPrReviewDraft,
+} from './testing/pr-review-draft-fixtures';
 import {
   readNeondeckPrDeliveries,
   readPendingNeondeckPrReviewIds,
@@ -53,6 +56,64 @@ afterEach(async () => {
 });
 
 describe('durable PR reviews', () => {
+  it('treats legacy-null and corrupt partial briefing state atomically', async () => {
+    const paths = await tempPaths();
+    const started = await startPrReview(
+      { ref: 'other/project#42', origin: 'api' },
+      paths,
+      {
+        resolveTarget: async () => ({
+          repoFullName: 'other/project',
+          owner: 'other',
+          repo: 'project',
+          number: 42,
+        }),
+        fetchDetail: async () => detail('head-1'),
+        invokeWorkflow: async () => ({ runId: 'briefing-validation-run' }),
+      },
+    );
+    expect(started.review).toMatchObject({
+      recommendation: null,
+      recommendationReason: null,
+      briefingOverview: null,
+    });
+
+    completePrReview(
+      {
+        reviewId: started.reviewId,
+        runId: started.runId,
+        headSha: 'head-1',
+        reportIds: [],
+        reviewUrl: started.review.reviewUrl,
+        briefingOverview: prReviewBriefingFixture({
+          recommendation: 'approve',
+          recommendationReason: 'The bounded fixture change is safe to merge.',
+        }),
+        findingCount: 0,
+        seededCount: 0,
+        reportOnlyCount: 0,
+        reportOnlyFindings: [],
+      },
+      paths,
+    );
+    const database = openDb(paths.neondeckDatabase);
+    try {
+      database
+        .prepare(
+          "UPDATE pr_reviews SET recommendation_reason = 'mismatched reason' WHERE id = ?;",
+        )
+        .run(started.reviewId);
+    } finally {
+      database.close();
+    }
+
+    expect(readPrReviewForTarget('other/project', 42, paths)).toMatchObject({
+      recommendation: null,
+      recommendationReason: null,
+      briefingOverview: null,
+    });
+  });
+
   it('recovers an admitted attempt whose submission id was not attached', async () => {
     const paths = await tempPaths();
     const started = await startPrReview(
@@ -207,6 +268,7 @@ describe('durable PR reviews', () => {
         headSha: 'head-1',
         reportIds: ['overview'],
         reviewUrl: started.review.reviewUrl,
+        briefingOverview: prReviewBriefingFixture(),
         findingCount: 0,
         seededCount: 0,
         reportOnlyCount: 0,
@@ -306,6 +368,16 @@ describe('durable PR reviews', () => {
         headSha: 'head-1',
         reportIds: ['overview', 'issues'],
         reviewUrl: '/review?repo=other%2Fproject&number=42',
+        briefingOverview: {
+          schemaVersion: 1,
+          recommendation: 'needs-human',
+          recommendationReason: 'A major finding requires human review.',
+          summary: 'This change needs a focused human pass.',
+          changeMap: [
+            { path: 'src/app.ts', summary: 'Changes review persistence.' },
+          ],
+          risks: ['The state transition is load-bearing.'],
+        },
         findingCount: 3,
         seededCount: 2,
         reportOnlyCount: 1,
@@ -313,7 +385,8 @@ describe('durable PR reviews', () => {
           {
             severity: 'minor',
             path: 'src/app.ts',
-            line: null,
+            line: 18,
+            side: 'LEFT',
             summary: 'Could not anchor this finding.',
             suggestedFix: 'Inspect the surrounding function.',
             reason: 'unanchorable',
@@ -325,9 +398,22 @@ describe('durable PR reviews', () => {
     expect(ready).toMatchObject({
       status: 'ready',
       reportIds: ['overview', 'issues'],
+      recommendation: 'needs-human',
+      recommendationReason: 'A major finding requires human review.',
+      briefingOverview: {
+        schemaVersion: 1,
+        recommendation: 'needs-human',
+        recommendationReason: 'A major finding requires human review.',
+        summary: 'This change needs a focused human pass.',
+        changeMap: [
+          { path: 'src/app.ts', summary: 'Changes review persistence.' },
+        ],
+        risks: ['The state transition is load-bearing.'],
+      },
       findingCount: 3,
       seededCount: 2,
       reportOnlyCount: 1,
+      reportOnlyFindings: [expect.objectContaining({ line: 18, side: 'LEFT' })],
     });
     expect(
       completePrReview(
@@ -337,6 +423,7 @@ describe('durable PR reviews', () => {
           headSha: 'late-head',
           reportIds: ['late'],
           reviewUrl: ready?.reviewUrl ?? '',
+          briefingOverview: prReviewBriefingFixture(),
           findingCount: 99,
           seededCount: 99,
           reportOnlyCount: 0,
@@ -592,6 +679,7 @@ describe('durable PR reviews', () => {
         headSha: 'head-1',
         reportIds: ['overview'],
         reviewUrl: started.review.reviewUrl,
+        briefingOverview: prReviewBriefingFixture(),
         findingCount: 0,
         seededCount: 0,
         reportOnlyCount: 0,
@@ -698,6 +786,7 @@ describe('durable PR reviews', () => {
         headSha: 'head-1',
         reportIds: [],
         reviewUrl: original.review.reviewUrl,
+        briefingOverview: prReviewBriefingFixture(),
         findingCount: 0,
         seededCount: 0,
         reportOnlyCount: 0,
@@ -780,6 +869,7 @@ describe('durable PR reviews', () => {
         headSha: 'head-1',
         reportIds: [],
         reviewUrl: original.review.reviewUrl,
+        briefingOverview: prReviewBriefingFixture(),
         findingCount: 0,
         seededCount: 0,
         reportOnlyCount: 0,
@@ -851,6 +941,7 @@ describe('durable PR reviews', () => {
         headSha: 'head-1',
         reportIds: ['overview'],
         reviewUrl: started.review.reviewUrl,
+        briefingOverview: prReviewBriefingFixture(),
         findingCount: 1,
         seededCount: 1,
         reportOnlyCount: 0,
@@ -930,6 +1021,7 @@ describe('durable PR reviews', () => {
         headSha: 'head-1',
         reportIds: ['overview'],
         reviewUrl: started.review.reviewUrl,
+        briefingOverview: prReviewBriefingFixture(),
         findingCount: 1,
         seededCount: 1,
         reportOnlyCount: 0,
@@ -1061,6 +1153,7 @@ describe('durable PR reviews', () => {
         headSha: 'head-1',
         reportIds: ['overview-2'],
         reviewUrl: restarted.review.reviewUrl,
+        briefingOverview: prReviewBriefingFixture(),
         findingCount: 0,
         seededCount: 0,
         reportOnlyCount: 0,
@@ -1520,6 +1613,7 @@ async function startReadyReview(
       headSha: 'head-1',
       reportIds: ['overview', 'issues'],
       reviewUrl: started.review.reviewUrl,
+      briefingOverview: prReviewBriefingFixture(),
       findingCount: 0,
       seededCount: 0,
       reportOnlyCount: 0,

@@ -47,6 +47,11 @@ import type {
 
 const loadPrReviewPopout = () =>
   import('./features/pr-review/PrReviewPopoutPage');
+const PrReviewBriefingPage = lazy(() =>
+  import('./features/pr-review/PrReviewBriefingPage').then((module) => ({
+    default: module.PrReviewBriefingPage,
+  })),
+);
 const PrReviewPopoutPage = lazy(() =>
   loadPrReviewPopout().then((module) => ({
     default: module.PrReviewPopoutPage,
@@ -70,9 +75,12 @@ if (typeof window !== 'undefined' && window.location.pathname === '/review') {
 export function App() {
   const queryClient = useQueryClient();
   const reviewRoute = useMemo(readReviewPopoutRoute, []);
+  const briefingRoute = useMemo(readReviewBriefingRoute, []);
   const activityRoute = useMemo(readActivityRoute, []);
   const isDashboardRoute =
-    reviewRoute.kind === 'none' && activityRoute.kind === 'none';
+    reviewRoute.kind === 'none' &&
+    briefingRoute.kind === 'none' &&
+    activityRoute.kind === 'none';
   const {
     data: config,
     error,
@@ -168,6 +176,33 @@ export function App() {
   const reviewAppearance = config
     ? resolveAppearance(config)
     : defaultReviewAppearance;
+
+  if (briefingRoute.kind === 'target') {
+    return (
+      <main className="h-screen overflow-hidden bg-bg text-ink">
+        <Suspense
+          fallback={
+            <BootState
+              detail="Loading the persisted overview and live review draft."
+              title="Loading review briefing"
+            />
+          }
+        >
+          <PrReviewBriefingPage reviewId={briefingRoute.reviewId} />
+        </Suspense>
+      </main>
+    );
+  }
+
+  if (briefingRoute.kind === 'invalid') {
+    return (
+      <BootState
+        detail={briefingRoute.message}
+        title="Invalid briefing route"
+        tone="alert"
+      />
+    );
+  }
 
   if (reviewRoute.kind === 'target') {
     return (
@@ -759,6 +794,11 @@ type ActivityRoute =
   | { kind: 'invalid'; message: string }
   | { kind: 'target'; submissionId: string };
 
+type ReviewBriefingRoute =
+  | { kind: 'none' }
+  | { kind: 'invalid'; message: string }
+  | { kind: 'target'; reviewId: string };
+
 function ReviewPopoutLoadingPage({
   appearance,
 }: {
@@ -832,8 +872,23 @@ function readReviewPopoutRoute(): ReviewPopoutRoute {
       baseSha: params.get('base')?.trim() || null,
       baseRef: params.get('baseRef')?.trim() || null,
       title: params.get('title')?.trim() || null,
+      initialPath: params.get('path')?.trim() || null,
     },
   };
+}
+
+export function readReviewBriefingRoute(
+  location: Pick<Location, 'pathname' | 'search'> = window.location,
+): ReviewBriefingRoute {
+  if (location.pathname !== '/review-briefing') return { kind: 'none' };
+  const reviewId = new URLSearchParams(location.search).get('id')?.trim();
+  return reviewId
+    ? { kind: 'target', reviewId }
+    : {
+        kind: 'invalid',
+        message:
+          'A review id query parameter is required, for example /review-briefing?id=review-id.',
+      };
 }
 
 function readActivityRoute(

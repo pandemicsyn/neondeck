@@ -41,11 +41,6 @@ html[data-theme] body {
   color: var(--ink);
 }
 
-html[data-theme='light'] .report-deck {
-  --rd-good: #157a5f;
-  --rd-warning: #8a5b00;
-  --rd-danger: #b42335;
-}
 `;
 
 const THEME_BOOTSTRAP_MARKER = 'data-neondeck-theme-bootstrap';

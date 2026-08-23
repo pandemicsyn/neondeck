@@ -1,14 +1,18 @@
+import * as v from 'valibot';
 import { openDb } from '../../lib/sqlite';
 import type { RuntimePaths } from '../../runtime-home';
 import { pruneExpiredSubmittedPrReviewRows } from '../../runtime-home/app-db/reconcile';
 import type {
+  PrReviewBriefingOverview,
   PrReviewOrigin,
+  PrReviewRecommendation,
   PrReviewRecord,
   PrReviewReportOnlyFinding,
   PrReviewStatus,
   PrReviewVerdict,
 } from './types';
 import { prReviewFindingSourceId } from './finding-id';
+import { prReviewBriefingOverviewSchema } from './schemas';
 
 export function readPrReview(id: string, paths: RuntimePaths) {
   return readOne('id = ?', id.trim(), paths);
@@ -144,6 +148,7 @@ export function pruneExpiredSubmittedPrReviews(
 
 export function readPrReviewRow(row: unknown): PrReviewRecord {
   const value = row as Record<string, unknown>;
+  const briefing = readPrReviewBriefing(value);
   return {
     id: stringValue(value.id),
     ref: stringValue(value.ref),
@@ -160,6 +165,9 @@ export function readPrReviewRow(row: unknown): PrReviewRecord {
     origin: originValue(value.origin),
     reviewUrl: stringValue(value.review_url),
     reportIds: stringArray(value.report_ids_json),
+    recommendation: briefing.recommendation,
+    recommendationReason: briefing.recommendationReason,
+    briefingOverview: briefing.overview,
     findingCount: numberValue(value.finding_count),
     seededCount: numberValue(value.seeded_count),
     reportOnlyCount: numberValue(value.report_only_count),
@@ -233,6 +241,55 @@ function verdictValue(value: unknown): PrReviewVerdict | null {
     : null;
 }
 
+function readPrReviewBriefing(value: Record<string, unknown>): {
+  recommendation: PrReviewRecommendation | null;
+  recommendationReason: string | null;
+  overview: PrReviewBriefingOverview | null;
+} {
+  const empty = {
+    recommendation: null,
+    recommendationReason: null,
+    overview: null,
+  } as const;
+  const recommendation = value.recommendation;
+  const recommendationReason = value.recommendation_reason;
+  const overviewJson = value.briefing_overview_json;
+  if (
+    recommendation == null &&
+    recommendationReason == null &&
+    overviewJson == null
+  ) {
+    return empty;
+  }
+  if (
+    typeof recommendation !== 'string' ||
+    typeof recommendationReason !== 'string' ||
+    typeof overviewJson !== 'string'
+  ) {
+    return empty;
+  }
+  try {
+    const parsed = v.safeParse(
+      prReviewBriefingOverviewSchema,
+      JSON.parse(overviewJson),
+    );
+    if (
+      !parsed.success ||
+      parsed.output.recommendation !== recommendation ||
+      parsed.output.recommendationReason !== recommendationReason
+    ) {
+      return empty;
+    }
+    return {
+      recommendation: parsed.output.recommendation,
+      recommendationReason: parsed.output.recommendationReason,
+      overview: parsed.output,
+    };
+  } catch {
+    return empty;
+  }
+}
+
 function stringArray(value: unknown): string[] {
   try {
     const parsed = JSON.parse(stringValue(value));
@@ -279,6 +336,7 @@ function reportOnlyFinding(value: unknown): PrReviewReportOnlyFinding | null {
     severity: item.severity,
     path: item.path,
     line: item.line,
+    side: item.side === 'RIGHT' || item.side === 'LEFT' ? item.side : null,
     summary: item.summary,
     suggestedFix: item.suggestedFix,
     reason: item.reason,

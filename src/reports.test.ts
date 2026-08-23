@@ -5,10 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { afterEach, describe, expect, it } from 'vitest';
-import { representativeReportDeckFixture } from '../shared/report-deck-fixtures';
 import { THEME_BOOTSTRAP_SOURCE } from '../shared/theme-bootstrap';
-import { REPORT_DECK_CONTROLLER_SOURCE } from './lib/report-deck-controller';
-import { renderReportDeckHtml } from './lib/report-deck-html';
 import { renderReportHtml } from './lib/report-html';
 import {
   listReports,
@@ -18,10 +15,7 @@ import {
   writeReport,
 } from './modules/reports';
 import { createApp } from './server/create-app';
-import {
-  REPORT_DECK_CONTROLLER_HASH,
-  REPORT_THEME_BOOTSTRAP_HASH,
-} from './server/routes/reports';
+import { REPORT_THEME_BOOTSTRAP_HASH } from './server/routes/reports';
 import { runtimePaths } from './runtime-home';
 
 const tempRoots: string[] = [];
@@ -270,6 +264,13 @@ describe('reports', () => {
     );
     expect(htmlResponse.status).toBe(200);
     expect(htmlResponse.headers.get('content-type')).toContain('text/html');
+    const themeHash = createHash('sha256')
+      .update(THEME_BOOTSTRAP_SOURCE)
+      .digest('base64');
+    expect(REPORT_THEME_BOOTSTRAP_HASH).toBe(themeHash);
+    expect(htmlResponse.headers.get('content-security-policy')).toBe(
+      `default-src 'none'; style-src 'unsafe-inline'; script-src 'sha256-${themeHash}'`,
+    );
     await expect(htmlResponse.text()).resolves.toContain('Weekly hygiene');
 
     const blockedResponse = await app.request(
@@ -277,55 +278,6 @@ describe('reports', () => {
       { headers: { host: 'example.com' } },
     );
     expect(blockedResponse.status).toBe(404);
-  });
-
-  it('serves standalone decks with an exact controller CSP hash', async () => {
-    const paths = runtimePaths(await tempDir());
-    const html = renderReportDeckHtml(representativeReportDeckFixture);
-    const report = await writeReport(
-      {
-        kind: 'pr-review',
-        title: representativeReportDeckFixture.title,
-        html,
-        summary: { deck: representativeReportDeckFixture },
-        createdBy: 'test',
-        createdAt: representativeReportDeckFixture.generatedAt,
-      },
-      paths,
-    );
-    const app = await createApp({
-      paths,
-      scheduler: false,
-      staticRoot: join(paths.home, 'missing-static'),
-    });
-
-    const response = await app.request(
-      `http://localhost/reports/${report.id}`,
-      { headers: { host: 'localhost' } },
-    );
-    const servedHtml = await response.text();
-    const expectedHash = createHash('sha256')
-      .update(REPORT_DECK_CONTROLLER_SOURCE)
-      .digest('base64');
-    const expectedThemeHash = createHash('sha256')
-      .update(THEME_BOOTSTRAP_SOURCE)
-      .digest('base64');
-
-    expect(response.status).toBe(200);
-    expect(REPORT_DECK_CONTROLLER_HASH).toBe(expectedHash);
-    expect(REPORT_THEME_BOOTSTRAP_HASH).toBe(expectedThemeHash);
-    expect(response.headers.get('content-security-policy')).toBe(
-      `default-src 'none'; style-src 'unsafe-inline'; script-src 'sha256-${expectedThemeHash}' 'sha256-${expectedHash}'`,
-    );
-    expect(servedHtml).toContain(
-      `<script data-neondeck-theme-bootstrap>${THEME_BOOTSTRAP_SOURCE}</script>`,
-    );
-    expect(servedHtml).toContain(
-      `<script>${REPORT_DECK_CONTROLLER_SOURCE}</script>`,
-    );
-    expect(servedHtml).toContain('data-deck-chrome="full"');
-    expect(servedHtml).toContain(representativeReportDeckFixture.title);
-    expect(servedHtml).toContain(representativeReportDeckFixture.subtitle);
   });
 
   it('keeps report paths under the runtime reports root', async () => {

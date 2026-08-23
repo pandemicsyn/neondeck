@@ -40,6 +40,7 @@ import { errorMessage, eventTargetJson, failResult, okResult } from './utils';
 export async function getGitHubPrReviewDraft(
   input: v.InferInput<typeof prEventTargetInputSchema>,
   paths: RuntimePaths = runtimePaths(),
+  options: { draftId?: string } = {},
 ): Promise<PrEventActionResult> {
   await ensureRuntimeHome(paths);
   const parsed = v.safeParse(prEventTargetInputSchema, input);
@@ -56,11 +57,24 @@ export async function getGitHubPrReviewDraft(
   );
   if (!resolved.ok) return resolved.result;
 
-  const draft = readLivePrReviewDraft({
-    databasePath: paths.neondeckDatabase,
-    repo: resolved.target.repoFullName,
-    prNumber: resolved.target.number,
-  });
+  const requestedDraft = options.draftId
+    ? readPrReviewDraft({
+        databasePath: paths.neondeckDatabase,
+        draftId: options.draftId,
+      })
+    : null;
+  const draft = options.draftId
+    ? requestedDraft &&
+      requestedDraft.repo.toLowerCase() ===
+        resolved.target.repoFullName.toLowerCase() &&
+      requestedDraft.prNumber === resolved.target.number
+      ? requestedDraft
+      : null
+    : readLivePrReviewDraft({
+        databasePath: paths.neondeckDatabase,
+        repo: resolved.target.repoFullName,
+        prNumber: resolved.target.number,
+      });
 
   return okResult(
     'github_pr_review_draft_get',

@@ -68,11 +68,11 @@ import {
   commentInputFromSelection,
   draftCommentIdsForSubmission,
   draftSnapshotIsAtOrBeyondFrontier,
-  draftSnapshotMatches,
   failingCommentIdsFromError,
   hasUnsettledDraftEditor,
   normalizeReviewBody,
   patchAnchorIndexesByPath,
+  settleAndSubmitPrReview,
   staleDraftCommentIds,
   waitForPendingDraftMutations,
 } from './review-helpers';
@@ -163,10 +163,12 @@ type PendingHunkNavigation = {
 const maxLazyHunkLoadsPerMove = 8;
 
 export function GitHubPrReview({
+  initialPath = null,
   mode = 'embedded',
   pr: incomingPr,
   reviewThreadsActivityVersion,
 }: {
+  initialPath?: string | null;
   mode?: GitHubPrReviewMode;
   pr: GitHubPullRequest;
   reviewThreadsActivityVersion?: string | null;
@@ -207,7 +209,7 @@ export function GitHubPrReview({
   const pendingDraftSavesRef = useRef<Promise<void>>(Promise.resolve());
   const reviewSubmissionPendingRef = useRef(false);
   const submitFailedCommentIdsRef = useRef<Set<string>>(new Set());
-  const [activePath, setActivePath] = useState<string | null>(null);
+  const [activePath, setActivePath] = useState<string | null>(initialPath);
   const [composer, setComposer] = useState<ComposerState | null>(null);
   const [commentEditor, setCommentEditor] = useState<CommentEditorState | null>(
     null,
@@ -1469,32 +1471,6 @@ export function GitHubPrReview({
     );
     return queued;
   };
-  const saveDraftAgainstSnapshot = async (
-    snapshot: GitHubPrReviewDraft | null,
-    next: Partial<{
-      body: string | null;
-      verdict: GitHubPrReviewVerdict | null;
-    }>,
-    headSha: string,
-  ) => {
-    const saved = await trackDraftMutation(
-      mutations.saveDraft.mutateAsync({
-        ...(snapshot
-          ? {
-              draftId: snapshot.id,
-              expectedRevision: snapshot.revision,
-            }
-          : { expectedAbsent: true }),
-        repo: pr.repo,
-        number: pr.number,
-        headSha,
-        ...('verdict' in next ? { verdict: next.verdict } : {}),
-        ...('body' in next ? { body: next.body } : {}),
-      }),
-    );
-    acceptDraftSnapshot(saved);
-    return saved;
-  };
   const ensureDraft = async () =>
     draftRef.current ?? (await enqueueDraftSave());
   const beginReanchorComment = (commentId: string, path: string | null) => {
@@ -2016,47 +1992,48 @@ export function GitHubPrReview({
       await waitForPendingDraftMutations(inFlightDraftMutationsRef.current);
       const barrierDraft = draftRef.current;
       const normalizedBody = normalizeReviewBody(reviewBody);
-      const refreshedDraftResult = await draftQuery.refetch({
-        throwOnError: true,
-      });
-      const refreshedDraft = refreshedDraftResult.data ?? null;
-      if (refreshedDraft) {
-        acceptDraftSnapshot(refreshedDraft);
-      } else {
-        draftIdRef.current = null;
-        draftRef.current = null;
-      }
-      if (!draftSnapshotMatches(refreshedDraft, barrierDraft)) {
-        throw new Error(
-          'The review draft changed after pending edits settled. Review it and submit again.',
-        );
-      }
-      const settledDraft = await saveDraftAgainstSnapshot(
-        refreshedDraft,
-        { body: normalizedBody, verdict },
-        currentHeadSha,
-      );
-      const settledUnknownPatchCommentIds = draftCommentIdsWithUnknownPatch(
-        settledDraft,
-        files,
-        patchQueryByPath,
-        deferredPatchPaths,
-      );
-      const submittedCommentIds = draftCommentIdsForSubmission({
-        draft: settledDraft,
-        failedCommentIds: submitFailedCommentIdsRef.current,
-        patchIndexesByPath,
-        unknownPatchCommentIds: settledUnknownPatchCommentIds,
-      });
-      await mutations.submitReview.mutateAsync({
-        draftId: settledDraft.id,
-        expectedDraftRevision: settledDraft.revision,
-        repo: pr.repo,
-        number: pr.number,
-        headSha: currentHeadSha,
+      await settleAndSubmitPrReview({
+        barrierDraft,
         body: normalizedBody,
+        commentIds: (settledDraft) => {
+          const settledUnknownPatchCommentIds = draftCommentIdsWithUnknownPatch(
+            settledDraft,
+            files,
+            patchQueryByPath,
+            deferredPatchPaths,
+          );
+          return draftCommentIdsForSubmission({
+            draft: settledDraft,
+            failedCommentIds: submitFailedCommentIdsRef.current,
+            patchIndexesByPath,
+            unknownPatchCommentIds: settledUnknownPatchCommentIds,
+          });
+        },
+        headSha: currentHeadSha,
+        number: pr.number,
+        refetchDraft: async () => {
+          const refreshedDraftResult = await draftQuery.refetch({
+            throwOnError: true,
+          });
+          const refreshedDraft = refreshedDraftResult.data ?? null;
+          if (refreshedDraft) {
+            acceptDraftSnapshot(refreshedDraft);
+          } else {
+            draftIdRef.current = null;
+            draftRef.current = null;
+          }
+          return refreshedDraft;
+        },
+        repo: pr.repo,
+        saveDraft: async (input) => {
+          const saved = await trackDraftMutation(
+            mutations.saveDraft.mutateAsync(input),
+          );
+          acceptDraftSnapshot(saved);
+          return saved;
+        },
+        submitReview: mutations.submitReview.mutateAsync,
         verdict,
-        commentIds: submittedCommentIds,
       });
       submitFailedCommentIdsRef.current = new Set();
       setSubmitFailedCommentIds(new Set());

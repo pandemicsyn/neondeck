@@ -1,3 +1,10 @@
+import type {
+  PrReviewBriefingOverview,
+  PrReviewRecommendation,
+} from './schemas';
+
+export type { PrReviewBriefingOverview, PrReviewRecommendation };
+
 export type PrReviewStatus =
   'reviewing' | 'ready' | 'submitting' | 'submitted' | 'failed';
 
@@ -10,6 +17,7 @@ export type PrReviewReportOnlyFinding = {
   severity: 'critical' | 'major' | 'minor' | 'nit';
   path: string;
   line: number | null;
+  side?: 'RIGHT' | 'LEFT' | null;
   summary: string;
   suggestedFix: string;
   reason: string;
@@ -31,6 +39,9 @@ export type PrReviewRecord = {
   origin: PrReviewOrigin;
   reviewUrl: string;
   reportIds: string[];
+  recommendation: PrReviewRecommendation | null;
+  recommendationReason: string | null;
+  briefingOverview: PrReviewBriefingOverview | null;
   findingCount: number;
   seededCount: number;
   reportOnlyCount: number;

@@ -13,6 +13,7 @@
   --color-primary-strong: var(--primary-strong);
   --color-primary-ink: var(--primary-ink);
   --color-accent: var(--accent);
+  --color-warning: var(--warning);
   --color-violet: var(--violet);
   --font-display: 'Chakra Petch', sans-serif;
   --font-sans:
@@ -37,6 +38,7 @@
   --primary-strong: #005b69;
   --primary-ink: #edf5f8;
   --accent: #b31170;
+  --warning: #8a5b00;
   --violet: #6034bd;
   --destructive: var(--accent);
   --ring: #006f7f;
@@ -72,6 +74,7 @@
   --primary-strong: #69e6ff;
   --primary-ink: #070810;
   --accent: #ff4fb8;
+  --warning: #f0b95b;
   --violet: #b59cff;
   --destructive: var(--accent);
   --ring: #69e6ff;

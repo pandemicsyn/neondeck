@@ -1,0 +1,230 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+  <style>
+    body { margin: 0; background: #05060a; }
+    .shell, .shell * { box-sizing: border-box; }
+    .shell {
+      --canvas: #0a0b10; --panel: #0a0b10; --field: #070810; --soft: rgba(255,255,255,0.04);
+      --line: rgba(255,255,255,0.07); --line-up: rgba(255,255,255,0.12);
+      --ink: #d7f7ff; --muted: #91a8b0;
+      --primary: #00b7c7; --primary-strong: #69e6ff; --primary-ink: #070810;
+      --good: #4dd6a8; --warning: #f0b95b; --danger: #ff6b7a;
+      font: 14px/1.55 "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
+      color: var(--ink);
+    }
+    .shell[data-theme="light"] {
+      --canvas: #edf5f8; --panel: #edf5f8; --field: #dbeaef; --soft: rgba(20,45,60,0.05);
+      --line: rgba(20,45,60,0.13); --line-up: rgba(20,45,60,0.22);
+      --ink: #19232e; --muted: #56646d;
+      --primary: #006f7f; --primary-strong: #005b69; --primary-ink: #edf5f8;
+      --good: #157a5f; --warning: #8a5b00; --danger: #b42335;
+    }
+    .mono { font-family: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace; }
+    .disp { font-family: "Chakra Petch", ui-sans-serif, system-ui, sans-serif; }
+    .shell a { color: var(--primary-strong); text-underline-offset: 0.18em; }
+    .shell button { font: inherit; cursor: pointer; border-radius: 0; }
+    .shell button:disabled { cursor: not-allowed; opacity: 0.45; }
+    .btn {
+      display: inline-flex; min-height: 26px; align-items: center; justify-content: center;
+      border: 1px solid var(--line); background: var(--soft); padding: 4px 8px;
+      color: var(--muted); font: 400 10px/1.2 "IBM Plex Mono", ui-monospace, monospace;
+    }
+    .btn:hover:not(:disabled) { border-color: var(--primary); color: var(--primary); }
+    .btn[data-tone="good"] { border-color: var(--good); color: var(--good); background: color-mix(in srgb, var(--good) 12%, transparent); font-weight: 600; }
+    .btn[data-tone="good"]:hover:not(:disabled) { background: color-mix(in srgb, var(--good) 22%, transparent); border-color: var(--good); color: var(--good); }
+    .btn[data-tone="caveat"] { border-color: var(--warning); color: var(--warning); font-weight: 600; }
+    .btn[data-tone="danger"] { border-color: var(--danger); color: var(--danger); font-weight: 600; }
+    .badge {
+      display: inline-flex; align-items: center; border: 1px solid var(--line); background: var(--soft);
+      padding: 2px 6px; font: 400 10px/1 "IBM Plex Mono", ui-monospace, monospace; color: var(--muted);
+    }
+    .badge[data-tone="good"] { border-color: var(--good); color: var(--good); }
+    .sectionhead {
+      display: flex; align-items: center; justify-content: space-between;
+      background: var(--field); padding: 6px 12px;
+      font: 400 10px/1.4 "IBM Plex Mono", ui-monospace, monospace; letter-spacing: 0.08em; color: var(--muted);
+    }
+    .row { border-top: 1px solid var(--line); padding: 8px 12px; }
+    .verdict { margin: 4px 0 0; font: 600 10px/1.4 "IBM Plex Mono", ui-monospace, monospace; letter-spacing: 0.04em; }
+    .verdict[data-tone="good"] { color: var(--good); }
+    .verdict[data-tone="caveat"] { color: var(--warning); }
+    .verdict[data-tone="danger"] { color: var(--danger); }
+    .verdict[data-tone="plain"] { color: var(--primary); }
+  </style>
+</helmet>
+<div class="shell" data-theme="{{theme}}" style="display: flex; width: 560px; height: 920px; flex-direction: column; border: 1px solid var(--line-up); background: var(--panel); overflow: hidden;">
+
+  <header style="display: flex; min-height: 40px; align-items: center; justify-content: space-between; gap: 10px; border-bottom: 1px solid var(--line); padding: 8px 12px;">
+    <h1 class="disp" style="margin: 0; font-size: 13px; font-weight: 600; letter-spacing: 0.02em; color: var(--ink);">Reviews</h1>
+    <div style="display: flex; align-items: center; gap: 6px;">
+      <span class="mono" style="font-size: 10px; color: var(--muted); font-variant-numeric: tabular-nums;">{{waitingLabel}}</span>
+      <button class="btn" type="button">+ add</button>
+    </div>
+  </header>
+
+  <div style="min-height: 0; flex: 1 1 auto; overflow: auto;">
+
+    <section>
+      <div class="sectionhead"><h3 style="margin: 0;">AWAITING YOUR REVIEW</h3><span style="font-variant-numeric: tabular-nums;">1</span></div>
+      <article class="row" style="border-top: 0;">
+        <div style="display: flex; align-items: flex-start; justify-content: space-between; gap: 12px;">
+          <div style="min-width: 0;">
+            <p class="mono" style="margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; color: var(--ink);">pandemicsyn/neondeck#318</p>
+            <p style="margin: 2px 0 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 10.5px; color: var(--muted);">Add companion display density presets</p>
+            <p class="verdict" data-tone="plain">not reviewed yet</p>
+          </div>
+          <span class="badge">awaiting</span>
+        </div>
+        <div style="display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; margin-top: 6px;">
+          <button class="btn" type="button">review it</button>
+        </div>
+      </article>
+    </section>
+
+    <section style="border-top: 1px solid var(--line);">
+      <div class="sectionhead"><h3 style="margin: 0;">IN PROGRESS</h3><span style="font-variant-numeric: tabular-nums;">1</span></div>
+      <article class="row" style="border-top: 0;">
+        <div style="display: flex; align-items: flex-start; justify-content: space-between; gap: 12px;">
+          <div style="min-width: 0;">
+            <p class="mono" style="margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; color: var(--ink);">pandemicsyn/neondeck#317</p>
+            <p style="margin: 2px 0 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 10.5px; color: var(--muted);">Move report deck styles into the shared package</p>
+            <p class="verdict" data-tone="plain">reading the diff &middot; 6 of 11 files</p>
+          </div>
+          <span class="badge">running</span>
+        </div>
+      </article>
+    </section>
+
+    <section style="border-top: 1px solid var(--line);">
+      <div class="sectionhead"><h3 style="margin: 0;">NEEDS ACTION</h3><span style="font-variant-numeric: tabular-nums;">{{needsActionCount}}</span></div>
+      <sc-for list="{{rows}}" as="row" hint-placeholder-count="3">
+        <article class="row">
+          <div style="display: flex; align-items: flex-start; justify-content: space-between; gap: 12px;">
+            <div style="min-width: 0;">
+              <p class="mono" style="margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; color: var(--ink);">{{row.ref}}</p>
+              <p style="margin: 2px 0 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 10.5px; color: var(--muted);">{{row.title}}</p>
+              <p class="verdict" data-tone="{{row.tone}}">{{row.verdict}}</p>
+              <p style="margin: 4px 0 0; max-width: 52ch; font-size: 10px; line-height: 1.5; color: var(--muted);">{{row.detail}}</p>
+            </div>
+            <span class="badge" data-tone="{{row.badgeTone}}">{{row.badge}}</span>
+          </div>
+          <div style="display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 6px; margin-top: 7px;">
+            <sc-if value="{{row.submitted}}" hint-placeholder-val="{{true}}">
+              <span class="mono" style="margin-inline-end: auto; font-size: 10px; color: var(--good);">{{row.receipt}}</span>
+              <a class="btn" href="#">view on GitHub</a>
+            </sc-if>
+            <sc-if value="{{row.pending}}" hint-placeholder-val="{{true}}">
+              <button class="btn" type="button">briefing</button>
+              <button class="btn" type="button">open</button>
+              <button class="btn" type="button">archive</button>
+              <sc-if value="{{row.canApprove}}" hint-placeholder-val="{{true}}">
+                <button class="btn" data-tone="{{row.approveTone}}" onClick="{{row.approve}}" type="button">{{row.approveLabel}}</button>
+              </sc-if>
+              <sc-if value="{{row.blocked}}" hint-placeholder-val="{{true}}">
+                <span class="mono" style="font-size: 10px; color: var(--danger);">no quick approve</span>
+              </sc-if>
+            </sc-if>
+          </div>
+        </article>
+      </sc-for>
+    </section>
+
+    <div style="border-top: 1px solid var(--line); padding: 14px 12px;">
+      <p class="mono" style="margin: 0; font-size: 9px; letter-spacing: 0.12em; color: var(--muted);">WHAT CHANGED HERE</p>
+      <p style="margin: 8px 0 0; font-size: 11.5px; line-height: 1.6; color: var(--muted);">Two verdicts only &mdash; approve, or needs a human. Each row carries the verdict and its one-line reason, so a safe PR is approved from the list and the briefing never opens. The two report buttons collapse into one <span class="mono" style="color: var(--ink);">briefing</span>.</p>
+      <p style="margin: 8px 0 0; font-size: 11.5px; line-height: 1.6; color: var(--muted);">A needs-a-human row has no approve button at all &mdash; the override lives inside the briefing, where the reasoning is, not out here on a list.</p>
+    </div>
+
+  </div>
+</div>
+</x-dc>
+<script data-dc-script data-props='{"theme":{"editor":"enum","options":["dark","light"],"default":"dark","section":"Theme"},"$preview":{"width":560,"height":920}}'>
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    this.state = { submitted: {} };
+  }
+
+  renderVals() {
+    const rowList = [
+      {
+        id: 'r314',
+        ref: 'pandemicsyn/neondeck#314',
+        title: 'Prevent PR review refresh retry loop',
+        tone: 'good',
+        verdict: '✓ RECOMMEND APPROVE',
+        detail: '3 nits, no correctness or security findings, all checks green. 7 of 10 files are regenerated fixtures.',
+        badge: 'ready',
+        approveLabel: 'approve & submit 3',
+        approveTone: 'good',
+        canApprove: true,
+        receipt: 'approved 12:06 · 3 comments sent',
+      },
+      {
+        id: 'r313',
+        ref: 'pandemicsyn/neondeck#313',
+        title: 'Refactor PR review draft concurrency',
+        tone: 'good',
+        verdict: '✓ RECOMMEND APPROVE',
+        detail: 'Sound refactor with the seams in the right places. 2 minor findings, both drafted as comments, and the concurrency tests cover the interleaving it fixes.',
+        badge: 'ready',
+        approveLabel: 'approve & submit 2',
+        approveTone: 'good',
+        canApprove: true,
+        receipt: 'approved 12:07 · 2 comments sent',
+      },
+      {
+        id: 'r315',
+        ref: 'pandemicsyn/neondeck#315',
+        title: 'Fix Reviews panel per-PR pending state and show PR author',
+        tone: 'danger',
+        verdict: '! NEEDS A HUMAN',
+        detail: '2 correctness findings in shared mutation state I could not trace, and the new test misses the path I am worried about.',
+        badge: 'ready',
+        approveLabel: '',
+        approveTone: 'danger',
+        canApprove: false,
+        receipt: '',
+      },
+    ];
+
+    const openCount = rowList.filter((row) => !this.state.submitted[row.id]).length;
+
+    return {
+      theme: this.props.theme ?? 'dark',
+      waitingLabel: `${openCount + 2} open`,
+      needsActionCount: String(rowList.length),
+      rows: rowList.map((row) => {
+        const submitted = Boolean(this.state.submitted[row.id]);
+        return {
+          ref: row.ref,
+          title: row.title,
+          tone: submitted ? 'good' : row.tone,
+          verdict: submitted ? '✓ APPROVED BY YOU' : row.verdict,
+          detail: row.detail,
+          badge: submitted ? 'submitted' : row.badge,
+          badgeTone: submitted ? 'good' : 'neutral',
+          submitted,
+          pending: !submitted,
+          canApprove: row.canApprove,
+          blocked: !row.canApprove,
+          approveLabel: row.approveLabel,
+          approveTone: row.approveTone,
+          receipt: row.receipt,
+          approve: () => this.setState({ submitted: { ...this.state.submitted, [row.id]: true } }),
+        };
+      }),
+    };
+  }
+}
+</script>
+</body>
+</html>

@@ -22,6 +22,7 @@ export const baseExclude = [
   '**/node_modules/**',
   '**/dist/**',
   '**/.astro/**',
+  '**/.claude/worktrees/**',
   '**/research-repos/**',
 ];
 

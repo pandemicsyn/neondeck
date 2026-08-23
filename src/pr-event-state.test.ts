@@ -10,6 +10,7 @@ import type {
   GitHubPullRequestReviewThread,
 } from './modules/github';
 import {
+  addPrReviewDraftComment,
   fetchPullRequestReviewSurfaceThreadsWithMetadata,
   invalidatePullRequestReviewSurfaceThreadCache,
 } from './modules/github';
@@ -1890,6 +1891,63 @@ describe('PR event state watermarks', () => {
         draft: {
           id: draftId,
           headSha: 'head123',
+        },
+      },
+    });
+  });
+
+  it('reads the exact submitted draft for a durable review receipt', async () => {
+    const home = await tempHome();
+    const paths = runtimePaths(home);
+    await writeRepoRegistry(paths.repos);
+    const created = await putGitHubPrReviewDraft(
+      { repo: 'neondeck', prNumber: 123 },
+      { headSha: 'head123', expectedAbsent: true },
+      paths,
+    );
+    const draft = (created.data as { draft: { id: string; revision: number } })
+      .draft;
+    addPrReviewDraftComment({
+      databasePath: paths.neondeckDatabase,
+      draftId: draft.id,
+      expectedDraftRevision: draft.revision,
+      path: 'src/app.ts',
+      side: 'RIGHT',
+      line: 1,
+      startLine: null,
+      startSide: null,
+      body: 'Receipt comment.',
+      origin: 'human',
+      sourceFindingId: 'finding-1',
+    });
+    const database = new DatabaseSync(paths.neondeckDatabase);
+    database
+      .prepare(
+        `UPDATE pr_review_drafts
+         SET status = 'submitted', submitted_at = updated_at
+         WHERE id = ?;`,
+      )
+      .run(draft.id);
+    database.close();
+
+    await expect(
+      getGitHubPrReviewDraft({ repo: 'neondeck', prNumber: 123 }, paths),
+    ).resolves.toMatchObject({ data: { draft: null } });
+    await expect(
+      getGitHubPrReviewDraft({ repo: 'neondeck', prNumber: 123 }, paths, {
+        draftId: draft.id,
+      }),
+    ).resolves.toMatchObject({
+      data: {
+        draft: {
+          id: draft.id,
+          status: 'submitted',
+          comments: [
+            expect.objectContaining({
+              body: 'Receipt comment.',
+              sourceFindingId: 'finding-1',
+            }),
+          ],
         },
       },
     });

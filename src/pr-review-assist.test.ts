@@ -17,19 +17,21 @@ import {
 import {
   createSubmitPrReviewTool,
   createReviewDurableEffectRunner,
+  resolvePrReviewRecommendation,
   reviewFactsForPrompt,
   reviewPrForHuman,
   type ReviewAssistFacts,
 } from './modules/pr-review-assist';
 import { upsertMemory } from './modules/memory';
-import { listReports, readReportHtml } from './modules/reports';
+import { listReports } from './modules/reports';
 import { listNotifications, listWorkflowSummaries } from './modules/app-state';
 import { ensureRuntimeHome, runtimePaths } from './runtime-home';
-import { reportDocumentFromSummary } from '../shared/report-document';
-import { reportDeckFromSummary } from '../shared/report-deck';
 import { openDb } from './lib/sqlite';
 import * as v from 'valibot';
-import { prReviewAgentInitialDataSchema } from './modules/pr-review-assist/schemas';
+import {
+  prReviewAgentInitialDataSchema,
+  reviewAssistStructuredOutputSchema,
+} from './modules/pr-review-assist/schemas';
 
 const tempRoots: string[] = [];
 
@@ -42,6 +44,68 @@ afterEach(async () => {
 });
 
 describe('PR review assist', () => {
+  it('clamps approve to needs-human when a major finding is present', () => {
+    const output = reviewOutputWithOneFinding();
+    output.findings[0]!.path = `src/${'x'.repeat(996)}`;
+
+    const recommendation = resolvePrReviewRecommendation(
+      output as Parameters<typeof resolvePrReviewRecommendation>[0],
+    );
+    expect(recommendation).toEqual({
+      recommendation: 'needs-human',
+      recommendationReason: 'A major finding requires human review.',
+    });
+    expect(recommendation.recommendationReason.length).toBeLessThanOrEqual(300);
+  });
+
+  it('preserves a conservative agent recommendation without findings', () => {
+    const output = reviewOutputWithOneFinding();
+    output.findings = [];
+    output.overview.recommendation = 'needs-human';
+    output.overview.recommendationReason =
+      'The change touches a load-bearing runtime boundary.';
+
+    expect(
+      resolvePrReviewRecommendation(
+        output as Parameters<typeof resolvePrReviewRecommendation>[0],
+      ),
+    ).toEqual({
+      recommendation: 'needs-human',
+      recommendationReason:
+        'The change touches a load-bearing runtime boundary.',
+    });
+  });
+
+  it('preserves a conservative agent reason when a major finding is present', () => {
+    const output = reviewOutputWithOneFinding();
+    output.overview.recommendation = 'needs-human';
+    output.overview.recommendationReason =
+      'The change rewires a load-bearing submission boundary.';
+
+    expect(
+      resolvePrReviewRecommendation(
+        output as Parameters<typeof resolvePrReviewRecommendation>[0],
+      ),
+    ).toEqual({
+      recommendation: 'needs-human',
+      recommendationReason:
+        'The change rewires a load-bearing submission boundary.',
+    });
+  });
+
+  it('does not retain unrendered check notes in structured review output', () => {
+    const output = reviewOutputWithOneFinding();
+    const parsed = v.parse(reviewAssistStructuredOutputSchema, {
+      ...output,
+      overview: {
+        ...output.overview,
+        checks: ['This field is not part of the briefing contract.'],
+      },
+    });
+
+    expect(parsed.overview).not.toHaveProperty('checks');
+  });
+
   it('accepts persisted initial-review data created before Explore was captured', () => {
     const legacyInitialData = {
       model: 'faux/faux-1',
@@ -316,7 +380,7 @@ describe('PR review assist', () => {
     });
   });
 
-  it('seeds only anchor-valid Neon draft comments and writes escaped reports', async () => {
+  it('seeds only anchor-valid Neon draft comments without writing reports', async () => {
     const paths = await tempPaths();
     const facts = reviewFacts();
     const result = await reviewPrForHuman(
@@ -326,6 +390,8 @@ describe('PR review assist', () => {
         fetchFacts: async () => facts,
         reviewer: async () => ({
           overview: {
+            recommendation: 'approve',
+            recommendationReason: 'The reviewed change appears safe to merge.',
             summary: 'Review <script>alert(1)</script>',
             changeMap: [
               {
@@ -334,7 +400,6 @@ describe('PR review assist', () => {
               },
             ],
             risks: ['Risk contains <b>markup</b>'],
-            checks: ['unit tests pending'],
           },
           findings: [
             {
@@ -356,22 +421,20 @@ describe('PR review assist', () => {
               suggestedFix: 'Keep it report-only.',
             },
           ],
-          presentation: {
-            overview: [
-              {
-                kind: 'source',
-                source: 'change-map',
-                layout: 'facts',
-              },
-            ],
-            issues: [],
-          },
         }),
       },
     );
 
     const okResult = requireReviewAssistOk(result);
     expect(okResult.data).toMatchObject({
+      recommendation: 'needs-human',
+      recommendationReason: 'A major finding requires human review.',
+      briefingOverview: {
+        schemaVersion: 1,
+        recommendation: 'needs-human',
+        recommendationReason: 'A major finding requires human review.',
+        summary: 'Review <script>alert(1)</script>',
+      },
       findingCount: 2,
       seededCount: 1,
       reportOnlyCount: 1,
@@ -395,6 +458,8 @@ describe('PR review assist', () => {
         line: 2,
         origin: 'neon',
         sourceFindingId: expect.stringMatching(/^prf_[a-f0-9]{24}$/),
+        neonSeverity: 'major',
+        neonSummary: 'Validate the new branch.',
         body: [
           'bot: Validate the new branch.',
           '',
@@ -402,86 +467,9 @@ describe('PR review assist', () => {
         ].join('\n'),
       },
     ]);
-
-    const reports = await listReports(paths, { kind: 'pr-review' });
-    expect(reports).toHaveLength(2);
-    const overview = reports.find((report) =>
-      report.title.startsWith('PR Overview:'),
+    await expect(listReports(paths, { kind: 'pr-review' })).resolves.toEqual(
+      [],
     );
-    expect(overview).toBeTruthy();
-    expect(reportDocumentFromSummary(overview?.summary)).toMatchObject({
-      title: 'PR Overview: pandemicsyn/neondeck#10',
-      summary: 'Review <script>alert(1)</script>',
-      sections: expect.arrayContaining([
-        expect.objectContaining({ title: 'Change Map' }),
-      ]),
-    });
-    const overviewDeck = reportDeckFromSummary(overview?.summary);
-    expect(overviewDeck).toMatchObject({
-      version: 2,
-      summaryMarkdown: 'Review <script>alert(1)</script>',
-    });
-    expect(overviewDeck?.eyebrow).toBe('PR REVIEW · OVERVIEW');
-    expect(overviewDeck?.slides).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ kind: 'summary', title: 'Review brief' }),
-        expect.objectContaining({
-          kind: 'facts',
-          title: 'PR facts',
-          items: [
-            { label: 'Base', value: 'main', href: null },
-            { label: 'Head', value: 'head123', href: null },
-            { label: 'Author', value: 'unknown', href: null },
-            { label: 'Additions', value: '2', href: null },
-            { label: 'Deletions', value: '0', href: null },
-            { label: 'Checks', value: '0 passing / 0 failing', href: null },
-            { label: 'Mergeable', value: 'clean', href: null },
-            expect.objectContaining({ label: 'Generated' }),
-          ],
-        }),
-        expect.objectContaining({
-          kind: 'change-map',
-          totalFiles: 1,
-          items: [
-            expect.objectContaining({
-              path: 'src/app.ts',
-              additions: 2,
-              deletions: 0,
-            }),
-          ],
-        }),
-      ]),
-    );
-    expect(overview?.summary).toMatchObject({
-      presentationWarnings: [
-        expect.stringContaining('deterministic overview layout was used'),
-      ],
-    });
-    const issues = reports.find((report) =>
-      report.title.startsWith('Review Issues:'),
-    );
-    const issuesDeck = reportDeckFromSummary(issues?.summary);
-    expect(issuesDeck).toMatchObject({ version: 2 });
-    expect(issuesDeck?.eyebrow).toBe('PR REVIEW · ISSUES');
-    expect(issuesDeck?.slides).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ kind: 'summary', title: 'Review brief' }),
-        expect.objectContaining({
-          kind: 'findings',
-          disposition: 'seeded',
-        }),
-        expect.objectContaining({
-          kind: 'findings',
-          disposition: 'report-only',
-        }),
-      ]),
-    );
-    const html = await readReportHtml(overview!.id, paths);
-    expect(html?.html).toContain('data-report-deck=""');
-    expect(html?.html).toContain('Review alert(1)');
-    expect(html?.html).toContain('Risk contains markup');
-    expect(html?.html).not.toContain('<script>alert(1)</script>');
-    expect(html?.html).not.toContain('<b>markup</b>');
   });
 
   it('replaces prior Neon findings on re-review', async () => {
@@ -747,7 +735,10 @@ describe('PR review assist', () => {
       reportOnlyCount: 1,
       skippedSeedingReason: null,
       reportOnlyFindings: [
-        expect.objectContaining({ reason: 'file-diff-truncated' }),
+        expect.objectContaining({
+          reason: 'file-diff-truncated',
+          side: 'RIGHT',
+        }),
       ],
     });
     expect(
@@ -1121,50 +1112,6 @@ describe('PR review assist', () => {
     await expect(listReports(paths)).resolves.toEqual([]);
   });
 
-  it('replays a crashed report step without duplicating artifacts', async () => {
-    const paths = await tempPaths();
-    const steps = new Map<string, unknown>();
-    let interruptReportRecording = true;
-    const runEffect = async <T>(
-      name: string,
-      effect: () => T | Promise<T>,
-    ): Promise<T> => {
-      if (steps.has(name)) return steps.get(name) as T;
-      const value = await effect();
-      if (name === 'write-review-reports' && interruptReportRecording) {
-        interruptReportRecording = false;
-        throw new Error('simulated crash after report writes');
-      }
-      steps.set(name, value);
-      return value;
-    };
-    const options = {
-      effectId: 'review-1:attempt-1',
-      runEffect,
-      fetchFacts: async () => reviewFacts(),
-      reviewer: async () => reviewOutputWithOneFinding(),
-    };
-
-    await expect(
-      reviewPrForHuman({ ref: 'pandemicsyn/neondeck#10' }, paths, options),
-    ).rejects.toThrow('simulated crash');
-    const firstReports = await listReports(paths, { kind: 'pr-review' });
-    expect(firstReports).toHaveLength(2);
-
-    const replayed = requireReviewAssistOk(
-      await reviewPrForHuman(
-        { ref: 'pandemicsyn/neondeck#10' },
-        paths,
-        options,
-      ),
-    );
-    const replayedReports = await listReports(paths, { kind: 'pr-review' });
-    expect(replayedReports).toHaveLength(2);
-    expect(replayed.data.reports.map((report) => report.id).sort()).toEqual(
-      firstReports.map((report) => report.id).sort(),
-    );
-  });
-
   it('replays crashed draft seeding without orphaning its seed ledger', async () => {
     const paths = await tempPaths();
     const steps = new Map<string, unknown>();
@@ -1390,10 +1337,11 @@ function requireReviewAssistOk(
 function reviewOutputWithOneFinding() {
   return {
     overview: {
+      recommendation: 'approve' as 'approve' | 'needs-human',
+      recommendationReason: 'The reviewed change appears safe to merge.',
       summary: 'Review summary',
       changeMap: [{ path: 'src/app.ts', summary: 'Modified source file.' }],
       risks: [],
-      checks: ['No failing check runs were present in fetched facts.'],
     },
     findings: [
       {
