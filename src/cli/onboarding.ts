@@ -132,7 +132,7 @@ export async function runInit(options: { home?: string }) {
   outro(
     status.status === 'ready'
       ? packagedInstall
-        ? 'Setup complete. Run `neondeck open` to launch the deck.'
+        ? 'Setup complete. Run `neondeck open` to start the server and open the UI; press Ctrl-C to stop.'
         : 'Setup complete. Run `npm run dev` to launch the deck.'
       : 'Finish the remaining config, then start the deck.',
   );
@@ -258,7 +258,12 @@ export function formatOnboardingNextSteps(
     '',
     'Next:',
     ...(packagedInstall
-      ? ['  neondeck service install', '  neondeck open']
+      ? [
+          '  neondeck open  # start the server and open the UI',
+          '',
+          'Optional login service:',
+          '  neondeck service install',
+        ]
       : ['  npm run dev', '  open http://127.0.0.1:5173/']),
     ...(autopilotRepoId
       ? [

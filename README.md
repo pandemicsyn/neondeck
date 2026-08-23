@@ -20,11 +20,11 @@ A companion agent for keeping PRs moving, getting reviews done, and helping huma
 Neon watches your PRs, helps you get your reviews done, an tracks CI and release checks. It can configure its own repos,
 schedules, models, and deck layout through typed tools and APIs.
 
-It works with ChatGPT subs, as well as any gateway support by Pi (Kilo gateway, open router, etc) 
+It works with ChatGPT subs, as well as any gateway support by Pi (Kilo gateway, open router, etc)
 
 It is especially useful on a companion display, vertical panel, or Corsair
 Xeneon Edge-style display, where your active work can stay visible without taking
-over your editor or primary agent chat. 
+over your editor or primary agent chat.
 
 The backend is Node 26, Hono, and Flue; the dashboard is Vite, React, and Tailwind. Neondeck can run on your machine or on a remote host, with
 mutable state stored in SQLite under a runtime home you control.
@@ -152,23 +152,26 @@ npm run build            # production dashboard/server + docs build
 npm run docs:astro-dev   # hot dev server for the docs site
 ```
 
-After a production build or package install, run Neondeck in the foreground:
-
-```sh
-neondeck serve
-```
-
-Or install and start the macOS or Linux login service:
-
-```sh
-neondeck service install
-```
-
-Then, from another terminal if using `serve`, open the dashboard in the OS
-default browser:
+After a production build or package install, start Neondeck and open the
+dashboard:
 
 ```sh
 neondeck open
+```
+
+When no login service is installed, `open` owns the server in the current
+terminal; press Ctrl-C to stop it. Or install the macOS or Linux login service
+for managed background operation:
+
+```sh
+neondeck service install
+neondeck open
+```
+
+Use `serve` when you want the foreground server without opening a browser:
+
+```sh
+neondeck serve
 ```
 
 To launch a named window profile with Chromium app-mode placement, select the

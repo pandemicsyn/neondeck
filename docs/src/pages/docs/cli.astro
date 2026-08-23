@@ -117,8 +117,11 @@ neondeck open xeneon --browser "/path/to/chromium"</code></pre>
           Node or service entry paths.
         </p>
         <p>
-          <code>open</code> ensures the server is ready and opens the dashboard. Named
-          window profiles come from runtime-home <code>dashboard.json</code>
+          <code>open</code> ensures the server is ready and opens the dashboard. Without
+          an installed service, it keeps the server attached to the current terminal
+          until Ctrl-C. An installed service remains managed by
+          <code>service start</code> and <code>service stop</code>. Named window
+          profiles come from runtime-home <code>dashboard.json</code>
           under <code>windows</code>; new runtime homes include <code
             >sidebar</code
           >

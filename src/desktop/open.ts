@@ -10,6 +10,7 @@ import {
   packageRootForServerEntry,
   resolvePackagedServerEntry,
   resolveServerPort,
+  serverSignalExitCode,
 } from '../server/serve';
 import { readServiceStatus, startService, type ServiceStatus } from './service';
 
@@ -35,6 +36,7 @@ export type OpenDashboardOptions = {
   port?: number | string;
   browserPath?: string;
   overrides?: WindowProfileOverrides;
+  suppressServerOutput?: boolean;
 };
 
 export type OpenDashboardResult = {
@@ -47,7 +49,7 @@ export type OpenDashboardResult = {
   geometry?: WindowProfile;
   server: {
     wasRunning: boolean;
-    startedBy: 'already-running' | 'service' | 'detached-serve' | 'none';
+    startedBy: 'already-running' | 'service' | 'attached-serve' | 'none';
   };
   browser: {
     strategy: 'chromium-app' | 'default-browser';
@@ -59,28 +61,83 @@ export type OpenDashboardResult = {
   errors?: string[];
 };
 
+export type AttachedServerExit = {
+  code: number | null;
+  signal: NodeJS.Signals | null;
+  error?: string;
+};
+
+export type AttachedServerController = {
+  exit: Promise<AttachedServerExit>;
+  stop: (signal?: NodeJS.Signals) => void;
+};
+
+export type OpenDashboardLaunch = {
+  result: OpenDashboardResult;
+  serverExit?: Promise<AttachedServerExit>;
+};
+
+type HealthResult = {
+  ok: boolean;
+  status?: number;
+  error?: string;
+  serverExited?: boolean;
+  serverExit?: AttachedServerExit;
+};
+
 type CommandSpawner = (
   command: string,
   args: string[],
   options?: { detached?: boolean; env?: NodeJS.ProcessEnv; cwd?: string },
 ) => Promise<void>;
 
+type AttachedServerSpawner = (
+  command: string,
+  args: string[],
+  options: {
+    env: NodeJS.ProcessEnv;
+    cwd: string;
+    suppressOutput?: boolean;
+  },
+) => AttachedServerController;
+
+type ControllableChild = {
+  exitCode: number | null;
+  signalCode: NodeJS.Signals | null;
+  kill: (signal?: NodeJS.Signals) => boolean;
+  once: {
+    (event: 'error', listener: (error: Error) => void): unknown;
+    (
+      event: 'exit',
+      listener: (code: number | null, signal: NodeJS.Signals | null) => void,
+    ): unknown;
+  };
+};
+
 type OpenDependencies = {
   fetch?: typeof fetch;
   exists?: (path: string) => boolean;
   platform?: NodeJS.Platform;
   spawn?: CommandSpawner;
+  spawnServer?: AttachedServerSpawner;
+  readProfiles?: typeof readWindowProfiles;
+  readServiceStatus?: typeof readServiceStatus;
+  startService?: typeof startService;
 };
 
 export async function openDashboard(
   options: OpenDashboardOptions,
   deps: OpenDependencies = {},
-): Promise<OpenDashboardResult> {
-  const serviceStatus = await readServiceStatus(options.paths);
+): Promise<OpenDashboardLaunch> {
+  const serviceStatus = await (deps.readServiceStatus ?? readServiceStatus)(
+    options.paths,
+  );
   const port = resolveOpenPort(options.port, serviceStatus, options.paths.home);
   const url = `http://127.0.0.1:${port}`;
   const warnings: string[] = [];
-  const profiles = await readWindowProfiles(options.paths);
+  const profiles = await (deps.readProfiles ?? readWindowProfiles)(
+    options.paths,
+  );
   let geometry: WindowProfile;
   try {
     geometry = resolveWindowProfile(
@@ -89,7 +146,7 @@ export async function openDashboard(
       options.overrides,
     );
   } catch (error) {
-    return {
+    return launchResult({
       ok: false,
       action: 'dashboard_open',
       changed: false,
@@ -100,7 +157,7 @@ export async function openDashboard(
       browser: { strategy: 'default-browser', geometryApplied: false },
       warnings,
       errors: [error instanceof Error ? error.message : String(error)],
-    };
+    });
   }
   const browser = resolveExplicitChromiumBrowser(
     options.browserPath,
@@ -108,7 +165,7 @@ export async function openDashboard(
   );
 
   if (options.browserPath && !browser) {
-    return {
+    return launchResult({
       ok: false,
       action: 'dashboard_open',
       changed: false,
@@ -120,7 +177,7 @@ export async function openDashboard(
       browser: { strategy: 'default-browser', geometryApplied: false },
       warnings,
       errors: [`Browser path does not exist: ${options.browserPath}`],
-    };
+    });
   }
 
   const initialHealth = await probeHealth(url, deps.fetch);
@@ -129,7 +186,7 @@ export async function openDashboard(
     serviceRuntimeHomeMismatch(serviceStatus, options.paths.home) &&
     serviceStatus.port === port
   ) {
-    return {
+    return launchResult({
       ok: false,
       action: 'dashboard_open',
       changed: false,
@@ -148,12 +205,13 @@ export async function openDashboard(
       errors: [
         `Service at ${url} is configured for ${serviceStatus.runtimeHome ?? 'an unknown runtime home'}, not ${options.paths.home}. Use a different --port, stop that service, or reinstall it for this runtime home.`,
       ],
-    };
+    });
   }
 
   let startedBy: OpenDashboardResult['server']['startedBy'] = initialHealth.ok
     ? 'already-running'
     : 'none';
+  let attachedServer: AttachedServerController | undefined;
 
   if (!initialHealth.ok) {
     const started = await startServerForOpen(
@@ -161,11 +219,13 @@ export async function openDashboard(
       port,
       serviceStatus,
       options.paths.home,
-      deps.spawn,
+      deps,
+      options.suppressServerOutput,
     );
     startedBy = started.startedBy;
+    attachedServer = started.attachedServer;
     if (!started.ok) {
-      return {
+      return launchResult({
         ok: false,
         action: 'dashboard_open',
         changed: false,
@@ -175,14 +235,19 @@ export async function openDashboard(
         browser: { strategy: 'default-browser', geometryApplied: false },
         warnings,
         errors: started.errors,
-      };
+      });
     }
     warnings.push(...started.warnings);
   }
 
-  const ready = await waitForHealth(url, { fetch: deps.fetch });
+  const ready = attachedServer
+    ? await waitForAttachedServerHealth(url, attachedServer, deps.fetch)
+    : await waitForHealth(url, { fetch: deps.fetch });
   if (!ready.ok) {
-    return {
+    if (attachedServer && ready.serverExited !== true) {
+      await stopAttachedServer(attachedServer);
+    }
+    return launchResult({
       ok: false,
       action: 'dashboard_open',
       changed: false,
@@ -191,74 +256,92 @@ export async function openDashboard(
       server: { wasRunning: initialHealth.ok, startedBy },
       browser: { strategy: 'default-browser', geometryApplied: false },
       warnings,
-      errors: [ready.error ?? `HTTP ${ready.status ?? 'unknown'}`],
-    };
+      errors: [
+        ready.serverExit?.error ??
+          ready.error ??
+          (ready.serverExit
+            ? `Server exited before becoming ready (${formatAttachedServerExitDetails(ready.serverExit)}).`
+            : `HTTP ${ready.status ?? 'unknown'}`),
+      ],
+    });
   }
 
   if (browser) {
     try {
       await launchChromiumApp(browser.path, url, geometry, deps.spawn);
     } catch (error) {
-      return openLaunchFailure(url, initialHealth.ok, startedBy, {
+      if (attachedServer) await stopAttachedServer(attachedServer);
+      return launchResult(
+        openLaunchFailure(url, initialHealth.ok, startedBy, {
+          profile: options.profile,
+          geometry,
+          warnings,
+          error,
+          browser: {
+            strategy: 'chromium-app',
+            name: browser.name,
+            path: browser.path,
+            geometryApplied: hasGeometry(geometry),
+          },
+        }),
+      );
+    }
+    return launchResult(
+      {
+        ok: true,
+        action: 'dashboard_open',
+        changed: true,
+        message: `Opened Neondeck in ${browser.name}.`,
+        url,
         profile: options.profile,
         geometry,
-        warnings,
-        error,
+        server: { wasRunning: initialHealth.ok, startedBy },
         browser: {
           strategy: 'chromium-app',
           name: browser.name,
           path: browser.path,
           geometryApplied: hasGeometry(geometry),
         },
-      });
-    }
-    return {
-      ok: true,
-      action: 'dashboard_open',
-      changed: true,
-      message: `Opened Neondeck in ${browser.name}.`,
-      url,
-      profile: options.profile,
-      geometry,
-      server: { wasRunning: initialHealth.ok, startedBy },
-      browser: {
-        strategy: 'chromium-app',
-        name: browser.name,
-        path: browser.path,
-        geometryApplied: hasGeometry(geometry),
+        warnings: warnings.length ? warnings : undefined,
       },
-      warnings: warnings.length ? warnings : undefined,
-    };
+      attachedServer,
+    );
   }
 
   try {
     await openDefaultBrowser(url, deps.platform, deps.spawn);
   } catch (error) {
-    return openLaunchFailure(url, initialHealth.ok, startedBy, {
-      profile: options.profile,
-      geometry,
-      warnings,
-      error,
-      browser: { strategy: 'default-browser', geometryApplied: false },
-    });
+    if (attachedServer) await stopAttachedServer(attachedServer);
+    return launchResult(
+      openLaunchFailure(url, initialHealth.ok, startedBy, {
+        profile: options.profile,
+        geometry,
+        warnings,
+        error,
+        browser: { strategy: 'default-browser', geometryApplied: false },
+      }),
+    );
   }
   if (hasGeometry(geometry)) {
     warnings.push(
       'Window geometry and kiosk settings were not applied because the default browser was used. Pass --browser <path> to launch a Chromium app-mode window, or install the PWA to keep dedicated window bounds.',
     );
   }
-  return {
-    ok: true,
-    action: 'dashboard_open',
-    changed: true,
-    message: 'Opened Neondeck in the default browser.',
-    url,
-    profile: options.profile,
-    geometry,
-    server: { wasRunning: initialHealth.ok, startedBy },
-    browser: { strategy: 'default-browser', geometryApplied: false },
-    warnings,
-  };
+  return launchResult(
+    {
+      ok: true,
+      action: 'dashboard_open',
+      changed: true,
+      message: 'Opened Neondeck in the default browser.',
+      url,
+      profile: options.profile,
+      geometry,
+      server: { wasRunning: initialHealth.ok, startedBy },
+      browser: { strategy: 'default-browser', geometryApplied: false },
+      warnings,
+    },
+    attachedServer,
+  );
 }
 
 export async function readWindowProfiles(paths: RuntimePaths) {
@@ -301,15 +384,18 @@ export async function waitForHealth(
     fetch?: typeof fetch;
     timeoutMs?: number;
     intervalMs?: number;
+    signal?: AbortSignal;
   } = {},
-) {
+): Promise<HealthResult> {
   const timeoutMs = options.timeoutMs ?? 10_000;
   const intervalMs = options.intervalMs ?? 250;
   const deadline = Date.now() + timeoutMs;
-  let last = await probeHealth(url, options.fetch);
-  while (!last.ok && Date.now() < deadline) {
-    await sleep(intervalMs);
-    last = await probeHealth(url, options.fetch);
+  let last = await probeHealth(url, options.fetch, options.signal);
+  while (!last.ok && !options.signal?.aborted && Date.now() < deadline) {
+    await sleep(intervalMs, options.signal);
+    if (!options.signal?.aborted) {
+      last = await probeHealth(url, options.fetch, options.signal);
+    }
   }
   return last;
 }
@@ -319,14 +405,15 @@ async function startServerForOpen(
   port: number,
   serviceStatus: ServiceStatus,
   runtimeHome: string,
-  spawnCommand?: CommandSpawner,
+  deps: OpenDependencies,
+  suppressServerOutput = false,
 ) {
   try {
     if (
       serviceMatchesRuntimeHome(serviceStatus, runtimeHome) &&
       serviceStatus.port === port
     ) {
-      const result = await startService(paths);
+      const result = await (deps.startService ?? startService)(paths);
       return {
         ok: result.ok,
         startedBy: 'service' as const,
@@ -336,25 +423,27 @@ async function startServerForOpen(
       };
     }
 
-    await spawnDetachedServe(paths, port, spawnCommand);
+    const attachedServer = spawnAttachedServe(
+      paths,
+      port,
+      deps.spawnServer,
+      deps.exists,
+      suppressServerOutput,
+    );
     const warnings = [...statusWarnings(serviceStatus)];
     if (serviceRuntimeHomeMismatch(serviceStatus, runtimeHome)) {
       warnings.push(serviceRuntimeHomeWarning(serviceStatus, runtimeHome));
     } else if (serviceStatus.installed && serviceStatus.port !== port) {
       warnings.push(
-        `Installed service is configured for port ${serviceStatus.port}; started detached serve for requested port ${port}.`,
-      );
-    } else {
-      warnings.push(
-        'Neondeck service is not installed; started a detached server for this login session.',
+        `Installed service is configured for port ${serviceStatus.port}; the server for requested port ${port} is attached to this terminal.`,
       );
     }
     return {
       ok: true,
-      startedBy: 'detached-serve' as const,
-      message:
-        'Started Neondeck with a detached foreground server. Run neondeck service install for login startup.',
+      startedBy: 'attached-serve' as const,
+      message: 'Started Neondeck server attached to this terminal.',
       warnings,
+      attachedServer,
     };
   } catch (error) {
     return {
@@ -400,21 +489,23 @@ async function openDefaultBrowser(
   await spawnCommand('xdg-open', [url], { detached: true });
 }
 
-async function spawnDetachedServe(
+function spawnAttachedServe(
   paths: RuntimePaths,
   port: number,
-  spawnCommand: CommandSpawner = spawnDetached,
+  spawnServer: AttachedServerSpawner = spawnAttached,
+  exists: (path: string) => boolean = existsSync,
+  suppressOutput = false,
 ) {
   const entry = resolvePackagedServerEntry();
-  if (!existsSync(entry)) {
+  if (!exists(entry)) {
     throw new Error(
       `Built Neondeck server entry was not found at ${entry}. Run npm run build:server or install a packaged Neondeck build before using neondeck open without an installed service.`,
     );
   }
   const args = [entry];
-  await spawnCommand(process.execPath, args, {
-    detached: true,
+  return spawnServer(process.execPath, args, {
     cwd: packageRootForServerEntry(entry),
+    suppressOutput,
     env: {
       ...process.env,
       NEONDECK_HOME: paths.home,
@@ -422,6 +513,75 @@ async function spawnDetachedServe(
       PORT: String(port),
     },
   });
+}
+
+function spawnAttached(
+  command: string,
+  args: string[],
+  options: {
+    env: NodeJS.ProcessEnv;
+    cwd: string;
+    suppressOutput?: boolean;
+  },
+): AttachedServerController {
+  const child = spawn(command, args, {
+    detached: false,
+    cwd: options.cwd,
+    env: options.env,
+    // Keep JSON stdout parseable while preserving diagnostics on stderr.
+    stdio: options.suppressOutput
+      ? ['inherit', 'ignore', 'inherit']
+      : 'inherit',
+  });
+  return controlAttachedServer(child);
+}
+
+export function controlAttachedServer(
+  child: ControllableChild,
+): AttachedServerController {
+  let settled = false;
+  let resolveExit: (exit: AttachedServerExit) => void = () => undefined;
+  const exit = new Promise<AttachedServerExit>((resolve) => {
+    resolveExit = resolve;
+  });
+  const stop = (signal: NodeJS.Signals = 'SIGTERM') => {
+    if (settled || child.exitCode !== null || child.signalCode !== null) return;
+    try {
+      child.kill(signal);
+    } catch (error) {
+      // A child can exit between the state check and kill(). Its exit event will
+      // settle the controller, so do not turn that normal race into a failure.
+      if ((error as NodeJS.ErrnoException).code !== 'ESRCH') {
+        finish({
+          code: null,
+          signal: null,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+  };
+  const forwardSigint = () => stop('SIGINT');
+  const forwardSigterm = () => stop('SIGTERM');
+  const finish = (result: AttachedServerExit) => {
+    if (settled) return;
+    settled = true;
+    process.off('SIGINT', forwardSigint);
+    process.off('SIGTERM', forwardSigterm);
+    resolveExit(result);
+  };
+
+  process.on('SIGINT', forwardSigint);
+  process.on('SIGTERM', forwardSigterm);
+  child.once('error', (error) => {
+    finish({
+      code: null,
+      signal: null,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  });
+  child.once('exit', (code, signal) => finish({ code, signal }));
+
+  return { exit, stop };
 }
 
 async function spawnDetached(
@@ -450,9 +610,117 @@ async function spawnDetached(
   });
 }
 
-async function probeHealth(url: string, fetchImpl: typeof fetch = fetch) {
+async function waitForAttachedServerHealth(
+  url: string,
+  server: AttachedServerController,
+  fetchImpl?: typeof fetch,
+): Promise<HealthResult> {
+  const controller = new AbortController();
+  const healthPromise = waitForHealth(url, {
+    fetch: fetchImpl,
+    signal: controller.signal,
+  });
+  const outcome = await Promise.race([
+    healthPromise.then((health) => ({ kind: 'health' as const, health })),
+    server.exit.then((serverExit) => ({
+      kind: 'server-exit' as const,
+      serverExit,
+    })),
+  ]);
+  if (outcome.kind === 'health') return outcome.health;
+
+  controller.abort();
+  await healthPromise;
+  return {
+    ok: false,
+    serverExited: true,
+    serverExit: outcome.serverExit,
+  };
+}
+
+export async function stopAttachedServer(
+  server: AttachedServerController,
+  timeoutMs = 5_000,
+) {
+  server.stop('SIGTERM');
+  if (await waitForAttachedServerExit(server.exit, timeoutMs)) return;
+  server.stop('SIGKILL');
+  await server.exit;
+}
+
+async function waitForAttachedServerExit(
+  exit: Promise<AttachedServerExit>,
+  timeoutMs: number,
+) {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      exit.then(() => true),
+      new Promise<false>((resolve) => {
+        timer = setTimeout(() => resolve(false), timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
+function launchResult(
+  result: OpenDashboardResult,
+  attachedServer?: AttachedServerController,
+): OpenDashboardLaunch {
+  return {
+    result,
+    ...(attachedServer ? { serverExit: attachedServer.exit } : {}),
+  };
+}
+
+export function openServerExitCode(exit: AttachedServerExit) {
+  if (exit.error) return 1;
+  if (exit.signal) return serverSignalExitCode(exit.signal);
+  return exit.code ?? 0;
+}
+
+export function formatOpenServerExit(exit: AttachedServerExit) {
+  if (exit.error) return `Neondeck server failed: ${exit.error}`;
+  if (openServerStoppedCleanly(exit)) {
+    return 'Neondeck stopped.';
+  }
+  if (exit.signal) {
+    return `Neondeck server stopped after ${exit.signal}.`;
+  }
+  return exit.code === 0
+    ? 'Neondeck stopped.'
+    : `Neondeck server stopped unexpectedly with code ${exit.code ?? 'unknown'}.`;
+}
+
+export function openServerStoppedCleanly(exit: AttachedServerExit) {
+  return (
+    !exit.error &&
+    (exit.signal === 'SIGINT' ||
+      exit.signal === 'SIGTERM' ||
+      exit.code === 0 ||
+      exit.code === 130 ||
+      exit.code === 143)
+  );
+}
+
+function formatAttachedServerExitDetails(exit: AttachedServerExit) {
+  if (exit.error) return exit.error;
+  if (exit.signal) return `signal ${exit.signal}`;
+  return `code ${exit.code ?? 'unknown'}`;
+}
+
+async function probeHealth(
+  url: string,
+  fetchImpl: typeof fetch = fetch,
+  signal?: AbortSignal,
+): Promise<HealthResult> {
   const healthUrl = `${url.replace(/\/$/, '')}/api/health`;
   const controller = new AbortController();
+  const abort = () => controller.abort();
+  signal?.addEventListener('abort', abort, { once: true });
+  if (signal?.aborted) controller.abort();
   const timer = setTimeout(() => controller.abort(), 750);
   try {
     const response = await fetchImpl(healthUrl, { signal: controller.signal });
@@ -464,6 +732,7 @@ async function probeHealth(url: string, fetchImpl: typeof fetch = fetch) {
     };
   } finally {
     clearTimeout(timer);
+    signal?.removeEventListener('abort', abort);
   }
 }
 
@@ -566,6 +835,16 @@ function stripUndefined(profile: WindowProfile): WindowProfile {
   ) as WindowProfile;
 }
 
-function sleep(ms: number) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+function sleep(ms: number, signal?: AbortSignal) {
+  return new Promise<void>((resolve) => {
+    const timer = setTimeout(finish, ms);
+    const abort = () => finish();
+    function finish() {
+      clearTimeout(timer);
+      signal?.removeEventListener('abort', abort);
+      resolve();
+    }
+    signal?.addEventListener('abort', abort, { once: true });
+    if (signal?.aborted) finish();
+  });
 }

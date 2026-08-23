@@ -353,7 +353,9 @@ const dashboardConfigExample = JSON.stringify(
           This is the normal path. Neondeck waits for the local server and then
           delegates the URL to macOS, Windows, or Linux. The browser decides
           whether that becomes a tab or a window; Neondeck's responsive layout
-          handles the available viewport.
+          handles the available viewport. If no login service is installed,
+          Neondeck keeps the server attached to this terminal; press Ctrl-C to
+          stop it.
         </p>
 
         <h3>Opt into Chromium window placement</h3>

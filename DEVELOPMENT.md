@@ -205,21 +205,22 @@ npm run release:app
 npm run release:npm:check
 ```
 
-After a production build or package install, either run Neondeck in the
-foreground:
+After a production build or package install, start Neondeck and open the
+dashboard:
 
 ```sh
-neondeck serve
+neondeck open
 ```
 
-Or install and start the macOS or Linux login service:
+Without an installed service, `open` keeps the server attached to its terminal;
+press Ctrl-C to stop it. Or install and start the macOS or Linux login service:
 
 ```sh
 neondeck service install
 ```
 
-Then, from another terminal if using `serve`, open the default dashboard or a
-named window profile:
+Then `open` starts the managed service when necessary, opens the default
+dashboard, and exits:
 
 ```sh
 neondeck open
@@ -230,9 +231,9 @@ neondeck open xeneon
 `neondeck service install` creates a macOS launchd agent or Linux systemd user
 unit with absolute Node and built server entry paths and logs under
 runtime-home `data/logs/server.log`. `neondeck open` probes `/api/health`,
-starts the installed service when present, falls back to a detached built server
-process when no service exists, and opens a dedicated browser app window when a
-supported Chromium browser is available.
+starts the installed service when present, otherwise keeps the built server
+attached to the current terminal until Ctrl-C, and opens a dedicated browser app
+window when a supported Chromium browser is available.
 
 `neondeck serve` and the login service run the built Flue server entry from
 `dist/server.mjs`; from a source checkout, use `npm run dev` for the fast loop

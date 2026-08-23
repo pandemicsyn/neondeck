@@ -325,8 +325,10 @@ describe('onboarding next steps', () => {
     expect(formatOnboardingNextSteps(true, 'cloud')).toEqual([
       '',
       'Next:',
+      '  neondeck open  # start the server and open the UI',
+      '',
+      'Optional login service:',
       '  neondeck service install',
-      '  neondeck open',
       '',
       'Optional diagnostics:',
       '  neondeck doctor --repo cloud',
