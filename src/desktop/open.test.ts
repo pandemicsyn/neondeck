@@ -295,6 +295,39 @@ describe('desktop open launcher', () => {
     expect(process.listenerCount('SIGTERM')).toBe(sigtermListeners);
   });
 
+  it('force-kills an attached child when interactive shutdown stalls', async () => {
+    vi.useFakeTimers();
+    const previousListeners = new Set(process.listeners('SIGINT'));
+    const child = Object.assign(new EventEmitter(), {
+      exitCode: null,
+      signalCode: null,
+      killed: false,
+      kill: vi.fn<() => boolean>(() => true),
+    });
+    const controller = controlAttachedServer(child);
+    const interrupt = process
+      .listeners('SIGINT')
+      .find((listener) => !previousListeners.has(listener));
+
+    try {
+      expect(interrupt).toBeDefined();
+      interrupt?.('SIGINT');
+      expect(child.kill).toHaveBeenCalledWith('SIGINT');
+
+      await vi.advanceTimersByTimeAsync(5_000);
+      expect(child.kill.mock.calls).toEqual([['SIGINT'], ['SIGKILL']]);
+
+      child.emit('exit', null, 'SIGKILL');
+      await expect(controller.exit).resolves.toEqual({
+        code: null,
+        signal: 'SIGKILL',
+      });
+    } finally {
+      child.emit('exit', null, 'SIGKILL');
+      vi.useRealTimers();
+    }
+  });
+
   it('force-kills a server that does not stop gracefully', async () => {
     let resolve: (exit: AttachedServerExit) => void = () => undefined;
     const exit = new Promise<AttachedServerExit>((done) => {

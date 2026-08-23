@@ -540,6 +540,7 @@ export function controlAttachedServer(
   child: ControllableChild,
 ): AttachedServerController {
   let settled = false;
+  let forceKillTimer: ReturnType<typeof setTimeout> | undefined;
   let resolveExit: (exit: AttachedServerExit) => void = () => undefined;
   const exit = new Promise<AttachedServerExit>((resolve) => {
     resolveExit = resolve;
@@ -560,11 +561,25 @@ export function controlAttachedServer(
       }
     }
   };
-  const forwardSigint = () => stop('SIGINT');
-  const forwardSigterm = () => stop('SIGTERM');
+  const armForceKill = () => {
+    if (settled || forceKillTimer) return;
+    forceKillTimer = setTimeout(() => {
+      forceKillTimer = undefined;
+      stop('SIGKILL');
+    }, 5_000);
+  };
+  const forwardSigint = () => {
+    stop('SIGINT');
+    armForceKill();
+  };
+  const forwardSigterm = () => {
+    stop('SIGTERM');
+    armForceKill();
+  };
   const finish = (result: AttachedServerExit) => {
     if (settled) return;
     settled = true;
+    if (forceKillTimer) clearTimeout(forceKillTimer);
     process.off('SIGINT', forwardSigint);
     process.off('SIGTERM', forwardSigterm);
     resolveExit(result);
