@@ -12,6 +12,11 @@ import {
   resolveServerPort,
   serverSignalExitCode,
 } from '../server/serve';
+import {
+  manageChildProcess,
+  type ManagedChildController,
+  type ManagedChildExit,
+} from '../server/child-process';
 import { readServiceStatus, startService, type ServiceStatus } from './service';
 
 export type WindowProfile = DashboardWindowProfile;
@@ -61,16 +66,9 @@ export type OpenDashboardResult = {
   errors?: string[];
 };
 
-export type AttachedServerExit = {
-  code: number | null;
-  signal: NodeJS.Signals | null;
-  error?: string;
-};
+export type AttachedServerExit = ManagedChildExit;
 
-export type AttachedServerController = {
-  exit: Promise<AttachedServerExit>;
-  stop: (signal?: NodeJS.Signals) => void;
-};
+export type AttachedServerController = ManagedChildController;
 
 export type OpenDashboardLaunch = {
   result: OpenDashboardResult;
@@ -100,19 +98,6 @@ type AttachedServerSpawner = (
     suppressOutput?: boolean;
   },
 ) => AttachedServerController;
-
-type ControllableChild = {
-  exitCode: number | null;
-  signalCode: NodeJS.Signals | null;
-  kill: (signal?: NodeJS.Signals) => boolean;
-  once: {
-    (event: 'error', listener: (error: Error) => void): unknown;
-    (
-      event: 'exit',
-      listener: (code: number | null, signal: NodeJS.Signals | null) => void,
-    ): unknown;
-  };
-};
 
 type OpenDependencies = {
   fetch?: typeof fetch;
@@ -525,7 +510,10 @@ function spawnAttached(
   },
 ): AttachedServerController {
   const child = spawn(command, args, {
-    detached: false,
+    // A separate process group prevents Ctrl-C from reaching the child both
+    // through the terminal and through the managed signal forwarder.
+    detached: true,
+    windowsHide: true,
     cwd: options.cwd,
     env: options.env,
     // Keep JSON stdout parseable while preserving diagnostics on stderr.
@@ -533,55 +521,7 @@ function spawnAttached(
       ? ['inherit', 'ignore', 'inherit']
       : 'inherit',
   });
-  return controlAttachedServer(child);
-}
-
-export function controlAttachedServer(
-  child: ControllableChild,
-): AttachedServerController {
-  let settled = false;
-  let resolveExit: (exit: AttachedServerExit) => void = () => undefined;
-  const exit = new Promise<AttachedServerExit>((resolve) => {
-    resolveExit = resolve;
-  });
-  const stop = (signal: NodeJS.Signals = 'SIGTERM') => {
-    if (settled || child.exitCode !== null || child.signalCode !== null) return;
-    try {
-      child.kill(signal);
-    } catch (error) {
-      // A child can exit between the state check and kill(). Its exit event will
-      // settle the controller, so do not turn that normal race into a failure.
-      if ((error as NodeJS.ErrnoException).code !== 'ESRCH') {
-        finish({
-          code: null,
-          signal: null,
-          error: error instanceof Error ? error.message : String(error),
-        });
-      }
-    }
-  };
-  const forwardSigint = () => stop('SIGINT');
-  const forwardSigterm = () => stop('SIGTERM');
-  const finish = (result: AttachedServerExit) => {
-    if (settled) return;
-    settled = true;
-    process.off('SIGINT', forwardSigint);
-    process.off('SIGTERM', forwardSigterm);
-    resolveExit(result);
-  };
-
-  process.on('SIGINT', forwardSigint);
-  process.on('SIGTERM', forwardSigterm);
-  child.once('error', (error) => {
-    finish({
-      code: null,
-      signal: null,
-      error: error instanceof Error ? error.message : String(error),
-    });
-  });
-  child.once('exit', (code, signal) => finish({ code, signal }));
-
-  return { exit, stop };
+  return manageChildProcess(child);
 }
 
 async function spawnDetached(
@@ -638,31 +578,8 @@ async function waitForAttachedServerHealth(
   };
 }
 
-export async function stopAttachedServer(
-  server: AttachedServerController,
-  timeoutMs = 5_000,
-) {
-  server.stop('SIGTERM');
-  if (await waitForAttachedServerExit(server.exit, timeoutMs)) return;
-  server.stop('SIGKILL');
-  await server.exit;
-}
-
-async function waitForAttachedServerExit(
-  exit: Promise<AttachedServerExit>,
-  timeoutMs: number,
-) {
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  try {
-    return await Promise.race([
-      exit.then(() => true),
-      new Promise<false>((resolve) => {
-        timer = setTimeout(() => resolve(false), timeoutMs);
-      }),
-    ]);
-  } finally {
-    if (timer) clearTimeout(timer);
-  }
+export async function stopAttachedServer(server: AttachedServerController) {
+  await server.terminate('SIGTERM');
 }
 
 function launchResult(

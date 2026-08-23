@@ -1,9 +1,7 @@
-import { EventEmitter } from 'node:events';
 import { describe, expect, it, vi } from 'vitest';
 import { runtimePaths } from '../runtime-home';
 import {
   formatOpenServerExit,
-  controlAttachedServer,
   openDashboard,
   openServerExitCode,
   openServerStoppedCleanly,
@@ -11,7 +9,6 @@ import {
   resolveOpenPort,
   resolveWindowProfile,
   serviceMatchesRuntimeHome,
-  stopAttachedServer,
   waitForHealth,
   type AttachedServerController,
   type AttachedServerExit,
@@ -245,6 +242,7 @@ describe('desktop open launcher', () => {
         spawnServer: () => ({
           exit: Promise.resolve({ code: 1, signal: null }),
           stop: vi.fn<() => void>(),
+          terminate: vi.fn(async () => ({ code: 1, signal: null })),
         }),
       },
     );
@@ -271,42 +269,6 @@ describe('desktop open launcher', () => {
       'Neondeck server stopped unexpectedly with code 1.',
     );
     expect(openServerExitCode({ code: 1, signal: null })).toBe(1);
-  });
-
-  it('controls and cleans up an attached child process', async () => {
-    const sigintListeners = process.listenerCount('SIGINT');
-    const sigtermListeners = process.listenerCount('SIGTERM');
-    const child = Object.assign(new EventEmitter(), {
-      exitCode: null,
-      signalCode: null,
-      killed: false,
-      kill: vi.fn<() => boolean>(() => true),
-    });
-    const controller = controlAttachedServer(child);
-
-    expect(process.listenerCount('SIGINT')).toBe(sigintListeners + 1);
-    expect(process.listenerCount('SIGTERM')).toBe(sigtermListeners + 1);
-    controller.stop('SIGTERM');
-    expect(child.kill).toHaveBeenCalledWith('SIGTERM');
-
-    child.emit('exit', 0, null);
-    await expect(controller.exit).resolves.toEqual({ code: 0, signal: null });
-    expect(process.listenerCount('SIGINT')).toBe(sigintListeners);
-    expect(process.listenerCount('SIGTERM')).toBe(sigtermListeners);
-  });
-
-  it('force-kills a server that does not stop gracefully', async () => {
-    let resolve: (exit: AttachedServerExit) => void = () => undefined;
-    const exit = new Promise<AttachedServerExit>((done) => {
-      resolve = done;
-    });
-    const stop = vi.fn<(signal?: NodeJS.Signals) => void>((signal) => {
-      if (signal === 'SIGKILL') resolve({ code: null, signal });
-    });
-
-    await stopAttachedServer({ exit, stop }, 1);
-
-    expect(stop.mock.calls).toEqual([['SIGTERM'], ['SIGKILL']]);
   });
 });
 
@@ -344,5 +306,9 @@ function deferredServer(options: { resolveWhenStopped?: boolean } = {}) {
       if (options.resolveWhenStopped) resolve({ code: null, signal });
     },
   );
-  return { controller: { exit, stop }, resolve, stop };
+  const terminate = vi.fn(async (signal: NodeJS.Signals = 'SIGTERM') => {
+    stop(signal);
+    return exit;
+  });
+  return { controller: { exit, stop, terminate }, resolve, stop, terminate };
 }

@@ -4,6 +4,7 @@ import { dirname } from 'node:path';
 import { Transform } from 'node:stream';
 import { fileURLToPath } from 'node:url';
 import type { RuntimePaths } from '../runtime-home';
+import { manageChildProcess } from './child-process';
 
 export const defaultServerPort = 3583;
 
@@ -24,52 +25,31 @@ export async function runBuiltNeondeckServer(
     );
   }
 
-  await new Promise<void>((resolve, reject) => {
-    const child = spawn(process.execPath, [entry], {
-      stdio: ['inherit', 'pipe', 'inherit'],
-      cwd: packageRootForServerEntry(entry),
-      env: {
-        ...process.env,
-        ...(options.paths ? { NEONDECK_HOME: options.paths.home } : {}),
-        ...(options.verbose ? { NEONDECK_LOG_LEVEL: 'debug' } : {}),
-        NEONDECK_PORT: String(port),
-        PORT: String(port),
-      },
-    });
-    let stoppingSignal: NodeJS.Signals | null = null;
-    const forwardSignal = (signal: NodeJS.Signals) => {
-      if (stoppingSignal) return;
-      stoppingSignal = signal;
-      child.kill(signal);
-    };
-    const forwardSigint = () => forwardSignal('SIGINT');
-    const forwardSigterm = () => forwardSignal('SIGTERM');
-    const cleanupSignalHandlers = () => {
-      process.off('SIGINT', forwardSigint);
-      process.off('SIGTERM', forwardSigterm);
-    };
-    process.on('SIGINT', forwardSigint);
-    process.on('SIGTERM', forwardSigterm);
-
-    child.stdout
-      .pipe(createServerOutputTransform(port, options.paths?.home))
-      .pipe(process.stdout, { end: false });
-    child.once('error', (error) => {
-      cleanupSignalHandlers();
-      reject(error);
-    });
-    child.once('exit', (code, signal) => {
-      cleanupSignalHandlers();
-      console.info(formatServerStop(code, signal));
-      if (signal) {
-        process.exitCode = serverSignalExitCode(signal);
-        resolve();
-        return;
-      }
-      process.exitCode = code ?? 0;
-      resolve();
-    });
+  const child = spawn(process.execPath, [entry], {
+    // Isolate terminal signals from the child so the controller forwards each
+    // signal exactly once while the parent continues to own and await it.
+    detached: true,
+    windowsHide: true,
+    stdio: ['inherit', 'pipe', 'inherit'],
+    cwd: packageRootForServerEntry(entry),
+    env: {
+      ...process.env,
+      ...(options.paths ? { NEONDECK_HOME: options.paths.home } : {}),
+      ...(options.verbose ? { NEONDECK_LOG_LEVEL: 'debug' } : {}),
+      NEONDECK_PORT: String(port),
+      PORT: String(port),
+    },
   });
+  const controller = manageChildProcess(child);
+  child.stdout
+    .pipe(createServerOutputTransform(port, options.paths?.home))
+    .pipe(process.stdout, { end: false });
+  const result = await controller.exit;
+  if (result.error) throw new Error(result.error);
+  console.info(formatServerStop(result.code, result.signal));
+  process.exitCode = result.signal
+    ? serverSignalExitCode(result.signal)
+    : (result.code ?? 0);
 }
 
 export function serverSignalExitCode(signal: NodeJS.Signals) {

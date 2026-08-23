@@ -8,6 +8,11 @@ const child = spawn(
   process.execPath,
   ['--import', tsxLoader, cliEntry, ...process.argv.slice(2)],
   {
+    // Keep terminal signals on this wrapper's process group. The wrapper
+    // forwards each signal once, so the CLI does not receive both the
+    // terminal signal and a forwarded duplicate.
+    detached: true,
+    windowsHide: true,
     stdio: 'inherit',
     env: process.env,
   },
