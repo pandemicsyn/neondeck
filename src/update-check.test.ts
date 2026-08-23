@@ -2,6 +2,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { openDb } from './lib/sqlite';
 import { getNotification } from './modules/app-state';
 import {
   checkForUpdates,
@@ -107,6 +108,132 @@ describe('Neondeck update checking', () => {
       latestVersion: '1.0.0-beta.40',
       dismissed: false,
     });
+  });
+
+  it('resolves an active notification when a newer update supersedes it', async () => {
+    const paths = runtimePaths(await tempDir());
+    const fetcher = vi.fn<typeof fetch>(async () =>
+      Response.json({ version: '1.0.0-beta.39' }),
+    );
+    await checkForUpdates(paths, {
+      currentVersion: '1.0.0-beta.38',
+      fetcher,
+    });
+
+    fetcher.mockResolvedValue(Response.json({ version: '1.0.0-beta.40' }));
+    await checkForUpdates(paths, {
+      currentVersion: '1.0.0-beta.38',
+      fetcher,
+    });
+
+    await expect(
+      getNotification(updateNotificationId('1.0.0-beta.39'), paths),
+    ).resolves.toMatchObject({ resolvedAt: expect.any(String) });
+    await expect(
+      getNotification(updateNotificationId('1.0.0-beta.40'), paths),
+    ).resolves.toMatchObject({ resolvedAt: null });
+  });
+
+  it('refreshes an active notification when the installed version changes', async () => {
+    const paths = runtimePaths(await tempDir());
+    const fetcher = vi.fn<typeof fetch>(async () =>
+      Response.json({ version: '1.0.0-beta.40' }),
+    );
+    await checkForUpdates(paths, {
+      currentVersion: '1.0.0-beta.38',
+      fetcher,
+      now: () => new Date('2026-08-23T12:00:00.000Z'),
+    });
+    await checkForUpdates(paths, {
+      currentVersion: '1.0.0-beta.39',
+      fetcher,
+      now: () => new Date('2026-08-24T12:00:00.000Z'),
+    });
+
+    await expect(
+      getNotification(updateNotificationId('1.0.0-beta.40'), paths),
+    ).resolves.toMatchObject({
+      message:
+        'You are running 1.0.0-beta.39. Review the upgrade instructions when you are ready.',
+      data: {
+        currentVersion: '1.0.0-beta.39',
+        latestVersion: '1.0.0-beta.40',
+      },
+      readAt: null,
+      resolvedAt: null,
+      occurrenceCount: 1,
+      updatedAt: '2026-08-24T12:00:00.000Z',
+    });
+  });
+
+  it('does not cache an update when its notification cannot be created', async () => {
+    const paths = runtimePaths(await tempDir());
+    await readUpdateStatus(paths, '1.0.0-beta.38');
+    const database = openDb(paths.neondeckDatabase);
+    try {
+      database.exec(`
+        CREATE TRIGGER reject_update_notification
+        BEFORE INSERT ON notifications
+        WHEN NEW.source = 'neondeck-update'
+        BEGIN
+          SELECT RAISE(FAIL, 'notification write failed');
+        END;
+      `);
+    } finally {
+      database.close();
+    }
+
+    await expect(
+      checkForUpdates(paths, {
+        currentVersion: '1.0.0-beta.38',
+        fetcher: async () => Response.json({ version: '1.0.0-beta.39' }),
+      }),
+    ).rejects.toThrow('notification write failed');
+    await expect(
+      readUpdateStatus(paths, '1.0.0-beta.38'),
+    ).resolves.toMatchObject({
+      latestVersion: null,
+      updateAvailable: false,
+      dismissed: false,
+    });
+  });
+
+  it('rolls back notification cleanup and cache changes together', async () => {
+    const paths = runtimePaths(await tempDir());
+    await checkForUpdates(paths, {
+      currentVersion: '1.0.0-beta.38',
+      fetcher: async () => Response.json({ version: '1.0.0-beta.39' }),
+    });
+    const database = openDb(paths.neondeckDatabase);
+    try {
+      database.exec(`
+        CREATE TRIGGER reject_next_update_notification
+        BEFORE INSERT ON notifications
+        WHEN NEW.source_id = '1.0.0-beta.40'
+        BEGIN
+          SELECT RAISE(FAIL, 'next notification write failed');
+        END;
+      `);
+    } finally {
+      database.close();
+    }
+
+    await expect(
+      checkForUpdates(paths, {
+        currentVersion: '1.0.0-beta.38',
+        fetcher: async () => Response.json({ version: '1.0.0-beta.40' }),
+      }),
+    ).rejects.toThrow('next notification write failed');
+    await expect(
+      readUpdateStatus(paths, '1.0.0-beta.38'),
+    ).resolves.toMatchObject({
+      latestVersion: '1.0.0-beta.39',
+      updateAvailable: true,
+      dismissed: false,
+    });
+    await expect(
+      getNotification(updateNotificationId('1.0.0-beta.39'), paths),
+    ).resolves.toMatchObject({ resolvedAt: null });
   });
 
   it('respects the update-check opt out without calling the registry', async () => {

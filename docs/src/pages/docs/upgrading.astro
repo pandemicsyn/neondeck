@@ -16,10 +16,11 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
       <article class="docs-prose">
         <h1>Upgrade Neondeck</h1>
         <p>
-          Neondeck checks the matching npm release channel once a day. Beta
-          installations follow <code>next</code>; stable installations follow
-          <code>latest</code>. When a newer version is available, the dashboard
-          shows a compact update banner and a durable notification.
+          Neondeck checks the matching npm release channel shortly after startup
+          and every 24 hours while it remains running. Beta installations follow
+          <code>next</code>; stable installations follow <code>latest</code>.
+          When a newer version is available, the dashboard shows a compact
+          update banner and a durable notification.
         </p>
         <aside class="docs-note">
           Upgrading the application does not replace your runtime home.

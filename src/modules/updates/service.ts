@@ -1,8 +1,10 @@
-import { openDb } from '../../lib/sqlite';
+import { openDb, withImmediateTransaction } from '../../lib/sqlite';
 import {
-  addNotification,
   getNotification,
+  publishNotificationEvent,
+  readNotificationRow,
   resolveNotification,
+  type NotificationEvent,
 } from '../app-state';
 import {
   ensureRuntimeHome,
@@ -108,31 +110,13 @@ export async function checkForUpdates(
   }
 
   const checkedAt = (options.now ?? (() => new Date()))().toISOString();
-  writeCachedUpdate(
+  const updateAvailable = compareVersions(payload.version, currentVersion) > 0;
+  persistUpdateCheck(
     { channel, latestVersion: payload.version, checkedAt },
+    currentVersion,
+    updateAvailable,
     paths,
   );
-  if (compareVersions(payload.version, currentVersion) > 0) {
-    await addNotification(
-      {
-        id: updateNotificationId(payload.version),
-        level: 'ready',
-        title: `Neondeck ${payload.version} is available`,
-        message: `You are running ${currentVersion}. Review the upgrade instructions when you are ready.`,
-        source: 'neondeck-update',
-        sourceId: payload.version,
-        data: {
-          currentVersion,
-          latestVersion: payload.version,
-          docsUrl: updateDocsUrl,
-          releaseUrl: releaseUrl(payload.version),
-        },
-      },
-      paths,
-    );
-  } else {
-    await resolveInstalledUpdateNotifications(currentVersion, paths);
-  }
   return readUpdateStatus(paths, currentVersion);
 }
 
@@ -179,51 +163,143 @@ function readCachedUpdate(paths: RuntimePaths): CachedUpdate | null {
   }
 }
 
-function writeCachedUpdate(update: CachedUpdate, paths: RuntimePaths) {
-  const database = openDb(paths.neondeckDatabase);
-  try {
-    database
-      .prepare(
-        `INSERT INTO app_metadata (key, value, updated_at)
-         VALUES (?, ?, ?)
-         ON CONFLICT(key) DO UPDATE SET
-           value = excluded.value,
-           updated_at = excluded.updated_at;`,
-      )
-      .run(updateCacheKey, JSON.stringify(update), update.checkedAt);
-  } finally {
-    database.close();
-  }
-}
-
-async function resolveInstalledUpdateNotifications(
+function persistUpdateCheck(
+  update: CachedUpdate,
   currentVersion: string,
+  updateAvailable: boolean,
   paths: RuntimePaths,
 ) {
   const database = openDb(paths.neondeckDatabase);
-  let ids: string[] = [];
+  const notificationId = updateAvailable
+    ? updateNotificationId(update.latestVersion)
+    : null;
+  const events: NotificationEvent[] = [];
   try {
-    ids = (
-      database
+    withImmediateTransaction(database, () => {
+      const obsoleteRows = database
         .prepare(
-          `SELECT id, source_id
+          `SELECT *
            FROM notifications
            WHERE source = 'neondeck-update'
              AND resolved_at IS NULL;`,
         )
-        .all() as Array<{ id: string; source_id: string | null }>
-    )
-      .filter(
-        (row) =>
-          row.source_id !== null &&
-          parseVersion(row.source_id) !== null &&
-          compareVersions(row.source_id, currentVersion) <= 0,
-      )
-      .map((row) => row.id);
+        .all()
+        .filter((row) => readNotificationRow(row).id !== notificationId);
+      for (const row of obsoleteRows) {
+        const obsolete = readNotificationRow(row);
+        database
+          .prepare(
+            `UPDATE notifications
+             SET resolved_at = ?,
+                 read_at = COALESCE(read_at, ?),
+                 updated_at = ?
+             WHERE id = ?;`,
+          )
+          .run(
+            update.checkedAt,
+            update.checkedAt,
+            update.checkedAt,
+            obsolete.id,
+          );
+        const resolvedRow = database
+          .prepare('SELECT * FROM notifications WHERE id = ?;')
+          .get(obsolete.id);
+        if (resolvedRow) {
+          events.push({
+            id: obsolete.id,
+            action: 'resolved',
+            notification: readNotificationRow(resolvedRow),
+            changedAt: update.checkedAt,
+          });
+        }
+      }
+
+      if (notificationId) {
+        const title = `Neondeck ${update.latestVersion} is available`;
+        const message = `You are running ${currentVersion}. Review the upgrade instructions when you are ready.`;
+        const data = JSON.stringify({
+          currentVersion,
+          latestVersion: update.latestVersion,
+          docsUrl: updateDocsUrl,
+          releaseUrl: releaseUrl(update.latestVersion),
+        });
+        const existing = database
+          .prepare('SELECT * FROM notifications WHERE id = ? LIMIT 1;')
+          .get(notificationId);
+        if (!existing) {
+          database
+            .prepare(
+              `INSERT INTO notifications (
+                 id, level, title, message, source, source_id, data_json,
+                 read_at, resolved_at, occurrence_count, created_at, updated_at
+               ) VALUES (?, ?, ?, ?, ?, ?, ?, NULL, NULL, 1, ?, ?);`,
+            )
+            .run(
+              notificationId,
+              'ready',
+              title,
+              message,
+              'neondeck-update',
+              update.latestVersion,
+              data,
+              update.checkedAt,
+              update.checkedAt,
+            );
+          const createdRow = database
+            .prepare('SELECT * FROM notifications WHERE id = ?;')
+            .get(notificationId);
+          if (createdRow) {
+            events.push({
+              id: notificationId,
+              action: 'created',
+              notification: readNotificationRow(createdRow),
+              changedAt: update.checkedAt,
+            });
+          }
+        } else {
+          const existingNotification = readNotificationRow(existing);
+          if (
+            existingNotification.resolvedAt === null &&
+            (existingNotification.title !== title ||
+              existingNotification.message !== message ||
+              JSON.stringify(existingNotification.data) !== data)
+          ) {
+            database
+              .prepare(
+                `UPDATE notifications
+                 SET title = ?, message = ?, data_json = ?, updated_at = ?
+                 WHERE id = ?;`,
+              )
+              .run(title, message, data, update.checkedAt, notificationId);
+            const reconciledRow = database
+              .prepare('SELECT * FROM notifications WHERE id = ?;')
+              .get(notificationId);
+            if (reconciledRow) {
+              events.push({
+                id: notificationId,
+                action: 'reconciled',
+                notification: readNotificationRow(reconciledRow),
+                changedAt: update.checkedAt,
+              });
+            }
+          }
+        }
+      }
+
+      database
+        .prepare(
+          `INSERT INTO app_metadata (key, value, updated_at)
+           VALUES (?, ?, ?)
+           ON CONFLICT(key) DO UPDATE SET
+             value = excluded.value,
+             updated_at = excluded.updated_at;`,
+        )
+        .run(updateCacheKey, JSON.stringify(update), update.checkedAt);
+    });
   } finally {
     database.close();
   }
-  await Promise.all(ids.map((id) => resolveNotification(id, paths)));
+  for (const event of events) publishNotificationEvent(event);
 }
 
 function releaseUrl(version: string) {

@@ -134,7 +134,8 @@ button:disabled {
 }
 
 @media (pointer: coarse) {
-  .dashboard-grid :where(button, a, input, textarea, select):not(.sr-only) {
+  :is(.deck-shell, .dashboard-grid)
+    :where(button, a, input, textarea, select):not(.sr-only) {
     min-width: 44px;
     min-height: 44px;
   }
