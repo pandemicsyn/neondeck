@@ -43,6 +43,7 @@ import {
   printRepoEditEventsResult,
   printServiceResult,
   printStatus,
+  isJsonOutput,
   setJsonOutput,
 } from './output';
 import type {
@@ -109,15 +110,21 @@ program
   )
   .action(async (profile: string | undefined, options: OpenOptions) => {
     const { ensureRuntimeHome } = await runtimeHomeModule();
-    const { openDashboard } = await openModule();
+    const {
+      formatOpenServerExit,
+      openDashboard,
+      openServerExitCode,
+      openServerStoppedCleanly,
+    } = await openModule();
     const paths = await pathsFromOptions(program.opts<GlobalOptions>());
     await ensureRuntimeHome(paths);
     loadEnvForPaths(paths);
-    const result = await openDashboard({
+    const launch = await openDashboard({
       paths,
       profile,
       port: options.port,
       browserPath: options.browser,
+      suppressServerOutput: isJsonOutput(),
       overrides: {
         width: parseOptionalPositiveIntegerFlag('--width', options.width),
         height: parseOptionalPositiveIntegerFlag('--height', options.height),
@@ -126,7 +133,24 @@ program
         ...(options.kiosk ? { kiosk: true } : {}),
       },
     });
-    printActionResult(result);
+    printActionResult(launch.result);
+    if (!launch.serverExit) return;
+
+    if (!isJsonOutput()) {
+      console.log(
+        '\nNeondeck is running in this terminal. Press Ctrl-C to stop.',
+      );
+    }
+    const exit = await launch.serverExit;
+    const exitCode = openServerExitCode(exit);
+    if (!isJsonOutput()) {
+      console.log(
+        openServerStoppedCleanly(exit)
+          ? `✓ ${formatOpenServerExit(exit)}`
+          : `✗ ${formatOpenServerExit(exit)}`,
+      );
+    }
+    process.exitCode = exitCode;
   });
 
 const service = program
