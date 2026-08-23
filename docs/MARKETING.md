@@ -1,13 +1,16 @@
 # Campaign pages and measurement
 
-The first paid-campaign landing pages are:
+The paid-campaign landing pages with Reddit measurement are:
 
 - `/for/pr-review/`
 - `/for/pr-autopilot/`
+- `/for/review-open-call/`
 
-They share `CampaignPage.astro` and use `CampaignProductPreview.astro` for
-promise-specific product previews. Keep the ad headline and its destination
-page aligned; do not turn these into alternate general-purpose homepages.
+The two product campaigns share `CampaignPage.astro` and use
+`CampaignProductPreview.astro` for promise-specific product previews. The
+review open call has a dedicated layout but participates in the same
+consent-gated measurement path. Keep the ad headline and its destination page
+aligned; do not turn these into alternate general-purpose homepages.
 
 ## Current measurement boundary
 

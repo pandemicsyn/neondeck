@@ -5,10 +5,10 @@
   hidden
 >
   <div>
-    <strong>Help us measure this campaign?</strong>
+    <strong>Measure this campaign?</strong>
     <p>
-      If you allow it, Reddit can receive visits and key CTA clicks on these
-      campaign pages. The Neondeck app remains telemetry-free.
+      Allow Reddit to count visits and key actions. The Neondeck app remains
+      telemetry-free.
     </p>
     <a href="/privacy/">What gets shared</a>
   </div>
@@ -104,14 +104,14 @@
 <style>
   .marketing-consent {
     position: fixed;
-    right: 18px;
-    bottom: 18px;
+    right: 14px;
+    bottom: 14px;
     z-index: 40;
     display: flex;
-    width: min(680px, calc(100vw - 36px));
-    align-items: end;
-    gap: 24px;
-    padding: 18px;
+    width: min(390px, calc(100vw - 28px));
+    align-items: center;
+    gap: 14px;
+    padding: 12px 14px;
     border: 1px solid var(--cyan);
     background: #080910;
     color: #d7f7ff;
@@ -123,21 +123,21 @@
 
   .marketing-consent strong {
     font-family: 'Chakra Petch', sans-serif;
-    font-size: 16px;
+    font-size: 14px;
   }
 
   .marketing-consent p {
-    max-width: 52ch;
-    margin: 5px 0 7px;
+    max-width: 33ch;
+    margin: 2px 0 5px;
     color: #a9bec5;
-    font-size: 13px;
-    line-height: 1.55;
+    font-size: 12px;
+    line-height: 1.4;
   }
 
   .marketing-consent a {
     color: var(--cyan);
     font-family: 'IBM Plex Mono', monospace;
-    font-size: 10px;
+    font-size: 9px;
     letter-spacing: 0.06em;
     text-transform: uppercase;
   }
@@ -145,12 +145,13 @@
   .marketing-consent__actions {
     display: flex;
     flex: none;
-    gap: 8px;
+    flex-direction: column;
+    gap: 5px;
   }
 
   .marketing-consent button {
-    min-height: 38px;
-    padding-inline: 12px;
+    min-height: 36px;
+    padding-inline: 9px;
     border: 1px solid rgba(215, 247, 255, 0.18);
     border-radius: 0;
     background: transparent;
@@ -180,14 +181,13 @@
       right: 12px;
       bottom: 12px;
       width: calc(100vw - 24px);
-      align-items: stretch;
-      flex-direction: column;
-      gap: 14px;
+      align-items: center;
+      gap: 10px;
+      padding: 11px 12px;
     }
 
     .marketing-consent__actions {
-      display: grid;
-      grid-template-columns: 1fr 1.35fr;
+      gap: 4px;
     }
   }
 
