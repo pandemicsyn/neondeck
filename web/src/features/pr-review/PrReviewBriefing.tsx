@@ -191,6 +191,10 @@ export function PrReviewBriefing({
   const payloadLabel = approvalNote.trim()
     ? `note + ${commentPayload}${rejectedCommentWarning}`
     : `${commentPayload}${rejectedCommentWarning}`;
+  const approvalActionLabel =
+    !approvalNote.trim() && submittedCommentCount === 0
+      ? `Approve with no comments${rejectedCommentWarning}`
+      : `Approve & submit ${payloadLabel}`;
   const archived = review.archivedAt !== null;
   const actionable =
     Boolean(actions) &&
@@ -706,7 +710,7 @@ export function PrReviewBriefing({
                   ? 'submitting…'
                   : actions.busy
                     ? 'draft update in progress…'
-                    : `Approve & submit ${payloadLabel}`}
+                    : approvalActionLabel}
               </button>
             </>
           ) : null}

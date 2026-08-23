@@ -535,13 +535,25 @@ describe('PR review briefing', () => {
     expect(container.textContent).toContain('Approve & submit 1 comment');
   });
 
+  it('uses the panel wording when approval has no comments', () => {
+    renderBriefing(
+      root,
+      reviewFixture('approve'),
+      { ...draftFixture(), comments: [] },
+      actionFixture(),
+    );
+
+    expect(container.textContent).toContain('Approve with no comments');
+    expect(container.textContent).not.toContain('Approve & submit no comments');
+  });
+
   it('warns when a rejected draft comment will be omitted', () => {
     const actions = actionFixture();
     actions.rejectedCommentCount = 1;
     renderBriefing(root, reviewFixture('approve'), draftFixture(), actions);
 
     expect(container.textContent).toContain(
-      'Approve & submit no comments · 1 rejected draft omitted until edited',
+      'Approve with no comments · 1 rejected draft omitted until edited',
     );
   });
 
