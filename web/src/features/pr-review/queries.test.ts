@@ -6,12 +6,42 @@ import type {
 } from '../../api';
 import {
   invalidateSubmittedReviewQueries,
+  prReviewDraftQueryOptions,
   prReviewQueryKeys,
   shouldRefreshReviewThreads,
   upsertReviewThread,
 } from './queries';
 
 describe('prReviewQueryKeys', () => {
+  it('uses the exact submission draft for submitting and submitted receipts', () => {
+    expect(
+      prReviewDraftQueryOptions({
+        status: 'submitted',
+        submissionDraftId: 'draft-1',
+      }),
+    ).toEqual({
+      draftId: 'draft-1',
+      live: false,
+      submissionStatus: 'submitted',
+    });
+    expect(
+      prReviewDraftQueryOptions({ status: 'ready', submissionDraftId: null }),
+    ).toEqual({ draftId: null, live: true, submissionStatus: null });
+    expect(
+      prReviewQueryKeys.submissionDraft(
+        { repo: 'owner/repo', number: 1 },
+        'draft-1',
+        'submitting',
+      ),
+    ).not.toEqual(
+      prReviewQueryKeys.submissionDraft(
+        { repo: 'owner/repo', number: 1 },
+        'draft-1',
+        'submitted',
+      ),
+    );
+  });
+
   it('keys files by diff inputs and mutable threads by PR identity', () => {
     const pr = pullRequest();
     const activityUpdated = {

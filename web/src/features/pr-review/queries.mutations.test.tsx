@@ -80,6 +80,92 @@ describe('useGitHubPrReviewMutations', () => {
     expect(queryClient.getQueryData(prReviewQueryKeys.draft(pr))).toBeNull();
   });
 
+  it('loads the submitted receipt instead of reusing a cached submitting draft', async () => {
+    const pr = pullRequest();
+    const submittingDraft = reviewDraft('submitting');
+    const submittedDraft = reviewDraft('submitted');
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    queryClient.setQueryData(
+      prReviewQueryKeys.submissionDraft(pr, submittingDraft.id, 'submitting'),
+      submittingDraft,
+    );
+    const fetchSpy = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValue(liveDraftResponse(submittedDraft));
+
+    function Harness() {
+      useGitHubPrReviewDraft(pr, {
+        draftId: submittingDraft.id,
+        submissionStatus: 'submitted',
+      });
+      return null;
+    }
+
+    await act(async () =>
+      root.render(
+        <QueryClientProvider client={queryClient}>
+          <Harness />
+        </QueryClientProvider>,
+      ),
+    );
+    await act(async () => {
+      await queryClient.refetchQueries({
+        queryKey: prReviewQueryKeys.submissionDraft(
+          pr,
+          submittedDraft.id,
+          'submitted',
+        ),
+      });
+    });
+
+    expect(fetchSpy).toHaveBeenCalledWith(
+      expect.stringContaining('draftId=draft-1'),
+      expect.any(Object),
+    );
+    expect(
+      queryClient.getQueryData<GitHubPrReviewDraft>(
+        prReviewQueryKeys.submissionDraft(pr, submittedDraft.id, 'submitted'),
+      )?.status,
+    ).toBe('submitted');
+  });
+
+  it('does not fetch or reuse the live draft when a receipt draft id is missing', async () => {
+    const pr = pullRequest();
+    const liveDraft = reviewDraft('draft');
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    queryClient.setQueryData(prReviewQueryKeys.draft(pr), liveDraft);
+    const fetchSpy = vi.spyOn(globalThis, 'fetch');
+    let receiptDraft: GitHubPrReviewDraft | null | undefined = liveDraft;
+
+    function Harness() {
+      receiptDraft = useGitHubPrReviewDraft(pr, {
+        draftId: null,
+        submissionStatus: 'submitted',
+      }).data;
+      return null;
+    }
+
+    await act(async () =>
+      root.render(
+        <QueryClientProvider client={queryClient}>
+          <Harness />
+        </QueryClientProvider>,
+      ),
+    );
+
+    expect(receiptDraft).toBeUndefined();
+    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(
+      queryClient.getQueryData(
+        prReviewQueryKeys.missingSubmissionDraft(pr, 'submitted'),
+      ),
+    ).toBeUndefined();
+  });
+
   it('reconciles the authoritative draft returned by a CAS conflict', async () => {
     const pr = pullRequest();
     const staleDraft = reviewDraft('draft');

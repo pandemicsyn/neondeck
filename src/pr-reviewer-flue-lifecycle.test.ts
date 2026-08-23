@@ -8,6 +8,7 @@ import { afterEach, expect, it } from 'vitest';
 import { prReviewerConversationId } from '../shared/pr-reviewer-session';
 import {
   addPrReviewDraftComment,
+  prReviewBriefingFixture,
   upsertPrReviewDraft,
 } from './testing/pr-review-draft-fixtures';
 import { completePrReview, startPrReview } from './modules/pr-reviews';
@@ -50,6 +51,7 @@ it('mounts fresh reviewer context before each Flue model turn without instructio
       headSha,
       reportIds: [],
       reviewUrl: started.review.reviewUrl,
+      briefingOverview: prReviewBriefingFixture(),
       findingCount: 0,
       seededCount: 0,
       reportOnlyCount: 0,

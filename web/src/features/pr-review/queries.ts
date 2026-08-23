@@ -26,6 +26,7 @@ import {
   type GitHubPrReviewSubmitResponse,
   type GitHubPullRequest,
   type GitHubPullRequestReviewThread,
+  type PrReviewRecord,
 } from '../../api';
 import { queryKeys } from '../../lib/query';
 
@@ -69,6 +70,30 @@ export const prReviewQueryKeys = {
     ['pr-review', 'review-threads', pr.repo, pr.number] as const,
   draft: (pr: Pick<GitHubPullRequest, 'repo' | 'number'>) =>
     ['pr-review', 'draft', pr.repo, pr.number] as const,
+  submissionDraft: (
+    pr: Pick<GitHubPullRequest, 'repo' | 'number'>,
+    draftId: string,
+    status: 'submitting' | 'submitted',
+  ) =>
+    [
+      'pr-review',
+      'submission-draft',
+      pr.repo,
+      pr.number,
+      draftId,
+      status,
+    ] as const,
+  missingSubmissionDraft: (
+    pr: Pick<GitHubPullRequest, 'repo' | 'number'>,
+    status: 'submitting' | 'submitted',
+  ) =>
+    [
+      'pr-review',
+      'submission-draft-unavailable',
+      pr.repo,
+      pr.number,
+      status,
+    ] as const,
 };
 
 export function useGitHubPullRequestFiles(pr: GitHubPullRequest) {
@@ -302,16 +327,68 @@ export function shouldRefreshReviewThreads(
   );
 }
 
-export function useGitHubPrReviewDraft(pr: GitHubPullRequest) {
+export function useGitHubPrReviewDraft(
+  pr: Pick<GitHubPullRequest, 'repo' | 'number'>,
+  options: {
+    draftId?: string | null;
+    enabled?: boolean;
+    live?: boolean;
+    submissionStatus?: 'submitting' | 'submitted' | null;
+  } = {},
+) {
+  const draftId = options.submissionStatus
+    ? options.draftId?.trim() || null
+    : null;
+  const missingSubmissionDraft = Boolean(options.submissionStatus && !draftId);
   return useQuery({
-    queryKey: prReviewQueryKeys.draft(pr),
+    queryKey:
+      draftId && options.submissionStatus
+        ? prReviewQueryKeys.submissionDraft(
+            pr,
+            draftId,
+            options.submissionStatus,
+          )
+        : options.submissionStatus
+          ? prReviewQueryKeys.missingSubmissionDraft(
+              pr,
+              options.submissionStatus,
+            )
+          : prReviewQueryKeys.draft(pr),
     queryFn: ({ signal }) =>
-      getGitHubPrReviewDraft({ repo: pr.repo, number: pr.number }, { signal }),
-    enabled: pr.repo.length > 0 && pr.number > 0,
+      getGitHubPrReviewDraft(
+        { repo: pr.repo, number: pr.number, draftId },
+        { signal },
+      ),
+    enabled:
+      options.enabled !== false &&
+      !missingSubmissionDraft &&
+      pr.repo.length > 0 &&
+      pr.number > 0,
+    refetchInterval: options.live && !draftId ? 5_000 : false,
+    refetchIntervalInBackground: options.live === true && !draftId,
   });
 }
 
-export function useGitHubPrReviewMutations(pr: GitHubPullRequest) {
+export function prReviewDraftQueryOptions(
+  review:
+    Pick<PrReviewRecord, 'status' | 'submissionDraftId'> | null | undefined,
+) {
+  return {
+    draftId:
+      review?.status === 'submitting' || review?.status === 'submitted'
+        ? review.submissionDraftId
+        : null,
+    live: review?.status === 'ready',
+    submissionStatus:
+      review?.status === 'submitting' || review?.status === 'submitted'
+        ? review.status
+        : null,
+  };
+}
+
+export function useGitHubPrReviewMutations(
+  pr: Pick<GitHubPullRequest, 'repo' | 'number'>,
+) {
   const queryClient = useQueryClient();
   const draftQueryKey = prReviewQueryKeys.draft(pr);
   const initialDraft = queryClient.getQueryData<GitHubPrReviewDraft | null>(

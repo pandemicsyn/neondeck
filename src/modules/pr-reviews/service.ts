@@ -31,6 +31,7 @@ import {
 } from './store';
 import {
   prReviewTrustBoundary,
+  type PrReviewBriefingOverview,
   type PrReviewOrigin,
   type PrReviewRecord,
   type PrReviewReportOnlyFinding,
@@ -300,6 +301,7 @@ export function completePrReview(
     headSha: string;
     reportIds: string[];
     reviewUrl: string;
+    briefingOverview: PrReviewBriefingOverview;
     findingCount: number;
     seededCount: number;
     reportOnlyCount: number;
@@ -322,6 +324,9 @@ export function completePrReview(
              head_sha = ?,
              report_ids_json = ?,
              review_url = ?,
+             recommendation = ?,
+             recommendation_reason = ?,
+             briefing_overview_json = ?,
              finding_count = ?,
              seeded_count = ?,
              report_only_count = ?,
@@ -337,6 +342,9 @@ export function completePrReview(
         input.headSha,
         JSON.stringify(input.reportIds),
         input.reviewUrl,
+        input.briefingOverview.recommendation,
+        input.briefingOverview.recommendationReason,
+        JSON.stringify(input.briefingOverview),
         input.findingCount,
         input.seededCount,
         input.reportOnlyCount,
@@ -1107,6 +1115,9 @@ function reserveReviewingRecord(
            origin = excluded.origin,
            review_url = excluded.review_url,
            report_ids_json = '[]',
+           recommendation = NULL,
+           recommendation_reason = NULL,
+           briefing_overview_json = NULL,
            finding_count = 0,
            seeded_count = 0,
            report_only_count = 0,

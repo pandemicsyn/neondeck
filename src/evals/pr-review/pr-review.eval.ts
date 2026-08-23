@@ -54,10 +54,12 @@ it('derives parallel task batches and validates the submitted review contract', 
     replyText: '',
     finalReview: {
       overview: {
+        recommendation: 'needs-human',
+        recommendationReason:
+          'Two independent domains require a human to confirm their interaction.',
         summary: 'Reviewed two independent domains.',
         changeMap: [],
         risks: [],
-        checks: [],
       },
       findings: [],
     },

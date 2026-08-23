@@ -1,6 +1,10 @@
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useMemo } from 'react';
-import { getActivitySubmission, type ActivityEventRecord } from '../../api';
+import {
+  getActivitySubmission,
+  type ActivityEventRecord,
+  type ActivitySubmissionResponse,
+} from '../../api';
 import { Badge, EmptyState, MiniEmpty, ScrollArea } from '../../components/ui';
 import { queryErrorMessage, queryKeys } from '../../lib/query';
 import { activitySubmissionMetrics } from './activity-metrics';
@@ -10,9 +14,22 @@ export function ActivitySubmissionPage({
 }: {
   submissionId: string;
 }) {
+  const queryClient = useQueryClient();
+  const queryKey = queryKeys.activitySubmission(submissionId);
   const { data, error, isLoading } = useQuery({
-    queryKey: queryKeys.activitySubmission(submissionId),
-    queryFn: ({ signal }) => getActivitySubmission(submissionId, { signal }),
+    queryKey,
+    queryFn: async ({ signal }) => {
+      const previous =
+        queryClient.getQueryData<ActivitySubmissionResponse>(queryKey);
+      const afterEventId = latestActivityEventId(previous?.events ?? []);
+      const incoming = await getActivitySubmission(submissionId, {
+        signal,
+        afterEventId,
+      });
+      return previous && afterEventId !== undefined
+        ? mergeActivitySubmissionResponse(previous, incoming)
+        : incoming;
+    },
     refetchInterval: (query) => {
       const status = query.state.data?.submission.status;
       return status === 'queued' || status === 'running' ? 2_000 : false;
@@ -322,52 +339,7 @@ function ActivityTimeline({
         {ordered.length ? (
           <ol className="m-0 list-none divide-y divide-line p-0">
             {ordered.map((event) => (
-              <li
-                className="grid grid-cols-[72px_minmax(0,1fr)] gap-3 px-4 py-3"
-                key={event.id}
-              >
-                <time
-                  className="font-mono text-[9.5px] text-muted"
-                  dateTime={event.createdAt}
-                >
-                  {formatTime(event.createdAt)}
-                </time>
-                <div className="min-w-0">
-                  <div className="flex items-center gap-2">
-                    <Badge
-                      className={
-                        event.isError ? 'border-accent text-accent' : ''
-                      }
-                    >
-                      {event.eventType.replaceAll('_', ' ')}
-                    </Badge>
-                    {event.operationKind ? (
-                      <span className="truncate font-mono text-[9.5px] text-muted">
-                        {event.operationKind}
-                      </span>
-                    ) : null}
-                  </div>
-                  <p
-                    className={
-                      event.isError
-                        ? 'mt-1 text-[11px] text-accent'
-                        : 'mt-1 text-[11px] text-ink'
-                    }
-                  >
-                    {event.message}
-                  </p>
-                  {event.summary !== null ? (
-                    <details className="mt-1.5 border-t border-line/70 pt-1">
-                      <summary className="cursor-pointer font-mono text-[9.5px] text-muted">
-                        event details
-                      </summary>
-                      <pre className="m-0 mt-1 max-h-44 overflow-auto whitespace-pre-wrap break-words bg-field/50 p-2 font-mono text-[10px] text-ink">
-                        {JSON.stringify(event.summary, null, 2)}
-                      </pre>
-                    </details>
-                  ) : null}
-                </div>
-              </li>
+              <ActivityEventRow event={event} key={event.id} />
             ))}
           </ol>
         ) : (
@@ -378,6 +350,144 @@ function ActivityTimeline({
       </ScrollArea>
     </section>
   );
+}
+
+function ActivityEventRow({ event }: { event: ActivityEventRecord }) {
+  const details = activityEventDetails(event);
+  return (
+    <li className="grid grid-cols-[72px_minmax(0,1fr)] gap-3 px-4 py-3">
+      <time
+        className="font-mono text-[9.5px] text-muted"
+        dateTime={event.createdAt}
+      >
+        {formatTime(event.createdAt)}
+      </time>
+      <div className="min-w-0">
+        <div className="flex items-center gap-2">
+          <Badge className={event.isError ? 'border-accent text-accent' : ''}>
+            {event.eventType.replaceAll('_', ' ')}
+          </Badge>
+          {event.operationKind ? (
+            <span className="truncate font-mono text-[9.5px] text-muted">
+              {event.operationKind}
+            </span>
+          ) : null}
+        </div>
+        <p
+          className={
+            event.isError
+              ? 'mt-1 text-[11px] text-accent'
+              : 'mt-1 text-[11px] text-ink'
+          }
+        >
+          {event.message}
+        </p>
+        {details.content ? (
+          <details className="mt-1.5 border-t border-line/70 pt-1">
+            <summary className="cursor-pointer font-mono text-[9.5px] text-primary hover:text-primary-strong">
+              {details.content.label} ·{' '}
+              {formatBytes(
+                new TextEncoder().encode(details.content.value).length,
+              )}
+              {details.content.truncated ? ' · truncated' : ''}
+            </summary>
+            <pre className="m-0 mt-1 max-h-80 max-w-[90ch] overflow-auto whitespace-pre-wrap break-words bg-field p-2.5 font-mono text-[10.5px] leading-[1.65] text-ink">
+              {details.content.value}
+            </pre>
+          </details>
+        ) : null}
+        {details.contentStatus ? (
+          <p className="m-0 mt-1.5 border-t border-line/70 pt-1.5 font-mono text-[9.5px] text-muted">
+            {details.contentStatus}
+          </p>
+        ) : null}
+        {details.metadata !== null ? (
+          <details className="mt-1.5 border-t border-line/70 pt-1">
+            <summary className="cursor-pointer font-mono text-[9.5px] text-muted hover:text-ink">
+              event details
+            </summary>
+            <pre className="m-0 mt-1 max-h-44 overflow-auto whitespace-pre-wrap break-words bg-field/50 p-2 font-mono text-[10px] text-ink">
+              {JSON.stringify(details.metadata, null, 2)}
+            </pre>
+          </details>
+        ) : null}
+      </div>
+    </li>
+  );
+}
+
+export function activityEventDetails(event: ActivityEventRecord) {
+  if (!event.summary || typeof event.summary !== 'object') {
+    return { content: null, contentStatus: null, metadata: event.summary };
+  }
+  const summary = event.summary as Record<string, unknown>;
+  const contentKey =
+    event.eventType === 'task_start'
+      ? 'prompt'
+      : event.eventType === 'task'
+        ? 'result'
+        : null;
+  const value = contentKey ? summary[contentKey] : null;
+  if (!contentKey) {
+    return { content: null, contentStatus: null, metadata: event.summary };
+  }
+  if (typeof value !== 'string') {
+    const label = contentKey === 'prompt' ? 'Task prompt' : 'Task output';
+    const omittedReason = summary[`${contentKey}OmittedReason`];
+    return {
+      content: null,
+      contentStatus:
+        omittedReason === 'retention_limit'
+          ? `${label} was omitted after the activity content retention limit was reached.`
+          : `${label} was not retained for this event.`,
+      metadata: event.summary,
+    };
+  }
+  const { [contentKey]: _content, ...metadata } = summary;
+  return {
+    content: {
+      label: contentKey === 'prompt' ? 'delegated prompt' : 'task output',
+      value,
+      truncated: summary[`${contentKey}Truncated`] === true,
+    },
+    contentStatus: null,
+    metadata: Object.keys(metadata).length ? metadata : null,
+  };
+}
+
+export function latestActivityEventId(events: ActivityEventRecord[]) {
+  return events.reduce<number | undefined>(
+    (latest, event) =>
+      latest === undefined ? event.id : Math.max(latest, event.id),
+    undefined,
+  );
+}
+
+export function mergeActivitySubmissionResponse(
+  previous: ActivitySubmissionResponse,
+  incoming: ActivitySubmissionResponse,
+): ActivitySubmissionResponse {
+  const eventsById = new Map(previous.events.map((event) => [event.id, event]));
+  for (const event of incoming.events) eventsById.set(event.id, event);
+  const retainedIds = new Set(
+    [...eventsById.keys()]
+      .sort((left, right) => right - left)
+      .slice(0, incoming.eventHistory.retainedEventCount),
+  );
+  return {
+    ...incoming,
+    events: [...eventsById.values()].filter((event) =>
+      retainedIds.has(event.id),
+    ),
+    eventHistory: {
+      totalEventCount: Math.max(
+        previous.eventHistory.totalEventCount,
+        incoming.eventHistory.totalEventCount,
+      ),
+      retainedEventCount: incoming.eventHistory.retainedEventCount,
+      isTruncated: incoming.eventHistory.isTruncated,
+    },
+  };
 }
 
 function Fact({ label, value }: { label: string; value: string }) {

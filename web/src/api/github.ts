@@ -111,12 +111,16 @@ export async function getGitHubPrReviewDraft(
   input: {
     repo: string;
     number: number;
+    draftId?: string | null;
   },
   options: ApiRequestOptions = {},
 ) {
   const [owner, name] = parseRepo(input.repo);
+  const draftQuery = input.draftId
+    ? `?draftId=${encodeURIComponent(input.draftId)}`
+    : '';
   const response = await getJson<GitHubPrReviewDraftResponse>(
-    `/api/github/prs/${encodeURIComponent(owner)}/${encodeURIComponent(name)}/${input.number}/review-draft`,
+    `/api/github/prs/${encodeURIComponent(owner)}/${encodeURIComponent(name)}/${input.number}/review-draft${draftQuery}`,
     options,
   );
   return response.data?.draft ?? null;

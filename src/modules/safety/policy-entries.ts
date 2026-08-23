@@ -547,13 +547,13 @@ export const entries: SafetyPolicyEntry[] = [
   ),
   action(
     'neondeck_pr_review_for_human',
-    'Prepare PR review artifacts',
+    'Prepare PR review briefing',
     {
       ...safeMutation,
       auditTarget:
-        'reports/pr_review_drafts/pr_review_draft_comments/notifications/workflow_summaries',
+        'pr_reviews/pr_review_drafts/pr_review_draft_comments/notifications/workflow_summaries',
     },
-    'Creates local PR review reports and Neon-origin local draft comments for human review. It never submits a GitHub review or performs external writes.',
+    'Creates a persisted local PR review briefing and Neon-origin local draft comments for human review. It never submits a GitHub review or performs external writes.',
   ),
   action(
     'neondeck_submit_learning_review',

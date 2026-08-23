@@ -672,3 +672,24 @@ Use this format:
 - Verification detail: The sequential closure fixture does run the production deterministic review fixer twice against a real temporary Git repository and managed worktree, including a local commit on the first turn, a persisted config-history plus repo-policy downgrade, and an uncommitted prepared-diff update on the second turn. Only the live Flue process/provider boundary remains simulated by accepted dispatch receipts and reconstructed dependency closures.
 - Verification limitation: The compaction unit test verifies the configured `reserveTokens`/`keepRecentTokens` relationship and the version-matched Flue contract only. It does not run a live model/provider through enough canonical history to empirically observe reconstructed-input compaction; that remains part of Package 8's live Flue product-path smoke once the long-suite prohibition is lifted.
 - Follow-up: Package 5 must consume `fix-prepared` owner settlements for verification/approval/push/comment/cleanup. Package 8 retains the real process-restart and live Flue product-path smoke obligations when the long-suite prohibition is lifted.
+
+## 2026-08-22 - Bounded Local Task Content In Activity Detail
+
+- Roadmap item: Phase 15 runtime observability drilldown and the PR-review
+  performance observation surface.
+- Decision: Retain surgically redacted Flue task prompts and string results only
+  for the local submission-detail API, capped at 64 KiB per event, 512 KiB per
+  submission, and 16 MiB across retained activity rows. The compact activity
+  overview removes those content fields and keeps only hashes, sizes, contract
+  metadata, and lifecycle summaries. Existing hash-only rows are not backfilled.
+- Reason: Operators need the delegated instruction and returned evidence to
+  understand Explore activity, but copying unbounded plaintext into every
+  overview poll would conflict with the plan's bounded/hash-oriented performance
+  posture and enlarge the credential-retention surface. Detail-only projection,
+  shared credential redaction, and byte-based caps preserve inspectability within
+  explicit local storage and transport boundaries. Durable transactional counters
+  enforce those caps without scanning or parsing retained history on the Flue
+  observation path.
+- Follow-up: Consider configurable retention or on-demand reads from Flue's
+  canonical event history if operators need longer-lived plaintext. Keep PR-review
+  performance projections hash/metadata-only.

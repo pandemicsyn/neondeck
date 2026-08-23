@@ -17,6 +17,7 @@ export type ReviewPopoutTarget = {
   baseSha?: string | null;
   baseRef?: string | null;
   title?: string | null;
+  initialPath?: string | null;
 };
 
 export type ReviewPopoutAppearance = {
@@ -74,6 +75,7 @@ export function PrReviewPopoutPage({
         />
       ) : null}
       <GitHubPrReview
+        initialPath={target.initialPath}
         mode="standalone"
         pr={pullRequest}
         reviewThreadsActivityVersion={prQuery.data?.updatedAt ?? null}

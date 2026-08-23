@@ -16,7 +16,7 @@ export function supportedCommands() {
       name: 'review-pr',
       usage: '/review-pr <repo#number|owner/repo#number|url>',
       description:
-        'Prepare local PR review reports and Neon-origin draft comments for a human reviewer.',
+        'Prepare a local PR review briefing and Neon-origin draft comments for a human reviewer.',
     },
     {
       name: 'fix-ci',

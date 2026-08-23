@@ -6,6 +6,7 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type {
   PrReviewMutationResponse,
+  PrReviewChangeEvent,
   PrReviewRecord,
   PrReviewsResponse,
 } from '../api';
@@ -13,22 +14,57 @@ import type {
 type ApiModule = typeof import('../api');
 
 const api = vi.hoisted(() => ({
+  getPrReview: vi.fn<ApiModule['getPrReview']>(),
   getPrReviews: vi.fn<ApiModule['getPrReviews']>(),
   startPrReview: vi.fn<ApiModule['startPrReview']>(),
   openPrReviewEventStream: vi.fn<ApiModule['openPrReviewEventStream']>(),
 }));
+const reviewDraftQueries = vi.hoisted(() => ({
+  useGitHubPrReviewDraft: vi.fn(),
+}));
+const reviewActions = vi.hoisted(() => ({
+  recoverSubmission: vi.fn(),
+  submitApproval: vi.fn(),
+  usePrReviewBriefingActions: vi.fn(),
+}));
 
 vi.mock('../api', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../api')>()),
+  getPrReview: api.getPrReview,
   getPrReviews: api.getPrReviews,
   startPrReview: api.startPrReview,
   openPrReviewEventStream: api.openPrReviewEventStream,
+}));
+vi.mock('../features/pr-review/PrReviewBriefing', () => ({
+  PrReviewBriefingOverlay: ({
+    onClose,
+    review,
+  }: {
+    onClose: () => void;
+    review: PrReviewRecord;
+  }) => (
+    <div data-testid="briefing-overlay">
+      <span>{review.status}</span>
+      <button onClick={onClose} type="button">
+        close briefing
+      </button>
+    </div>
+  ),
+}));
+vi.mock('../features/pr-review/queries', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../features/pr-review/queries')>()),
+  useGitHubPrReviewDraft: reviewDraftQueries.useGitHubPrReviewDraft,
+}));
+vi.mock('../features/pr-review/usePrReviewBriefingActions', () => ({
+  synchronizePrReviewSubmissionLock: vi.fn(),
+  usePrReviewBriefingActions: reviewActions.usePrReviewBriefingActions,
 }));
 
 import { ReviewsPanelPlugin } from './ReviewsPanel';
 
 let container: HTMLDivElement;
 let root: Root;
+let reviewEventListener: ((event: PrReviewChangeEvent) => void) | null;
 
 describe('ReviewsPanel concurrent row mutations', () => {
   beforeEach(() => {
@@ -39,8 +75,30 @@ describe('ReviewsPanel concurrent row mutations', () => {
     container = document.createElement('div');
     document.body.append(container);
     root = createRoot(container);
+    reviewEventListener = null;
     api.getPrReviews.mockResolvedValue(reviewsResponse());
-    api.openPrReviewEventStream.mockReturnValue(() => {});
+    api.getPrReview.mockReturnValue(new Promise(() => {}));
+    api.openPrReviewEventStream.mockImplementation((listener) => {
+      reviewEventListener = listener;
+      return () => {};
+    });
+    reviewDraftQueries.useGitHubPrReviewDraft.mockReturnValue({
+      data: null,
+      error: null,
+      isError: false,
+      isLoading: false,
+      isRefetchError: false,
+      refetch: vi.fn(),
+    });
+    reviewActions.submitApproval.mockResolvedValue(undefined);
+    reviewActions.recoverSubmission.mockResolvedValue(undefined);
+    reviewActions.usePrReviewBriefingActions.mockReturnValue({
+      busy: false,
+      rejectedCommentCount: 0,
+      recoverSubmission: reviewActions.recoverSubmission,
+      submitting: false,
+      submitApproval: reviewActions.submitApproval,
+    });
   });
 
   afterEach(() => {
@@ -48,6 +106,524 @@ describe('ReviewsPanel concurrent row mutations', () => {
     container.remove();
     vi.useRealTimers();
     vi.clearAllMocks();
+  });
+
+  it('shows one briefing action for new reviews and no report actions for legacy reviews', async () => {
+    const briefing = readyRecord('owner/project', 1, true);
+    const legacy = readyRecord('owner/project', 2, false);
+    api.getPrReviews.mockResolvedValue({
+      ...reviewsResponse(),
+      items: [briefing, legacy],
+      groups: {
+        awaiting: [],
+        inProgress: [],
+        needsAction: [briefing, legacy],
+        submitted: [],
+        archived: [],
+      },
+    });
+
+    await renderPanel();
+
+    expect(
+      [...container.querySelectorAll('button')].filter(
+        (button) => button.textContent === 'briefing',
+      ),
+    ).toHaveLength(1);
+    expect(container.textContent).not.toContain('overview');
+    expect(container.textContent).not.toContain('issues');
+  });
+
+  it('shows recommendation reasoning and quick approval only for approve rows', async () => {
+    const approve = readyRecord('owner/project', 1, true);
+    const needsHuman = {
+      ...readyRecord('owner/project', 2, true),
+      previousVerdict: 'request-changes' as const,
+      recommendation: 'needs-human' as const,
+      recommendationReason: 'A correctness risk still needs a human decision.',
+      briefingOverview: {
+        ...readyRecord('owner/project', 2, true).briefingOverview!,
+        recommendation: 'needs-human' as const,
+        recommendationReason:
+          'A correctness risk still needs a human decision.',
+      },
+    };
+    api.getPrReviews.mockResolvedValue({
+      ...reviewsResponse(),
+      items: [approve, needsHuman],
+      groups: {
+        awaiting: [],
+        inProgress: [],
+        needsAction: [approve, needsHuman],
+        submitted: [],
+        archived: [],
+      },
+    });
+
+    await renderPanel();
+
+    expect(container.textContent).toContain('✓ RECOMMEND APPROVE');
+    expect(container.textContent).toContain('! NEEDS A HUMAN');
+    expect(container.textContent).toContain(
+      'A correctness risk still needs a human decision.',
+    );
+    expect(
+      [...container.querySelectorAll('button')].filter(
+        (button) => button.textContent?.trim() === 'approve',
+      ),
+    ).toHaveLength(1);
+    expect(reviewDraftQueries.useGitHubPrReviewDraft).toHaveBeenCalledWith(
+      { repo: 'owner/project', number: 1 },
+      expect.objectContaining({ live: false }),
+    );
+    expect(container.textContent).not.toContain('no quick approve');
+    const approveRow = [...container.querySelectorAll('article')].find(
+      (article) => article.textContent?.includes('owner/project#1'),
+    );
+    expect(
+      [...(approveRow?.querySelectorAll('button,a') ?? [])].map((action) =>
+        action.textContent?.trim(),
+      ),
+    ).toEqual(['briefing', 'open', 'archive', 'approve']);
+    expect(
+      [...(approveRow?.querySelectorAll('button,a') ?? [])].every(
+        (action) =>
+          action.className.includes('min-h-[26px]') &&
+          action.className.includes('whitespace-nowrap') &&
+          action.className.includes('shrink-0'),
+      ),
+    ).toBe(true);
+    expect(
+      approveRow?.querySelector(':scope > div:last-child')?.className,
+    ).toContain('flex-nowrap');
+    expect(
+      [...(approveRow?.querySelectorAll('p') ?? [])].find((paragraph) =>
+        paragraph.textContent?.includes('RECOMMEND APPROVE'),
+      )?.className,
+    ).toContain('font-semibold');
+    const needsHumanRow = [...container.querySelectorAll('article')].find(
+      (article) => article.textContent?.includes('owner/project#2'),
+    );
+    expect(
+      [...(needsHumanRow?.querySelectorAll('button,a') ?? [])].map((action) =>
+        action.textContent?.trim(),
+      ),
+    ).toEqual(['briefing', 'open', 'archive']);
+    expect(
+      [...(needsHumanRow?.querySelectorAll('p') ?? [])].find((paragraph) =>
+        paragraph.textContent?.includes(
+          'A correctness risk still needs a human decision.',
+        ),
+      )?.className,
+    ).toContain('line-clamp-2');
+    const verdict = [...(needsHumanRow?.querySelectorAll('p') ?? [])].find(
+      (paragraph) => paragraph.textContent?.includes('! NEEDS A HUMAN'),
+    );
+    const priorVerdict = [...(verdict?.querySelectorAll('span') ?? [])].find(
+      (span) => span.textContent?.includes('· previously requested change'),
+    );
+    expect(priorVerdict?.className).toContain('text-muted');
+    expect(priorVerdict?.className).toContain('font-normal');
+    expect(
+      [...(needsHumanRow?.querySelectorAll('span') ?? [])].some(
+        (span) =>
+          span.textContent === 'previously requested change' &&
+          span.className.includes('border'),
+      ),
+    ).toBe(false);
+    const statusBadge = [
+      ...(needsHumanRow?.querySelectorAll('span') ?? []),
+    ].find((span) => span.textContent === 'ready');
+    expect(statusBadge?.parentElement).toBe(
+      needsHumanRow?.querySelector(':scope > div:first-child'),
+    );
+    expect(statusBadge?.className).not.toContain('border-primary');
+    expect(statusBadge?.className).not.toContain('text-primary');
+  });
+
+  it('clamps the ready-state fallback summary', async () => {
+    const fallback = {
+      ...readyRecord('owner/project', 3, false),
+      previousVerdict: 'approve' as const,
+    };
+    api.getPrReviews.mockResolvedValue({
+      ...reviewsResponse(),
+      items: [fallback],
+      groups: {
+        awaiting: [],
+        inProgress: [],
+        needsAction: [fallback],
+        submitted: [],
+        archived: [],
+      },
+    });
+
+    await renderPanel();
+
+    expect(
+      [...container.querySelectorAll('p')].find((paragraph) =>
+        paragraph.textContent?.includes('You previously approved this PR'),
+      )?.className,
+    ).toContain('line-clamp-2');
+    expect(
+      [...container.querySelectorAll('p')].find((paragraph) =>
+        paragraph.textContent?.includes('You previously approved this PR'),
+      )?.className,
+    ).toContain('w-full');
+    expect(container.textContent?.match(/previously approved/g)).toHaveLength(
+      1,
+    );
+  });
+
+  it('submits an approve recommendation from the row with no review body', async () => {
+    const approve = readyRecord('owner/project', 1, true);
+    api.getPrReviews.mockResolvedValue({
+      ...reviewsResponse(),
+      items: [approve],
+      groups: {
+        awaiting: [],
+        inProgress: [],
+        needsAction: [approve],
+        submitted: [],
+        archived: [],
+      },
+    });
+    await renderPanel();
+
+    await act(async () => buttonWithText('approve').click());
+
+    expect(reviewActions.submitApproval).toHaveBeenCalledWith('');
+  });
+
+  it('labels rejected draft comments that quick approval will omit', async () => {
+    const approve = readyRecord('owner/project', 1, true);
+    api.getPrReviews.mockResolvedValue({
+      ...reviewsResponse(),
+      items: [approve],
+      groups: {
+        awaiting: [],
+        inProgress: [],
+        needsAction: [approve],
+        submitted: [],
+        archived: [],
+      },
+    });
+    reviewDraftQueries.useGitHubPrReviewDraft.mockReturnValue({
+      data: { status: 'draft', headSha: approve.headSha, comments: [{}, {}] },
+      error: null,
+      isError: false,
+      isLoading: false,
+      isRefetchError: false,
+      refetch: vi.fn(),
+    });
+    reviewActions.usePrReviewBriefingActions.mockReturnValue({
+      busy: false,
+      rejectedCommentCount: 1,
+      submitting: false,
+      submitApproval: reviewActions.submitApproval,
+    });
+
+    await renderPanel();
+
+    expect(container.textContent).toContain(
+      'approve & submit 1 · omit 1 rejected',
+    );
+  });
+
+  it('disables row recovery while submission is active and enables it once recoverable', async () => {
+    const submitting = {
+      ...readyRecord('owner/project', 1, true),
+      status: 'submitting' as const,
+      submissionDraftId: 'draft-1',
+    };
+    api.getPrReviews.mockResolvedValue({
+      ...reviewsResponse(),
+      items: [submitting],
+      groups: {
+        awaiting: [],
+        inProgress: [submitting],
+        needsAction: [],
+        submitted: [],
+        archived: [],
+      },
+    });
+    reviewActions.usePrReviewBriefingActions.mockReturnValue({
+      busy: true,
+      rejectedCommentCount: 0,
+      recoverSubmission: reviewActions.recoverSubmission,
+      submitting: true,
+      submitApproval: reviewActions.submitApproval,
+    });
+
+    await renderPanel();
+
+    expect(buttonWithText('checking GitHub…').disabled).toBe(true);
+
+    reviewActions.usePrReviewBriefingActions.mockReturnValue({
+      busy: false,
+      rejectedCommentCount: 0,
+      recoverSubmission: reviewActions.recoverSubmission,
+      submitting: true,
+      submitApproval: reviewActions.submitApproval,
+    });
+    await renderPanel();
+
+    const recover = buttonWithText('recover submission');
+    expect(recover.disabled).toBe(false);
+    await act(async () => recover.click());
+    expect(reviewActions.recoverSubmission).toHaveBeenCalledOnce();
+  });
+
+  it('turns a submitted row into a durable receipt with its GitHub link', async () => {
+    const submitted = {
+      ...readyRecord('owner/project', 1, true),
+      status: 'submitted' as const,
+      verdict: 'approve' as const,
+      submissionDraftId: 'draft-1',
+      githubReviewUrl:
+        'https://github.com/owner/project/pull/1#pullrequestreview-42',
+      submittedAt: '2026-08-22T18:05:00.000Z',
+    };
+    reviewDraftQueries.useGitHubPrReviewDraft.mockReturnValue({
+      data: { status: 'submitted', comments: [{ id: 'one' }, { id: 'two' }] },
+      error: null,
+      isError: false,
+      isLoading: false,
+      isRefetchError: false,
+      refetch: vi.fn(),
+    });
+    api.getPrReviews.mockResolvedValue({
+      ...reviewsResponse(),
+      items: [submitted],
+      groups: {
+        awaiting: [],
+        inProgress: [],
+        needsAction: [],
+        submitted: [submitted],
+        archived: [],
+      },
+    });
+
+    await renderPanel();
+    act(() => container.querySelector('summary')?.click());
+
+    expect(container.textContent).toContain('receipt recorded');
+    expect(container.textContent).not.toContain('comments sent');
+    expect(container.textContent).not.toContain('briefing');
+    expect(container.textContent).not.toContain('open review');
+    expect(
+      container.querySelector<HTMLAnchorElement>('a[href*="pullrequestreview"]')
+        ?.textContent,
+    ).toBe('view on GitHub');
+  });
+
+  it('keeps the receipt link available after a submitted review is archived', async () => {
+    const archived = {
+      ...readyRecord('owner/project', 1, true),
+      status: 'submitted' as const,
+      verdict: 'approve' as const,
+      githubReviewUrl:
+        'https://github.com/owner/project/pull/1#pullrequestreview-42',
+      submittedAt: '2026-08-22T18:05:00.000Z',
+      archivedAt: '2026-08-22T18:10:00.000Z',
+    };
+    api.getPrReviews.mockResolvedValue({
+      ...reviewsResponse(),
+      items: [archived],
+      groups: {
+        awaiting: [],
+        inProgress: [],
+        needsAction: [],
+        submitted: [],
+        archived: [archived],
+      },
+    });
+
+    await renderPanel();
+
+    expect(
+      container.querySelector<HTMLAnchorElement>('a[href*="pullrequestreview"]')
+        ?.textContent,
+    ).toBe('view on GitHub');
+    expect(container.textContent).toContain('receipt recorded');
+  });
+
+  it('exposes the quick-approval failure reason to assistive technology', async () => {
+    const approve = readyRecord('owner/project', 1, true);
+    reviewDraftQueries.useGitHubPrReviewDraft.mockReturnValue({
+      data: null,
+      error: new Error('draft service unavailable'),
+      isError: true,
+      isLoading: false,
+      isRefetchError: false,
+      refetch: vi.fn(),
+    });
+    api.getPrReviews.mockResolvedValue({
+      ...reviewsResponse(),
+      items: [approve],
+      groups: {
+        awaiting: [],
+        inProgress: [],
+        needsAction: [approve],
+        submitted: [],
+        archived: [],
+      },
+    });
+
+    await renderPanel();
+
+    const alert = container.querySelector<HTMLElement>('[role="alert"]');
+    const button = buttonWithText('approval unavailable');
+    expect(alert?.textContent).toContain('draft service unavailable');
+    expect(button.getAttribute('aria-describedby')).toBe(alert?.id);
+    expect(button.disabled).toBe(true);
+  });
+
+  it('labels quick approval as loading until the draft count is known', async () => {
+    const approve = readyRecord('owner/project', 1, true);
+    reviewDraftQueries.useGitHubPrReviewDraft.mockReturnValue({
+      data: undefined,
+      error: null,
+      isError: false,
+      isLoading: true,
+      isRefetchError: false,
+      refetch: vi.fn(),
+    });
+    api.getPrReviews.mockResolvedValue({
+      ...reviewsResponse(),
+      items: [approve],
+      groups: {
+        awaiting: [],
+        inProgress: [],
+        needsAction: [approve],
+        submitted: [],
+        archived: [],
+      },
+    });
+
+    await renderPanel();
+
+    const button = buttonWithText('loading draft…');
+    expect(button.disabled).toBe(true);
+    expect(container.textContent).not.toContain('approve & submit —');
+  });
+
+  it('labels quick approval as unavailable when the draft revision mismatches', async () => {
+    const approve = readyRecord('owner/project', 1, true);
+    reviewDraftQueries.useGitHubPrReviewDraft.mockReturnValue({
+      data: {
+        status: 'draft',
+        headSha: 'different-head',
+        comments: [{ id: 'comment-1' }],
+      },
+      error: null,
+      isError: false,
+      isLoading: false,
+      isRefetchError: false,
+      refetch: vi.fn(),
+    });
+    api.getPrReviews.mockResolvedValue({
+      ...reviewsResponse(),
+      items: [approve],
+      groups: {
+        awaiting: [],
+        inProgress: [],
+        needsAction: [approve],
+        submitted: [],
+        archived: [],
+      },
+    });
+
+    await renderPanel();
+
+    const button = buttonWithText('approval unavailable');
+    expect(button.disabled).toBe(true);
+    expect(container.textContent).toContain(
+      'The local draft does not match this ready review.',
+    );
+    expect(button.getAttribute('aria-describedby')).toBeTruthy();
+  });
+
+  it.each(['submitting', 'submitted', 'discarded'] as const)(
+    'explains the non-editable %s draft state without claiming a head mismatch',
+    async (status) => {
+      const approve = readyRecord('owner/project', 1, true);
+      reviewDraftQueries.useGitHubPrReviewDraft.mockReturnValue({
+        data: {
+          status,
+          headSha: approve.headSha,
+          comments: [],
+        },
+        error: null,
+        isError: false,
+        isLoading: false,
+        isRefetchError: false,
+        refetch: vi.fn(),
+      });
+      api.getPrReviews.mockResolvedValue({
+        ...reviewsResponse(),
+        items: [approve],
+        groups: {
+          awaiting: [],
+          inProgress: [],
+          needsAction: [approve],
+          submitted: [],
+          archived: [],
+        },
+      });
+
+      await renderPanel();
+
+      const button = buttonWithText('approval unavailable');
+      expect(button.disabled).toBe(true);
+      expect(container.textContent).toContain(
+        `The local draft is ${status}; quick approval requires an editable draft.`,
+      );
+      expect(container.textContent).not.toContain(
+        'The local draft does not match this ready review.',
+      );
+    },
+  );
+
+  it('keeps the selected briefing open as its review moves between groups', async () => {
+    const ready = readyRecord('owner/project', 1, true);
+    api.getPrReviews.mockResolvedValue({
+      ...reviewsResponse(),
+      items: [ready],
+      groups: {
+        awaiting: [],
+        inProgress: [],
+        needsAction: [ready],
+        submitted: [],
+        archived: [],
+      },
+    });
+    await renderPanel();
+
+    act(() => buttonWithText('briefing').click());
+    expect(
+      container.querySelector('[data-testid="briefing-overlay"]')?.textContent,
+    ).toContain('ready');
+
+    const submitting = { ...ready, status: 'submitting' as const };
+    await act(async () => reviewEventListener?.(reviewEvent(submitting)));
+    await settle();
+    expect(
+      container.querySelector('[data-testid="briefing-overlay"]')?.textContent,
+    ).toContain('submitting');
+
+    const submitted = {
+      ...ready,
+      status: 'submitted' as const,
+      verdict: 'approve' as const,
+      githubReviewUrl: 'https://github.com/owner/project/pull/1#review-1',
+      submittedAt: '2026-08-22T18:05:00.000Z',
+    };
+    await act(async () => reviewEventListener?.(reviewEvent(submitted)));
+    await settle();
+    expect(
+      container.querySelector('[data-testid="briefing-overlay"]')?.textContent,
+    ).toContain('submitted');
   });
 
   it('keeps earlier rows pending while a later start is still running', async () => {
@@ -287,6 +863,9 @@ function reviewingRecord(repo: string, number: number): PrReviewRecord {
     origin: 'panel',
     reviewUrl: `/review?repo=${encodeURIComponent(repo)}&number=${number}`,
     reportIds: [],
+    recommendation: null,
+    recommendationReason: null,
+    briefingOverview: null,
     findingCount: 0,
     seededCount: 0,
     reportOnlyCount: 0,
@@ -302,6 +881,42 @@ function reviewingRecord(repo: string, number: number): PrReviewRecord {
     submittedAt: null,
     failedAt: null,
     archivedAt: null,
+  };
+}
+
+function readyRecord(
+  repo: string,
+  number: number,
+  withBriefing: boolean,
+): PrReviewRecord {
+  return {
+    ...reviewingRecord(repo, number),
+    status: 'ready',
+    reportIds: withBriefing ? [] : ['legacy-overview', 'legacy-issues'],
+    recommendation: withBriefing ? 'approve' : null,
+    recommendationReason: withBriefing
+      ? 'The bounded change appears safe.'
+      : null,
+    briefingOverview: withBriefing
+      ? {
+          schemaVersion: 1,
+          recommendation: 'approve',
+          recommendationReason: 'The bounded change appears safe.',
+          summary: 'The change is bounded and covered.',
+          changeMap: [],
+          risks: [],
+        }
+      : null,
+    readyAt: '2026-08-21T12:01:00.000Z',
+  };
+}
+
+function reviewEvent(review: PrReviewRecord): PrReviewChangeEvent {
+  return {
+    id: `event:${review.id}:${review.status}`,
+    action: 'changed',
+    review,
+    changedAt: review.updatedAt,
   };
 }
 

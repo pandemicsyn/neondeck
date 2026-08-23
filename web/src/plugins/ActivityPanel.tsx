@@ -24,11 +24,12 @@ type ActivityPanelConfig = {
   refreshSeconds: number;
 };
 
-type ActivityFilter = 'all' | 'active' | 'failed' | 'settled' | 'activity';
+type ActivityFilter =
+  'submissions' | 'active' | 'failed' | 'settled' | 'activity';
 
 type ActivityItem = {
   id: string;
-  kind: Exclude<ActivityFilter, 'all'> | 'event';
+  kind: ActivityFilter;
   title: string;
   message: string;
   createdAt: string;
@@ -53,7 +54,7 @@ const filters: Array<{
   id: ActivityFilter;
   label: string;
 }> = [
-  { id: 'all', label: 'all' },
+  { id: 'submissions', label: 'submissions' },
   { id: 'active', label: 'active' },
   { id: 'failed', label: 'failed' },
   { id: 'settled', label: 'settled' },
@@ -68,7 +69,7 @@ export const ActivityPanelPlugin = {
   parseConfig: (config) =>
     parsePositiveIntegerConfig(activityPanelDefaultConfig, config),
   Component({ config }) {
-    const [filter, setFilter] = useState<ActivityFilter>('all');
+    const [filter, setFilter] = useState<ActivityFilter>('submissions');
     const {
       data: workflows,
       error,
@@ -156,10 +157,10 @@ function ActivityView({
       </header>
       <div className="border-b border-line px-3 py-2">
         <div className="grid grid-cols-4 gap-1.5 font-mono text-[10px] text-muted">
+          <Metric label="active" value={counts.active} />
+          <Metric label="failed" value={counts.failed} />
           <Metric label="settled" value={counts.settled} />
-          <Metric label="logs" value={counts.activity} />
           <Metric label="events" value={counts.events} />
-          <Metric label="submissions" value={counts.active} />
         </div>
         <fieldset
           aria-label="Agent activity"
@@ -262,7 +263,7 @@ export function activityItems(
     ),
   );
 
-  if (filter === 'all' || filter === 'active') {
+  if (filter === 'submissions' || filter === 'active') {
     for (const submission of workflows.activeSubmissions) {
       items.push({
         id: `active:${submission.submissionId}`,
@@ -281,11 +282,11 @@ export function activityItems(
     }
   }
 
-  if (filter === 'all' || filter === 'failed') {
+  if (filter === 'submissions' || filter === 'failed') {
     addEvents(items, seen, workflows.recentFailures, 'failed', watchesByOwner);
   }
 
-  if (filter === 'all' || filter === 'settled') {
+  if (filter === 'submissions' || filter === 'settled') {
     addEvents(
       items,
       seen,
@@ -295,20 +296,8 @@ export function activityItems(
     );
   }
 
-  if (filter === 'all' || filter === 'activity') {
-    addEvents(items, seen, workflows.recentLogs, 'activity', watchesByOwner);
-    addEvents(items, seen, workflows.recentTools, 'activity', watchesByOwner);
-    addEvents(
-      items,
-      seen,
-      workflows.recentOperations,
-      'activity',
-      watchesByOwner,
-    );
-  }
-
-  if (filter === 'all') {
-    addEvents(items, seen, workflows.recentEvents, 'event', watchesByOwner);
+  if (filter === 'activity') {
+    addEvents(items, seen, workflows.recentEvents, 'activity', watchesByOwner);
   }
 
   return items.sort(
@@ -382,10 +371,6 @@ function activityCounts(workflows: ActivityObservability) {
     active: workflows.activeSubmissions.length,
     failed: workflows.recentFailures.length,
     settled: workflows.recentSettlements.length,
-    activity:
-      workflows.recentLogs.length +
-      workflows.recentTools.length +
-      workflows.recentOperations.length,
     events: workflows.recentEvents.length,
   };
 }

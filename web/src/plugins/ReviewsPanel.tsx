@@ -8,6 +8,7 @@ import {
   Children,
   useCallback,
   useEffect,
+  useId,
   useState,
   type FormEvent,
   type ReactNode,
@@ -16,7 +17,6 @@ import {
   archivePrReview,
   getPrReviews,
   openPrReviewEventStream,
-  reconcilePrReviewSubmission,
   restartPrReview,
   restorePrReview,
   startPrReview,
@@ -25,7 +25,17 @@ import {
   type PrReviewsResponse,
 } from '../api';
 import { Badge, Button, EmptyState, ScrollArea } from '../components/ui';
-import { PrReviewArtifactsOverlay } from '../features/pr-review/PrReviewArtifactsOverlay';
+import { PrReviewBriefingOverlay } from '../features/pr-review/PrReviewBriefing';
+import {
+  prReviewDraftQueryOptions,
+  useGitHubPrReviewDraft,
+} from '../features/pr-review/queries';
+import {
+  synchronizePrReviewSubmissionLock,
+  usePrReviewBriefingActions,
+} from '../features/pr-review/usePrReviewBriefingActions';
+import { useTransientPrReviewReconciliation } from '../features/pr-review/useTransientPrReviewReconciliation';
+import { reviewRecommendationLabel as briefingRecommendationLabel } from '../features/pr-review/review-ui-helpers';
 import { relativeTime } from '../lib/format';
 import { useDashboardEventConnectionState } from '../lib/dashboard-connection';
 import { actionErrorMessage, queryErrorMessage, queryKeys } from '../lib/query';
@@ -41,6 +51,9 @@ export const ReviewsPanelPlugin = {
     const eventConnection = useDashboardEventConnectionState();
     const [adding, setAdding] = useState(false);
     const [ref, setRef] = useState('');
+    const [briefingReviewId, setBriefingReviewId] = useState<string | null>(
+      null,
+    );
     const [actionError, setActionError] = useState<PanelActionError | null>(
       null,
     );
@@ -61,6 +74,11 @@ export const ReviewsPanelPlugin = {
         (current) => applyPrReviewSnapshot(current, localData),
       );
     }, [localData, queryClient]);
+    useEffect(() => {
+      for (const review of data?.items ?? []) {
+        synchronizePrReviewSubmissionLock(review);
+      }
+    }, [data?.items]);
 
     const updateReviewCaches = useCallback(
       (review: PrReviewRecord) => {
@@ -126,19 +144,6 @@ export const ReviewsPanelPlugin = {
         updateReviewCaches(result.review);
       },
     });
-    const reconcileMutation = useMutation({
-      mutationKey: panelMutationKey('reconcile'),
-      mutationFn: (id: string) => reconcilePrReviewSubmission(id),
-      onMutate(id) {
-        clearActionError('reconcile', id);
-      },
-      onError(error, id) {
-        recordActionError('reconcile', id, error);
-      },
-      onSuccess(result) {
-        updateReviewCaches(result.review);
-      },
-    });
     const archiveMutation = useMutation({
       mutationKey: panelMutationKey('archive'),
       mutationFn: (id: string) => archivePrReview(id),
@@ -167,13 +172,16 @@ export const ReviewsPanelPlugin = {
     });
     const pendingStartRefs = usePendingVariables(panelMutationKey('start'));
     const pendingRestartIds = usePendingVariables(panelMutationKey('restart'));
-    const pendingReconcileIds = usePendingVariables(
-      panelMutationKey('reconcile'),
-    );
     const pendingArchiveIds = usePendingVariables(panelMutationKey('archive'));
     const pendingRestoreIds = usePendingVariables(panelMutationKey('restore'));
     const pendingStartKeys = new Set(pendingStartRefs.map(prReviewRefKey));
     const uniquePendingStartRefs = uniqueReviewRefs(pendingStartRefs);
+    const briefingReview =
+      data?.items.find((review) => review.id === briefingReviewId) ?? null;
+    useTransientPrReviewReconciliation(
+      data?.items ?? emptyPrReviewRecords,
+      updateReviewCaches,
+    );
 
     useEffect(
       () =>
@@ -298,8 +306,8 @@ export const ReviewsPanelPlugin = {
                 {data.groups.inProgress.map((review) => (
                   <ReviewRow
                     key={review.id}
-                    onReconcile={(id) => reconcileMutation.mutate(id)}
-                    pending={pendingReconcileIds.includes(review.id)}
+                    onOpenBriefing={setBriefingReviewId}
+                    onReviewChange={updateReviewCaches}
                     review={review}
                   />
                 ))}
@@ -312,6 +320,8 @@ export const ReviewsPanelPlugin = {
                   <ReviewRow
                     key={review.id}
                     onArchive={(id) => archiveMutation.mutate(id)}
+                    onOpenBriefing={setBriefingReviewId}
+                    onReviewChange={updateReviewCaches}
                     onRestart={(id) => restartMutation.mutate(id)}
                     pending={
                       pendingRestartIds.includes(review.id) ||
@@ -332,6 +342,8 @@ export const ReviewsPanelPlugin = {
                       <ReviewRow
                         key={review.id}
                         onArchive={(id) => archiveMutation.mutate(id)}
+                        onOpenBriefing={setBriefingReviewId}
+                        onReviewChange={updateReviewCaches}
                         pending={pendingArchiveIds.includes(review.id)}
                         review={review}
                       />
@@ -353,6 +365,8 @@ export const ReviewsPanelPlugin = {
                     data.groups.archived.map((review) => (
                       <ReviewRow
                         key={review.id}
+                        onOpenBriefing={setBriefingReviewId}
+                        onReviewChange={updateReviewCaches}
                         onRestore={(id) => restoreMutation.mutate(id)}
                         pending={pendingRestoreIds.includes(review.id)}
                         review={review}
@@ -368,13 +382,21 @@ export const ReviewsPanelPlugin = {
             </div>
           </ScrollArea>
         ) : null}
+        {briefingReview?.briefingOverview ? (
+          <PrReviewBriefingOverlay
+            onClose={() => setBriefingReviewId(null)}
+            onReviewChange={updateReviewCaches}
+            review={briefingReview}
+          />
+        ) : null}
       </div>
     );
   },
 } satisfies DisplayPlugin<Record<string, never>>;
 
-type PanelMutationAction =
-  'archive' | 'reconcile' | 'restart' | 'restore' | 'start';
+const emptyPrReviewRecords: readonly PrReviewRecord[] = [];
+
+type PanelMutationAction = 'archive' | 'restart' | 'restore' | 'start';
 
 type PanelActionError = {
   error: unknown;
@@ -548,64 +570,71 @@ function AwaitingRow({
 
 function ReviewRow({
   onArchive,
-  onReconcile,
+  onOpenBriefing,
+  onReviewChange,
   onRestart,
   onRestore,
   pending = false,
   review,
 }: {
   onArchive?: (id: string) => void;
-  onReconcile?: (id: string) => void;
+  onOpenBriefing: (id: string) => void;
+  onReviewChange: (review: PrReviewRecord) => void;
   onRestart?: (id: string) => void;
   onRestore?: (id: string) => void;
   pending?: boolean;
   review: PrReviewRecord;
 }) {
-  const [artifactIndex, setArtifactIndex] = useState<number | null>(null);
+  const detail =
+    review.recommendationReason ??
+    (review.status === 'ready' && !review.archivedAt
+      ? reviewReadyDetail(review)
+      : null);
   return (
     <article className="px-3 py-2">
       <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
+        <div className="min-w-0 flex-1">
           <p className="truncate font-mono text-[11px] text-ink">
             {review.repoFullName}#{review.prNumber}
           </p>
           <p className="mt-0.5 truncate text-[10.5px] text-muted">
             {review.title}
           </p>
-          <p className="mt-1 font-mono text-[10px] text-primary">
-            {reviewStatusLine(review)}
+          <p
+            className={`mt-1 font-mono text-[10px] font-semibold tracking-[0.04em] ${reviewRecommendationTone(review)}`}
+          >
+            {reviewRecommendationLabel(review)}
+            {review.status === 'ready' &&
+            review.previousVerdict &&
+            review.recommendationReason ? (
+              <span className="font-normal tracking-normal text-muted">
+                {' '}
+                · {previousReviewLabel(review.previousVerdict)}
+              </span>
+            ) : null}
           </p>
-          {review.status === 'ready' && !review.archivedAt ? (
-            <p className="mt-1 max-w-[65ch] text-[10px] leading-4 text-muted">
-              {reviewReadyDetail(review)}
-            </p>
-          ) : null}
         </div>
-        <div className="flex shrink-0 flex-col items-end gap-1">
-          <Badge>{review.status}</Badge>
-          {review.status === 'ready' && review.previousVerdict ? (
-            <Badge className="border-primary text-primary">
-              {previousReviewLabel(review.previousVerdict)}
-            </Badge>
-          ) : null}
-        </div>
+        <Badge>{review.status}</Badge>
       </div>
-      <div className="mt-1.5 flex flex-wrap items-center justify-end gap-1.5 font-mono text-[10px]">
-        {review.reportIds.map((reportId, index) => (
+      {detail ? (
+        <p className="mt-1.5 line-clamp-2 w-full text-[10px] leading-4 text-muted">
+          {detail}
+        </p>
+      ) : null}
+      <div className="mt-2.5 flex flex-nowrap items-center justify-end gap-1 font-mono text-[10px]">
+        {review.status === 'submitted' ? (
+          <ReviewRowReceipt review={review} />
+        ) : null}
+        {review.briefingOverview && review.status !== 'submitted' ? (
           <button
-            className="border border-line px-1.5 py-1 text-muted hover:border-primary hover:text-primary focus:outline-none focus:ring-1 focus:ring-primary"
-            key={reportId}
-            onClick={() => setArtifactIndex(index)}
+            className={reviewRowActionClass}
+            onClick={() => onOpenBriefing(review.id)}
             type="button"
           >
-            {index === 0
-              ? 'overview'
-              : index === 1
-                ? 'issues'
-                : `report ${index + 1}`}
+            briefing
           </button>
-        ))}
-        {review.status === 'ready' || review.status === 'submitted' ? (
+        ) : null}
+        {review.status === 'ready' ? (
           <OpenReviewButton review={review} />
         ) : null}
         {review.status === 'failed' && onRestart ? (
@@ -617,58 +646,221 @@ function ReviewRow({
             retry
           </Button>
         ) : null}
-        {review.status === 'submitting' && onReconcile ? (
-          <Button
-            disabled={pending}
-            onClick={() => onReconcile(review.id)}
-            type="button"
-          >
-            {pending ? 'checking' : 'recover submission'}
-          </Button>
+        {review.status === 'submitting' ? (
+          <ReviewRowRecoverSubmission
+            onReviewChange={onReviewChange}
+            review={review}
+          />
         ) : null}
         {onArchive ? (
-          <Button
+          <button
+            className={reviewRowActionClass}
             disabled={pending}
             onClick={() => onArchive(review.id)}
             type="button"
           >
             archive
-          </Button>
+          </button>
         ) : null}
         {onRestore ? (
-          <Button
+          <button
+            className={reviewRowActionClass}
             disabled={pending}
             onClick={() => onRestore(review.id)}
             type="button"
           >
             restore
-          </Button>
+          </button>
+        ) : null}
+        {review.status === 'ready' &&
+        !review.archivedAt &&
+        review.recommendation === 'approve' &&
+        review.briefingOverview ? (
+          <ReviewRowQuickApprove
+            onReviewChange={onReviewChange}
+            review={review}
+          />
         ) : null}
       </div>
-      {artifactIndex !== null ? (
-        <PrReviewArtifactsOverlay
-          initialReportIndex={artifactIndex}
-          onClose={() => setArtifactIndex(null)}
-          reportIds={review.reportIds}
-          reviewLabel={`${review.repoFullName}#${review.prNumber}`}
-          reviewUrl={review.reviewUrl}
-        />
-      ) : null}
     </article>
+  );
+}
+
+function ReviewRowRecoverSubmission({
+  onReviewChange,
+  review,
+}: {
+  onReviewChange: (review: PrReviewRecord) => void;
+  review: PrReviewRecord;
+}) {
+  const [error, setError] = useState<unknown>(null);
+  const draftQuery = useGitHubPrReviewDraft(
+    { repo: review.repoFullName, number: review.prNumber },
+    { ...prReviewDraftQueryOptions(review), live: false },
+  );
+  const actions = usePrReviewBriefingActions(review, draftQuery, {
+    onReviewChange,
+  });
+  return (
+    <>
+      {error ? (
+        <span className="text-accent" role="alert">
+          {queryErrorMessage(error)}
+        </span>
+      ) : null}
+      <button
+        className={reviewRowActionClass}
+        disabled={actions.busy}
+        onClick={() => {
+          setError(null);
+          void actions.recoverSubmission().catch(setError);
+        }}
+        type="button"
+      >
+        {actions.busy ? 'checking GitHub…' : 'recover submission'}
+      </button>
+    </>
+  );
+}
+
+function ReviewRowQuickApprove({
+  onReviewChange,
+  review,
+}: {
+  onReviewChange: (review: PrReviewRecord) => void;
+  review: PrReviewRecord;
+}) {
+  const [error, setError] = useState<unknown>(null);
+  const unavailableReasonId = useId();
+  const draftQuery = useGitHubPrReviewDraft(
+    { repo: review.repoFullName, number: review.prNumber },
+    { ...prReviewDraftQueryOptions(review), live: false },
+  );
+  const actions = usePrReviewBriefingActions(review, draftQuery, {
+    onReviewChange,
+  });
+  const draftKnown =
+    !draftQuery.isLoading && !draftQuery.isError && !draftQuery.isRefetchError;
+  const draft = draftKnown ? (draftQuery.data ?? null) : null;
+  const draftMatches =
+    !draft || (draft.status === 'draft' && draft.headSha === review.headSha);
+  const commentCount = draftKnown ? (draft?.comments.length ?? 0) : null;
+  const unavailableReason =
+    draftQuery.isError || draftQuery.isRefetchError
+      ? queryErrorMessage(draftQuery.error)
+      : draftKnown && draft && draft.status !== 'draft'
+        ? `The local draft is ${draft.status}; quick approval requires an editable draft.`
+        : draftKnown && !draftMatches
+          ? 'The local draft does not match this ready review.'
+          : null;
+  const queryUnavailable = draftQuery.isError || draftQuery.isRefetchError;
+  const approvalUnavailable = queryUnavailable || (draftKnown && !draftMatches);
+  const rejectedCommentCount = Math.min(
+    actions.rejectedCommentCount,
+    commentCount ?? 0,
+  );
+  const submittedCommentCount =
+    commentCount === null ? null : commentCount - rejectedCommentCount;
+  const label = approvalUnavailable
+    ? 'approval unavailable'
+    : submittedCommentCount === null
+      ? 'loading draft…'
+      : `${
+          submittedCommentCount === 0
+            ? 'approve'
+            : `approve & submit ${submittedCommentCount}`
+        }${
+          rejectedCommentCount ? ` · omit ${rejectedCommentCount} rejected` : ''
+        }`;
+
+  return (
+    <>
+      {error ? (
+        <span className="text-accent" role="alert">
+          {queryErrorMessage(error)}
+        </span>
+      ) : null}
+      {unavailableReason ? (
+        <span
+          className="max-w-[34ch] text-right text-accent"
+          id={unavailableReasonId}
+          role={queryUnavailable ? 'alert' : undefined}
+        >
+          quick approval unavailable: {unavailableReason}
+        </span>
+      ) : null}
+      <button
+        aria-label={actions.submitting ? 'submitting review' : label}
+        aria-describedby={unavailableReason ? unavailableReasonId : undefined}
+        className={`${reviewRowActionClass} border-primary bg-[color-mix(in_srgb,var(--primary)_12%,transparent)] font-semibold text-primary hover:bg-[color-mix(in_srgb,var(--primary)_22%,transparent)]`}
+        disabled={!draftKnown || !draftMatches || actions.busy}
+        onClick={() => {
+          setError(null);
+          void actions.submitApproval('').catch(setError);
+        }}
+        type="button"
+      >
+        {actions.submitting ? 'submitting…' : label}
+      </button>
+    </>
+  );
+}
+
+function ReviewRowReceipt({ review }: { review: PrReviewRecord }) {
+  return (
+    <>
+      <span className="mr-auto text-primary">
+        {submittedActionLabel(review.verdict)}{' '}
+        {relativeTime(review.submittedAt ?? review.updatedAt)} · receipt
+        recorded
+      </span>
+      <a
+        className={`${reviewRowActionClass} border-primary text-primary`}
+        href={review.githubReviewUrl ?? review.prUrl}
+        rel="noreferrer"
+        target="_blank"
+      >
+        view on GitHub
+      </a>
+    </>
   );
 }
 
 function OpenReviewButton({ review }: { review: PrReviewRecord }) {
   return (
     <a
-      className="inline-flex min-h-[26px] items-center border border-primary px-2 py-1 font-mono text-[10px] text-primary focus:outline-none focus:ring-1 focus:ring-primary"
+      className={reviewRowActionClass}
       href={review.reviewUrl}
       rel="noreferrer"
       target="_blank"
     >
-      open review
+      open
     </a>
   );
+}
+
+export function reviewRecommendationLabel(review: PrReviewRecord) {
+  return briefingRecommendationLabel(review) ?? reviewStatusLine(review);
+}
+
+const reviewRowActionClass =
+  'inline-flex min-h-[26px] shrink-0 items-center justify-center whitespace-nowrap border border-line bg-soft px-[7px] py-1 font-mono text-[10px] font-normal leading-[1.2] text-muted hover:border-primary hover:text-primary focus:outline-none focus:ring-1 focus:ring-primary disabled:cursor-not-allowed disabled:opacity-50';
+
+function reviewRecommendationTone(review: PrReviewRecord) {
+  if (review.status === 'submitted') {
+    return review.verdict === 'request-changes'
+      ? 'text-accent'
+      : 'text-primary';
+  }
+  if (review.recommendation === 'needs-human') return 'text-accent';
+  return 'text-primary';
+}
+
+function submittedActionLabel(verdict: PrReviewRecord['verdict']) {
+  if (verdict === 'approve') return 'approved';
+  if (verdict === 'request-changes') return 'requested changes';
+  if (verdict === 'comment') return 'commented';
+  return 'submitted';
 }
 
 export function reviewStatusLine(review: PrReviewRecord) {
@@ -698,7 +890,7 @@ function previousReviewLabel(
   verdict: NonNullable<PrReviewRecord['previousVerdict']>,
 ) {
   if (verdict === 'approve') return 'previously approved';
-  if (verdict === 'request-changes') return 'previously requested changes';
+  if (verdict === 'request-changes') return 'previously requested change';
   return 'previously commented';
 }
 

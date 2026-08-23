@@ -4,10 +4,35 @@ import {
   applyPrReviewChange,
   applyPrReviewSnapshot,
   prReviewRefKey,
+  reviewRecommendationLabel,
   reviewReadyDetail,
 } from './ReviewsPanel';
 
 describe('ReviewsPanel review events', () => {
+  it('uses the recommendation and receipt labels specified for panel rows', () => {
+    expect(
+      reviewRecommendationLabel({
+        ...review('ready'),
+        recommendation: 'approve',
+      }),
+    ).toBe('✓ RECOMMEND APPROVE');
+    expect(
+      reviewRecommendationLabel({
+        ...review('ready'),
+        recommendation: 'needs-human',
+      }),
+    ).toBe('! NEEDS A HUMAN');
+    expect(reviewRecommendationLabel(review('submitted'))).toBe(
+      '✓ APPROVED BY YOU',
+    );
+    expect(
+      reviewRecommendationLabel({
+        ...review('submitted'),
+        verdict: 'request-changes',
+      }),
+    ).toBe('! CHANGES REQUESTED BY YOU');
+  });
+
   it('normalizes equivalent pull request references to one target key', () => {
     expect(prReviewRefKey('Other/Project#042')).toBe('other/project#42');
     expect(
@@ -184,6 +209,9 @@ function review(status: PrReviewRecord['status']): PrReviewRecord {
     origin: 'chat',
     reviewUrl: '/review?repo=other%2Fproject&number=42',
     reportIds: status === 'reviewing' ? [] : ['overview', 'issues'],
+    recommendation: null,
+    recommendationReason: null,
+    briefingOverview: null,
     findingCount: status === 'reviewing' ? 0 : 2,
     seededCount: status === 'reviewing' ? 0 : 1,
     reportOnlyCount: status === 'reviewing' ? 0 : 1,
