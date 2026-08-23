@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.0.0-beta.39
+
+### Minor Changes
+
+- [#335](https://github.com/pandemicsyn/neondeck/pull/335) [`1b5386c`](https://github.com/pandemicsyn/neondeck/commit/1b5386c2649bb9e742037ae31268e64892710b55) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Check the matching npm release channel for new Neondeck versions and show a durable notification plus a dismissible dashboard banner linked to upgrade instructions and release notes.
+
+### Patch Changes
+
+- [#337](https://github.com/pandemicsyn/neondeck/pull/337) [`96a735b`](https://github.com/pandemicsyn/neondeck/commit/96a735b4f01021d08eef51d98d777f8c5f42028b) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Keep servers started by `neondeck open` attached to the terminal so Ctrl-C stops them, while continuing to reuse healthy servers and installed login services.
+
 ## 1.0.0-beta.38
 
 ### Minor Changes
