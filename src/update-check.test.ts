@@ -10,6 +10,7 @@ import {
   dismissUpdate,
   parseVersion,
   readUpdateStatus,
+  startUpdateCheckLoop,
   updateChannelForVersion,
   updateNotificationId,
 } from './modules/updates';
@@ -166,6 +167,67 @@ describe('Neondeck update checking', () => {
       occurrenceCount: 1,
       updatedAt: '2026-08-24T12:00:00.000Z',
     });
+  });
+
+  it('resolves an installed update notice before a failed registry check', async () => {
+    const paths = runtimePaths(await tempDir());
+    await checkForUpdates(paths, {
+      currentVersion: '1.0.0-beta.38',
+      fetcher: async () => Response.json({ version: '1.0.0-beta.39' }),
+    });
+
+    await expect(
+      checkForUpdates(paths, {
+        currentVersion: '1.0.0-beta.39',
+        fetcher: async () => {
+          throw new Error('registry unavailable');
+        },
+      }),
+    ).rejects.toThrow('registry unavailable');
+    await expect(
+      getNotification(updateNotificationId('1.0.0-beta.39'), paths),
+    ).resolves.toMatchObject({ resolvedAt: expect.any(String) });
+  });
+
+  it('resolves update notices when automatic checks are disabled', async () => {
+    const paths = runtimePaths(await tempDir());
+    await checkForUpdates(paths, {
+      currentVersion: '1.0.0-beta.38',
+      fetcher: async () => Response.json({ version: '1.0.0-beta.39' }),
+    });
+
+    process.env.NEONDECK_DISABLE_UPDATE_CHECK = '1';
+    expect(startUpdateCheckLoop(paths)).toBeNull();
+    await vi.waitFor(async () => {
+      await expect(
+        getNotification(updateNotificationId('1.0.0-beta.39'), paths),
+      ).resolves.toMatchObject({ resolvedAt: expect.any(String) });
+    });
+  });
+
+  it('resolves an orphan update notice when no cache entry can preserve it', async () => {
+    const paths = runtimePaths(await tempDir());
+    await checkForUpdates(paths, {
+      currentVersion: '1.0.0-beta.38',
+      fetcher: async () => Response.json({ version: '1.0.0-beta.39' }),
+    });
+    const database = openDb(paths.neondeckDatabase);
+    try {
+      database
+        .prepare(
+          "DELETE FROM app_metadata WHERE key = 'neondeck-update-status';",
+        )
+        .run();
+    } finally {
+      database.close();
+    }
+
+    await expect(
+      readUpdateStatus(paths, '1.0.0-beta.38'),
+    ).resolves.toMatchObject({ notificationId: null });
+    await expect(
+      getNotification(updateNotificationId('1.0.0-beta.39'), paths),
+    ).resolves.toMatchObject({ resolvedAt: expect.any(String) });
   });
 
   it('does not cache an update when its notification cannot be created', async () => {

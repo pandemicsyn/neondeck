@@ -2,6 +2,7 @@ import type { RuntimePaths } from '../../runtime-home';
 import { globalMap } from '../../lib/global-registry';
 import {
   checkForUpdates,
+  readUpdateStatus,
   updateCheckIntervalMs,
   updateChecksEnabled,
 } from './service';
@@ -19,6 +20,7 @@ export function startUpdateCheckLoop(
     initialDelayMs?: number;
     intervalMs?: number;
     check?: typeof checkForUpdates;
+    reconcile?: typeof readUpdateStatus;
   } = {},
 ) {
   const existing = updateLoops.get(paths.home);
@@ -27,6 +29,10 @@ export function startUpdateCheckLoop(
     clearInterval(existing.interval);
     updateLoops.delete(paths.home);
   }
+  const reconcile = options.reconcile ?? readUpdateStatus;
+  void reconcile(paths).catch((error) => {
+    console.warn('[neondeck] update reconciliation failed', error);
+  });
   if (!updateChecksEnabled()) return null;
   const check = options.check ?? checkForUpdates;
   const run = () => {
