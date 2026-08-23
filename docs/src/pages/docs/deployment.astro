@@ -34,9 +34,11 @@ npm run docs:preview</code></pre>
           Wrangler config lives at <code>docs/wrangler.jsonc</code>. It deploys
           the built <code>docs/dist</code> assets to the
           <code>neondeck-site</code> Worker with custom domains for
-          <code>neondeck.dev</code> and <code>www.neondeck.dev</code>.
-          Deployment is currently manual: merging <code>main</code> does not publish
-          the site until <code>npm run docs:deploy</code> is run from the merged revision.
+          <code>neondeck.dev</code> and <code>www.neondeck.dev</code>. Merges to <code
+            >main</code
+          > that change the site or its build inputs are automatically built and deployed
+          by the docs deployment workflow. Use <code>npm run docs:deploy</code> for
+          a controlled manual redeploy.
         </p>
 
         <h2>Validation</h2>
