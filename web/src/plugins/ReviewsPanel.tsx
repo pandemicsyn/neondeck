@@ -585,10 +585,15 @@ function ReviewRow({
   pending?: boolean;
   review: PrReviewRecord;
 }) {
+  const detail =
+    review.recommendationReason ??
+    (review.status === 'ready' && !review.archivedAt
+      ? reviewReadyDetail(review)
+      : null);
   return (
     <article className="px-3 py-2">
       <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
+        <div className="min-w-0 flex-1">
           <p className="truncate font-mono text-[11px] text-ink">
             {review.repoFullName}#{review.prNumber}
           </p>
@@ -604,23 +609,19 @@ function ReviewRow({
             review.recommendationReason ? (
               <span className="font-normal tracking-normal text-muted">
                 {' '}
-                · you {previousReviewLabel(review.previousVerdict)}
+                · {previousReviewLabel(review.previousVerdict)}
               </span>
             ) : null}
           </p>
-          {review.recommendationReason ? (
-            <p className="mt-1 line-clamp-3 max-w-[65ch] text-[10px] leading-4 text-muted">
-              {review.recommendationReason}
-            </p>
-          ) : review.status === 'ready' && !review.archivedAt ? (
-            <p className="mt-1 line-clamp-3 max-w-[65ch] text-[10px] leading-4 text-muted">
-              {reviewReadyDetail(review)}
-            </p>
-          ) : null}
         </div>
         <Badge>{review.status}</Badge>
       </div>
-      <div className="mt-1.5 flex flex-nowrap items-center justify-end gap-1 font-mono text-[10px]">
+      {detail ? (
+        <p className="mt-1.5 line-clamp-2 w-full text-[10px] leading-4 text-muted">
+          {detail}
+        </p>
+      ) : null}
+      <div className="mt-2.5 flex flex-nowrap items-center justify-end gap-1 font-mono text-[10px]">
         {review.status === 'submitted' ? (
           <ReviewRowReceipt review={review} />
         ) : null}
@@ -766,7 +767,7 @@ function ReviewRowQuickApprove({
       ? 'loading draft…'
       : `${
           submittedCommentCount === 0
-            ? 'approve with no comments'
+            ? 'approve'
             : `approve & submit ${submittedCommentCount}`
         }${
           rejectedCommentCount ? ` · omit ${rejectedCommentCount} rejected` : ''
@@ -889,7 +890,7 @@ function previousReviewLabel(
   verdict: NonNullable<PrReviewRecord['previousVerdict']>,
 ) {
   if (verdict === 'approve') return 'previously approved';
-  if (verdict === 'request-changes') return 'previously requested changes';
+  if (verdict === 'request-changes') return 'previously requested change';
   return 'previously commented';
 }
 

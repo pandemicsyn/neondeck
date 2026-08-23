@@ -516,6 +516,7 @@ describe('PR review briefing', () => {
     const note = container.querySelector<HTMLTextAreaElement>(
       'textarea[aria-label="Approval note"]',
     );
+    expect(document.activeElement).toBe(note);
     act(() => setTextareaValue(note, '   '));
     expect(container.textContent).toContain('Approve & submit 1 comment');
     act(() => setTextareaValue(note, 'Reviewed manually.'));
@@ -535,6 +536,27 @@ describe('PR review briefing', () => {
     expect(container.textContent).toContain('Approve & submit 1 comment');
   });
 
+  it('does not steal focus when a saved approval note is restored', () => {
+    const focusSentinel = document.createElement('button');
+    document.body.append(focusSentinel);
+    focusSentinel.focus();
+
+    renderBriefing(
+      root,
+      reviewFixture('approve'),
+      { ...draftFixture(), body: 'Saved approval note.' },
+      actionFixture(),
+    );
+
+    expect(
+      container.querySelector<HTMLTextAreaElement>(
+        'textarea[aria-label="Approval note"]',
+      ),
+    ).not.toBeNull();
+    expect(document.activeElement).toBe(focusSentinel);
+    focusSentinel.remove();
+  });
+
   it('uses the panel wording when approval has no comments', () => {
     renderBriefing(
       root,
@@ -543,7 +565,7 @@ describe('PR review briefing', () => {
       actionFixture(),
     );
 
-    expect(container.textContent).toContain('Approve with no comments');
+    expect(buttonWithText(container, 'Approve').textContent).toBe('Approve');
     expect(container.textContent).not.toContain('Approve & submit no comments');
   });
 
@@ -553,7 +575,7 @@ describe('PR review briefing', () => {
     renderBriefing(root, reviewFixture('approve'), draftFixture(), actions);
 
     expect(container.textContent).toContain(
-      'Approve with no comments · 1 rejected draft omitted until edited',
+      'Approve · 1 rejected draft omitted until edited',
     );
   });
 

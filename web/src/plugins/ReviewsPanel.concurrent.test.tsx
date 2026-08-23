@@ -168,8 +168,8 @@ describe('ReviewsPanel concurrent row mutations', () => {
       'A correctness risk still needs a human decision.',
     );
     expect(
-      [...container.querySelectorAll('button')].filter((button) =>
-        button.textContent?.startsWith('approve '),
+      [...container.querySelectorAll('button')].filter(
+        (button) => button.textContent?.trim() === 'approve',
       ),
     ).toHaveLength(1);
     expect(reviewDraftQueries.useGitHubPrReviewDraft).toHaveBeenCalledWith(
@@ -184,7 +184,7 @@ describe('ReviewsPanel concurrent row mutations', () => {
       [...(approveRow?.querySelectorAll('button,a') ?? [])].map((action) =>
         action.textContent?.trim(),
       ),
-    ).toEqual(['briefing', 'open', 'archive', 'approve with no comments']);
+    ).toEqual(['briefing', 'open', 'archive', 'approve']);
     expect(
       [...(approveRow?.querySelectorAll('button,a') ?? [])].every(
         (action) =>
@@ -215,20 +215,19 @@ describe('ReviewsPanel concurrent row mutations', () => {
           'A correctness risk still needs a human decision.',
         ),
       )?.className,
-    ).toContain('line-clamp-3');
+    ).toContain('line-clamp-2');
     const verdict = [...(needsHumanRow?.querySelectorAll('p') ?? [])].find(
       (paragraph) => paragraph.textContent?.includes('! NEEDS A HUMAN'),
     );
     const priorVerdict = [...(verdict?.querySelectorAll('span') ?? [])].find(
-      (span) =>
-        span.textContent?.includes('· you previously requested changes'),
+      (span) => span.textContent?.includes('· previously requested change'),
     );
     expect(priorVerdict?.className).toContain('text-muted');
     expect(priorVerdict?.className).toContain('font-normal');
     expect(
       [...(needsHumanRow?.querySelectorAll('span') ?? [])].some(
         (span) =>
-          span.textContent === 'previously requested changes' &&
+          span.textContent === 'previously requested change' &&
           span.className.includes('border'),
       ),
     ).toBe(false);
@@ -265,7 +264,12 @@ describe('ReviewsPanel concurrent row mutations', () => {
       [...container.querySelectorAll('p')].find((paragraph) =>
         paragraph.textContent?.includes('You previously approved this PR'),
       )?.className,
-    ).toContain('line-clamp-3');
+    ).toContain('line-clamp-2');
+    expect(
+      [...container.querySelectorAll('p')].find((paragraph) =>
+        paragraph.textContent?.includes('You previously approved this PR'),
+      )?.className,
+    ).toContain('w-full');
     expect(container.textContent?.match(/previously approved/g)).toHaveLength(
       1,
     );
@@ -286,7 +290,7 @@ describe('ReviewsPanel concurrent row mutations', () => {
     });
     await renderPanel();
 
-    await act(async () => buttonWithText('approve with no comments').click());
+    await act(async () => buttonWithText('approve').click());
 
     expect(reviewActions.submitApproval).toHaveBeenCalledWith('');
   });

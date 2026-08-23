@@ -107,6 +107,8 @@ export function PrReviewBriefing({
   const [approvalNoteTouched, setApprovalNoteTouched] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const [overrideOpen, setOverrideOpen] = useState(false);
+  const approvalNoteRef = useRef<HTMLTextAreaElement>(null);
+  const focusApprovalNoteOnOpenRef = useRef(false);
   const initialQueueCountsRef = useRef<{
     reviewRunKey: string;
     counts: Record<QueueFilter, number>;
@@ -118,6 +120,11 @@ export function PrReviewBriefing({
       if (draft?.body?.trim()) setApprovalNoteOpen(true);
     }
   }, [approvalNoteTouched, draft?.body, draft?.id]);
+  useEffect(() => {
+    if (!approvalNoteOpen || !focusApprovalNoteOnOpenRef.current) return;
+    focusApprovalNoteOnOpenRef.current = false;
+    approvalNoteRef.current?.focus();
+  }, [approvalNoteOpen]);
   if (!overview) return null;
   const needsHuman = overview.recommendation === 'needs-human';
   const submissionDraftUnavailable =
@@ -193,7 +200,7 @@ export function PrReviewBriefing({
     : `${commentPayload}${rejectedCommentWarning}`;
   const approvalActionLabel =
     !approvalNote.trim() && submittedCommentCount === 0
-      ? `Approve with no comments${rejectedCommentWarning}`
+      ? `Approve${rejectedCommentWarning}`
       : `Approve & submit ${payloadLabel}`;
   const archived = review.archivedAt !== null;
   const actionable =
@@ -555,6 +562,7 @@ export function PrReviewBriefing({
                 setApprovalNoteTouched(true);
                 setApprovalNote(event.target.value);
               }}
+              ref={approvalNoteRef}
               value={approvalNote}
             />
           </section>
@@ -563,7 +571,10 @@ export function PrReviewBriefing({
             <button
               className={`${cardActionClass} border-dashed`}
               disabled={actions.busy}
-              onClick={() => setApprovalNoteOpen(true)}
+              onClick={() => {
+                focusApprovalNoteOnOpenRef.current = true;
+                setApprovalNoteOpen(true);
+              }}
               type="button"
             >
               + add a note with your approval

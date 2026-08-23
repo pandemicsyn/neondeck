@@ -595,3 +595,14 @@ the rest.
   consumes width without providing another action or state.
 - Follow-up: None. The absence of an approval button remains the operative
   behavior and is covered by the panel test.
+
+### 2026-08-22 — Shorten the zero-comment approval action
+
+- Phase: 3 — Reviews panel integration
+- Decision: Label a zero-comment, no-note approval action simply `approve`
+  instead of the mockup's `approve with no comments` wording.
+- Reason: The action has no attached payload to distinguish, and the shorter
+  label is clearer in the narrow panel rail. The briefing footer uses the same
+  wording so one state still has one label across surfaces.
+- Follow-up: None. Rejected-draft warnings remain appended when applicable,
+  and non-empty payloads still use `approve & submit …`.
