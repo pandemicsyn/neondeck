@@ -7,13 +7,24 @@ const { placement } = Astro.props;
 const command = 'npm install --global neondeck@next';
 ---
 
-<div class="campaign-command">
-  <span aria-hidden="true">$</span>
-  <code>{command}</code>
-  <button
-    type="button"
-    data-copy-command={command}
-    data-marketing-event="install_command_copy"
-    data-marketing-placement={placement}>copy</button
-  >
+<div class="campaign-install">
+  <div class="campaign-command">
+    <span aria-hidden="true">$</span>
+    <code>{command}</code>
+    <button
+      type="button"
+      data-copy-command={command}
+      data-marketing-event="install_command_copy"
+      data-marketing-placement={placement}>copy</button
+    >
+  </div>
+  <p class="campaign-install__guide">
+    Requires Node.js 26+
+    <span aria-hidden="true">·</span>
+    <a
+      href="/docs/getting-started/"
+      data-marketing-event="docs_click"
+      data-marketing-placement="hero-install-guide">see the setup guide →</a
+    >
+  </p>
 </div>
