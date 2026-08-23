@@ -1,5 +1,8 @@
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
-import { resolveBuildVersion } from './package-version';
+import { readPackageVersion, resolveBuildVersion } from './package-version';
 import { resolveRuntimeVersion, unknownNeondeckVersion } from './version';
 
 describe('Neondeck runtime version', () => {
@@ -27,5 +30,19 @@ describe('Neondeck runtime version', () => {
     expect(() => resolveBuildVersion(packageJsonUrl, 'not-semver')).toThrow(
       'NEONDECK_RELEASE_VERSION must be a valid semantic version',
     );
+  });
+
+  it('trims package versions and treats an empty override as unset', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'neondeck-version-test-'));
+    const packageJsonUrl = new URL('package.json', `file://${root}/`);
+    try {
+      await writeFile(packageJsonUrl, '{"version":" 2.0.0-beta.1 "}');
+
+      expect(readPackageVersion(packageJsonUrl)).toBe('2.0.0-beta.1');
+      expect(resolveBuildVersion(packageJsonUrl, '')).toBe('2.0.0-beta.1');
+      expect(resolveBuildVersion(packageJsonUrl, '   ')).toBe('2.0.0-beta.1');
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
   });
 });

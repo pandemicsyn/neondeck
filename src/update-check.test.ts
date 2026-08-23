@@ -14,6 +14,7 @@ import {
   updateNotificationId,
 } from './modules/updates';
 import { runtimePaths } from './runtime-home';
+import { unknownNeondeckVersion } from './version';
 
 const tempRoots: string[] = [];
 
@@ -248,6 +249,24 @@ describe('Neondeck update checking', () => {
         fetcher,
       }),
     ).resolves.toMatchObject({ enabled: false, updateAvailable: false });
+    expect(fetcher).not.toHaveBeenCalled();
+  });
+
+  it('disables update checks when the installed version is unknown', async () => {
+    const paths = runtimePaths(await tempDir());
+    const fetcher = vi.fn<typeof fetch>();
+
+    await expect(
+      checkForUpdates(paths, {
+        currentVersion: unknownNeondeckVersion,
+        fetcher,
+      }),
+    ).resolves.toMatchObject({
+      currentVersion: unknownNeondeckVersion,
+      enabled: false,
+      updateAvailable: false,
+      notificationId: null,
+    });
     expect(fetcher).not.toHaveBeenCalled();
   });
 });

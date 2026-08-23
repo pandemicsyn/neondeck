@@ -11,7 +11,7 @@ import {
   runtimePaths,
   type RuntimePaths,
 } from '../../runtime-home';
-import { neondeckVersion } from '../../version';
+import { neondeckVersion, unknownNeondeckVersion } from '../../version';
 import {
   compareVersions,
   parseVersion,
@@ -52,7 +52,7 @@ export async function readUpdateStatus(
   currentVersion = neondeckVersion,
 ): Promise<UpdateStatus> {
   await ensureRuntimeHome(paths);
-  const enabled = updateChecksEnabled();
+  const enabled = updateChecksEnabled(process.env, currentVersion);
   const database = openDb(paths.neondeckDatabase);
   try {
     const cached = readCachedUpdate(database);
@@ -82,7 +82,9 @@ export async function checkForUpdates(
   } = {},
 ) {
   const currentVersion = options.currentVersion ?? neondeckVersion;
-  if (!updateChecksEnabled()) return readUpdateStatus(paths, currentVersion);
+  if (!updateChecksEnabled(process.env, currentVersion)) {
+    return readUpdateStatus(paths, currentVersion);
+  }
   await ensureRuntimeHome(paths);
   const channel = updateChannelForVersion(currentVersion);
   const response = await (options.fetcher ?? fetch)(
@@ -138,8 +140,14 @@ export function updateNotificationId(version: string) {
   return `${updateNotificationPrefix}${version}`;
 }
 
-export function updateChecksEnabled(env: NodeJS.ProcessEnv = process.env) {
-  return env.NEONDECK_DISABLE_UPDATE_CHECK !== '1';
+export function updateChecksEnabled(
+  env: NodeJS.ProcessEnv = process.env,
+  currentVersion = neondeckVersion,
+) {
+  return (
+    env.NEONDECK_DISABLE_UPDATE_CHECK !== '1' &&
+    currentVersion !== unknownNeondeckVersion
+  );
 }
 
 function buildUpdateStatus(
