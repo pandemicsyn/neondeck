@@ -75,6 +75,7 @@
       const customEventName = {
         install_command_copy: 'InstallCommandCopy',
         github_click: 'GitHubClick',
+        docs_click: 'SetupGuideClick',
       }[event.detail?.name];
       if (!customEventName) return;
       window.rdt('track', 'Custom', { customEventName });

@@ -41,10 +41,11 @@ the current campaign URL, including its query string.
 
 1. loads only after the visitor explicitly allows measurement;
 2. initializes the public Reddit Pixel id `t2_4ljtr`;
-3. reports `PageVisit` and maps `install_command_copy` and `github_click` to
-   the custom conversions `InstallCommandCopy` and `GitHubClick`;
+3. reports `PageVisit` and maps `install_command_copy`, `github_click`, and
+   `docs_click` to the custom conversions `InstallCommandCopy`, `GitHubClick`,
+   and `SetupGuideClick`;
 4. does not send email addresses, stable user ids, or Neondeck app data; and
-5. ignores docs clicks and the event bridge's contextual properties.
+5. does not explicitly pass the event bridge's contextual properties.
 
 The public Pixel id is intentionally committed because browser visitors can
 always inspect it. A future Conversions API access token must be stored as a
