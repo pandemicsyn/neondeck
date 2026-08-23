@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.0.0-beta.38
+
+### Minor Changes
+
+- [#323](https://github.com/pandemicsyn/neondeck/pull/323) [`2c10e01`](https://github.com/pandemicsyn/neondeck/commit/2c10e013e871707be942418b45c0550aff364940) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Show delegated task prompts and outputs in submission activity, and separate submission summaries from the raw activity-event feed.
+
+- [#320](https://github.com/pandemicsyn/neondeck/pull/320) [`28f3ff8`](https://github.com/pandemicsyn/neondeck/commit/28f3ff87f295eb7b6062f65a0ec63a458b6b11b2) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Replace PR review report decks with durable recommendation briefings, live draft triage and approval actions, and recommendation-aware Reviews panel rows with submission receipts.
+
 ## 1.0.0-beta.37
 
 ### Patch Changes
