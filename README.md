@@ -31,6 +31,23 @@ over your editor. The backend is Node 26, Hono, and Flue; the dashboard is Vite,
 React, and Tailwind. Neondeck can run on your machine or on a remote host, with
 mutable state stored in SQLite under a runtime home you control.
 
+## The deck in action
+
+Neon puts the work queue, an actionable morning briefing, and the relevant
+conversation on the same screen.
+
+![Neondeck showing a morning briefing beside the PR review queue](docs/public/screenshots/main-with-briefing.png)
+
+When a PR is ready, its briefing makes the recommendation and any remaining
+human decision explicit before opening the full review surface.
+
+![Neondeck PR briefing modal with an approve recommendation and operational note](docs/public/screenshots/pr-briefing-modal.png)
+
+The focused workbench keeps the revision-aware diff, review actions, and a
+reviewer conversation together—without moving the work to GitHub's web UI.
+
+![Neondeck PR diff workbench with a reviewer conversation](docs/public/screenshots/diff-pr-workbench.png)
+
 ## Built for work in progress
 
 Neon watches your PRs, prepares fixes, and keeps things moving.
