@@ -14,6 +14,7 @@ import { promisify } from 'node:util';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   probeGitPushAccess,
+  redactGitText,
   runUnattendedGit,
   unattendedGitEnv,
 } from './lib/git';
@@ -319,6 +320,15 @@ describe('unattended Git', () => {
     expect(abortedText).toContain('[redacted]');
     expect(abortedText).not.toContain('abort-secret');
     expect(abortedText).not.toContain('query-secret');
+  });
+
+  it('redacts complete delimiter-bearing Git credential protocol lines', () => {
+    const output = redactGitText(
+      'password=abc&def;ghi\noauth_token=mixed,delimiters',
+    );
+    expect(output).toBe('password=[redacted]\noauth_token=[redacted]');
+    expect(output).not.toContain('def');
+    expect(output).not.toContain('delimiters');
   });
 
   it('rejects embedded remote credentials, queries, and fragments before lookup', async () => {

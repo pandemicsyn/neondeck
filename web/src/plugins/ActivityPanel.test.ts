@@ -3,7 +3,7 @@ import type { ActivityEventRecord, ActivityObservability } from '../api';
 import { activityItems } from './ActivityPanel';
 
 describe('activity drilldown', () => {
-  it('dedupes categorized events while preserving active submissions', () => {
+  it('keeps the submissions feed summary-level and reserves raw events for activity', () => {
     const failure = event({
       id: 1,
       eventType: 'submission_settled',
@@ -50,26 +50,35 @@ describe('activity drilldown', () => {
       fetchedAt: '2026-06-27T10:05:00.000Z',
     };
 
-    const all = activityItems(workflows, 'all', [
+    const submissions = activityItems(workflows, 'submissions', [
       {
         ownerInstanceId: 'pr-owner-42',
         repoFullName: 'owner/repo',
         prNumber: 42,
       },
     ]);
-    expect(all).toHaveLength(4);
-    expect(all.map((item) => item.id)).toEqual([
+    expect(submissions).toHaveLength(3);
+    expect(submissions.map((item) => item.id)).toEqual([
       'active:run-active',
-      'activity:3',
       'settled:2',
       'failed:1',
     ]);
-    expect(all.find((item) => item.id === 'activity:3')?.contextLabel).toBe(
-      'owner/repo#42 · PR owner',
-    );
-    expect(all.find((item) => item.id === 'settled:2')?.contextLabel).toBe(
-      'command-run',
-    );
+    expect(submissions.some((item) => item.id === 'activity:3')).toBe(false);
+
+    const activityOnly = activityItems(workflows, 'activity', [
+      {
+        ownerInstanceId: 'pr-owner-42',
+        repoFullName: 'owner/repo',
+        prNumber: 42,
+      },
+    ]);
+    expect(activityOnly).toHaveLength(3);
+    expect(
+      activityOnly.find((item) => item.id === 'activity:3')?.contextLabel,
+    ).toBe('owner/repo#42 · PR owner');
+    expect(
+      submissions.find((item) => item.id === 'settled:2')?.contextLabel,
+    ).toBe('command-run');
 
     const settledOnly = activityItems(workflows, 'settled');
     expect(settledOnly).toHaveLength(1);

@@ -1,6 +1,7 @@
 import { type FlueObservation, type JsonValue } from '@flue/runtime';
 import { createHash } from 'node:crypto';
 import type { DatabaseSync } from 'node:sqlite';
+import { redactSensitiveText } from '../../lib/redaction';
 import { openDb } from '../../lib/sqlite';
 import { ensureRuntimeHome, runtimePaths } from '../../runtime-home';
 
@@ -152,6 +153,9 @@ export type PrReviewPerformanceProjection = {
 };
 
 const maxActivityEventRows = 5_000;
+const maxActivityContentBytesPerEvent = 64 * 1_024;
+const maxActivityContentBytesPerSubmission = 512 * 1_024;
+const maxActivityContentBytesGlobally = 16 * 1_024 * 1_024;
 const taskBriefSchemaVersion = 1;
 const redacted = '[redacted]';
 const persistedEventTypes = new Set<FlueObservation['type']>([
@@ -180,11 +184,25 @@ export async function recordFlueObservation(
 ) {
   if (!persistedEventTypes.has(event.type)) return;
   await ensureRuntimeHome(paths);
-  const summary = withCorrelationMetadata(event, summarizeObservation(event));
   const database = openDb(paths.neondeckDatabase);
   const createdAt = event.timestamp ?? new Date().toISOString();
+  let transactionOpen = false;
 
   try {
+    database.exec('BEGIN IMMEDIATE;');
+    transactionOpen = true;
+    // Make the row that this event will occupy available before calculating
+    // content budgets, so content removed at the retention boundary can fund
+    // the incoming task detail in the same transaction.
+    if (activityEventWillBeRetained(database, createdAt)) {
+      pruneActivityEvents(database, createdAt, maxActivityEventRows - 1);
+    }
+    const contentBudget = remainingActivityContentBytes(database, event);
+    const summary = withCorrelationMetadata(
+      event,
+      summarizeObservation(event, contentBudget),
+    );
+    const contentBytes = activitySummaryContentBytes(event, summary.summary);
     database
       .prepare(
         `
@@ -192,8 +210,8 @@ export async function recordFlueObservation(
           submission_id, agent_name, instance_id, conversation_id,
           event_type, event_index, level, message, name,
           operation_kind, operation_id, duration_ms, is_error,
-          summary_json, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+          summary_json, content_bytes, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
       `,
       )
       .run(
@@ -211,13 +229,132 @@ export async function recordFlueObservation(
         summary.durationMs,
         summary.isError ? 1 : 0,
         JSON.stringify(summary.summary),
+        contentBytes,
         createdAt,
       );
     updateSubmissionProjection(database, event, summary.message, createdAt);
-    pruneActivityEvents(database);
+    incrementActivityContentCounters(
+      database,
+      event.submissionId,
+      contentBytes,
+      createdAt,
+    );
+    pruneActivityEvents(database, createdAt);
+    database.exec('COMMIT;');
+    transactionOpen = false;
+  } catch (error) {
+    if (transactionOpen) database.exec('ROLLBACK;');
+    throw error;
   } finally {
     database.close();
   }
+}
+
+function remainingActivityContentBytes(
+  database: DatabaseSync,
+  event: FlueObservation,
+) {
+  const hasInspectableContent =
+    event.type === 'task_start' ||
+    (event.type === 'task' && typeof event.result === 'string');
+  if (!hasInspectableContent) return maxActivityContentBytesPerEvent;
+
+  const globalRemaining =
+    maxActivityContentBytesGlobally -
+    retainedActivityContentBytes(database, 'global');
+  const submissionRemaining = event.submissionId
+    ? maxActivityContentBytesPerSubmission -
+      retainedActivityContentBytes(
+        database,
+        activitySubmissionContentScope(event.submissionId),
+      )
+    : maxActivityContentBytesPerSubmission;
+  return Math.max(
+    0,
+    Math.min(
+      maxActivityContentBytesPerEvent,
+      globalRemaining,
+      submissionRemaining,
+    ),
+  );
+}
+
+function retainedActivityContentBytes(database: DatabaseSync, scope: string) {
+  const row = database
+    .prepare(
+      `SELECT content_bytes FROM activity_content_counters WHERE scope = ?;`,
+    )
+    .get(scope) as { content_bytes?: unknown } | undefined;
+  return typeof row?.content_bytes === 'number' ? row.content_bytes : 0;
+}
+
+function activityEventWillBeRetained(
+  database: DatabaseSync,
+  createdAt: string,
+) {
+  const cutoff = database
+    .prepare(
+      `SELECT created_at FROM activity_events
+       ORDER BY created_at DESC, id DESC
+       LIMIT 1 OFFSET ?;`,
+    )
+    .get(maxActivityEventRows - 1) as { created_at?: unknown } | undefined;
+  return (
+    typeof cutoff?.created_at !== 'string' || createdAt >= cutoff.created_at
+  );
+}
+
+function activitySummaryContentBytes(
+  event: FlueObservation,
+  summary: JsonValue,
+) {
+  const record = objectRecord(summary);
+  const content =
+    event.type === 'task_start'
+      ? record?.prompt
+      : event.type === 'task'
+        ? record?.result
+        : undefined;
+  return typeof content === 'string' ? Buffer.byteLength(content, 'utf8') : 0;
+}
+
+function activitySubmissionContentScope(submissionId: string) {
+  return `submission:${submissionId}`;
+}
+
+function incrementActivityContentCounters(
+  database: DatabaseSync,
+  submissionId: string | undefined,
+  contentBytes: number,
+  updatedAt: string,
+) {
+  if (contentBytes <= 0) return;
+  adjustActivityContentCounter(database, 'global', contentBytes, updatedAt);
+  if (submissionId) {
+    adjustActivityContentCounter(
+      database,
+      activitySubmissionContentScope(submissionId),
+      contentBytes,
+      updatedAt,
+    );
+  }
+}
+
+function adjustActivityContentCounter(
+  database: DatabaseSync,
+  scope: string,
+  delta: number,
+  updatedAt: string,
+) {
+  database
+    .prepare(
+      `INSERT INTO activity_content_counters (scope, content_bytes, updated_at)
+       VALUES (?, MAX(0, ?), ?)
+       ON CONFLICT(scope) DO UPDATE SET
+         content_bytes = MAX(0, activity_content_counters.content_bytes + ?),
+         updated_at = MAX(activity_content_counters.updated_at, excluded.updated_at);`,
+    )
+    .run(scope, delta, updatedAt, delta);
 }
 
 export async function readActivityObservability(paths = runtimePaths()) {
@@ -227,11 +364,21 @@ export async function readActivityObservability(paths = runtimePaths()) {
   try {
     const recentEvents = database
       .prepare(
-        `SELECT * FROM activity_events
+        `SELECT id, submission_id, agent_name, instance_id, conversation_id,
+                event_type, event_index, level, message, name, operation_kind,
+                operation_id, duration_ms, is_error,
+                CASE WHEN event_type IN ('task_start', 'task')
+                       AND json_valid(summary_json)
+                  THEN json_remove(summary_json, '$.prompt', '$.result')
+                  ELSE summary_json
+                END AS summary_json,
+                created_at
+         FROM activity_events
          ORDER BY created_at DESC, id DESC LIMIT 120;`,
       )
       .all()
-      .map(readActivityEventRow);
+      .map(readActivityEventRow)
+      .map(withoutActivityEventContent);
     const activeSubmissions = database
       .prepare(
         `SELECT * FROM activity_submissions
@@ -952,7 +1099,10 @@ function repeatedCount(values: Array<string | null>) {
     .reduce((total, count) => total + count - 1, 0);
 }
 
-function summarizeObservation(event: FlueObservation): {
+function summarizeObservation(
+  event: FlueObservation,
+  contentBudget = maxActivityContentBytesPerEvent,
+): {
   message: string;
   name: string | null;
   operationKind: string | null;
@@ -1065,18 +1215,27 @@ function summarizeObservation(event: FlueObservation): {
         null,
         event.durationMs,
       );
-    case 'task_start':
+    case 'task_start': {
+      const prompt = sanitizeActivityContent(event.prompt, contentBudget);
       return activitySummary(
         `Task ${event.taskId} started.`,
         event.agent ?? null,
         false,
-        {
+        compactJsonRecord({
           taskId: event.taskId,
           agent: event.agent ?? null,
+          prompt: prompt.value,
+          promptTruncated: prompt.truncated,
+          promptOmittedReason: prompt.omittedReason,
           ...taskPromptMetadata(event.prompt),
-        },
+        }),
       );
-    case 'task':
+    }
+    case 'task': {
+      const result =
+        typeof event.result === 'string'
+          ? sanitizeActivityContent(event.result, contentBudget)
+          : null;
       return activitySummary(
         `Task ${event.taskId} ${event.isError ? 'failed' : 'completed'} in ${formatDuration(event.durationMs)}.`,
         event.agent ?? null,
@@ -1087,11 +1246,15 @@ function summarizeObservation(event: FlueObservation): {
           resultHash:
             event.result === undefined ? null : privacyHash(event.result),
           resultBytes: jsonByteLength(event.result),
+          result: result?.value,
+          resultTruncated: result?.truncated,
+          resultOmittedReason: result?.omittedReason,
           ...taskResultMetadata(event.result),
         }),
         null,
         event.durationMs,
       );
+    }
     case 'compaction_start':
       return activitySummary('Context compaction started.', null, false, {
         reason: event.reason,
@@ -1461,6 +1624,50 @@ function safeActivityString(value: unknown, maxLength: number) {
     : value;
 }
 
+function sanitizeActivityContent(value: string, maxBytes: number) {
+  const sanitized = redactSensitiveText(value);
+  if (Buffer.byteLength(sanitized, 'utf8') <= maxBytes) {
+    return { value: sanitized, truncated: false } as const;
+  }
+  const suffix = '\n\n[truncated]';
+  const suffixBytes = Buffer.byteLength(suffix, 'utf8');
+  if (maxBytes <= suffixBytes) {
+    return {
+      value: undefined,
+      truncated: true,
+      omittedReason: 'retention_limit',
+    } as const;
+  }
+  return {
+    value: `${utf8Prefix(sanitized, maxBytes - suffixBytes)}${suffix}`,
+    truncated: true,
+  } as const;
+}
+
+function utf8Prefix(value: string, maxBytes: number) {
+  let low = 0;
+  let high = value.length;
+  while (low < high) {
+    const middle = Math.ceil((low + high) / 2);
+    const end =
+      middle > 0 && isHighSurrogate(value.charCodeAt(middle - 1))
+        ? middle - 1
+        : middle;
+    if (Buffer.byteLength(value.slice(0, end), 'utf8') <= maxBytes) {
+      low = middle;
+    } else {
+      high = middle - 1;
+    }
+  }
+  const end =
+    low > 0 && isHighSurrogate(value.charCodeAt(low - 1)) ? low - 1 : low;
+  return value.slice(0, end);
+}
+
+function isHighSurrogate(code: number) {
+  return code >= 0xd800 && code <= 0xdbff;
+}
+
 function safeActivityPath(value: unknown) {
   if (typeof value !== 'string') return undefined;
   if (
@@ -1671,6 +1878,15 @@ function readActivityEventRow(row: unknown): ActivityEventRecord {
   };
 }
 
+function withoutActivityEventContent(event: ActivityEventRecord) {
+  const summary = objectRecord(event.summary);
+  if (!summary || (!('prompt' in summary) && !('result' in summary))) {
+    return event;
+  }
+  const { prompt: _prompt, result: _result, ...metadata } = summary;
+  return { ...event, summary: metadata as JsonValue };
+}
+
 function readActiveSubmissionRow(row: unknown) {
   const submission = readSubmissionRow(row);
   return {
@@ -1725,15 +1941,43 @@ function activityDetailUrl(submissionId: string | null) {
     : null;
 }
 
-function pruneActivityEvents(database: DatabaseSync) {
-  database
+function pruneActivityEvents(
+  database: DatabaseSync,
+  updatedAt: string,
+  retainedRows = maxActivityEventRows,
+) {
+  const pruned = database
     .prepare(
       `DELETE FROM activity_events WHERE id NOT IN (
          SELECT id FROM activity_events
          ORDER BY created_at DESC, id DESC LIMIT ?
-       );`,
+       ) RETURNING submission_id, content_bytes;`,
     )
-    .run(maxActivityEventRows);
+    .all(retainedRows) as Array<Record<string, unknown>>;
+  let globalBytes = 0;
+  const submissionBytes = new Map<string, number>();
+  for (const row of pruned) {
+    const contentBytes = Number(row.content_bytes);
+    if (!Number.isFinite(contentBytes) || contentBytes <= 0) continue;
+    globalBytes += contentBytes;
+    if (typeof row.submission_id === 'string') {
+      submissionBytes.set(
+        row.submission_id,
+        (submissionBytes.get(row.submission_id) ?? 0) + contentBytes,
+      );
+    }
+  }
+  if (globalBytes > 0) {
+    adjustActivityContentCounter(database, 'global', -globalBytes, updatedAt);
+  }
+  for (const [submissionId, contentBytes] of submissionBytes) {
+    adjustActivityContentCounter(
+      database,
+      activitySubmissionContentScope(submissionId),
+      -contentBytes,
+      updatedAt,
+    );
+  }
 }
 
 function sanitizeRecord(value: unknown) {
