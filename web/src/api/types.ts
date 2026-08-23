@@ -1692,6 +1692,19 @@ export type NotificationChangeEvent = {
   changedAt: string;
 };
 
+export type UpdateStatus = {
+  enabled: boolean;
+  currentVersion: string;
+  latestVersion: string | null;
+  channel: 'latest' | 'next';
+  updateAvailable: boolean;
+  dismissed: boolean;
+  notificationId: string | null;
+  docsUrl: string;
+  releaseUrl: string | null;
+  checkedAt: string | null;
+};
+
 export type BriefingProfile = {
   id: string;
   name: string;

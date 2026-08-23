@@ -59,6 +59,7 @@ import { createSessionRoutes } from './routes/sessions';
 import { createSkillRoutes } from './routes/skills';
 import { createWatchRoutes } from './routes/watches';
 import { createWorktreeRoutes } from './routes/worktrees';
+import { createUpdateRoutes } from './routes/updates';
 import { recoverPrReviewEvidenceFollowups } from './pr-review-submission-followups';
 import { logApiRequests, logFlueActivity } from './request-logging';
 import { recoverInterruptedAutopilotOwners } from '../modules/autopilot/owner/settlement';
@@ -75,6 +76,7 @@ import {
   readPrReviewAssistSettlement,
   recoverInterruptedPrReviewAssists,
 } from '../modules/pr-review-assist';
+import { startUpdateCheckLoop } from '../modules/updates';
 
 export type CreateAppOptions = {
   paths?: RuntimePaths;
@@ -169,6 +171,7 @@ export async function createApp(options: CreateAppOptions = {}) {
   app.route('/api', createSchedulerRoutes(paths));
   app.route('/api', createScheduledTaskRoutes(paths));
   app.route('/api/notifications', createNotificationRoutes(paths));
+  app.route('/api/update-status', createUpdateRoutes(paths));
   app.route('/api/activity', createActivityRoutes(paths));
   app.route('/api/operations', createOperationRoutes(paths));
   app.route('/api', createMemoryRoutes(paths));
@@ -210,6 +213,7 @@ export async function createApp(options: CreateAppOptions = {}) {
   app.get('*', serveStatic({ root: staticRoot, path: 'index.html' }));
 
   if (options.runtimeServices === true) {
+    startUpdateCheckLoop(paths);
     const startRuntimeServices = createFlueRuntimeServiceStarter({
       paths,
       scheduler: options.scheduler !== false,

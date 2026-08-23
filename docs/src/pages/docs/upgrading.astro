@@ -1,0 +1,134 @@
+---
+import DocsNav from '../../components/DocsNav.astro';
+import SiteFooter from '../../components/SiteFooter.astro';
+import SiteNav from '../../components/SiteNav.astro';
+import BaseLayout from '../../layouts/BaseLayout.astro';
+---
+
+<BaseLayout
+  title="Upgrade Neondeck · neondeck"
+  description="Upgrade an npm, release archive, or source installation of Neondeck without replacing its runtime home."
+>
+  <div class="site-shell">
+    <SiteNav />
+    <main class="container docs-layout">
+      <DocsNav />
+      <article class="docs-prose">
+        <h1>Upgrade Neondeck</h1>
+        <p>
+          Neondeck checks the matching npm release channel shortly after startup
+          and every 24 hours while it remains running. Beta installations follow
+          <code>next</code>; stable installations follow <code>latest</code>.
+          When a newer version is available, the dashboard shows a compact
+          update banner and a durable notification.
+        </p>
+        <aside class="docs-note">
+          Upgrading the application does not replace your runtime home.
+          Repositories, sessions, watches, schedules, notifications, memory,
+          skills, secrets, and app data remain under <code>NEONDECK_HOME</code> or
+          your resolved XDG home. Neondeck applies recognized database migrations
+          when the new server starts.
+        </aside>
+
+        <h2>Before upgrading</h2>
+        <p>
+          Confirm the installed version and optionally create a manual app-data
+          backup:
+        </p>
+        <pre><code>neondeck --version
+neondeck db backup</code></pre>
+        <p>
+          Read the
+          <a href="https://github.com/pandemicsyn/neondeck/releases"
+            >GitHub release notes</a
+          > for behavior changes or extra migration instructions.
+        </p>
+
+        <h2>Global npm installation</h2>
+        <p>Beta releases currently use npm's <code>next</code> channel:</p>
+        <pre><code>npm install --global neondeck@next</code></pre>
+        <p>
+          Once Neondeck reaches a stable release, stable installations can use:
+        </p>
+        <pre><code>npm install --global neondeck@latest</code></pre>
+
+        <h3>Restart a login service</h3>
+        <p>
+          On macOS or Linux, reinstall the service definition after the npm
+          update. This refreshes its absolute Node and Neondeck server paths and
+          restarts it:
+        </p>
+        <pre><code>neondeck service install
+neondeck service status</code></pre>
+
+        <h3>Restart a foreground server</h3>
+        <p>
+          Stop the existing <code>neondeck serve</code> process with
+          <kbd>Ctrl</kbd>+<kbd>C</kbd>, then start it again:
+        </p>
+        <pre><code>neondeck serve</code></pre>
+
+        <h2>Release archive installation</h2>
+        <ol>
+          <li>
+            Download the new <code>neondeck-&lt;version&gt;.tar.gz</code> and matching
+            <code>.sha256</code> file from the
+            <a href="https://github.com/pandemicsyn/neondeck/releases"
+              >GitHub releases page</a
+            >.
+          </li>
+          <li>Verify the checksum before extracting the archive.</li>
+          <li>
+            Install production dependencies in the new extracted directory.
+          </li>
+          <li>Link the new CLI and reinstall or restart the service.</li>
+        </ol>
+        <pre><code>shasum -a 256 -c neondeck-&lt;version&gt;.tar.gz.sha256
+tar -xzf neondeck-&lt;version&gt;.tar.gz
+cd neondeck-&lt;version&gt;
+npm install --omit=dev
+npm link
+neondeck service install</code></pre>
+        <p>
+          Use <code>sha256sum -c</code> instead of <code>shasum -a 256 -c</code> on
+          systems where that is the available checksum command.
+        </p>
+
+        <h2>Source checkout</h2>
+        <p>
+          Follow the repository's
+          <a
+            href="https://github.com/pandemicsyn/neondeck/blob/main/DEVELOPMENT.md"
+            >development guide</a
+          > to update dependencies and rebuild. If a login service points at that
+          checkout, run <code>neondeck service install</code> after rebuilding.
+        </p>
+
+        <h2>After upgrading</h2>
+        <pre><code>neondeck --version
+neondeck status
+neondeck service status</code></pre>
+        <p>
+          Reload any dashboard window that remained open while the server
+          restarted. Neondeck displays a separate reload message if the browser
+          bundle and running server versions do not match.
+        </p>
+
+        <h2>Disable automatic checks</h2>
+        <p>
+          Update checks make one unauthenticated request to the public npm
+          registry and do not send runtime-home contents or product telemetry.
+          To disable them, add this setting to the runtime-home <code>.env</code
+          > and restart Neondeck:
+        </p>
+        <pre><code>NEONDECK_DISABLE_UPDATE_CHECK=1</code></pre>
+        <p>
+          Disabling the check hides update banners and notifications. You can
+          still compare <code>neondeck --version</code> with the npm or GitHub release
+          page manually.
+        </p>
+      </article>
+    </main>
+    <SiteFooter />
+  </div>
+</BaseLayout>

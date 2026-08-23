@@ -1,8 +1,16 @@
 import { flue } from '@flue/vite';
 import { defineConfig } from 'vite';
+import { resolveBuildVersion } from './src/package-version';
+
+const buildVersion = resolveBuildVersion(
+  new URL('./package.json', import.meta.url),
+);
 
 export default defineConfig({
   plugins: [flue()],
+  define: {
+    __NEONDECK_VERSION__: JSON.stringify(buildVersion),
+  },
   server: {
     host: '127.0.0.1',
     port: 3583,

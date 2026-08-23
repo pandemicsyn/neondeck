@@ -64,9 +64,12 @@ describe('NotificationController integration', () => {
 
     expect(document.querySelectorAll('.notification-toast')).toHaveLength(1);
     expect(FakeAudioContext.startedNotes).toBe(2);
-    expect(invalidate).toHaveBeenCalledTimes(3);
+    expect(invalidate).toHaveBeenCalledTimes(4);
     expect(invalidate).toHaveBeenCalledWith({
       queryKey: queryKeys.chatSessionActivityRoot,
+    });
+    expect(invalidate).toHaveBeenCalledWith({
+      queryKey: queryKeys.updateStatus,
     });
   });
 

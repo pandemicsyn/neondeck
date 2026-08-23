@@ -36,6 +36,7 @@ import type {
 } from './features/pr-review/PrReviewPopoutPage';
 import { NotificationController } from './features/notifications/controller';
 import { ActivitySubmissionPage } from './features/activity/ActivitySubmissionPage';
+import { UpdateBanner } from './features/updates/update-banner';
 import type {
   DashboardConfig,
   DashboardDensity,
@@ -313,13 +314,14 @@ function DashboardShell({ config }: { config: DashboardConfig }) {
     <section
       aria-labelledby="neondeck-dashboard-title"
       ref={shellRef}
-      className="deck-shell h-screen w-screen overflow-hidden bg-bg p-0"
+      className="deck-shell flex h-screen w-screen flex-col overflow-hidden bg-bg p-0"
     >
       <h1 className="sr-only" id="neondeck-dashboard-title">
         Neondeck developer cockpit
       </h1>
+      <UpdateBanner />
       <div
-        className={`dashboard-grid deck-density-${appearance.density} grid h-full w-full gap-0 border-0 bg-canvas p-0`}
+        className={`dashboard-grid deck-density-${appearance.density} grid min-h-0 w-full flex-1 gap-0 border-0 bg-canvas p-0`}
         data-display-preset={displayPreset}
         data-deck-profile={profile}
         data-deck-arrangement={arrangement}

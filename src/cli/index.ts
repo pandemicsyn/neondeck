@@ -55,13 +55,14 @@ import type {
   ServeOptions,
   WatchPrOptions,
 } from './types';
+import { neondeckVersion } from '../version';
 
 const program = new Command()
   .name('neondeck')
   .description('Local developer cockpit and Flue agent control CLI.')
   .option('--home <path>', 'override runtime home')
   .option('--json', 'print machine-readable JSON where supported')
-  .version('1.0.0');
+  .version(neondeckVersion);
 
 program.hook('preAction', () => {
   setJsonOutput(program.opts<GlobalOptions>().json);
