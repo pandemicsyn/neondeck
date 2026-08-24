@@ -3,7 +3,7 @@ import { defineConfig } from 'vitest/config';
 import {
   flueMarkdownImportsForTests,
   sharedTestOptions,
-} from './vitest.shared';
+} from './vitest.shared.ts';
 
 // Live-model evaluations deliberately have no relationship to the normal test
 // configurations. They may take minutes and spend provider tokens.

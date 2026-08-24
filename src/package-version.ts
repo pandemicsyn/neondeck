@@ -1,5 +1,5 @@
 import { readFileSync } from 'node:fs';
-import { parseVersion } from './modules/updates/version';
+import { parseVersion } from './modules/updates/version.ts';
 
 export function readPackageVersion(packageJsonUrl: URL) {
   let parsed: { version?: unknown };

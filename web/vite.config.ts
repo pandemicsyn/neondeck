@@ -1,7 +1,7 @@
 import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
 import { defineConfig } from 'vite';
-import { resolveBuildVersion } from '../src/package-version';
+import { resolveBuildVersion } from '../src/package-version.ts';
 
 const serverPort = parsePort(process.env.NEONDECK_WEB_PORT, 5173);
 const apiProxyTarget =

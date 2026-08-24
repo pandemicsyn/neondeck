@@ -4,7 +4,7 @@ import {
   flueMarkdownImportsForTests,
   serialUnitTestFiles,
   sharedTestOptions,
-} from './vitest.shared';
+} from './vitest.shared.ts';
 
 export default defineConfig({
   plugins: [flueMarkdownImportsForTests()],

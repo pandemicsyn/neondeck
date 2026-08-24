@@ -1,6 +1,6 @@
 import { flue } from '@flue/vite';
 import { defineConfig } from 'vite';
-import { resolveBuildVersion } from './src/package-version';
+import { resolveBuildVersion } from './src/package-version.ts';
 
 const buildVersion = resolveBuildVersion(
   new URL('./package.json', import.meta.url),
