@@ -1,0 +1,189 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+import SiteFooter from '../components/SiteFooter.astro';
+import SiteNav from '../components/SiteNav.astro';
+---
+
+<BaseLayout
+  title="Terms of Service · neondeck"
+  description="The basic terms for using neondeck.dev and the open-source Neondeck project."
+>
+  <div class="site-shell">
+    <SiteNav />
+    <main class="container terms-page">
+      <p class="kicker">TERMS · NEONDECK.DEV</p>
+      <h1>Use the site responsibly. Keep control of your tools.</h1>
+      <p class="terms-lede">
+        These terms govern your use of neondeck.dev. Neondeck itself is
+        open-source software licensed separately under the MIT License.
+      </p>
+
+      <section>
+        <h2>Using this site</h2>
+        <p>
+          By accessing neondeck.dev, you agree to these terms. You may use the
+          site only in compliance with applicable law and may not attempt to
+          disrupt, damage, or gain unauthorized access to the site or its
+          supporting systems. If you do not agree, do not use the site.
+        </p>
+      </section>
+
+      <section>
+        <h2>Open-source software</h2>
+        <p>
+          The Neondeck software and its source code are provided under the
+          <a href="https://github.com/pandemicsyn/neondeck/blob/main/LICENSE"
+            >MIT License</a
+          >. That license—not these site terms—governs your right to use, copy,
+          modify, distribute, or sell the software. If these terms conflict with
+          the MIT License about the software, the MIT License controls.
+        </p>
+      </section>
+
+      <section>
+        <h2>Your environment and actions</h2>
+        <p>
+          Neondeck runs in infrastructure you control and can interact with
+          repositories, shells, credentials, AI providers, and other developer
+          services you configure. You are responsible for securing that
+          environment, reviewing permissions and proposed changes, keeping
+          appropriate backups, and deciding whether generated output or an
+          automated action is suitable for your use.
+        </p>
+        <p>
+          Agent output may be incomplete, incorrect, or unsafe. Review code,
+          commands, pull-request activity, and other consequential output before
+          relying on it or sending it to a third party.
+        </p>
+      </section>
+
+      <section>
+        <h2>Third-party services</h2>
+        <p>
+          Neondeck can connect to services such as GitHub and AI model
+          providers. Those services are operated by others and are governed by
+          their own terms, privacy policies, availability, and charges. You are
+          responsible for your accounts and for complying with their terms.
+          Neondeck does not control or endorse third-party services merely by
+          supporting an integration.
+        </p>
+      </section>
+
+      <section>
+        <h2>Availability and changes</h2>
+        <p>
+          Neondeck is evolving software and may include beta or experimental
+          features. The site, documentation, and project may change, be
+          interrupted, or be discontinued without notice. Documentation may
+          occasionally be incomplete or out of date.
+        </p>
+      </section>
+
+      <section>
+        <h2>No warranties</h2>
+        <p>
+          To the fullest extent permitted by law, neondeck.dev and its content
+          are provided “as is” and “as available,” without warranties of any
+          kind, express or implied. The Neondeck software carries the separate
+          warranty disclaimer in the MIT License.
+        </p>
+      </section>
+
+      <section>
+        <h2>Limitation of liability</h2>
+        <p>
+          To the fullest extent permitted by law, Neondeck’s authors and
+          contributors will not be liable for indirect, incidental, special,
+          consequential, or exemplary damages, or for lost data, profits,
+          goodwill, or business interruption arising from your use of, or
+          inability to use, the site. Some jurisdictions do not allow certain
+          limitations, so parts of this section may not apply to you.
+        </p>
+      </section>
+
+      <section>
+        <h2>Changes to these terms</h2>
+        <p>
+          These terms may be updated as the project changes. Material updates
+          will be reflected on this page with a new effective date. Continuing
+          to use the site after an update means you accept the revised terms.
+        </p>
+      </section>
+
+      <section>
+        <h2>Questions</h2>
+        <p>
+          Open a discussion or issue in the
+          <a href="https://github.com/pandemicsyn/neondeck"
+            >Neondeck repository</a
+          >. These terms are effective August 24, 2026.
+        </p>
+      </section>
+    </main>
+    <SiteFooter />
+  </div>
+</BaseLayout>
+
+<style>
+  .terms-page {
+    max-width: 820px;
+    padding-block: clamp(70px, 10vw, 120px);
+  }
+
+  .terms-page h1 {
+    max-width: 15ch;
+    margin: 0;
+    font-size: clamp(2.8rem, 7vw, 5.5rem);
+    line-height: 0.98;
+    text-align: left;
+    text-wrap: balance;
+  }
+
+  .terms-lede {
+    max-width: 65ch;
+    margin: 28px 0 70px;
+    color: var(--body);
+    font-size: 19px;
+    line-height: 1.7;
+    text-wrap: pretty;
+  }
+
+  .terms-page section {
+    padding-block: 30px;
+    border-top: 1px solid var(--line);
+  }
+
+  .terms-page h2 {
+    margin: 0 0 15px;
+    font-size: clamp(1.5rem, 3vw, 2.15rem);
+    text-align: left;
+  }
+
+  .terms-page section p {
+    max-width: 70ch;
+    margin: 0;
+    color: var(--muted);
+    font-size: 16px;
+    line-height: 1.75;
+    text-wrap: pretty;
+  }
+
+  .terms-page section p + p {
+    margin-top: 14px;
+  }
+
+  .terms-page section a {
+    color: var(--cyan);
+  }
+
+  @media (max-width: 640px) {
+    .terms-page h1 {
+      font-size: clamp(2.5rem, 13vw, 4rem);
+    }
+
+    .terms-lede {
+      margin-bottom: 48px;
+      font-size: 17px;
+    }
+  }
+</style>
