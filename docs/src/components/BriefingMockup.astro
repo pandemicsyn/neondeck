@@ -1,0 +1,809 @@
+---
+// Rebuilt from .plans/new-review/mockups/EscalateB.dc.html, the escalate verdict
+// of the review briefing. Sizes are expressed in --px, one pixel of that 1440px
+// board, so the whole thing scales with its container instead of being re-guessed
+// at marketing width. Sample data is the same composite the board uses; it is not
+// a real review.
+
+const findings = [
+  {
+    severity: 'major',
+    label: 'MAJOR',
+    location: 'web/src/plugins/ReviewsPanel.tsx:118',
+    summary:
+      'onReconcile still reads the shared panel flag, so recovering one submission disables archive on every other row — the exact bug this PR set out to fix, one call site down.',
+    confidence: 'high confidence',
+    fix: 'Key the reconcile mutation by review id the same way archive and restart now are.',
+    open: true,
+  },
+  {
+    severity: 'major',
+    label: 'MAJOR',
+    location: 'shared/report-deck-view.tsx:97',
+    summary:
+      'restoreFocusRef is armed before setActiveIndex, so two fast navigations in one frame can pull focus out of the footer.',
+    confidence: 'medium confidence',
+    fix: 'Capture the containment check and the target index together, then apply once per commit.',
+    open: false,
+  },
+];
+
+const risks = [
+  {
+    text: 'Three call sites share the pending state and only two were converted. I can see the third; I cannot see whether it matters at runtime.',
+    jump: 'ReviewsPanel.tsx:118',
+  },
+  {
+    text: 'Per-row state lives in the row component, so a list re-key on refetch drops it mid-flight. I could not prove the refetch preserves keys.',
+    jump: 'ReviewsPanel.tsx:564',
+  },
+];
+
+const filters = [
+  { label: 'BLOCKERS', count: '2', on: true },
+  { label: 'WORTH A LOOK', count: '4', on: false },
+  { label: 'EVERYTHING', count: '5', on: false },
+];
+---
+
+<div class="brief-frame" aria-label="neondeck review briefing preview">
+  <div class="brief-screen">
+    <header class="brief-top">
+      <div class="brief-ident">
+        <p class="brief-crumb">
+          REVIEW BRIEFING · PANDEMICSYN/NEONDECK#315 · 4F2C9AB
+        </p>
+        <h3>Fix Reviews panel per-PR pending state and show PR author</h3>
+      </div>
+      <div class="brief-chips">
+        <span class="bchip">pop out</span>
+        <span class="bchip">workbench</span>
+        <span class="bchip on">close</span>
+      </div>
+    </header>
+
+    <div class="escalate">
+      <span class="escalate-tag">! NEEDS A HUMAN</span>
+      <p>
+        This one needs you. Two correctness findings in shared mutation state I
+        couldn't fully trace, and the new test doesn't reach the path I'm
+        worried about.
+      </p>
+      <span class="escalate-stamp">reviewed 4f2c9ab · 12:04</span>
+    </div>
+
+    <div class="brief-meta">
+      <span class="brief-counts">
+        5 findings · 2 of them blockers · 3 drafted as comments · 9 files · +733
+        / −80
+      </span>
+      <div class="brief-segs">
+        {
+          filters.map((f) => (
+            <span class:list={['seg', { on: f.on }]}>
+              {f.label}
+              <em>{f.count}</em>
+            </span>
+          ))
+        }
+      </div>
+    </div>
+
+    <div class="brief-body">
+      <div class="brief-main">
+        <p class="brief-eyebrow">WHAT MAKES THIS HARD</p>
+        <div class="brief-prose">
+          <p>
+            The fix itself is right: a panel-wide <code>pending</code> flag becomes
+            per-review state, so archiving one review stops disabling every other
+            row. That part I'm confident about.
+          </p>
+          <p>
+            What I can't settle is the shape around it. Three call sites share
+            that state and only two were converted — <code>onReconcile</code> still
+            reads the old flag. The new 349-line concurrent test is genuinely good,
+            but it drives archive and restart, not reconcile, so the one path I'd
+            want covered is the one that isn't.
+          </p>
+          <p>
+            Underneath that, per-row state now lives in the row component.
+            Anything that re-keys the list on refetch drops it mid-flight, and I
+            couldn't prove from the code whether the refetch preserves keys.
+          </p>
+        </div>
+        <div class="brief-prrow">
+          <span class="brief-pr">Open PR</span>
+          <span class="brief-prmeta"
+            >open · base main · head 4f2c9ab · author pandemicsyn</span
+          >
+        </div>
+
+        <div class="brief-starthere">
+          <h4>START HERE</h4>
+          <p>the two findings behind the verdict</p>
+          <span>0 of 2 cleared</span>
+        </div>
+
+        {
+          findings.map((f) => (
+            <div class:list={['fcard', f.severity]}>
+              <div class="fcard-head">
+                <span class:list={['sev', f.severity]}>{f.label}</span>
+                <span class="floc">{f.location}</span>
+                <span class="ftag">draft comment</span>
+                <span class="fcaret">{f.open ? '−' : '+'}</span>
+              </div>
+              <div class="fcard-body">
+                <p class="fsum">{f.summary}</p>
+                {f.open && (
+                  <div class="ffix">
+                    <p class="brief-eyebrow">SUGGESTED FIX · {f.confidence}</p>
+                    <p>{f.fix}</p>
+                  </div>
+                )}
+                <div class="facts">
+                  <span>open in diff</span>
+                  <span>edit comment</span>
+                  <span>dismiss</span>
+                </div>
+              </div>
+            </div>
+          ))
+        }
+      </div>
+
+      <aside class="brief-aside">
+        <div class="aside-head">
+          <p>WHY I'M ESCALATING</p>
+          <span
+            >These two are the whole reason for the verdict. If you can settle
+            them, the rest is routine.</span
+          >
+        </div>
+        <p class="aside-label">
+          <em class="dot"></em>RISKS I COULD NOT SETTLE<span>2</span>
+        </p>
+        <div class="aside-risks">
+          {
+            risks.map((r) => (
+              <div class="risk">
+                <p>{r.text}</p>
+                <span class="risk-jump">{r.jump}</span>
+              </div>
+            ))
+          }
+        </div>
+        <div class="aside-ask">
+          <p class="brief-eyebrow">GOT A QUESTION?</p>
+          <p class="ask-copy">
+            The workbench has the full diff and the review chat. Asking there
+            keeps the answer next to the code it is about.
+          </p>
+          <span class="ask-btn">Ask Neon in the workbench →</span>
+        </div>
+      </aside>
+    </div>
+
+    <footer class="brief-foot">
+      <div class="foot-progress">
+        <div class="bar"><i></i></div>
+        <span>0 of 2 cleared · 3 comments drafted · no verdict chosen</span>
+      </div>
+      <div class="foot-actions">
+        <span class="ghost">Approve anyway</span>
+        <span class="primary">Open workbench →</span>
+      </div>
+    </footer>
+  </div>
+</div>
+
+<style>
+  /* --px is one pixel of the 1440px design board, so every number below is the
+     value the mockup was actually drawn at. */
+  .brief-frame {
+    container-type: inline-size;
+    overflow: hidden;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    background: #05060a;
+    padding: 10px;
+  }
+
+  .brief-screen {
+    --px: calc(100cqw / 1440);
+    --canvas: #0a0b10;
+    --panel: #0c0d12;
+    --field: #070810;
+    --line: rgba(255, 255, 255, 0.07);
+    --line-up: rgba(255, 255, 255, 0.12);
+    --ink: #d7f7ff;
+    --muted: #91a8b0;
+    --primary: #00b7c7;
+    --primary-strong: #69e6ff;
+    --good: #4dd6a8;
+    --warning: #f0b95b;
+    --danger: #ff6b7a;
+
+    display: flex;
+    overflow: hidden;
+    flex-direction: column;
+    background: var(--canvas);
+    color: var(--ink);
+    font-family: 'IBM Plex Sans', sans-serif;
+    line-height: 1.55;
+  }
+
+  .brief-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: calc(16 * var(--px));
+    border-bottom: 1px solid var(--line);
+    background: var(--panel);
+    padding: calc(8 * var(--px)) calc(14 * var(--px));
+  }
+
+  .brief-ident {
+    min-width: 0;
+  }
+
+  .brief-crumb {
+    margin: 0;
+    color: var(--primary);
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: calc(10 * var(--px));
+    letter-spacing: 0.12em;
+  }
+
+  .brief-ident h3 {
+    margin: calc(1 * var(--px)) 0 0;
+    color: var(--ink);
+    font-family: 'Chakra Petch', sans-serif;
+    font-size: calc(16 * var(--px));
+    font-weight: 600;
+  }
+
+  .brief-chips {
+    display: flex;
+    flex: none;
+    gap: calc(8 * var(--px));
+  }
+
+  .bchip {
+    border: 1px solid var(--line-up);
+    padding: calc(4 * var(--px)) calc(8 * var(--px));
+    color: var(--muted);
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: calc(10 * var(--px));
+    line-height: 1.2;
+  }
+
+  .bchip.on {
+    border-color: var(--primary);
+    color: var(--primary);
+  }
+
+  .escalate {
+    display: flex;
+    align-items: center;
+    gap: calc(14 * var(--px));
+    border-bottom: 1px solid var(--line);
+    background: color-mix(in srgb, var(--danger) 9%, var(--panel));
+    padding: calc(12 * var(--px)) calc(14 * var(--px));
+  }
+
+  .escalate-tag {
+    flex: none;
+    border: 1px solid var(--danger);
+    padding: calc(6 * var(--px)) calc(10 * var(--px));
+    color: var(--danger);
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: calc(10 * var(--px));
+    font-weight: 600;
+    letter-spacing: 0.08em;
+  }
+
+  .escalate p {
+    margin: 0;
+    min-width: 0;
+    font-size: calc(13.5 * var(--px));
+    line-height: 1.5;
+  }
+
+  .escalate-stamp {
+    flex: none;
+    margin-inline-start: auto;
+    color: var(--muted);
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: calc(10 * var(--px));
+    white-space: nowrap;
+  }
+
+  .brief-meta {
+    display: flex;
+    align-items: stretch;
+    justify-content: space-between;
+    gap: calc(16 * var(--px));
+    border-bottom: 1px solid var(--line);
+    background: var(--panel);
+  }
+
+  .brief-counts {
+    display: flex;
+    align-items: center;
+    padding: 0 calc(14 * var(--px));
+    color: var(--muted);
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: calc(11 * var(--px));
+  }
+
+  .brief-segs {
+    display: flex;
+    flex: none;
+    align-items: stretch;
+    border-left: 1px solid var(--line);
+  }
+
+  .seg {
+    display: flex;
+    align-items: center;
+    gap: calc(7 * var(--px));
+    border-right: 1px solid var(--line);
+    padding: calc(7 * var(--px)) calc(14 * var(--px));
+    color: var(--muted);
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: calc(11 * var(--px));
+    letter-spacing: 0.04em;
+    white-space: nowrap;
+  }
+
+  .seg:last-child {
+    border-right: 0;
+  }
+
+  .seg.on {
+    background: color-mix(in srgb, var(--danger) 16%, transparent);
+    box-shadow: inset 0 calc(-2 * var(--px)) 0 var(--danger);
+    color: var(--danger);
+  }
+
+  .seg em {
+    font-style: normal;
+    opacity: 0.72;
+  }
+
+  .brief-body {
+    display: grid;
+    min-height: 0;
+    grid-template-columns: minmax(0, 1fr) calc(340 * var(--px));
+  }
+
+  .brief-main {
+    min-height: 0;
+    padding: calc(26 * var(--px)) calc(30 * var(--px)) calc(30 * var(--px));
+  }
+
+  .brief-eyebrow {
+    margin: 0 0 calc(12 * var(--px));
+    color: var(--muted);
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: calc(9 * var(--px));
+    letter-spacing: 0.14em;
+  }
+
+  .brief-prose {
+    max-width: 78ch;
+    font-size: calc(16.5 * var(--px));
+    line-height: 1.7;
+    text-wrap: pretty;
+  }
+
+  .brief-prose p {
+    margin: 0 0 calc(15 * var(--px));
+  }
+
+  .brief-prose p:last-child {
+    margin-bottom: 0;
+  }
+
+  .brief-prose code {
+    background: var(--field);
+    padding: 0 calc(4 * var(--px));
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.86em;
+  }
+
+  .brief-prrow {
+    display: flex;
+    align-items: center;
+    gap: calc(8 * var(--px));
+    margin-top: calc(20 * var(--px));
+  }
+
+  .brief-pr {
+    border: 1px solid var(--primary);
+    padding: calc(6 * var(--px)) calc(12 * var(--px));
+    color: var(--primary-strong);
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: calc(10 * var(--px));
+    font-weight: 600;
+  }
+
+  .brief-prmeta {
+    color: var(--muted);
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: calc(10 * var(--px));
+  }
+
+  .brief-starthere {
+    display: flex;
+    align-items: baseline;
+    gap: calc(12 * var(--px));
+    margin: calc(30 * var(--px)) 0 calc(14 * var(--px));
+    border-top: 1px solid var(--line);
+    padding-top: calc(20 * var(--px));
+  }
+
+  .brief-starthere h4 {
+    margin: 0;
+    color: var(--danger);
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: calc(12 * var(--px));
+    font-weight: 600;
+    letter-spacing: 0.1em;
+  }
+
+  .brief-starthere p {
+    margin: 0;
+    color: var(--muted);
+    font-size: calc(11 * var(--px));
+  }
+
+  .brief-starthere span {
+    margin-inline-start: auto;
+    color: var(--muted);
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: calc(10 * var(--px));
+  }
+
+  .fcard {
+    border: 1px solid var(--line);
+    border-left: calc(2 * var(--px)) solid var(--danger);
+    background: var(--panel);
+  }
+
+  .fcard + .fcard {
+    margin-top: calc(10 * var(--px));
+  }
+
+  .fcard-head {
+    display: flex;
+    align-items: center;
+    gap: calc(10 * var(--px));
+    padding: calc(12 * var(--px)) calc(14 * var(--px));
+  }
+
+  .sev {
+    flex: none;
+    border: 1px solid currentColor;
+    padding: calc(2 * var(--px)) calc(6 * var(--px));
+    color: var(--danger);
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: calc(9 * var(--px));
+    font-weight: 600;
+    letter-spacing: 0.04em;
+  }
+
+  .floc {
+    overflow: hidden;
+    min-width: 0;
+    flex: 1 1 auto;
+    color: var(--primary-strong);
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: calc(12 * var(--px));
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .ftag {
+    flex: none;
+    border: 1px solid color-mix(in srgb, var(--primary) 60%, transparent);
+    padding: calc(2 * var(--px)) calc(6 * var(--px));
+    color: var(--primary-strong);
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: calc(9 * var(--px));
+    letter-spacing: 0.04em;
+  }
+
+  .fcaret {
+    flex: none;
+    color: var(--muted);
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: calc(10 * var(--px));
+  }
+
+  .fcard-body {
+    padding: 0 calc(14 * var(--px)) calc(12 * var(--px));
+  }
+
+  .fsum {
+    margin: 0;
+    font-size: calc(14 * var(--px));
+    line-height: 1.6;
+  }
+
+  .ffix {
+    margin-top: calc(12 * var(--px));
+    border-top: 1px solid var(--line);
+    padding-top: calc(11 * var(--px));
+  }
+
+  .ffix .brief-eyebrow {
+    margin-bottom: calc(5 * var(--px));
+    letter-spacing: 0.08em;
+  }
+
+  .ffix p:last-child {
+    margin: 0;
+    color: var(--muted);
+    font-size: calc(13 * var(--px));
+    line-height: 1.6;
+  }
+
+  .facts {
+    display: flex;
+    flex-wrap: wrap;
+    gap: calc(7 * var(--px));
+    margin-top: calc(12 * var(--px));
+  }
+
+  .facts span {
+    border: 1px solid var(--line-up);
+    padding: calc(4 * var(--px)) calc(9 * var(--px));
+    color: var(--muted);
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: calc(10 * var(--px));
+  }
+
+  .brief-aside {
+    display: flex;
+    min-height: 0;
+    flex-direction: column;
+    border-left: 1px solid var(--line);
+    background: var(--panel);
+  }
+
+  .aside-head {
+    border-bottom: 1px solid var(--line);
+    padding: calc(14 * var(--px)) calc(16 * var(--px));
+  }
+
+  .aside-head p {
+    margin: 0;
+    color: var(--danger);
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: calc(10 * var(--px));
+    font-weight: 600;
+    letter-spacing: 0.12em;
+  }
+
+  .aside-head span {
+    display: block;
+    margin-top: calc(5 * var(--px));
+    color: var(--muted);
+    font-size: calc(11.5 * var(--px));
+    line-height: 1.5;
+  }
+
+  .aside-label {
+    display: flex;
+    align-items: center;
+    gap: calc(8 * var(--px));
+    margin: 0;
+    padding: calc(14 * var(--px)) calc(16 * var(--px)) 0;
+    color: var(--muted);
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: calc(9 * var(--px));
+    letter-spacing: 0.12em;
+  }
+
+  .dot {
+    width: calc(5 * var(--px));
+    height: calc(5 * var(--px));
+    flex: none;
+    background: var(--warning);
+  }
+
+  .aside-label span {
+    margin-inline-start: auto;
+  }
+
+  .aside-risks {
+    padding: calc(10 * var(--px)) calc(16 * var(--px)) calc(16 * var(--px));
+  }
+
+  .risk {
+    border-left: calc(2 * var(--px)) solid var(--warning);
+    padding-left: calc(10 * var(--px));
+  }
+
+  .risk + .risk {
+    margin-top: calc(14 * var(--px));
+  }
+
+  .risk p {
+    margin: 0;
+    font-size: calc(12.5 * var(--px));
+    line-height: 1.55;
+  }
+
+  .risk-jump {
+    display: inline-block;
+    margin-top: calc(5 * var(--px));
+    color: var(--primary-strong);
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: calc(10 * var(--px));
+    text-decoration: underline;
+    text-underline-offset: 0.18em;
+  }
+
+  .aside-ask {
+    border-top: 1px solid var(--line);
+    margin: calc(4 * var(--px)) calc(16 * var(--px)) calc(20 * var(--px));
+    padding-top: calc(16 * var(--px));
+  }
+
+  .aside-ask .brief-eyebrow {
+    margin-bottom: calc(7 * var(--px));
+    letter-spacing: 0.12em;
+  }
+
+  .ask-copy {
+    margin: 0;
+    color: var(--muted);
+    font-size: calc(12.5 * var(--px));
+    line-height: 1.55;
+  }
+
+  .ask-btn {
+    display: inline-block;
+    margin-top: calc(10 * var(--px));
+    border: 1px solid var(--line-up);
+    padding: calc(6 * var(--px)) calc(10 * var(--px));
+    color: var(--primary-strong);
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: calc(10 * var(--px));
+  }
+
+  .brief-foot {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: calc(16 * var(--px));
+    border-top: 1px solid var(--line);
+    background: var(--panel);
+    padding: calc(8 * var(--px)) calc(14 * var(--px));
+  }
+
+  .foot-progress {
+    display: flex;
+    align-items: center;
+    gap: calc(12 * var(--px));
+  }
+
+  .bar {
+    width: calc(140 * var(--px));
+    height: calc(3 * var(--px));
+    background: var(--line);
+  }
+
+  .bar i {
+    display: block;
+    width: 0;
+    height: 100%;
+    background: var(--danger);
+  }
+
+  .foot-progress span {
+    color: var(--muted);
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: calc(10 * var(--px));
+  }
+
+  .foot-actions {
+    display: flex;
+    align-items: center;
+    gap: calc(12 * var(--px));
+  }
+
+  .ghost {
+    color: var(--muted);
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: calc(10 * var(--px));
+    text-decoration: underline dotted;
+    text-underline-offset: 3px;
+  }
+
+  .primary {
+    border: 1px solid var(--primary);
+    padding: calc(7 * var(--px)) calc(14 * var(--px));
+    color: var(--primary-strong);
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: calc(11 * var(--px));
+    font-weight: 600;
+    letter-spacing: 0.04em;
+  }
+
+  /* The board carries its own light palette; use it rather than letting neon
+     IDE colors land on the light campaign paper. */
+  :global(:root[data-theme='light']) .brief-screen {
+    --canvas: #edf5f8;
+    --panel: #f7fbfd;
+    --field: #dbeaef;
+    --line: rgba(20, 45, 60, 0.18);
+    --line-up: rgba(20, 45, 60, 0.26);
+    --ink: #19232e;
+    --muted: #435965;
+    --primary: #007f91;
+    --primary-strong: #005b69;
+    --good: #157a5f;
+    --warning: #8a5b00;
+    --danger: #b42335;
+  }
+
+  :global(:root[data-theme='light']) .brief-frame {
+    border-color: rgba(20, 45, 60, 0.2);
+    background: #dbeaef;
+  }
+
+  /* Scaling a 1440px board into a phone puts the type under 6px, so past this
+     point stop scaling: --px goes native and the same markup flows as a narrow
+     app view instead of a shrunken screenshot. */
+  @container (max-width: 900px) {
+    .brief-screen {
+      --px: 1px;
+    }
+
+    .brief-body {
+      grid-template-columns: minmax(0, 1fr);
+    }
+
+    .brief-aside,
+    .brief-counts,
+    .escalate-stamp,
+    .brief-chips {
+      display: none;
+    }
+
+    .brief-top,
+    .escalate,
+    .brief-meta,
+    .brief-foot,
+    .brief-starthere {
+      flex-wrap: wrap;
+    }
+
+    .escalate-tag {
+      order: -1;
+    }
+
+    .brief-main {
+      padding: 18px 16px 22px;
+    }
+
+    .brief-prose {
+      font-size: 15px;
+    }
+
+    .brief-starthere span,
+    .foot-progress span {
+      margin-inline-start: 0;
+    }
+  }
+
+  @container (max-width: 620px) {
+    .brief-prose p:nth-child(3),
+    .fcard + .fcard {
+      display: none;
+    }
+  }
+</style>

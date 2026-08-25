@@ -3,6 +3,7 @@ import CampaignCommand from '../../components/CampaignCommand.astro';
 import CampaignFooter from '../../components/CampaignFooter.astro';
 import MarketingConsent from '../../components/MarketingConsent.astro';
 import CampaignNav from '../../components/CampaignNav.astro';
+import BriefingMockup from '../../components/BriefingMockup.astro';
 import ReviewMockup from '../../components/ReviewMockup.astro';
 import BaseLayout from '../../layouts/BaseLayout.astro';
 import '../../styles/campaign.css';
@@ -90,7 +91,28 @@ const steps = [
       </header>
 
       <section class="campaign-container campaign-preview-wrap">
-        <ReviewMockup />
+        <figure class="oc-shot">
+          <figcaption>
+            <span class="oc-shot__n">01</span>
+            <strong>The briefing.</strong>
+            <span
+              >Neon reviews the PR first and tells you what it found, what it
+              could not settle, and whether it thinks this one needs you.</span
+            >
+          </figcaption>
+          <BriefingMockup />
+        </figure>
+        <figure class="oc-shot">
+          <figcaption>
+            <span class="oc-shot__n pink">02</span>
+            <strong>The workbench.</strong>
+            <span
+              >From there into the full diff, with the findings drafted as
+              comments sitting next to the code they are about.</span
+            >
+          </figcaption>
+          <ReviewMockup />
+        </figure>
       </section>
 
       <section class="campaign-container oc-section">
@@ -227,6 +249,47 @@ const steps = [
   .oc-primary:hover {
     color: #090a0f;
     transform: translateY(-1px);
+  }
+
+  .oc-shot + .oc-shot {
+    margin-top: clamp(38px, 5vw, 62px);
+  }
+
+  .oc-shot {
+    margin: 0;
+  }
+
+  .oc-shot figcaption {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 10px;
+    margin-bottom: 14px;
+  }
+
+  .oc-shot__n {
+    color: var(--cyan);
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 0.08em;
+  }
+
+  .oc-shot__n.pink {
+    color: var(--pink);
+  }
+
+  .oc-shot figcaption strong {
+    color: var(--campaign-ink);
+    font-family: 'Chakra Petch', sans-serif;
+    font-size: 17px;
+    font-weight: 600;
+  }
+
+  .oc-shot figcaption > span:last-child {
+    max-width: 68ch;
+    color: var(--campaign-muted);
+    font-size: 14.5px;
+    line-height: 1.6;
   }
 
   .oc-section {
