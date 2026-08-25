@@ -798,11 +798,19 @@ const filters = [
     .foot-progress span {
       margin-inline-start: 0;
     }
+
+    /* The counts are gone by here, so the filters take the row on their own and
+       wrap instead of running past the frame, which clips them. */
+    .brief-segs {
+      flex: 1 1 100%;
+      flex-wrap: wrap;
+      border-top: 1px solid var(--line);
+      border-left: 0;
+    }
   }
 
   @container (max-width: 620px) {
-    .brief-prose p:nth-child(3),
-    .fcard + .fcard {
+    .brief-prose p:nth-child(3) {
       display: none;
     }
   }
