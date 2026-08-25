@@ -10,7 +10,13 @@ const { campaign, context, showContext = true } = Astro.props;
 
 <nav class="campaign-nav" aria-label="Campaign navigation">
   <div class="campaign-container campaign-nav__inner">
-    <a class="campaign-brand" href="/" aria-label="neondeck home">
+    <a
+      class="campaign-brand"
+      href="/"
+      aria-label="neondeck home"
+      data-marketing-event="home_click"
+      data-marketing-placement="nav"
+    >
       <img src="/favicon.svg" width="30" height="30" alt="" />
       <span>neondeck</span>
     </a>

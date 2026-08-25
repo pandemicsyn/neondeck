@@ -8,7 +8,8 @@ import ReviewMockup from '../../components/ReviewMockup.astro';
 import BaseLayout from '../../layouts/BaseLayout.astro';
 import '../../styles/campaign.css';
 
-const discussions = 'https://github.com/pandemicsyn/neondeck/discussions';
+const repo = 'https://github.com/pandemicsyn/neondeck';
+const discussions = `${repo}/discussions`;
 
 const questions = [
   {
@@ -78,9 +79,9 @@ const steps = [
         <div class="campaign-hero__actions">
           <a
             class="oc-primary"
-            href={discussions}
+            href={repo}
             data-marketing-event="github_click"
-            data-marketing-placement="discussion-hero">join the discussion →</a
+            data-marketing-placement="hero-repo">view on github →</a
           >
           <CampaignCommand placement="hero" />
         </div>
