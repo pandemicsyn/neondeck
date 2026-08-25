@@ -90,15 +90,24 @@ const steps = [
         </p>
       </header>
 
+      <section class="campaign-container oc-section oc-intro">
+        <p class="campaign-kicker">the problem</p>
+        <h2>Agents increased the review load. Reviews haven't evolved.</h2>
+        <p class="oc-lead">
+          More PRs. Bigger changes. Agents are helping us write more code than
+          ever, but we're all feeling the review pressure. Here is where we have
+          got to so far: Neon reads the pull request before you do and tells you
+          what it could not settle, then drops you into the diff with its
+          findings already drafted as comments.
+        </p>
+      </section>
+
       <section class="campaign-container campaign-preview-wrap">
         <figure class="oc-shot">
           <figcaption>
             <span class="oc-shot__n">01</span>
             <strong>The briefing.</strong>
-            <span
-              >Neon reviews the PR first and tells you what it found, what it
-              could not settle, and whether it thinks this one needs you.</span
-            >
+            <span>what it found, and what it could not settle.</span>
           </figcaption>
           <BriefingMockup />
         </figure>
@@ -107,8 +116,8 @@ const steps = [
             <span class="oc-shot__n pink">02</span>
             <strong>The workbench.</strong>
             <span
-              >From there into the full diff, with the findings drafted as
-              comments sitting next to the code they are about.</span
+              >the full diff, with those findings sitting next to the code they
+              are about.</span
             >
           </figcaption>
           <ReviewMockup />
@@ -116,12 +125,12 @@ const steps = [
       </section>
 
       <section class="campaign-container oc-section">
-        <p class="campaign-kicker">why we are asking</p>
-        <h2>Agents increased the review load. Reviews haven't evolved.</h2>
+        <p class="campaign-kicker">open questions</p>
+        <h2>Four things we can't settle on our own.</h2>
         <p class="oc-lead">
-          More PRs. Bigger changes. Agents are helping us write more code than
-          ever, but we're all feeling the review pressure. Help us figure out
-          what reviews become, while reviews are still needed.
+          Help us figure out what reviews become, while reviews are still
+          needed. Each one is its own thread — take whichever you have an
+          opinion about.
         </p>
         <div class="oc-board">
           {
@@ -249,6 +258,16 @@ const steps = [
   .oc-primary:hover {
     color: #090a0f;
     transform: translateY(-1px);
+  }
+
+  /* The intro runs straight into the mockups it is describing, so it drops the
+     section's usual trailing space. */
+  .oc-intro {
+    padding-bottom: 0;
+  }
+
+  .oc-intro .oc-lead {
+    margin-bottom: clamp(24px, 3vw, 34px);
   }
 
   .oc-shot + .oc-shot {
