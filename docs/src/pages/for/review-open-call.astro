@@ -256,14 +256,16 @@ const steps = [
     transform: translateY(-1px);
   }
 
-  /* The intro runs straight into the mockups it is describing, so it drops the
-     section's usual trailing space. */
-  .oc-intro {
-    padding-bottom: 0;
+  /* The intro runs straight into the mockups it is describing, so it trades the
+     section's full trailing space for enough to separate it from the first
+     caption. Both classes are needed: .oc-section sets the same property and
+     wins on source order otherwise. */
+  .oc-section.oc-intro {
+    padding-bottom: clamp(30px, 4vw, 46px);
   }
 
   .oc-intro .oc-lead {
-    margin-bottom: clamp(24px, 3vw, 34px);
+    margin-bottom: 0;
   }
 
   .oc-shot + .oc-shot {
