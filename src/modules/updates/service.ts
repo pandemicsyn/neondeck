@@ -17,6 +17,7 @@ import {
   parseVersion,
   updateChannelForVersion,
 } from './version';
+import { parseUpdateManifest } from './manifest';
 
 export type UpdateChannel = 'latest' | 'next';
 
@@ -39,9 +40,8 @@ type CachedUpdate = {
   checkedAt: string;
 };
 
-type RegistryResponse = { version?: unknown };
-
 export const updateDocsUrl = 'https://neondeck.dev/docs/upgrading/';
+export const updateManifestUrl = 'https://neondeck.dev/latest.json';
 export const updateCheckIntervalMs = 24 * 60 * 60_000;
 export const updateCheckTimeoutMs = 5_000;
 const updateCacheKey = 'neondeck-update-status';
@@ -98,27 +98,25 @@ export async function checkForUpdates(
   const localStatus = await readUpdateStatus(paths, currentVersion);
   if (!localStatus.enabled) return localStatus;
   const channel = localStatus.channel;
-  const response = await (options.fetcher ?? fetch)(
-    `https://registry.npmjs.org/neondeck/${channel}`,
-    {
-      headers: {
-        accept: 'application/json',
-        'user-agent': `neondeck/${currentVersion}`,
-      },
-      signal: AbortSignal.timeout(updateCheckTimeoutMs),
+  const response = await (options.fetcher ?? fetch)(updateManifestUrl, {
+    headers: {
+      accept: 'application/json',
+      'user-agent': `neondeck/${currentVersion}`,
     },
-  );
+    signal: AbortSignal.timeout(updateCheckTimeoutMs),
+  });
   if (!response.ok) {
     throw new Error(`Neondeck update check returned ${response.status}.`);
   }
-  const payload = (await response.json()) as RegistryResponse;
-  if (typeof payload.version !== 'string' || !parseVersion(payload.version)) {
-    throw new Error('Neondeck update check returned an invalid version.');
+  const manifest = parseUpdateManifest(await response.json());
+  const latestVersion = manifest?.[channel];
+  if (!latestVersion) {
+    throw new Error('Neondeck update check returned an invalid manifest.');
   }
 
   const checkedAt = (options.now ?? (() => new Date()))().toISOString();
-  const updateAvailable = compareVersions(payload.version, currentVersion) > 0;
-  const cached = { channel, latestVersion: payload.version, checkedAt };
+  const updateAvailable = compareVersions(latestVersion, currentVersion) > 0;
+  const cached = { channel, latestVersion, checkedAt };
   const notification = persistUpdateCheck(
     cached,
     currentVersion,

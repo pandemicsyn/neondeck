@@ -49,8 +49,8 @@ describe('Neondeck update checking', () => {
   it('caches a newer prerelease and creates one durable notification', async () => {
     const paths = runtimePaths(await tempDir());
     const fetcher = vi.fn<typeof fetch>(async (input) => {
-      expect(String(input)).toBe('https://registry.npmjs.org/neondeck/next');
-      return Response.json({ version: '1.0.0-beta.39' });
+      expect(String(input)).toBe('https://neondeck.dev/latest.json');
+      return Response.json(updateManifest('1.0.0-beta.39'));
     });
 
     const first = await checkForUpdates(paths, {
@@ -84,10 +84,42 @@ describe('Neondeck update checking', () => {
     });
   });
 
+  it('selects the stable channel from the hosted manifest', async () => {
+    const paths = runtimePaths(await tempDir());
+    await expect(
+      checkForUpdates(paths, {
+        currentVersion: '1.0.0',
+        fetcher: async () =>
+          Response.json({
+            ...updateManifest('1.1.0-beta.1'),
+            latest: '1.0.1',
+          }),
+      }),
+    ).resolves.toMatchObject({
+      channel: 'latest',
+      latestVersion: '1.0.1',
+      updateAvailable: true,
+    });
+  });
+
+  it('rejects a malformed hosted manifest', async () => {
+    const paths = runtimePaths(await tempDir());
+    await expect(
+      checkForUpdates(paths, {
+        currentVersion: '1.0.0-beta.38',
+        fetcher: async () =>
+          Response.json({
+            ...updateManifest('1.0.0-beta.39'),
+            msg: 42,
+          }),
+      }),
+    ).rejects.toThrow('invalid manifest');
+  });
+
   it('keeps one version dismissed and surfaces the next version', async () => {
     const paths = runtimePaths(await tempDir());
     const fetcher = vi.fn<typeof fetch>(async () =>
-      Response.json({ version: '1.0.0-beta.39' }),
+      Response.json(updateManifest('1.0.0-beta.39')),
     );
     await checkForUpdates(paths, {
       currentVersion: '1.0.0-beta.38',
@@ -101,7 +133,7 @@ describe('Neondeck update checking', () => {
       readUpdateStatus(paths, '1.0.0-beta.38'),
     ).resolves.toMatchObject({ dismissed: true, updateAvailable: true });
 
-    fetcher.mockResolvedValue(Response.json({ version: '1.0.0-beta.40' }));
+    fetcher.mockResolvedValue(Response.json(updateManifest('1.0.0-beta.40')));
     await expect(
       checkForUpdates(paths, {
         currentVersion: '1.0.0-beta.38',
@@ -116,14 +148,14 @@ describe('Neondeck update checking', () => {
   it('resolves an active notification when a newer update supersedes it', async () => {
     const paths = runtimePaths(await tempDir());
     const fetcher = vi.fn<typeof fetch>(async () =>
-      Response.json({ version: '1.0.0-beta.39' }),
+      Response.json(updateManifest('1.0.0-beta.39')),
     );
     await checkForUpdates(paths, {
       currentVersion: '1.0.0-beta.38',
       fetcher,
     });
 
-    fetcher.mockResolvedValue(Response.json({ version: '1.0.0-beta.40' }));
+    fetcher.mockResolvedValue(Response.json(updateManifest('1.0.0-beta.40')));
     await checkForUpdates(paths, {
       currentVersion: '1.0.0-beta.38',
       fetcher,
@@ -140,7 +172,7 @@ describe('Neondeck update checking', () => {
   it('refreshes an active notification when the installed version changes', async () => {
     const paths = runtimePaths(await tempDir());
     const fetcher = vi.fn<typeof fetch>(async () =>
-      Response.json({ version: '1.0.0-beta.40' }),
+      Response.json(updateManifest('1.0.0-beta.40')),
     );
     await checkForUpdates(paths, {
       currentVersion: '1.0.0-beta.38',
@@ -173,7 +205,7 @@ describe('Neondeck update checking', () => {
     const paths = runtimePaths(await tempDir());
     await checkForUpdates(paths, {
       currentVersion: '1.0.0-beta.38',
-      fetcher: async () => Response.json({ version: '1.0.0-beta.39' }),
+      fetcher: async () => Response.json(updateManifest('1.0.0-beta.39')),
     });
 
     await expect(
@@ -193,7 +225,7 @@ describe('Neondeck update checking', () => {
     const paths = runtimePaths(await tempDir());
     await checkForUpdates(paths, {
       currentVersion: '1.0.0-beta.38',
-      fetcher: async () => Response.json({ version: '1.0.0-beta.39' }),
+      fetcher: async () => Response.json(updateManifest('1.0.0-beta.39')),
     });
 
     process.env.NEONDECK_DISABLE_UPDATE_CHECK = '1';
@@ -209,7 +241,7 @@ describe('Neondeck update checking', () => {
     const paths = runtimePaths(await tempDir());
     await checkForUpdates(paths, {
       currentVersion: '1.0.0-beta.38',
-      fetcher: async () => Response.json({ version: '1.0.0-beta.39' }),
+      fetcher: async () => Response.json(updateManifest('1.0.0-beta.39')),
     });
     const database = openDb(paths.neondeckDatabase);
     try {
@@ -250,7 +282,7 @@ describe('Neondeck update checking', () => {
     await expect(
       checkForUpdates(paths, {
         currentVersion: '1.0.0-beta.38',
-        fetcher: async () => Response.json({ version: '1.0.0-beta.39' }),
+        fetcher: async () => Response.json(updateManifest('1.0.0-beta.39')),
       }),
     ).rejects.toThrow('notification write failed');
     await expect(
@@ -266,7 +298,7 @@ describe('Neondeck update checking', () => {
     const paths = runtimePaths(await tempDir());
     await checkForUpdates(paths, {
       currentVersion: '1.0.0-beta.38',
-      fetcher: async () => Response.json({ version: '1.0.0-beta.39' }),
+      fetcher: async () => Response.json(updateManifest('1.0.0-beta.39')),
     });
     const database = openDb(paths.neondeckDatabase);
     try {
@@ -285,7 +317,7 @@ describe('Neondeck update checking', () => {
     await expect(
       checkForUpdates(paths, {
         currentVersion: '1.0.0-beta.38',
-        fetcher: async () => Response.json({ version: '1.0.0-beta.40' }),
+        fetcher: async () => Response.json(updateManifest('1.0.0-beta.40')),
       }),
     ).rejects.toThrow('next notification write failed');
     await expect(
@@ -337,4 +369,14 @@ async function tempDir() {
   const path = await mkdtemp(join(tmpdir(), 'neondeck-update-test-'));
   tempRoots.push(path);
   return path;
+}
+
+function updateManifest(version: string) {
+  return {
+    schema: 1,
+    latest: version,
+    next: version,
+    date: '2026-08-24T12:00:00.000Z',
+    msg: '',
+  };
 }

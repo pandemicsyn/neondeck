@@ -80,9 +80,10 @@
     "version-packages": "changeset version",
     "docs:build": "npm --workspace @neondeck/docs-site run build",
     "docs:check": "npm --workspace @neondeck/docs-site run check",
-    "docs:deploy": "npm --workspace @neondeck/docs-site run deploy",
+    "docs:deploy": "npm run docs:release-manifest && npm --workspace @neondeck/docs-site run deploy",
     "docs:dev": "npm --workspace @neondeck/docs-site run dev",
     "docs:astro-dev": "npm --workspace @neondeck/docs-site run astro-dev",
+    "docs:release-manifest": "node --import=tsx scripts/generate-update-manifest.ts",
     "eval:pr-review": "vitest run --config vitest.pr-review-evals.config.ts",
     "docs:preview": "npm --workspace @neondeck/docs-site run preview"
   },
