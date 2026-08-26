@@ -65,6 +65,16 @@ const program = new Command()
   .option('--json', 'print machine-readable JSON where supported')
   .version(neondeckVersion);
 
+if (process.argv.length === 2) {
+  program.addHelpText(
+    'after',
+    `
+Getting started:
+  1. neondeck init  Run the first-time setup wizard.
+  2. neondeck open  Start Neondeck and open the dashboard.`,
+  );
+}
+
 program.hook('preAction', () => {
   setJsonOutput(program.opts<GlobalOptions>().json);
 });
