@@ -304,7 +304,14 @@ The npm release path is separate from the GitHub app archive release:
 - `.github/workflows/changesets.yml` maintains the version PR from changesets
   merged to `main`.
 - `.github/workflows/npm-publish.yml` verifies the release tag, runs
-  `npm run release:npm:check`, and publishes `neondeck` to npm from `v*` tags.
+  `npm run release:npm:check`, publishes `neondeck` to npm from `v*` tags, and
+  waits for a docs deployment that refreshes `https://neondeck.dev/latest.json`
+  from npm's published `latest` and `next` dist-tags.
+
+Every production docs deployment regenerates the release manifest before the
+Astro build. This keeps ordinary docs deployments from replacing the manifest
+with stale repository data. Release-triggered docs deployments always build
+from current `main`, even though the publishing workflow itself runs from a tag.
 
 npm publishing uses trusted publishing for GitHub Actions with workflow
 `npm-publish.yml`, environment `npm`, and allowed action `npm publish`. Do not
