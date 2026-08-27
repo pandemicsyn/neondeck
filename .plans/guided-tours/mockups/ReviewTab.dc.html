@@ -1,0 +1,272 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+  <style>
+    body { margin: 0; background: #05060a; }
+    .shell, .shell * { box-sizing: border-box; }
+    .shell {
+      --ts: 1.12; --ds: 1;
+      --sans: "IBM Plex Sans", system-ui, -apple-system, sans-serif;
+      --mono: "IBM Plex Mono", "SFMono-Regular", Consolas, monospace;
+      --disp: "Chakra Petch", ui-sans-serif, system-ui, sans-serif;
+      --canvas: #0a0b10; --panel: #0a0b10; --field: #070810; --soft: rgba(255,255,255,0.04);
+      --line: rgba(255,255,255,0.07); --chrome: #070810;
+      --ink: #d7f7ff; --muted: #91a8b0;
+      --primary: #00b7c7; --primary-strong: #69e6ff; --primary-ink: #070810;
+      --accent: #ff4fb8; --warning: #f0b95b; --violet: #b59cff;
+      font: 400 calc(11px * var(--ts))/1.5 var(--sans);
+      color: var(--ink);
+    }
+    .shell[data-theme="light"] {
+      --canvas: #edf5f8; --panel: #edf5f8; --field: #dbeaef; --soft: rgba(20,45,60,0.05);
+      --line: rgba(20,45,60,0.13); --chrome: #dbeaef;
+      --ink: #19232e; --muted: #56646d;
+      --primary: #006f7f; --primary-strong: #005b69; --primary-ink: #edf5f8;
+      --accent: #b31170; --warning: #8a5b00; --violet: #6034bd;
+    }
+    .shell[data-hue="green"]  { --tour: #5cf28f; }
+    .shell[data-hue="violet"] { --tour: #b59cff; }
+    .shell[data-hue="none"]   { --tour: #d7f7ff; }
+    .shell[data-theme="light"][data-hue="green"]  { --tour: #0d7a42; }
+    .shell[data-theme="light"][data-hue="violet"] { --tour: #6034bd; }
+    .shell[data-theme="light"][data-hue="none"]   { --tour: #19232e; }
+
+    .shell button { font: inherit; cursor: pointer; border-radius: 0; }
+    .cbtn {
+      display: inline-flex; min-height: calc(24px * var(--ds)); align-items: center; justify-content: center;
+      border: 1px solid var(--line); background: var(--field); padding: 4px 6px;
+      color: var(--ink); font-family: var(--mono); font-size: calc(9.5px * var(--ts));
+      line-height: 1; white-space: nowrap;
+      transition: background-color 160ms ease, border-color 160ms ease, color 160ms ease;
+    }
+    .cbtn:hover { border-color: var(--primary); background: color-mix(in srgb, var(--primary) 8%, var(--field)); color: var(--primary-strong); }
+    .cbtn[data-lead] { border-color: color-mix(in srgb, var(--tour) 55%, var(--line)); color: var(--tour); }
+    .cbtn[data-lead]:hover { border-color: var(--tour); background: color-mix(in srgb, var(--tour) 10%, var(--field)); color: var(--tour); }
+    .badge { display: inline-flex; align-items: center; border: 1px solid var(--line); background: var(--soft);
+      padding: 2px 6px; color: var(--muted); font-family: var(--mono); font-size: calc(10px * var(--ts)); line-height: 1; }
+    .badge[data-tone="tour"] { border-color: color-mix(in srgb, var(--tour) 55%, var(--line)); color: var(--tour); }
+
+    .tabs { display: grid; grid-template-columns: 1fr 1fr; border-bottom: 1px solid var(--line); background: var(--chrome); }
+    .tab { min-height: calc(30px * var(--ds)); border: 0; border-right: 1px solid var(--line); background: transparent;
+      color: var(--muted); font-family: var(--mono); font-size: calc(10px * var(--ts)); letter-spacing: 0.04em; text-transform: uppercase; }
+    .tab[data-on] { background: color-mix(in srgb, var(--primary) 10%, var(--field));
+      box-shadow: inset 0 -1px 0 var(--primary); color: var(--primary-strong); }
+
+    /* inspector sections — styles.css:1553 */
+    .sect { border-bottom: 1px solid var(--line);
+      background: color-mix(in srgb, var(--panel) 72%, var(--field)); padding: 9px 10px; }
+    .shead { display: flex; align-items: center; justify-content: space-between; gap: 8px;
+      color: var(--muted); font-family: var(--mono); font-size: calc(10px * var(--ts)); }
+    .shead > span:first-child { color: var(--primary); }
+    .spath { margin: 6px 0 0; overflow-wrap: anywhere; color: var(--ink); font-family: var(--mono);
+      font-size: calc(11px * var(--ts)); line-height: 1.35; }
+    .scopy { margin: 6px 0 0; color: var(--muted); font-size: calc(11px * var(--ts)); line-height: 1.45; }
+    .metrics { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 8px; }
+    .metrics span { display: inline-flex; border: 1px solid var(--line); background: var(--field); padding: 3px 5px;
+      color: var(--muted); font-family: var(--mono); font-size: calc(10px * var(--ts)); line-height: 1; font-variant-numeric: tabular-nums; }
+
+    /* the tour section — same chrome, tour signal only on the left rule + markers */
+    .sect[data-tour] { border-left: 2px solid var(--tour); }
+    .sect[data-tour] .shead > span:first-child { color: var(--tour); }
+
+    .mark { display: inline-flex; flex: none; width: 16px; height: 16px; align-items: center; justify-content: center;
+      border: 1px solid var(--tour); background: var(--tour); color: var(--primary-ink);
+      font-family: var(--mono); font-size: calc(9px * var(--ts)); font-weight: 600; line-height: 1; font-variant-numeric: tabular-nums; }
+    .mark[data-ghost] { background: transparent; color: var(--tour); border-color: color-mix(in srgb, var(--tour) 45%, var(--line)); }
+
+    .ttitle { margin: 7px 0 0; font-size: calc(11px * var(--ts)); font-weight: 600; color: var(--ink); line-height: 1.35; }
+    .spine { margin: 9px 0 0; padding: 0; list-style: none; }
+    .spine li { position: relative; display: flex; gap: 8px; padding: 0 0 9px 0; }
+    .spine li:last-child { padding-bottom: 0; }
+    .spine li::before { content: ""; position: absolute; left: 8px; top: 17px; bottom: 0; width: 1px;
+      background: color-mix(in srgb, var(--tour) 35%, var(--line)); }
+    .spine li:last-child::before { display: none; }
+    .sp-txt { display: block; min-width: 0; padding-top: 1px; }
+    .sp-sym { display: block; font-family: var(--mono); font-size: calc(10px * var(--ts)); color: var(--ink);
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .sp-file { display: block; margin-top: 1px; font-family: var(--mono); font-size: calc(9px * var(--ts)); color: var(--muted);
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .spine li[data-state="todo"] .sp-sym { color: var(--muted); }
+    .spine li[data-state="done"] .sp-sym { color: var(--muted); }
+    .spine li[data-state="now"] .sp-sym { color: var(--tour); font-weight: 600; }
+    .sp-btn { display: flex; flex: 1 1 auto; min-width: 0; align-items: flex-start; gap: 8px;
+      border: 0; background: none; padding: 0; text-align: left; color: inherit; font: inherit; }
+    .sp-btn:hover .sp-sym { color: var(--tour); }
+    .shell button:disabled { cursor: not-allowed; opacity: 0.45; }
+    .tacts { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 9px; }
+
+    /* finding / draft summaries — styles.css:2041 */
+    .rows { border-top: 1px solid var(--line); }
+    .summ { border-bottom: 1px solid var(--line); display: grid; gap: 6px; padding: 10px 8px; color: var(--ink); }
+    .summ:last-child { border-bottom: 0; }
+    .fhead { display: flex; align-items: baseline; justify-content: space-between; gap: 8px;
+      font-family: var(--mono); font-size: calc(10px * var(--ts)); }
+    .ftitle { color: var(--primary-strong); font-weight: 600; min-width: 0; }
+    .fstate { flex: none; color: var(--ink); font-size: calc(9px * var(--ts)); font-variant-numeric: tabular-nums; }
+    .floc { margin: 0; color: var(--muted); font-family: var(--mono); font-size: calc(9.5px * var(--ts)); line-height: 1.45; }
+    .fcopy { margin: 0; font-size: calc(10.5px * var(--ts)); line-height: 1.45; }
+    .facts { display: flex; flex-wrap: wrap; gap: 6px; }
+    .summ[data-draft] .ftitle { color: var(--violet); }
+  </style>
+</helmet>
+
+<div class="shell" data-theme="{{theme}}" data-hue="{{hue}}" style="display: flex; width: 380px; height: 920px; flex-direction: column; border: 1px solid var(--line); background: var(--field); overflow: hidden;">
+
+  <div class="tabs">
+    <button class="tab" type="button" data-on>Review</button>
+    <button class="tab" type="button">Ask reviewer</button>
+  </div>
+
+  <div style="min-height: 0; flex: 1 1 auto; overflow: auto;">
+
+    <!-- Review focus — shipped section, unchanged -->
+    <section class="sect">
+      <div class="shead"><span>Review focus</span><span>active file</span></div>
+      <p class="spath">src/agents/pr-reviewer.ts</p>
+      <div class="metrics">
+        <span>3 files</span><span>1 touched</span><span>0/3 threads</span><span>0 pending</span>
+      </div>
+    </section>
+
+    <!-- NEW: the tour, as a first-class inspector section -->
+    <section class="sect" data-tour>
+      <div class="shead">
+        <span>Guided tour</span>
+        <span class="badge" data-tone="tour">step {{step}} of 4</span>
+      </div>
+      <p class="ttitle">How the reviewer is bound to one revision</p>
+      <ol class="spine">
+        <sc-for list="{{spine}}" as="sp" hint-placeholder-count="4">
+          <li data-state="{{sp.state}}">
+            <button class="sp-btn" type="button" onClick="{{sp.go}}">
+              <span class="mark" data-ghost="{{sp.ghost}}">{{sp.i}}</span>
+              <span class="sp-txt">
+                <span class="sp-sym">{{sp.symbol}}</span>
+                <span class="sp-file">{{sp.where}}</span>
+              </span>
+            </button>
+          </li>
+        </sc-for>
+      </ol>
+      <div class="tacts">
+        <button class="cbtn" data-lead type="button" disabled="{{atFirst}}" onClick="{{prev}}">&lsaquo; Previous</button>
+        <button class="cbtn" data-lead type="button" disabled="{{atLast}}" onClick="{{next}}">Next &rsaquo;</button>
+        <button class="cbtn" type="button" onClick="{{restart}}">Start over</button>
+        <button class="cbtn" type="button">Close tour</button>
+      </div>
+    </section>
+
+    <!-- Neon findings — shipped section, unchanged -->
+    <section class="sect" style="padding-bottom: 0;">
+      <div class="shead"><span>Neon findings</span><span class="badge">2</span></div>
+      <div class="rows" style="margin: 9px -10px 0;">
+        <article class="summ">
+          <div class="fhead">
+            <span class="ftitle">Missing headSha mounts no write tools, silently</span>
+            <span class="fstate">major &middot; active, high</span>
+          </div>
+          <p class="floc">src/agents/pr-reviewer.ts &middot; additions L245</p>
+          <p class="fcopy">The guard has no else branch. A conversation reaching here without a head SHA gets a reviewer with zero write tools and no diagnostic.</p>
+          <div class="facts">
+            <button class="cbtn" type="button">Show finding</button>
+            <button class="cbtn" type="button">Dismiss locally</button>
+            <button class="cbtn" type="button">Add to local draft</button>
+          </div>
+        </article>
+        <article class="summ">
+          <div class="fhead">
+            <span class="ftitle">Conversation id carries redundant keys</span>
+            <span class="fstate">nit &middot; active, medium</span>
+          </div>
+          <p class="floc">shared/pr-reviewer-session.ts &middot; additions L18&ndash;L20</p>
+          <p class="fcopy">reviewId and headSha are both derivable from the conversation id, so storing all three invites drift.</p>
+          <div class="facts">
+            <button class="cbtn" type="button">Show finding</button>
+            <button class="cbtn" type="button">Dismiss locally</button>
+            <button class="cbtn" type="button">Add to local draft</button>
+          </div>
+        </article>
+      </div>
+    </section>
+
+    <!-- Draft comments — shipped section, unchanged -->
+    <section class="sect" style="padding-bottom: 0;">
+      <div class="shead"><span>Draft comments</span><span class="badge">1</span></div>
+      <div class="rows" style="margin: 9px -10px 0;">
+        <article class="summ" data-draft>
+          <div class="fhead">
+            <span class="ftitle">Local draft</span>
+            <span class="fstate">RIGHT L254</span>
+          </div>
+          <p class="floc">src/agents/pr-reviewer.ts</p>
+          <p class="fcopy">This returns the array by reference, so a caller could mutate the mounted tool set.</p>
+          <div class="facts">
+            <button class="cbtn" type="button">Show comment</button>
+            <button class="cbtn" type="button">Delete</button>
+          </div>
+        </article>
+      </div>
+    </section>
+
+    <!-- Line review — shipped section, unchanged -->
+    <section class="sect">
+      <div class="shead"><span>Line review</span><span>select diff lines</span></div>
+      <p class="scopy">Select a changed line or range in the diff to draft an inline review comment. Saved drafts stay local until the review is submitted.</p>
+    </section>
+
+  </div>
+</div>
+</x-dc>
+<script data-dc-script data-props='{
+  "theme": {"editor": "enum", "options": ["dark", "light"], "default": "dark", "section": "Board"},
+  "hue": {"editor": "enum", "options": ["green", "violet", "none"], "default": "green", "section": "Board"}
+}'>
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    this.state = { step: 2 };
+  }
+
+  go(i) {
+    this.setState({ step: Math.min(4, Math.max(1, i)) });
+  }
+
+  renderVals() {
+    const cur = this.state.step;
+    const defs = [
+      { i: 1, symbol: 'prReviewerConversationId', where: 'pr-reviewer-session.ts L18–L20' },
+      { i: 2, symbol: 'tool mounting', where: 'pr-reviewer.ts L246–L251' },
+      { i: 3, symbol: 'boundReview', where: 'draft-tools.ts L276–L281' },
+      { i: 4, symbol: 'createPrReviewerRoute', where: 'pr-reviewer.ts L50–L55' },
+    ];
+    const spine = defs.map((d) => ({
+      i: d.i,
+      symbol: d.symbol,
+      where: d.where,
+      state: d.i === cur ? 'now' : d.i < cur ? 'done' : 'todo',
+      ghost: d.i === cur ? undefined : true,
+      go: () => this.go(d.i),
+    }));
+    return {
+      theme: this.props.theme ?? 'dark',
+      hue: this.props.hue ?? 'green',
+      step: cur,
+      spine,
+      atFirst: cur === 1,
+      atLast: cur === defs.length,
+      next: () => this.go(cur + 1),
+      prev: () => this.go(cur - 1),
+      restart: () => this.go(1),
+    };
+  }
+}
+</script>
+</body>
+</html>

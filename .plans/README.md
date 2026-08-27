@@ -12,7 +12,9 @@
 - `DIFF_IMPROVEMENTS_PLAN.md` — phases C–E remain planned after the completed Phase B milestone.
 - `PR_REVIEW_PERF_PLAN.md` — completed remediation record with explicit unresolved cold-path performance deferrals.
 - `PR_REVIEW_SUBAGENT_IMPROVEMENT_PLAN.md` — proposed Explore trust policy, result contract, critical-path observability, and live-model review eval work.
-- `PR_REVIEW_GUIDED_TOURS_PLAN.md` — proposed reviewer-scoped `/show-me` slash command and revision-bound, line-anchored guided tours, with one atomically replaced current tour per conversation and revision.
+- `PR_REVIEW_GUIDED_TOURS_PLAN.md` — proposed reviewer-scoped `/show-me` slash command and revision-bound, line-anchored guided tours, with one atomically replaced current tour per conversation and revision. Design settled; see the handoff and mockups below.
+- `PR_REVIEW_GUIDED_TOURS_HANDOFF.md` — implementation handoff for the above: codebase map, resolved tokens and CSS, traps, and a build order that differs from the plan's phase numbering.
+- `guided-tours/mockups/` — six interactive Design Component boards and the canvas manifest behind the tours design.
 - `new-review/` — proposed replacement of the two-report PR review artifacts with a single briefing, plus the agent recommendation on the Reviews panel row. Includes interactive mockups.
 - `EXEDEV_WORKSPACE_MODE_PLAN.md` — proposed exe.dev workspace-location mode.
 - `FLUE_2_USAGE_FOLLOWUP_BRIEFING.md` — non-blocking idiomatic cleanup and capability-surface reductions after the completed migration.

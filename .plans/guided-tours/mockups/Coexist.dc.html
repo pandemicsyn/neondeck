@@ -1,0 +1,301 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+  <style>
+    body { margin: 0; background: #05060a; }
+    .shell, .shell * { box-sizing: border-box; }
+    .shell {
+      --ts: 1.12; --ds: 1;
+      --sans: "IBM Plex Sans", system-ui, -apple-system, sans-serif;
+      --mono: "IBM Plex Mono", "SFMono-Regular", Consolas, monospace;
+      --disp: "Chakra Petch", ui-sans-serif, system-ui, sans-serif;
+      --canvas: #0a0b10; --panel: #0a0b10; --field: #070810; --soft: rgba(255,255,255,0.04);
+      --line: rgba(255,255,255,0.07); --chrome: #070810;
+      --ink: #d7f7ff; --muted: #91a8b0;
+      --primary: #00b7c7; --primary-strong: #69e6ff; --primary-ink: #070810;
+      --accent: #ff4fb8; --warning: #f0b95b; --violet: #b59cff;
+      --dbg: #0a0a0a; --dfg: #fafafa; --dadd: #5ecc71;
+      font: 400 calc(11px * var(--ts))/1.5 var(--sans);
+      color: var(--ink);
+    }
+    .shell[data-theme="light"] {
+      --canvas: #edf5f8; --panel: #edf5f8; --field: #dbeaef; --soft: rgba(20,45,60,0.05);
+      --line: rgba(20,45,60,0.13); --chrome: #dbeaef;
+      --ink: #19232e; --muted: #56646d;
+      --primary: #006f7f; --primary-strong: #005b69; --primary-ink: #edf5f8;
+      --accent: #b31170; --warning: #8a5b00; --violet: #6034bd;
+      --dbg: #ffffff; --dfg: #1c2430; --dadd: #0dbe4e;
+    }
+    .shell[data-hue="green"]  { --tour: #5cf28f; }
+    .shell[data-hue="violet"] { --tour: #b59cff; }
+    .shell[data-hue="none"]   { --tour: #d7f7ff; }
+    .shell[data-theme="light"][data-hue="green"]  { --tour: #0d7a42; }
+    .shell[data-theme="light"][data-hue="violet"] { --tour: #6034bd; }
+    .shell[data-theme="light"][data-hue="none"]   { --tour: #19232e; }
+
+    .shell button { font: inherit; cursor: pointer; border-radius: 0; }
+    .cbtn {
+      display: inline-flex; min-height: calc(24px * var(--ds));
+      align-items: center; justify-content: center;
+      border: 1px solid var(--line); background: var(--field); padding: 4px 6px;
+      color: var(--ink); font-family: var(--mono); font-size: calc(9.5px * var(--ts));
+      line-height: 1; white-space: nowrap;
+      transition: background-color 160ms ease, border-color 160ms ease, color 160ms ease;
+    }
+    .cbtn:hover { border-color: var(--primary); background: color-mix(in srgb, var(--primary) 8%, var(--field)); color: var(--primary-strong); }
+    .kbd { display: inline-block; border: 1px solid var(--line); background: var(--panel); padding: 1px 3px;
+      color: var(--primary-strong); font-size: 0.95em; font-family: var(--mono); }
+
+    /* ---- legend ---- */
+    .legend { border-bottom: 1px solid var(--line); background: color-mix(in srgb, var(--chrome) 90%, transparent); padding: 10px 12px; }
+    .legend h1 { margin: 0; font-family: var(--disp); font-size: 13px; font-weight: 600; letter-spacing: 0.02em; color: var(--ink); }
+    .legend p { margin: 4px 0 0; max-width: 88ch; color: var(--muted); font-size: calc(10.5px * var(--ts)); line-height: 1.5; }
+    .swatches { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 9px; }
+    .sw { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--line); padding: 4px 7px;
+      font-family: var(--mono); font-size: calc(9.5px * var(--ts)); line-height: 1; color: var(--muted); }
+    .sw i { display: block; width: 10px; height: 10px; border: 1px solid var(--line); font-style: normal; }
+    .sw[data-k="tour"]    { border-left: 2px solid var(--tour); }
+    .sw[data-k="tour"] i    { background: var(--field); border-color: var(--tour); }
+    .sw[data-k="finding"] i { background: color-mix(in srgb, var(--primary) 5%, var(--field)); border-color: color-mix(in srgb, var(--primary) 40%, var(--line)); }
+    .sw[data-k="thread"] i  { background: color-mix(in srgb, var(--primary) 7%, var(--field)); border-color: color-mix(in srgb, var(--primary) 55%, var(--line)); }
+    .sw[data-k="draft"] i   { background: color-mix(in srgb, var(--violet) 6%, var(--field)); border-color: color-mix(in srgb, var(--violet) 48%, var(--line)); }
+    .sw[data-k="stale"] i   { background: color-mix(in srgb, var(--accent) 10%, var(--field)); border-color: color-mix(in srgb, var(--accent) 46%, var(--line)); }
+    .sw b { color: var(--ink); font-weight: 500; }
+
+    /* ---- diff ---- */
+    .patch { min-height: 0; flex: 1 1 auto; overflow: auto; background: var(--dbg);
+      font-family: var(--mono); font-size: calc(10.5px * var(--ts)); line-height: 1.55; padding-top: 8px; }
+    .dl { display: grid; grid-template-columns: 7ch minmax(0, 1fr); }
+    .dn { position: relative; padding: 0 1ch 0 2ch; text-align: right; user-select: none;
+      border-right: 2px solid var(--dbg); color: color-mix(in lab, var(--dfg) 65%, var(--dbg)); }
+    .dn::before { content: ""; position: absolute; top: 0; left: 0; width: 4px; height: 100%; }
+    .dc { padding: 0 1ch; color: var(--dfg); white-space: pre-wrap; overflow-wrap: anywhere; }
+    .dl[data-t="add"] .dc { background: color-mix(in lab, var(--dbg) 80%, var(--dadd)); }
+    .dl[data-t="add"] .dn { background: color-mix(in lab, var(--dbg) 85%, var(--dadd)); }
+    .dl[data-t="add"] .dn::before { background: var(--dadd); }
+    .arow { background: color-mix(in lab, var(--dbg) 92.5%, var(--dfg)); padding: 4px 8px 6px 7ch; }
+    .sep { display: flex; height: 32px; align-items: center;
+      background: color-mix(in lab, var(--dbg) 85%, var(--dfg));
+      color: color-mix(in lab, var(--dfg) 65%, var(--dbg));
+      font-family: var(--sans); font-size: calc(10.5px * var(--ts)); }
+    .sep-btn { display: flex; min-width: 32px; height: 100%; align-items: center; justify-content: center;
+      border-right: 2px solid var(--dbg); background: var(--dbg); color: inherit; }
+    .sep > span:last-child { padding: 0 1ch; }
+
+    .mark { display: inline-flex; flex: none; width: 16px; height: 16px; align-items: center; justify-content: center;
+      border: 1px solid var(--tour); background: var(--tour); color: var(--primary-ink);
+      font-family: var(--mono); font-size: calc(9px * var(--ts)); font-weight: 600; line-height: 1; font-variant-numeric: tabular-nums; }
+    .mark[data-ghost] { background: transparent; color: var(--tour); border-color: color-mix(in srgb, var(--tour) 45%, var(--line)); }
+
+    /* TOUR — the only untinted annotation */
+    .tour { display: grid; gap: 6px; border: 1px solid var(--line); border-left: 2px solid var(--tour);
+      background: var(--field); padding: 8px; color: var(--ink);
+      font-family: var(--sans); font-size: calc(10.5px * var(--ts)); line-height: 1.45; }
+    .tour-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px;
+      font-family: var(--mono); font-size: calc(10px * var(--ts)); }
+    .tour-id { display: flex; min-width: 0; align-items: center; gap: 7px; }
+    .tour-loc { color: var(--tour); font-weight: 600; }
+    .tour-sym { color: var(--muted); }
+    .tour-prog { flex: none; color: var(--muted); font-size: calc(9px * var(--ts)); font-variant-numeric: tabular-nums; }
+    .tour-copy { margin: 0; max-width: 76ch; }
+    .acts { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+    .acts .cbtn[data-lead] { border-color: color-mix(in srgb, var(--tour) 55%, var(--line)); color: var(--tour); }
+    .acts .cbtn[data-lead]:hover { border-color: var(--tour); background: color-mix(in srgb, var(--tour) 10%, var(--field)); color: var(--tour); }
+    .tmark { display: flex; width: 100%; align-items: center; gap: 7px;
+      border: 1px dashed color-mix(in srgb, var(--tour) 30%, var(--line)); background: transparent;
+      padding: 4px 8px; color: var(--muted); font-family: var(--mono); font-size: calc(9.5px * var(--ts)); text-align: left; }
+    .tmark:hover { border-color: var(--tour); color: var(--ink); }
+    .tmark .go { flex: none; color: var(--tour); }
+
+    /* FINDING — styles.css:2041 */
+    .finding { display: grid; gap: 6px; border: 1px solid var(--line);
+      background: color-mix(in srgb, var(--primary) 5%, var(--field)); padding: 8px; color: var(--ink); }
+    .f-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px;
+      font-family: var(--mono); font-size: calc(10px * var(--ts)); }
+    .f-title { color: var(--primary-strong); font-weight: 600; min-width: 0; }
+    .f-state { flex: none; color: var(--ink); font-size: calc(9px * var(--ts)); font-variant-numeric: tabular-nums; }
+    .f-copy { margin: 0; font-family: var(--sans); font-size: calc(10.5px * var(--ts)); line-height: 1.45; }
+    .f-meta { margin: 0; color: var(--muted); font-family: var(--mono); font-size: calc(9.5px * var(--ts)); line-height: 1.45; }
+    .f-meta span { color: var(--ink); }
+
+    /* DRAFT — theme.ts:89 */
+    .draft { border: 1px solid color-mix(in srgb, var(--violet) 48%, var(--line));
+      background: color-mix(in srgb, var(--violet) 6%, var(--field)); }
+    .d-head { display: flex; align-items: center; justify-content: space-between; gap: 8px;
+      border-bottom: 1px solid color-mix(in srgb, var(--violet) 28%, var(--line));
+      background: color-mix(in srgb, var(--violet) 10%, var(--field)); padding: 6px 8px;
+      color: var(--muted); font-family: var(--mono); font-size: calc(9.5px * var(--ts)); }
+    .d-state { color: var(--violet); font-weight: 600; }
+    .d-body { padding: 8px; }
+    .d-body p { margin: 0; max-width: 76ch; font-family: var(--sans); font-size: calc(11px * var(--ts)); line-height: 1.5; }
+    .d-acts { display: flex; gap: 6px; border-top: 1px solid var(--line); padding: 7px 8px; }
+
+    /* THREAD — styles.css:1926 */
+    .thread { border: 1px solid color-mix(in srgb, var(--primary) 55%, var(--line));
+      background: color-mix(in srgb, var(--primary) 7%, var(--field)); }
+    .t-head { display: flex; align-items: center; justify-content: space-between; gap: 8px;
+      border-bottom: 1px solid var(--line); background: color-mix(in srgb, var(--primary) 11%, var(--field));
+      padding: 6px 8px; color: var(--muted); font-family: var(--mono); font-size: calc(9.5px * var(--ts)); }
+    .t-state { color: var(--primary-strong); font-weight: 600; }
+    .t-c { border-bottom: 1px solid var(--line); padding: 8px; }
+    .t-meta { display: flex; justify-content: space-between; gap: 8px; margin: 0 0 4px;
+      color: var(--muted); font-family: var(--mono); font-size: calc(9.5px * var(--ts)); }
+    .t-meta b { color: var(--primary-strong); font-weight: 400; }
+    .t-c p { margin: 0; font-family: var(--sans); font-size: calc(11px * var(--ts)); line-height: 1.5; }
+    .t-acts { display: flex; gap: 6px; padding: 7px 8px; }
+  </style>
+</helmet>
+
+<div class="shell" data-theme="{{theme}}" data-hue="{{hue}}" style="display: flex; width: 980px; height: 920px; flex-direction: column; border: 1px solid var(--line); background: var(--canvas); overflow: hidden;">
+
+  <div class="legend">
+    <h1>Four annotation types, one file</h1>
+    <p>Every existing annotation carries a tinted fill. The tour is the only one that does not — it sits on flat <code style="font-family: var(--mono); color: var(--ink);">--field</code> with a 2px left rule and a numbered square. That is the distinction you read before you read any words: <b style="color: var(--ink); font-weight: 500;">tours are chrome, findings are state.</b></p>
+    <div class="swatches">
+      <span class="sw" data-k="tour"><i></i><b>tour step</b> &mdash; no tint &middot; 2px rule</span>
+      <span class="sw" data-k="finding"><i></i><b>Neon finding</b> &mdash; primary 5%</span>
+      <span class="sw" data-k="thread"><i></i><b>review thread</b> &mdash; primary 7%</span>
+      <span class="sw" data-k="draft"><i></i><b>local draft</b> &mdash; violet 6%</span>
+      <span class="sw" data-k="stale"><i></i><b>stale draft</b> &mdash; accent 10%</span>
+    </div>
+  </div>
+
+  <div class="patch">
+
+    <div class="dl" data-t="add"><span class="dn">50</span><span class="dc">export function createPrReviewerRoute(deps: RouteDeps) {</span></div>
+    <div class="dl" data-t="add"><span class="dn">51</span><span class="dc">  return async (c: Context, next: Next) =&gt; {</span></div>
+    <div class="dl" data-t="add"><span class="dn">52</span><span class="dc">    const { reviewId, headSha } = parsePrReviewerConversationId(</span></div>
+    <div class="dl" data-t="add"><span class="dn">53</span><span class="dc">      c.req.param('conversationId'),</span></div>
+    <div class="dl" data-t="add"><span class="dn">54</span><span class="dc">    );</span></div>
+    <div class="dl" data-t="add"><span class="dn">55</span><span class="dc">    if (!headSha) return c.json({ error: 'revision required' }, 400);</span></div>
+
+    <!-- TOUR STEP, INACTIVE — same file, further up -->
+    <div class="arow">
+      <button class="tmark" type="button">
+        <span class="mark" data-ghost>4</span>
+        <span class="who">L50&ndash;L55 &middot; createPrReviewerRoute</span>
+        <span style="flex: 1 1 auto;"></span>
+        <span class="go">jump to step 4 &rsaquo;</span>
+      </button>
+    </div>
+
+    <div class="dl"><span class="dn">56</span><span class="dc">    return next();</span></div>
+    <div class="sep"><span class="sep-btn">&#8597;</span><span>185 unmodified lines</span></div>
+
+    <div class="dl"><span class="dn">244</span><span class="dc">  const tools = [...workspaceTools];</span></div>
+    <div class="dl"><span class="dn">245</span><span class="dc">  if (conversation.headSha) {</span></div>
+    <div class="dl" data-t="add"><span class="dn">246</span><span class="dc">    tools.push(</span></div>
+    <div class="dl" data-t="add"><span class="dn">247</span><span class="dc">      createPrReviewerReReviewTool({</span></div>
+    <div class="dl" data-t="add"><span class="dn">248</span><span class="dc">        headSha: conversation.headSha,</span></div>
+    <div class="dl" data-t="add"><span class="dn">249</span><span class="dc">        reviewId: conversation.reviewId,</span></div>
+    <div class="dl" data-t="add"><span class="dn">250</span><span class="dc">      }),</span></div>
+    <div class="dl" data-t="add"><span class="dn">251</span><span class="dc">    );</span></div>
+
+    <!-- 1. TOUR STEP, ACTIVE -->
+    <div class="arow">
+      <article class="tour">
+        <div class="tour-head">
+          <span class="tour-id">
+            <span class="mark">2</span>
+            <span class="tour-loc">L246&ndash;L251 <span class="tour-sym">&middot; tool mounting</span></span>
+          </span>
+          <span class="tour-prog">step 2 of 4</span>
+        </div>
+        <p class="tour-copy">Tools mount only when <code style="font-family: var(--mono);">conversation.headSha</code> exists, and the factories are handed the binding right here. The model never supplies either half of it.</p>
+        <div class="acts">
+          <button class="cbtn" data-lead type="button">&lsaquo; Previous <span class="kbd">[</span></button>
+          <button class="cbtn" data-lead type="button">Next <span class="kbd">]</span> &rsaquo;</button>
+          <button class="cbtn" type="button">Start over</button>
+          <button class="cbtn" type="button">Ask about this step</button>
+          <span style="flex: 1 1 auto;"></span>
+          <button class="cbtn" type="button">Close tour</button>
+        </div>
+      </article>
+    </div>
+
+    <div class="dl"><span class="dn">252</span><span class="dc">    tools.push(...createPrReviewerDraftTools(binding));</span></div>
+    <div class="dl"><span class="dn">253</span><span class="dc">  }</span></div>
+
+    <!-- 3. NEON FINDING -->
+    <div class="arow">
+      <article class="finding">
+        <div class="f-head">
+          <span class="f-title">Missing headSha mounts no write tools, silently</span>
+          <span class="f-state">major &middot; active, high confidence</span>
+        </div>
+        <p class="f-copy">The guard at L245 has no else branch. A conversation that reaches here without a head SHA gets a reviewer with zero write tools and no diagnostic &mdash; it simply answers questions and never mentions that it cannot act.</p>
+        <p class="f-meta"><span>Suggested action:</span> log, or surface an unavailability reason in the review context signal.</p>
+        <p class="f-meta">Neon &middot; role reviewer &middot; model claude-opus-5 &middot; run 4471 &middot; created 2026-08-25 22:58Z</p>
+        <div class="acts">
+          <button class="cbtn" type="button">Add to local draft</button>
+          <button class="cbtn" type="button">Dismiss locally</button>
+        </div>
+      </article>
+    </div>
+
+    <div class="dl"><span class="dn">254</span><span class="dc">  return tools;</span></div>
+
+    <!-- 4. LOCAL DRAFT -->
+    <div class="arow">
+      <div class="draft">
+        <div class="d-head">
+          <span class="d-state">Draft</span>
+          <span>Local &middot; RIGHT L254</span>
+        </div>
+        <div class="d-body"><p>Worth a comment in the PR: this returns the array by reference, so a caller could mutate the mounted tool set.</p></div>
+        <div class="d-acts">
+          <button class="cbtn" type="button">Edit</button>
+          <button class="cbtn" type="button">Delete</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="dl"><span class="dn">255</span><span class="dc">}</span></div>
+
+    <!-- 5. REVIEW THREAD -->
+    <div class="arow">
+      <div class="thread">
+        <div class="t-head">
+          <span class="t-state">Open review thread</span>
+          <span>2 comments</span>
+        </div>
+        <div class="t-c">
+          <p class="t-meta"><b>@pandemicsyn</b><span>2026-08-25 19:04</span></p>
+          <p>Do we want the guard here or at the route? Feels like both, honestly.</p>
+        </div>
+        <div class="t-acts">
+          <button class="cbtn" type="button">Reply</button>
+          <button class="cbtn" type="button">Resolve</button>
+          <button class="cbtn" type="button">Open on GitHub</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="dl"><span class="dn">256</span><span class="dc"></span></div>
+    <div class="dl"><span class="dn">257</span><span class="dc">// deferred workspace tools are appended by the caller</span></div>
+
+  </div>
+</div>
+</x-dc>
+<script data-dc-script data-props='{
+  "theme": {"editor": "enum", "options": ["dark", "light"], "default": "dark", "section": "Board"},
+  "hue": {"editor": "enum", "options": ["green", "violet", "none"], "default": "green", "section": "Board"}
+}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {
+      theme: this.props.theme ?? 'dark',
+      hue: this.props.hue ?? 'green',
+    };
+  }
+}
+</script>
+</body>
+</html>

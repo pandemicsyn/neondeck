@@ -10,6 +10,19 @@ Tours are not review findings. They have a distinct visual identity, interaction
 
 There is exactly one current tour for a PR reviewer conversation and exact PR revision. Publishing a new tour atomically replaces the previous tour.
 
+## Design
+
+The interaction and visual design is settled. Sources and rationale:
+
+- `guided-tours/mockups/` — six interactive boards and the canvas manifest. Start there; they are clickable and answer most layout questions faster than prose can.
+- `PR_REVIEW_GUIDED_TOURS_HANDOFF.md` — the implementation handoff: resolved token values, exact CSS, the file-by-file map, and the traps.
+
+Three decisions from that pass changed this plan and are reflected below:
+
+1. **Tour is a seventh traversal kind**, not a new navigation model. `PrReviewNavigationBar.tsx` already has `file | hunk | review-thread | local-draft | finding | attention` on `[` / `]`. Adding `tour` gives Previous, Next, keyboard, focus and the "N of M" readout for free, and satisfies invariant 6 by construction. The `/next` and `/previous` commands this plan originally proposed are redundant and have been dropped.
+2. **Tours are distinguished by form before colour.** Every shipped annotation carries a tinted fill; the tour is the only untinted one. See Visual Identity.
+3. **A finding can publish a tour.** This was not in the original plan and is the strongest argument for the feature. See Findings As Tour Sources.
+
 ## Product Experience
 
 The reviewer sidebar should continue to accept ordinary natural-language questions. When the user asks to be shown or walked through a code path, the reviewer investigates the exact reviewed revision and publishes a tour.
@@ -52,21 +65,46 @@ The active annotation should offer deterministic controls:
 
 Selecting Next or Previous must not invoke the model. It should navigate the existing review surface to the target file and exact line range, select the tour annotation, and update progress locally.
 
+Previous and Next are the existing review cursor, not new machinery: publishing a tour switches the Traverse control to `tour`, and from then on `[` and `]` walk the steps. The buttons on the annotation and in the chat card are additional affordances for the same cursor, so all three stay in sync without any extra state.
+
 “Ask about this step” should send or prefill an unambiguous follow-up containing the tour title, step number, symbol, file, and line range.
+
+### Walk and read
+
+Stepping is not the only useful way to consume a tour, and for short tours it is the worse one — the reviewer presses Next three times to read four paragraphs.
+
+The diff column should offer a `walk | read` toggle:
+
+- **walk** shows the tour's file with the active step expanded and any other step in the same file collapsed to a marker line. This is the mode the rest of this plan describes.
+- **read** concatenates only the anchored ranges, **in tour order**, each with its explanation and a link back into the diff, and names the jump between them ("back to `src/agents/pr-reviewer.ts`, 196 lines above the mount in step 2").
+
+Read mode is the one view a diff cannot otherwise produce: a diff is always in repository order, so a four-step trace across three files reads as four unrelated hunks. It needs no data the tour artifact does not already carry — the step list is enough.
+
+Default to read below a small step count (start at six) and keep the toggle. The mode is presentation state for one surface, like activation and closure; it is not part of the durable artifact.
 
 ## Visual Identity
 
 Tours must be visually distinct from Neon findings, GitHub threads, and local draft comments.
 
-Recommended visual language:
+Distinguish by **form first**. Every annotation type that ships today carries a tinted fill — Neon finding `primary 5%`, review thread `primary 7%`, local draft `violet 6%`, stale draft `accent 10%` — and all four read as *state*: something is true about this line. The tour takes the one slot nobody has claimed and uses **no tint at all**: flat `--field`, a 2px left rule, a numbered square marker. It reads as *chrome* — something is being shown to you — before a word of it has been read. That is a stronger separation than a fifth hue, and it avoids adding a fifth entry to a semantic ramp already at four.
 
-- numbered route markers rather than severity badges
-- a tour-only accent color, such as electric cyan or violet
-- visible sequence language such as `1 → 2 → 3`
-- “Tour 2 of 4” progress rather than confidence or lifecycle metadata
-- expanded content for the active step and compact markers for inactive steps
-- Previous, Next, Start over, Ask, and Close controls
+The settled visual language:
+
+- an untinted `--field` card with `border-left: 2px solid var(--tour)`, against the tinted fills every other annotation uses
+- square numbered markers (16×16, 1px border, mono, tabular-nums), filled for the active step and outlined for inactive ones — square because the app has exactly two rounded elements and both are 6px status dots
+- inactive steps collapse to a single dashed marker line, not a card
+- a vertical spine connecting the numbered markers in the chat card and the Review-tab panel, which is where `1 → 2 → 3 → 4` is actually legible
+- "step 2 of 4" progress in tabular-nums, never confidence or lifecycle metadata
+- Previous, Next, Start over, Ask about this step, Close tour
 - no severity, confidence, suggested fix, promote, or finding-dismiss controls
+
+### The tour accent
+
+Every hue in the diff gutter is already spoken for: cyan `#00b7c7` is `--primary` and owns the base annotation fill, findings and threads; violet `#b59cff` is local draft comments, the exact thing a tour must not be mistaken for; pink `#ff4fb8` is stale and error; amber `#f0b95b` is warning. Red is reserved for future use.
+
+Add one token, `--tour`, at a spring green — `#5cf28f` dark, `#0d7a42` light. The largest unclaimed gap on the wheel is amber 82° to cyan 208°, and ~150° sits in the middle of it, clear of red.
+
+The risk worth naming: green reads as "approved" in a review tool. Two things blunt it — there is no success token in `styles.css` today, so pass states already use `--primary`, and the hue never appears as a card fill, only on markers, the spine and the left rule. If green is later wanted for a `--good` token, `--tour` can move to violet without redrawing anything: the form-level distinction carries the identity on its own, which is why it was built that way. Each mockup board carries a `hue` tweak for exactly this comparison.
 
 Tours should be addressable through the diff viewer’s annotation system, but they should use a separate annotation type such as `ReviewGuideAnnotation` rather than overloading `NeonReviewFinding`.
 
@@ -77,7 +115,7 @@ Tours should be addressable through the diff viewer’s annotation system, but t
 3. Publishing is replacement-only. The agent cannot append or partially edit a tour.
 4. Replacement is atomic: the UI never displays steps from two tours together.
 5. Every step must resolve to a visible file and line anchor in the mounted review source.
-6. Tour navigation is deterministic application behavior, not a model tool call.
+6. Tour navigation is deterministic application behavior, not a model tool call. It is the existing review cursor under a new traversal kind, so there is one cursor and every affordance drives it.
 7. Tours never create or mutate GitHub comments or local review drafts.
 8. A tour from an older PR revision is stale and must not silently reanchor.
 9. Repository content and diff text remain untrusted data, never agent instructions.
@@ -118,7 +156,8 @@ The initial reviewer catalog should stay small:
 - `/help` lists reviewer-scoped commands locally.
 - `/re-review` exposes the existing exact-revision re-review capability.
 - `/show-me <flow, behavior, or area>` requests a guided explanation; `/tour` is its alias.
-- `/next`, `/previous`, `/restart-tour`, and `/close-tour` may be added with the tour UI as deterministic surface-action equivalents of the visible controls.
+
+Do not add `/next`, `/previous`, `/restart-tour`, or `/close-tour`. Navigation is the review cursor: `[` and `]` already move it, the Traverse control already selects what it walks, and the visible controls on the annotation and the chat card already drive it. Slash commands for the same thing would be a fourth spelling of one action, and typing into a composer is a worse affordance than a keystroke for something done repeatedly.
 
 `/show-me` requires repository investigation and therefore dispatches through the existing revision-bound `pr-reviewer` conversation. It must not be added to the global `/api/commands/run` registry. The reviewer agent receives the command as conversational intent and performs the product mutation only through `neondeck_publish_pr_tour`.
 
@@ -175,6 +214,21 @@ The tool should return a structured result suitable for a custom chat renderer:
 The agent does not need model-facing tools for append, edit-step, next, previous, start-over, or close. If the user asks for a different scope or more detail, including through another `/show-me` or `/tour` invocation, the agent publishes one complete coherent replacement.
 
 An optional read-only `neondeck_read_pr_tour` tool may be added if later follow-ups need to recover tour context after conversation compaction. It should read only the tour bound to the current reviewer conversation and revision.
+
+## Findings As Tour Sources
+
+A cross-file Neon finding today has one anchor and prose for everything else. The explanation degenerates into a list of `file:line` references attached to a line that is only one of them — correct, nearly unreadable, and it leaves the reviewer to hand-navigate to the other sites to check it.
+
+Give the finding annotation one more verb: **Show me why**. It asks the reviewer agent to publish a tour whose steps are the finding's own evidence, in the order that makes the claim. The finding's copy then shrinks to the claim itself.
+
+Constraints, all of which fall out of the invariants already stated:
+
+- The published tour is an ordinary tour. It carries no severity or confidence, cannot be promoted, and replaces whatever tour was current — a second finding's Show me why takes the same single slot, so nothing accumulates.
+- The finding's own lifecycle is untouched. Publishing a tour is not applying, dismissing, or promoting it.
+- Show me why takes the leading position in the action row but stays a plain chrome button. It is navigation, not a verdict, and must not outrank `Add to local draft`.
+- The tour card carries a **Back to the finding** control, so the reviewer is never stranded inside the explanation.
+
+This is deliberately listed after the core work — it depends on the whole tour pipeline — but it is the reason to build tours rather than a decoration on top of them. It makes tours load-bearing for review quality, which is an argument for pulling the phases in, not for deferring them.
 
 ## Agent Behavior
 
@@ -287,6 +341,19 @@ On success, the chat should:
 
 On reload, the PR workbench should load the current tour for its reviewer conversation and exact revision. Closing a tour should hide its annotations and active card presentation without invoking the model. The chat card may offer “Reopen tour.” Publishing another tour replaces the hidden or visible current tour alike.
 
+The card has four states, and the middle two are the ones this plan previously left open:
+
+1. **Investigating** — the agent is tracing. The card shows the intended title and a skeleton spine. **Nothing is installed in the diff until the whole tour validates**; a half-anchored tour is never shown.
+2. **Published** — title, summary, and the numbered spine, with the active step marked. Selecting a step here and pressing `]` in the diff are the same action.
+3. **Replaced** — a second `/show-me` collapses the superseded card **to a strip in place** rather than deleting it. The transcript stays readable while only one tour is live; the strip's annotations are already gone from the diff and its generation is dead. Replacement is correct either way, but this is what makes it *legible*.
+4. **Closed** — the card collapses to a strip carrying Reopen. Closing hides annotations and body without deleting the tour or calling the model.
+
+### The inspector
+
+The inspector has two tabs (`PrReviewFindingsSidebar.tsx`). Putting the spine only in **Ask reviewer** leaves a reviewer who switches to **Review** to check findings or drafts mid-tour with no map.
+
+The tour therefore also renders as a `pr-review-inspector-section` in the Review tab — same chrome, same heading, same `Badge` as every other panel, with the tour signal limited to the 2px left rule and the markers. It sits directly under **Review focus** and above **Neon findings**, because while a tour is open it *is* the navigation context, and it disappears entirely when no tour is current, so it costs nothing the rest of the time.
+
 ## Events
 
 Add a tour-specific event contract rather than disguising tour changes as finding changes:
@@ -374,18 +441,37 @@ When the PR head revision changes:
 
 ### Phase 3: Review surface and navigation
 
+- Add `tour` as a seventh `traversalKind`, and switch the Traverse control to it when a tour is published.
 - Extend navigation targets with optional line anchors and annotation ids.
 - Add revision-aware tour activation and acknowledgement.
 - Add tour-specific events and client subscriptions.
 - Verify multi-window behavior: the durable tour is shared, while activation affects only the chosen surface.
+- Verify there is exactly one cursor: `[` / `]`, the annotation buttons, the chat spine and the inspector panel all move it, and all four stay in sync.
 
 ### Phase 4: Diff and chat UI
 
-- Add the distinct tour annotation renderer and route-marker styling.
-- Add the custom chat tour card.
+- Add the `--tour` token to both themes in `styles.css`, and to the diff viewer's shadow CSS.
+- Add the distinct tour annotation renderer, the untinted card, and the square marker styling.
+- Add the collapsed inactive-step marker line.
+- Add the custom chat tour card with its four states, including the in-place superseded strip.
+- Add the tour panel to the Review tab of the inspector.
 - Implement Previous, Next, Start over, Ask about this step, Close, and Reopen.
 - Load the current tour when reopening the exact PR revision.
 - Ensure replacement atomically removes old annotations and resets progress to step one.
+
+### Phase 4b: Reading view
+
+- Add the `walk | read` toggle to the diff column, defaulting to read below six steps.
+- Render the stitched view: anchored ranges only, in tour order, each with its explanation, an `Open in diff` return and a named jump from the previous step.
+- Treat the mode as per-surface presentation state, never part of the durable artifact.
+- Test it against a one-step tour, a tour whose steps are all in one file, and a tour with a step whose range is longer than the viewport.
+
+### Phase 4c: Findings as tour sources
+
+- Add `Show me why` to the Neon finding annotation and the findings panel, in the leading position, styled as ordinary chrome.
+- Route it through the reviewer conversation as a guided-explanation intent carrying the finding's id, title, file and anchor.
+- Add `Back to the finding` to a tour published from a finding.
+- Verify the finding's lifecycle is unchanged by publishing, and that a second finding's `Show me why` replaces rather than accumulates.
 
 ### Phase 5: Evaluation and polish
 
@@ -401,6 +487,12 @@ When the PR head revision changes:
 - The sidebar provides accessible reviewer-scoped slash-command discovery without exposing unrelated main-chat commands.
 - `/show-me where the migration is applied` requests a guided explanation, and `/tour` behaves as its alias.
 - An unknown reviewer slash command is rejected contextually rather than sent to the model.
+- Publishing a tour switches Traverse to `tour`, and `[` / `]` then walk the steps with the status line reading `Tour · 2 of 4 · <title>`.
+- The annotation controls, the chat spine, the inspector panel and the keyboard all drive one cursor and stay in sync.
+- A tour annotation is the only annotation in the diff with no tinted fill.
+- Read mode shows the anchored ranges in tour order, and names each jump between them.
+- A cross-file finding offers `Show me why`, and the tour it publishes carries no severity and cannot be promoted.
+- A tour published from a finding offers a return to that finding.
 - Neon can publish an ordered, exact-revision, line-anchored tour across multiple changed files.
 - The first step opens automatically in the initiating workbench.
 - Previous, Next, and Start over navigate without invoking the model.

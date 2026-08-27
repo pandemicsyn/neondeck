@@ -1,0 +1,701 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+  <style>
+    body { margin: 0; background: #05060a; }
+    .shell, .shell * { box-sizing: border-box; }
+    .shell {
+      --ts: 1.12; --ds: 1;
+      --sans: "IBM Plex Sans", system-ui, -apple-system, sans-serif;
+      --mono: "IBM Plex Mono", "SFMono-Regular", Consolas, monospace;
+      --disp: "Chakra Petch", ui-sans-serif, system-ui, sans-serif;
+      --canvas: #0a0b10; --panel: #0a0b10; --field: #070810; --soft: rgba(255,255,255,0.04);
+      --line: rgba(255,255,255,0.07); --chrome: #070810; --faint: #849aa2;
+      --ink: #d7f7ff; --muted: #91a8b0;
+      --primary: #00b7c7; --primary-strong: #69e6ff; --primary-ink: #070810;
+      --accent: #ff4fb8; --warning: #f0b95b; --violet: #b59cff;
+      --dbg: #0a0a0a; --dfg: #fafafa; --dadd: #5ecc71;
+      font: 400 calc(11px * var(--ts))/1.5 var(--sans);
+      color: var(--ink);
+    }
+    .shell[data-theme="light"] {
+      --canvas: #edf5f8; --panel: #edf5f8; --field: #dbeaef; --soft: rgba(20,45,60,0.05);
+      --line: rgba(20,45,60,0.13); --chrome: #dbeaef; --faint: #5c6870;
+      --ink: #19232e; --muted: #56646d;
+      --primary: #006f7f; --primary-strong: #005b69; --primary-ink: #edf5f8;
+      --accent: #b31170; --warning: #8a5b00; --violet: #6034bd;
+      --dbg: #ffffff; --dfg: #1c2430; --dadd: #0dbe4e;
+    }
+    .shell[data-hue="green"]  { --tour: #5cf28f; }
+    .shell[data-hue="violet"] { --tour: #b59cff; }
+    .shell[data-hue="none"]   { --tour: #d7f7ff; }
+    .shell[data-theme="light"][data-hue="green"]  { --tour: #0d7a42; }
+    .shell[data-theme="light"][data-hue="violet"] { --tour: #6034bd; }
+    .shell[data-theme="light"][data-hue="none"]   { --tour: #19232e; }
+
+    .mono { font-family: var(--mono); }
+    .shell button { font: inherit; cursor: pointer; border-radius: 0; }
+    .shell button:disabled { cursor: not-allowed; opacity: 0.45; }
+
+    /* ---- chrome buttons (styles.css:1757) ---- */
+    .cbtn {
+      display: inline-flex; min-height: calc(24px * var(--ds));
+      align-items: center; justify-content: center; gap: 4px;
+      border: 1px solid var(--line); background: var(--field); padding: 4px 6px;
+      color: var(--ink); font-family: var(--mono); font-size: calc(10px * var(--ts));
+      line-height: 1; white-space: nowrap;
+      transition: background-color 160ms ease, border-color 160ms ease, color 160ms ease;
+    }
+    .cbtn:hover:not(:disabled) {
+      border-color: var(--primary); background: color-mix(in srgb, var(--primary) 8%, var(--field));
+      color: var(--primary-strong);
+    }
+    .badge {
+      display: inline-flex; align-items: center; border: 1px solid var(--line);
+      background: var(--soft); padding: 2px 6px; color: var(--muted);
+      font-family: var(--mono); font-size: calc(10px * var(--ts)); line-height: 1;
+    }
+    .badge[data-tone="tour"] { border-color: color-mix(in srgb, var(--tour) 55%, var(--line)); color: var(--tour); }
+    .kbd {
+      display: inline-block; border: 1px solid var(--line); background: var(--panel);
+      padding: 1px 3px; color: var(--primary-strong); font-size: 0.95em; font-family: var(--mono);
+    }
+
+    /* ---- header ---- */
+    .prh {
+      display: flex; min-height: 58px; align-items: center; justify-content: space-between; gap: 12px;
+      border-bottom: 1px solid var(--line);
+      background: color-mix(in srgb, var(--chrome) 90%, transparent); padding: 8px 10px;
+    }
+    .prh-kick { margin: 0; font-family: var(--mono); font-size: calc(10px * var(--ts)); letter-spacing: 0.08em; color: var(--primary); }
+    .prh-title { margin: 2px 0 0; font-size: calc(12px * var(--ts)); font-weight: 600; color: var(--ink); }
+
+    /* ---- navigation bar ---- */
+    .prn {
+      display: flex; min-height: 40px; align-items: center; gap: 8px;
+      border-bottom: 1px solid var(--line);
+      background: color-mix(in srgb, var(--chrome) 82%, var(--panel));
+      padding: 6px 10px; color: var(--muted);
+      font-family: var(--mono); font-size: calc(10px * var(--ts));
+    }
+    .prn label { color: var(--primary-strong); }
+    .prn select {
+      min-height: calc(26px * var(--ds)); border: 1px solid var(--line); border-radius: 0;
+      background: var(--field); padding: 4px 7px; color: var(--ink);
+      font-family: var(--mono); font-size: inherit; line-height: 1;
+    }
+    .prn select[data-tour] { border-color: color-mix(in srgb, var(--tour) 60%, var(--line)); color: var(--tour); }
+    .prn-status { flex: 1 1 auto; margin: 0; min-width: 0; overflow: hidden; text-overflow: ellipsis;
+      white-space: nowrap; color: var(--ink); font-variant-numeric: tabular-nums; }
+    .prn-status b { color: var(--tour); font-weight: 600; }
+
+    /* ---- three-pane grid ---- */
+    .grid {
+      display: grid; flex: 1 1 auto; min-height: 0;
+      grid-template-columns: 280px minmax(0, 1fr) 380px;
+      border-bottom: 1px solid var(--line);
+    }
+    .tree { min-height: 0; overflow: hidden; border-right: 1px solid var(--line); background: var(--field); }
+    .col { display: flex; min-width: 0; min-height: 0; flex-direction: column; }
+    .insp { min-height: 0; display: flex; flex-direction: column; border-left: 1px solid var(--line); background: var(--field); }
+
+    /* ---- file tree ---- */
+    .tree-head { border-bottom: 1px solid var(--line); padding: 6px 8px; font-family: var(--mono); font-size: calc(10px * var(--ts)); color: var(--muted); }
+    .tree-head .row { display: flex; justify-content: space-between; }
+    .tree-legend { margin-top: 4px; font-size: calc(9px * var(--ts)); color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .tree-filter { width: 100%; margin-top: 6px; border: 1px solid var(--line); border-radius: 0;
+      background: color-mix(in srgb, var(--primary) 7%, var(--field)); padding: 4px 6px; color: var(--ink);
+      font-family: var(--mono); font-size: calc(10px * var(--ts)); outline: none; }
+    .tnode {
+      display: flex; width: 100%; min-height: 24px; align-items: center; justify-content: space-between; gap: 6px;
+      border: 0; background: transparent; padding: 0 8px; color: var(--muted);
+      font-family: var(--mono); font-size: calc(10px * var(--ts)); text-align: left;
+    }
+    .tnode[data-on] { background: color-mix(in srgb, var(--primary) 18%, transparent); color: var(--ink); }
+    .tnode span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .tnode .deco { flex: none; color: var(--tour); font-size: calc(9px * var(--ts)); }
+
+    /* ---- diff pane ---- */
+    .dvh {
+      display: flex; min-height: 32px; align-items: center; justify-content: space-between; gap: 8px;
+      border-bottom: 1px solid var(--line); background: color-mix(in srgb, var(--chrome) 82%, transparent);
+      padding: 6px 8px; font-family: var(--mono);
+    }
+    .dvh-title { margin: 0; color: var(--primary); font-size: calc(10.5px * var(--ts)); }
+    .dvh-detail { margin: 2px 0 0; color: var(--muted); font-size: calc(10px * var(--ts)); }
+    .patch {
+      min-height: 0; flex: 1 1 auto; overflow: auto; background: var(--dbg);
+      font-family: var(--mono); font-size: calc(10.5px * var(--ts)); line-height: 1.55;
+      padding-top: 8px;
+    }
+    .dl { display: grid; grid-template-columns: 7ch minmax(0, 1fr); }
+    .dn {
+      position: relative; padding: 0 1ch 0 2ch; text-align: right; user-select: none;
+      border-right: 2px solid var(--dbg);
+      color: color-mix(in lab, var(--dfg) 65%, var(--dbg));
+    }
+    .dn::before { content: ""; position: absolute; top: 0; left: 0; width: 4px; height: 100%; }
+    .dc { padding: 0 1ch; color: var(--dfg); white-space: pre-wrap; overflow-wrap: anywhere; }
+    .dl[data-t="add"] .dc { background: color-mix(in lab, var(--dbg) 80%, var(--dadd)); }
+    .dl[data-t="add"] .dn { background: color-mix(in lab, var(--dbg) 85%, var(--dadd)); }
+    .dl[data-t="add"] .dn::before { background: var(--dadd); }
+    .sep {
+      display: flex; height: 32px; align-items: center;
+      background: color-mix(in lab, var(--dbg) 85%, var(--dfg));
+      color: color-mix(in lab, var(--dfg) 65%, var(--dbg));
+      font-family: var(--sans); font-size: calc(10.5px * var(--ts));
+    }
+    .sep-btn { display: flex; min-width: 32px; height: 100%; align-items: center; justify-content: center;
+      border: 0; border-right: 2px solid var(--dbg); background: var(--dbg); color: inherit; }
+    .sep > span:last-child { padding: 0 1ch; }
+
+    /* ---- annotation row (matches [data-line-annotation] context bg) ---- */
+    .arow { background: color-mix(in lab, var(--dbg) 92.5%, var(--dfg)); padding: 4px 8px 6px 7ch; }
+
+    /* ================= TOUR ================= */
+    /* The one annotation with NO tint: findings are primary 5%, drafts violet 6%,
+       threads primary 7%. An untinted card reads as chrome, not as state. */
+    .tour {
+      display: grid; gap: 6px;
+      border: 1px solid var(--line); border-left: 2px solid var(--tour);
+      background: var(--field); padding: 8px; color: var(--ink);
+      font-family: var(--sans); font-size: calc(10.5px * var(--ts)); line-height: 1.45;
+    }
+    .tour-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px;
+      font-family: var(--mono); font-size: calc(10px * var(--ts)); }
+    .tour-id { display: flex; min-width: 0; align-items: center; gap: 7px; }
+    .mark {
+      display: inline-flex; flex: none; width: 16px; height: 16px; align-items: center; justify-content: center;
+      border: 1px solid var(--tour); background: var(--tour); color: var(--primary-ink);
+      font-family: var(--mono); font-size: calc(9px * var(--ts)); font-weight: 600; line-height: 1;
+      font-variant-numeric: tabular-nums;
+    }
+    .mark[data-ghost] { background: transparent; color: var(--tour);
+      border-color: color-mix(in srgb, var(--tour) 45%, var(--line)); }
+    .tour-loc { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--tour); font-weight: 600; }
+    .tour-sym { color: var(--muted); }
+    .tour-prog { flex: none; color: var(--muted); font-size: calc(9px * var(--ts)); font-variant-numeric: tabular-nums; }
+    .tour-copy { margin: 0; max-width: 76ch; }
+    .tour-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+    .tour-actions .cbtn { font-size: calc(9.5px * var(--ts)); }
+    .tour-actions .cbtn[data-lead] { border-color: color-mix(in srgb, var(--tour) 55%, var(--line)); color: var(--tour); }
+    .tour-actions .cbtn[data-lead]:hover:not(:disabled) {
+      border-color: var(--tour); background: color-mix(in srgb, var(--tour) 10%, var(--field)); color: var(--tour); }
+    .tour-actions .spacer { flex: 1 1 auto; }
+
+    /* inactive step: a single marker line, no card */
+    .tmark {
+      display: flex; width: 100%; align-items: center; gap: 7px;
+      border: 1px dashed color-mix(in srgb, var(--tour) 30%, var(--line));
+      background: transparent; padding: 4px 8px; color: var(--muted);
+      font-family: var(--mono); font-size: calc(9.5px * var(--ts)); text-align: left;
+      transition: border-color 160ms ease, color 160ms ease;
+    }
+    .tmark:hover { border-color: var(--tour); color: var(--ink); }
+    .tmark .who { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .tmark .go { flex: none; color: var(--tour); }
+
+    /* ---- inspector ---- */
+    .tabs { display: grid; grid-template-columns: 1fr 1fr; border-bottom: 1px solid var(--line); background: var(--chrome); }
+    .tab {
+      min-height: calc(30px * var(--ds)); border: 0; border-right: 1px solid var(--line);
+      background: transparent; color: var(--muted);
+      font-family: var(--mono); font-size: calc(10px * var(--ts)); letter-spacing: 0.04em; text-transform: uppercase;
+    }
+    .tab[data-on] { background: color-mix(in srgb, var(--primary) 10%, var(--field));
+      box-shadow: inset 0 -1px 0 var(--primary); color: var(--primary-strong); }
+    .chat { display: grid; grid-template-rows: minmax(0,1fr) auto; min-height: 0; flex: 1 1 auto; background: var(--panel); }
+    .timeline { min-height: 0; overflow: auto; padding: 8px; display: flex; flex-direction: column; gap: 8px; }
+    .msg-user {
+      margin-left: auto; max-width: 90%; border: 1px solid rgba(105,230,255,0.22);
+      background: rgba(105,230,255,0.12); padding: 8px 12px;
+      font-family: var(--mono); font-size: calc(10.5px * var(--ts)); color: var(--ink);
+    }
+    .msg-a { border: 1px solid rgba(255,255,255,0.08); border-left: 2px solid var(--primary);
+      background: rgba(255,255,255,0.04); padding: 9px 13px; }
+    .shell[data-theme="light"] .msg-user { border-color: rgba(0,147,168,0.34); background: rgba(0,147,168,0.12); }
+    .shell[data-theme="light"] .msg-a { border-color: rgba(20,45,60,0.14); background: rgba(20,45,60,0.05); border-left-color: var(--primary); }
+    .msg-role { margin: 0 0 6px; font-family: var(--mono); font-size: calc(10px * var(--ts)); font-weight: 600; color: var(--muted); }
+
+    /* the chat tour card — carries the spine */
+    .card { border: 1px solid var(--line); border-left: 2px solid var(--tour); background: var(--field); }
+    .card-head { display: flex; align-items: center; justify-content: space-between; gap: 8px;
+      border-bottom: 1px solid var(--line); padding: 6px 8px;
+      font-family: var(--mono); font-size: calc(9.5px * var(--ts)); }
+    .card-kick { color: var(--tour); font-weight: 600; letter-spacing: 0.08em; }
+    .card-prog { color: var(--muted); font-variant-numeric: tabular-nums; }
+    .card-body { padding: 8px; }
+    .card-title { margin: 0; font-size: calc(11px * var(--ts)); font-weight: 600; color: var(--ink); line-height: 1.35; }
+    .card-sum { margin: 4px 0 0; color: var(--muted); font-size: calc(10px * var(--ts)); line-height: 1.45; }
+    .spine { margin: 10px 0 0; padding: 0; list-style: none; }
+    .spine li { position: relative; display: flex; gap: 8px; padding: 0 0 10px 0; }
+    .spine li:last-child { padding-bottom: 0; }
+    .spine li::before {
+      content: ""; position: absolute; left: 8px; top: 17px; bottom: 1px; width: 1px;
+      background: color-mix(in srgb, var(--tour) 35%, var(--line));
+    }
+    .spine li:last-child::before { display: none; }
+    .sp-txt { display: block; min-width: 0; padding-top: 1px; }
+    .sp-sym { display: block; font-family: var(--mono); font-size: calc(10px * var(--ts)); color: var(--ink); }
+    .sp-file { display: block; margin-top: 1px; font-family: var(--mono); font-size: calc(9px * var(--ts)); color: var(--muted);
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .spine li[data-state="done"] .sp-sym { color: var(--muted); }
+    .spine li[data-state="todo"] .sp-sym { color: var(--muted); }
+    .spine li[data-state="now"] .sp-sym { color: var(--tour); font-weight: 600; }
+    .sp-btn { display: flex; flex: 1 1 auto; min-width: 0; align-items: flex-start; gap: 8px;
+      border: 0; background: none; padding: 0; text-align: left; color: inherit; font: inherit; }
+    .sp-btn:hover .sp-sym { color: var(--tour); }
+    .card-foot { display: flex; flex-wrap: wrap; gap: 6px; border-top: 1px solid var(--line); padding: 7px 8px; }
+    .card-foot .cbtn { font-size: calc(9.5px * var(--ts)); }
+    .strip { display: flex; align-items: center; justify-content: space-between; gap: 8px;
+      border: 1px solid var(--line); border-left: 2px solid color-mix(in srgb, var(--tour) 30%, var(--line));
+      background: var(--field); padding: 7px 8px; color: var(--muted);
+      font-family: var(--mono); font-size: calc(9.5px * var(--ts)); }
+    .strip s { text-decoration: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+    /* ---- composer ---- */
+    .form { display: grid; gap: 6px; border-top: 1px solid var(--line); background: var(--chrome); padding: 8px; }
+    .form textarea {
+      width: 100%; min-height: 64px; resize: vertical; border: 1px solid var(--line); border-radius: 0;
+      background: var(--field); padding: 7px; color: var(--ink);
+      font-family: var(--sans); font-size: calc(10.5px * var(--ts)); line-height: 1.45; outline: none;
+    }
+    .form-actions { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+    .form-hint { color: var(--muted); font-family: var(--mono); font-size: calc(9.5px * var(--ts)); line-height: 1.35; }
+    .ask {
+      min-height: calc(25px * var(--ds)); border: 1px solid var(--primary);
+      background: color-mix(in srgb, var(--primary) 8%, var(--field)); padding: 4px 9px;
+      color: var(--primary-strong); font-family: var(--mono); font-size: calc(10px * var(--ts));
+    }
+
+    /* ---- submit bar ---- */
+    .bar {
+      display: grid; grid-template-columns: minmax(0,1fr) minmax(160px,1.4fr) auto; align-items: center; gap: 8px;
+      background: color-mix(in srgb, var(--chrome) 92%, transparent); padding: 8px;
+    }
+    .bar textarea {
+      width: 100%; min-height: 30px; height: 30px; resize: none; border: 1px solid var(--line); border-radius: 0;
+      background: var(--field); padding: 6px; color: var(--ink);
+      font-family: var(--sans); font-size: calc(11px * var(--ts)); line-height: 1.4; outline: none;
+    }
+  </style>
+</helmet>
+
+<div class="shell" data-theme="{{theme}}" data-hue="{{hue}}" style="display: flex; width: 1440px; height: 920px; flex-direction: column; background: var(--canvas); overflow: hidden;">
+
+  <!-- ============ HEADER ============ -->
+  <header class="prh">
+    <div style="min-width: 0;">
+      <p class="prh-kick">PR REVIEW &middot; pandemicsyn/neondeck#352</p>
+      <p class="prh-title">Plan PR review guided tours</p>
+    </div>
+    <div style="display: flex; flex-shrink: 0; flex-wrap: wrap; justify-content: flex-end; gap: 4px;">
+      <span class="badge">@pandemicsyn</span>
+      <span class="badge" style="border-color: var(--primary); color: var(--primary);">checks pass</span>
+      <span class="badge">main</span>
+      <span class="badge">0/3 threads</span>
+      <span class="badge">+426 -0</span>
+      <span class="badge">2 Neon findings</span>
+      <button class="cbtn" type="button">re-review</button>
+      <button class="cbtn" type="button">GitHub</button>
+    </div>
+  </header>
+
+  <!-- ============ NAV BAR — tour is a seventh traversal kind ============ -->
+  <nav class="prn">
+    <span style="display: flex; align-items: center; gap: 6px;">
+      <label for="tk">Traverse</label>
+      <select id="tk" data-tour>
+        <option>tour</option>
+        <option>file</option>
+        <option>hunk</option>
+        <option>review-thread</option>
+        <option>local-draft</option>
+        <option>finding</option>
+        <option>attention</option>
+      </select>
+    </span>
+    <span style="display: flex; align-items: center; gap: 6px;">
+      <button class="cbtn" type="button" disabled="{{atFirst}}" onClick="{{prev}}"><span aria-hidden="true">&larr;</span> Previous <span class="kbd">[</span></button>
+      <button class="cbtn" type="button" disabled="{{atLast}}" onClick="{{next}}">Next <span class="kbd">]</span> <span aria-hidden="true">&rarr;</span></button>
+    </span>
+    <p class="prn-status">{{statusText}}</p>
+    <button class="cbtn" type="button" style="margin-inline-start: auto;">Shortcuts <span class="kbd">?</span></button>
+  </nav>
+
+  <!-- ============ THREE PANES ============ -->
+  <div class="grid">
+
+    <aside class="tree">
+      <div class="tree-head">
+        <div class="row"><span>3 files</span><span style="color: var(--primary);">+426 -0</span></div>
+        <p class="tree-legend">review map &middot; 3 threads &middot; 2 Neon &middot; <span style="color: var(--tour);">4 tour steps</span></p>
+        <input class="tree-filter" type="search" value="" placeholder="filter paths or Neon findings">
+      </div>
+      <div style="padding-top: 4px;">
+        <sc-for list="{{tree}}" as="node" hint-placeholder-count="3">
+          <button class="tnode" type="button" data-on="{{node.on}}" onClick="{{node.go}}">
+            <span>{{node.label}}</span>
+            <span class="deco">{{node.deco}}</span>
+          </button>
+        </sc-for>
+      </div>
+    </aside>
+
+    <div class="col">
+      <header class="dvh">
+        <div style="min-width: 0;">
+          <p class="dvh-title">{{file}}</p>
+          <p class="dvh-detail">main &lt;- f58e5c5 &middot; 3 files</p>
+        </div>
+        <div style="display: flex; flex-shrink: 0; align-items: center; gap: 6px;">
+          <span class="badge" data-tone="tour">{{fileStepLabel}}</span>
+          <span class="badge">unified</span>
+        </div>
+      </header>
+
+      <div class="patch">
+        <sc-for list="{{rows}}" as="row" hint-placeholder-count="22">
+
+          <sc-if value="{{row.isCode}}" hint-placeholder-val="{{true}}">
+            <div class="dl" data-t="{{row.t}}">
+              <span class="dn">{{row.n}}</span>
+              <span class="dc">{{row.code}}</span>
+            </div>
+          </sc-if>
+
+          <sc-if value="{{row.isSep}}" hint-placeholder-val="{{false}}">
+            <div class="sep"><span class="sep-btn">&#8597;</span><span>{{row.text}}</span></div>
+          </sc-if>
+
+          <sc-if value="{{row.isActive}}" hint-placeholder-val="{{false}}">
+            <div class="arow">
+              <article class="tour">
+                <div class="tour-head">
+                  <span class="tour-id">
+                    <span class="mark">{{row.s.i}}</span>
+                    <span class="tour-loc">{{row.s.range}} <span class="tour-sym">&middot; {{row.s.symbol}}</span></span>
+                  </span>
+                  <span class="tour-prog">step {{row.s.i}} of 4</span>
+                </div>
+                <p class="tour-copy">{{row.s.text}}</p>
+                <div class="tour-actions">
+                  <button class="cbtn" type="button" data-lead disabled="{{atFirst}}" onClick="{{prev}}">&lsaquo; Previous <span class="kbd">[</span></button>
+                  <button class="cbtn" type="button" data-lead disabled="{{atLast}}" onClick="{{next}}">Next <span class="kbd">]</span> &rsaquo;</button>
+                  <button class="cbtn" type="button" onClick="{{restart}}">Start over</button>
+                  <button class="cbtn" type="button">Ask about this step</button>
+                  <span class="spacer"></span>
+                  <button class="cbtn" type="button" onClick="{{close}}">Close tour</button>
+                </div>
+              </article>
+            </div>
+          </sc-if>
+
+          <sc-if value="{{row.isMark}}" hint-placeholder-val="{{false}}">
+            <div class="arow">
+              <button class="tmark" type="button" onClick="{{row.go}}">
+                <span class="mark" data-ghost>{{row.s.i}}</span>
+                <span class="who">{{row.s.range}} &middot; {{row.s.symbol}}</span>
+                <span style="flex: 1 1 auto;"></span>
+                <span class="go">jump to step {{row.s.i}} &rsaquo;</span>
+              </button>
+            </div>
+          </sc-if>
+
+        </sc-for>
+      </div>
+    </div>
+
+    <!-- ============ INSPECTOR / REVIEWER CHAT ============ -->
+    <aside class="insp">
+      <div class="tabs">
+        <button class="tab" type="button">Review</button>
+        <button class="tab" type="button" data-on>Ask reviewer</button>
+      </div>
+      <div class="chat">
+        <div class="timeline">
+
+          <div class="msg-user">/show-me how the reviewer is bound to one revision</div>
+
+          <article class="msg-a">
+            <p class="msg-role">reviewer</p>
+            <p style="margin: 0 0 8px; font-size: calc(10.5px * var(--ts)); line-height: 1.55; color: var(--ink);">
+              Traced it across the session id, the mount, the per-call guard and the route. Four steps.
+            </p>
+
+            <sc-if value="{{open}}" hint-placeholder-val="{{true}}">
+              <div class="card">
+                <div class="card-head">
+                  <span class="card-kick">GUIDED TOUR</span>
+                  <span class="card-prog">{{stepNo}} / 4</span>
+                </div>
+                <div class="card-body">
+                  <p class="card-title">{{tourTitle}}</p>
+                  <p class="card-sum">Every place the reviewId + headSha pair is derived, enforced, or re-checked before a tool can write.</p>
+                  <ol class="spine">
+                    <sc-for list="{{spine}}" as="sp" hint-placeholder-count="4">
+                      <li data-state="{{sp.state}}">
+                        <button class="sp-btn" type="button" onClick="{{sp.go}}">
+                          <span class="mark" data-ghost="{{sp.ghost}}">{{sp.i}}</span>
+                          <span class="sp-txt">
+                            <span class="sp-sym">{{sp.symbol}}</span>
+                            <span class="sp-file">{{sp.where}}</span>
+                          </span>
+                        </button>
+                      </li>
+                    </sc-for>
+                  </ol>
+                </div>
+                <div class="card-foot">
+                  <button class="cbtn" type="button" onClick="{{restart}}">Start over</button>
+                  <button class="cbtn" type="button" onClick="{{close}}">Close tour</button>
+                </div>
+              </div>
+            </sc-if>
+
+            <sc-if value="{{closed}}" hint-placeholder-val="{{false}}">
+              <div class="strip">
+                <s>Tour closed &middot; {{tourTitle}}</s>
+                <button class="cbtn" type="button" data-lead style="flex: none;" onClick="{{reopen}}">Reopen</button>
+              </div>
+            </sc-if>
+          </article>
+
+        </div>
+        <form class="form">
+          <textarea placeholder="Ask why this is an issue&hellip;"></textarea>
+          <div class="form-actions">
+            <span class="form-hint">Enter send &middot; Shift+Enter newline</span>
+            <button class="ask" type="submit">Ask</button>
+          </div>
+        </form>
+      </div>
+    </aside>
+  </div>
+
+  <!-- ============ SUBMIT BAR ============ -->
+  <div class="bar">
+    <div style="display: flex; align-items: center; gap: 6px;">
+      <button class="cbtn" type="button" style="color: var(--primary-strong);">0 pending</button>
+      <span class="badge" data-tone="tour">tour open &middot; not a comment</span>
+    </div>
+    <textarea placeholder="Review summary"></textarea>
+    <div style="display: flex; gap: 6px;">
+      <button class="cbtn" type="button">Comment</button>
+      <button class="cbtn" type="button">Approve</button>
+      <button class="cbtn" type="button">Request changes</button>
+      <button class="cbtn" type="button">Submit</button>
+    </div>
+  </div>
+
+</div>
+</x-dc>
+<script data-dc-script data-props='{
+  "theme": {"editor": "enum", "options": ["dark", "light"], "default": "dark", "section": "Board"},
+  "hue": {"editor": "enum", "options": ["green", "violet", "none"], "default": "green", "section": "Board"}
+}'>
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    this.state = { step: 2, closed: false };
+  }
+
+  steps() {
+    return [
+      {
+        i: 1,
+        file: 'shared/pr-reviewer-session.ts',
+        range: 'L18–L20',
+        symbol: 'prReviewerConversationId',
+        anchor: 20,
+        where: 'pr-reviewer-session.ts L18–L20',
+        text: 'The conversation id IS the binding. reviewId and headSha are joined with @ here and parsed back apart on the way in, so nothing downstream ever has to be told which revision it is on — it reads it off the id it was addressed by.',
+      },
+      {
+        i: 2,
+        file: 'src/agents/pr-reviewer.ts',
+        range: 'L246–L251',
+        symbol: 'tool mounting',
+        anchor: 251,
+        where: 'pr-reviewer.ts L246–L251',
+        text: 'Tools mount only when conversation.headSha exists, and the factories are handed { reviewId, headSha } right here. The model never supplies either one — it cannot name a review or a revision it was not bound to.',
+      },
+      {
+        i: 3,
+        file: 'src/modules/pr-reviewer/draft-tools.ts',
+        range: 'L276–L281',
+        symbol: 'boundReview',
+        anchor: 281,
+        where: 'draft-tools.ts L276–L281',
+        text: 'Every single call re-reads the review and rejects it if the row is gone, the head SHA moved, or the status is not ready. The binding is checked per call, not once per session — which is what makes a mid-conversation force-push safe.',
+      },
+      {
+        i: 4,
+        file: 'src/agents/pr-reviewer.ts',
+        range: 'L50–L55',
+        symbol: 'createPrReviewerRoute',
+        anchor: 55,
+        where: 'pr-reviewer.ts L50–L55',
+        text: 'The route guard runs before the agent does, so a request carrying a stale revision is refused at the edge and never reaches the mount in step 2. Three layers, and none of them trust the model.',
+      },
+    ];
+  }
+
+  files() {
+    return {
+      'shared/pr-reviewer-session.ts': [
+        { n: 12, code: 'export function isPrReviewerDraftToolName(' },
+        { n: 13, code: '  value: string,' },
+        { n: 14, code: '): value is PrReviewerDraftToolName {' },
+        { n: 15, code: '  return (prReviewerDraftToolNames as readonly string[]).includes(value);' },
+        { n: 16, code: '}' },
+        { n: 17, code: '' },
+        { n: 18, t: 'add', code: 'export function prReviewerConversationId(reviewId: string, headSha: string) {' },
+        { n: 19, t: 'add', code: '  return `${reviewId}${revisionSeparator}${headSha}`;' },
+        { n: 20, t: 'add', code: '}' },
+        { n: 21, code: '' },
+        { n: 22, code: 'export function parsePrReviewerConversationId(value: string) {' },
+        { n: 23, code: '  const separatorIndex = value.lastIndexOf(revisionSeparator);' },
+        { n: 24, code: '  if (separatorIndex <= 0) return { reviewId: value, headSha: null };' },
+        { n: 25, code: '}' },
+      ],
+      'src/agents/pr-reviewer.ts': [
+        { n: 48, code: '' },
+        { n: 49, code: '// Revision guard — runs ahead of the agent.' },
+        { n: 50, t: 'add', code: 'export function createPrReviewerRoute(deps: RouteDeps) {' },
+        { n: 51, t: 'add', code: '  return async (c: Context, next: Next) => {' },
+        { n: 52, t: 'add', code: '    const { reviewId, headSha } = parsePrReviewerConversationId(' },
+        { n: 53, t: 'add', code: "      c.req.param('conversationId'),"  },
+        { n: 54, t: 'add', code: '    );' },
+        { n: 55, t: 'add', code: "    if (!headSha) return c.json({ error: 'revision required' }, 400);" },
+        { n: 56, code: '    return next();' },
+        { n: 57, code: '  };' },
+        { n: 58, code: '}' },
+        { sep: '185 unmodified lines' },
+        { n: 244, code: '  const tools = [...workspaceTools];' },
+        { n: 245, code: '  if (conversation.headSha) {' },
+        { n: 246, t: 'add', code: '    tools.push(' },
+        { n: 247, t: 'add', code: '      createPrReviewerReReviewTool({' },
+        { n: 248, t: 'add', code: '        headSha: conversation.headSha,' },
+        { n: 249, t: 'add', code: '        reviewId: conversation.reviewId,' },
+        { n: 250, t: 'add', code: '      }),' },
+        { n: 251, t: 'add', code: '    );' },
+        { n: 252, code: '    tools.push(...createPrReviewerDraftTools(binding));' },
+        { n: 253, code: '  }' },
+      ],
+      'src/modules/pr-reviewer/draft-tools.ts': [
+        { n: 273, code: '' },
+        { n: 274, code: '// Re-read on every call. Never cached across the conversation.' },
+        { n: 275, code: '' },
+        { n: 276, t: 'add', code: 'function boundReview(binding: PrReviewerBinding, paths: RuntimePaths) {' },
+        { n: 277, t: 'add', code: '  const review = readPrReview(binding.reviewId, paths);' },
+        { n: 278, t: 'add', code: "  if (!review) throw new Error('review not found');" },
+        { n: 279, t: 'add', code: '  if (review.headSha !== binding.headSha) {' },
+        { n: 280, t: 'add', code: "    throw new Error('review revision moved');" },
+        { n: 281, t: 'add', code: '  }' },
+        { n: 282, code: "  if (review.status !== 'ready') {" },
+        { n: 283, code: "    throw new Error('review not ready');" },
+        { n: 284, code: '  }' },
+        { n: 285, code: '  return review;' },
+        { n: 286, code: '}' },
+      ],
+    };
+  }
+
+  go(i) {
+    this.setState({ step: Math.min(4, Math.max(1, i)), closed: false });
+  }
+
+  renderVals() {
+    const STEPS = this.steps();
+    const FILES = this.files();
+    const cur = this.state.step;
+    const closed = this.state.closed === true;
+    const step = STEPS[cur - 1];
+    const file = step.file;
+    const lines = FILES[file] || [];
+
+    const rows = [];
+    for (const ln of lines) {
+      if (ln.sep) {
+        rows.push({ isCode: false, isSep: true, isActive: false, isMark: false, text: ln.sep });
+        continue;
+      }
+      rows.push({
+        isCode: true, isSep: false, isActive: false, isMark: false,
+        n: ln.n, t: ln.t || 'ctx', code: ln.code,
+      });
+      const at = closed ? null : STEPS.find((s) => s.file === file && s.anchor === ln.n);
+      if (at) {
+        const active = at.i === cur;
+        rows.push({
+          isCode: false, isSep: false,
+          isActive: active, isMark: !active,
+          s: at,
+          go: () => this.go(at.i),
+        });
+      }
+    }
+
+    const spine = STEPS.map((s) => ({
+      i: s.i,
+      symbol: s.symbol,
+      where: s.where,
+      state: s.i === cur ? 'now' : s.i < cur ? 'done' : 'todo',
+      ghost: s.i === cur ? undefined : true,
+      go: () => this.go(s.i),
+    }));
+
+    const inFile = STEPS.filter((s) => s.file === file);
+    const fileStepLabel =
+      inFile.length > 1
+        ? 'tour steps ' + inFile.map((s) => s.i).join(' + ')
+        : 'tour step ' + inFile[0].i;
+
+    const tree = Object.keys(FILES).map((path) => {
+      const own = STEPS.filter((s) => s.file === path);
+      const short = path.split('/').slice(-1)[0];
+      return {
+        label: short,
+        on: path === file ? true : undefined,
+        deco: own.map((s) => s.i).sort().join(' '),
+        go: () => this.go(own[0].i),
+      };
+    });
+
+    const title = 'How the reviewer is bound to one revision';
+    return {
+      theme: this.props.theme ?? 'dark',
+      hue: this.props.hue ?? 'green',
+      file,
+      rows,
+      spine,
+      tree,
+      fileStepLabel: closed ? 'tour closed' : fileStepLabel,
+      stepNo: cur,
+      tourTitle: title,
+      open: !closed,
+      closed,
+      atFirst: closed || cur === 1,
+      atLast: closed || cur === 4,
+      statusText: closed
+        ? 'Tour · closed · press ] to resume'
+        : 'Tour · ' + cur + ' of 4 · ' + title,
+      next: () => this.go(cur + 1),
+      prev: () => this.go(cur - 1),
+      restart: () => this.go(1),
+      close: () => this.setState({ closed: true }),
+      reopen: () => this.setState({ closed: false, step: 1 }),
+    };
+  }
+}
+</script>
+</body>
+</html>

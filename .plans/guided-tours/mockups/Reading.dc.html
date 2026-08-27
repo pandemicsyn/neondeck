@@ -1,0 +1,352 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+  <style>
+    body { margin: 0; background: #05060a; }
+    .shell, .shell * { box-sizing: border-box; }
+    .shell {
+      --ts: 1.12; --ds: 1;
+      --sans: "IBM Plex Sans", system-ui, -apple-system, sans-serif;
+      --mono: "IBM Plex Mono", "SFMono-Regular", Consolas, monospace;
+      --disp: "Chakra Petch", ui-sans-serif, system-ui, sans-serif;
+      --canvas: #0a0b10; --panel: #0a0b10; --field: #070810; --soft: rgba(255,255,255,0.04);
+      --line: rgba(255,255,255,0.07); --chrome: #070810;
+      --ink: #d7f7ff; --muted: #91a8b0;
+      --primary: #00b7c7; --primary-strong: #69e6ff; --primary-ink: #070810;
+      --accent: #ff4fb8; --violet: #b59cff;
+      --dbg: #0a0a0a; --dfg: #fafafa; --dadd: #5ecc71;
+      font: 400 calc(11px * var(--ts))/1.5 var(--sans);
+      color: var(--ink);
+    }
+    .shell[data-theme="light"] {
+      --canvas: #edf5f8; --panel: #edf5f8; --field: #dbeaef; --soft: rgba(20,45,60,0.05);
+      --line: rgba(20,45,60,0.13); --chrome: #dbeaef;
+      --ink: #19232e; --muted: #56646d;
+      --primary: #006f7f; --primary-strong: #005b69; --primary-ink: #edf5f8;
+      --accent: #b31170; --violet: #6034bd;
+      --dbg: #ffffff; --dfg: #1c2430; --dadd: #0dbe4e;
+    }
+    .shell[data-hue="green"]  { --tour: #5cf28f; }
+    .shell[data-hue="violet"] { --tour: #b59cff; }
+    .shell[data-hue="none"]   { --tour: #d7f7ff; }
+    .shell[data-theme="light"][data-hue="green"]  { --tour: #0d7a42; }
+    .shell[data-theme="light"][data-hue="violet"] { --tour: #6034bd; }
+    .shell[data-theme="light"][data-hue="none"]   { --tour: #19232e; }
+
+    .shell button { font: inherit; cursor: pointer; border-radius: 0; }
+    .shell button:disabled { cursor: not-allowed; opacity: 0.45; }
+    .cbtn {
+      display: inline-flex; min-height: calc(24px * var(--ds)); align-items: center; justify-content: center; gap: 4px;
+      border: 1px solid var(--line); background: var(--field); padding: 4px 6px;
+      color: var(--ink); font-family: var(--mono); font-size: calc(10px * var(--ts));
+      line-height: 1; white-space: nowrap;
+      transition: background-color 160ms ease, border-color 160ms ease, color 160ms ease;
+    }
+    .cbtn:hover:not(:disabled) { border-color: var(--primary); background: color-mix(in srgb, var(--primary) 8%, var(--field)); color: var(--primary-strong); }
+    .cbtn[data-lead] { border-color: color-mix(in srgb, var(--tour) 55%, var(--line)); color: var(--tour); }
+    .cbtn[data-lead]:hover:not(:disabled) { border-color: var(--tour); background: color-mix(in srgb, var(--tour) 10%, var(--field)); color: var(--tour); }
+    .kbd { display: inline-block; border: 1px solid var(--line); background: var(--panel); padding: 1px 3px;
+      color: var(--primary-strong); font-size: 0.95em; font-family: var(--mono); }
+    .badge { display: inline-flex; align-items: center; border: 1px solid var(--line); background: var(--soft);
+      padding: 2px 6px; color: var(--muted); font-family: var(--mono); font-size: calc(10px * var(--ts)); line-height: 1; }
+    .badge[data-tone="tour"] { border-color: color-mix(in srgb, var(--tour) 55%, var(--line)); color: var(--tour); }
+
+    /* nav bar */
+    .prn { display: flex; min-height: 40px; align-items: center; gap: 8px;
+      border-bottom: 1px solid var(--line); background: color-mix(in srgb, var(--chrome) 82%, var(--panel));
+      padding: 6px 10px; color: var(--muted); font-family: var(--mono); font-size: calc(10px * var(--ts)); }
+    .prn label { color: var(--primary-strong); }
+    .prn select { min-height: calc(26px * var(--ds)); border: 1px solid color-mix(in srgb, var(--tour) 60%, var(--line));
+      border-radius: 0; background: var(--field); padding: 4px 7px; color: var(--tour);
+      font-family: var(--mono); font-size: inherit; line-height: 1; }
+    .prn-status { flex: 1 1 auto; margin: 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+      color: var(--ink); font-variant-numeric: tabular-nums; }
+
+    /* mode toggle — mirrors the verdict fieldset idiom in the submit bar */
+    .modes { display: flex; flex: none; }
+    .modes button { min-height: calc(24px * var(--ds)); border: 1px solid var(--line); border-right-width: 0;
+      background: var(--field); padding: 4px 9px; color: var(--muted);
+      font-family: var(--mono); font-size: calc(10px * var(--ts)); line-height: 1;
+      transition: background-color 160ms ease, border-color 160ms ease, color 160ms ease; }
+    .modes button:last-child { border-right-width: 1px; }
+    .modes button[data-on] { border-color: var(--tour); background: color-mix(in srgb, var(--tour) 12%, var(--field));
+      color: var(--tour); font-weight: 600; }
+
+    /* diff header */
+    .dvh { display: flex; min-height: 32px; align-items: center; justify-content: space-between; gap: 8px;
+      border-bottom: 1px solid var(--line); background: color-mix(in srgb, var(--chrome) 82%, transparent);
+      padding: 6px 8px; font-family: var(--mono); }
+    .dvh-title { margin: 0; color: var(--primary); font-size: calc(10.5px * var(--ts)); }
+    .dvh-detail { margin: 2px 0 0; color: var(--muted); font-size: calc(10px * var(--ts)); }
+
+    .stream { min-height: 0; flex: 1 1 auto; overflow: auto; background: var(--dbg); }
+
+    /* tour lede — read mode only */
+    .lede { border-bottom: 1px solid var(--line); background: var(--field); border-left: 2px solid var(--tour); padding: 12px 14px; }
+    .lede h1 { margin: 0; font-family: var(--disp); font-size: 15px; font-weight: 600; letter-spacing: 0.01em; color: var(--ink); }
+    .lede p { margin: 5px 0 0; max-width: 80ch; color: var(--muted); font-size: calc(11px * var(--ts)); line-height: 1.5; }
+    .lede .meta { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 9px; }
+
+    /* a step block — shared by both modes */
+    .blk { border-bottom: 1px solid var(--line); }
+    .blk-band { display: flex; align-items: center; gap: 8px; border-left: 2px solid var(--tour);
+      background: var(--field); padding: 6px 8px; font-family: var(--mono); font-size: calc(10px * var(--ts)); }
+    .blk-path { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--tour); font-weight: 600; }
+    .blk-sym { color: var(--muted); }
+    .blk-of { flex: none; color: var(--muted); font-size: calc(9px * var(--ts)); font-variant-numeric: tabular-nums; }
+    .mark { display: inline-flex; flex: none; width: 16px; height: 16px; align-items: center; justify-content: center;
+      border: 1px solid var(--tour); background: var(--tour); color: var(--primary-ink);
+      font-family: var(--mono); font-size: calc(9px * var(--ts)); font-weight: 600; line-height: 1; font-variant-numeric: tabular-nums; }
+
+    .code { padding: 6px 0; font-family: var(--mono); font-size: calc(10.5px * var(--ts)); line-height: 1.55; }
+    .dl { display: grid; grid-template-columns: 7ch minmax(0, 1fr); }
+    .dn { position: relative; padding: 0 1ch 0 2ch; text-align: right; user-select: none;
+      border-right: 2px solid var(--dbg); color: color-mix(in lab, var(--dfg) 65%, var(--dbg)); }
+    .dn::before { content: ""; position: absolute; top: 0; left: 0; width: 4px; height: 100%; }
+    .dc { padding: 0 1ch; color: var(--dfg); white-space: pre-wrap; overflow-wrap: anywhere; }
+    .dl[data-t="add"] .dc { background: color-mix(in lab, var(--dbg) 80%, var(--dadd)); }
+    .dl[data-t="add"] .dn { background: color-mix(in lab, var(--dbg) 85%, var(--dadd)); }
+    .dl[data-t="add"] .dn::before { background: var(--dadd); }
+
+    .blk-say { border-top: 1px solid var(--line); background: var(--field); border-left: 2px solid var(--tour); padding: 9px 10px; }
+    .blk-say p { margin: 0; max-width: 80ch; font-size: calc(10.5px * var(--ts)); line-height: 1.5; color: var(--ink); }
+    .blk-acts { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+    .blk-acts .cbtn { font-size: calc(9.5px * var(--ts)); }
+
+    /* the jump between steps — names the distance the reader is being spared */
+    .jump { display: flex; align-items: center; gap: 8px; background: color-mix(in lab, var(--dbg) 92%, var(--dfg));
+      padding: 5px 10px 5px 7ch; color: color-mix(in lab, var(--dfg) 60%, var(--dbg));
+      font-family: var(--mono); font-size: calc(9.5px * var(--ts)); }
+    .jump em { font-style: normal; color: var(--tour); }
+
+    .foot { display: flex; align-items: center; justify-content: space-between; gap: 8px;
+      border-top: 1px solid var(--line); background: color-mix(in srgb, var(--chrome) 92%, transparent); padding: 8px 10px; }
+    .foot span { color: var(--muted); font-family: var(--mono); font-size: calc(9.5px * var(--ts)); }
+  </style>
+</helmet>
+
+<div class="shell" data-theme="{{theme}}" data-hue="{{hue}}" style="display: flex; width: 1040px; height: 920px; flex-direction: column; border: 1px solid var(--line); background: var(--canvas); overflow: hidden;">
+
+  <nav class="prn">
+    <span style="display: flex; align-items: center; gap: 6px;">
+      <label for="tk2">Traverse</label>
+      <select id="tk2"><option>tour</option><option>file</option><option>finding</option></select>
+    </span>
+    <span class="modes">
+      <button type="button" data-on="{{walkOn}}" onClick="{{setWalk}}">walk</button>
+      <button type="button" data-on="{{readOn}}" onClick="{{setRead}}">read</button>
+    </span>
+    <p class="prn-status">{{statusText}}</p>
+    <span style="display: flex; align-items: center; gap: 6px;">
+      <button class="cbtn" type="button" disabled="{{navOff}}" onClick="{{prev}}">Previous <span class="kbd">[</span></button>
+      <button class="cbtn" type="button" disabled="{{navOffNext}}" onClick="{{next}}">Next <span class="kbd">]</span></button>
+    </span>
+  </nav>
+
+  <header class="dvh">
+    <div style="min-width: 0;">
+      <p class="dvh-title">{{headTitle}}</p>
+      <p class="dvh-detail">{{headDetail}}</p>
+    </div>
+    <div style="display: flex; flex-shrink: 0; align-items: center; gap: 6px;">
+      <span class="badge" data-tone="tour">{{headBadge}}</span>
+    </div>
+  </header>
+
+  <div class="stream">
+
+    <sc-if value="{{readOn}}" hint-placeholder-val="{{true}}">
+      <div class="lede">
+        <h1>How the reviewer is bound to one revision</h1>
+        <p>Every place the reviewId + headSha pair is derived, enforced, or re-checked before a tool can write. Read top to bottom &mdash; the order is the argument, not the file layout.</p>
+        <div class="meta">
+          <span class="badge" data-tone="tour">4 steps</span>
+          <span class="badge">3 files</span>
+          <span class="badge">21 lines of 426</span>
+        </div>
+      </div>
+    </sc-if>
+
+    <sc-for list="{{blocks}}" as="b" hint-placeholder-count="4">
+     <div>
+      <sc-if value="{{b.gap}}" hint-placeholder-val="{{true}}">
+        <div class="jump"><em>&#8597;</em> {{b.gapText}}</div>
+      </sc-if>
+      <section class="blk">
+        <div class="blk-band">
+          <span class="mark">{{b.i}}</span>
+          <span class="blk-path">{{b.path}} {{b.range}} <span class="blk-sym">&middot; {{b.symbol}}</span></span>
+          <span style="flex: 1 1 auto;"></span>
+          <span class="blk-of">step {{b.i}} of {{b.of}}</span>
+        </div>
+        <div class="code">
+          <sc-for list="{{b.lines}}" as="ln" hint-placeholder-count="6">
+            <div class="dl" data-t="{{ln.t}}"><span class="dn">{{ln.n}}</span><span class="dc">{{ln.code}}</span></div>
+          </sc-for>
+        </div>
+        <div class="blk-say">
+          <p>{{b.text}}</p>
+          <div class="blk-acts">
+            <button class="cbtn" type="button" data-lead>Open in diff &rsaquo;</button>
+            <button class="cbtn" type="button">Ask about this step</button>
+          </div>
+        </div>
+      </section>
+     </div>
+    </sc-for>
+
+  </div>
+
+  <div class="foot">
+    <span>{{footText}}</span>
+    <span style="display: flex; gap: 6px;">
+      <button class="cbtn" type="button" disabled="{{restartOff}}" onClick="{{restart}}">Start over</button>
+      <button class="cbtn" type="button">Close tour</button>
+    </span>
+  </div>
+
+</div>
+</x-dc>
+<script data-dc-script data-props='{
+  "theme": {"editor": "enum", "options": ["dark", "light"], "default": "dark", "section": "Board"},
+  "hue": {"editor": "enum", "options": ["green", "violet", "none"], "default": "green", "section": "Board"},
+  "mode": {"editor": "enum", "options": ["read", "walk"], "default": "read", "section": "Board"}
+}'>
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    this.state = { mode: null, step: 2 };
+  }
+
+  blocks() {
+    return [
+      {
+        i: 1,
+        path: 'shared/pr-reviewer-session.ts',
+        range: 'L18–L20',
+        symbol: 'prReviewerConversationId',
+        gapText: null,
+        lines: [
+          { n: 18, t: 'add', code: 'export function prReviewerConversationId(reviewId: string, headSha: string) {' },
+          { n: 19, t: 'add', code: '  return `${reviewId}${revisionSeparator}${headSha}`;' },
+          { n: 20, t: 'add', code: '}' },
+        ],
+        text: 'The conversation id IS the binding. reviewId and headSha are joined here and parsed back apart on the way in, so nothing downstream has to be told which revision it is on — it reads it off the id it was addressed by.',
+      },
+      {
+        i: 2,
+        path: 'src/agents/pr-reviewer.ts',
+        range: 'L246–L251',
+        symbol: 'tool mounting',
+        gapText: 'across to src/agents/pr-reviewer.ts, 226 lines in',
+        lines: [
+          { n: 246, t: 'add', code: '    tools.push(' },
+          { n: 247, t: 'add', code: '      createPrReviewerReReviewTool({' },
+          { n: 248, t: 'add', code: '        headSha: conversation.headSha,' },
+          { n: 249, t: 'add', code: '        reviewId: conversation.reviewId,' },
+          { n: 250, t: 'add', code: '      }),' },
+          { n: 251, t: 'add', code: '    );' },
+        ],
+        text: 'Tools mount only when conversation.headSha exists, and the factories are handed { reviewId, headSha } right here. The model never supplies either one — it cannot name a review or a revision it was not bound to.',
+      },
+      {
+        i: 3,
+        path: 'src/modules/pr-reviewer/draft-tools.ts',
+        range: 'L276–L281',
+        symbol: 'boundReview',
+        gapText: 'across to src/modules/pr-reviewer/draft-tools.ts',
+        lines: [
+          { n: 276, t: 'add', code: 'function boundReview(binding: PrReviewerBinding, paths: RuntimePaths) {' },
+          { n: 277, t: 'add', code: '  const review = readPrReview(binding.reviewId, paths);' },
+          { n: 278, t: 'add', code: "  if (!review) throw new Error('review not found');" },
+          { n: 279, t: 'add', code: '  if (review.headSha !== binding.headSha) {' },
+          { n: 280, t: 'add', code: "    throw new Error('review revision moved');" },
+          { n: 281, t: 'add', code: '  }' },
+        ],
+        text: 'Every call re-reads the review and rejects it if the row is gone or the head SHA moved. Checked per call, not once per session — which is what makes a mid-conversation force-push safe.',
+      },
+      {
+        i: 4,
+        path: 'src/agents/pr-reviewer.ts',
+        range: 'L50–L55',
+        symbol: 'createPrReviewerRoute',
+        gapText: 'back to src/agents/pr-reviewer.ts — 196 lines above the mount in step 2',
+        lines: [
+          { n: 50, t: 'add', code: 'export function createPrReviewerRoute(deps: RouteDeps) {' },
+          { n: 51, t: 'add', code: '  return async (c: Context, next: Next) => {' },
+          { n: 52, t: 'add', code: '    const { reviewId, headSha } = parsePrReviewerConversationId(' },
+          { n: 53, t: 'add', code: "      c.req.param('conversationId')," },
+          { n: 54, t: 'add', code: '    );' },
+          { n: 55, t: 'add', code: "    if (!headSha) return c.json({ error: 'revision required' }, 400);" },
+        ],
+        text: 'The route guard runs before the agent does, so a request carrying a stale revision is refused at the edge and never reaches the mount in step 2. Three layers, and none of them trust the model.',
+      },
+    ];
+  }
+
+  mode() {
+    return this.state.mode ?? this.props.mode ?? 'read';
+  }
+
+  go(i) {
+    this.setState({ step: Math.min(this.blocks().length, Math.max(1, i)) });
+  }
+
+  renderVals() {
+    const ALL = this.blocks();
+    const last = ALL.length;
+    const mode = this.mode();
+    const read = mode === 'read';
+    const cur = Math.min(last, Math.max(1, this.state.step));
+
+    const shown = read ? ALL : ALL.filter((b) => b.i === cur);
+    const blocks = shown.map((b, index) => ({
+      i: b.i,
+      of: last,
+      path: b.path,
+      range: b.range,
+      symbol: b.symbol,
+      lines: b.lines,
+      text: b.text,
+      gap: read && index > 0 && b.gapText ? true : undefined,
+      gapText: b.gapText ?? '',
+    }));
+
+    return {
+      theme: this.props.theme ?? 'dark',
+      hue: this.props.hue ?? 'green',
+      blocks,
+      readOn: read ? true : undefined,
+      walkOn: read ? undefined : true,
+      statusText: read
+        ? 'Tour · reading · ' + last + ' steps across 3 files'
+        : 'Tour · ' + cur + ' of ' + last + ' · How the reviewer is bound to one revision',
+      navOff: read || cur === 1,
+      navOffNext: read || cur === last,
+      restartOff: read ? true : undefined,
+      headTitle: read ? '4 anchored ranges, in tour order' : shown[0].path,
+      headDetail: read
+        ? 'main <- f58e5c5 · everything between the steps is elided'
+        : 'main <- f58e5c5 · 3 files',
+      headBadge: read ? 'reading view' : 'step ' + cur + ' of ' + last,
+      footText: read
+        ? 'Reading view · the diff is reordered into the tour’s order, not the repository’s'
+        : 'Walk view · one step at a time, [ and ] move the shared cursor',
+      setRead: () => this.setState({ mode: 'read' }),
+      setWalk: () => this.setState({ mode: 'walk' }),
+      next: () => this.go(cur + 1),
+      prev: () => this.go(cur - 1),
+      restart: () => this.go(1),
+    };
+  }
+}
+</script>
+</body>
+</html>
