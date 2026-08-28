@@ -1,6 +1,10 @@
 import type { SelectedLineRange } from '@pierre/diffs/react';
 import { describe, expect, it, vi } from 'vitest';
 import {
+  prReviewTourAnnotationId,
+  type PrReviewTour,
+} from '../../../../shared/pr-review-tour';
+import {
   createReviewNavigationModel,
   reviewCursorTargets,
 } from '../../../../shared/review-navigation';
@@ -51,6 +55,7 @@ import {
   prReviewDraftHeadIsStale,
   reanchorDraftToRevision,
   refreshOrientationTargetSettled,
+  reviewSurfaceTargetMatchesCurrentTour,
   sameReviewDraftRevision,
   selectionAnchorMatchesPatch,
   shouldAutomaticallyApplyGitHubRevision,
@@ -58,6 +63,58 @@ import {
 import capturedReviewPatch from './fixtures/captured-review.patch?raw';
 
 describe('GitHubPrReview helpers', () => {
+  it('resolves a closed current-tour target from its exact persisted anchor', () => {
+    const tour = {
+      id: 'tour-1',
+      steps: [
+        {
+          id: 'step-1',
+          file: 'README.md',
+          anchor: {
+            side: 'additions',
+            startLine: 3,
+            endLine: 4,
+          },
+        },
+      ],
+    } as PrReviewTour;
+    const target = {
+      path: 'README.md',
+      focus: true,
+      annotationId: prReviewTourAnnotationId('step-1'),
+      anchor: { side: 'additions', startLine: 3, endLine: 4 },
+      correlationId: 'surface-1:1',
+    } as const;
+
+    expect(
+      reviewSurfaceTargetMatchesCurrentTour(target, tour, 'surface-1:1'),
+    ).toBe(true);
+    expect(
+      reviewSurfaceTargetMatchesCurrentTour(
+        { ...target, anchor: { ...target.anchor, endLine: 5 } },
+        tour,
+        'surface-1:1',
+      ),
+    ).toBe(false);
+    expect(
+      reviewSurfaceTargetMatchesCurrentTour(
+        { ...target, annotationId: prReviewTourAnnotationId('step-2') },
+        tour,
+        'surface-1:1',
+      ),
+    ).toBe(false);
+    expect(
+      reviewSurfaceTargetMatchesCurrentTour(
+        { ...target, correlationId: undefined },
+        tour,
+        'surface-1:1',
+      ),
+    ).toBe(false);
+    expect(
+      reviewSurfaceTargetMatchesCurrentTour(target, tour, 'surface-1:2'),
+    ).toBe(false);
+  });
+
   it('binds submission to the exact post-barrier draft revision', () => {
     expect(
       draftSnapshotMatches(

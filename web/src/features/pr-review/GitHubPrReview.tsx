@@ -118,6 +118,7 @@ import {
   prReviewDraftHeadIsStale,
   reanchorDraftToRevision,
   refreshOrientationTargetSettled,
+  reviewSurfaceTargetMatchesCurrentTour,
   sameReviewDraftRevision,
   selectionAnchorMatchesPatch,
   shouldAutomaticallyApplyGitHubRevision,
@@ -974,6 +975,11 @@ export function GitHubPrReview({
         !reviewSurfaceAnnotationMatchesTarget(
           annotationsByPath[target.path],
           target,
+        ) &&
+        !reviewSurfaceTargetMatchesCurrentTour(
+          target,
+          tour,
+          latestTourPresentationRequestRef.current,
         )
       ) {
         return false;
@@ -997,7 +1003,7 @@ export function GitHubPrReview({
         ? patchContainsReviewSurfaceTarget(patch, target)
         : false;
     },
-    [annotationsByPath, fileList, filesByPath, pr, queryClient],
+    [annotationsByPath, fileList, filesByPath, pr, queryClient, tour],
   );
   const activateNavigationTarget = useCallback(
     (
