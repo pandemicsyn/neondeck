@@ -1,6 +1,6 @@
 # PR Review Guided Tours Plan
 
-Status: proposed
+Status: implemented in PR #352; Phase 0 is intentionally deferred to a separate follow-up PR.
 
 ## Summary
 
@@ -86,7 +86,7 @@ Default to read below a small step count (start at six) and keep the toggle. The
 
 Tours must be visually distinct from Neon findings, GitHub threads, and local draft comments.
 
-Distinguish by **form first**. Every annotation type that ships today carries a tinted fill — Neon finding `primary 5%`, review thread `primary 7%`, local draft `violet 6%`, stale draft `accent 10%` — and all four read as *state*: something is true about this line. The tour takes the one slot nobody has claimed and uses **no tint at all**: flat `--field`, a 2px left rule, a numbered square marker. It reads as *chrome* — something is being shown to you — before a word of it has been read. That is a stronger separation than a fifth hue, and it avoids adding a fifth entry to a semantic ramp already at four.
+Distinguish by **form first**. Every annotation type that ships today carries a tinted fill — Neon finding `primary 5%`, review thread `primary 7%`, local draft `violet 6%`, stale draft `accent 10%` — and all four read as _state_: something is true about this line. The tour takes the one slot nobody has claimed and uses **no tint at all**: flat `--field`, a 2px left rule, a numbered square marker. It reads as _chrome_ — something is being shown to you — before a word of it has been read. That is a stronger separation than a fifth hue, and it avoids adding a fifth entry to a semantic ramp already at four.
 
 The settled visual language:
 
@@ -143,11 +143,11 @@ type ChatSlashCommand = {
   aliases?: string[];
   usage: string;
   description: string;
-  scope: "main" | "pr-reviewer";
+  scope: 'main' | 'pr-reviewer';
   dispatch:
-    | { kind: "app-command" }
-    | { kind: "agent-message"; intent: string }
-    | { kind: "surface-action"; action: string };
+    | { kind: 'app-command' }
+    | { kind: 'agent-message'; intent: string }
+    | { kind: 'surface-action'; action: string };
 };
 ```
 
@@ -176,15 +176,15 @@ neondeck_publish_pr_tour({
   title: string,
   summary: string,
   steps: Array<{
-    key: string,
-    file: string,
-    side: "additions" | "deletions",
-    startLine: number,
-    endLine: number,
-    symbol: string | null,
-    explanation: string
-  }>
-})
+    key: string;
+    file: string;
+    side: 'additions' | 'deletions';
+    startLine: number;
+    endLine: number;
+    symbol: string | null;
+    explanation: string;
+  }>,
+});
 ```
 
 The tool factory must derive and bind the following server-side rather than accepting them from the model:
@@ -269,8 +269,8 @@ type PrReviewTourStep = {
   ordinal: number;
   file: string;
   anchor: {
-    kind: "line-range";
-    side: "additions" | "deletions";
+    kind: 'line-range';
+    side: 'additions' | 'deletions';
     startLine: number;
     endLine: number;
   };
@@ -308,7 +308,7 @@ type ReviewSurfaceNavigationTarget = {
   path: string;
   focus: boolean;
   anchor?: {
-    side: "additions" | "deletions";
+    side: 'additions' | 'deletions';
     startLine: number;
     endLine: number;
   };
@@ -345,14 +345,14 @@ The card has four states, and the middle two are the ones this plan previously l
 
 1. **Investigating** — the agent is tracing. The card shows the intended title and a skeleton spine. **Nothing is installed in the diff until the whole tour validates**; a half-anchored tour is never shown.
 2. **Published** — title, summary, and the numbered spine, with the active step marked. Selecting a step here and pressing `]` in the diff are the same action.
-3. **Replaced** — a second `/show-me` collapses the superseded card **to a strip in place** rather than deleting it. The transcript stays readable while only one tour is live; the strip's annotations are already gone from the diff and its generation is dead. Replacement is correct either way, but this is what makes it *legible*.
+3. **Replaced** — a second `/show-me` collapses the superseded card **to a strip in place** rather than deleting it. The transcript stays readable while only one tour is live; the strip's annotations are already gone from the diff and its generation is dead. Replacement is correct either way, but this is what makes it _legible_.
 4. **Closed** — the card collapses to a strip carrying Reopen. Closing hides annotations and body without deleting the tour or calling the model.
 
 ### The inspector
 
 The inspector has two tabs (`PrReviewFindingsSidebar.tsx`). Putting the spine only in **Ask reviewer** leaves a reviewer who switches to **Review** to check findings or drafts mid-tour with no map.
 
-The tour therefore also renders as a `pr-review-inspector-section` in the Review tab — same chrome, same heading, same `Badge` as every other panel, with the tour signal limited to the 2px left rule and the markers. It sits directly under **Review focus** and above **Neon findings**, because while a tour is open it *is* the navigation context, and it disappears entirely when no tour is current, so it costs nothing the rest of the time.
+The tour therefore also renders as a `pr-review-inspector-section` in the Review tab — same chrome, same heading, same `Badge` as every other panel, with the tour signal limited to the 2px left rule and the markers. It sits directly under **Review focus** and above **Neon findings**, because while a tour is open it _is_ the navigation context, and it disappears entirely when no tour is current, so it costs nothing the rest of the time.
 
 ## Events
 
@@ -361,7 +361,7 @@ Add a tour-specific event contract rather than disguising tour changes as findin
 ```ts
 type ReviewTourChangeEvent =
   | {
-      action: "tour-replaced";
+      action: 'tour-replaced';
       conversationId: string;
       reviewId: string;
       revisionKey: string;
@@ -369,14 +369,14 @@ type ReviewTourChangeEvent =
       generation: number;
     }
   | {
-      action: "tour-activated";
+      action: 'tour-activated';
       surfaceId: string;
       tourId: string;
       generation: number;
       stepId: string;
     }
   | {
-      action: "tour-closed";
+      action: 'tour-closed';
       surfaceId: string;
       tourId: string;
       generation: number;
@@ -399,7 +399,7 @@ The publish service must reject the complete replacement if any step has:
 - an unsupported number of steps
 - a stale review or head SHA binding
 
-Initial limits should be deliberately bounded, for example 2–12 steps, short titles and symbols, and explanations sized for inline reading rather than essays.
+Initial limits are deliberately bounded at 1–12 steps, with short titles and symbols and explanations sized for inline reading rather than essays.
 
 The application should generate durable ids and provenance. The model must not provide HTML, executable actions, URLs, surface ids, review ids, repository paths outside the review, or revision identifiers.
 
@@ -481,12 +481,9 @@ When the PR head revision changes:
 - Test keyboard navigation, focus management, screen-reader announcements, split/unified diff modes, and narrow companion-display layouts.
 - Measure tour investigation latency and workspace-tool usage.
 
-## Acceptance Criteria
+## PR #352 Acceptance Criteria
 
 - A user can ask the PR reviewer for a tour in natural language.
-- The sidebar provides accessible reviewer-scoped slash-command discovery without exposing unrelated main-chat commands.
-- `/show-me where the migration is applied` requests a guided explanation, and `/tour` behaves as its alias.
-- An unknown reviewer slash command is rejected contextually rather than sent to the model.
 - Publishing a tour switches Traverse to `tour`, and `[` / `]` then walk the steps with the status line reading `Tour · 2 of 4 · <title>`.
 - The annotation controls, the chat spine, the inspector panel and the keyboard all drive one cursor and stay in sync.
 - A tour annotation is the only annotation in the diff with no tinted fill.
@@ -498,6 +495,9 @@ When the PR head revision changes:
 - Previous, Next, and Start over navigate without invoking the model.
 - Ask about this step creates an unambiguous contextual follow-up.
 - Tour annotations are visually and semantically distinct from findings and comments.
+
+The accessible reviewer-scoped slash-command typeahead, `/show-me` and `/tour` aliases, and contextual rejection of unknown reviewer commands are acceptance criteria for the separate Phase 0 follow-up PR. Until then, users can type the guided-tour request as ordinary reviewer text.
+
 - Publishing a second tour atomically replaces the first everywhere it is current.
 - Delayed events from the replaced tour cannot restore its annotations or progress.
 - A validation failure leaves the current tour unchanged.

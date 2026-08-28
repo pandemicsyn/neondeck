@@ -194,9 +194,11 @@ describe('PR review prompts', () => {
         'neondeck_pr_review_draft_comment_create',
         'neondeck_pr_review_draft_comment_update',
         'neondeck_pr_review_draft_comment_delete',
+        'neondeck_publish_pr_tour',
       ]),
     );
     expect(first.instructions).toContain('use the matching mounted draft tool');
+    expect(first.instructions).toContain('/show-me');
     expect(first.instructions).toContain(
       'explicitly asks to re-review the pull request',
     );

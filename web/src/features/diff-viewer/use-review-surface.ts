@@ -14,6 +14,7 @@ import {
   reviewSurfaceSchemaVersion,
   type ReviewSurfaceNavigationAckStatus,
   type ReviewSurfaceNavigationCommand,
+  type ReviewSurfaceNavigationTarget,
   type ReviewSurfaceSnapshot,
 } from '../../../../shared/review-surface';
 import type { ReviewSourceSnapshot } from '../../../../shared/review-source';
@@ -29,6 +30,10 @@ type UseReviewSurfaceInput = {
   activePath: string | null;
   fileFilter?: string | null;
   onNavigatePath?: (path: string, focus: boolean) => void;
+  onNavigateTarget?: (target: ReviewSurfaceNavigationTarget) => void;
+  canResolveNavigationTarget?: (
+    target: ReviewSurfaceNavigationTarget,
+  ) => boolean | Promise<boolean>;
   onFindingsChange?: (surfaceId: string, findings: NeonReviewFinding[]) => void;
   onSurfaceIdChange?: (surfaceId: string | null) => void;
   reviewOrder?: readonly string[];
@@ -78,14 +83,21 @@ export function useReviewSurface(input: UseReviewSurfaceInput | null) {
   );
   const snapshotRef = useRef(snapshot);
   const navigateRef = useRef(input?.onNavigatePath);
+  const navigateTargetRef = useRef(input?.onNavigateTarget);
+  const canResolveNavigationTargetRef = useRef(
+    input?.canResolveNavigationTarget,
+  );
   const findingsChangeRef = useRef(input?.onFindingsChange);
   const findingsRequestGenerationRef = useRef(0);
+  const navigationQueueRef = useRef<Promise<void>>(Promise.resolve());
   const surfaceIdChangeRef = useRef(input?.onSurfaceIdChange);
   const eventStreamReadyRef = useRef(false);
   const registeredRef = useRef(false);
   const surfaceWriteQueueRef = useRef<Promise<void>>(Promise.resolve());
   snapshotRef.current = snapshot;
   navigateRef.current = input?.onNavigatePath;
+  navigateTargetRef.current = input?.onNavigateTarget;
+  canResolveNavigationTargetRef.current = input?.canResolveNavigationTarget;
   findingsChangeRef.current = input?.onFindingsChange;
   surfaceIdChangeRef.current = input?.onSurfaceIdChange;
 
@@ -139,18 +151,9 @@ export function useReviewSurface(input: UseReviewSurfaceInput | null) {
         ) {
           return;
         }
-        const current = snapshotRef.current;
-        if (!current) return;
-        const result = resolveReviewSurfaceNavigation(current, command);
-        if (result.status === 'resolved' && result.resolvedPath) {
-          navigateRef.current?.(result.resolvedPath, command.target.focus);
-          if (command.target.focus) window.focus();
-        }
-        void acknowledgeReviewSurfaceNavigation({
-          commandId: command.commandId,
-          surfaceId,
-          ...result,
-        }).catch(() => undefined);
+        navigationQueueRef.current = navigationQueueRef.current
+          .catch(() => undefined)
+          .then(() => resolveAndAcknowledge(command));
       },
       () => {
         eventStreamReadyRef.current = false;
@@ -168,6 +171,63 @@ export function useReviewSurface(input: UseReviewSurfaceInput | null) {
       findingsRequestGenerationRef.current += 1;
       unsubscribe();
     };
+
+    async function resolveAndAcknowledge(
+      command: ReviewSurfaceNavigationCommand,
+    ) {
+      const current = snapshotRef.current;
+      if (!current) return;
+      let targetAvailable = true;
+      let resolver = canResolveNavigationTargetRef.current;
+      if (command.target.anchor || command.target.annotationId) {
+        try {
+          targetAvailable = Boolean(await resolver?.(command.target));
+        } catch {
+          targetAvailable = false;
+        }
+      }
+      let latest = snapshotRef.current;
+      if (!latest) return;
+      if (
+        (command.target.anchor || command.target.annotationId) &&
+        (latest !== current ||
+          resolver !== canResolveNavigationTargetRef.current)
+      ) {
+        resolver = canResolveNavigationTargetRef.current;
+        try {
+          targetAvailable = Boolean(await resolver?.(command.target));
+        } catch {
+          targetAvailable = false;
+        }
+        const afterRevalidation = snapshotRef.current;
+        if (!afterRevalidation) return;
+        if (
+          afterRevalidation !== latest ||
+          resolver !== canResolveNavigationTargetRef.current
+        ) {
+          targetAvailable = false;
+        }
+        latest = afterRevalidation;
+      }
+      const result = resolveReviewSurfaceNavigation(
+        latest,
+        command,
+        () => targetAvailable,
+      );
+      if (result.status === 'resolved' && result.resolvedPath) {
+        if (navigateTargetRef.current) {
+          navigateTargetRef.current(command.target);
+        } else {
+          navigateRef.current?.(result.resolvedPath, command.target.focus);
+        }
+        if (command.target.focus) window.focus();
+      }
+      void acknowledgeReviewSurfaceNavigation({
+        commandId: command.commandId,
+        surfaceId: command.surfaceId,
+        ...result,
+      }).catch(() => undefined);
+    }
   }, [surfaceId]);
 
   return surfaceId;
@@ -262,6 +322,7 @@ export function createReviewSurfaceSnapshot(
 export function resolveReviewSurfaceNavigation(
   surface: ReviewSurfaceSnapshot,
   command: ReviewSurfaceNavigationCommand,
+  canResolveTarget?: (target: ReviewSurfaceNavigationTarget) => boolean,
 ): {
   status: ReviewSurfaceNavigationAckStatus;
   revisionKey: string | null;
@@ -284,6 +345,18 @@ export function resolveReviewSurfaceNavigation(
       revisionKey,
       resolvedPath: null,
       message: 'The requested file is not part of this review revision.',
+    };
+  }
+  if (
+    (command.target.anchor || command.target.annotationId) &&
+    !canResolveTarget?.(command.target)
+  ) {
+    return {
+      status: 'target-unavailable',
+      revisionKey,
+      resolvedPath: null,
+      message:
+        'The requested line range is not available in the mounted review patch.',
     };
   }
   return {

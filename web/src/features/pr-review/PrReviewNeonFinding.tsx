@@ -11,6 +11,7 @@ export function PrReviewNeonFindingAnnotation({
   isPromoting = false,
   onDismiss,
   onPromote,
+  onShowWhy,
   promoteLabel,
   promotionDisabledReason,
   selected,
@@ -22,6 +23,7 @@ export function PrReviewNeonFindingAnnotation({
   isPromoting?: boolean;
   onDismiss: (finding: NeonReviewFinding) => void;
   onPromote?: (finding: NeonReviewFinding) => void;
+  onShowWhy?: (finding: NeonReviewFinding) => void;
   promoteLabel?: string;
   promotionDisabledReason?: string | null;
   selected: boolean;
@@ -51,6 +53,15 @@ export function PrReviewNeonFindingAnnotation({
       {finding.lifecycle.state === 'active' ||
       finding.lifecycle.state === 'stale' ? (
         <div className="pr-review-inline-actions">
+          {onShowWhy && finding.lifecycle.state === 'active' ? (
+            <button
+              aria-label={`Show why ${finding.title} matters at ${finding.file}, ${findingAnchorLabel(finding)}`}
+              onClick={() => onShowWhy(finding)}
+              type="button"
+            >
+              Show me why ›
+            </button>
+          ) : null}
           {onPromote && promoteLabel && finding.lifecycle.state === 'active' ? (
             <button
               aria-label={`${promoteLabel}: ${finding.title}`}
@@ -89,6 +100,7 @@ export function PrReviewNeonFindingsPanel({
   isPromoting = () => false,
   onDismiss,
   onPromote,
+  onShowWhy,
   promoteLabel,
   promotionDisabledReason,
   onSelect,
@@ -102,6 +114,7 @@ export function PrReviewNeonFindingsPanel({
   isPromoting?: (findingId: string) => boolean;
   onDismiss: (finding: NeonReviewFinding) => void;
   onPromote?: (finding: NeonReviewFinding) => void;
+  onShowWhy?: (finding: NeonReviewFinding) => void;
   promoteLabel?: string;
   promotionDisabledReason?: (finding: NeonReviewFinding) => string | null;
   onSelect: (finding: NeonReviewFinding) => void;
@@ -162,19 +175,30 @@ export function PrReviewNeonFindingsPanel({
               <FindingPromotionHistory finding={finding} />
               <div className="pr-review-inline-actions">
                 {finding.lifecycle.state === 'active' ? (
-                  <button
-                    aria-label={`${
-                      resolution.state === 'anchored'
+                  <>
+                    {onShowWhy ? (
+                      <button
+                        aria-label={`Show why ${finding.title} matters at ${finding.file}, ${findingAnchorLabel(finding)}`}
+                        onClick={() => onShowWhy(finding)}
+                        type="button"
+                      >
+                        Show me why ›
+                      </button>
+                    ) : null}
+                    <button
+                      aria-label={`${
+                        resolution.state === 'anchored'
+                          ? 'Show finding'
+                          : 'Show file'
+                      }: ${controlContext}`}
+                      onClick={() => onSelect(finding)}
+                      type="button"
+                    >
+                      {resolution.state === 'anchored'
                         ? 'Show finding'
-                        : 'Show file'
-                    }: ${controlContext}`}
-                    onClick={() => onSelect(finding)}
-                    type="button"
-                  >
-                    {resolution.state === 'anchored'
-                      ? 'Show finding'
-                      : 'Show file'}
-                  </button>
+                        : 'Show file'}
+                    </button>
+                  </>
                 ) : null}
                 {finding.lifecycle.state === 'active' ||
                 finding.lifecycle.state === 'stale' ? (

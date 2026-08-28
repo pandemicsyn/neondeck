@@ -1,6 +1,10 @@
 import type { RepoDiffFile } from '../../api';
 import type { ReviewFindingSeverity } from '../../../../shared/review-navigation';
 import type { NeonReviewFinding } from '../../../../shared/review-finding';
+import type {
+  PrReviewTour,
+  PrReviewTourStep,
+} from '../../../../shared/pr-review-tour';
 
 export type DiffFilePatch = Omit<RepoDiffFile, 'patch'> & {
   patch?: string | null;
@@ -22,7 +26,7 @@ export type DiffViewTone = 'primary' | 'violet' | 'accent';
 
 export type DiffReviewAnnotationMetadata = {
   id: string;
-  kind?: 'thread' | 'draft' | 'composer' | 'finding';
+  kind?: 'thread' | 'draft' | 'composer' | 'finding' | 'tour';
   title: string;
   body: string;
   authorLogin?: string | null;
@@ -31,6 +35,8 @@ export type DiffReviewAnnotationMetadata = {
   isOutdated?: boolean;
   isStale?: boolean;
   finding?: NeonReviewFinding;
+  tour?: PrReviewTour;
+  tourStep?: PrReviewTourStep;
 };
 
 export type DiffReviewAnnotation = {

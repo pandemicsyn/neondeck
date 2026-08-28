@@ -12,6 +12,7 @@ const traversalKinds: readonly ReviewCursorKind[] = [
   'review-thread',
   'local-draft',
   'finding',
+  'tour',
   'attention',
 ];
 
@@ -29,6 +30,7 @@ export function PrReviewNavigationBar({
   onMove,
   status,
   total,
+  context,
 }: {
   announcement: string;
   boundary: 'start' | 'end' | null;
@@ -43,6 +45,7 @@ export function PrReviewNavigationBar({
   onMove: (direction: ReviewCursorDirection) => void;
   status: string | null;
   total: number;
+  context?: string | null;
 }) {
   const [helpOpen, setHelpOpen] = useState(false);
   const helpButtonRef = useRef<HTMLButtonElement>(null);
@@ -110,6 +113,7 @@ export function PrReviewNavigationBar({
     kind,
     status,
     total,
+    context,
   });
 
   return (
@@ -281,6 +285,7 @@ function navigationPositionText({
   kind,
   status,
   total,
+  context,
 }: {
   boundary: 'start' | 'end' | null;
   canMove: boolean;
@@ -291,6 +296,7 @@ function navigationPositionText({
   kind: ReviewCursorKind;
   status: string | null;
   total: number;
+  context?: string | null;
 }) {
   const label =
     kind === 'attention' && currentTarget?.kind === 'attention'
@@ -315,5 +321,6 @@ function navigationPositionText({
     : '';
   const statusText =
     status && status !== `${boundary} boundary` ? ` · ${status}` : '';
-  return `${label} · ${position}${boundaryText}${statusText}`;
+  const contextText = kind === 'tour' && context ? ` · ${context}` : '';
+  return `${label} · ${position}${contextText}${boundaryText}${statusText}`;
 }

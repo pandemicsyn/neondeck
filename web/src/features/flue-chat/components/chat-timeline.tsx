@@ -1,5 +1,5 @@
 import type { FlueConversationMessage } from '@flue/react';
-import { memo } from 'react';
+import { memo, type ReactNode } from 'react';
 import type { SessionTimelineItem } from '../lib/timeline';
 import { ChatPartEvent, renderMessagePart } from './message-parts';
 import { SessionActivityRow } from './session-activity-row';
@@ -7,9 +7,11 @@ import { SessionActivityRow } from './session-activity-row';
 export const ChatTimelineItems = memo(function ChatTimelineItems({
   hasSession,
   items,
+  renderPart = renderMessagePart,
 }: {
   hasSession: boolean;
   items: SessionTimelineItem[];
+  renderPart?: (part: unknown, key: string) => ReactNode;
 }) {
   if (items.length === 0) {
     return (
@@ -34,7 +36,13 @@ export const ChatTimelineItems = memo(function ChatTimelineItems({
       return <SessionActivityRow activity={item.activity} key={item.id} />;
     }
 
-    return <ChatTimelineMessage key={item.id} message={item.message} />;
+    return (
+      <ChatTimelineMessage
+        key={item.id}
+        message={item.message}
+        renderPart={renderPart}
+      />
+    );
   });
 });
 
@@ -67,8 +75,10 @@ export function ChatResponseProgress({
 
 const ChatTimelineMessage = memo(function ChatTimelineMessage({
   message,
+  renderPart,
 }: {
   message: FlueConversationMessage;
+  renderPart: (part: unknown, key: string) => ReactNode;
 }) {
   return (
     <article
@@ -80,7 +90,7 @@ const ChatTimelineMessage = memo(function ChatTimelineMessage({
       <div className="space-y-2 text-[13px] leading-[1.55] text-ink">
         {message.parts.length > 0 ? (
           message.parts.map((part, index) =>
-            renderMessagePart(part, `${message.id}-${index}`),
+            renderPart(part, `${message.id}-${index}`),
           )
         ) : (
           <ChatPartEvent

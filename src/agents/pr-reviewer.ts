@@ -11,6 +11,10 @@ import {
 import type { MiddlewareHandler } from 'hono';
 import { parsePrReviewerConversationId } from '../../shared/pr-reviewer-session';
 import {
+  resolvedReviewRevision,
+  reviewRevisionKey,
+} from '../../shared/review-source';
+import {
   readLivePrReviewDraft,
   type GitHubPullRequestReviewThread,
 } from '../modules/github';
@@ -23,6 +27,7 @@ import {
   createDeferredPrReviewerWorkspaceTools,
   createPrReviewerDraftTools,
   createPrReviewerReReviewTool,
+  createPrReviewerTourTool,
   consumePrReviewWorkspaceBudget,
   prReviewWorkspaceBudgetKey,
   prReviewerWorkspaceToolCallLimit,
@@ -30,6 +35,7 @@ import {
   resolvePrReviewerWorkspace,
   type PrReviewerHandoff,
 } from '../modules/pr-reviewer';
+import { readBoundPrReviewTour } from '../modules/pr-review-tours';
 import {
   exploreSubagent,
   readAgentModelSelectionSync,
@@ -139,6 +145,21 @@ export async function buildPrReviewerRuntime(
     repo: review.repoFullName,
     prNumber: review.prNumber,
   });
+  const storedTour = readBoundPrReviewTour(review.id, review.headSha, paths);
+  const reviewRevision = reviewRevisionKey(
+    resolvedReviewRevision({
+      kind: 'git-commit',
+      id: review.headSha,
+      baseId: review.baseSha,
+    }),
+  );
+  const currentTour =
+    storedTour?.reviewId === review.id &&
+    storedTour.repoFullName.toLowerCase() ===
+      review.repoFullName.toLowerCase() &&
+    storedTour.revisionKey === reviewRevision
+      ? storedTour
+      : null;
   const [workspace, handoff, liveReviewThreads] = await Promise.all([
     resolvePrReviewerWorkspace(
       {
@@ -172,6 +193,7 @@ export async function buildPrReviewerRuntime(
       draft,
       handoff,
       liveReviewThreads,
+      currentTour,
     }),
     contextAvailable: true,
     reviewerWorkspace: workspace,
@@ -182,6 +204,10 @@ export async function buildPrReviewerRuntime(
         paths,
       ),
       ...createPrReviewerDraftTools(
+        { reviewId: review.id, headSha: review.headSha },
+        paths,
+      ),
+      createPrReviewerTourTool(
         { reviewId: review.id, headSha: review.headSha },
         paths,
       ),
@@ -283,6 +309,12 @@ export function PrReviewer({ id }: AgentProps) {
     )) {
       useTool(tool);
     }
+    useTool(
+      createPrReviewerTourTool(
+        { reviewId: conversation.reviewId, headSha: conversation.headSha },
+        paths,
+      ),
+    );
   }
 
   return reviewerInstructionsFromRuntimeHome();
@@ -372,8 +404,10 @@ export function reviewerContext(input: {
   draft: ReturnType<typeof readLivePrReviewDraft>;
   handoff: PrReviewerHandoff;
   liveReviewThreads: ReviewerLiveThreads;
+  currentTour: ReturnType<typeof readBoundPrReviewTour>;
 }) {
-  const { review, workspace, draft, handoff, liveReviewThreads } = input;
+  const { review, workspace, draft, handoff, liveReviewThreads, currentTour } =
+    input;
   const draftRevisionMatch = draft ? draft.headSha === review.headSha : null;
   const draftAnchorsIncluded = draftRevisionMatch === true;
   return JSON.stringify({
@@ -412,6 +446,22 @@ export function reviewerContext(input: {
       body: comment.body.slice(0, 4_000),
     })),
     liveGitHubReviewThreads: liveReviewThreads,
+    currentTour: currentTour
+      ? {
+          id: currentTour.id,
+          generation: currentTour.generation,
+          title: currentTour.title,
+          summary: currentTour.summary,
+          steps: currentTour.steps.map((step) => ({
+            key: step.key,
+            ordinal: step.ordinal,
+            file: step.file,
+            anchor: step.anchor,
+            symbol: step.symbol,
+            explanation: step.explanation,
+          })),
+        }
+      : null,
     workspace: workspace.available
       ? {
           available: true,

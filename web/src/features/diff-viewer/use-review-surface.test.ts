@@ -83,6 +83,30 @@ describe('review surface context', () => {
       resolvedPath: null,
     });
   });
+
+  it('acknowledges exact anchors only after the mounted patch validates them', () => {
+    const surface = createReviewSurfaceSnapshot({
+      activePath: 'src/app.ts',
+      source: reviewSource(),
+      surfaceId: 'surface-1',
+    });
+    const command: ReviewSurfaceNavigationCommand = {
+      ...navigation('src/app.ts', reviewRevisionKey(surface.source.revision)),
+      target: {
+        path: 'src/app.ts',
+        focus: false,
+        anchor: { side: 'additions', startLine: 10, endLine: 12 },
+        annotationId: 'tour-step:step-2',
+      },
+    };
+
+    expect(resolveReviewSurfaceNavigation(surface, command)).toMatchObject({
+      status: 'target-unavailable',
+    });
+    expect(
+      resolveReviewSurfaceNavigation(surface, command, () => true),
+    ).toMatchObject({ status: 'resolved', resolvedPath: 'src/app.ts' });
+  });
 });
 
 function navigation(

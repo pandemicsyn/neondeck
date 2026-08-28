@@ -1,5 +1,5 @@
 import type { SelectedLineRange } from '@pierre/diffs/react';
-import type { ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { MiniEmpty } from '../../components/ui';
 import { MultiFileView } from '../diff-viewer/MultiFileView';
 import type { DiffNavigationScrollRequest } from '../diff-viewer/DiffViewer';
@@ -11,6 +11,7 @@ import type {
 import type { ReviewSourceSnapshot } from '../../../../shared/review-source';
 import type { NeonReviewFinding } from '../../../../shared/review-finding';
 import type { ReviewRefreshStatus } from '../../../../shared/review-refresh';
+import type { ReviewSurfaceNavigationTarget } from '../../../../shared/review-surface';
 import {
   PrReviewFindingsSidebar,
   type PrReviewFindingsSidebarProps,
@@ -30,6 +31,8 @@ export function PrReviewDiffPane({
   onFileFilterChange,
   onReviewSurfaceFindingsChange,
   onReviewSurfaceIdChange,
+  onReviewSurfaceNavigate,
+  resolveReviewSurfaceTarget,
   onActivePathChange,
   onSelectedLinesChange,
   patchError,
@@ -41,6 +44,9 @@ export function PrReviewDiffPane({
   refreshStatus,
   source,
   title,
+  contentOverride,
+  columnToolbar,
+  hideFileSelector,
 }: {
   activePath: string | null;
   annotationsByPath: Record<string, DiffReviewAnnotation[]>;
@@ -58,6 +64,10 @@ export function PrReviewDiffPane({
     findings: NeonReviewFinding[],
   ) => void;
   onReviewSurfaceIdChange: (surfaceId: string | null) => void;
+  onReviewSurfaceNavigate: (target: ReviewSurfaceNavigationTarget) => void;
+  resolveReviewSurfaceTarget: (
+    target: ReviewSurfaceNavigationTarget,
+  ) => boolean | Promise<boolean>;
   onActivePathChange: (path: string) => void;
   onSelectedLinesChange: (selection: SelectedLineRange | null) => void;
   patchError: string | null;
@@ -69,7 +79,12 @@ export function PrReviewDiffPane({
   refreshStatus: ReviewRefreshStatus;
   source: ReviewSourceSnapshot;
   title: string;
+  contentOverride?: ReactNode;
+  columnToolbar?: ReactNode;
+  hideFileSelector?: boolean;
 }) {
+  const useCompactSidebar = useMediaQuery('(max-width: 1180px)');
+
   if (fileLoadMessage) {
     return (
       <div className="pr-review-load-state">
@@ -84,6 +99,9 @@ export function PrReviewDiffPane({
         activePath={activePath}
         annotationsByPath={annotationsByPath}
         detail={detail}
+        contentOverride={contentOverride}
+        columnToolbar={columnToolbar}
+        hideFileSelector={hideFileSelector}
         emptyLabel="No PR file patches available."
         fileFilter={fileFilter}
         files={files}
@@ -93,7 +111,7 @@ export function PrReviewDiffPane({
           )
         }
         inspector={
-          isStandalone ? (
+          isStandalone && !useCompactSidebar ? (
             <PrReviewFindingsSidebar {...findingsSidebar} variant="inspector" />
           ) : undefined
         }
@@ -104,6 +122,8 @@ export function PrReviewDiffPane({
         onFileFilterChange={onFileFilterChange}
         onReviewSurfaceFindingsChange={onReviewSurfaceFindingsChange}
         onReviewSurfaceIdChange={onReviewSurfaceIdChange}
+        onReviewSurfaceNavigate={onReviewSurfaceNavigate}
+        resolveReviewSurfaceTarget={resolveReviewSurfaceTarget}
         onSelectedLinesChange={onSelectedLinesChange}
         patchError={patchError}
         renderAnnotation={renderAnnotation}
@@ -116,9 +136,28 @@ export function PrReviewDiffPane({
         title={title}
         tone="primary"
       />
-      {isStandalone ? (
+      {isStandalone && useCompactSidebar ? (
         <PrReviewFindingsSidebar {...findingsSidebar} variant="compact" />
       ) : null}
     </>
   );
+}
+
+function useMediaQuery(query: string) {
+  const getMatches = () =>
+    typeof window !== 'undefined' &&
+    typeof window.matchMedia === 'function' &&
+    window.matchMedia(query).matches;
+  const [matches, setMatches] = useState(getMatches);
+
+  useEffect(() => {
+    if (typeof window.matchMedia !== 'function') return;
+    const media = window.matchMedia(query);
+    const update = () => setMatches(media.matches);
+    update();
+    media.addEventListener('change', update);
+    return () => media.removeEventListener('change', update);
+  }, [query]);
+
+  return matches;
 }

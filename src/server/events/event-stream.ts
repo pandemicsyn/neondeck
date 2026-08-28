@@ -14,6 +14,10 @@ import {
   subscribePrReviewEvents,
 } from '../../modules/pr-reviews';
 import {
+  formatReviewTourServerSentEvent,
+  subscribeReviewTourEvents,
+} from '../../modules/pr-review-tours';
+import {
   formatReviewSurfaceServerSentEvent,
   reviewSurfaceRegistry,
 } from '../../modules/review-surfaces';
@@ -47,6 +51,7 @@ export type EventStreamDependencies = {
   formatPrReviewServerSentEvent: typeof formatPrReviewServerSentEvent;
   formatReviewSurfaceServerSentEvent: typeof formatReviewSurfaceServerSentEvent;
   formatReviewSourceRevisionServerSentEvent: typeof formatReviewSourceRevisionServerSentEvent;
+  formatReviewTourServerSentEvent?: typeof formatReviewTourServerSentEvent;
   replayConfigEventsAfter: typeof replayConfigEventsAfter;
   subscribeChatSessionCommandEvents: typeof subscribeChatSessionCommandEvents;
   subscribeChatSessionEvents: typeof subscribeChatSessionEvents;
@@ -56,6 +61,7 @@ export type EventStreamDependencies = {
   subscribePrReviewEvents: typeof subscribePrReviewEvents;
   subscribeReviewSurfaceEvents: typeof reviewSurfaceRegistry.subscribe;
   subscribeReviewSourceRevisionEvents: typeof subscribeReviewSourceRevisionEvents;
+  subscribeReviewTourEvents?: typeof subscribeReviewTourEvents;
 };
 
 const defaultDependencies: EventStreamDependencies = {
@@ -67,6 +73,7 @@ const defaultDependencies: EventStreamDependencies = {
   formatPrReviewServerSentEvent,
   formatReviewSurfaceServerSentEvent,
   formatReviewSourceRevisionServerSentEvent,
+  formatReviewTourServerSentEvent,
   replayConfigEventsAfter,
   subscribeChatSessionCommandEvents,
   subscribeChatSessionEvents,
@@ -78,6 +85,7 @@ const defaultDependencies: EventStreamDependencies = {
     reviewSurfaceRegistry,
   ),
   subscribeReviewSourceRevisionEvents,
+  subscribeReviewTourEvents,
 };
 
 export type EventStreamOptions = {
@@ -133,6 +141,14 @@ export function createEventStreamRoutes(
           dependencies.subscribeReviewSourceRevisionEvents((event) => {
             send(dependencies.formatReviewSourceRevisionServerSentEvent(event));
           }),
+          ...(dependencies.subscribeReviewTourEvents &&
+          dependencies.formatReviewTourServerSentEvent
+            ? [
+                dependencies.subscribeReviewTourEvents((event) => {
+                  send(dependencies.formatReviewTourServerSentEvent!(event));
+                }),
+              ]
+            : []),
           dependencies.subscribeGitHubQueueSnapshotEvents((event) => {
             send(dependencies.formatGitHubQueueSnapshotServerSentEvent(event));
           }),

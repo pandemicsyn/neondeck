@@ -10,6 +10,7 @@ design
 research-repos
 .plans/*.html
 .plans/new-review/mockups
+.plans/guided-tours/mockups
 .flue-vite
 src/runtime-home/app-db/migrations/**/snapshot.json
 package-lock.json

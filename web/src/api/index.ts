@@ -21,6 +21,7 @@ export * from './briefings';
 export * from './reports';
 export * from './reviews';
 export * from './review-surfaces';
+export * from './review-tours';
 export * from './worktrees';
 export * from './watches';
 export * from './updates';

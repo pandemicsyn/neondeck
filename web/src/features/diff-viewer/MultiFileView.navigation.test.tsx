@@ -47,7 +47,7 @@ vi.mock('./DiffViewer', () => ({
   },
 }));
 
-import { MultiFileView } from './MultiFileView';
+import { MultiFileView, reviewSurfaceTargetExists } from './MultiFileView';
 import {
   reviewSourceSchemaVersion,
   resolvedReviewRevision,
@@ -70,6 +70,110 @@ describe('MultiFileView navigation synchronization', () => {
     act(() => root.unmount());
     container.remove();
     vi.clearAllMocks();
+  });
+
+  it('validates every requested side and line against the loaded patch', () => {
+    const files = reviewFiles();
+    expect(
+      reviewSurfaceTargetExists(files, undefined, {
+        path: 'src/a.ts',
+        focus: false,
+        anchor: { side: 'additions', startLine: 1, endLine: 1 },
+      }),
+    ).toBe(true);
+    expect(
+      reviewSurfaceTargetExists(files, undefined, {
+        path: 'src/a.ts',
+        focus: false,
+        anchor: { side: 'deletions', startLine: 2, endLine: 2 },
+      }),
+    ).toBe(false);
+    expect(
+      reviewSurfaceTargetExists(
+        files,
+        {},
+        {
+          path: 'src/a.ts',
+          focus: false,
+          annotationId: 'missing-annotation',
+        },
+      ),
+    ).toBe(false);
+    expect(
+      reviewSurfaceTargetExists(
+        files,
+        {
+          'src/a.ts': [{ metadata: { id: 'annotation-1' } } as never],
+        },
+        {
+          path: 'src/a.ts',
+          focus: false,
+          annotationId: 'annotation-1',
+        },
+      ),
+    ).toBe(true);
+  });
+
+  it('resolves additions from a full newly-added-file patch', () => {
+    expect(
+      reviewSurfaceTargetExists(
+        [
+          {
+            additions: 2,
+            deletions: 0,
+            path: 'src/new.ts',
+            patch:
+              'diff --git a/src/new.ts b/src/new.ts\n--- /dev/null\n+++ b/src/new.ts\n@@ -0,0 +1,2 @@\n+first\n+second',
+            status: 'added',
+          },
+        ],
+        undefined,
+        {
+          path: 'src/new.ts',
+          focus: false,
+          anchor: { side: 'additions', startLine: 1, endLine: 2 },
+        },
+      ),
+    ).toBe(true);
+  });
+
+  it('requires an exact tour-step annotation anchor', () => {
+    const files = reviewFiles();
+    const annotations = {
+      'src/a.ts': [
+        {
+          side: 'additions',
+          lineNumber: 2,
+          metadata: {
+            id: 'tour-step:step-1',
+            kind: 'tour',
+            tourStep: {
+              anchor: {
+                side: 'additions',
+                startLine: 1,
+                endLine: 1,
+              },
+            },
+          },
+        } as never,
+      ],
+    };
+    expect(
+      reviewSurfaceTargetExists(files, annotations, {
+        path: 'src/a.ts',
+        focus: false,
+        annotationId: 'tour-step:step-1',
+        anchor: { side: 'additions', startLine: 1, endLine: 1 },
+      }),
+    ).toBe(true);
+    expect(
+      reviewSurfaceTargetExists(files, annotations, {
+        path: 'src/a.ts',
+        focus: false,
+        annotationId: 'tour-step:step-1',
+        anchor: { side: 'deletions', startLine: 1, endLine: 1 },
+      }),
+    ).toBe(false);
   });
 
   it('keeps tree, diff anchor, inspector, and review-surface snapshot on one active target', () => {

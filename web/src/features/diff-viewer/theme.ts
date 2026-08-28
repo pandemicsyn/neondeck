@@ -207,4 +207,75 @@ export const neondeckDiffUnsafeCss = `
     cursor: not-allowed;
     opacity: 0.45;
   }
+  [data-neondeck-review-annotation].pr-review-tour-annotation {
+    border-color: color-mix(in srgb, var(--tour) 45%, var(--line));
+    border-left: 2px solid var(--tour);
+    background: var(--field);
+  }
+  .pr-review-tour-annotation h3,
+  .pr-review-tour-annotation p {
+    margin: 0;
+  }
+  .pr-review-tour-annotation h3 {
+    margin-top: 3px;
+    color: var(--ink);
+    font-size: calc(11px * var(--deck-text-scale));
+  }
+  .pr-review-tour-annotation button {
+    margin-top: 6px;
+    border: 1px solid var(--line);
+    background: var(--field);
+    color: var(--ink);
+    font: inherit;
+  }
+  .pr-review-tour-annotation button.pr-review-tour-traverse {
+    border-color: var(--tour);
+    color: var(--tour-text);
+  }
+  .pr-review-tour-marker {
+    display: flex;
+    width: 100%;
+    align-items: center;
+    gap: 7px;
+    margin: 0;
+    border: 1px dashed color-mix(in srgb, var(--tour) 30%, var(--line));
+    background: transparent;
+    padding: 4px 8px;
+    color: var(--muted);
+    font-family: var(--font-mono);
+    font-size: calc(9.5px * var(--deck-text-scale));
+    text-align: left;
+  }
+  .pr-review-tour-mark {
+    display: inline-flex;
+    width: 16px;
+    height: 16px;
+    flex: none;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid var(--tour);
+    background: var(--tour);
+    color: var(--primary-ink);
+    font-size: calc(9px * var(--deck-text-scale));
+    font-weight: 600;
+    line-height: 1;
+    font-variant-numeric: tabular-nums;
+  }
+  .pr-review-tour-mark[data-ghost] {
+    border-color: color-mix(in srgb, var(--tour) 45%, var(--line));
+    background: transparent;
+    color: var(--tour-text);
+  }
+  .pr-review-tour-annotation-heading {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+  }
+  .pr-review-tour-eyebrow {
+    color: var(--tour-text);
+    font-family: var(--font-mono);
+    font-size: calc(9px * var(--deck-text-scale));
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
 `;

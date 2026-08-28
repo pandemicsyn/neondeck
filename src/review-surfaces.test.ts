@@ -11,6 +11,7 @@ import {
 } from '../shared/review-source';
 import { createReviewRefreshStatus } from '../shared/review-refresh';
 import {
+  reviewSurfaceNavigationLimits,
   reviewSurfaceSchemaVersion,
   type ReviewSurfaceChangeEvent,
   type ReviewSurfaceSnapshot,
@@ -69,7 +70,12 @@ describe('review surface registry', () => {
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
           revisionKey: 'git-commit::head-sha',
-          target: { path: 'src/app.ts', focus: false },
+          target: {
+            path: 'src/app.ts',
+            focus: false,
+            anchor: { side: 'additions', startLine: 10, endLine: 12 },
+            annotationId: 'tour-step:step-2',
+          },
         }),
       },
     );
@@ -112,11 +118,48 @@ describe('review surface registry', () => {
       'navigation',
       'acknowledged',
     ]);
+    expect(events[1]?.navigation?.target).toEqual({
+      path: 'src/app.ts',
+      focus: false,
+      anchor: { side: 'additions', startLine: 10, endLine: 12 },
+      annotationId: 'tour-step:step-2',
+    });
     expect(registry.read('surface-a')?.lastNavigationAck).toMatchObject({
       commandId,
       status: 'resolved',
       resolvedPath: 'src/app.ts',
     });
+  });
+
+  it('rejects navigation anchors with unbounded lines or spans', async () => {
+    const { app } = harness();
+    await register(app, snapshot('surface-a'));
+
+    for (const anchor of [
+      {
+        side: 'additions',
+        startLine: 1,
+        endLine: reviewSurfaceNavigationLimits.maxLineNumber + 1,
+      },
+      {
+        side: 'additions',
+        startLine: 1,
+        endLine: reviewSurfaceNavigationLimits.maxLineRangeSpan + 1,
+      },
+    ]) {
+      const response = await app.request(
+        'http://localhost/api/review-surfaces/surface-a/navigation',
+        {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            revisionKey: 'git-commit::head-sha',
+            target: { path: 'src/app.ts', focus: false, anchor },
+          }),
+        },
+      );
+      expect(response.status).toBe(400);
+    }
   });
 
   it('expires inactive surfaces without durable state', () => {

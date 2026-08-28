@@ -68,7 +68,9 @@ Neon watches PRs, prepares fixes and reviews, and keeps things moving.
   Neon reviews against an exact-head, read-only Git workspace. The reviewer
   discovers the merge-base diff itself, can inspect bounded patches, raw files,
   hunk indexes, history, and blame at the reviewed revisions, and keeps a durable
-  chat available for follow-up questions.
+  chat available for follow-up questions. Ask to be shown a flow and Neon can
+  publish an exact-revision guided tour with deterministic diff walking, a
+  stitched reading view, and finding-backed “Show me why” explanations.
 - **Handoff, both directions.** Delegate work to agents like Kilo or Codex, then
   let the finished PR come back to Neon for checks and deployment follow-through.
 - **Conversational briefings and scheduled instructions.** Neon grounds a

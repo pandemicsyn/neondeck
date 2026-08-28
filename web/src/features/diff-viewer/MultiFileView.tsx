@@ -26,6 +26,7 @@ import type { NeonReviewFinding } from '../../../../shared/review-finding';
 import { reviewSourceDataAttributes } from './review-source';
 import { useReviewSurface } from './use-review-surface';
 import type { ReviewRefreshStatus } from '../../../../shared/review-refresh';
+import type { ReviewSurfaceNavigationTarget } from '../../../../shared/review-surface';
 
 type MultiFileViewProps = {
   files: DiffFilePatch[];
@@ -56,8 +57,15 @@ type MultiFileViewProps = {
     findings: NeonReviewFinding[],
   ) => void;
   onReviewSurfaceIdChange?: (surfaceId: string | null) => void;
+  onReviewSurfaceNavigate?: (target: ReviewSurfaceNavigationTarget) => void;
+  resolveReviewSurfaceTarget?: (
+    target: ReviewSurfaceNavigationTarget,
+  ) => boolean | Promise<boolean>;
   refreshStatus?: ReviewRefreshStatus;
   navigationScroll?: DiffNavigationScrollRequest | null;
+  contentOverride?: ReactNode;
+  columnToolbar?: ReactNode;
+  hideFileSelector?: boolean;
 };
 
 export function MultiFileView({
@@ -84,8 +92,13 @@ export function MultiFileView({
   selectedAnnotationId,
   onReviewSurfaceFindingsChange,
   onReviewSurfaceIdChange,
+  onReviewSurfaceNavigate,
+  resolveReviewSurfaceTarget,
   refreshStatus,
   navigationScroll,
+  contentOverride,
+  columnToolbar,
+  hideFileSelector = false,
   title,
   tone = 'primary',
 }: MultiFileViewProps) {
@@ -112,6 +125,10 @@ export function MultiFileView({
           onNavigatePath: selectPath,
           onFindingsChange: onReviewSurfaceFindingsChange,
           onSurfaceIdChange: onReviewSurfaceIdChange,
+          onNavigateTarget: onReviewSurfaceNavigate,
+          canResolveNavigationTarget: (target) =>
+            resolveReviewSurfaceTarget?.(target) ??
+            reviewSurfaceTargetExists(files, annotationsByPath, target),
           reviewOrder,
           selectedAnnotationId: selectedAnnotationId ?? null,
           selection: selectedLines,
@@ -157,7 +174,8 @@ export function MultiFileView({
         />
       </aside>
       <div className="diff-file-column">
-        <div className="diff-file-selector">
+        {columnToolbar}
+        <div className="diff-file-selector" hidden={hideFileSelector}>
           <label className="sr-only" htmlFor={selectId}>
             Changed file
           </label>
@@ -174,32 +192,36 @@ export function MultiFileView({
             ))}
           </select>
         </div>
-        <DiffWorkerProvider>
-          <UnifiedPatchView
-            className="min-h-0 flex-1"
-            detail={detail ?? selectedFile?.path}
-            lineAnnotations={
-              selectedFile ? annotationsByPath?.[selectedFile.path] : undefined
-            }
-            meta={
-              selectedFile ? (
-                <>
-                  <Badge>{selectedFile.status}</Badge>
-                  <Badge>{diffStatsLabel(selectedFile)}</Badge>
-                </>
-              ) : (
-                <Badge>{diffFileCountLabel(files.length)}</Badge>
-              )
-            }
-            navigationScroll={navigationScroll}
-            patch={patchHasContent(patch) ? patch : null}
-            renderAnnotation={renderAnnotation}
-            selectedLines={selectedLines}
-            onSelectedLinesChange={onSelectedLinesChange}
-            title={title}
-            tone={tone}
-          />
-        </DiffWorkerProvider>
+        {contentOverride ?? (
+          <DiffWorkerProvider>
+            <UnifiedPatchView
+              className="min-h-0 flex-1"
+              detail={detail ?? selectedFile?.path}
+              lineAnnotations={
+                selectedFile
+                  ? annotationsByPath?.[selectedFile.path]
+                  : undefined
+              }
+              meta={
+                selectedFile ? (
+                  <>
+                    <Badge>{selectedFile.status}</Badge>
+                    <Badge>{diffStatsLabel(selectedFile)}</Badge>
+                  </>
+                ) : (
+                  <Badge>{diffFileCountLabel(files.length)}</Badge>
+                )
+              }
+              navigationScroll={navigationScroll}
+              patch={patchHasContent(patch) ? patch : null}
+              renderAnnotation={renderAnnotation}
+              selectedLines={selectedLines}
+              onSelectedLinesChange={onSelectedLinesChange}
+              title={title}
+              tone={tone}
+            />
+          </DiffWorkerProvider>
+        )}
         {isLoadingPatch ? (
           <p className="border-x border-b border-line bg-field px-2 py-1 font-mono text-[10px] text-muted">
             Loading patch...
@@ -224,4 +246,95 @@ export function MultiFileView({
       ) : null}
     </section>
   );
+}
+
+export function reviewSurfaceTargetExists(
+  files: readonly DiffFilePatch[],
+  annotationsByPath:
+    Record<string, DiffReviewAnnotation[] | undefined> | undefined,
+  target: ReviewSurfaceNavigationTarget,
+) {
+  if (
+    target.annotationId &&
+    !reviewSurfaceAnnotationMatchesTarget(
+      annotationsByPath?.[target.path],
+      target,
+    )
+  ) {
+    return false;
+  }
+  if (!target.anchor) return files.some((file) => file.path === target.path);
+  const patch = files.find((file) => file.path === target.path)?.patch;
+  if (typeof patch !== 'string' || !patchHasContent(patch)) return false;
+  return patchContainsReviewSurfaceTarget(patch, target);
+}
+
+export function reviewSurfaceAnnotationMatchesTarget(
+  annotations: readonly DiffReviewAnnotation[] | undefined,
+  target: ReviewSurfaceNavigationTarget,
+) {
+  if (!target.annotationId) return true;
+  const annotation = annotations?.find(
+    (item) => item.metadata.id === target.annotationId,
+  );
+  if (!annotation) return false;
+  if (target.anchor && annotation.metadata.tourStep) {
+    const exactAnchor = annotation.metadata.tourStep.anchor;
+    return (
+      exactAnchor.side === target.anchor.side &&
+      exactAnchor.startLine === target.anchor.startLine &&
+      exactAnchor.endLine === target.anchor.endLine
+    );
+  }
+  return target.anchor
+    ? annotation.side === target.anchor.side &&
+        annotation.lineNumber >= target.anchor.startLine &&
+        annotation.lineNumber <= target.anchor.endLine
+    : true;
+}
+
+export function patchContainsReviewSurfaceTarget(
+  patch: string,
+  target: ReviewSurfaceNavigationTarget,
+) {
+  if (!target.anchor) return true;
+  const visible = visiblePatchLineKeys(patch);
+  for (
+    let line = target.anchor.startLine;
+    line <= target.anchor.endLine;
+    line += 1
+  ) {
+    if (!visible.has(`${target.anchor.side}:${line}`)) return false;
+  }
+  return true;
+}
+
+function visiblePatchLineKeys(patch: string) {
+  const keys = new Set<string>();
+  let inHunk = false;
+  let oldLine = 0;
+  let newLine = 0;
+  for (const line of patch.split('\n')) {
+    const hunk = line.match(/^@@\s+-(\d+)(?:,\d+)?\s+\+(\d+)(?:,\d+)?\s+@@/);
+    if (hunk) {
+      inHunk = true;
+      oldLine = Number(hunk[1]);
+      newLine = Number(hunk[2]);
+      continue;
+    }
+    if (!inHunk || line.startsWith('\\ No newline')) continue;
+    if (line.startsWith(' ')) {
+      keys.add(`deletions:${oldLine}`);
+      keys.add(`additions:${newLine}`);
+      oldLine += 1;
+      newLine += 1;
+    } else if (line.startsWith('-')) {
+      keys.add(`deletions:${oldLine}`);
+      oldLine += 1;
+    } else if (line.startsWith('+')) {
+      keys.add(`additions:${newLine}`);
+      newLine += 1;
+    }
+  }
+  return keys;
 }

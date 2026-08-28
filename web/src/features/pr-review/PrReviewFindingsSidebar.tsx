@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type {
   GitHubPrReviewDraft,
   GitHubPrReviewDraftComment,
@@ -20,6 +20,15 @@ import { reportOnlyFindingNavigationId } from './review-navigation';
 import { PrReviewNeonFindingsPanel } from './PrReviewNeonFinding';
 import type { NeonFindingAnchorResolution } from './review-findings';
 import { PrReviewReviewerChat } from './PrReviewReviewerChat';
+import type { PrReviewReviewerRequest } from './PrReviewReviewerChat';
+import type {
+  PrReviewTour,
+  PrReviewTourStep,
+} from '../../../../shared/pr-review-tour';
+import {
+  PrReviewTourInspectorSection,
+  type PrReviewTourMode,
+} from './PrReviewTour';
 
 export type PrReviewFindingsSidebarProps = {
   actionsLocked: (findingId: string) => boolean;
@@ -53,6 +62,30 @@ export type PrReviewFindingsSidebarProps = {
   findingResolution: (
     finding: NeonReviewFinding,
   ) => NeonFindingAnchorResolution;
+  tour?: PrReviewTour | null;
+  tourClosed?: boolean;
+  tourMode?: PrReviewTourMode;
+  activeTourStepId?: string | null;
+  onActivateTourStep?: (step: PrReviewTourStep) => void;
+  onAskTourStep?: (step: PrReviewTourStep) => void;
+  onBackToTourFinding?: (() => void) | null;
+  onCloseTour?: () => void;
+  onOpenTour?: () => void;
+  onTourModeChange?: (mode: PrReviewTourMode) => void;
+  onTourPublished?: (tourId: string, generation: number) => void;
+  onReviewerRequestDeliveryChange?: (
+    id: number,
+    delivery: PrReviewReviewerRequest['delivery'],
+    error?: string | null,
+  ) => void;
+  onReviewerSubmissionIdentified?: (submissionId: string) => void;
+  onReviewerSubmissionSettled?: (
+    submissionId: string,
+    outcome: 'completed' | 'failed' | 'aborted',
+  ) => void;
+  onSendReviewerMessage?: (message: string) => void;
+  onShowWhy?: (finding: NeonReviewFinding) => void;
+  reviewerRequest?: PrReviewReviewerRequest | null;
 };
 
 export function PrReviewFindingsSidebar({
@@ -65,14 +98,69 @@ export function PrReviewFindingsSidebar({
     'review',
   );
   const panels = <FindingsPanels {...props} />;
+  const tourSection = props.tour ? (
+    <PrReviewTourInspectorSection
+      activeStepId={props.activeTourStepId ?? null}
+      closed={Boolean(props.tourClosed)}
+      mode={props.tourMode ?? 'read'}
+      onActivate={props.onActivateTourStep ?? (() => undefined)}
+      onAsk={props.onAskTourStep ?? (() => undefined)}
+      onBackToFinding={props.onBackToTourFinding ?? null}
+      onClose={props.onCloseTour ?? (() => undefined)}
+      onModeChange={props.onTourModeChange ?? (() => undefined)}
+      onOpen={props.onOpenTour ?? (() => undefined)}
+      tour={props.tour}
+    />
+  ) : null;
 
-  if (variant === 'embedded') return panels;
+  useEffect(() => {
+    if (props.reviewerRequest) setInspectorView('reviewer');
+  }, [props.reviewerRequest]);
+
+  const contextualReviewer = props.reviewerRequest ? (
+    <section className="pr-review-inspector-section">
+      <div className="pr-review-inspector-heading">
+        <span>Reviewer follow-up</span>
+        <span>guided context</span>
+      </div>
+      <PrReviewReviewerChat
+        activeTourStepId={props.activeTourStepId}
+        isLocked={props.isLocked}
+        onActivateTourStep={props.onActivateTourStep}
+        onAskTourStep={props.onAskTourStep}
+        onBackToTourFinding={props.onBackToTourFinding}
+        onCloseTour={props.onCloseTour}
+        onDraftChanged={props.onDraftChanged}
+        onOpenTour={props.onOpenTour}
+        onRequestDeliveryChange={props.onReviewerRequestDeliveryChange}
+        onSubmissionIdentified={props.onReviewerSubmissionIdentified}
+        onSubmissionSettled={props.onReviewerSubmissionSettled}
+        onSendMessage={props.onSendReviewerMessage}
+        onTourPublished={props.onTourPublished}
+        request={props.reviewerRequest}
+        review={props.review}
+        tour={props.tour}
+        tourClosed={props.tourClosed}
+      />
+    </section>
+  ) : null;
+
+  if (variant === 'embedded')
+    return (
+      <>
+        {tourSection}
+        {contextualReviewer}
+        {panels}
+      </>
+    );
   if (variant === 'compact') {
     return (
       <div
         aria-label="Collapsed PR review details"
         className="pr-review-compact-panels"
       >
+        {tourSection}
+        {contextualReviewer}
         {panels}
       </div>
     );
@@ -132,6 +220,7 @@ export function PrReviewFindingsSidebar({
               ) : null}
             </div>
           </section>
+          {tourSection}
           <section className="pr-review-inspector-section">
             <div className="pr-review-inspector-heading">
               <span>Line review</span>
@@ -150,6 +239,20 @@ export function PrReviewFindingsSidebar({
           isLocked={props.isLocked}
           onDraftChanged={props.onDraftChanged}
           review={props.review}
+          tour={props.tour}
+          tourClosed={props.tourClosed}
+          activeTourStepId={props.activeTourStepId}
+          onActivateTourStep={props.onActivateTourStep}
+          onAskTourStep={props.onAskTourStep}
+          onCloseTour={props.onCloseTour}
+          onOpenTour={props.onOpenTour}
+          onBackToTourFinding={props.onBackToTourFinding}
+          onRequestDeliveryChange={props.onReviewerRequestDeliveryChange}
+          onSubmissionIdentified={props.onReviewerSubmissionIdentified}
+          onSubmissionSettled={props.onReviewerSubmissionSettled}
+          onSendMessage={props.onSendReviewerMessage}
+          onTourPublished={props.onTourPublished}
+          request={props.reviewerRequest}
         />
       )}
     </div>
@@ -201,6 +304,7 @@ function FindingsPanels(props: PrReviewFindingsSidebarProps) {
         onDismiss={props.onDismissFinding}
         onPromote={props.onPromoteFinding}
         onSelect={props.onSelectFinding}
+        onShowWhy={props.onShowWhy}
         promoteLabel={props.promoteLabel}
         promotionDisabledReason={props.promotionDisabledReason}
         resolutionFor={props.findingResolution}

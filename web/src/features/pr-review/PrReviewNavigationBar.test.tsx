@@ -107,6 +107,20 @@ describe('PR review navigation controls', () => {
     );
   });
 
+  it('keeps the active tour title in traversal status', () => {
+    renderBar(root, onMove, {
+      context: 'Bearer token authentication',
+      currentIndex: 1,
+      currentTarget: { ...draftTarget, kind: 'tour', id: 'step-2' },
+      kind: 'tour',
+      total: 4,
+    });
+
+    expect(container.textContent).toContain(
+      'Tour · 2 of 4 · Bearer token authentication',
+    );
+  });
+
   it('suppresses shortcuts for every editable, dialog, and composer focus context', () => {
     renderBar(root, onMove);
     const contexts = [
