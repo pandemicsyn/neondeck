@@ -55,6 +55,7 @@ import {
   prReviewDraftHeadIsStale,
   reanchorDraftToRevision,
   refreshOrientationTargetSettled,
+  observePrReviewTourGeneration,
   reviewSurfaceTargetMatchesCurrentTour,
   sameReviewDraftRevision,
   selectionAnchorMatchesPatch,
@@ -63,6 +64,46 @@ import {
 import capturedReviewPatch from './fixtures/captured-review.patch?raw';
 
 describe('GitHubPrReview helpers', () => {
+  it('detects a replacement within the current tour conversation', () => {
+    const tour = {
+      conversationId: 'review-1@head',
+      id: 'tour-2',
+      generation: 2,
+    } as PrReviewTour;
+
+    expect(
+      observePrReviewTourGeneration(
+        { conversationId: tour.conversationId, identity: 'tour-1:1' },
+        tour,
+      ),
+    ).toEqual({
+      changed: true,
+      next: {
+        conversationId: tour.conversationId,
+        identity: 'tour-2:2',
+      },
+      replacesCurrentConversation: true,
+    });
+    expect(
+      observePrReviewTourGeneration(
+        { conversationId: tour.conversationId, identity: 'tour-2:2' },
+        tour,
+      ),
+    ).toMatchObject({
+      changed: false,
+      replacesCurrentConversation: false,
+    });
+    expect(
+      observePrReviewTourGeneration(
+        { conversationId: 'review-2@head', identity: 'tour-1:1' },
+        tour,
+      ),
+    ).toMatchObject({
+      changed: true,
+      replacesCurrentConversation: false,
+    });
+  });
+
   it('resolves a closed current-tour target from its exact persisted anchor', () => {
     const tour = {
       id: 'tour-1',

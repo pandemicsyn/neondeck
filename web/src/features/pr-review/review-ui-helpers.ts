@@ -170,6 +170,32 @@ export function reviewSurfaceTargetMatchesCurrentTour(
   );
 }
 
+export type ObservedPrReviewTourGeneration = {
+  conversationId: string;
+  identity: string;
+};
+
+export function observePrReviewTourGeneration(
+  observed: ObservedPrReviewTourGeneration | null,
+  tour: PrReviewTour,
+) {
+  const next = {
+    conversationId: tour.conversationId,
+    identity: `${tour.id}:${tour.generation}`,
+  };
+  const changed =
+    !observed ||
+    observed.conversationId !== next.conversationId ||
+    observed.identity !== next.identity;
+  return {
+    changed,
+    next,
+    replacesCurrentConversation: Boolean(
+      changed && observed?.conversationId === next.conversationId,
+    ),
+  };
+}
+
 export function shouldAutomaticallyApplyGitHubRevision({
   attemptedRevisionKey,
   candidateRevisionKey,

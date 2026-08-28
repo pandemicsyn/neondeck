@@ -118,10 +118,12 @@ import {
   prReviewDraftHeadIsStale,
   reanchorDraftToRevision,
   refreshOrientationTargetSettled,
+  observePrReviewTourGeneration,
   reviewSurfaceTargetMatchesCurrentTour,
   sameReviewDraftRevision,
   selectionAnchorMatchesPatch,
   shouldAutomaticallyApplyGitHubRevision,
+  type ObservedPrReviewTourGeneration,
 } from './review-ui-helpers';
 import { usePrReviewRecord } from './usePrReviewRecord';
 import {
@@ -316,11 +318,21 @@ export function GitHubPrReview({
     tourId: string;
     generation: number;
   } | null>(null);
+  const pendingTourActivationRef = useRef(pendingTourActivation);
+  const scheduleTourActivation = useCallback(
+    (next: { tourId: string; generation: number }) => {
+      pendingTourActivationRef.current = next;
+      setPendingTourActivation(next);
+    },
+    [],
+  );
+  const clearScheduledTourActivation = useCallback(() => {
+    pendingTourActivationRef.current = null;
+    setPendingTourActivation(null);
+  }, []);
   const reviewerRequestIdRef = useRef(0);
-  const observedTourGenerationRef = useRef<{
-    conversationId: string;
-    identity: string;
-  } | null>(null);
+  const observedTourGenerationRef =
+    useRef<ObservedPrReviewTourGeneration | null>(null);
   const tourPresentationQueueRef = useRef<Promise<void>>(Promise.resolve());
   const tourPresentationRequestIdRef = useRef(0);
   const latestTourPresentationRequestRef = useRef<string | null>(null);
@@ -387,8 +399,16 @@ export function GitHubPrReview({
     paths: string[] | null;
     query: string | null;
   }>({ paths: null, query: null });
-  const [pendingHunkNavigation, setPendingHunkNavigation] =
+  const [pendingHunkNavigation, setPendingHunkNavigationState] =
     useState<PendingHunkNavigation | null>(null);
+  const pendingHunkNavigationRef = useRef(pendingHunkNavigation);
+  const setPendingHunkNavigation = useCallback(
+    (next: PendingHunkNavigation | null) => {
+      pendingHunkNavigationRef.current = next;
+      setPendingHunkNavigationState(next);
+    },
+    [],
+  );
   const [isApplyingRevision, setIsApplyingRevision] = useState(false);
   useEffect(() => {
     if (reviewerConversationId && !isApplyingRevision) return;
@@ -1366,12 +1386,12 @@ export function GitHubPrReview({
       );
       setTourClosed(false);
       pendingTourCloseAckRef.current = false;
-      setPendingTourActivation({
+      scheduleTourActivation({
         tourId: tour.id,
         generation: tour.generation,
       });
     },
-    [reviewerConversationId, tour],
+    [reviewerConversationId, scheduleTourActivation, tour],
   );
   const settleReviewerSubmission = useCallback(
     (submissionId: string, outcome: 'completed' | 'failed' | 'aborted') => {
@@ -1481,33 +1501,44 @@ export function GitHubPrReview({
     );
     setTourClosed(false);
     pendingTourCloseAckRef.current = false;
-    setPendingTourActivation({
+    scheduleTourActivation({
       tourId: tour.id,
       generation: tour.generation,
     });
-  }, [tour]);
+  }, [scheduleTourActivation, tour]);
 
   useEffect(() => {
     if (!tour) return;
-    const identity = `${tour.id}:${tour.generation}`;
-    const observed = observedTourGenerationRef.current;
-    if (
-      observed?.conversationId === tour.conversationId &&
-      observed.identity === identity
-    ) {
-      return;
-    }
-    observedTourGenerationRef.current = {
-      conversationId: tour.conversationId,
-      identity,
-    };
-    if (observed?.conversationId === tour.conversationId) return;
+    const observation = observePrReviewTourGeneration(
+      observedTourGenerationRef.current,
+      tour,
+    );
+    if (!observation.changed) return;
+    observedTourGenerationRef.current = observation.next;
     const defaultMode: PrReviewTourMode =
       tour.steps.length < 6 || window.innerWidth < 820 ? 'read' : 'walk';
     setTourMode(defaultMode);
     setTourClosed(false);
     pendingTourCloseAckRef.current = false;
-  }, [tour]);
+    if (!observation.replacesCurrentConversation) return;
+    const scheduled = pendingTourActivationRef.current;
+    const locallyActivatingReplacement = Boolean(
+      scheduled?.tourId === tour.id && scheduled.generation === tour.generation,
+    );
+    if (!locallyActivatingReplacement) clearScheduledTourActivation();
+    latestTourPresentationRequestRef.current = null;
+    setPendingHunkNavigation(null);
+    setNavigationKind('tour');
+    setNavigationTargetKey(null);
+    setNavigationAuthority('automatic');
+    setNavigationSelection(null);
+    setNavigationAnnotationId(null);
+    setNavigationBoundary(null);
+    setNavigationStatus(null);
+    setNavigationAnnouncement(
+      'The guided tour was replaced. Previous presentation state was cleared.',
+    );
+  }, [clearScheduledTourActivation, tour]);
 
   useEffect(() => {
     if (
@@ -1519,9 +1550,15 @@ export function GitHubPrReview({
     ) {
       return;
     }
-    setPendingTourActivation(null);
+    clearScheduledTourActivation();
     activateTourStep(tour.steps[0]!);
-  }, [activateTourStep, pendingTourActivation, reviewSurfaceId, tour]);
+  }, [
+    activateTourStep,
+    clearScheduledTourActivation,
+    pendingTourActivation,
+    reviewSurfaceId,
+    tour,
+  ]);
 
   useEffect(() => {
     if (!tour || !reviewSurfaceId) return;
@@ -1791,8 +1828,8 @@ export function GitHubPrReview({
     ) {
       if (
         tour &&
-        pendingTourActivation?.tourId === tour.id &&
-        pendingTourActivation.generation === tour.generation
+        pendingTourActivationRef.current?.tourId === tour.id &&
+        pendingTourActivationRef.current.generation === tour.generation
       ) {
         return;
       }
@@ -1866,12 +1903,17 @@ export function GitHubPrReview({
     navigationSelection,
     navigationTargetKey,
     navigationTargets,
-    pendingTourActivation,
     tour,
   ]);
 
   useEffect(() => {
-    if (!pendingHunkNavigation || !activePath) return;
+    if (
+      !pendingHunkNavigation ||
+      pendingHunkNavigationRef.current !== pendingHunkNavigation ||
+      !activePath
+    ) {
+      return;
+    }
     const state = patchNavigationState.get(activePath);
     if (state !== 'loaded' && state !== 'unavailable') return;
     performHunkTraversal(
