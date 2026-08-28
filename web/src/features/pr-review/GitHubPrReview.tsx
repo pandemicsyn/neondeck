@@ -29,7 +29,10 @@ import {
   type ReviewRefreshSafety,
 } from '../../../../shared/review-refresh';
 import type { NeonReviewFinding } from '../../../../shared/review-finding';
-import type { PrReviewTourStep } from '../../../../shared/pr-review-tour';
+import type {
+  PrReviewTour,
+  PrReviewTourStep,
+} from '../../../../shared/pr-review-tour';
 import type { ReviewSurfaceNavigationTarget } from '../../../../shared/review-surface';
 import { prReviewerConversationId } from '../../../../shared/pr-reviewer-session';
 import {
@@ -144,6 +147,7 @@ import {
 } from './review-findings';
 import {
   annotationsFromPrReviewTour,
+  prReviewTourReadingStatus,
   PrReviewTourAnnotation,
   PrReviewTourReadingView,
   type PrReviewTourMode,
@@ -644,6 +648,7 @@ export function GitHubPrReview({
         findings: reviewRecord?.reportOnlyFindings ?? [],
         neonFindings: activeNeonFindings,
         staleCommentIds,
+        tour: tourClosed ? null : tour,
         unresolvedThreads,
       }),
     [
@@ -652,6 +657,8 @@ export function GitHubPrReview({
       reviewRecord?.reportOnlyFindings,
       activeNeonFindings,
       staleCommentIds,
+      tour,
+      tourClosed,
       unresolvedThreads,
     ],
   );
@@ -2796,6 +2803,12 @@ export function GitHubPrReview({
           currentTarget={selectedNavigationTarget}
           filter={fileFilter.query}
           isBusy={isApplyingRevision || Boolean(pendingHunkNavigation)}
+          isTraversalDisabled={navigationKind === 'tour' && tourMode === 'read'}
+          traversalDisabledStatus={
+            navigationKind === 'tour' && tourMode === 'read' && tour
+              ? prReviewTourReadingStatus(tour)
+              : null
+          }
           kind={navigationKind}
           onClearFilter={() => {
             if (isApplyingRevision) return;
@@ -2891,6 +2904,13 @@ export function GitHubPrReview({
             <fieldset className="pr-review-tour-column-toolbar">
               <legend>Guided tour</legend>
               <span>{tour.title}</span>
+              {tourMode === 'read' || tourFileStepLabel(tour, activePath) ? (
+                <em className="pr-review-tour-file-status">
+                  {tourMode === 'read'
+                    ? 'reading view'
+                    : tourFileStepLabel(tour, activePath)}
+                </em>
+              ) : null}
               <div>
                 <button
                   aria-pressed={tourMode === 'walk'}
@@ -2924,6 +2944,9 @@ export function GitHubPrReview({
                 setTourMode('walk');
                 activateTourStep(step);
               }}
+              onAsk={askAboutTourStep}
+              onClose={closeTour}
+              onStartOver={() => activateTourStep(tour.steps[0]!)}
               tour={tour}
             />
           ) : undefined
@@ -3010,6 +3033,7 @@ export function GitHubPrReview({
           statusMessage={reviewBarStatusMessage}
           verdict={verdict}
           trustBoundary={reviewRecord?.trustBoundary ?? null}
+          tourOpen={Boolean(tour && !tourClosed)}
         />
       )}
     </section>
@@ -3025,6 +3049,16 @@ function sameStringArray(
   if (left === right) return true;
   if (!left || !right || left.length !== right.length) return false;
   return left.every((value, index) => value === right[index]);
+}
+
+function tourFileStepLabel(tour: PrReviewTour, activePath: string | null) {
+  const ordinals = tour.steps
+    .filter((step) => step.file === activePath)
+    .map((step) => step.ordinal);
+  if (ordinals.length === 0) return null;
+  return ordinals.length === 1
+    ? `tour step ${ordinals[0]}`
+    : `tour steps ${ordinals.join(' + ')}`;
 }
 
 function createPromotionRequestId() {

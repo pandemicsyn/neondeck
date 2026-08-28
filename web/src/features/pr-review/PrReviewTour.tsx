@@ -4,9 +4,16 @@ import type {
   PrReviewTourStep,
 } from '../../../../shared/pr-review-tour';
 import type { DiffFilePatch, DiffReviewAnnotation } from '../diff-viewer/types';
+import { Badge } from '../../components/ui';
 import { prReviewTourAnnotationId } from './review-navigation';
 
 export type PrReviewTourMode = 'read' | 'walk';
+
+export function prReviewTourReadingStatus(tour: PrReviewTour) {
+  const fileCount = new Set(tour.steps.map((step) => step.file)).size;
+  const stepCount = tour.steps.length;
+  return `Tour · reading · ${stepCount} ${stepCount === 1 ? 'step' : 'steps'} across ${fileCount} ${fileCount === 1 ? 'file' : 'files'}`;
+}
 
 export function annotationsFromPrReviewTour(
   tour: PrReviewTour | null,
@@ -59,7 +66,12 @@ export function PrReviewTourAnnotation({
         <span className="pr-review-tour-mark" data-ghost="">
           {step.ordinal}
         </span>
-        <span>{step.symbol ?? step.file}</span>
+        <span className="pr-review-tour-marker-location">
+          {tourStepLocation(step)}
+        </span>
+        <span className="pr-review-tour-marker-action">
+          jump to step {step.ordinal} ›
+        </span>
       </button>
     );
   }
@@ -72,11 +84,17 @@ export function PrReviewTourAnnotation({
     >
       <div className="pr-review-tour-annotation-heading">
         <span className="pr-review-tour-mark">{step.ordinal}</span>
-        <p className="pr-review-tour-eyebrow">
-          Guided tour · {step.ordinal} of {tour.steps.length}
-        </p>
+        <strong>
+          <span className="pr-review-tour-location">{tourStepRange(step)}</span>
+          <span className="pr-review-tour-symbol">
+            {' · '}
+            {step.symbol ?? step.file}
+          </span>
+        </strong>
+        <span className="pr-review-tour-annotation-progress">
+          step {step.ordinal} of {tour.steps.length}
+        </span>
       </div>
-      <h3>{step.symbol ?? step.file}</h3>
       <p>{step.explanation}</p>
       <div className="pr-review-inline-actions">
         <button
@@ -95,11 +113,7 @@ export function PrReviewTourAnnotation({
         >
           Next ›
         </button>
-        <button
-          disabled={step.ordinal === 1}
-          onClick={() => onActivate(tour.steps[0]!)}
-          type="button"
-        >
+        <button onClick={() => onActivate(tour.steps[0]!)} type="button">
           Start over
         </button>
         <button onClick={() => onAsk(step)} type="button">
@@ -122,34 +136,36 @@ export function PrReviewTourSpine({
   onActivate: (step: PrReviewTourStep) => void;
   tour: PrReviewTour;
 }) {
+  const activeIndex = tour.steps.findIndex((step) => step.id === activeStepId);
   return (
     <ol aria-label="Guided tour steps" className="pr-review-tour-spine">
-      {tour.steps.map((step) => (
-        <li
-          data-active={activeStepId === step.id ? '' : undefined}
-          key={step.id}
-        >
-          <button
-            aria-current={activeStepId === step.id ? 'step' : undefined}
-            onClick={() => onActivate(step)}
-            type="button"
-          >
-            <span
-              aria-hidden="true"
-              className="pr-review-tour-mark"
-              data-ghost={activeStepId === step.id ? undefined : ''}
+      {tour.steps.map((step, index) => {
+        const state =
+          index === activeIndex ? 'now' : index < activeIndex ? 'done' : 'todo';
+        return (
+          <li data-state={state} key={step.id}>
+            <button
+              aria-current={activeStepId === step.id ? 'step' : undefined}
+              onClick={() => onActivate(step)}
+              type="button"
             >
-              {step.ordinal}
-            </span>
-            <span>
-              <strong>{step.symbol ?? step.file}</strong>
-              <small>
-                {step.file}:{step.anchor.startLine}
-              </small>
-            </span>
-          </button>
-        </li>
-      ))}
+              <span
+                aria-hidden="true"
+                className="pr-review-tour-mark"
+                data-ghost={state === 'now' ? undefined : ''}
+              >
+                {step.ordinal}
+              </span>
+              <span>
+                <strong>{step.symbol ?? step.file}</strong>
+                <small>
+                  {step.file}:{step.anchor.startLine}
+                </small>
+              </span>
+            </button>
+          </li>
+        );
+      })}
     </ol>
   );
 }
@@ -182,7 +198,13 @@ export function PrReviewTourInspectorSection({
     <section className="pr-review-inspector-section pr-review-tour-section">
       <div className="pr-review-inspector-heading">
         <span>Guided tour</span>
-        <span>{closed ? 'closed' : `${tour.steps.length} steps`}</span>
+        <Badge className="pr-review-tour-progress-badge">
+          {closed
+            ? 'closed'
+            : active
+              ? `step ${active.ordinal} of ${tour.steps.length}`
+              : `${tour.steps.length} ${tour.steps.length === 1 ? 'step' : 'steps'}`}
+        </Badge>
       </div>
       <h3>{tour.title}</h3>
       <p className="pr-review-inspector-copy">{tour.summary}</p>
@@ -192,7 +214,7 @@ export function PrReviewTourInspectorSection({
           onClick={onOpen}
           type="button"
         >
-          Reopen tour
+          Reopen
         </button>
       ) : (
         <>
@@ -220,9 +242,33 @@ export function PrReviewTourInspectorSection({
           />
           <div className="pr-review-tour-actions">
             {active ? (
-              <button onClick={() => onAsk(active)} type="button">
-                Ask about this step
-              </button>
+              <>
+                <button
+                  className="pr-review-tour-traverse"
+                  disabled={active.ordinal === 1}
+                  onClick={() => onActivate(tour.steps[active.ordinal - 2]!)}
+                  type="button"
+                >
+                  ‹ Previous
+                </button>
+                <button
+                  className="pr-review-tour-traverse"
+                  disabled={active.ordinal === tour.steps.length}
+                  onClick={() => onActivate(tour.steps[active.ordinal]!)}
+                  type="button"
+                >
+                  Next ›
+                </button>
+                <button
+                  onClick={() => onActivate(tour.steps[0]!)}
+                  type="button"
+                >
+                  Start over
+                </button>
+                <button onClick={() => onAsk(active)} type="button">
+                  Ask about this step
+                </button>
+              </>
             ) : (
               <button onClick={onOpen} type="button">
                 Start tour
@@ -247,14 +293,22 @@ export function PrReviewTourReadingView({
   activeStepId,
   files,
   onActivate,
+  onAsk = () => undefined,
+  onClose = () => undefined,
+  onStartOver = () => undefined,
   tour,
 }: {
   activeStepId: string | null;
   files: DiffFilePatch[];
   onActivate: (step: PrReviewTourStep) => void;
+  onAsk?: (step: PrReviewTourStep) => void;
+  onClose?: () => void;
+  onStartOver?: () => void;
   tour: PrReviewTour;
 }) {
   const patches = new Map(files.map((file) => [file.path, file.patch ?? '']));
+  const fileCount = new Set(tour.steps.map((step) => step.file)).size;
+  const stepCount = tour.steps.length;
   return (
     <div
       className="pr-review-tour-reading"
@@ -264,6 +318,14 @@ export function PrReviewTourReadingView({
         <p className="pr-review-tour-eyebrow">Guided code tour</p>
         <h2>{tour.title}</h2>
         <p>{tour.summary}</p>
+        <div className="pr-review-tour-reading-meta">
+          <Badge className="pr-review-tour-progress-badge">
+            {stepCount} {stepCount === 1 ? 'step' : 'steps'}
+          </Badge>
+          <Badge>
+            {fileCount} {fileCount === 1 ? 'file' : 'files'}
+          </Badge>
+        </div>
       </header>
       {tour.steps.map((step, index) => (
         <article
@@ -276,30 +338,56 @@ export function PrReviewTourReadingView({
             </p>
           ) : null}
           <div className="pr-review-tour-reading-heading">
-            <span>{step.ordinal}</span>
-            <div>
-              <h3>{step.symbol ?? step.file}</h3>
-              <p>
-                {step.file}:{step.anchor.startLine}
-                {step.anchor.endLine === step.anchor.startLine
-                  ? ''
-                  : `–${step.anchor.endLine}`}
-              </p>
-            </div>
+            <span className="pr-review-tour-mark">{step.ordinal}</span>
+            <strong>
+              <span className="pr-review-tour-location">
+                {step.file} {tourStepRange(step)}
+              </span>
+              {step.symbol ? (
+                <span className="pr-review-tour-symbol">
+                  {' · '}
+                  {step.symbol}
+                </span>
+              ) : null}
+            </strong>
+            <span className="pr-review-tour-reading-progress">
+              step {step.ordinal} of {tour.steps.length}
+            </span>
           </div>
           <pre>
             <code>{tourCodeExcerpt(patches.get(step.file) ?? '', step)}</code>
           </pre>
           <p>{step.explanation}</p>
-          <button
-            aria-label={`Open step ${step.ordinal} in diff: ${step.symbol ?? step.file}`}
-            onClick={() => onActivate(step)}
-            type="button"
-          >
-            Open in diff
-          </button>
+          <div className="pr-review-tour-reading-actions">
+            <button
+              aria-label={`Open step ${step.ordinal} in diff: ${step.symbol ?? step.file}`}
+              className="pr-review-tour-primary"
+              onClick={() => onActivate(step)}
+              type="button"
+            >
+              Open in diff ›
+            </button>
+            <button onClick={() => onAsk(step)} type="button">
+              Ask about this step
+            </button>
+          </div>
         </article>
       ))}
+      <footer className="pr-review-tour-reading-footer">
+        <span>
+          {
+            'Reading view · the diff is reordered into the tour’s order, not the repository’s'
+          }
+        </span>
+        <div>
+          <button disabled onClick={onStartOver} type="button">
+            Start over
+          </button>
+          <button onClick={onClose} type="button">
+            Close tour
+          </button>
+        </div>
+      </footer>
     </div>
   );
 }
@@ -330,6 +418,7 @@ export function PrReviewTourToolPart({
   const input = objectValue(value.input);
   const output = objectValue(value.output);
   const title = stringValue(input.title) || 'Guided code tour';
+  const summary = stringValue(input.summary);
   if (state.includes('error') || value.errorText || value.error) {
     return (
       <div
@@ -348,12 +437,14 @@ export function PrReviewTourToolPart({
   if (state !== 'output-available') {
     return (
       <div className="pr-review-tour-tool" aria-live="polite">
-        <p className="pr-review-tour-eyebrow">Building guided tour</p>
-        <strong>{title}</strong>
-        <div className="pr-review-tour-skeleton" aria-hidden="true">
-          <i />
-          <i />
-          <i />
+        <div className="pr-review-tour-tool-head">
+          <span>Guided tour</span>
+          <span className="pr-review-tour-working">tracing</span>
+        </div>
+        <div className="pr-review-tour-tool-body">
+          <strong>{title}</strong>
+          {summary ? <p>{summary}</p> : null}
+          <PrReviewTourSkeleton />
         </div>
       </div>
     );
@@ -390,9 +481,8 @@ export function PrReviewTourToolPart({
     activeTour?.id === outputTourId && activeTour.generation === generation;
   if (current && closed) {
     return (
-      <div className="pr-review-tour-tool">
-        <p className="pr-review-tour-eyebrow">Guided tour closed</p>
-        <strong>{activeTour.title}</strong>
+      <div className="pr-review-tour-strip">
+        <span>Tour closed · {activeTour.title}</span>
         <button
           className="pr-review-tour-primary"
           onClick={onOpen}
@@ -417,15 +507,24 @@ export function PrReviewTourToolPart({
       activeTour.steps.find((step) => step.id === activeStepId) ?? null;
     return (
       <div className="pr-review-tour-tool">
-        <p className="pr-review-tour-eyebrow">Guided tour ready</p>
-        <strong>{activeTour.title}</strong>
-        <p>{activeTour.summary}</p>
-        <PrReviewTourSpine
-          activeStepId={active?.id ?? null}
-          onActivate={onActivate}
-          tour={activeTour}
-        />
-        <div className="pr-review-tour-actions">
+        <div className="pr-review-tour-tool-head">
+          <span>Guided tour</span>
+          <span>
+            {active
+              ? `${active.ordinal} / ${activeTour.steps.length}`
+              : 'ready'}
+          </span>
+        </div>
+        <div className="pr-review-tour-tool-body">
+          <strong>{activeTour.title}</strong>
+          <p>{activeTour.summary}</p>
+          <PrReviewTourSpine
+            activeStepId={active?.id ?? null}
+            onActivate={onActivate}
+            tour={activeTour}
+          />
+        </div>
+        <div className="pr-review-tour-tool-foot pr-review-tour-actions">
           {active ? (
             <>
               <button
@@ -447,7 +546,6 @@ export function PrReviewTourToolPart({
                 Next ›
               </button>
               <button
-                disabled={active.ordinal === 1}
                 onClick={() => onActivate(activeTour.steps[0]!)}
                 type="button"
               >
@@ -480,23 +578,53 @@ export function PrReviewTourToolPart({
   if (!activeTour || activeTour.generation < generation) {
     return (
       <div className="pr-review-tour-tool" aria-live="polite">
-        <p className="pr-review-tour-eyebrow">Syncing guided tour</p>
-        <strong>{title}</strong>
-        <div className="pr-review-tour-skeleton" aria-hidden="true">
-          <i />
-          <i />
-          <i />
+        <div className="pr-review-tour-tool-head">
+          <span>Guided tour</span>
+          <span>syncing</span>
+        </div>
+        <div className="pr-review-tour-tool-body">
+          <strong>{title}</strong>
+          <PrReviewTourSkeleton />
         </div>
       </div>
     );
   }
   return (
-    <div className="pr-review-tour-tool pr-review-tour-tool-replaced">
-      <p className="pr-review-tour-eyebrow">Guided tour replaced</p>
-      <strong>{title}</strong>
-      <p>A newer tour is now active for this reviewer conversation.</p>
+    <div className="pr-review-tour-strip pr-review-tour-tool-replaced">
+      <span>Replaced · {title}</span>
+      <span>newer tour active</span>
     </div>
   );
+}
+
+function PrReviewTourSkeleton() {
+  return (
+    <div className="pr-review-tour-skeleton" aria-hidden="true">
+      <span>
+        <i />
+        <u />
+      </span>
+      <span>
+        <i />
+        <u />
+      </span>
+      <span>
+        <i />
+        <u />
+      </span>
+    </div>
+  );
+}
+
+function tourStepLocation(step: PrReviewTourStep) {
+  const range = tourStepRange(step);
+  return step.symbol ? `${range} · ${step.symbol}` : `${range} · ${step.file}`;
+}
+
+function tourStepRange(step: PrReviewTourStep) {
+  return step.anchor.startLine === step.anchor.endLine
+    ? `L${step.anchor.startLine}`
+    : `L${step.anchor.startLine}–L${step.anchor.endLine}`;
 }
 
 function tourCodeExcerpt(patch: string, step: PrReviewTourStep) {

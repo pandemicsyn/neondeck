@@ -20,6 +20,7 @@ export type FileReviewMapEntry = {
   findingCount: number;
   highestFindingSeverity: ReviewFindingSeverity | null;
   findingSummaries: string[];
+  tourStepOrdinals: number[];
 };
 
 export type DiffViewTone = 'primary' | 'violet' | 'accent';

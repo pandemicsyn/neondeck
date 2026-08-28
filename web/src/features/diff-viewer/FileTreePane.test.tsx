@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   FileTreePane,
   fileReviewMapDecoration,
+  fileReviewMapDecorationParts,
   fileReviewMapStatusLabel,
 } from './FileTreePane';
 import type { DiffFilePatch, FileReviewMapEntry } from './types';
@@ -35,12 +36,17 @@ describe('FileTreePane review map', () => {
       findingCount: 2,
       highestFindingSeverity: 'critical',
       staleDraftCount: 1,
+      tourStepOrdinals: [1, 4],
       unresolvedThreadCount: 4,
     });
 
-    expect(fileReviewMapDecoration(entry)).toBe('T4 D3 S1 N2 critical');
+    expect(fileReviewMapDecoration(entry)).toBe('T4 D3 S1 N2 critical G1+4');
+    expect(fileReviewMapDecorationParts(entry).at(-1)).toEqual({
+      color: 'var(--tour)',
+      text: 'G1+4',
+    });
     expect(fileReviewMapStatusLabel(entry, true)).toBe(
-      'src/a.ts: 4 unresolved review threads, 3 local drafts, 1 stale draft, 2 Neon findings, highest severity critical.',
+      'src/a.ts: 4 unresolved review threads, 3 local drafts, 1 stale draft, 2 Neon findings, 2 guided-tour steps, highest severity critical.',
     );
   });
 
@@ -287,6 +293,7 @@ function reviewEntry(
     highestFindingSeverity: null,
     path: 'src/a.ts',
     staleDraftCount: 0,
+    tourStepOrdinals: [],
     unresolvedThreadCount: 0,
     ...overrides,
   };

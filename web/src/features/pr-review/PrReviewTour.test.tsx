@@ -6,6 +6,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { PrReviewTour } from '../../../../shared/pr-review-tour';
 import {
   annotationsFromPrReviewTour,
+  prReviewTourReadingStatus,
+  PrReviewTourAnnotation,
+  PrReviewTourInspectorSection,
   PrReviewTourReadingView,
   PrReviewTourToolPart,
 } from './PrReviewTour';
@@ -65,10 +68,131 @@ describe('PR review guided tours', () => {
     expect(container.textContent).toContain('return value;');
     expect(container.textContent).not.toContain('const value = load();');
     expect(container.textContent).not.toContain('b/src/b.ts');
+    expect(container.textContent).toContain('Ask about this step');
+    expect(container.textContent).toContain('Start over');
+    expect(container.textContent).toContain('Close tour');
+    expect(container.textContent).toContain('1 step');
+    expect(container.textContent).toContain('1 file');
+    expect(container.textContent).toContain(
+      'Reading view · the diff is reordered into the tour’s order, not the repository’s',
+    );
+    expect(
+      container.querySelector('.pr-review-tour-reading-heading')?.textContent,
+    ).toContain('src/b.ts L10–L11 · loadValue');
+    expect(
+      [...container.querySelectorAll('button')].find(
+        (button) => button.textContent === 'Start over',
+      )?.disabled,
+    ).toBe(true);
     await act(async () => {
       container.querySelector<HTMLButtonElement>('button')?.click();
     });
     expect(onActivate).toHaveBeenCalledWith(tour.steps[0]);
+  });
+
+  it('renders location-first annotation hierarchy for active and inactive steps', () => {
+    const annotation = annotationsFromPrReviewTour(tour, false)[
+      'src/b.ts'
+    ]![0]!;
+    act(() =>
+      root.render(
+        <PrReviewTourAnnotation
+          annotation={annotation}
+          onActivate={() => undefined}
+          onAsk={() => undefined}
+          onClose={() => undefined}
+          selected={false}
+        />,
+      ),
+    );
+    expect(container.textContent).toContain('L10–L11 · loadValue');
+    expect(container.textContent).toContain('jump to step 1 ›');
+
+    act(() =>
+      root.render(
+        <PrReviewTourAnnotation
+          annotation={annotation}
+          onActivate={() => undefined}
+          onAsk={() => undefined}
+          onClose={() => undefined}
+          selected
+        />,
+      ),
+    );
+    expect(container.textContent).toContain('step 1 of 1');
+    expect(container.textContent).toContain('L10–L11 · loadValue');
+    expect(
+      container.querySelector('.pr-review-tour-progress-badge'),
+    ).toBeNull();
+    expect(
+      [...container.querySelectorAll('button')].find(
+        (button) => button.textContent === 'Start over',
+      )?.disabled,
+    ).toBe(false);
+  });
+
+  it('exposes bounded shared-cursor controls and spine state in the Review tab', () => {
+    const threeStepTour: PrReviewTour = {
+      ...tour,
+      steps: [1, 2, 3].map((ordinal) => ({
+        ...tour.steps[0]!,
+        id: `step-${ordinal}`,
+        key: `step-${ordinal}`,
+        ordinal,
+      })),
+    };
+    act(() =>
+      root.render(
+        <PrReviewTourInspectorSection
+          activeStepId="step-2"
+          closed={false}
+          mode="walk"
+          onActivate={() => undefined}
+          onAsk={() => undefined}
+          onBackToFinding={null}
+          onClose={() => undefined}
+          onModeChange={() => undefined}
+          onOpen={() => undefined}
+          tour={threeStepTour}
+        />,
+      ),
+    );
+
+    expect(container.textContent).toContain('step 2 of 3');
+    expect(container.textContent).toContain('‹ Previous');
+    expect(container.textContent).toContain('Next ›');
+    expect(container.textContent).toContain('Start over');
+    expect(
+      container.querySelector('.pr-review-tour-progress-badge'),
+    ).not.toBeNull();
+    expect(
+      [...container.querySelectorAll('.pr-review-tour-spine li')].map((item) =>
+        item.getAttribute('data-state'),
+      ),
+    ).toEqual(['done', 'now', 'todo']);
+  });
+
+  it('uses singular Review-tab progress copy before a one-step tour starts', () => {
+    act(() =>
+      root.render(
+        <PrReviewTourInspectorSection
+          activeStepId={null}
+          closed={false}
+          mode="walk"
+          onActivate={() => undefined}
+          onAsk={() => undefined}
+          onBackToFinding={null}
+          onClose={() => undefined}
+          onModeChange={() => undefined}
+          onOpen={() => undefined}
+          tour={tour}
+        />,
+      ),
+    );
+
+    expect(
+      container.querySelector('.pr-review-tour-progress-badge')?.textContent,
+    ).toBe('1 step');
   });
 
   it('keeps publication failures accessible and explains prior-tour preservation', async () => {
@@ -184,8 +308,29 @@ describe('PR review guided tours', () => {
         />,
       );
     });
-    expect(container.textContent).toContain('Syncing guided tour');
+    expect(container.textContent).toContain('syncing');
     expect(container.textContent).not.toContain('Guided tour replaced');
+    expect(
+      container.querySelectorAll('.pr-review-tour-skeleton span'),
+    ).toHaveLength(3);
+    expect(
+      container.querySelectorAll('.pr-review-tour-skeleton u'),
+    ).toHaveLength(3);
+  });
+
+  it('pluralizes the reading status for one or several files', () => {
+    expect(prReviewTourReadingStatus(tour)).toBe(
+      'Tour · reading · 1 step across 1 file',
+    );
+    expect(
+      prReviewTourReadingStatus({
+        ...tour,
+        steps: [
+          tour.steps[0]!,
+          { ...tour.steps[0]!, id: 'step-2', ordinal: 2, file: 'src/c.ts' },
+        ],
+      }),
+    ).toBe('Tour · reading · 2 steps across 2 files');
   });
 
   it('keeps finding return navigation on the published chat card', async () => {
@@ -212,6 +357,48 @@ describe('PR review guided tours', () => {
     expect(container.querySelector('[aria-current="step"]')).not.toBeNull();
     await act(async () => back?.click());
     expect(onBackToFinding).toHaveBeenCalledTimes(1);
+  });
+
+  it('uses segmented active cards and collapsed closed or replaced strips', () => {
+    const publication = {
+      state: 'output-available',
+      input: { title: tour.title },
+      output: { ok: true, tourId: tour.id, generation: 1 },
+    };
+    act(() =>
+      root.render(
+        <PrReviewTourToolPart
+          activeStepId="step-1"
+          activeTour={tour}
+          closed={false}
+          part={publication}
+        />,
+      ),
+    );
+    expect(container.querySelector('.pr-review-tour-tool-head')).not.toBeNull();
+    expect(container.querySelector('.pr-review-tour-tool-body')).not.toBeNull();
+    expect(container.querySelector('.pr-review-tour-tool-foot')).not.toBeNull();
+    expect(container.textContent).toContain('1 / 1');
+
+    act(() =>
+      root.render(
+        <PrReviewTourToolPart activeTour={tour} closed part={publication} />,
+      ),
+    );
+    expect(container.querySelector('.pr-review-tour-strip')).not.toBeNull();
+    expect(container.textContent).toContain('Tour closed');
+
+    act(() =>
+      root.render(
+        <PrReviewTourToolPart
+          activeTour={{ ...tour, generation: 2, id: 'tour-2' }}
+          closed={false}
+          part={publication}
+        />,
+      ),
+    );
+    expect(container.querySelector('.pr-review-tour-strip')).not.toBeNull();
+    expect(container.textContent).toContain('Replaced');
   });
 });
 

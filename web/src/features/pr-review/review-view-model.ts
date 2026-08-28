@@ -9,6 +9,7 @@ import {
   type PrReviewReportOnlyFinding,
 } from '../../api';
 import type { NeonReviewFinding } from '../../../../shared/review-finding';
+import type { PrReviewTour } from '../../../../shared/pr-review-tour';
 import { actionErrorMessage } from '../../lib/query';
 import { patchHasContent } from '../diff-viewer/helpers';
 import type {
@@ -41,6 +42,7 @@ export function prReviewMapByPath({
   findings,
   neonFindings = [],
   staleCommentIds,
+  tour = null,
   unresolvedThreads,
 }: {
   draft: GitHubPrReviewDraft | null;
@@ -48,6 +50,7 @@ export function prReviewMapByPath({
   findings: PrReviewReportOnlyFinding[];
   neonFindings?: readonly NeonReviewFinding[];
   staleCommentIds: ReadonlySet<string>;
+  tour?: PrReviewTour | null;
   unresolvedThreads: GitHubPullRequestReviewThread[];
 }) {
   const result = new Map<string, FileReviewMapEntry>();
@@ -105,6 +108,11 @@ export function prReviewMapByPath({
       entry.highestFindingSeverity = finding.severity;
     }
   }
+  for (const step of tour?.steps ?? []) {
+    const path = resolveReviewMapPath(step.file, result, currentPathByAlias);
+    if (!path) continue;
+    result.get(path)?.tourStepOrdinals.push(step.ordinal);
+  }
   return result;
 }
 
@@ -116,6 +124,7 @@ function emptyFileReviewMapEntry(path: string): FileReviewMapEntry {
     findingSummaries: [],
     path,
     staleDraftCount: 0,
+    tourStepOrdinals: [],
     unresolvedThreadCount: 0,
   };
 }

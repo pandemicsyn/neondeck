@@ -26,6 +26,7 @@ describe('PrReviewSubmitBar accessibility', () => {
         staleCommentCount={0}
         statusMessage={null}
         trustBoundary={null}
+        tourOpen
         verdict="comment"
       />,
     );
@@ -35,6 +36,7 @@ describe('PrReviewSubmitBar accessibility', () => {
     expect(html).toContain('aria-pressed="true"');
     expect(html).toContain('id="pr-review-summary-body"');
     expect(html).toContain('>Submit</button>');
+    expect(html).toContain('tour open · not a comment');
   });
 
   it('locks summary and submission controls during a revision update', () => {

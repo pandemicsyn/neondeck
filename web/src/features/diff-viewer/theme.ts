@@ -208,25 +208,45 @@ export const neondeckDiffUnsafeCss = `
     opacity: 0.45;
   }
   [data-neondeck-review-annotation].pr-review-tour-annotation {
-    border-color: color-mix(in srgb, var(--tour) 45%, var(--line));
+    border-color: var(--line);
     border-left: 2px solid var(--tour);
     background: var(--field);
   }
-  .pr-review-tour-annotation h3,
   .pr-review-tour-annotation p {
     margin: 0;
   }
-  .pr-review-tour-annotation h3 {
-    margin-top: 3px;
-    color: var(--ink);
-    font-size: calc(11px * var(--deck-text-scale));
+  .pr-review-tour-annotation-heading strong {
+    min-width: 0;
+    flex: 1;
+    overflow: hidden;
+    font-family: var(--font-mono);
+    font-size: calc(10px * var(--deck-text-scale));
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .pr-review-tour-location {
+    color: var(--tour-text);
+    font-weight: 600;
+  }
+  .pr-review-tour-symbol {
+    color: var(--muted);
+    font-weight: 400;
+  }
+  .pr-review-tour-annotation-heading > span:last-child {
+    flex: none;
+    color: var(--muted);
+    font-family: var(--font-mono);
+    font-size: calc(9px * var(--deck-text-scale));
+    font-variant-numeric: tabular-nums;
   }
   .pr-review-tour-annotation button {
     margin-top: 6px;
     border: 1px solid var(--line);
     background: var(--field);
     color: var(--ink);
-    font: inherit;
+    font-family: var(--font-mono);
+    font-size: calc(9.5px * var(--deck-text-scale));
+    line-height: 1;
   }
   .pr-review-tour-annotation button.pr-review-tour-traverse {
     border-color: var(--tour);
@@ -245,6 +265,17 @@ export const neondeckDiffUnsafeCss = `
     font-family: var(--font-mono);
     font-size: calc(9.5px * var(--deck-text-scale));
     text-align: left;
+  }
+  .pr-review-tour-marker-location {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .pr-review-tour-marker-action {
+    flex: none;
+    margin-inline-start: auto;
+    color: var(--tour-text);
   }
   .pr-review-tour-mark {
     display: inline-flex;

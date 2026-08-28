@@ -56,6 +56,7 @@ export function PrReviewNeonFindingAnnotation({
           {onShowWhy && finding.lifecycle.state === 'active' ? (
             <button
               aria-label={`Show why ${finding.title} matters at ${finding.file}, ${findingAnchorLabel(finding)}`}
+              className="pr-review-tour-lead"
               onClick={() => onShowWhy(finding)}
               type="button"
             >
@@ -179,10 +180,27 @@ export function PrReviewNeonFindingsPanel({
                     {onShowWhy ? (
                       <button
                         aria-label={`Show why ${finding.title} matters at ${finding.file}, ${findingAnchorLabel(finding)}`}
+                        className="pr-review-tour-lead"
                         onClick={() => onShowWhy(finding)}
                         type="button"
                       >
                         Show me why ›
+                      </button>
+                    ) : null}
+                    {onPromote && promoteLabel ? (
+                      <button
+                        aria-label={`${promoteLabel}: ${controlContext}`}
+                        disabled={
+                          actionsLocked(finding.id) ||
+                          isDismissing(finding.id) ||
+                          isPromoting(finding.id) ||
+                          Boolean(promotionDisabledReason?.(finding))
+                        }
+                        onClick={() => onPromote(finding)}
+                        title={promotionDisabledReason?.(finding) ?? undefined}
+                        type="button"
+                      >
+                        {isPromoting(finding.id) ? 'Promoting' : promoteLabel}
                       </button>
                     ) : null}
                     <button
@@ -215,24 +233,6 @@ export function PrReviewNeonFindingsPanel({
                     {isDismissing(finding.id)
                       ? 'Dismissing'
                       : 'Dismiss locally'}
-                  </button>
-                ) : null}
-                {finding.lifecycle.state === 'active' &&
-                onPromote &&
-                promoteLabel ? (
-                  <button
-                    aria-label={`${promoteLabel}: ${controlContext}`}
-                    disabled={
-                      actionsLocked(finding.id) ||
-                      isDismissing(finding.id) ||
-                      isPromoting(finding.id) ||
-                      Boolean(promotionDisabledReason?.(finding))
-                    }
-                    onClick={() => onPromote(finding)}
-                    title={promotionDisabledReason?.(finding) ?? undefined}
-                    type="button"
-                  >
-                    {isPromoting(finding.id) ? 'Promoting' : promoteLabel}
                   </button>
                 ) : null}
               </div>

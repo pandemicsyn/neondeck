@@ -129,6 +129,7 @@ function FileTreePaneModel({
       return entry && fileReviewMapHasStatus(entry)
         ? {
             text: fileReviewMapDecoration(entry),
+            parts: fileReviewMapDecorationParts(entry),
             title: fileReviewMapStatusLabel(entry),
           }
         : null;
@@ -245,9 +246,9 @@ function TreeHeader({
       {hasReviewStatus ? (
         <p
           className="mt-1 truncate text-[9px] text-muted"
-          title="Review map: T unresolved threads, D local drafts, S stale drafts, N Neon findings"
+          title="Review map: T unresolved threads, D local drafts, S stale drafts, N Neon findings, G guided-tour steps"
         >
-          review map · T threads · D drafts · S stale · N Neon
+          review map · T threads · D drafts · S stale · N Neon · G tour
         </p>
       ) : null}
       <label className="sr-only" htmlFor={filterId}>
@@ -272,12 +273,19 @@ export function fileReviewMapHasStatus(entry: FileReviewMapEntry) {
     entry.unresolvedThreadCount > 0 ||
     entry.draftCount > 0 ||
     entry.staleDraftCount > 0 ||
-    entry.findingCount > 0
+    entry.findingCount > 0 ||
+    entry.tourStepOrdinals.length > 0
   );
 }
 
 export function fileReviewMapDecoration(entry: FileReviewMapEntry) {
-  return [
+  return fileReviewMapDecorationParts(entry)
+    .map((part) => part.text)
+    .join('');
+}
+
+export function fileReviewMapDecorationParts(entry: FileReviewMapEntry) {
+  const ordinary = [
     entry.unresolvedThreadCount > 0 ? `T${entry.unresolvedThreadCount}` : null,
     entry.draftCount > 0 ? `D${entry.draftCount}` : null,
     entry.staleDraftCount > 0 ? `S${entry.staleDraftCount}` : null,
@@ -286,6 +294,15 @@ export function fileReviewMapDecoration(entry: FileReviewMapEntry) {
   ]
     .filter(Boolean)
     .join(' ');
+  const tour =
+    entry.tourStepOrdinals.length > 0
+      ? `G${entry.tourStepOrdinals.join('+')}`
+      : '';
+  return [
+    ...(ordinary ? [{ text: ordinary }] : []),
+    ...(ordinary && tour ? [{ text: ' ' }] : []),
+    ...(tour ? [{ color: 'var(--tour)', text: tour }] : []),
+  ];
 }
 
 export function fileReviewMapStatusLabel(
@@ -297,6 +314,7 @@ export function fileReviewMapStatusLabel(
     countLabel(entry.draftCount, 'local draft'),
     countLabel(entry.staleDraftCount, 'stale draft'),
     countLabel(entry.findingCount, 'Neon finding'),
+    countLabel(entry.tourStepOrdinals.length, 'guided-tour step'),
     entry.findingCount > 0 && entry.highestFindingSeverity
       ? `highest severity ${entry.highestFindingSeverity}`
       : null,

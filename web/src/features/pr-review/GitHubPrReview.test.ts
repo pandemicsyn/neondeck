@@ -903,6 +903,7 @@ describe('GitHubPrReview helpers', () => {
       highestFindingSeverity: 'critical',
       path: 'src/a.ts',
       staleDraftCount: 0,
+      tourStepOrdinals: [],
       unresolvedThreadCount: 1,
     });
     expect(map.get('src/new.ts')).toEqual({
@@ -912,6 +913,7 @@ describe('GitHubPrReview helpers', () => {
       highestFindingSeverity: null,
       path: 'src/new.ts',
       staleDraftCount: 1,
+      tourStepOrdinals: [],
       unresolvedThreadCount: 1,
     });
   });

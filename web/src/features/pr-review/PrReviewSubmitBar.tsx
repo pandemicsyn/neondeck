@@ -20,6 +20,7 @@ export function PrReviewSubmitBar({
   statusMessage,
   verdict,
   trustBoundary,
+  tourOpen = false,
 }: {
   cleanCommentCount: number;
   draft: GitHubPrReviewDraft | null;
@@ -40,6 +41,7 @@ export function PrReviewSubmitBar({
   statusMessage: string | null;
   verdict: GitHubPrReviewVerdict;
   trustBoundary: string | null;
+  tourOpen?: boolean;
 }) {
   const hasBody = reviewBody.trim().length > 0;
   const canSubmit =
@@ -69,6 +71,11 @@ export function PrReviewSubmitBar({
         {staleCommentCount > 0 ? (
           <span className="pr-review-stale-count">
             {staleCommentCount} stale skipped
+          </span>
+        ) : null}
+        {tourOpen ? (
+          <span className="pr-review-tour-open-status">
+            tour open · not a comment
           </span>
         ) : null}
         <fieldset className="pr-review-verdicts">
