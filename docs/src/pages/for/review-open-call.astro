@@ -3,11 +3,13 @@ import CampaignCommand from '../../components/CampaignCommand.astro';
 import CampaignFooter from '../../components/CampaignFooter.astro';
 import MarketingConsent from '../../components/MarketingConsent.astro';
 import CampaignNav from '../../components/CampaignNav.astro';
+import BriefingMockup from '../../components/BriefingMockup.astro';
 import ReviewMockup from '../../components/ReviewMockup.astro';
 import BaseLayout from '../../layouts/BaseLayout.astro';
 import '../../styles/campaign.css';
 
-const discussions = 'https://github.com/pandemicsyn/neondeck/discussions';
+const repo = 'https://github.com/pandemicsyn/neondeck';
+const discussions = `${repo}/discussions`;
 
 const questions = [
   {
@@ -77,29 +79,54 @@ const steps = [
         <div class="campaign-hero__actions">
           <a
             class="oc-primary"
-            href={discussions}
+            href={repo}
             data-marketing-event="github_click"
-            data-marketing-placement="discussion-hero">join the discussion →</a
+            data-marketing-placement="hero-repo">view on github →</a
           >
           <CampaignCommand placement="hero" />
         </div>
-        <p class="campaign-hero__note">
-          100% open source (MIT) · runs on your machine · bring your own
-          provider
-        </p>
       </header>
 
-      <section class="campaign-container campaign-preview-wrap">
-        <ReviewMockup />
-      </section>
-
-      <section class="campaign-container oc-section">
-        <p class="campaign-kicker">why we are asking</p>
+      <section class="campaign-container oc-section oc-intro">
+        <p class="campaign-kicker">the problem</p>
         <h2>Agents increased the review load. Reviews haven't evolved.</h2>
         <p class="oc-lead">
           More PRs. Bigger changes. Agents are helping us write more code than
-          ever, but we're all feeling the review pressure. Help us figure out
-          what reviews become, while reviews are still needed.
+          ever, but we're all feeling the review pressure. Neon triages your PR
+          review backlog, flags the ones that need a human look, and gives you a
+          fast as fuck diff viewer when you need it. Approve PRs, leave
+          comments, without ever pulling up GitHub.
+        </p>
+      </section>
+
+      <section class="campaign-container campaign-preview-wrap">
+        <figure class="oc-shot">
+          <figcaption>
+            <span class="oc-shot__n">01</span>
+            <strong>The briefing.</strong>
+            <span>what Neon found, and why it escalated to you.</span>
+          </figcaption>
+          <BriefingMockup />
+        </figure>
+        <figure class="oc-shot">
+          <figcaption>
+            <span class="oc-shot__n pink">02</span>
+            <strong>The workbench.</strong>
+            <span
+              >the full PR diff, with preloaded comments and sidebar agent chat.</span
+            >
+          </figcaption>
+          <ReviewMockup />
+        </figure>
+      </section>
+
+      <section class="campaign-container oc-section">
+        <p class="campaign-kicker">open questions</p>
+        <h2>Four things we can't settle on our own.</h2>
+        <p class="oc-lead">
+          Help us figure out what reviews become, while reviews are still
+          needed. Each one is its own thread — take whichever you have an
+          opinion about.
         </p>
         <div class="oc-board">
           {
@@ -227,6 +254,59 @@ const steps = [
   .oc-primary:hover {
     color: #090a0f;
     transform: translateY(-1px);
+  }
+
+  /* The intro runs straight into the mockups it is describing, so it trades the
+     section's full trailing space for enough to separate it from the first
+     caption. Both classes are needed: .oc-section sets the same property and
+     wins on source order otherwise. */
+  .oc-section.oc-intro {
+    padding-bottom: clamp(30px, 4vw, 46px);
+  }
+
+  .oc-intro .oc-lead {
+    margin-bottom: 0;
+  }
+
+  .oc-shot + .oc-shot {
+    margin-top: clamp(38px, 5vw, 62px);
+  }
+
+  .oc-shot {
+    margin: 0;
+  }
+
+  .oc-shot figcaption {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 10px;
+    margin-bottom: 14px;
+  }
+
+  .oc-shot__n {
+    color: var(--cyan);
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 0.08em;
+  }
+
+  .oc-shot__n.pink {
+    color: var(--pink);
+  }
+
+  .oc-shot figcaption strong {
+    color: var(--campaign-ink);
+    font-family: 'Chakra Petch', sans-serif;
+    font-size: 17px;
+    font-weight: 600;
+  }
+
+  .oc-shot figcaption > span:last-child {
+    max-width: 68ch;
+    color: var(--campaign-muted);
+    font-size: 14.5px;
+    line-height: 1.6;
   }
 
   .oc-section {

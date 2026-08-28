@@ -116,10 +116,10 @@ neondeck service status</code></pre>
 
         <h2>Disable automatic checks</h2>
         <p>
-          Update checks make one unauthenticated request to the public npm
-          registry and do not send runtime-home contents or product telemetry.
-          To disable them, add this setting to the runtime-home <code>.env</code
-          > and restart Neondeck:
+          Update checks make one unauthenticated request to Neondeck's public
+          <a href="/latest.json">release manifest</a>. The request does not send
+          runtime-home contents or product telemetry. To disable it, add this
+          setting to the runtime-home <code>.env</code> and restart Neondeck:
         </p>
         <pre><code>NEONDECK_DISABLE_UPDATE_CHECK=1</code></pre>
         <p>

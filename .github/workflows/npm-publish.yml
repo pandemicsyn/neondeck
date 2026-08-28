@@ -39,6 +39,10 @@ jobs:
     name: Publish npm package
     runs-on: ubuntu-latest
     environment: npm
+    outputs:
+      dry_run: ${{ steps.release.outputs.dry_run }}
+      npm_tag: ${{ steps.release.outputs.npm_tag }}
+      version: ${{ steps.release.outputs.version }}
 
     steps:
       - name: Check out repository
@@ -185,3 +189,12 @@ jobs:
             echo "Registry propagation is still pending (attempt ${attempt}/12); retrying in 5 seconds."
             sleep 5
           done
+
+  deploy-docs:
+    name: Refresh neondeck.dev release manifest
+    needs: publish
+    if: needs.publish.outputs.dry_run == 'false'
+    uses: ./.github/workflows/docs-deploy.yml
+    with:
+      expected_version: ${{ needs.publish.outputs.version }}
+      expected_channel: ${{ needs.publish.outputs.npm_tag }}
