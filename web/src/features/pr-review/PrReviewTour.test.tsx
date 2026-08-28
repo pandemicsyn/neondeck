@@ -37,7 +37,14 @@ describe('PR review guided tours', () => {
     ).toMatchObject({
       side: 'additions',
       lineNumber: 11,
-      metadata: { kind: 'tour', tourStep: { id: 'step-1' } },
+      metadata: {
+        kind: 'tour',
+        exactAnchor: {
+          side: 'additions',
+          startLine: 10,
+          endLine: 11,
+        },
+      },
     });
     expect(annotationsFromPrReviewTour(tour, true)).toEqual({});
   });
@@ -91,17 +98,15 @@ describe('PR review guided tours', () => {
   });
 
   it('renders location-first annotation hierarchy for active and inactive steps', () => {
-    const annotation = annotationsFromPrReviewTour(tour, false)[
-      'src/b.ts'
-    ]![0]!;
     act(() =>
       root.render(
         <PrReviewTourAnnotation
-          annotation={annotation}
           onActivate={() => undefined}
           onAsk={() => undefined}
           onClose={() => undefined}
           selected={false}
+          step={tour.steps[0]!}
+          tour={tour}
         />,
       ),
     );
@@ -111,11 +116,12 @@ describe('PR review guided tours', () => {
     act(() =>
       root.render(
         <PrReviewTourAnnotation
-          annotation={annotation}
           onActivate={() => undefined}
           onAsk={() => undefined}
           onClose={() => undefined}
           selected
+          step={tour.steps[0]!}
+          tour={tour}
         />,
       ),
     );

@@ -3,9 +3,10 @@ import type {
   PrReviewTour,
   PrReviewTourStep,
 } from '../../../../shared/pr-review-tour';
+import { prReviewTourAnnotationId } from '../../../../shared/pr-review-tour';
+import { visiblePatchLines } from '../../../../shared/patch-anchors';
 import type { DiffFilePatch, DiffReviewAnnotation } from '../diff-viewer/types';
 import { Badge } from '../../components/ui';
-import { prReviewTourAnnotationId } from './review-navigation';
 
 export type PrReviewTourMode = 'read' | 'walk';
 
@@ -30,8 +31,11 @@ export function annotationsFromPrReviewTour(
         kind: 'tour',
         title: step.symbol ?? `Step ${step.ordinal}`,
         body: step.explanation,
-        tour,
-        tourStep: step,
+        exactAnchor: {
+          side: step.anchor.side,
+          startLine: step.anchor.startLine,
+          endLine: step.anchor.endLine,
+        },
       },
     });
   }
@@ -39,21 +43,20 @@ export function annotationsFromPrReviewTour(
 }
 
 export function PrReviewTourAnnotation({
-  annotation,
   onActivate,
   onAsk,
   onClose,
   selected,
+  step,
+  tour,
 }: {
-  annotation: DiffReviewAnnotation;
   onActivate: (step: PrReviewTourStep) => void;
   onAsk: (step: PrReviewTourStep) => void;
   onClose: () => void;
   selected: boolean;
+  step: PrReviewTourStep;
+  tour: PrReviewTour;
 }) {
-  const step = annotation.metadata.tourStep;
-  const tour = annotation.metadata.tour;
-  if (!step || !tour) return null;
   if (!selected) {
     return (
       <button
@@ -648,43 +651,6 @@ function tourJumpLabel(previous: PrReviewTourStep, current: PrReviewTourStep) {
   const distance = current.anchor.startLine - previous.anchor.endLine;
   if (distance === 0) return `Next: the adjacent range in ${current.file}.`;
   return `Next: ${Math.abs(distance)} line${Math.abs(distance) === 1 ? '' : 's'} ${distance > 0 ? 'below' : 'above'} the previous step in ${current.file}.`;
-}
-
-function visiblePatchLines(
-  patch: string,
-  side: PrReviewTourStep['anchor']['side'],
-) {
-  const result: Array<{ number: number; text: string }> = [];
-  let inHunk = false;
-  let oldLine = 0;
-  let newLine = 0;
-  for (const line of patch.split('\n')) {
-    const hunk = line.match(/^@@\s+-(\d+)(?:,\d+)?\s+\+(\d+)(?:,\d+)?\s+@@/);
-    if (hunk) {
-      inHunk = true;
-      oldLine = Number(hunk[1]);
-      newLine = Number(hunk[2]);
-      continue;
-    }
-    if (!inHunk || line.startsWith('\\ No newline')) continue;
-    if (line.startsWith('+')) {
-      if (side === 'additions')
-        result.push({ number: newLine, text: line.slice(1) });
-      newLine += 1;
-    } else if (line.startsWith('-')) {
-      if (side === 'deletions')
-        result.push({ number: oldLine, text: line.slice(1) });
-      oldLine += 1;
-    } else {
-      result.push({
-        number: side === 'additions' ? newLine : oldLine,
-        text: line.startsWith(' ') ? line.slice(1) : line,
-      });
-      oldLine += 1;
-      newLine += 1;
-    }
-  }
-  return result;
 }
 
 function objectValue(value: unknown): Record<string, unknown> {

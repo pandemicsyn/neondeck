@@ -72,18 +72,6 @@ export type PrReviewFindingsSidebarProps = {
   onCloseTour?: () => void;
   onOpenTour?: () => void;
   onTourModeChange?: (mode: PrReviewTourMode) => void;
-  onTourPublished?: (tourId: string, generation: number) => void;
-  onReviewerRequestDeliveryChange?: (
-    id: number,
-    delivery: PrReviewReviewerRequest['delivery'],
-    error?: string | null,
-  ) => void;
-  onReviewerSubmissionIdentified?: (submissionId: string) => void;
-  onReviewerSubmissionSettled?: (
-    submissionId: string,
-    outcome: 'completed' | 'failed' | 'aborted',
-  ) => void;
-  onSendReviewerMessage?: (message: string) => void;
   onShowWhy?: (finding: NeonReviewFinding) => void;
   reviewerRequest?: PrReviewReviewerRequest | null;
 };
@@ -132,11 +120,6 @@ export function PrReviewFindingsSidebar({
         onCloseTour={props.onCloseTour}
         onDraftChanged={props.onDraftChanged}
         onOpenTour={props.onOpenTour}
-        onRequestDeliveryChange={props.onReviewerRequestDeliveryChange}
-        onSubmissionIdentified={props.onReviewerSubmissionIdentified}
-        onSubmissionSettled={props.onReviewerSubmissionSettled}
-        onSendMessage={props.onSendReviewerMessage}
-        onTourPublished={props.onTourPublished}
         request={props.reviewerRequest}
         review={props.review}
         tour={props.tour}
@@ -247,11 +230,6 @@ export function PrReviewFindingsSidebar({
           onCloseTour={props.onCloseTour}
           onOpenTour={props.onOpenTour}
           onBackToTourFinding={props.onBackToTourFinding}
-          onRequestDeliveryChange={props.onReviewerRequestDeliveryChange}
-          onSubmissionIdentified={props.onReviewerSubmissionIdentified}
-          onSubmissionSettled={props.onReviewerSubmissionSettled}
-          onSendMessage={props.onSendReviewerMessage}
-          onTourPublished={props.onTourPublished}
           request={props.reviewerRequest}
         />
       )}

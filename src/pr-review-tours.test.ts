@@ -7,7 +7,9 @@ import {
   readBoundPrReviewTour,
   replacePrReviewTour,
 } from './modules/pr-review-tours';
+import type { PrReviewTourServiceDependencies } from './modules/pr-review-tours';
 import type { PrReviewRecord } from './modules/pr-reviews';
+import type { ReviewSurfaceChangeEvent } from '../shared/review-surface';
 import { initializeAppDatabase } from './runtime-home/app-db';
 import { runtimePaths } from './runtime-home';
 
@@ -321,8 +323,43 @@ describe('PR review guided tours', () => {
       tourId: tour.id,
       generation: tour.generation,
       stepId: tour.steps[0]!.id,
+      requestId: 'presentation-1',
     };
     const publishEvent = vi.fn<(event: unknown) => void>();
+    const navigateSurface = vi.fn<
+      NonNullable<PrReviewTourServiceDependencies['navigateSurface']>
+    >((surfaceId, request) => ({
+      ...request,
+      commandId: 'navigation-1',
+      requestedAt: '2026-08-27T00:00:00.000Z',
+      surfaceId,
+    }));
+    const surfaceListeners: Array<
+      Parameters<
+        NonNullable<PrReviewTourServiceDependencies['subscribeSurfaceEvents']>
+      >[0]
+    > = [];
+    const unsubscribeSurfaceEvents = vi.fn<() => void>();
+    const subscribeSurfaceEvents = vi.fn<
+      NonNullable<PrReviewTourServiceDependencies['subscribeSurfaceEvents']>
+    >((listener) => {
+      surfaceListeners.push(listener);
+      return unsubscribeSurfaceEvents;
+    });
+    const readMatchingSurface = () =>
+      ({
+        source: {
+          id: 'github-pr:owner/repo#1',
+          kind: 'github-pr',
+          repository: { repoFullName: review.repoFullName.toUpperCase() },
+          revision: {
+            state: 'resolved',
+            kind: 'git-commit',
+            id: review.headSha,
+            baseId: review.baseSha,
+          },
+        },
+      }) as never;
 
     expect(
       publishReviewTourPresentation(event, paths, {
@@ -374,26 +411,89 @@ describe('PR review guided tours', () => {
     expect(
       publishReviewTourPresentation(event, paths, {
         readReview: () => review,
-        readSurface: () =>
-          ({
-            source: {
-              id: 'github-pr:owner/repo#1',
-              kind: 'github-pr',
-              repository: { repoFullName: review.repoFullName.toUpperCase() },
-              revision: {
-                state: 'resolved',
-                kind: 'git-commit',
-                id: review.headSha,
-                baseId: review.baseSha,
-              },
-            },
-          }) as never,
+        readSurface: readMatchingSurface,
+        navigateSurface,
         publishEvent,
+        subscribeSurfaceEvents,
       }),
     ).toBe(true);
+    expect(navigateSurface).toHaveBeenCalledWith('surface-1', {
+      revisionKey: tour.revisionKey,
+      target: {
+        path: tour.steps[0]!.file,
+        focus: true,
+        anchor: {
+          side: tour.steps[0]!.anchor.side,
+          startLine: tour.steps[0]!.anchor.startLine,
+          endLine: tour.steps[0]!.anchor.endLine,
+        },
+        annotationId: JSON.stringify(['tour-step', tour.steps[0]!.id]),
+        correlationId: 'presentation-1',
+      },
+    });
+    expect(publishEvent).not.toHaveBeenCalled();
+    surfaceListeners[0]!(
+      surfaceChangeEvent('acknowledged', {
+        commandId: 'navigation-1',
+        surfaceId: 'surface-1',
+        status: 'resolved',
+        revisionKey: tour.revisionKey,
+        resolvedPath: tour.steps[0]!.file,
+        message: null,
+        acknowledgedAt: '2026-08-27T00:00:01.000Z',
+      }),
+    );
+    expect(unsubscribeSurfaceEvents).toHaveBeenCalledOnce();
     expect(publishEvent).toHaveBeenCalledTimes(1);
+
+    expect(
+      publishReviewTourPresentation(event, paths, {
+        readReview: () => review,
+        readSurface: readMatchingSurface,
+        navigateSurface,
+        publishEvent,
+        subscribeSurfaceEvents,
+      }),
+    ).toBe(true);
+    surfaceListeners[1]!(
+      surfaceChangeEvent('acknowledged', {
+        commandId: 'navigation-1',
+        surfaceId: 'surface-1',
+        status: 'target-unavailable',
+        revisionKey: tour.revisionKey,
+        resolvedPath: null,
+        message: 'The tour annotation is unavailable.',
+        acknowledgedAt: '2026-08-27T00:00:02.000Z',
+      }),
+    );
+    expect(unsubscribeSurfaceEvents).toHaveBeenCalledTimes(2);
+    expect(publishEvent).toHaveBeenCalledTimes(2);
+    expect(publishEvent).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        action: 'tour-activation-failed',
+        requestId: 'presentation-1',
+        status: 'target-unavailable',
+      }),
+    );
   });
 });
+
+function surfaceChangeEvent(
+  action: ReviewSurfaceChangeEvent['action'],
+  acknowledgement: ReviewSurfaceChangeEvent['acknowledgement'],
+): ReviewSurfaceChangeEvent {
+  return {
+    id: 'surface-event-1',
+    action,
+    surfaceId: 'surface-1',
+    changedAt: '2026-08-27T00:00:01.000Z',
+    surface: null,
+    navigation: null,
+    acknowledgement,
+    findings: null,
+    reason: null,
+  };
+}
 
 async function fixture() {
   const home = await mkdtemp(join(tmpdir(), 'neondeck-tour-'));

@@ -18,6 +18,7 @@ import {
 import type { DiffFilePatch } from '../diff-viewer/types';
 import type { NeonReviewFinding } from '../../../../shared/review-finding';
 import type { PrReviewTour } from '../../../../shared/pr-review-tour';
+import { prReviewTourAnnotationId } from '../../../../shared/pr-review-tour';
 import type { NeonFindingAnchorResolution } from './review-findings';
 import {
   namespacedReviewUiId,
@@ -475,10 +476,6 @@ export function reviewNavigationKindLabel(kind: ReviewCursorKind) {
     case 'attention':
       return 'attention item';
   }
-}
-
-export function prReviewTourAnnotationId(stepId: string) {
-  return namespacedReviewUiId('tour-step', stepId);
 }
 
 export function reviewNavigationAnnouncement(

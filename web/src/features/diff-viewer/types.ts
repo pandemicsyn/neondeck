@@ -1,10 +1,7 @@
 import type { RepoDiffFile } from '../../api';
 import type { ReviewFindingSeverity } from '../../../../shared/review-navigation';
 import type { NeonReviewFinding } from '../../../../shared/review-finding';
-import type {
-  PrReviewTour,
-  PrReviewTourStep,
-} from '../../../../shared/pr-review-tour';
+import type { ReviewSurfaceNavigationTarget } from '../../../../shared/review-surface';
 
 export type DiffFilePatch = Omit<RepoDiffFile, 'patch'> & {
   patch?: string | null;
@@ -36,8 +33,7 @@ export type DiffReviewAnnotationMetadata = {
   isOutdated?: boolean;
   isStale?: boolean;
   finding?: NeonReviewFinding;
-  tour?: PrReviewTour;
-  tourStep?: PrReviewTourStep;
+  exactAnchor?: ReviewSurfaceNavigationTarget['anchor'];
 };
 
 export type DiffReviewAnnotation = {

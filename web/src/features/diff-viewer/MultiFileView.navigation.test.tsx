@@ -147,12 +147,10 @@ describe('MultiFileView navigation synchronization', () => {
           metadata: {
             id: 'tour-step:step-1',
             kind: 'tour',
-            tourStep: {
-              anchor: {
-                side: 'additions',
-                startLine: 1,
-                endLine: 1,
-              },
+            exactAnchor: {
+              side: 'additions',
+              startLine: 1,
+              endLine: 1,
             },
           },
         } as never,

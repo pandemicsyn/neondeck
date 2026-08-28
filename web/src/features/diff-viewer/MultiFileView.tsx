@@ -26,6 +26,7 @@ import type { NeonReviewFinding } from '../../../../shared/review-finding';
 import { reviewSourceDataAttributes } from './review-source';
 import { useReviewSurface } from './use-review-surface';
 import type { ReviewRefreshStatus } from '../../../../shared/review-refresh';
+import { visiblePatchLineKeys } from '../../../../shared/patch-anchors';
 import type { ReviewSurfaceNavigationTarget } from '../../../../shared/review-surface';
 
 type MultiFileViewProps = {
@@ -278,8 +279,8 @@ export function reviewSurfaceAnnotationMatchesTarget(
     (item) => item.metadata.id === target.annotationId,
   );
   if (!annotation) return false;
-  if (target.anchor && annotation.metadata.tourStep) {
-    const exactAnchor = annotation.metadata.tourStep.anchor;
+  if (target.anchor && annotation.metadata.exactAnchor) {
+    const exactAnchor = annotation.metadata.exactAnchor;
     return (
       exactAnchor.side === target.anchor.side &&
       exactAnchor.startLine === target.anchor.startLine &&
@@ -307,34 +308,4 @@ export function patchContainsReviewSurfaceTarget(
     if (!visible.has(`${target.anchor.side}:${line}`)) return false;
   }
   return true;
-}
-
-function visiblePatchLineKeys(patch: string) {
-  const keys = new Set<string>();
-  let inHunk = false;
-  let oldLine = 0;
-  let newLine = 0;
-  for (const line of patch.split('\n')) {
-    const hunk = line.match(/^@@\s+-(\d+)(?:,\d+)?\s+\+(\d+)(?:,\d+)?\s+@@/);
-    if (hunk) {
-      inHunk = true;
-      oldLine = Number(hunk[1]);
-      newLine = Number(hunk[2]);
-      continue;
-    }
-    if (!inHunk || line.startsWith('\\ No newline')) continue;
-    if (line.startsWith(' ')) {
-      keys.add(`deletions:${oldLine}`);
-      keys.add(`additions:${newLine}`);
-      oldLine += 1;
-      newLine += 1;
-    } else if (line.startsWith('-')) {
-      keys.add(`deletions:${oldLine}`);
-      oldLine += 1;
-    } else if (line.startsWith('+')) {
-      keys.add(`additions:${newLine}`);
-      newLine += 1;
-    }
-  }
-  return keys;
 }

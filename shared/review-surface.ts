@@ -89,6 +89,7 @@ export type ReviewSurfaceNavigationTarget = {
     endLine: number;
   };
   annotationId?: string;
+  correlationId?: string;
 };
 
 export type ReviewSurfaceNavigationRequest = {

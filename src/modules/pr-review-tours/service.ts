@@ -5,19 +5,25 @@ import {
   resolvedReviewRevision,
 } from '../../../shared/review-source';
 import {
+  prReviewTourAnnotationId,
   prReviewTourLimits,
   type PrReviewTour,
   type PrReviewTourDraft,
   type PrReviewTourProvenance,
   type ReviewTourChangeEvent,
 } from '../../../shared/pr-review-tour';
+import type { ReviewSurfaceChangeEvent } from '../../../shared/review-surface';
 import { openDb } from '../../lib/sqlite';
 import { getGitHubPrFiles } from '../pr-events';
 import { readPrReview, type PrReviewRecord } from '../pr-reviews';
 import type { RuntimePaths } from '../../runtime-home';
 import { prReviewerConversationId } from '../../../shared/pr-reviewer-session';
+import { visiblePatchLineKeys } from '../../../shared/patch-anchors';
 import { publishReviewTourEvent } from './events';
-import { reviewSurfaceRegistry } from '../review-surfaces/registry';
+import {
+  reviewSurfaceRegistry,
+  reviewSurfaceTtlMs,
+} from '../review-surfaces/registry';
 import { prReviewTourDraftSchema } from './schemas';
 import {
   readPrReviewTour,
@@ -41,6 +47,8 @@ export type PrReviewTourServiceDependencies = {
   now?: () => Date;
   publishEvent?: typeof publishReviewTourEvent;
   readSurface?: typeof reviewSurfaceRegistry.read;
+  navigateSurface?: typeof reviewSurfaceRegistry.navigate;
+  subscribeSurfaceEvents?: typeof reviewSurfaceRegistry.subscribe;
 };
 
 export type ReplacePrReviewTourResult = {
@@ -133,7 +141,7 @@ export async function replacePrReviewTour(
         ['visiblePatchAnchor'],
       );
     }
-    const visibleLines = patchLineKeys(file.patch);
+    const visibleLines = visiblePatchLineKeys(file.patch);
     for (let line = step.startLine; line <= step.endLine; line += 1) {
       if (!visibleLines.has(`${step.side}:${line}`)) {
         return failure(
@@ -236,27 +244,33 @@ export function publishReviewTourPresentation(
         tourId: string;
         generation: number;
         stepId: string;
+        requestId: string;
       }
     | {
         action: 'tour-closed';
         surfaceId: string;
         tourId: string;
         generation: number;
+        requestId: string;
       },
   paths: RuntimePaths,
   dependencies: Pick<
     PrReviewTourServiceDependencies,
-    'now' | 'publishEvent' | 'readReview' | 'readSurface'
+    | 'navigateSurface'
+    | 'now'
+    | 'publishEvent'
+    | 'readReview'
+    | 'readSurface'
+    | 'subscribeSurfaceEvents'
   > = {},
 ) {
   const tour = findTourForPresentation(event.tourId, paths);
   if (!tour || tour.generation !== event.generation) return false;
-  if (
-    event.action === 'tour-activated' &&
-    !tour.steps.some((step) => step.id === event.stepId)
-  ) {
-    return false;
-  }
+  const step =
+    event.action === 'tour-activated'
+      ? tour.steps.find((candidate) => candidate.id === event.stepId)
+      : null;
+  if (event.action === 'tour-activated' && !step) return false;
   const surface = (
     dependencies.readSurface ??
     ((surfaceId) => reviewSurfaceRegistry.read(surfaceId))
@@ -291,12 +305,107 @@ export function publishReviewTourPresentation(
   ) {
     return false;
   }
+  if (event.action === 'tour-activated' && step) {
+    let commandId: string | null = null;
+    let expirationTimer: ReturnType<typeof setTimeout> | null = null;
+    let unsubscribe: () => void = () => undefined;
+    const cleanup = () => {
+      if (expirationTimer) clearTimeout(expirationTimer);
+      expirationTimer = null;
+      unsubscribe();
+    };
+    const subscribe =
+      dependencies.subscribeSurfaceEvents ??
+      ((listener: (surfaceEvent: ReviewSurfaceChangeEvent) => void) =>
+        reviewSurfaceRegistry.subscribe(listener));
+    unsubscribe = subscribe((surfaceEvent) => {
+      if (
+        surfaceEvent.action === 'removed' &&
+        surfaceEvent.surfaceId === event.surfaceId
+      ) {
+        cleanup();
+        return;
+      }
+      const acknowledgement = surfaceEvent.acknowledgement;
+      if (
+        surfaceEvent.action !== 'acknowledged' ||
+        surfaceEvent.surfaceId !== event.surfaceId ||
+        !acknowledgement ||
+        acknowledgement.commandId !== commandId
+      ) {
+        return;
+      }
+      cleanup();
+      if (
+        acknowledgement.status === 'resolved' &&
+        acknowledgement.revisionKey === tour.revisionKey &&
+        acknowledgement.resolvedPath === step.file
+      ) {
+        publishPresentationEvent(event, dependencies);
+      } else {
+        publishPresentationEvent(
+          {
+            ...event,
+            action: 'tour-activation-failed',
+            status:
+              acknowledgement.status === 'resolved'
+                ? 'target-unavailable'
+                : acknowledgement.status,
+            message:
+              acknowledgement.message ??
+              'The acknowledged tour target did not match the requested revision and path.',
+          },
+          dependencies,
+        );
+      }
+    });
+    const navigation = (
+      dependencies.navigateSurface ??
+      ((surfaceId, request) =>
+        reviewSurfaceRegistry.navigate(surfaceId, request))
+    )(event.surfaceId, {
+      revisionKey: tour.revisionKey,
+      target: {
+        path: step.file,
+        focus: true,
+        anchor: {
+          side: step.anchor.side,
+          startLine: step.anchor.startLine,
+          endLine: step.anchor.endLine,
+        },
+        annotationId: prReviewTourAnnotationId(step.id),
+        correlationId: event.requestId,
+      },
+    });
+    if (!navigation) {
+      cleanup();
+      return false;
+    }
+    commandId = navigation.commandId;
+    expirationTimer = setTimeout(cleanup, reviewSurfaceTtlMs);
+    expirationTimer.unref?.();
+    return true;
+  }
+  publishPresentationEvent(event, dependencies);
+  return true;
+}
+
+type PublishableReviewTourPresentationEvent<
+  Event extends ReviewTourChangeEvent = Exclude<
+    ReviewTourChangeEvent,
+    { action: 'tour-replaced' }
+  >,
+> = Event extends unknown ? Omit<Event, 'changedAt' | 'id'> : never;
+
+function publishPresentationEvent(
+  event: PublishableReviewTourPresentationEvent,
+  dependencies: Pick<PrReviewTourServiceDependencies, 'now' | 'publishEvent'>,
+) {
   (dependencies.publishEvent ?? publishReviewTourEvent)({
     ...event,
     id: randomUUID(),
     changedAt: (dependencies.now ?? (() => new Date()))().toISOString(),
   } as ReviewTourChangeEvent);
-  return true;
 }
 
 function findTourForPresentation(tourId: string, paths: RuntimePaths) {
@@ -382,36 +491,6 @@ function isReviewFile(value: unknown): value is ReviewFile {
     typeof row.binary === 'boolean' &&
     typeof row.truncated === 'boolean',
   );
-}
-
-function patchLineKeys(patch: string) {
-  const keys = new Set<string>();
-  let inHunk = false;
-  let oldLine = 0;
-  let newLine = 0;
-  for (const line of patch.split('\n')) {
-    const hunk = line.match(/^@@\s+-(\d+)(?:,\d+)?\s+\+(\d+)(?:,\d+)?\s+@@/);
-    if (hunk) {
-      inHunk = true;
-      oldLine = Number(hunk[1]);
-      newLine = Number(hunk[2]);
-      continue;
-    }
-    if (!inHunk || line.startsWith('\\ No newline')) continue;
-    if (line.startsWith(' ')) {
-      keys.add(`deletions:${oldLine}`);
-      keys.add(`additions:${newLine}`);
-      oldLine += 1;
-      newLine += 1;
-    } else if (line.startsWith('-')) {
-      keys.add(`deletions:${oldLine}`);
-      oldLine += 1;
-    } else if (line.startsWith('+')) {
-      keys.add(`additions:${newLine}`);
-      newLine += 1;
-    }
-  }
-  return keys;
 }
 
 function duplicateValues(values: string[]) {

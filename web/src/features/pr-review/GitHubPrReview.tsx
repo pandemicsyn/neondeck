@@ -29,9 +29,10 @@ import {
   type ReviewRefreshSafety,
 } from '../../../../shared/review-refresh';
 import type { NeonReviewFinding } from '../../../../shared/review-finding';
-import type {
-  PrReviewTour,
-  PrReviewTourStep,
+import {
+  prReviewTourAnnotationId,
+  type PrReviewTour,
+  type PrReviewTourStep,
 } from '../../../../shared/pr-review-tour';
 import type { ReviewSurfaceNavigationTarget } from '../../../../shared/review-surface';
 import { prReviewerConversationId } from '../../../../shared/pr-reviewer-session';
@@ -153,7 +154,7 @@ import {
   type PrReviewTourMode,
 } from './PrReviewTour';
 import {
-  PrReviewReviewerController,
+  PrReviewReviewerConversationProvider,
   type PrReviewReviewerRequest,
 } from './PrReviewReviewerChat';
 
@@ -320,6 +321,8 @@ export function GitHubPrReview({
     identity: string;
   } | null>(null);
   const tourPresentationQueueRef = useRef<Promise<void>>(Promise.resolve());
+  const tourPresentationRequestIdRef = useRef(0);
+  const latestTourPresentationRequestRef = useRef<string | null>(null);
   const pendingTourCloseAckRef = useRef(false);
   const [navigationTargetKey, setNavigationTargetKey] = useState<string | null>(
     null,
@@ -902,10 +905,34 @@ export function GitHubPrReview({
   const handleReviewSurfaceNavigate = useCallback(
     (target: ReviewSurfaceNavigationTarget) => {
       if (isApplyingRevision) return;
+      const tourStep =
+        target.annotationId && tour
+          ? tour.steps.find(
+              (step) =>
+                prReviewTourAnnotationId(step.id) === target.annotationId,
+            )
+          : null;
+      const tourTarget = tourStep
+        ? reviewCursorTargets(navigationData.model, 'tour').find(
+            (candidate) => candidate.id === tourStep.id,
+          )
+        : null;
+      if (
+        tourStep &&
+        (pendingTourCloseAckRef.current ||
+          target.correlationId !== latestTourPresentationRequestRef.current)
+      ) {
+        return;
+      }
       setFileFilter({ paths: null, query: null });
       setActivePath(target.path);
-      setNavigationTargetKey(null);
+      setNavigationTargetKey(tourTarget?.key ?? null);
       setNavigationAuthority('explicit');
+      if (tourStep) {
+        pendingTourCloseAckRef.current = false;
+        setTourClosed(false);
+        setNavigationKind('tour');
+      }
       const selection = target.anchor
         ? ({
             side: target.anchor.side,
@@ -922,17 +949,25 @@ export function GitHubPrReview({
         line: target.anchor?.endLine ?? null,
         selection,
       });
-      setNavigationBoundary(null);
-      setNavigationStatus(null);
-      setNavigationAnnouncement(
-        `${target.path}, review surface navigation resolved${target.anchor ? ` at lines ${target.anchor.startLine} through ${target.anchor.endLine}` : ''}.`,
-      );
+      if (!tourStep) {
+        setNavigationBoundary(null);
+        setNavigationStatus(null);
+        setNavigationAnnouncement(
+          `${target.path}, review surface navigation resolved${target.anchor ? ` at lines ${target.anchor.startLine} through ${target.anchor.endLine}` : ''}.`,
+        );
+      }
       if (target.focus) window.focus();
     },
-    [isApplyingRevision],
+    [isApplyingRevision, navigationData.model, tour],
   );
   const resolveReviewSurfaceTarget = useCallback(
     async (target: ReviewSurfaceNavigationTarget) => {
+      const isCurrentCorrelation = () =>
+        !target.correlationId ||
+        target.correlationId === latestTourPresentationRequestRef.current;
+      if (!isCurrentCorrelation()) {
+        return false;
+      }
       if (!fileList.some((file) => file.path === target.path)) return false;
       if (
         target.annotationId &&
@@ -957,6 +992,7 @@ export function GitHubPrReview({
           return false;
         }
       }
+      if (!isCurrentCorrelation()) return false;
       return typeof patch === 'string'
         ? patchContainsReviewSurfaceTarget(patch, target)
         : false;
@@ -1119,10 +1155,26 @@ export function GitHubPrReview({
       if (navigationKind === 'tour' && tour) {
         const step = tour.steps.find((item) => item.id === result.target?.id);
         if (step) {
+          if (result.boundary) {
+            const boundary = `${result.boundary} boundary`;
+            setNavigationBoundary(result.boundary);
+            setNavigationStatus(boundary);
+            setNavigationAnnouncement(
+              reviewNavigationAnnouncement(
+                result.target,
+                result.index,
+                result.total,
+                boundary,
+              ),
+            );
+          } else {
+            setNavigationBoundary(null);
+            setNavigationStatus(null);
+          }
           pendingTourCloseAckRef.current = false;
-          setTourClosed(false);
-          setFileFilter({ paths: null, query: null });
           if (reviewSurfaceId) {
+            const requestId = `${reviewSurfaceId}:${++tourPresentationRequestIdRef.current}`;
+            latestTourPresentationRequestRef.current = requestId;
             tourPresentationQueueRef.current = tourPresentationQueueRef.current
               .catch(() => undefined)
               .then(async () => {
@@ -1132,10 +1184,24 @@ export function GitHubPrReview({
                   tourId: tour.id,
                   generation: tour.generation,
                   stepId: step.id,
+                  requestId,
                 });
               })
-              .catch(() => undefined);
+              .catch((cause) => {
+                if (requestId !== latestTourPresentationRequestRef.current) {
+                  return;
+                }
+                const message = `Guided-tour navigation failed: ${queryErrorMessage(cause)}`;
+                setNavigationStatus(message);
+                setNavigationAnnouncement(message);
+              });
+          } else {
+            const message =
+              'The PR review surface is not ready for navigation.';
+            setNavigationStatus(message);
+            setNavigationAnnouncement(message);
           }
+          return;
         }
       }
       activateNavigationTarget(result.target, navigationTargets);
@@ -1214,53 +1280,48 @@ export function GitHubPrReview({
       navigationData.model,
     ],
   );
-  const installTourStep = useCallback(
-    (step: PrReviewTourStep) => {
-      if (!tour || isApplyingRevision) return;
-      const targets = reviewCursorTargets(navigationData.model, 'tour');
-      const target = targets.find((item) => item.id === step.id);
-      if (!target) return;
-      setTourClosed(false);
-      setPendingHunkNavigation(null);
-      setNavigationKind('tour');
-      setFileFilter({ paths: null, query: null });
-      activateNavigationTarget(target, targets);
-    },
-    [activateNavigationTarget, isApplyingRevision, navigationData.model, tour],
-  );
   const enqueueTourPresentation = useCallback(
     (event: Parameters<typeof publishPrReviewTourPresentation>[0]) => {
-      tourPresentationQueueRef.current = tourPresentationQueueRef.current
+      const request = tourPresentationQueueRef.current
         .catch(() => undefined)
-        .then(async () => {
-          await publishPrReviewTourPresentation(event);
-        })
-        .catch(() => undefined);
+        .then(() => publishPrReviewTourPresentation(event));
+      tourPresentationQueueRef.current = request.then(
+        () => undefined,
+        () => undefined,
+      );
+      return request;
     },
     [],
   );
   const activateTourStep = useCallback(
     (step: PrReviewTourStep) => {
       pendingTourCloseAckRef.current = false;
-      installTourStep(step);
       if (!tour || isApplyingRevision) return;
+      setNavigationBoundary(null);
+      setNavigationStatus(null);
       if (reviewSurfaceId) {
-        enqueueTourPresentation({
+        const requestId = `${reviewSurfaceId}:${++tourPresentationRequestIdRef.current}`;
+        latestTourPresentationRequestRef.current = requestId;
+        void enqueueTourPresentation({
           action: 'tour-activated',
           surfaceId: reviewSurfaceId,
           tourId: tour.id,
           generation: tour.generation,
           stepId: step.id,
+          requestId,
+        }).catch((cause) => {
+          if (requestId !== latestTourPresentationRequestRef.current) return;
+          const message = `Guided-tour navigation failed: ${queryErrorMessage(cause)}`;
+          setNavigationStatus(message);
+          setNavigationAnnouncement(message);
         });
+      } else {
+        const message = 'The PR review surface is not ready for navigation.';
+        setNavigationStatus(message);
+        setNavigationAnnouncement(message);
       }
     },
-    [
-      enqueueTourPresentation,
-      isApplyingRevision,
-      installTourStep,
-      reviewSurfaceId,
-      tour,
-    ],
+    [enqueueTourPresentation, isApplyingRevision, reviewSurfaceId, tour],
   );
   const queueReviewerRequest = useCallback(
     (message: string) => {
@@ -1371,11 +1432,20 @@ export function GitHubPrReview({
     setNavigationSelection(null);
     setNavigationAnnotationId(null);
     if (reviewSurfaceId) {
-      enqueueTourPresentation({
+      const requestId = `${reviewSurfaceId}:${++tourPresentationRequestIdRef.current}`;
+      latestTourPresentationRequestRef.current = requestId;
+      void enqueueTourPresentation({
         action: 'tour-closed',
         surfaceId: reviewSurfaceId,
         tourId: tour.id,
         generation: tour.generation,
+        requestId,
+      }).catch((cause) => {
+        if (requestId !== latestTourPresentationRequestRef.current) return;
+        pendingTourCloseAckRef.current = false;
+        const message = `Could not synchronize guided-tour closure: ${queryErrorMessage(cause)}`;
+        setNavigationStatus(message);
+        setNavigationAnnouncement(message);
       });
     }
   }, [enqueueTourPresentation, reviewSurfaceId, tour]);
@@ -1384,7 +1454,6 @@ export function GitHubPrReview({
     const defaultMode: PrReviewTourMode =
       tour.steps.length < 6 || window.innerWidth < 820 ? 'read' : 'walk';
     setTourMode(defaultMode);
-    setTourClosed(false);
     activateTourStep(tour.steps[0]!);
   }, [activateTourStep, tour]);
   const handleTourPublished = useCallback(
@@ -1437,6 +1506,7 @@ export function GitHubPrReview({
   useEffect(() => {
     if (
       !tour ||
+      !reviewSurfaceId ||
       !pendingTourActivation ||
       pendingTourActivation.tourId !== tour.id ||
       pendingTourActivation.generation !== tour.generation
@@ -1445,7 +1515,7 @@ export function GitHubPrReview({
     }
     setPendingTourActivation(null);
     activateTourStep(tour.steps[0]!);
-  }, [activateTourStep, pendingTourActivation, tour]);
+  }, [activateTourStep, pendingTourActivation, reviewSurfaceId, tour]);
 
   useEffect(() => {
     if (!tour || !reviewSurfaceId) return;
@@ -1454,16 +1524,33 @@ export function GitHubPrReview({
         event.action === 'tour-activated' &&
         event.surfaceId === reviewSurfaceId &&
         event.tourId === tour.id &&
-        event.generation === tour.generation
+        event.generation === tour.generation &&
+        event.requestId === latestTourPresentationRequestRef.current
       ) {
-        const step = tour.steps.find((item) => item.id === event.stepId);
-        if (step && !pendingTourCloseAckRef.current) installTourStep(step);
+        pendingTourCloseAckRef.current = false;
+        setTourClosed(false);
+      }
+      if (
+        event.action === 'tour-activation-failed' &&
+        event.surfaceId === reviewSurfaceId &&
+        event.tourId === tour.id &&
+        event.generation === tour.generation &&
+        event.requestId === latestTourPresentationRequestRef.current
+      ) {
+        const message =
+          event.message ??
+          (event.status === 'stale-revision'
+            ? 'The guided tour belongs to a stale PR revision.'
+            : 'The guided-tour target is unavailable on this review surface.');
+        setNavigationStatus(message);
+        setNavigationAnnouncement(message);
       }
       if (
         event.action === 'tour-closed' &&
         event.surfaceId === reviewSurfaceId &&
         event.tourId === tour.id &&
-        event.generation === tour.generation
+        event.generation === tour.generation &&
+        event.requestId === latestTourPresentationRequestRef.current
       ) {
         pendingTourCloseAckRef.current = false;
         setTourClosed(true);
@@ -1473,7 +1560,7 @@ export function GitHubPrReview({
         setNavigationAnnotationId(null);
       }
     });
-  }, [installTourStep, reviewSurfaceId, tour]);
+  }, [reviewSurfaceId, tour]);
   const applyAvailableRevision = useCallback(async () => {
     if (
       !hasAvailableRevision ||
@@ -2325,10 +2412,16 @@ export function GitHubPrReview({
       });
     }
   };
-  const renderAnnotation = (annotation: DiffReviewAnnotation) =>
-    annotation.metadata.kind === 'tour' && annotation.metadata.tourStep ? (
+  const renderAnnotation = (annotation: DiffReviewAnnotation) => {
+    const annotationTourStep =
+      annotation.metadata.kind === 'tour'
+        ? tour?.steps.find(
+            (step) =>
+              prReviewTourAnnotationId(step.id) === annotation.metadata.id,
+          )
+        : null;
+    return annotation.metadata.kind === 'tour' && tour && annotationTourStep ? (
       <PrReviewTourAnnotation
-        annotation={annotation}
         onActivate={(step) => {
           setTourMode('walk');
           activateTourStep(step);
@@ -2338,6 +2431,8 @@ export function GitHubPrReview({
         selected={
           selectedContext.selectedAnnotationId === annotation.metadata.id
         }
+        step={annotationTourStep}
+        tour={tour}
       />
     ) : annotation.metadata.kind === 'finding' &&
       annotation.metadata.finding ? (
@@ -2447,6 +2542,7 @@ export function GitHubPrReview({
         }
       />
     );
+  };
   const submitReview = async () => {
     if (
       isApplyingRevision ||
@@ -2647,396 +2743,397 @@ export function GitHubPrReview({
     onCloseTour: closeTour,
     onOpenTour: openTour,
     onTourModeChange: setTourMode,
-    onTourPublished: handleTourPublished,
-    onReviewerRequestDeliveryChange: updateReviewerRequestDelivery,
-    onReviewerSubmissionIdentified: identifyReviewerSubmission,
-    onReviewerSubmissionSettled: settleReviewerSubmission,
-    onSendReviewerMessage: queueReviewerRequest,
     reviewerRequest: activeReviewerRequest,
   };
 
   return (
-    <section
-      className={
-        isStandalone
-          ? 'pr-review-shell pr-review-shell-standalone'
-          : 'pr-review-shell'
-      }
+    <PrReviewReviewerConversationProvider
+      isLocked={isApplyingRevision}
+      onDraftChanged={() => {
+        void draftQuery.refetch();
+      }}
+      onRequestDeliveryChange={updateReviewerRequestDelivery}
+      onSubmissionIdentified={identifyReviewerSubmission}
+      onSubmissionSettled={settleReviewerSubmission}
+      onTourPublished={handleTourPublished}
+      request={activeReviewerRequest}
+      review={appliedReviewerRecord}
     >
-      <PrReviewReviewerController
-        isLocked={isApplyingRevision}
-        onDraftChanged={() => {
-          void draftQuery.refetch();
-        }}
-        onRequestDeliveryChange={updateReviewerRequestDelivery}
-        onSubmissionIdentified={identifyReviewerSubmission}
-        onSubmissionSettled={settleReviewerSubmission}
-        onTourPublished={handleTourPublished}
-        request={activeReviewerRequest}
-        review={appliedReviewerRecord}
-      />
-      <header className="pr-review-header">
-        <div className="min-w-0">
-          <p className="truncate font-mono text-[10px] tracking-[0.12em] text-primary">
-            PR REVIEW · {pr.repo}#{pr.number}
-          </p>
-          <p className="mt-0.5 line-clamp-1 text-[12px] font-semibold text-ink">
-            {pr.title}
-          </p>
-        </div>
-        <div className="flex shrink-0 flex-wrap justify-end gap-1">
-          <Badge>@{pr.author}</Badge>
-          <Badge className={checkBadgeClass(pr)}>{checkLabel(pr)}</Badge>
-          <Badge>{pr.baseRef ?? 'base unknown'}</Badge>
-          <Badge>
-            {unresolvedThreads.length}/{reviewThreads.length} threads
-          </Badge>
-          {summary ? <Badge>{summaryLabel(summary)}</Badge> : null}
-          {activeNeonFindings.length > 0 ? (
-            <Badge>{activeNeonFindings.length} Neon findings</Badge>
-          ) : null}
-          {fileStats.truncated > 0 ? (
-            <Badge>{fileStats.truncated} truncated</Badge>
-          ) : null}
-          {fileStats.binary > 0 ? (
-            <Badge>{fileStats.binary} binary</Badge>
-          ) : null}
-          {reviewRecord &&
-          (reviewRecord.status !== 'submitted' ||
-            (currentHeadSha && reviewRecord.headSha !== currentHeadSha)) ? (
-            <button
-              className="pr-review-popout-button"
-              disabled={
-                restartReview.isPending ||
-                reconcileSubmission.isPending ||
-                isApplyingRevision ||
-                reviewRecord.status === 'reviewing'
-              }
-              onClick={() => {
-                if (isApplyingRevision) return;
-                const operationToken = beginOperation();
-                if (reviewRecord.status === 'submitting') {
-                  reconcileSubmission.mutate(reviewRecord.id, {
-                    onError: (error) => failOperation(operationToken, error),
-                    onSuccess: (result) =>
-                      finishOperation(operationToken, result.message),
-                  });
-                } else {
-                  restartReview.mutate(reviewRecord.id, {
+      <section
+        className={
+          isStandalone
+            ? 'pr-review-shell pr-review-shell-standalone'
+            : 'pr-review-shell'
+        }
+      >
+        <header className="pr-review-header">
+          <div className="min-w-0">
+            <p className="truncate font-mono text-[10px] tracking-[0.12em] text-primary">
+              PR REVIEW · {pr.repo}#{pr.number}
+            </p>
+            <p className="mt-0.5 line-clamp-1 text-[12px] font-semibold text-ink">
+              {pr.title}
+            </p>
+          </div>
+          <div className="flex shrink-0 flex-wrap justify-end gap-1">
+            <Badge>@{pr.author}</Badge>
+            <Badge className={checkBadgeClass(pr)}>{checkLabel(pr)}</Badge>
+            <Badge>{pr.baseRef ?? 'base unknown'}</Badge>
+            <Badge>
+              {unresolvedThreads.length}/{reviewThreads.length} threads
+            </Badge>
+            {summary ? <Badge>{summaryLabel(summary)}</Badge> : null}
+            {activeNeonFindings.length > 0 ? (
+              <Badge>{activeNeonFindings.length} Neon findings</Badge>
+            ) : null}
+            {fileStats.truncated > 0 ? (
+              <Badge>{fileStats.truncated} truncated</Badge>
+            ) : null}
+            {fileStats.binary > 0 ? (
+              <Badge>{fileStats.binary} binary</Badge>
+            ) : null}
+            {reviewRecord &&
+            (reviewRecord.status !== 'submitted' ||
+              (currentHeadSha && reviewRecord.headSha !== currentHeadSha)) ? (
+              <button
+                className="pr-review-popout-button"
+                disabled={
+                  restartReview.isPending ||
+                  reconcileSubmission.isPending ||
+                  isApplyingRevision ||
+                  reviewRecord.status === 'reviewing'
+                }
+                onClick={() => {
+                  if (isApplyingRevision) return;
+                  const operationToken = beginOperation();
+                  if (reviewRecord.status === 'submitting') {
+                    reconcileSubmission.mutate(reviewRecord.id, {
+                      onError: (error) => failOperation(operationToken, error),
+                      onSuccess: (result) =>
+                        finishOperation(operationToken, result.message),
+                    });
+                  } else {
+                    restartReview.mutate(reviewRecord.id, {
+                      onError: (error) => failOperation(operationToken, error),
+                      onSuccess: () =>
+                        finishOperation(
+                          operationToken,
+                          'Neon review restarted.',
+                        ),
+                    });
+                  }
+                }}
+                title={
+                  reviewRecord.status === 'submitting'
+                    ? 'Check GitHub and recover an interrupted review submission'
+                    : currentHeadSha && reviewRecord.headSha !== currentHeadSha
+                      ? 'Run Neon again for the current PR head'
+                      : 'Refresh Neon findings from current GitHub facts'
+                }
+                type="button"
+              >
+                {reconcileSubmission.isPending
+                  ? 'checking GitHub'
+                  : reviewRecord.status === 'submitting'
+                    ? 'recover submission'
+                    : restartReview.isPending ||
+                        reviewRecord.status === 'reviewing'
+                      ? 'reviewing'
+                      : reviewRecord.status === 'submitted'
+                        ? 'review new changes'
+                        : 're-review'}
+              </button>
+            ) : null}
+            {!reviewRecord && reviewRecordQuery.isSuccess ? (
+              <button
+                className="pr-review-popout-button"
+                disabled={startReview.isPending || isApplyingRevision}
+                onClick={() => {
+                  if (isApplyingRevision) return;
+                  const operationToken = beginOperation();
+                  startReview.mutate(undefined, {
                     onError: (error) => failOperation(operationToken, error),
                     onSuccess: () =>
-                      finishOperation(operationToken, 'Neon review restarted.'),
+                      finishOperation(operationToken, 'Neon review started.'),
                   });
+                }}
+                title="Run Neon review assistance for this pull request"
+                type="button"
+              >
+                {startReview.isPending ? 'starting' : 'run Neon'}
+              </button>
+            ) : null}
+            {isStandalone ? (
+              <a
+                className="pr-review-popout-button"
+                href={pr.url}
+                rel="noreferrer"
+                target="_blank"
+              >
+                GitHub
+              </a>
+            ) : (
+              <button
+                className="pr-review-popout-button"
+                onClick={openPopout}
+                title="Open this review in a focused review window"
+                type="button"
+              >
+                pop out
+              </button>
+            )}
+          </div>
+        </header>
+        {isStandalone ? (
+          <PrReviewNavigationBar
+            announcement={navigationAnnouncement}
+            boundary={navigationBoundary}
+            canMove={
+              navigationKind === 'hunk'
+                ? navigationFiles.length > 0
+                : navigationTargets.length > 0
+            }
+            currentIndex={navigationCurrentIndex}
+            currentTarget={selectedNavigationTarget}
+            filter={fileFilter.query}
+            isBusy={isApplyingRevision || Boolean(pendingHunkNavigation)}
+            isTraversalDisabled={
+              navigationKind === 'tour' && tourMode === 'read'
+            }
+            traversalDisabledStatus={
+              navigationKind === 'tour' && tourMode === 'read' && tour
+                ? prReviewTourReadingStatus(tour)
+                : null
+            }
+            kind={navigationKind}
+            onClearFilter={() => {
+              if (isApplyingRevision) return;
+              setFileFilter({ paths: null, query: null });
+            }}
+            onKindChange={(nextKind) => {
+              if (isApplyingRevision) return;
+              setPendingHunkNavigation(null);
+              setNavigationKind(nextKind);
+              setNavigationTargetKey(null);
+              setNavigationAuthority('automatic');
+              setNavigationSelection(null);
+              setNavigationAnnotationId(null);
+              setNavigationBoundary(null);
+              setNavigationStatus(null);
+              setNavigationAnnouncement(
+                `${reviewNavigationKindLabel(nextKind)} traversal selected.`,
+              );
+            }}
+            onMove={navigateReview}
+            status={navigationStatus}
+            total={navigationTargets.length}
+            context={navigationKind === 'tour' ? tour?.title : null}
+          />
+        ) : null}
+        {hasAvailableRevision ? (
+          <GitHubPrRevisionNotice
+            headSha={incomingPr.headSha}
+            onApply={() => void applyAvailableRevision()}
+            safety={refreshSafety}
+          />
+        ) : null}
+        {!hasAvailableRevision &&
+        prReviewDraftHeadIsStale(draft?.headSha, currentHeadSha) ? (
+          <GitHubPrDraftRevisionNotice
+            disabled={!canExplicitlyApplyReviewRefresh(refreshSafety)}
+            headSha={currentHeadSha}
+            onApply={() => void refreshDraftHead()}
+            safety={refreshSafety}
+          />
+        ) : null}
+        {reanchoringCommentId ? (
+          <div className="pr-review-stale-banner">
+            Re-anchor mode is active. Select the new diff line or range for this
+            draft comment.
+          </div>
+        ) : null}
+        {anchoringFinding ? (
+          <div className="pr-review-stale-banner">
+            Choose-line mode is active for {anchoringFinding.path}. Select a
+            changed line or range to draft the finding inline.
+          </div>
+        ) : null}
+        {threadsQuery.error ? (
+          <MiniEmpty
+            label={`Review threads unavailable: ${queryErrorMessage(threadsQuery.error)}`}
+          />
+        ) : null}
+        {draftQuery.error ? (
+          <MiniEmpty
+            label={`Review draft unavailable: ${queryErrorMessage(draftQuery.error)}`}
+          />
+        ) : null}
+        <PrReviewDiffPane
+          activePath={activePath}
+          annotationsByPath={annotationsByPath}
+          detail={prDetail(pr, summary)}
+          fileFilter={fileFilter.query}
+          fileLoadMessage={fileLoadMessage}
+          files={files}
+          findingsSidebar={findingsSidebar}
+          isLoadingPatch={Boolean(activePatchQuery?.isLoading)}
+          isStandalone={isStandalone}
+          navigationScroll={navigationScroll}
+          onActivePathChange={selectPathFromWorkbench}
+          onFileFilterChange={handleFileFilterChange}
+          onReviewSurfaceFindingsChange={handleReviewSurfaceFindingsChange}
+          onReviewSurfaceIdChange={handleReviewSurfaceIdChange}
+          onReviewSurfaceNavigate={handleReviewSurfaceNavigate}
+          resolveReviewSurfaceTarget={resolveReviewSurfaceTarget}
+          onSelectedLinesChange={onSelectionChange}
+          patchError={patchErrorMessage}
+          renderAnnotation={renderAnnotation}
+          reviewMapByPath={reviewMapByPath}
+          reviewOrder={navigationData.model.guidedFilePaths}
+          refreshStatus={refreshStatus}
+          selectedLines={selectedContext.selectedLines}
+          selectedAnnotationId={selectedContext.selectedAnnotationId}
+          source={reviewSource}
+          title={pr.title}
+          columnToolbar={
+            tour && !tourClosed ? (
+              <fieldset className="pr-review-tour-column-toolbar">
+                <legend>Guided tour</legend>
+                <span>{tour.title}</span>
+                {tourMode === 'read' || tourFileStepLabel(tour, activePath) ? (
+                  <em className="pr-review-tour-file-status">
+                    {tourMode === 'read'
+                      ? 'reading view'
+                      : tourFileStepLabel(tour, activePath)}
+                  </em>
+                ) : null}
+                <div>
+                  <button
+                    aria-pressed={tourMode === 'walk'}
+                    onClick={() => setTourMode('walk')}
+                    type="button"
+                  >
+                    Walk
+                  </button>
+                  <button
+                    aria-pressed={tourMode === 'read'}
+                    onClick={() => setTourMode('read')}
+                    type="button"
+                  >
+                    Read
+                  </button>
+                </div>
+              </fieldset>
+            ) : undefined
+          }
+          hideFileSelector={Boolean(tour && !tourClosed && tourMode === 'read')}
+          contentOverride={
+            tour && !tourClosed && tourMode === 'read' ? (
+              <PrReviewTourReadingView
+                activeStepId={
+                  selectedNavigationTarget?.kind === 'tour'
+                    ? selectedNavigationTarget.id
+                    : null
                 }
-              }}
-              title={
-                reviewRecord.status === 'submitting'
-                  ? 'Check GitHub and recover an interrupted review submission'
-                  : currentHeadSha && reviewRecord.headSha !== currentHeadSha
-                    ? 'Run Neon again for the current PR head'
-                    : 'Refresh Neon findings from current GitHub facts'
+                files={files}
+                onActivate={(step) => {
+                  setTourMode('walk');
+                  activateTourStep(step);
+                }}
+                onAsk={askAboutTourStep}
+                onClose={closeTour}
+                onStartOver={() => activateTourStep(tour.steps[0]!)}
+                tour={tour}
+              />
+            ) : undefined
+          }
+        />
+        {fileLoadMessage ? null : (
+          <PrReviewSubmitBar
+            cleanCommentCount={cleanCommentIds.length}
+            draft={draft}
+            isBusy={
+              isApplyingRevision ||
+              isReviewSubmissionPending ||
+              isDraftMutationPending ||
+              isThreadMutationPending
+            }
+            isDurableReviewReady={isDurableReviewReady}
+            isHeadAvailable={currentHeadSha.length > 0}
+            isLocked={isApplyingRevision}
+            onBodyBlur={() => {
+              setIsReviewBodyFocused(false);
+              if (reviewSubmissionPendingRef.current) {
+                setHasPendingReviewBodyEdit(false);
+                return;
               }
-              type="button"
-            >
-              {reconcileSubmission.isPending
-                ? 'checking GitHub'
-                : reviewRecord.status === 'submitting'
-                  ? 'recover submission'
-                  : restartReview.isPending ||
-                      reviewRecord.status === 'reviewing'
-                    ? 'reviewing'
-                    : reviewRecord.status === 'submitted'
-                      ? 'review new changes'
-                      : 're-review'}
-            </button>
-          ) : null}
-          {!reviewRecord && reviewRecordQuery.isSuccess ? (
-            <button
-              className="pr-review-popout-button"
-              disabled={startReview.isPending || isApplyingRevision}
-              onClick={() => {
-                if (isApplyingRevision) return;
+              const normalizedBody = normalizeReviewBody(reviewBody);
+              if ((draft?.body ?? null) !== normalizedBody) {
                 const operationToken = beginOperation();
-                startReview.mutate(undefined, {
-                  onError: (error) => failOperation(operationToken, error),
-                  onSuccess: () =>
-                    finishOperation(operationToken, 'Neon review started.'),
-                });
-              }}
-              title="Run Neon review assistance for this pull request"
-              type="button"
-            >
-              {startReview.isPending ? 'starting' : 'run Neon'}
-            </button>
-          ) : null}
-          {isStandalone ? (
-            <a
-              className="pr-review-popout-button"
-              href={pr.url}
-              rel="noreferrer"
-              target="_blank"
-            >
-              GitHub
-            </a>
-          ) : (
-            <button
-              className="pr-review-popout-button"
-              onClick={openPopout}
-              title="Open this review in a focused review window"
-              type="button"
-            >
-              pop out
-            </button>
-          )}
-        </div>
-      </header>
-      {isStandalone ? (
-        <PrReviewNavigationBar
-          announcement={navigationAnnouncement}
-          boundary={navigationBoundary}
-          canMove={
-            navigationKind === 'hunk'
-              ? navigationFiles.length > 0
-              : navigationTargets.length > 0
-          }
-          currentIndex={navigationCurrentIndex}
-          currentTarget={selectedNavigationTarget}
-          filter={fileFilter.query}
-          isBusy={isApplyingRevision || Boolean(pendingHunkNavigation)}
-          isTraversalDisabled={navigationKind === 'tour' && tourMode === 'read'}
-          traversalDisabledStatus={
-            navigationKind === 'tour' && tourMode === 'read' && tour
-              ? prReviewTourReadingStatus(tour)
-              : null
-          }
-          kind={navigationKind}
-          onClearFilter={() => {
-            if (isApplyingRevision) return;
-            setFileFilter({ paths: null, query: null });
-          }}
-          onKindChange={(nextKind) => {
-            if (isApplyingRevision) return;
-            setPendingHunkNavigation(null);
-            setNavigationKind(nextKind);
-            setNavigationTargetKey(null);
-            setNavigationAuthority('automatic');
-            setNavigationSelection(null);
-            setNavigationAnnotationId(null);
-            setNavigationBoundary(null);
-            setNavigationStatus(null);
-            setNavigationAnnouncement(
-              `${reviewNavigationKindLabel(nextKind)} traversal selected.`,
-            );
-          }}
-          onMove={navigateReview}
-          status={navigationStatus}
-          total={navigationTargets.length}
-          context={navigationKind === 'tour' ? tour?.title : null}
-        />
-      ) : null}
-      {hasAvailableRevision ? (
-        <GitHubPrRevisionNotice
-          headSha={incomingPr.headSha}
-          onApply={() => void applyAvailableRevision()}
-          safety={refreshSafety}
-        />
-      ) : null}
-      {!hasAvailableRevision &&
-      prReviewDraftHeadIsStale(draft?.headSha, currentHeadSha) ? (
-        <GitHubPrDraftRevisionNotice
-          disabled={!canExplicitlyApplyReviewRefresh(refreshSafety)}
-          headSha={currentHeadSha}
-          onApply={() => void refreshDraftHead()}
-          safety={refreshSafety}
-        />
-      ) : null}
-      {reanchoringCommentId ? (
-        <div className="pr-review-stale-banner">
-          Re-anchor mode is active. Select the new diff line or range for this
-          draft comment.
-        </div>
-      ) : null}
-      {anchoringFinding ? (
-        <div className="pr-review-stale-banner">
-          Choose-line mode is active for {anchoringFinding.path}. Select a
-          changed line or range to draft the finding inline.
-        </div>
-      ) : null}
-      {threadsQuery.error ? (
-        <MiniEmpty
-          label={`Review threads unavailable: ${queryErrorMessage(threadsQuery.error)}`}
-        />
-      ) : null}
-      {draftQuery.error ? (
-        <MiniEmpty
-          label={`Review draft unavailable: ${queryErrorMessage(draftQuery.error)}`}
-        />
-      ) : null}
-      <PrReviewDiffPane
-        activePath={activePath}
-        annotationsByPath={annotationsByPath}
-        detail={prDetail(pr, summary)}
-        fileFilter={fileFilter.query}
-        fileLoadMessage={fileLoadMessage}
-        files={files}
-        findingsSidebar={findingsSidebar}
-        isLoadingPatch={Boolean(activePatchQuery?.isLoading)}
-        isStandalone={isStandalone}
-        navigationScroll={navigationScroll}
-        onActivePathChange={selectPathFromWorkbench}
-        onFileFilterChange={handleFileFilterChange}
-        onReviewSurfaceFindingsChange={handleReviewSurfaceFindingsChange}
-        onReviewSurfaceIdChange={handleReviewSurfaceIdChange}
-        onReviewSurfaceNavigate={handleReviewSurfaceNavigate}
-        resolveReviewSurfaceTarget={resolveReviewSurfaceTarget}
-        onSelectedLinesChange={onSelectionChange}
-        patchError={patchErrorMessage}
-        renderAnnotation={renderAnnotation}
-        reviewMapByPath={reviewMapByPath}
-        reviewOrder={navigationData.model.guidedFilePaths}
-        refreshStatus={refreshStatus}
-        selectedLines={selectedContext.selectedLines}
-        selectedAnnotationId={selectedContext.selectedAnnotationId}
-        source={reviewSource}
-        title={pr.title}
-        columnToolbar={
-          tour && !tourClosed ? (
-            <fieldset className="pr-review-tour-column-toolbar">
-              <legend>Guided tour</legend>
-              <span>{tour.title}</span>
-              {tourMode === 'read' || tourFileStepLabel(tour, activePath) ? (
-                <em className="pr-review-tour-file-status">
-                  {tourMode === 'read'
-                    ? 'reading view'
-                    : tourFileStepLabel(tour, activePath)}
-                </em>
-              ) : null}
-              <div>
-                <button
-                  aria-pressed={tourMode === 'walk'}
-                  onClick={() => setTourMode('walk')}
-                  type="button"
-                >
-                  Walk
-                </button>
-                <button
-                  aria-pressed={tourMode === 'read'}
-                  onClick={() => setTourMode('read')}
-                  type="button"
-                >
-                  Read
-                </button>
-              </div>
-            </fieldset>
-          ) : undefined
-        }
-        hideFileSelector={Boolean(tour && !tourClosed && tourMode === 'read')}
-        contentOverride={
-          tour && !tourClosed && tourMode === 'read' ? (
-            <PrReviewTourReadingView
-              activeStepId={
-                selectedNavigationTarget?.kind === 'tour'
-                  ? selectedNavigationTarget.id
-                  : null
+                void enqueueDraftSave({ body: normalizedBody })
+                  .then(() => {
+                    setHasPendingReviewBodyEdit(false);
+                    finishOperation(operationToken, 'Review summary saved.');
+                  })
+                  .catch((error) => failOperation(operationToken, error));
+              } else {
+                setHasPendingReviewBodyEdit(false);
               }
-              files={files}
-              onActivate={(step) => {
-                setTourMode('walk');
-                activateTourStep(step);
-              }}
-              onAsk={askAboutTourStep}
-              onClose={closeTour}
-              onStartOver={() => activateTourStep(tour.steps[0]!)}
-              tour={tour}
-            />
-          ) : undefined
-        }
-      />
-      {fileLoadMessage ? null : (
-        <PrReviewSubmitBar
-          cleanCommentCount={cleanCommentIds.length}
-          draft={draft}
-          isBusy={
-            isApplyingRevision ||
-            isReviewSubmissionPending ||
-            isDraftMutationPending ||
-            isThreadMutationPending
-          }
-          isDurableReviewReady={isDurableReviewReady}
-          isHeadAvailable={currentHeadSha.length > 0}
-          isLocked={isApplyingRevision}
-          onBodyBlur={() => {
-            setIsReviewBodyFocused(false);
-            if (reviewSubmissionPendingRef.current) {
-              setHasPendingReviewBodyEdit(false);
-              return;
-            }
-            const normalizedBody = normalizeReviewBody(reviewBody);
-            if ((draft?.body ?? null) !== normalizedBody) {
+            }}
+            onBodyChange={(value) => {
+              setReviewBody(value);
+              setHasPendingReviewBodyEdit(true);
+            }}
+            onBodyFocus={() => setIsReviewBodyFocused(true)}
+            onDiscard={() => {
+              if (!draft || reviewSubmissionPendingRef.current) return;
+              const confirmed = window.confirm('Discard this PR review draft?');
+              if (confirmed) {
+                const operationToken = beginOperation();
+                void trackDraftMutation(
+                  mutations.discardDraft.mutateAsync({
+                    repo: pr.repo,
+                    number: pr.number,
+                    draftId: draft.id,
+                    expectedRevision: draft.revision,
+                  }),
+                )
+                  .then((discardedDraft) => {
+                    recordDraftSnapshotRevision(discardedDraft);
+                    submitFailedCommentIdsRef.current = new Set();
+                    setSubmitFailedCommentIds(new Set());
+                    setComposer(null);
+                    setCommentEditor(null);
+                    setReanchoringCommentId(null);
+                    setAnchoringFinding(null);
+                    finishOperation(operationToken, 'Review draft discarded.');
+                  })
+                  .catch((error) => failOperation(operationToken, error));
+              }
+            }}
+            onSubmit={submitReview}
+            onPendingCountClick={focusNextPendingComment}
+            onVerdictChange={(next) => {
+              if (reviewSubmissionPendingRef.current) return;
+              setVerdict(next);
               const operationToken = beginOperation();
-              void enqueueDraftSave({ body: normalizedBody })
-                .then(() => {
-                  setHasPendingReviewBodyEdit(false);
-                  finishOperation(operationToken, 'Review summary saved.');
-                })
+              void enqueueDraftSave({ verdict: next })
+                .then(() => finishOperation(operationToken, 'Verdict saved.'))
                 .catch((error) => failOperation(operationToken, error));
-            } else {
-              setHasPendingReviewBodyEdit(false);
+            }}
+            isSubmitting={
+              isReviewSubmissionPending || mutations.submitReview.isPending
             }
-          }}
-          onBodyChange={(value) => {
-            setReviewBody(value);
-            setHasPendingReviewBodyEdit(true);
-          }}
-          onBodyFocus={() => setIsReviewBodyFocused(true)}
-          onDiscard={() => {
-            if (!draft || reviewSubmissionPendingRef.current) return;
-            const confirmed = window.confirm('Discard this PR review draft?');
-            if (confirmed) {
-              const operationToken = beginOperation();
-              void trackDraftMutation(
-                mutations.discardDraft.mutateAsync({
-                  repo: pr.repo,
-                  number: pr.number,
-                  draftId: draft.id,
-                  expectedRevision: draft.revision,
-                }),
-              )
-                .then((discardedDraft) => {
-                  recordDraftSnapshotRevision(discardedDraft);
-                  submitFailedCommentIdsRef.current = new Set();
-                  setSubmitFailedCommentIds(new Set());
-                  setComposer(null);
-                  setCommentEditor(null);
-                  setReanchoringCommentId(null);
-                  setAnchoringFinding(null);
-                  finishOperation(operationToken, 'Review draft discarded.');
-                })
-                .catch((error) => failOperation(operationToken, error));
-            }
-          }}
-          onSubmit={submitReview}
-          onPendingCountClick={focusNextPendingComment}
-          onVerdictChange={(next) => {
-            if (reviewSubmissionPendingRef.current) return;
-            setVerdict(next);
-            const operationToken = beginOperation();
-            void enqueueDraftSave({ verdict: next })
-              .then(() => finishOperation(operationToken, 'Verdict saved.'))
-              .catch((error) => failOperation(operationToken, error));
-          }}
-          isSubmitting={
-            isReviewSubmissionPending || mutations.submitReview.isPending
-          }
-          reviewBody={reviewBody}
-          staleCommentCount={blockedCommentIds.size}
-          statusMessage={reviewBarStatusMessage}
-          verdict={verdict}
-          trustBoundary={reviewRecord?.trustBoundary ?? null}
-          tourOpen={Boolean(tour && !tourClosed)}
-        />
-      )}
-    </section>
+            reviewBody={reviewBody}
+            staleCommentCount={blockedCommentIds.size}
+            statusMessage={reviewBarStatusMessage}
+            verdict={verdict}
+            trustBoundary={reviewRecord?.trustBoundary ?? null}
+            tourOpen={Boolean(tour && !tourClosed)}
+          />
+        )}
+      </section>
+    </PrReviewReviewerConversationProvider>
   );
 }
 

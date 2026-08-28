@@ -64,6 +64,10 @@ export type PrReviewTourDraft = Pick<
   >;
 };
 
+export function prReviewTourAnnotationId(stepId: string) {
+  return JSON.stringify(['tour-step', stepId]);
+}
+
 export type ReviewTourChangeEvent =
   | {
       id: string;
@@ -82,6 +86,19 @@ export type ReviewTourChangeEvent =
       tourId: string;
       generation: number;
       stepId: string;
+      requestId: string;
+      changedAt: string;
+    }
+  | {
+      id: string;
+      action: 'tour-activation-failed';
+      surfaceId: string;
+      tourId: string;
+      generation: number;
+      stepId: string;
+      requestId: string;
+      status: 'stale-revision' | 'target-unavailable';
+      message: string | null;
       changedAt: string;
     }
   | {
@@ -90,5 +107,6 @@ export type ReviewTourChangeEvent =
       surfaceId: string;
       tourId: string;
       generation: number;
+      requestId: string;
       changedAt: string;
     };

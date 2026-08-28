@@ -41,12 +41,14 @@ export const prReviewTourPresentationSchema = v.variant('action', [
     tourId: boundedString(240),
     generation: v.pipe(v.number(), v.integer(), v.minValue(1)),
     stepId: boundedString(240),
+    requestId: boundedString(240),
   }),
   v.strictObject({
     action: v.literal('tour-closed'),
     surfaceId: boundedString(240),
     tourId: boundedString(240),
     generation: v.pipe(v.number(), v.integer(), v.minValue(1)),
+    requestId: boundedString(240),
   }),
 ]);
 

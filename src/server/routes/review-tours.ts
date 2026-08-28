@@ -44,7 +44,9 @@ export function createReviewTourRoutes(paths: RuntimePaths) {
         action: 'pr_review_tour_presentation',
         changed,
         message: changed
-          ? 'Published the guided-tour presentation event.'
+          ? parsed.output.action === 'tour-activated'
+            ? 'Queued guided-tour activation for surface acknowledgement.'
+            : 'Published the guided-tour presentation event.'
           : 'The guided tour, step, or review surface is no longer current.',
       },
       changed ? 200 : 409,
