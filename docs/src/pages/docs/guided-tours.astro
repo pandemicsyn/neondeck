@@ -1,0 +1,228 @@
+---
+import DocsNav from '../../components/DocsNav.astro';
+import SiteFooter from '../../components/SiteFooter.astro';
+import SiteNav from '../../components/SiteNav.astro';
+import BaseLayout from '../../layouts/BaseLayout.astro';
+---
+
+<BaseLayout
+  title="Guided PR tours · neondeck"
+  description="Use revision-bound guided tours in Neondeck to trace a pull request across exact changed-line anchors, walk the diff, and ask focused follow-up questions."
+>
+  <div class="site-shell">
+    <SiteNav />
+    <main class="container docs-layout">
+      <DocsNav />
+      <article class="docs-prose guided-tour-guide">
+        <h1>Guided PR tours</h1>
+        <p class="tour-lede">
+          Ask Neon to trace a change and it can turn the answer into an ordered
+          route through the diff. Each stop explains one exact changed-line
+          range, so you can follow the implementation without manually hunting
+          through files and call sites.
+        </p>
+
+        <figure class="tour-shot">
+          <picture>
+            <source
+              media="(max-width: 900px)"
+              srcset="/screenshots/guided-pr-tour-mobile-480.webp 480w, /screenshots/guided-pr-tour-mobile-720.webp 720w, /screenshots/guided-pr-tour-mobile-960.webp 960w"
+              sizes="calc(100vw - 48px)"
+              width="480"
+              height="1234"
+            />
+            <img
+              src="/screenshots/guided-pr-tour-1440.webp"
+              srcset="/screenshots/guided-pr-tour-480.webp 480w, /screenshots/guided-pr-tour-720.webp 720w, /screenshots/guided-pr-tour-1440.webp 1440w"
+              sizes="780px"
+              alt="Neondeck PR review showing an Ask reviewer question and its seven-step guided tour card"
+              width="1440"
+              height="795"
+              fetchpriority="high"
+            />
+          </picture>
+          <figcaption>
+            The narrow crop focuses on the reviewer question and step list; the
+            wide-screen overview uses editorial callouts to highlight the
+            question and walkthrough entry points. In the product, the diff
+            annotation, top traversal controls, and reviewer-side step list stay
+            synchronized to one review cursor.
+            <a href="/screenshots/guided-pr-tour-1440.webp">
+              Open the full annotated overview.
+            </a>
+          </figcaption>
+        </figure>
+
+        <h2>Ask for a walkthrough</h2>
+        <p>
+          Open <strong>Ask reviewer</strong> for a completed PR review and send a
+          focused request. You can use natural language or type the reviewer messages
+          directly:
+        </p>
+        <pre><code>/show-me how authentication reaches the route handler
+/tour the new caching flow</code></pre>
+        <p>
+          Neon starts from the existing review context, investigates the exact
+          reviewed revision with read-only repository tools, and publishes the
+          smallest useful ordered set of anchors. When a navigable tour would
+          not improve the answer, it responds in prose instead.
+        </p>
+        <aside class="docs-note">
+          <strong>Current command boundary:</strong>
+          <code>/show-me</code> and
+          <code>/tour</code> are reviewer messages, not global Neondeck commands.
+          Type them in the reviewer composer; reviewer-scoped slash-command discovery
+          and autocomplete are planned separately.
+        </aside>
+
+        <h2>Walk or read the route</h2>
+        <div class="tour-flow" aria-label="Guided tour review flow">
+          <section>
+            <span>01</span>
+            <h3>Follow the cursor</h3>
+            <p>
+              Choose <strong>Tour</strong> in Traverse, use the
+              <kbd>[</kbd>/<kbd>]</kbd> shortcuts, click a step, or press Previous
+              and Next. Every control moves the same review cursor.
+            </p>
+          </section>
+          <section>
+            <span>02</span>
+            <h3>Choose the view</h3>
+            <p>
+              <strong>Walk</strong> keeps the full diff in view.
+              <strong>Read</strong> stitches only the anchored ranges together in
+              tour order and keeps a path back to the complete diff.
+            </p>
+          </section>
+          <section>
+            <span>03</span>
+            <h3>Stay in context</h3>
+            <p>
+              Ask about the active step, start over, or close and reopen the
+              tour. A follow-up question carries the selected step's exact file
+              and range into the continuing reviewer conversation.
+            </p>
+          </section>
+        </div>
+
+        <h2>Exact-revision safety</h2>
+        <p>
+          A tour is local Neondeck review state, not a GitHub review artifact.
+          The reviewer proposes a complete route, while the application binds it
+          to the current review and validates every range against visible added
+          or deleted lines in that exact revision.
+        </p>
+        <ul>
+          <li>A tour contains between one and twelve ordered steps.</li>
+          <li>
+            If any file or line range cannot be validated, publication fails as
+            a whole and the current tour remains unchanged.
+          </li>
+          <li>
+            Publishing another tour atomically replaces the prior route instead
+            of accumulating conflicting annotations.
+          </li>
+          <li>
+            Tours never create findings, local draft comments, GitHub comments,
+            or a submitted review.
+          </li>
+          <li>
+            A tour from an older PR revision is never silently re-anchored onto
+            a newer one.
+          </li>
+        </ul>
+
+        <h2>Start from a finding</h2>
+        <p>
+          A Neon finding can offer <strong>Show me why</strong>. That request
+          traces the finding's evidence into the same guided-tour experience and
+          adds a return path to the source finding. The finding's severity,
+          draft state, and lifecycle do not change when the tour is published.
+        </p>
+      </article>
+    </main>
+    <SiteFooter />
+  </div>
+</BaseLayout>
+
+<style>
+  .tour-lede {
+    color: var(--body);
+    font-size: 1.08rem;
+    line-height: 1.75;
+  }
+
+  .tour-shot {
+    margin: 28px 0 34px;
+    overflow: hidden;
+    border: 1px solid var(--line);
+    background: var(--card);
+  }
+
+  .tour-shot picture,
+  .tour-shot img {
+    display: block;
+    width: 100%;
+  }
+
+  .tour-shot img {
+    height: auto;
+  }
+
+  .tour-shot figcaption {
+    padding: 11px 13px;
+    border-top: 1px solid var(--line);
+    color: var(--muted);
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 11px;
+    line-height: 1.55;
+  }
+
+  .tour-flow {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 12px;
+    margin: 22px 0 30px;
+  }
+
+  .tour-flow section {
+    min-width: 0;
+    padding: 16px;
+    border: 1px solid var(--line);
+    background: var(--card);
+  }
+
+  .tour-flow span {
+    color: var(--cyan);
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 11px;
+  }
+
+  .tour-flow h3 {
+    margin: 8px 0;
+    font-size: 1rem;
+  }
+
+  .tour-flow p {
+    margin: 0;
+    color: var(--muted);
+    font-size: 13px;
+    line-height: 1.6;
+  }
+
+  kbd {
+    padding: 1px 5px;
+    border: 1px solid var(--line);
+    background: var(--code-bg);
+    color: var(--code-ink);
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.85em;
+  }
+
+  @media (max-width: 700px) {
+    .tour-flow {
+      grid-template-columns: 1fr;
+    }
+  }
+</style>
