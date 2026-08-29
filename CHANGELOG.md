@@ -1,5 +1,19 @@
 # Changelog
 
+## 1.0.0-beta.40
+
+### Minor Changes
+
+- [#353](https://github.com/pandemicsyn/neondeck/pull/353) [`ea114ca`](https://github.com/pandemicsyn/neondeck/commit/ea114ca260551e7df24c82c26c0803932bb2cadf) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Add reviewer-scoped slash-command discovery, keyboard completion, local help and re-review actions, and selection-aware `/show-me` requests with `/tour` as an alias.
+
+- [#352](https://github.com/pandemicsyn/neondeck/pull/352) [`2e4ac15`](https://github.com/pandemicsyn/neondeck/commit/2e4ac15c7a1e38aeffff01487c3d007f603601b4) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Add revision-bound guided code tours to the PR review workbench, including deterministic tour traversal, a stitched reading view, reviewer transcript cards, and finding-backed “Show me why” explanations.
+
+### Patch Changes
+
+- [#351](https://github.com/pandemicsyn/neondeck/pull/351) [`82b17fb`](https://github.com/pandemicsyn/neondeck/commit/82b17fb69f3c6cb39f11e884f250ce92c2292ba8) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Add first-run setup guidance when the CLI is invoked without arguments.
+
+- [#349](https://github.com/pandemicsyn/neondeck/pull/349) [`6db4da0`](https://github.com/pandemicsyn/neondeck/commit/6db4da09402ba5be8d5146d5d5143a97202d5e89) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Read update availability from the Neondeck-hosted release manifest and refresh it after successful npm releases.
+
 ## 1.0.0-beta.39
 
 ### Minor Changes
