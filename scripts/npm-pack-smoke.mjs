@@ -27,6 +27,7 @@ try {
   for (const requiredPath of [
     'dist/server.mjs',
     'dist/assets/migrations',
+    'dist/skills/neon-pr-tour/SKILL.md',
     'dist/skills/neon-pr-review/SKILL.md',
     'dist/skills/neon-ci-fix/SKILL.md',
     'dist/skills/neon-docs-fix/SKILL.md',

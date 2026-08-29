@@ -47,6 +47,7 @@ for (const requiredPath of [
   'config/dashboard.json',
   'config/dashboard.schema.json',
   'dist/server.mjs',
+  'dist/skills/neon-pr-tour/SKILL.md',
   'dist/skills/neon-pr-review/SKILL.md',
   'dist/skills/neon-ci-fix/SKILL.md',
   'dist/skills/neon-docs-fix/SKILL.md',

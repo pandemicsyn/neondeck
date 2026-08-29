@@ -5,6 +5,7 @@ import {
   useAgentStart,
   useModel,
   useSandbox,
+  useSkill,
   useSubagent,
   useTool,
 } from '@flue/runtime';
@@ -50,6 +51,7 @@ import {
   type RuntimePaths,
 } from '../runtime-home';
 import { noWorkspace } from '../sandboxes/no-workspace';
+import neonPrTour from '../skills/neon-pr-tour/SKILL.md';
 
 export const description =
   'Continuing reviewer conversation with read-only repository access and review-bound local draft management.';
@@ -239,6 +241,7 @@ export function PrReviewer({ id }: AgentProps) {
     compaction: { reserveTokens: 10_000, keepRecentTokens: 8_000 },
   });
   useSandbox(noWorkspace(), { cwd: '/workspace' });
+  useSkill(neonPrTour);
   useAgentStart(async ({ append, signal }) => {
     const runtime = await loadRuntime(signal);
     const workspace = runtime.reviewerWorkspace;

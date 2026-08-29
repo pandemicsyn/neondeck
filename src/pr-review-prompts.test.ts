@@ -198,7 +198,16 @@ describe('PR review prompts', () => {
       ]),
     );
     expect(first.instructions).toContain('use the matching mounted draft tool');
-    expect(first.instructions).toContain('/show-me');
+    expect(first.instructions).not.toContain('/show-me');
+    expect(first.instructions).toContain(
+      'Publish or mutate guided-tour state only through the mounted neondeck_publish_pr_tour tool',
+    );
+    expect(first.instructions).toContain(
+      'keep every tour bound to the exact reviewed revision',
+    );
+    expect(first.instructions).toContain(
+      'never turn a tour into a finding, local draft, GitHub comment, or submitted review',
+    );
     expect(first.instructions).toContain(
       'explicitly asks to re-review the pull request',
     );

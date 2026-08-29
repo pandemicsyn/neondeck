@@ -487,3 +487,23 @@ demonstrable:
 The order above deliberately puts Phase 0 last despite the plan numbering it
 first. The plan's sequence is a dependency order for the _complete_ feature;
 this is the order that gets a working tour in front of someone soonest.
+
+---
+
+## 7. Implementation follow-up: reviewer skill ownership
+
+The guided-explanation procedure now belongs to the built-in
+`src/skills/neon-pr-tour/SKILL.md` skill mounted on the continuing `PrReviewer`.
+The reviewer system prompt retains only the hard boundary around the typed
+publish tool, exact-revision binding, and the prohibition on turning tours into
+findings, drafts, comments, or submitted reviews. The future reviewer command
+registry still owns discovery, alias normalization, argument handling, and
+unknown-command rejection; the typed tool and application service still own
+validation, persistence, atomic replacement, and events.
+
+This integration follows the installed Flue 2.0.3 documentation:
+
+- `guide/skills` for static `SKILL.md` imports, progressive disclosure, and
+  application-owned skill packaging.
+- `reference/agent-hooks-api#useskill` for the synchronous per-render
+  `useSkill(...)` mount and catalog behavior.
