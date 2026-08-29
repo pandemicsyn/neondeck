@@ -277,6 +277,204 @@ describe('PrReviewReviewerChat', () => {
     expect(textarea?.value).toBe('');
   });
 
+  it('discovers only reviewer commands and completes aliases', async () => {
+    const sendMessage = vi.fn<UseFlueAgentResult['sendMessage']>(
+      async () => undefined,
+    );
+    useFlueAgentMock.mockReturnValue(connectedAgent(sendMessage));
+    const review = readyReview();
+
+    act(() => root.render(<PrReviewReviewerChat review={review} />));
+    const textarea = container.querySelector('textarea')!;
+
+    act(() => setTextareaValue(textarea, '/'));
+    const options = [...container.querySelectorAll('[role="option"]')].map(
+      (option) => option.textContent,
+    );
+    expect(options).toHaveLength(3);
+    expect(options.join(' ')).toContain('/show-me');
+    expect(options.join(' ')).toContain('alias /tour');
+    expect(options.join(' ')).not.toContain('/memory');
+
+    act(() => setTextareaValue(textarea, '/tou'));
+    act(() =>
+      textarea.dispatchEvent(
+        new KeyboardEvent('keydown', {
+          bubbles: true,
+          cancelable: true,
+          key: 'Tab',
+        }),
+      ),
+    );
+    expect(textarea.value).toBe('/show-me ');
+  });
+
+  it('normalizes tour requests and rejects unknown commands locally', async () => {
+    const sendMessage = vi.fn<UseFlueAgentResult['sendMessage']>(
+      async () => undefined,
+    );
+    useFlueAgentMock.mockReturnValue(connectedAgent(sendMessage));
+    act(() => root.render(<PrReviewReviewerChat review={readyReview()} />));
+    const textarea = container.querySelector('textarea')!;
+
+    await act(async () => {
+      setTextareaValue(textarea, '/tour the retry path');
+      pressEnter(textarea);
+      await Promise.resolve();
+    });
+    expect(sendMessage).toHaveBeenCalledWith('/show-me the retry path');
+
+    await act(async () => {
+      setTextareaValue(textarea, '/memory list');
+      pressEnter(textarea);
+      await Promise.resolve();
+    });
+    expect(sendMessage).toHaveBeenCalledTimes(1);
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain(
+      'Unknown reviewer command "/memory"',
+    );
+  });
+
+  it('rejects a malformed slash prefix when Ask is clicked', async () => {
+    const sendMessage = vi.fn<UseFlueAgentResult['sendMessage']>(
+      async () => undefined,
+    );
+    useFlueAgentMock.mockReturnValue(connectedAgent(sendMessage));
+    act(() => root.render(<PrReviewReviewerChat review={readyReview()} />));
+    const textarea = container.querySelector('textarea')!;
+    const ask = [...container.querySelectorAll('button')].find(
+      (button) => button.textContent === 'Ask',
+    )!;
+
+    await act(async () => {
+      setTextareaValue(textarea, '/');
+      ask.click();
+      await Promise.resolve();
+    });
+
+    expect(sendMessage).not.toHaveBeenCalled();
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain(
+      'Invalid reviewer command',
+    );
+  });
+
+  it('handles help and re-review as local surface actions', async () => {
+    const sendMessage = vi.fn<UseFlueAgentResult['sendMessage']>(
+      async () => undefined,
+    );
+    const onReReview = vi.fn<() => { ok: true; message: string }>(() => ({
+      ok: true,
+      message: 'Exact revision re-review started.',
+    }));
+    useFlueAgentMock.mockReturnValue(connectedAgent(sendMessage));
+    act(() =>
+      root.render(
+        <PrReviewReviewerChat onReReview={onReReview} review={readyReview()} />,
+      ),
+    );
+    const textarea = container.querySelector('textarea')!;
+
+    await act(async () => {
+      setTextareaValue(textarea, '/help');
+      pressEnter(textarea);
+      await Promise.resolve();
+    });
+    expect(container.querySelector('[role="status"]')?.textContent).toContain(
+      'Reviewer commands',
+    );
+    expect(sendMessage).not.toHaveBeenCalled();
+
+    await act(async () => {
+      setTextareaValue(textarea, '/re-review');
+      pressEnter(textarea);
+      await Promise.resolve();
+    });
+    expect(onReReview).toHaveBeenCalledTimes(1);
+    expect(sendMessage).not.toHaveBeenCalled();
+    expect(container.querySelector('[role="status"]')?.textContent).toContain(
+      'Exact revision re-review started.',
+    );
+  });
+
+  it('waits for re-review admission before reporting success', async () => {
+    const sendMessage = vi.fn<UseFlueAgentResult['sendMessage']>(
+      async () => undefined,
+    );
+    const admission = Promise.withResolvers<{
+      ok: true;
+      message: string;
+    }>();
+    useFlueAgentMock.mockReturnValue(connectedAgent(sendMessage));
+    act(() =>
+      root.render(
+        <PrReviewReviewerChat
+          onReReview={() => admission.promise}
+          review={readyReview()}
+        />,
+      ),
+    );
+    const textarea = container.querySelector('textarea')!;
+
+    act(() => {
+      setTextareaValue(textarea, '/re-review');
+      pressEnter(textarea);
+    });
+    expect(container.querySelector('[role="status"]')?.textContent).toContain(
+      'Starting exact-revision re-review',
+    );
+    expect(textarea.disabled).toBe(false);
+    expect(textarea.readOnly).toBe(true);
+    expect(
+      [...container.querySelectorAll('button')].find(
+        (button) => button.textContent === 'Starting',
+      )?.disabled,
+    ).toBe(true);
+
+    await act(async () => {
+      admission.resolve({ ok: true, message: 'Bound review admitted.' });
+      await admission.promise;
+      await Promise.resolve();
+    });
+    expect(container.querySelector('[role="status"]')?.textContent).toContain(
+      'Bound review admitted.',
+    );
+    expect(textarea.disabled).toBe(false);
+    expect(textarea.readOnly).toBe(false);
+  });
+
+  it('uses the active diff selection for argument-free show-me', async () => {
+    const sendMessage = vi.fn<UseFlueAgentResult['sendMessage']>(
+      async () => undefined,
+    );
+    useFlueAgentMock.mockReturnValue(connectedAgent(sendMessage));
+    act(() =>
+      root.render(
+        <PrReviewReviewerChat
+          commandSelection={{
+            path: 'src/cache.ts',
+            selection: {
+              start: 12,
+              end: 14,
+              side: 'additions',
+              endSide: 'additions',
+            } as never,
+          }}
+          review={readyReview()}
+        />,
+      ),
+    );
+    const textarea = container.querySelector('textarea')!;
+
+    await act(async () => {
+      setTextareaValue(textarea, '/show-me');
+      pressEnter(textarea);
+      await Promise.resolve();
+    });
+    expect(sendMessage).toHaveBeenCalledWith(
+      expect.stringContaining('"path":"src/cache.ts"'),
+    );
+  });
+
   it('locks new reviewer requests during a revision update', () => {
     useFlueAgentMock.mockReturnValue({
       messages: [],
@@ -1138,4 +1336,37 @@ function setTextareaValue(textarea: HTMLTextAreaElement, value: string) {
     'value',
   )?.set?.call(textarea, value);
   textarea.dispatchEvent(new Event('input', { bubbles: true }));
+}
+
+function pressEnter(textarea: HTMLTextAreaElement) {
+  textarea.dispatchEvent(
+    new KeyboardEvent('keydown', {
+      bubbles: true,
+      cancelable: true,
+      key: 'Enter',
+    }),
+  );
+}
+
+function readyReview() {
+  return {
+    id: 'review-commands',
+    headSha: 'c'.repeat(40),
+    status: 'ready',
+  } as PrReviewRecord;
+}
+
+function connectedAgent(
+  sendMessage: UseFlueAgentResult['sendMessage'],
+): UseFlueAgentResult {
+  return {
+    messages: [],
+    status: 'idle',
+    historyReady: true,
+    error: undefined,
+    failedSends: [],
+    settlements: [],
+    sendMessage,
+    refresh: vi.fn<() => void>(),
+  } as UseFlueAgentResult;
 }

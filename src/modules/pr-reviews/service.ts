@@ -66,6 +66,7 @@ type BoundStartPrReviewInput = StartPrReviewInput & {
     id: string;
     headSha: string;
   };
+  requireExpectedHead?: true;
   returnExistingInProgress: true;
 };
 
@@ -197,6 +198,20 @@ async function startPrReviewInternal(
   const attemptId = randomUUID();
   const expectedReview =
     'expectedReview' in input ? input.expectedReview : undefined;
+  if (
+    expectedReview &&
+    'requireExpectedHead' in input &&
+    input.requireExpectedHead &&
+    detail.headSha !== expectedReview.headSha
+  ) {
+    return {
+      review: readPrReview(expectedReview.id, paths),
+      reviewId: expectedReview.id,
+      runId: null,
+      started: false,
+      reason: 'stale',
+    };
+  }
   const reservation = reserveReviewingRecord(
     {
       ref,
@@ -1047,7 +1062,8 @@ function reserveReviewingRecord(
         if (input.returnExistingInProgress) {
           if (
             input.expectedReview &&
-            existingRow.id !== input.expectedReview.id
+            (existingRow.id !== input.expectedReview.id ||
+              existingRow.head_sha !== input.detail.headSha)
           ) {
             return { id: existingRow.id, acquired: false, reason: 'stale' };
           }

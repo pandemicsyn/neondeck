@@ -1,6 +1,6 @@
 # PR Review Guided Tours — Implementation Handoff
 
-Status: implemented in PR #352. Reviewer slash-command extraction remains a separate follow-up PR.
+Status: implemented in PR #352. Reviewer slash-command extraction is implemented in the Phase 0 follow-up.
 
 Companion to `PR_REVIEW_GUIDED_TOURS_PLAN.md`. The plan says _what_ and _why_.
 This says _where in this codebase_, _with which values_, and _what will bite
@@ -122,14 +122,15 @@ idiom and the row mappers.
 
 ### Sidebar and chat
 
-| What                                                     | Where                                                            |
-| -------------------------------------------------------- | ---------------------------------------------------------------- |
-| Inspector tabs — **add the tour panel under Review**     | `web/src/features/pr-review/PrReviewFindingsSidebar.tsx:88`      |
-| Panel stack order                                        | `web/src/features/pr-review/PrReviewFindingsSidebar.tsx:159`     |
-| Reviewer chat (a bare textarea today)                    | `web/src/features/pr-review/PrReviewReviewerChat.tsx:172`        |
-| Main-chat slash typeahead to extract from                | `web/src/features/flue-chat/components/session-view.tsx:459-517` |
-| Its filtering helpers                                    | `web/src/features/flue-chat/lib/commands.ts`                     |
-| Global command registry — **do not add `/show-me` here** | `src/modules/commands/registry.ts:3`                             |
+| What                                                     | Where                                                        |
+| -------------------------------------------------------- | ------------------------------------------------------------ |
+| Inspector tabs — **add the tour panel under Review**     | `web/src/features/pr-review/PrReviewFindingsSidebar.tsx:88`  |
+| Panel stack order                                        | `web/src/features/pr-review/PrReviewFindingsSidebar.tsx:159` |
+| Reviewer composer integration                            | `web/src/features/pr-review/PrReviewReviewerChat.tsx`        |
+| Shared slash-command interaction primitives              | `web/src/features/chat-commands/`                            |
+| Reviewer command catalog and dispatch                    | `web/src/features/pr-review/reviewer-commands.ts`            |
+| Main-chat global catalog adapter                         | `web/src/features/flue-chat/lib/commands.ts`                 |
+| Global command registry — **do not add `/show-me` here** | `src/modules/commands/registry.ts:3`                         |
 
 ---
 
@@ -478,11 +479,11 @@ demonstrable:
    card; the card is the easier of the two and the annotation determines the
    vocabulary.
 4. **Phase 4b** (read mode) is small and high value. Do it before 4c.
-5. **Phase 0** (the reviewer slash-command extraction) is the largest and
-   riskiest single item — it refactors working main-chat code
-   (`session-view.tsx:459-517`) with regression risk on a surface tours do not
-   touch. **Land it as its own PR.** Tours work without it; `/show-me` can be
-   typed as plain text into the existing textarea until the typeahead exists.
+5. **Phase 0** (the reviewer slash-command extraction) is implemented in its
+   own follow-up. Shared filtering, completion, keyboard, and accessible
+   listbox behavior live in `web/src/features/chat-commands/`; the main chat
+   retains the global app-command adapter, while the reviewer owns a strict
+   `/help`, `/re-review`, and `/show-me` catalog with `/tour` as an alias.
 
 The order above deliberately puts Phase 0 last despite the plan numbering it
 first. The plan's sequence is a dependency order for the _complete_ feature;

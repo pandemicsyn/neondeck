@@ -1,15 +1,16 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
-import { CommandTypeahead } from './command-controls';
+import { SlashCommandTypeahead } from '../../chat-commands/SlashCommandTypeahead';
+import type { ChatSlashCommand } from '../../chat-commands/types';
 
-describe('CommandTypeahead accessibility', () => {
+describe('SlashCommandTypeahead accessibility', () => {
   it('exposes the command menu as a selectable listbox', () => {
-    const commands = [
-      { command: '/review-pr', label: 'Review PR' },
-      { command: '/briefing', label: 'Briefing' },
+    const commands: ChatSlashCommand[] = [
+      command('review-pr', 'Review PR'),
+      command('briefing', 'Briefing'),
     ];
     const html = renderToStaticMarkup(
-      <CommandTypeahead
+      <SlashCommandTypeahead
         activeCommand={commands[1]}
         activeCommandIndex={1}
         commands={commands}
@@ -26,3 +27,14 @@ describe('CommandTypeahead accessibility', () => {
     expect(html).toContain('aria-selected="true"');
   });
 });
+
+function command(name: string, label: string): ChatSlashCommand {
+  return {
+    description: label,
+    dispatch: { kind: 'app-command' },
+    label,
+    name,
+    scope: 'main',
+    usage: `/${name}`,
+  };
+}

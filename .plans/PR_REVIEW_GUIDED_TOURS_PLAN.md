@@ -1,6 +1,6 @@
 # PR Review Guided Tours Plan
 
-Status: implemented in PR #352; Phase 0 is intentionally deferred to a separate follow-up PR.
+Status: implemented in PR #352; Phase 0 is implemented in a separate follow-up.
 
 ## Summary
 
@@ -496,7 +496,7 @@ When the PR head revision changes:
 - Ask about this step creates an unambiguous contextual follow-up.
 - Tour annotations are visually and semantically distinct from findings and comments.
 
-The accessible reviewer-scoped slash-command typeahead, `/show-me` and `/tour` aliases, and contextual rejection of unknown reviewer commands are acceptance criteria for the separate Phase 0 follow-up PR. Until then, users can type the guided-tour request as ordinary reviewer text.
+The Phase 0 follow-up implements the accessible reviewer-scoped slash-command typeahead, `/show-me` and `/tour` aliases, selection-aware argument handling, `/help`, `/re-review`, and contextual rejection of unknown reviewer commands. The shared filtering, keyboard, completion, and listbox behavior now lives under `web/src/features/chat-commands/`; reviewer catalog and dispatch ownership remain under `web/src/features/pr-review/reviewer-commands.ts`.
 
 - Publishing a second tour atomically replaces the first everywhere it is current.
 - Delayed events from the replaced tour cannot restore its annotations or progress.

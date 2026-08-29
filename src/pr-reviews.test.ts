@@ -917,6 +917,196 @@ describe('durable PR reviews', () => {
     expect(invokeWorkflow).not.toHaveBeenCalled();
   });
 
+  it('rejects an exact-head bound re-review when GitHub has advanced', async () => {
+    const paths = await tempPaths();
+    const target = async () => ({
+      repoFullName: 'other/project',
+      owner: 'other',
+      repo: 'project',
+      number: 42,
+    });
+    const original = await startPrReview(
+      { ref: 'other/project#42', origin: 'panel' },
+      paths,
+      {
+        resolveTarget: target,
+        fetchDetail: async () => detail('head-1'),
+        invokeWorkflow: async () => ({ runId: 'run-original' }),
+      },
+    );
+    completePrReview(
+      {
+        reviewId: original.reviewId,
+        runId: original.runId,
+        headSha: 'head-1',
+        reportIds: [],
+        reviewUrl: original.review.reviewUrl,
+        briefingOverview: prReviewBriefingFixture(),
+        findingCount: 0,
+        seededCount: 0,
+        reportOnlyCount: 0,
+        reportOnlyFindings: [],
+      },
+      paths,
+    );
+    const invokeWorkflow =
+      vi.fn<NonNullable<StartPrReviewDependencies['invokeWorkflow']>>();
+
+    await expect(
+      startBoundPrReview(
+        {
+          ref: 'other/project#42',
+          origin: 'panel',
+          expectedReview: { id: original.reviewId, headSha: 'head-1' },
+          requireExpectedHead: true,
+          returnExistingInProgress: true,
+        },
+        paths,
+        {
+          resolveTarget: target,
+          fetchDetail: async () => detail('head-2'),
+          invokeWorkflow,
+        },
+      ),
+    ).resolves.toMatchObject({
+      reviewId: original.reviewId,
+      runId: null,
+      started: false,
+      reason: 'stale',
+      review: { headSha: 'head-1', status: 'ready' },
+    });
+    expect(invokeWorkflow).not.toHaveBeenCalled();
+    expect(readPrReviewForTarget('other/project', 42, paths)).toMatchObject({
+      headSha: 'head-1',
+      status: 'ready',
+    });
+  });
+
+  it('passes the rendered head binding through the restart route', async () => {
+    const paths = await tempPaths();
+    const target = async () => ({
+      repoFullName: 'other/project',
+      owner: 'other',
+      repo: 'project',
+      number: 42,
+    });
+    const original = await startPrReview(
+      { ref: 'other/project#42', origin: 'panel' },
+      paths,
+      {
+        resolveTarget: target,
+        fetchDetail: async () => detail('head-1'),
+        invokeWorkflow: async () => ({ runId: 'run-original' }),
+      },
+    );
+    const current = readPrReviewForTarget('other/project', 42, paths)!;
+    const startBound = vi.fn<
+      (
+        input: unknown,
+        paths: unknown,
+      ) => Promise<{
+        review: typeof current;
+        reviewId: string;
+        runId: string;
+        started: true;
+        reason: null;
+      }>
+    >(async () => ({
+      review: current,
+      reviewId: current.id,
+      runId: 'run-bound',
+      started: true,
+      reason: null,
+    }));
+    const routes = createReviewRoutes(paths, {
+      startBoundPrReview: startBound as never,
+    });
+
+    const response = await routes.request(
+      `/reviews/${original.reviewId}/review`,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ headSha: 'head-1' }),
+      },
+    );
+
+    expect(response.status).toBe(202);
+    expect(startBound).toHaveBeenCalledWith(
+      {
+        ref: 'other/project#42',
+        origin: 'panel',
+        expectedReview: { id: original.reviewId, headSha: 'head-1' },
+        requireExpectedHead: true,
+        returnExistingInProgress: true,
+      },
+      paths,
+    );
+  });
+
+  it('rejects a same-record in-progress review on a different head', async () => {
+    const paths = await tempPaths();
+    const target = async () => ({
+      repoFullName: 'other/project',
+      owner: 'other',
+      repo: 'project',
+      number: 42,
+    });
+    const dependencies = {
+      resolveTarget: target,
+      fetchDetail: async () => detail('head-1'),
+      invokeWorkflow: async () => ({ runId: 'run-original' }),
+    };
+    const original = await startPrReview(
+      { ref: 'other/project#42', origin: 'panel' },
+      paths,
+      dependencies,
+    );
+    completePrReview(
+      {
+        reviewId: original.reviewId,
+        runId: original.runId,
+        headSha: 'head-1',
+        reportIds: [],
+        reviewUrl: original.review.reviewUrl,
+        briefingOverview: prReviewBriefingFixture(),
+        findingCount: 0,
+        seededCount: 0,
+        reportOnlyCount: 0,
+        reportOnlyFindings: [],
+      },
+      paths,
+    );
+    const newer = await startPrReview(
+      { ref: 'other/project#42', origin: 'panel' },
+      paths,
+      {
+        ...dependencies,
+        fetchDetail: async () => detail('head-2'),
+        invokeWorkflow: async () => ({ runId: 'run-newer' }),
+      },
+    );
+    expect(newer.reviewId).toBe(original.reviewId);
+
+    await expect(
+      startBoundPrReview(
+        {
+          ref: 'other/project#42',
+          origin: 'panel',
+          expectedReview: { id: original.reviewId, headSha: 'head-1' },
+          requireExpectedHead: true,
+          returnExistingInProgress: true,
+        },
+        paths,
+        dependencies,
+      ),
+    ).resolves.toMatchObject({
+      started: false,
+      reason: 'stale',
+      review: { headSha: 'head-2', status: 'reviewing' },
+    });
+  });
+
   it('reserves a submit against concurrent re-review and can release failures', async () => {
     const paths = await tempPaths();
     const dependencies = {

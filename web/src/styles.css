@@ -1508,11 +1508,29 @@ button:disabled {
 }
 
 .pr-reviewer-chat-form {
+  position: relative;
   display: grid;
   gap: 6px;
   border-top: 1px solid var(--line);
   background: var(--deck-chrome);
   padding: 8px;
+}
+
+.pr-reviewer-chat-command-feedback {
+  border: 1px solid var(--line);
+  background: var(--field);
+  padding: 7px 8px;
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: calc(9.5px * var(--deck-text-scale));
+  line-height: 1.5;
+  white-space: pre-line;
+}
+
+.pr-reviewer-chat-command-feedback[data-tone='error'] {
+  border-color: color-mix(in srgb, var(--accent) 65%, var(--line));
+  background: color-mix(in srgb, var(--accent) 7%, var(--field));
+  color: var(--accent);
 }
 
 .pr-reviewer-chat-form textarea {
@@ -2976,7 +2994,7 @@ button:disabled {
   background: var(--field);
 }
 
-.command-typeahead-option[data-active='true'] span:first-child {
+.command-typeahead-option[data-active='true'] > span:first-child {
   color: var(--primary-strong);
 }
 

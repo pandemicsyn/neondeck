@@ -34,19 +34,22 @@ describe('chat command catalog', () => {
     );
 
     expect(catalog).toEqual([
-      {
+      expect.objectContaining({
         label: 'Queue override',
-        command: '/review-queue',
+        name: 'review-queue',
         description: 'Fetch the review queue.',
-      },
-      {
+        scope: 'main',
+        dispatch: { kind: 'app-command' },
+      }),
+      expect.objectContaining({
         label: 'Inspect Release',
-        command: '/inspect-release',
+        name: 'inspect-release',
         description: 'Inspect a release candidate.',
-      },
+        usage: '/inspect-release <repo>',
+      }),
     ]);
     expect(filterCommands(catalog, 'release')).toEqual([
-      expect.objectContaining({ command: '/inspect-release' }),
+      expect.objectContaining({ name: 'inspect-release' }),
     ]);
   });
 
@@ -55,7 +58,38 @@ describe('chat command catalog', () => {
       mergeCommandCatalog([
         { label: 'Local command', command: '/local-command' },
       ]),
-    ).toContainEqual({ label: 'Local command', command: '/local-command' });
+    ).toContainEqual(
+      expect.objectContaining({
+        label: 'Local command',
+        name: 'local-command',
+      }),
+    );
+  });
+
+  it('preserves preset arguments when completing a configured command', () => {
+    expect(
+      mergeCommandCatalog(
+        [
+          {
+            label: 'Review target',
+            command: '/review-pr owner/repo#12',
+          },
+        ],
+        [
+          {
+            name: 'review-pr',
+            usage: '/review-pr <owner/repo#number>',
+            description: 'Review one pull request.',
+          },
+        ],
+      ),
+    ).toContainEqual(
+      expect.objectContaining({
+        completion: '/review-pr owner/repo#12',
+        name: 'review-pr',
+        usage: '/review-pr <owner/repo#number>',
+      }),
+    );
   });
 
   it('clamps the active command index when suggestions shrink', () => {

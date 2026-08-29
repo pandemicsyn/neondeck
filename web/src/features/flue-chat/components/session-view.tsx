@@ -5,7 +5,6 @@ import { useFlueAgent } from '@flue/react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   useEffect,
-  useId,
   useMemo,
   useRef,
   useState,
@@ -40,15 +39,10 @@ import {
 import { useDashboardEventConnectionState } from '../../../lib/dashboard-connection';
 import { createNeondeckConversationClient } from '../../../lib/flue';
 import { queryKeys } from '../../../lib/query';
-import { CommandResultSummary, CommandTypeahead } from './command-controls';
+import { CommandResultSummary } from './command-controls';
 import { ChatResponseProgress, ChatTimelineItems } from './chat-timeline';
 import { errorMessage } from './message-parts';
-import {
-  clampCommandIndex,
-  commandQueryFromInput,
-  filterCommands,
-  mergeCommandCatalog,
-} from '../lib/commands';
+import { mergeCommandCatalog } from '../lib/commands';
 import { upsertCommandEvent } from '../lib/command-events';
 import { chatMessagesForRender } from '../lib/messages';
 import {
@@ -56,11 +50,9 @@ import {
   sessionTimelineItems,
 } from '../lib/timeline';
 import { useChatAutoScroll } from '../lib/use-chat-auto-scroll';
-import type {
-  FlueChatCommand,
-  FlueChatConfig,
-  FlueChatSession,
-} from '../types';
+import type { FlueChatConfig, FlueChatSession } from '../types';
+import { SlashCommandTypeahead } from '../../chat-commands/SlashCommandTypeahead';
+import { useSlashCommandMenu } from '../../chat-commands/useSlashCommandMenu';
 
 export function FlueChatSessionView({
   activeRecord,
@@ -94,15 +86,12 @@ export function FlueChatSessionView({
   const [commandEvents, setCommandEvents] = useState<CommandEvent[]>([]);
   const [runningCommand, setRunningCommand] = useState<string>();
   const [commandSubmitting, setCommandSubmitting] = useState(false);
-  const [requestedCommandIndex, setRequestedCommandIndex] = useState(0);
-  const [dismissedCommandInput, setDismissedCommandInput] = useState('');
   const [sendingMessage, setSendingMessage] = useState(false);
   const [externalSubmissionIds, setExternalSubmissionIds] = useState<string[]>(
     [],
   );
   const [submitError, setSubmitError] = useState<string>();
   const commandSubmitLockRef = useRef(false);
-  const commandTypeaheadId = useId();
   const queryClient = useQueryClient();
   const conversationClient = useMemo(
     () =>
@@ -127,21 +116,12 @@ export function FlueChatSessionView({
     () => mergeCommandCatalog(quickCommands, commandsQuery.data?.items),
     [commandsQuery.data?.items, quickCommands],
   );
-  const commandQuery = allowCommands ? commandQueryFromInput(input) : undefined;
-  const matchingCommands = useMemo(
-    () => filterCommands(commandCatalog, commandQuery),
-    [commandCatalog, commandQuery],
-  );
-  const visibleCommands = matchingCommands.slice(0, 6);
-  const commandMenuOpen =
-    commandQuery !== undefined &&
-    dismissedCommandInput !== input &&
-    visibleCommands.length > 0;
-  const activeCommandIndex = clampCommandIndex(
-    requestedCommandIndex,
-    visibleCommands.length,
-  );
-  const activeCommand = visibleCommands[activeCommandIndex];
+  const commandMenu = useSlashCommandMenu({
+    commands: commandCatalog,
+    enabled: allowCommands,
+    input,
+    onComplete: setInput,
+  });
   const historyInputBlocked = Boolean(session?.id) && !agent.historyReady;
   const commandBusy = commandSubmitting || Boolean(runningCommand);
   const settlements = agent.settlements ?? [];
@@ -200,10 +180,6 @@ export function FlueChatSessionView({
     [activity, messages],
   );
   const chatAutoScroll = useChatAutoScroll(session?.id);
-
-  useEffect(() => {
-    setRequestedCommandIndex(0);
-  }, [commandQuery]);
 
   useEffect(() => {
     setCommandEvents([]);
@@ -471,50 +447,15 @@ export function FlueChatSessionView({
   }
 
   function handleKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
-    if (commandMenuOpen && activeCommand) {
-      if (event.key === 'ArrowDown') {
-        event.preventDefault();
-        setRequestedCommandIndex(
-          (activeCommandIndex + 1) % visibleCommands.length,
-        );
-        return;
-      }
-      if (event.key === 'ArrowUp') {
-        event.preventDefault();
-        setRequestedCommandIndex(
-          (activeCommandIndex - 1 + visibleCommands.length) %
-            visibleCommands.length,
-        );
-        return;
-      }
-      if (event.key === 'Tab') {
-        event.preventDefault();
-        completeCommand(activeCommand);
-        return;
-      }
-      if (event.key === 'Enter' && !event.shiftKey) {
-        const typedCommand = input.trim();
-        if (typedCommand !== activeCommand.command) {
-          event.preventDefault();
-          completeCommand(activeCommand);
-          return;
-        }
-      }
-      if (event.key === 'Escape') {
-        event.preventDefault();
-        setDismissedCommandInput(input);
-        return;
-      }
-    }
-
-    if (event.key !== 'Enter' || event.shiftKey) return;
+    if (commandMenu.handleKeyDown(event)) return;
+    if (
+      event.key !== 'Enter' ||
+      event.shiftKey ||
+      event.nativeEvent.isComposing
+    )
+      return;
     event.preventDefault();
     event.currentTarget.form?.requestSubmit();
-  }
-
-  function completeCommand(command: FlueChatCommand) {
-    setInput(`${command.command} `);
-    setDismissedCommandInput('');
   }
 
   return (
@@ -623,13 +564,13 @@ export function FlueChatSessionView({
       </div>
       <div className="relative shrink-0 border-t border-line bg-field">
         {allowCommands ? (
-          <CommandTypeahead
-            activeCommand={activeCommand}
-            activeCommandIndex={activeCommandIndex}
-            commands={visibleCommands}
-            id={commandTypeaheadId}
-            open={commandMenuOpen}
-            onSelect={completeCommand}
+          <SlashCommandTypeahead
+            activeCommand={commandMenu.activeCommand}
+            activeCommandIndex={commandMenu.activeIndex}
+            commands={commandMenu.visibleCommands}
+            id={commandMenu.id}
+            open={commandMenu.open}
+            onSelect={commandMenu.complete}
           />
         ) : null}
         {submitError ? (
@@ -646,19 +587,15 @@ export function FlueChatSessionView({
         >
           <span className="font-mono text-[13px] text-accent">›</span>
           <Textarea
-            aria-activedescendant={
-              commandMenuOpen
-                ? `${commandTypeaheadId}-option-${activeCommandIndex}`
-                : undefined
-            }
+            aria-activedescendant={commandMenu.activeOptionId}
             aria-autocomplete="list"
-            aria-controls={commandTypeaheadId}
-            aria-expanded={commandMenuOpen}
+            aria-controls={commandMenu.id}
+            aria-expanded={commandMenu.open}
             aria-label={messageLabel}
             className="dashboard-input h-7 min-w-0 flex-1 overflow-hidden px-0 py-1 font-mono text-[13px] leading-5 caret-primary"
             onChange={(event) => {
               setInput(event.target.value);
-              setDismissedCommandInput('');
+              commandMenu.resetDismissal();
               if (submitError) setSubmitError(undefined);
             }}
             onKeyDown={handleKeyDown}
@@ -675,7 +612,7 @@ export function FlueChatSessionView({
             value={input}
           />
           <Kbd className="flue-chat-composer-hint">
-            {commandMenuOpen
+            {commandMenu.open
               ? 'Tab complete'
               : historyInputBlocked
                 ? 'Loading history'

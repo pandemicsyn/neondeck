@@ -1,6 +1,3 @@
-// The rich slash-command popup is the listbox owned by the chat combobox; a
-// native select/datalist cannot preserve its descriptions and completion flow.
-/* oxlint-disable jsx-a11y/prefer-tag-over-role */
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
 import {
@@ -13,7 +10,6 @@ import { Badge, Button } from '../../../components/ui';
 import { useDashboardEventConnectionState } from '../../../lib/dashboard-connection';
 import { queryErrorMessage } from '../../../lib/query';
 import { PrReviewBriefingOverlay } from '../../pr-review/PrReviewBriefing';
-import type { FlueChatCommand } from '../types';
 
 export function CommandResultSummary({
   event,
@@ -183,55 +179,4 @@ function reviewIdFromResult(
   }
   const reviewId = (result.data as { reviewId?: unknown }).reviewId;
   return typeof reviewId === 'string' && reviewId.trim() ? reviewId : null;
-}
-
-export function CommandTypeahead({
-  activeCommand,
-  activeCommandIndex,
-  commands,
-  id,
-  onSelect,
-  open,
-}: {
-  activeCommand: FlueChatCommand | undefined;
-  activeCommandIndex: number;
-  commands: FlueChatCommand[];
-  id: string;
-  onSelect: (command: FlueChatCommand) => void;
-  open: boolean;
-}) {
-  if (!open) return null;
-
-  return (
-    <div
-      aria-label="Slash commands"
-      className="command-typeahead absolute right-0 bottom-full left-0 z-10 border-t border-line bg-canvas font-mono"
-      id={id}
-      role="listbox"
-    >
-      {commands.slice(0, 6).map((command, index) => {
-        const selected = activeCommand?.command === command.command;
-        return (
-          <button
-            aria-selected={selected}
-            className="command-typeahead-option flex w-full items-center gap-4 px-[18px] py-1.5 text-left"
-            data-active={index === activeCommandIndex}
-            id={`${id}-option-${index}`}
-            key={command.command}
-            onMouseDown={(event) => event.preventDefault()}
-            onClick={() => onSelect(command)}
-            role="option"
-            type="button"
-          >
-            <span className="w-[18ch] shrink-0 truncate text-[13px] font-semibold text-ink">
-              {command.command}
-            </span>
-            <span className="min-w-0 truncate text-[12px] text-muted">
-              {command.description ?? command.label}
-            </span>
-          </button>
-        );
-      })}
-    </div>
-  );
 }
