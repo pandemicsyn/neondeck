@@ -223,6 +223,7 @@ export function GitHubPrReview({
     isDurableReviewReady,
     query: reviewRecordQuery,
     reconcileSubmission,
+    restartBound: restartBoundReview,
     restart: restartReview,
     review: reviewRecord,
     start: startReview,
@@ -790,6 +791,7 @@ export function GitHubPrReview({
           isThreadMutationPending ||
           dismissingFindingIds.size > 0 ||
           findingActionsLocked ||
+          restartBoundReview.isPending ||
           restartReview.isPending ||
           reconcileSubmission.isPending ||
           startReview.isPending,
@@ -811,6 +813,7 @@ export function GitHubPrReview({
       reanchoringCommentId,
       reconcileSubmission.isPending,
       replyEditor?.body,
+      restartBoundReview.isPending,
       restartReview.isPending,
       selectedContext.selectedAnnotationId,
       selectedContext.selectedLines,
@@ -2729,6 +2732,38 @@ export function GitHubPrReview({
       'popup,width=1440,height=940',
     );
   };
+  const reReviewCurrentRevision = async () => {
+    if (
+      !appliedReviewerRecord ||
+      !appliedReviewerRecord.baseSha ||
+      restartBoundReview.isPending ||
+      isApplyingRevision
+    ) {
+      return {
+        ok: false as const,
+        message: 'Re-review is unavailable while this PR revision is changing.',
+      };
+    }
+    const operationToken = beginOperation();
+    try {
+      const result = await restartBoundReview.mutateAsync({
+        baseSha: appliedReviewerRecord.baseSha,
+        id: appliedReviewerRecord.id,
+        headSha: appliedReviewerRecord.headSha,
+      });
+      finishOperation(operationToken, 'Neon review restarted.');
+      return { ok: true as const, message: result.message };
+    } catch (error) {
+      failOperation(operationToken, error);
+      return {
+        ok: false as const,
+        message:
+          error instanceof Error
+            ? error.message
+            : 'Re-review could not be started.',
+      };
+    }
+  };
   const findingsSidebar = {
     actionsLocked: () => findingActionsLocked || isApplyingRevision,
     activePath,
@@ -2760,10 +2795,15 @@ export function GitHubPrReview({
     promotionDisabledReason: promotionUnavailableReason,
     onReanchor: (comment: GitHubPrReviewDraftComment) =>
       beginReanchorComment(comment.id, comment.path),
+    onReReview: reReviewCurrentRevision,
     onSelectDraftComment: showDraftComment,
     onSelectFinding: selectNeonFinding,
     onShowWhy: showWhy,
     review: appliedReviewerRecord,
+    reviewerCommandSelection:
+      activePath && selectedContext.selectedLines
+        ? { path: activePath, selection: selectedContext.selectedLines }
+        : null,
     reviewThreads,
     selectedAnnotationId: selectedContext.selectedAnnotationId,
     staleCommentCount: blockedCommentIds.size,
@@ -2846,6 +2886,7 @@ export function GitHubPrReview({
               <button
                 className="pr-review-popout-button"
                 disabled={
+                  restartBoundReview.isPending ||
                   restartReview.isPending ||
                   reconcileSubmission.isPending ||
                   isApplyingRevision ||
@@ -2884,7 +2925,8 @@ export function GitHubPrReview({
                   ? 'checking GitHub'
                   : reviewRecord.status === 'submitting'
                     ? 'recover submission'
-                    : restartReview.isPending ||
+                    : restartBoundReview.isPending ||
+                        restartReview.isPending ||
                         reviewRecord.status === 'reviewing'
                       ? 'reviewing'
                       : reviewRecord.status === 'submitted'

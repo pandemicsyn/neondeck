@@ -1,87 +1,95 @@
 import type { NeonCommandDefinition } from '../../../api';
+import {
+  clampSlashCommandIndex,
+  filterSlashCommands,
+  slashCommandQueryFromInput,
+} from '../../chat-commands/commands';
+import type { ChatSlashCommand } from '../../chat-commands/types';
 import { defaultCommandCatalog, type FlueChatCommand } from '../types';
 
 export function mergeCommandCatalog(
   commands: FlueChatCommand[],
   supportedCommands: NeonCommandDefinition[] | undefined = undefined,
 ) {
+  const defaultCommands = defaultCommandCatalog.map(commandFromQuickCommand);
   const canonicalCommands =
     supportedCommands !== undefined
       ? supportedCommands.map(commandFromDefinition)
-      : defaultCommandCatalog;
+      : defaultCommands;
   const canonicalCommandNames =
     supportedCommands === undefined
       ? undefined
-      : new Set(canonicalCommands.map((command) => command.command));
-  const detailsByCommand = new Map(
-    defaultCommandCatalog.map((command) => [command.command, command]),
+      : new Set(canonicalCommands.map((command) => command.name));
+  const detailsByName = new Map(
+    defaultCommands.map((command) => [command.name, command]),
   );
   for (const command of canonicalCommands) {
-    detailsByCommand.set(command.command, {
-      ...detailsByCommand.get(command.command),
+    detailsByName.set(command.name, {
+      ...detailsByName.get(command.name),
       ...command,
     });
   }
 
-  const byCommand = new Map<string, FlueChatCommand>();
-  for (const command of commands) {
-    if (canonicalCommandNames && !canonicalCommandNames.has(command.command)) {
+  const byCompletion = new Map<string, ChatSlashCommand>();
+  const configuredNames = new Set<string>();
+  for (const quickCommand of commands) {
+    const command = commandFromQuickCommand(quickCommand);
+    if (canonicalCommandNames && !canonicalCommandNames.has(command.name)) {
       continue;
     }
-    byCommand.set(command.command, {
-      ...detailsByCommand.get(command.command),
+    configuredNames.add(command.name);
+    const details = detailsByName.get(command.name);
+    byCompletion.set(command.completion!.trim().toLowerCase(), {
+      ...details,
       ...command,
+      description:
+        quickCommand.description ?? details?.description ?? command.description,
+      usage: details?.usage ?? command.usage,
     });
   }
   for (const command of canonicalCommands) {
-    if (!byCommand.has(command.command))
-      byCommand.set(command.command, command);
+    if (!configuredNames.has(command.name)) {
+      byCompletion.set(command.name, command);
+    }
   }
-  return [...byCommand.values()];
+  return [...byCompletion.values()];
 }
 
-export function commandQueryFromInput(input: string) {
-  const trimmedStart = input.trimStart();
-  if (!trimmedStart.startsWith('/')) return undefined;
-  const firstToken = trimmedStart.split(/\s+/, 1)[0] ?? '';
-  if (trimmedStart.length > firstToken.length) return undefined;
-  return firstToken.slice(1).toLowerCase();
-}
-
-export function filterCommands(
-  commands: FlueChatCommand[],
-  query: string | undefined,
-) {
-  if (query === undefined) return [];
-  if (!query) return commands;
-  return commands.filter((command) => {
-    const commandName = command.command.slice(1).toLowerCase();
-    const label = command.label.toLowerCase();
-    const description = command.description?.toLowerCase() ?? '';
-    return (
-      commandName.includes(query) ||
-      label.includes(query) ||
-      description.includes(query)
-    );
-  });
-}
-
-export function clampCommandIndex(index: number, commandCount: number) {
-  if (commandCount <= 0) return 0;
-  return Math.min(Math.max(index, 0), commandCount - 1);
-}
+export const commandQueryFromInput = slashCommandQueryFromInput;
+export const filterCommands = filterSlashCommands;
+export const clampCommandIndex = clampSlashCommandIndex;
 
 function commandFromDefinition(
   definition: NeonCommandDefinition,
-): FlueChatCommand {
-  const command = `/${definition.name}`;
+): ChatSlashCommand {
   return {
     label:
-      defaultCommandCatalog.find((item) => item.command === command)?.label ??
-      commandLabel(definition.name),
-    command,
+      defaultCommandCatalog.find(
+        (item) => commandName(item.command) === definition.name,
+      )?.label ?? commandLabel(definition.name),
+    name: definition.name,
+    usage: definition.usage,
     description: definition.description,
+    scope: 'main',
+    dispatch: { kind: 'app-command' },
   };
+}
+
+function commandFromQuickCommand(command: FlueChatCommand): ChatSlashCommand {
+  const name = commandName(command.command);
+  return {
+    completion: command.command,
+    label: command.label,
+    name,
+    usage: command.command,
+    description: command.description ?? command.label,
+    scope: 'main',
+    dispatch: { kind: 'app-command' },
+  };
+}
+
+function commandName(command: string) {
+  return command.replace(/^\//, '').split(/\s+/, 1)[0]!.toLowerCase();
 }
 
 function commandLabel(name: string) {

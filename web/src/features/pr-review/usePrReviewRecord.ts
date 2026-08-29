@@ -4,6 +4,7 @@ import {
   getPrReviewForTarget,
   openPrReviewEventStream,
   reconcilePrReviewSubmission,
+  restartBoundPrReview,
   restartPrReview,
   startPrReview,
   type GitHubPullRequest,
@@ -43,6 +44,18 @@ export function usePrReviewRecord(
   });
   const restart = useMutation({
     mutationFn: (id: string) => restartPrReview(id),
+    onSuccess: (result) => updateReview(result.review),
+  });
+  const restartBound = useMutation({
+    mutationFn: ({
+      baseSha,
+      headSha,
+      id,
+    }: {
+      baseSha: string;
+      headSha: string;
+      id: string;
+    }) => restartBoundPrReview(id, { baseSha, headSha }),
     onSuccess: (result) => updateReview(result.review),
   });
   const start = useMutation({
@@ -87,6 +100,7 @@ export function usePrReviewRecord(
     query,
     reconcileSubmission,
     restart,
+    restartBound,
     review,
     start,
   };

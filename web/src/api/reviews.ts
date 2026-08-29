@@ -54,6 +54,16 @@ export function restartPrReview(id: string) {
   );
 }
 
+export function restartBoundPrReview(
+  id: string,
+  revision: { baseSha: string; headSha: string },
+) {
+  return postJson<PrReviewMutationResponse>(
+    `/api/reviews/${encodeURIComponent(id)}/review`,
+    revision,
+  );
+}
+
 export function reconcilePrReviewSubmission(id: string) {
   return postJson<PrReviewMutationResponse>(
     `/api/reviews/${encodeURIComponent(id)}/reconcile`,

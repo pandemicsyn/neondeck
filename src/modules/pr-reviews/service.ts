@@ -63,9 +63,11 @@ type StartPrReviewInput = {
 
 type BoundStartPrReviewInput = StartPrReviewInput & {
   expectedReview: {
+    baseSha?: string;
     id: string;
     headSha: string;
   };
+  requireExpectedRevision?: true;
   returnExistingInProgress: true;
 };
 
@@ -197,6 +199,21 @@ async function startPrReviewInternal(
   const attemptId = randomUUID();
   const expectedReview =
     'expectedReview' in input ? input.expectedReview : undefined;
+  if (
+    expectedReview &&
+    'requireExpectedRevision' in input &&
+    input.requireExpectedRevision &&
+    (detail.headSha !== expectedReview.headSha ||
+      baseSha !== expectedReview.baseSha)
+  ) {
+    return {
+      review: readPrReview(expectedReview.id, paths),
+      reviewId: expectedReview.id,
+      runId: null,
+      started: false,
+      reason: 'stale',
+    };
+  }
   const reservation = reserveReviewingRecord(
     {
       ref,
@@ -1005,6 +1022,7 @@ function reserveReviewingRecord(
     detail: GitHubPullRequestDetail;
     attemptId: string;
     expectedReview?: {
+      baseSha?: string;
       id: string;
       headSha: string;
     };
@@ -1027,7 +1045,7 @@ function reserveReviewingRecord(
     reservation = withImmediateTransaction(database, () => {
       const existingRow = database
         .prepare(
-          `SELECT id, status, head_sha, verdict, previous_verdict, created_at
+          `SELECT id, status, head_sha, base_sha, verdict, previous_verdict, created_at
            FROM pr_reviews
            WHERE lower(repo_full_name) = lower(?) AND pr_number = ?
            LIMIT 1;`,
@@ -1037,6 +1055,7 @@ function reserveReviewingRecord(
             id: string;
             status: PrReviewRecord['status'];
             head_sha: string;
+            base_sha: string;
             verdict: PrReviewVerdict | null;
             previous_verdict: PrReviewVerdict | null;
             created_at: string;
@@ -1047,7 +1066,9 @@ function reserveReviewingRecord(
         if (input.returnExistingInProgress) {
           if (
             input.expectedReview &&
-            existingRow.id !== input.expectedReview.id
+            (existingRow.id !== input.expectedReview.id ||
+              existingRow.head_sha !== input.detail.headSha ||
+              existingRow.base_sha !== input.detail.baseSha)
           ) {
             return { id: existingRow.id, acquired: false, reason: 'stale' };
           }
@@ -1076,7 +1097,9 @@ function reserveReviewingRecord(
       if (
         input.expectedReview &&
         (existingRow?.id !== input.expectedReview.id ||
-          existingRow.head_sha !== input.expectedReview.headSha)
+          existingRow.head_sha !== input.expectedReview.headSha ||
+          (input.expectedReview.baseSha !== undefined &&
+            existingRow.base_sha !== input.expectedReview.baseSha))
       ) {
         return {
           id: existingRow?.id ?? null,

@@ -20,7 +20,11 @@ import { reportOnlyFindingNavigationId } from './review-navigation';
 import { PrReviewNeonFindingsPanel } from './PrReviewNeonFinding';
 import type { NeonFindingAnchorResolution } from './review-findings';
 import { PrReviewReviewerChat } from './PrReviewReviewerChat';
-import type { PrReviewReviewerRequest } from './PrReviewReviewerChat';
+import type {
+  PrReviewReReviewResult,
+  PrReviewReviewerRequest,
+} from './PrReviewReviewerChat';
+import type { PrReviewerCommandSelection } from './reviewer-commands';
 import type {
   PrReviewTour,
   PrReviewTourStep,
@@ -54,6 +58,7 @@ export type PrReviewFindingsSidebarProps = {
   onSelectDraftComment: (comment: GitHubPrReviewDraftComment) => void;
   onSelectFinding: (finding: NeonReviewFinding) => void;
   review: PrReviewRecord | null;
+  reviewerCommandSelection?: PrReviewerCommandSelection | null;
   reviewThreads: GitHubPullRequestReviewThread[];
   selectedAnnotationId: string | null;
   staleCommentCount: number;
@@ -73,6 +78,7 @@ export type PrReviewFindingsSidebarProps = {
   onOpenTour?: () => void;
   onTourModeChange?: (mode: PrReviewTourMode) => void;
   onShowWhy?: (finding: NeonReviewFinding) => void;
+  onReReview?: () => PrReviewReReviewResult | Promise<PrReviewReReviewResult>;
   reviewerRequest?: PrReviewReviewerRequest | null;
 };
 
@@ -113,6 +119,7 @@ export function PrReviewFindingsSidebar({
       </div>
       <PrReviewReviewerChat
         activeTourStepId={props.activeTourStepId}
+        commandSelection={props.reviewerCommandSelection}
         isLocked={props.isLocked}
         onActivateTourStep={props.onActivateTourStep}
         onAskTourStep={props.onAskTourStep}
@@ -120,6 +127,7 @@ export function PrReviewFindingsSidebar({
         onCloseTour={props.onCloseTour}
         onDraftChanged={props.onDraftChanged}
         onOpenTour={props.onOpenTour}
+        onReReview={props.onReReview}
         request={props.reviewerRequest}
         review={props.review}
         tour={props.tour}
@@ -219,6 +227,7 @@ export function PrReviewFindingsSidebar({
         </>
       ) : (
         <PrReviewReviewerChat
+          commandSelection={props.reviewerCommandSelection}
           isLocked={props.isLocked}
           onDraftChanged={props.onDraftChanged}
           review={props.review}
@@ -229,6 +238,7 @@ export function PrReviewFindingsSidebar({
           onAskTourStep={props.onAskTourStep}
           onCloseTour={props.onCloseTour}
           onOpenTour={props.onOpenTour}
+          onReReview={props.onReReview}
           onBackToTourFinding={props.onBackToTourFinding}
           request={props.reviewerRequest}
         />

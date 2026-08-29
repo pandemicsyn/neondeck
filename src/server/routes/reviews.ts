@@ -11,6 +11,7 @@ import {
   reconcilePrReviewSubmission,
   recentPrReviews,
   restorePrReview,
+  startBoundPrReview,
   startPrReview,
   type PrReviewOrigin,
   type PrReviewRecord,
@@ -24,6 +25,7 @@ export function createReviewRoutes(
   dependencies: {
     reconcilePrReviewSubmission?: typeof reconcilePrReviewSubmission;
     recordHumanReviewSubmittedApiEvidence?: typeof recordHumanReviewSubmittedApiEvidence;
+    startBoundPrReview?: typeof startBoundPrReview;
   } = {},
 ) {
   const routes = new Hono();
@@ -149,6 +151,7 @@ export function createReviewRoutes(
   });
 
   routes.post('/reviews/:id/review', async (c) => {
+    const body = objectBody(await safeJsonBody(c));
     const existing = readPrReview(c.req.param('id'), paths);
     if (!existing) {
       return c.json(
@@ -162,6 +165,80 @@ export function createReviewRoutes(
       );
     }
     try {
+      const expectedHeadSha =
+        typeof body.headSha === 'string' ? body.headSha.trim() : '';
+      const expectedBaseSha =
+        typeof body.baseSha === 'string' ? body.baseSha.trim() : '';
+      const hasExpectedRevision = 'headSha' in body || 'baseSha' in body;
+      if (hasExpectedRevision) {
+        if (!expectedHeadSha || !expectedBaseSha) {
+          return c.json(
+            {
+              ok: false,
+              action: 'pr_review_restart',
+              changed: false,
+              message:
+                'Both headSha and baseSha are required for an exact-revision re-review.',
+              requires: ['currentReviewRevision'],
+            },
+            400,
+          );
+        }
+        const result = await (
+          dependencies.startBoundPrReview ?? startBoundPrReview
+        )(
+          {
+            ref: existing.ref,
+            origin: 'panel',
+            expectedReview: {
+              id: existing.id,
+              headSha: expectedHeadSha,
+              baseSha: expectedBaseSha,
+            },
+            requireExpectedRevision: true,
+            returnExistingInProgress: true,
+          },
+          paths,
+        );
+        if (!result.started && result.reason !== 'in_progress') {
+          const message =
+            result.reason === 'submitting'
+              ? 'A review is currently being submitted and cannot be restarted.'
+              : result.reason === 'missing'
+                ? 'The bound PR review is no longer available.'
+                : 'The reviewer surface belongs to an older PR revision.';
+          return c.json(
+            {
+              ok: false,
+              action: 'pr_review_restart',
+              changed: false,
+              message,
+              requires: [
+                result.reason === 'submitting'
+                  ? 'settledReviewSubmission'
+                  : 'currentReviewRevision',
+              ],
+            },
+            409,
+          );
+        }
+        if (!result.review) {
+          throw new Error('The bound PR review could not be read.');
+        }
+        return c.json(
+          {
+            ok: true,
+            action: 'pr_review_restart',
+            changed: result.started,
+            message: result.started
+              ? `Re-reviewing ${result.review.repoFullName}#${result.review.prNumber} at ${expectedHeadSha.slice(0, 7)}.`
+              : `A Neon review is already in progress for ${result.review.repoFullName}#${result.review.prNumber}.`,
+            ...result,
+            runId: result.runId ?? result.review.runId,
+          },
+          result.started ? 202 : 200,
+        );
+      }
       const result = await startPrReview(
         { ref: existing.ref, origin: 'panel' },
         paths,

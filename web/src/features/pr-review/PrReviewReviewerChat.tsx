@@ -1,3 +1,6 @@
+// The reviewer keeps multiline editing while exposing shared slash-command
+// suggestions through the WAI-ARIA combobox pattern.
+/* oxlint-disable jsx-a11y/prefer-tag-over-role */
 import { useFlueAgent, type UseFlueAgentResult } from '@flue/react';
 import {
   createContext,
@@ -29,7 +32,14 @@ import { chatMessagesForRender } from '../flue-chat/lib/messages';
 import { sessionTimelineItems } from '../flue-chat/lib/timeline';
 import { useChatAutoScroll } from '../flue-chat/lib/use-chat-auto-scroll';
 import { createNeondeckConversationClient } from '../../lib/flue';
+import { SlashCommandTypeahead } from '../chat-commands/SlashCommandTypeahead';
+import { useSlashCommandMenu } from '../chat-commands/useSlashCommandMenu';
 import { PrReviewTourToolPart } from './PrReviewTour';
+import {
+  prReviewerSlashCommands,
+  resolvePrReviewerCommand,
+  type PrReviewerCommandSelection,
+} from './reviewer-commands';
 
 export type PrReviewReviewerRequest = {
   id: number;
@@ -38,6 +48,9 @@ export type PrReviewReviewerRequest = {
   delivery: 'pending' | 'sending' | 'sent' | 'failed';
   error: string | null;
 };
+
+export type PrReviewReReviewResult =
+  { ok: true; message: string } | { ok: false; message: string };
 
 type ReviewerConversationContextValue = {
   agent: UseFlueAgentResult;
@@ -425,6 +438,7 @@ function observeLocalSettlements({
 }
 
 export function PrReviewReviewerChat({
+  commandSelection = null,
   isLocked = false,
   onDraftChanged,
   review,
@@ -435,6 +449,7 @@ export function PrReviewReviewerChat({
   onAskTourStep,
   onCloseTour,
   onOpenTour,
+  onReReview,
   onBackToTourFinding,
   onTourPublished,
   onRequestDeliveryChange,
@@ -443,6 +458,7 @@ export function PrReviewReviewerChat({
   onSendMessage,
   request = null,
 }: {
+  commandSelection?: PrReviewerCommandSelection | null;
   isLocked?: boolean;
   onDraftChanged?: () => void;
   review: PrReviewRecord | null;
@@ -453,6 +469,7 @@ export function PrReviewReviewerChat({
   onAskTourStep?: (step: PrReviewTourStep) => void;
   onCloseTour?: () => void;
   onOpenTour?: () => void;
+  onReReview?: () => PrReviewReReviewResult | Promise<PrReviewReReviewResult>;
   onBackToTourFinding?: (() => void) | null;
   onTourPublished?: (tourId: string, generation: number) => void;
   onRequestDeliveryChange?: (
@@ -515,6 +532,7 @@ export function PrReviewReviewerChat({
       >
         <PrReviewReviewerChat
           activeTourStepId={activeTourStepId}
+          commandSelection={commandSelection}
           isLocked={isLocked}
           onActivateTourStep={onActivateTourStep}
           onAskTourStep={onAskTourStep}
@@ -522,6 +540,7 @@ export function PrReviewReviewerChat({
           onCloseTour={onCloseTour}
           onDraftChanged={onDraftChanged}
           onOpenTour={onOpenTour}
+          onReReview={onReReview}
           onRequestDeliveryChange={onRequestDeliveryChange}
           onSendMessage={onSendMessage}
           onSubmissionIdentified={onSubmissionIdentified}
@@ -546,6 +565,7 @@ export function PrReviewReviewerChat({
   return (
     <ReviewerConversation
       conversation={conversation}
+      commandSelection={commandSelection}
       tour={tour}
       tourClosed={tourClosed}
       activeTourStepId={activeTourStepId}
@@ -553,6 +573,7 @@ export function PrReviewReviewerChat({
       onAskTourStep={onAskTourStep}
       onCloseTour={onCloseTour}
       onOpenTour={onOpenTour}
+      onReReview={onReReview}
       onBackToTourFinding={onBackToTourFinding}
       onSendMessage={onSendMessage}
       input={input}
@@ -563,6 +584,7 @@ export function PrReviewReviewerChat({
 
 function ReviewerConversation({
   conversation,
+  commandSelection,
   tour,
   tourClosed,
   activeTourStepId,
@@ -570,12 +592,14 @@ function ReviewerConversation({
   onAskTourStep,
   onCloseTour,
   onOpenTour,
+  onReReview,
   onBackToTourFinding,
   onSendMessage,
   input,
   setInput,
 }: {
   conversation: ReviewerConversationContextValue;
+  commandSelection: PrReviewerCommandSelection | null;
   tour: PrReviewTour | null;
   tourClosed: boolean;
   activeTourStepId: string | null;
@@ -583,6 +607,7 @@ function ReviewerConversation({
   onAskTourStep?: (step: PrReviewTourStep) => void;
   onCloseTour?: () => void;
   onOpenTour?: () => void;
+  onReReview?: () => PrReviewReReviewResult | Promise<PrReviewReReviewResult>;
   onBackToTourFinding?: (() => void) | null;
   onSendMessage?: (message: string) => void;
   input: string;
@@ -602,6 +627,17 @@ function ReviewerConversation({
     sendMessage,
   } = conversation;
   const inputId = useId();
+  const [commandFeedback, setCommandFeedback] = useState<{
+    message: string;
+    tone: 'error' | 'info';
+  } | null>(null);
+  const [commandPending, setCommandPending] = useState(false);
+  const commandMenu = useSlashCommandMenu({
+    commands: prReviewerSlashCommands,
+    enabled: ready && !commandPending,
+    input,
+    onComplete: setInput,
+  });
   const messages = useMemo(
     () => chatMessagesForRender(agent.messages),
     [agent.messages],
@@ -611,10 +647,60 @@ function ReviewerConversation({
   const busy =
     sending || request?.delivery === 'sending' || agent.status === 'connecting';
 
+  useEffect(() => setCommandFeedback(null), [agentId]);
+
   async function submit(event: FormEvent) {
     event.preventDefault();
-    const message = input.trim();
-    if (!message || !ready) return;
+    let message = input.trim();
+    if (!message || !ready || commandPending) return;
+    const command = resolvePrReviewerCommand(message, commandSelection);
+    if (command?.kind === 'error') {
+      setCommandFeedback({ message: command.message, tone: 'error' });
+      return;
+    }
+    if (command?.kind === 'help') {
+      setInput('');
+      setCommandFeedback({ message: command.message, tone: 'info' });
+      return;
+    }
+    if (command?.kind === 're-review') {
+      setCommandPending(true);
+      setCommandFeedback({
+        message: 'Starting exact-revision re-review…',
+        tone: 'info',
+      });
+      let result: PrReviewReReviewResult | undefined;
+      try {
+        result = await onReReview?.();
+      } catch (error) {
+        result = {
+          ok: false,
+          message:
+            error instanceof Error
+              ? error.message
+              : 'Re-review could not be started.',
+        };
+      } finally {
+        setCommandPending(false);
+      }
+      if (!result?.ok) {
+        setCommandFeedback({
+          message:
+            result?.message ??
+            'Re-review is unavailable while this PR revision is changing.',
+          tone: 'error',
+        });
+        return;
+      }
+      setInput('');
+      setCommandFeedback({
+        message: result.message,
+        tone: 'info',
+      });
+      return;
+    }
+    if (command?.kind === 'agent-message') message = command.message;
+    setCommandFeedback(null);
     setInput('');
     if (onSendMessage) {
       onSendMessage(message);
@@ -626,6 +712,7 @@ function ReviewerConversation({
   }
 
   function handleKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
+    if (commandMenu.handleKeyDown(event)) return;
     if (
       event.key !== 'Enter' ||
       event.shiftKey ||
@@ -685,6 +772,24 @@ function ReviewerConversation({
         </button>
       ) : null}
       <form className="pr-reviewer-chat-form" onSubmit={submit}>
+        <SlashCommandTypeahead
+          activeCommand={commandMenu.activeCommand}
+          activeCommandIndex={commandMenu.activeIndex}
+          commands={commandMenu.visibleCommands}
+          compact
+          id={commandMenu.id}
+          onSelect={commandMenu.complete}
+          open={commandMenu.open}
+        />
+        {commandFeedback ? (
+          <div
+            className="pr-reviewer-chat-command-feedback"
+            data-tone={commandFeedback.tone}
+            role={commandFeedback.tone === 'error' ? 'alert' : 'status'}
+          >
+            {commandFeedback.message}
+          </div>
+        ) : null}
         {request?.delivery === 'failed' ? (
           <div className="pr-reviewer-chat-error" role="alert">
             <p>Reviewer request failed</p>
@@ -698,10 +803,18 @@ function ReviewerConversation({
           Ask the reviewer a question
         </label>
         <textarea
+          aria-activedescendant={commandMenu.activeOptionId}
+          aria-autocomplete="list"
+          aria-controls={commandMenu.id}
           aria-describedby={`${inputId}-shortcut`}
+          aria-expanded={commandMenu.open}
           disabled={!ready}
           id={inputId}
-          onChange={(event) => setInput(event.currentTarget.value)}
+          onChange={(event) => {
+            setInput(event.currentTarget.value);
+            commandMenu.resetDismissal();
+            setCommandFeedback(null);
+          }}
           onKeyDown={handleKeyDown}
           placeholder={
             isLocked
@@ -715,13 +828,17 @@ function ReviewerConversation({
                   : 'Loading reviewer history…'
           }
           rows={3}
+          readOnly={commandPending}
+          role="combobox"
           value={input}
         />
         <div className="pr-reviewer-chat-actions">
           <span aria-live="polite" id={`${inputId}-shortcut`}>
-            {agent.status === 'streaming'
-              ? 'Reviewer is responding · follow-ups are queued'
-              : sendError || 'Enter send · Shift+Enter newline'}
+            {commandMenu.open
+              ? 'Tab complete · arrows select · Escape close'
+              : agent.status === 'streaming'
+                ? 'Reviewer is responding · follow-ups are queued'
+                : sendError || 'Enter send · Shift+Enter newline'}
           </span>
           {connectionError ? (
             <button disabled={isLocked} onClick={onReconnect} type="button">
@@ -729,10 +846,10 @@ function ReviewerConversation({
             </button>
           ) : (
             <button
-              disabled={!ready || input.trim().length === 0}
+              disabled={!ready || commandPending || input.trim().length === 0}
               type="submit"
             >
-              {sending ? 'Sending' : 'Ask'}
+              {commandPending ? 'Starting' : sending ? 'Sending' : 'Ask'}
             </button>
           )}
         </div>
