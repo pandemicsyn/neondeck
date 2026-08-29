@@ -140,13 +140,19 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
           memory and skill candidates, recent decisions, and manual trigger buttons.
           The same state is available everywhere:
         </p>
-        <pre><code>neondeck learning status | reviews | candidates | events
+        <pre><code>neondeck learning status
+neondeck learning reviews
+neondeck learning candidates
+neondeck learning events
 GET  /api/learning/state          # consolidated operator view
 POST /api/learning/reviews/conversation
 POST /api/learning/reviews/prs
 POST /api/learning/curate
-POST /api/learning/candidates/:id/approve | reject
-POST /api/skills/patches/:id/apply | reject | restore</code></pre>
+POST /api/learning/candidates/:id/approve
+POST /api/learning/candidates/:id/reject
+POST /api/skills/patches/:id/apply
+POST /api/skills/patches/:id/reject
+POST /api/skills/patches/:id/restore</code></pre>
         <p>
           Neon itself reads the same state through
           <code>neondeck_learning_operator_state_lookup</code>, so you can just
