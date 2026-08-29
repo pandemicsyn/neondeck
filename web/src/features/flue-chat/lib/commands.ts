@@ -30,14 +30,16 @@ export function mergeCommandCatalog(
     });
   }
 
-  const byName = new Map<string, ChatSlashCommand>();
+  const byCompletion = new Map<string, ChatSlashCommand>();
+  const configuredNames = new Set<string>();
   for (const quickCommand of commands) {
     const command = commandFromQuickCommand(quickCommand);
     if (canonicalCommandNames && !canonicalCommandNames.has(command.name)) {
       continue;
     }
+    configuredNames.add(command.name);
     const details = detailsByName.get(command.name);
-    byName.set(command.name, {
+    byCompletion.set(command.completion!.trim().toLowerCase(), {
       ...details,
       ...command,
       description:
@@ -46,9 +48,11 @@ export function mergeCommandCatalog(
     });
   }
   for (const command of canonicalCommands) {
-    if (!byName.has(command.name)) byName.set(command.name, command);
+    if (!configuredNames.has(command.name)) {
+      byCompletion.set(command.name, command);
+    }
   }
-  return [...byName.values()];
+  return [...byCompletion.values()];
 }
 
 export const commandQueryFromInput = slashCommandQueryFromInput;

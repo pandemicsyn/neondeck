@@ -20,6 +20,10 @@ export function slashCommandToken(command: ChatSlashCommand) {
   return `/${command.name}`;
 }
 
+export function slashCommandDisplay(command: ChatSlashCommand) {
+  return command.completion ?? slashCommandToken(command);
+}
+
 export function slashCommandTokens(command: ChatSlashCommand) {
   return [command.name, ...(command.aliases ?? [])].map(
     (name) => `/${name.toLowerCase()}`,

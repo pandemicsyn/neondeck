@@ -92,6 +92,27 @@ describe('chat command catalog', () => {
     );
   });
 
+  it('preserves multiple configured presets for one canonical command', () => {
+    const catalog = mergeCommandCatalog(
+      [
+        { label: 'High reasoning', command: '/reasoning high' },
+        { label: 'Disable reasoning', command: '/reasoning off' },
+      ],
+      [
+        {
+          name: 'reasoning',
+          usage: '/reasoning <level>',
+          description: 'Set the reasoning level.',
+        },
+      ],
+    );
+
+    expect(catalog).toEqual([
+      expect.objectContaining({ completion: '/reasoning high' }),
+      expect.objectContaining({ completion: '/reasoning off' }),
+    ]);
+  });
+
   it('clamps the active command index when suggestions shrink', () => {
     expect(clampCommandIndex(5, 2)).toBe(1);
     expect(clampCommandIndex(-1, 2)).toBe(0);

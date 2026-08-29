@@ -1,7 +1,7 @@
 // The rich slash-command popup is the listbox owned by a multiline combobox;
 // a native select/datalist cannot preserve descriptions and completion flow.
 /* oxlint-disable jsx-a11y/prefer-tag-over-role */
-import { slashCommandToken } from './types';
+import { slashCommandDisplay } from './types';
 import type { ChatSlashCommand } from './types';
 
 export function SlashCommandTypeahead({
@@ -31,7 +31,7 @@ export function SlashCommandTypeahead({
       role="listbox"
     >
       {commands.slice(0, 6).map((command, index) => {
-        const selected = activeCommand?.name === command.name;
+        const selected = activeCommand === command;
         const aliases = command.aliases?.map((alias) => `/${alias}`).join(', ');
         return (
           <button
@@ -39,7 +39,7 @@ export function SlashCommandTypeahead({
             className={`command-typeahead-option flex w-full items-center py-1.5 text-left ${compact ? 'gap-2 px-3' : 'gap-4 px-[18px]'}`}
             data-active={index === activeCommandIndex}
             id={`${id}-option-${index}`}
-            key={`${command.scope}:${command.name}`}
+            key={`${command.scope}:${slashCommandDisplay(command).toLowerCase()}`}
             onMouseDown={(event) => event.preventDefault()}
             onClick={() => onSelect(command)}
             role="option"
@@ -49,7 +49,7 @@ export function SlashCommandTypeahead({
             <span
               className={`${compact ? 'w-[11ch]' : 'w-[18ch]'} shrink-0 truncate text-[13px] font-semibold text-ink`}
             >
-              {slashCommandToken(command)}
+              {slashCommandDisplay(command)}
             </span>
             <span className="flex min-w-0 items-center gap-2 text-[12px] text-muted">
               {aliases ? (

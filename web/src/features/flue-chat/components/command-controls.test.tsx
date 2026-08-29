@@ -26,6 +26,33 @@ describe('SlashCommandTypeahead accessibility', () => {
     expect(html).toContain('role="option"');
     expect(html).toContain('aria-selected="true"');
   });
+
+  it('distinguishes multiple presets for one command', () => {
+    const commands: ChatSlashCommand[] = [
+      {
+        ...command('reasoning', 'High reasoning'),
+        completion: '/reasoning high',
+      },
+      {
+        ...command('reasoning', 'Disable reasoning'),
+        completion: '/reasoning off',
+      },
+    ];
+    const html = renderToStaticMarkup(
+      <SlashCommandTypeahead
+        activeCommand={commands[1]}
+        activeCommandIndex={1}
+        commands={commands}
+        id="command-menu"
+        onSelect={vi.fn<(command: (typeof commands)[number]) => void>()}
+        open
+      />,
+    );
+
+    expect(html).toContain('/reasoning high');
+    expect(html).toContain('/reasoning off');
+    expect(html.match(/aria-selected="true"/g)).toHaveLength(1);
+  });
 });
 
 function command(name: string, label: string): ChatSlashCommand {

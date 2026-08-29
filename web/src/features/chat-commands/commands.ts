@@ -1,5 +1,9 @@
 import type { ChatSlashCommand } from './types';
-import { slashCommandToken, slashCommandTokens } from './types';
+import {
+  slashCommandDisplay,
+  slashCommandToken,
+  slashCommandTokens,
+} from './types';
 
 export function slashCommandQueryFromInput(input: string) {
   const trimmedStart = input.trimStart();
@@ -35,7 +39,7 @@ export function clampSlashCommandIndex(index: number, commandCount: number) {
 }
 
 export function slashCommandCompletion(command: ChatSlashCommand) {
-  return `${command.completion ?? slashCommandToken(command)} `;
+  return `${slashCommandDisplay(command)} `;
 }
 
 export function inputExactlyNamesSlashCommand(
