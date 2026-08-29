@@ -1,0 +1,258 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+  <style>
+    body { margin: 0; background: #05060a; }
+    .shell, .shell * { box-sizing: border-box; }
+    .shell {
+      --ts: 1.12; --ds: 1;
+      --sans: "IBM Plex Sans", system-ui, -apple-system, sans-serif;
+      --mono: "IBM Plex Mono", "SFMono-Regular", Consolas, monospace;
+      --disp: "Chakra Petch", ui-sans-serif, system-ui, sans-serif;
+      --canvas: #0a0b10; --panel: #0a0b10; --field: #070810; --soft: rgba(255,255,255,0.04);
+      --line: rgba(255,255,255,0.07); --chrome: #070810;
+      --ink: #d7f7ff; --muted: #91a8b0;
+      --primary: #00b7c7; --primary-strong: #69e6ff; --primary-ink: #070810;
+      --accent: #ff4fb8; --violet: #b59cff;
+      font: 400 calc(11px * var(--ts))/1.5 var(--sans);
+      color: var(--ink);
+    }
+    .shell[data-theme="light"] {
+      --canvas: #edf5f8; --panel: #edf5f8; --field: #dbeaef; --soft: rgba(20,45,60,0.05);
+      --line: rgba(20,45,60,0.13); --chrome: #dbeaef;
+      --ink: #19232e; --muted: #56646d;
+      --primary: #006f7f; --primary-strong: #005b69; --primary-ink: #edf5f8;
+      --accent: #b31170; --violet: #6034bd;
+    }
+    .shell[data-hue="green"]  { --tour: #5cf28f; }
+    .shell[data-hue="violet"] { --tour: #b59cff; }
+    .shell[data-hue="none"]   { --tour: #d7f7ff; }
+    .shell[data-theme="light"][data-hue="green"]  { --tour: #0d7a42; }
+    .shell[data-theme="light"][data-hue="violet"] { --tour: #6034bd; }
+    .shell[data-theme="light"][data-hue="none"]   { --tour: #19232e; }
+
+    .shell button { font: inherit; cursor: pointer; border-radius: 0; }
+    .cbtn {
+      display: inline-flex; min-height: calc(24px * var(--ds)); align-items: center; justify-content: center;
+      border: 1px solid var(--line); background: var(--field); padding: 4px 6px;
+      color: var(--ink); font-family: var(--mono); font-size: calc(9.5px * var(--ts));
+      line-height: 1; white-space: nowrap;
+      transition: background-color 160ms ease, border-color 160ms ease, color 160ms ease;
+    }
+    .cbtn:hover { border-color: var(--primary); background: color-mix(in srgb, var(--primary) 8%, var(--field)); color: var(--primary-strong); }
+    .cbtn[data-lead] { border-color: color-mix(in srgb, var(--tour) 55%, var(--line)); color: var(--tour); }
+    .cbtn[data-lead]:hover { border-color: var(--tour); background: color-mix(in srgb, var(--tour) 10%, var(--field)); color: var(--tour); }
+
+    .tabs { display: grid; grid-template-columns: 1fr 1fr; border-bottom: 1px solid var(--line); background: var(--chrome); }
+    .tab { min-height: calc(30px * var(--ds)); border: 0; border-right: 1px solid var(--line); background: transparent;
+      color: var(--muted); font-family: var(--mono); font-size: calc(10px * var(--ts)); letter-spacing: 0.04em; text-transform: uppercase; }
+    .tab[data-on] { background: color-mix(in srgb, var(--primary) 10%, var(--field));
+      box-shadow: inset 0 -1px 0 var(--primary); color: var(--primary-strong); }
+
+    .stage { border-top: 1px solid var(--line); background: color-mix(in srgb, var(--panel) 72%, var(--field));
+      padding: 5px 10px; color: var(--muted); font-family: var(--mono); font-size: calc(9.5px * var(--ts));
+      letter-spacing: 0.06em; text-transform: uppercase; }
+    .stage b { color: var(--tour); font-weight: 600; }
+    .wrap { padding: 8px; display: grid; gap: 8px; }
+
+    .msg-a { border: 1px solid rgba(255,255,255,0.08); border-left: 2px solid var(--primary);
+      background: rgba(255,255,255,0.04); padding: 9px 11px; }
+    .shell[data-theme="light"] .msg-a { border-color: rgba(20,45,60,0.14); background: rgba(20,45,60,0.05); border-left-color: var(--primary); }
+    .msg-role { margin: 0 0 6px; font-family: var(--mono); font-size: calc(10px * var(--ts)); font-weight: 600; color: var(--muted); }
+    .msg-say { margin: 0 0 8px; font-size: calc(10.5px * var(--ts)); line-height: 1.55; color: var(--ink); }
+
+    .card { border: 1px solid var(--line); border-left: 2px solid var(--tour); background: var(--field); }
+    .card-head { display: flex; align-items: center; justify-content: space-between; gap: 8px;
+      border-bottom: 1px solid var(--line); padding: 6px 8px; font-family: var(--mono); font-size: calc(9.5px * var(--ts)); }
+    .card-kick { color: var(--tour); font-weight: 600; letter-spacing: 0.08em; }
+    .card-prog { color: var(--muted); font-variant-numeric: tabular-nums; }
+    .card-body { padding: 8px; }
+    .card-title { margin: 0; font-size: calc(11px * var(--ts)); font-weight: 600; color: var(--ink); line-height: 1.35; }
+    .card-sum { margin: 4px 0 0; color: var(--muted); font-size: calc(10px * var(--ts)); line-height: 1.45; }
+
+    .mark { display: inline-flex; flex: none; width: 16px; height: 16px; align-items: center; justify-content: center;
+      border: 1px solid var(--tour); background: var(--tour); color: var(--primary-ink);
+      font-family: var(--mono); font-size: calc(9px * var(--ts)); font-weight: 600; line-height: 1; font-variant-numeric: tabular-nums; }
+    .mark[data-ghost] { background: transparent; color: var(--tour); border-color: color-mix(in srgb, var(--tour) 45%, var(--line)); }
+
+    .spine { margin: 10px 0 0; padding: 0; list-style: none; }
+    .spine li { position: relative; display: flex; gap: 8px; padding: 0 0 10px 0; }
+    .spine li:last-child { padding-bottom: 0; }
+    .spine li::before { content: ""; position: absolute; left: 8px; top: 17px; bottom: 1px; width: 1px;
+      background: color-mix(in srgb, var(--tour) 35%, var(--line)); }
+    .spine li:last-child::before { display: none; }
+    .sp-txt { display: block; min-width: 0; padding-top: 1px; }
+    .sp-sym { display: block; font-family: var(--mono); font-size: calc(10px * var(--ts)); color: var(--ink);
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .sp-file { display: block; margin-top: 1px; font-family: var(--mono); font-size: calc(9px * var(--ts)); color: var(--muted);
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .spine li[data-state="done"] .sp-sym { color: var(--muted); }
+    .spine li[data-state="todo"] .sp-sym { color: var(--muted); }
+    .spine li[data-state="now"] .sp-sym { color: var(--tour); font-weight: 600; }
+    .sp-btn { display: flex; flex: 1 1 auto; min-width: 0; align-items: flex-start; gap: 8px;
+      border: 0; background: none; padding: 0; text-align: left; color: inherit; font: inherit; }
+    .sp-btn:hover .sp-sym { color: var(--tour); }
+    .card-foot { display: flex; flex-wrap: wrap; gap: 6px; border-top: 1px solid var(--line); padding: 7px 8px; }
+
+    /* investigating */
+    .bones { display: grid; gap: 7px; margin-top: 10px; }
+    .bone { display: flex; align-items: center; gap: 8px; }
+    .bone i { display: block; width: 16px; height: 16px; flex: none;
+      border: 1px dashed color-mix(in srgb, var(--tour) 30%, var(--line)); }
+    .bone u { display: block; height: 8px; background: var(--line); text-decoration: none;
+      animation: pulse 1.2s ease-in-out infinite; }
+    @keyframes pulse { 0%, 100% { opacity: 0.5; } 50% { opacity: 1; } }
+    .working { display: inline-flex; align-items: center; gap: 6px; color: var(--tour);
+      font-family: var(--mono); font-size: calc(9.5px * var(--ts)); }
+    .working em { display: block; width: 6px; height: 6px; background: var(--tour); font-style: normal;
+      animation: pulse 1.2s ease-in-out infinite; }
+
+    /* superseded / closed strips */
+    .strip { display: flex; align-items: center; justify-content: space-between; gap: 8px;
+      border: 1px solid var(--line); border-left: 2px solid color-mix(in srgb, var(--tour) 30%, var(--line));
+      background: var(--field); padding: 7px 8px; color: var(--muted);
+      font-family: var(--mono); font-size: calc(9.5px * var(--ts)); }
+    .strip s { text-decoration: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .note { margin: 0; padding: 0 2px; color: var(--muted); font-size: calc(9.5px * var(--ts)); line-height: 1.5; }
+  </style>
+</helmet>
+
+<div class="shell" data-theme="{{theme}}" data-hue="{{hue}}" style="display: flex; width: 380px; height: 920px; flex-direction: column; border: 1px solid var(--line); background: var(--panel); overflow: hidden;">
+
+  <div class="tabs">
+    <button class="tab" type="button">Review</button>
+    <button class="tab" type="button" data-on>Ask reviewer</button>
+  </div>
+
+  <div style="min-height: 0; flex: 1 1 auto; overflow: auto;">
+
+    <!-- ============ 1. INVESTIGATING ============ -->
+    <p class="stage"><b>1</b> &middot; investigating</p>
+    <div class="wrap">
+      <article class="msg-a">
+        <p class="msg-role">reviewer</p>
+        <div class="card">
+          <div class="card-head">
+            <span class="card-kick">GUIDED TOUR</span>
+            <span class="working"><em></em>tracing</span>
+          </div>
+          <div class="card-body">
+            <p class="card-title">How the reviewer is bound to one revision</p>
+            <p class="card-sum">Reading the session id, the agent mount and the draft-tool guard.</p>
+            <div class="bones">
+              <div class="bone"><i></i><u style="width: 62%;"></u></div>
+              <div class="bone"><i></i><u style="width: 78%;"></u></div>
+              <div class="bone"><i></i><u style="width: 45%;"></u></div>
+            </div>
+          </div>
+        </div>
+      </article>
+      <p class="note">No annotations are installed until the whole tour validates. A partial tour is never shown.</p>
+    </div>
+
+    <!-- ============ 2. ACTIVE ============ -->
+    <p class="stage"><b>2</b> &middot; published &middot; walking it</p>
+    <div class="wrap">
+      <article class="msg-a">
+        <p class="msg-role">reviewer</p>
+        <p class="msg-say">Traced it across the session id, the mount, the per-call guard and the route. Four steps.</p>
+        <div class="card">
+          <div class="card-head">
+            <span class="card-kick">GUIDED TOUR</span>
+            <span class="card-prog">2 / 4</span>
+          </div>
+          <div class="card-body">
+            <p class="card-title">How the reviewer is bound to one revision</p>
+            <p class="card-sum">Every place the reviewId + headSha pair is derived, enforced, or re-checked before a tool can write.</p>
+            <ol class="spine">
+              <sc-for list="{{spine}}" as="sp" hint-placeholder-count="4">
+                <li data-state="{{sp.state}}">
+                  <button class="sp-btn" type="button">
+                    <span class="mark" data-ghost="{{sp.ghost}}">{{sp.i}}</span>
+                    <span class="sp-txt">
+                      <span class="sp-sym">{{sp.symbol}}</span>
+                      <span class="sp-file">{{sp.where}}</span>
+                    </span>
+                  </button>
+                </li>
+              </sc-for>
+            </ol>
+          </div>
+          <div class="card-foot">
+            <button class="cbtn" data-lead type="button">Next &rsaquo;</button>
+            <button class="cbtn" type="button">Start over</button>
+            <button class="cbtn" type="button">Close tour</button>
+          </div>
+        </div>
+      </article>
+      <p class="note">Selecting a step here and pressing <span style="font-family: var(--mono); color: var(--ink);">]</span> in the diff are the same action &mdash; both move the shared cursor. Neither calls the model.</p>
+    </div>
+
+    <!-- ============ 3. SUPERSEDED ============ -->
+    <p class="stage"><b>3</b> &middot; replaced by a second /show-me</p>
+    <div class="wrap">
+      <div class="strip">
+        <s>Replaced &middot; How the reviewer is bound&hellip;</s>
+        <span style="flex: none; color: color-mix(in srgb, var(--tour) 70%, var(--muted));">4 steps &middot; gone</span>
+      </div>
+      <article class="msg-a">
+        <p class="msg-role">reviewer</p>
+        <div class="card">
+          <div class="card-head">
+            <span class="card-kick">GUIDED TOUR</span>
+            <span class="card-prog">1 / 3</span>
+          </div>
+          <div class="card-body">
+            <p class="card-title">Where the tour itself gets persisted</p>
+            <p class="card-sum">The replacement transaction, its generation counter, and the event clients filter on.</p>
+          </div>
+          <div class="card-foot">
+            <button class="cbtn" data-lead type="button">Next &rsaquo;</button>
+            <button class="cbtn" type="button">Close tour</button>
+          </div>
+        </div>
+      </article>
+      <p class="note">The old card collapses to a strip in place rather than vanishing &mdash; the transcript stays readable, but only one tour is ever live. Its annotations are already gone from the diff.</p>
+    </div>
+
+    <!-- ============ 4. CLOSED ============ -->
+    <p class="stage"><b>4</b> &middot; closed by the reviewer</p>
+    <div class="wrap">
+      <div class="strip">
+        <s>Tour closed &middot; Where the tour itself gets persisted</s>
+        <button class="cbtn" data-lead type="button" style="flex: none;">Reopen</button>
+      </div>
+      <p class="note">Closing hides the annotations and the card body. It does not delete the tour and it does not call the model &mdash; reopening restores it at step one.</p>
+    </div>
+
+  </div>
+</div>
+</x-dc>
+<script data-dc-script data-props='{
+  "theme": {"editor": "enum", "options": ["dark", "light"], "default": "dark", "section": "Board"},
+  "hue": {"editor": "enum", "options": ["green", "violet", "none"], "default": "green", "section": "Board"}
+}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {
+      theme: this.props.theme ?? 'dark',
+      hue: this.props.hue ?? 'green',
+      spine: [
+        { i: 1, symbol: 'prReviewerConversationId', where: 'pr-reviewer-session.ts L18–L20', state: 'done', ghost: true },
+        { i: 2, symbol: 'tool mounting', where: 'pr-reviewer.ts L246–L251', state: 'now', ghost: undefined },
+        { i: 3, symbol: 'boundReview', where: 'draft-tools.ts L276–L281', state: 'todo', ghost: true },
+        { i: 4, symbol: 'createPrReviewerRoute', where: 'pr-reviewer.ts L50–L55', state: 'todo', ghost: true },
+      ],
+    };
+  }
+}
+</script>
+</body>
+</html>

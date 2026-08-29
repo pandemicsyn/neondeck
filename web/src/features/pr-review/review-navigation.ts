@@ -17,6 +17,8 @@ import {
 } from '../../../../shared/review-navigation';
 import type { DiffFilePatch } from '../diff-viewer/types';
 import type { NeonReviewFinding } from '../../../../shared/review-finding';
+import type { PrReviewTour } from '../../../../shared/pr-review-tour';
+import { prReviewTourAnnotationId } from '../../../../shared/pr-review-tour';
 import type { NeonFindingAnchorResolution } from './review-findings';
 import {
   namespacedReviewUiId,
@@ -96,6 +98,7 @@ export function createPrReviewNavigationData({
   neonFindings = [],
   staleCommentIds,
   threads,
+  tour = null,
 }: {
   draft: GitHubPrReviewDraft | null;
   files: DiffFilePatch[];
@@ -104,6 +107,7 @@ export function createPrReviewNavigationData({
   neonFindings?: readonly NeonReviewFinding[];
   staleCommentIds: ReadonlySet<string>;
   threads: GitHubPullRequestReviewThread[];
+  tour?: PrReviewTour | null;
 }): PrReviewNavigationData {
   const items: ReviewNavigationItem[] = [];
   const anchors = new Map<string, ReviewNavigationAnchor>();
@@ -195,6 +199,25 @@ export function createPrReviewNavigationData({
     anchors.set(navigationTargetKey(item.kind, item.id), {
       annotationId: neonFindingAnnotationId(finding.id),
       selection: resolution?.state === 'anchored' ? resolution.selection : null,
+    });
+  }
+  for (const step of tour?.steps ?? []) {
+    const item = {
+      id: step.id,
+      kind: 'tour' as const,
+      line: step.anchor.endLine,
+      ordinal: step.ordinal,
+      path: step.file,
+      summary: step.explanation,
+    };
+    items.push(item);
+    anchors.set(navigationTargetKey(item.kind, item.id), {
+      annotationId: prReviewTourAnnotationId(step.id),
+      selection: {
+        side: step.anchor.side,
+        start: step.anchor.startLine,
+        end: step.anchor.endLine,
+      } as SelectedLineRange,
     });
   }
 
@@ -448,6 +471,8 @@ export function reviewNavigationKindLabel(kind: ReviewCursorKind) {
       return 'local draft';
     case 'finding':
       return 'Neon finding';
+    case 'tour':
+      return 'Tour';
     case 'attention':
       return 'attention item';
   }

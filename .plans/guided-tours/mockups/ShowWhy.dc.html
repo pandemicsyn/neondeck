@@ -1,0 +1,272 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+  <style>
+    body { margin: 0; background: #05060a; }
+    .shell, .shell * { box-sizing: border-box; }
+    .shell {
+      --ts: 1.12; --ds: 1;
+      --sans: "IBM Plex Sans", system-ui, -apple-system, sans-serif;
+      --mono: "IBM Plex Mono", "SFMono-Regular", Consolas, monospace;
+      --disp: "Chakra Petch", ui-sans-serif, system-ui, sans-serif;
+      --canvas: #0a0b10; --panel: #0a0b10; --field: #070810; --soft: rgba(255,255,255,0.04);
+      --line: rgba(255,255,255,0.07); --chrome: #070810;
+      --ink: #d7f7ff; --muted: #91a8b0;
+      --primary: #00b7c7; --primary-strong: #69e6ff; --primary-ink: #070810;
+      --accent: #ff4fb8; --violet: #b59cff;
+      --dbg: #0a0a0a; --dfg: #fafafa; --dadd: #5ecc71;
+      font: 400 calc(11px * var(--ts))/1.5 var(--sans);
+      color: var(--ink);
+    }
+    .shell[data-theme="light"] {
+      --canvas: #edf5f8; --panel: #edf5f8; --field: #dbeaef; --soft: rgba(20,45,60,0.05);
+      --line: rgba(20,45,60,0.13); --chrome: #dbeaef;
+      --ink: #19232e; --muted: #56646d;
+      --primary: #006f7f; --primary-strong: #005b69; --primary-ink: #edf5f8;
+      --accent: #b31170; --violet: #6034bd;
+      --dbg: #ffffff; --dfg: #1c2430; --dadd: #0dbe4e;
+    }
+    .shell[data-hue="green"]  { --tour: #5cf28f; }
+    .shell[data-hue="violet"] { --tour: #b59cff; }
+    .shell[data-hue="none"]   { --tour: #d7f7ff; }
+    .shell[data-theme="light"][data-hue="green"]  { --tour: #0d7a42; }
+    .shell[data-theme="light"][data-hue="violet"] { --tour: #6034bd; }
+    .shell[data-theme="light"][data-hue="none"]   { --tour: #19232e; }
+
+    .shell button { font: inherit; cursor: pointer; border-radius: 0; }
+    .cbtn {
+      display: inline-flex; min-height: calc(24px * var(--ds)); align-items: center; justify-content: center; gap: 4px;
+      border: 1px solid var(--line); background: var(--field); padding: 4px 6px;
+      color: var(--ink); font-family: var(--mono); font-size: calc(9.5px * var(--ts));
+      line-height: 1; white-space: nowrap;
+      transition: background-color 160ms ease, border-color 160ms ease, color 160ms ease;
+    }
+    .cbtn:hover { border-color: var(--primary); background: color-mix(in srgb, var(--primary) 8%, var(--field)); color: var(--primary-strong); }
+    .cbtn[data-lead] { border-color: color-mix(in srgb, var(--tour) 55%, var(--line)); color: var(--tour); font-weight: 600; }
+    .cbtn[data-lead]:hover { border-color: var(--tour); background: color-mix(in srgb, var(--tour) 10%, var(--field)); color: var(--tour); }
+
+    .stage { border-top: 1px solid var(--line); border-bottom: 1px solid var(--line);
+      background: color-mix(in srgb, var(--chrome) 90%, transparent); padding: 6px 12px;
+      color: var(--muted); font-family: var(--mono); font-size: calc(10px * var(--ts));
+      letter-spacing: 0.08em; text-transform: uppercase; }
+    .stage b { color: var(--tour); font-weight: 600; }
+    .wrap { padding: 12px; }
+    .note { margin: 9px 0 0; max-width: 92ch; color: var(--muted); font-size: calc(10.5px * var(--ts)); line-height: 1.5; }
+    .note b { color: var(--ink); font-weight: 500; }
+    .mn { font-family: var(--mono); color: var(--ink); }
+
+    /* diff scaffolding, just enough to seat the annotation */
+    .patch { background: var(--dbg); font-family: var(--mono); font-size: calc(10.5px * var(--ts)); line-height: 1.55; padding: 6px 0; }
+    .dl { display: grid; grid-template-columns: 7ch minmax(0, 1fr); }
+    .dn { position: relative; padding: 0 1ch 0 2ch; text-align: right; user-select: none;
+      border-right: 2px solid var(--dbg); color: color-mix(in lab, var(--dfg) 65%, var(--dbg)); }
+    .dn::before { content: ""; position: absolute; top: 0; left: 0; width: 4px; height: 100%; }
+    .dc { padding: 0 1ch; color: var(--dfg); white-space: pre-wrap; overflow-wrap: anywhere; }
+    .dl[data-t="add"] .dc { background: color-mix(in lab, var(--dbg) 80%, var(--dadd)); }
+    .dl[data-t="add"] .dn { background: color-mix(in lab, var(--dbg) 85%, var(--dadd)); }
+    .dl[data-t="add"] .dn::before { background: var(--dadd); }
+    .arow { background: color-mix(in lab, var(--dbg) 92.5%, var(--dfg)); padding: 4px 8px 6px 7ch; }
+
+    /* finding — styles.css:2041 */
+    .finding { display: grid; gap: 6px; border: 1px solid var(--line);
+      background: color-mix(in srgb, var(--primary) 5%, var(--field)); padding: 8px; color: var(--ink); }
+    .f-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px;
+      font-family: var(--mono); font-size: calc(10px * var(--ts)); }
+    .f-title { color: var(--primary-strong); font-weight: 600; min-width: 0; }
+    .f-state { flex: none; color: var(--ink); font-size: calc(9px * var(--ts)); font-variant-numeric: tabular-nums; }
+    .f-copy { margin: 0; max-width: 92ch; font-family: var(--sans); font-size: calc(10.5px * var(--ts)); line-height: 1.45; }
+    .f-meta { margin: 0; max-width: 92ch; color: var(--muted); font-family: var(--mono);
+      font-size: calc(9.5px * var(--ts)); line-height: 1.45; }
+    .f-meta span { color: var(--ink); }
+    .acts { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+    .paths { color: var(--primary); }
+
+    /* tour card */
+    .mark { display: inline-flex; flex: none; width: 16px; height: 16px; align-items: center; justify-content: center;
+      border: 1px solid var(--tour); background: var(--tour); color: var(--primary-ink);
+      font-family: var(--mono); font-size: calc(9px * var(--ts)); font-weight: 600; line-height: 1; font-variant-numeric: tabular-nums; }
+    .mark[data-ghost] { background: transparent; color: var(--tour); border-color: color-mix(in srgb, var(--tour) 45%, var(--line)); }
+    .card { max-width: 560px; border: 1px solid var(--line); border-left: 2px solid var(--tour); background: var(--field); }
+    .card-head { display: flex; align-items: center; justify-content: space-between; gap: 8px;
+      border-bottom: 1px solid var(--line); padding: 6px 8px; font-family: var(--mono); font-size: calc(9.5px * var(--ts)); }
+    .card-kick { color: var(--tour); font-weight: 600; letter-spacing: 0.08em; }
+    .card-prog { color: var(--muted); font-variant-numeric: tabular-nums; }
+    .card-body { padding: 8px; }
+    .card-title { margin: 0; font-size: calc(11px * var(--ts)); font-weight: 600; color: var(--ink); line-height: 1.35; }
+    .card-sum { margin: 4px 0 0; color: var(--muted); font-size: calc(10px * var(--ts)); line-height: 1.45; }
+    .spine { margin: 10px 0 0; padding: 0; list-style: none; }
+    .spine li { position: relative; display: flex; gap: 8px; padding: 0 0 10px 0; }
+    .spine li:last-child { padding-bottom: 0; }
+    .spine li::before { content: ""; position: absolute; left: 8px; top: 17px; bottom: 1px; width: 1px;
+      background: color-mix(in srgb, var(--tour) 35%, var(--line)); }
+    .spine li:last-child::before { display: none; }
+    .sp-txt { display: block; min-width: 0; padding-top: 1px; }
+    .sp-sym { display: block; font-family: var(--mono); font-size: calc(10px * var(--ts)); color: var(--ink); }
+    .sp-say { display: block; margin-top: 1px; font-size: calc(9.5px * var(--ts)); color: var(--muted); line-height: 1.45; }
+    .spine li[data-state="todo"] .sp-sym { color: var(--muted); }
+    .spine li[data-state="now"] .sp-sym { color: var(--tour); font-weight: 600; }
+    .card-foot { display: flex; flex-wrap: wrap; gap: 6px; border-top: 1px solid var(--line); padding: 7px 8px; }
+
+    .placeholder { display: flex; max-width: 560px; align-items: center; justify-content: center;
+      border: 1px dashed color-mix(in srgb, var(--tour) 30%, var(--line)); padding: 26px 16px;
+      color: var(--muted); font-family: var(--mono); font-size: calc(10px * var(--ts)); text-align: center; }
+  </style>
+</helmet>
+
+<div class="shell" data-theme="{{theme}}" data-hue="{{hue}}" style="display: flex; width: 1000px; height: 920px; flex-direction: column; border: 1px solid var(--line); background: var(--canvas); overflow: hidden;">
+
+  <div style="min-height: 0; flex: 1 1 auto; overflow: auto;">
+
+    <!-- ===== TODAY ===== -->
+    <p class="stage">Today &middot; a cross-file finding has only prose</p>
+    <div class="wrap">
+      <div class="patch">
+        <div class="dl"><span class="dn">243</span><span class="dc">export function reviewerTools(conversation: PrReviewerConversation) {</span></div>
+        <div class="dl"><span class="dn">244</span><span class="dc">  const tools = [...workspaceTools];</span></div>
+        <div class="dl" data-t="add"><span class="dn">245</span><span class="dc">  if (conversation.headSha) {</span></div>
+        <div class="arow">
+          <article class="finding">
+            <div class="f-head">
+              <span class="f-title">The revision binding refuses three different ways</span>
+              <span class="f-state">major &middot; active, high confidence</span>
+            </div>
+            <p class="f-copy">The route guard at <span class="paths">src/agents/pr-reviewer.ts:55</span> answers 400. This mount at <span class="paths">src/agents/pr-reviewer.ts:245</span> skips silently with no signal at all. <span class="paths">boundReview</span> in <span class="paths">src/modules/pr-reviewer/draft-tools.ts:277</span> throws. And <span class="paths">parsePrReviewerConversationId</span> in <span class="paths">shared/pr-reviewer-session.ts:23</span> returns <span class="paths">headSha: null</span> rather than refusing, which is what lets the silent case exist. A caller cannot tell which layer refused, and one of them says nothing.</p>
+            <p class="f-meta"><span>Suggested action:</span> give the mount an else branch that records an unavailability reason.</p>
+            <div class="acts">
+              <button class="cbtn" type="button">Add to local draft</button>
+              <button class="cbtn" type="button">Dismiss locally</button>
+            </div>
+          </article>
+        </div>
+        <div class="dl"><span class="dn">246</span><span class="dc">    tools.push(</span></div>
+      </div>
+      <p class="note">Four file:line references in one paragraph, anchored to a line that is only one of them. <b>The finding is correct and nearly unreadable</b> &mdash; and the reviewer has to hand-navigate to three other places to check it.</p>
+    </div>
+
+    <!-- ===== WITH TOURS ===== -->
+    <p class="stage"><b>With tours</b> &middot; one more verb on the same card</p>
+    <div class="wrap">
+      <div class="patch">
+        <div class="dl" data-t="add"><span class="dn">245</span><span class="dc">  if (conversation.headSha) {</span></div>
+        <div class="arow">
+          <article class="finding">
+            <div class="f-head">
+              <span class="f-title">The revision binding refuses three different ways</span>
+              <span class="f-state">major &middot; active, high confidence</span>
+            </div>
+            <p class="f-copy">Three layers enforce the same binding and each fails differently &mdash; one of them silently. A caller cannot tell which refused it.</p>
+            <p class="f-meta"><span>Suggested action:</span> give the mount an else branch that records an unavailability reason.</p>
+            <div class="acts">
+              <button class="cbtn" type="button" data-lead onClick="{{publish}}">Show me why &rsaquo;</button>
+              <button class="cbtn" type="button">Add to local draft</button>
+              <button class="cbtn" type="button">Dismiss locally</button>
+            </div>
+          </article>
+        </div>
+        <div class="dl"><span class="dn">246</span><span class="dc">    tools.push(</span></div>
+      </div>
+      <p class="note">The prose shrinks to the claim. <b>Show me why</b> takes the leading position but stays a plain chrome button &mdash; it is navigation, not a verdict, so it never outranks <span class="mn">Add to local draft</span>. Nothing about the finding&rsquo;s own lifecycle changes: the tour it publishes carries no severity and cannot be promoted.</p>
+    </div>
+
+    <!-- ===== WHAT IT PUBLISHES ===== -->
+    <p class="stage">What it publishes</p>
+    <div class="wrap">
+      <sc-if value="{{idle}}" hint-placeholder-val="{{true}}">
+        <div class="placeholder">press &ldquo;Show me why&rdquo; above</div>
+      </sc-if>
+      <sc-if value="{{shown}}" hint-placeholder-val="{{false}}">
+        <div class="card">
+          <div class="card-head">
+            <span class="card-kick">GUIDED TOUR</span>
+            <span class="card-prog">1 / 4</span>
+          </div>
+          <div class="card-body">
+            <p class="card-title">Why the binding refuses three different ways</p>
+            <p class="card-sum">Published from a finding. Replaces whatever tour was current.</p>
+            <ol class="spine">
+              <sc-for list="{{spine}}" as="sp" hint-placeholder-count="4">
+                <li data-state="{{sp.state}}">
+                  <span class="mark" data-ghost="{{sp.ghost}}">{{sp.i}}</span>
+                  <span class="sp-txt">
+                    <span class="sp-sym">{{sp.symbol}}</span>
+                    <span class="sp-say">{{sp.say}}</span>
+                  </span>
+                </li>
+              </sc-for>
+            </ol>
+          </div>
+          <div class="card-foot">
+            <button class="cbtn" type="button" data-lead>Next &rsaquo;</button>
+            <button class="cbtn" type="button">Back to the finding</button>
+            <button class="cbtn" type="button" onClick="{{reset}}">Close tour</button>
+          </div>
+        </div>
+      </sc-if>
+      <p class="note">The tour is the finding&rsquo;s <b>evidence</b>, not a copy of it &mdash; four anchors: three refusals and the choice that lets the silent one exist, in the order that makes the claim. <span class="mn">Back to the finding</span> is the return leg, so the reviewer is never stranded inside the explanation. And because publishing is replacement-only, a second finding&rsquo;s <b>Show me why</b> takes over the same single slot &mdash; no accumulation, nothing to garbage-collect.</p>
+    </div>
+
+  </div>
+</div>
+</x-dc>
+<script data-dc-script data-props='{
+  "theme": {"editor": "enum", "options": ["dark", "light"], "default": "dark", "section": "Board"},
+  "hue": {"editor": "enum", "options": ["green", "violet", "none"], "default": "green", "section": "Board"}
+}'>
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    this.state = { shown: false };
+  }
+
+  renderVals() {
+    const shown = this.state.shown === true;
+    return {
+      theme: this.props.theme ?? 'dark',
+      hue: this.props.hue ?? 'green',
+      shown: shown ? true : undefined,
+      idle: shown ? undefined : true,
+      publish: () => this.setState({ shown: true }),
+      reset: () => this.setState({ shown: false }),
+      spine: [
+        {
+          i: 1,
+          symbol: 'parsePrReviewerConversationId · session.ts L23',
+          say: 'Returns headSha: null instead of refusing. Everything below inherits that choice.',
+          state: 'now',
+          ghost: undefined,
+        },
+        {
+          i: 2,
+          symbol: 'createPrReviewerRoute · pr-reviewer.ts L55',
+          say: 'Answers 400 at the edge. Loud, and the only layer the caller can see.',
+          state: 'todo',
+          ghost: true,
+        },
+        {
+          i: 3,
+          symbol: 'headSha guard · pr-reviewer.ts L245',
+          say: 'Skips the mount with no else branch. This is the silent one.',
+          state: 'todo',
+          ghost: true,
+        },
+        {
+          i: 4,
+          symbol: 'boundReview · draft-tools.ts L277',
+          say: 'Throws per call. Correct, but by now the tools are already absent.',
+          state: 'todo',
+          ghost: true,
+        },
+      ],
+    };
+  }
+}
+</script>
+</body>
+</html>

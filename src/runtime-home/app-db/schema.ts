@@ -612,6 +612,82 @@ export const prReviewWorkspaceOutputs = sqliteTable(
   ],
 );
 
+export const prReviewTours = sqliteTable(
+  'pr_review_tours',
+  {
+    conversationId: text('conversation_id').primaryKey(),
+    id: text('id').notNull(),
+    generation: integer('generation').notNull(),
+    reviewId: text('review_id').notNull(),
+    repoFullName: text('repo_full_name').notNull(),
+    headSha: text('head_sha').notNull(),
+    revisionKey: text('revision_key').notNull(),
+    title: text('title').notNull(),
+    summary: text('summary').notNull(),
+    sourceFindingId: text('source_finding_id'),
+    authorRole: text('author_role').notNull(),
+    model: text('model'),
+    submissionId: text('submission_id'),
+    createdAt: text('created_at').notNull(),
+    updatedAt: text('updated_at').notNull(),
+  },
+  (table) => [
+    uniqueIndex('idx_pr_review_tours_id').on(table.id),
+    index('idx_pr_review_tours_review_revision').on(
+      table.reviewId,
+      table.headSha,
+    ),
+  ],
+);
+
+export const prReviewTourSteps = sqliteTable(
+  'pr_review_tour_steps',
+  {
+    id: text('id').primaryKey(),
+    conversationId: text('conversation_id')
+      .notNull()
+      .references(() => prReviewTours.conversationId, {
+        onDelete: 'cascade',
+      }),
+    key: text('key').notNull(),
+    ordinal: integer('ordinal').notNull(),
+    file: text('file').notNull(),
+    side: text('side').notNull(),
+    startLine: integer('start_line').notNull(),
+    endLine: integer('end_line').notNull(),
+    symbol: text('symbol'),
+    explanation: text('explanation').notNull(),
+  },
+  (table) => [
+    uniqueIndex('idx_pr_review_tour_steps_key').on(
+      table.conversationId,
+      table.key,
+    ),
+    uniqueIndex('idx_pr_review_tour_steps_ordinal').on(
+      table.conversationId,
+      table.ordinal,
+    ),
+  ],
+);
+
+export const prReviewTourPublications = sqliteTable(
+  'pr_review_tour_publications',
+  {
+    toolCallId: text('tool_call_id').primaryKey(),
+    conversationId: text('conversation_id').notNull(),
+    tourId: text('tour_id').notNull(),
+    generation: integer('generation').notNull(),
+    resultJson: text('result_json').notNull(),
+    createdAt: text('created_at').notNull(),
+  },
+  (table) => [
+    index('idx_pr_review_tour_publications_conversation').on(
+      table.conversationId,
+      table.createdAt,
+    ),
+  ],
+);
+
 export const prReviewDrafts = sqliteTable(
   'pr_review_drafts',
   {

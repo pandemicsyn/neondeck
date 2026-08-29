@@ -1,21 +1,42 @@
 // @vitest-environment jsdom
 
 import type { UseFlueAgentOptions, UseFlueAgentResult } from '@flue/react';
-import { act } from 'react';
+import { StrictMode, act } from 'react';
 import { createRoot } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { PrReviewRecord } from '../../api';
-import { PrReviewReviewerChat } from './PrReviewReviewerChat';
+import { prReviewerConversationId } from '../../../../shared/pr-reviewer-session';
+import {
+  PrReviewReviewerChat,
+  PrReviewReviewerConversationProvider,
+  PrReviewReviewerController,
+} from './PrReviewReviewerChat';
 
 const useFlueAgentMock = vi.hoisted(() =>
   vi.fn<(options: UseFlueAgentOptions) => UseFlueAgentResult>(),
 );
 
-const conversationClient = vi.hoisted(() => ({ client: { url: 'test:' } }));
+const conversationClient = vi.hoisted(() => ({
+  client: { url: 'test:' },
+  onAdmission: null as null | ((admission: Record<string, unknown>) => void),
+  admissionObservers: [] as Array<(admission: Record<string, unknown>) => void>,
+}));
 
 vi.mock('@flue/react', () => ({ useFlueAgent: useFlueAgentMock }));
 vi.mock('../../lib/flue', () => ({
-  createNeondeckConversationClient: () => conversationClient.client,
+  createNeondeckConversationClient: (
+    _agentName: string,
+    _conversationId: string,
+    options?: {
+      onAdmission?: (admission: Record<string, unknown>) => void;
+    },
+  ) => {
+    conversationClient.onAdmission = options?.onAdmission ?? null;
+    if (options?.onAdmission) {
+      conversationClient.admissionObservers.push(options.onAdmission);
+    }
+    return conversationClient.client;
+  },
 }));
 
 describe('PrReviewReviewerChat', () => {
@@ -29,6 +50,8 @@ describe('PrReviewReviewerChat', () => {
     container = document.createElement('div');
     document.body.append(container);
     root = createRoot(container);
+    conversationClient.onAdmission = null;
+    conversationClient.admissionObservers = [];
     useFlueAgentMock.mockReturnValue({
       messages: [],
       status: 'error',
@@ -91,6 +114,112 @@ describe('PrReviewReviewerChat', () => {
       'conversation will reconnect when it finishes',
     );
     expect(useFlueAgentMock).not.toHaveBeenCalled();
+  });
+
+  it('renders terminal review states without opening or recursing into chat', () => {
+    for (const status of ['submitting', 'submitted'] as const) {
+      const review = {
+        id: 'review-123',
+        headSha: 'b'.repeat(40),
+        status,
+      } as PrReviewRecord;
+
+      act(() => root.render(<PrReviewReviewerChat review={review} />));
+
+      expect(container.textContent).toContain(
+        'reviewer conversation is no longer active',
+      );
+    }
+    expect(useFlueAgentMock).not.toHaveBeenCalled();
+  });
+
+  it('reconnects the conversation owner without remounting provider children', async () => {
+    const review = {
+      id: 'review-123',
+      headSha: 'a'.repeat(40),
+      status: 'ready',
+    } as PrReviewRecord;
+
+    await act(async () => {
+      root.render(
+        <PrReviewReviewerConversationProvider request={null} review={review}>
+          <input aria-label="stable workbench state" defaultValue="kept" />
+          <PrReviewReviewerChat review={review} />
+        </PrReviewReviewerConversationProvider>,
+      );
+      await Promise.resolve();
+    });
+    const stableInput = container.querySelector<HTMLInputElement>(
+      '[aria-label="stable workbench state"]',
+    );
+    expect(stableInput).not.toBeNull();
+    stableInput!.value = 'locally edited';
+
+    await act(async () => {
+      [...container.querySelectorAll('button')]
+        .find((button) => button.textContent === 'Reconnect')
+        ?.click();
+      await Promise.resolve();
+    });
+
+    expect(
+      container.querySelector('[aria-label="stable workbench state"]'),
+    ).toBe(stableInput);
+    expect(stableInput?.value).toBe('locally edited');
+  });
+
+  it('preserves the reviewer composer draft across a reconnect', async () => {
+    const connectedAgent = {
+      messages: [],
+      status: 'idle',
+      historyReady: true,
+      error: undefined,
+      failedSends: [],
+      settlements: [],
+      sendMessage: vi.fn<UseFlueAgentResult['sendMessage']>(),
+      refresh: vi.fn<() => void>(),
+    } as UseFlueAgentResult;
+    const review = {
+      id: 'review-123',
+      headSha: 'a'.repeat(40),
+      status: 'ready',
+    } as PrReviewRecord;
+    const renderChat = () => (
+      <PrReviewReviewerConversationProvider request={null} review={review}>
+        <PrReviewReviewerChat review={review} />
+      </PrReviewReviewerConversationProvider>
+    );
+    useFlueAgentMock.mockReturnValue(connectedAgent);
+    await act(async () => {
+      root.render(renderChat());
+      await Promise.resolve();
+    });
+    setTextareaValue(
+      container.querySelector('textarea')!,
+      'unsent explanation',
+    );
+
+    useFlueAgentMock.mockReturnValue({
+      ...connectedAgent,
+      historyReady: false,
+      status: 'error',
+      error: new Error('Socket unavailable'),
+    });
+    await act(async () => {
+      root.render(renderChat());
+      await Promise.resolve();
+    });
+    useFlueAgentMock.mockReturnValue(connectedAgent);
+    await act(async () => {
+      [...container.querySelectorAll('button')]
+        .find((button) => button.textContent === 'Reconnect')
+        ?.click();
+      await Promise.resolve();
+    });
+
+    expect(
+      container.querySelector<HTMLTextAreaElement>('textarea')?.value,
+    ).toBe('unsent explanation');
   });
 
   it('submits with Enter while preserving Shift+Enter for newlines', async () => {
@@ -274,7 +403,734 @@ describe('PrReviewReviewerChat', () => {
     );
     expect(onDraftChanged).toHaveBeenCalledTimes(1);
   });
+
+  it('activates only tours published after history hydration', () => {
+    const onTourPublished =
+      vi.fn<(tourId: string, generation: number) => void>();
+    const review = {
+      id: 'review-123',
+      headSha: 'a'.repeat(40),
+      status: 'ready',
+    } as PrReviewRecord;
+    const historicalPublication = tourPublicationMessage(
+      'assistant-history',
+      'tool-call-history',
+      'tour-history',
+      1,
+    );
+    const agentResult = {
+      messages: [historicalPublication],
+      status: 'idle',
+      historyReady: true,
+      error: undefined,
+      failedSends: [],
+      settlements: [],
+      sendMessage: vi.fn<UseFlueAgentResult['sendMessage']>(),
+      refresh: vi.fn<() => void>(),
+    } as UseFlueAgentResult;
+    useFlueAgentMock.mockReturnValue(agentResult);
+
+    act(() =>
+      root.render(
+        <PrReviewReviewerChat
+          onTourPublished={onTourPublished}
+          review={review}
+        />,
+      ),
+    );
+    expect(onTourPublished).not.toHaveBeenCalled();
+
+    useFlueAgentMock.mockReturnValue({
+      ...agentResult,
+      messages: [
+        historicalPublication,
+        tourPublicationMessage(
+          'assistant-live',
+          'tool-call-live',
+          'tour-live',
+          2,
+        ),
+      ],
+    });
+    act(() =>
+      root.render(
+        <PrReviewReviewerChat
+          onTourPublished={onTourPublished}
+          review={review}
+        />,
+      ),
+    );
+    expect(onTourPublished).toHaveBeenCalledTimes(1);
+    expect(onTourPublished).toHaveBeenCalledWith('tour-live', 2);
+
+    act(() =>
+      root.render(
+        <PrReviewReviewerChat
+          onTourPublished={onTourPublished}
+          review={review}
+        />,
+      ),
+    );
+    expect(onTourPublished).toHaveBeenCalledTimes(1);
+  });
+
+  it('dispatches a contextual reviewer request exactly once', async () => {
+    const sendMessage = vi.fn<UseFlueAgentResult['sendMessage']>(
+      async () => undefined,
+    );
+    useFlueAgentMock.mockReturnValue({
+      messages: [],
+      status: 'idle',
+      historyReady: true,
+      error: undefined,
+      failedSends: [],
+      settlements: [],
+      sendMessage,
+      refresh: vi.fn<() => void>(),
+    });
+    const review = {
+      id: 'review-123',
+      headSha: 'a'.repeat(40),
+      status: 'ready',
+    } as PrReviewRecord;
+    const request = {
+      id: 1,
+      conversationId: prReviewerConversationId(review.id, review.headSha),
+      message: '/show-me untrusted finding data',
+      delivery: 'pending' as const,
+      error: null,
+    };
+    const onRequestDeliveryChange =
+      vi.fn<
+        (
+          id: number,
+          delivery: 'pending' | 'sending' | 'sent' | 'failed',
+          error?: string | null,
+        ) => void
+      >();
+
+    await act(async () => {
+      root.render(
+        <PrReviewReviewerChat
+          onRequestDeliveryChange={onRequestDeliveryChange}
+          request={request}
+          review={review}
+        />,
+      );
+      await Promise.resolve();
+    });
+    expect(sendMessage).toHaveBeenCalledWith(request.message);
+    expect(onRequestDeliveryChange).toHaveBeenCalledWith(1, 'sending');
+    expect(onRequestDeliveryChange).toHaveBeenCalledWith(1, 'sent');
+
+    await act(async () => {
+      root.render(
+        <PrReviewReviewerChat
+          onRequestDeliveryChange={onRequestDeliveryChange}
+          request={{ ...request, delivery: 'sent' }}
+          review={review}
+        />,
+      );
+      await Promise.resolve();
+    });
+    expect(sendMessage).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      root.render(
+        <PrReviewReviewerChat
+          onRequestDeliveryChange={onRequestDeliveryChange}
+          request={request}
+          review={{ ...review, headSha: 'b'.repeat(40) }}
+        />,
+      );
+      await Promise.resolve();
+    });
+    expect(sendMessage).toHaveBeenCalledTimes(1);
+  });
+
+  it('waits for an explicit retry after a contextual request fails', async () => {
+    const sendMessage = vi.fn<UseFlueAgentResult['sendMessage']>(async () => {
+      throw new Error('Request unavailable');
+    });
+    useFlueAgentMock.mockReturnValue({
+      messages: [],
+      status: 'idle',
+      historyReady: true,
+      error: undefined,
+      failedSends: [],
+      settlements: [],
+      sendMessage,
+      refresh: vi.fn<() => void>(),
+    });
+    const review = {
+      id: 'review-123',
+      headSha: 'a'.repeat(40),
+      status: 'ready',
+    } as PrReviewRecord;
+    const request = {
+      id: 2,
+      conversationId: prReviewerConversationId(review.id, review.headSha),
+      message: '/show-me failed request',
+      delivery: 'pending' as const,
+      error: null,
+    };
+    const onRequestDeliveryChange =
+      vi.fn<
+        (
+          id: number,
+          delivery: 'pending' | 'sending' | 'sent' | 'failed',
+          error?: string | null,
+        ) => void
+      >();
+
+    await act(async () => {
+      root.render(
+        <PrReviewReviewerChat
+          onRequestDeliveryChange={onRequestDeliveryChange}
+          request={request}
+          review={review}
+        />,
+      );
+      await Promise.resolve();
+    });
+    expect(sendMessage).toHaveBeenCalledTimes(1);
+    expect(onRequestDeliveryChange).toHaveBeenLastCalledWith(
+      2,
+      'failed',
+      'Request unavailable',
+    );
+
+    await act(async () => {
+      root.render(
+        <PrReviewReviewerChat
+          onRequestDeliveryChange={onRequestDeliveryChange}
+          request={{
+            ...request,
+            delivery: 'failed',
+            error: 'Request unavailable',
+          }}
+          review={review}
+        />,
+      );
+      await Promise.resolve();
+    });
+    expect(sendMessage).toHaveBeenCalledTimes(1);
+    expect(container.textContent).toContain('Reviewer request failed');
+  });
+
+  it('correlates a local request with its admitted Flue submission', async () => {
+    const sendMessage = vi.fn<UseFlueAgentResult['sendMessage']>(
+      async () => undefined,
+    );
+    const oldLocalMessage = {
+      id: 'local:0',
+      role: 'user',
+      purpose: 'user',
+      display: 'visible',
+      submissionId: 'submission-old',
+      parts: [{ type: 'text', state: 'done', text: 'Earlier question' }],
+    } as never;
+    const baseAgent = {
+      messages: [oldLocalMessage],
+      status: 'idle',
+      historyReady: true,
+      error: undefined,
+      failedSends: [],
+      settlements: [],
+      sendMessage,
+      refresh: vi.fn<() => void>(),
+    } as UseFlueAgentResult;
+    useFlueAgentMock.mockReturnValue(baseAgent);
+    const review = {
+      id: 'review-123',
+      headSha: 'a'.repeat(40),
+      status: 'ready',
+    } as PrReviewRecord;
+    const request = {
+      id: 3,
+      conversationId: prReviewerConversationId(review.id, review.headSha),
+      message: '/show-me correlated request',
+      delivery: 'pending' as const,
+      error: null,
+    };
+    const onSubmissionIdentified = vi.fn<(submissionId: string) => void>();
+    const onSubmissionSettled =
+      vi.fn<
+        (
+          submissionId: string,
+          outcome: 'completed' | 'failed' | 'aborted',
+        ) => void
+      >();
+
+    await act(async () => {
+      root.render(
+        <PrReviewReviewerChat
+          onSubmissionIdentified={onSubmissionIdentified}
+          onSubmissionSettled={onSubmissionSettled}
+          request={request}
+          review={review}
+        />,
+      );
+      await Promise.resolve();
+    });
+
+    act(() =>
+      conversationClient.onAdmission?.({
+        streamUrl: 'test:stream',
+        offset: '1',
+        submissionId: 'submission-local-1',
+        uid: 'instance-1',
+      }),
+    );
+
+    const admittedMessage = {
+      id: 'local:1',
+      role: 'user',
+      purpose: 'user',
+      display: 'visible',
+      submissionId: 'submission-local-1',
+      parts: [{ type: 'text', state: 'done', text: request.message }],
+    } as never;
+    const foreignMessage = {
+      id: 'local:foreign',
+      role: 'user',
+      purpose: 'user',
+      display: 'visible',
+      submissionId: 'submission-foreign',
+      parts: [{ type: 'text', state: 'done', text: 'Another window request' }],
+    } as never;
+    useFlueAgentMock.mockReturnValue({
+      ...baseAgent,
+      messages: [oldLocalMessage, foreignMessage, admittedMessage],
+      status: 'streaming',
+    });
+    act(() =>
+      root.render(
+        <PrReviewReviewerChat
+          onSubmissionIdentified={onSubmissionIdentified}
+          onSubmissionSettled={onSubmissionSettled}
+          request={{ ...request, delivery: 'sent' }}
+          review={review}
+        />,
+      ),
+    );
+    expect(onSubmissionIdentified).toHaveBeenCalledWith('submission-local-1');
+    expect(onSubmissionIdentified).not.toHaveBeenCalledWith(
+      'submission-foreign',
+    );
+
+    useFlueAgentMock.mockReturnValue({
+      ...baseAgent,
+      messages: [oldLocalMessage, foreignMessage, admittedMessage],
+      settlements: [
+        { submissionId: 'submission-local-1', outcome: 'completed' },
+      ],
+    });
+    act(() =>
+      root.render(
+        <PrReviewReviewerChat
+          onSubmissionIdentified={onSubmissionIdentified}
+          onSubmissionSettled={onSubmissionSettled}
+          request={{ ...request, delivery: 'sent' }}
+          review={review}
+        />,
+      ),
+    );
+    expect(onSubmissionSettled).toHaveBeenCalledWith(
+      'submission-local-1',
+      'completed',
+    );
+  });
+
+  it('keeps identical multi-window requests bound to their own admission receipts', async () => {
+    const sendMessage = vi.fn<UseFlueAgentResult['sendMessage']>(
+      async () => undefined,
+    );
+    useFlueAgentMock.mockReturnValue({
+      messages: [],
+      status: 'idle',
+      historyReady: true,
+      error: undefined,
+      failedSends: [],
+      settlements: [],
+      sendMessage,
+      refresh: vi.fn<() => void>(),
+    });
+    const review = {
+      id: 'review-123',
+      headSha: 'a'.repeat(40),
+      status: 'ready',
+    } as PrReviewRecord;
+    const request = {
+      id: 30,
+      conversationId: prReviewerConversationId(review.id, review.headSha),
+      message: '/show-me identical request',
+      delivery: 'pending' as const,
+      error: null,
+    };
+    const first = vi.fn<(submissionId: string) => void>();
+    const second = vi.fn<(submissionId: string) => void>();
+
+    await act(async () => {
+      root.render(
+        <>
+          <PrReviewReviewerController
+            onSubmissionIdentified={first}
+            request={request}
+            review={review}
+          />
+          <PrReviewReviewerController
+            onSubmissionIdentified={second}
+            request={request}
+            review={review}
+          />
+        </>,
+      );
+      await Promise.resolve();
+    });
+
+    expect(conversationClient.admissionObservers).toHaveLength(2);
+    act(() => {
+      conversationClient.admissionObservers[0]?.({
+        submissionId: 'submission-window-a',
+      });
+      conversationClient.admissionObservers[1]?.({
+        submissionId: 'submission-window-b',
+      });
+    });
+    expect(first).toHaveBeenCalledWith('submission-window-a');
+    expect(first).not.toHaveBeenCalledWith('submission-window-b');
+    expect(second).toHaveBeenCalledWith('submission-window-b');
+    expect(second).not.toHaveBeenCalledWith('submission-window-a');
+  });
+
+  it('reconciles a settlement already observed when admission returns', async () => {
+    const review = {
+      id: 'review-123',
+      headSha: 'a'.repeat(40),
+      status: 'ready',
+    } as PrReviewRecord;
+    const onSubmissionSettled =
+      vi.fn<
+        (
+          submissionId: string,
+          outcome: 'completed' | 'failed' | 'aborted',
+        ) => void
+      >();
+    useFlueAgentMock.mockReturnValue({
+      messages: [],
+      status: 'idle',
+      historyReady: true,
+      error: undefined,
+      failedSends: [],
+      settlements: [{ submissionId: 'submission-fast', outcome: 'completed' }],
+      sendMessage: vi.fn<UseFlueAgentResult['sendMessage']>(),
+      refresh: vi.fn<() => void>(),
+    });
+
+    await act(async () => {
+      root.render(
+        <PrReviewReviewerController
+          onSubmissionSettled={onSubmissionSettled}
+          request={null}
+          review={review}
+        />,
+      );
+      await Promise.resolve();
+    });
+    act(() =>
+      conversationClient.onAdmission?.({
+        submissionId: 'submission-fast',
+      }),
+    );
+
+    expect(onSubmissionSettled).toHaveBeenCalledWith(
+      'submission-fast',
+      'completed',
+    );
+  });
+
+  it('keeps request delivery and tour observation alive when the visible chat unmounts', async () => {
+    const sendMessage = vi.fn<UseFlueAgentResult['sendMessage']>(
+      async () => undefined,
+    );
+    const agentResult = {
+      messages: [],
+      status: 'idle',
+      historyReady: true,
+      error: undefined,
+      failedSends: [],
+      settlements: [],
+      sendMessage,
+      refresh: vi.fn<() => void>(),
+    } as UseFlueAgentResult;
+    useFlueAgentMock.mockReturnValue(agentResult);
+    const review = {
+      id: 'review-123',
+      headSha: 'a'.repeat(40),
+      status: 'ready',
+    } as PrReviewRecord;
+    const request = {
+      id: 4,
+      conversationId: prReviewerConversationId(review.id, review.headSha),
+      message: '/show-me stable controller request',
+      delivery: 'pending' as const,
+      error: null,
+    };
+    const onRequestDeliveryChange =
+      vi.fn<
+        (
+          id: number,
+          delivery: 'pending' | 'sending' | 'sent' | 'failed',
+          error?: string | null,
+        ) => void
+      >();
+    const onTourPublished =
+      vi.fn<(tourId: string, generation: number) => void>();
+
+    await act(async () => {
+      root.render(
+        <StrictMode>
+          <PrReviewReviewerConversationProvider
+            onRequestDeliveryChange={onRequestDeliveryChange}
+            onTourPublished={onTourPublished}
+            request={request}
+            review={review}
+          >
+            <PrReviewReviewerChat request={request} review={review} />
+          </PrReviewReviewerConversationProvider>
+        </StrictMode>,
+      );
+      await Promise.resolve();
+    });
+    expect(sendMessage).toHaveBeenCalledTimes(1);
+
+    useFlueAgentMock.mockReturnValue({
+      ...agentResult,
+      messages: [
+        tourPublicationMessage(
+          'assistant-live',
+          'tool-call-live',
+          'tour-live',
+          2,
+        ),
+      ],
+    });
+    act(() =>
+      root.render(
+        <StrictMode>
+          <PrReviewReviewerConversationProvider
+            onRequestDeliveryChange={onRequestDeliveryChange}
+            onTourPublished={onTourPublished}
+            request={{ ...request, delivery: 'sent' }}
+            review={review}
+          >
+            {null}
+          </PrReviewReviewerConversationProvider>
+        </StrictMode>,
+      ),
+    );
+
+    expect(onTourPublished).toHaveBeenCalledWith('tour-live', 2);
+  });
+
+  it('surfaces a controller connection failure and reconnects before retrying', async () => {
+    const sendMessage = vi.fn<UseFlueAgentResult['sendMessage']>(
+      async () => undefined,
+    );
+    const review = {
+      id: 'review-123',
+      headSha: 'a'.repeat(40),
+      status: 'ready',
+    } as PrReviewRecord;
+    const request = {
+      id: 5,
+      conversationId: prReviewerConversationId(review.id, review.headSha),
+      message: 'Recover this request',
+      delivery: 'pending' as const,
+      error: null,
+    };
+    const onRequestDeliveryChange =
+      vi.fn<
+        (
+          id: number,
+          delivery: 'pending' | 'sending' | 'sent' | 'failed',
+          error?: string | null,
+        ) => void
+      >();
+    const connectedAgent = {
+      messages: [],
+      status: 'idle',
+      historyReady: true,
+      error: undefined,
+      failedSends: [],
+      settlements: [],
+      sendMessage,
+      refresh: vi.fn<() => void>(),
+    } as UseFlueAgentResult;
+    useFlueAgentMock.mockReturnValue({
+      ...connectedAgent,
+      error: new Error('Socket unavailable'),
+    });
+
+    act(() =>
+      root.render(
+        <PrReviewReviewerChat
+          onRequestDeliveryChange={onRequestDeliveryChange}
+          request={request}
+          review={review}
+        />,
+      ),
+    );
+    expect(onRequestDeliveryChange).toHaveBeenCalledWith(
+      5,
+      'failed',
+      'Reviewer connection unavailable: Socket unavailable',
+    );
+    expect(sendMessage).not.toHaveBeenCalled();
+
+    act(() =>
+      root.render(
+        <PrReviewReviewerChat
+          onRequestDeliveryChange={onRequestDeliveryChange}
+          request={{
+            ...request,
+            delivery: 'failed',
+            error: 'Reviewer connection unavailable: Socket unavailable',
+          }}
+          review={review}
+        />,
+      ),
+    );
+    useFlueAgentMock.mockReturnValue(connectedAgent);
+    act(() => container.querySelector('button')?.click());
+    expect(onRequestDeliveryChange).toHaveBeenCalledWith(5, 'pending', null);
+
+    await act(async () => {
+      root.render(
+        <PrReviewReviewerChat
+          onRequestDeliveryChange={onRequestDeliveryChange}
+          request={request}
+          review={review}
+        />,
+      );
+      await Promise.resolve();
+    });
+    expect(sendMessage).toHaveBeenCalledWith('Recover this request');
+  });
+
+  it('reconnects the controller before retrying a failed admission', async () => {
+    const failedSend = vi.fn<UseFlueAgentResult['sendMessage']>(async () => {
+      throw new Error('Admission failed');
+    });
+    const successfulSend = vi.fn<UseFlueAgentResult['sendMessage']>(
+      async () => undefined,
+    );
+    const review = {
+      id: 'review-123',
+      headSha: 'a'.repeat(40),
+      status: 'ready',
+    } as PrReviewRecord;
+    const request = {
+      id: 6,
+      conversationId: prReviewerConversationId(review.id, review.headSha),
+      message: 'Retry admission',
+      delivery: 'pending' as const,
+      error: null,
+    };
+    const onRequestDeliveryChange =
+      vi.fn<
+        (
+          id: number,
+          delivery: 'pending' | 'sending' | 'sent' | 'failed',
+          error?: string | null,
+        ) => void
+      >();
+    const agentResult = {
+      messages: [],
+      status: 'idle',
+      historyReady: true,
+      error: undefined,
+      failedSends: [],
+      settlements: [],
+      sendMessage: failedSend,
+      refresh: vi.fn<() => void>(),
+    } as UseFlueAgentResult;
+    useFlueAgentMock.mockReturnValue(agentResult);
+
+    await act(async () => {
+      root.render(
+        <PrReviewReviewerChat
+          onRequestDeliveryChange={onRequestDeliveryChange}
+          request={request}
+          review={review}
+        />,
+      );
+      await Promise.resolve();
+    });
+    expect(onRequestDeliveryChange).toHaveBeenCalledWith(
+      6,
+      'failed',
+      'Admission failed',
+    );
+
+    act(() =>
+      root.render(
+        <PrReviewReviewerChat
+          onRequestDeliveryChange={onRequestDeliveryChange}
+          request={{
+            ...request,
+            delivery: 'failed',
+            error: 'Admission failed',
+          }}
+          review={review}
+        />,
+      ),
+    );
+    useFlueAgentMock.mockReturnValue({
+      ...agentResult,
+      sendMessage: successfulSend,
+    });
+    act(() => container.querySelector('button')?.click());
+
+    await act(async () => {
+      root.render(
+        <PrReviewReviewerChat
+          onRequestDeliveryChange={onRequestDeliveryChange}
+          request={request}
+          review={review}
+        />,
+      );
+      await Promise.resolve();
+    });
+    expect(failedSend).toHaveBeenCalledTimes(1);
+    expect(successfulSend).toHaveBeenCalledWith('Retry admission');
+  });
 });
+
+function tourPublicationMessage(
+  id: string,
+  toolCallId: string,
+  tourId: string,
+  generation: number,
+) {
+  return {
+    id,
+    role: 'assistant',
+    purpose: 'answer',
+    display: 'visible',
+    parts: [
+      {
+        type: 'dynamic-tool',
+        toolName: 'neondeck_publish_pr_tour',
+        toolCallId,
+        state: 'output-available',
+        input: {},
+        output: { ok: true, tourId, generation },
+      },
+    ],
+  } as never;
+}
 
 function setTextareaValue(textarea: HTMLTextAreaElement, value: string) {
   Object.getOwnPropertyDescriptor(

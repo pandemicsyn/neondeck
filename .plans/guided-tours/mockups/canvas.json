@@ -1,0 +1,74 @@
+{
+  "pages": [
+    { "id": "page-1", "name": "The tour" },
+    { "id": "page-2", "name": "Reach" }
+  ],
+  "artboards": [
+    { "file": "Main.dc.html", "title": "Workbench · tour open", "x": 0, "y": 0, "w": 1440, "h": 920, "page": "page-1" },
+    { "file": "Coexist.dc.html", "title": "Four annotations, one file", "x": 1560, "y": 0, "w": 980, "h": 920, "page": "page-1" },
+    { "file": "Card.dc.html", "title": "Chat card · four states", "x": 2660, "y": 0, "w": 380, "h": 920, "page": "page-1" },
+
+    { "file": "Reading.dc.html", "title": "Walk vs read", "x": 0, "y": 0, "w": 1040, "h": 920, "page": "page-2" },
+    { "file": "ShowWhy.dc.html", "title": "Findings publish tours", "x": 1160, "y": 0, "w": 1000, "h": 920, "page": "page-2" },
+    { "file": "ReviewTab.dc.html", "title": "Tour in the Review tab", "x": 2280, "y": 0, "w": 380, "h": 920, "page": "page-2" }
+  ],
+  "annotations": [
+    {
+      "id": "note-main",
+      "page": "page-1",
+      "x": 0,
+      "y": -560,
+      "w": 520,
+      "text": "WORKBENCH — click it. Previous / Next / Start over walk the four steps, and the diff, the file tree, the header chip and the chat spine all move together. Close tour empties the diff and collapses the card to a Reopen strip.\n\nWhat this board is really arguing:\n\n· TOUR IS A SEVENTH TRAVERSAL KIND. PrReviewNavigationBar.tsx:9 already has file / hunk / review-thread / local-draft / finding / attention, driven by [ and ] with a tabular-nums \"N of M\" status line. Adding `tour` to that list gives Previous, Next, the keyboard bindings, focus management and the readout for free — no new navigation model, no model call, and it satisfies the plan's determinism invariant by construction. The plan's proposed /next and /previous commands are redundant against it.\n\n· ONE TOUR, SO ONE CURSOR. Traversal already assumes a single active cursor per kind, so the one-current-tour invariant stops being a rule the UI enforces and becomes the shape of the thing.\n\n· OTHER STEPS IN THIS FILE STAY VISIBLE. Steps 2 and 4 are both in pr-reviewer.ts, so whichever one you are not on renders as a dashed marker line rather than a card. Note that step 4 sits ABOVE step 2 in the file — tour order and file order are not the same, which is the whole problem the Reach page picks up."
+    },
+    {
+      "id": "note-coexist",
+      "page": "page-1",
+      "x": 1560,
+      "y": -560,
+      "w": 520,
+      "text": "FOUR ANNOTATIONS, ONE FILE — the distinction has to survive being adjacent, not just described.\n\nEvery annotation that ships today carries a TINTED FILL: Neon finding primary 5%, review thread primary 7%, local draft violet 6%, stale draft accent 10% (theme.ts:56–136, styles.css:2041). All four read as STATE — something is true about this line.\n\nSo the tour takes the one slot nobody has claimed: NO TINT. Flat --field, a 2px left rule, a numbered square. It reads as CHROME — something is being shown to you — before you have read a single word of it. That is a stronger separation than a fifth hue would have been, and it does not add an entry to a semantic ramp already at four.\n\nThe tour also carries none of the finding vocabulary: no severity, no confidence, no lifecycle state, no provenance line, no promote and no dismiss. The only verbs are navigation plus Ask. Nothing here can become a GitHub comment."
+    },
+    {
+      "id": "note-card",
+      "page": "page-1",
+      "x": 2660,
+      "y": -560,
+      "w": 460,
+      "text": "CHAT CARD — drawn at the real sidebar width (380px, the top of minmax(300px,380px), which the Workbench board also uses), because the spine either fits there or the design is wrong.\n\nFour states, and the two middle ones are the ones the plan leaves open:\n\n· INVESTIGATING — nothing is installed in the diff until the whole tour validates. A half-anchored tour is never shown.\n\n· REPLACED — a second /show-me collapses the old card to a strip IN PLACE rather than deleting it. The transcript stays readable, but its annotations are already gone from the diff and its generation is dead. This is what makes atomic replacement legible instead of merely correct.\n\n· CLOSED — hides annotations and body, keeps the tour. Reopen is local; it never calls the model."
+    },
+    {
+      "id": "note-hue",
+      "page": "page-1",
+      "x": 0,
+      "y": 990,
+      "w": 720,
+      "text": "THE HUE. Use the `hue` tweak above any board to compare — green (proposed), violet, or none.\n\nEvery hue in the diff gutter is already spoken for: cyan #00b7c7 is --primary and owns the base annotation fill, findings and threads; violet #b59cff is LOCAL DRAFT COMMENTS, the exact thing a tour must not be mistaken for; pink #ff4fb8 is stale/error; amber #f0b95b is warning. Red is reserved.\n\nSo the proposal is to extend with a spring green — #5cf28f dark / #0d7a42 light. The largest unclaimed gap on the wheel is amber 82° to cyan 208°, and ~150° sits in the middle of it, clear of red.\n\nThe risk worth naming: green reads as \"approved\" in a review tool. Two things blunt it — there is no success token in styles.css today (pass states use --primary), and the hue never appears on a card fill, only on markers, the spine and the left rule. If you would rather keep green free for a future --good, flip the tweak to violet: the form-level distinction does most of the work on its own, which is exactly why it was built that way.\n\nAll boards are the shipped neondeck system — IBM Plex Sans / IBM Plex Mono with Chakra Petch for display, square borders, and the text scale pinned at 1.12 (the boards call it --ts; the app calls it --deck-text-scale). Use the `theme` tweak to check the light palette.\n\nSample data is real: the tour traces the actual reviewId + headSha binding through pr-reviewer-session.ts, pr-reviewer.ts and draft-tools.ts. The findings and draft comments are invented."
+    },
+    {
+      "id": "note-reading",
+      "page": "page-2",
+      "x": 0,
+      "y": -560,
+      "w": 520,
+      "text": "WALK VS READ — toggle it in the nav bar.\n\nThe plan assumes stepping is the only way to consume a tour. For a four-step tour that may just be friction: you press Next three times to read six paragraphs.\n\nREAD mode concatenates only the anchored ranges, in TOUR ORDER, with the jumps between them named. That last part is the argument — a diff can only ever be in repository order, so a four-step trace across three files reads as four unrelated hunks. This is the one view that can put them in the order that makes the point, and it is impossible without tours.\n\nWALK mode is the same block, paged, with [ and ] moving the shared cursor.\n\nHow to choose: read is better for short tours and for handing someone an explanation; walk is better for long ones and for staying oriented in a file you are also reviewing. Cheapest resolution is to make read the default under ~6 steps and keep the toggle. Worth deciding before the annotation renderer is built, since read mode needs the step ranges as a list and nothing else."
+    },
+    {
+      "id": "note-showwhy",
+      "page": "page-2",
+      "x": 1160,
+      "y": -560,
+      "w": 520,
+      "text": "FINDINGS PUBLISH TOURS — press \"Show me why\" on the middle panel.\n\nThis is the strongest reason to build tours at all, and it is not in the plan.\n\nA cross-file finding today has one anchor and prose for everything else. The top panel is a real shape of that failure: four file:line references in one paragraph, attached to a line that is only one of them, correct and nearly unreadable. The reviewer then hand-navigates to three other places to check it.\n\nWith tours the finding keeps the claim and delegates the evidence. One more verb, in the leading position but still a plain chrome button — it is navigation, not a verdict, so it never outranks \"Add to local draft\".\n\nWhat it does NOT change, deliberately: the tour carries no severity and cannot be promoted, the finding's own lifecycle is untouched, and publishing is still replacement-only — a second finding's Show me why takes the same single slot. \"Back to the finding\" is the return leg so the reviewer is never stranded inside the explanation.\n\nThe cost: this makes tours load-bearing for review quality rather than a side feature, which is an argument for moving them earlier, not later."
+    },
+    {
+      "id": "note-reviewtab",
+      "page": "page-2",
+      "x": 2280,
+      "y": -560,
+      "w": 440,
+      "text": "TOUR IN THE REVIEW TAB — a gap in the first draft.\n\nThe inspector has two tabs (PrReviewFindingsSidebar.tsx:88). The first draft put the spine only in \"Ask reviewer\", so switching to \"Review\" to look at findings or drafts left you mid-tour with no map.\n\nFix: the tour becomes a pr-review-inspector-section like every other panel — same chrome, same heading, same Badge — sitting directly under Review focus and above Neon findings. The only tour signal is the 2px left rule and the markers.\n\nPlacement is the decision here: above the findings, because while a tour is open it IS the navigation context. It disappears entirely when no tour is current, so it costs nothing the rest of the time.\n\nClick the spine steps — it drives the same cursor as everything else."
+    }
+  ],
+  "launch": { "view": "canvas", "page": "page-2" }
+}

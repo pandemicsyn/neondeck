@@ -74,6 +74,21 @@ describe('review navigation model', () => {
     ]);
   });
 
+  it('keeps tour traversal in authored step order across files', () => {
+    const model = createReviewNavigationModel({
+      files: [{ path: 'src/a.ts' }, { path: 'src/b.ts' }],
+      items: [
+        { kind: 'tour', id: 'step-1', path: 'src/b.ts', line: 80, ordinal: 1 },
+        { kind: 'tour', id: 'step-2', path: 'src/a.ts', line: 4, ordinal: 2 },
+        { kind: 'tour', id: 'step-3', path: 'src/b.ts', line: 12, ordinal: 3 },
+      ],
+    });
+
+    expect(
+      reviewCursorTargets(model, 'tour').map((target) => target.id),
+    ).toEqual(['step-1', 'step-2', 'step-3']);
+  });
+
   it('scopes file-local hunk ids without ambiguous key collisions', () => {
     const model = createReviewNavigationModel({
       files: [{ path: 'src/a:b.ts' }, { path: 'src/a.ts' }],

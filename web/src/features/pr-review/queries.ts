@@ -27,7 +27,10 @@ import {
   type GitHubPullRequest,
   type GitHubPullRequestReviewThread,
   type PrReviewRecord,
+  getPrReviewTour,
+  openReviewTourEventStream,
 } from '../../api';
+import { prReviewerConversationId } from '../../../../shared/pr-reviewer-session';
 import { queryKeys } from '../../lib/query';
 
 type ReviewThreadsQueryData = Awaited<
@@ -70,6 +73,8 @@ export const prReviewQueryKeys = {
     ['pr-review', 'review-threads', pr.repo, pr.number] as const,
   draft: (pr: Pick<GitHubPullRequest, 'repo' | 'number'>) =>
     ['pr-review', 'draft', pr.repo, pr.number] as const,
+  tour: (conversationId: string) =>
+    ['pr-review', 'tour', conversationId] as const,
   submissionDraft: (
     pr: Pick<GitHubPullRequest, 'repo' | 'number'>,
     draftId: string,
@@ -95,6 +100,49 @@ export const prReviewQueryKeys = {
       status,
     ] as const,
 };
+
+export function usePrReviewTour(review: PrReviewRecord | null) {
+  const queryClient = useQueryClient();
+  const conversationId = review
+    ? prReviewerConversationId(review.id, review.headSha)
+    : null;
+  const query = useQuery({
+    queryKey: prReviewQueryKeys.tour(conversationId ?? 'unavailable'),
+    queryFn: async ({ signal }) => {
+      if (!conversationId) return null;
+      return (await getPrReviewTour(conversationId, { signal })).tour;
+    },
+    enabled: Boolean(conversationId),
+  });
+
+  useEffect(() => {
+    if (!conversationId) return;
+    const refresh = () => {
+      void queryClient.invalidateQueries({
+        queryKey: prReviewQueryKeys.tour(conversationId),
+      });
+    };
+    return openReviewTourEventStream(
+      (event) => {
+        if (
+          event.action !== 'tour-replaced' ||
+          event.conversationId !== conversationId
+        ) {
+          return;
+        }
+        refresh();
+      },
+      undefined,
+      () => {
+        // Replacement events are not replayed, so every reconnect reconciles
+        // the durable artifact before trusting the live stream again.
+        refresh();
+      },
+    );
+  }, [conversationId, queryClient]);
+
+  return { conversationId, query, tour: query.data ?? null };
+}
 
 export function useGitHubPullRequestFiles(pr: GitHubPullRequest) {
   return useQuery({

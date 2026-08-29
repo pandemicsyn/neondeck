@@ -40,11 +40,18 @@ export type ReviewFindingNavigationItem = ReviewNavigationItemBase & {
   severity?: ReviewFindingSeverity | null;
 };
 
+export type ReviewTourNavigationItem = ReviewNavigationItemBase & {
+  kind: 'tour';
+  line: number;
+  ordinal: number;
+};
+
 export type ReviewNavigationItem =
   | ReviewHunkNavigationItem
   | ReviewThreadNavigationItem
   | ReviewDraftNavigationItem
-  | ReviewFindingNavigationItem;
+  | ReviewFindingNavigationItem
+  | ReviewTourNavigationItem;
 
 export type ReviewNavigationInput = {
   files: readonly ReviewNavigationFile[];
@@ -117,6 +124,7 @@ const targetKindOrder: Record<ReviewNavigationTargetKind, number> = {
   'review-thread': 2,
   'local-draft': 3,
   finding: 4,
+  tour: 5,
 };
 
 export function createReviewNavigationModel(
@@ -165,9 +173,12 @@ export function createReviewNavigationModel(
     if (seenKeys.has(key)) continue;
     seenKeys.add(key);
     const target: ReviewNavigationTarget = {
-      orderIndex: resolvedPath
-        ? (fileIndexByPath.get(resolvedPath) ?? canonicalFilePaths.length)
-        : canonicalFilePaths.length,
+      orderIndex:
+        item.kind === 'tour'
+          ? 0
+          : resolvedPath
+            ? (fileIndexByPath.get(resolvedPath) ?? canonicalFilePaths.length)
+            : canonicalFilePaths.length,
       id: item.id,
       key,
       kind: item.kind,
@@ -250,7 +261,10 @@ export function reviewCursorTargets(
     .filter((target) => matchesFilter(target, kind, filter))
     .map((target) => ({
       ...target,
-      orderIndex: fileIndexByPath.get(target.path) ?? fileOrder.length,
+      orderIndex:
+        target.kind === 'tour'
+          ? 0
+          : (fileIndexByPath.get(target.path) ?? fileOrder.length),
     }))
     .sort(targetComparator);
 }
@@ -372,6 +386,7 @@ function resolvePath(
 }
 
 function itemPosition(item: ReviewNavigationItem, inputIndex: number) {
+  if (item.kind === 'tour') return item.ordinal;
   const line =
     item.kind === 'hunk'
       ? (positiveNumber(item.newStart) ?? positiveNumber(item.oldStart))

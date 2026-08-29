@@ -1,5 +1,10 @@
 import type { SelectedLineRange } from '@pierre/diffs/react';
 import type { ReviewCursorTarget } from '../../../../shared/review-navigation';
+import {
+  prReviewTourAnnotationId,
+  type PrReviewTour,
+} from '../../../../shared/pr-review-tour';
+import type { ReviewSurfaceNavigationTarget } from '../../../../shared/review-surface';
 import type {
   GitHubPrReviewDraft,
   GitHubPrReviewDraftComment,
@@ -136,6 +141,59 @@ export function isCurrentReviewOperation(
   completedToken: number,
 ) {
   return currentToken === completedToken;
+}
+
+export function reviewSurfaceTargetMatchesCurrentTour(
+  target: ReviewSurfaceNavigationTarget,
+  tour: PrReviewTour | null,
+  currentCorrelationId: string | null,
+) {
+  if (
+    !tour ||
+    !target.annotationId ||
+    !target.anchor ||
+    !target.correlationId ||
+    target.correlationId !== currentCorrelationId
+  ) {
+    return false;
+  }
+  const step = tour.steps.find(
+    (candidate) =>
+      prReviewTourAnnotationId(candidate.id) === target.annotationId,
+  );
+  return Boolean(
+    step &&
+    step.file === target.path &&
+    step.anchor.side === target.anchor.side &&
+    step.anchor.startLine === target.anchor.startLine &&
+    step.anchor.endLine === target.anchor.endLine,
+  );
+}
+
+export type ObservedPrReviewTourGeneration = {
+  conversationId: string;
+  identity: string;
+};
+
+export function observePrReviewTourGeneration(
+  observed: ObservedPrReviewTourGeneration | null,
+  tour: PrReviewTour,
+) {
+  const next = {
+    conversationId: tour.conversationId,
+    identity: `${tour.id}:${tour.generation}`,
+  };
+  const changed =
+    !observed ||
+    observed.conversationId !== next.conversationId ||
+    observed.identity !== next.identity;
+  return {
+    changed,
+    next,
+    replacesCurrentConversation: Boolean(
+      changed && observed?.conversationId === next.conversationId,
+    ),
+  };
 }
 
 export function shouldAutomaticallyApplyGitHubRevision({

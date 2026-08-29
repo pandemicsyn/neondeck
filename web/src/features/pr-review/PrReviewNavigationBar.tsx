@@ -12,6 +12,7 @@ const traversalKinds: readonly ReviewCursorKind[] = [
   'review-thread',
   'local-draft',
   'finding',
+  'tour',
   'attention',
 ];
 
@@ -23,12 +24,15 @@ export function PrReviewNavigationBar({
   currentTarget,
   filter,
   isBusy,
+  isTraversalDisabled = false,
+  traversalDisabledStatus = null,
   kind,
   onClearFilter,
   onKindChange,
   onMove,
   status,
   total,
+  context,
 }: {
   announcement: string;
   boundary: 'start' | 'end' | null;
@@ -37,12 +41,15 @@ export function PrReviewNavigationBar({
   currentTarget: ReviewCursorTarget | null;
   filter: string | null;
   isBusy: boolean;
+  isTraversalDisabled?: boolean;
+  traversalDisabledStatus?: string | null;
   kind: ReviewCursorKind;
   onClearFilter: () => void;
   onKindChange: (kind: ReviewCursorKind) => void;
   onMove: (direction: ReviewCursorDirection) => void;
   status: string | null;
   total: number;
+  context?: string | null;
 }) {
   const [helpOpen, setHelpOpen] = useState(false);
   const helpButtonRef = useRef<HTMLButtonElement>(null);
@@ -93,13 +100,13 @@ export function PrReviewNavigationBar({
         return;
       }
       if (event.key !== '[' && event.key !== ']') return;
-      if (isBusy) return;
+      if (isBusy || isTraversalDisabled) return;
       event.preventDefault();
       onMove(event.key === '[' ? 'previous' : 'next');
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [helpOpen, isBusy, onMove, openHelp]);
+  }, [helpOpen, isBusy, isTraversalDisabled, onMove, openHelp]);
   const positionText = navigationPositionText({
     boundary,
     canMove,
@@ -110,6 +117,9 @@ export function PrReviewNavigationBar({
     kind,
     status,
     total,
+    context,
+    isTraversalDisabled,
+    traversalDisabledStatus,
   });
 
   return (
@@ -121,6 +131,7 @@ export function PrReviewNavigationBar({
         <div className="pr-review-navigation-mode">
           <label htmlFor="pr-review-traversal-kind">Traverse</label>
           <select
+            data-tour={kind === 'tour' ? '' : undefined}
             disabled={isBusy}
             id="pr-review-traversal-kind"
             onChange={(event) =>
@@ -138,7 +149,7 @@ export function PrReviewNavigationBar({
         <div className="pr-review-navigation-actions">
           <button
             aria-keyshortcuts="["
-            disabled={isBusy || !canMove}
+            disabled={isBusy || isTraversalDisabled || !canMove}
             onClick={() => onMove('previous')}
             title="Previous target ([)"
             type="button"
@@ -147,7 +158,7 @@ export function PrReviewNavigationBar({
           </button>
           <button
             aria-keyshortcuts="]"
-            disabled={isBusy || !canMove}
+            disabled={isBusy || isTraversalDisabled || !canMove}
             onClick={() => onMove('next')}
             title="Next target (])"
             type="button"
@@ -281,6 +292,9 @@ function navigationPositionText({
   kind,
   status,
   total,
+  context,
+  isTraversalDisabled,
+  traversalDisabledStatus,
 }: {
   boundary: 'start' | 'end' | null;
   canMove: boolean;
@@ -291,11 +305,17 @@ function navigationPositionText({
   kind: ReviewCursorKind;
   status: string | null;
   total: number;
+  context?: string | null;
+  isTraversalDisabled: boolean;
+  traversalDisabledStatus: string | null;
 }) {
   const label =
     kind === 'attention' && currentTarget?.kind === 'attention'
       ? `${reviewNavigationKindLabel(currentTarget.attentionKind)} attention`
       : reviewNavigationKindLabel(kind);
+  if (isTraversalDisabled && traversalDisabledStatus) {
+    return traversalDisabledStatus;
+  }
   if (isBusy) return status ?? `Loading the next ${label}.`;
   if (total === 0) {
     if (kind === 'hunk' && canMove) {
@@ -315,5 +335,6 @@ function navigationPositionText({
     : '';
   const statusText =
     status && status !== `${boundary} boundary` ? ` · ${status}` : '';
-  return `${label} · ${position}${boundaryText}${statusText}`;
+  const contextText = kind === 'tour' && context ? ` · ${context}` : '';
+  return `${label} · ${position}${contextText}${boundaryText}${statusText}`;
 }

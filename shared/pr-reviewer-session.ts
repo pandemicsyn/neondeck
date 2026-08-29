@@ -7,6 +7,12 @@ export const prReviewerDraftToolNames = [
 ] as const;
 
 export const prReviewerReReviewToolName = 'neondeck_pr_review_restart' as const;
+export const prReviewerPublishTourToolName =
+  'neondeck_publish_pr_tour' as const;
+
+export function isPrReviewerPublishTourToolName(value: string) {
+  return value === prReviewerPublishTourToolName;
+}
 
 export type PrReviewerDraftToolName = (typeof prReviewerDraftToolNames)[number];
 

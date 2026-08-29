@@ -13,6 +13,11 @@ export const reviewSurfaceContextPageLimits = {
   maxOffset: 5_000,
 } as const;
 
+export const reviewSurfaceNavigationLimits = {
+  maxLineNumber: 10_000_000,
+  maxLineRangeSpan: 200,
+} as const;
+
 export type ReviewSurfaceSelection = {
   path: string;
   side: 'additions' | 'deletions';
@@ -78,6 +83,13 @@ export type ReviewSurfaceContextPage = {
 export type ReviewSurfaceNavigationTarget = {
   path: string;
   focus: boolean;
+  anchor?: {
+    side: 'additions' | 'deletions';
+    startLine: number;
+    endLine: number;
+  };
+  annotationId?: string;
+  correlationId?: string;
 };
 
 export type ReviewSurfaceNavigationRequest = {

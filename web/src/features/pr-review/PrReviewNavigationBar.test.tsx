@@ -107,6 +107,38 @@ describe('PR review navigation controls', () => {
     );
   });
 
+  it('keeps the active tour title in traversal status', () => {
+    renderBar(root, onMove, {
+      context: 'Bearer token authentication',
+      currentIndex: 1,
+      currentTarget: { ...draftTarget, kind: 'tour', id: 'step-2' },
+      kind: 'tour',
+      total: 4,
+    });
+
+    expect(container.textContent).toContain(
+      'Tour · 2 of 4 · Bearer token authentication',
+    );
+    expect(select('Traversal kind').hasAttribute('data-tour')).toBe(true);
+  });
+
+  it('disables pointer and keyboard traversal while reading a tour', () => {
+    renderBar(root, onMove, {
+      currentTarget: { ...draftTarget, kind: 'tour', id: 'step-1' },
+      isTraversalDisabled: true,
+      kind: 'tour',
+      traversalDisabledStatus: 'Tour · reading · 4 steps across 3 files',
+    });
+
+    expect(container.textContent).toContain(
+      'Tour · reading · 4 steps across 3 files',
+    );
+    expect(button('Previous').disabled).toBe(true);
+    expect(button('Next').disabled).toBe(true);
+    act(() => dispatchKey(document.body, ']'));
+    expect(onMove).not.toHaveBeenCalled();
+  });
+
   it('suppresses shortcuts for every editable, dialog, and composer focus context', () => {
     renderBar(root, onMove);
     const contexts = [

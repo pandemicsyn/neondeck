@@ -16,6 +16,7 @@ import {
 } from '../../../shared/review-source';
 import {
   reviewSurfaceContextPageLimits,
+  reviewSurfaceNavigationLimits,
   reviewSurfaceSchemaVersion,
   type ReviewSurfaceContextPageRequest,
   type ReviewSurfaceNavigationRequest,
@@ -186,7 +187,40 @@ export const reviewSurfaceSnapshotSchema: v.GenericSchema<ReviewSurfaceSnapshot>
 export const reviewSurfaceNavigationRequestSchema: v.GenericSchema<ReviewSurfaceNavigationRequest> =
   v.object({
     revisionKey: v.nullable(revisionKeySchema),
-    target: v.object({ path: pathSchema, focus: v.boolean() }),
+    target: v.object({
+      path: pathSchema,
+      focus: v.boolean(),
+      anchor: v.optional(
+        v.pipe(
+          v.object({
+            side: v.picklist(['additions', 'deletions']),
+            startLine: v.pipe(
+              v.number(),
+              v.integer(),
+              v.minValue(1),
+              v.maxValue(reviewSurfaceNavigationLimits.maxLineNumber),
+            ),
+            endLine: v.pipe(
+              v.number(),
+              v.integer(),
+              v.minValue(1),
+              v.maxValue(reviewSurfaceNavigationLimits.maxLineNumber),
+            ),
+          }),
+          v.check(
+            (anchor) => anchor.endLine >= anchor.startLine,
+            'Navigation anchor endLine must not precede startLine.',
+          ),
+          v.check(
+            (anchor) =>
+              anchor.endLine - anchor.startLine + 1 <=
+              reviewSurfaceNavigationLimits.maxLineRangeSpan,
+            'Navigation anchor exceeds the maximum line span.',
+          ),
+        ),
+      ),
+      annotationId: v.optional(identifierSchema),
+    }),
   });
 
 export const reviewSurfaceNavigationAckInputSchema = v.object({

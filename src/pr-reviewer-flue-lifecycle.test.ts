@@ -126,6 +126,13 @@ it('mounts fresh reviewer context before each Flue model turn without instructio
     ).resolves.toMatchObject({ text: 'Second answer.' });
 
     expect(capturedModelContexts).toHaveLength(2);
+    expect(capturedModelContexts[0]).toContain('neon-pr-tour');
+    expect(capturedModelContexts[0]).toContain(
+      'Use for /show-me, /tour, or natural requests to show, trace, or walk through a changed code path',
+    );
+    expect(capturedModelContexts[0]).not.toContain(
+      'Choose the smallest useful ordered set of one to twelve steps.',
+    );
     expect(capturedModelContexts[0]).toContain('First live draft context.');
     expect(capturedModelContexts[0]).not.toContain(
       'Second delivery has refreshed context.',

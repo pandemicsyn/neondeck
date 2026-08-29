@@ -1,6 +1,10 @@
 import type { SelectedLineRange } from '@pierre/diffs/react';
 import { describe, expect, it, vi } from 'vitest';
 import {
+  prReviewTourAnnotationId,
+  type PrReviewTour,
+} from '../../../../shared/pr-review-tour';
+import {
   createReviewNavigationModel,
   reviewCursorTargets,
 } from '../../../../shared/review-navigation';
@@ -51,6 +55,8 @@ import {
   prReviewDraftHeadIsStale,
   reanchorDraftToRevision,
   refreshOrientationTargetSettled,
+  observePrReviewTourGeneration,
+  reviewSurfaceTargetMatchesCurrentTour,
   sameReviewDraftRevision,
   selectionAnchorMatchesPatch,
   shouldAutomaticallyApplyGitHubRevision,
@@ -58,6 +64,98 @@ import {
 import capturedReviewPatch from './fixtures/captured-review.patch?raw';
 
 describe('GitHubPrReview helpers', () => {
+  it('detects a replacement within the current tour conversation', () => {
+    const tour = {
+      conversationId: 'review-1@head',
+      id: 'tour-2',
+      generation: 2,
+    } as PrReviewTour;
+
+    expect(
+      observePrReviewTourGeneration(
+        { conversationId: tour.conversationId, identity: 'tour-1:1' },
+        tour,
+      ),
+    ).toEqual({
+      changed: true,
+      next: {
+        conversationId: tour.conversationId,
+        identity: 'tour-2:2',
+      },
+      replacesCurrentConversation: true,
+    });
+    expect(
+      observePrReviewTourGeneration(
+        { conversationId: tour.conversationId, identity: 'tour-2:2' },
+        tour,
+      ),
+    ).toMatchObject({
+      changed: false,
+      replacesCurrentConversation: false,
+    });
+    expect(
+      observePrReviewTourGeneration(
+        { conversationId: 'review-2@head', identity: 'tour-1:1' },
+        tour,
+      ),
+    ).toMatchObject({
+      changed: true,
+      replacesCurrentConversation: false,
+    });
+  });
+
+  it('resolves a closed current-tour target from its exact persisted anchor', () => {
+    const tour = {
+      id: 'tour-1',
+      steps: [
+        {
+          id: 'step-1',
+          file: 'README.md',
+          anchor: {
+            side: 'additions',
+            startLine: 3,
+            endLine: 4,
+          },
+        },
+      ],
+    } as PrReviewTour;
+    const target = {
+      path: 'README.md',
+      focus: true,
+      annotationId: prReviewTourAnnotationId('step-1'),
+      anchor: { side: 'additions', startLine: 3, endLine: 4 },
+      correlationId: 'surface-1:1',
+    } as const;
+
+    expect(
+      reviewSurfaceTargetMatchesCurrentTour(target, tour, 'surface-1:1'),
+    ).toBe(true);
+    expect(
+      reviewSurfaceTargetMatchesCurrentTour(
+        { ...target, anchor: { ...target.anchor, endLine: 5 } },
+        tour,
+        'surface-1:1',
+      ),
+    ).toBe(false);
+    expect(
+      reviewSurfaceTargetMatchesCurrentTour(
+        { ...target, annotationId: prReviewTourAnnotationId('step-2') },
+        tour,
+        'surface-1:1',
+      ),
+    ).toBe(false);
+    expect(
+      reviewSurfaceTargetMatchesCurrentTour(
+        { ...target, correlationId: undefined },
+        tour,
+        'surface-1:1',
+      ),
+    ).toBe(false);
+    expect(
+      reviewSurfaceTargetMatchesCurrentTour(target, tour, 'surface-1:2'),
+    ).toBe(false);
+  });
+
   it('binds submission to the exact post-barrier draft revision', () => {
     expect(
       draftSnapshotMatches(
@@ -903,6 +1001,7 @@ describe('GitHubPrReview helpers', () => {
       highestFindingSeverity: 'critical',
       path: 'src/a.ts',
       staleDraftCount: 0,
+      tourStepOrdinals: [],
       unresolvedThreadCount: 1,
     });
     expect(map.get('src/new.ts')).toEqual({
@@ -912,6 +1011,7 @@ describe('GitHubPrReview helpers', () => {
       highestFindingSeverity: null,
       path: 'src/new.ts',
       staleDraftCount: 1,
+      tourStepOrdinals: [],
       unresolvedThreadCount: 1,
     });
   });

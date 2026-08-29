@@ -50,6 +50,7 @@ import {
 import { createReviewRoutes } from './routes/reviews';
 import { createReposRoutes } from './routes/repos';
 import { createReviewSurfaceRoutes } from './routes/review-surfaces';
+import { createReviewTourRoutes } from './routes/review-tours';
 import { createScheduledTaskRoutes } from './routes/scheduled-tasks';
 import { createRuntimeRoutes } from './routes/runtime';
 import { createSafetyRoutes } from './routes/safety';
@@ -175,6 +176,7 @@ export async function createApp(options: CreateAppOptions = {}) {
   app.route('/api/activity', createActivityRoutes(paths));
   app.route('/api/operations', createOperationRoutes(paths));
   app.route('/api', createMemoryRoutes(paths));
+  app.route('/api', createReviewTourRoutes(paths));
   app.route('/api/learning', createLearningRoutes(paths));
   app.route('/api/skills', createSkillRoutes(paths));
   app.route('/api/commands', createCommandRoutes(paths));
