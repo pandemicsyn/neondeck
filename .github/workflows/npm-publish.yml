@@ -198,3 +198,4 @@ jobs:
     with:
       expected_version: ${{ needs.publish.outputs.version }}
       expected_channel: ${{ needs.publish.outputs.npm_tag }}
+    secrets: inherit
