@@ -2735,6 +2735,7 @@ export function GitHubPrReview({
   const reReviewCurrentRevision = async () => {
     if (
       !appliedReviewerRecord ||
+      !appliedReviewerRecord.baseSha ||
       restartBoundReview.isPending ||
       isApplyingRevision
     ) {
@@ -2746,6 +2747,7 @@ export function GitHubPrReview({
     const operationToken = beginOperation();
     try {
       const result = await restartBoundReview.mutateAsync({
+        baseSha: appliedReviewerRecord.baseSha,
         id: appliedReviewerRecord.id,
         headSha: appliedReviewerRecord.headSha,
       });

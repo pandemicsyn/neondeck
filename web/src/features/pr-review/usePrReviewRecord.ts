@@ -47,8 +47,15 @@ export function usePrReviewRecord(
     onSuccess: (result) => updateReview(result.review),
   });
   const restartBound = useMutation({
-    mutationFn: ({ headSha, id }: { headSha: string; id: string }) =>
-      restartBoundPrReview(id, headSha),
+    mutationFn: ({
+      baseSha,
+      headSha,
+      id,
+    }: {
+      baseSha: string;
+      headSha: string;
+      id: string;
+    }) => restartBoundPrReview(id, { baseSha, headSha }),
     onSuccess: (result) => updateReview(result.review),
   });
   const start = useMutation({

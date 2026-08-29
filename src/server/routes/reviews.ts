@@ -167,15 +167,35 @@ export function createReviewRoutes(
     try {
       const expectedHeadSha =
         typeof body.headSha === 'string' ? body.headSha.trim() : '';
-      if (expectedHeadSha) {
+      const expectedBaseSha =
+        typeof body.baseSha === 'string' ? body.baseSha.trim() : '';
+      const hasExpectedRevision = 'headSha' in body || 'baseSha' in body;
+      if (hasExpectedRevision) {
+        if (!expectedHeadSha || !expectedBaseSha) {
+          return c.json(
+            {
+              ok: false,
+              action: 'pr_review_restart',
+              changed: false,
+              message:
+                'Both headSha and baseSha are required for an exact-revision re-review.',
+              requires: ['currentReviewRevision'],
+            },
+            400,
+          );
+        }
         const result = await (
           dependencies.startBoundPrReview ?? startBoundPrReview
         )(
           {
             ref: existing.ref,
             origin: 'panel',
-            expectedReview: { id: existing.id, headSha: expectedHeadSha },
-            requireExpectedHead: true,
+            expectedReview: {
+              id: existing.id,
+              headSha: expectedHeadSha,
+              baseSha: expectedBaseSha,
+            },
+            requireExpectedRevision: true,
             returnExistingInProgress: true,
           },
           paths,

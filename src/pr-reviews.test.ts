@@ -917,7 +917,7 @@ describe('durable PR reviews', () => {
     expect(invokeWorkflow).not.toHaveBeenCalled();
   });
 
-  it('rejects an exact-head bound re-review when GitHub has advanced', async () => {
+  it('rejects an exact-revision re-review when either GitHub revision advances', async () => {
     const paths = await tempPaths();
     const target = async () => ({
       repoFullName: 'other/project',
@@ -957,8 +957,12 @@ describe('durable PR reviews', () => {
         {
           ref: 'other/project#42',
           origin: 'panel',
-          expectedReview: { id: original.reviewId, headSha: 'head-1' },
-          requireExpectedHead: true,
+          expectedReview: {
+            id: original.reviewId,
+            headSha: 'head-1',
+            baseSha: 'base',
+          },
+          requireExpectedRevision: true,
           returnExistingInProgress: true,
         },
         paths,
@@ -980,9 +984,40 @@ describe('durable PR reviews', () => {
       headSha: 'head-1',
       status: 'ready',
     });
+    await expect(
+      startBoundPrReview(
+        {
+          ref: 'other/project#42',
+          origin: 'panel',
+          expectedReview: {
+            id: original.reviewId,
+            headSha: 'head-1',
+            baseSha: 'base',
+          },
+          requireExpectedRevision: true,
+          returnExistingInProgress: true,
+        },
+        paths,
+        {
+          resolveTarget: target,
+          fetchDetail: async () => ({
+            ...detail('head-1'),
+            baseSha: 'base-2',
+          }),
+          invokeWorkflow,
+        },
+      ),
+    ).resolves.toMatchObject({
+      reviewId: original.reviewId,
+      runId: null,
+      started: false,
+      reason: 'stale',
+      review: { baseSha: 'base', headSha: 'head-1', status: 'ready' },
+    });
+    expect(invokeWorkflow).not.toHaveBeenCalled();
   });
 
-  it('passes the rendered head binding through the restart route', async () => {
+  it('passes the rendered revision binding through the restart route', async () => {
     const paths = await tempPaths();
     const target = async () => ({
       repoFullName: 'other/project',
@@ -1027,7 +1062,7 @@ describe('durable PR reviews', () => {
       {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ headSha: 'head-1' }),
+        body: JSON.stringify({ headSha: 'head-1', baseSha: 'base' }),
       },
     );
 
@@ -1036,12 +1071,26 @@ describe('durable PR reviews', () => {
       {
         ref: 'other/project#42',
         origin: 'panel',
-        expectedReview: { id: original.reviewId, headSha: 'head-1' },
-        requireExpectedHead: true,
+        expectedReview: {
+          id: original.reviewId,
+          headSha: 'head-1',
+          baseSha: 'base',
+        },
+        requireExpectedRevision: true,
         returnExistingInProgress: true,
       },
       paths,
     );
+    const incompleteResponse = await routes.request(
+      `/reviews/${original.reviewId}/review`,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ headSha: 'head-1' }),
+      },
+    );
+    expect(incompleteResponse.status).toBe(400);
+    expect(startBound).toHaveBeenCalledTimes(1);
   });
 
   it('rejects a same-record in-progress review on a different head', async () => {
@@ -1093,8 +1142,12 @@ describe('durable PR reviews', () => {
         {
           ref: 'other/project#42',
           origin: 'panel',
-          expectedReview: { id: original.reviewId, headSha: 'head-1' },
-          requireExpectedHead: true,
+          expectedReview: {
+            id: original.reviewId,
+            headSha: 'head-1',
+            baseSha: 'base',
+          },
+          requireExpectedRevision: true,
           returnExistingInProgress: true,
         },
         paths,
@@ -1104,6 +1157,76 @@ describe('durable PR reviews', () => {
       started: false,
       reason: 'stale',
       review: { headSha: 'head-2', status: 'reviewing' },
+    });
+  });
+
+  it('rejects a same-record in-progress review on a different base', async () => {
+    const paths = await tempPaths();
+    const target = async () => ({
+      repoFullName: 'other/project',
+      owner: 'other',
+      repo: 'project',
+      number: 42,
+    });
+    const originalDependencies = {
+      resolveTarget: target,
+      fetchDetail: async () => detail('head-1'),
+      invokeWorkflow: async () => ({ runId: 'run-original' }),
+    };
+    const original = await startPrReview(
+      { ref: 'other/project#42', origin: 'panel' },
+      paths,
+      originalDependencies,
+    );
+    completePrReview(
+      {
+        reviewId: original.reviewId,
+        runId: original.runId,
+        headSha: 'head-1',
+        reportIds: [],
+        reviewUrl: original.review.reviewUrl,
+        briefingOverview: prReviewBriefingFixture(),
+        findingCount: 0,
+        seededCount: 0,
+        reportOnlyCount: 0,
+        reportOnlyFindings: [],
+      },
+      paths,
+    );
+    const newer = await startPrReview(
+      { ref: 'other/project#42', origin: 'panel' },
+      paths,
+      {
+        ...originalDependencies,
+        fetchDetail: async () => ({
+          ...detail('head-1'),
+          baseSha: 'base-2',
+        }),
+        invokeWorkflow: async () => ({ runId: 'run-newer' }),
+      },
+    );
+    expect(newer.reviewId).toBe(original.reviewId);
+
+    await expect(
+      startBoundPrReview(
+        {
+          ref: 'other/project#42',
+          origin: 'panel',
+          expectedReview: {
+            id: original.reviewId,
+            headSha: 'head-1',
+            baseSha: 'base',
+          },
+          requireExpectedRevision: true,
+          returnExistingInProgress: true,
+        },
+        paths,
+        originalDependencies,
+      ),
+    ).resolves.toMatchObject({
+      started: false,
+      reason: 'stale',
+      review: { baseSha: 'base-2', headSha: 'head-1', status: 'reviewing' },
     });
   });
 
