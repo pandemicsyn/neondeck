@@ -42,9 +42,17 @@ you really want to review this or if this change is safe to stamp and approve.
 ![Neondeck PR briefing modal with an approve recommendation and operational note](docs/public/screenshots/pr-briefing-modal-1440.webp)
 
 The focused workbench keeps the revision-aware diff, review actions, and a
-reviewer conversation together—without moving the work to GitHub's web UI. Its also fast as fuck even with giant PRs.
+reviewer conversation together—without moving the work to GitHub's web UI. It
+is also fast as fuck, even with giant PRs.
 
-![Neondeck PR diff workbench with a reviewer conversation](docs/public/screenshots/diff-pr-workbench-1440.webp)
+Guided PR tours turn a reviewer question into an exact-revision, line-anchored
+walkthrough. Neon traces the flow across files while the diff annotation,
+traversal controls, and reviewer-side step list stay synchronized—so you can
+inspect a cross-file change, ask follow-up questions, and never lose your place.
+
+![Neondeck PR review showing an Ask reviewer question and its seven-step guided tour](docs/public/screenshots/guided-pr-tour-1440.webp)
+
+[See how guided PR tours work](https://neondeck.dev/docs/guided-tours/).
 
 ## Built for work in progress
 
@@ -60,6 +68,12 @@ Neon watches PRs, prepares fixes and reviews, and keeps things moving.
   wait for approval in that same owner conversation, or deliver automatically
   when the owner judges the change reasonable, appropriately scoped, and
   sufficiently validated.
+- **Trace a change with guided PR tours.** Ask Neon to show you a flow, behavior,
+  or finding and get a durable walkthrough anchored to the exact PR revision.
+  Walk the steps in the diff or switch to a stitched reading view that preserves
+  tour order across files. Tours explain the code without masquerading as review
+  findings, and a new tour replaces the old one atomically so the current
+  walkthrough always matches the conversation.
 - **Review and approve PRs on the deck.** Read diffs, leave inline comments,
   resolve threads, traverse files, hunks, drafts, threads, and revision-bound
   Neon findings, and submit approvals or change requests without switching to
@@ -68,9 +82,7 @@ Neon watches PRs, prepares fixes and reviews, and keeps things moving.
   Neon reviews against an exact-head, read-only Git workspace. The reviewer
   discovers the merge-base diff itself, can inspect bounded patches, raw files,
   hunk indexes, history, and blame at the reviewed revisions, and keeps a durable
-  chat available for follow-up questions. Ask to be shown a flow and Neon can
-  publish an exact-revision guided tour with deterministic diff walking, a
-  stitched reading view, and finding-backed “Show me why” explanations.
+  chat available for follow-up questions.
 - **Handoff, both directions.** Delegate work to agents like Kilo or Codex, then
   let the finished PR come back to Neon for checks and deployment follow-through.
 - **Conversational briefings and scheduled instructions.** Neon grounds a
