@@ -15,6 +15,7 @@ import {
   formatOnboardingNextSteps,
   formatRuntimeSkillRootsNote,
   hasPackagedServerEntry,
+  providerFromModel,
 } from './onboarding';
 
 const tempRoots: string[] = [];
@@ -308,9 +309,12 @@ describe('onboarding model defaults', () => {
   it('uses the latest ChatGPT subscription model without changing API defaults', () => {
     expect(defaultProviderModel('openai-codex')).toBe(defaultOpenAiCodexModel);
     expect(defaultProviderModel('openai')).toBe('openai/gpt-5.5');
-    expect(defaultProviderModel('openrouter')).toBe(
-      'openrouter/openai/gpt-5.5',
+    expect(defaultProviderModel('openrouter')).toBe('openrouter/gpt-5.5');
+    expect(defaultProviderModel('opencode')).toBe('opencode/gpt-5.5');
+    expect(providerFromModel('openrouter/anthropic/claude-sonnet-4.6')).toBe(
+      'openrouter',
     );
+    expect(providerFromModel('opencode/gpt-5.6-terra')).toBe('opencode');
   });
 
   it('recommends cheap, fast Explore model profiles', () => {

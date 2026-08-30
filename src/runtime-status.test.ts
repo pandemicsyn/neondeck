@@ -38,6 +38,8 @@ describe('runtime status', () => {
       kilo: false,
       openai: false,
       anthropic: false,
+      openrouter: false,
+      opencode: false,
       openaiCodex: false,
       github: false,
     });
@@ -84,6 +86,47 @@ describe('runtime status', () => {
           ok: true,
           level: 'ready',
         }),
+      ]),
+    );
+  });
+
+  it('reports first-class gateway credentials and readiness', async () => {
+    const home = await tempDir();
+    const paths = runtimePaths(home);
+    await ensureRuntimeHome(paths);
+    await writeFile(
+      paths.config,
+      JSON.stringify({
+        version: 1,
+        models: { displayAssistant: 'opencode/gpt-5.6-terra' },
+        providers: {
+          openrouter: { apiKeyEnv: 'ROUTER_KEY' },
+          opencode: { apiKeyEnv: 'ZEN_KEY' },
+        },
+      }),
+    );
+
+    const missing = await readRuntimeStatus(paths, {});
+    expect(missing.checks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: 'opencode-key', ok: false }),
+      ]),
+    );
+
+    const ready = await readRuntimeStatus(paths, { ZEN_KEY: 'zen-key' });
+    expect(ready.providers.credentials).toMatchObject({
+      openrouter: false,
+      opencode: true,
+    });
+    expect(ready.providers.configs.opencode).toEqual({
+      enabled: true,
+      apiKeyEnv: 'ZEN_KEY',
+      apiKeyPresent: true,
+    });
+    expect(ready.checks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: 'opencode-key', ok: true }),
+        expect.objectContaining({ id: 'model-providers', ok: true }),
       ]),
     );
   });
@@ -364,6 +407,8 @@ describe('runtime status', () => {
       kilo: true,
       openai: false,
       anthropic: false,
+      openrouter: false,
+      opencode: false,
       openaiCodex: false,
       github: true,
     });

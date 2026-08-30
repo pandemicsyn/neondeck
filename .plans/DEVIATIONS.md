@@ -22,6 +22,20 @@ Use this format:
 - Reason: ChatGPT subscriptions should not be treated as OpenAI API keys, and users need providers such as OpenRouter and local compatible servers without opening config to unvalidated provider fields or raw secrets.
 - Follow-up: Add dashboard-owned ChatGPT login/logout controls if a signed user-intent OAuth surface is introduced; the current login lifecycle intentionally remains user-owned CLI state.
 
+## 2026-08-29 - Native Open Gateway Discovery
+
+- Roadmap item: Phase 13 / provider configuration and safety
+- Decision: Promote `openrouter` and `opencode` from generic-compatible examples to first-class providers. OpenRouter tries the account-filtered catalog before the public list and accepts eligible live ids even when they lead bundled Pi; runtime registration appends configured missing ids with OpenRouter's uniform Chat Completions API, compatibility mode, and conservative unknown limits. OpenCode treats Zen's live ids as availability and Pi as the per-model protocol authority, so it still intersects strictly. Offline setup uses a clearly stale bundled catalog, and generic provider ids now reserve both native ids.
+- Reason: OpenRouter and OpenCode expose model-list endpoints, but OpenCode is multi-protocol and both live lists can lead or lag Pi. OpenRouter's protocol is uniform enough to materialize a safe selected-model fallback, while guessing a protocol for a newly listed OpenCode model could silently misroute it.
+- Follow-up: Models.dev enrichment and dynamic Pi provider hydration for live OpenCode ids absent from Pi are intentionally deferred until there is a validated Pi adapter mapping. OpenRouter live ids without bundled metadata use conservative runtime limits until Pi catches up. Recommendation chains are centralized and should be revisited as pricing and model availability change.
+
+## 2026-08-30 - Paginated Gateway Model Search
+
+- Roadmap item: Phase 13 / native Open gateway discovery and onboarding
+- Decision: Replace the planned hard 12-result search cap with 12-result pages, visible range/total counts, and previous/next controls. Search ordering now prioritizes exact and close matches, then uses meaningful provider creation timestamps as a recency tie-breaker before a stable natural-id order.
+- Reason: A broad family query could match more than 12 models and silently hide a newer valid model, while a more specific query could still find it. Pagination preserves the compact prompt without making catalog entries unreachable, and relevance-first recency ordering makes broad discovery useful without letting a newer weak match outrank an exact match.
+- Follow-up: None. OpenCode timestamps that are absent or non-positive are treated as unknown and fall back to stable natural-id ordering.
+
 ## 2026-07-25 - PR Learning Evidence Boundaries
 
 - Roadmap item: Wrap Up the Learning Flywheel / handled PR evidence
