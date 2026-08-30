@@ -124,8 +124,10 @@ npm run dev
 Open `http://127.0.0.1:5173/`.
 
 The setup wizard prepares a runtime home, configures KiloCode, OpenAI API-key,
-Anthropic, ChatGPT subscription, or generic OpenAI-compatible model access,
-checks the Git identity used by Autopilot commits, adds local repositories,
+Anthropic, OpenRouter, OpenCode Zen, ChatGPT subscription, or custom
+OpenAI-compatible model access, and offers searchable live model catalogs for
+KiloCode, OpenRouter, and OpenCode. It also checks the Git identity used by
+Autopilot commits, adds local repositories,
 applies a dashboard preset, and can create initial schedules and command
 preapprovals. When the global Git identity is incomplete, the wizard warns and
 offers to configure it instead of allowing Git to silently invent one from the

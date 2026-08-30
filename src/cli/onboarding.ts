@@ -5,7 +5,12 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { spawn } from 'node:child_process';
 import { runUnattendedGit } from '../lib/git';
+import { defaultGatewayModel } from '../lib/gateway-model-policy';
 import { defaultOpenAiCodexModel } from '../model-defaults';
+import {
+  searchDiscoveredModels,
+  type ModelDiscoveryResult,
+} from '../modules/model-catalog';
 import { readDotEnvFile, type EnvLoadResult } from '../modules/runtime';
 import {
   openAiCompatibleBaseUrlIssue,
@@ -18,6 +23,7 @@ import {
   configActionsModule,
   githubModule,
   modelDiscoveryModule,
+  reposModule,
   runtimeHomeModule,
   runtimeStatusModule,
   sessionsModule,
@@ -34,14 +40,22 @@ import {
   requiredText,
   writeDotEnvFile,
 } from './prompts';
-import { readConfigData } from './output';
+import { formatProviderCredentialLines, readConfigData } from './output';
 import { preapprovalGroups, type PreapprovalGroupId } from './preapprovals';
 
 const defaultModel = 'kilocode/kilo-auto/balanced';
 export const exploreModelRecommendation =
   'Recommended: OpenAI Luna or OpenAI Terra at medium reasoning.';
 type SetupModelProvider =
-  'kilocode' | 'openai' | 'anthropic' | 'openai-codex' | 'openai-compatible';
+  | 'kilocode'
+  | 'openai'
+  | 'anthropic'
+  | 'openrouter'
+  | 'opencode'
+  | 'openai-codex'
+  | 'openai-compatible';
+
+type ModelDiscoveryCache = Map<string, Promise<ModelDiscoveryResult>>;
 
 export type SetupGitIdentityResult = {
   status: 'ready' | 'configured' | 'skipped' | 'unavailable';
@@ -105,11 +119,7 @@ export async function runInit(options: { home?: string }) {
     `home      ${paths.home}`,
     `status    ${status.status}`,
     `model     ${status.models.displayAssistant}`,
-    `github    ${status.providers.credentials.github ? 'configured' : 'missing'}`,
-    `kilo      ${status.providers.credentials.kilo ? 'configured' : 'missing'}`,
-    `openai    ${status.providers.credentials.openai ? 'configured' : 'missing'}`,
-    `chatgpt   ${status.providers.credentials.openaiCodex ? 'configured' : 'missing'}`,
-    `anthropic ${status.providers.credentials.anthropic ? 'configured' : 'missing'}`,
+    ...formatProviderCredentialLines(status.providers.credentials),
     `repos     ${status.counts.repos}`,
     `autopilot ${status.autopilot ? `${status.autopilot.status} (${status.autopilot.repoId})` : 'needs a repo'}`,
   ];
@@ -413,9 +423,19 @@ export async function configureProviderAndModels(paths: RuntimePaths) {
         hint: 'Built-in Flue provider using ANTHROPIC_API_KEY.',
       },
       {
+        value: 'openrouter',
+        label: 'OpenRouter',
+        hint: 'Search the live OpenRouter catalog using OPENROUTER_API_KEY.',
+      },
+      {
+        value: 'opencode',
+        label: 'OpenCode Zen',
+        hint: 'Search Zen models with native per-model protocol support.',
+      },
+      {
         value: 'openai-compatible',
         label: 'OpenAI-compatible endpoint',
-        hint: 'OpenRouter, a local server, or another compatible API.',
+        hint: 'A local server or another custom compatible API.',
       },
     ],
   });
@@ -432,14 +452,21 @@ export async function configureProviderAndModels(paths: RuntimePaths) {
   }
   loadEnvForPaths(paths, { includeDevFallback: false, overwrite: true });
 
-  const model = await chooseModel(modelProvider, env);
+  const discoveryCache: ModelDiscoveryCache = new Map();
+  const model = await chooseModel(modelProvider, env, discoveryCache);
   const thinkingLevel = await promptThinkingLevel();
-  const utilityModel = await chooseUtilityModel(modelProvider, env, model);
+  const utilityModel = await chooseUtilityModel(
+    modelProvider,
+    env,
+    model,
+    discoveryCache,
+  );
   const exploreModel = await chooseExploreModel(
     modelProvider,
     env,
     model,
     thinkingLevel,
+    discoveryCache,
   );
 
   await updateProviderConfig(configInput, paths);
@@ -468,6 +495,7 @@ export async function chooseExploreModel(
   env: EnvMap,
   displayModel: string,
   displayThinkingLevel: ThinkingLevel,
+  discoveryCache?: ModelDiscoveryCache,
 ) {
   const mode = await promptSelect<'default' | 'manual'>({
     message: 'Explore subagent model',
@@ -493,10 +521,9 @@ export async function chooseExploreModel(
     });
     return { explore: null, exploreThinkingLevel: thinkingLevel };
   }
-  const model =
-    provider === 'kilocode'
-      ? await chooseModel(provider, env)
-      : await promptModelText(provider, displayModel, 'Explore subagent model');
+  const model = isCatalogProvider(provider)
+    ? await chooseModel(provider, env, discoveryCache, 'explore')
+    : await promptModelText(provider, displayModel, 'Explore subagent model');
   const thinkingLevel = await promptThinkingLevel({
     message: 'Explore thinking level',
     initialValue: 'medium',
@@ -508,6 +535,7 @@ export async function chooseUtilityModel(
   provider: string,
   env: EnvMap,
   displayModel: string,
+  discoveryCache?: ModelDiscoveryCache,
 ) {
   const mode = await promptSelect<'default' | 'manual' | 'skip'>({
     message: 'Utility model',
@@ -528,7 +556,9 @@ export async function chooseUtilityModel(
   });
 
   if (mode !== 'manual') return undefined;
-  if (provider === 'kilocode') return chooseModel(provider, env);
+  if (isCatalogProvider(provider)) {
+    return chooseModel(provider, env, discoveryCache, 'utility');
+  }
   return promptModelText(provider, displayModel, 'Utility model');
 }
 
@@ -554,7 +584,7 @@ export async function configureProviderSecret(
         },
       ],
     });
-    const { loginOpenAiCodexSubscription } = await modelDiscoveryModule();
+    const { loginOpenAiCodexSubscription } = await reposModule();
     const spin = spinner();
     spin.start('Waiting for ChatGPT authorization');
     try {
@@ -614,8 +644,14 @@ export async function configureProviderSecret(
     if (orgId.trim()) env.set('KILOCODE_ORGANIZATION_ID', orgId.trim());
     else env.delete('KILOCODE_ORGANIZATION_ID');
   } else if (provider !== 'openai-compatible') {
-    const key = provider === 'openai' ? 'OPENAI_API_KEY' : 'ANTHROPIC_API_KEY';
-    const label = provider === 'openai' ? 'OpenAI' : 'Anthropic';
+    const providerSecret = {
+      openai: { key: 'OPENAI_API_KEY', label: 'OpenAI' },
+      anthropic: { key: 'ANTHROPIC_API_KEY', label: 'Anthropic' },
+      openrouter: { key: 'OPENROUTER_API_KEY', label: 'OpenRouter' },
+      opencode: { key: 'OPENCODE_API_KEY', label: 'OpenCode Zen' },
+    }[provider];
+    if (!providerSecret) return;
+    const { key, label } = providerSecret;
     const value = await promptPassword({
       message: env.get(key)
         ? `${label} API key (blank keeps existing)`
@@ -629,79 +665,156 @@ export async function configureProviderSecret(
   log.success(`Wrote ${paths.env}`);
 }
 
-export async function chooseModel(provider: string, env: EnvMap) {
-  if (provider !== 'kilocode') {
+export async function chooseModel(
+  provider: string,
+  env: EnvMap,
+  discoveryCache: ModelDiscoveryCache = new Map(),
+  role: 'displayAssistant' | 'utility' | 'explore' = 'displayAssistant',
+) {
+  if (!isCatalogProvider(provider)) {
     return promptModelText(provider, defaultProviderModel(provider));
   }
 
-  const { discoverModels } = await modelDiscoveryModule();
+  const { discoverModels, recommendedGatewayModel } =
+    await modelDiscoveryModule();
   const spin = spinner();
-  spin.start('Discovering KiloCode models');
-  const result = await discoverModels({
-    provider,
-    apiKey: env.get('KILOCODE_API_KEY'),
-    organizationId: env.get('KILOCODE_ORGANIZATION_ID'),
-  });
+  const label = providerLabel(provider);
+  spin.start(`Discovering ${label} models`);
+  let discovery = discoveryCache.get(provider);
+  if (!discovery) {
+    discovery = discoverModels({
+      provider,
+      apiKey:
+        provider === 'kilocode'
+          ? env.get('KILOCODE_API_KEY')
+          : provider === 'openrouter'
+            ? env.get('OPENROUTER_API_KEY')
+            : undefined,
+      organizationId:
+        provider === 'kilocode'
+          ? env.get('KILOCODE_ORGANIZATION_ID')
+          : undefined,
+    });
+    discoveryCache.set(provider, discovery);
+  }
+  const result = await discovery;
   spin.stop(
     result.ok
-      ? `Discovered ${result.models.length} KiloCode models`
-      : 'KiloCode discovery unavailable',
+      ? `Discovered ${result.models.length} ${label} models`
+      : `${label} live discovery unavailable; using ${result.diagnostics.source}`,
   );
+  if (result.warning) log.warn(result.warning);
   if (!result.ok && result.error) log.warn(result.error);
 
-  const mode = await promptSelect<'search' | 'default' | 'manual'>({
-    message: 'KiloCode model',
-    initialValue: 'default',
-    options: [
-      {
-        value: 'default',
-        label: defaultModel,
-        hint: 'Use the recommended default.',
-      },
-      {
-        value: 'search',
-        label: 'Search models',
-        hint: 'Filter discovered KiloCode models.',
-      },
-      { value: 'manual', label: 'Manual entry' },
-    ],
-  });
+  const recommended =
+    recommendedGatewayModel(provider, role, result.models) ??
+    result.models.find((model) => model.recommendedIndex === 0)?.id;
+  const initialModel =
+    recommended ?? result.models[0]?.id ?? defaultProviderModel(provider);
 
-  if (mode === 'default') return defaultModel;
-  if (mode === 'manual') return promptModelText(provider, defaultModel);
+  while (true) {
+    const mode = await promptSelect<'search' | 'default' | 'manual'>({
+      message: `${label} model`,
+      initialValue: recommended ? 'default' : 'search',
+      options: [
+        ...(recommended
+          ? [
+              {
+                value: 'default' as const,
+                label: recommended,
+                hint: 'Use the recommended default.',
+              },
+            ]
+          : []),
+        {
+          value: 'search',
+          label: 'Search models',
+          hint: `Filter discovered ${label} models.`,
+        },
+        { value: 'manual', label: 'Manual entry' },
+      ],
+    });
 
-  const query = await promptText({
-    message: 'Search KiloCode models',
-    placeholder: 'sonnet, gpt, kimi, free',
-  });
-  const matches = result.models
-    .filter((model) => {
-      const text = `${model.id} ${model.name}`.toLowerCase();
-      return text.includes(query.trim().toLowerCase());
-    })
-    .slice(0, 12);
+    if (mode === 'default' && recommended) return recommended;
+    if (mode === 'manual') {
+      return promptCatalogModelText(provider, initialModel, result.models);
+    }
 
-  if (matches.length === 0) {
-    log.warn('No discovered models matched that search.');
-    return promptModelText(provider, defaultModel);
+    searchModels: while (true) {
+      const query = await promptText({
+        message: `Search ${label} models`,
+        placeholder: 'sonnet, gpt, kimi, free',
+      });
+      const matches = searchDiscoveredModels(result.models, query);
+
+      if (matches.length === 0) {
+        log.warn('No discovered models matched that search.');
+        const next = await promptSelect<
+          typeof modelSearchAgain | typeof modelSearchBack
+        >({
+          message: 'No matching models',
+          initialValue: modelSearchAgain,
+          options: [
+            { value: modelSearchAgain, label: 'Search again' },
+            { value: modelSearchBack, label: 'Back to model choices' },
+          ],
+        });
+        if (next === modelSearchBack) break;
+        continue;
+      }
+
+      let page = 0;
+      const pageCount = Math.ceil(matches.length / modelSearchPageSize);
+      while (true) {
+        const start = page * modelSearchPageSize;
+        const pageMatches = matches.slice(start, start + modelSearchPageSize);
+        const selection = await promptSelect<string>({
+          message: `Select model (${start + 1}-${start + pageMatches.length} of ${matches.length})`,
+          options: [
+            ...pageMatches.map((model) => ({
+              value: model.id,
+              label: model.id,
+              hint: [
+                model.name,
+                model.contextLength ? `${model.contextLength} ctx` : null,
+                model.reasoning ? 'reasoning' : null,
+                model.isFree ? 'free' : null,
+                model.api,
+              ]
+                .filter(Boolean)
+                .join(' · '),
+            })),
+            ...(page > 0
+              ? [{ value: modelSearchPrevious, label: 'Previous results' }]
+              : []),
+            ...(page + 1 < pageCount
+              ? [{ value: modelSearchNext, label: 'More results' }]
+              : []),
+            { value: modelSearchAgain, label: 'Search again' },
+            { value: modelSearchBack, label: 'Back to model choices' },
+          ],
+        });
+        if (selection === modelSearchPrevious) {
+          page -= 1;
+          continue;
+        }
+        if (selection === modelSearchNext) {
+          page += 1;
+          continue;
+        }
+        if (selection === modelSearchAgain) continue searchModels;
+        if (selection === modelSearchBack) break searchModels;
+        return selection;
+      }
+    }
   }
-
-  return promptSelect<string>({
-    message: 'Select model',
-    options: matches.map((model) => ({
-      value: model.id,
-      label: model.id,
-      hint: [
-        model.name,
-        model.contextLength ? `${model.contextLength} ctx` : null,
-        model.reasoning ? 'reasoning' : null,
-        model.isFree ? 'free' : null,
-      ]
-        .filter(Boolean)
-        .join(' · '),
-    })),
-  });
 }
+
+const modelSearchAgain = '__neondeck_search_again__';
+const modelSearchBack = '__neondeck_model_choices__';
+const modelSearchPrevious = '__neondeck_search_previous__';
+const modelSearchNext = '__neondeck_search_next__';
+const modelSearchPageSize = 12;
 
 export async function promptModelText(
   provider: string,
@@ -724,6 +837,36 @@ export async function promptModelText(
       return undefined;
     },
   });
+}
+
+async function promptCatalogModelText(
+  provider: string,
+  initialValue: string,
+  models: ModelDiscoveryResult['models'],
+): Promise<string> {
+  const selected = await promptModelText(provider, initialValue);
+  if (models.some((model) => model.id === selected)) return selected;
+  log.warn(
+    `${selected} is not available in the effective ${providerLabel(provider)} catalog. Choose a discovered model.`,
+  );
+  return promptCatalogModelText(provider, initialValue, models);
+}
+
+function isCatalogProvider(
+  provider: string,
+): provider is 'kilocode' | 'openrouter' | 'opencode' {
+  return (
+    provider === 'kilocode' ||
+    provider === 'openrouter' ||
+    provider === 'opencode'
+  );
+}
+
+function providerLabel(provider: string) {
+  if (provider === 'kilocode') return 'KiloCode';
+  if (provider === 'openrouter') return 'OpenRouter';
+  if (provider === 'opencode') return 'OpenCode Zen';
+  return provider;
 }
 
 export async function promptThinkingLevel(
@@ -775,7 +918,12 @@ export function providerConfigInput(
   return {
     provider,
     enabled: true,
-    apiKeyEnv: provider === 'openai' ? 'OPENAI_API_KEY' : 'ANTHROPIC_API_KEY',
+    apiKeyEnv: {
+      openai: 'OPENAI_API_KEY',
+      anthropic: 'ANTHROPIC_API_KEY',
+      openrouter: 'OPENROUTER_API_KEY',
+      opencode: 'OPENCODE_API_KEY',
+    }[provider],
   };
 }
 
@@ -783,7 +931,9 @@ export function defaultProviderModel(provider: string) {
   if (provider === 'openai') return 'openai/gpt-5.5';
   if (provider === 'openai-codex') return defaultOpenAiCodexModel;
   if (provider === 'anthropic') return 'anthropic/claude-sonnet-4-6';
-  if (provider === 'openrouter') return 'openrouter/openai/gpt-5.5';
+  if (provider === 'openrouter' || provider === 'opencode') {
+    return defaultGatewayModel(provider) ?? `${provider}/gpt-5.5`;
+  }
   if (provider !== 'kilocode') return `${provider}/gpt-5.5`;
   return defaultModel;
 }
@@ -793,6 +943,8 @@ export function providerFromModel(model: string): SetupModelProvider {
   if (
     provider === 'openai' ||
     provider === 'anthropic' ||
+    provider === 'openrouter' ||
+    provider === 'opencode' ||
     provider === 'openai-codex'
   )
     return provider;
@@ -806,18 +958,15 @@ async function configureOpenAiCompatibleProvider(
   const id = (
     await promptText({
       message: 'Provider id',
-      initialValue: 'openrouter',
-      placeholder: 'openrouter',
+      initialValue: 'local-models',
+      placeholder: 'local-models',
       validate: openAiCompatibleProviderIdIssue,
     })
   ).trim();
   const baseUrl = (
     await promptText({
       message: 'OpenAI-compatible base URL',
-      initialValue:
-        id === 'openrouter'
-          ? 'https://openrouter.ai/api/v1'
-          : 'https://example.com/v1',
+      initialValue: 'https://example.com/v1',
       validate: openAiCompatibleBaseUrlIssue,
     })
   ).replace(/\/+$/, '');
@@ -828,7 +977,7 @@ async function configureOpenAiCompatibleProvider(
       {
         value: 'openai-completions',
         label: 'Chat Completions',
-        hint: 'OpenRouter and most compatible endpoints.',
+        hint: 'Most compatible endpoints.',
       },
       {
         value: 'openai-responses',

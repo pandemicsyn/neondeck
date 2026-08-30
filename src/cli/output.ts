@@ -430,6 +430,22 @@ export function numberField(record: Record<string, unknown>, key: string) {
   return typeof value === 'number' ? value : 0;
 }
 
+export function formatProviderCredentialLines(
+  credentials: RuntimeStatus['providers']['credentials'],
+) {
+  const state = (configured: boolean) =>
+    configured ? 'configured' : 'missing';
+  return [
+    `github     ${state(credentials.github)}`,
+    `kilo       ${state(credentials.kilo)}`,
+    `openai     ${state(credentials.openai)}`,
+    `chatgpt    ${state(credentials.openaiCodex)}`,
+    `anthropic  ${state(credentials.anthropic)}`,
+    `openrouter ${state(credentials.openrouter)}`,
+    `opencode   ${state(credentials.opencode)}`,
+  ];
+}
+
 export function printStatus(status: RuntimeStatus) {
   console.log(`neondeck:${status.status}`);
   console.log(`home      ${status.home}`);
@@ -441,21 +457,11 @@ export function printStatus(status: RuntimeStatus) {
   console.log(
     `utility  ${status.models.utilityConfigured ? status.models.utility : `${status.models.utility} (fallback)`}`,
   );
-  console.log(
-    `github    ${status.providers.credentials.github ? 'configured' : 'missing'}`,
-  );
-  console.log(
-    `kilo      ${status.providers.credentials.kilo ? 'configured' : 'missing'}`,
-  );
-  console.log(
-    `openai    ${status.providers.credentials.openai ? 'configured' : 'missing'}`,
-  );
-  console.log(
-    `chatgpt   ${status.providers.credentials.openaiCodex ? 'configured' : 'missing'}`,
-  );
-  console.log(
-    `anthropic ${status.providers.credentials.anthropic ? 'configured' : 'missing'}`,
-  );
+  for (const line of formatProviderCredentialLines(
+    status.providers.credentials,
+  )) {
+    console.log(line);
+  }
   console.log(`repos     ${status.counts.repos}`);
   console.log(`skills    ${status.counts.activeSkills}`);
   console.log(`watches   ${status.counts.activeWatches}`);

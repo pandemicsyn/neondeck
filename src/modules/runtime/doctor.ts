@@ -12,6 +12,8 @@ import {
   resolveKilocodeProviderStatus,
   resolveOpenAiCompatibleProviderStatuses,
   resolveOpenAiProviderStatus,
+  resolveOpenCodeProviderStatus,
+  resolveOpenRouterProviderStatus,
 } from '../repos';
 import {
   readGitRepoStatus,
@@ -454,6 +456,20 @@ function providerEnvRequirement(
       config ? { providers: config.providers } : undefined,
       env,
     );
+    return status.enabled ? { id: status.apiKeyEnv } : undefined;
+  }
+
+  if (provider === 'openrouter' || provider === 'opencode') {
+    const status =
+      provider === 'openrouter'
+        ? resolveOpenRouterProviderStatus(
+            config ? { providers: config.providers } : undefined,
+            env,
+          )
+        : resolveOpenCodeProviderStatus(
+            config ? { providers: config.providers } : undefined,
+            env,
+          );
     return status.enabled ? { id: status.apiKeyEnv } : undefined;
   }
 

@@ -199,7 +199,7 @@ export const updateProviderInputSchema = v.variant('provider', [
     ...builtInProviderFields,
   }),
   v.strictObject({
-    provider: v.literal('anthropic'),
+    provider: v.picklist(['anthropic', 'openrouter', 'opencode']),
     ...builtInProviderFields,
   }),
   v.strictObject({
@@ -227,7 +227,14 @@ export const updateProviderInputSchema = v.variant('provider', [
 // model-callable surface deliberately narrower than the local API/CLI schema:
 // arbitrary endpoints must be configured directly by the user.
 export const updateProviderActionInputSchema = v.strictObject({
-  provider: v.picklist(['kilocode', 'openai', 'anthropic', 'openai-codex']),
+  provider: v.picklist([
+    'kilocode',
+    'openai',
+    'anthropic',
+    'openrouter',
+    'opencode',
+    'openai-codex',
+  ]),
   enabled: v.optional(v.boolean()),
   apiKeyEnv: v.optional(v.nullable(envVarNameSchema)),
   organizationIdEnv: v.optional(v.nullable(envVarNameSchema)),
