@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.0.0-beta.41
+
+### Minor Changes
+
+- [#360](https://github.com/pandemicsyn/neondeck/pull/360) [`c5b69d4`](https://github.com/pandemicsyn/neondeck/commit/c5b69d44f40549757a3c0de4966336b43f2a1ed5) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Add first-class OpenRouter and OpenCode Zen setup with live searchable model discovery, native Pi provider behavior, and runtime readiness controls.
+
 ## 1.0.0-beta.40
 
 ### Minor Changes
