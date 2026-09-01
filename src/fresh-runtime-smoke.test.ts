@@ -157,6 +157,8 @@ describe('fresh runtime smoke test', () => {
       kilo: true,
       openai: false,
       anthropic: false,
+      openrouter: false,
+      opencode: false,
       openaiCodex: false,
       github: true,
     });

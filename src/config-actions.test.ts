@@ -1031,6 +1031,54 @@ describe('config actions', () => {
     ]);
   });
 
+  it('updates first-class gateway providers through env references', async () => {
+    const home = await tempDir('neondeck-home-');
+    const paths = runtimePaths(home);
+
+    await expect(
+      updateProviderConfig(
+        {
+          provider: 'openrouter',
+          enabled: true,
+          apiKeyEnv: 'NEONDECK_OPENROUTER_KEY',
+        },
+        paths,
+      ),
+    ).resolves.toMatchObject({
+      ok: true,
+      changed: true,
+      data: {
+        providers: {
+          openrouter: {
+            enabled: true,
+            apiKeyEnv: 'NEONDECK_OPENROUTER_KEY',
+          },
+        },
+      },
+    });
+    await expect(
+      updateProviderConfig(
+        {
+          provider: 'opencode',
+          enabled: false,
+          apiKeyEnv: 'NEONDECK_ZEN_KEY',
+        },
+        paths,
+      ),
+    ).resolves.toMatchObject({
+      ok: true,
+      changed: true,
+      data: {
+        providers: {
+          opencode: {
+            enabled: false,
+            apiKeyEnv: 'NEONDECK_ZEN_KEY',
+          },
+        },
+      },
+    });
+  });
+
   it('rejects unsafe provider config shapes and raw secret-looking values', async () => {
     const home = await tempDir('neondeck-home-');
     const paths = runtimePaths(home);
@@ -1079,10 +1127,10 @@ describe('config actions', () => {
       updateProviderConfig(
         {
           provider: 'openai-compatible',
-          id: 'openrouter',
+          id: 'router-proxy',
           enabled: true,
           baseUrl: 'https://openrouter.ai/api/v1',
-          apiKeyEnv: 'OPENROUTER_API_KEY',
+          apiKeyEnv: 'ROUTER_PROXY_API_KEY',
           api: 'openai-completions',
         },
         paths,
@@ -1094,9 +1142,9 @@ describe('config actions', () => {
         providers: {
           openaiCompatible: [
             {
-              id: 'openrouter',
+              id: 'router-proxy',
               baseUrl: 'https://openrouter.ai/api/v1',
-              apiKeyEnv: 'OPENROUTER_API_KEY',
+              apiKeyEnv: 'ROUTER_PROXY_API_KEY',
             },
           ],
         },
@@ -1105,7 +1153,7 @@ describe('config actions', () => {
 
     await expect(
       updateAgentModels(
-        { displayAssistant: 'openrouter/openai/gpt-5.5' },
+        { displayAssistant: 'router-proxy/openai/gpt-5.5' },
         paths,
       ),
     ).resolves.toMatchObject({ ok: true, changed: true });
@@ -1114,7 +1162,7 @@ describe('config actions', () => {
       updateProviderConfig(
         {
           provider: 'openai-compatible',
-          id: 'openrouter',
+          id: 'router-proxy',
           remove: true,
         },
         paths,

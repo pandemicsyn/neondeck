@@ -11,6 +11,12 @@ import { openAIResponsesApi } from '@earendil-works/pi-ai/api/openai-responses.l
 import { anthropicProvider } from '@earendil-works/pi-ai/providers/anthropic';
 import { openaiProvider } from '@earendil-works/pi-ai/providers/openai';
 import { openaiCodexProvider } from '@earendil-works/pi-ai/providers/openai-codex';
+import { opencodeProvider } from '@earendil-works/pi-ai/providers/opencode';
+import { openrouterProvider } from '@earendil-works/pi-ai/providers/openrouter';
+import {
+  registeredProviderIds,
+  type RegisteredProviderId,
+} from '../../../shared/provider-policy';
 import {
   ensureRuntimeHomeSync,
   parseAppConfig,
@@ -21,14 +27,7 @@ import {
 } from '../../runtime-home';
 import { resolveAgentModelSelection } from '../runtime/agent-config';
 
-export const registeredProviderIds = [
-  'kilocode',
-  'openai',
-  'anthropic',
-  'openai-codex',
-] as const;
-
-export type RegisteredProviderId = (typeof registeredProviderIds)[number];
+export { registeredProviderIds, type RegisteredProviderId };
 export type ProviderId = RegisteredProviderId | string;
 
 export type KilocodeProviderStatus = {
@@ -42,7 +41,7 @@ export type KilocodeProviderStatus = {
 };
 
 export type ApiKeyProviderStatus = {
-  id: 'openai' | 'anthropic';
+  id: 'openai' | 'anthropic' | 'openrouter' | 'opencode';
   allowed: true;
   enabled: boolean;
   apiKeyEnv: string;
@@ -78,8 +77,13 @@ const defaultKilocodeApiKeyEnv = 'KILOCODE_API_KEY';
 const defaultKilocodeOrganizationIdEnv = 'KILOCODE_ORGANIZATION_ID';
 const defaultOpenAiApiKeyEnv = 'OPENAI_API_KEY';
 const defaultAnthropicApiKeyEnv = 'ANTHROPIC_API_KEY';
+const defaultOpenRouterApiKeyEnv = 'OPENROUTER_API_KEY';
+const defaultOpenCodeApiKeyEnv = 'OPENCODE_API_KEY';
 const kilocodeGatewayBaseUrl = 'https://api.kilo.ai/api/gateway';
 const kilocodeGatewayMaxTokens = 16_384;
+const openRouterBaseUrl = 'https://openrouter.ai/api/v1';
+const openRouterFallbackContextWindow = 32_768;
+const openRouterFallbackMaxTokens = 4_096;
 
 export function readKilocodeProviderCredentials(
   env: NodeJS.ProcessEnv = process.env,
@@ -134,7 +138,7 @@ export function providerRuntimeRegistrations(
     },
     models: [],
     fetchModels: async ({ signal }) => {
-      const { discoverModels } = await import('./model-discovery');
+      const { discoverModels } = await import('../model-catalog');
       const discovered = await discoverModels({
         provider: 'kilocode',
         apiKey: env[kilocode.apiKeyEnv],
@@ -176,6 +180,10 @@ export function providerRuntimeRegistrations(
     ),
   });
 
+  const openRouterRegistration = builtInApiKeyProviderRuntimeRegistration(
+    resolveOpenRouterProviderStatus(config, env),
+    env,
+  );
   registrations.push(
     builtInApiKeyProviderRuntimeRegistration(
       resolveOpenAiProviderStatus(config, env),
@@ -183,6 +191,32 @@ export function providerRuntimeRegistrations(
     ),
     builtInApiKeyProviderRuntimeRegistration(
       resolveAnthropicProviderStatus(config, env),
+      env,
+    ),
+    {
+      ...openRouterRegistration,
+      provider: withAdditionalSelectedModels(
+        openRouterRegistration.provider,
+        () =>
+          modelIdsForProvider('openrouter', modelSpecifiers()).map((id) =>
+            compatibleModel({
+              id,
+              provider: 'openrouter',
+              api: 'openai-completions',
+              baseUrl: openRouterBaseUrl,
+              reasoning: false,
+              contextWindow: openRouterFallbackContextWindow,
+              maxTokens: openRouterFallbackMaxTokens,
+              compat: {
+                supportsDeveloperRole: false,
+                thinkingFormat: 'openrouter',
+              },
+            }),
+          ),
+      ),
+    },
+    builtInApiKeyProviderRuntimeRegistration(
+      resolveOpenCodeProviderStatus(config, env),
       env,
     ),
   );
@@ -278,6 +312,30 @@ export function resolveAnthropicProviderStatus(
   );
 }
 
+export function resolveOpenRouterProviderStatus(
+  config?: Pick<AppConfig, 'providers'>,
+  env: NodeJS.ProcessEnv = process.env,
+): ApiKeyProviderStatus {
+  return resolveApiKeyProviderStatus(
+    'openrouter',
+    config?.providers?.openrouter,
+    defaultOpenRouterApiKeyEnv,
+    env,
+  );
+}
+
+export function resolveOpenCodeProviderStatus(
+  config?: Pick<AppConfig, 'providers'>,
+  env: NodeJS.ProcessEnv = process.env,
+): ApiKeyProviderStatus {
+  return resolveApiKeyProviderStatus(
+    'opencode',
+    config?.providers?.opencode,
+    defaultOpenCodeApiKeyEnv,
+    env,
+  );
+}
+
 export function resolveOpenAiCodexProviderStatus(
   config?: Pick<AppConfig, 'providers'>,
 ): OpenAiCodexProviderStatus {
@@ -352,7 +410,13 @@ function builtInApiKeyProviderRuntimeRegistration(
   env: NodeJS.ProcessEnv,
 ): ProviderRuntimeRegistration {
   const builtIn =
-    status.id === 'openai' ? openaiProvider() : anthropicProvider();
+    status.id === 'openai'
+      ? openaiProvider()
+      : status.id === 'anthropic'
+        ? anthropicProvider()
+        : status.id === 'openrouter'
+          ? openrouterProvider()
+          : opencodeProvider();
   return {
     id: status.id,
     provider: {
@@ -455,6 +519,24 @@ function withSelectedModels<TProvider extends Provider>(
   };
 }
 
+function withAdditionalSelectedModels<TProvider extends Provider>(
+  provider: TProvider,
+  fallbackModels: () => readonly Model<Api>[],
+): TProvider {
+  const bundledModels = provider.getModels.bind(provider);
+  return {
+    ...provider,
+    getModels() {
+      const models = [...bundledModels()];
+      const knownIds = new Set(models.map((model) => model.id));
+      for (const fallback of fallbackModels()) {
+        if (!knownIds.has(fallback.id)) models.push(fallback);
+      }
+      return models;
+    },
+  };
+}
+
 function modelIdsForProvider(
   provider: string,
   specifiers: readonly string[],
@@ -483,6 +565,7 @@ function compatibleModel<
   reasoning: boolean;
   contextWindow: number;
   maxTokens: number;
+  compat?: Model<TApi>['compat'];
 }): Model<TApi> {
   return {
     id: input.id,
@@ -501,5 +584,6 @@ function compatibleModel<
     },
     contextWindow: input.contextWindow,
     maxTokens: input.maxTokens,
+    compat: input.compat,
   };
 }

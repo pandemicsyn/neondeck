@@ -16,6 +16,8 @@ import {
   resolveOpenAiCodexProviderStatus,
   resolveOpenAiCompatibleProviderStatuses,
   resolveOpenAiProviderStatus,
+  resolveOpenCodeProviderStatus,
+  resolveOpenRouterProviderStatus,
 } from '../../repos';
 import { updateProviderInputSchema, type ConfigActionResult } from '../schemas';
 
@@ -199,6 +201,11 @@ export function effectiveProviderConfig(
   const kilocode = resolveKilocodeProviderStatus({ providers: current }, env);
   const openai = resolveOpenAiProviderStatus({ providers: current }, env);
   const anthropic = resolveAnthropicProviderStatus({ providers: current }, env);
+  const openrouter = resolveOpenRouterProviderStatus(
+    { providers: current },
+    env,
+  );
+  const opencode = resolveOpenCodeProviderStatus({ providers: current }, env);
   const openaiCodex = resolveOpenAiCodexProviderStatus({
     providers: current,
   });
@@ -220,6 +227,14 @@ export function effectiveProviderConfig(
     anthropic: {
       enabled: anthropic.enabled,
       apiKeyEnv: anthropic.apiKeyEnv,
+    },
+    openrouter: {
+      enabled: openrouter.enabled,
+      apiKeyEnv: openrouter.apiKeyEnv,
+    },
+    opencode: {
+      enabled: opencode.enabled,
+      apiKeyEnv: opencode.apiKeyEnv,
     },
     openaiCodex: {
       enabled: openaiCodex.enabled,

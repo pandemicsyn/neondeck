@@ -9,6 +9,11 @@
 
 ## Active Or Deferred Work
 
+- `OPEN_GATEWAY_MODEL_DISCOVERY_PLAN.md` — implemented in the current worktree: first-class
+  OpenRouter and OpenCode Zen providers, live searchable onboarding, native Pi protocol
+  preservation, and a centralized but disabled-until-approved provider-role default mechanism.
+  Retain here until the change
+  lands, then archive it under the policy below.
 - `DIFF_IMPROVEMENTS_PLAN.md` — phases C–E remain planned after the completed Phase B milestone.
 - `PR_REVIEW_PERF_PLAN.md` — completed remediation record with explicit unresolved cold-path performance deferrals.
 - `PR_REVIEW_SUBAGENT_IMPROVEMENT_PLAN.md` — proposed Explore trust policy, result contract, critical-path observability, and live-model review eval work.

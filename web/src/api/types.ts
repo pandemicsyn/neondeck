@@ -646,6 +646,8 @@ export type RuntimeStatus = {
       kilo: boolean;
       openai: boolean;
       anthropic: boolean;
+      openrouter: boolean;
+      opencode: boolean;
       openaiCodex: boolean;
       github: boolean;
     };
@@ -663,6 +665,16 @@ export type RuntimeStatus = {
         apiKeyPresent: boolean;
       };
       anthropic: {
+        enabled: boolean;
+        apiKeyEnv: string;
+        apiKeyPresent: boolean;
+      };
+      openrouter: {
+        enabled: boolean;
+        apiKeyEnv: string;
+        apiKeyPresent: boolean;
+      };
+      opencode: {
         enabled: boolean;
         apiKeyEnv: string;
         apiKeyPresent: boolean;
@@ -1261,7 +1273,7 @@ export type ProviderUpdate =
       };
     }
   | {
-      provider: 'openai' | 'anthropic';
+      provider: 'openai' | 'anthropic' | 'openrouter' | 'opencode';
       input: {
         enabled?: boolean;
         apiKeyEnv?: string | null;

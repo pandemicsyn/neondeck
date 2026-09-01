@@ -20,10 +20,10 @@ describe('compatible provider controls', () => {
   it('builds complete create and edit requests', () => {
     expect(
       compatibleProviderUpdate({
-        id: ' openrouter ',
+        id: ' local-models ',
         enabled: true,
-        baseUrl: ' https://openrouter.ai/api/v1 ',
-        apiKeyEnv: ' OPENROUTER_API_KEY ',
+        baseUrl: ' http://localhost:11434/v1 ',
+        apiKeyEnv: ' LOCAL_MODELS_API_KEY ',
         api: 'openai-responses',
         contextWindow: '200000',
         maxTokens: '8192',
@@ -31,10 +31,10 @@ describe('compatible provider controls', () => {
     ).toEqual({
       provider: 'openai-compatible',
       input: {
-        id: 'openrouter',
+        id: 'local-models',
         enabled: true,
-        baseUrl: 'https://openrouter.ai/api/v1',
-        apiKeyEnv: 'OPENROUTER_API_KEY',
+        baseUrl: 'http://localhost:11434/v1',
+        apiKeyEnv: 'LOCAL_MODELS_API_KEY',
         api: 'openai-responses',
         contextWindow: 200000,
         maxTokens: 8192,
@@ -58,6 +58,17 @@ describe('compatible provider controls', () => {
         maxTokens: '',
       }),
     ).toThrow('Provider id is required.');
+    expect(() =>
+      compatibleProviderUpdate({
+        id: 'openrouter',
+        enabled: true,
+        baseUrl: 'https://openrouter.ai/api/v1',
+        apiKeyEnv: '',
+        api: 'openai-completions',
+        contextWindow: '',
+        maxTokens: '',
+      }),
+    ).toThrow('reserved by a built-in provider');
   });
 });
 

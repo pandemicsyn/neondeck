@@ -3,6 +3,7 @@ import {
   maxPrReviewTimeoutMs,
   minPrReviewTimeoutMs,
 } from '../../../../../shared/pr-review-policy';
+import { openAiCompatibleProviderIdIssue } from '../../../../../shared/provider-policy';
 import {
   getAutopilotPrompts,
   getPrReviewPrompts,
@@ -260,7 +261,10 @@ export function RuntimeConfigControls({
                 organizationIdEnv: organizationIdEnv.trim() || null,
               },
             }
-          : providerId === 'openai' || providerId === 'anthropic'
+          : providerId === 'openai' ||
+              providerId === 'anthropic' ||
+              providerId === 'openrouter' ||
+              providerId === 'opencode'
             ? {
                 provider: providerId,
                 input: {
@@ -555,7 +559,13 @@ export function RuntimeConfigControls({
           >
             {status.providers.registered.map((provider) => (
               <option key={provider} value={provider}>
-                {provider === 'openai-codex' ? 'ChatGPT' : provider}
+                {provider === 'openai-codex'
+                  ? 'ChatGPT'
+                  : provider === 'opencode'
+                    ? 'OpenCode Zen'
+                    : provider === 'openrouter'
+                      ? 'OpenRouter'
+                      : provider}
               </option>
             ))}
             <option value={newCompatibleProviderOption}>
@@ -606,7 +616,7 @@ export function RuntimeConfigControls({
                   setProviderDirty(true);
                   setCompatibleProviderId(value);
                 }}
-                placeholder="openrouter"
+                placeholder="local-models"
                 value={compatibleProviderId}
               />
             ) : null}
@@ -616,7 +626,7 @@ export function RuntimeConfigControls({
                 setProviderDirty(true);
                 setCompatibleBaseUrl(value);
               }}
-              placeholder="https://openrouter.ai/api/v1"
+              placeholder="http://localhost:11434/v1"
               value={compatibleBaseUrl}
             />
             <ConfigSelect
@@ -1208,6 +1218,8 @@ export function compatibleProviderUpdate(input: {
   const id = input.id.trim();
   const baseUrl = input.baseUrl.trim();
   if (!id) throw new Error('Provider id is required.');
+  const idIssue = openAiCompatibleProviderIdIssue(id);
+  if (idIssue) throw new Error(idIssue);
   if (!baseUrl) throw new Error('Endpoint URL is required.');
   return {
     provider: 'openai-compatible',
@@ -1253,6 +1265,8 @@ export function providerCredentialConfigured(
   if (provider === 'kilocode') return status.providers.credentials.kilo;
   if (provider === 'openai') return status.providers.credentials.openai;
   if (provider === 'anthropic') return status.providers.credentials.anthropic;
+  if (provider === 'openrouter') return status.providers.credentials.openrouter;
+  if (provider === 'opencode') return status.providers.credentials.opencode;
   if (provider === 'openai-codex')
     return status.providers.credentials.openaiCodex;
   const custom = status.providers.configs.openaiCompatible.find(
@@ -1290,6 +1304,15 @@ export function providerStatusSummary(status: RuntimeStatus, provider: string) {
       label: 'ANTHROPIC',
       enabled: status.providers.configs.anthropic.enabled,
       apiKeyEnv: status.providers.configs.anthropic.apiKeyEnv,
+      organizationIdEnv: null,
+    };
+  }
+  if (id === 'openrouter' || id === 'opencode') {
+    const provider = status.providers.configs[id];
+    return {
+      label: id === 'openrouter' ? 'OPENROUTER' : 'OPENCODE ZEN',
+      enabled: provider.enabled,
+      apiKeyEnv: provider.apiKeyEnv,
       organizationIdEnv: null,
     };
   }

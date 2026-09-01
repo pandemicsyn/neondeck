@@ -8,6 +8,8 @@ import {
   resolveOpenAiCodexProviderStatus,
   resolveOpenAiCompatibleProviderStatuses,
   resolveOpenAiProviderStatus,
+  resolveOpenCodeProviderStatus,
+  resolveOpenRouterProviderStatus,
 } from '../repos';
 import {
   type RuntimePaths,
@@ -70,6 +72,14 @@ export async function readRuntimeStatus(
     config.ok ? { providers: config.value.providers } : undefined,
     env,
   );
+  const openrouterProvider = resolveOpenRouterProviderStatus(
+    config.ok ? { providers: config.value.providers } : undefined,
+    env,
+  );
+  const opencodeProvider = resolveOpenCodeProviderStatus(
+    config.ok ? { providers: config.value.providers } : undefined,
+    env,
+  );
   const openaiCodexProvider = resolveOpenAiCodexProviderStatus(
     config.ok ? { providers: config.value.providers } : undefined,
   );
@@ -86,6 +96,10 @@ export async function readRuntimeStatus(
   const openaiKey = openaiProvider.enabled && openaiProvider.apiKeyPresent;
   const anthropicKey =
     anthropicProvider.enabled && anthropicProvider.apiKeyPresent;
+  const openrouterKey =
+    openrouterProvider.enabled && openrouterProvider.apiKeyPresent;
+  const opencodeKey =
+    opencodeProvider.enabled && opencodeProvider.apiKeyPresent;
   const githubToken = Boolean(env.GITHUB_TOKEN);
   const activeSkills = skills.ok
     ? skills.value.skills.filter((skill) => skill.status === 'active')
@@ -101,6 +115,8 @@ export async function readRuntimeStatus(
     kilocode: kilocodeProvider.enabled,
     openai: openaiProvider.enabled,
     anthropic: anthropicProvider.enabled,
+    openrouter: openrouterProvider.enabled,
+    opencode: opencodeProvider.enabled,
     'openai-codex': openaiCodexProvider.enabled,
     ...Object.fromEntries(
       openaiCompatibleProviders.map((provider) => [
@@ -167,6 +183,18 @@ export async function readRuntimeStatus(
         : anthropicProvider.enabled
           ? `${anthropicProvider.apiKeyEnv} is not configured.`
           : 'Anthropic provider is disabled in config.json.',
+    ),
+    apiKeyProviderCheck(
+      'openrouter',
+      'OpenRouter',
+      modelProviders,
+      openrouterProvider,
+    ),
+    apiKeyProviderCheck(
+      'opencode',
+      'OpenCode Zen',
+      modelProviders,
+      opencodeProvider,
     ),
     check(
       'openai-codex-auth',
@@ -362,6 +390,8 @@ export async function readRuntimeStatus(
         kilo: kiloKey,
         openai: openaiKey,
         anthropic: anthropicKey,
+        openrouter: openrouterKey,
+        opencode: opencodeKey,
         openaiCodex: openaiCodexAuth.usable,
         github: githubToken,
       },
@@ -382,6 +412,16 @@ export async function readRuntimeStatus(
           enabled: anthropicProvider.enabled,
           apiKeyEnv: anthropicProvider.apiKeyEnv,
           apiKeyPresent: anthropicProvider.apiKeyPresent,
+        },
+        openrouter: {
+          enabled: openrouterProvider.enabled,
+          apiKeyEnv: openrouterProvider.apiKeyEnv,
+          apiKeyPresent: openrouterProvider.apiKeyPresent,
+        },
+        opencode: {
+          enabled: opencodeProvider.enabled,
+          apiKeyEnv: opencodeProvider.apiKeyEnv,
+          apiKeyPresent: opencodeProvider.apiKeyPresent,
         },
         openaiCodex: {
           enabled: openaiCodexProvider.enabled,
@@ -499,6 +539,30 @@ function configCheck<T>(
     result.ok,
     'attention',
     result.ok ? `${label} is valid.` : `${path}: ${result.error}`,
+  );
+}
+
+function apiKeyProviderCheck(
+  id: 'openrouter' | 'opencode',
+  label: string,
+  modelProviders: string[],
+  provider: {
+    enabled: boolean;
+    apiKeyEnv: string;
+    apiKeyPresent: boolean;
+  },
+): RuntimeStatusCheck {
+  const ready = provider.enabled && provider.apiKeyPresent;
+  return check(
+    `${id}-key`,
+    `${label} key`,
+    !modelProviders.includes(id) || ready,
+    'needs-config',
+    ready
+      ? `${label} provider credentials are present.`
+      : provider.enabled
+        ? `${provider.apiKeyEnv} is not configured.`
+        : `${label} provider is disabled in config.json.`,
   );
 }
 

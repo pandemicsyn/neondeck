@@ -65,6 +65,8 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
 KILOCODE_ORGANIZATION_ID=...
 OPENAI_API_KEY=...
 ANTHROPIC_API_KEY=...
+OPENROUTER_API_KEY=...
+OPENCODE_API_KEY=...
 GITHUB_TOKEN=...
 GITHUB_LOGIN=...</code></pre>
 
@@ -102,8 +104,10 @@ GITHUB_LOGIN=...</code></pre>
           <code>config.json</code>. Model strings must be provider-qualified and
           use a built-in or explicitly configured provider:
           <code>kilocode</code>, <code>openai</code>,
-          <code>anthropic</code>, <code>openai-codex</code>, or a validated
-          OpenAI-compatible provider id.
+          <code>anthropic</code>, <code>openrouter</code>, <code>opencode</code
+          >,
+          <code>openai-codex</code>, or a validated OpenAI-compatible provider
+          id.
         </p>
 
         <h3 id="model-selection">Choose models</h3>
@@ -128,15 +132,22 @@ GITHUB_LOGIN=...</code></pre>
       "enabled": true,
       "apiKeyEnv": "OPENAI_API_KEY"
     &#125;,
+    "openrouter": &#123;
+      "enabled": true,
+      "apiKeyEnv": "OPENROUTER_API_KEY"
+    &#125;,
+    "opencode": &#123;
+      "enabled": true,
+      "apiKeyEnv": "OPENCODE_API_KEY"
+    &#125;,
     "openaiCodex": &#123;
       "enabled": true
     &#125;,
     "openaiCompatible": [
       &#123;
-        "id": "openrouter",
+        "id": "local-models",
         "enabled": true,
-        "baseUrl": "https://openrouter.ai/api/v1",
-        "apiKeyEnv": "OPENROUTER_API_KEY",
+        "baseUrl": "http://localhost:11434/v1",
         "api": "openai-completions",
         "contextWindow": 200000,
         "maxTokens": 8192
@@ -146,6 +157,21 @@ GITHUB_LOGIN=...</code></pre>
 &#125;</code></pre>
 
         <h3 id="compatible-endpoints">Compatible endpoint rules</h3>
+        <p>
+          OpenRouter and OpenCode Zen are native providers, not
+          compatible-endpoint presets. Native registration preserves Pi's model
+          metadata and, for OpenCode, its per-model OpenAI Responses, Anthropic
+          Messages, Google Generative AI, or Chat Completions protocol. During
+          setup, OpenRouter offers eligible models from its live catalog even
+          when a release is newer than Pi's bundled metadata; configured newer
+          ids use conservative runtime limits until Pi catches up. OpenCode is
+          multi-protocol, so its live availability is joined to the installed Pi
+          catalog and unknown ids are not offered. If discovery is offline,
+          setup labels and uses the bundled Pi catalog instead. Setup search
+          ranks exact and close model-id matches first, uses trustworthy
+          provider creation timestamps as a tie-breaker, and pages the complete
+          result set instead of silently truncating broad searches.
+        </p>
         <ul>
           <li>
             <strong>Credentials:</strong> provider config stores environment variable
@@ -249,6 +275,11 @@ GITHUB_LOGIN=...</code></pre>
           <li>
             Provider registration and standalone CLI ChatGPT login or logout
             require a server restart.
+          </li>
+          <li>
+            Model changes apply to new sessions. Existing sessions remain on
+            their original model and are marked stale by the normal
+            context-change policy.
           </li>
         </ul>
 

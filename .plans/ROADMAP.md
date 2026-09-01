@@ -1166,6 +1166,7 @@ Must-haves:
 - [x] Use secret references or environment-backed credentials rather than raw secrets in normal config.
 - [x] Add typed model config for named agent, utility, and subagent roles.
 - [x] Add readiness/dev-doctor checks for provider credentials.
+- [x] Add first-class OpenRouter and OpenCode Zen providers with native Pi catalogs, live searchable onboarding discovery, and runnable-model filtering.
 - [x] Add dashboard controls for model choices and provider environment variable references.
 - [x] Treat provider registration changes as restart-required until Flue offers a safe dynamic provider mechanism.
 - [x] Add approval policy for destructive mutations and host execution actions.
