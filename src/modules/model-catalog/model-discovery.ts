@@ -1,21 +1,46 @@
 import { openAiCodexModels } from '../../model-defaults';
-import { registeredProviderIds, type RegisteredProviderId } from './providers';
+import {
+  gatewayRecommendationModels,
+  suggestedGatewayModels,
+  type GatewayModelRole,
+} from '../../lib/gateway-model-policy';
+import {
+  registeredProviderIds,
+  type RegisteredProviderId,
+} from '../../../shared/provider-policy';
 
 export type DiscoveredModel = {
   id: string;
   provider: RegisteredProviderId;
   model: string;
   name: string;
+  api: string | null;
   contextLength: number | null;
   reasoning: boolean;
   isFree: boolean | null;
+  createdAt: number | null;
   recommendedIndex: number | null;
+  source: 'provider-live' | 'pi-bundled' | 'suggested';
+};
+
+export type ModelDiscoveryDiagnostics = {
+  source: DiscoveredModel['source'];
+  stale: boolean;
+  fetchedCount: number;
+  selectableCount: number;
+  excluded: {
+    invalid: number;
+    unsupported: number;
+    unavailableInRuntime: number;
+  };
 };
 
 export type ModelDiscoveryResult = {
   ok: boolean;
   provider: RegisteredProviderId;
   models: DiscoveredModel[];
+  diagnostics: ModelDiscoveryDiagnostics;
+  warning?: string;
   error?: string;
 };
 
@@ -44,10 +69,21 @@ export async function discoverModels(input: {
     return discoverKilocodeModels({ ...input, provider: 'kilocode' });
   }
 
+  if (input.provider === 'openrouter' || input.provider === 'opencode') {
+    const { discoverGatewayModels } = await import('./gateway-model-discovery');
+    return discoverGatewayModels({
+      provider: input.provider,
+      apiKey: input.apiKey,
+      signal: input.signal,
+    });
+  }
+
+  const models = suggestedModels(input.provider);
   return {
     ok: true,
     provider: input.provider,
-    models: suggestedModels(input.provider),
+    models,
+    diagnostics: discoveryDiagnostics('suggested', false, models.length),
   };
 }
 
@@ -93,6 +129,12 @@ export function suggestedModels(
     );
   }
 
+  if (provider === 'openrouter' || provider === 'opencode') {
+    return suggestedGatewayModels(provider).map(({ model, name }) =>
+      suggestedModel(provider, model, name, true, null),
+    );
+  }
+
   return [
     suggestedModel(
       'kilocode',
@@ -103,6 +145,19 @@ export function suggestedModels(
     ),
     suggestedModel('kilocode', 'kilo-auto/free', 'Kilo Auto Free', true, 1),
   ];
+}
+
+export function recommendedGatewayModel(
+  provider: string,
+  role: GatewayModelRole,
+  models: readonly DiscoveredModel[],
+) {
+  if (provider !== 'openrouter' && provider !== 'opencode') return undefined;
+  for (const modelId of gatewayRecommendationModels(provider, role)) {
+    const match = models.find((model) => model.model === modelId);
+    if (match) return match.id;
+  }
+  return undefined;
 }
 
 export function isDiscoverableProvider(
@@ -139,6 +194,7 @@ async function discoverKilocodeModels(input: {
       ok: false,
       provider: 'kilocode',
       models: suggestedModels('kilocode'),
+      diagnostics: discoveryDiagnostics('suggested', true, 0),
       error: response.message,
     };
   }
@@ -152,6 +208,7 @@ async function discoverKilocodeModels(input: {
       ok: false,
       provider: 'kilocode',
       models: suggestedModels('kilocode'),
+      diagnostics: discoveryDiagnostics('suggested', true, 0),
       error: `Kilo model discovery returned HTTP ${response.status}.`,
     };
   }
@@ -165,6 +222,7 @@ async function discoverKilocodeModels(input: {
       ok: false,
       provider: 'kilocode',
       models: suggestedModels('kilocode'),
+      diagnostics: discoveryDiagnostics('suggested', true, 0),
       error: 'Kilo model discovery returned an unexpected response.',
     };
   }
@@ -178,6 +236,12 @@ async function discoverKilocodeModels(input: {
     ok: true,
     provider: 'kilocode',
     models: models.length > 0 ? models : suggestedModels('kilocode'),
+    diagnostics: discoveryDiagnostics(
+      models.length > 0 ? 'provider-live' : 'suggested',
+      models.length === 0,
+      rows.length,
+      models.length,
+    ),
   };
 }
 
@@ -205,12 +269,15 @@ function kiloModel(row: unknown): DiscoveredModel | null {
     provider: 'kilocode',
     model: model.id,
     name: typeof model.name === 'string' ? model.name : model.id,
+    api: 'openai-completions',
     contextLength:
       typeof model.context_length === 'number' ? model.context_length : null,
     reasoning: supportedParameters.includes('reasoning'),
     isFree: typeof model.isFree === 'boolean' ? model.isFree : null,
+    createdAt: null,
     recommendedIndex:
       typeof model.preferredIndex === 'number' ? model.preferredIndex : null,
+    source: 'provider-live',
   };
 }
 
@@ -219,17 +286,39 @@ function suggestedModel(
   model: string,
   name: string,
   reasoning: boolean,
-  recommendedIndex: number,
+  recommendedIndex: number | null,
 ): DiscoveredModel {
   return {
     id: `${provider}/${model}`,
     provider,
     model,
     name,
+    api: null,
     contextLength: null,
     reasoning,
     isFree: null,
+    createdAt: null,
     recommendedIndex,
+    source: 'suggested',
+  };
+}
+
+function discoveryDiagnostics(
+  source: DiscoveredModel['source'],
+  stale: boolean,
+  fetchedCount: number,
+  selectableCount = fetchedCount,
+): ModelDiscoveryDiagnostics {
+  return {
+    source,
+    stale,
+    fetchedCount,
+    selectableCount,
+    excluded: {
+      invalid: 0,
+      unsupported: Math.max(0, fetchedCount - selectableCount),
+      unavailableInRuntime: 0,
+    },
   };
 }
 

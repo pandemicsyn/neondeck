@@ -40,6 +40,8 @@ export const runtimeStatusSchema = v.looseObject({
       kilo: v.boolean(),
       openai: v.boolean(),
       anthropic: v.boolean(),
+      openrouter: v.boolean(),
+      opencode: v.boolean(),
       openaiCodex: v.boolean(),
       github: v.boolean(),
     }),
@@ -57,6 +59,16 @@ export const runtimeStatusSchema = v.looseObject({
         apiKeyPresent: v.boolean(),
       }),
       anthropic: v.object({
+        enabled: v.boolean(),
+        apiKeyEnv: v.string(),
+        apiKeyPresent: v.boolean(),
+      }),
+      openrouter: v.object({
+        enabled: v.boolean(),
+        apiKeyEnv: v.string(),
+        apiKeyPresent: v.boolean(),
+      }),
+      opencode: v.object({
         enabled: v.boolean(),
         apiKeyEnv: v.string(),
         apiKeyPresent: v.boolean(),

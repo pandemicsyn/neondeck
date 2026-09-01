@@ -3,7 +3,13 @@ import { createModels } from '@earendil-works/pi-ai';
 import {
   providerRuntimeRegistrations,
   resolveKilocodeProviderStatus,
+  resolveOpenCodeProviderStatus,
+  resolveOpenRouterProviderStatus,
 } from './modules/repos/providers';
+import {
+  parseOpenCodeModels,
+  parseOpenRouterModels,
+} from './modules/model-catalog/gateway-model-discovery';
 
 describe('provider runtime registrations', () => {
   it('sets an explicit KiloCode gateway output-token budget', () => {
@@ -108,6 +114,175 @@ describe('provider runtime registrations', () => {
     ).toBeGreaterThan(0);
   });
 
+  it('registers native OpenRouter and OpenCode providers with configured auth', async () => {
+    const registrations = providerRuntimeRegistrations(
+      {
+        ROUTER_KEY: 'router-key',
+        ZEN_KEY: 'zen-key',
+      } as NodeJS.ProcessEnv,
+      {
+        providers: {
+          openrouter: { apiKeyEnv: 'ROUTER_KEY' },
+          opencode: { apiKeyEnv: 'ZEN_KEY' },
+        },
+      },
+    );
+
+    await expect(
+      resolveApiKey(registrations, 'openrouter'),
+    ).resolves.toMatchObject({
+      auth: { apiKey: 'router-key' },
+      source: 'ROUTER_KEY',
+    });
+    await expect(
+      resolveApiKey(registrations, 'opencode'),
+    ).resolves.toMatchObject({
+      auth: { apiKey: 'zen-key' },
+      source: 'ZEN_KEY',
+    });
+    expect(
+      registrations
+        .find((registration) => registration.id === 'opencode')
+        ?.provider.getModels(),
+    ).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: 'gpt-5.6-terra',
+          api: 'openai-responses',
+        }),
+        expect.objectContaining({
+          id: 'claude-sonnet-4-6',
+          api: 'anthropic-messages',
+        }),
+      ]),
+    );
+  });
+
+  it('resolves every representative discovered gateway model through Pi with the same API', () => {
+    const registrations = providerRuntimeRegistrations(
+      {
+        OPENROUTER_API_KEY: 'router-key',
+        OPENCODE_API_KEY: 'zen-key',
+      } as NodeJS.ProcessEnv,
+      {
+        providers: {
+          openrouter: {},
+          opencode: {},
+        },
+      },
+    ).filter(
+      (registration) =>
+        registration.id === 'openrouter' || registration.id === 'opencode',
+    );
+    const models = createModels();
+    for (const registration of registrations) {
+      models.setProvider(registration.provider);
+    }
+
+    const openRouter = models.getProvider('openrouter')!;
+    const openRouterRows = openRouter
+      .getModels()
+      .slice(0, 3)
+      .map((model) => ({
+        id: model.id,
+        architecture: { output_modalities: ['text'] },
+        supported_parameters: ['tools'],
+      }));
+    const discoveredRouter = parseOpenRouterModels(
+      openRouterRows,
+      openRouter.getModels(),
+    ).models;
+    expect(discoveredRouter).toHaveLength(openRouterRows.length);
+
+    const openCode = models.getProvider('opencode')!;
+    const expectedOpenCodeApis = [
+      'anthropic-messages',
+      'google-generative-ai',
+      'openai-completions',
+      'openai-responses',
+    ] as const;
+    const openCodeRows = expectedOpenCodeApis.map((api) => {
+      const model = openCode
+        .getModels()
+        .find((candidate) => candidate.api === api);
+      expect(model).toBeDefined();
+      return { id: model!.id };
+    });
+    const discoveredOpenCode = parseOpenCodeModels(
+      openCodeRows,
+      openCode.getModels(),
+    ).models;
+    expect(discoveredOpenCode.map((model) => model.api).sort()).toEqual(
+      [...expectedOpenCodeApis].sort(),
+    );
+
+    for (const discovered of [...discoveredRouter, ...discoveredOpenCode]) {
+      expect(
+        models.getModel(discovered.provider, discovered.model),
+      ).toMatchObject({
+        provider: discovered.provider,
+        id: discovered.model,
+        api: discovered.api,
+      });
+    }
+  });
+
+  it('materializes a configured OpenRouter model released ahead of Pi', () => {
+    const registration = providerRuntimeRegistrations(
+      { OPENROUTER_API_KEY: 'router-key' } as NodeJS.ProcessEnv,
+      {
+        models: {
+          displayAssistant: 'openrouter/z-ai/glm-5.3-flash',
+        },
+        providers: { openrouter: {} },
+      },
+    ).find((candidate) => candidate.id === 'openrouter');
+    const models = createModels();
+    models.setProvider(registration!.provider);
+
+    expect(models.getModel('openrouter', 'z-ai/glm-5.3-flash')).toMatchObject({
+      id: 'z-ai/glm-5.3-flash',
+      provider: 'openrouter',
+      api: 'openai-completions',
+      baseUrl: 'https://openrouter.ai/api/v1',
+      contextWindow: 32_768,
+      maxTokens: 4_096,
+      compat: {
+        supportsDeveloperRole: false,
+        thinkingFormat: 'openrouter',
+      },
+    });
+  });
+
+  it('uses gateway default env names and shadows ambient credentials when disabled', async () => {
+    expect(resolveOpenRouterProviderStatus(undefined, {})).toMatchObject({
+      apiKeyEnv: 'OPENROUTER_API_KEY',
+      apiKeyPresent: false,
+    });
+    expect(resolveOpenCodeProviderStatus(undefined, {})).toMatchObject({
+      apiKeyEnv: 'OPENCODE_API_KEY',
+      apiKeyPresent: false,
+    });
+    const registrations = providerRuntimeRegistrations(
+      {
+        OPENROUTER_API_KEY: 'ambient-router-key',
+        OPENCODE_API_KEY: 'ambient-zen-key',
+      } as NodeJS.ProcessEnv,
+      {
+        providers: {
+          openrouter: { enabled: false },
+          opencode: { enabled: false },
+        },
+      },
+    );
+    await expect(
+      resolveApiKey(registrations, 'openrouter'),
+    ).resolves.toBeUndefined();
+    await expect(
+      resolveApiKey(registrations, 'opencode'),
+    ).resolves.toBeUndefined();
+  });
+
   it('does not fall back to default built-in provider env vars when disabled', async () => {
     const registrations = providerRuntimeRegistrations(
       {
@@ -138,17 +313,17 @@ describe('provider runtime registrations', () => {
 
   it('registers configured OpenAI-compatible endpoints with env-backed keys', async () => {
     const registrations = providerRuntimeRegistrations(
-      { OPENROUTER_API_KEY: 'router-key' } as NodeJS.ProcessEnv,
+      { ROUTER_PROXY_API_KEY: 'router-key' } as NodeJS.ProcessEnv,
       {
         models: {
-          displayAssistant: 'openrouter/openai/gpt-5.5',
+          displayAssistant: 'router-proxy/openai/gpt-5.5',
         },
         providers: {
           openaiCompatible: [
             {
-              id: 'openrouter',
+              id: 'router-proxy',
               baseUrl: 'https://openrouter.ai/api/v1/',
-              apiKeyEnv: 'OPENROUTER_API_KEY',
+              apiKeyEnv: 'ROUTER_PROXY_API_KEY',
             },
           ],
         },
@@ -158,7 +333,7 @@ describe('provider runtime registrations', () => {
     expect(registrations).toEqual(
       expect.arrayContaining([
         {
-          id: 'openrouter',
+          id: 'router-proxy',
           provider: expect.objectContaining({
             baseUrl: 'https://openrouter.ai/api/v1',
           }),
@@ -166,17 +341,17 @@ describe('provider runtime registrations', () => {
       ]),
     );
     await expect(
-      resolveApiKey(registrations, 'openrouter'),
+      resolveApiKey(registrations, 'router-proxy'),
     ).resolves.toMatchObject({ auth: { apiKey: 'router-key' } });
     expect(
       registrations
-        .find((registration) => registration.id === 'openrouter')
+        .find((registration) => registration.id === 'router-proxy')
         ?.provider.getModels(),
     ).toEqual([
       expect.objectContaining({
         id: 'openai/gpt-5.5',
         api: 'openai-completions',
-        provider: 'openrouter',
+        provider: 'router-proxy',
       }),
     ]);
   });

@@ -1,4 +1,5 @@
 import * as v from 'valibot';
+import { openAiCompatibleProviderIdIssue } from '../../shared/provider-policy';
 import {
   maxPrReviewTimeoutMs,
   minPrReviewTimeoutMs,
@@ -163,23 +164,7 @@ export const handoffConfigSchema = v.looseObject({
   allowExternalReviewQueue: v.optional(v.boolean()),
 });
 
-const reservedProviderIds = [
-  'kilocode',
-  'openai',
-  'anthropic',
-  'openai-codex',
-  'openai-compatible',
-];
-
-export function openAiCompatibleProviderIdIssue(value: string | undefined) {
-  if (!/^[a-z][a-z0-9-]{0,62}$/.test(value ?? '')) {
-    return 'Use lowercase letters, numbers, and hyphens.';
-  }
-  if (reservedProviderIds.includes(value ?? '')) {
-    return 'That id is reserved by a built-in provider.';
-  }
-  return undefined;
-}
+export { openAiCompatibleProviderIdIssue };
 
 export function openAiCompatibleBaseUrlIssue(value: string | undefined) {
   try {
@@ -239,6 +224,18 @@ export const providerConfigSchema = v.strictObject({
     }),
   ),
   anthropic: v.optional(
+    v.strictObject({
+      enabled: v.optional(v.boolean()),
+      apiKeyEnv: v.optional(envVarNameSchema),
+    }),
+  ),
+  openrouter: v.optional(
+    v.strictObject({
+      enabled: v.optional(v.boolean()),
+      apiKeyEnv: v.optional(envVarNameSchema),
+    }),
+  ),
+  opencode: v.optional(
     v.strictObject({
       enabled: v.optional(v.boolean()),
       apiKeyEnv: v.optional(envVarNameSchema),
@@ -624,7 +621,178 @@ export class ConfigValidationError extends Error {
 }
 
 export function parseAppConfig(value: unknown, path: string): AppConfig {
-  return parseSchema(appConfigSchema, value, path);
+  return parseSchema(
+    appConfigSchema,
+    migrateLegacyGatewayProviders(value, path),
+    path,
+  );
+}
+
+type MigratedGatewayConfig = { enabled?: boolean; apiKeyEnv?: string };
+
+function migrateLegacyGatewayProviders(value: unknown, path: string): unknown {
+  if (!isPlainRecord(value) || !isPlainRecord(value.providers)) return value;
+  const providers = value.providers;
+  const compatible = providers.openaiCompatible;
+  if (!Array.isArray(compatible)) return value;
+
+  const migrated: Partial<
+    Record<'openrouter' | 'opencode', MigratedGatewayConfig>
+  > = {};
+  const remaining = compatible.filter((candidate, index) => {
+    if (!isPlainRecord(candidate) || typeof candidate.id !== 'string') {
+      return true;
+    }
+    if (candidate.id !== 'openrouter' && candidate.id !== 'opencode') {
+      return true;
+    }
+    const candidatePath = `${path}.providers.openaiCompatible[${index}]`;
+    const baseUrl =
+      typeof candidate.baseUrl === 'string'
+        ? candidate.baseUrl.replace(/\/+$/, '')
+        : '';
+    const official =
+      (candidate.id === 'openrouter' &&
+        baseUrl === 'https://openrouter.ai/api/v1') ||
+      (candidate.id === 'opencode' &&
+        (baseUrl === 'https://opencode.ai/zen/v1' ||
+          baseUrl === 'https://opencode.ai/zen'));
+    if (!official) {
+      throw legacyGatewayMigrationError(
+        candidatePath,
+        candidate.id,
+        'its endpoint is not the official gateway endpoint',
+      );
+    }
+
+    const allowedKeys = new Set([
+      'id',
+      'enabled',
+      'baseUrl',
+      'apiKeyEnv',
+      'api',
+      'contextWindow',
+      'maxTokens',
+    ]);
+    const extraKey = Object.keys(candidate).find(
+      (key) => !allowedKeys.has(key),
+    );
+    if (extraKey) {
+      throw legacyGatewayMigrationError(
+        candidatePath,
+        candidate.id,
+        `it contains unsupported field ${JSON.stringify(extraKey)}`,
+      );
+    }
+    if (
+      candidate.contextWindow !== undefined ||
+      candidate.maxTokens !== undefined
+    ) {
+      throw legacyGatewayMigrationError(
+        candidatePath,
+        candidate.id,
+        'it contains model metadata overrides that the native provider would discard',
+      );
+    }
+    const protocolCompatible =
+      candidate.id === 'openrouter' &&
+      (candidate.api === undefined || candidate.api === 'openai-completions');
+    if (!protocolCompatible) {
+      throw legacyGatewayMigrationError(
+        candidatePath,
+        candidate.id,
+        candidate.id === 'opencode'
+          ? 'the legacy Chat Completions protocol is not equivalent to native OpenCode model-level routing'
+          : 'its protocol is not OpenRouter Chat Completions',
+      );
+    }
+
+    const config = {
+      ...(typeof candidate.enabled === 'boolean'
+        ? { enabled: candidate.enabled }
+        : {}),
+      ...(typeof candidate.apiKeyEnv === 'string'
+        ? { apiKeyEnv: candidate.apiKeyEnv }
+        : {}),
+    };
+    const previous = migrated[candidate.id];
+    if (previous && gatewayConfigConflict(previous, config)) {
+      throw legacyGatewayMigrationError(
+        candidatePath,
+        candidate.id,
+        'multiple legacy entries disagree about enablement or the API-key environment variable',
+      );
+    }
+    migrated[candidate.id] = { ...config, ...previous };
+    return false;
+  });
+  if (Object.keys(migrated).length === 0) return value;
+  const otherProviders = { ...providers };
+  delete otherProviders.openaiCompatible;
+
+  for (const id of ['openrouter', 'opencode'] as const) {
+    const legacy = migrated[id];
+    if (!legacy) continue;
+    const native = providers[id];
+    if (native !== undefined && !isPlainRecord(native)) {
+      throw legacyGatewayMigrationError(
+        `${path}.providers.${id}`,
+        id,
+        'the existing first-class provider config is invalid',
+      );
+    }
+    if (native && gatewayConfigConflict(native, legacy)) {
+      throw legacyGatewayMigrationError(
+        `${path}.providers.${id}`,
+        id,
+        'the legacy and first-class provider settings conflict',
+      );
+    }
+  }
+
+  return {
+    ...value,
+    providers: {
+      ...otherProviders,
+      ...Object.fromEntries(
+        Object.entries(migrated).map(([id, config]) => [
+          id,
+          {
+            ...config,
+            ...(isPlainRecord(providers[id]) ? providers[id] : {}),
+          },
+        ]),
+      ),
+      ...(remaining.length > 0 ? { openaiCompatible: remaining } : {}),
+    },
+  };
+}
+
+function gatewayConfigConflict(
+  left: Record<string, unknown>,
+  right: Record<string, unknown>,
+) {
+  return (['enabled', 'apiKeyEnv'] as const).some(
+    (key) =>
+      left[key] !== undefined &&
+      right[key] !== undefined &&
+      left[key] !== right[key],
+  );
+}
+
+function legacyGatewayMigrationError(
+  path: string,
+  id: 'openrouter' | 'opencode',
+  reason: string,
+) {
+  return new ConfigValidationError(
+    path,
+    `Cannot migrate legacy compatible provider ${JSON.stringify(id)} because ${reason}. Rename it to a non-reserved provider id to keep custom behavior, or remove it and configure providers.${id}.`,
+  );
+}
+
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 }
 
 export function parseMcpConfig(value: unknown, path: string): McpConfig {

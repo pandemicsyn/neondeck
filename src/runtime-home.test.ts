@@ -37,7 +37,9 @@ afterEach(async () => {
 
 describe('runtime home', () => {
   it('shares compatible endpoint validation with onboarding', () => {
-    expect(openAiCompatibleProviderIdIssue('openrouter')).toBeUndefined();
+    expect(openAiCompatibleProviderIdIssue('router-proxy')).toBeUndefined();
+    expect(openAiCompatibleProviderIdIssue('openrouter')).toContain('reserved');
+    expect(openAiCompatibleProviderIdIssue('opencode')).toContain('reserved');
     expect(openAiCompatibleProviderIdIssue('openai')).toContain('reserved');
     expect(openAiCompatibleProviderIdIssue('OpenRouter')).toContain(
       'lowercase',
@@ -54,6 +56,127 @@ describe('runtime home', () => {
     expect(
       openAiCompatibleBaseUrlIssue('https://user:secret@example.com/v1'),
     ).toContain('without credentials');
+  });
+
+  it('migrates exact official gateway definitions to first-class config', () => {
+    expect(
+      parseAppConfig(
+        {
+          version: 1,
+          providers: {
+            openaiCompatible: [
+              {
+                id: 'openrouter',
+                enabled: false,
+                baseUrl: 'https://openrouter.ai/api/v1/',
+                apiKeyEnv: 'ROUTER_KEY',
+              },
+            ],
+          },
+        },
+        '/runtime/config.json',
+      ).providers,
+    ).toEqual({
+      openrouter: { enabled: false, apiKeyEnv: 'ROUTER_KEY' },
+    });
+  });
+
+  it('preserves matching first-class gateway settings during legacy migration', () => {
+    expect(
+      parseAppConfig(
+        {
+          version: 1,
+          providers: {
+            openrouter: { enabled: false, apiKeyEnv: 'ROUTER_KEY' },
+            openaiCompatible: [
+              {
+                id: 'openrouter',
+                enabled: false,
+                baseUrl: 'https://openrouter.ai/api/v1',
+                apiKeyEnv: 'ROUTER_KEY',
+                api: 'openai-completions',
+              },
+            ],
+          },
+        },
+        '/runtime/config.json',
+      ).providers,
+    ).toEqual({
+      openrouter: { enabled: false, apiKeyEnv: 'ROUTER_KEY' },
+    });
+  });
+
+  it('rejects incompatible, custom, or conflicting legacy gateway entries with migration guidance', () => {
+    const cases = [
+      {
+        providers: {
+          openaiCompatible: [
+            {
+              id: 'openrouter',
+              baseUrl: 'https://openrouter.ai/api/v1',
+              api: 'openai-responses',
+            },
+          ],
+        },
+        message: 'protocol is not OpenRouter Chat Completions',
+      },
+      {
+        providers: {
+          openaiCompatible: [
+            {
+              id: 'openrouter',
+              baseUrl: 'https://router-proxy.example/v1',
+            },
+          ],
+        },
+        message: 'not the official gateway endpoint',
+      },
+      {
+        providers: {
+          openrouter: { apiKeyEnv: 'NATIVE_KEY' },
+          openaiCompatible: [
+            {
+              id: 'openrouter',
+              baseUrl: 'https://openrouter.ai/api/v1',
+              apiKeyEnv: 'LEGACY_KEY',
+            },
+          ],
+        },
+        message: 'legacy and first-class provider settings conflict',
+      },
+    ];
+
+    for (const testCase of cases) {
+      const parse = () =>
+        parseAppConfig(
+          { version: 1, providers: testCase.providers },
+          '/runtime/config.json',
+        );
+      expect(parse).toThrow(testCase.message);
+      expect(parse).toThrow('Rename it to a non-reserved provider id');
+    }
+  });
+
+  it('does not auto-migrate implicit or explicit single-protocol OpenCode entries', () => {
+    for (const api of [undefined, 'openai-completions'] as const) {
+      expect(() =>
+        parseAppConfig(
+          {
+            version: 1,
+            providers: {
+              openaiCompatible: [
+                {
+                  id: 'opencode',
+                  baseUrl: 'https://opencode.ai/zen/v1',
+                  ...(api ? { api } : {}),
+                },
+              ],
+            },
+          },
+          '/runtime/config.json',
+        ),
+      ).toThrow('not equivalent to native OpenCode model-level routing');
+    }
   });
 
   it('validates and normalizes exact trusted dashboard origins', () => {

@@ -60,8 +60,8 @@ export async function mcpModule() {
 
 export async function modelDiscoveryModule() {
   return import(
-    new URL('../modules/repos/index.ts', import.meta.url).href
-  ) as Promise<typeof import('../modules/repos')>;
+    new URL('../modules/model-catalog/index.ts', import.meta.url).href
+  ) as Promise<typeof import('../modules/model-catalog')>;
 }
 
 export async function reposModule() {
