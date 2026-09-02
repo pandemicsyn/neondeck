@@ -272,9 +272,9 @@ export function RuntimeConfigControls({
                   apiKeyEnv: apiKeyEnv.trim() || null,
                 },
               }
-            : providerId === 'openai-codex'
+            : providerId === 'openai-codex' || providerId === 'google-vertex'
               ? {
-                  provider: 'openai-codex',
+                  provider: providerId,
                   input: { enabled: providerEnabled },
                 }
               : compatibleProviderUpdate({
@@ -565,7 +565,9 @@ export function RuntimeConfigControls({
                     ? 'OpenCode Zen'
                     : provider === 'openrouter'
                       ? 'OpenRouter'
-                      : provider}
+                      : provider === 'google-vertex'
+                        ? 'Google Vertex AI'
+                        : provider}
               </option>
             ))}
             <option value={newCompatibleProviderOption}>
@@ -605,6 +607,30 @@ export function RuntimeConfigControls({
             <p>
               Manage with <code>neondeck auth login openai-codex</code>, then
               restart Neondeck.
+            </p>
+          </div>
+        ) : providerId === 'google-vertex' && !creatingCompatibleProvider ? (
+          <div className="space-y-1 border border-line bg-field px-2 py-1.5 font-mono text-[10px] text-muted">
+            <p>
+              Auth:{' '}
+              <span
+                className={
+                  status.providers.configs.googleVertex.usable
+                    ? 'text-primary-strong'
+                    : 'text-accent'
+                }
+              >
+                {status.providers.configs.googleVertex.authMode ?? 'missing'}
+              </span>
+            </p>
+            <p>
+              {googleVertexCredentialSummary(
+                status.providers.configs.googleVertex,
+              )}
+            </p>
+            <p>
+              Configure credentials with <code>neondeck init</code> or the
+              runtime-home <code>.env</code>, then restart Neondeck.
             </p>
           </div>
         ) : creatingCompatibleProvider || selectedCompatibleProvider ? (
@@ -1267,6 +1293,8 @@ export function providerCredentialConfigured(
   if (provider === 'anthropic') return status.providers.credentials.anthropic;
   if (provider === 'openrouter') return status.providers.credentials.openrouter;
   if (provider === 'opencode') return status.providers.credentials.opencode;
+  if (provider === 'google-vertex')
+    return status.providers.credentials.googleVertex;
   if (provider === 'openai-codex')
     return status.providers.credentials.openaiCodex;
   const custom = status.providers.configs.openaiCompatible.find(
@@ -1281,11 +1309,26 @@ export function providerCredentialLabel(
 ) {
   if (!providerCredentialConfigured(status, provider)) return 'missing';
   if (provider === 'openai-codex') return 'oauth';
+  if (provider === 'google-vertex') {
+    return status.providers.configs.googleVertex.authMode ?? 'missing';
+  }
   const custom = status.providers.configs.openaiCompatible.find(
     (candidate) => candidate.id === provider,
   );
   if (custom && !custom.apiKeyEnv) return 'ready';
   return 'key';
+}
+
+export function googleVertexCredentialSummary(
+  status: RuntimeStatus['providers']['configs']['googleVertex'],
+) {
+  if (status.authMode === 'api-key') return 'API key present';
+  return [
+    `API key ${status.apiKeyPresent ? 'present' : 'missing'}`,
+    `ADC ${status.adcCredentialsPresent ? 'present' : 'missing'}`,
+    `project ${status.projectPresent ? 'present' : 'missing'}`,
+    `location ${status.locationPresent ? 'present' : 'missing'}`,
+  ].join(' · ');
 }
 
 export function providerStatusSummary(status: RuntimeStatus, provider: string) {
@@ -1321,6 +1364,15 @@ export function providerStatusSummary(status: RuntimeStatus, provider: string) {
     return {
       label: 'CHATGPT',
       enabled: status.providers.configs.openaiCodex.enabled,
+      apiKeyEnv: '',
+      organizationIdEnv: null,
+    };
+  }
+
+  if (id === 'google-vertex') {
+    return {
+      label: 'GOOGLE VERTEX AI',
+      enabled: status.providers.configs.googleVertex.enabled,
       apiKeyEnv: '',
       organizationIdEnv: null,
     };

@@ -648,6 +648,7 @@ export type RuntimeStatus = {
       anthropic: boolean;
       openrouter: boolean;
       opencode: boolean;
+      googleVertex: boolean;
       openaiCodex: boolean;
       github: boolean;
     };
@@ -678,6 +679,15 @@ export type RuntimeStatus = {
         enabled: boolean;
         apiKeyEnv: string;
         apiKeyPresent: boolean;
+      };
+      googleVertex: {
+        enabled: boolean;
+        usable: boolean;
+        authMode: 'api-key' | 'adc' | null;
+        apiKeyPresent: boolean;
+        adcCredentialsPresent: boolean;
+        projectPresent: boolean;
+        locationPresent: boolean;
       };
       openaiCodex: {
         enabled: boolean;
@@ -1281,6 +1291,12 @@ export type ProviderUpdate =
     }
   | {
       provider: 'openai-codex';
+      input: {
+        enabled?: boolean;
+      };
+    }
+  | {
+      provider: 'google-vertex';
       input: {
         enabled?: boolean;
       };

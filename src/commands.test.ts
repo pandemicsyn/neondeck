@@ -1026,6 +1026,30 @@ describe('Neon commands', () => {
     });
   });
 
+  it('reports Google Vertex authentication readiness in dev-doctor', async () => {
+    const home = await tempDir('neondeck-home-');
+    const paths = runtimePaths(home);
+    await updateAgentModels(
+      { displayAssistant: 'google-vertex/gemini-2.5-pro' },
+      paths,
+    );
+    await writeFile(paths.env, 'GOOGLE_CLOUD_API_KEY=doctor-vertex-key\n');
+
+    await expect(runDevDoctor(paths)).resolves.toMatchObject({
+      checks: expect.arrayContaining([
+        expect.objectContaining({
+          id: 'google-vertex-auth',
+          status: 'ok',
+          data: expect.objectContaining({
+            required: true,
+            usable: true,
+            authMode: 'api-key',
+          }),
+        }),
+      ]),
+    });
+  });
+
   it('lists repo status through a direct deterministic action', async () => {
     const home = await tempDir('neondeck-home-');
     const repoPath = await tempGitRepo();

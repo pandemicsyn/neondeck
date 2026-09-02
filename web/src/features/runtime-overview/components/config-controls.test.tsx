@@ -6,9 +6,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   AutopilotPromptControls,
   compatibleProviderUpdate,
+  googleVertexCredentialSummary,
   optionalPositiveInteger,
   PrReviewPromptControls,
+  providerCredentialConfigured,
+  providerCredentialLabel,
+  providerStatusSummary,
 } from './config-controls';
+import type { RuntimeStatus } from '../../../api';
 
 const prompts = {
   'prepare-only': 'Prepare default {{mode}}',
@@ -69,6 +74,56 @@ describe('compatible provider controls', () => {
         maxTokens: '',
       }),
     ).toThrow('reserved by a built-in provider');
+  });
+});
+
+describe('Google Vertex provider controls', () => {
+  const status = {
+    providers: {
+      credentials: { googleVertex: true },
+      configs: {
+        googleVertex: {
+          enabled: true,
+          usable: true,
+          authMode: 'adc',
+          apiKeyPresent: false,
+          adcCredentialsPresent: true,
+          projectPresent: true,
+          locationPresent: true,
+        },
+        openaiCompatible: [],
+      },
+    },
+  } as unknown as RuntimeStatus;
+
+  it('reports native ADC readiness without exposing a secret field', () => {
+    expect(providerCredentialConfigured(status, 'google-vertex')).toBe(true);
+    expect(providerCredentialLabel(status, 'google-vertex')).toBe('adc');
+    expect(
+      googleVertexCredentialSummary(status.providers.configs.googleVertex),
+    ).toBe(
+      'API key missing · ADC present · project present · location present',
+    );
+    expect(providerStatusSummary(status, 'google-vertex')).toEqual({
+      label: 'GOOGLE VERTEX AI',
+      enabled: true,
+      apiKeyEnv: '',
+      organizationIdEnv: null,
+    });
+  });
+
+  it('does not present ADC-only fields as missing for API-key auth', () => {
+    expect(
+      googleVertexCredentialSummary({
+        enabled: true,
+        usable: true,
+        authMode: 'api-key',
+        apiKeyPresent: true,
+        adcCredentialsPresent: false,
+        projectPresent: false,
+        locationPresent: false,
+      }),
+    ).toBe('API key present');
   });
 });
 

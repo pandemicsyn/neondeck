@@ -40,6 +40,9 @@ describe('runtime home', () => {
     expect(openAiCompatibleProviderIdIssue('router-proxy')).toBeUndefined();
     expect(openAiCompatibleProviderIdIssue('openrouter')).toContain('reserved');
     expect(openAiCompatibleProviderIdIssue('opencode')).toContain('reserved');
+    expect(openAiCompatibleProviderIdIssue('google-vertex')).toContain(
+      'reserved',
+    );
     expect(openAiCompatibleProviderIdIssue('openai')).toContain('reserved');
     expect(openAiCompatibleProviderIdIssue('OpenRouter')).toContain(
       'lowercase',
@@ -104,6 +107,52 @@ describe('runtime home', () => {
     ).toEqual({
       openrouter: { enabled: false, apiKeyEnv: 'ROUTER_KEY' },
     });
+  });
+
+  it('reports the complete migration required for a legacy custom google-vertex provider', () => {
+    expect(() =>
+      parseAppConfig(
+        {
+          version: 1,
+          models: {
+            default: 'google-vertex/custom-default',
+            displayAssistant: 'google-vertex/custom-display',
+            utility: 'openai/gpt-5.5',
+            subagents: {
+              explore: 'google-vertex/custom-explore',
+            },
+          },
+          providers: {
+            openaiCompatible: [
+              {
+                id: 'google-vertex',
+                baseUrl: 'https://vertex-proxy.example/v1',
+                apiKeyEnv: 'VERTEX_PROXY_KEY',
+              },
+            ],
+          },
+        },
+        '/runtime/config.json',
+      ),
+    ).toThrow(
+      '/runtime/config.json.providers.openaiCompatible[0]: The custom provider id "google-vertex" is now reserved',
+    );
+    expect(() =>
+      parseAppConfig(
+        {
+          version: 1,
+          providers: {
+            openaiCompatible: [
+              {
+                id: 'google-vertex',
+                baseUrl: 'https://vertex-proxy.example/v1',
+              },
+            ],
+          },
+        },
+        '/runtime/config.json',
+      ),
+    ).toThrow('config models and FLUE_*_MODEL environment variables');
   });
 
   it('rejects incompatible, custom, or conflicting legacy gateway entries with migration guidance', () => {

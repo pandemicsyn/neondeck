@@ -42,6 +42,7 @@ export const runtimeStatusSchema = v.looseObject({
       anthropic: v.boolean(),
       openrouter: v.boolean(),
       opencode: v.boolean(),
+      googleVertex: v.boolean(),
       openaiCodex: v.boolean(),
       github: v.boolean(),
     }),
@@ -72,6 +73,15 @@ export const runtimeStatusSchema = v.looseObject({
         enabled: v.boolean(),
         apiKeyEnv: v.string(),
         apiKeyPresent: v.boolean(),
+      }),
+      googleVertex: v.object({
+        enabled: v.boolean(),
+        usable: v.boolean(),
+        authMode: v.nullable(v.picklist(['api-key', 'adc'])),
+        apiKeyPresent: v.boolean(),
+        adcCredentialsPresent: v.boolean(),
+        projectPresent: v.boolean(),
+        locationPresent: v.boolean(),
       }),
       openaiCodex: v.object({
         enabled: v.boolean(),

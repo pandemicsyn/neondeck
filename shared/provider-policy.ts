@@ -5,6 +5,7 @@ export const registeredProviderIds = [
   'openai-codex',
   'openrouter',
   'opencode',
+  'google-vertex',
 ] as const;
 
 export type RegisteredProviderId = (typeof registeredProviderIds)[number];

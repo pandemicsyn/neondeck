@@ -15,6 +15,13 @@ Use this format:
 - Follow-up: What remains, who/what should handle it, or `None`.
 ```
 
+## 2026-09-01 - Google Vertex Gemini Provider
+
+- Roadmap item: Phase 13 / provider configuration and safety
+- Decision: Broaden the completed provider scope with a first-class `google-vertex` integration for Gemini. Neondeck preserves Pi's native Vertex provider, protocol, login surface, and bundled model catalog; adds enablement through typed config; supports standard Google Cloud API-key or ADC environment variables; and exposes setup, status, doctor, dashboard, model discovery, tests, and operator guidance through the same provider contract. Raw service-account JSON is never stored in Neondeck config.
+- Reason: Vertex authentication differs materially from a generic API-key or OpenAI-compatible provider, while Pi already supplies a validated native Gemini adapter and model metadata that Neondeck can preserve instead of duplicating.
+- Follow-up: Other Vertex Model Garden publishers remain unsupported until Pi exposes validated provider adapters and metadata for them. Vertex model discovery is bundled rather than live and should be revisited if Pi or Google exposes an appropriate authenticated catalog boundary.
+
 ## 2026-07-27 - ChatGPT OAuth And OpenAI-Compatible Providers
 
 - Roadmap item: Phase 13 / provider configuration and safety

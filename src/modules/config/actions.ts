@@ -12,6 +12,7 @@ import {
   updateAutopilotPromptInputSchema,
   updatePrReviewPromptInputSchema,
   updateHandoffConfigInputSchema,
+  updateGoogleVertexActionInputSchema,
   updateLearningConfigInputSchema,
   updateProviderActionInputSchema,
   updateRepoAutopilotPolicyInputSchema,
@@ -213,6 +214,22 @@ export const updateProviderAction = defineTool({
   },
 });
 
+export const updateGoogleVertexAction = defineTool({
+  name: 'neondeck_config_update_google_vertex',
+  description:
+    'Enable or disable the built-in Google Vertex AI Gemini provider in config.json after explicit user confirmation. Pass confirm=true only when the user approved this provider-wiring change. Credentials are user-owned and must be configured with neondeck init or the runtime-home .env. Server restart is required.',
+  input: updateGoogleVertexActionInputSchema,
+  output: configActionOutputSchema,
+  async run({ data: input }) {
+    return {
+      output: await updateProviderConfig({
+        provider: 'google-vertex',
+        enabled: input.enabled,
+      }),
+    };
+  },
+});
+
 export const updateExecutionPolicyAction = defineTool({
   name: 'neondeck_config_update_execution_policy',
   description:
@@ -305,6 +322,7 @@ export const neondeckConfigActions = [
   updateWorktreePolicyAction,
   readProvidersAction,
   updateProviderAction,
+  updateGoogleVertexAction,
   updateExecutionPolicyAction,
   updateDashboardLayoutAction,
   applyDashboardPresetAction,

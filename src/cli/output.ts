@@ -443,6 +443,7 @@ export function formatProviderCredentialLines(
     `anthropic  ${state(credentials.anthropic)}`,
     `openrouter ${state(credentials.openrouter)}`,
     `opencode   ${state(credentials.opencode)}`,
+    `vertex     ${state(credentials.googleVertex)}`,
   ];
 }
 

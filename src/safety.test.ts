@@ -122,6 +122,14 @@ describe('safety policy', () => {
           auditTarget: 'config_history',
         }),
         expect.objectContaining({
+          id: 'neondeck_config_update_google_vertex',
+          primitive: 'action',
+          class: 'safe-mutation',
+          requiresConfirmation: true,
+          audited: true,
+          auditTarget: 'config_history',
+        }),
+        expect.objectContaining({
           id: 'neondeck_execution_run',
           primitive: 'action',
           class: 'host-execution',

@@ -52,6 +52,7 @@ type SetupModelProvider =
   | 'anthropic'
   | 'openrouter'
   | 'opencode'
+  | 'google-vertex'
   | 'openai-codex'
   | 'openai-compatible';
 
@@ -433,6 +434,11 @@ export async function configureProviderAndModels(paths: RuntimePaths) {
         hint: 'Search Zen models with native per-model protocol support.',
       },
       {
+        value: 'google-vertex',
+        label: 'Google Vertex AI',
+        hint: 'Gemini through Vertex using an API key or Google Cloud ADC.',
+      },
+      {
         value: 'openai-compatible',
         label: 'OpenAI-compatible endpoint',
         hint: 'A local server or another custom compatible API.',
@@ -627,7 +633,69 @@ export async function configureProviderSecret(
     return;
   }
 
-  if (provider === 'kilocode') {
+  if (provider === 'google-vertex') {
+    const authMethod = await promptSelect<'api-key' | 'adc'>({
+      message: 'Vertex authentication',
+      initialValue: env.get('GOOGLE_CLOUD_API_KEY') ? 'api-key' : 'adc',
+      options: [
+        {
+          value: 'api-key',
+          label: 'Google Cloud API key',
+          hint: 'Simplest setup; project and location are not required.',
+        },
+        {
+          value: 'adc',
+          label: 'Application Default Credentials',
+          hint: 'Use gcloud user credentials or a service account file.',
+        },
+      ],
+    });
+
+    if (authMethod === 'api-key') {
+      const value = await promptPassword({
+        message: env.get('GOOGLE_CLOUD_API_KEY')
+          ? 'Google Cloud API key (blank keeps existing)'
+          : 'Google Cloud API key',
+        required: !env.get('GOOGLE_CLOUD_API_KEY'),
+      });
+      if (value) env.set('GOOGLE_CLOUD_API_KEY', value);
+    } else {
+      env.delete('GOOGLE_CLOUD_API_KEY');
+      const project = await promptText({
+        message: 'Google Cloud project id',
+        initialValue:
+          env.get('GOOGLE_CLOUD_PROJECT') ?? env.get('GCLOUD_PROJECT') ?? '',
+        validate: requiredText,
+      });
+      const location = await promptText({
+        message: 'Google Cloud location',
+        initialValue: env.get('GOOGLE_CLOUD_LOCATION') ?? 'us-central1',
+        validate: requiredText,
+      });
+      const credentialsPath = await promptText({
+        message: 'Service account credentials file',
+        placeholder: 'blank uses gcloud application-default credentials',
+        initialValue: env.get('GOOGLE_APPLICATION_CREDENTIALS') ?? '',
+      });
+      env.set('GOOGLE_CLOUD_PROJECT', project.trim());
+      env.delete('GCLOUD_PROJECT');
+      env.set('GOOGLE_CLOUD_LOCATION', location.trim());
+      if (credentialsPath.trim()) {
+        env.set('GOOGLE_APPLICATION_CREDENTIALS', credentialsPath.trim());
+      } else {
+        env.delete('GOOGLE_APPLICATION_CREDENTIALS');
+        const defaultAdcPath = join(
+          homedir(),
+          '.config/gcloud/application_default_credentials.json',
+        );
+        if (!existsSync(defaultAdcPath)) {
+          log.warn(
+            'Application Default Credentials were not found. Run `gcloud auth application-default login` before starting Neondeck.',
+          );
+        }
+      }
+    }
+  } else if (provider === 'kilocode') {
     const kiloKey = await promptPassword({
       message: env.get('KILOCODE_API_KEY')
         ? 'Kilo API key (blank keeps existing)'
@@ -675,7 +743,7 @@ export async function chooseModel(
     return promptModelText(provider, defaultProviderModel(provider));
   }
 
-  const { discoverModels, recommendedGatewayModel } =
+  const { discoverModels, recommendedCatalogModel } =
     await modelDiscoveryModule();
   const spin = spinner();
   const label = providerLabel(provider);
@@ -707,7 +775,7 @@ export async function chooseModel(
   if (!result.ok && result.error) log.warn(result.error);
 
   const recommended =
-    recommendedGatewayModel(provider, role, result.models) ??
+    recommendedCatalogModel(provider, role, result.models) ??
     result.models.find((model) => model.recommendedIndex === 0)?.id;
   const initialModel =
     recommended ?? result.models[0]?.id ?? defaultProviderModel(provider);
@@ -854,11 +922,12 @@ async function promptCatalogModelText(
 
 function isCatalogProvider(
   provider: string,
-): provider is 'kilocode' | 'openrouter' | 'opencode' {
+): provider is 'kilocode' | 'openrouter' | 'opencode' | 'google-vertex' {
   return (
     provider === 'kilocode' ||
     provider === 'openrouter' ||
-    provider === 'opencode'
+    provider === 'opencode' ||
+    provider === 'google-vertex'
   );
 }
 
@@ -866,6 +935,7 @@ function providerLabel(provider: string) {
   if (provider === 'kilocode') return 'KiloCode';
   if (provider === 'openrouter') return 'OpenRouter';
   if (provider === 'opencode') return 'OpenCode Zen';
+  if (provider === 'google-vertex') return 'Google Vertex AI';
   return provider;
 }
 
@@ -915,6 +985,13 @@ export function providerConfigInput(
     };
   }
 
+  if (provider === 'google-vertex') {
+    return {
+      provider,
+      enabled: true,
+    };
+  }
+
   return {
     provider,
     enabled: true,
@@ -931,6 +1008,9 @@ export function defaultProviderModel(provider: string) {
   if (provider === 'openai') return 'openai/gpt-5.5';
   if (provider === 'openai-codex') return defaultOpenAiCodexModel;
   if (provider === 'anthropic') return 'anthropic/claude-sonnet-4-6';
+  if (provider === 'google-vertex') {
+    return 'google-vertex/gemini-2.5-pro';
+  }
   if (provider === 'openrouter' || provider === 'opencode') {
     return defaultGatewayModel(provider) ?? `${provider}/gpt-5.5`;
   }
@@ -945,6 +1025,7 @@ export function providerFromModel(model: string): SetupModelProvider {
     provider === 'anthropic' ||
     provider === 'openrouter' ||
     provider === 'opencode' ||
+    provider === 'google-vertex' ||
     provider === 'openai-codex'
   )
     return provider;

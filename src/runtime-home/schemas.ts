@@ -241,6 +241,11 @@ export const providerConfigSchema = v.strictObject({
       apiKeyEnv: v.optional(envVarNameSchema),
     }),
   ),
+  googleVertex: v.optional(
+    v.strictObject({
+      enabled: v.optional(v.boolean()),
+    }),
+  ),
   openaiCodex: v.optional(
     v.strictObject({
       enabled: v.optional(v.boolean()),
@@ -621,6 +626,7 @@ export class ConfigValidationError extends Error {
 }
 
 export function parseAppConfig(value: unknown, path: string): AppConfig {
+  rejectLegacyGoogleVertexProvider(value, path);
   return parseSchema(
     appConfigSchema,
     migrateLegacyGatewayProviders(value, path),
@@ -629,6 +635,20 @@ export function parseAppConfig(value: unknown, path: string): AppConfig {
 }
 
 type MigratedGatewayConfig = { enabled?: boolean; apiKeyEnv?: string };
+
+function rejectLegacyGoogleVertexProvider(value: unknown, path: string) {
+  if (!isPlainRecord(value) || !isPlainRecord(value.providers)) return;
+  const compatible = value.providers.openaiCompatible;
+  if (!Array.isArray(compatible)) return;
+  const index = compatible.findIndex(
+    (candidate) => isPlainRecord(candidate) && candidate.id === 'google-vertex',
+  );
+  if (index === -1) return;
+  throw new ConfigValidationError(
+    `${path}.providers.openaiCompatible[${index}]`,
+    'The custom provider id "google-vertex" is now reserved by the built-in Google Vertex AI provider. Rename this custom provider to a non-reserved id and update every google-vertex/... selector in config models and FLUE_*_MODEL environment variables before upgrading.',
+  );
+}
 
 function migrateLegacyGatewayProviders(value: unknown, path: string): unknown {
   if (!isPlainRecord(value) || !isPlainRecord(value.providers)) return value;
