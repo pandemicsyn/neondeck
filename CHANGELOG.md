@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.0.0-beta.42
+
+### Minor Changes
+
+- [#365](https://github.com/pandemicsyn/neondeck/pull/365) [`cf72cf0`](https://github.com/pandemicsyn/neondeck/commit/cf72cf0bc10c798bc5e3a450a727f9562f0c02e3) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Add first-class Google Vertex AI Gemini support with API-key and ADC onboarding, native Pi runtime registration and model discovery, readiness diagnostics, and dashboard configuration.
+
+### Patch Changes
+
+- [#363](https://github.com/pandemicsyn/neondeck/pull/363) [`9704ea1`](https://github.com/pandemicsyn/neondeck/commit/9704ea1ac15857b56b805abf6319a20901b54db1) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Keep guided PR tour comments selected when moving between changed files.
+
 ## 1.0.0-beta.41
 
 ### Minor Changes
