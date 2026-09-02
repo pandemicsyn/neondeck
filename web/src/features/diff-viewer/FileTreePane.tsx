@@ -79,6 +79,7 @@ function FileTreePaneModel({
 }) {
   const reviewMapRef = useRef(reviewMapByPath);
   reviewMapRef.current = reviewMapByPath;
+  const isSyncingSelectedPathRef = useRef(false);
   const previousPathAliasRef = useRef<ReadonlyMap<string, string>>(new Map());
   const filePathSet = useMemo(() => new Set(paths), [paths]);
   const occupiedPathSet = useMemo(() => occupiedFileTreePaths(paths), [paths]);
@@ -108,6 +109,7 @@ function FileTreePaneModel({
     initialSelectedPaths: selectedPath ? [selectedPath] : [],
     itemHeight: 24,
     onSelectionChange(selectedPaths) {
+      if (isSyncingSelectedPathRef.current) return;
       const nextPath = [...selectedPaths]
         .reverse()
         .map((path) => previousPathAliasRef.current.get(path) ?? path)
@@ -165,11 +167,16 @@ function FileTreePaneModel({
       [...filterProjection.previousPathAliases].find(
         ([, path]) => path === selectedPath,
       )?.[0] ?? selectedPath;
-    for (const path of model.getSelectedPaths()) {
-      if (path !== visibleSelectedPath) model.getItem(path)?.deselect();
+    isSyncingSelectedPathRef.current = true;
+    try {
+      for (const path of model.getSelectedPaths()) {
+        if (path !== visibleSelectedPath) model.getItem(path)?.deselect();
+      }
+      const item = model.getItem(visibleSelectedPath);
+      if (!item?.isSelected()) item?.select();
+    } finally {
+      isSyncingSelectedPathRef.current = false;
     }
-    const item = model.getItem(visibleSelectedPath);
-    if (!item?.isSelected()) item?.select();
     model.scrollToPath(visibleSelectedPath, {
       focus: false,
       offset: 'nearest',
