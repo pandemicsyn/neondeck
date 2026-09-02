@@ -100,6 +100,40 @@ describe('FileTreePane review map', () => {
     expect(onSelectPath).toHaveBeenCalledWith('src/b.ts');
   });
 
+  it('does not report controlled path synchronization as a user selection', async () => {
+    const onSelectPath = vi.fn<(path: string) => void>();
+    const files = reviewFiles();
+
+    await act(async () => {
+      root.render(
+        <FileTreePane
+          files={files}
+          onSelectPath={onSelectPath}
+          selectedPath="src/a.ts"
+        />,
+      );
+    });
+    onSelectPath.mockClear();
+
+    await act(async () => {
+      root.render(
+        <FileTreePane
+          files={files}
+          onSelectPath={onSelectPath}
+          selectedPath="src/b.ts"
+        />,
+      );
+    });
+
+    expect(selectedPaths()).toEqual(['src/b.ts']);
+    expect(onSelectPath).not.toHaveBeenCalled();
+
+    await act(async () => {
+      treeItem('src/a.ts')?.click();
+    });
+    expect(onSelectPath).toHaveBeenCalledWith('src/a.ts');
+  });
+
   it('shares Pierre search state with review navigation, including previous paths', async () => {
     const onFilterChange =
       vi.fn<(query: string | null, paths: string[] | null) => void>();
@@ -114,7 +148,7 @@ describe('FileTreePane review map', () => {
           filterQuery="old-a"
           onFilterChange={onFilterChange}
           onSelectPath={onSelectPath}
-          selectedPath="src/a.ts"
+          selectedPath="src/b.ts"
         />,
       );
     });
@@ -122,7 +156,7 @@ describe('FileTreePane review map', () => {
     expect(onFilterChange).toHaveBeenLastCalledWith('old-a', ['src/a.ts']);
     expect(treeItem('src/old-a.ts')).not.toBeNull();
     expect(treeItem('src/a.ts')).toBeNull();
-    expect(selectedPaths()).toEqual(['src/old-a.ts']);
+    expect(selectedPaths()).toEqual([]);
     expect(decorationText('src/old-a.ts')).toBe('renamed → src/a.ts');
     await act(async () => treeItem('src/old-a.ts')?.click());
     expect(onSelectPath).toHaveBeenCalledWith('src/a.ts');
