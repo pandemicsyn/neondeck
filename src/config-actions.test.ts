@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { promisify } from 'node:util';
 import { afterEach, describe, expect, it } from 'vitest';
+import * as v from 'valibot';
 import {
   addRepo,
   applyDashboardPreset,
@@ -24,6 +25,8 @@ import {
   updateExecutionPolicy,
   updateDashboardLayout,
   updateDashboardLayoutAction,
+  updateGoogleVertexActionInputSchema,
+  updateProviderActionInputSchema,
   updateProviderConfig,
   updateSkillRoots,
   updateWorktreePolicy,
@@ -51,6 +54,32 @@ afterEach(async () => {
 });
 
 describe('config actions', () => {
+  it('keeps the model-facing Google Vertex mutation enabled-only', () => {
+    expect(
+      v.safeParse(updateProviderActionInputSchema, {
+        provider: 'google-vertex',
+        enabled: true,
+      }).success,
+    ).toBe(false);
+    expect(
+      v.safeParse(updateGoogleVertexActionInputSchema, {
+        enabled: true,
+        confirm: true,
+      }).success,
+    ).toBe(true);
+    expect(
+      v.safeParse(updateGoogleVertexActionInputSchema, {
+        enabled: true,
+        confirm: true,
+        apiKeyEnv: 'GOOGLE_CLOUD_API_KEY',
+      }).success,
+    ).toBe(false);
+    expect(
+      v.safeParse(updateGoogleVertexActionInputSchema, { enabled: true })
+        .success,
+    ).toBe(false);
+  });
+
   it('reads, overrides, and resets full Autopilot owner prompts', async () => {
     const home = await tempDir('neondeck-home-');
     const paths = runtimePaths(home);
@@ -1077,6 +1106,31 @@ describe('config actions', () => {
         },
       },
     });
+    await expect(
+      updateProviderConfig(
+        {
+          provider: 'google-vertex',
+          enabled: false,
+        },
+        paths,
+      ),
+    ).resolves.toMatchObject({
+      ok: true,
+      changed: true,
+      data: {
+        providers: {
+          googleVertex: {
+            enabled: false,
+          },
+        },
+      },
+    });
+
+    const config = parseAppConfig(
+      JSON.parse(await readFile(paths.config, 'utf8')),
+      paths.config,
+    );
+    expect(config.providers?.googleVertex).toEqual({ enabled: false });
   });
 
   it('rejects unsafe provider config shapes and raw secret-looking values', async () => {
@@ -1101,6 +1155,20 @@ describe('config actions', () => {
       ok: false,
       changed: false,
       action: 'config_update_provider',
+      message: 'Invalid action input.',
+    });
+    await expect(
+      updateProviderConfig(
+        {
+          provider: 'google-vertex',
+          enabled: true,
+          apiKeyEnv: 'GOOGLE_CLOUD_API_KEY',
+        },
+        paths,
+      ),
+    ).resolves.toMatchObject({
+      ok: false,
+      changed: false,
       message: 'Invalid action input.',
     });
 

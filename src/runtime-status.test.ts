@@ -40,6 +40,7 @@ describe('runtime status', () => {
       anthropic: false,
       openrouter: false,
       opencode: false,
+      googleVertex: false,
       openaiCodex: false,
       github: false,
     });
@@ -129,6 +130,82 @@ describe('runtime status', () => {
         expect.objectContaining({ id: 'model-providers', ok: true }),
       ]),
     );
+  });
+
+  it('reports Google Vertex API-key readiness for configured Gemini models', async () => {
+    const home = await tempDir();
+    const paths = runtimePaths(home);
+    await ensureRuntimeHome(paths);
+    await writeFile(
+      paths.config,
+      JSON.stringify({
+        version: 1,
+        models: {
+          displayAssistant: 'google-vertex/gemini-2.5-pro',
+        },
+        providers: { googleVertex: { enabled: true } },
+      }),
+    );
+
+    const missing = await readRuntimeStatus(paths, {});
+    expect(missing.providers.configs.googleVertex).toMatchObject({
+      enabled: true,
+      usable: false,
+      authMode: null,
+    });
+    expect(missing.checks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: 'google-vertex-auth', ok: false }),
+      ]),
+    );
+
+    const ready = await readRuntimeStatus(paths, {
+      GOOGLE_CLOUD_API_KEY: 'vertex-key',
+    });
+    expect(ready.providers.credentials.googleVertex).toBe(true);
+    expect(ready.providers.configs.googleVertex).toMatchObject({
+      usable: true,
+      authMode: 'api-key',
+      apiKeyPresent: true,
+    });
+    expect(ready.checks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: 'google-vertex-auth', ok: true }),
+        expect.objectContaining({ id: 'model-providers', ok: true }),
+      ]),
+    );
+  });
+
+  it('reports Google Vertex ADC readiness with project and location', async () => {
+    const home = await tempDir();
+    const paths = runtimePaths(home);
+    await ensureRuntimeHome(paths);
+    const credentials = join(home, 'vertex-service-account.json');
+    await writeFile(credentials, '{}');
+    await writeFile(
+      paths.config,
+      JSON.stringify({
+        version: 1,
+        models: {
+          displayAssistant: 'google-vertex/gemini-2.5-flash',
+        },
+        providers: { googleVertex: { enabled: true } },
+      }),
+    );
+
+    const status = await readRuntimeStatus(paths, {
+      GOOGLE_APPLICATION_CREDENTIALS: credentials,
+      GOOGLE_CLOUD_PROJECT: 'neondeck-test',
+      GOOGLE_CLOUD_LOCATION: 'us-central1',
+    });
+    expect(status.providers.credentials.googleVertex).toBe(true);
+    expect(status.providers.configs.googleVertex).toMatchObject({
+      usable: true,
+      authMode: 'adc',
+      adcCredentialsPresent: true,
+      projectPresent: true,
+      locationPresent: true,
+    });
   });
 
   it('flags an app database with no migration journal', async () => {
@@ -409,6 +486,7 @@ describe('runtime status', () => {
       anthropic: false,
       openrouter: false,
       opencode: false,
+      googleVertex: false,
       openaiCodex: false,
       github: true,
     });

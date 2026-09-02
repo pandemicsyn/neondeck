@@ -42,15 +42,19 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
           provider, checks the Git identity used for Autopilot commits, and can
           add repositories, choose a dashboard preset, and create initial
           schedules. It supports KiloCode, OpenAI, Anthropic, OpenRouter,
-          OpenCode Zen, a ChatGPT subscription, and custom OpenAI-compatible
-          endpoints. KiloCode, OpenRouter, and OpenCode offer searchable model
-          catalogs during setup; OpenRouter uses the account-filtered catalog
-          when its key permits it and falls back to the public catalog. If a
-          search matches more than one page, results are ranked by relevance and
-          provider recency when available, and every match remains reachable
-          through <em>More results</em>. You can also search again or return to
-          the model choices. Newly released eligible OpenRouter models can be
-          selected before Pi's bundled metadata catches up. When global
+          OpenCode Zen, Google Vertex AI Gemini, a ChatGPT subscription, and
+          custom OpenAI-compatible endpoints. KiloCode, OpenRouter, OpenCode,
+          and Vertex offer searchable model catalogs during setup; Vertex uses
+          Pi's bundled Gemini catalog and supports a Google Cloud API key or
+          Application Default Credentials with a project and location.
+          OpenRouter uses the account-filtered catalog when its key permits it
+          and falls back to the public catalog. If a search matches more than
+          one page, results are ranked by relevance and provider recency when
+          available, and every match remains reachable through <em
+            >More results</em
+          >. You can also search again or return to the model choices. Newly
+          released eligible OpenRouter models can be selected before Pi's
+          bundled metadata catches up. When global
           <code>user.name</code> or <code>user.email</code> is missing, the wizard
           warns and offers to configure both plus
           <code>user.useConfigOnly</code> so Git cannot silently invent an identity

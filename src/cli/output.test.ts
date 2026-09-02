@@ -12,6 +12,7 @@ describe('provider credential output', () => {
         anthropic: false,
         openrouter: true,
         opencode: false,
+        googleVertex: false,
       }),
     ).toEqual([
       'github     configured',
@@ -21,6 +22,7 @@ describe('provider credential output', () => {
       'anthropic  missing',
       'openrouter configured',
       'opencode   missing',
+      'vertex     missing',
     ]);
   });
 });

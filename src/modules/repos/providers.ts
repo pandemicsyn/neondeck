@@ -6,11 +6,15 @@ import {
   type ModelAuth,
   type Provider,
 } from '@earendil-works/pi-ai';
+import { existsSync } from 'node:fs';
+import { homedir } from 'node:os';
+import { join } from 'node:path';
 import { openAICompletionsApi } from '@earendil-works/pi-ai/api/openai-completions.lazy';
 import { openAIResponsesApi } from '@earendil-works/pi-ai/api/openai-responses.lazy';
 import { anthropicProvider } from '@earendil-works/pi-ai/providers/anthropic';
 import { openaiProvider } from '@earendil-works/pi-ai/providers/openai';
 import { openaiCodexProvider } from '@earendil-works/pi-ai/providers/openai-codex';
+import { googleVertexProvider } from '@earendil-works/pi-ai/providers/google-vertex';
 import { opencodeProvider } from '@earendil-works/pi-ai/providers/opencode';
 import { openrouterProvider } from '@earendil-works/pi-ai/providers/openrouter';
 import {
@@ -54,6 +58,18 @@ export type OpenAiCodexProviderStatus = {
   enabled: boolean;
 };
 
+export type GoogleVertexProviderStatus = {
+  id: 'google-vertex';
+  allowed: true;
+  enabled: boolean;
+  usable: boolean;
+  authMode: 'api-key' | 'adc' | null;
+  apiKeyPresent: boolean;
+  adcCredentialsPresent: boolean;
+  projectPresent: boolean;
+  locationPresent: boolean;
+};
+
 export type OpenAiCompatibleProviderStatus = {
   id: string;
   allowed: true;
@@ -79,6 +95,11 @@ const defaultOpenAiApiKeyEnv = 'OPENAI_API_KEY';
 const defaultAnthropicApiKeyEnv = 'ANTHROPIC_API_KEY';
 const defaultOpenRouterApiKeyEnv = 'OPENROUTER_API_KEY';
 const defaultOpenCodeApiKeyEnv = 'OPENCODE_API_KEY';
+const googleCloudApiKeyEnv = 'GOOGLE_CLOUD_API_KEY';
+const googleCloudProjectEnv = 'GOOGLE_CLOUD_PROJECT';
+const googleCloudProjectFallbackEnv = 'GCLOUD_PROJECT';
+const googleCloudLocationEnv = 'GOOGLE_CLOUD_LOCATION';
+const googleApplicationCredentialsEnv = 'GOOGLE_APPLICATION_CREDENTIALS';
 const kilocodeGatewayBaseUrl = 'https://api.kilo.ai/api/gateway';
 const kilocodeGatewayMaxTokens = 16_384;
 const openRouterBaseUrl = 'https://openrouter.ai/api/v1';
@@ -219,6 +240,10 @@ export function providerRuntimeRegistrations(
       resolveOpenCodeProviderStatus(config, env),
       env,
     ),
+    googleVertexProviderRuntimeRegistration(
+      resolveGoogleVertexProviderStatus(config, env),
+      env,
+    ),
   );
 
   for (const provider of resolveOpenAiCompatibleProviderStatuses(config, env)) {
@@ -336,6 +361,44 @@ export function resolveOpenCodeProviderStatus(
   );
 }
 
+export function resolveGoogleVertexProviderStatus(
+  config?: Pick<AppConfig, 'providers'>,
+  env: NodeJS.ProcessEnv = process.env,
+  fileExists: (path: string) => boolean = existsSync,
+): GoogleVertexProviderStatus {
+  const enabled = config?.providers?.googleVertex?.enabled ?? true;
+  const apiKeyPresent = Boolean(env[googleCloudApiKeyEnv]);
+  const projectPresent = Boolean(
+    env[googleCloudProjectEnv] ?? env[googleCloudProjectFallbackEnv],
+  );
+  const locationPresent = Boolean(env[googleCloudLocationEnv]);
+  const configuredCredentialsPath =
+    env[googleApplicationCredentialsEnv] ??
+    join(homedir(), '.config/gcloud/application_default_credentials.json');
+  const credentialsPath = normalizeGoogleCredentialsPath(
+    configuredCredentialsPath,
+  );
+  const adcCredentialsPresent = fileExists(credentialsPath);
+  const adcReady = adcCredentialsPresent && projectPresent && locationPresent;
+  const authMode = apiKeyPresent ? 'api-key' : adcReady ? 'adc' : null;
+
+  return {
+    id: 'google-vertex',
+    allowed: true,
+    enabled,
+    usable: enabled && authMode !== null,
+    authMode,
+    apiKeyPresent,
+    adcCredentialsPresent,
+    projectPresent,
+    locationPresent,
+  };
+}
+
+export function normalizeGoogleCredentialsPath(path: string) {
+  return path.startsWith('~/') ? join(homedir(), path.slice(2)) : path;
+}
+
 export function resolveOpenAiCodexProviderStatus(
   config?: Pick<AppConfig, 'providers'>,
 ): OpenAiCodexProviderStatus {
@@ -429,6 +492,111 @@ function builtInApiKeyProviderRuntimeRegistration(
           source: status.apiKeyEnv,
         }),
       },
+    },
+  };
+}
+
+export function googleVertexProviderRuntimeRegistration(
+  status: GoogleVertexProviderStatus,
+  env: NodeJS.ProcessEnv,
+  builtIn: ReturnType<typeof googleVertexProvider> = googleVertexProvider(),
+): ProviderRuntimeRegistration {
+  const builtInAuth = builtIn.auth.apiKey!;
+  // The runtime registry erases the provider API generic after model lookup;
+  // this provider's own catalog remains Vertex-only.
+  const dispatchProvider = builtIn as Provider;
+  const scopedContext = (ctx: Parameters<ApiKeyAuth['resolve']>[0]['ctx']) => ({
+    ...ctx,
+    env: async (name: string) => (await ctx.env(name)) ?? env[name],
+  });
+  return {
+    id: 'google-vertex',
+    provider: {
+      ...builtIn,
+      stream(model, context, options) {
+        return dispatchProvider.stream(
+          model,
+          context,
+          normalizeGoogleVertexRequestOptions(options),
+        );
+      },
+      streamSimple(model, context, options) {
+        return dispatchProvider.streamSimple(
+          model,
+          context,
+          normalizeGoogleVertexRequestOptions(options),
+        );
+      },
+      auth: {
+        apiKey: {
+          ...builtInAuth,
+          check: async (input) =>
+            status.enabled
+              ? builtInAuth.check
+                ? builtInAuth.check({
+                    ...input,
+                    ctx: scopedContext(input.ctx),
+                  })
+                : builtInAuth
+                    .resolve({
+                      ...input,
+                      ctx: scopedContext(input.ctx),
+                    })
+                    .then((result) =>
+                      result
+                        ? { source: result.source, type: 'api_key' }
+                        : undefined,
+                    )
+              : undefined,
+          resolve: async (input) => {
+            if (!status.enabled) return undefined;
+            const ctx = scopedContext(input.ctx);
+            const result = await builtInAuth.resolve({ ...input, ctx });
+            if (!result || result.auth.apiKey) return result;
+            const project =
+              result.env?.[googleCloudProjectEnv] ??
+              result.env?.[googleCloudProjectFallbackEnv] ??
+              (await ctx.env(googleCloudProjectEnv)) ??
+              (await ctx.env(googleCloudProjectFallbackEnv));
+            const location =
+              result.env?.[googleCloudLocationEnv] ??
+              (await ctx.env(googleCloudLocationEnv));
+            const credentialsPath =
+              result.env?.[googleApplicationCredentialsEnv] ??
+              (await ctx.env(googleApplicationCredentialsEnv));
+            return {
+              ...result,
+              env: {
+                ...result.env,
+                ...(project ? { [googleCloudProjectEnv]: project } : {}),
+                ...(location ? { [googleCloudLocationEnv]: location } : {}),
+                ...(credentialsPath
+                  ? {
+                      [googleApplicationCredentialsEnv]:
+                        normalizeGoogleCredentialsPath(credentialsPath),
+                    }
+                  : {}),
+              },
+            };
+          },
+        },
+      },
+    },
+  };
+}
+
+function normalizeGoogleVertexRequestOptions<
+  T extends { env?: Record<string, string> },
+>(options: T | undefined): T | undefined {
+  const credentialsPath = options?.env?.[googleApplicationCredentialsEnv];
+  if (!credentialsPath) return options;
+  const normalizedPath = normalizeGoogleCredentialsPath(credentialsPath);
+  if (normalizedPath === credentialsPath) return options;
+  return {
+    ...options,
+    env: {
+      ...options.env,
+      [googleApplicationCredentialsEnv]: normalizedPath,
     },
   };
 }

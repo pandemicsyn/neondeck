@@ -159,6 +159,7 @@ describe('fresh runtime smoke test', () => {
       anthropic: false,
       openrouter: false,
       opencode: false,
+      googleVertex: false,
       openaiCodex: false,
       github: true,
     });

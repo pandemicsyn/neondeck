@@ -1,7 +1,15 @@
-import { describe, expect, it } from 'vitest';
-import { createModels } from '@earendil-works/pi-ai';
+import { describe, expect, it, vi } from 'vitest';
+import {
+  createAssistantMessageEventStream,
+  createModels,
+} from '@earendil-works/pi-ai';
+import { googleVertexProvider } from '@earendil-works/pi-ai/providers/google-vertex';
+import { homedir } from 'node:os';
+import { join } from 'node:path';
 import {
   providerRuntimeRegistrations,
+  googleVertexProviderRuntimeRegistration,
+  resolveGoogleVertexProviderStatus,
   resolveKilocodeProviderStatus,
   resolveOpenCodeProviderStatus,
   resolveOpenRouterProviderStatus,
@@ -156,6 +164,233 @@ describe('provider runtime registrations', () => {
         }),
       ]),
     );
+  });
+
+  it('registers native Google Vertex models and supports API-key or ADC auth', async () => {
+    expect(
+      resolveGoogleVertexProviderStatus(
+        undefined,
+        { GOOGLE_CLOUD_API_KEY: 'vertex-key' },
+        () => false,
+      ),
+    ).toMatchObject({
+      enabled: true,
+      usable: true,
+      authMode: 'api-key',
+      apiKeyPresent: true,
+    });
+    let checkedCredentialsPath = '';
+    expect(
+      resolveGoogleVertexProviderStatus(
+        undefined,
+        {
+          GOOGLE_APPLICATION_CREDENTIALS: '~/vertex-service-account.json',
+          GOOGLE_CLOUD_PROJECT: 'neondeck-project',
+          GOOGLE_CLOUD_LOCATION: 'us-central1',
+        },
+        (path) => {
+          checkedCredentialsPath = path;
+          return true;
+        },
+      ),
+    ).toMatchObject({
+      usable: true,
+      authMode: 'adc',
+      adcCredentialsPresent: true,
+      projectPresent: true,
+      locationPresent: true,
+    });
+    expect(checkedCredentialsPath).toBe(
+      join(homedir(), 'vertex-service-account.json'),
+    );
+
+    const apiKeyRegistration = providerRuntimeRegistrations({
+      GOOGLE_CLOUD_API_KEY: 'vertex-key',
+    } as NodeJS.ProcessEnv).find(
+      (registration) => registration.id === 'google-vertex',
+    );
+    expect(apiKeyRegistration?.provider.getModels()).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: 'gemini-2.5-pro',
+          api: 'google-vertex',
+          reasoning: true,
+          input: expect.arrayContaining(['text', 'image']),
+        }),
+      ]),
+    );
+    await expect(
+      apiKeyRegistration?.provider.auth.apiKey?.resolve({
+        ctx: {
+          env: async () => undefined,
+          fileExists: async () => false,
+        },
+      }),
+    ).resolves.toMatchObject({
+      auth: { apiKey: 'vertex-key' },
+      source: 'GOOGLE_CLOUD_API_KEY',
+    });
+
+    const adcRegistration = providerRuntimeRegistrations({
+      GOOGLE_APPLICATION_CREDENTIALS: '~/vertex-service-account.json',
+      GOOGLE_CLOUD_PROJECT: 'neondeck-project',
+      GOOGLE_CLOUD_LOCATION: 'us-central1',
+    } as NodeJS.ProcessEnv).find(
+      (registration) => registration.id === 'google-vertex',
+    );
+    await expect(
+      adcRegistration?.provider.auth.apiKey?.resolve({
+        ctx: {
+          env: async () => undefined,
+          fileExists: async () => true,
+        },
+      }),
+    ).resolves.toMatchObject({
+      auth: {},
+      env: {
+        GOOGLE_APPLICATION_CREDENTIALS: join(
+          homedir(),
+          'vertex-service-account.json',
+        ),
+        GOOGLE_CLOUD_PROJECT: 'neondeck-project',
+        GOOGLE_CLOUD_LOCATION: 'us-central1',
+      },
+    });
+  });
+
+  it('shadows ambient Google Vertex credentials when disabled', async () => {
+    const registrations = providerRuntimeRegistrations(
+      { GOOGLE_CLOUD_API_KEY: 'ambient-vertex-key' } as NodeJS.ProcessEnv,
+      { providers: { googleVertex: { enabled: false } } },
+    );
+    await expect(
+      resolveApiKey(registrations, 'google-vertex'),
+    ).resolves.toBeUndefined();
+  });
+
+  it('keeps stored Google Vertex ADC fields ahead of conflicting ambient values', async () => {
+    const registration = providerRuntimeRegistrations({
+      GOOGLE_APPLICATION_CREDENTIALS: '/ambient/service-account.json',
+      GOOGLE_CLOUD_PROJECT: 'ambient-project',
+      GOOGLE_CLOUD_LOCATION: 'ambient-location',
+    } as NodeJS.ProcessEnv).find(
+      (candidate) => candidate.id === 'google-vertex',
+    );
+
+    await expect(
+      registration?.provider.auth.apiKey?.resolve({
+        credential: {
+          type: 'api_key',
+          env: {
+            GOOGLE_APPLICATION_CREDENTIALS: '~/stored-service-account.json',
+            GOOGLE_CLOUD_PROJECT: 'stored-project',
+            GOOGLE_CLOUD_LOCATION: 'stored-location',
+          },
+        },
+        ctx: {
+          env: async () => undefined,
+          fileExists: async () => true,
+        },
+      }),
+    ).resolves.toMatchObject({
+      auth: {},
+      env: {
+        GOOGLE_APPLICATION_CREDENTIALS: join(
+          homedir(),
+          'stored-service-account.json',
+        ),
+        GOOGLE_CLOUD_PROJECT: 'stored-project',
+        GOOGLE_CLOUD_LOCATION: 'stored-location',
+      },
+      source: 'stored credential',
+    });
+  });
+
+  it('keeps explicit Pi request env ahead of captured ambient Vertex values', async () => {
+    const registration = providerRuntimeRegistrations({
+      GOOGLE_APPLICATION_CREDENTIALS: '/ambient/service-account.json',
+      GOOGLE_CLOUD_PROJECT: 'ambient-project',
+      GOOGLE_CLOUD_LOCATION: 'ambient-location',
+    } as NodeJS.ProcessEnv).find(
+      (candidate) => candidate.id === 'google-vertex',
+    );
+    const models = createModels({
+      authContext: {
+        env: async () => undefined,
+        fileExists: async () => true,
+      },
+    });
+    models.setProvider(registration!.provider);
+
+    await expect(
+      models.getAuth('google-vertex', {
+        env: {
+          GOOGLE_APPLICATION_CREDENTIALS: '~/request-service-account.json',
+          GOOGLE_CLOUD_PROJECT: 'request-project',
+          GOOGLE_CLOUD_LOCATION: 'request-location',
+        },
+      }),
+    ).resolves.toMatchObject({
+      auth: {},
+      env: {
+        GOOGLE_APPLICATION_CREDENTIALS: join(
+          homedir(),
+          'request-service-account.json',
+        ),
+        GOOGLE_CLOUD_PROJECT: 'request-project',
+        GOOGLE_CLOUD_LOCATION: 'request-location',
+      },
+    });
+  });
+
+  it('keeps request-scoped credential paths normalized through Pi stream dispatch', async () => {
+    const builtIn = googleVertexProvider();
+    const stream = vi.fn<typeof builtIn.stream>(() => {
+      const result = createAssistantMessageEventStream();
+      result.end();
+      return result;
+    });
+    const capturedEnv = {
+      GOOGLE_APPLICATION_CREDENTIALS: '/ambient/service-account.json',
+      GOOGLE_CLOUD_PROJECT: 'ambient-project',
+      GOOGLE_CLOUD_LOCATION: 'ambient-location',
+    } as NodeJS.ProcessEnv;
+    const registration = googleVertexProviderRuntimeRegistration(
+      resolveGoogleVertexProviderStatus(undefined, capturedEnv),
+      capturedEnv,
+      { ...builtIn, stream },
+    );
+    const models = createModels({
+      authContext: {
+        env: async () => undefined,
+        fileExists: async () => true,
+      },
+    });
+    models.setProvider(registration.provider);
+    const model = registration.provider.getModels()[0]!;
+
+    models.stream(
+      model,
+      { messages: [] },
+      {
+        env: {
+          GOOGLE_APPLICATION_CREDENTIALS: '~/request-service-account.json',
+          GOOGLE_CLOUD_PROJECT: 'request-project',
+          GOOGLE_CLOUD_LOCATION: 'request-location',
+        },
+      },
+    );
+    await vi.waitFor(() => expect(stream).toHaveBeenCalledOnce());
+    expect(stream.mock.calls[0]?.[2]).toMatchObject({
+      env: {
+        GOOGLE_APPLICATION_CREDENTIALS: join(
+          homedir(),
+          'request-service-account.json',
+        ),
+        GOOGLE_CLOUD_PROJECT: 'request-project',
+        GOOGLE_CLOUD_LOCATION: 'request-location',
+      },
+    });
   });
 
   it('resolves every representative discovered gateway model through Pi with the same API', () => {

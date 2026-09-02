@@ -106,8 +106,8 @@ GITHUB_LOGIN=...</code></pre>
           <code>kilocode</code>, <code>openai</code>,
           <code>anthropic</code>, <code>openrouter</code>, <code>opencode</code
           >,
-          <code>openai-codex</code>, or a validated OpenAI-compatible provider
-          id.
+          <code>google-vertex</code>, <code>openai-codex</code>, or a validated
+          OpenAI-compatible provider id.
         </p>
 
         <h3 id="model-selection">Choose models</h3>
@@ -140,6 +140,9 @@ GITHUB_LOGIN=...</code></pre>
       "enabled": true,
       "apiKeyEnv": "OPENCODE_API_KEY"
     &#125;,
+    "googleVertex": &#123;
+      "enabled": true
+    &#125;,
     "openaiCodex": &#123;
       "enabled": true
     &#125;,
@@ -155,6 +158,28 @@ GITHUB_LOGIN=...</code></pre>
     ]
   &#125;
 &#125;</code></pre>
+
+        <h3 id="google-vertex">Google Vertex AI Gemini</h3>
+        <p>
+          Use provider-qualified model ids such as
+          <code>google-vertex/gemini-2.5-pro</code>. Neondeck preserves Pi's
+          native Vertex protocol and bundled Gemini metadata; setup searches
+          that installed catalog and recommends Gemini 2.5 Pro, Flash, and Flash
+          Lite. This integration is for Gemini on Vertex AI. Other Vertex Model
+          Garden publishers are not treated as compatible models without a
+          validated Pi adapter.
+        </p>
+        <p>
+          Credentials stay in the runtime-home <code>.env</code>, never in
+          <code>config.json</code>. Set <code>GOOGLE_CLOUD_API_KEY</code> for API-key
+          authentication, or use Application Default Credentials with
+          <code>GOOGLE_CLOUD_PROJECT</code> (or <code>GCLOUD_PROJECT</code>) and
+          <code>GOOGLE_CLOUD_LOCATION</code>. A service-account file may be
+          selected with <code>GOOGLE_APPLICATION_CREDENTIALS</code>; otherwise
+          Neondeck also recognizes the standard local gcloud ADC file. Runtime
+          status, the dashboard, and <code>neondeck doctor</code> report which pieces
+          are present without exposing credential contents.
+        </p>
 
         <h3 id="compatible-endpoints">Compatible endpoint rules</h3>
         <p>
@@ -273,8 +298,8 @@ GITHUB_LOGIN=...</code></pre>
             review or response.
           </li>
           <li>
-            Provider registration and standalone CLI ChatGPT login or logout
-            require a server restart.
+            Provider registration, including enabling or disabling Vertex, and
+            standalone CLI ChatGPT login or logout require a server restart.
           </li>
           <li>
             Model changes apply to new sessions. Existing sessions remain on

@@ -4,7 +4,7 @@ import { runtimePaths } from '../runtime-home';
 
 const mocks = vi.hoisted(() => ({
   discoverModels: vi.fn(),
-  recommendedGatewayModel: vi.fn(),
+  recommendedCatalogModel: vi.fn(),
   promptPassword: vi.fn(),
   promptSelect: vi.fn(),
   promptText: vi.fn(),
@@ -42,7 +42,7 @@ vi.mock('./modules', async (importOriginal) => ({
   }),
   modelDiscoveryModule: async () => ({
     discoverModels: mocks.discoverModels,
-    recommendedGatewayModel: mocks.recommendedGatewayModel,
+    recommendedCatalogModel: mocks.recommendedCatalogModel,
   }),
 }));
 
@@ -102,7 +102,7 @@ function discovery(
 beforeEach(() => {
   vi.clearAllMocks();
   mocks.discoverModels.mockResolvedValue(discovery());
-  mocks.recommendedGatewayModel.mockReturnValue(undefined);
+  mocks.recommendedCatalogModel.mockReturnValue(undefined);
   mocks.promptPassword.mockResolvedValue('super-secret-value');
 });
 
@@ -160,7 +160,7 @@ describe('gateway onboarding model chooser', () => {
 
   it('reuses one discovery request when approved role defaults are supplied', async () => {
     const cache = new Map();
-    mocks.recommendedGatewayModel.mockImplementation(
+    mocks.recommendedCatalogModel.mockImplementation(
       (_provider: string, role: string) =>
         role === 'displayAssistant' ? models[0]?.id : models[1]?.id,
     );
@@ -349,5 +349,43 @@ describe('gateway onboarding model chooser', () => {
     expect(JSON.stringify(mocks.success.mock.calls)).not.toContain(
       'super-secret-value',
     );
+  });
+
+  it('writes Google Vertex API keys only through the env file', async () => {
+    const env = new Map<string, string>();
+    const paths = runtimePaths('/tmp/neondeck-onboarding-vertex-key-test');
+    mocks.promptSelect.mockResolvedValueOnce('api-key');
+
+    await configureProviderSecret('google-vertex', env, paths);
+
+    expect(env.get('GOOGLE_CLOUD_API_KEY')).toBe('super-secret-value');
+    expect(mocks.writeDotEnvFile).toHaveBeenCalledWith(paths.env, env);
+    expect(JSON.stringify(mocks.success.mock.calls)).not.toContain(
+      'super-secret-value',
+    );
+  });
+
+  it('configures Google Vertex ADC without persisting credential contents', async () => {
+    const env = new Map<string, string>([
+      ['GOOGLE_CLOUD_API_KEY', 'old-key'],
+      ['GCLOUD_PROJECT', 'old-project'],
+    ]);
+    const paths = runtimePaths('/tmp/neondeck-onboarding-vertex-adc-test');
+    mocks.promptSelect.mockResolvedValueOnce('adc');
+    mocks.promptText
+      .mockResolvedValueOnce('neondeck-project')
+      .mockResolvedValueOnce('us-central1')
+      .mockResolvedValueOnce('/secure/service-account.json');
+
+    await configureProviderSecret('google-vertex', env, paths);
+
+    expect(Object.fromEntries(env)).toMatchObject({
+      GOOGLE_CLOUD_PROJECT: 'neondeck-project',
+      GOOGLE_CLOUD_LOCATION: 'us-central1',
+      GOOGLE_APPLICATION_CREDENTIALS: '/secure/service-account.json',
+    });
+    expect(env.has('GOOGLE_CLOUD_API_KEY')).toBe(false);
+    expect(env.has('GCLOUD_PROJECT')).toBe(false);
+    expect(mocks.writeDotEnvFile).toHaveBeenCalledWith(paths.env, env);
   });
 });

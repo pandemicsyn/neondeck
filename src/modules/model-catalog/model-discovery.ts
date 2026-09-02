@@ -1,4 +1,5 @@
 import { openAiCodexModels } from '../../model-defaults';
+import { googleVertexProvider } from '@earendil-works/pi-ai/providers/google-vertex';
 import {
   gatewayRecommendationModels,
   suggestedGatewayModels,
@@ -58,6 +59,19 @@ type KiloRawModel = {
 
 const kiloApiBase = 'https://api.kilo.ai';
 const kiloFetchTimeoutMs = 10_000;
+const googleVertexRecommendations = [
+  'gemini-2.5-pro',
+  'gemini-2.5-flash',
+  'gemini-2.5-flash-lite',
+] as const;
+const googleVertexRoleRecommendations: Record<
+  GatewayModelRole,
+  readonly (typeof googleVertexRecommendations)[number][]
+> = {
+  displayAssistant: ['gemini-2.5-pro'],
+  utility: ['gemini-2.5-flash-lite', 'gemini-2.5-flash'],
+  explore: ['gemini-2.5-flash', 'gemini-2.5-flash-lite'],
+};
 
 export async function discoverModels(input: {
   provider: RegisteredProviderId;
@@ -76,6 +90,16 @@ export async function discoverModels(input: {
       apiKey: input.apiKey,
       signal: input.signal,
     });
+  }
+
+  if (input.provider === 'google-vertex') {
+    const models = bundledGoogleVertexModels();
+    return {
+      ok: true,
+      provider: 'google-vertex',
+      models,
+      diagnostics: discoveryDiagnostics('pi-bundled', false, models.length),
+    };
   }
 
   const models = suggestedModels(input.provider);
@@ -135,6 +159,8 @@ export function suggestedModels(
     );
   }
 
+  if (provider === 'google-vertex') return bundledGoogleVertexModels();
+
   return [
     suggestedModel(
       'kilocode',
@@ -147,11 +173,44 @@ export function suggestedModels(
   ];
 }
 
-export function recommendedGatewayModel(
+export function bundledGoogleVertexModels(): DiscoveredModel[] {
+  return googleVertexProvider()
+    .getModels()
+    .map((model) => ({
+      id: `google-vertex/${model.id}`,
+      provider: 'google-vertex' as const,
+      model: model.id,
+      name: model.name,
+      api: model.api,
+      contextLength: model.contextWindow || null,
+      reasoning: model.reasoning,
+      isFree: false,
+      createdAt: null,
+      recommendedIndex: googleVertexRecommendationIndex(model.id),
+      source: 'pi-bundled' as const,
+    }))
+    .sort(compareModels);
+}
+
+function googleVertexRecommendationIndex(model: string) {
+  const index = googleVertexRecommendations.indexOf(
+    model as (typeof googleVertexRecommendations)[number],
+  );
+  return index >= 0 ? index : null;
+}
+
+export function recommendedCatalogModel(
   provider: string,
   role: GatewayModelRole,
   models: readonly DiscoveredModel[],
 ) {
+  if (provider === 'google-vertex') {
+    for (const modelId of googleVertexRoleRecommendations[role]) {
+      const match = models.find((model) => model.model === modelId);
+      if (match) return match.id;
+    }
+    return undefined;
+  }
   if (provider !== 'openrouter' && provider !== 'opencode') return undefined;
   for (const modelId of gatewayRecommendationModels(provider, role)) {
     const match = models.find((model) => model.model === modelId);

@@ -40,6 +40,9 @@ describe('runtime home', () => {
     expect(openAiCompatibleProviderIdIssue('router-proxy')).toBeUndefined();
     expect(openAiCompatibleProviderIdIssue('openrouter')).toContain('reserved');
     expect(openAiCompatibleProviderIdIssue('opencode')).toContain('reserved');
+    expect(openAiCompatibleProviderIdIssue('google-vertex')).toContain(
+      'reserved',
+    );
     expect(openAiCompatibleProviderIdIssue('openai')).toContain('reserved');
     expect(openAiCompatibleProviderIdIssue('OpenRouter')).toContain(
       'lowercase',

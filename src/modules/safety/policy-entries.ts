@@ -715,6 +715,16 @@ export const entries: SafetyPolicyEntry[] = [
     'Updates built-in provider settings using environment variable references only; arbitrary compatible endpoints remain user-owned and server restart is required.',
   ),
   action(
+    'neondeck_config_update_google_vertex',
+    'Enable or disable Google Vertex AI',
+    {
+      ...safeMutation,
+      requiresConfirmation: true,
+      auditTarget: 'config_history',
+    },
+    'Enables or disables the built-in Google Vertex AI Gemini provider; credentials remain user-owned and server restart is required.',
+  ),
+  action(
     'neondeck_config_update_autopilot_prompt',
     'Update Autopilot owner prompt',
     {

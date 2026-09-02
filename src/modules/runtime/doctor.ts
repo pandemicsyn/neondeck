@@ -8,6 +8,7 @@ import { resolveAgentModelSelection } from './agent-config';
 import { readEnvFiles } from './env';
 import {
   isRegisteredProvider,
+  resolveGoogleVertexProviderStatus,
   resolveAnthropicProviderStatus,
   resolveKilocodeProviderStatus,
   resolveOpenAiCompatibleProviderStatuses,
@@ -172,6 +173,7 @@ export async function runDevDoctor(
   );
 
   const envResult = envCheck(localEnv, appConfig, repos);
+  const vertexCheck = googleVertexDoctorCheck(appConfig, mergedEnv(localEnv));
   const readinessRepoId = input.repoId ?? repos.repos[0]?.id;
   const autopilot = readinessRepoId
     ? await readAutopilotReadiness(
@@ -192,6 +194,7 @@ export async function runDevDoctor(
     packageScriptsCheck(rootPackage, repoPackages),
     nodeVersionCheck(),
     envResult.check,
+    vertexCheck,
     portsCheck(ports),
     await serverHealthCheck(),
     databases,
@@ -474,6 +477,7 @@ function providerEnvRequirement(
   }
 
   if (provider === 'openai-codex') return undefined;
+  if (provider === 'google-vertex') return undefined;
   const status = resolveOpenAiCompatibleProviderStatuses(
     config ? { providers: config.providers } : undefined,
     env,
@@ -481,6 +485,45 @@ function providerEnvRequirement(
   return status?.enabled && status.apiKeyEnv
     ? { id: status.apiKeyEnv }
     : undefined;
+}
+
+function googleVertexDoctorCheck(
+  config: AppConfig | undefined,
+  env: NodeJS.ProcessEnv,
+): DoctorCheck {
+  const models = resolveAgentModelSelection(
+    config ? { models: config.models } : undefined,
+    env,
+  );
+  const required = requiredModelProviders(models).includes('google-vertex');
+  const status = resolveGoogleVertexProviderStatus(
+    config ? { providers: config.providers } : undefined,
+    env,
+  );
+  return {
+    id: 'google-vertex-auth',
+    label: 'Google Vertex credentials',
+    status: !required || status.usable ? 'ok' : 'attention',
+    message: !required
+      ? 'Google Vertex is not required by the configured models.'
+      : status.usable
+        ? `Google Vertex is ready through ${status.authMode === 'api-key' ? 'GOOGLE_CLOUD_API_KEY' : 'Application Default Credentials'}.`
+        : !status.enabled
+          ? 'Google Vertex is required by a model but disabled in config.json.'
+          : status.adcCredentialsPresent
+            ? 'Google Vertex ADC needs a project and location.'
+            : 'Configure GOOGLE_CLOUD_API_KEY or Application Default Credentials with a project and location.',
+    data: {
+      required,
+      enabled: status.enabled,
+      usable: status.usable,
+      authMode: status.authMode,
+      apiKeyPresent: status.apiKeyPresent,
+      adcCredentialsPresent: status.adcCredentialsPresent,
+      projectPresent: status.projectPresent,
+      locationPresent: status.locationPresent,
+    },
+  };
 }
 
 function mergedEnv(localEnv: Map<string, string>): NodeJS.ProcessEnv {

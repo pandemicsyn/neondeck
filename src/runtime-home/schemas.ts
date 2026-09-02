@@ -241,6 +241,11 @@ export const providerConfigSchema = v.strictObject({
       apiKeyEnv: v.optional(envVarNameSchema),
     }),
   ),
+  googleVertex: v.optional(
+    v.strictObject({
+      enabled: v.optional(v.boolean()),
+    }),
+  ),
   openaiCodex: v.optional(
     v.strictObject({
       enabled: v.optional(v.boolean()),

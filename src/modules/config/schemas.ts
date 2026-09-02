@@ -203,6 +203,10 @@ export const updateProviderInputSchema = v.variant('provider', [
     ...builtInProviderFields,
   }),
   v.strictObject({
+    provider: v.literal('google-vertex'),
+    enabled: v.optional(v.boolean()),
+  }),
+  v.strictObject({
     provider: v.literal('openai-codex'),
     enabled: v.optional(v.boolean()),
   }),
@@ -238,6 +242,10 @@ export const updateProviderActionInputSchema = v.strictObject({
   enabled: v.optional(v.boolean()),
   apiKeyEnv: v.optional(v.nullable(envVarNameSchema)),
   organizationIdEnv: v.optional(v.nullable(envVarNameSchema)),
+});
+export const updateGoogleVertexActionInputSchema = v.strictObject({
+  enabled: v.boolean(),
+  confirm: v.literal(true),
 });
 export const dashboardPresetSchema = v.object({
   preset: v.picklist(['classic', 'cockpit']),

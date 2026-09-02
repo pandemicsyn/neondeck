@@ -311,10 +311,16 @@ describe('onboarding model defaults', () => {
     expect(defaultProviderModel('openai')).toBe('openai/gpt-5.5');
     expect(defaultProviderModel('openrouter')).toBe('openrouter/gpt-5.5');
     expect(defaultProviderModel('opencode')).toBe('opencode/gpt-5.5');
+    expect(defaultProviderModel('google-vertex')).toBe(
+      'google-vertex/gemini-2.5-pro',
+    );
     expect(providerFromModel('openrouter/anthropic/claude-sonnet-4.6')).toBe(
       'openrouter',
     );
     expect(providerFromModel('opencode/gpt-5.6-terra')).toBe('opencode');
+    expect(providerFromModel('google-vertex/gemini-2.5-pro')).toBe(
+      'google-vertex',
+    );
   });
 
   it('recommends cheap, fast Explore model profiles', () => {

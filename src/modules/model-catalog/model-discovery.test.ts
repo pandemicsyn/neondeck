@@ -3,7 +3,7 @@ import { defaultOpenAiCodexModel } from '../../model-defaults';
 import { suggestedGatewayModels } from '../../lib/gateway-model-policy';
 import {
   discoverModels,
-  recommendedGatewayModel,
+  recommendedCatalogModel,
   suggestedModels,
 } from './model-discovery';
 import {
@@ -27,6 +27,40 @@ describe('suggestedModels', () => {
       'openai-codex/gpt-5.6-luna',
     ]);
     expect(models[0]?.recommendedIndex).toBe(0);
+  });
+
+  it('uses Pi bundled Google Vertex metadata for searchable Gemini models', async () => {
+    const result = await discoverModels({ provider: 'google-vertex' });
+
+    expect(result.ok).toBe(true);
+    expect(result.diagnostics).toMatchObject({
+      source: 'pi-bundled',
+      stale: false,
+    });
+    expect(result.models).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: 'google-vertex/gemini-2.5-pro',
+          api: 'google-vertex',
+          contextLength: 1_048_576,
+          reasoning: true,
+          recommendedIndex: 0,
+        }),
+      ]),
+    );
+    expect(
+      recommendedCatalogModel(
+        'google-vertex',
+        'displayAssistant',
+        result.models,
+      ),
+    ).toBe('google-vertex/gemini-2.5-pro');
+    expect(
+      recommendedCatalogModel('google-vertex', 'utility', result.models),
+    ).toBe('google-vertex/gemini-2.5-flash-lite');
+    expect(
+      recommendedCatalogModel('google-vertex', 'explore', result.models),
+    ).toBe('google-vertex/gemini-2.5-flash');
   });
 });
 
@@ -219,10 +253,10 @@ describe('gateway model catalog discovery', () => {
     );
     expect(result.excluded.unavailableInRuntime).toBe(1);
     expect(
-      recommendedGatewayModel('opencode', 'displayAssistant', result.models),
+      recommendedCatalogModel('opencode', 'displayAssistant', result.models),
     ).toBeUndefined();
     expect(
-      recommendedGatewayModel('opencode', 'utility', result.models),
+      recommendedCatalogModel('opencode', 'utility', result.models),
     ).toBeUndefined();
   });
 

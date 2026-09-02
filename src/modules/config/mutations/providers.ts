@@ -12,6 +12,7 @@ import {
 } from '../../../runtime-home';
 import {
   resolveAnthropicProviderStatus,
+  resolveGoogleVertexProviderStatus,
   resolveKilocodeProviderStatus,
   resolveOpenAiCodexProviderStatus,
   resolveOpenAiCompatibleProviderStatuses,
@@ -55,7 +56,9 @@ export async function updateProviderConfig(
   const input = parsed.input;
   if (
     input.enabled === undefined &&
-    (input.provider === 'openai-codex' || input.apiKeyEnv === undefined) &&
+    (input.provider === 'openai-codex' ||
+      input.provider === 'google-vertex' ||
+      input.apiKeyEnv === undefined) &&
     (input.provider !== 'kilocode' || input.organizationIdEnv === undefined) &&
     (input.provider !== 'openai-compatible' ||
       (input.baseUrl === undefined &&
@@ -164,12 +167,18 @@ function mergeProviderConfig(
   }
 
   const configKey =
-    input.provider === 'openai-codex' ? 'openaiCodex' : input.provider;
+    input.provider === 'openai-codex'
+      ? 'openaiCodex'
+      : input.provider === 'google-vertex'
+        ? 'googleVertex'
+        : input.provider;
   const existing = current?.[configKey] ?? {};
   const provider = {
     ...existing,
     ...(input.enabled !== undefined ? { enabled: input.enabled } : {}),
-    ...(input.provider !== 'openai-codex' && input.apiKeyEnv !== undefined
+    ...(input.provider !== 'openai-codex' &&
+    input.provider !== 'google-vertex' &&
+    input.apiKeyEnv !== undefined
       ? input.apiKeyEnv === null
         ? {}
         : { apiKeyEnv: input.apiKeyEnv }
@@ -181,7 +190,11 @@ function mergeProviderConfig(
       : {}),
   };
 
-  if (input.provider !== 'openai-codex' && input.apiKeyEnv === null) {
+  if (
+    input.provider !== 'openai-codex' &&
+    input.provider !== 'google-vertex' &&
+    input.apiKeyEnv === null
+  ) {
     delete provider.apiKeyEnv;
   }
   if (input.provider === 'kilocode' && input.organizationIdEnv === null) {
@@ -206,6 +219,10 @@ export function effectiveProviderConfig(
     env,
   );
   const opencode = resolveOpenCodeProviderStatus({ providers: current }, env);
+  const googleVertex = resolveGoogleVertexProviderStatus(
+    { providers: current },
+    env,
+  );
   const openaiCodex = resolveOpenAiCodexProviderStatus({
     providers: current,
   });
@@ -235,6 +252,9 @@ export function effectiveProviderConfig(
     opencode: {
       enabled: opencode.enabled,
       apiKeyEnv: opencode.apiKeyEnv,
+    },
+    googleVertex: {
+      enabled: googleVertex.enabled,
     },
     openaiCodex: {
       enabled: openaiCodex.enabled,

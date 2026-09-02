@@ -4,6 +4,7 @@ import {
   isRegisteredProvider,
   openAiCodexAuthStatus,
   resolveAnthropicProviderStatus,
+  resolveGoogleVertexProviderStatus,
   resolveKilocodeProviderStatus,
   resolveOpenAiCodexProviderStatus,
   resolveOpenAiCompatibleProviderStatuses,
@@ -80,6 +81,10 @@ export async function readRuntimeStatus(
     config.ok ? { providers: config.value.providers } : undefined,
     env,
   );
+  const googleVertexProvider = resolveGoogleVertexProviderStatus(
+    config.ok ? { providers: config.value.providers } : undefined,
+    env,
+  );
   const openaiCodexProvider = resolveOpenAiCodexProviderStatus(
     config.ok ? { providers: config.value.providers } : undefined,
   );
@@ -100,6 +105,7 @@ export async function readRuntimeStatus(
     openrouterProvider.enabled && openrouterProvider.apiKeyPresent;
   const opencodeKey =
     opencodeProvider.enabled && opencodeProvider.apiKeyPresent;
+  const googleVertexCredentials = googleVertexProvider.usable;
   const githubToken = Boolean(env.GITHUB_TOKEN);
   const activeSkills = skills.ok
     ? skills.value.skills.filter((skill) => skill.status === 'active')
@@ -117,6 +123,7 @@ export async function readRuntimeStatus(
     anthropic: anthropicProvider.enabled,
     openrouter: openrouterProvider.enabled,
     opencode: opencodeProvider.enabled,
+    'google-vertex': googleVertexProvider.enabled,
     'openai-codex': openaiCodexProvider.enabled,
     ...Object.fromEntries(
       openaiCompatibleProviders.map((provider) => [
@@ -196,6 +203,7 @@ export async function readRuntimeStatus(
       modelProviders,
       opencodeProvider,
     ),
+    googleVertexProviderCheck(modelProviders, googleVertexProvider),
     check(
       'openai-codex-auth',
       'ChatGPT sign-in',
@@ -392,6 +400,7 @@ export async function readRuntimeStatus(
         anthropic: anthropicKey,
         openrouter: openrouterKey,
         opencode: opencodeKey,
+        googleVertex: googleVertexCredentials,
         openaiCodex: openaiCodexAuth.usable,
         github: githubToken,
       },
@@ -422,6 +431,15 @@ export async function readRuntimeStatus(
           enabled: opencodeProvider.enabled,
           apiKeyEnv: opencodeProvider.apiKeyEnv,
           apiKeyPresent: opencodeProvider.apiKeyPresent,
+        },
+        googleVertex: {
+          enabled: googleVertexProvider.enabled,
+          usable: googleVertexProvider.usable,
+          authMode: googleVertexProvider.authMode,
+          apiKeyPresent: googleVertexProvider.apiKeyPresent,
+          adcCredentialsPresent: googleVertexProvider.adcCredentialsPresent,
+          projectPresent: googleVertexProvider.projectPresent,
+          locationPresent: googleVertexProvider.locationPresent,
         },
         openaiCodex: {
           enabled: openaiCodexProvider.enabled,
@@ -563,6 +581,25 @@ function apiKeyProviderCheck(
       : provider.enabled
         ? `${provider.apiKeyEnv} is not configured.`
         : `${label} provider is disabled in config.json.`,
+  );
+}
+
+function googleVertexProviderCheck(
+  modelProviders: string[],
+  provider: ReturnType<typeof resolveGoogleVertexProviderStatus>,
+): RuntimeStatusCheck {
+  return check(
+    'google-vertex-auth',
+    'Google Vertex credentials',
+    !modelProviders.includes('google-vertex') || provider.usable,
+    'needs-config',
+    provider.usable
+      ? `Google Vertex credentials are ready through ${provider.authMode === 'api-key' ? 'GOOGLE_CLOUD_API_KEY' : 'Application Default Credentials'}.`
+      : !provider.enabled
+        ? 'Google Vertex provider is disabled in config.json.'
+        : provider.adcCredentialsPresent
+          ? 'Google Vertex ADC requires GOOGLE_CLOUD_PROJECT (or GCLOUD_PROJECT) and GOOGLE_CLOUD_LOCATION.'
+          : 'Configure GOOGLE_CLOUD_API_KEY or Application Default Credentials with a project and location.',
   );
 }
 
