@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.0.0-beta.43
+
+### Patch Changes
+
+- [#369](https://github.com/pandemicsyn/neondeck/pull/369) [`de44178`](https://github.com/pandemicsyn/neondeck/commit/de4417804ab0d7c8a5df095776e72665553e7dff) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Default new Google Vertex setups to Gemini 3.6 Flash and recommend Gemini 3.5 Flash-Lite for low-cost utility work.
+
 ## 1.0.0-beta.42
 
 ### Minor Changes
