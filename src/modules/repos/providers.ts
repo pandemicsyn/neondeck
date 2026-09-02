@@ -101,6 +101,7 @@ const googleCloudProjectEnv = 'GOOGLE_CLOUD_PROJECT';
 const googleCloudProjectFallbackEnv = 'GCLOUD_PROJECT';
 const googleCloudLocationEnv = 'GOOGLE_CLOUD_LOCATION';
 const googleApplicationCredentialsEnv = 'GOOGLE_APPLICATION_CREDENTIALS';
+const googleVertexExclusiveMaxOutputTokens = 65_536;
 const defaultGoogleApplicationCredentialsPath = join(
   homedir(),
   '.config/gcloud/application_default_credentials.json',
@@ -514,6 +515,7 @@ export function googleVertexProviderRuntimeRegistration(
   builtIn: ReturnType<typeof googleVertexProvider> = googleVertexProvider(),
 ): ProviderRuntimeRegistration {
   const builtInAuth = builtIn.auth.apiKey!;
+  const builtInModels = builtIn.getModels.bind(builtIn);
   // The runtime registry erases the provider API generic after model lookup;
   // this provider's own catalog remains Vertex-only.
   const dispatchProvider = builtIn as Provider;
@@ -530,18 +532,27 @@ export function googleVertexProviderRuntimeRegistration(
     id: 'google-vertex',
     provider: {
       ...builtIn,
+      getModels() {
+        return builtInModels().map(normalizeGoogleVertexModel);
+      },
       stream(model, context, options) {
+        const normalizedModel = normalizeGoogleVertexModel(model);
         return dispatchProvider.stream(
-          model,
+          normalizedModel,
           context,
-          normalizeGoogleVertexRequestOptions(options),
+          normalizeGoogleVertexRequestOptions(
+            capGoogleVertexMaxTokens(options, normalizedModel.maxTokens),
+          ),
         );
       },
       streamSimple(model, context, options) {
+        const normalizedModel = normalizeGoogleVertexModel(model);
         return dispatchProvider.streamSimple(
-          model,
+          normalizedModel,
           context,
-          normalizeGoogleVertexRequestOptions(options),
+          normalizeGoogleVertexRequestOptions(
+            capGoogleVertexMaxTokens(options, normalizedModel.maxTokens),
+          ),
         );
       },
       auth: {
@@ -603,6 +614,15 @@ export function googleVertexProviderRuntimeRegistration(
   };
 }
 
+function normalizeGoogleVertexModel<TApi extends Api>(
+  model: Model<TApi>,
+): Model<TApi> {
+  // Pi currently records Vertex's exclusive upper bound as the usable limit.
+  return model.maxTokens === googleVertexExclusiveMaxOutputTokens
+    ? { ...model, maxTokens: model.maxTokens - 1 }
+    : model;
+}
+
 function normalizeGoogleVertexAuthInput(
   input: Parameters<ApiKeyAuth['resolve']>[0],
 ) {
@@ -629,6 +649,20 @@ function normalizeGoogleVertexCredential(
     ...(key ? { key } : {}),
     ...(env && Object.keys(env).length > 0 ? { env } : {}),
   };
+}
+
+function capGoogleVertexMaxTokens<T extends { maxTokens?: number }>(
+  options: T | undefined,
+  modelMaxTokens: number,
+): T | undefined {
+  if (
+    modelMaxTokens === googleVertexExclusiveMaxOutputTokens - 1 &&
+    options?.maxTokens !== undefined &&
+    options.maxTokens > modelMaxTokens
+  ) {
+    return { ...options, maxTokens: modelMaxTokens };
+  }
+  return options;
 }
 
 function normalizeGoogleVertexRequestOptions<

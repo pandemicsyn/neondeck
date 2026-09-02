@@ -453,6 +453,40 @@ describe('provider runtime registrations', () => {
     });
   });
 
+  it("keeps Vertex output tokens below Pi's exclusive catalog ceiling", () => {
+    const builtIn = googleVertexProvider();
+    const streamSimple = vi.fn<typeof builtIn.streamSimple>(() => {
+      const result = createAssistantMessageEventStream();
+      result.end();
+      return result;
+    });
+    const registration = googleVertexProviderRuntimeRegistration(
+      resolveGoogleVertexProviderStatus(undefined, {}),
+      {},
+      { ...builtIn, streamSimple },
+    );
+    const builtInModel = builtIn
+      .getModels()
+      .find((model) => model.id === 'gemini-3.6-flash')!;
+    const runtimeModel = registration.provider
+      .getModels()
+      .find((model) => model.id === builtInModel.id)!;
+
+    expect(runtimeModel.maxTokens).toBe(builtInModel.maxTokens - 1);
+
+    registration.provider.streamSimple(
+      runtimeModel,
+      { messages: [] },
+      { maxTokens: builtInModel.maxTokens },
+    );
+
+    expect(streamSimple).toHaveBeenCalledWith(
+      expect.objectContaining({ maxTokens: builtInModel.maxTokens - 1 }),
+      { messages: [] },
+      expect.objectContaining({ maxTokens: builtInModel.maxTokens - 1 }),
+    );
+  });
+
   it('sanitizes stored blank Vertex credentials through Pi stream dispatch', async () => {
     const builtIn = googleVertexProvider();
     const stream = vi.fn<typeof builtIn.stream>(() => {
