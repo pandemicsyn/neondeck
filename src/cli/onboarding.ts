@@ -1009,7 +1009,7 @@ export function defaultProviderModel(provider: string) {
   if (provider === 'openai-codex') return defaultOpenAiCodexModel;
   if (provider === 'anthropic') return 'anthropic/claude-sonnet-4-6';
   if (provider === 'google-vertex') {
-    return 'google-vertex/gemini-2.5-pro';
+    return 'google-vertex/gemini-3.6-flash';
   }
   if (provider === 'openrouter' || provider === 'opencode') {
     return defaultGatewayModel(provider) ?? `${provider}/gpt-5.5`;
