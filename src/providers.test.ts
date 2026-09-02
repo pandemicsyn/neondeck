@@ -2,6 +2,8 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   createAssistantMessageEventStream,
   createModels,
+  type ApiKeyCredential,
+  type CredentialStore,
 } from '@earendil-works/pi-ai';
 import { googleVertexProvider } from '@earendil-works/pi-ai/providers/google-vertex';
 import { homedir } from 'node:os';
@@ -204,6 +206,31 @@ describe('provider runtime registrations', () => {
       join(homedir(), 'vertex-service-account.json'),
     );
 
+    for (const blankPath of ['', '   ']) {
+      checkedCredentialsPath = '';
+      expect(
+        resolveGoogleVertexProviderStatus(
+          undefined,
+          {
+            GOOGLE_APPLICATION_CREDENTIALS: blankPath,
+            GOOGLE_CLOUD_PROJECT: 'neondeck-project',
+            GOOGLE_CLOUD_LOCATION: 'us-central1',
+          },
+          (path) => {
+            checkedCredentialsPath = path;
+            return true;
+          },
+        ),
+      ).toMatchObject({
+        usable: true,
+        authMode: 'adc',
+        adcCredentialsPresent: true,
+      });
+      expect(checkedCredentialsPath).toBe(
+        join(homedir(), '.config/gcloud/application_default_credentials.json'),
+      );
+    }
+
     const apiKeyRegistration = providerRuntimeRegistrations({
       GOOGLE_CLOUD_API_KEY: 'vertex-key',
     } as NodeJS.ProcessEnv).find(
@@ -256,6 +283,39 @@ describe('provider runtime registrations', () => {
         GOOGLE_CLOUD_LOCATION: 'us-central1',
       },
     });
+
+    let resolvedDefaultAdcPath = '';
+    const defaultAdcRegistration = providerRuntimeRegistrations({
+      GOOGLE_APPLICATION_CREDENTIALS: '   ',
+      GOOGLE_CLOUD_PROJECT: 'neondeck-project',
+      GOOGLE_CLOUD_LOCATION: 'us-central1',
+    } as NodeJS.ProcessEnv).find(
+      (registration) => registration.id === 'google-vertex',
+    );
+    await expect(
+      defaultAdcRegistration?.provider.auth.apiKey?.resolve({
+        ctx: {
+          env: async () => undefined,
+          fileExists: async (path) => {
+            resolvedDefaultAdcPath = path;
+            return true;
+          },
+        },
+      }),
+    ).resolves.toMatchObject({
+      auth: {},
+      env: {
+        GOOGLE_APPLICATION_CREDENTIALS: join(
+          homedir(),
+          '.config/gcloud/application_default_credentials.json',
+        ),
+        GOOGLE_CLOUD_PROJECT: 'neondeck-project',
+        GOOGLE_CLOUD_LOCATION: 'us-central1',
+      },
+    });
+    expect(resolvedDefaultAdcPath).toBe(
+      '~/.config/gcloud/application_default_credentials.json',
+    );
   });
 
   it('shadows ambient Google Vertex credentials when disabled', async () => {
@@ -391,6 +451,68 @@ describe('provider runtime registrations', () => {
         GOOGLE_CLOUD_LOCATION: 'request-location',
       },
     });
+  });
+
+  it('sanitizes stored blank Vertex credentials through Pi stream dispatch', async () => {
+    const builtIn = googleVertexProvider();
+    const stream = vi.fn<typeof builtIn.stream>(() => {
+      const result = createAssistantMessageEventStream();
+      result.end();
+      return result;
+    });
+    const storedCredential: ApiKeyCredential = {
+      type: 'api_key',
+      key: '   ',
+      env: {
+        GOOGLE_APPLICATION_CREDENTIALS: '   ',
+        GOOGLE_CLOUD_PROJECT: 'stored-project',
+        GOOGLE_CLOUD_LOCATION: 'stored-location',
+      },
+    };
+    const credentials: CredentialStore = {
+      read: async () => storedCredential,
+      list: async () => [],
+      modify: async (_providerId, update) =>
+        (await update(storedCredential)) ?? storedCredential,
+      delete: async () => undefined,
+    };
+    const capturedEnv = {
+      GOOGLE_APPLICATION_CREDENTIALS: '   ',
+    } as NodeJS.ProcessEnv;
+    const registration = googleVertexProviderRuntimeRegistration(
+      resolveGoogleVertexProviderStatus(undefined, capturedEnv, () => true),
+      capturedEnv,
+      { ...builtIn, stream },
+    );
+    let resolvedDefaultAdcPath = '';
+    const models = createModels({
+      credentials,
+      authContext: {
+        env: async () => undefined,
+        fileExists: async (path) => {
+          resolvedDefaultAdcPath = path;
+          return true;
+        },
+      },
+    });
+    models.setProvider(registration.provider);
+
+    models.stream(registration.provider.getModels()[0]!, { messages: [] });
+    await vi.waitFor(() => expect(stream).toHaveBeenCalledOnce());
+    expect(resolvedDefaultAdcPath).toBe(
+      '~/.config/gcloud/application_default_credentials.json',
+    );
+    expect(stream.mock.calls[0]?.[2]).toMatchObject({
+      env: {
+        GOOGLE_APPLICATION_CREDENTIALS: join(
+          homedir(),
+          '.config/gcloud/application_default_credentials.json',
+        ),
+        GOOGLE_CLOUD_PROJECT: 'stored-project',
+        GOOGLE_CLOUD_LOCATION: 'stored-location',
+      },
+    });
+    expect(stream.mock.calls[0]?.[2]?.apiKey).toBeUndefined();
   });
 
   it('resolves every representative discovered gateway model through Pi with the same API', () => {

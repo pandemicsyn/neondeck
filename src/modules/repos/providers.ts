@@ -2,6 +2,7 @@ import {
   createProvider,
   type Api,
   type ApiKeyAuth,
+  type ApiKeyCredential,
   type Model,
   type ModelAuth,
   type Provider,
@@ -100,6 +101,10 @@ const googleCloudProjectEnv = 'GOOGLE_CLOUD_PROJECT';
 const googleCloudProjectFallbackEnv = 'GCLOUD_PROJECT';
 const googleCloudLocationEnv = 'GOOGLE_CLOUD_LOCATION';
 const googleApplicationCredentialsEnv = 'GOOGLE_APPLICATION_CREDENTIALS';
+const defaultGoogleApplicationCredentialsPath = join(
+  homedir(),
+  '.config/gcloud/application_default_credentials.json',
+);
 const kilocodeGatewayBaseUrl = 'https://api.kilo.ai/api/gateway';
 const kilocodeGatewayMaxTokens = 16_384;
 const openRouterBaseUrl = 'https://openrouter.ai/api/v1';
@@ -367,14 +372,17 @@ export function resolveGoogleVertexProviderStatus(
   fileExists: (path: string) => boolean = existsSync,
 ): GoogleVertexProviderStatus {
   const enabled = config?.providers?.googleVertex?.enabled ?? true;
-  const apiKeyPresent = Boolean(env[googleCloudApiKeyEnv]);
+  const apiKeyPresent = Boolean(nonBlankEnvValue(env[googleCloudApiKeyEnv]));
   const projectPresent = Boolean(
-    env[googleCloudProjectEnv] ?? env[googleCloudProjectFallbackEnv],
+    nonBlankEnvValue(env[googleCloudProjectEnv]) ??
+    nonBlankEnvValue(env[googleCloudProjectFallbackEnv]),
   );
-  const locationPresent = Boolean(env[googleCloudLocationEnv]);
+  const locationPresent = Boolean(
+    nonBlankEnvValue(env[googleCloudLocationEnv]),
+  );
   const configuredCredentialsPath =
-    env[googleApplicationCredentialsEnv] ??
-    join(homedir(), '.config/gcloud/application_default_credentials.json');
+    nonBlankEnvValue(env[googleApplicationCredentialsEnv]) ??
+    defaultGoogleApplicationCredentialsPath;
   const credentialsPath = normalizeGoogleCredentialsPath(
     configuredCredentialsPath,
   );
@@ -397,6 +405,10 @@ export function resolveGoogleVertexProviderStatus(
 
 export function normalizeGoogleCredentialsPath(path: string) {
   return path.startsWith('~/') ? join(homedir(), path.slice(2)) : path;
+}
+
+function nonBlankEnvValue(value: string | undefined) {
+  return value?.trim() ? value : undefined;
 }
 
 export function resolveOpenAiCodexProviderStatus(
@@ -507,7 +519,12 @@ export function googleVertexProviderRuntimeRegistration(
   const dispatchProvider = builtIn as Provider;
   const scopedContext = (ctx: Parameters<ApiKeyAuth['resolve']>[0]['ctx']) => ({
     ...ctx,
-    env: async (name: string) => (await ctx.env(name)) ?? env[name],
+    env: async (name: string) => {
+      const scopedValue = await ctx.env(name);
+      return nonBlankEnvValue(
+        scopedValue !== undefined ? scopedValue : env[name],
+      );
+    },
   });
   return {
     id: 'google-vertex',
@@ -530,52 +547,53 @@ export function googleVertexProviderRuntimeRegistration(
       auth: {
         apiKey: {
           ...builtInAuth,
-          check: async (input) =>
-            status.enabled
-              ? builtInAuth.check
-                ? builtInAuth.check({
-                    ...input,
+          check: async (input) => {
+            if (!status.enabled) return undefined;
+            const normalizedInput = normalizeGoogleVertexAuthInput(input);
+            return builtInAuth.check
+              ? builtInAuth.check({
+                  ...normalizedInput,
+                  ctx: scopedContext(input.ctx),
+                })
+              : builtInAuth
+                  .resolve({
+                    ...normalizedInput,
                     ctx: scopedContext(input.ctx),
                   })
-                : builtInAuth
-                    .resolve({
-                      ...input,
-                      ctx: scopedContext(input.ctx),
-                    })
-                    .then((result) =>
-                      result
-                        ? { source: result.source, type: 'api_key' }
-                        : undefined,
-                    )
-              : undefined,
+                  .then((result) =>
+                    result
+                      ? { source: result.source, type: 'api_key' }
+                      : undefined,
+                  );
+          },
           resolve: async (input) => {
             if (!status.enabled) return undefined;
             const ctx = scopedContext(input.ctx);
-            const result = await builtInAuth.resolve({ ...input, ctx });
+            const result = await builtInAuth.resolve({
+              ...normalizeGoogleVertexAuthInput(input),
+              ctx,
+            });
             if (!result || result.auth.apiKey) return result;
             const project =
-              result.env?.[googleCloudProjectEnv] ??
-              result.env?.[googleCloudProjectFallbackEnv] ??
+              nonBlankEnvValue(result.env?.[googleCloudProjectEnv]) ??
+              nonBlankEnvValue(result.env?.[googleCloudProjectFallbackEnv]) ??
               (await ctx.env(googleCloudProjectEnv)) ??
               (await ctx.env(googleCloudProjectFallbackEnv));
             const location =
-              result.env?.[googleCloudLocationEnv] ??
+              nonBlankEnvValue(result.env?.[googleCloudLocationEnv]) ??
               (await ctx.env(googleCloudLocationEnv));
             const credentialsPath =
-              result.env?.[googleApplicationCredentialsEnv] ??
-              (await ctx.env(googleApplicationCredentialsEnv));
+              nonBlankEnvValue(result.env?.[googleApplicationCredentialsEnv]) ??
+              (await ctx.env(googleApplicationCredentialsEnv)) ??
+              defaultGoogleApplicationCredentialsPath;
             return {
               ...result,
               env: {
                 ...result.env,
                 ...(project ? { [googleCloudProjectEnv]: project } : {}),
                 ...(location ? { [googleCloudLocationEnv]: location } : {}),
-                ...(credentialsPath
-                  ? {
-                      [googleApplicationCredentialsEnv]:
-                        normalizeGoogleCredentialsPath(credentialsPath),
-                    }
-                  : {}),
+                [googleApplicationCredentialsEnv]:
+                  normalizeGoogleCredentialsPath(credentialsPath),
               },
             };
           },
@@ -585,12 +603,43 @@ export function googleVertexProviderRuntimeRegistration(
   };
 }
 
+function normalizeGoogleVertexAuthInput(
+  input: Parameters<ApiKeyAuth['resolve']>[0],
+) {
+  return {
+    ...input,
+    credential: normalizeGoogleVertexCredential(input.credential),
+  };
+}
+
+function normalizeGoogleVertexCredential(
+  credential: ApiKeyCredential | undefined,
+): ApiKeyCredential | undefined {
+  if (!credential) return undefined;
+  const key = nonBlankEnvValue(credential.key);
+  const env = credential.env
+    ? Object.fromEntries(
+        Object.entries(credential.env).filter(([, value]) =>
+          nonBlankEnvValue(value),
+        ),
+      )
+    : undefined;
+  return {
+    type: 'api_key',
+    ...(key ? { key } : {}),
+    ...(env && Object.keys(env).length > 0 ? { env } : {}),
+  };
+}
+
 function normalizeGoogleVertexRequestOptions<
   T extends { env?: Record<string, string> },
 >(options: T | undefined): T | undefined {
   const credentialsPath = options?.env?.[googleApplicationCredentialsEnv];
-  if (!credentialsPath) return options;
-  const normalizedPath = normalizeGoogleCredentialsPath(credentialsPath);
+  if (!options?.env || credentialsPath === undefined) return options;
+  const configuredPath = nonBlankEnvValue(credentialsPath);
+  const normalizedPath = configuredPath
+    ? normalizeGoogleCredentialsPath(configuredPath)
+    : defaultGoogleApplicationCredentialsPath;
   if (normalizedPath === credentialsPath) return options;
   return {
     ...options,
@@ -598,7 +647,7 @@ function normalizeGoogleVertexRequestOptions<
       ...options.env,
       [googleApplicationCredentialsEnv]: normalizedPath,
     },
-  };
+  } as T;
 }
 
 export function openAiCodexProviderFromModelAuth(

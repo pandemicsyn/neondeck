@@ -624,22 +624,9 @@ export function RuntimeConfigControls({
               </span>
             </p>
             <p>
-              API key{' '}
-              {status.providers.configs.googleVertex.apiKeyPresent
-                ? 'present'
-                : 'missing'}
-              {' · '}ADC{' '}
-              {status.providers.configs.googleVertex.adcCredentialsPresent
-                ? 'present'
-                : 'missing'}
-              {' · '}project{' '}
-              {status.providers.configs.googleVertex.projectPresent
-                ? 'present'
-                : 'missing'}
-              {' · '}location{' '}
-              {status.providers.configs.googleVertex.locationPresent
-                ? 'present'
-                : 'missing'}
+              {googleVertexCredentialSummary(
+                status.providers.configs.googleVertex,
+              )}
             </p>
             <p>
               Configure credentials with <code>neondeck init</code> or the
@@ -1330,6 +1317,18 @@ export function providerCredentialLabel(
   );
   if (custom && !custom.apiKeyEnv) return 'ready';
   return 'key';
+}
+
+export function googleVertexCredentialSummary(
+  status: RuntimeStatus['providers']['configs']['googleVertex'],
+) {
+  if (status.authMode === 'api-key') return 'API key present';
+  return [
+    `API key ${status.apiKeyPresent ? 'present' : 'missing'}`,
+    `ADC ${status.adcCredentialsPresent ? 'present' : 'missing'}`,
+    `project ${status.projectPresent ? 'present' : 'missing'}`,
+    `location ${status.locationPresent ? 'present' : 'missing'}`,
+  ].join(' · ');
 }
 
 export function providerStatusSummary(status: RuntimeStatus, provider: string) {
