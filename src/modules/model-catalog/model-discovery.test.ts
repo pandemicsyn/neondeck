@@ -40,7 +40,7 @@ describe('suggestedModels', () => {
     expect(result.models).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          id: 'google-vertex/gemini-2.5-pro',
+          id: 'google-vertex/gemini-3.6-flash',
           api: 'google-vertex',
           contextLength: 1_048_576,
           reasoning: true,
@@ -54,13 +54,13 @@ describe('suggestedModels', () => {
         'displayAssistant',
         result.models,
       ),
-    ).toBe('google-vertex/gemini-2.5-pro');
+    ).toBe('google-vertex/gemini-3.6-flash');
     expect(
       recommendedCatalogModel('google-vertex', 'utility', result.models),
-    ).toBe('google-vertex/gemini-2.5-flash-lite');
+    ).toBe('google-vertex/gemini-3.5-flash-lite');
     expect(
       recommendedCatalogModel('google-vertex', 'explore', result.models),
-    ).toBe('google-vertex/gemini-2.5-flash');
+    ).toBe('google-vertex/gemini-3.6-flash');
   });
 });
 
