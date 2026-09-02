@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.0.0-beta.44
+
+### Patch Changes
+
+- [#371](https://github.com/pandemicsyn/neondeck/pull/371) [`6fb0cde`](https://github.com/pandemicsyn/neondeck/commit/6fb0cdead4a8cba6a0096eea27d4d8f1e8b12e5d) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Keep Google Vertex output token requests below the provider's exclusive upper bound.
+
 ## 1.0.0-beta.43
 
 ### Patch Changes
