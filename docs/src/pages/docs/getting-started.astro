@@ -138,27 +138,7 @@ neondeck open</code></pre>
           opening a browser.
         </p>
 
-        <h2>5. Open a companion-display window</h2>
-        <p>
-          Run <code>open</code> again to open another dashboard without changing the
-          already-running server.
-        </p>
-        <p>
-          New runtime homes include named <code>sidebar</code> and
-          <code>xeneon</code> window profiles for companion displays:
-        </p>
-        <pre><code>neondeck open sidebar --browser "/path/to/chromium"
-neondeck open xeneon --browser "/path/to/chromium"</code></pre>
-        <p>
-          Profile names and window settings come from <code>dashboard.json</code
-          >. Neondeck opens the OS default browser. To apply size, position, or
-          kiosk settings, pass a Chromium-family executable with <code
-            >--browser &lt;path&gt;</code
-          >. See the <a href="/docs/dashboard/">Dashboard guide</a> for browser app
-          installation, display layouts, and window behavior.
-        </p>
-
-        <h2>6. Check the installation</h2>
+        <h2>5. Check the installation</h2>
         <pre><code>neondeck status</code></pre>
         <p>
           Once the dashboard is running, use the
@@ -168,6 +148,31 @@ neondeck open xeneon --browser "/path/to/chromium"</code></pre>
         <p>
           When a newer release is available, Neondeck links to the
           <a href="/docs/upgrading/">upgrade guide</a> from its dashboard banner.
+        </p>
+
+        <h2>Optional: open Neondeck on a secondary display</h2>
+        <p>
+          Neondeck works in a normal browser window. You do not need a secondary
+          display, a fixed-size window, or a Chromium-family browser.
+        </p>
+        <p>
+          If you want a dedicated companion-display window with a fixed size or
+          position, new runtime homes include named <code>sidebar</code> and
+          <code>xeneon</code> window profiles:
+        </p>
+        <pre><code>neondeck open sidebar --browser "/path/to/chromium"
+neondeck open xeneon --browser "/path/to/chromium"</code></pre>
+        <p>
+          Running <code>open</code> again opens another dashboard without changing
+          the already-running server. Neondeck normally uses the OS default browser;
+          pass a Chromium-family executable with <code
+            >--browser &lt;path&gt;</code
+          > to apply a profile's size, position, or kiosk settings.
+        </p>
+        <p>
+          Profile names and window settings come from <code>dashboard.json</code
+          >. See the <a href="/docs/dashboard/">Dashboard guide</a> for browser app
+          installation, display layouts, and window behavior.
         </p>
 
         <h2>Development</h2>
