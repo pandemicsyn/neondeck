@@ -38,29 +38,57 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
         <h2>3. Run the setup wizard</h2>
         <pre><code>neondeck init</code></pre>
         <p>
-          The wizard creates your local runtime home, configures a model
-          provider, checks the Git identity used for Autopilot commits, and can
-          add repositories, choose a dashboard preset, and create initial
-          schedules. It supports KiloCode, OpenAI, Anthropic, OpenRouter,
-          OpenCode Zen, Google Vertex AI Gemini, a ChatGPT subscription, and
-          custom OpenAI-compatible endpoints. KiloCode, OpenRouter, OpenCode,
-          and Vertex offer searchable model catalogs during setup; Vertex uses
-          Pi's bundled Gemini catalog and supports a Google Cloud API key or
-          Application Default Credentials with a project and location.
-          OpenRouter uses the account-filtered catalog when its key permits it
-          and falls back to the public catalog. If a search matches more than
-          one page, results are ranked by relevance and provider recency when
-          available, and every match remains reachable through <em
-            >More results</em
-          >. You can also search again or return to the model choices. Newly
-          released eligible OpenRouter models can be selected before Pi's
-          bundled metadata catches up. When global
+          The wizard creates your local runtime home and walks you through the
+          essential setup:
+        </p>
+        <ul>
+          <li>Configure a model provider.</li>
+          <li>Check the Git identity used for Autopilot commits.</li>
+          <li>
+            Optionally add repositories, choose a dashboard preset, and create
+            initial schedules.
+          </li>
+        </ul>
+
+        <h3>Choose a model provider</h3>
+        <p>
+          Neondeck supports KiloCode, OpenAI, Anthropic, OpenRouter, OpenCode
+          Zen, Google Vertex AI Gemini, a ChatGPT subscription, and custom
+          OpenAI-compatible endpoints.
+        </p>
+        <p>
+          KiloCode, OpenRouter, OpenCode, and Vertex offer searchable model
+          catalogs during setup:
+        </p>
+        <ul>
+          <li>
+            Vertex uses Pi's bundled Gemini catalog. Authenticate with a Google
+            Cloud API key or Application Default Credentials, plus a project and
+            location.
+          </li>
+          <li>
+            OpenRouter uses your account-filtered catalog when the API key
+            permits it, then falls back to the public catalog. Eligible new
+            models may appear before Pi's bundled metadata catches up.
+          </li>
+          <li>
+            Search results are ranked by relevance and, when available, provider
+            recency. Use <em>More results</em> to browse every match, start another
+            search, or return to the model choices.
+          </li>
+        </ul>
+
+        <h3>Confirm your Git identity</h3>
+        <p>
+          Autopilot commits need an explicit Git identity. If global
           <code>user.name</code> or <code>user.email</code> is missing, the wizard
-          warns and offers to configure both plus
-          <code>user.useConfigOnly</code> so Git cannot silently invent an identity
-          from the machine account. Complete author and committer overrides in the
-          runtime-home <code>.env</code> are accepted, but temporary shell exports
-          do not suppress this warning.
+          offers to configure both values and <code>user.useConfigOnly</code> so Git
+          cannot silently invent an identity from the machine account.
+        </p>
+        <p>
+          Complete author and committer overrides in the runtime-home
+          <code>.env</code> are also accepted. Temporary shell exports do not suppress
+          the warning.
         </p>
         <p>
           By default, local state is stored in
