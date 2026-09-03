@@ -379,6 +379,10 @@ describe('gateway onboarding model chooser', () => {
 
     await configureProviderSecret('google-vertex', env, paths);
 
+    expect(mocks.promptText.mock.calls[1]?.[0]).toMatchObject({
+      message: 'Google Cloud location',
+      initialValue: 'global',
+    });
     expect(Object.fromEntries(env)).toMatchObject({
       GOOGLE_CLOUD_PROJECT: 'neondeck-project',
       GOOGLE_CLOUD_LOCATION: 'us-central1',

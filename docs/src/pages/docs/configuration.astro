@@ -179,10 +179,10 @@ GITHUB_LOGIN=...</code></pre>
           selected with <code>GOOGLE_APPLICATION_CREDENTIALS</code>; otherwise
           Neondeck also recognizes the standard local gcloud ADC file. Runtime
           status, the dashboard, and <code>neondeck doctor</code> report which pieces
-          are present without exposing credential contents. Gemini 3.6 Flash requests
-          use the model's required <code>global</code> endpoint even when the configured
-          default names a regional location; other Vertex models retain the configured
-          location.
+          are present without exposing credential contents. Setup defaults to the
+          <code>global</code> endpoint supported by the bundled Gemini catalog. You
+          can select a regional location when its data-residency behavior is required;
+          Gemini 3.6 Flash requests still use that model's required global endpoint.
         </p>
 
         <h3 id="compatible-endpoints">Compatible endpoint rules</h3>

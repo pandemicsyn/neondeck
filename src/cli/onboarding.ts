@@ -669,7 +669,7 @@ export async function configureProviderSecret(
       });
       const location = await promptText({
         message: 'Google Cloud location',
-        initialValue: env.get('GOOGLE_CLOUD_LOCATION') ?? 'us-central1',
+        initialValue: env.get('GOOGLE_CLOUD_LOCATION') ?? 'global',
         validate: requiredText,
       });
       const credentialsPath = await promptText({
