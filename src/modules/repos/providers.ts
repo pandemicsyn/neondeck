@@ -102,6 +102,8 @@ const googleCloudProjectFallbackEnv = 'GCLOUD_PROJECT';
 const googleCloudLocationEnv = 'GOOGLE_CLOUD_LOCATION';
 const googleApplicationCredentialsEnv = 'GOOGLE_APPLICATION_CREDENTIALS';
 const googleVertexExclusiveMaxOutputTokens = 65_536;
+const googleVertexGlobalLocation = 'global';
+const googleVertexGlobalOnlyModelIds = new Set(['gemini-3.6-flash']);
 const defaultGoogleApplicationCredentialsPath = join(
   homedir(),
   '.config/gcloud/application_default_credentials.json',
@@ -542,6 +544,7 @@ export function googleVertexProviderRuntimeRegistration(
           context,
           normalizeGoogleVertexRequestOptions(
             capGoogleVertexMaxTokens(options, normalizedModel.maxTokens),
+            normalizedModel.id,
           ),
         );
       },
@@ -552,6 +555,7 @@ export function googleVertexProviderRuntimeRegistration(
           context,
           normalizeGoogleVertexRequestOptions(
             capGoogleVertexMaxTokens(options, normalizedModel.maxTokens),
+            normalizedModel.id,
           ),
         );
       },
@@ -666,21 +670,45 @@ function capGoogleVertexMaxTokens<T extends { maxTokens?: number }>(
 }
 
 function normalizeGoogleVertexRequestOptions<
-  T extends { env?: Record<string, string> },
->(options: T | undefined): T | undefined {
+  T extends { env?: Record<string, string>; location?: string },
+>(options: T | undefined, modelId: string): T | undefined {
   const credentialsPath = options?.env?.[googleApplicationCredentialsEnv];
-  if (!options?.env || credentialsPath === undefined) return options;
-  const configuredPath = nonBlankEnvValue(credentialsPath);
-  const normalizedPath = configuredPath
-    ? normalizeGoogleCredentialsPath(configuredPath)
-    : defaultGoogleApplicationCredentialsPath;
-  if (normalizedPath === credentialsPath) return options;
+  const normalizedPath =
+    credentialsPath === undefined
+      ? undefined
+      : nonBlankEnvValue(credentialsPath)
+        ? normalizeGoogleCredentialsPath(credentialsPath)
+        : defaultGoogleApplicationCredentialsPath;
+  const location = options?.location;
+  const envLocation = options?.env?.[googleCloudLocationEnv];
+  const globalOnly = googleVertexGlobalOnlyModelIds.has(modelId);
+  const normalizedLocation = globalOnly ? googleVertexGlobalLocation : location;
+  const normalizedEnvLocation = globalOnly
+    ? googleVertexGlobalLocation
+    : envLocation;
+  if (
+    normalizedPath === credentialsPath &&
+    normalizedLocation === location &&
+    normalizedEnvLocation === envLocation
+  ) {
+    return options;
+  }
   return {
     ...options,
-    env: {
-      ...options.env,
-      [googleApplicationCredentialsEnv]: normalizedPath,
-    },
+    ...(normalizedLocation ? { location: normalizedLocation } : {}),
+    ...(normalizedPath || normalizedEnvLocation
+      ? {
+          env: {
+            ...options?.env,
+            ...(normalizedPath
+              ? { [googleApplicationCredentialsEnv]: normalizedPath }
+              : {}),
+            ...(normalizedEnvLocation
+              ? { [googleCloudLocationEnv]: normalizedEnvLocation }
+              : {}),
+          },
+        }
+      : {}),
   } as T;
 }
 

@@ -487,6 +487,57 @@ describe('provider runtime registrations', () => {
     );
   });
 
+  it('routes global-only Vertex models through the global endpoint', () => {
+    const builtIn = googleVertexProvider();
+    const stream = vi.fn<typeof builtIn.stream>(() => {
+      const result = createAssistantMessageEventStream();
+      result.end();
+      return result;
+    });
+    const streamSimple = vi.fn<typeof builtIn.streamSimple>(() => {
+      const result = createAssistantMessageEventStream();
+      result.end();
+      return result;
+    });
+    const registration = googleVertexProviderRuntimeRegistration(
+      resolveGoogleVertexProviderStatus(undefined, {}),
+      {},
+      { ...builtIn, stream, streamSimple },
+    );
+    const globalOnlyModel = registration.provider
+      .getModels()
+      .find((model) => model.id === 'gemini-3.6-flash')!;
+    const regionalModel = registration.provider
+      .getModels()
+      .find((model) => model.id === 'gemini-3.5-flash')!;
+
+    registration.provider.stream(globalOnlyModel, { messages: [] }, {
+      location: 'us-central1',
+      env: { GOOGLE_CLOUD_LOCATION: 'us-central1' },
+    } as Parameters<typeof builtIn.stream>[2]);
+    registration.provider.streamSimple(
+      globalOnlyModel,
+      { messages: [] },
+      { env: { GOOGLE_CLOUD_LOCATION: 'us-central1' } },
+    );
+    registration.provider.streamSimple(
+      regionalModel,
+      { messages: [] },
+      { env: { GOOGLE_CLOUD_LOCATION: 'us-central1' } },
+    );
+
+    expect(stream.mock.calls[0]?.[2]).toMatchObject({
+      location: 'global',
+      env: { GOOGLE_CLOUD_LOCATION: 'global' },
+    });
+    expect(streamSimple.mock.calls[0]?.[2]).toMatchObject({
+      env: { GOOGLE_CLOUD_LOCATION: 'global' },
+    });
+    expect(streamSimple.mock.calls[1]?.[2]).toMatchObject({
+      env: { GOOGLE_CLOUD_LOCATION: 'us-central1' },
+    });
+  });
+
   it('sanitizes stored blank Vertex credentials through Pi stream dispatch', async () => {
     const builtIn = googleVertexProvider();
     const stream = vi.fn<typeof builtIn.stream>(() => {
