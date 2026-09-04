@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.0.0-beta.45
+
+### Patch Changes
+
+- [#376](https://github.com/pandemicsyn/neondeck/pull/376) [`b6ae02d`](https://github.com/pandemicsyn/neondeck/commit/b6ae02df7d9cf6ddac013963143039698633f376) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Route Gemini 3.6 Flash through Vertex AI's required global location.
+
 ## 1.0.0-beta.44
 
 ### Patch Changes
