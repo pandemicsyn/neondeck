@@ -834,9 +834,10 @@ Use this format:
   edits can race the final read/write even after explicit repair approval. The UI
   discloses this. Runtime concurrency remains one process/home. The initial token
   must support the authenticated-user endpoint; installation/OAuth setup is deferred.
-- Follow-up: Final candidate checks/screenshots and manager-owned static reviews
-  are required before publication. Live GitHub/model/deployment/restart/exposure
-  acceptance remains separately pending authorization; no coding executor is added.
+- Status: V4 passed local verification and both independent/manager reviews; feature
+  `a0c0cf31c8a6693863e1f975eb61f8ff1bb85fa3` is open in PR #387. CI was pending at feature publication; final-head CI is tracked in the PR.
+  Live GitHub/model/deployment/restart/exposure acceptance remains separately pending
+  authorization; nothing is merged/deployed and no coding executor is added.
 
 ## 2026-09-05 - Factory slice 1 cumulative repo-context authority fix
 
@@ -855,5 +856,8 @@ Use this format:
 - Boundary: This covers typed local registry mutations in the existing single
   process/home runtime; it does not introduce multi-process configuration locking
   or claim to observe arbitrary external file edits between reads.
-- Follow-up: V4 candidate verification and independent/manager reviews; accepted
-  commit and PR metadata belong to the manager's subsequent docs-only follow-up.
+- Status: Included in accepted V4 feature `a0c0cf31c8a6693863e1f975eb61f8ff1bb85fa3`,
+  open in PR #387 after both independent reviews and manager review. Full Node 26
+  verification passed 1,735 tests; focused verification passed 99. This docs-only
+  follow-up records that evidence without changing reviewed runtime code. Merge,
+  deployment and live acceptance remain pending; PR #387 CI was pending at feature publication; final-head CI is tracked in the PR.

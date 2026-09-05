@@ -68,36 +68,39 @@ As of August 2026:
 - Phase 10's provider-specific deploy adapters and all of Phase 17's TUI surface remain intentionally deferred.
 - Active product follow-ups live in the top level of `.plans/`; completed implementation plans and point-in-time reviews live in `.plans/archived/`. See `.plans/README.md` for the index.
 
-## Next Implementation Priority — Software Factory Slice 1
+## Software Factory Slice 1 — Local Code Complete; Landing and Live Acceptance Pending
 
-As of September 2026, the next requested implementation is the initial factory's
-intake and collaborative shaping path. Historical phase completion above is unchanged.
+As of September 2026, all five increments of the initial intake and collaborative
+shaping path are implemented and reviewed. Historical phase completion above is unchanged.
 
-- [ ] Manual/GitHub intake, durable source/work records, and bounded model triage.
-- [ ] Persistent model-led planning, versioned briefs, Markdown editing and proposal
+- [x] Manual/GitHub intake, durable source/work records, and bounded model triage.
+- [x] Persistent model-led planning, versioned briefs, Markdown editing and proposal
       diffs, with explicit human decisions and exact-version release.
-- [ ] Public webhook-only listener, private dashboard/API access, source reconciliation,
+- [x] Public webhook-only listener, private dashboard/API access, source reconciliation,
       and opt-in GitHub status writeback with attributed replies.
-- [ ] Stacked PR delivery and full intake-to-queue acceptance, including restart and
-      exposure checks. Coding execution starts in a subsequent slice.
+- [x] Reviewed stacked PR delivery and local intake-to-queue verification.
+- [ ] Merge the open stack and complete authorized live-provider/GitHub, VM restart
+      and anonymous exposure acceptance. Coding execution starts in a subsequent slice.
 
 See [the slice 1 implementation plan](factory/SLICE_1_IMPLEMENTATION_PLAN.md) and
-[manager/implementer handoff](factory/SLICE_1_HANDOFF.md). Plan root PR #382,
-manual intake PR #383 and model planning PR #384 are open, none merged/deployed.
-Planning is manager-accepted at `3210fbb00eddb54e2873b1e44bfea9eea012b9d5` after
-two clean dedicated reviews, 1,623-test verification on identical runtime source
-plus a README-only clarification, and all six GitHub checks passing. Human shaping
-PR #385 is manager-accepted at `8809958947531e3c7fa727accae4aab3f3073f57`, with two
-clean reviews, 1,632-test verification plus a CSS-only rebuilt UI correction, and
-all six GitHub checks passing. GitHub ingress PR #386 is accepted and open at
-`836dfe24dbb6b790865523b37f68d2b64ec9035c`, after two clean dedicated reviews and
-manager acceptance; all six GitHub checks pass. Increment 5 implements opt-in status,
-exact approved questions, effect recovery and echo controls as an uncommitted
-candidate. Final verification, two static reviews, manager acceptance and its PR
-remain pending. Nothing is merged or deployed. Live GitHub/model/restart and
-anonymous exposure acceptance remain separately pending operator authorization.
-Actual deviations belong in `DEVIATIONS.md`; preserve existing coding harnesses and
-do not revive the removed PR Autopilot coordinator.
+[progress ledger](factory/SLICE_1_HANDOFF.md#progress-ledger). Plan root #382 and
+implementation PRs #383–#387 remain open; nothing is merged or deployed. All six
+GitHub CI checks passed for each of the first four implementation PRs (#383–#386).
+[PR #387](https://github.com/pandemicsyn/neondeck/pull/387) contains accepted feature
+`a0c0cf31c8a6693863e1f975eb61f8ff1bb85fa3` on `agent/factory-s1-05-github-status`,
+based on `agent/factory-s1-04-github-ingress`; CI was pending at feature publication; final-head CI is tracked in the PR.
+Both independent reviewers and the manager accepted V4 identity
+`8fe4f4d530cad8c775b55de0af34e7efa9ad178888cc70122a47950c0d1a7264`.
+
+Final Node 26.4.0 verification passed: 99 focused tests, 1,597-test check and
+1,735-test full verification, builds, package/CLI smoke and formatting. UI evidence
+was hash-carried with unchanged UI source; six screenshots were uploaded and
+verified on PR #387. This completes local code/review acceptance, not operational
+acceptance. The authorized real GitHub test issue, final live provider conversation,
+VM restart and anonymous external exposure probes remain pending. Preserve the
+active plans through landing and acceptance. Actual deviations belong in
+`DEVIATIONS.md`; preserve existing coding harnesses and do not revive the removed
+PR Autopilot coordinator.
 
 ## Usability Gate
 
