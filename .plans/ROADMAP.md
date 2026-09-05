@@ -82,10 +82,16 @@ intake and collaborative shaping path. Historical phase completion above is unch
       exposure checks. Coding execution starts in a subsequent slice.
 
 See [the slice 1 implementation plan](factory/SLICE_1_IMPLEMENTATION_PLAN.md) and
-[manager/implementer handoff](factory/SLICE_1_HANDOFF.md). Increment 1 manual intake/domain is implemented locally on
-`agent/factory-s1-01-intake` from `9aba1ae2` (parent PR #382); independent static
-review and final verification/evidence are pending. Model planning, full shaping,
-GitHub ingress and writeback remain unimplemented. Actual deviations belong in `DEVIATIONS.md`; do not revive the removed
+[manager/implementer handoff](factory/SLICE_1_HANDOFF.md). Increment 1 manual intake/domain is implemented and accepted in
+[PR #383](https://github.com/pandemicsyn/neondeck/pull/383), based on documentation
+PR #382 at `9aba1ae2`. Accepted feature commit `587bbafd` passed two independent
+static reviews and manager implementation/product review; Node 26.4.0 full
+verification passed 1,594 tests (1,456 unit, 47 git, 91 integration), builds,
+package smoke and formatting. Follow-up `0c399179` enables CI on the stacked
+branch bases. These are historical acceptance results, not approval of subsequent
+feedback fixes. PR #383 remains unmerged and undeployed. At this increment's head,
+model planning, full shaping, GitHub ingress and writeback remain later stack work.
+Actual deviations belong in `DEVIATIONS.md`; do not revive the removed
 PR Autopilot coordinator or replace existing coding harnesses as part of this slice.
 
 ## Usability Gate

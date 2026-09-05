@@ -1,0 +1,4 @@
+interface:
+  display_name: "Stacked PRs"
+  short_description: "Use explicit stacked-PR workflows with gh stack"
+  default_prompt: "Use $stacked-prs to implement this change as a reviewable stack of pull requests."
