@@ -247,6 +247,58 @@ describe('manual factory domain', () => {
       ),
     ).toThrow('changed');
   });
+  it('reopens paused work without changing its source or reviving withdrawn release authority', () => {
+    const ready = createReady();
+    const originalInput = releaseInput(ready);
+    const released = releaseFactoryWork(
+      ready.work.id,
+      originalInput,
+      actor,
+      paths,
+    );
+    const paused = transitionFactoryWork(
+      ready.work.id,
+      { expectedVersion: released.work.version, action: 'pause' },
+      actor,
+      paths,
+    );
+    expect(paused.eligible).toBe(false);
+    const reopened = transitionFactoryWork(
+      ready.work.id,
+      { expectedVersion: paused.work.version, action: 'reopen' },
+      actor,
+      paths,
+    );
+    expect(reopened.source).toEqual(ready.source);
+    expect(reopened.revisions).toEqual(ready.revisions);
+    expect(reopened.work.lifecycle).toBe('shaping');
+    expect(reopened.eligible).toBe(false);
+    expect(reopened.blockers).toEqual([]);
+    expect(reopened.releases[0].withdrawnAt).not.toBeNull();
+    expect(
+      releaseFactoryWork(ready.work.id, originalInput, actor, paths).eligible,
+    ).toBe(false);
+    expect(() =>
+      releaseFactoryWork(
+        ready.work.id,
+        {
+          ...releaseInput(reopened, 'stale-release'),
+          expectedVersion: paused.work.version,
+        },
+        actor,
+        paths,
+      ),
+    ).toThrow('changed');
+    const fresh = releaseFactoryWork(
+      ready.work.id,
+      releaseInput(reopened, 'fresh-release'),
+      actor,
+      paths,
+    );
+    expect(fresh.eligible).toBe(true);
+    expect(fresh.releases).toHaveLength(2);
+    expect(fresh.revisions).toEqual(ready.revisions);
+  });
   it('rejects stale editors and fences pause/close/withdraw/reopen transitions', () => {
     const ready = createReady();
     const paused = transitionFactoryWork(
@@ -294,6 +346,28 @@ describe('manual factory domain', () => {
     expect(reopened.work.lifecycle).toBe('shaping');
     expect(reopened.eligible).toBe(false);
     expect(reopened.blockers.join(' ')).toContain('context changed');
+    expect(closed.source.status).toBe('closed');
+    expect(closed.source.version).toBe(ready.source.version + 1);
+    expect(reopened.source.status).toBe('open');
+    expect(reopened.source.version).toBe(closed.source.version + 1);
+    expect(() =>
+      releaseFactoryWork(ready.work.id, releaseInput(reopened), actor, paths),
+    ).toThrow('context changed');
+    const reviewed = saveFactorySpec(
+      ready.work.id,
+      {
+        expectedVersion: reopened.work.version,
+        expectedSpecVersion: reopened.work.specVersion,
+        expectedRepoFingerprint: reopened.repoFingerprint,
+        spec,
+      },
+      actor,
+      paths,
+    );
+    expect(
+      releaseFactoryWork(ready.work.id, releaseInput(reviewed), actor, paths)
+        .eligible,
+    ).toBe(true);
   });
   it('invalidates release for source/repo context changes and missing registries', () => {
     const ready = createReady();
