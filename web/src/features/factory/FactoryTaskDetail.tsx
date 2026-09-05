@@ -1,6 +1,8 @@
 import { FactoryGitHubSource } from './FactoryGitHub';
-import { readWorkbenchDraft, writeWorkbenchDraft } from './workbench-draft';
-import { useEffect, useRef, useState } from 'react';
+import { useFactoryWorkbench } from './useFactoryWorkbench';
+import { FactoryDraftRecovery } from './FactoryDraftRecovery';
+import { FactorySpecEditor } from './FactorySpecEditor';
+import { useRef, useState } from 'react';
 import { FactoryPlanning } from './FactoryPlanning';
 import { SourceEditor } from './SourceEditor';
 import { DocumentRevisionDiff } from '../diff-viewer/DocumentRevisionDiff';
@@ -13,9 +15,8 @@ import {
   factoryPolicy,
   renderFactorySpec,
   type FactoryDetail,
-  type FactorySpec,
 } from '../../../../shared/factory';
-import { mutateFactory } from '../../api/factory';
+import { mutateFactory, type FactoryMutationArgs } from '../../api/factory';
 import { MarkdownMessage } from '../../components/MarkdownMessage';
 import { BriefingNarrative } from '../../components/BriefingNarrative';
 const message = (error: unknown) =>
@@ -29,58 +30,33 @@ export function FactoryTaskDetail({
   repos: { id: string; name: string }[];
   refresh: () => Promise<void>;
 }) {
-  const [stored] = useState(() => readWorkbenchDraft(detail.work.id));
-  const [storageError, setStorageError] = useState(false);
-  const [editor, setEditor] = useState<{
-    spec: FactorySpec;
-    version: number;
-    specVersion: number;
-    repoFingerprint: string | null;
-  } | null>(stored?.editor ?? null);
+  const {
+    editor,
+    setEditor,
+    storageError,
+    recovery,
+    retryRecovery,
+    discardRecovery,
+    workbenchView,
+    setWorkbenchView,
+    viewedVersion,
+    setViewedVersion,
+    compare,
+    setCompare,
+    compareVersion,
+    setCompareVersion,
+    discussion,
+    setDiscussion,
+  } = useFactoryWorkbench(detail);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const sourceDetails = useRef<HTMLDetailsElement>(null);
   const workbench = useRef<HTMLDivElement>(null);
-  const [workbenchView, setWorkbenchView] = useState<'chat' | 'brief'>(
-    stored?.workbenchView ?? 'brief',
-  );
   const latest = detail.revisions.at(-1)!;
-  const [viewedVersion, setViewedVersion] = useState(
-    stored?.viewedVersion ?? latest.version,
-  );
   const viewed =
     detail.revisions.find((r) => r.version === viewedVersion) ?? latest;
-  const [compare, setCompare] = useState(stored?.compare ?? false);
-  const [compareVersion, setCompareVersion] = useState(
-    stored?.compareVersion ??
-      detail.revisions.at(-2)?.version ??
-      latest.version,
-  );
   const before =
     detail.revisions.find((r) => r.version === compareVersion) ?? latest;
-  const [discussion, setDiscussion] = useState<
-    FactoryDiscussionReference | undefined
-  >(stored?.discussion);
-  useEffect(() => {
-    setStorageError(
-      !writeWorkbenchDraft(detail.work.id, {
-        editor,
-        viewedVersion,
-        compareVersion,
-        compare,
-        workbenchView,
-        discussion,
-      }),
-    );
-  }, [
-    detail.work.id,
-    editor,
-    viewedVersion,
-    compareVersion,
-    compare,
-    workbenchView,
-    discussion,
-  ]);
   const discuss = (
     kind: FactoryDiscussionReference['kind'],
     reference: string,
@@ -100,16 +76,11 @@ export function FactoryTaskDetail({
     label: `v${r.version} · ${r.authorKind === 'model' ? 'Neon' : r.actor}`,
     text: renderFactorySpec(r.spec),
   });
-  const staleEditor =
-    editor &&
-    (editor.version !== detail.work.version ||
-      editor.specVersion !== latest.version);
-
-  async function mutate(action: string, input: unknown) {
+  async function mutate(...command: FactoryMutationArgs) {
     setBusy(true);
     setError('');
     try {
-      const saved = await mutateFactory(detail.work.id, action, input);
+      const saved = await mutateFactory(detail.work.id, ...command);
       await refresh();
       return saved;
     } catch (e) {
@@ -127,12 +98,15 @@ export function FactoryTaskDetail({
       specVersion: latest.version,
       repoFingerprint: latest.repoFingerprint,
     });
-  const change = (field: keyof FactorySpec, value: string) => {
-    if (editor)
-      setEditor({ ...editor, spec: { ...editor.spec, [field]: value } });
-  };
   return (
     <>
+      {recovery && (
+        <FactoryDraftRecovery
+          recovery={recovery}
+          onRetry={retryRecovery}
+          onDiscard={discardRecovery}
+        />
+      )}
       {storageError && (
         <p role="alert">
           Browser draft storage is unavailable. Your unsaved work is retained
@@ -283,6 +257,7 @@ export function FactoryTaskDetail({
                   <button
                     disabled={
                       busy ||
+                      !!recovery ||
                       detail.work.lifecycle === 'closed' ||
                       viewed.version !== latest.version
                     }
@@ -344,7 +319,10 @@ export function FactoryTaskDetail({
                       </button>
                       {!d.answer?.trim() &&
                         viewed.version === latest.version && (
-                          <button disabled={busy} onClick={beginEdit}>
+                          <button
+                            disabled={busy || !!recovery}
+                            onClick={beginEdit}
+                          >
                             Answer in a new revision
                           </button>
                         )}
@@ -364,10 +342,12 @@ export function FactoryTaskDetail({
                 </section>
               </>
             ) : (
-              <form
-                className="factory-form"
-                onSubmit={async (event) => {
-                  event.preventDefault();
+              <FactorySpecEditor
+                editor={editor}
+                setEditor={setEditor}
+                detail={detail}
+                busy={busy}
+                onSave={async () => {
                   const saved = await mutate('spec', {
                     expectedVersion: editor.version,
                     expectedSpecVersion: editor.specVersion,
@@ -379,243 +359,7 @@ export function FactoryTaskDetail({
                     setViewedVersion(saved.work.specVersion);
                   }
                 }}
-              >
-                <fieldset disabled={busy} className="factory-editor-fields">
-                  <legend className="sr-only">Draft editor</legend>
-                  <h3>Editing v{editor.specVersion}</h3>
-                  {staleEditor && (
-                    <section className="factory-error" role="alert">
-                      <h3>Saved task changed — your text is retained</h3>
-                      <p>
-                        Current brief v{latest.version}, source v
-                        {detail.source.version}: {detail.source.title}
-                      </p>
-                      <details>
-                        <summary>Review current source</summary>
-                        <p>{detail.source.body}</p>
-                      </details>
-                      <DocumentRevisionDiff
-                        before={document(latest)}
-                        after={{
-                          id: `local:${JSON.stringify(editor.spec)}`,
-                          label: 'Your unsaved draft',
-                          text: renderFactorySpec(editor.spec),
-                        }}
-                      />
-                      <p>
-                        Keeping your text will replace the current brief with
-                        your draft in a new revision. Review all differences and
-                        the current source first. Repository context requires
-                        its own acknowledgement below.
-                      </p>
-                      <button
-                        type="button"
-                        onClick={() =>
-                          setEditor({
-                            ...editor,
-                            version: detail.work.version,
-                            specVersion: latest.version,
-                          })
-                        }
-                      >
-                        Use current save base and keep my text
-                      </button>
-                    </section>
-                  )}
-                  <section className="factory-source">
-                    <h3>Repository context</h3>
-                    {detail.repoContext ? (
-                      <>
-                        <p>
-                          Path: {detail.repoContext.path}
-                          <br />
-                          Branch: {detail.repoContext.defaultBranch}
-                        </p>
-                        <p>
-                          Configured commands:{' '}
-                          {Object.entries(detail.repoContext.commands)
-                            .map(([name, command]) => `${name}: ${command}`)
-                            .join('; ') || 'None configured'}
-                        </p>
-                      </>
-                    ) : (
-                      <p>No registered repository selected.</p>
-                    )}
-                    {editor.repoFingerprint !== detail.repoFingerprint && (
-                      <>
-                        <p>
-                          The repository configuration differs from this draft's
-                          reviewed context. Review the path, branch and commands
-                          above before accepting it. Your draft text stays
-                          intact.
-                        </p>
-                        <button
-                          type="button"
-                          disabled={busy}
-                          onClick={() =>
-                            setEditor({
-                              ...editor,
-                              repoFingerprint: detail.repoFingerprint,
-                            })
-                          }
-                        >
-                          Use this reviewed repository context
-                        </button>
-                      </>
-                    )}
-                  </section>
-
-                  {(
-                    [
-                      'outcome',
-                      'scope',
-                      'nonGoals',
-                      'approach',
-                      'constraints',
-                      'assumptions',
-                    ] as const
-                  ).map((field) => (
-                    <label key={field}>
-                      {
-                        {
-                          outcome: 'Outcome',
-                          scope: 'Scope',
-                          nonGoals: 'Non-goals',
-                          approach: 'Approach (Markdown)',
-                          constraints: 'Constraints',
-                          assumptions: 'Assumptions',
-                        }[field]
-                      }
-                      <textarea
-                        rows={field === 'approach' ? 6 : 3}
-                        maxLength={20000}
-                        value={editor.spec[field]}
-                        onChange={(event) => change(field, event.target.value)}
-                      />
-                    </label>
-                  ))}
-                  <fieldset>
-                    <legend>Acceptance criteria</legend>
-                    {editor.spec.acceptanceCriteria.map((criterion, index) => (
-                      <label key={criterion.id}>
-                        {criterion.id}
-                        <input
-                          required
-                          maxLength={240}
-                          value={criterion.text}
-                          onChange={(event) =>
-                            setEditor({
-                              ...editor,
-                              spec: {
-                                ...editor.spec,
-                                acceptanceCriteria:
-                                  editor.spec.acceptanceCriteria.map((c, i) =>
-                                    i === index
-                                      ? { ...c, text: event.target.value }
-                                      : c,
-                                  ),
-                              },
-                            })
-                          }
-                        />
-                        <button
-                          type="button"
-                          onClick={() =>
-                            setEditor({
-                              ...editor,
-                              spec: {
-                                ...editor.spec,
-                                acceptanceCriteria:
-                                  editor.spec.acceptanceCriteria.filter(
-                                    (c) => c.id !== criterion.id,
-                                  ),
-                              },
-                            })
-                          }
-                        >
-                          Remove {criterion.id}
-                        </button>
-                      </label>
-                    ))}
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setEditor({
-                          ...editor,
-                          spec: {
-                            ...editor.spec,
-                            acceptanceCriteria: [
-                              ...editor.spec.acceptanceCriteria,
-                              {
-                                id: `ac-${crypto.randomUUID().slice(0, 8)}`,
-                                text: '',
-                              },
-                            ],
-                          },
-                        })
-                      }
-                    >
-                      Add criterion
-                    </button>
-                  </fieldset>
-                  <fieldset>
-                    <legend>Decisions — answers create a human revision</legend>
-                    {editor.spec.decisions.map((decision, index) => (
-                      <label key={decision.id}>
-                        {decision.id} · {decision.question} (
-                        {decision.blocking ? 'blocking' : 'optional'})
-                        <textarea
-                          aria-label={`Answer ${decision.id}`}
-                          rows={3}
-                          maxLength={20000}
-                          value={decision.answer ?? ''}
-                          onChange={(e) =>
-                            setEditor({
-                              ...editor,
-                              spec: {
-                                ...editor.spec,
-                                decisions: editor.spec.decisions.map((d, i) =>
-                                  i === index
-                                    ? {
-                                        ...d,
-                                        answer: e.target.value.trim()
-                                          ? e.target.value
-                                          : null,
-                                      }
-                                    : d,
-                                ),
-                              },
-                            })
-                          }
-                        />
-                      </label>
-                    ))}
-                    {!editor.spec.decisions.length && (
-                      <p>No decisions to resolve.</p>
-                    )}
-                  </fieldset>
-                  <div className="factory-toolbar">
-                    <button disabled={busy || !!staleEditor} type="submit">
-                      Save new revision
-                    </button>
-                    <button
-                      disabled={busy}
-                      type="button"
-                      onClick={() => setEditor(null)}
-                    >
-                      Cancel edits
-                    </button>
-                  </div>
-                  {editor.specVersion !== latest.version && (
-                    <details open>
-                      <summary>Current saved draft v{latest.version}</summary>
-                      <MarkdownMessage>
-                        {renderFactorySpec(latest.spec)}
-                      </MarkdownMessage>
-                    </details>
-                  )}
-                </fieldset>
-              </form>
+              />
             )}
           </div>
         </div>
@@ -660,7 +404,7 @@ export function FactoryTaskDetail({
                 specVersion: viewed.version,
                 specHash: viewed.hash,
                 sourceVersion: detail.source.version,
-                repoFingerprint: detail.repoFingerprint,
+                repoFingerprint: detail.repoFingerprint ?? '',
                 policyVersion: factoryPolicy.version,
               })
             }

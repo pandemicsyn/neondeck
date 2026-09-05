@@ -17,6 +17,8 @@ Codex or OpenCode in subsequent slices; this work does not build a coding agent.
   five stacked PRs, acceptance criteria, and operational readiness.
 - [Implementation handoff](SLICE_1_HANDOFF.md): manager/reviewer responsibilities,
   implementer assignment template, stack maintenance, and progress ledger.
+- [Boundary and ownership hardening](SLICE_1_HARDENING.md): audit follow-up,
+  draft recovery, typed persistence, module boundaries, and GitHub caching.
 - [GitHub publishing operations](INCREMENT_5_OPERATOR.md): consent, exact approvals,
   uncertain effects, remote repair and remaining live acceptance.
 - [Overall proposal](../research/software-factory-proposal.html): architecture,

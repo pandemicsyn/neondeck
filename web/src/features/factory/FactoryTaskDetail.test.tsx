@@ -332,3 +332,55 @@ it('restores selected view, incomplete local edits and revision-bound discussion
   expect(button('Read brief')).toBeDefined();
   expect(container.textContent).toContain('Discussion 2:scope');
 });
+
+it.each([
+  '{"editor":',
+  JSON.stringify({ editor: { spec: { outcome: 'Recover this text' } } }),
+])(
+  'retains rejected draft data without autosave until explicit discard: %s',
+  async (raw) => {
+    sessionStorage.setItem('factory-workbench:task', raw);
+    await render();
+    expect(container.textContent).toContain('Saved draft needs recovery');
+    expect(sessionStorage.getItem('factory-workbench:task')).toBe(raw);
+    expect(
+      container.querySelector<HTMLTextAreaElement>(
+        '[aria-label="Saved draft data"]',
+      )?.value,
+    ).toBe(raw);
+    await click('Retry draft recovery');
+    expect(sessionStorage.getItem('factory-workbench:task')).toBe(raw);
+    await click('Discard saved draft…');
+    expect(sessionStorage.getItem('factory-workbench:task')).toBe(raw);
+    await click('Keep saved data');
+    expect(sessionStorage.getItem('factory-workbench:task')).toBe(raw);
+    await click('Discard saved draft…');
+    await click('Confirm discard saved draft');
+    expect(container.textContent).not.toContain('Saved draft needs recovery');
+    expect(
+      JSON.parse(sessionStorage.getItem('factory-workbench:task')!).editor,
+    ).toBeNull();
+  },
+);
+
+it('does not overwrite an unreadable draft and retries storage recovery explicitly', async () => {
+  const original = sessionStorage;
+  const set = vi.fn();
+  vi.stubGlobal('sessionStorage', {
+    getItem: () => {
+      throw new Error('Storage unavailable');
+    },
+    setItem: set,
+  });
+  try {
+    await render();
+    expect(container.textContent).toContain('Saved draft needs recovery');
+    expect(set).not.toHaveBeenCalled();
+    vi.stubGlobal('sessionStorage', original);
+    await click('Discard saved draft…');
+    await click('Confirm discard saved draft');
+    expect(container.textContent).not.toContain('Saved draft needs recovery');
+  } finally {
+    vi.unstubAllGlobals();
+  }
+});

@@ -1,3 +1,5 @@
+import { githubRetryAt } from './retry';
+
 export class GitHubApiError extends Error {
   constructor(
     readonly status: number,
@@ -15,18 +17,16 @@ export class GitHubApiError extends Error {
 
 export function githubErrorMessage(response: Response, data?: unknown) {
   const rateLimitRemaining = response.headers.get('x-ratelimit-remaining');
-  const rateLimitReset = response.headers.get('x-ratelimit-reset');
-  const retryAfter = response.headers.get('retry-after');
 
   if (
     response.status === 429 ||
     (response.status === 403 && rateLimitRemaining === '0')
   ) {
-    const retryAt = retryAfter
-      ? ` Retry after ${retryAfter}s.`
-      : rateLimitReset
-        ? ` Rate limit resets at ${new Date(Number(rateLimitReset) * 1000).toISOString()}.`
-        : '';
+    const timestamp = githubRetryAt(response.headers);
+    const retryAt =
+      timestamp === null
+        ? ''
+        : ` Retry at ${new Date(timestamp).toISOString()}.`;
     return `GitHub request was rate limited with ${response.status}.${retryAt}`;
   }
 

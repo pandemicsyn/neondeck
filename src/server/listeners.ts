@@ -1,4 +1,4 @@
-import { privateServerHost } from '../lib/server-address';
+import { normalizeListenerEnv } from '../lib/server-address';
 import { serve } from '@hono/node-server';
 import type { Server } from 'node:http';
 import type { Fetchable } from '@flue/runtime/routing';
@@ -7,25 +7,7 @@ export type HostedApplication = Fetchable & {
   stop(): Promise<void>;
 };
 export function listenerConfig(env: NodeJS.ProcessEnv = process.env) {
-  const parsePort = (raw: string | undefined, fallback: number) => {
-    const number = raw === undefined ? fallback : Number(raw);
-    if (!Number.isInteger(number) || number < 1 || number > 65535)
-      throw new Error('Listener port must be between 1 and 65535.');
-    return number;
-  };
-  const privateHost = privateServerHost(env);
-  const privatePort = parsePort(env.NEONDECK_PORT ?? env.PORT, 3583);
-  const publicPort = env.NEONDECK_INGRESS_PORT
-    ? parsePort(env.NEONDECK_INGRESS_PORT, 0)
-    : null;
-  if (publicPort === privatePort)
-    throw new Error('Public and private listener ports must differ.');
-  return {
-    privateHost,
-    privatePort,
-    publicHost: env.NEONDECK_INGRESS_HOST ?? '127.0.0.1',
-    publicPort,
-  };
+  return normalizeListenerEnv(env);
 }
 async function bind(app: Fetchable, host: string, port: number) {
   let server: Server;

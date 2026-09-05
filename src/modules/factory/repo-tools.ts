@@ -1,67 +1,11 @@
-import { execFile, execFileSync } from 'node:child_process';
+import { gitAsync } from './repo-reader';
+import { safeReference } from './repo-reference';
+import { writePlanningEffect } from './effect-store';
 import { defineTool } from '@flue/runtime';
 import * as v from 'valibot';
 import { runtimePaths, type RuntimePaths } from '../../runtime-home';
 import { dbRun, FactoryError } from './service';
-import {
-  authorizePlanningIntent,
-  hashPlanning,
-  safeReference,
-} from './planning-store';
-function git(path: string, args: string[], maxBuffer = 64000) {
-  return execFileSync('git', ['--no-pager', '-C', path, ...args], {
-    encoding: 'utf8',
-    timeout: 3000,
-    maxBuffer,
-    env: {
-      PATH: process.env.PATH,
-      HOME: '/nonexistent',
-      GIT_CONFIG_NOSYSTEM: '1',
-      GIT_CONFIG_GLOBAL: '/dev/null',
-      GIT_TERMINAL_PROMPT: '0',
-      GIT_OPTIONAL_LOCKS: '0',
-    },
-    stdio: ['ignore', 'pipe', 'pipe'],
-  });
-}
-export function captureRepoCommit(path: string | null) {
-  if (!path) return null;
-  try {
-    const sha = git(path, ['rev-parse', '--verify', 'HEAD']).trim();
-    return /^[a-f0-9]{40,64}$/.test(sha) ? sha : null;
-  } catch {
-    return null;
-  }
-}
-async function gitAsync(
-  path: string,
-  args: string[],
-  signal: AbortSignal,
-  maxBuffer = 64000,
-): Promise<string> {
-  signal.throwIfAborted();
-  return new Promise((resolve, reject) => {
-    execFile(
-      'git',
-      ['--no-pager', '-C', path, ...args],
-      {
-        encoding: 'utf8',
-        timeout: 3000,
-        maxBuffer,
-        signal,
-        env: {
-          PATH: process.env.PATH,
-          HOME: '/nonexistent',
-          GIT_CONFIG_NOSYSTEM: '1',
-          GIT_CONFIG_GLOBAL: '/dev/null',
-          GIT_TERMINAL_PROMPT: '0',
-          GIT_OPTIONAL_LOCKS: '0',
-        },
-      },
-      (error, stdout) => (error ? reject(error) : resolve(stdout)),
-    );
-  });
-}
+import { authorizePlanningIntent, hashPlanning } from './planning-store';
 async function readCommittedFile(
   repo: string,
   commit: string,
@@ -136,12 +80,12 @@ function recordReads(
     )
       throw new FactoryError(409, 'Planning repository context changed.');
     for (const path of reads)
-      db.prepare(
-        'INSERT OR IGNORE INTO factory_planning_effects (id,intent_id,record) VALUES (?,?,?)',
-      ).run(
+      writePlanningEffect(
+        db,
         hashPlanning({ sessionId, toolCallId, read: path }),
         intentId,
-        JSON.stringify({ path, commit: context.repoCommit }),
+        { kind: 'repo-read', path, commit: context.repoCommit },
+        true,
       );
   });
 }

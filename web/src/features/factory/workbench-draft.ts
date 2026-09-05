@@ -40,14 +40,34 @@ const savedWorkbenchSchema = v.object({
 });
 export type WorkbenchDraft = v.InferOutput<typeof savedWorkbenchSchema>;
 const key = (id: string) => `factory-workbench:${id}`;
-export function readWorkbenchDraft(id: string): WorkbenchDraft | undefined {
+export type DraftRead =
+  | { status: 'missing' }
+  | { status: 'loaded'; value: WorkbenchDraft }
+  | { status: 'failed'; raw: string | null; error: string };
+export function readWorkbenchDraft(id: string): DraftRead {
+  let raw: string | null = null;
   try {
-    const stored = sessionStorage.getItem(key(id));
-    return stored
-      ? v.parse(savedWorkbenchSchema, JSON.parse(stored))
-      : undefined;
+    raw = sessionStorage.getItem(key(id));
+    if (raw === null) return { status: 'missing' };
+    return {
+      status: 'loaded',
+      value: v.parse(savedWorkbenchSchema, JSON.parse(raw)),
+    };
+  } catch (error) {
+    return {
+      status: 'failed',
+      raw,
+      error:
+        error instanceof Error ? error.message : 'Unable to read saved draft.',
+    };
+  }
+}
+export function discardWorkbenchDraft(id: string) {
+  try {
+    sessionStorage.removeItem(key(id));
+    return true;
   } catch {
-    return undefined;
+    return false;
   }
 }
 export function writeWorkbenchDraft(id: string, value: WorkbenchDraft) {
