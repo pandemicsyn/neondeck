@@ -169,3 +169,14 @@ export async function approveFactoryWritebackRepair(
     { previewId, replacement },
   );
 }
+
+export async function getFactoryGitHubComments(id: string, cursor?: string) {
+  const { factoryGitHubCommentsSchema } =
+    await import('../../../shared/factory-github');
+  return v.parse(
+    factoryGitHubCommentsSchema,
+    await getJson(
+      `/api/factory/work/${encodeURIComponent(id)}/comments${cursor ? `?cursor=${encodeURIComponent(cursor)}` : ''}`,
+    ),
+  );
+}

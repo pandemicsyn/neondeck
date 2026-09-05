@@ -83,24 +83,31 @@ shaping path are implemented and reviewed. Historical phase completion above is 
       and anonymous exposure acceptance. Coding execution starts in a subsequent slice.
 
 See [the slice 1 implementation plan](factory/SLICE_1_IMPLEMENTATION_PLAN.md) and
-[progress ledger](factory/SLICE_1_HANDOFF.md#progress-ledger). Plan root #382 and
-implementation PRs #383–#387 remain open; nothing is merged or deployed. All six
-GitHub CI checks passed for each of the first four implementation PRs (#383–#386).
-[PR #387](https://github.com/pandemicsyn/neondeck/pull/387) contains accepted feature
-`a0c0cf31c8a6693863e1f975eb61f8ff1bb85fa3` on `agent/factory-s1-05-github-status`,
-based on `agent/factory-s1-04-github-ingress`; CI was pending at feature publication; final-head CI is tracked in the PR.
-Both independent reviewers and the manager accepted V4 identity
-`8fe4f4d530cad8c775b55de0af34e7efa9ad178888cc70122a47950c0d1a7264`.
+[progress ledger](factory/SLICE_1_HANDOFF.md#progress-ledger). Original local
+acceptance is historical: feature `a0c0cf31c8a6693863e1f975eb61f8ff1bb85fa3`
+and documentation head `ff3a69033ae866aaf47dd0a6c3384544e5eb1e6a` passed their
+own reviews. V4 verification passed 1,735 tests (1,597 unit, 47 git, 91 integration),
+99 focused tests, builds/package smoke and formatting; six UI screenshots were
+attached to PR #387. These results do not certify subsequent feedback revisions.
 
-Final Node 26.4.0 verification passed: 99 focused tests, 1,597-test check and
-1,735-test full verification, builds, package/CLI smoke and formatting. UI evidence
-was hash-carried with unchanged UI source; six screenshots were uploaded and
-verified on PR #387. This completes local code/review acceptance, not operational
-acceptance. The authorized real GitHub test issue, final live provider conversation,
-VM restart and anonymous external exposure probes remain pending. Preserve the
-active plans through landing and acceptance. Actual deviations belong in
-`DEVIATIONS.md`; preserve existing coding harnesses and do not revive the removed
-PR Autopilot coordinator.
+The feedback stack incorporates accepted parents `6433b10e` (#382),
+`192e7cf7` (#383), `5d773582` (#384), `f14b45b4` (#385), and
+`bb4266f8289b650c40d58c04063c19158e1f752f` (#386), using parent merges that
+preserve each branch's history. Current feedback review and CI evidence belongs to
+[PR #382](https://github.com/pandemicsyn/neondeck/pull/382),
+[PR #383](https://github.com/pandemicsyn/neondeck/pull/383),
+[PR #384](https://github.com/pandemicsyn/neondeck/pull/384),
+[PR #385](https://github.com/pandemicsyn/neondeck/pull/385),
+[PR #386](https://github.com/pandemicsyn/neondeck/pull/386), and
+[PR #387](https://github.com/pandemicsyn/neondeck/pull/387).
+Historical acceptance does not approve later changes. Every publication requires
+verification, two clean independent static reviews and manager acceptance.
+
+Nothing is merged or deployed. Authorized real GitHub, final live provider,
+VM restart and anonymous exposure acceptance remain pending. Preserve active plans
+through landing; coding execution starts in a subsequent slice. Actual deviations
+belong in `DEVIATIONS.md`; preserve existing coding harnesses and do not revive
+the removed PR Autopilot coordinator.
 
 ## Usability Gate
 

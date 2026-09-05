@@ -377,11 +377,18 @@ export function getBoundPlanningSession(
 export function getPlanningIntent(id: string, paths = runtimePaths()) {
   return dbRun(paths, (db) => readIntent(db, id));
 }
-export function pendingPlanningIntents(paths = runtimePaths()) {
+export function pendingPlanningIntents(
+  paths = runtimePaths(),
+  workId?: string,
+) {
   return dbRun(paths, (db) =>
     db
-      .prepare('SELECT record FROM factory_planning_intents')
-      .all()
+      .prepare(
+        workId === undefined
+          ? 'SELECT record FROM factory_planning_intents'
+          : 'SELECT record FROM factory_planning_intents WHERE work_id=?',
+      )
+      .all(...(workId === undefined ? [] : [workId]))
       .map((row) => v.parse(intentSchema, JSON.parse(String(row.record))))
       .filter((i) => ['triage', 'planner'].includes(i.stage)),
   );

@@ -355,9 +355,21 @@ export function queueStatus(
     }
     return;
   }
+  if (status.relinquished || status.repairRequired) return;
+  for (const e of view.effects) {
+    // Failed means the write is definitively unsent/rejected. Only ordinary
+    // status effects may be superseded; exact repair approvals stay immutable.
+    if (e.kind !== 'status' || e.state !== 'failed' || e.approvalId) continue;
+    try {
+      effectAuthorized(db, e, paths);
+    } catch (error) {
+      if (!(error instanceof FactoryError) || error.status !== 409) throw error;
+      e.state = 'cancelled';
+      e.error = 'Superseded by current status after authorization changed.';
+      put(db, 'effect', e);
+    }
+  }
   if (
-    status.relinquished ||
-    status.repairRequired ||
     view.effects.some(
       (e) =>
         e.kind === 'status' &&

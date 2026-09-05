@@ -138,3 +138,53 @@ it('invokes the reusable triage admission entrypoint after successful persisted 
   expect(rejected.status).toBe(400);
   expect(calls).toHaveLength(1);
 });
+
+it('returns 400 for malformed planning input before creating a planning intent', async () => {
+  await request('/config', { enabled: true });
+  const created = await (
+    await request('/work', {
+      requestKey: 'planning-input',
+      title: 'Fixture',
+      body: 'Plan',
+      repoId: null,
+    })
+  ).json();
+  for (const body of [
+    { expectedVersion: 1, message: 'Plan' },
+    { requestKey: 'bad-version', expectedVersion: '1', message: 'Plan' },
+    null,
+  ]) {
+    const response = await request(`/work/${created.work.id}/planning`, body);
+    expect(response.status).toBe(400);
+    expect(await response.json()).toHaveProperty('error');
+  }
+  const state = await (
+    await request(`/work/${created.work.id}/planning`)
+  ).json();
+  expect(state.sessionId).toBeNull();
+});
+
+it('keeps discussion scoped and private and validates cursors', async () => {
+  await request('/config', { enabled: true });
+  const work = await (
+    await request('/work', {
+      requestKey: 'comments',
+      title: 'Task',
+      body: '',
+      repoId: null,
+    })
+  ).json();
+  const path = `/work/${work.work.id}/comments`;
+  expect(await (await request(path)).json()).toEqual({
+    comments: [],
+    nextCursor: null,
+  });
+  expect((await request(`${path}?cursor=invalid`)).status).toBe(400);
+  expect(
+    (await request(path, undefined, { host: 'example.invalid' })).status,
+  ).toBe(404);
+  expect((await request('/work/missing/comments')).status).toBe(404);
+  expect(await (await request('/github')).json()).not.toHaveProperty(
+    'comments',
+  );
+});

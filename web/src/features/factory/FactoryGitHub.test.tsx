@@ -3,9 +3,11 @@ import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
-import { FactoryGitHubSetup } from './FactoryGitHub';
+import { FactoryGitHubSetup, FactoryGitHubSource } from './FactoryGitHub';
 const api = vi.hoisted(() => ({
   getFactoryGitHub: vi.fn(),
+  getFactoryWriteback: vi.fn(),
+  getFactoryGitHubComments: vi.fn(),
   saveFactoryGitHub: vi.fn(),
   syncFactorySource: vi.fn(),
 }));
@@ -28,7 +30,6 @@ const data = {
   ],
   deliveries: [],
   sync: [],
-  comments: [],
 };
 let root: Root, container: HTMLDivElement, client: QueryClient;
 beforeEach(() => {
@@ -37,6 +38,7 @@ beforeEach(() => {
   ).IS_REACT_ACT_ENVIRONMENT = true;
   vi.clearAllMocks();
   api.getFactoryGitHub.mockResolvedValue(data);
+  api.getFactoryWriteback.mockResolvedValue(null);
   api.saveFactoryGitHub.mockResolvedValue({});
   container = document.createElement('div');
   document.body.append(container);
@@ -120,4 +122,91 @@ it('does not fetch hidden setup, avoiding unrelated errors during task editing',
     );
   });
   expect(api.getFactoryGitHub).not.toHaveBeenCalled();
+});
+
+it('loads only selected-task comment pages and resets paging on a different task', async () => {
+  const comment = (body: string) => ({
+    id: body,
+    workId: 'work-one',
+    remoteId: '1',
+    body,
+    author: 'external',
+    remoteUpdatedAt: '2026-09-01',
+    version: 1,
+    deleted: false,
+    intentId: null,
+  });
+  api.getFactoryGitHubComments.mockImplementation(async (_id, cursor) => ({
+    comments: cursor
+      ? [comment('Older page body')]
+      : [
+          { ...comment('Confirmed publication'), echo: 'confirmed' },
+          { ...comment('Newest page body'), echo: 'awaiting-receipt' },
+        ],
+    nextCursor: cursor ? null : '10',
+  }));
+  const detail = (id: string) =>
+    ({
+      work: { id },
+      source: {
+        version: 1,
+        status: 'open',
+        actor: 'external',
+        body: 'Issue',
+        remote: {
+          connectionId: 'test',
+          number: 1,
+          url: 'https://github.com/example/fixture/issues/1',
+        },
+      },
+    }) as Parameters<typeof FactoryGitHubSource>[0]['detail'];
+  const draw = async (id: string) => {
+    await act(async () => {
+      root.render(
+        <QueryClientProvider client={client}>
+          <FactoryGitHubSource detail={detail(id)} />
+        </QueryClientProvider>,
+      );
+    });
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 30));
+    });
+  };
+  await draw('work-one');
+  expect(container.textContent).toContain('Newest page body');
+  expect(container.textContent).not.toContain('Confirmed publication');
+  expect(container.textContent).toContain('Matching in-flight publication');
+  expect(
+    container.querySelector('[aria-label="GitHub publishing"]'),
+  ).not.toBeNull();
+  // Receipt classification changes on the same retained page; it must disappear.
+  await act(async () => {
+    client.setQueryData(['factory-github-comments', 'work-one', undefined], {
+      comments: [{ ...comment('Newest page body'), echo: 'confirmed' }],
+      nextCursor: '10',
+    });
+  });
+  await act(async () => {
+    await new Promise((r) => setTimeout(r, 30));
+  });
+  expect(container.textContent).not.toContain('Newest page body');
+  expect(container.textContent).toContain('No retained comments on this page.');
+
+  await act(async () => {
+    Array.from(container.querySelectorAll('button'))
+      .find((b) => b.textContent === 'Older comments')!
+      .click();
+  });
+  await act(async () => {
+    await new Promise((r) => setTimeout(r, 30));
+  });
+  expect(container.textContent).toContain('Older page body');
+  expect(container.textContent).not.toContain('Newest page body');
+  expect(api.getFactoryGitHubComments).toHaveBeenCalledWith('work-one', '10');
+  await draw('work-two');
+  expect(api.getFactoryGitHubComments).toHaveBeenLastCalledWith(
+    'work-two',
+    undefined,
+  );
+  expect(container.textContent).toContain('Newest page body');
 });

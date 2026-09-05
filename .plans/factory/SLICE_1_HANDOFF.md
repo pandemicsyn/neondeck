@@ -1,12 +1,25 @@
 # Slice 1 — Manager and implementer handoff
 
-Status: all five slice 1 code increments are implemented, reviewed and open in
-the PR stack. The accepted final feature is `a0c0cf31c8a6693863e1f975eb61f8ff1bb85fa3`
-in [PR #387](https://github.com/pandemicsyn/neondeck/pull/387), based on
-`agent/factory-s1-04-github-ingress`. Both independent static reviewers and the
-manager accepted V4. PRs #383–#386 each passed all six CI checks; PR #387 CI was
-pending at feature publication; final-head CI is tracked in PR #387. Nothing is merged, deployed or live-accepted.
-Documentation root PR #382 also remains open. Keep these plans active through
+Historical acceptance: all five slice 1 increments were implemented and reviewed
+in the original open stack. PR #387's accepted feature was
+`a0c0cf31c8a6693863e1f975eb61f8ff1bb85fa3`, followed by documentation ledger head
+`ff3a69033ae866aaf47dd0a6c3384544e5eb1e6a`. The records below describe those
+specific accepted candidates, not subsequent feedback revisions.
+
+The feedback stack incorporates accepted parents `6433b10e` (#382),
+`192e7cf7` (#383), `5d773582` (#384), `f14b45b4` (#385), and
+`bb4266f8289b650c40d58c04063c19158e1f752f` (#386), using parent merges that
+preserve each branch's history. Current feedback review and CI evidence belongs to
+[PR #382](https://github.com/pandemicsyn/neondeck/pull/382),
+[PR #383](https://github.com/pandemicsyn/neondeck/pull/383),
+[PR #384](https://github.com/pandemicsyn/neondeck/pull/384),
+[PR #385](https://github.com/pandemicsyn/neondeck/pull/385),
+[PR #386](https://github.com/pandemicsyn/neondeck/pull/386), and
+[PR #387](https://github.com/pandemicsyn/neondeck/pull/387).
+Historical acceptance does not approve later changes. Every publication requires
+verification, two clean independent static reviews and manager acceptance.
+
+Nothing is merged, deployed or live-accepted. Keep these plans active through
 landing and operational acceptance; local code completion does not archive them.
 
 Read the [slice contract](SLICE_1_IMPLEMENTATION_PLAN.md) before starting.
@@ -117,8 +130,10 @@ Contract: .plans/factory/SLICE_1_IMPLEMENTATION_PLAN.md, PR <number>, plus the
 cross-cutting invariants that apply to this increment.
 
 Read AGENTS.md, ROADMAP.md and DEVIATIONS.md. Use the roadmap-implementation
-skill. For Flue work use the installed-version Flue skill/docs. Before accessing
-Drizzle files or generating migrations, load the required Drizzle skills.
+skill. For Flue work use the installed-version Flue skill/docs. For Drizzle work,
+load applicable Drizzle skills when available in the agent environment; they are
+not tracked prerequisites of this repository. Follow the migration workflow below
+whether or not those optional environment skills are installed.
 Use the Impeccable skill for the shaping UI, preserving Neondeck's design language.
 
 Build the assigned user path end to end, with typed services, durable state,
@@ -148,9 +163,21 @@ must additionally inspect `guide/durability`, tool result contracts, the agent A
 React clients and Node lifecycle docs when touching those surfaces. No dependency
 upgrade is implied by this plan.
 
-For migrations, follow the repository's Drizzle skill chain and generation/check
-commands. Generate forward migrations from the current parent snapshot; do not
-hand-edit applied migration history to make stacked branches agree.
+For migrations, use the repository's portable workflow from `AGENTS.md` with the
+installed dependencies and Node 26.4.0:
+
+```sh
+fnm exec --using 26.4.0 npm run db:generate -- --name <migration_name>
+fnm exec --using 26.4.0 npm run db:check
+```
+
+No Drizzle `SKILL.md` is tracked in this planning root. If the agent environment
+provides Drizzle guidance, read the applicable skills before accessing Drizzle
+files or generating migrations. Their absence does not block the repository
+workflow above. Inspect generation results and resolve any reported decisions;
+then review the generated SQL and snapshot together. Generate forward migrations
+from the current parent snapshot; do not hand-edit applied migration history to
+make stacked branches agree.
 
 ## Review and evidence protocol
 
@@ -222,18 +249,20 @@ privately when required; local implementation need not wait for it.
 
 ## Progress ledger
 
+This ledger records original historical acceptance through increment 5.
+The incorporated feedback parents and current review/CI links are listed above.
 Update with real evidence as work proceeds. Do not infer “implemented” from branch
 creation, “verified” from a claimed plan, or “deployed” from passing local tests.
 
-| Increment                      | State                                                                                        | Branch/base + reviewed head                                                                                                                 | PR                                                       | Verification / review / deployment evidence                                                                                                                                                                                                                                  |
-| ------------------------------ | -------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Plan root                      | Reviewed, open                                                                               | `agent/software-factory-plan`; head `9aba1ae2`, base `main`                                                                                 | #382                                                     | Documentation only; not merged/deployed                                                                                                                                                                                                                                      |
-| 1 — Manual intake/domain       | Accepted, open                                                                               | `agent/factory-s1-01-intake`; head `0c39917930b42aeacc3cbad71031d5552a29ccee`, base `agent/software-factory-plan`                           | #383                                                     | Feature verification: 1,594 tests at `587bbafd`; six-line CI-only follow-up independently reviewed by both reviewers and manager; all six GitHub checks pass at `0c399179`; not merged/deployed                                                                              |
-| 2 — Model planning             | Accepted, open                                                                               | `agent/factory-s1-02-planning`; head `3210fbb00eddb54e2873b1e44bfea9eea012b9d5`, base `agent/factory-s1-01-intake`                          | #384                                                     | Both dedicated static reviews and manager clean. V3 full verification: 1,623 tests on identical runtime source; final README-only clarification checked separately. All six GitHub checks pass at `3210fbb0`; not merged/deployed.                                           |
-| 3 — Human workbench            | Accepted, open                                                                               | `agent/factory-s1-03-shaping`; head `8809958947531e3c7fa727accae4aab3f3073f57`, base `agent/factory-s1-02-planning`                         | #385                                                     | Both dedicated reviews and manager clean; 1,632-test verification followed by CSS-only wrap correction and rebuilt screenshots; all six GitHub checks pass. Not merged/deployed.                                                                                             |
-| 4 — GitHub ingress             | Accepted, open                                                                               | `agent/factory-s1-04-github-ingress`; head `836dfe24dbb6b790865523b37f68d2b64ec9035c`, base `agent/factory-s1-03-shaping`                   | #386                                                     | Both dedicated static reviews and manager clean. V1 full verification: 1,667 tests; V2 focused mapping regressions, 1,531-unit-test check, server rebuild and unchanged-UI proof. All six GitHub checks pass. Not merged/deployed.                                           |
-| 5 — GitHub status              | Accepted, open; CI pending at feature publication; final-head CI in PR                       | `agent/factory-s1-05-github-status`; reviewed feature `a0c0cf31c8a6693863e1f975eb61f8ff1bb85fa3`, base `agent/factory-s1-04-github-ingress` | [#387](https://github.com/pandemicsyn/neondeck/pull/387) | Both independent V4 static reviews and manager accepted. Full verification: 1,735 tests; focused: 99. Node 26 builds/package/CLI smoke passed; UI hash carry verified. Mandatory gitleaks hook clean; six screenshots uploaded and verified by manager. Not merged/deployed. |
-| Full slice / deployed exercise | Local code implemented and reviewed; all implementation PRs open; live acceptance incomplete | Accepted feature `a0c0cf31c8a6693863e1f975eb61f8ff1bb85fa3`; V4 identity below                                                              | #383–#387                                                | Final-stack local verification passed. Authorized GitHub test issue, final live provider conversation, VM restart and anonymous external exposure checks remain pending operator authorization. No merge or deployment.                                                      |
+| Increment                      | State                                                 | Branch/base + reviewed head                                                                                                                 | PR                                                       | Verification / review / deployment evidence                                                                                                                                                                                                                                  |
+| ------------------------------ | ----------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Plan root                      | Historical acceptance                                 | `agent/software-factory-plan`; head `9aba1ae2`, base `main`                                                                                 | #382                                                     | Documentation only; not merged/deployed                                                                                                                                                                                                                                      |
+| 1 — Manual intake/domain       | Historical acceptance                                 | `agent/factory-s1-01-intake`; head `0c39917930b42aeacc3cbad71031d5552a29ccee`, base `agent/software-factory-plan`                           | #383                                                     | Feature verification: 1,594 tests at `587bbafd`; six-line CI-only follow-up independently reviewed by both reviewers and manager; all six GitHub checks pass at `0c399179`; not merged/deployed                                                                              |
+| 2 — Model planning             | Historical acceptance                                 | `agent/factory-s1-02-planning`; head `3210fbb00eddb54e2873b1e44bfea9eea012b9d5`, base `agent/factory-s1-01-intake`                          | #384                                                     | Both dedicated static reviews and manager clean. V3 full verification: 1,623 tests on identical runtime source; final README-only clarification checked separately. All six GitHub checks pass at `3210fbb0`; not merged/deployed.                                           |
+| 3 — Human workbench            | Historical acceptance                                 | `agent/factory-s1-03-shaping`; head `8809958947531e3c7fa727accae4aab3f3073f57`, base `agent/factory-s1-02-planning`                         | #385                                                     | Both dedicated reviews and manager clean; 1,632-test verification followed by CSS-only wrap correction and rebuilt screenshots; all six GitHub checks pass. Not merged/deployed.                                                                                             |
+| 4 — GitHub ingress             | Historical acceptance                                 | `agent/factory-s1-04-github-ingress`; head `836dfe24dbb6b790865523b37f68d2b64ec9035c`, base `agent/factory-s1-03-shaping`                   | #386                                                     | Both dedicated static reviews and manager clean. V1 full verification: 1,667 tests; V2 focused mapping regressions, 1,531-unit-test check, server rebuild and unchanged-UI proof. All six GitHub checks pass. Not merged/deployed.                                           |
+| 5 — GitHub status              | Historical acceptance; current review/CI in PR        | `agent/factory-s1-05-github-status`; reviewed feature `a0c0cf31c8a6693863e1f975eb61f8ff1bb85fa3`, base `agent/factory-s1-04-github-ingress` | [#387](https://github.com/pandemicsyn/neondeck/pull/387) | Both independent V4 static reviews and manager accepted. Full verification: 1,735 tests; focused: 99. Node 26 builds/package/CLI smoke passed; UI hash carry verified. Mandatory gitleaks hook clean; six screenshots uploaded and verified by manager. Not merged/deployed. |
+| Full slice / deployed exercise | Original local acceptance; live acceptance incomplete | Accepted feature `a0c0cf31c8a6693863e1f975eb61f8ff1bb85fa3`; V4 identity below                                                              | #383–#387                                                | Original final-stack local verification passed. Authorized GitHub test issue, final live provider conversation, VM restart and anonymous external exposure checks remain pending operator authorization. No merge or deployment.                                             |
 
 Accepted V4 review identity: `8fe4f4d530cad8c775b55de0af34e7efa9ad178888cc70122a47950c0d1a7264`.
 It covers the full 35-file feature delta, including the inherited repo-context ABA
@@ -241,7 +270,7 @@ fix found during cumulative review. The accepted feature commit is
 `a0c0cf31c8a6693863e1f975eb61f8ff1bb85fa3`; subsequent docs-only ledger changes have
 their own review and do not change that runtime verification identity.
 
-All final verification commands exited 0 under Node 26.4.0: 99 focused tests,
+At the original accepted V4 candidate, all verification commands exited 0 under Node 26.4.0: 99 focused tests,
 1,597 unit tests in `npm run check`, and 1,735 tests in `npm run verify`
 (1,597 unit + 47 git + 91 integration). Builds, the 1,066-file package check,
 installed CLI smoke and formatting passed. Fresh-process recovery and manual/GitHub

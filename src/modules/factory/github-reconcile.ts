@@ -2,7 +2,7 @@ import { echoDisposition, observeOwnedCommentChange } from './writeback';
 import * as v from 'valibot';
 import type {
   GitHubConnection,
-  GitHubIssue,
+  GitHubIssueDiscovery,
   GitHubComment,
 } from '../../../shared/factory-github';
 import { sourceSchema, type FactorySource } from '../../../shared/factory';
@@ -114,7 +114,7 @@ function workIdForSource(source: FactorySource, paths: RuntimePaths) {
     ),
   );
 }
-function eligible(issue: GitHubIssue, connection: GitHubConnection) {
+function eligible(issue: GitHubIssueDiscovery, connection: GitHubConnection) {
   return (
     connection.admission.mode === 'all' ||
     issue.labels.some(
@@ -169,9 +169,13 @@ function deferUnavailableIssue(
   paths: RuntimePaths,
 ) {
   if (
-    !(error instanceof GitHubApiError) ||
-    error.retry.rateLimited ||
-    ![404, 410].includes(error.status)
+    !v.isValiError(error) &&
+    !(error instanceof FactoryError && error.status === 400) &&
+    !(
+      error instanceof GitHubApiError &&
+      !error.retry.rateLimited &&
+      [404, 410].includes(error.status)
+    )
   )
     return false;
   currentConnection(connection, paths);
@@ -431,7 +435,17 @@ async function reconcile(
     const intent = prepareFactoryTriage(current.work.id, paths);
     if (intent) void io.planning(intent.id, paths).catch(() => undefined);
   } catch (error) {
-    if (retained) {
+    // Failed reads are health/retry state, not evidence of changed context.
+    // Definitive unavailable content, invalid content or identity/mapping conflicts
+    // still invalidate authority; transient/rate/deadline/shutdown failures do not.
+    if (
+      retained &&
+      (v.isValiError(error) ||
+        error instanceof FactoryError ||
+        (error instanceof GitHubApiError &&
+          !error.retry.rateLimited &&
+          [404, 410].includes(error.status)))
+    ) {
       const workId = workIdForSource(retained, paths);
       dbRun(paths, (db) =>
         markGitHubAttention(db, workId, failure(error, 0).error, paths),
@@ -636,12 +650,35 @@ export function factoryGitHubState(paths = runtimePaths()) {
       deliverySchema,
     ).slice(-100),
     sync: readGitHubRecords(db, 'factory_github_sync', syncSchema),
-    comments: readGitHubRecords(
-      db,
-      'factory_github_comments',
-      commentRecordSchema,
-    ),
   }));
+}
+/** Newest-first keyset page; query and parse only this task's bounded rows. */
+export function factoryGitHubComments(
+  workId: string,
+  cursor: string | undefined,
+  paths = runtimePaths(),
+) {
+  if (
+    cursor !== undefined &&
+    (!/^[1-9][0-9]*$/.test(cursor) || !Number.isSafeInteger(Number(cursor)))
+  )
+    throw new FactoryError(400, 'Invalid discussion cursor.');
+  return dbRun(paths, (db) => {
+    detail(db, workId, paths);
+    const rows = db
+      .prepare(
+        'SELECT rowid, record FROM factory_github_comments WHERE work_id=? AND rowid<? ORDER BY rowid DESC LIMIT 11',
+      )
+      .all(workId, cursor ? Number(cursor) : Number.MAX_SAFE_INTEGER);
+    return {
+      comments: rows
+        .slice(0, 10)
+        .map((row) =>
+          v.parse(commentRecordSchema, JSON.parse(String(row.record))),
+        ),
+      nextCursor: rows.length > 10 ? String(rows[9].rowid) : null,
+    };
+  });
 }
 export function requestFactoryGitHubSync(
   workId: string,

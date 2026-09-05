@@ -858,6 +858,19 @@ Use this format:
   or claim to observe arbitrary external file edits between reads.
 - Status: Included in accepted V4 feature `a0c0cf31c8a6693863e1f975eb61f8ff1bb85fa3`,
   open in PR #387 after both independent reviews and manager review. Full Node 26
-  verification passed 1,735 tests; focused verification passed 99. This docs-only
-  follow-up records that evidence without changing reviewed runtime code. Merge,
+  verification passed 1,735 tests; focused verification passed 99. That historical docs-only
+  follow-up recorded the original reviewed runtime evidence. Merge,
   deployment and live acceptance remain pending; PR #387 CI was pending at feature publication; final-head CI is tracked in the PR.
+
+## 2026-09-05 - Factory Planning Feedback: Asynchronous Repository Reads
+
+- Roadmap item: Software Factory slice 1 / increment 2 scoped repository evidence.
+- Decision: Run both planner repository tools asynchronously outside app-database
+  transactions, reauthorize before recording evidence, and impose a ten-second
+  total tool budget alongside the existing per-process and output limits. Propagate
+  Flue's tool cancellation signal. Task-specific recovery only admits/reconciles
+  the requested work; global startup recovery remains unchanged in scope.
+- Reason: Slow Git reads must not block the event loop or retain SQLite's writer
+  lock. Context changes during those reads must not grant stale evidence authority.
+- Follow-up: None. Malformed planning JSON/schema input already maps to HTTP 400
+  at the factory router; HTTP regression coverage now protects that behavior.

@@ -11,9 +11,11 @@ import {
   saveFactorySpec,
   releaseFactoryWork,
   submitFactoryWork,
+  transitionFactoryWork,
 } from './service';
 import {
   setWritebackPolicy,
+  queueStatus,
   getWritebackState,
   approveWriteback,
   rows,
@@ -33,7 +35,10 @@ import {
   removeRepo,
   addRepo,
 } from '../config';
-import { runFactoryGitHubSync, factoryGitHubState } from './github-reconcile';
+import {
+  runFactoryGitHubSync,
+  factoryGitHubComments,
+} from './github-reconcile';
 import { connectionFingerprint } from './github-config';
 import type { GitHubComment } from '../../../shared/factory-github';
 import { emptyFactorySpec } from '../../../shared/factory';
@@ -414,6 +419,146 @@ it('read failures remain failed without claiming deletion or sending a write', a
   expect(state().effects[0].error).toContain('access denied');
   expect(io.create).not.toHaveBeenCalled();
 });
+it.each(['work', 'spec', 'source'] as const)(
+  'supersedes a definitively unsent failed status after a %s change',
+  async (change) => {
+    consent();
+    const repository = io.repository;
+    io.repository = vi.fn(async () => {
+      throw new GitHubApiError(403, null, 'Forbidden');
+    });
+    await tick();
+    const failed = state().effects[0];
+    expect(failed.state).toBe('failed');
+    expect(io.create).not.toHaveBeenCalled();
+    if (change === 'spec') saveSpec();
+    else if (change === 'work') {
+      const d = getFactoryWork(id, setup.paths);
+      transitionFactoryWork(
+        id,
+        { expectedVersion: d.work.version, action: 'pause' },
+        human,
+        setup.paths,
+      );
+    } else {
+      const updated = {
+        ...issue,
+        body: 'Updated source',
+        updated_at: '2026-09-05T01:00:00Z',
+      };
+      dbRun(setup.paths, (db) =>
+        reconcileGitHubSource(
+          db,
+          { ...connection, connectionId: connection.id, issue: updated },
+          setup.paths,
+        ),
+      );
+      io.issue = vi.fn(async () => updated);
+    }
+    io.repository = repository;
+    await tick();
+    const effects = state().effects;
+    expect(effects.find((e) => e.id === failed.id)).toEqual({
+      ...failed,
+      state: 'cancelled',
+      error: 'Superseded by current status after authorization changed.',
+    });
+    expect(effects).toHaveLength(2);
+    expect(effects[1].state).toBe('sent');
+    expect(effects[1].workVersion).toBe(
+      getFactoryWork(id, setup.paths).work.version,
+    );
+    expect(io.create).toHaveBeenCalledTimes(1);
+  },
+);
+it('resumes an existing managed comment after a rejected update becomes stale', async () => {
+  consent();
+  await tick();
+  const managedId = state().status!.remoteId;
+  saveSpec();
+  const update = io.update;
+  io.update = vi.fn(async () => {
+    throw new GitHubApiError(429, null, 'Rejected');
+  });
+  await tick();
+  const failed = state().effects.at(-1)!;
+  expect(failed.state).toBe('failed');
+  expect(failed.attempts).toBe(1);
+  const d = getFactoryWork(id, setup.paths);
+  transitionFactoryWork(
+    id,
+    { expectedVersion: d.work.version, action: 'pause' },
+    human,
+    setup.paths,
+  );
+  io.update = update;
+  await tick();
+  expect(state().effects.find((e) => e.id === failed.id)?.state).toBe(
+    'cancelled',
+  );
+  expect(state().effects.at(-1)!.state).toBe('sent');
+  expect(state().status!.remoteId).toBe(managedId);
+  expect(io.create).toHaveBeenCalledTimes(1);
+  expect(io.update).toHaveBeenCalledTimes(1);
+  expect(remote).toHaveLength(1);
+  expect(remote[0].body).toContain('Paused');
+});
+it('keeps a current failed status blocked until explicit retry', async () => {
+  consent();
+  const repository = io.repository;
+  io.repository = vi.fn(async () => {
+    throw new GitHubApiError(403, null, 'Forbidden');
+  });
+  await tick();
+  const failed = state().effects[0];
+  io.repository = repository;
+  await tick();
+  expect(state().effects).toEqual([failed]);
+  expect(io.create).not.toHaveBeenCalled();
+  recoverWriteback(
+    id,
+    { effectId: failed.id, action: 'retry' },
+    human,
+    setup.paths,
+  );
+  await tick();
+  expect(state().effects[0].state).toBe('sent');
+  expect(io.create).toHaveBeenCalledTimes(1);
+});
+it.each([
+  'sending',
+  'uncertain',
+  'repair',
+  'failed-repair',
+  'repair-required',
+] as const)(
+  'does not supersede a stale status protected by %s',
+  (protection) => {
+    consent();
+    dbRun(setup.paths, (db) => {
+      queueStatus(db, id, setup.paths);
+      const e = rows(db, 'effect')[0];
+      put(db, 'effect', {
+        ...e,
+        state:
+          protection === 'failed-repair' || protection === 'repair-required'
+            ? 'failed'
+            : protection,
+        approvalId:
+          protection === 'failed-repair' ? 'exact-repair-approval' : null,
+      });
+      if (protection === 'repair-required') {
+        const status = rows(db, 'status')[0];
+        put(db, 'status', { ...status, repairRequired: true });
+      }
+    });
+    const before = state();
+    saveSpec();
+    dbRun(setup.paths, (db) => queueStatus(db, id, setup.paths));
+    expect(state().effects).toEqual(before.effects);
+    expect(state().status).toEqual(before.status);
+  },
+);
 it('edited status requires exact repair approval and a second remote revision check', async () => {
   consent();
   await tick();
@@ -517,13 +662,15 @@ it('inbound before receipt is held then confirmed without invalidating released 
       comment: io.comment,
       planning: async () => {},
     });
-    expect(factoryGitHubState(setup.paths).comments[0].echo).toBe(
-      'awaiting-receipt',
-    );
+    expect(
+      factoryGitHubComments(id, undefined, setup.paths).comments[0].echo,
+    ).toBe('awaiting-receipt');
     return result;
   });
   await tick();
-  expect(factoryGitHubState(setup.paths).comments[0].echo).toBe('confirmed');
+  expect(
+    factoryGitHubComments(id, undefined, setup.paths).comments[0].echo,
+  ).toBe('confirmed');
   expect(getFactoryWork(id, setup.paths).eligible).toBe(true);
 });
 it('genuine other-bot discussion remains attributed context and invalidates release', async () => {
@@ -543,7 +690,7 @@ it('genuine other-bot discussion remains attributed context and invalidates rele
     comment: io.comment,
     planning: async () => {},
   });
-  const comments = factoryGitHubState(setup.paths).comments;
+  const comments = factoryGitHubComments(id, undefined, setup.paths).comments;
   expect(comments.find((c) => c.remoteId === '33')?.echo).toBe('external');
   expect(getFactoryWork(id, setup.paths).source.attention).toContain('33');
 });

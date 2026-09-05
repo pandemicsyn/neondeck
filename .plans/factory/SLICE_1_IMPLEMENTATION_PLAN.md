@@ -1,14 +1,13 @@
 # Slice 1 — Intake, collaborative shaping, and human release
 
-Status: all five slice 1 code increments are implemented, reviewed and open in
-the PR stack. The accepted final feature is `a0c0cf31c8a6693863e1f975eb61f8ff1bb85fa3`
-in [PR #387](https://github.com/pandemicsyn/neondeck/pull/387), based on
-`agent/factory-s1-04-github-ingress`. Both independent static reviewers and the
-manager accepted V4. PRs #383–#386 each passed all six CI checks; PR #387 CI was
-pending at feature publication; final-head CI is tracked in PR #387. Nothing is merged, deployed or live-accepted.
-Code completion, review acceptance, PR publication, merge and live operational
-acceptance remain separate gates. The [progress ledger](SLICE_1_HANDOFF.md#progress-ledger)
-records the accepted evidence and remaining live checks.
+Historical acceptance: the original slice 1 stack was reviewed through feature
+`a0c0cf31c8a6693863e1f975eb61f8ff1bb85fa3` and documentation head
+`ff3a69033ae866aaf47dd0a6c3384544e5eb1e6a`. Those reviews and verification apply
+to those candidates. See the [handoff ledger](SLICE_1_HANDOFF.md) for incorporated
+feedback parents and [PR #387](https://github.com/pandemicsyn/neondeck/pull/387)
+for current feedback reviews and CI. Each publication requires its own verification,
+two clean dedicated static reviews and manager acceptance. Nothing is merged,
+deployed or live-accepted.
 
 This implements **slice 1: Intake to inbox** from the
 [software factory proposal](../research/software-factory-proposal.html#rollout).
