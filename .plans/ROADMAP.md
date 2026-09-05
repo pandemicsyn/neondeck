@@ -82,10 +82,14 @@ intake and collaborative shaping path. Historical phase completion above is unch
       exposure checks. Coding execution starts in a subsequent slice.
 
 See [the slice 1 implementation plan](factory/SLICE_1_IMPLEMENTATION_PLAN.md) and
-[manager/implementer handoff](factory/SLICE_1_HANDOFF.md). Increment 1 manual intake/domain is implemented locally on
-`agent/factory-s1-01-intake` from `9aba1ae2` (parent PR #382); independent static
-review and final verification/evidence are pending. Model planning, full shaping,
-GitHub ingress and writeback remain unimplemented. Actual deviations belong in `DEVIATIONS.md`; do not revive the removed
+[manager/implementer handoff](factory/SLICE_1_HANDOFF.md). Plan root PR #382 and
+manual intake PR #383 are open, neither merged nor deployed. Intake is accepted at
+`0c39917930b42aeacc3cbad71031d5552a29ccee`. Increment 2 is an uncommitted candidate on
+`agent/factory-s1-02-planning` from that parent: automatic bounded triage, dedicated
+persistent planning, scoped repository reads, typed model proposals/questions and
+initial chat/rendered draft are implemented; final verification/evidence and
+independent review remain pending. Full shaping, GitHub ingress and writeback remain
+unimplemented. Actual deviations belong in `DEVIATIONS.md`; do not revive the removed
 PR Autopilot coordinator or replace existing coding harnesses as part of this slice.
 
 ## Usability Gate

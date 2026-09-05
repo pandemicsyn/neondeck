@@ -97,7 +97,7 @@ export const revisionSchema = v.strictObject({
   sourceVersion: version,
   repoFingerprint: v.nullable(hash),
   repoContext: v.nullable(repoContextSchema),
-  authorKind: v.literal('human'),
+  authorKind: v.picklist(['human', 'model']),
   actor: label,
   createdAt: label,
 });

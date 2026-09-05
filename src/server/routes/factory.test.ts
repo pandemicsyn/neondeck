@@ -17,7 +17,10 @@ beforeEach(() => {
   initializeAppDatabase(paths.neondeckDatabase);
   app = new Hono();
   app.use('/api/*', requireLocalApiAccess());
-  app.route('/api/factory', createFactoryRoutes(paths));
+  app.route(
+    '/api/factory',
+    createFactoryRoutes(paths, () => {}),
+  );
 });
 afterEach(() => rmSync(paths.home, { recursive: true, force: true }));
 const request = (
@@ -102,4 +105,36 @@ it('supports disabled setup, typed manual intake, retry, detail and input errors
   expect(
     (await request('/work', { ...input, body: 'x'.repeat(600000) })).status,
   ).toBe(413);
+});
+it('invokes the reusable triage admission entrypoint after successful persisted intake only', async () => {
+  const calls: string[] = [];
+  const routes = createFactoryRoutes(paths, (id) => {
+    calls.push(id);
+  });
+  await routes.request('/config', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ enabled: true }),
+  });
+  const input = {
+    requestKey: 'auto-triage',
+    title: 'Public fixture',
+    body: 'Classify this',
+    repoId: null,
+  };
+  const admitted = await routes.request('/work', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(input),
+  });
+  const work = await admitted.json();
+  expect(admitted.status).toBe(200);
+  expect(calls).toEqual([work.work.id]);
+  const rejected = await routes.request('/work', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ ...input, unexpected: true }),
+  });
+  expect(rejected.status).toBe(400);
+  expect(calls).toHaveLength(1);
 });

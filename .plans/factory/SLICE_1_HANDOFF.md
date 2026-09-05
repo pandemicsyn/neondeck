@@ -1,8 +1,9 @@
 # Slice 1 — Manager and implementer handoff
 
-Status: documentation root PR #382 is open at `9aba1ae2`. Increment 1 is
-implemented locally and awaits independent static review; no implementation PR
-has been created.
+Status: documentation root PR #382 is open at `9aba1ae2` against `main`.
+Intake PR #383 is open at `0c39917930b42aeacc3cbad71031d5552a29ccee` against
+`agent/software-factory-plan`; neither PR is merged or deployed. Increment 2 is
+an uncommitted candidate on its assigned branch, with verification and review pending.
 
 Read the [slice contract](SLICE_1_IMPLEMENTATION_PLAN.md) before starting.
 The coordinating assistant acts as **dev manager and reviewer**. Implementation
@@ -220,17 +221,27 @@ privately when required; local implementation need not wait for it.
 Update with real evidence as work proceeds. Do not infer “implemented” from branch
 creation, “verified” from a claimed plan, or “deployed” from passing local tests.
 
-| Increment                      | State                                                                                       | Branch/base + reviewed head                                                           | PR         | Verification / review / deployment evidence                                                                                     |
-| ------------------------------ | ------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------- | ---------- | ------------------------------------------------------------------------------------------------------------------------------- |
-| Plan root                      | Overall proposal committed; slice plan prepared                                             | `agent/software-factory-plan`; resolve head at start                                  | Not opened | Documentation only                                                                                                              |
-| 1 — Manual intake/domain       | Candidate v3; five review findings fixed; re-review and final verification/evidence pending | `agent/factory-s1-01-intake`; base/head `9aba1ae2` plus uncommitted diff; parent #382 | Not opened | Initial check: 179 suites / 1,448 tests; v3 focused: 3 suites / 22 tests; typecheck/build passed; final verify/evidence pending |
-| 2 — Model planning             | Not started                                                                                 | Not created                                                                           | Not opened | None                                                                                                                            |
-| 3 — Human workbench            | Not started                                                                                 | Not created                                                                           | Not opened | None                                                                                                                            |
-| 4 — GitHub ingress             | Not started                                                                                 | Not created                                                                           | Not opened | None                                                                                                                            |
-| 5 — GitHub status              | Not started                                                                                 | Not created                                                                           | Not opened | None                                                                                                                            |
-| Full slice / deployed exercise | Not started                                                                                 | Record final accepted SHA                                                             | —          | Manual + GitHub + real model + restart + exposure checks pending                                                                |
+| Increment                      | State                                                         | Branch/base + reviewed head                                                                                       | PR         | Verification / review / deployment evidence                                                                                                                                                     |
+| ------------------------------ | ------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- | ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Plan root                      | Reviewed, open                                                | `agent/software-factory-plan`; head `9aba1ae2`, base `main`                                                       | #382       | Documentation only; not merged/deployed                                                                                                                                                         |
+| 1 — Manual intake/domain       | Accepted, open                                                | `agent/factory-s1-01-intake`; head `0c39917930b42aeacc3cbad71031d5552a29ccee`, base `agent/software-factory-plan` | #383       | Feature verification: 1,594 tests at `587bbafd`; six-line CI-only follow-up independently reviewed by both reviewers and manager; all six GitHub checks pass at `0c399179`; not merged/deployed |
+| 2 — Model planning             | Uncommitted V3 candidate; renewed verification/review pending | `agent/factory-s1-02-planning`; base/head `0c39917930b42aeacc3cbad71031d5552a29ccee` plus local delta             | Not opened | V1 full verification passed 1,614 tests; V2 passed 1,619 tests. V3 additionally closes mixed-tool triage continuation at the provider-call boundary; renewed review and gates pending           |
+| 3 — Human workbench            | Not started                                                   | Not created                                                                                                       | Not opened | None                                                                                                                                                                                            |
+| 4 — GitHub ingress             | Not started                                                   | Not created                                                                                                       | Not opened | None                                                                                                                                                                                            |
+| 5 — GitHub status              | Not started                                                   | Not created                                                                                                       | Not opened | None                                                                                                                                                                                            |
+| Full slice / deployed exercise | Not started                                                   | Record final accepted SHA                                                                                         | —          | Manual + GitHub + real model + restart + exposure checks pending                                                                                                                                |
 
 On completion, update `.plans/ROADMAP.md` and this ledger with the actual remaining
 limits. Preserve the plans as active while review/landing is underway; archive under
 the planning-index policy once complete. Next work is slice 2, not an unplanned
 extension of the last PR into a coding agent implementation.
+
+### Increment 2 implementation references
+
+Installed Flue 2.0.3 full pages: `guide/durability`, `reference/agent-api`,
+`reference/agent-hooks-api`, `guide/routing`, `guide/node-target`, `guide/react`,
+`guide/observability`, `reference/agent-behavior`, `guide/models`, and
+`reference/events` (provider-call interception). The installed public
+`AgentDispatchRequest` declaration additionally supplies the idempotency-key replay
+contract. Operator behavior and finite limits are documented in
+[INCREMENT_2_OPERATOR.md](INCREMENT_2_OPERATOR.md).

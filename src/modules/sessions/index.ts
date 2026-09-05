@@ -11,3 +11,7 @@ export * from './schemas';
 export * from './service';
 export * from './summaries';
 export * from './stale-reasons';
+export {
+  registerFactoryPlannerSession,
+  readFactoryPlannerSession,
+} from './factory';

@@ -52,3 +52,8 @@ async function authorizedFlueFetch(
   }
   return fetch(input, { ...init, headers });
 }
+
+/** Fixed factory capability route; the server validates the durable task binding. */
+export function createFactoryPlannerConversationClient(sessionId: string) {
+  return createNeondeckConversationClient('factory-planner', sessionId);
+}

@@ -103,7 +103,7 @@ export function findChatSession(database: DatabaseSync, id: string) {
       `
       SELECT *
       FROM chat_sessions
-      WHERE id = ?;
+      WHERE id = ? AND agent_name = 'display-assistant';
     `,
     )
     .get(id);

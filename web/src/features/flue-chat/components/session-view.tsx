@@ -37,7 +37,10 @@ import {
   Textarea,
 } from '../../../components/ui';
 import { useDashboardEventConnectionState } from '../../../lib/dashboard-connection';
-import { createNeondeckConversationClient } from '../../../lib/flue';
+import {
+  createFactoryPlannerConversationClient,
+  createNeondeckConversationClient,
+} from '../../../lib/flue';
 import { queryKeys } from '../../../lib/query';
 import { CommandResultSummary } from './command-controls';
 import { ChatResponseProgress, ChatTimelineItems } from './chat-timeline';
@@ -64,6 +67,7 @@ export function FlueChatSessionView({
   onSendMessage,
   quickCommands,
   referenceDraft,
+  refreshKey,
   session,
   sessionState,
 }: {
@@ -78,6 +82,7 @@ export function FlueChatSessionView({
   ) => Promise<{ submissionId?: string } | void>;
   quickCommands: FlueChatConfig['quickCommands'];
   referenceDraft?: string;
+  refreshKey?: string | null;
   session: FlueChatSession | undefined;
   sessionState: NeonSessionState | undefined;
 }) {
@@ -96,15 +101,33 @@ export function FlueChatSessionView({
   const conversationClient = useMemo(
     () =>
       session?.id
-        ? createNeondeckConversationClient(agentName, session.id)
+        ? agentName === 'factory-planner'
+          ? createFactoryPlannerConversationClient(session.id)
+          : createNeondeckConversationClient(agentName, session.id)
         : undefined,
     [agentName, session?.id],
   );
   const agent = useFlueAgent({ client: conversationClient });
   const refreshAgent = agent.refresh;
+  useEffect(() => {
+    if (refreshKey) refreshAgent();
+  }, [refreshAgent, refreshKey]);
   const messages = useMemo(
-    () => chatMessagesForRender(agent.messages),
-    [agent.messages],
+    () =>
+      chatMessagesForRender(
+        agentName === 'factory-planner'
+          ? agent.messages.map((message) =>
+              message.signal?.tagName === 'factory-human-message'
+                ? {
+                    ...message,
+                    role: 'user' as const,
+                    display: 'visible' as const,
+                  }
+                : message,
+            )
+          : agent.messages,
+      ),
+    [agent.messages, agentName],
   );
   const commandsQuery = useQuery({
     queryKey: queryKeys.neonCommands,

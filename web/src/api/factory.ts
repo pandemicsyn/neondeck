@@ -31,3 +31,49 @@ export async function setFactoryEnabled(enabled: boolean) {
 }
 
 export { dashboardEventHub } from './event-hub';
+
+export async function getFactoryPlanning(id: string) {
+  const { planningStateSchema } =
+    await import('../../../shared/factory-planning');
+  return v.parse(
+    planningStateSchema,
+    await getJson(`/api/factory/work/${encodeURIComponent(id)}/planning`),
+  );
+}
+export async function sendFactoryPlanning(
+  id: string,
+  input: { requestKey: string; expectedVersion: number; message: string },
+) {
+  return v.parse(
+    v.object({ sessionId: v.string(), intentId: v.string() }),
+    await postJson(
+      `/api/factory/work/${encodeURIComponent(id)}/planning`,
+      input,
+    ),
+  );
+}
+export async function recoverFactoryPlanning(id: string) {
+  await postJson(
+    `/api/factory/work/${encodeURIComponent(id)}/planning/recover`,
+    {},
+  );
+}
+export async function refreshFactoryPlanningContext(
+  id: string,
+  expectedVersion: number,
+) {
+  await postJson(
+    `/api/factory/work/${encodeURIComponent(id)}/planning/context`,
+    { expectedVersion },
+  );
+}
+
+export async function stopFactoryPlanning(sessionId: string) {
+  await postJson(
+    `/api/flue/agents/factory-planner/${encodeURIComponent(sessionId)}/abort`,
+    {},
+  );
+}
+export async function retryFactoryTriage(id: string) {
+  await postJson(`/api/factory/work/${encodeURIComponent(id)}/triage`, {});
+}
