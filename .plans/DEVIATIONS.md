@@ -815,3 +815,45 @@ Use this format:
   ran in login shells that reverted to Node 25. Their results are not acceptance
   evidence. Acceptance commands explicitly select Node 26.4.0. Early loopback-denied
   tests were rerun with approved local networking; no blocked test is called passed.
+
+## 2026-09-05 — Factory increment 5 public effects and recovery limits
+
+- Roadmap item: Software Factory slice 1 / GitHub writeback and final code acceptance.
+- Decision: Keep versioned writeback consent in app SQLite, outside generic factory
+  configuration. Any factory configuration change conservatively revokes consent
+  before file replacement. Human publication APIs are not planning tools.
+- Reason: Separate authority cannot be conferred by a model configuration mutation;
+  a durable epoch prevents disable/re-enable or mapping ABA from reviving pending
+  publication. Ordinary status transitions need no repeated confirmation.
+- Decision: Serialize writeback per runtime home through the existing GitHub loop;
+  uncertain creates use durable four-page scan continuations, never blind retries.
+  Exact in-flight inbound matches wait visibly for a receipt before planner delivery.
+- Reason: SQLite and GitHub have no shared transaction, and REST page numbers are
+  not a stable snapshot. Confirmed identity/revision provides the echo boundary.
+- Limit: GitHub does not document conditional issue-comment replacement; remote
+  edits can race the final read/write even after explicit repair approval. The UI
+  discloses this. Runtime concurrency remains one process/home. The initial token
+  must support the authenticated-user endpoint; installation/OAuth setup is deferred.
+- Follow-up: Final candidate checks/screenshots and manager-owned static reviews
+  are required before publication. Live GitHub/model/deployment/restart/exposure
+  acceptance remains separately pending authorization; no coding executor is added.
+
+## 2026-09-05 - Factory slice 1 cumulative repo-context authority fix
+
+- Scope: Increment 5 also fixes an inherited slice-1 repository-context ABA defect
+  found during cumulative manager review. Earlier fingerprint-only eligibility
+  allowed restoring repository settings to restore an old release and public scope.
+- Decision: Meaningful typed repository add/update/remove and policy changes
+  durably increment affected factory source/work versions and withdraw releases.
+  Identical updates are no-ops. A synchronous registry snapshot check, revocation
+  and atomic file replacement prevent approvals during an asynchronous write gap;
+  stale asynchronous discovery results must retry. File replacement failure leaves
+  conservative revocation in place. No cross-store transaction is claimed.
+- Reason: Returning to old values or removing/re-adding the same repo must require
+  renewed human review. Existing source/work version fences also invalidate exact
+  questions, summaries, and in-flight planning proposals without a new runtime.
+- Boundary: This covers typed local registry mutations in the existing single
+  process/home runtime; it does not introduce multi-process configuration locking
+  or claim to observe arbitrary external file edits between reads.
+- Follow-up: V4 candidate verification and independent/manager reviews; accepted
+  commit and PR metadata belong to the manager's subsequent docs-only follow-up.

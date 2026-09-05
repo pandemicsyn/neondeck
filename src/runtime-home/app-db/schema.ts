@@ -1585,3 +1585,13 @@ export const factoryGitHubComments = sqliteTable('factory_github_comments', {
     .references(() => factoryWorkItems.id),
   record: text('record').notNull(),
 });
+
+export const factoryWritebackRecords = sqliteTable(
+  'factory_writeback_records',
+  {
+    id: text('id').primaryKey(),
+    kind: text('kind').notNull(),
+    workId: text('work_id'),
+    record: text('record').notNull(),
+  },
+);

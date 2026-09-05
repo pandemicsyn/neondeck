@@ -1,3 +1,4 @@
+import { FactoryWriteback } from './FactoryWriteback';
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import {
@@ -39,8 +40,9 @@ export function FactoryGitHubSetup({
     >
       <summary>GitHub connections</summary>
       <p>
-        Choose which issues enter this inbox. GitHub is read-only here; no
-        status or question comments are sent.
+        Choose which issues enter this inbox. Writeback is off by default.
+        Review the explicit publishing policy in an admitted task to allow
+        status updates and separately approved questions.
       </p>
       {(error || state.error) && (
         <p role="alert" className="factory-error">
@@ -330,7 +332,10 @@ export function FactoryGitHubSource({ detail }: { detail: FactoryDetail }) {
         brief.
       </p>
       {state.data?.comments
-        .filter((comment) => comment.workId === detail.work.id)
+        .filter(
+          (comment) =>
+            comment.workId === detail.work.id && comment.echo !== 'confirmed',
+        )
         .map((comment) => (
           <article key={comment.id}>
             <p>
@@ -346,12 +351,15 @@ export function FactoryGitHubSource({ detail }: { detail: FactoryDetail }) {
             </p>
             <MarkdownMessage>{comment.body}</MarkdownMessage>
             <p>
-              {comment.intentId
-                ? 'Retained in planner delivery history.'
-                : 'Retained context; awaiting an open planning conversation.'}
+              {comment.echo === 'awaiting-receipt'
+                ? 'Matching in-flight publication; awaiting a confirmed receipt before classifying this context.'
+                : comment.intentId
+                  ? 'Retained in planner delivery history.'
+                  : 'Retained context; awaiting an open planning conversation.'}
             </p>
           </article>
         ))}
+      <FactoryWriteback key={detail.work.id} detail={detail} />
     </section>
   );
 }

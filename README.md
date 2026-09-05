@@ -38,12 +38,17 @@ then reply to revise it or edit the draft manually. Compare retained versions,
 discuss a section, and resolve decisions before releasing an exact specification
 version. GitHub connections can admit signed issue events and reconcile full source
 content and attributed replies. A separate webhook listener keeps the dashboard
-on loopback. The coding executor and outbound GitHub status/comments remain pending.
+on loopback. GitHub publishing is off by default: explicitly enable one maintained
+status comment, approve a version-bound public summary, or preview and send an exact
+question. Ambiguous sends and remote edits have visible recovery paths. Released
+tasks await a coding executor; no coding, PR creation, merge or deployment runs.
+These factory changes are in an open stacked delivery; deployed acceptance is pending.
 
 See the [manual intake operator guide](.plans/factory/INCREMENT_1_OPERATOR.md) and
 [planning operator guide](.plans/factory/INCREMENT_2_OPERATOR.md), plus the
 [human shaping guide](.plans/factory/INCREMENT_3_OPERATOR.md) and
-[GitHub intake operator guide](.plans/factory/INCREMENT_4_OPERATOR.md).
+[GitHub intake operator guide](.plans/factory/INCREMENT_4_OPERATOR.md) and
+[GitHub publishing guide](.plans/factory/INCREMENT_5_OPERATOR.md).
 
 ## The deck in action
 

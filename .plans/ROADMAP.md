@@ -89,9 +89,13 @@ two clean dedicated reviews, 1,623-test verification on identical runtime source
 plus a README-only clarification, and all six GitHub checks passing. Human shaping
 PR #385 is manager-accepted at `8809958947531e3c7fa727accae4aab3f3073f57`, with two
 clean reviews, 1,632-test verification plus a CSS-only rebuilt UI correction, and
-all six GitHub checks passing. Increment 4 GitHub ingress/reconciliation is an
-uncommitted candidate from that parent; final verification and dedicated review
-remain pending. Writeback and actual deployed exposure acceptance remain pending.
+all six GitHub checks passing. GitHub ingress PR #386 is accepted and open at
+`836dfe24dbb6b790865523b37f68d2b64ec9035c`, after two clean dedicated reviews and
+manager acceptance; all six GitHub checks pass. Increment 5 implements opt-in status,
+exact approved questions, effect recovery and echo controls as an uncommitted
+candidate. Final verification, two static reviews, manager acceptance and its PR
+remain pending. Nothing is merged or deployed. Live GitHub/model/restart and
+anonymous exposure acceptance remain separately pending operator authorization.
 Actual deviations belong in `DEVIATIONS.md`; preserve existing coding harnesses and
 do not revive the removed PR Autopilot coordinator.
 
