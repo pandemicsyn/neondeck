@@ -1,9 +1,11 @@
 # GitHub publishing — slice 1, increment 5
 
-Status: uncommitted code candidate. Final verification, two independent static
-reviews and manager acceptance precede PR publication. Increments 1–4 are accepted
-and open; nothing is merged or deployed. This document describes candidate behavior,
-not a live-environment acceptance claim.
+Status: all five slice 1 code increments are implemented, reviewed and open in
+the PR stack. The accepted final feature is `a0c0cf31c8a6693863e1f975eb61f8ff1bb85fa3`
+in [PR #387](https://github.com/pandemicsyn/neondeck/pull/387), based on
+`agent/factory-s1-04-github-ingress`. Both independent static reviewers and the
+manager accepted V4. PRs #383–#386 each passed all six CI checks; PR #387 CI was
+pending at feature publication; final-head CI is tracked in PR #387. Nothing is merged, deployed or live-accepted.
 
 ## Human publication boundaries
 
@@ -124,6 +126,16 @@ preview, stale drafts, pending failures and captured policy fingerprints. Existi
 Flue, source lifecycle, migration and packaged listener suites remain part of final
 stack verification. Evidence manifests record frozen source hashes and actual
 commands/results; passing a synthetic test is not live provider evidence.
+
+The accepted feature commit `a0c0cf31c8a6693863e1f975eb61f8ff1bb85fa3` is open in PR #387
+after both independent static reviews and manager acceptance of V4 identity
+`8fe4f4d530cad8c775b55de0af34e7efa9ad178888cc70122a47950c0d1a7264`. All final Node 26.4.0 commands exited
+0: 99 focused tests, 1,597-test check, and 1,735-test full verification; builds,
+package contents (1,066 files), installed CLI smoke and formatting passed.
+Fresh-process recovery, repo-context ABA and remove/re-add checks also passed.
+The 243 UI files were unchanged from V3; 22 retained V2/V3 screenshots were
+hash-checked, and the manager uploaded and verified six screenshots on PR #387.
+These are local/synthetic acceptance results. PR #387 CI was pending at feature publication; final-head CI is tracked in the PR.
 
 For reproducible actual UI evidence, build the dashboard then run the existing
 standalone fixture with `FACTORY_GITHUB_FIXTURE=1` and
