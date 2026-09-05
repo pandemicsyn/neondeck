@@ -1,3 +1,4 @@
+import type { FactoryDiscussionReference } from '../../../shared/factory-planning';
 import * as v from 'valibot';
 import {
   factoryDetailSchema,
@@ -42,7 +43,12 @@ export async function getFactoryPlanning(id: string) {
 }
 export async function sendFactoryPlanning(
   id: string,
-  input: { requestKey: string; expectedVersion: number; message: string },
+  input: {
+    requestKey: string;
+    expectedVersion: number;
+    message: string;
+    discussion?: FactoryDiscussionReference;
+  },
 ) {
   return v.parse(
     v.object({ sessionId: v.string(), intentId: v.string() }),

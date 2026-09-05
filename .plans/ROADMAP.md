@@ -82,20 +82,25 @@ intake and collaborative shaping path. Historical phase completion above is unch
       exposure checks. Coding execution starts in a subsequent slice.
 
 See [the slice 1 implementation plan](factory/SLICE_1_IMPLEMENTATION_PLAN.md) and
-[manager/implementer handoff](factory/SLICE_1_HANDOFF.md). Intake and planning are
-implemented and published in PRs #383 and #384; neither is merged or deployed.
-Planning's historical accepted head is `3210fbb00e`: both dedicated static reviews
-and manager implementation/product review passed before publication. Historical
-Node 26.4.0 verification passed 1,623 tests (1,485 unit, 47 git, 91 integration),
-builds, package smoke and formatting. The accepted intake feedback parent
-`192e7cf719d6dba1d7ea088452ffe1ad502014b5` is incorporated into planning's feedback
-fixes. Current feedback review and CI status live in
-[PR #384](https://github.com/pandemicsyn/neondeck/pull/384). Every changed candidate
-requires verification, two independent clean static reviews and manager acceptance
-before publication; historical results do not approve subsequent changes. Full shaping, GitHub
-ingress and writeback belong to downstream stack increments; coding execution
-remains a later slice. Actual deviations belong in `DEVIATIONS.md`; do not revive the removed
-PR Autopilot coordinator or replace existing coding harnesses as part of this slice.
+[manager/implementer handoff](factory/SLICE_1_HANDOFF.md). Plan root PR #382,
+manual intake PR #383 and model planning PR #384 are open, none merged/deployed.
+Planning was manager-accepted at `3210fbb00eddb54e2873b1e44bfea9eea012b9d5` after
+two clean dedicated reviews, 1,623-test verification on identical runtime source
+plus a README-only clarification, and all six GitHub checks passing at that head. Increment 3's
+human shaping workbench was manager-accepted at `8809958947531e3c7fa727accae4aab3f3073f57`
+and opened as PR #385 against planning after two clean dedicated reviews and
+1,632-test full verification, followed by the separately verified CSS-only overflow
+fix (dashboard rebuild and five UI states). These are historical acceptance records;
+subsequent feedback fixes require their own review. GitHub ingress/writeback are
+outside this increment's acceptance record.
+Accepted intake feedback parent `192e7cf7` and planning feedback parent `5d773582`
+are incorporated. Current feedback review and CI status are recorded in
+[PR #383](https://github.com/pandemicsyn/neondeck/pull/383),
+[PR #384](https://github.com/pandemicsyn/neondeck/pull/384), and
+[PR #385](https://github.com/pandemicsyn/neondeck/pull/385). Every changed candidate
+requires verification, two clean independent reviews and manager acceptance before
+publication. Actual deviations belong in `DEVIATIONS.md`; preserve existing coding harnesses and
+do not revive the removed PR Autopilot coordinator.
 
 ## Usability Gate
 

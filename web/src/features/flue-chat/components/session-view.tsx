@@ -63,6 +63,7 @@ export function FlueChatSessionView({
   allowCommands = true,
   messageEnabled = true,
   messageLabel = 'Message Neon',
+  draftStorageKey,
   onReferenceDraftConsumed,
   onSendMessage,
   quickCommands,
@@ -76,6 +77,7 @@ export function FlueChatSessionView({
   allowCommands?: boolean;
   messageEnabled?: boolean;
   messageLabel?: string;
+  draftStorageKey?: string;
   onReferenceDraftConsumed?: () => void;
   onSendMessage?: (
     message: string,
@@ -87,7 +89,26 @@ export function FlueChatSessionView({
   sessionState: NeonSessionState | undefined;
 }) {
   const eventConnection = useDashboardEventConnectionState();
-  const [input, setInput] = useState('');
+  const [input, setInput] = useState(() => {
+    try {
+      return draftStorageKey
+        ? (sessionStorage.getItem(draftStorageKey) ?? '')
+        : '';
+    } catch {
+      return '';
+    }
+  });
+  const [draftStorageFailed, setDraftStorageFailed] = useState(false);
+  useEffect(() => {
+    if (!draftStorageKey) return;
+    try {
+      if (input) sessionStorage.setItem(draftStorageKey, input);
+      else sessionStorage.removeItem(draftStorageKey);
+      setDraftStorageFailed(false);
+    } catch {
+      setDraftStorageFailed(true);
+    }
+  }, [draftStorageKey, input]);
   const [commandEvents, setCommandEvents] = useState<CommandEvent[]>([]);
   const [runningCommand, setRunningCommand] = useState<string>();
   const [commandSubmitting, setCommandSubmitting] = useState(false);
@@ -604,6 +625,12 @@ export function FlueChatSessionView({
             {submitError}
           </div>
         ) : null}
+        {draftStorageFailed && (
+          <p role="alert">
+            Browser draft storage is unavailable. Copy your unsent reply before
+            reloading.
+          </p>
+        )}
         <form
           className="flue-chat-composer flex min-h-11 items-center gap-2.5 px-4"
           onSubmit={submit}
