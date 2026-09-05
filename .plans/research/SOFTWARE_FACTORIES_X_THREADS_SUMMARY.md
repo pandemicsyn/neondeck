@@ -1,5 +1,8 @@
 # Software factories — X references summary (2026)
 
+> **Companion:** curated link pack on neonronin (debate + company + field notes, with short blurbs) — https://neonronin.sh/note/5  
+> This document expands the **X** sources from that pack only. Non-X essays and docs in the pack are left for the implementer.
+
 This document briefs an implementer on **what the X posts and X long-form articles in Florian’s software-factories reading pack actually argue**. It is an initial reading of the X surface only: claims, vocabulary, and disagreements as they appear on X. It is **not** an implementation plan, roadmap, MVP sequence, or product brief for any specific app. Non-X blogs and docs (Factory.ai, Amp, Warp’s off-X docs, Uber’s engineering blog beyond this X article, Simon Willison, Dan Shapiro, etc.) are left for the implementer to research separately; where an X post is mainly a pointer, that is noted in one sentence.
 
 Sources were pulled via the X API (`article.plain_text` / `note_tweet` where available). Dex’s three-part series also has a combined essay mirror at [wsff.md](https://raw.githubusercontent.com/humanlayer/advanced-context-engineering-for-coding-agents/main/wsff.md); API article bodies for the three X articles were available and used as primary text.
