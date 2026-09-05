@@ -75,11 +75,11 @@ export function FactoryPage() {
     setBusy(true);
     setError('');
     try {
-      const task = await mutateFactory(null, '', {
+      const task = await mutateFactory(null, 'create', {
         requestKey,
-        title: data.get('title'),
-        body: data.get('body'),
-        repoId: data.get('repoId') || null,
+        title: String(data.get('title') ?? ''),
+        body: String(data.get('body') ?? ''),
+        repoId: String(data.get('repoId') ?? '') || null,
       });
       setRequestKey(crypto.randomUUID());
       form.reset();

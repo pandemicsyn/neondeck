@@ -140,3 +140,5 @@ export {
   factoryGitHubIdentity,
 } from './factory-issues';
 export { GitHubApiError } from './errors';
+
+export { githubWritebackRetryAt } from './retry';

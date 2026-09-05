@@ -1,3 +1,5 @@
+import { ValiError } from 'valibot';
+import { assertTriageBudget } from './triage-budget';
 import {
   mkdtempSync,
   writeFileSync,
@@ -462,6 +464,30 @@ it('reads only bounded committed regular files and requires inspected evidence f
       paths,
     ),
   ).toThrow(/references/);
+  dbRun(paths, (db) => {
+    db.prepare(
+      "UPDATE factory_planning_effects SET record=json_remove(record, '$.kind') WHERE intent_id=?",
+    ).run(intent.id);
+  });
+  const referenced = {
+    ...spec,
+    references: [
+      {
+        path: 'README.md',
+        commit: intent.context.repoCommit!,
+        note: 'Read from captured commit',
+      },
+    ],
+  };
+  expect(
+    proposeFactorySpec(
+      intent.sessionId,
+      intent.id,
+      'legacy-ref',
+      proposal(intent, referenced),
+      paths,
+    ).version,
+  ).toBe(2);
 });
 it('automatically admitted triage is deduped by meaningful input and never starts planning', async () => {
   const { prepareFactoryTriage } = await import('./planning-store');
@@ -815,3 +841,82 @@ it.each([
     }
   },
 );
+
+it('validates legacy proposal replay and rejects a corrupt success result without another revision', () => {
+  const intent = planning();
+  const input = proposal(intent);
+  const result = proposeFactorySpec(
+    intent.sessionId,
+    intent.id,
+    'legacy-proposal',
+    input,
+    paths,
+  );
+  dbRun(paths, (db) => {
+    db.prepare(
+      "UPDATE factory_planning_effects SET record=json_remove(record, '$.kind') WHERE intent_id=?",
+    ).run(intent.id);
+  });
+  expect(
+    proposeFactorySpec(
+      intent.sessionId,
+      intent.id,
+      'legacy-proposal',
+      input,
+      paths,
+    ),
+  ).toEqual(result);
+  dbRun(paths, (db) => {
+    db.prepare(
+      "UPDATE factory_planning_effects SET record=json_set(record, '$.result.version', 'invalid') WHERE intent_id=?",
+    ).run(intent.id);
+  });
+  expect(() =>
+    proposeFactorySpec(
+      intent.sessionId,
+      intent.id,
+      'legacy-proposal',
+      input,
+      paths,
+    ),
+  ).toThrow(ValiError);
+  expect(getFactoryWork(intent.workId, paths).revisions).toHaveLength(2);
+});
+it('rejects malformed duplicate candidates instead of coercing their titles', () => {
+  const other = task();
+  const current = task();
+  dbRun(paths, (db) => {
+    db.prepare(
+      "UPDATE factory_work_items SET record=json_set(record, '$.title', json('{}')) WHERE id=?",
+    ).run(other.work.id);
+  });
+  expect(() =>
+    prepareFactoryPlanning(
+      current.work.id,
+      { requestKey: 'candidate-check', expectedVersion: 1, message: 'Plan' },
+      paths,
+    ),
+  ).toThrow(ValiError);
+  expect(pendingPlanningIntents(paths, current.work.id)).toEqual([]);
+});
+
+it('fails closed on corrupted retained usage instead of bypassing the token budget', () => {
+  const intent = prepare();
+  dbRun(paths, (db) => {
+    db.prepare('INSERT INTO factory_planning_effects VALUES (?,?,?)').run(
+      'bad-usage',
+      intent.id,
+      '{"kind":"triage-usage"}',
+    );
+  });
+  expect(() => assertTriageBudget(intent.id, paths)).toThrow(ValiError);
+  dbRun(paths, (db) => {
+    db.prepare('UPDATE factory_planning_effects SET record=? WHERE id=?').run(
+      '{"kind":"triage-usage","tokens":12000}',
+      'bad-usage',
+    );
+  });
+  expect(() => assertTriageBudget(intent.id, paths)).toThrow(
+    /budget exhausted/,
+  );
+});

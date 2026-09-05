@@ -1,34 +1,50 @@
 import type { FactoryDiscussionReference } from '../../../shared/factory-planning';
 import * as v from 'valibot';
 import {
-  factoryDetailSchema,
+  factoryConfigSchema,
   factoryStateSchema,
 } from '../../../shared/factory';
+import {
+  factoryDetailViewSchema,
+  factoryAcceptedSchema,
+  factoryAbortSchema,
+  factoryPlanningAdmissionSchema,
+  type FactoryMutationArgs,
+} from '../../../shared/factory-api';
+import { planningStateSchema } from '../../../shared/factory-planning';
+import {
+  writebackPolicySchema,
+  publicApprovalSchema,
+  writebackStateSchema,
+} from '../../../shared/factory-writeback';
+export type { FactoryMutationArgs } from '../../../shared/factory-api';
 import { getJson, postJson } from './http';
 export async function getFactoryState() {
   return v.parse(factoryStateSchema, await getJson('/api/factory/state'));
 }
 export async function getFactoryDetail(id: string) {
   return v.parse(
-    factoryDetailSchema,
+    factoryDetailViewSchema,
     await getJson(`/api/factory/work/${encodeURIComponent(id)}`),
   );
 }
 export async function mutateFactory(
   id: string | null,
-  action: string,
-  input: unknown,
+  ...[action, input]: FactoryMutationArgs
 ) {
   const url = id
     ? `/api/factory/work/${encodeURIComponent(id)}/${action}`
     : '/api/factory/work';
-  return v.parse(factoryDetailSchema, await postJson(url, input));
+  return v.parse(factoryDetailViewSchema, await postJson(url, input));
 }
 export async function setFactoryEnabled(enabled: boolean) {
-  await postJson('/api/factory/config', {
-    enabled,
-    codingPolicy: 'isolated-local-v1',
-  });
+  return v.parse(
+    v.required(factoryConfigSchema),
+    await postJson('/api/factory/config', {
+      enabled,
+      codingPolicy: 'isolated-local-v1',
+    }),
+  );
 }
 
 export { dashboardEventHub } from './event-hub';
@@ -51,7 +67,7 @@ export async function sendFactoryPlanning(
   },
 ) {
   return v.parse(
-    v.object({ sessionId: v.string(), intentId: v.string() }),
+    factoryPlanningAdmissionSchema,
     await postJson(
       `/api/factory/work/${encodeURIComponent(id)}/planning`,
       input,
@@ -59,29 +75,41 @@ export async function sendFactoryPlanning(
   );
 }
 export async function recoverFactoryPlanning(id: string) {
-  await postJson(
-    `/api/factory/work/${encodeURIComponent(id)}/planning/recover`,
-    {},
+  return v.parse(
+    planningStateSchema,
+    await postJson(
+      `/api/factory/work/${encodeURIComponent(id)}/planning/recover`,
+      {},
+    ),
   );
 }
 export async function refreshFactoryPlanningContext(
   id: string,
   expectedVersion: number,
 ) {
-  await postJson(
-    `/api/factory/work/${encodeURIComponent(id)}/planning/context`,
-    { expectedVersion },
+  return v.parse(
+    planningStateSchema,
+    await postJson(
+      `/api/factory/work/${encodeURIComponent(id)}/planning/context`,
+      { expectedVersion },
+    ),
   );
 }
 
 export async function stopFactoryPlanning(sessionId: string) {
-  await postJson(
-    `/api/flue/agents/factory-planner/${encodeURIComponent(sessionId)}/abort`,
-    {},
+  return v.parse(
+    factoryAbortSchema,
+    await postJson(
+      `/api/flue/agents/factory-planner/${encodeURIComponent(sessionId)}/abort`,
+      {},
+    ),
   );
 }
 export async function retryFactoryTriage(id: string) {
-  await postJson(`/api/factory/work/${encodeURIComponent(id)}/triage`, {});
+  return v.parse(
+    planningStateSchema,
+    await postJson(`/api/factory/work/${encodeURIComponent(id)}/triage`, {}),
+  );
 }
 
 export async function getFactoryGitHub() {
@@ -96,13 +124,19 @@ export async function saveFactoryGitHub(
   github: import('../../../shared/factory-github').GitHubConnection[],
   expectedFingerprint: string,
 ) {
-  await postJson('/api/factory/github/config', {
-    connections: github,
-    expectedFingerprint,
-  });
+  return v.parse(
+    v.required(factoryConfigSchema),
+    await postJson('/api/factory/github/config', {
+      connections: github,
+      expectedFingerprint,
+    }),
+  );
 }
 export async function syncFactorySource(id: string) {
-  await postJson(`/api/factory/work/${encodeURIComponent(id)}/sync`, {});
+  return v.parse(
+    factoryAcceptedSchema,
+    await postJson(`/api/factory/work/${encodeURIComponent(id)}/sync`, {}),
+  );
 }
 
 export async function getFactoryWriteback(id: string) {
@@ -121,18 +155,24 @@ export async function setFactoryWriteback(
     expectedFingerprint: string;
   },
 ) {
-  await postJson(
-    `/api/factory/github/${encodeURIComponent(connectionId)}/writeback`,
-    input,
+  return v.parse(
+    writebackPolicySchema,
+    await postJson(
+      `/api/factory/github/${encodeURIComponent(connectionId)}/writeback`,
+      input,
+    ),
   );
 }
 export async function approveFactoryWriteback(
   id: string,
   input: import('../../../shared/factory-writeback').WritebackApprovalInput,
 ) {
-  await postJson(
-    `/api/factory/work/${encodeURIComponent(id)}/writeback/approve`,
-    input,
+  return v.parse(
+    publicApprovalSchema,
+    await postJson(
+      `/api/factory/work/${encodeURIComponent(id)}/writeback/approve`,
+      input,
+    ),
   );
 }
 export async function recoverFactoryWriteback(
@@ -140,9 +180,12 @@ export async function recoverFactoryWriteback(
   effectId: string,
   action: 'retry' | 'relinquish',
 ) {
-  await postJson(
-    `/api/factory/work/${encodeURIComponent(id)}/writeback/recover`,
-    { effectId, action },
+  return v.parse(
+    writebackStateSchema,
+    await postJson(
+      `/api/factory/work/${encodeURIComponent(id)}/writeback/recover`,
+      { effectId, action },
+    ),
   );
 }
 export async function previewFactoryWritebackRepair(
@@ -164,9 +207,12 @@ export async function approveFactoryWritebackRepair(
   previewId: string,
   replacement: string,
 ) {
-  await postJson(
-    `/api/factory/work/${encodeURIComponent(id)}/writeback/repair`,
-    { previewId, replacement },
+  return v.parse(
+    writebackStateSchema,
+    await postJson(
+      `/api/factory/work/${encodeURIComponent(id)}/writeback/repair`,
+      { previewId, replacement },
+    ),
   );
 }
 
