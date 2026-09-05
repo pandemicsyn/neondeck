@@ -6,13 +6,19 @@ Intake PR #383 opened at feature head `587bbafd` against
 `0c39917930b42aeacc3cbad71031d5552a29ccee`. Planning PR #384 opened at
 `3210fbb00eddb54e2873b1e44bfea9eea012b9d5` against `agent/factory-s1-01-intake`.
 Increment 3 was accepted at `8809958947531e3c7fa727accae4aab3f3073f57` and opened
-as PR #385 against planning. All four PRs were unmerged and undeployed at that
-acceptance checkpoint. Subsequent feedback fixes require separate review.
+as PR #385 against planning. GitHub ingress was accepted at
+`836dfe24dbb6b790865523b37f68d2b64ec9035c` and opened as
+[PR #386](https://github.com/pandemicsyn/neondeck/pull/386) against shaping after
+two clean dedicated reviews and manager acceptance. These PRs were unmerged and
+undeployed at their acceptance checkpoints. Subsequent feedback fixes require
+separate review.
 
 The accepted intake feedback parent `192e7cf7` and planning feedback parent
-`5d773582422f27af520931c03e329b9773e3373f` are incorporated into the shaping branch.
+`5d773582422f27af520931c03e329b9773e3373f`, followed by the accepted shaping
+feedback parent `f14b45b407071266ec2df10bc977a677468f6673`, are incorporated into
+the ingress branch.
 Current feedback reviews and CI status are recorded in
-[PR #385](https://github.com/pandemicsyn/neondeck/pull/385); historical acceptance
+[PR #386](https://github.com/pandemicsyn/neondeck/pull/386); historical acceptance
 does not approve later changes. Each publication requires verification, two clean
 dedicated static reviews and manager acceptance.
 
@@ -243,20 +249,20 @@ privately when required; local implementation need not wait for it.
 
 ## Progress ledger
 
-This ledger records historical acceptance through increment 3 and its incorporated
+This ledger records historical acceptance through increment 4 and its incorporated
 feedback parents. Downstream branches carry their own acceptance evidence.
 Update with real evidence as work proceeds. Do not infer “implemented” from branch
 creation, “verified” from a claimed plan, or “deployed” from passing local tests.
 
-| Increment                      | State                          | Branch/base + reviewed head                                                                                                                               | PR                | Verification / review / deployment evidence                                                                                                                                                                                        |
-| ------------------------------ | ------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Plan root                      | Reviewed, open                 | `agent/software-factory-plan`; head `9aba1ae2`, base `main`                                                                                               | #382              | Documentation only; not merged/deployed                                                                                                                                                                                            |
-| 1 — Manual intake/domain       | Accepted, open                 | `agent/factory-s1-01-intake`; historical head `0c39917930b42aeacc3cbad71031d5552a29ccee`, feedback parent `192e7cf7`, base `agent/software-factory-plan`  | #383              | Feature verification: 1,594 tests at `587bbafd`; six-line CI-only follow-up independently reviewed by both reviewers and manager; all six GitHub checks pass at `0c399179`; not merged/deployed                                    |
-| 2 — Model planning             | Accepted, open                 | `agent/factory-s1-02-planning`; historical head `3210fbb00eddb54e2873b1e44bfea9eea012b9d5`, feedback parent `5d773582`, base `agent/factory-s1-01-intake` | #384              | Both dedicated static reviews and manager clean. V3 full verification: 1,623 tests on identical runtime source; final README-only clarification checked separately. All six GitHub checks pass at `3210fbb0`; not merged/deployed. |
-| 3 — Human workbench            | Accepted historical head, open | `agent/factory-s1-03-shaping`; head `8809958947531e3c7fa727accae4aab3f3073f57`, base `agent/factory-s1-02-planning`                                       | #385              | Two dedicated reviews and manager clean; 1,632-test full verification, then CSS-only overflow fix verified by dashboard rebuild and five UI states. Not merged/deployed at acceptance.                                             |
-| 4 — GitHub ingress             | Outside this acceptance record | See downstream branch                                                                                                                                     | See downstream PR | None                                                                                                                                                                                                                               |
-| 5 — GitHub status              | Outside this acceptance record | See downstream branch                                                                                                                                     | See downstream PR | None                                                                                                                                                                                                                               |
-| Full slice / deployed exercise | Outside this acceptance record | Record final accepted SHA                                                                                                                                 | —                 | Manual + GitHub + real model + restart + exposure checks pending                                                                                                                                                                   |
+| Increment                      | State                          | Branch/base + reviewed head                                                                                                                                                 | PR                | Verification / review / deployment evidence                                                                                                                                                                                                                                                                                |
+| ------------------------------ | ------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Plan root                      | Reviewed, open                 | `agent/software-factory-plan`; head `9aba1ae2`, base `main`                                                                                                                 | #382              | Documentation only; not merged/deployed                                                                                                                                                                                                                                                                                    |
+| 1 — Manual intake/domain       | Accepted, open                 | `agent/factory-s1-01-intake`; historical head `0c39917930b42aeacc3cbad71031d5552a29ccee`, feedback parent `192e7cf7`, base `agent/software-factory-plan`                    | #383              | Feature verification: 1,594 tests at `587bbafd`; six-line CI-only follow-up independently reviewed by both reviewers and manager; all six GitHub checks pass at `0c399179`; not merged/deployed                                                                                                                            |
+| 2 — Model planning             | Accepted, open                 | `agent/factory-s1-02-planning`; historical head `3210fbb00eddb54e2873b1e44bfea9eea012b9d5`, feedback parent `5d773582`, base `agent/factory-s1-01-intake`                   | #384              | Both dedicated static reviews and manager clean. V3 full verification: 1,623 tests on identical runtime source; final README-only clarification checked separately. All six GitHub checks pass at `3210fbb0`; not merged/deployed.                                                                                         |
+| 3 — Human workbench            | Accepted historical head, open | `agent/factory-s1-03-shaping`; head `8809958947531e3c7fa727accae4aab3f3073f57`, base `agent/factory-s1-02-planning`                                                         | #385              | Two dedicated reviews and manager clean; 1,632-test full verification, then CSS-only overflow fix verified by dashboard rebuild and five UI states. Not merged/deployed at acceptance.                                                                                                                                     |
+| 4 — GitHub ingress             | Accepted historical head, open | `agent/factory-s1-04-github-ingress`; accepted head `836dfe24dbb6b790865523b37f68d2b64ec9035c`, incorporated feedback parent `f14b45b4`, base `agent/factory-s1-03-shaping` | #386              | Two dedicated reviews and manager clean at historical acceptance; 1,667-test full verification followed by the separately checked mapping correction (1,531-test check). All six GitHub checks passed at `836dfe24`. Current feedback review/CI evidence is in PR #386; deployment and live setup are separate acceptance. |
+| 5 — GitHub status              | Outside this acceptance record | See downstream branch                                                                                                                                                       | See downstream PR | None                                                                                                                                                                                                                                                                                                                       |
+| Full slice / deployed exercise | Outside this acceptance record | Record final accepted SHA                                                                                                                                                   | —                 | Manual + GitHub + real model + restart + exposure checks pending                                                                                                                                                                                                                                                           |
 
 On completion, update `.plans/ROADMAP.md` and this ledger with the actual remaining
 limits. Preserve the plans as active while review/landing is underway; archive under
@@ -279,3 +285,12 @@ See [human shaping operations](INCREMENT_3_OPERATOR.md). Installed Flue 2.0.3
 `guide/react` informed the existing conversation integration; no runtime hooks,
 planner tools or model policy were changed. Pierre 1.3.6 installed declarations
 for `parseDiffFromFile` and `FileDiff` define the document renderer adapter.
+
+### Increment 4 implementation references
+
+See [GitHub intake operations](INCREMENT_4_OPERATOR.md). Installed Flue 2.0.3
+`guide/node-target`, `guide/deploy`, `guide/routing`, `reference/agent-api`, and
+`reference/agent-behavior`, plus the installed Node bootstrap/types, inform the
+owned two-listener host and attributed signal delivery. No writable agent harness
+is introduced. GitHub signature/best-practice and REST issue/comment documents and
+exe.dev's index/proxy guide were read; actual deployment routing was not changed.

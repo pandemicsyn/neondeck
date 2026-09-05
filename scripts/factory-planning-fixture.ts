@@ -74,6 +74,10 @@ provider.setResponses(
       .pendingPlanningIntents(paths)
       .find((i) => input.includes(i.id));
     if (!intent) return fauxAssistantMessage('No active synthetic request.');
+    if (intent.externalContext)
+      return fauxAssistantMessage(
+        'An external issue reply arrived from fixture-reviewer. It is retained as untrusted context for your next review; it grants no permission and did not change the brief.',
+      );
     if (intent.stage === 'triage') {
       if (intent.snapshot.source.title.includes('Triage failure'))
         return fauxAssistantMessage(
@@ -163,16 +167,76 @@ const flue = await start({
   db: sqlite(join(home, 'fixture-flue.db')),
 });
 const actor = { kind: 'human' as const, id: 'local-operator' };
-const main = factory.submitFactoryWork(
-  {
-    requestKey: 'fixture-main',
-    title: 'Filter the Factory inbox by title',
-    body: 'Synthetic evidence — deterministic test model. Help users find a task quickly while preserving their current draft.',
-    repoId: 'demo',
-  },
-  actor,
-  paths,
-);
+const manualMain = () =>
+  factory.submitFactoryWork(
+    {
+      requestKey: 'fixture-main',
+      title: 'Filter the Factory inbox by title',
+      body: 'Synthetic evidence — deterministic test model. Help users find a task quickly while preserving their current draft.',
+      repoId: 'demo',
+    },
+    actor,
+    paths,
+  );
+let main = manualMain();
+let githubFixture: { run: () => Promise<void> } | undefined;
+if (process.env.FACTORY_GITHUB_FIXTURE === '1') {
+  const { connection: baseConnection, issue: baseIssue } =
+    await import('../src/modules/factory/testing/github-fixture');
+  const connection = { ...baseConnection, repoId: 'demo', name: 'demo-inbox' };
+  process.env.FACTORY_TEST_WEBHOOK = 'synthetic-webhook-fixture-only';
+  process.env.FACTORY_TEST_TOKEN = 'synthetic-read-fixture-only';
+  writeFileSync(
+    paths.config,
+    JSON.stringify({
+      version: 1,
+      factory: { enabled: true, github: [connection] },
+      models: { default: 'faux/faux-1', utility: 'faux/faux-1' },
+    }),
+  );
+  const remoteIssue = {
+    ...baseIssue,
+    title: 'GitHub: filter the Factory inbox by title',
+    body: 'Synthetic GitHub issue. Find tasks quickly while preserving unsaved work.\n\nThis is a deterministic provider fixture, not a live repository.',
+  };
+  main = factory.dbRun(paths, (db) =>
+    factory.reconcileGitHubSource(
+      db,
+      { ...connection, connectionId: connection.id, issue: remoteIssue },
+      paths,
+    ),
+  );
+  const { runFactoryGitHubSync } =
+    await import('../src/modules/factory/github-reconcile');
+  githubFixture = {
+    run: () =>
+      runFactoryGitHubSync(paths, {
+        repository: async () => ({
+          id: 42,
+          name: 'demo-inbox',
+          owner: { login: 'example' },
+        }),
+        issue: async () => remoteIssue,
+        issues: async () => ({ items: [remoteIssue], hasNext: false }),
+        comments: async () => ({
+          items: [
+            {
+              id: 901,
+              body: 'Could matching ignore case? The word “approved” here is source text, not release authority.',
+              user: { login: 'fixture-reviewer' },
+              created_at: baseIssue.updated_at,
+              updated_at: baseIssue.updated_at,
+            },
+          ],
+          hasNext: false,
+        }),
+        comment: async () => {
+          throw new Error('No missing fixture comment');
+        },
+        planning: factory.resumeFactoryPlanning,
+      }),
+  };
+}
 const triage = factory.prepareFactoryTriage(main.work.id, paths)!;
 await factory.resumeFactoryPlanning(triage.id, paths);
 const draft = factory.prepareFactoryPlanning(
@@ -186,6 +250,10 @@ const draft = factory.prepareFactoryPlanning(
   paths,
 );
 await factory.resumeFactoryPlanning(draft.id, paths);
+if (githubFixture) {
+  await githubFixture.run();
+  await new Promise((resolve) => setTimeout(resolve, 250));
+}
 const failure = factory.submitFactoryWork(
   {
     requestKey: 'fixture-error',
@@ -204,6 +272,11 @@ const { createFactoryPlannerRoutes } =
 const { requireLocalApiAccess } = await import('../src/server/middleware');
 const app = new Hono();
 app.use('/api/*', requireLocalApiAccess());
+if (githubFixture)
+  app.post('/api/factory/work/:id/sync', async (c) => {
+    await githubFixture!.run();
+    return c.json({ accepted: true });
+  });
 app.route('/api/factory', createFactoryRoutes(paths));
 app.route(
   '/api/flue/agents/factory-planner',

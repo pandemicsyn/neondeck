@@ -1,5 +1,11 @@
 import { spawn, spawnSync } from 'node:child_process';
-import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import {
+  existsSync,
+  mkdtempSync,
+  readFileSync,
+  writeFileSync,
+  rmSync,
+} from 'node:fs';
 import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -26,6 +32,8 @@ try {
   const packageRoot = join(projectDir, 'node_modules', 'neondeck');
   for (const requiredPath of [
     'dist/server.mjs',
+    'dist/neondeck-server.mjs',
+    'dist/app.mjs',
     'dist/assets/migrations',
     'dist/skills/neon-pr-tour/SKILL.md',
     'dist/skills/neon-pr-review/SKILL.md',
@@ -141,8 +149,15 @@ async function availablePort() {
 }
 
 async function smokeServe(cli, home, port, cwd) {
+  const ingressPort = await availablePort();
   const child = spawn(cli, ['--home', home, 'serve', '--port', String(port)], {
     cwd,
+    env: {
+      ...process.env,
+      NEONDECK_INGRESS_PORT: String(ingressPort),
+      NEONDECK_INGRESS_HOST: '127.0.0.1',
+      NEONDECK_PRIVATE_HOST: '127.0.0.1',
+    },
     detached: process.platform !== 'win32',
     stdio: ['ignore', 'pipe', 'pipe'],
   });
@@ -169,16 +184,93 @@ async function smokeServe(cli, home, port, cwd) {
         const response = await fetch(`http://127.0.0.1:${port}/api/health`);
         if (response.ok) {
           await assertRuntimeSkills(port);
-          return;
+          await assertIngressIsolation(ingressPort, port);
+          break;
         }
       } catch {
         // Retry until the server binds or the deadline expires.
       }
       await new Promise((resolve) => setTimeout(resolve, 250));
     }
-    throw new Error(`Packed serve did not become healthy.\n${output}`);
+    if (Date.now() >= deadline)
+      throw new Error(`Packed serve did not become healthy.\n${output}`);
   } finally {
     await stopProcess(child);
+  }
+  for (const closedPort of [port, ingressPort]) {
+    try {
+      await fetch(`http://127.0.0.1:${closedPort}/health`, {
+        signal: AbortSignal.timeout(1000),
+      });
+    } catch {
+      continue;
+    }
+    throw new Error('Packaged listener remained reachable after shutdown.');
+  }
+  await smokeManagedEntry(home, port, ingressPort, cwd);
+  await assertBindRollback(cli, home, port, ingressPort, cwd);
+}
+
+// systemd/launchd invoke the packaged entry directly, without the CLI env loader.
+async function smokeManagedEntry(home, port, ingressPort, cwd) {
+  const envPath = join(home, '.env');
+  const original = existsSync(envPath) ? readFileSync(envPath, 'utf8') : null;
+  const env = {
+    ...process.env,
+    NEONDECK_HOME: home,
+    NEONDECK_PORT: String(port),
+    PORT: String(port),
+  };
+  delete env.NEONDECK_INGRESS_PORT;
+  delete env.NEONDECK_INGRESS_HOST;
+  delete env.NEONDECK_PRIVATE_HOST;
+  writeFileSync(
+    envPath,
+    `${original ?? ''}\nNEONDECK_INGRESS_PORT=${ingressPort}\nNEONDECK_INGRESS_HOST=127.0.0.1\nNEONDECK_PRIVATE_HOST=::1\n`,
+  );
+  const entry = join(cwd, 'node_modules', 'neondeck', 'dist', 'server.mjs');
+  const child = spawn(process.execPath, [entry], {
+    cwd,
+    env,
+    detached: process.platform !== 'win32',
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  let output = '';
+  child.stdout.on('data', (chunk) => {
+    output += String(chunk);
+  });
+  child.stderr.on('data', (chunk) => {
+    output += String(chunk);
+  });
+  try {
+    const deadline = Date.now() + 15000;
+    for (;;) {
+      try {
+        const privateHealth = await fetch(`http://[::1]:${port}/api/health`);
+        const publicHealth = await fetch(
+          `http://127.0.0.1:${ingressPort}/health`,
+        );
+        if (privateHealth.ok && publicHealth.ok) break;
+      } catch {
+        /* startup */
+      }
+      if (child.exitCode !== null || Date.now() > deadline)
+        throw new Error(
+          `Direct managed entry failed runtime-home listener config.\n${output}`,
+        );
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+    if (
+      (await fetch(`http://127.0.0.1:${ingressPort}/api/health`)).status !== 404
+    )
+      throw new Error('Managed public listener exposed private route');
+    console.info(
+      'Direct managed entry: runtime-home .env, IPv6 private health and public isolation passed.',
+    );
+  } finally {
+    await stopProcess(child);
+    if (original === null) rmSync(envPath);
+    else writeFileSync(envPath, original);
   }
 }
 
@@ -219,4 +311,78 @@ async function stopProcess(child) {
     exited,
     new Promise((resolve) => setTimeout(resolve, 5_000)),
   ]);
+}
+
+async function assertIngressIsolation(ingressPort, privatePort) {
+  const health = await fetch(`http://127.0.0.1:${ingressPort}/health`);
+  if (!health.ok) throw new Error('Packed ingress health failed.');
+  for (const path of [
+    '/api/health',
+    '/api/factory/state',
+    '/api/flue/agents/factory-planner/test',
+    '/agents/test',
+    '/reports/test',
+    '/attachments/test',
+    '/assets/test.js',
+    '/',
+    '/factory',
+  ]) {
+    const response = await fetch(`http://127.0.0.1:${ingressPort}${path}`, {
+      headers: { Host: 'localhost', Origin: `http://localhost:${privatePort}` },
+    });
+    if (response.status !== 404)
+      throw new Error(
+        `Packed public listener exposed ${path}: ${response.status}`,
+      );
+  }
+  const planner = await fetch(
+    `http://127.0.0.1:${privatePort}/api/flue/agents/factory-planner/unbound?view=history`,
+  );
+  if (planner.status !== 403)
+    throw new Error('Packed planner binding route missing.');
+}
+async function assertBindRollback(cli, home, port, ingressPort, cwd) {
+  const occupied = createServer();
+  await new Promise((resolve, reject) => {
+    occupied.once('error', reject);
+    occupied.listen(ingressPort, '127.0.0.1', resolve);
+  });
+  try {
+    const child = spawn(
+      cli,
+      ['--home', home, 'serve', '--port', String(port)],
+      {
+        cwd,
+        stdio: 'ignore',
+        env: {
+          ...process.env,
+          NEONDECK_INGRESS_PORT: String(ingressPort),
+          NEONDECK_INGRESS_HOST: '127.0.0.1',
+        },
+      },
+    );
+    const code = await Promise.race([
+      new Promise((resolve, reject) => {
+        child.once('error', reject);
+        child.once('exit', resolve);
+      }),
+      new Promise((_, reject) =>
+        setTimeout(() => {
+          child.kill('SIGTERM');
+          reject(new Error('Packed bind failure did not terminate.'));
+        }, 10000).unref(),
+      ),
+    ]);
+    if (code === 0) throw new Error('Packed bind failure reported success.');
+    try {
+      await fetch(`http://127.0.0.1:${port}/api/health`, {
+        signal: AbortSignal.timeout(1000),
+      });
+    } catch {
+      return;
+    }
+    throw new Error('Packed bind failure left private listener reachable.');
+  } finally {
+    await new Promise((resolve) => occupied.close(resolve));
+  }
 }

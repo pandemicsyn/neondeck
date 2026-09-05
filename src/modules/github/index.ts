@@ -129,3 +129,11 @@ export type {
   GitHubQueueIssue,
   PullRequestQueueRelation,
 } from './schemas';
+export {
+  readFactoryGitHubIssue,
+  readFactoryGitHubIssuesPage,
+  readFactoryGitHubCommentsPage,
+  readFactoryGitHubComment,
+  readFactoryGitHubRepository,
+} from './factory-issues';
+export { GitHubApiError } from './errors';

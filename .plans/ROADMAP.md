@@ -91,13 +91,18 @@ human shaping workbench was manager-accepted at `8809958947531e3c7fa727accae4aab
 and opened as PR #385 against planning after two clean dedicated reviews and
 1,632-test full verification, followed by the separately verified CSS-only overflow
 fix (dashboard rebuild and five UI states). These are historical acceptance records;
-subsequent feedback fixes require their own review. GitHub ingress/writeback are
-outside this increment's acceptance record.
+subsequent feedback fixes require their own review. GitHub ingress was accepted at
+`836dfe24dbb6b790865523b37f68d2b64ec9035c` and opened as PR #386 after two clean
+reviews and manager acceptance, with 1,667-test full verification and a separately
+checked mapping correction. The accepted shaping feedback parent `f14b45b4` is
+incorporated into ingress. Writeback and live deployment acceptance are outside
+this branch's acceptance record.
 Accepted intake feedback parent `192e7cf7` and planning feedback parent `5d773582`
 are incorporated. Current feedback review and CI status are recorded in
 [PR #383](https://github.com/pandemicsyn/neondeck/pull/383),
 [PR #384](https://github.com/pandemicsyn/neondeck/pull/384), and
-[PR #385](https://github.com/pandemicsyn/neondeck/pull/385). Every changed candidate
+[PR #385](https://github.com/pandemicsyn/neondeck/pull/385), and
+[PR #386](https://github.com/pandemicsyn/neondeck/pull/386). Every changed candidate
 requires verification, two clean independent reviews and manager acceptance before
 publication. Actual deviations belong in `DEVIATIONS.md`; preserve existing coding harnesses and
 do not revive the removed PR Autopilot coordinator.

@@ -163,3 +163,28 @@ it('returns 400 for malformed planning input before creating a planning intent',
   ).json();
   expect(state.sessionId).toBeNull();
 });
+
+it('keeps discussion scoped and private and validates cursors', async () => {
+  await request('/config', { enabled: true });
+  const work = await (
+    await request('/work', {
+      requestKey: 'comments',
+      title: 'Task',
+      body: '',
+      repoId: null,
+    })
+  ).json();
+  const path = `/work/${work.work.id}/comments`;
+  expect(await (await request(path)).json()).toEqual({
+    comments: [],
+    nextCursor: null,
+  });
+  expect((await request(`${path}?cursor=invalid`)).status).toBe(400);
+  expect(
+    (await request(path, undefined, { host: 'example.invalid' })).status,
+  ).toBe(404);
+  expect((await request('/work/missing/comments')).status).toBe(404);
+  expect(await (await request('/github')).json()).not.toHaveProperty(
+    'comments',
+  );
+});

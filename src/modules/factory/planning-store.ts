@@ -74,6 +74,7 @@ export const intentSchema = v.object({
   snapshot: factoryDetailSchema,
   context: contextSchema,
   triageOnly: v.optional(v.boolean(), false),
+  externalContext: v.optional(v.boolean(), false),
   stage: v.picklist(['triage', 'planner', 'completed', 'failed']),
   triage: v.nullable(triageResultSchema),
   triageModel: v.optional(nullable, null),
@@ -267,6 +268,7 @@ export function prepareFactoryPlanning(
       },
       context: triageOnly ? captureContext(current, paths) : binding.context,
       triageOnly,
+      externalContext: false,
       stage: !triageOnly && reusableTriage ? 'planner' : 'triage',
       triage: !triageOnly ? reusableTriage : null,
       triageModel: reusableTriage && !triageOnly ? previous!.triageModel : null,
@@ -426,6 +428,11 @@ export function authorizePlanningIntent(
     );
   readFactoryPlannerSession(db, sessionId, intent.workId);
   const current = detail(db, intent.workId, paths);
+  if (intent.externalContext)
+    throw new FactoryError(
+      403,
+      'External replies are context only and cannot propose revisions.',
+    );
   if (['paused', 'closed', 'queued'].includes(current.work.lifecycle))
     throw new FactoryError(409, 'Task is not open for planning.');
   expectVersion(current, intent.snapshot.work.version);
@@ -595,4 +602,64 @@ export function prepareFactoryTriage(
     paths,
     true,
   );
+}
+
+/** Persist an attributed, capability-free context turn in the existing planner.
+ * No binding is created until a human has explicitly started planning. */
+export function prepareGitHubContext(
+  db: DatabaseSync,
+  workId: string,
+  key: string,
+  message: string,
+  paths: RuntimePaths,
+) {
+  const prior = read(
+    db,
+    'SELECT record FROM factory_planning_intents WHERE work_id=? AND request_key=?',
+    intentSchema,
+    workId,
+    key,
+  );
+  if (prior) return prior;
+  const binding = readBinding(db, workId);
+  const started = db
+    .prepare(
+      "SELECT id FROM factory_planning_intents WHERE work_id=? AND json_extract(record,'$.triageOnly')=0 AND json_extract(record,'$.externalContext') IS NOT 1 LIMIT 1",
+    )
+    .get(workId);
+  if (!binding || !started) return null;
+  const current = detail(db, workId, paths);
+  if (['paused', 'closed', 'queued'].includes(current.work.lifecycle))
+    return null;
+  const latest = latestIntent(db, workId);
+  if (latest && ['triage', 'planner'].includes(latest.stage)) return null;
+  const intent: PlanningIntent = {
+    id: randomUUID(),
+    workId,
+    sessionId: binding.sessionId,
+    requestKey: key,
+    requestHash: hashPlanning(message),
+    message,
+    snapshot: {
+      ...current,
+      revisions: current.revisions.slice(-1),
+      releases: [],
+    },
+    context: binding.context,
+    triageOnly: false,
+    externalContext: true,
+    stage: 'planner',
+    triage: latest?.triage ?? null,
+    triageModel: latest?.triageModel ?? null,
+    triageCandidates: [],
+    triageSubmissionId: null,
+    submissionId: null,
+    error: null,
+    createdAt: new Date().toISOString(),
+    abortRequested: false,
+  };
+  db.prepare(
+    'INSERT INTO factory_planning_intents(id,work_id,request_key,record) VALUES(?,?,?,?)',
+  ).run(intent.id, workId, key, JSON.stringify(intent));
+  return intent;
 }

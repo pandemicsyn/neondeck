@@ -1564,3 +1564,24 @@ export const factoryPlanningEffects = sqliteTable('factory_planning_effects', {
     .references(() => factoryPlanningIntents.id),
   record: text('record').notNull(),
 });
+
+export const factoryGitHubDeliveries = sqliteTable(
+  'factory_github_deliveries',
+  {
+    id: text('id').primaryKey(),
+    connectionId: text('connection_id').notNull(),
+    issueNumber: integer('issue_number').notNull(),
+    record: text('record').notNull(),
+  },
+);
+export const factoryGitHubSync = sqliteTable('factory_github_sync', {
+  id: text('id').primaryKey(),
+  record: text('record').notNull(),
+});
+export const factoryGitHubComments = sqliteTable('factory_github_comments', {
+  id: text('id').primaryKey(),
+  workId: text('work_id')
+    .notNull()
+    .references(() => factoryWorkItems.id),
+  record: text('record').notNull(),
+});
