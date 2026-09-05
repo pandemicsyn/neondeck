@@ -1,0 +1,2810 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="dark light" />
+    <meta
+      name="description"
+      content="A proposal for Neondeck's initial software factory: flexible intake, Codex and OpenCode workers, durable coordination, and exe.dev deployment."
+    />
+    <title>Neon / Software factory proposal</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: oklch(15% 0.013 275);
+        --surface: oklch(19% 0.018 260);
+        --ink: oklch(94% 0.025 218);
+        --muted: oklch(75% 0.025 218);
+        --line: oklch(34% 0.025 240);
+        --cyan: oklch(84% 0.12 212);
+        --pink: oklch(77% 0.17 345);
+        --green: oklch(85% 0.15 155);
+        --amber: oklch(84% 0.12 80);
+        --mono: 'IBM Plex Mono', 'SFMono-Regular', Consolas, monospace;
+        --sans:
+          'IBM Plex Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI',
+          sans-serif;
+      }
+      :root[data-theme='light'] {
+        color-scheme: light;
+        --bg: oklch(97% 0.009 220);
+        --surface: oklch(93% 0.018 220);
+        --ink: oklch(25% 0.025 250);
+        --muted: oklch(43% 0.028 230);
+        --line: oklch(75% 0.025 230);
+        --cyan: oklch(43% 0.08 215);
+        --pink: oklch(43% 0.17 345);
+        --green: oklch(42% 0.1 155);
+        --amber: oklch(44% 0.08 70);
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html {
+        scroll-behavior: smooth;
+        scroll-padding-top: 88px;
+      }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--ink);
+        font: 16px/1.65 var(--sans);
+      }
+      a {
+        color: var(--cyan);
+        text-decoration-thickness: 1px;
+        text-underline-offset: 0.22em;
+      }
+      a:hover {
+        color: var(--ink);
+      }
+      :focus-visible {
+        outline: 2px solid var(--pink);
+        outline-offset: 5px;
+      }
+      button,
+      select {
+        font: 13px var(--mono);
+        color: var(--ink);
+        background: var(--surface);
+        border: 1px solid var(--line);
+        padding: 10px 12px;
+        border-radius: 0;
+      }
+      button {
+        cursor: pointer;
+      }
+      button:hover,
+      select:hover {
+        border-color: var(--cyan);
+      }
+      .skip {
+        position: fixed;
+        top: -100px;
+        left: 15px;
+        padding: 10px;
+        background: var(--bg);
+        z-index: 30;
+      }
+      .skip:focus {
+        top: 12px;
+      }
+      .masthead {
+        position: sticky;
+        top: 0;
+        z-index: 20;
+        background: var(--bg);
+        border-bottom: 1px solid var(--line);
+        min-height: 62px;
+        padding: 12px 30px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+      }
+      .brand {
+        font: 15px var(--mono);
+        display: flex;
+        gap: 12px;
+        align-items: center;
+      }
+      .brand svg {
+        width: 26px;
+        height: 26px;
+        fill: var(--pink);
+      }
+      .brand span {
+        color: var(--muted);
+      }
+      .tools {
+        display: flex;
+        gap: 8px;
+      }
+      .layout {
+        max-width: 1510px;
+        margin: auto;
+        display: grid;
+        grid-template-columns: 224px minmax(0, 1fr);
+      }
+      .sidebar {
+        position: sticky;
+        top: 90px;
+        max-height: calc(100vh - 90px);
+        overflow-y: auto;
+        align-self: start;
+        padding: 36px 22px 24px 30px;
+      }
+      .sidebar p {
+        color: var(--muted);
+        font: 12px/1.6 var(--mono);
+      }
+      .sidebar a {
+        display: block;
+        padding: 8px 0;
+        color: var(--muted);
+        text-decoration: none;
+        font-size: 14px;
+      }
+      .sidebar a:hover,
+      .sidebar a[aria-current='location'] {
+        color: var(--cyan);
+      }
+      .sidebar .meta {
+        border-top: 1px solid var(--line);
+        margin-top: 24px;
+        padding-top: 16px;
+      }
+      main {
+        min-width: 0;
+        padding: 52px 54px 70px;
+        border-left: 1px solid var(--line);
+      }
+      .intro {
+        padding-bottom: 34px;
+      }
+      .status {
+        color: var(--pink);
+        font: 12px var(--mono);
+        display: flex;
+        gap: 12px;
+        align-items: center;
+      }
+      .status::before {
+        content: '';
+        width: 8px;
+        height: 8px;
+        background: var(--pink);
+      }
+      h1,
+      h2,
+      h3 {
+        line-height: 1.18;
+        text-wrap: balance;
+      }
+      h1 {
+        font-size: 54px;
+        font-weight: 600;
+        letter-spacing: -0.035em;
+        margin: 25px 0;
+        max-width: 16ch;
+      }
+      h1 em {
+        color: var(--cyan);
+        font-style: normal;
+      }
+      h2 {
+        font-size: 29px;
+        letter-spacing: -0.02em;
+        margin: 0 0 22px;
+      }
+      h3 {
+        font-size: 19px;
+        margin: 28px 0 12px;
+      }
+      p {
+        max-width: 74ch;
+        margin: 0 0 18px;
+        text-wrap: pretty;
+      }
+      .lead {
+        font-size: 20px;
+        line-height: 1.55;
+        max-width: 64ch;
+      }
+      .muted,
+      .caption {
+        color: var(--muted);
+      }
+      .caption {
+        font-size: 13px;
+        margin-top: 14px;
+      }
+      section {
+        padding: 42px 0;
+        border-top: 1px solid var(--line);
+      }
+      .decision {
+        background: var(--surface);
+        padding: 22px 24px;
+        margin-top: 28px;
+      }
+      .decision p:last-child {
+        margin-bottom: 0;
+      }
+      .decision strong {
+        color: var(--green);
+      }
+      .split {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 32px;
+      }
+      .split > * {
+        min-width: 0;
+      }
+      .split h3 {
+        margin-top: 0;
+      }
+      ul,
+      ol {
+        padding-left: 22px;
+        max-width: 80ch;
+      }
+      li {
+        padding-left: 3px;
+        margin: 8px 0;
+      }
+      code {
+        font: 0.85em var(--mono);
+        overflow-wrap: anywhere;
+        color: var(--cyan);
+      }
+      pre {
+        background: var(--surface);
+        padding: 22px;
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+        font: 12px/1.7 var(--mono);
+      }
+      pre code {
+        font: inherit;
+        color: var(--ink);
+      }
+      .table-wrap {
+        overflow-x: auto;
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        text-align: left;
+        font-size: 14px;
+      }
+      th {
+        color: var(--muted);
+        font: 12px/1.5 var(--mono);
+        padding: 12px 14px;
+        background: var(--surface);
+      }
+      td {
+        padding: 16px 14px;
+        vertical-align: top;
+        border-bottom: 1px solid var(--line);
+      }
+      td:first-child {
+        width: 22%;
+      }
+      td p {
+        margin-bottom: 8px;
+      }
+      .tag {
+        display: inline-block;
+        font: 11px var(--mono);
+        padding: 4px 6px;
+        margin-bottom: 7px;
+        border: 1px solid currentColor;
+      }
+      .reuse {
+        color: var(--green);
+      }
+      .adapt {
+        color: var(--cyan);
+      }
+      .new {
+        color: var(--pink);
+      }
+      .retire {
+        color: var(--amber);
+      }
+      .flow {
+        display: flex;
+        gap: 0;
+        list-style: none;
+        padding: 0;
+        max-width: none;
+        margin: 28px 0;
+      }
+      .flow li {
+        flex: 1;
+        min-width: 0;
+        margin: 0;
+        padding: 0;
+        position: relative;
+      }
+      .flow li + li::before {
+        content: '→';
+        position: absolute;
+        left: -7px;
+        top: 18px;
+        color: var(--muted);
+        z-index: 1;
+      }
+      .flow a {
+        display: block;
+        padding: 15px 12px;
+        border: 1px solid var(--line);
+        text-decoration: none;
+        height: 100%;
+        margin-right: 12px;
+        font-size: 14px;
+      }
+      .flow li:last-child a {
+        margin-right: 0;
+      }
+      .flow small {
+        display: block;
+        color: var(--muted);
+        font: 10px/1.5 var(--mono);
+        margin-top: 8px;
+      }
+      .flow a:hover {
+        background: var(--surface);
+      }
+      .phase {
+        display: grid;
+        grid-template-columns: 40px 175px 1fr;
+        gap: 18px;
+        padding: 23px 0;
+        border-top: 1px solid var(--line);
+        scroll-margin-top: 85px;
+      }
+      .phase .num {
+        font: 15px var(--mono);
+        color: var(--cyan);
+        padding-top: 3px;
+      }
+      .phase h3 {
+        margin: 0 0 9px;
+      }
+      .phase .owner {
+        color: var(--muted);
+        font: 12px/1.5 var(--mono);
+      }
+      .phase p {
+        margin: 0;
+        font-size: 15px;
+      }
+      .phase p + p {
+        margin-top: 8px;
+      }
+      .phase .output {
+        color: var(--muted);
+      }
+      details {
+        border-bottom: 1px solid var(--line);
+        padding: 18px 0;
+      }
+      summary {
+        cursor: pointer;
+        font-weight: 600;
+      }
+      details > :not(summary) {
+        margin-top: 18px;
+      }
+      .topology {
+        border: 1px solid var(--line);
+        padding: 26px;
+        margin: 20px 0;
+      }
+      .topology .top-row {
+        display: flex;
+        justify-content: space-between;
+        gap: 24px;
+        align-items: center;
+        margin-bottom: 24px;
+      }
+      .topology h3 {
+        margin: 0;
+      }
+      .machine {
+        background: var(--surface);
+        padding: 22px;
+        min-width: 0;
+      }
+      .machine strong {
+        color: var(--cyan);
+      }
+      .machine p {
+        font-size: 14px;
+        margin: 12px 0 0;
+      }
+      .connection {
+        text-align: center;
+        color: var(--muted);
+        font: 12px/1.6 var(--mono);
+        padding: 16px 0;
+      }
+      .machine.worker strong {
+        color: var(--green);
+      }
+      .artifact {
+        font: 13px/1.8 var(--mono);
+        color: var(--muted);
+      }
+      .source-list td:first-child {
+        width: 30%;
+      }
+      footer {
+        border-top: 1px solid var(--line);
+        padding-top: 22px;
+        color: var(--muted);
+        font-size: 13px;
+      }
+      @media (max-width: 1100px) {
+        main {
+          padding: 42px 30px;
+        }
+        .layout {
+          grid-template-columns: 190px minmax(0, 1fr);
+        }
+        .sidebar {
+          padding-left: 22px;
+        }
+        .flow {
+          flex-wrap: wrap;
+          gap: 10px;
+        }
+        .flow li {
+          flex: 1 1 27%;
+        }
+        .flow li + li::before {
+          display: none;
+        }
+        .flow a {
+          margin-right: 0;
+        }
+        .phase {
+          grid-template-columns: 30px 135px 1fr;
+          gap: 12px;
+        }
+      }
+      @media (max-width: 760px) {
+        html {
+          scroll-padding-top: 115px;
+        }
+        .masthead {
+          padding: 12px 18px;
+        }
+        .brand span {
+          display: none;
+        }
+        .layout {
+          display: block;
+        }
+        .sidebar {
+          position: static;
+          max-height: none;
+          overflow-y: visible;
+          padding: 16px 20px;
+          border-bottom: 1px solid var(--line);
+        }
+        .sidebar nav {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 2px 18px;
+        }
+        .sidebar a {
+          font-size: 12px;
+          padding: 5px 0;
+        }
+        .sidebar > p,
+        .sidebar .meta {
+          display: none;
+        }
+        main {
+          padding: 32px 20px;
+          border-left: 0;
+        }
+        h1 {
+          font-size: 40px;
+        }
+        h2 {
+          font-size: 26px;
+        }
+        .lead {
+          font-size: 18px;
+        }
+        section {
+          padding: 32px 0;
+        }
+        .split {
+          grid-template-columns: 1fr;
+          gap: 20px;
+        }
+        .phase {
+          grid-template-columns: 25px 1fr;
+          gap: 12px;
+        }
+        .phase > div:last-child {
+          grid-column: 2;
+        }
+        .flow li {
+          flex-basis: 28%;
+        }
+        .flow a {
+          font-size: 12px;
+          padding: 12px 8px;
+        }
+        th,
+        td {
+          padding: 12px 9px;
+        }
+        table {
+          min-width: 580px;
+        }
+        .topology {
+          padding: 16px;
+        }
+        .topology .top-row {
+          align-items: start;
+          flex-direction: column;
+          gap: 12px;
+        }
+        .tools button {
+          padding: 9px;
+          font-size: 11px;
+        }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        html {
+          scroll-behavior: auto;
+        }
+      }
+      @media print {
+        :root {
+          --bg: white;
+          --surface: #eee;
+          --ink: #15202a;
+          --muted: #39434a;
+          --line: #a5adb3;
+          --cyan: #005b69;
+          --pink: #922050;
+          --green: #17623e;
+          --amber: #765100;
+        }
+        body {
+          font-size: 10pt;
+        }
+        .masthead {
+          position: static;
+        }
+        .sidebar,
+        .tools,
+        .skip,
+        .topology select,
+        .topology label {
+          display: none;
+        }
+        .layout {
+          display: block;
+        }
+        main {
+          padding: 24px 0;
+          border: 0;
+        }
+        section {
+          padding: 24px 0;
+        }
+        h1 {
+          font-size: 34pt;
+        }
+        h2 {
+          font-size: 20pt;
+        }
+        h2,
+        h3 {
+          break-after: avoid;
+        }
+        tr,
+        .phase,
+        .machine {
+          break-inside: avoid;
+        }
+        table {
+          min-width: 0;
+        }
+        .table-wrap {
+          overflow: visible;
+        }
+        a {
+          text-decoration: underline;
+        }
+        details > * {
+          display: block;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <a class="skip" href="#proposal">Skip to proposal</a>
+    <header class="masthead">
+      <div class="brand">
+        <svg viewBox="0 0 30 30" aria-hidden="true">
+          <path
+            d="M15 1 29 15 15 29 1 15Zm-1 8-5 9h4l-1 5 9-12h-5l2-5Z"
+            fill-rule="evenodd"
+          /></svg
+        >neon <span>/ factory design note</span>
+      </div>
+      <div class="tools">
+        <button id="theme" type="button" aria-label="Switch to light theme">
+          Light theme</button
+        ><button id="print" type="button">Print / PDF</button>
+      </div>
+    </header>
+    <div class="layout">
+      <aside class="sidebar">
+        <p>Proposal · v0.1<br />September 5, 2026</p>
+        <nav aria-label="Document sections">
+          <a href="#proposal">Recommendation</a
+          ><a href="#workflow">Factory workflow</a
+          ><a href="#human-touchpoints">Human touchpoints</a
+          ><a href="#intake">Flexible intake</a
+          ><a href="#issue-writeback">GitHub issue updates</a
+          ><a href="#planning">Planning with humans</a
+          ><a href="#shaping-ui">Shaping workbench</a
+          ><a href="#sessions">Coding sessions</a
+          ><a href="#deployment">Running on exe.dev</a
+          ><a href="#integration">Reuse &amp; changes</a
+          ><a href="#contracts">State &amp; contracts</a
+          ><a href="#delivery">Delivery &amp; feedback</a
+          ><a href="#rollout">Implementation slices</a
+          ><a href="#research">Research &amp; sources</a>
+        </nav>
+        <p class="meta">
+          One repository per run.<br />One writer per workspace.<br />A human at
+          merge.
+        </p>
+      </aside>
+      <main>
+        <div class="intro" id="proposal">
+          <div class="status">Proposed architecture · for iteration</div>
+          <h1>A small factory.<br /><em>Neon runs the line.</em></h1>
+          <p class="lead">
+            Turn incoming work into scoped, verified pull requests. Neon owns
+            intake, coordination, evidence, and follow-through. Codex or
+            OpenCode owns the coding session.
+          </p>
+          <p class="muted">
+            Start with a persistent exe.dev host, SQLite, a deterministic state
+            machine, and managed Git worktrees. Keep the agent harness and the
+            machine it runs on independently replaceable.
+          </p>
+          <div class="decision">
+            <p>
+              <strong>Recommended first version:</strong> GitHub issue webhooks
+              + manual intake; a lightweight model triages eligible work; Neon
+              investigates and iterates on a plan with the human in a persistent
+              planning conversation; the human releases the agreed brief into
+              the queue; a configured Codex or OpenCode worker implements it;
+              Neon verifies, opens a draft PR, and follows CI and review. A
+              human decides whether to merge.
+            </p>
+            <p>
+              Linear fits the same intake contract as the next connector. Remote
+              worker VMs fit the same execution contract as the next host
+              adapter. Neither requires another factory or a new coding agent.
+            </p>
+          </div>
+          <p class="caption">
+            This is a design proposal, not shipped behavior. Existing
+            capabilities below were checked against this checkout, including
+            Flue 2.0.3. Proposed defaults are starting points for discussion.
+          </p>
+        </div>
+
+        <section id="workflow">
+          <h2>The line, and who owns each station</h2>
+          <p>
+            Use a fixed sequence with explicit return paths. These are
+            application phases; they do not require six long-lived agents or a
+            workflow designer.
+          </p>
+          <ol class="flow" aria-label="Factory phases">
+            <li>
+              <a href="#phase-intake">Intake<small>events → work</small></a>
+            </li>
+            <li>
+              <a href="#phase-shape">Shape<small>intent → contract</small></a>
+            </li>
+            <li>
+              <a href="#phase-build">Build<small>external harness</small></a>
+            </li>
+            <li>
+              <a href="#phase-verify">Verify<small>evidence + review</small></a>
+            </li>
+            <li>
+              <a href="#phase-deliver"
+                >Deliver<small>draft PR → merge</small></a
+              >
+            </li>
+            <li>
+              <a href="#phase-observe"
+                >Observe<small>feedback → intake</small></a
+              >
+            </li>
+          </ol>
+          <div class="phase" id="phase-intake">
+            <span class="num">1</span>
+            <div>
+              <h3>Intake &amp; triage</h3>
+              <span class="owner">Services + lightweight triage model</span>
+            </div>
+            <div>
+              <p>
+                Validate the event, refresh source facts, group related signals,
+                and resolve the registered repository. Classify: implement,
+                investigate, clarify, duplicate, defer, or decline. Ambiguous
+                ownership stays in the inbox.
+              </p>
+              <p class="output">
+                Output: a WorkItem, source links, reason, priority, and next
+                action. Workspace allocation happens after queue admission.
+              </p>
+            </div>
+          </div>
+          <div class="phase" id="phase-shape">
+            <span class="num">2</span>
+            <div>
+              <h3>Plan with the human</h3>
+              <span class="owner"
+                >Neon planning model + human conversation</span
+              >
+            </div>
+            <div>
+              <p>
+                Neon investigates the repository, proposes a brief and approach,
+                explains tradeoffs, and asks focused questions. The human and
+                planner iterate in a persistent conversation while Neon updates
+                the versioned brief, acceptance checks, and implementation plan.
+                Use mocks or diagrams where they help make a decision. The human
+                releases the agreed plan when the scope is clear.
+              </p>
+              <p class="output">
+                Output: linked planning conversation + versioned TaskSpec +
+                validation contract + approval to queue. Approval binds that
+                spec version, repository, and authority.
+              </p>
+            </div>
+          </div>
+          <div class="phase" id="phase-build">
+            <span class="num">3</span>
+            <div>
+              <h3>Implement</h3>
+              <span class="owner">Codex or OpenCode</span>
+            </div>
+            <div>
+              <p>
+                The dispatcher leases a workspace and starts an external coding
+                session with the approved brief. The harness explores, edits,
+                runs tests, and manages its own tools and context. Neon monitors
+                its process and results; it does not implement a second
+                edit–tool–model loop.
+              </p>
+              <p class="output">
+                Output: candidate revision, diff, session reference, check logs,
+                and decisions or unresolved assumptions.
+              </p>
+            </div>
+          </div>
+          <div class="phase" id="phase-verify">
+            <span class="num">4</span>
+            <div>
+              <h3>Verify &amp; review</h3>
+              <span class="owner">Checks + fresh reviewer</span>
+            </div>
+            <div>
+              <p>
+                Run the configured checks independently, then review the exact
+                candidate revision against the approved contract. Use Neon's
+                read-only reviewer and behavior evidence where applicable. The
+                reviewer reports findings and cannot fix them. Failures return a
+                bounded fix brief to the coding adapter.
+              </p>
+              <p class="output">
+                Output: revision-bound evidence and findings. Start with at most
+                two repair attempts; then block for an operator decision.
+              </p>
+            </div>
+          </div>
+          <div class="phase" id="phase-deliver">
+            <span class="num">5</span>
+            <div>
+              <h3>Deliver &amp; shepherd</h3>
+              <span class="owner">Typed GitHub services + human</span>
+            </div>
+            <div>
+              <p>
+                Publish the candidate branch and create or update one draft PR
+                under the task's granted authority. Attach the plan, evidence,
+                and risks. Existing PR watches collect CI and review feedback;
+                any code repair returns through the same factory run. The human
+                makes the merge decision.
+              </p>
+              <p class="output">
+                Output: PR URL, delivery receipt, watch link, and merge/closed
+                outcome.
+              </p>
+            </div>
+          </div>
+          <div class="phase" id="phase-observe">
+            <span class="num">6</span>
+            <div>
+              <h3>Observe &amp; learn</h3>
+              <span class="owner">Existing watches + learning services</span>
+            </div>
+            <div>
+              <p>
+                Follow available release/deployment checks. Record whether the
+                task merged, was abandoned, or caused follow-up work. Feed
+                actionable new signals into intake and settled outcomes into
+                audited learning.
+              </p>
+              <p class="output">
+                Output: outcome record and linked follow-up items. A merged PR
+                is not proof of a successful deployment.
+              </p>
+            </div>
+          </div>
+          <div class="decision">
+            <p>
+              <strong>The practical synthesis:</strong> borrow upstream design
+              and small slices from Dex, independent verification from
+              Factory/StrongDM, and product feedback from PostHog. Keep human
+              code review available in Neondeck's existing workbench. A green
+              test suite alone cannot certify maintainability.
+              <a href="#research">Research notes ↗</a>
+            </p>
+          </div>
+        </section>
+
+        <section id="human-touchpoints">
+          <h2>Where humans plug in</h2>
+          <p>
+            Humans collaborate with the planning model, release the agreed
+            scope, and decide whether to merge. Neon carries the work between
+            those points. Additional interruptions happen when a concrete
+            decision falls outside the authority already granted.
+          </p>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Touchpoint / when</th>
+                  <th>What Neon brings</th>
+                  <th>Human action &amp; what follows</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>
+                    <strong>Configure the factory</strong><br /><span
+                      class="tag adapt"
+                      >Setup / policy changes</span
+                    >
+                  </td>
+                  <td>
+                    Proposed source/repo mappings, triage and planning models,
+                    coding harness, execution host, budgets, and publication
+                    permissions, with readiness checks.
+                  </td>
+                  <td>
+                    Choose the standing policy. Neon applies it to eligible
+                    work; it does not ask again for each already-authorized
+                    action. Material policy changes do not silently broaden an
+                    active run's authority.
+                  </td>
+                </tr>
+                <tr>
+                  <td>
+                    <strong>Shape the task together</strong><br /><span
+                      class="tag adapt"
+                      >Collaboration</span
+                    >
+                  </td>
+                  <td>
+                    Repository investigation, a proposed brief and plan,
+                    acceptance criteria, alternatives, and focused questions.
+                    Mocks or diagrams make design decisions concrete.
+                  </td>
+                  <td>
+                    Discuss, correct assumptions, and choose an approach in the
+                    persistent planning chat. Neon does the drafting and
+                    revision work. Unresolved ownership or intent returns here
+                    from triage; routine classification needs no approval.
+                  </td>
+                </tr>
+                <tr>
+                  <td>
+                    <strong>Release the plan</strong><br /><span class="tag new"
+                      >Required in v1</span
+                    >
+                  </td>
+                  <td>
+                    The current spec version, implementation plan, validation
+                    contract, open assumptions, execution budget, and exact
+                    publication authority requested.
+                  </td>
+                  <td>
+                    Release that version, request revisions, defer, or cancel.
+                    Release queues the task and permits implementation,
+                    verification, and bounded repairs. Draft-PR publication can
+                    be included explicitly in this same decision.
+                  </td>
+                </tr>
+                <tr>
+                  <td>
+                    <strong>Resolve an exception</strong><br /><span
+                      class="tag retire"
+                      >Only when blocked</span
+                    >
+                  </td>
+                  <td>
+                    A material scope discovery, exhausted repair budget, missing
+                    capability, uncertain worker state, or missing delivery
+                    authority, together with evidence and a recommended next
+                    step.
+                  </td>
+                  <td>
+                    Iterate with the planner, approve a revised spec or bounded
+                    authority, retry after fixing the blocker, or cancel. Stop
+                    the affected work at a safe checkpoint. In-scope fixes
+                    continue without another human gate.
+                  </td>
+                </tr>
+                <tr>
+                  <td>
+                    <strong>Review and merge</strong><br /><span class="tag new"
+                      >Required in v1</span
+                    >
+                  </td>
+                  <td>
+                    The PR diff, acceptance evidence, current CI, independent
+                    review findings, and deviations from the plan, linked to the
+                    exact candidate revision.
+                  </td>
+                  <td>
+                    Review with Neon in the existing workbench; request changes,
+                    close, or decide to merge. Revision requests return to the
+                    external coding adapter. Changed candidates require fresh
+                    applicable evidence and review.
+                  </td>
+                </tr>
+                <tr>
+                  <td>
+                    <strong>Handle follow-up decisions</strong><br /><span
+                      class="tag retire"
+                      >Policy-dependent</span
+                    >
+                  </td>
+                  <td>
+                    Actionable release failures, learning candidates requiring
+                    review, or retained dirty/adopted/unpublished work that
+                    cannot be cleaned automatically.
+                  </td>
+                  <td>
+                    Choose follow-up work, decide learning changes under the
+                    existing policy, or explicitly retain/discard protected
+                    work. Routine observation, permitted learning, and eligible
+                    cleanup proceed automatically.
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <h3>Each interruption arrives as a concrete decision</h3>
+          <p>
+            In the Factory view's Needs attention queue, show who needs to act,
+            why work is waiting, Neon's recommendation, the brief/diff/evidence
+            being decided on, and available actions. Link directly to the
+            planning conversation or PR workbench so the human can ask questions
+            and iterate before deciding. Record the decision, actor, time,
+            scope, and bound spec/candidate version using the existing approval
+            and audit patterns.
+          </p>
+          <p>
+            Required decisions leave the run in <code>waiting-human</code> until
+            answered; silence or a timeout never grants approval. New evidence
+            that changes the decision invalidates the old request. Notify once
+            when attention is needed and again only for a meaningful change or a
+            configured reminder. Waiting releases coding compute after a safe
+            checkpoint while preserving the conversation and work artifacts.
+          </p>
+          <div class="decision">
+            <p>
+              <strong>Between human touchpoints:</strong> Neon handles
+              admission, classification, worker creation, monitoring, checks,
+              bounded repairs, authorized publication, and PR watching. Humans
+              can inspect, steer, or cancel at any time without becoming the
+              message courier between components. Skipping plan release for
+              selected small tasks is a later explicit policy option; v1 keeps
+              plan release and the merge decision human-owned.
+            </p>
+          </div>
+        </section>
+
+        <section id="intake">
+          <h2>A flexible inbox, with a small first connector</h2>
+          <p>
+            Separate <strong>delivery</strong>, <strong>source item</strong>,
+            and <strong>work item</strong>. Ten updates to an issue are ten
+            deliveries, usually one source item, and not ten coding jobs.
+            Several source items can describe the same work.
+          </p>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Input</th>
+                  <th>Admission &amp; routing</th>
+                  <th>First-version scope</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>GitHub issue</td>
+                  <td>
+                    Subscribe to issue create/edit/label/reopen/close events. An
+                    opt-in label such as <code>neon:factory</code>, applied by
+                    an authorized maintainer, admits triage. Resolve repository
+                    by provider ID, then re-fetch current issue and actor facts.
+                  </td>
+                  <td>
+                    <span class="tag new">Build first</span><br />One configured
+                    org/repo allowlist. New labels request triage; queue
+                    approval grants execution.
+                  </td>
+                </tr>
+                <tr>
+                  <td>Linear issue</td>
+                  <td>
+                    Map workspace/team/project to a registered GitHub repo; use
+                    a configured label or state for admission. Multiple matching
+                    repos require clarification. Preserve Linear as the source
+                    of task intent.
+                  </td>
+                  <td>
+                    <span class="tag adapt">Next connector</span><br />Webhook
+                    create/update/remove + current-state fetch. GitHub remains
+                    the delivery target.
+                  </td>
+                </tr>
+                <tr>
+                  <td>Neon chat / CLI / dashboard</td>
+                  <td>
+                    Submit intent through the same typed intake service. Accept
+                    a source URL or a standalone brief; resolve user-supplied
+                    links through configured provider adapters.
+                  </td>
+                  <td>
+                    <span class="tag new">Include in v1</span><br />Useful for
+                    testing and work without a tracker.
+                  </td>
+                </tr>
+                <tr>
+                  <td>PR feedback / schedules / alerts</td>
+                  <td>
+                    Correlate known PRs to the existing run. New incidents or
+                    maintenance ideas enter triage with their evidence and
+                    source fingerprint.
+                  </td>
+                  <td>
+                    <span class="tag reuse">Reuse signals</span><br />PR repair
+                    in v1. Additional monitoring connectors later.
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <h3>The inbound sequence</h3>
+          <ol>
+            <li>
+              <strong>Receive and persist.</strong> Verify the provider
+              signature over raw bytes before trusting payloads. Enforce body
+              limits, expected event/action types, and configured source
+              ownership. Commit the delivery and enqueue its processing in one
+              SQLite transaction; acknowledge immediately afterward.
+            </li>
+            <li>
+              <strong>Deduplicate and refresh.</strong> Unique key: provider +
+              connection + delivery ID. Track source ID and semantic fingerprint
+              separately. Re-fetch current state so delayed or reordered
+              deliveries cannot overwrite newer intent. Repeated fingerprints do
+              not wake Neon.
+            </li>
+            <li>
+              <strong>Route deterministically.</strong> Check source
+              eligibility, repo mapping, linked active runs, terminal state, and
+              configured policy before model work. Cross-provider duplicate
+              suggestions need a confirmed link; similar titles alone cannot
+              merge tasks.
+            </li>
+            <li>
+              <strong>Classify eligible work.</strong> Run a bounded triage job
+              with a configurable inexpensive model, source facts, and bounded
+              repo/product context. Persist a typed triage decision, confidence,
+              rationale, and missing information. External issue bodies are task
+              data and cannot grant permissions.
+            </li>
+            <li>
+              <strong>Open collaborative planning.</strong> Route actionable
+              work to a separate Neon planning conversation. The planning model
+              investigates, proposes, and revises the brief with the human
+              before queue admission. Uncertain classifications can request
+              deeper investigation. Posting a question back to a tracker
+              requires configured outbound authority; clarification in Neon uses
+              the planning conversation.
+            </li>
+          </ol>
+          <p class="caption">
+            GitHub recommends fast acknowledgement and delivery-ID
+            deduplication. Linear documents HMAC validation and timestamp
+            checks; apply its freshness check and deduplicate delivery IDs. Plan
+            explicit reconciliation for missed GitHub deliveries rather than
+            assuming automatic retries.
+            <a
+              href="https://docs.github.com/en/webhooks/using-webhooks/best-practices-for-using-webhooks"
+              >GitHub webhook guidance</a
+            >
+            ·
+            <a href="https://linear.app/developers/webhooks">Linear webhooks</a>
+          </p>
+          <details>
+            <summary>Changes arriving while work is already running</summary>
+            <p>
+              Comments and edits append source revisions; they do not silently
+              rewrite the running spec. Material scope changes pause at a
+              checkpoint and require a new approved spec version. Source closure
+              requests cancellation, which stops the worker before releasing its
+              lease. Reopening a terminal item requires a new explicit run.
+              Ignore the factory's own status writes as triggers. Unknown repo,
+              unavailable credentials, provider rate limits, and invalid model
+              output remain visible inbox states with retry times or operator
+              actions.
+            </p>
+            <p>
+              Keep a scheduled reconciliation pass for opted-in source items and
+              delivery failures. Use bounded retries with backoff for transient
+              reads; permanent mapping/authentication errors should not spend
+              model tokens.
+            </p>
+          </details>
+        </section>
+
+        <section id="issue-writeback">
+          <h2>Keep GitHub issues useful to collaborators</h2>
+          <p>
+            Recommended: enable concise issue updates as an explicit repository
+            onboarding choice. People following the issue should know whether
+            Neon picked it up, what scope was agreed, what needs attention, and
+            where the PR is. Neondeck keeps the authoritative run state,
+            planning conversation, versioned artifacts, and audit history;
+            GitHub keeps the original request and contributor discussion.
+          </p>
+          <h3>One maintained status comment</h3>
+          <p>
+            After eligible work is accepted for planning, create one Neon-owned
+            status comment per linked work item. Update it on meaningful
+            transitions: shaping, queued, implementing, blocked, PR ready,
+            merged, failed, or cancelled. Include the current run, last update,
+            concise blocker/next action, agreed scope and acceptance summary
+            with spec version, and PR link when available. Render only committed
+            facts; mark proposed scope as draft until released.
+          </p>
+          <div class="machine">
+            <strong>Illustrative issue comment / Neon factory</strong>
+            <p><strong>Status:</strong> Ready for review · spec v3</p>
+            <p>
+              <strong>Agreed scope:</strong> Preserve handled notification IDs
+              across reconnects. New feedback must still notify.
+            </p>
+            <p>
+              <strong>Evidence:</strong> Reconnect regression and new-feedback
+              scenarios passed. CI passed for the linked PR revision.
+            </p>
+            <p><strong>Next:</strong> Human review of the linked draft PR.</p>
+            <p class="caption">
+              A real comment includes the issue/PR references, recorded update
+              time, and an access-controlled Neon link where useful.
+            </p>
+          </div>
+          <p>
+            Keep full chat, speculative alternatives, raw logs, credentials, and
+            private cross-repository context in Neon. Preview any proposed scope
+            summary before its first publication, then reuse approved
+            publication scope for routine status changes. A private Neon URL
+            must retain authentication and carry no bearer token; the issue
+            summary should be understandable to readers who cannot open it.
+            Preserve the reporter's issue body and labels unless separate
+            configured authority permits changes.
+          </p>
+          <h3>Questions and replies</h3>
+          <p>
+            Default to <code>status</code> writeback after onboarding consent,
+            with <code>off</code> available. Posting an actionable question is a
+            separate “Ask on GitHub” action: Neon drafts it, the human can edit
+            and send it. A later <code>status-and-questions</code> policy can
+            authorize this automatically. Questions become distinct comments so
+            collaborators have a clear place to reply; routine progress edits
+            should not be relied on as an attention-delivery mechanism.
+          </p>
+          <p>
+            Subscribe to issue-comment changes for linked items. Bring replies
+            into the existing planning conversation as attributed source
+            updates. Re-check identity and relevance; comment text cannot
+            release a plan, change execution authority, or overwrite the
+            accepted spec. Neon proposes any resulting brief revision in the
+            planning UI. Issue closure requests cancellation as already defined;
+            an implementation run finishing must not close an issue prematurely.
+            Use a plain PR reference initially; add closing keywords only when
+            the approved delivery scope actually resolves the issue.
+          </p>
+          <h3>Use the existing delivery and audit mechanisms</h3>
+          <p>
+            Add typed issue create/update-comment operations over the existing
+            GitHub client. The current PR-comment helper already uses the shared
+            Issues API; generalize its naming and add the update operation.
+            Persist the comment ID, owned marker, desired content hash, source
+            revision, and delivery receipt. Serialize writes per work item,
+            coalesce superseded updates, and reconcile uncertain creates before
+            retrying. Verify ownership before editing and suppress only our own
+            correlated status events to avoid triggering another run.
+          </p>
+          <p>
+            Failed writeback shows “GitHub update pending” with retry status in
+            Neon. Coding can continue within its existing authority while that
+            update retries; a question awaiting an answer still blocks dependent
+            work. A human-edited or deleted status comment requires
+            reconciliation rather than blindly recreating or overwriting it.
+            GitHub comment edits never become the factory's database.
+          </p>
+          <p class="caption">
+            <a href="../../src/modules/github/comments.ts"
+              >Existing comment helper</a
+            >
+            ·
+            <a href="https://docs.github.com/en/rest/issues/comments"
+              >GitHub comment API</a
+            >
+            ·
+            <a
+              href="https://docs.github.com/en/issues/tracking-your-work-with-issues/using-issues/linking-a-pull-request-to-an-issue"
+              >PR/issue linking behavior</a
+            >. This is proposed writeback policy; no external messages are sent
+            by this document.
+          </p>
+        </section>
+
+        <section id="planning">
+          <h2>Humans plan with Neon</h2>
+          <p>
+            The lightweight classifier routes work. A separately configured
+            planning model does the investigation, drafting, and revision work
+            with the human. Use Neondeck's durable Flue conversations and
+            existing chat UI, linked to the work item before any coding run
+            exists.
+          </p>
+          <ol>
+            <li>
+              <strong>Neon proposes.</strong> Read relevant code and product
+              context, identify unknowns, and present a brief with the intended
+              outcome, acceptance criteria, constraints, and a suggested
+              approach. For substantial work, show interfaces, likely file
+              changes, and vertical slices. For UI decisions, share a mock; for
+              architecture, share a diagram or concrete alternatives.
+            </li>
+            <li>
+              <strong>The human and model iterate.</strong> The human asks
+              questions, corrects assumptions, or chooses an approach. Neon
+              investigates further and updates the brief and plan through typed
+              services. Show what changed between versions and which decisions
+              remain open. Scale the conversation to the task: a tiny fix can
+              settle quickly; larger changes need more design discussion.
+            </li>
+            <li>
+              <strong>The human releases a specific version.</strong> Present
+              the current brief, validation contract, remaining assumptions, and
+              proposed authority together. Queue that agreed version. Merely
+              discussing or editing a plan does not start a coding agent.
+            </li>
+            <li>
+              <strong>Neon hands off the agreed context.</strong> Package the
+              spec, relevant research, resolved decisions, selected guidance,
+              and validation contract for Codex/OpenCode. Keep the full planning
+              history available by reference; avoid dumping the whole chat into
+              the coding prompt.
+            </li>
+            <li>
+              <strong
+                >Consequential discoveries return to this conversation.</strong
+              >
+              If implementation finds a faulty assumption or needs a material
+              scope change, checkpoint the worker and bring the finding,
+              evidence, and proposed revision back to the human and planner.
+              Resume after agreement on the new spec version. Ordinary in-scope
+              repairs stay within the already granted authority.
+            </li>
+          </ol>
+          <p>
+            The planning view shows the conversation alongside the current
+            brief, plan, open questions, and version history. Persist its
+            conversation ID, model/context version, and decision records on the
+            work item so it survives restarts and can be reopened from the run
+            or PR. Each model turn is bounded; the conversation persists while
+            waiting without holding a coding process or worker VM.
+          </p>
+          <p>
+            The
+            <a href="#human-touchpoints">human touchpoints map</a> distinguishes
+            collaboration, required gates, and conditional interventions. After
+            plan release, Neon coordinates implementation, verification, and
+            draft-PR delivery within that authority without requiring the human
+            to relay messages between phases.
+          </p>
+        </section>
+
+        <section id="shaping-ui">
+          <h2>A shaping workbench built from existing surfaces</h2>
+          <p>
+            Start from a task briefing, then expand into a persistent workbench
+            using the existing chat, Markdown renderer, and diff viewer. The
+            human should be able to understand the proposal, inspect its
+            evidence, and discuss a particular decision without reconstructing
+            context from a long transcript.
+          </p>
+          <div class="topology">
+            <h3>Proposed layout / task-scoped view</h3>
+            <p class="caption">
+              Task title · source issue · planning status · current spec version
+            </p>
+            <div class="split">
+              <div class="machine">
+                <strong>Conversation with Neon</strong>
+                <p>
+                  Persistent planning chat, focused questions, alternatives, and
+                  selected passages/files supplied as explicit context.
+                </p>
+              </div>
+              <div class="machine">
+                <strong>Proposal and evidence</strong>
+                <p>Brief · Plan · Changes · References</p>
+                <p>
+                  Rendered Markdown, version comparison, code references,
+                  diagrams, and mocks associated with this work item.
+                </p>
+              </div>
+            </div>
+            <p class="caption">
+              Actions: discuss selection · revise · share summary · release this
+              version
+            </p>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Surface</th>
+                  <th>User interaction</th>
+                  <th>Reuse / extension</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><strong>Task briefing</strong></td>
+                  <td>
+                    Glance at the problem, proposed outcome, scope, open
+                    decisions, Neon's recommendation, and next human action.
+                    Open the full planning workbench from here.
+                  </td>
+                  <td>
+                    Adapt the PR briefing's summary/action layout. Extract
+                    shared presentational pieces; its current data and approval
+                    handlers are PR-specific. Do not repurpose the morning
+                    briefing's singleton session as task planning state.
+                  </td>
+                </tr>
+                <tr>
+                  <td><strong>Rendered proposal</strong></td>
+                  <td>
+                    Read brief and plan as Markdown. Select a paragraph and ask
+                    Neon to explain, compare options, or revise it. Direct human
+                    edits are supported through a simple Markdown editor with
+                    preview.
+                  </td>
+                  <td>
+                    Reuse <code>MarkdownMessage</code>. Add versioned artifact
+                    storage, an editor, and explicit selection-to-chat context.
+                    Chat replies link to the artifact/version they discuss.
+                  </td>
+                </tr>
+                <tr>
+                  <td><strong>Proposal changes</strong></td>
+                  <td>
+                    Compare the previous or released proposal with the current
+                    draft. Review changes to acceptance criteria and scope, then
+                    discuss an anchored passage. “Release v3” approves the whole
+                    spec, not individual diff hunks.
+                  </td>
+                  <td>
+                    Reuse the text diff renderer. Add proposal-version revision
+                    identity and capabilities; current shared review sources
+                    only model Git/worktree/retained-patch revisions. Do not
+                    manufacture a PR to review a planning document.
+                  </td>
+                </tr>
+                <tr>
+                  <td><strong>Code and design references</strong></td>
+                  <td>
+                    Open actual source lines, a referenced diff, or an attached
+                    mock/diagram next to the discussion. Keep a proposed
+                    file/interface change visibly separate from an implemented
+                    code diff.
+                  </td>
+                  <td>
+                    Reuse file/diff navigation. Add artifact previews for images
+                    and diagrams; HTML mock previews run in a restricted frame
+                    without access to Neon's privileged APIs. Interactive
+                    preview support is an extension, not a capability of the
+                    current Markdown renderer.
+                  </td>
+                </tr>
+                <tr>
+                  <td><strong>Review and release</strong></td>
+                  <td>
+                    Neon summarizes changes since the last review and unresolved
+                    decisions. The human requests revisions or releases the
+                    displayed version with its execution/publication authority.
+                  </td>
+                  <td>
+                    Reuse approval and stale-revision patterns with
+                    factory-specific actions. Persist decisions and discussion
+                    anchors in app state; the active review-surface registry and
+                    its findings are ephemeral.
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <p>
+            A discussion anchor contains artifact ID, version, and section or
+            selected line range. When Neon revises the document, keep the old
+            snapshot and mark displaced anchors stale; do not silently attach a
+            comment to different text. Human edits use optimistic version checks
+            so model revisions cannot clobber an unsaved or newer draft. Draft
+            changes become explicit versions, and release fails if the displayed
+            version is no longer current.
+          </p>
+          <p>
+            On a narrow companion display, use Brief/Plan/Changes/Chat views
+            with the same task context; expand into a two-pane workbench on a
+            larger display. Start with rendered Markdown, chat, version diffs,
+            and release. Richer inline discussion and interactive mocks can
+            follow without changing the work-item or approval model.
+          </p>
+          <p class="caption">
+            Verified reuse points:
+            <a href="../../web/src/features/pr-review/PrReviewBriefing.tsx"
+              >PR briefing</a
+            >,
+            <a href="../../web/src/plugins/BriefingPanel.tsx"
+              >briefing/session pattern</a
+            >,
+            <a href="../../web/src/components/MarkdownMessage.tsx"
+              >Markdown renderer</a
+            >,
+            <a href="../../shared/review-source.ts">review-source contracts</a>,
+            and
+            <a href="../../src/modules/review-surfaces/registry.ts"
+              >active surface registry</a
+            >. Layout above is an architectural sketch, not a working feature.
+          </p>
+        </section>
+
+        <section id="sessions">
+          <h2>External coding sessions, owned from start to cleanup</h2>
+          <p>
+            A factory run is the durable job. A coding session is one
+            replaceable participant. Do not use a provider session ID as the run
+            ID, and do not treat a worktree, a VM, and a conversation as the
+            same resource.
+          </p>
+          <div class="split">
+            <div>
+              <h3>CodingAgent adapter</h3>
+              <p>
+                Owns provider-specific start/resume arguments, event parsing,
+                session identity, final result extraction, and transcript
+                export. Initial adapters: <strong>Codex CLI</strong> and
+                <strong>OpenCode CLI</strong>.
+              </p>
+              <p class="artifact">
+                start · resume · normalize events · export session
+              </p>
+            </div>
+            <div>
+              <h3>ExecutionHost adapter</h3>
+              <p>
+                Owns workspace preparation, process supervision, logs,
+                cancellation, artifact collection, and cleanup. Initial adapter:
+                <strong>local process on the Neon host</strong>. Future:
+                existing remote host or disposable exe.dev VM.
+              </p>
+              <p class="artifact">
+                prepare · launch · inspect · cancel · collect · release
+              </p>
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Harness</th>
+                  <th>Initial integration</th>
+                  <th>Session policy</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>
+                    <strong>Codex</strong><br /><a
+                      href="https://developers.openai.com/codex/noninteractive/"
+                      >Non-interactive documentation</a
+                    >
+                  </td>
+                  <td>
+                    Use <code>codex exec --json</code> with explicit working
+                    directory, model, and permission profile. Capture
+                    <code>thread.started</code> and terminal events. Use
+                    structured final output as a report, then check Git and
+                    validation evidence independently.
+                  </td>
+                  <td>
+                    Fresh session for a new task. Resume only its recorded ID
+                    for a scoped repair with the same workspace and context
+                    version. Keep session persistence enabled. Never use “last
+                    session.”
+                  </td>
+                </tr>
+                <tr>
+                  <td>
+                    <strong>OpenCode</strong><br /><a
+                      href="https://opencode.ai/docs/cli/"
+                      >CLI documentation</a
+                    >
+                  </td>
+                  <td>
+                    Use <code>opencode run --format json --dir …</code> with a
+                    configured model/agent. Normalize events without sharing
+                    Kilo's provider assumptions. Export the explicit session ID
+                    for inspection.
+                  </td>
+                  <td>
+                    Resume with <code>--session</code> only after checking
+                    ownership. Start with per-attempt CLI processes. A private
+                    <code>opencode serve</code> backend is a later adapter
+                    optimization.
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <p class="caption">
+            Pin supported CLI versions and validate each adapter against
+            recorded event fixtures plus a real smoke task. OpenCode Zen
+            model-provider support in Neondeck does not constitute an OpenCode
+            coding-session runner. Codex CLI help was also checked locally; no
+            coding session was launched for this proposal.
+          </p>
+          <h3>Session lifecycle</h3>
+          <ol>
+            <li>
+              <strong>Reserve.</strong> Persist run/attempt IDs and acquire the
+              task/workspace lease before allocating resources. Start with one
+              coding attempt globally and one writer per repository; queued work
+              waits without an agent process.
+            </li>
+            <li>
+              <strong>Prepare.</strong> Resolve and record the base SHA, create
+              an app-owned worktree and
+              <code>agent/factory/&lt;work-item-id&gt;</code> branch, install
+              dependencies using trusted repo setup instructions, and assign
+              per-run scratch directories and dev-server ports. Never code in
+              the user's primary checkout.
+            </li>
+            <li>
+              <strong>Freeze context.</strong> Materialize the approved brief,
+              acceptance contract, relevant source snapshots, repo instructions,
+              selected skills, and memory snapshot. Record their versions/hashes
+              plus harness version/model. Native harness compaction remains the
+              harness's job. A new spec or deliberate context refresh creates an
+              explicit boundary.
+            </li>
+            <li>
+              <strong>Launch and track.</strong> Run under a supervised job with
+              a unique attempt token, cwd, start time, PID/process-group or
+              service identity, log files, and eventual provider session ID. A
+              small runner wrapper records heartbeat and atomic exit receipts.
+              It launches the existing CLI; it has no model/tool loop.
+            </li>
+            <li>
+              <strong>Finish and collect.</strong> Stop the writer, capture
+              dirty/untracked changes and the candidate commit, logs, decisions,
+              and test artifacts. The factory records the candidate SHA before
+              independent verification. An exit code of zero means the process
+              finished, not that the task is done.
+            </li>
+            <li>
+              <strong>Repair or release.</strong> Resume a known session for a
+              narrow fix, or use a fresh session with a handoff summary when
+              context or host changed. Every retry gets a new attempt record and
+              its own budget. Same task/branch does not mean simultaneous
+              workers.
+            </li>
+            <li>
+              <strong>Clean up.</strong> Stop the CLI and all owned child
+              services; collect evidence; revoke temporary credentials; release
+              ports; confirm no live writer; then release the lease. Remove the
+              worktree only when existing cleanup policy permits and all local
+              commits/dirty work are preserved or explicitly discarded.
+            </li>
+          </ol>
+          <div class="decision">
+            <p>
+              <strong>Isolation in v1 is operational.</strong> Separate
+              worktrees, private agent homes/state, allowlisted environment, and
+              owned processes prevent accidental session collisions. They do not
+              create a security sandbox: worktrees share Git metadata, and
+              same-user processes may access each other's files. Limit this mode
+              to trusted repositories and tasks. Full OS isolation is a later
+              host capability.
+            </p>
+          </div>
+          <p>
+            Give workers only their selected model authentication and required
+            test credentials. Keep webhook secrets, deployment credentials, and
+            GitHub write authority in the control service. Harness-specific
+            config/state roots must be isolated and tested; do not inherit the
+            operator's global plugins, MCP servers, or login environment
+            wholesale. Keep native harness permission controls where supported.
+            Neondeck's shell policy does not automatically govern a separate
+            CLI's internal tools.
+          </p>
+          <details>
+            <summary>
+              Restart, cancellation, and a worker we cannot locate
+            </summary>
+            <p>
+              The supervisor writes logs and terminal receipts to disk
+              independently of Neon's in-memory process map. At startup,
+              reconcile each active attempt using its host, service identity,
+              start token, receipt, and workspace. If still running, resume
+              monitoring; do not launch another worker. If ended, import its
+              evidence. If ownership or outcome is uncertain, mark
+              <code>needs-reconcile</code> and quarantine the workspace.
+            </p>
+            <p>
+              A lease timeout does not prove an external CLI stopped writing.
+              Fence future publication, stop or prove the old process dead, and
+              only then issue a replacement lease. Cancellation sends TERM to
+              the owned process group/service, follows with KILL after a bounded
+              grace period, and confirms termination. A disconnected SSH channel
+              is not cancellation. Persist cancellation intent so a restarted
+              controller finishes it.
+            </p>
+          </details>
+          <details>
+            <summary>Retention and cleanup policy</summary>
+            <p>
+              Proposed defaults: stop compute when a task waits for human input;
+              retain the worktree while its PR is active; retain a clean, fully
+              published successful workspace for 24 hours after terminal
+              outcome. Failed, dirty, adopted, or unpublished work stays
+              retained under existing policy. After seven days, surface a
+              cleanup decision rather than deleting valuable work automatically.
+              Keep redacted logs and session exports for 30 days, and durable
+              outcome/provenance records independently of compute.
+            </p>
+            <p>
+              Future per-run VMs follow the same rule: collect and verify
+              artifact transfer before deletion. Record explicit resource
+              ownership so cleanup cannot remove the persistent Neon VM, a
+              user-provided VM, or an adopted checkout. Cleanup is idempotent
+              and retryable; failed cleanup stays visible. Provider-managed
+              history may have its own retention policy.
+            </p>
+          </details>
+        </section>
+
+        <section id="deployment">
+          <h2>exe.dev hosts Neon now, workers later</h2>
+          <p>
+            Run one Neon control process under a service manager on a persistent
+            Linux VM. Keep <code>NEONDECK_HOME</code>, app SQLite, Flue SQLite,
+            artifacts, and registered repositories on persistent disk. Back up
+            both databases consistently with their SQLite journaling mode; do
+            not clone the live control VM as a worker template.
+          </p>
+          <div class="topology">
+            <div class="top-row">
+              <h3>Execution placement</h3>
+              <div>
+                <label for="placement">View: </label
+                ><select id="placement">
+                  <option value="local">v1 · same host</option>
+                  <option value="remote">Later · worker VM</option>
+                </select>
+              </div>
+            </div>
+            <div class="machine">
+              <strong>Persistent exe.dev VM / Neon control</strong>
+              <p>
+                Public webhook listener → SQLite inbox → factory coordinator
+              </p>
+              <p>
+                Private dashboard + API · Flue triage/reviewer · GitHub delivery
+                · watches
+              </p>
+            </div>
+            <div class="connection" id="host-connection">
+              Local supervisor · run identity + process receipt
+            </div>
+            <div class="machine worker" aria-live="polite">
+              <strong id="host-title">Managed worktree on the same VM</strong>
+              <p id="host-body">
+                Codex or OpenCode process · private agent state · per-run test
+                data and ports. Runs use the existing VM in the first slice.
+              </p>
+            </div>
+            <p class="caption" id="host-foot">
+              Same-host execution is the smallest implementation. Shared
+              resources and filesystem access remain a known limitation.
+            </p>
+          </div>
+          <h3>Public webhooks without making the deck public</h3>
+          <p>
+            exe.dev terminates TLS and supports one public proxy port while
+            alternate ports in the 3000–9999 range remain private. Set the
+            primary public port to a
+            <strong>dedicated minimal Hono webhook app</strong>, for example
+            port 8080, exposing only <code>POST /hooks/github</code>,
+            <code>POST /hooks/linear</code>, and a minimal health response. Keep
+            the dashboard/API on a private alternate port such as 3000, behind
+            exe.dev login. The two listeners can live in the same Node service
+            and share the intake service.
+          </p>
+          <p>
+            The public listener must not mount the dashboard, Flue routes,
+            reports, execution API, or a catch-all proxy. Configure the exact
+            private dashboard origin for Neondeck's existing origin checks.
+            Those checks defend browser access; they are not standalone internet
+            authentication. Verify routing and private access on the actual host
+            before enabling a real webhook.
+            <a href="https://exe.dev/docs/proxy.md">exe.dev proxy behavior</a>
+          </p>
+          <h3>The future remote handoff</h3>
+          <p>
+            The host adapter provisions or selects a machine, checks out the
+            pinned base SHA, transfers the brief and any unpublished candidate
+            via a Git bundle/patch, then runs the same supervisor and coding CLI
+            there. Return a verified Git bundle or pushed candidate ref plus
+            artifact manifest. Never assume a local absolute path is meaningful
+            on the remote host.
+          </p>
+          <p>
+            Persist VM name, SSH destination, ownership, environment
+            fingerprint, and retention state. Reconcile a timed-out VM-create
+            operation by its recorded unique name before retrying. Use returned
+            connection metadata; exe.dev's SSH API may return a destination with
+            a required username. Poll a remote receipt/log cursor instead of
+            keeping a model turn or SSH stream alive.
+          </p>
+          <p>
+            For previews, allocate and register a private URL, readiness probe,
+            port, expiry, and service stop handle. Collection and publication
+            are explicit actions. exe.dev VMs are persistent: stopping a coding
+            process is not deleting its machine or ending all resource usage.
+            Support clean images, setup scripts, and deletion through the
+            provider adapter when this slice ships.
+            <a href="https://exe.dev/docs/api.md">SSH API</a> ·
+            <a href="https://exe.dev/docs/cli-new.md">Create VM</a> ·
+            <a href="https://exe.dev/docs/cli-rm.md">Delete VM</a>
+          </p>
+          <p class="caption">
+            The selector illustrates architecture only. It does not configure
+            Neondeck or create infrastructure. Shelley is not part of the
+            proposed coding path.
+          </p>
+        </section>
+
+        <section id="integration">
+          <h2>What Neondeck already gives us</h2>
+          <p>
+            The repository is much further along than a blank factory project.
+            Reuse the delivery cockpit, and add the missing upstream work model.
+            Preserve existing non-factory workflows during migration.
+          </p>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Existing feature</th>
+                  <th>Decision</th>
+                  <th>Concrete integration</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>Runtime home, repos, app state, typed APIs</td>
+                  <td><span class="tag reuse">Reuse</span></td>
+                  <td>
+                    Add factory records to Neondeck's app database. Flue's
+                    database keeps conversations/submissions. Add services under
+                    <code>src/modules/factory/</code> and call them from Hono,
+                    CLI, and Flue tools.
+                    <a href="../../src/server/create-app.ts"
+                      >Server composition</a
+                    >
+                    · <a href="../ROADMAP.md">Roadmap</a>
+                  </td>
+                </tr>
+                <tr>
+                  <td>Managed worktrees and leases</td>
+                  <td><span class="tag adapt">Adapt</span></td>
+                  <td>
+                    Reuse creation, Git checks, locks, and cleanup. Add
+                    work-item/run ownership before a PR exists, branch-level
+                    exclusion, worker heartbeat, and proof of termination before
+                    reclaim. Existing time-based lock recovery is insufficient
+                    by itself for an external writer.
+                    <a href="../../src/modules/worktrees/locks.ts">Locks</a> ·
+                    <a href="../../src/modules/worktrees/cleanup.ts">Cleanup</a>
+                  </td>
+                </tr>
+                <tr>
+                  <td>Kilo delegation and results</td>
+                  <td><span class="tag adapt">Extract shared parts</span></td>
+                  <td>
+                    Reuse durable jobs/events, raw logs, session links, diff
+                    capture, cancellation UI, and verification patterns. Extract
+                    a provider-neutral coding-runs layer; keep Kilo as a
+                    compatibility adapter with historical records intact.
+                    Current restart handling reports
+                    <code>needs-reconcile</code>; it cannot safely reattach the
+                    process.
+                    <a href="../../src/modules/kilo/service.ts">Runner</a> ·
+                    <a href="../../src/modules/kilo/process.ts">Recovery</a>
+                  </td>
+                </tr>
+                <tr>
+                  <td>Kilo promotion</td>
+                  <td><span class="tag new">Complete delivery</span></td>
+                  <td>
+                    The “promote” operation currently admits promotion but
+                    defers commit/push/comment. Do not report that gate as
+                    shipped delivery. Add an actual revision-checked delivery
+                    service with an external-effect ledger and recorded PR
+                    receipt.
+                    <a href="../../src/modules/kilo/results/service.ts"
+                      >Promotion implementation</a
+                    >
+                  </td>
+                </tr>
+                <tr>
+                  <td>Continuing PR Autopilot owner</td>
+                  <td><span class="tag retire">Redirect coding</span></td>
+                  <td>
+                    It currently mounts a writable sandbox and codes itself. For
+                    factory-owned PRs, retain coordination/feedback concepts but
+                    send every code repair to Codex/OpenCode. Explicitly route
+                    the watch to the factory coordinator so both owners cannot
+                    edit or push. Leave legacy watches on their old path until
+                    deliberately migrated.
+                    <a href="../../src/agents/pr-autopilot-owner.ts"
+                      >Current coding owner</a
+                    >
+                  </td>
+                </tr>
+                <tr>
+                  <td>PR review, prepared diffs, tours</td>
+                  <td><span class="tag reuse">Reuse</span></td>
+                  <td>
+                    Register a factory candidate as a review source; adapt
+                    Kilo's prepared-result route. Reuse exact-revision read-only
+                    review, findings, diff navigation, and human review
+                    controls. Invalidate evidence when the candidate changes.
+                    <a href="../../src/modules/review-surfaces/registry.ts"
+                      >Source registry</a
+                    >
+                    ·
+                    <a
+                      href="../../web/src/features/pr-review/GitHubPrReview.tsx"
+                      >Review workbench</a
+                    >
+                  </td>
+                </tr>
+                <tr>
+                  <td>Watches, scheduler, notifications</td>
+                  <td><span class="tag adapt">Extend</span></td>
+                  <td>
+                    Keep semantic event fingerprints and quiet-when-unchanged
+                    behavior. Add factory reconciliation and source backfill
+                    jobs through the existing scheduler. PR events target an
+                    existing run rather than create a new factory job.
+                    <a href="../../src/server/scheduler-loop.ts"
+                      >Scheduler loop</a
+                    >
+                    ·
+                    <a href="../../src/modules/pr-events/watch-refresh.ts"
+                      >Watch refresh</a
+                    >
+                  </td>
+                </tr>
+                <tr>
+                  <td>exe.dev execution</td>
+                  <td><span class="tag adapt">Reuse transport</span></td>
+                  <td>
+                    Already has SSH/SFTP, existing-VM checkout/environment
+                    support, and create/clone/delete helpers. Add durable
+                    provisioning ownership, remote job receipts, artifact
+                    transfer, preview leases, and deletion reconciliation; audit
+                    helper/API compatibility before use.
+                    <a href="../../src/sandboxes/exedev.ts"
+                      >Adapter + lifecycle helpers</a
+                    >
+                    ·
+                    <a href="../../src/modules/execution/exedev/context.ts"
+                      >Checkout context</a
+                    >
+                  </td>
+                </tr>
+                <tr>
+                  <td>Runtime skills, memory, learning</td>
+                  <td><span class="tag reuse">Reuse</span></td>
+                  <td>
+                    Snapshot relevant guidance into the brief. Submit settled
+                    factory outcomes once using stable source IDs. Respect
+                    existing review/off/apply policy and audit-backed
+                    restoration. Do not let one failed run rewrite its own
+                    acceptance criteria or active skills.
+                    <a href="../../src/modules/learning/index.ts"
+                      >Learning module</a
+                    >
+                  </td>
+                </tr>
+                <tr>
+                  <td>Local access middleware</td>
+                  <td><span class="tag new">Separate ingress</span></td>
+                  <td>
+                    The browser API is host/origin-gated. Add a separate
+                    signed-webhook listener; do not loosen the existing
+                    middleware to admit anonymous issue payloads.
+                    <a href="../../src/server/middleware.ts"
+                      >Access middleware</a
+                    >
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <h3>What to remove, and when</h3>
+          <p>
+            Remove duplicated coding orchestration from the
+            <em>factory path</em> as soon as external adapters work. Later,
+            retire the writable Flue PR-owner feature only after existing
+            watches can migrate and equivalent repair behavior is verified.
+            Replace Kilo-only labels on shared job UI with “Coding runs”; retain
+            provider-specific inspection where useful. Consolidate duplicate job
+            schedulers rather than introducing a factory cron engine.
+          </p>
+          <p>
+            Keep Neon chat, reviews, watches, schedules, and learning. They
+            become factory components and remain useful independently. Correct
+            stale Flue “workflow/action” terminology in touched product docs;
+            this checkout uses Flue 2 agents/tools and app-owned orchestration,
+            not the old framework workflows.
+          </p>
+        </section>
+
+        <section id="contracts">
+          <h2>Work state that survives restarts</h2>
+          <p>
+            Use one coordinator loop that advances runnable records from
+            persisted evidence. Flue handles bounded triage, planning, and
+            review submissions. The coordinator handles queueing, dependencies,
+            retries, leases, external coding processes, and delivery.
+          </p>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Record</th>
+                  <th>What it owns</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><code>InboundDelivery</code></td>
+                  <td>
+                    Provider/connection/delivery ID, source entity/revision,
+                    payload digest, verification time, processing status, retry
+                    time, and WorkItem link.
+                  </td>
+                </tr>
+                <tr>
+                  <td><code>WorkItem + TaskSpec</code></td>
+                  <td>
+                    Intent, repo, source links, triage disposition, owner,
+                    priority, dependencies, versioned acceptance criteria,
+                    constraints, plan, context hashes, and authorization. Links
+                    the persistent planning conversation, its model/context
+                    version, open questions, and versioned decision history.
+                  </td>
+                </tr>
+                <tr>
+                  <td><code>FactoryRun</code></td>
+                  <td>
+                    Approved spec version, phase, status, optimistic version,
+                    budgets, current attempt, candidate SHA, PR/watch IDs,
+                    outcomes, and block reason.
+                  </td>
+                </tr>
+                <tr>
+                  <td><code>CodingAttempt</code></td>
+                  <td>
+                    Run/attempt ID, agent provider/session/model/version,
+                    host/workspace, process token, heartbeat, exit receipt,
+                    event cursor, usage if available, and failure
+                    classification.
+                  </td>
+                </tr>
+                <tr>
+                  <td><code>WorkspaceLease</code></td>
+                  <td>
+                    Adapt existing worktree/lock records with host resource
+                    identity, ownership, branch, generation/fencing token,
+                    process ownership, ports, and cleanup status.
+                  </td>
+                </tr>
+                <tr>
+                  <td><code>Evidence + Effect</code></td>
+                  <td>
+                    Candidate SHA + spec/validation version; commands,
+                    environment, logs and result; approval binding; delivery
+                    idempotency key, planned side effect, remote receipt, and
+                    audit history.
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <pre><code>WorkItem disposition
+  untriaged → clarify | duplicate | deferred | declined | ready
+
+FactoryRun phase
+  shape → build → verify → deliver → observe
+            ↑        │        │
+            └─ repair┘        └─ PR feedback → scoped repair
+
+Run status (separate from phase)
+  queued | running | waiting-human | blocked | cancelling
+  completed | failed | cancelled
+
+Workspace lifecycle (separate from run status)
+  reserved → prepared → active → retained → cleanup-pending → released
+                         └─ uncertain ownership → quarantined</code></pre>
+          <p>
+            Transitions compare the current version and lease generation.
+            Admission plus the pending effect is transactional. Reconcile
+            external effects after restart; do not promise exactly-once remote
+            execution. A deterministic run key and durable effect intent prevent
+            ordinary duplicate starts, while uncertain outcomes remain explicit.
+          </p>
+          <div class="split">
+            <div>
+              <h3>One backend surface</h3>
+              <p>
+                Proposed operations: submit, triage, open/message planning
+                conversation, revise brief/plan, release spec version, queue,
+                pause, cancel, retry, approve delivery, reconcile, and cleanup.
+                Use schema-validated domain services with request idempotency
+                keys. Expose <code>/api/factory/…</code>, CLI commands, and
+                model-facing tools over those same services.
+              </p>
+            </div>
+            <div>
+              <h3>One operator view</h3>
+              <p>
+                Add a Factory view: Inbox, Active, Needs attention, and History.
+                Each work item opens a planning conversation alongside its
+                versioned brief, plan, and open decisions. Each run links back
+                to that conversation and opens its timeline, external session,
+                diff/evidence, and PR. Needs attention surfaces the assigned
+                human decision, recommendation, bound version, and next actions
+                from the <a href="#human-touchpoints">touchpoints map</a>. Neon
+                can explain “why blocked?” from those records. Use the existing
+                event stream to refresh clients; durable state remains
+                authoritative.
+              </p>
+            </div>
+          </div>
+          <p>
+            Keep a small validated factory profile in runtime config: eligible
+            sources/repos, triage model, planning model, coding agent
+            provider/model, execution host, setup/check commands, publication
+            authority, concurrency, retry/time limits, and retention. Changes go
+            through typed config tools. Avoid a generic graph DSL or arbitrary
+            executable webhook configuration in v1.
+          </p>
+          <p class="caption">
+            Flue 2.0.3's bundled <code>guide/durability</code> documents durable
+            submission settlement and at-least-once side effects. It does not
+            make an external CLI or VM durable automatically.
+            <a href="https://flueframework.com/docs/guide/durability/"
+              >Public durability guide</a
+            >
+            (live docs may evolve).
+          </p>
+        </section>
+
+        <section id="delivery">
+          <h2>Define “done” before starting the worker</h2>
+          <p>
+            The spec includes user-visible acceptance scenarios, required
+            repository checks, excluded scope, and evidence requirements.
+            Validate both behavior and the shape of the change: unexpected
+            files, dependency additions, changed tests, and departures from the
+            plan go into the reviewer packet.
+          </p>
+          <p>
+            The verifier runs configured commands against a frozen candidate in
+            a separate verification workspace where needed, with separate test
+            data. Record command, cwd, environment/toolchain fingerprint, exit
+            code, logs, and candidate SHA. Require the working tree to remain
+            unchanged or capture and review any generated changes. The agent
+            cannot weaken the externally stored validation contract through its
+            result report.
+          </p>
+          <p>
+            For UI work, require a small browser scenario and a screenshot or
+            recording when the task calls for it; for backend work, use
+            observable inputs/outputs and regression checks. A missing
+            environment produces “blocked validation,” not a pass. Fresh agent
+            review adds judgment, but it does not substitute for executed
+            evidence or the human merge decision.
+          </p>
+          <h3>Delivery is its own side effect</h3>
+          <ol>
+            <li>
+              Confirm the current candidate, approved spec, successful
+              validation, and publication authority still match. Base/head
+              movement invalidates affected checks and review.
+            </li>
+            <li>
+              Use the trusted delivery service to commit if needed, push only
+              the intended branch, and create/update a draft PR. The default
+              queue approval can grant this bounded publication. Merge, deploy,
+              or unrelated tracker messages are separate authorities.
+            </li>
+            <li>
+              Record an effect key and correlate the PR using repo + branch +
+              run marker. On a network timeout, query GitHub for the branch/PR
+              before repeating the action. Persist actual receipts before
+              showing “published.”
+            </li>
+            <li>
+              Attach the existing PR watch with factory ownership. Deduplicate
+              CI/review feedback, acquire the same writer lease, and invoke the
+              external coding adapter for repairs. Enforce a total run budget as
+              well as per-repair limits.
+            </li>
+          </ol>
+          <h3>Defaults that keep the naive factory bounded</h3>
+          <p>
+            Start with one active coding worker, a 45-minute implementation
+            attempt, two repair attempts per candidate cycle, and a three-hour
+            cumulative execution budget per run. Human waiting time is separate.
+            These are configurable admission limits, not claims about normal
+            task duration. Cap queued-ready work when review backlog grows.
+            Record provider usage when available; an unavailable dollar estimate
+            stays “unknown.”
+          </p>
+          <p>
+            Measure time to reviewable PR, first-pass validation, repair count,
+            human review/rework time, outcome cost, cancellation/cleanup
+            failures, and later reverts or linked regressions. Retain a small
+            set of real completed tasks as an evaluation set before expanding
+            autonomy. Learning changes future guidance through the existing
+            audited system.
+          </p>
+          <details>
+            <summary>A worked example: one issue, two coding attempts</summary>
+            <p>
+              A maintainer labels a GitHub issue: “Watch notifications repeat
+              after reconnect.” The delivery is persisted once; Neon fetches the
+              current issue, links related watch behavior, and drafts a brief:
+              reconnecting must not resend already-handled feedback, while
+              genuinely new feedback still notifies.
+            </p>
+            <p>
+              The operator queues that brief. The coordinator resolves the base
+              SHA and creates a managed worktree. Codex implements a candidate
+              and reports passing checks. Independent verification finds that
+              new feedback is now suppressed. The reviewer records that failure
+              against the candidate; the coordinator issues a scoped repair
+              brief to the same recorded Codex session.
+            </p>
+            <p>
+              The second candidate passes the acceptance cases and review. Neon
+              publishes one draft PR and follows CI. A duplicate webhook adds no
+              work. A controller restart reconstructs the run from records. The
+              human reviews and merges; the release watch reports what it can
+              observe, and the clean published worktree becomes eligible for
+              cleanup. Learning receives one settled outcome, including the
+              failed first attempt.
+            </p>
+          </details>
+        </section>
+
+        <section id="rollout">
+          <h2>Implement as vertical slices</h2>
+          <p>
+            Each slice should work end to end. Keep new dispatch disabled by
+            default until its acceptance exercise passes. Slice 1 is now the
+            next planned roadmap priority; see the
+            <a href="../factory/SLICE_1_IMPLEMENTATION_PLAN.md"
+              >implementation plan</a
+            >
+            and
+            <a href="../factory/SLICE_1_HANDOFF.md">stacked-PR handoff</a>.
+            Implementation has not started. Record real deviations in the
+            existing planning files.
+          </p>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Slice</th>
+                  <th>Deliverable</th>
+                  <th>Acceptance exercise</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><strong>1 · Intake to inbox</strong></td>
+                  <td>
+                    Public webhook-only listener on exe.dev; manual intake;
+                    delivery/source/work records; GitHub mapping; lightweight
+                    triage; persistent model-led planning chat with versioned
+                    briefs, plan revisions, and a human release gate. Reuse the
+                    briefing/chat/Markdown/diff surfaces for the initial shaping
+                    workbench. Include opt-in maintained issue status comments
+                    and attributed issue replies in planning context.
+                  </td>
+                  <td>
+                    Replay duplicate and reordered deliveries; restart after
+                    persistence; close an issue; send bad signatures. One work
+                    item, no lost accepted delivery, no anonymous dashboard
+                    access, no accidental coding. Iterate on a proposed plan
+                    with the model, restart and recover the conversation/brief,
+                    and verify that only the released spec version is queued.
+                    Confirm that an unanswered human decision keeps work waiting
+                    and that a revised spec invalidates its previous release.
+                    Compare proposal versions and reject stale editor saves.
+                    Retry a status write without duplicate comments; verify our
+                    updates cannot trigger fresh work and an issue reply cannot
+                    grant execution authority.
+                  </td>
+                </tr>
+                <tr>
+                  <td><strong>2 · Brief to candidate</strong></td>
+                  <td>
+                    Shared coding-run model extracted from Kilo patterns;
+                    supervised local worktree host; Codex adapter; logs/session
+                    links, cancellation, limits, retention.
+                  </td>
+                  <td>
+                    Complete a small repo task. Kill Neon mid-run, reconcile
+                    without a duplicate writer, cancel a process with a child
+                    dev server, and retain failed/dirty work.
+                  </td>
+                </tr>
+                <tr>
+                  <td><strong>3 · Candidate to PR</strong></td>
+                  <td>
+                    Independent checks/reviewer; bounded repair; real delivery
+                    service; draft PR; existing watch and review UI connected
+                    with explicit factory ownership.
+                  </td>
+                  <td>
+                    Reject bad evidence and stale approvals. Retry a timed-out
+                    PR creation without duplicates. Process CI feedback without
+                    the old Autopilot owner also editing. Merge manually, record
+                    outcome, and clean up. Exercise a scope-change conversation
+                    and exhausted-budget intervention; verify that an ordinary
+                    authorized repair adds no human gate and that merge remains
+                    a human decision.
+                  </td>
+                </tr>
+                <tr>
+                  <td><strong>4 · Second harness</strong></td>
+                  <td>
+                    OpenCode adapter and readiness/config UI over the same host,
+                    run records, review, and delivery path.
+                  </td>
+                  <td>
+                    Run the same task/repair/cancel exercises with OpenCode.
+                    Provider selection changes no factory phase code. This
+                    completes the initial dual-harness scope.
+                  </td>
+                </tr>
+                <tr>
+                  <td><strong>5 · Second source</strong></td>
+                  <td>
+                    Linear connector with explicit team/project-to-repo mapping;
+                    source reconciliation and configured status writeback.
+                  </td>
+                  <td>
+                    Replay Linear updates, resolve ambiguous repo mapping,
+                    cancel on removal, and prevent status-write feedback loops.
+                  </td>
+                </tr>
+                <tr>
+                  <td><strong>6 · Remote execution</strong></td>
+                  <td>
+                    Reuse exe.dev transport/lifecycle helpers behind the host
+                    adapter; isolated checkout, durable receipt, Git/artifact
+                    transfer, private preview and cleanup.
+                  </td>
+                  <td>
+                    Disconnect SSH, restart the controller, retry provisioning,
+                    collect unpublished work, and remove only a factory-owned VM
+                    after verified transfer.
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="split" style="margin-top: 28px">
+            <div>
+              <h3>Included in the initial target</h3>
+              <p>
+                Slices 1–4: one repo per task, GitHub/manual intake, both coding
+                harness choices, explicit gates, real draft PR delivery, repair
+                through existing PR feedback, durable inspection, and safe
+                cleanup on one exe.dev host.
+              </p>
+            </div>
+            <div>
+              <h3>Deferred deliberately</h3>
+              <p>
+                Linear can replace GitHub-first if preferred. Otherwise it
+                follows as slice 5. VM-per-run execution is slice 6. Also defer
+                multi-repo graphs, parallel branch synthesis, autoscaling pools,
+                digital twins, auto-merge/deploy, custom model gateways, and
+                self-modifying factory policies.
+              </p>
+            </div>
+          </div>
+          <h3>Decisions to revisit together</h3>
+          <p>
+            GitHub or Linear as the first source; default Codex versus OpenCode
+            profile; whether queue approval includes draft-PR publication; how
+            much existing PR-owner behavior to retire after migration; and
+            whether same-host contention warrants pulling the remote slice
+            forward. The proposal chooses workable defaults so none of these
+            need block the first review.
+          </p>
+        </section>
+
+        <section id="research">
+          <h2>What the reading changed</h2>
+          <p>
+            The sources disagree about whether unread code can be trusted. The
+            useful common ground is narrower: deliberate intake, bounded tasks,
+            explicit context, independent evidence, traceable decisions, and
+            feedback. The architecture above is a synthesis for Neondeck, not a
+            claim that these vendors use identical designs or that their
+            reported results will transfer here.
+          </p>
+          <div class="table-wrap">
+            <table class="source-list">
+              <thead>
+                <tr>
+                  <th>Source / reading</th>
+                  <th>Pattern to borrow</th>
+                  <th>Boundary for this proposal</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>
+                    <a href="https://neonronin.sh/note/5"
+                      >neonronin reading pack</a
+                    ><br /><a href="SOFTWARE_FACTORIES_X_THREADS_SUMMARY.md"
+                      >Local X-thread summary</a
+                    >
+                  </td>
+                  <td>
+                    Maps the debate and its contrasting claims. X arguments from
+                    Dex, dzhng, Addy, Uber/Uday, Warp, Chamath, and PostHog
+                    informed the framing.
+                  </td>
+                  <td>
+                    X content was reviewed through the supplied research
+                    summary; essays and platform docs below were opened
+                    separately.
+                  </td>
+                </tr>
+                <tr>
+                  <td>
+                    <a
+                      href="https://raw.githubusercontent.com/humanlayer/advanced-context-engineering-for-coding-agents/main/wsff.md"
+                      >Dex / Why Software Factories Fail</a
+                    >
+                  </td>
+                  <td>
+                    Review product intent, architecture, and program design
+                    upstream; deliver small vertical slices.
+                  </td>
+                  <td>
+                    Keep a human review path and measure rework. Passing tests
+                    is insufficient evidence of long-term design quality.
+                  </td>
+                </tr>
+                <tr>
+                  <td>
+                    <a href="https://github.com/dzhng/skills">dzhng / Skills</a
+                    ><br />Plus the supplied X analysis
+                  </td>
+                  <td>
+                    Independently verifiable pieces, explicit unknowns, and
+                    decision artifacts; re-scope when evidence changes.
+                  </td>
+                  <td>
+                    Use a small decision log. Do not copy an entire skills stack
+                    or let the worker silently change approved scope.
+                  </td>
+                </tr>
+                <tr>
+                  <td>
+                    <a href="https://posthog.com/newsletter/software-factories"
+                      >PostHog / Can factories work?</a
+                    >
+                  </td>
+                  <td>
+                    Tasks need product and production context, not only code and
+                    a ticket.
+                  </td>
+                  <td>
+                    Include relevant user symptoms, logs, constraints, and prior
+                    outcomes. A full analytics/context warehouse is unnecessary
+                    for v1.
+                  </td>
+                </tr>
+                <tr>
+                  <td>
+                    <a
+                      href="https://www.danshapiro.com/blog/2026/01/the-five-levels-from-spicy-autocomplete-to-the-software-factory/"
+                      >Dan Shapiro / Five Levels</a
+                    >
+                  </td>
+                  <td>
+                    Useful vocabulary for degrees of delegated engineering.
+                  </td>
+                  <td>
+                    Keep autonomy explicit per phase; “dark factory” is not the
+                    target or a required maturity badge.
+                  </td>
+                </tr>
+                <tr>
+                  <td>
+                    <a href="https://factory.strongdm.ai/"
+                      >StrongDM / Software Factory</a
+                    ><br /><a
+                      href="https://simonwillison.net/2026/Feb/7/software-factory/"
+                      >Simon Willison's account</a
+                    >
+                  </td>
+                  <td>
+                    Externally defined behavior scenarios can detect failures
+                    that implementation-written tests miss.
+                  </td>
+                  <td>
+                    Borrow a validation contract and independent review. Defer
+                    digital twins, hidden-test infrastructure, and their
+                    no-human-review rule.
+                  </td>
+                </tr>
+                <tr>
+                  <td>
+                    <a
+                      href="https://www.uber.com/us/en/blog/efficient-software-factory/"
+                      >Uber / Factory efficiency</a
+                    >
+                  </td>
+                  <td>
+                    Measure quality and cost per useful outcome; evaluate models
+                    on actual managed work.
+                  </td>
+                  <td>
+                    Record usage, failures, rework, and latency. Do not build
+                    enterprise gateways or a context graph to launch one worker.
+                  </td>
+                </tr>
+                <tr>
+                  <td>
+                    <a
+                      href="https://www.warp.dev/blog/open-infrastructure-for-building-a-software-factory"
+                      >Warp / Open infrastructure</a
+                    >
+                  </td>
+                  <td>
+                    Versioned factory configuration and separable
+                    harness/infrastructure choices.
+                  </td>
+                  <td>
+                    Adopt typed profiles and adapter seams. Buying Warp or
+                    reproducing its platform is outside this scope.
+                  </td>
+                </tr>
+                <tr>
+                  <td>
+                    <a href="https://factory.com/news/software-factory"
+                      >Factory 2.0</a
+                    ><br /><a
+                      href="https://factory.com/articles/what-is-a-software-factory-architecture"
+                      >Seven-component architecture</a
+                    >
+                  </td>
+                  <td>
+                    Signals become planned changes, then delivery and
+                    observation feed the next input.
+                  </td>
+                  <td>
+                    Use this as a coverage check. Reuse Neondeck's existing
+                    context, review, and observation components.
+                  </td>
+                </tr>
+                <tr>
+                  <td>
+                    <a href="https://factory.ai/news/missions-architecture"
+                      >Factory / Missions architecture</a
+                    ><br /><a
+                      href="https://factory.com/news/what-it-takes-for-coding-agents-to-complete-large-software-tasks"
+                      >Completion instruments</a
+                    >
+                  </td>
+                  <td>
+                    Separate worker incentives from validation, define
+                    correctness first, and externalize durable artifacts.
+                  </td>
+                  <td>
+                    Fresh reviewer + bounded repairs. Defer a multi-day
+                    recursive worker tree or claim that all verification is
+                    adversarially isolated in v1.
+                  </td>
+                </tr>
+                <tr>
+                  <td>
+                    <a href="https://docs.factory.ai/harness/agents-md"
+                      >Factory / AGENTS.md</a
+                    >
+                  </td>
+                  <td>
+                    Repo-native commands and scoped guidance help harnesses use
+                    the right conventions.
+                  </td>
+                  <td>
+                    Respect this repo's instructions and selected skills. Keep
+                    prompts small and avoid a second competing instruction
+                    system.
+                  </td>
+                </tr>
+                <tr>
+                  <td>
+                    <a href="https://ampcode.com/docs/orbs">Amp / Orbs</a
+                    ><br /><a
+                      href="https://ampcode.com/news/from-agent-to-agent"
+                      >Agent-to-agent</a
+                    ><br /><a href="https://ampcode.com/news/event-driven-orbs"
+                      >Event-driven Orbs</a
+                    >
+                  </td>
+                  <td>
+                    Separate machine/session lifecycle, carry context and
+                    evidence across handoffs, wake on meaningful external
+                    events.
+                  </td>
+                  <td>
+                    Our host adapter permits the same placement flexibility
+                    later. Every worker is budgeted and tracked.
+                  </td>
+                </tr>
+                <tr>
+                  <td>
+                    <a href="https://www.8090.ai/">8090</a><br />Plus Chamath in
+                    the X summary
+                  </td>
+                  <td>
+                    Intent, ownership, and traceability belong in the control
+                    system.
+                  </td>
+                  <td>
+                    Adopt provenance and a named operator. Do not infer
+                    guaranteed outcomes from category marketing.
+                  </td>
+                </tr>
+                <tr>
+                  <td>
+                    <a href="https://software-factory.dev/"
+                      >Software Factory / Ona field notes</a
+                    ><br /><a
+                      href="https://sociotechnica.org/notebook/software-factory/"
+                      >Jess Martin / Year of the Factory</a
+                    >
+                  </td>
+                  <td>
+                    Operate and improve the delivery process; expose where work
+                    stalls and feed observations back into it.
+                  </td>
+                  <td>
+                    Useful examples and organizational framing, not evidence
+                    that we need their full automation inventory.
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <details>
+            <summary>Coverage and technical references</summary>
+            <p>
+              The linked primary essays/platform pages above were reviewed on
+              September 5, 2026. The reading pack itself was fetched directly
+              because the browser research fetch failed. The linked
+              <a href="https://memo.software-factory.dev">Memo demo</a> could
+              not be fetched; its parent field-note page was reviewed. Linked
+              videos were not watched. The linked
+              <a
+                href="https://newsletter.port.io/p/how-uber-built-a-software-factory"
+                >Port overview</a
+              >
+              and
+              <a
+                href="https://techcrunch.com/2026/08/18/warps-new-system-is-an-out-of-the-box-software-factory-for-ai-development/"
+                >TechCrunch coverage</a
+              >
+              were also opened as secondary context; technical conclusions use
+              the original Uber and Warp posts.
+            </p>
+            <p>
+              Implementation references:
+              <a href="https://exe.dev/llms.txt">exe.dev documentation index</a
+              >, <a href="https://exe.dev/docs/proxy.md">proxy</a>,
+              <a href="https://exe.dev/docs/api.md">SSH API</a>,
+              <a href="https://exe.dev/docs/cli-new.md">VM creation</a>,
+              <a href="https://exe.dev/docs/cli-rm.md">VM deletion</a>,
+              <a href="https://developers.openai.com/codex/noninteractive/"
+                >Codex exec</a
+              >, <a href="https://opencode.ai/docs/cli/">OpenCode CLI</a>,
+              <a href="https://opencode.ai/docs/server/">OpenCode server</a>,
+              <a
+                href="https://docs.github.com/en/webhooks/using-webhooks/best-practices-for-using-webhooks"
+                >GitHub webhook guidance</a
+              >, and
+              <a href="https://linear.app/developers/webhooks"
+                >Linear webhooks</a
+              >. Flue guidance was read from the installed 2.0.3 CLI rather than
+              inferred from the old roadmap wording.
+            </p>
+            <p>
+              Local context: <a href="../ROADMAP.md">Roadmap</a>,
+              <a href="HERMES_RESEARCH.md">Hermes research</a>,
+              <a href="../../README.md">README</a>,
+              <a href="../../SOUL.md">SOUL</a>, and the implementation links in
+              the reuse table. Local file links resolve relative to this
+              document when kept inside the repository.
+            </p>
+          </details>
+        </section>
+        <footer>
+          Neondeck design proposal · v0.1 · September 5, 2026<br />Self-contained
+          HTML with embedded styles and scripts, using system fonts. Controls
+          affect this document only.
+        </footer>
+      </main>
+    </div>
+    <script>
+      const themeButton = document.getElementById('theme');
+      themeButton.addEventListener('click', () => {
+        const light = document.documentElement.dataset.theme !== 'light';
+        document.documentElement.dataset.theme = light ? 'light' : 'dark';
+        themeButton.textContent = light ? 'Dark theme' : 'Light theme';
+        themeButton.setAttribute(
+          'aria-label',
+          light ? 'Switch to dark theme' : 'Switch to light theme',
+        );
+      });
+      document
+        .getElementById('print')
+        .addEventListener('click', () => window.print());
+      const detailsState = new Map();
+      window.addEventListener('beforeprint', () => {
+        document.querySelectorAll('details').forEach((item) => {
+          detailsState.set(item, item.open);
+          item.open = true;
+        });
+      });
+      window.addEventListener('afterprint', () => {
+        detailsState.forEach((open, item) => {
+          item.open = open;
+        });
+        detailsState.clear();
+      });
+      document
+        .getElementById('placement')
+        .addEventListener('change', (event) => {
+          const remote = event.target.value === 'remote';
+          document.getElementById('host-connection').textContent = remote
+            ? 'SSH / provider API · brief + Git bundle out · receipts + evidence back'
+            : 'Local supervisor · run identity + process receipt';
+          document.getElementById('host-title').textContent = remote
+            ? 'Factory-owned exe.dev worker VM'
+            : 'Managed worktree on the same VM';
+          document.getElementById('host-body').textContent = remote
+            ? 'Codex or OpenCode process · pinned checkout · independent runtime/test data · private preview URL. The control plane retains the work history.'
+            : 'Codex or OpenCode process · private agent state · per-run test data and ports. Runs use the existing VM in the first slice.';
+          document.getElementById('host-foot').textContent = remote
+            ? 'Later slice: provision or select → run → collect and verify artifacts → remove owned VM. The coding harness and factory phases stay the same.'
+            : 'Same-host execution is the smallest implementation. Shared resources and filesystem access remain a known limitation.';
+        });
+      const navLinks = [...document.querySelectorAll('.sidebar nav a')];
+      const targets = navLinks.map((link) =>
+        document.querySelector(link.getAttribute('href')),
+      );
+      let pending = false;
+      function updateNavigation() {
+        let current = targets[0];
+        for (const target of targets) {
+          if (target.getBoundingClientRect().top <= 160) current = target;
+        }
+        navLinks.forEach((link) => {
+          if (link.hash === '#' + current.id)
+            link.setAttribute('aria-current', 'location');
+          else link.removeAttribute('aria-current');
+        });
+        pending = false;
+      }
+      window.addEventListener(
+        'scroll',
+        () => {
+          if (!pending) {
+            pending = true;
+            requestAnimationFrame(updateNavigation);
+          }
+        },
+        { passive: true },
+      );
+      updateNavigation();
+    </script>
+  </body>
+</html>
