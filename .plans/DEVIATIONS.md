@@ -791,3 +791,27 @@ Use this format:
   discard unsaved local drafts; storage failure is surfaced.
 - Follow-up: Rich threaded comments and a generic document platform remain deferred
   as planned. Increment 4 owns GitHub ingress, not this workbench.
+
+## 2026-09-05 — Factory slice 1 increment 4 recovery and production hosting
+
+- Roadmap item: Factory slice 1 / GitHub ingress, reconciliation and exposure.
+- Decision: Use bounded, durable, fully overlapping `state=all` discovery cycles
+  rather than advancing an incremental timestamp watermark. Rotate connections and
+  admitted sources, retain page/item checkpoints, and individually confirm missing
+  comments after pagination. No deletion is inferred from an incomplete page.
+- Reason: GitHub page-number pagination is not a snapshot; full repeated overlap
+  repairs moving-page omissions in the naive implementation without claiming a
+  stable provider cursor. Manager accepted this bounded naive tradeoff.
+- Follow-up: Optimize discovery if measured read costs justify a more elaborate
+  overlap policy. Outbound effects remain increment 5; deployed anonymous exposure
+  and live webhook setup remain separately pending.
+- Decision: Emit an owned production host alongside the Flue non-listening app and
+  point the conventional packaged entry to it. The private host is loopback-only,
+  with separate public routes, rollback and shutdown under one runtime owner.
+- Reason: Inspected Flue 2.0.3's generated self-starting entry uses an unspecified
+  bind address and owns only one listener. Reusing its documented app bootstrap
+  preserves agent registration/durability while making exposure explicit.
+- Verification correction: Initial diagnostic commands after Node-26 npm install
+  ran in login shells that reverted to Node 25. Their results are not acceptance
+  evidence. Acceptance commands explicitly select Node 26.4.0. Early loopback-denied
+  tests were rerun with approved local networking; no blocked test is called passed.

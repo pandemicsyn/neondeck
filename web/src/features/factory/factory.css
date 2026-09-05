@@ -330,3 +330,16 @@
   min-width: 0;
   overflow-wrap: anywhere;
 }
+
+.factory-github {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.factory-github article {
+  padding-block: 1rem;
+  border-bottom: 1px solid var(--color-border);
+}
+.factory-github input,
+.factory-github select {
+  max-width: 100%;
+}

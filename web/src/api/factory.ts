@@ -83,3 +83,24 @@ export async function stopFactoryPlanning(sessionId: string) {
 export async function retryFactoryTriage(id: string) {
   await postJson(`/api/factory/work/${encodeURIComponent(id)}/triage`, {});
 }
+
+export async function getFactoryGitHub() {
+  const { factoryGitHubStateSchema } =
+    await import('../../../shared/factory-github');
+  return v.parse(
+    factoryGitHubStateSchema,
+    await getJson('/api/factory/github'),
+  );
+}
+export async function saveFactoryGitHub(
+  github: import('../../../shared/factory-github').GitHubConnection[],
+  expectedFingerprint: string,
+) {
+  await postJson('/api/factory/github/config', {
+    connections: github,
+    expectedFingerprint,
+  });
+}
+export async function syncFactorySource(id: string) {
+  await postJson(`/api/factory/work/${encodeURIComponent(id)}/sync`, {});
+}

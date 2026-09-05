@@ -1,3 +1,4 @@
+import { FactoryGitHubSource } from './FactoryGitHub';
 import { readWorkbenchDraft, writeWorkbenchDraft } from './workbench-draft';
 import { useEffect, useRef, useState } from 'react';
 import { FactoryPlanning } from './FactoryPlanning';
@@ -140,7 +141,12 @@ export function FactoryTaskDetail({
       )}
       <div className="factory-title">
         <div>
-          <p>Manual source · {detail.work.repoId ?? 'Repository unresolved'}</p>
+          <p>
+            {detail.source.provider === 'github'
+              ? 'GitHub source'
+              : 'Manual source'}{' '}
+            · {detail.work.repoId ?? 'Repository unresolved'}
+          </p>
           <h2>{detail.work.title}</h2>
         </div>
         <span>
@@ -707,13 +713,17 @@ export function FactoryTaskDetail({
         <p>
           Changing source context requires saving and reviewing a new revision.
         </p>
-        <SourceEditor
-          detail={detail}
-          repos={repos}
-          disabled={busy || !!editor || detail.work.lifecycle === 'closed'}
-          onSave={(input) => mutate('source', input)}
-          onReload={() => setError('')}
-        />
+        {detail.source.provider === 'github' ? (
+          <FactoryGitHubSource detail={detail} />
+        ) : (
+          <SourceEditor
+            detail={detail}
+            repos={repos}
+            disabled={busy || !!editor || detail.work.lifecycle === 'closed'}
+            onSave={(input) => mutate('source', input)}
+            onReload={() => setError('')}
+          />
+        )}
       </details>
       <details className="factory-history">
         <summary>

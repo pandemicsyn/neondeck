@@ -7,7 +7,20 @@ const buildVersion = resolveBuildVersion(
 );
 
 export default defineConfig({
-  plugins: [flue()],
+  plugins: [
+    flue(),
+    {
+      name: 'neondeck-production-host',
+      apply: 'build',
+      buildStart() {
+        this.emitFile({
+          type: 'chunk',
+          id: new URL('./src/server/production.ts', import.meta.url).pathname,
+          fileName: 'neondeck-server.mjs',
+        });
+      },
+    },
+  ],
   define: {
     __NEONDECK_VERSION__: JSON.stringify(buildVersion),
   },

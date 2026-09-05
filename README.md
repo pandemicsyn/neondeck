@@ -36,11 +36,14 @@ tasks receive bounded utility-model triage automatically. Choose **Ask Neon to
 plan** to shape a model-proposed brief in a dedicated persistent conversation,
 then reply to revise it or edit the draft manually. Compare retained versions,
 discuss a section, and resolve decisions before releasing an exact specification
-version; the coding executor and GitHub ingress remain pending.
+version. GitHub connections can admit signed issue events and reconcile full source
+content and attributed replies. A separate webhook listener keeps the dashboard
+on loopback. The coding executor and outbound GitHub status/comments remain pending.
 
 See the [manual intake operator guide](.plans/factory/INCREMENT_1_OPERATOR.md) and
 [planning operator guide](.plans/factory/INCREMENT_2_OPERATOR.md), plus the
-[human shaping guide](.plans/factory/INCREMENT_3_OPERATOR.md).
+[human shaping guide](.plans/factory/INCREMENT_3_OPERATOR.md) and
+[GitHub intake operator guide](.plans/factory/INCREMENT_4_OPERATOR.md).
 
 ## The deck in action
 

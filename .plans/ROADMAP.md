@@ -86,9 +86,12 @@ See [the slice 1 implementation plan](factory/SLICE_1_IMPLEMENTATION_PLAN.md) an
 manual intake PR #383 and model planning PR #384 are open, none merged/deployed.
 Planning is manager-accepted at `3210fbb00eddb54e2873b1e44bfea9eea012b9d5` after
 two clean dedicated reviews, 1,623-test verification on identical runtime source
-plus a README-only clarification, and all six GitHub checks passing. Increment 3's
-human shaping workbench is an uncommitted candidate from that parent; verification
-and independent review are pending. GitHub ingress/writeback remain unimplemented.
+plus a README-only clarification, and all six GitHub checks passing. Human shaping
+PR #385 is manager-accepted at `8809958947531e3c7fa727accae4aab3f3073f57`, with two
+clean reviews, 1,632-test verification plus a CSS-only rebuilt UI correction, and
+all six GitHub checks passing. Increment 4 GitHub ingress/reconciliation is an
+uncommitted candidate from that parent; final verification and dedicated review
+remain pending. Writeback and actual deployed exposure acceptance remain pending.
 Actual deviations belong in `DEVIATIONS.md`; preserve existing coding harnesses and
 do not revive the removed PR Autopilot coordinator.
 

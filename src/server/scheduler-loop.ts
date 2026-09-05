@@ -72,3 +72,10 @@ export function startSchedulerLoop(
   schedulerLoopRegistry.set(paths.home, timer);
   return timer;
 }
+
+export function stopSchedulerLoop(paths: RuntimePaths) {
+  const timer = schedulerLoopRegistry.get(paths.home);
+  if (timer) clearInterval(timer);
+  schedulerLoopRegistry.delete(paths.home);
+  return schedulerTicksInFlight.get(paths.home);
+}

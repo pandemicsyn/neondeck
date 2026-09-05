@@ -26,6 +26,8 @@ try {
   const packageRoot = join(projectDir, 'node_modules', 'neondeck');
   for (const requiredPath of [
     'dist/server.mjs',
+    'dist/neondeck-server.mjs',
+    'dist/app.mjs',
     'dist/assets/migrations',
     'dist/skills/neon-pr-tour/SKILL.md',
     'dist/skills/neon-pr-review/SKILL.md',
@@ -141,8 +143,15 @@ async function availablePort() {
 }
 
 async function smokeServe(cli, home, port, cwd) {
+  const ingressPort = await availablePort();
   const child = spawn(cli, ['--home', home, 'serve', '--port', String(port)], {
     cwd,
+    env: {
+      ...process.env,
+      NEONDECK_INGRESS_PORT: String(ingressPort),
+      NEONDECK_INGRESS_HOST: '127.0.0.1',
+      NEONDECK_PRIVATE_HOST: '127.0.0.1',
+    },
     detached: process.platform !== 'win32',
     stdio: ['ignore', 'pipe', 'pipe'],
   });
@@ -169,17 +178,30 @@ async function smokeServe(cli, home, port, cwd) {
         const response = await fetch(`http://127.0.0.1:${port}/api/health`);
         if (response.ok) {
           await assertRuntimeSkills(port);
-          return;
+          await assertIngressIsolation(ingressPort, port);
+          break;
         }
       } catch {
         // Retry until the server binds or the deadline expires.
       }
       await new Promise((resolve) => setTimeout(resolve, 250));
     }
-    throw new Error(`Packed serve did not become healthy.\n${output}`);
+    if (Date.now() >= deadline)
+      throw new Error(`Packed serve did not become healthy.\n${output}`);
   } finally {
     await stopProcess(child);
   }
+  for (const closedPort of [port, ingressPort]) {
+    try {
+      await fetch(`http://127.0.0.1:${closedPort}/health`, {
+        signal: AbortSignal.timeout(1000),
+      });
+    } catch {
+      continue;
+    }
+    throw new Error('Packaged listener remained reachable after shutdown.');
+  }
+  await assertBindRollback(cli, home, port, ingressPort, cwd);
 }
 
 async function assertRuntimeSkills(port) {
@@ -219,4 +241,78 @@ async function stopProcess(child) {
     exited,
     new Promise((resolve) => setTimeout(resolve, 5_000)),
   ]);
+}
+
+async function assertIngressIsolation(ingressPort, privatePort) {
+  const health = await fetch(`http://127.0.0.1:${ingressPort}/health`);
+  if (!health.ok) throw new Error('Packed ingress health failed.');
+  for (const path of [
+    '/api/health',
+    '/api/factory/state',
+    '/api/flue/agents/factory-planner/test',
+    '/agents/test',
+    '/reports/test',
+    '/attachments/test',
+    '/assets/test.js',
+    '/',
+    '/factory',
+  ]) {
+    const response = await fetch(`http://127.0.0.1:${ingressPort}${path}`, {
+      headers: { Host: 'localhost', Origin: `http://localhost:${privatePort}` },
+    });
+    if (response.status !== 404)
+      throw new Error(
+        `Packed public listener exposed ${path}: ${response.status}`,
+      );
+  }
+  const planner = await fetch(
+    `http://127.0.0.1:${privatePort}/api/flue/agents/factory-planner/unbound?view=history`,
+  );
+  if (planner.status !== 403)
+    throw new Error('Packed planner binding route missing.');
+}
+async function assertBindRollback(cli, home, port, ingressPort, cwd) {
+  const occupied = createServer();
+  await new Promise((resolve, reject) => {
+    occupied.once('error', reject);
+    occupied.listen(ingressPort, '127.0.0.1', resolve);
+  });
+  try {
+    const child = spawn(
+      cli,
+      ['--home', home, 'serve', '--port', String(port)],
+      {
+        cwd,
+        stdio: 'ignore',
+        env: {
+          ...process.env,
+          NEONDECK_INGRESS_PORT: String(ingressPort),
+          NEONDECK_INGRESS_HOST: '127.0.0.1',
+        },
+      },
+    );
+    const code = await Promise.race([
+      new Promise((resolve, reject) => {
+        child.once('error', reject);
+        child.once('exit', resolve);
+      }),
+      new Promise((_, reject) =>
+        setTimeout(() => {
+          child.kill('SIGTERM');
+          reject(new Error('Packed bind failure did not terminate.'));
+        }, 10000).unref(),
+      ),
+    ]);
+    if (code === 0) throw new Error('Packed bind failure reported success.');
+    try {
+      await fetch(`http://127.0.0.1:${port}/api/health`, {
+        signal: AbortSignal.timeout(1000),
+      });
+    } catch {
+      return;
+    }
+    throw new Error('Packed bind failure left private listener reachable.');
+  } finally {
+    await new Promise((resolve) => occupied.close(resolve));
+  }
 }
