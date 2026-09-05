@@ -1,3 +1,9 @@
+import * as v from 'valibot';
+import {
+  readPlanningEffects,
+  writePlanningEffect,
+  triageTokensSchema,
+} from './effect-store';
 import { instrument } from '@flue/runtime';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { runtimePaths } from '../../runtime-home';
@@ -6,14 +12,11 @@ import { getPlanningIntent, hashPlanning } from './planning-store';
 // Metering only: Flue remains the owner of turns, attempts, queue and recovery.
 // Stop before the next model call once four calls or 12k observed tokens are
 // consumed. A single provider response can cross the token threshold.
-export function assertTriageBudget(intentId: string) {
-  return dbRun(runtimePaths(), (db) => {
-    const rows = db
-      .prepare('SELECT record FROM factory_planning_effects WHERE intent_id=?')
-      .all(intentId);
-    const usage = rows
-      .map((r) => JSON.parse(String(r.record)))
-      .filter((r) => r.kind === 'triage-usage');
+export function assertTriageBudget(intentId: string, paths = runtimePaths()) {
+  return dbRun(paths, (db) => {
+    const usage = readPlanningEffects(db, intentId).filter(
+      (effect) => effect.kind === 'triage-usage',
+    );
     if (
       usage.length >= 4 ||
       usage.reduce((sum, row) => sum + row.tokens, 0) >= 12000
@@ -85,15 +88,21 @@ export function installFactoryTriageBudget() {
             .get(intentId)
         )
           return;
-        db.prepare(
-          'INSERT OR IGNORE INTO factory_planning_effects (id,intent_id,record) VALUES (?,?,?)',
-        ).run(
+        // Observers cannot veto a turn. Invalid provider usage must durably
+        // exhaust the next-call budget rather than throw here and lose metering.
+        const tokens = v.safeParse(
+          triageTokensSchema,
+          event.response.usage?.totalTokens ?? 0,
+        );
+        writePlanningEffect(
+          db,
           hashPlanning({ intentId, turnId: event.turnId }),
           intentId,
-          JSON.stringify({
+          {
             kind: 'triage-usage',
-            tokens: event.response.usage?.totalTokens ?? 0,
-          }),
+            tokens: tokens.success ? tokens.output : 12000,
+          },
+          true,
         );
       });
     },

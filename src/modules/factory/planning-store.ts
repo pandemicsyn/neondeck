@@ -1,5 +1,4 @@
 import { createHash, randomUUID } from 'node:crypto';
-import { readFileSync } from 'node:fs';
 import * as v from 'valibot';
 import type { DatabaseSync } from 'node:sqlite';
 import {
@@ -8,13 +7,13 @@ import {
   type FactoryPlanningState,
 } from '../../../shared/factory-planning';
 import { factoryDiscussionText } from '../../../shared/factory-document';
-import { factoryDetailSchema, saveSpecSchema } from '../../../shared/factory';
-import { runtimePaths, type RuntimePaths } from '../../runtime-home';
-import { buildMemoryPromptSnapshotSync } from '../memory';
 import {
-  readAgentModelSelectionSync,
-  runtimeSkillSessionSnapshotsSync,
-} from '../runtime';
+  factoryDetailSchema,
+  saveSpecSchema,
+  workSchema,
+  revisionSchema,
+} from '../../../shared/factory';
+import { runtimePaths, type RuntimePaths } from '../../runtime-home';
 import {
   registerFactoryPlannerSession,
   readFactoryPlannerSession,
@@ -27,38 +26,16 @@ import {
   FactoryError,
   saveSpecInTransaction,
 } from './service';
-import { captureRepoCommit } from './repo-tools';
+import { captureContext, contextSchema } from './planning-context';
+import {
+  readPlanningEffect,
+  readPlanningEffects,
+  writePlanningEffect,
+} from './effect-store';
+import { safeReference } from './repo-reference';
+export { safeReference } from './repo-reference';
 const str = v.string();
 const nullable = v.nullable(str);
-const contextSchema = v.object({
-  capturedAt: str,
-  model: str,
-  utilityModel: str,
-  thinkingLevel: v.picklist([
-    'off',
-    'minimal',
-    'low',
-    'medium',
-    'high',
-    'xhigh',
-  ]),
-  utilityThinkingLevel: v.picklist([
-    'off',
-    'minimal',
-    'low',
-    'medium',
-    'high',
-    'xhigh',
-  ]),
-  soul: str,
-  memory: str,
-  memoryIds: v.array(str),
-  skills: v.array(v.object({ name: str, instructions: str })),
-  repoCommit: nullable,
-  repoPath: nullable,
-  repoFingerprint: nullable,
-  sourceVersion: v.number(),
-});
 const bindingSchema = v.object({
   workId: str,
   sessionId: str,
@@ -71,7 +48,11 @@ export const intentSchema = v.object({
   requestKey: str,
   requestHash: str,
   message: str,
-  snapshot: factoryDetailSchema,
+  // Internal context retains a bounded subset, not the full dashboard view.
+  snapshot: v.strictObject({
+    ...factoryDetailSchema.entries,
+    revisions: v.array(revisionSchema),
+  }),
   context: contextSchema,
   triageOnly: v.optional(v.boolean(), false),
   externalContext: v.optional(v.boolean(), false),
@@ -130,41 +111,6 @@ function latestIntent(db: DatabaseSync, workId: string) {
     intentSchema,
     workId,
   );
-}
-function captureContext(
-  current: ReturnType<typeof detail>,
-  paths: RuntimePaths,
-) {
-  const models = readAgentModelSelectionSync(paths);
-  const memory = buildMemoryPromptSnapshotSync(paths, {
-    repoId: current.work.repoId,
-  });
-  let soul = '';
-  try {
-    soul = readFileSync(paths.soul, 'utf8').slice(0, 12000);
-  } catch {
-    /* Optional SOUL. */
-  }
-  return v.parse(contextSchema, {
-    capturedAt: new Date().toISOString(),
-    model: models.displayAssistant,
-    utilityModel: models.utility,
-    thinkingLevel: models.displayAssistantThinkingLevel,
-    utilityThinkingLevel: models.utilityThinkingLevel,
-    soul,
-    memory: memory.instructions.slice(0, 16000),
-    memoryIds: memory.memoryIds,
-    skills: runtimeSkillSessionSnapshotsSync(paths)
-      .slice(0, 8)
-      .map((s) => ({
-        name: s.name,
-        instructions: s.instructions.slice(0, 6000),
-      })),
-    repoCommit: captureRepoCommit(current.repoContext?.path ?? null),
-    repoPath: current.repoContext?.path ?? null,
-    repoFingerprint: current.repoFingerprint,
-    sourceVersion: current.source.version,
-  });
 }
 function contextChanged(
   binding: PlanningBinding,
@@ -277,10 +223,18 @@ export function prepareFactoryPlanning(
           'SELECT id,record FROM factory_work_items WHERE id<>? ORDER BY rowid DESC LIMIT 10',
         )
         .all(workId)
-        .map((row) => ({
-          id: String(row.id),
-          title: String(JSON.parse(String(row.record)).title).slice(0, 240),
-        })),
+        .map((row) => {
+          const work = v.parse(
+            workSchema,
+            JSON.parse(v.parse(str, row.record)),
+          );
+          if (work.id !== v.parse(str, row.id))
+            throw new FactoryError(
+              409,
+              'Stored work identity does not match its record.',
+            );
+          return { id: work.id, title: work.title.slice(0, 240) };
+        }),
       triageSubmissionId: null,
       submissionId: null,
       error: null,
@@ -453,19 +407,16 @@ export function proposeFactorySpec(
   const data = v.parse(saveSpecSchema, input);
   return dbRun(paths, (db) => {
     const effectId = hashPlanning({ sessionId, toolCallId });
-    const old = db
-      .prepare(
-        'SELECT record FROM factory_planning_effects WHERE id=? AND intent_id=?',
-      )
-      .get(effectId, intentId);
-    if (old) {
-      const effect = JSON.parse(String(old.record));
+    const effect = readPlanningEffect(db, effectId, intentId);
+    if (effect) {
+      if (effect.kind !== 'proposal')
+        throw new FactoryError(409, 'Proposal receipt has the wrong kind.');
       if (effect.inputHash !== hashPlanning(data))
         throw new FactoryError(
           409,
           'Proposal retry differs from recorded input.',
         );
-      return effect.result as { version: number; hash: string };
+      return effect.result;
     }
     const intent = authorizePlanningIntent(
       db,
@@ -483,10 +434,9 @@ export function proposeFactorySpec(
         409,
         'Proposal must use the revision bound to this request.',
       );
-    const evidence = db
-      .prepare('SELECT record FROM factory_planning_effects WHERE intent_id=?')
-      .all(intent.id)
-      .map((row) => JSON.parse(String(row.record)));
+    const evidence = readPlanningEffects(db, intent.id).filter(
+      (effect) => effect.kind === 'repo-read',
+    );
     if (
       data.spec.references.some(
         (r) =>
@@ -508,26 +458,14 @@ export function proposeFactorySpec(
     );
     const revision = saved.revisions.at(-1)!;
     const result = { version: revision.version, hash: revision.hash };
-    db.prepare(
-      'INSERT INTO factory_planning_effects (id,intent_id,record) VALUES (?,?,?)',
-    ).run(
-      effectId,
-      intentId,
-      JSON.stringify({ inputHash: hashPlanning(data), result }),
-    );
+    writePlanningEffect(db, effectId, intentId, {
+      kind: 'proposal',
+      inputHash: hashPlanning(data),
+      result,
+    });
     // A second proposal in this turn intentionally conflicts: one effective revision per request.
     return result;
   });
-}
-export function safeReference(path: string) {
-  return (
-    path.length < 500 &&
-    !path.startsWith('/') &&
-    !path.includes('\\') &&
-    !path
-      .split('/')
-      .some((p) => !p || p === '.' || p === '..' || p.startsWith('.'))
-  );
 }
 export function recordTriage(
   sessionId: string,
