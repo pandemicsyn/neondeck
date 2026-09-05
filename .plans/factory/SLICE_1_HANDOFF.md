@@ -1,9 +1,17 @@
 # Slice 1 — Manager and implementer handoff
 
-Status: documentation root PR #382 is open at `9aba1ae2` against `main`.
-Intake PR #383 is open at `0c39917930b42aeacc3cbad71031d5552a29ccee` against
-`agent/software-factory-plan`; neither PR is merged or deployed. Increment 2 is
-an uncommitted candidate on its assigned branch, with verification and review pending.
+Historical acceptance: documentation root PR #382 was based at `9aba1ae2`.
+Intake PR #383 and planning PR #384 are accepted and published, unmerged and
+undeployed. Planning's accepted head is `3210fbb00e`; both dedicated static
+reviewers and the manager accepted it before publication. Its historical full
+verification passed 1,623 tests, builds, package smoke and formatting.
+
+The manager has accepted and published the intake feedback parent `192e7cf7`.
+Planning's feedback fixes incorporate that accepted parent. Current feedback
+review and CI status live in [PR #384](https://github.com/pandemicsyn/neondeck/pull/384).
+For each changed candidate, publication requires verification, two clean dedicated
+static reviews and manager acceptance. Historical acceptance does not approve
+subsequent changes.
 
 Read the [slice contract](SLICE_1_IMPLEMENTATION_PLAN.md) before starting.
 The coordinating assistant acts as **dev manager and reviewer**. Implementation
@@ -113,8 +121,10 @@ Contract: .plans/factory/SLICE_1_IMPLEMENTATION_PLAN.md, PR <number>, plus the
 cross-cutting invariants that apply to this increment.
 
 Read AGENTS.md, ROADMAP.md and DEVIATIONS.md. Use the roadmap-implementation
-skill. For Flue work use the installed-version Flue skill/docs. Before accessing
-Drizzle files or generating migrations, load the required Drizzle skills.
+skill. For Flue work use the installed-version Flue skill/docs. For Drizzle work,
+load applicable Drizzle skills when available in the agent environment; they are
+not tracked prerequisites of this repository. Follow the migration workflow below
+whether or not those optional environment skills are installed.
 Use the Impeccable skill for the shaping UI, preserving Neondeck's design language.
 
 Build the assigned user path end to end, with typed services, durable state,
@@ -144,9 +154,21 @@ must additionally inspect `guide/durability`, tool result contracts, the agent A
 React clients and Node lifecycle docs when touching those surfaces. No dependency
 upgrade is implied by this plan.
 
-For migrations, follow the repository's Drizzle skill chain and generation/check
-commands. Generate forward migrations from the current parent snapshot; do not
-hand-edit applied migration history to make stacked branches agree.
+For migrations, use the repository's portable workflow from `AGENTS.md` with the
+installed dependencies and Node 26.4.0:
+
+```sh
+fnm exec --using 26.4.0 npm run db:generate -- --name <migration_name>
+fnm exec --using 26.4.0 npm run db:check
+```
+
+No Drizzle `SKILL.md` is tracked in this planning root. If the agent environment
+provides Drizzle guidance, read the applicable skills before accessing Drizzle
+files or generating migrations. Their absence does not block the repository
+workflow above. Inspect generation results and resolve any reported decisions;
+then review the generated SQL and snapshot together. Generate forward migrations
+from the current parent snapshot; do not hand-edit applied migration history to
+make stacked branches agree.
 
 ## Review and evidence protocol
 
@@ -218,18 +240,19 @@ privately when required; local implementation need not wait for it.
 
 ## Progress ledger
 
+This ledger describes the increment-2 branch, not downstream implementation heads.
 Update with real evidence as work proceeds. Do not infer “implemented” from branch
 creation, “verified” from a claimed plan, or “deployed” from passing local tests.
 
-| Increment                      | State                                                         | Branch/base + reviewed head                                                                                       | PR         | Verification / review / deployment evidence                                                                                                                                                     |
-| ------------------------------ | ------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- | ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Plan root                      | Reviewed, open                                                | `agent/software-factory-plan`; head `9aba1ae2`, base `main`                                                       | #382       | Documentation only; not merged/deployed                                                                                                                                                         |
-| 1 — Manual intake/domain       | Accepted, open                                                | `agent/factory-s1-01-intake`; head `0c39917930b42aeacc3cbad71031d5552a29ccee`, base `agent/software-factory-plan` | #383       | Feature verification: 1,594 tests at `587bbafd`; six-line CI-only follow-up independently reviewed by both reviewers and manager; all six GitHub checks pass at `0c399179`; not merged/deployed |
-| 2 — Model planning             | Uncommitted V3 candidate; renewed verification/review pending | `agent/factory-s1-02-planning`; base/head `0c39917930b42aeacc3cbad71031d5552a29ccee` plus local delta             | Not opened | V1 full verification passed 1,614 tests; V2 passed 1,619 tests. V3 additionally closes mixed-tool triage continuation at the provider-call boundary; renewed review and gates pending           |
-| 3 — Human workbench            | Not started                                                   | Not created                                                                                                       | Not opened | None                                                                                                                                                                                            |
-| 4 — GitHub ingress             | Not started                                                   | Not created                                                                                                       | Not opened | None                                                                                                                                                                                            |
-| 5 — GitHub status              | Not started                                                   | Not created                                                                                                       | Not opened | None                                                                                                                                                                                            |
-| Full slice / deployed exercise | Not started                                                   | Record final accepted SHA                                                                                         | —          | Manual + GitHub + real model + restart + exposure checks pending                                                                                                                                |
+| Increment                      | State                                                   | Branch/base + reviewed head                                                                                          | PR                                                       | Verification / review / deployment evidence                                                                                                                                                                                                                                            |
+| ------------------------------ | ------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Plan root                      | Accepted and published; unmerged                        | `agent/software-factory-plan`; `9aba1ae2`                                                                            | [#382](https://github.com/pandemicsyn/neondeck/pull/382) | Documentation; dedicated static reviews and manager accepted                                                                                                                                                                                                                           |
+| 1 — Manual intake/domain       | Accepted and published; unmerged and undeployed         | `agent/factory-s1-01-intake`; feedback parent `192e7cf7`                                                             | [#383](https://github.com/pandemicsyn/neondeck/pull/383) | Historical feature verification: 1,594 tests; feedback parent accepted by both dedicated reviewers and manager before publication.                                                                                                                                                     |
+| 2 — Model planning             | Historical acceptance; current review/CI recorded in PR | `agent/factory-s1-02-planning`; historically accepted `3210fbb00e`; feedback incorporates accepted parent `192e7cf7` | [#384](https://github.com/pandemicsyn/neondeck/pull/384) | Historical acceptance: both static reviewers and manager; 1,623 tests (1,485 unit + 47 git + 91 integration), builds/package/format checks and attached UI screenshots. Subsequent feedback review and CI status are recorded in PR #384; publication follows the review policy above. |
+| 3 — Human workbench            | Not started                                             | Not created                                                                                                          | Not opened                                               | None                                                                                                                                                                                                                                                                                   |
+| 4 — GitHub ingress             | Not started                                             | Not created                                                                                                          | Not opened                                               | None                                                                                                                                                                                                                                                                                   |
+| 5 — GitHub status              | Not started                                             | Not created                                                                                                          | Not opened                                               | None                                                                                                                                                                                                                                                                                   |
+| Full slice / deployed exercise | Not started                                             | Record final accepted SHA                                                                                            | —                                                        | Manual + GitHub + real model + restart + exposure checks pending                                                                                                                                                                                                                       |
 
 On completion, update `.plans/ROADMAP.md` and this ledger with the actual remaining
 limits. Preserve the plans as active while review/landing is underway; archive under

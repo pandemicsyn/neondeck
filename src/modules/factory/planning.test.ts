@@ -1,4 +1,10 @@
-import { mkdtempSync, writeFileSync, mkdirSync, rmSync } from 'node:fs';
+import {
+  mkdtempSync,
+  writeFileSync,
+  mkdirSync,
+  rmSync,
+  chmodSync,
+} from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -17,10 +23,12 @@ import {
   releaseFactoryWork,
   transitionFactoryWork,
   updateFactorySource,
+  dbRun,
 } from './service';
 import {
   prepareFactoryPlanning,
   getPlanningState,
+  pendingPlanningIntents,
   getPlanningIntent,
   getBoundPlanningSession,
   proposeFactorySpec,
@@ -30,9 +38,11 @@ import {
 } from './planning-store';
 import {
   resumeFactoryPlanning,
+  recoverFactoryWorkPlanning,
+  recoverFactoryPlanning,
   type PlanningTransport,
 } from './planning-dispatch';
-import { readPlanningRepo } from './repo-tools';
+import { readPlanningRepo, searchPlanningRepo } from './repo-tools';
 let paths: RuntimePaths;
 const human = { kind: 'human' as const, id: 'local-operator' };
 const triage = {
@@ -355,7 +365,7 @@ it('a pause races a model save through the same version fence', () => {
     ),
   ).toThrow(/not open/);
 });
-it('reads only bounded committed regular files and requires inspected evidence for references', () => {
+it('reads only bounded committed regular files and requires inspected evidence for references', async () => {
   const repo = join(paths.home, 'repo');
   mkdirSync(repo);
   writeFileSync(join(repo, 'README.md'), 'Committed public fixture');
@@ -408,13 +418,31 @@ it('reads only bounded committed regular files and requires inspected evidence f
   );
   writeFileSync(join(repo, 'README.md'), 'Uncommitted context');
   expect(
-    readPlanningRepo(intent.sessionId, intent.id, 'README.md', 'read-1', paths)
-      .content,
+    (
+      await readPlanningRepo(
+        intent.sessionId,
+        intent.id,
+        'README.md',
+        'read-1',
+        paths,
+      )
+    ).content,
   ).toBe('Committed public fixture');
   for (const name of ['../README.md', '/etc/passwd', '.env'])
-    expect(() =>
+    await expect(
       readPlanningRepo(intent.sessionId, intent.id, name, 'bad', paths),
-    ).toThrow();
+    ).rejects.toThrow();
+  const searched = await searchPlanningRepo(
+    intent.sessionId,
+    intent.id,
+    { query: 'Committed', pathPrefix: 'README' },
+    'search-1',
+    paths,
+  );
+  expect(searched.matches).toEqual([
+    { path: 'README.md', line: 1, text: 'Committed public fixture' },
+  ]);
+  expect(searched.inspected).toBe(1);
   const proposed = {
     ...spec,
     references: [
@@ -537,5 +565,165 @@ it.each([false, true])(
     expect(dispatched).toEqual([first.id, successor.id]);
     expect(getPlanningState(work.work.id, paths).activity).toBe('completed');
     expect(getFactoryWork(work.work.id, paths).revisions).toHaveLength(1);
+  },
+);
+
+it('recovers only the requested task while startup still recovers all tasks', async () => {
+  const a = prepare(),
+    b = prepare(),
+    unprepared = task();
+  const dispatched: string[] = [];
+  const io: PlanningTransport = {
+    async dispatch(intent) {
+      dispatched.push(intent.workId);
+      throw new Error('Synthetic uncertain admission');
+    },
+    async abort() {},
+    async read() {},
+  };
+  recoverFactoryWorkPlanning(a.workId, paths, io);
+  await resumeFactoryPlanning(a.id, paths, io);
+  expect(dispatched).toEqual([a.workId]);
+  expect(getPlanningState(unprepared.work.id, paths).sessionId).toBeNull();
+  expect(getPlanningIntent(b.id, paths).error).toBeNull();
+  recoverFactoryPlanning(paths, io);
+  await Promise.all([
+    resumeFactoryPlanning(a.id, paths, io),
+    resumeFactoryPlanning(b.id, paths, io),
+  ]);
+  expect(dispatched).toContain(b.workId);
+  const admitted = pendingPlanningIntents(paths, unprepared.work.id)[0]!;
+  await resumeFactoryPlanning(admitted.id, paths, io);
+  expect(dispatched).toContain(unprepared.work.id);
+});
+
+it.each([
+  ['read', 'source'],
+  ['search', 'source'],
+  ['read', 'repo'],
+  ['search', 'repo'],
+  ['read', 'abort'],
+  ['search', 'abort'],
+] as const)(
+  '%s yields to writers and fences %s changes before recording evidence',
+  async (tool, change) => {
+    const repo = join(paths.home, 'slow-repo');
+    mkdirSync(repo);
+    writeFileSync(join(repo, 'README.md'), 'Public fixture needle');
+    const realGit = execFileSync('which', ['git'], { encoding: 'utf8' }).trim();
+    const git = (...args: string[]) =>
+      execFileSync(realGit, ['-C', repo, ...args]);
+    git('init');
+    git('add', '.');
+    git(
+      '-c',
+      'user.name=Fixture',
+      '-c',
+      'user.email=fixture@example.test',
+      '-c',
+      'commit.gpgsign=false',
+      'commit',
+      '-m',
+      'Fixture',
+    );
+    writeFileSync(
+      paths.repos,
+      JSON.stringify({
+        version: 1,
+        repos: [
+          {
+            id: 'demo',
+            path: repo,
+            defaultBranch: 'main',
+            github: { owner: 'example', name: 'demo' },
+          },
+        ],
+      }),
+    );
+    const work = submitFactoryWork(
+      { requestKey: 'async', title: 'Read', body: 'Plan', repoId: 'demo' },
+      human,
+      paths,
+    );
+    const intent = prepareFactoryPlanning(
+      work.work.id,
+      { requestKey: 'async-plan', expectedVersion: 1, message: 'Plan' },
+      paths,
+    );
+    updatePlanningIntent(
+      intent.id,
+      (i) => {
+        i.stage = 'planner';
+      },
+      paths,
+    );
+    const bin = join(paths.home, 'fixture-bin');
+    mkdirSync(bin);
+    writeFileSync(
+      join(bin, 'git'),
+      `#!/bin/sh\n/bin/sleep 0.1\nexec '${realGit}' "$@"\n`,
+    );
+    chmodSync(join(bin, 'git'), 0o755);
+    const oldPath = process.env.PATH;
+    process.env.PATH = `${bin}:${oldPath}`;
+    let heartbeat = false;
+    try {
+      const cancellation = new AbortController();
+      const reading =
+        tool === 'read'
+          ? readPlanningRepo(
+              intent.sessionId,
+              intent.id,
+              'README.md',
+              'async-read',
+              paths,
+              cancellation.signal,
+            )
+          : searchPlanningRepo(
+              intent.sessionId,
+              intent.id,
+              { query: 'needle', pathPrefix: '' },
+              'async-search',
+              paths,
+              cancellation.signal,
+            );
+      const assertion = expect(reading).rejects.toThrow(
+        /version|stale|changed|abort/i,
+      );
+      await new Promise<void>((resolve) => setTimeout(resolve, 20));
+      // A separate connection acquires the writer lock while Git is in flight.
+      task();
+      if (change === 'source')
+        updateFactorySource(
+          work.work.id,
+          {
+            expectedVersion: 1,
+            title: 'Changed',
+            body: 'New context',
+            repoId: 'demo',
+          },
+          human,
+          paths,
+        );
+      else if (change === 'repo')
+        writeFileSync(paths.repos, JSON.stringify({ version: 1, repos: [] }));
+      else cancellation.abort();
+      heartbeat = true;
+      await assertion;
+      expect(heartbeat).toBe(true);
+      expect(
+        dbRun(
+          paths,
+          (db) =>
+            db
+              .prepare(
+                'SELECT COUNT(*) AS n FROM factory_planning_effects WHERE intent_id=?',
+              )
+              .get(intent.id)?.n,
+        ),
+      ).toBe(0);
+    } finally {
+      process.env.PATH = oldPath;
+    }
   },
 );
