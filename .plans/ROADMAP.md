@@ -82,16 +82,19 @@ intake and collaborative shaping path. Historical phase completion above is unch
       exposure checks. Coding execution starts in a subsequent slice.
 
 See [the slice 1 implementation plan](factory/SLICE_1_IMPLEMENTATION_PLAN.md) and
-[manager/implementer handoff](factory/SLICE_1_HANDOFF.md). Increment 1 manual intake/domain is implemented and accepted in
-[PR #383](https://github.com/pandemicsyn/neondeck/pull/383), based on documentation
-PR #382 at `9aba1ae2`. Accepted feature commit `587bbafd` passed two independent
-static reviews and manager implementation/product review; Node 26.4.0 full
-verification passed 1,594 tests (1,456 unit, 47 git, 91 integration), builds,
-package smoke and formatting. Follow-up `0c399179` enables CI on the stacked
-branch bases. These are historical acceptance results, not approval of subsequent
-feedback fixes. PR #383 remains unmerged and undeployed. At this increment's head,
-model planning, full shaping, GitHub ingress and writeback remain later stack work.
-Actual deviations belong in `DEVIATIONS.md`; do not revive the removed
+[manager/implementer handoff](factory/SLICE_1_HANDOFF.md). Intake and planning are
+implemented and published in PRs #383 and #384; neither is merged or deployed.
+Planning's historical accepted head is `3210fbb00e`: both dedicated static reviews
+and manager implementation/product review passed before publication. Historical
+Node 26.4.0 verification passed 1,623 tests (1,485 unit, 47 git, 91 integration),
+builds, package smoke and formatting. The accepted intake feedback parent
+`192e7cf719d6dba1d7ea088452ffe1ad502014b5` is incorporated into planning's feedback
+fixes. Current feedback review and CI status live in
+[PR #384](https://github.com/pandemicsyn/neondeck/pull/384). Every changed candidate
+requires verification, two independent clean static reviews and manager acceptance
+before publication; historical results do not approve subsequent changes. Full shaping, GitHub
+ingress and writeback belong to downstream stack increments; coding execution
+remains a later slice. Actual deviations belong in `DEVIATIONS.md`; do not revive the removed
 PR Autopilot coordinator or replace existing coding harnesses as part of this slice.
 
 ## Usability Gate

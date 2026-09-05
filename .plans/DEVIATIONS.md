@@ -748,3 +748,41 @@ Use this format:
   failure without a product-code change.
 - Follow-up: Rerun the complete required verification gate against the final
   candidate and report the actual outcomes; no checks are waived.
+
+## 2026-09-05 - Factory Increment 2 Flue Contracts And Bounded Context
+
+- Roadmap item: Software Factory slice 1 / increment 2 bounded triage and planning.
+- Decision: Use the existing utility role for triage and display-assistant model
+  selection for the separately scoped planner. Capture at most eight active runtime
+  guidance documents (6,000 characters each), 12,000 SOUL characters and 16,000 memory
+  characters; do not mount guidance-supplied tools or supporting-file capabilities.
+  Repository search is bounded literal search at an immutable commit. One effective
+  proposal revision is permitted per planning request; further revisions use a new
+  human conversation request. Full diff/section discussion remains increment 3.
+- Reason: This keeps model configuration in existing settings and makes context and
+  authority finite without exposing the display assistant or a coding sandbox.
+  Flue 2.0.3's installed public declaration documents `idempotencyKey` target-scoped
+  admission replay and payload conflict semantics, although its bundled agent API
+  prose omits that field. Dispatch recovery uses that installed contract plus
+  `init().read(receipt)` and durable tool steps with app-transaction idempotency.
+- Limit: The triage token threshold is checked between calls using persisted observed
+  usage; one provider response may exceed it. Four model calls, one no-result repair,
+  and the finite Flue attempt/timeout policy bound the classifier. Framework `task`
+  remains present but inert with no declared subagents. No new model gateway or
+  parallel Flue execution state is introduced.
+- Follow-up: Increment 3 supplies full retained-version comparison and section-linked
+  discussion. Report final verification, UI evidence and real-provider smoke
+  separately; deterministic fixture success is not live-provider evidence.
+
+## 2026-09-05 - Factory Planning Feedback: Asynchronous Repository Reads
+
+- Roadmap item: Software Factory slice 1 / increment 2 scoped repository evidence.
+- Decision: Run both planner repository tools asynchronously outside app-database
+  transactions, reauthorize before recording evidence, and impose a ten-second
+  total tool budget alongside the existing per-process and output limits. Propagate
+  Flue's tool cancellation signal. Task-specific recovery only admits/reconciles
+  the requested work; global startup recovery remains unchanged in scope.
+- Reason: Slow Git reads must not block the event loop or retain SQLite's writer
+  lock. Context changes during those reads must not grant stale evidence authority.
+- Follow-up: None. Malformed planning JSON/schema input already maps to HTTP 400
+  at the factory router; HTTP regression coverage now protects that behavior.

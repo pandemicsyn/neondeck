@@ -12,12 +12,21 @@ import {
   releaseFactoryWork,
   transitionFactoryWork,
   updateFactorySource,
+  getPlanningState,
+  triageAdmittedFactoryWork,
+  prepareFactoryPlanning,
+  resumeFactoryPlanning,
+  recoverFactoryWorkPlanning,
+  refreshFactoryPlanningContext,
 } from '../../modules/factory';
 import { runtimePaths } from '../../runtime-home';
 
 // Mounted only behind the private app's local API middleware. No model tool
 // registration; actor identity is server assigned, never taken from source text.
-export function createFactoryRoutes(paths = runtimePaths()) {
+export function createFactoryRoutes(
+  paths = runtimePaths(),
+  triageAdmission = triageAdmittedFactoryWork,
+) {
   const routes = new Hono();
   routes.use('*', bodyLimit({ maxSize: 512 * 1024 }));
   routes.onError((error, c) => {
@@ -45,9 +54,46 @@ export function createFactoryRoutes(paths = runtimePaths()) {
   routes.get('/work/:id', (c) =>
     c.json(getFactoryWork(c.req.param('id'), paths)),
   );
-  routes.post('/work', async (c) =>
-    c.json(submitFactoryWork(await c.req.json(), actor, paths)),
+  routes.post('/work', async (c) => {
+    const work = submitFactoryWork(await c.req.json(), actor, paths);
+    triageAdmission(work.work.id, paths);
+    return c.json(work);
+  });
+  routes.post('/work/:id/triage', (c) => {
+    triageAdmission(c.req.param('id'), paths, true);
+    return c.json(getPlanningState(c.req.param('id'), paths));
+  });
+  routes.get('/work/:id/planning', (c) =>
+    c.json(getPlanningState(c.req.param('id'), paths)),
   );
+  routes.post('/work/:id/planning', async (c) => {
+    const intent = prepareFactoryPlanning(
+      c.req.param('id'),
+      await c.req.json(),
+      paths,
+    );
+    void resumeFactoryPlanning(intent.id, paths);
+    return c.json({ sessionId: intent.sessionId, intentId: intent.id }, 202);
+  });
+  routes.post('/work/:id/planning/recover', (c) => {
+    getFactoryWork(c.req.param('id'), paths);
+    recoverFactoryWorkPlanning(c.req.param('id'), paths);
+    return c.json(getPlanningState(c.req.param('id'), paths));
+  });
+  routes.post('/work/:id/planning/context', async (c) => {
+    const input = v.parse(
+      v.strictObject({
+        expectedVersion: v.pipe(v.number(), v.integer(), v.minValue(1)),
+      }),
+      await c.req.json(),
+    );
+    refreshFactoryPlanningContext(
+      c.req.param('id'),
+      input.expectedVersion,
+      paths,
+    );
+    return c.json(getPlanningState(c.req.param('id'), paths));
+  });
   routes.post('/work/:id/spec', async (c) =>
     c.json(
       saveFactorySpec(c.req.param('id'), await c.req.json(), actor, paths),
@@ -68,10 +114,15 @@ export function createFactoryRoutes(paths = runtimePaths()) {
       ),
     ),
   );
-  routes.post('/work/:id/source', async (c) =>
-    c.json(
-      updateFactorySource(c.req.param('id'), await c.req.json(), actor, paths),
-    ),
-  );
+  routes.post('/work/:id/source', async (c) => {
+    const work = updateFactorySource(
+      c.req.param('id'),
+      await c.req.json(),
+      actor,
+      paths,
+    );
+    triageAdmission(work.work.id, paths);
+    return c.json(work);
+  });
   return routes;
 }
