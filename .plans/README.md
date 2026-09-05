@@ -1,6 +1,6 @@
 # Planning Index
 
-`ROADMAP.md` is the source of truth for product status and sequencing. Keep only active, proposed, intentionally deferred, or durable research documents at this level. Move completed implementation plans and point-in-time review artifacts to `archived/` rather than deleting their decision history.
+`ROADMAP.md` is the source of truth for product status and sequencing. Keep only active, proposed, or intentionally deferred plans at this level. Durable research lives under `research/`. Move completed implementation plans and point-in-time review artifacts to `archived/` rather than deleting their decision history.
 
 ## Current Direction
 
@@ -26,8 +26,11 @@
 
 ## Durable Research
 
-- `HERMES_RESEARCH.md` — product and agent-system inspiration.
-- `KILOCODE_HANDOFF_RESEARCH.md` — Kilo integration research supporting the remaining Phase 21 work.
+Durable research notes live under `research/`:
+
+- `research/HERMES_RESEARCH.md` — product and agent-system research notes.
+- `research/KILOCODE_HANDOFF_RESEARCH.md` — Kilo integration research supporting the remaining Phase 21 work.
+- `research/SOFTWARE_FACTORIES_X_THREADS_SUMMARY.md` — X-thread briefing on the 2026 software-factories debate (claims and tensions only; not an implementation plan).
 
 ## Archive Policy
 
