@@ -116,3 +116,57 @@ export async function readFactoryGitHubRepository(
     await readJson(response),
   );
 }
+
+/** These are issue comments, not PR review comments. */
+export async function createFactoryGitHubComment(
+  connection: GitHubConnection,
+  number: number,
+  body: string,
+  signal?: AbortSignal,
+) {
+  const response = await githubFetch(
+    process.env[connection.tokenEnv]!,
+    `${base(connection)}/issues/${number}/comments`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ body }),
+      signal,
+      redirect: 'error',
+    },
+  );
+  return v.parse(githubCommentSchema, await readJson(response));
+}
+export async function updateFactoryGitHubComment(
+  connection: GitHubConnection,
+  id: string,
+  body: string,
+  signal?: AbortSignal,
+) {
+  const response = await githubFetch(
+    process.env[connection.tokenEnv]!,
+    `${base(connection)}/issues/comments/${encodeURIComponent(id)}`,
+    {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ body }),
+      signal,
+      redirect: 'error',
+    },
+  );
+  return v.parse(githubCommentSchema, await readJson(response));
+}
+export async function factoryGitHubIdentity(
+  connection: GitHubConnection,
+  signal?: AbortSignal,
+) {
+  const response = await githubFetch(
+    process.env[connection.tokenEnv]!,
+    'https://api.github.com/user',
+    { signal, redirect: 'error' },
+  );
+  return v.parse(
+    v.object({ login: v.string(), id: v.number() }),
+    await readJson(response),
+  );
+}

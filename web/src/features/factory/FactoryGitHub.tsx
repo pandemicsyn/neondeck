@@ -1,3 +1,4 @@
+import { FactoryWriteback } from './FactoryWriteback';
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import {
@@ -40,8 +41,9 @@ export function FactoryGitHubSetup({
     >
       <summary>GitHub connections</summary>
       <p>
-        Choose which issues enter this inbox. GitHub is read-only here; no
-        status or question comments are sent.
+        Choose which issues enter this inbox. Writeback is off by default.
+        Review the explicit publishing policy in an admitted task to allow
+        status updates and separately approved questions.
       </p>
       {(error || state.error) && (
         <p role="alert" className="factory-error">
@@ -333,8 +335,9 @@ export function FactoryGitHubSource({ detail }: { detail: FactoryDetail }) {
         .map((d) => (
           <p key={d.id}>{d.error ?? 'Source sync pending.'}</p>
         ))}
+      <FactoryWriteback key={`writeback:${detail.work.id}`} detail={detail} />
       <FactoryGitHubDiscussion
-        key={detail.work.id}
+        key={`discussion:${detail.work.id}`}
         workId={detail.work.id}
         url={remote.url}
       />
@@ -372,9 +375,8 @@ function FactoryGitHubDiscussion({
           <button onClick={() => void state.refetch()}>Retry discussion</button>
         </p>
       )}
-      {state.data?.comments.length === 0 && (
-        <p>No retained comments on this page.</p>
-      )}
+      {state.data?.comments.filter((comment) => comment.echo !== 'confirmed')
+        .length === 0 && <p>No retained comments on this page.</p>}
       <nav aria-label="Discussion pages">
         <button
           disabled={cursors.length === 1 || state.isFetching}
@@ -389,27 +391,31 @@ function FactoryGitHubDiscussion({
           Older comments
         </button>
       </nav>
-      {state.data?.comments.map((comment) => (
-        <article key={comment.id}>
-          <p>
-            <a
-              href={`${url}#issuecomment-${comment.remoteId}`}
-              target="_blank"
-              rel="noreferrer"
-            >
-              {comment.author}
-            </a>{' '}
-            · revision {comment.version} ·{' '}
-            {comment.deleted ? 'Deleted on GitHub' : comment.remoteUpdatedAt}
-          </p>
-          <MarkdownMessage>{comment.body}</MarkdownMessage>
-          <p>
-            {comment.intentId
-              ? 'Retained in planner delivery history.'
-              : 'Retained context; awaiting an open planning conversation.'}
-          </p>
-        </article>
-      ))}
+      {state.data?.comments
+        .filter((comment) => comment.echo !== 'confirmed')
+        .map((comment) => (
+          <article key={comment.id}>
+            <p>
+              <a
+                href={`${url}#issuecomment-${comment.remoteId}`}
+                target="_blank"
+                rel="noreferrer"
+              >
+                {comment.author}
+              </a>{' '}
+              · revision {comment.version} ·{' '}
+              {comment.deleted ? 'Deleted on GitHub' : comment.remoteUpdatedAt}
+            </p>
+            <MarkdownMessage>{comment.body}</MarkdownMessage>
+            <p>
+              {comment.echo === 'awaiting-receipt'
+                ? 'Matching in-flight publication; awaiting a confirmed receipt before classifying this context.'
+                : comment.intentId
+                  ? 'Retained in planner delivery history.'
+                  : 'Retained context; awaiting an open planning conversation.'}
+            </p>
+          </article>
+        ))}
     </section>
   );
 }

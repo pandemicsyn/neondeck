@@ -50,6 +50,7 @@ describe('app database migrator', () => {
     const database = new DatabaseSync(databasePath, { readOnly: true });
     try {
       expect(tableExists(database, 'notifications')).toBe(true);
+      expect(tableExists(database, 'factory_writeback_records')).toBe(true);
       expect(tableExists(database, 'briefing_profiles')).toBe(true);
       expect(tableExists(database, 'briefing_runs')).toBe(true);
       expect(tableExists(database, 'pr_watch_event_watermarks')).toBe(true);
@@ -108,6 +109,39 @@ describe('app database migrator', () => {
     expect(readAppDbMigrationStatus(databasePath).message).toContain(
       'predates the current Neondeck baseline',
     );
+  });
+  it('adds factory writeback to an existing ingress home without losing retained records', async () => {
+    const root = await tempDir();
+    const databasePath = join(root, 'neondeck.db');
+    const parentMigrations = join(root, 'parent-migrations');
+    await mkdir(parentMigrations);
+    for (const entry of await readdir(appDbMigrationsFolder())) {
+      if (entry.includes('factory_writeback')) continue;
+      await cp(
+        join(appDbMigrationsFolder(), entry),
+        join(parentMigrations, entry),
+        { recursive: true },
+      );
+    }
+    applyAppDbMigrations(databasePath, { migrationsFolder: parentMigrations });
+    const before = new DatabaseSync(databasePath);
+    before
+      .prepare('INSERT INTO factory_github_sync(id,record) VALUES(?,?)')
+      .run('retained-source-cursor', '{"page":3,"offset":7}');
+    before.close();
+    const result = applyAppDbMigrations(databasePath);
+    expect(result.applied).toEqual([
+      expect.stringContaining('factory_writeback'),
+    ]);
+    const after = new DatabaseSync(databasePath);
+    expect(
+      after
+        .prepare('SELECT record FROM factory_github_sync WHERE id=?')
+        .get('retained-source-cursor')?.record,
+    ).toBe('{"page":3,"offset":7}');
+    expect(tableExists(after, 'factory_writeback_records')).toBe(true);
+    after.close();
+    expect(applyAppDbMigrations(databasePath).applied).toEqual([]);
   });
   it('cleans an upgraded runtime home while preserving watch feedback state', async () => {
     const root = await tempDir();

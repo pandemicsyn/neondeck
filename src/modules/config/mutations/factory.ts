@@ -1,3 +1,4 @@
+import { invalidateWriteback } from '../../factory';
 import { dbRun, markGitHubAttention } from '../../factory';
 import { sourceSchema } from '../../../../shared/factory';
 import type { GitHubConnection } from '../../../../shared/factory-github';
@@ -68,6 +69,12 @@ export function updateFactoryConfig(input: unknown, paths = runtimePaths()) {
             paths,
           );
       }
+    });
+  }
+  if (JSON.stringify(before.factory) !== JSON.stringify(factory)) {
+    dbRun(paths, (db) => {
+      for (const c of before.factory?.github ?? [])
+        invalidateWriteback(db, c.id);
     });
   }
   writeJsonAtomicSync(paths.config, after);

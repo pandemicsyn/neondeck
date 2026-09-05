@@ -6,6 +6,7 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { FactoryGitHubSetup, FactoryGitHubSource } from './FactoryGitHub';
 const api = vi.hoisted(() => ({
   getFactoryGitHub: vi.fn(),
+  getFactoryWriteback: vi.fn(),
   getFactoryGitHubComments: vi.fn(),
   saveFactoryGitHub: vi.fn(),
   syncFactorySource: vi.fn(),
@@ -29,7 +30,6 @@ const data = {
   ],
   deliveries: [],
   sync: [],
-  comments: [],
 };
 let root: Root, container: HTMLDivElement, client: QueryClient;
 beforeEach(() => {
@@ -38,6 +38,7 @@ beforeEach(() => {
   ).IS_REACT_ACT_ENVIRONMENT = true;
   vi.clearAllMocks();
   api.getFactoryGitHub.mockResolvedValue(data);
+  api.getFactoryWriteback.mockResolvedValue(null);
   api.saveFactoryGitHub.mockResolvedValue({});
   container = document.createElement('div');
   document.body.append(container);
@@ -136,7 +137,12 @@ it('loads only selected-task comment pages and resets paging on a different task
     intentId: null,
   });
   api.getFactoryGitHubComments.mockImplementation(async (_id, cursor) => ({
-    comments: [comment(cursor ? 'Older page body' : 'Newest page body')],
+    comments: cursor
+      ? [comment('Older page body')]
+      : [
+          { ...comment('Confirmed publication'), echo: 'confirmed' },
+          { ...comment('Newest page body'), echo: 'awaiting-receipt' },
+        ],
     nextCursor: cursor ? null : '10',
   }));
   const detail = (id: string) =>
@@ -168,6 +174,24 @@ it('loads only selected-task comment pages and resets paging on a different task
   };
   await draw('work-one');
   expect(container.textContent).toContain('Newest page body');
+  expect(container.textContent).not.toContain('Confirmed publication');
+  expect(container.textContent).toContain('Matching in-flight publication');
+  expect(
+    container.querySelector('[aria-label="GitHub publishing"]'),
+  ).not.toBeNull();
+  // Receipt classification changes on the same retained page; it must disappear.
+  await act(async () => {
+    client.setQueryData(['factory-github-comments', 'work-one', undefined], {
+      comments: [{ ...comment('Newest page body'), echo: 'confirmed' }],
+      nextCursor: '10',
+    });
+  });
+  await act(async () => {
+    await new Promise((r) => setTimeout(r, 30));
+  });
+  expect(container.textContent).not.toContain('Newest page body');
+  expect(container.textContent).toContain('No retained comments on this page.');
+
   await act(async () => {
     Array.from(container.querySelectorAll('button'))
       .find((b) => b.textContent === 'Older comments')!

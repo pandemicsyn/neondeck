@@ -9,7 +9,7 @@ This repository is `neondeck`: a local-first developer cockpit for a companion d
 - User-facing project summary: `README.md`
 - Current agent personality file: `SOUL.md`
 
-The roadmap is the source of truth for direction, implementation order, and completion status. Follow its **Next Implementation Priority — Software Factory Slice 1** section and `.plans/factory/SLICE_1_IMPLEMENTATION_PLAN.md` for the requested intake-to-human-released-queue work. Build on the existing runtime, repo/GitHub, schedules, skills, and dashboard foundations; coding execution belongs to a subsequent slice. Check the roadmap and factory handoff ledger before assigning work rather than treating this direction as a completion claim.
+The roadmap is the source of truth for direction, implementation order, and completion status. Follow its current **Software Factory Slice 1** status and direction and `.plans/factory/SLICE_1_IMPLEMENTATION_PLAN.md` for the requested intake-to-human-released-queue work. Build on the existing runtime, repo/GitHub, schedules, skills, and dashboard foundations; coding execution belongs to a subsequent slice. Check the roadmap and factory handoff ledger before assigning work rather than treating this direction as a completion claim.
 
 ## Architecture Direction
 

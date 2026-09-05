@@ -59,11 +59,16 @@ export const commentRecordSchema = v.object({
   remoteId: str,
   body: str,
   author: str,
+  authorId: v.optional(v.nullable(v.number()), null),
   remoteUpdatedAt: str,
   fingerprint: str,
   version: v.number(),
   deleted: v.boolean(),
   seenScan: str,
+  echo: v.optional(
+    v.picklist(['external', 'awaiting-receipt', 'confirmed']),
+    'external',
+  ),
   intentId: v.nullable(str),
 });
 export type CommentRecord = v.InferOutput<typeof commentRecordSchema>;

@@ -179,6 +179,11 @@ const manualMain = () =>
     paths,
   );
 let main = manualMain();
+let writeback:
+  | ReturnType<
+      typeof import('../src/modules/factory/testing/writeback-fixture').writebackFixture
+    >
+  | undefined;
 let githubFixture: { run: () => Promise<void> } | undefined;
 if (process.env.FACTORY_GITHUB_FIXTURE === '1') {
   const { connection: baseConnection, issue: baseIssue } =
@@ -199,6 +204,11 @@ if (process.env.FACTORY_GITHUB_FIXTURE === '1') {
     title: 'GitHub: filter the Factory inbox by title',
     body: 'Synthetic GitHub issue. Find tasks quickly while preserving unsaved work.\n\nThis is a deterministic provider fixture, not a live repository.',
   };
+  if (process.env.FACTORY_WRITEBACK_FIXTURE === '1') {
+    const { writebackFixture } =
+      await import('../src/modules/factory/testing/writeback-fixture');
+    writeback = writebackFixture(connection, remoteIssue, paths);
+  }
   main = factory.dbRun(paths, (db) =>
     factory.reconcileGitHubSource(
       db,
@@ -277,7 +287,18 @@ if (githubFixture)
     await githubFixture!.run();
     return c.json({ accepted: true });
   });
-app.route('/api/factory', createFactoryRoutes(paths));
+if (writeback) {
+  app.post('/api/fixture/writeback/tick', async (c) => {
+    await writeback!.run();
+    return c.json({ ok: true });
+  });
+  app.post('/api/fixture/writeback/mode', async (c) => {
+    const input = await c.req.json();
+    writeback!.setMode(String(input.mode));
+    return c.json({ ok: true });
+  });
+}
+app.route('/api/factory', createFactoryRoutes(paths, undefined, writeback?.io));
 app.route(
   '/api/flue/agents/factory-planner',
   createFactoryPlannerRoutes(paths),

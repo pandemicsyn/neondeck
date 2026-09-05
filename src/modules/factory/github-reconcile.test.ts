@@ -511,6 +511,9 @@ it('pages only the requested task comments and rejects invalid cursors', async (
         remoteId: String(n),
         body: 'body',
         author: 'synthetic',
+        authorId: 55,
+        echo:
+          n === 23 ? 'confirmed' : n === 22 ? 'awaiting-receipt' : 'external',
         remoteUpdatedAt: issue.updated_at,
         fingerprint: String(n),
         version: 1,
@@ -526,6 +529,9 @@ it('pages only the requested task comments and rejects invalid cursors', async (
   expect(factoryGitHubState(setup.paths)).not.toHaveProperty('comments');
   const first = factoryGitHubComments(workId, undefined, setup.paths);
   expect(first.comments).toHaveLength(10);
+  expect(first.comments[0].echo).toBe('confirmed');
+  expect(first.comments[1].echo).toBe('awaiting-receipt');
+  expect(first.comments[0].authorId).toBe(55);
   expect(first.comments[0].remoteId).toBe('23');
   const second = factoryGitHubComments(workId, first.nextCursor!, setup.paths);
   const third = factoryGitHubComments(workId, second.nextCursor!, setup.paths);

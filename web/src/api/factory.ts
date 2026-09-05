@@ -105,6 +105,71 @@ export async function syncFactorySource(id: string) {
   await postJson(`/api/factory/work/${encodeURIComponent(id)}/sync`, {});
 }
 
+export async function getFactoryWriteback(id: string) {
+  const { writebackStateSchema } =
+    await import('../../../shared/factory-writeback');
+  return v.parse(
+    writebackStateSchema,
+    await getJson(`/api/factory/work/${encodeURIComponent(id)}/writeback`),
+  );
+}
+export async function setFactoryWriteback(
+  connectionId: string,
+  input: {
+    enabled: boolean;
+    expectedEpoch: string;
+    expectedFingerprint: string;
+  },
+) {
+  await postJson(
+    `/api/factory/github/${encodeURIComponent(connectionId)}/writeback`,
+    input,
+  );
+}
+export async function approveFactoryWriteback(
+  id: string,
+  input: import('../../../shared/factory-writeback').WritebackApprovalInput,
+) {
+  await postJson(
+    `/api/factory/work/${encodeURIComponent(id)}/writeback/approve`,
+    input,
+  );
+}
+export async function recoverFactoryWriteback(
+  id: string,
+  effectId: string,
+  action: 'retry' | 'relinquish',
+) {
+  await postJson(
+    `/api/factory/work/${encodeURIComponent(id)}/writeback/recover`,
+    { effectId, action },
+  );
+}
+export async function previewFactoryWritebackRepair(
+  id: string,
+  effectId: string,
+) {
+  const { writebackRepairSchema } =
+    await import('../../../shared/factory-writeback');
+  return v.parse(
+    writebackRepairSchema,
+    await postJson(
+      `/api/factory/work/${encodeURIComponent(id)}/writeback/repair-preview`,
+      { effectId },
+    ),
+  );
+}
+export async function approveFactoryWritebackRepair(
+  id: string,
+  previewId: string,
+  replacement: string,
+) {
+  await postJson(
+    `/api/factory/work/${encodeURIComponent(id)}/writeback/repair`,
+    { previewId, replacement },
+  );
+}
+
 export async function getFactoryGitHubComments(id: string, cursor?: string) {
   const { factoryGitHubCommentsSchema } =
     await import('../../../shared/factory-github');

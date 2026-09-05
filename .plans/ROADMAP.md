@@ -68,44 +68,46 @@ As of August 2026:
 - Phase 10's provider-specific deploy adapters and all of Phase 17's TUI surface remain intentionally deferred.
 - Active product follow-ups live in the top level of `.plans/`; completed implementation plans and point-in-time reviews live in `.plans/archived/`. See `.plans/README.md` for the index.
 
-## Next Implementation Priority — Software Factory Slice 1
+## Software Factory Slice 1 — Local Code Complete; Landing and Live Acceptance Pending
 
-As of September 2026, the next requested implementation is the initial factory's
-intake and collaborative shaping path. Historical phase completion above is unchanged.
+As of September 2026, all five increments of the initial intake and collaborative
+shaping path are implemented and reviewed. Historical phase completion above is unchanged.
 
-- [ ] Manual/GitHub intake, durable source/work records, and bounded model triage.
-- [ ] Persistent model-led planning, versioned briefs, Markdown editing and proposal
+- [x] Manual/GitHub intake, durable source/work records, and bounded model triage.
+- [x] Persistent model-led planning, versioned briefs, Markdown editing and proposal
       diffs, with explicit human decisions and exact-version release.
-- [ ] Public webhook-only listener, private dashboard/API access, source reconciliation,
+- [x] Public webhook-only listener, private dashboard/API access, source reconciliation,
       and opt-in GitHub status writeback with attributed replies.
-- [ ] Stacked PR delivery and full intake-to-queue acceptance, including restart and
-      exposure checks. Coding execution starts in a subsequent slice.
+- [x] Reviewed stacked PR delivery and local intake-to-queue verification.
+- [ ] Merge the open stack and complete authorized live-provider/GitHub, VM restart
+      and anonymous exposure acceptance. Coding execution starts in a subsequent slice.
 
 See [the slice 1 implementation plan](factory/SLICE_1_IMPLEMENTATION_PLAN.md) and
-[manager/implementer handoff](factory/SLICE_1_HANDOFF.md). Plan root PR #382,
-manual intake PR #383 and model planning PR #384 are open, none merged/deployed.
-Planning was manager-accepted at `3210fbb00eddb54e2873b1e44bfea9eea012b9d5` after
-two clean dedicated reviews, 1,623-test verification on identical runtime source
-plus a README-only clarification, and all six GitHub checks passing at that head. Increment 3's
-human shaping workbench was manager-accepted at `8809958947531e3c7fa727accae4aab3f3073f57`
-and opened as PR #385 against planning after two clean dedicated reviews and
-1,632-test full verification, followed by the separately verified CSS-only overflow
-fix (dashboard rebuild and five UI states). These are historical acceptance records;
-subsequent feedback fixes require their own review. GitHub ingress was accepted at
-`836dfe24dbb6b790865523b37f68d2b64ec9035c` and opened as PR #386 after two clean
-reviews and manager acceptance, with 1,667-test full verification and a separately
-checked mapping correction. The accepted shaping feedback parent `f14b45b4` is
-incorporated into ingress. Writeback and live deployment acceptance are outside
-this branch's acceptance record.
-Accepted intake feedback parent `192e7cf7` and planning feedback parent `5d773582`
-are incorporated. Current feedback review and CI status are recorded in
+[progress ledger](factory/SLICE_1_HANDOFF.md#progress-ledger). Original local
+acceptance is historical: feature `a0c0cf31c8a6693863e1f975eb61f8ff1bb85fa3`
+and documentation head `ff3a69033ae866aaf47dd0a6c3384544e5eb1e6a` passed their
+own reviews. V4 verification passed 1,735 tests (1,597 unit, 47 git, 91 integration),
+99 focused tests, builds/package smoke and formatting; six UI screenshots were
+attached to PR #387. These results do not certify subsequent feedback revisions.
+
+The feedback stack incorporates accepted parents `6433b10e` (#382),
+`192e7cf7` (#383), `5d773582` (#384), `f14b45b4` (#385), and
+`bb4266f8289b650c40d58c04063c19158e1f752f` (#386), using parent merges that
+preserve each branch's history. Current feedback review and CI evidence belongs to
+[PR #382](https://github.com/pandemicsyn/neondeck/pull/382),
 [PR #383](https://github.com/pandemicsyn/neondeck/pull/383),
-[PR #384](https://github.com/pandemicsyn/neondeck/pull/384), and
-[PR #385](https://github.com/pandemicsyn/neondeck/pull/385), and
-[PR #386](https://github.com/pandemicsyn/neondeck/pull/386). Every changed candidate
-requires verification, two clean independent reviews and manager acceptance before
-publication. Actual deviations belong in `DEVIATIONS.md`; preserve existing coding harnesses and
-do not revive the removed PR Autopilot coordinator.
+[PR #384](https://github.com/pandemicsyn/neondeck/pull/384),
+[PR #385](https://github.com/pandemicsyn/neondeck/pull/385),
+[PR #386](https://github.com/pandemicsyn/neondeck/pull/386), and
+[PR #387](https://github.com/pandemicsyn/neondeck/pull/387).
+Historical acceptance does not approve later changes. Every publication requires
+verification, two clean independent static reviews and manager acceptance.
+
+Nothing is merged or deployed. Authorized real GitHub, final live provider,
+VM restart and anonymous exposure acceptance remain pending. Preserve active plans
+through landing; coding execution starts in a subsequent slice. Actual deviations
+belong in `DEVIATIONS.md`; preserve existing coding harnesses and do not revive
+the removed PR Autopilot coordinator.
 
 ## Usability Gate
 
