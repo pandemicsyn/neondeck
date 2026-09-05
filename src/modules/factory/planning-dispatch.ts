@@ -1,4 +1,4 @@
-import { factoryState } from './service';
+import { factoryState, getFactoryWork } from './service';
 import { AgentRunError, dispatch, init } from '@flue/runtime';
 import { runtimePaths, type RuntimePaths } from '../../runtime-home';
 import {
@@ -147,7 +147,10 @@ export function resumeFactoryPlanning(
     }
   }
 }
-export function recoverFactoryPlanning(paths = runtimePaths()) {
+export function recoverFactoryPlanning(
+  paths = runtimePaths(),
+  io: PlanningTransport = transport,
+) {
   const state = factoryState(paths);
   if (state.enabled)
     for (const item of state.items) {
@@ -155,7 +158,18 @@ export function recoverFactoryPlanning(paths = runtimePaths()) {
         prepareFactoryTriage(item.id, paths);
     }
   for (const intent of pendingPlanningIntents(paths))
-    void resumeFactoryPlanning(intent.id, paths);
+    void resumeFactoryPlanning(intent.id, paths, io);
+}
+export function recoverFactoryWorkPlanning(
+  workId: string,
+  paths = runtimePaths(),
+  io: PlanningTransport = transport,
+) {
+  const current = getFactoryWork(workId, paths);
+  if (current.work.lifecycle === 'inbox' && current.work.specVersion === 1)
+    prepareFactoryTriage(workId, paths);
+  for (const intent of pendingPlanningIntents(paths, workId))
+    void resumeFactoryPlanning(intent.id, paths, io);
 }
 export async function stopFactoryPlanning(
   sessionId: string,
