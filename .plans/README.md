@@ -23,6 +23,7 @@
 - `new-review/` — proposed replacement of the two-report PR review artifacts with a single briefing, plus the agent recommendation on the Reviews panel row. Includes interactive mockups.
 - `EXEDEV_WORKSPACE_MODE_PLAN.md` — proposed exe.dev workspace-location mode.
 - `FLUE_2_USAGE_FOLLOWUP_BRIEFING.md` — non-blocking idiomatic cleanup and capability-surface reductions after the completed migration.
+- `GITHUB_WEBHOOK_RELAY_PLAN.md` — proposed GitHub webhook relay worker integration, blocked on a rebase prerequisite.
 
 ## Durable Research
 
