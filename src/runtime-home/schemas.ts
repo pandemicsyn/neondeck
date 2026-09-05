@@ -1,3 +1,4 @@
+import { factoryConfigSchema } from '../../shared/factory';
 import * as v from 'valibot';
 import { openAiCompatibleProviderIdIssue } from '../../shared/provider-policy';
 import {
@@ -446,6 +447,7 @@ export const serverConfigSchema = v.strictObject({
 
 export const appConfigSchema = v.looseObject({
   version: positiveIntegerSchema,
+  factory: v.optional(factoryConfigSchema),
   localApi: v.optional(localApiConfigSchema),
   server: v.optional(serverConfigSchema),
   skillRoots: v.optional(v.array(nonEmptyStringSchema)),

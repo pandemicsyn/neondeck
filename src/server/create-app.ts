@@ -1,3 +1,4 @@
+import { createFactoryRoutes } from './routes/factory';
 import { getAgentInstance } from '@flue/runtime';
 import { createAgentRouter } from '@flue/runtime/routing';
 import type { FlueConversationSnapshot } from '@flue/sdk';
@@ -150,6 +151,7 @@ export async function createApp(options: CreateAppOptions = {}) {
         : {},
     ),
   );
+  app.route('/api/factory', createFactoryRoutes(paths));
   app.route('/api/safety', createSafetyRoutes(paths));
   app.route('/api/execution', createExecutionRoutes(paths));
   app.route('/api', createSessionRoutes(paths));
