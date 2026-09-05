@@ -9,3 +9,5 @@ export * from './mutations/providers';
 export * from './mutations/repos';
 export * from './read';
 export * from './schemas';
+
+export { updateFactoryConfig } from './mutations/factory';

@@ -1,6 +1,11 @@
 # Slice 1 — Manager and implementer handoff
 
-Scope: implementation and review protocol for slice 1. Documentation root: [PR #382](https://github.com/pandemicsyn/neondeck/pull/382). See the progress ledger for the recorded planning baseline; consult the implementation stack for subsequent evidence and current PR state.
+Historical increment-1 acceptance: documentation root [PR #382](https://github.com/pandemicsyn/neondeck/pull/382) was based at `9aba1ae2`.
+Increment 1 is accepted and published in PR #383: feature commit `587bbafd`,
+followed by stacked-branch CI support at `0c399179`. Both dedicated static reviews
+and the manager's final implementation/product review passed before publication.
+The PR is unmerged and undeployed. Historical acceptance below does not approve
+subsequent feedback fixes; those require renewed review before publication.
 
 Read the [slice contract](SLICE_1_IMPLEMENTATION_PLAN.md) before starting.
 The coordinating assistant acts as **dev manager and reviewer**. Implementation
@@ -229,23 +234,19 @@ privately when required; local implementation need not wait for it.
 
 ## Progress ledger
 
-The implementation rows below preserve the **pre-delegation planning baseline**
-recorded in plan-root commit `9aba1ae2e8a918ab8d98b37044eb080c92e5ba8a`
-on September 5, 2026. They are historical, not a live claim about the stack. The
-documentation root is tracked in PR #382; later implementation branches update
-this ledger with their own evidence. Consult those branches and PRs for subsequent
-progress. Do not infer “implemented” from branch creation, “verified” from a claimed
-plan, or “deployed” from passing local tests.
+This ledger describes the increment-1 branch, not downstream implementation heads.
+Update with real evidence as work proceeds. Do not infer “implemented” from branch
+creation, “verified” from a claimed plan, or “deployed” from passing local tests.
 
-| Increment                      | State                                           | Branch/base + reviewed head                          | PR                                                       | Verification / review / deployment evidence                      |
-| ------------------------------ | ----------------------------------------------- | ---------------------------------------------------- | -------------------------------------------------------- | ---------------------------------------------------------------- |
-| Plan root                      | Overall proposal committed; slice plan prepared | `agent/software-factory-plan`; resolve head at start | [#382](https://github.com/pandemicsyn/neondeck/pull/382) | Documentation only                                               |
-| 1 — Manual intake/domain       | Not started                                     | Not created                                          | Not opened                                               | None                                                             |
-| 2 — Model planning             | Not started                                     | Not created                                          | Not opened                                               | None                                                             |
-| 3 — Human workbench            | Not started                                     | Not created                                          | Not opened                                               | None                                                             |
-| 4 — GitHub ingress             | Not started                                     | Not created                                          | Not opened                                               | None                                                             |
-| 5 — GitHub status              | Not started                                     | Not created                                          | Not opened                                               | None                                                             |
-| Full slice / deployed exercise | Not started                                     | Record final accepted SHA                            | —                                                        | Manual + GitHub + real model + restart + exposure checks pending |
+| Increment                      | State                                           | Branch/base + reviewed head                                                                         | PR                                                       | Verification / review / deployment evidence                                                                                                                                                                                                                                                                                                       |
+| ------------------------------ | ----------------------------------------------- | --------------------------------------------------------------------------------------------------- | -------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Plan root                      | Accepted and published; unmerged                | `agent/software-factory-plan`; `9aba1ae2`                                                           | [#382](https://github.com/pandemicsyn/neondeck/pull/382) | Documentation; dedicated static reviews and manager accepted                                                                                                                                                                                                                                                                                      |
+| 1 — Manual intake/domain       | Accepted and published; unmerged and undeployed | `agent/factory-s1-01-intake`; base `9aba1ae2`; accepted feature `587bbafd`; CI follow-up `0c399179` | [#383](https://github.com/pandemicsyn/neondeck/pull/383) | Both dedicated static reviewers: no findings; manager accepted. Node 26.4.0 check: 179 suites / 1,456 tests. Full verify: 1,594 tests (1,456 unit + 47 git + 91 integration), builds, package smoke, formatting passed. Built-server restart/deduplication: retained revisions and release, zero worktrees. Actual UI screenshots attached to PR. |
+| 2 — Model planning             | Not started                                     | Not created                                                                                         | Not opened                                               | None                                                                                                                                                                                                                                                                                                                                              |
+| 3 — Human workbench            | Not started                                     | Not created                                                                                         | Not opened                                               | None                                                                                                                                                                                                                                                                                                                                              |
+| 4 — GitHub ingress             | Not started                                     | Not created                                                                                         | Not opened                                               | None                                                                                                                                                                                                                                                                                                                                              |
+| 5 — GitHub status              | Not started                                     | Not created                                                                                         | Not opened                                               | None                                                                                                                                                                                                                                                                                                                                              |
+| Full slice / deployed exercise | Not started                                     | Record final accepted SHA                                                                           | —                                                        | Manual + GitHub + real model + restart + exposure checks pending                                                                                                                                                                                                                                                                                  |
 
 On completion, update `.plans/ROADMAP.md` and this ledger with the actual remaining
 limits. Preserve the plans as active while review/landing is underway; archive under

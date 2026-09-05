@@ -714,3 +714,37 @@ Use this format:
 - Follow-up: Consider configurable retention or on-demand reads from Flue's
   canonical event history if operators need longer-lived plaintext. Keep PR-review
   performance projections hash/metadata-only.
+
+## 2026-09-05 - Factory Increment 1 Verification Home Isolation
+
+- Roadmap item: Software Factory slice 1 / increment 1 manual intake/domain.
+- Decision: Run verification against a dedicated, preinitialized temporary
+  `NEONDECK_HOME`, separate from the synthetic screenshot server home. No
+  implementation scope or acceptance suite is deferred.
+- Reason: An initial parallel suite run hit the existing import-time SQLite WAL
+  initialization race in `pr-review-prompts.test.ts`. A 24-process bootstrap probe
+  reproduced `database is locked` on untouched base `9aba1ae2`; the isolated
+  baseline suite passed 176 suites / 1,432 tests. The candidate's clean check then
+  passed 179 suites / 1,448 tests, including that suite. A diagnostic run that
+  accidentally discovered a nested baseline archive is discarded; the baseline
+  archive was moved outside the implementation checkout before final verification.
+- Follow-up: Existing concurrent first-home initialization can be hardened in a
+  separately scoped runtime fix. This increment does not change bootstrap/WAL code.
+
+## 2026-09-05 - Factory Verification Dependency And Baseline Format Evidence
+
+- Roadmap item: Software Factory slice 1 / increment 1 verification.
+- Decision: Replace only the assigned worktree's dependency symlink with a local
+  `npm ci` installation from the unchanged checked-in lockfile. Preserve the
+  manager's shared dependencies and all normal hooks. Apply manager-authorized
+  Prettier-only emphasis-delimiter normalization to the supporting factory research
+  note; its prose/content is unchanged.
+- Reason: Both base `9aba1ae2` and the candidate failed Astro prerendering with
+  the shared install's missing `cookie.parseCookie` export. A clean local install
+  made the docs build pass without product, dependency manifest or lockfile changes.
+  Repository format checking also flags the unchanged baseline research document
+  `.plans/research/SOFTWARE_FACTORIES_X_THREADS_SUMMARY.md`; checking the base copy
+  reproduces it. The authorized formatting-only cleanup resolves that baseline
+  failure without a product-code change.
+- Follow-up: Rerun the complete required verification gate against the final
+  candidate and report the actual outcomes; no checks are waived.
