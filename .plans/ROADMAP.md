@@ -84,12 +84,22 @@ intake and collaborative shaping path. Historical phase completion above is unch
 See [the slice 1 implementation plan](factory/SLICE_1_IMPLEMENTATION_PLAN.md) and
 [manager/implementer handoff](factory/SLICE_1_HANDOFF.md). Plan root PR #382,
 manual intake PR #383 and model planning PR #384 are open, none merged/deployed.
-Planning is manager-accepted at `3210fbb00eddb54e2873b1e44bfea9eea012b9d5` after
+Planning was manager-accepted at `3210fbb00eddb54e2873b1e44bfea9eea012b9d5` after
 two clean dedicated reviews, 1,623-test verification on identical runtime source
-plus a README-only clarification, and all six GitHub checks passing. Increment 3's
-human shaping workbench is an uncommitted candidate from that parent; verification
-and independent review are pending. GitHub ingress/writeback remain unimplemented.
-Actual deviations belong in `DEVIATIONS.md`; preserve existing coding harnesses and
+plus a README-only clarification, and all six GitHub checks passing at that head. Increment 3's
+human shaping workbench was manager-accepted at `8809958947531e3c7fa727accae4aab3f3073f57`
+and opened as PR #385 against planning after two clean dedicated reviews and
+1,632-test full verification, followed by the separately verified CSS-only overflow
+fix (dashboard rebuild and five UI states). These are historical acceptance records;
+subsequent feedback fixes require their own review. GitHub ingress/writeback are
+outside this increment's acceptance record.
+Accepted intake feedback parent `192e7cf7` and planning feedback parent `5d773582`
+are incorporated. Current feedback review and CI status are recorded in
+[PR #383](https://github.com/pandemicsyn/neondeck/pull/383),
+[PR #384](https://github.com/pandemicsyn/neondeck/pull/384), and
+[PR #385](https://github.com/pandemicsyn/neondeck/pull/385). Every changed candidate
+requires verification, two clean independent reviews and manager acceptance before
+publication. Actual deviations belong in `DEVIATIONS.md`; preserve existing coding harnesses and
 do not revive the removed PR Autopilot coordinator.
 
 ## Usability Gate

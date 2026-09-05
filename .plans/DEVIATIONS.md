@@ -791,3 +791,16 @@ Use this format:
   discard unsaved local drafts; storage failure is surfaced.
 - Follow-up: Rich threaded comments and a generic document platform remain deferred
   as planned. Increment 4 owns GitHub ingress, not this workbench.
+
+## 2026-09-05 - Factory Planning Feedback: Asynchronous Repository Reads
+
+- Roadmap item: Software Factory slice 1 / increment 2 scoped repository evidence.
+- Decision: Run both planner repository tools asynchronously outside app-database
+  transactions, reauthorize before recording evidence, and impose a ten-second
+  total tool budget alongside the existing per-process and output limits. Propagate
+  Flue's tool cancellation signal. Task-specific recovery only admits/reconciles
+  the requested work; global startup recovery remains unchanged in scope.
+- Reason: Slow Git reads must not block the event loop or retain SQLite's writer
+  lock. Context changes during those reads must not grant stale evidence authority.
+- Follow-up: None. Malformed planning JSON/schema input already maps to HTTP 400
+  at the factory router; HTTP regression coverage now protects that behavior.

@@ -1,11 +1,20 @@
 # Slice 1 — Manager and implementer handoff
 
-Status: documentation root PR #382 is open at `9aba1ae2` against `main`.
-Intake PR #383 is open at `0c39917930b42aeacc3cbad71031d5552a29ccee` against
-`agent/software-factory-plan`. Planning PR #384 is open at
+Historical acceptance: documentation root PR #382 opened at `9aba1ae2` against `main`.
+Intake PR #383 opened at feature head `587bbafd` against
+`agent/software-factory-plan`; its accepted CI-only follow-up head was
+`0c39917930b42aeacc3cbad71031d5552a29ccee`. Planning PR #384 opened at
 `3210fbb00eddb54e2873b1e44bfea9eea012b9d5` against `agent/factory-s1-01-intake`.
-All three PRs remain unmerged and undeployed. Increment 3 is an uncommitted
-implementation candidate; verification and independent review remain pending.
+Increment 3 was accepted at `8809958947531e3c7fa727accae4aab3f3073f57` and opened
+as PR #385 against planning. All four PRs were unmerged and undeployed at that
+acceptance checkpoint. Subsequent feedback fixes require separate review.
+
+The accepted intake feedback parent `192e7cf7` and planning feedback parent
+`5d773582422f27af520931c03e329b9773e3373f` are incorporated into the shaping branch.
+Current feedback reviews and CI status are recorded in
+[PR #385](https://github.com/pandemicsyn/neondeck/pull/385); historical acceptance
+does not approve later changes. Each publication requires verification, two clean
+dedicated static reviews and manager acceptance.
 
 Read the [slice contract](SLICE_1_IMPLEMENTATION_PLAN.md) before starting.
 The coordinating assistant acts as **dev manager and reviewer**. Implementation
@@ -115,8 +124,10 @@ Contract: .plans/factory/SLICE_1_IMPLEMENTATION_PLAN.md, PR <number>, plus the
 cross-cutting invariants that apply to this increment.
 
 Read AGENTS.md, ROADMAP.md and DEVIATIONS.md. Use the roadmap-implementation
-skill. For Flue work use the installed-version Flue skill/docs. Before accessing
-Drizzle files or generating migrations, load the required Drizzle skills.
+skill. For Flue work use the installed-version Flue skill/docs. For Drizzle work,
+load applicable Drizzle skills when available in the agent environment; they are
+not tracked prerequisites of this repository. Follow the migration workflow below
+whether or not those optional environment skills are installed.
 Use the Impeccable skill for the shaping UI, preserving Neondeck's design language.
 
 Build the assigned user path end to end, with typed services, durable state,
@@ -146,9 +157,21 @@ must additionally inspect `guide/durability`, tool result contracts, the agent A
 React clients and Node lifecycle docs when touching those surfaces. No dependency
 upgrade is implied by this plan.
 
-For migrations, follow the repository's Drizzle skill chain and generation/check
-commands. Generate forward migrations from the current parent snapshot; do not
-hand-edit applied migration history to make stacked branches agree.
+For migrations, use the repository's portable workflow from `AGENTS.md` with the
+installed dependencies and Node 26.4.0:
+
+```sh
+fnm exec --using 26.4.0 npm run db:generate -- --name <migration_name>
+fnm exec --using 26.4.0 npm run db:check
+```
+
+No Drizzle `SKILL.md` is tracked in this planning root. If the agent environment
+provides Drizzle guidance, read the applicable skills before accessing Drizzle
+files or generating migrations. Their absence does not block the repository
+workflow above. Inspect generation results and resolve any reported decisions;
+then review the generated SQL and snapshot together. Generate forward migrations
+from the current parent snapshot; do not hand-edit applied migration history to
+make stacked branches agree.
 
 ## Review and evidence protocol
 
@@ -220,18 +243,20 @@ privately when required; local implementation need not wait for it.
 
 ## Progress ledger
 
+This ledger records historical acceptance through increment 3 and its incorporated
+feedback parents. Downstream branches carry their own acceptance evidence.
 Update with real evidence as work proceeds. Do not infer “implemented” from branch
 creation, “verified” from a claimed plan, or “deployed” from passing local tests.
 
-| Increment                      | State                                                  | Branch/base + reviewed head                                                                                        | PR         | Verification / review / deployment evidence                                                                                                                                                                                        |
-| ------------------------------ | ------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------ | ---------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Plan root                      | Reviewed, open                                         | `agent/software-factory-plan`; head `9aba1ae2`, base `main`                                                        | #382       | Documentation only; not merged/deployed                                                                                                                                                                                            |
-| 1 — Manual intake/domain       | Accepted, open                                         | `agent/factory-s1-01-intake`; head `0c39917930b42aeacc3cbad71031d5552a29ccee`, base `agent/software-factory-plan`  | #383       | Feature verification: 1,594 tests at `587bbafd`; six-line CI-only follow-up independently reviewed by both reviewers and manager; all six GitHub checks pass at `0c399179`; not merged/deployed                                    |
-| 2 — Model planning             | Accepted, open                                         | `agent/factory-s1-02-planning`; head `3210fbb00eddb54e2873b1e44bfea9eea012b9d5`, base `agent/factory-s1-01-intake` | #384       | Both dedicated static reviews and manager clean. V3 full verification: 1,623 tests on identical runtime source; final README-only clarification checked separately. All six GitHub checks pass at `3210fbb0`; not merged/deployed. |
-| 3 — Human workbench            | Uncommitted candidate; verification and review pending | `agent/factory-s1-03-shaping`; base/head `3210fbb00eddb54e2873b1e44bfea9eea012b9d5` plus local delta               | Not opened | No publication or deployment; see increment 3 operator guide and candidate evidence.                                                                                                                                               |
-| 4 — GitHub ingress             | Not started                                            | Not created                                                                                                        | Not opened | None                                                                                                                                                                                                                               |
-| 5 — GitHub status              | Not started                                            | Not created                                                                                                        | Not opened | None                                                                                                                                                                                                                               |
-| Full slice / deployed exercise | Not started                                            | Record final accepted SHA                                                                                          | —          | Manual + GitHub + real model + restart + exposure checks pending                                                                                                                                                                   |
+| Increment                      | State                          | Branch/base + reviewed head                                                                                                                               | PR                | Verification / review / deployment evidence                                                                                                                                                                                        |
+| ------------------------------ | ------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Plan root                      | Reviewed, open                 | `agent/software-factory-plan`; head `9aba1ae2`, base `main`                                                                                               | #382              | Documentation only; not merged/deployed                                                                                                                                                                                            |
+| 1 — Manual intake/domain       | Accepted, open                 | `agent/factory-s1-01-intake`; historical head `0c39917930b42aeacc3cbad71031d5552a29ccee`, feedback parent `192e7cf7`, base `agent/software-factory-plan`  | #383              | Feature verification: 1,594 tests at `587bbafd`; six-line CI-only follow-up independently reviewed by both reviewers and manager; all six GitHub checks pass at `0c399179`; not merged/deployed                                    |
+| 2 — Model planning             | Accepted, open                 | `agent/factory-s1-02-planning`; historical head `3210fbb00eddb54e2873b1e44bfea9eea012b9d5`, feedback parent `5d773582`, base `agent/factory-s1-01-intake` | #384              | Both dedicated static reviews and manager clean. V3 full verification: 1,623 tests on identical runtime source; final README-only clarification checked separately. All six GitHub checks pass at `3210fbb0`; not merged/deployed. |
+| 3 — Human workbench            | Accepted historical head, open | `agent/factory-s1-03-shaping`; head `8809958947531e3c7fa727accae4aab3f3073f57`, base `agent/factory-s1-02-planning`                                       | #385              | Two dedicated reviews and manager clean; 1,632-test full verification, then CSS-only overflow fix verified by dashboard rebuild and five UI states. Not merged/deployed at acceptance.                                             |
+| 4 — GitHub ingress             | Outside this acceptance record | See downstream branch                                                                                                                                     | See downstream PR | None                                                                                                                                                                                                                               |
+| 5 — GitHub status              | Outside this acceptance record | See downstream branch                                                                                                                                     | See downstream PR | None                                                                                                                                                                                                                               |
+| Full slice / deployed exercise | Outside this acceptance record | Record final accepted SHA                                                                                                                                 | —                 | Manual + GitHub + real model + restart + exposure checks pending                                                                                                                                                                   |
 
 On completion, update `.plans/ROADMAP.md` and this ledger with the actual remaining
 limits. Preserve the plans as active while review/landing is underway; archive under
