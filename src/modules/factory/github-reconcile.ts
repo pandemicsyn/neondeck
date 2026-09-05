@@ -1,3 +1,4 @@
+import { echoDisposition, observeOwnedCommentChange } from './writeback';
 import * as v from 'valibot';
 import type {
   GitHubConnection,
@@ -224,6 +225,7 @@ function saveComment(
   const fingerprint = githubDigest([
     comment.body,
     comment.user?.login ?? 'deleted-user',
+    comment.user?.id ?? null,
     comment.updated_at,
   ]);
   const changed = !prior || prior.deleted || prior.fingerprint !== fingerprint;
@@ -233,21 +235,25 @@ function saveComment(
     remoteId: String(comment.id),
     body: comment.body,
     author: comment.user?.login ?? 'deleted-user',
+    authorId: comment.user?.id ?? null,
     remoteUpdatedAt: comment.updated_at,
     fingerprint,
     version: prior ? prior.version + (changed ? 1 : 0) : 1,
     deleted: false,
     seenScan: scan,
+    echo: echoDisposition(db, workId, comment),
     intentId: changed ? null : prior!.intentId,
   };
   putComment(db, row);
-  if (changed)
+  if ((changed || prior?.echo !== 'external') && row.echo === 'external') {
+    observeOwnedCommentChange(db, workId, row.remoteId);
     markGitHubAttention(
       db,
       workId,
       `GitHub comment ${comment.id} revision ${row.version} changed. Review and save a new draft before release.`,
       paths,
     );
+  }
 }
 async function comments(
   connection: GitHubConnection,
@@ -303,10 +309,12 @@ async function comments(
           putComment(db, {
             ...row,
             deleted: true,
+            echo: 'external',
             version: row.version + 1,
             intentId: null,
             seenScan: state.commentScan,
           });
+          observeOwnedCommentChange(db, workId, row.remoteId);
           markGitHubAttention(
             db,
             workId,
@@ -335,7 +343,9 @@ async function comments(
         JSON.stringify({
           source: 'github',
           author: row.author,
+          authorId: row.authorId,
           remoteCommentId: row.remoteId,
+          url: `${source.remote!.url}#issuecomment-${row.remoteId}`,
           revision: row.version,
           updatedAt: row.remoteUpdatedAt,
           deleted: row.deleted,

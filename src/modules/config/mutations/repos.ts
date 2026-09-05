@@ -3,7 +3,7 @@ import { constants } from 'node:fs';
 import { access, readFile, stat } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
-import { promisify } from 'node:util';
+import { promisify, isDeepStrictEqual } from 'node:util';
 import * as v from 'valibot';
 import {
   parseActionInput,
@@ -12,9 +12,13 @@ import {
   errorMessage,
 } from '../result';
 import { recordConfigChange } from '../history';
-import { writeJson } from '../files';
+import { writeJsonAtomicSync } from '../../../runtime-home/files';
+import { invalidateFactoryRepoContext } from '../../factory';
 import {
   type RepoConfig,
+  type RepoRegistry,
+  type RuntimePaths,
+  readRuntimeJsonSync,
   ensureRuntimeHome,
   parseAppConfig,
   parseRepoRegistry,
@@ -125,7 +129,8 @@ export async function addRepo(
     paths.repos,
   );
 
-  await writeJson(paths.repos, next);
+  const settled = commitRegistry(registry, next, paths, 'config_add_repo', id);
+  if (settled) return settled;
   recordConfigChange(paths, {
     action: 'config_add_repo',
     file: paths.repos,
@@ -229,7 +234,14 @@ export async function updateRepo(
     paths.repos,
   );
 
-  await writeJson(paths.repos, next);
+  const settled = commitRegistry(
+    registry,
+    next,
+    paths,
+    'config_update_repo',
+    input.id,
+  );
+  if (settled) return settled;
   recordConfigChange(paths, {
     action: 'config_update_repo',
     file: paths.repos,
@@ -343,7 +355,14 @@ export async function updateRepoAutopilotPolicy(
   );
   const changed = JSON.stringify(current) !== JSON.stringify(nextRepo);
   if (changed) {
-    await writeJson(paths.repos, next);
+    const settled = commitRegistry(
+      registry,
+      next,
+      paths,
+      'config_update_repo_autopilot_policy',
+      repoId,
+    );
+    if (settled) return settled;
     recordConfigChange(paths, {
       action: 'config_update_repo_autopilot_policy',
       file: paths.repos,
@@ -558,7 +577,14 @@ export async function removeRepo(
     { ...registry, repos: nextRepos },
     paths.repos,
   );
-  await writeJson(paths.repos, next);
+  const settled = commitRegistry(
+    registry,
+    next,
+    paths,
+    'config_remove_repo',
+    input.id,
+  );
+  if (settled) return settled;
   recordConfigChange(paths, {
     action: 'config_remove_repo',
     file: paths.repos,
@@ -660,4 +686,40 @@ function resolveUserPath(path: string) {
   if (path === '~') return homedir();
   if (path.startsWith('~/')) return join(homedir(), path.slice(2));
   return resolve(path);
+}
+
+function commitRegistry(
+  before: RepoRegistry,
+  after: RepoRegistry,
+  paths: RuntimePaths,
+  action: string,
+  target: string,
+): ConfigActionResult | undefined {
+  // Async discovery/read phases may race another mutation. Reject a stale snapshot,
+  // then perform revocation and atomic replacement without yielding to approvals.
+  const live = readRuntimeJsonSync(paths.repos, parseRepoRegistry);
+  if (!isDeepStrictEqual(live, before))
+    return failResult(action, paths, [paths.repos], {
+      message:
+        'Repository registry changed during this request. Reload and retry.',
+    });
+  if (isDeepStrictEqual(before, after))
+    return okResult(action, false, paths, [paths.repos], {
+      message: `Repository "${target}" already matched the requested values.`,
+      data: { repo: after.repos.find((repo) => repo.id === target) },
+    });
+  for (const id of new Set(
+    [...before.repos, ...after.repos].map((repo) => repo.id),
+  )) {
+    if (
+      !isDeepStrictEqual(
+        before.repos.find((repo) => repo.id === id),
+        after.repos.find((repo) => repo.id === id),
+      )
+    )
+      invalidateFactoryRepoContext(id, paths);
+  }
+  // If replacement fails, conservative durable revocation remains; no cross-store
+  // transaction or provider CAS is claimed.
+  writeJsonAtomicSync(paths.repos, after);
 }

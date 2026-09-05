@@ -135,5 +135,8 @@ export {
   readFactoryGitHubCommentsPage,
   readFactoryGitHubComment,
   readFactoryGitHubRepository,
+  createFactoryGitHubComment,
+  updateFactoryGitHubComment,
+  factoryGitHubIdentity,
 } from './factory-issues';
 export { GitHubApiError } from './errors';

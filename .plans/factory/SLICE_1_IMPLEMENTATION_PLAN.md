@@ -1,6 +1,9 @@
 # Slice 1 — Intake, collaborative shaping, and human release
 
-Status: implementation authorized; first delegation being prepared.
+Status: increments 1–4 are reviewed and open in the PR stack; increment 5 is an
+uncommitted implementation candidate, with final verification and reviews pending.
+Nothing in this stack is merged or deployed. Code, review, publication, merge and
+live deployment acceptance are separate gates.
 
 This implements **slice 1: Intake to inbox** from the
 [software factory proposal](../research/software-factory-proposal.html#rollout).

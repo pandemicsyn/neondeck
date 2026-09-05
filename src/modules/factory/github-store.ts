@@ -59,11 +59,16 @@ export const commentRecordSchema = v.object({
   remoteId: str,
   body: str,
   author: str,
+  authorId: v.optional(v.nullable(v.number()), null),
   remoteUpdatedAt: str,
   fingerprint: str,
   version: v.number(),
   deleted: v.boolean(),
   seenScan: str,
+  echo: v.optional(
+    v.picklist(['external', 'awaiting-receipt', 'confirmed']),
+    'external',
+  ),
   intentId: v.nullable(str),
 });
 export type CommentRecord = v.InferOutput<typeof commentRecordSchema>;
@@ -171,6 +176,7 @@ export function pendingGitHubComments(db: DatabaseSync, workId: string) {
       `SELECT record FROM factory_github_comments
      WHERE work_id=? AND (json_extract(record,'$.intentId') IS NULL
        OR json_extract(record,'$.intentId')='')
+       AND COALESCE(json_extract(record,'$.echo'),'external')='external'
      ORDER BY rowid LIMIT 1`,
     )
     .all(workId)

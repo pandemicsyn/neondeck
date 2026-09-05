@@ -4,3 +4,5 @@ export * from './planning-store';
 export * from './repo-tools';
 export * from './planning-dispatch';
 export { assertTriageBudget } from './triage-budget';
+
+export { invalidateWriteback } from './writeback-store';

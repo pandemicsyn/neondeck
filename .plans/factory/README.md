@@ -1,6 +1,7 @@
 # Software factory implementation
 
-Status: implementation authorized; preparing delegation and review gates.
+Status: increments 1–4 are reviewed and open; increment 5 is an uncommitted
+candidate awaiting final verification and review. No stack PR is merged or deployed.
 
 The next implementation priority is **slice 1: intake to a human-released queue**.
 Neon helps a human shape a task into a versioned brief. Coding remains delegated to
@@ -10,6 +11,8 @@ Codex or OpenCode in subsequent slices; this work does not build a coding agent.
   five stacked PRs, acceptance criteria, and operational readiness.
 - [Implementation handoff](SLICE_1_HANDOFF.md): manager/reviewer responsibilities,
   implementer assignment template, stack maintenance, and progress ledger.
+- [GitHub publishing operations](INCREMENT_5_OPERATOR.md): consent, exact approvals,
+  uncertain effects, remote repair and remaining live acceptance.
 - [Overall proposal](../research/software-factory-proposal.html): architecture,
   human touchpoints, GitHub writeback, shaping surfaces, agent isolation and cleanup,
   and subsequent slices.

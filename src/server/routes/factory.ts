@@ -1,3 +1,14 @@
+import {
+  getWritebackState,
+  setWritebackPolicy,
+  approveWriteback,
+} from '../../modules/factory/writeback-store';
+import {
+  recoverWriteback,
+  type WritebackIO,
+  previewWritebackRepair,
+  approveWritebackRepair,
+} from '../../modules/factory/writeback';
 import { factoryConnections } from '../../modules/factory/github-config';
 import { githubDigest } from '../../modules/factory/github-store';
 import { githubConnectionSchema } from '../../../shared/factory-github';
@@ -34,6 +45,7 @@ import { runtimePaths } from '../../runtime-home';
 export function createFactoryRoutes(
   paths = runtimePaths(),
   triageAdmission = triageAdmittedFactoryWork,
+  writebackProvider?: WritebackIO,
 ) {
   const routes = new Hono();
   routes.use('*', bodyLimit({ maxSize: 512 * 1024 }));
@@ -73,6 +85,48 @@ export function createFactoryRoutes(
       );
     return c.json(updateFactoryConfig({ github: input.connections }, paths));
   });
+  routes.post('/work/:id/writeback/repair-preview', async (c) => {
+    const input = v.parse(
+      v.strictObject({ effectId: v.string() }),
+      await c.req.json(),
+    );
+    return c.json(
+      await previewWritebackRepair(
+        c.req.param('id'),
+        input.effectId,
+        paths,
+        writebackProvider,
+      ),
+    );
+  });
+  routes.post('/work/:id/writeback/repair', async (c) =>
+    c.json(
+      approveWritebackRepair(
+        c.req.param('id'),
+        await c.req.json(),
+        actor,
+        paths,
+      ),
+    ),
+  );
+  routes.get('/work/:id/writeback', (c) =>
+    c.json(getWritebackState(c.req.param('id'), paths)),
+  );
+  routes.post('/github/:id/writeback', async (c) =>
+    c.json(
+      setWritebackPolicy(c.req.param('id'), await c.req.json(), actor, paths),
+    ),
+  );
+  routes.post('/work/:id/writeback/approve', async (c) =>
+    c.json(
+      approveWriteback(c.req.param('id'), await c.req.json(), actor, paths),
+    ),
+  );
+  routes.post('/work/:id/writeback/recover', async (c) =>
+    c.json(
+      recoverWriteback(c.req.param('id'), await c.req.json(), actor, paths),
+    ),
+  );
   routes.get('/work/:id/comments', (c) =>
     c.json(
       factoryGitHubComments(c.req.param('id'), c.req.query('cursor'), paths),
