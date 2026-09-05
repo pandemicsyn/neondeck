@@ -517,6 +517,8 @@ export function transitionFactoryWork(
         'Closed tasks must be reopened first.',
         current,
       );
+    const reopeningClosed =
+      data.action === 'reopen' && current.work.lifecycle === 'closed';
     withdraw(db, current.releases, data.action);
     current.work.lifecycle =
       data.action === 'pause'
@@ -526,7 +528,7 @@ export function transitionFactoryWork(
           : 'shaping';
     if (
       current.source.provider === 'manual' &&
-      (data.action === 'close' || data.action === 'reopen')
+      (data.action === 'close' || reopeningClosed)
     ) {
       current.source.status = data.action === 'close' ? 'closed' : 'open';
       current.source.version++;

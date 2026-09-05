@@ -69,3 +69,14 @@ unchanged provider/agent integration.
 
 GitHub ingress, writeback and deployed exposure acceptance remain increments 4/5.
 No migrations or dependency changes are required by this workbench.
+
+### Planning requests with an uncertain receipt
+
+The browser stores the exact planning request before sending it, including its
+request key, expected task version, message and discussion reference. After a
+lost response or reload, **Retry original request** resends that same envelope;
+new messages and context refresh remain blocked until it is resolved. A changed
+brief, selected reference or lifecycle does not rebind that request. A definitive
+rejection requires **Dismiss rejection and review a new request** before a new
+send. Storage failure prevents admission; retain browser storage while resolving
+uncertain requests. Closing the tab may discard this browser-local recovery data.

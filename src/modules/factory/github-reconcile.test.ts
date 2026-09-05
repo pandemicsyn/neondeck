@@ -2,6 +2,7 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { fixture, connection, issue } from './testing/github-fixture';
 import {
   factoryGitHubState,
+  factoryGitHubComments,
   runFactoryGitHubSync,
   requestFactoryGitHubSync,
   type GitHubReconcileIO,
@@ -13,6 +14,7 @@ import {
   saveFactorySpec,
   releaseFactoryWork,
   transitionFactoryWork,
+  submitFactoryWork,
 } from './service';
 import {
   prepareFactoryPlanning,
@@ -204,7 +206,11 @@ it('keeps comment context before planning, dedupes edits, and confirms tombstone
   };
   vi.mocked(io.comments).mockResolvedValue({ items: [comment], hasNext: true });
   await tick();
-  let rows = factoryGitHubState(setup.paths).comments;
+  let rows = factoryGitHubComments(
+    current().work.id,
+    undefined,
+    setup.paths,
+  ).comments;
   expect(rows).toHaveLength(1);
   expect(rows[0]).toMatchObject({
     author: 'external-author',
@@ -214,21 +220,30 @@ it('keeps comment context before planning, dedupes edits, and confirms tombstone
   expect(current().releases).toHaveLength(0);
   vi.mocked(io.comments).mockResolvedValue({ items: [], hasNext: true });
   await tick();
-  expect(factoryGitHubState(setup.paths).comments[0].deleted).toBe(false);
+  expect(
+    factoryGitHubComments(current().work.id, undefined, setup.paths).comments[0]
+      .deleted,
+  ).toBe(false);
   expect(io.comment).not.toHaveBeenCalled();
   vi.mocked(io.comments).mockResolvedValue({ items: [], hasNext: false });
   await tick();
   await tick();
   await tick();
   await tick();
-  expect(factoryGitHubState(setup.paths).comments[0].deleted).toBe(true);
+  expect(
+    factoryGitHubComments(current().work.id, undefined, setup.paths).comments[0]
+      .deleted,
+  ).toBe(true);
   vi.mocked(io.comments).mockResolvedValue({
     items: [comment],
     hasNext: false,
   });
   await tick();
   await tick();
-  expect(factoryGitHubState(setup.paths).comments[0].deleted).toBe(true);
+  expect(
+    factoryGitHubComments(current().work.id, undefined, setup.paths).comments[0]
+      .deleted,
+  ).toBe(true);
 });
 it('rejects remote repository identity changes and keeps shaped tasks out of retriage', async () => {
   await tick();
@@ -394,8 +409,162 @@ it('surfaces oversized full issue bodies instead of admitting a truncated source
   await tick();
   expect(factoryState(setup.paths).items).toHaveLength(0);
   expect(
+    factoryGitHubState(setup.paths).deliveries.find((d) => d.issueNumber === 1)
+      ?.error,
+  ).toBeTruthy();
+});
+
+it.each([
+  new Error('network failure'),
+  new DOMException('deadline', 'TimeoutError'),
+  new DOMException('shutdown', 'AbortError'),
+  new GitHubApiError(403, null, 'limited', {
+    rateLimited: true,
+    retryAt: Date.now() + 90000,
+  }),
+  new GitHubApiError(503, null, 'unavailable'),
+])(
+  'keeps released source authority unchanged after transient read failure: %s',
+  async (error) => {
+    await tick();
+    save();
+    release();
+    const before = current();
+    vi.mocked(io.issue).mockRejectedValue(error);
+    requestFactoryGitHubSync(before.work.id, setup.paths);
+    await tick();
+    expect(current().source).toMatchObject(before.source);
+    expect(current().releases).toEqual(before.releases);
+    expect(current().eligible).toBe(true);
+    expect(
+      factoryGitHubState(setup.paths).deliveries.some((d) => d.error),
+    ).toBe(true);
+    vi.mocked(io.issue).mockResolvedValue(issue);
+    dbRun(setup.paths, (db) =>
+      db.exec(
+        "UPDATE factory_github_sync SET record=json_set(record,'$.retryAt',0)",
+      ),
+    );
+    requestFactoryGitHubSync(before.work.id, setup.paths);
+    await tick();
+    expect(current().source).toMatchObject(before.source);
+    expect(current().releases).toEqual(before.releases);
+    expect(current().eligible).toBe(true);
+  },
+);
+it.each([404, 410])(
+  'still withdraws release for an unavailable source (%s)',
+  async (status) => {
+    await tick();
+    save();
+    release();
+    vi.mocked(io.issue).mockRejectedValue(
+      new GitHubApiError(status, null, 'gone'),
+    );
+    await tick();
+    expect(current().eligible).toBe(false);
+    expect(current().releases[0].withdrawnAt).not.toBeNull();
+  },
+);
+it('isolates oversized content and continues to valid issues and later pages', async () => {
+  vi.mocked(io.issues).mockImplementation(async (_, _since, page) => ({
+    items:
+      page === 1
+        ? [issue, { ...issue, id: 102, number: 2 }]
+        : [{ ...issue, id: 103, number: 3 }],
+    hasNext: page === 1,
+  }));
+  vi.mocked(io.issue).mockImplementation(async (_, number) => ({
+    ...issue,
+    id: 100 + number,
+    number,
+    body: number === 1 ? 'x'.repeat(65537) : 'valid',
+  }));
+  await tick();
+  expect(
     factoryGitHubState(setup.paths).sync.find(
       (s) => s.id === 'connection:synthetic',
-    )?.error,
-  ).toBeTruthy();
+    )?.page,
+  ).toBe(2);
+  expect(factoryGitHubState(setup.paths).deliveries).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ issueNumber: 1, state: 'attention' }),
+    ]),
+  );
+  await tick();
+  expect(factoryState(setup.paths).items).toHaveLength(2);
+});
+it('pages only the requested task comments and rejects invalid cursors', async () => {
+  const { putComment } = await import('./github-store');
+  await tick();
+  const workId = current().work.id;
+  const other = submitFactoryWork(
+    { requestKey: 'other', title: 'Other task', body: '', repoId: null },
+    human,
+    setup.paths,
+  );
+  dbRun(setup.paths, (db) => {
+    for (let n = 1; n <= 23; n++)
+      putComment(db, {
+        id: `page-${n}`,
+        workId,
+        remoteId: String(n),
+        body: 'body',
+        author: 'synthetic',
+        remoteUpdatedAt: issue.updated_at,
+        fingerprint: String(n),
+        version: 1,
+        deleted: false,
+        seenScan: '',
+        intentId: null,
+      });
+    // An unrelated malformed record proves it is neither decoded nor transferred.
+    db.prepare(
+      'INSERT INTO factory_github_comments(id,work_id,record) VALUES(?,?,?)',
+    ).run('unrelated', other.work.id, 'invalid-json');
+  });
+  expect(factoryGitHubState(setup.paths)).not.toHaveProperty('comments');
+  const first = factoryGitHubComments(workId, undefined, setup.paths);
+  expect(first.comments).toHaveLength(10);
+  expect(first.comments[0].remoteId).toBe('23');
+  const second = factoryGitHubComments(workId, first.nextCursor!, setup.paths);
+  const third = factoryGitHubComments(workId, second.nextCursor!, setup.paths);
+  expect(third.comments).toHaveLength(3);
+  expect(third.nextCursor).toBeNull();
+  expect(
+    new Set(
+      [...first.comments, ...second.comments, ...third.comments].map(
+        (c) => c.id,
+      ),
+    ).size,
+  ).toBe(23);
+  expect(() => factoryGitHubComments(workId, '-1', setup.paths)).toThrow(
+    'cursor',
+  );
+  expect(() =>
+    factoryGitHubComments('missing', undefined, setup.paths),
+  ).toThrow();
+});
+
+it('integrated pause/reopen preserves GitHub source and requires a fresh release', async () => {
+  await tick();
+  save();
+  const before = release();
+  const paused = transitionFactoryWork(
+    before.work.id,
+    { expectedVersion: before.work.version, action: 'pause' },
+    human,
+    setup.paths,
+  );
+  const reopened = transitionFactoryWork(
+    before.work.id,
+    { expectedVersion: paused.work.version, action: 'reopen' },
+    human,
+    setup.paths,
+  );
+  expect(reopened.source).toEqual(before.source);
+  expect(reopened.revisions).toEqual(before.revisions);
+  expect(reopened.eligible).toBe(false);
+  expect(reopened.releases[0].withdrawnAt).not.toBeNull();
+  expect(release().eligible).toBe(true);
 });

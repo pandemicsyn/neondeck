@@ -1,3 +1,4 @@
+import { privateServerUrl } from '../lib/server-address';
 import { spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { dirname } from 'node:path';
@@ -102,13 +103,17 @@ export function rewriteServerLogLine(
   port: number,
   runtimeHome?: string,
 ) {
-  if (!/^\[flue\] Server listening on http:\/\/localhost:\d+\r?$/.test(line)) {
+  if (
+    !/^\[flue\] Server listening on http:\/\/(?:localhost|127\.0\.0\.1|\[::1\]):\d+\r?$/.test(
+      line,
+    )
+  ) {
     return line;
   }
 
   return [
     '[neondeck] Server ready',
-    `  dashboard  http://127.0.0.1:${port}/`,
+    `  dashboard  ${privateServerUrl(port)}/`,
     ...(runtimeHome ? [`  home       ${runtimeHome}`] : []),
     '  mode       foreground (Ctrl+C to stop)',
   ].join('\n');
