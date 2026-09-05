@@ -1,6 +1,6 @@
 # Slice 1 — Manager and implementer handoff
 
-Status: implementation authorized; preparing the first delegation. No PR created.
+Scope: implementation and review protocol for slice 1. Documentation root: [PR #382](https://github.com/pandemicsyn/neondeck/pull/382). See the progress ledger for the recorded planning baseline; consult the implementation stack for subsequent evidence and current PR state.
 
 Read the [slice contract](SLICE_1_IMPLEMENTATION_PLAN.md) before starting.
 The coordinating assistant acts as **dev manager and reviewer**. Implementation
@@ -110,8 +110,10 @@ Contract: .plans/factory/SLICE_1_IMPLEMENTATION_PLAN.md, PR <number>, plus the
 cross-cutting invariants that apply to this increment.
 
 Read AGENTS.md, ROADMAP.md and DEVIATIONS.md. Use the roadmap-implementation
-skill. For Flue work use the installed-version Flue skill/docs. Before accessing
-Drizzle files or generating migrations, load the required Drizzle skills.
+skill. For Flue work use the installed-version Flue skill/docs. For Drizzle work,
+load applicable Drizzle skills when available in the agent environment; they are
+not tracked prerequisites of this repository. Follow the migration workflow below
+whether or not those optional environment skills are installed.
 Use the Impeccable skill for the shaping UI, preserving Neondeck's design language.
 
 Build the assigned user path end to end, with typed services, durable state,
@@ -141,9 +143,21 @@ must additionally inspect `guide/durability`, tool result contracts, the agent A
 React clients and Node lifecycle docs when touching those surfaces. No dependency
 upgrade is implied by this plan.
 
-For migrations, follow the repository's Drizzle skill chain and generation/check
-commands. Generate forward migrations from the current parent snapshot; do not
-hand-edit applied migration history to make stacked branches agree.
+For migrations, use the repository's portable workflow from `AGENTS.md` with the
+installed dependencies and Node 26.4.0:
+
+```sh
+fnm exec --using 26.4.0 npm run db:generate -- --name <migration_name>
+fnm exec --using 26.4.0 npm run db:check
+```
+
+No Drizzle `SKILL.md` is tracked in this planning root. If the agent environment
+provides Drizzle guidance, read the applicable skills before accessing Drizzle
+files or generating migrations. Their absence does not block the repository
+workflow above. Inspect generation results and resolve any reported decisions;
+then review the generated SQL and snapshot together. Generate forward migrations
+from the current parent snapshot; do not hand-edit applied migration history to
+make stacked branches agree.
 
 ## Review and evidence protocol
 
@@ -215,18 +229,23 @@ privately when required; local implementation need not wait for it.
 
 ## Progress ledger
 
-Update with real evidence as work proceeds. Do not infer “implemented” from branch
-creation, “verified” from a claimed plan, or “deployed” from passing local tests.
+The implementation rows below preserve the **pre-delegation planning baseline**
+recorded in plan-root commit `9aba1ae2e8a918ab8d98b37044eb080c92e5ba8a`
+on September 5, 2026. They are historical, not a live claim about the stack. The
+documentation root is tracked in PR #382; later implementation branches update
+this ledger with their own evidence. Consult those branches and PRs for subsequent
+progress. Do not infer “implemented” from branch creation, “verified” from a claimed
+plan, or “deployed” from passing local tests.
 
-| Increment                      | State                                           | Branch/base + reviewed head                          | PR         | Verification / review / deployment evidence                      |
-| ------------------------------ | ----------------------------------------------- | ---------------------------------------------------- | ---------- | ---------------------------------------------------------------- |
-| Plan root                      | Overall proposal committed; slice plan prepared | `agent/software-factory-plan`; resolve head at start | Not opened | Documentation only                                               |
-| 1 — Manual intake/domain       | Not started                                     | Not created                                          | Not opened | None                                                             |
-| 2 — Model planning             | Not started                                     | Not created                                          | Not opened | None                                                             |
-| 3 — Human workbench            | Not started                                     | Not created                                          | Not opened | None                                                             |
-| 4 — GitHub ingress             | Not started                                     | Not created                                          | Not opened | None                                                             |
-| 5 — GitHub status              | Not started                                     | Not created                                          | Not opened | None                                                             |
-| Full slice / deployed exercise | Not started                                     | Record final accepted SHA                            | —          | Manual + GitHub + real model + restart + exposure checks pending |
+| Increment                      | State                                           | Branch/base + reviewed head                          | PR                                                       | Verification / review / deployment evidence                      |
+| ------------------------------ | ----------------------------------------------- | ---------------------------------------------------- | -------------------------------------------------------- | ---------------------------------------------------------------- |
+| Plan root                      | Overall proposal committed; slice plan prepared | `agent/software-factory-plan`; resolve head at start | [#382](https://github.com/pandemicsyn/neondeck/pull/382) | Documentation only                                               |
+| 1 — Manual intake/domain       | Not started                                     | Not created                                          | Not opened                                               | None                                                             |
+| 2 — Model planning             | Not started                                     | Not created                                          | Not opened                                               | None                                                             |
+| 3 — Human workbench            | Not started                                     | Not created                                          | Not opened                                               | None                                                             |
+| 4 — GitHub ingress             | Not started                                     | Not created                                          | Not opened                                               | None                                                             |
+| 5 — GitHub status              | Not started                                     | Not created                                          | Not opened                                               | None                                                             |
+| Full slice / deployed exercise | Not started                                     | Record final accepted SHA                            | —                                                        | Manual + GitHub + real model + restart + exposure checks pending |
 
 On completion, update `.plans/ROADMAP.md` and this ledger with the actual remaining
 limits. Preserve the plans as active while review/landing is underway; archive under
