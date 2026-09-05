@@ -34,11 +34,13 @@ mutable state stored in SQLite under a runtime home you control.
 Open `/factory` to enable the opt-in local inbox and create manual tasks. Admitted
 tasks receive bounded utility-model triage automatically. Choose **Ask Neon to
 plan** to shape a model-proposed brief in a dedicated persistent conversation,
-then reply to revise it or edit the draft manually. You review and release an
-exact specification version; the coding executor and GitHub ingress remain pending.
+then reply to revise it or edit the draft manually. Compare retained versions,
+discuss a section, and resolve decisions before releasing an exact specification
+version; the coding executor and GitHub ingress remain pending.
 
 See the [manual intake operator guide](.plans/factory/INCREMENT_1_OPERATOR.md) and
-[planning operator guide](.plans/factory/INCREMENT_2_OPERATOR.md).
+[planning operator guide](.plans/factory/INCREMENT_2_OPERATOR.md), plus the
+[human shaping guide](.plans/factory/INCREMENT_3_OPERATOR.md).
 
 ## The deck in action
 

@@ -16,7 +16,17 @@ export const triageResultSchema = v.strictObject({
   missingInformation: v.pipe(v.array(text(500)), v.maxLength(12)),
   candidateIds: v.pipe(v.array(id), v.maxLength(10)),
 });
+export const discussionReferenceSchema = v.strictObject({
+  version: v.pipe(v.number(), v.integer(), v.minValue(1)),
+  hash: v.pipe(v.string(), v.regex(/^[a-f0-9]{64}$/)),
+  kind: v.picklist(['section', 'criterion', 'decision']),
+  id,
+});
+export type FactoryDiscussionReference = v.InferOutput<
+  typeof discussionReferenceSchema
+>;
 export const planningInputSchema = v.strictObject({
+  discussion: v.optional(discussionReferenceSchema),
   requestKey: id,
   expectedVersion: v.pipe(v.number(), v.integer(), v.minValue(1)),
   message: v.pipe(text(12000), v.trim(), v.minLength(1)),

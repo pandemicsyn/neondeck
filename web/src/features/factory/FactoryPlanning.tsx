@@ -1,3 +1,4 @@
+import type { FactoryDiscussionReference } from '../../../../shared/factory-planning';
 import { ApiError } from '../../api/http';
 import { useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
@@ -11,13 +12,22 @@ import {
   refreshFactoryPlanningContext,
 } from '../../api/factory';
 import { FlueChatSessionView } from '../flue-chat/components/session-view';
-export function FactoryPlanning({ detail }: { detail: FactoryDetail }) {
+export function FactoryPlanning({
+  detail,
+  discussion,
+  onClearDiscussion,
+}: {
+  detail: FactoryDetail;
+  discussion?: FactoryDiscussionReference;
+  onClearDiscussion?: () => void;
+}) {
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [request, setRequest] = useState<{
     key: string;
     message: string;
     version: number;
+    discussion?: FactoryDiscussionReference;
   }>();
   const state = useQuery({
     queryKey: ['factory-planning', detail.work.id],
@@ -32,9 +42,15 @@ export function FactoryPlanning({ detail }: { detail: FactoryDetail }) {
     ['paused', 'closed', 'queued'].includes(detail.work.lifecycle);
   async function send(message: string) {
     const current =
-      request?.message === message
+      request?.message === message &&
+      JSON.stringify(request.discussion) === JSON.stringify(discussion)
         ? request
-        : { key: crypto.randomUUID(), message, version: detail.work.version };
+        : {
+            key: crypto.randomUUID(),
+            message,
+            version: detail.work.version,
+            discussion,
+          };
     setRequest(current);
     setBusy(true);
     setError('');
@@ -43,8 +59,10 @@ export function FactoryPlanning({ detail }: { detail: FactoryDetail }) {
         requestKey: current.key,
         expectedVersion: current.version,
         message,
+        ...(current.discussion ? { discussion: current.discussion } : {}),
       });
       setRequest(undefined);
+      onClearDiscussion?.();
       await state.refetch();
     } catch (error) {
       if (error instanceof ApiError && error.status === 409)
@@ -69,6 +87,23 @@ export function FactoryPlanning({ detail }: { detail: FactoryDetail }) {
   return (
     <section className="factory-planning" aria-label="Planning conversation">
       <h3>Shape with Neon</h3>
+      {discussion && (
+        <div className="factory-discussion-context">
+          <strong>
+            Discussing v{discussion.version} · {discussion.kind}:{' '}
+            {discussion.id}
+          </strong>
+          <p>
+            {discussion.version !== detail.work.specVersion
+              ? 'This reference is from an older version. Feedback stays attached to that version.'
+              : 'Your next message will include this exact revision and reference.'}{' '}
+            Chat does not itself edit the brief or release work.
+          </p>
+          <button disabled={busy || pending} onClick={onClearDiscussion}>
+            Clear discussion reference
+          </button>
+        </div>
+      )}
       {state.isPending ? (
         <output>Loading planning state…</output>
       ) : state.error && !state.data ? (
@@ -194,6 +229,7 @@ export function FactoryPlanning({ detail }: { detail: FactoryDetail }) {
                 allowCommands={false}
                 messageEnabled={!blocked}
                 messageLabel="Discuss this draft"
+                draftStorageKey={`factory-chat-draft:${detail.work.id}:${state.data.sessionId}`}
                 onSendMessage={send}
                 quickCommands={[]}
                 session={{

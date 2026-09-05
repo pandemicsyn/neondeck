@@ -2,8 +2,10 @@
 
 Status: documentation root PR #382 is open at `9aba1ae2` against `main`.
 Intake PR #383 is open at `0c39917930b42aeacc3cbad71031d5552a29ccee` against
-`agent/software-factory-plan`; neither PR is merged or deployed. Increment 2 is
-an uncommitted candidate on its assigned branch, with verification and review pending.
+`agent/software-factory-plan`. Planning PR #384 is open at
+`3210fbb00eddb54e2873b1e44bfea9eea012b9d5` against `agent/factory-s1-01-intake`.
+All three PRs remain unmerged and undeployed. Increment 3 is an uncommitted
+implementation candidate; verification and independent review remain pending.
 
 Read the [slice contract](SLICE_1_IMPLEMENTATION_PLAN.md) before starting.
 The coordinating assistant acts as **dev manager and reviewer**. Implementation
@@ -221,15 +223,15 @@ privately when required; local implementation need not wait for it.
 Update with real evidence as work proceeds. Do not infer “implemented” from branch
 creation, “verified” from a claimed plan, or “deployed” from passing local tests.
 
-| Increment                      | State                                                         | Branch/base + reviewed head                                                                                       | PR         | Verification / review / deployment evidence                                                                                                                                                     |
-| ------------------------------ | ------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- | ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Plan root                      | Reviewed, open                                                | `agent/software-factory-plan`; head `9aba1ae2`, base `main`                                                       | #382       | Documentation only; not merged/deployed                                                                                                                                                         |
-| 1 — Manual intake/domain       | Accepted, open                                                | `agent/factory-s1-01-intake`; head `0c39917930b42aeacc3cbad71031d5552a29ccee`, base `agent/software-factory-plan` | #383       | Feature verification: 1,594 tests at `587bbafd`; six-line CI-only follow-up independently reviewed by both reviewers and manager; all six GitHub checks pass at `0c399179`; not merged/deployed |
-| 2 — Model planning             | Uncommitted V3 candidate; renewed verification/review pending | `agent/factory-s1-02-planning`; base/head `0c39917930b42aeacc3cbad71031d5552a29ccee` plus local delta             | Not opened | V1 full verification passed 1,614 tests; V2 passed 1,619 tests. V3 additionally closes mixed-tool triage continuation at the provider-call boundary; renewed review and gates pending           |
-| 3 — Human workbench            | Not started                                                   | Not created                                                                                                       | Not opened | None                                                                                                                                                                                            |
-| 4 — GitHub ingress             | Not started                                                   | Not created                                                                                                       | Not opened | None                                                                                                                                                                                            |
-| 5 — GitHub status              | Not started                                                   | Not created                                                                                                       | Not opened | None                                                                                                                                                                                            |
-| Full slice / deployed exercise | Not started                                                   | Record final accepted SHA                                                                                         | —          | Manual + GitHub + real model + restart + exposure checks pending                                                                                                                                |
+| Increment                      | State                                                  | Branch/base + reviewed head                                                                                        | PR         | Verification / review / deployment evidence                                                                                                                                                                                        |
+| ------------------------------ | ------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------ | ---------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Plan root                      | Reviewed, open                                         | `agent/software-factory-plan`; head `9aba1ae2`, base `main`                                                        | #382       | Documentation only; not merged/deployed                                                                                                                                                                                            |
+| 1 — Manual intake/domain       | Accepted, open                                         | `agent/factory-s1-01-intake`; head `0c39917930b42aeacc3cbad71031d5552a29ccee`, base `agent/software-factory-plan`  | #383       | Feature verification: 1,594 tests at `587bbafd`; six-line CI-only follow-up independently reviewed by both reviewers and manager; all six GitHub checks pass at `0c399179`; not merged/deployed                                    |
+| 2 — Model planning             | Accepted, open                                         | `agent/factory-s1-02-planning`; head `3210fbb00eddb54e2873b1e44bfea9eea012b9d5`, base `agent/factory-s1-01-intake` | #384       | Both dedicated static reviews and manager clean. V3 full verification: 1,623 tests on identical runtime source; final README-only clarification checked separately. All six GitHub checks pass at `3210fbb0`; not merged/deployed. |
+| 3 — Human workbench            | Uncommitted candidate; verification and review pending | `agent/factory-s1-03-shaping`; base/head `3210fbb00eddb54e2873b1e44bfea9eea012b9d5` plus local delta               | Not opened | No publication or deployment; see increment 3 operator guide and candidate evidence.                                                                                                                                               |
+| 4 — GitHub ingress             | Not started                                            | Not created                                                                                                        | Not opened | None                                                                                                                                                                                                                               |
+| 5 — GitHub status              | Not started                                            | Not created                                                                                                        | Not opened | None                                                                                                                                                                                                                               |
+| Full slice / deployed exercise | Not started                                            | Record final accepted SHA                                                                                          | —          | Manual + GitHub + real model + restart + exposure checks pending                                                                                                                                                                   |
 
 On completion, update `.plans/ROADMAP.md` and this ledger with the actual remaining
 limits. Preserve the plans as active while review/landing is underway; archive under
@@ -245,3 +247,10 @@ Installed Flue 2.0.3 full pages: `guide/durability`, `reference/agent-api`,
 `AgentDispatchRequest` declaration additionally supplies the idempotency-key replay
 contract. Operator behavior and finite limits are documented in
 [INCREMENT_2_OPERATOR.md](INCREMENT_2_OPERATOR.md).
+
+### Increment 3 implementation references
+
+See [human shaping operations](INCREMENT_3_OPERATOR.md). Installed Flue 2.0.3
+`guide/react` informed the existing conversation integration; no runtime hooks,
+planner tools or model policy were changed. Pierre 1.3.6 installed declarations
+for `parseDiffFromFile` and `FileDiff` define the document renderer adapter.

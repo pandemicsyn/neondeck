@@ -82,15 +82,15 @@ intake and collaborative shaping path. Historical phase completion above is unch
       exposure checks. Coding execution starts in a subsequent slice.
 
 See [the slice 1 implementation plan](factory/SLICE_1_IMPLEMENTATION_PLAN.md) and
-[manager/implementer handoff](factory/SLICE_1_HANDOFF.md). Plan root PR #382 and
-manual intake PR #383 are open, neither merged nor deployed. Intake is accepted at
-`0c39917930b42aeacc3cbad71031d5552a29ccee`. Increment 2 is an uncommitted candidate on
-`agent/factory-s1-02-planning` from that parent: automatic bounded triage, dedicated
-persistent planning, scoped repository reads, typed model proposals/questions and
-initial chat/rendered draft are implemented; final verification/evidence and
-independent review remain pending. Full shaping, GitHub ingress and writeback remain
-unimplemented. Actual deviations belong in `DEVIATIONS.md`; do not revive the removed
-PR Autopilot coordinator or replace existing coding harnesses as part of this slice.
+[manager/implementer handoff](factory/SLICE_1_HANDOFF.md). Plan root PR #382,
+manual intake PR #383 and model planning PR #384 are open, none merged/deployed.
+Planning is manager-accepted at `3210fbb00eddb54e2873b1e44bfea9eea012b9d5` after
+two clean dedicated reviews, 1,623-test verification on identical runtime source
+plus a README-only clarification, and all six GitHub checks passing. Increment 3's
+human shaping workbench is an uncommitted candidate from that parent; verification
+and independent review are pending. GitHub ingress/writeback remain unimplemented.
+Actual deviations belong in `DEVIATIONS.md`; preserve existing coding harnesses and
+do not revive the removed PR Autopilot coordinator.
 
 ## Usability Gate
 

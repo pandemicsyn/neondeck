@@ -539,3 +539,91 @@ it.each([false, true])(
     expect(getFactoryWork(work.work.id, paths).revisions).toHaveLength(1);
   },
 );
+
+it('binds section feedback to its retained original revision without selecting another task/session', () => {
+  const original = task();
+  const first = original.revisions[0];
+  const revised = saveFactorySpec(
+    original.work.id,
+    {
+      expectedVersion: 1,
+      expectedSpecVersion: 1,
+      expectedRepoFingerprint: null,
+      spec,
+    },
+    human,
+    paths,
+  );
+  const ref = {
+    version: first.version,
+    hash: first.hash,
+    kind: 'section',
+    id: 'outcome',
+  };
+  const intent = prepareFactoryPlanning(
+    original.work.id,
+    {
+      requestKey: 'section',
+      expectedVersion: revised.work.version,
+      message: 'Please explain this choice.',
+      discussion: ref,
+    },
+    paths,
+  );
+  expect(intent.message).toContain(
+    `Discussing brief v1 (${first.hash}), section:outcome`,
+  );
+  expect(intent.message).toContain(first.spec.outcome);
+  expect(intent.snapshot.revisions[0].version).toBe(2);
+  expect(getFactoryWork(original.work.id, paths).revisions).toHaveLength(2);
+  expect(getFactoryWork(original.work.id, paths).releases).toHaveLength(0);
+  expect(
+    prepareFactoryPlanning(
+      original.work.id,
+      {
+        requestKey: 'section',
+        expectedVersion: revised.work.version,
+        message: 'Please explain this choice.',
+        discussion: ref,
+      },
+      paths,
+    ).id,
+  ).toBe(intent.id);
+  const other = task();
+  expect(() =>
+    prepareFactoryPlanning(
+      other.work.id,
+      {
+        requestKey: 'bad',
+        expectedVersion: 1,
+        message: 'Another session',
+        discussion: { ...ref, hash: 'f'.repeat(64) },
+      },
+      paths,
+    ),
+  ).toThrow('Discussion reference is not retained in this task');
+  expect(() =>
+    prepareFactoryPlanning(
+      other.work.id,
+      {
+        requestKey: 'bad',
+        expectedVersion: 1,
+        message: 'Redirect',
+        discussion: { ...ref, sessionId: intent.sessionId },
+      },
+      paths,
+    ),
+  ).toThrow();
+  expect(() =>
+    prepareFactoryPlanning(
+      other.work.id,
+      {
+        requestKey: 'bad',
+        expectedVersion: 1,
+        message: 'Unknown field',
+        discussion: { ...ref, hash: other.revisions[0].hash, id: 'release' },
+      },
+      paths,
+    ),
+  ).toThrow('Discussion reference is not retained in this task');
+});

@@ -7,6 +7,7 @@ import {
   triageResultSchema,
   type FactoryPlanningState,
 } from '../../../shared/factory-planning';
+import { factoryDiscussionText } from '../../../shared/factory-document';
 import { factoryDetailSchema, saveSpecSchema } from '../../../shared/factory';
 import { runtimePaths, type RuntimePaths } from '../../runtime-home';
 import { buildMemoryPromptSnapshotSync } from '../memory';
@@ -197,6 +198,22 @@ export function prepareFactoryPlanning(
     }
     const current = detail(db, workId, paths);
     expectVersion(current, data.expectedVersion);
+    let message = data.message;
+    if (data.discussion) {
+      const ref = data.discussion;
+      const revision = current.revisions.find(
+        (r) => r.version === ref.version && r.hash === ref.hash,
+      );
+      const context = revision && factoryDiscussionText(revision.spec, ref);
+      if (!context)
+        throw new FactoryError(
+          409,
+          'Discussion reference is not retained in this task.',
+        );
+      // Persist the resolved, original revision in the ordinary message. No client
+      // session/work ID or free-form reference can broaden planner authority.
+      message = `Discussing brief v${ref.version} (${ref.hash}), ${ref.kind}:${ref.id} — ${context.label}.\nThis is revision-bound context, not approval or a spec mutation.\n${context.text.slice(0, 6000)}${context.text.length > 6000 ? '\n[Excerpt limited to 6000 characters]' : ''}\n\nHuman feedback:\n${data.message}`;
+    }
     if (['paused', 'closed', 'queued'].includes(current.work.lifecycle))
       throw new FactoryError(
         409,
@@ -242,7 +259,7 @@ export function prepareFactoryPlanning(
       sessionId: binding.sessionId,
       requestKey: data.requestKey,
       requestHash: hashPlanning(data),
-      message: data.message,
+      message,
       snapshot: {
         ...current,
         revisions: current.revisions.slice(-1),

@@ -1,3 +1,4 @@
+import { BriefingNarrative } from '../../components/BriefingNarrative';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import type {
@@ -348,12 +349,7 @@ export function PrReviewBriefing({
           <SectionLabel>
             {needsHuman ? 'What makes this hard' : 'Why I think this is safe'}
           </SectionLabel>
-          <MarkdownMessage
-            className="mt-3 max-w-[78ch]"
-            style={{ fontSize: '16.5px', lineHeight: 1.7, textWrap: 'pretty' }}
-          >
-            {overview.summary}
-          </MarkdownMessage>
+          <BriefingNarrative>{overview.summary}</BriefingNarrative>
           <div className="mt-5 flex flex-wrap items-center gap-2 font-mono text-[10px]">
             {needsHuman ? (
               <>
