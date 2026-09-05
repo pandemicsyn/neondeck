@@ -82,14 +82,19 @@ intake and collaborative shaping path. Historical phase completion above is unch
       exposure checks. Coding execution starts in a subsequent slice.
 
 See [the slice 1 implementation plan](factory/SLICE_1_IMPLEMENTATION_PLAN.md) and
-[manager/implementer handoff](factory/SLICE_1_HANDOFF.md). Plan root PR #382 and
-manual intake PR #383 are open, neither merged nor deployed. Intake is accepted at
-`0c39917930b42aeacc3cbad71031d5552a29ccee`. Increment 2 is an uncommitted candidate on
-`agent/factory-s1-02-planning` from that parent: automatic bounded triage, dedicated
-persistent planning, scoped repository reads, typed model proposals/questions and
-initial chat/rendered draft are implemented; final verification/evidence and
-independent review remain pending. Full shaping, GitHub ingress and writeback remain
-unimplemented. Actual deviations belong in `DEVIATIONS.md`; do not revive the removed
+[manager/implementer handoff](factory/SLICE_1_HANDOFF.md). Intake and planning are
+implemented and published in PRs #383 and #384; neither is merged or deployed.
+Planning's historical accepted head is `3210fbb00e`: both dedicated static reviews
+and manager implementation/product review passed before publication. Historical
+Node 26.4.0 verification passed 1,623 tests (1,485 unit, 47 git, 91 integration),
+builds, package smoke and formatting. The accepted intake feedback parent
+`192e7cf719d6dba1d7ea088452ffe1ad502014b5` is incorporated into planning's feedback
+fixes. Current feedback review and CI status live in
+[PR #384](https://github.com/pandemicsyn/neondeck/pull/384). Every changed candidate
+requires verification, two independent clean static reviews and manager acceptance
+before publication; historical results do not approve subsequent changes. Full shaping, GitHub
+ingress and writeback belong to downstream stack increments; coding execution
+remains a later slice. Actual deviations belong in `DEVIATIONS.md`; do not revive the removed
 PR Autopilot coordinator or replace existing coding harnesses as part of this slice.
 
 ## Usability Gate
