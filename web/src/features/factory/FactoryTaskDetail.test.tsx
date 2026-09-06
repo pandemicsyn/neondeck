@@ -127,6 +127,13 @@ let current: FactoryDetail;
 const refresh = vi.fn(async () => {});
 beforeEach(() => {
   vi.clearAllMocks();
+  vi.stubGlobal(
+    'URL',
+    class extends URL {
+      static createObjectURL = vi.fn(() => 'blob:synthetic-recovery');
+      static revokeObjectURL = vi.fn();
+    },
+  );
   sessionStorage.clear();
   (
     globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }
@@ -139,6 +146,7 @@ beforeEach(() => {
 afterEach(async () => {
   await act(async () => root.unmount());
   container.remove();
+  vi.unstubAllGlobals();
 });
 async function render() {
   await act(async () =>

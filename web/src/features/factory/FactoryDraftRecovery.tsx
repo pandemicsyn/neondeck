@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { DraftRead } from './workbench-draft';
 export function FactoryDraftRecovery({
   recovery,
@@ -10,6 +10,23 @@ export function FactoryDraftRecovery({
   onDiscard: () => void;
 }) {
   const [confirm, setConfirm] = useState(false);
+  const [download, setDownload] = useState<{ raw: string; url: string } | null>(
+    null,
+  );
+  const raw = recovery.raw;
+  useEffect(() => {
+    if (raw === null) {
+      setDownload(null);
+      return;
+    }
+    const url = URL.createObjectURL(
+      new Blob([raw], { type: 'text/plain;charset=utf-8' }),
+    );
+    setDownload({ raw, url });
+    // Keep the URL usable for repeated downloads until its data is replaced or
+    // recovery ends (successful retry/discard or workbench unmount).
+    return () => URL.revokeObjectURL(url);
+  }, [raw]);
   return (
     <section className="factory-error" role="alert">
       <h3>Saved draft needs recovery</h3>
@@ -35,12 +52,11 @@ export function FactoryDraftRecovery({
               onFocus={(e) => e.currentTarget.select()}
             />
           </label>
-          <a
-            download="factory-draft-recovery.txt"
-            href={`data:text/plain;charset=utf-8,${encodeURIComponent(recovery.raw)}`}
-          >
-            Download saved draft
-          </a>
+          {download?.raw === recovery.raw && (
+            <a download="factory-draft-recovery.txt" href={download.url}>
+              Download saved draft
+            </a>
+          )}
         </>
       ) : (
         <p>
