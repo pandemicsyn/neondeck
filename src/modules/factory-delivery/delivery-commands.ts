@@ -290,10 +290,25 @@ export function applyDeliveryCommand(
         ['verification', 'review', 'feedback-review'].includes(effect.kind) &&
         delivered
       ) {
-        if (a.executionMs === undefined)
+        if (
+          a.executionMs === undefined ||
+          (a.executionMs === null && effect.kind === 'verification')
+        )
           throw new Error('Verification execution accounting required');
         effect.executionMs = a.executionMs;
-        if (a.executionMs > (effect.reservedExecutionMs ?? 0))
+        if (a.executionMs === null)
+          r.interventions.push({
+            id: `review-usage:${effect.id}`,
+            kind: 'scope',
+            reason:
+              'Reviewer is terminal with unknown execution usage and certification unavailable. The full reservation remains held; return to planning.',
+            revision: r.revision,
+            resolution: null,
+          });
+        if (
+          a.executionMs !== null &&
+          a.executionMs > (effect.reservedExecutionMs ?? 0)
+        )
           r.interventions.push({
             id: `budget:${effect.id}`,
             kind: 'budget',

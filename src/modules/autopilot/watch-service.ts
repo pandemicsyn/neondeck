@@ -232,7 +232,10 @@ export async function readPrAutopilotStatus(
   );
   if (!resolved.ok) return resolved.result;
   if (isFactoryOwnedWatch(resolved.id, paths))
-    return failure('factory_owned', 'Factory delivery owns this pull request; use its delivery controls.');
+    return failure(
+      'factory_owned',
+      'Factory delivery owns this pull request; use its delivery controls.',
+    );
   const watch = readWatch(paths, resolved.id);
   return watch
     ? {
@@ -264,7 +267,10 @@ export async function controlPrAutopilot(
   );
   if (!resolved.ok) return resolved.result;
   if (isFactoryOwnedWatch(resolved.id, paths))
-    return failure('factory_owned', 'Factory delivery owns this pull request; use its delivery controls.');
+    return failure(
+      'factory_owned',
+      'Factory delivery owns this pull request; use its delivery controls.',
+    );
 
   if (parsed.output.operation === 'pause') {
     return setPrWatchPolling({ id: resolved.id, enabled: false }, paths);
@@ -430,7 +436,10 @@ export async function approvePrAutopilotChange(
   );
   if (!resolved.ok) return resolved.result;
   if (isFactoryOwnedWatch(resolved.id, paths))
-    return failure('factory_owned', 'Factory delivery owns this pull request; use its delivery controls.');
+    return failure(
+      'factory_owned',
+      'Factory delivery owns this pull request; use its delivery controls.',
+    );
   const watch = readWatch(paths, resolved.id);
   if (
     !watch ||
@@ -516,7 +525,10 @@ async function dispatchPrAutopilotOwnerTurn(
   const resolved = await resolveWatchId(input, paths, action);
   if (!resolved.ok) return resolved.result;
   if (isFactoryOwnedWatch(resolved.id, paths))
-    return failure('factory_owned', 'Factory delivery owns this pull request; use its delivery controls.');
+    return failure(
+      'factory_owned',
+      'Factory delivery owns this pull request; use its delivery controls.',
+    );
   const watch = readWatch(paths, resolved.id);
   if (
     !watch ||

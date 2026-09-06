@@ -63,7 +63,8 @@ export function buildAutopilotOwnerToolRegistry(input: {
   approvedRevisionKey?: string;
 }) {
   const { watch, source, paths } = input;
-  if (isFactoryOwnedWatch(watch.id, paths)) return { capabilities: [], tools: [] };
+  if (isFactoryOwnedWatch(watch.id, paths))
+    return { capabilities: [], tools: [] };
   if (!watch.worktreeId) return { capabilities: [], tools: [] };
   const worktreeId = watch.worktreeId;
   const sessionId = watch.ownerInstanceId ?? undefined;
@@ -91,7 +92,8 @@ export function buildAutopilotOwnerToolRegistry(input: {
           input: v.object({ confirm: v.literal(true) }),
           durable: true,
           async run({ step }) {
-          if (isFactoryOwnedWatch(watch.id, paths)) throw new Error('Factory delivery owns this pull request.');
+            if (isFactoryOwnedWatch(watch.id, paths))
+              throw new Error('Factory delivery owns this pull request.');
             return {
               output: await step.do('discard-prepared-commit', () =>
                 syncWorktree(
@@ -122,7 +124,8 @@ export function buildAutopilotOwnerToolRegistry(input: {
         }),
         durable: true,
         async run({ data: toolInput, step }) {
-          if (isFactoryOwnedWatch(watch.id, paths)) throw new Error('Factory delivery owns this pull request.');
+          if (isFactoryOwnedWatch(watch.id, paths))
+            throw new Error('Factory delivery owns this pull request.');
           return {
             output: await step.do('commit-workspace', () =>
               commitInteractiveRepo(
@@ -161,7 +164,8 @@ export function buildAutopilotOwnerToolRegistry(input: {
               }),
         durable: true,
         async run({ data: toolInput, step }) {
-          if (isFactoryOwnedWatch(watch.id, paths)) throw new Error('Factory delivery owns this pull request.');
+          if (isFactoryOwnedWatch(watch.id, paths))
+            throw new Error('Factory delivery owns this pull request.');
           if (source === 'watch-event') {
             return {
               output: await step.do('safe-push-current-commit', () =>
@@ -244,7 +248,8 @@ export function buildAutopilotOwnerToolRegistry(input: {
         input: v.object({ body: v.string() }),
         durable: true,
         async run({ data: toolInput, step }) {
-          if (isFactoryOwnedWatch(watch.id, paths)) throw new Error('Factory delivery owns this pull request.');
+          if (isFactoryOwnedWatch(watch.id, paths))
+            throw new Error('Factory delivery owns this pull request.');
           if (source === 'watch-event') {
             if (
               !(await autonomousResponseDeliveryCurrent(

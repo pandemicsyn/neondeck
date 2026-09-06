@@ -51,7 +51,11 @@ export async function runAutopilotWatchEvent(
   dependencies: AutopilotLoopDependencies = {},
 ) {
   if (isFactoryOwnedWatch(event.watchId, paths))
-    return loopResult('factory-owned', false, 'Factory delivery owns this pull request.');
+    return loopResult(
+      'factory-owned',
+      false,
+      'Factory delivery owns this pull request.',
+    );
   let watch = readWatch(paths, event.watchId);
   if (!watch)
     return loopResult('missing', false, 'The watch no longer exists.');

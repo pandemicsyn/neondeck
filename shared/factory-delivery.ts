@@ -216,7 +216,7 @@ export const deliveryCommandSchema = v.strictObject({
       id: label,
       state: v.picklist(['uncertain', 'delivered']),
       receiptRef: label,
-      executionMs: v.optional(natural),
+      executionMs: v.optional(v.nullable(natural)),
       pr: v.optional(deliveryPrSchema),
     }),
     // Only the trusted external observer may attest absence; elapsed time is never proof.
@@ -225,7 +225,7 @@ export const deliveryCommandSchema = v.strictObject({
       id: label,
       observation: v.picklist(['not-delivered', 'delivered']),
       receiptRef: label,
-      executionMs: v.optional(natural),
+      executionMs: v.optional(v.nullable(natural)),
       pr: v.optional(deliveryPrSchema),
     }),
     v.strictObject({

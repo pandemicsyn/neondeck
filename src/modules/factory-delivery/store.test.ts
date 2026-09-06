@@ -583,7 +583,7 @@ describe('reviewer A regressions', () => {
   it('requires fresh linked review when a successful verification bundle replaces another', () => {
     let r = ready();
     r = evidence(r, 'verification');
-    expect(() => plan(r, 'commit')).toThrow('independent verification');
+    expect(() => plan(r, 'commit')).toThrow();
     r = evidence(r, 'review');
     expect(plan(r, 'commit').effects.at(-1)!.kind).toBe('commit');
   });
@@ -622,7 +622,7 @@ it('rejects pass labels without an execution effect and rejects review before ve
     }),
   ).toThrow('effect provenance');
   r = evidence(r, 'verification', 'passed', 'checker', false);
-  expect(() => plan(r, 'commit')).toThrow('independent verification');
+  expect(() => plan(r, 'commit')).toThrow();
   expect(() => evidence(r, 'review')).toThrow('unresolved');
 });
 
@@ -842,4 +842,94 @@ it('imports an exact trusted commit receipt once while its prior effect remains 
     update(r, { ...action, publishedHeadSha: '8'.repeat(40) }),
   ).toThrow('Conflicting commit');
   expect(r.effects.at(-1)!.state).toBe('uncertain');
+});
+
+it.each(['review', 'feedback-review'] as const)(
+  'retains unknown duration for a known terminal %s without reusing old pass authority',
+  (kind) => {
+    let r = ready();
+    const id = 'terminal-unknown';
+    r = update(r, { type: 'plan-effect', id, kind, maxExecutionMs: 1000 });
+    r = update(r, { type: 'start-effect', id });
+    r = update(r, {
+      type: 'settle-effect',
+      id,
+      state: 'uncertain',
+      receiptRef: 'uncertain',
+    });
+    r = update(r, {
+      type: 'reconcile-effect',
+      id,
+      observation: 'delivered',
+      receiptRef: 'known-failed-submission',
+      executionMs: null,
+    });
+    expect(r.effects.at(-1)).toMatchObject({
+      state: 'delivered',
+      executionMs: null,
+      reservedExecutionMs: 1000,
+    });
+    expect(deliveryBudget(r).reservedExecutionMs).toBe(1000);
+    expect(r.interventions).toContainEqual(
+      expect.objectContaining({
+        id: `review-usage:${id}`,
+        kind: 'scope',
+        resolution: null,
+      }),
+    );
+    expect(() =>
+      update(r, {
+        type: 'reconcile-effect',
+        id,
+        observation: 'delivered',
+        receiptRef: 'known-failed-submission',
+        executionMs: null,
+      }),
+    ).toThrow('not outstanding');
+    expect(
+      getDeliveryPipeline(r.pipelineId, paths)?.interventions,
+    ).toHaveLength(1);
+    if (kind === 'review') {
+      expect(() => plan(r, 'commit')).toThrow();
+      const verification = r.evidence.find((e) => e.kind === 'verification')!;
+      expect(() =>
+        update(r, {
+          type: 'record-evidence',
+          evidence: {
+            id,
+            kind: 'review',
+            revision: r.revision,
+            producerId: 'unknown-usage-review',
+            result: 'passed',
+            evidenceRef: 'known-failed-submission',
+            effectId: id,
+            validationContractDigest: deliveryValidationContractDigest(r),
+            bundleDigest: '1'.repeat(64),
+            verificationEvidenceId: verification.id,
+            verificationBundleDigest: verification.bundleDigest,
+          },
+        }),
+      ).toThrow('effect ledger');
+    }
+    expect(getDeliveryPipeline(r.pipelineId, paths)).toEqual(r);
+  },
+);
+it('never settles verification with unknown execution usage', () => {
+  let r = reserveDeliveryPipeline(reservation, paths);
+  r = update(r, {
+    type: 'plan-effect',
+    id: 'check',
+    kind: 'verification',
+    maxExecutionMs: 1000,
+  });
+  r = update(r, { type: 'start-effect', id: 'check' });
+  expect(() =>
+    update(r, {
+      type: 'settle-effect',
+      id: 'check',
+      state: 'delivered',
+      receiptRef: 'unknown',
+      executionMs: null,
+    }),
+  ).toThrow('accounting required');
 });

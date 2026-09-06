@@ -52,9 +52,12 @@ export function assertRecord(r: DeliveryPipeline) {
       ['verification', 'review', 'feedback-review'].includes(effect.kind) !==
         (effect.reservedExecutionMs !== null) ||
       (effect.state === 'delivered' && effect.receiptRef === null) ||
-      (['verification', 'review', 'feedback-review'].includes(effect.kind) &&
-        effect.state === 'delivered' &&
-        effect.executionMs === null) ||
+      (effect.state === 'delivered' &&
+        effect.executionMs === null &&
+        (effect.kind === 'verification' ||
+          r.evidence.some(
+            (e) => e.effectId === effect.id && e.result === 'passed',
+          ))) ||
       (effect.executionMs !== null &&
         effect.executionMs > (effect.reservedExecutionMs ?? 0) &&
         !r.interventions.some(
@@ -217,6 +220,15 @@ export function currentPasses(r: DeliveryPipeline) {
     verification.producerId === review.producerId ||
     !settledEvidence(r, verification) ||
     !settledEvidence(r, review) ||
+    r.effects.findLast(
+      (e) =>
+        e.kind === 'verification' &&
+        sameDeliveryRevision(e.revision, r.revision),
+    )?.id !== verification.effectId ||
+    r.effects.findLast(
+      (e) =>
+        e.kind === 'review' && sameDeliveryRevision(e.revision, r.revision),
+    )?.id !== review.effectId ||
     review.verificationEvidenceId !== verification.id ||
     review.verificationBundleDigest !== verification.bundleDigest
   )
