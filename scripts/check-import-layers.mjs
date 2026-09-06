@@ -33,6 +33,7 @@ const backendLayers = new Map([
   ['src/modules/config', 3],
   ['src/modules/execution', 3],
   ['src/modules/kilo', 3],
+  ['src/modules/coding-runs', 2],
   ['src/modules/watches', 3],
   ['src/modules/pr-events', 3],
   ['src/modules/reports', 3],
