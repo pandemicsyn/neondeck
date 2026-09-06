@@ -1,3 +1,4 @@
+import { privateServerUrl } from '../../lib/server-address';
 import { openDb } from '../../lib/sqlite.ts';
 import { randomUUID } from 'node:crypto';
 import {
@@ -66,7 +67,8 @@ type TokenState = {
   updatedAt: string | null;
 };
 
-const defaultCallbackUrl = 'http://127.0.0.1:3583/api/mcp/oauth/callback';
+const defaultCallbackUrl = () =>
+  `${privateServerUrl(Number(process.env.NEONDECK_PORT ?? process.env.PORT ?? 3583))}/api/mcp/oauth/callback`;
 const loginTtlMs = 10 * 60 * 1000;
 
 export type McpOAuthLoginOptions = {
@@ -81,7 +83,7 @@ export async function startMcpOAuthLogin(
   let login: McpOAuthLoginRecord | null = null;
   try {
     const { server } = await requireOAuthServer(input.id, paths);
-    const redirectUrl = input.redirectUrl ?? defaultCallbackUrl;
+    const redirectUrl = input.redirectUrl ?? defaultCallbackUrl();
     if (!isAllowedMcpOAuthRedirectUrl(redirectUrl, options.trustedOrigins)) {
       return {
         ok: false,
@@ -431,7 +433,7 @@ export function createMcpOAuthProvider(input: {
 }) {
   return new NeondeckMcpOAuthProvider({
     ...input,
-    redirectUrl: input.redirectUrl ?? defaultCallbackUrl,
+    redirectUrl: input.redirectUrl ?? defaultCallbackUrl(),
     state: input.state ?? randomUUID(),
   });
 }

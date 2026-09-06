@@ -1,3 +1,4 @@
+import { FactoryGitHubSetup } from './FactoryGitHub';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
 import type { FormEvent } from 'react';
@@ -95,9 +96,10 @@ export function FactoryPage() {
       <header className="factory-header">
         <a href="/">← Dashboard</a>
         <h1>Factory inbox</h1>
-        <span>Manual intake</span>
+        <span>Intake and shaping</span>
         <button onClick={() => void refresh()}>Refresh</button>
       </header>
+      {state.data && <FactoryGitHubSetup repos={state.data.repos} />}
       {state.error && state.data && (
         <p className="factory-error" role="alert">
           Inbox refresh failed: {message(state.error)}. Showing the last loaded

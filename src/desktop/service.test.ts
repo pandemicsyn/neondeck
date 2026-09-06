@@ -99,3 +99,64 @@ describe('desktop service renderers', () => {
     }
   });
 });
+
+it.each([
+  { processHost: undefined, installedHost: '::1', expectedHost: '[::1]' },
+  { processHost: '', installedHost: '::1', expectedHost: '[::1]' },
+  { processHost: '127.0.0.1', installedHost: '::1', expectedHost: '127.0.0.1' },
+  { processHost: '::1', installedHost: '127.0.0.1', expectedHost: '[::1]' },
+])(
+  'matches startup host precedence using the installed home: $processHost / $installedHost',
+  async ({ processHost, installedHost, expectedHost }) => {
+    const { mkdtempSync, mkdirSync, writeFileSync, rmSync } =
+      await import('node:fs');
+    const { tmpdir } = await import('node:os');
+    const { join, dirname } = await import('node:path');
+    const { vi } = await import('vitest');
+    const { readServiceStatus } = await import('./service');
+    const root = mkdtempSync(join(tmpdir(), 'service-ipv6-'));
+    const paths = runtimePaths(join(root, 'installed'));
+    const requested = runtimePaths(join(root, 'requested'));
+    mkdirSync(paths.home);
+    mkdirSync(requested.home);
+    writeFileSync(paths.env, `NEONDECK_PRIVATE_HOST=${installedHost}\n`);
+    writeFileSync(requested.env, 'NEONDECK_PRIVATE_HOST=127.0.0.1\n');
+    const location = servicePaths(requested, {
+      platform: 'linux',
+      homeDirectory: root,
+    });
+    mkdirSync(dirname(location.unitPath), { recursive: true });
+    writeFileSync(
+      location.unitPath,
+      renderSystemdUnit({ ...definition, runtimeHome: paths.home }),
+    );
+    const fetchMock = vi.fn(async () => Response.json({ ok: true }));
+    vi.stubGlobal('fetch', fetchMock);
+    vi.stubEnv('NEONDECK_PRIVATE_HOST', processHost);
+    try {
+      const result = await readServiceStatus(requested, {
+        platform: 'linux',
+        homeDirectory: root,
+        commandRunner: async () => ({
+          stdout: 'ActiveState=active\nMainPID=123\n',
+          stderr: '',
+        }),
+      });
+      expect(result.health.url).toBe(`http://${expectedHost}:3599/api/health`);
+      expect(fetchMock).toHaveBeenCalledWith(
+        result.health.url,
+        expect.objectContaining({ signal: expect.any(AbortSignal) }),
+      );
+      // Exercise the production env loader independently to prove matching precedence.
+      const { loadNeondeckEnv } = await import('../modules/runtime/env');
+      const { privateServerUrl } = await import('../lib/server-address');
+      loadNeondeckEnv(paths, { includeDevFallback: false });
+      expect(result.health.url).toBe(`${privateServerUrl(3599)}/api/health`);
+      expect(result.health.ok).toBe(true);
+    } finally {
+      vi.unstubAllGlobals();
+      vi.unstubAllEnvs();
+      rmSync(root, { recursive: true, force: true });
+    }
+  },
+);

@@ -302,6 +302,19 @@ async function executeGitHubRequest(
       managedResponse.status,
       data,
       githubErrorMessage(managedResponse, data),
+      {
+        rateLimited:
+          managedResponse.status === 429 ||
+          (managedResponse.status === 403 &&
+            (managedResponse.headers.get('x-ratelimit-remaining') === '0' ||
+              managedResponse.headers.has('retry-after'))),
+        retryAt: managedResponse.headers.has('retry-after')
+          ? Date.now() +
+            Number(managedResponse.headers.get('retry-after')) * 1000
+          : managedResponse.headers.has('x-ratelimit-reset')
+            ? Number(managedResponse.headers.get('x-ratelimit-reset')) * 1000
+            : null,
+      },
     );
   }
 

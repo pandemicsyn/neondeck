@@ -1,3 +1,4 @@
+import { fileURLToPath } from 'node:url';
 import { flue } from '@flue/vite';
 import { defineConfig } from 'vite';
 import { resolveBuildVersion } from './src/package-version.ts';
@@ -7,7 +8,22 @@ const buildVersion = resolveBuildVersion(
 );
 
 export default defineConfig({
-  plugins: [flue()],
+  plugins: [
+    flue(),
+    {
+      name: 'neondeck-production-host',
+      apply: 'build',
+      buildStart() {
+        this.emitFile({
+          type: 'chunk',
+          id: fileURLToPath(
+            new URL('./src/server/production.ts', import.meta.url),
+          ),
+          fileName: 'neondeck-server.mjs',
+        });
+      },
+    },
+  ],
   define: {
     __NEONDECK_VERSION__: JSON.stringify(buildVersion),
   },

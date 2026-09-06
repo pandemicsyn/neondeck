@@ -9,7 +9,9 @@ import {
   resolvePackagedServerEntry,
   resolveServerPort,
 } from '../server/serve';
-import type { RuntimePaths } from '../runtime-home';
+import { runtimePaths, type RuntimePaths } from '../runtime-home';
+import { readEnvFiles } from '../modules/runtime/env';
+import { privateServerUrl } from '../lib/server-address';
 
 export const launchdLabel = 'dev.neondeck.server';
 export const systemdUnitName = 'neondeck.service';
@@ -458,7 +460,21 @@ export async function readServiceStatus(
     : {};
   const warnings: string[] = [];
   const port = resolveStatusPort(installedConfig.port, warnings);
-  const health = await probeServiceHealth(port);
+  const hostEnv = await readEnvFiles(
+    installedConfig.runtimeHome
+      ? runtimePaths(installedConfig.runtimeHome)
+      : paths,
+    { includeDevFallback: false },
+  );
+  // Match loadNeondeckEnv(overwrite: false): a nonempty process value wins;
+  // otherwise use the installed home's value, retaining an empty process value
+  // if the file has no key so invalid configuration fails just as at startup.
+  const processHost = process.env.NEONDECK_PRIVATE_HOST;
+  const health = await probeServiceHealth(port, {
+    NEONDECK_PRIVATE_HOST: processHost
+      ? processHost
+      : (hostEnv.get('NEONDECK_PRIVATE_HOST') ?? processHost),
+  });
   const runtimeStatus = supported
     ? await readPlatformRuntimeStatus(platform, options.commandRunner)
     : { running: false };
@@ -718,8 +734,11 @@ async function readPlatformRuntimeStatus(
   return { running: false };
 }
 
-async function probeServiceHealth(port: number): Promise<ServiceHealth> {
-  const url = `http://127.0.0.1:${port}/api/health`;
+async function probeServiceHealth(
+  port: number,
+  env: NodeJS.ProcessEnv,
+): Promise<ServiceHealth> {
+  const url = `${privateServerUrl(port, env)}/api/health`;
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 750);
   try {

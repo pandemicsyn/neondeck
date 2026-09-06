@@ -1,3 +1,11 @@
+import { factoryConnections } from '../../modules/factory/github-config';
+import { githubDigest } from '../../modules/factory/github-store';
+import { githubConnectionSchema } from '../../../shared/factory-github';
+import {
+  factoryGitHubState,
+  factoryGitHubComments,
+  requestFactoryGitHubSync,
+} from '../../modules/factory/github-reconcile';
 import { HTTPException } from 'hono/http-exception';
 import * as v from 'valibot';
 import { updateFactoryConfig } from '../../modules/config';
@@ -49,6 +57,30 @@ export function createFactoryRoutes(
   const actor = { kind: 'human' as const, id: 'local-operator' };
   routes.post('/config', async (c) =>
     c.json(updateFactoryConfig(await c.req.json(), paths)),
+  );
+  routes.post('/github/config', async (c) => {
+    const input = v.parse(
+      v.strictObject({
+        expectedFingerprint: v.string(),
+        connections: v.array(githubConnectionSchema),
+      }),
+      await c.req.json(),
+    );
+    if (githubDigest(factoryConnections(paths)) !== input.expectedFingerprint)
+      throw new FactoryError(
+        409,
+        'Connection configuration changed. Reload and review before saving; your draft is retained.',
+      );
+    return c.json(updateFactoryConfig({ github: input.connections }, paths));
+  });
+  routes.get('/work/:id/comments', (c) =>
+    c.json(
+      factoryGitHubComments(c.req.param('id'), c.req.query('cursor'), paths),
+    ),
+  );
+  routes.get('/github', (c) => c.json(factoryGitHubState(paths)));
+  routes.post('/work/:id/sync', (c) =>
+    c.json(requestFactoryGitHubSync(c.req.param('id'), paths), 202),
   );
   routes.get('/state', (c) => c.json(factoryState(paths)));
   routes.get('/work/:id', (c) =>

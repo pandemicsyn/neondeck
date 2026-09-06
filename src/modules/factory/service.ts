@@ -39,7 +39,7 @@ export class FactoryError extends Error {
   }
 }
 export type FactoryActor = { kind: 'human'; id: string };
-type RevisionActor = FactoryActor | { kind: 'model'; id: string };
+type RevisionActor = FactoryActor | { kind: 'model' | 'source'; id: string };
 const digest = (value: unknown) =>
   createHash('sha256').update(JSON.stringify(value)).digest('hex');
 function parse<T>(schema: v.GenericSchema<unknown, T>, value: unknown): T {
@@ -133,6 +133,25 @@ export function detail(
   if (!fingerprint) blockers.push('Select a registered repository.');
   if (source.repoId !== item.repoId)
     blockers.push('Source repository does not match task repository.');
+  if (source.remote) {
+    const mappings = (config(paths)?.github ?? []).filter(
+      (c) => c.enabled && c.repositoryId === source.remote!.repositoryId,
+    );
+    const mapping = mappings[0];
+    const registered = repos(paths).find((repo) => repo.id === item.repoId);
+    if (
+      mappings.length !== 1 ||
+      mapping.id !== source.remote.connectionId ||
+      mapping.repoId !== item.repoId ||
+      !registered ||
+      registered.github.owner.toLowerCase() !== mapping.owner.toLowerCase() ||
+      registered.github.name.toLowerCase() !== mapping.name.toLowerCase()
+    )
+      blockers.push(
+        'GitHub source mapping is disabled, changed or ambiguous. Restore the intended mapping before release.',
+      );
+  }
+  if (source.attention) blockers.push(source.attention);
   if (source.status === 'closed') blockers.push('Source is closed.');
   if (item.lifecycle === 'paused' || item.lifecycle === 'closed')
     blockers.push('Reopen this task before release.');
@@ -307,6 +326,7 @@ export function submitFactoryWork(
       ...data,
       id: randomUUID(),
       provider: 'manual',
+      attention: null,
       requestHash: digest(data),
       version: 1,
       status: 'open',
@@ -376,6 +396,13 @@ export function saveSpecInTransaction(
   if (current.work.lifecycle === 'closed')
     throw new FactoryError(409, 'Reopen this task before editing.', current);
   withdraw(db, current.releases, 'new-spec-revision');
+  if (current.source.attention?.includes('Review and save a new draft')) {
+    current.source.attention = null;
+    db.prepare('UPDATE factory_sources SET record=? WHERE id=?').run(
+      JSON.stringify(current.source),
+      current.source.id,
+    );
+  }
   current.work.specVersion++;
   if (current.work.lifecycle !== 'paused') current.work.lifecycle = 'shaping';
   insertRevision(db, current.work, current.source, data.spec, actor, current);
@@ -499,7 +526,10 @@ export function transitionFactoryWork(
         : data.action === 'close'
           ? 'closed'
           : 'shaping';
-    if (data.action === 'close' || reopeningClosed) {
+    if (
+      current.source.provider === 'manual' &&
+      (data.action === 'close' || reopeningClosed)
+    ) {
       current.source.status = data.action === 'close' ? 'closed' : 'open';
       current.source.version++;
       db.prepare('UPDATE factory_sources SET record=? WHERE id=?').run(
@@ -524,6 +554,11 @@ export function updateFactorySource(
     requireEnabled(paths);
     const current = detail(db, id, paths);
     expectVersion(current, data.expectedVersion);
+    if (current.source.provider !== 'manual')
+      throw new FactoryError(
+        409,
+        'GitHub source is read-only. Sync the source or edit the brief.',
+      );
     if (
       data.title === current.source.title &&
       data.body === current.source.body &&
@@ -550,5 +585,165 @@ export function updateFactorySource(
     putWork(db, current.work);
     audit(db, id, 'source-updated', actor);
     return detail(db, id, paths);
+  });
+}
+
+/** Internal reconciler boundary. Never registered as a model tool or human API. */
+export function reconcileGitHubSource(
+  db: DatabaseSync,
+  input: {
+    connectionId: string;
+    repositoryId: string;
+    repoId: string;
+    owner: string;
+    name: string;
+    issue: import('../../../shared/factory-github').GitHubIssue;
+  },
+  paths: RuntimePaths,
+) {
+  const { issue } = input;
+  const key = `github:${input.repositoryId}:${issue.id}`;
+  const previous = records(
+    db,
+    'SELECT record FROM factory_sources WHERE request_key=?',
+    sourceSchema,
+    key,
+  )[0];
+  const fingerprint = digest({
+    title: issue.title,
+    body: issue.body ?? '',
+    state: issue.state,
+  });
+  const remote = {
+    connectionId: input.connectionId,
+    repositoryId: input.repositoryId,
+    issueId: String(issue.id),
+    number: issue.number,
+    updatedAt: issue.updated_at,
+    fingerprint,
+    url: `https://github.com/${input.owner}/${input.name}/issues/${issue.number}`,
+  };
+  if (!previous) {
+    const now = new Date().toISOString();
+    const source = parse(sourceSchema, {
+      id: randomUUID(),
+      provider: 'github',
+      requestKey: key,
+      requestHash: fingerprint,
+      title: issue.title,
+      body: issue.body ?? '',
+      repoId: input.repoId,
+      remote,
+      version: 1,
+      status: issue.state,
+      actor: issue.user?.login ?? 'deleted-user',
+      createdAt: now,
+    });
+    const item: FactoryWork = {
+      id: randomUUID(),
+      sourceId: source.id,
+      title: source.title,
+      repoId: source.repoId,
+      lifecycle: issue.state === 'closed' ? 'paused' : 'inbox',
+      version: 1,
+      specVersion: 1,
+      createdAt: now,
+      updatedAt: now,
+    };
+    db.prepare(
+      'INSERT INTO factory_sources(id,request_key,record) VALUES(?,?,?)',
+    ).run(source.id, key, JSON.stringify(source));
+    db.prepare(
+      'INSERT INTO factory_work_items(id,source_id,record) VALUES(?,?,?)',
+    ).run(item.id, source.id, JSON.stringify(item));
+    // Full source stays canonical; the initial empty brief is never a truncated source copy.
+    insertRevision(
+      db,
+      item,
+      source,
+      emptyFactorySpec(),
+      { kind: 'source', id: `github:${source.actor}` },
+      repoSnapshot(item.repoId, paths),
+    );
+    audit(db, item.id, 'github-intake', {
+      kind: 'source',
+      id: input.connectionId,
+    });
+    return detail(db, item.id, paths);
+  }
+  const item = records(
+    db,
+    'SELECT record FROM factory_work_items WHERE source_id=?',
+    workSchema,
+    previous.id,
+  )[0];
+  const current = detail(db, item.id, paths);
+  if (
+    previous.remote?.connectionId !== input.connectionId ||
+    previous.repoId !== input.repoId
+  ) {
+    markGitHubAttention(
+      db,
+      item.id,
+      'Repository mapping changed. Restore the original mapping before reconciling this task.',
+      paths,
+    );
+    throw new FactoryError(409, 'Source already belongs to another mapping.');
+  }
+  if (Date.parse(issue.updated_at) < Date.parse(previous.remote.updatedAt))
+    return current;
+  const changed = previous.remote.fingerprint !== fingerprint;
+  const equalRevisionConflict =
+    changed && issue.updated_at === previous.remote.updatedAt;
+  if (changed) {
+    withdraw(db, current.releases, 'github-source-changed');
+    previous.version++;
+    Object.assign(previous, {
+      title: issue.title,
+      body: issue.body ?? '',
+      status: issue.state,
+    });
+    item.title = issue.title;
+    if (issue.state === 'closed') item.lifecycle = 'paused';
+    else if (current.source.status === 'closed' || item.lifecycle === 'queued')
+      item.lifecycle = 'shaping';
+    putWork(db, item);
+    audit(db, item.id, 'github-source-reconciled', {
+      kind: 'source',
+      id: input.connectionId,
+    });
+  }
+  previous.remote = remote;
+  previous.attention = equalRevisionConflict
+    ? 'GitHub returned changed content at the same timestamp. Review and save a new draft.'
+    : previous.attention?.includes('Review and save a new draft')
+      ? previous.attention
+      : null;
+  db.prepare('UPDATE factory_sources SET record=? WHERE id=?').run(
+    JSON.stringify(previous),
+    previous.id,
+  );
+  return detail(db, item.id, paths);
+}
+export function markGitHubAttention(
+  db: DatabaseSync,
+  workId: string,
+  reason: string,
+  paths: RuntimePaths,
+) {
+  const current = detail(db, workId, paths);
+  if (current.source.attention === reason) return;
+  current.source.attention = reason;
+  current.source.version++;
+  withdraw(db, current.releases, 'github-needs-review');
+  if (current.work.lifecycle === 'queued') current.work.lifecycle = 'shaping';
+  putWork(db, current.work);
+  db.prepare('UPDATE factory_sources SET record=? WHERE id=?').run(
+    JSON.stringify(current.source),
+    current.source.id,
+  );
+  audit(db, workId, 'github-needs-review', {
+    kind: 'source',
+    id: current.source.remote?.connectionId ?? 'github',
   });
 }

@@ -31,8 +31,15 @@ const transport: PlanningTransport = {
         kind: 'signal',
         type: 'neondeck.factory.request',
         tagName:
-          stage === 'planner' ? 'factory-human-message' : 'factory-triage',
-        attributes: { intentId: intent.id, actor: 'local-operator' },
+          stage === 'planner'
+            ? intent.externalContext
+              ? 'factory-github-context'
+              : 'factory-human-message'
+            : 'factory-triage',
+        attributes: {
+          intentId: intent.id,
+          actor: intent.externalContext ? 'github-source' : 'local-operator',
+        },
         body:
           stage === 'triage'
             ? JSON.stringify({

@@ -3,6 +3,10 @@ export class GitHubApiError extends Error {
     readonly status: number,
     readonly data: unknown,
     message: string,
+    readonly retry: { rateLimited: boolean; retryAt: number | null } = {
+      rateLimited: status === 429,
+      retryAt: null,
+    },
   ) {
     super(message);
     this.name = 'GitHubApiError';

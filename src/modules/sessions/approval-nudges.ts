@@ -1,3 +1,4 @@
+import { privateServerUrl } from '../../lib/server-address';
 import type { DispatchReceipt } from '@flue/runtime';
 import { createFlueClient } from '@flue/sdk';
 import { addNotification } from '../app-state';
@@ -30,7 +31,7 @@ let approvalNudgeDispatch: ApprovalNudgeDispatch = async (input) => {
     );
   }
   const client = createFlueClient({
-    url: `http://127.0.0.1:${port}/api/flue/agents/display-assistant/${encodeURIComponent(input.id)}`,
+    url: `${privateServerUrl(port)}/api/flue/agents/display-assistant/${encodeURIComponent(input.id)}`,
     headers: {
       'x-neondeck-api-token': config.localApi?.token ?? '',
     },

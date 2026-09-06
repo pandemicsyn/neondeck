@@ -1,3 +1,4 @@
+import { privateServerUrl } from '../../lib/server-address';
 import { defineTool, type JsonValue } from '@flue/runtime';
 import { existsSync, readFileSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
@@ -552,7 +553,9 @@ function portsCheck(ports: Array<{ id: string; port: number; open: boolean }>) {
 
 async function serverHealthCheck(): Promise<DoctorCheck> {
   try {
-    const response = await fetchWithTimeout('http://127.0.0.1:3583/api/health');
+    const response = await fetchWithTimeout(
+      `${privateServerUrl(Number(process.env.NEONDECK_PORT ?? process.env.PORT ?? 3583))}/api/health`,
+    );
     const raw = await response.json().catch(() => ({}));
     const parsed = v.safeParse(healthResponseSchema, raw);
     const ok = response.ok && parsed.success && parsed.output.ok;
