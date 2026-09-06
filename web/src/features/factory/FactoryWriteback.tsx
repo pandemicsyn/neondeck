@@ -352,7 +352,10 @@ export function FactoryWriteback({ detail }: { detail: FactoryDetail }) {
                 </details>
                 {['failed', 'uncertain'].includes(effect.state) && (
                   <button
-                    disabled={busy}
+                    disabled={
+                      busy ||
+                      (effect.state === 'failed' && !data.policy.enabled)
+                    }
                     onClick={() =>
                       void perform(() =>
                         recoverFactoryWriteback(

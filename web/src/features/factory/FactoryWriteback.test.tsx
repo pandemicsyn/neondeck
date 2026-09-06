@@ -224,3 +224,48 @@ it.each(
       expect(container.textContent).toContain('Recheck receipt (read only)');
   },
 );
+
+it.each([
+  { state: 'failed', enabled: false, disabled: true },
+  { state: 'failed', enabled: true, disabled: false },
+  { state: 'uncertain', enabled: false, disabled: false },
+])(
+  'gates $state retry with consent enabled=$enabled',
+  async ({ state, enabled, disabled }) => {
+    api.getFactoryWriteback.mockResolvedValue({
+      ...data,
+      policy: { ...data.policy, enabled },
+      effects: [
+        {
+          id: 'effect',
+          kind: 'status',
+          state,
+          retryAt: 0,
+          body: 'Synthetic approved status',
+          specVersion: 1,
+          createdAt: '2026-09-06T00:00:00Z',
+          remoteId: null,
+          error: null,
+        },
+      ],
+    });
+    api.recoverFactoryWriteback.mockResolvedValue(undefined);
+    await render();
+    const label =
+      state === 'failed'
+        ? 'Retry authorized send'
+        : 'Recheck receipt (read only)';
+    const button = Array.from(container.querySelectorAll('button')).find(
+      (b) => b.textContent === label,
+    )!;
+    expect(button.disabled).toBe(disabled);
+    await click(label);
+    if (disabled) expect(api.recoverFactoryWriteback).not.toHaveBeenCalled();
+    else
+      expect(api.recoverFactoryWriteback).toHaveBeenCalledWith(
+        'work',
+        'effect',
+        'retry',
+      );
+  },
+);
