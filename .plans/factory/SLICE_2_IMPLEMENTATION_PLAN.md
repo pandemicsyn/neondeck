@@ -2,34 +2,28 @@
 
 Status: implementation authorized on 2026-09-06; no slice 2 implementation accepted or published yet.
 
-## Mandatory merge gate: live slice 1 acceptance
+<a id="mandatory-merge-gate-live-slice-1-acceptance"></a>
 
-**Do not merge any slice 2 PR until the operator and manager have completed and recorded live slice 1 acceptance.** The user deferred this exercise until the morning. Local implementation, mockdex tests, static reviews and draft stacked PRs may proceed in the interim. Mock results and CI do not satisfy this gate. This is a manager-enforced delivery gate, not a claimed GitHub branch protection rule.
+## Slice 1 acceptance decision
 
-Slice 1 merged in PRs #382–#387 and #389, ending at `13049498d457257626af80483d68e0aa8110ad68`. The final reviewed tree passed 1,968 tests, 63 CI checks, both independent static reviews and manager review. Deployment and live acceptance remain pending.
+On September 6, after reviewing the newly merged PR #396, the operator explicitly accepted Slice 1 with its remaining live checks deferred and instructed the manager to merge the Slice 2 stack. This supersedes the earlier manager-enforced pre-merge hold. Review and CI requirements still apply.
 
-Before any slice 2 merge, record date, operator/manager acceptance and public-safe evidence for:
+Slice 1 code merged through `13049498d457257626af80483d68e0aa8110ad68`; PR #396 at `2ca0edfd` records its bounded live exercise. Real GitHub admission, configured model triage/planning, managed status identity, graceful restart/replay and selected external route probes have evidence. The original home was preserved after a Flue compatibility failure; the exercise used a fresh acceptance home. The live record reported zero releases. See the [preserved rehearsal](SLICE_1_HANDOFF.md#september-6-2026--merged-build-and-partial-live-acceptance).
 
-- [ ] Authorized private runtime setup and VM deployment, using existing SSH access and private provider/credential references.
-- [ ] Real GitHub test issue admission through the signed public webhook; duplicate/reordered deliveries, invalid signatures and closed-source behavior.
-- [ ] Live model triage and model/human planning iteration, revision comparison, persistent conversation/brief recovery, and exact human release. Unanswered decisions and changed specifications invalidate release as designed.
-- [ ] Explicitly opted-in issue status/question writeback and attributed replies; retry without duplicate comments; replies cannot release work.
-- [ ] VM/Neon restart recovery with no lost accepted work, and anonymous external checks proving the webhook is public while dashboard/API remain private.
-- [ ] Operator and manager accept the results; failures fixed and relevant checks repeated.
+**Decision: OPERATOR-ACCEPTED WITH DEFERRED CHECKS.** Remaining human iteration/comparison/release, post-release recovery/revocation, replies/questions/repair/missed-delivery and full manual-source exercises remain unperformed, not passed. The manager tracks these follow-ups in the Slice 1 handoff and deviations ledger.
 
-Gate state: **PENDING — blocks all slice 2 merges.** Keep hostnames, credentials, SSH configuration and raw private evidence out of tracked files, screenshots and PR bodies. Do not ask for private keys in chat. No live VM/provider exercise is authorized for this interim implementation.
+<a id="mandatory-merge-gate-real-codex-smoke"></a>
 
-## Mandatory merge gate: real Codex smoke
+## Slice 2 acceptance after merge
 
-**Do not merge any slice 2 PR until a real Codex smoke through the local adapter has passed and the operator and manager have recorded acceptance.** This is a separate gate from live slice 1 acceptance; both must pass before any slice 2 merge. Mockdex, installed CLI help and CI cannot establish real CLI/auth compatibility.
+**Real Codex acceptance: PENDING — not performed.** The operator's subsequent instruction to merge the stack changes sequencing; it does not establish real CLI/auth/model compatibility. The earlier requirement to finish this smoke before any Slice 2 merge is superseded by that instruction. Complete and record the real exercise after merge, before treating the factory as live-accepted.
 
-Before any slice 2 merge, record public-safe evidence for:
-
-- [ ] A bounded, authorized real Codex task through the slice 2 local adapter, using the supported CLI version, selected model/auth reference and an isolated managed worktree.
+- [ ] A bounded, authorized real Codex task through the local adapter, using the supported CLI version, selected model/auth reference and an isolated managed worktree.
 - [ ] Actual invocation/authentication, JSONL events and session identity, terminal receipt and retained candidate changes; the primary checkout remains unchanged.
-- [ ] Date, tested candidate revision and CLI version, operator/manager acceptance, and any failures fixed and rechecked.
+- [ ] Human review of the exact release and retained candidate, plus cancellation/ownership and recovery observations with their actual scope recorded.
+- [ ] Date, tested candidate revision and CLI version, public-safe outcomes, operator/manager signoff, and failures fixed and rechecked.
 
-Gate state: **PENDING — blocks all slice 2 merges.** This documentation correction does not authorize a provider or SSH run now. Slice 2 Linux/VM and remote-host acceptance remain later work; that deferral neither waives this local real Codex smoke nor changes the separate live slice 1 deployment checklist above.
+Mockdex, installed help and CI do not clear this obligation. Slice 2 Linux/VM and remote-worker acceptance remain separate later work. Keep credentials, deployment addresses and raw private evidence outside this public repository. This documentation and merge task does not initiate a real provider or SSH exercise.
 
 ## Product outcome
 
@@ -65,13 +59,13 @@ Use a provider-neutral coding-run contract and a local execution-host boundary. 
 
 Use official gh stack with branch prefix agent/. Start from merged main. Layers may be refined for clean ownership, with deviations recorded.
 
-1. `agent/factory-s2-00-plan`: merge gate, corrected slice 1 landing status and this contract.
+1. `agent/factory-s2-00-plan`: acceptance sequencing, corrected slice 1 landing status and this contract.
 2. `agent/factory-s2-01-runs`: shared Valibot coding-run contracts, app persistence/migration, atomic admission/state/ownership primitives and tests. No process launch yet.
 3. `agent/factory-s2-02-codex`: supervised local host, Codex adapter and test-only mockdex CLI, restart/cancel/limits/evidence tests.
 4. `agent/factory-s2-03-workbench`: released-brief dispatch, config/API/runtime lifecycle, candidate/run UI using existing diff surface, operator docs and screenshots.
 5. `agent/factory-s2-04-acceptance`: only integration corrections required by cumulative acceptance, if needed; avoid an empty hardening PR.
 
-Implementers use isolated worktrees and start at low reasoning for bounded changes; complex process/recovery work may use medium. Two independent dedicated static reviewers (medium) inspect each candidate before publication. The manager performs the final implementation and product-plan review. Findings return to implementers. No PR, including documentation or draft PRs, is created until both reviewers report NO FINDINGS and the manager accepts that exact candidate. New code after review requires renewed review. Never bypass the secrets-scanning pre-commit hook. Include actual synthetic UI screenshots for UI changes and upload with supported gh image attachment commands. Every PR body must repeat both pending merge gates: live slice 1 acceptance and real Codex smoke.
+Implementers use isolated worktrees and start at low reasoning for bounded changes; complex process/recovery work may use medium. Two independent dedicated static reviewers (medium) inspect each candidate before publication. The manager performs the final implementation and product-plan review. Findings return to implementers. No PR, including documentation or draft PRs, is created until both reviewers report NO FINDINGS and the manager accepts that exact candidate. New code after review requires renewed review. Never bypass the secrets-scanning pre-commit hook. Include actual synthetic UI screenshots for UI changes and upload with supported gh image attachment commands. Every PR body must reflect the current operator acceptance decision and pending post-merge real Codex testing; preserve earlier gates as historical decisions only.
 
 ## Acceptance and evidence
 
@@ -85,15 +79,15 @@ Use Node 26.4.0 and the repository check/verify suites, with isolated temporary 
 - Test secret/environment separation, isolated harness state, ownership/path rejection, safe repeated cleanup and failed/dirty retention.
 - UI empty/loading/error/running/cancelling/needs-reconcile/candidate states and review links; screenshots from synthetic data, no private credentials or deployment target.
 - Full cumulative npm run verify and staged/range secret scans; independent static reviews and manager acceptance.
-- Real Codex smoke through the local adapter and live slice 1 acceptance must both pass and be recorded before any slice 2 PR merges. Local mock acceptance does not clear either gate. Slice 2 Linux/VM and remote-host acceptance remain explicitly pending for later work.
+- Record real Codex acceptance through the local adapter after the operator-authorized merge; local mock acceptance is not evidence for it. Track the deferred Slice 1 checks and separate later Slice 2 Linux/VM/remote-host acceptance.
 
 ## Progress ledger
 
-| Layer / gate                             | State                          | Evidence                                           |
-| ---------------------------------------- | ------------------------------ | -------------------------------------------------- |
-| Slice 1 live acceptance                  | PENDING — blocks slice 2 merge | Morning operator exercise; no live test performed. |
-| Slice 2 plan                             | In progress                    | This contract; publication waits for reviews.      |
-| Coding run foundation                    | Pending                        | No implementation accepted.                        |
-| Local Codex host / mockdex               | In progress                    | Delegated mockdex fixture; no live CLI invocation. |
-| Factory workbench integration            | Pending                        | No implementation accepted.                        |
-| Cumulative acceptance / real Codex smoke | Pending                        | Mock and live evidence must remain distinct.       |
+| Layer / gate                             | State                              | Evidence                                                                                   |
+| ---------------------------------------- | ---------------------------------- | ------------------------------------------------------------------------------------------ |
+| Slice 1 acceptance decision              | Operator-accepted; checks deferred | Partial rehearsal recorded in PR #396; subsequent operator decision supersedes merge hold. |
+| Slice 2 plan                             | In progress                        | This contract; publication waits for reviews.                                              |
+| Coding run foundation                    | Pending                            | No implementation accepted.                                                                |
+| Local Codex host / mockdex               | In progress                        | Delegated mockdex fixture; no live CLI invocation.                                         |
+| Factory workbench integration            | Pending                            | No implementation accepted.                                                                |
+| Cumulative acceptance / real Codex smoke | Pending                            | Mock and live evidence must remain distinct.                                               |

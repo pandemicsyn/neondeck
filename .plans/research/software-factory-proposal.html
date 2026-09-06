@@ -2269,17 +2269,17 @@ Workspace lifecycle (separate from run status)
           <h2>Implement as vertical slices</h2>
           <p>
             Each slice should work end to end. Keep new dispatch disabled by
-            default until its acceptance exercise passes. Slice 1 is merged with
-            live acceptance pending; see the
+            default until its acceptance exercise passes. Slice 1 is merged and
+            operator-accepted with remaining checks deferred; see the
             <a href="../factory/SLICE_1_IMPLEMENTATION_PLAN.md"
               >implementation plan</a
             >
             and
-            <a href="../factory/SLICE_1_HANDOFF.md">stacked-PR handoff</a>.
-            Slice 2 implementation may proceed, but no slice 2 PR may merge
-            before live slice 1 acceptance. See the
+            <a href="../factory/SLICE_1_HANDOFF.md">stacked-PR handoff</a>. The
+            operator authorized the Slice 2 stack to merge; real Codex
+            acceptance remains pending after merge. See the
             <a href="../factory/SLICE_2_IMPLEMENTATION_PLAN.md"
-              >slice 2 plan and merge gate</a
+              >slice 2 implementation and acceptance plan</a
             >. Record real deviations in the existing planning files.
           </p>
           <div class="table-wrap">

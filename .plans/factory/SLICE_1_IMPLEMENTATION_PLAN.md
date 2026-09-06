@@ -1,13 +1,11 @@
 # Slice 1 — Intake, collaborative shaping, and human release
 
-## Current landing status and slice 2 merge gate (2026-09-06)
+## Current acceptance decision (2026-09-06)
 
 Slice 1 is **merged**, through `13049498d457257626af80483d68e0aa8110ad68`
 (PRs #382–#387 and #389). Final local verification passed 1,968 tests and 63 CI
 checks, with two independent clean static reviews and manager acceptance.
-**Deployment/live acceptance is still pending. No slice 2 PR may merge until the
-morning operator exercise is completed and accepted.** See the
-[slice 2 gate checklist](SLICE_2_IMPLEMENTATION_PLAN.md#mandatory-merge-gate-live-slice-1-acceptance).
+**The operator accepted Slice 1 with the remaining live checks deferred and authorized the Slice 2 stack to merge.** This decision follows the partial live rehearsal recorded in PR #396; it does not turn unperformed tests into passes. See the [acceptance decision](SLICE_2_IMPLEMENTATION_PLAN.md#slice-1-acceptance-decision) and [Slice 1 live record](SLICE_1_HANDOFF.md#september-6-2026--merged-build-and-partial-live-acceptance). Slice 2 real Codex acceptance remains pending after merge.
 The historical candidates and pre-merge ledger below remain an audit record;
 their “not merged” statements describe those earlier checkpoints.
 
@@ -19,7 +17,7 @@ feedback parents and [PR #387](https://github.com/pandemicsyn/neondeck/pull/387)
 for historical feedback reviews and CI. Each publication requires its own verification,
 two clean dedicated static reviews and manager acceptance.
 
-Current status (2026-09-06): PRs #382–#387 and #389 are merged into main
+Rehearsal checkpoint (2026-09-06, before the operator decision above): PRs #382–#387 and #389 are merged into main
 `13049498d457257626af80483d68e0aa8110ad68`. Final prior verification passed
 1,968 tests and 63 CI checks; the VM built this commit with Node 26.5 and Flue
 2.0.3. Real GitHub admission, live triage/planning, managed status updates, graceful
