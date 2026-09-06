@@ -7,10 +7,10 @@ import type { RuntimePaths } from '../../runtime-home';
 import { requireWorktree } from './store';
 import type { WorktreeRecord } from './schemas';
 import { WorktreeError } from './errors';
-export type FactoryWorkspaceClaim = Pick<
-  CodingRunRecord,
-  'runId' | 'attemptId' | 'ownershipToken'
->;
+import { getDeliveryPipeline } from '../factory-delivery/store';
+export type FactoryWorkspaceClaim =
+  | Pick<CodingRunRecord, 'runId' | 'attemptId' | 'ownershipToken'>
+  | { pipelineId: string; expectedVersion: number };
 export function codingWorktreeOwner(
   record: WorktreeRecord,
   paths: RuntimePaths,
@@ -28,6 +28,7 @@ export function assertFactoryClaim(
 ) {
   if (
     !claim ||
+    !('runId' in claim) ||
     claim.runId !== run.runId ||
     claim.attemptId !== run.attemptId ||
     claim.ownershipToken !== run.ownershipToken
@@ -42,6 +43,24 @@ export function guardCodingWorktree(
   paths: RuntimePaths,
   claim?: FactoryWorkspaceClaim,
 ) {
+  if (record.owningWorkflowRunId?.startsWith('factory-delivery:')) {
+    const pipelineId = record.owningWorkflowRunId.slice(
+      'factory-delivery:'.length,
+    );
+    const pipeline = getDeliveryPipeline(pipelineId, paths);
+    if (
+      !pipeline ||
+      !claim ||
+      !('pipelineId' in claim) ||
+      claim.pipelineId !== pipelineId ||
+      claim.expectedVersion !== pipeline.version ||
+      pipeline.repoId !== record.repoId
+    )
+      throw new WorktreeError(
+        'FACTORY_OWNED',
+        'Factory publication workspace requires its current delivery claim.',
+      );
+  }
   const run = codingWorktreeOwner(record, paths);
   if (run) assertFactoryClaim(run, claim);
 }

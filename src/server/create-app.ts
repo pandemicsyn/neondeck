@@ -1,4 +1,5 @@
 import { createFactoryCodingRoutes } from './routes/factory-coding';
+import { createFactoryDeliveryRoutes } from './routes/factory-delivery';
 import { createFactoryPlannerRoutes } from './routes/factory-planner';
 import { recoverFactoryPlanning } from '../modules/factory';
 import { createFactoryRoutes } from './routes/factory';
@@ -155,6 +156,7 @@ export async function createApp(options: CreateAppOptions = {}) {
     ),
   );
   app.route('/api/factory/coding', createFactoryCodingRoutes(paths));
+  app.route('/api/factory-delivery', createFactoryDeliveryRoutes(paths));
   app.route('/api/factory', createFactoryRoutes(paths));
   app.route('/api/safety', createSafetyRoutes(paths));
   app.route('/api/execution', createExecutionRoutes(paths));

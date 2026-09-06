@@ -1,5 +1,6 @@
 import { openDb } from '../../lib/sqlite.ts';
 import { randomUUID } from 'node:crypto';
+import type { DatabaseSync } from 'node:sqlite';
 import * as v from 'valibot';
 import type { RepoConfig, RuntimePaths } from '../../runtime-home';
 import { WorktreeError, errorMessage } from './errors';
@@ -68,8 +69,12 @@ export function recordWorktreeCreating(
   );
 }
 
-export function upsertWorktree(record: WorktreeRecord, paths: RuntimePaths) {
-  const database = openDb(paths.neondeckDatabase);
+export function upsertWorktree(
+  record: WorktreeRecord,
+  paths: RuntimePaths,
+  transaction?: DatabaseSync,
+) {
+  const database = transaction ?? openDb(paths.neondeckDatabase);
   try {
     database
       .prepare(
@@ -132,7 +137,7 @@ export function upsertWorktree(record: WorktreeRecord, paths: RuntimePaths) {
         record.updatedAt,
       );
   } finally {
-    database.close();
+    if (!transaction) database.close();
   }
 }
 

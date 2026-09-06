@@ -9,3 +9,10 @@ export * from './service';
 export { recordWorktreeEvent } from './store';
 
 export { guardCodingWorktreeId, codingWorktreeOwner } from './coding-guard';
+export { cleanupDecision } from './cleanup';
+export {
+  readFactoryPublicationWorkspace,
+  reserveFactoryPublicationWorkspace,
+  settleFactoryPublicationWorkspace,
+  type FactoryPublicationClaim,
+} from './publication';
