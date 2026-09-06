@@ -9,6 +9,10 @@ import {
   factoryDetailSchema,
 } from '../../../../shared/factory';
 import * as v from 'valibot';
+import { factoryCodingConfigSchema } from '../../../../shared/factory-coding';
+// Keep intake fixtures focused; coding has dedicated response/interaction tests.
+vi.mock('./FactoryCoding', () => ({ FactoryCoding: () => null }));
+vi.mock('./FactoryCodingSetup', () => ({ FactoryCodingSetup: () => null }));
 let container: HTMLDivElement;
 let root: ReturnType<typeof createRoot>;
 let client: QueryClient;
@@ -59,6 +63,7 @@ it('explains disabled mode, then enables real typed intake config', async () => 
           enabled,
           github: [],
           codingPolicy: 'isolated-local-v1',
+          coding: v.parse(factoryCodingConfigSchema, {}),
         });
       }
       expect(options?.method).toBeUndefined();

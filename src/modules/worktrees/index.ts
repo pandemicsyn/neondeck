@@ -7,3 +7,5 @@ export * from './queries';
 export * from './schemas';
 export * from './service';
 export { recordWorktreeEvent } from './store';
+
+export { guardCodingWorktreeId, codingWorktreeOwner } from './coding-guard';

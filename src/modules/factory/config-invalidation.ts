@@ -1,3 +1,4 @@
+import { cancelActiveFactoryCoding } from './coding-invalidation';
 import * as v from 'valibot';
 import { sourceSchema } from '../../../shared/factory';
 import type { GitHubConnection } from '../../../shared/factory-github';
@@ -23,6 +24,12 @@ export function invalidateFactoryConfig(
   after: AppConfig,
   paths: RuntimePaths,
 ) {
+  if (
+    before.factory?.enabled !== after.factory?.enabled ||
+    JSON.stringify(before.factory?.coding) !==
+      JSON.stringify(after.factory?.coding)
+  )
+    cancelActiveFactoryCoding(paths);
   if (
     JSON.stringify(before.factory?.github ?? []) !==
     JSON.stringify(after.factory?.github ?? [])

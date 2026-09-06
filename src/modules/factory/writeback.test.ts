@@ -1,3 +1,12 @@
+import {
+  codingSnapshot,
+  assertCodingAuthoritySnapshot,
+} from './coding-context';
+import {
+  reserveCodingRun,
+  updateCodingRun,
+  latestCodingRunForWorkItem,
+} from '../coding-runs';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import * as runtimeHome from '../../runtime-home';
@@ -1358,4 +1367,252 @@ it('revocation is durable before registry replacement and survives a failed writ
   );
   expect(remote).toHaveLength(1);
   expect(getFactoryWork(id, setup.paths).eligible).toBe(false);
+});
+
+function prepareCodingRelease(requestKey = 'coding-release') {
+  execFileSync('git', ['init', '-b', 'main', setup.paths.home], {
+    stdio: 'ignore',
+  });
+  execFileSync(
+    'git',
+    [
+      '-C',
+      setup.paths.home,
+      '-c',
+      'user.name=Test',
+      '-c',
+      'user.email=test@example.test',
+      'commit',
+      '--allow-empty',
+      '-m',
+      'Coding fixture base',
+    ],
+    { stdio: 'ignore' },
+  );
+  const config = runtimeHome.parseAppConfig(
+    JSON.parse(readFileSync(setup.paths.config, 'utf8')),
+    setup.paths.config,
+  );
+  writeFileSync(
+    setup.paths.config,
+    JSON.stringify({
+      ...config,
+      factory: {
+        ...config.factory,
+        enabled: true,
+        coding: {
+          enabled: true,
+          executable: '/mock/codex',
+          model: 'private-model',
+          auth: { kind: 'api-key', env: 'FACTORY_TEST_TOKEN' },
+        },
+      },
+    }),
+  );
+  const d = saveSpec(),
+    rev = d.revisions.at(-1)!;
+  releaseFactoryWork(
+    id,
+    {
+      requestKey,
+      expectedVersion: d.work.version,
+      specVersion: rev.version,
+      specHash: rev.hash,
+      sourceVersion: d.source.version,
+      repoFingerprint: d.repoFingerprint,
+      policyVersion: 'isolated-local-v1',
+    },
+    human,
+    setup.paths,
+  );
+}
+async function codingReservation(requestId = 'coding-request') {
+  if (
+    !getFactoryWork(id, setup.paths).eligible ||
+    requestId !== 'coding-request'
+  )
+    prepareCodingRelease(requestId);
+  const snapshot = await codingSnapshot(id, 'private-version', setup.paths);
+  assertCodingAuthoritySnapshot(snapshot, setup.paths);
+  return reserveCodingRun(snapshot, setup.paths);
+}
+function codingCancel(run: Awaited<ReturnType<typeof codingReservation>>) {
+  return updateCodingRun(
+    {
+      runId: run.runId,
+      attemptId: run.attemptId,
+      ownershipToken: run.ownershipToken,
+      expectedVersion: run.version,
+      action: { type: 'cancel', reason: 'private-cancel-reason' },
+    },
+    setup.paths,
+  );
+}
+it('projects retained coding facts into the same opted-in comment without private evidence', async () => {
+  prepareCodingRelease();
+  consent();
+  approveWriteback(
+    id,
+    approval('summary', 'Approved visible scope'),
+    human,
+    setup.paths,
+  );
+  await tick();
+  const remoteId = remote[0].id;
+  let run = await codingReservation();
+  await tick();
+  expect(remote[0].body).toContain('Queued — awaiting coding dispatch');
+  expect(remote[0].body).toContain('Approved visible scope');
+  run = codingCancel(run);
+  await tick();
+  expect(remote[0].body).toContain('awaiting confirmed stop');
+  run = updateCodingRun(
+    {
+      runId: run.runId,
+      attemptId: run.attemptId,
+      ownershipToken: run.ownershipToken,
+      expectedVersion: run.version,
+      action: { type: 'quarantine', reason: 'private-uncertainty' },
+    },
+    setup.paths,
+  );
+  await tick();
+  expect(remote[0].body).toContain('execution state is uncertain');
+  updateCodingRun(
+    {
+      runId: run.runId,
+      attemptId: run.attemptId,
+      ownershipToken: run.ownershipToken,
+      expectedVersion: run.version,
+      action: {
+        type: 'finish',
+        status: 'cancelled',
+        reason: 'private-result',
+        proof: {
+          runId: run.runId,
+          attemptId: run.attemptId,
+          ownershipToken: run.ownershipToken,
+          host: null,
+          kind: 'never-started',
+          evidenceRef: 'private-receipt',
+        },
+      },
+    },
+    setup.paths,
+  );
+  await tick();
+  expect(remote[0].body).toContain('Coding cancelled');
+  expect(remote[0].body).not.toContain('private-');
+  expect(remote[0].body).not.toContain(run.runId);
+  expect(remote[0].body).not.toContain(run.ownershipToken);
+  expect(remote[0].id).toBe(remoteId);
+  expect(io.create).toHaveBeenCalledTimes(1);
+  expect(state().status?.confirmedBody).toBe(remote[0].body);
+  saveSpec();
+  await tick();
+  expect(remote[0].body).not.toContain('Approved visible scope');
+  expect(remote[0].body).toContain('Coding cancelled');
+  const next = await codingReservation('new-release');
+  expect(latestCodingRunForWorkItem(id, setup.paths)?.runId).toBe(next.runId);
+  expect(latestCodingRunForWorkItem('unrelated-work', setup.paths)).toBeNull();
+});
+it('blocks stale status when coding changes during provider preflight without work version change', async () => {
+  consent();
+  const run = await codingReservation();
+  const workVersion = getFactoryWork(id, setup.paths).work.version;
+  vi.mocked(io.identity).mockImplementationOnce(async () => {
+    codingCancel(run);
+    return { login: 'neon-bot', id: 77 };
+  });
+  await tick();
+  expect(getFactoryWork(id, setup.paths).work.version).toBe(workVersion);
+  expect(io.create).not.toHaveBeenCalled();
+  expect(state().effects.at(-1)?.state).toBe('cancelled');
+  await tick();
+  expect(remote[0].body).toContain('awaiting confirmed stop');
+});
+it('coding runs never opt an issue into writeback', async () => {
+  await codingReservation();
+  await tick();
+  expect(io.create).not.toHaveBeenCalled();
+  expect(state().policy.enabled).toBe(false);
+  expect(state().effects).toHaveLength(0);
+});
+it('maintains running and candidate facts while release eligibility and consent remain separate', async () => {
+  consent();
+  let run = await codingReservation();
+  const advance = (
+    action: import('../../../shared/coding-runs').CodingRunCommand['action'],
+  ) => {
+    run = updateCodingRun(
+      {
+        runId: run.runId,
+        attemptId: run.attemptId,
+        ownershipToken: run.ownershipToken,
+        expectedVersion: run.version,
+        action,
+      },
+      setup.paths,
+    );
+  };
+  dbRun(setup.paths, (db) => {
+    db.prepare(
+      `INSERT INTO worktrees (id,repo_id,repo_full_name,github_owner,github_name,base_ref,head_ref,local_path,storage_kind,owning_workflow_run_id,lifecycle_status,adopted,created_by,created_at,updated_at) VALUES ('coding-wt','fixture','example/fixture','example','fixture','main','agent/factory-test','/private/local-worktree','home',?,'ready',0,'factory',?,?)`,
+    ).run(run.runId, run.createdAt, run.createdAt);
+    db.prepare(
+      `INSERT INTO worktree_locks (id,scope,scope_key,worktree_id,repo_id,owner,workflow_run_id,expires_at,created_at,updated_at) VALUES ('coding-lock','worktree','worktree:coding-wt','coding-wt','fixture','factory',?,'2099-01-01T00:00:00.000Z',?,?)`,
+    ).run(run.runId, run.createdAt, run.createdAt);
+  });
+  advance({
+    type: 'bind-host',
+    host: { hostId: 'private-host', jobId: 'private-job' },
+  });
+  advance({
+    type: 'bind-workspace',
+    workspace: { worktreeId: 'coding-wt', lockId: 'coding-lock' },
+  });
+  advance({ type: 'running' });
+  advance({
+    type: 'bind-session',
+    providerSessionId: 'private-provider-session',
+  });
+  await tick();
+  expect(remote[0].body).toContain('Coding in progress');
+  expect(remote[0].body).not.toContain('No coding executor has been started');
+  advance({ type: 'collecting' });
+  await tick();
+  expect(remote[0].body).toContain('not yet a candidate');
+  advance({
+    type: 'finish',
+    status: 'candidate',
+    reason: 'private-result',
+    proof: {
+      runId: run.runId,
+      attemptId: run.attemptId,
+      ownershipToken: run.ownershipToken,
+      host: run.host,
+      kind: 'verified-dead',
+      evidenceRef: 'private-receipt',
+    },
+    candidate: {
+      baseSha: run.snapshot.baseSha,
+      headSha: 'c'.repeat(40),
+      worktreeId: 'coding-wt',
+      statusRef: 'private-status',
+      diffRef: 'private-diff',
+      includesUntracked: true,
+    },
+  });
+  await tick();
+  expect(remote[0].body).toContain('Coding candidate — awaiting human review');
+  expect(remote[0].body).not.toContain('private-');
+  expect(remote[0].body).not.toContain('/private/');
+  expect(remote[0].body).not.toContain('coding-wt');
+  expect(remote[0].body).toContain('does not imply task completion');
+  expect(io.create).toHaveBeenCalledTimes(1);
+  consent(false);
+  const count = vi.mocked(io.update).mock.calls.length;
+  await codingReservation('next-release');
+  await tick();
+  expect(io.update).toHaveBeenCalledTimes(count);
 });

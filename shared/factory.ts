@@ -1,4 +1,5 @@
 import * as v from 'valibot';
+import { factoryCodingConfigSchema } from './factory-coding';
 import { githubConnectionSchema } from './factory-github';
 
 const text = (max = 20000) => v.pipe(v.string(), v.maxLength(max));
@@ -18,6 +19,7 @@ export const factoryConfigSchema = v.strictObject({
     ),
     [],
   ),
+  coding: v.optional(factoryCodingConfigSchema, {}),
   codingPolicy: v.optional(v.literal('isolated-local-v1'), 'isolated-local-v1'),
 });
 export const factoryPolicy = {

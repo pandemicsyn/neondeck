@@ -31,6 +31,23 @@ const worktreeRevision = resolvedReviewRevision({
 });
 
 describe('review source adapters', () => {
+  it('limits factory candidates to read-only capabilities without changing defaults', () => {
+    const readonly = preparedDiffReviewSource(
+      preparedDiff(),
+      [unloadedFile],
+      worktreeRevision,
+      { readOnly: true },
+    );
+    expect(readonly.capabilities).not.toContain('request-revision');
+    expect(readonly.promotionTargets).toEqual([]);
+    expect(readonly.capabilities).toContain('refresh');
+    expect(readonly.capabilities).toContain('context-expansion');
+    expect(
+      preparedDiffReviewSource(preparedDiff(), [unloadedFile], worktreeRevision)
+        .capabilities,
+    ).toContain('request-revision');
+  });
+
   it('represents a GitHub PR by immutable head SHA and explicit file state', () => {
     const source = githubPrReviewSource(githubPullRequest(), [unloadedFile], {
       localSource: true,

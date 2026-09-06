@@ -1,3 +1,4 @@
+import { startFactoryCodingLoop } from './factory-coding-loop';
 import { refreshGitHubQueueSnapshot } from '../modules/github';
 import { refreshPrReviewRemoteState } from '../modules/pr-reviews';
 import type { Fetchable } from '@flue/runtime/routing';
@@ -24,6 +25,7 @@ export function startManagedServices(paths: RuntimePaths, app: Fetchable) {
       refreshPrReviewRemoteState(paths).catch(() => undefined),
     );
   }
+  const stopCoding = startFactoryCodingLoop(paths);
   const stopSources = startFactoryGitHubLoop(paths);
   function recover() {
     if (stopped) return;
@@ -53,6 +55,7 @@ export function startManagedServices(paths: RuntimePaths, app: Fetchable) {
     clearTimeout(retry);
     stopUpdateCheckLoop(paths);
     await Promise.allSettled([
+      stopCoding(),
       stopSources(),
       stopSchedulerLoop(paths),
       recovery,

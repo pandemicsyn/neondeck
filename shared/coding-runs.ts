@@ -169,6 +169,7 @@ export const codingRunPageSchema = v.strictObject({
   limit: v.optional(v.pipe(version, v.maxValue(100)), 25),
 });
 export const codingRunListSchema = v.strictObject({
+  order: v.optional(v.picklist(['asc', 'desc']), 'asc'),
   ...codingRunPageSchema.entries,
   workItemId: v.optional(codingLabelSchema),
 });

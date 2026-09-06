@@ -1,3 +1,4 @@
+import { fenceInvalidFactoryCoding } from './coding-invalidation';
 import { publishFactoryChange } from './events';
 import { createHash, randomUUID } from 'node:crypto';
 import type { DatabaseSync } from 'node:sqlite';
@@ -71,14 +72,22 @@ function repoFingerprint(repoId: string | null, paths: RuntimePaths) {
 }
 export function dbRun<T>(paths: RuntimePaths, run: (db: DatabaseSync) => T) {
   const db = openDb(paths.neondeckDatabase);
+  let changed = false;
+  let result: T;
   try {
-    const result = withImmediateTransaction(db, () => run(db));
+    result = withImmediateTransaction(db, () => run(db));
     const changes = db.prepare('SELECT total_changes() AS count').get();
-    if (Number(changes?.count) > 0) publishFactoryChange();
-    return result;
+    changed = Number(changes?.count) > 0;
   } finally {
     db.close();
   }
+  if (changed) {
+    // Commit source/release changes first, then durably fence coding before this
+    // synchronous mutation returns. Read-only detail calls do not recurse.
+    fenceInvalidFactoryCoding(paths);
+    publishFactoryChange();
+  }
+  return result;
 }
 function records<T>(
   db: DatabaseSync,

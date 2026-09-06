@@ -89,22 +89,24 @@ export function preparedDiffReviewSource(
   diff: PreparedDiffRecord,
   files: DiffFilePatch[],
   revision: ReviewRevision | undefined,
-  options: PatchStateOptions = {},
+  options: PatchStateOptions & { readOnly?: boolean } = {},
 ) {
   return reviewSource({
     ...options,
     capabilities: [
-      'request-revision',
+      ...(options.readOnly ? [] : (['request-revision'] as const)),
       'context-expansion',
       'open-in-editor',
       'refresh',
     ],
-    promotionTargets: [
-      {
-        destination: 'prepared-diff-revision',
-        preparedDiffId: diff.id,
-      },
-    ],
+    promotionTargets: options.readOnly
+      ? []
+      : [
+          {
+            destination: 'prepared-diff-revision',
+            preparedDiffId: diff.id,
+          },
+        ],
     files,
     id: `prepared-diff:${diff.id}`,
     kind: 'prepared-diff',

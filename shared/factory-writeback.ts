@@ -1,4 +1,5 @@
 import * as v from 'valibot';
+import { codingRunStatusSchema } from './coding-runs';
 const str = v.string();
 const text = v.pipe(
   str,
@@ -110,11 +111,36 @@ export const statusLabels = {
   closed: 'Closed in Neon',
   review: 'Review needed — release is not currently eligible',
 } as const;
+export const publicCodingStatusSchema = v.strictObject({
+  status: codingRunStatusSchema,
+  cancellationRequested: v.boolean(),
+});
+const codingLabels = {
+  reserved: 'Queued — awaiting coding dispatch',
+  running: 'Coding in progress',
+  collecting: 'Collecting coding output — not yet a candidate',
+  'needs-reconcile':
+    'Coding needs reconciliation — execution state is uncertain',
+  candidate: 'Coding candidate — awaiting human review',
+  failed: 'Coding failed — needs attention',
+  cancelled: 'Coding cancelled',
+} as const;
 export function publicStatusBody(
   lifecycle: keyof typeof statusLabels,
   summary?: string,
+  coding?: v.InferOutput<typeof publicCodingStatusSchema>,
 ) {
-  return `### Neon factory\n\n${statusLabels[lifecycle]}${summary ? `\n\nApproved scope:\n${summary}` : ''}\n\nNo coding executor has been started.`;
+  const facts = coding ? v.parse(publicCodingStatusSchema, coding) : null;
+  const label =
+    facts && lifecycle === 'queued' ? 'Released' : statusLabels[lifecycle];
+  const active =
+    facts && ['reserved', 'running', 'collecting'].includes(facts.status);
+  const codingLabel = facts
+    ? active && facts.cancellationRequested
+      ? 'Coding cancellation requested — awaiting confirmed stop'
+      : codingLabels[facts.status]
+    : null;
+  return `### Neon factory\n\n${label}${summary ? `\n\nApproved scope:\n${summary}` : ''}${codingLabel ? `\n\nLatest coding run: ${codingLabel}` : ''}\n\n${facts ? 'Coding status does not imply task completion, verification, or publication.' : 'No coding executor has been started.'}`;
 }
 export const writebackRepairSchema = v.object({
   id: str,

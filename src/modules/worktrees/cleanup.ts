@@ -1,3 +1,4 @@
+import { codingWorktreeOwner } from './coding-guard';
 import type { RuntimePaths } from '../../runtime-home';
 import { activeLocksForWorktree } from './locks';
 import { exists, repoContext } from './paths';
@@ -13,6 +14,13 @@ export async function cleanupDecision(
   },
   paths: RuntimePaths,
 ): Promise<{ delete: boolean; reason: string }> {
+  const codingOwner = codingWorktreeOwner(record, paths);
+  if (codingOwner)
+    return {
+      delete: false,
+      reason:
+        'Factory-owned work is retained, including active, uncertain and unpublished candidates.',
+    };
   const policy = await currentCleanupPolicy(record, paths);
   if (record.lifecycleStatus === 'deleted') {
     return { delete: false, reason: 'already deleted' };

@@ -178,6 +178,21 @@ describe('revision-aware prepared and Kilo surfaces', () => {
     container.remove();
   });
 
+  it('keeps factory review read-only across refreshed revisions', async () => {
+    await render(<PreparedDiffReview diff={preparedDiff()} readOnly />);
+    expect(state.viewProps?.source?.capabilities).not.toContain(
+      'request-revision',
+    );
+    expect(state.viewProps?.source?.promotionTargets).toEqual([]);
+    expect(state.viewProps?.inspector).toBeUndefined();
+    state.preparedRevision = 'prepared-readonly-next';
+    await render(<PreparedDiffReview diff={preparedDiff()} readOnly />);
+    expect(state.viewProps?.source?.capabilities).not.toContain(
+      'request-revision',
+    );
+    expect(state.viewProps?.source?.promotionTargets).toEqual([]);
+  });
+
   it('retains an old-revision finding as history and degrades a vanished selection', async () => {
     state.findings = [finding('prepared-a', 'prepared-diff:prepared-1')];
     await render(<PreparedDiffReview diff={preparedDiff()} />);

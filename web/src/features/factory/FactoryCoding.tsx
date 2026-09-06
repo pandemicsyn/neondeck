@@ -1,0 +1,371 @@
+import { useState } from 'react';
+import {
+  useInfiniteQuery,
+  useQuery,
+  useQueryClient,
+} from '@tanstack/react-query';
+import type { FactoryCodingRun } from '../../../../shared/factory-coding';
+import {
+  controlFactoryCodingRun,
+  getFactoryCodingRun,
+  getFactoryCodingRuns,
+  getFactoryCodingState,
+} from '../../api/factory-coding';
+import { factoryCodingStateKey } from './FactoryCodingSetup';
+import { FactoryCodingEvidence } from './FactoryCodingEvidence';
+import { FactoryCodingCandidate } from './FactoryCodingCandidate';
+
+const statuses: Record<
+  FactoryCodingRun['displayStatus'],
+  { title: string; description: string }
+> = {
+  reserved: {
+    title: 'Preparing workspace',
+    description:
+      'The exact released brief is reserved. Neon is preparing an isolated worktree.',
+  },
+  running: {
+    title: 'Coding in progress',
+    description:
+      'Codex is working in the managed worktree. Progress is retained below.',
+  },
+  cancelling: {
+    title: 'Stopping coding',
+    description:
+      'Cancellation is recorded. Ownership remains held until the process and its children are confirmed stopped.',
+  },
+  collecting: {
+    title: 'Collecting candidate',
+    description:
+      'Neon is collecting the worktree changes and execution evidence.',
+  },
+  'needs-reconcile': {
+    title: 'Ownership needs reconciliation',
+    description:
+      'The writer’s state is uncertain. The workspace is retained and no replacement run will start.',
+  },
+  'candidate-awaiting-review': {
+    title: 'Candidate awaiting review',
+    description:
+      'Execution complete. Checks and human review are still pending.',
+  },
+  failed: {
+    title: 'Coding attempt failed',
+    description:
+      'The failed attempt and its worktree evidence are retained. No automatic retry is scheduled.',
+  },
+  cancelled: {
+    title: 'Coding stopped',
+    description:
+      'Cancellation completed. Existing changes and evidence are retained.',
+  },
+};
+
+export function FactoryCoding({
+  workId,
+  eligible,
+}: {
+  workId: string;
+  eligible: boolean;
+}) {
+  const [selected, setSelected] = useState<string | null>(null);
+  const state = useQuery({
+    queryKey: factoryCodingStateKey,
+    queryFn: ({ signal }) => getFactoryCodingState({ signal }),
+    refetchInterval: 15000,
+  });
+  const runs = useInfiniteQuery({
+    queryKey: ['factory-coding-runs', workId],
+    initialPageParam: 0,
+    queryFn: ({ pageParam, signal }) =>
+      getFactoryCodingRuns(workId, pageParam, { signal }),
+    getNextPageParam: (page) => page.nextCursor ?? undefined,
+    refetchInterval: 5000,
+  });
+  const items = runs.data?.pages.flatMap((page) => page.items) ?? [];
+  const matching = items.filter(
+    (item) => item.run.record.snapshot.workItemId === workId,
+  );
+  const attention = runs.data?.pages[0]?.attention;
+  const selectedId = selected ?? matching[0]?.run.record.runId;
+  const selectionOutsidePage =
+    selected !== null &&
+    !matching.some((item) => item.run.record.runId === selected);
+  return (
+    <section className="factory-coding" aria-label="Task coding">
+      <div className="factory-toolbar">
+        <h3>Coding</h3>
+        <button onClick={() => void runs.refetch()}>Refresh coding</button>
+      </div>
+      {runs.isPending && <output>Loading coding attempts…</output>}
+      {runs.error && (
+        <p className="factory-error" role="alert">
+          Coding history unavailable or unsupported.{' '}
+          {runs.data
+            ? 'Showing retained history; controls require a fresh run read.'
+            : 'Refresh coding to try again.'}
+        </p>
+      )}
+      {attention && (
+        <div className="factory-error" role="alert">
+          <strong>Coding could not start</strong>
+          <p>{attention.reason}</p>
+        </div>
+      )}
+      {!runs.isPending &&
+        !runs.error &&
+        !attention &&
+        matching.length === 0 && (
+          <p>
+            {!eligible
+              ? 'Review and release the current brief before it can enter coding.'
+              : state.error
+                ? 'Coding readiness is unavailable. Refresh readiness in Local coding.'
+                : !state.data
+                  ? 'Checking coding readiness…'
+                  : !state.data.config.enabled
+                    ? 'This brief is released. Local coding is disabled; configure it above to allow automatic dispatch.'
+                    : !state.data.readiness.ready
+                      ? 'This brief is released. Resolve the coding setup requirements above.'
+                      : 'This brief is released and awaiting automatic dispatch. A single writer handles eligible work.'}
+          </p>
+        )}
+      {(matching.length > 1 || selectionOutsidePage) && (
+        <label className="factory-coding-attempt-picker">
+          Recorded attempt
+          <select
+            value={selectedId}
+            onChange={(event) => setSelected(event.target.value)}
+          >
+            {selectionOutsidePage && (
+              <option value={selected ?? undefined}>
+                Selected attempt · {selected}
+              </option>
+            )}
+            {matching.map(({ run }) => (
+              <option key={run.record.runId} value={run.record.runId}>
+                {statuses[run.displayStatus].title} · v
+                {run.record.snapshot.specVersion} · {run.record.attemptId}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
+      {runs.hasNextPage && (
+        <button
+          disabled={runs.isFetchingNextPage}
+          onClick={() => void runs.fetchNextPage()}
+        >
+          {runs.isFetchingNextPage ? 'Loading attempts…' : 'Load more attempts'}
+        </button>
+      )}
+      {selectedId && (
+        <FactoryCodingRunDetail
+          key={selectedId}
+          id={selectedId}
+          workId={workId}
+        />
+      )}
+    </section>
+  );
+}
+
+function FactoryCodingRunDetail({
+  id,
+  workId,
+}: {
+  id: string;
+  workId: string;
+}) {
+  const client = useQueryClient();
+  const run = useQuery({
+    queryKey: ['factory-coding-run', id],
+    queryFn: async ({ signal }) => {
+      const result = await getFactoryCodingRun(id, { signal });
+      if (result.record.snapshot.workItemId !== workId)
+        throw new Error('Run belongs to a different task.');
+      return result;
+    },
+    refetchInterval: 5000,
+  });
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState('');
+  async function control(action: 'cancel' | 'reconcile') {
+    if (pending || !run.data || run.error) return;
+    setPending(true);
+    setError('');
+    try {
+      await controlFactoryCodingRun(id, action, run.data.record.version);
+      await client.invalidateQueries({ queryKey: ['factory-coding-run', id] });
+      await client.invalidateQueries({
+        queryKey: ['factory-coding-runs', workId],
+      });
+    } catch (cause) {
+      setError(
+        cause instanceof Error
+          ? cause.message
+          : 'The run could not be updated.',
+      );
+      await run.refetch();
+    } finally {
+      setPending(false);
+    }
+  }
+  if (run.isPending) return <output>Loading coding run…</output>;
+  if (!run.data)
+    return (
+      <p role="alert" className="factory-error">
+        Coding run unavailable or unsupported.{' '}
+        <button onClick={() => void run.refetch()}>Reload run</button>
+      </p>
+    );
+  const { record, displayStatus } = run.data;
+  const status = statuses[displayStatus];
+  const active = ['reserved', 'running', 'collecting'].includes(displayStatus);
+  return (
+    <div className="factory-coding-run">
+      <div className="factory-toolbar">
+        <h3>{status.title}</h3>
+        <span className="factory-coding-badge">
+          Spec v{record.snapshot.specVersion}
+        </span>
+        {active && (
+          <button
+            disabled={pending || !!run.error}
+            onClick={() => void control('cancel')}
+          >
+            {pending ? 'Requesting stop…' : 'Stop coding'}
+          </button>
+        )}
+        {displayStatus === 'needs-reconcile' && (
+          <button
+            disabled={pending || !!run.error}
+            onClick={() => void control('reconcile')}
+          >
+            {pending ? 'Reconciling…' : 'Reconcile ownership'}
+          </button>
+        )}
+      </div>
+      <output className="factory-coding-status">{status.description}</output>
+      {run.error && (
+        <p role="alert" className="factory-error">
+          Run refresh failed. Displayed evidence may be stale; controls are
+          disabled.{' '}
+          <button onClick={() => void run.refetch()}>Reload run</button>
+        </p>
+      )}
+      {error && (
+        <p role="alert" className="factory-error">
+          {error} Review the refreshed state before another action.
+        </p>
+      )}
+      {(record.reason || record.cancelReason) && (
+        <p className="factory-coding-reason">
+          {record.reason ?? record.cancelReason}
+        </p>
+      )}
+      <dl className="factory-coding-facts">
+        <div>
+          <dt>Attempt</dt>
+          <dd>{record.attemptId}</dd>
+        </div>
+        <div>
+          <dt>Elapsed</dt>
+          <dd>{elapsed(record.createdAt, record.completedAt)}</dd>
+        </div>
+        <div>
+          <dt>Model</dt>
+          <dd>{record.snapshot.harness.model}</dd>
+        </div>
+        <div>
+          <dt>Provider session</dt>
+          <dd>{record.providerSessionId ?? 'Not recorded yet'}</dd>
+        </div>
+        <div>
+          <dt>Pinned base</dt>
+          <dd>
+            <code>{record.snapshot.baseSha}</code>
+          </dd>
+        </div>
+        {record.candidate && (
+          <div>
+            <dt>Collected head</dt>
+            <dd>
+              <code>{record.candidate.headSha}</code>
+            </dd>
+          </div>
+        )}
+      </dl>
+      {displayStatus === 'candidate-awaiting-review' && (
+        <>
+          {run.data.diff ? (
+            <FactoryCodingCandidate diff={run.data.diff} />
+          ) : (
+            <p>
+              The candidate is retained, but its prepared diff is not available
+              yet. Refresh coding to check again.
+            </p>
+          )}
+        </>
+      )}
+      {record.cleanupAttentionAt && (
+        <p className="factory-note">
+          Work retained. Cleanup attention: {date(record.cleanupAttentionAt)}.{' '}
+          {record.evidenceRetainUntil && (
+            <>Evidence retention: {date(record.evidenceRetainUntil)}.</>
+          )}
+        </p>
+      )}
+      <details className="factory-coding-evidence">
+        <summary>Captured attempt provenance</summary>
+        <dl className="factory-coding-facts">
+          <div>
+            <dt>Run</dt>
+            <dd>{record.runId}</dd>
+          </div>
+          <div>
+            <dt>Release</dt>
+            <dd>{record.snapshot.releaseId}</dd>
+          </div>
+          <div>
+            <dt>Specification hash</dt>
+            <dd>{record.snapshot.specHash}</dd>
+          </div>
+          <div>
+            <dt>Harness version</dt>
+            <dd>{record.snapshot.harness.version}</dd>
+          </div>
+          {record.candidate && (
+            <>
+              <div>
+                <dt>Captured status evidence</dt>
+                <dd>{record.candidate.statusRef}</dd>
+              </div>
+              <div>
+                <dt>Captured diff evidence</dt>
+                <dd>{record.candidate.diffRef}</dd>
+              </div>
+            </>
+          )}
+          <div>
+            <dt>Last recorded update</dt>
+            <dd>{date(record.updatedAt)}</dd>
+          </div>
+        </dl>
+      </details>
+      <FactoryCodingEvidence id={id} />
+    </div>
+  );
+}
+function elapsed(start: string, end: string | null) {
+  const ms = (end ? Date.parse(end) : Date.now()) - Date.parse(start);
+  if (!Number.isFinite(ms) || ms < 0) return 'Unavailable';
+  const seconds = Math.floor(ms / 1000);
+  return `${Math.floor(seconds / 60)}m ${seconds % 60}s${end ? ' total' : ''}`;
+}
+function date(value: string) {
+  const parsed = new Date(value);
+  return Number.isFinite(parsed.getTime())
+    ? parsed.toLocaleString()
+    : 'Unavailable';
+}

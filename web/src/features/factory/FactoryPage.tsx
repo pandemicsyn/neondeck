@@ -1,3 +1,4 @@
+import { FactoryCodingSetup } from './FactoryCodingSetup';
 import { FactoryGitHubSetup } from './FactoryGitHub';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
@@ -100,6 +101,7 @@ export function FactoryPage() {
         <button onClick={() => void refresh()}>Refresh</button>
       </header>
       {state.data && <FactoryGitHubSetup repos={state.data.repos} />}
+      {state.data?.enabled && <FactoryCodingSetup />}
       {state.error && state.data && (
         <p className="factory-error" role="alert">
           Inbox refresh failed: {message(state.error)}. Showing the last loaded
@@ -130,7 +132,8 @@ export function FactoryPage() {
           <p>
             Releasing a reviewed version records permission for future isolated
             implementation and repo-configured checks. Publishing, merging and
-            deployment are not permitted. Coding execution is not available yet.
+            deployment are not permitted. Local coding requires separate
+            explicit setup.
           </p>
           <button
             disabled={busy}

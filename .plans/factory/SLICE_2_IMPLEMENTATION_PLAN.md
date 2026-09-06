@@ -1,6 +1,6 @@
 # Slice 2 — Brief to candidate
 
-Status: implementation authorized on 2026-09-06; no slice 2 implementation accepted or published yet.
+Status: initial candidate implemented and accepted locally on 2026-09-06. The stack was initially published as draft PRs and subsequently marked ready at the user's request. The PR feedback candidate subsequently passed the local checks recorded below. The operator subsequently accepted Slice 1 with deferred checks and authorized stack merge; real Codex acceptance remains pending after merge. See [local handoff](SLICE_2_HANDOFF.md).
 
 <a id="mandatory-merge-gate-live-slice-1-acceptance"></a>
 
@@ -69,6 +69,8 @@ Implementers use isolated worktrees and start at low reasoning for bounded chang
 
 ## Acceptance and evidence
 
+See the [Slice 2 acceptance record](SLICE_2_ACCEPTANCE.md#slice-2-acceptance-after-merge) for historical verification/CI identities, the superseding operator decision and the pending post-merge real Codex checklist.
+
 Use Node 26.4.0 and the repository check/verify suites, with isolated temporary runtime homes and Git repos. mockdex is explicitly configured for tests and never substitutes automatically for missing Codex. Pin the supported real CLI contract from installed help/types or official documentation; record the version and date. Mock JSONL/receipts prove controller behavior, not real model quality or real CLI compatibility.
 
 - Concurrent and replayed admission reserves at most one writer; disabled/stale/closed/withdrawn work cannot launch.
@@ -83,11 +85,21 @@ Use Node 26.4.0 and the repository check/verify suites, with isolated temporary 
 
 ## Progress ledger
 
-| Layer / gate                             | State                              | Evidence                                                                                   |
-| ---------------------------------------- | ---------------------------------- | ------------------------------------------------------------------------------------------ |
-| Slice 1 acceptance decision              | Operator-accepted; checks deferred | Partial rehearsal recorded in PR #396; subsequent operator decision supersedes merge hold. |
-| Slice 2 plan                             | In progress                        | This contract; publication waits for reviews.                                              |
-| Coding run foundation                    | Pending                            | No implementation accepted.                                                                |
-| Local Codex host / mockdex               | In progress                        | Delegated mockdex fixture; no live CLI invocation.                                         |
-| Factory workbench integration            | Pending                            | No implementation accepted.                                                                |
-| Cumulative acceptance / real Codex smoke | Pending                            | Mock and live evidence must remain distinct.                                               |
+Implementation rows, commit references and verification counts below describe the initial candidate checkpoint before PR feedback revisions. Acceptance decision rows reflect the subsequent operator direction. Historical checks do not establish acceptance of the rebased documentation tree. The combined post-feedback local result is recorded below; GitHub CI remains a separate publication check.
+
+| Layer / gate                                | State                              | Evidence                                                                                                                                      |
+| ------------------------------------------- | ---------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| Slice 1 acceptance decision                 | Operator-accepted; checks deferred | Partial rehearsal in PR #396, followed by explicit operator acceptance; unperformed checks remain deferred.                                   |
+| Slice 2 plan                                | Accepted locally                   | Two independent static reviews and manager acceptance; commit 5f6bb2b.                                                                        |
+| Coding run foundation                       | Accepted locally                   | Commit 33d56463; two clean reviews; full verification passed 1,986 tests at that layer.                                                       |
+| Local Codex host / mockdex                  | Accepted locally                   | Commit 4488b4ec; two clean reviews; 29 actual host tests and 32 mockdex fixture tests.                                                        |
+| Factory workbench integration               | Accepted locally                   | Two clean static reviews and manager acceptance; real local mockdex candidate and cancellation flows, typed operator UI and screenshots.      |
+| Cumulative local acceptance                 | Passed at initial checkpoint       | Full npm run verify: 1,943 unit + 47 Git + 123 integration = 2,113 tests, lint, layers, migrations, types, builds, package and format checks. |
+| Real Codex smoke                            | PENDING — after authorized merge   | Real local adapter/CLI/auth evidence and operator/manager signoff still required; no real Codex exercise performed.                           |
+| Slice 2 Linux / VM / remote-host acceptance | PENDING — later work               | Separate deployment/remote-host scope; not established by local mock verification or the operator acceptance decision.                        |
+
+See [handoff and remaining acceptance](SLICE_2_HANDOFF.md). GitHub CI is a separate publication check; local verification is not a claim that remote checks or live acceptance passed.
+
+## Post-feedback local acceptance — 2026-09-06
+
+Corrections for all 13 comments on PRs #391–#394 passed two independent static reviews and manager implementation/product-plan review. Cumulative `npm run verify` passed **2,156 tests** (1,981 unit, 47 Git, 128 integration), types, lint, layers, migrations, builds, package smoke and formatting. The implementation retained exact human release authority, durable writer reservations, managed checkout isolation and candidate-only completion. See the [feedback checkpoint](SLICE_2_HANDOFF.md#pr-feedback-verification-checkpoint--2026-09-06) for review and regression details. The existing PRs remain ready for review; final-head GitHub CI is checked after publication. At that checkpoint both pre-merge holds were pending. The subsequent operator decision above supersedes those holds: Slice 1 is accepted with deferred checks, and real Codex acceptance remains pending after the authorized merge.
