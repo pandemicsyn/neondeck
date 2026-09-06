@@ -52,7 +52,11 @@ Consent is app SQLite state, separate from ordinary configuration and unavailabl
 to planning tools. It is bound to the connection fingerprint and a fresh epoch.
 Changing factory configuration revokes consent conservatively; restore the intended
 mapping and explicitly re-enable publishing. Revocation persists before the config
-file replacement; if replacement fails, revoked authority stays revoked. Pending
+file replacement; if replacement fails, revoked authority stays revoked.
+Registry mutations detect stale snapshots when observed and require those requests
+to retry. Their synchronous check, revocation and replacement serialize with
+approvals in the owning process only. Another process can race the check/write
+window; this is not multi-process compare-and-set or configuration locking. Pending
 and pre-dispatch failed effects are cancelled. A revoked repair returns to required
 review; re-enabling consent cannot convert it into an ordinary status update. Already dispatched requests may
 finish; Neon records/reconciles their receipts without authorizing another write.

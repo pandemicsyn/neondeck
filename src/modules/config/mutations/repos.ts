@@ -695,8 +695,9 @@ function commitRegistry(
   action: string,
   target: string,
 ): ConfigActionResult | undefined {
-  // Async discovery/read phases may race another mutation. Reject a stale snapshot,
-  // then perform revocation and atomic replacement without yielding to approvals.
+  // Detect stale discovery/read snapshots when observed. The synchronous check,
+  // revocation and replacement serialize with approvals in this process only;
+  // another process can race the check/write window (no multi-process CAS).
   const live = readRuntimeJsonSync(paths.repos, parseRepoRegistry);
   if (!isDeepStrictEqual(live, before))
     return failResult(action, paths, [paths.repos], {

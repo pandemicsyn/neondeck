@@ -1,6 +1,14 @@
 import * as v from 'valibot';
 const str = v.string();
-const text = v.pipe(str, v.minLength(1), v.maxLength(8000));
+const text = v.pipe(
+  str,
+  v.minLength(1),
+  v.maxLength(8000),
+  v.check(
+    (body) => body.trim().length > 0,
+    'Body must contain non-whitespace text',
+  ),
+);
 export const writebackApprovalSchema = v.strictObject({
   requestKey: v.pipe(str, v.minLength(1), v.maxLength(240)),
   expectedVersion: v.number(),

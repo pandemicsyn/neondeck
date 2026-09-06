@@ -228,7 +228,21 @@ function saveComment(
     comment.user?.id ?? null,
     comment.updated_at,
   ]);
-  const changed = !prior || prior.deleted || prior.fingerprint !== fingerprint;
+  // Upgrade only pre-identity fingerprints. Once a numeric identity is known,
+  // changing it is a real revision even if the login and body are unchanged.
+  const legacyEquivalent =
+    prior?.authorId === null &&
+    prior.body === comment.body &&
+    prior.author === (comment.user?.login ?? 'deleted-user') &&
+    prior.remoteUpdatedAt === comment.updated_at &&
+    prior.fingerprint ===
+      githubDigest([
+        comment.body,
+        comment.user?.login ?? 'deleted-user',
+        comment.updated_at,
+      ]);
+  const changed =
+    !prior || (prior.fingerprint !== fingerprint && !legacyEquivalent);
   const row: CommentRecord = {
     id,
     workId,
