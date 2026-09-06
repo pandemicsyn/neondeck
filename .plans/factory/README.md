@@ -12,7 +12,7 @@ their “not merged” statements describe those earlier checkpoints.
 The merged scope is **slice 1: intake to a human-released queue**.
 Slice 2 adds an opt-in Codex CLI handoff from that exact release to a retained
 candidate for human review. Its implementation is reviewed and verified locally;
-merge remains blocked by live slice 1 acceptance. This work does not build a coding agent.
+the operator authorized stack merge, with real Codex acceptance still pending after merge. This work does not build a coding agent.
 
 - [Slice 2 implementation and acceptance plan](SLICE_2_IMPLEMENTATION_PLAN.md):
   brief-to-candidate scope, stacked delivery, mockdex and acceptance.

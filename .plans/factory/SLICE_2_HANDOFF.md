@@ -1,6 +1,6 @@
 # Slice 2 local implementation handoff
 
-**Live Slice 1 acceptance and real Codex smoke both remain PENDING and block every Slice 2 merge.** Complete and record operator/manager acceptance for the separate [live Slice 1 checklist](SLICE_2_IMPLEMENTATION_PLAN.md#mandatory-merge-gate-live-slice-1-acceptance) and [real Codex smoke checklist](SLICE_2_IMPLEMENTATION_PLAN.md#mandatory-merge-gate-real-codex-smoke). Nothing in this handoff clears either gate.
+**Current decision (2026-09-06): Slice 1 is operator-accepted with unchecked cases deferred; the user authorized stack merge after the acceptance updates are integrated.** Real Codex acceptance is **PENDING, NOT RUN**, as a post-merge obligation. See the [Slice 1 acceptance decision](SLICE_2_ACCEPTANCE.md#slice-1-acceptance-decision) and [Slice 2 acceptance after merge](SLICE_2_ACCEPTANCE.md#slice-2-acceptance-after-merge) for the superseded merge-gate history, evidence boundaries and deferred cases. This decision does not authorize live tests.
 
 ## Delivered scope
 
@@ -17,7 +17,7 @@ The Factory workbench exposes readiness/configuration, newest-first attempt hist
 | agent/factory-s2-02-codex     | Local host, Codex CLI adapter, immutable evidence, launch/cancel gate and test-only mockdex.                   |
 | agent/factory-s2-03-workbench | Released-brief dispatch, guarded worktrees/diffs, API/UI, issue status, integration coverage and this handoff. |
 
-The manager used the repository's official `gh stack` workflow. Implementers used isolated worktrees; two dedicated independent static reviewers inspected the final candidates and fixes before PR publication. The manager checked product/plan adherence. The required gitleaks pre-commit hook must pass on every commit; it is never bypassed. The stack was initially published as draft PRs and subsequently marked ready at the user's request. Both merge gates remain pending and must be repeated in each PR. Remote CI and feedback are checked separately and are not asserted complete by this document.
+The manager used the repository's official `gh stack` workflow. Implementers used isolated worktrees; two dedicated independent static reviewers inspected the final candidates and fixes before PR publication. The manager checked product/plan adherence. The required gitleaks pre-commit hook must pass on every commit; it is never bypassed. The stack was initially published as draft PRs and subsequently marked ready at the user's request. At that publication checkpoint both merge gates were pending; the later operator decision in the acceptance record supersedes those merge conditions. Remote CI and feedback are checked separately and are not asserted complete by this document.
 
 ## Initial local verification checkpoint
 
@@ -37,15 +37,15 @@ The corrections for all 13 review comments across PRs #391–#394 passed two ind
 
 Cumulative `npm run verify` passed on Node 26.4.0: **2,156 tests** (1,981 unit, 47 Git, 128 integration), lint, import layers, migration consistency, TypeScript, dashboard/server/docs builds, package manifest and installed-package smoke, and formatting. The stricter expiry schema exposed one old writeback fixture with a date-only timestamp; correcting that fixture retained all assertions and production validation. The host suite now has 34 actual local-process tests, including shutdown grace beyond five seconds and no-write checks for both checkout roots. Provider execution remains synthetic/mockdex only.
 
-This checkpoint supersedes the initial local counts for the feedback candidate. The existing stacked PRs remain ready for review; publication and final-head GitHub CI are checked separately. Required commit-hook and range secret scans remain mandatory. Both live acceptance merge gates remain **PENDING**; this checkpoint does not authorize a merge or clear either gate.
+This checkpoint supersedes the initial local counts for the feedback candidate. The existing stacked PRs remain ready for review; publication and final-head GitHub CI are checked separately. Required commit-hook and range secret scans remain mandatory. At this historical checkpoint both live acceptance merge gates remained **PENDING**. The later operator decision supersedes those merge conditions; it does not change the test outcomes or establish real Codex acceptance.
 
 ## Explicit limits and next acceptance
 
-- Real Codex 0.150.1 authentication/model behavior remains untested here. A real smoke through the local adapter is mandatory before any Slice 2 PR merges, separately from live Slice 1 acceptance. No real provider, SSH or deployment exercise was performed or is authorized by this documentation correction.
-- Slice 2 Linux process observations, VM deployment and remote-host acceptance remain later work. This does not defer either merge gate, including the separate live Slice 1 deployment/routing/recovery checklist.
+- Real Codex 0.150.1 authentication/model behavior remains untested here. A real smoke through the local adapter remains a post-merge acceptance obligation under the operator's subsequent merge authorization. No real provider, SSH or deployment exercise was performed or is authorized by this documentation correction.
+- Slice 2 Linux process observations, VM deployment and remote-host acceptance remain later work. Keep that later scope separate from the local Codex obligation and the unchecked Slice 1 cases explicitly deferred by the operator.
 - Local POSIX process isolation assumes trusted repositories; it is not an OS sandbox. Remote execution hosts remain later work.
 - Executable Git clean/process filters and submodules are unsupported for initial evidence collection. Uncertainty retains/quarantines ownership instead of running unowned subprocesses or discarding work.
 - A shared host gate orders cancellation and provider authorization. Database cancellation is recorded first; no atomic transaction across SQLite, filesystem and process creation is claimed. Stale gates are not stolen.
 - All factory worktrees remain retained. Seven-day cleanup attention and 30-day evidence dates are metadata, not automatic deletion authority. Explicit reviewed discard, independent checks/repair, PR publishing and remote workers remain later slices. No automatic retry or resume-last-session exists.
 
-Use the [operator guide](SLICE_2_OPERATOR.md) for private setup and controls. Keep credentials, hostnames, SSH configuration and raw private operational evidence outside this public repository and PRs. Before any Slice 2 merge, record successful live Slice 1 acceptance and real Codex smoke, with operator/manager acceptance and any failures fixed and rechecked.
+Use the [operator guide](SLICE_2_OPERATOR.md) for private setup and controls. Keep credentials, hostnames, SSH configuration and raw private operational evidence outside this public repository and PRs. Record the post-merge real Codex result using the [acceptance template](SLICE_2_ACCEPTANCE.md#sanitized-evidence-template), with operator/manager signoff, failures fixed and rechecked, and any unperformed cases still explicit.
