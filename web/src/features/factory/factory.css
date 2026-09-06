@@ -343,3 +343,17 @@
 .factory-github select {
   max-width: 100%;
 }
+
+.factory-writeback-preview,
+.factory-writeback-effect {
+  border-top: 1px solid var(--line);
+  padding-block: 0.75rem;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.factory-writeback textarea {
+  min-height: 8rem;
+}
+.factory-writeback button {
+  white-space: normal;
+}

@@ -129,3 +129,85 @@ it('rejects a selected record that fails the full comment schema', () => {
     expect(() => pendingGitHubComments(db, workId)).toThrow(v.ValiError);
   });
 });
+
+it('skips confirmed and awaiting echoes before selecting external, legacy and deletion context', () => {
+  dbRun(setup.paths, (db) => {
+    putComment(db, comment('confirmed', { echo: 'confirmed' }));
+    putComment(db, comment('awaiting', { echo: 'awaiting-receipt' }));
+    putComment(db, comment('external', { echo: 'external' }));
+    const legacy = comment('legacy');
+    // Persist the old format directly, omitting the schema output defaults.
+    db.prepare(
+      'INSERT INTO factory_github_comments(id,work_id,record) VALUES(?,?,?)',
+    ).run(
+      legacy.id,
+      workId,
+      JSON.stringify({ ...legacy, echo: undefined, authorId: undefined }),
+    );
+    putComment(db, comment('deletion', { echo: 'external', deleted: true }));
+
+    expect(pendingGitHubComments(db, workId).map((row) => row.id)).toEqual([
+      'external',
+    ]);
+    putComment(db, comment('external', { intentId: 'external-intent' }));
+    expect(pendingGitHubComments(db, workId)).toEqual([
+      expect.objectContaining({
+        id: 'legacy',
+        echo: 'external',
+        authorId: null,
+      }),
+    ]);
+    putComment(db, comment('legacy', { intentId: 'legacy-intent' }));
+    expect(pendingGitHubComments(db, workId)).toEqual([
+      expect.objectContaining({
+        id: 'deletion',
+        echo: 'external',
+        deleted: true,
+      }),
+    ]);
+    putComment(
+      db,
+      comment('deletion', { deleted: true, intentId: 'deletion-intent' }),
+    );
+    expect(pendingGitHubComments(db, workId)).toEqual([]);
+    // Queue traversal does not resolve, mark handled or otherwise mutate echoes.
+    const echoes = db
+      .prepare(
+        "SELECT record FROM factory_github_comments WHERE id IN ('confirmed','awaiting') ORDER BY rowid",
+      )
+      .all()
+      .map((row) =>
+        v.parse(
+          commentRecordSchema,
+          JSON.parse(v.parse(v.string(), row.record)),
+        ),
+      );
+    expect(echoes).toEqual([
+      comment('confirmed', { echo: 'confirmed' }),
+      comment('awaiting', { echo: 'awaiting-receipt' }),
+    ]);
+  });
+});
+
+it('does not decode excluded echo rows ahead of an eligible external comment', () => {
+  dbRun(setup.paths, (db) => {
+    const insert = db.prepare(
+      'INSERT INTO factory_github_comments(id,work_id,record) VALUES(?,?,?)',
+    );
+    // These would fail full schema decoding; SQL must exclude both before LIMIT.
+    insert.run(
+      'confirmed-poison',
+      workId,
+      JSON.stringify({ echo: 'confirmed', intentId: null }),
+    );
+    insert.run(
+      'awaiting-poison',
+      workId,
+      JSON.stringify({ echo: 'awaiting-receipt', intentId: '' }),
+    );
+    putComment(db, comment('external'));
+    expect(pendingGitHubComments(db, workId).map((row) => row.id)).toEqual([
+      'external',
+    ]);
+  });
+});

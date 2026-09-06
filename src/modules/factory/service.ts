@@ -747,3 +747,33 @@ export function markGitHubAttention(
     id: current.source.remote?.connectionId ?? 'github',
   });
 }
+
+/** Revoke retained authority before a meaningful typed registry mutation. */
+export function invalidateFactoryRepoContext(
+  repoId: string,
+  paths: RuntimePaths,
+) {
+  dbRun(paths, (db) => {
+    const items = records(
+      db,
+      'SELECT record FROM factory_work_items',
+      workSchema,
+    ).filter((item) => item.repoId === repoId);
+    for (const item of items) {
+      const current = detail(db, item.id, paths);
+      current.source.version++;
+      current.source.attention ??=
+        'Repository context changed. Review and save a new draft before release.';
+      withdraw(db, current.releases, 'repository-context-changed');
+      putWork(db, current.work);
+      db.prepare('UPDATE factory_sources SET record=? WHERE id=?').run(
+        JSON.stringify(current.source),
+        current.source.id,
+      );
+      audit(db, item.id, 'repository-context-changed', {
+        kind: 'source',
+        id: 'repo-registry',
+      });
+    }
+  });
+}

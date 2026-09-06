@@ -1,3 +1,4 @@
+import { githubDigest, putComment } from './github-store';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { fixture, connection, issue } from './testing/github-fixture';
 import {
@@ -511,6 +512,9 @@ it('pages only the requested task comments and rejects invalid cursors', async (
         remoteId: String(n),
         body: 'body',
         author: 'synthetic',
+        authorId: 55,
+        echo:
+          n === 23 ? 'confirmed' : n === 22 ? 'awaiting-receipt' : 'external',
         remoteUpdatedAt: issue.updated_at,
         fingerprint: String(n),
         version: 1,
@@ -526,6 +530,9 @@ it('pages only the requested task comments and rejects invalid cursors', async (
   expect(factoryGitHubState(setup.paths)).not.toHaveProperty('comments');
   const first = factoryGitHubComments(workId, undefined, setup.paths);
   expect(first.comments).toHaveLength(10);
+  expect(first.comments[0].echo).toBe('confirmed');
+  expect(first.comments[1].echo).toBe('awaiting-receipt');
+  expect(first.comments[0].authorId).toBe(55);
   expect(first.comments[0].remoteId).toBe('23');
   const second = factoryGitHubComments(workId, first.nextCursor!, setup.paths);
   const third = factoryGitHubComments(workId, second.nextCursor!, setup.paths);
@@ -568,3 +575,140 @@ it('integrated pause/reopen preserves GitHub source and requires a fresh release
   expect(reopened.releases[0].withdrawnAt).not.toBeNull();
   expect(release().eligible).toBe(true);
 });
+
+it.each(['missing', 'null'] as const)(
+  'upgrades an unchanged legacy fingerprint with %s authorId without invalidating release',
+  async (identity) => {
+    const comment = {
+      id: 91,
+      body: 'Existing external context',
+      user: { login: 'external-author', id: 55 },
+      created_at: issue.updated_at,
+      updated_at: issue.updated_at,
+    };
+    vi.mocked(io.comments).mockResolvedValue({
+      items: [comment],
+      hasNext: true,
+    });
+    await tick();
+    const prior = factoryGitHubComments(
+      current().work.id,
+      undefined,
+      setup.paths,
+    ).comments[0];
+    const { authorId: _authorId, ...legacy } = prior;
+    dbRun(setup.paths, (db) =>
+      db.prepare('UPDATE factory_github_comments SET record=? WHERE id=?').run(
+        JSON.stringify({
+          ...legacy,
+          ...(identity === 'null' ? { authorId: null } : {}),
+          fingerprint: githubDigest([
+            comment.body,
+            comment.user.login,
+            comment.updated_at,
+          ]),
+          intentId: 'retained-context-intent',
+        }),
+        prior.id,
+      ),
+    );
+    save();
+    release();
+    const before = current();
+    await tick();
+    const updated = factoryGitHubComments(
+      current().work.id,
+      undefined,
+      setup.paths,
+    ).comments[0];
+    expect(updated).toMatchObject({
+      authorId: 55,
+      version: prior.version,
+      intentId: 'retained-context-intent',
+      echo: 'external',
+      fingerprint: githubDigest([
+        comment.body,
+        comment.user.login,
+        55,
+        comment.updated_at,
+      ]),
+    });
+    expect(current().work.version).toBe(before.work.version);
+    expect(current().releases).toEqual(before.releases);
+    expect(current().eligible).toBe(true);
+  },
+);
+
+it.each([
+  'identity',
+  'body',
+  'login',
+  'date',
+  'established-legacy-digest',
+] as const)(
+  'does not suppress real %s changes as legacy fingerprint upgrades',
+  async (change) => {
+    const comment = {
+      id: 92,
+      body: 'Existing context',
+      user: { login: 'external-author', id: 55 },
+      created_at: issue.updated_at,
+      updated_at: issue.updated_at,
+    };
+    vi.mocked(io.comments).mockResolvedValue({
+      items: [comment],
+      hasNext: true,
+    });
+    await tick();
+    const prior = factoryGitHubComments(
+      current().work.id,
+      undefined,
+      setup.paths,
+    ).comments[0];
+    dbRun(setup.paths, (db) =>
+      putComment(db, {
+        ...prior,
+        authorId:
+          change === 'identity' || change === 'established-legacy-digest'
+            ? 55
+            : null,
+        fingerprint:
+          change === 'identity'
+            ? prior.fingerprint
+            : githubDigest([
+                comment.body,
+                comment.user.login,
+                comment.updated_at,
+              ]),
+        intentId: 'retained-context-intent',
+      }),
+    );
+    save();
+    release();
+    const next = {
+      ...comment,
+      body: change === 'body' ? 'Changed context' : comment.body,
+      user: {
+        login: change === 'login' ? 'different-author' : comment.user.login,
+        id:
+          change === 'identity' || change === 'established-legacy-digest'
+            ? 66
+            : 55,
+      },
+      updated_at:
+        change === 'date' ? '2026-09-02T00:00:00Z' : comment.updated_at,
+    };
+    vi.mocked(io.comments).mockResolvedValue({ items: [next], hasNext: true });
+    await tick();
+    expect(
+      factoryGitHubComments(current().work.id, undefined, setup.paths)
+        .comments[0],
+    ).toMatchObject({
+      version: prior.version + 1,
+      intentId: null,
+      echo: 'external',
+    });
+    expect(current().eligible).toBe(false);
+    expect(current().releases.at(-1)?.withdrawnAt).not.toBeNull();
+  },
+);

@@ -1,6 +1,13 @@
 # Slice 1 — Intake, collaborative shaping, and human release
 
-Status: implementation authorized; first delegation being prepared.
+Historical acceptance: the original slice 1 stack was reviewed through feature
+`a0c0cf31c8a6693863e1f975eb61f8ff1bb85fa3` and documentation head
+`ff3a69033ae866aaf47dd0a6c3384544e5eb1e6a`. Those reviews and verification apply
+to those candidates. See the [handoff ledger](SLICE_1_HANDOFF.md) for incorporated
+feedback parents and [PR #387](https://github.com/pandemicsyn/neondeck/pull/387)
+for current feedback reviews and CI. Each publication requires its own verification,
+two clean dedicated static reviews and manager acceptance. Nothing is merged,
+deployed or live-accepted.
 
 This implements **slice 1: Intake to inbox** from the
 [software factory proposal](../research/software-factory-proposal.html#rollout).

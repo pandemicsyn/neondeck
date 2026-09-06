@@ -120,8 +120,9 @@ spec, release, publish or impersonate `local-operator`. Only a subsequent explic
 human planning request or human draft save adopts changes. Comments do not retriage
 already-shaped tasks. Refresh captured planning context explicitly when it is stale.
 
-Outbound effects and echo suppression belong to increment 5. Future suppression
-must match confirmed owned comment ID and revision, not all bot authors or a marker.
+The increment 5 candidate adds [opt-in publishing and echo controls](INCREMENT_5_OPERATOR.md).
+Suppression matches confirmed owned comment ID, actor identity, body and revision,
+not all bot authors or a marker. Pending receipt candidates remain visibly distinct.
 
 ## Validation and evidence
 
