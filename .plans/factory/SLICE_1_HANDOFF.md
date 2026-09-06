@@ -9,7 +9,7 @@ specific accepted candidates, not subsequent feedback revisions.
 The feedback stack incorporates accepted parents `6433b10e` (#382),
 `192e7cf7` (#383), `5d773582` (#384), `f14b45b4` (#385), and
 `bb4266f8289b650c40d58c04063c19158e1f752f` (#386), using parent merges that
-preserve each branch's history. Current feedback review and CI evidence belongs to
+preserve each branch's history. Historical feedback review and CI evidence belongs to
 [PR #382](https://github.com/pandemicsyn/neondeck/pull/382),
 [PR #383](https://github.com/pandemicsyn/neondeck/pull/383),
 [PR #384](https://github.com/pandemicsyn/neondeck/pull/384),
@@ -19,8 +19,11 @@ preserve each branch's history. Current feedback review and CI evidence belongs 
 Historical acceptance does not approve later changes. Every publication requires
 verification, two clean independent static reviews and manager acceptance.
 
-Nothing is merged, deployed or live-accepted. Keep these plans active through
-landing and operational acceptance; local code completion does not archive them.
+Current status (2026-09-06): PRs #382–#387 and #389 are merged into main
+`13049498d457257626af80483d68e0aa8110ad68`. Final prior verification passed
+1,968 tests and 63 CI checks. The VM built this commit and completed the bounded
+live exercise below. Slice 1 remains active: live acceptance is partial, with zero
+releases. Earlier candidate reviews and test counts remain historical evidence.
 
 Read the [slice contract](SLICE_1_IMPLEMENTATION_PLAN.md) before starting.
 The coordinating assistant acts as **dev manager and reviewer**. Implementation
@@ -249,7 +252,9 @@ privately when required; local implementation need not wait for it.
 
 ## Progress ledger
 
-This ledger records original historical acceptance through increment 5.
+This table records original historical acceptance through increment 5, before landing.
+Its unmerged/deployment-pending statements describe that historical snapshot only;
+the September 6 record below supersedes them for current status.
 The incorporated feedback parents and current review/CI links are listed above.
 Update with real evidence as work proceeds. Do not infer “implemented” from branch
 creation, “verified” from a claimed plan, or “deployed” from passing local tests.
@@ -261,7 +266,7 @@ creation, “verified” from a claimed plan, or “deployed” from passing loc
 | 2 — Model planning             | Historical acceptance                                 | `agent/factory-s1-02-planning`; head `3210fbb00eddb54e2873b1e44bfea9eea012b9d5`, base `agent/factory-s1-01-intake`                          | #384                                                     | Both dedicated static reviews and manager clean. V3 full verification: 1,623 tests on identical runtime source; final README-only clarification checked separately. All six GitHub checks pass at `3210fbb0`; not merged/deployed.                                           |
 | 3 — Human workbench            | Historical acceptance                                 | `agent/factory-s1-03-shaping`; head `8809958947531e3c7fa727accae4aab3f3073f57`, base `agent/factory-s1-02-planning`                         | #385                                                     | Both dedicated reviews and manager clean; 1,632-test verification followed by CSS-only wrap correction and rebuilt screenshots; all six GitHub checks pass. Not merged/deployed.                                                                                             |
 | 4 — GitHub ingress             | Historical acceptance                                 | `agent/factory-s1-04-github-ingress`; head `836dfe24dbb6b790865523b37f68d2b64ec9035c`, base `agent/factory-s1-03-shaping`                   | #386                                                     | Both dedicated static reviews and manager clean. V1 full verification: 1,667 tests; V2 focused mapping regressions, 1,531-unit-test check, server rebuild and unchanged-UI proof. All six GitHub checks pass. Not merged/deployed.                                           |
-| 5 — GitHub status              | Historical acceptance; current review/CI in PR        | `agent/factory-s1-05-github-status`; reviewed feature `a0c0cf31c8a6693863e1f975eb61f8ff1bb85fa3`, base `agent/factory-s1-04-github-ingress` | [#387](https://github.com/pandemicsyn/neondeck/pull/387) | Both independent V4 static reviews and manager accepted. Full verification: 1,735 tests; focused: 99. Node 26 builds/package/CLI smoke passed; UI hash carry verified. Mandatory gitleaks hook clean; six screenshots uploaded and verified by manager. Not merged/deployed. |
+| 5 — GitHub status              | Historical acceptance; review/CI in PR                | `agent/factory-s1-05-github-status`; reviewed feature `a0c0cf31c8a6693863e1f975eb61f8ff1bb85fa3`, base `agent/factory-s1-04-github-ingress` | [#387](https://github.com/pandemicsyn/neondeck/pull/387) | Both independent V4 static reviews and manager accepted. Full verification: 1,735 tests; focused: 99. Node 26 builds/package/CLI smoke passed; UI hash carry verified. Mandatory gitleaks hook clean; six screenshots uploaded and verified by manager. Not merged/deployed. |
 | Full slice / deployed exercise | Original local acceptance; live acceptance incomplete | Accepted feature `a0c0cf31c8a6693863e1f975eb61f8ff1bb85fa3`; V4 identity below                                                              | #383–#387                                                | Original final-stack local verification passed. Authorized GitHub test issue, final live provider conversation, VM restart and anonymous external exposure checks remain pending operator authorization. No merge or deployment.                                             |
 
 Accepted V4 review identity: `8fe4f4d530cad8c775b55de0af34e7efa9ad178888cc70122a47950c0d1a7264`.
@@ -281,9 +286,61 @@ evidence covers manual and GitHub shaping through exact human release with no
 coding side effects; it does not establish live-provider acceptance.
 
 On completion, update `.plans/ROADMAP.md` and this ledger with the actual remaining
-limits. Preserve the plans as active while review/landing is underway; archive under
-the planning-index policy once complete. Next work is slice 2, not an unplanned
-extension of the last PR into a coding agent implementation.
+limits. Preserve the plans as active through the remaining live acceptance; archive under
+the planning-index policy only once complete. Finish slice 1 acceptance before
+starting slice 2 coding execution.
+
+### September 6, 2026 — Merged build and partial live acceptance
+
+This sanitized record uses manager-observed live results, separate from the
+historical fixture evidence above. PRs #382–#387 and
+[#389](https://github.com/pandemicsyn/neondeck/pull/389) landed on main
+`13049498d457257626af80483d68e0aa8110ad68`; final prior verification passed
+1,968 tests and 63 CI checks. These checks were not rerun for this documentation
+update. The acceptance VM built that commit with Node 26.5 and Flue 2.0.3.
+
+- **Home and database boundary:** The original Flue database used format 4,
+  incompatible with the runtime's supported format 1. The original database was
+  preserved. A fresh isolated acceptance home was seeded with configured models
+  and environment; only the existing OAuth credential was privately transferred
+  into the fresh app database. This proves neither an existing-home upgrade nor
+  migration of old conversations.
+- **Models:** The configured utility and planning models succeeded. The CLI was
+  not used by Slice 1.
+- **Admission:** A real scoped GitHub issue webhook returned HTTP 202 externally
+  and admitted one task. Synthetic signed checks against direct local ingress
+  returned 401 for a bad signature, 202 for an identical replay, and 409 for
+  changed bytes under the same delivery identity. VM self-HTTPS hairpin access
+  failed, so those synthetic checks do not prove the external HTTPS path.
+- **Model planning:** The live model read repository tools. An invalid
+  `proposeSpec` call was rejected; the model corrected it and saved model draft v2.
+  This is model repair evidence, not human iteration or version-comparison proof.
+- **Writeback:** With factory writeback off, zero comments were created. Opt-in
+  created one managed status comment; later updates reused the same comment
+  identity. The restart check confirmed that identity remained with no duplicate;
+  it did not establish a new post-restart mutation.
+- **Restart and replay:** A graceful service restart retained the same work item,
+  revisions, triage and planning session. Replaying the original planning envelope
+  reused the same intent/session without an extra revision. Zero releases were
+  recorded. This does not establish crash-window or post-release recovery.
+- **Anonymous public routing:** After explicit proxy-port selection, public JSON
+  health returned 200; `/`, `/factory`, `/api/runtime/status`,
+  `/api/local-api/session`, `/api/factory/state`, `/api/flue`, `/reports` and
+  `/attachments` returned 404. Initial automatic proxy selection had selected the
+  private port and exposed SPA HTML; explicit selection corrected the routing.
+  These observations cover the selected route probes, not all ports or all
+  authentication vectors.
+
+After the rehearsal, the operator requested shutdown. Both the application and
+reverse-proxy services were stopped and disabled; application listeners were
+confirmed closed. Test state was preserved for a future authorized continuation.
+
+Still pending: live human iteration, version comparison and exact-version release;
+post-release recovery and revocation; attributed replies, approved questions,
+writeback repair and missed-delivery recovery; and full manual-source live
+acceptance. Keep Slice 1 active. Coding execution belongs to a subsequent slice.
+Raw evidence remains private: do not publish deployment hostnames, private repo
+identity/URLs, private paths/IPs, issue/work/session identifiers or credentials.
 
 ### Increment 2 implementation references
 
