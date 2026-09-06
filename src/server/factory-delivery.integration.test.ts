@@ -899,7 +899,17 @@ const child=spawn(process.execPath,[${JSON.stringify(resolve('scripts/mockdex.mj
         },
         paths,
       );
-      expect(revoked.nextAction).toBe('human-authority');
+      expect(revoked.pipeline.interventions).toContainEqual(
+        expect.objectContaining({
+          kind: 'authority',
+          reason: 'Human revoked delivery: Synthetic operator stop',
+          resolution: null,
+        }),
+      );
+      // The first unresolved intervention retains projection priority.
+      expect(revoked.nextAction).toBe(
+        mode === 'two-repairs' ? 'human-budget' : 'human-authority',
+      );
       expect(postCount).toBe(1);
     } finally {
       const active = getActiveCodingRun(paths);
