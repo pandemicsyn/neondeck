@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
+import * as v from 'valibot';
 import { fixture, issue } from './testing/github-fixture';
 import { dbRun, factoryState, getFactoryWork } from './service';
 import {
@@ -7,6 +8,7 @@ import {
 } from './github-reconcile';
 import {
   githubDigest,
+  commentRecordSchema,
   putComment,
   putDelivery,
   acceptGitHubDelivery,
@@ -130,19 +132,22 @@ function context(
     setup.paths,
   );
   dbRun(setup.paths, (db) =>
-    putComment(db, {
-      id,
-      workId,
-      remoteId: '11',
-      body: 'Context',
-      author: 'external',
-      remoteUpdatedAt: issue.updated_at,
-      fingerprint: githubDigest(['Context', 'external', issue.updated_at]),
-      version,
-      deleted: false,
-      seenScan: '',
-      intentId: intent.id,
-    }),
+    putComment(
+      db,
+      v.parse(commentRecordSchema, {
+        id,
+        workId,
+        remoteId: '11',
+        body: 'Context',
+        author: 'external',
+        remoteUpdatedAt: issue.updated_at,
+        fingerprint: githubDigest(['Context', 'external', issue.updated_at]),
+        version,
+        deleted: false,
+        seenScan: '',
+        intentId: intent.id,
+      }),
+    ),
   );
   return intent.id;
 }
