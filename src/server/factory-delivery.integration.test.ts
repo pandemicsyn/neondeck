@@ -8,7 +8,7 @@ import {
   rmSync,
   writeFileSync,
 } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { homedir, tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { afterEach, expect, it, vi } from 'vitest';
@@ -755,12 +755,23 @@ const child=spawn(process.execPath,[${JSON.stringify(resolve('scripts/mockdex.mj
         expect(requireDelivery(pipelineId, paths).pr).toEqual(first.pr);
       }
       const delivered = requireDelivery(pipelineId, paths);
-      expect(
-        v.parse(
-          deliveryDetailSchema,
-          factoryDeliveryDetail(requireDelivery(pipelineId, paths), paths),
-        ).pipeline,
-      ).toEqual(delivered);
+      const exposed = v.parse(
+        deliveryDetailSchema,
+        factoryDeliveryDetail(requireDelivery(pipelineId, paths), paths),
+      ).pipeline;
+      // The operator projection redacts local paths in progress instructions.
+      // All admission identities and accounting must remain exactly durable.
+      expect({ ...exposed, progress: delivered.progress }).toEqual(delivered);
+      const identities = (p: DeliveryPipeline) =>
+        p.progress.assessments.map(
+          ({ instructions: _instructions, ...assessment }) => assessment,
+        );
+      expect(identities(exposed)).toEqual(identities(delivered));
+      for (const assessment of exposed.progress.assessments) {
+        expect(assessment.instructions.length).toBeGreaterThan(0);
+        expect(assessment.instructions).not.toContain(homedir());
+      }
+
       expect(postCount).toBe(1);
       expect(delivered.pr?.number).toBe(7);
       expect(delivered.effects.every((e) => e.state === 'delivered')).toBe(
