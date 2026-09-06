@@ -1080,3 +1080,17 @@ Use this format:
 - Follow-up: Implement the Slice 3.1 plan with existing Flue/runtime and human
   planning surfaces, finite judge calls inside the same grant budget, and no new
   execution authority. This scheduling update adds no Slice 3 merge gate.
+
+## 2026-09-06 — Slice 3.1 Keeps Human Pauses After Uncertain Assessment
+
+- Roadmap item: Software Factory Slice 3.1 / progress review recovery.
+- Decision: Once an uncertain or invalid assessment has raised a human
+  intervention, later read-only recovery can settle known usage but does not
+  automatically restore permission to repair. A crash with a recorded submission
+  and no intervention can recover a valid on-time decision after its original
+  deadline; recovery grants no new model execution window.
+- Reason: Accounting reconciliation should not silently override a visible human
+  pause or a subsequent authority decision. The prospective repair ordinal remains
+  consumed and no replacement judge is admitted.
+- Follow-up: Use the existing explicit planning/release/consent flow. Same-grant
+  budget extension and an intervention override action remain outside this slice.

@@ -32,8 +32,8 @@ export function FactoryDeliveryBudget({ detail }: { detail: DeliveryDetail }) {
       </dl>
       <p>
         Up to 2 repairs and 3 hours cumulative, including initial coding,
-        verification and review. Each attempt is limited to 45 minutes. Unknown
-        in-flight usage remains reserved.
+        verification, review and progress assessment. Each attempt is limited to
+        45 minutes. Unknown in-flight usage remains reserved.
       </p>
     </section>
   );

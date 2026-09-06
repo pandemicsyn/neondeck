@@ -1,3 +1,5 @@
+import { FactoryDeliveryProgress } from './FactoryDeliveryProgress';
+import { getFactoryDeliveryProgressEvidence } from '../../api/factory-progress';
 import { FactoryDeliveryCommits } from './FactoryDeliveryCommits';
 import {
   triggeringDeliveryFeedback,
@@ -60,18 +62,23 @@ export function FactoryDeliveryDetail({
     setError('');
     try {
       const records = deliveryDiscussionRecords(detail.data);
+      const progress = await Promise.all(
+        detail.data.pipeline.progress.assessments.map((assessment) =>
+          getFactoryDeliveryProgressEvidence(id, assessment.assessmentId),
+        ),
+      );
       const content = await Promise.all(
         records.map((record) => getFactoryDeliveryEvidence(id, record.id)),
       );
       if (
-        content.some(
+        [...content, ...progress].some(
           (item) =>
             JSON.stringify(item.currentRevision) !==
             JSON.stringify(detail.data.pipeline.revision),
         )
       )
         throw new Error('Delivery revision changed while reading evidence.');
-      onDiscuss(deliveryPlanningEvidence(detail.data, content));
+      onDiscuss(deliveryPlanningEvidence(detail.data, content, progress));
     } catch {
       setError(
         'Evidence content could not be loaded. Retry discussion after inspecting the evidence; no incomplete briefing was sent.',
@@ -198,6 +205,11 @@ export function FactoryDeliveryDetail({
           )}
         </section>
       )}
+      <FactoryDeliveryProgress
+        detail={detail.data}
+        disabled={disabled}
+        onDiscuss={onDiscuss ? () => void discuss() : undefined}
+      />
       <FactoryDeliveryRevision
         revision={p.revision}
         configFingerprint={p.authorization.configFingerprint}
