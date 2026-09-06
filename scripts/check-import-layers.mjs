@@ -60,6 +60,7 @@ const compatibilityShimLayers = new Map([
 // Flue 2 admissions must pass the concrete agent function to init()/dispatch().
 // Keep these reverse edges explicit and narrow instead of relaxing module layers.
 const allowedLayerBridges = new Set([
+  'src/modules/factory/planning-dispatch.ts -> src/agents/factory-planner.ts',
   'src/modules/autopilot/owner/dispatch.ts -> src/agents/pr-autopilot-owner.ts',
   'src/modules/autopilot/owner/loop.ts -> src/agents/pr-autopilot-owner.ts',
   'src/modules/autopilot/owner/settlement.ts -> src/agents/pr-autopilot-owner.ts',

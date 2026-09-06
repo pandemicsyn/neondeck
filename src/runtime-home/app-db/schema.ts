@@ -1531,3 +1531,36 @@ export const factoryAudit = sqliteTable('factory_audit', {
   actor: text('actor').notNull(),
   createdAt: text('created_at').notNull(),
 });
+
+export const factoryPlanningBindings = sqliteTable(
+  'factory_planning_bindings',
+  {
+    workId: text('work_id')
+      .primaryKey()
+      .references(() => factoryWorkItems.id),
+    sessionId: text('session_id')
+      .notNull()
+      .unique()
+      .references(() => chatSessions.id),
+    record: text('record').notNull(),
+  },
+);
+export const factoryPlanningIntents = sqliteTable(
+  'factory_planning_intents',
+  {
+    id: text('id').primaryKey(),
+    workId: text('work_id')
+      .notNull()
+      .references(() => factoryWorkItems.id),
+    requestKey: text('request_key').notNull(),
+    record: text('record').notNull(),
+  },
+  (table) => [unique().on(table.workId, table.requestKey)],
+);
+export const factoryPlanningEffects = sqliteTable('factory_planning_effects', {
+  id: text('id').primaryKey(),
+  intentId: text('intent_id')
+    .notNull()
+    .references(() => factoryPlanningIntents.id),
+  record: text('record').notNull(),
+});

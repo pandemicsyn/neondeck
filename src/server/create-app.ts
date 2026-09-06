@@ -1,3 +1,5 @@
+import { createFactoryPlannerRoutes } from './routes/factory-planner';
+import { recoverFactoryPlanning } from '../modules/factory';
 import { createFactoryRoutes } from './routes/factory';
 import { getAgentInstance } from '@flue/runtime';
 import { createAgentRouter } from '@flue/runtime/routing';
@@ -187,6 +189,19 @@ export async function createApp(options: CreateAppOptions = {}) {
   app.route('/api', createReviewSurfaceRoutes());
   app.route('/api/github', createGitHubRoutes(paths));
 
+  app.route(
+    '/api/flue/agents/factory-planner',
+    createFactoryPlannerRoutes(paths),
+  );
+  app.use('/api/flue/agents/display-assistant/*', async (c, next) => {
+    const segment = decodeURIComponent(c.req.path.split('/')[5] ?? '');
+    if (segment.startsWith('factory-'))
+      return c.json(
+        { error: 'Use the bound factory planner conversation.' },
+        403,
+      );
+    return next();
+  });
   app.use('/api/flue/agents/display-assistant/*', displayAssistantRoute);
   app.route(
     '/api/flue/agents/display-assistant',
@@ -317,8 +332,15 @@ function startFlueRuntimeScheduler(input: FlueRuntimeServiceInput) {
   }
 }
 
-async function recoverFlueRuntimeServices(input: FlueRuntimeServiceInput) {
+export async function recoverFlueRuntimeServices(
+  input: FlueRuntimeServiceInput,
+) {
   const failures: Error[] = [];
+  await captureRuntimeStartupFailure(
+    'Factory planning recovery',
+    failures,
+    async () => recoverFactoryPlanning(input.paths),
+  );
   await captureRuntimeStartupFailure(
     'PR review submission follow-up recovery',
     failures,

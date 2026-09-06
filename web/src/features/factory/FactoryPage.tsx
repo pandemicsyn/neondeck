@@ -1,3 +1,4 @@
+import { FactoryPlanning } from './FactoryPlanning';
 import { SourceEditor } from './SourceEditor';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useRef, useState } from 'react';
@@ -187,8 +188,8 @@ export function FactoryPage() {
               </ul>
             )}
             <p className="factory-note">
-              You shape and release each task. Planning with Neon arrives in a
-              later increment.
+              Neon triages new tasks and helps shape a brief. You review and
+              release each task.
             </p>
           </aside>
           <section className="factory-main">
@@ -271,6 +272,7 @@ function TaskDetail({
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const sourceDetails = useRef<HTMLDetailsElement>(null);
+  const [workbenchView, setWorkbenchView] = useState<'chat' | 'brief'>('brief');
   const latest = detail.revisions.at(-1)!;
   async function mutate(action: string, input: unknown) {
     setBusy(true);
@@ -346,196 +348,220 @@ function TaskDetail({
           )}
         </div>
       )}
-      {!editor ? (
-        <>
-          <div className="factory-toolbar">
-            <h3>Draft v{latest.version}</h3>
-            <button
-              disabled={busy || detail.work.lifecycle === 'closed'}
-              onClick={beginEdit}
-            >
-              Edit draft
-            </button>
-          </div>
-          <MarkdownMessage>{renderFactorySpec(latest.spec)}</MarkdownMessage>
-        </>
-      ) : (
-        <form
-          className="factory-form"
-          onSubmit={async (event) => {
-            event.preventDefault();
-            if (
-              await mutate('spec', {
-                expectedVersion: editor.version,
-                expectedSpecVersion: editor.specVersion,
-                expectedRepoFingerprint: editor.repoFingerprint,
-                spec: editor.spec,
-              })
-            )
-              setEditor(null);
-          }}
+      <nav className="factory-workbench-tabs" aria-label="Task views">
+        <button
+          aria-pressed={workbenchView === 'chat'}
+          onClick={() => setWorkbenchView('chat')}
         >
-          <fieldset disabled={busy} className="factory-editor-fields">
-            <legend className="sr-only">Draft editor</legend>
-            <h3>Editing v{editor.specVersion}</h3>
-            <section className="factory-source">
-              <h3>Repository context</h3>
-              {detail.repoContext ? (
-                <>
-                  <p>
-                    Path: {detail.repoContext.path}
-                    <br />
-                    Branch: {detail.repoContext.defaultBranch}
-                  </p>
-                  <p>
-                    Configured commands:{' '}
-                    {Object.entries(detail.repoContext.commands)
-                      .map(([name, command]) => `${name}: ${command}`)
-                      .join('; ') || 'None configured'}
-                  </p>
-                </>
-              ) : (
-                <p>No registered repository selected.</p>
-              )}
-              {editor.repoFingerprint !== detail.repoFingerprint && (
-                <>
-                  <p>
-                    The repository configuration differs from this draft's
-                    reviewed context. Review the path, branch and commands above
-                    before accepting it. Your draft text stays intact.
-                  </p>
-                  <button
-                    type="button"
-                    disabled={busy}
-                    onClick={() =>
-                      setEditor({
-                        ...editor,
-                        repoFingerprint: detail.repoFingerprint,
-                      })
-                    }
-                  >
-                    Use this reviewed repository context
-                  </button>
-                </>
-              )}
-            </section>
-
-            {(
-              [
-                'outcome',
-                'scope',
-                'nonGoals',
-                'approach',
-                'constraints',
-                'assumptions',
-              ] as const
-            ).map((field) => (
-              <label key={field}>
-                {
-                  {
-                    outcome: 'Outcome',
-                    scope: 'Scope',
-                    nonGoals: 'Non-goals',
-                    approach: 'Approach (Markdown)',
-                    constraints: 'Constraints',
-                    assumptions: 'Assumptions',
-                  }[field]
-                }
-                <textarea
-                  rows={field === 'approach' ? 6 : 3}
-                  maxLength={20000}
-                  value={editor.spec[field]}
-                  onChange={(event) => change(field, event.target.value)}
-                />
-              </label>
-            ))}
-            <fieldset>
-              <legend>Acceptance criteria</legend>
-              {editor.spec.acceptanceCriteria.map((criterion, index) => (
-                <label key={criterion.id}>
-                  {criterion.id}
-                  <input
-                    required
-                    maxLength={240}
-                    value={criterion.text}
-                    onChange={(event) =>
-                      setEditor({
-                        ...editor,
-                        spec: {
-                          ...editor.spec,
-                          acceptanceCriteria:
-                            editor.spec.acceptanceCriteria.map((c, i) =>
-                              i === index
-                                ? { ...c, text: event.target.value }
-                                : c,
-                            ),
-                        },
-                      })
-                    }
-                  />
-                  <button
-                    type="button"
-                    onClick={() =>
-                      setEditor({
-                        ...editor,
-                        spec: {
-                          ...editor.spec,
-                          acceptanceCriteria:
-                            editor.spec.acceptanceCriteria.filter(
-                              (c) => c.id !== criterion.id,
-                            ),
-                        },
-                      })
-                    }
-                  >
-                    Remove {criterion.id}
-                  </button>
-                </label>
-              ))}
-              <button
-                type="button"
-                onClick={() =>
-                  setEditor({
-                    ...editor,
-                    spec: {
-                      ...editor.spec,
-                      acceptanceCriteria: [
-                        ...editor.spec.acceptanceCriteria,
-                        {
-                          id: `ac-${crypto.randomUUID().slice(0, 8)}`,
-                          text: '',
-                        },
-                      ],
-                    },
+          Conversation
+        </button>
+        <button
+          aria-pressed={workbenchView === 'brief'}
+          onClick={() => setWorkbenchView('brief')}
+        >
+          Brief v{latest.version}
+        </button>
+      </nav>
+      <div className={`factory-workbench factory-view-${workbenchView}`}>
+        <FactoryPlanning detail={detail} />
+        <div className="factory-brief">
+          {!editor ? (
+            <>
+              <div className="factory-toolbar">
+                <h3>
+                  Draft v{latest.version}
+                  {latest.authorKind === 'model' ? ' · Proposed by Neon' : ''}
+                </h3>
+                <button
+                  disabled={busy || detail.work.lifecycle === 'closed'}
+                  onClick={beginEdit}
+                >
+                  Edit draft
+                </button>
+              </div>
+              <MarkdownMessage>
+                {renderFactorySpec(latest.spec)}
+              </MarkdownMessage>
+            </>
+          ) : (
+            <form
+              className="factory-form"
+              onSubmit={async (event) => {
+                event.preventDefault();
+                if (
+                  await mutate('spec', {
+                    expectedVersion: editor.version,
+                    expectedSpecVersion: editor.specVersion,
+                    expectedRepoFingerprint: editor.repoFingerprint,
+                    spec: editor.spec,
                   })
-                }
-              >
-                Add criterion
-              </button>
-            </fieldset>
-            <div className="factory-toolbar">
-              <button disabled={busy} type="submit">
-                Save new revision
-              </button>
-              <button
-                disabled={busy}
-                type="button"
-                onClick={() => setEditor(null)}
-              >
-                Cancel edits
-              </button>
-            </div>
-            {editor.specVersion !== latest.version && (
-              <details open>
-                <summary>Current saved draft v{latest.version}</summary>
-                <MarkdownMessage>
-                  {renderFactorySpec(latest.spec)}
-                </MarkdownMessage>
-              </details>
-            )}
-          </fieldset>
-        </form>
-      )}
+                )
+                  setEditor(null);
+              }}
+            >
+              <fieldset disabled={busy} className="factory-editor-fields">
+                <legend className="sr-only">Draft editor</legend>
+                <h3>Editing v{editor.specVersion}</h3>
+                <section className="factory-source">
+                  <h3>Repository context</h3>
+                  {detail.repoContext ? (
+                    <>
+                      <p>
+                        Path: {detail.repoContext.path}
+                        <br />
+                        Branch: {detail.repoContext.defaultBranch}
+                      </p>
+                      <p>
+                        Configured commands:{' '}
+                        {Object.entries(detail.repoContext.commands)
+                          .map(([name, command]) => `${name}: ${command}`)
+                          .join('; ') || 'None configured'}
+                      </p>
+                    </>
+                  ) : (
+                    <p>No registered repository selected.</p>
+                  )}
+                  {editor.repoFingerprint !== detail.repoFingerprint && (
+                    <>
+                      <p>
+                        The repository configuration differs from this draft's
+                        reviewed context. Review the path, branch and commands
+                        above before accepting it. Your draft text stays intact.
+                      </p>
+                      <button
+                        type="button"
+                        disabled={busy}
+                        onClick={() =>
+                          setEditor({
+                            ...editor,
+                            repoFingerprint: detail.repoFingerprint,
+                          })
+                        }
+                      >
+                        Use this reviewed repository context
+                      </button>
+                    </>
+                  )}
+                </section>
+
+                {(
+                  [
+                    'outcome',
+                    'scope',
+                    'nonGoals',
+                    'approach',
+                    'constraints',
+                    'assumptions',
+                  ] as const
+                ).map((field) => (
+                  <label key={field}>
+                    {
+                      {
+                        outcome: 'Outcome',
+                        scope: 'Scope',
+                        nonGoals: 'Non-goals',
+                        approach: 'Approach (Markdown)',
+                        constraints: 'Constraints',
+                        assumptions: 'Assumptions',
+                      }[field]
+                    }
+                    <textarea
+                      rows={field === 'approach' ? 6 : 3}
+                      maxLength={20000}
+                      value={editor.spec[field]}
+                      onChange={(event) => change(field, event.target.value)}
+                    />
+                  </label>
+                ))}
+                <fieldset>
+                  <legend>Acceptance criteria</legend>
+                  {editor.spec.acceptanceCriteria.map((criterion, index) => (
+                    <label key={criterion.id}>
+                      {criterion.id}
+                      <input
+                        required
+                        maxLength={240}
+                        value={criterion.text}
+                        onChange={(event) =>
+                          setEditor({
+                            ...editor,
+                            spec: {
+                              ...editor.spec,
+                              acceptanceCriteria:
+                                editor.spec.acceptanceCriteria.map((c, i) =>
+                                  i === index
+                                    ? { ...c, text: event.target.value }
+                                    : c,
+                                ),
+                            },
+                          })
+                        }
+                      />
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setEditor({
+                            ...editor,
+                            spec: {
+                              ...editor.spec,
+                              acceptanceCriteria:
+                                editor.spec.acceptanceCriteria.filter(
+                                  (c) => c.id !== criterion.id,
+                                ),
+                            },
+                          })
+                        }
+                      >
+                        Remove {criterion.id}
+                      </button>
+                    </label>
+                  ))}
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setEditor({
+                        ...editor,
+                        spec: {
+                          ...editor.spec,
+                          acceptanceCriteria: [
+                            ...editor.spec.acceptanceCriteria,
+                            {
+                              id: `ac-${crypto.randomUUID().slice(0, 8)}`,
+                              text: '',
+                            },
+                          ],
+                        },
+                      })
+                    }
+                  >
+                    Add criterion
+                  </button>
+                </fieldset>
+                <div className="factory-toolbar">
+                  <button disabled={busy} type="submit">
+                    Save new revision
+                  </button>
+                  <button
+                    disabled={busy}
+                    type="button"
+                    onClick={() => setEditor(null)}
+                  >
+                    Cancel edits
+                  </button>
+                </div>
+                {editor.specVersion !== latest.version && (
+                  <details open>
+                    <summary>Current saved draft v{latest.version}</summary>
+                    <MarkdownMessage>
+                      {renderFactorySpec(latest.spec)}
+                    </MarkdownMessage>
+                  </details>
+                )}
+              </fieldset>
+            </form>
+          )}
+        </div>
+      </div>
       <section className="factory-release">
         <h3>Review release v{latest.version}</h3>
         <p>

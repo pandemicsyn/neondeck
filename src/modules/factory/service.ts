@@ -39,6 +39,7 @@ export class FactoryError extends Error {
   }
 }
 export type FactoryActor = { kind: 'human'; id: string };
+type RevisionActor = FactoryActor | { kind: 'model'; id: string };
 const digest = (value: unknown) =>
   createHash('sha256').update(JSON.stringify(value)).digest('hex');
 function parse<T>(schema: v.GenericSchema<unknown, T>, value: unknown): T {
@@ -68,7 +69,7 @@ function repoSnapshot(repoId: string | null, paths: RuntimePaths) {
 function repoFingerprint(repoId: string | null, paths: RuntimePaths) {
   return repoSnapshot(repoId, paths).repoFingerprint;
 }
-function dbRun<T>(paths: RuntimePaths, run: (db: DatabaseSync) => T) {
+export function dbRun<T>(paths: RuntimePaths, run: (db: DatabaseSync) => T) {
   const db = openDb(paths.neondeckDatabase);
   try {
     const result = withImmediateTransaction(db, () => run(db));
@@ -100,7 +101,7 @@ function work(db: DatabaseSync, id: string) {
   if (!result) throw new FactoryError(404, 'Task not found.');
   return result;
 }
-function detail(
+export function detail(
   db: DatabaseSync,
   id: string,
   paths: RuntimePaths,
@@ -180,14 +181,14 @@ function requireHuman(actor: FactoryActor) {
       'Only the local human operator can change factory work.',
     );
 }
-function requireEnabled(paths: RuntimePaths) {
+export function requireEnabled(paths: RuntimePaths) {
   if (!config(paths)?.enabled)
     throw new FactoryError(
       403,
       'Factory is disabled. Enable factory.enabled in local configuration.',
     );
 }
-function expectVersion(current: FactoryDetail, expected: number) {
+export function expectVersion(current: FactoryDetail, expected: number) {
   if (current.work.version !== expected)
     throw new FactoryError(
       409,
@@ -207,7 +208,7 @@ function audit(
   db: DatabaseSync,
   id: string,
   action: string,
-  actor: FactoryActor,
+  actor: RevisionActor,
 ) {
   db.prepare(
     'INSERT INTO factory_audit (work_id,action,actor,created_at) VALUES (?,?,?,?)',
@@ -232,7 +233,7 @@ function insertRevision(
   item: FactoryWork,
   source: FactorySource,
   spec: FactoryRevision['spec'],
-  actor: FactoryActor,
+  actor: RevisionActor,
   context: Pick<FactoryDetail, 'repoFingerprint' | 'repoContext'>,
 ) {
   const revision: FactoryRevision = {
@@ -244,7 +245,7 @@ function insertRevision(
     sourceVersion: source.version,
     repoFingerprint: context.repoFingerprint,
     repoContext: context.repoContext,
-    authorKind: 'human',
+    authorKind: actor.kind,
     actor: actor.id,
     createdAt: new Date().toISOString(),
   };
@@ -349,29 +350,40 @@ export function saveFactorySpec(
 ) {
   requireHuman(actor);
   const data = parse(saveSpecSchema, input);
-  return dbRun(paths, (db) => {
-    requireEnabled(paths);
-    const current = detail(db, id, paths);
-    expectVersion(current, data.expectedVersion);
-    if (data.expectedRepoFingerprint !== current.repoFingerprint)
-      throw new FactoryError(
-        409,
-        'Repository configuration changed. Review the current repository context before saving; your draft is retained.',
-        current,
-      );
-    if (current.work.specVersion !== data.expectedSpecVersion)
-      throw new FactoryError(409, 'Draft changed.', current);
-    if (current.work.lifecycle === 'closed')
-      throw new FactoryError(409, 'Reopen this task before editing.', current);
-    withdraw(db, current.releases, 'new-spec-revision');
-    current.work.specVersion++;
-    if (current.work.lifecycle !== 'paused') current.work.lifecycle = 'shaping';
-    insertRevision(db, current.work, current.source, data.spec, actor, current);
-    putWork(db, current.work);
-    audit(db, id, 'spec-saved', actor);
-    return detail(db, id, paths);
-  });
+  return dbRun(paths, (db) =>
+    saveSpecInTransaction(db, id, data, actor, paths),
+  );
 }
+// Internal domain operation; callers must establish human or bound planner authority.
+export function saveSpecInTransaction(
+  db: DatabaseSync,
+  id: string,
+  data: v.InferOutput<typeof saveSpecSchema>,
+  actor: RevisionActor,
+  paths: RuntimePaths,
+) {
+  requireEnabled(paths);
+  const current = detail(db, id, paths);
+  expectVersion(current, data.expectedVersion);
+  if (data.expectedRepoFingerprint !== current.repoFingerprint)
+    throw new FactoryError(
+      409,
+      'Repository configuration changed. Review the current repository context before saving; your draft is retained.',
+      current,
+    );
+  if (current.work.specVersion !== data.expectedSpecVersion)
+    throw new FactoryError(409, 'Draft changed.', current);
+  if (current.work.lifecycle === 'closed')
+    throw new FactoryError(409, 'Reopen this task before editing.', current);
+  withdraw(db, current.releases, 'new-spec-revision');
+  current.work.specVersion++;
+  if (current.work.lifecycle !== 'paused') current.work.lifecycle = 'shaping';
+  insertRevision(db, current.work, current.source, data.spec, actor, current);
+  putWork(db, current.work);
+  audit(db, id, 'spec-saved', actor);
+  return detail(db, id, paths);
+}
+
 export function releaseFactoryWork(
   id: string,
   input: unknown,
