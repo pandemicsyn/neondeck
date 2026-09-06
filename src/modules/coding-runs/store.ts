@@ -71,63 +71,120 @@ export function reserveCodingRun(
     withImmediateTransaction(database, () => {
       const existing = database
         .prepare(
-          'SELECT * FROM coding_runs WHERE request_id = ? OR release_id = ?',
+          'SELECT * FROM coding_runs WHERE release_id = ? ORDER BY sequence LIMIT 1',
         )
-        .all(snapshot.requestId, snapshot.releaseId);
-      if (existing.length) {
-        const record = decode(existing[0]).record;
-        if (
-          existing.length !== 1 ||
-          !isDeepStrictEqual(record.snapshot, snapshot)
-        )
+        .get(snapshot.releaseId);
+      if (existing) {
+        const record = decode(existing).record;
+        if (!isDeepStrictEqual(record.snapshot, snapshot))
           throw new Error('Conflicting coding run replay');
         return record;
       }
-      if (
-        database
-          .prepare('SELECT run_id FROM coding_runs WHERE writer_slot = 1')
-          .get()
-      )
-        throw new Error('Coding writer already reserved');
-      const now = new Date().toISOString();
-      const record = v.parse(codingRunRecordSchema, {
-        runId: randomUUID(),
-        attemptId: randomUUID(),
-        ownershipToken: randomUUID(),
-        version: 1,
-        snapshot,
-        status: 'reserved',
-        host: null,
-        workspace: null,
-        providerSessionId: null,
-        cancelRequestedAt: null,
-        cancelReason: null,
-        reason: null,
-        deadProof: null,
-        candidate: null,
-        createdAt: now,
-        updatedAt: now,
-        completedAt: null,
-        cleanupAttentionAt: null,
-        evidenceRetainUntil: null,
-      });
-      database
-        .prepare(
-          'INSERT INTO coding_runs (run_id, attempt_id, request_id, release_id, work_item_id, writer_slot, record_json) VALUES (?, ?, ?, ?, ?, 1, ?)',
-        )
-        .run(
-          record.runId,
-          record.attemptId,
-          snapshot.requestId,
-          snapshot.releaseId,
-          snapshot.workItemId,
-          JSON.stringify(record),
-        );
-      event(database, record, 'reserved');
-      return record;
+      return reserveCodingRunInTransaction(database, snapshot);
     }),
   );
 }
+
+/** Low-level insertion for a caller-owned IMMEDIATE transaction. The coordinator
+ * must consume its persisted authorization and link the resulting run in that same
+ * transaction. This module deliberately has no delivery-policy dependency. */
+export function reserveCodingRunInTransaction(
+  database: DatabaseSync,
+  input: unknown,
+): CodingRunRecord {
+  const snapshot = v.parse(codingRunSnapshotSchema, input);
+  if (!database.isTransaction)
+    throw new Error('Coding reservation requires a transaction');
+  const existing = database
+    .prepare('SELECT * FROM coding_runs WHERE request_id = ?')
+    .all(snapshot.requestId);
+  if (existing.length) {
+    const record = decode(existing[0]).record;
+    if (existing.length !== 1 || !isDeepStrictEqual(record.snapshot, snapshot))
+      throw new Error('Conflicting coding run replay');
+    return record;
+  }
+  if (
+    database
+      .prepare('SELECT run_id FROM coding_runs WHERE writer_slot = 1')
+      .get()
+  )
+    throw new Error('Coding writer already reserved');
+  const now = new Date().toISOString();
+  const record = v.parse(codingRunRecordSchema, {
+    runId: randomUUID(),
+    attemptId: randomUUID(),
+    ownershipToken: randomUUID(),
+    version: 1,
+    snapshot,
+    status: 'reserved',
+    host: null,
+    workspace: null,
+    providerSessionId: null,
+    cancelRequestedAt: null,
+    cancelReason: null,
+    reason: null,
+    deadProof: null,
+    candidate: null,
+    createdAt: now,
+    updatedAt: now,
+    completedAt: null,
+    cleanupAttentionAt: null,
+    evidenceRetainUntil: null,
+  });
+  database
+    .prepare(
+      'INSERT INTO coding_runs (run_id, attempt_id, request_id, release_id, work_item_id, writer_slot, record_json) VALUES (?, ?, ?, ?, ?, 1, ?)',
+    )
+    .run(
+      record.runId,
+      record.attemptId,
+      snapshot.requestId,
+      snapshot.releaseId,
+      snapshot.workItemId,
+      JSON.stringify(record),
+    );
+  event(database, record, 'reserved');
+  return record;
+}
+
+/** Invoked only inside the delivery coordinator's authorization/budget transaction. */
+export function reserveRepairCodingRunInTransaction(
+  database: DatabaseSync,
+  input: unknown,
+): CodingRunRecord {
+  const command = v.parse(
+    v.strictObject({
+      parentRunId: codingLabelSchema,
+      requestId: codingLabelSchema,
+      maxWallTimeMs: v.pipe(
+        v.number(),
+        v.safeInteger(),
+        v.minValue(1),
+        v.maxValue(45 * 60_000),
+      ),
+    }),
+    input,
+  );
+  if (!database.isTransaction)
+    throw new Error('Repair reservation requires a transaction');
+  const parent = get(database, command.parentRunId);
+  if (
+    !parent ||
+    parent.status !== 'candidate' ||
+    !parent.candidate ||
+    !parent.deadProof ||
+    !parent.providerSessionId
+  )
+    throw new Error('Repair requires retained terminal candidate');
+  if (command.requestId === parent.snapshot.requestId)
+    throw new Error('Repair requires fresh request identity');
+  return reserveCodingRunInTransaction(database, {
+    ...parent.snapshot,
+    requestId: command.requestId,
+  });
+}
+
 export function getCodingRun(runId: unknown, paths: Paths) {
   const id = v.parse(codingLabelSchema, runId);
   return db(paths, (database) => get(database, id));

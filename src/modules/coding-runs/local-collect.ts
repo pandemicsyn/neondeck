@@ -55,6 +55,7 @@ export async function collectLocalAttempt(input: unknown) {
   const untracked: {
     path: string;
     kind: 'file' | 'symlink';
+    mode: '100644' | '100755' | '120000';
     bytes: number;
     sha256: string;
     contentBase64: string;
@@ -78,6 +79,11 @@ export async function collectLocalAttempt(input: unknown) {
     untracked.push({
       path: name,
       kind: info.isSymbolicLink() ? 'symlink' : 'file',
+      mode: info.isSymbolicLink()
+        ? '120000'
+        : info.mode & 0o111
+          ? '100755'
+          : '100644',
       bytes: content.length,
       sha256: createHash('sha256').update(content).digest('hex'),
       contentBase64: content.toString('base64'),
@@ -105,6 +111,14 @@ export async function collectLocalAttempt(input: unknown) {
     throw new Error('Candidate diff changed while collecting');
   for (const entry of untracked) {
     const path = resolve(cwd, entry.path);
+    const currentInfo = await lstat(path);
+    const currentMode = currentInfo.isSymbolicLink()
+      ? '120000'
+      : currentInfo.mode & 0o111
+        ? '100755'
+        : '100644';
+    if (currentMode !== entry.mode)
+      throw new Error('Untracked candidate mode changed while collecting');
     const current =
       entry.kind === 'symlink'
         ? Buffer.from(await readlink(path))

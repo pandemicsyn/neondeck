@@ -27,9 +27,11 @@ function selectRun(
   );
   let runId: string | null = null;
   try {
-    // Both columns have unique indexes. Fetch only the ID, not historical snapshots.
+    // Return the original release run deterministically; repairs retain their own rows.
     const row = database
-      .prepare(`SELECT run_id FROM coding_runs WHERE ${column} = ? LIMIT 1`)
+      .prepare(
+        `SELECT run_id FROM coding_runs WHERE ${column} = ? ORDER BY sequence ASC LIMIT 1`,
+      )
       .get(value);
     if (row)
       runId = v.parse(v.object({ run_id: codingLabelSchema }), row).run_id;

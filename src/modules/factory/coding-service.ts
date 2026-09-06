@@ -66,6 +66,16 @@ export function requireCodingRun(id: string, paths: RuntimePaths) {
   if (!run) throw new FactoryError(404, 'Coding run not found.');
   return run;
 }
+/** Actual signed host execution time; delayed controller collection is never usage. */
+export async function readCodingExecutionUsage(
+  input: unknown,
+  paths: RuntimePaths,
+): Promise<number | null> {
+  const run = v.parse(codingRunRecordSchema, input);
+  if (!terminalCodingRun(run) || !run.deadProof) return null;
+  if (run.deadProof.kind === 'never-started' && !run.host) return 0;
+  return localHost.localAttemptExecutionDuration(codingHandle(run, paths));
+}
 export function changeCodingRun(
   run: CodingRunRecord,
   action: CodingRunCommand['action'],
@@ -157,10 +167,31 @@ export async function dispatchCodingWork(
     return null;
   }
   clearCodingAttention(workId, paths);
+  return launchReservedCodingRun(
+    reserveCodingRun(snapshot, paths),
+    paths,
+    host,
+  );
+}
+
+/** Shared resource lifecycle; callers must reserve authority atomically first. */
+export async function launchReservedCodingRun(
+  input: CodingRunRecord,
+  paths: RuntimePaths,
+  host: CodingHost = localHost,
+  options: {
+    prepareWorkspace?: (root: string) => Promise<void>;
+    assertAuthority?: () => Promise<void>;
+    prompt?: string;
+    wallTimeMs?: number;
+  } = {},
+) {
+  let run = v.parse(codingRunRecordSchema, input);
+  const snapshot = run.snapshot;
+  const workId = snapshot.workItemId;
   const selectedAuth = selectedCodingAuth(
     codingAuthority(workId, paths).coding,
   );
-  let run = reserveCodingRun(snapshot, paths);
   if (
     run.host ||
     terminalCodingRun(run) ||
@@ -223,6 +254,7 @@ export async function dispatchCodingWork(
       ['checkout', '-b', branch, snapshot.baseSha],
       AbortSignal.timeout(5000),
     );
+    await options.prepareWorkspace?.(worktree.localPath);
     const { coding, repo } = codingAuthority(workId, paths);
     const handle = codingHandle(run, paths);
     await mkdir(join(paths.home, 'coding-attempts'), {
@@ -230,6 +262,14 @@ export async function dispatchCodingWork(
       mode: 0o700,
     });
     const config = localCodingConfig(coding);
+    if (options.wallTimeMs !== undefined)
+      config.wallTimeMs = Math.min(
+        config.wallTimeMs,
+        v.parse(
+          v.pipe(v.number(), v.integer(), v.minValue(1)),
+          options.wallTimeMs,
+        ),
+      );
     await host.prepareLocalAttempt({
       ...handle,
       attemptId: run.attemptId,
@@ -243,10 +283,11 @@ export async function dispatchCodingWork(
         baseSha: snapshot.baseSha,
       },
       config,
-      prompt: codingPrompt(snapshot),
+      prompt: options.prompt ?? codingPrompt(snapshot),
       selectedAuth,
     });
     await assertCodingSnapshot(snapshot, paths);
+    await options.assertAuthority?.();
     if (
       JSON.stringify(
         selectedCodingAuth(codingAuthority(workId, paths).coding),

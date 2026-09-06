@@ -17,3 +17,19 @@ export * from './planning-dispatch';
 export { assertTriageBudget } from './triage-budget';
 
 export { invalidateFactoryConfig } from './config-invalidation';
+export { codingHandle } from './coding-handle';
+export { assertCodingAuthoritySnapshot, codingDigest } from './coding-context';
+export {
+  launchReservedCodingRun,
+  requireCodingRun,
+  reconcileCodingRun,
+  type CodingHost,
+} from './coding-service';
+export { assertCodingSnapshot, codingPrompt } from './coding-context';
+export { codingReadiness } from './coding-readiness';
+export { dispatchCodingWork } from './coding-service';
+export { renderFactorySpec } from '../../../shared/factory';
+
+export { readCodingExecutionUsage } from './coding-service';
+
+export { codingConfig } from './coding-context';

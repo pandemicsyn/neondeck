@@ -66,8 +66,13 @@ async function run(
       env: codexEnvironment(manifest),
       stdio: ['pipe', 'inherit', 'inherit'],
     });
+    child.once('spawn', () =>
+      reply({ kind: 'started', startedAt: Date.now() }),
+    );
     child.once('error', () => reply({ kind: 'error' }));
-    child.once('exit', (code, signal) => reply({ kind: 'exit', code, signal }));
+    child.once('exit', (code, signal) =>
+      reply({ kind: 'exit', code, signal, endedAt: Date.now() }),
+    );
     child.stdin.on('error', () => {});
     child.stdin.end(prompt);
     return true;
@@ -86,7 +91,13 @@ void keeper;
 function reply(
   value:
     | { kind: 'ready' | 'error' | 'cancelled' }
-    | { kind: 'exit'; code: number | null; signal: NodeJS.Signals | null },
+    | { kind: 'started'; startedAt: number }
+    | {
+        kind: 'exit';
+        code: number | null;
+        signal: NodeJS.Signals | null;
+        endedAt: number;
+      },
 ) {
   if (!process.connected || !process.send) return;
   try {
