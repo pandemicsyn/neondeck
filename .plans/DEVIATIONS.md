@@ -834,7 +834,7 @@ Use this format:
   edits can race the final read/write even after explicit repair approval. The UI
   discloses this. Runtime concurrency remains one process/home. The initial token
   must support the authenticated-user endpoint; installation/OAuth setup is deferred.
-- Status: V4 passed local verification and both independent/manager reviews; feature
+- Historical status at V4 publication (superseded by the September 6 entry below): V4 passed local verification and both independent/manager reviews; feature
   `a0c0cf31c8a6693863e1f975eb61f8ff1bb85fa3` is open in PR #387. CI was pending at feature publication; final-head CI is tracked in the PR.
   Live GitHub/model/deployment/restart/exposure acceptance remains separately pending
   authorization; nothing is merged/deployed and no coding executor is added.
@@ -858,7 +858,7 @@ Use this format:
 - Boundary: This covers typed local registry mutations in the existing single
   process/home runtime; it does not introduce multi-process configuration locking
   or claim to observe arbitrary external file edits between reads.
-- Status: Included in accepted V4 feature `a0c0cf31c8a6693863e1f975eb61f8ff1bb85fa3`,
+- Historical status at V4 publication (superseded by the September 6 entry below): Included in accepted V4 feature `a0c0cf31c8a6693863e1f975eb61f8ff1bb85fa3`,
   open in PR #387 after both independent reviews and manager review. Full Node 26
   verification passed 1,735 tests; focused verification passed 99. That historical docs-only
   follow-up recorded the original reviewed runtime evidence. Merge,
@@ -876,3 +876,33 @@ Use this format:
   lock. Context changes during those reads must not grant stale evidence authority.
 - Follow-up: None. Malformed planning JSON/schema input already maps to HTTP 400
   at the factory router; HTTP regression coverage now protects that behavior.
+
+## 2026-09-06 - Factory Slice 1 Partial Live Acceptance And Home Isolation
+
+- Roadmap item: Software Factory Slice 1 / deployed acceptance.
+- Decision: Record merged PRs #382–#387 and #389 at main
+  `13049498d457257626af80483d68e0aa8110ad68`, final prior verification of 1,968
+  tests and 63 CI checks, and the bounded live exercise separately from historical
+  candidate reviews. Keep Slice 1 active with zero live releases.
+- Reason: The VM built that commit with Node 26.5 and Flue 2.0.3, but the original
+  Flue database format 4 was incompatible with runtime-supported format 1. Preserve
+  the original database and use a fresh isolated acceptance home seeded with
+  configured models/environment and privately only the existing OAuth credential
+  in the fresh app database. No old-conversation migration or existing-home
+  upgrade is proved.
+- Exposure correction: Automatic proxy selection initially chose the private port
+  and exposed SPA HTML. Explicit proxy-port selection corrected routing; selected
+  anonymous probes returned JSON health 200 and private routes 404. This does not
+  establish all-port or all-authentication coverage. VM self-HTTPS hairpin failed;
+  synthetic signed checks used direct ingress, while real external GitHub delivery
+  returned 202.
+- Evidence boundary: Live triage/planning, corrected model proposal v2, opt-in
+  managed-status identity, graceful restart and idempotent planning replay are
+  recorded in the [sanitized handoff](factory/SLICE_1_HANDOFF.md#september-6-2026--merged-build-and-partial-live-acceptance).
+  Graceful restart is not crash-window or post-release recovery evidence. Private
+  operational identifiers, credentials and raw evidence are excluded.
+- Follow-up: Complete live human iteration/version comparison/exact release,
+  post-release recovery/revocation, attributed replies/questions, writeback repair,
+  missed-delivery recovery and full manual-source acceptance. Track old-conversation
+  compatibility separately; do not infer it from fresh-home success. Coding
+  execution remains a subsequent slice.

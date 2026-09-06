@@ -68,7 +68,7 @@ As of August 2026:
 - Phase 10's provider-specific deploy adapters and all of Phase 17's TUI surface remain intentionally deferred.
 - Active product follow-ups live in the top level of `.plans/`; completed implementation plans and point-in-time reviews live in `.plans/archived/`. See `.plans/README.md` for the index.
 
-## Software Factory Slice 1 — Local Code Complete; Landing and Live Acceptance Pending
+## Software Factory Slice 1 — Merged; Live Acceptance In Progress
 
 As of September 2026, all five increments of the initial intake and collaborative
 shaping path are implemented and reviewed. Historical phase completion above is unchanged.
@@ -79,8 +79,12 @@ shaping path are implemented and reviewed. Historical phase completion above is 
 - [x] Public webhook-only listener, private dashboard/API access, source reconciliation,
       and opt-in GitHub status writeback with attributed replies.
 - [x] Reviewed stacked PR delivery and local intake-to-queue verification.
-- [ ] Merge the open stack and complete authorized live-provider/GitHub, VM restart
-      and anonymous exposure acceptance. Coding execution starts in a subsequent slice.
+- [x] Merge PRs #382–#387 and #389 into main `13049498d457257626af80483d68e0aa8110ad68`.
+- [x] Record the September 6 bounded live exercise: GitHub admission, configured
+      models, managed status, graceful restart/replay and selected public route probes.
+- [ ] Complete live human iteration/version comparison/exact release, post-release
+      recovery/revocation, attributed replies/questions/repair/missed-delivery recovery,
+      and full manual-source live acceptance. Coding execution is a subsequent slice.
 
 See [the slice 1 implementation plan](factory/SLICE_1_IMPLEMENTATION_PLAN.md) and
 [progress ledger](factory/SLICE_1_HANDOFF.md#progress-ledger). Original local
@@ -93,7 +97,7 @@ attached to PR #387. These results do not certify subsequent feedback revisions.
 The feedback stack incorporates accepted parents `6433b10e` (#382),
 `192e7cf7` (#383), `5d773582` (#384), `f14b45b4` (#385), and
 `bb4266f8289b650c40d58c04063c19158e1f752f` (#386), using parent merges that
-preserve each branch's history. Current feedback review and CI evidence belongs to
+preserve each branch's history. Historical feedback review and CI evidence belongs to
 [PR #382](https://github.com/pandemicsyn/neondeck/pull/382),
 [PR #383](https://github.com/pandemicsyn/neondeck/pull/383),
 [PR #384](https://github.com/pandemicsyn/neondeck/pull/384),
@@ -103,9 +107,17 @@ preserve each branch's history. Current feedback review and CI evidence belongs 
 Historical acceptance does not approve later changes. Every publication requires
 verification, two clean independent static reviews and manager acceptance.
 
-Nothing is merged or deployed. Authorized real GitHub, final live provider,
-VM restart and anonymous exposure acceptance remain pending. Preserve active plans
-through landing; coding execution starts in a subsequent slice. Actual deviations
+Final prior verification passed 1,968 tests and 63 CI checks. The VM built merged
+main with Node 26.5 and Flue 2.0.3. Live acceptance used a fresh isolated home:
+the original Flue database's format 4 was incompatible with runtime format 1 and
+was preserved; old conversation migration remains unproven. Zero releases were
+recorded. Initial automatic proxy selection exposed SPA HTML on the private port;
+explicit proxy-port selection corrected it, with JSON health 200 and the selected
+private-route probes 404. This is not an all-port or all-authentication audit.
+See the [sanitized live record](factory/SLICE_1_HANDOFF.md#september-6-2026--merged-build-and-partial-live-acceptance)
+for model, ingress, writeback and restart observations and their limits. Preserve
+active plans through the remaining acceptance; coding execution starts in a
+subsequent slice. Actual deviations
 belong in `DEVIATIONS.md`; preserve existing coding harnesses and do not revive
 the removed PR Autopilot coordinator.
 

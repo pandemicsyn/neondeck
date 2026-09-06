@@ -5,9 +5,20 @@ Historical acceptance: the original slice 1 stack was reviewed through feature
 `ff3a69033ae866aaf47dd0a6c3384544e5eb1e6a`. Those reviews and verification apply
 to those candidates. See the [handoff ledger](SLICE_1_HANDOFF.md) for incorporated
 feedback parents and [PR #387](https://github.com/pandemicsyn/neondeck/pull/387)
-for current feedback reviews and CI. Each publication requires its own verification,
-two clean dedicated static reviews and manager acceptance. Nothing is merged,
-deployed or live-accepted.
+for historical feedback reviews and CI. Each publication requires its own verification,
+two clean dedicated static reviews and manager acceptance.
+
+Current status (2026-09-06): PRs #382–#387 and #389 are merged into main
+`13049498d457257626af80483d68e0aa8110ad68`. Final prior verification passed
+1,968 tests and 63 CI checks; the VM built this commit with Node 26.5 and Flue
+2.0.3. Real GitHub admission, live triage/planning, managed status updates, graceful
+restart/replay and selected anonymous route probes have partial live evidence.
+See the [September 6 acceptance record](SLICE_1_HANDOFF.md#september-6-2026--merged-build-and-partial-live-acceptance)
+for observations and limits, including the fresh-home database boundary and
+corrected proxy selection. Zero releases were recorded. Human iteration, version
+comparison, exact release, post-release recovery/revocation, attributed replies,
+questions, repair, missed-delivery recovery and full manual live acceptance remain
+pending. Slice 1 remains active; coding execution is a subsequent slice.
 
 This implements **slice 1: Intake to inbox** from the
 [software factory proposal](../research/software-factory-proposal.html#rollout).
@@ -203,7 +214,7 @@ Required interactions:
 
 Reuse `MarkdownMessage`, existing chat message/session components, briefing
 presentation and `@pierre/diffs`. Extract small reusable presentation pieces where
-necessary. The configured chat plugin currently accepts only `display-assistant`:
+necessary. The pre-slice configured chat plugin accepted only `display-assistant`:
 add a typed planning-session route/client binding, not arbitrary configurable agent
 URLs. Do not impersonate a PR to get document diffs. Add a narrow revision/document
 source adapter if needed, with truthful capability flags and canonical retained text.
@@ -417,5 +428,5 @@ contract, including its captured permissions. The future executor must validate
 that contract before consuming the queue.
 
 Record actual deviations, changed PR ordering, narrowed UI scope or deferred checks
-in `.plans/DEVIATIONS.md` with reason and follow-up. These documents do not mark any
-implementation complete or alter historical completion claims.
+in `.plans/DEVIATIONS.md` with reason and follow-up. Current implementation and partial live acceptance are recorded separately above;
+remaining acceptance obligations do not alter historical phase completion claims.
