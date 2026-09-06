@@ -85,6 +85,9 @@ export const receiptSchema = v.strictObject({
   attemptId: text,
   nonce: text,
   at: positive(Number.MAX_SAFE_INTEGER),
+  // Absent on legacy receipts; null means no provider endpoint was observed.
+  startedAt: v.optional(v.nullable(positive(Number.MAX_SAFE_INTEGER))),
+  endedAt: v.optional(v.nullable(positive(Number.MAX_SAFE_INTEGER))),
   supervisor: identitySchema,
   group: v.nullable(identitySchema),
   state: v.picklist(['running', 'cancelling', 'finished', 'needs-reconcile']),

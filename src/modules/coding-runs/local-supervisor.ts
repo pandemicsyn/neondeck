@@ -47,6 +47,8 @@ async function supervise(value: unknown) {
     attemptId: manifest.attemptId,
     nonce: manifest.nonce,
     at: Date.now(),
+    startedAt: null,
+    endedAt: null,
     supervisor: await identify(process.pid, manifest.nonce),
     group: null,
     state: 'running',
@@ -132,9 +134,14 @@ async function supervise(value: unknown) {
             v.strictObject({ kind: v.literal('error') }),
             v.strictObject({ kind: v.literal('cancelled') }),
             v.strictObject({
+              kind: v.literal('started'),
+              startedAt: v.pipe(v.number(), v.safeInteger(), v.minValue(1)),
+            }),
+            v.strictObject({
               kind: v.literal('exit'),
               code: v.nullable(v.pipe(v.number(), v.integer())),
               signal: v.nullable(v.string()),
+              endedAt: v.pipe(v.number(), v.safeInteger(), v.minValue(1)),
             }),
           ]),
           data,
@@ -144,6 +151,8 @@ async function supervise(value: unknown) {
           return;
         }
         if (event.output.kind === 'ready') ready = true;
+        if (event.output.kind === 'started')
+          receipt.startedAt = event.output.startedAt;
         if (event.output.kind === 'cancelled') {
           receipt.reason = 'cancelled';
           exited = true;
@@ -153,6 +162,7 @@ async function supervise(value: unknown) {
           exited = true;
         }
         if (event.output.kind === 'exit') {
+          receipt.endedAt = event.output.endedAt;
           receipt.exitCode = event.output.code;
           receipt.signal = event.output.signal;
           exited = true;
@@ -219,6 +229,10 @@ async function supervise(value: unknown) {
       }
       if (!closed || !(await groupAbsent(receipt.group)))
         throw new Error('Writer termination could not be proven');
+      // If the provider ignored TERM, the trusted host observes its death here.
+      // Never synthesize endpoints later during controller reconciliation.
+      if (receipt.startedAt !== null && receipt.endedAt === null)
+        receipt.endedAt = Date.now();
       receipt.noWriter = true;
     }
   } catch {

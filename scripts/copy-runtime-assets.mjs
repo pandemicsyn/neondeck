@@ -28,6 +28,24 @@ for (const name of ['local-host', 'local-supervisor', 'local-anchor']) {
     },
   });
 }
+const verificationAssets = join(root, 'dist/assets/factory-delivery');
+rmSync(verificationAssets, { recursive: true, force: true });
+await build({
+  configFile: false,
+  logLevel: 'warn',
+  build: {
+    ssr: join(root, 'src/modules/factory-delivery/verification-worker.ts'),
+    outDir: verificationAssets,
+    emptyOutDir: false,
+    minify: false,
+    rollupOptions: {
+      output: {
+        entryFileNames: 'verification-worker.mjs',
+        codeSplitting: false,
+      },
+    },
+  },
+});
 copyFile('SOUL.md', 'dist/SOUL.md');
 // Keep the conventional entry on the same owned two-listener host as the CLI.
 writeFileSync(

@@ -1,5 +1,7 @@
 export {
   reserveCodingRun,
+  reserveCodingRunInTransaction,
+  reserveRepairCodingRunInTransaction,
   getCodingRun,
   getCodingRunForWorktree,
   listCodingRuns,
@@ -37,3 +39,17 @@ export {
   getActiveCodingRun,
   getCodingRunForRelease,
 } from './queries';
+
+// Narrow evidence/workspace boundary shared by retained-candidate delivery and repairs.
+export { readRetainedCandidate, artifactHash } from './host-candidate';
+export type { LocalCandidate } from './host-candidate';
+export {
+  readBytesBounded,
+  atomicWrite,
+  readSigned,
+  writeSigned,
+  privateDirectory,
+} from './host-io';
+export { hostGit, inside, verifyOwnedWorktree } from './host-workspace';
+
+export { localAttemptExecutionDuration } from './execution-usage';
