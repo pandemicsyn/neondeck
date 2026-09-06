@@ -8,7 +8,7 @@ import {
   rmSync,
   writeFileSync,
 } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { homedir, tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { afterEach, expect, it, vi } from 'vitest';
@@ -24,6 +24,7 @@ import {
   type LocalAttemptHandle,
 } from '../modules/coding-runs';
 import {
+  codingDigest,
   codingHandle,
   dispatchCodingWork,
   reconcileCodingRun,
@@ -53,6 +54,12 @@ import {
 import { reviewerChecksSchema } from '../modules/factory-delivery/reviewer-contract';
 import * as publicationGit from '../modules/factory-delivery/publication-git-io';
 import type { DeliveryPipeline } from '../../shared/factory-delivery';
+import {
+  progressReviewRequestSchema,
+  type ProgressReviewRequest,
+} from '../modules/factory-delivery/progress-reviewer-contract';
+import { progressIO } from '../modules/factory-delivery/progress-service';
+import { progressDigest } from '../modules/factory-delivery/progress-evidence-contract';
 import { captureCandidateEvidence } from '../modules/factory-delivery/evidence';
 
 // Only external Flue admission/settlement is synthetic. The production reviewer
@@ -87,11 +94,18 @@ it.each([
   'uncertain-create',
   'prepublish-repair',
   'reviewer-findings',
+  'change-approach',
+  'escalate',
+  'unknown-progress-admission',
+  'two-repairs',
 ] as const)(
   'production candidate-to-draft integration: %s',
   async (mode) => {
     const expectsRepair =
-      mode.includes('repair') || mode === 'reviewer-findings';
+      mode.includes('repair') ||
+      mode === 'reviewer-findings' ||
+      mode === 'change-approach';
+    const expectedRepairs = mode === 'two-repairs' ? 2 : expectsRepair ? 1 : 0;
     const root = realpathSync(
       mkdtempSync(join(tmpdir(), 'factory-delivery-e2e-')),
     );
@@ -105,6 +119,7 @@ it.each([
     const observedPullHeads: string[] = [];
     let pull: Record<string, unknown> | undefined;
     const requests: CandidateReviewRequest[] = [];
+    const progressRequests: ProgressReviewRequest[] = [];
     const handles: LocalAttemptHandle[] = [];
     // Fail closed for all HTTP not explicitly modeled below.
     vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
@@ -205,7 +220,7 @@ it.each([
       writeFileSync(join(repo, 'original.txt'), 'unchanged\n');
       writeFileSync(
         join(repo, 'check.cjs'),
-        `const fs=require('node:fs'); console.log(JSON.stringify({cwd:process.cwd(),pid:process.pid,hasProviderSecret:'FACTORY_DELIVERY_AUTH' in process.env})); if(!fs.readFileSync('mockdex-result.txt','utf8').includes('deterministic')) process.exit(2); if(${mode === 'prepublish-repair' ? "fs.readFileSync('state.txt','utf8') !== 'fixed-v2'" : "!fs.readFileSync('state.txt','utf8').startsWith('fixed')"}) process.exit(3);`,
+        `const fs=require('node:fs'); console.log(JSON.stringify({cwd:process.cwd(),pid:process.pid,hasProviderSecret:'FACTORY_DELIVERY_AUTH' in process.env})); if(!fs.readFileSync('mockdex-result.txt','utf8').includes('deterministic')) process.exit(2); if(${['prepublish-repair', 'change-approach', 'escalate', 'unknown-progress-admission', 'two-repairs'].includes(mode) ? (mode === 'two-repairs' ? "!fs.readFileSync('state.txt','utf8').startsWith('fixed-v')" : "fs.readFileSync('state.txt','utf8') !== 'fixed-v2'") : "!fs.readFileSync('state.txt','utf8').startsWith('fixed')"}) process.exit(3);`,
       );
       git(repo, 'add', '.');
       git(repo, 'commit', '-m', 'synthetic base');
@@ -222,12 +237,12 @@ it.each([
       writeFileSync(
         executable,
         `#!/usr/bin/env node
-import {writeFileSync,existsSync,unlinkSync} from 'node:fs';import {spawn} from 'node:child_process';
+import {writeFileSync,readFileSync,existsSync,unlinkSync} from 'node:fs';import {spawn} from 'node:child_process';
 if(process.argv[2]==='--version') console.log('codex-cli 0.150.1');
 else {let prompt='';for await(const chunk of process.stdin)prompt+=chunk;
 const repair=prompt.includes('This is a bounded repair');
 if(repair&&existsSync('mockdex-result.txt'))unlinkSync('mockdex-result.txt');
-writeFileSync('state.txt',repair?'fixed-v2':'fixed');
+writeFileSync('state.txt',repair?(${mode === 'two-repairs'}&&readFileSync('state.txt','utf8')==='fixed-v2'?'fixed-v3':'fixed-v2'):'fixed');
 const child=spawn(process.execPath,[${JSON.stringify(resolve('scripts/mockdex.mjs'))},...process.argv.slice(2)],{env:{...process.env,MOCKDEX_SCENARIO:'success'},stdio:['pipe','inherit','inherit']});child.stdin.end(prompt);child.on('exit',code=>process.exitCode=code??1);child.on('error',()=>process.exitCode=1);}
 `,
         { mode: 0o700 },
@@ -421,6 +436,54 @@ const child=spawn(process.execPath,[${JSON.stringify(resolve('scripts/mockdex.mj
       });
       model.dispatch.mockImplementation(
         async (_agent: unknown, raw: { initialData: unknown }) => {
+          const progress = v.safeParse(
+            progressReviewRequestSchema,
+            raw.initialData,
+          );
+          if (progress.success) {
+            progressRequests.push(progress.output);
+            const packet = progress.output.packet;
+            if (packet.repairOrdinal === 1) {
+              expect(packet.priorRepairs).toEqual([]);
+              expect(packet.candidates).toHaveLength(1);
+            } else {
+              expect(mode).toBe('two-repairs');
+              expect(packet.repairOrdinal).toBe(2);
+              const current = requireDelivery(pipelineId, paths);
+              expect(packet.priorRepairs).toEqual([
+                {
+                  ordinal: 1,
+                  revision: current.repairs[0].fromRevision,
+                  instructions: current.repairs[0].reason,
+                },
+              ]);
+              expect(
+                packet.candidates.map((candidate) => candidate.revision),
+              ).toEqual([current.initialRevision, current.revision]);
+              expect(packet.candidates[0].diff).not.toBe(
+                packet.candidates[1].diff,
+              );
+              expect(packet.candidates[0].revision.candidateDigest).not.toBe(
+                packet.candidates[1].revision.candidateDigest,
+              );
+              expect(
+                packet.candidates.every(
+                  (candidate) => candidate.observations.length > 0,
+                ),
+              ).toBe(true);
+            }
+            expect(progress.output.packet.missingEvidence).toEqual([]);
+            expect(progress.output.packet.omittedEvidence).toEqual([]);
+            if (mode === 'unknown-progress-admission')
+              throw new Error(
+                'Synthetic accepted progress admission with lost response',
+              );
+            return {
+              submissionId: `progress-${progressRequests.length}`,
+              uid: 'synthetic-progress',
+              acceptedAt: new Date().toISOString(),
+            };
+          }
           const request = v.parse(
             candidateReviewRequestSchema,
             raw.initialData,
@@ -439,6 +502,49 @@ const child=spawn(process.execPath,[${JSON.stringify(resolve('scripts/mockdex.mj
         (_agent: unknown, options: { id: string }) => ({
           abort: async () => {},
           read: async (receipt: { submissionId: string } | string) => {
+            const progress = progressRequests.findLast(
+              (r) => r.id === options.id,
+            );
+            if (progress) {
+              const submissionId =
+                typeof receipt === 'string' ? receipt : receipt.submissionId;
+              expect(
+                requireDelivery(pipelineId, paths).progress.assessments.find(
+                  (a) => a.assessmentId === progress.binding.assessmentId,
+                )?.submissionId,
+              ).toBe(submissionId);
+              return {
+                submissionId,
+                data: {
+                  factoryProgressReview: [
+                    {
+                      ...progress.binding,
+                      decision:
+                        mode === 'change-approach'
+                          ? 'change-approach'
+                          : mode === 'escalate'
+                            ? 'escalate'
+                            : 'continue',
+                      rationale:
+                        'Synthetic assessment of the retained production evidence.',
+                      evidenceRefs: [
+                        `candidate:${progress.packet.revision.candidateDigest}`,
+                      ],
+                      nextInstructions:
+                        mode === 'change-approach'
+                          ? 'Use the alternate scoped approach: write fixed-v2 to state.txt and preserve mockdex-result.txt.'
+                          : null,
+                    },
+                  ],
+                },
+                metadata: {
+                  startedAt: Date.now(),
+                  completedAt: Date.now(),
+                  totalTokens: 20,
+                  requestDigest: progressDigest(progress),
+                },
+              };
+            }
             const request = requests.findLast((r) => r.id === options.id)!;
             expect(request).toBeDefined();
             const p = requireDelivery(pipelineId, paths);
@@ -494,6 +600,7 @@ const child=spawn(process.execPath,[${JSON.stringify(resolve('scripts/mockdex.mj
           },
         }),
       );
+      const progressReview = vi.spyOn(progressIO, 'review');
       const observations = {
         verification: vi.spyOn(deliveryIO, 'verify'),
         review: vi.spyOn(deliveryIO, 'review'),
@@ -527,8 +634,12 @@ const child=spawn(process.execPath,[${JSON.stringify(resolve('scripts/mockdex.mj
               )
                 handles.push(codingHandle(child, paths));
             }
-            if (p.interventions.length)
+            if (done(p)) return true;
+            if (p.interventions.length) {
+              const call = progressReview.mock.results.at(-1);
+              if (call?.type === 'return') await call.value;
               throw new Error(JSON.stringify(p.interventions));
+            }
             if (
               p.effects.some(
                 (e) => e.state === 'uncertain' && e.kind !== 'create-pr',
@@ -547,38 +658,85 @@ const child=spawn(process.execPath,[${JSON.stringify(resolve('scripts/mockdex.mj
             }
             return done(p);
           },
-          90000,
+          180000,
           () => JSON.stringify(requireDelivery(pipelineId, paths)),
         );
       }
+      if (mode === 'escalate' || mode === 'unknown-progress-admission') {
+        await drive((p) => p.interventions.length > 0);
+        const stopped = requireDelivery(pipelineId, paths);
+        expect(stopped.progress.assessments).toHaveLength(1);
+        expect(stopped.progress.assessments[0].result?.decision).toBe(
+          mode === 'escalate' ? 'escalate' : undefined,
+        );
+        if (mode === 'unknown-progress-admission')
+          expect(stopped.progress.assessments[0]).toMatchObject({
+            state: 'uncertain',
+            submissionId: null,
+            executionMs: null,
+            result: null,
+          });
+        expect(stopped.repairs).toEqual([]);
+        expect(listCodingRuns({}, paths)).toHaveLength(1);
+        expect(postCount).toBe(0);
+        for (let tick = 0; tick < 3; tick++)
+          await advanceFactoryDelivery(pipelineId, paths, deliveryIO);
+        expect(progressRequests).toHaveLength(1);
+        expect(requireDelivery(pipelineId, paths).progress).toEqual(
+          stopped.progress,
+        );
+        expect(listCodingRuns({}, paths)).toHaveLength(1);
+        return;
+      }
       await drive((p) => p.pr !== null);
-      if (mode === 'repair') {
+      if (mode === 'repair' || mode === 'two-repairs') {
         const first = requireDelivery(pipelineId, paths);
         // Model the external current-head CI observation, then enter the real
         // durable feedback command and coordinator repair admission.
+        const normalized = {
+          headSha: first.commits.at(-1)!.publishedHeadSha,
+          checks: [
+            {
+              name: 'synthetic-ci',
+              status: 'completed',
+              conclusion: 'failure',
+            },
+          ],
+          statuses: [],
+          reviews: [],
+          inlineComments: [],
+          issueComments: [],
+        };
+        const fingerprint = codingDigest(normalized);
         const feedback = {
           id: 'synthetic-ci',
-          fingerprint: '8'.repeat(64),
+          fingerprint,
           revision: first.revision,
-          publishedHeadSha: first.commits.at(-1)!.publishedHeadSha,
+          publishedHeadSha: normalized.headSha,
           ciFailed: true,
           hasReviewFeedback: false,
           evidenceRef: deliveryReceipt(
             pipelineId,
             {
-              feedbackBody: 'Scoped state file must use fixed-v2.',
-              checks: [
-                {
-                  name: 'synthetic-ci',
-                  status: 'completed',
-                  conclusion: 'failure',
-                },
-              ],
-              statuses: [],
+              ...normalized,
+              fingerprint,
+              ciFailed: true,
+              hasReviewFeedback: false,
+              feedbackBody: JSON.stringify({
+                reviews: normalized.reviews,
+                inlineComments: normalized.inlineComments,
+                issueComments: normalized.issueComments,
+              }),
             },
             paths,
           ),
         };
+        changeDelivery(
+          pipelineId,
+          { type: 'record-feedback', feedback },
+          paths,
+        );
+        // Duplicate provider observation must preserve the same prospective repair.
         changeDelivery(
           pipelineId,
           { type: 'record-feedback', feedback },
@@ -597,12 +755,23 @@ const child=spawn(process.execPath,[${JSON.stringify(resolve('scripts/mockdex.mj
         expect(requireDelivery(pipelineId, paths).pr).toEqual(first.pr);
       }
       const delivered = requireDelivery(pipelineId, paths);
-      expect(
-        v.parse(
-          deliveryDetailSchema,
-          factoryDeliveryDetail(requireDelivery(pipelineId, paths), paths),
-        ).pipeline,
-      ).toEqual(delivered);
+      const exposed = v.parse(
+        deliveryDetailSchema,
+        factoryDeliveryDetail(requireDelivery(pipelineId, paths), paths),
+      ).pipeline;
+      // The operator projection redacts local paths in progress instructions.
+      // All admission identities and accounting must remain exactly durable.
+      expect({ ...exposed, progress: delivered.progress }).toEqual(delivered);
+      const identities = (p: DeliveryPipeline) =>
+        p.progress.assessments.map(
+          ({ instructions: _instructions, ...assessment }) => assessment,
+        );
+      expect(identities(exposed)).toEqual(identities(delivered));
+      for (const assessment of exposed.progress.assessments) {
+        expect(assessment.instructions.length).toBeGreaterThan(0);
+        expect(assessment.instructions).not.toContain(homedir());
+      }
+
       expect(postCount).toBe(1);
       expect(delivered.pr?.number).toBe(7);
       expect(delivered.effects.every((e) => e.state === 'delivered')).toBe(
@@ -643,13 +812,37 @@ const child=spawn(process.execPath,[${JSON.stringify(resolve('scripts/mockdex.mj
       expect(
         readFileSync(git(retained, 'rev-parse', '--git-path', 'index')),
       ).toEqual(originalIndex);
-      expect(delivered.repairs).toHaveLength(expectsRepair ? 1 : 0);
-      expect(listCodingRuns({}, paths)).toHaveLength(expectsRepair ? 2 : 1);
-      if (expectsRepair) {
+      expect(delivered.repairs).toHaveLength(expectedRepairs);
+      expect(listCodingRuns({}, paths)).toHaveLength(expectedRepairs + 1);
+      expect(progressRequests).toHaveLength(expectedRepairs);
+      expect(delivered.progress.assessments).toHaveLength(expectedRepairs);
+      if (expectedRepairs > 0) {
+        expect(delivered.progress.assessments[0]).toMatchObject({
+          state: 'settled',
+          repairOrdinal: 1,
+          submissionId: 'progress-1',
+          result: {
+            decision:
+              mode === 'change-approach' ? 'change-approach' : 'continue',
+          },
+        });
+        if (mode === 'change-approach') {
+          expect(delivered.repairs[0].reason).toContain(
+            'alternate scoped approach',
+          );
+          const repairRun = requireCodingRun(delivered.repairs[0].runId, paths);
+          expect(repairRun.attemptId).not.toBe(run.attemptId);
+          expect(
+            readFileSync(
+              join(codingHandle(repairRun, paths).directory, 'prompt.txt'),
+              'utf8',
+            ),
+          ).toContain(delivered.repairs[0].reason);
+        }
         expect(delivered.revision.runId).not.toBe(run.runId);
         expect(
           delivered.evidence.filter((e) => e.kind === 'verification'),
-        ).toHaveLength(2);
+        ).toHaveLength(expectedRepairs + 1);
         expect(delivered.authorization.id).toBe('grant-e2e');
       }
       if (mode === 'reviewer-findings') {
@@ -675,15 +868,48 @@ const child=spawn(process.execPath,[${JSON.stringify(resolve('scripts/mockdex.mj
       }
       if (mode === 'uncertain-create')
         expect(readsAfterPost).toBeGreaterThanOrEqual(2);
+      if (mode === 'two-repairs') {
+        expect(
+          delivered.progress.assessments.map((a) => a.repairOrdinal),
+        ).toEqual([1, 2]);
+        expect(delivered.repairs.map((r) => r.status)).toEqual([
+          'candidate',
+          'candidate',
+        ]);
+        await deliveryIO.repair(
+          delivered,
+          'A third repair must not be admitted.',
+          'third-repair',
+          paths,
+        );
+        const exhausted = requireDelivery(pipelineId, paths);
+        expect(exhausted.interventions.some((i) => i.kind === 'budget')).toBe(
+          true,
+        );
+        expect(exhausted.progress.assessments).toHaveLength(2);
+        expect(progressRequests).toHaveLength(2);
+        expect(exhausted.repairs).toHaveLength(2);
+        expect(listCodingRuns({}, paths)).toHaveLength(3);
+      }
       const revoked = await revokeFactoryDelivery(
         pipelineId,
         {
-          expectedVersion: delivered.version,
+          expectedVersion: requireDelivery(pipelineId, paths).version,
           reason: 'Synthetic operator stop',
         },
         paths,
       );
-      expect(revoked.nextAction).toBe('human-authority');
+      expect(revoked.pipeline.interventions).toContainEqual(
+        expect.objectContaining({
+          kind: 'authority',
+          reason: 'Human revoked delivery: Synthetic operator stop',
+          resolution: null,
+        }),
+      );
+      // The first unresolved intervention retains projection priority.
+      expect(revoked.nextAction).toBe(
+        mode === 'two-repairs' ? 'human-budget' : 'human-authority',
+      );
       expect(postCount).toBe(1);
     } finally {
       const active = getActiveCodingRun(paths);
@@ -698,7 +924,7 @@ const child=spawn(process.execPath,[${JSON.stringify(resolve('scripts/mockdex.mj
       rmSync(root, { recursive: true, force: true });
     }
   },
-  180000,
+  360000,
 );
 function json(value: unknown, status = 200) {
   return new Response(JSON.stringify(value), {

@@ -19,9 +19,9 @@ the operator authorized stack merge, with real Codex acceptance still pending af
 - [Slice 3 implementation plan](SLICE_3_IMPLEMENTATION_PLAN.md): exact delivery
   grants, independent evidence, bounded repairs and draft publication.
 - [Slice 3 handoff](SLICE_3_HANDOFF.md): stack ownership, review and acceptance.
-- [Slice 3.1 progress supervision](SLICE_3_1_PROGRESS_REVIEW_PLAN.md): scheduled
-  next, before OpenCode; assess repair history and escalate suspicious cycles
-  within existing budgets. Not implemented.
+- [Slice 3.1 progress supervision](SLICE_3_1_PROGRESS_REVIEW_PLAN.md): implementation
+  in progress before OpenCode; assess repair history within existing budgets.
+  See its [handoff](SLICE_3_1_HANDOFF.md) and [acceptance ledger](SLICE_3_1_ACCEPTANCE.md).
 - [Slice 3 operator guide](SLICE_3_OPERATOR.md): candidate delivery controls and
   conditional human interventions.
 - [Slice 2 local handoff](SLICE_2_HANDOFF.md): accepted stack, verification,
@@ -52,4 +52,4 @@ provide screenshots for UI changes for review and eventual GitHub publication.
 
 Slice 3 postmerge live obligations are recorded in [SLICE_3_ACCEPTANCE.md](SLICE_3_ACCEPTANCE.md); no live acceptance is claimed by synthetic verification.
 
-Slice 3 is implemented and verified in draft stack #402 (PRs #397–#401). Two independent static reviews were clean before publication; the manager’s post-publication architecture review is also clean. See the [Slice 3 handoff](SLICE_3_HANDOFF.md) for PR links, 2,439 passing tests, screenshots and remaining acceptance. Human review and merge remain pending.
+Slice 3 merged in PRs #397–#401 through `a897aa06`. Two independent static reviews were clean before publication; the manager’s post-publication architecture review is also clean. See the [Slice 3 handoff](SLICE_3_HANDOFF.md) for PR links, 2,439 passing tests, screenshots and remaining acceptance. All 45 CI checks passed and no review feedback was present at merge. Live acceptance remains pending.

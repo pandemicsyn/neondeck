@@ -61,6 +61,7 @@ const candidate = {
 };
 function fakeIO(): DeliveryIO {
   return {
+    recoverProgress: vi.fn(async () => false),
     assert: vi.fn(async () => {}),
     capture: vi.fn(async () => candidate),
     verify: vi.fn(async () => ({

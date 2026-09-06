@@ -1,3 +1,9 @@
+import { assertProgressRepair } from './progress-domain';
+export {
+  reserveDeliveryProgress,
+  updateDeliveryProgress,
+} from './progress-store';
+export { deliveryProgressEvidenceDigest } from './progress-domain';
 import { isDeepStrictEqual } from 'node:util';
 import type { DatabaseSync } from 'node:sqlite';
 import * as v from 'valibot';
@@ -168,6 +174,9 @@ export function reserveDeliveryRepair(
       const replay = r.repairs.find((x) => x.requestId === cmd.requestId);
       if (replay) {
         if (
+          replay.progressAssessmentId !== cmd.progressAssessmentId ||
+          replay.progressInputDigest !== cmd.progressInputDigest ||
+          replay.progressEvidenceDigest !== cmd.progressEvidenceDigest ||
           replay.reason !== cmd.reason ||
           replay.reservedExecutionMs !== cmd.maxWallTimeMs
         )
@@ -204,6 +213,7 @@ export function reserveDeliveryRepair(
         )
       )
         throw new Error('Current failed evidence required for repair');
+      assertProgressRepair(r, cmd);
       const spent = spentExecution(r);
       if (
         r.repairs.length >= r.authorization.maxRepairAttempts ||
@@ -238,6 +248,9 @@ export function reserveDeliveryRepair(
         reservedExecutionMs: cmd.maxWallTimeMs,
         executionMs: null,
         fromRevision: r.revision,
+        progressAssessmentId: cmd.progressAssessmentId,
+        progressInputDigest: cmd.progressInputDigest,
+        progressEvidenceDigest: cmd.progressEvidenceDigest,
         status: 'reserved',
         revision: null,
       });

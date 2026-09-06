@@ -403,6 +403,9 @@ it('uses the canonical backend contract for feedback, watch timestamps and long 
     executionMs: null,
   });
   current.pipeline.repairs.push({
+    progressAssessmentId: null,
+    progressInputDigest: null,
+    progressEvidenceDigest: null,
     runId: 'repair-1',
     attemptId: 'attempt-2',
     requestId: 'repair-request',

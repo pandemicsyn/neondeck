@@ -1,3 +1,4 @@
+import { sanitizeEvidenceText } from './evidence-content';
 import { isDeepStrictEqual } from 'node:util';
 import * as v from 'valibot';
 import {
@@ -31,7 +32,44 @@ export function factoryDeliveryDetail(
     typeof input === 'string' ? requireDelivery(input, paths) : input;
   const intervention = pipeline.interventions.find((i) => !i.resolution);
   return v.parse(deliveryDetailSchema, {
-    pipeline,
+    pipeline: {
+      ...pipeline,
+      progress: {
+        ...pipeline.progress,
+        assessments: pipeline.progress.assessments.map((assessment) => ({
+          ...assessment,
+          instructions: sanitizeEvidenceText(
+            assessment.instructions,
+            paths,
+            20000,
+          ).text,
+          evidenceRefs: assessment.evidenceRefs.map(
+            (ref) => sanitizeEvidenceText(ref, paths, 500).text,
+          ),
+          result: assessment.result
+            ? {
+                ...assessment.result,
+                rationale: sanitizeEvidenceText(
+                  assessment.result.rationale,
+                  paths,
+                  4000,
+                ).text,
+                evidenceRefs: assessment.result.evidenceRefs.map(
+                  (ref) => sanitizeEvidenceText(ref, paths, 500).text,
+                ),
+                nextInstructions:
+                  assessment.result.nextInstructions === null
+                    ? null
+                    : sanitizeEvidenceText(
+                        assessment.result.nextInstructions,
+                        paths,
+                        20000,
+                      ).text,
+              }
+            : null,
+        })),
+      },
+    },
     budget: deliveryBudget(pipeline),
     plannerSessionId: getPlanningState(pipeline.workItemId, paths).sessionId,
     planningWorkId: pipeline.workItemId,

@@ -54,6 +54,14 @@ export function deliveryDetail(
           ? 'reconcile'
           : 'running',
     pipeline: {
+      progress: {
+        limits: {
+          maxAssessments: 2,
+          maxAssessmentsPerRepair: 1,
+          maxAssessmentMs: 180000,
+        },
+        assessments: [],
+      },
       feedback:
         mode === 'intervention'
           ? [

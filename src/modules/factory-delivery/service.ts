@@ -50,8 +50,11 @@ export async function tickFactoryDelivery(
     const rows = listDeliveryPipelines({ after, limit: 100 }, paths);
     for (const { record } of rows) {
       try {
-        if (record.outcome) await io.cleanup(record, paths);
-        else await advanceFactoryDelivery(record.pipelineId, paths, io);
+        if (record.outcome) {
+          await io.cancel(record, paths);
+          if (!(await io.recoverProgress(record, paths)))
+            await io.cleanup(record, paths);
+        } else await advanceFactoryDelivery(record.pipelineId, paths, io);
       } catch {
         console.warn(
           '[factory] One delivery needs reconciliation; other deliveries continue.',
@@ -75,13 +78,18 @@ export function advanceFactoryDelivery(
   return pending;
   async function step() {
     let pipeline = requireDelivery(id, paths);
-    if (pipeline.outcome) return;
+    if (pipeline.outcome) {
+      await io.cancel(pipeline, paths);
+      await io.recoverProgress(pipeline, paths);
+      return;
+    }
     if (
       pipeline.interventions.some(
         (i) => !i.resolution && i.kind === 'authority',
       )
     )
       await io.cancel(pipeline, paths);
+    if (await io.recoverProgress(pipeline, paths)) return;
     const outstanding = pipeline.effects.find(
       (e) => e.state === 'in-flight' || e.state === 'uncertain',
     );

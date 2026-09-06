@@ -1,8 +1,9 @@
 # Slice 3 handoff — Candidate to PR
 
-Status: implemented and verified; five draft stacked PRs published September 6, 2026. Two independent static reviews and the manager's product and architectural
-reviews are complete with no outstanding findings. Human review and merge remain
-pending. **Real Codex/GitHub acceptance is NOT RUN**, as recorded in
+Status: merged September 6, 2026 in PRs #397–#401 through `a897aa06`.
+Two independent static reviews and the manager's product and architectural
+reviews were clean. All 45 CI checks passed and no review feedback was present
+at merge. **Real Codex/GitHub acceptance is NOT RUN**, as recorded in
 [SLICE_3_ACCEPTANCE.md](SLICE_3_ACCEPTANCE.md).
 
 ## Stack and review record

@@ -1,3 +1,4 @@
+import { assertProgressRecord } from './progress-domain';
 import { createHash } from 'node:crypto';
 import { isDeepStrictEqual } from 'node:util';
 import * as v from 'valibot';
@@ -26,6 +27,7 @@ export function identity(repoId: string, r: DeliveryRevision) {
     .digest('hex');
 }
 export function assertRecord(r: DeliveryPipeline) {
+  assertProgressRecord(r);
   const key = identity(r.repoId, r.initialRevision);
   if (
     r.pipelineId !== key ||
@@ -236,6 +238,10 @@ export function currentPasses(r: DeliveryPipeline) {
 }
 export function spentExecution(r: DeliveryPipeline) {
   return (
+    r.progress.assessments.reduce(
+      (n, a) => n + (a.executionMs ?? a.reservedExecutionMs),
+      0,
+    ) +
     r.authorization.initialExecutionMs +
     r.repairs.reduce(
       (n, x) => n + (x.executionMs ?? x.reservedExecutionMs),
@@ -248,8 +254,9 @@ export function spentExecution(r: DeliveryPipeline) {
   );
 }
 export function unresolvedEffects(r: DeliveryPipeline) {
-  return r.effects.some(
-    (x) => x.state === 'in-flight' || x.state === 'uncertain',
+  return (
+    r.progress.assessments.some((a) => a.state !== 'settled') ||
+    r.effects.some((x) => x.state === 'in-flight' || x.state === 'uncertain')
   );
 }
 export function getPendingDeliveryFeedback(r: DeliveryPipeline) {
@@ -273,10 +280,15 @@ export function deliveryBudget(input: DeliveryPipeline) {
   const r = v.parse(deliveryPipelineSchema, input);
   assertRecord(r);
   const consumedExecutionMs =
+    r.progress.assessments.reduce((n, a) => n + (a.executionMs ?? 0), 0) +
     r.authorization.initialExecutionMs +
     r.repairs.reduce((n, x) => n + (x.executionMs ?? 0), 0) +
     r.effects.reduce((n, x) => n + (x.executionMs ?? 0), 0);
   const reservedExecutionMs =
+    r.progress.assessments.reduce(
+      (n, a) => n + (a.executionMs === null ? a.reservedExecutionMs : 0),
+      0,
+    ) +
     r.repairs.reduce(
       (n, x) => n + (x.executionMs === null ? x.reservedExecutionMs : 0),
       0,

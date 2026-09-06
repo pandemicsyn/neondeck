@@ -2,7 +2,7 @@
 
 ## Current decision — September 6, 2026
 
-Slice 3 implementation, local verification and static/architectural review are complete; its PR stack remains draft. **Real Codex/GitHub
+Slice 3 implementation, local verification and static/architectural review are complete; PRs #397–#401 merged through `a897aa06`. **Real Codex/GitHub
 Candidate-to-PR acceptance is pending, not run and not passed.** Local Git,
 mockdex, fake model providers and synthetic GitHub responses establish only the
 scenarios actually exercised. See the [handoff](SLICE_3_HANDOFF.md) for the

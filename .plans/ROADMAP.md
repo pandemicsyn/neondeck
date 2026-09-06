@@ -130,7 +130,7 @@ See the [Slice 2 implementation plan](factory/SLICE_2_IMPLEMENTATION_PLAN.md)
 for delivery status and acceptance obligations. The operator authorized stack merge with real Codex acceptance still pending after merge. Each publication requires two
 clean independent static reviews and manager implementation/product-plan review.
 
-## Software Factory Slice 3 — Candidate To PR (Draft Stack Review)
+## Software Factory Slice 3 — Candidate To PR (Merged)
 
 Slice 2 merged in PRs #391–#394, ending at `0b776ff6994b8d078aa550910ca143b61d643bbd`.
 Its real Codex acceptance remains pending after merge; Slice 1 remains
@@ -145,12 +145,15 @@ acceptance claim for Slice 3.
 - [x] Two clean independent static reviews before PR creation, cumulative verification,
       screenshots where applicable, and a manager architecture review of the full stack.
 
+Slice 3 merged in PRs #397–#401 through `a897aa06` on September 6, 2026.
+Real Codex/GitHub acceptance remains pending.
+
 See the [Slice 3 implementation plan](factory/SLICE_3_IMPLEMENTATION_PLAN.md) and
 [handoff ledger](factory/SLICE_3_HANDOFF.md). Development and review agents use
 Astra at medium effort. Existing releases do not gain publication authority on
 upgrade; the initial delivery grant binds an exact candidate and bounded policy.
 
-## Software Factory Slice 3.1 — Progress Supervision (Scheduled)
+## Software Factory Slice 3.1 — Progress Supervision (In Progress)
 
 Next factory follow-up after Slice 3, before Slice 4's OpenCode adapter. Current
 delivery has finite budgets and per-candidate review; it does not yet evaluate
@@ -163,8 +166,10 @@ repair history for unproductive or suspicious cycles.
 - [ ] Reuse human planning/evidence surfaces and test duplicate, stale, uncertain,
       restart and exhausted-budget paths without recursive loops.
 
-See the [Slice 3.1 plan](factory/SLICE_3_1_PROGRESS_REVIEW_PLAN.md). This is scheduled
-work, not implemented capability or an additional Slice 3 merge gate. Slice 4
+See the [Slice 3.1 plan](factory/SLICE_3_1_PROGRESS_REVIEW_PLAN.md),
+[handoff](factory/SLICE_3_1_HANDOFF.md) and
+[acceptance record](factory/SLICE_3_1_ACCEPTANCE.md). Implementation is authorized
+and in progress; completion and live acceptance are not yet claimed. Slice 4
 (OpenCode), Slice 5 (Linear) and Slice 6 (remote execution) retain their numbering.
 
 ## Usability Gate

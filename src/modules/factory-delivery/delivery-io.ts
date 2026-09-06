@@ -32,6 +32,11 @@ import { cancelCandidateVerification } from './verification-supervisor';
 import { updateCodingRun, cancelLocalAttempt } from '../coding-runs';
 import { requireDelivery, saveDeliveryIntent } from './service-records';
 import { sameDeliveryRevision } from './store';
+import { checkpointDeliveryRepair } from './progress-service';
+import {
+  recoverDeliveryProgress,
+  cancelDeliveryProgress,
+} from './progress-recovery';
 
 type EvidenceResult = {
   producerId: string;
@@ -40,6 +45,10 @@ type EvidenceResult = {
   details: unknown;
 };
 export type DeliveryIO = {
+  recoverProgress(
+    pipeline: DeliveryPipeline,
+    paths: RuntimePaths,
+  ): Promise<boolean>;
   cancel(pipeline: DeliveryPipeline, paths: RuntimePaths): Promise<void>;
   assert(pipeline: DeliveryPipeline, paths: RuntimePaths): Promise<void>;
   capture(
@@ -101,7 +110,9 @@ function guard(pipeline: DeliveryPipeline, paths: RuntimePaths) {
   };
 }
 export const deliveryIO: DeliveryIO = {
+  recoverProgress: recoverDeliveryProgress,
   async cancel(pipeline, paths) {
+    await cancelDeliveryProgress(pipeline, paths);
     for (const repair of pipeline.repairs.filter(
       (r) => r.status === 'reserved',
     )) {
@@ -324,12 +335,23 @@ export const deliveryIO: DeliveryIO = {
   watch: watchFactoryDelivery,
   cleanup: cleanupFactoryDelivery,
   async repair(pipeline, reason, requestId, paths) {
+    const approval = await checkpointDeliveryRepair(
+      pipeline,
+      reason,
+      requestId,
+      paths,
+    );
+    if (!approval) return null;
+    pipeline = requireDelivery(pipeline.pipelineId, paths);
     return dispatchCodingRepair(
       {
         pipelineId: pipeline.pipelineId,
         expectedVersion: pipeline.version,
         requestId,
-        reason,
+        reason: approval.instructions,
+        progressAssessmentId: approval.assessmentId,
+        progressInputDigest: approval.inputDigest,
+        progressEvidenceDigest: approval.evidenceDigest,
         maxWallTimeMs: Math.min(
           2700000,
           deliveryContext(pipeline.revision.runId, paths).authority.coding
