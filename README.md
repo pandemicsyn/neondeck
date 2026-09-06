@@ -29,7 +29,7 @@ over your editor or primary agent chat.
 The backend is Node 26, Hono, and Flue; the dashboard is Vite, React, and Tailwind. Neondeck can run on your machine or on a remote host, with
 mutable state stored in SQLite under a runtime home you control.
 
-## Factory intake and planning
+## Factory intake, coding and delivery
 
 Open `/factory` to enable the opt-in local inbox and create manual tasks. Admitted
 tasks receive bounded utility-model triage automatically. Choose **Ask Neon to
@@ -41,10 +41,22 @@ content and attributed replies. A separate webhook listener keeps the dashboard
 on loopback. GitHub publishing is off by default: explicitly enable one maintained
 status comment, approve a version-bound public summary, or preview and send an exact
 question. Ambiguous sends and remote edits have visible recovery paths. Released
-tasks await a coding executor; no coding, PR creation, merge or deployment runs.
+tasks can use the opt-in local Codex executor in a managed worktree, with retained
+candidate evidence and explicit cancellation/reconciliation.
+
+A retained candidate can receive a separate human grant for independent checks,
+a read-only model review, at most two scoped Codex repairs and one draft PR.
+The grant binds the released brief, candidate, repository and finite execution
+budget. Inspect evidence or return to the existing Neon planning conversation
+when scope, authority or budget needs a human decision. PR merge and deployment
+remain human actions. Local check homes and environments are separate; this
+initial local version is not a filesystem security sandbox.
+
 Slice 1 is merged and operator-accepted with remaining live checks deferred.
-The [slice 2 plan](.plans/factory/SLICE_2_IMPLEMENTATION_PLAN.md) records the
-authorized stack merge and pending real Codex acceptance after merge.
+Slice 2 is merged with real Codex acceptance pending. Slice 3 is implemented in a draft PR stack;
+synthetic checks do not establish live Codex/GitHub acceptance. See the
+[candidate delivery operator guide](.plans/factory/SLICE_3_OPERATOR.md) and
+[Slice 3 handoff](.plans/factory/SLICE_3_HANDOFF.md) for current evidence.
 
 See the [manual intake operator guide](.plans/factory/INCREMENT_1_OPERATOR.md) and
 [planning operator guide](.plans/factory/INCREMENT_2_OPERATOR.md), plus the

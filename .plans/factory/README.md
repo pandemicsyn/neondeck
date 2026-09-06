@@ -9,13 +9,21 @@ checks, with two independent clean static reviews and manager acceptance.
 The historical candidates and pre-merge ledger below remain an audit record;
 their “not merged” statements describe those earlier checkpoints.
 
-The merged scope is **slice 1: intake to a human-released queue**.
+The merged scope includes **slice 1: intake to a human-released queue**, followed by Slice 2 brief-to-candidate execution.
 Slice 2 adds an opt-in Codex CLI handoff from that exact release to a retained
 candidate for human review. Its implementation is reviewed and verified locally;
 the operator authorized stack merge, with real Codex acceptance still pending after merge. This work does not build a coding agent.
 
 - [Slice 2 implementation and acceptance plan](SLICE_2_IMPLEMENTATION_PLAN.md):
   brief-to-candidate scope, stacked delivery, mockdex and acceptance.
+- [Slice 3 implementation plan](SLICE_3_IMPLEMENTATION_PLAN.md): exact delivery
+  grants, independent evidence, bounded repairs and draft publication.
+- [Slice 3 handoff](SLICE_3_HANDOFF.md): stack ownership, review and acceptance.
+- [Slice 3.1 progress supervision](SLICE_3_1_PROGRESS_REVIEW_PLAN.md): scheduled
+  next, before OpenCode; assess repair history and escalate suspicious cycles
+  within existing budgets. Not implemented.
+- [Slice 3 operator guide](SLICE_3_OPERATOR.md): candidate delivery controls and
+  conditional human interventions.
 - [Slice 2 local handoff](SLICE_2_HANDOFF.md): accepted stack, verification,
   screenshots and remaining live acceptance.
 - [Slice 2 operator guide](SLICE_2_OPERATOR.md): private coding setup, run controls,
@@ -41,3 +49,7 @@ The existing secrets-scanning pre-commit hook must run on every commit.
 No PR is created until dedicated static reviewers return no findings and the
 manager completes the final implementation/product-plan review. Implementers
 provide screenshots for UI changes for review and eventual GitHub publication.
+
+Slice 3 postmerge live obligations are recorded in [SLICE_3_ACCEPTANCE.md](SLICE_3_ACCEPTANCE.md); no live acceptance is claimed by synthetic verification.
+
+Slice 3 is implemented and verified in draft stack #402 (PRs #397–#401). Two independent static reviews were clean before publication; the manager’s post-publication architecture review is also clean. See the [Slice 3 handoff](SLICE_3_HANDOFF.md) for PR links, 2,439 passing tests, screenshots and remaining acceptance. Human review and merge remain pending.

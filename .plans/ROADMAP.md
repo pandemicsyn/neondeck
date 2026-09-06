@@ -130,25 +130,42 @@ See the [Slice 2 implementation plan](factory/SLICE_2_IMPLEMENTATION_PLAN.md)
 for delivery status and acceptance obligations. The operator authorized stack merge with real Codex acceptance still pending after merge. Each publication requires two
 clean independent static reviews and manager implementation/product-plan review.
 
-## Software Factory Slice 3 — Candidate To PR (In Progress)
+## Software Factory Slice 3 — Candidate To PR (Draft Stack Review)
 
 Slice 2 merged in PRs #391–#394, ending at `0b776ff6994b8d078aa550910ca143b61d643bbd`.
 Its real Codex acceptance remains pending after merge; Slice 1 remains
 operator-accepted with the recorded checks deferred. Neither decision is a live
 acceptance claim for Slice 3.
 
-- [ ] Independent candidate verification and model review bound to exact evidence.
-- [ ] Bounded Codex repairs with durable budgets and human scope interventions.
-- [ ] Revision-checked draft PR delivery with uncertain-effect reconciliation.
-- [ ] Existing watch/review surfaces with exclusive factory ownership, human merge,
+- [x] Independent candidate verification and model review bound to exact evidence.
+- [x] Bounded Codex repairs with durable budgets and human scope interventions.
+- [x] Revision-checked draft PR delivery with uncertain-effect reconciliation.
+- [x] Existing watch/review surfaces with exclusive factory ownership, human merge,
       recorded outcomes, and safe cleanup.
-- [ ] Two clean independent static reviews before PR creation, cumulative verification,
+- [x] Two clean independent static reviews before PR creation, cumulative verification,
       screenshots where applicable, and a manager architecture review of the full stack.
 
 See the [Slice 3 implementation plan](factory/SLICE_3_IMPLEMENTATION_PLAN.md) and
 [handoff ledger](factory/SLICE_3_HANDOFF.md). Development and review agents use
 Astra at medium effort. Existing releases do not gain publication authority on
 upgrade; the initial delivery grant binds an exact candidate and bounded policy.
+
+## Software Factory Slice 3.1 — Progress Supervision (Scheduled)
+
+Next factory follow-up after Slice 3, before Slice 4's OpenCode adapter. Current
+delivery has finite budgets and per-candidate review; it does not yet evaluate
+repair history for unproductive or suspicious cycles.
+
+- [ ] Read-only progress judge assesses repeated failures, oscillating changes,
+      test weakening, scope drift and demonstrated progress before another repair.
+- [ ] Persist evidence-bound continue/change-approach/escalate decisions with
+      finite calls and deadlines inside the existing cumulative grant budget.
+- [ ] Reuse human planning/evidence surfaces and test duplicate, stale, uncertain,
+      restart and exhausted-budget paths without recursive loops.
+
+See the [Slice 3.1 plan](factory/SLICE_3_1_PROGRESS_REVIEW_PLAN.md). This is scheduled
+work, not implemented capability or an additional Slice 3 merge gate. Slice 4
+(OpenCode), Slice 5 (Linear) and Slice 6 (remote execution) retain their numbering.
 
 ## Usability Gate
 

@@ -959,3 +959,124 @@ Use this format:
 - Follow-up: Slice 3 implementers expose the grant and conditional interventions
   through the shared backend and dashboard. A future release-policy version may
   offer this grant during shaping; that convenience is deferred, not implied.
+
+## 2026-09-06 — Slice 3 Retained Candidates And Separate Workspaces
+
+- Roadmap item: Software Factory Slice 3 / verification, repair and publication.
+- Decision: Preserve the original candidate checkout and authenticated receipt.
+  Freeze its complete content as an immutable Git tree, check that tree in a
+  separate managed checkout, and make a normal hook-respecting publication commit
+  whose tree must match the certification. Each repair uses a fresh managed
+  workspace and Codex session seeded from the authorized candidate tree.
+- Reason: This preserves original evidence, includes dirty and untracked content,
+  and prevents verification, commit hooks or a repair from silently replacing the
+  candidate the human authorized. Commit metadata is recorded separately from the
+  certified tree; no synthetic commit is published.
+- Follow-up: Retain failed, uncertain and unpublished work. Verify exact tree and
+  executable-mode preservation, receipt-based execution accounting and safe
+  publication cleanup; keep remote workspace transport in its later slice.
+
+## 2026-09-06 — Legacy Untracked Candidate Mode Evidence
+
+- Roadmap item: Software Factory Slice 3 / exact candidate verification.
+- Decision: New retained untracked-file evidence records Git executable mode.
+  Older candidates containing untracked entries without sealed mode cannot enter
+  exact delivery certification; their workspace and evidence remain retained.
+- Reason: Content hashes alone cannot prove that an untracked script was not
+  chmodded after collection. Adopting its current mode would silently change the
+  retained candidate during the first freeze.
+- Follow-up: Use a fresh explicitly released supervised attempt to produce
+  complete evidence. A future explicit migration/re-attestation flow is deferred;
+  do not rewrite older receipts or discard their work automatically.
+
+## 2026-09-06 — Slice 3 Fixed Grant Budgets
+
+- Roadmap item: Software Factory Slice 3 / bounded repair and human intervention.
+- Decision: Defer the proposed same-release budget-extension action. The initial
+  grant keeps a fixed two-repair and three-hour cumulative ceiling. Exhaustion
+  opens the existing planning conversation; a revised brief needs a new exact
+  release, candidate and human grant. Regranting a repair descendant of the same
+  release cannot replenish its budget.
+- Reason: A separate extension policy and audit action would broaden the initial
+  naive delivery flow. Fixed grants provide a complete bounded workflow while
+  preserving consumed history and making further work a concrete human decision.
+- Follow-up: Add an explicitly reviewed, finite extension action if operator use
+  demonstrates a need; do not imply that chat or reconciliation extends authority.
+
+## 2026-09-06 — Slice 3 Local Check Isolation Boundary
+
+- Roadmap item: Software Factory Slice 3 / independent verification.
+- Decision: Use a separate managed checkout, supervised process group, private job
+  home/config/data/cache/temp directories and an allowlisted environment for checks.
+  Do not inherit the operator's application home or credential configuration.
+  This is process and workspace isolation, not a filesystem security sandbox.
+- Reason: The operator explicitly scoped the naive version without full sandbox
+  support. Same-user code can still access paths outside its checkout; local
+  receipts and private directories do not protect against malicious code with
+  equivalent OS privileges. They support lifecycle and accidental-drift checks.
+- Follow-up: Require a separate OS identity or remote sandbox before treating
+  hostile code as isolated from controller state or host credentials. Keep that
+  execution-host work separate from this local Slice 3 implementation.
+
+## 2026-09-06 — Slice 3 Immutable Initial PR Evidence
+
+- Roadmap item: Software Factory Slice 3 / draft publication and watched repairs.
+- Decision: The initial draft body labels its tree, commit and checks as initial
+  publication evidence. Later certified repairs update the same branch; current
+  evidence is available in Neon. The factory does not rewrite the PR body.
+- Reason: A read-time body hash plus an unconditional GitHub PATCH cannot prevent
+  overwriting a simultaneous human edit. The existing ETag transport proves
+  conditional reads, not conditional body writes. Preserve human edits without
+  inventing compare-and-swap guarantees.
+- Follow-up: Add managed-section updates only after verifying provider-supported
+  write preconditions or introducing an explicit conflict-safe operator action.
+  Continue to validate exact PR identity and marker before any factory mutation.
+
+## 2026-09-06 — Slice 3 Verification Evidence Scope
+
+- Roadmap item: Software Factory Slice 3 / validation contract and human review.
+- Decision: Initial certification covers the frozen source tree, the exact
+  configured repository checks, their supervised receipts and a separate model
+  code review against the released brief. It does not establish that every
+  natural-language acceptance criterion or visual behavior has been exercised.
+  Display the criteria and actual evidence for human review before merge.
+- Reason: The existing release policy selects repository-configured checks. A
+  new browser/behavior-artifact harness and per-scenario evidence-admission schema
+  would broaden this naive slice. Checks can assert required behavior/artifacts;
+  missing evidence outside those checks remains a human acceptance obligation.
+- Follow-up: Add a versioned per-scenario artifact contract and automated visual
+  evidence ingestion in a later slice. Preserve screenshots for this change's
+  implemented UI, and never label synthetic code-review/check results as full
+  product or live-provider acceptance.
+
+## 2026-09-06 — Slice 3 Revision Workspaces And Conservative Retention
+
+- Roadmap item: Software Factory Slice 3 / bounded repair and safe cleanup.
+- Decision: Each candidate revision receives its own managed verification and
+  publication checkout. Checks and the later normal commit use that revision's
+  checkout sequentially, after writer-death and exact-tree checks; original coding
+  work remains separate. Local revision branches feed one durable remote PR branch.
+  Only the latest published clean/dead/settled checkout is eligible for cleanup,
+  after a 24-hour grace following an observed merge or close.
+- Reason: Reusing a prepublication checkout across revisions blocks ordinary
+  repairs or risks discarding failed-check/hook output. Separate revision ownership
+  preserves that evidence. Automated historical pruning needs additional retention
+  policy beyond proof that the latest published checkout is safe to remove.
+- Follow-up: Older revision checkouts, coding/repair candidates, frozen-tree refs
+  and evidence are retained indefinitely. Defer the proposed seven-day attention
+  and 30-day evidence-pruning policy to an explicit retention/discard workflow.
+  Never delete dirty, unpublished, uncertain or active work, or remote branches.
+
+## 2026-09-06 — Schedule Factory Progress Supervision Before OpenCode
+
+- Roadmap item: Software Factory Slice 3.1 / cross-cycle progress assessment.
+- Decision: Schedule a bounded read-only judge of repair history as the next
+  follow-up after Slice 3, before Slice 4's OpenCode adapter. Preserve existing
+  Slice 4–6 numbering. Slice 3 provides finite budgets and per-candidate review;
+  cross-cycle assessment is not implemented there.
+- Reason: The operator requested explicit follow-up planning for repeated failed
+  approaches, oscillation and suspicious repair behavior; the original rollout
+  had no dedicated progress-supervision deliverable.
+- Follow-up: Implement the Slice 3.1 plan with existing Flue/runtime and human
+  planning surfaces, finite judge calls inside the same grant budget, and no new
+  execution authority. This scheduling update adds no Slice 3 merge gate.

@@ -49,6 +49,7 @@ export function FactoryTaskDetail({
     discussion,
     setDiscussion,
   } = useFactoryWorkbench(detail);
+  const [deliveryEvidence, setDeliveryEvidence] = useState<string>();
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const sourceDetails = useRef<HTMLDetailsElement>(null);
@@ -146,6 +147,14 @@ export function FactoryTaskDetail({
                     : 'Ready for your review — release requires your explicit decision.'}
       </p>
       <FactoryCoding
+        onDiscussDelivery={(evidence) => {
+          setDeliveryEvidence(evidence);
+          setWorkbenchView('chat');
+          setTimeout(
+            () => workbench.current?.scrollIntoView?.({ block: 'start' }),
+            0,
+          );
+        }}
         key={detail.work.id}
         workId={detail.work.id}
         eligible={detail.eligible}
@@ -196,6 +205,8 @@ export function FactoryTaskDetail({
         className={`factory-workbench factory-view-${workbenchView}`}
       >
         <FactoryPlanning
+          deliveryEvidence={deliveryEvidence}
+          onClearDeliveryEvidence={() => setDeliveryEvidence(undefined)}
           detail={detail}
           discussion={discussion}
           onClearDiscussion={() =>
