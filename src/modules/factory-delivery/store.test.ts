@@ -933,3 +933,19 @@ it('never settles verification with unknown execution usage', () => {
     }),
   ).toThrow('accounting required');
 });
+
+it('rejects over-limit grants before reserving a pipeline, while admitting all 16 supported checks', () => {
+  const input = {
+    ...reservation,
+    authorization: {
+      ...reservation.authorization,
+      checkCommands: Array.from({ length: 17 }, (_, i) => `npm run check-${i}`),
+    },
+  };
+  expect(() => reserveDeliveryPipeline(input, paths)).toThrow(/length/i);
+  expect(listDeliveryPipelines({}, paths)).toEqual([]);
+  input.authorization.checkCommands.pop();
+  const admitted = reserveDeliveryPipeline(input, paths);
+  expect(admitted.authorization.checkCommands).toHaveLength(16);
+  expect(admitted.effects).toEqual([]);
+});

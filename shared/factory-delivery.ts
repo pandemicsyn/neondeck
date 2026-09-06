@@ -1,6 +1,12 @@
 import * as v from 'valibot';
 
 const label = v.pipe(v.string(), v.minLength(1), v.maxLength(500));
+export const deliveryMaxCheckCommands = 16;
+export const deliveryCheckCommandsSchema = v.pipe(
+  v.array(label),
+  v.minLength(1),
+  v.maxLength(deliveryMaxCheckCommands),
+);
 const repairInstructions = v.pipe(
   v.string(),
   v.minLength(1),
@@ -97,7 +103,7 @@ export const deliveryAuthorizationSchema = v.pipe(
     repoId: label,
     target: v.strictObject({ owner: label, name: label, baseBranch: label }),
     configFingerprint: hash,
-    checkCommands: v.pipe(v.array(label), v.minLength(1), v.maxLength(50)),
+    checkCommands: deliveryCheckCommandsSchema,
     maxRepairAttempts: v.pipe(natural, v.maxValue(2)),
     totalExecutionMs: v.pipe(version, v.maxValue(10800000)),
     initialExecutionMs: natural,

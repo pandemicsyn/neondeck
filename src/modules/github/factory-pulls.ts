@@ -104,12 +104,15 @@ function context(connection: GitHubConnection) {
   };
 }
 function readOptions(options: FactoryPullReadOptions): RequestInit {
+  // Every managed GET contacts GitHub. Fresh authority reads must not join a
+  // request begun earlier, but can still use credential-scoped ETags and 304s.
+  // A signal disables the client's in-flight sharing without disabling validators.
   return {
-    signal: options.signal,
+    signal:
+      options.signal ??
+      (options.fresh ? new AbortController().signal : undefined),
     redirect: 'error',
-    ...(options.fresh
-      ? { cache: 'no-store', headers: { 'Cache-Control': 'no-store' } }
-      : {}),
+    ...(options.fresh ? { cache: 'no-cache' } : {}),
   };
 }
 async function json(response: Response): Promise<unknown> {

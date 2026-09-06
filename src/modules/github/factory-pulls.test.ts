@@ -330,7 +330,7 @@ it('propagates observation access errors instead of presenting missing CI as suc
     observeFactoryGitHubPull(connection, 7, identity),
   ).rejects.toMatchObject({ status: 403 });
 });
-it('revalidates cached negative lookup but fresh lookup bypasses validators', async () => {
+it('fresh lookup revalidates a cached negative before accepting changed server facts', async () => {
   const mock = vi
     .fn<typeof fetch>()
     .mockResolvedValueOnce(
@@ -353,8 +353,8 @@ it('revalidates cached negative lookup but fresh lookup bypasses validators', as
   ).toMatchObject({ status: 'found' });
   expect(
     new Headers(mock.mock.calls[2]?.[1]?.headers).get('if-none-match'),
-  ).toBeNull();
-  expect(mock.mock.calls[2]?.[1]?.cache).toBe('no-store');
+  ).toBe('"negative"');
+  expect(mock.mock.calls[2]?.[1]?.cache).toBe('no-cache');
 });
 it('uncertain POST invalidates negative lookup for subsequent reconciliation', async () => {
   const mock = vi
@@ -365,7 +365,7 @@ it('uncertain POST invalidates negative lookup for subsequent reconciliation', a
     .mockRejectedValueOnce(new Error('synthetic response loss'))
     .mockResolvedValueOnce(Response.json([pull]));
   vi.stubGlobal('fetch', mock);
-  await lookupFactoryGitHubPull(connection, identity);
+  await lookupFactoryGitHubPull(connection, identity, { fresh: true });
   await expect(
     createFactoryGitHubDraftPull(connection, {
       ...identity,
@@ -373,7 +373,9 @@ it('uncertain POST invalidates negative lookup for subsequent reconciliation', a
       body: 'Description',
     }),
   ).rejects.toThrow('response loss');
-  expect(await lookupFactoryGitHubPull(connection, identity)).toMatchObject({
+  expect(
+    await lookupFactoryGitHubPull(connection, identity, { fresh: true }),
+  ).toMatchObject({
     status: 'found',
   });
   expect(
@@ -409,6 +411,7 @@ it('honors cancellation without dispatch', async () => {
   await expect(
     lookupFactoryGitHubPull(connection, identity, {
       signal: controller.signal,
+      fresh: true,
     }),
   ).rejects.toThrow('cancelled');
   expect(mock).not.toHaveBeenCalled();
@@ -458,4 +461,102 @@ it('retains inline and issue feedback, and fails closed on truncated comments', 
       items: [{ path: 'src/example.ts', line: 1 }],
     },
   });
+});
+it('fresh watch observations revalidate every cached resource with server 304s', async () => {
+  const validators = new Map<string, string>();
+  let notModified = 0;
+  const mock = vi.fn<typeof fetch>(async (url, init) => {
+    const key = String(url);
+    const validator = validators.get(key);
+    expect(init?.cache).toBe('no-cache');
+    expect(init?.signal).toBeInstanceOf(AbortSignal);
+    expect(new Headers(init?.headers).get('if-none-match')).toBe(
+      validator ?? null,
+    );
+    if (validator) {
+      notModified++;
+      return new Response(null, { status: 304 });
+    }
+    const etag = `"resource-${validators.size}"`;
+    validators.set(key, etag);
+    const body = key.endsWith('/pulls/7')
+      ? pull
+      : key.includes('/check-runs')
+        ? { total_count: 0, check_runs: [] }
+        : [];
+    return Response.json(body, { headers: { etag } });
+  });
+  vi.stubGlobal('fetch', mock);
+  const first = await observeFactoryGitHubPull(connection, 7, identity, {
+    fresh: true,
+  });
+  const second = await observeFactoryGitHubPull(connection, 7, identity, {
+    fresh: true,
+  });
+  expect(second).toEqual(first);
+  expect(second.complete).toBe(true);
+  expect(validators.size).toBe(6);
+  expect(mock).toHaveBeenCalledTimes(14);
+  expect(notModified).toBe(8);
+});
+it('two concurrent fresh authority reads neither join an earlier read nor each other', async () => {
+  const earlier = Promise.withResolvers<Response>();
+  const fresh = Promise.withResolvers<Response>();
+  const mock = vi
+    .fn<typeof fetch>()
+    .mockResolvedValueOnce(
+      Response.json(pull, { headers: { etag: '"authority"' } }),
+    )
+    .mockImplementationOnce(() => earlier.promise)
+    .mockImplementation(() => fresh.promise);
+  vi.stubGlobal('fetch', mock);
+  await readFactoryGitHubPull(connection, 7, identity, { fresh: true });
+  const pendingEarlier = readFactoryGitHubPull(connection, 7, identity);
+  const pendingFresh = [
+    readFactoryGitHubPull(connection, 7, identity, { fresh: true }),
+    readFactoryGitHubPull(connection, 7, identity, { fresh: true }),
+  ];
+  try {
+    await vi.waitFor(() => expect(mock).toHaveBeenCalledTimes(4));
+    for (const call of mock.mock.calls.slice(2)) {
+      expect(new Headers(call[1]?.headers).get('if-none-match')).toBe(
+        '"authority"',
+      );
+      expect(call[1]?.cache).toBe('no-cache');
+    }
+  } finally {
+    fresh.resolve(new Response(null, { status: 304 }));
+    earlier.resolve(new Response(null, { status: 304 }));
+  }
+  expect(await Promise.all(pendingFresh)).toEqual([pull, pull]);
+  expect(await pendingEarlier).toEqual(pull);
+});
+it('fresh validators remain isolated by credential and are reusable after switching back', async () => {
+  const mock = vi
+    .fn<typeof fetch>()
+    .mockResolvedValueOnce(
+      Response.json(pull, { headers: { etag: '"credential-a"' } }),
+    )
+    .mockResolvedValueOnce(
+      Response.json(pull, { headers: { etag: '"credential-b"' } }),
+    )
+    .mockResolvedValueOnce(new Response(null, { status: 304 }))
+    .mockResolvedValueOnce(new Response(null, { status: 304 }));
+  vi.stubGlobal('fetch', mock);
+  for (const token of [
+    'synthetic-a',
+    'synthetic-b',
+    'synthetic-a',
+    'synthetic-b',
+  ]) {
+    vi.stubEnv('SYNTHETIC_TOKEN', token);
+    expect(
+      await readFactoryGitHubPull(connection, 7, identity, { fresh: true }),
+    ).toEqual(pull);
+  }
+  expect(
+    mock.mock.calls.map((call) =>
+      new Headers(call[1]?.headers).get('if-none-match'),
+    ),
+  ).toEqual([null, null, '"credential-a"', '"credential-b"']);
 });
