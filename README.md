@@ -42,9 +42,10 @@ on loopback. GitHub publishing is off by default: explicitly enable one maintain
 status comment, approve a version-bound public summary, or preview and send an exact
 question. Ambiguous sends and remote edits have visible recovery paths. Released
 tasks await a coding executor; no coding, PR creation, merge or deployment runs.
-Slice 1 is merged; deployed acceptance remains pending. The
-[slice 2 plan](.plans/factory/SLICE_2_IMPLEMENTATION_PLAN.md) covers Codex handoff
-and records live slice 1 acceptance as a prerequisite for merging slice 2.
+Slice 1 is merged; deployed acceptance remains pending.
+The [slice 2 plan](.plans/factory/SLICE_2_IMPLEMENTATION_PLAN.md) covers Codex
+handoff and requires both live slice 1 acceptance and a real Codex smoke before
+any slice 2 PR merges.
 
 See the [manual intake operator guide](.plans/factory/INCREMENT_1_OPERATOR.md) and
 [planning operator guide](.plans/factory/INCREMENT_2_OPERATOR.md), plus the

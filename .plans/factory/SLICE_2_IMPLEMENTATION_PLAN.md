@@ -19,6 +19,18 @@ Before any slice 2 merge, record date, operator/manager acceptance and public-sa
 
 Gate state: **PENDING — blocks all slice 2 merges.** Keep hostnames, credentials, SSH configuration and raw private evidence out of tracked files, screenshots and PR bodies. Do not ask for private keys in chat. No live VM/provider exercise is authorized for this interim implementation.
 
+## Mandatory merge gate: real Codex smoke
+
+**Do not merge any slice 2 PR until a real Codex smoke through the local adapter has passed and the operator and manager have recorded acceptance.** This is a separate gate from live slice 1 acceptance; both must pass before any slice 2 merge. Mockdex, installed CLI help and CI cannot establish real CLI/auth compatibility.
+
+Before any slice 2 merge, record public-safe evidence for:
+
+- [ ] A bounded, authorized real Codex task through the slice 2 local adapter, using the supported CLI version, selected model/auth reference and an isolated managed worktree.
+- [ ] Actual invocation/authentication, JSONL events and session identity, terminal receipt and retained candidate changes; the primary checkout remains unchanged.
+- [ ] Date, tested candidate revision and CLI version, operator/manager acceptance, and any failures fixed and rechecked.
+
+Gate state: **PENDING — blocks all slice 2 merges.** This documentation correction does not authorize a provider or SSH run now. Slice 2 Linux/VM and remote-host acceptance remain later work; that deferral neither waives this local real Codex smoke nor changes the separate live slice 1 deployment checklist above.
+
 ## Product outcome
 
 An explicitly enabled factory consumes an exact human-released brief, creates a managed local worktree, invokes the existing Codex CLI, and retains a reviewable candidate with provenance, logs and session identity. Completion of the CLI is not acceptance of the task. A human can inspect the candidate and stop a run. Independent product verification/repair and publishing a generated PR belong to slice 3. OpenCode belongs to slice 4; remote worker provisioning belongs to slice 6.
@@ -59,7 +71,7 @@ Use official gh stack with branch prefix agent/. Start from merged main. Layers 
 4. `agent/factory-s2-03-workbench`: released-brief dispatch, config/API/runtime lifecycle, candidate/run UI using existing diff surface, operator docs and screenshots.
 5. `agent/factory-s2-04-acceptance`: only integration corrections required by cumulative acceptance, if needed; avoid an empty hardening PR.
 
-Implementers use isolated worktrees and start at low reasoning for bounded changes; complex process/recovery work may use medium. Two independent dedicated static reviewers (medium) inspect each candidate before publication. The manager performs the final implementation and product-plan review. Findings return to implementers. No PR, including documentation or draft PRs, is created until both reviewers report NO FINDINGS and the manager accepts that exact candidate. New code after review requires renewed review. Never bypass the secrets-scanning pre-commit hook. Include actual synthetic UI screenshots for UI changes and upload with supported gh image attachment commands. Every PR body must repeat the pending slice 1 live-acceptance merge gate.
+Implementers use isolated worktrees and start at low reasoning for bounded changes; complex process/recovery work may use medium. Two independent dedicated static reviewers (medium) inspect each candidate before publication. The manager performs the final implementation and product-plan review. Findings return to implementers. No PR, including documentation or draft PRs, is created until both reviewers report NO FINDINGS and the manager accepts that exact candidate. New code after review requires renewed review. Never bypass the secrets-scanning pre-commit hook. Include actual synthetic UI screenshots for UI changes and upload with supported gh image attachment commands. Every PR body must repeat both pending merge gates: live slice 1 acceptance and real Codex smoke.
 
 ## Acceptance and evidence
 
@@ -72,7 +84,8 @@ Use Node 26.4.0 and the repository check/verify suites, with isolated temporary 
 - Failure, spawn error, missing terminal event, malformed/oversized output, output/time exhaustion and contradictory receipts are visible and bounded.
 - Test secret/environment separation, isolated harness state, ownership/path rejection, safe repeated cleanup and failed/dirty retention.
 - UI empty/loading/error/running/cancelling/needs-reconcile/candidate states and review links; screenshots from synthetic data, no private credentials or deployment target.
-- Full cumulative npm run verify and staged/range secret scans; independent static reviews and manager acceptance. Any remaining real Codex smoke or remote acceptance must be explicitly pending.
+- Full cumulative npm run verify and staged/range secret scans; independent static reviews and manager acceptance.
+- Real Codex smoke through the local adapter and live slice 1 acceptance must both pass and be recorded before any slice 2 PR merges. Local mock acceptance does not clear either gate. Slice 2 Linux/VM and remote-host acceptance remain explicitly pending for later work.
 
 ## Progress ledger
 
