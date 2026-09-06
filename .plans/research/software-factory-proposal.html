@@ -2351,19 +2351,31 @@ Workspace lifecycle (separate from run status)
                 <tr>
                   <td><strong>3.1 · Progress supervision</strong></td>
                   <td>
-                    Scheduled follow-up: a bounded read-only judge assesses
-                    repair history for repeated failures, oscillating changes,
-                    test weakening and scope drift. Reuse Flue and the existing
-                    human planning surfaces; retain the same execution budgets.
+                    Published draft stack #405, not merged:
+                    <a href="https://github.com/pandemicsyn/neondeck/pull/403"
+                      >#403</a
+                    >
+                    and
+                    <a href="https://github.com/pandemicsyn/neondeck/pull/404"
+                      >#404</a
+                    >. A bounded read-only Flue judge assesses repair history
+                    before another attempt. Continue, change approach or
+                    escalate through existing human planning surfaces within the
+                    same budgets.
                   </td>
                   <td>
-                    Distinguish productive progress from repeated failed
-                    approaches. Persist continue, change-approach or escalate
-                    decisions; test duplicate events, stale evidence, restart,
-                    timeout and budget exhaustion without recursive judge loops.
-                    Not implemented in Slice 3. See the
-                    <a href="../factory/SLICE_3_1_PROGRESS_REVIEW_PLAN.md"
-                      >follow-up plan</a
+                    Local verification stages pass across the full run and
+                    corrected targeted rerun, with 2,544 unique passing tests.
+                    Production/UI and final test-delta static reviews are clean.
+                    Documentation static reviews were clean before publication;
+                    manager post-publication architecture review is clean on the
+                    published heads. CI is in progress; secrets checks are
+                    green. Real model/Codex/GitHub acceptance is NOT RUN;
+                    judgment quality is unevaluated. This between-attempt
+                    checkpoint adds neither live preemption nor a new all-green
+                    gate. See the
+                    <a href="../factory/SLICE_3_1_HANDOFF.md"
+                      >implementation and verification record</a
                     >.
                   </td>
                 </tr>

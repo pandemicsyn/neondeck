@@ -153,24 +153,46 @@ See the [Slice 3 implementation plan](factory/SLICE_3_IMPLEMENTATION_PLAN.md) an
 Astra at medium effort. Existing releases do not gain publication authority on
 upgrade; the initial delivery grant binds an exact candidate and bounded policy.
 
-## Software Factory Slice 3.1 — Progress Supervision (In Progress)
+## Software Factory Slice 3.1 — Published Draft Stack, Not Merged
 
-Next factory follow-up after Slice 3, before Slice 4's OpenCode adapter. Current
-delivery has finite budgets and per-candidate review; it does not yet evaluate
-repair history for unproductive or suspicious cycles.
+Implemented after Slice 3 and before Slice 4's OpenCode adapter. The read-only
+Flue checkpoint assesses repair history before another authorized attempt.
 
-- [ ] Read-only progress judge assesses repeated failures, oscillating changes,
-      test weakening, scope drift and demonstrated progress before another repair.
-- [ ] Persist evidence-bound continue/change-approach/escalate decisions with
-      finite calls and deadlines inside the existing cumulative grant budget.
-- [ ] Reuse human planning/evidence surfaces and test duplicate, stale, uncertain,
-      restart and exhausted-budget paths without recursive loops.
+- [x] Assemble revision-bound history for repeated failures, oscillating changes,
+      test weakening, scope drift and demonstrated progress.
+- [x] Persist bound continue/change-approach/escalate decisions with finite calls
+      and deadlines inside the existing cumulative grant budget.
+- [x] Reuse human planning/evidence surfaces and cover duplicate, stale, uncertain,
+      restart and exhausted-budget paths without recursive judge loops.
+- [x] Complete local verification across the full run, corrected targeted rerun
+      and separately completed remaining stages: 2,544 unique passing tests.
+- [x] Two independent production/UI static reviews are clean on `87a3bbe0`.
+- [x] Manager pre-publication architecture and product review is clean.
+- [x] Both independent reviews are clean on the final test-only delta.
+- [x] Complete pre-publication documentation static reviews and publish official
+      stack #405: draft [#403](https://github.com/pandemicsyn/neondeck/pull/403) and
+      [#404](https://github.com/pandemicsyn/neondeck/pull/404).
+- [x] Manager post-publication architecture review is clean on cumulative source
+      `9a6023fe` and the lower head recorded in the handoff.
+- [x] Both static reviewers cleared the completed fixture relocation and publication
+      documentation; cumulative implementation is unchanged.
+- [x] PR #403 at `5cbc5882`: all nine CI checks pass.
+- [x] PR #404 at `9a6023fe`: all nine CI checks pass.
+      Results apply to these revisions; linked PRs show current status.
+- [ ] Obtain explicit merge authorization; none has been granted.
+- [ ] Real model/Codex/GitHub acceptance and model judgment evaluation: NOT RUN.
+
+This checkpoint does not continuously monitor or preempt running coding work and
+adds no new all-green publication gate. Synthetic decisions and 18 actual UI
+screenshots establish local behavior, not real model detection quality. Slice 1
+accepted deferrals and Slice 2/3 pending live acceptance remain unchanged.
 
 See the [Slice 3.1 plan](factory/SLICE_3_1_PROGRESS_REVIEW_PLAN.md),
 [handoff](factory/SLICE_3_1_HANDOFF.md) and
-[acceptance record](factory/SLICE_3_1_ACCEPTANCE.md). Implementation is authorized
-and in progress; completion and live acceptance are not yet claimed. Slice 4
-(OpenCode), Slice 5 (Linear) and Slice 6 (remote execution) retain their numbering.
+[acceptance record](factory/SLICE_3_1_ACCEPTANCE.md) for the precise verification
+record; no single successful full `npm run verify` invocation is claimed.
+Slice 4 (OpenCode), Slice 5 (Linear) and Slice 6 (remote execution) retain their
+numbering.
 
 ## Usability Gate
 
