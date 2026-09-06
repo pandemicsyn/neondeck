@@ -43,6 +43,9 @@ status comment, approve a version-bound public summary, or preview and send an e
 question. Ambiguous sends and remote edits have visible recovery paths. Released
 tasks await a coding executor; no coding, PR creation, merge or deployment runs.
 These factory changes are in an open stacked delivery; deployed acceptance is pending.
+Original acceptance at feature `a0c0cf31` and ledger `ff3a6903` is historical;
+[current feedback reviews and CI](https://github.com/pandemicsyn/neondeck/pull/387)
+and the [handoff ledger](.plans/factory/SLICE_1_HANDOFF.md) track the integrated stack.
 
 See the [manual intake operator guide](.plans/factory/INCREMENT_1_OPERATOR.md) and
 [planning operator guide](.plans/factory/INCREMENT_2_OPERATOR.md), plus the
