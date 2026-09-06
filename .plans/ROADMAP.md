@@ -168,7 +168,7 @@ Flue checkpoint assesses repair history before another authorized attempt.
       and separately completed remaining stages: 2,544 unique passing tests.
 - [x] Two independent production/UI static reviews are clean on `87a3bbe0`.
 - [x] Manager pre-publication architecture and product review is clean.
-- [ ] Complete final test-only delta and documentation static reviews.
+- [x] Both independent reviews are clean on the final test-only delta.
 - [ ] Publish Slice 3.1 PRs and complete post-publication architecture review.
 - [ ] Real model/Codex/GitHub acceptance and model judgment evaluation: NOT RUN.
 

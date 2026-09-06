@@ -14,25 +14,26 @@ expectation passed the targeted rerun (1 passed, 8 already-covered cases skipped
 Build, package inspection, package smoke and formatting passed separately. This
 is not a claim that one `npm run verify` invocation exited successfully. See the
 [handoff](SLICE_3_1_HANDOFF.md#review-and-verification-gates) for the precise record.
-Two static reviewers are clean on production/UI `87a3bbe0`; the final test-only
-delta remains in review. Synthetic
+Two static reviewers are clean on production/UI `87a3bbe0` and the final test-only
+delta; the handoff records its SHA-256. Manager pre-publication architecture and
+product-plan review is complete. Synthetic
 judge output proves routing and enforcement only; fixture names such as
 oscillation or weakened tests are not evidence that a real model detected them.
 
-| Scenario                                                   | Required evidence                                                                         | Status                     |
-| ---------------------------------------------------------- | ----------------------------------------------------------------------------------------- | -------------------------- |
-| First repair                                               | Current facts and proposed approach; no fabricated prior history                          | Local pass                 |
-| Repeated failure and unchanged candidate                   | Deterministic fingerprints plus revision-bound history                                    | Local pass                 |
-| Oscillation, weakened tests, scope drift, partial progress | Meaningful packet contents and synthetic decision routing                                 | Local pass                 |
-| Both repair entry paths                                    | Checks/review and actionable PR feedback cannot skip supervision                          | Local pass                 |
-| Continue and change approach                               | Exact accepted instructions enter one fresh coding repair under the same grant            | Local pass                 |
-| Escalate                                                   | Durable pause, readable evidence and explicit human planning action                       | Local pass                 |
-| Bound authority                                            | Wrong grant, revision, ordinal, request, instructions or evidence cannot authorize repair | Local pass                 |
-| Duplicate and concurrent work                              | One admission per prospective repair ordinal; one coding writer                           | Local pass                 |
-| Restart and unknown admission                              | Retain original deadline, submission identity and reservation; no replacement judge       | Local pass                 |
-| Limits and bad results                                     | Exhaustion before model admission; malformed/missing/late/unknown usage fails closed      | Local pass                 |
-| Human surface                                              | Pending, uncertainty, outcome/history and narrow/wide screenshots                         | Local pass                 |
-| Regression checks                                          | Verification stages pass; production/UI reviews clean, final test-delta review pending    | Local pass; review pending |
+| Scenario                                                   | Required evidence                                                                         | Status     |
+| ---------------------------------------------------------- | ----------------------------------------------------------------------------------------- | ---------- |
+| First repair                                               | Current facts and proposed approach; no fabricated prior history                          | Local pass |
+| Repeated failure and unchanged candidate                   | Deterministic fingerprints plus revision-bound history                                    | Local pass |
+| Oscillation, weakened tests, scope drift, partial progress | Meaningful packet contents and synthetic decision routing                                 | Local pass |
+| Both repair entry paths                                    | Checks/review and actionable PR feedback cannot skip supervision                          | Local pass |
+| Continue and change approach                               | Exact accepted instructions enter one fresh coding repair under the same grant            | Local pass |
+| Escalate                                                   | Durable pause, readable evidence and explicit human planning action                       | Local pass |
+| Bound authority                                            | Wrong grant, revision, ordinal, request, instructions or evidence cannot authorize repair | Local pass |
+| Duplicate and concurrent work                              | One admission per prospective repair ordinal; one coding writer                           | Local pass |
+| Restart and unknown admission                              | Retain original deadline, submission identity and reservation; no replacement judge       | Local pass |
+| Limits and bad results                                     | Exhaustion before model admission; malformed/missing/late/unknown usage fails closed      | Local pass |
+| Human surface                                              | Pending, uncertainty, outcome/history and narrow/wide screenshots                         | Local pass |
+| Regression checks                                          | Verification stages pass; production/UI and final test-delta reviews clean                | Local pass |
 
 Coverage is recorded in `progress-store.test.ts`, `progress-reviewer.test.ts`,
 `progress-reviewer-admission.test.ts`, `progress-service.test.ts`,

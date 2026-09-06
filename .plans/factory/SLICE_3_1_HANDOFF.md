@@ -51,7 +51,7 @@ Keep credentials, private addresses and raw live evidence out of this public rep
 - [x] Focused contract, controller, runtime and UI tests pass.
 - [x] All verification stages pass (full run plus targeted rerun), as detailed below.
 - [x] Two independent static reviews are clean on production/UI source `87a3bbe0`.
-- [ ] Complete static review of the final test-only assertion correction.
+- [x] Both independent reviews are clean on the final test-only assertion correction.
 - [x] Manager pre-publication architecture and product review is clean.
 - [ ] Create draft stacked PRs with verification and actual UI screenshots.
 - [ ] Manager performs a post-publication architectural review of the full stack:
@@ -62,15 +62,17 @@ The full verification run on `87a3bbe0` passed lint, import layers, database
 migration validation and all type checks, then passed 2,351 unit, 47 serial Git and
 145 integration tests. One integration case failed its final assertion: it
 expected `human-authority`, but the existing `human-budget` intervention correctly
-remained authoritative after two repairs. The test-only expectation was corrected;
+remained the first displayed intervention after two repairs. Authority revocation
+was separately recorded; this assertion checks display priority. The test-only expectation was corrected;
 the targeted `two-repairs` rerun passed (1 passed, 8 skipped, 135.537 seconds,
 exit 0). The skipped cases had already passed in the full run. Combined unique
 coverage is **2,544 passing tests: 2,351 unit, 47 serial Git and 146 integration**.
 
 The remaining build, `check:npm-package`, `smoke:npm-pack` and `format:check`
 stages passed separately. Local verification is complete across these runs;
-this does not claim a single successful `npm run verify` invocation. The final
-test-only delta remains in static review. Manager pre-publication architecture
+this does not claim a single successful `npm run verify` invocation. Both independent reviewers also cleared the final
+test-only delta, identified by SHA-256
+`8cb5ea6ace7434d21583b25829e5e815177065dd05456542d18e78be36551f39`. Manager pre-publication architecture
 review is clean: shared Valibot validates unknown inputs, pure shared schemas are
 separate from Node fingerprints, atomic store enforcement is independent, and
 runtime, recovery, evidence and UI responsibilities remain distinct. No new `any`

@@ -3,8 +3,8 @@
 Status: implemented and verified locally, September 6, 2026; publication pending,
 with no Slice 3.1 PRs yet. All verification stages pass across the full run,
 corrected targeted rerun and separately completed remaining stages. Two independent
-static reviews are clean on production/UI `87a3bbe0`; the final test-only delta
-remains in review. Real model/Codex/GitHub acceptance is **NOT RUN**.
+static reviews are clean on production/UI `87a3bbe0` and the final test-only delta.
+Manager pre-publication architecture and product-plan review is complete. Real model/Codex/GitHub acceptance is **NOT RUN**.
 
 This follows Slice 3, merged in PRs #397–#401 through `a897aa06`, and precedes
 Slice 4's OpenCode adapter. Slice 1 accepted deferrals and Slice 2/3 pending live
