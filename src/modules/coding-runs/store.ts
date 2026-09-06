@@ -1,3 +1,4 @@
+import { isDeepStrictEqual } from 'node:util';
 import { randomUUID } from 'node:crypto';
 import type { DatabaseSync } from 'node:sqlite';
 import * as v from 'valibot';
@@ -5,6 +6,8 @@ import { openDb, withImmediateTransaction } from '../../lib/sqlite';
 import type { RuntimePaths } from '../../runtime-home';
 import {
   codingLabelSchema,
+  codingTimeSchema,
+  sameCodingHostIdentity,
   codingRunCommandSchema,
   codingRunEventSchema,
   codingRunPageSchema,
@@ -19,7 +22,10 @@ type Paths = Pick<RuntimePaths, 'neondeckDatabase'>;
 const terminal = (r: CodingRunRecord) =>
   ['candidate', 'failed', 'cancelled'].includes(r.status);
 function db<T>(paths: Paths, operation: (database: DatabaseSync) => T): T {
-  const path = v.parse(codingLabelSchema, paths.neondeckDatabase);
+  const path = v.parse(
+    v.pipe(v.string(), v.minLength(1)),
+    paths.neondeckDatabase,
+  );
   const database = openDb(path);
   try {
     return operation(database);
@@ -72,7 +78,7 @@ export function reserveCodingRun(
         const record = decode(existing[0]).record;
         if (
           existing.length !== 1 ||
-          JSON.stringify(record.snapshot) !== JSON.stringify(snapshot)
+          !isDeepStrictEqual(record.snapshot, snapshot)
         )
           throw new Error('Conflicting coding run replay');
         return record;
@@ -184,6 +190,7 @@ function assertWorkspaceOwnership(
       worktree_id: v.string(),
       workflow_run_id: v.string(),
       repo_id: v.string(),
+      expires_at: codingTimeSchema,
       released_at: v.null(),
       revoked_at: v.null(),
     }),
@@ -194,6 +201,7 @@ function assertWorkspaceOwnership(
   if (!workspace.success || !lock.success)
     throw new Error('Workspace ownership mismatch');
   if (
+    Date.parse(lock.output.expires_at) <= Date.now() ||
     workspace.output.repo_id !== record.snapshot.repoId ||
     workspace.output.owning_workflow_run_id !== record.runId ||
     lock.output.scope_key !== `worktree:${identity.worktreeId}` ||
@@ -278,7 +286,7 @@ export function updateCodingRun(input: unknown, paths: Paths): CodingRunRecord {
             proof.runId !== record.runId ||
             proof.attemptId !== record.attemptId ||
             proof.ownershipToken !== record.ownershipToken ||
-            JSON.stringify(proof.host) !== JSON.stringify(record.host)
+            !sameCodingHostIdentity(proof.host, record.host)
           )
             throw new Error('Terminal identity mismatch');
           if ((proof.kind === 'never-started') !== (record.host === null))
@@ -294,6 +302,7 @@ export function updateCodingRun(input: unknown, paths: Paths): CodingRunRecord {
               action.candidate.worktreeId !== record.workspace.worktreeId
             )
               throw new Error('Candidate evidence mismatch');
+            assertWorkspaceOwnership(database, record, record.workspace);
             record.candidate = action.candidate;
           } else if (action.candidate)
             throw new Error('Noncandidate cannot include candidate evidence');

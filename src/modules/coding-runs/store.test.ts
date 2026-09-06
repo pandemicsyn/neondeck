@@ -73,7 +73,7 @@ function createWorkspace(r: CodingRunRecord) {
       `INSERT INTO worktrees (id,repo_id,repo_full_name,github_owner,github_name,base_ref,head_ref,local_path,storage_kind,owning_workflow_run_id,lifecycle_status,adopted,created_by,created_at,updated_at) VALUES ('wt','repo','a/b','a','b','main','agent/factory-test','/tmp/test','home',?,'ready',0,'factory',?,?)`,
     ).run(r.runId, r.createdAt, r.createdAt);
     db.prepare(
-      `INSERT INTO worktree_locks (id,scope,scope_key,worktree_id,repo_id,owner,workflow_run_id,expires_at,created_at,updated_at) VALUES ('lock','worktree','worktree:wt','wt','repo','factory',?,'2000-01-01',?,?)`,
+      `INSERT INTO worktree_locks (id,scope,scope_key,worktree_id,repo_id,owner,workflow_run_id,expires_at,created_at,updated_at) VALUES ('lock','worktree','worktree:wt','wt','repo','factory',?,'2099-01-01T00:00:00.000Z',?,?)`,
     ).run(r.runId, r.createdAt, r.createdAt);
   } finally {
     db.close();
@@ -89,6 +89,14 @@ function workspace(r: CodingRunRecord) {
 
 describe('durable coding runs', () => {
   it.each([
+    [
+      'expired lock',
+      "UPDATE worktree_locks SET expires_at = '2000-01-01T00:00:00.000Z' WHERE id = 'lock'",
+    ],
+    [
+      'invalid expiry',
+      "UPDATE worktree_locks SET expires_at = 'invalid' WHERE id = 'lock'",
+    ],
     ['wrong scope', "UPDATE worktree_locks SET scope = 'pr' WHERE id = 'lock'"],
     [
       'wrong scope key',
@@ -122,6 +130,10 @@ describe('durable coding runs', () => {
     expect(listCodingRunEvents(r.runId, {}, paths)).toHaveLength(1);
   });
   it.each([
+    [
+      'expired lock',
+      "UPDATE worktree_locks SET expires_at = '2000-01-01T00:00:00.000Z' WHERE id = 'lock'",
+    ],
     [
       'released lock',
       "UPDATE worktree_locks SET released_at = '2026-09-06T00:00:00.000Z' WHERE id = 'lock'",
@@ -173,6 +185,108 @@ describe('durable coding runs', () => {
       ).toThrow('Coding writer already reserved');
     },
   );
+  it.each([
+    [
+      'released',
+      "UPDATE worktree_locks SET released_at = '2026-09-06T00:00:00.000Z' WHERE id = 'lock'",
+    ],
+    [
+      'revoked',
+      "UPDATE worktree_locks SET revoked_at = '2026-09-06T00:00:00.000Z' WHERE id = 'lock'",
+    ],
+    [
+      'expired',
+      "UPDATE worktree_locks SET expires_at = '2000-01-01T00:00:00.000Z' WHERE id = 'lock'",
+    ],
+    [
+      'reclaimed',
+      "UPDATE worktree_locks SET workflow_run_id = 'other-run' WHERE id = 'lock'",
+    ],
+    [
+      'wrong workspace owner',
+      "UPDATE worktrees SET owning_workflow_run_id = 'other-run' WHERE id = 'wt'",
+    ],
+  ])(
+    'rejects candidate with %s ownership and retains writer/evidence',
+    (_label, mutation) => {
+      let r = workspace(reserveCodingRun(snapshot, paths));
+      r = update(r, {
+        type: 'bind-host',
+        host: { hostId: 'local', jobId: 'job' },
+      });
+      r = update(r, { type: 'running' });
+      r = update(r, { type: 'bind-session', providerSessionId: 'session' });
+      r = update(r, { type: 'collecting' });
+      const events = listCodingRunEvents(r.runId, {}, paths);
+      const database = openDb(paths.neondeckDatabase);
+      try {
+        database.exec(mutation);
+      } finally {
+        database.close();
+      }
+      expect(() =>
+        update(r, {
+          type: 'finish',
+          status: 'candidate',
+          proof: proof(r),
+          reason: 'candidate',
+          candidate: {
+            baseSha: r.snapshot.baseSha,
+            headSha: 'c'.repeat(40),
+            worktreeId: 'wt',
+            statusRef: 'status',
+            diffRef: 'diff',
+            includesUntracked: true,
+          },
+        }),
+      ).toThrow('Workspace ownership mismatch');
+      expect(getCodingRun(r.runId, paths)).toEqual(r);
+      expect(getCodingRunForWorktree('wt', paths)).toEqual(r);
+      expect(listCodingRunEvents(r.runId, {}, paths)).toEqual(events);
+      expect(() =>
+        reserveCodingRun(
+          { ...snapshot, requestId: 'other', releaseId: 'other' },
+          paths,
+        ),
+      ).toThrow('Coding writer already reserved');
+      const quarantined = update(r, {
+        type: 'quarantine',
+        reason: 'ownership lost',
+      });
+      expect(quarantined.status).toBe('needs-reconcile');
+      expect(() =>
+        reserveCodingRun(
+          { ...snapshot, requestId: 'other', releaseId: 'other' },
+          paths,
+        ),
+      ).toThrow('Coding writer already reserved');
+    },
+  );
+  it('accepts reordered identity keys but keeps opaque snapshot bytes exact', () => {
+    const input = { ...snapshot, contextSnapshot: '{"a":1,"b":2}' };
+    const r = reserveCodingRun(input, paths);
+    const reordered = Object.fromEntries(Object.entries(input).reverse());
+    reordered.harness = {
+      model: input.harness.model,
+      version: input.harness.version,
+      provider: input.harness.provider,
+    };
+    expect(reserveCodingRun(reordered, paths)).toEqual(r);
+    expect(() =>
+      reserveCodingRun({ ...input, contextSnapshot: '{"b":2,"a":1}' }, paths),
+    ).toThrow('Conflicting coding run replay');
+    const host = update(r, {
+      type: 'bind-host',
+      host: { hostId: 'local', jobId: 'job' },
+    });
+    const done = update(host, {
+      type: 'finish',
+      status: 'failed',
+      reason: 'stopped',
+      proof: { ...proof(host), host: { jobId: 'job', hostId: 'local' } },
+    });
+    expect(getCodingRun(done.runId, paths)).toEqual(done);
+  });
   it('replays exactly, rejects changed frozen inputs and serializes global ownership', () => {
     const r = reserveCodingRun(snapshot, paths);
     expect(reserveCodingRun({ ...snapshot }, paths)).toEqual(r);

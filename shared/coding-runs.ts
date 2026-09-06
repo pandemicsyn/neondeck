@@ -47,6 +47,14 @@ export const codingHostIdentitySchema = v.strictObject({
   hostId: codingLabelSchema,
   jobId: codingLabelSchema,
 });
+export function sameCodingHostIdentity(
+  left: v.InferOutput<typeof codingHostIdentitySchema> | null,
+  right: v.InferOutput<typeof codingHostIdentitySchema> | null,
+) {
+  return left === null || right === null
+    ? left === right
+    : left.hostId === right.hostId && left.jobId === right.jobId;
+}
 export const codingWorkspaceSchema = v.strictObject({
   worktreeId: codingLabelSchema,
   lockId: codingLabelSchema,
@@ -111,7 +119,7 @@ export const codingRunRecordSchema = v.pipe(
         (r.deadProof.runId === r.runId &&
           r.deadProof.attemptId === r.attemptId &&
           r.deadProof.ownershipToken === r.ownershipToken &&
-          JSON.stringify(r.deadProof.host) === JSON.stringify(r.host) &&
+          sameCodingHostIdentity(r.deadProof.host, r.host) &&
           (r.deadProof.kind === 'never-started') === (r.host === null))) &&
       (r.candidate === null ||
         (r.candidate.baseSha === r.snapshot.baseSha &&
