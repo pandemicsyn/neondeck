@@ -9,6 +9,9 @@
 
 ## Active Or Deferred Work
 
+- `factory/` — next implementation priority: software factory slice 1, from manual/GitHub
+  intake through model-assisted shaping to human release; five stacked implementation
+  PRs with a manager/reviewer handoff. Planned, not implemented.
 - `OPEN_GATEWAY_MODEL_DISCOVERY_PLAN.md` — implemented in the current worktree: first-class
   OpenRouter and OpenCode Zen providers, live searchable onboarding, native Pi protocol
   preservation, and a centralized but disabled-until-approved provider-role default mechanism.
@@ -31,6 +34,8 @@ Durable research notes live under `research/`:
 - `research/HERMES_RESEARCH.md` — product and agent-system research notes.
 - `research/KILOCODE_HANDOFF_RESEARCH.md` — Kilo integration research supporting the remaining Phase 21 work.
 - `research/SOFTWARE_FACTORIES_X_THREADS_SUMMARY.md` — X-thread briefing on the 2026 software-factories debate (claims and tensions only; not an implementation plan).
+- `research/software-factory-proposal.html` — overall Neon factory proposal, human
+  touchpoints, GitHub writeback, shaping workbench, coding-agent isolation and rollout.
 
 ## Archive Policy
 

@@ -68,6 +68,24 @@ As of August 2026:
 - Phase 10's provider-specific deploy adapters and all of Phase 17's TUI surface remain intentionally deferred.
 - Active product follow-ups live in the top level of `.plans/`; completed implementation plans and point-in-time reviews live in `.plans/archived/`. See `.plans/README.md` for the index.
 
+## Next Implementation Priority — Software Factory Slice 1
+
+As of September 2026, the next requested implementation is the initial factory's
+intake and collaborative shaping path. Historical phase completion above is unchanged.
+
+- [ ] Manual/GitHub intake, durable source/work records, and bounded model triage.
+- [ ] Persistent model-led planning, versioned briefs, Markdown editing and proposal
+      diffs, with explicit human decisions and exact-version release.
+- [ ] Public webhook-only listener, private dashboard/API access, source reconciliation,
+      and opt-in GitHub status writeback with attributed replies.
+- [ ] Stacked PR delivery and full intake-to-queue acceptance, including restart and
+      exposure checks. Coding execution starts in a subsequent slice.
+
+See [the slice 1 implementation plan](factory/SLICE_1_IMPLEMENTATION_PLAN.md) and
+[manager/implementer handoff](factory/SLICE_1_HANDOFF.md). Implementation has not
+started. Actual deviations belong in `DEVIATIONS.md`; do not revive the removed
+PR Autopilot coordinator or replace existing coding harnesses as part of this slice.
+
 ## Usability Gate
 
 Neondeck is usable when a new local install can answer “what should I pay attention to?” and “why is Neon not working?” without the user reading source code or editing config by hand.
