@@ -1,8 +1,9 @@
 # Slice 3.1 operator flow: progress review before repair
 
-Status: implementation in progress. Use the [handoff](SLICE_3_1_HANDOFF.md) for
-verified source and PR status, and the [acceptance ledger](SLICE_3_1_ACCEPTANCE.md)
-for the separate real-model exercise. This guide describes the intended flow.
+Status: implemented and verified locally; publication is pending and no Slice 3.1
+PRs exist yet. Use the [handoff](SLICE_3_1_HANDOFF.md) for verification and review
+status. Real model/Codex/GitHub acceptance is **NOT RUN**; model judgment quality
+remains unevaluated in the [acceptance ledger](SLICE_3_1_ACCEPTANCE.md).
 
 ## Where progress review runs
 

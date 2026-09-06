@@ -52,6 +52,17 @@ when scope, authority or budget needs a human decision. PR merge and deployment
 remain human actions. Local check homes and environments are separate; this
 initial local version is not a filesystem security sandbox.
 
+Slice 3.1 adds a read-only progress checkpoint before another repair. It can
+continue, change the approach within the same allowance, or pause for explicit
+human planning. The workbench shows the assessed cycle, rationale, proposed
+approach and retained evidence; discussion never refills budgets or sends a chat
+message automatically. This is a checkpoint between attempts, not continuous
+coding supervision or an extra gate for passing candidates. Implementation and
+local verification are complete; publication is pending, with no Slice 3.1 PRs
+yet. Real model/Codex/GitHub acceptance is NOT RUN and model judgment quality is
+unevaluated. See the [progress review guide](.plans/factory/SLICE_3_1_OPERATOR.md)
+and [verification record](.plans/factory/SLICE_3_1_HANDOFF.md).
+
 Slice 1 is merged and operator-accepted with remaining live checks deferred.
 Slice 2 is merged with real Codex acceptance pending. Slice 3 is merged;
 synthetic checks do not establish live Codex/GitHub acceptance. See the

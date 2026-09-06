@@ -1,11 +1,15 @@
 # Slice 3.1 — Progress supervision
 
-Status: implementation in progress, September 6, 2026. The operator authorized
-implementation after Slice 3 merged in PRs #397–#401 through `a897aa06`.
-Prioritize before Slice 4's OpenCode adapter. Existing Slice 3 live acceptance
-remains pending; local verification of this follow-up is a separate record.
-See the [implementation handoff](SLICE_3_1_HANDOFF.md) and
-[acceptance ledger](SLICE_3_1_ACCEPTANCE.md).
+Status: implemented and verified locally, September 6, 2026; publication pending,
+with no Slice 3.1 PRs yet. All verification stages pass across the full run,
+corrected targeted rerun and separately completed remaining stages. Two independent
+static reviews are clean on production/UI `87a3bbe0`; the final test-only delta
+remains in review. Real model/Codex/GitHub acceptance is **NOT RUN**.
+
+This follows Slice 3, merged in PRs #397–#401 through `a897aa06`, and precedes
+Slice 4's OpenCode adapter. Slice 1 accepted deferrals and Slice 2/3 pending live
+acceptance remain unchanged. See the [implementation handoff](SLICE_3_1_HANDOFF.md)
+and [acceptance ledger](SLICE_3_1_ACCEPTANCE.md).
 
 ## Outcome
 
@@ -16,6 +20,11 @@ not systematically judge progress across the repair history.
 Add a read-only progress judge through the existing Flue runtime. Keep the
 deterministic coordinator, candidate reviewer and Codex harness. The judge cannot
 edit code, execute commands, publish, merge, extend budgets or grant authority.
+
+This is a checkpoint between attempts, not continuous monitoring or live
+preemption. It adds no separate gate when candidate checks and review already
+pass. Model judgment quality remains unevaluated; local synthetic cases verify
+the controller and evidence contracts.
 
 ## Assessment and decisions
 
@@ -48,7 +57,7 @@ history; subsequent assessments compare actual prior work.
 
 - Preserve the two-repair and three-hour cumulative ceilings. Judge time counts
   toward the same budget. Exhausted authority stops admission before a model call.
-- Proposed default: one judge invocation per prospective repair ordinal, at most
+- Implemented limits: one judge invocation per prospective repair ordinal, at most
   two per grant, each with a three-minute deadline or the smaller remaining
   allowance. Snapshot these limits in the admission contract. No recursive judges,
   voting rounds or automatic judge retry loop.

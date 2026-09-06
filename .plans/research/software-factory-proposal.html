@@ -2351,19 +2351,22 @@ Workspace lifecycle (separate from run status)
                 <tr>
                   <td><strong>3.1 · Progress supervision</strong></td>
                   <td>
-                    Scheduled follow-up: a bounded read-only judge assesses
-                    repair history for repeated failures, oscillating changes,
-                    test weakening and scope drift. Reuse Flue and the existing
-                    human planning surfaces; retain the same execution budgets.
+                    Implemented locally, publication pending; no Slice 3.1 PRs
+                    yet. A bounded read-only Flue judge assesses repair history
+                    before another attempt. Continue, change approach or
+                    escalate through existing human planning surfaces within the
+                    same budgets.
                   </td>
                   <td>
-                    Distinguish productive progress from repeated failed
-                    approaches. Persist continue, change-approach or escalate
-                    decisions; test duplicate events, stale evidence, restart,
-                    timeout and budget exhaustion without recursive judge loops.
-                    Not implemented in Slice 3. See the
-                    <a href="../factory/SLICE_3_1_PROGRESS_REVIEW_PLAN.md"
-                      >follow-up plan</a
+                    Local verification stages pass across the full run and
+                    corrected targeted rerun, with 2,544 unique passing tests.
+                    Production/UI static reviews are clean; final test-delta
+                    review and publication gates remain pending. Real
+                    model/Codex/GitHub acceptance is NOT RUN; judgment quality
+                    is unevaluated. This between-attempt checkpoint adds neither
+                    live preemption nor a new all-green gate. See the
+                    <a href="../factory/SLICE_3_1_HANDOFF.md"
+                      >implementation and verification record</a
                     >.
                   </td>
                 </tr>

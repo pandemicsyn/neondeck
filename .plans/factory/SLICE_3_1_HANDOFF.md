@@ -1,11 +1,12 @@
 # Slice 3.1 implementation handoff
 
-Status: implementation in progress, September 6, 2026. No Slice 3.1 PRs have
-been created. Source base: merged Slice 3, `a897aa06dde6640ad8c8bf83b1683534d252ded5`.
+Status: implemented and verified locally, September 6, 2026. Publication is
+pending; no Slice 3.1 PRs have been created. Real model/Codex/GitHub acceptance is
+**NOT RUN**. Source base: merged Slice 3, `a897aa06dde6640ad8c8bf83b1683534d252ded5`.
 
 ## Delivery contract
 
-Implement the [progress supervision plan](SLICE_3_1_PROGRESS_REVIEW_PLAN.md).
+Implements the [progress supervision plan](SLICE_3_1_PROGRESS_REVIEW_PLAN.md).
 The progress reviewer is a bounded read-only Flue assessment before an otherwise
 authorized coding repair. Both check/review failure and actionable GitHub feedback
 use the same gate. Atomic repair admission also requires the matching successful
@@ -47,14 +48,40 @@ Keep credentials, private addresses and raw live evidence out of this public rep
 
 ## Review and verification gates
 
-- [ ] Focused contract, controller, runtime and UI tests pass.
-- [ ] Full `npm run verify` passes on the cumulative source candidate.
-- [ ] Two independent static reviewers return no findings on the final source.
-- [ ] Manager checks product-plan adherence and recorded deviations before PRs.
+- [x] Focused contract, controller, runtime and UI tests pass.
+- [x] All verification stages pass (full run plus targeted rerun), as detailed below.
+- [x] Two independent static reviews are clean on production/UI source `87a3bbe0`.
+- [ ] Complete static review of the final test-only assertion correction.
+- [x] Manager pre-publication architecture and product review is clean.
 - [ ] Create draft stacked PRs with verification and actual UI screenshots.
 - [ ] Manager performs a post-publication architectural review of the full stack:
       Valibot IO validation, precise types, separated responsibilities and ownership.
-- [ ] Record PR links, tested source, clean-review source and remaining acceptance.
+- [ ] Record PR links and publication status when available.
+
+The full verification run on `87a3bbe0` passed lint, import layers, database
+migration validation and all type checks, then passed 2,351 unit, 47 serial Git and
+145 integration tests. One integration case failed its final assertion: it
+expected `human-authority`, but the existing `human-budget` intervention correctly
+remained authoritative after two repairs. The test-only expectation was corrected;
+the targeted `two-repairs` rerun passed (1 passed, 8 skipped, 135.537 seconds,
+exit 0). The skipped cases had already passed in the full run. Combined unique
+coverage is **2,544 passing tests: 2,351 unit, 47 serial Git and 146 integration**.
+
+The remaining build, `check:npm-package`, `smoke:npm-pack` and `format:check`
+stages passed separately. Local verification is complete across these runs;
+this does not claim a single successful `npm run verify` invocation. The final
+test-only delta remains in static review. Manager pre-publication architecture
+review is clean: shared Valibot validates unknown inputs, pure shared schemas are
+separate from Node fingerprints, atomic store enforcement is independent, and
+runtime, recovery, evidence and UI responsibilities remain distinct. No new `any`
+or GitHub transport/caching changes were introduced. Post-publication review
+remains pending.
+
+Eighteen actual React UI screenshots use synthetic fixtures at 1440px desktop and
+390px mobile widths. They cover decision states, expanded history, paused delivery
+and transfer into the existing planning session with an unsent draft. Captures
+recorded zero chat writes, page errors or horizontal overflow. Screenshot
+publication with the PRs is pending; no live service or model behavior is implied.
 
 Reviewers use static inspection only. Fixes return to implementers, then both
 reviewers recheck the final candidate. A synthetic model decision tests controller
