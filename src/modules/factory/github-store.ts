@@ -144,3 +144,37 @@ export function recentGitHubDeliveries(db: DatabaseSync) {
       v.parse(deliverySchema, JSON.parse(v.parse(v.string(), row.record))),
     );
 }
+
+/** One confirmation candidate from this work's completed comment scan. */
+export function missingGitHubComments(
+  db: DatabaseSync,
+  workId: string,
+  scan: string,
+) {
+  return db
+    .prepare(
+      `SELECT record FROM factory_github_comments
+     WHERE work_id=? AND json_extract(record,'$.deleted')=0
+       AND json_extract(record,'$.seenScan')<>?
+     ORDER BY rowid LIMIT 1`,
+    )
+    .all(workId, scan)
+    .map((row) =>
+      v.parse(commentRecordSchema, JSON.parse(v.parse(v.string(), row.record))),
+    );
+}
+
+/** Preserve first-retained delivery order, including deletion notices. */
+export function pendingGitHubComments(db: DatabaseSync, workId: string) {
+  return db
+    .prepare(
+      `SELECT record FROM factory_github_comments
+     WHERE work_id=? AND (json_extract(record,'$.intentId') IS NULL
+       OR json_extract(record,'$.intentId')='')
+     ORDER BY rowid LIMIT 1`,
+    )
+    .all(workId)
+    .map((row) =>
+      v.parse(commentRecordSchema, JSON.parse(v.parse(v.string(), row.record))),
+    );
+}

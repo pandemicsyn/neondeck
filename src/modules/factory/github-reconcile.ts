@@ -32,6 +32,8 @@ import {
   readGitHubRecords,
   dueGitHubDeliveries,
   recentGitHubDeliveries,
+  missingGitHubComments,
+  pendingGitHubComments,
   syncSchema,
   commentRecordSchema,
   putDelivery,
@@ -277,16 +279,7 @@ async function comments(
     });
   } else {
     const missing = dbRun(paths, (db) =>
-      readGitHubRecords(
-        db,
-        'factory_github_comments',
-        commentRecordSchema,
-      ).filter(
-        (row) =>
-          row.workId === workId &&
-          !row.deleted &&
-          row.seenScan !== state.commentScan,
-      ),
+      missingGitHubComments(db, workId, state.commentScan),
     );
     const row = missing[0];
     if (row) {
@@ -331,13 +324,9 @@ async function comments(
     }
   }
   const intents = dbRun(paths, (db) => {
-    const rows = readGitHubRecords(
-      db,
-      'factory_github_comments',
-      commentRecordSchema,
-    ).filter((row) => row.workId === workId && !row.intentId);
+    const rows = pendingGitHubComments(db, workId);
     const admitted: string[] = [];
-    for (const row of rows.slice(0, 1)) {
+    for (const row of rows) {
       const key = `github-comment:${row.id}:${row.version}`;
       const intent = prepareGitHubContext(
         db,
