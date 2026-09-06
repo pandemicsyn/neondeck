@@ -21,6 +21,12 @@ import {
 } from './progress-evidence-contract';
 export * from './progress-evidence-contract';
 
+export function isSensitiveProgressDiffPath(name: string) {
+  return /(?:^|\/)(?:\.env(?:\.|$)|credentials|secrets|\.git(?:\/|$))|\.(pem|key|p12)$/i.test(
+    name,
+  );
+}
+
 /** Collect only retained revision objects and authenticated report projections.
  * No checkout, writer, or mutable working-tree text enters the snapshot. */
 export async function buildProgressEvidencePacket(
@@ -59,13 +65,7 @@ export async function buildProgressEvidencePacket(
       )
         .split('\0')
         .filter(Boolean);
-      if (
-        names.some((name) =>
-          /(?:^|\/)(?:\.env(?:\.|$)|credentials|secrets|\.git)|\.(pem|key|p12)$/i.test(
-            name,
-          ),
-        )
-      )
+      if (names.some(isSensitiveProgressDiffPath))
         throw new Error('Sensitive diff paths');
       const content = await hostGit(root, [
         'diff',

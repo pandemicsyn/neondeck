@@ -35,6 +35,7 @@ import {
   readCodingExecutionUsage,
 } from '../factory';
 import { dispatchCodingRepair } from './repair';
+import { approveTestProgress } from './progress-test-helpers';
 import { captureCandidateEvidence } from './evidence';
 import {
   reserveDeliveryPipeline,
@@ -291,19 +292,32 @@ else {
         },
         paths,
       );
+      pipeline = approveTestProgress(
+        pipeline,
+        paths,
+        'repair-one',
+        'Fix within released scope',
+      );
+      const assessment = pipeline.progress.assessments.at(-1)!;
+      expect(assessment.state).toBe('settled');
+      expect(assessment.executionMs).toBe(1);
       const command = {
         pipelineId: pipeline.pipelineId,
         expectedVersion: pipeline.version,
         requestId: 'repair-one',
         reason: 'Fix within released scope',
         maxWallTimeMs: 15000,
+        progressAssessmentId: assessment.assessmentId,
+        progressInputDigest: assessment.inputDigest,
+        progressEvidenceDigest: assessment.evidenceDigest,
       };
       const originalEvidence = readFileSync(parent.candidate!.diffRef);
       const authority = vi.fn<() => Promise<void>>(async () => {});
       const started = await dispatchCodingRepair(command, paths, authority);
       if (!started) throw new Error('Expected reserved repair');
       handle = codingHandle(started, paths);
-      const expectedCap = allowance === 'remaining' ? 5000 : 15000;
+      // The accounted judge millisecond shares the original grant ceiling.
+      const expectedCap = allowance === 'remaining' ? 4999 : 15000;
       expect((await loadLocalManifest(handle)).manifest.config.wallTimeMs).toBe(
         expectedCap,
       );

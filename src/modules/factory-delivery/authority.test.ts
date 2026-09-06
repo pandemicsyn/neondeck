@@ -37,7 +37,8 @@ vi.mock('../runtime', () => ({
     prReview: 'reviewer',
   }),
 }));
-vi.mock('../autopilot-policy', () => ({
+vi.mock('../autopilot-policy', async (original) => ({
+  ...(await original<typeof import('../autopilot-policy')>()),
   repoGuardrails: () => ({ requiredChecks: [] }),
 }));
 vi.mock('../worktree-verification', () => ({
