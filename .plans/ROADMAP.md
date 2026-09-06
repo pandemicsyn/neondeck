@@ -68,10 +68,11 @@ As of August 2026:
 - Phase 10's provider-specific deploy adapters and all of Phase 17's TUI surface remain intentionally deferred.
 - Active product follow-ups live in the top level of `.plans/`; completed implementation plans and point-in-time reviews live in `.plans/archived/`. See `.plans/README.md` for the index.
 
-## Software Factory Slice 1 — Merged; Live Acceptance In Progress
+## Software Factory Slice 1 — Operator Accepted With Deferred Checks
 
-As of September 2026, all five increments of the initial intake and collaborative
-shaping path are implemented and reviewed. Historical phase completion above is unchanged.
+Slice 1 merged in PRs #382–#387 and #389 through `13049498d457257626af80483d68e0aa8110ad68`.
+Final verification passed 1,968 tests, 63 CI checks, two independent static reviews
+and final manager review. Local tests do not establish deployed acceptance.
 
 - [x] Manual/GitHub intake, durable source/work records, and bounded model triage.
 - [x] Persistent model-led planning, versioned briefs, Markdown editing and proposal
@@ -82,7 +83,8 @@ shaping path are implemented and reviewed. Historical phase completion above is 
 - [x] Merge PRs #382–#387 and #389 into main `13049498d457257626af80483d68e0aa8110ad68`.
 - [x] Record the September 6 bounded live exercise: GitHub admission, configured
       models, managed status, graceful restart/replay and selected public route probes.
-- [ ] Complete live human iteration/version comparison/exact release, post-release
+- [x] Operator accepts Slice 1 with the remaining checks deferred (September 6); this is a scope decision, not proof that those tests passed.
+- [ ] Deferred: live human iteration/version comparison/exact release, post-release
       recovery/revocation, attributed replies/questions/repair/missed-delivery recovery,
       and full manual-source live acceptance. Coding execution is a subsequent slice.
 
@@ -116,10 +118,17 @@ explicit proxy-port selection corrected it, with JSON health 200 and the selecte
 private-route probes 404. This is not an all-port or all-authentication audit.
 See the [sanitized live record](factory/SLICE_1_HANDOFF.md#september-6-2026--merged-build-and-partial-live-acceptance)
 for model, ingress, writeback and restart observations and their limits. Preserve
-active plans through the remaining acceptance; coding execution starts in a
-subsequent slice. Actual deviations
+active plans to track the deferred checks; the operator has authorized the Slice 2 stack to merge. Actual deviations
 belong in `DEVIATIONS.md`; preserve existing coding harnesses and do not revive
 the removed PR Autopilot coordinator.
+
+## Software Factory Slice 2 — Implementation And Acceptance
+
+Slice 2 adds supervised local worktrees and Codex CLI handoff, durable coding runs,
+cancellation/recovery/limits, retained candidate evidence and an operator UI.
+See the [Slice 2 implementation plan](factory/SLICE_2_IMPLEMENTATION_PLAN.md)
+for delivery status and acceptance obligations. The operator authorized stack merge with real Codex acceptance still pending after merge. Each publication requires two
+clean independent static reviews and manager implementation/product-plan review.
 
 ## Usability Gate
 

@@ -906,3 +906,19 @@ Use this format:
   missed-delivery recovery and full manual-source acceptance. Track old-conversation
   compatibility separately; do not infer it from fresh-home success. Coding
   execution remains a subsequent slice.
+
+## 2026-09-06 - Software factory slice 2 sequencing (historical)
+
+- Roadmap item: Software factory slices 1–2.
+- Historical decision, superseded by the operator decision below: Begin slice 2 implementation and reviewed draft stacked PRs before deployed slice 1 acceptance; all slice 2 merges remain blocked on that acceptance.
+- Reason: The user deferred private VM/GitHub/provider setup and live tests until the morning and explicitly authorized interim development with mockdex.
+- Follow-up: Operator and manager complete the checklist in factory/SLICE_2_IMPLEMENTATION_PLAN.md, record public-safe acceptance evidence and clear the merge gate before any slice 2 PR merges. Mock tests do not clear it.
+
+## 2026-09-06 - Operator Acceptance And Deferred Factory Tests
+
+- Roadmap item: Software Factory slices 1–2.
+- Decision: After integrating PR #396, the operator explicitly accepted Slice 1 with the remaining checks deferred and instructed the manager to merge the Slice 2 stack. This supersedes the earlier manager-enforced pre-merge acceptance holds; GitHub checks and dedicated review requirements remain in force.
+- Evidence boundary: PR #396 records a partial live rehearsal, zero releases, a fresh acceptance home and a corrected proxy configuration. That dated record is preserved. Operator acceptance does not claim that unperformed tests passed.
+- Deferred Slice 1 checks: human iteration/version comparison/exact release; post-release recovery/revocation; attributed replies, questions, writeback repair and missed-delivery recovery; full manual-source live acceptance. Existing-home/conversation compatibility remains unproven separately.
+- Deferred Slice 2 checks: real supported Codex CLI/model/auth execution through the local adapter, operator candidate review, lifecycle and recovery acceptance. Automated mockdex verification remains valid for its tested scope, but is not live Codex acceptance. Record the real exercise after merge in the Slice 2 acceptance plan.
+- Follow-up: Keep deferred checks visible in the active factory plans. Merge authorization does not authorize a provider call, new GitHub fixture, VM restart or deployment in this documentation task. The manager owns follow-up coordination; the operator selects private inputs and signs off the live results.
