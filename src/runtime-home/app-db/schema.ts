@@ -1605,7 +1605,7 @@ export const codingRuns = sqliteTable(
     attemptId: text('attempt_id').notNull().unique(),
     requestId: text('request_id').notNull().unique(),
     workItemId: text('work_item_id').notNull(),
-    releaseId: text('release_id').notNull().unique(),
+    releaseId: text('release_id').notNull(),
     writerSlot: integer('writer_slot').unique(),
     worktreeId: text('worktree_id')
       .unique()
@@ -1631,5 +1631,25 @@ export const codingRunEvents = sqliteTable(
   },
   (table) => [
     index('idx_coding_run_events_run').on(table.runId, table.sequence),
+  ],
+);
+
+// Ownership is retained after terminal outcomes; unrelated controllers must not adopt factory PRs.
+export const factoryDeliveryPipelines = sqliteTable(
+  'factory_delivery_pipelines',
+  {
+    sequence: integer('sequence').primaryKey({ autoIncrement: true }),
+    pipelineId: text('pipeline_id').notNull().unique(),
+    initialRunId: text('initial_run_id').notNull().unique(),
+    initialAttemptId: text('initial_attempt_id').notNull().unique(),
+    workItemId: text('work_item_id').notNull(),
+    repoId: text('repo_id').notNull(),
+    branch: text('branch').notNull(),
+    prNumber: integer('pr_number'),
+    recordJson: text('record_json').notNull(),
+  },
+  (table) => [
+    unique().on(table.repoId, table.branch),
+    unique().on(table.repoId, table.prNumber),
   ],
 );
