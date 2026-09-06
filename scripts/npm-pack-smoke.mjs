@@ -1,5 +1,11 @@
 import { spawn, spawnSync } from 'node:child_process';
-import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import {
+  existsSync,
+  mkdtempSync,
+  readFileSync,
+  writeFileSync,
+  rmSync,
+} from 'node:fs';
 import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -201,7 +207,71 @@ async function smokeServe(cli, home, port, cwd) {
     }
     throw new Error('Packaged listener remained reachable after shutdown.');
   }
+  await smokeManagedEntry(home, port, ingressPort, cwd);
   await assertBindRollback(cli, home, port, ingressPort, cwd);
+}
+
+// systemd/launchd invoke the packaged entry directly, without the CLI env loader.
+async function smokeManagedEntry(home, port, ingressPort, cwd) {
+  const envPath = join(home, '.env');
+  const original = existsSync(envPath) ? readFileSync(envPath, 'utf8') : null;
+  const env = {
+    ...process.env,
+    NEONDECK_HOME: home,
+    NEONDECK_PORT: String(port),
+    PORT: String(port),
+  };
+  delete env.NEONDECK_INGRESS_PORT;
+  delete env.NEONDECK_INGRESS_HOST;
+  delete env.NEONDECK_PRIVATE_HOST;
+  writeFileSync(
+    envPath,
+    `${original ?? ''}\nNEONDECK_INGRESS_PORT=${ingressPort}\nNEONDECK_INGRESS_HOST=127.0.0.1\nNEONDECK_PRIVATE_HOST=::1\n`,
+  );
+  const entry = join(cwd, 'node_modules', 'neondeck', 'dist', 'server.mjs');
+  const child = spawn(process.execPath, [entry], {
+    cwd,
+    env,
+    detached: process.platform !== 'win32',
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  let output = '';
+  child.stdout.on('data', (chunk) => {
+    output += String(chunk);
+  });
+  child.stderr.on('data', (chunk) => {
+    output += String(chunk);
+  });
+  try {
+    const deadline = Date.now() + 15000;
+    for (;;) {
+      try {
+        const privateHealth = await fetch(`http://[::1]:${port}/api/health`);
+        const publicHealth = await fetch(
+          `http://127.0.0.1:${ingressPort}/health`,
+        );
+        if (privateHealth.ok && publicHealth.ok) break;
+      } catch {
+        /* startup */
+      }
+      if (child.exitCode !== null || Date.now() > deadline)
+        throw new Error(
+          `Direct managed entry failed runtime-home listener config.\n${output}`,
+        );
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+    if (
+      (await fetch(`http://127.0.0.1:${ingressPort}/api/health`)).status !== 404
+    )
+      throw new Error('Managed public listener exposed private route');
+    console.info(
+      'Direct managed entry: runtime-home .env, IPv6 private health and public isolation passed.',
+    );
+  } finally {
+    await stopProcess(child);
+    if (original === null) rmSync(envPath);
+    else writeFileSync(envPath, original);
+  }
 }
 
 async function assertRuntimeSkills(port) {

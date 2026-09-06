@@ -1,3 +1,4 @@
+import { privateServerHost } from '../lib/server-address';
 import { serve } from '@hono/node-server';
 import type { Server } from 'node:http';
 import type { Fetchable } from '@flue/runtime/routing';
@@ -12,11 +13,7 @@ export function listenerConfig(env: NodeJS.ProcessEnv = process.env) {
       throw new Error('Listener port must be between 1 and 65535.');
     return number;
   };
-  const privateHost = env.NEONDECK_PRIVATE_HOST ?? '127.0.0.1';
-  if (!['127.0.0.1', '::1'].includes(privateHost))
-    throw new Error(
-      'Private listener must bind to loopback. Use an authenticated tunnel or SSH forwarding.',
-    );
+  const privateHost = privateServerHost(env);
   const privatePort = parsePort(env.NEONDECK_PORT ?? env.PORT, 3583);
   const publicPort = env.NEONDECK_INGRESS_PORT
     ? parsePort(env.NEONDECK_INGRESS_PORT, 0)

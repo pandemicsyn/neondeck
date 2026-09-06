@@ -45,6 +45,16 @@ export const githubIssueSchema = v.object({
   pull_request: v.optional(v.unknown()),
 });
 export type GitHubIssue = v.InferOutput<typeof githubIssueSchema>;
+// Discovery needs identity and admission only. Validate full content per issue.
+export const githubIssueDiscoverySchema = v.pick(githubIssueSchema, [
+  'id',
+  'number',
+  'labels',
+  'pull_request',
+]);
+export type GitHubIssueDiscovery = v.InferOutput<
+  typeof githubIssueDiscoverySchema
+>;
 export const factoryGitHubStateSchema = v.object({
   configFingerprint: v.string(),
   connections: v.array(
@@ -71,6 +81,9 @@ export const factoryGitHubStateSchema = v.object({
       page: v.number(),
     }),
   ),
+});
+export const factoryGitHubCommentsSchema = v.object({
+  nextCursor: v.nullable(v.string()),
   comments: v.array(
     v.object({
       id: v.string(),

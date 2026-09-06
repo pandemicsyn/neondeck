@@ -1,13 +1,16 @@
+import { privateServerUrl } from '../lib/server-address';
 import { createGitHubIngress } from './github-ingress';
 import { listenerConfig, startNeondeckListeners } from './listeners';
 import { startManagedServices } from './managed-services';
 import { getMcpRegistry } from '../domains/mcp';
 import { runtimePaths } from '../runtime-home';
+import { loadNeondeckEnv } from '../modules/runtime/env';
+const paths = runtimePaths();
+loadNeondeckEnv(paths, { includeDevFallback: false });
 const config = listenerConfig();
 process.env.NEONDECK_MANAGED_HOST = '1';
 const { loadFlueNodeApplication } = await import('virtual:flue/server');
 const application = await loadFlueNodeApplication();
-const paths = runtimePaths();
 let stopSources = () => getMcpRegistry(paths).stop();
 const lifecycle = await startNeondeckListeners(
   application,
@@ -17,7 +20,7 @@ const lifecycle = await startNeondeckListeners(
 );
 stopSources = startManagedServices(paths, application);
 console.info(
-  `[flue] Server listening on http://localhost:${config.privatePort}`,
+  `[flue] Server listening on ${privateServerUrl(config.privatePort)}`,
 );
 if (config.publicPort)
   console.info(

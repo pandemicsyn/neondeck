@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import {
   getFactoryGitHub,
+  getFactoryGitHubComments,
   saveFactoryGitHub,
   syncFactorySource,
 } from '../../api/factory';
@@ -314,6 +315,14 @@ export function FactoryGitHubSource({ detail }: { detail: FactoryDetail }) {
           Source discussion refresh failed; retained content remains visible.
         </p>
       )}
+      {state.data?.sync
+        .filter((s) => s.id === `connection:${remote.connectionId}` && s.error)
+        .map((s) => (
+          <p key={s.id} role="status">
+            {s.error} Retained source approval is unchanged unless new context
+            was observed.
+          </p>
+        ))}
       {state.data?.deliveries
         .filter(
           (d) =>
@@ -324,34 +333,83 @@ export function FactoryGitHubSource({ detail }: { detail: FactoryDetail }) {
         .map((d) => (
           <p key={d.id}>{d.error ?? 'Source sync pending.'}</p>
         ))}
+      <FactoryGitHubDiscussion
+        key={detail.work.id}
+        workId={detail.work.id}
+        url={remote.url}
+      />
+    </section>
+  );
+}
+function FactoryGitHubDiscussion({
+  workId,
+  url,
+}: {
+  workId: string;
+  url: string;
+}) {
+  const [cursors, setCursors] = useState<Array<string | undefined>>([
+    undefined,
+  ]);
+  const cursor = cursors.at(-1);
+  const state = useQuery({
+    queryKey: ['factory-github-comments', workId, cursor],
+    queryFn: () => getFactoryGitHubComments(workId, cursor),
+    refetchInterval: 15000,
+  });
+  return (
+    <section aria-label="Issue discussion">
       <h3>Attributed issue discussion</h3>
       <p>
         External context only. Replies cannot approve, release, or change the
         brief.
       </p>
-      {state.data?.comments
-        .filter((comment) => comment.workId === detail.work.id)
-        .map((comment) => (
-          <article key={comment.id}>
-            <p>
-              <a
-                href={`${remote.url}#issuecomment-${comment.remoteId}`}
-                target="_blank"
-                rel="noreferrer"
-              >
-                {comment.author}
-              </a>{' '}
-              · revision {comment.version} ·{' '}
-              {comment.deleted ? 'Deleted on GitHub' : comment.remoteUpdatedAt}
-            </p>
-            <MarkdownMessage>{comment.body}</MarkdownMessage>
-            <p>
-              {comment.intentId
-                ? 'Retained in planner delivery history.'
-                : 'Retained context; awaiting an open planning conversation.'}
-            </p>
-          </article>
-        ))}
+      <p>Newest first · up to 10 comments per page.</p>
+      {state.isPending && <p>Loading discussion…</p>}
+      {state.error && (
+        <p role="alert">
+          Discussion refresh failed.{' '}
+          <button onClick={() => void state.refetch()}>Retry discussion</button>
+        </p>
+      )}
+      {state.data?.comments.length === 0 && (
+        <p>No retained comments on this page.</p>
+      )}
+      <nav aria-label="Discussion pages">
+        <button
+          disabled={cursors.length === 1 || state.isFetching}
+          onClick={() => setCursors(cursors.slice(0, -1))}
+        >
+          Newer comments
+        </button>
+        <button
+          disabled={!state.data?.nextCursor || state.isFetching}
+          onClick={() => setCursors([...cursors, state.data!.nextCursor!])}
+        >
+          Older comments
+        </button>
+      </nav>
+      {state.data?.comments.map((comment) => (
+        <article key={comment.id}>
+          <p>
+            <a
+              href={`${url}#issuecomment-${comment.remoteId}`}
+              target="_blank"
+              rel="noreferrer"
+            >
+              {comment.author}
+            </a>{' '}
+            · revision {comment.version} ·{' '}
+            {comment.deleted ? 'Deleted on GitHub' : comment.remoteUpdatedAt}
+          </p>
+          <MarkdownMessage>{comment.body}</MarkdownMessage>
+          <p>
+            {comment.intentId
+              ? 'Retained in planner delivery history.'
+              : 'Retained context; awaiting an open planning conversation.'}
+          </p>
+        </article>
+      ))}
     </section>
   );
 }

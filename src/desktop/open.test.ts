@@ -379,3 +379,34 @@ function deferredServer(options: { resolveWhenStopped?: boolean } = {}) {
   );
   return { controller: { exit, stop }, resolve, stop };
 }
+
+it('uses bracketed IPv6 for dashboard probes and browser launch', async () => {
+  vi.stubEnv('NEONDECK_PRIVATE_HOST', '::1');
+  try {
+    const fetchImpl = vi.fn<typeof fetch>(async () =>
+      Response.json({ ok: true }),
+    );
+    const browser = vi.fn(async () => {});
+    const launch = await openDashboard(
+      { paths: runtimePaths('/tmp/synthetic-open-ipv6'), port: 3599 },
+      {
+        fetch: fetchImpl,
+        spawn: browser,
+        platform: 'linux',
+        readProfiles: async () => ({}),
+        readServiceStatus: async () => serviceStatus(),
+      },
+    );
+    expect(launch.result.url).toBe('http://[::1]:3599');
+    expect(
+      fetchImpl.mock.calls.every(
+        ([url]) => String(url) === 'http://[::1]:3599/api/health',
+      ),
+    ).toBe(true);
+    expect(browser).toHaveBeenCalledWith('xdg-open', ['http://[::1]:3599'], {
+      detached: true,
+    });
+  } finally {
+    vi.unstubAllEnvs();
+  }
+});

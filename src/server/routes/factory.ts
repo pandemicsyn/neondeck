@@ -3,6 +3,7 @@ import { githubDigest } from '../../modules/factory/github-store';
 import { githubConnectionSchema } from '../../../shared/factory-github';
 import {
   factoryGitHubState,
+  factoryGitHubComments,
   requestFactoryGitHubSync,
 } from '../../modules/factory/github-reconcile';
 import { HTTPException } from 'hono/http-exception';
@@ -72,6 +73,11 @@ export function createFactoryRoutes(
       );
     return c.json(updateFactoryConfig({ github: input.connections }, paths));
   });
+  routes.get('/work/:id/comments', (c) =>
+    c.json(
+      factoryGitHubComments(c.req.param('id'), c.req.query('cursor'), paths),
+    ),
+  );
   routes.get('/github', (c) => c.json(factoryGitHubState(paths)));
   routes.post('/work/:id/sync', (c) =>
     c.json(requestFactoryGitHubSync(c.req.param('id'), paths), 202),

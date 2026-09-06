@@ -29,6 +29,10 @@ configuration/credential presence, not a successful live access or exposure test
 
 Build and run with Node 26.4.0 using `npm run build:dashboard` and `neondeck serve`.
 The packaged `dist/server.mjs` delegates to the same owned host as the CLI.
+Direct systemd/launchd startup loads the runtime home's `.env` before resolving
+listeners; supplied process environment wins. No development `.env` fallback is
+used by that entry. IPv6 loopback uses bracketed `http://[::1]:<port>` URLs in the
+dashboard launcher, service health probe and startup display.
 
 | Variable                   | Default     | Purpose                                                                   |
 | -------------------------- | ----------- | ------------------------------------------------------------------------- |
@@ -138,3 +142,18 @@ Provider contracts: [GitHub signature verification](https://docs.github.com/en/w
 [webhook best practices](https://docs.github.com/en/webhooks/using-webhooks/best-practices-for-using-webhooks),
 [issue REST reads](https://docs.github.com/en/rest/issues/issues), and
 [issue-comment REST reads](https://docs.github.com/en/rest/issues/comments).
+
+## Read health and bounded discussion
+
+Transient connectivity, rate-limit, deadline and shutdown read failures stay in
+retry/health state. They do not change source versions or withdraw a release when
+no new context was observed. An unavailable source, invalid content or confirmed
+identity/context change still requires human review. Discovery retains identity
+and admission fields before fetching full content per issue; an oversized issue
+gets a durable attention receipt while valid later issues continue.
+
+Global GitHub state contains connection and sync health, not discussion bodies.
+The work-scoped `/api/factory/work/:id/comments` endpoint returns at most ten
+retained comments, newest first, with an opaque row cursor for older pages. The
+workbench offers newer/older controls and polls only the selected task/page.
+External discussion remains attributed context without approval authority.

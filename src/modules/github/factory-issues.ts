@@ -1,6 +1,7 @@
 import * as v from 'valibot';
 import {
   githubIssueSchema,
+  githubIssueDiscoverySchema,
   githubCommentSchema,
   type GitHubConnection,
 } from '../../../shared/factory-github';
@@ -59,7 +60,7 @@ export async function readFactoryGitHubIssuesPage(
   );
   return {
     items: v.parse(
-      v.pipe(v.array(githubIssueSchema), v.maxLength(25)),
+      v.pipe(v.array(githubIssueDiscoverySchema), v.maxLength(25)),
       await readJson(response),
     ),
     hasNext: !!nextLink(response.headers.get('link')),
