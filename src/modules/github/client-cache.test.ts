@@ -329,3 +329,216 @@ it.each([200, 304])(
     ).toBe('"fresh"');
   },
 );
+
+it.each(['same-token', 'other-token', 'clear'])(
+  'fences conditional reads for %s invalidation',
+  async (invalidation) => {
+    const delayed = Promise.withResolvers<Response>();
+    const started = Promise.withResolvers<void>();
+    const mock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(response({ old: true }))
+      .mockImplementationOnce(() => {
+        started.resolve();
+        return delayed.promise;
+      })
+      .mockResolvedValueOnce(Response.json({ written: true }))
+      .mockResolvedValueOnce(response({ next: true }));
+    vi.stubGlobal('fetch', mock);
+    await read();
+    const pending = read().catch((error: unknown) => error);
+    await started.promise;
+    if (invalidation === 'clear') clearGitHubRequestCache();
+    else
+      await (
+        await githubFetch(
+          invalidation === 'same-token' ? 'synthetic-a' : 'synthetic-b',
+          url,
+          { method: 'PATCH', body: '{}' },
+        )
+      ).json();
+    delayed.resolve(
+      new Response(null, { status: 304, headers: { ETag: '"validated"' } }),
+    );
+    if (invalidation === 'other-token')
+      expect(await pending).toEqual({ old: true });
+    else
+      expect(await pending).toMatchObject({
+        message: expect.stringContaining('invalidated'),
+      });
+    await read();
+    expect(
+      new Headers(mock.mock.calls.at(-1)?.[1]?.headers).get('if-none-match'),
+    ).toBe(invalidation === 'other-token' ? '"validated"' : null);
+  },
+);
+
+it.each([
+  { slow: 304, fast: 200, noStore: 'none' },
+  { slow: 304, fast: 304, noStore: 'none' },
+  { slow: 304, fast: 200, noStore: 'slow' },
+  { slow: 304, fast: 304, noStore: 'slow' },
+  { slow: 304, fast: 200, noStore: 'fast' },
+  { slow: 304, fast: 304, noStore: 'fast' },
+])(
+  'preserves the winning response for $slow/$fast reads with $noStore no-store',
+  async ({ slow, fast, noStore }) => {
+    const delayed = Promise.withResolvers<Response>();
+    const started = Promise.withResolvers<void>();
+    const makeResponse = (status: number, version: string) => {
+      const headers = {
+        ETag: `"${version}"`,
+        Link: `<https://api.github.com/${version}>; rel="next"`,
+        ...(noStore === version ? { 'Cache-Control': 'no-store' } : {}),
+      };
+      return status === 304
+        ? new Response(null, { status, headers })
+        : response({ version }, headers);
+    };
+    const mock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(response({ version: 'original' }))
+      .mockImplementationOnce(() => {
+        started.resolve();
+        return delayed.promise;
+      })
+      .mockResolvedValueOnce(makeResponse(fast, 'fast'))
+      .mockResolvedValueOnce(
+        noStore === 'fast'
+          ? response({ version: 'uncached' })
+          : new Response(null, { status: 304 }),
+      );
+    vi.stubGlobal('fetch', mock);
+    await read();
+    const pending = read('synthetic-a', url, {
+      signal: new AbortController().signal,
+    });
+    await started.promise;
+    await read();
+    delayed.resolve(makeResponse(slow, 'slow'));
+    await pending;
+    const retained = await githubFetch('synthetic-a', url);
+    expect(
+      new Headers(mock.mock.calls.at(-1)?.[1]?.headers).get('if-none-match'),
+    ).toBe(noStore === 'fast' ? null : '"fast"');
+    if (noStore !== 'fast')
+      expect(retained.headers.get('link')).toContain('/fast>');
+    expect(await retained.json()).toEqual({
+      version:
+        noStore === 'fast' ? 'uncached' : fast === 200 ? 'fast' : 'original',
+    });
+  },
+);
+
+it.each(['headers', 'buffering'])(
+  'does not resurrect a %s response after a newer no-store response',
+  async (phase) => {
+    const started = Promise.withResolvers<void>();
+    let finish: (() => void) | undefined;
+    const mock = vi
+      .fn<typeof fetch>()
+      .mockImplementationOnce(
+        async () =>
+          new Response(
+            new ReadableStream<Uint8Array>({
+              start(controller) {
+                controller.enqueue(new TextEncoder().encode('{"old":'));
+                finish = () => {
+                  controller.enqueue(new TextEncoder().encode('true}'));
+                  controller.close();
+                };
+                started.resolve();
+              },
+            }),
+            { headers: { 'Content-Type': 'application/json', ETag: '"old"' } },
+          ),
+      )
+      .mockResolvedValueOnce(
+        response({ fresh: true }, { 'Cache-Control': 'no-store' }),
+      )
+      .mockResolvedValueOnce(response({ next: true }));
+    vi.stubGlobal('fetch', mock);
+    const pending = read('synthetic-a', url, {
+      signal: new AbortController().signal,
+    });
+    await started.promise;
+    // Let the pending read claim the empty entry and begin body buffering before
+    // the next request observes the absent cache entry.
+    if (phase === 'buffering')
+      await new Promise<void>((resolve) => setImmediate(resolve));
+    await read();
+    finish?.();
+    expect(await pending).toEqual({ old: true });
+    await read();
+    expect(
+      new Headers(mock.mock.calls[2]?.[1]?.headers).get('if-none-match'),
+    ).toBeNull();
+  },
+);
+
+it('does not fence an uncached body completing across an unrelated token write', async () => {
+  const started = Promise.withResolvers<void>();
+  const delayed = Promise.withResolvers<Response>();
+  const mock = vi
+    .fn<typeof fetch>()
+    .mockImplementationOnce(() => {
+      started.resolve();
+      return delayed.promise;
+    })
+    .mockResolvedValueOnce(Response.json({ written: true }))
+    .mockResolvedValueOnce(new Response(null, { status: 304 }));
+  vi.stubGlobal('fetch', mock);
+  const pending = read();
+  await started.promise;
+  await (
+    await githubFetch('synthetic-b', url, { method: 'PATCH', body: '{}' })
+  ).json();
+  delayed.resolve(response({ fresh: true }));
+  await pending;
+  expect(await read()).toEqual({ fresh: true });
+  expect(
+    new Headers(mock.mock.calls[2]?.[1]?.headers).get('if-none-match'),
+  ).toBe('"v1"');
+});
+
+it.each(['failure', '304', 'no-store'])(
+  'allows a later full response after an earlier %s cache update',
+  async (first) => {
+    const delayed = Promise.withResolvers<Response>();
+    const started = Promise.withResolvers<void>();
+    const mock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(response({ original: true }))
+      .mockImplementationOnce(() => {
+        started.resolve();
+        return delayed.promise;
+      })
+      .mockResolvedValueOnce(
+        first === 'failure'
+          ? Response.json({}, { status: 500 })
+          : new Response(null, {
+              status: 304,
+              headers:
+                first === 'no-store'
+                  ? { 'Cache-Control': 'no-store' }
+                  : { ETag: '"validated"' },
+            }),
+      )
+      .mockResolvedValueOnce(new Response(null, { status: 304 }));
+    vi.stubGlobal('fetch', mock);
+    await read();
+    const pending = read('synthetic-a', url, {
+      signal: new AbortController().signal,
+    });
+    await started.promise;
+    if (first === 'failure')
+      await expect(read()).rejects.toThrow('GitHub request failed with 500');
+    else await read();
+    delayed.resolve(response({ fresh: true }, { ETag: '"fresh"' }));
+    await pending;
+    expect(await read()).toEqual({ fresh: true });
+    expect(
+      new Headers(mock.mock.calls[3]?.[1]?.headers).get('if-none-match'),
+    ).toBe('"fresh"');
+  },
+);

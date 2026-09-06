@@ -26,9 +26,16 @@ const githubLoginCache = new Map<
   string,
   { expiresAt: number | null; value: Promise<string> }
 >();
-// A process-wide epoch avoids an unbounded map of historical token identities.
-// Writes conservatively separate all in-flight reads; retained bodies are evicted
-// only for the affected token.
+type GitHubRead = {
+  tokenFingerprint: string;
+  cacheKey: string | undefined;
+  invalidated: boolean;
+  superseded: boolean;
+};
+// Retain fences only for outstanding reads, never historical token identities.
+// Each fence is released in finally, including errors and aborted requests.
+const githubReads = new Set<GitHubRead>();
+// The global epoch separates deduplication groups, not cache authority.
 let githubReadEpoch = 0;
 const githubRequestWaiters: Array<{
   resolve: () => void;
@@ -214,7 +221,6 @@ export async function githubFetch(
       { ...init, headers },
       validatorCacheKey,
       cached,
-      generation,
     ).finally(() => {
       if (githubGetRequestsInFlight.get(requestKey) === request) {
         githubGetRequestsInFlight.delete(requestKey);
@@ -230,7 +236,6 @@ export async function githubFetch(
     { ...init, headers },
     validatorCacheKey,
     cached,
-    generation,
   );
 }
 
@@ -240,25 +245,41 @@ async function executeConditionalGitHubGet(
   init: RequestInit,
   validatorCacheKey: string | undefined,
   cached: CachedGitHubResponse | undefined,
-  generation: number,
 ) {
+  const read: GitHubRead = {
+    tokenFingerprint: githubTokenFingerprint(token),
+    cacheKey: validatorCacheKey,
+    invalidated: false,
+    superseded: false,
+  };
+  githubReads.add(read);
+  try {
+    return await revalidateGitHubGet(url, init, cached, read);
+  } finally {
+    githubReads.delete(read);
+  }
+}
+
+async function revalidateGitHubGet(
+  url: string,
+  init: RequestInit,
+  cached: CachedGitHubResponse | undefined,
+  read: GitHubRead,
+) {
+  const validatorCacheKey = read.cacheKey;
   let response: Response;
   try {
     response = await executeGitHubRequest(url, init, cached);
   } catch (error) {
     // A failed revalidation retires only the entry this request observed.
     // A concurrent successful read may already have replaced it.
-    if (
-      validatorCacheKey &&
-      githubReadGeneration() === generation &&
-      githubValidatorCache.get(validatorCacheKey) === cached
-    ) {
+    if (validatorCacheKey && claimGitHubCacheUpdate(read, cached)) {
       deleteCachedGitHubResponse(validatorCacheKey);
     }
     throw error;
   }
   if (response.status === 304 && cached) {
-    if (githubReadGeneration() !== generation) {
+    if (read.invalidated) {
       throw new Error(
         'GitHub read invalidated during conditional revalidation; retry.',
       );
@@ -266,7 +287,7 @@ async function executeConditionalGitHubGet(
     const headers = new Headers(cached.headers);
     for (const [name, value] of response.headers) headers.set(name, value);
     const refreshed = { ...cached, headers: [...headers.entries()] };
-    if (validatorCacheKey) {
+    if (validatorCacheKey && claimGitHubCacheUpdate(read, cached)) {
       if (hasNoStore(headers) || !boundedCacheHeaders(headers))
         deleteCachedGitHubResponse(validatorCacheKey);
       else storeCachedGitHubResponse(validatorCacheKey, refreshed);
@@ -280,12 +301,13 @@ async function executeConditionalGitHubGet(
 
   // A replacement response must not leave a superseded validator behind,
   // including no-store, partial, invalid JSON, or oversized responses.
-  if (validatorCacheKey && githubReadGeneration() === generation) {
+  const ownsUpdate = claimGitHubCacheUpdate(read, cached, true);
+  if (validatorCacheKey && ownsUpdate) {
     deleteCachedGitHubResponse(validatorCacheKey);
   }
   if (
     validatorCacheKey &&
-    githubReadGeneration() === generation &&
+    ownsUpdate &&
     response.ok &&
     isValidatorCacheable(response)
   ) {
@@ -293,9 +315,9 @@ async function executeConditionalGitHubGet(
       response,
       githubValidatorMaxBodyBytes,
     );
-    if (body && githubReadGeneration() === generation && isJsonBody(body)) {
+    if (body && !read.invalidated && !read.superseded && isJsonBody(body)) {
       storeCachedGitHubResponse(validatorCacheKey, {
-        tokenFingerprint: githubTokenFingerprint(token),
+        tokenFingerprint: read.tokenFingerprint,
         body,
         headers: [...response.headers.entries()],
         status: response.status,
@@ -304,6 +326,29 @@ async function executeConditionalGitHubGet(
     }
   }
   return response;
+}
+
+// Conditional responses/errors may only affect their observed entry. A full
+// response is independent of that entry and can replace it. Fence buffering and
+// conditional peers before deletion so they cannot resurrect an evicted entry.
+function claimGitHubCacheUpdate(
+  read: GitHubRead,
+  cached: CachedGitHubResponse | undefined,
+  replacement = false,
+) {
+  if (
+    !read.cacheKey ||
+    read.invalidated ||
+    (!replacement &&
+      (read.superseded || githubValidatorCache.get(read.cacheKey) !== cached))
+  )
+    return false;
+  read.superseded = false;
+  for (const other of githubReads) {
+    if (other !== read && other.cacheKey === read.cacheKey)
+      other.superseded = true;
+  }
+  return true;
 }
 
 async function executeGitHubRequest(
@@ -469,6 +514,9 @@ function githubReadGeneration() {
 function advanceGitHubReadGeneration(token: string) {
   githubReadEpoch += 1;
   const fingerprint = githubTokenFingerprint(token);
+  for (const read of githubReads) {
+    if (read.tokenFingerprint === fingerprint) read.invalidated = true;
+  }
   githubLoginCache.delete(fingerprint);
   for (const [key, entry] of githubValidatorCache) {
     if (entry.tokenFingerprint === fingerprint) deleteCachedGitHubResponse(key);
@@ -681,6 +729,8 @@ function releaseGitHubRequestSlot() {
 }
 
 export function clearGitHubRequestCache() {
+  for (const read of githubReads) read.invalidated = true;
+  githubReads.clear();
   githubValidatorCache.clear();
   githubGetRequestsInFlight.clear();
   githubGraphqlQueriesInFlight.clear();
