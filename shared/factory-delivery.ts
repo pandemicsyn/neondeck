@@ -17,14 +17,27 @@ export const deliveryRevisionSchema = v.strictObject({
   headSha: sha,
   treeSha: sha,
 });
-export const deliveryEvidenceSchema = v.strictObject({
-  id: label,
-  kind: v.picklist(['verification', 'review']),
-  revision: deliveryRevisionSchema,
-  producerId: label,
-  result: v.picklist(['passed', 'failed', 'blocked']),
-  evidenceRef: label,
-});
+export const deliveryEvidenceSchema = v.pipe(
+  v.strictObject({
+    id: label,
+    kind: v.picklist(['verification', 'review']),
+    revision: deliveryRevisionSchema,
+    producerId: label,
+    result: v.picklist(['passed', 'failed', 'blocked']),
+    evidenceRef: label,
+    effectId: label,
+    validationContractDigest: hash,
+    bundleDigest: hash,
+    verificationEvidenceId: v.nullable(label),
+    verificationBundleDigest: v.nullable(hash),
+  }),
+  v.check((e) =>
+    e.kind === 'verification'
+      ? e.verificationEvidenceId === null && e.verificationBundleDigest === null
+      : e.verificationEvidenceId !== null &&
+        e.verificationBundleDigest !== null,
+  ),
+);
 export const deliveryEffectSchema = v.strictObject({
   id: label,
   kind: v.picklist([

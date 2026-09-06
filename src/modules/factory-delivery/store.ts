@@ -17,6 +17,7 @@ import {
   deliveryRepairReservationSchema,
   type DeliveryPipeline,
   type DeliveryRevision,
+  type DeliveryEvidence,
 } from '../../../shared/factory-delivery';
 
 type Paths = Pick<RuntimePaths, 'neondeckDatabase'>;
@@ -25,6 +26,7 @@ const integer = v.pipe(v.number(), v.safeInteger(), v.minValue(1));
 const rowSchema = v.strictObject({
   sequence: integer,
   pipeline_id: label,
+  release_id: label,
   initial_run_id: label,
   initial_attempt_id: label,
   work_item_id: label,
@@ -48,6 +50,7 @@ function decode(input: unknown) {
   const record = v.parse(deliveryPipelineSchema, JSON.parse(row.record_json));
   if (
     row.pipeline_id !== record.pipelineId ||
+    row.release_id !== record.initialRevision.releaseId ||
     row.initial_run_id !== record.initialRevision.runId ||
     row.initial_attempt_id !== record.initialRevision.attemptId ||
     row.work_item_id !== record.workItemId ||
@@ -98,6 +101,7 @@ function assertRecord(r: DeliveryPipeline) {
     new Set(r.repairs.map((x) => x.requestId)).size !== r.repairs.length ||
     new Set(r.effects.map((x) => x.id)).size !== r.effects.length ||
     new Set(r.evidence.map((x) => x.id)).size !== r.evidence.length ||
+    new Set(r.evidence.map((x) => x.effectId)).size !== r.evidence.length ||
     new Set(r.interventions.map((x) => x.id)).size !== r.interventions.length
   )
     throw new Error('Inconsistent delivery record');
@@ -122,6 +126,31 @@ function assertRecord(r: DeliveryPipeline) {
       throw new Error('Inconsistent effect ledger');
   }
   for (const evidence of r.evidence) {
+    const effect = r.effects.find((x) => x.id === evidence.effectId);
+    if (
+      !effect ||
+      effect.kind !== evidence.kind ||
+      !sameDeliveryRevision(effect.revision, evidence.revision) ||
+      evidence.validationContractDigest !==
+        deliveryValidationContractDigest(r) ||
+      (effect.state === 'delivered' &&
+        effect.receiptRef !== evidence.evidenceRef)
+    )
+      throw new Error('Corrupt evidence effect provenance');
+    if (evidence.kind === 'review') {
+      const verification = r.evidence.find(
+        (x) => x.id === evidence.verificationEvidenceId,
+      );
+      if (
+        !verification ||
+        verification.kind !== 'verification' ||
+        verification.result !== 'passed' ||
+        !sameDeliveryRevision(verification.revision, evidence.revision) ||
+        verification.bundleDigest !== evidence.verificationBundleDigest ||
+        !settledEvidence(r, verification)
+      )
+        throw new Error('Corrupt review verification linkage');
+    }
     if (
       !sameScope(evidence.revision, r.initialRevision) ||
       [evidence.revision.runId, evidence.revision.attemptId].includes(
@@ -187,6 +216,30 @@ function available(r: DeliveryPipeline) {
   if (r.repairs.some((x) => x.status === 'reserved'))
     throw new Error('Repair already reserved');
 }
+export function deliveryValidationContractDigest(r: DeliveryPipeline) {
+  return createHash('sha256')
+    .update(
+      JSON.stringify([
+        r.authorization.configFingerprint,
+        r.authorization.checkCommands,
+        r.initialRevision.specVersion,
+        r.initialRevision.specHash,
+      ]),
+    )
+    .digest('hex');
+}
+function settledEvidence(r: DeliveryPipeline, e: DeliveryEvidence) {
+  const effect = r.effects.find((x) => x.id === e.effectId);
+  return (
+    effect?.state === 'delivered' &&
+    effect.kind === e.kind &&
+    sameDeliveryRevision(effect.revision, e.revision) &&
+    effect.receiptRef === e.evidenceRef &&
+    effect.executionMs !== null &&
+    effect.reservedExecutionMs !== null &&
+    e.validationContractDigest === deliveryValidationContractDigest(r)
+  );
+}
 function currentPasses(r: DeliveryPipeline) {
   const latest = (kind: 'verification' | 'review') =>
     r.evidence.findLast(
@@ -197,7 +250,11 @@ function currentPasses(r: DeliveryPipeline) {
   if (
     verification?.result !== 'passed' ||
     review?.result !== 'passed' ||
-    verification.producerId === review.producerId
+    verification.producerId === review.producerId ||
+    !settledEvidence(r, verification) ||
+    !settledEvidence(r, review) ||
+    review.verificationEvidenceId !== verification.id ||
+    review.verificationBundleDigest !== verification.bundleDigest
   )
     throw new Error('Current independent verification and review required');
 }
@@ -237,9 +294,13 @@ export function reserveDeliveryPipeline(
     withImmediateTransaction(db, () => {
       const rows = db
         .prepare(
-          'SELECT * FROM factory_delivery_pipelines WHERE initial_run_id=? OR initial_attempt_id=?',
+          'SELECT * FROM factory_delivery_pipelines WHERE release_id=? OR initial_run_id=? OR initial_attempt_id=?',
         )
-        .all(request.initialRevision.runId, request.initialRevision.attemptId);
+        .all(
+          request.initialRevision.releaseId,
+          request.initialRevision.runId,
+          request.initialRevision.attemptId,
+        );
       if (rows.length) {
         const prior = decode(rows[0]).record;
         if (
@@ -283,9 +344,10 @@ export function reserveDeliveryPipeline(
       });
       assertRecord(r);
       db.prepare(
-        'INSERT INTO factory_delivery_pipelines (pipeline_id,initial_run_id,initial_attempt_id,work_item_id,repo_id,branch,record_json) VALUES (?,?,?,?,?,?,?)',
+        'INSERT INTO factory_delivery_pipelines (pipeline_id,release_id,initial_run_id,initial_attempt_id,work_item_id,repo_id,branch,record_json) VALUES (?,?,?,?,?,?,?,?)',
       ).run(
         r.pipelineId,
+        r.initialRevision.releaseId,
         r.initialRevision.runId,
         r.initialRevision.attemptId,
         r.workItemId,
@@ -485,6 +547,8 @@ export function updateDeliveryPipeline(
               throw new Error('Conflicting evidence replay');
             return r;
           }
+          if (r.evidence.some((e) => e.effectId === a.evidence.effectId))
+            throw new Error('Effect evidence already bound');
           r.evidence.push(a.evidence);
           break;
         }
@@ -531,6 +595,7 @@ export function updateDeliveryPipeline(
           if (unresolvedEffects(r))
             throw new Error('External operation unresolved');
           if (
+            !['verification', 'review'].includes(a.kind) &&
             r.effects.some(
               (x) =>
                 x.kind === a.kind &&

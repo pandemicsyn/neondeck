@@ -1,6 +1,7 @@
 CREATE TABLE `factory_delivery_pipelines` (
 	`sequence` integer PRIMARY KEY AUTOINCREMENT,
 	`pipeline_id` text NOT NULL UNIQUE,
+	`release_id` text NOT NULL UNIQUE,
 	`initial_run_id` text NOT NULL UNIQUE,
 	`initial_attempt_id` text NOT NULL UNIQUE,
 	`work_item_id` text NOT NULL,

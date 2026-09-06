@@ -1640,6 +1640,7 @@ export const factoryDeliveryPipelines = sqliteTable(
   {
     sequence: integer('sequence').primaryKey({ autoIncrement: true }),
     pipelineId: text('pipeline_id').notNull().unique(),
+    releaseId: text('release_id').notNull().unique(),
     initialRunId: text('initial_run_id').notNull().unique(),
     initialAttemptId: text('initial_attempt_id').notNull().unique(),
     workItemId: text('work_item_id').notNull(),

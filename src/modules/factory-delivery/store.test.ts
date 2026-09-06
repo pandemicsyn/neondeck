@@ -13,6 +13,7 @@ import type {
 } from '../../../shared/factory-delivery';
 import {
   reserveDeliveryPipeline,
+  deliveryValidationContractDigest,
   getDeliveryPipeline,
   updateDeliveryPipeline,
   reserveDeliveryRepair,
@@ -68,18 +69,38 @@ function evidence(
   kind: 'verification' | 'review',
   result: 'passed' | 'failed' = 'passed',
   producerId: string = kind,
+  settle = true,
 ) {
-  return update(r, {
+  const id = `${kind}-${r.version}`;
+  const verification = r.evidence.findLast((x) => x.kind === 'verification');
+  r = update(r, { type: 'plan-effect', id, kind, maxExecutionMs: 1000 });
+  r = update(r, { type: 'start-effect', id });
+  r = update(r, {
     type: 'record-evidence',
     evidence: {
-      id: `${kind}-${r.version}`,
+      id,
       kind,
       revision: r.revision,
       producerId,
       result,
-      evidenceRef: 'private-evidence',
+      evidenceRef: `receipt:${id}`,
+      effectId: id,
+      validationContractDigest: deliveryValidationContractDigest(r),
+      bundleDigest: (kind === 'verification' ? '1' : '2').repeat(64),
+      verificationEvidenceId: kind === 'review' ? verification!.id : null,
+      verificationBundleDigest:
+        kind === 'review' ? verification!.bundleDigest : null,
     },
   });
+  return settle
+    ? update(r, {
+        type: 'settle-effect',
+        id,
+        state: 'delivered',
+        receiptRef: `receipt:${id}`,
+        executionMs: 1,
+      })
+    : r;
 }
 function ready() {
   return evidence(
@@ -213,14 +234,34 @@ describe('factory delivery foundation', () => {
   it('requires exact independent current evidence', () => {
     let r = reserveDeliveryPipeline(reservation, paths);
     expect(() => plan(r, 'push')).toThrow('independent verification');
-    expect(() => evidence(r, 'verification', 'passed', revision.runId)).toThrow(
-      'Independent evidence',
-    );
+    expect(() =>
+      update(r, {
+        type: 'record-evidence',
+        evidence: {
+          id: 'self',
+          kind: 'verification',
+          revision,
+          producerId: revision.runId,
+          result: 'passed',
+          evidenceRef: 'proof',
+          effectId: 'none',
+          validationContractDigest: deliveryValidationContractDigest(r),
+          bundleDigest: '1'.repeat(64),
+          verificationEvidenceId: null,
+          verificationBundleDigest: null,
+        },
+      }),
+    ).toThrow('Independent evidence');
     expect(() =>
       update(r, {
         type: 'record-evidence',
         evidence: {
           id: 'stale',
+          effectId: 'none',
+          validationContractDigest: deliveryValidationContractDigest(r),
+          bundleDigest: '1'.repeat(64),
+          verificationEvidenceId: null,
+          verificationBundleDigest: null,
           kind: 'verification',
           revision: { ...revision, treeSha: 'f'.repeat(40) },
           producerId: 'verifier',
@@ -239,11 +280,16 @@ describe('factory delivery foundation', () => {
     r = evidence(r, 'review');
     r = plan(r, 'push');
     r = evidence(r, 'verification', 'failed');
-    expect(() => start(r)).toThrow('independent verification');
+    expect(() =>
+      update(r, {
+        type: 'start-effect',
+        id: r.effects.find((x) => x.kind === 'push')!.id,
+      }),
+    ).toThrow('independent verification');
   });
   it('keeps uncertain operations reserved and requires observed absence before restart', () => {
     let r = start(plan(ready(), 'push'));
-    const id = r.effects[0]!.id;
+    const id = r.effects.find((x) => x.kind === 'push')!.id;
     r = update(r, {
       type: 'settle-effect',
       id,
@@ -268,7 +314,7 @@ describe('factory delivery foundation', () => {
     });
     r = update(r, { type: 'start-effect', id });
     r = deliver(r);
-    expect(r.effects[0]!.state).toBe('delivered');
+    expect(r.effects.find((x) => x.kind === 'push')!.state).toBe('delivered');
     expect(() => update(r, { type: 'start-effect', id })).toThrow(
       'cannot start',
     );
@@ -297,11 +343,14 @@ describe('factory delivery foundation', () => {
     r = plan(r, 'create-pr');
     expect(() => start(r)).toThrow('push receipt');
     r = deliver(start(plan(r, 'push')));
-    r = update(r, { type: 'start-effect', id: r.effects[0]!.id });
+    r = update(r, {
+      type: 'start-effect',
+      id: r.effects.find((x) => x.kind === 'create-pr')!.id,
+    });
     const pr = { number: 42, url: 'https://github.com/test/repo/pull/42' };
     r = update(r, {
       type: 'settle-effect',
-      id: r.effects[0]!.id,
+      id: r.effects.find((x) => x.kind === 'create-pr')!.id,
       state: 'delivered',
       receiptRef: 'github-read',
       pr,
@@ -348,7 +397,7 @@ describe('factory delivery foundation', () => {
   it('rolls back both budget and fresh run on callback failure', () => {
     const r = evidence(
       reserveDeliveryPipeline(reservation, paths),
-      'review',
+      'verification',
       'failed',
     );
     expect(() =>
@@ -443,4 +492,125 @@ describe('factory delivery foundation', () => {
       }),
     ).toThrow('New exact authorization');
   });
+});
+
+describe('reviewer A regressions', () => {
+  it('prevents descendant candidate regrant for the same release without resetting budget or identity', () => {
+    const r = evidence(
+      reserveDeliveryPipeline(reservation, paths),
+      'verification',
+      'failed',
+    );
+    const child = {
+      ...revision,
+      runId: 'repair-descendant',
+      attemptId: 'repair-attempt',
+    };
+    expect(() =>
+      reserveDeliveryPipeline(
+        {
+          ...reservation,
+          initialRevision: child,
+          authorization: { ...reservation.authorization, revision: child },
+        },
+        paths,
+      ),
+    ).toThrow('Conflicting delivery replay');
+    expect(getDeliveryPipeline(r.pipelineId, paths)).toEqual(r);
+    expect(listDeliveryPipelines({}, paths)).toHaveLength(1);
+    const next = { ...child, releaseId: 'new-human-release' };
+    expect(
+      reserveDeliveryPipeline(
+        {
+          ...reservation,
+          initialRevision: next,
+          authorization: { ...reservation.authorization, revision: next },
+        },
+        paths,
+      ).pipelineId,
+    ).not.toBe(r.pipelineId);
+  });
+  it('crossvalidates indexed release identity on read', () => {
+    const r = reserveDeliveryPipeline(reservation, paths);
+    const db = openDb(paths.neondeckDatabase);
+    db.prepare('UPDATE factory_delivery_pipelines SET release_id=?').run(
+      'tampered',
+    );
+    db.close();
+    expect(() => getDeliveryPipeline(r.pipelineId, paths)).toThrow(
+      'Corrupt delivery identity',
+    );
+  });
+  it('requires accounted settled review receipt even when both pass labels exist', () => {
+    let r = evidence(
+      evidence(reserveDeliveryPipeline(reservation, paths), 'verification'),
+      'review',
+      'passed',
+      'review',
+      false,
+    );
+    expect(() => plan(r, 'push')).toThrow('independent verification');
+    const review = r.evidence.at(-1)!;
+    expect(() =>
+      update(r, {
+        type: 'settle-effect',
+        id: review.effectId,
+        state: 'delivered',
+        receiptRef: 'wrong-receipt',
+        executionMs: 1,
+      }),
+    ).toThrow('provenance');
+    r = update(r, {
+      type: 'settle-effect',
+      id: review.effectId,
+      state: 'delivered',
+      receiptRef: review.evidenceRef,
+      executionMs: 1,
+    });
+    expect(plan(r, 'push').effects.at(-1)!.kind).toBe('push');
+  });
+  it('requires fresh linked review when a successful verification bundle replaces another', () => {
+    let r = ready();
+    r = evidence(r, 'verification');
+    expect(() => plan(r, 'commit')).toThrow('independent verification');
+    r = evidence(r, 'review');
+    expect(plan(r, 'commit').effects.at(-1)!.kind).toBe('commit');
+  });
+  it('rejects persisted evidence whose receipt linkage is corrupted', () => {
+    const r = ready();
+    r.evidence[0]!.effectId = 'nonexistent';
+    const db = openDb(paths.neondeckDatabase);
+    db.prepare('UPDATE factory_delivery_pipelines SET record_json=?').run(
+      JSON.stringify(r),
+    );
+    db.close();
+    expect(() => getDeliveryPipeline(r.pipelineId, paths)).toThrow(
+      'provenance',
+    );
+  });
+});
+
+it('rejects pass labels without an execution effect and rejects review before verification settlement', () => {
+  let r = reserveDeliveryPipeline(reservation, paths);
+  expect(() =>
+    update(r, {
+      type: 'record-evidence',
+      evidence: {
+        id: 'fake-pass',
+        kind: 'verification',
+        revision,
+        producerId: 'checker',
+        result: 'passed',
+        evidenceRef: 'fake',
+        effectId: 'no-effect',
+        validationContractDigest: deliveryValidationContractDigest(r),
+        bundleDigest: '1'.repeat(64),
+        verificationEvidenceId: null,
+        verificationBundleDigest: null,
+      },
+    }),
+  ).toThrow('effect provenance');
+  r = evidence(r, 'verification', 'passed', 'checker', false);
+  expect(() => plan(r, 'commit')).toThrow('independent verification');
+  expect(() => evidence(r, 'review')).toThrow('unresolved');
 });

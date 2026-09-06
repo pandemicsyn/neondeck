@@ -1,7 +1,7 @@
 {
   "version": "7",
   "dialect": "sqlite",
-  "id": "960c09e3-33a7-4dd3-addb-fc807eb4da66",
+  "id": "a16b900f-c1e7-4104-8d4d-ce51e76c9fde",
   "prevIds": [
     "c605c4dc-8118-455c-8d31-2f1fd3751694"
   ],
@@ -2139,6 +2139,16 @@
       "default": null,
       "generated": null,
       "name": "pipeline_id",
+      "entityType": "columns",
+      "table": "factory_delivery_pipelines"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "release_id",
       "entityType": "columns",
       "table": "factory_delivery_pipelines"
     },
@@ -10684,6 +10694,15 @@
       ],
       "nameExplicit": false,
       "name": "factory_delivery_pipelines_pipeline_id_unique",
+      "entityType": "uniques",
+      "table": "factory_delivery_pipelines"
+    },
+    {
+      "columns": [
+        "release_id"
+      ],
+      "nameExplicit": false,
+      "name": "factory_delivery_pipelines_release_id_unique",
       "entityType": "uniques",
       "table": "factory_delivery_pipelines"
     },
