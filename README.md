@@ -58,14 +58,18 @@ human planning. The workbench shows the assessed cycle, rationale, proposed
 approach and retained evidence; discussion never refills budgets or sends a chat
 message automatically. This is a checkpoint between attempts, not continuous
 coding supervision or an extra gate for passing candidates. Implementation and
-local verification are complete. Draft PRs
+local verification are complete. PRs
 [#403](https://github.com/pandemicsyn/neondeck/pull/403) and
-[#404](https://github.com/pandemicsyn/neondeck/pull/404) are published in stack #405
-and are not merged. Source/documentation static reviews before publication and
-post-publication architecture review are clean. The reviewed fixture relocation is complete. CI is complete: all nine checks pass on each PR, #403 at `5cbc5882` and
-#404 at `9a6023fe`. These results apply to those revisions; linked PRs show current status. Merge has not been authorized. Real model/Codex/GitHub acceptance is NOT RUN and model judgment quality is
+[#404](https://github.com/pandemicsyn/neondeck/pull/404) merged as stack #405 through
+`00c3e3e5`, after clean independent static and manager architecture reviews and
+all nine CI checks passing on each final head. Real model/Codex/GitHub acceptance is NOT RUN and model judgment quality is
 unevaluated. See the [progress review guide](.plans/factory/SLICE_3_1_OPERATOR.md)
 and [verification record](.plans/factory/SLICE_3_1_HANDOFF.md).
+
+Slice 4 is planned to add OpenCode and Kilo Code through a pluggable coding CLI
+contract alongside Codex. CLI adapters own invocation and event normalization;
+Neon retains workspace/process ownership, budgets, recovery, review and publication.
+See the [Slice 4 plan](.plans/factory/SLICE_4_IMPLEMENTATION_PLAN.md).
 
 Slice 1 is merged and operator-accepted with remaining live checks deferred.
 Slice 2 is merged with real Codex acceptance pending. Slice 3 is merged;

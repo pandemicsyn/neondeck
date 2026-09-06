@@ -153,9 +153,9 @@ See the [Slice 3 implementation plan](factory/SLICE_3_IMPLEMENTATION_PLAN.md) an
 Astra at medium effort. Existing releases do not gain publication authority on
 upgrade; the initial delivery grant binds an exact candidate and bounded policy.
 
-## Software Factory Slice 3.1 — Published Draft Stack, Not Merged
+## Software Factory Slice 3.1 — Progress Supervision (Merged)
 
-Implemented after Slice 3 and before Slice 4's OpenCode adapter. The read-only
+Implemented after Slice 3 and before Slice 4's OpenCode and Kilo Code adapters. The read-only
 Flue checkpoint assesses repair history before another authorized attempt.
 
 - [x] Assemble revision-bound history for repeated failures, oscillating changes,
@@ -177,9 +177,11 @@ Flue checkpoint assesses repair history before another authorized attempt.
 - [x] Both static reviewers cleared the completed fixture relocation and publication
       documentation; cumulative implementation is unchanged.
 - [x] PR #403 at `5cbc5882`: all nine CI checks pass.
-- [x] PR #404 at `9a6023fe`: all nine CI checks pass.
+- [x] PR #404 at final head `8fbb0b04`: all nine CI checks pass.
       Results apply to these revisions; linked PRs show current status.
-- [ ] Obtain explicit merge authorization; none has been granted.
+- [x] Operator authorized atomic stack merge; PRs #403/#404 merged on September 6,
+      2026, through `00c3e3e565a63ebc24411eabdf34f23d94efe6ef`. Merged tree matches
+      the reviewed cumulative implementation.
 - [ ] Real model/Codex/GitHub acceptance and model judgment evaluation: NOT RUN.
 
 This checkpoint does not continuously monitor or preempt running coding work and
@@ -191,8 +193,35 @@ See the [Slice 3.1 plan](factory/SLICE_3_1_PROGRESS_REVIEW_PLAN.md),
 [handoff](factory/SLICE_3_1_HANDOFF.md) and
 [acceptance record](factory/SLICE_3_1_ACCEPTANCE.md) for the precise verification
 record; no single successful full `npm run verify` invocation is claimed.
-Slice 4 (OpenCode), Slice 5 (Linear) and Slice 6 (remote execution) retain their
+Slice 4 (OpenCode and Kilo Code), Slice 5 (Linear) and Slice 6 (remote execution) retain their
 numbering.
+
+## Software Factory Slice 4 — Pluggable Coding CLIs (Planned)
+
+Extend the existing Codex path with **OpenCode and Kilo Code**, through a small
+typed coding adapter contract and registry. Adding another CLI should require an
+adapter, validated configuration and contract fixtures, without changing factory
+phases, progress supervision or publication logic. Codex remains the default.
+
+- [ ] Separate CLI-specific readiness, invocation, event/session normalization and
+      recovery interpretation from shared host process/workspace ownership.
+- [ ] Pin the selected adapter and configuration at admission. No silent fallback
+      to another CLI, fresh session or renewed budget after failure or restart.
+- [ ] Reuse the existing Kilo CLI/parser/session work where compatible, while
+      retaining one factory run, one process supervisor and one workspace owner.
+- [ ] Give Codex, OpenCode and Kilo the same contract tests, bounded repair/judge
+      rules, cancellation/recovery checks and explicit cleanup flow.
+- [ ] Surface harness readiness and selection in the existing configuration and
+      workbench, with validated IO and screenshots for operator changes.
+- [ ] Verify installed CLI versions and execution-host readiness, then record
+      separate real Codex/OpenCode/Kilo acceptance. Kilo installation is
+      operator-reported; factory compatibility and authentication are not yet verified.
+
+See the [Slice 4 implementation plan](factory/SLICE_4_IMPLEMENTATION_PLAN.md).
+The recommended next operational work remains combined Slice 2/3/3.1 live
+acceptance; preserve existing deferrals without inventing another merge gate.
+Managed CLI servers/SDKs, ACP, dynamic third-party plugins and remote execution
+are outside Slice 4. The host boundary must remain usable for Slice 6.
 
 ## Usability Gate
 

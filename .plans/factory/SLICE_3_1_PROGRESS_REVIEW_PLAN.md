@@ -1,17 +1,17 @@
 # Slice 3.1 — Progress supervision
 
-Status: published draft stack #405, September 6, 2026; **not merged**.
-Draft PRs [#403](https://github.com/pandemicsyn/neondeck/pull/403) and
-[#404](https://github.com/pandemicsyn/neondeck/pull/404) follow clean source and
-pre-publication documentation static reviews. Manager post-publication architecture
-review is clean on the exact heads recorded in the handoff. The reviewed fixture relocation is complete. CI is complete: all nine checks pass on each PR, #403 at `5cbc5882` and
-#404 at `9a6023fe`. These results apply to those revisions; linked PRs show current status. Merge has not been authorized. All verification stages pass across the full run,
-corrected targeted rerun and separately completed remaining stages. Two independent
-static reviews are clean on production/UI `87a3bbe0` and the final test-only delta.
-Manager pre-publication architecture and product-plan review is complete. Real model/Codex/GitHub acceptance is **NOT RUN**.
+Status: **merged**, September 6, 2026. The operator authorized atomic stack #405
+merge through PRs [#403](https://github.com/pandemicsyn/neondeck/pull/403) and
+[#404](https://github.com/pandemicsyn/neondeck/pull/404), ending at
+`00c3e3e565a63ebc24411eabdf34f23d94efe6ef`. Both final heads passed all nine CI
+checks; independent static reviews and manager architecture review were clean.
+The merged tree matches the reviewed cumulative implementation. Local verification
+used the full run, corrected targeted rerun and separately completed remaining
+stages. Real model/Codex/GitHub acceptance is **NOT RUN**.
 
 This follows Slice 3, merged in PRs #397–#401 through `a897aa06`, and precedes
-Slice 4's OpenCode adapter. Slice 1 accepted deferrals and Slice 2/3 pending live
+Slice 4's [pluggable OpenCode and Kilo Code adapters](SLICE_4_IMPLEMENTATION_PLAN.md).
+Slice 1 accepted deferrals and Slice 2/3 pending live
 acceptance remain unchanged. See the [implementation handoff](SLICE_3_1_HANDOFF.md)
 and [acceptance ledger](SLICE_3_1_ACCEPTANCE.md).
 

@@ -6,7 +6,7 @@
     <meta name="color-scheme" content="dark light" />
     <meta
       name="description"
-      content="A proposal for Neondeck's initial software factory: flexible intake, Codex and OpenCode workers, durable coordination, and exe.dev deployment."
+      content="A proposal for Neondeck's software factory: flexible intake, pluggable Codex, OpenCode and Kilo Code workers, durable coordination, and exe.dev deployment."
     />
     <title>Neon / Software factory proposal</title>
     <style>
@@ -682,8 +682,9 @@
           <h1>A small factory.<br /><em>Neon runs the line.</em></h1>
           <p class="lead">
             Turn incoming work into scoped, verified pull requests. Neon owns
-            intake, coordination, evidence, and follow-through. Codex or
-            OpenCode owns the coding session.
+            intake, coordination, evidence, and follow-through. The selected
+            coding CLI owns the coding session: Codex today, with OpenCode and
+            Kilo Code planned in Slice 4.
           </p>
           <p class="muted">
             Start with a persistent exe.dev host, SQLite, a deterministic state
@@ -696,9 +697,9 @@
               + manual intake; a lightweight model triages eligible work; Neon
               investigates and iterates on a plan with the human in a persistent
               planning conversation; the human releases the agreed brief into
-              the queue; a configured Codex or OpenCode worker implements it;
-              Neon verifies, opens a draft PR, and follows CI and review. A
-              human decides whether to merge.
+              the queue; the selected coding CLI implements it; Neon verifies,
+              opens a draft PR, and follows CI and review. A human decides
+              whether to merge.
             </p>
             <p>
               Linear fits the same intake contract as the next connector. Remote
@@ -791,7 +792,7 @@
             <span class="num">3</span>
             <div>
               <h3>Implement</h3>
-              <span class="owner">Codex or OpenCode</span>
+              <span class="owner">Registered coding CLI</span>
             </div>
             <div>
               <p>
@@ -1330,9 +1331,9 @@
             <li>
               <strong>Neon hands off the agreed context.</strong> Package the
               spec, relevant research, resolved decisions, selected guidance,
-              and validation contract for Codex/OpenCode. Keep the full planning
-              history available by reference; avoid dumping the whole chat into
-              the coding prompt.
+              and validation contract for each coding CLI. Keep the full
+              planning history available by reference; avoid dumping the whole
+              chat into the coding prompt.
             </li>
             <li>
               <strong
@@ -1532,13 +1533,16 @@
             <div>
               <h3>CodingAgent adapter</h3>
               <p>
-                Owns provider-specific start/resume arguments, event parsing,
-                session identity, final result extraction, and transcript
-                export. Initial adapters: <strong>Codex CLI</strong> and
-                <strong>OpenCode CLI</strong>.
+                Owns CLI-specific readiness, command construction, validated
+                event parsing, session identity and result interpretation.
+                <strong>Codex CLI</strong> is implemented; Slice 4 adds
+                <strong>OpenCode</strong> and <strong>Kilo Code</strong> through
+                the same typed contract and adapter registry. A new CLI should
+                require an adapter and contract fixtures, without edits to
+                factory phases, progress supervision or publication logic.
               </p>
               <p class="artifact">
-                start · resume · normalize events · export session
+                probe · build launch · normalize events · reconcile identity
               </p>
             </div>
             <div>
@@ -1579,10 +1583,10 @@
                     validation evidence independently.
                   </td>
                   <td>
-                    Fresh session for a new task. Resume only its recorded ID
-                    for a scoped repair with the same workspace and context
-                    version. Keep session persistence enabled. Never use “last
-                    session.”
+                    Fresh session and managed worktree for each coding attempt,
+                    including repairs. Reconcile only the recorded attempt after
+                    restart; never select “last session” or launch a replacement
+                    while admission is uncertain.
                   </td>
                 </tr>
                 <tr>
@@ -1593,16 +1597,34 @@
                     >
                   </td>
                   <td>
-                    Use <code>opencode run --format json --dir …</code> with a
-                    configured model/agent. Normalize events without sharing
-                    Kilo's provider assumptions. Export the explicit session ID
-                    for inspection.
+                    Planned CLI adapter. Verify supported invocation and JSONL
+                    events against the installed version before implementation.
+                    Normalize its own protocol, retain explicit session
+                    identity, and reuse the factory host and durable run
+                    contracts.
                   </td>
                   <td>
-                    Resume with <code>--session</code> only after checking
-                    ownership. Start with per-attempt CLI processes. A private
+                    Fresh per-attempt CLI process and private session state;
+                    restart recovery must preserve the same admitted identity,
+                    deadline and budget. A private
                     <code>opencode serve</code> backend is a later adapter
                     optimization.
+                  </td>
+                </tr>
+                <tr>
+                  <td><strong>Kilo Code</strong></td>
+                  <td>
+                    Planned CLI adapter. Reuse compatible invocation, JSONL and
+                    session helpers from the existing Kilo handoff module. Keep
+                    factory process and workspace ownership in the shared host;
+                    do not start a second Kilo task supervisor for the attempt.
+                  </td>
+                  <td>
+                    Same fresh-session, cancellation, recovery and cleanup
+                    contract as Codex and OpenCode. Installation is
+                    operator-reported; verify target-host version,
+                    authentication and compatibility before acceptance.
+                    Provider-specific assumptions stay inside this adapter.
                   </td>
                 </tr>
               </tbody>
@@ -1612,8 +1634,12 @@
             Pin supported CLI versions and validate each adapter against
             recorded event fixtures plus a real smoke task. OpenCode Zen
             model-provider support in Neondeck does not constitute an OpenCode
-            coding-session runner. Codex CLI help was also checked locally; no
-            coding session was launched for this proposal.
+            coding-session runner; neither does Kilo model-provider support. Pin
+            harness choice at admission, with no silent CLI fallback after
+            failure. See the
+            <a href="../factory/SLICE_4_IMPLEMENTATION_PLAN.md">Slice 4 plan</a>
+            for adapter boundaries, reuse and acceptance. No coding session was
+            launched for this planning update.
           </p>
           <h3>Session lifecycle</h3>
           <ol>
@@ -1771,7 +1797,7 @@
             <div class="machine worker" aria-live="polite">
               <strong id="host-title">Managed worktree on the same VM</strong>
               <p id="host-body">
-                Codex or OpenCode process · private agent state · per-run test
+                Selected coding CLI process · private agent state · per-run test
                 data and ports. Runs use the existing VM in the first slice.
               </p>
             </div>
@@ -1915,10 +1941,10 @@
                   <td>
                     It currently mounts a writable sandbox and codes itself. For
                     factory-owned PRs, retain coordination/feedback concepts but
-                    send every code repair to Codex/OpenCode. Explicitly route
-                    the watch to the factory coordinator so both owners cannot
-                    edit or push. Leave legacy watches on their old path until
-                    deliberately migrated.
+                    send every code repair to the selected coding CLI.
+                    Explicitly route the watch to the factory coordinator so
+                    both owners cannot edit or push. Leave legacy watches on
+                    their old path until deliberately migrated.
                     <a href="../../src/agents/pr-autopilot-owner.ts"
                       >Current coding owner</a
                     >
@@ -2351,7 +2377,7 @@ Workspace lifecycle (separate from run status)
                 <tr>
                   <td><strong>3.1 · Progress supervision</strong></td>
                   <td>
-                    Published draft stack #405, not merged:
+                    Merged stack #405 through <code>00c3e3e5</code>:
                     <a href="https://github.com/pandemicsyn/neondeck/pull/403"
                       >#403</a
                     >
@@ -2369,9 +2395,9 @@ Workspace lifecycle (separate from run status)
                     Production/UI and final test-delta static reviews are clean.
                     Documentation static reviews were clean before publication;
                     manager post-publication architecture review is clean on the
-                    published heads. CI is in progress; secrets checks are
-                    green. Real model/Codex/GitHub acceptance is NOT RUN;
-                    judgment quality is unevaluated. This between-attempt
+                    final heads. All nine CI checks passed on each PR before the
+                    authorized merge. Real model/Codex/GitHub acceptance is NOT
+                    RUN; judgment quality is unevaluated. This between-attempt
                     checkpoint adds neither live preemption nor a new all-green
                     gate. See the
                     <a href="../factory/SLICE_3_1_HANDOFF.md"
@@ -2380,15 +2406,22 @@ Workspace lifecycle (separate from run status)
                   </td>
                 </tr>
                 <tr>
-                  <td><strong>4 · Second harness</strong></td>
+                  <td><strong>4 · Pluggable coding CLIs</strong></td>
                   <td>
-                    OpenCode adapter and readiness/config UI over the same host,
-                    run records, review, and delivery path.
+                    Planned OpenCode and Kilo Code adapters alongside Codex,
+                    registered through a small typed contract. Shared host, run
+                    records, budgets, progress review and delivery remain
+                    independent of the selected CLI.
                   </td>
                   <td>
-                    Run the same task/repair/cancel exercises with OpenCode.
-                    Provider selection changes no factory phase code. This
-                    completes the initial dual-harness scope.
+                    Run the same task, repair, judge, cancellation, restart and
+                    cleanup contract tests with all three CLIs. Adding a CLI
+                    requires its adapter and tests, without changing factory
+                    phases. Reuse existing Kilo helpers with one factory owner.
+                    Real acceptance is separate for each harness. See the
+                    <a href="../factory/SLICE_4_IMPLEMENTATION_PLAN.md"
+                      >implementation plan</a
+                    >.
                   </td>
                 </tr>
                 <tr>
@@ -2441,12 +2474,12 @@ Workspace lifecycle (separate from run status)
           </div>
           <h3>Decisions to revisit together</h3>
           <p>
-            GitHub or Linear as the first source; default Codex versus OpenCode
-            profile; whether queue approval includes draft-PR publication; how
-            much existing PR-owner behavior to retire after migration; and
-            whether same-host contention warrants pulling the remote slice
-            forward. The proposal chooses workable defaults so none of these
-            need block the first review.
+            GitHub or Linear intake preferences; per-repo selection among Codex,
+            OpenCode and Kilo Code (Codex remains the default); how much
+            existing PR-owner behavior to retire after migration; and whether
+            same-host contention warrants pulling the remote slice forward. The
+            proposal chooses workable defaults so none of these need block the
+            first review.
           </p>
         </section>
 
@@ -2805,8 +2838,8 @@ Workspace lifecycle (separate from run status)
             ? 'Factory-owned exe.dev worker VM'
             : 'Managed worktree on the same VM';
           document.getElementById('host-body').textContent = remote
-            ? 'Codex or OpenCode process · pinned checkout · independent runtime/test data · private preview URL. The control plane retains the work history.'
-            : 'Codex or OpenCode process · private agent state · per-run test data and ports. Runs use the existing VM in the first slice.';
+            ? 'Selected coding CLI process · pinned checkout · independent runtime/test data · private preview URL. The control plane retains the work history.'
+            : 'Selected coding CLI process · private agent state · per-run test data and ports. Runs use the existing VM in the first slice.';
           document.getElementById('host-foot').textContent = remote
             ? 'Later slice: provision or select → run → collect and verify artifacts → remove owned VM. The coding harness and factory phases stay the same.'
             : 'Same-host execution is the smallest implementation. Shared resources and filesystem access remain a known limitation.';
