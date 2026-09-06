@@ -11,3 +11,23 @@ export type {
   CodingRunRecord,
   CodingRunCommand,
 } from '../../../shared/coding-runs';
+
+export {
+  prepareLocalAttempt,
+  publishLocalCancellation,
+  launchLocalAttempt,
+  inspectLocalAttempt,
+  cancelLocalAttempt,
+  collectLocalAttempt,
+  reconcileLocalAttempt,
+  inspectCodexReadiness,
+  localHostCapability,
+  loadLocalManifest,
+} from './local-host';
+export type {
+  LocalAttemptHandle,
+  PrepareLocalAttemptInput,
+  LocalInspection,
+  LocalReceipt,
+} from './local-host';
+export { prepareSchema } from './host-contract';
