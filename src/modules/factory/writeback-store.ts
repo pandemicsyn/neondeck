@@ -19,6 +19,7 @@ import {
   readyConnection,
 } from './github-config';
 import { githubDigest } from './github-store';
+import { latestCodingRunForWorkItem } from '../coding-runs';
 export const schemas = {
   policy: writebackPolicySchema,
   effect: writebackEffectSchema,
@@ -163,6 +164,7 @@ export function stateInDb(
   paths: RuntimePaths,
 ) {
   const { d, connection, remote, p } = context(db, workId, paths, false);
+  const coding = latestCodingRunForWorkItem(workId, paths);
   const approvals = rows(db, 'approval').filter((a) => a.workId === workId);
   const approved = approvals
     .filter(
@@ -186,6 +188,12 @@ export function stateInDb(
         ? 'review'
         : d.work.lifecycle,
       approved?.body,
+      coding
+        ? {
+            status: coding.status,
+            cancellationRequested: coding.cancelRequestedAt !== null,
+          }
+        : undefined,
     ),
     approvals,
     effects: rows(db, 'effect').filter((e) => e.workId === workId),
@@ -422,6 +430,16 @@ export function effectAuthorized(
     throw new FactoryError(
       409,
       'Authorization or task changed before dispatch. Review again.',
+    );
+  // Coding transitions do not change workVersion. Recheck the finite public
+  // projection at the existing final dispatch fence; never rewrite a sent effect.
+  if (
+    e.kind === 'status' &&
+    e.body !== `${stateInDb(db, e.workId, paths).template}\n\n${e.marker}`
+  )
+    throw new FactoryError(
+      409,
+      'Coding status changed before dispatch. Refresh current status.',
     );
   return connection;
 }

@@ -922,3 +922,24 @@ Use this format:
 - Deferred Slice 1 checks: human iteration/version comparison/exact release; post-release recovery/revocation; attributed replies, questions, writeback repair and missed-delivery recovery; full manual-source live acceptance. Existing-home/conversation compatibility remains unproven separately.
 - Deferred Slice 2 checks: real supported Codex CLI/model/auth execution through the local adapter, operator candidate review, lifecycle and recovery acceptance. Automated mockdex verification remains valid for its tested scope, but is not live Codex acceptance. Record the real exercise after merge in the Slice 2 acceptance plan.
 - Follow-up: Keep deferred checks visible in the active factory plans. Merge authorization does not authorize a provider call, new GitHub fixture, VM restart or deployment in this documentation task. The manager owns follow-up coordination; the operator selects private inputs and signs off the live results.
+
+## 2026-09-06 - Factory slice 2 backend ownership adaptation
+
+- Roadmap item: Factory slice 2, brief to candidate.
+- Decision: Reuse managed worktrees with a small durable coding-run ownership guard in generic cleanup, lock, sync, prepared-diff mutation and verification paths. Retain all factory-owned workspaces even after lease expiry or a clean terminal candidate. Generic callers cannot supply the private internal reservation claim through JSON. Source/release/config mutations synchronously persist cancellation before returning.
+- Reason: Existing lease expiration and forced cleanup could discard unpublished commits or admit a second generic writer. Guarding only the factory endpoints would not preserve slice 2 ownership. This adds no second lock engine or coordinator. Preflight attention uses small typed app metadata, with a cheap retry fingerprint, rather than inventing failed coding runs before reservation.
+- Follow-up: Explicit reviewed discard/repair/publishing authority is deferred to later slices. No automatic cleanup is introduced. Version 1 uses frozen root tracked AGENTS.md, setup command metadata, exact released references and selected runtime skills/memory; no conversation transcript. Repository setup runs inside the CLI permission profile. There is no port allocator; use ephemeral ports and terminate child servers through the host supervisor.
+
+## 2026-09-06 - Factory slice 2 review boundary corrections
+
+- Roadmap item: Factory slice 2, brief to candidate.
+- Decision: Use the local host's bounded synchronous cancellation/launch gate to order durable revocation against provider authorization; persist database cancellation first so host I/O failure remains recoverable. Derive prepared-diff promotion eligibility from durable factory ownership, retaining `not-requested` push decisions on creation and regeneration. Compare source authority separately from observational transport timestamps while retaining exact frozen source provenance.
+- Reason: Static review identified an asynchronous launch cancellation gap, false revocation on unchanged-source refresh, and generic push-approval initialization that contradicted retained-candidate-only authority. These are narrow adaptations of existing ownership and host boundaries, not a second coordinator or workflow engine.
+- Follow-up: No atomic database/filesystem/process transaction is promised. Uncertain cancellation delivery or a stale host gate retains ownership for reconciliation; no lease-based gate theft, retry, push, or publication authority is introduced.
+
+## 2026-09-06 - Factory slice 2 conservative Git evidence scope
+
+- Roadmap item: Factory slice 2 local-host candidate evidence.
+- Decision: Version one rejects effective repository clean/process filters and gitlinks/submodules before status/diff collection. Unsupported evidence retains/quarantines ownership rather than executing filters or nested repository operations outside the supervised process group.
+- Reason: Static host review found that Git collection could launch untracked subprocesses through repository configuration; the manager accepted this conservative first-slice scope.
+- Follow-up: A future reviewed host capability is required to collect evidence for these repositories safely. No automatic filter/submodule execution, cleanup, or ownership release is introduced.

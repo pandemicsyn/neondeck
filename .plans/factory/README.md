@@ -9,12 +9,17 @@ checks, with two independent clean static reviews and manager acceptance.
 The historical candidates and pre-merge ledger below remain an audit record;
 their “not merged” statements describe those earlier checkpoints.
 
-The implemented local scope is **slice 1: intake to a human-released queue**.
-Neon helps a human shape a task into a versioned brief. Coding remains delegated to
-Codex or OpenCode in subsequent slices; this work does not build a coding agent.
+The merged scope is **slice 1: intake to a human-released queue**.
+Slice 2 adds an opt-in Codex CLI handoff from that exact release to a retained
+candidate for human review. Its implementation is reviewed and verified locally;
+merge remains blocked by live slice 1 acceptance. This work does not build a coding agent.
 
 - [Slice 2 implementation and acceptance plan](SLICE_2_IMPLEMENTATION_PLAN.md):
   brief-to-candidate scope, stacked delivery, mockdex and acceptance.
+- [Slice 2 local handoff](SLICE_2_HANDOFF.md): accepted stack, verification,
+  screenshots and remaining live acceptance.
+- [Slice 2 operator guide](SLICE_2_OPERATOR.md): private coding setup, run controls,
+  context policy, retained worktree review and recovery limits.
 - [Slice 1 implementation plan](SLICE_1_IMPLEMENTATION_PLAN.md): scope, contracts,
   five stacked PRs, acceptance criteria, and operational readiness.
 - [Implementation handoff](SLICE_1_HANDOFF.md): manager/reviewer responsibilities,

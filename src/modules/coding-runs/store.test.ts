@@ -1,3 +1,4 @@
+import { getActiveCodingRun, getCodingRunForRelease } from './queries';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -286,6 +287,111 @@ describe('durable coding runs', () => {
       proof: { ...proof(host), host: { jobId: 'job', hostId: 'local' } },
     });
     expect(getCodingRun(done.runId, paths)).toEqual(done);
+  });
+  it('pages newest first beyond 25 runs without gaps and preserves ascending defaults', () => {
+    const ids: string[] = [];
+    for (let i = 0; i < 30; i++) {
+      const run = reserveCodingRun(
+        { ...snapshot, requestId: `page-${i}`, releaseId: `release-${i}` },
+        paths,
+      );
+      ids.push(run.runId);
+      update(run, {
+        type: 'finish',
+        status: 'failed',
+        proof: proof(run),
+        reason: 'never launched',
+      });
+    }
+    const first = listCodingRuns({ order: 'desc' }, paths);
+    expect(first).toHaveLength(25);
+    expect(first.map((row) => row.record.runId)).toEqual(
+      ids.slice(5).reverse(),
+    );
+    const second = listCodingRuns(
+      { order: 'desc', after: first.at(-1)!.sequence },
+      paths,
+    );
+    expect(second.map((row) => row.record.runId)).toEqual(
+      ids.slice(0, 5).reverse(),
+    );
+    expect(
+      listCodingRuns({ order: 'desc', after: second.at(-1)!.sequence }, paths),
+    ).toEqual([]);
+    expect(listCodingRuns({}, paths).map((row) => row.record.runId)).toEqual(
+      ids.slice(0, 25),
+    );
+    expect(
+      listCodingRuns({ order: 'desc', workItemId: 'work', limit: 1 }, paths)[0]
+        ?.record.runId,
+    ).toBe(ids.at(-1));
+    expect(
+      listCodingRuns({ order: 'desc', workItemId: 'missing', limit: 1 }, paths),
+    ).toEqual([]);
+    expect(
+      listCodingRuns(
+        {
+          order: 'desc',
+          workItemId: 'work',
+          after: first[0]!.sequence,
+          limit: 1,
+        },
+        paths,
+      )[0]?.record.runId,
+    ).toBe(ids.at(-2));
+    expect(() => listCodingRuns({ order: 'sideways' }, paths)).toThrow(
+      ValiError,
+    );
+  });
+  it('queries the unique active slot and exact release without decoding unrelated history', () => {
+    expect(getActiveCodingRun(paths)).toBeNull();
+    expect(getCodingRunForRelease('missing', paths)).toBeNull();
+    const first = reserveCodingRun(snapshot, paths);
+    expect(getActiveCodingRun(paths)).toEqual(first);
+    const completed = update(first, {
+      type: 'finish',
+      status: 'failed',
+      proof: proof(first),
+      reason: 'no compute',
+    });
+    expect(getActiveCodingRun(paths)).toBeNull();
+    expect(getCodingRunForRelease(snapshot.releaseId, paths)).toEqual(
+      completed,
+    );
+    let active = reserveCodingRun(
+      { ...snapshot, requestId: 'next', releaseId: 'next-release' },
+      paths,
+    );
+    active = update(active, { type: 'quarantine', reason: 'unknown compute' });
+    expect(getActiveCodingRun(paths)).toEqual(active);
+    expect(getCodingRunForRelease('next-release', paths)).toEqual(active);
+    const database = openDb(paths.neondeckDatabase);
+    try {
+      database
+        .prepare('UPDATE coding_runs SET record_json = ? WHERE run_id = ?')
+        .run('{}', first.runId);
+    } finally {
+      database.close();
+    }
+    expect(getActiveCodingRun(paths)).toEqual(active);
+    expect(getCodingRunForRelease('next-release', paths)).toEqual(active);
+    expect(getCodingRunForRelease('absent', paths)).toBeNull();
+    expect(() => getCodingRunForRelease(snapshot.releaseId, paths)).toThrow(
+      ValiError,
+    );
+    expect(() => getCodingRunForRelease('', paths)).toThrow(ValiError);
+  });
+  it('validates selected active IDs and records through the foundation decoder', () => {
+    const active = reserveCodingRun(snapshot, paths);
+    const database = openDb(paths.neondeckDatabase);
+    try {
+      database
+        .prepare('UPDATE coding_runs SET record_json = ? WHERE run_id = ?')
+        .run('{}', active.runId);
+    } finally {
+      database.close();
+    }
+    expect(() => getActiveCodingRun(paths)).toThrow(ValiError);
   });
   it('replays exactly, rejects changed frozen inputs and serializes global ownership', () => {
     const r = reserveCodingRun(snapshot, paths);

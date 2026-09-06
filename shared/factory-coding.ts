@@ -1,0 +1,125 @@
+import * as v from 'valibot';
+import {
+  codingRunSnapshotSchema,
+  codingRunStatusSchema,
+  codingCandidateEvidenceSchema,
+  codingRunEventSchema,
+} from './coding-runs';
+const label = v.pipe(v.string(), v.trim(), v.minLength(1), v.maxLength(4096));
+const absolute = v.pipe(label, v.regex(/^\//));
+export const factoryCodingConfigSchema = v.strictObject({
+  enabled: v.optional(v.boolean(), false),
+  executable: v.optional(v.nullable(absolute), null),
+  model: v.optional(v.nullable(label), null),
+  auth: v.optional(
+    v.nullable(
+      v.strictObject({
+        kind: v.picklist(['api-key', 'auth-json']),
+        env: v.pipe(v.string(), v.regex(/^[A-Z][A-Z0-9_]{0,127}$/)),
+      }),
+    ),
+    null,
+  ),
+  path: v.optional(
+    v.pipe(
+      label,
+      v.check((s) => s.split(':').every((p) => p.startsWith('/'))),
+    ),
+    '/usr/bin:/bin',
+  ),
+  sandbox: v.optional(v.literal('workspace-write'), 'workspace-write'),
+  wallTimeMs: v.optional(
+    v.pipe(v.number(), v.integer(), v.minValue(1000), v.maxValue(2700000)),
+    2700000,
+  ),
+  maxOutputBytes: v.optional(
+    v.pipe(v.number(), v.integer(), v.minValue(1024), v.maxValue(67108864)),
+    8388608,
+  ),
+  maxWriters: v.optional(v.literal(1), 1),
+});
+export type FactoryCodingConfig = v.InferOutput<
+  typeof factoryCodingConfigSchema
+>;
+export const factoryCodingReadinessSchema = v.strictObject({
+  ready: v.boolean(),
+  enabled: v.boolean(),
+  supportedVersion: label,
+  installedVersion: v.nullable(label),
+  blockers: v.array(label),
+});
+export const factoryCodingRunSchema = v.strictObject({
+  record: v.strictObject({
+    runId: label,
+    attemptId: label,
+    version: v.number(),
+    snapshot: codingRunSnapshotSchema,
+    status: codingRunStatusSchema,
+    workspace: v.nullable(v.strictObject({ worktreeId: label })),
+    providerSessionId: v.nullable(label),
+    cancelRequestedAt: v.nullable(label),
+    cancelReason: v.nullable(label),
+    reason: v.nullable(label),
+    candidate: v.nullable(codingCandidateEvidenceSchema),
+    createdAt: label,
+    updatedAt: label,
+    completedAt: v.nullable(label),
+    cleanupAttentionAt: v.nullable(label),
+    evidenceRetainUntil: v.nullable(label),
+  }),
+  displayStatus: v.picklist([
+    'reserved',
+    'running',
+    'cancelling',
+    'collecting',
+    'needs-reconcile',
+    'candidate-awaiting-review',
+    'failed',
+    'cancelled',
+  ]),
+  diff: v.nullable(
+    v.strictObject({ worktreeId: label, preparedDiffId: label }),
+  ),
+});
+export const factoryCodingStateSchema = v.strictObject({
+  config: factoryCodingConfigSchema,
+  configFingerprint: label,
+  readiness: factoryCodingReadinessSchema,
+});
+export const factoryCodingAttentionSchema = v.strictObject({
+  workId: label,
+  inputFingerprint: label,
+  reason: label,
+  updatedAt: label,
+});
+export const factoryCodingPageSchema = v.strictObject({
+  attention: v.optional(v.nullable(factoryCodingAttentionSchema), null),
+  items: v.array(
+    v.strictObject({ sequence: v.number(), run: factoryCodingRunSchema }),
+  ),
+  nextCursor: v.nullable(v.number()),
+});
+export const factoryCodingEventsSchema = v.strictObject({
+  items: v.array(codingRunEventSchema),
+  nextCursor: v.nullable(v.number()),
+});
+export const factoryCodingControlSchema = v.strictObject({
+  expectedVersion: v.pipe(v.number(), v.integer(), v.minValue(1)),
+});
+export const factoryCodingLogsSchema = v.strictObject({
+  text: v.pipe(v.string(), v.maxLength(65536)),
+  nextOffset: v.number(),
+  truncated: v.boolean(),
+});
+export type FactoryCodingRun = v.InferOutput<typeof factoryCodingRunSchema>;
+export type FactoryCodingState = v.InferOutput<typeof factoryCodingStateSchema>;
+export type FactoryCodingPage = v.InferOutput<typeof factoryCodingPageSchema>;
+export type FactoryCodingEvents = v.InferOutput<
+  typeof factoryCodingEventsSchema
+>;
+export type FactoryCodingLogs = v.InferOutput<typeof factoryCodingLogsSchema>;
+
+export const factoryCodingConfigInputSchema = v.strictObject({
+  expectedFingerprint: label,
+  config: factoryCodingConfigSchema,
+});

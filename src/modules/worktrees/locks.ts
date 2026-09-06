@@ -1,3 +1,8 @@
+import {
+  guardCodingWorktree,
+  type FactoryWorkspaceClaim,
+} from './coding-guard';
+import { requireWorktree } from './store';
 import { openDb, withImmediateTransaction } from '../../lib/sqlite.ts';
 import type { RuntimePaths } from '../../runtime-home';
 import { WorktreeError, isSqliteUniqueConstraint } from './errors';
@@ -13,6 +18,7 @@ export function assertNoForeignActiveLock(
   lockId: string | undefined,
   paths: RuntimePaths,
 ) {
+  guardCodingWorktree(record, paths);
   const now = Date.now();
   const locks = activeLocksForWorktree(record, paths).filter(
     (lock) => Date.parse(lock.expiresAt) > now,
@@ -43,9 +49,16 @@ export function acquireLock(
   lock: WorktreeLockRecord,
   now: Date,
   paths: RuntimePaths,
+  factoryClaim?: FactoryWorkspaceClaim,
 ):
   | { ok: true; lock: WorktreeLockRecord; recovered?: WorktreeLockRecord }
   | { ok: false; active: WorktreeLockRecord } {
+  if (lock.worktreeId)
+    guardCodingWorktree(
+      requireWorktree(lock.worktreeId, paths),
+      paths,
+      factoryClaim,
+    );
   const database = openDb(paths.neondeckDatabase);
   try {
     return withImmediateTransaction(database, () => {

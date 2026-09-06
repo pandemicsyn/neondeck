@@ -46,8 +46,10 @@ import { ReviewRefreshNotice } from './ReviewRefreshNotice';
 export function PreparedDiffReview({
   diff,
   externalRefreshGuard,
+  readOnly = false,
 }: {
   diff: PreparedDiffRecord;
+  readOnly?: boolean;
   externalRefreshGuard?: {
     mutationPending?: boolean;
     revisionConfirmationOpen?: boolean;
@@ -112,6 +114,7 @@ export function PreparedDiffReview({
   const source = useMemo(
     () =>
       preparedDiffReviewSource(diff, viewFiles, appliedData?.revision, {
+        readOnly,
         loadingPaths:
           activePath && filePatchQuery.isLoading
             ? new Set([activePath])
@@ -128,6 +131,7 @@ export function PreparedDiffReview({
       filePatchQuery.isLoading,
       appliedData?.revision,
       viewFiles,
+      readOnly,
     ],
   );
   const findingReview = usePreparedFindingReview({
@@ -177,7 +181,12 @@ export function PreparedDiffReview({
       return;
     setIsApplyingRevision(true);
     const nextFiles = next.files ?? [];
-    const nextSource = preparedDiffReviewSource(diff, nextFiles, next.revision);
+    const nextSource = preparedDiffReviewSource(
+      diff,
+      nextFiles,
+      next.revision,
+      { readOnly },
+    );
     const nextFindingProjection = findingReview.projectRefresh(
       nextSource,
       nextFiles,
@@ -206,6 +215,7 @@ export function PreparedDiffReview({
     hasAvailableRevision,
     isApplyingRevision,
     source.files,
+    readOnly,
   ]);
   useEffect(() => {
     if (hasAvailableRevision && refreshSafety.safe) applyAvailableRevision();
@@ -271,7 +281,11 @@ export function PreparedDiffReview({
       <MultiFileView
         activePath={activePath}
         annotationsByPath={findingReview.annotationsByPath}
-        detail={`${diff.verificationStatus} verification - ${diff.pushApprovalStatus} push`}
+        detail={
+          readOnly
+            ? 'Retained worktree · current changes'
+            : `${diff.verificationStatus} verification - ${diff.pushApprovalStatus} push`
+        }
         emptyLabel="No prepared-diff files."
         files={viewFiles}
         isLoadingPatch={Boolean(activePath) && filePatchQuery.isLoading}
@@ -285,7 +299,7 @@ export function PreparedDiffReview({
         }
         refreshStatus={refreshStatus}
         source={source}
-        inspector={findingReview.inspector}
+        inspector={readOnly ? undefined : findingReview.inspector}
         inspectorLabel={findingReview.inspectorLabel}
         renderAnnotation={findingReview.renderAnnotation}
         reviewMapByPath={findingReview.reviewMapByPath}
@@ -293,6 +307,12 @@ export function PreparedDiffReview({
         title={diff.title}
         tone="primary"
       />
+      {readOnly && (
+        <details className="prepared-readonly-findings">
+          <summary>Local review findings</summary>
+          {findingReview.inspector}
+        </details>
+      )}
     </>
   );
 }

@@ -7,6 +7,8 @@ import {
   emptyFactorySpec,
   type FactoryDetail,
 } from '../../../../shared/factory';
+// Coding query behavior is covered separately in FactoryCoding.test.tsx.
+vi.mock('./FactoryCoding', () => ({ FactoryCoding: () => null }));
 const api = vi.hoisted(() => ({ mutateFactory: vi.fn() }));
 vi.mock('../../api/factory', () => api);
 vi.mock('../diff-viewer/DocumentRevisionDiff', () => ({

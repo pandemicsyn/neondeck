@@ -1,3 +1,8 @@
+import {
+  guardCodingWorktreeId,
+  codingWorktreeOwner,
+  readWorktreeRecord,
+} from '../worktrees';
 /* eslint-disable no-unused-vars */
 import { defineTool, type JsonValue } from '@flue/runtime';
 import { asJsonValue } from '../../lib/action-result';
@@ -63,6 +68,11 @@ export async function ensurePreparedDiffForWorktree(
   } = {},
 ) {
   await ensureRuntimeHome(paths);
+  // Derive ownership from durable records, including create-before-bind workflow
+  // association. Callers cannot opt into or out of this promotion restriction.
+  const factoryOwned = Boolean(
+    codingWorktreeOwner(readWorktreeRecord(worktree.id, paths), paths),
+  );
   const now = new Date().toISOString();
   const existing = readPreparedDiffByWorktreeId(worktree.id, paths);
   const shouldResetDecisionState = Boolean(
@@ -76,11 +86,13 @@ export async function ensurePreparedDiffForWorktree(
     updateWorktreeLifecycle(existing.worktreeId, 'cleanup-pending', paths);
     return existing;
   }
-  if (existing && shouldResetDecisionState) {
+  if (existing && (shouldResetDecisionState || factoryOwned)) {
     supersedeApprovals(
       existing.id,
       'push',
-      'Prepared diff was regenerated; previous push decision is no longer current.',
+      factoryOwned
+        ? 'Factory candidate is retained for review without push authority.'
+        : 'Prepared diff was regenerated; previous push decision is no longer current.',
       paths,
     );
   }
@@ -102,9 +114,11 @@ export async function ensurePreparedDiffForWorktree(
       existing?.status === 'abandoned' || shouldResetDecisionState
         ? 'prepared'
         : (existing?.status ?? 'prepared'),
-    pushApprovalStatus: shouldResetDecisionState
-      ? 'pending'
-      : (existing?.pushApprovalStatus ?? 'pending'),
+    pushApprovalStatus: factoryOwned
+      ? 'not-requested'
+      : shouldResetDecisionState
+        ? 'pending'
+        : (existing?.pushApprovalStatus ?? 'pending'),
     verificationStatus: shouldResetDecisionState
       ? 'not-run'
       : (existing?.verificationStatus ?? 'not-run'),
@@ -174,6 +188,7 @@ export async function recordPreparedDiffVerification(
       ? readPreparedDiffByWorktreeId(input.worktreeId, paths)
       : undefined;
   if (!record) return null;
+  guardCodingWorktreeId(record.worktreeId, paths);
   const verifiedCommitSha = await gitCurrentSha(
     record.sourceWorktreePath,
   ).catch(() => null);
@@ -213,6 +228,7 @@ export function markPreparedDiffPushBlocked(
 ) {
   const current = readPreparedDiffRecord(preparedDiffId, paths);
   if (!current) return null;
+  guardCodingWorktreeId(current.worktreeId, paths);
   return updatePreparedDiffState(
     preparedDiffId,
     {
@@ -238,6 +254,7 @@ export function markPreparedDiffPushed(
 ) {
   const current = readPreparedDiffRecord(preparedDiffId, paths);
   if (!current) return null;
+  guardCodingWorktreeId(current.worktreeId, paths);
   return updatePreparedDiffState(
     preparedDiffId,
     {
@@ -486,6 +503,17 @@ export async function requestPreparedDiffRevision(
     paths,
   );
   if (!loaded.ok) return loaded.result;
+  try {
+    guardCodingWorktreeId(loaded.record.worktreeId, paths);
+  } catch {
+    return {
+      ok: false,
+      action: 'prepared_diff_request_revision',
+      changed: false,
+      message:
+        'Factory candidate is read-only; repair and publishing are deferred.',
+    };
+  }
   const existingPromotion = objectField(loaded.record.summary).findingPromotion;
   if (
     parsed.input.findingPromotion &&

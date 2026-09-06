@@ -31,3 +31,9 @@ export type {
   LocalReceipt,
 } from './local-host';
 export { prepareSchema } from './host-contract';
+
+export {
+  latestCodingRunForWorkItem,
+  getActiveCodingRun,
+  getCodingRunForRelease,
+} from './queries';

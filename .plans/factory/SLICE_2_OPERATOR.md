@@ -1,0 +1,45 @@
+# Factory slice 2 operator surface
+
+Slice 1 live acceptance remains **PENDING** and blocks every slice 2 merge. Mock tests are not live acceptance. No real model, GitHub write, SSH or deployment exercise is part of this implementation.
+
+Coding is off by default. In the private local API, GET `/api/factory/coding/state` returns typed configuration, `configFingerprint`, and readiness. POST `/api/factory/coding/config` accepts `{expectedFingerprint, config}`; stale saves return 409. The generic factory config service validates the same schema. No model-callable launch tool or public ingress coding endpoint exists.
+
+Explicit configuration selects an absolute `executable`, `model`, allowlisted `path`, and `auth: {kind: "api-key" | "auth-json", env: "ENVIRONMENT_VARIABLE_NAME"}`. Set the referenced value privately in the runtime environment, never in the config request. Config and status contain only the reference. The supported contract is `codex-cli 0.150.1`, checked by the local host before starting the writer. Missing or unsupported CLI/auth is not replaced by a mock. `sandbox` is `workspace-write`; `maxWriters` is fixed at 1; `wallTimeMs` defaults to and cannot exceed 2,700,000 (45 minutes). Output is bounded by `maxOutputBytes`, default 8 MiB, maximum 64 MiB. This is operational isolation for trusted repositories, not an OS security sandbox.
+
+Enabling coding opts in to automatic consumption of queued, exact human releases. Ordinary messages and issue comments do not authorize launch. Admission checks source, repository mapping, release/spec version and hash, policy, selected context and current settings before reservation and again before the host launch. A synchronous versioned host binding claims preparation before any asynchronous worktree allocation. Reservation replay cannot create another workspace or writer. Current source/release/config changes durably request cancellation and synchronously publish authenticated host cancellation intent before the mutation returns. Disabling coding does not disable recovery.
+
+Each attempt uses a new app-owned worktree and dedicated `agent/factory-<attempt>` branch pinned to the captured local default-branch commit. There is no implicit fetch or primary checkout edit. The worktree owner is recorded before Git creation, and its ID/lock are bound before launch. Private attempt state lives under the runtime home's `coding-attempts/<attempt>` with private harness home and scratch. Credentials are selected explicitly by the host; operator plugins, MCP and other control-plane credentials are not inherited.
+
+## First-slice frozen context policy
+
+The exact brief, source, repository registration, release policy, pinned commit and harness model/version are immutable run snapshots. Context contains the root tracked regular-file `AGENTS.md` at the pinned commit with its hash, registered setup commands, the released reference path/commit/note entries, and the current non-built-in runtime skill snapshots and selected scoped memory IDs/content/hashes from the existing runtime selection services. The context has an integrity hash. Routine memory or skill changes elsewhere do not refresh or invalidate a running attempt; a new release or deliberate planning-context refresh is the explicit boundary. Context is bounded; oversized content fails admission rather than silently truncating the brief. No entire planning transcript or mutable chat session is injected. Codex can read additional tracked subtree instructions and referenced files in its pinned checkout. Repository setup is performed by Codex under its permission profile, not by a new setup-command pipeline. No port allocator exists in version 1: use OS-assigned ephemeral ports and stop child servers; the host owns process-group termination.
+
+## Admission attention
+
+Preflight failures do not invent a coding run. A task-filtered run page includes nullable `attention: {workId, inputFingerprint, reason, updatedAt}` backed by small app metadata. Missing default-branch commits or unreadable/oversized selected context show an actionable reason. Repeated unchanged inputs skip the expensive preflight. Changes to the release, repository/configuration or relevant local Git metadata permit another check; after changing selected memory/skills, deliberately refresh the planning context and release the reviewed brief. Running attempts keep their frozen context. Runtime recovery and mutation invalidation read only the indexed active writer; release replay uses its unique release lookup, not a history scan.
+
+## Read and control
+
+- GET `/api/factory/coding/runs?workId=<work>&after=0&limit=25`: newest-first cursor-paged runs; maximum 100 per page. `after=0` starts with the latest run; a returned cursor loads strictly older sequences, unaffected by new arrivals.
+- GET `/api/factory/coding/runs/<run>`: safe detail projection and meaningful display state.
+- GET `/api/factory/coding/runs/<run>/events?after=0&limit=25`: persisted lifecycle events, maximum 100 per page.
+- GET `/api/factory/coding/runs/<run>/logs?offset=0&limit=16384`: bounded stdout, maximum 65,536 bytes per page.
+- POST `/api/factory/coding/runs/<run>/cancel` or `/reconcile`: `{expectedVersion}`. Stale controls return 409. Cancellation persists before host I/O.
+
+`candidate-awaiting-review` means verified process death and collected Git evidence, including untracked content, not that the task is done or accepted. `cancelling` means durable cancellation awaits death/evidence; `needs-reconcile` retains ownership when the receipt or process identity is uncertain. Reconciliation monitors the same job; it never blindly retries a launch. A process exit or lease timeout alone cannot release ownership. No auto retry, repair, resume-last-session, PR, push, merge or deploy action exists.
+
+A non-null `diff: {worktreeId, preparedDiffId}` identifies the existing prepared-worktree diff surface. Use the existing prepared-diff summary/files/file-diff APIs and read-only `PreparedDiffReview`. Do not fabricate a link when diff is null, or a provider session link when only the session ID is known. Generic prepared-diff repair, push and verification, worktree sync and lease reclamation are blocked for factory-owned work. Reads remain available. Factory ownership also keeps the prepared diff push decision `not-requested`; candidate creation and regeneration do not create a pending push approval or its notification.
+
+All factory workspaces are retained, including clean unpublished commits and incomplete creation, regardless of force cleanup or expired locks. Seven-day cleanup attention and 30-day evidence-retention dates are metadata, not deletion authority; no automatic deletion is introduced. Missing or contradictory receipts quarantine the attempt and preserve the global writer reservation for investigation. Do not manually delete state or release a claim to make another writer start. A future explicit operator discard/recovery protocol must establish no live process and preserve valuable evidence.
+
+### Launch and cancellation ordering
+
+The local host uses one short, exclusive per-attempt filesystem gate to order signed cancellation publication against the anchor's final synchronous cancellation check and provider spawn. There is no await between that check and spawn. Revocation that wins this gate prevents provider launch. If launch authorization wins first, subsequent cancellation stops the owned process group through the supervisor; a source database commit is not claimed to be an atomic transaction with filesystem/process creation.
+
+Factory mutations persist database cancellation before publishing host intent. A host publication error can therefore be returned after the factory/source mutation committed. Treat that error as cancellation requiring reconciliation, not permission to retry launch: the retained database intent is redelivered during recovery, including while coding is disabled. Gate contention/failed ownership verification remains uncertain; no timeout or stale gate lease establishes process death or permits stealing another owner's gate.
+
+The full frozen source remains provenance. Observational GitHub `updatedAt` changes and absent/null attention normalization do not invalidate it; source content/version/identity/mapping, release, repository and policy changes still revoke authority.
+
+### Version-one repository evidence limitations
+
+The local host rejects effective repository clean/process filters and gitlinks/submodules before status/diff collection. These Git reads can otherwise start executable filters or nested repository processes outside the supervised CLI group. Such repositories are unsupported for version-one evidence collection: retain/quarantine the run and workspace for reconciliation, without running those filters or submodule operations or treating incomplete evidence as a candidate. Supporting them requires a future reviewed host capability; disabling protection or manually clearing ownership is not a recovery path.

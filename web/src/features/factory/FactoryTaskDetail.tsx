@@ -1,3 +1,4 @@
+import { FactoryCoding } from './FactoryCoding';
 import { FactoryGitHubSource } from './FactoryGitHub';
 import { useFactoryWorkbench } from './useFactoryWorkbench';
 import { FactoryDraftRecovery } from './FactoryDraftRecovery';
@@ -129,7 +130,7 @@ export function FactoryTaskDetail({
       </div>
       <p className="factory-status">
         {detail.eligible
-          ? 'Released — awaiting coding executor'
+          ? 'Released · coding status below'
           : detail.work.lifecycle === 'queued'
             ? 'Release needs review — not eligible for coding'
             : detail.work.lifecycle === 'paused'
@@ -144,6 +145,11 @@ export function FactoryTaskDetail({
                     ? 'Needs your attention — shape the draft and resolve release requirements.'
                     : 'Ready for your review — release requires your explicit decision.'}
       </p>
+      <FactoryCoding
+        key={detail.work.id}
+        workId={detail.work.id}
+        eligible={detail.eligible}
+      />
       {!detail.work.repoId && (
         <p>
           Select a repository before release.{' '}
@@ -369,7 +375,8 @@ export function FactoryTaskDetail({
         <p>
           Policy {factoryPolicy.version}: implement this exact specification in
           an isolated worktree and run repo-configured checks. No publish, merge
-          or deploy authority. No coding executor is available.
+          or deploy authority. When local coding is enabled and ready, eligible
+          releases dispatch automatically.
         </p>
         <p>
           Source v{viewed.sourceVersion} · {viewed.authorKind}:{' '}

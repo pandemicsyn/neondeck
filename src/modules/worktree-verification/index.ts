@@ -1,3 +1,4 @@
+import { guardCodingWorktreeId } from '../worktrees';
 import { runApprovedExecution } from '../execution';
 import { recordPreparedDiffVerification } from '../prepared-diffs';
 import { readRepoRegistrySnapshot, repoFullName } from '../repos';
@@ -79,6 +80,7 @@ export async function verifyWorktreeChecks(
   dependencies: VerifyWorktreeChecksDependencies = {},
 ): Promise<WorktreeVerificationResult> {
   await ensureRuntimeHome(paths);
+  guardCodingWorktreeId(input.worktreeId, paths);
   let acquiredLockId: string | undefined;
   const lockOwner = input.lockOwner ?? 'verify_worktree_checks';
   let finalLockStatus = input.finalLockStatus ?? 'ready';

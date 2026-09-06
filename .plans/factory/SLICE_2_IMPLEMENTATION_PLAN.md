@@ -1,6 +1,6 @@
 # Slice 2 — Brief to candidate
 
-Status: implementation authorized on 2026-09-06; no slice 2 implementation accepted or published yet.
+Status: implemented and accepted locally on 2026-09-06; reviewed draft stacked delivery. All Slice 2 merges remain blocked on live Slice 1 acceptance. See [local handoff](SLICE_2_HANDOFF.md).
 
 <a id="mandatory-merge-gate-live-slice-1-acceptance"></a>
 
@@ -83,11 +83,14 @@ Use Node 26.4.0 and the repository check/verify suites, with isolated temporary 
 
 ## Progress ledger
 
-| Layer / gate                             | State                              | Evidence                                                                                   |
-| ---------------------------------------- | ---------------------------------- | ------------------------------------------------------------------------------------------ |
-| Slice 1 acceptance decision              | Operator-accepted; checks deferred | Partial rehearsal recorded in PR #396; subsequent operator decision supersedes merge hold. |
-| Slice 2 plan                             | In progress                        | This contract; publication waits for reviews.                                              |
-| Coding run foundation                    | Pending                            | No implementation accepted.                                                                |
-| Local Codex host / mockdex               | In progress                        | Delegated mockdex fixture; no live CLI invocation.                                         |
-| Factory workbench integration            | Pending                            | No implementation accepted.                                                                |
-| Cumulative acceptance / real Codex smoke | Pending                            | Mock and live evidence must remain distinct.                                               |
+| Layer / gate                  | State                                | Evidence                                                                                                                                      |
+| ----------------------------- | ------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| Slice 1 live acceptance       | PENDING — blocks every Slice 2 merge | Morning operator checklist above; no live test performed.                                                                                     |
+| Slice 2 plan                  | Accepted locally                     | Two independent static reviews and manager acceptance; commit 5f6bb2b.                                                                        |
+| Coding run foundation         | Accepted locally                     | Commit 33d56463; two clean reviews; full verification passed 1,986 tests at that layer.                                                       |
+| Local Codex host / mockdex    | Accepted locally                     | Commit 4488b4ec; two clean reviews; 29 actual host tests and 32 mockdex fixture tests.                                                        |
+| Factory workbench integration | Accepted locally                     | Two clean static reviews and manager acceptance; real local mockdex candidate and cancellation flows, typed operator UI and screenshots.      |
+| Cumulative local acceptance   | Passed                               | Full npm run verify: 1,943 unit + 47 Git + 123 integration = 2,113 tests, lint, layers, migrations, types, builds, package and format checks. |
+| Real Codex / Linux / VM smoke | PENDING                              | Mock execution does not establish real CLI/auth or deployment acceptance.                                                                     |
+
+See [handoff and remaining acceptance](SLICE_2_HANDOFF.md). GitHub CI is a separate publication check; local verification is not a claim that remote checks or live acceptance passed.

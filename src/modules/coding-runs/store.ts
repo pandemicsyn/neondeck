@@ -135,18 +135,24 @@ export function getCodingRun(runId: unknown, paths: Paths) {
 export function listCodingRuns(input: unknown, paths: Paths) {
   const page = v.parse(codingRunListSchema, input);
   return db(paths, (database) => {
-    const rows =
-      page.workItemId === undefined
-        ? database
-            .prepare(
-              'SELECT * FROM coding_runs WHERE sequence > ? ORDER BY sequence LIMIT ?',
-            )
-            .all(page.after, page.limit)
-        : database
-            .prepare(
-              'SELECT * FROM coding_runs WHERE work_item_id = ? AND sequence > ? ORDER BY sequence LIMIT ?',
-            )
-            .all(page.workItemId, page.after, page.limit);
+    // Only validated enum choices select SQL fragments; values stay bound.
+    const descending = page.order === 'desc';
+    const clauses: string[] = [];
+    const params: (string | number)[] = [];
+    if (page.workItemId !== undefined) {
+      clauses.push('work_item_id = ?');
+      params.push(page.workItemId);
+    }
+    if (!descending || page.after !== 0) {
+      clauses.push(descending ? 'sequence < ?' : 'sequence > ?');
+      params.push(page.after);
+    }
+    const where = clauses.length ? `WHERE ${clauses.join(' AND ')}` : '';
+    const rows = database
+      .prepare(
+        `SELECT * FROM coding_runs ${where} ORDER BY sequence ${descending ? 'DESC' : 'ASC'} LIMIT ?`,
+      )
+      .all(...params, page.limit);
     return rows.map(decode);
   });
 }

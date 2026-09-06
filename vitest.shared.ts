@@ -30,6 +30,7 @@ export const integrationTestFiles = [
   'src/autopilot-recovery.test.ts',
   'src/autopilot-workflows.test.ts',
   'src/commands.test.ts',
+  'src/server/factory-coding.integration.test.ts',
   'src/modules/coding-runs/local-host.test.ts',
   'src/kilo-actions.test.ts',
   'src/kilo-results.test.ts',

@@ -1,3 +1,4 @@
+import { guardCodingWorktreeId } from '../worktrees';
 /* eslint-disable no-unused-vars */
 import { defineTool, type JsonValue } from '@flue/runtime';
 import { asJsonValue } from '../../lib/action-result';
@@ -197,6 +198,7 @@ export function approvePreparedDiffPushState(
         .get(id);
       if (!row) throw new Error(`Prepared diff ${id} was not found.`);
       const current = readPreparedDiffRow(row);
+      guardCodingWorktreeId(current.worktreeId, paths);
       const allowedStatuses: PreparedDiffStatus[] = [
         'prepared',
         'verification-requested',
@@ -374,6 +376,7 @@ export function updatePreparedDiffVerificationWithLease(
         .get(id);
       if (!row) throw new Error(`Prepared diff ${id} was not found.`);
       const current = readPreparedDiffRow(row);
+      guardCodingWorktreeId(current.worktreeId, paths);
       const updated: PreparedDiffRecord = {
         ...current,
         verificationStatus: input.status,
