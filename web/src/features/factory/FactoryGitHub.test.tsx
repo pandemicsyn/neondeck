@@ -168,9 +168,17 @@ it('loads only selected-task comment pages and resets paging on a different task
   };
   await draw('work-one');
   expect(container.textContent).toContain('Newest page body');
+  expect(container.textContent).toContain(
+    'Ordered by when Neon first retained each comment, most recent first',
+  );
+  expect(
+    Array.from(container.querySelectorAll('button')).find(
+      (b) => b.textContent === 'Previous page',
+    )!.disabled,
+  ).toBe(true);
   await act(async () => {
     Array.from(container.querySelectorAll('button'))
-      .find((b) => b.textContent === 'Older comments')!
+      .find((b) => b.textContent === 'Next page')!
       .click();
   });
   await act(async () => {

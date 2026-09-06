@@ -364,7 +364,10 @@ function FactoryGitHubDiscussion({
         External context only. Replies cannot approve, release, or change the
         brief.
       </p>
-      <p>Newest first · up to 10 comments per page.</p>
+      <p>
+        Ordered by when Neon first retained each comment, most recent first · up
+        to 10 comments per page.
+      </p>
       {state.isPending && <p>Loading discussion…</p>}
       {state.error && (
         <p role="alert">
@@ -380,13 +383,13 @@ function FactoryGitHubDiscussion({
           disabled={cursors.length === 1 || state.isFetching}
           onClick={() => setCursors(cursors.slice(0, -1))}
         >
-          Newer comments
+          Previous page
         </button>
         <button
           disabled={!state.data?.nextCursor || state.isFetching}
           onClick={() => setCursors([...cursors, state.data!.nextCursor!])}
         >
-          Older comments
+          Next page
         </button>
       </nav>
       {state.data?.comments.map((comment) => (

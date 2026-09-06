@@ -44,7 +44,13 @@ export function connectionReadiness(
     );
   if (connection.admission.mode === 'label' && !connection.admission.label)
     reasons.push('Choose an admission label.');
-  loadNeondeckEnv(paths, { includeDevFallback: false });
+  // Startup normally loads these; retain lazy fallback without rereading .env
+  // on every ready poll or webhook. Existing process values keep precedence.
+  if (
+    !process.env[connection.webhookSecretEnv] ||
+    !process.env[connection.tokenEnv]
+  )
+    loadNeondeckEnv(paths, { includeDevFallback: false });
   if (!process.env[connection.webhookSecretEnv])
     reasons.push('Webhook secret reference is unavailable.');
   if (!process.env[connection.tokenEnv])
