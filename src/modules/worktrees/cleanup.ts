@@ -1,4 +1,17 @@
-import { codingWorktreeOwner } from './coding-guard';
+import {
+  codingWorktreeOwner,
+  type FactoryWorkspaceClaim,
+} from './coding-guard';
+import {
+  getDeliveryPipeline,
+  sameDeliveryRevision,
+} from '../factory-delivery/store';
+import { getCodingRun } from '../coding-runs';
+import { gitCurrentSha } from '../../repo-edit/git';
+import { readFileSync, statSync } from 'node:fs';
+import { join, basename, dirname } from 'node:path';
+import { createHash } from 'node:crypto';
+import * as v from 'valibot';
 import type { RuntimePaths } from '../../runtime-home';
 import { activeLocksForWorktree } from './locks';
 import { exists, repoContext } from './paths';
@@ -13,7 +26,87 @@ export async function cleanupDecision(
     force?: boolean;
   },
   paths: RuntimePaths,
+  claim?: FactoryWorkspaceClaim,
 ): Promise<{ delete: boolean; reason: string }> {
+  if (record.owningWorkflowRunId?.startsWith('factory-delivery:')) {
+    const id = record.owningWorkflowRunId.slice('factory-delivery:'.length);
+    const pipeline = getDeliveryPipeline(id, paths);
+    const latest = pipeline?.commits.at(-1);
+    const run = pipeline ? getCodingRun(pipeline.revision.runId, paths) : null;
+    if (
+      !pipeline ||
+      !claim ||
+      !('pipelineId' in claim) ||
+      claim.pipelineId !== id ||
+      claim.expectedVersion !== pipeline.version ||
+      !['merged', 'closed'].includes(pipeline.outcome ?? '') ||
+      !pipeline.pr ||
+      !latest ||
+      !pipeline.effects.some(
+        (effect) =>
+          effect.kind === 'push' &&
+          effect.state === 'delivered' &&
+          sameDeliveryRevision(effect.revision, latest.revision),
+      ) ||
+      !run?.deadProof ||
+      !pipeline.coordinator.terminalObservedAt ||
+      Date.now() - Date.parse(pipeline.coordinator.terminalObservedAt) <
+        86400000 ||
+      pipeline.effects.some((e) => e.state !== 'delivered') ||
+      pipeline.repairs.some((r) => r.status === 'reserved') ||
+      activeLocksForWorktree(record, paths).some(
+        (l) => Date.parse(l.expiresAt) > Date.now(),
+      ) ||
+      record.adopted ||
+      !(await isGitClean(record.localPath).catch(() => false)) ||
+      (await gitCurrentSha(record.localPath).catch(() => null)) !==
+        latest.publishedHeadSha
+    )
+      return {
+        delete: false,
+        reason: 'Factory publication cleanup proof is incomplete; retained.',
+      };
+    try {
+      if (
+        dirname(latest.evidenceRef) !==
+          join(paths.home, 'factory-delivery', pipeline.pipelineId) ||
+        statSync(latest.evidenceRef).size > 16384
+      )
+        throw new Error('Publication receipt location is invalid.');
+      const body = readFileSync(latest.evidenceRef, 'utf8');
+      if (
+        basename(latest.evidenceRef) !==
+        `${createHash('sha256').update(body).digest('hex')}.json`
+      )
+        throw new Error('Publication receipt content changed.');
+      const proof = v.parse(
+        v.object({
+          root: v.string(),
+          worktreeId: v.string(),
+          branch: v.string(),
+          publishedHeadSha: v.string(),
+        }),
+        JSON.parse(body),
+      );
+      if (
+        proof.root !== record.localPath ||
+        proof.worktreeId !== record.id ||
+        proof.branch !== record.headRef ||
+        proof.publishedHeadSha !== latest.publishedHeadSha
+      )
+        throw new Error('Publication receipt belongs to another workspace.');
+    } catch {
+      return {
+        delete: false,
+        reason: 'Exact published workspace receipt is unavailable; retained.',
+      };
+    }
+    return {
+      delete: true,
+      reason:
+        'Terminal published revision, dead writer, clean checkout and 24-hour grace verified.',
+    };
+  }
   const codingOwner = codingWorktreeOwner(record, paths);
   if (codingOwner)
     return {

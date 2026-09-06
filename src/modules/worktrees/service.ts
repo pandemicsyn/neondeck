@@ -623,6 +623,7 @@ export async function releaseWorktreeLock(
 export async function cleanupWorktrees(
   rawInput: unknown,
   paths: RuntimePaths = runtimePaths(),
+  factoryClaim?: FactoryWorkspaceClaim,
 ) {
   const parsed = parseInput(cleanupInputSchema, rawInput, 'worktree_cleanup');
   if (!parsed.ok) return parsed.result;
@@ -639,7 +640,12 @@ export async function cleanupWorktrees(
     let changed = false;
 
     for (const record of records) {
-      const decision = await cleanupDecision(record, input, paths);
+      const decision = await cleanupDecision(
+        record,
+        input,
+        paths,
+        factoryClaim,
+      );
       if (!decision.delete) {
         recordCleanupAttempt(
           record,
@@ -683,6 +689,7 @@ export async function cleanupWorktrees(
           ttlSeconds: 300,
         },
         paths,
+        factoryClaim,
       );
       if (!acquired.ok || !('lock' in acquired)) {
         const reason = 'worktree became locked before cleanup';
