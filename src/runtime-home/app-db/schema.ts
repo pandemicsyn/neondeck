@@ -1595,3 +1595,41 @@ export const factoryWritebackRecords = sqliteTable(
     record: text('record').notNull(),
   },
 );
+
+// The nullable singleton slot is held through uncertainty and evidence collection.
+export const codingRuns = sqliteTable(
+  'coding_runs',
+  {
+    sequence: integer('sequence').primaryKey({ autoIncrement: true }),
+    runId: text('run_id').notNull().unique(),
+    attemptId: text('attempt_id').notNull().unique(),
+    requestId: text('request_id').notNull().unique(),
+    workItemId: text('work_item_id').notNull(),
+    releaseId: text('release_id').notNull().unique(),
+    writerSlot: integer('writer_slot').unique(),
+    worktreeId: text('worktree_id')
+      .unique()
+      .references(() => worktrees.id),
+    recordJson: text('record_json').notNull(),
+  },
+  (table) => [
+    index('idx_coding_runs_work_item').on(table.workItemId, table.sequence),
+  ],
+);
+
+export const codingRunEvents = sqliteTable(
+  'coding_run_events',
+  {
+    sequence: integer('sequence').primaryKey({ autoIncrement: true }),
+    runId: text('run_id')
+      .notNull()
+      .references(() => codingRuns.runId),
+    version: integer('version').notNull(),
+    type: text('type').notNull(),
+    status: text('status').notNull(),
+    createdAt: text('created_at').notNull(),
+  },
+  (table) => [
+    index('idx_coding_run_events_run').on(table.runId, table.sequence),
+  ],
+);
