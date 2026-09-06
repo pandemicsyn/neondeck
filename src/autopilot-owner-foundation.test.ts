@@ -12,6 +12,12 @@ import {
 import type { PrWatch } from './modules/watches';
 import { runtimePaths } from './runtime-home';
 
+// These capability tests have no runtime database; durable factory ownership is
+// exercised by factory-delivery/store.test.ts against the real SQLite boundary.
+vi.mock('./modules/factory-delivery/store', () => ({
+  isFactoryOwnedWatch: () => false,
+}));
+
 describe('continuing Autopilot owner foundations', () => {
   it('derives one stable Flue instance id per watch without generations', () => {
     const first = autopilotOwnerInstanceId('pandemicsyn/neondeck#164');

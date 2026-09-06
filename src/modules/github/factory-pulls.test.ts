@@ -249,6 +249,7 @@ it('observes bounded raw check/status/review facts pinned to head and preserves 
           user: null,
           commit_id: 'c'.repeat(40),
           state: 'APPROVED',
+          body: 'Synthetic top-level review prose',
           submitted_at: pull.updated_at,
         },
       ]);
@@ -261,7 +262,12 @@ it('observes bounded raw check/status/review facts pinned to head and preserves 
     pull: { mergeable: null },
     checks: { complete: true },
     statuses: { complete: true },
-    reviews: { complete: true, items: [{ commit_id: 'c'.repeat(40) }] },
+    reviews: {
+      complete: true,
+      items: [
+        { commit_id: 'c'.repeat(40), body: 'Synthetic top-level review prose' },
+      ],
+    },
   });
   expect(result.complete).toBe(true);
   expect(mock).toHaveBeenCalledTimes(7);

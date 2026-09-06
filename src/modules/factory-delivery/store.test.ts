@@ -1,6 +1,9 @@
-import { mkdtempSync, rmSync } from 'node:fs';
+import { runtimePaths, type RuntimePaths } from '../../runtime-home';
+import { claimWatchAutopilotTurn, transitionWatchAutopilot } from '../watches';
+import { registerPendingAutopilotTurn } from '../autopilot';
+import { mkdtempSync, rmSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, dirname } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import * as v from 'valibot';
 import { initializeAppDatabase } from '../../runtime-home/app-db';
@@ -14,6 +17,9 @@ import type {
 import {
   reserveDeliveryPipeline,
   deliveryValidationContractDigest,
+  getPendingDeliveryFeedback,
+  isFactoryOwnedWatch,
+  deliveryBudget,
   getDeliveryPipeline,
   updateDeliveryPipeline,
   reserveDeliveryRepair,
@@ -22,7 +28,7 @@ import {
 } from './store';
 
 let home: string;
-let paths: { neondeckDatabase: string };
+let paths: RuntimePaths;
 const revision = {
   runId: 'initial',
   attemptId: 'initial-attempt',
@@ -54,7 +60,8 @@ const reservation: DeliveryReservation = {
 };
 beforeEach(() => {
   home = mkdtempSync(join(tmpdir(), 'delivery-'));
-  paths = { neondeckDatabase: join(home, 'app.db') };
+  paths = runtimePaths(home);
+  mkdirSync(dirname(paths.neondeckDatabase), { recursive: true });
   initializeAppDatabase(paths.neondeckDatabase);
 });
 afterEach(() => rmSync(home, { recursive: true, force: true }));
@@ -524,7 +531,11 @@ describe('reviewer A regressions', () => {
         {
           ...reservation,
           initialRevision: next,
-          authorization: { ...reservation.authorization, revision: next },
+          authorization: {
+            ...reservation.authorization,
+            id: 'new-grant',
+            revision: next,
+          },
         },
         paths,
       ).pipelineId,
@@ -613,4 +624,222 @@ it('rejects pass labels without an execution effect and rejects review before ve
   r = evidence(r, 'verification', 'passed', 'checker', false);
   expect(() => plan(r, 'commit')).toThrow('independent verification');
   expect(() => evidence(r, 'review')).toThrow('unresolved');
+});
+
+function published() {
+  let r = start(plan(ready(), 'commit'));
+  r = update(r, {
+    type: 'bind-commit',
+    publishedHeadSha: '7'.repeat(40),
+    treeSha: r.revision.treeSha,
+    evidenceRef: 'commit',
+  });
+  r = deliver(r);
+  r = deliver(start(plan(r, 'push')));
+  r = start(plan(r, 'create-pr'));
+  return update(r, {
+    type: 'settle-effect',
+    id: r.effects.at(-1)!.id,
+    state: 'delivered',
+    receiptRef: 'PR receipt',
+    pr: { number: 42, url: 'https://github.com/test/repo/pull/42' },
+  });
+}
+function feedback(
+  r: DeliveryPipeline,
+  ciFailed: boolean,
+  hasReviewFeedback = false,
+  fingerprint = '4'.repeat(64),
+) {
+  return update(r, {
+    type: 'record-feedback',
+    feedback: {
+      id: `feedback:${fingerprint}`,
+      fingerprint,
+      revision: r.revision,
+      publishedHeadSha: '7'.repeat(40),
+      ciFailed,
+      hasReviewFeedback,
+      evidenceRef: 'external-observation',
+    },
+  });
+}
+function seedWatch(id: string, number = 99, repoId = 'repo', owner = 'test') {
+  const db = openDb(paths.neondeckDatabase);
+  db.prepare(
+    `INSERT INTO pr_watches(id,repo_id,repo_full_name,github_owner,github_name,pr_number,desired_terminal_state,status,created_at,updated_at) VALUES(?,?,?,?,?,?,'merged','watching',?,?)`,
+  ).run(
+    id,
+    repoId,
+    `${owner}/repo`,
+    owner,
+    'repo',
+    number,
+    reservation.authorization.authorizedAt,
+    reservation.authorization.authorizedAt,
+  );
+  db.close();
+}
+it('normal feedback never certifies, consumes repair once, and success supersedes failure', () => {
+  let r = feedback(published(), true);
+  const observed = r.feedback[0]!;
+  expect(getPendingDeliveryFeedback(r)?.id).toBe(observed.id);
+  expect(r.evidence).toHaveLength(2);
+  expect(feedback(r, true)).toEqual(r);
+  r = feedback(r, false, false, '5'.repeat(64));
+  expect(getPendingDeliveryFeedback(r)).toBeNull();
+  r = feedback(r, true, false, '6'.repeat(64));
+  const repaired = reserveDeliveryRepair(repairInput(r), paths, createRun);
+  expect(repaired.pipeline.feedback.at(-1)!.repairRequestId).toBe('repair');
+  expect(getPendingDeliveryFeedback(repaired.pipeline)).toBeNull();
+});
+it('raw review prose is not repair authority; only bound accounted classification can authorize', () => {
+  let r = feedback(published(), false, true);
+  const f = r.feedback[0]!;
+  const id = `feedback-review:${f.fingerprint}`;
+  expect(getPendingDeliveryFeedback(r)).toBeNull();
+  expect(() => reserveDeliveryRepair(repairInput(r), paths, createRun)).toThrow(
+    'failed evidence',
+  );
+  expect(() =>
+    update(r, {
+      type: 'classify-feedback',
+      id: f.id,
+      effectId: id,
+      result: 'scoped-repair',
+      evidenceRef: 'report',
+    }),
+  ).toThrow('receipt missing');
+  r = update(r, {
+    type: 'plan-effect',
+    id,
+    kind: 'feedback-review',
+    maxExecutionMs: 1000,
+  });
+  r = update(r, { type: 'start-effect', id });
+  r = update(r, {
+    type: 'bind-effect-receipt',
+    id,
+    receiptRef: 'dispatch-receipt',
+  });
+  expect(() =>
+    update(r, {
+      type: 'classify-feedback',
+      id: f.id,
+      effectId: id,
+      result: 'scoped-repair',
+      evidenceRef: 'report',
+    }),
+  ).toThrow('receipt missing');
+  r = update(r, {
+    type: 'settle-effect',
+    id,
+    state: 'delivered',
+    receiptRef: 'report',
+    executionMs: 25,
+  });
+  r = update(r, {
+    type: 'classify-feedback',
+    id: f.id,
+    effectId: id,
+    result: 'scoped-repair',
+    evidenceRef: 'report',
+  });
+  expect(getPendingDeliveryFeedback(r)?.id).toBe(f.id);
+  expect(deliveryBudget(r).consumedExecutionMs).toBe(2700027);
+});
+it('queued plans do not fence unrelated work; legacy claim wins before publication admission', () => {
+  let r = deliver(start(plan(ready(), 'push')));
+  r = plan(r, 'create-pr');
+  seedWatch('legacy');
+  expect(isFactoryOwnedWatch('legacy', paths)).toBe(false);
+  expect(claimWatchAutopilotTurn(paths, 'legacy', 'event')).toBeDefined();
+  expect(() => start(r)).toThrow('Legacy owner');
+  expect(getDeliveryPipeline(r.pipelineId, paths)!.effects.at(-1)!.state).toBe(
+    'planned',
+  );
+});
+it('publication claim atomically fences legacy event/direct/pending admissions including repo aliases', () => {
+  let r = deliver(start(plan(ready(), 'push')));
+  r = plan(r, 'create-pr');
+  seedWatch('alias', 99, 'other-config-alias');
+  seedWatch('otherrepo', 9, 'otherrepo', 'other');
+  r = start(r);
+  expect(isFactoryOwnedWatch('alias', paths)).toBe(true);
+  expect(isFactoryOwnedWatch('otherrepo', paths)).toBe(false);
+  expect(claimWatchAutopilotTurn(paths, 'alias', 'event')).toBeUndefined();
+  expect(
+    transitionWatchAutopilot(paths, 'alias', {
+      from: 'watching',
+      to: 'working',
+    }),
+  ).toBeUndefined();
+  expect(() =>
+    registerPendingAutopilotTurn(
+      paths.home,
+      'owner',
+      undefined,
+      'autofix-with-approval',
+      'direct-human',
+      undefined,
+      { watchId: 'alias' },
+    ),
+  ).toThrow('Factory delivery');
+  r = update(r, {
+    type: 'settle-effect',
+    id: r.effects.at(-1)!.id,
+    state: 'uncertain',
+    receiptRef: 'timeout',
+  });
+  expect(isFactoryOwnedWatch('alias', paths)).toBe(true);
+  r = update(r, {
+    type: 'reconcile-effect',
+    id: r.effects.at(-1)!.id,
+    observation: 'delivered',
+    receiptRef: 'observed-PR',
+    pr: { number: 42, url: 'https://github.com/test/repo/pull/42' },
+  });
+  expect(isFactoryOwnedWatch('alias', paths)).toBe(false);
+  seedWatch('factory-pr', 42, 'another-alias');
+  expect(isFactoryOwnedWatch('factory-pr', paths)).toBe(true);
+});
+it('retains execution reservation for a dead repair with unavailable duration', () => {
+  const r = evidence(
+    reserveDeliveryPipeline(reservation, paths),
+    'verification',
+    'failed',
+  );
+  const reserved = reserveDeliveryRepair(repairInput(r), paths, createRun);
+  const finished = update(reserved.pipeline, {
+    type: 'finish-repair',
+    runId: reserved.run.runId,
+    attemptId: reserved.run.attemptId,
+    revision: null,
+    executionMs: null,
+  });
+  expect(deliveryBudget(finished).reservedExecutionMs).toBe(1000);
+  expect(getDeliveryPipeline(finished.pipelineId, paths)).toEqual(finished);
+});
+
+it('imports an exact trusted commit receipt once while its prior effect remains uncertain', () => {
+  let r = start(plan(ready(), 'commit'));
+  const id = r.effects.at(-1)!.id;
+  r = update(r, {
+    type: 'settle-effect',
+    id,
+    state: 'uncertain',
+    receiptRef: 'timeout',
+  });
+  const action = {
+    type: 'bind-commit' as const,
+    publishedHeadSha: '7'.repeat(40),
+    treeSha: r.revision.treeSha,
+    evidenceRef: 'trusted-commit-receipt',
+  };
+  r = update(r, action);
+  expect(update(r, action)).toEqual(r);
+  expect(() =>
+    update(r, { ...action, publishedHeadSha: '8'.repeat(40) }),
+  ).toThrow('Conflicting commit');
+  expect(r.effects.at(-1)!.state).toBe('uncertain');
 });

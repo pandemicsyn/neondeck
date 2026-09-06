@@ -15,6 +15,10 @@ const sourceExtensions = new Set(['.ts', '.tsx']);
 
 const backendLayers = new Map([
   ['src/modules/factory-delivery/store.ts', 2],
+  ['src/modules/factory-delivery/delivery-aggregate.ts', 2],
+  ['src/modules/factory-delivery/delivery-persistence.ts', 2],
+  ['src/modules/factory-delivery/delivery-commands.ts', 2],
+  ['src/modules/factory-delivery/delivery-ownership.ts', 2],
   ['src/lib', 0],
   ['src/runtime-home', 1],
   ['src/modules/app-state', 2],

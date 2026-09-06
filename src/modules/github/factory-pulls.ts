@@ -322,6 +322,7 @@ export const factoryPullReviewSchema = v.object({
     'PENDING',
   ]),
   submitted_at: v.optional(v.nullable(timestamp)),
+  body: v.optional(v.nullable(v.pipe(v.string(), v.maxLength(65536)))),
 });
 export const factoryPullStatusSchema = v.object({
   id,

@@ -1,3 +1,4 @@
+import { isFactoryOwnedWatchInTransaction } from '../../factory-delivery/store';
 import { randomUUID } from 'node:crypto';
 import { openDb, withImmediateTransaction } from '../../../lib/sqlite';
 import { runtimePaths, type ThinkingLevel } from '../../../runtime-home';
@@ -75,6 +76,8 @@ export function registerPendingAutopilotTurn(
   const watchId = options.watchId ?? options.envelope?.watchId ?? instanceId;
   try {
     return withImmediateTransaction(database, () => {
+      if (isFactoryOwnedWatchInTransaction(database, watchId))
+        throw new Error('Factory delivery owns this pull request.');
       if (eventFingerprint) {
         const existing = database
           .prepare(

@@ -142,3 +142,10 @@ export {
 export { GitHubApiError } from './errors';
 
 export { githubWritebackRetryAt } from './retry';
+
+export {
+  lookupFactoryGitHubPull,
+  createFactoryGitHubDraftPull,
+  observeFactoryGitHubPull,
+  readFactoryGitHubPull,
+} from './factory-pulls';

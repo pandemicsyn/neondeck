@@ -1,6 +1,11 @@
 import * as v from 'valibot';
 
 const label = v.pipe(v.string(), v.minLength(1), v.maxLength(500));
+const repairInstructions = v.pipe(
+  v.string(),
+  v.minLength(1),
+  v.maxLength(20000),
+);
 const natural = v.pipe(v.number(), v.safeInteger(), v.minValue(0));
 const version = v.pipe(natural, v.minValue(1));
 const hash = v.pipe(v.string(), v.regex(/^[a-f0-9]{64}$/));
@@ -44,6 +49,7 @@ export const deliveryEffectSchema = v.strictObject({
     'commit',
     'verification',
     'review',
+    'feedback-review',
     'push',
     'create-pr',
     'update-pr',
@@ -63,7 +69,7 @@ export const deliveryRepairSchema = v.strictObject({
   fromRevision: deliveryRevisionSchema,
   status: v.picklist(['reserved', 'candidate', 'failed']),
   revision: v.nullable(deliveryRevisionSchema),
-  reason: label,
+  reason: repairInstructions,
 });
 export const deliveryInterventionSchema = v.strictObject({
   id: label,
@@ -108,6 +114,7 @@ export const deliveryCoordinatorSchema = v.strictObject({
   candidateRef: v.nullable(label),
   watchId: v.nullable(label),
   observationFingerprint: v.nullable(label),
+  watchObservedAt: v.optional(v.nullable(time), null),
   terminalObservedAt: v.nullable(time),
 });
 export const deliveryCommitSchema = v.strictObject({
@@ -115,6 +122,25 @@ export const deliveryCommitSchema = v.strictObject({
   publishedHeadSha: sha,
   treeSha: sha,
   evidenceRef: label,
+});
+export const deliveryFeedbackObservationSchema = v.strictObject({
+  id: label,
+  fingerprint: hash,
+  revision: deliveryRevisionSchema,
+  publishedHeadSha: sha,
+  ciFailed: v.boolean(),
+  hasReviewFeedback: v.boolean(),
+  evidenceRef: label,
+});
+export const deliveryFeedbackClassificationSchema = v.strictObject({
+  effectId: label,
+  result: v.picklist(['scoped-repair', 'scope-change', 'no-action']),
+  evidenceRef: label,
+});
+export const deliveryFeedbackSchema = v.strictObject({
+  ...deliveryFeedbackObservationSchema.entries,
+  classification: v.nullable(deliveryFeedbackClassificationSchema),
+  repairRequestId: v.nullable(label),
 });
 export const deliveryPipelineSchema = v.strictObject({
   pipelineId: label,
@@ -130,6 +156,7 @@ export const deliveryPipelineSchema = v.strictObject({
   repairs: v.array(deliveryRepairSchema),
   evidence: v.array(deliveryEvidenceSchema),
   effects: v.array(deliveryEffectSchema),
+  feedback: v.optional(v.array(deliveryFeedbackSchema), []),
   interventions: v.array(deliveryInterventionSchema),
   commits: v.array(deliveryCommitSchema),
   coordinator: deliveryCoordinatorSchema,
@@ -142,6 +169,20 @@ export const deliveryCommandSchema = v.strictObject({
   pipelineId: label,
   expectedVersion: version,
   action: v.variant('type', [
+    v.strictObject({
+      type: v.literal('bind-effect-receipt'),
+      id: label,
+      receiptRef: label,
+    }),
+    v.strictObject({
+      type: v.literal('record-feedback'),
+      feedback: deliveryFeedbackObservationSchema,
+    }),
+    v.strictObject({
+      type: v.literal('classify-feedback'),
+      id: label,
+      ...deliveryFeedbackClassificationSchema.entries,
+    }),
     v.strictObject({
       type: v.literal('bind-commit'),
       publishedHeadSha: sha,
@@ -161,7 +202,7 @@ export const deliveryCommandSchema = v.strictObject({
       runId: label,
       attemptId: label,
       revision: v.nullable(deliveryRevisionSchema),
-      executionMs: natural,
+      executionMs: v.nullable(natural),
     }),
     v.strictObject({
       type: v.literal('plan-effect'),
@@ -233,9 +274,11 @@ export const deliveryRepairReservationSchema = v.strictObject({
   pipelineId: label,
   expectedVersion: version,
   requestId: label,
-  reason: label,
+  reason: repairInstructions,
   maxWallTimeMs: v.pipe(version, v.maxValue(2700000)),
 });
 export type DeliveryAuthorization = v.InferOutput<
   typeof deliveryAuthorizationSchema
 >;
+
+export type DeliveryFeedback = v.InferOutput<typeof deliveryFeedbackSchema>;
