@@ -172,92 +172,97 @@ export async function pushPublicationCommit(
   assertAuthority: AssertPublicationAuthority,
   beforePush: () => Promise<void>,
 ) {
-  const commit = v.parse(publicationCommitSchema, commitInput);
-  const workspace = publicationWorkspaceFrom(commit);
-  const target = v.parse(publicationPushTargetSchema, targetInput);
-  v.parse(v.nullable(sha), expectedRemoteSha);
-  await verifyWorkspace(workspace, pipeline, paths, assertAuthority);
-  const receipt = pipeline.commits.find((c) =>
-    sameDeliveryRevision(c.revision, pipeline.revision),
-  );
-  if (
-    !receipt ||
-    receipt.publishedHeadSha !== commit.publishedHeadSha ||
-    receipt.treeSha !== workspace.treeSha
-  )
-    throw new Error('Publication commit must be durably bound before push.');
-  if (
-    (await readValidatedPublicationCommitReceipt(pipeline, workspace, paths))
-      ?.publishedHeadSha !== commit.publishedHeadSha
-  )
-    throw new Error('Publication commit changed before push.');
-  const current = await readPublicationPushTarget(
-    pipeline,
-    workspace,
-    target.remote,
-    paths,
-    assertAuthority,
-  );
-  if (JSON.stringify(current) !== JSON.stringify(target))
-    throw new Error('Publication target fingerprint changed.');
-  const observed = await remoteHead(workspace.root, current);
-  if (observed === commit.publishedHeadSha)
-    return v.parse(publicationPushReceiptSchema, {
-      publishedHeadSha: commit.publishedHeadSha,
-      remoteSha: observed,
-      targetFingerprint: current.fingerprint,
-      alreadyPublished: true,
-    });
-  if (observed !== expectedRemoteSha)
-    throw new Error('Publication remote branch does not match expected lease.');
-  if (expectedRemoteSha !== null)
-    await git(workspace.root, [
-      'merge-base',
-      '--is-ancestor',
-      expectedRemoteSha,
-      commit.publishedHeadSha,
-    ]);
-  const hooks = await trustedPublicationHooks(workspace.sourceRoot);
-  await assertAuthority();
+  let pushInvoked = false;
   try {
+    const commit = v.parse(publicationCommitSchema, commitInput);
+    const workspace = publicationWorkspaceFrom(commit);
+    const target = v.parse(publicationPushTargetSchema, targetInput);
+    v.parse(v.nullable(sha), expectedRemoteSha);
+    await verifyWorkspace(workspace, pipeline, paths, assertAuthority);
+    const receipt = pipeline.commits.find((c) =>
+      sameDeliveryRevision(c.revision, pipeline.revision),
+    );
+    if (
+      !receipt ||
+      receipt.publishedHeadSha !== commit.publishedHeadSha ||
+      receipt.treeSha !== workspace.treeSha
+    )
+      throw new Error('Publication commit must be durably bound before push.');
+    if (
+      (await readValidatedPublicationCommitReceipt(pipeline, workspace, paths))
+        ?.publishedHeadSha !== commit.publishedHeadSha
+    )
+      throw new Error('Publication commit changed before push.');
+    const current = await readPublicationPushTarget(
+      pipeline,
+      workspace,
+      target.remote,
+      paths,
+      assertAuthority,
+    );
+    if (JSON.stringify(current) !== JSON.stringify(target))
+      throw new Error('Publication target fingerprint changed.');
+    const observed = await remoteHead(workspace.root, current);
+    if (observed === commit.publishedHeadSha)
+      return v.parse(publicationPushReceiptSchema, {
+        publishedHeadSha: commit.publishedHeadSha,
+        remoteSha: observed,
+        targetFingerprint: current.fingerprint,
+        alreadyPublished: true,
+      });
+    if (observed !== expectedRemoteSha)
+      throw new Error(
+        'Publication remote branch does not match expected lease.',
+      );
+    if (expectedRemoteSha !== null)
+      await git(workspace.root, [
+        'merge-base',
+        '--is-ancestor',
+        expectedRemoteSha,
+        commit.publishedHeadSha,
+      ]);
+    const hooks = await trustedPublicationHooks(workspace.sourceRoot);
+    await assertAuthority();
     await beforePush();
     await assertAuthority();
-  } catch {
-    throw new PublicationPushNotAttemptedError();
+    pushInvoked = true;
+    // Explicit URL pins the observed endpoint; lease closes the ls-remote race.
+    await git(workspace.root, [
+      '-c',
+      `core.hooksPath=${hooks.hooksPath}`,
+      'push',
+      `--force-with-lease=refs/heads/${current.branch}:${expectedRemoteSha ?? ''}`,
+      '--',
+      current.url,
+      `${commit.publishedHeadSha}:refs/heads/${current.branch}`,
+    ]);
+    if (
+      (await trustedPublicationHooks(workspace.sourceRoot)).fingerprint !==
+      hooks.fingerprint
+    )
+      throw new Error('Trusted publication push hooks changed.');
+    const remoteSha = await remoteHead(workspace.root, current);
+    if (remoteSha !== commit.publishedHeadSha)
+      throw new Error('Publication push outcome is uncertain.');
+    await assertAuthority();
+    settleFactoryPublicationWorkspace(
+      {
+        pipelineId: pipeline.pipelineId,
+        repoId: pipeline.repoId,
+        expectedVersion: pipeline.version,
+        phase: 'pushed',
+        headSha: commit.publishedHeadSha,
+      },
+      paths,
+    );
+    return v.parse(publicationPushReceiptSchema, {
+      publishedHeadSha: commit.publishedHeadSha,
+      remoteSha,
+      targetFingerprint: current.fingerprint,
+      alreadyPublished: false,
+    });
+  } catch (error) {
+    if (!pushInvoked) throw new PublicationPushNotAttemptedError(error);
+    throw error;
   }
-  // Explicit URL pins the observed endpoint; lease closes the ls-remote race.
-  await git(workspace.root, [
-    '-c',
-    `core.hooksPath=${hooks.hooksPath}`,
-    'push',
-    `--force-with-lease=refs/heads/${current.branch}:${expectedRemoteSha ?? ''}`,
-    '--',
-    current.url,
-    `${commit.publishedHeadSha}:refs/heads/${current.branch}`,
-  ]);
-  if (
-    (await trustedPublicationHooks(workspace.sourceRoot)).fingerprint !==
-    hooks.fingerprint
-  )
-    throw new Error('Trusted publication push hooks changed.');
-  const remoteSha = await remoteHead(workspace.root, current);
-  if (remoteSha !== commit.publishedHeadSha)
-    throw new Error('Publication push outcome is uncertain.');
-  await assertAuthority();
-  settleFactoryPublicationWorkspace(
-    {
-      pipelineId: pipeline.pipelineId,
-      repoId: pipeline.repoId,
-      expectedVersion: pipeline.version,
-      phase: 'pushed',
-      headSha: commit.publishedHeadSha,
-    },
-    paths,
-  );
-  return v.parse(publicationPushReceiptSchema, {
-    publishedHeadSha: commit.publishedHeadSha,
-    remoteSha,
-    targetFingerprint: current.fingerprint,
-    alreadyPublished: false,
-  });
 }

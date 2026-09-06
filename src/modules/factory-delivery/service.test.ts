@@ -11,7 +11,7 @@ import {
   RepairContextTooLargeError,
 } from './delivery-repair-context';
 import { interveneDelivery, deliveryReceipt } from './service-records';
-import type { DeliveryIO } from './delivery-io';
+import { deliveryIO, type DeliveryIO } from './delivery-io';
 import type { DeliveryReservation } from '../../../shared/factory-delivery';
 
 let home: string;
@@ -150,7 +150,7 @@ it('revocation between durable admission and IO fences checks and retains the cl
   await advanceFactoryDelivery(p.pipelineId, paths, io);
   expect(io.verify).not.toHaveBeenCalled();
   expect(getDeliveryPipeline(p.pipelineId, paths)!.effects.at(-1)!.state).toBe(
-    'uncertain',
+    'planned',
   );
   await advanceFactoryDelivery(p.pipelineId, paths, io);
   expect(io.cancel).toHaveBeenCalled();
@@ -282,4 +282,36 @@ it('rejects a legal oversized scoped feedback packet explicitly without truncati
     }),
   ).toThrow(RepairContextTooLargeError);
   expect(JSON.parse(readFileSync(ref, 'utf8'))).toEqual(report);
+});
+
+it('records known nonadmission when post-start authority rejects before push IO dispatch', async () => {
+  const p = reserveDeliveryPipeline(reservation, paths),
+    io = fakeIO();
+  for (let i = 0; i < 3; i++)
+    await advanceFactoryDelivery(p.pipelineId, paths, io);
+  io.assert = vi.fn<DeliveryIO['assert']>(async (current) => {
+    if (
+      current.effects.some((e) => e.kind === 'push' && e.state === 'in-flight')
+    )
+      throw new Error('revoked before dispatch');
+  });
+  await advanceFactoryDelivery(p.pipelineId, paths, io);
+  const paused = getDeliveryPipeline(p.pipelineId, paths)!;
+  expect(io.push).not.toHaveBeenCalled();
+  expect(paused.effects.at(-1)?.state).toBe('planned');
+  expect(paused.interventions.at(-1)?.reason).toContain('not dispatched');
+  await advanceFactoryDelivery(p.pipelineId, paths, io);
+  expect(io.recover).not.toHaveBeenCalled();
+});
+it('records known nonadmission when outer push preparation rejects before an intent exists', async () => {
+  const p = reserveDeliveryPipeline(reservation, paths),
+    io = fakeIO();
+  for (let i = 0; i < 3; i++)
+    await advanceFactoryDelivery(p.pipelineId, paths, io);
+  // The fake commit receipt intentionally lacks a publication workspace: real IO must reject before any Git.
+  io.push = deliveryIO.push;
+  await advanceFactoryDelivery(p.pipelineId, paths, io);
+  const paused = getDeliveryPipeline(p.pipelineId, paths)!;
+  expect(paused.effects.at(-1)?.state).toBe('planned');
+  expect(paused.interventions.at(-1)?.kind).toBe('scope');
 });

@@ -36,12 +36,14 @@ const state = vi.hoisted<{
   pipeline: DeliveryPipeline | null;
   pushRace: (() => Promise<void>) | null;
   loseCommitResponse: boolean;
+  remoteRead: (() => Promise<void>) | null;
 }>(() => ({
   source: '',
   remote: '',
   pipeline: null,
   pushRace: null,
   loseCommitResponse: false,
+  remoteRead: null,
 }));
 vi.mock('./store', () => ({
   getFactoryDeliveryOwnership: () => state.pipeline,
@@ -72,6 +74,11 @@ vi.mock('../../lib/git', async (importOriginal) => {
         ),
         options,
       );
+      if (args.includes('ls-remote') && state.remoteRead) {
+        const duringRead = state.remoteRead;
+        state.remoteRead = null;
+        await duringRead();
+      }
       if (args.includes('commit') && state.loseCommitResponse) {
         state.loseCommitResponse = false;
         throw new Error('synthetic crash after HEAD update');
@@ -472,7 +479,10 @@ it('expected absence lease rejects a branch created between probe and push', asy
       `${f.evidence.headSha}:refs/heads/${f.pipeline.branch}`,
     );
   };
-  await expect(f.push()).rejects.toThrow(/stale info|rejected/);
+  const failure: unknown = await f.push().catch((error: unknown) => error);
+  expect(failure).toBeInstanceOf(Error);
+  expect(failure).not.toBeInstanceOf(PublicationPushNotAttemptedError);
+  expect((failure as Error).message).toMatch(/stale info|rejected/);
   expect(
     await git(f.remote, 'rev-parse', `refs/heads/${f.pipeline.branch}`),
   ).toBe(f.evidence.headSha);
@@ -942,3 +952,25 @@ it.each(['check', 'hook'])(
     expect(await git(second.root, 'write-tree')).toBe(evidence.treeSha);
   },
 );
+
+it('classifies revocation during the remote read as known nonadmission before the final callback', async () => {
+  const f = await committed();
+  await git(
+    f.source,
+    'push',
+    f.remote,
+    `${f.evidence.headSha}:refs/heads/${f.pipeline.branch}`,
+  );
+  state.remoteRead = async () => {
+    f.authority.mockRejectedValue(
+      new Error('authority revoked during remote read'),
+    );
+  };
+  await expect(f.push(f.evidence.headSha)).rejects.toBeInstanceOf(
+    PublicationPushNotAttemptedError,
+  );
+  expect(f.beforePush).not.toHaveBeenCalled();
+  expect(
+    await git(f.remote, 'rev-parse', `refs/heads/${f.pipeline.branch}`),
+  ).toBe(f.evidence.headSha);
+});

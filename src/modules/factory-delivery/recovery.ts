@@ -1,4 +1,5 @@
-import { recoverPushNonadmission } from './publication-nonadmission';
+import { terminalPrObservation } from './terminal-observation';
+import { recoverEffectNonadmission } from './publication-nonadmission';
 import { readFileSync } from 'node:fs';
 import * as v from 'valibot';
 import type {
@@ -115,8 +116,9 @@ export async function observePausedDeliveryOutcome(
     watch.lastCheckedAt === p.coordinator.watchObservedAt
   )
     return;
+  const connection = readConnection(p, paths);
   const facts = await observeFactoryGitHubPull(
-    readConnection(p, paths),
+    connection,
     p.pr.number,
     deliveryPullIdentity(p),
     { fresh: true },
@@ -124,25 +126,41 @@ export async function observePausedDeliveryOutcome(
   if (!facts.complete || facts.pull.head.sha !== published.publishedHeadSha)
     return;
   const terminal = facts.pull.merged || facts.pull.state === 'closed';
+  const observedAt = new Date().toISOString();
+  // Persist only bounded identity/state before changing the polling watermark.
+  const receipt = terminal
+    ? deliveryReceipt(
+        p.pipelineId,
+        terminalPrObservation(
+          p,
+          published,
+          connection.repositoryId,
+          facts.pull,
+          observedAt,
+        ),
+        paths,
+      )
+    : null;
   changeDelivery(
     p.pipelineId,
     {
       type: 'set-coordinator',
       coordinator: {
         ...p.coordinator,
-        watchObservedAt: watch.lastCheckedAt,
-        ...(terminal ? { terminalObservedAt: new Date().toISOString() } : {}),
+        ...(terminal
+          ? { terminalObservedAt: observedAt }
+          : { watchObservedAt: watch.lastCheckedAt }),
       },
     },
     paths,
   );
-  if (terminal)
+  if (receipt)
     changeDelivery(
       p.pipelineId,
       {
         type: 'finish',
         outcome: facts.pull.merged ? 'merged' : 'closed',
-        evidenceRef: deliveryReceipt(p.pipelineId, facts, paths),
+        evidenceRef: receipt,
       },
       paths,
     );
@@ -152,6 +170,7 @@ async function recoverKnownDeliveryEffect(
   effect: DeliveryEffect,
   paths: RuntimePaths,
 ) {
+  if (recoverEffectNonadmission(p, effect, paths)) return;
   if (effect.kind === 'feedback-review') {
     if (!effect.receiptRef) return;
     const receipt = v.parse(
@@ -249,7 +268,6 @@ async function recoverKnownDeliveryEffect(
     return;
   }
   if (effect.kind === 'push') {
-    if (recoverPushNonadmission(p, effect, paths)) return;
     const intent = v.parse(
       v.strictObject({
         commit: publicationCommitSchema,

@@ -3,9 +3,15 @@ import { advanceFactoryDelivery } from './service';
 import { deliveryIO } from './delivery-io';
 import {
   PublicationPushNotAttemptedError,
-  settlePushNonadmission,
+  settleEffectNonadmission,
 } from './publication-nonadmission';
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
+import {
+  mkdtempSync,
+  mkdirSync,
+  writeFileSync,
+  rmSync,
+  readFileSync,
+} from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { beforeEach, afterEach, expect, it, vi } from 'vitest';
@@ -235,7 +241,17 @@ it.each(['authority', 'scope', 'budget'] as const)(
     ]);
     io.observe.mockResolvedValue({
       complete: true,
-      pull: { merged: true, state: 'closed', head: { sha: '9'.repeat(40) } },
+      pull: {
+        merged: true,
+        state: 'closed',
+        head: { sha: '9'.repeat(40) },
+        updated_at: '2026-09-06T12:00:00.000Z',
+        merged_at: '2026-09-06T12:00:00.000Z',
+        merge_commit_sha: '1'.repeat(40),
+      },
+      issueComments: {
+        items: Array.from({ length: 17 }, () => ({ body: 'x'.repeat(64000) })),
+      },
     });
     const nextRevision = {
       ...p.revision,
@@ -259,6 +275,8 @@ it.each(['authority', 'scope', 'budget'] as const)(
     );
     const ended = requireDelivery(p.pipelineId, paths);
     expect(ended.outcome).toBe('merged');
+    expect(readFileSync(ended.outcomeRef!, 'utf8').length).toBeLessThan(4096);
+    expect(ended.coordinator.watchObservedAt).toBeNull();
     expect(
       ended.interventions.some((i) => i.kind === kind && !i.resolution),
     ).toBe(true);
@@ -394,7 +412,7 @@ it('known pre-push rejection pauses durably then observes a human close without 
       ],
     }),
   );
-  settlePushNonadmission(
+  settleEffectNonadmission(
     p,
     p.effects.at(-1)!,
     new PublicationPushNotAttemptedError(),
@@ -418,7 +436,17 @@ it('known pre-push rejection pauses durably then observes a human close without 
   ]);
   io.observe.mockResolvedValue({
     complete: true,
-    pull: { merged: false, state: 'closed', head: { sha: '9'.repeat(40) } },
+    pull: {
+      merged: false,
+      state: 'closed',
+      head: { sha: '9'.repeat(40) },
+      updated_at: '2026-09-06T12:00:00.000Z',
+      merged_at: null,
+      merge_commit_sha: null,
+    },
+    issueComments: {
+      items: Array.from({ length: 17 }, () => ({ body: 'x'.repeat(64000) })),
+    },
   });
   const push = vi.fn(),
     assert = vi.fn();

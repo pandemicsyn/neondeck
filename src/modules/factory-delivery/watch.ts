@@ -1,11 +1,7 @@
+import { terminalPrObservation } from './terminal-observation';
 import * as v from 'valibot';
 import { reviewerFeedbackSchema } from './reviewer-contract';
-import {
-  deliveryAuthorizationSchema,
-  deliveryRevisionSchema,
-  deliveryPrSchema,
-  type DeliveryPipeline,
-} from '../../../shared/factory-delivery';
+import { type DeliveryPipeline } from '../../../shared/factory-delivery';
 import type { RuntimePaths } from '../../runtime-home';
 import { addNotification } from '../app-state';
 import { addPrWatch, readWatches } from '../watches';
@@ -25,26 +21,6 @@ import {
 } from './watch-publication';
 import { normalizeDeliveryFeedback } from './watch-observation';
 import { classifyFeedback } from './watch-feedback';
-const timestamp = v.pipe(v.string(), v.isoTimestamp());
-const terminalObservationSchema = v.strictObject({
-  kind: v.literal('terminal-pr-observation'),
-  pipelineId: v.pipe(v.string(), v.regex(/^[a-f0-9]{64}$/)),
-  revision: deliveryRevisionSchema,
-  target: deliveryAuthorizationSchema.entries.target,
-  repositoryId: v.pipe(v.string(), v.minLength(1), v.maxLength(500)),
-  pr: v.strictObject({
-    ...deliveryPrSchema.entries,
-    url: v.pipe(deliveryPrSchema.entries.url, v.maxLength(2000)),
-  }),
-  headBranch: v.pipe(v.string(), v.minLength(1), v.maxLength(500)),
-  publishedHeadSha: deliveryRevisionSchema.entries.headSha,
-  outcome: v.picklist(['merged', 'closed']),
-  updatedAt: timestamp,
-  observedAt: timestamp,
-  mergedAt: v.nullable(timestamp),
-  mergeCommitSha: v.nullable(deliveryRevisionSchema.entries.headSha),
-});
-
 // Preserve the existing public watch surface for coordinator/recovery callers.
 export {
   deliveryPullIdentity,
@@ -134,21 +110,13 @@ export async function watchFactoryDelivery(
     )
       return;
     const observedAt = new Date().toISOString();
-    const terminal = v.parse(terminalObservationSchema, {
-      kind: 'terminal-pr-observation',
-      pipelineId: p.pipelineId,
-      revision: p.revision,
-      target: p.authorization.target,
-      repositoryId: connection.repositoryId,
-      pr: p.pr,
-      headBranch: p.branch,
-      publishedHeadSha: commit.publishedHeadSha,
-      outcome: facts.pull.merged ? 'merged' : 'closed',
-      updatedAt: facts.pull.updated_at,
+    const terminal = terminalPrObservation(
+      p,
+      commit,
+      connection.repositoryId,
+      facts.pull,
       observedAt,
-      mergedAt: facts.pull.merged_at,
-      mergeCommitSha: facts.pull.merge_commit_sha,
-    });
+    );
     const receipt = deliveryReceipt(p.pipelineId, terminal, paths);
     changeDelivery(
       p.pipelineId,

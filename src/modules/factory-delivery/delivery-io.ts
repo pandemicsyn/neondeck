@@ -1,3 +1,4 @@
+import { PublicationPushNotAttemptedError } from './publication-nonadmission';
 import { assertPublicationPrPushAllowed } from './publication-pr-guard';
 import * as v from 'valibot';
 import { readFileSync } from 'node:fs';
@@ -266,30 +267,42 @@ export const deliveryIO: DeliveryIO = {
     );
   },
   async push(pipeline, paths) {
-    const record = pipeline.commits.findLast((c) =>
-      sameDeliveryRevision(c.revision, pipeline.revision),
-    );
-    if (!record) throw new Error('Bound publication commit is required.');
-    const commit = v.parse(
-      publicationCommitSchema,
-      JSON.parse(readFileSync(record.evidenceRef, 'utf8')),
-    );
-    const target = await readPublicationPushTarget(
-      pipeline,
-      commit,
-      'origin',
-      paths,
-      guard(pipeline, paths),
-    );
-    const prior = pipeline.commits
-      .filter((c) => !sameDeliveryRevision(c.revision, pipeline.revision))
-      .at(-1);
-    saveDeliveryIntent(
-      pipeline.pipelineId,
-      `push:${pipeline.revision.candidateDigest}`,
-      { commit, target, expectedRemoteSha: prior?.publishedHeadSha ?? null },
-      paths,
-    );
+    const prepared = await (async () => {
+      try {
+        const record = pipeline.commits.findLast((c) =>
+          sameDeliveryRevision(c.revision, pipeline.revision),
+        );
+        if (!record) throw new Error('Bound publication commit is required.');
+        const commit = v.parse(
+          publicationCommitSchema,
+          JSON.parse(readFileSync(record.evidenceRef, 'utf8')),
+        );
+        const target = await readPublicationPushTarget(
+          pipeline,
+          commit,
+          'origin',
+          paths,
+          guard(pipeline, paths),
+        );
+        const prior = pipeline.commits
+          .filter((c) => !sameDeliveryRevision(c.revision, pipeline.revision))
+          .at(-1);
+        saveDeliveryIntent(
+          pipeline.pipelineId,
+          `push:${pipeline.revision.candidateDigest}`,
+          {
+            commit,
+            target,
+            expectedRemoteSha: prior?.publishedHeadSha ?? null,
+          },
+          paths,
+        );
+        return { commit, target, prior };
+      } catch (error) {
+        throw new PublicationPushNotAttemptedError(error);
+      }
+    })();
+    const { commit, target, prior } = prepared;
     return pushPublicationCommit(
       pipeline,
       commit,

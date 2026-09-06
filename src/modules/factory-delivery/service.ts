@@ -1,4 +1,7 @@
-import { settlePushNonadmission } from './publication-nonadmission';
+import {
+  settleEffectNonadmission,
+  DeliveryEffectNotDispatchedError,
+} from './publication-nonadmission';
 import * as v from 'valibot';
 import { readFileSync } from 'node:fs';
 import type { RuntimePaths } from '../../runtime-home';
@@ -273,7 +276,11 @@ export function advanceFactoryDelivery(
     const started = Date.now();
     try {
       // The durable in-flight claim precedes every external mutation/admission.
-      await io.assert(pipeline, paths);
+      try {
+        await io.assert(pipeline, paths);
+      } catch {
+        throw new DeliveryEffectNotDispatchedError();
+      }
       if (kind === 'verification' || kind === 'review') {
         const result =
           kind === 'verification'
@@ -366,7 +373,7 @@ export function advanceFactoryDelivery(
         );
       }
     } catch (error) {
-      if (settlePushNonadmission(pipeline, effect, error, paths)) return;
+      if (settleEffectNonadmission(pipeline, effect, error, paths)) return;
       if (settleReviewerFailure(pipeline, effect, error, paths)) return;
       const current = requireDelivery(id, paths);
       const active = current.effects.find((e) => e.id === effectId);

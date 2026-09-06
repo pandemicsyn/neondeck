@@ -1,5 +1,5 @@
 import { readFileSync, statSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, dirname } from 'node:path';
 import * as v from 'valibot';
 import type {
   DeliveryPipeline,
@@ -16,27 +16,41 @@ import {
 
 /** Raised only before Git push is invoked, never from Git or post-push checks. */
 export class PublicationPushNotAttemptedError extends Error {
-  constructor() {
+  constructor(cause?: unknown) {
     super(
-      'The final publication guard rejected this push before Git was invoked.',
+      `Git push was not invoked: ${cause instanceof Error ? cause.message : 'publication preparation rejected'}`,
     );
   }
 }
+export class DeliveryEffectNotDispatchedError extends Error {}
 const receiptSchema = v.strictObject({
-  kind: v.literal('publication-push-not-attempted'),
+  kind: v.picklist([
+    'publication-push-not-attempted',
+    'delivery-effect-not-dispatched',
+  ]),
   effectId: v.string(),
   candidateDigest: v.string(),
 });
-export function recoverPushNonadmission(
+export function recoverEffectNonadmission(
   p: DeliveryPipeline,
   effect: DeliveryEffect,
   paths: RuntimePaths,
 ) {
-  if (effect.kind !== 'push' || !effect.receiptRef) return false;
+  if (
+    !effect.receiptRef ||
+    dirname(effect.receiptRef) !==
+      join(paths.home, 'factory-delivery', p.pipelineId)
+  )
+    return false;
   if (statSync(effect.receiptRef).size > 4096) return false;
   const raw: unknown = JSON.parse(readFileSync(effect.receiptRef, 'utf8'));
   const parsed = v.safeParse(receiptSchema, raw);
   if (!parsed.success) return false;
+  if (
+    parsed.output.kind === 'publication-push-not-attempted' &&
+    effect.kind !== 'push'
+  )
+    throw new Error('Nonadmission effect kind mismatch');
   if (
     effect.receiptRef !==
       join(
@@ -52,7 +66,7 @@ export function recoverPushNonadmission(
   interveneDelivery(
     p.pipelineId,
     'scope',
-    'Git push was not attempted because its final publication guard rejected admission. Review the existing PR and delivery authority in planning; the retained candidate has not been published.',
+    'The operation was not dispatched because preparation or authority rejected admission. Review the retained evidence and delivery authority in planning.',
     paths,
   );
   changeDelivery(
@@ -67,15 +81,16 @@ export function recoverPushNonadmission(
   );
   return true;
 }
-export function settlePushNonadmission(
+export function settleEffectNonadmission(
   p: DeliveryPipeline,
   effect: DeliveryEffect,
   error: unknown,
   paths: RuntimePaths,
 ) {
   if (
-    !(error instanceof PublicationPushNotAttemptedError) ||
-    effect.kind !== 'push'
+    !(error instanceof DeliveryEffectNotDispatchedError) &&
+    (!(error instanceof PublicationPushNotAttemptedError) ||
+      effect.kind !== 'push')
   )
     return false;
   const current = requireDelivery(p.pipelineId, paths);
@@ -85,7 +100,10 @@ export function settlePushNonadmission(
   const ref = deliveryReceipt(
     p.pipelineId,
     {
-      kind: 'publication-push-not-attempted',
+      kind:
+        error instanceof DeliveryEffectNotDispatchedError
+          ? 'delivery-effect-not-dispatched'
+          : 'publication-push-not-attempted',
       effectId: effect.id,
       candidateDigest: effect.revision.candidateDigest,
     },
@@ -96,7 +114,7 @@ export function settlePushNonadmission(
     { type: 'bind-effect-receipt', id: effect.id, receiptRef: ref },
     paths,
   );
-  return recoverPushNonadmission(
+  return recoverEffectNonadmission(
     bound,
     bound.effects.find((e) => e.id === effect.id)!,
     paths,
