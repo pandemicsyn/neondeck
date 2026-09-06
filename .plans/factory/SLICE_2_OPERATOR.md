@@ -1,6 +1,6 @@
 # Factory slice 2 operator surface
 
-Slice 1 live acceptance remains **PENDING** and blocks every slice 2 merge. Mock tests are not live acceptance. No real model, GitHub write, SSH or deployment exercise is part of this implementation.
+Slice 1 live acceptance and real Codex smoke both remain **PENDING** and block every slice 2 merge. Record operator/manager acceptance for both the [live slice 1 checklist](SLICE_2_IMPLEMENTATION_PLAN.md#mandatory-merge-gate-live-slice-1-acceptance) and the [real Codex smoke checklist](SLICE_2_IMPLEMENTATION_PLAN.md#mandatory-merge-gate-real-codex-smoke) before any slice 2 PR merges. Mock tests cannot clear either gate. This documentation correction authorizes no real model, GitHub write, SSH or deployment exercise now. Slice 2 Linux/VM and remote-host acceptance remain later work, separately from both merge gates.
 
 Coding is off by default. In the private local API, GET `/api/factory/coding/state` returns typed configuration, `configFingerprint`, and readiness. POST `/api/factory/coding/config` accepts `{expectedFingerprint, config}`; stale saves return 409. The generic factory config service validates the same schema. No model-callable launch tool or public ingress coding endpoint exists.
 

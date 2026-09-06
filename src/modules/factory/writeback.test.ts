@@ -1560,7 +1560,7 @@ it('maintains running and candidate facts while release eligibility and consent 
       `INSERT INTO worktrees (id,repo_id,repo_full_name,github_owner,github_name,base_ref,head_ref,local_path,storage_kind,owning_workflow_run_id,lifecycle_status,adopted,created_by,created_at,updated_at) VALUES ('coding-wt','fixture','example/fixture','example','fixture','main','agent/factory-test','/private/local-worktree','home',?,'ready',0,'factory',?,?)`,
     ).run(run.runId, run.createdAt, run.createdAt);
     db.prepare(
-      `INSERT INTO worktree_locks (id,scope,scope_key,worktree_id,repo_id,owner,workflow_run_id,expires_at,created_at,updated_at) VALUES ('coding-lock','worktree','worktree:coding-wt','coding-wt','fixture','factory',?,'2099-01-01',?,?)`,
+      `INSERT INTO worktree_locks (id,scope,scope_key,worktree_id,repo_id,owner,workflow_run_id,expires_at,created_at,updated_at) VALUES ('coding-lock','worktree','worktree:coding-wt','coding-wt','fixture','factory',?,'2099-01-01T00:00:00.000Z',?,?)`,
     ).run(run.runId, run.createdAt, run.createdAt);
   });
   advance({

@@ -49,6 +49,7 @@ import {
 } from '../modules/factory/service';
 import {
   dispatchCodingWork,
+  tickFactoryCoding,
   reconcileCodingRun,
   publicCodingRun,
   codingHandle,
@@ -79,6 +80,8 @@ import {
 import { approvePreparedDiffPushState } from '../modules/prepared-diffs';
 import { assertWorktreeMutationAllowed } from '../modules/worktrees';
 import { fenceInvalidFactoryCoding } from '../modules/factory/coding-invalidation';
+import * as codingRuns from '../modules/coding-runs';
+import { readCodingAttention } from '../modules/factory/coding-attention';
 import { createFactoryCodingRoutes } from './routes/factory-coding';
 const actor = { kind: 'human' as const, id: 'operator' };
 let paths: RuntimePaths;
@@ -662,6 +665,71 @@ describe('factory coding bridge', () => {
     expect(result.status).toBe('needs-reconcile');
     expect(result.deadProof).toBeNull();
     expect(result.candidate).toBeNull();
+  });
+  it('shares readiness failures between loop and HTTP polling, recovers credentials, and still reconciles while disabled', async () => {
+    const executable = join(root, 'synthetic-codex');
+    writeFileSync(executable, 'unsupported fixture');
+    updateFactoryConfig(
+      { coding: { ...codingConfig(paths).coding, executable } },
+      paths,
+    );
+    const work = release();
+    const probe = vi
+      .spyOn(codingRuns, 'inspectCodexReadiness')
+      .mockResolvedValue({
+        ready: false,
+        version: '',
+        reason: 'unsupported-cli-version',
+      });
+    try {
+      vi.stubEnv('FACTORY_TEST_KEY', '');
+      const app = createFactoryCodingRoutes(paths);
+      for (let n = 0; n < 3; n++) {
+        await tickFactoryCoding(paths, host);
+        expect((await app.request('/state')).status).toBe(200);
+      }
+      expect(probe).not.toHaveBeenCalled();
+      expect(readCodingAttention(work.work.id, paths)).toBeNull();
+      vi.stubEnv('FACTORY_TEST_KEY', 'synthetic-auth-now-present');
+      for (let n = 0; n < 3; n++) {
+        await tickFactoryCoding(paths, host);
+        const state: unknown = await (await app.request('/state')).json();
+        expect(JSON.stringify(state)).not.toContain(
+          'synthetic-auth-now-present',
+        );
+        expect(state).toMatchObject({
+          readiness: {
+            ready: false,
+            installedVersion: null,
+            blockers: ['unsupported-cli-version'],
+          },
+        });
+      }
+      expect(probe).toHaveBeenCalledTimes(1);
+      expect(listCodingRuns({}, paths)).toHaveLength(0);
+      expect(readCodingAttention(work.work.id, paths)).toBeNull();
+      writeFileSync(executable, 'supported replacement fixture');
+      probe.mockResolvedValue({
+        ready: true,
+        version: 'codex-cli 0.150.1',
+        reason: null,
+      });
+      await tickFactoryCoding(paths, host);
+      expect(probe).toHaveBeenCalledTimes(2);
+      expect(host.launchLocalAttempt).toHaveBeenCalledTimes(1);
+      const run = listCodingRuns({}, paths)[0].record;
+      updateFactoryConfig(
+        { coding: { ...codingConfig(paths).coding, enabled: false } },
+        paths,
+      );
+      finished = true;
+      await tickFactoryCoding(paths, host);
+      expect(getCodingRun(run.runId, paths)?.status).toBe('cancelled');
+      expect(host.cancelLocalAttempt).toHaveBeenCalled();
+      expect(probe).toHaveBeenCalledTimes(2);
+    } finally {
+      probe.mockRestore();
+    }
   });
   it('keeps disabled work unreserved and requires authenticated current HTTP control version', async () => {
     const work = release();

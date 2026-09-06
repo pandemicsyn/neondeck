@@ -101,6 +101,8 @@ function FactoryCodingConfigForm({
       return typeof entry === 'string' ? entry : '';
     };
     setError('');
+    const minutes = Number(value('minutes'));
+    const outputMiB = Number(value('outputMiB'));
     const parsed = v.safeParse(factoryCodingConfigSchema, {
       ...base.config,
       enabled: values.has('enabled'),
@@ -110,8 +112,13 @@ function FactoryCodingConfigForm({
       auth: value('authEnv')
         ? { kind: value('authKind'), env: value('authEnv') }
         : null,
-      wallTimeMs: Number(value('minutes')) * 60000,
-      maxOutputBytes: Number(value('outputMiB')) * 1024 * 1024,
+      // Reject out-of-range inputs before rounding to the API's integer units.
+      wallTimeMs:
+        minutes >= 1 / 60 && minutes <= 45 ? Math.round(minutes * 60000) : NaN,
+      maxOutputBytes:
+        outputMiB >= 1 / 1024 && outputMiB <= 64
+          ? Math.round(outputMiB * 1024 * 1024)
+          : NaN,
     });
     if (!parsed.success) {
       setError(

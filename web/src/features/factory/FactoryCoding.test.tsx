@@ -279,6 +279,93 @@ it('requires explicit reload when the config fingerprint changes while editing',
     config: { model: 'updated-model' },
   });
 });
+it.each([
+  {
+    minutes: '0.3333',
+    outputMiB: '0.3333',
+    wallTimeMs: 19998,
+    maxOutputBytes: 349490,
+  },
+  {
+    minutes: '0.333333',
+    outputMiB: '0.000977',
+    wallTimeMs: 20000,
+    maxOutputBytes: 1024,
+  },
+  {
+    minutes: String(1 / 60),
+    outputMiB: String(1 / 1024),
+    wallTimeMs: 1000,
+    maxOutputBytes: 1024,
+  },
+  {
+    minutes: '45',
+    outputMiB: '64',
+    wallTimeMs: 2700000,
+    maxOutputBytes: 67108864,
+  },
+])(
+  'saves $minutes minutes and $outputMiB MiB as bounded integer API units',
+  async ({ minutes, outputMiB, wallTimeMs, maxOutputBytes }) => {
+    await render(<FactoryCodingSetup />);
+    await click('Configure coding');
+    for (const [name, value] of Object.entries({ minutes, outputMiB })) {
+      const input = container.querySelector<HTMLInputElement>(
+        `input[name="${name}"]`,
+      );
+      if (!input) throw new Error(`Missing ${name} input`);
+      input.value = value;
+    }
+    await act(async () =>
+      form().dispatchEvent(
+        new Event('submit', { bubbles: true, cancelable: true }),
+      ),
+    );
+    await flush();
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.body).toEqual({
+      expectedFingerprint: state.configFingerprint,
+      config: { ...state.config, wallTimeMs, maxOutputBytes },
+    });
+  },
+);
+it.each([
+  { name: 'minutes', value: '0.016666' },
+  { name: 'minutes', value: '45.000001' },
+  { name: 'outputMiB', value: '0.0009765' },
+  { name: 'outputMiB', value: '64.0000001' },
+  { name: 'minutes', value: '-1' },
+  { name: 'outputMiB', value: '0' },
+  { name: 'minutes', value: '' },
+  { name: 'outputMiB', value: '' },
+  { name: 'minutes', value: 'not-a-number' },
+  { name: 'outputMiB', value: 'NaN' },
+  { name: 'minutes', value: 'Infinity' },
+  { name: 'outputMiB', value: '1e309' },
+])(
+  'rejects invalid $name=$value before rounding can admit it',
+  async ({ name, value }) => {
+    await render(<FactoryCodingSetup />);
+    await click('Configure coding');
+    const input = container.querySelector<HTMLInputElement>(
+      `input[name="${name}"]`,
+    );
+    if (!input) throw new Error(`Missing ${name} input`);
+    input.value = value;
+    // Submit directly to check application validation even without browser constraints.
+    await act(async () =>
+      form().dispatchEvent(
+        new Event('submit', { bubbles: true, cancelable: true }),
+      ),
+    );
+    await flush();
+    expect(calls).toHaveLength(0);
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain(
+      'finite limits',
+    );
+    expect(container.querySelector('form')).not.toBeNull();
+  },
+);
 it('rejects mismatched run and prepared diff identities at IO boundaries', async () => {
   await expect(getFactoryCodingRun('other-run')).rejects.toThrow(
     'does not match',

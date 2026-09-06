@@ -22,7 +22,9 @@ function selectRun(
   value: string | number,
   paths: Paths,
 ) {
-  const database = openDb(v.parse(codingLabelSchema, paths.neondeckDatabase));
+  const database = openDb(
+    v.parse(v.pipe(v.string(), v.minLength(1)), paths.neondeckDatabase),
+  );
   let runId: string | null = null;
   try {
     // Both columns have unique indexes. Fetch only the ID, not historical snapshots.
