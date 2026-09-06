@@ -116,3 +116,31 @@ export function putComment(db: DatabaseSync, row: CommentRecord) {
     'INSERT INTO factory_github_comments(id,work_id,record) VALUES(?,?,?) ON CONFLICT(id) DO UPDATE SET record=excluded.record',
   ).run(row.id, row.workId, JSON.stringify(row));
 }
+
+/** Bound the operational read before decoding JSON, including when attention
+ * receipts legitimately outlive the settled-history retention window. */
+export function dueGitHubDeliveries(db: DatabaseSync, now: number) {
+  return db
+    .prepare(
+      `SELECT record FROM factory_github_deliveries
+       WHERE json_extract(record,'$.state') <> 'complete'
+         AND json_extract(record,'$.retryAt') <= ?
+       ORDER BY json_extract(record,'$.retryAt'), json_extract(record,'$.createdAt')
+       LIMIT 1`,
+    )
+    .all(now)
+    .map((row) =>
+      v.parse(deliverySchema, JSON.parse(v.parse(v.string(), row.record))),
+    );
+}
+export function recentGitHubDeliveries(db: DatabaseSync) {
+  return db
+    .prepare(
+      'SELECT record FROM factory_github_deliveries ORDER BY rowid DESC LIMIT 100',
+    )
+    .all()
+    .reverse()
+    .map((row) =>
+      v.parse(deliverySchema, JSON.parse(v.parse(v.string(), row.record))),
+    );
+}

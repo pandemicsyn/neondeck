@@ -157,3 +157,35 @@ The work-scoped `/api/factory/work/:id/comments` endpoint returns at most ten
 retained comments, newest first, with an opaque row cursor for older pages. The
 workbench offers newer/older controls and polls only the selected task/page.
 External discussion remains attributed context without approval authority.
+
+## Operational retention
+
+Each sync pass observes at most 100 completed delivery receipts and 100 completed
+external-context intents, and deletes at most 100 expired records of each kind.
+The grace period is **30 days after completion is first observed by cleanup**,
+not after admission. Existing completed records get a full grace period on upgrade.
+A paused service or a large backlog can extend retention until later passes.
+
+Completed webhook/manual-sync/discovery-retry receipts expire. After expiry, the
+same delivery ID can be accepted again (including a previously conflicting body);
+it schedules a fresh read of current GitHub state. Stable issue identity, source
+versions and retained comment revisions still prevent duplicate work and unchanged
+context dispatch. The receipt-level byte-conflict guarantee applies only while
+that receipt is retained. Delivery lists decode at most 100 records and due-work
+selection decodes one, rather than loading the entire receipt history.
+
+Only **superseded completed external-context queue entries** expire. Keep the
+current intent anchor for every comment, the latest task intent, every intent with
+planning effects, and all intent history while a task has an active request.
+The retained comment's monotonic revision and intent anchor prevent an unchanged
+sync from regenerating an expired older context turn. Comment bodies and deletion
+tombstones remain available; no comment pagination or user-visible history is
+removed. Human planning, bindings, Flue sessions and replay receipts, immutable
+specs/releases and audit records are not retention targets.
+
+`attention` deliveries still represent retryable work, so they never expire;
+neither do pending deliveries or active, failed or uncertain context intents.
+This policy bounds settled operational history by age and cleanup throughput,
+not total database size: unresolved work, current deduplication anchors and
+intentional authority/audit history remain durable. SQLite may reuse freed pages;
+cleanup does not vacuum or promise immediate file shrinkage.

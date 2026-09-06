@@ -30,7 +30,8 @@ import {
 import {
   githubDigest,
   readGitHubRecords,
-  deliverySchema,
+  dueGitHubDeliveries,
+  recentGitHubDeliveries,
   syncSchema,
   commentRecordSchema,
   putDelivery,
@@ -41,6 +42,7 @@ import {
 } from './github-store';
 import { prepareFactoryTriage, prepareGitHubContext } from './planning-store';
 import { resumeFactoryPlanning } from './planning-dispatch';
+import { retainFactoryGitHubHistory } from './github-retention';
 export const githubReconcileIO = {
   repository: readFactoryGitHubRepository,
   issue: readFactoryGitHubIssue,
@@ -453,15 +455,10 @@ export function runFactoryGitHubSync(
   active.set(paths.neondeckDatabase, promise);
   return promise;
   async function run() {
+    retainFactoryGitHubHistory(paths);
     let budget = 12;
     const deliveries = dbRun(paths, (db) =>
-      readGitHubRecords(db, 'factory_github_deliveries', deliverySchema)
-        .filter((row) => row.state !== 'complete' && row.retryAt <= Date.now())
-        .sort(
-          (a, b) =>
-            a.retryAt - b.retryAt || a.createdAt.localeCompare(b.createdAt),
-        )
-        .slice(0, 1),
+      dueGitHubDeliveries(db, Date.now()),
     );
     for (const delivery of deliveries) {
       if (signal.aborted || budget < 3) return;
@@ -631,11 +628,7 @@ export function factoryGitHubState(paths = runtimePaths()) {
       ...connection,
       readiness: connectionReadiness(connection, paths),
     })),
-    deliveries: readGitHubRecords(
-      db,
-      'factory_github_deliveries',
-      deliverySchema,
-    ).slice(-100),
+    deliveries: recentGitHubDeliveries(db),
     sync: readGitHubRecords(db, 'factory_github_sync', syncSchema),
   }));
 }
