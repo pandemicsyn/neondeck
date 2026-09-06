@@ -137,10 +137,10 @@ Its real Codex acceptance remains pending after merge; Slice 1 remains
 operator-accepted with the recorded checks deferred. Neither decision is a live
 acceptance claim for Slice 3.
 
-- [ ] Independent candidate verification and model review bound to exact evidence.
-- [ ] Bounded Codex repairs with durable budgets and human scope interventions.
-- [ ] Revision-checked draft PR delivery with uncertain-effect reconciliation.
-- [ ] Existing watch/review surfaces with exclusive factory ownership, human merge,
+- [x] Independent candidate verification and model review bound to exact evidence.
+- [x] Bounded Codex repairs with durable budgets and human scope interventions.
+- [x] Revision-checked draft PR delivery with uncertain-effect reconciliation.
+- [x] Existing watch/review surfaces with exclusive factory ownership, human merge,
       recorded outcomes, and safe cleanup.
 - [ ] Two clean independent static reviews before PR creation, cumulative verification,
       screenshots where applicable, and a manager architecture review of the full stack.

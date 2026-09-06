@@ -16,6 +16,11 @@ the operator authorized stack merge, with real Codex acceptance still pending af
 
 - [Slice 2 implementation and acceptance plan](SLICE_2_IMPLEMENTATION_PLAN.md):
   brief-to-candidate scope, stacked delivery, mockdex and acceptance.
+- [Slice 3 implementation plan](SLICE_3_IMPLEMENTATION_PLAN.md): exact delivery
+  grants, independent evidence, bounded repairs and draft publication.
+- [Slice 3 handoff](SLICE_3_HANDOFF.md): stack ownership, review and acceptance.
+- [Slice 3 operator guide](SLICE_3_OPERATOR.md): candidate delivery controls and
+  conditional human interventions.
 - [Slice 2 local handoff](SLICE_2_HANDOFF.md): accepted stack, verification,
   screenshots and remaining live acceptance.
 - [Slice 2 operator guide](SLICE_2_OPERATOR.md): private coding setup, run controls,
@@ -41,3 +46,5 @@ The existing secrets-scanning pre-commit hook must run on every commit.
 No PR is created until dedicated static reviewers return no findings and the
 manager completes the final implementation/product-plan review. Implementers
 provide screenshots for UI changes for review and eventual GitHub publication.
+
+Slice 3 postmerge live obligations are recorded in [SLICE_3_ACCEPTANCE.md](SLICE_3_ACCEPTANCE.md); no live acceptance is claimed by synthetic verification.

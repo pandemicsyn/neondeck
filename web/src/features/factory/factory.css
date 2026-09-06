@@ -505,3 +505,112 @@
 .factory-coding-diff .prepared-readonly-findings {
   margin-top: 12px;
 }
+
+/* Candidate delivery owns these additions. Shared factory tokens stay intact. */
+.factory-delivery {
+  margin-block: 24px;
+  padding-block: 20px;
+  border-block: 1px solid var(--line);
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.factory-delivery h4 {
+  font-size: 15px;
+  margin: 16px 0 8px;
+}
+.factory-delivery .factory-coding-facts {
+  margin-block: 16px;
+}
+.factory-delivery dt {
+  color: var(--ink);
+}
+.factory-delivery dd {
+  line-height: 1.6;
+}
+.factory-delivery-consent {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  margin-block: 20px;
+}
+.factory-delivery-consent input {
+  flex: 0 0 auto;
+  width: 20px;
+  height: 20px;
+  margin-top: 2px;
+  accent-color: var(--primary);
+}
+.factory-delivery button {
+  min-height: 44px;
+  white-space: normal;
+}
+.factory-delivery button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+.factory-delivery :is(button, a, input, textarea):focus-visible {
+  outline: 2px solid var(--primary-strong);
+  outline-offset: 3px;
+}
+.factory-delivery-budget,
+.factory-delivery-evidence,
+.factory-delivery-intervention {
+  border-top: 1px solid var(--line);
+  padding-block: 12px;
+}
+.factory-delivery-evidence-row {
+  padding-block: 12px;
+}
+.factory-delivery-evidence-row details {
+  margin-top: 8px;
+}
+.factory-delivery-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 20px;
+}
+.factory-delivery-controls form {
+  flex-basis: 100%;
+}
+.factory-delivery-controls textarea {
+  display: block;
+  width: 100%;
+  min-height: 80px;
+  margin-top: 8px;
+  padding: 10px;
+  background: var(--field);
+  color: var(--ink);
+  border: 1px solid var(--line);
+}
+@media (max-width: 700px) {
+  .factory-delivery .factory-toolbar {
+    align-items: flex-start;
+    gap: 12px;
+  }
+  .factory-delivery .factory-coding-facts {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .factory-delivery-controls > button {
+    width: 100%;
+  }
+}
+
+@media (max-width: 700px) {
+  .factory-delivery-budget .factory-coding-facts {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px 16px;
+  }
+}
+
+.factory-delivery-evidence-content pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 20rem;
+  overflow: auto;
+  padding: 0.75rem;
+  background: var(--color-bg, #10131b);
+}
+.factory-delivery-evidence-content li {
+  overflow-wrap: anywhere;
+}

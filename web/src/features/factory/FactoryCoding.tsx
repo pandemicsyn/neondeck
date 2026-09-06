@@ -1,3 +1,4 @@
+import { FactoryDelivery } from './FactoryDelivery';
 import { useState } from 'react';
 import {
   useInfiniteQuery,
@@ -64,9 +65,11 @@ const statuses: Record<
 export function FactoryCoding({
   workId,
   eligible,
+  onDiscussDelivery,
 }: {
   workId: string;
   eligible: boolean;
+  onDiscussDelivery?: (evidence: string) => void;
 }) {
   const [selected, setSelected] = useState<string | null>(null);
   const state = useQuery({
@@ -164,6 +167,7 @@ export function FactoryCoding({
           key={selectedId}
           id={selectedId}
           workId={workId}
+          onDiscussDelivery={onDiscussDelivery}
         />
       )}
     </section>
@@ -173,9 +177,11 @@ export function FactoryCoding({
 function FactoryCodingRunDetail({
   id,
   workId,
+  onDiscussDelivery,
 }: {
   id: string;
   workId: string;
+  onDiscussDelivery?: (evidence: string) => void;
 }) {
   const client = useQueryClient();
   const run = useQuery({
@@ -307,6 +313,14 @@ function FactoryCodingRunDetail({
             </p>
           )}
         </>
+      )}
+      {record.candidate && (
+        <FactoryDelivery
+          runId={id}
+          workId={workId}
+          onDiscuss={onDiscussDelivery}
+          releaseId={record.snapshot.releaseId}
+        />
       )}
       {record.cleanupAttentionAt && (
         <p className="factory-note">

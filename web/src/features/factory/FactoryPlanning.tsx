@@ -20,8 +20,12 @@ export function FactoryPlanning({
   detail,
   discussion,
   onClearDiscussion,
+  deliveryEvidence,
+  onClearDeliveryEvidence,
 }: {
   detail: FactoryDetail;
+  deliveryEvidence?: string;
+  onClearDeliveryEvidence?: () => void;
   discussion?: FactoryDiscussionReference;
   onClearDiscussion?: () => void;
 }) {
@@ -69,7 +73,9 @@ export function FactoryPlanning({
       request ??
       v.parse(planningInputSchema, {
         requestKey: crypto.randomUUID(),
-        message,
+        message: deliveryEvidence
+          ? `${message}\n\n${deliveryEvidence}`
+          : message,
         expectedVersion: detail.work.version,
         ...(discussion ? { discussion } : {}),
       });
@@ -81,12 +87,19 @@ export function FactoryPlanning({
     try {
       await sendFactoryPlanning(detail.work.id, current);
       const draftKey = `factory-chat-draft:${detail.work.id}:${state.data?.sessionId}`;
-      if (sessionStorage.getItem(draftKey)?.trim() === current.message)
+      const savedDraft = sessionStorage.getItem(draftKey)?.trim();
+      if (
+        savedDraft &&
+        (savedDraft === current.message ||
+          (deliveryEvidence &&
+            `${savedDraft}\n\n${deliveryEvidence}` === current.message))
+      )
         sessionStorage.removeItem(draftKey);
       sessionStorage.removeItem(storageKey);
       setRequest(undefined);
       setChatGeneration((n) => n + 1);
       onClearDiscussion?.();
+      onClearDeliveryEvidence?.();
       await state.refetch();
     } catch (error) {
       // Replay is checked before version/context validation on the server. A
@@ -112,6 +125,28 @@ export function FactoryPlanning({
   return (
     <section className="factory-planning" aria-label="Planning conversation">
       <h3>Shape with Neon</h3>
+      {deliveryEvidence && (
+        <div className="factory-discussion-context">
+          <strong>Delivery evidence attached to your next message</strong>
+          <p>
+            Review this context, then send your own planning message. This does
+            not authorize scope changes, execution, or publication.
+          </p>
+          <details>
+            <summary>Inspect attached delivery evidence</summary>
+            <pre style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>
+              {deliveryEvidence}
+            </pre>
+          </details>
+          <button
+            disabled={busy || !!request}
+            onClick={onClearDeliveryEvidence}
+          >
+            Clear delivery evidence
+          </button>
+        </div>
+      )}
+
       {restored.error && <p role="alert">{restored.error}</p>}
       {request && (
         <div className="factory-discussion-context" role="status">
