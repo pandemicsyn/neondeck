@@ -173,6 +173,14 @@ async function fixture() {
       initialExecutionMs: 1,
     },
     repairs: [],
+    progress: {
+      limits: {
+        maxAssessments: 2,
+        maxAssessmentsPerRepair: 1,
+        maxAssessmentMs: 180000,
+      },
+      assessments: [],
+    },
     feedback: [],
     evidence: [],
     effects: [
@@ -815,6 +823,9 @@ async function nextCandidate(f: Awaited<ReturnType<typeof fixture>>) {
     runId: revision.runId,
     attemptId: revision.attemptId,
     requestId: 'repair-request',
+    progressAssessmentId: null,
+    progressInputDigest: null,
+    progressEvidenceDigest: null,
     reservedExecutionMs: 1000,
     executionMs: 10,
     fromRevision: prior,

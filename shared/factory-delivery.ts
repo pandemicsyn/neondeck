@@ -1,4 +1,7 @@
 import * as v from 'valibot';
+import { deliveryProgressStateSchema } from './factory-progress';
+import { deliveryRevisionSchema } from './factory-delivery-revision';
+export { deliveryRevisionSchema } from './factory-delivery-revision';
 
 const label = v.pipe(v.string(), v.minLength(1), v.maxLength(500));
 export const deliveryMaxCheckCommands = 16;
@@ -17,17 +20,6 @@ const version = v.pipe(natural, v.minValue(1));
 const hash = v.pipe(v.string(), v.regex(/^[a-f0-9]{64}$/));
 const sha = v.pipe(v.string(), v.regex(/^[a-f0-9]{40}([a-f0-9]{24})?$/));
 const time = v.pipe(v.string(), v.isoTimestamp());
-export const deliveryRevisionSchema = v.strictObject({
-  runId: label,
-  attemptId: label,
-  releaseId: label,
-  specVersion: version,
-  specHash: hash,
-  candidateDigest: hash,
-  baseSha: sha,
-  headSha: sha,
-  treeSha: sha,
-});
 export const deliveryEvidenceSchema = v.pipe(
   v.strictObject({
     id: label,
@@ -73,6 +65,9 @@ export const deliveryRepairSchema = v.strictObject({
   reservedExecutionMs: version,
   executionMs: v.nullable(natural),
   fromRevision: deliveryRevisionSchema,
+  progressAssessmentId: v.optional(v.nullable(label), null),
+  progressInputDigest: v.optional(v.nullable(hash), null),
+  progressEvidenceDigest: v.optional(v.nullable(hash), null),
   status: v.picklist(['reserved', 'candidate', 'failed']),
   revision: v.nullable(deliveryRevisionSchema),
   reason: repairInstructions,
@@ -160,6 +155,14 @@ export const deliveryPipelineSchema = v.strictObject({
   pr: v.nullable(deliveryPrSchema),
   authorization: deliveryAuthorizationSchema,
   repairs: v.array(deliveryRepairSchema),
+  progress: v.optional(deliveryProgressStateSchema, () => ({
+    limits: {
+      maxAssessments: 2,
+      maxAssessmentsPerRepair: 1,
+      maxAssessmentMs: 180000,
+    },
+    assessments: [],
+  })),
   evidence: v.array(deliveryEvidenceSchema),
   effects: v.array(deliveryEffectSchema),
   feedback: v.optional(v.array(deliveryFeedbackSchema), []),
@@ -282,6 +285,9 @@ export const deliveryRepairReservationSchema = v.strictObject({
   requestId: label,
   reason: repairInstructions,
   maxWallTimeMs: v.pipe(version, v.maxValue(2700000)),
+  progressAssessmentId: label,
+  progressInputDigest: hash,
+  progressEvidenceDigest: hash,
 });
 export type DeliveryAuthorization = v.InferOutput<
   typeof deliveryAuthorizationSchema

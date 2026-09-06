@@ -24,6 +24,7 @@ import {
   type LocalAttemptHandle,
 } from '../modules/coding-runs';
 import {
+  codingDigest,
   codingHandle,
   dispatchCodingWork,
   reconcileCodingRun,
@@ -53,6 +54,12 @@ import {
 import { reviewerChecksSchema } from '../modules/factory-delivery/reviewer-contract';
 import * as publicationGit from '../modules/factory-delivery/publication-git-io';
 import type { DeliveryPipeline } from '../../shared/factory-delivery';
+import {
+  progressReviewRequestSchema,
+  type ProgressReviewRequest,
+} from '../modules/factory-delivery/progress-reviewer-contract';
+import { progressIO } from '../modules/factory-delivery/progress-service';
+import { progressDigest } from '../modules/factory-delivery/progress-evidence-contract';
 import { captureCandidateEvidence } from '../modules/factory-delivery/evidence';
 
 // Only external Flue admission/settlement is synthetic. The production reviewer
@@ -87,11 +94,16 @@ it.each([
   'uncertain-create',
   'prepublish-repair',
   'reviewer-findings',
+  'change-approach',
+  'escalate',
+  'unknown-progress-admission',
 ] as const)(
   'production candidate-to-draft integration: %s',
   async (mode) => {
     const expectsRepair =
-      mode.includes('repair') || mode === 'reviewer-findings';
+      mode.includes('repair') ||
+      mode === 'reviewer-findings' ||
+      mode === 'change-approach';
     const root = realpathSync(
       mkdtempSync(join(tmpdir(), 'factory-delivery-e2e-')),
     );
@@ -105,6 +117,7 @@ it.each([
     const observedPullHeads: string[] = [];
     let pull: Record<string, unknown> | undefined;
     const requests: CandidateReviewRequest[] = [];
+    const progressRequests: ProgressReviewRequest[] = [];
     const handles: LocalAttemptHandle[] = [];
     // Fail closed for all HTTP not explicitly modeled below.
     vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
@@ -205,7 +218,7 @@ it.each([
       writeFileSync(join(repo, 'original.txt'), 'unchanged\n');
       writeFileSync(
         join(repo, 'check.cjs'),
-        `const fs=require('node:fs'); console.log(JSON.stringify({cwd:process.cwd(),pid:process.pid,hasProviderSecret:'FACTORY_DELIVERY_AUTH' in process.env})); if(!fs.readFileSync('mockdex-result.txt','utf8').includes('deterministic')) process.exit(2); if(${mode === 'prepublish-repair' ? "fs.readFileSync('state.txt','utf8') !== 'fixed-v2'" : "!fs.readFileSync('state.txt','utf8').startsWith('fixed')"}) process.exit(3);`,
+        `const fs=require('node:fs'); console.log(JSON.stringify({cwd:process.cwd(),pid:process.pid,hasProviderSecret:'FACTORY_DELIVERY_AUTH' in process.env})); if(!fs.readFileSync('mockdex-result.txt','utf8').includes('deterministic')) process.exit(2); if(${['prepublish-repair', 'change-approach', 'escalate', 'unknown-progress-admission'].includes(mode) ? "fs.readFileSync('state.txt','utf8') !== 'fixed-v2'" : "!fs.readFileSync('state.txt','utf8').startsWith('fixed')"}) process.exit(3);`,
       );
       git(repo, 'add', '.');
       git(repo, 'commit', '-m', 'synthetic base');
@@ -421,6 +434,26 @@ const child=spawn(process.execPath,[${JSON.stringify(resolve('scripts/mockdex.mj
       });
       model.dispatch.mockImplementation(
         async (_agent: unknown, raw: { initialData: unknown }) => {
+          const progress = v.safeParse(
+            progressReviewRequestSchema,
+            raw.initialData,
+          );
+          if (progress.success) {
+            progressRequests.push(progress.output);
+            expect(progress.output.packet.priorRepairs).toEqual([]);
+            expect(progress.output.packet.candidates).toHaveLength(1);
+            expect(progress.output.packet.missingEvidence).toEqual([]);
+            expect(progress.output.packet.omittedEvidence).toEqual([]);
+            if (mode === 'unknown-progress-admission')
+              throw new Error(
+                'Synthetic accepted progress admission with lost response',
+              );
+            return {
+              submissionId: `progress-${progressRequests.length}`,
+              uid: 'synthetic-progress',
+              acceptedAt: new Date().toISOString(),
+            };
+          }
           const request = v.parse(
             candidateReviewRequestSchema,
             raw.initialData,
@@ -439,6 +472,48 @@ const child=spawn(process.execPath,[${JSON.stringify(resolve('scripts/mockdex.mj
         (_agent: unknown, options: { id: string }) => ({
           abort: async () => {},
           read: async (receipt: { submissionId: string } | string) => {
+            const progress = progressRequests.findLast(
+              (r) => r.id === options.id,
+            );
+            if (progress) {
+              const submissionId =
+                typeof receipt === 'string' ? receipt : receipt.submissionId;
+              expect(
+                requireDelivery(pipelineId, paths).progress.assessments[0]
+                  .submissionId,
+              ).toBe(submissionId);
+              return {
+                submissionId,
+                data: {
+                  factoryProgressReview: [
+                    {
+                      ...progress.binding,
+                      decision:
+                        mode === 'change-approach'
+                          ? 'change-approach'
+                          : mode === 'escalate'
+                            ? 'escalate'
+                            : 'continue',
+                      rationale:
+                        'Synthetic assessment of the retained production evidence.',
+                      evidenceRefs: [
+                        `candidate:${progress.packet.revision.candidateDigest}`,
+                      ],
+                      nextInstructions:
+                        mode === 'change-approach'
+                          ? 'Use the alternate scoped approach: write fixed-v2 to state.txt and preserve mockdex-result.txt.'
+                          : null,
+                    },
+                  ],
+                },
+                metadata: {
+                  startedAt: Date.now(),
+                  completedAt: Date.now(),
+                  totalTokens: 20,
+                  requestDigest: progressDigest(progress),
+                },
+              };
+            }
             const request = requests.findLast((r) => r.id === options.id)!;
             expect(request).toBeDefined();
             const p = requireDelivery(pipelineId, paths);
@@ -494,6 +569,7 @@ const child=spawn(process.execPath,[${JSON.stringify(resolve('scripts/mockdex.mj
           },
         }),
       );
+      const progressReview = vi.spyOn(progressIO, 'review');
       const observations = {
         verification: vi.spyOn(deliveryIO, 'verify'),
         review: vi.spyOn(deliveryIO, 'review'),
@@ -527,8 +603,12 @@ const child=spawn(process.execPath,[${JSON.stringify(resolve('scripts/mockdex.mj
               )
                 handles.push(codingHandle(child, paths));
             }
-            if (p.interventions.length)
+            if (done(p)) return true;
+            if (p.interventions.length) {
+              const call = progressReview.mock.results.at(-1);
+              if (call?.type === 'return') await call.value;
               throw new Error(JSON.stringify(p.interventions));
+            }
             if (
               p.effects.some(
                 (e) => e.state === 'uncertain' && e.kind !== 'create-pr',
@@ -551,34 +631,81 @@ const child=spawn(process.execPath,[${JSON.stringify(resolve('scripts/mockdex.mj
           () => JSON.stringify(requireDelivery(pipelineId, paths)),
         );
       }
+      if (mode === 'escalate' || mode === 'unknown-progress-admission') {
+        await drive((p) => p.interventions.length > 0);
+        const stopped = requireDelivery(pipelineId, paths);
+        expect(stopped.progress.assessments).toHaveLength(1);
+        expect(stopped.progress.assessments[0].result?.decision).toBe(
+          mode === 'escalate' ? 'escalate' : undefined,
+        );
+        if (mode === 'unknown-progress-admission')
+          expect(stopped.progress.assessments[0]).toMatchObject({
+            state: 'uncertain',
+            submissionId: null,
+            executionMs: null,
+            result: null,
+          });
+        expect(stopped.repairs).toEqual([]);
+        expect(listCodingRuns({}, paths)).toHaveLength(1);
+        expect(postCount).toBe(0);
+        for (let tick = 0; tick < 3; tick++)
+          await advanceFactoryDelivery(pipelineId, paths, deliveryIO);
+        expect(progressRequests).toHaveLength(1);
+        expect(requireDelivery(pipelineId, paths).progress).toEqual(
+          stopped.progress,
+        );
+        expect(listCodingRuns({}, paths)).toHaveLength(1);
+        return;
+      }
       await drive((p) => p.pr !== null);
       if (mode === 'repair') {
         const first = requireDelivery(pipelineId, paths);
         // Model the external current-head CI observation, then enter the real
         // durable feedback command and coordinator repair admission.
+        const normalized = {
+          headSha: first.commits.at(-1)!.publishedHeadSha,
+          checks: [
+            {
+              name: 'synthetic-ci',
+              status: 'completed',
+              conclusion: 'failure',
+            },
+          ],
+          statuses: [],
+          reviews: [],
+          inlineComments: [],
+          issueComments: [],
+        };
+        const fingerprint = codingDigest(normalized);
         const feedback = {
           id: 'synthetic-ci',
-          fingerprint: '8'.repeat(64),
+          fingerprint,
           revision: first.revision,
-          publishedHeadSha: first.commits.at(-1)!.publishedHeadSha,
+          publishedHeadSha: normalized.headSha,
           ciFailed: true,
           hasReviewFeedback: false,
           evidenceRef: deliveryReceipt(
             pipelineId,
             {
-              feedbackBody: 'Scoped state file must use fixed-v2.',
-              checks: [
-                {
-                  name: 'synthetic-ci',
-                  status: 'completed',
-                  conclusion: 'failure',
-                },
-              ],
-              statuses: [],
+              ...normalized,
+              fingerprint,
+              ciFailed: true,
+              hasReviewFeedback: false,
+              feedbackBody: JSON.stringify({
+                reviews: normalized.reviews,
+                inlineComments: normalized.inlineComments,
+                issueComments: normalized.issueComments,
+              }),
             },
             paths,
           ),
         };
+        changeDelivery(
+          pipelineId,
+          { type: 'record-feedback', feedback },
+          paths,
+        );
+        // Duplicate provider observation must preserve the same prospective repair.
         changeDelivery(
           pipelineId,
           { type: 'record-feedback', feedback },
@@ -645,7 +772,33 @@ const child=spawn(process.execPath,[${JSON.stringify(resolve('scripts/mockdex.mj
       ).toEqual(originalIndex);
       expect(delivered.repairs).toHaveLength(expectsRepair ? 1 : 0);
       expect(listCodingRuns({}, paths)).toHaveLength(expectsRepair ? 2 : 1);
+      expect(progressRequests).toHaveLength(expectsRepair ? 1 : 0);
+      expect(delivered.progress.assessments).toHaveLength(
+        expectsRepair ? 1 : 0,
+      );
       if (expectsRepair) {
+        expect(delivered.progress.assessments[0]).toMatchObject({
+          state: 'settled',
+          repairOrdinal: 1,
+          submissionId: 'progress-1',
+          result: {
+            decision:
+              mode === 'change-approach' ? 'change-approach' : 'continue',
+          },
+        });
+        if (mode === 'change-approach') {
+          expect(delivered.repairs[0].reason).toContain(
+            'alternate scoped approach',
+          );
+          const repairRun = requireCodingRun(delivered.repairs[0].runId, paths);
+          expect(repairRun.attemptId).not.toBe(run.attemptId);
+          expect(
+            readFileSync(
+              join(codingHandle(repairRun, paths).directory, 'prompt.txt'),
+              'utf8',
+            ),
+          ).toContain(delivered.repairs[0].reason);
+        }
         expect(delivered.revision.runId).not.toBe(run.runId);
         expect(
           delivered.evidence.filter((e) => e.kind === 'verification'),

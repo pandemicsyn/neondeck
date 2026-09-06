@@ -1,3 +1,4 @@
+import { approveTestProgress } from './progress-test-helpers';
 import { runtimePaths, type RuntimePaths } from '../../runtime-home';
 import { claimWatchAutopilotTurn, transitionWatchAutopilot } from '../watches';
 import { registerPendingAutopilotTurn } from '../autopilot';
@@ -136,6 +137,12 @@ function repairInput(r: DeliveryPipeline, requestId = 'repair') {
     requestId,
     reason: 'failed validation',
     maxWallTimeMs: 1000,
+    progressAssessmentId:
+      r.progress.assessments.at(-1)?.assessmentId ?? 'missing',
+    progressInputDigest:
+      r.progress.assessments.at(-1)?.inputDigest ?? '1'.repeat(64),
+    progressEvidenceDigest:
+      r.progress.assessments.at(-1)?.evidenceDigest ?? '1'.repeat(64),
   };
 }
 function createRun(
@@ -380,7 +387,7 @@ describe('factory delivery foundation', () => {
     expect(() =>
       reserveDeliveryRepair(repairInput(r), paths, createRun),
     ).toThrow('failed evidence');
-    r = evidence(r, 'verification', 'failed');
+    r = approveTestProgress(evidence(r, 'verification', 'failed'), paths);
     const result = reserveDeliveryRepair(repairInput(r), paths, createRun);
     expect(reserveDeliveryRepair(repairInput(r), paths, createRun)).toEqual(
       result,
@@ -402,10 +409,13 @@ describe('factory delivery foundation', () => {
     ).toThrow();
   });
   it('rolls back both budget and fresh run on callback failure', () => {
-    const r = evidence(
-      reserveDeliveryPipeline(reservation, paths),
-      'verification',
-      'failed',
+    const r = approveTestProgress(
+      evidence(
+        reserveDeliveryPipeline(reservation, paths),
+        'verification',
+        'failed',
+      ),
+      paths,
     );
     expect(() =>
       reserveDeliveryRepair(repairInput(r), paths, (db, input) => {
@@ -419,7 +429,7 @@ describe('factory delivery foundation', () => {
     db.close();
   });
   it('revision replacement invalidates retained pass evidence and records over-budget intervention', () => {
-    let r = evidence(ready(), 'review', 'failed');
+    let r = approveTestProgress(evidence(ready(), 'review', 'failed'), paths);
     const result = reserveDeliveryRepair(repairInput(r), paths, createRun);
     r = result.pipeline;
     const next = {
@@ -503,10 +513,13 @@ describe('factory delivery foundation', () => {
 
 describe('reviewer A regressions', () => {
   it('prevents descendant candidate regrant for the same release without resetting budget or identity', () => {
-    const r = evidence(
-      reserveDeliveryPipeline(reservation, paths),
-      'verification',
-      'failed',
+    const r = approveTestProgress(
+      evidence(
+        reserveDeliveryPipeline(reservation, paths),
+        'verification',
+        'failed',
+      ),
+      paths,
     );
     const child = {
       ...revision,
@@ -688,7 +701,7 @@ it('normal feedback never certifies, consumes repair once, and success supersede
   expect(feedback(r, true)).toEqual(r);
   r = feedback(r, false, false, '5'.repeat(64));
   expect(getPendingDeliveryFeedback(r)).toBeNull();
-  r = feedback(r, true, false, '6'.repeat(64));
+  r = approveTestProgress(feedback(r, true, false, '6'.repeat(64)), paths);
   const repaired = reserveDeliveryRepair(repairInput(r), paths, createRun);
   expect(repaired.pipeline.feedback.at(-1)!.repairRequestId).toBe('repair');
   expect(getPendingDeliveryFeedback(repaired.pipeline)).toBeNull();
@@ -804,10 +817,13 @@ it('publication claim atomically fences legacy event/direct/pending admissions i
   expect(isFactoryOwnedWatch('factory-pr', paths)).toBe(true);
 });
 it('retains execution reservation for a dead repair with unavailable duration', () => {
-  const r = evidence(
-    reserveDeliveryPipeline(reservation, paths),
-    'verification',
-    'failed',
+  const r = approveTestProgress(
+    evidence(
+      reserveDeliveryPipeline(reservation, paths),
+      'verification',
+      'failed',
+    ),
+    paths,
   );
   const reserved = reserveDeliveryRepair(repairInput(r), paths, createRun);
   const finished = update(reserved.pipeline, {
@@ -948,4 +964,58 @@ it('rejects over-limit grants before reserving a pipeline, while admitting all 1
   const admitted = reserveDeliveryPipeline(input, paths);
   expect(admitted.authorization.checkCommands).toHaveLength(16);
   expect(admitted.effects).toEqual([]);
+});
+
+it('atomically refuses stale progress proof before allocating a repair writer', () => {
+  let r = approveTestProgress(
+    evidence(
+      reserveDeliveryPipeline(reservation, paths),
+      'verification',
+      'failed',
+    ),
+    paths,
+  );
+  const proof = repairInput(r);
+  r = evidence(r, 'verification', 'failed');
+  let called = false;
+  expect(() =>
+    reserveDeliveryRepair(
+      { ...proof, expectedVersion: r.version },
+      paths,
+      (db, input) => {
+        called = true;
+        return createRun(db, input);
+      },
+    ),
+  ).toThrow('successful bound progress');
+  expect(called).toBe(false);
+});
+it('retains exact assessment provenance on repair descendants and rejects forged replay proofs', () => {
+  const r = approveTestProgress(
+    evidence(
+      reserveDeliveryPipeline(reservation, paths),
+      'verification',
+      'failed',
+    ),
+    paths,
+  );
+  const proof = repairInput(r);
+  const admitted = reserveDeliveryRepair(proof, paths, createRun);
+  expect(() =>
+    reserveDeliveryRepair(
+      { ...proof, progressInputDigest: '9'.repeat(64) },
+      paths,
+      createRun,
+    ),
+  ).toThrow('Conflicting repair');
+  const corrupt = structuredClone(admitted.pipeline);
+  corrupt.repairs[0]!.progressAssessmentId = 'invented';
+  const db = openDb(paths.neondeckDatabase);
+  db.prepare(
+    'UPDATE factory_delivery_pipelines SET record_json=? WHERE pipeline_id=?',
+  ).run(JSON.stringify(corrupt), corrupt.pipelineId);
+  db.close();
+  expect(() => getDeliveryPipeline(corrupt.pipelineId, paths)).toThrow(
+    'Corrupt repair progress',
+  );
 });

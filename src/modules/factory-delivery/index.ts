@@ -7,4 +7,4 @@ export {
   revokeFactoryDelivery,
 } from './service-operator';
 export { reconcileFactoryDelivery, tickFactoryDelivery } from './service';
-export { readDeliveryEvidence } from './evidence-read';
+export { readDeliveryEvidenceOrProgress as readDeliveryEvidence } from './evidence-read';

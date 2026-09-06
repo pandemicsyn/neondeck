@@ -27,6 +27,8 @@ import {
   renderEvidenceFindings,
 } from './evidence-content';
 import { readFeedbackContent } from './evidence-feedback';
+import { readDeliveryProgressEvidence } from './evidence-progress';
+import type { DeliveryProgressEvidenceContent } from '../../../shared/factory-delivery-progress-evidence';
 const natural = v.pipe(v.number(), v.safeInteger(), v.minValue(0));
 const envelopeSchema = v.strictObject({
   producerId: v.string(),
@@ -270,6 +272,36 @@ export async function readDeliveryEvidence(
       acceptanceCriteriaRole: 'review-inputs',
       truncated,
     });
+  } catch {
+    throw new FactoryError(
+      409,
+      'Retained evidence is unavailable or failed integrity validation. Keep the previous view and retry after inspection.',
+    );
+  }
+}
+
+/** Public endpoint adapter; existing certification consumers keep their narrow contract. */
+export async function readDeliveryEvidenceOrProgress(
+  raw: unknown,
+  paths: RuntimePaths,
+): Promise<DeliveryEvidenceContent | DeliveryProgressEvidenceContent> {
+  const input = v.parse(deliveryEvidenceReadInputSchema, raw);
+  try {
+    const pipeline = getDeliveryPipeline(input.deliveryId, paths);
+    const assessment = pipeline?.progress.assessments.find(
+      (a) => a.assessmentId === input.evidenceId,
+    );
+    if (!pipeline || !assessment) return readDeliveryEvidence(raw, paths);
+    if (
+      pipeline.evidence.some((e) => e.id === input.evidenceId) ||
+      pipeline.feedback.some((e) => e.id === input.evidenceId)
+    )
+      throw new Error('Ambiguous retained evidence identity');
+    return await readDeliveryProgressEvidence(
+      pipeline,
+      assessment.assessmentId,
+      paths,
+    );
   } catch {
     throw new FactoryError(
       409,

@@ -230,11 +230,12 @@ function review() {
     'failed',
   );
 }
-function read(e: DeliveryEvidence) {
-  return readDeliveryEvidence(
+async function read(e: DeliveryEvidence) {
+  const content = await readDeliveryEvidence(
     { deliveryId: p.pipelineId, evidenceId: e.id },
     paths,
   );
+  return content;
 }
 function rewriteRecord(change: (r: DeliveryPipeline) => void) {
   change(p);
@@ -384,6 +385,9 @@ describe('bound public delivery evidence content', () => {
         runId: 'repair',
         attemptId: 'repair-attempt',
         requestId: 'repair-request',
+        progressAssessmentId: null,
+        progressInputDigest: null,
+        progressEvidenceDigest: null,
         reservedExecutionMs: 1000,
         executionMs: 5,
         fromRevision: r.revision,
@@ -550,8 +554,13 @@ function feedbackEvidence(
     });
   return p.feedback[0]!;
 }
-const readFeedback = (id = 'feedback-observation') =>
-  readDeliveryEvidence({ deliveryId: p.pipelineId, evidenceId: id }, paths);
+const readFeedback = async (id = 'feedback-observation') => {
+  const content = await readDeliveryEvidence(
+    { deliveryId: p.pipelineId, evidenceId: id },
+    paths,
+  );
+  return content;
+};
 describe('external feedback content reads', () => {
   it('reads the actual scope-change packet and findings while paused, sanitized and never certification', async () => {
     const f = feedbackEvidence();
@@ -638,6 +647,9 @@ describe('external feedback content reads', () => {
         runId: 'repair',
         attemptId: 'repair-attempt',
         requestId: 'repair-request',
+        progressAssessmentId: null,
+        progressInputDigest: null,
+        progressEvidenceDigest: null,
         reservedExecutionMs: 1000,
         executionMs: 5,
         fromRevision: r.revision,

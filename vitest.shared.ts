@@ -32,6 +32,7 @@ export const integrationTestFiles = [
   'src/commands.test.ts',
   'src/server/factory-coding.integration.test.ts',
   'src/server/factory-delivery.integration.test.ts',
+  'src/agents/factory-progress-reviewer.integration.test.ts',
   'src/modules/coding-runs/local-host.test.ts',
   'src/kilo-actions.test.ts',
   'src/kilo-results.test.ts',

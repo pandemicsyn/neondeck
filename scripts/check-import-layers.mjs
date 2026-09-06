@@ -19,6 +19,8 @@ const backendLayers = new Map([
   ['src/modules/factory-delivery/delivery-persistence.ts', 2],
   ['src/modules/factory-delivery/delivery-commands.ts', 2],
   ['src/modules/factory-delivery/delivery-ownership.ts', 2],
+  ['src/modules/factory-delivery/progress-domain.ts', 2],
+  ['src/modules/factory-delivery/progress-store.ts', 2],
   ['src/lib', 0],
   ['src/runtime-home', 1],
   ['src/modules/app-state', 2],
@@ -68,6 +70,7 @@ const compatibilityShimLayers = new Map([
 // Keep these reverse edges explicit and narrow instead of relaxing module layers.
 const allowedLayerBridges = new Set([
   'src/modules/factory-delivery/reviewer.ts -> src/agents/factory-reviewer.ts',
+  'src/modules/factory-delivery/progress-reviewer.ts -> src/agents/factory-progress-reviewer.ts',
   'src/modules/factory/planning-dispatch.ts -> src/agents/factory-planner.ts',
   'src/modules/autopilot/owner/dispatch.ts -> src/agents/pr-autopilot-owner.ts',
   'src/modules/autopilot/owner/loop.ts -> src/agents/pr-autopilot-owner.ts',
