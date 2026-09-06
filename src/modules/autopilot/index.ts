@@ -29,3 +29,5 @@ export {
   type CiFixRunInput,
 } from './ci-fix-run';
 export * from './watch-service';
+
+export { registerPendingAutopilotTurn } from './owner/pending';

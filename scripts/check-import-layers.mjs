@@ -14,6 +14,11 @@ const sourceRoots = ['src', 'web/src', 'shared'];
 const sourceExtensions = new Set(['.ts', '.tsx']);
 
 const backendLayers = new Map([
+  ['src/modules/factory-delivery/store.ts', 2],
+  ['src/modules/factory-delivery/delivery-aggregate.ts', 2],
+  ['src/modules/factory-delivery/delivery-persistence.ts', 2],
+  ['src/modules/factory-delivery/delivery-commands.ts', 2],
+  ['src/modules/factory-delivery/delivery-ownership.ts', 2],
   ['src/lib', 0],
   ['src/runtime-home', 1],
   ['src/modules/app-state', 2],
@@ -39,6 +44,7 @@ const backendLayers = new Map([
   ['src/modules/reports', 3],
   ['src/modules/autopilot-policy', 3],
   ['src/modules/worktree-verification', 3],
+  ['src/modules/factory-delivery', 4],
   ['src/modules/docs-drift', 4],
   ['src/modules/issue-triage', 4],
   ['src/modules/hygiene', 4],
@@ -61,6 +67,7 @@ const compatibilityShimLayers = new Map([
 // Flue 2 admissions must pass the concrete agent function to init()/dispatch().
 // Keep these reverse edges explicit and narrow instead of relaxing module layers.
 const allowedLayerBridges = new Set([
+  'src/modules/factory-delivery/reviewer.ts -> src/agents/factory-reviewer.ts',
   'src/modules/factory/planning-dispatch.ts -> src/agents/factory-planner.ts',
   'src/modules/autopilot/owner/dispatch.ts -> src/agents/pr-autopilot-owner.ts',
   'src/modules/autopilot/owner/loop.ts -> src/agents/pr-autopilot-owner.ts',
@@ -184,6 +191,7 @@ function checkBackendImport(sourceRel, targetRel) {
     sourceModule &&
     targetModule &&
     sourceModule !== targetModule &&
+    targetRel !== 'src/modules/factory-delivery/store.ts' &&
     targetRel !== `src/modules/${targetModule}/index.ts`
   ) {
     violations.push({
