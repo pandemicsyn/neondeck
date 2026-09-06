@@ -1066,3 +1066,17 @@ Use this format:
   and evidence are retained indefinitely. Defer the proposed seven-day attention
   and 30-day evidence-pruning policy to an explicit retention/discard workflow.
   Never delete dirty, unpublished, uncertain or active work, or remote branches.
+
+## 2026-09-06 — Schedule Factory Progress Supervision Before OpenCode
+
+- Roadmap item: Software Factory Slice 3.1 / cross-cycle progress assessment.
+- Decision: Schedule a bounded read-only judge of repair history as the next
+  follow-up after Slice 3, before Slice 4's OpenCode adapter. Preserve existing
+  Slice 4–6 numbering. Slice 3 provides finite budgets and per-candidate review;
+  cross-cycle assessment is not implemented there.
+- Reason: The operator requested explicit follow-up planning for repeated failed
+  approaches, oscillation and suspicious repair behavior; the original rollout
+  had no dedicated progress-supervision deliverable.
+- Follow-up: Implement the Slice 3.1 plan with existing Flue/runtime and human
+  planning surfaces, finite judge calls inside the same grant budget, and no new
+  execution authority. This scheduling update adds no Slice 3 merge gate.

@@ -150,6 +150,23 @@ See the [Slice 3 implementation plan](factory/SLICE_3_IMPLEMENTATION_PLAN.md) an
 Astra at medium effort. Existing releases do not gain publication authority on
 upgrade; the initial delivery grant binds an exact candidate and bounded policy.
 
+## Software Factory Slice 3.1 — Progress Supervision (Scheduled)
+
+Next factory follow-up after Slice 3, before Slice 4's OpenCode adapter. Current
+delivery has finite budgets and per-candidate review; it does not yet evaluate
+repair history for unproductive or suspicious cycles.
+
+- [ ] Read-only progress judge assesses repeated failures, oscillating changes,
+      test weakening, scope drift and demonstrated progress before another repair.
+- [ ] Persist evidence-bound continue/change-approach/escalate decisions with
+      finite calls and deadlines inside the existing cumulative grant budget.
+- [ ] Reuse human planning/evidence surfaces and test duplicate, stale, uncertain,
+      restart and exhausted-budget paths without recursive loops.
+
+See the [Slice 3.1 plan](factory/SLICE_3_1_PROGRESS_REVIEW_PLAN.md). This is scheduled
+work, not implemented capability or an additional Slice 3 merge gate. Slice 4
+(OpenCode), Slice 5 (Linear) and Slice 6 (remote execution) retain their numbering.
+
 ## Usability Gate
 
 Neondeck is usable when a new local install can answer “what should I pay attention to?” and “why is Neon not working?” without the user reading source code or editing config by hand.

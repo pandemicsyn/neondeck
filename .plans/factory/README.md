@@ -19,6 +19,9 @@ the operator authorized stack merge, with real Codex acceptance still pending af
 - [Slice 3 implementation plan](SLICE_3_IMPLEMENTATION_PLAN.md): exact delivery
   grants, independent evidence, bounded repairs and draft publication.
 - [Slice 3 handoff](SLICE_3_HANDOFF.md): stack ownership, review and acceptance.
+- [Slice 3.1 progress supervision](SLICE_3_1_PROGRESS_REVIEW_PLAN.md): scheduled
+  next, before OpenCode; assess repair history and escalate suspicious cycles
+  within existing budgets. Not implemented.
 - [Slice 3 operator guide](SLICE_3_OPERATOR.md): candidate delivery controls and
   conditional human interventions.
 - [Slice 2 local handoff](SLICE_2_HANDOFF.md): accepted stack, verification,

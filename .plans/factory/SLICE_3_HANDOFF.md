@@ -32,7 +32,7 @@ The manager's product review confirms the
 [implementation contract](SLICE_3_IMPLEMENTATION_PLAN.md): exact human consent,
 ordinary scoped repairs without repeated approval, human scope decisions and
 merge ownership, reuse of Codex/Flue/worktrees/watches, and no new coding agent.
-Later changes in this layer record completed verification and PR metadata only.
+Later changes in this layer record verification, PR metadata and separately scheduled follow-up scope; the tested runtime source remains unchanged.
 
 ## Verification
 
@@ -89,6 +89,11 @@ Completed against all five published layers, with no outstanding findings.
   dirty, uncertain and historical work.
 
 ## Human touchpoints and retained obligations
+
+Cross-cycle progress assessment is not implemented in Slice 3. The operator has
+scheduled [Slice 3.1 progress supervision](SLICE_3_1_PROGRESS_REVIEW_PLAN.md) as the
+next factory follow-up before OpenCode. A bounded read-only judge will evaluate
+repair history while preserving hard limits and human authority.
 
 The [operator guide](SLICE_3_OPERATOR.md) covers exact consent, diff and evidence
 review, scope/budget conversation, revocation and reconciliation. Chat alone

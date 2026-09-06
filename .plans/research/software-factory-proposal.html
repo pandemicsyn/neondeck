@@ -2349,6 +2349,25 @@ Workspace lifecycle (separate from run status)
                   </td>
                 </tr>
                 <tr>
+                  <td><strong>3.1 · Progress supervision</strong></td>
+                  <td>
+                    Scheduled follow-up: a bounded read-only judge assesses
+                    repair history for repeated failures, oscillating changes,
+                    test weakening and scope drift. Reuse Flue and the existing
+                    human planning surfaces; retain the same execution budgets.
+                  </td>
+                  <td>
+                    Distinguish productive progress from repeated failed
+                    approaches. Persist continue, change-approach or escalate
+                    decisions; test duplicate events, stale evidence, restart,
+                    timeout and budget exhaustion without recursive judge loops.
+                    Not implemented in Slice 3. See the
+                    <a href="../factory/SLICE_3_1_PROGRESS_REVIEW_PLAN.md"
+                      >follow-up plan</a
+                    >.
+                  </td>
+                </tr>
+                <tr>
                   <td><strong>4 · Second harness</strong></td>
                   <td>
                     OpenCode adapter and readiness/config UI over the same host,
