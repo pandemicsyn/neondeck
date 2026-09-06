@@ -1,8 +1,11 @@
 # Slice 3.1 — Progress supervision
 
-Status: scheduled follow-up, September 6, 2026. Not implemented. Prioritize after
-Slice 3 and before Slice 4's OpenCode adapter. Existing Slice 3 merge and live
-acceptance decisions remain separate; this follow-up is not a new merge gate.
+Status: implementation in progress, September 6, 2026. The operator authorized
+implementation after Slice 3 merged in PRs #397–#401 through `a897aa06`.
+Prioritize before Slice 4's OpenCode adapter. Existing Slice 3 live acceptance
+remains pending; local verification of this follow-up is a separate record.
+See the [implementation handoff](SLICE_3_1_HANDOFF.md) and
+[acceptance ledger](SLICE_3_1_ACCEPTANCE.md).
 
 ## Outcome
 
