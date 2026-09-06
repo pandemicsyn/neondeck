@@ -16,7 +16,7 @@ import {
   triageAdmittedFactoryWork,
   prepareFactoryPlanning,
   resumeFactoryPlanning,
-  recoverFactoryPlanning,
+  recoverFactoryWorkPlanning,
   refreshFactoryPlanningContext,
 } from '../../modules/factory';
 import { runtimePaths } from '../../runtime-home';
@@ -77,7 +77,7 @@ export function createFactoryRoutes(
   });
   routes.post('/work/:id/planning/recover', (c) => {
     getFactoryWork(c.req.param('id'), paths);
-    recoverFactoryPlanning(paths);
+    recoverFactoryWorkPlanning(c.req.param('id'), paths);
     return c.json(getPlanningState(c.req.param('id'), paths));
   });
   routes.post('/work/:id/planning/context', async (c) => {
