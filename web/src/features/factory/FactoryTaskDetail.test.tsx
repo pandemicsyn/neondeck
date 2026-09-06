@@ -127,6 +127,13 @@ let current: FactoryDetail;
 const refresh = vi.fn(async () => {});
 beforeEach(() => {
   vi.clearAllMocks();
+  vi.stubGlobal(
+    'URL',
+    class extends URL {
+      static createObjectURL = vi.fn(() => 'blob:synthetic-recovery');
+      static revokeObjectURL = vi.fn();
+    },
+  );
   sessionStorage.clear();
   (
     globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }
@@ -139,6 +146,7 @@ beforeEach(() => {
 afterEach(async () => {
   await act(async () => root.unmount());
   container.remove();
+  vi.unstubAllGlobals();
 });
 async function render() {
   await act(async () =>
@@ -331,4 +339,78 @@ it('restores selected view, incomplete local edits and revision-bound discussion
   ).toHaveLength(2);
   expect(button('Read brief')).toBeDefined();
   expect(container.textContent).toContain('Discussion 2:scope');
+});
+
+it.each([
+  '{"editor":',
+  JSON.stringify({ editor: { spec: { outcome: 'Recover this text' } } }),
+])(
+  'retains rejected draft data without autosave until explicit discard: %s',
+  async (raw) => {
+    sessionStorage.setItem('factory-workbench:task', raw);
+    await render();
+    expect(container.textContent).toContain('Saved draft needs recovery');
+    expect(sessionStorage.getItem('factory-workbench:task')).toBe(raw);
+    expect(
+      container.querySelector<HTMLTextAreaElement>(
+        '[aria-label="Saved draft data"]',
+      )?.value,
+    ).toBe(raw);
+    await click('Retry draft recovery');
+    expect(sessionStorage.getItem('factory-workbench:task')).toBe(raw);
+    await click('Discard saved draft…');
+    expect(sessionStorage.getItem('factory-workbench:task')).toBe(raw);
+    await click('Keep saved data');
+    expect(sessionStorage.getItem('factory-workbench:task')).toBe(raw);
+    await click('Discard saved draft…');
+    await click('Confirm discard saved draft');
+    expect(container.textContent).not.toContain('Saved draft needs recovery');
+    expect(
+      JSON.parse(sessionStorage.getItem('factory-workbench:task')!).editor,
+    ).toBeNull();
+  },
+);
+
+it('does not overwrite an unreadable draft and retries storage recovery explicitly', async () => {
+  const original = sessionStorage;
+  const set = vi.fn();
+  vi.stubGlobal('sessionStorage', {
+    getItem: () => {
+      throw new Error('Storage unavailable');
+    },
+    setItem: set,
+  });
+  try {
+    await render();
+    expect(container.textContent).toContain('Saved draft needs recovery');
+    expect(set).not.toHaveBeenCalled();
+    vi.stubGlobal('sessionStorage', original);
+    await click('Discard saved draft…');
+    await click('Confirm discard saved draft');
+    expect(container.textContent).not.toContain('Saved draft needs recovery');
+  } finally {
+    vi.unstubAllGlobals();
+  }
+});
+
+it('disables release without a current repository fingerprint and releases with a valid fingerprint', async () => {
+  current = { ...current, blockers: [], repoFingerprint: null };
+  await render();
+  expect(button('Release v2').disabled).toBe(true);
+  await click('Release v2');
+  expect(api.mutateFactory).not.toHaveBeenCalled();
+  current = { ...current, repoFingerprint: hash };
+  await render();
+  expect(button('Release v2').disabled).toBe(false);
+  await click('Release v2');
+  expect(api.mutateFactory).toHaveBeenCalledWith(
+    'task',
+    'release',
+    expect.objectContaining({
+      repoFingerprint: hash,
+      specVersion: 2,
+      specHash: 'b'.repeat(64),
+      expectedVersion: 2,
+    }),
+  );
 });

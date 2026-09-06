@@ -5,7 +5,7 @@ import type { GitHubComment } from '../../../shared/factory-github';
 import type { WritebackEffect } from '../../../shared/factory-writeback';
 import { runtimePaths, type RuntimePaths } from '../../runtime-home';
 import * as github from '../github';
-import { GitHubApiError } from '../github';
+import { GitHubApiError, githubWritebackRetryAt } from '../github';
 import { dbRun, detail, FactoryError, type FactoryActor } from './service';
 import {
   rows,
@@ -380,10 +380,9 @@ export function runFactoryWriteback(
             ? 'Managed comment is unavailable. Explicit repair or relinquish required.'
             : errorMessage(error);
       }
-      e.retryAt =
-        error instanceof GitHubApiError && error.retry.retryAt
-          ? Math.max(Date.now() + 300000, error.retry.retryAt)
-          : Date.now() + 300000;
+      e.retryAt = githubWritebackRetryAt(
+        error instanceof GitHubApiError ? error.retry.retryAt : null,
+      );
       save(e, paths);
     }
   }

@@ -58,6 +58,12 @@ local drafts, never canonical records or authorization. Background refresh error
 keep the last loaded workbench mounted. Storage failures show a copy-before-reload
 warning; closing the browser tab may discard unsaved drafts.
 
+If a saved draft cannot be restored, **Saved draft needs recovery** preserves its
+original data and pauses automatic draft saving. Select and copy the saved data
+or download it before discarding. **Retry draft recovery** tries reading it again;
+discarding requires explicit confirmation. A failed read or schema check never
+silently replaces the saved draft with defaults.
+
 ## Verification and remaining slice work
 
 Use the focused Factory/domain/document-diff tests and normal `npm run check` /

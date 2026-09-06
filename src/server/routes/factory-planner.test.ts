@@ -14,6 +14,8 @@ import {
 } from '../../modules/factory';
 import { readChatSession, switchChatSession } from '../../modules/sessions';
 import { createFactoryPlannerRoutes } from './factory-planner';
+import * as v from 'valibot';
+import { factoryAbortSchema } from '../../../shared/factory-api';
 import { requireLocalApiAccess } from '../middleware';
 let paths: RuntimePaths;
 let app: Hono;
@@ -47,7 +49,9 @@ beforeEach(() => {
     createFactoryPlannerRoutes(paths),
   );
 });
-afterEach(() => rmSync(paths.home, { recursive: true, force: true }));
+afterEach(() => {
+  rmSync(paths.home, { recursive: true, force: true });
+});
 it('checks binding on reads, direct sends, aborts and attachment requests before Flue', async () => {
   for (const [method, path] of [
     ['GET', ''],
@@ -98,4 +102,17 @@ it('does not register planner sessions as selectable display-assistant sessions'
   expect(await switchChatSession({ id: sessionId }, paths)).toMatchObject({
     ok: false,
   });
+});
+
+it('returns the shared dashboard acknowledgement for repeated stop requests', async () => {
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const response = await app.request(
+      `http://localhost/api/flue/agents/factory-planner/${sessionId}/abort`,
+      { method: 'POST', headers: { host: 'localhost' } },
+    );
+    expect(response.status).toBe(200);
+    expect(v.parse(factoryAbortSchema, await response.json())).toEqual({
+      ok: true,
+    });
+  }
 });

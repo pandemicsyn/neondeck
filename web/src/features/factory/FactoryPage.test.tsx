@@ -55,7 +55,11 @@ it('explains disabled mode, then enables real typed intake config', async () => 
     .mockImplementation(async (url, options) => {
       if (url === '/api/factory/config') {
         enabled = true;
-        return response({ enabled });
+        return response({
+          enabled,
+          github: [],
+          codingPolicy: 'isolated-local-v1',
+        });
       }
       expect(options?.method).toBeUndefined();
       return response({

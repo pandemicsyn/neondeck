@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import * as v from 'valibot';
 import { githubGraphqlBaseResponseSchema } from './schemas';
 import { GitHubApiError, githubErrorMessage, isRequestTimeout } from './errors';
+import { githubRetryAt } from './retry';
 
 const githubRequestTimeoutMs = 15_000;
 const githubMaxConcurrentRequests = 8;
@@ -11,6 +12,7 @@ const githubValidatorMaxBodyBytes = 2 * 1024 * 1024;
 const githubLoginCacheTtlMs = 60 * 60 * 1000;
 
 type CachedGitHubResponse = {
+  tokenFingerprint: string;
   body: ArrayBuffer;
   headers: Array<[string, string]>;
   status: number;
@@ -24,7 +26,17 @@ const githubLoginCache = new Map<
   string,
   { expiresAt: number | null; value: Promise<string> }
 >();
-const githubReadGenerations = new Map<string, number>();
+type GitHubRead = {
+  tokenFingerprint: string;
+  cacheKey: string | undefined;
+  invalidated: boolean;
+  superseded: boolean;
+};
+// Retain fences only for outstanding reads, never historical token identities.
+// Each fence is released in finally, including errors and aborted requests.
+const githubReads = new Set<GitHubRead>();
+// The global epoch separates deduplication groups, not cache authority.
+let githubReadEpoch = 0;
 const githubRequestWaiters: Array<{
   resolve: () => void;
   reject: (reason: unknown) => void;
@@ -100,7 +112,7 @@ export async function githubGraphqlFetch(
   const key = createHash('sha256')
     .update(githubTokenFingerprint(token))
     .update('\0')
-    .update(String(githubReadGeneration(token)))
+    .update(String(githubReadGeneration()))
     .update('\0')
     .update(query)
     .update('\0')
@@ -160,15 +172,20 @@ export async function githubFetch(
   const method = (init.method ?? 'GET').toUpperCase();
   const headers = githubRequestHeaders(token, init);
   if (method !== 'GET' || init.body) {
-    const response = await executeGitHubRequest(url, { ...init, headers });
-    if (behavior.write ?? method !== 'GET') {
-      advanceGitHubReadGeneration(token);
+    const write = behavior.write ?? method !== 'GET';
+    if (write) advanceGitHubReadGeneration(token);
+    try {
+      return await executeGitHubRequest(url, { ...init, headers });
+    } finally {
+      // A timeout or failed response may follow a successful remote mutation.
+      // Also fences reads started while the write was in flight.
+      if (write) advanceGitHubReadGeneration(token);
     }
-    return response;
   }
 
-  const generation = githubReadGeneration(token);
-  const useValidators = shouldUseManagedValidators(init.headers);
+  const generation = githubReadGeneration();
+  const useValidators =
+    init.cache !== 'no-store' && shouldUseManagedValidators(init.headers);
   const validatorCacheKey = useValidators
     ? githubValidatorCacheKey(token, url, headers)
     : undefined;
@@ -189,7 +206,11 @@ export async function githubFetch(
   // Most GitHub reads fan out from a small number of local actions. Sharing an
   // identical request prevents adjacent dashboard, watcher, and agent reads
   // from spending quota (and secondary-rate budget) on the same work.
-  if (!init.signal) {
+  if (
+    !init.signal &&
+    init.cache !== 'no-store' &&
+    !hasNoStore(new Headers(init.headers))
+  ) {
     const requestKey = githubGetRequestKey(token, url, headers, generation);
     const existing = githubGetRequestsInFlight.get(requestKey);
     if (existing) return (await existing).clone();
@@ -200,7 +221,6 @@ export async function githubFetch(
       { ...init, headers },
       validatorCacheKey,
       cached,
-      generation,
     ).finally(() => {
       if (githubGetRequestsInFlight.get(requestKey) === request) {
         githubGetRequestsInFlight.delete(requestKey);
@@ -216,7 +236,6 @@ export async function githubFetch(
     { ...init, headers },
     validatorCacheKey,
     cached,
-    generation,
   );
 }
 
@@ -226,12 +245,53 @@ async function executeConditionalGitHubGet(
   init: RequestInit,
   validatorCacheKey: string | undefined,
   cached: CachedGitHubResponse | undefined,
-  generation: number,
 ) {
-  const response = await executeGitHubRequest(url, init, cached);
+  const read: GitHubRead = {
+    tokenFingerprint: githubTokenFingerprint(token),
+    cacheKey: validatorCacheKey,
+    invalidated: false,
+    superseded: false,
+  };
+  githubReads.add(read);
+  try {
+    return await revalidateGitHubGet(url, init, cached, read);
+  } finally {
+    githubReads.delete(read);
+  }
+}
+
+async function revalidateGitHubGet(
+  url: string,
+  init: RequestInit,
+  cached: CachedGitHubResponse | undefined,
+  read: GitHubRead,
+) {
+  const validatorCacheKey = read.cacheKey;
+  let response: Response;
+  try {
+    response = await executeGitHubRequest(url, init, cached);
+  } catch (error) {
+    // A failed revalidation retires only the entry this request observed.
+    // A concurrent successful read may already have replaced it.
+    if (validatorCacheKey && claimGitHubCacheUpdate(read, cached)) {
+      deleteCachedGitHubResponse(validatorCacheKey);
+    }
+    throw error;
+  }
   if (response.status === 304 && cached) {
+    if (read.invalidated) {
+      throw new Error(
+        'GitHub read invalidated during conditional revalidation; retry.',
+      );
+    }
     const headers = new Headers(cached.headers);
     for (const [name, value] of response.headers) headers.set(name, value);
+    const refreshed = { ...cached, headers: [...headers.entries()] };
+    if (validatorCacheKey && claimGitHubCacheUpdate(read, cached)) {
+      if (hasNoStore(headers) || !boundedCacheHeaders(headers))
+        deleteCachedGitHubResponse(validatorCacheKey);
+      else storeCachedGitHubResponse(validatorCacheKey, refreshed);
+    }
     return new Response(cached.body.slice(0), {
       status: cached.status,
       statusText: cached.statusText,
@@ -239,9 +299,15 @@ async function executeConditionalGitHubGet(
     });
   }
 
+  // A replacement response must not leave a superseded validator behind,
+  // including no-store, partial, invalid JSON, or oversized responses.
+  const ownsUpdate = claimGitHubCacheUpdate(read, cached, true);
+  if (validatorCacheKey && ownsUpdate) {
+    deleteCachedGitHubResponse(validatorCacheKey);
+  }
   if (
     validatorCacheKey &&
-    githubReadGeneration(token) === generation &&
+    ownsUpdate &&
     response.ok &&
     isValidatorCacheable(response)
   ) {
@@ -249,8 +315,9 @@ async function executeConditionalGitHubGet(
       response,
       githubValidatorMaxBodyBytes,
     );
-    if (body) {
+    if (body && !read.invalidated && !read.superseded && isJsonBody(body)) {
       storeCachedGitHubResponse(validatorCacheKey, {
+        tokenFingerprint: read.tokenFingerprint,
         body,
         headers: [...response.headers.entries()],
         status: response.status,
@@ -259,6 +326,29 @@ async function executeConditionalGitHubGet(
     }
   }
   return response;
+}
+
+// Conditional responses/errors may only affect their observed entry. A full
+// response is independent of that entry and can replace it. Fence buffering and
+// conditional peers before deletion so they cannot resurrect an evicted entry.
+function claimGitHubCacheUpdate(
+  read: GitHubRead,
+  cached: CachedGitHubResponse | undefined,
+  replacement = false,
+) {
+  if (
+    !read.cacheKey ||
+    read.invalidated ||
+    (!replacement &&
+      (read.superseded || githubValidatorCache.get(read.cacheKey) !== cached))
+  )
+    return false;
+  read.superseded = false;
+  for (const other of githubReads) {
+    if (other !== read && other.cacheKey === read.cacheKey)
+      other.superseded = true;
+  }
+  return true;
 }
 
 async function executeGitHubRequest(
@@ -308,12 +398,7 @@ async function executeGitHubRequest(
           (managedResponse.status === 403 &&
             (managedResponse.headers.get('x-ratelimit-remaining') === '0' ||
               managedResponse.headers.has('retry-after'))),
-        retryAt: managedResponse.headers.has('retry-after')
-          ? Date.now() +
-            Number(managedResponse.headers.get('retry-after')) * 1000
-          : managedResponse.headers.has('x-ratelimit-reset')
-            ? Number(managedResponse.headers.get('x-ratelimit-reset')) * 1000
-            : null,
+        retryAt: githubRetryAt(managedResponse.headers),
       },
     );
   }
@@ -348,6 +433,7 @@ function isGraphqlMutation(query: string) {
 function shouldUseManagedValidators(headers: HeadersInit | undefined) {
   const requested = new Headers(headers);
   return (
+    !hasNoStore(requested) &&
     !requested.has('range') &&
     !requested.has('if-none-match') &&
     !requested.has('if-modified-since')
@@ -421,13 +507,51 @@ export function githubTokenFingerprint(token: string) {
   return createHash('sha256').update(token).digest('base64url');
 }
 
-function githubReadGeneration(token: string) {
-  return githubReadGenerations.get(githubTokenFingerprint(token)) ?? 0;
+function githubReadGeneration() {
+  return githubReadEpoch;
 }
 
 function advanceGitHubReadGeneration(token: string) {
-  const key = githubTokenFingerprint(token);
-  githubReadGenerations.set(key, (githubReadGenerations.get(key) ?? 0) + 1);
+  githubReadEpoch += 1;
+  const fingerprint = githubTokenFingerprint(token);
+  for (const read of githubReads) {
+    if (read.tokenFingerprint === fingerprint) read.invalidated = true;
+  }
+  githubLoginCache.delete(fingerprint);
+  for (const [key, entry] of githubValidatorCache) {
+    if (entry.tokenFingerprint === fingerprint) deleteCachedGitHubResponse(key);
+  }
+}
+
+function deleteCachedGitHubResponse(key: string) {
+  const cached = githubValidatorCache.get(key);
+  if (cached) githubValidatorCacheBytes -= cached.body.byteLength;
+  githubValidatorCache.delete(key);
+}
+
+function hasNoStore(headers: Headers) {
+  return /(?:^|,)\s*no-store\s*(?:,|$)/i.test(
+    headers.get('cache-control') ?? '',
+  );
+}
+
+function boundedCacheHeaders(headers: Headers) {
+  // Bound metadata as well as the separately bounded body (at most 256 entries).
+  let bytes = 0;
+  for (const [name, value] of headers) {
+    bytes += Buffer.byteLength(name) + Buffer.byteLength(value);
+    if (bytes > 16 * 1024) return false;
+  }
+  return true;
+}
+
+function isJsonBody(body: ArrayBuffer) {
+  try {
+    JSON.parse(new TextDecoder().decode(body));
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function readCachedGitHubResponse(key: string) {
@@ -439,6 +563,12 @@ function readCachedGitHubResponse(key: string) {
 }
 
 function isValidatorCacheable(response: Response) {
+  if (
+    response.status !== 200 ||
+    hasNoStore(response.headers) ||
+    !boundedCacheHeaders(response.headers)
+  )
+    return false;
   if (!response.headers.has('etag') && !response.headers.has('last-modified')) {
     return false;
   }
@@ -599,11 +729,13 @@ function releaseGitHubRequestSlot() {
 }
 
 export function clearGitHubRequestCache() {
+  for (const read of githubReads) read.invalidated = true;
+  githubReads.clear();
   githubValidatorCache.clear();
   githubGetRequestsInFlight.clear();
   githubGraphqlQueriesInFlight.clear();
   githubLoginCache.clear();
-  githubReadGenerations.clear();
+  githubReadEpoch += 1;
   githubValidatorCacheBytes = 0;
 }
 
