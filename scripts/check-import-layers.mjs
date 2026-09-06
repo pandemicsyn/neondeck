@@ -29,6 +29,7 @@ const backendLayers = new Map([
   ['src/modules/memory', 2],
   ['src/modules/prepared-diffs', 2],
   ['src/modules/execution-policy', 2],
+  ['src/modules/factory', 3],
   ['src/modules/config', 3],
   ['src/modules/execution', 3],
   ['src/modules/kilo', 3],

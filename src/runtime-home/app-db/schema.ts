@@ -1485,3 +1485,49 @@ export const mcpOauthLogins = sqliteTable('mcp_oauth_logins', {
   completedAt: text('completed_at'),
   updatedAt: text('updated_at').notNull(),
 });
+
+export const factorySources = sqliteTable('factory_sources', {
+  id: text('id').primaryKey(),
+  requestKey: text('request_key').notNull().unique(),
+  record: text('record').notNull(),
+});
+export const factoryWorkItems = sqliteTable('factory_work_items', {
+  id: text('id').primaryKey(),
+  sourceId: text('source_id')
+    .notNull()
+    .unique()
+    .references(() => factorySources.id),
+  record: text('record').notNull(),
+});
+export const factorySpecRevisions = sqliteTable(
+  'factory_spec_revisions',
+  {
+    workId: text('work_id')
+      .notNull()
+      .references(() => factoryWorkItems.id),
+    version: integer('version').notNull(),
+    record: text('record').notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.workId, table.version] })],
+);
+export const factoryReleases = sqliteTable(
+  'factory_releases',
+  {
+    id: text('id').primaryKey(),
+    workId: text('work_id')
+      .notNull()
+      .references(() => factoryWorkItems.id),
+    requestKey: text('request_key').notNull(),
+    record: text('record').notNull(),
+  },
+  (table) => [unique().on(table.workId, table.requestKey)],
+);
+export const factoryAudit = sqliteTable('factory_audit', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  workId: text('work_id')
+    .notNull()
+    .references(() => factoryWorkItems.id),
+  action: text('action').notNull(),
+  actor: text('actor').notNull(),
+  createdAt: text('created_at').notNull(),
+});

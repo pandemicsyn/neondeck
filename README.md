@@ -29,6 +29,13 @@ over your editor or primary agent chat.
 The backend is Node 26, Hono, and Flue; the dashboard is Vite, React, and Tailwind. Neondeck can run on your machine or on a remote host, with
 mutable state stored in SQLite under a runtime home you control.
 
+## Manual factory intake
+
+Open `/factory` to enable the opt-in local inbox, create manual tasks, edit durable
+spec revisions, and release an exact version for a future coding executor. No
+coding, model planning or GitHub ingress is started by this increment. See the
+[manual intake operator guide](.plans/factory/INCREMENT_1_OPERATOR.md).
+
 ## The deck in action
 
 Neon puts the work queue, an actionable morning briefing, and the relevant

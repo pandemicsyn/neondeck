@@ -51,7 +51,7 @@ Sources were pulled via the X API (`article.plain_text` / `note_tweet` where ava
   - The “lit” factory still uses agents heavily; the change is **where judgment sits** (design/program shape), not abandoning automation
   - Program design artifacts are treated as the cheap place to make decisions that otherwise explode in code review
   - Slice granularity and early resteering are first-class process choices, not afterthoughts
-  - Explicit anti-goal: outsourcing the *thinking* while keeping velocity theater
+  - Explicit anti-goal: outsourcing the _thinking_ while keeping velocity theater
 
 ---
 
@@ -221,10 +221,10 @@ Sources were pulled via the X API (`article.plain_text` / `note_tweet` where ava
 
 ---
 
-### @posthog — Can software factories actually work? (2026-08-11) — *substantive X article*
+### @posthog — Can software factories actually work? (2026-08-11) — _substantive X article_
 
 - **Link(s):** https://x.com/posthog/status/2087248173106684127  
-  *(Originally also published in PostHog’s “build mode” newsletter—**do not** treat newsletter extras as if they were this X piece; the X article body itself is substantive enough to brief.)*
+  _(Originally also published in PostHog’s “build mode” newsletter—**do not** treat newsletter extras as if they were this X piece; the X article body itself is substantive enough to brief.)_
 
 - **What it argues:** Maps the debate after Dex’s series: factories as agent-automated ship/test pipelines on a **spectrum** of agent authorship vs human reading (Ramp/Cursor/Uber mid; PostHog ~70% agent PRs with humans still skimming ~80%; lights-off corner controversial). Summarizes Dex’s RL/maintainability critique and SlopCodeBench’s point that design quality depends on **unknown future requirements**. PostHog’s own claim: most factories (and Dex’s framing) cleanly separate “decide what to build” from “build it,” handing agents tickets with **zero prior product context**. Real product engineering needs usage signals, ICP, complaints, prod logs/traces; **63%** of their changed lines are in existing files; **fix** is largest commit type (~40%). They’re working on giving agents that **prod/product context** so “turning off the lights might not be so crazy.”
 

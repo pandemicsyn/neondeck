@@ -1,3 +1,7 @@
+import {
+  subscribeFactoryEvents,
+  formatFactoryServerSentEvent,
+} from '../../modules/factory';
 import { Hono } from 'hono';
 import { dashboardHeartbeatEventName } from '../../../shared/dashboard-events';
 import {
@@ -43,6 +47,8 @@ function formatDashboardHeartbeat() {
 }
 
 export type EventStreamDependencies = {
+  subscribeFactoryEvents?: typeof subscribeFactoryEvents;
+  formatFactoryServerSentEvent?: typeof formatFactoryServerSentEvent;
   formatChatSessionCommandServerSentEvent: typeof formatChatSessionCommandServerSentEvent;
   formatChatSessionServerSentEvent: typeof formatChatSessionServerSentEvent;
   formatConfigServerSentEvent: typeof formatConfigServerSentEvent;
@@ -65,6 +71,8 @@ export type EventStreamDependencies = {
 };
 
 const defaultDependencies: EventStreamDependencies = {
+  subscribeFactoryEvents,
+  formatFactoryServerSentEvent,
   formatChatSessionCommandServerSentEvent,
   formatChatSessionServerSentEvent,
   formatConfigServerSentEvent,
@@ -120,6 +128,14 @@ export function createEventStreamRoutes(
           controller.enqueue(encoder.encode(value));
         };
         const unsubscribers = [
+          ...(dependencies.subscribeFactoryEvents &&
+          dependencies.formatFactoryServerSentEvent
+            ? [
+                dependencies.subscribeFactoryEvents((event) =>
+                  send(dependencies.formatFactoryServerSentEvent!(event)),
+                ),
+              ]
+            : []),
           dependencies.subscribeConfigEvents((event) => {
             send(dependencies.formatConfigServerSentEvent(event));
           }),
