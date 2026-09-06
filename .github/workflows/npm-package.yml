@@ -6,6 +6,7 @@ on:
       - main
       - agent/software-factory-plan
       - 'agent/factory-s1-*'
+      - 'agent/factory-s3-*'
   workflow_dispatch:
 
 permissions:
