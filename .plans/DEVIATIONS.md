@@ -774,6 +774,24 @@ Use this format:
   discussion. Report final verification, UI evidence and real-provider smoke
   separately; deterministic fixture success is not live-provider evidence.
 
+## 2026-09-05 - Factory Increment 3 Document And Draft Boundaries
+
+- Roadmap item: Software Factory slice 1 / increment 3 human shaping workbench.
+- Decision: Use a narrow retained-document adapter with Pierre `FileDiff`, sharing
+  existing theme/worker primitives without adding a PR-shaped review-source entry.
+  Store minimal revision-bound section context in the existing durable planning
+  message, resolved by the server; no comment table or runtime queue is added.
+- Reason: Factory specs are immutable app records, not Git commits or PRs. The
+  generic review registry remains ephemeral and has no canonical draft/authority
+  role. Session storage preserves unsaved browser-tab work across reload without
+  confusing it with an approved or saved specification.
+- Limit: Discussion excerpts are capped at 6,000 characters with explicit truncation.
+  Stale-editor recovery preserves the human's whole draft after explicit comparison
+  and acknowledgement; it does not claim an automatic merge. Closing the tab can
+  discard unsaved local drafts; storage failure is surfaced.
+- Follow-up: Rich threaded comments and a generic document platform remain deferred
+  as planned. Increment 4 owns GitHub ingress, not this workbench.
+
 ## 2026-09-05 - Factory Planning Feedback: Asynchronous Repository Reads
 
 - Roadmap item: Software Factory slice 1 / increment 2 scoped repository evidence.

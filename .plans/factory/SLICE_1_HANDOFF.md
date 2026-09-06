@@ -1,17 +1,20 @@
 # Slice 1 — Manager and implementer handoff
 
-Historical acceptance: documentation root PR #382 was based at `9aba1ae2`.
-Intake PR #383 and planning PR #384 are accepted and published, unmerged and
-undeployed. Planning's accepted head is `3210fbb00e`; both dedicated static
-reviewers and the manager accepted it before publication. Its historical full
-verification passed 1,623 tests, builds, package smoke and formatting.
+Historical acceptance: documentation root PR #382 opened at `9aba1ae2` against `main`.
+Intake PR #383 opened at feature head `587bbafd` against
+`agent/software-factory-plan`; its accepted CI-only follow-up head was
+`0c39917930b42aeacc3cbad71031d5552a29ccee`. Planning PR #384 opened at
+`3210fbb00eddb54e2873b1e44bfea9eea012b9d5` against `agent/factory-s1-01-intake`.
+Increment 3 was accepted at `8809958947531e3c7fa727accae4aab3f3073f57` and opened
+as PR #385 against planning. All four PRs were unmerged and undeployed at that
+acceptance checkpoint. Subsequent feedback fixes require separate review.
 
-The manager has accepted and published the intake feedback parent `192e7cf7`.
-Planning's feedback fixes incorporate that accepted parent. Current feedback
-review and CI status live in [PR #384](https://github.com/pandemicsyn/neondeck/pull/384).
-For each changed candidate, publication requires verification, two clean dedicated
-static reviews and manager acceptance. Historical acceptance does not approve
-subsequent changes.
+The accepted intake feedback parent `192e7cf7` and planning feedback parent
+`5d773582422f27af520931c03e329b9773e3373f` are incorporated into the shaping branch.
+Current feedback reviews and CI status are recorded in
+[PR #385](https://github.com/pandemicsyn/neondeck/pull/385); historical acceptance
+does not approve later changes. Each publication requires verification, two clean
+dedicated static reviews and manager acceptance.
 
 Read the [slice contract](SLICE_1_IMPLEMENTATION_PLAN.md) before starting.
 The coordinating assistant acts as **dev manager and reviewer**. Implementation
@@ -240,19 +243,20 @@ privately when required; local implementation need not wait for it.
 
 ## Progress ledger
 
-This ledger describes the increment-2 branch, not downstream implementation heads.
+This ledger records historical acceptance through increment 3 and its incorporated
+feedback parents. Downstream branches carry their own acceptance evidence.
 Update with real evidence as work proceeds. Do not infer “implemented” from branch
 creation, “verified” from a claimed plan, or “deployed” from passing local tests.
 
-| Increment                      | State                                                   | Branch/base + reviewed head                                                                                          | PR                                                       | Verification / review / deployment evidence                                                                                                                                                                                                                                            |
-| ------------------------------ | ------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Plan root                      | Accepted and published; unmerged                        | `agent/software-factory-plan`; `9aba1ae2`                                                                            | [#382](https://github.com/pandemicsyn/neondeck/pull/382) | Documentation; dedicated static reviews and manager accepted                                                                                                                                                                                                                           |
-| 1 — Manual intake/domain       | Accepted and published; unmerged and undeployed         | `agent/factory-s1-01-intake`; feedback parent `192e7cf7`                                                             | [#383](https://github.com/pandemicsyn/neondeck/pull/383) | Historical feature verification: 1,594 tests; feedback parent accepted by both dedicated reviewers and manager before publication.                                                                                                                                                     |
-| 2 — Model planning             | Historical acceptance; current review/CI recorded in PR | `agent/factory-s1-02-planning`; historically accepted `3210fbb00e`; feedback incorporates accepted parent `192e7cf7` | [#384](https://github.com/pandemicsyn/neondeck/pull/384) | Historical acceptance: both static reviewers and manager; 1,623 tests (1,485 unit + 47 git + 91 integration), builds/package/format checks and attached UI screenshots. Subsequent feedback review and CI status are recorded in PR #384; publication follows the review policy above. |
-| 3 — Human workbench            | Not started                                             | Not created                                                                                                          | Not opened                                               | None                                                                                                                                                                                                                                                                                   |
-| 4 — GitHub ingress             | Not started                                             | Not created                                                                                                          | Not opened                                               | None                                                                                                                                                                                                                                                                                   |
-| 5 — GitHub status              | Not started                                             | Not created                                                                                                          | Not opened                                               | None                                                                                                                                                                                                                                                                                   |
-| Full slice / deployed exercise | Not started                                             | Record final accepted SHA                                                                                            | —                                                        | Manual + GitHub + real model + restart + exposure checks pending                                                                                                                                                                                                                       |
+| Increment                      | State                          | Branch/base + reviewed head                                                                                                                               | PR                | Verification / review / deployment evidence                                                                                                                                                                                        |
+| ------------------------------ | ------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Plan root                      | Reviewed, open                 | `agent/software-factory-plan`; head `9aba1ae2`, base `main`                                                                                               | #382              | Documentation only; not merged/deployed                                                                                                                                                                                            |
+| 1 — Manual intake/domain       | Accepted, open                 | `agent/factory-s1-01-intake`; historical head `0c39917930b42aeacc3cbad71031d5552a29ccee`, feedback parent `192e7cf7`, base `agent/software-factory-plan`  | #383              | Feature verification: 1,594 tests at `587bbafd`; six-line CI-only follow-up independently reviewed by both reviewers and manager; all six GitHub checks pass at `0c399179`; not merged/deployed                                    |
+| 2 — Model planning             | Accepted, open                 | `agent/factory-s1-02-planning`; historical head `3210fbb00eddb54e2873b1e44bfea9eea012b9d5`, feedback parent `5d773582`, base `agent/factory-s1-01-intake` | #384              | Both dedicated static reviews and manager clean. V3 full verification: 1,623 tests on identical runtime source; final README-only clarification checked separately. All six GitHub checks pass at `3210fbb0`; not merged/deployed. |
+| 3 — Human workbench            | Accepted historical head, open | `agent/factory-s1-03-shaping`; head `8809958947531e3c7fa727accae4aab3f3073f57`, base `agent/factory-s1-02-planning`                                       | #385              | Two dedicated reviews and manager clean; 1,632-test full verification, then CSS-only overflow fix verified by dashboard rebuild and five UI states. Not merged/deployed at acceptance.                                             |
+| 4 — GitHub ingress             | Outside this acceptance record | See downstream branch                                                                                                                                     | See downstream PR | None                                                                                                                                                                                                                               |
+| 5 — GitHub status              | Outside this acceptance record | See downstream branch                                                                                                                                     | See downstream PR | None                                                                                                                                                                                                                               |
+| Full slice / deployed exercise | Outside this acceptance record | Record final accepted SHA                                                                                                                                 | —                 | Manual + GitHub + real model + restart + exposure checks pending                                                                                                                                                                   |
 
 On completion, update `.plans/ROADMAP.md` and this ledger with the actual remaining
 limits. Preserve the plans as active while review/landing is underway; archive under
@@ -268,3 +272,10 @@ Installed Flue 2.0.3 full pages: `guide/durability`, `reference/agent-api`,
 `AgentDispatchRequest` declaration additionally supplies the idempotency-key replay
 contract. Operator behavior and finite limits are documented in
 [INCREMENT_2_OPERATOR.md](INCREMENT_2_OPERATOR.md).
+
+### Increment 3 implementation references
+
+See [human shaping operations](INCREMENT_3_OPERATOR.md). Installed Flue 2.0.3
+`guide/react` informed the existing conversation integration; no runtime hooks,
+planner tools or model policy were changed. Pierre 1.3.6 installed declarations
+for `parseDiffFromFile` and `FileDiff` define the document renderer adapter.

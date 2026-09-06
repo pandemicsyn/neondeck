@@ -1,3 +1,8 @@
+import {
+  planningInputSchema,
+  type FactoryDiscussionReference,
+} from '../../../../shared/factory-planning';
+import * as v from 'valibot';
 import { ApiError } from '../../api/http';
 import { useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
@@ -11,14 +16,38 @@ import {
   refreshFactoryPlanningContext,
 } from '../../api/factory';
 import { FlueChatSessionView } from '../flue-chat/components/session-view';
-export function FactoryPlanning({ detail }: { detail: FactoryDetail }) {
+export function FactoryPlanning({
+  detail,
+  discussion,
+  onClearDiscussion,
+}: {
+  detail: FactoryDetail;
+  discussion?: FactoryDiscussionReference;
+  onClearDiscussion?: () => void;
+}) {
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
-  const [request, setRequest] = useState<{
-    key: string;
-    message: string;
-    version: number;
-  }>();
+  const storageKey = `factory-planning-request:${detail.work.id}`;
+  const [restored] = useState(() => {
+    try {
+      const saved = sessionStorage.getItem(storageKey);
+      return {
+        request: saved
+          ? v.parse(planningInputSchema, JSON.parse(saved))
+          : undefined,
+        error: '',
+      };
+    } catch {
+      return {
+        request: undefined,
+        error:
+          'Saved planning request could not be read. Restore browser storage before sending; an earlier request may already have been admitted.',
+      };
+    }
+  });
+  const [request, setRequest] = useState(restored.request);
+  const [rejected, setRejected] = useState(false);
+  const [chatGeneration, setChatGeneration] = useState(0);
   const state = useQuery({
     queryKey: ['factory-planning', detail.work.id],
     queryFn: () => getFactoryPlanning(detail.work.id),
@@ -27,28 +56,42 @@ export function FactoryPlanning({ detail }: { detail: FactoryDetail }) {
   const pending = state.data?.activity === 'pending';
   const blocked =
     busy ||
+    !!request ||
+    !!restored.error ||
     pending ||
     state.data?.contextStale ||
     ['paused', 'closed', 'queued'].includes(detail.work.lifecycle);
   async function send(message: string) {
+    if (restored.error) throw new Error(restored.error);
+    // Persist before HTTP admission. An uncertain request is immutable, even if
+    // the editor, selected reference, task version or planning context changes.
     const current =
-      request?.message === message
-        ? request
-        : { key: crypto.randomUUID(), message, version: detail.work.version };
+      request ??
+      v.parse(planningInputSchema, {
+        requestKey: crypto.randomUUID(),
+        message,
+        expectedVersion: detail.work.version,
+        ...(discussion ? { discussion } : {}),
+      });
+    sessionStorage.setItem(storageKey, JSON.stringify(current));
     setRequest(current);
+    setRejected(false);
     setBusy(true);
     setError('');
     try {
-      await sendFactoryPlanning(detail.work.id, {
-        requestKey: current.key,
-        expectedVersion: current.version,
-        message,
-      });
+      await sendFactoryPlanning(detail.work.id, current);
+      const draftKey = `factory-chat-draft:${detail.work.id}:${state.data?.sessionId}`;
+      if (sessionStorage.getItem(draftKey)?.trim() === current.message)
+        sessionStorage.removeItem(draftKey);
+      sessionStorage.removeItem(storageKey);
       setRequest(undefined);
+      setChatGeneration((n) => n + 1);
+      onClearDiscussion?.();
       await state.refetch();
     } catch (error) {
-      if (error instanceof ApiError && error.status === 409)
-        setRequest(undefined);
+      // Replay is checked before version/context validation on the server. A
+      // definitive rejection permits an explicit new review, never auto-rebinding.
+      if (error instanceof ApiError && error.status === 409) setRejected(true);
       throw error;
     } finally {
       setBusy(false);
@@ -69,6 +112,72 @@ export function FactoryPlanning({ detail }: { detail: FactoryDetail }) {
   return (
     <section className="factory-planning" aria-label="Planning conversation">
       <h3>Shape with Neon</h3>
+      {restored.error && <p role="alert">{restored.error}</p>}
+      {request && (
+        <div className="factory-discussion-context" role="status">
+          <strong>
+            {rejected
+              ? 'Planning request rejected'
+              : 'Planning receipt not confirmed'}
+          </strong>
+          <p>
+            The original message and context are retained. Retry checks that
+            exact request; it does not create a new planning turn.
+          </p>
+          <p>{request.message}</p>
+          {request.discussion && (
+            <p>
+              Original reference: v{request.discussion.version} ·{' '}
+              {request.discussion.kind}: {request.discussion.id}
+            </p>
+          )}
+          <button
+            disabled={busy}
+            onClick={() => void action(() => send(request.message))}
+          >
+            Retry original request
+          </button>
+          {rejected && (
+            <button
+              disabled={busy}
+              onClick={() => {
+                try {
+                  sessionStorage.removeItem(storageKey);
+                  setRequest(undefined);
+                  setRejected(false);
+                  setError(
+                    'Request rejected. Review the current task and discussion reference before sending a new request.',
+                  );
+                } catch {
+                  setError('Browser storage unavailable; request retained.');
+                }
+              }}
+            >
+              Dismiss rejection and review a new request
+            </button>
+          )}
+        </div>
+      )}
+      {discussion && (
+        <div className="factory-discussion-context">
+          <strong>
+            Discussing v{discussion.version} · {discussion.kind}:{' '}
+            {discussion.id}
+          </strong>
+          <p>
+            {discussion.version !== detail.work.specVersion
+              ? 'This reference is from an older version. Feedback stays attached to that version.'
+              : 'Your next message will include this exact revision and reference.'}{' '}
+            Chat does not itself edit the brief or release work.
+          </p>
+          <button
+            disabled={busy || pending || !!request}
+            onClick={onClearDiscussion}
+          >
+            Clear discussion reference
+          </button>
+        </div>
+      )}
       {state.isPending ? (
         <output>Loading planning state…</output>
       ) : state.error && !state.data ? (
@@ -151,7 +260,7 @@ export function FactoryPlanning({ detail }: { detail: FactoryDetail }) {
                 {state.data.triageSubmissionId ?? 'Not admitted'}
               </p>
               <button
-                disabled={busy || pending}
+                disabled={busy || pending || !!request}
                 onClick={() =>
                   void action(() =>
                     refreshFactoryPlanningContext(
@@ -187,13 +296,14 @@ export function FactoryPlanning({ detail }: { detail: FactoryDetail }) {
           ) : (
             <div className="factory-chat">
               <FlueChatSessionView
-                key={state.data.sessionId}
+                key={`${state.data.sessionId}:${chatGeneration}`}
                 activeRecord={undefined}
                 agentName="factory-planner"
                 refreshKey={state.data.submissionId}
                 allowCommands={false}
                 messageEnabled={!blocked}
                 messageLabel="Discuss this draft"
+                draftStorageKey={`factory-chat-draft:${detail.work.id}:${state.data.sessionId}`}
                 onSendMessage={send}
                 quickCommands={[]}
                 session={{

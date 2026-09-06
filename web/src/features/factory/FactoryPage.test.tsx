@@ -22,6 +22,7 @@ beforeEach(() => {
   client = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });
+  sessionStorage.clear();
   history.replaceState(null, '', '/factory');
 });
 afterEach(() => {
@@ -307,9 +308,10 @@ it('pins all source values before focus and explicitly reloads after a stale sou
     await client.refetchQueries({ queryKey: ['factory-detail'] });
   });
   await flush();
-  expect((container.querySelector('select') as HTMLSelectElement).value).toBe(
-    '',
-  );
+  expect(
+    (container.querySelector('.factory-source select') as HTMLSelectElement)
+      .value,
+  ).toBe('');
   expect(container.textContent).toContain('Your local edits are retained');
   await act(async () =>
     container
@@ -328,9 +330,10 @@ it('pins all source values before focus and explicitly reloads after a stale sou
   await act(async () =>
     button('Reload current source (discard local edits)').click(),
   );
-  expect((container.querySelector('select') as HTMLSelectElement).value).toBe(
-    'other',
-  );
+  expect(
+    (container.querySelector('.factory-source select') as HTMLSelectElement)
+      .value,
+  ).toBe('other');
   expect(
     (container.querySelector('input[name="title"]') as HTMLInputElement).value,
   ).toBe('Remote source title');

@@ -271,3 +271,62 @@
     display: none;
   }
 }
+
+.factory-version-picker select,
+.factory-brief > div > label select {
+  max-width: 100%;
+  border: 1px solid var(--line);
+  background: var(--field);
+  color: var(--ink);
+  padding: 8px;
+  font: inherit;
+}
+.factory-spec-section {
+  border-top: 1px solid var(--line);
+  padding: 16px 0;
+  overflow-wrap: anywhere;
+}
+.factory-spec-section .factory-toolbar {
+  margin: 0 0 12px;
+}
+.factory-spec-section .factory-toolbar button {
+  font-size: 12px;
+}
+.factory-discussion-context {
+  border: 1px solid var(--primary);
+  padding: 12px;
+  margin: 16px 0;
+  overflow-wrap: anywhere;
+}
+.factory-document-diff {
+  min-width: 0;
+  overflow: auto;
+  margin: 16px 0;
+}
+.factory-document-diff pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.factory-brief [hidden] {
+  display: none;
+}
+.factory-main {
+  max-width: 1600px;
+}
+.factory-workbench {
+  grid-template-columns: minmax(280px, 0.8fr) minmax(0, 1.2fr);
+}
+@media (max-width: 1100px) {
+  .factory-workbench {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* Long repository paths and decision labels must not set a narrow editor's
+   intrinsic width. Preserve the full text by wrapping it. */
+.factory-form,
+.factory-form fieldset,
+.factory-form label {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
