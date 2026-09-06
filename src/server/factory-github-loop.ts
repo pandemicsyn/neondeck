@@ -11,29 +11,37 @@ export function startFactoryGitHubLoop(
   let timer: ReturnType<typeof setTimeout> | undefined;
   function tick() {
     if (controller.signal.aborted) return;
-    pending = runFactoryGitHubSync(
-      paths,
-      undefined,
-      AbortSignal.any([controller.signal, AbortSignal.timeout(45000)]),
-    )
-      .then(() =>
-        runFactoryWriteback(
-          paths,
-          undefined,
-          AbortSignal.any([controller.signal, AbortSignal.timeout(45000)]),
-        ),
-      )
-      .catch(() => {
-        console.warn(
-          '[factory] GitHub recovery failed; retained work will retry.',
-        );
-      })
-      .finally(() => {
-        if (!controller.signal.aborted) {
-          timer = setTimeout(tick, intervalMs);
-          timer.unref();
-        }
-      });
+    pending = recover().finally(() => {
+      if (!controller.signal.aborted) {
+        timer = setTimeout(tick, intervalMs);
+        timer.unref();
+      }
+    });
+  }
+  async function recover() {
+    try {
+      await runFactoryGitHubSync(
+        paths,
+        undefined,
+        AbortSignal.any([controller.signal, AbortSignal.timeout(45000)]),
+      );
+    } catch {
+      console.warn(
+        '[factory] GitHub source recovery failed; retained work will retry.',
+      );
+    }
+    if (controller.signal.aborted) return;
+    try {
+      await runFactoryWriteback(
+        paths,
+        undefined,
+        AbortSignal.any([controller.signal, AbortSignal.timeout(45000)]),
+      );
+    } catch {
+      console.warn(
+        '[factory] GitHub writeback recovery failed; retained work will retry.',
+      );
+    }
   }
   tick();
   return async () => {
