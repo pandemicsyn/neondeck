@@ -173,3 +173,54 @@ it('opt-in uses the reviewed policy fingerprint, not a silently refreshed mappin
     expectedFingerprint: 'fingerprint',
   });
 });
+
+it.each(
+  (
+    [
+      'pending',
+      'sending',
+      'uncertain',
+      'failed',
+      'repair',
+      'cancelled',
+      'sent',
+    ] as const
+  ).flatMap((state) =>
+    [0, Date.UTC(2020, 0, 1), Date.UTC(2099, 0, 1)].map((retryAt) => ({
+      state,
+      retryAt,
+    })),
+  ),
+)(
+  'shows retry timing only for automatic recovery: $state / $retryAt',
+  async ({ state, retryAt }) => {
+    api.getFactoryWriteback.mockResolvedValue({
+      ...data,
+      effects: [
+        {
+          id: 'effect',
+          kind: 'status',
+          state,
+          retryAt,
+          body: 'Synthetic approved status',
+          specVersion: 1,
+          createdAt: '2026-09-06T00:00:00Z',
+          remoteId: null,
+          error: 'Synthetic retained error',
+        },
+      ],
+    });
+    await render();
+    const automatic = ['pending', 'sending', 'uncertain'].includes(state);
+    expect(container.textContent?.includes('Next eligible check:')).toBe(
+      automatic && retryAt > 0,
+    );
+    expect(container.textContent).toContain('Synthetic retained error');
+    if (state === 'failed')
+      expect(container.textContent).toContain('Retry authorized send');
+    if (state === 'repair')
+      expect(container.textContent).toContain('Review remote comment repair');
+    if (state === 'uncertain')
+      expect(container.textContent).toContain('Recheck receipt (read only)');
+  },
+);

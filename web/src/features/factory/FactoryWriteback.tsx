@@ -334,12 +334,15 @@ export function FactoryWriteback({ detail }: { detail: FactoryDetail }) {
                   )}
                 </p>
                 {effect.error && <p>{effect.error}</p>}
-                {effect.retryAt > 0 && (
-                  <p>
-                    Next eligible check:{' '}
-                    {new Date(effect.retryAt).toLocaleString()}
-                  </p>
-                )}
+                {effect.retryAt > 0 &&
+                  ['pending', 'sending', 'uncertain'].includes(
+                    effect.state,
+                  ) && (
+                    <p>
+                      Next eligible check:{' '}
+                      {new Date(effect.retryAt).toLocaleString()}
+                    </p>
+                  )}
                 <details>
                   <summary>Authorized content and receipt</summary>
                   <MarkdownMessage>{effect.body}</MarkdownMessage>
