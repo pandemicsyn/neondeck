@@ -8,6 +8,8 @@ import {
   rm,
   stat,
   cp,
+  readdir,
+  symlink,
 } from 'node:fs/promises';
 import { randomBytes } from 'node:crypto';
 import { tmpdir } from 'node:os';
@@ -40,6 +42,7 @@ import {
 } from './codex-adapter.ts';
 import { inspectCodexReadiness } from './codex-readiness.ts';
 import { groupAbsent, processTable, sameProcess } from './host-process.ts';
+import { inside } from './host-workspace.ts';
 const exec = promisify(execFile);
 const folders: string[] = [];
 const handles: LocalAttemptHandle[] = [];
@@ -249,6 +252,155 @@ describe('supervised local host (synthetic CLI only)', () => {
     const receipt = await finish(handle);
     expect(receipt.reason).toBe('cancelled');
     expect(receipt.group && (await groupAbsent(receipt.group))).toBe(true);
+  });
+  it.each(['completion', 'cancellation'] as const)(
+    'keeps inspection stopping throughout long TERM grace after %s',
+    async (outcome) => {
+      const input = await fixture(
+        outcome === 'completion' ? 'success' : 'stall',
+      );
+      input.config.termGraceMs = 7500;
+      input.config.wallTimeMs = 20_000;
+      const handle = await prepareLocalAttempt(input);
+      handles.push(handle);
+      await launchLocalAttempt(handle);
+      let observed = await inspectLocalAttempt(handle);
+      const startingDeadline = Date.now() + 5000;
+      while (
+        !(
+          observed.state === 'cancelling' ||
+          (observed.state === 'running' && observed.receipt.group)
+        ) &&
+        Date.now() < startingDeadline
+      ) {
+        await delay(25);
+        observed = await inspectLocalAttempt(handle);
+      }
+      if (outcome === 'cancellation') {
+        if (observed.state !== 'running')
+          throw new Error('Expected a running group before cancellation');
+        await cancelLocalAttempt(handle);
+      }
+      while (observed.state === 'running' && Date.now() < startingDeadline) {
+        await delay(25);
+        observed = await inspectLocalAttempt(handle);
+      }
+      if (observed.state !== 'cancelling' || !observed.receipt.group)
+        throw new Error('Expected a stopping owned process group');
+      const firstHeartbeat = observed.receipt.at;
+      const group = observed.receipt.group;
+      expect(await groupAbsent(group)).toBe(false);
+      let latestStoppingAt = firstHeartbeat;
+      const deadline = Date.now() + 12_000;
+      while (Date.now() < deadline) {
+        observed = await inspectLocalAttempt(handle);
+        if (observed.state === 'finished') break;
+        expect(observed.state).toBe('cancelling');
+        if (observed.state !== 'cancelling')
+          throw new Error('Lost stopping ownership during grace');
+        expect(observed.receipt.noWriter).toBe(false);
+        latestStoppingAt = observed.receipt.at;
+        await delay(200);
+      }
+      // Observe fresh signed receipts beyond inspect's five-second stale limit.
+      expect(latestStoppingAt - firstHeartbeat).toBeGreaterThan(5500);
+      expect(observed.state).toBe('finished');
+      if (observed.state !== 'finished')
+        throw new Error('Termination timed out');
+      expect(observed.receipt.noWriter).toBe(true);
+      expect(observed.receipt.reason).toBe(
+        outcome === 'completion' ? null : 'cancelled',
+      );
+      expect(await groupAbsent(group)).toBe(true);
+    },
+  );
+  it('rejects attempt state overlapping either checkout before writing credentials', async () => {
+    const input = await fixture();
+    input.selectedAuth = { kind: 'api-key', value: 'synthetic-path-guard-key' };
+    const source = input.ownedWorktree.sourceRoot;
+    const snapshot = async (root: string) => {
+      const paths = (await readdir(root, { recursive: true })).sort();
+      return Promise.all(
+        paths.map(async (path) => ({
+          path,
+          bytes: (await stat(join(root, path))).isFile()
+            ? await readFile(join(root, path))
+            : null,
+        })),
+      );
+    };
+    const roots = [source, input.ownedWorktree.root];
+    const before = await Promise.all(roots.map(snapshot));
+    for (const root of roots) {
+      for (const directory of [
+        join(root, '.neondeck-attempt'),
+        join(root, '..attempt'),
+        root,
+        dirname(root),
+        `${root}/../${root.split('/').at(-1)}`,
+      ]) {
+        await expect(
+          prepareLocalAttempt({ ...input, directory }),
+        ).rejects.toThrow('Attempt state must not overlap');
+      }
+      await expect(stat(join(root, '.neondeck-attempt'))).rejects.toThrow(
+        /ENOENT/,
+      );
+      await expect(stat(join(root, '..attempt'))).rejects.toThrow(/ENOENT/);
+      await expect(stat(join(root, 'home'))).rejects.toThrow(/ENOENT/);
+      await expect(stat(join(dirname(root), 'home'))).rejects.toThrow(/ENOENT/);
+    }
+    const alias = join(dirname(input.directory), 'source-alias');
+    await symlink(source, alias);
+    await expect(
+      prepareLocalAttempt({
+        ...input,
+        directory: join(alias, '.neondeck-attempt'),
+      }),
+    ).rejects.toThrow('canonical');
+    expect(await Promise.all(roots.map(snapshot))).toEqual(before);
+    await expect(stat(input.directory)).rejects.toThrow(/ENOENT/);
+  });
+  it('distinguishes parent components from double-dot-prefixed descendants', () => {
+    const root = resolve('/owned');
+    for (const path of ['..attempt', '..attempt/nested', 'child/../leaf'])
+      expect(inside(root, resolve(root, path))).toBe(true);
+    for (const path of [
+      '.',
+      '..',
+      '../sibling',
+      '../owned-other',
+      'child/../../escaped',
+    ])
+      expect(inside(root, resolve(root, path))).toBe(false);
+  });
+  it('validates a double-dot-prefixed managed worktree and collects its untracked evidence', async () => {
+    const input = await fixture();
+    const root = join(input.ownedWorktree.storageRoot, '..owned');
+    await exec(
+      '/usr/bin/git',
+      ['worktree', 'move', input.ownedWorktree.root, root],
+      {
+        cwd: input.ownedWorktree.sourceRoot,
+      },
+    );
+    input.ownedWorktree.root = root;
+    const handle = await prepareLocalAttempt(input);
+    handles.push(handle);
+    await launchLocalAttempt(handle);
+    await finish(handle);
+    await writeFile(join(root, '..evidence'), 'double-dot child content');
+    const candidate = await collectLocalAttempt(handle);
+    expect(
+      JSON.parse(await readFile(candidate.untrackedRef, 'utf8')),
+    ).toContainEqual(
+      expect.objectContaining({
+        path: '..evidence',
+        contentBase64: Buffer.from('double-dot child content').toString(
+          'base64',
+        ),
+      }),
+    );
   });
   it('rejects primary checkout and wrong branch identity', async () => {
     const input = await fixture();

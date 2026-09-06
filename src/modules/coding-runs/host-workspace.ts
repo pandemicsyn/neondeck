@@ -1,6 +1,6 @@
 import { execFile } from 'node:child_process';
 import { lstat, realpath } from 'node:fs/promises';
-import { isAbsolute, relative, resolve } from 'node:path';
+import { isAbsolute, relative, resolve, sep } from 'node:path';
 import { promisify } from 'node:util';
 import * as v from 'valibot';
 import { workspaceSchema } from './host-contract.ts';
@@ -75,7 +75,12 @@ export async function hostGit(cwd: string, args: string[]) {
 }
 export function inside(root: string, child: string) {
   const part = relative(root, child);
-  return part !== '' && !part.startsWith('..') && !isAbsolute(part);
+  return (
+    part !== '' &&
+    part !== '..' &&
+    !part.startsWith(`..${sep}`) &&
+    !isAbsolute(part)
+  );
 }
 export async function verifyOwnedWorktree(
   input: unknown,

@@ -197,15 +197,26 @@ async function supervise(value: unknown) {
       receipt.state = 'cancelling';
       await persist();
       await signalOwnedGroup(receipt.group, 'SIGTERM');
-      await delay(manifest.config.termGraceMs);
+      // A live owner must remain inspectable throughout the shutdown grace.
+      const graceEndsAt = Date.now() + manifest.config.termGraceMs;
+      while (Date.now() < graceEndsAt) {
+        await delay(Math.min(500, graceEndsAt - Date.now()));
+        await persist();
+      }
       // Anchor survives TERM, retaining proof of ownership for the KILL.
       await signalOwnedGroup(receipt.group, 'SIGKILL');
       const killedAt = Date.now();
+      lastHeartbeat = killedAt;
       while (
         (!closed || !(await groupAbsent(receipt.group))) &&
         Date.now() - killedAt < 5000
-      )
+      ) {
+        if (Date.now() - lastHeartbeat >= 500) {
+          await persist();
+          lastHeartbeat = Date.now();
+        }
         await delay(25);
+      }
       if (!closed || !(await groupAbsent(receipt.group)))
         throw new Error('Writer termination could not be proven');
       receipt.noWriter = true;

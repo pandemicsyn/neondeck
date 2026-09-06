@@ -2,7 +2,7 @@ import { spawn } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { mkdir, open, realpath } from 'node:fs/promises';
-import { dirname, join } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { setTimeout as delay } from 'node:timers/promises';
 import * as v from 'valibot';
@@ -55,13 +55,22 @@ export async function prepareLocalAttempt(
   if (!localHostCapability().supported)
     throw new Error('Unsupported local host platform');
   await verifyOwnedWorktree(value.ownedWorktree, true);
+  const directory = resolve(value.directory);
   if (
-    inside(value.ownedWorktree.root, value.directory) ||
-    value.directory === value.ownedWorktree.root ||
-    inside(value.directory, value.ownedWorktree.root)
+    [value.ownedWorktree.root, value.ownedWorktree.sourceRoot].some(
+      (root) =>
+        inside(root, directory) ||
+        directory === root ||
+        inside(directory, root),
+    )
   )
-    throw new Error('Attempt state must be outside worktree');
-  if ((await realpath(dirname(value.directory))) !== dirname(value.directory))
+    throw new Error(
+      'Attempt state must not overlap source or managed worktrees',
+    );
+  if (
+    directory !== value.directory ||
+    (await realpath(dirname(directory))) !== dirname(directory)
+  )
     throw new Error('Attempt parent must be canonical');
   await mkdir(value.directory, { mode: 0o700 });
   await privateDirectory(value.directory);
