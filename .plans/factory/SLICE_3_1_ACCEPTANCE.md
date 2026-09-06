@@ -1,9 +1,14 @@
 # Slice 3.1 acceptance record
 
-Status: implemented and verified locally, September 6, 2026. No Slice 3.1 PRs
-have been created; publication and post-publication architecture review are
-pending. Real model/Codex/GitHub acceptance is **NOT RUN**. Slice 1 operator
-acceptance with deferred checks and Slice 2/3 pending live acceptance are unchanged.
+Status: published draft stack #405, September 6, 2026; **not merged**.
+Draft PRs [#403](https://github.com/pandemicsyn/neondeck/pull/403) and
+[#404](https://github.com/pandemicsyn/neondeck/pull/404) have clean source,
+pre-publication documentation and manager post-publication architecture reviews.
+CI is pending the lower-layer test-fixture relocation; #404 typecheck passes
+and secrets checks are green. Real model/Codex/GitHub acceptance
+is **NOT RUN**. Slice 1 accepted deferrals and Slice 2/3 pending live acceptance
+are unchanged. The handoff identifies reviewed heads and the pending narrow
+publication-status documentation review.
 
 ## Deterministic implementation verification
 
@@ -16,7 +21,7 @@ is not a claim that one `npm run verify` invocation exited successfully. See the
 [handoff](SLICE_3_1_HANDOFF.md#review-and-verification-gates) for the precise record.
 Two static reviewers are clean on production/UI `87a3bbe0` and the final test-only
 delta; the handoff records its SHA-256. Manager pre-publication architecture and
-product-plan review is complete. Synthetic
+product-plan review and post-publication source architecture review are complete. Synthetic
 judge output proves routing and enforcement only; fixture names such as
 oscillation or weakened tests are not evidence that a real model detected them.
 

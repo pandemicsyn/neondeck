@@ -2351,8 +2351,14 @@ Workspace lifecycle (separate from run status)
                 <tr>
                   <td><strong>3.1 · Progress supervision</strong></td>
                   <td>
-                    Implemented locally, publication pending; no Slice 3.1 PRs
-                    yet. A bounded read-only Flue judge assesses repair history
+                    Published draft stack #405, not merged:
+                    <a href="https://github.com/pandemicsyn/neondeck/pull/403"
+                      >#403</a
+                    >
+                    and
+                    <a href="https://github.com/pandemicsyn/neondeck/pull/404"
+                      >#404</a
+                    >. A bounded read-only Flue judge assesses repair history
                     before another attempt. Continue, change approach or
                     escalate through existing human planning surfaces within the
                     same budgets.
@@ -2361,11 +2367,13 @@ Workspace lifecycle (separate from run status)
                     Local verification stages pass across the full run and
                     corrected targeted rerun, with 2,544 unique passing tests.
                     Production/UI and final test-delta static reviews are clean.
-                    Manager pre-publication review is complete; publication and
-                    post-publication architecture review remain pending. Real
-                    model/Codex/GitHub acceptance is NOT RUN; judgment quality
-                    is unevaluated. This between-attempt checkpoint adds neither
-                    live preemption nor a new all-green gate. See the
+                    Documentation static reviews were clean before publication;
+                    manager post-publication architecture review is clean on the
+                    published heads. CI is in progress; secrets checks are
+                    green. Real model/Codex/GitHub acceptance is NOT RUN;
+                    judgment quality is unevaluated. This between-attempt
+                    checkpoint adds neither live preemption nor a new all-green
+                    gate. See the
                     <a href="../factory/SLICE_3_1_HANDOFF.md"
                       >implementation and verification record</a
                     >.

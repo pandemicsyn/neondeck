@@ -1,7 +1,8 @@
 # Slice 3.1 implementation handoff
 
-Status: implemented and verified locally, September 6, 2026. Publication is
-pending; no Slice 3.1 PRs have been created. Real model/Codex/GitHub acceptance is
+Status: published as a draft stack, September 6, 2026; **not merged**.
+Official stack #405 contains draft PRs [#403](https://github.com/pandemicsyn/neondeck/pull/403)
+and [#404](https://github.com/pandemicsyn/neondeck/pull/404). Real model/Codex/GitHub acceptance is
 **NOT RUN**. Source base: merged Slice 3, `a897aa06dde6640ad8c8bf83b1683534d252ded5`.
 
 ## Delivery contract
@@ -31,10 +32,26 @@ All implementation and independent review agents use GPT-6 Astra at medium effor
 The manager owns scope, integration, verification, Git commits and PR publication.
 Agents edit disjoint source sets in the shared checkout and do not create PRs.
 
-| Layer | Planned branch                   | Owner and responsibility                                                                                                       |
+| Layer | Branch                           | Owner and responsibility                                                                                                       |
 | ----- | -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
 | 1     | `agent/factory-s31-01-admission` | Poincare: contracts/admission; Raman: history/Flue reviewer; Franklin: coordinator/recovery; Leibniz: integrated runtime tests |
 | 2     | `agent/factory-s31-03-workbench` | Halley: readable evidence, explicit planning, accessible operator states and screenshots                                       |
+
+The published linear bases and draft status were verified:
+
+| PR                                                       | Base                             | Reviewed head                              |
+| -------------------------------------------------------- | -------------------------------- | ------------------------------------------ |
+| [#403](https://github.com/pandemicsyn/neondeck/pull/403) | `main`                           | `99e6da3e460c6f9d4f01e74d41c613fb602d4d2c` |
+| [#404](https://github.com/pandemicsyn/neondeck/pull/404) | `agent/factory-s31-01-admission` | `3224ee8ee66e54661382f6bfda4393366465458e` |
+
+CI is pending a lower-layer test-fixture correction. PR #403 typecheck failed
+because `FactoryDelivery.test.tsx` lacks three nullable progress proof fields;
+those exact fields are already present in the upper PR. PR #404 typecheck passes,
+and secrets checks are green. Move the existing `progressAssessmentId: null`,
+`progressInputDigest: null` and `progressEvidenceDigest: null` fixture delta to the
+lower layer, then have both static reviewers inspect the relocation before push.
+The combined source tree remains unchanged; the published heads above identify
+the earlier architecture review. Full CI success and merge remain pending.
 
 Backend admission and assessment ship as one complete layer because requiring a
 progress proof without its producer and recovery path would break existing repairs
@@ -53,10 +70,12 @@ Keep credentials, private addresses and raw live evidence out of this public rep
 - [x] Two independent static reviews are clean on production/UI source `87a3bbe0`.
 - [x] Both independent reviews are clean on the final test-only assertion correction.
 - [x] Manager pre-publication architecture and product review is clean.
-- [ ] Create draft stacked PRs with verification and actual UI screenshots.
-- [ ] Manager performs a post-publication architectural review of the full stack:
-      Valibot IO validation, precise types, separated responsibilities and ownership.
-- [ ] Record PR links and publication status when available.
+- [x] Source and documentation static reviews were clean before PR creation.
+- [x] Create draft stacked PRs with verification and actual UI screenshots.
+- [x] Manager post-publication architecture review is clean on both exact heads above.
+- [x] Record PR links and publication status.
+- [ ] Review the final publication-status-only documentation delta.
+- [ ] Complete CI and obtain merge approval.
 
 The full verification run on `87a3bbe0` passed lint, import layers, database
 migration validation and all type checks, then passed 2,351 unit, 47 serial Git and
@@ -76,14 +95,24 @@ test-only delta, identified by SHA-256
 review is clean: shared Valibot validates unknown inputs, pure shared schemas are
 separate from Node fingerprints, atomic store enforcement is independent, and
 runtime, recovery, evidence and UI responsibilities remain distinct. No new `any`
-or GitHub transport/caching changes were introduced. Post-publication review
-remains pending.
+or GitHub transport/caching changes were introduced.
+
+Manager post-publication architecture review is also clean on the exact published
+heads above, with cumulative source head `3224ee8e`. It rechecked contracts,
+atomic store/service admission, evidence gathering and reads, the Flue provider
+fence and UI transport. Pure shared Valibot schemas validate unknown inputs; Node
+hashing, store authority and model capabilities remain separate. Retained evidence
+is redacted, validated and checked for changes during reads. Both repair paths use
+the same gate. There are no new `any` types, unsafe TypeScript suppressions or
+GitHub transport/caching changes. This status-only documentation update follows
+that source review and awaits its own narrow static review.
 
 Eighteen actual React UI screenshots use synthetic fixtures at 1440px desktop and
 390px mobile widths. They cover decision states, expanded history, paused delivery
 and transfer into the existing planning session with an unsent draft. Captures
-recorded zero chat writes, page errors or horizontal overflow. Screenshot
-publication with the PRs is pending; no live service or model behavior is implied.
+recorded zero chat writes, page errors or horizontal overflow. Four images were attached successfully to the published PRs: desktop workbench,
+mobile workbench, existing planning transfer and change approach. No live service
+or model behavior is implied.
 
 Reviewers use static inspection only. Fixes return to implementers, then both
 reviewers recheck the final candidate. A synthetic model decision tests controller
@@ -107,4 +136,4 @@ capability to edit this controller-owned claim.
 An uncertain assessment that raises human intervention remains paused after usage
 reconciliation; see the Slice 3.1 decision in `.plans/DEVIATIONS.md`. The real model
 exercise and Slice 2/3 live acceptance remain pending. Preserve Slice 1 deferred
-checks. Record other material deviations before publication.
+checks. Record any further material deviations before merge.

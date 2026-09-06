@@ -153,7 +153,7 @@ See the [Slice 3 implementation plan](factory/SLICE_3_IMPLEMENTATION_PLAN.md) an
 Astra at medium effort. Existing releases do not gain publication authority on
 upgrade; the initial delivery grant binds an exact candidate and bounded policy.
 
-## Software Factory Slice 3.1 — Implemented Locally, Publication Pending
+## Software Factory Slice 3.1 — Published Draft Stack, Not Merged
 
 Implemented after Slice 3 and before Slice 4's OpenCode adapter. The read-only
 Flue checkpoint assesses repair history before another authorized attempt.
@@ -169,7 +169,14 @@ Flue checkpoint assesses repair history before another authorized attempt.
 - [x] Two independent production/UI static reviews are clean on `87a3bbe0`.
 - [x] Manager pre-publication architecture and product review is clean.
 - [x] Both independent reviews are clean on the final test-only delta.
-- [ ] Publish Slice 3.1 PRs and complete post-publication architecture review.
+- [x] Complete pre-publication documentation static reviews and publish official
+      stack #405: draft [#403](https://github.com/pandemicsyn/neondeck/pull/403) and
+      [#404](https://github.com/pandemicsyn/neondeck/pull/404).
+- [x] Manager post-publication architecture review is clean on cumulative source
+      `3224ee8e` and the lower head recorded in the handoff.
+- [ ] Review the publication-status documentation delta, complete CI and merge.
+      CI is pending the lower-layer test-fixture relocation; #404 typecheck passes
+      and secrets checks are green.
 - [ ] Real model/Codex/GitHub acceptance and model judgment evaluation: NOT RUN.
 
 This checkpoint does not continuously monitor or preempt running coding work and

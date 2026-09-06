@@ -21,7 +21,12 @@ the operator authorized stack merge, with real Codex acceptance still pending af
 - [Slice 3 handoff](SLICE_3_HANDOFF.md): stack ownership, review and acceptance.
 - [Slice 3.1 progress supervision](SLICE_3_1_PROGRESS_REVIEW_PLAN.md): implemented
   and verified locally before OpenCode, with 2,544 unique passing tests across the
-  full run and corrected targeted rerun. Publication is pending; no PRs yet.
+  full run and corrected targeted rerun. Published as draft
+  [#403](https://github.com/pandemicsyn/neondeck/pull/403) and
+  [#404](https://github.com/pandemicsyn/neondeck/pull/404), official stack #405;
+  not merged. Source/documentation static reviews before publication and manager
+  post-publication architecture review are clean. CI is in progress, with secrets
+  checks green.
   Real model/Codex/GitHub acceptance is NOT RUN. See its
   [handoff](SLICE_3_1_HANDOFF.md), [operator guide](SLICE_3_1_OPERATOR.md) and
   [acceptance ledger](SLICE_3_1_ACCEPTANCE.md).

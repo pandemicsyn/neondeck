@@ -1,7 +1,10 @@
 # Slice 3.1 operator flow: progress review before repair
 
-Status: implemented and verified locally; publication is pending and no Slice 3.1
-PRs exist yet. Use the [handoff](SLICE_3_1_HANDOFF.md) for verification and review
+Status: published as draft PRs [#403](https://github.com/pandemicsyn/neondeck/pull/403)
+and [#404](https://github.com/pandemicsyn/neondeck/pull/404) in stack #405;
+**not merged**. Source and pre-publication documentation static reviews and the
+manager post-publication architecture review are clean. CI is pending the lower-layer test-fixture relocation; #404 typecheck passes
+and secrets checks are green. Use the [handoff](SLICE_3_1_HANDOFF.md) for verification and review
 status. Real model/Codex/GitHub acceptance is **NOT RUN**; model judgment quality
 remains unevaluated in the [acceptance ledger](SLICE_3_1_ACCEPTANCE.md).
 

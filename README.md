@@ -58,8 +58,12 @@ human planning. The workbench shows the assessed cycle, rationale, proposed
 approach and retained evidence; discussion never refills budgets or sends a chat
 message automatically. This is a checkpoint between attempts, not continuous
 coding supervision or an extra gate for passing candidates. Implementation and
-local verification are complete; publication is pending, with no Slice 3.1 PRs
-yet. Real model/Codex/GitHub acceptance is NOT RUN and model judgment quality is
+local verification are complete. Draft PRs
+[#403](https://github.com/pandemicsyn/neondeck/pull/403) and
+[#404](https://github.com/pandemicsyn/neondeck/pull/404) are published in stack #405
+and are not merged. Source/documentation static reviews before publication and
+post-publication architecture review are clean; CI is pending the lower-layer test-fixture relocation; #404 typecheck passes
+and secrets checks are green. Real model/Codex/GitHub acceptance is NOT RUN and model judgment quality is
 unevaluated. See the [progress review guide](.plans/factory/SLICE_3_1_OPERATOR.md)
 and [verification record](.plans/factory/SLICE_3_1_HANDOFF.md).
 
