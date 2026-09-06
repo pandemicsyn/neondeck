@@ -144,7 +144,19 @@ export function deliveryDetail(
                 executionMs: null,
               },
             ]
-          : [],
+          : mode === 'delivery'
+            ? [
+                {
+                  id: 'push-demo',
+                  kind: 'push',
+                  revision: preview.revision,
+                  state: 'delivered',
+                  receiptRef: 'confirmed-push-demo.json',
+                  reservedExecutionMs: null,
+                  executionMs: null,
+                },
+              ]
+            : [],
       interventions:
         mode === 'delivery'
           ? []
@@ -160,7 +172,17 @@ export function deliveryDetail(
                 resolution: null,
               },
             ],
-      commits: [],
+      commits:
+        mode === 'delivery'
+          ? [
+              {
+                revision: preview.revision,
+                publishedHeadSha: '8'.repeat(40),
+                treeSha: preview.revision.treeSha,
+                evidenceRef: 'local-commit-demo.json',
+              },
+            ]
+          : [],
       coordinator: {
         candidateRef: 'candidate-evidence-demo',
         watchId: mode === 'delivery' ? 'watch-demo' : null,

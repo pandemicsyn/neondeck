@@ -468,3 +468,52 @@ it('keeps prior external feedback available as history without labelling it the 
   await flush();
   expect(container.textContent).toContain('Prior revision');
 });
+
+it.each(['planned', 'uncertain'] as const)(
+  'distinguishes a previously pushed commit from a newer %s repair push after PR closure',
+  async (state) => {
+    current = deliveryDetail();
+    const prior = current.pipeline.revision;
+    const repaired = {
+      ...prior,
+      runId: 'repair-new',
+      candidateDigest: '9'.repeat(64),
+      treeSha: '9'.repeat(40),
+    };
+    current.pipeline.revision = repaired;
+    current.pipeline.commits.push({
+      revision: repaired,
+      publishedHeadSha: '6'.repeat(40),
+      treeSha: repaired.treeSha,
+      evidenceRef: 'unpublished-local.json',
+    });
+    current.pipeline.effects.push({
+      id: 'repair-push',
+      kind: 'push',
+      revision: repaired,
+      state,
+      receiptRef: state === 'planned' ? 'not-attempted.json' : 'uncertain.json',
+      executionMs: null,
+      reservedExecutionMs: null,
+    });
+    current.pipeline.outcome = 'closed';
+    current.nextAction = 'complete';
+    await render();
+    const receipt = Array.from(container.querySelectorAll('summary')).find(
+      (item) => item.textContent === 'Commit receipts',
+    )!;
+    await act(async () => {
+      receipt.click();
+    });
+    const rows = Array.from(receipt.parentElement!.querySelectorAll('p'));
+    expect(
+      rows.find((row) => row.textContent?.includes('8'.repeat(40)))
+        ?.textContent,
+    ).toContain('Confirmed pushed commit');
+    expect(
+      rows.find((row) => row.textContent?.includes('6'.repeat(40)))
+        ?.textContent,
+    ).toContain('Local commit · push not confirmed');
+    expect(container.textContent).not.toContain('Published commit:');
+  },
+);

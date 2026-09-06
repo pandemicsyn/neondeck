@@ -1,3 +1,4 @@
+import { FactoryDeliveryCommits } from './FactoryDeliveryCommits';
 import {
   triggeringDeliveryFeedback,
   deliveryDiscussionRecords,
@@ -224,23 +225,10 @@ export function FactoryDeliveryDetail({
         </nav>
       )}
       <p>
-        Checks certify the frozen tree. Publication commits below are separate
-        receipts. Merge remains a human action.
+        Checks certify the frozen tree. Local commits and confirmed pushes have
+        separate receipts. Merge remains a human action.
       </p>
-      {p.commits.length > 0 && (
-        <details>
-          <summary>Publication commit receipts</summary>{' '}
-          {p.commits.map((commit) => (
-            <p key={commit.publishedHeadSha}>
-              Published commit: <code>{commit.publishedHeadSha}</code>
-              <br />
-              Tree: <code>{commit.treeSha}</code>
-              <br />
-              Evidence: <code>{commit.evidenceRef}</code>
-            </p>
-          ))}
-        </details>
-      )}
+      <FactoryDeliveryCommits detail={detail.data} />
       {p.coordinator.watchId ? (
         <p>
           Attached watch: <code>{p.coordinator.watchId}</code>
