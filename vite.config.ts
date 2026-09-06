@@ -1,3 +1,4 @@
+import { fileURLToPath } from 'node:url';
 import { flue } from '@flue/vite';
 import { defineConfig } from 'vite';
 import { resolveBuildVersion } from './src/package-version.ts';
@@ -15,7 +16,9 @@ export default defineConfig({
       buildStart() {
         this.emitFile({
           type: 'chunk',
-          id: new URL('./src/server/production.ts', import.meta.url).pathname,
+          id: fileURLToPath(
+            new URL('./src/server/production.ts', import.meta.url),
+          ),
           fileName: 'neondeck-server.mjs',
         });
       },

@@ -31,6 +31,21 @@ const data = {
   sync: [],
   comments: [],
 };
+const detail = (id: string) =>
+  ({
+    work: { id },
+    source: {
+      version: 1,
+      status: 'open',
+      actor: 'external',
+      body: 'Issue',
+      remote: {
+        connectionId: 'test',
+        number: 1,
+        url: 'https://github.com/example/fixture/issues/1',
+      },
+    },
+  }) as Parameters<typeof FactoryGitHubSource>[0]['detail'];
 let root: Root, container: HTMLDivElement, client: QueryClient;
 beforeEach(() => {
   (
@@ -139,21 +154,6 @@ it('loads only selected-task comment pages and resets paging on a different task
     comments: [comment(cursor ? 'Older page body' : 'Newest page body')],
     nextCursor: cursor ? null : '10',
   }));
-  const detail = (id: string) =>
-    ({
-      work: { id },
-      source: {
-        version: 1,
-        status: 'open',
-        actor: 'external',
-        body: 'Issue',
-        remote: {
-          connectionId: 'test',
-          number: 1,
-          url: 'https://github.com/example/fixture/issues/1',
-        },
-      },
-    }) as Parameters<typeof FactoryGitHubSource>[0]['detail'];
   const draw = async (id: string) => {
     await act(async () => {
       root.render(
@@ -186,3 +186,48 @@ it('loads only selected-task comment pages and resets paging on a different task
   );
   expect(container.textContent).toContain('Newest page body');
 });
+
+it.each(['status', 'discussion'] as const)(
+  'identifies a failed %s query without mislabeling the other query',
+  async (failedQuery) => {
+    api.getFactoryGitHubComments.mockResolvedValue({
+      comments: [],
+      nextCursor: null,
+    });
+    if (failedQuery === 'status') {
+      api.getFactoryGitHub.mockRejectedValue(
+        new Error('Synthetic status failure'),
+      );
+    } else {
+      api.getFactoryGitHubComments.mockRejectedValue(
+        new Error('Synthetic discussion failure'),
+      );
+    }
+    await act(async () => {
+      root.render(
+        <QueryClientProvider client={client}>
+          <FactoryGitHubSource detail={detail('query-error')} />
+        </QueryClientProvider>,
+      );
+    });
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 30));
+    });
+    const alerts = Array.from(container.querySelectorAll('[role="alert"]')).map(
+      (node) => node.textContent,
+    );
+    expect(alerts).toHaveLength(1);
+    expect(alerts[0]).toContain(
+      failedQuery === 'status'
+        ? 'Could not load GitHub connections, sync status, and delivery status.'
+        : 'Discussion refresh failed.',
+    );
+    expect(container.textContent).toContain('Issue');
+    expect(
+      container.textContent?.includes('No retained comments on this page.'),
+    ).toBe(failedQuery === 'status');
+    expect(container.textContent?.includes('Discussion refresh failed.')).toBe(
+      failedQuery === 'discussion',
+    );
+  },
+);

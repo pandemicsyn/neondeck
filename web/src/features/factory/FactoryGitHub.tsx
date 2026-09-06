@@ -312,7 +312,7 @@ export function FactoryGitHubSource({ detail }: { detail: FactoryDetail }) {
       )}
       {state.error && (
         <p role="alert">
-          Source discussion refresh failed; retained content remains visible.
+          Could not load GitHub connections, sync status, and delivery status.
         </p>
       )}
       {state.data?.sync
