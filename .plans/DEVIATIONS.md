@@ -943,3 +943,19 @@ Use this format:
 - Decision: Version one rejects effective repository clean/process filters and gitlinks/submodules before status/diff collection. Unsupported evidence retains/quarantines ownership rather than executing filters or nested repository operations outside the supervised process group.
 - Reason: Static host review found that Git collection could launch untracked subprocesses through repository configuration; the manager accepted this conservative first-slice scope.
 - Follow-up: A future reviewed host capability is required to collect evidence for these repositories safely. No automatic filter/submodule execution, cleanup, or ownership release is introduced.
+
+## 2026-09-06 — Slice 3 Explicit Candidate Delivery Grant
+
+- Roadmap item: Software Factory Slice 3 / candidate to PR.
+- Decision: Start Slice 3 with an explicit human delivery grant bound to the
+  candidate revision, released brief, repository target, verification contract,
+  and finite repair/execution budget. Existing Slice 1/2 releases retain their
+  `publish: false` meaning. Within the grant, ordinary scoped repairs do not add
+  another human approval; merge and scope expansion remain human decisions.
+- Reason: The proposal permits queue release to grant draft publication, but the
+  shipped release contract does not. Silently expanding old releases on upgrade
+  would change their authority. The existing candidate review surface provides
+  a concrete place to review the new authority.
+- Follow-up: Slice 3 implementers expose the grant and conditional interventions
+  through the shared backend and dashboard. A future release-policy version may
+  offer this grant during shaping; that convenience is deferred, not implied.

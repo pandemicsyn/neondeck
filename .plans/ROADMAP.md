@@ -130,6 +130,26 @@ See the [Slice 2 implementation plan](factory/SLICE_2_IMPLEMENTATION_PLAN.md)
 for delivery status and acceptance obligations. The operator authorized stack merge with real Codex acceptance still pending after merge. Each publication requires two
 clean independent static reviews and manager implementation/product-plan review.
 
+## Software Factory Slice 3 — Candidate To PR (In Progress)
+
+Slice 2 merged in PRs #391–#394, ending at `0b776ff6994b8d078aa550910ca143b61d643bbd`.
+Its real Codex acceptance remains pending after merge; Slice 1 remains
+operator-accepted with the recorded checks deferred. Neither decision is a live
+acceptance claim for Slice 3.
+
+- [ ] Independent candidate verification and model review bound to exact evidence.
+- [ ] Bounded Codex repairs with durable budgets and human scope interventions.
+- [ ] Revision-checked draft PR delivery with uncertain-effect reconciliation.
+- [ ] Existing watch/review surfaces with exclusive factory ownership, human merge,
+      recorded outcomes, and safe cleanup.
+- [ ] Two clean independent static reviews before PR creation, cumulative verification,
+      screenshots where applicable, and a manager architecture review of the full stack.
+
+See the [Slice 3 implementation plan](factory/SLICE_3_IMPLEMENTATION_PLAN.md) and
+[handoff ledger](factory/SLICE_3_HANDOFF.md). Development and review agents use
+Astra at medium effort. Existing releases do not gain publication authority on
+upgrade; the initial delivery grant binds an exact candidate and bounded policy.
+
 ## Usability Gate
 
 Neondeck is usable when a new local install can answer “what should I pay attention to?” and “why is Neon not working?” without the user reading source code or editing config by hand.
