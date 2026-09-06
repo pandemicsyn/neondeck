@@ -41,17 +41,24 @@ The published linear bases and draft status were verified:
 
 | PR                                                       | Base                             | Reviewed head                              |
 | -------------------------------------------------------- | -------------------------------- | ------------------------------------------ |
-| [#403](https://github.com/pandemicsyn/neondeck/pull/403) | `main`                           | `99e6da3e460c6f9d4f01e74d41c613fb602d4d2c` |
-| [#404](https://github.com/pandemicsyn/neondeck/pull/404) | `agent/factory-s31-01-admission` | `3224ee8ee66e54661382f6bfda4393366465458e` |
+| [#403](https://github.com/pandemicsyn/neondeck/pull/403) | `main`                           | `5cbc58825b495b18349b8ecdcacd324e3ecd37cb` |
+| [#404](https://github.com/pandemicsyn/neondeck/pull/404) | `agent/factory-s31-01-admission` | `9a6023fe3154bd4318e875b24e8989be231c1857` |
 
-CI is pending a lower-layer test-fixture correction. PR #403 typecheck failed
-because `FactoryDelivery.test.tsx` lacks three nullable progress proof fields;
-those exact fields are already present in the upper PR. PR #404 typecheck passes,
-and secrets checks are green. Move the existing `progressAssessmentId: null`,
-`progressInputDigest: null` and `progressEvidenceDigest: null` fixture delta to the
-lower layer, then have both static reviewers inspect the relocation before push.
-The combined source tree remains unchanged; the published heads above identify
-the earlier architecture review. Full CI success and merge remain pending.
+The lower-layer fixture correction is complete and pushed. The three nullable
+progress proof fields in `FactoryDelivery.test.tsx` moved from the upper layer to
+the lower layer, fixing PR #403's typecheck failure. Lower-layer
+`typecheck:app` and all 27 FactoryDelivery tests passed. Both static reviewers
+cleared the exact relocation and publication documentation. The manager confirmed
+that cumulative source/shared/web/scripts content is unchanged and post-publication
+architecture and plan adherence remain clean on the heads above. A later docs-only
+commit does not change the reviewed implementation.
+
+CI snapshot on the reviewed heads: PR #403 at `5cbc5882` passed all nine checks.
+PR #404 at `9a6023fe` also passed all nine checks, including **Validate npm package**.
+No PR feedback or submitted reviews were present at this checkpoint. The linked
+PRs are authoritative for current results. These results describe those revisions,
+not a future documentation commit. CI completion is separate from merge approval;
+both PRs remain drafts and merge has not been authorized.
 
 Backend admission and assessment ship as one complete layer because requiring a
 progress proof without its producer and recovery path would break existing repairs
@@ -74,8 +81,10 @@ Keep credentials, private addresses and raw live evidence out of this public rep
 - [x] Create draft stacked PRs with verification and actual UI screenshots.
 - [x] Manager post-publication architecture review is clean on both exact heads above.
 - [x] Record PR links and publication status.
-- [ ] Review the final publication-status-only documentation delta.
-- [ ] Complete CI and obtain merge approval.
+- [x] Both static reviewers cleared the relocation and publication documentation.
+- [x] PR #403 CI: all nine checks pass on `5cbc5882`.
+- [x] PR #404 CI: all nine checks pass on `9a6023fe`.
+- [ ] Obtain explicit merge authorization; none has been granted.
 
 The full verification run on `87a3bbe0` passed lint, import layers, database
 migration validation and all type checks, then passed 2,351 unit, 47 serial Git and
@@ -98,14 +107,14 @@ runtime, recovery, evidence and UI responsibilities remain distinct. No new `any
 or GitHub transport/caching changes were introduced.
 
 Manager post-publication architecture review is also clean on the exact published
-heads above, with cumulative source head `3224ee8e`. It rechecked contracts,
+heads above, with cumulative source head `9a6023fe`. It rechecked contracts,
 atomic store/service admission, evidence gathering and reads, the Flue provider
 fence and UI transport. Pure shared Valibot schemas validate unknown inputs; Node
 hashing, store authority and model capabilities remain separate. Retained evidence
 is redacted, validated and checked for changes during reads. Both repair paths use
 the same gate. There are no new `any` types, unsafe TypeScript suppressions or
-GitHub transport/caching changes. This status-only documentation update follows
-that source review and awaits its own narrow static review.
+GitHub transport/caching changes. The relocation and publication documentation were subsequently cleared by both
+static reviewers; cumulative implementation equality was confirmed by the manager.
 
 Eighteen actual React UI screenshots use synthetic fixtures at 1440px desktop and
 390px mobile widths. They cover decision states, expanded history, paused delivery

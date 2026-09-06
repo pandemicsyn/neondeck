@@ -62,8 +62,8 @@ local verification are complete. Draft PRs
 [#403](https://github.com/pandemicsyn/neondeck/pull/403) and
 [#404](https://github.com/pandemicsyn/neondeck/pull/404) are published in stack #405
 and are not merged. Source/documentation static reviews before publication and
-post-publication architecture review are clean; CI is pending the lower-layer test-fixture relocation; #404 typecheck passes
-and secrets checks are green. Real model/Codex/GitHub acceptance is NOT RUN and model judgment quality is
+post-publication architecture review are clean. The reviewed fixture relocation is complete. CI is complete: all nine checks pass on each PR, #403 at `5cbc5882` and
+#404 at `9a6023fe`. These results apply to those revisions; linked PRs show current status. Merge has not been authorized. Real model/Codex/GitHub acceptance is NOT RUN and model judgment quality is
 unevaluated. See the [progress review guide](.plans/factory/SLICE_3_1_OPERATOR.md)
 and [verification record](.plans/factory/SLICE_3_1_HANDOFF.md).
 

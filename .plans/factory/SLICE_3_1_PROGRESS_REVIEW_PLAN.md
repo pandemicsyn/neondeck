@@ -4,8 +4,8 @@ Status: published draft stack #405, September 6, 2026; **not merged**.
 Draft PRs [#403](https://github.com/pandemicsyn/neondeck/pull/403) and
 [#404](https://github.com/pandemicsyn/neondeck/pull/404) follow clean source and
 pre-publication documentation static reviews. Manager post-publication architecture
-review is clean on the exact heads recorded in the handoff. CI is pending the lower-layer test-fixture relocation; #404 typecheck passes
-and secrets checks are green. All verification stages pass across the full run,
+review is clean on the exact heads recorded in the handoff. The reviewed fixture relocation is complete. CI is complete: all nine checks pass on each PR, #403 at `5cbc5882` and
+#404 at `9a6023fe`. These results apply to those revisions; linked PRs show current status. Merge has not been authorized. All verification stages pass across the full run,
 corrected targeted rerun and separately completed remaining stages. Two independent
 static reviews are clean on production/UI `87a3bbe0` and the final test-only delta.
 Manager pre-publication architecture and product-plan review is complete. Real model/Codex/GitHub acceptance is **NOT RUN**.
