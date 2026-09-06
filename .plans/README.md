@@ -9,9 +9,8 @@
 
 ## Active Or Deferred Work
 
-- `factory/` — next implementation priority: software factory slice 1, from manual/GitHub
-  intake through model-assisted shaping to human release; five stacked implementation
-  PRs with a manager/reviewer handoff. Planned, not implemented.
+- `factory/` — slice 1 is merged with live acceptance pending. Slice 2 brief-to-candidate
+  implementation is active; no slice 2 PR may merge before live slice 1 acceptance.
 - `OPEN_GATEWAY_MODEL_DISCOVERY_PLAN.md` — implemented in the current worktree: first-class
   OpenRouter and OpenCode Zen providers, live searchable onboarding, native Pi protocol
   preservation, and a centralized but disabled-until-approved provider-role default mechanism.

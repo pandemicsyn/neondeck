@@ -70,8 +70,9 @@ As of August 2026:
 
 ## Software Factory Slice 1 — Merged; Live Acceptance In Progress
 
-As of September 2026, all five increments of the initial intake and collaborative
-shaping path are implemented and reviewed. Historical phase completion above is unchanged.
+Slice 1 merged in PRs #382–#387 and #389 through `13049498d457257626af80483d68e0aa8110ad68`.
+Final verification passed 1,968 tests, 63 CI checks, two independent static reviews
+and final manager review. Local tests do not establish deployed acceptance.
 
 - [x] Manual/GitHub intake, durable source/work records, and bounded model triage.
 - [x] Persistent model-led planning, versioned briefs, Markdown editing and proposal
@@ -120,6 +121,14 @@ active plans through the remaining acceptance; coding execution starts in a
 subsequent slice. Actual deviations
 belong in `DEVIATIONS.md`; preserve existing coding harnesses and do not revive
 the removed PR Autopilot coordinator.
+
+## Software Factory Slice 2 — Implementation And Acceptance
+
+Slice 2 adds supervised local worktrees and Codex CLI handoff, durable coding runs,
+cancellation/recovery/limits, retained candidate evidence and an operator UI.
+See the [Slice 2 implementation plan](factory/SLICE_2_IMPLEMENTATION_PLAN.md)
+for delivery status and acceptance obligations. Each publication requires two
+clean independent static reviews and manager implementation/product-plan review.
 
 ## Usability Gate
 

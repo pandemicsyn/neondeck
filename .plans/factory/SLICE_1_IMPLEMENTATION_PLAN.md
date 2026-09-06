@@ -1,5 +1,16 @@
 # Slice 1 — Intake, collaborative shaping, and human release
 
+## Current landing status and slice 2 merge gate (2026-09-06)
+
+Slice 1 is **merged**, through `13049498d457257626af80483d68e0aa8110ad68`
+(PRs #382–#387 and #389). Final local verification passed 1,968 tests and 63 CI
+checks, with two independent clean static reviews and manager acceptance.
+**Deployment/live acceptance is still pending. No slice 2 PR may merge until the
+morning operator exercise is completed and accepted.** See the
+[slice 2 gate checklist](SLICE_2_IMPLEMENTATION_PLAN.md#mandatory-merge-gate-live-slice-1-acceptance).
+The historical candidates and pre-merge ledger below remain an audit record;
+their “not merged” statements describe those earlier checkpoints.
+
 Historical acceptance: the original slice 1 stack was reviewed through feature
 `a0c0cf31c8a6693863e1f975eb61f8ff1bb85fa3` and documentation head
 `ff3a69033ae866aaf47dd0a6c3384544e5eb1e6a`. Those reviews and verification apply

@@ -906,3 +906,10 @@ Use this format:
   missed-delivery recovery and full manual-source acceptance. Track old-conversation
   compatibility separately; do not infer it from fresh-home success. Coding
   execution remains a subsequent slice.
+
+## 2026-09-06 - Software factory slice 2 sequencing
+
+- Roadmap item: Software factory slices 1–2.
+- Decision: Begin slice 2 implementation and reviewed draft stacked PRs before deployed slice 1 acceptance; all slice 2 merges remain blocked on that acceptance.
+- Reason: The user deferred private VM/GitHub/provider setup and live tests until the morning and explicitly authorized interim development with mockdex.
+- Follow-up: Operator and manager complete the checklist in factory/SLICE_2_IMPLEMENTATION_PLAN.md, record public-safe acceptance evidence and clear the merge gate before any slice 2 PR merges. Mock tests do not clear it.
