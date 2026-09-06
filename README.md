@@ -53,7 +53,7 @@ remain human actions. Local check homes and environments are separate; this
 initial local version is not a filesystem security sandbox.
 
 Slice 1 is merged and operator-accepted with remaining live checks deferred.
-Slice 2 is merged with real Codex acceptance pending. Slice 3 is in development;
+Slice 2 is merged with real Codex acceptance pending. Slice 3 is implemented in a draft PR stack;
 synthetic checks do not establish live Codex/GitHub acceptance. See the
 [candidate delivery operator guide](.plans/factory/SLICE_3_OPERATOR.md) and
 [Slice 3 handoff](.plans/factory/SLICE_3_HANDOFF.md) for current evidence.

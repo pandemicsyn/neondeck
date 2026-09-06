@@ -9,7 +9,7 @@ checks, with two independent clean static reviews and manager acceptance.
 The historical candidates and pre-merge ledger below remain an audit record;
 their “not merged” statements describe those earlier checkpoints.
 
-The merged scope is **slice 1: intake to a human-released queue**.
+The merged scope includes **slice 1: intake to a human-released queue**, followed by Slice 2 brief-to-candidate execution.
 Slice 2 adds an opt-in Codex CLI handoff from that exact release to a retained
 candidate for human review. Its implementation is reviewed and verified locally;
 the operator authorized stack merge, with real Codex acceptance still pending after merge. This work does not build a coding agent.
@@ -48,3 +48,5 @@ manager completes the final implementation/product-plan review. Implementers
 provide screenshots for UI changes for review and eventual GitHub publication.
 
 Slice 3 postmerge live obligations are recorded in [SLICE_3_ACCEPTANCE.md](SLICE_3_ACCEPTANCE.md); no live acceptance is claimed by synthetic verification.
+
+Slice 3 is implemented and verified in draft stack #402 (PRs #397–#401). Two independent static reviews were clean before publication; the manager’s post-publication architecture review is also clean. See the [Slice 3 handoff](SLICE_3_HANDOFF.md) for PR links, 2,439 passing tests, screenshots and remaining acceptance. Human review and merge remain pending.

@@ -1,6 +1,6 @@
 # Slice 3 — Candidate to PR
 
-Status: implementation contract, September 6, 2026. Slice 3 runtime and workbench implementation are complete locally; final cumulative verification, independent review and draft stack publication are in progress. Real-provider acceptance is pending. See [handoff](SLICE_3_HANDOFF.md) for layer ownership, evidence and remaining work.
+Status: implementation contract, September 6, 2026. Slice 3 runtime and workbench implementation are verified and published in draft stack #402 (PRs #397–#401). Both independent static reviews and the manager product/architecture reviews are clean. Human review/merge and real-provider acceptance remain pending. See [handoff](SLICE_3_HANDOFF.md) for layer ownership, evidence and remaining work.
 
 ## Direction and prior acceptance
 

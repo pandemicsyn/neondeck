@@ -130,7 +130,7 @@ See the [Slice 2 implementation plan](factory/SLICE_2_IMPLEMENTATION_PLAN.md)
 for delivery status and acceptance obligations. The operator authorized stack merge with real Codex acceptance still pending after merge. Each publication requires two
 clean independent static reviews and manager implementation/product-plan review.
 
-## Software Factory Slice 3 — Candidate To PR (In Progress)
+## Software Factory Slice 3 — Candidate To PR (Draft Stack Review)
 
 Slice 2 merged in PRs #391–#394, ending at `0b776ff6994b8d078aa550910ca143b61d643bbd`.
 Its real Codex acceptance remains pending after merge; Slice 1 remains
@@ -142,7 +142,7 @@ acceptance claim for Slice 3.
 - [x] Revision-checked draft PR delivery with uncertain-effect reconciliation.
 - [x] Existing watch/review surfaces with exclusive factory ownership, human merge,
       recorded outcomes, and safe cleanup.
-- [ ] Two clean independent static reviews before PR creation, cumulative verification,
+- [x] Two clean independent static reviews before PR creation, cumulative verification,
       screenshots where applicable, and a manager architecture review of the full stack.
 
 See the [Slice 3 implementation plan](factory/SLICE_3_IMPLEMENTATION_PLAN.md) and

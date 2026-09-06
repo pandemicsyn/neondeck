@@ -11,8 +11,9 @@
 
 - `factory/` — slice 1 is merged and operator-accepted with deferred live checks.
   Slice 2 brief-to-candidate delivery is merged; real Codex acceptance remains
-  pending after merge. Slice 3 candidate-to-PR implementation is in progress;
-  its stack requires independent clean static reviews before publication.
+  pending after merge. Slice 3 candidate-to-PR implementation is verified and
+  published as draft PRs #397–#401 after two independent clean static reviews.
+  Human review/merge and real-provider acceptance remain pending.
 - `OPEN_GATEWAY_MODEL_DISCOVERY_PLAN.md` — implemented in the current worktree: first-class
   OpenRouter and OpenCode Zen providers, live searchable onboarding, native Pi protocol
   preservation, and a centralized but disabled-until-approved provider-role default mechanism.
