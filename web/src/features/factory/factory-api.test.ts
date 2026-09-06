@@ -42,12 +42,12 @@ it.each(acknowledgements)(
     await expect(operation()).rejects.toThrow();
   },
 );
-it('accepts the documented idle abort and accepted sync responses', async () => {
+it('accepts the owned stop acknowledgement and accepted sync responses', async () => {
   vi.mocked(postJson)
-    .mockResolvedValueOnce({ aborted: false })
+    .mockResolvedValueOnce({ ok: true })
     .mockResolvedValueOnce({ accepted: true });
   await expect(api.stopFactoryPlanning('session')).resolves.toEqual({
-    aborted: false,
+    ok: true,
   });
   await expect(api.syncFactorySource('task')).resolves.toEqual({
     accepted: true,

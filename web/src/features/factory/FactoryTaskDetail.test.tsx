@@ -384,3 +384,25 @@ it('does not overwrite an unreadable draft and retries storage recovery explicit
     vi.unstubAllGlobals();
   }
 });
+
+it('disables release without a current repository fingerprint and releases with a valid fingerprint', async () => {
+  current = { ...current, blockers: [], repoFingerprint: null };
+  await render();
+  expect(button('Release v2').disabled).toBe(true);
+  await click('Release v2');
+  expect(api.mutateFactory).not.toHaveBeenCalled();
+  current = { ...current, repoFingerprint: hash };
+  await render();
+  expect(button('Release v2').disabled).toBe(false);
+  await click('Release v2');
+  expect(api.mutateFactory).toHaveBeenCalledWith(
+    'task',
+    'release',
+    expect.objectContaining({
+      repoFingerprint: hash,
+      specVersion: 2,
+      specHash: 'b'.repeat(64),
+      expectedVersion: 2,
+    }),
+  );
+});

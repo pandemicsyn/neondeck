@@ -263,3 +263,69 @@ it('bypasses validators for explicit no-store requests', async () => {
     mock.mock.calls.map((c) => new Headers(c[1]?.headers).get('if-none-match')),
   ).toEqual([null, null, null]);
 });
+
+it.each(['provider', 'network'])(
+  'evicts a cached validator after a %s failure and rejects a subsequent stale 304',
+  async (failure) => {
+    const mock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(response({ old: true }))
+      .mockImplementationOnce(async () => {
+        if (failure === 'network')
+          throw new TypeError('synthetic network failure');
+        return Response.json({}, { status: 500 });
+      })
+      .mockResolvedValueOnce(new Response(null, { status: 304 }))
+      .mockResolvedValueOnce(response({ fresh: true }, { ETag: '"fresh"' }));
+    vi.stubGlobal('fetch', mock);
+    await read();
+    await expect(read()).rejects.toThrow(
+      failure === 'network'
+        ? 'synthetic network failure'
+        : 'GitHub request failed with 500',
+    );
+    await expect(read()).rejects.toMatchObject({ status: 304 });
+    expect(await read()).toEqual({ fresh: true });
+    expect(
+      mock.mock.calls.map((call) =>
+        new Headers(call[1]?.headers).get('if-none-match'),
+      ),
+    ).toEqual([null, '"v1"', null, null]);
+  },
+);
+
+it.each([200, 304])(
+  'preserves a newer successful %s validator when an older read fails',
+  async (status) => {
+    let fail: ((reason: Error) => void) | undefined;
+    const mock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(response({ old: true }))
+      .mockImplementationOnce(
+        () =>
+          new Promise<Response>((_resolve, reject) => {
+            fail = reject;
+          }),
+      )
+      .mockResolvedValueOnce(
+        status === 200
+          ? response({ fresh: true }, { ETag: '"fresh"' })
+          : new Response(null, { status: 304, headers: { ETag: '"fresh"' } }),
+      )
+      .mockResolvedValueOnce(new Response(null, { status: 304 }));
+    vi.stubGlobal('fetch', mock);
+    await read();
+    const old = read('synthetic-a', url, {
+      signal: new AbortController().signal,
+    }).catch((error: unknown) => error);
+    await vi.waitFor(() => expect(fail).toBeDefined());
+    const expected = status === 200 ? { fresh: true } : { old: true };
+    expect(await read()).toEqual(expected);
+    fail?.(new TypeError('synthetic late failure'));
+    expect(await old).toBeInstanceOf(TypeError);
+    expect(await read()).toEqual(expected);
+    expect(
+      new Headers(mock.mock.calls[3]?.[1]?.headers).get('if-none-match'),
+    ).toBe('"fresh"');
+  },
+);

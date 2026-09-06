@@ -242,7 +242,21 @@ async function executeConditionalGitHubGet(
   cached: CachedGitHubResponse | undefined,
   generation: number,
 ) {
-  const response = await executeGitHubRequest(url, init, cached);
+  let response: Response;
+  try {
+    response = await executeGitHubRequest(url, init, cached);
+  } catch (error) {
+    // A failed revalidation retires only the entry this request observed.
+    // A concurrent successful read may already have replaced it.
+    if (
+      validatorCacheKey &&
+      githubReadGeneration() === generation &&
+      githubValidatorCache.get(validatorCacheKey) === cached
+    ) {
+      deleteCachedGitHubResponse(validatorCacheKey);
+    }
+    throw error;
+  }
   if (response.status === 304 && cached) {
     if (githubReadGeneration() !== generation) {
       throw new Error(

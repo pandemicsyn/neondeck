@@ -18,7 +18,8 @@ export const factoryPlanningAdmissionSchema = v.object({
   sessionId: v.pipe(v.string(), v.minLength(1)),
   intentId: v.pipe(v.string(), v.minLength(1)),
 });
-export const factoryAbortSchema = v.object({ aborted: v.boolean() });
+// The owned route acknowledges the stop request; settlement may still be pending.
+export const factoryAbortSchema = v.object({ ok: v.literal(true) });
 export type FactoryMutationArgs =
   | [action: 'create', input: v.InferOutput<typeof manualIntakeSchema>]
   | [action: 'spec', input: v.InferOutput<typeof saveSpecSchema>]

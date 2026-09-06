@@ -395,19 +395,21 @@ export function FactoryTaskDetail({
               !!editor ||
               viewed.version !== latest.version ||
               detail.blockers.length > 0 ||
+              !detail.repoFingerprint ||
               detail.eligible
             }
-            onClick={() =>
+            onClick={() => {
+              if (!detail.repoFingerprint) return;
               void mutate('release', {
                 requestKey: crypto.randomUUID(),
                 expectedVersion: detail.work.version,
                 specVersion: viewed.version,
                 specHash: viewed.hash,
                 sourceVersion: detail.source.version,
-                repoFingerprint: detail.repoFingerprint ?? '',
+                repoFingerprint: detail.repoFingerprint,
                 policyVersion: factoryPolicy.version,
-              })
-            }
+              });
+            }}
           >
             Release v{viewed.version}
           </button>
