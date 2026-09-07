@@ -1,6 +1,18 @@
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { log } from '@clack/prompts';
+import { discoverLocalCodexAuth } from '../modules/factory/codex-local-auth';
+import {
+  codingDiscoveryContext,
+  codingExecutionPath,
+  discoverCodingExecutable,
+  isCodingExecutable,
+  validCodingPath,
+  validateCodingExecutable,
+  type CodingDiscoveryContext,
+} from './coding-discovery';
+import { pickCodingModel } from './coding-model-picker';
 import * as v from 'valibot';
 import {
   factoryCodingConfigSchema,
@@ -15,65 +27,158 @@ import {
   localCodingConfig,
   selectedCodingAuth,
 } from '../modules/factory/coding-readiness';
-import {
-  promptConfirm,
-  promptSelect,
-  promptText,
-  requiredText,
-} from './prompts';
+import { promptConfirm, promptSelect, promptText } from './prompts';
 
-export async function configureFactoryCoding(current: FactoryCodingConfig) {
+export async function configureFactoryCoding(
+  current: FactoryCodingConfig,
+  context: CodingDiscoveryContext = codingDiscoveryContext(),
+) {
   if (
     !(await promptConfirm({
-      message: 'Select an installed coding CLI and isolated auth reference?',
-      initialValue: false,
+      message: 'Set up an installed coding CLI?',
+      initialValue: Boolean(current.executable),
     }))
   )
     return current;
   const adapters = listCodingAdapters();
+  const detected = new Map(
+    await Promise.all(
+      adapters.map(
+        async (adapter) =>
+          [
+            adapter.id,
+            await discoverCodingExecutable(adapter.id, context),
+          ] as const,
+      ),
+    ),
+  );
   const id = await promptSelect({
-    message: 'Coding adapter (installation and login are separate)',
+    message: 'Coding CLI',
+    initialValue:
+      current.adapter?.id ??
+      adapters.find((adapter) => detected.get(adapter.id))?.id ??
+      'codex',
     options: adapters.map((adapter) => ({
       value: adapter.id,
       label: adapter.label,
-      hint: adapter.supportedVersion,
+      hint:
+        current.adapter?.id === adapter.id && current.executable
+          ? `Configured: ${current.executable}`
+          : (detected.get(adapter.id) ?? 'Not detected; enter path manually'),
     })),
   });
   const adapter = getCodingAdapter(id);
-  const executable = await promptText({
-    message: 'Absolute installed executable path',
-    initialValue: current.adapter?.id === id ? (current.executable ?? '') : '',
-    validate: (value) =>
-      value?.startsWith('/') ? undefined : 'Enter an absolute executable path.',
-  });
-  const path = await promptText({
-    message:
-      'Executable search PATH (colon-separated absolute directories). Include CLI runtimes such as Node for npm-installed CLIs using /usr/bin/env node; for example /opt/node/bin:/usr/local/bin:/usr/bin:/bin. Only this PATH is used, not your shell environment.',
-    initialValue: current.path,
-    validate: (value) =>
-      v.safeParse(factoryCodingConfigSchema.entries.path, value ?? '').success
-        ? undefined
-        : 'Enter colon-separated absolute directories with no empty entries.',
-  });
-  const model = await promptText({
-    message: 'Coding model (adapter-specific model or provider/model)',
-    initialValue: current.adapter?.id === id ? (current.model ?? '') : '',
-    validate: requiredText,
-  });
-  const kind = await promptSelect({
-    message: 'Isolated credential mechanism',
-    options: adapter.credentialKinds.map((value) => ({ value, label: value })),
-  });
-  const env = await promptText({
-    message: 'Credential environment variable name (never the secret value)',
-    initialValue:
-      (current.auth?.kind === 'codex-local' ? undefined : current.auth?.env) ??
-      'FACTORY_CODING_AUTH',
-    validate: (value) =>
-      /^[A-Z][A-Z0-9_]{0,127}$/.test(value ?? '')
-        ? undefined
-        : 'Enter an uppercase environment variable name.',
-  });
+  const sameAdapter = (current.adapter?.id ?? 'codex') === id;
+  let executable =
+    (sameAdapter ? current.executable : null) ?? detected.get(id);
+  let path =
+    sameAdapter && current.executable
+      ? current.path
+      : executable
+        ? codingExecutionPath(executable, context)
+        : current.path;
+  if (executable)
+    log.info(
+      `Coding executable: ${executable}. Search PATH ${sameAdapter && current.executable ? 'retained' : 'auto-detected'}.`,
+    );
+  const advanced = executable
+    ? await promptConfirm({
+        message: 'Edit executable or search PATH (advanced)?',
+        initialValue: false,
+      })
+    : true;
+  if (advanced) {
+    executable = await promptText({
+      message: 'Absolute installed executable path',
+      initialValue: executable ?? '',
+      validate: (value) => validateCodingExecutable(value ?? ''),
+    });
+    path = await promptText({
+      message: 'Executable search PATH (colon-separated absolute directories)',
+      initialValue:
+        sameAdapter && current.executable
+          ? current.path
+          : codingExecutionPath(executable, context),
+      validate: (value) =>
+        validCodingPath(value ?? '')
+          ? undefined
+          : 'Enter absolute directories with no empty entries or control characters.',
+    });
+  }
+  if (!executable || !(await isCodingExecutable(executable)))
+    throw new Error(
+      'Coding executable is missing or not executable. Edit its path to continue.',
+    );
+  if (!validCodingPath(path))
+    throw new Error('Invalid executable search PATH.');
+  const model = await pickCodingModel(
+    id,
+    sameAdapter ? current.model : null,
+    context.env,
+  );
+  let auth = sameAdapter ? current.auth : null;
+  const local =
+    id === 'codex'
+      ? discoverLocalCodexAuth({ env: context.env, home: context.home })
+      : null;
+  const existingEnv = auth && 'env' in auth ? auth.env : null;
+  const missingReference =
+    existingEnv !== null && !context.env[existingEnv]?.trim();
+  if (missingReference)
+    log.info(
+      `Configured credential reference ${existingEnv} is unavailable.${local?.available ? ' A reusable local Codex login is available.' : ''}`,
+    );
+  const keepAuth = auth
+    ? await promptConfirm({
+        message: 'Keep the configured isolated credential reference?',
+        initialValue: !missingReference,
+      })
+    : false;
+  if (!keepAuth) {
+    if (local && !local.available)
+      log.info(
+        'No reusable file-backed Codex login found. Log in with Codex using auth.json, or select a credential environment reference.',
+      );
+    const defaultEnv =
+      id === 'kilo' ? 'KILOCODE_API_KEY' : 'FACTORY_CODING_AUTH';
+    const kind = await promptSelect({
+      message:
+        'Isolated credential reference (live authentication remains unverified)',
+      initialValue: local?.available ? 'codex-local' : 'api-key',
+      options: [
+        ...(local?.available
+          ? [
+              {
+                value: 'codex-local',
+                label: 'Use existing local Codex login',
+                hint: local.path,
+              },
+            ]
+          : []),
+        ...adapter.credentialKinds.map((value) => ({
+          value,
+          label: `${value} environment reference${id === 'kilo' && value === 'api-key' ? ' (KILOCODE_API_KEY)' : ' (advanced)'}`,
+        })),
+      ],
+    });
+    if (kind === 'codex-local' && local?.available) {
+      auth = v.parse(factoryCodingConfigSchema.entries.auth, {
+        kind,
+        path: local.path,
+      });
+    } else {
+      const env = await promptText({
+        message:
+          'Credential environment variable name (never the secret value)',
+        initialValue: defaultEnv,
+        validate: (value) =>
+          /^[A-Z][A-Z0-9_]{0,127}$/.test(value ?? '')
+            ? undefined
+            : 'Enter an uppercase environment variable name.',
+      });
+      auth = v.parse(factoryCodingConfigSchema.entries.auth, { kind, env });
+    }
+  }
   const next = v.parse(factoryCodingConfigSchema, {
     ...current,
     adapter: {
@@ -84,7 +189,7 @@ export async function configureFactoryCoding(current: FactoryCodingConfig) {
     executable,
     path,
     model,
-    auth: { kind, env },
+    auth,
   });
   if (
     !adapter.acceptsVersion(adapter.supportedVersion, localCodingConfig(next))

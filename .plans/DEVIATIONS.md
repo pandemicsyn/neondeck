@@ -15,6 +15,18 @@ Use this format:
 - Follow-up: What remains, who/what should handle it, or `None`.
 ```
 
+## 2026-09-07 - Guided factory setup and explicit coding enablement
+
+- Roadmap item: Factory operations onboarding follow-up.
+- Decision: Add CLI discovery, model search, file-backed local Codex login reuse,
+  multi-repository GitHub setup and an explicit coding enablement choice.
+- Reason: Operator rehearsal exposed avoidable manual setup and an incomplete
+  path from configuring a CLI to enabling human-released coding work.
+- Follow-up: See [setup usability plan](factory/SETUP_USABILITY_PLAN.md).
+  Keyring-only credential export and writing refreshed attempt tokens back to the
+  user's login store are not introduced. Live authentication/refresh and remote
+  acceptance remain pending; no existing slice acceptance is reclassified.
+
 ## 2026-09-07 - Diagnostics layer delivery and retention limits
 
 - Roadmap item: Factory diagnostics layer in the operations stack, after Slice 4.

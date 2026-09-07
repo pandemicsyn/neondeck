@@ -245,6 +245,11 @@ acceptance or start Linear intake/remote execution.
 
 ## Software Factory Onboarding And Observability — Source Complete
 
+Operator rehearsal follow-up: [guided setup](factory/SETUP_USABILITY_PLAN.md) adds
+CLI detection, searchable models, local Codex login reuse, multiple intake
+repositories and explicit coding enablement. Implementation and independent review
+are in progress; existing live acceptance obligations remain open.
+
 User-prioritized after UI polish and before further factory expansion. Optional
 `neondeck init` setup, correlated local diagnostics, durable worker health, task
 history, factory doctor, and previewable redacted export are implemented.

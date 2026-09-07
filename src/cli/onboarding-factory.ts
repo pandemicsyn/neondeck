@@ -9,6 +9,7 @@ import { loadEnvForPaths } from './options';
 import {
   promptConfirm,
   promptSelect,
+  promptMultiselect,
   promptText,
   requiredText,
 } from './prompts';
@@ -57,7 +58,7 @@ export async function configureFactory(paths: RuntimePaths) {
         ? [
             {
               value: 'github',
-              label: 'Add GitHub issue connection',
+              label: 'Add GitHub issue connections',
               hint: 'Saved disabled; no remote setup.',
             },
           ]
@@ -74,23 +75,48 @@ export async function configureFactory(paths: RuntimePaths) {
     log.info(githubResumeHint);
     return;
   }
-  let repoId: string | undefined;
-  if (before.repos.length)
-    repoId = await promptSelect({
-      message:
-        'Repository for intake (manual tasks select it again in /factory)',
-      options: before.repos.map((repo) => ({ value: repo.id, label: repo.id })),
-    });
-  const repo = before.repos.find((repo) => repo.id === repoId);
-  if (before.repos.length && !repo) {
+  const selectedRepoIds =
+    intake === 'github'
+      ? await promptMultiselect({
+          message: 'Repositories for GitHub issue intake',
+          required: false,
+          options: before.repos.map((repo) => ({
+            value: repo.id,
+            label: `${repo.id} (${repo.github.owner}/${repo.github.name})`,
+            hint: next.github.some(
+              (connection) => connection.repoId === repo.id,
+            )
+              ? 'Existing connection retained; no duplicate added.'
+              : 'Add a disabled connection.',
+          })),
+        })
+      : [];
+  if (
+    selectedRepoIds.some((id) => !before.repos.some((repo) => repo.id === id))
+  ) {
     log.info(
-      'Repository selection is unavailable. Factory configuration unchanged. Resume with neondeck factory setup to select a registered repository.',
+      'Repository selection is unavailable. Factory configuration unchanged. Resume with neondeck factory setup.',
     );
     return;
   }
-  if (intake === 'github' && repo) {
+  if (intake === 'github' && !selectedRepoIds.length)
+    log.info(
+      'No repositories selected. Existing GitHub connections are retained.',
+    );
+  for (const repoId of new Set(selectedRepoIds)) {
+    const repo = before.repos.find((repo) => repo.id === repoId)!;
+    if (next.github.some((connection) => connection.repoId === repoId)) {
+      log.info(
+        `${repoId}: existing GitHub connection retained. Review it in /factory.`,
+      );
+      continue;
+    }
+    note(
+      `${repoId}: ${repo.github.owner}/${repo.github.name}. This connection will be saved disabled. Metadata lookup is read-only.`,
+      'GitHub connection',
+    );
     const id = await promptText({
-      message: 'New connection ID',
+      message: `${repoId}: new connection ID`,
       validate: (value) =>
         /^[A-Za-z0-9_-]+$/.test(value ?? '') &&
         !next.github.some((item) => item.id === value)
@@ -98,7 +124,7 @@ export async function configureFactory(paths: RuntimePaths) {
           : 'Use a unique alphanumeric connection ID.',
     });
     const mode = await promptSelect({
-      message: 'Issue admission',
+      message: `${repoId}: issue admission`,
       options: [
         { value: 'label', label: 'Require a label' },
         { value: 'all', label: 'All issues' },
@@ -172,24 +198,50 @@ export async function configureFactory(paths: RuntimePaths) {
     next.github.push(connection);
   }
   next.coding = await configureFactoryCoding(next.coding);
+  if (before.factory.coding.enabled)
+    log.info('Coding remains enabled. Review coding controls in /factory.');
+  else
+    log.info(
+      'Enabling coding may dispatch existing human-released tasks under existing grants after Apply. Setup creates no release or publication grants.',
+    );
+  if (!next.enabled)
+    log.info(
+      'Factory intake is off. Enabled coding will not dispatch until factory intake is enabled.',
+    );
+  const enableCoding =
+    !before.factory.coding.enabled &&
+    (await promptConfirm({
+      message: 'Enable coding for human-released tasks?',
+      initialValue: false,
+    }));
+  next.coding.enabled = before.factory.coding.enabled || enableCoding;
+  const authorization =
+    enableCoding && !before.factory.coding.enabled
+      ? { enableCoding: true as const }
+      : undefined;
   const readiness = await factoryCodingSetupReadiness(next.coding);
   note(
     [
       `Factory intake: ${before.factory.enabled} → ${next.enabled}`,
-      `Selected repository: ${repoId ?? 'choose when creating a manual task'}`,
+      `Intake repositories: ${intake === 'manual' ? 'choose per manual task in /factory' : selectedRepoIds.join(', ') || 'no additions'}`,
       `Planning: ${before.models.displayAssistant}; triage: ${before.models.utility}`,
       ...before.modelIssues.map(
         (model) => `Unconfigured provider/model reference: ${model}`,
       ),
-      `Coding enabled: ${next.coding.enabled} (retained). Release/publication grants are separate human actions.`,
+      `Coding enabled: ${before.factory.coding.enabled} → ${next.coding.enabled}. Release/publication grants are separate human actions.`,
       ...readiness,
+      ...(!next.enabled
+        ? [
+            'Factory intake is off: coding will not dispatch until factory intake is enabled.',
+          ]
+        : []),
       'Proposed factory configuration (references only):',
       JSON.stringify(next, null, 2),
       'GitHub webhook: /hooks/github/<connection-id> on the separate ingress listener.',
       'Keep dashboard /factory on the private listener. Setup creates no webhook, provider login or new release/publication grants.',
       ...(next.enabled && next.coding.enabled
         ? [
-            'WARNING: Coding is already enabled. Applying intake enablement may let a running server dispatch existing released work under existing grants.',
+            'Coding is enabled in this proposal. Applying may let a running server dispatch existing released work under existing grants.',
           ]
         : []),
       'Changing existing coding settings can invalidate outstanding grants; review them in /factory.',
@@ -205,7 +257,7 @@ export async function configureFactory(paths: RuntimePaths) {
     log.info('Factory configuration unchanged.');
     return;
   }
-  applyFactorySetup(paths, before.fingerprint, next);
+  applyFactorySetup(paths, before.fingerprint, next, authorization);
   const lines = next.github.flatMap((connection) =>
     connectionReadiness(connection, paths).map(
       (reason) => `${connection.id}: ${reason}`,
