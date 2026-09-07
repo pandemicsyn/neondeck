@@ -1607,6 +1607,16 @@ Must-haves:
 - [x] Add fast tests with mocked reflection/model output for config fallback, scope validation, candidate policies, prompt snapshot budgets, session staleness, PR retrospective thresholds, API validation, skill patch proposals, direct handled-PR accounting, dashboard query adapters, and CLI learning inspect/decision/restore paths.
 - [x] Add opt-in smoke/integration tests for conversation reflection and PR retrospective workflows without slowing `npm run check`.
 
+## Factory diagnostics layer — operations stack
+
+Implemented in PR #416 above the UI polish and observability foundation, after
+Slice 4 and before further factory expansion. This layer adds read-only diagnostic
+health, bounded timelines and redacted preview/export APIs, plus CLI helpers.
+Command registration/setup and dashboard integration belong to subsequent stack
+layers #417/#418. See [diagnostics handoff](factory/DIAGNOSTICS_HANDOFF.md) for
+scope, verification and acceptance limits. Implementation is complete; merge
+requires clear reviews/checks, and live acceptance remains pending.
+
 ## Open Questions
 
 All current roadmap questions have been resolved into decisions above. Add new questions here as implementation uncovers them.

@@ -15,6 +15,22 @@ Use this format:
 - Follow-up: What remains, who/what should handle it, or `None`.
 ```
 
+## 2026-09-07 - Diagnostics layer delivery and retention limits
+
+- Roadmap item: Factory diagnostics layer in the operations stack, after Slice 4.
+- Decision: PR #416 delivers the read-only API and CLI helpers; registered doctor,
+  setup and dashboard surfaces arrive in #417/#418. Its standalone changeset
+  describes the complete stack's shipped capability, not available CLI wiring in
+  this intermediate branch.
+- Reason: Keep diagnostic reads separate from command registration and UI while
+  making each branch's actual status explicit. History retains bounded source
+  windows and the newest 2,000 projected entries; exports include the newest 100.
+  Omitted history is reported as partial, never complete audit retention.
+- Follow-up: Complete stack review/checks before merging; retain live provider,
+  GitHub, restart and factory acceptance obligations. See
+  [diagnostics handoff](factory/DIAGNOSTICS_HANDOFF.md). No live acceptance is
+  claimed by the local tests, fixtures or export previews.
+
 ## 2026-09-01 - Google Vertex Gemini Provider
 
 - Roadmap item: Phase 13 / provider configuration and safety

@@ -25,6 +25,7 @@ const backendLayers = new Map([
   ['src/runtime-home', 1],
   ['src/modules/app-state', 2],
   ['src/modules/factory-observability', 2],
+  ['src/modules/factory-diagnostics', 4],
   ['src/modules/runtime', 2],
   ['src/modules/autonomous-audit', 2],
   ['src/repo-edit', 2],

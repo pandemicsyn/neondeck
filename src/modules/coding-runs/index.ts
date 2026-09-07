@@ -65,3 +65,5 @@ export type {
 
 export { executableIdentity as inspectCodingExecutableIdentity } from './adapter-host';
 export type { CodingExecutableIdentity } from '../../../shared/coding-adapters';
+
+export { decodeCodingRunRow } from './row-decoder';

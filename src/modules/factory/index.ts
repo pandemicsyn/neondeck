@@ -37,3 +37,6 @@ export {
   frozenCodingConfig,
   assertPinnedCodingExecutable,
 } from './coding-context';
+
+// Public decoder for bounded read projections of retained planning receipts.
+export { decodePlanningEffect } from './effect-store';
