@@ -36,7 +36,7 @@ export function readFactorySetup(paths: RuntimePaths) {
     factory,
     models,
     modelIssues,
-    fingerprint: factoryConfigSnapshotFingerprint(paths, config),
+    fingerprint: factoryConfigSnapshotFingerprint(config, repos),
   };
 }
 

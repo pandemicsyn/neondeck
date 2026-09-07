@@ -7,6 +7,7 @@ import {
   parseAppConfig,
   parseRepoRegistry,
   type AppConfig,
+  type RepoConfig,
   type RuntimePaths,
   readRuntimeJsonSync,
   runtimePaths,
@@ -15,16 +16,11 @@ import { writeJsonAtomicSync } from '../../../runtime-home/files';
 import { recordConfigChange } from '../history';
 
 export function factoryConfigSnapshotFingerprint(
-  paths: RuntimePaths,
-  config?: AppConfig,
+  config: AppConfig,
+  repos: readonly RepoConfig[],
 ) {
   return createHash('sha256')
-    .update(
-      JSON.stringify({
-        config: config ?? readRuntimeJsonSync(paths.config, parseAppConfig),
-        repos: readRuntimeJsonSync(paths.repos, parseRepoRegistry).repos,
-      }),
-    )
+    .update(JSON.stringify({ config, repos }))
     .digest('hex');
 }
 
@@ -43,7 +39,11 @@ export function updateFactoryConfig(
       v.parse(
         v.pipe(v.string(), v.regex(/^[a-f0-9]{64}$/)),
         options.expectedFingerprint,
-      ) !== factoryConfigSnapshotFingerprint(paths, before)
+      ) !==
+        factoryConfigSnapshotFingerprint(
+          before,
+          readRuntimeJsonSync(paths.repos, parseRepoRegistry).repos,
+        )
     ) {
       throw new Error(
         'Configuration or repositories changed during setup. Run factory setup again to review current settings.',

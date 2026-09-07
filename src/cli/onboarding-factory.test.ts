@@ -1,3 +1,5 @@
+import { writeFileSync } from 'node:fs';
+import * as agentConfig from '../modules/runtime/agent-config';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -28,6 +30,7 @@ vi.mock('@clack/prompts', () => ({
 }));
 const homes: string[] = [];
 afterEach(async () => {
+  vi.restoreAllMocks();
   vi.resetAllMocks();
   vi.unstubAllEnvs();
   await Promise.all(
@@ -206,4 +209,46 @@ it('runs section preconditions after acquiring the shared lock against current c
   ).toThrow('stale section rejected');
   expect(inspected).toBe(true);
   expect(readFactorySetup(paths).factory.enabled).toBe(true);
+});
+
+it('rejects a registry change between the preview read and fingerprint calculation', async () => {
+  const paths = await fixture();
+  const before = readFactorySetup(paths);
+  const bytes = await readFile(paths.config, 'utf8');
+  const changedRegistry = JSON.stringify({
+    repos: [
+      {
+        id: 'added',
+        path: '/tmp/added',
+        defaultBranch: 'main',
+        github: { owner: 'example', name: 'added' },
+      },
+    ],
+  });
+  const resolveModels = agentConfig.resolveAgentModelSelection;
+  // Model resolution runs after the preview reads repos but before it hashes them.
+  const modelSpy = vi
+    .spyOn(agentConfig, 'resolveAgentModelSelection')
+    .mockImplementationOnce((config) => {
+      writeFileSync(paths.repos, changedRegistry);
+      return resolveModels(config);
+    });
+  const preview = readFactorySetup(paths);
+  modelSpy.mockRestore();
+
+  expect(preview.repos).toEqual(before.repos);
+  expect(preview.fingerprint).toBe(before.fingerprint);
+  expect(readFactorySetup(paths).fingerprint).not.toBe(preview.fingerprint);
+  const proposal = { ...preview.factory, enabled: true };
+  expect(() => applyFactorySetup(paths, preview.fingerprint, proposal)).toThrow(
+    'changed during setup',
+  );
+  // The mutation service independently rejects that same stale preview under its lock.
+  expect(() =>
+    updateFactoryConfig(proposal, paths, {
+      expectedFingerprint: preview.fingerprint,
+    }),
+  ).toThrow('changed during setup');
+  expect(await readFile(paths.config, 'utf8')).toBe(bytes);
+  expect(await readFile(paths.repos, 'utf8')).toBe(changedRegistry);
 });
