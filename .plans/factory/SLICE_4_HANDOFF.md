@@ -1,7 +1,7 @@
 # Slice 4 handoff
 
 September 6, 2026: source implementation and recorded deterministic verification
-complete. Final documentation review and publication remain pending. **No PR created.**
+complete. Published stack #410: draft [#406](https://github.com/pandemicsyn/neondeck/pull/406) → [#407](https://github.com/pandemicsyn/neondeck/pull/407) → [#408](https://github.com/pandemicsyn/neondeck/pull/408) → [#409](https://github.com/pandemicsyn/neondeck/pull/409). Published-source CI is green at the dated checkpoint below; live acceptance remains NOT RUN.
 Startup base `00c3e3e5`; planning commit `d0d57dcd`.
 
 ## Ownership and stack
@@ -17,10 +17,9 @@ All assigned source and test implementation is complete.
 | Core and generic factory contract | `03b697f6`   | `factory-coding-adapter-foundation.md` (minor) |
 | OpenCode                          | `2cce6b09`   | `factory-opencode-adapter.md` (minor)          |
 | Kilo                              | `6255c952`   | `factory-kilo-adapter.md` (minor)              |
-| UI and handoff                    | `1042d0e5`   | `factory-coding-selection-ui.md` (patch)       |
+| UI and handoff                    | `473ab9ef`   | `factory-coding-selection-ui.md` (patch)       |
 
-These are the parent-reported restacked heads before this final documentation
-update. All three lower-layer isolated typechecks passed again after restacking
+These are the published heads verified by the parent against reviewed local heads. All three lower-layer isolated typechecks passed again after restacking
 and the Linux process/import correction. Earlier focused layer checkpoints passed
 59, 47 and 72 tests respectively; those overlap other suites and are not added
 to cumulative totals.
@@ -40,9 +39,12 @@ files plus the Kilo fixture executable mode 755. Manifest:
 
 The parent's private pre-publication manager review reports no findings on
 product separation, Valibot boundaries, absence of `any`, module structure or UI.
-Final documentation needs its own review. No PR exists; publication, exact-head
-CI and the separate post-PR architecture review are pending. Earlier review
-manifests are superseded by the final v4 source attestation.
+Both independent source and documentation reviews were clean before any PR was
+created. The parent post-publication architecture review is also CLEAN: published
+heads match reviewed local heads, bases are exactly main → #406 → #407 → #408 →
+#409, and ownership, Valibot boundaries, module structure and CLI separation are
+unchanged. CI passed at the exact published-source checkpoint below; later documentation heads require their own checks. Earlier source
+manifests are superseded by final v4.
 
 ## Verification
 
@@ -124,9 +126,21 @@ passed 65. Twelve actual synthetic React screenshots cover setup, running,
 unsupported OS, cancelling, uncertainty and judge intervention, at desktop
 1440×1100 dark and mobile 390×844 light. Capture recorded no page errors,
 horizontal overflow or API mutations. Preview sources were removed and server
-stopped. The parent inspected representative setup/judge images. Four images
-await PR attachment; none have been published.
+stopped. The parent inspected representative setup/judge images. Four actual synthetic images were uploaded and verified in the #409 body.
 
-Only final documentation review, PR publication/CI/post-PR architecture review,
-live acceptance and the explicitly unestablished scenario matrix remain. Slice 1
+Live acceptance and the explicitly unestablished scenario matrix remain;
+follow-up documentation CI is shown on the PR. This publication-status documentation delta awaits review. Slice 1
 operator-accepted deferrals and Slice 2/3/3.1 pending live obligations are unchanged.
+
+## Published CI checkpoint — September 6, 2026
+
+All nine checks succeeded on each exact published head:
+[#406](https://github.com/pandemicsyn/neondeck/pull/406) `03b697f6`,
+[#407](https://github.com/pandemicsyn/neondeck/pull/407) `2cce6b09`,
+[#408](https://github.com/pandemicsyn/neondeck/pull/408) `6255c952`, and
+[#409](https://github.com/pandemicsyn/neondeck/pull/409) `473ab9ef`.
+Checks: Lint, Typecheck, Build app, Build docs, Validate npm package, TruffleHog,
+CodeQL and two Analyze checks. At this check there were no PR reviews or inline
+comments on any of the four PRs; the independent agent reviews are recorded
+separately. These results certify these source heads only. Later documentation
+commits do not inherit their CI status; linked PRs show follow-up/current CI.

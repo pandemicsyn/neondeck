@@ -1,6 +1,6 @@
 # Slice 4 operator guidance
 
-Implementation in progress. Live acceptance is **NOT RUN**; the compatibility limits below remain explicit.
+Implementation published in stack #410: draft [#406](https://github.com/pandemicsyn/neondeck/pull/406) → [#407](https://github.com/pandemicsyn/neondeck/pull/407) → [#408](https://github.com/pandemicsyn/neondeck/pull/408) → [#409](https://github.com/pandemicsyn/neondeck/pull/409). Published-source CI passed at the September 6 checkpoint in the [handoff](SLICE_4_HANDOFF.md); follow-up documentation CI remains specific to its PR head. Live acceptance is **NOT RUN**; compatibility limits remain explicit.
 
 The Local coding setup selects a registered coding CLI: Codex by default,
 OpenCode or Kilo by explicit choice. Configure the executable and model in the

@@ -1,6 +1,6 @@
 # Slice 4 — Pluggable local coding CLIs: OpenCode and Kilo Code
 
-Status: **SOURCE AND RECORDED DETERMINISTIC VERIFICATION COMPLETE**, September 6, 2026. Final documentation review and publication pending. No PR created. Slice 4 live acceptance: **NOT RUN**. See [handoff](SLICE_4_HANDOFF.md) for ownership, verification and review evidence.
+Status: **SOURCE AND RECORDED DETERMINISTIC VERIFICATION COMPLETE**, September 6, 2026. Both independent source/docs reviews are clean; published stack #410: draft [#406](https://github.com/pandemicsyn/neondeck/pull/406) → [#407](https://github.com/pandemicsyn/neondeck/pull/407) → [#408](https://github.com/pandemicsyn/neondeck/pull/408) → [#409](https://github.com/pandemicsyn/neondeck/pull/409). All nine checks passed on each exact published source head at the September 6 checkpoint in the handoff; later documentation commits have separate CI. Slice 4 live acceptance: **NOT RUN**. See [handoff](SLICE_4_HANDOFF.md) for ownership, verification and review evidence.
 
 Slice 3.1 merged on September 6, 2026, in PRs [#403](https://github.com/pandemicsyn/neondeck/pull/403) and [#404](https://github.com/pandemicsyn/neondeck/pull/404), through source head `00c3e3e565a63ebc24411eabdf34f23d94efe6ef`. The manager verified the merge against GitHub and the main tree. Slice 3.1 real model/Codex/GitHub acceptance remains **NOT RUN**.
 
@@ -101,7 +101,7 @@ No mid-session switching, failure fallback, automatic replacement or resumption 
 Review A's P1/P2 fixes pin the original executable identity from admission through
 repairs and reject identity drift before `--version`. Invalid credential failures
 are no longer cached, allowing corrected selected references to be re-evaluated.
-These fixes have focused regression tests and are included in both clean final v4 source reviews. Transitional UI/registry variants and all four changesets are also clean; only final documentation attestation remains pending before publication.
+These fixes have focused regression tests and are included in both clean final v4 source reviews. Transitional UI/registry variants and all four changesets are also clean; final documentation was also cleared by both reviewers before publication.
 
 Legacy attempts without a captured executable identity remain inspectable and
 reconcilable. **New repairs pause for a fresh human release** instead of silently
@@ -148,8 +148,9 @@ publication candidate and the parent completes implementation/product-plan revie
 Final v4 source is clean with both reviewers on manifest
 `10d35b26816b5840d6e5f06d26bf2e643183c7309377a30ea847478bdaf5070c`
 (1,335 manifest files plus Kilo mode 755). Lower transitional variants and four
-changesets are also clean. Final documentation needs standalone review; no PR
-exists, and CI/post-PR architecture review remain pending.
+changesets and final documentation are also clean. All PRs were created afterward.
+The parent post-publication architecture review is clean on the exact published
+heads and main → #406 → #407 → #408 → #409 bases. All nine checks passed on each exact published source head at the September 6 checkpoint in the handoff; later documentation commits have separate CI.
 
 ## Acceptance checklist
 
@@ -183,8 +184,9 @@ Cartesian matrix or single all-inclusive `npm run verify` pass is claimed.
       patterns, publication uncertainty, feedback edges and cleanup outcomes:
       not established as a complete matrix by shared suites and six routing cases.
       This remaining matrix obligation does not imply the named runs are pending.
-- [ ] Final documentation attestation, PR publication, exact-head CI and separate
-      post-PR parent architecture review.
+- [x] Both independent final source/docs reviews, PR publication and separate
+      post-PR parent architecture review completed. Four synthetic images verified in #409.
+- [x] All nine checks passed on each exact published source head at the September 6 checkpoint in the handoff; later documentation commits have separate CI.
 
 ### Separately authorized live acceptance
 

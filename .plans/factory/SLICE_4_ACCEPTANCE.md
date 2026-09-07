@@ -1,31 +1,33 @@
 # Slice 4 acceptance record
 
-September 6, 2026: recorded deterministic verification complete; final docs review
-and publication pending. **No PR created. Live acceptance: NOT RUN.**
+September 6, 2026: recorded deterministic verification complete. Published stack #410: draft [#406](https://github.com/pandemicsyn/neondeck/pull/406) → [#407](https://github.com/pandemicsyn/neondeck/pull/407) → [#408](https://github.com/pandemicsyn/neondeck/pull/408) → [#409](https://github.com/pandemicsyn/neondeck/pull/409). **Published-source CI green at the dated checkpoint below. Live acceptance: NOT RUN.**
 
 ## Confirmed evidence
 
-| Evidence                                           | Result                                                                                       |
-| -------------------------------------------------- | -------------------------------------------------------------------------------------------- |
-| Final `npm run check` v3                           | PASS: lint/layers/db/types; 256 unit files, 2,511 tests                                      |
-| Linux host suite                                   | PASS: 49/49, 85.43 seconds; 37 Codex + 6 OpenCode + 6 Kilo                                   |
-| Linux factory matrix                               | PASS: 6/6, 337.58 seconds, Node 26.4.0                                                       |
-| Final isolated typechecks                          | All three lower layers PASS after restack/process/import fix                                 |
-| Legacy integration                                 | 9 PASS, 679 seconds, before Linux process-table fix                                          |
-| Other integration / Git                            | Earlier baseline: 103 tests / 9 files and 47 tests / 6 files PASS                            |
-| Build/package/smoke                                | Earlier full web/server/docs build PASS; post-fix dashboard/package (1,223 files)/smoke PASS |
-| Formatting                                         | Repository check PASS; final documentation check separate                                    |
-| Source static reviews                              | Both independent reviewers CLEAN on final v4, 1,335 manifest files plus mode 755             |
-| Lower transitional variants / changesets           | Both reviewers CLEAN                                                                         |
-| Parent pre-publication manager review              | No findings; not the post-PR review                                                          |
-| UI screenshots                                     | 12 actual synthetic React captures; no page errors, overflow or API mutations                |
-| Final docs review / PR / CI / post-PR architecture | Pending                                                                                      |
-| Real coding-model/authentication/GitHub acceptance | NOT RUN                                                                                      |
+| Evidence                                           | Result                                                                                                                  |
+| -------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| Final `npm run check` v3                           | PASS: lint/layers/db/types; 256 unit files, 2,511 tests                                                                 |
+| Linux host suite                                   | PASS: 49/49, 85.43 seconds; 37 Codex + 6 OpenCode + 6 Kilo                                                              |
+| Linux factory matrix                               | PASS: 6/6, 337.58 seconds, Node 26.4.0                                                                                  |
+| Final isolated typechecks                          | All three lower layers PASS after restack/process/import fix                                                            |
+| Legacy integration                                 | 9 PASS, 679 seconds, before Linux process-table fix                                                                     |
+| Other integration / Git                            | Earlier baseline: 103 tests / 9 files and 47 tests / 6 files PASS                                                       |
+| Build/package/smoke                                | Earlier full web/server/docs build PASS; post-fix dashboard/package (1,223 files)/smoke PASS                            |
+| Formatting                                         | Repository check PASS; final documentation check separate                                                               |
+| Source static reviews                              | Both independent reviewers CLEAN on final v4, 1,335 manifest files plus mode 755                                        |
+| Lower transitional variants / changesets           | Both reviewers CLEAN                                                                                                    |
+| Parent pre-publication manager review              | No findings; not the post-PR review                                                                                     |
+| UI screenshots                                     | 12 actual synthetic React captures; no page errors, overflow or API mutations                                           |
+| Final docs review / publication                    | Both independent reviews CLEAN before all PRs were created                                                              |
+| Post-PR parent architecture                        | CLEAN: published heads/bases match reviewed stack; boundaries unchanged                                                 |
+| Exact-head CI                                      | All nine checks passed on each published source head at the September 6 checkpoint; later docs commits have separate CI |
+| Real coding-model/authentication/GitHub acceptance | NOT RUN                                                                                                                 |
 
 Final source manifest:
 `10d35b26816b5840d6e5f06d26bf2e643183c7309377a30ea847478bdaf5070c`.
-Current restacked heads before this documentation update:
-`03b697f6` / `2cce6b09` / `6255c952` / `1042d0e5`.
+Published heads verified against reviewed local heads:
+`03b697f6` / `2cce6b09` / `6255c952` / `473ab9ef`.
+Four actual synthetic images are uploaded and verified in #409.
 Do not add overlapping focused checkpoints to cumulative totals. No single
 all-inclusive successful `npm run verify` invocation is claimed.
 
@@ -75,3 +77,16 @@ new repairs need fresh human release. Linux managed-state restrictions and the
 permissions are not an OS sandbox. Real authentication, coding quality, judged
 repairs, delivery and operator acceptance remain NOT RUN. Slice 1 accepted
 deferrals and Slice 2/3/3.1 pending live obligations remain unchanged.
+
+## Published CI checkpoint — September 6, 2026
+
+All nine checks succeeded on each exact published head:
+[#406](https://github.com/pandemicsyn/neondeck/pull/406) `03b697f6`,
+[#407](https://github.com/pandemicsyn/neondeck/pull/407) `2cce6b09`,
+[#408](https://github.com/pandemicsyn/neondeck/pull/408) `6255c952`, and
+[#409](https://github.com/pandemicsyn/neondeck/pull/409) `473ab9ef`.
+Checks: Lint, Typecheck, Build app, Build docs, Validate npm package, TruffleHog,
+CodeQL and two Analyze checks. At this check there were no PR reviews or inline
+comments on any of the four PRs; the independent agent reviews are recorded
+separately. These results certify these source heads only. Later documentation
+commits do not inherit their CI status; linked PRs show follow-up/current CI.
