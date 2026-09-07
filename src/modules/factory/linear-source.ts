@@ -1,3 +1,4 @@
+import { clearLinearReadFailure } from './linear-read-health';
 import { randomUUID } from 'node:crypto';
 import * as v from 'valibot';
 import type { DatabaseSync } from 'node:sqlite';
@@ -273,5 +274,6 @@ export function reconcileLinearSource(
     JSON.stringify(previous),
     previous.id,
   );
+  clearLinearReadFailure(db, previous.id);
   return detail(db, item.id, paths);
 }

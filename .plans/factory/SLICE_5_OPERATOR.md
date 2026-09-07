@@ -41,6 +41,10 @@ provider state, and periodic discovery catches missed events. Inspect connection
 sync errors in setup. Inside a task, **Source and repository → Sync Linear
 source** requests a fresh reconciliation and refreshes the displayed task.
 
+A temporary provider error or timeout is a synchronization failure, not evidence
+that the issue changed. It must not withdraw a release or cancel coding by itself.
+Inspect the retained sync error and retry time while provider access recovers.
+
 ## Source changes and mapping repair
 
 The source panel shows the Linear issue link, team/project, source version,
@@ -48,6 +52,9 @@ status and attention reason. Resolve ambiguous configuration in setup and retry
 sync. An already admitted task retains its original source mapping; do not
 reassign it to an unrelated repository by changing connection IDs or mappings.
 Restore its original mapping when the task reports that mapping changed.
+Editing a disjoint project connection leaves unrelated project tasks unchanged;
+edits to the task's own connection or an overlapping team/project mapping still
+require review.
 
 Meaningful source changes require renewed review. Closure, archive, removal or
 loss of admission eligibility withdraws stale authority and cancels factory work

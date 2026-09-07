@@ -88,12 +88,17 @@ export function invalidateFactoryConfig(
         .all()) {
         const source = v.parse(sourceSchema, JSON.parse(String(row.record)));
         const relevant = (config: AppConfig) =>
-          (config.factory?.linear ?? []).filter(
-            (c) =>
-              c.id === source.linear?.connectionId ||
-              (c.organizationId === source.linear?.organizationId &&
-                c.teamId === source.linear?.teamId),
-          );
+          (config.factory?.linear ?? [])
+            .filter(
+              (c) =>
+                c.id === source.linear?.connectionId ||
+                (c.enabled &&
+                  c.organizationId === source.linear?.organizationId &&
+                  c.teamId === source.linear?.teamId &&
+                  (c.projectId === null ||
+                    c.projectId === source.linear?.projectId)),
+            )
+            .sort((a, b) => a.id.localeCompare(b.id));
         if (
           JSON.stringify(relevant(before)) === JSON.stringify(relevant(after))
         )

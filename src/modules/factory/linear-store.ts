@@ -61,11 +61,28 @@ const removalSchema = v.object({
   issueId: key,
   createdAt: key,
 });
+export const linearScheduleSchema = v.object({
+  id: key,
+  kind: v.literal('schedule'),
+  offset: v.pipe(
+    v.number(),
+    v.integer(),
+    v.minValue(0),
+    v.maxValue(Number.MAX_SAFE_INTEGER),
+  ),
+});
+export const linearReadFailureSchema = v.object({
+  ...common,
+  kind: v.literal('read-failure'),
+  issueId: key,
+});
 export const linearRecordSchema = v.variant('kind', [
   deliverySchema,
   linearSyncSchema,
   linearEffectSchema,
   removalSchema,
+  linearScheduleSchema,
+  linearReadFailureSchema,
 ]);
 export type LinearRecord = v.InferOutput<typeof linearRecordSchema>;
 export function linearRecords<K extends LinearRecord['kind']>(

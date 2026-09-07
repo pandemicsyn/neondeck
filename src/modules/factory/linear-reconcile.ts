@@ -1,3 +1,13 @@
+import { processLinearRemovals } from './linear-removals';
+import {
+  clearLinearReadFailure,
+  linearReadFailure,
+  recordLinearReadFailure,
+} from './linear-read-health';
+import {
+  scheduledLinearConnections,
+  scheduledLinearPhases,
+} from './linear-scheduling';
 import type { FactoryDetail } from '../../../shared/factory';
 import { prepareFactoryTriage } from './planning-store';
 import { resumeFactoryPlanning } from './planning-dispatch';
@@ -7,12 +17,7 @@ import { sourceSchema } from '../../../shared/factory';
 import { factoryLinearStateSchema } from '../../../shared/factory-linear';
 import { runtimePaths, type RuntimePaths } from '../../runtime-home';
 import { readLinearIssue, readLinearIssuesPage } from '../linear';
-import {
-  dbRun,
-  FactoryError,
-  getFactoryWork,
-  markSourceAttention,
-} from './service';
+import { dbRun, FactoryError, getFactoryWork } from './service';
 import {
   linearConnections,
   linearFingerprint,
@@ -34,7 +39,13 @@ export function factoryLinearState(paths = runtimePaths()) {
         ...c,
         readiness: linearReadiness(c, paths),
       })),
-      sync: linearRecords(db, 'sync'),
+      sync: [
+        ...linearRecords(db, 'sync'),
+        ...linearRecords(db, 'read-failure', { limit: 100 }).map((row) => ({
+          ...row,
+          cursor: null,
+        })),
+      ],
       deliveries: linearRecords(db, 'delivery', { limit: 100 }),
       writebacks: linearRecords(db, 'writeback', { limit: 100 }),
     }),
@@ -49,6 +60,7 @@ export function requestFactoryLinearSync(
     throw new FactoryError(409, 'Task is not a Linear source.');
   const c = readyLinearConnection(current.source.linear.connectionId, paths);
   return dbRun(paths, (db) => {
+    clearLinearReadFailure(db, current.source.id);
     for (const effect of linearRecords(db, 'writeback', { workId }).filter(
       (e) => e.workId === workId && e.state === 'attention',
     ))
@@ -92,7 +104,15 @@ export async function runFactoryLinearSync(
     if (intent && intent.stage === 'triage' && io.planning)
       void io.planning(intent.id, paths).catch(() => undefined);
   };
-  connections: for (const c of linearConnections(paths).slice(0, 100)) {
+  const configured = linearConnections(paths).slice(0, 100);
+  processLinearRemovals(configured, paths, signal);
+  if (signal?.aborted) return;
+  connections: for (const c of scheduledLinearConnections(configured, paths)) {
+    if (signal?.aborted) return;
+    const requestSignal = AbortSignal.any([
+      ...(signal ? [signal] : []),
+      AbortSignal.timeout(10000),
+    ]);
     if (signal?.aborted) return;
     if (linearReadiness(c, paths).length) continue;
     const fingerprint = linearFingerprint(c);
@@ -100,157 +120,187 @@ export async function runFactoryLinearSync(
       if (linearFingerprint(readyLinearConnection(c.id, paths)) !== fingerprint)
         throw new FactoryError(409, 'Linear configuration changed.');
     };
-    const pending = dbRun(paths, (db) =>
-      linearRecords(db, 'delivery').filter(
-        (r) =>
-          r.connectionId === c.id &&
-          r.state === 'pending' &&
-          r.retryAt <= Date.now(),
-      ),
-    );
-    // Authenticated removal is local authority revocation, never provider I/O.
-    const deliveries = [
-      ...pending.filter((row) => row.action === 'remove').slice(0, 25),
-      ...pending.filter((row) => row.action !== 'remove').slice(0, 25),
-    ];
-    for (const delivery of deliveries) {
-      if (delivery.action !== 'remove' && linearCoolingDown(c.id, paths))
-        continue;
-      try {
-        if (delivery.connectionFingerprint !== fingerprint) {
-          dbRun(paths, (db) =>
-            putLinearRecord(db, {
-              ...delivery,
-              state: 'attention',
-              error: 'Connection changed; request a new sync.',
-            }),
-          );
-          continue;
-        }
-        const issue =
-          delivery.action === 'remove'
-            ? null
-            : await io.readIssue(c, delivery.issueId, signal);
-        assertConfig();
-        const current = dbRun(paths, (db) => {
-          const result = reconcileLinearSource(
-            db,
-            c,
-            issue,
-            delivery.issueId,
-            paths,
-            delivery.action === 'remove' ? delivery.createdAt : undefined,
-          );
-          putLinearRecord(db, { ...delivery, state: 'complete', error: null });
-          return result;
-        });
-        if (delivery.action !== 'remove') triage(current);
-      } catch (error) {
-        if (retainLinearRateLimit(error, c, paths)) continue;
-        dbRun(paths, (db) =>
-          putLinearRecord(db, {
-            ...delivery,
-            attempts: delivery.attempts + 1,
-            retryAt:
-              Date.now() +
-              Math.min(3600000, 30000 * 2 ** Math.min(delivery.attempts, 7)),
-            error: 'Linear sync failed. Verify connection and retry.',
-            state: delivery.attempts >= 7 ? 'attention' : 'pending',
-          }),
+    for (const phase of scheduledLinearPhases(c.id, paths)) {
+      if (requestSignal.aborted || linearCoolingDown(c.id, paths))
+        continue connections;
+      if (phase === 'delivery') {
+        const pending = dbRun(paths, (db) =>
+          linearRecords(db, 'delivery').filter(
+            (r) =>
+              r.connectionId === c.id &&
+              r.action !== 'remove' &&
+              r.state === 'pending' &&
+              r.retryAt <= Date.now(),
+          ),
         );
-      }
-    }
-    if (linearCoolingDown(c.id, paths)) continue connections;
-    let sync = dbRun(paths, (db) =>
-      linearRecords(db, 'sync').find((r) => r.id === `sync:${c.id}`),
-    );
-    if (!sync || sync.connectionFingerprint !== fingerprint)
-      sync = v.parse(linearSyncSchema, {
-        id: `sync:${c.id}`,
-        kind: 'sync',
-        connectionId: c.id,
-        connectionFingerprint: fingerprint,
-        state: 'pending',
-        error: null,
-        retryAt: 0,
-        attempts: 0,
-      });
-    if (sync.kind !== 'sync') continue;
-    const record = sync;
-    if (record.retryAt <= Date.now())
-      try {
-        if (linearCoolingDown(c.id, paths)) continue connections;
-        const page = await io.readPage(c, record.cursor ?? null, signal);
-        assertConfig();
-        const reconciled = dbRun(paths, (db) => {
-          const currents = page.items.map((issue) =>
-            reconcileLinearSource(db, c, issue, issue.id, paths),
-          );
-          putLinearRecord(db, {
-            ...record,
-            cursor: page.cursor,
-            retryAt: page.cursor ? 0 : Date.now() + 60000,
-            error: null,
-            attempts: 0,
-          });
-          return currents;
-        });
-        for (const current of reconciled) triage(current);
-      } catch (error) {
-        if (retainLinearRateLimit(error, c, paths)) continue connections;
-        dbRun(paths, (db) =>
-          putLinearRecord(db, {
-            ...record,
-            attempts: record.attempts + 1,
-            retryAt: Date.now() + 60000,
-            error: 'Linear discovery failed. Verify connection and retry.',
-          }),
-        );
-      }
-    // Re-read retained sources independently of admission-filtered discovery.
-    const retained = dbRun(paths, (db) =>
-      db
-        .prepare(
-          "SELECT record FROM factory_sources WHERE json_extract(record,'$.linear.connectionId')=? ORDER BY id",
-        )
-        .all(c.id)
-        .map((r) => v.parse(sourceSchema, JSON.parse(String(r.record)))),
-    );
-    // Cursor is persisted separately so a large retained set cannot starve later issues.
-    const offset = record.offset;
-    const batch = retained.slice(offset, offset + 25);
-    for (const source of batch) {
-      if (linearCoolingDown(c.id, paths)) continue connections;
-      try {
-        const issue = await io.readIssue(c, source.linear!.issueId, signal);
-        assertConfig();
-        const current = dbRun(paths, (db) =>
-          reconcileLinearSource(db, c, issue, source.linear!.issueId, paths),
-        );
-        triage(current);
-      } catch (error) {
-        if (retainLinearRateLimit(error, c, paths)) continue connections;
-        dbRun(paths, (db) => {
-          const work = db
-            .prepare('SELECT id FROM factory_work_items WHERE source_id=?')
-            .get(source.id);
-          if (work)
-            markSourceAttention(
-              db,
-              String(work.id),
-              'Linear source could not be refreshed. Sync again after restoring provider access.',
-              paths,
+        const deliveries = pending.slice(0, 25);
+        for (const delivery of deliveries) {
+          if (requestSignal.aborted) continue connections;
+          if (linearCoolingDown(c.id, paths)) continue;
+          try {
+            if (delivery.connectionFingerprint !== fingerprint) {
+              dbRun(paths, (db) =>
+                putLinearRecord(db, {
+                  ...delivery,
+                  state: 'attention',
+                  error: 'Connection changed; request a new sync.',
+                }),
+              );
+              continue;
+            }
+            const issue = await io.readIssue(
+              c,
+              delivery.issueId,
+              requestSignal,
             );
+            requestSignal.throwIfAborted();
+            assertConfig();
+            const current = dbRun(paths, (db) => {
+              const result = reconcileLinearSource(
+                db,
+                c,
+                issue,
+                delivery.issueId,
+                paths,
+              );
+              putLinearRecord(db, {
+                ...delivery,
+                state: 'complete',
+                error: null,
+              });
+              return result;
+            });
+            triage(current);
+          } catch (error) {
+            if (retainLinearRateLimit(error, c, paths)) continue;
+            dbRun(paths, (db) =>
+              putLinearRecord(db, {
+                ...delivery,
+                attempts: delivery.attempts + (requestSignal.aborted ? 0 : 1),
+                retryAt:
+                  Date.now() +
+                  Math.min(
+                    3600000,
+                    30000 * 2 ** Math.min(delivery.attempts, 7),
+                  ),
+                error: 'Linear sync failed. Verify connection and retry.',
+                state:
+                  !requestSignal.aborted && delivery.attempts >= 7
+                    ? 'attention'
+                    : 'pending',
+              }),
+            );
+          }
+        }
+        continue;
+      }
+      if (requestSignal.aborted || linearCoolingDown(c.id, paths))
+        continue connections;
+      let sync = dbRun(paths, (db) =>
+        linearRecords(db, 'sync').find((r) => r.id === `sync:${c.id}`),
+      );
+      if (!sync || sync.connectionFingerprint !== fingerprint)
+        sync = v.parse(linearSyncSchema, {
+          id: `sync:${c.id}`,
+          kind: 'sync',
+          connectionId: c.id,
+          connectionFingerprint: fingerprint,
+          state: 'pending',
+          error: null,
+          retryAt: 0,
+          attempts: 0,
         });
+      if (sync.kind !== 'sync') continue;
+      const record = sync;
+      if (phase === 'discovery') {
+        if (record.retryAt <= Date.now())
+          try {
+            if (requestSignal.aborted || linearCoolingDown(c.id, paths))
+              continue connections;
+            const page = await io.readPage(
+              c,
+              record.cursor ?? null,
+              requestSignal,
+            );
+            requestSignal.throwIfAborted();
+            assertConfig();
+            const reconciled = dbRun(paths, (db) => {
+              const currents = page.items.map((issue) =>
+                reconcileLinearSource(db, c, issue, issue.id, paths),
+              );
+              putLinearRecord(db, {
+                ...record,
+                cursor: page.cursor,
+                retryAt: page.cursor ? 0 : Date.now() + 60000,
+                error: null,
+                attempts: 0,
+              });
+              return currents;
+            });
+            for (const current of reconciled) triage(current);
+          } catch (error) {
+            if (retainLinearRateLimit(error, c, paths)) continue connections;
+            dbRun(paths, (db) =>
+              putLinearRecord(db, {
+                ...record,
+                attempts: record.attempts + (requestSignal.aborted ? 0 : 1),
+                retryAt: Date.now() + 60000,
+                error: 'Linear discovery failed. Verify connection and retry.',
+              }),
+            );
+          }
+        continue;
+      }
+      // Re-read retained sources independently of admission-filtered discovery.
+      const retained = dbRun(paths, (db) =>
+        db
+          .prepare(
+            "SELECT record FROM factory_sources WHERE json_extract(record,'$.linear.connectionId')=? ORDER BY id",
+          )
+          .all(c.id)
+          .map((r) => v.parse(sourceSchema, JSON.parse(String(r.record)))),
+      );
+      // Cursor is persisted separately so a large retained set cannot starve later issues.
+      const offset = record.offset;
+      const batch = retained.slice(offset, offset + 25);
+      for (const [index, source] of batch.entries()) {
+        if (requestSignal.aborted) continue connections;
+        dbRun(paths, (db) => {
+          const latest =
+            linearRecords(db, 'sync', { id: record.id })[0] ?? record;
+          putLinearRecord(db, {
+            ...latest,
+            offset:
+              offset + index + 1 >= retained.length ? 0 : offset + index + 1,
+          });
+        });
+        if (requestSignal.aborted || linearCoolingDown(c.id, paths))
+          continue connections;
+        const failed = linearReadFailure(source.id, paths);
+        if (failed && failed.retryAt > Date.now()) continue;
+        try {
+          const issue = await io.readIssue(
+            c,
+            source.linear!.issueId,
+            requestSignal,
+          );
+          requestSignal.throwIfAborted();
+          assertConfig();
+          const current = dbRun(paths, (db) =>
+            reconcileLinearSource(db, c, issue, source.linear!.issueId, paths),
+          );
+          triage(current);
+        } catch (error) {
+          if (retainLinearRateLimit(error, c, paths)) continue connections;
+          recordLinearReadFailure(
+            c,
+            source.id,
+            source.linear!.issueId,
+            requestSignal.aborted,
+            paths,
+          );
+        }
       }
     }
-    dbRun(paths, (db) => {
-      const latest =
-        linearRecords(db, 'sync').find((r) => r.id === record.id) ?? record;
-      putLinearRecord(db, {
-        ...latest,
-        offset: offset + 25 >= retained.length ? 0 : offset + 25,
-      });
-    });
   }
 }

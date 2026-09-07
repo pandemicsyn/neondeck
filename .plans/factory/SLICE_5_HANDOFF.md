@@ -23,6 +23,58 @@ packaged CLI smoke and repository formatting passed.
 Post-integration `npm run check` also **PASS**: 3,066 unit tests across 285 files
 in 82.10 seconds, lint, import layers, migration consistency and app/docs types.
 
+## PR feedback follow-up
+
+The review of `95c5ef31` identified three valid findings that the earlier local
+reviews missed:
+
+- [Transient read failure](https://github.com/pandemicsyn/neondeck/pull/423#discussion_r3952649071):
+  retained refresh errors revoked release/coding authority without confirmed source
+  changes. Track retryable synchronization failure independently of source authority.
+- [Connection starvation](https://github.com/pandemicsyn/neondeck/pull/423#discussion_r3952649078):
+  a slow early connection could exhaust every shared tick. Persist fair progress
+  across deadlines/restarts and process authenticated local removals before remote IO.
+  Independent re-review also found that a sustained delivery backlog could starve
+  retained refresh within one connection, and the last connection could repeatedly
+  receive only the remainder of the shared deadline. Rotate both the starting
+  connection once per tick and the starting provider phase once per connection visit.
+- [Project mapping scope](https://github.com/pandemicsyn/neondeck/pull/423#discussion_r3952649084):
+  configuration invalidation included unrelated projects in the same team. Match
+  the source's original connection and effective wildcard/exact-project overlap.
+
+Corrections and focused regressions are complete with Astra low developers.
+Both independent static reviewers returned **CLEAN** after the connection and
+phase fairness follow-ups. Manager architecture review is **CLEAN**: scheduling,
+local removal processing and per-source read health have separate helpers; source
+authority changes remain in reconciliation/config invalidation. Existing packages,
+model ownership and the SQLite table are reused without another migration.
+These corrections restore the intended slice behavior; no scope deviation or
+new live acceptance claim is introduced. All nine CI checks passed on `bde0eb70`
+before this follow-up; that result does not cover the corrections.
+
+Final focused verification: **39 tests passed across four files**, including
+actual released/reserved runs under network/server/cancellation failures,
+continuous intake backlog, five busy connections sharing a deadline, and disjoint
+versus overlapping project edits. Server bundling, package validation (1,272
+files) and changed-file formatting also passed.
+
+After the operator requested protection for their existing runtime home, final
+verification uses temporary `NEONDECK_HOME`/`XDG_CONFIG_HOME` directories and an
+OS sandbox denying all access to `~/.config/neondeck`. The focused fixtures also
+pass explicit temporary runtime paths. This safeguard was verified before running
+the final checks; no operator configuration is used by those runs.
+
+The protected final `npm run check` passed lint, layers, migration consistency and
+application/docs types. Its unit stage reported **3,079 passed, five failed** across
+287 files (256.87 seconds). All five failures are the unchanged
+`factory-delivery/repair.integration.test.ts` host-fixture cases: the protective
+macOS sandbox refuses to execute `/bin/ps`, preventing supervisor identity evidence
+and resulting in `Fixture writer did not stop`. A read-only process probe confirmed
+that restriction; static tracing identified failure before the first heartbeat.
+No live fixture processes remained. This run is **not** a full-check pass; the
+five host cases require a disposable environment where process inspection is
+available. The operator-home protection was not removed to rerun them.
+
 ## Delivered scope and boundaries
 
 - `src/modules/linear`: fixed-origin GraphQL reads/mutations, complete-response
@@ -54,10 +106,17 @@ responses to 4 MiB and a 15-second deadline. Discovery pages contain at most 25
 issues; issue labels are complete-or-fail at 100. Oversized/malformed provider
 facts fail visibly rather than being truncated into an accepted task.
 
-Delivery processing selects up to 25 removals independently ahead of up to 25
-provider-dependent deliveries. Retained-source refresh and writeback each use
+Delivery processing handles up to 25 removals per ready connection across all
+connections before provider I/O, then up to 25 provider-dependent deliveries per
+connection. Retained-source refresh and writeback each use
 batches of 25. Remote discovery cursors and local nonnegative integer offsets are distinct.
 The source loop and writeback controller each receive a 45-second per-tick signal.
+Reconciliation also gives each connection a ten-second budget. A private durable
+cursor rotates the starting connection once per tick, independently of how many
+connections finish. A per-connection cursor rotates delivery, discovery and retained
+refresh phases. The retained-source cursor advances before each read. This gives
+each connection/phase a fresh budget in turn and preserves progress across restarts.
+Scheduler records are separate from sync diagnostics.
 Provider rate limits persist a per-connection cooldown shared by both controllers;
 remaining requests stop until the retained retry time, with a visible sync reason.
 Authenticated removal deliveries still withdraw authority during cooldown because
@@ -65,6 +124,11 @@ they require no provider request; pending updates cannot starve their batch.
 Completed deliveries retain the latest 10,000 entries; admission stops at 5,000
 non-complete deliveries. Removal watermarks are retained independently of task
 admission and delivery pruning.
+
+Failed retained reads use separate per-source retry records with a one-minute
+backoff and preserve task/release/coding authority. The state API shows the latest
+100 failures; retry records remain durable until a successful authoritative read
+or explicit task sync clears them. Canceled reads do not increment failure attempts.
 
 Completed writeback evidence retains the latest 20 records per task; sending,
 uncertain and attention records are not pruned. New sends pause at 1,000 unresolved
