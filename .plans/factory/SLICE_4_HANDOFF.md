@@ -178,3 +178,38 @@ lower-variant tests; it does not certify a clean full suite. The final stable
 rerun is the applicable result. Both independent reviewers are CLEAN on the final correction source, lower-layer
 variants and handoff before this unit-result-only delta. Source is unchanged;
 the added unit-result evidence is subsequent to that review checkpoint.
+
+## Second feedback round — September 6, 2026
+
+PR #409 P2 now preserves unsaved generic time/output limits and PATH when the
+selected CLI changes. Only executable, model, version and credential fields
+reset. The unchanged grid layout needs no new visual treatment. All 57 coding UI
+tests passed, including both adapter-switch/save regressions and existing
+provider-reset coverage. Independent reviewers A and B are clean on this fix.
+
+The admitted-run P1 correction spans seven backend files. Both independent static
+reviewers are CLEAN on the final files, including B5. Current configuration is checked immediately before synchronous
+reservation; after admission, the run and repairs retain frozen configuration
+and original executable identity. Explicit factory or coding enablement changes
+from true to false record sticky cancellation; re-enabling cannot resurrect the
+cancelled authority. This restores the planned admission boundary and adds no
+new deferral.
+
+Backend verification passed 43 focused unit tests and one selected real-process
+Codex-to-global-Kilo-defaults-change repair case in 22.65 seconds. The latter
+checks original credential reference/value isolation, PATH, output/time limits,
+binary and model retention. It is process/fixture evidence, not real coding-model
+or online authentication acceptance. Typecheck, lint, import-layer and formatting
+checks passed. The parent's full unit run passed **257 files / 2,528 tests in
+79.57 seconds**, with exit code 0. This checkpoint precedes the B5 correction
+described below.
+
+B5 is closed: the frozen configuration of a legacy-null pending snapshot is
+compared with current configuration synchronously before admission, without
+rewriting historical records. Final-delta verification passed **27 server coding
+tests in 8.64 seconds**, plus typecheck, scoped lint and formatting. The full
+2,528-test result above remains a separate pre-B5 checkpoint.
+
+Earlier clean source/CI checkpoints above remain historical; CI for the new
+exact heads is pending. Live acceptance remains **NOT RUN**; prior
+accepted deferrals and explicit matrix limitations are unchanged.
