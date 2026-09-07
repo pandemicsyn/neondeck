@@ -2,9 +2,14 @@ import * as v from 'valibot';
 import { codingAdapterCapabilitiesSchema } from '../../../../shared/coding-adapters.ts';
 import { codexAdapter } from './codex.ts';
 import { opencodeAdapter } from './opencode.ts';
+import { kiloAdapter } from './kilo.ts';
 import type { CodingAdapter } from './contract.ts';
 // Deliberately compiled in; user configuration cannot import executable plugins.
-const adapters: readonly CodingAdapter[] = [codexAdapter, opencodeAdapter];
+const adapters: readonly CodingAdapter[] = [
+  codexAdapter,
+  opencodeAdapter,
+  kiloAdapter,
+];
 export function createCodingAdapterRegistry(entries: readonly CodingAdapter[]) {
   const registry = new Map<string, CodingAdapter>();
   for (const adapter of entries) {

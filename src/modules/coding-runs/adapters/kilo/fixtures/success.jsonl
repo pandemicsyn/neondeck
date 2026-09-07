@@ -1,0 +1,3 @@
+{"type":"step_start","timestamp":1,"sessionID":"ses_synthetic_kilo","part":{"id":"prt_start","sessionID":"ses_synthetic_kilo","messageID":"msg_synthetic","type":"step-start"}}
+{"type":"text","timestamp":2,"sessionID":"ses_synthetic_kilo","part":{"id":"prt_text","sessionID":"ses_synthetic_kilo","messageID":"msg_synthetic","type":"text","text":"Synthetic candidate prepared."}}
+{"type":"step_finish","timestamp":3,"sessionID":"ses_synthetic_kilo","part":{"id":"prt_finish","sessionID":"ses_synthetic_kilo","messageID":"msg_synthetic","type":"step-finish","reason":"stop","cost":0,"tokens":{"input":1,"output":1,"reasoning":0,"cache":{"read":0,"write":0}}}}
