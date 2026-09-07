@@ -55,6 +55,9 @@ export async function configureFactoryCoding(
       ),
     ),
   );
+  const savedExecutableValid = current.executable
+    ? await isCodingExecutable(current.executable)
+    : false;
   const configuredAdapterId = current.executable
     ? (current.adapter?.id ?? 'codex')
     : current.adapter?.id;
@@ -69,23 +72,29 @@ export async function configureFactoryCoding(
       label: adapter.label,
       hint:
         configuredAdapterId === adapter.id && current.executable
-          ? `Configured: ${current.executable}`
+          ? savedExecutableValid
+            ? `Configured: ${current.executable}`
+            : `Unavailable: ${current.executable}; ${detected.get(adapter.id) ? `replacement: ${detected.get(adapter.id)}` : 'enter path manually'}`
           : (detected.get(adapter.id) ?? 'Not detected; enter path manually'),
     })),
   });
   const adapter = getCodingAdapter(id);
   const sameAdapter = (current.adapter?.id ?? 'codex') === id;
+  const retainSavedExecutable = sameAdapter && savedExecutableValid;
   let executable =
-    (sameAdapter ? current.executable : null) ?? detected.get(id);
-  let path =
-    sameAdapter && current.executable
-      ? current.path
-      : executable
-        ? codingExecutionPath(executable, context)
-        : current.path;
+    (retainSavedExecutable ? current.executable : null) ?? detected.get(id);
+  if (sameAdapter && current.executable && !savedExecutableValid)
+    log.info(
+      `Configured coding executable ${current.executable} is missing or not executable. ${executable ? `Using detected replacement: ${executable}.` : 'No replacement detected; enter an installed executable path and review its search PATH to continue.'}`,
+    );
+  let path = retainSavedExecutable
+    ? current.path
+    : executable
+      ? codingExecutionPath(executable, context)
+      : current.path;
   if (executable)
     log.info(
-      `Coding executable: ${executable}. Search PATH ${sameAdapter && current.executable ? 'retained' : 'auto-detected'}.`,
+      `Coding executable: ${executable}. Search PATH ${retainSavedExecutable ? 'retained' : 'auto-detected'}.`,
     );
   const advanced = executable
     ? await promptConfirm({
@@ -101,10 +110,9 @@ export async function configureFactoryCoding(
     });
     path = await promptText({
       message: 'Executable search PATH (colon-separated absolute directories)',
-      initialValue:
-        sameAdapter && current.executable
-          ? current.path
-          : codingExecutionPath(executable, context),
+      initialValue: retainSavedExecutable
+        ? current.path
+        : codingExecutionPath(executable, context),
       validate: (value) =>
         validCodingPath(value ?? '')
           ? undefined

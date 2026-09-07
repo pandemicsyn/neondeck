@@ -21,6 +21,7 @@ import {
 import { configureFactory } from './onboarding-factory';
 import { readFactorySetup } from './onboarding-factory-state';
 import { promptConfirm, promptSelect, promptText } from './prompts';
+import * as codingDiscovery from './coding-discovery';
 
 vi.mock('./prompts', async (importOriginal) => ({
   ...(await importOriginal<typeof import('./prompts')>()),
@@ -44,6 +45,7 @@ vi.mock('../modules/factory/codex-local-auth', async (importOriginal) => ({
 }));
 const homes: string[] = [];
 afterEach(async () => {
+  vi.restoreAllMocks();
   vi.resetAllMocks();
   vi.unstubAllEnvs();
   await Promise.all(
@@ -344,7 +346,7 @@ it.each(['deleted', 'invalid', 'valid'] as const)(
   },
 );
 
-it.each(['kilo', 'opencode'])(
+it.each(['codex', 'kilo', 'opencode'])(
   'retains legacy off-PATH Codex settings when %s is discovered',
   async (discovered) => {
     const home = await mkdtemp(join(tmpdir(), 'onboarding-legacy-codex-'));
@@ -387,7 +389,10 @@ it.each(['kilo', 'opencode'])(
         }),
         expect.objectContaining({
           value: discovered,
-          hint: join(bin, discovered),
+          hint:
+            discovered === 'codex'
+              ? `Configured: ${executable}`
+              : join(bin, discovered),
         }),
       ]),
     });
@@ -399,5 +404,105 @@ it.each(['kilo', 'opencode'])(
       auth: current.auth,
     });
     expect(promptText).not.toHaveBeenCalled();
+  },
+);
+
+it.each([
+  ['missing', true],
+  ['nonexecutable', true],
+  ['missing', false],
+  ['nonexecutable', false],
+] as const)(
+  'repairs a %s saved executable with detected replacement %s',
+  async (state, detected) => {
+    const home = await mkdtemp(join(tmpdir(), 'onboarding-stale-cli-'));
+    homes.push(home);
+    const stale = join(home, 'old-codex');
+    if (state === 'nonexecutable') await writeFile(stale, '', { mode: 0o644 });
+    const replacement = join(home, 'new-codex');
+    await writeFile(replacement, '', { mode: 0o755 });
+    vi.spyOn(codingDiscovery, 'discoverCodingExecutable').mockImplementation(
+      async (id) => (detected && id === 'codex' ? replacement : undefined),
+    );
+    const current = v.parse(factoryCodingConfigSchema, {
+      adapter: null,
+      executable: stale,
+      path: '/saved/bin:/usr/bin:/bin',
+      model: 'gpt-5.6-terra',
+      auth: { kind: 'api-key', env: 'SYNTHETIC_CODING_AUTH' },
+    });
+    vi.mocked(promptConfirm).mockImplementation(
+      async ({ message, initialValue }) =>
+        message === 'Set up an installed coding CLI?'
+          ? true
+          : Boolean(initialValue),
+    );
+    vi.mocked(promptSelect).mockImplementation(
+      async ({ initialValue }) => initialValue!,
+    );
+    const manualPath = '/manual/bin:/usr/bin:/bin';
+    vi.mocked(promptText).mockImplementation(async ({ message, validate }) => {
+      const answer =
+        message === 'Absolute installed executable path'
+          ? replacement
+          : manualPath;
+      if (typeof validate !== 'function')
+        throw new Error('Expected executable/PATH validator');
+      expect(validate(answer)).toBeUndefined();
+      return answer;
+    });
+    const context = {
+      home,
+      node: process.execPath,
+      env: { SYNTHETIC_CODING_AUTH: 'synthetic-token' },
+    };
+    const next = await configureFactoryCoding(current, context);
+    expect(next).toMatchObject({
+      executable: replacement,
+      path: detected
+        ? codingDiscovery.codingExecutionPath(replacement, context)
+        : manualPath,
+      model: current.model,
+      auth: current.auth,
+      adapter: { id: 'codex' },
+    });
+    expect(log.info).toHaveBeenCalledWith(
+      expect.stringContaining(
+        `Configured coding executable ${stale} is missing or not executable.`,
+      ),
+    );
+    const cliPrompt = vi
+      .mocked(promptSelect)
+      .mock.calls.find(([options]) => options.message === 'Coding CLI')?.[0];
+    expect(
+      cliPrompt?.options.find((option) => option.value === 'codex')?.hint,
+    ).toBe(
+      `Unavailable: ${stale}; ${detected ? `replacement: ${replacement}` : 'enter path manually'}`,
+    );
+    expect(log.info).toHaveBeenCalledWith(
+      expect.stringContaining(
+        detected
+          ? `Using detected replacement: ${replacement}.`
+          : 'No replacement detected; enter an installed executable path',
+      ),
+    );
+    expect(
+      vi
+        .mocked(promptConfirm)
+        .mock.calls.filter(([options]) =>
+          options.message.startsWith('Edit executable'),
+        )
+        .map(([options]) => options.initialValue),
+    ).toEqual(detected ? [false] : []);
+    expect(
+      vi.mocked(promptText).mock.calls.map(([options]) => options.message),
+    ).toEqual(
+      detected
+        ? []
+        : [
+            'Absolute installed executable path',
+            'Executable search PATH (colon-separated absolute directories)',
+          ],
+    );
   },
 );

@@ -18,6 +18,8 @@ probe.
   Show the discovered choice; manual executable/PATH entry remains an advanced
   fallback. Keep an operator's existing configuration on repeat setup. Persist
   only explicit paths, never the entire environment.
+  Retain a saved executable only while it remains executable. If it is stale,
+  offer a detected replacement or guide manual repair before continuing.
 - Offer searchable Codex models using the maintained model list, including Astra,
   Sol, Terra, Luna, GPT-5.5, Mini and Spark. Preserve the existing default and allow
   manual IDs for future releases.
@@ -124,3 +126,10 @@ connection capacity before collecting details. The fixes passed 39 onboarding
 tests, 13 new release regressions and 50 existing service/bridge tests, followed by
 app/dashboard types, import-layer checks and changed-file formatting. Two independent
 Astra-low static reviewers cleared the fixes; no live acceptance claim changes.
+
+A subsequent PR review found that a stale saved CLI path overrode a valid detected
+replacement. Setup now checks the saved executable before retaining it, uses a
+detected replacement when available, and requires manual repair otherwise. Valid
+custom executables keep their explicit search PATH. The 17 focused coding-wizard
+tests passed along with app/dashboard types, focused lint and formatting.
+Two independent Astra-low static reviewers cleared the recovery change.
