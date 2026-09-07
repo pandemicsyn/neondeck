@@ -12,6 +12,7 @@ import { join } from 'node:path';
 import * as v from 'valibot';
 import {
   codingRunRecordSchema,
+  publicCodingRunSnapshot,
   type CodingRunRecord,
   type CodingRunCommand,
 } from '../../../shared/coding-runs';
@@ -111,6 +112,7 @@ export function publicCodingRun(input: CodingRunRecord, paths: RuntimePaths) {
   } = run;
   const record = {
     ...safeRecord,
+    snapshot: publicCodingRunSnapshot(run.snapshot),
     workspace: run.workspace ? { worktreeId: run.workspace.worktreeId } : null,
   };
   const prepared = run.workspace

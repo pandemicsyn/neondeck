@@ -10,6 +10,7 @@ import {
   cp,
   readdir,
   symlink,
+  utimes,
 } from 'node:fs/promises';
 import { randomBytes } from 'node:crypto';
 import { tmpdir } from 'node:os';
@@ -216,6 +217,60 @@ describe('supervised local host (synthetic CLI only)', () => {
     await expect(prepareLocalAttempt(input)).rejects.toThrow(
       'identity changed',
     );
+    await expect(stat(marker)).rejects.toMatchObject({ code: 'ENOENT' });
+  });
+  it('inspects and reconciles completed historical stat-only manifests without repinning', async () => {
+    const input = await fixture();
+    const handle = await prepareLocalAttempt(input);
+    handles.push(handle);
+    await launchLocalAttempt(handle);
+    const receipt = await finish(handle);
+    expect(receipt.noWriter).toBe(true);
+    const { manifest } = await loadLocalManifest(handle);
+    const { sha256: _digest, ...statOnly } = manifest.executableIdentity!;
+    await writeSigned(
+      join(handle.directory, 'manifest.json'),
+      handle.attemptToken,
+      {
+        ...manifest,
+        executableIdentity: statOnly,
+      },
+    );
+    expect(
+      (await loadLocalManifest(handle)).manifest.executableIdentity,
+    ).toEqual(statOnly);
+    expect(await inspectLocalAttempt(handle)).toMatchObject({ receipt });
+    expect(await reconcileLocalAttempt(handle)).toMatchObject({ receipt });
+    expect(
+      (await loadLocalManifest(handle)).manifest.executableIdentity,
+    ).toEqual(statOnly);
+  });
+  it('rejects same-size timestamp-restored executable edits before a prepared launch', async () => {
+    const input = await fixture();
+    const executable = join(dirname(input.directory), 'same-size-cli.mjs');
+    const marker = join(dirname(input.directory), 'replacement-ran');
+    const original = await readFile(mock, 'utf8');
+    const replacement = `#!/usr/bin/env node\nimport {writeFileSync} from 'node:fs';writeFileSync(${JSON.stringify(marker)},'ran');console.log('mockdex codex-contract 0.150.1');\n`;
+    expect(replacement.length).toBeLessThan(original.length);
+    await writeFile(executable, original, { mode: 0o700 });
+    const timestamp = new Date('2026-01-01T00:00:00Z');
+    await utimes(executable, timestamp, timestamp);
+    input.config.executable = executable;
+    const handle = await prepareLocalAttempt(input);
+    handles.push(handle);
+    const { manifest } = await loadLocalManifest(handle);
+    await writeFile(executable, replacement.padEnd(original.length, ' '));
+    await utimes(executable, timestamp, timestamp);
+    const changed = await executableIdentity(executable);
+    expect({ ...changed, sha256: manifest.executableIdentity?.sha256 }).toEqual(
+      manifest.executableIdentity,
+    );
+    await launchLocalAttempt(handle);
+    expect(await finish(handle)).toMatchObject({
+      noWriter: true,
+      reason: 'host-preflight-failed',
+      sessionId: null,
+    });
     await expect(stat(marker)).rejects.toMatchObject({ code: 'ENOENT' });
   });
   it('blocks changed executable identity even when the version string stays pinned', async () => {

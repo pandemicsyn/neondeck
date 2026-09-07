@@ -22,6 +22,8 @@ import { connection, issue } from '../modules/factory/testing/github-fixture';
 import {
   factoryCodingConfigSchema,
   factoryCodingPageSchema,
+  factoryCodingRunSchema,
+  factoryCodingEventsSchema,
 } from '../../shared/factory-coding';
 import {
   prepareSchema,
@@ -276,6 +278,83 @@ function expireLocks() {
   }
 }
 describe('factory coding bridge', () => {
+  it('keeps executable identity private in run pages, details, and events', async () => {
+    const work = release();
+    const run = (await dispatchCodingWork(work.work.id, paths, host, ready))!;
+    const identity = run.snapshot.harness.executableIdentity!;
+    expect(identity.sha256).toMatch(/^[a-f0-9]{64}$/);
+    const routes = createFactoryCodingRoutes(paths);
+    const page = v.parse(
+      factoryCodingPageSchema,
+      await (await routes.request('/runs')).json(),
+    );
+    const detail = v.parse(
+      factoryCodingRunSchema,
+      await (await routes.request(`/runs/${run.runId}`)).json(),
+    );
+    const events = v.parse(
+      factoryCodingEventsSchema,
+      await (await routes.request(`/runs/${run.runId}/events`)).json(),
+    );
+    const { provider, version, model } = run.snapshot.harness;
+    for (const projection of [
+      page.items[0].run,
+      detail,
+      publicCodingRun(run, paths),
+    ]) {
+      expect(projection.record.snapshot.harness).toEqual({
+        provider,
+        version,
+        model,
+      });
+      expect(JSON.stringify(projection)).not.toContain(identity.sha256);
+      expect(
+        v.parse(factoryCodingRunSchema, projection).record.snapshot.harness,
+      ).toEqual({ provider, version, model });
+      expect(
+        v.safeParse(factoryCodingRunSchema, {
+          ...projection,
+          record: {
+            ...projection.record,
+            snapshot: {
+              ...projection.record.snapshot,
+              harness: run.snapshot.harness,
+            },
+          },
+        }).success,
+      ).toBe(false);
+    }
+    expect(events.items.length).toBeGreaterThan(0);
+    expect(JSON.stringify(events)).not.toContain(identity.sha256);
+    expect(JSON.stringify(events)).not.toContain(identity.canonical);
+    expect(
+      getCodingRun(run.runId, paths)?.snapshot.harness.executableIdentity,
+    ).toEqual(identity);
+    expect(codingConfig(paths).coding.executable).toBe(
+      join(root, 'synthetic-codex'),
+    );
+  });
+  it('retains stat-only historical run evidence without granting fresh execution authority', async () => {
+    const work = release();
+    const run = (await dispatchCodingWork(work.work.id, paths, host, ready))!;
+    const { sha256: _digest, ...statOnly } =
+      run.snapshot.harness.executableIdentity!;
+    const snapshot = {
+      ...run.snapshot,
+      harness: { ...run.snapshot.harness, executableIdentity: statOnly },
+    };
+    rmSync(join(root, 'synthetic-codex'));
+    await expect(assertPinnedCodingExecutable(snapshot)).rejects.toThrow(
+      'no original executable content digest',
+    );
+    expect(
+      publicCodingRun({ ...run, snapshot }, paths).record.snapshot.harness,
+    ).toEqual({
+      provider: run.snapshot.harness.provider,
+      version: run.snapshot.harness.version,
+      model: run.snapshot.harness.model,
+    });
+  });
   it('pins the default Codex version and freezes admitted configuration', async () => {
     const work = release();
     const run = (await dispatchCodingWork(work.work.id, paths, host, ready))!;

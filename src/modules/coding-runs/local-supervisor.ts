@@ -17,7 +17,7 @@ import {
   inspectCodingAdapterReadiness,
   adapterCredentialRedactor,
   removeAdapterCredentials,
-  executableIdentity,
+  assertExecutableIdentity,
   verifyAdapterWorkspace,
 } from './adapter-host.ts';
 import { localCancellationRequested } from './host-launch-gate.ts';
@@ -78,22 +78,22 @@ async function supervise(value: unknown) {
   try {
     await verifyOwnedWorktree(manifest.ownedWorktree, true);
     verifyAdapterWorkspace(manifest);
-    if (
-      manifest.executableIdentity &&
-      JSON.stringify(await executableIdentity(manifest.config.executable)) !==
-        JSON.stringify(manifest.executableIdentity)
-    )
-      throw new Error('CLI executable changed');
+    if (!manifest.executableIdentity)
+      throw new Error('Legacy CLI identity missing');
+    await assertExecutableIdentity(
+      manifest.config.executable,
+      manifest.executableIdentity,
+    );
     const readiness = await inspectCodingAdapterReadiness(
       manifest.config,
       join(handle.directory, 'scratch'),
     );
-    if (
-      manifest.executableIdentity &&
-      JSON.stringify(await executableIdentity(manifest.config.executable)) !==
-        JSON.stringify(manifest.executableIdentity)
-    )
-      throw new Error('CLI executable changed');
+    if (!manifest.executableIdentity)
+      throw new Error('Legacy CLI identity missing');
+    await assertExecutableIdentity(
+      manifest.config.executable,
+      manifest.executableIdentity,
+    );
     if (!readiness.ready || readiness.version !== manifest.cliVersion)
       throw new Error('CLI readiness changed');
     if (await cancelled()) {

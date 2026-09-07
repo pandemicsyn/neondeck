@@ -4,7 +4,7 @@ import {
   codingAdapterMetadataSchema,
 } from './coding-adapters';
 import {
-  codingRunSnapshotSchema,
+  codingPublicRunSnapshotSchema,
   codingRunStatusSchema,
   codingCandidateEvidenceSchema,
   codingRunEventSchema,
@@ -72,7 +72,7 @@ export const factoryCodingRunSchema = v.strictObject({
     runId: label,
     attemptId: label,
     version: v.number(),
-    snapshot: codingRunSnapshotSchema,
+    snapshot: codingPublicRunSnapshotSchema,
     status: codingRunStatusSchema,
     workspace: v.nullable(v.strictObject({ worktreeId: label })),
     providerSessionId: v.nullable(label),

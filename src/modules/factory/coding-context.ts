@@ -317,6 +317,10 @@ export async function assertPinnedCodingExecutable(
     throw new CodingPreflightError(
       'The legacy coding attempt has no original executable identity. Existing evidence is retained; a new repair requires human review and a fresh release.',
     );
+  if (!expected.sha256)
+    throw new CodingPreflightError(
+      'The legacy coding attempt has no original executable content digest. Existing evidence is retained; a new repair requires human review and a fresh release.',
+    );
   if (
     !executable ||
     codingDigest(await inspectCodingExecutableIdentity(executable)) !==

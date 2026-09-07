@@ -57,7 +57,17 @@ export const codingExecutableIdentitySchema = v.strictObject({
   inode: v.pipe(v.number(), v.safeInteger(), v.minValue(0)),
   size: v.pipe(v.number(), v.safeInteger(), v.minValue(0)),
   modified: v.number(),
+  // Missing only on historical records; never sufficient for new execution.
+  sha256: v.optional(v.pipe(v.string(), v.regex(/^[a-f0-9]{64}$/))),
 });
 export type CodingExecutableIdentity = v.InferOutput<
   typeof codingExecutableIdentitySchema
+>;
+
+export const codingPinnedExecutableIdentitySchema = v.strictObject({
+  ...codingExecutableIdentitySchema.entries,
+  sha256: v.pipe(v.string(), v.regex(/^[a-f0-9]{64}$/)),
+});
+export type CodingPinnedExecutableIdentity = v.InferOutput<
+  typeof codingPinnedExecutableIdentitySchema
 >;

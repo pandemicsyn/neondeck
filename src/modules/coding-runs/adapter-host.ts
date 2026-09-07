@@ -1,13 +1,9 @@
 import { execFile } from 'node:child_process';
 import { lstatSync } from 'node:fs';
 import { promisify } from 'node:util';
-import { mkdir, unlink, stat, realpath } from 'node:fs/promises';
+import { mkdir, unlink, realpath } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import * as v from 'valibot';
-import {
-  codingExecutableIdentitySchema,
-  type CodingExecutableIdentity,
-} from '../../../shared/coding-adapters.ts';
 import { configSchema, type LocalManifest } from './host-contract.ts';
 import { getCodingAdapter } from './adapters/registry.ts';
 import { validateAdapterEnvironment } from './adapter-environment.ts';
@@ -44,18 +40,10 @@ export function manifestAdapter(manifest: LocalManifest) {
     identity?.contractVersion ?? 1,
   );
 }
-export async function executableIdentity(executable: string) {
-  const canonical = await realpath(executable);
-  const info = await stat(canonical);
-  if (!info.isFile()) throw new Error('CLI executable is not a file');
-  return v.parse(codingExecutableIdentitySchema, {
-    canonical,
-    device: info.dev,
-    inode: info.ino,
-    size: info.size,
-    modified: info.mtimeMs,
-  });
-}
+export {
+  executableIdentity,
+  assertExecutableIdentity,
+} from './executable-identity.ts';
 export async function inspectCodingAdapterReadiness(
   input: unknown,
   home: string,
@@ -298,15 +286,4 @@ export function verifyAdapterWorkspace(manifest: LocalManifest) {
     }
     throw new Error('Workspace contains unsupported provider configuration');
   }
-}
-
-export async function assertExecutableIdentity(
-  executable: string,
-  expected: CodingExecutableIdentity,
-) {
-  if (
-    JSON.stringify(await executableIdentity(executable)) !==
-    JSON.stringify(v.parse(codingExecutableIdentitySchema, expected))
-  )
-    throw new Error('Pinned CLI executable identity changed');
 }

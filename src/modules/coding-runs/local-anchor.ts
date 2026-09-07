@@ -6,7 +6,7 @@ import { spawn } from 'node:child_process';
 import { readBounded } from './host-io.ts';
 import {
   adapterLaunch,
-  executableIdentity,
+  assertExecutableIdentity,
   verifyAdapterWorkspace,
 } from './adapter-host.ts';
 import {
@@ -63,12 +63,12 @@ async function run(
   }
   verifyAdapterWorkspace(manifest);
   const launch = adapterLaunch(manifest);
-  if (
-    manifest.executableIdentity &&
-    JSON.stringify(await executableIdentity(manifest.config.executable)) !==
-      JSON.stringify(manifest.executableIdentity)
-  )
-    throw new Error('CLI executable changed');
+  if (!manifest.executableIdentity)
+    throw new Error('Legacy CLI identity missing');
+  await assertExecutableIdentity(
+    manifest.config.executable,
+    manifest.executableIdentity,
+  );
   const started = withLocalLaunchGate(handle, () => {
     // This synchronous check+spawn under the shared gate is the authorization
     // linearization point. Later cancellation terminates the already-owned group.
