@@ -212,8 +212,8 @@ it('exports current pending writebacks even behind 200 historical sent effects a
   const preview = await (await request('/tasks/work-test/preview')).json();
   expect(health.tasks[0].unresolvedEffects).toHaveLength(1);
   expect(preview.health.tasks[0].unresolvedEffectCount).toBe(1);
-  expect(preview.health).toHaveProperty('truncated', false);
-  expect(preview.health.tasks[0]).toHaveProperty('truncated', false);
+  expect(preview.health).toHaveProperty('truncated', true);
+  expect(preview.health.tasks[0]).toHaveProperty('truncated', true);
   expect(preview.timeline.truncated).toBe(true);
   const currentDb = openDb(paths.neondeckDatabase);
   try {
@@ -403,12 +403,10 @@ it.each(['uncertain', 'sent', 'cancelled'])(
     }
     for (const path of ['/health', '/health?workId=work-test']) {
       const response = await request(path);
-      expect(response.status).toBe(state === 'uncertain' ? 503 : 200);
-      expect(await response.json()).toMatchObject(
-        state === 'uncertain'
-          ? { error: 'Task record binding is inconsistent.' }
-          : { tasks: [{ unresolvedEffects: [] }] },
-      );
+      expect(response.status).toBe(503);
+      expect(await response.json()).toEqual({
+        error: 'Task record binding is inconsistent.',
+      });
     }
   },
 );
@@ -1664,3 +1662,210 @@ it.each(['authorization', 'duplicate-effects', 'evidence-linkage'])(
     }
   },
 );
+
+function insertWriteback(kind: string, record: Record<string, unknown>) {
+  const db = openDb(paths.neondeckDatabase);
+  try {
+    db.prepare(
+      'INSERT INTO factory_writeback_records(id,kind,work_id,record) VALUES(?,?,?,?)',
+    ).run(String(record.id), kind, 'work-test', JSON.stringify(record));
+  } finally {
+    db.close();
+  }
+}
+function statusFixture() {
+  return {
+    id: 'status:work-test',
+    workId: 'work-test',
+    marker: 'm',
+    remoteId: null,
+    author: null,
+    confirmedBody: null,
+    confirmedUpdatedAt: null,
+    relinquished: false,
+  };
+}
+it.each(['', 'unknown', 'status', 'approval', 'repair', 'policy'])(
+  'rejects missing, invalid or disagreeing indexed writeback kind %j',
+  async (kind) => {
+    insertWriteback('status', statusFixture());
+    insertWriteback(kind, writebackFixture());
+    for (const path of diagnosticPaths)
+      expect((await request(path)).status).toBe(503);
+  },
+);
+it.each([undefined, null, 'effect', 'invalid', 42, false, {}])(
+  'rejects missing or invalid effect payload kind %j',
+  async (kind) => {
+    insertWriteback('status', statusFixture());
+    insertWriteback('effect', { ...writebackFixture(), kind });
+    for (const path of diagnosticPaths)
+      expect((await request(path)).status).toBe(503);
+  },
+);
+it.each(['status', 'effect'])(
+  'rejects hybrid payload masquerading as %s',
+  async (kind) => {
+    insertWriteback(kind, { ...writebackFixture(), ...statusFixture() });
+    for (const path of diagnosticPaths)
+      expect((await request(path)).status).toBe(503);
+  },
+);
+it('preserves valid non-effect records and legacy effect defaults', async () => {
+  insertWriteback('status', statusFixture());
+  insertWriteback('approval', {
+    id: 'approval',
+    workId: 'work-test',
+    requestKey: 'request',
+    expectedVersion: 1,
+    specVersion: 1,
+    specHash: 'h',
+    sourceVersion: 1,
+    issueId: 'issue',
+    kind: 'question',
+    body: 'approved question',
+    decisionId: null,
+    actor: 'human',
+    approvedAt: recordedAt,
+    bodyHash: 'h',
+    epoch: 'e',
+  });
+  insertWriteback('repair', {
+    id: 'repair',
+    workId: 'work-test',
+    effectId: 'old-pending',
+    epoch: 'e',
+    workVersion: 1,
+    observed: null,
+    replacement: 'replacement',
+    expiresAt: 1,
+  });
+  insertWriteback('effect', writebackFixture());
+  for (const path of diagnosticPaths)
+    expect((await request(path)).status).toBe(200);
+  const health = await (await request('/health?workId=work-test')).json();
+  expect(health.tasks[0].unresolvedEffects).toHaveLength(1);
+  expect(health.tasks[0].unresolvedEffects[0].effectId).toBe('old-pending');
+});
+it('bounds writeback candidates and validates the lookahead before reporting partial coverage', async () => {
+  insertWriteback('invalid', writebackFixture());
+  for (let i = 0; i < sourceLimit; i++)
+    insertWriteback('status', { ...statusFixture(), id: `status-${i}` });
+  for (const path of diagnosticPaths)
+    expect((await request(path)).status).toBe(503);
+  insertWriteback('status', { ...statusFixture(), id: 'status-lookahead' });
+  for (const path of diagnosticPaths)
+    expect((await request(path)).status).toBe(200);
+  const health = await (await request('/health?workId=work-test')).json();
+  expect(health).toMatchObject({
+    truncated: true,
+    tasks: [{ truncated: true }],
+  });
+  const preview = await (await request('/tasks/work-test/preview')).json();
+  expect(preview.health.truncated).toBe(true);
+  expect(preview.timeline.truncated).toBe(true);
+});
+it('fails safely on malformed writeback JSON before priority classification', async () => {
+  insertWriteback('effect', writebackFixture());
+  const db = openDb(paths.neondeckDatabase);
+  try {
+    db.prepare('UPDATE factory_writeback_records SET record=?').run('{broken');
+  } finally {
+    db.close();
+  }
+  for (const path of diagnosticPaths) {
+    const response = await request(path);
+    expect(response.status).toBe(503);
+    expect(await response.json()).toEqual(retainedError);
+  }
+});
+it('rejects a null indexed kind in a schema-drifted writeback table', async () => {
+  const db = openDb(paths.neondeckDatabase);
+  try {
+    db.exec('DROP TABLE factory_writeback_records');
+    db.exec(
+      'CREATE TABLE factory_writeback_records(id TEXT PRIMARY KEY, kind TEXT, work_id TEXT, record TEXT NOT NULL)',
+    );
+    db.prepare('INSERT INTO factory_writeback_records VALUES(?,?,?,?)').run(
+      'old-pending',
+      null,
+      'work-test',
+      JSON.stringify(writebackFixture()),
+    );
+  } finally {
+    db.close();
+  }
+  insertWriteback('status', statusFixture());
+  for (const path of diagnosticPaths)
+    expect((await request(path)).status).toBe(503);
+});
+it('does not read global policy or other-task writeback records', async () => {
+  const db = openDb(paths.neondeckDatabase);
+  try {
+    const insert = db.prepare(
+      'INSERT INTO factory_writeback_records VALUES(?,?,?,?)',
+    );
+    insert.run(
+      'policy:connection',
+      'policy',
+      null,
+      JSON.stringify({
+        id: 'policy:connection',
+        enabled: true,
+        epoch: 'e',
+        connectionFingerprint: 'f',
+        actor: 'human',
+        approvedAt: recordedAt,
+      }),
+    );
+    insert.run('foreign', 'invalid', 'other-task', '{broken');
+  } finally {
+    db.close();
+  }
+  insertWriteback('effect', writebackFixture());
+  for (const path of diagnosticPaths)
+    expect((await request(path)).status).toBe(200);
+});
+
+it('previews the newest 100 timeline entries through the route, including undated current states', async () => {
+  const middle = '2026-09-07T13:00:00.000Z';
+  const recent = '2026-09-08T12:00:00.000Z';
+  const db = openDb(paths.neondeckDatabase);
+  try {
+    const insert = db.prepare(
+      'INSERT INTO factory_audit(work_id,action,actor,created_at) VALUES(?,?,?,?)',
+    );
+    for (let i = 0; i < 150; i++)
+      insert.run('work-test', 'spec-saved', 'actor', middle);
+  } finally {
+    db.close();
+  }
+  insertWriteback('effect', {
+    ...writebackFixture(),
+    state: 'failed',
+    createdAt: recent,
+  });
+  const response = await request('/tasks/work-test/preview');
+  expect(response.status).toBe(200);
+  const preview = await response.json();
+  expect(preview.timeline.truncated).toBe(true);
+  expect(preview.timeline.entries).toHaveLength(100);
+  expect(preview.timeline.entries).toContainEqual(
+    expect.objectContaining({ kind: 'effect', occurredAt: recent }),
+  );
+  expect(preview.timeline.entries.at(-1)).toMatchObject({
+    kind: 'effect',
+    occurredAt: null,
+    correlation: { workItemId: preview.workId },
+  });
+  expect(preview.timeline.entries).not.toContainEqual(
+    expect.objectContaining({ occurredAt: recordedAt }),
+  );
+  // The same retained history still starts chronologically in the interactive API.
+  const firstPage = await (
+    await request('/tasks/work-test/timeline?limit=100')
+  ).json();
+  expect(firstPage.entries[0].occurredAt).toBe(recordedAt);
+  expect(firstPage.nextCursor).toBeTypeOf('string');
+  expect(firstPage.coverage.truncated).toBe(false);
+});

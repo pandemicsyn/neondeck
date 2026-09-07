@@ -16,7 +16,7 @@ import {
   withDiagnosticDatabase,
 } from './records';
 import { diagnoseHealth } from './health';
-import { timelinePage } from './timeline';
+import { timelinePage, timelinePreview } from './timeline';
 import { createDiagnosticExport } from './export';
 export { DiagnosticsError } from './records';
 export { serializeDiagnosticExport } from './export';
@@ -68,7 +68,7 @@ export function previewFactoryDiagnostics(
     const records = readTaskRecords(db, id);
     return createDiagnosticExport(
       diagnoseHealth([readTaskHealthRecords(db, id)], workers, generatedAt),
-      timelinePage(records, { limit: 100 }),
+      timelinePreview(records),
       diagnostics,
     );
   });

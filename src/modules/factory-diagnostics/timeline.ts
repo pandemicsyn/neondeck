@@ -9,6 +9,11 @@ import {
 import type { DeliveryRevision } from '../../../shared/factory-delivery';
 import { DiagnosticsError, sourceLimit, type TaskRecords } from './records';
 const projectionLimit = 2000;
+function compareEntries(a: FactoryTimelineEntry, b: FactoryTimelineEntry) {
+  const ta = a.occurredAt === null ? Infinity : Date.parse(a.occurredAt),
+    tb = b.occurredAt === null ? Infinity : Date.parse(b.occurredAt);
+  return ta < tb ? -1 : ta > tb ? 1 : a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
+}
 export function projectTimeline(records: TaskRecords) {
   const entries: FactoryTimelineEntry[] = [];
   let overflow = false;
@@ -19,25 +24,33 @@ export function projectTimeline(records: TaskRecords) {
     summary: string,
     rest: Partial<FactoryTimelineEntry> = {},
   ) {
+    const entry = v.parse(factoryTimelineEntrySchema, {
+      id,
+      kind,
+      recordType: 'record',
+      occurredAt,
+      timeBasis: occurredAt === null ? 'unknown' : 'recorded',
+      actor: null,
+      summary,
+      correlation: { workItemId: records.work.id },
+      revision: null,
+      evidenceRefs: [],
+      ...rest,
+    });
+    // Keep the globally newest bounded window, independent of source iteration.
     if (entries.length === projectionLimit) {
       overflow = true;
-      return;
+      if (compareEntries(entry, entries[0]) <= 0) return;
+      entries.shift();
     }
-    entries.push(
-      v.parse(factoryTimelineEntrySchema, {
-        id,
-        kind,
-        recordType: 'record',
-        occurredAt,
-        timeBasis: occurredAt === null ? 'unknown' : 'recorded',
-        actor: null,
-        summary,
-        correlation: { workItemId: records.work.id },
-        revision: null,
-        evidenceRefs: [],
-        ...rest,
-      }),
-    );
+    let low = 0;
+    let high = entries.length;
+    while (low < high) {
+      const mid = Math.floor((low + high) / 2);
+      if (compareEntries(entries[mid], entry) <= 0) low = mid + 1;
+      else high = mid;
+    }
+    entries.splice(low, 0, entry);
   }
   const base = { workItemId: records.work.id };
   add(
@@ -276,12 +289,22 @@ export function projectTimeline(records: TaskRecords) {
         },
       );
   }
-  entries.sort((a, b) => {
-    const ta = a.occurredAt === null ? Infinity : Date.parse(a.occurredAt),
-      tb = b.occurredAt === null ? Infinity : Date.parse(b.occurredAt);
-    return ta < tb ? -1 : ta > tb ? 1 : a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
-  });
   return { entries, truncated: records.truncated || overflow };
+}
+// Export uses the newest window without exposing another pagination contract.
+export function timelinePreview(records: TaskRecords) {
+  const projection = projectTimeline(records);
+  return v.parse(factoryTimelineSchema, {
+    workId: records.work.id,
+    entries: projection.entries.slice(-100),
+    nextCursor: null,
+    coverage: {
+      bounded: true,
+      limit: sourceLimit,
+      truncated: projection.truncated || projection.entries.length > 100,
+      note: 'Newest 100 projected entries from the bounded timeline. Undated current states follow recorded timestamps; older entries may be omitted.',
+    },
+  });
 }
 const cursorSchema = v.strictObject({
   version: v.literal(1),
@@ -339,7 +362,7 @@ export function timelinePage(records: TaskRecords, input: unknown) {
       bounded: true,
       limit: sourceLimit,
       truncated: projection.truncated,
-      note: 'Latest 200 records per source; up to 2,000 projected entries. Undated records follow recorded timestamps. Mutable receipts show current state, not invented audit history. Diagnostic spans are separate.',
+      note: 'Latest 200 records per source; newest 2,000 projected entries. Undated records follow recorded timestamps. Mutable receipts show current state, not invented audit history. Diagnostic spans are separate.',
     },
   });
 }

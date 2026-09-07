@@ -1,6 +1,12 @@
 import type { DatabaseSync } from 'node:sqlite';
 import * as v from 'valibot';
-import { writebackEffectSchema } from '../../../shared/factory-writeback';
+import {
+  writebackEffectSchema,
+  writebackPolicySchema,
+  writebackStatusSchema,
+  publicApprovalSchema,
+  writebackRepairSchema,
+} from '../../../shared/factory-writeback';
 import {
   workSchema,
   revisionSchema,
@@ -150,6 +156,64 @@ function readDeliveryCandidates(db: DatabaseSync, workId: string) {
     .all(workId, sourceLimit + 1)
     .map((row) => canonicalRecord(row, decodeDeliveryPipelineRow));
 }
+// The SQL discriminator is a table record kind, not the effect's JSON kind.
+// Validate the corresponding domain record before selecting effects. Canonical
+// schemas deliberately retain their legacy optional-field defaults.
+const writebackCandidateSchema = v.variant('recordKind', [
+  v.object({ recordKind: v.literal('effect'), value: writebackEffectSchema }),
+  v.object({ recordKind: v.literal('policy'), value: writebackPolicySchema }),
+  v.object({ recordKind: v.literal('status'), value: writebackStatusSchema }),
+  v.object({ recordKind: v.literal('approval'), value: publicApprovalSchema }),
+  v.object({ recordKind: v.literal('repair'), value: writebackRepairSchema }),
+]);
+function writebackCandidates(db: DatabaseSync, workId: string, health = false) {
+  // Prioritization is only a candidate hint: it must never exclude malformed
+  // discriminators or replace validation. Unread history makes coverage partial.
+  const order = health
+    ? `CASE WHEN json_valid(record) THEN CASE WHEN json_extract(record,'$.state') IN ('sent','cancelled') THEN 1 ELSE 0 END ELSE 0 END, rowid DESC`
+    : 'rowid DESC';
+  return db
+    .prepare(
+      `SELECT id,kind,work_id,record FROM factory_writeback_records WHERE work_id=? ORDER BY ${order} LIMIT ?`,
+    )
+    .all(workId, sourceLimit + 1)
+    .map((row) => {
+      const text = v.parse(
+        v.pipe(v.string(), v.maxLength(2_000_000)),
+        row.record,
+      );
+      const raw: unknown = JSON.parse(text);
+      // Object schemas strip unknown keys; reject hybrid payloads that could
+      // otherwise masquerade as a different valid record kind.
+      const matches = [
+        writebackEffectSchema,
+        writebackPolicySchema,
+        writebackStatusSchema,
+        publicApprovalSchema,
+        writebackRepairSchema,
+      ].filter((schema) => v.is(schema, raw));
+      if (matches.length !== 1)
+        throw new DiagnosticsError(503, 'Task record binding is inconsistent.');
+      const candidate = v.parse(writebackCandidateSchema, {
+        recordKind: row.kind,
+        value: raw,
+      });
+      const record = candidate.value;
+      if (
+        record.id !== row.id ||
+        !('workId' in record) ||
+        record.workId !== row.work_id ||
+        record.workId !== workId
+      )
+        throw new DiagnosticsError(503, 'Task record binding is inconsistent.');
+      return candidate;
+    });
+}
+function writebackEffects(candidates: ReturnType<typeof writebackCandidates>) {
+  return candidates.flatMap((candidate) =>
+    candidate.recordKind === 'effect' ? [candidate.value] : [],
+  );
+}
 export function readTaskRecords(db: DatabaseSync, workId: string) {
   const row = db
     .prepare('SELECT record FROM factory_work_items WHERE id=?')
@@ -158,12 +222,8 @@ export function readTaskRecords(db: DatabaseSync, workId: string) {
   const work = v.parse(workSchema, JSON.parse(v.parse(v.string(), row.record)));
   if (work.id !== workId)
     throw new DiagnosticsError(503, 'Task identity is inconsistent.');
-  const writeback = jsonRows(
-    db,
-    "SELECT id,record FROM factory_writeback_records WHERE work_id=? AND kind='effect' ORDER BY rowid DESC LIMIT ?",
-    writebackEffectSchema,
-    workId,
-  );
+  const writebackRows = writebackCandidates(db, workId);
+  const writeback = writebackEffects(writebackRows.slice(0, sourceLimit));
   const revisions = jsonRows(
     db,
     'SELECT version,record FROM factory_spec_revisions WHERE work_id=? ORDER BY rowid DESC LIMIT ?',
@@ -238,7 +298,7 @@ export function readTaskRecords(db: DatabaseSync, workId: string) {
   )
     throw new DiagnosticsError(503, 'Task record binding is inconsistent.');
   const truncated = [
-    writeback,
+    writebackRows,
     revisions,
     releases,
     runs,
@@ -282,12 +342,6 @@ export function readTaskHealthRecords(
   const work = v.parse(workSchema, JSON.parse(v.parse(v.string(), row.record)));
   if (work.id !== workId)
     throw new DiagnosticsError(503, 'Task identity is inconsistent.');
-  function current<T>(sql: string, schema: v.GenericSchema<unknown, T>) {
-    return db
-      .prepare(sql)
-      .all(workId)
-      .map((r) => parseRecord(r, schema));
-  }
   const runCandidates = codingCandidates(db, workId);
   const runs = runCandidates.slice(0, sourceLimit);
   const releaseCandidates =
@@ -316,10 +370,10 @@ export function readTaskHealthRecords(
   const deliveries = deliveryCandidates
     .slice(0, sourceLimit)
     .filter((r) => r.outcome === null);
-  const writeback = current(
-    "SELECT id,record FROM factory_writeback_records WHERE work_id=? AND kind='effect' AND (json_extract(record,'$.state') IS NULL OR json_extract(record,'$.state') NOT IN ('sent','cancelled')) ORDER BY rowid DESC LIMIT 51",
-    writebackEffectSchema,
-  );
+  const writebackRows = writebackCandidates(db, workId, true);
+  const writeback = writebackEffects(
+    writebackRows.slice(0, sourceLimit),
+  ).filter((effect) => !['sent', 'cancelled'].includes(effect.state));
   const candidates = planningCandidates(db, workId);
   const planning = candidates
     .slice(0, sourceLimit)
@@ -348,6 +402,7 @@ export function readTaskHealthRecords(
       releaseCandidates.length > sourceLimit ||
       candidates.length > sourceLimit ||
       deliveryCandidates.length > sourceLimit ||
+      writebackRows.length > sourceLimit ||
       writeback.length > 50 ||
       planning.length > 1,
   };
