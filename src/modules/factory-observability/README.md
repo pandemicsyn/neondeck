@@ -73,7 +73,14 @@ Operational logger: completed failed span transitions emit one JSON warning to
 stderr (`factory.operation.failed`) with fixed operation, safe error class/code,
 span/trace IDs and correlation. Recovery emits JSON info to stdout
 (`factory.operation.recovered`). Repeated identical failures are silent; changed
-failure/recovery output is limited to once per operation per minute. The in-memory
+failure/recovery output is limited to once per home, operation and tagged stable
+identity per minute. Identity uses the first present field in this order:
+`effectId`, `runId`, `deliveryId`, `workItemId`; calls without these fields share
+an uncorrelated scope. Different identities (including identical values under
+different identity tags) or uncorrelated successes cannot clear a scoped failure. `github.writeback-controller` tracks controller calls,
+separately from `github.writeback` effects and their nested `github.publish`
+spans. Recovery describes a successful operation for that scope, not proof of a
+successful domain outcome; consult durable domain state. The in-memory
 state cache is capped at 256 entries. This console path is independent of SQLite
 writes. Diagnostic storage failure emits `factory.diagnostics.degraded` with fixed
 `DIAGNOSTIC_STORAGE_FAILED` code at most once per home per minute, never the path

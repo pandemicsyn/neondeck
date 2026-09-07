@@ -14,7 +14,15 @@ export function logFactoryDiagnostic(
   paths: RuntimePaths,
   record: FactoryDiagnostic,
 ) {
-  const key = `${paths.neondeckDatabase}:${record.operation}`;
+  // Prefer the most specific stable identity; tags prevent cross-kind collisions.
+  const identityKey = (
+    ['effectId', 'runId', 'deliveryId', 'workItemId'] as const
+  ).find((key) => record.correlation[key] !== undefined);
+  const key = JSON.stringify([
+    paths.neondeckDatabase,
+    record.operation,
+    identityKey ? [identityKey, record.correlation[identityKey]] : null,
+  ]);
   const previous = states.get(key);
   const failure = record.error?.code ?? null;
   if (!failure && !previous?.failure) return;

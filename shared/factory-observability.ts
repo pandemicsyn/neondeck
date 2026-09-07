@@ -26,6 +26,7 @@ export const factoryDiagnosticOperationSchema = v.picklist([
   'github.tick',
   'github.sync',
   'github.writeback',
+  'github.writeback-controller',
   'github.publish',
   'github.source',
   'coding.tick',

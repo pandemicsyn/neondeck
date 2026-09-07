@@ -1,4 +1,8 @@
 import {
+  listFactoryDiagnostics,
+  withFactorySpan,
+} from '../factory-observability';
+import {
   codingSnapshot,
   codingConfig,
   codingDigest,
@@ -1643,4 +1647,55 @@ it('maintains running and candidate facts while release eligibility and consent 
   await codingReservation('next-release');
   await tick();
   expect(io.update).toHaveBeenCalledTimes(count);
+});
+
+it.each([false, true])(
+  'parents publish under its effect (controller=%s)',
+  async (controller) => {
+    consent();
+    if (controller) {
+      await withFactorySpan(
+        setup.paths,
+        'github.writeback-controller',
+        {},
+        tick,
+      );
+    } else {
+      await tick();
+    }
+    const records = listFactoryDiagnostics(setup.paths).records;
+    const effects = records.filter((r) => r.operation === 'github.writeback');
+    expect(effects).toHaveLength(1);
+    const effect = effects[0];
+    const publish = records.find((r) => r.operation === 'github.publish')!;
+    expect(publish).toMatchObject({
+      parentSpanId: effect.id,
+      traceId: effect.traceId,
+      outcome: 'success',
+      correlation: { workItemId: id, effectId: state().effects[0].id },
+    });
+    const parent = records.find(
+      (r) => r.operation === 'github.writeback-controller',
+    );
+    expect(effect.parentSpanId).toBe(controller ? parent!.id : null);
+    if (parent) expect(effect.traceId).toBe(parent.traceId);
+  },
+);
+
+it('retains one failed effect span when a publish error is caught and persisted', async () => {
+  consent();
+  vi.mocked(io.create).mockRejectedValueOnce(
+    new GitHubApiError(403, null, 'Denied'),
+  );
+  await expect(tick()).resolves.toBeUndefined();
+  expect(state().effects[0].state).toBe('failed');
+  const records = listFactoryDiagnostics(setup.paths).records;
+  const effects = records.filter((r) => r.operation === 'github.writeback');
+  expect(effects).toHaveLength(1);
+  expect(effects[0].outcome).toBe('failure');
+  expect(records.find((r) => r.operation === 'github.publish')).toMatchObject({
+    parentSpanId: effects[0].id,
+    traceId: effects[0].traceId,
+    outcome: 'failure',
+  });
 });

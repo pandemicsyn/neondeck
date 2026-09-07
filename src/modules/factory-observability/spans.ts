@@ -86,13 +86,13 @@ export async function withFactorySpan<T>(
   paths: RuntimePaths,
   operation: FactoryDiagnosticOperation,
   correlation: FactoryCorrelation,
-  run: () => Promise<T>,
+  run: (span: ReturnType<typeof startFactorySpan>) => Promise<T>,
   kind: FactoryDiagnostic['kind'] = 'external',
 ): Promise<T> {
   const span = startFactorySpan(paths, operation, correlation, kind);
   return context.run(span.context, async () => {
     try {
-      const result = await run();
+      const result = await run(span);
       span.finish();
       return result;
     } catch (error) {

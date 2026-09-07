@@ -38,7 +38,7 @@ export function startFactoryGitHubLoop(
     }
     if (controller.signal.aborted) return;
     try {
-      await withFactorySpan(paths, 'github.writeback', {}, () =>
+      await withFactorySpan(paths, 'github.writeback-controller', {}, () =>
         runFactoryWriteback(
           paths,
           undefined,

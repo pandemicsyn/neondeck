@@ -2,7 +2,11 @@ import { mkdtempSync, mkdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { initializeAppDatabase } from '../runtime-home/app-db';
-import { getFactoryWorkerHealth } from '../modules/factory-observability';
+import {
+  listFactoryDiagnostics,
+  withFactorySpan,
+  getFactoryWorkerHealth,
+} from '../modules/factory-observability';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { runFactoryGitHubSync } from '../modules/factory/github-reconcile';
 import { runFactoryWriteback } from '../modules/factory/writeback';
@@ -70,7 +74,7 @@ it('retries on the next tick after writeback fails', async () => {
   stop = startFactoryGitHubLoop(paths, 1000);
   await vi.advanceTimersByTimeAsync(0);
   expect(console.warn).toHaveBeenCalledWith(
-    expect.stringContaining('"operation":"github.writeback"'),
+    expect.stringContaining('"operation":"github.writeback-controller"'),
   );
   expect(getFactoryWorkerHealth(paths)[0]).toMatchObject({
     consecutiveFailures: 1,
@@ -175,4 +179,40 @@ it('gives writeback a fresh bounded timeout after source recovery times out', as
   expect(AbortSignal.timeout).toHaveBeenNthCalledWith(1, 45000);
   expect(AbortSignal.timeout).toHaveBeenNthCalledWith(2, 45000);
   expect(runFactoryGitHubSync).toHaveBeenCalledTimes(1);
+});
+
+it('does not recover a failed effect when later empty controller ticks succeed', async () => {
+  const info = vi.spyOn(console, 'info').mockImplementation(() => {});
+  vi.mocked(runFactoryWriteback).mockImplementationOnce(async () => {
+    await withFactorySpan(
+      paths,
+      'github.writeback',
+      { effectId: 'effect-1' },
+      async (span) => {
+        // The effect persists its business failure and returns normally.
+        span.finish(new Error('publish failed'));
+      },
+    );
+  });
+  stop = startFactoryGitHubLoop(paths, 1000);
+  await vi.advanceTimersByTimeAsync(0);
+  expect(console.warn).toHaveBeenCalledWith(
+    expect.stringContaining('"operation":"github.writeback"'),
+  );
+  // Cross the logger cooldown so it cannot mask a false recovery.
+  await vi.advanceTimersByTimeAsync(61000);
+  const records = listFactoryDiagnostics(paths, { limit: 500 }).records;
+  expect(
+    records.filter((r) => r.operation === 'github.writeback'),
+  ).toMatchObject([{ outcome: 'failure' }]);
+  expect(
+    records.some(
+      (r) =>
+        r.operation === 'github.writeback-controller' &&
+        r.outcome === 'success',
+    ),
+  ).toBe(true);
+  expect(info).not.toHaveBeenCalledWith(
+    expect.stringContaining('"operation":"github.writeback"'),
+  );
 });

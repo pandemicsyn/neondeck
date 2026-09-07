@@ -232,7 +232,12 @@ it('emits bounded structured failure/recovery logs and safe storage warnings', a
     error: { code: 'ENOENT' },
   });
   await vi.advanceTimersByTimeAsync(60001);
-  await withFactorySpan(paths, 'coding.launch', {}, async () => {});
+  await withFactorySpan(
+    paths,
+    'coding.launch',
+    { workItemId: 'work-log' },
+    async () => {},
+  );
   expect(info).toHaveBeenCalledTimes(1);
   const db = openDb(paths.neondeckDatabase);
   db.exec('DROP TABLE factory_diagnostics');
@@ -265,3 +270,96 @@ it('binds the actual admitted submission to its enclosing app span', async () =>
     submissionId: 'submission-1',
   });
 });
+
+it('only recovers the same effect operation after an unrelated effect succeeds', async () => {
+  vi.useFakeTimers();
+  const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+  const info = vi.spyOn(console, 'info').mockImplementation(() => {});
+  try {
+    await withFactorySpan(
+      paths,
+      'github.writeback',
+      { effectId: 'effect-a' },
+      async (span) => {
+        span.finish(new Error('failed'));
+      },
+    );
+    expect(warn).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(60001);
+    await withFactorySpan(
+      paths,
+      'github.writeback',
+      { effectId: 'effect-b' },
+      async () => {},
+    );
+    await withFactorySpan(paths, 'github.writeback', {}, async () => {});
+    expect(info).not.toHaveBeenCalled();
+    await withFactorySpan(
+      paths,
+      'github.writeback',
+      { effectId: 'effect-a' },
+      async () => {},
+    );
+    expect(info).toHaveBeenCalledTimes(1);
+    expect(JSON.parse(String(info.mock.calls[0][0]))).toMatchObject({
+      event: 'factory.operation.recovered',
+      operation: 'github.writeback',
+      correlation: { effectId: 'effect-a' },
+    });
+  } finally {
+    warn.mockRestore();
+    info.mockRestore();
+  }
+});
+
+it.each(['runId', 'deliveryId', 'workItemId'] as const)(
+  'only recovers the same %s identity without an effect ID',
+  async (identityKey) => {
+    vi.useFakeTimers();
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const info = vi.spyOn(console, 'info').mockImplementation(() => {});
+    const correlation = { [identityKey]: 'identity-a' };
+    try {
+      await withFactorySpan(
+        paths,
+        'coding.launch',
+        correlation,
+        async (span) => {
+          span.finish(new Error('failed'));
+        },
+      );
+      expect(warn).toHaveBeenCalledTimes(1);
+      await vi.advanceTimersByTimeAsync(60001);
+      await withFactorySpan(
+        paths,
+        'coding.launch',
+        { [identityKey]: 'identity-b' },
+        async () => {},
+      );
+      // Even the same raw ID in a more specific identity scope is unrelated.
+      await withFactorySpan(
+        paths,
+        'coding.launch',
+        { effectId: 'identity-a' },
+        async () => {},
+      );
+      await withFactorySpan(paths, 'coding.launch', {}, async () => {});
+      expect(info).not.toHaveBeenCalled();
+      await withFactorySpan(
+        paths,
+        'coding.launch',
+        correlation,
+        async () => {},
+      );
+      expect(info).toHaveBeenCalledTimes(1);
+      expect(JSON.parse(String(info.mock.calls[0][0]))).toMatchObject({
+        event: 'factory.operation.recovered',
+        operation: 'coding.launch',
+        correlation,
+      });
+    } finally {
+      warn.mockRestore();
+      info.mockRestore();
+    }
+  },
+);
