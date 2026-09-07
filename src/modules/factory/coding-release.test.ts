@@ -1,5 +1,14 @@
+import * as gitIo from '../../lib/git';
+import { prepareFactoryPlanning, updatePlanningIntent } from './planning-store';
+import { clearCodingAttention } from './coding-attention';
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
+import {
+  mkdtempSync,
+  mkdirSync,
+  readFileSync,
+  writeFileSync,
+  rmSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
@@ -11,7 +20,11 @@ import {
   type RuntimePaths,
 } from '../../runtime-home';
 import * as v from 'valibot';
-import { prepareSchema, listCodingRuns } from '../coding-runs';
+import {
+  prepareSchema,
+  listCodingRuns,
+  reserveCodingRun,
+} from '../coding-runs';
 import {
   codingConfig,
   codingDigest,
@@ -40,6 +53,7 @@ function configure(changes: Partial<FactoryCodingConfig>) {
 beforeEach(async () => {
   root = mkdtempSync(join(tmpdir(), 'factory-release-'));
   paths = runtimePaths(join(root, 'runtime'));
+  vi.stubEnv('NEONDECK_HOME', paths.home);
   await ensureRuntimeHome(paths);
   const repo = join(root, 'repo');
   mkdirSync(repo);
@@ -81,6 +95,7 @@ beforeEach(async () => {
   });
 });
 afterEach(() => {
+  vi.restoreAllMocks();
   vi.unstubAllEnvs();
   rmSync(root, { recursive: true, force: true });
 });
@@ -260,4 +275,172 @@ it('blocks launch if coding is disabled after host preparation', async () => {
   expect(run?.cancelRequestedAt).toBeTruthy();
   expect(host.prepareLocalAttempt).toHaveBeenCalledTimes(1);
   expect(host.launchLocalAttempt).not.toHaveBeenCalled();
+});
+
+function fixtureGit(cwd: string, ...args: string[]) {
+  return execFileSync('git', ['-C', cwd, ...args], {
+    encoding: 'utf8',
+    stdio: 'pipe',
+  }).trim();
+}
+function remoteFixture() {
+  const repo = join(root, 'repo'),
+    remote = join(root, 'origin.git'),
+    upstream = join(root, 'upstream');
+  fixtureGit(root, 'clone', '--bare', repo, remote);
+  fixtureGit(repo, 'remote', 'add', 'origin', remote);
+  fixtureGit(root, 'clone', remote, upstream);
+  const push = () => {
+    writeFileSync(
+      join(upstream, 'AGENTS.md'),
+      'Use the new remote instructions',
+    );
+    fixtureGit(upstream, 'add', 'AGENTS.md');
+    fixtureGit(
+      upstream,
+      '-c',
+      'user.name=Fixture',
+      '-c',
+      'user.email=fixture@example.test',
+      'commit',
+      '-m',
+      'Remote instructions',
+    );
+    fixtureGit(upstream, 'push', 'origin', 'main');
+    return fixtureGit(upstream, 'rev-parse', 'HEAD');
+  };
+  return { repo, remote, push };
+}
+it('captures planning and initial coding at distinct times, then reuses the frozen coding attempt without fetching', async () => {
+  configure({ enabled: true });
+  const { repo, push } = remoteFixture();
+  const work = readyWork();
+  const planning = await prepareFactoryPlanning(
+    work.work.id,
+    { requestKey: 'plan', expectedVersion: work.work.version, message: 'Plan' },
+    paths,
+  );
+  updatePlanningIntent(
+    planning.id,
+    (intent) => {
+      intent.stage = 'completed';
+    },
+    paths,
+  );
+  const sha = push();
+  fixtureGit(repo, 'checkout', '-b', 'operator');
+  writeFileSync(join(repo, 'dirty.txt'), 'Operator work');
+  const head = fixtureGit(repo, 'rev-parse', 'HEAD');
+  const main = fixtureGit(repo, 'rev-parse', 'main');
+  releaseFactoryWork(work.work.id, releaseInput(work), actor, paths);
+  const host = mockHost();
+  const run = await dispatchCodingWork(work.work.id, paths, host, readiness);
+  expect(run?.snapshot.baseSha).toBe(sha);
+  expect(planning.context.repoCommit).not.toBe(sha);
+  expect(JSON.parse(run!.snapshot.contextSnapshot)).toMatchObject({
+    repoBaseline: {
+      source: 'origin',
+      branch: 'main',
+      ref: `refs/neondeck/factory/commits/${sha}`,
+    },
+    repoInstructions: { commit: sha, text: 'Use the new remote instructions' },
+  });
+  expect(fixtureGit(repo, 'rev-parse', 'HEAD')).toBe(head);
+  expect(fixtureGit(repo, 'rev-parse', 'main')).toBe(main);
+  expect(fixtureGit(repo, 'branch', '--show-current')).toBe('operator');
+  expect(readFileSync(join(repo, 'dirty.txt'), 'utf8')).toBe('Operator work');
+  fixtureGit(repo, 'remote', 'set-url', 'origin', join(root, 'missing.git'));
+  const spy = vi.spyOn(gitIo, 'runUnattendedGit');
+  expect(
+    (await dispatchCodingWork(work.work.id, paths, host, readiness))?.snapshot,
+  ).toEqual(run!.snapshot);
+  expect(spy).not.toHaveBeenCalled();
+  expect(host.launchLocalAttempt).toHaveBeenCalledTimes(1);
+});
+it('fails initial coding on remote errors before reserving resources, without a stale local fallback', async () => {
+  configure({ enabled: true });
+  const { repo } = remoteFixture();
+  fixtureGit(repo, 'remote', 'set-url', 'origin', join(root, 'missing.git'));
+  const work = release(),
+    host = mockHost();
+  expect(
+    await dispatchCodingWork(work.work.id, paths, host, readiness),
+  ).toBeNull();
+  expect(host.prepareLocalAttempt).not.toHaveBeenCalled();
+  expect(listCodingRuns({}, paths)).toEqual([]);
+  await expect(
+    codingSnapshot(work.work.id, 'synthetic', paths),
+  ).rejects.toThrow(/No stale local fallback/);
+  expect(
+    fixtureGit(
+      repo,
+      'for-each-ref',
+      '--format=%(refname)',
+      'refs/neondeck/factory/fetch',
+    ),
+  ).toBe('');
+});
+it.each(['disabled', 'config'] as const)(
+  'rechecks %s after coding fetch before host operations and never accumulates per-attempt refs',
+  async (change) => {
+    configure({ enabled: true });
+    const { repo, push } = remoteFixture();
+    const sha = push();
+    const work = release(),
+      host = mockHost();
+    const original = gitIo.runUnattendedGit;
+    vi.spyOn(gitIo, 'runUnattendedGit').mockImplementation(
+      async (cwd, args, options) => {
+        const result = await original(cwd, args, options);
+        if (args.includes('fetch'))
+          configure(
+            change === 'disabled'
+              ? { enabled: false }
+              : { model: 'changed-model' },
+          );
+        return result;
+      },
+    );
+    for (let i = 0; i < 2; i++) {
+      configure({ enabled: true, model: 'synthetic-model' });
+      clearCodingAttention(work.work.id, paths);
+      expect(
+        await dispatchCodingWork(work.work.id, paths, host, readiness),
+      ).toBeNull();
+    }
+    expect(host.prepareLocalAttempt).not.toHaveBeenCalled();
+    expect(host.launchLocalAttempt).not.toHaveBeenCalled();
+    expect(listCodingRuns({}, paths)).toEqual([]);
+    expect(
+      fixtureGit(
+        repo,
+        'for-each-ref',
+        '--format=%(refname)',
+        'refs/neondeck/factory',
+      ),
+    ).toBe(`refs/neondeck/factory/commits/${sha}`);
+  },
+);
+
+it('launches an existing unbound reservation from its frozen snapshot without refetching', async () => {
+  configure({ enabled: true });
+  const { repo, push } = remoteFixture();
+  const work = release();
+  const snapshot = await codingSnapshot(
+    work.work.id,
+    'codex-cli 0.150.1',
+    paths,
+  );
+  const reserved = reserveCodingRun(snapshot, paths);
+  expect(reserved.host).toBeNull();
+  push();
+  fixtureGit(repo, 'remote', 'set-url', 'origin', join(root, 'missing.git'));
+  const spy = vi.spyOn(gitIo, 'runUnattendedGit');
+  const host = mockHost();
+  const result = await dispatchCodingWork(work.work.id, paths, host, readiness);
+  expect(result?.runId).toBe(reserved.runId);
+  expect(result?.snapshot).toEqual(snapshot);
+  expect(host.prepareLocalAttempt).toHaveBeenCalledTimes(1);
+  expect(host.launchLocalAttempt).toHaveBeenCalledTimes(1);
+  expect(spy.mock.calls.some(([, args]) => args.includes('fetch'))).toBe(false);
 });

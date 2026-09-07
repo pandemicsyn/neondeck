@@ -171,6 +171,11 @@ export async function dispatchCodingWork(
     );
     return null;
   }
+  const existing = getCodingRunForRelease(
+    codingAuthority(workId, paths).release.id,
+    paths,
+  );
+  if (existing) return launchReservedCodingRun(existing, paths, host);
   const ready = await readiness(paths);
   if (!ready.ready || !ready.installedVersion) return null;
   let snapshot: Awaited<ReturnType<typeof codingSnapshot>>;
@@ -200,11 +205,13 @@ export async function dispatchCodingWork(
     return null;
   }
   clearCodingAttention(workId, paths);
-  return launchReservedCodingRun(
-    reserveCodingRun(snapshot, paths),
-    paths,
-    host,
-  );
+  // Keep reservation conflicts outside the preflight catch: an occupied writer
+  // is an admission conflict, not stale context. Concurrent admissions reuse the
+  // durable snapshot and the ordinary launch/recovery guards without refetching.
+  const reserved =
+    getCodingRunForRelease(snapshot.releaseId, paths) ??
+    reserveCodingRun(snapshot, paths);
+  return launchReservedCodingRun(reserved, paths, host);
 }
 
 /** Shared resource lifecycle; callers must reserve authority atomically first. */

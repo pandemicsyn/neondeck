@@ -15,6 +15,19 @@ Use this format:
 - Follow-up: What remains, who/what should handle it, or `None`.
 ```
 
+## 2026-09-07 - Factory replies and latest default-branch baselines
+
+- Roadmap item: Factory shaping and coding usability follow-up.
+- Decision: Fetch the configured default branch for new planning sessions and
+  initial coding snapshots. Retain pinned revisions for existing sessions and
+  repair attempts. Make the factory reply composer visibly multiline and let
+  operators draft while send gates remain active.
+- Reason: Operator rehearsal exposed a hard-to-find reply field and planning
+  based on whichever local HEAD happened to be checked out.
+- Follow-up: See [session usability plan](factory/PLANNING_SESSION_USABILITY.md)
+  for scope and verification. Planning and coding still capture revisions at
+  different times; this is not a shared immutable baseline across both phases.
+
 ## 2026-09-07 - Guided factory setup and explicit coding enablement
 
 - Roadmap item: Factory operations onboarding follow-up.

@@ -30,7 +30,7 @@ let workId: string;
 const day = 86400000;
 const start = Date.parse('2026-10-01T00:00:00Z');
 beforeEach(async () => {
-  setup = fixture();
+  setup = fixture(true);
   io = {
     repository: vi.fn(async () => ({
       id: 42,
@@ -58,7 +58,7 @@ beforeEach(async () => {
       },
       setup.paths,
     );
-  const human = prepareFactoryPlanning(
+  const human = await prepareFactoryPlanning(
     workId,
     {
       requestKey: 'human',
