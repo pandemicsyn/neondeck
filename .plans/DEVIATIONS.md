@@ -25,7 +25,10 @@ Use this format:
 - Follow-up: See [setup usability plan](factory/SETUP_USABILITY_PLAN.md).
   Keyring-only credential export and writing refreshed attempt tokens back to the
   user's login store are not introduced. Live authentication/refresh and remote
-  acceptance remain pending; no existing slice acceptance is reclassified.
+  acceptance remain pending; no existing slice acceptance is reclassified. The
+  broad macOS integration run was stopped after ten minutes without results;
+  focused regressions, the separate 100-test integration group, builds and packed
+  smoke passed. See the plan for exact incomplete verification scope.
 
 ## 2026-09-07 - Diagnostics layer delivery and retention limits
 

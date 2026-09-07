@@ -94,3 +94,17 @@ Factory styles and synthetic API data at 1360px and 390px. They verified the
 not-checked status, relevant credential fields, source switching, preserved local
 reference on save, and no horizontal overflow. Screenshots use synthetic paths;
 operator screenshots containing private setup details are not published.
+
+The Kilo loading indicator subsequently passed 62 focused CLI tests and two
+independent static rechecks. The Git suite passed 47 tests; the separately selected
+integration groups passed 100 tests across eight files. App/docs builds, package
+validation (1,253 files) and packed CLI smoke passed, including managed runtime
+entry, IPv6 private health and public isolation checks.
+
+The all-in-one macOS integration attempt was stopped after approximately ten
+minutes without reported results. It is incomplete, not a pass. Host/coding/
+adapter/delivery integration groups were not completed in that broad run; the
+changed credential boundary has focused coverage and the established private-copy
+redaction/cleanup test passed separately. No single successful all-inclusive
+`npm run verify` is claimed. Existing live provider and refresh acceptance remains
+open.
