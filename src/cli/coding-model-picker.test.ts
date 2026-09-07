@@ -1,5 +1,5 @@
 import { beforeEach, expect, it, vi } from 'vitest';
-import { log } from '@clack/prompts';
+import { log, spinner } from '@clack/prompts';
 import { discoverModels, suggestedModels } from '../modules/model-catalog';
 import {
   codingModels,
@@ -16,7 +16,14 @@ vi.mock('./prompts', () => ({
   promptSelect: vi.fn<typeof promptSelect>(),
   promptText: vi.fn<typeof promptText>(),
 }));
-vi.mock('@clack/prompts', () => ({ log: { info: vi.fn<typeof log.info>() } }));
+const activity = vi.hoisted(() => ({
+  start: vi.fn<(message: string) => void>(),
+  stop: vi.fn<(message: string) => void>(),
+}));
+vi.mock('@clack/prompts', () => ({
+  log: { info: vi.fn<typeof log.info>() },
+  spinner: vi.fn<() => typeof activity>(() => activity),
+}));
 beforeEach(() => vi.resetAllMocks());
 it('uses offline Frontier without a key and does not claim authentication', async () => {
   const result = await codingModels('kilo', {});
@@ -27,6 +34,7 @@ it('uses offline Frontier without a key and does not claim authentication', asyn
   expect(await pickCodingModel('kilo', null, {})).toBe(
     'kilo/kilo-auto/frontier',
   );
+  expect(spinner).not.toHaveBeenCalled();
 });
 it('guards thrown errors and never displays their contents', async () => {
   vi.mocked(discoverModels).mockRejectedValue(new Error('synthetic-secret'));
@@ -74,6 +82,7 @@ it('has all seven Codex choices, preserves Sol, and allows future manual models'
   vi.mocked(promptSelect).mockResolvedValueOnce(':manual');
   vi.mocked(promptText).mockResolvedValueOnce('gpt-future');
   expect(await pickCodingModel('codex', null, {})).toBe('gpt-future');
+  expect(spinner).not.toHaveBeenCalled();
   expect(vi.mocked(promptSelect).mock.calls[0][0].initialValue).toBe(
     'gpt-5.6-sol',
   );
@@ -122,3 +131,44 @@ it('keeps fallback diagnostics generic even when discovery returns unsafe error 
   expect(result.warning).toContain('catalog unavailable');
   expect(JSON.stringify(result)).not.toContain('synthetic-secret');
 });
+
+it.each(['success', 'fallback', 'thrown'] as const)(
+  'shows activity while authenticated Kilo discovery is pending and stops after %s',
+  async (outcome) => {
+    const pending =
+      Promise.withResolvers<Awaited<ReturnType<typeof discoverModels>>>();
+    vi.mocked(discoverModels).mockReturnValueOnce(pending.promise);
+    vi.mocked(promptSelect).mockResolvedValueOnce(defaultKiloCodingModel);
+    const selection = pickCodingModel('kilo', null, {
+      KILOCODE_API_KEY: 'synthetic-secret',
+    });
+    expect(spinner).toHaveBeenCalledTimes(1);
+    expect(activity.start).toHaveBeenCalledExactlyOnceWith(
+      'Discovering Kilo models',
+    );
+    expect(activity.stop).not.toHaveBeenCalled();
+    expect(promptSelect).not.toHaveBeenCalled();
+    if (outcome === 'thrown') pending.reject(new Error('synthetic-secret'));
+    else
+      pending.resolve({
+        ok: outcome === 'success',
+        models: [],
+        diagnostics: { stale: outcome === 'fallback' },
+        error: 'synthetic-secret',
+      } as never);
+    expect(await selection).toBe(defaultKiloCodingModel);
+    expect(activity.stop).toHaveBeenCalledExactlyOnceWith(
+      'Kilo model discovery finished',
+    );
+    expect(activity.stop.mock.invocationCallOrder[0]).toBeLessThan(
+      vi.mocked(promptSelect).mock.invocationCallOrder[0],
+    );
+    expect(
+      JSON.stringify([
+        activity.start.mock.calls,
+        activity.stop.mock.calls,
+        vi.mocked(log.info).mock.calls,
+      ]),
+    ).not.toContain('synthetic-secret');
+  },
+);

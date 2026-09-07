@@ -1,5 +1,5 @@
 /* eslint-disable no-control-regex -- Reject terminal control characters at input boundaries. */
-import { log } from '@clack/prompts';
+import { log, spinner } from '@clack/prompts';
 import * as v from 'valibot';
 import { defaultOpenAiCodexModel } from '../model-defaults';
 import {
@@ -112,7 +112,15 @@ export async function pickCodingModel(
   current: string | null,
   env: NodeJS.ProcessEnv,
 ) {
-  const catalog = await codingModels(id, env);
+  const activity =
+    id === 'kilo' && env.KILOCODE_API_KEY?.trim() ? spinner() : null;
+  activity?.start('Discovering Kilo models');
+  let catalog: Awaited<ReturnType<typeof codingModels>>;
+  try {
+    catalog = await codingModels(id, env);
+  } finally {
+    activity?.stop('Kilo model discovery finished');
+  }
   if (catalog.warning) log.info(catalog.warning);
   const defaultModel =
     current ??
