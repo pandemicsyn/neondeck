@@ -46,6 +46,15 @@ export async function configureFactoryCoding(current: FactoryCodingConfig) {
     validate: (value) =>
       value?.startsWith('/') ? undefined : 'Enter an absolute executable path.',
   });
+  const path = await promptText({
+    message:
+      'Executable search PATH (colon-separated absolute directories). Include CLI runtimes such as Node for npm-installed CLIs using /usr/bin/env node; for example /opt/node/bin:/usr/local/bin:/usr/bin:/bin. Only this PATH is used, not your shell environment.',
+    initialValue: current.path,
+    validate: (value) =>
+      v.safeParse(factoryCodingConfigSchema.entries.path, value ?? '').success
+        ? undefined
+        : 'Enter colon-separated absolute directories with no empty entries.',
+  });
   const model = await promptText({
     message: 'Coding model (adapter-specific model or provider/model)',
     initialValue: current.adapter?.id === id ? (current.model ?? '') : '',
@@ -71,6 +80,7 @@ export async function configureFactoryCoding(current: FactoryCodingConfig) {
       cliVersion: adapter.supportedVersion,
     },
     executable,
+    path,
     model,
     auth: { kind, env },
   });
