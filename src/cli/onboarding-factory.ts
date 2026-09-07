@@ -42,6 +42,9 @@ export async function configureFactory(paths: RuntimePaths) {
         'Enable factory intake? A running server may triage admitted work with the utility model.',
       initialValue: false,
     });
+  const githubResumeHint =
+    'GitHub issue intake needs a registered GitHub repository. Run neondeck repo add, then neondeck factory setup. Manual intake remains available in /factory.';
+  if (!before.repos.length) log.info(githubResumeHint);
   const intake = await promptSelect({
     message: 'Intake setup',
     options: [
@@ -50,13 +53,27 @@ export async function configureFactory(paths: RuntimePaths) {
         label: 'Manual dashboard intake',
         hint: 'Existing GitHub connections are retained.',
       },
-      {
-        value: 'github',
-        label: 'Add GitHub issue connection',
-        hint: 'Saved disabled; no remote setup.',
-      },
+      ...(before.repos.length
+        ? [
+            {
+              value: 'github',
+              label: 'Add GitHub issue connection',
+              hint: 'Saved disabled; no remote setup.',
+            },
+          ]
+        : []),
     ],
   });
+  if (intake !== 'manual' && intake !== 'github') {
+    log.info(
+      'Intake selection is unavailable. Factory configuration unchanged. Resume with neondeck factory setup.',
+    );
+    return;
+  }
+  if (intake === 'github' && !before.repos.length) {
+    log.info(githubResumeHint);
+    return;
+  }
   let repoId: string | undefined;
   if (before.repos.length)
     repoId = await promptSelect({
@@ -64,12 +81,14 @@ export async function configureFactory(paths: RuntimePaths) {
         'Repository for intake (manual tasks select it again in /factory)',
       options: before.repos.map((repo) => ({ value: repo.id, label: repo.id })),
     });
-  else if (intake === 'github')
-    throw new Error(
-      'Register a repository with neondeck repo add before GitHub setup.',
+  const repo = before.repos.find((repo) => repo.id === repoId);
+  if (before.repos.length && !repo) {
+    log.info(
+      'Repository selection is unavailable. Factory configuration unchanged. Resume with neondeck factory setup to select a registered repository.',
     );
-  if (intake === 'github') {
-    const repo = before.repos.find((repo) => repo.id === repoId)!;
+    return;
+  }
+  if (intake === 'github' && repo) {
     const id = await promptText({
       message: 'New connection ID',
       validate: (value) =>

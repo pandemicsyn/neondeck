@@ -1,3 +1,4 @@
+import { log } from '@clack/prompts';
 import { writeFileSync } from 'node:fs';
 import * as agentConfig from '../modules/runtime/agent-config';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
@@ -341,4 +342,120 @@ it('rejects a registry change between the preview read and fingerprint calculati
   ).toThrow('changed during setup');
   expect(await readFile(paths.config, 'utf8')).toBe(bytes);
   expect(await readFile(paths.repos, 'utf8')).toBe(changedRegistry);
+});
+
+it.each(['github', 'unsupported'])(
+  'continues without mutation for unavailable intake selection %j with no repositories',
+  async (selection) => {
+    const paths = await fixture();
+    const bytes = await readFile(paths.config, 'utf8');
+    const repos = await readFile(paths.repos, 'utf8');
+    vi.mocked(promptConfirm).mockResolvedValue(true);
+    vi.mocked(promptSelect).mockResolvedValue(selection);
+
+    await expect(configureFactory(paths)).resolves.toBeUndefined();
+
+    expect(promptSelect).toHaveBeenCalledExactlyOnceWith({
+      message: 'Intake setup',
+      options: [expect.objectContaining({ value: 'manual' })],
+    });
+    expect(log.info).toHaveBeenCalledWith(
+      expect.stringContaining('neondeck repo add'),
+    );
+    expect(log.info).toHaveBeenCalledWith(
+      expect.stringContaining('neondeck factory setup'),
+    );
+    expect(promptText).not.toHaveBeenCalled();
+    expect(readFactoryGitHubRepository).not.toHaveBeenCalled();
+    expect(await readFile(paths.config, 'utf8')).toBe(bytes);
+    expect(await readFile(paths.repos, 'utf8')).toBe(repos);
+    expect(promptConfirm).not.toHaveBeenCalledWith(
+      expect.objectContaining({
+        message: 'Apply this local factory configuration?',
+      }),
+    );
+  },
+);
+
+it('keeps manual intake available without a repository', async () => {
+  const paths = await fixture();
+  vi.mocked(promptConfirm)
+    .mockResolvedValueOnce(true)
+    .mockResolvedValueOnce(true)
+    .mockResolvedValueOnce(false)
+    .mockResolvedValueOnce(true);
+  vi.mocked(promptSelect).mockResolvedValue('manual');
+
+  await configureFactory(paths);
+
+  expect(readFactorySetup(paths).factory.enabled).toBe(true);
+  expect(readFactorySetup(paths).factory.github).toEqual([]);
+  expect(readFactoryGitHubRepository).not.toHaveBeenCalled();
+});
+
+it.each(['removed-repo', ''])(
+  'continues without mutation for stale or unsupported repository selection %j',
+  async (selection) => {
+    const paths = await fixture();
+    await writeFile(
+      paths.repos,
+      JSON.stringify({
+        repos: [
+          {
+            id: 'fixture',
+            path: '/tmp/fixture',
+            defaultBranch: 'main',
+            github: { owner: 'example', name: 'fixture' },
+          },
+        ],
+      }),
+    );
+    const bytes = await readFile(paths.config, 'utf8');
+    vi.mocked(promptConfirm).mockResolvedValue(true);
+    vi.mocked(promptSelect)
+      .mockResolvedValueOnce('github')
+      .mockResolvedValueOnce(selection);
+
+    await expect(configureFactory(paths)).resolves.toBeUndefined();
+
+    expect(log.info).toHaveBeenCalledWith(
+      expect.stringContaining('Repository selection is unavailable'),
+    );
+    expect(promptText).not.toHaveBeenCalled();
+    expect(readFactoryGitHubRepository).not.toHaveBeenCalled();
+    expect(await readFile(paths.config, 'utf8')).toBe(bytes);
+  },
+);
+
+it('propagates invalid configuration from the optional wizard', async () => {
+  const paths = await fixture();
+  await writeFile(paths.config, '{invalid');
+  vi.mocked(promptConfirm).mockResolvedValue(true);
+  await expect(configureFactory(paths)).rejects.toThrow(paths.config);
+  expect(await readFile(paths.config, 'utf8')).toBe('{invalid');
+  expect(promptSelect).not.toHaveBeenCalled();
+});
+
+it('propagates apply precondition failures from the optional wizard', async () => {
+  const paths = await fixture();
+  const config = readFactorySetup(paths).config;
+  await writeFile(
+    paths.config,
+    JSON.stringify({
+      ...config,
+      models: { ...config.models, utility: 'removed-provider/model' },
+    }),
+  );
+  const bytes = await readFile(paths.config, 'utf8');
+  vi.mocked(promptConfirm)
+    .mockResolvedValueOnce(true)
+    .mockResolvedValueOnce(true)
+    .mockResolvedValueOnce(false)
+    .mockResolvedValueOnce(true);
+  vi.mocked(promptSelect).mockResolvedValue('manual');
+
+  await expect(configureFactory(paths)).rejects.toThrow(
+    'Configure registered planning and utility model references',
+  );
+  expect(await readFile(paths.config, 'utf8')).toBe(bytes);
 });
