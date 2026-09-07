@@ -244,7 +244,7 @@ it('retains config and expected fingerprint after optimistic concurrency rejecti
   );
   await flush();
   expect(calls[0]?.body).toEqual({
-    expectedFingerprint: state.configFingerprint,
+    expectedFingerprint: 'c'.repeat(64),
     config: state.config,
   });
   expect(container.textContent).toContain('Settings changed elsewhere');
@@ -522,4 +522,160 @@ it('rejects admission attention for a different work item', async () => {
     'Coding history unavailable or unsupported',
   );
   expect(container.textContent).not.toContain('Other task reason');
+});
+
+it('selects registered CLIs without saving or executing and clears provider credentials', async () => {
+  await render(<FactoryCodingSetup />);
+  await click('Configure coding');
+  const selector =
+    container.querySelector<HTMLSelectElement>('[name="adapter"]');
+  if (!selector) throw new Error('Missing adapter selector');
+  expect([...selector.options].map((option) => option.text)).toEqual([
+    'Codex',
+    'OpenCode',
+    'Kilo Code',
+  ]);
+  expect(selector.value).toBe('codex');
+  await act(async () => {
+    selector.value = 'opencode';
+    selector.dispatchEvent(new Event('change', { bubbles: true }));
+  });
+  expect(calls).toEqual([]);
+  expect(
+    container.querySelector<HTMLInputElement>('[name="authEnv"]')?.value,
+  ).toBe('');
+  expect(
+    container.querySelector<HTMLInputElement>('[name="executable"]')?.value,
+  ).toBe('');
+  expect(
+    container.querySelector<HTMLInputElement>('[name="model"]')?.value,
+  ).toBe('');
+  expect(
+    container.querySelector<HTMLSelectElement>('[name="authKind"]')?.value,
+  ).toBe('auth-json');
+  expect(container.textContent).toContain(
+    'Existing runs and repairs keep their pinned CLI',
+  );
+});
+
+it('saves the explicit adapter contract and version with only a credential reference', async () => {
+  await render(<FactoryCodingSetup />);
+  await click('Configure coding');
+  const selector =
+    container.querySelector<HTMLSelectElement>('[name="adapter"]');
+  if (!selector) throw new Error('Missing adapter selector');
+  await act(async () => {
+    selector.value = 'kilo';
+    selector.dispatchEvent(new Event('change', { bubbles: true }));
+  });
+  const credential =
+    container.querySelector<HTMLInputElement>('[name="authEnv"]');
+  if (!credential) throw new Error('Missing credential reference');
+  credential.value = 'SYNTHETIC_AUTH_REFERENCE';
+  await act(async () =>
+    form().dispatchEvent(
+      new Event('submit', { bubbles: true, cancelable: true }),
+    ),
+  );
+  await flush();
+  expect(calls[0]?.body).toMatchObject({
+    expectedFingerprint: 'c'.repeat(64),
+    config: {
+      adapter: {
+        id: 'kilo',
+        contractVersion: 1,
+        cliVersion: 'synthetic-version',
+      },
+      auth: { kind: 'auth-json', env: 'SYNTHETIC_AUTH_REFERENCE' },
+    },
+  });
+  expect(calls).toHaveLength(1);
+  expect(calls[0]?.url).toBe('/api/factory/coding/config');
+});
+
+it('shows selected settings separately from the pinned running CLI', async () => {
+  state.config.adapter = {
+    id: 'kilo',
+    contractVersion: 1,
+    cliVersion: 'synthetic-version',
+  };
+  await render(
+    <>
+      <FactoryCodingSetup />
+      <FactoryCoding workId="work-demo" eligible />
+    </>,
+  );
+  expect(container.textContent).toContain('Selected CLI: Kilo Code');
+  expect(container.textContent).toContain('Pinned coding CLIcodex · 0.150.1');
+  expect(container.textContent).toContain(
+    'does not change this run or its grant',
+  );
+});
+
+it('shows unsupported selected readiness without claiming the other registered CLIs are unavailable', async () => {
+  state.config.adapter = {
+    id: 'opencode',
+    contractVersion: 1,
+    cliVersion: 'synthetic-version',
+  };
+  state.readiness.ready = false;
+  state.readiness.blockers = [
+    'The selected OpenCode CLI version is unsupported.',
+  ];
+  await render(<FactoryCodingSetup />);
+  expect(container.textContent).toContain('Selected CLI: OpenCode');
+  expect(container.textContent).toContain(
+    'The selected OpenCode CLI version is unsupported.',
+  );
+  expect(container.textContent).not.toContain('Codex is unavailable');
+  expect(calls).toEqual([]);
+});
+
+it.each([
+  ['disabled', 'Disabled'],
+  ['unconfigured', 'Needs configuration'],
+  ['host-unsupported', 'Operating system unsupported'],
+  ['adapter-unavailable', 'Adapter unavailable'],
+  ['credential-unavailable', 'Credential reference unavailable'],
+  ['executable-unresolved', 'Executable unresolved'],
+  ['unsupported', 'CLI contract unsupported'],
+  ['ready', 'CLI contract ready'],
+  ['busy', 'Readiness check deferred'],
+] satisfies [
+  NonNullable<ReturnType<typeof codingState>['readiness']['status']>,
+  string,
+][])(
+  'distinguishes %s readiness from live authentication',
+  async (status, label) => {
+    state.readiness.status = status;
+    state.readiness.authentication = 'unverified';
+    await render(<FactoryCodingSetup />);
+    expect(container.querySelector('.factory-coding-badge')?.textContent).toBe(
+      label,
+    );
+    expect(container.textContent).toContain('Authentication: unverified');
+    expect(container.textContent).toContain(
+      'Workspace compatibility is checked',
+    );
+  },
+);
+
+it('retains settings and prevents submission after readiness refresh fails', async () => {
+  await render(<FactoryCodingSetup />);
+  await click('Configure coding');
+  failure = '/state';
+  await act(async () => {
+    await client.refetchQueries({ queryKey: factoryCodingStateKey });
+  });
+  await flush();
+  expect(button('Save coding settings').disabled).toBe(true);
+  await act(async () =>
+    form().dispatchEvent(
+      new Event('submit', { bubbles: true, cancelable: true }),
+    ),
+  );
+  expect(calls).toEqual([]);
+  expect(
+    container.querySelector<HTMLInputElement>('[name="model"]')?.value,
+  ).toBe('synthetic-codex-model');
 });

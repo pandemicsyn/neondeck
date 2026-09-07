@@ -1,6 +1,6 @@
 # Slice 4 — Pluggable local coding CLIs: OpenCode and Kilo Code
 
-Status: **PLANNED ONLY**, September 6, 2026. Implementation and Slice 4 live acceptance: **NOT RUN**.
+Status: **IMPLEMENTATION IN PROGRESS**, September 6, 2026. Slice 4 live acceptance: **NOT RUN**. See [handoff](SLICE_4_HANDOFF.md) for ownership, verification and review evidence.
 
 Slice 3.1 merged on September 6, 2026, in PRs [#403](https://github.com/pandemicsyn/neondeck/pull/403) and [#404](https://github.com/pandemicsyn/neondeck/pull/404), through source head `00c3e3e565a63ebc24411eabdf34f23d94efe6ef`. The manager verified the merge against GitHub and the main tree. Slice 3.1 real model/Codex/GitHub acceptance remains **NOT RUN**.
 
@@ -16,11 +16,31 @@ Slice 5 remains Linear intake. Slice 6 remains remote execution. This slice intr
 
 ## Current evidence and compatibility discovery
 
-**Kilo CLI: USER-REPORTED INSTALLED.** The inspected shell could not resolve either `kilo` or `opencode` in PATH, including under Node 26. This is shell discovery evidence only. It does not establish that either CLI is missing on the execution host or requires installation. Execution-host discovery, installed versions, supported flags, permission behavior and authentication readiness are **PENDING**. Neither OpenCode nor Kilo has been live-verified for this factory plan.
+Compatibility discovery now has version-pinned local evidence:
 
-Before implementing each adapter, inspect the selected executable on the intended execution host and its installed version/help, then consult that version's official CLI documentation and upstream source/types where necessary. Record a public-safe compatibility matrix containing tested version, documentation references/date, invocation and prompt transport, model selection, isolated configuration/auth locations, noninteractive permission behavior, output framing, session and terminal semantics, process behavior and safe inspection capabilities. Keep absolute executable locations and host identifiers in private operator configuration.
+- **Kilo 7.4.23:** installed native binary version and `run --help` verified;
+  tagged source inspected at `40fa10e50a75c4887978d892520d1246515413bf`.
+  The separately discovered 7.1.20 installation is outside the supported contract.
+- **OpenCode 1.18.29:** temporary official binary version and `run --help`
+  verified against tagged source. No system installation or provider call was made.
+- **Codex:** support remains `codex-cli 0.150.1`; the read-only intended-host
+  probe found 0.144.6, which does not establish compatible admission.
 
-Do not invent flags or treat current legacy Kilo arguments as proof of installed compatibility. OpenCode and Kilo require separate verified contracts even if some observed events resemble one another. The existing Codex adapter records a historical `codex-cli 0.150.1` help check, explicitly without live model smoke; preserve that evidence's limits and recheck the supported baseline during implementation.
+See the [OpenCode compatibility record](SLICE_4_OPENCODE_COMPATIBILITY.md) and
+[Kilo compatibility record](SLICE_4_KILO_COMPATIBILITY.md) for invocation,
+permissions, private state, output/session semantics, source references and
+synthetic verification. OpenCode supports selected native `opencode` (Zen),
+`anthropic` and `openai` API keys. Kilo supports native Kilo Gateway API keys only.
+Both optional adapters initially support Linux; Darwin fails closed on unisolated
+managed preference loading. Kilo additionally requires absence of 24 exact legacy
+autoload paths; harmless `.kilo/skills` remains permitted.
+
+Target Linux optional-CLI availability and live authentication/model execution
+remain unverified. Earlier PATH/common-location misses do not establish missing
+installations. Local help/source checks and synthetic tests are completed
+categories of evidence, not live factory acceptance. Pending Linux lifecycle
+and six-case factory integration results, final reviews and CI are tracked in
+[the handoff](SLICE_4_HANDOFF.md); final totals await the parent report.
 
 Readiness must distinguish disabled, unconfigured, executable unresolved on the selected host, unsupported version/capability, authentication unverified or unavailable, and ready under a verified contract. Version/help inspection is not proof of authenticated execution. An incompatible provider remains unavailable with an actionable reason; never compensate by silently removing isolation or changing providers.
 
@@ -62,15 +82,32 @@ Keep host transport and CLI identity distinct. A later existing-VM/`exe.dev` hos
 
 Capabilities must be honest, typed supported/unsupported/unknown facts with reasons. Do not call provider approval modes an OS sandbox or claim all CLIs support Codex sandbox semantics. Required private-state, bounded noninteractive execution and cancellation capabilities must be verified for admission. Optional child-session details may be unavailable without fabricating data. Keep separate parsers and fixtures; normalize outcomes, not an assumed common wire protocol.
 
-**Pluggability acceptance:** adding a CLI requires a new adapter registration, its Valibot schemas, version/capability/readiness metadata and contract fixtures. After extracting the common seam, adding OpenCode and then Kilo must require no provider branches in factory phase/coordinator/judge modules. Also register an additional test-only stub adapter through the same seam and demonstrate admission-to-candidate and repair routing without modifying phase modules. Codex must pass the same conformance suite. Test-only registration is not a production dynamic plugin facility.
+**Pluggability acceptance:** adding a CLI requires a new adapter registration, its Valibot schemas, version/capability/readiness metadata and contract fixtures. After extracting the common seam, adding OpenCode and then Kilo must require no provider branches in factory phase/coordinator/judge modules. Codex must pass the same conformance suite. The parent accepted replacing a
+fourth unique test-only adapter subprocess case with pure typed registry
+conformance/unknown-ID rejection, the real fake-CLI production-path matrix for
+Codex/OpenCode/Kilo, and static checks for provider branches in phase modules.
+The child supervisor retains compiled registration and closed schema IDs; no
+dynamic loader or OS bypass is added for tests. No fourth-ID child-process
+coverage is claimed. See the [deviation ledger](../DEVIATIONS.md).
 
 ## Selection, snapshots and compatibility
 
 Expose all three harnesses in private setup/readiness and release controls, with Codex selected by default and OpenCode/Kilo opt-in. Missing optional-provider readiness must not block a configured Codex path. Saving credentials, changing selection or inspecting readiness does not execute code or publish anything.
 
-Bind the human-selected harness/config reference to exact release authority; admission resolves and persists adapter ID, contract version, executable identity and version, model, supported capabilities, permission profile and stable context. Persist references to credentials, never their values. Repairs inherit the grant's pinned selection. Persist exact attempt identity so controller restart dispatches to the same adapter and host, never the current global default. Revalidate readiness and executable identity before spawning; a changed or unsupported binary blocks launch rather than accepting a silent version upgrade.
+Bind the human-selected harness/config reference to exact release authority; admission resolves and persists adapter ID, contract version, executable identity and version, model, supported capabilities, permission profile and stable context. Persist references to credentials, never their values. Repairs inherit the grant's pinned selection. Persist exact attempt identity so controller restart dispatches to the same adapter and host, never the current global default. Compare the originally admitted executable identity before any executable probe, including `--version`, and preserve it through repair lineage. Revalidate readiness before spawning; a changed or unsupported binary blocks launch rather than accepting a silent version upgrade.
 
 No mid-session switching, failure fallback, automatic replacement or resumption of a provider's last session. Each initial or repair attempt gets a fresh provider session and private home. A deliberate harness/model change follows explicit new release/admission and any required candidate delivery consent; it cannot reset consumed budgets on existing authority or take over uncertain compute.
+
+Review A's P1/P2 fixes pin the original executable identity from admission through
+repairs and reject identity drift before `--version`. Invalid credential failures
+are no longer cached, allowing corrected selected references to be re-evaluated.
+These fixes have focused regression tests and two clean independent source reviews on the parent-reported manifest prefix `0a141c`. Both reviewers also cleared transitional UI/registry variants and the four changesets; final documentation attestation remains pending.
+
+Legacy attempts without a captured executable identity remain inspectable and
+reconcilable. **New repairs pause for a fresh human release** instead of silently
+capturing a replacement binary identity. This explicitly narrows historical
+repair compatibility; it does not discard evidence or change uncertain ownership.
+The deviation and operator recovery path are recorded in the linked ledger.
 
 Old config without a selector continues to mean Codex. Preserve old run snapshots, version-1 manifests/receipts, `local-codex` host references, candidate lineage, grants and in-flight recovery semantics through explicit compatible decoders. Do not rewrite historical identities. Unknown adapter IDs/versions fail closed with retained evidence and reconciliation attention, never a default fallback. Legacy `publish:false` records gain no authority on upgrade. Prefer existing JSON contracts where sufficient; no speculative database schema or migration work is needed for this plan. Load the Drizzle skills before any later Drizzle work.
 
@@ -95,27 +132,34 @@ Keep exact candidate-delivery grants, commit/tree equality, hooks/author checks,
 
 The parent orchestrator owns assignments, integration, existing status/deviation documents and publication. Development and both independent static reviewers use **Astra, medium effort**. Use stacked PRs with disjoint file ownership and explicit lower-layer contracts; serialize edits to shared contracts.
 
-| Layer                                                 | Complete deliverable and boundary                                                                                                                                  | Required evidence before publication                                                                                                                     |
-| ----------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1 — Adapter foundation and Codex baseline             | Typed registry/metadata, host-versus-adapter separation, compatible persisted decoding, Codex implementation of the contract. Keep optional providers disabled.    | Old-record/restart fixtures, Codex conformance, host cancellation/death and credential regression; this layer typechecks and works without upper layers. |
-| 2 — OpenCode adapter                                  | Verified version contract, isolated auth/config, parser/result/reconciliation mapping and independent fake-provider fixtures through shared host.                  | OpenCode conformance, unsupported-capability states, bounded malformed output and process lifecycle; no factory phase branches.                          |
-| 3 — Kilo adapter                                      | Separate verified Kilo contract and fixtures using the same host; retain legacy Kilo services and smoke unchanged except separately justified compatibility fixes. | Kilo conformance, legacy/factory owner exclusion, no legacy launcher call, separate protocol evidence; full intermediate typecheck.                      |
-| 4 — Selection and factory integration                 | Release/admission snapshots, both repair paths, registry-driven readiness/run UI, compatibility attention and operator guidance.                                   | All-harness authority/budget/judge/delivery matrix, extension stub test, actual synthetic UI screenshots and independently typechecking integrated tree. |
-| 5 — Cumulative acceptance corrections, only if needed | Fix concrete cross-layer findings and record evidence/remaining live obligations. Avoid an empty hardening PR.                                                     | Cumulative repository verification, reviewed corrections, public-safe acceptance ledger.                                                                 |
+| Layer                                 | Complete deliverable and boundary                                                                                                                                          | Required evidence before publication                                                                                                                             |
+| ------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1 — Core and generic factory contract | Typed registry/metadata, shared host, Codex baseline, compatible decoding, release fingerprint binding, original executable identity and generic admission/repair routing. | Old-record fixtures, Codex conformance, host death/credential checks and complete lower-layer typecheck without new UI.                                          |
+| 2 — OpenCode                          | Version-pinned descriptor, private auth/config, parser and independent fake-provider fixtures.                                                                             | OpenCode conformance and Linux shared-host lifecycle; no provider branches in phases.                                                                            |
+| 3 — Kilo                              | Separate pinned descriptor/parser, precise workspace guards and independent fixtures; retain standalone Kilo ownership.                                                    | Kilo conformance, Linux shared-host lifecycle and intermediate typecheck.                                                                                        |
+| 4 — UI and handoff                    | Registry-driven setup/readiness, exact release selection, pinned run identity, evidence/planning controls and operator documentation.                                      | Three-CLI factory matrix, accepted registry/static conformance substitute, synthetic UI screenshots, cumulative checks and two clean independent static reviews. |
 
-Each intermediate stack layer must be complete, independently typecheck and retain working Codex behavior; never defer broken types or missing contract implementations to an upper PR. Use Node 26, focused relevant tests and the repository check/verify stages at appropriate cumulative checkpoints during implementation. Include packaging/supervisor asset verification when adapter modules change packaged process entrypoints. User-facing implementation changes require a changeset.
+The current proposal is four complete layers. Integrate concrete corrections into
+their owning layers; change the stack only when dependency evidence requires it.
+The parent coordinates and publishes; implementation remains with assigned agents.
 
-Before **any PR creation**, including drafts and documentation PRs, both independent static reviewers must report no findings on the exact candidate and the parent must complete implementation/product-plan review. Changes require renewed reviews. Reviewers inspect statically; implementers own tests and fixes. After all stack PRs exist, perform a separate parent architecture review and record exact-head CI evidence. Preserve required secret scans/hooks. Attach actual synthetic screenshots for changed UI; mock screenshots are not live acceptance. Slice 4 reviews and checks remain pending.
+Before **any PR creation**, including drafts and documentation PRs, both independent static reviewers must report no findings on the exact candidate and the parent must complete implementation/product-plan review. Changes require renewed reviews. Reviewers inspect statically; implementers own tests and fixes. After all stack PRs exist, perform a separate parent architecture review and record exact-head CI evidence. Preserve required secret scans/hooks. Attach actual synthetic screenshots for changed UI; mock screenshots are not live acceptance. Two independent source reviews are clean; transitional UI/registry variants and changesets are also clean; final documentation attestation remains pending. Confirmed cumulative checks and remaining Linux/legacy runs are recorded in the handoff.
 
 ## Acceptance checklist
 
-All items below are **NOT RUN** for Slice 4. Record actual results separately per harness, source revision and tested CLI version; one provider's pass never clears another's obligation.
+Local version/help/source inspection, focused synthetic adapter/UI tests and
+actual synthetic React screenshots have evidence in the linked compatibility and
+handoff records. The checklist below tracks complete obligations, so an unchecked
+item may include partial completed evidence. Linux optional-adapter lifecycle,
+the six-case factory matrix, final legacy cases, final documentation attestation and CI remain pending. Live acceptance
+is **NOT RUN**. Record results separately per harness, source revision and CLI
+version; one provider's pass never clears another's obligation.
 
 ### Contract and deterministic integration
 
 - [ ] Codex baseline and old config/run/manifest/receipt/grant fixtures remain readable and recoverable, with no new execution/publication authority.
 - [ ] OpenCode and Kilo have separate version/documentation records, Valibot parsers, sanitized recorded JSONL and fake-provider executables. Reuse mockdex for Codex and common isolated repositories/host assertions; do not rename Codex events and call them provider evidence.
-- [ ] All three pass the common adapter suite; an additional test-only adapter routes through initial and repair phases by registration without phase/coordinator/judge edits. Unsupported capabilities and unknown adapters fail closed.
+- [ ] All three pass the common adapter suite and production-path fake-CLI admission/repair matrix. Pure typed registry conformance, unknown-ID rejection and static phase checks replace the fourth unique subprocess adapter case under the accepted deviation. No fourth-ID child coverage is claimed. Linux matrix results remain pending.
 - [ ] Duplicate/concurrent/stale/revoked admission starts at most one writer. Selection/default/model/binary changes do not alter an admitted attempt, repair lineage or restart identity. Failed readiness never triggers fallback.
 - [ ] Fresh sessions and private CLI state/auth are verified per attempt; root/child IDs are bounded and correctly attributed. Foreign sessions, inherited secrets/plugins/MCP and private-path disclosure are rejected or absent.
 - [ ] Real fake-provider subprocesses cover success, nonzero exit, absent/duplicate/contradictory terminal events, malformed/oversized/truncated JSONL, stderr flood, spawn failure and timeout. Completion flows through actual shared host receipts, not test database completion updates.
@@ -129,7 +173,7 @@ All items below are **NOT RUN** for Slice 4. Record actual results separately pe
 ### Separately authorized live acceptance
 
 - [ ] Record combined Slice 2/3/3.1 real Codex acceptance and actual model judgment observations, preserving all earlier deferred cases that remain unexercised.
-- [ ] On the intended execution host, establish installed version, flags, capabilities, selected model and auth readiness separately for Codex, OpenCode and Kilo. Kilo's user-reported installation remains distinct from this evidence.
+- [ ] On the intended execution host, establish installed version, flags, capabilities, selected model and auth readiness separately for Codex, OpenCode and Kilo. Kilo's verified local installation and OpenCode's temporary official-binary checks remain distinct from target-host authenticated readiness.
 - [ ] For each harness, release a bounded task explicitly and observe private managed-worktree execution, actual JSONL/session/terminal evidence, independent checks/review, one bounded judged repair and unchanged primary checkout.
 - [ ] Under explicit delivery authority, exercise one draft PR, watched feedback, human outcome and retained/cleaned work for each harness; record recovery/cancellation observations and their precise limits. Do not manufacture a real-provider success from fixtures or a legacy Kilo smoke.
 - [ ] Record date, tested source/CLI versions, finite limits, sanitized outcomes, failures/rechecks and operator/parent signoff. Store raw sessions, credentials, private executable paths and execution-host details outside public docs/screenshots/PRs. Unrun scenarios remain pending; no new premerge live gate is introduced.

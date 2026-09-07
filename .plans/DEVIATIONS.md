@@ -1112,3 +1112,55 @@ Use this format:
 - Follow-up: Implement and verify the [Slice 4 plan](factory/SLICE_4_IMPLEMENTATION_PLAN.md)
   with independent reviews, the existing stacked-PR process and per-harness live
   acceptance. This entry records planned scope, not completed implementation.
+
+## 2026-09-06 - Slice 4 optional CLI operating-system compatibility
+
+- Roadmap item: Software Factory Slice 4, OpenCode and Kilo adapters.
+- Decision: Initially admit optional adapters only on verified Linux contracts.
+  Darwin fails closed because managed OS preferences outside private HOME/XDG
+  can affect provider configuration. Codex compatibility remains unchanged.
+- Reason: The intended factory deployment is Linux. Private HOME/XDG alone does
+  not establish isolation from the inspected providers’ managed preferences.
+  Kilo 7.4.23 local version/help was verified without a model call. Its Linux
+  legacy project autoload can still discover repo MCP, modes and rules despite
+  the project-config disable flag. The common host therefore checks adapter
+  declared forbidden workspace paths before preparation and launch, rejecting
+  incompatible workspaces with a reason instead of deleting their configuration.
+- Follow-up: Provider owners record exact source versions and guarded paths in
+  operator guidance. Verify a provider opt-out and additional OS support before
+  broadening admission. Global CLI readiness does not certify a particular
+  workspace; workspace guards remain admission/launch checks. Live acceptance
+  remains NOT RUN.
+
+## 2026-09-06 - Slice 4 additional adapter conformance validation
+
+- Roadmap item: Slice 4 pluggability acceptance, fourth test-only adapter admission
+  and repair subprocess exercise.
+- Decision: Replace the fourth unique adapter ID subprocess case with typed
+  registry conformance and unknown-ID rejection, a production-path fake-CLI matrix
+  for Codex/OpenCode/Kilo, and static checks for provider branches in factory
+  phases. Individual results remain in the handoff; no fourth-ID live-child
+  coverage is claimed.
+- Reason: The child supervisor uses a compiled registry and closed validated IDs.
+  Adding a production dynamic loader or OS bypass solely for tests would weaken
+  the architecture that the test is intended to protect.
+- Follow-up: A future compiled adapter adds its schema ID, registry registration
+  and conformance fixtures through the same seam. Keep phase/coordinator/judge
+  code provider-independent. The parent explicitly accepted this validation
+  substitution; it does not establish real-provider execution or live acceptance.
+
+## 2026-09-06 - Slice 4 legacy repair executable identity
+
+- Roadmap item: Slice 4 legacy compatibility and immutable admission/repair identity.
+- Decision: Historical attempts without a captured executable identity remain
+  inspectable and reconcilable, but starting a new repair pauses for fresh human
+  release. New attempts preserve the originally admitted identity across repairs
+  and compare it before executing even `--version`.
+- Reason: A legacy record cannot prove the binary approved by its original
+  admission. Capturing today's executable during repair would silently authorize
+  a replacement and weaken the pinned grant. Review A identified this boundary;
+  the fix has focused regression tests, with final review still pending.
+- Follow-up: Use existing human planning/release/consent for new authority. Keep
+  historical evidence, ownership and consumed budgets intact; no migration should
+  fabricate the missing original identity. This is an explicit narrowing of old
+  repair behavior, not a live acceptance result.

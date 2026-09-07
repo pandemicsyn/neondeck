@@ -196,7 +196,7 @@ record; no single successful full `npm run verify` invocation is claimed.
 Slice 4 (OpenCode and Kilo Code), Slice 5 (Linear) and Slice 6 (remote execution) retain their
 numbering.
 
-## Software Factory Slice 4 — Pluggable Coding CLIs (Planned)
+## Software Factory Slice 4 — Pluggable Coding CLIs (Implementation In Progress)
 
 Extend the existing Codex path with **OpenCode and Kilo Code**, through a small
 typed coding adapter contract and registry. Adding another CLI should require an

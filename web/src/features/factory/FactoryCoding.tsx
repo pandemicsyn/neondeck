@@ -28,7 +28,7 @@ const statuses: Record<
   running: {
     title: 'Coding in progress',
     description:
-      'Codex is working in the managed worktree. Progress is retained below.',
+      'The pinned coding CLI is working in the managed worktree. Progress is retained below.',
   },
   cancelling: {
     title: 'Stopping coding',
@@ -280,7 +280,14 @@ function FactoryCodingRunDetail({
           <dd>{elapsed(record.createdAt, record.completedAt)}</dd>
         </div>
         <div>
-          <dt>Model</dt>
+          <dt>Pinned coding CLI</dt>
+          <dd>
+            {record.snapshot.harness.provider} ·{' '}
+            {record.snapshot.harness.version}
+          </dd>
+        </div>
+        <div>
+          <dt>Pinned model</dt>
           <dd>{record.snapshot.harness.model}</dd>
         </div>
         <div>
@@ -367,6 +374,11 @@ function FactoryCodingRunDetail({
           </div>
         </dl>
       </details>
+      <p className="factory-note">
+        This attempt retains its admitted CLI and model. Changing coding
+        settings does not change this run or its grant. Each attempt starts a
+        fresh session.
+      </p>
       <FactoryCodingEvidence id={id} />
     </div>
   );
