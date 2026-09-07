@@ -247,10 +247,33 @@ export function readTaskHealthRecords(
       .all(workId)
       .map((r) => parseRecord(r, schema));
   }
-  const runs = current(
-    'SELECT run_id AS runId,record_json AS record FROM coding_runs WHERE work_item_id=? ORDER BY sequence DESC LIMIT 1',
+  const runCandidates = jsonRows(
+    db,
+    'SELECT run_id AS runId,record_json AS record FROM coding_runs WHERE work_item_id=? ORDER BY sequence DESC LIMIT ?',
     codingRunRecordSchema,
+    workId,
   );
+  const runs = runCandidates.slice(0, sourceLimit);
+  const releaseCandidates =
+    work.lifecycle === 'queued' && runs.length
+      ? jsonRows(
+          db,
+          'SELECT id,record FROM factory_releases WHERE work_id=? ORDER BY rowid DESC LIMIT ?',
+          releaseSchema,
+          workId,
+        )
+      : [];
+  const releases = releaseCandidates
+    .slice(0, sourceLimit)
+    .filter((r) => r.withdrawnAt === null);
+  const revisions = releases.length
+    ? db
+        .prepare(
+          'SELECT version,record FROM factory_spec_revisions WHERE work_id=? AND version=? LIMIT 1',
+        )
+        .all(workId, work.specVersion)
+        .map((row) => parseRecord(row, revisionSchema))
+    : [];
   // Validate a bounded candidate window before deciding which outcomes are terminal.
   // Older candidates outside this window make health partial, never silently healthy.
   const deliveryCandidates = jsonRows(
@@ -271,7 +294,9 @@ export function readTaskHealthRecords(
     .slice(0, sourceLimit)
     .filter((r) => r.stage === 'triage' || r.stage === 'planner');
   if (
-    runs.some((r) => r.snapshot.workItemId !== workId) ||
+    runCandidates.some((r) => r.snapshot.workItemId !== workId) ||
+    releaseCandidates.some((r) => r.workId !== workId) ||
+    revisions.some((r) => r.workId !== workId) ||
     deliveryCandidates.some((r) => r.workItemId !== workId) ||
     writeback.some((r) => r.workId !== workId)
   )
@@ -279,18 +304,19 @@ export function readTaskHealthRecords(
   return {
     work,
     runs,
-    deliveries: deliveries.slice(0, 1),
+    deliveries,
     writeback: writeback.slice(0, 50),
     planning: planning.slice(0, 1),
-    revisions: [],
-    releases: [],
+    revisions,
+    releases,
     audit: [],
     receipts: [],
     events: [],
     truncated:
+      runCandidates.length > sourceLimit ||
+      releaseCandidates.length > sourceLimit ||
       candidates.length > sourceLimit ||
       deliveryCandidates.length > sourceLimit ||
-      deliveries.length > 1 ||
       writeback.length > 50 ||
       planning.length > 1,
   };

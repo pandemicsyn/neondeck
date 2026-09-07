@@ -1,3 +1,6 @@
+import { releaseSchema, factoryPolicy } from '../../../shared/factory';
+import { codingRunRecordSchema } from '../../../shared/coding-runs';
+import { writebackEffectSchema } from '../../../shared/factory-writeback';
 import { mkdtempSync, mkdirSync, rmSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -417,7 +420,7 @@ it.each(['invalid', 42, {}, false])(
     }
   },
 );
-it('excludes validated terminal deliveries while retaining the newest active delivery and truncation', async () => {
+it('retains both active pipelines without claiming omitted coverage', async () => {
   insertDelivery('older-active');
   for (const outcome of ['merged', 'closed', 'cancelled', 'failed'])
     insertDelivery(outcome, outcome);
@@ -434,13 +437,37 @@ it('excludes validated terminal deliveries while retaining the newest active del
     ],
   });
   insertDelivery('newer-active');
+  const db = openDb(paths.neondeckDatabase);
+  try {
+    const newer = deliveryFixture('newer-active');
+    newer.effects[0].state = 'planned';
+    db.prepare(
+      'UPDATE factory_delivery_pipelines SET record_json=? WHERE pipeline_id=?',
+    ).run(JSON.stringify(newer), newer.pipelineId);
+  } finally {
+    db.close();
+  }
   response = await request('/health?workId=work-test');
   expect(await response.json()).toMatchObject({
-    truncated: true,
+    truncated: false,
     tasks: [
       {
-        truncated: true,
-        budgets: [{ deliveryId: deliveryFixture('newer-active').pipelineId }],
+        truncated: false,
+        status: 'needs-reconciliation',
+        unresolvedEffects: [
+          {
+            deliveryId: deliveryFixture('newer-active').pipelineId,
+            state: 'planned',
+          },
+          {
+            deliveryId: deliveryFixture('older-active').pipelineId,
+            state: 'uncertain',
+          },
+        ],
+        budgets: [
+          { deliveryId: deliveryFixture('newer-active').pipelineId },
+          { deliveryId: deliveryFixture('older-active').pipelineId },
+        ],
       },
     ],
   });
@@ -763,5 +790,561 @@ it.each(['runId', 'workItemId'])(
     expect((await request('/tasks/work-test/timeline')).status).toBe(503);
     expect((await request('/tasks/work-test/preview')).status).toBe(503);
     expect((await request('/health?workId=work-test')).status).toBe(200);
+  },
+);
+
+it.each(['closed', 'paused', 'shaping'] as const)(
+  'keeps external failures and active effects visible while %s',
+  async (lifecycle) => {
+    const db = openDb(paths.neondeckDatabase);
+    try {
+      const work = { ...taskFixture().work, lifecycle };
+      db.prepare('UPDATE factory_work_items SET record=? WHERE id=?').run(
+        JSON.stringify(work),
+        work.id,
+      );
+      for (const [state, status, overall] of [
+        ['uncertain', 'needs-reconciliation', 'attention'],
+        ['repair', 'needs-reconciliation', 'attention'],
+        ['failed', 'writeback-pending', 'attention'],
+        ['sending', 'writeback-pending', 'healthy'],
+        ['pending', 'writeback-pending', 'healthy'],
+      ]) {
+        const effect = { ...writebackFixture(), state };
+        db.prepare(
+          'INSERT OR REPLACE INTO factory_writeback_records(id,kind,work_id,record) VALUES(?,?,?,?)',
+        ).run(effect.id, 'effect', work.id, JSON.stringify(effect));
+        const health = diagnoseHealth(
+          [readTaskHealthRecords(db, work.id)],
+          [workerFixture()],
+          recordedAt,
+        );
+        expect(health).toMatchObject({ status: overall, tasks: [{ status }] });
+        const api = await (await request('/health?workId=work-test')).json();
+        const preview = await (
+          await request('/tasks/work-test/preview')
+        ).json();
+        expect(api.tasks[0].status).toBe(status);
+        expect(preview.health.status).toBe(api.status);
+        expect(preview.health.tasks[0].unresolvedEffectCount).toBe(
+          api.tasks[0].unresolvedEffects.length,
+        );
+      }
+    } finally {
+      db.close();
+    }
+  },
+);
+
+it.each(['closed', 'paused', 'shaping', 'queued'] as const)(
+  'binds terminal run guidance and preserves older recovery during %s',
+  (lifecycle) => {
+    const run = insertRun('release');
+    const failed = {
+      ...run,
+      status: 'failed',
+      completedAt: recordedAt,
+      cleanupAttentionAt: recordedAt,
+      evidenceRetainUntil: recordedAt,
+      deadProof: {
+        runId: run.runId,
+        attemptId: run.attemptId,
+        ownershipToken: run.ownershipToken,
+        host: null,
+        kind: 'never-started',
+        evidenceRef: 'proof',
+      },
+    };
+    const db = openDb(paths.neondeckDatabase);
+    try {
+      const work = { ...taskFixture().work, lifecycle, repoId: 'repo' };
+      db.prepare('UPDATE factory_work_items SET record=? WHERE id=?').run(
+        JSON.stringify(work),
+        work.id,
+      );
+      db.prepare('UPDATE coding_runs SET record_json=? WHERE run_id=?').run(
+        JSON.stringify(failed),
+        run.runId,
+      );
+      const release = {
+        id: 'release',
+        workId: work.id,
+        requestKey: 'release',
+        actor: 'human',
+        specVersion: 1,
+        specHash: 'a'.repeat(64),
+        sourceVersion: 1,
+        repoId: 'repo',
+        repoFingerprint: 'a'.repeat(64),
+        policy: {
+          version: 'isolated-local-v1',
+          implementation: 'isolated-worktree',
+          checks: 'repo-configured',
+          publish: false,
+          merge: false,
+          deploy: false,
+        },
+        createdAt: recordedAt,
+        withdrawnAt: null,
+        withdrawalReason: null,
+      };
+      db.prepare(
+        'INSERT INTO factory_releases(id,work_id,request_key,record) VALUES(?,?,?,?)',
+      ).run(release.id, work.id, release.requestKey, JSON.stringify(release));
+      const status = () =>
+        diagnoseHealth(
+          [readTaskHealthRecords(db, work.id)],
+          [workerFixture()],
+          recordedAt,
+        ).tasks[0].status;
+      expect(status()).toBe(
+        lifecycle === 'queued' ? 'coding-failed' : lifecycle,
+      );
+      for (const terminalStatus of [
+        'candidate',
+        'failed',
+        'cancelled',
+      ] as const) {
+        const host = { hostId: 'host', jobId: 'job' };
+        const terminal =
+          terminalStatus === 'candidate'
+            ? {
+                ...failed,
+                status: terminalStatus,
+                host,
+                workspace: { worktreeId: 'wt', lockId: 'lock' },
+                providerSessionId: 'session',
+                deadProof: { ...failed.deadProof, host, kind: 'verified-dead' },
+                candidate: {
+                  baseSha: run.snapshot.baseSha,
+                  headSha: 'c'.repeat(40),
+                  worktreeId: 'wt',
+                  statusRef: 'status',
+                  diffRef: 'diff',
+                  includesUntracked: true,
+                },
+              }
+            : {
+                ...failed,
+                status: terminalStatus,
+                cancelRequestedAt:
+                  terminalStatus === 'cancelled' ? recordedAt : null,
+                cancelReason:
+                  terminalStatus === 'cancelled' ? 'cancelled' : null,
+              };
+        db.prepare('UPDATE coding_runs SET record_json=? WHERE run_id=?').run(
+          JSON.stringify(terminal),
+          run.runId,
+        );
+        expect(status()).toBe(
+          lifecycle === 'queued'
+            ? terminalStatus === 'candidate'
+              ? 'candidate'
+              : `coding-${terminalStatus}`
+            : lifecycle,
+        );
+        db.prepare('UPDATE factory_releases SET record=? WHERE id=?').run(
+          JSON.stringify({ ...release, withdrawnAt: recordedAt }),
+          release.id,
+        );
+        expect(status()).toBe(lifecycle);
+        db.prepare('UPDATE factory_releases SET record=? WHERE id=?').run(
+          JSON.stringify(release),
+          release.id,
+        );
+      }
+      db.prepare('UPDATE coding_runs SET record_json=? WHERE run_id=?').run(
+        JSON.stringify(failed),
+        run.runId,
+      );
+      for (const stale of [
+        { ...release, withdrawnAt: recordedAt },
+        { ...release, specHash: 'b'.repeat(64) },
+        { ...release, specVersion: 2 },
+        { ...release, repoId: 'other' },
+      ]) {
+        db.prepare('UPDATE factory_releases SET record=? WHERE id=?').run(
+          JSON.stringify(stale),
+          release.id,
+        );
+        expect(status()).toBe(lifecycle);
+      }
+      db.prepare('UPDATE factory_releases SET record=? WHERE id=?').run(
+        JSON.stringify(release),
+        release.id,
+      );
+      for (const changed of [
+        { ...work, specVersion: 2 },
+        { ...work, repoId: 'other' },
+      ]) {
+        db.prepare('UPDATE factory_work_items SET record=? WHERE id=?').run(
+          JSON.stringify(changed),
+          work.id,
+        );
+        expect(status()).toBe(lifecycle);
+      }
+      db.prepare('UPDATE factory_work_items SET record=? WHERE id=?').run(
+        JSON.stringify(work),
+        work.id,
+      );
+      db.prepare('UPDATE factory_releases SET record=? WHERE id=?').run(
+        JSON.stringify({ ...release, withdrawnAt: 42 }),
+        release.id,
+      );
+      let invalidReleaseRejected = false;
+      try {
+        status();
+      } catch (error) {
+        invalidReleaseRejected = error instanceof v.ValiError;
+      }
+      expect(invalidReleaseRejected).toBe(lifecycle === 'queued');
+      db.prepare('UPDATE factory_releases SET record=? WHERE id=?').run(
+        JSON.stringify(release),
+        release.id,
+      );
+      for (const activeStatus of [
+        'reserved',
+        'running',
+        'collecting',
+      ] as const) {
+        db.prepare('UPDATE coding_runs SET record_json=? WHERE run_id=?').run(
+          JSON.stringify({
+            ...run,
+            status: activeStatus,
+            host: { hostId: 'host', jobId: 'job' },
+            workspace: { worktreeId: 'wt', lockId: 'lock' },
+          }),
+          run.runId,
+        );
+        expect(status()).toBe(`coding-${activeStatus}`);
+      }
+      db.prepare('UPDATE coding_runs SET record_json=? WHERE run_id=?').run(
+        JSON.stringify({ ...run, status: 'needs-reconcile' }),
+        run.runId,
+      );
+      expect(status()).toBe('needs-reconciliation');
+      db.prepare('UPDATE coding_runs SET record_json=? WHERE run_id=?').run(
+        JSON.stringify(run),
+        run.runId,
+      );
+      expect(status()).toBe('coding-reserved');
+      // A newer terminal run cannot hide an older live reservation.
+      db.prepare(
+        'INSERT INTO coding_runs(run_id,attempt_id,request_id,work_item_id,release_id,record_json) VALUES(?,?,?,?,?,?)',
+      ).run(
+        'new',
+        'new',
+        'new',
+        work.id,
+        'new',
+        JSON.stringify({
+          ...failed,
+          runId: 'new',
+          attemptId: 'new',
+          snapshot: { ...run.snapshot, releaseId: 'new', requestId: 'new' },
+          deadProof: { ...failed.deadProof, runId: 'new', attemptId: 'new' },
+        }),
+      );
+      expect(status()).toBe('coding-reserved');
+    } finally {
+      db.close();
+    }
+  },
+);
+
+it.each(['closed', 'paused', 'shaping'] as const)(
+  'prioritizes uncertain assessments and live delivery over %s',
+  (lifecycle) => {
+    const records = taskFixture();
+    records.work.lifecycle = lifecycle;
+    const delivery = deliveryFixture('delivery');
+    records.deliveries = [delivery];
+    const status = () =>
+      diagnoseHealth([records], [workerFixture()], recordedAt);
+    expect(status()).toMatchObject({
+      status: 'attention',
+      tasks: [{ status: 'needs-reconciliation' }],
+    });
+    delivery.effects[0].state = 'in-flight';
+    expect(status().tasks[0].status).toBe('delivery-pending');
+    delivery.effects = [];
+    delivery.version = 2;
+    delivery.progress.assessments.push({
+      assessmentId: 'assessment',
+      grantId: 'grant',
+      revision: delivery.revision,
+      repairOrdinal: 1,
+      requestId: 'assessment',
+      inputDigest: 'a'.repeat(64),
+      evidenceDigest: 'b'.repeat(64),
+      evidenceRefs: ['evidence'],
+      instructions: 'Review progress',
+      state: 'uncertain',
+      sourceVersion: 1,
+      remainingExecutionMs: 1000,
+      reservedAt: recordedAt,
+      deadlineAt: new Date(Date.parse(recordedAt) + 1000).toISOString(),
+      reservedExecutionMs: 1000,
+      executionMs: null,
+      completedAt: null,
+      submissionId: null,
+      resultId: null,
+      result: null,
+    });
+    expect(status()).toMatchObject({
+      status: 'attention',
+      tasks: [{ status: 'needs-reconciliation' }],
+    });
+    delivery.progress.assessments[0].state = 'reserved';
+    expect(status()).toMatchObject({
+      status: 'healthy',
+      tasks: [{ status: 'assessment-reserved' }],
+    });
+    delivery.progress.assessments.push({
+      ...delivery.progress.assessments[0],
+      assessmentId: 'second',
+      requestId: 'second',
+      repairOrdinal: 2,
+      state: 'uncertain',
+    });
+    expect(status()).toMatchObject({
+      status: 'attention',
+      tasks: [{ status: 'needs-reconciliation' }],
+    });
+    delivery.progress.assessments = [];
+    delivery.repairs.push({
+      runId: 'repair',
+      attemptId: 'repair',
+      requestId: 'repair',
+      reservedExecutionMs: 1000,
+      executionMs: null,
+      fromRevision: delivery.revision,
+      progressAssessmentId: null,
+      progressInputDigest: null,
+      progressEvidenceDigest: null,
+      status: 'reserved',
+      revision: null,
+      reason: 'Repair',
+    });
+    expect(status().tasks[0].status).toBe('delivery-pending');
+  },
+);
+
+function faultCoexistenceFixture() {
+  const records = taskFixture();
+  records.work.lifecycle = 'queued';
+  records.work.repoId = 'repo';
+  const run = insertRun('release');
+  records.runs = [
+    v.parse(codingRunRecordSchema, {
+      ...run,
+      status: 'failed',
+      completedAt: recordedAt,
+      cleanupAttentionAt: recordedAt,
+      evidenceRetainUntil: recordedAt,
+      deadProof: {
+        runId: run.runId,
+        attemptId: run.attemptId,
+        ownershipToken: run.ownershipToken,
+        host: null,
+        kind: 'never-started',
+        evidenceRef: 'proof',
+      },
+    }),
+  ];
+  records.releases = [
+    v.parse(releaseSchema, {
+      id: 'release',
+      workId: records.work.id,
+      requestKey: 'release',
+      actor: 'human',
+      specVersion: 1,
+      specHash: 'a'.repeat(64),
+      sourceVersion: 1,
+      repoId: 'repo',
+      repoFingerprint: 'a'.repeat(64),
+      policy: factoryPolicy,
+      createdAt: recordedAt,
+      withdrawnAt: null,
+      withdrawalReason: null,
+    }),
+  ];
+  return { records, run };
+}
+function assessmentFixture(delivery: ReturnType<typeof deliveryFixture>) {
+  delivery.version = 2;
+  return {
+    assessmentId: 'assessment',
+    grantId: 'grant',
+    revision: delivery.revision,
+    repairOrdinal: 1,
+    requestId: 'assessment',
+    inputDigest: 'a'.repeat(64),
+    evidenceDigest: 'b'.repeat(64),
+    evidenceRefs: ['evidence'],
+    instructions: 'Review progress',
+    state: 'reserved' as const,
+    sourceVersion: 1,
+    remainingExecutionMs: 8000,
+    reservedAt: recordedAt,
+    deadlineAt: new Date(Date.parse(recordedAt) + 8000).toISOString(),
+    reservedExecutionMs: 8000,
+    executionMs: null,
+    completedAt: null,
+    submissionId: null,
+    resultId: null,
+    result: null,
+  };
+}
+it.each([
+  'pending',
+  'sending',
+  'assessment',
+  'coding',
+  'delivery',
+  'planning',
+] as const)('keeps actionable faults ahead of benign %s work', (pending) => {
+  const { records, run } = faultCoexistenceFixture();
+  const active = deliveryFixture('active');
+  active.effects = [];
+  if (pending === 'pending' || pending === 'sending') {
+    records.writeback.push(
+      v.parse(writebackEffectSchema, { ...writebackFixture(), state: pending }),
+    );
+  } else if (pending === 'assessment') {
+    active.progress.assessments.push(assessmentFixture(active));
+    records.deliveries.push(active);
+  } else if (pending === 'coding') {
+    records.runs.push({
+      ...run,
+      snapshot: { ...run.snapshot, releaseId: 'older-release' },
+    });
+  } else if (pending === 'delivery') {
+    active.effects = deliveryFixture('active').effects;
+    active.effects[0].state = 'in-flight';
+    records.deliveries.push(active);
+  } else {
+    records.planning.push({
+      id: 'planning',
+      workId: records.work.id,
+      createdAt: recordedAt,
+      stage: 'planner',
+      submissionId: null,
+      triageSubmissionId: null,
+    });
+  }
+  const health = () => diagnoseHealth([records], [workerFixture()], recordedAt);
+  expect(health()).toMatchObject({
+    status: 'attention',
+    tasks: [
+      {
+        status: 'coding-failed',
+        nextStep: expect.stringContaining('resolve the failure'),
+      },
+    ],
+  });
+  // The failed run is now historical; a distinct spent pipeline still needs attention.
+  records.releases[0].withdrawnAt = recordedAt;
+  const exhausted = deliveryFixture('exhausted');
+  exhausted.effects = [];
+  exhausted.authorization.initialExecutionMs =
+    exhausted.authorization.totalExecutionMs;
+  records.deliveries.push(exhausted);
+  expect(health()).toMatchObject({
+    status: 'attention',
+    tasks: [
+      {
+        status: 'budget-exhausted',
+        nextStep: expect.stringContaining('human budget decision'),
+      },
+    ],
+  });
+  records.deliveries = records.deliveries.filter(
+    (delivery) => delivery !== exhausted,
+  );
+  records.writeback.push(
+    v.parse(writebackEffectSchema, {
+      ...writebackFixture(),
+      id: 'failed-writeback',
+      state: 'failed',
+    }),
+  );
+  expect(health()).toMatchObject({
+    status: 'attention',
+    tasks: [
+      {
+        status: 'writeback-pending',
+        nextStep: expect.stringContaining('failed GitHub writeback'),
+      },
+    ],
+  });
+  // Reconciliation beats all faults, even when they coexist with active work.
+  records.releases[0].withdrawnAt = null;
+  records.deliveries.push(exhausted);
+  records.writeback.push(
+    v.parse(writebackEffectSchema, {
+      ...writebackFixture(),
+      id: 'uncertain-writeback',
+      state: 'uncertain',
+    }),
+  );
+  expect(health()).toMatchObject({
+    status: 'attention',
+    tasks: [{ status: 'needs-reconciliation' }],
+  });
+});
+it.each(['assessment', 'effect', 'repair'] as const)(
+  'does not call a fully reserved active %s budget exhausted',
+  (kind) => {
+    const records = taskFixture();
+    const delivery = deliveryFixture('active');
+    delivery.effects = [];
+    records.deliveries.push(delivery);
+    records.writeback.push(
+      v.parse(writebackEffectSchema, {
+        ...writebackFixture(),
+        state: 'pending',
+      }),
+    );
+    if (kind === 'assessment') {
+      delivery.progress.assessments.push(assessmentFixture(delivery));
+    } else if (kind === 'effect') {
+      delivery.effects = deliveryFixture('active').effects;
+      delivery.effects[0].state = 'in-flight';
+      delivery.effects[0].reservedExecutionMs = 8000;
+    } else {
+      delivery.repairs.push({
+        runId: 'repair',
+        attemptId: 'repair',
+        requestId: 'repair',
+        reservedExecutionMs: 8000,
+        executionMs: null,
+        fromRevision: delivery.revision,
+        progressAssessmentId: null,
+        progressInputDigest: null,
+        progressEvidenceDigest: null,
+        status: 'reserved',
+        revision: null,
+        reason: 'Repair',
+      });
+    }
+    expect(
+      diagnoseHealth([records], [workerFixture()], recordedAt),
+    ).toMatchObject({
+      status: 'healthy',
+      tasks: [
+        {
+          status:
+            kind === 'assessment' ? 'assessment-reserved' : 'delivery-pending',
+          budgets: [
+            {
+              consumedExecutionMs: 2000,
+              reservedExecutionMs: 8000,
+              remainingExecutionMs: 0,
+            },
+          ],
+        },
+      ],
+    });
   },
 );

@@ -40,7 +40,30 @@ export function diagnoseTask(
       state: e.state,
     })),
   );
-  const run = r.runs[0];
+  // Recovery belongs to the retained operation, even after its authority is withdrawn.
+  const recoveryRun = r.runs.find((run) => run.status === 'needs-reconcile');
+  const activeRun = r.runs.find((run) =>
+    ['reserved', 'running', 'collecting'].includes(run.status),
+  );
+  const run = r.runs.find(
+    (run) =>
+      r.work.lifecycle === 'queued' &&
+      run.snapshot.specVersion === r.work.specVersion &&
+      r.releases.some(
+        (release) =>
+          release.id === run.snapshot.releaseId &&
+          release.withdrawnAt === null &&
+          release.specVersion === run.snapshot.specVersion &&
+          release.specHash === run.snapshot.specHash &&
+          release.repoId === run.snapshot.repoId &&
+          release.repoId === r.work.repoId &&
+          r.revisions.some(
+            (revision) =>
+              revision.version === release.specVersion &&
+              revision.hash === release.specHash,
+          ),
+      ),
+  );
   const planning = r.planning.find(
     (p) => p.stage === 'triage' || p.stage === 'planner',
   );
@@ -54,16 +77,35 @@ export function diagnoseTask(
     .sort((a, b) => a - b)[0];
   const assessment = deliveries
     .flatMap((d) => d.progress.assessments)
-    .find((a) => a.state !== 'settled');
-  if (r.work.lifecycle === 'closed') {
-    status = 'closed';
-    pendingSince = null;
-    nextStep = 'Task is closed. Inspect retained outcomes and evidence.';
-  } else if (effects.some((e) => ['uncertain', 'repair'].includes(e.state))) {
+    .filter((a) => a.state !== 'settled')
+    .sort(
+      (a, b) =>
+        Number(b.state === 'uncertain') - Number(a.state === 'uncertain'),
+    )[0];
+  // Zero headroom is normal while an execution owns the remaining reservation.
+  // Only a spent budget with no outstanding reservations is an exhausted gate.
+  const exhaustedBudget = budgets.some(
+    (budget) =>
+      budget.remainingExecutionMs === 0 && budget.reservedExecutionMs === 0,
+  );
+  const failedWriteback = writeback.filter(
+    (effect) => effect.state === 'failed',
+  );
+  if (effects.some((e) => ['uncertain', 'repair'].includes(e.state))) {
     status = 'needs-reconciliation';
     pendingSince = null;
     nextStep =
       'Inspect unresolved effects and reconcile through the existing operator controls. Do not retry an ambiguous publication.';
+  } else if (recoveryRun) {
+    status = 'needs-reconciliation';
+    pendingSince = recoveryRun.updatedAt;
+    nextStep =
+      'Inspect the coding run and use its reconciliation control before starting another attempt.';
+  } else if (assessment?.state === 'uncertain') {
+    status = 'needs-reconciliation';
+    pendingSince = assessment.reservedAt;
+    nextStep =
+      'Reconcile the retained progress assessment; do not grant a replacement budget.';
   } else if (
     deliveries.some((d) => d.interventions.some((i) => i.resolution === null))
   ) {
@@ -71,36 +113,45 @@ export function diagnoseTask(
     pendingSince = null;
     nextStep =
       'Inspect delivery interventions; a human must resolve scope, budget or authority before work continues.';
-  } else if (run?.status === 'needs-reconcile') {
-    status = 'needs-reconciliation';
-    pendingSince = run.updatedAt;
+  } else if (run?.status === 'failed') {
+    status = 'coding-failed';
+    pendingSince = null;
     nextStep =
-      'Inspect the coding run and use its reconciliation control before starting another attempt.';
+      'Inspect retained coding evidence and resolve the failure before deciding on further work.';
+  } else if (exhaustedBudget) {
+    status = 'budget-exhausted';
+    pendingSince = null;
+    nextStep =
+      'Review delivery evidence and the exhausted execution budget. Continuing requires a human budget decision; diagnosis does not refill budgets.';
+  } else if (failedWriteback.length) {
+    status = 'writeback-pending';
+    pendingSince = failedWriteback.reduce(
+      (old, effect) => (effect.createdAt < old ? effect.createdAt : old),
+      failedWriteback[0].createdAt,
+    );
+    nextStep =
+      'Inspect failed GitHub writeback effects and their recorded errors and retry times before expecting delivery.';
   } else if (assessment) {
     status = `assessment-${assessment.state}`;
     pendingSince = assessment.reservedAt;
     nextStep =
-      assessment.state === 'uncertain'
-        ? 'Reconcile the retained progress assessment; do not grant a replacement budget.'
-        : 'Wait for the bounded progress assessment; inspect worker health if its deadline has passed.';
-  } else if (
-    run &&
-    ['reserved', 'running', 'collecting'].includes(run.status)
-  ) {
-    status = `coding-${run.status}`;
-    pendingSince = run.updatedAt;
+      'Wait for the bounded progress assessment; inspect worker health if its deadline has passed.';
+  } else if (activeRun) {
+    status = `coding-${activeRun.status}`;
+    pendingSince = activeRun.updatedAt;
     nextStep =
       'Inspect the coding run and coding worker health. Cancellation and reconciliation remain explicit operator actions.';
-  } else if (budgets.some((b) => b.remainingExecutionMs === 0)) {
-    status = 'budget-exhausted';
-    pendingSince = null;
-    nextStep =
-      'Review remaining reservations and delivery evidence. Continuing requires a human budget decision; diagnosis does not refill budgets.';
-  } else if (deliveries.length) {
+  } else if (
+    deliveries.some(
+      (d) =>
+        d.effects.some((e) => e.state === 'in-flight') ||
+        d.repairs.some((repair) => repair.status === 'reserved'),
+    )
+  ) {
     status = 'delivery-pending';
     pendingSince = null;
     nextStep =
-      'Inspect current delivery evidence and delivery worker health. The coordinator advances only within the recorded human grant.';
+      'Inspect the in-flight effect and worker health before taking further action.';
   } else if (writeback.length) {
     status = 'writeback-pending';
     pendingSince = writeback.reduce(
@@ -109,6 +160,19 @@ export function diagnoseTask(
     );
     nextStep =
       'Inspect GitHub writeback effects and the recorded retry time; uncertain sends require reconciliation.';
+  } else if (r.work.lifecycle === 'closed') {
+    status = 'closed';
+    pendingSince = null;
+    nextStep = 'Task is closed. Inspect retained outcomes and evidence.';
+  } else if (r.work.lifecycle === 'paused') {
+    status = 'paused';
+    nextStep =
+      'Review the task and its recorded decisions before explicitly resuming it.';
+  } else if (deliveries.length) {
+    status = 'delivery-pending';
+    pendingSince = null;
+    nextStep =
+      'Inspect current delivery evidence and delivery worker health. The coordinator advances only within the recorded human grant.';
   } else if (planning) {
     status = `planning-${planning.stage}`;
     pendingSince = planning.createdAt;
@@ -119,7 +183,7 @@ export function diagnoseTask(
     pendingSince = null;
     nextStep =
       'Inspect the retained candidate. Delivery requires a separate human grant; a release alone does not authorize publication.';
-  } else if (run?.status === 'failed' || run?.status === 'cancelled') {
+  } else if (run?.status === 'cancelled') {
     status = `coding-${run.status}`;
     pendingSince = null;
     nextStep =
@@ -127,9 +191,6 @@ export function diagnoseTask(
   } else if (r.work.lifecycle === 'queued') {
     nextStep =
       'Inspect coding readiness and coding worker health. A valid exact release and enabled local adapter are required for admission.';
-  } else if (r.work.lifecycle === 'paused') {
-    nextStep =
-      'Review the task and its recorded decisions before explicitly resuming it.';
   }
   return v.parse(factoryTaskDiagnosisSchema, {
     workId: r.work.id,
@@ -166,6 +227,7 @@ export function diagnoseHealth(
         w.consecutiveFailures > 0 ||
         w.diagnosticsDegraded,
     ) ||
+    tasks.some((t) => t.unresolvedEffects.some((e) => e.state === 'failed')) ||
     tasks.some((t) =>
       [
         'needs-reconciliation',
