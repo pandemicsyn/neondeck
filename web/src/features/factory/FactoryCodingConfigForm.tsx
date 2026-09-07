@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react';
+import { Fragment, useState, type FormEvent } from 'react';
 import * as v from 'valibot';
 import {
   factoryCodingConfigSchema,
@@ -159,70 +159,72 @@ export function FactoryCodingConfigForm({
             repairs keep their pinned CLI and model. Selecting or saving a CLI
             does not launch it.
           </p>
-          <div key={adapterId} className="factory-coding-fields">
-            <label>
-              Coding executable
-              <input
-                name="executable"
-                placeholder="Absolute executable path"
-                defaultValue={
-                  changedAdapter ? '' : (base.config.executable ?? '')
-                }
-              />
-            </label>
-            <label>
-              Model
-              <input
-                name="model"
-                placeholder="Configured coding model"
-                defaultValue={changedAdapter ? '' : (base.config.model ?? '')}
-              />
-            </label>
-            <label>
-              Pinned CLI version
-              <input
-                name="cliVersion"
-                required
-                defaultValue={
-                  changedAdapter
-                    ? (adapter?.supportedVersion ?? '')
-                    : (base.config.adapter?.cliVersion ??
-                      adapter?.supportedVersion ??
-                      '')
-                }
-              />
-            </label>
-            <label>
-              Credential source
-              <select
-                name="authKind"
-                defaultValue={
-                  changedAdapter
-                    ? adapter?.credentialKinds[0]
-                    : (base.config.auth?.kind ?? adapter?.credentialKinds[0])
-                }
-              >
-                {adapter?.credentialKinds.map((kind) => (
-                  <option key={kind} value={kind}>
-                    {kind === 'api-key'
-                      ? 'API key environment reference'
-                      : 'Auth file environment reference'}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label>
-              Environment variable name
-              <input
-                name="authEnv"
-                placeholder="CODING_AUTH_REFERENCE"
-                defaultValue={
-                  changedAdapter ? '' : (base.config.auth?.env ?? '')
-                }
-                autoComplete="off"
-                spellCheck={false}
-              />
-            </label>
+          <div className="factory-coding-fields">
+            <Fragment key={adapterId}>
+              <label>
+                Coding executable
+                <input
+                  name="executable"
+                  placeholder="Absolute executable path"
+                  defaultValue={
+                    changedAdapter ? '' : (base.config.executable ?? '')
+                  }
+                />
+              </label>
+              <label>
+                Model
+                <input
+                  name="model"
+                  placeholder="Configured coding model"
+                  defaultValue={changedAdapter ? '' : (base.config.model ?? '')}
+                />
+              </label>
+              <label>
+                Pinned CLI version
+                <input
+                  name="cliVersion"
+                  required
+                  defaultValue={
+                    changedAdapter
+                      ? (adapter?.supportedVersion ?? '')
+                      : (base.config.adapter?.cliVersion ??
+                        adapter?.supportedVersion ??
+                        '')
+                  }
+                />
+              </label>
+              <label>
+                Credential source
+                <select
+                  name="authKind"
+                  defaultValue={
+                    changedAdapter
+                      ? adapter?.credentialKinds[0]
+                      : (base.config.auth?.kind ?? adapter?.credentialKinds[0])
+                  }
+                >
+                  {adapter?.credentialKinds.map((kind) => (
+                    <option key={kind} value={kind}>
+                      {kind === 'api-key'
+                        ? 'API key environment reference'
+                        : 'Auth file environment reference'}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                Environment variable name
+                <input
+                  name="authEnv"
+                  placeholder="CODING_AUTH_REFERENCE"
+                  defaultValue={
+                    changedAdapter ? '' : (base.config.auth?.env ?? '')
+                  }
+                  autoComplete="off"
+                  spellCheck={false}
+                />
+              </label>
+            </Fragment>
             <label>
               Time limit (minutes)
               <input

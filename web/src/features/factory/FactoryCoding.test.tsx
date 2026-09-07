@@ -558,6 +558,66 @@ it('selects registered CLIs without saving or executing and clears provider cred
   );
 });
 
+it.each(['opencode', 'kilo'])(
+  'retains edited generic limits and PATH when switching to %s and saving',
+  async (adapterId) => {
+    await render(<FactoryCodingSetup />);
+    await click('Configure coding');
+    for (const [name, value] of Object.entries({
+      minutes: '2.5',
+      outputMiB: '3',
+      path: '/synthetic/bin:/usr/bin',
+    })) {
+      const input = container.querySelector<HTMLInputElement>(
+        `input[name="${name}"]`,
+      );
+      if (!input) throw new Error(`Missing ${name} input`);
+      input.value = value;
+    }
+    const selector =
+      container.querySelector<HTMLSelectElement>('[name="adapter"]');
+    if (!selector) throw new Error('Missing adapter selector');
+    await act(async () => {
+      selector.value = adapterId;
+      selector.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    expect(
+      container.querySelector<HTMLInputElement>('[name="executable"]')?.value,
+    ).toBe('');
+    expect(
+      container.querySelector<HTMLInputElement>('[name="model"]')?.value,
+    ).toBe('');
+    expect(
+      container.querySelector<HTMLInputElement>('[name="authEnv"]')?.value,
+    ).toBe('');
+    expect(calls).toEqual([]);
+    await act(async () =>
+      form().dispatchEvent(
+        new Event('submit', { bubbles: true, cancelable: true }),
+      ),
+    );
+    await flush();
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.body).toEqual({
+      expectedFingerprint: state.configFingerprint,
+      config: {
+        ...state.config,
+        adapter: {
+          id: adapterId,
+          contractVersion: 1,
+          cliVersion: 'synthetic-version',
+        },
+        executable: null,
+        model: null,
+        auth: null,
+        path: '/synthetic/bin:/usr/bin',
+        wallTimeMs: 150000,
+        maxOutputBytes: 3145728,
+      },
+    });
+  },
+);
+
 it('saves the explicit adapter contract and version with only a credential reference', async () => {
   await render(<FactoryCodingSetup />);
   await click('Configure coding');
