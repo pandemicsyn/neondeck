@@ -4,7 +4,11 @@ import { existsSync, writeFileSync } from 'node:fs';
 import { setTimeout as delay } from 'node:timers/promises';
 import { spawn } from 'node:child_process';
 import { readBounded } from './host-io.ts';
-import { codexArguments, codexEnvironment } from './codex-adapter.ts';
+import {
+  adapterLaunch,
+  assertExecutableIdentity,
+  verifyAdapterWorkspace,
+} from './adapter-host.ts';
 import {
   manifestSchema,
   handleSchema,
@@ -57,13 +61,22 @@ async function run(
     while (existsSync(join(manifest.directory, 'test-spawn.pause')))
       await delay(20);
   }
+  verifyAdapterWorkspace(manifest);
+  const launch = adapterLaunch(manifest);
+  if (!manifest.executableIdentity)
+    throw new Error('Legacy CLI identity missing');
+  await assertExecutableIdentity(
+    manifest.config.executable,
+    manifest.executableIdentity,
+  );
   const started = withLocalLaunchGate(handle, () => {
     // This synchronous check+spawn under the shared gate is the authorization
     // linearization point. Later cancellation terminates the already-owned group.
     if (localCancellationRequested(handle, manifest.nonce)) return false;
-    const child = spawn(manifest.config.executable, codexArguments(manifest), {
+    verifyAdapterWorkspace(manifest);
+    const child = spawn(manifest.config.executable, launch.args, {
       cwd: manifest.ownedWorktree.root,
-      env: codexEnvironment(manifest),
+      env: launch.env,
       stdio: ['pipe', 'inherit', 'inherit'],
     });
     child.once('spawn', () =>

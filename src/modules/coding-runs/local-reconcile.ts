@@ -3,7 +3,7 @@ import * as v from 'valibot';
 import { receiptSchema, type LocalInspection } from './host-contract.ts';
 import { loadLocalManifest, inspectLocalAttempt } from './local-host.ts';
 import { readBounded, readSigned, writeSigned, message } from './host-io.ts';
-import { removeAttemptCredentials } from './codex-auth.ts';
+import { removeAdapterCredentials } from './adapter-host.ts';
 import { localCancellationRequested } from './host-launch-gate.ts';
 import { processTable } from './host-process.ts';
 
@@ -60,7 +60,7 @@ export async function reconcileLocalAttempt(
         'Supervisor or owned group still present; retain ownership',
       );
     const cancelled = localCancellationRequested(handle, manifest.nonce);
-    const authCleanup = await removeAttemptCredentials(handle.directory);
+    const authCleanup = await removeAdapterCredentials(manifest);
     const recovered = v.parse(receiptSchema, {
       ...receipt,
       at: Date.now(),

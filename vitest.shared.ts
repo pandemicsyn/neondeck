@@ -31,6 +31,7 @@ export const integrationTestFiles = [
   'src/autopilot-workflows.test.ts',
   'src/commands.test.ts',
   'src/server/factory-coding.integration.test.ts',
+  'src/server/factory-adapters.integration.test.ts',
   'src/server/factory-delivery.integration.test.ts',
   'src/agents/factory-progress-reviewer.integration.test.ts',
   'src/modules/coding-runs/local-host.test.ts',

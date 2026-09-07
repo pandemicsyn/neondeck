@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 // TEST ONLY. Never use as an automatic fallback for a missing Codex executable.
 import { spawn } from 'node:child_process';
+import { randomUUID } from 'node:crypto';
 import { once } from 'node:events';
 import { open, realpath, stat } from 'node:fs/promises';
 import { basename, join } from 'node:path';
@@ -147,7 +148,7 @@ async function main() {
     throw new Error('Nonempty prompt required');
   emit({
     type: 'thread.started',
-    thread_id: '00000000-0000-4000-8000-000000000001',
+    thread_id: randomUUID(),
   });
   emit({ type: 'turn.started' });
   if (scenario === 'failure') {

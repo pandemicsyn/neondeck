@@ -1,11 +1,13 @@
 import { createHash } from 'node:crypto';
 import * as v from 'valibot';
+import type { CodingExecutableIdentity } from '../../../shared/coding-adapters';
 import {
   factoryPolicy,
   specSchema,
   sourceSchema,
   type FactorySource,
   renderFactorySpec,
+  releaseSchema,
   type FactoryDetail,
 } from '../../../shared/factory';
 import {
@@ -21,6 +23,7 @@ import {
 } from '../../runtime-home';
 import { buildMemoryPromptSnapshotSync } from '../memory';
 import { runtimeSkillSessionSnapshotsSync } from '../runtime';
+import { inspectCodingExecutableIdentity } from '../coding-runs';
 import { getFactoryWork } from './service';
 import { gitAsync } from './repo-reader';
 export const codingDigest = (value: unknown) =>
@@ -60,6 +63,22 @@ export function codingAuthority(workId: string, paths: RuntimePaths) {
 }
 const bounded = v.pipe(v.string(), v.maxLength(95000));
 export class CodingPreflightError extends Error {}
+export function assertReleasedCodingConfig(
+  workId: string,
+  paths: RuntimePaths,
+) {
+  const { release, coding } = codingAuthority(workId, paths);
+  if (release.codingConfigFingerprint === null) {
+    if (coding.adapter !== null)
+      throw new CodingPreflightError(
+        'Legacy release permits only the original default Codex selection. Review coding settings and release a refreshed brief.',
+      );
+  } else if (release.codingConfigFingerprint !== codingDigest(coding)) {
+    throw new CodingPreflightError(
+      'Coding configuration changed since human release. Review coding settings and release a refreshed brief.',
+    );
+  }
+}
 
 const text = v.string();
 const hashSchema = v.pipe(text, v.regex(/^[a-f0-9]{64}$/));
@@ -161,10 +180,22 @@ export async function codingSnapshot(
   version: string,
   paths: RuntimePaths,
 ): Promise<CodingRunSnapshot> {
+  assertReleasedCodingConfig(workId, paths);
   const { current, release, revision, repo, coding } = codingAuthority(
     workId,
     paths,
   );
+  let executableIdentity: CodingExecutableIdentity;
+  try {
+    if (!coding.executable) throw new Error('CLI unconfigured');
+    executableIdentity = await inspectCodingExecutableIdentity(
+      coding.executable,
+    );
+  } catch {
+    throw new CodingPreflightError(
+      'Cannot pin the selected coding executable. Review the executable configuration before admission.',
+    );
+  }
   let baseSha: string;
   try {
     baseSha = (
@@ -202,7 +233,12 @@ export async function codingSnapshot(
     policySnapshot: JSON.stringify({ release: release.policy, coding }),
     contextSnapshot,
     baseSha,
-    harness: { provider: 'codex', version, model: coding.model },
+    harness: {
+      provider: coding.adapter?.id ?? 'codex',
+      version,
+      model: coding.model,
+      executableIdentity,
+    },
     sessionMode: 'fresh',
   });
 }
@@ -231,7 +267,8 @@ export function assertCodingAuthoritySnapshot(
   paths: RuntimePaths,
 ) {
   const authority = codingAuthority(snapshot.workItemId, paths);
-  const { current, release, revision, repo, coding } = authority;
+  const coding = frozenCodingConfig(snapshot);
+  const { current, release, revision, repo } = authority;
   if (
     release.id !== snapshot.releaseId ||
     revision.version !== snapshot.specVersion ||
@@ -243,11 +280,56 @@ export function assertCodingAuthoritySnapshot(
         ),
       ) ||
     JSON.stringify(repo) !== snapshot.repoSnapshot ||
-    JSON.stringify({ release: release.policy, coding }) !==
-      snapshot.policySnapshot
+    (release.codingConfigFingerprint === null
+      ? coding.adapter !== null
+      : release.codingConfigFingerprint !== codingDigest(coding)) ||
+    codingDigest({ release: release.policy, coding }) !==
+      codingDigest(frozenCodingPolicy(snapshot))
   )
     throw new Error('Frozen coding authority changed.');
-  return authority;
+  return { ...authority, coding };
+}
+const frozenCodingPolicySchema = v.strictObject({
+  release: releaseSchema.entries.policy,
+  coding: factoryCodingConfigSchema,
+});
+function frozenCodingPolicy(snapshot: CodingRunSnapshot) {
+  return v.parse(frozenCodingPolicySchema, JSON.parse(snapshot.policySnapshot));
+}
+/** Decode the admitted selection; defaults only apply to historical Codex config. */
+export function frozenCodingConfig(snapshot: CodingRunSnapshot) {
+  const { coding } = frozenCodingPolicy(snapshot);
+  if (
+    (coding.adapter?.id ?? 'codex') !== snapshot.harness.provider ||
+    coding.model !== snapshot.harness.model ||
+    (coding.adapter && coding.adapter.cliVersion !== snapshot.harness.version)
+  )
+    throw new Error('Frozen coding adapter identity is inconsistent.');
+  return coding;
+}
+/** Never execute a retained path until it matches the original admission. */
+export async function assertPinnedCodingExecutable(
+  snapshot: CodingRunSnapshot,
+) {
+  const { executable } = frozenCodingConfig(snapshot);
+  const expected = snapshot.harness.executableIdentity;
+  if (!expected)
+    throw new CodingPreflightError(
+      'The legacy coding attempt has no original executable identity. Existing evidence is retained; a new repair requires human review and a fresh release.',
+    );
+  if (!expected.sha256)
+    throw new CodingPreflightError(
+      'The legacy coding attempt has no original executable content digest. Existing evidence is retained; a new repair requires human review and a fresh release.',
+    );
+  if (
+    !executable ||
+    codingDigest(await inspectCodingExecutableIdentity(executable)) !==
+      codingDigest(expected)
+  )
+    throw new CodingPreflightError(
+      'The coding executable changed since original admission. Existing evidence is retained; review the binary and release authority before another attempt.',
+    );
+  return expected;
 }
 export async function assertCodingSnapshot(
   snapshot: CodingRunSnapshot,

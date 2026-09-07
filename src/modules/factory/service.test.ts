@@ -1,3 +1,4 @@
+import { codingConfig, codingDigest } from './coding-context';
 import { applyAppDbMigrations } from '../../runtime-home/app-db/migrate';
 import {
   cpSync,
@@ -55,6 +56,7 @@ const releaseInput = (d: FactoryDetail, key = 'release-1') => ({
   sourceVersion: d.source.version,
   repoFingerprint: d.repoFingerprint,
   policyVersion: 'isolated-local-v1',
+  expectedCodingConfigFingerprint: codingDigest(codingConfig(paths).coding),
 });
 function createReady() {
   const d = submitFactoryWork(intake, actor, paths);
@@ -116,6 +118,176 @@ describe('manual factory domain', () => {
         .success,
     ).toBe(false);
     expect(factoryState(paths).items).toHaveLength(0);
+  });
+  it('binds reviewed coding settings and rejects a stale release fingerprint', () => {
+    const ready = createReady();
+    const fingerprint = codingDigest(codingConfig(paths).coding);
+    expect(() =>
+      releaseFactoryWork(
+        ready.work.id,
+        {
+          ...releaseInput(ready),
+          expectedCodingConfigFingerprint: 'a'.repeat(64),
+        },
+        actor,
+        paths,
+      ),
+    ).toThrow('Coding configuration changed');
+    const released = releaseFactoryWork(
+      ready.work.id,
+      { ...releaseInput(ready), expectedCodingConfigFingerprint: fingerprint },
+      actor,
+      paths,
+    );
+    expect(released.releases[0].codingConfigFingerprint).toBe(fingerprint);
+    expect(() =>
+      releaseFactoryWork(
+        ready.work.id,
+        {
+          ...releaseInput(ready),
+          expectedCodingConfigFingerprint: 'b'.repeat(64),
+        },
+        actor,
+        paths,
+      ),
+    ).toThrow('another decision');
+  });
+  it.each([undefined, null, '', 'invalid'])(
+    'rejects an unreviewed default Codex release fingerprint %s',
+    (fingerprint) => {
+      const ready = createReady();
+      expect(codingConfig(paths).coding.adapter).toBeNull();
+      const {
+        expectedCodingConfigFingerprint: _reviewed,
+        ...withoutFingerprint
+      } = releaseInput(ready);
+      const input =
+        fingerprint === undefined
+          ? withoutFingerprint
+          : {
+              ...withoutFingerprint,
+              expectedCodingConfigFingerprint: fingerprint,
+            };
+      expect(() =>
+        releaseFactoryWork(ready.work.id, input, actor, paths),
+      ).toThrow('expectedCodingConfigFingerprint');
+      expect(getFactoryWork(ready.work.id, paths).releases).toEqual([]);
+    },
+  );
+  it('accepts exact bound retries without rebinding changed default Codex settings', () => {
+    const ready = createReady();
+    const input = releaseInput(ready);
+    const released = releaseFactoryWork(ready.work.id, input, actor, paths);
+    writeFileSync(
+      paths.config,
+      JSON.stringify({
+        version: 1,
+        factory: {
+          enabled: true,
+          coding: {
+            ...codingConfig(paths).coding,
+            model: 'different-reviewed-model',
+          },
+        },
+      }),
+    );
+    expect(
+      releaseFactoryWork(ready.work.id, input, actor, paths).releases,
+    ).toEqual(released.releases);
+    expect(() =>
+      releaseFactoryWork(
+        ready.work.id,
+        { ...input, expectedCodingConfigFingerprint: null },
+        actor,
+        paths,
+      ),
+    ).toThrow('expectedCodingConfigFingerprint');
+    const { expectedCodingConfigFingerprint: _fingerprint, ...omitted } = input;
+    expect(() =>
+      releaseFactoryWork(ready.work.id, omitted, actor, paths),
+    ).toThrow('expectedCodingConfigFingerprint');
+    const changed = releaseInput(getFactoryWork(ready.work.id, paths));
+    expect(() =>
+      releaseFactoryWork(ready.work.id, changed, actor, paths),
+    ).toThrow('another decision');
+    expect(() =>
+      releaseFactoryWork(
+        ready.work.id,
+        { ...changed, requestKey: 'new-decision' },
+        actor,
+        paths,
+      ),
+    ).toThrow('active release binds different coding settings');
+    expect(getFactoryWork(ready.work.id, paths).releases).toEqual(
+      released.releases,
+    );
+  });
+  it('decodes historical releases without upgrading missing fingerprint authority on retry', () => {
+    const ready = createReady();
+    const input = releaseInput(ready);
+    const released = releaseFactoryWork(ready.work.id, input, actor, paths);
+    const { codingConfigFingerprint: _fingerprint, ...historical } =
+      released.releases[0];
+    const db = openDb(paths.neondeckDatabase);
+    try {
+      db.prepare('UPDATE factory_releases SET record=? WHERE id=?').run(
+        JSON.stringify(historical),
+        historical.id,
+      );
+    } finally {
+      db.close();
+    }
+    expect(
+      getFactoryWork(ready.work.id, paths).releases[0].codingConfigFingerprint,
+    ).toBeNull();
+    expect(() =>
+      releaseFactoryWork(ready.work.id, input, actor, paths),
+    ).toThrow('another decision');
+    expect(() =>
+      releaseFactoryWork(
+        ready.work.id,
+        {
+          ...releaseInput(getFactoryWork(ready.work.id, paths)),
+          requestKey: 'fresh-decision',
+        },
+        actor,
+        paths,
+      ),
+    ).toThrow('active release binds different coding settings');
+    expect(
+      getFactoryWork(ready.work.id, paths).releases[0].codingConfigFingerprint,
+    ).toBeNull();
+  });
+  it('requires an explicit reviewed fingerprint for an optional adapter selection', () => {
+    const ready = createReady();
+    const coding = {
+      ...codingConfig(paths).coding,
+      adapter: { id: 'opencode', contractVersion: 1, cliVersion: '1.0.0' },
+    };
+    writeFileSync(
+      paths.config,
+      JSON.stringify({ version: 1, factory: { enabled: true, coding } }),
+    );
+    expect(() =>
+      releaseFactoryWork(
+        ready.work.id,
+        { ...releaseInput(ready), expectedCodingConfigFingerprint: null },
+        actor,
+        paths,
+      ),
+    ).toThrow('expectedCodingConfigFingerprint');
+    const fingerprint = codingDigest(codingConfig(paths).coding);
+    expect(
+      releaseFactoryWork(
+        ready.work.id,
+        {
+          ...releaseInput(ready),
+          expectedCodingConfigFingerprint: fingerprint,
+        },
+        actor,
+        paths,
+      ).releases[0].codingConfigFingerprint,
+    ).toBe(fingerprint);
   });
   it('deduplicates exact retry, rejects request-key reuse and survives reinitialization', () => {
     const initial = submitFactoryWork(intake, actor, paths);

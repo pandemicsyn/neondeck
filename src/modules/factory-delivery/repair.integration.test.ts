@@ -1,3 +1,4 @@
+import { updateFactoryConfig } from '../config';
 import { execFileSync } from 'node:child_process';
 import {
   mkdirSync,
@@ -6,12 +7,14 @@ import {
   realpathSync,
   rmSync,
   writeFileSync,
+  existsSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { expect, it, vi } from 'vitest';
 import * as v from 'valibot';
+import { openDb } from '../../lib/sqlite';
 import { emptyFactorySpec } from '../../../shared/factory';
 import { ensureRuntimeHome, runtimePaths } from '../../runtime-home';
 import {
@@ -23,6 +26,9 @@ import {
   type LocalAttemptHandle,
 } from '../coding-runs';
 import {
+  codingConfig,
+  frozenCodingConfig,
+  codingDigest,
   releaseFactoryWork,
   saveFactorySpec,
   submitFactoryWork,
@@ -54,7 +60,13 @@ const git = (cwd: string, ...args: string[]) =>
       GIT_CONFIG_NOSYSTEM: '1',
     },
   }).trim();
-it.each(['normal', 'remaining'] as const)(
+it.each([
+  'normal',
+  'remaining',
+  'replaced-binary',
+  'legacy-binary',
+  'changed-defaults',
+] as const)(
   'repairs a retained mockdex candidate: %s allowance',
   async (allowance) => {
     const mode = 'candidate';
@@ -191,6 +203,9 @@ else {
           sourceVersion: detail.source.version,
           repoFingerprint: detail.repoFingerprint,
           policyVersion: 'isolated-local-v1',
+          expectedCodingConfigFingerprint: codingDigest(
+            codingConfig(paths).coding,
+          ),
         },
         actor,
         paths,
@@ -313,6 +328,78 @@ else {
       };
       const originalEvidence = readFileSync(parent.candidate!.diffRef);
       const authority = vi.fn<() => Promise<void>>(async () => {});
+      if (allowance === 'changed-defaults') {
+        updateFactoryConfig(
+          {
+            coding: {
+              ...codingConfig(paths).coding,
+              adapter: {
+                id: 'kilo',
+                contractVersion: 1,
+                cliVersion: 'changed-cli-version',
+              },
+              executable: join(root, 'must-not-execute'),
+              model: 'future-model',
+              auth: { kind: 'api-key', env: 'FUTURE_AUTH_REF' },
+              path: '/synthetic/future-path',
+              wallTimeMs: 1000,
+              maxOutputBytes: 1024,
+            },
+          },
+          paths,
+        );
+        expect(getDeliveryPipeline(pipeline.pipelineId, paths)).toEqual(
+          pipeline,
+        );
+      }
+      if (allowance === 'replaced-binary' || allowance === 'legacy-binary') {
+        const marker = join(root, 'replacement-was-executed');
+        if (allowance === 'legacy-binary') {
+          // Explicit old persisted fixture: decoding must not invent identity.
+          const { executableIdentity: _identity, ...harness } =
+            parent.snapshot.harness;
+          const legacy = {
+            ...parent,
+            snapshot: { ...parent.snapshot, harness },
+          };
+          const db = openDb(paths.neondeckDatabase);
+          try {
+            db.prepare(
+              'UPDATE coding_runs SET record_json=? WHERE run_id=?',
+            ).run(JSON.stringify(legacy), parent.runId);
+          } finally {
+            db.close();
+          }
+          expect(await reconcileCodingRun(parent.runId, paths)).toEqual(legacy);
+        }
+        writeFileSync(
+          executable,
+          `#!/usr/bin/env node\nimport {writeFileSync} from 'node:fs';\nwriteFileSync(${JSON.stringify(marker)}, 'executed');\nconsole.log('codex-cli 0.150.1');\n`,
+          { mode: 0o700 },
+        );
+        expect(
+          await dispatchCodingRepair(command, paths, authority),
+        ).toBeNull();
+        expect(existsSync(marker)).toBe(false);
+        const retained = getDeliveryPipeline(pipeline.pipelineId, paths)!;
+        expect(retained.repairs).toEqual(pipeline.repairs);
+        expect(retained.effects).toEqual(pipeline.effects);
+        expect(retained.interventions.at(-1)).toMatchObject({
+          kind: 'authority',
+          resolution: null,
+        });
+        expect(retained.interventions.at(-1)?.reason).toContain(
+          allowance === 'legacy-binary'
+            ? 'no original executable identity'
+            : 'no longer matches original admission',
+        );
+        expect(listCodingRuns({}, paths)).toHaveLength(1);
+        expect(getActiveCodingRun(paths)).toBeNull();
+        expect(readFileSync(parent.candidate!.diffRef)).toEqual(
+          originalEvidence,
+        );
+        return;
+      }
       const started = await dispatchCodingRepair(command, paths, authority);
       if (!started) throw new Error('Expected reserved repair');
       handle = codingHandle(started, paths);
@@ -326,6 +413,18 @@ else {
           .reservedExecutionMs,
       ).toBe(expectedCap);
       expect(started.runId).not.toBe(parent.runId);
+      const repairManifest = (await loadLocalManifest(handle)).manifest;
+      expect(repairManifest.config.executable).toBe(executable);
+      expect(repairManifest.config.model).toBe(parent.snapshot.harness.model);
+      const originalCoding = frozenCodingConfig(parent.snapshot);
+      expect(repairManifest.config.path).toBe(originalCoding.path);
+      expect(repairManifest.config.maxOutputBytes).toBe(
+        originalCoding.maxOutputBytes,
+      );
+      expect(originalCoding.auth?.env).toBe('FACTORY_E2E_AUTH');
+      expect(repairManifest.executableIdentity).toEqual(
+        parent.snapshot.harness.executableIdentity,
+      );
       expect(started.attemptId).not.toBe(parent.attemptId);
       expect(started.snapshot).toEqual({
         ...parent.snapshot,
@@ -363,7 +462,13 @@ else {
 
       // mockdex emits a fixed session ID; verify the actual fresh CLI invocation.
       const execution = v.parse(
-        v.object({ args: v.array(v.string()), codexHome: v.string() }),
+        v.object({
+          args: v.array(v.string()),
+          codexHome: v.string(),
+          selectedAuthPresent: v.boolean(),
+          selectedEnvAbsent: v.boolean(),
+          controllerEnvAbsent: v.boolean(),
+        }),
         JSON.parse(
           readFileSync(
             join(handle.directory, 'scratch/execution.json'),
@@ -372,6 +477,9 @@ else {
         ),
       );
       expect(execution.args[0]).toBe('exec');
+      expect(execution.selectedAuthPresent).toBe(true);
+      expect(execution.selectedEnvAbsent).toBe(true);
+      expect(execution.controllerEnvAbsent).toBe(true);
       expect(execution.args).not.toContain('resume');
       expect(execution.codexHome).not.toBe(
         join(codingHandle(parent, paths).directory, 'home/.codex'),

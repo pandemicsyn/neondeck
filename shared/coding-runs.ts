@@ -1,4 +1,5 @@
 import * as v from 'valibot';
+import { codingExecutableIdentitySchema } from './coding-adapters.ts';
 
 export const codingLabelSchema = v.pipe(
   v.string(),
@@ -31,9 +32,42 @@ export const codingRunSnapshotSchema = v.strictObject({
     provider: codingLabelSchema,
     version: codingLabelSchema,
     model: codingLabelSchema,
+    executableIdentity: v.optional(codingExecutableIdentitySchema),
   }),
   sessionMode: v.literal('fresh'),
 });
+// Public transport deliberately lists its fields instead of inheriting future
+// internal identity fields or defaults. Opaque provenance remains unchanged.
+export const codingPublicHarnessSchema = v.strictObject({
+  provider: codingLabelSchema,
+  version: codingLabelSchema,
+  model: codingLabelSchema,
+});
+export const codingPublicRunSnapshotSchema = v.strictObject({
+  requestId: codingRunSnapshotSchema.entries.requestId,
+  workItemId: codingRunSnapshotSchema.entries.workItemId,
+  releaseId: codingRunSnapshotSchema.entries.releaseId,
+  specVersion: codingRunSnapshotSchema.entries.specVersion,
+  specHash: codingRunSnapshotSchema.entries.specHash,
+  specSnapshot: codingRunSnapshotSchema.entries.specSnapshot,
+  sourceId: codingRunSnapshotSchema.entries.sourceId,
+  sourceSnapshot: codingRunSnapshotSchema.entries.sourceSnapshot,
+  repoId: codingRunSnapshotSchema.entries.repoId,
+  repoSnapshot: codingRunSnapshotSchema.entries.repoSnapshot,
+  policySnapshot: codingRunSnapshotSchema.entries.policySnapshot,
+  contextSnapshot: codingRunSnapshotSchema.entries.contextSnapshot,
+  baseSha: codingRunSnapshotSchema.entries.baseSha,
+  sessionMode: codingRunSnapshotSchema.entries.sessionMode,
+  harness: codingPublicHarnessSchema,
+});
+export function publicCodingRunSnapshot(input: unknown) {
+  const snapshot = v.parse(codingRunSnapshotSchema, input);
+  const { provider, version, model } = snapshot.harness;
+  return v.parse(codingPublicRunSnapshotSchema, {
+    ...snapshot,
+    harness: { provider, version, model },
+  });
+}
 export const codingRunStatusSchema = v.picklist([
   'reserved',
   'running',

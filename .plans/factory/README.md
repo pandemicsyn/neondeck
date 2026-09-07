@@ -19,17 +19,21 @@ the operator authorized stack merge, with real Codex acceptance still pending af
 - [Slice 3 implementation plan](SLICE_3_IMPLEMENTATION_PLAN.md): exact delivery
   grants, independent evidence, bounded repairs and draft publication.
 - [Slice 3 handoff](SLICE_3_HANDOFF.md): stack ownership, review and acceptance.
-- [Slice 3.1 progress supervision](SLICE_3_1_PROGRESS_REVIEW_PLAN.md): implemented
-  and verified locally before OpenCode, with 2,544 unique passing tests across the
-  full run and corrected targeted rerun. Published as draft
+- [Slice 3.1 progress supervision](SLICE_3_1_PROGRESS_REVIEW_PLAN.md): merged through
+  `00c3e3e5`, with 2,544 unique passing tests across the
+  full run and corrected targeted rerun. PRs
   [#403](https://github.com/pandemicsyn/neondeck/pull/403) and
-  [#404](https://github.com/pandemicsyn/neondeck/pull/404), official stack #405;
-  not merged. Source/documentation static reviews before publication and manager
-  post-publication architecture review are clean. CI is in progress, with secrets
-  checks green.
+  [#404](https://github.com/pandemicsyn/neondeck/pull/404), official stack #405,
+  merged after operator authorization, clean independent and manager reviews,
+  and all nine CI checks passing on each final head.
   Real model/Codex/GitHub acceptance is NOT RUN. See its
   [handoff](SLICE_3_1_HANDOFF.md), [operator guide](SLICE_3_1_OPERATOR.md) and
   [acceptance ledger](SLICE_3_1_ACCEPTANCE.md).
+- [Slice 4 implementation plan](SLICE_4_IMPLEMENTATION_PLAN.md): planned pluggable
+  coding CLI contract, OpenCode and Kilo Code adapters alongside Codex, shared
+  isolation/lifecycle and acceptance coverage. Existing Kilo handoff is reuse
+  material, not a second factory coordinator. CLI installation alone is not
+  factory readiness or live acceptance.
 - [Slice 3 operator guide](SLICE_3_OPERATOR.md): candidate delivery controls and
   conditional human interventions.
 - [Slice 2 local handoff](SLICE_2_HANDOFF.md): accepted stack, verification,

@@ -1,15 +1,16 @@
 # Slice 3.1 acceptance record
 
-Status: published draft stack #405, September 6, 2026; **not merged**.
-Draft PRs [#403](https://github.com/pandemicsyn/neondeck/pull/403) and
-[#404](https://github.com/pandemicsyn/neondeck/pull/404) have clean source,
-pre-publication documentation and manager post-publication architecture reviews.
-The reviewed fixture relocation is complete. CI on PR #403 at `5cbc5882` passed all nine checks; PR #404 at `9a6023fe`
-also passed all nine checks, including Validate npm package. These results apply to
-those revisions; the linked PRs are authoritative for current status. Merge has not been authorized. Real model/Codex/GitHub acceptance
-is **NOT RUN**. Slice 1 accepted deferrals and Slice 2/3 pending live acceptance
-are unchanged. The handoff records the updated reviewed heads, clean relocation/documentation
-reviews, and passing lower-layer typecheck and 27 FactoryDelivery tests.
+Status: **merged**, September 6, 2026. The operator authorized stack #405 merge;
+PRs [#403](https://github.com/pandemicsyn/neondeck/pull/403) and
+[#404](https://github.com/pandemicsyn/neondeck/pull/404) landed through
+`00c3e3e565a63ebc24411eabdf34f23d94efe6ef`. All nine checks passed on each final
+PR head (`5cbc5882` and `8fbb0b04`); static and manager architecture reviews were
+clean. The merged tree matches the reviewed stack.
+
+Real model/Codex/GitHub acceptance is **NOT RUN**. Merge is not live acceptance.
+Slice 1 accepted deferrals and Slice 2/3 pending live acceptance are unchanged.
+The handoff retains the reviewed fixture relocation, verification history and
+passing lower-layer typecheck and 27 FactoryDelivery tests.
 
 ## Deterministic implementation verification
 

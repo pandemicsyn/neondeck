@@ -13,11 +13,13 @@ import {
 import { privateDirectory, readSigned, writeSigned } from './host-io.ts';
 import { identify, groupAbsent, signalOwnedGroup } from './host-process.ts';
 import { verifyOwnedWorktree } from './host-workspace.ts';
-import { inspectCodexReadiness } from './codex-readiness.ts';
 import {
-  selectedCredentialRedactor,
-  removeAttemptCredentials,
-} from './codex-auth.ts';
+  inspectCodingAdapterReadiness,
+  adapterCredentialRedactor,
+  removeAdapterCredentials,
+  assertExecutableIdentity,
+  verifyAdapterWorkspace,
+} from './adapter-host.ts';
 import { localCancellationRequested } from './host-launch-gate.ts';
 import { HostOutput } from './host-output.ts';
 
@@ -75,9 +77,22 @@ async function supervise(value: unknown) {
   let spawnAttempted = false;
   try {
     await verifyOwnedWorktree(manifest.ownedWorktree, true);
-    const readiness = await inspectCodexReadiness(
+    verifyAdapterWorkspace(manifest);
+    if (!manifest.executableIdentity)
+      throw new Error('Legacy CLI identity missing');
+    await assertExecutableIdentity(
+      manifest.config.executable,
+      manifest.executableIdentity,
+    );
+    const readiness = await inspectCodingAdapterReadiness(
       manifest.config,
       join(handle.directory, 'scratch'),
+    );
+    if (!manifest.executableIdentity)
+      throw new Error('Legacy CLI identity missing');
+    await assertExecutableIdentity(
+      manifest.config.executable,
+      manifest.executableIdentity,
     );
     if (!readiness.ready || readiness.version !== manifest.cliVersion)
       throw new Error('CLI readiness changed');
@@ -87,7 +102,7 @@ async function supervise(value: unknown) {
     } else {
       output = new HostOutput(
         manifest,
-        await selectedCredentialRedactor(handle.directory),
+        await adapterCredentialRedactor(manifest),
       );
       const captured = output;
       spawnAttempted = true;
@@ -260,7 +275,7 @@ async function supervise(value: unknown) {
           : null;
   }
   if (receipt.noWriter) {
-    receipt.authCleanup = await removeAttemptCredentials(handle.directory);
+    receipt.authCleanup = await removeAdapterCredentials(manifest);
     if (receipt.authCleanup === 'failed')
       receipt.reason = 'credential-cleanup-failed';
   }

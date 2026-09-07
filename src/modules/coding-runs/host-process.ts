@@ -22,7 +22,21 @@ export async function processTable() {
       env: { PATH: '/usr/bin:/bin', LC_ALL: 'C' },
     },
   );
-  return stdout
+  return parseProcessTable(stdout);
+}
+// Linux kernel tasks may legitimately belong to group zero. Observation of
+// those rows must not invalidate unrelated process ownership; only positive
+// group identities can be authenticated, persisted, or signalled.
+const processObservationSchema = v.strictObject({
+  ...identitySchema.entries,
+  pgid: v.pipe(v.number(), v.integer(), v.minValue(0), v.maxValue(2 ** 31 - 1)),
+});
+export function parseProcessTable(input: unknown) {
+  const output = v.parse(
+    v.pipe(v.string(), v.maxLength(4 * 1024 * 1024)),
+    input,
+  );
+  return output
     .split('\n')
     .filter((line) => line.trim())
     .map((line) => {
@@ -32,7 +46,7 @@ export async function processTable() {
         );
       if (!match) throw new Error('Unrecognized process observation');
       return {
-        ...v.parse(identitySchema, {
+        ...v.parse(processObservationSchema, {
           pid: Number(match[1]),
           pgid: Number(match[2]),
           start: match[3],

@@ -12,6 +12,7 @@ import { join } from 'node:path';
 import * as v from 'valibot';
 import {
   codingRunRecordSchema,
+  publicCodingRunSnapshot,
   type CodingRunRecord,
   type CodingRunCommand,
 } from '../../../shared/coding-runs';
@@ -37,9 +38,15 @@ import {
 import type { RuntimePaths } from '../../runtime-home';
 import {
   assertCodingSnapshot,
+  assertCodingAuthoritySnapshot,
+  codingConfig,
+  codingDigest,
   codingAuthority,
   codingPrompt,
   codingSnapshot,
+  frozenCodingConfig,
+  assertReleasedCodingConfig,
+  assertPinnedCodingExecutable,
   CodingPreflightError,
 } from './coding-context';
 import {
@@ -105,6 +112,7 @@ export function publicCodingRun(input: CodingRunRecord, paths: RuntimePaths) {
   } = run;
   const record = {
     ...safeRecord,
+    snapshot: publicCodingRunSnapshot(run.snapshot),
     workspace: run.workspace ? { worktreeId: run.workspace.worktreeId } : null,
   };
   const prepared = run.workspace
@@ -149,12 +157,36 @@ export async function dispatchCodingWork(
   const fingerprint = codingAdmissionFingerprint(workId, paths);
   if (readCodingAttention(workId, paths)?.inputFingerprint === fingerprint)
     return null;
+  try {
+    assertReleasedCodingConfig(workId, paths);
+  } catch (error) {
+    saveCodingAttention(
+      workId,
+      fingerprint,
+      error instanceof CodingPreflightError
+        ? error.message
+        : 'Coding release authority is unavailable.',
+      paths,
+    );
+    return null;
+  }
   const ready = await readiness(paths);
   if (!ready.ready || !ready.installedVersion) return null;
   let snapshot: Awaited<ReturnType<typeof codingSnapshot>>;
   try {
     snapshot = await codingSnapshot(workId, ready.installedVersion, paths);
     await assertCodingSnapshot(snapshot, paths);
+    // Reservation is admission: recheck current reviewed settings after every
+    // asynchronous preflight, before the synchronous durable reservation.
+    const authority = assertCodingAuthoritySnapshot(snapshot, paths);
+    assertReleasedCodingConfig(workId, paths);
+    if (
+      codingDigest(authority.coding) !==
+      codingDigest(codingConfig(paths).coding)
+    )
+      throw new CodingPreflightError(
+        'Coding settings changed during admission preflight. Review the current settings before release.',
+      );
   } catch (error) {
     saveCodingAttention(
       workId,
@@ -189,9 +221,6 @@ export async function launchReservedCodingRun(
   let run = v.parse(codingRunRecordSchema, input);
   const snapshot = run.snapshot;
   const workId = snapshot.workItemId;
-  const selectedAuth = selectedCodingAuth(
-    codingAuthority(workId, paths).coding,
-  );
   if (
     run.host ||
     terminalCodingRun(run) ||
@@ -204,13 +233,18 @@ export async function launchReservedCodingRun(
     {
       type: 'bind-host',
       host: {
-        hostId: 'local-codex',
+        hostId: 'local-cli',
         jobId: join(realpathSync(paths.home), 'coding-attempts', run.attemptId),
       },
     },
     paths,
   );
   try {
+    await assertCodingSnapshot(snapshot, paths);
+    const coding = frozenCodingConfig(snapshot);
+    const expectedExecutableIdentity =
+      await assertPinnedCodingExecutable(snapshot);
+    const selectedAuth = selectedCodingAuth(coding);
     const branch = `agent/factory-${run.attemptId}`;
     const created = await createWorktree(
       {
@@ -255,13 +289,13 @@ export async function launchReservedCodingRun(
       AbortSignal.timeout(5000),
     );
     await options.prepareWorkspace?.(worktree.localPath);
-    const { coding, repo } = codingAuthority(workId, paths);
+    const { repo } = codingAuthority(workId, paths);
     const handle = codingHandle(run, paths);
     await mkdir(join(paths.home, 'coding-attempts'), {
       recursive: true,
       mode: 0o700,
     });
-    const config = localCodingConfig(coding);
+    const config = localCodingConfig(coding, snapshot.harness.version);
     if (options.wallTimeMs !== undefined)
       config.wallTimeMs = Math.min(
         config.wallTimeMs,
@@ -283,15 +317,15 @@ export async function launchReservedCodingRun(
         baseSha: snapshot.baseSha,
       },
       config,
+      expectedExecutableIdentity,
       prompt: options.prompt ?? codingPrompt(snapshot),
       selectedAuth,
     });
     await assertCodingSnapshot(snapshot, paths);
     await options.assertAuthority?.();
     if (
-      JSON.stringify(
-        selectedCodingAuth(codingAuthority(workId, paths).coding),
-      ) !== JSON.stringify(selectedAuth)
+      JSON.stringify(selectedCodingAuth(coding)) !==
+      JSON.stringify(selectedAuth)
     )
       throw new Error('Selected credential changed before launch.');
     const current = requireCodingRun(run.runId, paths);

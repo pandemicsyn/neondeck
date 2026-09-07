@@ -1094,3 +1094,21 @@ Use this format:
   consumed and no replacement judge is admitted.
 - Follow-up: Use the existing explicit planning/release/consent flow. Same-grant
   budget extension and an intervention override action remain outside this slice.
+
+## 2026-09-06 — Expand Slice 4 To Pluggable OpenCode And Kilo Code Adapters
+
+- Roadmap item: Software Factory Slice 4 / additional coding CLIs.
+- Decision: The operator expanded the OpenCode-only slice to include Kilo Code
+  and explicitly requested easy addition of future CLIs. Plan a small typed
+  adapter registry over the existing coding run and execution-host contracts.
+  Keep factory phases and delivery/progress supervision independent of CLI choice.
+- Reuse: Adapt existing Kilo invocation, event and session helpers where suitable;
+  do not run its separate task supervisor as a second owner of a factory attempt.
+  Preserve standalone Kilo handoff behavior and the existing Codex default.
+- Limits: CLI installation is operator-reported, not proof of target-host
+  readiness, protocol compatibility or live acceptance. Validate those before use.
+  Keep managed servers/SDKs, ACP and dynamic third-party plugins deferred; remote
+  execution stays Slice 6 and Linear stays Slice 5. No new merge gate is added.
+- Follow-up: Implement and verify the [Slice 4 plan](factory/SLICE_4_IMPLEMENTATION_PLAN.md)
+  with independent reviews, the existing stacked-PR process and per-harness live
+  acceptance. This entry records planned scope, not completed implementation.

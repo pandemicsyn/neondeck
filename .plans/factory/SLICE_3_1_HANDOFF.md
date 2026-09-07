@@ -1,8 +1,11 @@
 # Slice 3.1 implementation handoff
 
-Status: published as a draft stack, September 6, 2026; **not merged**.
-Official stack #405 contains draft PRs [#403](https://github.com/pandemicsyn/neondeck/pull/403)
-and [#404](https://github.com/pandemicsyn/neondeck/pull/404). Real model/Codex/GitHub acceptance is
+Status: **merged**, September 6, 2026. The operator authorized atomic squash merge
+of official stack #405: [#403](https://github.com/pandemicsyn/neondeck/pull/403)
+and [#404](https://github.com/pandemicsyn/neondeck/pull/404), ending at
+`00c3e3e565a63ebc24411eabdf34f23d94efe6ef`. The merged tree matches reviewed head
+`8fbb0b04e7ed8c2705dde4fd27bafd05c4181981`. Both final PR heads passed all nine
+checks with no review feedback or unresolved threads. Real model/Codex/GitHub acceptance is
 **NOT RUN**. Source base: merged Slice 3, `a897aa06dde6640ad8c8bf83b1683534d252ded5`.
 
 ## Delivery contract
@@ -37,7 +40,8 @@ Agents edit disjoint source sets in the shared checkout and do not create PRs.
 | 1     | `agent/factory-s31-01-admission` | Poincare: contracts/admission; Raman: history/Flue reviewer; Franklin: coordinator/recovery; Leibniz: integrated runtime tests |
 | 2     | `agent/factory-s31-03-workbench` | Halley: readable evidence, explicit planning, accessible operator states and screenshots                                       |
 
-The published linear bases and draft status were verified:
+The following records the earlier published review checkpoint; final merge status
+and the final documentation-only head are recorded above:
 
 | PR                                                       | Base                             | Reviewed head                              |
 | -------------------------------------------------------- | -------------------------------- | ------------------------------------------ |
@@ -58,7 +62,8 @@ PR #404 at `9a6023fe` also passed all nine checks, including **Validate npm pack
 No PR feedback or submitted reviews were present at this checkpoint. The linked
 PRs are authoritative for current results. These results describe those revisions,
 not a future documentation commit. CI completion is separate from merge approval;
-both PRs remain drafts and merge has not been authorized.
+both PRs were drafts at that checkpoint. The later operator authorization and
+verified merge supersede that status without changing live acceptance obligations.
 
 Backend admission and assessment ship as one complete layer because requiring a
 progress proof without its producer and recovery path would break existing repairs
@@ -84,7 +89,7 @@ Keep credentials, private addresses and raw live evidence out of this public rep
 - [x] Both static reviewers cleared the relocation and publication documentation.
 - [x] PR #403 CI: all nine checks pass on `5cbc5882`.
 - [x] PR #404 CI: all nine checks pass on `9a6023fe`.
-- [ ] Obtain explicit merge authorization; none has been granted.
+- [x] Operator authorized merge; both PRs merged through `00c3e3e5` after final checks.
 
 The full verification run on `87a3bbe0` passed lint, import layers, database
 migration validation and all type checks, then passed 2,351 unit, 47 serial Git and

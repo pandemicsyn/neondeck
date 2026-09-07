@@ -1,6 +1,10 @@
 import * as v from 'valibot';
 import {
-  codingRunSnapshotSchema,
+  codingAdapterIdentitySchema,
+  codingAdapterMetadataSchema,
+} from './coding-adapters';
+import {
+  codingPublicRunSnapshotSchema,
   codingRunStatusSchema,
   codingCandidateEvidenceSchema,
   codingRunEventSchema,
@@ -9,6 +13,7 @@ const label = v.pipe(v.string(), v.trim(), v.minLength(1), v.maxLength(4096));
 const absolute = v.pipe(label, v.regex(/^\//));
 export const factoryCodingConfigSchema = v.strictObject({
   enabled: v.optional(v.boolean(), false),
+  adapter: v.optional(v.nullable(codingAdapterIdentitySchema), null),
   executable: v.optional(v.nullable(absolute), null),
   model: v.optional(v.nullable(label), null),
   auth: v.optional(
@@ -47,13 +52,27 @@ export const factoryCodingReadinessSchema = v.strictObject({
   supportedVersion: label,
   installedVersion: v.nullable(label),
   blockers: v.array(label),
+  authentication: v.optional(v.picklist(['unavailable', 'unverified'])),
+  status: v.optional(
+    v.picklist([
+      'disabled',
+      'unconfigured',
+      'host-unsupported',
+      'adapter-unavailable',
+      'credential-unavailable',
+      'executable-unresolved',
+      'unsupported',
+      'ready',
+      'busy',
+    ]),
+  ),
 });
 export const factoryCodingRunSchema = v.strictObject({
   record: v.strictObject({
     runId: label,
     attemptId: label,
     version: v.number(),
-    snapshot: codingRunSnapshotSchema,
+    snapshot: codingPublicRunSnapshotSchema,
     status: codingRunStatusSchema,
     workspace: v.nullable(v.strictObject({ worktreeId: label })),
     providerSessionId: v.nullable(label),
@@ -85,6 +104,7 @@ export const factoryCodingStateSchema = v.strictObject({
   config: factoryCodingConfigSchema,
   configFingerprint: label,
   readiness: factoryCodingReadinessSchema,
+  adapters: v.optional(v.array(codingAdapterMetadataSchema), []),
 });
 export const factoryCodingAttentionSchema = v.strictObject({
   workId: label,

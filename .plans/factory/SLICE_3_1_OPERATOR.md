@@ -1,11 +1,11 @@
 # Slice 3.1 operator flow: progress review before repair
 
-Status: published as draft PRs [#403](https://github.com/pandemicsyn/neondeck/pull/403)
-and [#404](https://github.com/pandemicsyn/neondeck/pull/404) in stack #405;
-**not merged**. Source and pre-publication documentation static reviews and the
-manager post-publication architecture review are clean. The reviewed fixture relocation is complete. CI is complete: all nine checks pass on each PR, #403 at `5cbc5882` and
-#404 at `9a6023fe`. These results apply to those revisions; linked PRs show current status. Merge has not been authorized. Use the [handoff](SLICE_3_1_HANDOFF.md) for verification and review
-status. Real model/Codex/GitHub acceptance is **NOT RUN**; model judgment quality
+Status: **merged**, September 6, 2026, through PRs
+[#403](https://github.com/pandemicsyn/neondeck/pull/403) and
+[#404](https://github.com/pandemicsyn/neondeck/pull/404), ending at `00c3e3e5`.
+Independent static reviews, manager architecture review and all final PR checks
+were clean. Use the [handoff](SLICE_3_1_HANDOFF.md) for verification and review
+history. Real model/Codex/GitHub acceptance is **NOT RUN**; model judgment quality
 remains unevaluated in the [acceptance ledger](SLICE_3_1_ACCEPTANCE.md).
 
 ## Where progress review runs

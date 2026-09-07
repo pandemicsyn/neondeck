@@ -1,5 +1,7 @@
 import {
   codingSnapshot,
+  codingConfig,
+  codingDigest,
   assertCodingAuthoritySnapshot,
 } from './coding-context';
 import {
@@ -8,6 +10,7 @@ import {
   latestCodingRunForWorkItem,
 } from '../coding-runs';
 import { readFileSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { execFileSync } from 'node:child_process';
 import * as runtimeHome from '../../runtime-home';
 import * as runtimeFiles from '../../runtime-home/files';
@@ -332,6 +335,9 @@ it('writeback failure never blocks valid human release and queue wording is trut
       sourceVersion: d.source.version,
       repoFingerprint: d.repoFingerprint,
       policyVersion: 'isolated-local-v1',
+      expectedCodingConfigFingerprint: codingDigest(
+        codingConfig(setup.paths).coding,
+      ),
     },
     human,
     setup.paths,
@@ -656,6 +662,9 @@ it('inbound before receipt is held then confirmed without invalidating released 
       sourceVersion: d.source.version,
       repoFingerprint: d.repoFingerprint,
       policyVersion: 'isolated-local-v1',
+      expectedCodingConfigFingerprint: codingDigest(
+        codingConfig(setup.paths).coding,
+      ),
     },
     human,
     setup.paths,
@@ -944,6 +953,9 @@ it('repo context invalidates public released wording and the previously approved
       sourceVersion: d.source.version,
       repoFingerprint: d.repoFingerprint,
       policyVersion: 'isolated-local-v1',
+      expectedCodingConfigFingerprint: codingDigest(
+        codingConfig(setup.paths).coding,
+      ),
     },
     human,
     setup.paths,
@@ -1094,6 +1106,9 @@ it.each(['manual', 'github'] as const)(
       sourceVersion: d.source.version,
       repoFingerprint: d.repoFingerprint,
       policyVersion: 'isolated-local-v1',
+      expectedCodingConfigFingerprint: codingDigest(
+        codingConfig(setup.paths).coding,
+      ),
     };
     releaseFactoryWork(id, release, human, setup.paths);
     let question: ReturnType<typeof approval> | undefined;
@@ -1214,6 +1229,9 @@ it.each(['manual', 'github'] as const)(
         sourceVersion: d.source.version,
         repoFingerprint: d.repoFingerprint,
         policyVersion: 'isolated-local-v1',
+        expectedCodingConfigFingerprint: codingDigest(
+          codingConfig(setup.paths).coding,
+        ),
       },
       human,
       setup.paths,
@@ -1332,6 +1350,9 @@ it('revocation is durable before registry replacement and survives a failed writ
       sourceVersion: d.source.version,
       repoFingerprint: d.repoFingerprint,
       policyVersion: 'isolated-local-v1',
+      expectedCodingConfigFingerprint: codingDigest(
+        codingConfig(setup.paths).coding,
+      ),
     },
     human,
     setup.paths,
@@ -1370,6 +1391,10 @@ it('revocation is durable before registry replacement and survives a failed writ
 });
 
 function prepareCodingRelease(requestKey = 'coding-release') {
+  // Metadata-only fixture: admission now pins a real file identity, but these
+  // writeback tests never launch a coding CLI. Unexpected execution fails.
+  const executable = join(setup.paths.home, 'private-codex-fixture');
+  writeFileSync(executable, '#!/bin/sh\nexit 1\n', { mode: 0o700 });
   execFileSync('git', ['init', '-b', 'main', setup.paths.home], {
     stdio: 'ignore',
   });
@@ -1402,7 +1427,7 @@ function prepareCodingRelease(requestKey = 'coding-release') {
         enabled: true,
         coding: {
           enabled: true,
-          executable: '/mock/codex',
+          executable,
           model: 'private-model',
           auth: { kind: 'api-key', env: 'FACTORY_TEST_TOKEN' },
         },
@@ -1421,6 +1446,9 @@ function prepareCodingRelease(requestKey = 'coding-release') {
       sourceVersion: d.source.version,
       repoFingerprint: d.repoFingerprint,
       policyVersion: 'isolated-local-v1',
+      expectedCodingConfigFingerprint: codingDigest(
+        codingConfig(setup.paths).coding,
+      ),
     },
     human,
     setup.paths,

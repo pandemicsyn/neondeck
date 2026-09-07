@@ -22,6 +22,8 @@ import { connection, issue } from '../modules/factory/testing/github-fixture';
 import {
   factoryCodingConfigSchema,
   factoryCodingPageSchema,
+  factoryCodingRunSchema,
+  factoryCodingEventsSchema,
 } from '../../shared/factory-coding';
 import {
   prepareSchema,
@@ -59,6 +61,9 @@ import {
   codingConfig,
   codingDigest,
   codingSnapshot,
+  assertCodingAuthoritySnapshot,
+  frozenCodingConfig,
+  assertPinnedCodingExecutable,
 } from '../modules/factory/coding-context';
 import {
   factoryCodingRuns,
@@ -142,6 +147,10 @@ beforeEach(async () => {
   git(repo, 'commit', '-m', 'initial');
   await ensureRuntimeHome(paths);
   writeFileSync(
+    join(root, 'synthetic-codex'),
+    'synthetic CLI identity fixture',
+  );
+  writeFileSync(
     paths.config,
     JSON.stringify({
       version: 1,
@@ -149,7 +158,7 @@ beforeEach(async () => {
         enabled: true,
         coding: {
           enabled: true,
-          executable: '/mock/codex',
+          executable: join(root, 'synthetic-codex'),
           model: 'test-model',
           auth: { kind: 'api-key', env: 'FACTORY_TEST_KEY' },
         },
@@ -252,6 +261,7 @@ function release(key = 'one', initial?: FactoryDetail) {
       sourceVersion: d.source.version,
       repoFingerprint: d.repoFingerprint,
       policyVersion: 'isolated-local-v1',
+      expectedCodingConfigFingerprint: codingDigest(codingConfig(paths).coding),
     },
     actor,
     paths,
@@ -268,6 +278,300 @@ function expireLocks() {
   }
 }
 describe('factory coding bridge', () => {
+  it('keeps executable identity private in run pages, details, and events', async () => {
+    const work = release();
+    const run = (await dispatchCodingWork(work.work.id, paths, host, ready))!;
+    const identity = run.snapshot.harness.executableIdentity!;
+    expect(identity.sha256).toMatch(/^[a-f0-9]{64}$/);
+    const routes = createFactoryCodingRoutes(paths);
+    const page = v.parse(
+      factoryCodingPageSchema,
+      await (await routes.request('/runs')).json(),
+    );
+    const detail = v.parse(
+      factoryCodingRunSchema,
+      await (await routes.request(`/runs/${run.runId}`)).json(),
+    );
+    const events = v.parse(
+      factoryCodingEventsSchema,
+      await (await routes.request(`/runs/${run.runId}/events`)).json(),
+    );
+    const { provider, version, model } = run.snapshot.harness;
+    for (const projection of [
+      page.items[0].run,
+      detail,
+      publicCodingRun(run, paths),
+    ]) {
+      expect(projection.record.snapshot.harness).toEqual({
+        provider,
+        version,
+        model,
+      });
+      expect(JSON.stringify(projection)).not.toContain(identity.sha256);
+      expect(
+        v.parse(factoryCodingRunSchema, projection).record.snapshot.harness,
+      ).toEqual({ provider, version, model });
+      expect(
+        v.safeParse(factoryCodingRunSchema, {
+          ...projection,
+          record: {
+            ...projection.record,
+            snapshot: {
+              ...projection.record.snapshot,
+              harness: run.snapshot.harness,
+            },
+          },
+        }).success,
+      ).toBe(false);
+    }
+    expect(events.items.length).toBeGreaterThan(0);
+    expect(JSON.stringify(events)).not.toContain(identity.sha256);
+    expect(JSON.stringify(events)).not.toContain(identity.canonical);
+    expect(
+      getCodingRun(run.runId, paths)?.snapshot.harness.executableIdentity,
+    ).toEqual(identity);
+    expect(codingConfig(paths).coding.executable).toBe(
+      join(root, 'synthetic-codex'),
+    );
+  });
+  it('retains stat-only historical run evidence without granting fresh execution authority', async () => {
+    const work = release();
+    const run = (await dispatchCodingWork(work.work.id, paths, host, ready))!;
+    const { sha256: _digest, ...statOnly } =
+      run.snapshot.harness.executableIdentity!;
+    const snapshot = {
+      ...run.snapshot,
+      harness: { ...run.snapshot.harness, executableIdentity: statOnly },
+    };
+    rmSync(join(root, 'synthetic-codex'));
+    await expect(assertPinnedCodingExecutable(snapshot)).rejects.toThrow(
+      'no original executable content digest',
+    );
+    expect(
+      publicCodingRun({ ...run, snapshot }, paths).record.snapshot.harness,
+    ).toEqual({
+      provider: run.snapshot.harness.provider,
+      version: run.snapshot.harness.version,
+      model: run.snapshot.harness.model,
+    });
+  });
+  it('pins the default Codex version and freezes admitted configuration', async () => {
+    const work = release();
+    const run = (await dispatchCodingWork(work.work.id, paths, host, ready))!;
+    expect(run.host?.hostId).toBe('local-cli');
+    expect(prepared?.config.adapter).toEqual({
+      id: 'codex',
+      contractVersion: 1,
+      cliVersion: 'codex-cli 0.150.1',
+    });
+    expect(prepared?.expectedExecutableIdentity).toEqual(
+      run.snapshot.harness.executableIdentity,
+    );
+    expect(run.snapshot.harness.executableIdentity).toBeDefined();
+    const original = frozenCodingConfig(run.snapshot);
+    updateFactoryConfig(
+      {
+        coding: {
+          ...original,
+          model: 'different-model',
+          adapter: {
+            id: 'kilo',
+            contractVersion: 1,
+            cliVersion: 'different-version',
+          },
+          executable: '/synthetic/unselected-cli',
+          auth: { kind: 'auth-json', env: 'UNSELECTED_AUTH' },
+          path: '/synthetic/new-path',
+          wallTimeMs: 1000,
+          maxOutputBytes: 1024,
+        },
+      },
+      paths,
+    );
+    expect(frozenCodingConfig(run.snapshot)).toEqual(original);
+    expect(assertCodingAuthoritySnapshot(run.snapshot, paths).coding).toEqual(
+      original,
+    );
+    expect(getCodingRun(run.runId, paths)?.cancelRequestedAt).toBeNull();
+    expect((await reconcileCodingRun(run.runId, paths, host)).status).toBe(
+      'running',
+    );
+    finished = true;
+    expect((await reconcileCodingRun(run.runId, paths, host)).status).toBe(
+      'candidate',
+    );
+    expect(host.cancelLocalAttempt).not.toHaveBeenCalled();
+    expect(host.launchLocalAttempt).toHaveBeenCalledTimes(1);
+  });
+  it('keeps the initial attempt frozen when defaults change after reservation during preparation', async () => {
+    const work = release();
+    const original = codingConfig(paths).coding;
+    const prepare = host.prepareLocalAttempt;
+    host.prepareLocalAttempt = vi.fn(async (input) => {
+      const handle = await prepare(input);
+      updateFactoryConfig(
+        {
+          coding: {
+            ...original,
+            model: 'future-model',
+            auth: { kind: 'api-key', env: 'FUTURE_KEY' },
+          },
+        },
+        paths,
+      );
+      return handle;
+    });
+    const run = (await dispatchCodingWork(work.work.id, paths, host, ready))!;
+    expect(run.status).toBe('running');
+    expect(run.cancelRequestedAt).toBeNull();
+    expect(prepared?.config.model).toBe(original.model);
+    expect(prepared?.selectedAuth).toEqual({
+      kind: 'api-key',
+      value: 'synthetic-auth-only',
+    });
+    expect(host.launchLocalAttempt).toHaveBeenCalledTimes(1);
+    expect(host.cancelLocalAttempt).not.toHaveBeenCalled();
+  });
+  it.each(['reviewed', 'historical-null'] as const)(
+    'rechecks %s defaults after asynchronous preflight before reservation',
+    async (releaseKind) => {
+      const work = release();
+      if (releaseKind === 'historical-null') {
+        const { codingConfigFingerprint: _fingerprint, ...historical } =
+          work.releases[0];
+        dbRun(paths, (db) =>
+          db
+            .prepare('UPDATE factory_releases SET record=? WHERE id=?')
+            .run(JSON.stringify(historical), historical.id),
+        );
+        expect(
+          getFactoryWork(work.work.id, paths).releases[0]
+            .codingConfigFingerprint,
+        ).toBeNull();
+        expect(codingConfig(paths).coding.adapter).toBeNull();
+      }
+      const inspect = codingRuns.inspectCodingExecutableIdentity;
+      const probe = vi
+        .spyOn(codingRuns, 'inspectCodingExecutableIdentity')
+        .mockImplementationOnce(async (executable) => {
+          const identity = await inspect(executable);
+          updateFactoryConfig(
+            {
+              coding: {
+                ...codingConfig(paths).coding,
+                model: 'changed-during-preflight',
+              },
+            },
+            paths,
+          );
+          return identity;
+        });
+      try {
+        expect(
+          await dispatchCodingWork(work.work.id, paths, host, ready),
+        ).toBeNull();
+        expect(listCodingRuns({}, paths)).toHaveLength(0);
+        expect(host.prepareLocalAttempt).not.toHaveBeenCalled();
+        expect(readCodingAttention(work.work.id, paths)?.reason).toContain(
+          releaseKind === 'historical-null'
+            ? 'changed during admission preflight'
+            : 'since human release',
+        );
+        expect(
+          getFactoryWork(work.work.id, paths).releases[0]
+            .codingConfigFingerprint,
+        ).toBe(
+          releaseKind === 'historical-null'
+            ? null
+            : work.releases[0].codingConfigFingerprint,
+        );
+      } finally {
+        probe.mockRestore();
+      }
+    },
+  );
+  it('treats explicit factory disable as a durable stop even when defaults are later restored', async () => {
+    const work = release();
+    const run = (await dispatchCodingWork(work.work.id, paths, host, ready))!;
+    updateFactoryConfig({ enabled: false }, paths);
+    expect(getCodingRun(run.runId, paths)?.cancelRequestedAt).toBeTruthy();
+    updateFactoryConfig({ enabled: true }, paths);
+    expect(getCodingRun(run.runId, paths)?.cancelRequestedAt).toBeTruthy();
+    await reconcileCodingRun(run.runId, paths, host);
+    expect(host.cancelLocalAttempt).toHaveBeenCalled();
+  });
+  it('blocks queued configuration drift with retained attention before host allocation', async () => {
+    const work = release();
+    updateFactoryConfig(
+      {
+        coding: {
+          ...codingConfig(paths).coding,
+          model: 'changed-after-release',
+        },
+      },
+      paths,
+    );
+    expect(
+      await dispatchCodingWork(work.work.id, paths, host, ready),
+    ).toBeNull();
+    expect(readCodingAttention(work.work.id, paths)?.reason).toContain(
+      'since human release',
+    );
+    expect(listCodingRuns({}, paths)).toHaveLength(0);
+    expect(host.prepareLocalAttempt).not.toHaveBeenCalled();
+  });
+  it('normalizes historical config and release records without authorizing a new adapter', async () => {
+    const work = release();
+    const snapshot = await codingSnapshot(
+      work.work.id,
+      'codex-cli 0.150.1',
+      paths,
+    );
+    const { adapter: _adapter, ...legacyCoding } = codingConfig(paths).coding;
+    const legacySnapshot = {
+      ...snapshot,
+      policySnapshot: JSON.stringify({
+        release: work.releases[0].policy,
+        coding: legacyCoding,
+      }),
+    };
+    const { codingConfigFingerprint: _fingerprint, ...legacyRelease } =
+      work.releases[0];
+    dbRun(paths, (db) =>
+      db
+        .prepare('UPDATE factory_releases SET record=? WHERE id=?')
+        .run(JSON.stringify(legacyRelease), legacyRelease.id),
+    );
+    expect(() =>
+      assertCodingAuthoritySnapshot(legacySnapshot, paths),
+    ).not.toThrow();
+    const { executableIdentity: _identity, ...legacyHarness } =
+      legacySnapshot.harness;
+    await expect(
+      assertPinnedCodingExecutable({
+        ...legacySnapshot,
+        harness: legacyHarness,
+      }),
+    ).rejects.toThrow(
+      'legacy coding attempt has no original executable identity',
+    );
+    updateFactoryConfig(
+      {
+        coding: {
+          ...codingConfig(paths).coding,
+          adapter: { id: 'opencode', contractVersion: 1, cliVersion: '1.0.0' },
+        },
+      },
+      paths,
+    );
+    expect(
+      await dispatchCodingWork(work.work.id, paths, host, ready),
+    ).toBeNull();
+    expect(readCodingAttention(work.work.id, paths)?.reason).toContain(
+      'Legacy release',
+    );
+    expect(host.prepareLocalAttempt).not.toHaveBeenCalled();
+  });
   it('claims preparation once across concurrent controllers and replay', async () => {
     const work = release();
     const results = await Promise.allSettled([
@@ -675,7 +979,7 @@ describe('factory coding bridge', () => {
     );
     const work = release();
     const probe = vi
-      .spyOn(codingRuns, 'inspectCodexReadiness')
+      .spyOn(codingRuns, 'inspectCodingAdapterReadiness')
       .mockResolvedValue({
         ready: false,
         version: '',

@@ -24,10 +24,12 @@ export function invalidateFactoryConfig(
   after: AppConfig,
   paths: RuntimePaths,
 ) {
+  // Defaults govern future admission. Only explicit disable switches stop
+  // admitted execution; persisted cancellation is never undone by re-enabling.
   if (
-    before.factory?.enabled !== after.factory?.enabled ||
-    JSON.stringify(before.factory?.coding) !==
-      JSON.stringify(after.factory?.coding)
+    (before.factory?.enabled === true && after.factory?.enabled !== true) ||
+    (before.factory?.coding?.enabled === true &&
+      after.factory?.coding?.enabled !== true)
   )
     cancelActiveFactoryCoding(paths);
   if (

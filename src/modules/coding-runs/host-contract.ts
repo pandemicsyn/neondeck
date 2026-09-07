@@ -1,5 +1,9 @@
 import * as v from 'valibot';
 import { isAbsolute } from 'node:path';
+import {
+  codingAdapterIdentitySchema,
+  codingExecutableIdentitySchema,
+} from '../../../shared/coding-adapters.ts';
 
 const text = v.pipe(v.string(), v.minLength(1), v.maxLength(4096));
 const absolute = v.pipe(text, v.check(isAbsolute, 'Expected absolute path'));
@@ -19,6 +23,7 @@ export const workspaceSchema = v.strictObject({
   baseSha: v.pipe(v.string(), v.regex(/^[a-f0-9]{40}$/)),
 });
 export const configSchema = v.strictObject({
+  adapter: v.optional(codingAdapterIdentitySchema),
   executable: absolute,
   model: text,
   sandbox: v.picklist(['read-only', 'workspace-write']),
@@ -51,6 +56,7 @@ export const prepareSchema = v.strictObject({
   config: configSchema,
   testPauseBeforeSpawn: v.optional(v.boolean()),
   prompt: v.pipe(v.string(), v.minLength(1), v.maxLength(1024 * 1024)),
+  expectedExecutableIdentity: v.optional(codingExecutableIdentitySchema),
   selectedAuth: v.optional(
     v.variant('kind', [
       v.strictObject({
@@ -64,16 +70,29 @@ export const prepareSchema = v.strictObject({
     ]),
   ),
 });
-export const manifestSchema = v.strictObject({
-  version: v.literal(1),
-  attemptId: text,
-  cliVersion: text,
-  testPauseBeforeSpawn: v.optional(v.boolean()),
-  directory: absolute,
-  ownedWorktree: workspaceSchema,
-  config: configSchema,
-  nonce: v.pipe(v.string(), v.regex(/^[a-f0-9]{32}$/)),
-});
+export const manifestSchema = v.pipe(
+  v.strictObject({
+    version: v.union([v.literal(1), v.literal(2)]),
+    attemptId: text,
+    cliVersion: text,
+    executableIdentity: v.optional(codingExecutableIdentitySchema),
+    testPauseBeforeSpawn: v.optional(v.boolean()),
+    directory: absolute,
+    ownedWorktree: workspaceSchema,
+    config: configSchema,
+    nonce: v.pipe(v.string(), v.regex(/^[a-f0-9]{32}$/)),
+  }),
+  v.check(
+    (manifest) =>
+      (manifest.version === 1 &&
+        (!manifest.config.adapter || manifest.config.adapter.id === 'codex')) ||
+      (manifest.version === 2 &&
+        manifest.config.adapter !== undefined &&
+        manifest.executableIdentity !== undefined &&
+        manifest.cliVersion === manifest.config.adapter.cliVersion),
+    'Inconsistent versioned adapter manifest',
+  ),
+);
 export const identitySchema = v.strictObject({
   pid: positive(2 ** 31 - 1),
   pgid: positive(2 ** 31 - 1),

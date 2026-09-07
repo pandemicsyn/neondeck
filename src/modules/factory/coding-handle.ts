@@ -9,7 +9,11 @@ export function codingHandle(run: CodingRunRecord, paths: RuntimePaths) {
     'coding-attempts',
     run.attemptId,
   );
-  if (run.host?.hostId !== 'local-codex' || run.host.jobId !== directory)
+  if (
+    !run.host ||
+    !['local-codex', 'local-cli'].includes(run.host.hostId) ||
+    run.host.jobId !== directory
+  )
     throw new Error('Stored local host identity does not match attempt.');
   return {
     directory,
