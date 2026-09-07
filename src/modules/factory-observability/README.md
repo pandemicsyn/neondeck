@@ -50,15 +50,24 @@ source reconciliation before task admission may have no work ID. Timings describ
 app call boundaries, not independent provider CPU time; nested durations overlap.
 
 The local span read API returns raw local correlation IDs for internal diagnosis;
-it is not the public export format. Explicit export uses the strict
-`FactoryDiagnosticExport` snapshot in `shared/factory-diagnostics.ts`, with
-pseudonymized identifiers and nested, bounded span summaries. Run
+it is not the public export format. This foundation layer (PR #415) does not
+provide diagnostics export. The dependent layers provide these surfaces:
+
+- PR #416 provides the strict `FactoryDiagnosticExport` snapshot schema in
+  `shared/factory-diagnostics.ts` and the diagnostics API, with pseudonymized
+  identifiers and nested, bounded span summaries.
+- PR #417 registers the diagnostics preview and export CLI commands.
+- PR #418 provides the dashboard diagnostics preview and download UI.
+
+With the complete stack installed, run
 `neondeck factory diagnostics preview <workId>` to inspect/save the canonical JSON,
 then `neondeck factory diagnostics export <previewFile> <outputFile>` to validate
 and copy exactly those previewed bytes to a new local file. Dashboard preview and
-download use the same redacted snapshot. There is no JSONL file export, automatic
-export or upload. The JSON-line console logger described below is a separate
-operational output. Remote OpenTelemetry/vendor integration is outside this slice.
+download use the same redacted snapshot. These instructions require the dependent
+layers; they are not available from the foundation alone. There is no JSONL file
+export, automatic export or upload. The JSON-line console logger described below
+is a separate operational output. Remote OpenTelemetry/vendor integration is
+outside this slice.
 
 Operational logger: completed failed span transitions emit one JSON warning to
 stderr (`factory.operation.failed`) with fixed operation, safe error class/code,
