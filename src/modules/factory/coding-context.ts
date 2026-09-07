@@ -17,6 +17,7 @@ import {
 } from '../../../shared/coding-runs';
 import {
   factoryCodingConfigSchema,
+  effectiveFactoryCodingConfig,
   type FactoryCodingConfig,
 } from '../../../shared/factory-coding';
 import {
@@ -26,7 +27,6 @@ import {
   type RuntimePaths,
 } from '../../runtime-home';
 import { buildMemoryPromptSnapshotSync } from '../memory';
-import { runtimeSkillSessionSnapshotsSync } from '../runtime';
 import { inspectCodingExecutableIdentity } from '../coding-runs';
 import { getFactoryWork } from './service';
 import { gitAsync } from './repo-reader';
@@ -51,7 +51,7 @@ export function codingConfig(paths: RuntimePaths) {
   const config = readRuntimeJsonSync(paths.config, parseAppConfig);
   return {
     factoryEnabled: config.factory?.enabled ?? false,
-    coding: v.parse(factoryCodingConfigSchema, config.factory?.coding ?? {}),
+    coding: effectiveFactoryCodingConfig(config.factory?.coding ?? {}),
   };
 }
 export function codingAuthority(workId: string, paths: RuntimePaths) {
@@ -88,10 +88,9 @@ export function assertReleasedCodingConfig(
 ) {
   const { release, coding } = codingAuthority(workId, paths);
   if (release.codingConfigFingerprint === null) {
-    if (coding.adapter !== null)
-      throw new CodingPreflightError(
-        'Legacy release permits only the original default Codex selection. Review coding settings and release a refreshed brief.',
-      );
+    throw new CodingPreflightError(
+      'Legacy release has no reviewed repository skill policy. Review coding settings and release a refreshed brief.',
+    );
   } else if (
     !matchesReleasedCodingConfig(release.codingConfigFingerprint, coding)
   ) {
@@ -168,10 +167,6 @@ export async function freezeCodingContext(
   const memory = buildMemoryPromptSnapshotSync(paths, {
     repoId: current.work.repoId,
   });
-  const skills = runtimeSkillSessionSnapshotsSync(paths).map((s) => {
-    const snapshot = v.parse(skillSchema, s);
-    return { snapshot, hash: codingDigest(snapshot) };
-  });
   const repoInstructions = await pinnedInstructions(
     current.repoContext!.path,
     baseSha,
@@ -187,7 +182,11 @@ export async function freezeCodingContext(
       instructions: memory.instructions,
       hash: codingDigest(memory.instructions),
     },
-    skills,
+    // Coding agents use repository-native skills. No factory-specific skill is
+    // requested today, so new contexts never discover Neon's global library.
+    // Retain the v1 skill schema/validation for already-admitted attempts and
+    // repairs: their frozen payloads must not be silently rewritten.
+    skills: [],
     environmentPolicy:
       'Fresh session, private harness home and scratch. No port allocator: use OS-assigned ephemeral ports and stop all child servers. No push, PR, merge or deploy. Run trusted repository setup within the configured workspace-write permission profile.',
   };
@@ -195,7 +194,7 @@ export async function freezeCodingContext(
   const serialized = JSON.stringify({ ...body, hash: codingDigest(body) });
   if (serialized.length > 95000)
     throw new CodingPreflightError(
-      'Coding context exceeds the 95,000-character budget. Reduce selected skill/memory inputs, then deliberately refresh and release the brief.',
+      'Coding context exceeds the 95,000-character budget. Reduce repository context/memory inputs, then deliberately refresh and release the brief.',
     );
   return v.parse(bounded, serialized);
 }
@@ -246,7 +245,7 @@ export async function codingSnapshot(
   } catch (error) {
     if (error instanceof CodingPreflightError) throw error;
     throw new CodingPreflightError(
-      'Cannot freeze repository instructions and selected context. Check tracked AGENTS.md and skill/memory inputs, then deliberately refresh and release the brief.',
+      'Cannot freeze repository instructions and selected context. Check tracked AGENTS.md and repository context/memory inputs, then deliberately refresh and release the brief.',
     );
   }
   const snapshot = v.parse(codingRunSnapshotSchema, {
@@ -314,7 +313,7 @@ export function assertCodingAuthoritySnapshot(
       ) ||
     JSON.stringify(repo) !== snapshot.repoSnapshot ||
     (release.codingConfigFingerprint === null
-      ? coding.adapter !== null
+      ? coding.adapter !== null || coding.repositorySkills !== undefined
       : !matchesReleasedCodingConfig(
           release.codingConfigFingerprint,
           coding,

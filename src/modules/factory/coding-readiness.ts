@@ -50,6 +50,9 @@ export function localCodingConfig(
       : undefined);
   return {
     ...(adapter ? { adapter } : {}),
+    ...(config.repositorySkills
+      ? { repositorySkills: config.repositorySkills }
+      : {}),
     executable: config.executable,
     model: config.model,
     path: config.path,

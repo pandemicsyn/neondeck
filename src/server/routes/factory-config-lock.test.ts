@@ -7,8 +7,7 @@ import {
 } from 'node:fs';
 import { Hono } from 'hono';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
-import * as v from 'valibot';
-import { factoryCodingConfigSchema } from '../../../shared/factory-coding';
+import { effectiveFactoryCodingConfig } from '../../../shared/factory-coding';
 import * as runtimeFiles from '../../runtime-home/files';
 import {
   connection,
@@ -63,7 +62,7 @@ afterEach(() => {
   vi.restoreAllMocks();
   setup.dispose();
 });
-const coding = v.parse(factoryCodingConfigSchema, {});
+const coding = effectiveFactoryCodingConfig({});
 const mutations = [
   { path: '/factory/config', body: { enabled: false } },
   {

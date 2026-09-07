@@ -48,6 +48,7 @@ The first production coding admission also exposed the 95,000-character frozen
 context cap. Current assembly includes every active non-built-in runtime skill and
 its supporting files, serializes binary resources as base64, and injects that JSON
 into the prompt. This is an application snapshot limit rather than a model token
-limit. A follow-up should select task-relevant skills, separate retained artifacts
-from prompt content, and expose a pre-release size breakdown and recovery path.
-Context-budget redesign remains open and is not part of worker lifecycle wiring.
+limit. The operator clarified that coding CLIs should discover repository-native
+skills themselves. The [coding skill follow-up](CODING_REPO_SKILLS.md) removes
+automatic global skill injection; no factory-specific skill is currently needed.
+Broader context-budget diagnostics remain open, separate from worker lifecycle wiring.

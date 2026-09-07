@@ -1312,3 +1312,29 @@ Use this format:
 - Follow-up: The six-case Linux adapter matrix passed, and both independent
   reviewers cleared the fixture delta. This direct guard assertion is not a new claim of full
   per-harness stale-repair-admission coverage.
+
+## 2026-09-07 - Coding uses native repository skills
+
+- Roadmap item: Factory coding handoff and operator acceptance.
+- Decision: Remove implicit global runtime skill injection for new coding contexts;
+  rely on native CLI repository discovery. No factory-specific skill is injected.
+  Historical attempts retain admitted payloads and integrity checks; discovery
+  policy is explicitly bound to new releases and manifests. Repairs cannot silently
+  switch policy. Native CLI link behavior is trusted with repository content; no
+  bespoke recursive supporting-file validator is added.
+- Reason: The operator explicitly requested repository skills after a small task
+  exceeded the snapshot cap due to unrelated global skill supporting files.
+- Follow-up: Keep the existing cap. Broader prompt/artifact budgeting and pre-release
+  size diagnostics remain separate work. Native CLI discovery compatibility and
+  review evidence are tracked in `factory/CODING_REPO_SKILLS.md`; live acceptance
+  is still required after upgrade. Planning/chat global skills are unchanged.
+
+## 2026-09-07 - Planning screenshot fixture follow-up
+
+- Roadmap item: Factory operator rehearsal and planning usability.
+- Decision: Fix the two PR review findings in the synthetic manual fixture:
+  await planning preparation and create the configured `main` branch explicitly.
+- Reason: The new async baseline lookup otherwise breaks screenshot setup.
+- Follow-up: Manual startup/HTTP/shutdown smoke passed. A preexisting GitHub-only
+  fixture mode calls an unavailable `factory.dbRun` export; that separate fixture
+  repair remains open. No claim of GitHub-mode screenshot coverage is made.
