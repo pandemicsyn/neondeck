@@ -275,6 +275,12 @@ it('retains local text across tabs and a two-editor race, requiring explicit rec
   await render();
   expect(editor.value).toBe('My local outcome');
   expect(button('Save new revision').disabled).toBe(true);
+  await act(async () => {
+    editor.form!.dispatchEvent(
+      new Event('submit', { bubbles: true, cancelable: true }),
+    );
+  });
+  expect(api.mutateFactory).not.toHaveBeenCalled();
   expect(container.textContent).toContain('Other editor outcome');
   await click('Use current save base and keep my text');
   api.mutateFactory.mockResolvedValue({
@@ -374,6 +380,7 @@ it.each([
     sessionStorage.setItem('factory-workbench:task', raw);
     await render();
     expect(container.textContent).toContain('Saved draft needs recovery');
+    expect(button('Pause').disabled).toBe(false);
     expect(sessionStorage.getItem('factory-workbench:task')).toBe(raw);
     expect(
       container.querySelector<HTMLTextAreaElement>(
@@ -458,3 +465,26 @@ it('blocks release after a coding selection refresh failure and retains the disp
   await click('Release v2');
   expect(api.mutateFactory).not.toHaveBeenCalled();
 });
+
+it.each([
+  ['Pause', 'pause'],
+  ['Withdraw release', 'withdraw'],
+])(
+  'allows %s during draft recovery without touching retained data',
+  async (label, action) => {
+    const raw = '{"editor":';
+    sessionStorage.setItem('factory-workbench:task', raw);
+    current = { ...current, work: { ...current.work, lifecycle: 'queued' } };
+    api.mutateFactory.mockResolvedValue(current);
+    await render();
+    expect(button(label).disabled).toBe(false);
+    expect(button('Release v2').disabled).toBe(true);
+    await click(label);
+    expect(api.mutateFactory).toHaveBeenCalledWith('task', 'transition', {
+      expectedVersion: current.work.version,
+      action,
+    });
+    expect(sessionStorage.getItem('factory-workbench:task')).toBe(raw);
+    expect(container.textContent).toContain('Saved draft needs recovery');
+  },
+);

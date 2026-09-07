@@ -44,12 +44,37 @@ export function FactoryDeliveryEvidence({
   detail: DeliveryDetail;
 }) {
   const p = detail.pipeline;
+  const activityLabels = {
+    commit: 'Preparing local commit',
+    verification: 'Running independent checks',
+    review: 'Reviewing the candidate',
+    'feedback-review': 'Reviewing external feedback',
+    push: 'Pushing the authorized revision',
+    'create-pr': 'Creating the draft pull request',
+    'update-pr': 'Updating the draft pull request',
+  };
+  const activeEffects = p.effects.filter(
+    (effect) => effect.state === 'in-flight',
+  );
   return (
     <section
       className="factory-delivery-evidence"
       aria-label="Independent validation"
     >
       <h4>Independent checks and review</h4>
+      {activeEffects.length > 0 && (
+        <ul aria-label="Recorded delivery activity">
+          {activeEffects.map((effect) => (
+            <li key={effect.id}>{activityLabels[effect.kind]} · in progress</li>
+          ))}
+        </ul>
+      )}
+      {detail.nextAction === 'running' && activeEffects.length === 0 && (
+        <p>
+          Waiting for the next recorded delivery step. No checks or review are
+          confirmed running.
+        </p>
+      )}
       <ul>
         {p.authorization.checkCommands.map((command) => (
           <li key={command}>

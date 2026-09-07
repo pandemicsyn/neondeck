@@ -21,6 +21,7 @@ export function FactoryWriteback({ detail }: { detail: FactoryDetail }) {
     queryFn: () => getFactoryWriteback(detail.work.id),
     refetchInterval: 5000,
   });
+  const [visibleEffects, setVisibleEffects] = useState(12);
   const [draft, setDraft] = useState<WritebackApprovalInput | null>(null);
   const [preview, setPreview] = useState(false);
   const [policyPreview, setPolicyPreview] = useState<{
@@ -75,7 +76,18 @@ export function FactoryWriteback({ detail }: { detail: FactoryDetail }) {
       className="factory-writeback factory-source"
       aria-label="GitHub publishing"
     >
-      <h3>GitHub publishing</h3>
+      <div className="factory-toolbar">
+        <h3>GitHub publishing</h3>
+        <button
+          disabled={query.isFetching || busy}
+          onClick={() => void query.refetch()}
+        >
+          {query.isFetching ? 'Refreshing publishing…' : 'Refresh publishing'}
+        </button>
+      </div>
+      {busy && (
+        <output>Updating publishing; waiting for the recorded result…</output>
+      )}
       <p>
         Target:{' '}
         <a href={remote.url} target="_blank" rel="noreferrer">
@@ -89,7 +101,7 @@ export function FactoryWriteback({ detail }: { detail: FactoryDetail }) {
             'Publishing status refresh failed. Retained content and your input remain available.'}
         </p>
       )}
-      {!data && <p>Loading publishing policy…</p>}
+      {query.isPending && <output>Loading publishing policy…</output>}
       {data && (
         <>
           <p>
@@ -308,7 +320,7 @@ export function FactoryWriteback({ detail }: { detail: FactoryDetail }) {
             </p>
           )}
           {data.effects
-            .slice(-12)
+            .slice(-visibleEffects)
             .reverse()
             .map((effect) => (
               <article key={effect.id} className="factory-writeback-effect">
@@ -409,6 +421,12 @@ export function FactoryWriteback({ detail }: { detail: FactoryDetail }) {
                 )}
               </article>
             ))}
+          {data.effects.length > visibleEffects && (
+            <button onClick={() => setVisibleEffects(visibleEffects + 12)}>
+              Show older publishing receipts (
+              {data.effects.length - visibleEffects} remaining)
+            </button>
+          )}
           {repair && (
             <div className="factory-writeback-preview">
               <h4>

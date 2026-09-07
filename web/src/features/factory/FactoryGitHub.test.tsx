@@ -263,3 +263,55 @@ it.each(['status', 'discussion'] as const)(
     );
   },
 );
+
+it('requires an explicit cancel before replacing a connection draft', async () => {
+  await edit();
+  const field = container.querySelector('input')!;
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(
+      HTMLInputElement.prototype,
+      'value',
+    )!.set!.call(field, 'retained-draft');
+    field.dispatchEvent(new Event('input', { bubbles: true }));
+  });
+  const editButton = Array.from(container.querySelectorAll('button')).find(
+    (button) => button.textContent === 'Edit test',
+  )!;
+  expect(editButton.disabled).toBe(true);
+  await act(async () => editButton.click());
+  expect(field.value).toBe('retained-draft');
+  await act(async () => {
+    const disclosure = container.querySelector('details')!;
+    disclosure.open = false;
+    disclosure.dispatchEvent(new Event('toggle'));
+    disclosure.open = true;
+    disclosure.dispatchEvent(new Event('toggle'));
+  });
+  expect(container.querySelector('input')!.value).toBe('retained-draft');
+});
+
+it('refreshes the selected task and inbox after source sync', async () => {
+  api.getFactoryGitHubComments.mockResolvedValue({
+    comments: [],
+    nextCursor: null,
+  });
+  api.syncFactorySource.mockResolvedValue({});
+  const invalidate = vi.spyOn(client, 'invalidateQueries');
+  await act(async () =>
+    root.render(
+      <QueryClientProvider client={client}>
+        <FactoryGitHubSource detail={detail('work-sync')} />
+      </QueryClientProvider>,
+    ),
+  );
+  await act(async () => {
+    Array.from(container.querySelectorAll('button'))
+      .find((button) => button.textContent === 'Sync source')!
+      .click();
+  });
+  expect(api.syncFactorySource).toHaveBeenCalledWith('work-sync');
+  expect(invalidate).toHaveBeenCalledWith({
+    queryKey: ['factory-detail', 'work-sync'],
+  });
+  expect(invalidate).toHaveBeenCalledWith({ queryKey: ['factory-state'] });
+});

@@ -137,6 +137,9 @@ export function FactoryDeliveryDetail({
           {p.outcome ?? (p.pr ? 'Draft PR recorded' : 'Draft only')}
         </span>
       </div>
+      {busy && (
+        <output>Preparing the delivery action; waiting for its result…</output>
+      )}
       {detail.error && (
         <p role="alert" className="factory-error">
           Refresh failed. Evidence may be stale; controls are disabled.{' '}
@@ -306,6 +309,10 @@ export function FactoryDeliveryDetail({
   );
 }
 function safeWebUrl(value: string) {
-  const url = new URL(value);
-  return ['https:', 'http:'].includes(url.protocol) ? url.href : undefined;
+  try {
+    const url = new URL(value);
+    return ['https:', 'http:'].includes(url.protocol) ? url.href : undefined;
+  } catch {
+    return undefined;
+  }
 }

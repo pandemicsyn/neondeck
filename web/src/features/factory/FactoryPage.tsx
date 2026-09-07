@@ -1,7 +1,7 @@
 import { FactoryCodingSetup } from './FactoryCodingSetup';
 import { FactoryGitHubSetup } from './FactoryGitHub';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
 import {
   getFactoryDetail,
@@ -34,6 +34,15 @@ export function FactoryPage() {
   );
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  const submitting = useRef(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const main = useRef<HTMLElement>(null);
+  const [reveal, setReveal] = useState(0);
+  useEffect(() => {
+    if (!reveal) return;
+    main.current?.focus({ preventScroll: true });
+    main.current?.scrollIntoView?.({ block: 'start' });
+  }, [reveal]);
   const [requestKey, setRequestKey] = useState(() => crypto.randomUUID());
   const state = useQuery({
     queryKey: ['factory-state'],
@@ -54,9 +63,9 @@ export function FactoryPage() {
     enabled: !!id,
     refetchInterval: 15000,
   });
-  const select = (next: string | null) => {
-    if (busy) return;
+  const navigate = (next: string | null) => {
     setId(next);
+    setReveal((value) => value + 1);
     history.replaceState(
       null,
       '',
@@ -64,13 +73,18 @@ export function FactoryPage() {
     );
     setError('');
   };
+  const select = (next: string | null) => {
+    if (submitting.current || busy) return;
+    navigate(next);
+  };
   const refresh = async () => {
     await client.invalidateQueries({ queryKey: ['factory-state'] });
     await client.invalidateQueries({ queryKey: ['factory-detail'] });
   };
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (busy) return;
+    if (submitting.current || busy) return;
+    submitting.current = true;
     const form = event.currentTarget;
     const data = new FormData(form);
     setBusy(true);
@@ -84,24 +98,50 @@ export function FactoryPage() {
       });
       setRequestKey(crypto.randomUUID());
       form.reset();
-      select(task.work.id);
+      navigate(task.work.id);
       await refresh();
     } catch (e) {
       setError(message(e));
     } finally {
+      submitting.current = false;
       setBusy(false);
     }
   }
   return (
-    <main className="factory-page bg-bg text-ink">
+    <main
+      className="factory-page bg-bg text-ink"
+      aria-label="Factory inbox"
+      tabIndex={-1}
+    >
       <header className="factory-header">
         <a href="/">← Dashboard</a>
         <h1>Factory inbox</h1>
         <span>Intake and shaping</span>
-        <button onClick={() => void refresh()}>Refresh</button>
+        <a
+          href="#factory-setup"
+          onClick={() => {
+            const setup = document.getElementById('factory-setup');
+            if (setup instanceof HTMLDetailsElement) setup.open = true;
+          }}
+        >
+          Setup
+        </a>
+        <button
+          disabled={
+            busy || refreshing || state.isFetching || selected.isFetching
+          }
+          onClick={async () => {
+            setRefreshing(true);
+            try {
+              await refresh();
+            } finally {
+              setRefreshing(false);
+            }
+          }}
+        >
+          {refreshing ? 'Refreshing…' : 'Refresh'}
+        </button>
       </header>
-      {state.data && <FactoryGitHubSetup repos={state.data.repos} />}
-      {state.data?.enabled && <FactoryCodingSetup />}
       {state.error && state.data && (
         <p className="factory-error" role="alert">
           Inbox refresh failed: {message(state.error)}. Showing the last loaded
@@ -154,7 +194,7 @@ export function FactoryPage() {
         </section>
       ) : state.data ? (
         <div className="factory-layout">
-          <aside className="factory-inbox">
+          <aside className="factory-inbox" aria-label="Task inbox">
             <h2>
               Tasks <span>({state.data.items.length})</span>
             </h2>
@@ -164,7 +204,9 @@ export function FactoryPage() {
             {!state.data.items.length ? (
               <p>No tasks yet. Add an outcome to start a draft.</p>
             ) : (
-              <ul>
+              // Keyboard users can focus the bounded list and scroll without selecting a task.
+              // oxlint-disable-next-line jsx-a11y/no-noninteractive-tabindex
+              <ul tabIndex={0} aria-label="Tasks">
                 {state.data.items.map((item) => (
                   <li key={item.id}>
                     <button
@@ -189,7 +231,12 @@ export function FactoryPage() {
               release each task.
             </p>
           </aside>
-          <section className="factory-main">
+          <section
+            ref={main}
+            className="factory-main"
+            tabIndex={-1}
+            aria-label={id ? 'Selected task' : 'New task editor'}
+          >
             {!id ? (
               <>
                 <h2>New task</h2>
@@ -243,6 +290,13 @@ export function FactoryPage() {
           </section>
         </div>
       ) : null}
+      {state.data && (
+        <details id="factory-setup" className="factory-setup">
+          <summary>Factory setup</summary>
+          <FactoryGitHubSetup repos={state.data.repos} />
+          {state.data.enabled && <FactoryCodingSetup />}
+        </details>
+      )}
       {error && (
         <p className="factory-error" role="alert">
           {error} Your input is retained; retry when ready.

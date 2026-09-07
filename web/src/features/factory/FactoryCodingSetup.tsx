@@ -24,6 +24,7 @@ export function FactoryCodingSetup() {
     refetchInterval: 15000,
   });
   const [editing, setEditing] = useState(false);
+  const [opened, setOpened] = useState(false);
   return (
     <section className="factory-coding-setup" aria-label="Local coding setup">
       <div className="factory-toolbar">
@@ -39,7 +40,15 @@ export function FactoryCodingSetup() {
                   : 'Needs setup'}
           </span>
         )}
-        <button onClick={() => setEditing(!editing)} disabled={!state.data}>
+        <button
+          aria-expanded={editing}
+          aria-controls="factory-coding-config"
+          onClick={() => {
+            setOpened(true);
+            setEditing(!editing);
+          }}
+          disabled={!state.data}
+        >
           {editing ? 'Close setup' : 'Configure coding'}
         </button>
       </div>
@@ -113,17 +122,20 @@ export function FactoryCodingSetup() {
               </div>
             ))}
           </details>
-          {editing && (
-            <FactoryCodingConfigForm
-              state={state.data}
-              unavailable={!!state.error}
-              onSaved={async () => {
-                setEditing(false);
-                await client.invalidateQueries({
-                  queryKey: factoryCodingStateKey,
-                });
-              }}
-            />
+          {opened && (
+            <div id="factory-coding-config" hidden={!editing}>
+              <FactoryCodingConfigForm
+                state={state.data}
+                unavailable={!!state.error}
+                onSaved={async () => {
+                  setEditing(false);
+                  setOpened(false);
+                  await client.invalidateQueries({
+                    queryKey: factoryCodingStateKey,
+                  });
+                }}
+              />
+            </div>
           )}
         </>
       )}

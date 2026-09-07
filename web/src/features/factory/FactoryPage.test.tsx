@@ -413,8 +413,11 @@ it('keeps the reviewed repo fingerprint pinned until an explicit context review'
       .querySelector('form')!
       .dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })),
   );
-  expect(sent).toMatchObject({ expectedRepoFingerprint: 'a'.repeat(64) });
-  expect(container.textContent).toContain('Repository configuration changed');
+  expect(sent).toBeUndefined();
+  expect(
+    container.querySelector('form button[type="submit"]')?.matches(':disabled'),
+  ).toBe(true);
+  expect(container.textContent).toContain('repository configuration differs');
   expect(container.textContent).toContain('/private/tmp/synthetic-replacement');
   await act(async () => button('Use this reviewed repository context').click());
   expect(container.querySelector('textarea')?.value).toBe(
@@ -525,6 +528,7 @@ it.each(['success', 'failure'] as const)(
       );
     await act(async () => {
       send();
+      send();
     });
     expect(settle).toBeTypeOf('function');
     for (const control of form.querySelectorAll('input,textarea,select,button'))
@@ -573,7 +577,13 @@ it.each(['success', 'failure'] as const)(
         expect(control.matches(':disabled')).toBe(false);
     } else {
       expect(location.search).toBe('?task=task-1');
+      expect(document.activeElement).toBe(
+        container.querySelector('.factory-main'),
+      );
       await act(async () => button('New task').click());
+      expect(document.activeElement).toBe(
+        container.querySelector('.factory-main'),
+      );
       expect(
         (container.querySelector('input[name="title"]') as HTMLInputElement)
           .value,

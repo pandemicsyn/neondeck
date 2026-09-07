@@ -1,3 +1,4 @@
+import './FactoryCodingEvidence.css';
 import { useState } from 'react';
 import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
 import {
@@ -18,7 +19,8 @@ export function FactoryCodingEvidence({ id }: { id: string }) {
   );
 }
 function EvidencePages({ id }: { id: string }) {
-  const [offset, setOffset] = useState(0);
+  const [offsets, setOffsets] = useState([0]);
+  const offset = offsets.at(-1)!;
   const events = useInfiniteQuery({
     queryKey: ['factory-coding-events', id],
     initialPageParam: 0,
@@ -34,7 +36,12 @@ function EvidencePages({ id }: { id: string }) {
     <>
       <div className="factory-toolbar">
         <h4>Recorded events</h4>
-        <button onClick={() => void events.refetch()}>Refresh events</button>
+        <button
+          disabled={events.isFetching}
+          onClick={() => void events.refetch()}
+        >
+          {events.isFetching ? 'Refreshing events…' : 'Refresh events'}
+        </button>
       </div>
       {events.isPending && <output>Loading recorded events…</output>}
       {events.error && (
@@ -49,7 +56,9 @@ function EvidencePages({ id }: { id: string }) {
                 <span>
                   {event.type} · {event.status}
                 </span>
-                <time>{event.createdAt}</time>
+                <time dateTime={event.createdAt}>
+                  {new Date(event.createdAt).toLocaleString()}
+                </time>
               </li>
             ))}
         </ol>
@@ -67,7 +76,9 @@ function EvidencePages({ id }: { id: string }) {
       )}
       <div className="factory-toolbar">
         <h4>Log excerpt</h4>
-        <button onClick={() => void logs.refetch()}>Refresh log</button>
+        <button disabled={logs.isFetching} onClick={() => void logs.refetch()}>
+          {logs.isFetching ? 'Refreshing log…' : 'Refresh log'}
+        </button>
       </div>
       <p className="factory-note">
         Up to 16 KiB per page. Log text is untrusted execution output.
@@ -78,7 +89,7 @@ function EvidencePages({ id }: { id: string }) {
       )}
       {logs.data && (
         <>
-          <pre aria-label="Coding log excerpt">
+          <pre tabIndex={0} role="region" aria-label="Coding log excerpt">
             {logs.data.text || 'No log output at this offset.'}
           </pre>
           <p className="factory-note">
@@ -87,21 +98,32 @@ function EvidencePages({ id }: { id: string }) {
               ? ' · More output is available.'
               : ' · End of current output.'}
           </p>
-          <div className="factory-toolbar">
-            <button disabled={offset === 0} onClick={() => setOffset(0)}>
-              Back to log start
-            </button>
-            <button
-              disabled={!logs.data.truncated || logs.data.nextOffset <= offset}
-              onClick={() => {
-                if (logs.data) setOffset(logs.data.nextOffset);
-              }}
-            >
-              Next log excerpt
-            </button>
-          </div>
         </>
       )}
+      <div className="factory-toolbar">
+        <button
+          disabled={offsets.length === 1}
+          onClick={() => setOffsets(offsets.slice(0, -1))}
+        >
+          Previous log excerpt
+        </button>
+        <button disabled={offset === 0} onClick={() => setOffsets([0])}>
+          Back to log start
+        </button>
+        <button
+          disabled={
+            logs.isFetching ||
+            !!logs.error ||
+            !logs.data?.truncated ||
+            logs.data.nextOffset <= offset
+          }
+          onClick={() => {
+            if (logs.data) setOffsets([...offsets, logs.data.nextOffset]);
+          }}
+        >
+          Next log excerpt
+        </button>
+      </div>
     </>
   );
 }

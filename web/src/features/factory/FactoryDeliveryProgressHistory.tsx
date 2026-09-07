@@ -34,7 +34,9 @@ export function FactoryDeliveryProgressHistory({
       )}
       <details>
         <summary>Released brief used for assessment</summary>
-        <pre>{content.releasedBrief}</pre>
+        <pre tabIndex={0} role="region" aria-label="Recorded evidence text">
+          {content.releasedBrief}
+        </pre>
       </details>
       {content.priorRepairs.length === 0 ? (
         <p>Initial repair assessment. No prior repair history was supplied.</p>
@@ -69,7 +71,13 @@ export function FactoryDeliveryProgressHistory({
               <summary>
                 {observation.kind} · {observation.ref}
               </summary>
-              <pre>{observation.body}</pre>
+              <pre
+                tabIndex={0}
+                role="region"
+                aria-label="Recorded evidence text"
+              >
+                {observation.body}
+              </pre>
               {observation.truncated && (
                 <p>Observation shortened for display.</p>
               )}
@@ -83,7 +91,13 @@ export function FactoryDeliveryProgressHistory({
                 Assessed candidate diff
                 {candidate.diffTruncated ? ' (shortened)' : ''}
               </summary>
-              <pre>{candidate.diff || 'No diff content recorded.'}</pre>
+              <pre
+                tabIndex={0}
+                role="region"
+                aria-label="Recorded evidence text"
+              >
+                {candidate.diff || 'No diff content recorded.'}
+              </pre>
             </details>
           )}
         </article>

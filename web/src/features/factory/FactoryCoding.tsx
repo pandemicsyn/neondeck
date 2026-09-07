@@ -71,6 +71,7 @@ export function FactoryCoding({
   eligible: boolean;
   onDiscussDelivery?: (evidence: string) => void;
 }) {
+  const client = useQueryClient();
   const [selected, setSelected] = useState<string | null>(null);
   const state = useQuery({
     queryKey: factoryCodingStateKey,
@@ -98,7 +99,19 @@ export function FactoryCoding({
     <section className="factory-coding" aria-label="Task coding">
       <div className="factory-toolbar">
         <h3>Coding</h3>
-        <button onClick={() => void runs.refetch()}>Refresh coding</button>
+        <button
+          disabled={runs.isFetching}
+          onClick={() => {
+            void runs.refetch();
+            void state.refetch();
+            if (selectedId)
+              void client.invalidateQueries({
+                queryKey: ['factory-coding-run', selectedId],
+              });
+          }}
+        >
+          {runs.isFetching ? 'Refreshing coding…' : 'Refresh coding'}
+        </button>
       </div>
       {runs.isPending && <output>Loading coding attempts…</output>}
       {runs.error && (
@@ -123,14 +136,33 @@ export function FactoryCoding({
             {!eligible
               ? 'Review and release the current brief before it can enter coding.'
               : state.error
-                ? 'Coding readiness is unavailable. Refresh readiness in Local coding.'
+                ? 'Coding readiness is unavailable. Refresh readiness in Factory setup.'
                 : !state.data
                   ? 'Checking coding readiness…'
                   : !state.data.config.enabled
-                    ? 'This brief is released. Local coding is disabled; configure it above to allow automatic dispatch.'
+                    ? 'This brief is released. Local coding is disabled; open Factory setup to allow automatic dispatch.'
                     : !state.data.readiness.ready
-                      ? 'This brief is released. Resolve the coding setup requirements above.'
+                      ? 'This brief is released. Resolve the requirements in Factory setup.'
                       : 'This brief is released and awaiting automatic dispatch. A single writer handles eligible work.'}
+            {eligible &&
+              (state.error ||
+                (state.data &&
+                  (!state.data.config.enabled ||
+                    !state.data.readiness.ready))) && (
+                <>
+                  {' '}
+                  <a
+                    href="#factory-setup"
+                    onClick={() => {
+                      const setup = document.getElementById('factory-setup');
+                      if (setup instanceof HTMLDetailsElement)
+                        setup.open = true;
+                    }}
+                  >
+                    Open Factory setup
+                  </a>
+                </>
+              )}
           </p>
         )}
       {(matching.length > 1 || selectionOutsidePage) && (

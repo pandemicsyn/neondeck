@@ -739,3 +739,68 @@ it('retains settings and prevents submission after readiness refresh fails', asy
     container.querySelector<HTMLInputElement>('[name="model"]')?.value,
   ).toBe('synthetic-codex-model');
 });
+
+it('refreshes the selected run immediately from Refresh coding', async () => {
+  await render();
+  current = codingRun('failed');
+  await click('Refresh coding');
+  expect(container.textContent).toContain('Coding attempt failed');
+  expect(container.textContent).not.toContain('Stop coding');
+});
+
+it('returns to the previous bounded log page without losing the page position', async () => {
+  const original = vi.mocked(fetch).getMockImplementation()!;
+  vi.mocked(fetch).mockImplementation(async (input, init) => {
+    const url = new URL(String(input), 'http://fixture.local');
+    if (url.pathname.endsWith('/logs')) {
+      const offset = Number(url.searchParams.get('offset'));
+      return response({
+        text: `Page ${offset}`,
+        nextOffset: offset + 100,
+        truncated: offset < 200,
+      });
+    }
+    return original(input, init);
+  });
+  await render();
+  const details = container.querySelector<HTMLDetailsElement>(
+    '.factory-coding-evidence:last-child',
+  )!;
+  await act(async () => {
+    details.open = true;
+    details.dispatchEvent(new Event('toggle'));
+  });
+  await flush();
+  await click('Next log excerpt');
+  await click('Next log excerpt');
+  expect(container.querySelector('pre')?.textContent).toBe('Page 200');
+  await click('Previous log excerpt');
+  expect(container.querySelector('pre')?.textContent).toBe('Page 100');
+  expect(button('Previous log excerpt').disabled).toBe(false);
+});
+
+it('opens collapsed Factory setup from a released coding blocker', async () => {
+  state = codingState(false);
+  const original = vi.mocked(fetch).getMockImplementation()!;
+  vi.mocked(fetch).mockImplementation((input, init) =>
+    String(input).includes('/runs?')
+      ? Promise.resolve(response({ items: [], nextCursor: null }))
+      : original(input, init),
+  );
+  await render(
+    <>
+      <FactoryCoding workId="work-demo" eligible />
+      <details id="factory-setup">
+        <summary>Factory setup</summary>
+      </details>
+    </>,
+  );
+  await act(async () =>
+    container
+      .querySelector<HTMLAnchorElement>('a[href="#factory-setup"]')!
+      .click(),
+  );
+  expect(
+    container.querySelector<HTMLDetailsElement>('#factory-setup')!.open,
+  ).toBe(true);
+});

@@ -520,3 +520,29 @@ it.each(['planned', 'uncertain'] as const)(
     expect(container.textContent).not.toContain('Published commit:');
   },
 );
+
+it('distinguishes recorded in-flight checks from waiting without a polling live region', async () => {
+  current = deliveryDetail();
+  current.pipeline.effects = [
+    {
+      id: 'active-check',
+      kind: 'verification',
+      revision: current.pipeline.revision,
+      state: 'in-flight',
+      receiptRef: null,
+      reservedExecutionMs: 1000,
+      executionMs: null,
+    },
+  ];
+  await render();
+  const activity = container.querySelector(
+    '[aria-label="Recorded delivery activity"]',
+  );
+  expect(activity?.textContent).toContain(
+    'Running independent checks · in progress',
+  );
+  expect(activity?.hasAttribute('aria-live')).toBe(false);
+  expect(container.textContent).not.toContain(
+    'No checks or review are confirmed running',
+  );
+});

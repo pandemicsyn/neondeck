@@ -40,6 +40,12 @@ export function FactorySpecEditor({
       className="factory-form"
       onSubmit={(event) => {
         event.preventDefault();
+        if (
+          busy ||
+          staleEditor ||
+          editor.repoFingerprint !== detail.repoFingerprint
+        )
+          return;
         void onSave();
       }}
     >
@@ -251,7 +257,14 @@ export function FactorySpecEditor({
           {!editor.spec.decisions.length && <p>No decisions to resolve.</p>}
         </fieldset>
         <div className="factory-toolbar">
-          <button disabled={busy || !!staleEditor} type="submit">
+          <button
+            disabled={
+              busy ||
+              staleEditor ||
+              editor.repoFingerprint !== detail.repoFingerprint
+            }
+            type="submit"
+          >
             Save new revision
           </button>
           <button disabled={busy} type="button" onClick={() => setEditor(null)}>

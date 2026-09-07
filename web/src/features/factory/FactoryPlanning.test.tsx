@@ -21,12 +21,20 @@ vi.mock('../../api/factory', () => api);
 vi.mock('../flue-chat/components/session-view', () => ({
   FlueChatSessionView: ({
     onSendMessage,
+    responsePending,
+    emptyMessage,
+    consumedDraft,
   }: {
     onSendMessage: (message: string) => Promise<void>;
+    responsePending?: boolean;
+    emptyMessage?: string;
+    consumedDraft?: { message: string };
   }) => {
     const [text, setText] = useState('');
     return (
       <form
+        data-consumed-message={consumedDraft?.message}
+        aria-label={responsePending ? 'Response pending' : emptyMessage}
         onSubmit={(e) => {
           e.preventDefault();
           void onSendMessage(text)
@@ -195,7 +203,13 @@ it('restores the exact uncertain envelope across reload and changed context with
   const first = api.sendFactoryPlanning.mock.calls[0][1];
   expect(
     JSON.parse(sessionStorage.getItem('factory-planning-request:work-1')!),
-  ).toEqual(first);
+  ).toEqual({
+    ...first,
+    composer: {
+      message: 'Keep this reply',
+      storageKey: 'factory-chat-draft:work-1:factory-test',
+    },
+  });
   await act(async () => root.unmount());
   root = createRoot(container);
   client.setQueryData(['factory-planning', 'work-1'], {
@@ -237,4 +251,119 @@ it('does not dispatch if durable browser envelope storage fails', async () => {
   });
   expect(api.sendFactoryPlanning).not.toHaveBeenCalled();
   fail.mockRestore();
+});
+
+it('keeps the transcript mounted after successful planning admission', async () => {
+  await render();
+  const input = await typeReply();
+  await act(async () => {
+    container
+      .querySelector('form')!
+      .dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+    await new Promise((r) => setTimeout(r, 10));
+  });
+  expect(api.sendFactoryPlanning).toHaveBeenCalledTimes(1);
+  expect(container.querySelector('input')).toBe(input);
+  expect(input.value).toBe('');
+});
+
+it('restores pending activity from server state before any local send', async () => {
+  api.getFactoryPlanning.mockResolvedValue({ ...ready, activity: 'pending' });
+  client.setQueryData(['factory-planning', 'work-1'], {
+    ...ready,
+    activity: 'pending',
+  });
+  await render();
+  expect(container.querySelector('form')?.getAttribute('aria-label')).toBe(
+    'Response pending',
+  );
+  expect(container.textContent).toContain('Neon is working on this request');
+  expect(api.sendFactoryPlanning).not.toHaveBeenCalled();
+});
+it('provides task-specific empty conversation guidance', async () => {
+  await render();
+  expect(container.querySelector('form')?.getAttribute('aria-label')).toContain(
+    'revise this brief',
+  );
+});
+
+it('retains a newer composer draft when retry confirms the original request', async () => {
+  sessionStorage.setItem(
+    'factory-planning-request:work-1',
+    JSON.stringify({
+      requestKey: 'retained-request',
+      message: 'Original request',
+      expectedVersion: 1,
+    }),
+  );
+  const draftKey = 'factory-chat-draft:work-1:factory-test';
+  sessionStorage.setItem(draftKey, 'Newer unsent reply');
+  await render();
+  const input = await typeReply();
+  await act(async () => {
+    [...container.querySelectorAll('button')]
+      .find((b) => b.textContent === 'Retry original request')!
+      .click();
+    await new Promise((r) => setTimeout(r, 10));
+  });
+  expect(sessionStorage.getItem(draftKey)).toBe('Newer unsent reply');
+  expect(container.querySelector('input')).toBe(input);
+  expect(input.value).toBe('Keep this reply');
+  expect(container.querySelector('form')?.dataset.consumedMessage).toBe(
+    'Original request',
+  );
+});
+
+it('keeps recovery actions before collapsed original payload and provides a keyboard-scrollable region', async () => {
+  const message =
+    'Please review\n\n' +
+    JSON.stringify({ evidence: 'Long retained evidence'.repeat(50) });
+  sessionStorage.setItem(
+    'factory-planning-request:work-1',
+    JSON.stringify({
+      requestKey: 'retained-request',
+      message,
+      expectedVersion: 1,
+      discussion: {
+        version: 1,
+        hash: 'a'.repeat(64),
+        kind: 'section',
+        id: 'approach',
+      },
+    }),
+  );
+  await render();
+  const disclosure = [...container.querySelectorAll('details')].find(
+    (el) =>
+      el.querySelector('summary')?.textContent ===
+      'Review original request and context',
+  )!;
+  const retry = [...container.querySelectorAll('button')].find(
+    (el) => el.textContent === 'Retry original request',
+  )!;
+  expect(disclosure.open).toBe(false);
+  expect(
+    retry.compareDocumentPosition(disclosure) &
+      Node.DOCUMENT_POSITION_FOLLOWING,
+  ).not.toBe(0);
+  expect(disclosure.textContent).toContain('Original reference: v1');
+  const payload = disclosure.querySelector<HTMLElement>('[role="region"]')!;
+  expect(payload.getAttribute('aria-label')).toBe('Original planning request');
+  expect(payload.tabIndex).toBe(0);
+  expect(payload.textContent).toBe(message);
+  api.sendFactoryPlanning.mockRejectedValueOnce(
+    new ApiError('Task changed', 409, '/api/factory', {}),
+  );
+  await act(async () => {
+    retry.click();
+    await new Promise((r) => setTimeout(r, 10));
+  });
+  const dismiss = [...container.querySelectorAll('button')].find(
+    (el) => el.textContent === 'Dismiss rejection and review a new request',
+  )!;
+  expect(
+    dismiss.compareDocumentPosition(disclosure) &
+      Node.DOCUMENT_POSITION_FOLLOWING,
+  ).not.toBe(0);
+  expect(api.sendFactoryPlanning.mock.calls[0][1].message).toBe(message);
 });

@@ -196,7 +196,10 @@ record; no single successful full `npm run verify` invocation is claimed.
 Slice 4 (OpenCode and Kilo Code), Slice 5 (Linear) and Slice 6 (remote execution) retain their
 numbering.
 
-## Software Factory Slice 4 — Pluggable Coding CLIs (Published, Source CI Verified)
+## Software Factory Slice 4 — Pluggable Coding CLIs (Merged)
+
+PRs #406–#409 merged through `cc73e8e5881e997f170dee37e3aad61f81656256`.
+The final main tree matched the reviewed stack. Live acceptance remains pending.
 
 Extend the existing Codex path with **OpenCode and Kilo Code**, through a small
 typed coding adapter contract and registry. Adding another CLI should require an
@@ -217,7 +220,7 @@ phases, progress supervision or publication logic. Codex remains the default.
       separate real Codex/OpenCode/Kilo acceptance. Kilo 7.4.23 installed help/source and temporary OpenCode 1.18.29 help/source
       are verified; target authenticated readiness remains unverified.
 
-Published stack #410: draft [#406](https://github.com/pandemicsyn/neondeck/pull/406) → [#407](https://github.com/pandemicsyn/neondeck/pull/407) → [#408](https://github.com/pandemicsyn/neondeck/pull/408) → [#409](https://github.com/pandemicsyn/neondeck/pull/409) after both independent source/docs reviews were clean.
+Published stack #410: [#406](https://github.com/pandemicsyn/neondeck/pull/406) → [#407](https://github.com/pandemicsyn/neondeck/pull/407) → [#408](https://github.com/pandemicsyn/neondeck/pull/408) → [#409](https://github.com/pandemicsyn/neondeck/pull/409) after both independent source/docs reviews were clean.
 Parent post-publication architecture review is clean; all nine checks passed on each published source head (#406 `03b697f6`, #407 `2cce6b09`, #408 `6255c952`, #409 `473ab9ef`) on September 6. Later documentation heads have separate CI; see the linked PRs for current status.
 The expanded per-harness scenario matrix and live acceptance remain open.
 Atomic binding from entrypoint hash check to execution is a manager-accepted
@@ -230,6 +233,15 @@ The recommended next operational work remains combined Slice 2/3/3.1 live
 acceptance; preserve existing deferrals without inventing another merge gate.
 Managed CLI servers/SDKs, ACP, dynamic third-party plugins and remote execution
 are outside Slice 4. The host boundary must remain usable for Slice 6.
+
+## Factory UI Polish — Source And Synthetic Verification Complete
+
+The September 7 polish pass repairs factory page/transcript scrolling, setup and
+planning draft retention, compact chat controls, evidence navigation and recovery
+affordances. Implementation and independent reviews use Astra low at the
+operator's request. See the [UI polish record](factory/UI_POLISH.md) for exact
+test/browser evidence and limitations. This does not complete live factory
+acceptance or start Linear intake/remote execution.
 
 ## Usability Gate
 
