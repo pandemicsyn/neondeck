@@ -263,6 +263,35 @@ describe('OpenCode adapter contract', () => {
       opencodeAdapter.credentialSecrets(['{}', '{}'], fixture().config),
     ).toThrow('Unexpected OpenCode');
   });
+  it.each(['opencode', 'anthropic', 'openai'])(
+    'rejects missing or multiple %s credential snapshots',
+    (provider) => {
+      const config = {
+        ...fixture().config,
+        model: `${provider}/fixture-model`,
+      };
+      const content = JSON.stringify({
+        [provider]: { type: 'api', key: 'fixture-snapshot-key' },
+      });
+      expect(() => opencodeAdapter.credentialSecrets([], config)).toThrow(
+        'Unexpected OpenCode credential files',
+      );
+      expect(() =>
+        opencodeAdapter.credentialSecrets([content, content], config),
+      ).toThrow('Unexpected OpenCode credential files');
+      expect(opencodeAdapter.credentialSecrets([content], config)).toEqual([
+        'fixture-snapshot-key',
+      ]);
+    },
+  );
+  it.each(['', '{malformed', '{}', '{"openai":{"type":"api","key":""}}'])(
+    'rejects a malformed single credential snapshot (%#)',
+    (content) => {
+      expect(() =>
+        opencodeAdapter.credentialSecrets([content], fixture().config),
+      ).toThrow('OpenCode requires a selected provider API credential');
+    },
+  );
 });
 
 describe('OpenCode bounded run JSONL', () => {

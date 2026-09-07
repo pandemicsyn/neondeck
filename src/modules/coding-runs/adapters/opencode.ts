@@ -226,7 +226,7 @@ export const opencodeAdapter: CodingAdapter = {
     };
   },
   credentialSecrets(contents, config) {
-    if (contents.length > 1)
+    if (contents.length !== 1)
       throw new Error('Unexpected OpenCode credential files');
     return contents.map((content) => parseAuth(content, config).key);
   },
