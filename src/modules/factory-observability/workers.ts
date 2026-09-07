@@ -37,7 +37,7 @@ const empty = (worker: FactoryWorker): FactoryWorkerHealth => ({
 export function getFactoryWorkerHealth(
   paths: RuntimePaths,
 ): FactoryWorkerHealth[] {
-  return (['github', 'coding', 'delivery'] as const).map((worker) => {
+  return (['github', 'coding', 'delivery', 'linear'] as const).map((worker) => {
     const row = readWorker(paths, worker) ?? empty(worker);
     if (row.status === 'stopped' || row.status === 'not-running') return row;
     let alive = row.ownerPid !== null;

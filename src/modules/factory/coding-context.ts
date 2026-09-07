@@ -246,10 +246,21 @@ export async function codingSnapshot(
 // attention normalization are not release authority. Nonempty attention still
 // makes codingAuthority reject admission through the existing eligibility check.
 function sourceAuthority(source: FactorySource) {
-  const { remote, attention, ...identity } = source;
+  const { remote, linear, attention, ...identity } = source;
   return {
     ...identity,
     attention: attention ?? null,
+    linear: linear
+      ? {
+          connectionId: linear.connectionId,
+          organizationId: linear.organizationId,
+          issueId: linear.issueId,
+          teamId: linear.teamId,
+          projectId: linear.projectId,
+          fingerprint: linear.fingerprint,
+          url: linear.url,
+        }
+      : null,
     remote: remote
       ? {
           connectionId: remote.connectionId,

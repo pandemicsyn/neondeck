@@ -11,6 +11,7 @@ import {
 import type { RuntimePaths } from '../runtime-home';
 import { recoverFlueRuntimeServices } from './create-app';
 import { startSchedulerLoop, stopSchedulerLoop } from './scheduler-loop';
+import { startFactoryLinearLoop } from './factory-linear-loop';
 import { startFactoryGitHubLoop } from './factory-github-loop';
 /** Production owns one service set, after Flue initialization and both successful binds. */
 export function startManagedServices(paths: RuntimePaths, app: Fetchable) {
@@ -29,6 +30,7 @@ export function startManagedServices(paths: RuntimePaths, app: Fetchable) {
   const stopCoding = startFactoryCodingLoop(paths);
   const stopDelivery = startFactoryDeliveryLoop(paths);
   const stopSources = startFactoryGitHubLoop(paths);
+  const stopLinear = startFactoryLinearLoop(paths);
   function recover() {
     if (stopped) return;
     recovery = recoverFlueRuntimeServices({
@@ -60,6 +62,7 @@ export function startManagedServices(paths: RuntimePaths, app: Fetchable) {
       stopCoding(),
       stopDelivery(),
       stopSources(),
+      stopLinear(),
       stopSchedulerLoop(paths),
       recovery,
       ...initialRefreshes,

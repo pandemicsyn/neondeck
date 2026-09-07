@@ -2,6 +2,7 @@ import * as v from 'valibot';
 import { deliveryRevisionSchema } from './factory-delivery-revision';
 import {
   factoryWorkerHealthSchema,
+  factoryWorkerSchema,
   factoryDiagnosticOperationSchema,
   factorySafeErrorSchema,
 } from './factory-observability';
@@ -108,7 +109,10 @@ export const factoryHealthSchema = v.strictObject({
   generatedAt: time,
   status: v.picklist(['healthy', 'attention', 'not-running']),
   summary: label,
-  workers: v.pipe(v.array(factoryWorkerHealthSchema), v.maxLength(3)),
+  workers: v.pipe(
+    v.array(factoryWorkerHealthSchema),
+    v.maxLength(factoryWorkerSchema.options.length),
+  ),
   tasks: v.pipe(v.array(factoryTaskDiagnosisSchema), v.maxLength(50)),
   truncated: v.boolean(),
 });
@@ -128,7 +132,7 @@ export const factoryDiagnosticExportSchema = v.strictObject({
     workers: v.pipe(
       v.array(
         v.strictObject({
-          worker: v.picklist(['github', 'coding', 'delivery']),
+          worker: factoryWorkerSchema,
           status: v.picklist([
             'running',
             'waiting',
@@ -141,7 +145,7 @@ export const factoryDiagnosticExportSchema = v.strictObject({
           consecutiveFailures: natural,
         }),
       ),
-      v.maxLength(3),
+      v.maxLength(factoryWorkerSchema.options.length),
     ),
     tasks: v.pipe(
       v.array(

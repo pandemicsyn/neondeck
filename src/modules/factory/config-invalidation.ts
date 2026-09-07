@@ -3,7 +3,7 @@ import * as v from 'valibot';
 import { sourceSchema } from '../../../shared/factory';
 import type { GitHubConnection } from '../../../shared/factory-github';
 import type { AppConfig, RuntimePaths } from '../../runtime-home';
-import { dbRun, markGitHubAttention } from './service';
+import { dbRun, markGitHubAttention, markSourceAttention } from './service';
 import { invalidateWriteback } from './writeback-store';
 
 const effectiveMappings = (
@@ -73,6 +73,37 @@ export function invalidateFactoryConfig(
             'GitHub connection changed. Review and save a new draft before release.',
             paths,
           );
+      }
+    });
+  }
+  if (
+    JSON.stringify(before.factory?.linear ?? []) !==
+    JSON.stringify(after.factory?.linear ?? [])
+  ) {
+    dbRun(paths, (db) => {
+      for (const row of db
+        .prepare(
+          "SELECT w.id,s.record FROM factory_sources s JOIN factory_work_items w ON w.source_id=s.id WHERE json_extract(s.record,'$.provider')='linear'",
+        )
+        .all()) {
+        const source = v.parse(sourceSchema, JSON.parse(String(row.record)));
+        const relevant = (config: AppConfig) =>
+          (config.factory?.linear ?? []).filter(
+            (c) =>
+              c.id === source.linear?.connectionId ||
+              (c.organizationId === source.linear?.organizationId &&
+                c.teamId === source.linear?.teamId),
+          );
+        if (
+          JSON.stringify(relevant(before)) === JSON.stringify(relevant(after))
+        )
+          continue;
+        markSourceAttention(
+          db,
+          v.parse(v.string(), row.id),
+          'Linear connection changed. Review and save a new draft before release.',
+          paths,
+        );
       }
     });
   }

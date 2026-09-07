@@ -1,5 +1,6 @@
 import { expect, it } from 'vitest';
 import * as v from 'valibot';
+import { linearEffectSchema } from '../factory';
 import { writebackEffectSchema } from '../../../shared/factory-writeback';
 import { diagnoseHealth, diagnoseTask } from './health';
 import { taskFixture, workerFixture, recordedAt } from './fixture.test-helper';
@@ -208,4 +209,36 @@ it('never reports healthy when global or task coverage is incomplete', () => {
     truncated: true,
     tasks: [{ truncated: true }],
   });
+});
+
+it('projects pending and uncertain Linear status effects without claiming success', () => {
+  const records = taskFixture();
+  records.linearWriteback.push(
+    v.parse(linearEffectSchema, {
+      id: 'linear-effect',
+      issueId: 'issue',
+      stateId: 'state',
+      sourceVersion: 1,
+      baseline: 'baseline',
+      kind: 'writeback',
+      connectionId: 'connection',
+      connectionFingerprint: 'fingerprint',
+      workId: records.work.id,
+      state: 'pending',
+      error: null,
+      retryAt: Date.now() + 60000,
+      attempts: 0,
+      createdAt: recordedAt,
+    }),
+  );
+  expect(diagnoseTask(records, Date.now())).toMatchObject({
+    status: 'writeback-pending',
+    unresolvedEffects: [
+      expect.objectContaining({ kind: 'linear-state', state: 'pending' }),
+    ],
+  });
+  records.linearWriteback[0].state = 'attention';
+  expect(diagnoseTask(records, Date.now()).status).toBe('needs-reconciliation');
+  records.linearWriteback[0].state = 'complete';
+  expect(diagnoseTask(records, Date.now()).unresolvedEffects).toEqual([]);
 });

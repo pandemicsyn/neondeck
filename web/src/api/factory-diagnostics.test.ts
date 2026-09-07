@@ -15,7 +15,6 @@ import {
   getFactoryTimeline,
 } from './factory-diagnostics';
 import { getJson } from './http';
-import { createDiagnosticExport } from '../../../src/modules/factory-diagnostics/export';
 
 vi.mock('./http', () => ({ getJson: vi.fn<typeof getJson>() }));
 afterEach(() => vi.resetAllMocks());
@@ -71,25 +70,62 @@ function health(): FactoryHealth {
   };
 }
 function preview(): FactoryDiagnosticExport {
-  return createDiagnosticExport(health(), timeline(), {
-    records: [
-      {
-        sequence: 1,
-        id: 'span',
-        traceId: 'trace',
-        parentSpanId: null,
-        operation: 'coding.inspect',
-        correlation: { workItemId: workId },
-        error: null,
-        kind: 'phase',
-        startedAt: generatedAt,
-        finishedAt: generatedAt,
-        durationMs: 0,
-        outcome: 'success',
-      },
-    ],
-    nextBefore: null,
-  });
+  const token = 'id:aaaaaaaaaaaaaaaaaaaaaaaa';
+  return {
+    schemaVersion: 1,
+    generatedAt,
+    workId: token,
+    notice:
+      'Local diagnostic summary. IDs are pseudonymized; no raw logs, prompts, paths, credentials or actor identities. Authority records and retained diagnostic spans are distinct; this is not a complete execution trace.',
+    health: {
+      status: 'healthy',
+      truncated: false,
+      workers: [],
+      tasks: [
+        {
+          workId: token,
+          pendingAgeMs: null,
+          remainingExecutionMs: null,
+          repairsRemaining: null,
+          unresolvedEffectCount: 0,
+          truncated: false,
+        },
+      ],
+    },
+    timeline: {
+      entries: [
+        {
+          id: token,
+          kind: 'task',
+          recordType: 'record',
+          occurredAt: null,
+          correlation: { workItemId: token },
+          specVersion: null,
+          specHash: null,
+          evidenceCount: 0,
+        },
+      ],
+      truncated: false,
+    },
+    diagnostics: {
+      spans: [
+        {
+          id: token,
+          traceId: token,
+          parentSpanId: null,
+          operation: 'coding.inspect',
+          correlation: { workItemId: token },
+          error: null,
+          kind: 'phase',
+          startedAt: generatedAt,
+          finishedAt: generatedAt,
+          durationMs: 0,
+          outcome: 'success',
+        },
+      ],
+      truncated: false,
+    },
+  };
 }
 
 it.each([undefined, 'cursor / +?'])(

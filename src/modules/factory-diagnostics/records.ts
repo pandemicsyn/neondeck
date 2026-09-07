@@ -1,5 +1,6 @@
 import type { DatabaseSync } from 'node:sqlite';
 import * as v from 'valibot';
+import { linearRecordSchema } from '../factory';
 import {
   writebackEffectSchema,
   writebackPolicySchema,
@@ -230,6 +231,22 @@ function writebackEffects(candidates: ReturnType<typeof writebackCandidates>) {
     candidate.recordKind === 'effect' ? [candidate.value] : [],
   );
 }
+function linearWritebackCandidates(db: DatabaseSync, workId: string) {
+  return db
+    .prepare(
+      "SELECT record FROM factory_linear_records WHERE kind='writeback' AND (NOT json_valid(record) OR json_extract(record,'$.workId')=?) ORDER BY rowid DESC LIMIT ?",
+    )
+    .all(workId, sourceLimit + 1)
+    .map((row) => {
+      const value = v.parse(linearRecordSchema, JSON.parse(String(row.record)));
+      if (value.kind !== 'writeback' || value.workId !== workId)
+        throw new DiagnosticsError(
+          503,
+          'Linear effect binding is inconsistent.',
+        );
+      return value;
+    });
+}
 export function readTaskRecords(db: DatabaseSync, workId: string) {
   const row = db
     .prepare('SELECT record FROM factory_work_items WHERE id=?')
@@ -238,6 +255,7 @@ export function readTaskRecords(db: DatabaseSync, workId: string) {
   const work = v.parse(workSchema, JSON.parse(v.parse(v.string(), row.record)));
   if (work.id !== workId)
     throw new DiagnosticsError(503, 'Task identity is inconsistent.');
+  const linearWriteback = linearWritebackCandidates(db, workId);
   const writebackRows = writebackCandidates(db, workId);
   const writeback = writebackEffects(writebackRows.slice(0, sourceLimit));
   const revisions = jsonRows(
@@ -326,6 +344,7 @@ export function readTaskRecords(db: DatabaseSync, workId: string) {
   ].some((r) => r.length > sourceLimit);
   return {
     work,
+    linearWriteback: linearWriteback.slice(0, sourceLimit),
     writeback: writeback.slice(0, sourceLimit),
     revisions: revisions.slice(0, sourceLimit),
     releases: releases.slice(0, sourceLimit),
@@ -335,7 +354,7 @@ export function readTaskRecords(db: DatabaseSync, workId: string) {
     planning: planning.slice(0, sourceLimit),
     receipts: receipts.slice(0, sourceLimit),
     events: events.slice(0, sourceLimit),
-    truncated,
+    truncated: truncated || linearWriteback.length > sourceLimit,
   };
 }
 export type TaskRecords = ReturnType<typeof readTaskRecords>;
@@ -390,6 +409,7 @@ export function readTaskHealthRecords(
   const deliveries = deliveryCandidates
     .slice(0, sourceLimit)
     .filter((r) => r.outcome === null);
+  const linearWriteback = linearWritebackCandidates(db, workId);
   const writebackRows = writebackCandidates(db, workId, true);
   const writeback = writebackEffects(
     writebackRows.slice(0, sourceLimit),
@@ -410,6 +430,7 @@ export function readTaskHealthRecords(
     work,
     runs,
     deliveries,
+    linearWriteback: linearWriteback.slice(0, sourceLimit),
     writeback: writeback.slice(0, 50),
     planning: planning.slice(0, 1),
     revisions,
@@ -418,6 +439,7 @@ export function readTaskHealthRecords(
     receipts: [],
     events: [],
     truncated:
+      linearWriteback.length > sourceLimit ||
       runCandidates.length > sourceLimit ||
       releaseCandidates.length > sourceLimit ||
       revisions.length > sourceLimit ||

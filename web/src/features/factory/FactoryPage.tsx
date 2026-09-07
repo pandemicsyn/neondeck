@@ -1,3 +1,4 @@
+import { FactoryLinearSetup } from './FactoryLinearSetup';
 import { FactoryOperations } from './FactoryOperations';
 import { FactoryCodingSetup } from './FactoryCodingSetup';
 import { FactoryGitHubSetup } from './FactoryGitHub';
@@ -296,6 +297,7 @@ export function FactoryPage() {
         <details id="factory-setup" className="factory-setup">
           <summary>Factory setup</summary>
           <FactoryGitHubSetup repos={state.data.repos} />
+          <FactoryLinearSetup repos={state.data.repos} />
           {state.data.enabled && <FactoryCodingSetup />}
         </details>
       )}

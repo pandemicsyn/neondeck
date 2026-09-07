@@ -1,3 +1,4 @@
+import { linearConnectionSchema } from './factory-linear';
 import * as v from 'valibot';
 import { factoryCodingConfigSchema } from './factory-coding';
 import { githubConnectionSchema } from './factory-github';
@@ -8,6 +9,17 @@ const version = v.pipe(v.number(), v.integer(), v.minValue(1));
 const hash = v.pipe(v.string(), v.regex(/^[a-f0-9]{64}$/));
 export const factoryConfigSchema = v.strictObject({
   enabled: v.optional(v.boolean(), false),
+  linear: v.optional(
+    v.pipe(
+      v.array(linearConnectionSchema),
+      v.maxLength(100),
+      v.check(
+        (items) => new Set(items.map((c) => c.id)).size === items.length,
+        'Connection IDs must be unique.',
+      ),
+    ),
+    [],
+  ),
   github: v.optional(
     v.pipe(
       v.array(githubConnectionSchema),
@@ -86,7 +98,7 @@ export const manualIntakeSchema = v.strictObject({
 });
 export const sourceSchema = v.strictObject({
   id: label,
-  provider: v.picklist(['manual', 'github']),
+  provider: v.picklist(['manual', 'github', 'linear']),
   requestKey: label,
   requestHash: hash,
   title: label,
@@ -101,6 +113,33 @@ export const sourceSchema = v.strictObject({
       updatedAt: label,
       fingerprint: hash,
       url: label,
+    }),
+  ),
+  linear: v.optional(
+    v.strictObject({
+      connectionId: label,
+      organizationId: label,
+      issueId: label,
+      identifier: label,
+      teamId: label,
+      projectId: v.nullable(label),
+      stateId: label,
+      stateType: label,
+      updatedAt: label,
+      fingerprint: hash,
+      url: v.pipe(
+        label,
+        v.url(),
+        v.check((value) => {
+          const url = new URL(value);
+          return (
+            url.protocol === 'https:' &&
+            url.hostname === 'linear.app' &&
+            !url.username &&
+            !url.password
+          );
+        }),
+      ),
     }),
   ),
   attention: v.optional(v.nullable(text(2000))),

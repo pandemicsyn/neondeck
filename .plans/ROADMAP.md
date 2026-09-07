@@ -254,6 +254,21 @@ and independent static review agents used Astra at low effort. Both independent
 static reviews and manager product/architecture review are clean before draft
 publication. Merge and live acceptance are tracked separately.
 
+## Software Factory Slice 5 — Linear Intake (Source Complete)
+
+The operator requested implementation on September 7, after the source-complete
+onboarding and observability work. Implemented explicit Linear workspace/team/project
+mapping, selected-issue admission, signed webhooks and source reconciliation,
+with opt-in configured workflow-state writeback. Preserves existing human release,
+coding and publication authority; GitHub remains the delivery target.
+
+Implementation used Astra at low effort. Both independent static reviews and
+manager architecture review are clean; integrated verification passed, including
+final-source checks after corrections. Ready publication and merge are tracked in the
+[Slice 5 plan](factory/SLICE_5_IMPLEMENTATION_PLAN.md) and
+[handoff](factory/SLICE_5_HANDOFF.md). Existing live acceptance obligations remain
+pending; Slice 6 remains remote execution.
+
 ## Usability Gate
 
 Neondeck is usable when a new local install can answer “what should I pay attention to?” and “why is Neon not working?” without the user reading source code or editing config by hand.

@@ -55,7 +55,7 @@ function config(paths: RuntimePaths) {
 function repos(paths: RuntimePaths) {
   return readRuntimeJsonSync(paths.repos, parseRepoRegistry).repos;
 }
-function repoSnapshot(repoId: string | null, paths: RuntimePaths) {
+export function repoSnapshot(repoId: string | null, paths: RuntimePaths) {
   const repo = repos(paths).find((r) => r.id === repoId);
   return {
     repoFingerprint: repo ? digest(repo) : null,
@@ -161,6 +161,23 @@ export function detail(
         'GitHub source mapping is disabled, changed or ambiguous. Restore the intended mapping before release.',
       );
   }
+  if (source.linear) {
+    const mappings = (config(paths)?.linear ?? []).filter(
+      (c) =>
+        c.enabled &&
+        c.organizationId === source.linear!.organizationId &&
+        c.teamId === source.linear!.teamId &&
+        (c.projectId === null || c.projectId === source.linear!.projectId),
+    );
+    if (
+      mappings.length !== 1 ||
+      mappings[0].id !== source.linear.connectionId ||
+      mappings[0].repoId !== item.repoId
+    )
+      blockers.push(
+        'Linear source mapping is disabled, changed or ambiguous. Restore the intended mapping before release.',
+      );
+  }
   if (source.attention) blockers.push(source.attention);
   if (source.status === 'closed') blockers.push('Source is closed.');
   if (item.lifecycle === 'paused' || item.lifecycle === 'closed')
@@ -225,7 +242,7 @@ export function expectVersion(current: FactoryDetail, expected: number) {
       current,
     );
 }
-function putWork(db: DatabaseSync, item: FactoryWork) {
+export function putWork(db: DatabaseSync, item: FactoryWork) {
   item.version++;
   item.updatedAt = new Date().toISOString();
   db.prepare('UPDATE factory_work_items SET record=? WHERE id=?').run(
@@ -233,7 +250,7 @@ function putWork(db: DatabaseSync, item: FactoryWork) {
     item.id,
   );
 }
-function audit(
+export function audit(
   db: DatabaseSync,
   id: string,
   action: string,
@@ -243,7 +260,7 @@ function audit(
     'INSERT INTO factory_audit (work_id,action,actor,created_at) VALUES (?,?,?,?)',
   ).run(id, action, actor.id, new Date().toISOString());
 }
-function withdraw(
+export function withdraw(
   db: DatabaseSync,
   releases: FactoryRelease[],
   reason: string,
@@ -257,7 +274,7 @@ function withdraw(
     );
   }
 }
-function insertRevision(
+export function insertRevision(
   db: DatabaseSync,
   item: FactoryWork,
   source: FactorySource,
@@ -758,7 +775,7 @@ export function reconcileGitHubSource(
   );
   return detail(db, item.id, paths);
 }
-export function markGitHubAttention(
+export function markSourceAttention(
   db: DatabaseSync,
   workId: string,
   reason: string,
@@ -768,16 +785,19 @@ export function markGitHubAttention(
   if (current.source.attention === reason) return;
   current.source.attention = reason;
   current.source.version++;
-  withdraw(db, current.releases, 'github-needs-review');
+  withdraw(db, current.releases, `${current.source.provider}-needs-review`);
   if (current.work.lifecycle === 'queued') current.work.lifecycle = 'shaping';
   putWork(db, current.work);
   db.prepare('UPDATE factory_sources SET record=? WHERE id=?').run(
     JSON.stringify(current.source),
     current.source.id,
   );
-  audit(db, workId, 'github-needs-review', {
+  audit(db, workId, `${current.source.provider}-needs-review`, {
     kind: 'source',
-    id: current.source.remote?.connectionId ?? 'github',
+    id:
+      current.source.linear?.connectionId ??
+      current.source.remote?.connectionId ??
+      current.source.provider,
   });
 }
 
@@ -810,3 +830,5 @@ export function invalidateFactoryRepoContext(
     }
   });
 }
+
+export const markGitHubAttention = markSourceAttention;
