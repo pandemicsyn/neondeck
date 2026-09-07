@@ -345,3 +345,11 @@ validating indexed/JSON bindings, so corruption in either direction cannot silen
 omit an attributable span from a task preview. The preceding integrated source
 passed 484 tests across 19 files, types, formatting and all eight browser evidence
 cases; this retained-span correction receives focused regression and static review.
+The same candidate-selection rule applies to writeback task bindings: a pending
+external effect attributed to a task by its retained JSON must reach validation
+even when its nullable task index disagrees. The remaining diagnostic task selectors
+now use the same guarded candidate selection and validate both identities,
+preserving bounded results, legacy planning records and explicit partial-coverage
+reporting. Current spec selection also checks both persisted versions. This final
+selector correction passed 187 focused tests and app type checks; live acceptance
+remains pending as tracked above.
