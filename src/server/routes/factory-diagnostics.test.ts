@@ -2247,3 +2247,234 @@ it('uses canonical first active release rather than accepting any matching relea
     db.close();
   }
 });
+
+const reverseTaskSources = [
+  ['coding', 'coding_runs', 'work_item_id', 'record_json'],
+  ['delivery', 'factory_delivery_pipelines', 'work_item_id', 'record_json'],
+  ['release', 'factory_releases', 'work_id', 'record'],
+  ['spec', 'factory_spec_revisions', 'work_id', 'record'],
+  ['planning', 'factory_planning_intents', 'work_id', 'record'],
+] as const;
+function seedReverseTaskSource(kind: (typeof reverseTaskSources)[number][0]) {
+  if (kind === 'coding') insertRun('reverse');
+  if (kind === 'delivery') insertDelivery('reverse');
+  if (kind === 'planning') insertPlanning('reverse');
+  if (kind === 'release' || kind === 'spec') {
+    const { records, revision, release } = queuedReleaseFixture();
+    const db = openDb(paths.neondeckDatabase);
+    try {
+      db.prepare('UPDATE factory_work_items SET record=?').run(
+        JSON.stringify(records.work),
+      );
+      db.prepare('UPDATE factory_spec_revisions SET record=?').run(
+        JSON.stringify(revision),
+      );
+      db.prepare(
+        'INSERT INTO factory_releases(id,work_id,request_key,record) VALUES(?,?,?,?)',
+      ).run(
+        release.id,
+        release.workId,
+        release.requestKey,
+        JSON.stringify(release),
+      );
+    } finally {
+      db.close();
+    }
+  }
+}
+it.each(reverseTaskSources)(
+  'exposes reverse %s task bindings before diagnosing across routes',
+  async (kind, table, indexed) => {
+    seedReverseTaskSource(kind);
+    const db = openDb(paths.neondeckDatabase);
+    try {
+      // Deliberately damage the persisted index without changing runtime JSON.
+      db.exec('PRAGMA foreign_keys=OFF');
+      db.prepare(`UPDATE ${table} SET ${indexed}=?`).run('private-other-task');
+    } finally {
+      db.close();
+    }
+    for (const path of diagnosticPaths) {
+      const response = await request(path);
+      expect(response.status).toBe(503);
+      const body = await response.json();
+      expect(Object.keys(body)).toEqual(['error']);
+      expect(JSON.stringify(body)).not.toContain('private-other-task');
+    }
+  },
+);
+it.each(reverseTaskSources)(
+  'keeps unrelated malformed %s records outside the task candidate window',
+  async (kind, table, indexed, column) => {
+    seedReverseTaskSource(kind);
+    const db = openDb(paths.neondeckDatabase);
+    try {
+      db.exec('PRAGMA foreign_keys=OFF');
+      db.prepare(`UPDATE ${table} SET ${indexed}=?,${column}=?`).run(
+        'other-task',
+        '{private-broken',
+      );
+    } finally {
+      db.close();
+    }
+    for (const path of diagnosticPaths)
+      expect((await request(path)).status).toBe(200);
+  },
+);
+it.each([
+  ['work-test', null],
+  [null, 'work-test'],
+  ['other-task', 'work-test'],
+] as const)(
+  'rejects nullable writeback index %s / embedded %s bindings',
+  async (indexed, embedded) => {
+    const db = openDb(paths.neondeckDatabase);
+    try {
+      db.prepare(
+        'INSERT INTO factory_writeback_records(id,kind,work_id,record) VALUES(?,?,?,?)',
+      ).run(
+        'old-pending',
+        'effect',
+        indexed,
+        JSON.stringify({
+          ...writebackFixture(),
+          state: 'pending',
+          workId: embedded,
+        }),
+      );
+    } finally {
+      db.close();
+    }
+    for (const path of diagnosticPaths) {
+      const response = await request(path);
+      expect(response.status).toBe(503);
+      expect(Object.keys(await response.json())).toEqual(['error']);
+    }
+  },
+);
+it.each(['indexed', 'embedded'] as const)(
+  'validates current spec candidates when only the %s version matches',
+  async (matching) => {
+    seedReverseTaskSource('spec');
+    const db = openDb(paths.neondeckDatabase);
+    try {
+      if (matching === 'embedded')
+        db.prepare('UPDATE factory_spec_revisions SET version=2').run();
+      else
+        db.prepare(
+          "UPDATE factory_spec_revisions SET record=json_set(record,'$.version',2)",
+        ).run();
+    } finally {
+      db.close();
+    }
+    for (const path of diagnosticPaths)
+      expect((await request(path)).status).toBe(503);
+  },
+);
+it.each([sourceLimit, sourceLimit + 1])(
+  'bounds reverse delivery candidates with %s newer valid records',
+  async (newer) => {
+    insertDelivery('reverse-oldest');
+    const db = openDb(paths.neondeckDatabase);
+    try {
+      db.exec('PRAGMA foreign_keys=OFF');
+      db.prepare('UPDATE factory_delivery_pipelines SET work_item_id=?').run(
+        'other-task',
+      );
+    } finally {
+      db.close();
+    }
+    for (let i = 0; i < newer; i++) insertDelivery(`newer-${i}`);
+    for (const path of diagnosticPaths) {
+      const response = await request(path);
+      expect(response.status).toBe(newer === sourceLimit ? 503 : 200);
+      const body = await response.json();
+      const truncated = path.includes('timeline')
+        ? body.coverage?.truncated
+        : path.includes('preview')
+          ? body.health?.truncated
+          : body.truncated;
+      expect(truncated).toBe(newer === sourceLimit ? undefined : true);
+    }
+  },
+);
+it('prioritizes a reverse pending writeback ahead of retained sent history', async () => {
+  const db = openDb(paths.neondeckDatabase);
+  try {
+    const insert = db.prepare(
+      'INSERT INTO factory_writeback_records(id,kind,work_id,record) VALUES(?,?,?,?)',
+    );
+    insert.run(
+      'old-pending',
+      'effect',
+      null,
+      JSON.stringify({ ...writebackFixture(), state: 'pending' }),
+    );
+    for (let i = 0; i <= sourceLimit; i++)
+      insert.run(
+        `sent-${i}`,
+        'effect',
+        'work-test',
+        JSON.stringify({
+          ...writebackFixture(),
+          id: `sent-${i}`,
+          state: 'sent',
+        }),
+      );
+  } finally {
+    db.close();
+  }
+  for (const path of [
+    '/health',
+    '/health?workId=work-test',
+    '/tasks/work-test/preview',
+  ])
+    expect((await request(path)).status).toBe(503);
+  const timeline = await request('/tasks/work-test/timeline');
+  expect(timeline.status).toBe(200);
+  expect((await timeline.json()).coverage.truncated).toBe(true);
+});
+
+it('returns a safe unavailable response for indexed malformed planning metadata', async () => {
+  insertPlanning('malformed');
+  const db = openDb(paths.neondeckDatabase);
+  try {
+    db.prepare('UPDATE factory_planning_intents SET record=?').run(
+      '{private-broken',
+    );
+  } finally {
+    db.close();
+  }
+  for (const path of diagnosticPaths) {
+    const response = await request(path);
+    expect(response.status).toBe(503);
+    expect(await response.json()).toEqual(retainedError);
+  }
+});
+it.each(reverseTaskSources)(
+  'does not include explicitly other-task %s JSON in the requested task',
+  async (kind, table, indexed, column) => {
+    seedReverseTaskSource(kind);
+    const db = openDb(paths.neondeckDatabase);
+    try {
+      db.exec('PRAGMA foreign_keys=OFF');
+      const path =
+        kind === 'coding'
+          ? '$.snapshot.workItemId'
+          : kind === 'delivery'
+            ? '$.workItemId'
+            : '$.workId';
+      db.prepare(
+        `UPDATE ${table} SET ${indexed}=?,${column}=json_set(${column},?,?)`,
+      ).run('other-task', path, 'other-task');
+    } finally {
+      db.close();
+    }
+    for (const path of diagnosticPaths)
+      expect((await request(path)).status).toBe(200);
+    const timeline = await (
+      await request('/tasks/work-test/timeline?limit=100')
+    ).text();
+    expect(timeline).not.toContain('other-task');
+  },
+);

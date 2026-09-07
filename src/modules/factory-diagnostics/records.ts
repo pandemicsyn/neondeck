@@ -20,6 +20,21 @@ import { openDb, withTransaction } from '../../lib/sqlite';
 import type { RuntimePaths } from '../../runtime-home';
 
 export const sourceLimit = 200;
+// SQL fragments are internal literals; task/version values always remain bound.
+function embeddedEquals(
+  column: 'record' | 'record_json' | 'i.record',
+  path: '$.workId' | '$.workItemId' | '$.snapshot.workItemId' | '$.version',
+  parameter: '?1' | '?2' = '?1',
+) {
+  return `CASE WHEN json_valid(${column}) THEN json_extract(${column},'${path}')=${parameter} ELSE 0 END`;
+}
+function taskCandidate(
+  indexed: 'work_id' | 'work_item_id' | 'i.work_id',
+  column: 'record' | 'record_json' | 'i.record' = 'record',
+  path: '$.workId' | '$.workItemId' | '$.snapshot.workItemId' = '$.workId',
+) {
+  return `(${indexed}=?1 OR ${embeddedEquals(column, path)})`;
+}
 const label = v.pipe(v.string(), v.minLength(1), v.maxLength(500));
 const natural = v.pipe(v.number(), v.safeInteger(), v.minValue(0));
 const time = v.pipe(v.string(), v.isoTimestamp());
@@ -34,13 +49,14 @@ const planningSchema = v.strictObject({
 });
 // Keep the legacy metadata projection, but never substitute column identities for JSON.
 function planningProjection(alias: string) {
+  const record = `CASE WHEN json_valid(${alias}.record) THEN ${alias}.record ELSE '{}' END`;
   return `${alias}.id AS columnId,${alias}.work_id AS columnWorkId,
-    json_extract(${alias}.record,'$.id') AS id,
-    json_extract(${alias}.record,'$.workId') AS workId,
-    json_extract(${alias}.record,'$.createdAt') AS createdAt,
-    json_extract(${alias}.record,'$.stage') AS stage,
-    json_extract(${alias}.record,'$.submissionId') AS submissionId,
-    json_extract(${alias}.record,'$.triageSubmissionId') AS triageSubmissionId`;
+    json_extract(${record},'$.id') AS id,
+    json_extract(${record},'$.workId') AS workId,
+    json_extract(${record},'$.createdAt') AS createdAt,
+    json_extract(${record},'$.stage') AS stage,
+    json_extract(${record},'$.submissionId') AS submissionId,
+    json_extract(${record},'$.triageSubmissionId') AS triageSubmissionId`;
 }
 function parsePlanning(row: Record<string, unknown>, workId: string) {
   const { columnId, columnWorkId, ...metadata } = row;
@@ -56,7 +72,7 @@ function parsePlanning(row: Record<string, unknown>, workId: string) {
 function planningCandidates(db: DatabaseSync, workId: string) {
   return db
     .prepare(
-      `SELECT ${planningProjection('i')} FROM factory_planning_intents i WHERE i.work_id=? ORDER BY i.rowid DESC LIMIT ?`,
+      `SELECT ${planningProjection('i')} FROM factory_planning_intents i WHERE ${taskCandidate('i.work_id', 'i.record')} ORDER BY i.rowid DESC LIMIT ?`,
     )
     .all(workId, sourceLimit + 1)
     .map((row) => parsePlanning(row, workId));
@@ -143,7 +159,7 @@ function canonicalRecord<T>(
 function codingCandidates(db: DatabaseSync, workId: string) {
   return db
     .prepare(
-      'SELECT * FROM coding_runs WHERE work_item_id=? ORDER BY sequence DESC LIMIT ?',
+      `SELECT * FROM coding_runs WHERE ${taskCandidate('work_item_id', 'record_json', '$.snapshot.workItemId')} ORDER BY sequence DESC LIMIT ?`,
     )
     .all(workId, sourceLimit + 1)
     .map((row) => canonicalRecord(row, decodeCodingRunRow));
@@ -151,7 +167,7 @@ function codingCandidates(db: DatabaseSync, workId: string) {
 function readDeliveryCandidates(db: DatabaseSync, workId: string) {
   return db
     .prepare(
-      'SELECT * FROM factory_delivery_pipelines WHERE work_item_id=? ORDER BY sequence DESC LIMIT ?',
+      `SELECT * FROM factory_delivery_pipelines WHERE ${taskCandidate('work_item_id', 'record_json', '$.workItemId')} ORDER BY sequence DESC LIMIT ?`,
     )
     .all(workId, sourceLimit + 1)
     .map((row) => canonicalRecord(row, decodeDeliveryPipelineRow));
@@ -174,7 +190,7 @@ function writebackCandidates(db: DatabaseSync, workId: string, health = false) {
     : 'rowid DESC';
   return db
     .prepare(
-      `SELECT id,kind,work_id,record FROM factory_writeback_records WHERE work_id=? ORDER BY ${order} LIMIT ?`,
+      `SELECT id,kind,work_id,record FROM factory_writeback_records WHERE ${taskCandidate('work_id')} ORDER BY ${order} LIMIT ?`,
     )
     .all(workId, sourceLimit + 1)
     .map((row) => {
@@ -226,13 +242,13 @@ export function readTaskRecords(db: DatabaseSync, workId: string) {
   const writeback = writebackEffects(writebackRows.slice(0, sourceLimit));
   const revisions = jsonRows(
     db,
-    'SELECT version,record FROM factory_spec_revisions WHERE work_id=? ORDER BY rowid DESC LIMIT ?',
+    `SELECT version,work_id AS workId,record FROM factory_spec_revisions WHERE ${taskCandidate('work_id')} ORDER BY rowid DESC LIMIT ?`,
     revisionSchema,
     workId,
   );
   const releases = jsonRows(
     db,
-    'SELECT id,record FROM factory_releases WHERE work_id=? ORDER BY rowid DESC LIMIT ?',
+    `SELECT id,work_id AS workId,record FROM factory_releases WHERE ${taskCandidate('work_id')} ORDER BY rowid DESC LIMIT ?`,
     releaseSchema,
     workId,
   );
@@ -348,7 +364,7 @@ export function readTaskHealthRecords(
     work.lifecycle === 'queued'
       ? jsonRows(
           db,
-          'SELECT id,record FROM factory_releases WHERE work_id=? ORDER BY rowid DESC LIMIT ?',
+          `SELECT id,work_id AS workId,record FROM factory_releases WHERE ${taskCandidate('work_id')} ORDER BY rowid DESC LIMIT ?`,
           releaseSchema,
           workId,
         )
@@ -363,9 +379,9 @@ export function readTaskHealthRecords(
     work.lifecycle === 'queued'
       ? db
           .prepare(
-            'SELECT version,record FROM factory_spec_revisions WHERE work_id=? AND version=? LIMIT 1',
+            `SELECT version,work_id AS workId,record FROM factory_spec_revisions WHERE ${taskCandidate('work_id')} AND (version=?2 OR ${embeddedEquals('record', '$.version', '?2')}) ORDER BY rowid DESC LIMIT ?`,
           )
-          .all(workId, work.specVersion)
+          .all(workId, work.specVersion, sourceLimit + 1)
           .map((row) => parseRecord(row, revisionSchema))
       : [];
   // Validate a bounded candidate window before deciding which outcomes are terminal.
@@ -404,6 +420,7 @@ export function readTaskHealthRecords(
     truncated:
       runCandidates.length > sourceLimit ||
       releaseCandidates.length > sourceLimit ||
+      revisions.length > sourceLimit ||
       candidates.length > sourceLimit ||
       deliveryCandidates.length > sourceLimit ||
       writebackRows.length > sourceLimit ||
