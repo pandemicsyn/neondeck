@@ -83,8 +83,13 @@ runtime paths, hostnames, task content or credentials belong in committed artifa
 - Lint, import boundaries, migration checks and types passed. The full unit suite
   passed 3,050 tests and serial Git tests passed 47 tests. Production/dashboard/docs
   builds, package validation, packed CLI smoke and formatting passed. Delivery
-  integration fixtures are being updated to seed a real local remote for the new
-  fetch path; final integration results are recorded separately below.
+  integration fixtures now seed a real local remote for the new fetch path.
+- After that fixture correction, representative Codex integrations passed for
+  initial coding plus pre-publication repair (98 seconds) and watched-feedback
+  repair (128 seconds). The earlier full integration run passed 142 tests but
+  failed 11 cases on the unseeded fixture. Its full scenario matrix was not rerun;
+  the two representative reruns exercise both corrected admission/repair paths.
+  OpenCode/Kilo integration cases remain Linux-only and were skipped on macOS.
 - Live operator acceptance remains open: answer an actual blocking question in
   the upgraded dashboard, and start a new task against a repository whose remote
   default branch has advanced. Browser verification used mocked APIs and is not
