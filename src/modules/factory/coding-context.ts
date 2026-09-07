@@ -14,7 +14,10 @@ import {
   codingRunSnapshotSchema,
   type CodingRunSnapshot,
 } from '../../../shared/coding-runs';
-import { factoryCodingConfigSchema } from '../../../shared/factory-coding';
+import {
+  factoryCodingConfigSchema,
+  type FactoryCodingConfig,
+} from '../../../shared/factory-coding';
 import {
   parseAppConfig,
   parseRepoRegistry,
@@ -28,6 +31,17 @@ import { getFactoryWork } from './service';
 import { gitAsync } from './repo-reader';
 export const codingDigest = (value: unknown) =>
   createHash('sha256').update(JSON.stringify(value)).digest('hex');
+/** Persisted releases retain full digests. Only the runtime switch may differ;
+ * fresh release requests still compare the complete reviewed configuration. */
+function matchesReleasedCodingConfig(
+  fingerprint: string,
+  coding: FactoryCodingConfig,
+) {
+  return (
+    fingerprint === codingDigest(coding) ||
+    fingerprint === codingDigest({ ...coding, enabled: !coding.enabled })
+  );
+}
 export function codingConfig(paths: RuntimePaths) {
   const config = readRuntimeJsonSync(paths.config, parseAppConfig);
   return {
@@ -73,7 +87,9 @@ export function assertReleasedCodingConfig(
       throw new CodingPreflightError(
         'Legacy release permits only the original default Codex selection. Review coding settings and release a refreshed brief.',
       );
-  } else if (release.codingConfigFingerprint !== codingDigest(coding)) {
+  } else if (
+    !matchesReleasedCodingConfig(release.codingConfigFingerprint, coding)
+  ) {
     throw new CodingPreflightError(
       'Coding configuration changed since human release. Review coding settings and release a refreshed brief.',
     );
@@ -282,7 +298,10 @@ export function assertCodingAuthoritySnapshot(
     JSON.stringify(repo) !== snapshot.repoSnapshot ||
     (release.codingConfigFingerprint === null
       ? coding.adapter !== null
-      : release.codingConfigFingerprint !== codingDigest(coding)) ||
+      : !matchesReleasedCodingConfig(
+          release.codingConfigFingerprint,
+          coding,
+        )) ||
     codingDigest({ release: release.policy, coding }) !==
       codingDigest(frozenCodingPolicy(snapshot))
   )

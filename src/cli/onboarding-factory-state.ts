@@ -40,10 +40,14 @@ export function readFactorySetup(paths: RuntimePaths) {
   };
 }
 
+/** Explicit operator opt-in, collected separately from the final Apply confirmation. */
+export type FactorySetupAuthorization = { enableCoding: true };
+
 export function applyFactorySetup(
   paths: RuntimePaths,
   fingerprint: string,
   proposal: unknown,
+  authorization?: FactorySetupAuthorization,
 ) {
   const current = readFactorySetup(paths);
   if (current.fingerprint !== fingerprint)
@@ -53,7 +57,14 @@ export function applyFactorySetup(
   const next = v.parse(factoryConfigSchema, proposal);
   if (current.factory.enabled && !next.enabled)
     throw new Error('Setup cannot disable an existing factory.');
-  if (next.coding.enabled !== current.factory.coding.enabled)
+  if (
+    next.coding.enabled !== current.factory.coding.enabled &&
+    !(
+      authorization?.enableCoding === true &&
+      !current.factory.coding.enabled &&
+      next.coding.enabled
+    )
+  )
     throw new Error('Setup cannot change coding authority.');
   if (!current.factory.enabled && next.enabled && current.modelIssues.length)
     throw new Error(

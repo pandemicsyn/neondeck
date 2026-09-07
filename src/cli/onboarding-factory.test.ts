@@ -1,4 +1,5 @@
-import { log } from '@clack/prompts';
+import { log, note } from '@clack/prompts';
+import { MAX_FACTORY_GITHUB_CONNECTIONS } from '../../shared/factory';
 import { writeFileSync } from 'node:fs';
 import * as agentConfig from '../modules/runtime/agent-config';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
@@ -12,7 +13,12 @@ import {
   readFactorySetup,
 } from './onboarding-factory-state';
 import { configureFactory } from './onboarding-factory';
-import { promptConfirm, promptSelect, promptText } from './prompts';
+import {
+  promptConfirm,
+  promptSelect,
+  promptText,
+  promptMultiselect,
+} from './prompts';
 import { readFactoryGitHubRepository } from '../modules/github';
 import { writeFile } from 'node:fs/promises';
 vi.mock('./prompts', async (importOriginal) => ({
@@ -20,6 +26,7 @@ vi.mock('./prompts', async (importOriginal) => ({
   promptConfirm: vi.fn<typeof promptConfirm>(),
   promptSelect: vi.fn<typeof promptSelect>(),
   promptText: vi.fn<typeof promptText>(),
+  promptMultiselect: vi.fn<typeof promptMultiselect>(),
 }));
 vi.mock('../modules/github', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../modules/github')>()),
@@ -221,11 +228,12 @@ it.each([false, true])(
     if (!enabled) vi.mocked(promptConfirm).mockResolvedValueOnce(false);
     vi.mocked(promptConfirm)
       .mockResolvedValueOnce(false)
+      .mockResolvedValueOnce(false)
       .mockResolvedValueOnce(true);
     vi.mocked(promptSelect)
       .mockResolvedValueOnce('github')
-      .mockResolvedValueOnce('fixture')
       .mockResolvedValueOnce('all');
+    vi.mocked(promptMultiselect).mockResolvedValue(['fixture']);
     vi.mocked(promptText)
       .mockResolvedValueOnce('fixture-intake')
       .mockResolvedValueOnce('SETUP_TEST_SECRET')
@@ -383,6 +391,7 @@ it('keeps manual intake available without a repository', async () => {
     .mockResolvedValueOnce(true)
     .mockResolvedValueOnce(true)
     .mockResolvedValueOnce(false)
+    .mockResolvedValueOnce(false)
     .mockResolvedValueOnce(true);
   vi.mocked(promptSelect).mockResolvedValue('manual');
 
@@ -412,9 +421,8 @@ it.each(['removed-repo', ''])(
     );
     const bytes = await readFile(paths.config, 'utf8');
     vi.mocked(promptConfirm).mockResolvedValue(true);
-    vi.mocked(promptSelect)
-      .mockResolvedValueOnce('github')
-      .mockResolvedValueOnce(selection);
+    vi.mocked(promptSelect).mockResolvedValueOnce('github');
+    vi.mocked(promptMultiselect).mockResolvedValue([selection]);
 
     await expect(configureFactory(paths)).resolves.toBeUndefined();
 
@@ -451,6 +459,7 @@ it('propagates apply precondition failures from the optional wizard', async () =
     .mockResolvedValueOnce(true)
     .mockResolvedValueOnce(true)
     .mockResolvedValueOnce(false)
+    .mockResolvedValueOnce(false)
     .mockResolvedValueOnce(true);
   vi.mocked(promptSelect).mockResolvedValue('manual');
 
@@ -458,4 +467,375 @@ it('propagates apply precondition failures from the optional wizard', async () =
     'Configure registered planning and utility model references',
   );
   expect(await readFile(paths.config, 'utf8')).toBe(bytes);
+});
+
+it('allows only an explicitly authorized false-to-true coding transition', async () => {
+  const paths = await fixture();
+  const before = readFactorySetup(paths);
+  const proposal = {
+    ...before.factory,
+    coding: { ...before.factory.coding, enabled: true },
+  };
+  expect(() => applyFactorySetup(paths, before.fingerprint, proposal)).toThrow(
+    'coding authority',
+  );
+  applyFactorySetup(paths, before.fingerprint, proposal, {
+    enableCoding: true,
+  });
+  const enabled = readFactorySetup(paths);
+  expect(enabled.factory.coding.enabled).toBe(true);
+  expect(() =>
+    applyFactorySetup(paths, enabled.fingerprint, before.factory, {
+      enableCoding: true,
+    }),
+  ).toThrow('coding authority');
+});
+
+async function registerSetupRepos(paths: ReturnType<typeof runtimePaths>) {
+  await writeFile(
+    paths.repos,
+    JSON.stringify({
+      repos: ['one', 'two'].map((id) => ({
+        id,
+        path: `/tmp/${id}`,
+        defaultBranch: 'main',
+        github: { owner: 'example', name: id },
+      })),
+    }),
+  );
+}
+
+function manualChoices(enable: boolean, apply: boolean) {
+  vi.mocked(promptSelect).mockResolvedValue('manual');
+  vi.mocked(promptConfirm).mockImplementation(async ({ message }) => {
+    if (message === 'Enable coding for human-released tasks?') return enable;
+    if (message === 'Apply this local factory configuration?') return apply;
+    return message === 'Set up optional factory intake now?';
+  });
+}
+
+it.each([false, true])(
+  'requires final Apply after coding opt-in: %s',
+  async (apply) => {
+    const paths = await fixture();
+    await registerSetupRepos(paths);
+    const bytes = await readFile(paths.config, 'utf8');
+    manualChoices(true, apply);
+    await configureFactory(paths);
+    expect(readFactorySetup(paths).factory.coding.enabled).toBe(apply);
+    expect((await readFile(paths.config, 'utf8')) === bytes).toBe(!apply);
+    expect(promptMultiselect).not.toHaveBeenCalled();
+    expect(promptSelect).toHaveBeenCalledTimes(1);
+    expect(promptConfirm).toHaveBeenCalledWith({
+      message: 'Enable coding for human-released tasks?',
+      initialValue: false,
+    });
+  },
+);
+
+it('retains enabled coding without asking an enable question', async () => {
+  const paths = await fixture();
+  updateFactoryConfig({ coding: { enabled: true } }, paths);
+  manualChoices(false, true);
+  await configureFactory(paths);
+  expect(readFactorySetup(paths).factory.coding.enabled).toBe(true);
+  expect(promptConfirm).not.toHaveBeenCalledWith(
+    expect.objectContaining({
+      message: 'Enable coding for human-released tasks?',
+    }),
+  );
+  expect(log.info).toHaveBeenCalledWith(
+    expect.stringContaining('Coding remains enabled'),
+  );
+});
+
+it('adds multiple disabled connections once and preserves existing connections on repeat setup', async () => {
+  const paths = await fixture();
+  await registerSetupRepos(paths);
+  manualChoices(false, true);
+  vi.mocked(promptSelect).mockImplementation(async ({ message }) =>
+    message === 'Intake setup' ? 'github' : 'all',
+  );
+  vi.mocked(promptMultiselect).mockResolvedValue(['one', 'two', 'one']);
+  vi.stubEnv('SETUP_TEST_TOKEN', 'synthetic-fixture');
+  vi.mocked(readFactoryGitHubRepository).mockImplementation(
+    async (connection) => ({
+      id: connection.repoId === 'one' ? 1 : 2,
+      name: connection.name,
+      owner: { login: connection.owner },
+    }),
+  );
+  vi.mocked(promptText)
+    .mockResolvedValueOnce('one-intake')
+    .mockResolvedValueOnce('ONE_SECRET')
+    .mockResolvedValueOnce('SETUP_TEST_TOKEN')
+    .mockResolvedValueOnce('two-intake')
+    .mockResolvedValueOnce('TWO_SECRET')
+    .mockResolvedValueOnce('SETUP_TEST_TOKEN');
+  await configureFactory(paths);
+  const first = readFactorySetup(paths).factory;
+  expect(first.github).toEqual([
+    expect.objectContaining({
+      id: 'one-intake',
+      repoId: 'one',
+      repositoryId: '1',
+      enabled: false,
+      webhookSecretEnv: 'ONE_SECRET',
+    }),
+    expect.objectContaining({
+      id: 'two-intake',
+      repoId: 'two',
+      repositoryId: '2',
+      enabled: false,
+      webhookSecretEnv: 'TWO_SECRET',
+    }),
+  ]);
+  await configureFactory(paths);
+  expect(readFactorySetup(paths).factory).toEqual(first);
+  expect(readFactoryGitHubRepository).toHaveBeenCalledTimes(2);
+  expect(promptText).toHaveBeenCalledTimes(6);
+  const preview = vi
+    .mocked(note)
+    .mock.calls.map(([message]) => message)
+    .join('\n');
+  expect(preview).toContain('references only');
+  expect(preview).toContain('ONE_SECRET');
+  expect(preview).not.toContain('synthetic-fixture');
+});
+
+it('handles empty selection without adding connections', async () => {
+  const paths = await fixture();
+  await registerSetupRepos(paths);
+  manualChoices(false, true);
+  vi.mocked(promptSelect).mockResolvedValue('github');
+  vi.mocked(promptMultiselect).mockResolvedValue([]);
+  await configureFactory(paths);
+  expect(readFactorySetup(paths).factory.github).toEqual([]);
+  expect(readFactoryGitHubRepository).not.toHaveBeenCalled();
+});
+
+it.each(['failure', 'cancel'])(
+  'does not save the first connection when the second encounters %s',
+  async (mode) => {
+    const paths = await fixture();
+    await registerSetupRepos(paths);
+    const bytes = await readFile(paths.config, 'utf8');
+    manualChoices(false, true);
+    vi.mocked(promptSelect).mockImplementation(async ({ message }) =>
+      message === 'Intake setup' ? 'github' : 'all',
+    );
+    vi.mocked(promptMultiselect).mockResolvedValue(['one', 'two']);
+    vi.stubEnv('SETUP_TEST_TOKEN', 'synthetic-fixture');
+    vi.mocked(readFactoryGitHubRepository)
+      .mockResolvedValueOnce({
+        id: 1,
+        name: 'one',
+        owner: { login: 'example' },
+      })
+      .mockRejectedValueOnce(new Error('lookup failed'));
+    vi.mocked(promptText)
+      .mockResolvedValueOnce('one')
+      .mockResolvedValueOnce('ONE_SECRET')
+      .mockResolvedValueOnce('SETUP_TEST_TOKEN');
+    if (mode === 'cancel')
+      vi.mocked(promptText).mockRejectedValueOnce(new Error('cancelled'));
+    else
+      vi.mocked(promptText)
+        .mockResolvedValueOnce('two')
+        .mockResolvedValueOnce('TWO_SECRET')
+        .mockResolvedValueOnce('SETUP_TEST_TOKEN');
+    const result = await configureFactory(paths).then(
+      () => 'completed',
+      (error: Error) => error.message,
+    );
+    expect(result).toBe(mode === 'cancel' ? 'cancelled' : 'completed');
+    expect(await readFile(paths.config, 'utf8')).toBe(bytes);
+  },
+);
+
+it('explains existing released work and factory-off blocking before coding opt-in', async () => {
+  const paths = await fixture();
+  manualChoices(true, true);
+  await configureFactory(paths);
+  const codingPrompt = vi
+    .mocked(promptConfirm)
+    .mock.calls.findIndex(
+      ([options]) =>
+        options.message === 'Enable coding for human-released tasks?',
+    );
+  for (const text of [
+    'existing human-released tasks',
+    'will not dispatch until factory intake is enabled',
+  ]) {
+    const info = vi
+      .mocked(log.info)
+      .mock.calls.findIndex(([message]) => message.includes(text));
+    expect(info).toBeGreaterThanOrEqual(0);
+    expect(vi.mocked(log.info).mock.invocationCallOrder[info]).toBeLessThan(
+      vi.mocked(promptConfirm).mock.invocationCallOrder[codingPrompt]!,
+    );
+  }
+  expect(readFactorySetup(paths).factory.enabled).toBe(false);
+  expect(readFactorySetup(paths).factory.coding.enabled).toBe(true);
+});
+
+it('rejects explicit coding opt-in when the repository snapshot changed', async () => {
+  const paths = await fixture();
+  const before = readFactorySetup(paths);
+  const bytes = await readFile(paths.config, 'utf8');
+  await registerSetupRepos(paths);
+  expect(() =>
+    applyFactorySetup(
+      paths,
+      before.fingerprint,
+      {
+        ...before.factory,
+        coding: { ...before.factory.coding, enabled: true },
+      },
+      { enableCoding: true },
+    ),
+  ).toThrow('changed during setup');
+  expect(await readFile(paths.config, 'utf8')).toBe(bytes);
+});
+
+async function capacityFixture(existingCount: number) {
+  const paths = await fixture();
+  await writeFile(
+    paths.repos,
+    JSON.stringify({
+      repos: ['existing-0', 'one', 'two', 'three'].map((id) => ({
+        id,
+        path: `/tmp/${id}`,
+        defaultBranch: 'main',
+        github: { owner: 'example', name: id },
+      })),
+    }),
+  );
+  updateFactoryConfig(
+    {
+      github: Array.from({ length: existingCount }, (_, index) => ({
+        id: `connection-${index}`,
+        repoId: `existing-${index}`,
+        enabled: index === 0,
+        repositoryId: String(index + 1),
+        owner: 'example',
+        name: `existing-${index}`,
+        admission: { mode: 'all' as const },
+        webhookSecretEnv: 'EXISTING_SECRET',
+        tokenEnv: 'SETUP_TEST_TOKEN',
+      })),
+    },
+    paths,
+  );
+  manualChoices(false, true);
+  vi.mocked(promptSelect).mockImplementation(async ({ message }) =>
+    message === 'Intake setup' ? 'github' : 'all',
+  );
+  return paths;
+}
+
+it.each([0, 1, 2])(
+  'rejects additions beyond %s remaining slots before details or metadata',
+  async (remaining) => {
+    const paths = await capacityFixture(
+      MAX_FACTORY_GITHUB_CONNECTIONS - remaining,
+    );
+    const bytes = await readFile(paths.config, 'utf8');
+    vi.mocked(promptMultiselect).mockResolvedValue(['one', 'two', 'three']);
+    await expect(configureFactory(paths)).resolves.toBeUndefined();
+    expect(await readFile(paths.config, 'utf8')).toBe(bytes);
+    expect(promptText).not.toHaveBeenCalled();
+    expect(readFactoryGitHubRepository).not.toHaveBeenCalled();
+    expect(promptConfirm).not.toHaveBeenCalledWith(
+      expect.objectContaining({
+        message: 'Apply this local factory configuration?',
+      }),
+    );
+    expect(log.info).toHaveBeenCalledWith(
+      expect.stringContaining(
+        remaining === 0 ? 'slots are in use' : `only ${remaining} slots remain`,
+      ),
+    );
+    expect(promptMultiselect).toHaveBeenCalledTimes(remaining === 0 ? 0 : 1);
+    expect(log.info).toHaveBeenCalledWith(
+      expect.stringContaining(
+        remaining === 0
+          ? 'choose manual intake'
+          : `select at most ${remaining}`,
+      ),
+    );
+  },
+);
+
+it.each([false, true])(
+  'stages exactly the remaining capacity atomically, Apply: %s',
+  async (apply) => {
+    const paths = await capacityFixture(MAX_FACTORY_GITHUB_CONNECTIONS - 2);
+    const before = readFactorySetup(paths).factory;
+    const bytes = await readFile(paths.config, 'utf8');
+    vi.mocked(promptConfirm).mockImplementation(
+      async ({ message }) =>
+        message === 'Set up optional factory intake now?' ||
+        (message === 'Apply this local factory configuration?' && apply),
+    );
+    vi.mocked(promptMultiselect).mockResolvedValue([
+      'existing-0',
+      'one',
+      'two',
+      'one',
+    ]);
+    vi.stubEnv('SETUP_TEST_TOKEN', 'synthetic-fixture');
+    vi.mocked(readFactoryGitHubRepository).mockImplementation(
+      async (connection) => ({
+        id: connection.repoId === 'one' ? 101 : 102,
+        name: connection.name,
+        owner: { login: connection.owner },
+      }),
+    );
+    vi.mocked(promptText)
+      .mockResolvedValueOnce('one-intake')
+      .mockResolvedValueOnce('ONE_SECRET')
+      .mockResolvedValueOnce('SETUP_TEST_TOKEN')
+      .mockResolvedValueOnce('two-intake')
+      .mockResolvedValueOnce('TWO_SECRET')
+      .mockResolvedValueOnce('SETUP_TEST_TOKEN');
+    await configureFactory(paths);
+    expect(promptMultiselect).toHaveBeenCalledWith(
+      expect.objectContaining({
+        message:
+          'Repositories for GitHub issue intake (up to 2 new connections)',
+      }),
+    );
+    expect(readFactoryGitHubRepository).toHaveBeenCalledTimes(2);
+    const after = readFactorySetup(paths).factory;
+    expect(after.github.slice(0, before.github.length)).toEqual(before.github);
+    expect(after.github).toHaveLength(before.github.length + (apply ? 2 : 0));
+    expect(
+      after.github
+        .slice(before.github.length)
+        .map(({ repoId, enabled }) => ({ repoId, enabled })),
+    ).toEqual(
+      apply
+        ? [
+            { repoId: 'one', enabled: false },
+            { repoId: 'two', enabled: false },
+          ]
+        : [],
+    );
+    expect((await readFile(paths.config, 'utf8')) === bytes).toBe(!apply);
+  },
+);
+
+it('allows manual setup with all GitHub slots occupied', async () => {
+  const paths = await capacityFixture(MAX_FACTORY_GITHUB_CONNECTIONS);
+  const before = readFactorySetup(paths).factory.github;
+  manualChoices(false, true);
+  await configureFactory(paths);
+  expect(readFactorySetup(paths).factory.github).toEqual(before);
+  expect(promptMultiselect).not.toHaveBeenCalled();
+  expect(promptConfirm).toHaveBeenCalledWith(
+    expect.objectContaining({
+      message: 'Apply this local factory configuration?',
+    }),
+  );
 });

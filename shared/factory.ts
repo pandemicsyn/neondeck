@@ -6,12 +6,13 @@ const text = (max = 20000) => v.pipe(v.string(), v.maxLength(max));
 const label = v.pipe(text(240), v.trim(), v.minLength(1));
 const version = v.pipe(v.number(), v.integer(), v.minValue(1));
 const hash = v.pipe(v.string(), v.regex(/^[a-f0-9]{64}$/));
+export const MAX_FACTORY_GITHUB_CONNECTIONS = 20;
 export const factoryConfigSchema = v.strictObject({
   enabled: v.optional(v.boolean(), false),
   github: v.optional(
     v.pipe(
       v.array(githubConnectionSchema),
-      v.maxLength(20),
+      v.maxLength(MAX_FACTORY_GITHUB_CONNECTIONS),
       v.check(
         (items) => new Set(items.map((item) => item.id)).size === items.length,
         'Connection IDs must be unique.',

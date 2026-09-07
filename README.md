@@ -31,14 +31,23 @@ mutable state stored in SQLite under a runtime home you control.
 
 ## Factory intake, coding and delivery
 
-Run `neondeck factory setup` to configure an installed coding CLI. Review its
-executable search PATH before the version probe: npm-installed wrappers using
-`#!/usr/bin/env node` need the Node runtime directory as well as system tools
-(for example, `/opt/node/bin:/usr/local/bin:/usr/bin:/bin`). Setup defaults to the
-currently configured PATH and requires colon-separated absolute directories with
-no empty entries. It does not copy your shell environment or secret values. The
-final configuration preview includes this PATH before you choose whether to save;
-coding authority and release/publication grants remain separate.
+Run `neondeck factory setup` to detect an installed Codex, OpenCode or Kilo CLI.
+Setup derives the executable search PATH, including Node for npm wrappers;
+manual path editing remains available. Search Codex models or the Kilo catalog
+using the deck's configured Kilo gateway key. Kilo defaults to Auto Frontier
+when no key is configured or discovery is unavailable.
+
+Choose an existing file-backed Codex login or a credential environment reference.
+Local login reuse stores only the selected `auth.json` path and copies credentials
+into each private attempt home. Keyring-only logins require file-backed storage
+or an explicit credential reference. Attempt token refreshes are not written back
+to the original login file; live refresh/long-running acceptance remains open.
+
+GitHub setup can add multiple repositories at once. New connections are saved
+disabled for review; manual tasks select their repository in the dashboard.
+Setup separately asks whether to enable coding for human-released tasks, then
+shows the complete proposal before Apply. Enabling coding can dispatch existing
+released work; it does not release tasks or grant publication permission.
 
 Open `/factory` to enable the opt-in local inbox and create manual tasks. Admitted
 tasks receive bounded utility-model triage automatically. Choose **Ask Neon to
