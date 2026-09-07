@@ -9,6 +9,9 @@ Status: implementation and independent static reviews complete, September 7, 202
 - Drafting remains possible while sending is blocked. Explain the reason and put
   any required context-refresh action next to the reply box. Sending retains the
   existing pending-request, lifecycle and authority checks.
+- Release must explain any open local draft, recovery or other admission blocker
+  beside its button. Comparison mode must offer a way to reveal a retained editor
+  without silently discarding its contents or authorizing a release.
 - A new planning session captures the latest fetched `origin` commit for the
   registered repository's configured default branch (normally `main`). Creating
   lightweight intake triage must not leave the first planning turn on an old HEAD.
@@ -73,6 +76,15 @@ runtime paths, hostnames, task content or credentials belong in committed artifa
   sending is gated, retains text across refresh, blocks Enter submission while
   stale, and submits once after recovery. No horizontal overflow or browser errors
   were observed. Synthetic screenshots accompany the reply UI PR.
+- A follow-up browser check reproduced a hidden v1 editor with saved model v4.
+  The release notice revealed the unchanged draft; explicitly cancelling that
+  synthetic draft enabled Release v4. The live operator draft was not cancelled
+  or released. Factory UI regression tests passed (329 tests).
+- Lint, import boundaries, migration checks and types passed. The full unit suite
+  passed 3,050 tests and serial Git tests passed 47 tests. Production/dashboard/docs
+  builds, package validation, packed CLI smoke and formatting passed. Delivery
+  integration fixtures are being updated to seed a real local remote for the new
+  fetch path; final integration results are recorded separately below.
 - Live operator acceptance remains open: answer an actual blocking question in
   the upgraded dashboard, and start a new task against a repository whose remote
   default branch has advanced. Browser verification used mocked APIs and is not

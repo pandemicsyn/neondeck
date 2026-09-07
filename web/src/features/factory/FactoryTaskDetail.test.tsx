@@ -488,3 +488,114 @@ it.each([
     expect(container.textContent).toContain('Saved draft needs recovery');
   },
 );
+
+it.each([false, true])(
+  'reveals an older local editor from compare mode without discarding it (edited=%s)',
+  async (edited) => {
+    current = {
+      ...current,
+      blockers: [],
+      work: { ...current.work, version: 1, specVersion: 1 },
+      revisions: [current.revisions[0]],
+    };
+    await render();
+    await click('Edit draft');
+    if (edited)
+      await input('.factory-editor-fields textarea', 'Keep my local outcome');
+    const savedEditor = JSON.parse(
+      sessionStorage.getItem('factory-workbench:task')!,
+    ).editor;
+    current = {
+      ...current,
+      work: { ...current.work, version: 4, specVersion: 4 },
+      revisions: [
+        ...current.revisions,
+        {
+          ...current.revisions[0],
+          version: 4,
+          hash: 'd'.repeat(64),
+          spec: {
+            ...current.revisions[0].spec,
+            outcome: 'Latest model outcome',
+          },
+        },
+      ],
+    };
+    await render();
+    await input('[aria-label="Retained version"]', '4');
+    await click('Compare versions');
+    await click('Conversation');
+    const field = container.querySelector<HTMLTextAreaElement>(
+      '.factory-editor-fields textarea',
+    )!;
+    expect(field.closest('[hidden]')).not.toBeNull();
+    const release = button('Release v4');
+    expect(release.disabled).toBe(true);
+    expect(button('Pause').disabled).toBe(true);
+    const notice = document.getElementById(
+      release.getAttribute('aria-describedby')!,
+    )!;
+    expect(notice.textContent).toContain('local draft of v1 is open');
+    expect(notice.textContent).toContain('latest saved brief is v4');
+    await click('Release v4');
+    expect(api.mutateFactory).not.toHaveBeenCalled();
+    await click('Review local draft');
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    });
+    expect(field.closest('[hidden]')).toBeNull();
+    expect(
+      container
+        .querySelector('.factory-workbench')!
+        .classList.contains('factory-view-brief'),
+    ).toBe(true);
+    expect(document.activeElement).toBe(field);
+    expect(
+      JSON.parse(sessionStorage.getItem('factory-workbench:task')!).editor,
+    ).toEqual(savedEditor);
+    expect(field.value).toBe(savedEditor.spec.outcome);
+    expect(button('Release v4').disabled).toBe(true);
+    expect(api.mutateFactory).not.toHaveBeenCalled();
+    await click('Cancel edits');
+    expect(button('Release v4').disabled).toBe(false);
+    expect(api.mutateFactory).not.toHaveBeenCalled();
+  },
+);
+
+it('explains draft recovery beside Release without deleting retained data', async () => {
+  const raw = '{invalid synthetic draft';
+  sessionStorage.setItem('factory-workbench:task', raw);
+  current = { ...current, blockers: [] };
+  await render();
+  const release = button('Release v2');
+  expect(release.disabled).toBe(true);
+  expect(
+    document.getElementById(release.getAttribute('aria-describedby')!)!
+      .textContent,
+  ).toContain('resolve Saved draft needs recovery');
+  expect(sessionStorage.getItem('factory-workbench:task')).toBe(raw);
+  expect(api.mutateFactory).not.toHaveBeenCalled();
+});
+
+it('explains an unresolved mutation beside Release until it settles', async () => {
+  current = { ...current, blockers: [] };
+  let resolve!: (value: FactoryDetail) => void;
+  api.mutateFactory.mockImplementationOnce(
+    () =>
+      new Promise<FactoryDetail>((done) => {
+        resolve = done;
+      }),
+  );
+  await render();
+  await click('Release v2');
+  const release = button('Release v2');
+  expect(release.disabled).toBe(true);
+  expect(
+    document.getElementById(release.getAttribute('aria-describedby')!)!
+      .textContent,
+  ).toContain('Saving task changes');
+  await act(async () => {
+    resolve(current);
+  });
+  expect(button('Release v2').disabled).toBe(false);
+});
