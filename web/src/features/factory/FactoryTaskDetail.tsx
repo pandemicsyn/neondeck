@@ -146,7 +146,13 @@ export function FactoryTaskDetail({
                   ? 'Needs your decision — answer blocking questions before release.'
                   : detail.blockers.length
                     ? 'Needs your attention — shape the draft and resolve release requirements.'
-                    : 'Ready for your review — release requires your explicit decision.'}
+                    : recovery
+                      ? 'Saved draft needs recovery before release.'
+                      : editor
+                        ? 'Local draft open — review or cancel edits before release.'
+                        : busy
+                          ? 'Saving task changes — wait before releasing.'
+                          : 'Ready for your review — release requires your explicit decision.'}
       </p>
       <FactoryCoding
         onDiscussDelivery={(evidence) => {
@@ -395,22 +401,76 @@ export function FactoryTaskDetail({
           Source v{viewed.sourceVersion} · {viewed.authorKind}:{' '}
           {viewed.authorKind === 'model' ? 'Neon' : viewed.actor}
         </p>
-        {viewed.version !== latest.version && (
-          <p role="status">
-            Viewing retained v{viewed.version}. Only the current version can be
-            released. Select and review v{latest.version} first.
-          </p>
-        )}
-        {detail.blockers.length > 0 && (
-          <ul>
-            {detail.blockers.map((reason) => (
-              <li key={reason}>{reason}</li>
-            ))}
-          </ul>
-        )}
         <FactoryReleaseCoding
           key={`${detail.work.id}:${viewed.version}`}
           label={`Release v${viewed.version}`}
+          releaseNotice={
+            <>
+              {editor && (
+                <p>
+                  Release and task transitions are blocked while your local
+                  draft of v{editor.specVersion} is open. The latest saved brief
+                  is v{latest.version}. Review and save your edits, or choose
+                  Cancel edits in the editor to use the saved brief.{' '}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setCompare(false);
+                      setWorkbenchView('brief');
+                      setTimeout(() => {
+                        const field =
+                          workbench.current?.querySelector<HTMLTextAreaElement>(
+                            '.factory-editor-fields textarea',
+                          );
+                        field?.scrollIntoView?.({ block: 'center' });
+                        field?.focus();
+                      }, 0);
+                    }}
+                  >
+                    Review local draft
+                  </button>
+                </p>
+              )}
+              {recovery && (
+                <p>
+                  Release is blocked until you resolve Saved draft needs
+                  recovery above. Retained draft data has not been discarded.
+                </p>
+              )}
+              {busy && (
+                <p>
+                  <output>
+                    Saving task changes. Wait for the result before releasing.
+                  </output>
+                </p>
+              )}
+              {viewed.version !== latest.version && (
+                <p>
+                  Viewing retained v{viewed.version}. Only the current version
+                  can be released. Select and review v{latest.version} first.
+                </p>
+              )}
+              {detail.blockers.length > 0 && (
+                <ul>
+                  {detail.blockers.map((reason) => (
+                    <li key={reason}>{reason}</li>
+                  ))}
+                </ul>
+              )}
+              {!detail.repoFingerprint && (
+                <p>
+                  Release requires current repository context. Review Source and
+                  repository below.
+                </p>
+              )}
+              {detail.eligible && (
+                <p>
+                  This task is already released. Check coding status above for
+                  execution progress.
+                </p>
+              )}
+            </>
+          }
           disabled={
             busy ||
             !!editor ||

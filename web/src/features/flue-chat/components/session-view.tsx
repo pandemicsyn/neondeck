@@ -5,10 +5,12 @@ import { useFlueAgent } from '@flue/react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   useEffect,
+  useId,
   useMemo,
   useRef,
   useState,
   type FormEvent,
+  type ReactNode,
   type KeyboardEvent,
 } from 'react';
 import type {
@@ -63,6 +65,9 @@ export function FlueChatSessionView({
   allowCommands = true,
   messageEnabled = true,
   messageLabel = 'Message Neon',
+  composerVariant = 'compact',
+  draftEnabled,
+  composerNotice,
   draftStorageKey,
   consumedDraft,
   responsePending = false,
@@ -80,6 +85,10 @@ export function FlueChatSessionView({
   allowCommands?: boolean;
   messageEnabled?: boolean;
   messageLabel?: string;
+  composerVariant?: 'compact' | 'reply';
+  /** Opt in to editing drafts independently of admission gates. */
+  draftEnabled?: boolean;
+  composerNotice?: ReactNode;
   draftStorageKey?: string;
   consumedDraft?: { message: string; storageKey: string };
   responsePending?: boolean;
@@ -94,6 +103,8 @@ export function FlueChatSessionView({
   session: FlueChatSession | undefined;
   sessionState: NeonSessionState | undefined;
 }) {
+  const composerId = useId();
+  const multilineReply = composerVariant === 'reply';
   const eventConnection = useDashboardEventConnectionState();
   const [input, setInput] = useState(() => {
     try {
@@ -207,7 +218,7 @@ export function FlueChatSessionView({
               : undefined;
   const inputPlaceholder = !session
     ? 'Resolving active session...'
-    : !messageEnabled
+    : !messageEnabled || draftEnabled
       ? session.placeholder
       : historyInputBlocked
         ? 'Loading session history...'
@@ -645,11 +656,31 @@ export function FlueChatSessionView({
           </p>
         )}
         <form
-          className="flue-chat-composer flex min-h-11 items-center gap-2.5 px-4"
+          className={
+            multilineReply
+              ? 'flue-chat-composer flue-chat-composer-reply'
+              : 'flue-chat-composer flex min-h-11 items-center gap-2.5 px-4'
+          }
           onSubmit={submit}
         >
-          <span className="font-mono text-[13px] text-accent">›</span>
+          {multilineReply ? (
+            <label htmlFor={composerId}>{messageLabel}</label>
+          ) : (
+            <span className="font-mono text-[13px] text-accent">›</span>
+          )}
+          {composerNotice && (
+            <div
+              id={`${composerId}-notice`}
+              className="flue-chat-composer-notice"
+            >
+              {composerNotice}
+            </div>
+          )}
           <Textarea
+            id={composerId}
+            aria-describedby={
+              composerNotice ? `${composerId}-notice` : undefined
+            }
             aria-activedescendant={commandMenu.activeOptionId}
             aria-autocomplete="list"
             aria-controls={commandMenu.id}
@@ -663,46 +694,59 @@ export function FlueChatSessionView({
             }}
             onKeyDown={handleKeyDown}
             placeholder={inputPlaceholder}
-            rows={Math.min(5, Math.max(1, input.split('\n').length))}
+            rows={Math.min(
+              multilineReply ? 10 : 5,
+              Math.max(multilineReply ? 4 : 1, input.split('\n').length),
+            )}
             role="combobox"
             disabled={
-              !session ||
-              !messageEnabled ||
-              historyInputBlocked ||
-              sendingMessage ||
-              commandBusy
+              draftEnabled === undefined
+                ? !session ||
+                  !messageEnabled ||
+                  historyInputBlocked ||
+                  sendingMessage ||
+                  commandBusy
+                : !session || !draftEnabled
             }
             value={input}
           />
-          <Kbd className="flue-chat-composer-hint">
-            {commandMenu.open
-              ? 'Tab complete'
-              : historyInputBlocked
-                ? 'Loading history'
-                : runningCommand
-                  ? 'Running'
-                  : commandSubmitting
-                    ? 'Starting'
-                    : sendingMessage
-                      ? 'Sending'
-                      : allowCommands
-                        ? '/ commands | Enter send'
-                        : 'Enter send'}
-          </Kbd>
-          <Button
-            className="flue-chat-send min-h-[28px] shrink-0 bg-transparent px-2 py-1 font-mono text-[10px]"
-            disabled={
-              !session ||
-              !messageEnabled ||
-              historyInputBlocked ||
-              !input.trim() ||
-              sendingMessage ||
-              commandBusy
+          <div
+            className={
+              multilineReply ? 'flue-chat-composer-actions' : 'contents'
             }
-            type="submit"
           >
-            Send
-          </Button>
+            <Kbd className="flue-chat-composer-hint">
+              {commandMenu.open
+                ? 'Tab complete'
+                : historyInputBlocked
+                  ? 'Loading history'
+                  : runningCommand
+                    ? 'Running'
+                    : commandSubmitting
+                      ? 'Starting'
+                      : sendingMessage
+                        ? 'Sending'
+                        : allowCommands
+                          ? '/ commands | Enter send'
+                          : multilineReply
+                            ? 'Enter send · Shift+Enter newline'
+                            : 'Enter send'}
+            </Kbd>
+            <Button
+              className="flue-chat-send min-h-[28px] shrink-0 bg-transparent px-2 py-1 font-mono text-[10px]"
+              disabled={
+                !session ||
+                !messageEnabled ||
+                historyInputBlocked ||
+                !input.trim() ||
+                sendingMessage ||
+                commandBusy
+              }
+              type="submit"
+            >
+              Send
+            </Button>
+          </div>
         </form>
       </div>
     </div>
