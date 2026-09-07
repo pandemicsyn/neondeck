@@ -64,6 +64,9 @@ export function FlueChatSessionView({
   messageEnabled = true,
   messageLabel = 'Message Neon',
   draftStorageKey,
+  consumedDraft,
+  responsePending = false,
+  emptyMessage,
   onReferenceDraftConsumed,
   onSendMessage,
   quickCommands,
@@ -78,6 +81,9 @@ export function FlueChatSessionView({
   messageEnabled?: boolean;
   messageLabel?: string;
   draftStorageKey?: string;
+  consumedDraft?: { message: string; storageKey: string };
+  responsePending?: boolean;
+  emptyMessage?: string;
   onReferenceDraftConsumed?: () => void;
   onSendMessage?: (
     message: string,
@@ -98,6 +104,10 @@ export function FlueChatSessionView({
       return '';
     }
   });
+  useEffect(() => {
+    if (consumedDraft && consumedDraft.storageKey === draftStorageKey)
+      setInput((current) => (current === consumedDraft.message ? '' : current));
+  }, [consumedDraft, draftStorageKey]);
   const [draftStorageFailed, setDraftStorageFailed] = useState(false);
   useEffect(() => {
     if (!draftStorageKey) return;
@@ -192,7 +202,9 @@ export function FlueChatSessionView({
           ? 'submitted'
           : agent.status === 'streaming'
             ? 'streaming'
-            : undefined;
+            : responsePending
+              ? 'submitted'
+              : undefined;
   const inputPlaceholder = !session
     ? 'Resolving active session...'
     : !messageEnabled
@@ -432,7 +444,7 @@ export function FlueChatSessionView({
             : [...submissionIds, submissionId],
         );
       }
-      setInput('');
+      setInput((current) => (current.trim() === message ? '' : current));
     } catch (error) {
       setSubmitError(errorMessage(error));
     } finally {
@@ -587,6 +599,7 @@ export function FlueChatSessionView({
             ))}
             <ChatTimelineItems
               hasSession={Boolean(session)}
+              emptyMessage={emptyMessage}
               items={timelineItems}
             />
             {responseProgress ? (
@@ -642,7 +655,7 @@ export function FlueChatSessionView({
             aria-controls={commandMenu.id}
             aria-expanded={commandMenu.open}
             aria-label={messageLabel}
-            className="dashboard-input h-7 min-w-0 flex-1 overflow-hidden px-0 py-1 font-mono text-[13px] leading-5 caret-primary"
+            className="dashboard-input min-h-7 max-h-32 min-w-0 flex-1 overflow-y-auto px-0 py-1 font-mono text-[13px] leading-5 caret-primary"
             onChange={(event) => {
               setInput(event.target.value);
               commandMenu.resetDismissal();
@@ -650,7 +663,7 @@ export function FlueChatSessionView({
             }}
             onKeyDown={handleKeyDown}
             placeholder={inputPlaceholder}
-            rows={1}
+            rows={Math.min(5, Math.max(1, input.split('\n').length))}
             role="combobox"
             disabled={
               !session ||

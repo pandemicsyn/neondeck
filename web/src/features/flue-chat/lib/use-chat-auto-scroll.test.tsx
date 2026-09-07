@@ -2,7 +2,7 @@
 
 import { act, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { useChatAutoScroll } from './use-chat-auto-scroll';
 
 function AutoScrollHarness({
@@ -62,6 +62,7 @@ describe('useChatAutoScroll', () => {
   afterEach(() => {
     act(() => root.unmount());
     container.remove();
+    vi.unstubAllGlobals();
   });
 
   it('follows content mutations while the transcript is at the bottom', async () => {
@@ -93,6 +94,34 @@ describe('useChatAutoScroll', () => {
     await click('New activity');
     expect(transcript.scrollTop).toBe(600);
     expect(button('New activity')).toBeNull();
+  });
+
+  it('follows late layout growth but preserves reading position on resize', () => {
+    let resize!: () => void;
+    const disconnect = vi.fn<() => void>();
+    vi.stubGlobal(
+      'ResizeObserver',
+      class {
+        constructor(callback: () => void) {
+          resize = callback;
+        }
+        observe() {}
+        disconnect = disconnect;
+      },
+    );
+    render('Initial', 'session-1');
+    const transcript = getTranscript();
+    setTranscriptGeometry(transcript, { clientHeight: 100, scrollHeight: 600 });
+    act(() => resize());
+    expect(transcript.scrollTop).toBe(600);
+    transcript.scrollTop = 100;
+    act(() => transcript.dispatchEvent(new Event('scroll', { bubbles: true })));
+    setTranscriptGeometry(transcript, { clientHeight: 100, scrollHeight: 800 });
+    act(() => resize());
+    expect(transcript.scrollTop).toBe(100);
+    act(() => root.unmount());
+    expect(disconnect).toHaveBeenCalled();
+    root = createRoot(container);
   });
 
   it('returns to the bottom when the active session changes', () => {
