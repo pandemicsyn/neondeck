@@ -71,5 +71,5 @@ Slice 3 merged in PRs #397–#401 through `a897aa06`. Two independent static rev
 [Onboarding and observability](OPERATIONS_IMPLEMENTATION_PLAN.md) is source complete
 after UI polish, covering optional init setup, task history, worker health,
 correlated diagnostics, doctor and previewable local export. Independent static
-reviews are clean; delivery is a draft stack. Existing live acceptance obligations
+reviews are clean; delivery uses stacked PRs. Existing live acceptance obligations
 remain unchanged.

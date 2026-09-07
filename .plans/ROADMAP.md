@@ -252,7 +252,7 @@ Existing authority and real-provider acceptance obligations remain unchanged.
 See [implementation plan](factory/OPERATIONS_IMPLEMENTATION_PLAN.md). Development
 and independent static review agents used Astra at low effort. Both independent
 static reviews and manager product/architecture review are clean before draft
-publication. Merge and live acceptance are separate remaining steps.
+publication. Merge and live acceptance are tracked separately.
 
 ## Usability Gate
 

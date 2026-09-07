@@ -1,7 +1,8 @@
 # Factory onboarding and observability
 
 Status: implementation complete; independent static reviews clean, September 7, 2026.
-Delivery is a draft stack above #412/#413; merge and live acceptance remain separate.
+Initial delivery used a draft stack above #412/#413. The stack is now ready for
+review, with merge authorized after clearance; live acceptance remains separate.
 
 This user-requested slice follows the UI polish stack (#412, #413) and precedes
 further factory expansion. Slice 5 (Linear) and Slice 6 (remote execution) keep their
@@ -261,3 +262,22 @@ These checks do not complete live acceptance. The existing factory-only lock and
 bounded diagnostic history limitations remain. Merge authorization applies after
 independent static reviews and GitHub checks clear; the linked PR states record
 the final merge outcome.
+
+The next review identified lifecycle precedence in diagnosis (closed tasks with
+unresolved effects and obsolete terminal runs after a pause or new specification)
+and expected lock contention reaching API clients as an internal error. The corrections prioritize reconciliation over lifecycle summaries, retain active
+work, and bind terminal-run guidance to the current repository, specification and
+non-withdrawn release. Failed writebacks require attention, and retained multiple
+pipelines keep their budgets/effects without falsely claiming omissions. Expected
+factory-lock contention maps to a typed 409 across the three config endpoints;
+unexpected failures remain 500. The respective focused suites passed 84 diagnosis
+tests and 58 configuration/lock tests, with types and scoped formatting/lint.
+Independent review and CI remain the final merge gates.
+The preceding combined checkpoint passed 222 tests across 15 files, app/dashboard
+typechecking and repository formatting; it does not certify later source changes.
+
+The final independent review added coexistence regressions: benign pending
+writeback/planning and activity in another pipeline must not hide current coding
+failure or consumed budget exhaustion. Reconciliation remains highest priority;
+zero headroom reserved for active work is not classified as spent-budget failure.
+These corrections do not change public contracts or execution authority.
