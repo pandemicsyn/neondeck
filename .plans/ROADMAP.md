@@ -251,6 +251,11 @@ for new planning sessions and initial coding attempts. Existing sessions retain
 their pinned revisions. Implementation and two independent static reviews are
 complete; synthetic browser checks pass. Live operator acceptance remains open.
 
+The [development worker follow-up](factory/DEV_RUNTIME_WORKERS.md) starts factory
+workers under `npm run dev` with explicit reload/shutdown ownership. Implementation,
+two independent static reviews and isolated Vite lifecycle checks are complete.
+The separate frozen-context budget finding remains open in that record.
+
 Operator rehearsal follow-up: [guided setup](factory/SETUP_USABILITY_PLAN.md) adds
 CLI detection, searchable models, local Codex login reuse, multiple intake
 repositories and explicit coding enablement. Implementation and independent static

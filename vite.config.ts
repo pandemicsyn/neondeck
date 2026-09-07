@@ -1,4 +1,5 @@
 import { fileURLToPath } from 'node:url';
+import { devServicesPlugin } from './src/server/dev-services-plugin.ts';
 import { flue } from '@flue/vite';
 import { defineConfig } from 'vite';
 import { resolveBuildVersion } from './src/package-version.ts';
@@ -9,6 +10,7 @@ const buildVersion = resolveBuildVersion(
 
 export default defineConfig({
   plugins: [
+    devServicesPlugin(),
     flue(),
     {
       name: 'neondeck-production-host',

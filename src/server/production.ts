@@ -18,7 +18,21 @@ const lifecycle = await startNeondeckListeners(
   config,
   () => stopSources(),
 );
-stopSources = startManagedServices(paths, application);
+try {
+  stopSources = await startManagedServices(paths, application, (stop) => {
+    stopSources = stop;
+  });
+} catch (error) {
+  try {
+    await lifecycle.stop();
+  } catch (cleanupError) {
+    throw new AggregateError(
+      [error, cleanupError],
+      'Production startup cleanup failed.',
+    );
+  }
+  throw error;
+}
 console.info(
   `[flue] Server listening on ${privateServerUrl(config.privatePort)}`,
 );
