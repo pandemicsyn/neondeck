@@ -1,6 +1,6 @@
 # Factory setup usability follow-up
 
-Status: implementation in progress, September 7, 2026. Follows the merged
+Status: implementation and independent static reviews complete, September 7, 2026. Follows the merged
 operations stack (#412, #413, #415–#418). Live acceptance remains separate.
 
 ## Operator-reported problems
@@ -69,3 +69,28 @@ The required import-layer check exposed a pre-existing frontend diagnostic test
 importing a backend exporter from the prior stack. This follow-up replaces that
 test dependency with a schema-valid public fixture while preserving client
 binding rejection cases; production diagnostic behavior is unchanged.
+
+## Local verification and independent review
+
+The two implementation layers are complete. Two independent Astra-low static
+reviews found and then cleared rerun issues involving a missing selected auth file
+and legacy `adapter: null` Codex configuration. The manager checked plan adherence,
+credential isolation, explicit authority and conditional credential fields.
+
+The initial repository verification passed lint, import layers, database checks
+and types. Unit testing reported 2,980 passing tests and one stale catalog-list
+assertion; that assertion was updated for the seven requested Codex choices.
+The final focused run passed 193 tests across ten files, followed by app/dashboard
+types and repository formatting. These counts overlap and are not additive.
+
+Real terminal prompts were exercised against a synthetic runtime and a version-only
+mock CLI: detected executable/PATH, default Codex model, selected local login,
+explicit coding opt-in and final Apply succeeded. Separate real terminal checks
+searched for Astra and selected it, and accepted Kilo Auto Frontier with no key.
+No provider execution or remote credentials were used.
+
+Browser checks exercised the actual coding setup components with production
+Factory styles and synthetic API data at 1360px and 390px. They verified the
+not-checked status, relevant credential fields, source switching, preserved local
+reference on save, and no horizontal overflow. Screenshots use synthetic paths;
+operator screenshots containing private setup details are not published.

@@ -2,7 +2,10 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { log } from '@clack/prompts';
-import { discoverLocalCodexAuth } from '../modules/factory/codex-local-auth';
+import {
+  discoverLocalCodexAuth,
+  readLocalCodexAuth,
+} from '../modules/factory/codex-local-auth';
 import {
   codingDiscoveryContext,
   codingExecutionPath,
@@ -52,17 +55,20 @@ export async function configureFactoryCoding(
       ),
     ),
   );
+  const configuredAdapterId = current.executable
+    ? (current.adapter?.id ?? 'codex')
+    : current.adapter?.id;
   const id = await promptSelect({
     message: 'Coding CLI',
     initialValue:
-      current.adapter?.id ??
+      configuredAdapterId ??
       adapters.find((adapter) => detected.get(adapter.id))?.id ??
       'codex',
     options: adapters.map((adapter) => ({
       value: adapter.id,
       label: adapter.label,
       hint:
-        current.adapter?.id === adapter.id && current.executable
+        configuredAdapterId === adapter.id && current.executable
           ? `Configured: ${current.executable}`
           : (detected.get(adapter.id) ?? 'Not detected; enter path manually'),
     })),
@@ -122,11 +128,18 @@ export async function configureFactoryCoding(
       ? discoverLocalCodexAuth({ env: context.env, home: context.home })
       : null;
   const existingEnv = auth && 'env' in auth ? auth.env : null;
-  const missingReference =
+  let missingReference =
     existingEnv !== null && !context.env[existingEnv]?.trim();
+  if (auth?.kind === 'codex-local') {
+    try {
+      readLocalCodexAuth(auth.path);
+    } catch {
+      missingReference = true;
+    }
+  }
   if (missingReference)
     log.info(
-      `Configured credential reference ${existingEnv} is unavailable.${local?.available ? ' A reusable local Codex login is available.' : ''}`,
+      `${auth?.kind === 'codex-local' ? 'Configured local Codex auth.json cache is missing or invalid.' : `Configured credential reference ${existingEnv} is unavailable.`}${local?.available ? ' A reusable local Codex login is available.' : ''}`,
     );
   const keepAuth = auth
     ? await promptConfirm({
@@ -214,7 +227,9 @@ export async function factoryCodingSetupReadiness(config: FactoryCodingConfig) {
     );
   } catch {
     lines.push(
-      'Isolated credential reference: missing or invalid; set its value in the private runtime environment.',
+      config.auth?.kind === 'codex-local'
+        ? 'Isolated credential reference: selected local Codex auth.json is missing or invalid, or incompatible with the adapter. Restore a valid file-backed login at the selected path or rerun neondeck factory setup to select a replacement. Keyring-only logins cannot be reused; alternatively select a credential environment reference.'
+        : 'Isolated credential reference: missing or invalid; set its value in the private runtime environment.',
     );
   }
   const home = await mkdtemp(join(tmpdir(), 'neondeck-factory-setup-'));

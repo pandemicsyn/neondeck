@@ -9,7 +9,7 @@ import {
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { discoverLocalCodexAuth } from '../modules/factory/codex-local-auth';
-import { note } from '@clack/prompts';
+import { log, note } from '@clack/prompts';
 import * as v from 'valibot';
 import { afterEach, expect, it, vi } from 'vitest';
 import { factoryCodingConfigSchema } from '../../shared/factory-coding';
@@ -32,7 +32,10 @@ vi.mock('@clack/prompts', () => ({
   log: { info: vi.fn<(message: string) => void>() },
   note: vi.fn<typeof note>(),
 }));
-vi.mock('../modules/factory/codex-local-auth', () => ({
+vi.mock('../modules/factory/codex-local-auth', async (importOriginal) => ({
+  ...(await importOriginal<
+    typeof import('../modules/factory/codex-local-auth')
+  >()),
   discoverLocalCodexAuth: vi.fn<typeof discoverLocalCodexAuth>(() => ({
     available: false,
     path: '/synthetic/auth.json',
@@ -239,3 +242,162 @@ it('defaults away from a missing environment reference toward available local lo
       )?.[0].initialValue,
   ).toBe(false);
 });
+
+it.each(['deleted', 'invalid', 'valid'] as const)(
+  'validates the selected nondefault local cache on rerun: %s',
+  async (state) => {
+    const home = await mkdtemp(join(tmpdir(), 'onboarding-selected-login-'));
+    homes.push(home);
+    const executable = join(home, 'codex');
+    await writeFile(executable, '', { mode: 0o755 });
+    const selectedPath = join(home, 'selected', 'auth.json');
+    await mkdir(dirname(selectedPath));
+    const secret = 'synthetic-selected-token';
+    await writeFile(
+      selectedPath,
+      state === 'invalid'
+        ? secret
+        : JSON.stringify({ tokens: { access_token: secret } }),
+    );
+    if (state === 'deleted') await rm(selectedPath);
+    const replacementPath = join(home, 'auth.json');
+    vi.mocked(discoverLocalCodexAuth).mockReturnValueOnce({
+      available: state !== 'valid',
+      path: replacementPath,
+      reason: state === 'valid' ? 'unavailable' : null,
+    });
+    const current = v.parse(factoryCodingConfigSchema, {
+      executable,
+      model: 'gpt-5.6-sol',
+      auth: { kind: 'codex-local', path: selectedPath },
+      path: '/usr/bin:/bin',
+    });
+    vi.mocked(promptConfirm).mockImplementation(
+      async ({ message, initialValue }) =>
+        message === 'Set up an installed coding CLI?'
+          ? true
+          : Boolean(initialValue),
+    );
+    vi.mocked(promptSelect).mockImplementation(async ({ message }) =>
+      message === 'Coding CLI'
+        ? 'codex'
+        : message.startsWith('Coding model')
+          ? 'gpt-5.6-sol'
+          : 'codex-local',
+    );
+    const next = await configureFactoryCoding(current, {
+      home,
+      node: process.execPath,
+      env: {},
+    });
+    expect(
+      vi
+        .mocked(promptConfirm)
+        .mock.calls.find(([options]) =>
+          options.message.startsWith('Keep the configured'),
+        )?.[0].initialValue,
+    ).toBe(state === 'valid');
+    expect(next.auth).toEqual({
+      kind: 'codex-local',
+      path: state === 'valid' ? selectedPath : replacementPath,
+    });
+    const authPrompt = vi
+      .mocked(promptSelect)
+      .mock.calls.find(([options]) =>
+        options.message.startsWith('Isolated credential'),
+      )?.[0];
+    expect(authPrompt?.initialValue).toBe(
+      state === 'valid' ? undefined : 'codex-local',
+    );
+    expect(
+      authPrompt?.options.find((option) => option.value === 'codex-local')
+        ?.hint,
+    ).toBe(state === 'valid' ? undefined : replacementPath);
+    expect(
+      vi
+        .mocked(log.info)
+        .mock.calls.some(([message]) =>
+          message.includes(
+            'Configured local Codex auth.json cache is missing or invalid.',
+          ),
+        ),
+    ).toBe(state !== 'valid');
+    const readiness = (await factoryCodingSetupReadiness(current)).join('\n');
+    expect(
+      readiness.includes('locally valid; live authentication unverified'),
+    ).toBe(state === 'valid');
+    for (const guidance of [
+      'selected local Codex auth.json is missing or invalid',
+      'Restore a valid file-backed login at the selected path',
+      'rerun neondeck factory setup',
+      'Keyring-only logins cannot be reused',
+    ]) {
+      expect(readiness.includes(guidance)).toBe(state !== 'valid');
+    }
+    expect(readiness).not.toContain(
+      'set its value in the private runtime environment',
+    );
+    expect(
+      JSON.stringify([next, vi.mocked(log.info).mock.calls, readiness]),
+    ).not.toContain(secret);
+    expect(promptText).not.toHaveBeenCalled();
+  },
+);
+
+it.each(['kilo', 'opencode'])(
+  'retains legacy off-PATH Codex settings when %s is discovered',
+  async (discovered) => {
+    const home = await mkdtemp(join(tmpdir(), 'onboarding-legacy-codex-'));
+    homes.push(home);
+    const bin = join(home, 'bin');
+    await mkdir(bin);
+    await writeFile(join(bin, discovered), '', { mode: 0o755 });
+    const executable = join(home, 'custom-codex');
+    await writeFile(executable, '', { mode: 0o755 });
+    const current = v.parse(factoryCodingConfigSchema, {
+      adapter: null,
+      executable,
+      path: '/configured/bin:/usr/bin:/bin',
+      model: 'gpt-5.6-terra',
+      auth: { kind: 'api-key', env: 'SYNTHETIC_CODING_AUTH' },
+    });
+    vi.mocked(promptConfirm).mockImplementation(
+      async ({ message, initialValue }) =>
+        message === 'Set up an installed coding CLI?'
+          ? true
+          : Boolean(initialValue),
+    );
+    vi.mocked(promptSelect).mockImplementation(
+      async ({ initialValue }) => initialValue!,
+    );
+    const next = await configureFactoryCoding(current, {
+      home,
+      node: process.execPath,
+      env: { PATH: bin, SYNTHETIC_CODING_AUTH: 'synthetic-token' },
+    });
+    const cliPrompt = vi
+      .mocked(promptSelect)
+      .mock.calls.find(([options]) => options.message === 'Coding CLI')?.[0];
+    expect(cliPrompt).toMatchObject({
+      initialValue: 'codex',
+      options: expect.arrayContaining([
+        expect.objectContaining({
+          value: 'codex',
+          hint: `Configured: ${executable}`,
+        }),
+        expect.objectContaining({
+          value: discovered,
+          hint: join(bin, discovered),
+        }),
+      ]),
+    });
+    expect(next).toMatchObject({
+      adapter: { id: 'codex' },
+      executable: current.executable,
+      path: current.path,
+      model: current.model,
+      auth: current.auth,
+    });
+    expect(promptText).not.toHaveBeenCalled();
+  },
+);
