@@ -292,3 +292,18 @@ unrelated configuration after a provider is removed. Coding authority and stale
 preview protections remain unchanged. The preceding combined checkpoint passed
 247 tests across 16 files, types and repository formatting; final correction
 verification and review are recorded with the PRs. Live acceptance remains open.
+
+The browser API review also identified missing request-to-response task binding
+for timelines. Timeline and task-scoped health reads must reject another task's
+response before rendering evidence. Diagnostic exports retain their pseudonymized
+identity contract; internal references can be checked for consistency without
+adding raw task IDs. The preceding integrated checkpoint passed 260 tests across
+16 files, app/dashboard types and repository formatting. This boundary follow-up
+has its own focused regressions and independent reviews before publication.
+
+The diagnostics domain-read review additionally requires the canonical coding
+row identity decoder and delivery aggregate invariants, including parent runs
+used by event history. Diagnostics reuse pure domain-owned validation on bounded
+read-only projections; they must not project inconsistent retained authority as
+valid history or budgets. Invalid retained records remain generic unavailable
+responses, without changing coding/delivery mutations or authority.
