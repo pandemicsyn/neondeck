@@ -24,6 +24,24 @@ uncertain compute, erase retained work or reset an existing grant's consumed
 budget. Corrected credential references are rechecked; invalid credential
 failures are not cached.
 
+The latest foundation correction is implemented with source held and both
+independent source reviews CLEAN, including the FIFO correction. Verified tests
+and their scope are recorded in the handoff; new exact-head CI remains pending.
+It requires a SHA-256 digest of the configured entrypoint file for
+new preparation, launch and repair. Existing stat-only records remain readable
+and reconcilable, but new execution or repair pauses for fresh human release;
+today's binary is not repinned into historical authority. Descriptor-based hashing
+uses a 1 MiB buffer, a 512 MiB file bound, a 10-second limit and pre/post stat
+checks. Nonblocking open precedes regular-file validation, avoiding a hang on a
+FIFO with no writer. This detects entrypoint byte changes, not changes throughout transitive
+packages, and does not establish filesystem isolation or an OS sandbox.
+
+The accompanying public factory run harness projection is limited to provider,
+version and model; resolved canonical path, device/inode and digest are excluded.
+The configured executable remains visible in the authorized private operator
+release configuration. See the [handoff](SLICE_4_HANDOFF.md) for current review
+and CI checkpoints.
+
 Use the existing stop control to request cancellation. Ownership remains held
 until the process and its children are confirmed dead. An uncertain run requires
 reconciliation, never replacement or fallback to another CLI. Preserve retained
@@ -49,6 +67,8 @@ only, with a `kilo/` model prefix. It has no OpenAI credential dependency. Both
 adapters accept the selected API-key reference or a strict single-provider API
 auth-JSON reference, never credential values entered in the dashboard. Structural
 credential validity does not prove live authentication or model availability.
+Both providers require exactly one private authentication snapshot at supervisor
+startup; this correction has passed focused tests and both independent reviews.
 
 Kilo Code 7.4.23 is locally verified by read-only native `--version` and
 `run --help` inspection. An older 7.1.20 installation also exists; this does not

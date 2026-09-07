@@ -213,3 +213,55 @@ tests in 8.64 seconds**, plus typecheck, scoped lint and formatting. The full
 Earlier clean source/CI checkpoints above remain historical; CI for the new
 exact heads is pending. Live acceptance remains **NOT RUN**; prior
 accepted deferrals and explicit matrix limitations are unchanged.
+
+## Entrypoint and private authentication feedback — September 6, 2026
+
+OpenCode and Kilo now require exactly one private authentication snapshot at
+supervisor startup. Kilo passed 68 focused tests; OpenCode passed 40. Both
+independent reviewers are CLEAN on these provider corrections.
+
+The two foundation corrections are implemented with source held. Both independent
+reviewers are CLEAN on the final source, including the FIFO correction closing
+A-F1/B6; the other ten file hashes are unchanged. The first captures SHA-256 of the configured entrypoint file through
+a file descriptor, using a 1 MiB buffer, a 512 MiB file bound, a 10-second hashing
+limit and pre/post stat checks. New preparation, launch and repair require the
+digest. Old stat-only persisted records remain decodable and reconcilable, but
+new execution or repair pauses for fresh human release without repinning or
+rewriting history. This extends the existing legacy executable-identity
+compatibility narrowing in the deviations ledger. The digest detects entrypoint
+byte changes; it does not cover transitive packages or establish filesystem
+isolation or an OS sandbox.
+
+The second correction limits the public factory run harness projection to
+provider, version and model, excluding resolved canonical path, device/inode and
+digest. The configured executable remains visible in the authorized private
+operator release configuration.
+
+Before the final FIFO correction, the parent's full unit run passed **258 files / 2,545
+tests in 78.84 seconds**, with exit code 0. Owner identity and factory checks
+passed **34/34 in 10.17 seconds**. Earlier targeted host/privacy checks passed
+**13/13 in 7.11 seconds** and overlap that coverage; these totals are not additive.
+Typecheck, import-layer and formatting checks passed; lint reported pre-existing
+warnings. These results remain a pre-FIFO baseline.
+
+With source unchanged, the selected native fake Codex host test, “launches a
+version-two pinned Codex manifest through the same host,” passed in **1.34
+seconds** (one selected, 50 unselected). It exercised preparation, the raw Node
+supervisor, anchor and fake CLI through a completed receipt with `noWriter: true`.
+This is a distinct checkpoint overlapping the earlier 13 selected tests, not
+additional aggregate coverage or a real model invocation.
+
+The final two-file FIFO correction uses nonblocking open before validating that
+the entrypoint is a regular file, so opening a FIFO cannot hang before validation.
+All **6 identity tests passed in 150 ms**, including a real FIFO with no writer
+exercised through a raw Node child with a bounded timeout. Post-FIFO typecheck,
+lint and formatting passed. This strengthens the existing regular-file boundary
+without adding scope.
+
+The normal native fake Codex candidate-collection case also passed in **1.79
+seconds**. It and the pinned version-two launch result above are distinct,
+overlapping checkpoints, not additive coverage.
+
+Earlier test, review and CI checkpoints remain historical. Foundation and provider
+source reviews are CLEAN; new exact-head CI remains pending. These checks do not
+establish live provider acceptance, which remains **NOT RUN**.

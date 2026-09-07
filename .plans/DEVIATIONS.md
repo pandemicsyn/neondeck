@@ -1164,6 +1164,16 @@ Use this format:
   historical evidence, ownership and consumed budgets intact; no migration should
   fabricate the missing original identity. This is an explicit narrowing of old
   repair behavior, not a live acceptance result.
+- Reviewed extension: New preparation, launch and repair
+  require a SHA-256 digest of the configured entrypoint file. Old stat-only
+  persisted records still decode and reconcile, but new execution or repair
+  pauses for fresh human release without repinning or rewriting historical
+  authority. Stat metadata alone cannot establish unchanged entrypoint bytes.
+  This extends the same compatibility narrowing. Foundation source is held;
+  both independent source reviews are CLEAN, including nonblocking open before
+  regular-file validation to reject FIFOs without hanging. Verified test scopes
+  are recorded in the handoff; new exact-head CI remains pending. The digest covers the entrypoint file, not
+  transitive packages, and does not establish filesystem isolation or a sandbox.
 
 ## 2026-09-06 - Slice 4 expanded per-harness scenario matrix
 
