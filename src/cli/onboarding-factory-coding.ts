@@ -66,7 +66,9 @@ export async function configureFactoryCoding(current: FactoryCodingConfig) {
   });
   const env = await promptText({
     message: 'Credential environment variable name (never the secret value)',
-    initialValue: current.auth?.env ?? 'FACTORY_CODING_AUTH',
+    initialValue:
+      (current.auth?.kind === 'codex-local' ? undefined : current.auth?.env) ??
+      'FACTORY_CODING_AUTH',
     validate: (value) =>
       /^[A-Z][A-Z0-9_]{0,127}$/.test(value ?? '')
         ? undefined

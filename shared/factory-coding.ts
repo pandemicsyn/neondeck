@@ -18,10 +18,16 @@ export const factoryCodingConfigSchema = v.strictObject({
   model: v.optional(v.nullable(label), null),
   auth: v.optional(
     v.nullable(
-      v.strictObject({
-        kind: v.picklist(['api-key', 'auth-json']),
-        env: v.pipe(v.string(), v.regex(/^[A-Z][A-Z0-9_]{0,127}$/)),
-      }),
+      v.union([
+        v.strictObject({
+          kind: v.picklist(['api-key', 'auth-json']),
+          env: v.pipe(v.string(), v.regex(/^[A-Z][A-Z0-9_]{0,127}$/)),
+        }),
+        v.strictObject({
+          kind: v.literal('codex-local'),
+          path: v.pipe(absolute, v.endsWith('/auth.json')),
+        }),
+      ]),
     ),
     null,
   ),

@@ -176,3 +176,18 @@ it('does not offer release before a validated configuration is available', async
     ),
   ).toBe(false);
 });
+
+it('shows the local auth path in the exact release snapshot without an environment downgrade', async () => {
+  const state = codingState();
+  state.config.auth = {
+    kind: 'codex-local',
+    path: '/synthetic/.codex/auth.json',
+  };
+  client.setQueryData(key, state);
+  await render();
+  expect(fact('Credential kind')).toBe('codex-local');
+  expect(fact('Credential file reference')).toBe('/synthetic/.codex/auth.json');
+  expect(fact('Credential environment reference')).toBeUndefined();
+  await act(async () => button('Release v2').click());
+  expect(release).toHaveBeenCalledWith(state.configFingerprint);
+});

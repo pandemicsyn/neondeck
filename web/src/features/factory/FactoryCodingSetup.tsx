@@ -86,8 +86,14 @@ export function FactoryCodingSetup() {
             · Model {state.data.config.model ?? 'not configured'}
           </p>
           <p className="factory-note">
-            CLI {state.data.readiness.installedVersion ?? 'not detected'} ·
-            Supported {state.data.readiness.supportedVersion}
+            CLI{' '}
+            {state.data.readiness.installedVersion ??
+              (state.data.readiness.status === 'executable-unresolved'
+                ? 'not detected'
+                : state.data.readiness.status === 'unsupported'
+                  ? 'version unavailable'
+                  : 'not checked')}{' '}
+            · Supported {state.data.readiness.supportedVersion}
           </p>
           <p className="factory-note">
             Authentication:{' '}
