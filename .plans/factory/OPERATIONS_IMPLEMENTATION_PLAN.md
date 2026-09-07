@@ -339,3 +339,9 @@ synthetic desktop/mobile evidence-inspection cases with screenshots attached to
 The optional GitHub factory setup path must also remain unavailable or return
 cleanly when no registered repository has GitHub metadata, allowing the rest of
 first-run initialization to continue without mutating factory authority.
+
+Diagnostic span selection also considers the embedded task identity before
+validating indexed/JSON bindings, so corruption in either direction cannot silently
+omit an attributable span from a task preview. The preceding integrated source
+passed 484 tests across 19 files, types, formatting and all eight browser evidence
+cases; this retained-span correction receives focused regression and static review.
