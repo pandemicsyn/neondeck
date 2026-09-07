@@ -116,7 +116,10 @@ export async function dispatchCodingRepair(
       );
     return null;
   }
-  const ready = await codingReadiness(paths);
+  const ready = await codingReadiness(
+    paths,
+    frozenCodingConfig(parent.snapshot),
+  );
   if (
     !ready.ready ||
     ready.installedVersion !== parent.snapshot.harness.version

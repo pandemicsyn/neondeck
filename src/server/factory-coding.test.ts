@@ -291,15 +291,135 @@ describe('factory coding bridge', () => {
     expect(run.snapshot.harness.executableIdentity).toBeDefined();
     const original = frozenCodingConfig(run.snapshot);
     updateFactoryConfig(
-      { coding: { ...original, model: 'different-model' } },
+      {
+        coding: {
+          ...original,
+          model: 'different-model',
+          adapter: {
+            id: 'kilo',
+            contractVersion: 1,
+            cliVersion: 'different-version',
+          },
+          executable: '/synthetic/unselected-cli',
+          auth: { kind: 'auth-json', env: 'UNSELECTED_AUTH' },
+          path: '/synthetic/new-path',
+          wallTimeMs: 1000,
+          maxOutputBytes: 1024,
+        },
+      },
       paths,
     );
     expect(frozenCodingConfig(run.snapshot)).toEqual(original);
-    expect(() => assertCodingAuthoritySnapshot(run.snapshot, paths)).toThrow(
-      'Coding configuration changed since human release',
+    expect(assertCodingAuthoritySnapshot(run.snapshot, paths).coding).toEqual(
+      original,
     );
-    expect(getCodingRun(run.runId, paths)?.cancelRequestedAt).toBeTruthy();
+    expect(getCodingRun(run.runId, paths)?.cancelRequestedAt).toBeNull();
+    expect((await reconcileCodingRun(run.runId, paths, host)).status).toBe(
+      'running',
+    );
+    finished = true;
+    expect((await reconcileCodingRun(run.runId, paths, host)).status).toBe(
+      'candidate',
+    );
+    expect(host.cancelLocalAttempt).not.toHaveBeenCalled();
     expect(host.launchLocalAttempt).toHaveBeenCalledTimes(1);
+  });
+  it('keeps the initial attempt frozen when defaults change after reservation during preparation', async () => {
+    const work = release();
+    const original = codingConfig(paths).coding;
+    const prepare = host.prepareLocalAttempt;
+    host.prepareLocalAttempt = vi.fn(async (input) => {
+      const handle = await prepare(input);
+      updateFactoryConfig(
+        {
+          coding: {
+            ...original,
+            model: 'future-model',
+            auth: { kind: 'api-key', env: 'FUTURE_KEY' },
+          },
+        },
+        paths,
+      );
+      return handle;
+    });
+    const run = (await dispatchCodingWork(work.work.id, paths, host, ready))!;
+    expect(run.status).toBe('running');
+    expect(run.cancelRequestedAt).toBeNull();
+    expect(prepared?.config.model).toBe(original.model);
+    expect(prepared?.selectedAuth).toEqual({
+      kind: 'api-key',
+      value: 'synthetic-auth-only',
+    });
+    expect(host.launchLocalAttempt).toHaveBeenCalledTimes(1);
+    expect(host.cancelLocalAttempt).not.toHaveBeenCalled();
+  });
+  it.each(['reviewed', 'historical-null'] as const)(
+    'rechecks %s defaults after asynchronous preflight before reservation',
+    async (releaseKind) => {
+      const work = release();
+      if (releaseKind === 'historical-null') {
+        const { codingConfigFingerprint: _fingerprint, ...historical } =
+          work.releases[0];
+        dbRun(paths, (db) =>
+          db
+            .prepare('UPDATE factory_releases SET record=? WHERE id=?')
+            .run(JSON.stringify(historical), historical.id),
+        );
+        expect(
+          getFactoryWork(work.work.id, paths).releases[0]
+            .codingConfigFingerprint,
+        ).toBeNull();
+        expect(codingConfig(paths).coding.adapter).toBeNull();
+      }
+      const inspect = codingRuns.inspectCodingExecutableIdentity;
+      const probe = vi
+        .spyOn(codingRuns, 'inspectCodingExecutableIdentity')
+        .mockImplementationOnce(async (executable) => {
+          const identity = await inspect(executable);
+          updateFactoryConfig(
+            {
+              coding: {
+                ...codingConfig(paths).coding,
+                model: 'changed-during-preflight',
+              },
+            },
+            paths,
+          );
+          return identity;
+        });
+      try {
+        expect(
+          await dispatchCodingWork(work.work.id, paths, host, ready),
+        ).toBeNull();
+        expect(listCodingRuns({}, paths)).toHaveLength(0);
+        expect(host.prepareLocalAttempt).not.toHaveBeenCalled();
+        expect(readCodingAttention(work.work.id, paths)?.reason).toContain(
+          releaseKind === 'historical-null'
+            ? 'changed during admission preflight'
+            : 'since human release',
+        );
+        expect(
+          getFactoryWork(work.work.id, paths).releases[0]
+            .codingConfigFingerprint,
+        ).toBe(
+          releaseKind === 'historical-null'
+            ? null
+            : work.releases[0].codingConfigFingerprint,
+        );
+      } finally {
+        probe.mockRestore();
+      }
+    },
+  );
+  it('treats explicit factory disable as a durable stop even when defaults are later restored', async () => {
+    const work = release();
+    const run = (await dispatchCodingWork(work.work.id, paths, host, ready))!;
+    updateFactoryConfig({ enabled: false }, paths);
+    expect(getCodingRun(run.runId, paths)?.cancelRequestedAt).toBeTruthy();
+    updateFactoryConfig({ enabled: true }, paths);
+    expect(getCodingRun(run.runId, paths)?.cancelRequestedAt).toBeTruthy();
+    await reconcileCodingRun(run.runId, paths, host);
+    expect(host.cancelLocalAttempt).toHaveBeenCalled();
   });
   it('blocks queued configuration drift with retained attention before host allocation', async () => {
     const work = release();

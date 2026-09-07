@@ -37,6 +37,9 @@ import {
 import type { RuntimePaths } from '../../runtime-home';
 import {
   assertCodingSnapshot,
+  assertCodingAuthoritySnapshot,
+  codingConfig,
+  codingDigest,
   codingAuthority,
   codingPrompt,
   codingSnapshot,
@@ -171,6 +174,17 @@ export async function dispatchCodingWork(
   try {
     snapshot = await codingSnapshot(workId, ready.installedVersion, paths);
     await assertCodingSnapshot(snapshot, paths);
+    // Reservation is admission: recheck current reviewed settings after every
+    // asynchronous preflight, before the synchronous durable reservation.
+    const authority = assertCodingAuthoritySnapshot(snapshot, paths);
+    assertReleasedCodingConfig(workId, paths);
+    if (
+      codingDigest(authority.coding) !==
+      codingDigest(codingConfig(paths).coding)
+    )
+      throw new CodingPreflightError(
+        'Coding settings changed during admission preflight. Review the current settings before release.',
+      );
   } catch (error) {
     saveCodingAttention(
       workId,
@@ -308,9 +322,8 @@ export async function launchReservedCodingRun(
     await assertCodingSnapshot(snapshot, paths);
     await options.assertAuthority?.();
     if (
-      JSON.stringify(
-        selectedCodingAuth(codingAuthority(workId, paths).coding),
-      ) !== JSON.stringify(selectedAuth)
+      JSON.stringify(selectedCodingAuth(coding)) !==
+      JSON.stringify(selectedAuth)
     )
       throw new Error('Selected credential changed before launch.');
     const current = requireCodingRun(run.runId, paths);

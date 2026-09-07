@@ -267,9 +267,8 @@ export function assertCodingAuthoritySnapshot(
   paths: RuntimePaths,
 ) {
   const authority = codingAuthority(snapshot.workItemId, paths);
-  assertReleasedCodingConfig(snapshot.workItemId, paths);
-  frozenCodingConfig(snapshot);
-  const { current, release, revision, repo, coding } = authority;
+  const coding = frozenCodingConfig(snapshot);
+  const { current, release, revision, repo } = authority;
   if (
     release.id !== snapshot.releaseId ||
     revision.version !== snapshot.specVersion ||
@@ -281,11 +280,14 @@ export function assertCodingAuthoritySnapshot(
         ),
       ) ||
     JSON.stringify(repo) !== snapshot.repoSnapshot ||
+    (release.codingConfigFingerprint === null
+      ? coding.adapter !== null
+      : release.codingConfigFingerprint !== codingDigest(coding)) ||
     codingDigest({ release: release.policy, coding }) !==
       codingDigest(frozenCodingPolicy(snapshot))
   )
     throw new Error('Frozen coding authority changed.');
-  return authority;
+  return { ...authority, coding };
 }
 const frozenCodingPolicySchema = v.strictObject({
   release: releaseSchema.entries.policy,

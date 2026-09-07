@@ -1,3 +1,4 @@
+import { updateFactoryConfig } from '../config';
 import { execFileSync } from 'node:child_process';
 import {
   mkdirSync,
@@ -26,6 +27,7 @@ import {
 } from '../coding-runs';
 import {
   codingConfig,
+  frozenCodingConfig,
   codingDigest,
   releaseFactoryWork,
   saveFactorySpec,
@@ -58,7 +60,13 @@ const git = (cwd: string, ...args: string[]) =>
       GIT_CONFIG_NOSYSTEM: '1',
     },
   }).trim();
-it.each(['normal', 'remaining', 'replaced-binary', 'legacy-binary'] as const)(
+it.each([
+  'normal',
+  'remaining',
+  'replaced-binary',
+  'legacy-binary',
+  'changed-defaults',
+] as const)(
   'repairs a retained mockdex candidate: %s allowance',
   async (allowance) => {
     const mode = 'candidate';
@@ -320,6 +328,30 @@ else {
       };
       const originalEvidence = readFileSync(parent.candidate!.diffRef);
       const authority = vi.fn<() => Promise<void>>(async () => {});
+      if (allowance === 'changed-defaults') {
+        updateFactoryConfig(
+          {
+            coding: {
+              ...codingConfig(paths).coding,
+              adapter: {
+                id: 'kilo',
+                contractVersion: 1,
+                cliVersion: 'changed-cli-version',
+              },
+              executable: join(root, 'must-not-execute'),
+              model: 'future-model',
+              auth: { kind: 'api-key', env: 'FUTURE_AUTH_REF' },
+              path: '/synthetic/future-path',
+              wallTimeMs: 1000,
+              maxOutputBytes: 1024,
+            },
+          },
+          paths,
+        );
+        expect(getDeliveryPipeline(pipeline.pipelineId, paths)).toEqual(
+          pipeline,
+        );
+      }
       if (allowance === 'replaced-binary' || allowance === 'legacy-binary') {
         const marker = join(root, 'replacement-was-executed');
         if (allowance === 'legacy-binary') {
@@ -381,6 +413,18 @@ else {
           .reservedExecutionMs,
       ).toBe(expectedCap);
       expect(started.runId).not.toBe(parent.runId);
+      const repairManifest = (await loadLocalManifest(handle)).manifest;
+      expect(repairManifest.config.executable).toBe(executable);
+      expect(repairManifest.config.model).toBe(parent.snapshot.harness.model);
+      const originalCoding = frozenCodingConfig(parent.snapshot);
+      expect(repairManifest.config.path).toBe(originalCoding.path);
+      expect(repairManifest.config.maxOutputBytes).toBe(
+        originalCoding.maxOutputBytes,
+      );
+      expect(originalCoding.auth?.env).toBe('FACTORY_E2E_AUTH');
+      expect(repairManifest.executableIdentity).toEqual(
+        parent.snapshot.harness.executableIdentity,
+      );
       expect(started.attemptId).not.toBe(parent.attemptId);
       expect(started.snapshot).toEqual({
         ...parent.snapshot,
@@ -418,7 +462,13 @@ else {
 
       // mockdex emits a fixed session ID; verify the actual fresh CLI invocation.
       const execution = v.parse(
-        v.object({ args: v.array(v.string()), codexHome: v.string() }),
+        v.object({
+          args: v.array(v.string()),
+          codexHome: v.string(),
+          selectedAuthPresent: v.boolean(),
+          selectedEnvAbsent: v.boolean(),
+          controllerEnvAbsent: v.boolean(),
+        }),
         JSON.parse(
           readFileSync(
             join(handle.directory, 'scratch/execution.json'),
@@ -427,6 +477,9 @@ else {
         ),
       );
       expect(execution.args[0]).toBe('exec');
+      expect(execution.selectedAuthPresent).toBe(true);
+      expect(execution.selectedEnvAbsent).toBe(true);
+      expect(execution.controllerEnvAbsent).toBe(true);
       expect(execution.args).not.toContain('resume');
       expect(execution.codexHome).not.toBe(
         join(codingHandle(parent, paths).directory, 'home/.codex'),

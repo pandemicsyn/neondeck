@@ -103,8 +103,12 @@ function executableStamp(path: string | null) {
     return null;
   }
 }
-function readinessInput(paths: RuntimePaths) {
-  const { coding, factoryEnabled } = codingConfig(paths);
+function readinessInput(paths: RuntimePaths, pinned?: FactoryCodingConfig) {
+  const current = codingConfig(paths);
+  const coding = pinned ?? current.coding;
+  // Both enable switches are explicit execution stops even for pinned grants.
+  const factoryEnabled =
+    current.factoryEnabled && (!pinned || current.coding.enabled);
   let authAvailable = false;
   try {
     selectedCodingAuth(coding);
@@ -153,8 +157,11 @@ function blockedReadiness(
     blockers,
   });
 }
-export async function codingReadiness(paths: RuntimePaths): Promise<Readiness> {
-  const input = readinessInput(paths);
+export async function codingReadiness(
+  paths: RuntimePaths,
+  pinned?: FactoryCodingConfig,
+): Promise<Readiness> {
+  const input = readinessInput(paths, pinned);
   const key = JSON.stringify([paths.home, paths.config]);
   let entry = readinessFailures.get(key);
   if (entry && entry.fingerprint !== input.fingerprint) {
@@ -163,7 +170,7 @@ export async function codingReadiness(paths: RuntimePaths): Promise<Readiness> {
     // from stale settings. Re-read current inputs after that probe settles.
     if (!entry.settled) {
       await entry.pending.catch(() => undefined);
-      return codingReadiness(paths);
+      return codingReadiness(paths, pinned);
     }
     readinessFailures.delete(key);
     entry = undefined;
@@ -208,8 +215,8 @@ export async function codingReadiness(paths: RuntimePaths): Promise<Readiness> {
     );
   }
   const result = await entry.pending;
-  if (readinessInput(paths).fingerprint !== entry.fingerprint)
-    return codingReadiness(paths);
+  if (readinessInput(paths, pinned).fingerprint !== entry.fingerprint)
+    return codingReadiness(paths, pinned);
   // Return a fresh validated projection so callers cannot mutate cached blockers.
   return v.parse(factoryCodingReadinessSchema, result);
 }
