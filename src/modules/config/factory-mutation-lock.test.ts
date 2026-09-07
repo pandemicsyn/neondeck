@@ -3,7 +3,10 @@ import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { afterEach, expect, it } from 'vitest';
-import { withFactoryMutationLock } from './factory-mutation-lock';
+import {
+  FactoryMutationLockError,
+  withFactoryMutationLock,
+} from './factory-mutation-lock';
 const homes: string[] = [];
 afterEach(() => {
   for (const home of homes.splice(0))
@@ -32,7 +35,10 @@ it('rejects a lock acquired by another process and never steals an abandoned loc
     withFactoryMutationLock(config, () => {
       throw new Error('must not execute');
     }),
-  ).toThrow('locked by another writer');
+  ).toThrow(FactoryMutationLockError);
+  expect(() => withFactoryMutationLock(config, () => 1)).toThrow(
+    'stop all Neondeck processes before removing config.json.factory-write.lock',
+  );
   expect(existsSync(`${config}.factory-write.lock`)).toBe(true);
 });
 it('releases ownership after success and failure', () => {

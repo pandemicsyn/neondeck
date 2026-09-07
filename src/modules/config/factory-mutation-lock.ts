@@ -1,5 +1,16 @@
 import { mkdirSync, realpathSync, rmdirSync } from 'node:fs';
 
+export class FactoryMutationLockError extends Error {
+  readonly status = 409;
+
+  constructor() {
+    super(
+      'Factory configuration is locked by another writer. Retry after it finishes. If the writer crashed, stop all Neondeck processes before removing config.json.factory-write.lock from the runtime home.',
+    );
+    this.name = 'FactoryMutationLockError';
+  }
+}
+
 /** Factory mutations fail closed under contention, including an abandoned lock.
  * No time-based stealing: a slow live writer must never lose its ownership. */
 export function withFactoryMutationLock<T>(
@@ -11,9 +22,7 @@ export function withFactoryMutationLock<T>(
     mkdirSync(lockPath, { mode: 0o700 });
   } catch (error) {
     if (error instanceof Error && 'code' in error && error.code === 'EEXIST') {
-      throw new Error(
-        'Factory configuration is locked by another writer. Retry after it finishes. If the writer crashed, stop all Neondeck processes before removing config.json.factory-write.lock from the runtime home.',
-      );
+      throw new FactoryMutationLockError();
     }
     throw error;
   }

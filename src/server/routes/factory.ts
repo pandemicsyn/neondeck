@@ -1,3 +1,4 @@
+import { FactoryMutationLockError } from '../../modules/config/factory-mutation-lock';
 import {
   getWritebackState,
   setWritebackPolicy,
@@ -50,6 +51,8 @@ export function createFactoryRoutes(
   routes.use('*', bodyLimit({ maxSize: 512 * 1024 }));
   routes.onError((error, c) => {
     if (error instanceof HTTPException) return error.getResponse();
+    if (error instanceof FactoryMutationLockError)
+      return c.json({ error: error.message }, error.status);
     if (error instanceof FactoryError)
       return c.json(
         { error: error.message, current: error.current },

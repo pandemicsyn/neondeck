@@ -1,3 +1,4 @@
+import { FactoryMutationLockError } from '../../modules/config/factory-mutation-lock';
 import { Hono } from 'hono';
 import { bodyLimit } from 'hono/body-limit';
 import { HTTPException } from 'hono/http-exception';
@@ -21,6 +22,8 @@ export function createFactoryCodingRoutes(paths: RuntimePaths) {
   routes.use('*', bodyLimit({ maxSize: 16384 }));
   routes.onError((error, c) => {
     if (error instanceof HTTPException) return error.getResponse();
+    if (error instanceof FactoryMutationLockError)
+      return c.json({ error: error.message }, error.status);
     if (error instanceof FactoryError)
       return c.json({ error: error.message }, error.status);
     if (v.isValiError(error) || error instanceof SyntaxError)
