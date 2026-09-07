@@ -1112,3 +1112,102 @@ Use this format:
 - Follow-up: Implement and verify the [Slice 4 plan](factory/SLICE_4_IMPLEMENTATION_PLAN.md)
   with independent reviews, the existing stacked-PR process and per-harness live
   acceptance. This entry records planned scope, not completed implementation.
+
+## 2026-09-06 - Slice 4 optional CLI operating-system compatibility
+
+- Roadmap item: Software Factory Slice 4, OpenCode and Kilo adapters.
+- Decision: Initially admit optional adapters only on verified Linux contracts.
+  Darwin fails closed because managed OS preferences outside private HOME/XDG
+  can affect provider configuration. Codex compatibility remains unchanged.
+- Reason: The intended factory deployment is Linux. Private HOME/XDG alone does
+  not establish isolation from the inspected providers’ managed preferences.
+  Kilo 7.4.23 local version/help was verified without a model call. Its Linux
+  legacy project autoload can still discover repo MCP, modes and rules despite
+  the project-config disable flag. The common host therefore checks adapter
+  declared forbidden workspace paths before preparation and launch, rejecting
+  incompatible workspaces with a reason instead of deleting their configuration.
+- Follow-up: Provider owners record exact source versions and guarded paths in
+  operator guidance. Verify a provider opt-out and additional OS support before
+  broadening admission. Global CLI readiness does not certify a particular
+  workspace; workspace guards remain admission/launch checks. Live acceptance
+  remains NOT RUN.
+
+## 2026-09-06 - Slice 4 additional adapter conformance validation
+
+- Roadmap item: Slice 4 pluggability acceptance, fourth test-only adapter admission
+  and repair subprocess exercise.
+- Decision: Replace the fourth unique adapter ID subprocess case with typed
+  registry conformance and unknown-ID rejection, a production-path fake-CLI matrix
+  for Codex/OpenCode/Kilo, and static checks for provider branches in factory
+  phases. Individual results remain in the handoff; no fourth-ID live-child
+  coverage is claimed.
+- Reason: The child supervisor uses a compiled registry and closed validated IDs.
+  Adding a production dynamic loader or OS bypass solely for tests would weaken
+  the architecture that the test is intended to protect.
+- Follow-up: A future compiled adapter adds its schema ID, registry registration
+  and conformance fixtures through the same seam. Keep phase/coordinator/judge
+  code provider-independent. The parent explicitly accepted this validation
+  substitution; it does not establish real-provider execution or live acceptance.
+
+## 2026-09-06 - Slice 4 legacy repair executable identity
+
+- Roadmap item: Slice 4 legacy compatibility and immutable admission/repair identity.
+- Decision: Historical attempts without a captured executable identity remain
+  inspectable and reconcilable, but starting a new repair pauses for fresh human
+  release. New attempts preserve the originally admitted identity across repairs
+  and compare it before executing even `--version`.
+- Reason: A legacy record cannot prove the binary approved by its original
+  admission. Capturing today's executable during repair would silently authorize
+  a replacement and weaken the pinned grant. Review A identified this boundary;
+  the fix has focused regression tests and is included in both clean final v4 source reviews.
+- Follow-up: Use existing human planning/release/consent for new authority. Keep
+  historical evidence, ownership and consumed budgets intact; no migration should
+  fabricate the missing original identity. This is an explicit narrowing of old
+  repair behavior, not a live acceptance result.
+- Reviewed extension: New preparation, launch and repair
+  require a SHA-256 digest of the configured entrypoint file. Old stat-only
+  persisted records still decode and reconcile, but new execution or repair
+  pauses for fresh human release without repinning or rewriting historical
+  authority. Stat metadata alone cannot establish unchanged entrypoint bytes.
+  This extends the same compatibility narrowing. Foundation source is held;
+  both independent source reviews are CLEAN, including nonblocking open before
+  regular-file validation to reject FIFOs without hanging. Verified test scopes
+  are recorded in the handoff; new exact-head CI remains pending. The digest covers the entrypoint file, not
+  transitive packages, and does not establish filesystem isolation or a sandbox.
+
+## 2026-09-06 - Slice 4 executable check-to-spawn race
+
+- Roadmap item: Slice 4 pinned executable identity and local-host launch boundary.
+- Decision: The manager accepts deferring atomic executable binding within the
+  user's explicitly naive, trusted localhost scope. The original entrypoint hash
+  remains pinned between runs, but its descriptor closes before pathname-based
+  spawn. Only mismatches observed at identity checkpoints are rejected; executed
+  bytes are not guaranteed immutable. Cancellation gates do not protect the
+  filesystem. This is a manager-accepted residual race, not personal user
+  acceptance of a new risk, an implemented fix or a false-positive dismissal.
+- Reason: Both independent reviewers recommend the precise deferral, and the
+  foundation owner's offline assessment corroborates it. No assessed portable
+  copy or descriptor-execution fix preserves all CLI wrapper, interpreter and
+  package-asset layout behavior. Copying an entrypoint alone omits dependencies;
+  descriptor execution alone does not bind that complete execution environment.
+- Operator requirement: Keep the trusted CLI installation, interpreter and
+  dependencies stable throughout each attempt. Pause admission and stop active
+  writers before updates.
+- Follow-up: Opt-in immutable execution artifacts preserving entrypoint,
+  interpreter and package-asset layout, together with host write protection.
+  Remote VM placement alone does not solve the race. Track the deferred
+  [PR #406 finding](https://github.com/pandemicsyn/neondeck/pull/406#discussion_r3946295354).
+  Live acceptance remains NOT RUN.
+
+## 2026-09-06 - Slice 4 expanded per-harness scenario matrix
+
+- Roadmap item: Slice 4 acceptance combinations across CLI providers.
+- Decision: Preserve the expanded per-harness crash/judge/publication/feedback/
+  cleanup combinations as an explicit remaining matrix obligation. The named
+  deterministic runs are complete, including 49 Linux host cases and six factory
+  initial/repair routing cases. Do not claim exhaustive per-harness combinations.
+- Reason: Shared generic suites and selected provider routing cases establish
+  their recorded scenarios, not every combination of every edge case for each
+  CLI. This is a coverage limit, not a still-running test or a live result.
+- Follow-up: Extend the matrix with individually recorded scenarios when taken
+  up; retain the existing live acceptance obligations and no-full-matrix claim.

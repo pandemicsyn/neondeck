@@ -196,26 +196,34 @@ record; no single successful full `npm run verify` invocation is claimed.
 Slice 4 (OpenCode and Kilo Code), Slice 5 (Linear) and Slice 6 (remote execution) retain their
 numbering.
 
-## Software Factory Slice 4 — Pluggable Coding CLIs (Planned)
+## Software Factory Slice 4 — Pluggable Coding CLIs (Published, Source CI Verified)
 
 Extend the existing Codex path with **OpenCode and Kilo Code**, through a small
 typed coding adapter contract and registry. Adding another CLI should require an
 adapter, validated configuration and contract fixtures, without changing factory
 phases, progress supervision or publication logic. Codex remains the default.
 
-- [ ] Separate CLI-specific readiness, invocation, event/session normalization and
+- [x] Separate CLI-specific readiness, invocation, event/session normalization and
       recovery interpretation from shared host process/workspace ownership.
-- [ ] Pin the selected adapter and configuration at admission. No silent fallback
+- [x] Pin the selected adapter and configuration at admission. No silent fallback
       to another CLI, fresh session or renewed budget after failure or restart.
-- [ ] Reuse the existing Kilo CLI/parser/session work where compatible, while
+- [x] Reuse the existing Kilo CLI/parser/session work where compatible, while
       retaining one factory run, one process supervisor and one workspace owner.
 - [ ] Give Codex, OpenCode and Kilo the same contract tests, bounded repair/judge
       rules, cancellation/recovery checks and explicit cleanup flow.
-- [ ] Surface harness readiness and selection in the existing configuration and
+- [x] Surface harness readiness and selection in the existing configuration and
       workbench, with validated IO and screenshots for operator changes.
 - [ ] Verify installed CLI versions and execution-host readiness, then record
-      separate real Codex/OpenCode/Kilo acceptance. Kilo installation is
-      operator-reported; factory compatibility and authentication are not yet verified.
+      separate real Codex/OpenCode/Kilo acceptance. Kilo 7.4.23 installed help/source and temporary OpenCode 1.18.29 help/source
+      are verified; target authenticated readiness remains unverified.
+
+Published stack #410: draft [#406](https://github.com/pandemicsyn/neondeck/pull/406) → [#407](https://github.com/pandemicsyn/neondeck/pull/407) → [#408](https://github.com/pandemicsyn/neondeck/pull/408) → [#409](https://github.com/pandemicsyn/neondeck/pull/409) after both independent source/docs reviews were clean.
+Parent post-publication architecture review is clean; all nine checks passed on each published source head (#406 `03b697f6`, #407 `2cce6b09`, #408 `6255c952`, #409 `473ab9ef`) on September 6. Later documentation heads have separate CI; see the linked PRs for current status.
+The expanded per-harness scenario matrix and live acceptance remain open.
+Atomic binding from entrypoint hash check to execution is a manager-accepted
+deferral within the user's explicitly naive, trusted localhost scope. Follow-up
+is opt-in immutable execution artifacts preserving interpreter/package layout
+with host write protection; see the [recorded race and operator requirement](DEVIATIONS.md#2026-09-06---slice-4-executable-check-to-spawn-race).
 
 See the [Slice 4 implementation plan](factory/SLICE_4_IMPLEMENTATION_PLAN.md).
 The recommended next operational work remains combined Slice 2/3/3.1 live

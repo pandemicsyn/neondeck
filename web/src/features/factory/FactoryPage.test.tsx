@@ -12,7 +12,10 @@ import * as v from 'valibot';
 import { factoryCodingConfigSchema } from '../../../../shared/factory-coding';
 // Keep intake fixtures focused; coding has dedicated response/interaction tests.
 vi.mock('./FactoryCoding', () => ({ FactoryCoding: () => null }));
-vi.mock('./FactoryCodingSetup', () => ({ FactoryCodingSetup: () => null }));
+vi.mock('./FactoryCodingSetup', () => ({
+  FactoryCodingSetup: () => null,
+  factoryCodingStateKey: ['factory-coding-state'],
+}));
 let container: HTMLDivElement;
 let root: ReturnType<typeof createRoot>;
 let client: QueryClient;
