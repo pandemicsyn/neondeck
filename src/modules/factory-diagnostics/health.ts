@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import * as v from 'valibot';
 import {
   factoryHealthSchema,
@@ -45,24 +46,35 @@ export function diagnoseTask(
   const activeRun = r.runs.find((run) =>
     ['reserved', 'running', 'collecting'].includes(run.status),
   );
+  // Pure durable identity subset of codingAuthority; runtime readiness remains separate.
+  const release = r.releases.find((release) => release.withdrawnAt === null);
+  const revision = r.revisions.find(
+    (revision) => revision.version === r.work.specVersion,
+  );
+  const releaseBlocked =
+    r.work.lifecycle === 'queued' &&
+    (!release ||
+      !revision ||
+      release.workId !== r.work.id ||
+      revision.workId !== r.work.id ||
+      release.repoId !== r.work.repoId ||
+      release.specVersion !== revision.version ||
+      release.specHash !== revision.hash ||
+      release.specHash !==
+        createHash('sha256')
+          .update(JSON.stringify(revision.spec))
+          .digest('hex') ||
+      release.repoFingerprint !== revision.repoFingerprint ||
+      release.sourceVersion !== revision.sourceVersion);
   const run = r.runs.find(
     (run) =>
       r.work.lifecycle === 'queued' &&
-      run.snapshot.specVersion === r.work.specVersion &&
-      r.releases.some(
-        (release) =>
-          release.id === run.snapshot.releaseId &&
-          release.withdrawnAt === null &&
-          release.specVersion === run.snapshot.specVersion &&
-          release.specHash === run.snapshot.specHash &&
-          release.repoId === run.snapshot.repoId &&
-          release.repoId === r.work.repoId &&
-          r.revisions.some(
-            (revision) =>
-              revision.version === release.specVersion &&
-              revision.hash === release.specHash,
-          ),
-      ),
+      !releaseBlocked &&
+      release &&
+      run.snapshot.specVersion === release.specVersion &&
+      run.snapshot.releaseId === release.id &&
+      run.snapshot.specHash === release.specHash &&
+      run.snapshot.repoId === release.repoId,
   );
   const planning = r.planning.find(
     (p) => p.stage === 'triage' || p.stage === 'planner',
@@ -152,6 +164,11 @@ export function diagnoseTask(
     pendingSince = null;
     nextStep =
       'Inspect the in-flight effect and worker health before taking further action.';
+  } else if (releaseBlocked) {
+    status = 'release-blocked';
+    pendingSince = null;
+    nextStep =
+      'Review the current specification and repository context, then issue a new exact release through the existing release controls. Durable release authority is missing, withdrawn or inconsistent; coding readiness remains a separate check.';
   } else if (writeback.length) {
     status = 'writeback-pending';
     pendingSince = writeback.reduce(
@@ -234,6 +251,7 @@ export function diagnoseHealth(
         'human-decision',
         'budget-exhausted',
         'coding-failed',
+        'release-blocked',
       ].includes(t.status),
     );
   const status = notRunning

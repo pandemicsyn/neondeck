@@ -345,7 +345,7 @@ export function readTaskHealthRecords(
   const runCandidates = codingCandidates(db, workId);
   const runs = runCandidates.slice(0, sourceLimit);
   const releaseCandidates =
-    work.lifecycle === 'queued' && runs.length
+    work.lifecycle === 'queued'
       ? jsonRows(
           db,
           'SELECT id,record FROM factory_releases WHERE work_id=? ORDER BY rowid DESC LIMIT ?',
@@ -353,17 +353,21 @@ export function readTaskHealthRecords(
           workId,
         )
       : [];
+  // Match codingAuthority/getFactoryWork: first non-withdrawn release in row order.
+  // Any older omitted authority keeps the bounded diagnosis partial.
   const releases = releaseCandidates
     .slice(0, sourceLimit)
+    .reverse()
     .filter((r) => r.withdrawnAt === null);
-  const revisions = releases.length
-    ? db
-        .prepare(
-          'SELECT version,record FROM factory_spec_revisions WHERE work_id=? AND version=? LIMIT 1',
-        )
-        .all(workId, work.specVersion)
-        .map((row) => parseRecord(row, revisionSchema))
-    : [];
+  const revisions =
+    work.lifecycle === 'queued'
+      ? db
+          .prepare(
+            'SELECT version,record FROM factory_spec_revisions WHERE work_id=? AND version=? LIMIT 1',
+          )
+          .all(workId, work.specVersion)
+          .map((row) => parseRecord(row, revisionSchema))
+      : [];
   // Validate a bounded candidate window before deciding which outcomes are terminal.
   // Older candidates outside this window make health partial, never silently healthy.
   const deliveryCandidates = readDeliveryCandidates(db, workId);

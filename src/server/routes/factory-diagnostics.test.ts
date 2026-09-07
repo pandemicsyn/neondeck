@@ -878,6 +878,12 @@ it.each(['closed', 'paused', 'shaping', 'queued'] as const)(
   'binds terminal run guidance and preserves older recovery during %s',
   (lifecycle) => {
     const run = insertRun('release');
+    const revision = taskFixture().revisions[0];
+    revision.hash = createHash('sha256')
+      .update(JSON.stringify(revision.spec))
+      .digest('hex');
+    revision.repoFingerprint = 'a'.repeat(64);
+    run.snapshot.specHash = revision.hash;
     const failed = {
       ...run,
       status: 'failed',
@@ -895,6 +901,9 @@ it.each(['closed', 'paused', 'shaping', 'queued'] as const)(
     };
     const db = openDb(paths.neondeckDatabase);
     try {
+      db.prepare('UPDATE factory_spec_revisions SET record=?').run(
+        JSON.stringify(revision),
+      );
       const work = { ...taskFixture().work, lifecycle, repoId: 'repo' };
       db.prepare('UPDATE factory_work_items SET record=? WHERE id=?').run(
         JSON.stringify(work),
@@ -909,7 +918,7 @@ it.each(['closed', 'paused', 'shaping', 'queued'] as const)(
         requestKey: 'release',
         actor: 'human',
         specVersion: 1,
-        specHash: 'a'.repeat(64),
+        specHash: revision.hash,
         sourceVersion: 1,
         repoId: 'repo',
         repoFingerprint: 'a'.repeat(64),
@@ -989,7 +998,9 @@ it.each(['closed', 'paused', 'shaping', 'queued'] as const)(
           JSON.stringify({ ...release, withdrawnAt: recordedAt }),
           release.id,
         );
-        expect(status()).toBe(lifecycle);
+        expect(status()).toBe(
+          lifecycle === 'queued' ? 'release-blocked' : lifecycle,
+        );
         db.prepare('UPDATE factory_releases SET record=? WHERE id=?').run(
           JSON.stringify(release),
           release.id,
@@ -1008,7 +1019,9 @@ it.each(['closed', 'paused', 'shaping', 'queued'] as const)(
           JSON.stringify(stale),
           release.id,
         );
-        expect(status()).toBe(lifecycle);
+        expect(status()).toBe(
+          lifecycle === 'queued' ? 'release-blocked' : lifecycle,
+        );
       }
       db.prepare('UPDATE factory_releases SET record=? WHERE id=?').run(
         JSON.stringify(release),
@@ -1022,7 +1035,9 @@ it.each(['closed', 'paused', 'shaping', 'queued'] as const)(
           JSON.stringify(changed),
           work.id,
         );
-        expect(status()).toBe(lifecycle);
+        expect(status()).toBe(
+          lifecycle === 'queued' ? 'release-blocked' : lifecycle,
+        );
       }
       db.prepare('UPDATE factory_work_items SET record=? WHERE id=?').run(
         JSON.stringify(work),
@@ -1176,6 +1191,11 @@ function faultCoexistenceFixture() {
   records.work.lifecycle = 'queued';
   records.work.repoId = 'repo';
   const run = insertRun('release');
+  records.revisions[0].hash = createHash('sha256')
+    .update(JSON.stringify(records.revisions[0].spec))
+    .digest('hex');
+  records.revisions[0].repoFingerprint = 'a'.repeat(64);
+  run.snapshot.specHash = records.revisions[0].hash;
   records.runs = [
     v.parse(codingRunRecordSchema, {
       ...run,
@@ -1200,7 +1220,7 @@ function faultCoexistenceFixture() {
       requestKey: 'release',
       actor: 'human',
       specVersion: 1,
-      specHash: 'a'.repeat(64),
+      specHash: records.revisions[0].hash,
       sourceVersion: 1,
       repoId: 'repo',
       repoFingerprint: 'a'.repeat(64),
@@ -1868,4 +1888,262 @@ it('previews the newest 100 timeline entries through the route, including undate
   expect(firstPage.entries[0].occurredAt).toBe(recordedAt);
   expect(firstPage.nextCursor).toBeTypeOf('string');
   expect(firstPage.coverage.truncated).toBe(false);
+});
+
+function queuedReleaseFixture() {
+  const records = taskFixture();
+  records.work.lifecycle = 'queued';
+  records.work.repoId = 'repo';
+  const revision = records.revisions[0];
+  revision.hash = createHash('sha256')
+    .update(JSON.stringify(revision.spec))
+    .digest('hex');
+  revision.repoFingerprint = 'a'.repeat(64);
+  const release = v.parse(releaseSchema, {
+    id: 'first-release',
+    workId: records.work.id,
+    requestKey: 'first-release',
+    actor: 'human',
+    specVersion: revision.version,
+    specHash: revision.hash,
+    sourceVersion: revision.sourceVersion,
+    repoId: 'repo',
+    repoFingerprint: revision.repoFingerprint,
+    policy: factoryPolicy,
+    createdAt: recordedAt,
+    withdrawnAt: null,
+    withdrawalReason: null,
+  });
+  return { records, revision, release };
+}
+it.each([
+  'valid',
+  'missing',
+  'withdrawn',
+  'stale-version',
+  'repo',
+  'hash',
+  'spec-digest',
+  'revision-hash',
+  'revision-missing',
+  'fingerprint',
+  'source-version',
+  'malformed-release',
+  'malformed-revision',
+  'work-binding',
+  'revision-binding',
+] as const)(
+  'diagnoses first queued release without a reserved run: %s',
+  async (fault) => {
+    const { records, revision, release } = queuedReleaseFixture();
+    if (fault === 'withdrawn') release.withdrawnAt = recordedAt;
+    if (fault === 'stale-version') release.specVersion++;
+    if (fault === 'repo') release.repoId = 'other';
+    if (fault === 'hash') release.specHash = 'b'.repeat(64);
+    if (fault === 'spec-digest')
+      revision.spec.outcome = 'Changed without updating stored hash';
+    if (fault === 'revision-hash') revision.hash = 'b'.repeat(64);
+    if (fault === 'fingerprint') revision.repoFingerprint = 'b'.repeat(64);
+    if (fault === 'source-version') release.sourceVersion++;
+    if (fault === 'work-binding') release.workId = 'other';
+    if (fault === 'revision-binding') revision.version++;
+    const db = openDb(paths.neondeckDatabase);
+    try {
+      db.prepare('UPDATE factory_work_items SET record=?').run(
+        JSON.stringify(records.work),
+      );
+      db.prepare('UPDATE factory_spec_revisions SET record=?').run(
+        fault === 'malformed-revision'
+          ? 'private-invalid-json'
+          : JSON.stringify(revision),
+      );
+      if (fault === 'revision-missing')
+        db.prepare('DELETE FROM factory_spec_revisions').run();
+      if (fault !== 'missing')
+        db.prepare(
+          'INSERT INTO factory_releases(id,work_id,request_key,record) VALUES(?,?,?,?)',
+        ).run(
+          release.id,
+          records.work.id,
+          release.requestKey,
+          fault === 'malformed-release'
+            ? 'private-invalid-json'
+            : JSON.stringify(release),
+        );
+      if (
+        ![
+          'malformed-release',
+          'malformed-revision',
+          'work-binding',
+          'revision-binding',
+        ].includes(fault)
+      ) {
+        expect(
+          diagnoseHealth(
+            [readTaskHealthRecords(db, records.work.id)],
+            [workerFixture()],
+            recordedAt,
+          ),
+        ).toMatchObject({
+          status: fault === 'valid' ? 'healthy' : 'attention',
+          tasks: [{ status: fault === 'valid' ? 'queued' : 'release-blocked' }],
+        });
+      }
+      for (const path of ['/health', '/health?workId=work-test']) {
+        const response = await request(path);
+        const invalid = [
+          'malformed-release',
+          'malformed-revision',
+          'work-binding',
+          'revision-binding',
+        ].includes(fault);
+        expect(response.status).toBe(invalid ? 503 : 200);
+        const body = await response.json();
+        if (invalid)
+          expect(JSON.stringify(body)).not.toContain('private-invalid-json');
+        else
+          expect(body.tasks[0].status).toBe(
+            fault === 'valid' ? 'queued' : 'release-blocked',
+          );
+      }
+      expect(db.prepare('SELECT count(*) AS n FROM coding_runs').get()?.n).toBe(
+        0,
+      );
+      expect(
+        db.prepare('SELECT count(*) AS n FROM factory_audit').get()?.n,
+      ).toBe(1);
+    } finally {
+      db.close();
+    }
+  },
+);
+it.each([false, true])(
+  'bounds queued release candidates and validates lookahead (malformed=%s)',
+  async (malformed) => {
+    const { records, revision, release } = queuedReleaseFixture();
+    const db = openDb(paths.neondeckDatabase);
+    try {
+      db.prepare('UPDATE factory_work_items SET record=?').run(
+        JSON.stringify(records.work),
+      );
+      db.prepare('UPDATE factory_spec_revisions SET record=?').run(
+        JSON.stringify(revision),
+      );
+      for (let i = 0; i <= sourceLimit; i++) {
+        const candidate = {
+          ...release,
+          id: `release-${i}`,
+          requestKey: `release-${i}`,
+        };
+        db.prepare(
+          'INSERT INTO factory_releases(id,work_id,request_key,record) VALUES(?,?,?,?)',
+        ).run(
+          candidate.id,
+          records.work.id,
+          candidate.requestKey,
+          malformed && i === 0 ? 'bad' : JSON.stringify(candidate),
+        );
+      }
+      if (!malformed)
+        expect(
+          diagnoseHealth(
+            [readTaskHealthRecords(db, records.work.id)],
+            [workerFixture()],
+            recordedAt,
+          ),
+        ).toMatchObject({ status: 'attention', truncated: true });
+      expect((await request('/health?workId=work-test')).status).toBe(
+        malformed ? 503 : 200,
+      );
+    } finally {
+      db.close();
+    }
+  },
+);
+
+it('keeps ongoing operations visible when future queued admission is blocked', () => {
+  const { records, run } = faultCoexistenceFixture();
+  records.releases[0].withdrawnAt = recordedAt;
+  records.runs = [];
+  const health = () => diagnoseHealth([records], [workerFixture()], recordedAt);
+  expect(health()).toMatchObject({
+    status: 'attention',
+    tasks: [{ status: 'release-blocked' }],
+  });
+  records.planning = [
+    {
+      id: 'planning',
+      workId: records.work.id,
+      createdAt: recordedAt,
+      stage: 'planner',
+      submissionId: null,
+      triageSubmissionId: null,
+    },
+  ];
+  records.writeback = [
+    v.parse(writebackEffectSchema, { ...writebackFixture(), state: 'pending' }),
+  ];
+  expect(health().tasks[0].status).toBe('release-blocked');
+  records.runs = [run];
+  expect(health().tasks[0]).toMatchObject({
+    status: 'coding-reserved',
+    nextStep: expect.stringContaining('Cancellation and reconciliation'),
+  });
+  records.runs = [];
+  const delivery = deliveryFixture('ongoing');
+  records.deliveries = [delivery];
+  delivery.effects[0].state = 'in-flight';
+  expect(health().tasks[0].status).toBe('delivery-pending');
+  delivery.effects = [];
+  delivery.progress.assessments = [assessmentFixture(delivery)];
+  expect(health().tasks[0].status).toBe(
+    `assessment-${delivery.progress.assessments[0].state}`,
+  );
+  delivery.progress.assessments[0].state = 'uncertain';
+  expect(health().tasks[0].status).toBe('needs-reconciliation');
+});
+
+it('uses canonical first active release rather than accepting any matching release', () => {
+  const { records, revision, release } = queuedReleaseFixture();
+  const db = openDb(paths.neondeckDatabase);
+  try {
+    db.prepare('UPDATE factory_work_items SET record=?').run(
+      JSON.stringify(records.work),
+    );
+    db.prepare('UPDATE factory_spec_revisions SET record=?').run(
+      JSON.stringify(revision),
+    );
+    const first = { ...release, repoId: 'wrong-repo' };
+    const second = { ...release, id: 'second', requestKey: 'second' };
+    for (const candidate of [first, second])
+      db.prepare(
+        'INSERT INTO factory_releases(id,work_id,request_key,record) VALUES(?,?,?,?)',
+      ).run(
+        candidate.id,
+        records.work.id,
+        candidate.requestKey,
+        JSON.stringify(candidate),
+      );
+    const health = () =>
+      diagnoseHealth(
+        [readTaskHealthRecords(db, records.work.id)],
+        [workerFixture()],
+        recordedAt,
+      );
+    expect(health()).toMatchObject({
+      status: 'attention',
+      tasks: [{ status: 'release-blocked' }],
+    });
+    first.withdrawnAt = recordedAt;
+    db.prepare('UPDATE factory_releases SET record=? WHERE id=?').run(
+      JSON.stringify(first),
+      first.id,
+    );
+    expect(health()).toMatchObject({
+      status: 'healthy',
+      tasks: [{ status: 'queued' }],
+    });
+  } finally {
+    db.close();
+  }
 });
