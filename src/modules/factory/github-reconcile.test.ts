@@ -28,7 +28,7 @@ import { GitHubApiError } from '../github';
 let setup: ReturnType<typeof fixture>;
 let io: GitHubReconcileIO;
 beforeEach(() => {
-  setup = fixture();
+  setup = fixture(true);
   io = {
     repository: vi.fn(async () => ({
       id: 42,
@@ -286,7 +286,7 @@ it('creates server-attributed capability-free comment intent only after explicit
     }
   });
   const d = current();
-  const humanIntent = prepareFactoryPlanning(
+  const humanIntent = await prepareFactoryPlanning(
     d.work.id,
     { requestKey: 'human', expectedVersion: d.work.version, message: 'Plan' },
     setup.paths,

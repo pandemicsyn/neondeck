@@ -90,9 +90,9 @@ function task() {
     paths,
   );
 }
-function prepare() {
+async function prepare() {
   const work = task();
-  return prepareFactoryPlanning(
+  return await prepareFactoryPlanning(
     work.work.id,
     {
       requestKey: 'message-1',
@@ -102,7 +102,7 @@ function prepare() {
     paths,
   );
 }
-function proposal(intent: ReturnType<typeof prepare>, content = spec) {
+function proposal(intent: Awaited<ReturnType<typeof prepare>>, content = spec) {
   return {
     expectedVersion: intent.snapshot.work.version,
     expectedSpecVersion: intent.snapshot.work.specVersion,
@@ -110,8 +110,8 @@ function proposal(intent: ReturnType<typeof prepare>, content = spec) {
     spec: content,
   };
 }
-function planning() {
-  const intent = prepare();
+async function planning() {
+  const intent = await prepare();
   recordTriage(intent.sessionId, intent.id, triage, paths);
   return updatePlanningIntent(
     intent.id,
@@ -121,8 +121,8 @@ function planning() {
     paths,
   );
 }
-it('persists the dedicated task binding and exact request before dispatch, and rejects key reuse or parallel messages', () => {
-  const intent = prepare();
+it('persists the dedicated task binding and exact request before dispatch, and rejects key reuse or parallel messages', async () => {
+  const intent = await prepare();
   expect(
     getBoundPlanningSession(intent.sessionId, paths).session,
   ).toMatchObject({
@@ -134,32 +134,34 @@ it('persists the dedicated task binding and exact request before dispatch, and r
     intent,
   );
   expect(
-    prepareFactoryPlanning(
+    await prepareFactoryPlanning(
       intent.workId,
       { requestKey: 'message-1', expectedVersion: 1, message: intent.message },
       paths,
     ),
   ).toEqual(intent);
-  expect(() =>
-    prepareFactoryPlanning(
-      intent.workId,
-      { requestKey: 'message-1', expectedVersion: 1, message: 'Different' },
-      paths,
-    ),
-  ).toThrow(/another message/);
-  expect(() =>
-    prepareFactoryPlanning(
-      intent.workId,
-      { requestKey: 'message-2', expectedVersion: 1, message: 'More' },
-      paths,
-    ),
-  ).toThrow(/pending/);
+  await expect(
+    async () =>
+      await prepareFactoryPlanning(
+        intent.workId,
+        { requestKey: 'message-1', expectedVersion: 1, message: 'Different' },
+        paths,
+      ),
+  ).rejects.toThrow(/another message/);
+  await expect(
+    async () =>
+      await prepareFactoryPlanning(
+        intent.workId,
+        { requestKey: 'message-2', expectedVersion: 1, message: 'More' },
+        paths,
+      ),
+  ).rejects.toThrow(/pending/);
   expect(() => getBoundPlanningSession('neondeck-main', paths)).toThrow(
     /Unbound/,
   );
 });
-it('commits one model revision and its idempotency effect together; a replay cannot duplicate the revision', () => {
-  const intent = planning();
+it('commits one model revision and its idempotency effect together; a replay cannot duplicate the revision', async () => {
+  const intent = await planning();
   const input = proposal(intent);
   const first = proposeFactorySpec(
     intent.sessionId,
@@ -195,8 +197,8 @@ it('commits one model revision and its idempotency effect together; a replay can
     ),
   ).toThrow(/differs/);
 });
-it('rejects cross-task/session, stale human/model, and revoked tool authority; release remains human-only', () => {
-  const intent = planning();
+it('rejects cross-task/session, stale human/model, and revoked tool authority; release remains human-only', async () => {
+  const intent = await planning();
   const input = proposal(intent);
   expect(() =>
     proposeFactorySpec('neondeck-main', intent.id, 'cross', input, paths),
@@ -213,7 +215,7 @@ it('rejects cross-task/session, stale human/model, and revoked tool authority; r
       paths,
     ),
   ).toThrow(/human/);
-  const other = planning();
+  const other = await planning();
   updatePlanningIntent(
     other.id,
     (i) => {
@@ -231,8 +233,8 @@ it('rejects cross-task/session, stale human/model, and revoked tool authority; r
     ),
   ).toThrow(/capability/);
 });
-it('retains original context until explicit refresh, including model changes', () => {
-  const intent = planning();
+it('retains original context until explicit refresh, including model changes', async () => {
+  const intent = await planning();
   updatePlanningIntent(
     intent.id,
     (i) => {
@@ -252,14 +254,15 @@ it('retains original context until explicit refresh, including model changes', (
     contextStale: true,
     model: 'faux/faux-1',
   });
-  expect(() =>
-    prepareFactoryPlanning(
-      intent.workId,
-      { requestKey: 'm2', expectedVersion: 1, message: 'Revise' },
-      paths,
-    ),
-  ).toThrow(/context changed/);
-  refreshFactoryPlanningContext(intent.workId, 1, paths);
+  await expect(
+    async () =>
+      await prepareFactoryPlanning(
+        intent.workId,
+        { requestKey: 'm2', expectedVersion: 1, message: 'Revise' },
+        paths,
+      ),
+  ).rejects.toThrow(/context changed/);
+  await refreshFactoryPlanningContext(intent.workId, 1, paths);
   expect(getPlanningState(intent.workId, paths)).toMatchObject({
     contextStale: false,
     model: 'faux/faux-2',
@@ -267,7 +270,7 @@ it('retains original context until explicit refresh, including model changes', (
   });
 });
 it('reconciles an accepted dispatch with a lost receipt through the same idempotent delivery', async () => {
-  const intent = prepare();
+  const intent = await prepare();
   const admitted = new Map<string, string>();
   let failReceipt = true;
   const calls: string[] = [];
@@ -301,7 +304,7 @@ it('reconciles an accepted dispatch with a lost receipt through the same idempot
   expect(getFactoryWork(intent.workId, paths).revisions).toHaveLength(2);
 });
 it('invalid triage and terminal provider failure leave retryable inspectable state and never start planner', async () => {
-  const intent = prepare();
+  const intent = await prepare();
   expect(() =>
     recordTriage(
       intent.sessionId,
@@ -327,7 +330,7 @@ it('invalid triage and terminal provider failure leave retryable inspectable sta
     activity: 'failed',
     triage: null,
   });
-  const retry = prepareFactoryPlanning(
+  const retry = await prepareFactoryPlanning(
     intent.workId,
     { requestKey: 'retry', expectedVersion: 1, message: 'Try again' },
     paths,
@@ -349,8 +352,8 @@ it('invalid triage and terminal provider failure leave retryable inspectable sta
   });
   expect(getFactoryWork(intent.workId, paths).revisions).toHaveLength(1);
 });
-it('a pause races a model save through the same version fence', () => {
-  const intent = planning();
+it('a pause races a model save through the same version fence', async () => {
+  const intent = await planning();
   transitionFactoryWork(
     intent.workId,
     { action: 'pause', expectedVersion: 1 },
@@ -374,7 +377,7 @@ it('reads only bounded committed regular files and requires inspected evidence f
   writeFileSync(join(repo, '.env'), 'SYNTHETIC=fixture');
   const git = (...args: string[]) =>
     execFileSync('git', ['-C', repo, ...args], { stdio: 'pipe' });
-  git('init');
+  git('init', '-b', 'main');
   git('add', '.');
   git(
     '-c',
@@ -406,7 +409,7 @@ it('reads only bounded committed regular files and requires inspected evidence f
     human,
     paths,
   );
-  const intent = prepareFactoryPlanning(
+  const intent = await prepareFactoryPlanning(
     work.work.id,
     { requestKey: 'repo-plan', expectedVersion: 1, message: 'Plan' },
     paths,
@@ -514,7 +517,7 @@ it('automatically admitted triage is deduped by meaningful input and never start
     triage,
   });
   expect(prepareFactoryTriage(work.work.id, paths)?.id).toBe(intent.id);
-  const request = prepareFactoryPlanning(
+  const request = await prepareFactoryPlanning(
     work.work.id,
     { requestKey: 'human-plan', expectedVersion: 1, message: 'Now plan it' },
     paths,
@@ -523,7 +526,7 @@ it('automatically admitted triage is deduped by meaningful input and never start
   expect(request.triageOnly).toBe(false);
 });
 it('replays a persisted abort before awaiting settlement after restart', async () => {
-  const intent = prepare();
+  const intent = await prepare();
   updatePlanningIntent(
     intent.id,
     (i) => {
@@ -594,7 +597,7 @@ it.each([false, true])(
   },
 );
 
-it('binds section feedback to its retained original revision without selecting another task/session', () => {
+it('binds section feedback to its retained original revision without selecting another task/session', async () => {
   const original = task();
   const first = original.revisions[0];
   const revised = saveFactorySpec(
@@ -614,7 +617,7 @@ it('binds section feedback to its retained original revision without selecting a
     kind: 'section',
     id: 'outcome',
   };
-  const intent = prepareFactoryPlanning(
+  const intent = await prepareFactoryPlanning(
     original.work.id,
     {
       requestKey: 'section',
@@ -632,59 +635,64 @@ it('binds section feedback to its retained original revision without selecting a
   expect(getFactoryWork(original.work.id, paths).revisions).toHaveLength(2);
   expect(getFactoryWork(original.work.id, paths).releases).toHaveLength(0);
   expect(
-    prepareFactoryPlanning(
-      original.work.id,
-      {
-        requestKey: 'section',
-        expectedVersion: revised.work.version,
-        message: 'Please explain this choice.',
-        discussion: ref,
-      },
-      paths,
+    (
+      await prepareFactoryPlanning(
+        original.work.id,
+        {
+          requestKey: 'section',
+          expectedVersion: revised.work.version,
+          message: 'Please explain this choice.',
+          discussion: ref,
+        },
+        paths,
+      )
     ).id,
   ).toBe(intent.id);
   const other = task();
-  expect(() =>
-    prepareFactoryPlanning(
-      other.work.id,
-      {
-        requestKey: 'bad',
-        expectedVersion: 1,
-        message: 'Another session',
-        discussion: { ...ref, hash: 'f'.repeat(64) },
-      },
-      paths,
-    ),
-  ).toThrow('Discussion reference is not retained in this task');
-  expect(() =>
-    prepareFactoryPlanning(
-      other.work.id,
-      {
-        requestKey: 'bad',
-        expectedVersion: 1,
-        message: 'Redirect',
-        discussion: { ...ref, sessionId: intent.sessionId },
-      },
-      paths,
-    ),
-  ).toThrow();
-  expect(() =>
-    prepareFactoryPlanning(
-      other.work.id,
-      {
-        requestKey: 'bad',
-        expectedVersion: 1,
-        message: 'Unknown field',
-        discussion: { ...ref, hash: other.revisions[0].hash, id: 'release' },
-      },
-      paths,
-    ),
-  ).toThrow('Discussion reference is not retained in this task');
+  await expect(
+    async () =>
+      await prepareFactoryPlanning(
+        other.work.id,
+        {
+          requestKey: 'bad',
+          expectedVersion: 1,
+          message: 'Another session',
+          discussion: { ...ref, hash: 'f'.repeat(64) },
+        },
+        paths,
+      ),
+  ).rejects.toThrow('Discussion reference is not retained in this task');
+  await expect(
+    async () =>
+      await prepareFactoryPlanning(
+        other.work.id,
+        {
+          requestKey: 'bad',
+          expectedVersion: 1,
+          message: 'Redirect',
+          discussion: { ...ref, sessionId: intent.sessionId },
+        },
+        paths,
+      ),
+  ).rejects.toThrow();
+  await expect(
+    async () =>
+      await prepareFactoryPlanning(
+        other.work.id,
+        {
+          requestKey: 'bad',
+          expectedVersion: 1,
+          message: 'Unknown field',
+          discussion: { ...ref, hash: other.revisions[0].hash, id: 'release' },
+        },
+        paths,
+      ),
+  ).rejects.toThrow('Discussion reference is not retained in this task');
 });
 
 it('recovers only the requested task while startup still recovers all tasks', async () => {
-  const a = prepare(),
-    b = prepare(),
+  const a = await prepare(),
+    b = await prepare(),
     unprepared = task();
   const dispatched: string[] = [];
   const io: PlanningTransport = {
@@ -727,7 +735,7 @@ it.each([
     const realGit = execFileSync('which', ['git'], { encoding: 'utf8' }).trim();
     const git = (...args: string[]) =>
       execFileSync(realGit, ['-C', repo, ...args]);
-    git('init');
+    git('init', '-b', 'main');
     git('add', '.');
     git(
       '-c',
@@ -759,7 +767,7 @@ it.each([
       human,
       paths,
     );
-    const intent = prepareFactoryPlanning(
+    const intent = await prepareFactoryPlanning(
       work.work.id,
       { requestKey: 'async-plan', expectedVersion: 1, message: 'Plan' },
       paths,
@@ -842,8 +850,8 @@ it.each([
   },
 );
 
-it('validates legacy proposal replay and rejects a corrupt success result without another revision', () => {
-  const intent = planning();
+it('validates legacy proposal replay and rejects a corrupt success result without another revision', async () => {
+  const intent = await planning();
   const input = proposal(intent);
   const result = proposeFactorySpec(
     intent.sessionId,
@@ -882,7 +890,7 @@ it('validates legacy proposal replay and rejects a corrupt success result withou
   ).toThrow(ValiError);
   expect(getFactoryWork(intent.workId, paths).revisions).toHaveLength(2);
 });
-it('rejects malformed duplicate candidates instead of coercing their titles', () => {
+it('rejects malformed duplicate candidates instead of coercing their titles', async () => {
   const other = task();
   const current = task();
   dbRun(paths, (db) => {
@@ -890,18 +898,19 @@ it('rejects malformed duplicate candidates instead of coercing their titles', ()
       "UPDATE factory_work_items SET record=json_set(record, '$.title', json('{}')) WHERE id=?",
     ).run(other.work.id);
   });
-  expect(() =>
-    prepareFactoryPlanning(
-      current.work.id,
-      { requestKey: 'candidate-check', expectedVersion: 1, message: 'Plan' },
-      paths,
-    ),
-  ).toThrow(ValiError);
+  await expect(
+    async () =>
+      await prepareFactoryPlanning(
+        current.work.id,
+        { requestKey: 'candidate-check', expectedVersion: 1, message: 'Plan' },
+        paths,
+      ),
+  ).rejects.toThrow(ValiError);
   expect(pendingPlanningIntents(paths, current.work.id)).toEqual([]);
 });
 
-it('fails closed on corrupted retained usage instead of bypassing the token budget', () => {
-  const intent = prepare();
+it('fails closed on corrupted retained usage instead of bypassing the token budget', async () => {
+  const intent = await prepare();
   dbRun(paths, (db) => {
     db.prepare('INSERT INTO factory_planning_effects VALUES (?,?,?)').run(
       'bad-usage',

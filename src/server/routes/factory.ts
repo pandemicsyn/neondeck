@@ -163,7 +163,7 @@ export function createFactoryRoutes(
     c.json(getPlanningState(c.req.param('id'), paths)),
   );
   routes.post('/work/:id/planning', async (c) => {
-    const intent = prepareFactoryPlanning(
+    const intent = await prepareFactoryPlanning(
       c.req.param('id'),
       await c.req.json(),
       paths,
@@ -183,7 +183,7 @@ export function createFactoryRoutes(
       }),
       await c.req.json(),
     );
-    refreshFactoryPlanningContext(
+    await refreshFactoryPlanningContext(
       c.req.param('id'),
       input.expectedVersion,
       paths,

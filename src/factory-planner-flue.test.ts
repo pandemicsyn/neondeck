@@ -157,7 +157,7 @@ it('runs real Flue triage and a persistent planner with a deterministic test pro
       { kind: 'human', id: 'local-operator' },
       paths,
     );
-    const first = prepareFactoryPlanning(
+    const first = await prepareFactoryPlanning(
       task.work.id,
       {
         requestKey: 'plan-one',
@@ -194,7 +194,7 @@ it('runs real Flue triage and a persistent planner with a deterministic test pro
       providers: [provider.provider],
       db: sqlite(join(home, 'factory-flue.db')),
     });
-    const second = prepareFactoryPlanning(
+    const second = await prepareFactoryPlanning(
       task.work.id,
       {
         requestKey: 'plan-two',
@@ -407,7 +407,7 @@ it('exhausts a finite invalid-tool triage budget into an inspectable retryable f
       { kind: 'human', id: 'local-operator' },
       paths,
     );
-    const intent = prepareFactoryPlanning(
+    const intent = await prepareFactoryPlanning(
       task.work.id,
       { requestKey: 'm1', expectedVersion: 1, message: 'Plan' },
       paths,
@@ -420,10 +420,12 @@ it('exhausts a finite invalid-tool triage budget into an inspectable retryable f
     });
     expect(getFactoryWork(task.work.id, paths).revisions).toHaveLength(1);
     expect(
-      prepareFactoryPlanning(
-        task.work.id,
-        { requestKey: 'retry', expectedVersion: 1, message: 'Retry' },
-        paths,
+      (
+        await prepareFactoryPlanning(
+          task.work.id,
+          { requestKey: 'retry', expectedVersion: 1, message: 'Retry' },
+          paths,
+        )
       ).id,
     ).not.toBe(intent.id);
   } finally {
@@ -440,7 +442,7 @@ it('delivers attributed GitHub context without tools and reconciles a lost recei
   const { reconcileGitHubSource } = await import('./modules/factory/service');
   const { prepareGitHubContext, getPlanningIntent } =
     await import('./modules/factory/planning-store');
-  const setup = fixture();
+  const setup = fixture(true);
   const oldHome = process.env.NEONDECK_HOME;
   process.env.NEONDECK_HOME = setup.paths.home;
   let flue: Awaited<ReturnType<typeof start>> | undefined;
@@ -464,7 +466,7 @@ it('delivers attributed GitHub context without tools and reconciles a lost recei
         setup.paths,
       ),
     );
-    const human = prepareFactoryPlanning(
+    const human = await prepareFactoryPlanning(
       task.work.id,
       {
         requestKey: 'human-start',

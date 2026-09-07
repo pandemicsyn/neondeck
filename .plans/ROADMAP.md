@@ -245,6 +245,12 @@ acceptance or start Linear intake/remote execution.
 
 ## Software Factory Onboarding And Observability — Source Complete
 
+Additional operator rehearsal work: [planning replies and session baselines](factory/PLANNING_SESSION_USABILITY.md)
+enlarges the factory reply editor and captures the latest fetched default branch
+for new planning sessions and initial coding attempts. Existing sessions retain
+their pinned revisions. Implementation and two independent static reviews are
+complete; synthetic browser checks pass. Live operator acceptance remains open.
+
 Operator rehearsal follow-up: [guided setup](factory/SETUP_USABILITY_PLAN.md) adds
 CLI detection, searchable models, local Codex login reuse, multiple intake
 repositories and explicit coding enablement. Implementation and independent static

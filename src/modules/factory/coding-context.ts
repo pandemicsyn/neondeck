@@ -1,3 +1,4 @@
+import { captureFactoryRepoBaseline } from './repo-baseline';
 import { createHash } from 'node:crypto';
 import * as v from 'valibot';
 import type { CodingExecutableIdentity } from '../../../shared/coding-adapters';
@@ -29,6 +30,10 @@ import { runtimeSkillSessionSnapshotsSync } from '../runtime';
 import { inspectCodingExecutableIdentity } from '../coding-runs';
 import { getFactoryWork } from './service';
 import { gitAsync } from './repo-reader';
+import {
+  factoryRepoBaselineSchema,
+  type FactoryRepoBaseline,
+} from './repo-baseline-schema';
 export const codingDigest = (value: unknown) =>
   createHash('sha256').update(JSON.stringify(value)).digest('hex');
 /** Persisted releases retain full digests. Only the runtime switch may differ;
@@ -112,6 +117,7 @@ const skillSchema = v.strictObject({
 });
 const frozenBodySchema = v.strictObject({
   policy: v.literal('frozen-selected-context-v1'),
+  repoBaseline: v.optional(factoryRepoBaselineSchema),
   repoInstructions: v.nullable(
     v.strictObject({
       path: v.literal('AGENTS.md'),
@@ -157,6 +163,7 @@ export async function freezeCodingContext(
   current: FactoryDetail,
   baseSha: string,
   paths: RuntimePaths,
+  baseline?: FactoryRepoBaseline,
 ) {
   const memory = buildMemoryPromptSnapshotSync(paths, {
     repoId: current.work.repoId,
@@ -171,6 +178,7 @@ export async function freezeCodingContext(
   );
   const snapshot = {
     policy: 'frozen-selected-context-v1',
+    ...(baseline?.repoBaseline ? { repoBaseline: baseline.repoBaseline } : {}),
     repoInstructions,
     setup: current.repoContext!.commands,
     references: current.revisions.at(-1)!.spec.references,
@@ -212,30 +220,36 @@ export async function codingSnapshot(
       'Cannot pin the selected coding executable. Review the executable configuration before admission.',
     );
   }
-  let baseSha: string;
+  // Each initial coding session captures independently of planning. Existing
+  // attempts and repairs continue using their durable snapshot/baseSha.
+  let baseline: FactoryRepoBaseline;
   try {
-    baseSha = (
-      await gitAsync(
-        repo.path,
-        ['rev-parse', '--verify', `${repo.defaultBranch}^{commit}`],
-        AbortSignal.timeout(5000),
-      )
-    ).trim();
-  } catch {
+    baseline = await captureFactoryRepoBaseline(current.repoContext);
+    if (!baseline.repoCommit)
+      throw new Error('Repository context unavailable.');
+  } catch (error) {
     throw new CodingPreflightError(
-      'Local repository default branch is unavailable. Restore the repository/base branch, then update repository configuration or release a refreshed brief.',
+      error instanceof Error
+        ? error.message
+        : 'Cannot capture coding baseline.',
     );
   }
+  const baseSha = baseline.repoCommit!;
   let contextSnapshot: string;
   try {
-    contextSnapshot = await freezeCodingContext(current, baseSha, paths);
+    contextSnapshot = await freezeCodingContext(
+      current,
+      baseSha,
+      paths,
+      baseline,
+    );
   } catch (error) {
     if (error instanceof CodingPreflightError) throw error;
     throw new CodingPreflightError(
       'Cannot freeze repository instructions and selected context. Check tracked AGENTS.md and skill/memory inputs, then deliberately refresh and release the brief.',
     );
   }
-  return v.parse(codingRunSnapshotSchema, {
+  const snapshot = v.parse(codingRunSnapshotSchema, {
     requestId: `factory:${release.id}`,
     workItemId: workId,
     releaseId: release.id,
@@ -257,6 +271,9 @@ export async function codingSnapshot(
     },
     sessionMode: 'fresh',
   });
+  assertReleasedCodingConfig(workId, paths);
+  assertCodingAuthoritySnapshot(snapshot, paths);
+  return snapshot;
 }
 // Keep the full source in provenance; transport timestamps and optional/null
 // attention normalization are not release authority. Nonempty attention still
