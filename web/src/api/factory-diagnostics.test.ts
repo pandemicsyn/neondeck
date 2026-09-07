@@ -70,11 +70,14 @@ function health(): FactoryHealth {
   };
 }
 function preview(): FactoryDiagnosticExport {
-  const token = 'id:aaaaaaaaaaaaaaaaaaaaaaaa';
-  return {
+  // Synthetic stand-ins for the server's per-export HMAC pseudonyms (24 hex
+  // digits). The raw requested ID is never exported; its token is shared by
+  // the root, health task, timeline correlation and span correlation.
+  const taskToken = 'id:aaaaaaaaaaaaaaaaaaaaaaaa';
+  return v.parse(factoryDiagnosticExportSchema, {
     schemaVersion: 1,
     generatedAt,
-    workId: token,
+    workId: taskToken,
     notice:
       'Local diagnostic summary. IDs are pseudonymized; no raw logs, prompts, paths, credentials or actor identities. Authority records and retained diagnostic spans are distinct; this is not a complete execution trace.',
     health: {
@@ -83,7 +86,7 @@ function preview(): FactoryDiagnosticExport {
       workers: [],
       tasks: [
         {
-          workId: token,
+          workId: taskToken,
           pendingAgeMs: null,
           remainingExecutionMs: null,
           repairsRemaining: null,
@@ -95,26 +98,26 @@ function preview(): FactoryDiagnosticExport {
     timeline: {
       entries: [
         {
-          id: token,
+          id: 'id:cccccccccccccccccccccccc',
           kind: 'task',
           recordType: 'record',
           occurredAt: null,
-          correlation: { workItemId: token },
+          correlation: { workItemId: taskToken },
           specVersion: null,
           specHash: null,
           evidenceCount: 0,
         },
       ],
-      truncated: false,
+      truncated: true,
     },
     diagnostics: {
       spans: [
         {
-          id: token,
-          traceId: token,
+          id: 'id:dddddddddddddddddddddddd',
+          traceId: 'id:eeeeeeeeeeeeeeeeeeeeeeee',
           parentSpanId: null,
           operation: 'coding.inspect',
-          correlation: { workItemId: token },
+          correlation: { workItemId: taskToken },
           error: null,
           kind: 'phase',
           startedAt: generatedAt,
@@ -125,7 +128,7 @@ function preview(): FactoryDiagnosticExport {
       ],
       truncated: false,
     },
-  };
+  });
 }
 
 it.each([undefined, 'cursor / +?'])(

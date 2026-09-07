@@ -6,6 +6,22 @@ import {
 } from '../../../../shared/factory-coding';
 import { saveFactoryCodingConfig } from '../../api/factory-coding';
 
+function credentialDraft(state: FactoryCodingState, adapterId: string) {
+  const auth =
+    adapterId === (state.config.adapter?.id ?? 'codex')
+      ? state.config.auth
+      : null;
+  return {
+    kind:
+      auth?.kind ??
+      state.adapters.find((item) => item.id === adapterId)
+        ?.credentialKinds[0] ??
+      'api-key',
+    env: auth && auth.kind !== 'codex-local' ? auth.env : '',
+    path: auth?.kind === 'codex-local' ? auth.path : '',
+  };
+}
+
 export function FactoryCodingConfigForm({
   state,
   onSaved,
@@ -21,6 +37,9 @@ export function FactoryCodingConfigForm({
   const [generation, setGeneration] = useState(0);
   const [adapterId, setAdapterId] = useState(
     base.config.adapter?.id ?? 'codex',
+  );
+  const [authDraft, setAuthDraft] = useState(() =>
+    credentialDraft(base, adapterId),
   );
   const adapter = state.adapters.find((item) => item.id === adapterId);
   const savedAdapterId = base.config.adapter?.id ?? 'codex';
@@ -60,9 +79,12 @@ export function FactoryCodingConfigForm({
       executable: value('executable') || null,
       model: value('model') || null,
       path: value('path'),
-      auth: value('authEnv')
-        ? { kind: value('authKind'), env: value('authEnv') }
-        : null,
+      auth:
+        value('authKind') === 'codex-local'
+          ? { kind: 'codex-local', path: value('authPath') }
+          : value('authEnv')
+            ? { kind: value('authKind'), env: value('authEnv') }
+            : null,
       // Reject out-of-range inputs before rounding to the API's integer units.
       wallTimeMs:
         minutes >= 1 / 60 && minutes <= 45 ? Math.round(minutes * 60000) : NaN,
@@ -102,6 +124,9 @@ export function FactoryCodingConfigForm({
             onClick={() => {
               setBase(state);
               setAdapterId(state.config.adapter?.id ?? 'codex');
+              setAuthDraft(
+                credentialDraft(state, state.config.adapter?.id ?? 'codex'),
+              );
               setGeneration((g) => g + 1);
               setError('');
             }}
@@ -144,7 +169,10 @@ export function FactoryCodingConfigForm({
                 const selected = state.adapters.find(
                   (item) => item.id === event.target.value,
                 );
-                if (selected) setAdapterId(selected.id);
+                if (selected) {
+                  setAdapterId(selected.id);
+                  setAuthDraft(credentialDraft(base, selected.id));
+                }
               }}
             >
               {state.adapters.map((item) => (
@@ -159,6 +187,14 @@ export function FactoryCodingConfigForm({
             repairs keep their pinned CLI and model. Selecting or saving a CLI
             does not launch it.
           </p>
+          {authDraft.kind === 'codex-local' && (
+            <p className="factory-note">
+              Local Codex reuse requires a file-backed login. Each attempt uses
+              an isolated credential snapshot; OAuth refreshes are not synced
+              back and may require signing in again. Keyring-only logins need a
+              file-backed login or environment reference.
+            </p>
+          )}
           <div className="factory-coding-fields">
             <Fragment key={adapterId}>
               <label>
@@ -197,12 +233,28 @@ export function FactoryCodingConfigForm({
                 Credential source
                 <select
                   name="authKind"
-                  defaultValue={
-                    changedAdapter
-                      ? adapter?.credentialKinds[0]
-                      : (base.config.auth?.kind ?? adapter?.credentialKinds[0])
-                  }
+                  value={authDraft.kind}
+                  onChange={(event) => {
+                    const kind = event.currentTarget.value;
+                    if (
+                      kind !== 'codex-local' &&
+                      kind !== 'api-key' &&
+                      kind !== 'auth-json'
+                    )
+                      return;
+                    const values = new FormData(event.currentTarget.form!);
+                    setAuthDraft((draft) => ({
+                      kind,
+                      env: String(values.get('authEnv') ?? draft.env),
+                      path: String(values.get('authPath') ?? draft.path),
+                    }));
+                  }}
                 >
+                  {adapterId === 'codex' && (
+                    <option value="codex-local">
+                      Local Codex auth.json reference
+                    </option>
+                  )}
                   {adapter?.credentialKinds.map((kind) => (
                     <option key={kind} value={kind}>
                       {kind === 'api-key'
@@ -212,18 +264,30 @@ export function FactoryCodingConfigForm({
                   ))}
                 </select>
               </label>
-              <label>
-                Environment variable name
-                <input
-                  name="authEnv"
-                  placeholder="CODING_AUTH_REFERENCE"
-                  defaultValue={
-                    changedAdapter ? '' : (base.config.auth?.env ?? '')
-                  }
-                  autoComplete="off"
-                  spellCheck={false}
-                />
-              </label>
+              {authDraft.kind !== 'codex-local' && (
+                <label>
+                  Environment variable name
+                  <input
+                    name="authEnv"
+                    placeholder="CODING_AUTH_REFERENCE"
+                    defaultValue={authDraft.env}
+                    autoComplete="off"
+                    spellCheck={false}
+                  />
+                </label>
+              )}
+              {authDraft.kind === 'codex-local' && (
+                <label>
+                  Local Codex auth.json path
+                  <input
+                    name="authPath"
+                    placeholder="Absolute path to auth.json"
+                    defaultValue={authDraft.path}
+                    autoComplete="off"
+                    spellCheck={false}
+                  />
+                </label>
+              )}
             </Fragment>
             <label>
               Time limit (minutes)
@@ -260,9 +324,10 @@ export function FactoryCodingConfigForm({
             />
           </label>
           <p className="factory-note">
-            Enter only the name of a configured environment variable, never a
-            credential value. One active writer; each attempt starts a fresh
-            session.
+            {authDraft.kind === 'codex-local'
+              ? 'Enter only the absolute auth.json path, never credential contents.'
+              : 'Enter only the name of a configured environment variable, never a credential value.'}{' '}
+            One active writer; each attempt starts a fresh session.
           </p>
           <button disabled={stale || !adapter || unavailable}>
             {busy ? 'Saving coding settings…' : 'Save coding settings'}

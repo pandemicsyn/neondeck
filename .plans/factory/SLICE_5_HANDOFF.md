@@ -11,6 +11,18 @@ wiring. [PR #423](https://github.com/pandemicsyn/neondeck/pull/423) is published
 ready for review after verification. Implementation commit: `95c5ef31`.
 Merge and live acceptance remain pending.
 
+Current-main integration: main advanced to `8e35a0d8` (#420 local Codex login and
+#421 guided setup) during implementation. It is merged into the feature branch;
+both deviations entries and the upstream independent diagnostics fixture are
+preserved. Linear source authority and the upstream coding-enablement gate remain
+separate. Both independent reviewers returned **CLEAN** on the merge resolution;
+the manager found no architecture compatibility issue. Targeted diagnostics,
+Linear domain/routes and coding-release verification passed 53 tests across four
+files. The merged dashboard/server rebuild, package validation (1,269 files),
+packaged CLI smoke and repository formatting passed.
+Post-integration `npm run check` also **PASS**: 3,066 unit tests across 285 files
+in 82.10 seconds, lint, import layers, migration consistency and app/docs types.
+
 ## Delivered scope and boundaries
 
 - `src/modules/linear`: fixed-origin GraphQL reads/mutations, complete-response

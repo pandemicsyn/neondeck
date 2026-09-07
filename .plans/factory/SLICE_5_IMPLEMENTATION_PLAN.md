@@ -3,7 +3,7 @@
 Status: source implementation and independent static/manager architecture reviews
 complete; verification passed and [PR #423](https://github.com/pandemicsyn/neondeck/pull/423)
 published ready for review, September 7, 2026. Merge/live acceptance remain pending.
-Base: `51a5caea`.
+Initial base: `51a5caea`; integrated current main `8e35a0d8` before final handoff.
 
 The operator requested implementation of the next numbered factory slice after
 Slice 4 and the onboarding/observability work. Development and independent static

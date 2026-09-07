@@ -82,3 +82,6 @@ after UI polish, covering optional init setup, task history, worker health,
 correlated diagnostics, doctor and previewable local export. Independent static
 reviews are clean; delivery uses stacked PRs. Existing live acceptance obligations
 remain unchanged.
+
+- [Setup usability follow-up](SETUP_USABILITY_PLAN.md): CLI detection, model search,
+  existing local login, multiple intake repositories and explicit coding enablement.

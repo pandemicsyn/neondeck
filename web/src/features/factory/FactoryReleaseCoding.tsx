@@ -83,7 +83,12 @@ function ReleaseSnapshot({
     model: [['Model', config.model ?? 'Not configured']],
     auth: [
       ['Credential kind', config.auth?.kind ?? 'None selected'],
-      ['Credential environment reference', config.auth?.env ?? 'None selected'],
+      config.auth?.kind === 'codex-local'
+        ? ['Credential file reference', config.auth.path]
+        : [
+            'Credential environment reference',
+            config.auth?.env ?? 'None selected',
+          ],
     ],
     path: [['Executable search PATH', config.path]],
     sandbox: [['Permission profile', config.sandbox]],

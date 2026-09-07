@@ -11,14 +11,17 @@ The wizard reuses registered repositories, planning/utility model references and
 factory configuration. It shows the proposed local configuration before asking to
 apply; declining leaves configuration unchanged. Concurrent configuration or
 repository changes require a fresh review. Manual intake uses `/factory`; select
-the repository again when creating each task (there is no global default repo).
+the repository when creating each task (there is no global default repo).
 Existing GitHub connections and coding enablement remain intact. Enabling intake
 allows a running server to triage admitted work using its configured utility model.
-Setup does not submit tasks or contact model providers. If coding was already
+Setup does not submit tasks or run model inference. Selecting Kilo may fetch its
+model catalog using the deck's configured key and organization. If coding was already
 enabled, enabling factory intake may let a running server dispatch existing
 released work under existing grants; the preview warns about this.
 
-A new GitHub connection is saved disabled. The wizard looks up its numeric repository ID through the existing cached GitHub
+Select multiple registered repositories to add GitHub intake connections in one
+run. Existing connections are retained without duplication. Each new connection
+is saved disabled. The wizard looks up its numeric repository ID through the existing cached GitHub
 read client using the selected token reference; lookup failure offers an explicit
 manual fallback. Supply an admission label (or explicitly choose all issues), and environment variable names
 for the webhook secret and read credential. Put values only in the private runtime
@@ -34,22 +37,36 @@ webhook separately with the same local secret and `issues` / `issue_comment`
 events. Never expose the dashboard port as webhook ingress. See
 [GitHub intake](INCREMENT_4_OPERATOR.md) for listener and routing details.
 
-Optionally select installed Codex, OpenCode or Kilo, its absolute executable,
-adapter-specific model and isolated credential environment reference. The wizard
-uses the runtime adapter registry's supported versions and model validation. It
-runs only the bounded version probe in a temporary isolated home without provider
-credentials, and validates the selected credential locally in memory. It does not
-install a CLI, sign in, import ambient CLI auth or verify live provider access.
-Missing credentials and unsupported versions appear as readiness blockers; settings
-can be saved for later completion. A malformed model/adapter configuration must be
-corrected before saving.
+Optionally select installed Codex, OpenCode or Kilo. Setup detects the executable
+and derives an explicit runtime PATH, including Node for npm wrappers; choose
+manual settings if detection is insufficient. Existing explicit paths are retained
+on repeat setup. Codex has a searchable maintained model list. Kilo uses the deck's
+configured gateway key and organization for searchable models, with Auto Frontier
+as the default when no key is available or discovery fails. Manual model entry
+remains available. The selected model must match the adapter's namespace.
 
-Coding stays disabled on a new installation; existing coding enablement is retained.
-Changing an existing coding selection may invalidate outstanding grants through the
-normal configuration service. Review readiness and grants in `/factory`. Human
-release and publication approvals remain separate; setup never grants them. Existing grants may resume as described above. Planning and utility models use the existing configuration; invalid
-provider references must be repaired with the regular model/provider setup before
-enabling intake. Credential presence is not evidence of live access.
+For Codex, select **Use existing local Codex login** when a valid file-backed cache
+is available. Setup stores only its absolute `auth.json` reference. The runtime
+validates and copies it into each private attempt home; it never shares the user's
+whole Codex home, config or sessions. Missing/invalid caches and keyring-only
+logins require file-backed storage or an explicit credential environment reference.
+Per-attempt token refreshes are not written back to the source login cache; live
+refresh longevity remains acceptance work. Kilo can reuse `KILOCODE_API_KEY`.
+
+The wizard uses the runtime adapter registry's supported versions. Its bounded
+version probe runs in a temporary private home without provider credentials. It
+does not install a CLI, sign in or verify live provider access. Missing credentials
+and unsupported versions appear as readiness blockers; settings can be saved for
+later completion. “Version not checked” is distinct from a missing executable.
+
+Coding starts disabled. Setup now offers an explicit enablement choice for
+human-released tasks, separately from the final Apply confirmation. Existing coding
+enablement is retained. Enabling may dispatch already released work once intake is
+also enabled. Changing an existing coding selection may invalidate outstanding
+grants through the normal configuration service. Review readiness and grants in
+`/factory`. Human release and publication approvals remain separate; setup creates
+neither. Planning and utility model references must be valid before enabling intake.
+Credential presence is not evidence of live access.
 
 Factory configuration writes from the CLI and factory API share a cross-process
 lock. The preview fingerprint is checked inside that lock before replacing
