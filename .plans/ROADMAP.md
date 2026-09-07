@@ -243,6 +243,17 @@ operator's request. See the [UI polish record](factory/UI_POLISH.md) for exact
 test/browser evidence and limitations. This does not complete live factory
 acceptance or start Linear intake/remote execution.
 
+## Software Factory Onboarding And Observability — Source Complete
+
+User-prioritized after UI polish and before further factory expansion. Optional
+`neondeck init` setup, correlated local diagnostics, durable worker health, task
+history, factory doctor, and previewable redacted export are implemented.
+Existing authority and real-provider acceptance obligations remain unchanged.
+See [implementation plan](factory/OPERATIONS_IMPLEMENTATION_PLAN.md). Development
+and independent static review agents used Astra at low effort. Both independent
+static reviews and manager product/architecture review are clean before draft
+publication. Merge and live acceptance are separate remaining steps.
+
 ## Usability Gate
 
 Neondeck is usable when a new local install can answer “what should I pay attention to?” and “why is Neon not working?” without the user reading source code or editing config by hand.

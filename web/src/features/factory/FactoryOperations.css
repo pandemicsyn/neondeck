@@ -1,0 +1,85 @@
+.factory-operations,
+.factory-timeline {
+  min-width: 0;
+  border-bottom: 1px solid var(--line);
+  padding-block: 12px;
+  overflow-wrap: anywhere;
+}
+.factory-operations > .factory-toolbar,
+.factory-timeline .factory-toolbar {
+  margin-block: 8px;
+}
+.factory-operations .factory-toolbar > strong {
+  margin-right: auto;
+}
+.factory-operations-scroll {
+  max-height: min(45dvh, 28rem);
+  overflow: auto;
+  scrollbar-gutter: stable;
+  min-width: 0;
+}
+.factory-operations-row,
+.factory-timeline-entry {
+  border-top: 1px solid var(--line);
+  padding-block: 12px;
+}
+.factory-operations-row p,
+.factory-timeline-entry p {
+  margin-block: 6px;
+}
+.factory-operations-meta {
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.factory-operations-facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 24px;
+  margin-block: 8px;
+}
+.factory-operations-facts > div {
+  min-width: 0;
+  max-width: 100%;
+}
+.factory-operations-facts dt {
+  font-size: 12px;
+}
+.factory-operations-facts dd {
+  margin: 0;
+}
+.factory-operations-json {
+  max-height: min(45dvh, 28rem);
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  background: var(--field);
+  padding: 12px;
+  font-size: 12px;
+  scrollbar-gutter: stable;
+}
+.factory-timeline {
+  margin-top: 24px;
+  border-top: 1px solid var(--line);
+}
+.factory-timeline ol {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+.factory-timeline-entry h4 {
+  font-size: 14px;
+  margin: 0;
+}
+.factory-timeline-entry code {
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.factory-operations :is(summary, button),
+.factory-timeline :is(summary, button) {
+  min-height: 44px;
+}
+@media (max-width: 700px) {
+  .factory-operations-facts {
+    flex-direction: column;
+  }
+}
