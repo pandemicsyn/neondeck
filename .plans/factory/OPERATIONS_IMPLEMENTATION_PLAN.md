@@ -281,3 +281,14 @@ writeback/planning and activity in another pipeline must not hide current coding
 failure or consumed budget exhaustion. Reconciliation remains highest priority;
 zero headroom reserved for active work is not classified as spent-budget failure.
 These corrections do not change public contracts or execution authority.
+
+A further review found that indexed diagnostic spans and worker records needed
+identity checks against their validated JSON before task export or health reads.
+The correction validates task, finish-time and worker bindings, including the
+bounded pagination lookahead; inconsistent retained records fail closed. SQLite
+continues to own the diagnostic sequence cursor. Setup model validation now
+applies only when enabling intake, so an already-enabled installation can repair
+unrelated configuration after a provider is removed. Coding authority and stale
+preview protections remain unchanged. The preceding combined checkpoint passed
+247 tests across 16 files, types and repository formatting; final correction
+verification and review are recorded with the PRs. Live acceptance remains open.
