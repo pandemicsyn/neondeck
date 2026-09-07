@@ -55,7 +55,7 @@ export function applyFactorySetup(
     throw new Error('Setup cannot disable an existing factory.');
   if (next.coding.enabled !== current.factory.coding.enabled)
     throw new Error('Setup cannot change coding authority.');
-  if (next.enabled && current.modelIssues.length)
+  if (!current.factory.enabled && next.enabled && current.modelIssues.length)
     throw new Error(
       'Configure registered planning and utility model references before enabling intake.',
     );

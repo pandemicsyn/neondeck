@@ -61,6 +61,76 @@ it('retains unrelated configuration and existing coding authority when resumed',
   expect(readFactorySetup(paths).config).toEqual(before.config);
   expect(readFactorySetup(paths).factory.coding.enabled).toBe(true);
 });
+it.each([false, true])(
+  'repairs coding config with removed model providers while preserving coding authority %s',
+  async (codingEnabled) => {
+    const paths = await fixture();
+    updateFactoryConfig(
+      { enabled: true, coding: { enabled: codingEnabled } },
+      paths,
+    );
+    const config = readFactorySetup(paths).config;
+    await writeFile(
+      paths.config,
+      JSON.stringify({
+        ...config,
+        models: {
+          ...config.models,
+          displayAssistant: 'removed-provider/planning',
+          utility: 'removed-provider/utility',
+        },
+      }),
+    );
+    const before = readFactorySetup(paths);
+    expect(before.modelIssues).toEqual([
+      'removed-provider/planning',
+      'removed-provider/utility',
+    ]);
+    const proposal = {
+      ...before.factory,
+      coding: { ...before.factory.coding, model: 'repaired-coding-model' },
+    };
+
+    expect(applyFactorySetup(paths, before.fingerprint, proposal)).toEqual(
+      proposal,
+    );
+    const after = readFactorySetup(paths);
+    expect(after.config).toEqual({ ...before.config, factory: proposal });
+    expect(after.factory.coding.enabled).toBe(codingEnabled);
+    expect(after.modelIssues).toEqual(before.modelIssues);
+  },
+);
+it.each(['displayAssistant', 'utility'] as const)(
+  'rejects enabling intake with an invalid %s model without writing config',
+  async (role) => {
+    const paths = await fixture();
+    const config = readFactorySetup(paths).config;
+    await writeFile(
+      paths.config,
+      JSON.stringify({
+        ...config,
+        models: {
+          ...config.models,
+          displayAssistant: 'kilocode/planning',
+          utility: 'kilocode/utility',
+          [role]: 'removed-provider/model',
+        },
+      }),
+    );
+    const before = readFactorySetup(paths);
+    expect(before.factory.enabled).toBe(false);
+    expect(before.modelIssues).toEqual(['removed-provider/model']);
+    const bytes = await readFile(paths.config, 'utf8');
+
+    expect(() =>
+      applyFactorySetup(paths, before.fingerprint, {
+        ...before.factory,
+        enabled: true,
+      }),
+    ).toThrow('Configure registered planning and utility model references');
+    expect(await readFile(paths.config, 'utf8')).toBe(bytes);
+  },
+);
 it('rejects stale previews without changing the newer configuration', async () => {
   const paths = await fixture();
   const before = readFactorySetup(paths);
@@ -108,55 +178,75 @@ it('declines the review without writing factory configuration', async () => {
   await configureFactory(paths);
   expect(await readFile(paths.config, 'utf8')).toBe(bytes);
 });
-it('looks up GitHub identity using the selected reference and saves a disabled connection', async () => {
-  const paths = await fixture();
-  await writeFile(
-    paths.repos,
-    JSON.stringify({
-      repos: [
-        {
-          id: 'fixture',
-          path: '/tmp/fixture',
-          defaultBranch: 'main',
-          github: { owner: 'example', name: 'fixture' },
+it.each([false, true])(
+  'saves a disabled GitHub connection with invalid models and factory enabled %s',
+  async (enabled) => {
+    const paths = await fixture();
+    updateFactoryConfig({ enabled }, paths);
+    const config = readFactorySetup(paths).config;
+    await writeFile(
+      paths.config,
+      JSON.stringify({
+        ...config,
+        models: {
+          ...config.models,
+          displayAssistant: 'removed-provider/planning',
+          utility: 'removed-provider/utility',
         },
-      ],
-    }),
-  );
-  vi.stubEnv('SETUP_TEST_TOKEN', 'synthetic-fixture');
-  vi.mocked(readFactoryGitHubRepository).mockResolvedValue({
-    id: 42,
-    name: 'fixture',
-    owner: { login: 'example' },
-  });
-  vi.mocked(promptConfirm)
-    .mockResolvedValueOnce(true)
-    .mockResolvedValueOnce(false)
-    .mockResolvedValueOnce(false)
-    .mockResolvedValueOnce(true);
-  vi.mocked(promptSelect)
-    .mockResolvedValueOnce('github')
-    .mockResolvedValueOnce('fixture')
-    .mockResolvedValueOnce('all');
-  vi.mocked(promptText)
-    .mockResolvedValueOnce('fixture-intake')
-    .mockResolvedValueOnce('SETUP_TEST_SECRET')
-    .mockResolvedValueOnce('SETUP_TEST_TOKEN');
-  await configureFactory(paths);
-  expect(readFactoryGitHubRepository).toHaveBeenCalledWith(
-    expect.objectContaining({
-      tokenEnv: 'SETUP_TEST_TOKEN',
-      owner: 'example',
+      }),
+    );
+    const before = readFactorySetup(paths);
+    expect(before.modelIssues).toHaveLength(2);
+    await writeFile(
+      paths.repos,
+      JSON.stringify({
+        repos: [
+          {
+            id: 'fixture',
+            path: '/tmp/fixture',
+            defaultBranch: 'main',
+            github: { owner: 'example', name: 'fixture' },
+          },
+        ],
+      }),
+    );
+    vi.stubEnv('SETUP_TEST_TOKEN', 'synthetic-fixture');
+    vi.mocked(readFactoryGitHubRepository).mockResolvedValue({
+      id: 42,
       name: 'fixture',
-    }),
-  );
-  expect(readFactorySetup(paths).factory.github).toEqual([
-    expect.objectContaining({ repositoryId: '42', enabled: false }),
-  ]);
-  expect(await readFile(paths.config, 'utf8')).not.toContain(
-    'synthetic-fixture',
-  );
-});
+      owner: { login: 'example' },
+    });
+    vi.mocked(promptConfirm).mockResolvedValueOnce(true);
+    if (!enabled) vi.mocked(promptConfirm).mockResolvedValueOnce(false);
+    vi.mocked(promptConfirm)
+      .mockResolvedValueOnce(false)
+      .mockResolvedValueOnce(true);
+    vi.mocked(promptSelect)
+      .mockResolvedValueOnce('github')
+      .mockResolvedValueOnce('fixture')
+      .mockResolvedValueOnce('all');
+    vi.mocked(promptText)
+      .mockResolvedValueOnce('fixture-intake')
+      .mockResolvedValueOnce('SETUP_TEST_SECRET')
+      .mockResolvedValueOnce('SETUP_TEST_TOKEN');
+    await configureFactory(paths);
+    expect(readFactoryGitHubRepository).toHaveBeenCalledWith(
+      expect.objectContaining({
+        tokenEnv: 'SETUP_TEST_TOKEN',
+        owner: 'example',
+        name: 'fixture',
+      }),
+    );
+    expect(readFactorySetup(paths).factory.enabled).toBe(enabled);
+    expect(readFactorySetup(paths).modelIssues).toEqual(before.modelIssues);
+    expect(readFactorySetup(paths).factory.github).toEqual([
+      expect.objectContaining({ repositoryId: '42', enabled: false }),
+    ]);
+    expect(await readFile(paths.config, 'utf8')).not.toContain(
+      'synthetic-fixture',
+    );
+  },
+);
 it('checks the preview fingerprint inside the shared factory mutation service', async () => {
   const paths = await fixture();
   const before = readFactorySetup(paths);
