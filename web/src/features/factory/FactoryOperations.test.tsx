@@ -32,7 +32,21 @@ const preview: FactoryDiagnosticExport = {
   workId: 'work:aaaaaaaaaaaaaaaaaaaaaaaa',
   notice:
     'Local diagnostic summary. IDs are pseudonymized; no raw logs, prompts, paths, credentials or actor identities. Authority records and retained diagnostic spans are distinct; this is not a complete execution trace.',
-  health: { status: 'attention', workers: [], tasks: [], truncated: false },
+  health: {
+    status: 'attention',
+    workers: [],
+    tasks: [
+      {
+        workId: 'work:aaaaaaaaaaaaaaaaaaaaaaaa',
+        pendingAgeMs: null,
+        remainingExecutionMs: null,
+        repairsRemaining: null,
+        unresolvedEffectCount: 0,
+        truncated: false,
+      },
+    ],
+    truncated: false,
+  },
   timeline: { entries: [], truncated: false },
   diagnostics: { spans: [], truncated: false },
 };
