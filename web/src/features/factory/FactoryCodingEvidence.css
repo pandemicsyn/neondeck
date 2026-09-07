@@ -1,0 +1,35 @@
+.factory-coding-evidence pre,
+.factory-delivery-evidence-content pre {
+  max-height: 24rem;
+  max-width: 100%;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  padding: 12px;
+  background: var(--field);
+  line-height: 1.6;
+}
+.factory-coding-evidence pre:focus-visible,
+.factory-delivery-evidence-content pre:focus-visible {
+  outline: 2px solid var(--primary-strong);
+  outline-offset: 2px;
+}
+.factory-delivery-evidence-content {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.factory-delivery-evidence-content > p,
+.factory-delivery-evidence-content li {
+  max-width: 75ch;
+  line-height: 1.6;
+}
+.factory-delivery-evidence-content section + section {
+  border-top: 1px solid var(--line);
+  margin-top: 12px;
+  padding-top: 12px;
+}
+
+.factory-coding-diff:focus-visible {
+  outline: 2px solid var(--primary-strong);
+  outline-offset: 2px;
+}

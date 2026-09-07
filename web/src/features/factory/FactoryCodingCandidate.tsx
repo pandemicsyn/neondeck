@@ -26,7 +26,11 @@ export function FactoryCodingCandidate({
         {open ? 'Hide worktree changes' : 'Review retained worktree'}
       </button>
       {open && (
-        <div className="factory-coding-diff">
+        <section
+          className="factory-coding-diff"
+          tabIndex={0}
+          aria-label="Retained worktree diff"
+        >
           {summary.isPending && <output>Loading candidate review…</output>}
           {summary.error && (
             <p role="alert" className="factory-error">
@@ -39,7 +43,7 @@ export function FactoryCodingCandidate({
           {summary.data && !summary.error && (
             <PreparedDiffReview diff={summary.data} readOnly />
           )}
-        </div>
+        </section>
       )}
     </div>
   );

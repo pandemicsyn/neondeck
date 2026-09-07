@@ -1,5 +1,17 @@
 .factory-page {
-  min-height: 100vh;
+  --deck-form-height: 48px;
+  --deck-panel-header-height: 36px;
+  --deck-chat-padding-x: 20px;
+  --deck-chat-padding-y: 16px;
+  --deck-chat-gap: 14px;
+  --deck-density-space: 1;
+  --deck-text-scale: 1.12;
+  height: 100vh;
+  height: 100dvh;
+  min-height: 0;
+  overflow: auto;
+  scrollbar-gutter: stable;
+  overflow-wrap: anywhere;
   padding: 0 24px 40px;
   font-size: 14px;
   line-height: 1.55;
@@ -61,7 +73,7 @@
 .factory-layout {
   display: grid;
   grid-template-columns: minmax(200px, 280px) minmax(0, 1fr);
-  min-height: 75vh;
+  align-items: start;
 }
 .factory-inbox {
   padding: 24px 20px 24px 0;
@@ -74,6 +86,9 @@
   list-style: none;
   padding: 0;
   margin: 20px 0;
+  max-height: min(60dvh, 720px);
+  overflow: auto;
+  scrollbar-gutter: stable;
 }
 .factory-inbox li button {
   width: 100%;
@@ -83,8 +98,8 @@
   background: transparent;
   overflow-wrap: anywhere;
 }
-.factory-inbox strong,
-.factory-inbox span {
+.factory-inbox li strong,
+.factory-inbox li span {
   display: block;
 }
 .factory-inbox button[aria-current] {
@@ -229,14 +244,14 @@
   padding-right: 20px;
 }
 .factory-chat {
-  height: 600px;
+  height: clamp(360px, 70dvh, 600px);
   display: flex;
   flex-direction: column;
 }
 .factory-chat > * {
   min-height: 0;
 }
-.factory-planning output {
+.factory-planning > output {
   display: block;
   margin: 12px 0;
 }
@@ -250,7 +265,7 @@
     padding: 0 0 20px;
   }
   .factory-chat {
-    height: 460px;
+    height: clamp(360px, 70dvh, 460px);
   }
 }
 .factory-workbench-tabs {
@@ -337,7 +352,7 @@
 }
 .factory-github article {
   padding-block: 1rem;
-  border-bottom: 1px solid var(--color-border);
+  border-bottom: 1px solid var(--line);
 }
 .factory-github input,
 .factory-github select {
@@ -609,8 +624,90 @@
   max-height: 20rem;
   overflow: auto;
   padding: 0.75rem;
-  background: var(--color-bg, #10131b);
+  background: var(--field);
 }
 .factory-delivery-evidence-content li {
   overflow-wrap: anywhere;
+}
+
+/* The factory owns scrolling; the dashboard keeps its fixed viewport shell. */
+.factory-setup {
+  border-top: 1px solid var(--line);
+  margin-top: 24px;
+  padding-block: 16px;
+}
+.factory-setup > .factory-source {
+  margin-top: 0;
+}
+.factory-page summary {
+  padding-block: 10px;
+  min-height: 44px;
+}
+.factory-page button {
+  min-height: 44px;
+  max-width: 100%;
+  white-space: normal;
+}
+.factory-page button:not(:disabled):active {
+  background: var(--line);
+}
+.factory-page :is(input, textarea, select):disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+}
+.factory-form label:has(> input[type='checkbox']) {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+}
+.factory-form input[type='checkbox'] {
+  width: 20px;
+  height: 20px;
+  flex: 0 0 auto;
+  accent-color: var(--primary);
+}
+.factory-page [hidden] {
+  display: none;
+}
+.factory-github > section {
+  padding-block: 16px;
+  border-bottom: 1px solid var(--line);
+}
+@media (max-width: 700px) {
+  .factory-header {
+    gap: 12px;
+  }
+  .factory-inbox ul {
+    max-height: min(30dvh, 240px);
+  }
+  .factory-empty {
+    margin-block: 24px;
+  }
+}
+
+.factory-coding-facts dd {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.factory-coding-diff[tabindex='0'] {
+  max-height: min(75dvh, 800px);
+  overflow: auto;
+  scrollbar-gutter: stable;
+}
+.factory-toolbar > * {
+  min-width: 0;
+  max-width: 100%;
+}
+
+/* Retained planning payloads remain inspectable without hiding recovery actions. */
+.factory-planning .factory-planning-retained-text {
+  max-height: min(35dvh, 20rem);
+  min-width: 0;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  scrollbar-gutter: stable;
+  padding: 12px;
+  background: var(--field);
 }

@@ -1,3 +1,4 @@
+import './FactoryCodingEvidence.css';
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { getFactoryDeliveryEvidence } from '../../api/factory-delivery';
@@ -73,7 +74,13 @@ export function FactoryDeliveryEvidenceContent({
               <details>
                 <summary>Triggering external feedback text</summary>
                 <p>External text is untrusted review input.</p>
-                <pre>{content.feedback.packet}</pre>
+                <pre
+                  tabIndex={0}
+                  role="region"
+                  aria-label="Recorded evidence text"
+                >
+                  {content.feedback.packet}
+                </pre>
                 {content.feedback.packetTruncated && (
                   <p>External packet truncated.</p>
                 )}
@@ -89,7 +96,13 @@ export function FactoryDeliveryEvidenceContent({
               <p>
                 Exit {check.exitCode ?? 'unknown'} · {check.durationMs} ms
               </p>
-              <pre>{check.output || 'No output recorded.'}</pre>
+              <pre
+                tabIndex={0}
+                role="region"
+                aria-label="Recorded evidence text"
+              >
+                {check.output || 'No output recorded.'}
+              </pre>
               {check.truncated && <p>Check output truncated.</p>}
             </section>
           ))}

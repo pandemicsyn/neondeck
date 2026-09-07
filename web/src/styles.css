@@ -839,9 +839,12 @@ button:disabled {
 
   .flue-chat-secondary-controls {
     max-width: 100%;
-    overflow-x: auto;
-    padding-bottom: 1px;
-    scrollbar-width: thin;
+    flex-wrap: wrap;
+  }
+
+  .flue-chat-secondary-controls > button {
+    flex: none;
+    white-space: nowrap;
   }
 }
 

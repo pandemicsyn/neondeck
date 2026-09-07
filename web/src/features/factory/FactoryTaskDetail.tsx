@@ -413,6 +413,7 @@ export function FactoryTaskDetail({
           disabled={
             busy ||
             !!editor ||
+            !!recovery ||
             viewed.version !== latest.version ||
             detail.blockers.length > 0 ||
             !detail.repoFingerprint ||
@@ -436,7 +437,7 @@ export function FactoryTaskDetail({
           {detail.work.lifecycle === 'paused' ||
           detail.work.lifecycle === 'closed' ? (
             <button
-              disabled={busy || !!editor}
+              disabled={busy || !!editor || !!recovery}
               onClick={() =>
                 void mutate('transition', {
                   expectedVersion: detail.work.version,

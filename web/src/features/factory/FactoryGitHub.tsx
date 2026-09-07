@@ -1,6 +1,6 @@
 import { FactoryWriteback } from './FactoryWriteback';
 import { useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   getFactoryGitHub,
   getFactoryGitHubComments,
@@ -50,7 +50,18 @@ export function FactoryGitHubSetup({
           {error || errorText(state.error)}
         </p>
       )}
-      {state.isPending && <p>Loading connections…</p>}
+      {state.isPending && <output>Loading connections…</output>}
+      {state.error && (
+        <button
+          disabled={state.isFetching}
+          onClick={() => void state.refetch()}
+        >
+          {state.isFetching ? 'Refreshing connections…' : 'Retry connections'}
+        </button>
+      )}
+      {state.data?.connections.length === 0 && !editing && (
+        <p>No connections yet. Add a repository to admit GitHub issues.</p>
+      )}
       {state.data?.connections.map((connection) => (
         <section key={connection.id}>
           <h3>
@@ -63,7 +74,7 @@ export function FactoryGitHubSetup({
               : 'Credentials and mapping ready. Listener exposure must be verified by the operator.'}
           </p>
           <button
-            disabled={busy}
+            disabled={busy || !!editing}
             onClick={() => {
               setBase(state.data!.configFingerprint);
               setEditingId(connection.id);
@@ -245,7 +256,7 @@ export function FactoryGitHubSetup({
               />
               Enable connection
             </label>
-            <button>Save connection</button>
+            <button>{busy ? 'Saving connection…' : 'Save connection'}</button>
             <button type="button" onClick={() => setEditing(null)}>
               Cancel
             </button>
@@ -270,6 +281,7 @@ export function FactoryGitHubSetup({
   );
 }
 export function FactoryGitHubSource({ detail }: { detail: FactoryDetail }) {
+  const client = useQueryClient();
   const state = useGitHub();
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
@@ -294,7 +306,13 @@ export function FactoryGitHubSource({ detail }: { detail: FactoryDetail }) {
           setError('');
           try {
             await syncFactorySource(detail.work.id);
-            await state.refetch();
+            await Promise.all([
+              state.refetch(),
+              client.invalidateQueries({
+                queryKey: ['factory-detail', detail.work.id],
+              }),
+              client.invalidateQueries({ queryKey: ['factory-state'] }),
+            ]);
           } catch (e) {
             setError(errorText(e));
           } finally {
@@ -302,7 +320,7 @@ export function FactoryGitHubSource({ detail }: { detail: FactoryDetail }) {
           }
         }}
       >
-        Sync source
+        {busy ? 'Syncing source…' : 'Sync source'}
       </button>
       {error && (
         <p role="alert" className="factory-error">

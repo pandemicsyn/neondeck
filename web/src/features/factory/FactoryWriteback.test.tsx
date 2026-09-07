@@ -269,3 +269,39 @@ it.each([
       );
   },
 );
+
+it('offers retry after an initial load failure without claiming it is still loading', async () => {
+  api.getFactoryWriteback.mockRejectedValue(new Error('Unavailable'));
+  await render();
+  expect(container.textContent).not.toContain('Loading publishing policy');
+  api.getFactoryWriteback.mockResolvedValue(data);
+  await click('Refresh publishing');
+  await render();
+  expect(container.textContent).toContain('Writeback enabled');
+});
+
+it('makes older publishing receipts accessible beyond the initial twelve', async () => {
+  api.getFactoryWriteback.mockResolvedValue({
+    ...data,
+    effects: Array.from({ length: 14 }, (_, i) => ({
+      id: `effect-${i}`,
+      kind: 'status',
+      state: 'sent',
+      retryAt: 0,
+      body: `Receipt body ${i}`,
+      specVersion: 1,
+      createdAt: '2026-09-06T00:00:00Z',
+      remoteId: null,
+      error: null,
+    })),
+  });
+  await render();
+  expect(container.querySelectorAll('.factory-writeback-effect')).toHaveLength(
+    12,
+  );
+  await click('Show older publishing receipts (2 remaining)');
+  expect(container.querySelectorAll('.factory-writeback-effect')).toHaveLength(
+    14,
+  );
+  expect(container.textContent).toContain('Receipt body 0');
+});

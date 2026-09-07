@@ -16,6 +16,25 @@ import {
   refreshFactoryPlanningContext,
 } from '../../api/factory';
 import { FlueChatSessionView } from '../flue-chat/components/session-view';
+// Local recovery metadata travels beside the immutable API envelope. Legacy
+// records have no composer metadata and only consume an exact message match.
+const savedPlanningRequestSchema = (workId: string) =>
+  v.object({
+    ...planningInputSchema.entries,
+    composer: v.optional(
+      v.object({
+        message: v.pipe(v.string(), v.maxLength(12000)),
+        storageKey: v.pipe(
+          v.string(),
+          v.check((key) => {
+            const prefix = `factory-chat-draft:${workId}:`;
+            return key.startsWith(prefix) && key.length > prefix.length;
+          }, 'Composer storage must belong to this task.'),
+        ),
+      }),
+    ),
+  });
+
 export function FactoryPlanning({
   detail,
   discussion,
@@ -37,7 +56,10 @@ export function FactoryPlanning({
       const saved = sessionStorage.getItem(storageKey);
       return {
         request: saved
-          ? v.parse(planningInputSchema, JSON.parse(saved))
+          ? v.parse(
+              savedPlanningRequestSchema(detail.work.id),
+              JSON.parse(saved),
+            )
           : undefined,
         error: '',
       };
@@ -51,7 +73,10 @@ export function FactoryPlanning({
   });
   const [request, setRequest] = useState(restored.request);
   const [rejected, setRejected] = useState(false);
-  const [chatGeneration, setChatGeneration] = useState(0);
+  const [consumedDraft, setConsumedDraft] = useState<{
+    message: string;
+    storageKey: string;
+  }>();
   const state = useQuery({
     queryKey: ['factory-planning', detail.work.id],
     queryFn: () => getFactoryPlanning(detail.work.id),
@@ -69,9 +94,15 @@ export function FactoryPlanning({
     if (restored.error) throw new Error(restored.error);
     // Persist before HTTP admission. An uncertain request is immutable, even if
     // the editor, selected reference, task version or planning context changes.
+    const draftKey = `factory-chat-draft:${detail.work.id}:${state.data?.sessionId}`;
+    const originalDraft = sessionStorage.getItem(draftKey);
     const current =
       request ??
-      v.parse(planningInputSchema, {
+      v.parse(savedPlanningRequestSchema(detail.work.id), {
+        composer: {
+          message: originalDraft?.trim() === message ? originalDraft : message,
+          storageKey: draftKey,
+        },
         requestKey: crypto.randomUUID(),
         message: deliveryEvidence
           ? `${message}\n\n${deliveryEvidence}`
@@ -85,19 +116,20 @@ export function FactoryPlanning({
     setBusy(true);
     setError('');
     try {
-      await sendFactoryPlanning(detail.work.id, current);
-      const draftKey = `factory-chat-draft:${detail.work.id}:${state.data?.sessionId}`;
-      const savedDraft = sessionStorage.getItem(draftKey)?.trim();
-      if (
-        savedDraft &&
-        (savedDraft === current.message ||
-          (deliveryEvidence &&
-            `${savedDraft}\n\n${deliveryEvidence}` === current.message))
-      )
-        sessionStorage.removeItem(draftKey);
+      const { composer: retainedComposer, ...envelope } = current;
+      await sendFactoryPlanning(
+        detail.work.id,
+        v.parse(planningInputSchema, envelope),
+      );
+      const composer = retainedComposer ?? {
+        message: current.message,
+        storageKey: draftKey,
+      };
+      if (sessionStorage.getItem(composer.storageKey) === composer.message)
+        sessionStorage.removeItem(composer.storageKey);
       sessionStorage.removeItem(storageKey);
       setRequest(undefined);
-      setChatGeneration((n) => n + 1);
+      setConsumedDraft(composer);
       onClearDiscussion?.();
       onClearDeliveryEvidence?.();
       await state.refetch();
@@ -125,6 +157,20 @@ export function FactoryPlanning({
   return (
     <section className="factory-planning" aria-label="Planning conversation">
       <h3>Shape with Neon</h3>
+      {state.data?.contextStale && (
+        <p role="status">
+          Planning context changed. Review and refresh planning context below
+          before sending.
+        </p>
+      )}
+      {['paused', 'closed', 'queued'].includes(detail.work.lifecycle) && (
+        <p role="status">
+          Planning is read-only while this task is {detail.work.lifecycle}.
+          {detail.work.lifecycle === 'queued'
+            ? 'Withdraw the release before sending a new message.'
+            : 'Reopen shaping before sending a new message.'}
+        </p>
+      )}
       {deliveryEvidence && (
         <div className="factory-discussion-context">
           <strong>Delivery evidence attached to your next message</strong>
@@ -134,7 +180,12 @@ export function FactoryPlanning({
           </p>
           <details>
             <summary>Inspect attached delivery evidence</summary>
-            <pre style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>
+            <pre
+              className="factory-planning-retained-text"
+              tabIndex={0}
+              role="region"
+              aria-label="Attached delivery evidence"
+            >
               {deliveryEvidence}
             </pre>
           </details>
@@ -151,21 +202,16 @@ export function FactoryPlanning({
       {request && (
         <div className="factory-discussion-context" role="status">
           <strong>
-            {rejected
-              ? 'Planning request rejected'
-              : 'Planning receipt not confirmed'}
+            {busy
+              ? 'Sending planning request…'
+              : rejected
+                ? 'Planning request rejected'
+                : 'Planning receipt not confirmed'}
           </strong>
           <p>
             The original message and context are retained. Retry checks that
             exact request; it does not create a new planning turn.
           </p>
-          <p>{request.message}</p>
-          {request.discussion && (
-            <p>
-              Original reference: v{request.discussion.version} ·{' '}
-              {request.discussion.kind}: {request.discussion.id}
-            </p>
-          )}
           <button
             disabled={busy}
             onClick={() => void action(() => send(request.message))}
@@ -191,6 +237,23 @@ export function FactoryPlanning({
               Dismiss rejection and review a new request
             </button>
           )}
+          <details>
+            <summary>Review original request and context</summary>
+            <pre
+              className="factory-planning-retained-text"
+              tabIndex={0}
+              role="region"
+              aria-label="Original planning request"
+            >
+              {request.message}
+            </pre>
+            {request.discussion && (
+              <p>
+                Original reference: v{request.discussion.version} ·{' '}
+                {request.discussion.kind}: {request.discussion.id}
+              </p>
+            )}
+          </details>
         </div>
       )}
       {discussion && (
@@ -255,7 +318,7 @@ export function FactoryPlanning({
             <>
               <output>Neon is working on this request…</output>
               <button
-                disabled={busy}
+                disabled={busy || !state.data?.sessionId}
                 onClick={() =>
                   void action(() => stopFactoryPlanning(state.data!.sessionId!))
                 }
@@ -271,6 +334,7 @@ export function FactoryPlanning({
           )}
           {state.data?.error && pending && (
             <button
+              disabled={busy}
               onClick={() =>
                 void action(() => recoverFactoryPlanning(detail.work.id))
               }
@@ -331,7 +395,10 @@ export function FactoryPlanning({
           ) : (
             <div className="factory-chat">
               <FlueChatSessionView
-                key={`${state.data.sessionId}:${chatGeneration}`}
+                key={state.data.sessionId}
+                consumedDraft={consumedDraft}
+                responsePending={pending}
+                emptyMessage="Discuss the task outcome, answer a blocking question, or ask Neon to revise this brief."
                 activeRecord={undefined}
                 agentName="factory-planner"
                 refreshKey={state.data.submissionId}

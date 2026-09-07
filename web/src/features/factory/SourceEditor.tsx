@@ -29,6 +29,7 @@ export function SourceEditor({
       className="factory-form"
       onSubmit={async (event) => {
         event.preventDefault();
+        if (disabled) return;
         const saved = await onSave(draft);
         if (saved) setDraft(snapshot(saved));
       }}
