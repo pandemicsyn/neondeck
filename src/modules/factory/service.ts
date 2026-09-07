@@ -179,6 +179,14 @@ export function detail(
       );
   }
   if (source.attention) blockers.push(source.attention);
+  if (
+    source.linear?.sourceConfirmationRequired ||
+    (source.linear &&
+      source.attention?.startsWith('Linear connection changed.'))
+  )
+    blockers.push(
+      'Sync the Linear source to confirm current admission before release.',
+    );
   if (source.status === 'closed') blockers.push('Source is closed.');
   if (item.lifecycle === 'paused' || item.lifecycle === 'closed')
     blockers.push('Reopen this task before release.');
@@ -423,7 +431,14 @@ export function saveSpecInTransaction(
   if (current.work.lifecycle === 'closed')
     throw new FactoryError(409, 'Reopen this task before editing.', current);
   withdraw(db, current.releases, 'new-spec-revision');
-  if (current.source.attention?.includes('Review and save a new draft')) {
+  if (
+    current.source.attention?.includes('Review and save a new draft') &&
+    !current.source.linear?.sourceConfirmationRequired &&
+    !(
+      current.source.linear &&
+      current.source.attention.startsWith('Linear connection changed.')
+    )
+  ) {
     current.source.attention = null;
     db.prepare('UPDATE factory_sources SET record=? WHERE id=?').run(
       JSON.stringify(current.source),

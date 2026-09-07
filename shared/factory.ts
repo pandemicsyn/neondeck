@@ -118,6 +118,7 @@ export const sourceSchema = v.strictObject({
   ),
   linear: v.optional(
     v.strictObject({
+      sourceConfirmationRequired: v.optional(v.boolean()),
       connectionId: label,
       organizationId: label,
       issueId: label,

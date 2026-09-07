@@ -38,14 +38,26 @@ it.each(['token', 'webhook', 'both'] as const)(
     enqueueRemoval(paths, c);
     if (missing !== 'webhook') delete process.env[c.tokenEnv];
     if (missing !== 'token') delete process.env[c.webhookSecretEnv];
+    const assertRevokedBeforeProviderCall = () => {
+      expect(
+        getFactoryWork(current.work.id, paths).releases[0].withdrawnAt,
+      ).not.toBeNull();
+      expect(getCodingRun(run.runId, paths)!.cancelRequestedAt).not.toBeNull();
+    };
     const io = {
-      readIssue: vi.fn(async () => issue),
-      readPage: vi.fn(async () => ({ items: [], cursor: null })),
+      readIssue: vi.fn(async () => {
+        assertRevokedBeforeProviderCall();
+        return issue;
+      }),
+      readPage: vi.fn(async () => {
+        assertRevokedBeforeProviderCall();
+        return { items: [], cursor: null };
+      }),
       planning: vi.fn(async () => {}),
     };
     await runFactoryLinearSync(paths, undefined, io);
-    expect(io.readIssue).not.toHaveBeenCalled();
-    expect(io.readPage).not.toHaveBeenCalled();
+    expect(io.readIssue).toHaveBeenCalledTimes(missing === 'webhook' ? 1 : 0);
+    expect(io.readPage).toHaveBeenCalledTimes(missing === 'webhook' ? 1 : 0);
     expect(io.planning).not.toHaveBeenCalled();
     expect(
       getFactoryWork(current.work.id, paths).releases[0].withdrawnAt,

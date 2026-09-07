@@ -23,6 +23,10 @@ cannot approve a brief or release work.
    repository and ambiguous mappings remain visible. A configured reference is
    not proof of authenticated access or webhook delivery.
 
+Polling and state writeback use the API token; webhook authentication uses the
+signing secret. A missing signing secret does not stop provider refresh, and a
+missing API token does not prevent a valid signed removal from being accepted.
+
 The form retains unsaved changes across refresh and errors. If another client
 changes the configuration, saving the stale draft is blocked. Copy the draft,
 cancel, reopen the saved connection, and apply the intended changes.
@@ -60,6 +64,10 @@ Restore its original mapping when the task reports that mapping changed.
 Editing a disjoint project connection leaves unrelated project tasks unchanged;
 edits to the task's own connection or an overlapping team/project mapping still
 require review.
+
+After a source-authority configuration change, sync must confirm that the issue
+still qualifies before another release. Saving a draft preserves this blocker;
+it cannot substitute for current provider evidence when credentials are unavailable.
 
 Meaningful source changes require renewed review. Closure, archive, removal or
 loss of admission eligibility withdraws stale authority and cancels factory work

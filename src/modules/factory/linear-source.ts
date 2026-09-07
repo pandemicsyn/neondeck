@@ -260,16 +260,24 @@ export function reconcileLinearSource(
       id: c.id,
     });
   }
-  previous.attention = previous.attention?.includes(
-    'Review and save a new draft',
-  )
-    ? previous.attention
-    : mappingChanged
-      ? 'Linear mapping changed. Restore the original repository mapping before release.'
-      : !eligible
-        ? 'Linear source is removed or no longer eligible.'
-        : null;
+  const confirmationRequired =
+    previous.linear?.sourceConfirmationRequired === true ||
+    previous.attention?.startsWith('Linear connection changed.') === true;
+  const sourceConfirmed = !closed && !mappingChanged;
+  previous.attention = confirmationRequired
+    ? sourceConfirmed
+      ? null
+      : 'Linear connection changed. Sync an eligible source with the original repository mapping before release.'
+    : previous.attention?.includes('Review and save a new draft')
+      ? previous.attention
+      : mappingChanged
+        ? 'Linear mapping changed. Restore the original repository mapping before release.'
+        : !eligible
+          ? 'Linear source is removed or no longer eligible.'
+          : null;
   if (!mappingChanged) previous.linear = remote;
+  if (confirmationRequired)
+    previous.linear!.sourceConfirmationRequired = !sourceConfirmed;
   if (echo) previous.linear!.fingerprint = current.source.linear!.fingerprint;
   db.prepare('UPDATE factory_sources SET record=? WHERE id=?').run(
     JSON.stringify(previous),

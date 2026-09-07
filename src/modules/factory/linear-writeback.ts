@@ -1,5 +1,6 @@
 import { linearCoolingDown, retainLinearRateLimit } from './linear-cooldown';
 import { linearSourceFingerprint } from './linear-authority';
+import { scheduledLinearConnections } from './linear-scheduling';
 import * as v from 'valibot';
 import { sourceSchema } from '../../../shared/factory';
 import { runtimePaths, type RuntimePaths } from '../../runtime-home';
@@ -30,21 +31,29 @@ export async function runFactoryLinearWriteback(
   signal?: AbortSignal,
   io = defaultIO,
 ) {
-  connections: for (const c of linearConnections(paths)) {
+  if (signal?.aborted) return;
+  connections: for (const c of scheduledLinearConnections(
+    linearConnections(paths),
+    paths,
+    'writeback',
+  )) {
     if (signal?.aborted) return;
-    if (!c.writeback.enabled || linearReadiness(c, paths).length) continue;
+    if (linearReadiness(c, paths, 'writeback').length) continue;
     if (linearCoolingDown(c.id, paths)) continue;
+    const requestSignal = AbortSignal.any([
+      ...(signal ? [signal] : []),
+      AbortSignal.timeout(10000),
+    ]);
     const fingerprint = linearFingerprint(c);
     const cursor = dbRun(paths, (db) =>
       linearRecords(db, 'sync').find(
         (r) => r.id === `writeback-cursor:${c.id}`,
       ),
     );
-    const offset = cursor?.offset ?? 0;
     const items = dbRun(paths, (db) =>
       db
         .prepare(
-          "SELECT w.id,s.record FROM factory_sources s JOIN factory_work_items w ON w.source_id=s.id WHERE json_extract(s.record,'$.linear.connectionId')=?",
+          "SELECT w.id,s.record FROM factory_sources s JOIN factory_work_items w ON w.source_id=s.id WHERE json_extract(s.record,'$.linear.connectionId')=? ORDER BY w.id",
         )
         .all(c.id)
         .map((r) => ({
@@ -52,26 +61,28 @@ export async function runFactoryLinearWriteback(
           source: v.parse(sourceSchema, JSON.parse(String(r.record))),
         })),
     );
+    const offset = (cursor?.offset ?? 0) % Math.max(items.length, 1);
     const batch = items.slice(offset, offset + 25);
-    dbRun(paths, (db) =>
-      putLinearRecord(
-        db,
-        v.parse(linearSyncSchema, {
-          id: `writeback-cursor:${c.id}`,
-          kind: 'sync',
-          connectionId: c.id,
-          connectionFingerprint: fingerprint,
-          offset: offset + 25 >= items.length ? 0 : offset + 25,
-          state: 'pending',
-          error: null,
-          retryAt: 0,
-          attempts: 0,
-        }),
-      ),
-    );
-    for (const item of batch) {
-      if (linearCoolingDown(c.id, paths)) continue connections;
+    for (const [index, item] of batch.entries()) {
       if (signal?.aborted) return;
+      if (requestSignal.aborted || linearCoolingDown(c.id, paths))
+        continue connections;
+      dbRun(paths, (db) =>
+        putLinearRecord(
+          db,
+          v.parse(linearSyncSchema, {
+            id: `writeback-cursor:${c.id}`,
+            kind: 'sync',
+            connectionId: c.id,
+            connectionFingerprint: fingerprint,
+            offset: offset + index + 1 >= items.length ? 0 : offset + index + 1,
+            state: 'pending',
+            error: null,
+            retryAt: 0,
+            attempts: 0,
+          }),
+        ),
+      );
       const current = dbRun(paths, (db) => detail(db, item.id, paths));
       const stateId = c.writeback.states[current.work.lifecycle];
       if (
@@ -94,12 +105,14 @@ export async function runFactoryLinearWriteback(
         const issue = await io.readIssue(
           c,
           item.source.linear!.issueId,
-          signal,
+          requestSignal,
         );
+        requestSignal.throwIfAborted();
         if (!issue) continue;
         if (
-          linearSourceFingerprint(readyLinearConnection(c.id, paths)) !==
-          linearSourceFingerprint(c)
+          linearSourceFingerprint(
+            readyLinearConnection(c.id, paths, 'provider'),
+          ) !== linearSourceFingerprint(c)
         )
           continue;
         const latestSource = dbRun(paths, (db) =>
@@ -127,7 +140,8 @@ export async function runFactoryLinearWriteback(
         )
           continue;
         if (
-          linearFingerprint(readyLinearConnection(c.id, paths)) !== fingerprint
+          linearFingerprint(readyLinearConnection(c.id, paths, 'writeback')) !==
+          fingerprint
         )
           continue;
         effect = v.parse(linearEffectSchema, {
@@ -165,7 +179,8 @@ export async function runFactoryLinearWriteback(
                 kind: 'sync',
                 connectionId: c.id,
                 connectionFingerprint: fingerprint,
-                offset,
+                offset:
+                  offset + index + 1 >= items.length ? 0 : offset + index + 1,
                 state: 'attention',
                 error:
                   'Linear writeback is paused at the 1000 unresolved-effect limit. Sync affected sources and review uncertain updates.',
@@ -183,16 +198,18 @@ export async function runFactoryLinearWriteback(
           c,
           issue.id,
           stateId,
-          signal,
+          requestSignal,
           () => {
+            requestSignal.throwIfAborted();
             if (linearCoolingDown(c.id, paths))
               throw new FactoryError(
                 409,
                 'Linear provider cooldown is active.',
               );
             if (
-              linearFingerprint(readyLinearConnection(c.id, paths)) !==
-              fingerprint
+              linearFingerprint(
+                readyLinearConnection(c.id, paths, 'writeback'),
+              ) !== fingerprint
             )
               throw new FactoryError(409, 'Linear configuration changed.');
             dbRun(paths, (db) => {

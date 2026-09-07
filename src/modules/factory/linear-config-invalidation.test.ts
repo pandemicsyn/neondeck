@@ -21,6 +21,7 @@ import {
   assertCodingAuthoritySnapshot,
 } from './coding-context';
 import { reconcileLinearSource } from './linear-source';
+import type { FactoryDetail } from '../../../shared/factory';
 const a: LinearConnection = {
   id: 'a',
   enabled: true,
@@ -158,6 +159,122 @@ it.each([
     ).not.toThrow();
   },
 );
+
+function saveCurrent(
+  current: FactoryDetail,
+  paths: ReturnType<typeof setup>['paths'],
+) {
+  return saveFactorySpec(
+    current.work.id,
+    {
+      expectedVersion: current.work.version,
+      expectedSpecVersion: current.work.specVersion,
+      expectedRepoFingerprint: current.repoFingerprint,
+      spec: current.revisions.at(-1)!.spec,
+    },
+    { kind: 'human', id: 'operator' },
+    paths,
+  );
+}
+function releaseCurrent(
+  current: FactoryDetail,
+  paths: ReturnType<typeof setup>['paths'],
+) {
+  const revision = current.revisions.at(-1)!;
+  return releaseFactoryWork(
+    current.work.id,
+    {
+      requestKey: `release-${current.work.version}`,
+      expectedVersion: current.work.version,
+      specVersion: revision.version,
+      specHash: revision.hash,
+      sourceVersion: current.source.version,
+      repoFingerprint: current.repoFingerprint,
+      policyVersion: 'isolated-local-v1',
+      expectedCodingConfigFingerprint: codingDigest(codingConfig(paths).coding),
+    },
+    { kind: 'human', id: 'operator' },
+    paths,
+  );
+}
+
+it('requires current source confirmation after admission changes even when a new draft is saved', () => {
+  const { paths, current } = setup();
+  const restricted: LinearConnection = {
+    ...a,
+    admission: { mode: 'label', value: 'admitted' },
+  };
+  updateFactoryConfig({ linear: [restricted, b] }, paths);
+  delete process.env.FACTORY_TEST_TOKEN;
+  const saved = saveCurrent(getFactoryWork(current.work.id, paths), paths);
+  expect(saved.source.linear?.sourceConfirmationRequired).toBe(true);
+  expect(() => releaseCurrent(saved, paths)).toThrow();
+  process.env.FACTORY_TEST_TOKEN = 'synthetic-read-fixture-only';
+  dbRun(paths, (db) =>
+    reconcileLinearSource(
+      db,
+      restricted,
+      { ...issue, updatedAt: '2026-09-06T00:00:00Z' },
+      issue.id,
+      paths,
+    ),
+  );
+  expect(
+    getFactoryWork(current.work.id, paths).source.linear
+      ?.sourceConfirmationRequired,
+  ).toBe(true);
+  dbRun(paths, (db) =>
+    reconcileLinearSource(
+      db,
+      restricted,
+      { ...issue, updatedAt: '2026-09-07T01:00:00Z' },
+      issue.id,
+      paths,
+    ),
+  );
+  const ineligible = saveCurrent(getFactoryWork(current.work.id, paths), paths);
+  expect(ineligible.source.status).toBe('closed');
+  expect(ineligible.source.linear?.sourceConfirmationRequired).toBe(true);
+  expect(() => releaseCurrent(ineligible, paths)).toThrow();
+  dbRun(paths, (db) =>
+    reconcileLinearSource(
+      db,
+      restricted,
+      {
+        ...issue,
+        labels: [{ id: 'admitted' }],
+        updatedAt: '2026-09-07T02:00:00Z',
+      },
+      issue.id,
+      paths,
+    ),
+  );
+  const confirmed = saveCurrent(getFactoryWork(current.work.id, paths), paths);
+  expect(confirmed.source.linear?.sourceConfirmationRequired).toBe(false);
+  expect(confirmed.source.attention).toBeNull();
+  expect(releaseCurrent(confirmed, paths).eligible).toBe(true);
+});
+
+it('does not allow saving a draft to erase a legacy Linear config confirmation blocker', () => {
+  const { paths, current } = setup();
+  dbRun(paths, (db) => {
+    const source = {
+      ...current.source,
+      attention:
+        'Linear connection changed. Review and save a new draft before release.',
+    };
+    db.prepare('UPDATE factory_sources SET record=? WHERE id=?').run(
+      JSON.stringify(source),
+      source.id,
+    );
+  });
+  const saved = saveCurrent(getFactoryWork(current.work.id, paths), paths);
+  expect(saved.source.attention).toContain('Linear connection changed.');
+  expect(() => releaseCurrent(saved, paths)).toThrow();
+  dbRun(paths, (db) => reconcileLinearSource(db, a, issue, issue.id, paths));
+  const confirmed = saveCurrent(getFactoryWork(current.work.id, paths), paths);
+  expect(releaseCurrent(confirmed, paths).eligible).toBe(true);
+});
 it.each([
   ['wildcard addition', [a, b, { ...b, id: 'wildcard', projectId: null }]],
   ['disjoint mapping becomes wildcard', [a, { ...b, projectId: null }]],

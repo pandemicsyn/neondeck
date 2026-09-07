@@ -33,9 +33,12 @@ export function linearMappings(
       (c.projectId === null || c.projectId === projectId),
   );
 }
+export type LinearCapability =
+  'overview' | 'ingress' | 'provider' | 'writeback';
 export function linearReadiness(
   connection: LinearConnection,
   paths: RuntimePaths,
+  capability: LinearCapability = 'overview',
 ) {
   const reasons: string[] = [];
   if (!readRuntimeJsonSync(paths.config, parseAppConfig).factory?.enabled)
@@ -64,21 +67,29 @@ export function linearReadiness(
     reasons.push(
       'Ambiguous team/project mapping. Enable only one matching connection.',
     );
+  const needsToken = capability !== 'ingress';
+  const needsSecret = capability === 'overview' || capability === 'ingress';
   if (
-    !process.env[connection.tokenEnv] ||
-    !process.env[connection.webhookSecretEnv]
+    (needsToken && !process.env[connection.tokenEnv]) ||
+    (needsSecret && !process.env[connection.webhookSecretEnv])
   )
     loadNeondeckEnv(paths, { includeDevFallback: false });
-  if (!process.env[connection.tokenEnv])
+  if (needsToken && !process.env[connection.tokenEnv])
     reasons.push('Linear credential reference is unavailable.');
-  if (!process.env[connection.webhookSecretEnv])
+  if (needsSecret && !process.env[connection.webhookSecretEnv])
     reasons.push('Linear webhook secret reference is unavailable.');
+  if (capability === 'writeback' && !connection.writeback.enabled)
+    reasons.push('Linear writeback is disabled.');
   return reasons;
 }
-export function readyLinearConnection(id: string, paths: RuntimePaths) {
+export function readyLinearConnection(
+  id: string,
+  paths: RuntimePaths,
+  capability: LinearCapability = 'provider',
+) {
   const connection = linearConnections(paths).find((c) => c.id === id);
   if (!connection) throw new FactoryError(404, 'Unknown Linear connection.');
-  const reasons = linearReadiness(connection, paths);
+  const reasons = linearReadiness(connection, paths, capability);
   if (reasons.length) throw new FactoryError(409, reasons.join(' '));
   return connection;
 }

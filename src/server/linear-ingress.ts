@@ -27,6 +27,7 @@ export function createLinearIngress(paths: RuntimePaths = runtimePaths()) {
       const connection = readyLinearConnection(
         c.req.param('connectionId'),
         paths,
+        'ingress',
       );
       const signature = c.req.header('linear-signature') ?? '';
       if (!/^[a-f0-9]{64}$/.test(signature))
@@ -75,8 +76,9 @@ export function createLinearIngress(paths: RuntimePaths = runtimePaths()) {
       )
         return c.json({ error: 'Invalid delivery ID.' }, 400);
       if (
-        linearSourceFingerprint(readyLinearConnection(connection.id, paths)) !==
-        linearSourceFingerprint(connection)
+        linearSourceFingerprint(
+          readyLinearConnection(connection.id, paths, 'ingress'),
+        ) !== linearSourceFingerprint(connection)
       )
         return c.json({ error: 'Connection changed.' }, 409);
       const result = acceptLinearDelivery(

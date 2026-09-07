@@ -114,8 +114,20 @@ export function invalidateFactoryConfig(
         markSourceAttention(
           db,
           v.parse(v.string(), row.id),
-          'Linear connection changed. Review and save a new draft before release.',
+          'Linear connection changed. Sync the source to confirm current admission before release.',
           paths,
+        );
+        const updatedRow = db
+          .prepare('SELECT record FROM factory_sources WHERE id=?')
+          .get(source.id)!;
+        const updated = v.parse(
+          sourceSchema,
+          JSON.parse(String(updatedRow.record)),
+        );
+        updated.linear!.sourceConfirmationRequired = true;
+        db.prepare('UPDATE factory_sources SET record=? WHERE id=?').run(
+          JSON.stringify(updated),
+          updated.id,
         );
       }
     });

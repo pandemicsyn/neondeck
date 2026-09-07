@@ -109,6 +109,41 @@ The protected broad unit suite passed **3,099 tests across 288 files** in
 confirmed above. This is a passing included suite, not a claim that the excluded
 cases or full `npm run verify` passed on this correction.
 
+## Further feedback on `5639a98d`
+
+- [Capability-specific readiness](https://github.com/pandemicsyn/neondeck/pull/423#discussion_r3952856265):
+  provider reads/writeback need the API token; signed ingress needs the webhook
+  secret. Losing one credential must not disable the independent capability.
+- [Admission confirmation](https://github.com/pandemicsyn/neondeck/pull/423#discussion_r3952856272):
+  saving a draft must not clear a configuration-change blocker before a current
+  Linear source read confirms eligibility under the new admission rules.
+- [Writeback fairness](https://github.com/pandemicsyn/neondeck/pull/423#discussion_r3952856275):
+  writeback connections must rotate under the shared deadline. Boundary review
+  also identified the need to advance retained item progress before slow reads.
+
+Corrections are complete with Astra low developers. Both independent static
+reviewers returned **CLEAN**, including final test-boundary corrections. Manager
+architecture review is **CLEAN**: capability checks stay in connection readiness,
+the shared source contract carries the confirmation requirement, and existing
+factory eligibility/reconciliation controls its lifetime. Writeback reuses the
+durable scheduler with an independent cursor and advances ordered item progress
+before reads. Packages, model ownership and database schema remain unchanged.
+
+Protected focused verification passed **82 tests across ten files**. Coverage
+includes real HMAC ingress and actual release/reserved-run revocation under
+credential loss, save-before-sync and legacy admission blockers, stale/ineligible
+reads, independent connection/item progress, stale cursor recovery and abort
+guards. Initial validation caught a server import in a domain test, the wrong
+HTTP success assertion and an obsolete no-polling assertion; all were corrected
+and independently re-reviewed. Dashboard/server builds and package validation
+(1,274 files) passed with operator configuration access denied.
+
+Final protected broad verification passed **3,111 tests across 290 files** in
+62.32 seconds, plus lint, import layers, migration consistency, application/docs
+types and repository formatting. The same five unchanged host-fixture cases
+requiring `/bin/ps` were explicitly excluded. This does not claim a full final-head
+`npm run verify` pass or live Linear acceptance.
+
 ## Delivered scope and boundaries
 
 - `src/modules/linear`: fixed-origin GraphQL reads/mutations, complete-response
@@ -145,9 +180,10 @@ connections before provider I/O, then up to 25 provider-dependent deliveries per
 connection. Retained-source refresh and writeback each use
 batches of 25. Remote discovery cursors and local nonnegative integer offsets are distinct.
 The source loop and writeback controller each receive a 45-second per-tick signal.
-Reconciliation also gives each connection a ten-second budget. A private durable
-cursor rotates the starting connection once per tick, independently of how many
-connections finish. A per-connection cursor rotates delivery, discovery and retained
+Both loops also give each connection a ten-second budget. Independent private durable
+cursors rotate each loop's starting connection once per tick, independently of how many
+connections finish. Writeback advances its stable ordered item cursor before each read.
+A per-connection source cursor rotates delivery, discovery and retained
 refresh phases. The retained-source cursor advances before each read. This gives
 each connection/phase a fresh budget in turn and preserves progress across restarts.
 Scheduler records are separate from sync diagnostics.

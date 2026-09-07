@@ -62,7 +62,11 @@ export function requestFactoryLinearSync(
   const current = getFactoryWork(workId, paths);
   if (!current.source.linear)
     throw new FactoryError(409, 'Task is not a Linear source.');
-  const c = readyLinearConnection(current.source.linear.connectionId, paths);
+  const c = readyLinearConnection(
+    current.source.linear.connectionId,
+    paths,
+    'provider',
+  );
   return dbRun(paths, (db) => {
     clearLinearReadFailure(db, current.source.id);
     for (const effect of linearRecords(db, 'writeback', { workId }).filter(
@@ -119,13 +123,14 @@ export async function runFactoryLinearSync(
       AbortSignal.timeout(10000),
     ]);
     if (signal?.aborted) return;
-    if (linearReadiness(c, paths).length) continue;
+    if (linearReadiness(c, paths, 'provider').length) continue;
     const fingerprint = linearFingerprint(c);
     const sourceFingerprint = linearSourceFingerprint(c);
     const assertConfig = () => {
       if (
-        linearSourceFingerprint(readyLinearConnection(c.id, paths)) !==
-        sourceFingerprint
+        linearSourceFingerprint(
+          readyLinearConnection(c.id, paths, 'provider'),
+        ) !== sourceFingerprint
       )
         throw new FactoryError(409, 'Linear configuration changed.');
     };

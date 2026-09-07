@@ -12,16 +12,21 @@ import {
 export function scheduledLinearConnections(
   connections: LinearConnection[],
   paths: RuntimePaths,
+  worker: 'source' | 'writeback' = 'source',
 ) {
   if (!connections.length) return [];
   return dbRun(paths, (db) => {
+    const id =
+      worker === 'source'
+        ? 'connection-schedule'
+        : 'writeback-connection-schedule';
     const offset =
-      (linearRecords(db, 'schedule', { id: 'connection-schedule' })[0]
-        ?.offset ?? 0) % connections.length;
+      (linearRecords(db, 'schedule', { id })[0]?.offset ?? 0) %
+      connections.length;
     putLinearRecord(
       db,
       v.parse(linearScheduleSchema, {
-        id: 'connection-schedule',
+        id,
         kind: 'schedule',
         offset: (offset + 1) % connections.length,
       }),
