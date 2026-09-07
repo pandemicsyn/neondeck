@@ -1,18 +1,7 @@
-/* eslint-disable no-unused-vars */
-import { defineTool, type JsonValue } from '@flue/runtime';
-import { asJsonValue } from '../../lib/action-result';
-import { randomUUID } from 'node:crypto';
+import { type JsonValue } from '@flue/runtime';
 import * as v from 'valibot';
-import { addNotification } from '../app-state';
-import { buildPreparedDiffAuditSummary } from '../autonomous-audit';
-import { openDb } from '../../lib/sqlite';
-import { gitCurrentSha, gitDiff, type RepoDiffFile } from '../../repo-edit/git';
+import { type RepoDiffFile } from '../../repo-edit/git';
 import type { ReviewRevision } from '../../../shared/review-source';
-import {
-  type RuntimePaths,
-  ensureRuntimeHome,
-  runtimePaths,
-} from '../../runtime-home';
 
 export type PreparedDiffStatus =
   | 'prepared'
