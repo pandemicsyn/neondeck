@@ -33,11 +33,19 @@ probe.
 - Manual intake chooses a repository when a task is created. GitHub setup selects
   multiple repositories and stages one disabled connection per selected repository.
   Retain existing connections and apply the entire reviewed proposal atomically.
+  Check the remaining connection capacity before collecting metadata or details;
+  an oversized selection must not fail only after the final Apply confirmation.
 - Ask explicitly whether to enable coding for human-released tasks. Keep this
   choice distinct from intake enablement and the final Apply confirmation. Existing
   released work may dispatch once enabled; no releases or publication grants are
   created by setup. The mutation boundary requires the explicit enablement choice.
 - Distinguish disabled, credential unavailable, and version not checked states.
+
+The coding enable switch is a runtime gate. An existing release remains eligible
+when only that switch changes; adapter, model, auth reference, execution paths and
+resource limits remain bound to the human-reviewed selection. Preserve existing
+stored fingerprints and full-config checks for new release/configuration requests.
+Disabling coding must still prevent dispatch and invalidate live execution authority.
 
 ## Delivery and ownership
 
@@ -108,3 +116,11 @@ changed credential boundary has focused coverage and the established private-cop
 redaction/cleanup test passed separately. No single successful all-inclusive
 `npm run verify` is claimed. Existing live provider and refresh acceptance remains
 open.
+
+PR #421 feedback identified queued releases invalidated by the enable switch and
+oversized repository selections failing after Apply. Both are corrected: persisted
+release matching permits only an enable-only difference, and setup checks remaining
+connection capacity before collecting details. The fixes passed 39 onboarding
+tests, 13 new release regressions and 50 existing service/bridge tests, followed by
+app/dashboard types, import-layer checks and changed-file formatting. Two independent
+Astra-low static reviewers cleared the fixes; no live acceptance claim changes.

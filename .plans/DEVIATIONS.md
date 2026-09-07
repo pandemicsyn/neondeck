@@ -22,6 +22,10 @@ Use this format:
   multi-repository GitHub setup and an explicit coding enablement choice.
 - Reason: Operator rehearsal exposed avoidable manual setup and an incomplete
   path from configuring a CLI to enabling human-released coding work.
+- Review correction: Treat coding enablement as a runtime gate when matching an
+  existing release, while retaining its other reviewed settings and preserving
+  full-config concurrency checks for new decisions. GitHub setup must reject
+  selections beyond remaining connection capacity before collecting details.
 - Follow-up: See [setup usability plan](factory/SETUP_USABILITY_PLAN.md).
   Keyring-only credential export and writing refreshed attempt tokens back to the
   user's login store are not introduced. Live authentication/refresh and remote

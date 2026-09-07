@@ -1,7 +1,10 @@
 import { log, note } from '@clack/prompts';
 import * as v from 'valibot';
 import { githubConnectionSchema } from '../../shared/factory-github';
-import { factoryConfigSchema } from '../../shared/factory';
+import {
+  factoryConfigSchema,
+  MAX_FACTORY_GITHUB_CONNECTIONS,
+} from '../../shared/factory';
 import { readFactoryGitHubRepository } from '../modules/github';
 import type { RuntimePaths } from '../runtime-home';
 import { connectionReadiness } from '../modules/factory/github-config';
@@ -75,10 +78,18 @@ export async function configureFactory(paths: RuntimePaths) {
     log.info(githubResumeHint);
     return;
   }
+  const remainingConnections =
+    MAX_FACTORY_GITHUB_CONNECTIONS - next.github.length;
+  if (intake === 'github' && remainingConnections === 0) {
+    log.info(
+      `All ${MAX_FACTORY_GITHUB_CONNECTIONS} GitHub connection slots are in use. Review existing connections in /factory before adding more, or rerun neondeck factory setup and choose manual intake to continue setup. Factory configuration unchanged.`,
+    );
+    return;
+  }
   const selectedRepoIds =
     intake === 'github'
       ? await promptMultiselect({
-          message: 'Repositories for GitHub issue intake',
+          message: `Repositories for GitHub issue intake (up to ${remainingConnections} new connections)`,
           required: false,
           options: before.repos.map((repo) => ({
             value: repo.id,
@@ -96,6 +107,15 @@ export async function configureFactory(paths: RuntimePaths) {
   ) {
     log.info(
       'Repository selection is unavailable. Factory configuration unchanged. Resume with neondeck factory setup.',
+    );
+    return;
+  }
+  const newRepoIds = [...new Set(selectedRepoIds)].filter(
+    (repoId) => !next.github.some((connection) => connection.repoId === repoId),
+  );
+  if (newRepoIds.length > remainingConnections) {
+    log.info(
+      `Selected ${newRepoIds.length} new GitHub connections, but only ${remainingConnections} slots remain (limit ${MAX_FACTORY_GITHUB_CONNECTIONS}). Factory configuration unchanged. Rerun neondeck factory setup and select at most ${remainingConnections} new repositories; existing connections are retained and do not use additional slots.`,
     );
     return;
   }
