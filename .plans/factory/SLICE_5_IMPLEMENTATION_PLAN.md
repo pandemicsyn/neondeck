@@ -1,7 +1,8 @@
 # Slice 5 — Linear intake
 
 Status: source implementation and independent static/manager architecture reviews
-complete; verification passed and ready publication pending, September 7, 2026.
+complete; verification passed and [PR #423](https://github.com/pandemicsyn/neondeck/pull/423)
+published ready for review, September 7, 2026. Merge/live acceptance remain pending.
 Base: `51a5caea`.
 
 The operator requested implementation of the next numbered factory slice after
@@ -91,7 +92,7 @@ solely to perform a small set of queries and mutations.
 - [x] Complete integrated verification and record acceptance limits.
 - [x] Obtain two clean independent static reviews, including final corrections.
 - [x] Complete manager architecture review, including cooldown and triage fixes.
-- [ ] Publish ready PR after final review and verification.
+- [x] Publish ready PR after final review and verification: #423.
 
 See [the handoff ledger](SLICE_5_HANDOFF.md) for delivered evidence and
 [the deviations ledger](../DEVIATIONS.md) for actual deviations or deferrals.

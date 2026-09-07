@@ -7,7 +7,9 @@ The [implementation plan](SLICE_5_IMPLEMENTATION_PLAN.md) defines scope and
 ownership. Developers and independent reviewers use Astra at low effort. The
 parent manages integration and final architecture review. Both independent static
 reviews and the manager architecture review are clean, including final triage
-wiring. Ready PR publication follows final verification; merge is separate.
+wiring. [PR #423](https://github.com/pandemicsyn/neondeck/pull/423) is published
+ready for review after verification. Implementation commit: `95c5ef31`.
+Merge and live acceptance remain pending.
 
 ## Delivered scope and boundaries
 
@@ -122,6 +124,7 @@ Later checkpoints:
   across 281 files in 81.26 seconds, lint, import layers, migrations and types.
   Final dashboard/server rebuild, package validation (1,266 files) and packaged
   CLI smoke also **PASS**. This final checkpoint includes automatic triage.
+- Final repository formatting and staged gitleaks secret scan: **PASS**.
 
 These checkpoints overlap later suites and must not be added together as a
 cumulative result.
