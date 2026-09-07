@@ -1,3 +1,4 @@
+import { FactoryMutationLockError } from '../../modules/config/factory-mutation-lock';
 import {
   getWritebackState,
   setWritebackPolicy,
@@ -9,7 +10,6 @@ import {
   previewWritebackRepair,
   approveWritebackRepair,
 } from '../../modules/factory/writeback';
-import { factoryConnections } from '../../modules/factory/github-config';
 import { githubDigest } from '../../modules/factory/github-store';
 import { githubConnectionSchema } from '../../../shared/factory-github';
 import {
@@ -51,6 +51,8 @@ export function createFactoryRoutes(
   routes.use('*', bodyLimit({ maxSize: 512 * 1024 }));
   routes.onError((error, c) => {
     if (error instanceof HTTPException) return error.getResponse();
+    if (error instanceof FactoryMutationLockError)
+      return c.json({ error: error.message }, error.status);
     if (error instanceof FactoryError)
       return c.json(
         { error: error.message, current: error.current },
@@ -78,12 +80,20 @@ export function createFactoryRoutes(
       }),
       await c.req.json(),
     );
-    if (githubDigest(factoryConnections(paths)) !== input.expectedFingerprint)
-      throw new FactoryError(
-        409,
-        'Connection configuration changed. Reload and review before saving; your draft is retained.',
-      );
-    return c.json(updateFactoryConfig({ github: input.connections }, paths));
+    return c.json(
+      updateFactoryConfig({ github: input.connections }, paths, {
+        precondition(before) {
+          if (
+            githubDigest(before.factory?.github ?? []) !==
+            input.expectedFingerprint
+          )
+            throw new FactoryError(
+              409,
+              'Connection configuration changed. Reload and review before saving; your draft is retained.',
+            );
+        },
+      }),
+    );
   });
   routes.post('/work/:id/writeback/repair-preview', async (c) => {
     const input = v.parse(

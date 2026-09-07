@@ -31,6 +31,15 @@ mutable state stored in SQLite under a runtime home you control.
 
 ## Factory intake, coding and delivery
 
+Run `neondeck factory setup` to configure an installed coding CLI. Review its
+executable search PATH before the version probe: npm-installed wrappers using
+`#!/usr/bin/env node` need the Node runtime directory as well as system tools
+(for example, `/opt/node/bin:/usr/local/bin:/usr/bin:/bin`). Setup defaults to the
+currently configured PATH and requires colon-separated absolute directories with
+no empty entries. It does not copy your shell environment or secret values. The
+final configuration preview includes this PATH before you choose whether to save;
+coding authority and release/publication grants remain separate.
+
 Open `/factory` to enable the opt-in local inbox and create manual tasks. Admitted
 tasks receive bounded utility-model triage automatically. Choose **Ask Neon to
 plan** to shape a model-proposed brief in a dedicated persistent conversation,

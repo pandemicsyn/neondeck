@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import * as v from 'valibot';
 import {
   factoryCodingConfigInputSchema,
+  factoryCodingConfigSchema,
   factoryCodingStateSchema,
   factoryCodingPageSchema,
   factoryCodingEventsSchema,
@@ -50,12 +51,19 @@ export async function saveFactoryCodingConfig(
   paths: RuntimePaths,
 ) {
   const data = v.parse(factoryCodingConfigInputSchema, input);
-  if (codingDigest(codingConfig(paths).coding) !== data.expectedFingerprint)
-    throw new FactoryError(
-      409,
-      'Coding configuration changed. Reload before saving.',
-    );
-  updateFactoryConfig({ coding: data.config }, paths);
+  updateFactoryConfig({ coding: data.config }, paths, {
+    precondition(before) {
+      const coding = v.parse(
+        factoryCodingConfigSchema,
+        before.factory?.coding ?? {},
+      );
+      if (codingDigest(coding) !== data.expectedFingerprint)
+        throw new FactoryError(
+          409,
+          'Coding configuration changed. Reload before saving.',
+        );
+    },
+  });
   return factoryCodingState(paths);
 }
 export function factoryCodingRuns(input: unknown, paths: RuntimePaths) {

@@ -41,6 +41,7 @@ import {
   writeDotEnvFile,
 } from './prompts';
 import { formatProviderCredentialLines, readConfigData } from './output';
+import { configureFactory } from './onboarding-factory';
 import { preapprovalGroups, type PreapprovalGroupId } from './preapprovals';
 
 const defaultModel = 'kilocode/kilo-auto/balanced';
@@ -108,6 +109,7 @@ export async function runInit(options: { home?: string }) {
   await configureSoul(paths);
   await configureProviderAndModels(paths);
   await configureRepos(paths);
+  await configureFactory(paths);
   await configureDashboard(paths);
   await configureExecution(paths);
   await configureSkillRoots(paths);
