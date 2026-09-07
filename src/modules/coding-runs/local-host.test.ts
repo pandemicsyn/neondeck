@@ -524,10 +524,24 @@ describe('supervised local host (synthetic CLI only)', () => {
   });
   it('requires the pinned version and never falls back', async () => {
     const input = await fixture();
-    input.config.executable = '/usr/bin/true';
+    // System utilities differ across GNU/BSD hosts in their --version output.
+    // Keep this fixture's unsupported response short and deterministic.
+    input.config.executable = join(
+      dirname(input.directory),
+      'unsupported-version.mjs',
+    );
+    await writeFile(
+      input.config.executable,
+      "#!/usr/bin/env node\nconsole.log('synthetic-unsupported-cli 9.9.9');\n",
+      { mode: 0o700 },
+    );
     expect(
       await inspectCodexReadiness(input.config, dirname(input.directory)),
-    ).toMatchObject({ ready: false, reason: 'unsupported-cli-version' });
+    ).toMatchObject({
+      ready: false,
+      version: 'synthetic-unsupported-cli 9.9.9',
+      reason: 'unsupported-cli-version',
+    });
     input.config.executable = '/missing/codex';
     expect(
       await inspectCodexReadiness(input.config, dirname(input.directory)),
