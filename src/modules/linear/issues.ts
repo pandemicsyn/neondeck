@@ -6,9 +6,10 @@ import {
 import { linearGraphql, LinearApiError } from './client';
 
 // https://github.com/linear/linear/blob/master/packages/sdk/src/schema.graphql
-const fields = `id identifier url title description updatedAt archivedAt team { id } project { id } state { id type } labels(first: 100) { nodes { id } pageInfo { hasNextPage } }`;
+const fields = `id identifier url title description updatedAt archivedAt trashed team { id } project { id } state { id type } labels(first: 100) { nodes { id } pageInfo { hasNextPage } }`;
 const remoteIssue = v.object({
   ...linearIssueSchema.entries,
+  trashed: v.nullable(v.boolean()),
   labels: v.object({
     nodes: linearIssueSchema.entries.labels,
     pageInfo: v.object({ hasNextPage: v.boolean() }),
@@ -25,7 +26,8 @@ function checkOrganization(
 function normalize(issue: v.InferOutput<typeof remoteIssue>) {
   if (issue.labels.pageInfo.hasNextPage)
     throw new LinearApiError('Linear issue labels exceed supported page size.');
-  return { ...issue, labels: issue.labels.nodes };
+  const { trashed: _trashed, ...current } = issue;
+  return { ...current, labels: issue.labels.nodes };
 }
 function parse<T extends v.BaseSchema<unknown, unknown, v.BaseIssue<unknown>>>(
   schema: T,
@@ -42,18 +44,29 @@ export async function readLinearIssue(
   signal?: AbortSignal,
 ) {
   const data = parse(
-    v.object({ organization, issue: remoteIssue }),
+    v.object({
+      organization,
+      issues: v.object({
+        nodes: v.pipe(v.array(remoteIssue), v.maxLength(1)),
+        pageInfo: v.object({ hasNextPage: v.literal(false) }),
+      }),
+    }),
     await linearGraphql(
       process.env[connection.tokenEnv]!,
-      `query FactoryIssue($id: String!) { organization { id } issue(id: $id) { ${fields} } }`,
-      { id: issueId },
+      `query FactoryIssue($filter: IssueFilter!) { organization { id } issues(first: 2, filter: $filter, includeArchived: true) { nodes { ${fields} } pageInfo { hasNextPage } } }`,
+      { filter: { id: { eq: issueId } } },
       signal,
     ),
   );
   checkOrganization(data.organization, connection);
-  if (data.issue.id !== issueId)
+  // A complete, successful exact-ID query proves absence from the accessible
+  // source. It does not assert why access disappeared or interpret provider errors.
+  const issue = data.issues.nodes[0];
+  if (!issue) return null;
+  if (issue.id !== issueId)
     throw new LinearApiError('Linear issue identity mismatch.');
-  return normalize(data.issue);
+  if (issue.trashed === true) return null;
+  return normalize(issue);
 }
 export async function readLinearIssuesPage(
   connection: LinearConnection,
@@ -93,7 +106,9 @@ export async function readLinearIssuesPage(
   if (page.hasNextPage && (!page.endCursor || page.endCursor === cursor))
     throw new LinearApiError('Linear pagination did not advance.');
   return {
-    items: data.issues.nodes.map(normalize),
+    items: data.issues.nodes
+      .filter((issue) => issue.trashed !== true)
+      .map(normalize),
     cursor: page.hasNextPage ? page.endCursor : null,
   };
 }
@@ -116,7 +131,6 @@ export async function updateLinearIssueState(
     ),
   );
   checkOrganization(identity.organization, connection);
-  beforeMutation?.();
   const data = parse(
     v.object({
       issueUpdate: v.object({
@@ -133,6 +147,7 @@ export async function updateLinearIssueState(
       'mutation FactoryState($id: String!, $stateId: String!) { issueUpdate(id: $id, input: { stateId: $stateId }) { success issue { id updatedAt state { id } } } }',
       { id: issueId, stateId },
       signal,
+      beforeMutation,
     ),
   );
   const issue = data.issueUpdate.issue;

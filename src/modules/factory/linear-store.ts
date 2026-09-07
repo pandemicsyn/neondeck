@@ -1,11 +1,12 @@
 import * as v from 'valibot';
+import { linearRecordIdSchema } from '../../../shared/factory-linear';
 import type { DatabaseSync } from 'node:sqlite';
 import { runtimePaths } from '../../runtime-home';
 import { dbRun, FactoryError } from './service';
 const s = v.pipe(v.string(), v.maxLength(2000));
 const key = v.pipe(s, v.minLength(1));
 const common = {
-  id: key,
+  id: linearRecordIdSchema,
   connectionId: key,
   connectionFingerprint: key,
   state: v.picklist([
@@ -64,7 +65,7 @@ const removalSchema = v.object({
   createdAt: key,
 });
 export const linearScheduleSchema = v.object({
-  id: key,
+  id: linearRecordIdSchema,
   kind: v.literal('schedule'),
   offset: v.pipe(
     v.number(),

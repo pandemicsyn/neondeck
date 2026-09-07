@@ -184,6 +184,7 @@ export function reconcileLinearSource(
       }
     : {
         ...previous!.linear!,
+        fingerprint,
         updatedAt: removedAt ?? previous!.linear!.updatedAt,
       };
   if (!previous) {

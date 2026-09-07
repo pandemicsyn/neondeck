@@ -144,6 +144,50 @@ types and repository formatting. The same five unchanged host-fixture cases
 requiring `/bin/ps` were explicitly excluded. This does not claim a full final-head
 `npm run verify` pass or live Linear acceptance.
 
+## Feedback on `c79b2eaf`
+
+- [Definitive source absence](https://github.com/pandemicsyn/neondeck/pull/423#discussion_r3952930814):
+  retained polling must reconcile a proven missing issue as removal while keeping
+  provider, authentication and malformed-response failures separate.
+- [Preflight retry](https://github.com/pandemicsyn/neondeck/pull/423#discussion_r3952930816):
+  a mutation not yet dispatched must remain retryable after transient organization
+  preflight failures. Only dispatched requests have uncertain remote outcomes.
+- [Composite record IDs](https://github.com/pandemicsyn/neondeck/pull/423#discussion_r3952930818):
+  internal record identifiers need bounds distinct from provider/configuration IDs
+  so valid long connections and workflow states remain visible through the API.
+
+Corrections are complete with Astra low developers. Both independent static
+reviewers returned **CLEAN** on the combined final delta. Manager architecture
+review is **CLEAN**: transport establishes source absence and the dispatch boundary;
+domain reconciliation owns authority, and persisted effect state distinguishes
+pending from sending. A transactional dispatch claim prevents concurrent sends.
+Source-equivalent configuration edits can safely rebind an unsent intent; legacy
+sending records remain conservative. Shared composite IDs use one 2,000-character
+schema, while external/configuration IDs retain their 240-character limit.
+Existing packages, model ownership and database schema remain unchanged.
+
+Protected focused verification passed **120 tests across 13 files**, including
+actual transport absence, trashed-source and HTTP/GraphQL failure cases; repeated
+absence idempotence; real organization-preflight 429/503 recovery; pending retry
+and rebinding; concurrent dispatch claims; and durable API state with long IDs.
+Dashboard/server builds and package validation (1,274 files) also passed.
+
+Final protected broad verification passed **3,142 tests across 292 files** in
+68.19 seconds, plus lint, import layers, migration consistency, application/docs
+types and repository formatting. The five previously identified host-fixture
+cases requiring `/bin/ps` remain explicitly excluded. All runs use temporary
+runtime homes and deny access to the operator's `~/.config/neondeck`; this is not
+a full final-head `npm run verify` pass or live Linear acceptance.
+
+The provider contract uses an organization-bound exact-ID `issues` query with a
+complete result page and archived issues included. An empty result means absent
+from the accessible source, not proven deletion; an explicitly trashed issue is
+also unavailable. HTTP/GraphQL errors and malformed or partial pages remain read
+failures. The official [filtering guide](https://linear.app/developers/filtering)
+and [GraphQL schema](https://raw.githubusercontent.com/linear/linear/master/packages/sdk/src/schema.graphql)
+define the ID comparator, archive inclusion and trashed field. No synthetic
+deletion timestamp is introduced.
+
 ## Delivered scope and boundaries
 
 - `src/modules/linear`: fixed-origin GraphQL reads/mutations, complete-response
@@ -200,7 +244,7 @@ backoff and preserve task/release/coding authority. The state API shows the late
 100 failures; retry records remain durable until a successful authoritative read
 or explicit task sync clears them. Canceled reads do not increment failure attempts.
 
-Completed writeback evidence retains the latest 20 records per task; sending,
+Completed writeback evidence retains the latest 20 records per task; pending, sending,
 uncertain and attention records are not pruned. New sends pause at 1,000 unresolved
 effects globally, with a visible sync attention reason. Effect reads are scoped
 to task/issue/identity; the setup/source API returns the latest 100 effects and

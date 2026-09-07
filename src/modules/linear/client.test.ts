@@ -37,13 +37,22 @@ function respond(data: unknown) {
   process.env.LINEAR_TEST_TOKEN = 'synthetic';
   return mock;
 }
+function respondIssue(current: typeof issue | null, organizationId = 'org') {
+  return respond({
+    organization: { id: organizationId },
+    issues: {
+      nodes: current ? [{ ...current, trashed: null }] : [],
+      pageInfo: { hasNextPage: false },
+    },
+  });
+}
 afterEach(() => {
   vi.unstubAllGlobals();
   vi.useRealTimers();
   delete process.env.LINEAR_TEST_TOKEN;
 });
 it('uses fixed endpoint, credential and raw GraphQL variables and normalizes issue labels', async () => {
-  const mock = respond({ organization: { id: 'org' }, issue });
+  const mock = respondIssue(issue);
   expect(await readLinearIssue(connection, 'issue')).toEqual({
     ...issue,
     labels: [],
@@ -56,22 +65,22 @@ it('uses fixed endpoint, credential and raw GraphQL variables and normalizes iss
         Authorization: 'synthetic',
         'Content-Type': 'application/json',
       },
-      body: expect.stringContaining('"id":"issue"'),
+      body: expect.stringContaining('"id":{"eq":"issue"}'),
     }),
   );
 });
 it('rejects wrong workspace, mismatched identity and truncated labels', async () => {
-  respond({ organization: { id: 'other' }, issue });
+  respondIssue(issue, 'other');
   await expect(readLinearIssue(connection, 'issue')).rejects.toThrow(
     'organization',
   );
-  respond({ organization: { id: 'org' }, issue });
+  respondIssue(issue);
   await expect(readLinearIssue(connection, 'other')).rejects.toThrow(
     'identity',
   );
-  respond({
-    organization: { id: 'org' },
-    issue: { ...issue, labels: { nodes: [], pageInfo: { hasNextPage: true } } },
+  respondIssue({
+    ...issue,
+    labels: { nodes: [], pageInfo: { hasNextPage: true } },
   });
   await expect(readLinearIssue(connection, 'issue')).rejects.toThrow('labels');
 });
@@ -79,7 +88,7 @@ it('pages with an opaque cursor and refuses a non-advancing cursor', async () =>
   const data = {
     organization: { id: 'org' },
     issues: {
-      nodes: [issue],
+      nodes: [{ ...issue, trashed: null }],
       pageInfo: { hasNextPage: true, endCursor: 'next' },
     },
   };
@@ -89,6 +98,20 @@ it('pages with an opaque cursor and refuses a non-advancing cursor', async () =>
   await expect(readLinearIssuesPage(connection, 'next')).rejects.toThrow(
     'advance',
   );
+});
+
+it('does not discover explicitly trashed issues and preserves the page cursor', async () => {
+  respond({
+    organization: { id: 'org' },
+    issues: {
+      nodes: [{ ...issue, trashed: true }],
+      pageInfo: { hasNextPage: true, endCursor: 'next' },
+    },
+  });
+  await expect(readLinearIssuesPage(connection, null)).resolves.toEqual({
+    items: [],
+    cursor: 'next',
+  });
 });
 it('refuses partial GraphQL success and redacts provider text on both HTTP and GraphQL failures', async () => {
   vi.stubGlobal(
@@ -179,7 +202,151 @@ it('rechecks caller authority after organization verification and before mutatio
   });
   await expect(
     updateLinearIssueState(connection, 'issue', 'target', undefined, fence),
-  ).rejects.toThrow('authority withdrawn');
+  ).rejects.toThrow('Linear request failed.');
   expect(fence).toHaveBeenCalledTimes(1);
   expect(mock).toHaveBeenCalledTimes(1);
+});
+
+it('returns source absence only from a complete exact-ID result in the bound organization', async () => {
+  const mock = respondIssue(null);
+  await expect(readLinearIssue(connection, 'issue')).resolves.toBeNull();
+  const request = JSON.parse(mock.mock.calls[0][1].body);
+  expect(request.variables).toEqual({ filter: { id: { eq: 'issue' } } });
+  expect(request.query).toContain('includeArchived: true');
+  expect(request.query).not.toContain('teamId');
+  respondIssue(null, 'other');
+  await expect(readLinearIssue(connection, 'issue')).rejects.toThrow(
+    'organization',
+  );
+  respond({
+    organization: { id: 'org' },
+    issues: {
+      nodes: [{ ...issue, trashed: true }],
+      pageInfo: { hasNextPage: false },
+    },
+  });
+  await expect(readLinearIssue(connection, 'issue')).resolves.toBeNull();
+});
+
+it.each([
+  { nodes: [], pageInfo: { hasNextPage: true } },
+  { nodes: [], pageInfo: {} },
+  { nodes: null, pageInfo: { hasNextPage: false } },
+  { nodes: [issue], pageInfo: { hasNextPage: false } },
+  {
+    nodes: [
+      { ...issue, trashed: false },
+      { ...issue, trashed: false },
+    ],
+    pageInfo: { hasNextPage: false },
+  },
+])(
+  'does not turn malformed or incomplete issue collections into absence',
+  async (issues) => {
+    respond({ organization: { id: 'org' }, issues });
+    await expect(readLinearIssue(connection, 'issue')).rejects.toThrow();
+  },
+);
+
+it.each([
+  'ENTITY_NOT_FOUND',
+  'FORBIDDEN',
+  'UNAUTHENTICATED',
+  'INTERNAL_SERVER_ERROR',
+  'RATELIMITED',
+])('does not infer absence from GraphQL %s', async (code) => {
+  process.env.LINEAR_TEST_TOKEN = 'synthetic';
+  vi.stubGlobal(
+    'fetch',
+    vi.fn().mockResolvedValue(
+      Response.json({
+        data: {
+          organization: { id: 'org' },
+          issues: { nodes: [], pageInfo: { hasNextPage: false } },
+        },
+        errors: [{ extensions: { code } }],
+      }),
+    ),
+  );
+  await expect(readLinearIssue(connection, 'issue')).rejects.toThrow();
+});
+
+it.each([401, 403, 404, 429, 500])(
+  'does not infer absence from HTTP %s',
+  async (status) => {
+    process.env.LINEAR_TEST_TOKEN = 'synthetic';
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        Response.json(
+          {
+            data: {
+              organization: { id: 'org' },
+              issues: { nodes: [], pageInfo: { hasNextPage: false } },
+            },
+          },
+          { status },
+        ),
+      ),
+    );
+    await expect(readLinearIssue(connection, 'issue')).rejects.toThrow();
+  },
+);
+
+it('does not mark mutation dispatch when organization preflight fails or the caller aborts', async () => {
+  const fence = vi.fn();
+  respond({ organization: { id: 'wrong' } });
+  await expect(
+    updateLinearIssueState(connection, 'issue', 'target', undefined, fence),
+  ).rejects.toThrow();
+  expect(fence).not.toHaveBeenCalled();
+  const controller = new AbortController();
+  const fetcher = respond({ organization: { id: 'org' } });
+  controller.abort();
+  await expect(
+    updateLinearIssueState(
+      connection,
+      'issue',
+      'target',
+      controller.signal,
+      fence,
+    ),
+  ).rejects.toThrow();
+  expect(fence).not.toHaveBeenCalled();
+  expect(fetcher).not.toHaveBeenCalled();
+});
+
+it('marks dispatch immediately before the mutation fetch', async () => {
+  process.env.LINEAR_TEST_TOKEN = 'synthetic';
+  const sequence: string[] = [];
+  vi.stubGlobal(
+    'fetch',
+    vi.fn().mockImplementation((_url, init) => {
+      if (JSON.parse(init.body).query.startsWith('query')) {
+        sequence.push('preflight');
+        return Promise.resolve(
+          Response.json({ data: { organization: { id: 'org' } } }),
+        );
+      }
+      sequence.push('mutation');
+      return Promise.resolve(
+        Response.json({
+          data: {
+            issueUpdate: {
+              success: true,
+              issue: {
+                id: 'issue',
+                state: { id: 'target' },
+                updatedAt: issue.updatedAt,
+              },
+            },
+          },
+        }),
+      );
+    }),
+  );
+  await updateLinearIssueState(connection, 'issue', 'target', undefined, () => {
+    sequence.push('dispatch');
+  });
+  expect(sequence).toEqual(['preflight', 'dispatch', 'mutation']);
 });

@@ -97,9 +97,14 @@ it('does not repeat an uncertain mutation when the provider still differs', asyn
   const { paths } = setup(true);
   const io = {
     readIssue: vi.fn(async () => issue),
-    updateState: vi.fn(async () => {
-      throw new Error('Lost response');
-    }),
+    updateState: vi.fn(
+      async (
+        ...args: Parameters<typeof import('../linear').updateLinearIssueState>
+      ) => {
+        args[4]!();
+        throw new Error('Lost response');
+      },
+    ),
   };
   await runFactoryLinearWriteback(paths, undefined, io);
   const uncertain = dbRun(paths, (db) => linearRecords(db, 'writeback'));
@@ -158,14 +163,19 @@ it('recovers an uncertain exact echo durably without source-version churn on lat
   let remote = issue;
   const io = {
     readIssue: async () => remote,
-    updateState: vi.fn(async () => {
-      remote = {
-        ...issue,
-        state: { id: 'started', type: 'started' },
-        updatedAt: '2026-09-07T01:00:00Z',
-      };
-      throw new Error('Response lost after provider commit');
-    }),
+    updateState: vi.fn(
+      async (
+        ...args: Parameters<typeof import('../linear').updateLinearIssueState>
+      ) => {
+        args[4]!();
+        remote = {
+          ...issue,
+          state: { id: 'started', type: 'started' },
+          updatedAt: '2026-09-07T01:00:00Z',
+        };
+        throw new Error('Response lost after provider commit');
+      },
+    ),
   };
   await runFactoryLinearWriteback(paths, undefined, io);
   const recovered = dbRun(paths, (db) =>

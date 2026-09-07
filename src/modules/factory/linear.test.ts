@@ -275,7 +275,7 @@ it('stops remaining writeback requests when a mutation is rate limited', async (
     ).state,
   ).toBe('attention');
   expect(dbRun(paths, (db) => linearRecords(db, 'writeback'))[0].state).toBe(
-    'uncertain',
+    'pending',
   );
 });
 

@@ -1,5 +1,11 @@
 import * as v from 'valibot';
 const id = v.pipe(v.string(), v.trim(), v.minLength(1), v.maxLength(240));
+// Persisted identities may compose several external IDs plus an operation prefix.
+export const linearRecordIdSchema = v.pipe(
+  v.string(),
+  v.minLength(1),
+  v.maxLength(2000),
+);
 const env = v.pipe(id, v.regex(/^[A-Z][A-Z0-9_]*$/));
 const timestamp = v.pipe(
   id,
@@ -66,7 +72,7 @@ export const factoryLinearStateSchema = v.object({
   ),
   sync: v.array(
     v.object({
-      id,
+      id: linearRecordIdSchema,
       cursor: v.nullable(v.string()),
       error: v.nullable(v.string()),
       retryAt: v.number(),
@@ -74,7 +80,7 @@ export const factoryLinearStateSchema = v.object({
   ),
   deliveries: v.array(
     v.object({
-      id,
+      id: linearRecordIdSchema,
       connectionId: id,
       issueId: id,
       state: v.string(),
@@ -84,7 +90,7 @@ export const factoryLinearStateSchema = v.object({
   ),
   writebacks: v.array(
     v.object({
-      id,
+      id: linearRecordIdSchema,
       workId: id,
       stateId: id,
       state: v.string(),

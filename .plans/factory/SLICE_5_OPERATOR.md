@@ -54,6 +54,11 @@ A temporary provider error or timeout is a synchronization failure, not evidence
 that the issue changed. It must not withdraw a release or cancel coding by itself.
 Inspect the retained sync error and retry time while provider access recovers.
 
+A successful complete lookup by exact issue ID can confirm that the issue is no
+longer available to the configured workspace credential, even if no removal
+webhook arrived. This withdraws stale authority. Generic provider errors do not
+establish absence; a missing result does not distinguish deletion from lost access.
+
 ## Source changes and mapping repair
 
 The source panel shows the Linear issue link, team/project, source version,
@@ -92,6 +97,10 @@ Review writeback state and errors in the task's source panel. An uncertain
 mutation must be reconciled against Linear before another send; do not use a
 configuration toggle as an assumed retry receipt. An exact acknowledged status
 echo must not invalidate the brief, while independent source edits still do.
+
+An update remains pending until its organization preflight succeeds and the final
+authority guard permits dispatch. Transient preflight failures retry after backoff;
+only a dispatched request can have an uncertain outcome requiring read-only recovery.
 
 Use **Sync Linear source** to recheck retained uncertain effects without resending
 the mutation. An exact match can establish the receipt; a mismatch remains visible

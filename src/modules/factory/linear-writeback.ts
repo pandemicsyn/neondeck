@@ -1,5 +1,8 @@
 import { linearCoolingDown, retainLinearRateLimit } from './linear-cooldown';
-import { linearSourceFingerprint } from './linear-authority';
+import {
+  linearSourceFingerprint,
+  matchesLinearSourceBinding,
+} from './linear-authority';
 import { scheduledLinearConnections } from './linear-scheduling';
 import * as v from 'valibot';
 import { sourceSchema } from '../../../shared/factory';
@@ -101,6 +104,7 @@ export async function runFactoryLinearWriteback(
         (effect?.retryAt ?? 0) > Date.now()
       )
         continue;
+      let dispatched = false;
       try {
         const issue = await io.readIssue(
           c,
@@ -108,13 +112,24 @@ export async function runFactoryLinearWriteback(
           requestSignal,
         );
         requestSignal.throwIfAborted();
-        if (!issue) continue;
         if (
           linearSourceFingerprint(
             readyLinearConnection(c.id, paths, 'provider'),
           ) !== linearSourceFingerprint(c)
         )
           continue;
+        if (!issue) {
+          dbRun(paths, (db) =>
+            reconcileLinearSource(
+              db,
+              c,
+              null,
+              item.source.linear!.issueId,
+              paths,
+            ),
+          );
+          continue;
+        }
         const latestSource = dbRun(paths, (db) =>
           detail(db, item.id, paths),
         ).source;
@@ -123,7 +138,7 @@ export async function runFactoryLinearWriteback(
           Date.parse(latestSource.linear!.updatedAt)
         )
           continue;
-        if (effect) {
+        if (effect && effect.state !== 'pending') {
           dbRun(paths, (db) =>
             reconcileLinearSource(db, c, issue, issue.id, paths),
           );
@@ -140,35 +155,57 @@ export async function runFactoryLinearWriteback(
         )
           continue;
         if (
+          effect &&
+          (!matchesLinearSourceBinding(effect, c) ||
+            effect.sourceVersion !== current.source.version ||
+            effect.baseline !== linearContentFingerprint(issue))
+        )
+          continue;
+        if (
           linearFingerprint(readyLinearConnection(c.id, paths, 'writeback')) !==
           fingerprint
         )
           continue;
-        effect = v.parse(linearEffectSchema, {
-          id,
-          kind: 'writeback',
-          connectionId: c.id,
-          connectionFingerprint: fingerprint,
-          sourceFingerprint: linearSourceFingerprint(c),
-          issueId: issue.id,
-          workId: item.id,
-          stateId,
-          sourceVersion: current.source.version,
-          baseline: linearContentFingerprint(issue),
-          createdAt: new Date().toISOString(),
-          state: 'sending',
-          error: null,
-          retryAt: 0,
-          attempts: 1,
-        });
+        const priorFingerprint = effect?.connectionFingerprint;
+        effect = effect
+          ? {
+              ...effect,
+              connectionFingerprint: fingerprint,
+              sourceFingerprint: linearSourceFingerprint(c),
+            }
+          : v.parse(linearEffectSchema, {
+              id,
+              kind: 'writeback',
+              connectionId: c.id,
+              connectionFingerprint: fingerprint,
+              sourceFingerprint: linearSourceFingerprint(c),
+              issueId: issue.id,
+              workId: item.id,
+              stateId,
+              sourceVersion: current.source.version,
+              baseline: linearContentFingerprint(issue),
+              createdAt: new Date().toISOString(),
+              state: 'pending',
+              error: null,
+              retryAt: 0,
+              attempts: 0,
+            });
         const reserved = dbRun(paths, (db) => {
-          if (
-            linearRecords(db, 'writeback', { id }).some((row) => row.id === id)
-          )
-            return false;
+          const existing = linearRecords(db, 'writeback', { id })[0];
+          if (existing) {
+            if (
+              existing.state !== 'pending' ||
+              existing.connectionFingerprint !== priorFingerprint ||
+              existing.sourceVersion !== current.source.version ||
+              existing.baseline !== effect!.baseline
+            )
+              return false;
+            putLinearRecord(db, effect!);
+            return true;
+          }
           const unresolved = db
             .prepare(
-              "SELECT count(*) AS count FROM factory_linear_records WHERE kind='writeback' AND json_extract(record,'$.state') IN ('sending','uncertain','attention')",
+              "SELECT count(*) AS count FROM factory_linear_records WHERE kind='writeback' AND json_extract(record,'$.state') IN ('pending','sending','uncertain','attention')",
             )
             .get();
           if (Number(unresolved?.count) >= 1000) {
@@ -220,7 +257,33 @@ export async function runFactoryLinearWriteback(
                 latest.source.attention
               )
                 throw new FactoryError(409, 'Factory authority changed.');
+              const retained = linearRecords(db, 'writeback', { id })[0];
+              if (
+                !retained ||
+                retained.state !== 'pending' ||
+                retained.connectionFingerprint !== fingerprint ||
+                retained.connectionId !== c.id ||
+                retained.workId !== item.id ||
+                retained.issueId !== issue.id ||
+                retained.stateId !== stateId ||
+                retained.sourceVersion !== current.source.version ||
+                retained.baseline !== effect!.baseline
+              )
+                throw new FactoryError(
+                  409,
+                  'Linear effect is no longer pending.',
+                );
+              // This callback is the transport's final synchronous boundary
+              // immediately before fetch. Only one pending claimant can send.
+              effect = {
+                ...retained,
+                state: 'sending',
+                attempts: retained.attempts + 1,
+                error: null,
+              };
+              putLinearRecord(db, effect);
             });
+            dispatched = true;
           },
         );
         dbRun(paths, (db) =>
@@ -233,15 +296,27 @@ export async function runFactoryLinearWriteback(
         );
       } catch (error) {
         if (effect)
-          dbRun(paths, (db) =>
-            putLinearRecord(db, {
-              ...effect!,
-              state: 'uncertain',
-              retryAt: Date.now() + 30000,
-              error:
-                'Linear state update outcome is uncertain; checking current source before retry.',
-            }),
-          );
+          dbRun(paths, (db) => {
+            const retained = linearRecords(db, 'writeback', { id })[0];
+            // A concurrent preflight loser cannot overwrite another sender or
+            // a receipt already reconciled by the source worker.
+            if (!retained || retained.state === 'complete') return;
+            if (dispatched && retained.state === 'sending')
+              putLinearRecord(db, {
+                ...retained,
+                state: 'uncertain',
+                retryAt: Date.now() + 30000,
+                error:
+                  'Linear state update outcome is uncertain; checking current source before retry.',
+              });
+            else if (!dispatched && retained.state === 'pending')
+              putLinearRecord(db, {
+                ...retained,
+                retryAt: Date.now() + 30000,
+                error:
+                  'Linear state update was not dispatched; retrying provider preflight.',
+              });
+          });
         if (retainLinearRateLimit(error, c, paths)) continue connections;
       }
     }

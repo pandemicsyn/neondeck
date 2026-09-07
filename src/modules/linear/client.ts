@@ -30,6 +30,7 @@ export async function linearGraphql(
   query: string,
   variables: Record<string, unknown>,
   signal?: AbortSignal,
+  beforeDispatch?: () => void,
 ): Promise<unknown> {
   if (!token) throw new LinearApiError('Linear token is unavailable.', 401);
   const controller = new AbortController();
@@ -45,13 +46,16 @@ export async function linearGraphql(
     }, 15_000);
   });
   const operation = async () => {
-    const response = await fetch('https://api.linear.app/graphql', {
+    const init: RequestInit = {
       method: 'POST',
       redirect: 'error',
       signal: requestSignal,
       headers: { Authorization: token, 'Content-Type': 'application/json' },
       body: JSON.stringify({ query, variables }),
-    });
+    };
+    requestSignal.throwIfAborted();
+    beforeDispatch?.();
+    const response = await fetch('https://api.linear.app/graphql', init);
     reader = response.body?.getReader();
     if (!reader) throw new LinearApiError('Linear returned no response body.');
     const chunks: Uint8Array[] = [];
