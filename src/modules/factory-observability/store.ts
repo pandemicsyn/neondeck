@@ -43,14 +43,23 @@ export function listFactoryDiagnostics(paths: RuntimePaths, raw: unknown = {}) {
   const query = v.parse(factoryDiagnosticQuerySchema, raw);
   const db = openDb(paths.neondeckDatabase, { readOnly: true });
   try {
+    const retainedSince = new Date(
+      Date.now() - factoryDiagnosticRetention.maxAgeMs,
+    ).toISOString();
+    // Either representation can identify a candidate; neither grants authority.
+    // Guard extraction so malformed retained JSON reaches the decoder below.
     const rows = db
       .prepare(
-        `SELECT sequence,work_item_id,finished_at,record_json FROM factory_diagnostics WHERE finished_at >= ? AND (? IS NULL OR work_item_id=?) AND (? IS NULL OR sequence < ?) ORDER BY sequence DESC LIMIT ?`,
+        `SELECT sequence,work_item_id,finished_at,record_json FROM factory_diagnostics
+         WHERE (finished_at >= ? OR CASE WHEN json_valid(record_json) THEN json_extract(record_json, '$.finishedAt') END >= ?)
+           AND (? IS NULL OR work_item_id=? OR CASE WHEN json_valid(record_json) THEN json_extract(record_json, '$.correlation.workItemId') END = ?)
+           AND (? IS NULL OR sequence < ?)
+         ORDER BY sequence DESC LIMIT ?`,
       )
       .all(
-        new Date(
-          Date.now() - factoryDiagnosticRetention.maxAgeMs,
-        ).toISOString(),
+        retainedSince,
+        retainedSince,
+        query.workItemId ?? null,
         query.workItemId ?? null,
         query.workItemId ?? null,
         query.before ?? null,

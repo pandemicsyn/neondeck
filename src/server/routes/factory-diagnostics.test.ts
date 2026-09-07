@@ -1463,6 +1463,106 @@ it.each(['foreign', 'missing', 'finishedAt'])(
     expect(() => listFactoryDiagnostics(paths)).toThrow(v.ValiError);
   },
 );
+it.each([null, 'foreign-task'])(
+  'fails preview closed when task JSON has reverse index binding %s',
+  async (indexedTask) => {
+    appendDiagnostic(paths, {
+      ...retainedSpan(),
+      outcome: 'failure',
+      error: { class: 'io', code: 'ENOENT' },
+    });
+    const db = openDb(paths.neondeckDatabase);
+    try {
+      db.prepare('UPDATE factory_diagnostics SET work_item_id=?').run(
+        indexedTask,
+      );
+    } finally {
+      db.close();
+    }
+    // A newer healthy span must not hide a corrupt lookahead candidate.
+    appendDiagnostic(paths, { ...retainedSpan(), id: 'newer' });
+    expect(() =>
+      listFactoryDiagnostics(paths, { workItemId: 'work-test', limit: 1 }),
+    ).toThrow(v.ValiError);
+    const response = await request('/tasks/work-test/preview');
+    expect(response.status).toBe(503);
+    expect(await response.json()).toEqual(retainedError);
+  },
+);
+it('rejects an expired date index with current task JSON instead of omitting the span', async () => {
+  appendDiagnostic(paths, retainedSpan());
+  const db = openDb(paths.neondeckDatabase);
+  try {
+    db.prepare('UPDATE factory_diagnostics SET finished_at=?').run(
+      '2000-01-01T00:00:00.000Z',
+    );
+  } finally {
+    db.close();
+  }
+  for (const query of [{}, { workItemId: 'work-test' }])
+    expect(() => listFactoryDiagnostics(paths, query)).toThrow(v.ValiError);
+  const response = await request('/tasks/work-test/preview');
+  expect(response.status).toBe(503);
+  expect(await response.json()).toEqual(retainedError);
+});
+it('guards malformed span JSON before SQLite extraction and returns safe preview errors', async () => {
+  appendDiagnostic(paths, retainedSpan());
+  const db = openDb(paths.neondeckDatabase);
+  try {
+    db.prepare('UPDATE factory_diagnostics SET record_json=?').run(
+      'private-invalid-json',
+    );
+  } finally {
+    db.close();
+  }
+  for (const query of [{}, { workItemId: 'work-test' }])
+    expect(() => listFactoryDiagnostics(paths, query)).toThrow(SyntaxError);
+  // Force evaluation of the JSON task predicate for a nonmatching index.
+  expect(listFactoryDiagnostics(paths, { workItemId: 'other-task' })).toEqual({
+    records: [],
+    nextBefore: null,
+  });
+  const response = await request('/tasks/work-test/preview');
+  expect(response.status).toBe(503);
+  expect(await response.json()).toEqual(retainedError);
+});
+it('excludes healthy other-task, global and expired spans from scoped reads', async () => {
+  const span = retainedSpan();
+  appendDiagnostic(paths, span);
+  appendDiagnostic(paths, {
+    ...span,
+    id: 'other-span',
+    correlation: { workItemId: 'unknown-task' },
+  });
+  appendDiagnostic(paths, { ...span, id: 'global-span', correlation: {} });
+  const db = openDb(paths.neondeckDatabase);
+  try {
+    const expired = {
+      ...span,
+      id: 'expired',
+      finishedAt: '2000-01-01T00:00:00.000Z',
+    };
+    db.prepare(
+      'INSERT INTO factory_diagnostics(work_item_id,finished_at,record_json) VALUES(?,?,?)',
+    ).run('work-test', expired.finishedAt, JSON.stringify(expired));
+  } finally {
+    db.close();
+  }
+  expect(
+    listFactoryDiagnostics(paths, { workItemId: 'work-test', limit: 1 }),
+  ).toEqual({
+    records: [{ ...span, sequence: 1 }],
+    nextBefore: null,
+  });
+  expect(listFactoryDiagnostics(paths, { workItemId: 'absent-task' })).toEqual({
+    records: [],
+    nextBefore: null,
+  });
+  const response = await request('/tasks/work-test/preview');
+  expect(response.status).toBe(200);
+  expect((await response.json()).diagnostics.spans).toHaveLength(1);
+  expect((await request('/tasks/unknown-task/preview')).status).toBe(404);
+});
 it.each(['github', 'coding', 'delivery'] as const)(
   'fails health and preview closed when the %s key contains another worker',
   async (worker) => {
