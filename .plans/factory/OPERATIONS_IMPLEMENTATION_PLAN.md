@@ -317,3 +317,11 @@ candidates, so a corrupt discriminator cannot silently hide an unresolved effect
 The prior integrated checkpoint passed 308 tests across 17 files, app/dashboard
 types and repository formatting; this final selection correction is separately
 verified and independently reviewed before publication.
+
+The evidence-inspector review requires validation entries to resolve their exact
+recorded evidence kind, ID/reference and revision instead of exposing every result
+from the same historical revision. The browser fix preserves task/pipeline
+bindings, current versus historical context and reservation-only judge entries.
+The preceding integrated checkpoint passed 332 tests across 17 files, types and
+formatting; evidence-association regressions and independent static reviews cover
+this subsequent correction before publication.

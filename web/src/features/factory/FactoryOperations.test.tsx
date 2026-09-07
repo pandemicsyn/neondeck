@@ -4,7 +4,10 @@ import {
 } from './FactoryDeliveryProgress.fixtures';
 import { FactoryTimelineEvidence } from './FactoryTimelineEvidence';
 import { codingRun } from './FactoryCoding.fixtures';
-import { deliveryDetail } from './FactoryDelivery.fixtures';
+import {
+  deliveryDetail,
+  deliveryEvidenceContent,
+} from './FactoryDelivery.fixtures';
 import type { FactoryTimelineEntry } from '../../../../shared/factory-diagnostics';
 // @vitest-environment jsdom
 import { act } from 'react';
@@ -481,3 +484,160 @@ it('inspects a repair target proven by its pipeline while retaining the distinct
   expect(container.textContent).toContain('Repair target is not bound');
   expect(container.textContent).not.toContain('Review retained worktree');
 });
+
+function validationTimelineFixture(historical: boolean) {
+  const detail = deliveryDetail();
+  const revision = detail.pipeline.revision;
+  detail.pipeline.evidence[1].result = 'failed';
+  if (historical) {
+    detail.pipeline.revision = {
+      ...revision,
+      runId: 'repair-run',
+      attemptId: 'repair-attempt',
+      headSha: '8'.repeat(40),
+      treeSha: '9'.repeat(40),
+    };
+    detail.pipeline.repairs = [
+      {
+        requestId: 'repair-request',
+        runId: 'repair-run',
+        attemptId: 'repair-attempt',
+        fromRevision: revision,
+        status: 'candidate',
+        revision: detail.pipeline.revision,
+        reason: 'Repair failed review',
+        reservedExecutionMs: 60000,
+        executionMs: 1000,
+        progressAssessmentId: null,
+        progressInputDigest: null,
+        progressEvidenceDigest: null,
+      },
+    ];
+  }
+  const entries = detail.pipeline.evidence.map(
+    (item): FactoryTimelineEntry => ({
+      ...evidenceEntry({
+        workItemId: detail.pipeline.workItemId,
+        deliveryId: detail.pipeline.pipelineId,
+        effectId: item.effectId,
+      }),
+      id: `evidence:${detail.pipeline.pipelineId}:${item.id}`,
+      kind: item.kind,
+      revision: item.revision,
+      evidenceRefs: [item.evidenceRef],
+    }),
+  );
+  return { detail, entries };
+}
+it.each([true, false])(
+  'isolates selected verification and failed review evidence (historical=%s)',
+  async (historical) => {
+    const { detail, entries } = validationTimelineFixture(historical);
+    const fetch = vi
+      .spyOn(globalThis, 'fetch')
+      .mockImplementation(async (input) => {
+        const url = String(input);
+        const item = detail.pipeline.evidence.find((item) =>
+          url.endsWith(`/evidence/${item.id}`),
+        );
+        return response(
+          item
+            ? {
+                ...deliveryEvidenceContent(item.id),
+                result: item.result,
+                revision: item.revision,
+                currentRevision: detail.pipeline.revision,
+                isCurrent: !historical,
+                summary: `Only ${item.id} receipt content`,
+                checks: [],
+                findings: [],
+              }
+            : detail,
+        );
+      });
+    for (const [index, entry] of entries.entries()) {
+      fetch.mockClear();
+      await render(<FactoryTimelineEvidence key={entry.id} entry={entry} />);
+      await openEvidence();
+      const selected = detail.pipeline.evidence[index];
+      const other = detail.pipeline.evidence[1 - index];
+      expect(container.textContent).toContain(
+        `${selected.kind} · ${selected.result}`,
+      );
+      expect(container.textContent).not.toContain(
+        `${other.kind} · ${other.result}`,
+      );
+      expect(container.textContent).not.toContain(
+        'Independent checks and review',
+      );
+      await act(async () => {
+        const nested = container.querySelector(
+          'details details',
+        )! as HTMLDetailsElement;
+        nested.open = true;
+        nested.dispatchEvent(new Event('toggle'));
+      });
+      await settle();
+      expect(container.textContent).toContain(
+        `Only ${selected.id} receipt content`,
+      );
+      expect(container.textContent).not.toContain(
+        `Only ${other.id} receipt content`,
+      );
+      expect(
+        fetch.mock.calls.some(([url]) =>
+          String(url).endsWith(`/evidence/${selected.id}`),
+        ),
+      ).toBe(true);
+      expect(
+        fetch.mock.calls.some(([url]) =>
+          String(url).endsWith(`/evidence/${other.id}`),
+        ),
+      ).toBe(false);
+    }
+  },
+);
+it.each([
+  'reference',
+  'id',
+  'kind',
+  'effect',
+  'revision',
+  'task',
+  'delivery',
+  'ambiguous',
+  'extra-reference',
+  'validation-kind',
+] as const)(
+  'rejects selected validation evidence with mismatched or ambiguous %s',
+  async (mismatch) => {
+    for (const historical of [true, false]) {
+      const { detail, entries } = validationTimelineFixture(historical);
+      const entry = structuredClone(entries[0]);
+      if (mismatch === 'reference')
+        entry.evidenceRefs = entries[1].evidenceRefs;
+      if (mismatch === 'extra-reference') entry.evidenceRefs.push('extra');
+      if (mismatch === 'id') entry.id = entries[1].id;
+      if (mismatch === 'kind') entry.kind = 'effect';
+      if (mismatch === 'validation-kind') entry.kind = 'review';
+      if (mismatch === 'effect') entry.correlation.effectId = 'other';
+      if (mismatch === 'revision') entry.revision!.treeSha = '0'.repeat(40);
+      if (mismatch === 'task') entry.correlation.workItemId = 'other';
+      if (mismatch === 'delivery') entry.correlation.deliveryId = 'other';
+      if (mismatch === 'ambiguous')
+        detail.pipeline.evidence.push(detail.pipeline.evidence[0]);
+      const fetch = vi
+        .spyOn(globalThis, 'fetch')
+        .mockResolvedValue(response(detail));
+      await render(
+        <FactoryTimelineEvidence key={String(historical)} entry={entry} />,
+      );
+      await openEvidence();
+      expect(container.querySelector('[role="alert"]')).not.toBeNull();
+      expect(container.textContent).toContain('Retry evidence');
+      expect(container.querySelector('details details')).toBeNull();
+      expect(fetch).toHaveBeenCalledTimes(1);
+      vi.restoreAllMocks();
+    }
+  },
+);

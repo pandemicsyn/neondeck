@@ -108,15 +108,41 @@ export function FactoryTimelineEvidence({
             throw new Error('Assessment revision does not match this record.');
           return { kind: 'progress' as const, content };
         }
-        const matches = detail.pipeline.evidence.filter((item) =>
-          sameRevision(item.revision, revision),
-        );
         const current = sameRevision(detail.pipeline.revision, revision);
-        if (!current && !matches.length)
+        const validation =
+          entry.kind === 'verification' || entry.kind === 'review';
+        // Match the producer's complete ID and receipt reference, not a guessed
+        // suffix or another validation record for the same candidate.
+        const matches = validation
+          ? detail.pipeline.evidence.filter(
+              (item) =>
+                entry.id === `evidence:${deliveryId}:${item.id}` &&
+                entry.kind === item.kind &&
+                entry.evidenceRefs.length === 1 &&
+                entry.evidenceRefs[0] === item.evidenceRef &&
+                sameRevision(item.revision, revision) &&
+                (entry.correlation.effectId === undefined ||
+                  entry.correlation.effectId === item.effectId),
+            )
+          : [];
+        if (
+          (validation && matches.length !== 1) ||
+          (!validation && entry.id.startsWith('evidence:'))
+        )
           throw new Error(
-            'The current pipeline differs from this historical revision, and no matching retained validation evidence is available.',
+            'No unique validation evidence matches this entry’s recorded ID, reference, kind, and revision. References remain reference-only.',
           );
-        return { kind: 'delivery' as const, detail, current, matches };
+        if (!validation && !current)
+          throw new Error(
+            'The current pipeline differs from this historical revision. This entry has no exact retained validation evidence binding; references remain reference-only.',
+          );
+        return {
+          kind: 'delivery' as const,
+          detail,
+          current,
+          matches,
+          validation,
+        };
       }
       const run = await getFactoryCodingRun(runId!, { signal });
       const record = run.record;
@@ -215,11 +241,11 @@ export function FactoryTimelineEvidence({
             ) : (
               <>
                 <p>
-                  {result.current
-                    ? 'Current pipeline evidence matches this entry’s exact revision. Pipeline status may include later activity.'
-                    : 'Retained validation evidence for this historical revision. The current pipeline is on a different revision.'}
+                  {result.validation
+                    ? 'Only the selected validation record is shown, bound to its recorded ID, receipt reference, kind, and exact revision.'
+                    : 'Current pipeline evidence matches this entry’s exact revision. Pipeline status may include later activity.'}
                 </p>
-                {result.current ? (
+                {!result.validation ? (
                   <FactoryDeliveryEvidence detail={result.detail} />
                 ) : (
                   result.matches.map((item) => (
@@ -228,7 +254,7 @@ export function FactoryTimelineEvidence({
                       deliveryId={result.detail.pipeline.pipelineId}
                       evidenceId={item.id}
                       version={result.detail.pipeline.version}
-                      label={`${item.kind} · ${item.result} · Historical revision`}
+                      label={`${item.kind} · ${item.result} · ${result.current ? 'Current' : 'Historical'} revision`}
                     />
                   ))
                 )}
