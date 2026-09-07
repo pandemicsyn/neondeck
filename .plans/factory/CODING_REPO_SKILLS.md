@@ -62,7 +62,14 @@ Verification record:
   release-policy visual checks passed.
 - Broad unit verification found one fixture using the old raw config fingerprint;
   its helper now uses the effective policy while preserving write-error assertions.
-- Full `npm run verify` is running; its final result remains to be recorded.
+- Full `npm run verify` passed: 3,083 unit tests, 47 serial Git tests, and 153
+  integration tests passed; 16 platform-specific cases were skipped on macOS.
+  The full delivery/repair matrix passed. Dashboard/server/docs builds, package
+  validation, packed CLI smoke, and repository formatting passed.
+- After verification, the stack was rebased onto the separately reviewed planning
+  fixture fix. The resulting source tree differs from the verified tree only by
+  awaiting fixture planning and initializing its synthetic repository with `main`;
+  that exact fixture delta already passed a live synthetic startup/HTTP smoke.
   Live operator acceptance remains pending after upgrade. A broader token-budget
   redesign, retained artifact transport, and pre-release size diagnostics are
   separate follow-ups; removing global skill injection does not solve every possible

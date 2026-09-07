@@ -94,3 +94,16 @@ runtime paths, hostnames, task content or credentials belong in committed artifa
   the upgraded dashboard, and start a new task against a repository whose remote
   default branch has advanced. Browser verification used mocked APIs and is not
   a claim of live model/provider acceptance.
+
+## Subsequent verification and review feedback
+
+The repository-skill follow-up completed the full macOS integration matrix:
+153 tests passed and 16 platform-specific cases were skipped. This supersedes the
+representative-only integration record above; live provider acceptance is unchanged.
+
+PR review found two screenshot fixture regressions: the async planning call needed
+an await, and the synthetic repository needed an explicit `main` branch. Both are
+fixed, independently reviewed, and verified by starting the manual fixture,
+requesting `/factory` successfully, and stopping it cleanly. A separate preexisting
+GitHub-only fixture mode still calls the unavailable `factory.dbRun` export; its
+repair is deferred and the manual fixture smoke does not cover that mode.

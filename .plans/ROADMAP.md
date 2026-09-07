@@ -247,8 +247,8 @@ acceptance or start Linear intake/remote execution.
 
 Operator correction: [coding repository skills](factory/CODING_REPO_SKILLS.md)
 removes automatic global runtime skill injection from new coding contexts and
-relies on native CLI discovery. Source and independent reviews are complete;
-final full verification and live operator acceptance remain to be recorded.
+relies on native CLI discovery. Source, independent reviews and full verification
+are complete; live operator acceptance remains pending.
 
 Additional operator rehearsal work: [planning replies and session baselines](factory/PLANNING_SESSION_USABILITY.md)
 enlarges the factory reply editor and captures the latest fetched default branch

@@ -1328,3 +1328,13 @@ Use this format:
   size diagnostics remain separate work. Native CLI discovery compatibility and
   review evidence are tracked in `factory/CODING_REPO_SKILLS.md`; live acceptance
   is still required after upgrade. Planning/chat global skills are unchanged.
+
+## 2026-09-07 - Planning screenshot fixture follow-up
+
+- Roadmap item: Factory operator rehearsal and planning usability.
+- Decision: Fix the two PR review findings in the synthetic manual fixture:
+  await planning preparation and create the configured `main` branch explicitly.
+- Reason: The new async baseline lookup otherwise breaks screenshot setup.
+- Follow-up: Manual startup/HTTP/shutdown smoke passed. A preexisting GitHub-only
+  fixture mode calls an unavailable `factory.dbRun` export; that separate fixture
+  repair remains open. No claim of GitHub-mode screenshot coverage is made.
