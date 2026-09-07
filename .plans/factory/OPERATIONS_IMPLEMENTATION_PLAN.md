@@ -307,3 +307,13 @@ used by event history. Diagnostics reuse pure domain-owned validation on bounded
 read-only projections; they must not project inconsistent retained authority as
 valid history or budgets. Invalid retained records remain generic unavailable
 responses, without changing coding/delivery mutations or authority.
+
+The bounded history review adds two selection corrections: the global timeline
+cap must retain the newest ordered entries regardless of source iteration order,
+and diagnostic exports must include the newest 100 entries rather than the first
+chronological page. Coverage continues to disclose omitted history. Writeback
+reads also validate each indexed record kind before classifying bounded task
+candidates, so a corrupt discriminator cannot silently hide an unresolved effect.
+The prior integrated checkpoint passed 308 tests across 17 files, app/dashboard
+types and repository formatting; this final selection correction is separately
+verified and independently reviewed before publication.
