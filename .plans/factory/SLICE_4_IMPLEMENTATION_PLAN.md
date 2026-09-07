@@ -1,6 +1,6 @@
 # Slice 4 — Pluggable local coding CLIs: OpenCode and Kilo Code
 
-Status: **IMPLEMENTATION IN PROGRESS**, September 6, 2026. Slice 4 live acceptance: **NOT RUN**. See [handoff](SLICE_4_HANDOFF.md) for ownership, verification and review evidence.
+Status: **SOURCE AND RECORDED DETERMINISTIC VERIFICATION COMPLETE**, September 6, 2026. Final documentation review and publication pending. No PR created. Slice 4 live acceptance: **NOT RUN**. See [handoff](SLICE_4_HANDOFF.md) for ownership, verification and review evidence.
 
 Slice 3.1 merged on September 6, 2026, in PRs [#403](https://github.com/pandemicsyn/neondeck/pull/403) and [#404](https://github.com/pandemicsyn/neondeck/pull/404), through source head `00c3e3e565a63ebc24411eabdf34f23d94efe6ef`. The manager verified the merge against GitHub and the main tree. Slice 3.1 real model/Codex/GitHub acceptance remains **NOT RUN**.
 
@@ -38,9 +38,9 @@ autoload paths; harmless `.kilo/skills` remains permitted.
 Target Linux optional-CLI availability and live authentication/model execution
 remain unverified. Earlier PATH/common-location misses do not establish missing
 installations. Local help/source checks and synthetic tests are completed
-categories of evidence, not live factory acceptance. Pending Linux lifecycle
-and six-case factory integration results, final reviews and CI are tracked in
-[the handoff](SLICE_4_HANDOFF.md); final totals await the parent report.
+categories of evidence, not live factory acceptance. The Linux host 49/49 and factory 6/6 runs passed on corrected source; final
+source reviews are clean, with documentation/publication obligations tracked in
+[the handoff](SLICE_4_HANDOFF.md); final totals are recorded in the handoff.
 
 Readiness must distinguish disabled, unconfigured, executable unresolved on the selected host, unsupported version/capability, authentication unverified or unavailable, and ready under a verified contract. Version/help inspection is not proof of authenticated execution. An incompatible provider remains unavailable with an actionable reason; never compensate by silently removing isolation or changing providers.
 
@@ -101,7 +101,7 @@ No mid-session switching, failure fallback, automatic replacement or resumption 
 Review A's P1/P2 fixes pin the original executable identity from admission through
 repairs and reject identity drift before `--version`. Invalid credential failures
 are no longer cached, allowing corrected selected references to be re-evaluated.
-These fixes have focused regression tests and two clean independent source reviews on the parent-reported manifest prefix `0a141c`. Both reviewers also cleared transitional UI/registry variants and the four changesets; final documentation attestation remains pending.
+These fixes have focused regression tests and are included in both clean final v4 source reviews. Transitional UI/registry variants and all four changesets are also clean; only final documentation attestation remains pending before publication.
 
 Legacy attempts without a captured executable identity remain inspectable and
 reconcilable. **New repairs pause for a fresh human release** instead of silently
@@ -143,32 +143,48 @@ The current proposal is four complete layers. Integrate concrete corrections int
 their owning layers; change the stack only when dependency evidence requires it.
 The parent coordinates and publishes; implementation remains with assigned agents.
 
-Before **any PR creation**, including drafts and documentation PRs, both independent static reviewers must report no findings on the exact candidate and the parent must complete implementation/product-plan review. Changes require renewed reviews. Reviewers inspect statically; implementers own tests and fixes. After all stack PRs exist, perform a separate parent architecture review and record exact-head CI evidence. Preserve required secret scans/hooks. Attach actual synthetic screenshots for changed UI; mock screenshots are not live acceptance. Two independent source reviews are clean; transitional UI/registry variants and changesets are also clean; final documentation attestation remains pending. Confirmed cumulative checks and remaining Linux/legacy runs are recorded in the handoff.
+Before **any PR creation**, both independent reviewers must clear the exact
+publication candidate and the parent completes implementation/product-plan review.
+Final v4 source is clean with both reviewers on manifest
+`10d35b26816b5840d6e5f06d26bf2e643183c7309377a30ea847478bdaf5070c`
+(1,335 manifest files plus Kilo mode 755). Lower transitional variants and four
+changesets are also clean. Final documentation needs standalone review; no PR
+exists, and CI/post-PR architecture review remain pending.
 
 ## Acceptance checklist
 
-Local version/help/source inspection, focused synthetic adapter/UI tests and
-actual synthetic React screenshots have evidence in the linked compatibility and
-handoff records. The checklist below tracks complete obligations, so an unchecked
-item may include partial completed evidence. Linux optional-adapter lifecycle,
-the six-case factory matrix, final legacy cases, final documentation attestation and CI remain pending. Live acceptance
-is **NOT RUN**. Record results separately per harness, source revision and CLI
-version; one provider's pass never clears another's obligation.
+Recorded deterministic runs are complete: check v3 passed 256 unit files/2,511
+tests; Linux host 49/49 (37 Codex, 6 OpenCode, 6 Kilo), factory matrix 6/6; final
+three lower-layer typechecks and post-fix dashboard/package/smoke passed. Earlier
+legacy 9, other integration 103 and Git 47 passes retain their baseline scope.
+See [handoff](SLICE_4_HANDOFF.md) and [acceptance](SLICE_4_ACCEPTANCE.md) for
+counts, durations, failure/recheck history and limits. No full per-harness
+Cartesian matrix or single all-inclusive `npm run verify` pass is claimed.
 
 ### Contract and deterministic integration
 
-- [ ] Codex baseline and old config/run/manifest/receipt/grant fixtures remain readable and recoverable, with no new execution/publication authority.
-- [ ] OpenCode and Kilo have separate version/documentation records, Valibot parsers, sanitized recorded JSONL and fake-provider executables. Reuse mockdex for Codex and common isolated repositories/host assertions; do not rename Codex events and call them provider evidence.
-- [ ] All three pass the common adapter suite and production-path fake-CLI admission/repair matrix. Pure typed registry conformance, unknown-ID rejection and static phase checks replace the fourth unique subprocess adapter case under the accepted deviation. No fourth-ID child coverage is claimed. Linux matrix results remain pending.
-- [ ] Duplicate/concurrent/stale/revoked admission starts at most one writer. Selection/default/model/binary changes do not alter an admitted attempt, repair lineage or restart identity. Failed readiness never triggers fallback.
-- [ ] Fresh sessions and private CLI state/auth are verified per attempt; root/child IDs are bounded and correctly attributed. Foreign sessions, inherited secrets/plugins/MCP and private-path disclosure are rejected or absent.
-- [ ] Real fake-provider subprocesses cover success, nonzero exit, absent/duplicate/contradictory terminal events, malformed/oversized/truncated JSONL, stderr flood, spawn failure and timeout. Completion flows through actual shared host receipts, not test database completion updates.
-- [ ] Controller death before/after spawn, supervisor death, live child server, missing receipt, PID identity mismatch and restart during cancellation retain ownership until proven dead or quarantined. No uncertain path launches a replacement.
-- [ ] For each harness, both pre-publication and watched-feedback repair exercise independent checks/review, progress decisions, repeated failure, oscillation, test weakening, scope drift, productive partial progress, stale evidence, duplicate judge admission, exhaustion and unknown usage. Budgets survive restart and remain cumulative.
-- [ ] For each harness, stale candidate/grant/head, hook mutation, revoke-during-effect, uncertain push/create, duplicate/partial feedback, watch ownership and ETag/cache invalidation use unchanged delivery guards. No unauthorized execution or publication occurs.
-- [ ] Failed/dirty/untracked/uncertain evidence is retained; credential cleanup failure is visible; explicit discard and repeated safe cleanup preserve exact ownership/outcome rules. Existing legacy Kilo session/result and watch tests remain valid.
-- [ ] UI covers Codex default, all provider readiness/unsupported states, selected-versus-pinned identity, stale config, running/cancelling/reconciliation, candidate evidence, budgets/judge intervention and cleanup attention. Capture actual desktop/mobile synthetic screenshots without secrets, private paths or hostnames.
-- [ ] Every stack layer typechecks; focused tests, cumulative verification/package checks, two independent clean reviews, parent reviews and exact-head CI are recorded accurately. Skips and failures remain explicit.
+- [x] Separate pinned OpenCode/Kilo help/source contracts, Valibot parsers and
+      source-derived synthetic JSONL/fake executables; Codex default retained.
+- [x] Three-CLI Linux host suite and initial/pre-publication plus
+      initial/watched-feedback repair routing through actual fake subprocesses
+      and signed receipts. Typed registry/static phase checks replace the fourth
+      unique subprocess adapter under the accepted deviation.
+- [x] Release configuration and original executable identity remain pinned;
+      identity is checked before `--version`. Credential failures are not cached.
+      Focused regression fixes and final source review are clean.
+- [x] Legacy inspection/reconciliation retained. Explicit compatibility narrowing:
+      new repairs without captured executable identity pause for human release.
+- [x] Registry-driven setup/readiness, selected-versus-pinned identity, stale-read
+      controls and retained evidence/planning UI verified with focused tests and
+      twelve actual synthetic desktop/mobile screenshots.
+- [x] Named deterministic suites, final lower-layer typechecks and package/build
+      checks completed with exact evidence and prior-baseline distinctions recorded.
+- [ ] Expanded per-harness combinations of all crash windows, judge failure
+      patterns, publication uncertainty, feedback edges and cleanup outcomes:
+      not established as a complete matrix by shared suites and six routing cases.
+      This remaining matrix obligation does not imply the named runs are pending.
+- [ ] Final documentation attestation, PR publication, exact-head CI and separate
+      post-PR parent architecture review.
 
 ### Separately authorized live acceptance
 

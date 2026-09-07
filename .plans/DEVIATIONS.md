@@ -1159,8 +1159,21 @@ Use this format:
 - Reason: A legacy record cannot prove the binary approved by its original
   admission. Capturing today's executable during repair would silently authorize
   a replacement and weaken the pinned grant. Review A identified this boundary;
-  the fix has focused regression tests, with final review still pending.
+  the fix has focused regression tests and is included in both clean final v4 source reviews.
 - Follow-up: Use existing human planning/release/consent for new authority. Keep
   historical evidence, ownership and consumed budgets intact; no migration should
   fabricate the missing original identity. This is an explicit narrowing of old
   repair behavior, not a live acceptance result.
+
+## 2026-09-06 - Slice 4 expanded per-harness scenario matrix
+
+- Roadmap item: Slice 4 acceptance combinations across CLI providers.
+- Decision: Preserve the expanded per-harness crash/judge/publication/feedback/
+  cleanup combinations as an explicit remaining matrix obligation. The named
+  deterministic runs are complete, including 49 Linux host cases and six factory
+  initial/repair routing cases. Do not claim exhaustive per-harness combinations.
+- Reason: Shared generic suites and selected provider routing cases establish
+  their recorded scenarios, not every combination of every edge case for each
+  CLI. This is a coverage limit, not a still-running test or a live result.
+- Follow-up: Extend the matrix with individually recorded scenarios when taken
+  up; retain the existing live acceptance obligations and no-full-matrix claim.

@@ -1,61 +1,77 @@
 # Slice 4 acceptance record
 
-Status: implementation in progress, September 6, 2026. Live acceptance: **NOT RUN**.
+September 6, 2026: recorded deterministic verification complete; final docs review
+and publication pending. **No PR created. Live acceptance: NOT RUN.**
 
-| Evidence                                                           | Result                                                                                           |
-| ------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------ |
-| Final cumulative `npm run check`                                   | PASS: lint/layers/db/types; 255 unit files, 2,504 tests                                          |
-| Other integration suites                                           | PASS: 9 files, 103 tests                                                                         |
-| Git suite                                                          | PASS: 6 files, 47 tests                                                                          |
-| Web/server/docs build, package validation, smoke and formatting    | PASS                                                                                             |
-| Layer 1 isolated typecheck and tests                               | PASS: 59 tests, head `03ac1826`                                                                  |
-| Layer 2 / Layer 3 isolated typecheck and tests                     | PASS: 47 at `012fe5ab` / 72 at `5bb4a1ac`                                                        |
-| Linux host lifecycle / factory matrix                              | Pending: 49 host cases (37 Codex, 12 optional) and 6 factory cases                               |
-| Final legacy integration                                           | 9 cases running; pending                                                                         |
-| Focused React UI checkpoint                                        | 88 tests; overlaps cumulative coverage                                                           |
-| Actual synthetic React screenshots                                 | 12 captured; zero page errors, overflow or API mutations; parent inspected representative images |
-| Two independent source reviews                                     | Clean on parent-reported manifest prefix `0a141c`                                                |
-| Transitional UI/registry variants and four changesets              | Both independent reviewers clean                                                                 |
-| Final documentation attestation                                    | Pending final results and standalone review                                                      |
-| Parent pre-publication manager review                              | No findings; distinct from post-PR review                                                        |
-| PR publication, CI and post-publication parent architecture review | Pending; no PR created                                                                           |
-| CLI help/source compatibility                                      | Kilo installed 7.4.23 and temporary official OpenCode 1.18.29 verified; target auth unverified   |
-| Real CLI/model/authentication/GitHub acceptance                    | NOT RUN                                                                                          |
+## Confirmed evidence
 
-Do not sum focused checkpoints and cumulative suites. No single all-inclusive
-successful `npm run verify` invocation is claimed. See the handoff for the
-writeback-fixture and Layer 1 typecheck failures and successful rechecks.
+| Evidence                                           | Result                                                                                       |
+| -------------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| Final `npm run check` v3                           | PASS: lint/layers/db/types; 256 unit files, 2,511 tests                                      |
+| Linux host suite                                   | PASS: 49/49, 85.43 seconds; 37 Codex + 6 OpenCode + 6 Kilo                                   |
+| Linux factory matrix                               | PASS: 6/6, 337.58 seconds, Node 26.4.0                                                       |
+| Final isolated typechecks                          | All three lower layers PASS after restack/process/import fix                                 |
+| Legacy integration                                 | 9 PASS, 679 seconds, before Linux process-table fix                                          |
+| Other integration / Git                            | Earlier baseline: 103 tests / 9 files and 47 tests / 6 files PASS                            |
+| Build/package/smoke                                | Earlier full web/server/docs build PASS; post-fix dashboard/package (1,223 files)/smoke PASS |
+| Formatting                                         | Repository check PASS; final documentation check separate                                    |
+| Source static reviews                              | Both independent reviewers CLEAN on final v4, 1,335 manifest files plus mode 755             |
+| Lower transitional variants / changesets           | Both reviewers CLEAN                                                                         |
+| Parent pre-publication manager review              | No findings; not the post-PR review                                                          |
+| UI screenshots                                     | 12 actual synthetic React captures; no page errors, overflow or API mutations                |
+| Final docs review / PR / CI / post-PR architecture | Pending                                                                                      |
+| Real coding-model/authentication/GitHub acceptance | NOT RUN                                                                                      |
 
-No live coding models, GitHub messages or deployments are authorized during
-implementation. Later live exercises need separate authorization and must record
-the tested source and CLI versions, finite limits, exact observed scenarios,
-failures, recovery and unexercised cases. Public evidence must omit credentials,
-private hosts and operator paths.
+Final source manifest:
+`10d35b26816b5840d6e5f06d26bf2e643183c7309377a30ea847478bdaf5070c`.
+Current restacked heads before this documentation update:
+`03b697f6` / `2cce6b09` / `6255c952` / `1042d0e5`.
+Do not add overlapping focused checkpoints to cumulative totals. No single
+all-inclusive successful `npm run verify` invocation is claimed.
 
-Earlier obligations are unchanged: Slice 1 operator-accepted deferrals remain
-open; Slice 2/3/3.1 live acceptance remains pending, NOT RUN. Refer to the
-[implementation plan](SLICE_4_IMPLEMENTATION_PLAN.md) for the full required matrix.
+## What the synthetic evidence establishes
 
-## Read-only target-host discovery
+For each CLI, the Linux factory matrix covers initial coding followed by a
+pre-publication repair and initial coding followed by watched-feedback repair.
+These are actual fake subprocesses with signed host receipts. The shared-host
+suite and separate parser/conformance fixtures cover their recorded failure,
+identity, isolation, cancellation and ownership cases. The suites are complete;
+no deterministic run is still pending.
 
-Parent-reported probe: `codex-cli 0.144.6`; OpenCode and Kilo did not resolve in
-the default PATH or inspected common locations. This does not prove either is uninstalled. No system or model
-settings changed. Target-host authentication and admission readiness are unproven.
-The existing Codex support baseline remains 0.150.1 unless separately verified.
+The plan's broader combinations of every crash window, judge failure pattern,
+publish uncertainty, cleanup outcome and feedback edge case for every CLI are
+**not established as a complete per-harness matrix**. Shared generic suites and
+six routing cases do not prove that full Cartesian coverage. This is an explicit
+remaining matrix obligation, separate from the passing named runs and from live
+acceptance. No fourth unique adapter-ID subprocess coverage is claimed; the
+accepted substitution uses typed registry conformance/unknown rejection, static
+phase checks and the three registered CLI matrix.
 
-Optional executable-location clarification remains pending; no actual installation absence is claimed.
+## Failure/recheck record
 
-## Review fixes and remaining deterministic evidence
+An early unit run reported four writeback-fixture failures; QA corrections were
+followed by the passing final 2,511-test run. Layer 1's old release caller initially
+failed typecheck; the reviewed null-fingerprint variant and later isolated reruns
+passed. Initial Linux execution failed without heartbeat and its broad run was
+aborted. Kernel zero process-group observations were rejected; the narrow schema
+fix preserves positive owned identities. The subsequent host run passed 42/49;
+six Kilo fixtures lacked executable mode and `/usr/bin/true` produced longer GNU
+version output than intended. Mode 755 and a short private fake corrected those
+fixtures; the final host rerun passed 49/49 and factory run passed 6/6.
+See [handoff](SLICE_4_HANDOFF.md) for checkpoint scope and reviewed corrections.
 
-Review A P1/P2 findings have fixes and focused regression tests: original
-executable identity remains pinned from admission through repairs and is checked
-before `--version`; invalid credential failures are not cached. Both independent source reviewers cleared the fixes on the parent-reported
-manifest prefix `0a141c`; lower-layer variants and changesets are also clean; final documentation attestation remains pending. Legacy attempts without executable identity retain
-inspection/reconciliation but cannot start new repairs without fresh human release.
+## Compatibility and live boundaries
 
-Linux optional-adapter shared-host lifecycle and the six-case production-path
-factory matrix remain pending. The fourth unique test-only subprocess adapter
-case was replaced by the accepted typed-registry/static-check/three-CLI matrix
-substitution, with no fourth-ID child-process claim. Remaining Linux/legacy results and CI await the parent report. Provider-specific local checkpoints are in the
-[OpenCode](SLICE_4_OPENCODE_COMPATIBILITY.md) and
-[Kilo](SLICE_4_KILO_COMPATIBILITY.md) records; they are not aggregated here.
+Kilo installed 7.4.23 help/source and temporary official OpenCode 1.18.29
+help/source are verified; see their [Kilo](SLICE_4_KILO_COMPATIBILITY.md) and
+[OpenCode](SLICE_4_OPENCODE_COMPATIBILITY.md) records. This does not establish
+intended-host installed CLI or authenticated provider readiness. The read-only
+intended-host probe found Codex 0.144.6, outside the preserved 0.150.1 baseline;
+OpenCode/Kilo PATH/common-location misses did not prove installation absence.
+
+Legacy attempts without executable identity retain inspection/reconciliation;
+new repairs need fresh human release. Linux managed-state restrictions and the
+24 exact Kilo autoload guards remain; harmless `.kilo/skills` is allowed. Provider
+permissions are not an OS sandbox. Real authentication, coding quality, judged
+repairs, delivery and operator acceptance remain NOT RUN. Slice 1 accepted
+deferrals and Slice 2/3/3.1 pending live obligations remain unchanged.
