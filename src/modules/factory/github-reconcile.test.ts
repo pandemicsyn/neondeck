@@ -1,3 +1,4 @@
+import { codingConfig, codingDigest } from './coding-context';
 import { githubDigest, putComment } from './github-store';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { fixture, connection, issue } from './testing/github-fixture';
@@ -86,6 +87,9 @@ function release() {
       sourceVersion: d.source.version,
       repoFingerprint: d.repoFingerprint,
       policyVersion: 'isolated-local-v1',
+      expectedCodingConfigFingerprint: codingDigest(
+        codingConfig(setup.paths).coding,
+      ),
     },
     human,
     setup.paths,

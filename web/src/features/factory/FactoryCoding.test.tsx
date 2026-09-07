@@ -244,7 +244,7 @@ it('retains config and expected fingerprint after optimistic concurrency rejecti
   );
   await flush();
   expect(calls[0]?.body).toEqual({
-    expectedFingerprint: 'synthetic-config-v1',
+    expectedFingerprint: state.configFingerprint,
     config: state.config,
   });
   expect(container.textContent).toContain('Settings changed elsewhere');

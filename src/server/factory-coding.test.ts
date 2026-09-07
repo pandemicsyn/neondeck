@@ -259,6 +259,7 @@ function release(key = 'one', initial?: FactoryDetail) {
       sourceVersion: d.source.version,
       repoFingerprint: d.repoFingerprint,
       policyVersion: 'isolated-local-v1',
+      expectedCodingConfigFingerprint: codingDigest(codingConfig(paths).coding),
     },
     actor,
     paths,

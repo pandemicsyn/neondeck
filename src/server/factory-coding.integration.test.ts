@@ -32,7 +32,7 @@ import {
   type LocalAttemptHandle,
 } from '../modules/coding-runs';
 import * as localHost from '../modules/coding-runs';
-import { codingConfig } from '../modules/factory/coding-context';
+import { codingConfig, codingDigest } from '../modules/factory/coding-context';
 import { localCodingConfig } from '../modules/factory/coding-readiness';
 import {
   transitionFactoryWork,
@@ -200,6 +200,9 @@ else {
           sourceVersion: detail.source.version,
           repoFingerprint: detail.repoFingerprint,
           policyVersion: 'isolated-local-v1',
+          expectedCodingConfigFingerprint: codingDigest(
+            codingConfig(paths).coding,
+          ),
         },
         actor,
         paths,

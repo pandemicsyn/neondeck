@@ -1,5 +1,9 @@
 // @vitest-environment jsdom
 import { act, useState } from 'react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { codingState } from './FactoryCoding.fixtures';
+const factoryCodingStateKey = ['factory-coding-state'];
+import { getFactoryCodingState } from '../../api/factory-coding';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { FactoryTaskDetail } from './FactoryTaskDetail';
@@ -9,6 +13,9 @@ import {
 } from '../../../../shared/factory';
 // Coding query behavior is covered separately in FactoryCoding.test.tsx.
 vi.mock('./FactoryCoding', () => ({ FactoryCoding: () => null }));
+vi.mock('../../api/factory-coding', () => ({
+  getFactoryCodingState: vi.fn<typeof getFactoryCodingState>(),
+}));
 const api = vi.hoisted(() => ({ mutateFactory: vi.fn() }));
 vi.mock('../../api/factory', () => api);
 vi.mock('../diff-viewer/DocumentRevisionDiff', () => ({
@@ -126,6 +133,7 @@ function fixture(): FactoryDetail {
 let container: HTMLDivElement;
 let root: Root;
 let current: FactoryDetail;
+let client: QueryClient;
 const refresh = vi.fn(async () => {});
 beforeEach(() => {
   vi.clearAllMocks();
@@ -144,20 +152,34 @@ beforeEach(() => {
   document.body.append(container);
   root = createRoot(container);
   current = fixture();
+  client = new QueryClient({
+    defaultOptions: { queries: { retry: false, staleTime: Infinity } },
+  });
+  client.setQueryData(factoryCodingStateKey, {
+    ...codingState(),
+    configFingerprint: 'c'.repeat(64),
+  });
+  vi.mocked(getFactoryCodingState).mockResolvedValue({
+    ...codingState(),
+    configFingerprint: 'c'.repeat(64),
+  });
 });
 afterEach(async () => {
   await act(async () => root.unmount());
   container.remove();
+  client.clear();
   vi.unstubAllGlobals();
 });
 async function render() {
   await act(async () =>
     root.render(
-      <FactoryTaskDetail
-        detail={current}
-        repos={[{ id: 'demo', name: 'Demo' }]}
-        refresh={refresh}
-      />,
+      <QueryClientProvider client={client}>
+        <FactoryTaskDetail
+          detail={current}
+          repos={[{ id: 'demo', name: 'Demo' }]}
+          refresh={refresh}
+        />
+      </QueryClientProvider>,
     ),
   );
 }
@@ -410,9 +432,29 @@ it('disables release without a current repository fingerprint and releases with 
     'release',
     expect.objectContaining({
       repoFingerprint: hash,
+      expectedCodingConfigFingerprint: 'c'.repeat(64),
       specVersion: 2,
       specHash: 'b'.repeat(64),
       expectedVersion: 2,
     }),
   );
+});
+
+it('blocks release after a coding selection refresh failure and retains the displayed selection', async () => {
+  current = { ...current, blockers: [] };
+  await render();
+  expect(button('Release v2').disabled).toBe(false);
+  vi.mocked(getFactoryCodingState).mockRejectedValue(
+    new Error('Synthetic unavailable'),
+  );
+  await act(async () => {
+    await client.refetchQueries({ queryKey: factoryCodingStateKey });
+  });
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 35));
+  });
+  expect(button('Release v2').disabled).toBe(true);
+  expect(container.textContent).toContain('Coding selection is unavailable');
+  await click('Release v2');
+  expect(api.mutateFactory).not.toHaveBeenCalled();
 });

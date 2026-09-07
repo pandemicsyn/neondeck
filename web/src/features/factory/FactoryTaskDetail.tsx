@@ -1,3 +1,4 @@
+import { FactoryReleaseCoding } from './FactoryReleaseCoding';
 import { FactoryCoding } from './FactoryCoding';
 import { FactoryGitHubSource } from './FactoryGitHub';
 import { useFactoryWorkbench } from './useFactoryWorkbench';
@@ -406,32 +407,32 @@ export function FactoryTaskDetail({
             ))}
           </ul>
         )}
+        <FactoryReleaseCoding
+          key={`${detail.work.id}:${viewed.version}`}
+          label={`Release v${viewed.version}`}
+          disabled={
+            busy ||
+            !!editor ||
+            viewed.version !== latest.version ||
+            detail.blockers.length > 0 ||
+            !detail.repoFingerprint ||
+            detail.eligible
+          }
+          onRelease={(fingerprint) => {
+            if (!detail.repoFingerprint) return;
+            void mutate('release', {
+              requestKey: crypto.randomUUID(),
+              expectedVersion: detail.work.version,
+              specVersion: viewed.version,
+              specHash: viewed.hash,
+              sourceVersion: detail.source.version,
+              repoFingerprint: detail.repoFingerprint,
+              policyVersion: factoryPolicy.version,
+              expectedCodingConfigFingerprint: fingerprint,
+            });
+          }}
+        />
         <div className="factory-toolbar">
-          <button
-            disabled={
-              busy ||
-              !!editor ||
-              viewed.version !== latest.version ||
-              detail.blockers.length > 0 ||
-              !detail.repoFingerprint ||
-              detail.eligible
-            }
-            onClick={() => {
-              if (!detail.repoFingerprint) return;
-              void mutate('release', {
-                requestKey: crypto.randomUUID(),
-                expectedVersion: detail.work.version,
-                specVersion: viewed.version,
-                specHash: viewed.hash,
-                sourceVersion: detail.source.version,
-                repoFingerprint: detail.repoFingerprint,
-                policyVersion: factoryPolicy.version,
-                expectedCodingConfigFingerprint: null,
-              });
-            }}
-          >
-            Release v{viewed.version}
-          </button>
           {detail.work.lifecycle === 'paused' ||
           detail.work.lifecycle === 'closed' ? (
             <button

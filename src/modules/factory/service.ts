@@ -442,9 +442,8 @@ export function releaseFactoryWork(
         previous.sourceVersion !== data.sourceVersion ||
         previous.repoFingerprint !== data.repoFingerprint ||
         previous.policy.version !== data.policyVersion ||
-        (data.expectedCodingConfigFingerprint !== null &&
-          previous.codingConfigFingerprint !==
-            data.expectedCodingConfigFingerprint) ||
+        previous.codingConfigFingerprint !==
+          data.expectedCodingConfigFingerprint ||
         previous.actor !== actor.id
       )
         throw new FactoryError(
@@ -461,11 +460,7 @@ export function releaseFactoryWork(
       config(paths)?.coding ?? {},
     );
     const codingConfigFingerprint = digest(coding);
-    if (
-      (data.expectedCodingConfigFingerprint !== null &&
-        data.expectedCodingConfigFingerprint !== codingConfigFingerprint) ||
-      (data.expectedCodingConfigFingerprint === null && coding.adapter !== null)
-    )
+    if (data.expectedCodingConfigFingerprint !== codingConfigFingerprint)
       throw new FactoryError(
         409,
         'Coding configuration changed or selection was not reviewed. Reload coding settings before releasing.',
@@ -486,6 +481,15 @@ export function releaseFactoryWork(
     if (current.blockers.length)
       throw new FactoryError(409, current.blockers.join(' '), current);
     const active = current.releases.find((r) => !r.withdrawnAt);
+    if (
+      active &&
+      active.codingConfigFingerprint !== data.expectedCodingConfigFingerprint
+    )
+      throw new FactoryError(
+        409,
+        'The active release binds different coding settings. Withdraw it and review the brief before releasing again.',
+        current,
+      );
     if (active) return current;
     const decision: FactoryRelease = {
       id: randomUUID(),

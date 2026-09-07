@@ -24,6 +24,7 @@ import {
   type LocalAttemptHandle,
 } from '../modules/coding-runs';
 import {
+  codingConfig,
   codingDigest,
   codingHandle,
   dispatchCodingWork,
@@ -343,6 +344,9 @@ const child=spawn(process.execPath,[${JSON.stringify(resolve('scripts/mockdex.mj
           sourceVersion: work.source.version,
           repoFingerprint: work.repoFingerprint,
           policyVersion: 'isolated-local-v1',
+          expectedCodingConfigFingerprint: codingDigest(
+            codingConfig(paths).coding,
+          ),
         },
         actor,
         paths,

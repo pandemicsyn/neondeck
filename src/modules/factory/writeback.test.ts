@@ -1,5 +1,7 @@
 import {
   codingSnapshot,
+  codingConfig,
+  codingDigest,
   assertCodingAuthoritySnapshot,
 } from './coding-context';
 import {
@@ -333,6 +335,9 @@ it('writeback failure never blocks valid human release and queue wording is trut
       sourceVersion: d.source.version,
       repoFingerprint: d.repoFingerprint,
       policyVersion: 'isolated-local-v1',
+      expectedCodingConfigFingerprint: codingDigest(
+        codingConfig(setup.paths).coding,
+      ),
     },
     human,
     setup.paths,
@@ -657,6 +662,9 @@ it('inbound before receipt is held then confirmed without invalidating released 
       sourceVersion: d.source.version,
       repoFingerprint: d.repoFingerprint,
       policyVersion: 'isolated-local-v1',
+      expectedCodingConfigFingerprint: codingDigest(
+        codingConfig(setup.paths).coding,
+      ),
     },
     human,
     setup.paths,
@@ -945,6 +953,9 @@ it('repo context invalidates public released wording and the previously approved
       sourceVersion: d.source.version,
       repoFingerprint: d.repoFingerprint,
       policyVersion: 'isolated-local-v1',
+      expectedCodingConfigFingerprint: codingDigest(
+        codingConfig(setup.paths).coding,
+      ),
     },
     human,
     setup.paths,
@@ -1095,6 +1106,9 @@ it.each(['manual', 'github'] as const)(
       sourceVersion: d.source.version,
       repoFingerprint: d.repoFingerprint,
       policyVersion: 'isolated-local-v1',
+      expectedCodingConfigFingerprint: codingDigest(
+        codingConfig(setup.paths).coding,
+      ),
     };
     releaseFactoryWork(id, release, human, setup.paths);
     let question: ReturnType<typeof approval> | undefined;
@@ -1215,6 +1229,9 @@ it.each(['manual', 'github'] as const)(
         sourceVersion: d.source.version,
         repoFingerprint: d.repoFingerprint,
         policyVersion: 'isolated-local-v1',
+        expectedCodingConfigFingerprint: codingDigest(
+          codingConfig(setup.paths).coding,
+        ),
       },
       human,
       setup.paths,
@@ -1333,6 +1350,9 @@ it('revocation is durable before registry replacement and survives a failed writ
       sourceVersion: d.source.version,
       repoFingerprint: d.repoFingerprint,
       policyVersion: 'isolated-local-v1',
+      expectedCodingConfigFingerprint: codingDigest(
+        codingConfig(setup.paths).coding,
+      ),
     },
     human,
     setup.paths,
@@ -1426,6 +1446,9 @@ function prepareCodingRelease(requestKey = 'coding-release') {
       sourceVersion: d.source.version,
       repoFingerprint: d.repoFingerprint,
       policyVersion: 'isolated-local-v1',
+      expectedCodingConfigFingerprint: codingDigest(
+        codingConfig(setup.paths).coding,
+      ),
     },
     human,
     setup.paths,

@@ -25,6 +25,8 @@ import {
   type LocalAttemptHandle,
 } from '../coding-runs';
 import {
+  codingConfig,
+  codingDigest,
   releaseFactoryWork,
   saveFactorySpec,
   submitFactoryWork,
@@ -193,6 +195,9 @@ else {
           sourceVersion: detail.source.version,
           repoFingerprint: detail.repoFingerprint,
           policyVersion: 'isolated-local-v1',
+          expectedCodingConfigFingerprint: codingDigest(
+            codingConfig(paths).coding,
+          ),
         },
         actor,
         paths,

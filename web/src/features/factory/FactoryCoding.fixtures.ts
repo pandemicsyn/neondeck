@@ -13,7 +13,32 @@ export function codingState(enabled = true) {
       model: 'synthetic-codex-model',
       auth: { kind: 'api-key', env: 'CODEX_API_KEY' },
     },
-    configFingerprint: 'synthetic-config-v1',
+    adapters: ['codex', 'opencode', 'kilo'].map((id) => ({
+      id,
+      label:
+        id === 'codex' ? 'Codex' : id === 'opencode' ? 'OpenCode' : 'Kilo Code',
+      contractVersion: 1,
+      supportedVersion: id === 'codex' ? '0.150.1' : 'synthetic-version',
+      credentialKinds:
+        id === 'codex' ? ['api-key', 'auth-json'] : ['auth-json'],
+      capabilities: {
+        privateState: { status: 'supported', reason: 'Private attempt state' },
+        nonInteractive: {
+          status: 'supported',
+          reason: 'Bounded noninteractive execution',
+        },
+        cancellation: {
+          status: 'supported',
+          reason: 'Host-owned cancellation',
+        },
+        osSandbox: { status: 'unsupported', reason: 'No OS sandbox claim' },
+        childSessions: {
+          status: 'unknown',
+          reason: 'Child-session details unverified',
+        },
+      },
+    })),
+    configFingerprint: 'c'.repeat(64),
     readiness: {
       enabled,
       ready: enabled,
