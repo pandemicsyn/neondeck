@@ -1,12 +1,24 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { mkdtemp, mkdir, rm, symlink, writeFile } from 'node:fs/promises';
+import {
+  mkdtemp,
+  mkdir,
+  realpath,
+  rm,
+  symlink,
+  writeFile,
+} from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import * as v from 'valibot';
 import { kiloAdapter, kiloForbiddenWorkspacePaths } from './kilo.ts';
 import { KiloEvents } from './kilo-events.ts';
 import { manifestSchema } from '../host-contract.ts';
-import { adapterLaunch, verifyAdapterWorkspace } from '../adapter-host.ts';
+import {
+  adapterCredentialRedactor,
+  adapterLaunch,
+  prepareAdapterCredentials,
+  verifyAdapterWorkspace,
+} from '../adapter-host.ts';
 import * as registry from './registry.ts';
 
 function manifest(root = '/tmp/kilo-fixture/work') {
@@ -245,6 +257,51 @@ describe('Kilo 7.4.23 adapter contract', () => {
         { ...config, model: 'openai/model' },
       ),
     ).toThrow('Unsupported Kilo credential provider');
+  });
+
+  it('requires exactly one valid credential snapshot for redaction', () => {
+    const config = manifest().config;
+    const valid = '{"kilo":{"type":"api","key":"synthetic-key"}}';
+    expect(kiloAdapter.credentialSecrets([valid], config)).toEqual([
+      'synthetic-key',
+    ]);
+    for (const contents of [[], [valid, valid]]) {
+      expect(() => kiloAdapter.credentialSecrets(contents, config)).toThrow(
+        'Expected one Kilo credential file',
+      );
+    }
+    for (const invalid of ['', '{', '{}', '{"kilo":{"type":"api","key":""}}']) {
+      expect(() => kiloAdapter.credentialSecrets([invalid], config)).toThrow(
+        'Invalid selected Kilo credentials',
+      );
+    }
+  });
+
+  it('rejects a prepared auth snapshot deleted before supervisor redactor preflight', async () => {
+    const directory = await realpath(
+      await mkdtemp(join(tmpdir(), 'kilo-auth-')),
+    );
+    const value = manifest();
+    value.directory = directory;
+    try {
+      await prepareAdapterCredentials(value, {
+        kind: 'api-key',
+        value: 'synthetic-key',
+      });
+      const redact = await adapterCredentialRedactor(value);
+      expect(redact('key=synthetic-key')).toBe('key=[REDACTED]');
+      const authPath = join(directory, 'home/.local/share/kilo/auth.json');
+      await rm(authPath);
+      await expect(adapterCredentialRedactor(value)).rejects.toThrow(
+        'Invalid selected credential snapshot',
+      );
+      await writeFile(authPath, '{malformed', { mode: 0o600 });
+      await expect(adapterCredentialRedactor(value)).rejects.toThrow(
+        'Invalid selected credential snapshot',
+      );
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
   });
 
   it('accepts intermediate tool turns only before an ordered final stop', () => {

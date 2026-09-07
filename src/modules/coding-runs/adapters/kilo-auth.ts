@@ -53,6 +53,7 @@ export function kiloCredentialSecrets(
 ): string[] {
   if (!v.is(kiloModelSchema, config.model))
     throw new Error('Unsupported Kilo credential provider');
-  if (contents.length > 1) throw new Error('Unexpected Kilo credential files');
+  if (contents.length !== 1)
+    throw new Error('Expected one Kilo credential file');
   return contents.map((content) => parseAuth(content).kilo.key);
 }
