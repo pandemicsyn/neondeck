@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { Hono } from 'hono';
 import { createHash } from 'node:crypto';
 import * as v from 'valibot';
+import { reserveCodingRun } from '../../modules/coding-runs/store';
 import { deliveryPipelineSchema } from '../../../shared/factory-delivery';
 import {
   readTaskHealthRecords,
@@ -491,3 +492,276 @@ it('validates the extra delivery candidate used to detect truncation', async () 
     insertDelivery(`terminal-${i}`, 'merged');
   expect((await request('/health?workId=work-test')).status).toBe(503);
 });
+
+function insertPlanning(id: string, overrides: Record<string, unknown> = {}) {
+  const db = openDb(paths.neondeckDatabase);
+  try {
+    db.prepare(
+      'INSERT INTO factory_planning_intents(id,work_id,request_key,record) VALUES(?,?,?,?)',
+    ).run(
+      id,
+      'work-test',
+      id,
+      JSON.stringify({
+        id,
+        workId: 'work-test',
+        createdAt: recordedAt,
+        stage: 'triage',
+        submissionId: null,
+        triageSubmissionId: null,
+        ...overrides,
+      }),
+    );
+  } finally {
+    db.close();
+  }
+}
+const diagnosticPaths = [
+  '/tasks/work-test/timeline',
+  '/tasks/work-test/preview',
+  '/health',
+  '/health?workId=work-test',
+];
+it.each([
+  { id: 'foreign' },
+  { workId: 'foreign' },
+  { id: null },
+  { workId: null },
+  { id: undefined },
+  { workId: undefined },
+  { id: 42 },
+  { workId: {} },
+  { stage: 'invalid' },
+  { stage: null },
+  { stage: undefined },
+  { stage: 42 },
+  { stage: false },
+  { stage: {} },
+])(
+  'fails closed on planning metadata corruption %j across routes',
+  async (overrides) => {
+    insertPlanning('intent', overrides);
+    for (const path of diagnosticPaths)
+      expect((await request(path)).status).toBe(503);
+  },
+);
+it.each([undefined, null, 'invalid', 42, false, {}, []])(
+  'fails closed on unclassifiable writeback state %j across routes',
+  async (state) => {
+    const effect = { ...writebackFixture(), state };
+    const db = openDb(paths.neondeckDatabase);
+    try {
+      db.prepare(
+        'INSERT INTO factory_writeback_records(id,kind,work_id,record) VALUES(?,?,?,?)',
+      ).run(effect.id, 'effect', effect.workId, JSON.stringify(effect));
+    } finally {
+      db.close();
+    }
+    for (const path of diagnosticPaths)
+      expect((await request(path)).status).toBe(503);
+  },
+);
+it('validates legacy planning metadata before filtering terminal stages', async () => {
+  insertPlanning('active');
+  insertPlanning('completed', { stage: 'completed' });
+  insertPlanning('failed', { stage: 'failed' });
+  for (const path of diagnosticPaths)
+    expect((await request(path)).status).toBe(200);
+  const db = openDb(paths.neondeckDatabase, { readOnly: true });
+  try {
+    expect(readTaskHealthRecords(db, 'work-test')).toMatchObject({
+      planning: [{ id: 'active' }],
+      truncated: false,
+    });
+  } finally {
+    db.close();
+  }
+  insertPlanning('newest', { stage: 'planner' });
+  expect(
+    await (await request('/health?workId=work-test')).json(),
+  ).toMatchObject({
+    truncated: true,
+    tasks: [{ status: 'planning-planner', truncated: true }],
+  });
+});
+it.each([{ stage: 'invalid' }, { id: 'foreign' }, { workId: 'foreign' }])(
+  'validates the extra planning candidate %j on both routes',
+  async (overrides) => {
+    insertPlanning('boundary', overrides);
+    for (let i = 0; i < sourceLimit; i++)
+      insertPlanning(`terminal-${i}`, { stage: 'completed' });
+    for (const path of diagnosticPaths)
+      expect((await request(path)).status).toBe(503);
+  },
+);
+it('bounds planning validation and reports omitted active or invalid history as attention', async () => {
+  insertPlanning('older-active');
+  insertPlanning('outside', { stage: 'invalid' });
+  for (let i = 0; i <= sourceLimit; i++)
+    insertPlanning(`terminal-${i}`, { stage: 'completed' });
+  expect((await request('/tasks/work-test/timeline')).status).toBe(200);
+  expect(
+    await (await request('/health?workId=work-test')).json(),
+  ).toMatchObject({
+    truncated: true,
+    tasks: [{ truncated: true }],
+  });
+  const db = openDb(paths.neondeckDatabase, { readOnly: true });
+  try {
+    const records = readTaskHealthRecords(db, 'work-test');
+    expect(records.planning).toEqual([]);
+    expect(
+      diagnoseHealth([records], [workerFixture()], recordedAt),
+    ).toMatchObject({
+      status: 'attention',
+      truncated: true,
+    });
+  } finally {
+    db.close();
+  }
+});
+it.each([{ id: 'foreign' }, { workId: 'foreign' }])(
+  'validates receipt parent metadata outside the intent window %j',
+  async (overrides) => {
+    insertPlanning('outside', overrides);
+    for (let i = 0; i <= sourceLimit; i++)
+      insertPlanning(`terminal-${i}`, { stage: 'completed' });
+    const db = openDb(paths.neondeckDatabase);
+    try {
+      db.prepare(
+        'INSERT INTO factory_planning_effects(id,intent_id,record) VALUES(?,?,?)',
+      ).run(
+        'receipt',
+        'outside',
+        JSON.stringify({
+          inputHash: 'a'.repeat(64),
+          result: { version: 2, hash: 'b'.repeat(64) },
+        }),
+      );
+    } finally {
+      db.close();
+    }
+    expect((await request('/tasks/work-test/timeline')).status).toBe(503);
+    expect((await request('/tasks/work-test/preview')).status).toBe(503);
+  },
+);
+
+it('rejects writeback row/JSON identity mismatches across routes', async () => {
+  const effect = writebackFixture();
+  const db = openDb(paths.neondeckDatabase);
+  try {
+    db.prepare(
+      'INSERT INTO factory_writeback_records(id,kind,work_id,record) VALUES(?,?,?,?)',
+    ).run('different-row', 'effect', effect.workId, JSON.stringify(effect));
+  } finally {
+    db.close();
+  }
+  for (const path of diagnosticPaths)
+    expect((await request(path)).status).toBe(503);
+});
+it('rejects delivery row/JSON identity mismatches across routes', async () => {
+  insertDelivery('mismatched');
+  const db = openDb(paths.neondeckDatabase);
+  try {
+    db.prepare('UPDATE factory_delivery_pipelines SET pipeline_id=?').run(
+      'different-row',
+    );
+  } finally {
+    db.close();
+  }
+  for (const path of diagnosticPaths)
+    expect((await request(path)).status).toBe(503);
+});
+it('rejects revision row/JSON version mismatches in retained history', async () => {
+  const db = openDb(paths.neondeckDatabase);
+  try {
+    db.prepare('UPDATE factory_spec_revisions SET version=2').run();
+  } finally {
+    db.close();
+  }
+  expect((await request('/tasks/work-test/timeline')).status).toBe(503);
+  expect((await request('/tasks/work-test/preview')).status).toBe(503);
+  expect((await request('/health?workId=work-test')).status).toBe(200);
+});
+
+function insertRun(id: string) {
+  return reserveCodingRun(
+    {
+      requestId: id,
+      workItemId: 'work-test',
+      releaseId: id,
+      specVersion: 1,
+      specHash: 'a'.repeat(64),
+      specSnapshot: '{}',
+      sourceId: 'source-test',
+      sourceSnapshot: '{}',
+      repoId: 'repo',
+      repoSnapshot: '{}',
+      policySnapshot: '{}',
+      contextSnapshot: '{}',
+      baseSha: 'b'.repeat(40),
+      harness: { provider: 'test', version: '1', model: 'test-model' },
+      sessionMode: 'fresh',
+    },
+    paths,
+  );
+}
+it('rejects coding run row/JSON identity mismatches across routes', async () => {
+  const run = insertRun('run');
+  const db = openDb(paths.neondeckDatabase);
+  try {
+    db.prepare('UPDATE coding_runs SET record_json=? WHERE run_id=?').run(
+      JSON.stringify({ ...run, runId: 'foreign' }),
+      run.runId,
+    );
+  } finally {
+    db.close();
+  }
+  for (const path of diagnosticPaths)
+    expect((await request(path)).status).toBe(503);
+});
+it.each(['runId', 'workItemId'])(
+  'validates event parent %s outside the retained run window',
+  async (field) => {
+    const run = insertRun('outside');
+    const db = openDb(paths.neondeckDatabase);
+    try {
+      // Insert valid independent historical rows without reserving concurrent writers.
+      const insert = db.prepare(
+        'INSERT INTO coding_runs(run_id,attempt_id,request_id,work_item_id,release_id,record_json) VALUES(?,?,?,?,?,?)',
+      );
+      for (let i = 0; i <= sourceLimit; i++) {
+        const id = `new-${i}`;
+        insert.run(
+          id,
+          id,
+          id,
+          'work-test',
+          id,
+          JSON.stringify({
+            ...run,
+            runId: id,
+            attemptId: id,
+            snapshot: { ...run.snapshot, requestId: id, releaseId: id },
+          }),
+        );
+      }
+      db.prepare('UPDATE coding_runs SET record_json=? WHERE run_id=?').run(
+        JSON.stringify(
+          field === 'runId'
+            ? { ...run, runId: 'foreign' }
+            : {
+                ...run,
+                snapshot: { ...run.snapshot, workItemId: 'foreign' },
+              },
+        ),
+        run.runId,
+      );
+    } finally {
+      db.close();
+    }
+    expect((await request('/tasks/work-test/timeline')).status).toBe(503);
+    expect((await request('/tasks/work-test/preview')).status).toBe(503);
+    expect((await request('/health?workId=work-test')).status).toBe(200);
+  },
+);

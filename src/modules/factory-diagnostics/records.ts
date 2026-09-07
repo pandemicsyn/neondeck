@@ -28,6 +28,35 @@ const planningSchema = v.strictObject({
   submissionId: v.nullable(label),
   triageSubmissionId: v.nullable(label),
 });
+// Keep the legacy metadata projection, but never substitute column identities for JSON.
+function planningProjection(alias: string) {
+  return `${alias}.id AS columnId,${alias}.work_id AS columnWorkId,
+    json_extract(${alias}.record,'$.id') AS id,
+    json_extract(${alias}.record,'$.workId') AS workId,
+    json_extract(${alias}.record,'$.createdAt') AS createdAt,
+    json_extract(${alias}.record,'$.stage') AS stage,
+    json_extract(${alias}.record,'$.submissionId') AS submissionId,
+    json_extract(${alias}.record,'$.triageSubmissionId') AS triageSubmissionId`;
+}
+function parsePlanning(row: Record<string, unknown>, workId: string) {
+  const { columnId, columnWorkId, ...metadata } = row;
+  const intent = v.parse(planningSchema, metadata);
+  if (
+    intent.id !== columnId ||
+    intent.workId !== columnWorkId ||
+    intent.workId !== workId
+  )
+    throw new DiagnosticsError(503, 'Task record binding is inconsistent.');
+  return intent;
+}
+function planningCandidates(db: DatabaseSync, workId: string) {
+  return db
+    .prepare(
+      `SELECT ${planningProjection('i')} FROM factory_planning_intents i WHERE i.work_id=? ORDER BY i.rowid DESC LIMIT ?`,
+    )
+    .all(workId, sourceLimit + 1)
+    .map((row) => parsePlanning(row, workId));
+}
 const auditSchema = v.strictObject({
   id: natural,
   action: label,
@@ -66,6 +95,20 @@ export function withDiagnosticDatabase<T>(
     db.close();
   }
 }
+function parseRecord<T>(
+  row: Record<string, unknown>,
+  schema: v.GenericSchema<unknown, T>,
+) {
+  const text = v.parse(v.pipe(v.string(), v.maxLength(2_000_000)), row.record);
+  const raw = v.parse(v.record(v.string(), v.unknown()), JSON.parse(text));
+  const record = v.parse(schema, raw);
+  // Additional selected columns are persisted keys, aliased to their JSON fields.
+  for (const [key, value] of Object.entries(row)) {
+    if (key !== 'record' && raw[key] !== value)
+      throw new DiagnosticsError(503, 'Task record binding is inconsistent.');
+  }
+  return record;
+}
 function jsonRows<T>(
   db: DatabaseSync,
   sql: string,
@@ -75,13 +118,7 @@ function jsonRows<T>(
   return db
     .prepare(sql)
     .all(workId, sourceLimit + 1)
-    .map((row) => {
-      const text = v.parse(
-        v.pipe(v.string(), v.maxLength(2_000_000)),
-        row.record,
-      );
-      return v.parse(schema, JSON.parse(text));
-    });
+    .map((row) => parseRecord(row, schema));
 }
 export function readTaskRecords(db: DatabaseSync, workId: string) {
   const row = db
@@ -93,31 +130,31 @@ export function readTaskRecords(db: DatabaseSync, workId: string) {
     throw new DiagnosticsError(503, 'Task identity is inconsistent.');
   const writeback = jsonRows(
     db,
-    "SELECT record FROM factory_writeback_records WHERE work_id=? AND kind='effect' ORDER BY rowid DESC LIMIT ?",
+    "SELECT id,record FROM factory_writeback_records WHERE work_id=? AND kind='effect' ORDER BY rowid DESC LIMIT ?",
     writebackEffectSchema,
     workId,
   );
   const revisions = jsonRows(
     db,
-    'SELECT record FROM factory_spec_revisions WHERE work_id=? ORDER BY rowid DESC LIMIT ?',
+    'SELECT version,record FROM factory_spec_revisions WHERE work_id=? ORDER BY rowid DESC LIMIT ?',
     revisionSchema,
     workId,
   );
   const releases = jsonRows(
     db,
-    'SELECT record FROM factory_releases WHERE work_id=? ORDER BY rowid DESC LIMIT ?',
+    'SELECT id,record FROM factory_releases WHERE work_id=? ORDER BY rowid DESC LIMIT ?',
     releaseSchema,
     workId,
   );
   const runs = jsonRows(
     db,
-    'SELECT record_json AS record FROM coding_runs WHERE work_item_id=? ORDER BY sequence DESC LIMIT ?',
+    'SELECT run_id AS runId,record_json AS record FROM coding_runs WHERE work_item_id=? ORDER BY sequence DESC LIMIT ?',
     codingRunRecordSchema,
     workId,
   );
   const deliveries = jsonRows(
     db,
-    'SELECT record_json AS record FROM factory_delivery_pipelines WHERE work_item_id=? ORDER BY sequence DESC LIMIT ?',
+    'SELECT pipeline_id AS pipelineId,record_json AS record FROM factory_delivery_pipelines WHERE work_item_id=? ORDER BY sequence DESC LIMIT ?',
     deliveryPipelineSchema,
     workId,
   );
@@ -127,28 +164,30 @@ export function readTaskRecords(db: DatabaseSync, workId: string) {
     )
     .all(workId, sourceLimit + 1)
     .map((r) => v.parse(auditSchema, r));
-  const planning = db
-    .prepare(
-      `SELECT id,work_id AS workId,json_extract(record,'$.createdAt') AS createdAt,json_extract(record,'$.stage') AS stage,json_extract(record,'$.submissionId') AS submissionId,json_extract(record,'$.triageSubmissionId') AS triageSubmissionId FROM factory_planning_intents WHERE work_id=? ORDER BY rowid DESC LIMIT ?`,
-    )
-    .all(workId, sourceLimit + 1)
-    .map((r) => v.parse(planningSchema, r));
+  const planning = planningCandidates(db, workId);
   const receipts = db
     .prepare(
-      'SELECT e.id,e.intent_id AS intentId,e.record FROM factory_planning_effects e JOIN factory_planning_intents i ON i.id=e.intent_id WHERE i.work_id=? ORDER BY e.rowid DESC LIMIT ?',
+      `SELECT e.id AS effectId,e.intent_id AS intentId,e.record AS effectRecord,${planningProjection('i')} FROM factory_planning_effects e JOIN factory_planning_intents i ON i.id=e.intent_id WHERE i.work_id=? ORDER BY e.rowid DESC LIMIT ?`,
     )
     .all(workId, sourceLimit + 1)
-    .map((r) => ({
-      id: v.parse(label, r.id),
-      intentId: v.parse(label, r.intentId),
-      effect: decodePlanningEffect(r.record),
-    }));
+    .map(({ effectId, intentId, effectRecord, ...parent }) => {
+      parsePlanning(parent, workId);
+      return {
+        id: v.parse(label, effectId),
+        intentId: v.parse(label, intentId),
+        effect: decodePlanningEffect(effectRecord),
+      };
+    });
   const events = db
     .prepare(
-      'SELECT e.sequence,e.run_id AS runId,e.version,e.type,e.status,e.created_at AS createdAt FROM coding_run_events e JOIN coding_runs r ON e.run_id=r.run_id WHERE r.work_item_id=? ORDER BY e.sequence DESC LIMIT ?',
+      `SELECT json_extract(r.record_json,'$.runId') AS parentRunId,json_extract(r.record_json,'$.snapshot.workItemId') AS parentWorkId,e.sequence,e.run_id AS runId,e.version,e.type,e.status,e.created_at AS createdAt FROM coding_run_events e JOIN coding_runs r ON e.run_id=r.run_id WHERE r.work_item_id=? ORDER BY e.sequence DESC LIMIT ?`,
     )
     .all(workId, sourceLimit + 1)
-    .map((r) => v.parse(codingRunEventSchema, r));
+    .map(({ parentRunId, parentWorkId, ...r }) => {
+      if (parentRunId !== r.runId || parentWorkId !== workId)
+        throw new DiagnosticsError(503, 'Task record binding is inconsistent.');
+      return v.parse(codingRunEventSchema, r);
+    });
   if (
     writeback.some((r) => r.workId !== workId) ||
     revisions.some((r) => r.workId !== workId) ||
@@ -206,24 +245,17 @@ export function readTaskHealthRecords(
     return db
       .prepare(sql)
       .all(workId)
-      .map((r) =>
-        v.parse(
-          schema,
-          JSON.parse(
-            v.parse(v.pipe(v.string(), v.maxLength(2_000_000)), r.record),
-          ),
-        ),
-      );
+      .map((r) => parseRecord(r, schema));
   }
   const runs = current(
-    'SELECT record_json AS record FROM coding_runs WHERE work_item_id=? ORDER BY sequence DESC LIMIT 1',
+    'SELECT run_id AS runId,record_json AS record FROM coding_runs WHERE work_item_id=? ORDER BY sequence DESC LIMIT 1',
     codingRunRecordSchema,
   );
   // Validate a bounded candidate window before deciding which outcomes are terminal.
   // Older candidates outside this window make health partial, never silently healthy.
   const deliveryCandidates = jsonRows(
     db,
-    'SELECT record_json AS record FROM factory_delivery_pipelines WHERE work_item_id=? ORDER BY sequence DESC LIMIT ?',
+    'SELECT pipeline_id AS pipelineId,record_json AS record FROM factory_delivery_pipelines WHERE work_item_id=? ORDER BY sequence DESC LIMIT ?',
     deliveryPipelineSchema,
     workId,
   );
@@ -231,15 +263,13 @@ export function readTaskHealthRecords(
     .slice(0, sourceLimit)
     .filter((r) => r.outcome === null);
   const writeback = current(
-    "SELECT record FROM factory_writeback_records WHERE work_id=? AND kind='effect' AND json_extract(record,'$.state') NOT IN ('sent','cancelled') ORDER BY rowid DESC LIMIT 51",
+    "SELECT id,record FROM factory_writeback_records WHERE work_id=? AND kind='effect' AND (json_extract(record,'$.state') IS NULL OR json_extract(record,'$.state') NOT IN ('sent','cancelled')) ORDER BY rowid DESC LIMIT 51",
     writebackEffectSchema,
   );
-  const planning = db
-    .prepare(
-      `SELECT id,work_id AS workId,json_extract(record,'$.createdAt') AS createdAt,json_extract(record,'$.stage') AS stage,json_extract(record,'$.submissionId') AS submissionId,json_extract(record,'$.triageSubmissionId') AS triageSubmissionId FROM factory_planning_intents WHERE work_id=? AND json_extract(record,'$.stage') IN ('triage','planner') ORDER BY rowid DESC LIMIT 2`,
-    )
-    .all(workId)
-    .map((r) => v.parse(planningSchema, r));
+  const candidates = planningCandidates(db, workId);
+  const planning = candidates
+    .slice(0, sourceLimit)
+    .filter((r) => r.stage === 'triage' || r.stage === 'planner');
   if (
     runs.some((r) => r.snapshot.workItemId !== workId) ||
     deliveryCandidates.some((r) => r.workItemId !== workId) ||
@@ -258,6 +288,7 @@ export function readTaskHealthRecords(
     receipts: [],
     events: [],
     truncated:
+      candidates.length > sourceLimit ||
       deliveryCandidates.length > sourceLimit ||
       deliveries.length > 1 ||
       writeback.length > 50 ||
