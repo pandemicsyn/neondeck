@@ -15,7 +15,6 @@ import {
   getFactoryTimeline,
 } from './factory-diagnostics';
 import { getJson } from './http';
-import { createDiagnosticExport } from '../../../src/modules/factory-diagnostics/export';
 
 vi.mock('./http', () => ({ getJson: vi.fn<typeof getJson>() }));
 afterEach(() => vi.resetAllMocks());
@@ -71,24 +70,64 @@ function health(): FactoryHealth {
   };
 }
 function preview(): FactoryDiagnosticExport {
-  return createDiagnosticExport(health(), timeline(), {
-    records: [
-      {
-        sequence: 1,
-        id: 'span',
-        traceId: 'trace',
-        parentSpanId: null,
-        operation: 'coding.inspect',
-        correlation: { workItemId: workId },
-        error: null,
-        kind: 'phase',
-        startedAt: generatedAt,
-        finishedAt: generatedAt,
-        durationMs: 0,
-        outcome: 'success',
-      },
-    ],
-    nextBefore: null,
+  // Synthetic stand-ins for the server's per-export HMAC pseudonyms (24 hex
+  // digits). The raw requested ID is never exported; its token is shared by
+  // the root, health task, timeline correlation and span correlation.
+  const taskToken = 'id:aaaaaaaaaaaaaaaaaaaaaaaa';
+  return v.parse(factoryDiagnosticExportSchema, {
+    schemaVersion: 1,
+    generatedAt,
+    workId: taskToken,
+    notice:
+      'Local diagnostic summary. IDs are pseudonymized; no raw logs, prompts, paths, credentials or actor identities. Authority records and retained diagnostic spans are distinct; this is not a complete execution trace.',
+    health: {
+      status: 'healthy',
+      truncated: false,
+      workers: [],
+      tasks: [
+        {
+          workId: taskToken,
+          pendingAgeMs: null,
+          remainingExecutionMs: null,
+          repairsRemaining: null,
+          unresolvedEffectCount: 0,
+          truncated: false,
+        },
+      ],
+    },
+    timeline: {
+      entries: [
+        {
+          id: 'id:cccccccccccccccccccccccc',
+          kind: 'task',
+          recordType: 'record',
+          occurredAt: null,
+          correlation: { workItemId: taskToken },
+          specVersion: null,
+          specHash: null,
+          evidenceCount: 0,
+        },
+      ],
+      truncated: true,
+    },
+    diagnostics: {
+      spans: [
+        {
+          id: 'id:dddddddddddddddddddddddd',
+          traceId: 'id:eeeeeeeeeeeeeeeeeeeeeeee',
+          parentSpanId: null,
+          operation: 'coding.inspect',
+          correlation: { workItemId: taskToken },
+          error: null,
+          kind: 'phase',
+          startedAt: generatedAt,
+          finishedAt: generatedAt,
+          durationMs: 0,
+          outcome: 'success',
+        },
+      ],
+      truncated: false,
+    },
   });
 }
 

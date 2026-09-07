@@ -804,3 +804,127 @@ it('opens collapsed Factory setup from a released coding blocker', async () => {
     container.querySelector<HTMLDetailsElement>('#factory-setup')!.open,
   ).toBe(true);
 });
+
+it('preserves local Codex auth when editing unrelated coding settings', async () => {
+  state.config.auth = {
+    kind: 'codex-local',
+    path: '/synthetic/.codex/auth.json',
+  };
+  await render(<FactoryCodingSetup />);
+  await click('Configure coding');
+  expect(
+    container.querySelector<HTMLSelectElement>('[name="authKind"]')?.value,
+  ).toBe('codex-local');
+  expect(
+    container.querySelector<HTMLInputElement>('[name="authPath"]')?.value,
+  ).toBe('/synthetic/.codex/auth.json');
+  const model = container.querySelector<HTMLInputElement>('[name="model"]')!;
+  model.value = 'synthetic-updated-model';
+  await act(async () => {
+    container
+      .querySelector('form')!
+      .dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+  });
+  expect(calls).toContainEqual(
+    expect.objectContaining({
+      body: expect.objectContaining({
+        config: expect.objectContaining({
+          model: 'synthetic-updated-model',
+          auth: { kind: 'codex-local', path: '/synthetic/.codex/auth.json' },
+        }),
+      }),
+    }),
+  );
+});
+
+it.each(['disabled', 'credential-unavailable'] as const)(
+  'shows not checked when %s prevented a version probe',
+  async (status) => {
+    state.readiness = {
+      ...state.readiness,
+      status,
+      ready: false,
+      installedVersion: null,
+    };
+    await render(<FactoryCodingSetup />);
+    expect(container.textContent).toContain('CLI not checked');
+    expect(container.textContent).not.toContain('CLI not detected');
+  },
+);
+
+it('keeps empty unsupported version output distinct from an unperformed check', async () => {
+  state.readiness = {
+    ...state.readiness,
+    status: 'unsupported',
+    ready: false,
+    installedVersion: null,
+  };
+  await render(<FactoryCodingSetup />);
+  expect(container.textContent).toContain('CLI version unavailable');
+  expect(container.textContent).toContain('CLI contract unsupported');
+});
+
+it('shows only the selected credential field, retains source drafts, and resets on adapter changes', async () => {
+  await render(<FactoryCodingSetup />);
+  await click('Configure coding');
+  const select = async (name: string, value: string) =>
+    act(async () => {
+      const field = container.querySelector<HTMLSelectElement>(
+        `[name="${name}"]`,
+      )!;
+      field.value = value;
+      field.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+  expect(container.querySelector('[name="authPath"]')).toBeNull();
+  expect(container.textContent).not.toContain('Local Codex reuse requires');
+  container.querySelector<HTMLInputElement>('[name="authEnv"]')!.value =
+    'SYNTHETIC_DRAFT';
+  await select('authKind', 'codex-local');
+  expect(container.querySelector('[name="authEnv"]')).toBeNull();
+  expect(container.textContent).toContain('Local Codex reuse requires');
+  container.querySelector<HTMLInputElement>('[name="authPath"]')!.value =
+    '/synthetic/draft/auth.json';
+  await select('authKind', 'auth-json');
+  expect(container.querySelector('[name="authPath"]')).toBeNull();
+  expect(
+    container.querySelector<HTMLInputElement>('[name="authEnv"]')?.value,
+  ).toBe('SYNTHETIC_DRAFT');
+  await select('authKind', 'codex-local');
+  expect(
+    container.querySelector<HTMLInputElement>('[name="authPath"]')?.value,
+  ).toBe('/synthetic/draft/auth.json');
+  await select('adapter', 'kilo');
+  expect(
+    container.querySelector<HTMLSelectElement>('[name="authKind"]')?.value,
+  ).toBe('auth-json');
+  expect(
+    container.querySelector<HTMLInputElement>('[name="authEnv"]')?.value,
+  ).toBe('');
+  expect(container.querySelector('[name="authPath"]')).toBeNull();
+  expect(container.textContent).not.toContain('Local Codex reuse requires');
+});
+
+it('reloads the selected credential field from changed configuration', async () => {
+  await render(<FactoryCodingSetup />);
+  await click('Configure coding');
+  state = {
+    ...state,
+    configFingerprint: 'd'.repeat(64),
+    config: {
+      ...state.config,
+      auth: { kind: 'codex-local', path: '/synthetic/reloaded/auth.json' },
+    },
+  };
+  await act(async () => {
+    client.setQueryData(['factory-coding-state'], state);
+  });
+  await flush();
+  await click('Reload current coding settings');
+  expect(
+    container.querySelector<HTMLSelectElement>('[name="authKind"]')?.value,
+  ).toBe('codex-local');
+  expect(container.querySelector('[name="authEnv"]')).toBeNull();
+  expect(
+    container.querySelector<HTMLInputElement>('[name="authPath"]')?.value,
+  ).toBe('/synthetic/reloaded/auth.json');
+});

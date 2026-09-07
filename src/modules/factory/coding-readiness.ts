@@ -1,3 +1,4 @@
+import { readLocalCodexAuth } from './codex-local-auth';
 import { statSync } from 'node:fs';
 import { mkdtemp, mkdir, rm } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -60,8 +61,12 @@ export function localCodingConfig(
   };
 }
 export function selectedCodingAuth(config: FactoryCodingConfig) {
-  if (!config.auth)
-    throw new Error('Select a credential environment reference.');
+  if (!config.auth) throw new Error('Select a credential reference.');
+  if (config.auth.kind === 'codex-local') {
+    if (config.adapter && config.adapter.id !== 'codex')
+      throw new Error('Local Codex credentials require the Codex adapter.');
+    return readLocalCodexAuth(config.auth.path);
+  }
   const value = process.env[config.auth.env];
   if (!value || value.length > 131072)
     throw new Error('Selected credential reference is unavailable or invalid.');
@@ -230,7 +235,11 @@ async function probeCodingReadiness(
   if (!coding.enabled) blockers.push('Coding is disabled.');
   if (!supported) blockers.push('Local supervisor platform is unsupported.');
   if (!authAvailable)
-    blockers.push('Selected credential reference is unavailable or invalid.');
+    blockers.push(
+      coding.auth?.kind === 'codex-local'
+        ? 'Local Codex auth.json is unavailable or invalid, or the adapter is not Codex. Keyring-only logins cannot be reused; use a file-backed login or credential environment reference.'
+        : 'Selected credential reference is unavailable or invalid.',
+    );
   if (!coding.executable || !coding.model)
     blockers.push('Select an absolute coding CLI executable and model.');
   if (blockers.length) return blockedReadiness(input, blockers);

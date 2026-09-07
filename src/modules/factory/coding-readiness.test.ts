@@ -315,3 +315,28 @@ it('revalidates corrected adapter credentials at the same reference without reta
     registered.mockRestore();
   }
 });
+
+it('resolves local auth at readiness and launch, recovering missing files without leaking credentials', async () => {
+  const path = join(root, 'auth.json');
+  config.auth = { kind: 'codex-local', path };
+  save();
+  expect(await codingReadiness(paths)).toMatchObject({
+    status: 'credential-unavailable',
+    installedVersion: null,
+  });
+  expect(probe).not.toHaveBeenCalled();
+  writeFileSync(path, '{}');
+  expect((await codingReadiness(paths)).ready).toBe(false);
+  expect(probe).not.toHaveBeenCalled();
+  writeFileSync(
+    path,
+    '{"tokens":{"access_token":"synthetic-local-access","refresh_token":"synthetic-local-refresh"}}',
+  );
+  probe.mockResolvedValue(supported);
+  const result = await codingReadiness(paths);
+  expect(result).toMatchObject({ ready: true, authentication: 'unverified' });
+  expect(JSON.stringify(result)).not.toContain('synthetic-local');
+  rmSync(path);
+  expect((await codingReadiness(paths)).status).toBe('credential-unavailable');
+  expect(probe).toHaveBeenCalledTimes(1);
+});

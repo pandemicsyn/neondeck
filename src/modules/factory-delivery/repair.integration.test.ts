@@ -421,7 +421,7 @@ else {
       expect(repairManifest.config.maxOutputBytes).toBe(
         originalCoding.maxOutputBytes,
       );
-      expect(originalCoding.auth?.env).toBe('FACTORY_E2E_AUTH');
+      expect(originalCoding.auth).toMatchObject({ env: 'FACTORY_E2E_AUTH' });
       expect(repairManifest.executableIdentity).toEqual(
         parent.snapshot.harness.executableIdentity,
       );
