@@ -313,6 +313,30 @@ it('shows matching delivery evidence without authority controls and rejects unma
   expect(container.textContent).toContain('current pipeline differs');
   expect(container.textContent).not.toContain('Independent checks and review');
 });
+it('keeps assessment reservations reference-only even after settlement', async () => {
+  const detail = progressDetail();
+  const assessment = detail.pipeline.progress.assessments[0];
+  const fetch = vi
+    .spyOn(globalThis, 'fetch')
+    .mockResolvedValue(response(detail));
+  const entry: FactoryTimelineEntry = {
+    ...evidenceEntry({
+      workItemId: detail.pipeline.workItemId,
+      deliveryId: detail.pipeline.pipelineId,
+    }),
+    id: `judge-reserved:${assessment.assessmentId}`,
+    kind: 'judge',
+    summary: 'A label that does not identify the reservation',
+    revision: assessment.revision,
+    evidenceRefs: assessment.evidenceRefs,
+  };
+  expect(assessment.state).toBe('settled');
+  await render(<FactoryTimelineEvidence entry={entry} />);
+  expect(container.textContent).toContain('Reference-only');
+  expect(container.textContent).toContain('inputs recorded');
+  expect(container.querySelector('details, summary, button')).toBeNull();
+  expect(fetch).not.toHaveBeenCalled();
+});
 it('opens settled progress history only for matching recorded result and revision', async () => {
   const detail = progressDetail();
   const content = progressContent();
@@ -326,6 +350,7 @@ it('opens settled progress history only for matching recorded result and revisio
       deliveryId: detail.pipeline.pipelineId,
     }),
     kind: 'judge' as const,
+    id: `judge-result:${assessment.assessmentId}`,
     revision: assessment.revision,
     evidenceRefs: [assessment.resultId!],
   };
@@ -336,6 +361,40 @@ it('opens settled progress history only for matching recorded result and revisio
   );
   expect(container.textContent).not.toContain('Grant');
 });
+it.each(['task', 'revision', 'result'] as const)(
+  'rejects settled judge evidence with a mismatched %s binding',
+  async (mismatch) => {
+    const detail = progressDetail();
+    const assessment = detail.pipeline.progress.assessments[0];
+    const fetch = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValue(response(detail));
+    const entry: FactoryTimelineEntry = {
+      ...evidenceEntry({
+        workItemId:
+          mismatch === 'task' ? 'other-task' : detail.pipeline.workItemId,
+        deliveryId: detail.pipeline.pipelineId,
+      }),
+      id: `judge-result:${assessment.assessmentId}`,
+      kind: 'judge',
+      revision: {
+        ...assessment.revision,
+        ...(mismatch === 'revision' ? { treeSha: '9'.repeat(40) } : {}),
+      },
+      evidenceRefs: [
+        mismatch === 'result' ? 'other-result' : assessment.resultId!,
+      ],
+    };
+    await render(<FactoryTimelineEvidence entry={entry} />);
+    await openEvidence();
+    expect(container.querySelector('[role="alert"]')).not.toBeNull();
+    expect(container.textContent).not.toContain(
+      'Assessed evidence and repair history',
+    );
+    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(String(fetch.mock.calls[0][0])).not.toContain('/evidence/');
+  },
+);
 it('inspects a repair target proven by its pipeline while retaining the distinct historical source', async () => {
   const detail = deliveryDetail();
   const source = detail.pipeline.revision;

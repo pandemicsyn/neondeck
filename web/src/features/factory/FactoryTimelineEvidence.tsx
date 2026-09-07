@@ -26,9 +26,12 @@ export function FactoryTimelineEvidence({
 }) {
   const [open, setOpen] = useState(false);
   const { deliveryId, runId } = entry.correlation;
+  // The timeline producer retains reservations separately from settled results.
+  const reservation =
+    entry.kind === 'judge' && entry.id.startsWith('judge-reserved:');
   const evidence = useQuery({
     queryKey: ['factory-timeline-evidence', entry],
-    enabled: open && !!(deliveryId || runId),
+    enabled: open && !reservation && !!(deliveryId || runId),
     retry: false,
     queryFn: async ({ signal }) => {
       if (deliveryId) {
@@ -147,6 +150,14 @@ export function FactoryTimelineEvidence({
     },
   });
   const result = evidence.data;
+  if (reservation)
+    return (
+      <p>
+        Reference-only: these are the inputs recorded when the progress
+        assessment was reserved. Inspect the settled assessment entry for result
+        evidence.
+      </p>
+    );
   if (!deliveryId && !runId)
     return (
       <p>

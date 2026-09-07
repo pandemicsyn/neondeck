@@ -62,7 +62,8 @@ and caches remain the path for provider facts.
 Implemented branch layers: observability foundation; diagnostics API/CLI helpers;
 optional onboarding and CLI registration; operator UI and final evidence. Build above the unmerged UI polish stack,
 using official `gh stack`. Each layer has relevant tests/docs/changesets. Normal
-secret-scanning commit hooks remain mandatory. No merge is authorized by this task.
+secret-scanning commit hooks remain mandatory. The initial implementation request was draft-only; the maintainer subsequently
+authorized merging the cleared stack on September 7, 2026.
 
 ## Verification and acceptance
 
@@ -219,5 +220,44 @@ recorded explicitly above.
   privately using the documented runtime-home environment workflow. CLI version
   probes establish availability only, not authentication. Existing release and
   publication grants are preserved, never created by setup.
-- Mandatory secret-scanning hooks run on every commit. The draft stack is for
-  review; this task does not authorize marking it ready or merging it.
+- Mandatory secret-scanning hooks run on every commit. Initial delivery was a
+  draft stack; the maintainer subsequently requested ready-for-review status and
+  authorized merge after review feedback and checks are clear.
+
+### September 7 merge review follow-up
+
+The six-PR stack is #412, #413, #415, #416, #417 and #418. The maintainer
+requested feedback fixes and merge after clearance. Live acceptance remains a
+separate obligation.
+
+The first feedback pass corrected test-only fixture construction, clarified
+export availability across stack layers, rejected mismatched writeback bindings,
+validated bounded delivery candidates before outcome filtering, and fingerprinted
+the exact repository snapshot shown during setup. Two independent static reviews
+were clean, and the combined source passed app/dashboard types and 52 focused
+tests. Delivery health validates at most 201 candidates; omitted history remains
+partial, including when an older active delivery is outside the window.
+
+A refreshed automated review then identified span parentage and recovery-log
+scope, judge reservation inspection, planning metadata identity/stage validation,
+missing writeback-state validation, and explicit runtime PATH setup for CLI
+wrappers. The corrections now preserve effect span parentage, separate controller
+operations, scope recovery logs by stable effect/run/delivery/task identity, and
+make judge reservations reference-only. Planning stages are validated before
+filtering, row/JSON identities and receipt/event parents are checked, and null or
+missing writeback states fail closed. Setup explicitly reviews the executable
+search PATH without importing the shell environment.
+
+Latest correction evidence: 99 tracing/writeback tests, 65 diagnostics tests,
+28 onboarding tests, and 26 focused UI tests passed in their respective source
+worktrees. These counts have overlapping supporting suites and are not added
+into a distinct-test total. App/dashboard types and scoped lint/format checks
+passed. Synthetic actual-App desktop/mobile QA confirms reservations perform no
+inspection requests and settled evidence still opens; the new screenshot is
+attached to #418. The harness and temporary worktrees are task-owned and cleaned
+up after use. No new production UI style or authority change is involved.
+
+These checks do not complete live acceptance. The existing factory-only lock and
+bounded diagnostic history limitations remain. Merge authorization applies after
+independent static reviews and GitHub checks clear; the linked PR states record
+the final merge outcome.
