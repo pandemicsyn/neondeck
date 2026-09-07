@@ -11,7 +11,6 @@ import {
   type FactoryWorker,
 } from '../../../shared/factory-observability';
 
-const rowSchema = v.object({ record_json: v.string() });
 export function appendDiagnostic(
   paths: RuntimePaths,
   input: FactoryDiagnostic,
@@ -46,7 +45,7 @@ export function listFactoryDiagnostics(paths: RuntimePaths, raw: unknown = {}) {
   try {
     const rows = db
       .prepare(
-        `SELECT sequence,record_json FROM factory_diagnostics WHERE finished_at >= ? AND (? IS NULL OR work_item_id=?) AND (? IS NULL OR sequence < ?) ORDER BY sequence DESC LIMIT ?`,
+        `SELECT sequence,work_item_id,finished_at,record_json FROM factory_diagnostics WHERE finished_at >= ? AND (? IS NULL OR work_item_id=?) AND (? IS NULL OR sequence < ?) ORDER BY sequence DESC LIMIT ?`,
       )
       .all(
         new Date(
@@ -58,16 +57,38 @@ export function listFactoryDiagnostics(paths: RuntimePaths, raw: unknown = {}) {
         query.before ?? null,
         query.limit + 1,
       );
-    const records = rows.slice(0, query.limit).map((row) => {
+    // Validate the bounded lookahead row too: it determines pagination coverage.
+    const retained = rows.map((row) => {
       const parsed = v.parse(
-        v.object({ sequence: v.number(), record_json: v.string() }),
+        v.object({
+          sequence: v.number(),
+          work_item_id: v.nullable(v.string()),
+          finished_at: v.string(),
+          record_json: v.string(),
+        }),
         row,
       );
+      const record = v.parse(
+        v.pipe(
+          factoryDiagnosticSchema,
+          v.check(
+            (record) =>
+              (record.correlation.workItemId ?? null) === parsed.work_item_id &&
+              record.finishedAt === parsed.finished_at &&
+              (query.workItemId === undefined ||
+                record.correlation.workItemId === query.workItemId),
+            'Retained diagnostic binding is inconsistent.',
+          ),
+        ),
+        JSON.parse(parsed.record_json),
+      );
+      // appendDiagnostic stores the caller's placeholder; SQLite owns this cursor.
       return v.parse(factoryDiagnosticSchema, {
-        ...v.parse(factoryDiagnosticSchema, JSON.parse(parsed.record_json)),
+        ...record,
         sequence: parsed.sequence,
       });
     });
+    const records = retained.slice(0, query.limit);
     return {
       records,
       nextBefore: rows.length > query.limit ? records.at(-1)!.sequence : null,
@@ -80,14 +101,26 @@ export function readWorker(paths: RuntimePaths, worker: FactoryWorker) {
   const db = openDb(paths.neondeckDatabase, { readOnly: true });
   try {
     const row = db
-      .prepare('SELECT record_json FROM factory_worker_health WHERE worker=?')
+      .prepare(
+        'SELECT worker,record_json FROM factory_worker_health WHERE worker=?',
+      )
       .get(worker);
-    return row
-      ? v.parse(
-          factoryWorkerHealthSchema,
-          JSON.parse(v.parse(rowSchema, row).record_json),
-        )
-      : null;
+    if (!row) return null;
+    const parsed = v.parse(
+      v.object({ worker: v.string(), record_json: v.string() }),
+      row,
+    );
+    return v.parse(
+      v.pipe(
+        factoryWorkerHealthSchema,
+        v.check(
+          (record) =>
+            record.worker === parsed.worker && record.worker === worker,
+          'Retained worker binding is inconsistent.',
+        ),
+      ),
+      JSON.parse(parsed.record_json),
+    );
   } finally {
     db.close();
   }

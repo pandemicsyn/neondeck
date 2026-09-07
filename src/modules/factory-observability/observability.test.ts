@@ -102,15 +102,22 @@ it('bounds retention independently from domain audit and paginates without dupli
     async () => {},
   );
   const first = db
-    .prepare('SELECT record_json FROM factory_diagnostics')
+    .prepare('SELECT finished_at,record_json FROM factory_diagnostics')
     .get()!;
   db.exec('BEGIN');
   const insert = db.prepare(
     'INSERT INTO factory_diagnostics(work_item_id,finished_at,record_json) VALUES(?,?,?)',
   );
   for (let i = 0; i < 10002; i++)
-    insert.run('work-1', new Date().toISOString(), first.record_json!);
-  insert.run('work-1', '2000-01-01T00:00:00.000Z', first.record_json!);
+    insert.run('work-1', first.finished_at!, first.record_json!);
+  insert.run(
+    'work-1',
+    '2000-01-01T00:00:00.000Z',
+    JSON.stringify({
+      ...JSON.parse(String(first.record_json)),
+      finishedAt: '2000-01-01T00:00:00.000Z',
+    }),
+  );
   db.exec('COMMIT');
   const before = db
     .prepare('SELECT count(*) AS count FROM factory_audit')

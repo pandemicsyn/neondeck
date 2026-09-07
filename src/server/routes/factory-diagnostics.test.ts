@@ -1,3 +1,9 @@
+import {
+  appendDiagnostic,
+  saveWorker,
+} from '../../modules/factory-observability/store';
+import { listFactoryDiagnostics } from '../../modules/factory-observability';
+import type { FactoryDiagnostic } from '../../../shared/factory-observability';
 import { releaseSchema, factoryPolicy } from '../../../shared/factory';
 import { codingRunRecordSchema } from '../../../shared/coding-runs';
 import { writebackEffectSchema } from '../../../shared/factory-writeback';
@@ -1348,3 +1354,141 @@ it.each(['assessment', 'effect', 'repair'] as const)(
     });
   },
 );
+
+function retainedSpan(): FactoryDiagnostic {
+  const now = new Date().toISOString();
+  return {
+    sequence: 0,
+    id: 'span-test',
+    traceId: 'trace-test',
+    parentSpanId: null,
+    operation: 'coding.tick',
+    kind: 'phase',
+    startedAt: now,
+    finishedAt: now,
+    durationMs: 0,
+    outcome: 'success',
+    correlation: { workItemId: 'work-test' },
+    error: null,
+  };
+}
+const retainedError = {
+  error:
+    'Retained diagnostic records are unavailable or invalid. Check the local database and refresh.',
+};
+it.each(['foreign', 'missing', 'finishedAt'])(
+  'fails preview closed for a retained span with %s binding corruption',
+  async (corruption) => {
+    const span = retainedSpan();
+    appendDiagnostic(paths, span);
+    const corrupt = {
+      ...span,
+      correlation:
+        corruption === 'foreign'
+          ? { workItemId: 'foreign-task' }
+          : corruption === 'missing'
+            ? {}
+            : span.correlation,
+      finishedAt:
+        corruption === 'finishedAt'
+          ? '2000-01-01T00:00:00.000Z'
+          : span.finishedAt,
+    };
+    const db = openDb(paths.neondeckDatabase);
+    try {
+      db.prepare('UPDATE factory_diagnostics SET record_json=?').run(
+        JSON.stringify(corrupt),
+      );
+    } finally {
+      db.close();
+    }
+    const response = await request('/tasks/work-test/preview');
+    expect(response.status).toBe(503);
+    expect(await response.json()).toEqual(retainedError);
+    expect(() => listFactoryDiagnostics(paths)).toThrow(v.ValiError);
+  },
+);
+it.each(['github', 'coding', 'delivery'] as const)(
+  'fails health and preview closed when the %s key contains another worker',
+  async (worker) => {
+    saveWorker(paths, { ...workerFixture('stopped'), worker });
+    const db = openDb(paths.neondeckDatabase);
+    try {
+      db.prepare(
+        'UPDATE factory_worker_health SET record_json=? WHERE worker=?',
+      ).run(
+        JSON.stringify({
+          ...workerFixture('stopped'),
+          worker: worker === 'github' ? 'coding' : 'github',
+        }),
+        worker,
+      );
+    } finally {
+      db.close();
+    }
+    for (const path of [
+      '/health',
+      '/health?workId=work-test',
+      '/tasks/work-test/preview',
+    ]) {
+      const response = await request(path);
+      expect(response.status).toBe(503);
+      expect(await response.json()).toEqual(retainedError);
+    }
+  },
+);
+it('preserves valid span cursors, optional correlation and nullable worker records', async () => {
+  const span = retainedSpan();
+  appendDiagnostic(paths, span);
+  appendDiagnostic(paths, { ...span, id: 'global-span', correlation: {} });
+  const all = listFactoryDiagnostics(paths);
+  expect(all.records.map((record) => record.sequence)).toEqual([2, 1]);
+  expect(all.records[0].correlation).toEqual({});
+  expect(all.records[1]).toEqual({ ...span, sequence: 1 });
+  const page = listFactoryDiagnostics(paths, { limit: 1 });
+  expect(page.nextBefore).toBe(2);
+  expect(
+    listFactoryDiagnostics(paths, { before: page.nextBefore!, limit: 1 })
+      .records,
+  ).toEqual([all.records[1]]);
+  saveWorker(paths, workerFixture('stopped'));
+  const health = await request('/health');
+  expect(health.status).toBe(200);
+  expect((await health.json()).workers).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        worker: 'coding',
+        status: 'stopped',
+        instanceId: null,
+        ownerPid: null,
+      }),
+      expect.objectContaining({ worker: 'github', status: 'not-running' }),
+      expect.objectContaining({ worker: 'delivery', status: 'not-running' }),
+    ]),
+  );
+  const response = await request('/tasks/work-test/preview');
+  expect(response.status).toBe(200);
+  const preview = await response.json();
+  expect(preview.diagnostics.spans).toHaveLength(1);
+  expect(preview.diagnostics.spans[0]).toMatchObject({
+    correlation: { workItemId: preview.workId },
+    parentSpanId: null,
+    error: null,
+  });
+});
+it('rejects null-index foreign correlation and corrupted pagination lookahead', () => {
+  const span = retainedSpan();
+  appendDiagnostic(paths, { ...span, correlation: {} });
+  appendDiagnostic(paths, { ...span, id: 'newer' });
+  const db = openDb(paths.neondeckDatabase);
+  try {
+    db.prepare(
+      'UPDATE factory_diagnostics SET record_json=? WHERE sequence=1',
+    ).run(JSON.stringify(span));
+  } finally {
+    db.close();
+  }
+  expect(() => listFactoryDiagnostics(paths, { limit: 1 })).toThrow(
+    v.ValiError,
+  );
+});
