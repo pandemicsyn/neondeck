@@ -1,5 +1,5 @@
 import * as v from 'valibot';
-import { codingExecutableIdentitySchema } from './coding-adapters';
+import { codingExecutableIdentitySchema } from './coding-adapters.ts';
 
 export const codingLabelSchema = v.pipe(
   v.string(),
