@@ -190,9 +190,12 @@ describe('Kilo 7.4.23 adapter contract', () => {
 
   it.each([
     ['"plugin":[]', '"plugin":["untrusted-plugin"]'],
+    ['".kilo/skills"', '"/outside/skills"'],
+    ['".kilo/skills"', '"../skills"'],
     ['"enabled_providers":["kilo"]', '"enabled_providers":["kilo","openai"]'],
   ])('rejects additional configuration entries in %s', (original, injected) => {
     const value = manifest();
+    value.config.repositorySkills = 'native-v1';
     const descriptor = kiloAdapter.launch(value);
     expect(descriptor.env.KILO_CONFIG_CONTENT).toContain(original);
     vi.spyOn(registry, 'getCodingAdapter').mockReturnValue({
@@ -520,3 +523,74 @@ describe('Kilo 7.4.23 adapter contract', () => {
     }
   });
 });
+
+it('enables only native skill roots while retaining project and external config gates', () => {
+  const input = manifest();
+  input.config.sandbox = 'read-only';
+  input.config.repositorySkills = 'native-v1';
+  const descriptor = adapterLaunch(input);
+  const config = JSON.parse(descriptor.env.KILO_CONFIG_CONTENT);
+  expect(config.skills.paths).toEqual([
+    '.kilo/skills',
+    '.kilo/skill',
+    '.kilocode/skills',
+    '.kilocode/skill',
+    '.agents/skills',
+    '.claude/skills',
+  ]);
+  expect(config.permission).toMatchObject({ '*': 'deny', skill: 'allow' });
+  expect(descriptor.env.KILO_DISABLE_PROJECT_CONFIG).toBe('1');
+  expect(descriptor.env.KILO_DISABLE_EXTERNAL_SKILLS).toBe('1');
+  expect(descriptor.env.KILO_DISABLE_DEFAULT_PLUGINS).toBe('1');
+  expect(descriptor.args).toContain('--pure');
+});
+
+it.each(['read-only', 'workspace-write'] as const)(
+  'preserves unmarked historical Kilo %s manifests and repair descriptors',
+  (sandbox) => {
+    const historical = manifest();
+    historical.config.sandbox = sandbox;
+    const saved = v.parse(
+      manifestSchema,
+      JSON.parse(JSON.stringify(historical)),
+    );
+    expect(saved.config).not.toHaveProperty('repositorySkills');
+    const repair = v.parse(manifestSchema, {
+      ...saved,
+      directory: `${saved.directory}-repair`,
+    });
+    const expected = {
+      model: saved.config.model,
+      enabled_providers: ['kilo'],
+      share: 'disabled',
+      autoupdate: false,
+      snapshot: false,
+      plugin: [],
+      mcp: {},
+      lsp: false,
+      formatter: false,
+      permission:
+        sandbox === 'read-only'
+          ? {
+              '*': 'deny',
+              read: 'allow',
+              glob: 'allow',
+              grep: 'allow',
+              list: 'allow',
+            }
+          : {
+              '*': 'allow',
+              question: 'deny',
+              suggest: 'deny',
+              interactive_terminal: 'deny',
+              plan_enter: 'deny',
+              plan_exit: 'deny',
+            },
+    };
+    for (const input of [saved, repair]) {
+      expect(adapterLaunch(input).env.KILO_CONFIG_CONTENT).toBe(
+        JSON.stringify(expected),
+      );
+    }
+  },
+);

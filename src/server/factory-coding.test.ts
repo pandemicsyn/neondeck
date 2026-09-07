@@ -433,7 +433,7 @@ describe('factory coding bridge', () => {
     expect(host.cancelLocalAttempt).not.toHaveBeenCalled();
   });
   it.each(['reviewed', 'historical-null'] as const)(
-    'rechecks %s defaults after asynchronous preflight before reservation',
+    'blocks %s config drift or missing policy before reservation',
     async (releaseKind) => {
       const work = release();
       if (releaseKind === 'historical-null') {
@@ -474,8 +474,11 @@ describe('factory coding bridge', () => {
         expect(host.prepareLocalAttempt).not.toHaveBeenCalled();
         expect(readCodingAttention(work.work.id, paths)?.reason).toContain(
           releaseKind === 'historical-null'
-            ? 'changed during admission preflight'
+            ? 'no reviewed repository skill policy'
             : 'since human release',
+        );
+        expect(probe).toHaveBeenCalledTimes(
+          releaseKind === 'historical-null' ? 0 : 1,
         );
         expect(
           getFactoryWork(work.work.id, paths).releases[0]
@@ -527,7 +530,11 @@ describe('factory coding bridge', () => {
       'codex-cli 0.150.1',
       paths,
     );
-    const { adapter: _adapter, ...legacyCoding } = codingConfig(paths).coding;
+    const {
+      adapter: _adapter,
+      repositorySkills: _repositorySkills,
+      ...legacyCoding
+    } = codingConfig(paths).coding;
     const legacySnapshot = {
       ...snapshot,
       policySnapshot: JSON.stringify({

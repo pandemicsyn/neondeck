@@ -22,11 +22,19 @@ const modelSchema = v.pipe(
   v.string(),
   v.regex(/^(opencode|anthropic|openai)\/[a-zA-Z0-9][a-zA-Z0-9._-]{0,199}$/),
 );
+// Use only native skill roots, without enabling project config or plugins.
+const skillPaths = [
+  '.opencode/skills',
+  '.opencode/skill',
+  '.agents/skills',
+  '.claude/skills',
+] as const;
 const permissionSchema = v.strictObject({
   '*': v.literal('deny'),
   read: v.literal('allow'),
   glob: v.literal('allow'),
   grep: v.literal('allow'),
+  skill: v.optional(v.literal('allow')),
   edit: v.optional(v.literal('allow')),
   bash: v.optional(v.literal('allow')),
   external_directory: v.literal('deny'),
@@ -34,6 +42,11 @@ const permissionSchema = v.strictObject({
   question: v.literal('deny'),
 });
 const configurationSchema = v.strictObject({
+  skills: v.optional(
+    v.strictObject({
+      paths: v.strictTuple(skillPaths.map((path) => v.literal(path))),
+    }),
+  ),
   enabled_providers: v.strictTuple([providerSchema]),
   share: v.literal('disabled'),
   autoupdate: v.literal(false),
@@ -142,6 +155,9 @@ export const opencodeAdapter: CodingAdapter = {
       read: 'allow',
       glob: 'allow',
       grep: 'allow',
+      ...(manifest.config.repositorySkills === 'native-v1'
+        ? { skill: 'allow' }
+        : {}),
       ...(manifest.config.sandbox === 'workspace-write'
         ? { edit: 'allow', bash: 'allow' }
         : {}),
@@ -185,6 +201,9 @@ export const opencodeAdapter: CodingAdapter = {
         OPENCODE_DISABLE_LSP_DOWNLOAD: 'true',
         OPENCODE_DISABLE_AUTOUPDATE: 'true',
         OPENCODE_CONFIG_CONTENT: JSON.stringify({
+          ...(manifest.config.repositorySkills === 'native-v1'
+            ? { skills: { paths: skillPaths } }
+            : {}),
           enabled_providers: [selectedProvider(manifest.config)],
           share: 'disabled',
           autoupdate: false,

@@ -48,10 +48,21 @@ export const factoryCodingConfigSchema = v.strictObject({
     8388608,
   ),
   maxWriters: v.optional(v.literal(1), 1),
+  // No decoder default: historical admitted policies retain legacy discovery.
+  repositorySkills: v.optional(v.literal('native-v1')),
 });
 export type FactoryCodingConfig = v.InferOutput<
   typeof factoryCodingConfigSchema
 >;
+/** Current settings for a new human release, never for a frozen snapshot. */
+export function effectiveFactoryCodingConfig(
+  input: unknown,
+): FactoryCodingConfig {
+  return {
+    ...v.parse(factoryCodingConfigSchema, input),
+    repositorySkills: 'native-v1',
+  };
+}
 export const factoryCodingReadinessSchema = v.strictObject({
   ready: v.boolean(),
   enabled: v.boolean(),

@@ -103,6 +103,14 @@ function ReleaseSnapshot({
     ],
     maxOutputBytes: [['Output limit', `${config.maxOutputBytes} bytes`]],
     maxWriters: [['Maximum writers', String(config.maxWriters)]],
+    repositorySkills: [
+      [
+        'Repository skills',
+        config.repositorySkills === 'native-v1'
+          ? 'Native CLI discovery'
+          : 'Legacy discovery policy',
+      ],
+    ],
   } satisfies Record<keyof FactoryCodingState['config'], [string, string][]>;
   return (
     <>

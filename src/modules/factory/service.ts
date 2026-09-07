@@ -3,7 +3,7 @@ import { publishFactoryChange } from './events';
 import { createHash, randomUUID } from 'node:crypto';
 import type { DatabaseSync } from 'node:sqlite';
 import * as v from 'valibot';
-import { factoryCodingConfigSchema } from '../../../shared/factory-coding';
+import { effectiveFactoryCodingConfig } from '../../../shared/factory-coding';
 import {
   emptyFactorySpec,
   factoryPolicy,
@@ -455,10 +455,7 @@ export function releaseFactoryWork(
       return current;
     }
     expectVersion(current, data.expectedVersion);
-    const coding = v.parse(
-      factoryCodingConfigSchema,
-      config(paths)?.coding ?? {},
-    );
+    const coding = effectiveFactoryCodingConfig(config(paths)?.coding ?? {});
     const codingConfigFingerprint = digest(coding);
     if (data.expectedCodingConfigFingerprint !== codingConfigFingerprint)
       throw new FactoryError(
