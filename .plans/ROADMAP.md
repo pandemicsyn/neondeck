@@ -245,6 +245,11 @@ acceptance or start Linear intake/remote execution.
 
 ## Software Factory Onboarding And Observability — Source Complete
 
+Operator follow-up: [background refresh stability](factory/BACKGROUND_REFRESH.md)
+separates quiet query revalidation from user action/loading feedback. Implementation
+and independent static reviews are complete; backend authority gates remain unchanged.
+Live operator acceptance and the separately documented delivery lifecycle UX follow-up remain open.
+
 Operator correction: [coding repository skills](factory/CODING_REPO_SKILLS.md)
 removes automatic global runtime skill injection from new coding contexts and
 relies on native CLI discovery. Source, independent reviews and full verification

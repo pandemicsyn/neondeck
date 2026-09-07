@@ -1,3 +1,4 @@
+import { useFactoryRefresh } from './useFactoryRefresh';
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import * as v from 'valibot';
@@ -21,6 +22,7 @@ export function FactoryDeliveryGrant({
   disabled: boolean;
   onGranted: () => Promise<unknown>;
 }) {
+  const { refreshing, refresh } = useFactoryRefresh();
   const preview = useQuery({
     queryKey: ['factory-delivery-preview', runId],
     queryFn: async ({ signal }) => {
@@ -45,8 +47,8 @@ export function FactoryDeliveryGrant({
         </p>
       )}
       <button
-        disabled={preview.isFetching}
-        onClick={() => void preview.refetch()}
+        disabled={preview.isPending || refreshing}
+        onClick={() => void refresh(() => preview.refetch())}
       >
         Refresh candidate preview
       </button>
@@ -54,9 +56,11 @@ export function FactoryDeliveryGrant({
         <GrantForm
           key={JSON.stringify(preview.data)}
           preview={preview.data}
-          disabled={disabled || !!preview.error || preview.isFetching}
+          disabled={
+            disabled || !!preview.error || preview.isPending || refreshing
+          }
           onGranted={onGranted}
-          refresh={() => preview.refetch()}
+          refresh={() => refresh(() => preview.refetch())}
         />
       )}
     </>

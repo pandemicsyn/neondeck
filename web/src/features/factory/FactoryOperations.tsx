@@ -1,3 +1,4 @@
+import { useFactoryRefresh } from './useFactoryRefresh';
 /* Bounded regions intentionally support keyboard scrolling. */
 /* oxlint-disable jsx-a11y/no-noninteractive-tabindex */
 import { useQuery } from '@tanstack/react-query';
@@ -76,6 +77,7 @@ export function FactoryOperationsTask({
   );
 }
 export function FactoryOperations() {
+  const { refreshing, refresh } = useFactoryRefresh();
   const health = useQuery({
     queryKey: ['factory-operations-health'],
     queryFn: () => getFactoryHealth(),
@@ -88,10 +90,12 @@ export function FactoryOperations() {
           Factory health{health.data ? ` · ${health.data.status}` : ''}
         </strong>
         <button
-          disabled={health.isFetching}
-          onClick={() => void health.refetch()}
+          disabled={health.isPending || refreshing}
+          onClick={() => void refresh(() => health.refetch())}
         >
-          {health.isFetching ? 'Checking health…' : 'Refresh health'}
+          {health.isPending || refreshing
+            ? 'Checking health…'
+            : 'Refresh health'}
         </button>
       </div>
       {health.isPending && <output>Loading worker health…</output>}

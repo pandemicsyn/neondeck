@@ -1,4 +1,5 @@
 import './FactoryCodingEvidence.css';
+import { useFactoryRefresh } from './useFactoryRefresh';
 import type {
   DeliveryEvidence,
   DeliveryFeedback,
@@ -20,6 +21,7 @@ export function FactoryDeliveryEvidenceContent({
   label: string;
   initiallyOpen?: boolean;
 }) {
+  const { refreshing, refresh } = useFactoryRefresh();
   const [open, setOpen] = useState(initiallyOpen);
   const query = useQuery({
     queryKey: ['factory-delivery-evidence', deliveryId, evidence, version],
@@ -34,12 +36,19 @@ export function FactoryDeliveryEvidenceContent({
       onToggle={(event) => setOpen(event.currentTarget.open)}
     >
       <summary>{label}</summary>
-      {query.isFetching && <p role="status">Loading evidence content…</p>}
+      {open && (query.isPending || refreshing) && (
+        <p role="status">Loading evidence content…</p>
+      )}
       {query.error && (
         <p role="alert">
           Evidence content could not be refreshed. Any displayed content may be
           stale.{' '}
-          <button onClick={() => void query.refetch()}>Retry evidence</button>
+          <button
+            disabled={refreshing}
+            onClick={() => void refresh(() => query.refetch())}
+          >
+            Retry evidence
+          </button>
         </p>
       )}
       {content && (

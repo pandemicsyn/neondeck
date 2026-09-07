@@ -1,3 +1,4 @@
+import { useFactoryRefresh } from './useFactoryRefresh';
 import { useQuery } from '@tanstack/react-query';
 import { getFactoryDeliveryState } from '../../api/factory-delivery';
 import { FactoryDeliveryGrant } from './FactoryDeliveryGrant';
@@ -13,6 +14,7 @@ export function FactoryDelivery({
   releaseId?: string;
   onDiscuss?: (evidence: string) => void;
 }) {
+  const { refreshing, refresh } = useFactoryRefresh();
   const state = useQuery({
     queryKey: ['factory-delivery-state'],
     queryFn: ({ signal }) => getFactoryDeliveryState({ signal }),
@@ -33,8 +35,8 @@ export function FactoryDelivery({
       <div className="factory-toolbar">
         <h3>Candidate delivery</h3>
         <button
-          disabled={state.isFetching}
-          onClick={() => void state.refetch()}
+          disabled={state.isPending || refreshing}
+          onClick={() => void refresh(() => state.refetch())}
         >
           Refresh delivery
         </button>
@@ -50,7 +52,7 @@ export function FactoryDelivery({
         <FactoryDeliveryGrant
           runId={runId}
           workId={workId}
-          disabled={!!state.error || state.isFetching}
+          disabled={!!state.error || state.isPending || refreshing}
           onGranted={() => state.refetch()}
         />
       )}

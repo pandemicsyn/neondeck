@@ -556,3 +556,49 @@ it('distinguishes recorded in-flight checks from waiting without a polling live 
     'No checks or review are confirmed running',
   );
 });
+it('keeps consent through an unchanged background preview and requires consent again for changed authority', async () => {
+  await render();
+  await consent();
+  const grant = button('Grant bounded draft delivery');
+  const original = vi.mocked(fetch).getMockImplementation()!;
+  let resolve!: (value: Response) => void;
+  vi.mocked(fetch).mockImplementation((input, init) =>
+    String(input).includes('/candidates/')
+      ? new Promise((yes) => {
+          resolve = yes;
+        })
+      : original(input, init),
+  );
+  await act(async () => {
+    void client.invalidateQueries({ queryKey: ['factory-delivery-preview'] });
+  });
+  await flush();
+  expect(grant.disabled).toBe(false);
+  expect(button('Refresh candidate preview').disabled).toBe(false);
+  await act(async () => resolve(response(deliveryPreview())));
+  await flush();
+  expect(button('Grant bounded draft delivery')).toBe(grant);
+  expect(grant.disabled).toBe(false);
+  await act(async () => {
+    void client.invalidateQueries({ queryKey: ['factory-delivery-preview'] });
+  });
+  const changed = deliveryPreview();
+  changed.configFingerprint = 'e'.repeat(64);
+  await act(async () => resolve(response(changed)));
+  await flush();
+  expect(button('Grant bounded draft delivery').disabled).toBe(true);
+  await consent();
+  expect(button('Grant bounded draft delivery').disabled).toBe(false);
+  await act(async () => {
+    void client.invalidateQueries({ queryKey: ['factory-delivery-preview'] });
+  });
+  await act(async () => resolve(response({ error: 'offline' }, 503)));
+  await flush();
+  expect(button('Grant bounded draft delivery').disabled).toBe(true);
+  await act(async () => {
+    void client.invalidateQueries({ queryKey: ['factory-delivery-preview'] });
+  });
+  await flush();
+  expect(button('Grant bounded draft delivery').disabled).toBe(true);
+  expect(calls).toHaveLength(0);
+});

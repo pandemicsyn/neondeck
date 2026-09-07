@@ -1,3 +1,4 @@
+import { useFactoryRefresh } from './useFactoryRefresh';
 import { FactoryDeliveryProgress } from './FactoryDeliveryProgress';
 import { getFactoryDeliveryProgressEvidence } from '../../api/factory-progress';
 import { FactoryDeliveryCommits } from './FactoryDeliveryCommits';
@@ -39,6 +40,7 @@ export function FactoryDeliveryDetail({
   workId: string;
   onDiscuss?: (evidence: string) => void;
 }) {
+  const { refreshing, refresh } = useFactoryRefresh();
   const detail = useQuery({
     queryKey: ['factory-delivery', id],
     queryFn: async ({ signal }) => {
@@ -88,7 +90,8 @@ export function FactoryDeliveryDetail({
     }
   }
   async function control(action: 'revoke' | 'reconcile') {
-    if (!detail.data || detail.error || detail.isFetching || busy) return;
+    if (!detail.data || detail.error || detail.isPending || refreshing || busy)
+      return;
     setBusy(true);
     setError('');
     try {
@@ -118,13 +121,13 @@ export function FactoryDeliveryDetail({
     return (
       <p role="alert" className="factory-error">
         Delivery evidence unavailable or unsupported.{' '}
-        <button onClick={() => void detail.refetch()}>
+        <button onClick={() => void refresh(() => detail.refetch())}>
           Reload delivery evidence
         </button>
       </p>
     );
   const { pipeline: p, nextAction } = detail.data;
-  const disabled = busy || !!detail.error || detail.isFetching;
+  const disabled = busy || !!detail.error || detail.isPending || refreshing;
   const triggeringFeedback = triggeringDeliveryFeedback(detail.data);
   return (
     <div
@@ -143,7 +146,7 @@ export function FactoryDeliveryDetail({
       {detail.error && (
         <p role="alert" className="factory-error">
           Refresh failed. Evidence may be stale; controls are disabled.{' '}
-          <button onClick={() => void detail.refetch()}>
+          <button onClick={() => void refresh(() => detail.refetch())}>
             Reload delivery evidence
           </button>
         </p>

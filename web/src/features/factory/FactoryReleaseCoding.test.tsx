@@ -195,3 +195,66 @@ it('shows the local auth path in the exact release snapshot without an environme
   await act(async () => button('Release v2').click());
   expect(release).toHaveBeenCalledWith(state.configFingerprint);
 });
+it('keeps reviewed release controls stable through polling, but blocks changed settings and failed retries', async () => {
+  vi.useFakeTimers();
+  let resolve!: (value: ReturnType<typeof codingState>) => void;
+  let reject!: (error: Error) => void;
+  vi.mocked(getFactoryCodingState).mockImplementation(
+    () =>
+      new Promise((yes, no) => {
+        resolve = yes;
+        reject = no;
+      }),
+  );
+  try {
+    await render();
+    const action = button('Release v2');
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(15000);
+    });
+    expect(getFactoryCodingState).toHaveBeenCalledTimes(1);
+    expect(button('Refresh execution settings').disabled).toBe(false);
+    expect(action.disabled).toBe(false);
+    await act(async () => action.click());
+    expect(release).toHaveBeenCalledWith(codingState().configFingerprint);
+    await act(async () => {
+      resolve(codingState());
+      await vi.advanceTimersByTimeAsync(1);
+    });
+    expect(button('Release v2')).toBe(action);
+    expect(action.disabled).toBe(false);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(15000);
+    });
+    const changed = codingState();
+    changed.configFingerprint = 'e'.repeat(64);
+    changed.config.model = 'changed-model';
+    await act(async () => {
+      resolve(changed);
+      await vi.advanceTimersByTimeAsync(1);
+    });
+    expect(action.disabled).toBe(true);
+    expect(fact('Model')).not.toBe('changed-model');
+    await act(async () => button('Review updated execution settings').click());
+    expect(fact('Model')).toBe('changed-model');
+    expect(action.disabled).toBe(false);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(15000);
+      reject(new Error('offline'));
+      await vi.advanceTimersByTimeAsync(1);
+    });
+    expect(action.disabled).toBe(true);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(15000);
+    });
+    expect(action.disabled).toBe(true);
+    expect(container.textContent).toContain('Coding selection is unavailable');
+    await act(async () => {
+      resolve(changed);
+      await vi.advanceTimersByTimeAsync(1);
+    });
+    expect(action.disabled).toBe(false);
+  } finally {
+    vi.useRealTimers();
+  }
+});

@@ -4,6 +4,7 @@ import { act, type ReactNode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { FactoryCoding } from './FactoryCoding';
+import { FactoryCodingEvidence } from './FactoryCodingEvidence';
 import { FactoryCodingSetup } from './FactoryCodingSetup';
 import {
   codingRun,
@@ -928,3 +929,100 @@ it('reloads the selected credential field from changed configuration', async () 
     container.querySelector<HTMLInputElement>('[name="authPath"]')?.value,
   ).toBe('/synthetic/reloaded/auth.json');
 });
+it('keeps coding labels and actions stable during delayed background refetch and blocks a missing next task', async () => {
+  await render();
+  const stop = button('Stop coding');
+  const original = vi.mocked(fetch).getMockImplementation()!;
+  let resolve!: (value: Response) => void;
+  vi.mocked(fetch).mockImplementation((input, init) =>
+    String(input).includes('/runs?')
+      ? new Promise((yes) => {
+          resolve = yes;
+        })
+      : original(input, init),
+  );
+  await act(async () => {
+    void client.invalidateQueries({ queryKey: ['factory-coding-runs'] });
+  });
+  await flush();
+  expect(button('Refresh coding').disabled).toBe(false);
+  expect(stop.disabled).toBe(false);
+  await act(async () =>
+    resolve(
+      response({ items: [{ sequence: 1, run: current }], nextCursor: null }),
+    ),
+  );
+  await flush();
+  expect(button('Stop coding')).toBe(stop);
+  await act(async () => button('Refresh coding').click());
+  expect(button('Refreshing coding…').disabled).toBe(true);
+  await act(async () =>
+    resolve(
+      response({ items: [{ sequence: 1, run: current }], nextCursor: null }),
+    ),
+  );
+  await flush();
+  expect(button('Refresh coding').disabled).toBe(false);
+  await render(<FactoryCoding key="other" workId="other" eligible />);
+  expect(container.textContent).toContain('Loading coding attempts');
+  expect(container.textContent).not.toContain('Stop coding');
+  expect(button('Refresh coding').disabled).toBe(true);
+});
+it.each(['attempts', 'events'] as const)(
+  'serializes manual refresh and loading more %s without cancelling pagination',
+  async (kind) => {
+    const events = kind === 'events';
+    const matches = (url: string) =>
+      url.includes(events ? '/events?' : '/runs?');
+    const page = { items: [], nextCursor: 1 };
+    const original = vi.mocked(fetch).getMockImplementation()!;
+    vi.mocked(fetch).mockImplementation((input, init) =>
+      matches(String(input))
+        ? Promise.resolve(response(page))
+        : original(input, init),
+    );
+    await render(
+      events ? (
+        <FactoryCodingEvidence id="run-demo" />
+      ) : (
+        <FactoryCoding workId="work-demo" eligible />
+      ),
+    );
+    if (events) {
+      await act(async () => {
+        const details = container.querySelector('details')!;
+        details.open = true;
+        details.dispatchEvent(new Event('toggle'));
+      });
+      await flush();
+      await flush();
+    }
+    let resolve!: (value: Response) => void;
+    let signal: AbortSignal | null | undefined;
+    let requests = 0;
+    vi.mocked(fetch).mockImplementation((input, init) => {
+      if (!matches(String(input))) return original(input, init);
+      requests++;
+      signal = init?.signal;
+      return new Promise((yes) => {
+        resolve = yes;
+      });
+    });
+    const refreshLabel = events ? 'Refresh events' : 'Refresh coding';
+    const moreLabel = events ? 'Load more events' : 'Load more attempts';
+    await click(moreLabel);
+    expect(button(refreshLabel).disabled).toBe(true);
+    await click(refreshLabel);
+    expect(requests).toBe(1);
+    expect(signal?.aborted).toBe(false);
+    await act(async () => resolve(response({ items: [], nextCursor: 2 })));
+    await flush();
+    expect(button(refreshLabel).disabled).toBe(false);
+    await click(refreshLabel);
+    expect(button(moreLabel).disabled).toBe(true);
+    const pending = requests;
+    await click(moreLabel);
+    expect(requests).toBe(pending);
+    expect(signal?.aborted).toBe(false);
+  },
+);

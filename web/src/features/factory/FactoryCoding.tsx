@@ -1,3 +1,4 @@
+import { useFactoryRefresh } from './useFactoryRefresh';
 import { FactoryDelivery } from './FactoryDelivery';
 import { useState } from 'react';
 import {
@@ -72,6 +73,7 @@ export function FactoryCoding({
   onDiscussDelivery?: (evidence: string) => void;
 }) {
   const client = useQueryClient();
+  const { refreshing, refresh } = useFactoryRefresh();
   const [selected, setSelected] = useState<string | null>(null);
   const state = useQuery({
     queryKey: factoryCodingStateKey,
@@ -100,17 +102,27 @@ export function FactoryCoding({
       <div className="factory-toolbar">
         <h3>Coding</h3>
         <button
-          disabled={runs.isFetching}
-          onClick={() => {
-            void runs.refetch();
-            void state.refetch();
-            if (selectedId)
-              void client.invalidateQueries({
-                queryKey: ['factory-coding-run', selectedId],
-              });
-          }}
+          disabled={
+            runs.isPending ||
+            state.isPending ||
+            refreshing ||
+            runs.isFetchingNextPage
+          }
+          onClick={() =>
+            void refresh(() =>
+              Promise.all([
+                runs.refetch(),
+                state.refetch(),
+                selectedId
+                  ? client.invalidateQueries({
+                      queryKey: ['factory-coding-run', selectedId],
+                    })
+                  : Promise.resolve(),
+              ]),
+            )
+          }
         >
-          {runs.isFetching ? 'Refreshing coding…' : 'Refresh coding'}
+          {refreshing ? 'Refreshing coding…' : 'Refresh coding'}
         </button>
       </div>
       {runs.isPending && <output>Loading coding attempts…</output>}
@@ -188,7 +200,7 @@ export function FactoryCoding({
       )}
       {runs.hasNextPage && (
         <button
-          disabled={runs.isFetchingNextPage}
+          disabled={runs.isFetchingNextPage || refreshing}
           onClick={() => void runs.fetchNextPage()}
         >
           {runs.isFetchingNextPage ? 'Loading attempts…' : 'Load more attempts'}

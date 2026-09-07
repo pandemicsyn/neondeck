@@ -1,4 +1,5 @@
 import './FactoryCodingEvidence.css';
+import { useFactoryRefresh } from './useFactoryRefresh';
 import { useState } from 'react';
 import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
 import {
@@ -14,11 +15,13 @@ export function FactoryCodingEvidence({ id }: { id: string }) {
       onToggle={(event) => setOpen(event.currentTarget.open)}
     >
       <summary>Execution history and bounded logs</summary>
-      {open && <EvidencePages id={id} />}
+      {open && <EvidencePages key={id} id={id} />}
     </details>
   );
 }
 function EvidencePages({ id }: { id: string }) {
+  const eventRefresh = useFactoryRefresh();
+  const logRefresh = useFactoryRefresh();
   const [offsets, setOffsets] = useState([0]);
   const offset = offsets.at(-1)!;
   const events = useInfiniteQuery({
@@ -37,10 +40,14 @@ function EvidencePages({ id }: { id: string }) {
       <div className="factory-toolbar">
         <h4>Recorded events</h4>
         <button
-          disabled={events.isFetching}
-          onClick={() => void events.refetch()}
+          disabled={
+            events.isPending ||
+            eventRefresh.refreshing ||
+            events.isFetchingNextPage
+          }
+          onClick={() => void eventRefresh.refresh(() => events.refetch())}
         >
-          {events.isFetching ? 'Refreshing events…' : 'Refresh events'}
+          {eventRefresh.refreshing ? 'Refreshing events…' : 'Refresh events'}
         </button>
       </div>
       {events.isPending && <output>Loading recorded events…</output>}
@@ -68,7 +75,7 @@ function EvidencePages({ id }: { id: string }) {
       )}
       {events.hasNextPage && (
         <button
-          disabled={events.isFetchingNextPage}
+          disabled={events.isFetchingNextPage || eventRefresh.refreshing}
           onClick={() => void events.fetchNextPage()}
         >
           Load more events
@@ -76,8 +83,11 @@ function EvidencePages({ id }: { id: string }) {
       )}
       <div className="factory-toolbar">
         <h4>Log excerpt</h4>
-        <button disabled={logs.isFetching} onClick={() => void logs.refetch()}>
-          {logs.isFetching ? 'Refreshing log…' : 'Refresh log'}
+        <button
+          disabled={logs.isPending || logRefresh.refreshing}
+          onClick={() => void logRefresh.refresh(() => logs.refetch())}
+        >
+          {logRefresh.refreshing ? 'Refreshing log…' : 'Refresh log'}
         </button>
       </div>
       <p className="factory-note">
@@ -112,7 +122,8 @@ function EvidencePages({ id }: { id: string }) {
         </button>
         <button
           disabled={
-            logs.isFetching ||
+            logs.isPending ||
+            logRefresh.refreshing ||
             !!logs.error ||
             !logs.data?.truncated ||
             logs.data.nextOffset <= offset

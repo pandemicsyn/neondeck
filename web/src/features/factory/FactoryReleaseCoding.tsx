@@ -1,3 +1,4 @@
+import { useFactoryRefresh } from './useFactoryRefresh';
 import { useId, useState, type ReactNode } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import type { FactoryCodingState } from '../../../../shared/factory-coding';
@@ -12,6 +13,7 @@ interface ReleaseCodingProps {
 
 /** Owns the visible execution snapshot and the authority submitted with it. */
 export function FactoryReleaseCoding(props: ReleaseCodingProps) {
+  const { refreshing, refresh } = useFactoryRefresh();
   const query = useQuery({
     queryKey: ['factory-coding-state'],
     queryFn: ({ signal }) => getFactoryCodingState({ signal }),
@@ -22,10 +24,10 @@ export function FactoryReleaseCoding(props: ReleaseCodingProps) {
       <div className="factory-toolbar">
         <h3>Execution settings for this release</h3>
         <button
-          disabled={query.isFetching}
-          onClick={() => void query.refetch()}
+          disabled={query.isPending || refreshing}
+          onClick={() => void refresh(() => query.refetch())}
         >
-          {query.isFetching
+          {query.isPending || refreshing
             ? 'Refreshing execution settings…'
             : 'Refresh execution settings'}
         </button>
@@ -41,7 +43,7 @@ export function FactoryReleaseCoding(props: ReleaseCodingProps) {
         <ReleaseSnapshot
           {...props}
           current={query.data}
-          unavailable={!!query.error || query.isFetching}
+          unavailable={!!query.error || query.isPending || refreshing}
         />
       )}
     </section>

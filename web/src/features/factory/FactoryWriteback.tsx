@@ -1,3 +1,4 @@
+import { useFactoryRefresh } from './useFactoryRefresh';
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import type { FactoryDetail } from '../../../../shared/factory';
@@ -16,6 +17,7 @@ import {
 } from '../../api/factory';
 import { MarkdownMessage } from '../../components/MarkdownMessage';
 export function FactoryWriteback({ detail }: { detail: FactoryDetail }) {
+  const { refreshing, refresh } = useFactoryRefresh();
   const query = useQuery({
     queryKey: ['factory-writeback', detail.work.id],
     queryFn: () => getFactoryWriteback(detail.work.id),
@@ -34,8 +36,14 @@ export function FactoryWriteback({ detail }: { detail: FactoryDetail }) {
     [error, setError] = useState('');
   const data = query.data,
     remote = detail.source.remote!;
+  const unavailable = query.isPending || !!query.error || refreshing;
+  const policyChanged =
+    !!policyPreview &&
+    !!data &&
+    (policyPreview.epoch !== data.policy.epoch ||
+      policyPreview.fingerprint !== data.connectionFingerprint);
   async function perform(action: () => Promise<unknown>, done?: () => void) {
-    if (busy) return;
+    if (busy || unavailable) return;
     setBusy(true);
     setError('');
     try {
@@ -79,10 +87,12 @@ export function FactoryWriteback({ detail }: { detail: FactoryDetail }) {
       <div className="factory-toolbar">
         <h3>GitHub publishing</h3>
         <button
-          disabled={query.isFetching || busy}
-          onClick={() => void query.refetch()}
+          disabled={query.isPending || refreshing || busy}
+          onClick={() => void refresh(() => query.refetch())}
         >
-          {query.isFetching ? 'Refreshing publishing…' : 'Refresh publishing'}
+          {query.isPending || refreshing
+            ? 'Refreshing publishing…'
+            : 'Refresh publishing'}
         </button>
       </div>
       {busy && (
@@ -117,7 +127,7 @@ export function FactoryWriteback({ detail }: { detail: FactoryDetail }) {
             release.
           </p>
           <button
-            disabled={busy}
+            disabled={unavailable || busy}
             onClick={() =>
               data.policy.enabled
                 ? void perform(() =>
@@ -140,6 +150,12 @@ export function FactoryWriteback({ detail }: { detail: FactoryDetail }) {
           </button>
           {policyPreview && (
             <div className="factory-writeback-preview">
+              {policyChanged && (
+                <p role="alert">
+                  Publishing policy changed. Cancel and review the current
+                  policy before enabling.
+                </p>
+              )}
               <h4>Allow one maintained status comment per admitted issue</h4>
               <p>
                 This connection may publish the following template statuses, an
@@ -156,8 +172,9 @@ export function FactoryWriteback({ detail }: { detail: FactoryDetail }) {
               <h4>Current status preview</h4>
               <MarkdownMessage>{policyPreview.template}</MarkdownMessage>
               <button
-                disabled={busy}
+                disabled={unavailable || busy || policyChanged}
                 onClick={() =>
+                  !policyChanged &&
                   void perform(
                     () =>
                       setFactoryWriteback(remote.connectionId, {
@@ -283,6 +300,7 @@ export function FactoryWriteback({ detail }: { detail: FactoryDetail }) {
                     <button
                       type="button"
                       disabled={
+                        unavailable ||
                         !data.policy.enabled ||
                         draft.expectedVersion !== detail.work.version
                       }
@@ -365,6 +383,7 @@ export function FactoryWriteback({ detail }: { detail: FactoryDetail }) {
                 {['failed', 'uncertain'].includes(effect.state) && (
                   <button
                     disabled={
+                      unavailable ||
                       busy ||
                       (effect.state === 'failed' && !data.policy.enabled)
                     }
@@ -385,7 +404,7 @@ export function FactoryWriteback({ detail }: { detail: FactoryDetail }) {
                 )}
                 {effect.state === 'repair' && effect.kind === 'status' && (
                   <button
-                    disabled={busy || !data.policy.enabled}
+                    disabled={unavailable || busy || !data.policy.enabled}
                     onClick={() =>
                       void perform(async () =>
                         setRepair(
@@ -402,7 +421,7 @@ export function FactoryWriteback({ detail }: { detail: FactoryDetail }) {
                 )}
                 {['failed', 'uncertain', 'repair'].includes(effect.state) && (
                   <button
-                    disabled={busy}
+                    disabled={unavailable || busy}
                     onClick={() =>
                       void perform(() =>
                         recoverFactoryWriteback(
@@ -448,7 +467,7 @@ export function FactoryWriteback({ detail }: { detail: FactoryDetail }) {
                 writing; another remote edit can still race that request.
               </p>
               <button
-                disabled={busy || !data.policy.enabled}
+                disabled={unavailable || busy || !data.policy.enabled}
                 onClick={() =>
                   void perform(
                     () =>

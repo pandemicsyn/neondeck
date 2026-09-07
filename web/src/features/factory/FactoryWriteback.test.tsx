@@ -167,10 +167,14 @@ it('opt-in uses the reviewed policy fingerprint, not a silently refreshed mappin
     await new Promise((r) => setTimeout(r, 20));
   });
   await click('Enable these status updates');
+  expect(api.setFactoryWriteback).not.toHaveBeenCalled();
+  await click('Cancel');
+  await click('Review writeback policy');
+  await click('Enable these status updates');
   expect(api.setFactoryWriteback).toHaveBeenCalledWith('connection', {
     enabled: true,
-    expectedEpoch: 'one',
-    expectedFingerprint: 'fingerprint',
+    expectedEpoch: 'two',
+    expectedFingerprint: 'new',
   });
 });
 
@@ -304,4 +308,76 @@ it('makes older publishing receipts accessible beyond the initial twelve', async
     14,
   );
   expect(container.textContent).toContain('Receipt body 0');
+});
+it('retains editable drafts through background fetch and errors while publication fails closed', async () => {
+  await render();
+  await click('Ask on GitHub');
+  await type('Held question');
+  await click('Preview exact publication');
+  const button = (label: string) =>
+    [...container.querySelectorAll('button')].find(
+      (b) => b.textContent === label,
+    )!;
+  const textarea = container.querySelector('textarea')!;
+  let resolve!: (value: typeof data) => void;
+  let reject!: (error: Error) => void;
+  api.getFactoryWriteback.mockImplementation(
+    () =>
+      new Promise((yes, no) => {
+        resolve = yes;
+        reject = no;
+      }),
+  );
+  await act(async () => {
+    void client.invalidateQueries({ queryKey: ['factory-writeback'] });
+  });
+  expect(button('Refresh publishing').disabled).toBe(false);
+  expect(button('Send this question to GitHub').disabled).toBe(false);
+  expect(container.querySelector('textarea')).toBe(textarea);
+  await act(async () => {
+    resolve(structuredClone(data));
+  });
+  await render();
+  expect(textarea.value).toBe('Held question');
+  await act(async () => {
+    void client.invalidateQueries({ queryKey: ['factory-writeback'] });
+  });
+  await act(async () => reject(new Error('offline')));
+  await render();
+  expect(button('Send this question to GitHub').disabled).toBe(true);
+  expect(container.querySelector('fieldset')!.disabled).toBe(false);
+  await type('Still editable');
+  expect(textarea.value).toBe('Still editable');
+  await click('Preview exact publication');
+  await act(async () => {
+    void client.invalidateQueries({ queryKey: ['factory-writeback'] });
+  });
+  expect(button('Send this question to GitHub').disabled).toBe(true);
+  await click('Cancel draft');
+  expect(container.querySelector('textarea')).toBeNull();
+  expect(api.approveFactoryWriteback).not.toHaveBeenCalled();
+});
+it('requires a fresh policy review when the background fingerprint changes', async () => {
+  api.getFactoryWriteback.mockResolvedValue({
+    ...data,
+    policy: { ...data.policy, enabled: false },
+  });
+  await render();
+  await click('Review writeback policy');
+  api.getFactoryWriteback.mockResolvedValue({
+    ...data,
+    policy: { enabled: false, epoch: 'two' },
+    connectionFingerprint: 'changed',
+  });
+  await act(async () => {
+    await client.invalidateQueries({ queryKey: ['factory-writeback'] });
+  });
+  await render();
+  const action = [...container.querySelectorAll('button')].find(
+    (b) => b.textContent === 'Enable these status updates',
+  )!;
+  expect(action.disabled).toBe(true);
+  await click('Cancel');
+  expect(container.textContent).not.toContain('Enable these status updates');
+  expect(api.setFactoryWriteback).not.toHaveBeenCalled();
 });
