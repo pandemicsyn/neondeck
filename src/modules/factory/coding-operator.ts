@@ -19,6 +19,7 @@ import {
   listCodingRuns,
   listCodingRunEvents,
   loadLocalManifest,
+  listCodingAdapters,
 } from '../coding-runs';
 import { updateFactoryConfig } from '../config';
 import type { RuntimePaths } from '../../runtime-home';
@@ -41,6 +42,7 @@ export async function factoryCodingState(paths: RuntimePaths) {
     config: coding,
     configFingerprint: codingDigest(coding),
     readiness,
+    adapters: listCodingAdapters(),
   });
 }
 export async function saveFactoryCodingConfig(

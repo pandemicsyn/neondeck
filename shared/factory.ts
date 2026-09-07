@@ -148,6 +148,7 @@ export const releaseSchema = v.strictObject({
   sourceVersion: version,
   repoId: label,
   repoFingerprint: hash,
+  codingConfigFingerprint: v.optional(v.nullable(hash), null),
   policy: v.strictObject({
     version: v.literal('isolated-local-v1'),
     implementation: v.literal('isolated-worktree'),
@@ -174,6 +175,7 @@ export const releaseInputSchema = v.strictObject({
   sourceVersion: version,
   repoFingerprint: hash,
   policyVersion: v.literal('isolated-local-v1'),
+  expectedCodingConfigFingerprint: v.optional(v.nullable(hash), null),
 });
 export const transitionSchema = v.strictObject({
   expectedVersion: version,

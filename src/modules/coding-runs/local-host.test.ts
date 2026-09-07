@@ -40,6 +40,8 @@ import {
   codexEnvironment,
   CodexEvents,
 } from './codex-adapter.ts';
+import { listCodingAdapters } from './adapters/registry.ts';
+import { executableIdentity } from './adapter-host.ts';
 import { inspectCodexReadiness } from './codex-readiness.ts';
 import { groupAbsent, processTable, sameProcess } from './host-process.ts';
 import { inside } from './host-workspace.ts';
@@ -173,6 +175,67 @@ async function controller(
   };
 }
 describe('supervised local host (synthetic CLI only)', () => {
+  it('launches a version-two pinned Codex manifest through the same host', async () => {
+    const input = await fixture();
+    input.expectedExecutableIdentity = await executableIdentity(
+      input.config.executable,
+    );
+    input.config.adapter = {
+      id: 'codex',
+      contractVersion: 1,
+      cliVersion: 'mockdex codex-contract 0.150.1',
+    };
+    const handle = await prepareLocalAttempt(input);
+    handles.push(handle);
+    const { manifest } = await loadLocalManifest(handle);
+    expect(manifest.version).toBe(2);
+    expect(manifest.executableIdentity).toBeDefined();
+    await launchLocalAttempt(handle);
+    expect(await finish(handle)).toMatchObject({
+      state: 'finished',
+      noWriter: true,
+      terminal: 'completed',
+    });
+  });
+  it('rejects a replacement before even running its version command with an admitted pin', async () => {
+    const input = await fixture();
+    const executable = join(dirname(input.directory), 'admitted-cli.mjs');
+    const marker = join(dirname(input.directory), 'replacement-executed');
+    await writeFile(executable, await readFile(mock), { mode: 0o700 });
+    input.config.executable = executable;
+    input.expectedExecutableIdentity = await executableIdentity(executable);
+    input.config.adapter = {
+      id: 'codex',
+      contractVersion: 1,
+      cliVersion: 'mockdex codex-contract 0.150.1',
+    };
+    await writeFile(
+      executable,
+      `#!/usr/bin/env node\nimport {writeFileSync} from 'node:fs';writeFileSync(${JSON.stringify(marker)},'ran');console.log('mockdex codex-contract 0.150.1');\n`,
+    );
+    await expect(prepareLocalAttempt(input)).rejects.toThrow(
+      'identity changed',
+    );
+    await expect(stat(marker)).rejects.toMatchObject({ code: 'ENOENT' });
+  });
+  it('blocks changed executable identity even when the version string stays pinned', async () => {
+    const input = await fixture();
+    const executable = join(dirname(input.directory), 'changed-cli.mjs');
+    const source = await readFile(mock, 'utf8');
+    await writeFile(executable, source, { mode: 0o700 });
+    input.config.executable = executable;
+    const handle = await prepareLocalAttempt(input);
+    handles.push(handle);
+    await writeFile(executable, source + '\n// changed after preparation\n');
+    await launchLocalAttempt(handle);
+    expect(await finish(handle)).toMatchObject({
+      state: 'finished',
+      noWriter: true,
+      reason: 'host-preflight-failed',
+      sessionId: null,
+    });
+  });
+
   it('collects an untracked candidate after group death and retains primary checkout', async () => {
     const input = await fixture();
     const handle = await prepareLocalAttempt(input);
@@ -1001,3 +1064,147 @@ describe('supervised local host (synthetic CLI only)', () => {
     ).rejects.toThrow(/ENOENT/);
   });
 });
+
+// This matrix is collected in the foundation but only executes on a supported
+// host after the provider's separately reviewed compiled registration lands.
+const optionalHostProviders = [
+  {
+    id: 'opencode',
+    version: 'mock-opencode 1.18.29',
+    script: 'mock-opencode.mjs',
+    model: 'openai/fixture-model',
+  },
+  {
+    id: 'kilo',
+    version: 'mock-kilo-factory 7.4.23',
+    script: 'mock-kilo-factory.mjs',
+    model: 'kilo/fixture-model',
+  },
+] as const;
+for (const provider of optionalHostProviders) {
+  describe.skipIf(
+    process.platform !== 'linux' ||
+      !listCodingAdapters().some((adapter) => adapter.id === provider.id),
+  )(`${provider.id} shared host conformance (synthetic Linux CLI)`, () => {
+    async function providerFixture(
+      scenario: PrepareLocalAttemptInput['config']['mockScenario'] = 'success',
+      prompt = 'Create a deterministic candidate.',
+    ) {
+      const input = await fixture(scenario);
+      input.config.executable = resolve(dirname(mock), provider.script);
+      input.config.model = provider.model;
+      input.config.adapter = {
+        id: provider.id,
+        contractVersion: 1,
+        cliVersion: provider.version,
+      };
+      input.expectedExecutableIdentity = await executableIdentity(
+        input.config.executable,
+      );
+      input.selectedAuth = {
+        kind: 'api-key',
+        value: 'synthetic-host-fixture-key',
+      };
+      input.prompt = prompt;
+      return input;
+    }
+    it.each(['failure', 'malformed', 'stall'] as const)(
+      'settles %s only with death proof and credential cleanup',
+      async (scenario) => {
+        const input = await providerFixture(scenario);
+        if (scenario === 'stall') input.config.wallTimeMs = 600;
+        const handle = await prepareLocalAttempt(input);
+        handles.push(handle);
+        await launchLocalAttempt(handle);
+        const receipt = await finish(handle);
+        expect(receipt.noWriter).toBe(true);
+        expect(receipt.authCleanup).toBe('removed');
+        expect(receipt.reason).not.toBeNull();
+        if (scenario === 'malformed')
+          expect(receipt.reason).toBe('malformed-provider-output');
+        if (scenario === 'stall')
+          expect(receipt.reason).toBe('wall-time-limit');
+        expect(receipt.group && (await groupAbsent(receipt.group))).toBe(true);
+      },
+    );
+    it('rejects missing terminal evidence after actual provider exit', async () => {
+      const input = await providerFixture('success', 'fixture:absent-terminal');
+      const handle = await prepareLocalAttempt(input);
+      handles.push(handle);
+      await launchLocalAttempt(handle);
+      expect(await finish(handle)).toMatchObject({
+        noWriter: true,
+        terminal: null,
+        reason: 'provider-terminal-missing-or-failed',
+        authCleanup: 'removed',
+      });
+    });
+    it('removes a live owned child before cancellation settles', async () => {
+      const input = await providerFixture('child-dev-server');
+      input.config.termGraceMs = 500;
+      const handle = await prepareLocalAttempt(input);
+      handles.push(handle);
+      await launchLocalAttempt(handle);
+      let observed = await inspectLocalAttempt(handle);
+      for (let i = 0; i < 100; i++) {
+        observed = await inspectLocalAttempt(handle);
+        if (
+          (observed.state === 'running' || observed.state === 'cancelling') &&
+          observed.receipt.sessionId
+        )
+          break;
+        await delay(20);
+      }
+      await cancelLocalAttempt(handle);
+      const receipt = await finish(handle);
+      expect(receipt).toMatchObject({
+        noWriter: true,
+        reason: 'cancelled',
+        authCleanup: 'removed',
+      });
+      expect(receipt.group && (await groupAbsent(receipt.group))).toBe(true);
+    });
+    it('retains uncertain supervisor death and never starts a replacement', async () => {
+      const input = await providerFixture('stall');
+      input.config.wallTimeMs = 1000;
+      const handle = await prepareLocalAttempt(input);
+      handles.push(handle);
+      await launchLocalAttempt(handle);
+      let observed = await inspectLocalAttempt(handle);
+      for (let i = 0; i < 100; i++) {
+        observed = await inspectLocalAttempt(handle);
+        if (
+          observed.state === 'running' &&
+          observed.receipt.group &&
+          observed.receipt.sessionId
+        )
+          break;
+        await delay(20);
+      }
+      if (observed.state !== 'running' || !observed.receipt.group)
+        throw new Error('Expected authenticated provider group');
+      process.kill(observed.receipt.supervisor.pid, 'SIGKILL');
+      await delay(100);
+      expect((await reconcileLocalAttempt(handle)).state).toBe(
+        'needs-reconcile',
+      );
+      expect((await launchLocalAttempt(handle)).state).toBe('needs-reconcile');
+      await cancelLocalAttempt(handle);
+      const until = Date.now() + 9000;
+      let result = await reconcileLocalAttempt(handle);
+      while (result.state !== 'finished' && Date.now() < until) {
+        await delay(100);
+        result = await reconcileLocalAttempt(handle);
+      }
+      expect(result.state).toBe('finished');
+      if (result.state !== 'finished')
+        throw new Error('Expected recovered dead provider');
+      expect(result.receipt).toMatchObject({
+        noWriter: true,
+        reason: 'cancelled',
+        authCleanup: 'removed',
+      });
+      expect((await launchLocalAttempt(handle)).state).toBe('finished');
+    });
+  });
+}

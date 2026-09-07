@@ -18,7 +18,12 @@ import {
   assertCandidateEvidenceCurrent,
   captureCandidateTree,
 } from './evidence';
-import { assertCodingSnapshot, codingPrompt, codingConfig } from '../factory';
+import {
+  assertCodingSnapshot,
+  codingPrompt,
+  frozenCodingConfig,
+  assertPinnedCodingExecutable,
+} from '../factory';
 import { codingReadiness } from '../factory';
 import {
   codingHandle,
@@ -54,10 +59,11 @@ export async function dispatchCodingRepair(
   if (pipeline.version !== command.expectedVersion)
     throw new Error('Stale delivery repair request');
   const budget = deliveryBudget(pipeline);
+  const parent = requireCodingRun(pipeline.revision.runId, paths);
   const maxWallTimeMs = Math.min(
     command.maxWallTimeMs,
     45 * 60_000,
-    codingConfig(paths).coding.wallTimeMs,
+    frozenCodingConfig(parent.snapshot).wallTimeMs,
     budget.remainingExecutionMs,
   );
   if (maxWallTimeMs <= 0 || budget.repairsRemaining <= 0) {
@@ -82,9 +88,34 @@ export async function dispatchCodingRepair(
       );
     return null;
   }
-  const parent = requireCodingRun(pipeline.revision.runId, paths);
   await assertCodingSnapshot(parent.snapshot, paths);
   await assertAuthority(pipeline);
+  try {
+    await assertPinnedCodingExecutable(parent.snapshot);
+  } catch {
+    const id = `repair-executable:${pipeline.revision.candidateDigest}`;
+    if (
+      !pipeline.interventions.some(
+        (item) => item.id === id && item.resolution === null,
+      )
+    )
+      updateDeliveryPipeline(
+        {
+          pipelineId: pipeline.pipelineId,
+          expectedVersion: pipeline.version,
+          action: {
+            type: 'intervene',
+            id,
+            kind: 'authority',
+            reason: parent.snapshot.harness.executableIdentity
+              ? 'The coding executable no longer matches original admission. No replacement was inspected or launched; evidence and budgets are retained for human review.'
+              : 'This legacy attempt has no original executable identity. Existing recovery and evidence remain available; another repair requires human review and a fresh release.',
+          },
+        },
+        paths,
+      );
+    return null;
+  }
   const ready = await codingReadiness(paths);
   if (
     !ready.ready ||

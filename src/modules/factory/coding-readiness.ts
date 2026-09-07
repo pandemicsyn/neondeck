@@ -6,14 +6,49 @@ import {
   factoryCodingReadinessSchema,
   type FactoryCodingConfig,
 } from '../../../shared/factory-coding';
-import { inspectCodexReadiness, localHostCapability } from '../coding-runs';
+import {
+  inspectCodingAdapterReadiness,
+  localHostCapability,
+  getCodingAdapter,
+} from '../coding-runs';
 import type { RuntimePaths } from '../../runtime-home';
 import { codingConfig, codingDigest } from './coding-context';
 export const supportedCodingVersion = 'codex-cli 0.150.1';
-export function localCodingConfig(config: FactoryCodingConfig) {
+function selectedSupportedVersion(config: FactoryCodingConfig) {
+  try {
+    return getCodingAdapter(
+      config.adapter?.id ?? 'codex',
+      config.adapter?.contractVersion ?? 1,
+    ).supportedVersion;
+  } catch {
+    return config.adapter?.cliVersion ?? supportedCodingVersion;
+  }
+}
+export function localCodingConfig(
+  config: FactoryCodingConfig,
+  pinnedVersion?: string,
+) {
   if (!config.executable || !config.model)
-    throw new Error('Select an absolute Codex executable and model.');
+    throw new Error('Select an absolute coding CLI executable and model.');
+  if (
+    config.adapter &&
+    pinnedVersion &&
+    config.adapter.cliVersion !== pinnedVersion
+  )
+    throw new Error(
+      'Selected coding CLI version differs from admitted version.',
+    );
+  const adapter =
+    config.adapter ??
+    (pinnedVersion
+      ? {
+          id: 'codex' as const,
+          contractVersion: 1 as const,
+          cliVersion: pinnedVersion,
+        }
+      : undefined);
   return {
+    ...(adapter ? { adapter } : {}),
     executable: config.executable,
     model: config.model,
     path: config.path,
@@ -95,12 +130,26 @@ function readinessInput(paths: RuntimePaths) {
 function blockedReadiness(
   input: ReturnType<typeof readinessInput>,
   blockers: string[],
+  status: Readiness['status'] = !input.factoryEnabled || !input.coding.enabled
+    ? 'disabled'
+    : !input.coding.executable || !input.coding.model
+      ? 'unconfigured'
+      : !input.supported
+        ? 'host-unsupported'
+        : !input.authAvailable
+          ? 'credential-unavailable'
+          : 'adapter-unavailable',
 ): Readiness {
   return v.parse(factoryCodingReadinessSchema, {
     ready: false,
+    status,
     enabled: input.factoryEnabled && input.coding.enabled,
-    supportedVersion: supportedCodingVersion,
+    supportedVersion: selectedSupportedVersion(input.coding),
     installedVersion: null,
+    authentication:
+      input.authAvailable && status !== 'credential-unavailable'
+        ? 'unverified'
+        : 'unavailable',
     blockers,
   });
 }
@@ -126,9 +175,11 @@ export async function codingReadiness(paths: RuntimePaths): Promise<Readiness> {
       );
       if (oldestSettled) readinessFailures.delete(oldestSettled[0]);
       else
-        return blockedReadiness(input, [
-          'Readiness probes are busy. Retry shortly.',
-        ]);
+        return blockedReadiness(
+          input,
+          ['Readiness probes are busy. Retry shortly.'],
+          'busy',
+        );
     }
     const created: ReadinessEntry = {
       fingerprint: input.fingerprint,
@@ -141,8 +192,12 @@ export async function codingReadiness(paths: RuntimePaths): Promise<Readiness> {
       (result) => {
         created.settled = true;
         // Success is only shared with concurrent callers; launch retains its own
-        // real readiness checks. Unexpected I/O errors are not cached either.
-        if (result.ready && readinessFailures.get(key) === created)
+        // real readiness checks. Credential-content failures must be retried:
+        // their secret contents deliberately do not enter the cache identity.
+        if (
+          (result.ready || result.status === 'credential-unavailable') &&
+          readinessFailures.get(key) === created
+        )
           readinessFailures.delete(key);
       },
       () => {
@@ -170,7 +225,33 @@ async function probeCodingReadiness(
   if (!authAvailable)
     blockers.push('Selected credential reference is unavailable or invalid.');
   if (!coding.executable || !coding.model)
-    blockers.push('Select an absolute Codex executable and model.');
+    blockers.push('Select an absolute coding CLI executable and model.');
+  if (blockers.length) return blockedReadiness(input, blockers);
+  try {
+    const adapter = getCodingAdapter(
+      coding.adapter?.id ?? 'codex',
+      coding.adapter?.contractVersion ?? 1,
+    );
+    if (authAvailable) {
+      try {
+        const selected = selectedCodingAuth(coding);
+        if (!adapter.credentialKinds.includes(selected.kind))
+          throw new Error('Unsupported credential mechanism');
+        adapter.credentials(selected, localCodingConfig(coding));
+      } catch {
+        return blockedReadiness(
+          input,
+          [
+            ...blockers,
+            'Selected credential mechanism or value is invalid for this adapter.',
+          ],
+          'credential-unavailable',
+        );
+      }
+    }
+  } catch {
+    blockers.push('Selected adapter or credential mechanism is unavailable.');
+  }
   if (blockers.length) return blockedReadiness(input, blockers);
   await mkdir(join(paths.home, 'coding-readiness'), {
     recursive: true,
@@ -178,14 +259,23 @@ async function probeCodingReadiness(
   });
   const home = await mkdtemp(join(paths.home, 'coding-readiness', 'probe-'));
   try {
-    const result = await inspectCodexReadiness(localCodingConfig(coding), home);
+    const result = await inspectCodingAdapterReadiness(
+      localCodingConfig(coding),
+      home,
+    );
     return v.parse(factoryCodingReadinessSchema, {
       ready: result.ready,
+      status: result.ready
+        ? 'ready'
+        : result.reason === 'cli-unavailable'
+          ? 'executable-unresolved'
+          : 'unsupported',
       enabled: true,
-      supportedVersion: supportedCodingVersion,
+      supportedVersion: selectedSupportedVersion(input.coding),
       // The host accepts empty stdout as an unsupported version. Keep that
       // ordinary failure schema-valid so unchanged polls reuse it.
       installedVersion: result.version?.trim() || null,
+      authentication: 'unverified',
       blockers: result.ready ? [] : [result.reason ?? 'CLI is unavailable.'],
     });
   } finally {

@@ -426,6 +426,7 @@ export function FactoryTaskDetail({
                 sourceVersion: detail.source.version,
                 repoFingerprint: detail.repoFingerprint,
                 policyVersion: factoryPolicy.version,
+                expectedCodingConfigFingerprint: null,
               });
             }}
           >

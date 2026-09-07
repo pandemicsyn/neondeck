@@ -40,6 +40,9 @@ import {
   codingAuthority,
   codingPrompt,
   codingSnapshot,
+  frozenCodingConfig,
+  assertReleasedCodingConfig,
+  assertPinnedCodingExecutable,
   CodingPreflightError,
 } from './coding-context';
 import {
@@ -149,6 +152,19 @@ export async function dispatchCodingWork(
   const fingerprint = codingAdmissionFingerprint(workId, paths);
   if (readCodingAttention(workId, paths)?.inputFingerprint === fingerprint)
     return null;
+  try {
+    assertReleasedCodingConfig(workId, paths);
+  } catch (error) {
+    saveCodingAttention(
+      workId,
+      fingerprint,
+      error instanceof CodingPreflightError
+        ? error.message
+        : 'Coding release authority is unavailable.',
+      paths,
+    );
+    return null;
+  }
   const ready = await readiness(paths);
   if (!ready.ready || !ready.installedVersion) return null;
   let snapshot: Awaited<ReturnType<typeof codingSnapshot>>;
@@ -189,9 +205,6 @@ export async function launchReservedCodingRun(
   let run = v.parse(codingRunRecordSchema, input);
   const snapshot = run.snapshot;
   const workId = snapshot.workItemId;
-  const selectedAuth = selectedCodingAuth(
-    codingAuthority(workId, paths).coding,
-  );
   if (
     run.host ||
     terminalCodingRun(run) ||
@@ -204,13 +217,18 @@ export async function launchReservedCodingRun(
     {
       type: 'bind-host',
       host: {
-        hostId: 'local-codex',
+        hostId: 'local-cli',
         jobId: join(realpathSync(paths.home), 'coding-attempts', run.attemptId),
       },
     },
     paths,
   );
   try {
+    await assertCodingSnapshot(snapshot, paths);
+    const coding = frozenCodingConfig(snapshot);
+    const expectedExecutableIdentity =
+      await assertPinnedCodingExecutable(snapshot);
+    const selectedAuth = selectedCodingAuth(coding);
     const branch = `agent/factory-${run.attemptId}`;
     const created = await createWorktree(
       {
@@ -255,13 +273,13 @@ export async function launchReservedCodingRun(
       AbortSignal.timeout(5000),
     );
     await options.prepareWorkspace?.(worktree.localPath);
-    const { coding, repo } = codingAuthority(workId, paths);
+    const { repo } = codingAuthority(workId, paths);
     const handle = codingHandle(run, paths);
     await mkdir(join(paths.home, 'coding-attempts'), {
       recursive: true,
       mode: 0o700,
     });
-    const config = localCodingConfig(coding);
+    const config = localCodingConfig(coding, snapshot.harness.version);
     if (options.wallTimeMs !== undefined)
       config.wallTimeMs = Math.min(
         config.wallTimeMs,
@@ -283,6 +301,7 @@ export async function launchReservedCodingRun(
         baseSha: snapshot.baseSha,
       },
       config,
+      expectedExecutableIdentity,
       prompt: options.prompt ?? codingPrompt(snapshot),
       selectedAuth,
     });

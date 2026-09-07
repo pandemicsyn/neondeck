@@ -32,4 +32,8 @@ export { renderFactorySpec } from '../../../shared/factory';
 
 export { readCodingExecutionUsage } from './coding-service';
 
-export { codingConfig } from './coding-context';
+export {
+  codingConfig,
+  frozenCodingConfig,
+  assertPinnedCodingExecutable,
+} from './coding-context';

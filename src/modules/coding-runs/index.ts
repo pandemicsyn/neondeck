@@ -53,3 +53,15 @@ export {
 export { hostGit, inside, verifyOwnedWorktree } from './host-workspace';
 
 export { localAttemptExecutionDuration } from './execution-usage';
+
+export { getCodingAdapter, listCodingAdapters } from './adapters/registry';
+export { inspectCodingAdapterReadiness } from './adapter-host';
+export type {
+  CodingAdapter,
+  CodingAdapterEvents,
+  LocalConfig,
+  SelectedAuth,
+} from './adapters/contract';
+
+export { executableIdentity as inspectCodingExecutableIdentity } from './adapter-host';
+export type { CodingExecutableIdentity } from '../../../shared/coding-adapters';

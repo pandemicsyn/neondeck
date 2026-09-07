@@ -1,11 +1,14 @@
 import { openSync, writeSync, closeSync, fsyncSync, constants } from 'node:fs';
 import { join } from 'node:path';
-import { CodexEvents } from './codex-adapter.ts';
+import { validateBoundedAdapterJson } from './adapter-environment.ts';
+import { manifestAdapter } from './adapter-host.ts';
+import type { CodingAdapterEvents } from './adapters/contract.ts';
 import type { LocalManifest } from './host-contract.ts';
 
 export class HostOutput {
-  readonly events = new CodexEvents();
+  readonly events: CodingAdapterEvents;
   bytes = 0;
+  private eventCount = 0;
   failure: string | null = null;
   private buffers = { stdout: Buffer.alloc(0), stderr: Buffer.alloc(0) };
   private files: { stdout: number; stderr: number };
@@ -13,6 +16,7 @@ export class HostOutput {
   private manifest: LocalManifest;
   private redact: (text: string) => string;
   constructor(manifest: LocalManifest, redact: (text: string) => string) {
+    this.events = manifestAdapter(manifest).createEvents();
     this.manifest = manifest;
     this.redact = redact;
     this.files = {
@@ -70,7 +74,12 @@ export class HostOutput {
       if (end < 0) break;
       if (stream === 'stdout') {
         try {
-          this.events.accept(this.buffers[stream].toString('utf8'));
+          if (++this.eventCount > 10000)
+            throw new Error('Provider event limit');
+          const line = this.buffers[stream].toString('utf8');
+          const raw: unknown = JSON.parse(line);
+          validateBoundedAdapterJson(raw);
+          this.events.accept(line);
         } catch {
           this.failure = 'malformed-provider-output';
         }

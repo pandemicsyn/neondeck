@@ -59,6 +59,9 @@ import {
   codingConfig,
   codingDigest,
   codingSnapshot,
+  assertCodingAuthoritySnapshot,
+  frozenCodingConfig,
+  assertPinnedCodingExecutable,
 } from '../modules/factory/coding-context';
 import {
   factoryCodingRuns,
@@ -142,6 +145,10 @@ beforeEach(async () => {
   git(repo, 'commit', '-m', 'initial');
   await ensureRuntimeHome(paths);
   writeFileSync(
+    join(root, 'synthetic-codex'),
+    'synthetic CLI identity fixture',
+  );
+  writeFileSync(
     paths.config,
     JSON.stringify({
       version: 1,
@@ -149,7 +156,7 @@ beforeEach(async () => {
         enabled: true,
         coding: {
           enabled: true,
-          executable: '/mock/codex',
+          executable: join(root, 'synthetic-codex'),
           model: 'test-model',
           auth: { kind: 'api-key', env: 'FACTORY_TEST_KEY' },
         },
@@ -268,6 +275,103 @@ function expireLocks() {
   }
 }
 describe('factory coding bridge', () => {
+  it('pins the default Codex version and freezes admitted configuration', async () => {
+    const work = release();
+    const run = (await dispatchCodingWork(work.work.id, paths, host, ready))!;
+    expect(run.host?.hostId).toBe('local-cli');
+    expect(prepared?.config.adapter).toEqual({
+      id: 'codex',
+      contractVersion: 1,
+      cliVersion: 'codex-cli 0.150.1',
+    });
+    expect(prepared?.expectedExecutableIdentity).toEqual(
+      run.snapshot.harness.executableIdentity,
+    );
+    expect(run.snapshot.harness.executableIdentity).toBeDefined();
+    const original = frozenCodingConfig(run.snapshot);
+    updateFactoryConfig(
+      { coding: { ...original, model: 'different-model' } },
+      paths,
+    );
+    expect(frozenCodingConfig(run.snapshot)).toEqual(original);
+    expect(() => assertCodingAuthoritySnapshot(run.snapshot, paths)).toThrow(
+      'Coding configuration changed since human release',
+    );
+    expect(getCodingRun(run.runId, paths)?.cancelRequestedAt).toBeTruthy();
+    expect(host.launchLocalAttempt).toHaveBeenCalledTimes(1);
+  });
+  it('blocks queued configuration drift with retained attention before host allocation', async () => {
+    const work = release();
+    updateFactoryConfig(
+      {
+        coding: {
+          ...codingConfig(paths).coding,
+          model: 'changed-after-release',
+        },
+      },
+      paths,
+    );
+    expect(
+      await dispatchCodingWork(work.work.id, paths, host, ready),
+    ).toBeNull();
+    expect(readCodingAttention(work.work.id, paths)?.reason).toContain(
+      'since human release',
+    );
+    expect(listCodingRuns({}, paths)).toHaveLength(0);
+    expect(host.prepareLocalAttempt).not.toHaveBeenCalled();
+  });
+  it('normalizes historical config and release records without authorizing a new adapter', async () => {
+    const work = release();
+    const snapshot = await codingSnapshot(
+      work.work.id,
+      'codex-cli 0.150.1',
+      paths,
+    );
+    const { adapter: _adapter, ...legacyCoding } = codingConfig(paths).coding;
+    const legacySnapshot = {
+      ...snapshot,
+      policySnapshot: JSON.stringify({
+        release: work.releases[0].policy,
+        coding: legacyCoding,
+      }),
+    };
+    const { codingConfigFingerprint: _fingerprint, ...legacyRelease } =
+      work.releases[0];
+    dbRun(paths, (db) =>
+      db
+        .prepare('UPDATE factory_releases SET record=? WHERE id=?')
+        .run(JSON.stringify(legacyRelease), legacyRelease.id),
+    );
+    expect(() =>
+      assertCodingAuthoritySnapshot(legacySnapshot, paths),
+    ).not.toThrow();
+    const { executableIdentity: _identity, ...legacyHarness } =
+      legacySnapshot.harness;
+    await expect(
+      assertPinnedCodingExecutable({
+        ...legacySnapshot,
+        harness: legacyHarness,
+      }),
+    ).rejects.toThrow(
+      'legacy coding attempt has no original executable identity',
+    );
+    updateFactoryConfig(
+      {
+        coding: {
+          ...codingConfig(paths).coding,
+          adapter: { id: 'opencode', contractVersion: 1, cliVersion: '1.0.0' },
+        },
+      },
+      paths,
+    );
+    expect(
+      await dispatchCodingWork(work.work.id, paths, host, ready),
+    ).toBeNull();
+    expect(readCodingAttention(work.work.id, paths)?.reason).toContain(
+      'Legacy release',
+    );
+    expect(host.prepareLocalAttempt).not.toHaveBeenCalled();
+  });
   it('claims preparation once across concurrent controllers and replay', async () => {
     const work = release();
     const results = await Promise.allSettled([
@@ -675,7 +779,7 @@ describe('factory coding bridge', () => {
     );
     const work = release();
     const probe = vi
-      .spyOn(codingRuns, 'inspectCodexReadiness')
+      .spyOn(codingRuns, 'inspectCodingAdapterReadiness')
       .mockResolvedValue({
         ready: false,
         version: '',

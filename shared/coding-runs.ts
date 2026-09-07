@@ -1,4 +1,5 @@
 import * as v from 'valibot';
+import { codingExecutableIdentitySchema } from './coding-adapters';
 
 export const codingLabelSchema = v.pipe(
   v.string(),
@@ -31,6 +32,7 @@ export const codingRunSnapshotSchema = v.strictObject({
     provider: codingLabelSchema,
     version: codingLabelSchema,
     model: codingLabelSchema,
+    executableIdentity: v.optional(codingExecutableIdentitySchema),
   }),
   sessionMode: v.literal('fresh'),
 });

@@ -1,3 +1,4 @@
+import * as codingRuns from '../coding-runs';
 import {
   chmodSync,
   existsSync,
@@ -26,7 +27,7 @@ const probe = vi.hoisted(() =>
 );
 vi.mock('../coding-runs', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../coding-runs')>()),
-  inspectCodexReadiness: probe,
+  inspectCodingAdapterReadiness: probe,
   localHostCapability: () => ({ supported: true }),
 }));
 let root: string;
@@ -233,4 +234,84 @@ it('bounds retained homes and allows an evicted failure to probe afresh', async 
   }
   await codingReadiness(originalPaths);
   expect(probe).toHaveBeenCalledTimes(34);
+});
+it('rejects unknown adapters and malformed contract versions without a default fallback', () => {
+  for (const adapter of [
+    { id: 'unknown-cli', contractVersion: 1, cliVersion: '1' },
+    { id: 'opencode', contractVersion: 2, cliVersion: '1' },
+    { id: 'kilo', contractVersion: 1, cliVersion: '' },
+    { id: 'codex', contractVersion: 1, cliVersion: '1', executable: '/other' },
+  ])
+    expect(v.safeParse(factoryCodingConfigSchema, { adapter }).success).toBe(
+      false,
+    );
+  expect(v.parse(factoryCodingConfigSchema, {}).adapter).toBeNull();
+});
+it('reports readiness without claiming authenticated execution', async () => {
+  probe.mockResolvedValue(supported);
+  expect(await codingReadiness(paths)).toMatchObject({
+    ready: true,
+    status: 'ready',
+    authentication: 'unverified',
+  });
+  config.enabled = false;
+  save();
+  expect(await codingReadiness(paths)).toMatchObject({
+    ready: false,
+    status: 'disabled',
+  });
+  config.enabled = true;
+  config.model = null;
+  save();
+  expect(await codingReadiness(paths)).toMatchObject({
+    ready: false,
+    status: 'unconfigured',
+  });
+});
+
+it('revalidates corrected adapter credentials at the same reference without retaining secret values', async () => {
+  const adapter = codingRuns.getCodingAdapter('codex');
+  const credentials = vi.fn<typeof adapter.credentials>(
+    (selected, localConfig) => {
+      if (selected?.value === '{}')
+        throw new Error('synthetic adapter-invalid credentials');
+      return adapter.credentials(selected, localConfig);
+    },
+  );
+  const registered = vi
+    .spyOn(codingRuns, 'getCodingAdapter')
+    .mockReturnValue({ ...adapter, credentials });
+  try {
+    config.auth = { kind: 'auth-json', env: 'FACTORY_READINESS_TEST_AUTH' };
+    save();
+    vi.stubEnv('FACTORY_READINESS_TEST_AUTH', '{}');
+    expect(await codingReadiness(paths)).toMatchObject({
+      ready: false,
+      status: 'credential-unavailable',
+    });
+    expect(probe).not.toHaveBeenCalled();
+    probe.mockResolvedValue(supported);
+    for (const key of ['synthetic-corrected-key', 'synthetic-rotated-key']) {
+      vi.stubEnv(
+        'FACTORY_READINESS_TEST_AUTH',
+        JSON.stringify({ OPENAI_API_KEY: key }),
+      );
+      const result = await codingReadiness(paths);
+      expect(result).toMatchObject({
+        ready: true,
+        authentication: 'unverified',
+      });
+      expect(JSON.stringify(result)).not.toContain(key);
+    }
+    expect(probe).toHaveBeenCalledTimes(2);
+    expect(credentials).toHaveBeenLastCalledWith(
+      expect.objectContaining({ kind: 'auth-json' }),
+      expect.objectContaining({
+        model: config.model,
+        executable: config.executable,
+      }),
+    );
+  } finally {
+    registered.mockRestore();
+  }
 });

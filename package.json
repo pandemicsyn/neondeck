@@ -13,6 +13,7 @@
     "shared/",
     "src/**/*.ts",
     "!src/**/*.test.ts",
+    "!src/**/*.test-helper.ts",
     "!src/test-setup.ts",
     "src/runtime-home/app-db/migrations/",
     "src/skills/",

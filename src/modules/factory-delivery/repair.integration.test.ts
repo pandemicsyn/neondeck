@@ -6,12 +6,14 @@ import {
   realpathSync,
   rmSync,
   writeFileSync,
+  existsSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { expect, it, vi } from 'vitest';
 import * as v from 'valibot';
+import { openDb } from '../../lib/sqlite';
 import { emptyFactorySpec } from '../../../shared/factory';
 import { ensureRuntimeHome, runtimePaths } from '../../runtime-home';
 import {
@@ -54,7 +56,7 @@ const git = (cwd: string, ...args: string[]) =>
       GIT_CONFIG_NOSYSTEM: '1',
     },
   }).trim();
-it.each(['normal', 'remaining'] as const)(
+it.each(['normal', 'remaining', 'replaced-binary', 'legacy-binary'] as const)(
   'repairs a retained mockdex candidate: %s allowance',
   async (allowance) => {
     const mode = 'candidate';
@@ -313,6 +315,54 @@ else {
       };
       const originalEvidence = readFileSync(parent.candidate!.diffRef);
       const authority = vi.fn<() => Promise<void>>(async () => {});
+      if (allowance === 'replaced-binary' || allowance === 'legacy-binary') {
+        const marker = join(root, 'replacement-was-executed');
+        if (allowance === 'legacy-binary') {
+          // Explicit old persisted fixture: decoding must not invent identity.
+          const { executableIdentity: _identity, ...harness } =
+            parent.snapshot.harness;
+          const legacy = {
+            ...parent,
+            snapshot: { ...parent.snapshot, harness },
+          };
+          const db = openDb(paths.neondeckDatabase);
+          try {
+            db.prepare(
+              'UPDATE coding_runs SET record_json=? WHERE run_id=?',
+            ).run(JSON.stringify(legacy), parent.runId);
+          } finally {
+            db.close();
+          }
+          expect(await reconcileCodingRun(parent.runId, paths)).toEqual(legacy);
+        }
+        writeFileSync(
+          executable,
+          `#!/usr/bin/env node\nimport {writeFileSync} from 'node:fs';\nwriteFileSync(${JSON.stringify(marker)}, 'executed');\nconsole.log('codex-cli 0.150.1');\n`,
+          { mode: 0o700 },
+        );
+        expect(
+          await dispatchCodingRepair(command, paths, authority),
+        ).toBeNull();
+        expect(existsSync(marker)).toBe(false);
+        const retained = getDeliveryPipeline(pipeline.pipelineId, paths)!;
+        expect(retained.repairs).toEqual(pipeline.repairs);
+        expect(retained.effects).toEqual(pipeline.effects);
+        expect(retained.interventions.at(-1)).toMatchObject({
+          kind: 'authority',
+          resolution: null,
+        });
+        expect(retained.interventions.at(-1)?.reason).toContain(
+          allowance === 'legacy-binary'
+            ? 'no original executable identity'
+            : 'no longer matches original admission',
+        );
+        expect(listCodingRuns({}, paths)).toHaveLength(1);
+        expect(getActiveCodingRun(paths)).toBeNull();
+        expect(readFileSync(parent.candidate!.diffRef)).toEqual(
+          originalEvidence,
+        );
+        return;
+      }
       const started = await dispatchCodingRepair(command, paths, authority);
       if (!started) throw new Error('Expected reserved repair');
       handle = codingHandle(started, paths);

@@ -3,6 +3,7 @@ import { publishFactoryChange } from './events';
 import { createHash, randomUUID } from 'node:crypto';
 import type { DatabaseSync } from 'node:sqlite';
 import * as v from 'valibot';
+import { factoryCodingConfigSchema } from '../../../shared/factory-coding';
 import {
   emptyFactorySpec,
   factoryPolicy,
@@ -441,6 +442,9 @@ export function releaseFactoryWork(
         previous.sourceVersion !== data.sourceVersion ||
         previous.repoFingerprint !== data.repoFingerprint ||
         previous.policy.version !== data.policyVersion ||
+        (data.expectedCodingConfigFingerprint !== null &&
+          previous.codingConfigFingerprint !==
+            data.expectedCodingConfigFingerprint) ||
         previous.actor !== actor.id
       )
         throw new FactoryError(
@@ -452,6 +456,21 @@ export function releaseFactoryWork(
       return current;
     }
     expectVersion(current, data.expectedVersion);
+    const coding = v.parse(
+      factoryCodingConfigSchema,
+      config(paths)?.coding ?? {},
+    );
+    const codingConfigFingerprint = digest(coding);
+    if (
+      (data.expectedCodingConfigFingerprint !== null &&
+        data.expectedCodingConfigFingerprint !== codingConfigFingerprint) ||
+      (data.expectedCodingConfigFingerprint === null && coding.adapter !== null)
+    )
+      throw new FactoryError(
+        409,
+        'Coding configuration changed or selection was not reviewed. Reload coding settings before releasing.',
+        current,
+      );
     const revision = current.revisions.at(-1)!;
     if (
       revision.version !== data.specVersion ||
@@ -479,6 +498,7 @@ export function releaseFactoryWork(
       repoId: current.work.repoId!,
       repoFingerprint: current.repoFingerprint!,
       policy: factoryPolicy,
+      codingConfigFingerprint,
       createdAt: new Date().toISOString(),
       withdrawnAt: null,
       withdrawalReason: null,

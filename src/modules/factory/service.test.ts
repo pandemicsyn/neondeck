@@ -1,3 +1,4 @@
+import { codingConfig, codingDigest } from './coding-context';
 import { applyAppDbMigrations } from '../../runtime-home/app-db/migrate';
 import {
   cpSync,
@@ -116,6 +117,65 @@ describe('manual factory domain', () => {
         .success,
     ).toBe(false);
     expect(factoryState(paths).items).toHaveLength(0);
+  });
+  it('binds reviewed coding settings and rejects a stale release fingerprint', () => {
+    const ready = createReady();
+    const fingerprint = codingDigest(codingConfig(paths).coding);
+    expect(() =>
+      releaseFactoryWork(
+        ready.work.id,
+        {
+          ...releaseInput(ready),
+          expectedCodingConfigFingerprint: 'a'.repeat(64),
+        },
+        actor,
+        paths,
+      ),
+    ).toThrow('Coding configuration changed');
+    const released = releaseFactoryWork(
+      ready.work.id,
+      { ...releaseInput(ready), expectedCodingConfigFingerprint: fingerprint },
+      actor,
+      paths,
+    );
+    expect(released.releases[0].codingConfigFingerprint).toBe(fingerprint);
+    expect(() =>
+      releaseFactoryWork(
+        ready.work.id,
+        {
+          ...releaseInput(ready),
+          expectedCodingConfigFingerprint: 'b'.repeat(64),
+        },
+        actor,
+        paths,
+      ),
+    ).toThrow('another decision');
+  });
+  it('requires an explicit reviewed fingerprint for an optional adapter selection', () => {
+    const ready = createReady();
+    const coding = {
+      ...codingConfig(paths).coding,
+      adapter: { id: 'opencode', contractVersion: 1, cliVersion: '1.0.0' },
+    };
+    writeFileSync(
+      paths.config,
+      JSON.stringify({ version: 1, factory: { enabled: true, coding } }),
+    );
+    expect(() =>
+      releaseFactoryWork(ready.work.id, releaseInput(ready), actor, paths),
+    ).toThrow('selection was not reviewed');
+    const fingerprint = codingDigest(codingConfig(paths).coding);
+    expect(
+      releaseFactoryWork(
+        ready.work.id,
+        {
+          ...releaseInput(ready),
+          expectedCodingConfigFingerprint: fingerprint,
+        },
+        actor,
+        paths,
+      ).releases[0].codingConfigFingerprint,
+    ).toBe(fingerprint);
   });
   it('deduplicates exact retry, rejects request-key reuse and survives reinitialization', () => {
     const initial = submitFactoryWork(intake, actor, paths);

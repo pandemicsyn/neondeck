@@ -8,6 +8,7 @@ import {
   latestCodingRunForWorkItem,
 } from '../coding-runs';
 import { readFileSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { execFileSync } from 'node:child_process';
 import * as runtimeHome from '../../runtime-home';
 import * as runtimeFiles from '../../runtime-home/files';
@@ -1370,6 +1371,10 @@ it('revocation is durable before registry replacement and survives a failed writ
 });
 
 function prepareCodingRelease(requestKey = 'coding-release') {
+  // Metadata-only fixture: admission now pins a real file identity, but these
+  // writeback tests never launch a coding CLI. Unexpected execution fails.
+  const executable = join(setup.paths.home, 'private-codex-fixture');
+  writeFileSync(executable, '#!/bin/sh\nexit 1\n', { mode: 0o700 });
   execFileSync('git', ['init', '-b', 'main', setup.paths.home], {
     stdio: 'ignore',
   });
@@ -1402,7 +1407,7 @@ function prepareCodingRelease(requestKey = 'coding-release') {
         enabled: true,
         coding: {
           enabled: true,
-          executable: '/mock/codex',
+          executable,
           model: 'private-model',
           auth: { kind: 'api-key', env: 'FACTORY_TEST_TOKEN' },
         },

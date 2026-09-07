@@ -28,7 +28,14 @@ import {
   localHostCapability,
 } from './host-process.ts';
 import { inside, verifyOwnedWorktree } from './host-workspace.ts';
-import { inspectCodexReadiness } from './codex-readiness.ts';
+import {
+  inspectCodingAdapterReadiness,
+  prepareAdapterCredentials,
+  executableIdentity,
+  assertExecutableIdentity,
+  manifestAdapter,
+  verifyAdapterWorkspace,
+} from './adapter-host.ts';
 import { publishLocalCancellation } from './host-launch-gate.ts';
 export { publishLocalCancellation } from './host-launch-gate.ts';
 export { reconcileLocalAttempt } from './local-reconcile.ts';
@@ -83,28 +90,33 @@ export async function prepareLocalAttempt(
     'scratch',
   ])
     await mkdir(join(value.directory, path), { recursive: true, mode: 0o700 });
-  const readiness = await inspectCodexReadiness(
+  if (value.config.adapter && !value.expectedExecutableIdentity)
+    throw new Error('Pinned CLI executable identity required');
+  if (value.expectedExecutableIdentity)
+    await assertExecutableIdentity(
+      value.config.executable,
+      value.expectedExecutableIdentity,
+    );
+  const binaryIdentity =
+    value.expectedExecutableIdentity ??
+    (await executableIdentity(value.config.executable));
+  const readiness = await inspectCodingAdapterReadiness(
     value.config,
     join(value.directory, 'scratch'),
   );
   if (!readiness.ready)
-    throw new Error(readiness.reason ?? 'Codex unavailable');
-  if (value.selectedAuth) {
-    const auth: unknown =
-      value.selectedAuth.kind === 'api-key'
-        ? { OPENAI_API_KEY: value.selectedAuth.value }
-        : JSON.parse(value.selectedAuth.value);
-    v.parse(v.record(v.string(), v.unknown()), auth);
-    await atomicWrite(
-      join(value.directory, 'home/.codex/auth.json'),
-      JSON.stringify(auth),
-    );
-  }
+    throw new Error(readiness.reason ?? 'Coding CLI unavailable');
+  if (
+    JSON.stringify(binaryIdentity) !==
+    JSON.stringify(await executableIdentity(value.config.executable))
+  )
+    throw new Error('CLI executable changed during preparation');
   await atomicWrite(join(value.directory, 'prompt.txt'), value.prompt);
   if (value.testPauseBeforeSpawn)
     await atomicWrite(join(value.directory, 'test-spawn.pause'), 'paused');
   const manifest = v.parse(manifestSchema, {
-    version: 1,
+    version: value.config.adapter ? 2 : 1,
+    executableIdentity: binaryIdentity,
     attemptId: value.attemptId,
     cliVersion: readiness.version,
     testPauseBeforeSpawn: value.testPauseBeforeSpawn,
@@ -113,6 +125,8 @@ export async function prepareLocalAttempt(
     config: value.config,
     nonce: randomBytes(16).toString('hex'),
   });
+  verifyAdapterWorkspace(manifest);
+  await prepareAdapterCredentials(manifest, value.selectedAuth);
   await writeSigned(
     join(value.directory, 'manifest.json'),
     value.attemptToken,
@@ -130,6 +144,7 @@ export async function loadLocalManifest(input: unknown) {
       handle.attemptToken,
     ),
   );
+  manifestAdapter(manifest);
   if (manifest.directory !== handle.directory)
     throw new Error('Attempt directory identity mismatch');
   return { handle, manifest };
