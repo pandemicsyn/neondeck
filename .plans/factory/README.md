@@ -65,3 +65,11 @@ provide screenshots for UI changes for review and eventual GitHub publication.
 Slice 3 postmerge live obligations are recorded in [SLICE_3_ACCEPTANCE.md](SLICE_3_ACCEPTANCE.md); no live acceptance is claimed by synthetic verification.
 
 Slice 3 merged in PRs #397–#401 through `a897aa06`. Two independent static reviews were clean before publication; the manager’s post-publication architecture review is also clean. See the [Slice 3 handoff](SLICE_3_HANDOFF.md) for PR links, 2,439 passing tests, screenshots and remaining acceptance. All 45 CI checks passed and no review feedback was present at merge. Live acceptance remains pending.
+
+## Current operator follow-up
+
+[Onboarding and observability](OPERATIONS_IMPLEMENTATION_PLAN.md) is source complete
+after UI polish, covering optional init setup, task history, worker health,
+correlated diagnostics, doctor and previewable local export. Independent static
+reviews are clean; delivery uses stacked PRs. Existing live acceptance obligations
+remain unchanged.

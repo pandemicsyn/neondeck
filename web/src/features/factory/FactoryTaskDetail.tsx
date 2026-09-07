@@ -1,3 +1,4 @@
+import { FactoryTimeline } from './FactoryTimeline';
 import { FactoryReleaseCoding } from './FactoryReleaseCoding';
 import { FactoryCoding } from './FactoryCoding';
 import { FactoryGitHubSource } from './FactoryGitHub';
@@ -492,6 +493,10 @@ export function FactoryTaskDetail({
           />
         )}
       </details>
+      <FactoryTimeline
+        key={`timeline:${detail.work.id}`}
+        workId={detail.work.id}
+      />
       <details className="factory-history">
         <summary>
           Retained history · {detail.revisions.length} revisions ·{' '}

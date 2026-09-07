@@ -88,7 +88,7 @@ export function FactoryDeliveryEvidence({
           <FactoryDeliveryEvidenceContent
             key={item.id}
             deliveryId={p.pipelineId}
-            evidenceId={item.id}
+            evidence={item}
             version={p.version}
             label={`External feedback · ${item.classification?.result.replaceAll('-', ' ') ?? 'Awaiting classification'}`}
           />
@@ -124,7 +124,7 @@ export function FactoryDeliveryEvidence({
               <FactoryDeliveryEvidenceContent
                 key={e.id}
                 deliveryId={p.pipelineId}
-                evidenceId={e.id}
+                evidence={e}
                 version={p.version}
                 label={`${e.result} · ${current.includes(e) ? 'Current tree' : 'Prior or unmatched evidence, not current certification'}`}
               />

@@ -1227,3 +1227,56 @@ Use this format:
   CLI. This is a coverage limit, not a still-running test or a live result.
 - Follow-up: Extend the matrix with individually recorded scenarios when taken
   up; retain the existing live acceptance obligations and no-full-matrix claim.
+
+## 2026-09-07 - Factory onboarding and observability priority
+
+- Roadmap item: Software Factory follow-ups after Slice 4 and UI polish.
+- Decision: Insert optional CLI onboarding and an operator observability slice
+  before additional intake providers or remote execution. Preserve Slice 5/6 numbering.
+- Reason: The operator requested setup, auditability and debugging as core factory
+  capabilities; existing durable records lack a cohesive operational surface.
+- Follow-up: Complete the implementation/review/verification ledger in
+  `factory/OPERATIONS_IMPLEMENTATION_PLAN.md` (source complete and reviewed). Existing real-provider/VM acceptance
+  remains pending; this change does not count synthetic checks as live acceptance.
+
+## 2026-09-07 - Factory tracing export scope
+
+- Roadmap item: Factory onboarding and observability.
+- Decision: Implement correlated local phase/external-operation spans and explicit
+  local diagnostic export. Reuse retained Flue submission identities; keep native
+  model/tool tracing in Flue. Do not add a remote telemetry backend in this slice.
+- Reason: The requested optional export and local debugging can work without new
+  vendor credentials, network delivery, or duplicated Flue instrumentation.
+- Follow-up: If remote telemetry is requested, use the installed-version Flue
+  OpenTelemetry/Sentry/Braintrust integration with an explicit content policy.
+  Local diagnostic evidence does not establish complete historical model traces.
+
+## 2026-09-07 - Factory setup mutation serialization
+
+- Roadmap item: Factory onboarding and observability / stale setup preview.
+- Decision: Serialize factory configuration writes through the shared factory
+  service and validate the setup fingerprint inside that critical section.
+- Reason: CLI and running-server factory writes occur in different processes;
+  synchronous JavaScript alone cannot protect a reviewed proposal from overwrite.
+- Follow-up: Unrelated whole-config/repository writers do not yet share this
+  factory-specific lock. General cross-process configuration transactions remain
+  a separate follow-up; the setup guarantee must not claim global configuration
+  atomicity. A stale lock requires explicit operator recovery, never automatic
+  lock stealing. Factory contention/API precondition checks passed, and both
+  independent source reviews are clean.
+
+## 2026-09-07 - Existing factory adapter integration precondition
+
+- Roadmap item: Factory onboarding/observability verification, existing Slice 4
+  adapter matrix.
+- Decision: Correct the matrix fixture's early configuration-drift assertion to
+  call the production released-configuration guard directly. Keep no-new-run,
+  no-repair and unchanged-snapshot assertions, followed by the real candidate and
+  repair/delivery flow. No production admission guard is weakened or reordered.
+- Reason: The same Codex case fails at base `7ff29cbf`: it requested a repair before
+  failed evidence/progress admission existed, so the earlier evidence guard
+  correctly rejected it before the expected configuration-drift error. The
+  corrected current-source Codex case passes on macOS.
+- Follow-up: The six-case Linux adapter matrix passed, and both independent
+  reviewers cleared the fixture delta. This direct guard assertion is not a new claim of full
+  per-harness stale-repair-admission coverage.

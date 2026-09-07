@@ -37,8 +37,18 @@ beforeEach(() => {
   vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
     const url = String(input);
     if (url.includes('/evidence/progress-demo')) return response(content);
-    if (url.includes('/evidence/'))
-      return response(deliveryEvidenceContent(url.split('/').at(-1)));
+    if (url.includes('/evidence/')) {
+      const evidence = deliveryEvidenceContent(url.split('/').at(-1));
+      const selected = detail?.pipeline.evidence.find(
+        (item) => item.id === evidence.evidenceId,
+      );
+      if (selected)
+        Object.assign(evidence, {
+          result: selected.result,
+          revision: selected.revision,
+        });
+      return response(evidence);
+    }
     return response(detail);
   });
 });

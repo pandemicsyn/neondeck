@@ -8,7 +8,11 @@ import {
   deliveryControlInputSchema,
   type DeliveryGrantPreview,
 } from '../../../shared/factory-delivery-api';
-import type { DeliveryRevision } from '../../../shared/factory-delivery';
+import type {
+  DeliveryRevision,
+  DeliveryEvidence,
+  DeliveryFeedback,
+} from '../../../shared/factory-delivery';
 import { getJson, postJson, type ApiRequestOptions } from './http';
 
 // Validate each HTTP boundary with the canonical contract, avoiding schema drift.
@@ -110,17 +114,34 @@ function matchDelivery(detail: DeliveryDetail, id: string) {
 
 export async function getFactoryDeliveryEvidence(
   deliveryId: string,
-  evidenceId: string,
+  expected: DeliveryEvidence | DeliveryFeedback,
   options: ApiRequestOptions = {},
 ) {
   const result = v.parse(
     deliveryEvidenceContentSchema,
     await getJson<unknown>(
-      `${prefix}/deliveries/${encodeURIComponent(deliveryId)}/evidence/${encodeURIComponent(evidenceId)}`,
+      `${prefix}/deliveries/${encodeURIComponent(deliveryId)}/evidence/${encodeURIComponent(expected.id)}`,
       options,
     ),
   );
-  if (result.deliveryId !== deliveryId || result.evidenceId !== evidenceId)
+  if (result.deliveryId !== deliveryId || result.evidenceId !== expected.id)
     throw new Error('Evidence identity does not match this request.');
+  // Receipt references and bundle provenance are validated by the backend;
+  // the public content contract exposes only these immutable binding fields.
+  const sameRevision = Object.keys(expected.revision).every(
+    (key) =>
+      expected.revision[key as keyof DeliveryRevision] ===
+      result.revision[key as keyof DeliveryRevision],
+  );
+  const matches =
+    'kind' in expected
+      ? result.kind === expected.kind && result.result === expected.result
+      : result.kind === 'feedback' &&
+        result.feedback.fingerprint === expected.fingerprint &&
+        result.feedback.publishedHeadSha === expected.publishedHeadSha &&
+        result.feedback.ciFailed === expected.ciFailed &&
+        result.feedback.hasReviewFeedback === expected.hasReviewFeedback;
+  if (!sameRevision || !matches)
+    throw new Error('Evidence content does not match the selected record.');
   return result;
 }

@@ -1,3 +1,4 @@
+import { FactoryOperations } from './FactoryOperations';
 import { FactoryCodingSetup } from './FactoryCodingSetup';
 import { FactoryGitHubSetup } from './FactoryGitHub';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -142,6 +143,7 @@ export function FactoryPage() {
           {refreshing ? 'Refreshing…' : 'Refresh'}
         </button>
       </header>
+      <FactoryOperations />
       {state.error && state.data && (
         <p className="factory-error" role="alert">
           Inbox refresh failed: {message(state.error)}. Showing the last loaded
