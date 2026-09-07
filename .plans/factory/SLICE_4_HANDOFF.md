@@ -228,8 +228,8 @@ limit and pre/post stat checks. New preparation, launch and repair require the
 digest. Old stat-only persisted records remain decodable and reconcilable, but
 new execution or repair pauses for fresh human release without repinning or
 rewriting history. This extends the existing legacy executable-identity
-compatibility narrowing in the deviations ledger. The digest detects entrypoint
-byte changes; it does not cover transitive packages or establish filesystem
+compatibility narrowing in the deviations ledger. Digest comparisons detect
+entrypoint byte mismatches observed at checkpoints; they do not cover transitive packages or establish filesystem
 isolation or an OS sandbox.
 
 The second correction limits the public factory run harness projection to
@@ -265,3 +265,26 @@ overlapping checkpoints, not additive coverage.
 Earlier test, review and CI checkpoints remain historical. Foundation and provider
 source reviews are CLEAN; new exact-head CI remains pending. These checks do not
 establish live provider acceptance, which remains **NOT RUN**.
+
+## Manager-accepted executable race deferral — September 6, 2026
+
+The [PR #406 hash-to-spawn finding](https://github.com/pandemicsyn/neondeck/pull/406#discussion_r3946295354)
+is tracked as deferred, not implemented or dismissed as a false positive. The
+original entrypoint hash remains pinned between runs, and mismatches observed at
+identity checkpoints block execution. The descriptor closes before pathname-based
+spawn, so those checks do not guarantee immutable executed bytes; cancellation
+gates provide no filesystem protection.
+
+Both independent reviewers recommended this precise deferral, corroborated by
+the foundation owner's offline assessment: no assessed portable copy or descriptor
+execution approach preserved CLI wrapper, interpreter and package-asset behavior.
+The manager accepted the residual race within the user's explicitly naive,
+trusted localhost scope. This records the manager's decision, not personal user
+acceptance of a new risk, and qualifies earlier clean-review checkpoints.
+
+Operators must keep trusted CLI installations, interpreters and dependencies
+stable throughout attempts, pausing admission and stopping active writers before
+updates. Deferred follow-up is opt-in immutable execution artifacts preserving
+entrypoint, interpreter and package-asset layout with host write protection. A
+remote VM alone does not solve atomic binding. No source fix or new test result
+is claimed. Both independent static reviews of this documentation and the proposed PR note are CLEAN; new-head CI remains pending. Live acceptance remains **NOT RUN**.

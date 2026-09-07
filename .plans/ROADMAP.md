@@ -220,6 +220,10 @@ phases, progress supervision or publication logic. Codex remains the default.
 Published stack #410: draft [#406](https://github.com/pandemicsyn/neondeck/pull/406) → [#407](https://github.com/pandemicsyn/neondeck/pull/407) → [#408](https://github.com/pandemicsyn/neondeck/pull/408) → [#409](https://github.com/pandemicsyn/neondeck/pull/409) after both independent source/docs reviews were clean.
 Parent post-publication architecture review is clean; all nine checks passed on each published source head (#406 `03b697f6`, #407 `2cce6b09`, #408 `6255c952`, #409 `473ab9ef`) on September 6. Later documentation heads have separate CI; see the linked PRs for current status.
 The expanded per-harness scenario matrix and live acceptance remain open.
+Atomic binding from entrypoint hash check to execution is a manager-accepted
+deferral within the user's explicitly naive, trusted localhost scope. Follow-up
+is opt-in immutable execution artifacts preserving interpreter/package layout
+with host write protection; see the [recorded race and operator requirement](DEVIATIONS.md#2026-09-06---slice-4-executable-check-to-spawn-race).
 
 See the [Slice 4 implementation plan](factory/SLICE_4_IMPLEMENTATION_PLAN.md).
 The recommended next operational work remains combined Slice 2/3/3.1 live

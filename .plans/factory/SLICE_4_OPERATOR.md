@@ -15,7 +15,8 @@ version, model and configuration; later settings changes cannot change an
 existing grant or running attempt. Repairs retain pinned authority and cumulative
 budgets, with a fresh private home and session per attempt. The originally
 admitted executable identity is checked before any version probe and carried into
-repairs; replacing the binary blocks the attempt even if its version text matches.
+repairs; a mismatch observed at an identity checkpoint blocks the attempt even if
+version text matches. These checks do not guarantee immutable executed bytes.
 
 Historical attempts without a captured executable identity can still be inspected
 and reconciled. Starting a new repair pauses for a fresh human release through
@@ -33,8 +34,24 @@ and reconcilable, but new execution or repair pauses for fresh human release;
 today's binary is not repinned into historical authority. Descriptor-based hashing
 uses a 1 MiB buffer, a 512 MiB file bound, a 10-second limit and pre/post stat
 checks. Nonblocking open precedes regular-file validation, avoiding a hang on a
-FIFO with no writer. This detects entrypoint byte changes, not changes throughout transitive
+FIFO with no writer. Digest comparisons detect entrypoint byte mismatches observed
+at checkpoints, not changes throughout transitive
 packages, and does not establish filesystem isolation or an OS sandbox.
+
+The hash descriptor closes before pathname-based spawn, leaving a check-to-spawn
+race. The original hash remains pinned between runs, but cancellation gates do
+not protect filesystem contents. Keep the trusted CLI installation, interpreter
+and dependencies stable throughout each attempt. Pause admission and stop active
+writers before updating them.
+
+The manager accepted deferring atomic binding within the user's explicitly naive,
+trusted localhost scope; the race is not fixed, and this does not represent the
+user personally accepting a new risk. Portable copying or descriptor execution
+does not by itself preserve CLI wrapper, interpreter and package-asset behavior.
+The follow-up is opt-in immutable execution artifacts preserving that layout with
+host write protection; moving to a remote VM alone does not resolve it. See the
+[tracked review thread](https://github.com/pandemicsyn/neondeck/pull/406#discussion_r3946295354)
+and [deviations ledger](../DEVIATIONS.md#2026-09-06---slice-4-executable-check-to-spawn-race).
 
 The accompanying public factory run harness projection is limited to provider,
 version and model; resolved canonical path, device/inode and digest are excluded.

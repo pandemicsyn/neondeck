@@ -94,12 +94,25 @@ coverage is claimed. See the [deviation ledger](../DEVIATIONS.md).
 
 Expose all three harnesses in private setup/readiness and release controls, with Codex selected by default and OpenCode/Kilo opt-in. Missing optional-provider readiness must not block a configured Codex path. Saving credentials, changing selection or inspecting readiness does not execute code or publish anything.
 
-Bind the human-selected harness/config reference to exact release authority; admission resolves and persists adapter ID, contract version, executable identity and version, model, supported capabilities, permission profile and stable context. Persist references to credentials, never their values. Repairs inherit the grant's pinned selection. Persist exact attempt identity so controller restart dispatches to the same adapter and host, never the current global default. Compare the originally admitted executable identity before any executable probe, including `--version`, and preserve it through repair lineage. Revalidate readiness before spawning; a changed or unsupported binary blocks launch rather than accepting a silent version upgrade.
+Bind the human-selected harness/config reference to exact release authority; admission resolves and persists adapter ID, contract version, executable identity and version, model, supported capabilities, permission profile and stable context. Persist references to credentials, never their values. Repairs inherit the grant's pinned selection. Persist exact attempt identity so controller restart dispatches to the same adapter and host, never the current global default. Compare the originally admitted executable identity before any executable probe, including `--version`, and preserve it through repair lineage. Revalidate readiness before spawning; an identity mismatch or unsupported version observed at these checkpoints blocks launch. These checks do not guarantee immutable executed bytes.
+
+The original entrypoint hash remains pinned between runs, but its descriptor closes
+before pathname-based spawn, leaving a hash-to-spawn TOCTOU race. The cancellation
+gate does not protect the filesystem. The manager accepts this residual race as a
+deferred atomic-binding requirement within the user's explicitly naive, trusted
+localhost scope; this is not a claim that the user personally accepted a new risk
+or that the race was fixed. Keep the trusted CLI installation, interpreter and
+dependencies stable throughout each attempt; pause admission and stop active
+writers before updates. Follow-up is opt-in immutable execution artifacts that
+preserve entrypoint, interpreter and package-asset layout with host write
+protection. A remote VM alone does not solve this boundary. See the
+[deviation](../DEVIATIONS.md#2026-09-06---slice-4-executable-check-to-spawn-race)
+and tracked [PR #406 thread](https://github.com/pandemicsyn/neondeck/pull/406#discussion_r3946295354).
 
 No mid-session switching, failure fallback, automatic replacement or resumption of a provider's last session. Each initial or repair attempt gets a fresh provider session and private home. A deliberate harness/model change follows explicit new release/admission and any required candidate delivery consent; it cannot reset consumed budgets on existing authority or take over uncertain compute.
 
 Review A's P1/P2 fixes pin the original executable identity from admission through
-repairs and reject identity drift before `--version`. Invalid credential failures
+repairs and reject identity drift observed at checks before `--version`. Invalid credential failures
 are no longer cached, allowing corrected selected references to be re-evaluated.
 These fixes have focused regression tests and are included in both clean final v4 source reviews. Transitional UI/registry variants and all four changesets are also clean; final documentation was also cleared by both reviewers before publication.
 
@@ -172,6 +185,7 @@ Cartesian matrix or single all-inclusive `npm run verify` pass is claimed.
       unique subprocess adapter under the accepted deviation.
 - [x] Release configuration and original executable identity remain pinned;
       identity is checked before `--version`. Credential failures are not cached.
+      Atomic binding of checked bytes to execution remains explicitly deferred.
       Focused regression fixes and final source review are clean.
 - [x] Legacy inspection/reconciliation retained. Explicit compatibility narrowing:
       new repairs without captured executable identity pause for human release.

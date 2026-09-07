@@ -1175,6 +1175,30 @@ Use this format:
   are recorded in the handoff; new exact-head CI remains pending. The digest covers the entrypoint file, not
   transitive packages, and does not establish filesystem isolation or a sandbox.
 
+## 2026-09-06 - Slice 4 executable check-to-spawn race
+
+- Roadmap item: Slice 4 pinned executable identity and local-host launch boundary.
+- Decision: The manager accepts deferring atomic executable binding within the
+  user's explicitly naive, trusted localhost scope. The original entrypoint hash
+  remains pinned between runs, but its descriptor closes before pathname-based
+  spawn. Only mismatches observed at identity checkpoints are rejected; executed
+  bytes are not guaranteed immutable. Cancellation gates do not protect the
+  filesystem. This is a manager-accepted residual race, not personal user
+  acceptance of a new risk, an implemented fix or a false-positive dismissal.
+- Reason: Both independent reviewers recommend the precise deferral, and the
+  foundation owner's offline assessment corroborates it. No assessed portable
+  copy or descriptor-execution fix preserves all CLI wrapper, interpreter and
+  package-asset layout behavior. Copying an entrypoint alone omits dependencies;
+  descriptor execution alone does not bind that complete execution environment.
+- Operator requirement: Keep the trusted CLI installation, interpreter and
+  dependencies stable throughout each attempt. Pause admission and stop active
+  writers before updates.
+- Follow-up: Opt-in immutable execution artifacts preserving entrypoint,
+  interpreter and package-asset layout, together with host write protection.
+  Remote VM placement alone does not solve the race. Track the deferred
+  [PR #406 finding](https://github.com/pandemicsyn/neondeck/pull/406#discussion_r3946295354).
+  Live acceptance remains NOT RUN.
+
 ## 2026-09-06 - Slice 4 expanded per-harness scenario matrix
 
 - Roadmap item: Slice 4 acceptance combinations across CLI providers.
