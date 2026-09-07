@@ -1,26 +1,30 @@
 import './FactoryCodingEvidence.css';
+import type {
+  DeliveryEvidence,
+  DeliveryFeedback,
+} from '../../../../shared/factory-delivery';
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { getFactoryDeliveryEvidence } from '../../api/factory-delivery';
 
 export function FactoryDeliveryEvidenceContent({
   deliveryId,
-  evidenceId,
+  evidence,
   version,
   label,
   initiallyOpen = false,
 }: {
   deliveryId: string;
-  evidenceId: string;
+  evidence: DeliveryEvidence | DeliveryFeedback;
   version: number;
   label: string;
   initiallyOpen?: boolean;
 }) {
   const [open, setOpen] = useState(initiallyOpen);
   const query = useQuery({
-    queryKey: ['factory-delivery-evidence', deliveryId, evidenceId, version],
+    queryKey: ['factory-delivery-evidence', deliveryId, evidence, version],
     queryFn: ({ signal }) =>
-      getFactoryDeliveryEvidence(deliveryId, evidenceId, { signal }),
+      getFactoryDeliveryEvidence(deliveryId, evidence, { signal }),
     enabled: open,
   });
   const content = query.data;

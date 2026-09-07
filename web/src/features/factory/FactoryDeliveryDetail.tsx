@@ -68,7 +68,7 @@ export function FactoryDeliveryDetail({
         ),
       );
       const content = await Promise.all(
-        records.map((record) => getFactoryDeliveryEvidence(id, record.id)),
+        records.map((record) => getFactoryDeliveryEvidence(id, record)),
       );
       if (
         [...content, ...progress].some(
@@ -187,7 +187,7 @@ export function FactoryDeliveryDetail({
           {triggeringFeedback && (
             <FactoryDeliveryEvidenceContent
               deliveryId={id}
-              evidenceId={triggeringFeedback.id}
+              evidence={triggeringFeedback}
               version={p.version}
               label="Triggering external scope feedback"
               initiallyOpen

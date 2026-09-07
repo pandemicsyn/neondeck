@@ -3,22 +3,13 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import type { FactoryTimelineEntry } from '../../../../shared/factory-diagnostics';
-import { getFactoryCodingRun } from '../../api/factory-coding';
-import { getFactoryDelivery } from '../../api/factory-delivery';
 import { FactoryCodingEvidence } from './FactoryCodingEvidence';
 import { FactoryCodingCandidate } from './FactoryCodingCandidate';
 import { FactoryDeliveryEvidence } from './FactoryDeliveryEvidence';
-import { getFactoryDeliveryProgressEvidence } from '../../api/factory-progress';
+import { loadFactoryTimelineEvidence } from './factory-timeline-evidence';
 import { FactoryDeliveryProgressHistory } from './FactoryDeliveryProgressHistory';
 import { FactoryDeliveryEvidenceContent } from './FactoryDeliveryEvidenceContent';
 
-const sameRevision = (
-  a: NonNullable<FactoryTimelineEntry['revision']>,
-  b: NonNullable<FactoryTimelineEntry['revision']>,
-) =>
-  Object.keys(a).every(
-    (key) => a[key as keyof typeof a] === b[key as keyof typeof b],
-  );
 export function FactoryTimelineEvidence({
   entry,
 }: {
@@ -33,147 +24,7 @@ export function FactoryTimelineEvidence({
     queryKey: ['factory-timeline-evidence', entry],
     enabled: open && !reservation && !!(deliveryId || runId),
     retry: false,
-    queryFn: async ({ signal }) => {
-      if (deliveryId) {
-        const detail = await getFactoryDelivery(deliveryId, { signal });
-        if (detail.pipeline.workItemId !== entry.correlation.workItemId)
-          throw new Error('Delivery task binding does not match this record.');
-        if (!entry.revision)
-          throw new Error(
-            'This entry has no exact delivery revision binding. Its references remain reference-only.',
-          );
-        const revision = entry.revision;
-        for (const key of [
-          'runId',
-          'attemptId',
-          'releaseId',
-          'specVersion',
-          'specHash',
-        ] as const) {
-          if (
-            entry.correlation[key] !== undefined &&
-            entry.correlation[key] !== revision[key]
-          )
-            throw new Error(
-              'Recorded delivery correlation does not match its revision binding.',
-            );
-        }
-        if (entry.kind === 'repair') {
-          const target = entry.repairTarget;
-          const repair =
-            target &&
-            detail.pipeline.repairs.find(
-              (item) =>
-                item.runId === target.runId &&
-                item.attemptId === target.attemptId &&
-                sameRevision(item.fromRevision, revision),
-            );
-          if (!repair)
-            throw new Error(
-              'Repair target is not bound to this pipeline and historical source revision.',
-            );
-          const run = await getFactoryCodingRun(repair.runId, { signal });
-          const snapshot = run.record.snapshot;
-          if (
-            run.record.attemptId !== repair.attemptId ||
-            snapshot.requestId !== repair.requestId ||
-            snapshot.workItemId !== detail.pipeline.workItemId ||
-            snapshot.repoId !== detail.pipeline.repoId ||
-            snapshot.releaseId !== revision.releaseId ||
-            snapshot.specVersion !== revision.specVersion ||
-            snapshot.specHash !== revision.specHash
-          )
-            throw new Error(
-              'Repair coding run does not match the recorded target binding.',
-            );
-          return { kind: 'coding' as const, run, sourceRevision: revision };
-        }
-        if (entry.kind === 'judge') {
-          const assessment = detail.pipeline.progress.assessments.find(
-            (item) =>
-              sameRevision(item.revision, revision) &&
-              item.resultId !== null &&
-              entry.evidenceRefs.includes(item.resultId),
-          );
-          if (!assessment)
-            throw new Error(
-              'No settled assessment matches these recorded references. References remain reference-only.',
-            );
-          const content = await getFactoryDeliveryProgressEvidence(
-            deliveryId,
-            assessment.assessmentId,
-            { signal },
-          );
-          if (!sameRevision(content.assessment.revision, revision))
-            throw new Error('Assessment revision does not match this record.');
-          return { kind: 'progress' as const, content };
-        }
-        const current = sameRevision(detail.pipeline.revision, revision);
-        const validation =
-          entry.kind === 'verification' || entry.kind === 'review';
-        // Match the producer's complete ID and receipt reference, not a guessed
-        // suffix or another validation record for the same candidate.
-        const matches = validation
-          ? detail.pipeline.evidence.filter(
-              (item) =>
-                entry.id === `evidence:${deliveryId}:${item.id}` &&
-                entry.kind === item.kind &&
-                entry.evidenceRefs.length === 1 &&
-                entry.evidenceRefs[0] === item.evidenceRef &&
-                sameRevision(item.revision, revision) &&
-                (entry.correlation.effectId === undefined ||
-                  entry.correlation.effectId === item.effectId),
-            )
-          : [];
-        if (
-          (validation && matches.length !== 1) ||
-          (!validation && entry.id.startsWith('evidence:'))
-        )
-          throw new Error(
-            'No unique validation evidence matches this entry’s recorded ID, reference, kind, and revision. References remain reference-only.',
-          );
-        if (!validation && !current)
-          throw new Error(
-            'The current pipeline differs from this historical revision. This entry has no exact retained validation evidence binding; references remain reference-only.',
-          );
-        return {
-          kind: 'delivery' as const,
-          detail,
-          current,
-          matches,
-          validation,
-        };
-      }
-      const run = await getFactoryCodingRun(runId!, { signal });
-      const record = run.record;
-      const expected = entry.correlation;
-      if (
-        record.snapshot.workItemId !== expected.workItemId ||
-        (expected.attemptId !== undefined &&
-          record.attemptId !== expected.attemptId) ||
-        (expected.releaseId !== undefined &&
-          record.snapshot.releaseId !== expected.releaseId) ||
-        (expected.specVersion !== undefined &&
-          record.snapshot.specVersion !== expected.specVersion) ||
-        (expected.specHash !== undefined &&
-          record.snapshot.specHash !== expected.specHash)
-      )
-        throw new Error('Coding evidence binding does not match this record.');
-      if (
-        entry.revision &&
-        (entry.revision.runId !== record.runId ||
-          entry.revision.attemptId !== record.attemptId ||
-          entry.revision.releaseId !== record.snapshot.releaseId ||
-          entry.revision.specVersion !== record.snapshot.specVersion ||
-          entry.revision.specHash !== record.snapshot.specHash ||
-          entry.revision.baseSha !== record.candidate?.baseSha ||
-          entry.revision.headSha !== record.candidate?.headSha)
-      )
-        throw new Error(
-          'Coding candidate does not match the recorded revision.',
-        );
-      return { kind: 'coding' as const, run, sourceRevision: null };
-    },
+    queryFn: ({ signal }) => loadFactoryTimelineEvidence(entry, signal),
   });
   const result = evidence.data;
   if (reservation)
@@ -252,7 +103,7 @@ export function FactoryTimelineEvidence({
                     <FactoryDeliveryEvidenceContent
                       key={item.id}
                       deliveryId={result.detail.pipeline.pipelineId}
-                      evidenceId={item.id}
+                      evidence={item}
                       version={result.detail.pipeline.version}
                       label={`${item.kind} · ${item.result} · ${result.current ? 'Current' : 'Historical'} revision`}
                     />

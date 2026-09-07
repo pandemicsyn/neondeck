@@ -325,3 +325,17 @@ bindings, current versus historical context and reservation-only judge entries.
 The preceding integrated checkpoint passed 332 tests across 17 files, types and
 formatting; evidence-association regressions and independent static reviews cover
 this subsequent correction before publication.
+
+Queued-task health must inspect the current durable release and specification even
+before a coding run exists, reporting missing or stale authority as actionable
+attention. It does not replace the existing full coding-readiness/admission checks.
+The inspector follow-up binds settled judge entries to their exact assessment and
+checks repair source/target candidate identities before showing the target run.
+Available candidate base/head fields are checked; current worktree views remain
+explicitly distinct from frozen historical artifacts. The preceding integrated
+checkpoint passed 344 tests across 17 files, types and formatting, plus eight
+synthetic desktop/mobile evidence-inspection cases with screenshots attached to
+#418. These subsequent corrections receive their own tests and static reviews.
+The optional GitHub factory setup path must also remain unavailable or return
+cleanly when no registered repository has GitHub metadata, allowing the rest of
+first-run initialization to continue without mutating factory authority.

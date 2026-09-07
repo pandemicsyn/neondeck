@@ -52,8 +52,18 @@ beforeEach(() => {
       current = deliveryDetail();
       return response(current);
     }
-    if (url.includes('/evidence/'))
-      return response(deliveryEvidenceContent(url.split('/').at(-1)));
+    if (url.includes('/evidence/')) {
+      const evidence = deliveryEvidenceContent(url.split('/').at(-1));
+      const selected = current?.pipeline.evidence.find(
+        (item) => item.id === evidence.evidenceId,
+      );
+      if (selected)
+        Object.assign(evidence, {
+          result: selected.result,
+          revision: selected.revision,
+        });
+      return response(evidence);
+    }
     if (url.endsWith('/state'))
       return response({ deliveries: current ? [current] : [] });
     if (url.includes('/candidates/')) return response(deliveryPreview());
