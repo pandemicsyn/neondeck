@@ -1,7 +1,7 @@
 # Slice 4 handoff
 
 September 6, 2026: source implementation and recorded deterministic verification
-complete. Published stack #410: draft [#406](https://github.com/pandemicsyn/neondeck/pull/406) → [#407](https://github.com/pandemicsyn/neondeck/pull/407) → [#408](https://github.com/pandemicsyn/neondeck/pull/408) → [#409](https://github.com/pandemicsyn/neondeck/pull/409). Published-source CI is green at the dated checkpoint below; live acceptance remains NOT RUN.
+complete. Published stack #410: ready PRs [#406](https://github.com/pandemicsyn/neondeck/pull/406) → [#407](https://github.com/pandemicsyn/neondeck/pull/407) → [#408](https://github.com/pandemicsyn/neondeck/pull/408) → [#409](https://github.com/pandemicsyn/neondeck/pull/409). Published-source CI is green at the dated checkpoint below; live acceptance remains NOT RUN.
 Startup base `00c3e3e5`; planning commit `d0d57dcd`.
 
 ## Ownership and stack
@@ -24,11 +24,13 @@ and the Linux process/import correction. Earlier focused layer checkpoints passe
 59, 47 and 72 tests respectively; those overlap other suites and are not added
 to cumulative totals.
 
-The Layer 1 transitional task-detail variant adds only
-`expectedCodingConfigFingerprint: null` to the old release call, retaining legacy
-Codex semantics. Layer 4 supersedes it with the full registry-driven UI and
-actual displayed fingerprint binding. Both reviewers cleared the transitional
-UI/registry variants and all four changesets.
+The PR #409 P1 correction replaces the earlier transitional null-fingerprint
+caller. The new Layer 1 variant uses the same complete execution-review component
+as the top UI, reads validated coding state, blocks unavailable/stale review and
+submits the exact visible snapshot's non-null fingerprint. Every new release,
+including default Codex and retries, requires that fingerprint. Historical stored
+release records may retain null; they do not authorize new null-input releases.
+The updated variant and P1 source need fresh independent review.
 
 ## Final source reviews
 
@@ -144,3 +146,35 @@ CodeQL and two Analyze checks. At this check there were no PR reviews or inline
 comments on any of the four PRs; the independent agent reviews are recorded
 separately. These results certify these source heads only. Later documentation
 commits do not inherit their CI status; linked PRs show follow-up/current CI.
+
+## PR #409 P1 — complete execution review
+
+The release UI now owns a retained, visible configuration snapshot together with
+its submitted fingerprint. It displays automatic dispatch, adapter/contract/CLI
+version or explicit defaults, executable, model, credential kind and environment
+reference, PATH, permission profile, time/output limits and writer count. The
+field mapping is exhaustive over the typed configuration. No credential values
+are read or displayed. Refresh keeps reviewed values visible; changed settings
+block release until explicit re-review, and pending/failed reads disable it.
+
+The P1 UI checkpoint passed 25 focused tests across release review, task detail
+and page suites, including complete settings, stale hidden-setting changes,
+explicit re-review, default Codex fingerprint submission and unavailable reads.
+The private Layer 1 task-detail/test variants also passed 15 focused tests with
+the shared release-review component (overlapping the top checkpoint). Temporary
+test copies were removed. Web typecheck passed. Six actual synthetic desktop/mobile screenshots show full,
+stale and re-reviewed settings; no page errors, overflow or API network requests
+were observed. Screenshot attachment and independent review of this correction
+remain with the parent. Earlier clean reviews/CI apply to their dated source
+heads, not automatically to this new correction. The PRs are ready; stack merge
+is authorized only once feedback is clear. Live acceptance remains NOT RUN.
+
+### P1 final stable unit verification
+
+Parent-reported final broad unit run: **PASS, 257 files / 2,522 tests in 60.75
+seconds**, using stable source with unsandboxed execution. The earlier sandbox
+attempt was aborted after EPERM and overlapped discovery/removal of temporary
+lower-variant tests; it does not certify a clean full suite. The final stable
+rerun is the applicable result. Both independent reviewers are CLEAN on the final correction source, lower-layer
+variants and handoff before this unit-result-only delta. Source is unchanged;
+the added unit-result evidence is subsequent to that review checkpoint.
