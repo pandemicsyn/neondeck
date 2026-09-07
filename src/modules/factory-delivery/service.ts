@@ -1,3 +1,4 @@
+import { withFactorySpan, deliveryCorrelation } from '../factory-observability';
 import {
   settleEffectNonadmission,
   DeliveryEffectNotDispatchedError,
@@ -73,7 +74,13 @@ export function advanceFactoryDelivery(
   const key = `${paths.neondeckDatabase}:${id}`;
   const prior = attached.get(key);
   if (prior) return prior;
-  const pending = step().finally(() => attached.delete(key));
+  const pending = withFactorySpan(
+    paths,
+    'delivery.advance',
+    { deliveryId: id },
+    step,
+    'phase',
+  ).finally(() => attached.delete(key));
   attached.set(key, pending);
   return pending;
   async function step() {
@@ -96,7 +103,12 @@ export function advanceFactoryDelivery(
     if (outstanding) {
       // Only read reconciliation is admitted after controller loss. Never retry a
       // possibly accepted POST or launch another check/model process here.
-      await io.recover(pipeline, outstanding, paths);
+      await withFactorySpan(
+        paths,
+        'delivery.recover',
+        deliveryCorrelation(pipeline, outstanding.id),
+        () => io.recover(pipeline, outstanding, paths),
+      );
       return;
     }
     if (pipeline.repairs.some((r) => r.status === 'reserved')) {
@@ -177,11 +189,17 @@ export function advanceFactoryDelivery(
         feedbackRepairInstructions(feedback),
       );
       if (instructions === null) return;
-      await io.repair(
-        pipeline,
-        instructions,
-        `feedback-repair:${feedback.id}`,
+      await withFactorySpan(
         paths,
+        'delivery.repair',
+        deliveryCorrelation(pipeline),
+        () =>
+          io.repair(
+            pipeline,
+            instructions,
+            `feedback-repair:${feedback.id}`,
+            paths,
+          ),
       );
       return;
     }
@@ -209,7 +227,12 @@ export function advanceFactoryDelivery(
         repairInstructionsFromReceipt(failure.evidenceRef),
       );
       if (instructions === null) return;
-      await io.repair(pipeline, instructions, `repair:${failure.id}`, paths);
+      await withFactorySpan(
+        paths,
+        'delivery.repair',
+        deliveryCorrelation(pipeline),
+        () => io.repair(pipeline, instructions, `repair:${failure.id}`, paths),
+      );
       return;
     }
     if (verification?.result === 'blocked' || review?.result === 'blocked') {
@@ -243,7 +266,12 @@ export function advanceFactoryDelivery(
       kind = 'push';
     else if (!pipeline.pr) kind = 'create-pr';
     else {
-      await io.watch(pipeline, paths);
+      await withFactorySpan(
+        paths,
+        'delivery.watch',
+        deliveryCorrelation(pipeline),
+        () => io.watch(pipeline, paths),
+      );
       return;
     }
     const effectId = `${kind}:${pipeline.revision.candidateDigest}`;
@@ -292,8 +320,18 @@ export function advanceFactoryDelivery(
       if (kind === 'verification' || kind === 'review') {
         const result =
           kind === 'verification'
-            ? await io.verify(pipeline, evidence, effect, paths)
-            : await io.review(pipeline, evidence, effect, paths);
+            ? await withFactorySpan(
+                paths,
+                'delivery.verification',
+                deliveryCorrelation(pipeline, effectId),
+                () => io.verify(pipeline, evidence, effect!, paths),
+              )
+            : await withFactorySpan(
+                paths,
+                'delivery.review',
+                deliveryCorrelation(pipeline, effectId),
+                () => io.review(pipeline, evidence, effect!, paths),
+              );
         const receipt = deliveryReceipt(id, result, paths);
         await io.assert(requireDelivery(id, paths), paths);
         changeDelivery(
@@ -331,7 +369,12 @@ export function advanceFactoryDelivery(
           paths,
         );
       } else if (kind === 'commit') {
-        const result = await io.commit(pipeline, evidence, paths);
+        const result = await withFactorySpan(
+          paths,
+          'delivery.commit',
+          deliveryCorrelation(pipeline, effectId),
+          () => io.commit(pipeline, evidence, paths),
+        );
         const receipt = deliveryReceipt(id, result, paths);
         await io.assert(requireDelivery(id, paths), paths);
         changeDelivery(
@@ -355,7 +398,12 @@ export function advanceFactoryDelivery(
           paths,
         );
       } else if (kind === 'push') {
-        const result = await io.push(pipeline, paths);
+        const result = await withFactorySpan(
+          paths,
+          'delivery.push',
+          deliveryCorrelation(pipeline, effectId),
+          () => io.push(pipeline, paths),
+        );
         changeDelivery(
           id,
           {
@@ -367,7 +415,12 @@ export function advanceFactoryDelivery(
           paths,
         );
       } else {
-        const result = await io.createPr(pipeline, paths);
+        const result = await withFactorySpan(
+          paths,
+          'delivery.create-pr',
+          deliveryCorrelation(pipeline, effectId),
+          () => io.createPr(pipeline, paths),
+        );
         changeDelivery(
           id,
           {

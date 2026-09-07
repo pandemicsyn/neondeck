@@ -1,3 +1,4 @@
+import { startFactoryWorker } from '../modules/factory-observability';
 import type { RuntimePaths } from '../runtime-home';
 import { tickFactoryDelivery } from '../modules/factory-delivery';
 
@@ -8,19 +9,17 @@ export function startFactoryDeliveryLoop(
   intervalMs = 3000,
   tick = tickFactoryDelivery,
 ) {
+  const health = startFactoryWorker(paths, 'delivery', intervalMs);
   let stopped = false;
   let timer: ReturnType<typeof setTimeout> | undefined;
   let pending: Promise<void> | undefined;
   function run() {
     if (stopped) return;
-    pending = tick(paths)
-      .catch(() => {
-        console.warn(
-          '[factory] Delivery recovery needs attention; resources retained.',
-        );
-      })
+    pending = health
+      .tick(() => tick(paths))
       .finally(() => {
         if (!stopped) {
+          health.scheduled();
           timer = setTimeout(run, intervalMs);
           timer.unref();
         }
@@ -31,5 +30,6 @@ export function startFactoryDeliveryLoop(
     stopped = true;
     clearTimeout(timer);
     await pending;
+    health.stopped();
   };
 }

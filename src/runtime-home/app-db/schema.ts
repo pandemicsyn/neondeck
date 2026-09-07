@@ -1654,3 +1654,21 @@ export const factoryDeliveryPipelines = sqliteTable(
     unique().on(table.repoId, table.prNumber),
   ],
 );
+
+// Disposable bounded operational records; never an authority/audit ledger.
+export const factoryDiagnostics = sqliteTable(
+  'factory_diagnostics',
+  {
+    sequence: integer('sequence').primaryKey({ autoIncrement: true }),
+    workItemId: text('work_item_id'),
+    finishedAt: text('finished_at').notNull(),
+    recordJson: text('record_json').notNull(),
+  },
+  (table) => [
+    index('idx_factory_diagnostics_work').on(table.workItemId, table.sequence),
+  ],
+);
+export const factoryWorkerHealth = sqliteTable('factory_worker_health', {
+  worker: text('worker').primaryKey(),
+  recordJson: text('record_json').notNull(),
+});

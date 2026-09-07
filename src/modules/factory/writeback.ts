@@ -1,3 +1,4 @@
+import { withFactorySpan } from '../factory-observability';
 import * as v from 'valibot';
 import { randomUUID } from 'node:crypto';
 import type { DatabaseSync } from 'node:sqlite';
@@ -177,214 +178,245 @@ export function runFactoryWriteback(
       (a, b) => a.retryAt - b.retryAt || a.createdAt.localeCompare(b.createdAt),
     )[0];
     if (!e || signal.aborted) return;
-    let dispatched = ['sending', 'uncertain'].includes(e.state);
-    let writeInvoked = false;
-    try {
-      // Recovery is read-only even after opt-out; never discard evidence of a dispatched request.
-      const connection = factoryConnections(paths).find(
-        (c) => c.id === e.connectionId,
-      );
-      if (
-        !connection ||
-        connectionFingerprint(connection) !== e.connectionFingerprint
-      )
-        throw new FactoryError(
-          409,
-          'Mapping changed. Restore the original connection to reconcile this effect.',
-        );
-      if (!dispatched) dbRun(paths, (db) => effectAuthorized(db, e, paths));
-      const repo = await io.repository(connection, signal);
-      const source = await io.issue(connection, e.number, signal);
-      if (
-        String(repo.id) !== connection.repositoryId ||
-        repo.owner.login.toLowerCase() !== connection.owner.toLowerCase() ||
-        repo.name.toLowerCase() !== connection.name.toLowerCase() ||
-        String(source.id) !== e.issueId ||
-        source.number !== e.number ||
-        source.pull_request !== undefined
-      )
-        throw new FactoryError(
-          409,
-          'Remote target identity changed. No comment was written.',
-        );
-      if (dispatched) {
-        if (e.remoteId) {
-          const live = await io.comment(connection, e.remoteId, signal);
-          if (exact(e, live)) receipt(e, live, paths);
-          else {
-            e.state = 'repair';
-            e.error =
-              'Remote comment differs from the dispatched content. Explicit repair or relinquish required.';
-            save(e, paths);
-          }
-        } else {
-          // A complete bounded scan can prove a matching receipt, never prove that a timed-out POST did not commit.
-          const matches = new Set(e.scanMatches);
-          let complete = false;
-          for (let step = 0; step < 4 && !signal.aborted; step++) {
-            const result = await io.comments(
-              connection,
-              e.number,
-              e.scanPage,
-              signal,
-            );
-            for (const c of result.items.filter((c) => exact(e, c)))
-              if (matches.size < 2) matches.add(String(c.id));
-            e.scanMatches = [...matches];
-            e.scanPage++;
-            save(e, paths);
-            if (!result.hasNext) {
-              complete = true;
-              break;
-            }
-          }
-          if (complete && matches.size === 1) {
-            const live = await io.comment(connection, [...matches][0], signal);
-            if (!exact(e, live)) throw new Error('Remote candidate changed.');
-            receipt(e, live, paths);
-          } else {
-            e.state = 'uncertain';
-            e.retryAt = Date.now() + 300000;
-            e.error = complete
-              ? 'No unique confirmed receipt. No duplicate will be created. Recheck or relinquish.'
-              : 'Comment scan is incomplete. Durable pagination continues on the next check; no duplicate will be created.';
-            if (complete) {
-              e.scanPage = 1;
-              e.scanMatches = [];
-            }
-            save(e, paths);
-          }
-        }
-        return;
-      }
-      // Latest provider source content must match admission before issuing a new write.
-      const current = dbRun(paths, (db) => context(db, e.workId, paths));
-      if (
-        source.updated_at !== current.remote.updatedAt ||
-        source.state !== current.d.source.status ||
-        (source.body ?? '') !== current.d.source.body ||
-        source.title !== current.d.source.title
-      )
-        throw new FactoryError(
-          409,
-          'GitHub source changed. Sync source and review before sending.',
-        );
-      const identity = await io.identity(connection, signal);
-      if (e.remoteId && e.authorId !== identity.id) {
-        e.state = 'repair';
-        e.error =
-          'Configured credential no longer owns this comment. Restore the original author or relinquish management.';
-        save(e, paths);
-        return;
-      }
-      e.author = identity.login;
-      e.authorId = identity.id;
-      if (e.remoteId) {
-        const live = await io.comment(connection, e.remoteId, signal);
-        if (
-          String(live.id) !== e.remoteId ||
-          live.body !== e.confirmedBody ||
-          live.updated_at !== e.confirmedUpdatedAt ||
-          live.user?.login !== e.author ||
-          live.user?.id !== e.authorId
-        ) {
-          e.state = 'repair';
-          e.error =
-            'Managed comment was edited remotely. Automatic overwrite stopped.';
-          save(e, paths);
-          return;
-        }
-      }
-      if (!e.remoteId && e.approvalId) {
-        const repair = dbRun(paths, (db) =>
-          rows(db, 'repair').find((r) => r.id === e.approvalId),
-        );
-        if (repair && !repair.observed) {
-          const original = dbRun(paths, (db) =>
-            rows(db, 'status').find((x) => x.workId === e.workId),
+    return withFactorySpan(
+      paths,
+      'github.writeback',
+      {
+        workItemId: e.workId,
+        effectId: e.id,
+      },
+      async (span) => {
+        let dispatched = ['sending', 'uncertain'].includes(e.state);
+        let writeInvoked = false;
+        try {
+          // Recovery is read-only even after opt-out; never discard evidence of a dispatched request.
+          const connection = factoryConnections(paths).find(
+            (c) => c.id === e.connectionId,
           );
-          try {
-            if (!original?.remoteId)
-              throw new FactoryError(
-                409,
-                'Managed comment identity is unavailable. Relinquish management.',
-              );
-            await io.comment(connection, original.remoteId, signal);
+          if (
+            !connection ||
+            connectionFingerprint(connection) !== e.connectionFingerprint
+          )
             throw new FactoryError(
               409,
-              'The missing comment reappeared. Review repair again; no duplicate was created.',
+              'Mapping changed. Restore the original connection to reconcile this effect.',
             );
-          } catch (error) {
-            if (!(error instanceof GitHubApiError) || error.status !== 404)
-              throw error;
+          if (!dispatched) dbRun(paths, (db) => effectAuthorized(db, e, paths));
+          const repo = await io.repository(connection, signal);
+          const source = await io.issue(connection, e.number, signal);
+          if (
+            String(repo.id) !== connection.repositoryId ||
+            repo.owner.login.toLowerCase() !== connection.owner.toLowerCase() ||
+            repo.name.toLowerCase() !== connection.name.toLowerCase() ||
+            String(source.id) !== e.issueId ||
+            source.number !== e.number ||
+            source.pull_request !== undefined
+          )
+            throw new FactoryError(
+              409,
+              'Remote target identity changed. No comment was written.',
+            );
+          if (dispatched) {
+            if (e.remoteId) {
+              const live = await io.comment(connection, e.remoteId, signal);
+              if (exact(e, live)) receipt(e, live, paths);
+              else {
+                e.state = 'repair';
+                e.error =
+                  'Remote comment differs from the dispatched content. Explicit repair or relinquish required.';
+                save(e, paths);
+              }
+            } else {
+              // A complete bounded scan can prove a matching receipt, never prove that a timed-out POST did not commit.
+              const matches = new Set(e.scanMatches);
+              let complete = false;
+              for (let step = 0; step < 4 && !signal.aborted; step++) {
+                const result = await io.comments(
+                  connection,
+                  e.number,
+                  e.scanPage,
+                  signal,
+                );
+                for (const c of result.items.filter((c) => exact(e, c)))
+                  if (matches.size < 2) matches.add(String(c.id));
+                e.scanMatches = [...matches];
+                e.scanPage++;
+                save(e, paths);
+                if (!result.hasNext) {
+                  complete = true;
+                  break;
+                }
+              }
+              if (complete && matches.size === 1) {
+                const live = await io.comment(
+                  connection,
+                  [...matches][0],
+                  signal,
+                );
+                if (!exact(e, live))
+                  throw new Error('Remote candidate changed.');
+                receipt(e, live, paths);
+              } else {
+                e.state = 'uncertain';
+                e.retryAt = Date.now() + 300000;
+                e.error = complete
+                  ? 'No unique confirmed receipt. No duplicate will be created. Recheck or relinquish.'
+                  : 'Comment scan is incomplete. Durable pagination continues on the next check; no duplicate will be created.';
+                if (complete) {
+                  e.scanPage = 1;
+                  e.scanMatches = [];
+                }
+                save(e, paths);
+              }
+            }
+            return;
           }
+          // Latest provider source content must match admission before issuing a new write.
+          const current = dbRun(paths, (db) => context(db, e.workId, paths));
+          if (
+            source.updated_at !== current.remote.updatedAt ||
+            source.state !== current.d.source.status ||
+            (source.body ?? '') !== current.d.source.body ||
+            source.title !== current.d.source.title
+          )
+            throw new FactoryError(
+              409,
+              'GitHub source changed. Sync source and review before sending.',
+            );
+          const identity = await io.identity(connection, signal);
+          if (e.remoteId && e.authorId !== identity.id) {
+            e.state = 'repair';
+            e.error =
+              'Configured credential no longer owns this comment. Restore the original author or relinquish management.';
+            save(e, paths);
+            return;
+          }
+          e.author = identity.login;
+          e.authorId = identity.id;
+          if (e.remoteId) {
+            const live = await io.comment(connection, e.remoteId, signal);
+            if (
+              String(live.id) !== e.remoteId ||
+              live.body !== e.confirmedBody ||
+              live.updated_at !== e.confirmedUpdatedAt ||
+              live.user?.login !== e.author ||
+              live.user?.id !== e.authorId
+            ) {
+              e.state = 'repair';
+              e.error =
+                'Managed comment was edited remotely. Automatic overwrite stopped.';
+              save(e, paths);
+              return;
+            }
+          }
+          if (!e.remoteId && e.approvalId) {
+            const repair = dbRun(paths, (db) =>
+              rows(db, 'repair').find((r) => r.id === e.approvalId),
+            );
+            if (repair && !repair.observed) {
+              const original = dbRun(paths, (db) =>
+                rows(db, 'status').find((x) => x.workId === e.workId),
+              );
+              try {
+                if (!original?.remoteId)
+                  throw new FactoryError(
+                    409,
+                    'Managed comment identity is unavailable. Relinquish management.',
+                  );
+                await io.comment(connection, original.remoteId, signal);
+                throw new FactoryError(
+                  409,
+                  'The missing comment reappeared. Review repair again; no duplicate was created.',
+                );
+              } catch (error) {
+                if (!(error instanceof GitHubApiError) || error.status !== 404)
+                  throw error;
+              }
+            }
+          }
+          signal.throwIfAborted();
+          dbRun(paths, (db) => {
+            const latest = rows(db, 'effect').find((x) => x.id === e.id)!;
+            if (latest.state !== 'pending')
+              throw new FactoryError(
+                409,
+                'Effect was cancelled before dispatch.',
+              );
+            effectAuthorized(db, e, paths);
+            e.state = 'sending';
+            e.attempts++;
+            e.error = null;
+            put(db, 'effect', e);
+          });
+          dispatched = true;
+          // No await between the final authorization fence and invoking the transport.
+          writeInvoked = true;
+          const response = e.remoteId
+            ? await withFactorySpan(
+                paths,
+                'github.publish',
+                { workItemId: e.workId, effectId: e.id },
+                () => io.update(connection, e.remoteId!, e.body, signal),
+              )
+            : await withFactorySpan(
+                paths,
+                'github.publish',
+                { workItemId: e.workId, effectId: e.id },
+                () => io.create(connection, e.number, e.body, signal),
+              );
+          receipt(e, response, paths);
+        } catch (error) {
+          span.finish(error ?? new Error());
+          if (
+            !dispatched &&
+            dbRun(
+              paths,
+              (db) => rows(db, 'effect').find((x) => x.id === e.id)?.state,
+            ) === 'cancelled'
+          )
+            return;
+          if (
+            writeInvoked &&
+            error instanceof GitHubApiError &&
+            [401, 403, 422, 429].includes(error.status)
+          ) {
+            e.state = 'failed';
+            e.error = errorMessage(error);
+          } else if (dispatched) {
+            e.state =
+              error instanceof GitHubApiError &&
+              error.status === 404 &&
+              !!e.remoteId
+                ? 'repair'
+                : 'uncertain';
+            e.error = `${errorMessage(error)} Outcome is not assumed; no blind retry.`;
+          } else if (
+            error instanceof FactoryError &&
+            [403, 409].includes(error.status)
+          ) {
+            e.state =
+              e.kind === 'status' && e.approvalId ? 'repair' : 'cancelled';
+            e.error = error.message;
+          } else {
+            e.state =
+              error instanceof GitHubApiError &&
+              error.status === 404 &&
+              !!e.remoteId
+                ? 'repair'
+                : 'failed';
+            e.error =
+              e.state === 'repair'
+                ? 'Managed comment is unavailable. Explicit repair or relinquish required.'
+                : errorMessage(error);
+          }
+          e.retryAt = githubWritebackRetryAt(
+            error instanceof GitHubApiError ? error.retry.retryAt : null,
+          );
+          save(e, paths);
         }
-      }
-      signal.throwIfAborted();
-      dbRun(paths, (db) => {
-        const latest = rows(db, 'effect').find((x) => x.id === e.id)!;
-        if (latest.state !== 'pending')
-          throw new FactoryError(409, 'Effect was cancelled before dispatch.');
-        effectAuthorized(db, e, paths);
-        e.state = 'sending';
-        e.attempts++;
-        e.error = null;
-        put(db, 'effect', e);
-      });
-      dispatched = true;
-      // No await between the final authorization fence and invoking the transport.
-      writeInvoked = true;
-      const response = e.remoteId
-        ? await io.update(connection, e.remoteId, e.body, signal)
-        : await io.create(connection, e.number, e.body, signal);
-      receipt(e, response, paths);
-    } catch (error) {
-      if (
-        !dispatched &&
-        dbRun(
-          paths,
-          (db) => rows(db, 'effect').find((x) => x.id === e.id)?.state,
-        ) === 'cancelled'
-      )
-        return;
-      if (
-        writeInvoked &&
-        error instanceof GitHubApiError &&
-        [401, 403, 422, 429].includes(error.status)
-      ) {
-        e.state = 'failed';
-        e.error = errorMessage(error);
-      } else if (dispatched) {
-        e.state =
-          error instanceof GitHubApiError &&
-          error.status === 404 &&
-          !!e.remoteId
-            ? 'repair'
-            : 'uncertain';
-        e.error = `${errorMessage(error)} Outcome is not assumed; no blind retry.`;
-      } else if (
-        error instanceof FactoryError &&
-        [403, 409].includes(error.status)
-      ) {
-        e.state = e.kind === 'status' && e.approvalId ? 'repair' : 'cancelled';
-        e.error = error.message;
-      } else {
-        e.state =
-          error instanceof GitHubApiError &&
-          error.status === 404 &&
-          !!e.remoteId
-            ? 'repair'
-            : 'failed';
-        e.error =
-          e.state === 'repair'
-            ? 'Managed comment is unavailable. Explicit repair or relinquish required.'
-            : errorMessage(error);
-      }
-      e.retryAt = githubWritebackRetryAt(
-        error instanceof GitHubApiError ? error.retry.retryAt : null,
-      );
-      save(e, paths);
-    }
+      },
+      'phase',
+    );
   }
 }
 export function recoverWriteback(

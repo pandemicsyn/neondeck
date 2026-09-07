@@ -1,3 +1,4 @@
+import { bindFactorySpanCorrelation } from '../factory-observability';
 export {
   ReviewerDeadlineError,
   ReviewerTerminalError,
@@ -97,6 +98,7 @@ export async function reviewCandidateEvidence(
         },
       });
       await callbacks.onDispatched(dispatched.submissionId);
+      bindFactorySpanCorrelation({ submissionId: dispatched.submissionId });
       try {
         await callbacks.assertAuthority?.();
       } catch (error) {
@@ -131,6 +133,7 @@ export async function recoverExistingCandidateReview(
   validateReviewerChecks(request);
   await assertCandidateEvidenceCurrent(handle, request.evidence);
   const { FactoryReviewer } = await import('../../agents/factory-reviewer');
+  bindFactorySpanCorrelation({ submissionId });
   const reply = await readCandidateReviewWithinDeadline(
     init(FactoryReviewer, { id: request.id }),
     submissionId,

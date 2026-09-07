@@ -1,3 +1,7 @@
+import {
+  startFactoryWorker,
+  withFactorySpan,
+} from '../modules/factory-observability';
 import { runFactoryWriteback } from '../modules/factory/writeback';
 import { runFactoryGitHubSync } from '../modules/factory/github-reconcile';
 import type { RuntimePaths } from '../runtime-home';
@@ -6,13 +10,15 @@ export function startFactoryGitHubLoop(
   paths: RuntimePaths,
   intervalMs = 15000,
 ) {
+  const health = startFactoryWorker(paths, 'github', intervalMs);
   const controller = new AbortController();
   let pending: Promise<void> | undefined;
   let timer: ReturnType<typeof setTimeout> | undefined;
   function tick() {
     if (controller.signal.aborted) return;
-    pending = recover().finally(() => {
+    pending = health.tick(recover).finally(() => {
       if (!controller.signal.aborted) {
+        health.scheduled();
         timer = setTimeout(tick, intervalMs);
         timer.unref();
       }
@@ -20,27 +26,27 @@ export function startFactoryGitHubLoop(
   }
   async function recover() {
     try {
-      await runFactoryGitHubSync(
-        paths,
-        undefined,
-        AbortSignal.any([controller.signal, AbortSignal.timeout(45000)]),
+      await withFactorySpan(paths, 'github.sync', {}, () =>
+        runFactoryGitHubSync(
+          paths,
+          undefined,
+          AbortSignal.any([controller.signal, AbortSignal.timeout(45000)]),
+        ),
       );
-    } catch {
-      console.warn(
-        '[factory] GitHub source recovery failed; retained work will retry.',
-      );
+    } catch (error) {
+      health.failure(error);
     }
     if (controller.signal.aborted) return;
     try {
-      await runFactoryWriteback(
-        paths,
-        undefined,
-        AbortSignal.any([controller.signal, AbortSignal.timeout(45000)]),
+      await withFactorySpan(paths, 'github.writeback-controller', {}, () =>
+        runFactoryWriteback(
+          paths,
+          undefined,
+          AbortSignal.any([controller.signal, AbortSignal.timeout(45000)]),
+        ),
       );
-    } catch {
-      console.warn(
-        '[factory] GitHub writeback recovery failed; retained work will retry.',
-      );
+    } catch (error) {
+      health.failure(error);
     }
   }
   tick();
@@ -48,5 +54,6 @@ export function startFactoryGitHubLoop(
     controller.abort();
     clearTimeout(timer);
     await pending;
+    health.stopped();
   };
 }
