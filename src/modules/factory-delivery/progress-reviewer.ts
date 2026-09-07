@@ -1,3 +1,4 @@
+import { bindFactorySpanCorrelation } from '../factory-observability';
 import { dispatch, init } from '@flue/runtime';
 import {
   validateProgressRequest,
@@ -48,6 +49,7 @@ export async function reviewFactoryProgress(
         },
       });
       await callbacks.onDispatched(receipt.submissionId);
+      bindFactorySpanCorrelation({ submissionId: receipt.submissionId });
       await callbacks.assertAuthority();
       return receipt;
     },
@@ -75,6 +77,7 @@ export async function recoverExistingFactoryProgress(
   await assertAuthority?.();
   const { FactoryProgressReviewer } =
     await import('../../agents/factory-progress-reviewer');
+  bindFactorySpanCorrelation({ submissionId });
   const reply = await readCandidateReviewWithinDeadline(
     init(FactoryProgressReviewer, { id: request.id }),
     submissionId,

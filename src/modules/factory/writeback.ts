@@ -1,3 +1,4 @@
+import { startFactorySpan, withFactorySpan } from '../factory-observability';
 import * as v from 'valibot';
 import { randomUUID } from 'node:crypto';
 import type { DatabaseSync } from 'node:sqlite';
@@ -177,6 +178,10 @@ export function runFactoryWriteback(
       (a, b) => a.retryAt - b.retryAt || a.createdAt.localeCompare(b.createdAt),
     )[0];
     if (!e || signal.aborted) return;
+    const span = startFactorySpan(paths, 'github.writeback', {
+      workItemId: e.workId,
+      effectId: e.id,
+    });
     let dispatched = ['sending', 'uncertain'].includes(e.state);
     let writeInvoked = false;
     try {
@@ -335,10 +340,21 @@ export function runFactoryWriteback(
       // No await between the final authorization fence and invoking the transport.
       writeInvoked = true;
       const response = e.remoteId
-        ? await io.update(connection, e.remoteId, e.body, signal)
-        : await io.create(connection, e.number, e.body, signal);
+        ? await withFactorySpan(
+            paths,
+            'github.publish',
+            { workItemId: e.workId, effectId: e.id },
+            () => io.update(connection, e.remoteId!, e.body, signal),
+          )
+        : await withFactorySpan(
+            paths,
+            'github.publish',
+            { workItemId: e.workId, effectId: e.id },
+            () => io.create(connection, e.number, e.body, signal),
+          );
       receipt(e, response, paths);
     } catch (error) {
+      span.finish(error);
       if (
         !dispatched &&
         dbRun(
@@ -384,6 +400,8 @@ export function runFactoryWriteback(
         error instanceof GitHubApiError ? error.retry.retryAt : null,
       );
       save(e, paths);
+    } finally {
+      span.finish();
     }
   }
 }

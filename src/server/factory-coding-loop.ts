@@ -1,3 +1,4 @@
+import { startFactoryWorker } from '../modules/factory-observability';
 import type { RuntimePaths } from '../runtime-home';
 import { tickFactoryCoding } from '../modules/factory/coding-service';
 /** Recovery runs even while disabled. The settled tick schedules its successor,
@@ -7,19 +8,17 @@ export function startFactoryCodingLoop(
   intervalMs = 3000,
   tick = tickFactoryCoding,
 ) {
+  const health = startFactoryWorker(paths, 'coding', intervalMs);
   let stopped = false;
   let timer: ReturnType<typeof setTimeout> | undefined;
   let pending: Promise<void> | undefined;
   function run() {
     if (stopped) return;
-    pending = tick(paths)
-      .catch(() => {
-        console.warn(
-          '[factory] Coding recovery needs attention; ownership retained.',
-        );
-      })
+    pending = health
+      .tick(() => tick(paths))
       .finally(() => {
         if (!stopped) {
+          health.scheduled();
           timer = setTimeout(run, intervalMs);
           timer.unref();
         }
@@ -30,5 +29,6 @@ export function startFactoryCodingLoop(
     stopped = true;
     clearTimeout(timer);
     await pending;
+    health.stopped();
   };
 }

@@ -1,3 +1,4 @@
+import { withFactorySpan, codingCorrelation } from '../factory-observability';
 import {
   codingAdmissionFingerprint,
   readCodingAttention,
@@ -304,23 +305,29 @@ export async function launchReservedCodingRun(
           options.wallTimeMs,
         ),
       );
-    await host.prepareLocalAttempt({
-      ...handle,
-      attemptId: run.attemptId,
-      ownedWorktree: {
-        id: worktree.id,
-        repoId: worktree.repoId,
-        root: await realpath(worktree.localPath),
-        storageRoot: await realpath(paths.worktrees),
-        sourceRoot: await realpath(repo.path),
-        branch,
-        baseSha: snapshot.baseSha,
-      },
-      config,
-      expectedExecutableIdentity,
-      prompt: options.prompt ?? codingPrompt(snapshot),
-      selectedAuth,
-    });
+    await withFactorySpan(
+      paths,
+      'coding.prepare',
+      codingCorrelation(run),
+      async () =>
+        host.prepareLocalAttempt({
+          ...handle,
+          attemptId: run.attemptId,
+          ownedWorktree: {
+            id: worktree.id,
+            repoId: worktree.repoId,
+            root: await realpath(worktree.localPath),
+            storageRoot: await realpath(paths.worktrees),
+            sourceRoot: await realpath(repo.path),
+            branch,
+            baseSha: snapshot.baseSha,
+          },
+          config,
+          expectedExecutableIdentity,
+          prompt: options.prompt ?? codingPrompt(snapshot),
+          selectedAuth,
+        }),
+    );
     await assertCodingSnapshot(snapshot, paths);
     await options.assertAuthority?.();
     if (
@@ -336,7 +343,9 @@ export async function launchReservedCodingRun(
     )
       throw new Error('Launch authority changed.');
     run = changeCodingRun(current, { type: 'running' }, paths);
-    await host.launchLocalAttempt(handle);
+    await withFactorySpan(paths, 'coding.launch', codingCorrelation(run), () =>
+      host.launchLocalAttempt(handle),
+    );
     return await reconcileCodingRun(run.runId, paths, host);
   } catch {
     const current = requireCodingRun(run.runId, paths);
@@ -385,10 +394,26 @@ export async function reconcileCodingRun(
     run = requireCodingRun(id, paths);
     if (!run.host) return quarantine(id, paths);
     const handle = codingHandle(run, paths);
-    if (run.cancelRequestedAt) await host.cancelLocalAttempt(handle);
-    let state = await host.inspectLocalAttempt(handle);
+    if (run.cancelRequestedAt)
+      await withFactorySpan(
+        paths,
+        'coding.cancel',
+        codingCorrelation(run),
+        () => host.cancelLocalAttempt(handle),
+      );
+    let state = await withFactorySpan(
+      paths,
+      'coding.inspect',
+      codingCorrelation(run),
+      () => host.inspectLocalAttempt(handle),
+    );
     if (state.state === 'needs-reconcile')
-      state = await host.reconcileLocalAttempt(handle);
+      state = await withFactorySpan(
+        paths,
+        'coding.reconcile',
+        codingCorrelation(run),
+        () => host.reconcileLocalAttempt(handle),
+      );
     if (state.state === 'needs-reconcile') return quarantine(id, paths);
     run = requireCodingRun(id, paths);
     if (state.receipt.sessionId && !run.providerSessionId)
@@ -400,7 +425,12 @@ export async function reconcileCodingRun(
     if (state.state !== 'finished' || !state.receipt.noWriter) return run;
     if (run.status === 'running')
       run = changeCodingRun(run, { type: 'collecting' }, paths);
-    const evidence = await host.collectLocalAttempt(handle);
+    const evidence = await withFactorySpan(
+      paths,
+      'coding.collect',
+      codingCorrelation(run),
+      () => host.collectLocalAttempt(handle),
+    );
     if (!evidence.receipt.noWriter)
       throw new Error('Writer death is unconfirmed.');
     run = requireCodingRun(id, paths);

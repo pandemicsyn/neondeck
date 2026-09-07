@@ -1,3 +1,8 @@
+import {
+  withFactorySpan,
+  deliveryCorrelation,
+  bindFactorySpanCorrelation,
+} from '../factory-observability';
 import * as v from 'valibot';
 import type { DeliveryPipeline } from '../../../shared/factory-delivery';
 import type { DeliveryProgressAssessment } from '../../../shared/factory-progress';
@@ -226,21 +231,29 @@ export async function checkpointDeliveryRepair(
       paths,
     );
     await assertProgressCurrent(p, assessment, paths, io);
-    const result = await io.review(request, {
-      assertAuthority: () => assertProgressCurrent(p, assessment, paths, io),
-      onDispatched: async (submissionId) => {
-        const current = requireDelivery(p.pipelineId, paths);
-        updateDeliveryProgress(
-          {
-            pipelineId: p.pipelineId,
-            expectedVersion: current.version,
-            assessmentId,
-            action: { type: 'bind-submission', submissionId },
+    const result = await withFactorySpan(
+      paths,
+      'delivery.progress',
+      deliveryCorrelation(p),
+      () =>
+        io.review(request, {
+          assertAuthority: () =>
+            assertProgressCurrent(p, assessment, paths, io),
+          onDispatched: async (submissionId) => {
+            const current = requireDelivery(p.pipelineId, paths);
+            updateDeliveryProgress(
+              {
+                pipelineId: p.pipelineId,
+                expectedVersion: current.version,
+                assessmentId,
+                action: { type: 'bind-submission', submissionId },
+              },
+              paths,
+            );
+            bindFactorySpanCorrelation({ submissionId });
           },
-          paths,
-        );
-      },
-    });
+        }),
+    );
     await assertProgressCurrent(p, assessment, paths, io);
     await settleDeliveryProgress(p, assessment, result, paths);
     return checkpointDeliveryRepair(

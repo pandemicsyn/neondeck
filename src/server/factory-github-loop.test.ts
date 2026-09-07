@@ -1,3 +1,8 @@
+import { mkdtempSync, mkdirSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { initializeAppDatabase } from '../runtime-home/app-db';
+import { getFactoryWorkerHealth } from '../modules/factory-observability';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { runFactoryGitHubSync } from '../modules/factory/github-reconcile';
 import { runFactoryWriteback } from '../modules/factory/writeback';
@@ -5,15 +10,18 @@ import { runtimePaths } from '../runtime-home';
 import { startFactoryGitHubLoop } from './factory-github-loop';
 
 vi.mock('../modules/factory/github-reconcile', () => ({
-  runFactoryGitHubSync: vi.fn(),
+  runFactoryGitHubSync: vi.fn<typeof runFactoryGitHubSync>(),
 }));
 vi.mock('../modules/factory/writeback', () => ({
-  runFactoryWriteback: vi.fn(),
+  runFactoryWriteback: vi.fn<typeof runFactoryWriteback>(),
 }));
 
-const paths = runtimePaths('/tmp/factory-github-loop-fixture');
+let paths: ReturnType<typeof runtimePaths>;
 let stop: (() => Promise<void>) | undefined;
 beforeEach(() => {
+  paths = runtimePaths(mkdtempSync(join(tmpdir(), 'factory-github-loop-')));
+  mkdirSync(paths.data, { recursive: true });
+  initializeAppDatabase(paths.neondeckDatabase);
   vi.useFakeTimers();
   vi.mocked(runFactoryGitHubSync).mockResolvedValue(undefined);
   vi.mocked(runFactoryWriteback).mockResolvedValue(undefined);
@@ -26,6 +34,7 @@ afterEach(async () => {
   vi.useRealTimers();
   vi.restoreAllMocks();
   vi.resetAllMocks();
+  rmSync(paths.home, { recursive: true, force: true });
 });
 
 it('runs independent writeback after source recovery fails', async () => {
@@ -36,9 +45,20 @@ it('runs independent writeback after source recovery fails', async () => {
   await vi.advanceTimersByTimeAsync(0);
   expect(runFactoryWriteback).toHaveBeenCalledTimes(1);
   expect(console.warn).toHaveBeenCalledWith(
-    expect.stringContaining('source recovery failed'),
+    expect.stringContaining('"operation":"github.sync"'),
   );
+  expect(getFactoryWorkerHealth(paths)[0]).toMatchObject({
+    consecutiveFailures: 1,
+    totalFailures: 1,
+    lastSuccessAt: null,
+    status: 'waiting',
+  });
   await vi.advanceTimersByTimeAsync(1000);
+  expect(getFactoryWorkerHealth(paths)[0]).toMatchObject({
+    consecutiveFailures: 0,
+    totalFailures: 1,
+    status: 'waiting',
+  });
   expect(runFactoryGitHubSync).toHaveBeenCalledTimes(2);
   expect(runFactoryWriteback).toHaveBeenCalledTimes(2);
 });
@@ -50,9 +70,20 @@ it('retries on the next tick after writeback fails', async () => {
   stop = startFactoryGitHubLoop(paths, 1000);
   await vi.advanceTimersByTimeAsync(0);
   expect(console.warn).toHaveBeenCalledWith(
-    expect.stringContaining('writeback recovery failed'),
+    expect.stringContaining('"operation":"github.writeback"'),
   );
+  expect(getFactoryWorkerHealth(paths)[0]).toMatchObject({
+    consecutiveFailures: 1,
+    totalFailures: 1,
+    lastSuccessAt: null,
+    status: 'waiting',
+  });
   await vi.advanceTimersByTimeAsync(1000);
+  expect(getFactoryWorkerHealth(paths)[0]).toMatchObject({
+    consecutiveFailures: 0,
+    totalFailures: 1,
+    status: 'waiting',
+  });
   expect(runFactoryGitHubSync).toHaveBeenCalledTimes(2);
   expect(runFactoryWriteback).toHaveBeenCalledTimes(2);
 });

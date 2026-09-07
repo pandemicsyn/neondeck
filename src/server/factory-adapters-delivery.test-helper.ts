@@ -5,8 +5,10 @@ import {
   writeAdapterFixture,
   assertAdapterAttempts,
 } from './factory-adapters-fixtures.test-helper';
-import { codingConfig } from '../modules/factory/coding-context';
-import { dispatchCodingRepair } from '../modules/factory-delivery/repair';
+import {
+  codingConfig,
+  assertReleasedCodingConfig,
+} from '../modules/factory/coding-context';
 import { deliveryDetailSchema } from '../../shared/factory-delivery-api';
 import { execFileSync } from 'node:child_process';
 import {
@@ -428,7 +430,6 @@ const child=spawn(process.execPath,[${JSON.stringify(resolve('scripts/mockdex.mj
     );
     pipelineId = granted.pipeline.pipelineId;
     if (provider) {
-      const admitted = requireDelivery(pipelineId, paths);
       const changed = {
         ...config,
         factory: {
@@ -446,22 +447,12 @@ const child=spawn(process.execPath,[${JSON.stringify(resolve('scripts/mockdex.mj
         },
       };
       writeFileSync(paths.config, JSON.stringify(changed));
-      await expect(
-        dispatchCodingRepair(
-          {
-            pipelineId,
-            expectedVersion: admitted.version,
-            requestId: 'reject-config-drift',
-            progressAssessmentId: 'not-admitted',
-            progressInputDigest: '0'.repeat(64),
-            progressEvidenceDigest: '0'.repeat(64),
-            reason: 'Synthetic drift must not redirect a repair',
-            maxWallTimeMs: 15000,
-          },
-          paths,
-          async () => {},
-        ),
-      ).rejects.toThrow(/Coding configuration changed since human release/);
+      // This newly granted candidate has no failed evidence or progress admission.
+      // Exercise configuration authority directly instead of asking repair admission
+      // to bypass those earlier prerequisites merely to reach a particular error.
+      expect(() => assertReleasedCodingConfig(work.work.id, paths)).toThrow(
+        /Coding configuration changed since human release/,
+      );
       expect(listCodingRuns({}, paths)).toHaveLength(1);
       expect(requireDelivery(pipelineId, paths).repairs).toEqual([]);
       expect(requireCodingRun(run.runId, paths).snapshot).toEqual(run.snapshot);

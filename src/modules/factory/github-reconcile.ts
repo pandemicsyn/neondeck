@@ -1,3 +1,4 @@
+import { startFactorySpan } from '../factory-observability';
 import { echoDisposition, observeOwnedCommentChange } from './writeback';
 import * as v from 'valibot';
 import type {
@@ -393,6 +394,17 @@ async function reconcile(
       source.remote?.repositoryId === connection.repositoryId &&
       source.remote.number === number,
   );
+  let observedWorkId: string | undefined;
+  try {
+    if (retained) observedWorkId = workIdForSource(retained, paths);
+  } catch {
+    /* Diagnostic lookup must not change source reconciliation. */
+  }
+  const span = startFactorySpan(
+    paths,
+    'github.source',
+    observedWorkId ? { workItemId: observedWorkId } : {},
+  );
   try {
     const repo = await io.repository(connection, signal);
     if (
@@ -437,6 +449,7 @@ async function reconcile(
     const intent = prepareFactoryTriage(current.work.id, paths);
     if (intent) void io.planning(intent.id, paths).catch(() => undefined);
   } catch (error) {
+    span.finish(error);
     // Failed reads are health/retry state, not evidence of changed context.
     // Definitive unavailable content, invalid content or identity/mapping conflicts
     // still invalidate authority; transient/rate/deadline/shutdown failures do not.
@@ -454,6 +467,8 @@ async function reconcile(
       );
     }
     throw error;
+  } finally {
+    span.finish();
   }
 }
 /** One serialized owner per runtime home. No runtime queue or lease duplicates Flue. */

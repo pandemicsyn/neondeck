@@ -1,3 +1,4 @@
+import { withFactorySpan } from '../factory-observability';
 import { factoryState, getFactoryWork } from './service';
 import { AgentRunError, dispatch, init } from '@flue/runtime';
 import { runtimePaths, type RuntimePaths } from '../../runtime-home';
@@ -90,7 +91,12 @@ export function resumeFactoryPlanning(
       try {
         if (!submissionId) {
           // Retrying this exact persisted payload/key reconciles admission uncertainty.
-          const receipt = await io.dispatch(intent, stage);
+          const receipt = await withFactorySpan(
+            paths,
+            'planning.dispatch',
+            { workItemId: intent.workId, intentId: intent.id },
+            () => io.dispatch(intent, stage),
+          );
           submissionId = receipt.submissionId;
           intent = updatePlanningIntent(
             intentId,
@@ -104,8 +110,19 @@ export function resumeFactoryPlanning(
           );
         }
         intent = getPlanningIntent(intentId, paths);
-        if (intent.abortRequested) await io.abort(intent, stage);
-        await io.read(intent, stage, submissionId);
+        if (intent.abortRequested)
+          await withFactorySpan(
+            paths,
+            'planning.abort',
+            { workItemId: intent.workId, intentId: intent.id, submissionId },
+            () => io.abort(intent, stage),
+          );
+        await withFactorySpan(
+          paths,
+          'planning.read',
+          { workItemId: intent.workId, intentId: intent.id, submissionId },
+          () => io.read(intent, stage, submissionId!),
+        );
         updatePlanningIntent(
           intentId,
           (row) => {
