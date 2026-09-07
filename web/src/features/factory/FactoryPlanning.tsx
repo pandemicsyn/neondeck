@@ -50,6 +50,7 @@ export function FactoryPlanning({
 }) {
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  const [busyLabel, setBusyLabel] = useState<'preparing' | 'refreshing'>();
   const storageKey = `factory-planning-request:${detail.work.id}`;
   const [restored] = useState(() => {
     try {
@@ -142,7 +143,11 @@ export function FactoryPlanning({
       setBusy(false);
     }
   }
-  async function action(run: () => Promise<unknown>) {
+  async function action(
+    run: () => Promise<unknown>,
+    label?: 'preparing' | 'refreshing',
+  ) {
+    setBusyLabel(label);
     setBusy(true);
     setError('');
     try {
@@ -152,25 +157,12 @@ export function FactoryPlanning({
       setError(e instanceof Error ? e.message : 'Planning request failed.');
     } finally {
       setBusy(false);
+      setBusyLabel(undefined);
     }
   }
   return (
     <section className="factory-planning" aria-label="Planning conversation">
       <h3>Shape with Neon</h3>
-      {state.data?.contextStale && (
-        <p role="status">
-          Planning context changed. Review and refresh planning context below
-          before sending.
-        </p>
-      )}
-      {['paused', 'closed', 'queued'].includes(detail.work.lifecycle) && (
-        <p role="status">
-          Planning is read-only while this task is {detail.work.lifecycle}.
-          {detail.work.lifecycle === 'queued'
-            ? 'Withdraw the release before sending a new message.'
-            : 'Reopen shaping before sending a new message.'}
-        </p>
-      )}
       {deliveryEvidence && (
         <div className="factory-discussion-context">
           <strong>Delivery evidence attached to your next message</strong>
@@ -358,23 +350,53 @@ export function FactoryPlanning({
                 Triage receipt:{' '}
                 {state.data.triageSubmissionId ?? 'Not admitted'}
               </p>
-              <button
-                disabled={busy || pending || !!request}
-                onClick={() =>
-                  void action(() =>
-                    refreshFactoryPlanningContext(
-                      detail.work.id,
-                      detail.work.version,
-                    ),
-                  )
-                }
-              >
-                Refresh planning context
-              </button>
+              {!state.data.contextStale && (
+                <button
+                  type="button"
+                  disabled={busy || pending || !!request}
+                  onClick={() =>
+                    void action(
+                      () =>
+                        refreshFactoryPlanningContext(
+                          detail.work.id,
+                          detail.work.version,
+                        ),
+                      'refreshing',
+                    )
+                  }
+                >
+                  {busyLabel === 'refreshing'
+                    ? 'Refreshing context…'
+                    : 'Refresh planning context'}
+                </button>
+              )}
             </details>
           )}
           {!state.data?.plannerStarted ? (
             <>
+              {state.data?.contextStale && (
+                <p role="status">
+                  Planning context changed. Refresh before asking Neon to plan.{' '}
+                  <button
+                    type="button"
+                    disabled={busy || pending || !!request}
+                    onClick={() =>
+                      void action(
+                        () =>
+                          refreshFactoryPlanningContext(
+                            detail.work.id,
+                            detail.work.version,
+                          ),
+                        'refreshing',
+                      )
+                    }
+                  >
+                    {busyLabel === 'refreshing'
+                      ? 'Refreshing context…'
+                      : 'Refresh planning context'}
+                  </button>
+                </p>
+              )}
               <p>
                 Neon can recommend an approach and save a proposed brief. Review
                 and release remain yours.
@@ -382,14 +404,18 @@ export function FactoryPlanning({
               <button
                 disabled={blocked}
                 onClick={() =>
-                  void action(() =>
-                    send(
-                      'Please triage this task and propose an initial brief, approach, and acceptance criteria. Record any blocking questions.',
-                    ),
+                  void action(
+                    () =>
+                      send(
+                        'Please triage this task and propose an initial brief, approach, and acceptance criteria. Record any blocking questions.',
+                      ),
+                    'preparing',
                   )
                 }
               >
-                Ask Neon to plan
+                {busyLabel === 'preparing'
+                  ? 'Preparing planning…'
+                  : 'Ask Neon to plan'}
               </button>
             </>
           ) : (
@@ -404,7 +430,62 @@ export function FactoryPlanning({
                 refreshKey={state.data.submissionId}
                 allowCommands={false}
                 messageEnabled={!blocked}
-                messageLabel="Discuss this draft"
+                composerVariant="reply"
+                messageLabel="Reply to Neon"
+                draftEnabled={!busy && !request && !restored.error}
+                composerNotice={
+                  state.data.contextStale ||
+                  pending ||
+                  ['paused', 'closed', 'queued'].includes(
+                    detail.work.lifecycle,
+                  ) ? (
+                    <>
+                      {state.data.contextStale && (
+                        <p role="status">
+                          Planning context changed. You can draft a reply, but
+                          refresh context before sending.
+                        </p>
+                      )}
+                      {['paused', 'closed', 'queued'].includes(
+                        detail.work.lifecycle,
+                      ) && (
+                        <p role="status">
+                          Planning is read-only while this task is{' '}
+                          {detail.work.lifecycle}. You can draft a reply.{' '}
+                          {detail.work.lifecycle === 'queued'
+                            ? 'Withdraw the release before sending.'
+                            : 'Reopen shaping before sending.'}
+                        </p>
+                      )}
+                      {pending && (
+                        <p role="status">
+                          You can draft your next reply while Neon works.
+                          Sending is available when planning finishes.
+                        </p>
+                      )}
+                      {state.data.contextStale && state.data.sessionId && (
+                        <button
+                          type="button"
+                          disabled={busy || pending || !!request}
+                          onClick={() =>
+                            void action(
+                              () =>
+                                refreshFactoryPlanningContext(
+                                  detail.work.id,
+                                  detail.work.version,
+                                ),
+                              'refreshing',
+                            )
+                          }
+                        >
+                          {busyLabel === 'refreshing'
+                            ? 'Refreshing context…'
+                            : 'Refresh planning context'}
+                        </button>
+                      )}
+                    </>
+                  ) : undefined
+                }
                 draftStorageKey={`factory-chat-draft:${detail.work.id}:${state.data.sessionId}`}
                 onSendMessage={send}
                 quickCommands={[]}
