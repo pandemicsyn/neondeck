@@ -44,7 +44,23 @@ export function useChatAutoScroll(sessionId: string | undefined) {
     const transcript = transcriptRef.current;
     if (!transcript) return;
 
+    const followLayout = () => {
+      if (followsLatestRef.current && transcript.clientHeight > 0)
+        transcript.scrollTop = transcript.scrollHeight;
+    };
+    // Images, expanded details, fonts and hidden panels can resize without text
+    // mutations. Observe both the viewport and its content, preserving scrollback.
+    const resizeObserver =
+      typeof ResizeObserver === 'undefined'
+        ? undefined
+        : new ResizeObserver(followLayout);
+    resizeObserver?.observe(transcript);
+    const observeContent = () => {
+      for (const child of transcript.children) resizeObserver?.observe(child);
+    };
+    observeContent();
     const observer = new MutationObserver(() => {
+      observeContent();
       if (followsLatestRef.current) {
         transcript.scrollTop = transcript.scrollHeight;
         return;
@@ -58,7 +74,10 @@ export function useChatAutoScroll(sessionId: string | undefined) {
       subtree: true,
     });
 
-    return () => observer.disconnect();
+    return () => {
+      observer.disconnect();
+      resizeObserver?.disconnect();
+    };
   }, []);
 
   return {

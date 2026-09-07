@@ -62,6 +62,20 @@ describe('ChatTimelineItems', () => {
     expect(container.textContent).not.toContain('SQLite');
   });
 
+  it('uses the supplied conversation context for empty guidance', () => {
+    act(() =>
+      root.render(
+        <ChatTimelineItems
+          hasSession
+          items={[]}
+          emptyMessage="Discuss this task brief."
+        />,
+      ),
+    );
+    expect(container.textContent).toContain('Discuss this task brief.');
+    expect(container.textContent).not.toContain('active watch');
+  });
+
   it.each([
     ['admitting', 'Sending to Neon…'],
     ['submitted', 'Neon is working…'],
