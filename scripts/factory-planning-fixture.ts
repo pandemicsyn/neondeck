@@ -35,7 +35,7 @@ writeFileSync(
 );
 const git = (...args: string[]) =>
   execFileSync('git', ['-C', repo, ...args], { stdio: 'pipe' });
-git('init');
+git('init', '-b', 'main');
 git('add', '.');
 git(
   '-c',
@@ -249,7 +249,7 @@ if (process.env.FACTORY_GITHUB_FIXTURE === '1') {
 }
 const triage = factory.prepareFactoryTriage(main.work.id, paths)!;
 await factory.resumeFactoryPlanning(triage.id, paths);
-const draft = factory.prepareFactoryPlanning(
+const draft = await factory.prepareFactoryPlanning(
   main.work.id,
   {
     requestKey: 'fixture-plan',
