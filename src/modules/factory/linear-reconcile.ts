@@ -1,5 +1,9 @@
 import { processLinearRemovals } from './linear-removals';
 import {
+  linearSourceFingerprint,
+  matchesLinearSourceBinding,
+} from './linear-authority';
+import {
   clearLinearReadFailure,
   linearReadFailure,
   recordLinearReadFailure,
@@ -72,6 +76,7 @@ export function requestFactoryLinearSync(
         kind: 'delivery',
         connectionId: c.id,
         connectionFingerprint: linearFingerprint(c),
+        sourceFingerprint: linearSourceFingerprint(c),
         issueId: current.source.linear!.issueId,
         state: 'pending',
         error: null,
@@ -116,8 +121,12 @@ export async function runFactoryLinearSync(
     if (signal?.aborted) return;
     if (linearReadiness(c, paths).length) continue;
     const fingerprint = linearFingerprint(c);
+    const sourceFingerprint = linearSourceFingerprint(c);
     const assertConfig = () => {
-      if (linearFingerprint(readyLinearConnection(c.id, paths)) !== fingerprint)
+      if (
+        linearSourceFingerprint(readyLinearConnection(c.id, paths)) !==
+        sourceFingerprint
+      )
         throw new FactoryError(409, 'Linear configuration changed.');
     };
     for (const phase of scheduledLinearPhases(c.id, paths)) {
@@ -138,7 +147,7 @@ export async function runFactoryLinearSync(
           if (requestSignal.aborted) continue connections;
           if (linearCoolingDown(c.id, paths)) continue;
           try {
-            if (delivery.connectionFingerprint !== fingerprint) {
+            if (!matchesLinearSourceBinding(delivery, c)) {
               dbRun(paths, (db) =>
                 putLinearRecord(db, {
                   ...delivery,

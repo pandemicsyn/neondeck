@@ -1,4 +1,5 @@
 import { linearCoolingDown, retainLinearRateLimit } from './linear-cooldown';
+import { linearSourceFingerprint } from './linear-authority';
 import * as v from 'valibot';
 import { sourceSchema } from '../../../shared/factory';
 import { runtimePaths, type RuntimePaths } from '../../runtime-home';
@@ -97,7 +98,8 @@ export async function runFactoryLinearWriteback(
         );
         if (!issue) continue;
         if (
-          linearFingerprint(readyLinearConnection(c.id, paths)) !== fingerprint
+          linearSourceFingerprint(readyLinearConnection(c.id, paths)) !==
+          linearSourceFingerprint(c)
         )
           continue;
         const latestSource = dbRun(paths, (db) =>
@@ -133,6 +135,7 @@ export async function runFactoryLinearWriteback(
           kind: 'writeback',
           connectionId: c.id,
           connectionFingerprint: fingerprint,
+          sourceFingerprint: linearSourceFingerprint(c),
           issueId: issue.id,
           workId: item.id,
           stateId,

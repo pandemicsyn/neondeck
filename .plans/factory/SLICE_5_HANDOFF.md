@@ -75,6 +75,40 @@ No live fixture processes remained. This run is **not** a full-check pass; the
 five host cases require a disposable environment where process inspection is
 available. The operator-home protection was not removed to rerun them.
 
+## Additional feedback on `73c68fd9`
+
+- [Accepted removals during credential loss](https://github.com/pandemicsyn/neondeck/pull/423#discussion_r3952745591):
+  local processing must validate the retained delivery's current configuration
+  binding without requiring the API token or webhook-secret environment value.
+- [Writeback-only configuration edits](https://github.com/pandemicsyn/neondeck/pull/423#discussion_r3952745594):
+  source invalidation must compare source mapping, admission and binding fields,
+  excluding outbound writeback settings. The same separation must preserve queued
+  source deliveries and recognition of authorized status echoes across such edits.
+
+These corrections are complete with Astra low developers. Source fingerprints
+and full outbound configuration fingerprints have distinct roles; the full binding
+continues to guard new mutations. Legacy source/effect evidence can gain a source
+fingerprint only when its retained full fingerprint matches the trusted previous
+configuration, before the replacement configuration is published. Both independent
+static reviewers returned **CLEAN**. The manager architecture review is **CLEAN**:
+source binding lives in one domain helper, persistence preserves proven bindings
+without reading configuration, and full outbound guards still fence mutations.
+Existing packages, model ownership and database schema remain unchanged.
+
+Protected focused verification passed **70 tests across eight files**, including
+credential-loss removals against real release/reserved-run fixtures, legacy and
+current queued deliveries, exact authorized echoes, stale asynchronous record
+writes and outbound configuration races. Lint, import layers, migration consistency,
+application/docs types, server bundling, package validation (1,274 files) and
+repository formatting also passed. Runtime paths are temporary and the operator's
+configuration directory remains inaccessible to these checks.
+
+The protected broad unit suite passed **3,099 tests across 288 files** in
+70.02 seconds. It explicitly excluded the five unchanged host-fixture cases in
+`factory-delivery/repair.integration.test.ts`, whose `/bin/ps` restriction was
+confirmed above. This is a passing included suite, not a claim that the excluded
+cases or full `npm run verify` passed on this correction.
+
 ## Delivered scope and boundaries
 
 - `src/modules/linear`: fixed-origin GraphQL reads/mutations, complete-response
@@ -106,7 +140,7 @@ responses to 4 MiB and a 15-second deadline. Discovery pages contain at most 25
 issues; issue labels are complete-or-fail at 100. Oversized/malformed provider
 facts fail visibly rather than being truncated into an accepted task.
 
-Delivery processing handles up to 25 removals per ready connection across all
+Delivery processing handles up to 25 removals per matching enabled connection across all
 connections before provider I/O, then up to 25 provider-dependent deliveries per
 connection. Retained-source refresh and writeback each use
 batches of 25. Remote discovery cursors and local nonnegative integer offsets are distinct.

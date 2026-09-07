@@ -6,6 +6,7 @@ import {
   readyLinearConnection,
   linearFingerprint,
 } from '../modules/factory/linear-config';
+import { linearSourceFingerprint } from '../modules/factory/linear-authority';
 import { acceptLinearDelivery } from '../modules/factory/linear-store';
 import { FactoryError } from '../modules/factory/service';
 import { boundedRequestBytes } from './github-ingress';
@@ -74,8 +75,8 @@ export function createLinearIngress(paths: RuntimePaths = runtimePaths()) {
       )
         return c.json({ error: 'Invalid delivery ID.' }, 400);
       if (
-        linearFingerprint(readyLinearConnection(connection.id, paths)) !==
-        linearFingerprint(connection)
+        linearSourceFingerprint(readyLinearConnection(connection.id, paths)) !==
+        linearSourceFingerprint(connection)
       )
         return c.json({ error: 'Connection changed.' }, 409);
       const result = acceptLinearDelivery(
@@ -83,6 +84,7 @@ export function createLinearIngress(paths: RuntimePaths = runtimePaths()) {
           id: linearFingerprint([connection.id, deliveryId.toLowerCase()]),
           connectionId: connection.id,
           connectionFingerprint: linearFingerprint(connection),
+          sourceFingerprint: linearSourceFingerprint(connection),
           issueId: payload.data.id,
           action: payload.action,
           digest: createHash('sha256').update(bytes).digest('hex'),

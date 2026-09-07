@@ -41,6 +41,11 @@ provider state, and periodic discovery catches missed events. Inspect connection
 sync errors in setup. Inside a task, **Source and repository → Sync Linear
 source** requests a fresh reconciliation and refreshes the displayed task.
 
+An already authenticated, queued removal can still withdraw work if the API token
+or webhook-secret environment value becomes unavailable. Its saved source binding
+must still match the current enabled connection; missing or changed bindings stay
+visible for review.
+
 A temporary provider error or timeout is a synchronization failure, not evidence
 that the issue changed. It must not withdraw a release or cancel coding by itself.
 Inspect the retained sync error and retry time while provider access recovers.
@@ -69,6 +74,11 @@ lifecycle states you intend to publish (`inbox`, `shaping`, `queued`, `paused`,
 mappings publish nothing. Saving with writeback enabled grants continuing
 permission for those configured status updates; it does not permit comments,
 questions, assignment changes, issue creation or publishing code.
+
+Enabling, disabling or remapping writeback alone does not change the source brief
+or revoke released work. It does change the configuration checked before sending
+new status mutations. Previously accepted source deliveries and valid status echoes
+retain their source binding across writeback-only edits.
 
 Review writeback state and errors in the task's source panel. An uncertain
 mutation must be reconciled against Linear before another send; do not use a

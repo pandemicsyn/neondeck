@@ -268,8 +268,9 @@ with opt-in configured workflow-state writeback. Preserves existing human releas
 coding and publication authority; GitHub remains the delivery target.
 
 Implementation used Astra at low effort. Both independent static reviews and
-manager architecture review are clean; integrated verification passed, including
-final-source checks after corrections. Ready publication and merge are tracked in the
+manager architecture review are clean. Staged verification results, PR feedback
+corrections and operator-home sandbox limits are recorded in the handoff.
+Ready publication and merge are tracked in the
 [Slice 5 plan](factory/SLICE_5_IMPLEMENTATION_PLAN.md) and
 [handoff](factory/SLICE_5_HANDOFF.md). Existing live acceptance obligations remain
 pending; Slice 6 remains remote execution.

@@ -1,4 +1,5 @@
 import { clearLinearReadFailure } from './linear-read-health';
+import { matchesLinearSourceBinding } from './linear-authority';
 import { randomUUID } from 'node:crypto';
 import * as v from 'valibot';
 import type { DatabaseSync } from 'node:sqlite';
@@ -115,7 +116,7 @@ export function reconcileLinearSource(
       ['sending', 'uncertain'].includes(e.state),
   )) {
     const matched =
-      effect.connectionFingerprint === linearFingerprint(c) &&
+      matchesLinearSourceBinding(effect, c) &&
       effect.sourceVersion === previous?.version &&
       effect.baseline === baseline &&
       effect.stateId === issue?.state.id;
@@ -134,7 +135,7 @@ export function reconcileLinearSource(
   }).filter(
     (e) =>
       e.connectionId === c.id &&
-      e.connectionFingerprint === linearFingerprint(c) &&
+      matchesLinearSourceBinding(e, c) &&
       e.sourceVersion === previous?.version &&
       (e.state !== 'complete' ||
         e.updatedAt === issue?.updatedAt ||

@@ -51,7 +51,7 @@ const fixtures: ReturnType<typeof fixture>[] = [];
 afterEach(() => {
   for (const f of fixtures.splice(0)) f.dispose();
 });
-function setup() {
+function setup(connection = a) {
   const f = fixture();
   fixtures.push(f);
   const { paths } = f;
@@ -61,14 +61,14 @@ function setup() {
       version: 1,
       factory: {
         enabled: true,
-        linear: [a, b],
+        linear: [connection, b],
         coding: { enabled: true, model: 'synthetic' },
       },
       models: { default: 'faux/faux-1' },
     }),
   );
   const initial = dbRun(paths, (db) =>
-    reconcileLinearSource(db, a, issue, issue.id, paths),
+    reconcileLinearSource(db, connection, issue, issue.id, paths),
   )!;
   const human = { kind: 'human' as const, id: 'operator' };
   const saved = saveFactorySpec(
@@ -163,6 +163,11 @@ it.each([
   ['disjoint mapping becomes wildcard', [a, { ...b, projectId: null }]],
   ['disjoint mapping becomes project A', [a, { ...b, projectId: 'project-a' }]],
   ['original connection edit', [{ ...a, tokenEnv: 'CHANGED_TOKEN' }, b]],
+  ['original project edit', [{ ...a, projectId: 'project-c' }, b]],
+  [
+    'original admission edit',
+    [{ ...a, admission: { mode: 'state' as const, value: 'todo' } }, b],
+  ],
   ['original connection disable', [{ ...a, enabled: false }, b]],
   ['original connection removal', [b]],
 ] as const)(
@@ -174,5 +179,28 @@ it.each([
     expect(after.source.attention).toContain('Linear connection changed');
     expect(after.releases[0].withdrawnAt).not.toBeNull();
     expect(getCodingRun(run.runId, paths)!.cancelRequestedAt).not.toBeNull();
+  },
+);
+
+it.each([
+  ['enable', a.writeback, { enabled: true, states: { queued: 'started' } }],
+  ['disable', { enabled: true, states: { queued: 'started' } }, a.writeback],
+  [
+    'state mapping',
+    { enabled: true, states: { queued: 'started' } },
+    { enabled: true, states: { queued: 'in-progress' } },
+  ],
+] as const)(
+  'preserves released source and reserved coding authority after writeback %s',
+  (_name, before, after) => {
+    const { paths, current, run } = setup({ ...a, writeback: before });
+    updateFactoryConfig({ linear: [{ ...a, writeback: after }, b] }, paths);
+    const updated = getFactoryWork(current.work.id, paths);
+    expect(updated.source).toEqual(current.source);
+    expect(updated.releases).toEqual(current.releases);
+    expect(getCodingRun(run.runId, paths)!.cancelRequestedAt).toBeNull();
+    expect(() =>
+      assertCodingAuthoritySnapshot(run.snapshot, paths),
+    ).not.toThrow();
   },
 );

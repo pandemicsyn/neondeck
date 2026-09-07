@@ -5,6 +5,10 @@ import type { GitHubConnection } from '../../../shared/factory-github';
 import type { AppConfig, RuntimePaths } from '../../runtime-home';
 import { dbRun, markGitHubAttention, markSourceAttention } from './service';
 import { invalidateWriteback } from './writeback-store';
+import {
+  bindLegacyLinearSourceRecords,
+  linearSourceProjection,
+} from './linear-authority';
 
 const effectiveMappings = (
   connections: GitHubConnection[],
@@ -81,6 +85,9 @@ export function invalidateFactoryConfig(
     JSON.stringify(after.factory?.linear ?? [])
   ) {
     dbRun(paths, (db) => {
+      // Legacy records can inherit only the binding authenticated by the old
+      // configuration, never the replacement being installed.
+      bindLegacyLinearSourceRecords(db, before.factory?.linear ?? []);
       for (const row of db
         .prepare(
           "SELECT w.id,s.record FROM factory_sources s JOIN factory_work_items w ON w.source_id=s.id WHERE json_extract(s.record,'$.provider')='linear'",
@@ -98,7 +105,8 @@ export function invalidateFactoryConfig(
                   (c.projectId === null ||
                     c.projectId === source.linear?.projectId)),
             )
-            .sort((a, b) => a.id.localeCompare(b.id));
+            .sort((a, b) => a.id.localeCompare(b.id))
+            .map(linearSourceProjection);
         if (
           JSON.stringify(relevant(before)) === JSON.stringify(relevant(after))
         )

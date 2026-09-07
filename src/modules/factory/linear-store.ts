@@ -22,6 +22,7 @@ const common = {
 const deliverySchema = v.object({
   ...common,
   kind: v.literal('delivery'),
+  sourceFingerprint: v.optional(key),
   issueId: key,
   action: v.optional(
     v.picklist(['create', 'update', 'remove', 'retry']),
@@ -47,6 +48,7 @@ export const linearSyncSchema = v.object({
 export const linearEffectSchema = v.object({
   ...common,
   kind: v.literal('writeback'),
+  sourceFingerprint: v.optional(key),
   issueId: key,
   workId: key,
   stateId: key,
@@ -119,6 +121,20 @@ export function linearRecords<K extends LinearRecord['kind']>(
 }
 export function putLinearRecord(db: DatabaseSync, row: LinearRecord) {
   const value = v.parse(linearRecordSchema, row);
+  // A provider await may retain an older legacy object while a config mutation
+  // upgrades its binding. Do not erase that proven binding on retry/receipt.
+  if (
+    (value.kind === 'delivery' || value.kind === 'writeback') &&
+    value.sourceFingerprint === undefined
+  ) {
+    const previous = linearRecords(db, value.kind, { id: value.id })[0];
+    if (
+      previous &&
+      previous.connectionId === value.connectionId &&
+      previous.connectionFingerprint === value.connectionFingerprint
+    )
+      value.sourceFingerprint = previous.sourceFingerprint;
+  }
   db.prepare(
     'INSERT INTO factory_linear_records(id,kind,record) VALUES(?,?,?) ON CONFLICT(id) DO UPDATE SET record=excluded.record',
   ).run(value.id, value.kind, JSON.stringify(value));
@@ -133,6 +149,7 @@ export function acceptLinearDelivery(
     id: string;
     connectionId: string;
     connectionFingerprint: string;
+    sourceFingerprint?: string;
     issueId: string;
     action: 'create' | 'update' | 'remove';
     digest: string;

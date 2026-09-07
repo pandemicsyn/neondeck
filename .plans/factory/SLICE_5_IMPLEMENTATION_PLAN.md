@@ -1,7 +1,8 @@
 # Slice 5 — Linear intake
 
 Status: source implementation and independent static/manager architecture reviews
-complete; verification passed and [PR #423](https://github.com/pandemicsyn/neondeck/pull/423)
+complete; staged verification results and environment limits are recorded in the
+handoff. [PR #423](https://github.com/pandemicsyn/neondeck/pull/423) is
 published ready for review, September 7, 2026. Merge/live acceptance remain pending.
 Initial base: `51a5caea`; integrated current main `8e35a0d8` before final handoff.
 
@@ -96,3 +97,5 @@ solely to perform a small set of queries and mutations.
 
 See [the handoff ledger](SLICE_5_HANDOFF.md) for delivered evidence and
 [the deviations ledger](../DEVIATIONS.md) for actual deviations or deferrals.
+The handoff also tracks PR feedback fixes, their independent re-reviews and
+verification with operator configuration access explicitly denied.
