@@ -150,6 +150,7 @@ export function readTaskRecords(db: DatabaseSync, workId: string) {
     .all(workId, sourceLimit + 1)
     .map((r) => v.parse(codingRunEventSchema, r));
   if (
+    writeback.some((r) => r.workId !== workId) ||
     revisions.some((r) => r.workId !== workId) ||
     releases.some((r) => r.workId !== workId) ||
     runs.some((r) => r.snapshot.workItemId !== workId) ||
@@ -218,10 +219,17 @@ export function readTaskHealthRecords(
     'SELECT record_json AS record FROM coding_runs WHERE work_item_id=? ORDER BY sequence DESC LIMIT 1',
     codingRunRecordSchema,
   );
-  const deliveries = current(
-    "SELECT record_json AS record FROM factory_delivery_pipelines WHERE work_item_id=? AND json_extract(record_json,'$.outcome') IS NULL ORDER BY sequence DESC LIMIT 2",
+  // Validate a bounded candidate window before deciding which outcomes are terminal.
+  // Older candidates outside this window make health partial, never silently healthy.
+  const deliveryCandidates = jsonRows(
+    db,
+    'SELECT record_json AS record FROM factory_delivery_pipelines WHERE work_item_id=? ORDER BY sequence DESC LIMIT ?',
     deliveryPipelineSchema,
+    workId,
   );
+  const deliveries = deliveryCandidates
+    .slice(0, sourceLimit)
+    .filter((r) => r.outcome === null);
   const writeback = current(
     "SELECT record FROM factory_writeback_records WHERE work_id=? AND kind='effect' AND json_extract(record,'$.state') NOT IN ('sent','cancelled') ORDER BY rowid DESC LIMIT 51",
     writebackEffectSchema,
@@ -234,7 +242,7 @@ export function readTaskHealthRecords(
     .map((r) => v.parse(planningSchema, r));
   if (
     runs.some((r) => r.snapshot.workItemId !== workId) ||
-    deliveries.some((r) => r.workItemId !== workId) ||
+    deliveryCandidates.some((r) => r.workItemId !== workId) ||
     writeback.some((r) => r.workId !== workId)
   )
     throw new DiagnosticsError(503, 'Task record binding is inconsistent.');
@@ -250,6 +258,9 @@ export function readTaskHealthRecords(
     receipts: [],
     events: [],
     truncated:
-      deliveries.length > 1 || writeback.length > 50 || planning.length > 1,
+      deliveryCandidates.length > sourceLimit ||
+      deliveries.length > 1 ||
+      writeback.length > 50 ||
+      planning.length > 1,
   };
 }

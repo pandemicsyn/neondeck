@@ -2,6 +2,14 @@ import { mkdtempSync, mkdirSync, rmSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { Hono } from 'hono';
+import { createHash } from 'node:crypto';
+import * as v from 'valibot';
+import { deliveryPipelineSchema } from '../../../shared/factory-delivery';
+import {
+  readTaskHealthRecords,
+  sourceLimit,
+} from '../../modules/factory-diagnostics/records';
+import { diagnoseHealth } from '../../modules/factory-diagnostics/health';
 import { beforeEach, afterEach, expect, it } from 'vitest';
 import { initializeAppDatabase } from '../../runtime-home/app-db';
 import { runtimePaths, type RuntimePaths } from '../../runtime-home';
@@ -9,6 +17,7 @@ import { openDb } from '../../lib/sqlite';
 import {
   taskFixture,
   recordedAt,
+  workerFixture,
 } from '../../modules/factory-diagnostics/fixture.test-helper';
 import { createFactoryDiagnosticsRoutes } from './factory-diagnostics';
 import { requireLocalApiAccess } from '../middleware';
@@ -169,32 +178,7 @@ it('joins planning submissions and validated legacy receipts without fabricating
 });
 it('exports current pending writebacks even behind 200 historical sent effects and projects retained receipts', async () => {
   const db = openDb(paths.neondeckDatabase);
-  const effect = {
-    id: 'old-pending',
-    workId: 'work-test',
-    connectionId: 'connection',
-    issueId: 'issue',
-    number: 1,
-    connectionFingerprint: 'f',
-    epoch: 'e',
-    kind: 'status',
-    body: 'private body',
-    bodyHash: 'h',
-    marker: 'm',
-    specVersion: 1,
-    sourceVersion: 1,
-    workVersion: 1,
-    approvalId: null,
-    state: 'uncertain',
-    remoteId: null,
-    author: null,
-    confirmedBody: null,
-    confirmedUpdatedAt: null,
-    error: null,
-    attempts: 1,
-    retryAt: 0,
-    createdAt: recordedAt,
-  };
+  const effect = writebackFixture();
   try {
     const insert = db.prepare(
       'INSERT INTO factory_writeback_records(id,kind,work_id,record) VALUES(?,?,?,?)',
@@ -256,4 +240,254 @@ it('exports current pending writebacks even behind 200 historical sent effects a
       actor: null,
     }),
   );
+});
+
+function writebackFixture() {
+  return {
+    id: 'old-pending',
+    workId: 'work-test',
+    connectionId: 'connection',
+    issueId: 'issue',
+    number: 1,
+    connectionFingerprint: 'f',
+    epoch: 'e',
+    kind: 'status',
+    body: 'private body',
+    bodyHash: 'h',
+    marker: 'm',
+    specVersion: 1,
+    sourceVersion: 1,
+    workVersion: 1,
+    approvalId: null,
+    state: 'uncertain',
+    remoteId: null,
+    author: null,
+    confirmedBody: null,
+    confirmedUpdatedAt: null,
+    error: null,
+    attempts: 1,
+    retryAt: 0,
+    createdAt: recordedAt,
+  };
+}
+
+function insertDelivery(id: string, outcome: unknown = null) {
+  const delivery = deliveryFixture(id);
+  const db = openDb(paths.neondeckDatabase);
+  try {
+    db.prepare(
+      'INSERT INTO factory_delivery_pipelines(pipeline_id,release_id,initial_run_id,initial_attempt_id,work_item_id,repo_id,branch,record_json) VALUES(?,?,?,?,?,?,?,?)',
+    ).run(
+      delivery.pipelineId,
+      id,
+      id,
+      id,
+      delivery.workItemId,
+      delivery.repoId,
+      delivery.branch,
+      JSON.stringify({ ...delivery, outcome }),
+    );
+  } finally {
+    db.close();
+  }
+}
+function deliveryFixture(id: string) {
+  const revision = {
+    runId: id,
+    attemptId: id,
+    releaseId: id,
+    specVersion: 1,
+    specHash: 'a'.repeat(64),
+    candidateDigest: 'b'.repeat(64),
+    baseSha: 'c'.repeat(40),
+    headSha: 'd'.repeat(40),
+    treeSha: 'e'.repeat(40),
+  };
+  const key = createHash('sha256')
+    .update(
+      JSON.stringify([
+        'repo',
+        revision.runId,
+        revision.attemptId,
+        revision.candidateDigest,
+      ]),
+    )
+    .digest('hex');
+  return v.parse(deliveryPipelineSchema, {
+    pipelineId: key,
+    version: 1,
+    workItemId: 'work-test',
+    repoId: 'repo',
+    initialRevision: revision,
+    revision,
+    branch: `agent/factory-${key}`,
+    prIdentity: `neondeck-factory:${key}`,
+    pr: null,
+    authorization: {
+      id: 'grant',
+      authorizedBy: 'actual-human',
+      authorizedAt: recordedAt,
+      revision,
+      repoId: 'repo',
+      target: { owner: 'example', name: 'repo', baseBranch: 'main' },
+      configFingerprint: 'f'.repeat(64),
+      checkCommands: ['npm test'],
+      maxRepairAttempts: 2,
+      totalExecutionMs: 10000,
+      initialExecutionMs: 2000,
+    },
+    repairs: [],
+    evidence: [],
+    effects: [
+      {
+        id: 'review-effect',
+        kind: 'review',
+        revision,
+        state: 'uncertain',
+        receiptRef: null,
+        reservedExecutionMs: 3000,
+        executionMs: null,
+      },
+    ],
+    interventions: [],
+    commits: [],
+    coordinator: {
+      candidateRef: null,
+      watchId: null,
+      observationFingerprint: null,
+      terminalObservedAt: null,
+    },
+    outcome: null,
+    outcomeRef: null,
+    createdAt: recordedAt,
+    updatedAt: recordedAt,
+  });
+}
+
+it.each(['uncertain', 'sent', 'cancelled'])(
+  'rejects writeback task binding corruption in %s records',
+  async (state) => {
+    const effect = { ...writebackFixture(), state, workId: 'foreign-work' };
+    const db = openDb(paths.neondeckDatabase);
+    try {
+      db.prepare(
+        'INSERT INTO factory_writeback_records(id,kind,work_id,record) VALUES(?,?,?,?)',
+      ).run(effect.id, 'effect', 'work-test', JSON.stringify(effect));
+    } finally {
+      db.close();
+    }
+    for (const path of [
+      '/tasks/work-test/timeline',
+      '/tasks/work-test/preview',
+    ]) {
+      const response = await request(path);
+      expect(response.status).toBe(503);
+      expect(await response.json()).toEqual({
+        error: 'Task record binding is inconsistent.',
+      });
+    }
+    for (const path of ['/health', '/health?workId=work-test']) {
+      const response = await request(path);
+      expect(response.status).toBe(state === 'uncertain' ? 503 : 200);
+      expect(await response.json()).toMatchObject(
+        state === 'uncertain'
+          ? { error: 'Task record binding is inconsistent.' }
+          : { tasks: [{ unresolvedEffects: [] }] },
+      );
+    }
+  },
+);
+it.each(['invalid', 42, {}, false])(
+  'fails closed on invalid delivery outcome %j',
+  async (outcome) => {
+    insertDelivery('corrupt', outcome);
+    for (const path of [
+      '/tasks/work-test/timeline',
+      '/tasks/work-test/preview',
+      '/health',
+      '/health?workId=work-test',
+    ]) {
+      const response = await request(path);
+      expect(response.status).toBe(503);
+      expect(await response.json()).toEqual({
+        error:
+          'Retained diagnostic records are unavailable or invalid. Check the local database and refresh.',
+      });
+    }
+  },
+);
+it('excludes validated terminal deliveries while retaining the newest active delivery and truncation', async () => {
+  insertDelivery('older-active');
+  for (const outcome of ['merged', 'closed', 'cancelled', 'failed'])
+    insertDelivery(outcome, outcome);
+  let response = await request('/health?workId=work-test');
+  expect(response.status).toBe(200);
+  expect(await response.json()).toMatchObject({
+    truncated: false,
+    tasks: [
+      {
+        status: 'needs-reconciliation',
+        truncated: false,
+        budgets: [{ deliveryId: deliveryFixture('older-active').pipelineId }],
+      },
+    ],
+  });
+  insertDelivery('newer-active');
+  response = await request('/health?workId=work-test');
+  expect(await response.json()).toMatchObject({
+    truncated: true,
+    tasks: [
+      {
+        truncated: true,
+        budgets: [{ deliveryId: deliveryFixture('newer-active').pipelineId }],
+      },
+    ],
+  });
+});
+it('does not treat terminal delivery history as pending work', async () => {
+  for (const outcome of ['merged', 'closed', 'cancelled', 'failed'])
+    insertDelivery(outcome, outcome);
+  const response = await request('/health?workId=work-test');
+  expect(response.status).toBe(200);
+  expect(await response.json()).toMatchObject({
+    truncated: false,
+    tasks: [
+      {
+        status: 'shaping',
+        budgets: [],
+        unresolvedEffects: [],
+        truncated: false,
+      },
+    ],
+  });
+});
+it('bounds delivery candidate validation and marks omitted history as attention', async () => {
+  insertDelivery('older-active');
+  insertDelivery('outside-window', 'invalid');
+  for (let i = 0; i <= sourceLimit; i++)
+    insertDelivery(`terminal-${i}`, 'merged');
+  const response = await request('/health?workId=work-test');
+  expect(response.status).toBe(200);
+  expect(await response.json()).toMatchObject({
+    truncated: true,
+    tasks: [{ truncated: true, budgets: [] }],
+  });
+  const db = openDb(paths.neondeckDatabase, { readOnly: true });
+  try {
+    expect(
+      diagnoseHealth(
+        [readTaskHealthRecords(db, 'work-test')],
+        [workerFixture()],
+        recordedAt,
+      ),
+    ).toMatchObject({ status: 'attention', truncated: true });
+  } finally {
+    db.close();
+  }
+});
+it('validates the extra delivery candidate used to detect truncation', async () => {
+  insertDelivery('boundary-corrupt', 'invalid');
+  for (let i = 0; i < sourceLimit; i++)
+    insertDelivery(`terminal-${i}`, 'merged');
+  expect((await request('/health?workId=work-test')).status).toBe(503);
 });
