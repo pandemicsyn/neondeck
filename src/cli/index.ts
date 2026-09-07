@@ -1,5 +1,7 @@
 #!/usr/bin/env -S node --import=tsx
 import { Command } from 'commander';
+import { configureFactory } from './onboarding-factory';
+import { registerFactoryCommands } from './factory-diagnostics';
 import { configureProviderSecret, runInit } from './onboarding';
 import { decideLearningCandidateCli } from './learning';
 import { registerMcpCommands } from './mcp';
@@ -85,6 +87,18 @@ program
   .option('--home <path>', 'override runtime home for this run')
   .action(async (options: { home?: string }) => {
     await runInit({ home: options.home ?? program.opts<GlobalOptions>().home });
+  });
+
+const factoryCommand = program
+  .command('factory')
+  .description('Factory setup and diagnostics.');
+registerFactoryCommands(factoryCommand);
+factoryCommand
+  .command('setup')
+  .description('Resume optional local factory setup.')
+  .action(async () => {
+    const paths = await pathsFromOptions(program.opts<GlobalOptions>());
+    await configureFactory(paths);
   });
 
 program

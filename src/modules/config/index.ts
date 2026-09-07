@@ -10,4 +10,7 @@ export * from './mutations/repos';
 export * from './read';
 export * from './schemas';
 
-export { updateFactoryConfig } from './mutations/factory';
+export {
+  updateFactoryConfig,
+  factoryConfigSnapshotFingerprint,
+} from './mutations/factory';

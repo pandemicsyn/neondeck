@@ -9,7 +9,6 @@ import {
   previewWritebackRepair,
   approveWritebackRepair,
 } from '../../modules/factory/writeback';
-import { factoryConnections } from '../../modules/factory/github-config';
 import { githubDigest } from '../../modules/factory/github-store';
 import { githubConnectionSchema } from '../../../shared/factory-github';
 import {
@@ -78,12 +77,20 @@ export function createFactoryRoutes(
       }),
       await c.req.json(),
     );
-    if (githubDigest(factoryConnections(paths)) !== input.expectedFingerprint)
-      throw new FactoryError(
-        409,
-        'Connection configuration changed. Reload and review before saving; your draft is retained.',
-      );
-    return c.json(updateFactoryConfig({ github: input.connections }, paths));
+    return c.json(
+      updateFactoryConfig({ github: input.connections }, paths, {
+        precondition(before) {
+          if (
+            githubDigest(before.factory?.github ?? []) !==
+            input.expectedFingerprint
+          )
+            throw new FactoryError(
+              409,
+              'Connection configuration changed. Reload and review before saving; your draft is retained.',
+            );
+        },
+      }),
+    );
   });
   routes.post('/work/:id/writeback/repair-preview', async (c) => {
     const input = v.parse(

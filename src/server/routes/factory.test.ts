@@ -188,3 +188,37 @@ it('keeps discussion scoped and private and validates cursors', async () => {
     'comments',
   );
 });
+it('rejects a second GitHub client saving an earlier connection snapshot', async () => {
+  const { githubDigest } = await import('../../modules/factory/github-store');
+  const { factoryConnections } =
+    await import('../../modules/factory/github-config');
+  const snapshot = githubDigest([]);
+  const connection = {
+    id: 'synthetic-connection',
+    enabled: false,
+    repoId: 'fixture',
+    repositoryId: '42',
+    owner: 'example',
+    name: 'fixture',
+    webhookSecretEnv: 'SYNTHETIC_SECRET',
+    tokenEnv: 'SYNTHETIC_TOKEN',
+    admission: { mode: 'all' },
+  };
+  expect(
+    (
+      await request('/github/config', {
+        expectedFingerprint: snapshot,
+        connections: [connection],
+      })
+    ).status,
+  ).toBe(200);
+  expect(
+    (
+      await request('/github/config', {
+        expectedFingerprint: snapshot,
+        connections: [],
+      })
+    ).status,
+  ).toBe(409);
+  expect(factoryConnections(paths)).toHaveLength(1);
+});
