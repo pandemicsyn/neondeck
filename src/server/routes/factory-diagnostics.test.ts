@@ -1,3 +1,4 @@
+import { deliveryValidationContractDigest } from '../../modules/factory-delivery/store';
 import {
   appendDiagnostic,
   saveWorker,
@@ -295,7 +296,11 @@ function insertDelivery(id: string, outcome: unknown = null) {
       delivery.workItemId,
       delivery.repoId,
       delivery.branch,
-      JSON.stringify({ ...delivery, outcome }),
+      JSON.stringify({
+        ...delivery,
+        outcome,
+        outcomeRef: outcome === null ? null : 'outcome-receipt',
+      }),
     );
   } finally {
     db.close();
@@ -753,7 +758,15 @@ it('rejects coding run row/JSON identity mismatches across routes', async () => 
   for (const path of diagnosticPaths)
     expect((await request(path)).status).toBe(503);
 });
-it.each(['runId', 'workItemId'])(
+it.each([
+  'runId',
+  'attemptId',
+  'requestId',
+  'releaseId',
+  'workItemId',
+  'worktreeId',
+  'writer_slot',
+])(
   'validates event parent %s outside the retained run window',
   async (field) => {
     const run = insertRun('outside');
@@ -775,21 +788,42 @@ it.each(['runId', 'workItemId'])(
             ...run,
             runId: id,
             attemptId: id,
+            status: 'failed',
+            completedAt: recordedAt,
+            cleanupAttentionAt: recordedAt,
+            evidenceRetainUntil: recordedAt,
+            deadProof: {
+              runId: id,
+              attemptId: id,
+              ownershipToken: run.ownershipToken,
+              host: null,
+              kind: 'never-started',
+              evidenceRef: 'proof',
+            },
             snapshot: { ...run.snapshot, requestId: id, releaseId: id },
           }),
         );
       }
-      db.prepare('UPDATE coding_runs SET record_json=? WHERE run_id=?').run(
-        JSON.stringify(
-          field === 'runId'
-            ? { ...run, runId: 'foreign' }
-            : {
-                ...run,
-                snapshot: { ...run.snapshot, workItemId: 'foreign' },
-              },
-        ),
-        run.runId,
-      );
+      // Verify the complete bounded projection and the out-of-window event parent first.
+      for (const path of diagnosticPaths)
+        expect((await request(path)).status).toBe(200);
+      if (field === 'worktreeId' || field === 'writer_slot') {
+        db.exec('PRAGMA foreign_keys=OFF');
+        db.prepare(
+          `UPDATE coding_runs SET ${field === 'worktreeId' ? 'worktree_id' : 'writer_slot'}=? WHERE run_id=?`,
+        ).run(field === 'worktreeId' ? 'foreign' : null, run.runId);
+      } else {
+        const corrupt = structuredClone(run);
+        if (field === 'runId' || field === 'attemptId')
+          corrupt[field] = 'foreign';
+        else
+          corrupt.snapshot[field as 'requestId' | 'releaseId' | 'workItemId'] =
+            'foreign';
+        db.prepare('UPDATE coding_runs SET record_json=? WHERE run_id=?').run(
+          JSON.stringify(corrupt),
+          run.runId,
+        );
+      }
     } finally {
       db.close();
     }
@@ -868,10 +902,9 @@ it.each(['closed', 'paused', 'shaping', 'queued'] as const)(
         JSON.stringify(work),
         work.id,
       );
-      db.prepare('UPDATE coding_runs SET record_json=? WHERE run_id=?').run(
-        JSON.stringify(failed),
-        run.runId,
-      );
+      db.prepare(
+        'UPDATE coding_runs SET record_json=?,writer_slot=NULL WHERE run_id=?',
+      ).run(JSON.stringify(failed), run.runId);
       const release = {
         id: 'release',
         workId: work.id,
@@ -938,8 +971,13 @@ it.each(['closed', 'paused', 'shaping', 'queued'] as const)(
                 cancelReason:
                   terminalStatus === 'cancelled' ? 'cancelled' : null,
               };
-        db.prepare('UPDATE coding_runs SET record_json=? WHERE run_id=?').run(
+        // Synthetic retained workspace; this projection does not inspect workspace ownership.
+        db.exec('PRAGMA foreign_keys=OFF');
+        db.prepare(
+          'UPDATE coding_runs SET record_json=?,worktree_id=? WHERE run_id=?',
+        ).run(
           JSON.stringify(terminal),
+          terminalStatus === 'candidate' ? 'wt' : null,
           run.runId,
         );
         expect(status()).toBe(
@@ -959,10 +997,9 @@ it.each(['closed', 'paused', 'shaping', 'queued'] as const)(
           release.id,
         );
       }
-      db.prepare('UPDATE coding_runs SET record_json=? WHERE run_id=?').run(
-        JSON.stringify(failed),
-        run.runId,
-      );
+      db.prepare(
+        'UPDATE coding_runs SET record_json=?,writer_slot=NULL WHERE run_id=?',
+      ).run(JSON.stringify(failed), run.runId);
       for (const stale of [
         { ...release, withdrawnAt: recordedAt },
         { ...release, specHash: 'b'.repeat(64) },
@@ -1013,7 +1050,9 @@ it.each(['closed', 'paused', 'shaping', 'queued'] as const)(
         'running',
         'collecting',
       ] as const) {
-        db.prepare('UPDATE coding_runs SET record_json=? WHERE run_id=?').run(
+        db.prepare(
+          "UPDATE coding_runs SET record_json=?,writer_slot=1,worktree_id='wt' WHERE run_id=?",
+        ).run(
           JSON.stringify({
             ...run,
             status: activeStatus,
@@ -1024,15 +1063,13 @@ it.each(['closed', 'paused', 'shaping', 'queued'] as const)(
         );
         expect(status()).toBe(`coding-${activeStatus}`);
       }
-      db.prepare('UPDATE coding_runs SET record_json=? WHERE run_id=?').run(
-        JSON.stringify({ ...run, status: 'needs-reconcile' }),
-        run.runId,
-      );
+      db.prepare(
+        'UPDATE coding_runs SET record_json=?,writer_slot=1,worktree_id=NULL WHERE run_id=?',
+      ).run(JSON.stringify({ ...run, status: 'needs-reconcile' }), run.runId);
       expect(status()).toBe('needs-reconciliation');
-      db.prepare('UPDATE coding_runs SET record_json=? WHERE run_id=?').run(
-        JSON.stringify(run),
-        run.runId,
-      );
+      db.prepare(
+        'UPDATE coding_runs SET record_json=?,writer_slot=1,worktree_id=NULL WHERE run_id=?',
+      ).run(JSON.stringify(run), run.runId);
       expect(status()).toBe('coding-reserved');
       // A newer terminal run cannot hide an older live reservation.
       db.prepare(
@@ -1492,3 +1529,138 @@ it('rejects null-index foreign correlation and corrupted pagination lookahead', 
     v.ValiError,
   );
 });
+
+it.each([
+  'runId',
+  'attemptId',
+  'requestId',
+  'releaseId',
+  'workItemId',
+  'worktree_id',
+  'writer_slot',
+] as const)(
+  'canonically validates indexed coding identity %s across diagnostic routes',
+  async (field) => {
+    const run = insertRun('canonical');
+    for (const path of diagnosticPaths)
+      expect((await request(path)).status).toBe(200);
+    const db = openDb(paths.neondeckDatabase);
+    try {
+      if (field === 'worktree_id' || field === 'writer_slot') {
+        db.exec('PRAGMA foreign_keys=OFF');
+        db.prepare(`UPDATE coding_runs SET ${field}=?`).run(
+          field === 'worktree_id' ? 'private-mismatch' : null,
+        );
+      } else {
+        if (field === 'runId' || field === 'attemptId')
+          run[field] = 'private-mismatch';
+        else run.snapshot[field] = 'private-mismatch';
+        v.parse(codingRunRecordSchema, run);
+        db.prepare('UPDATE coding_runs SET record_json=?').run(
+          JSON.stringify(run),
+        );
+      }
+    } finally {
+      db.close();
+    }
+    for (const path of diagnosticPaths) {
+      const response = await request(path);
+      expect(response.status).toBe(503);
+      expect(await response.json()).toEqual(retainedError);
+    }
+  },
+);
+it.each([
+  'pipeline_id',
+  'release_id',
+  'initial_run_id',
+  'initial_attempt_id',
+  'work_item_id',
+  'repo_id',
+  'branch',
+  'pr_number',
+] as const)(
+  'canonically validates indexed delivery identity %s across diagnostic routes',
+  async (field) => {
+    insertDelivery('canonical');
+    for (const path of diagnosticPaths)
+      expect((await request(path)).status).toBe(200);
+    const db = openDb(paths.neondeckDatabase);
+    try {
+      if (field === 'work_item_id') {
+        const delivery = deliveryFixture('canonical');
+        delivery.workItemId = 'private-mismatch';
+        db.prepare('UPDATE factory_delivery_pipelines SET record_json=?').run(
+          JSON.stringify(delivery),
+        );
+      } else
+        db.prepare(`UPDATE factory_delivery_pipelines SET ${field}=?`).run(
+          field === 'pr_number' ? 123 : 'private-mismatch',
+        );
+    } finally {
+      db.close();
+    }
+    for (const path of diagnosticPaths) {
+      const response = await request(path);
+      expect(response.status).toBe(503);
+      expect(await response.json()).toEqual(retainedError);
+    }
+  },
+);
+it.each(['authorization', 'duplicate-effects', 'evidence-linkage'])(
+  'rejects shape-valid delivery aggregate corruption: %s',
+  async (corruption) => {
+    insertDelivery('canonical');
+    for (const path of diagnosticPaths)
+      expect((await request(path)).status).toBe(200);
+    const delivery = deliveryFixture('canonical');
+    if (corruption === 'authorization')
+      delivery.authorization.revision = {
+        ...delivery.initialRevision,
+        runId: 'private-mismatch',
+      };
+    else if (corruption === 'duplicate-effects')
+      delivery.effects.push({ ...delivery.effects[0] });
+    else {
+      delivery.effects[0].kind = 'verification';
+      delivery.evidence.push({
+        id: 'evidence',
+        kind: 'verification',
+        revision: delivery.revision,
+        producerId: 'independent',
+        result: 'failed',
+        evidenceRef: 'receipt',
+        effectId: delivery.effects[0].id,
+        validationContractDigest: deliveryValidationContractDigest(delivery),
+        bundleDigest: 'b'.repeat(64),
+        verificationEvidenceId: null,
+        verificationBundleDigest: null,
+      });
+      const validDb = openDb(paths.neondeckDatabase);
+      try {
+        validDb
+          .prepare('UPDATE factory_delivery_pipelines SET record_json=?')
+          .run(JSON.stringify(delivery));
+      } finally {
+        validDb.close();
+      }
+      for (const path of diagnosticPaths)
+        expect((await request(path)).status).toBe(200);
+      delivery.evidence[0].effectId = 'missing-effect';
+    }
+    v.parse(deliveryPipelineSchema, delivery);
+    const db = openDb(paths.neondeckDatabase);
+    try {
+      db.prepare('UPDATE factory_delivery_pipelines SET record_json=?').run(
+        JSON.stringify(delivery),
+      );
+    } finally {
+      db.close();
+    }
+    for (const path of diagnosticPaths) {
+      const response = await request(path);
+      expect(response.status).toBe(503);
+      expect(await response.json()).toEqual(retainedError);
+    }
+  },
+);

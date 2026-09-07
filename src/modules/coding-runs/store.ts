@@ -16,7 +16,7 @@ import {
   codingRunSnapshotSchema,
   type CodingRunRecord,
 } from '../../../shared/coding-runs';
-import { codingRunRowSchema } from './schemas';
+import { decodeCodingRunRow as decode } from './row-decoder';
 
 type Paths = Pick<RuntimePaths, 'neondeckDatabase'>;
 const terminal = (r: CodingRunRecord) =>
@@ -33,21 +33,7 @@ function db<T>(paths: Paths, operation: (database: DatabaseSync) => T): T {
     database.close();
   }
 }
-function decode(row: unknown) {
-  const stored = v.parse(codingRunRowSchema, row);
-  const record = v.parse(codingRunRecordSchema, JSON.parse(stored.record_json));
-  if (
-    stored.run_id !== record.runId ||
-    stored.attempt_id !== record.attemptId ||
-    stored.worktree_id !== (record.workspace?.worktreeId ?? null) ||
-    stored.request_id !== record.snapshot.requestId ||
-    stored.work_item_id !== record.snapshot.workItemId ||
-    stored.release_id !== record.snapshot.releaseId ||
-    (stored.writer_slot === null) !== terminal(record)
-  )
-    throw new Error('Corrupt coding run identity');
-  return { sequence: stored.sequence, record };
-}
+
 function get(database: DatabaseSync, id: string) {
   const row = database
     .prepare('SELECT * FROM coding_runs WHERE run_id = ?')

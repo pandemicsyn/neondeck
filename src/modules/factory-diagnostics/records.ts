@@ -6,11 +6,9 @@ import {
   revisionSchema,
   releaseSchema,
 } from '../../../shared/factory';
-import {
-  codingRunRecordSchema,
-  codingRunEventSchema,
-} from '../../../shared/coding-runs';
-import { deliveryPipelineSchema } from '../../../shared/factory-delivery';
+import { codingRunEventSchema } from '../../../shared/coding-runs';
+import { decodeCodingRunRow } from '../coding-runs';
+import { decodeDeliveryPipelineRow } from '../factory-delivery';
 import { decodePlanningEffect } from '../factory';
 import { openDb, withTransaction } from '../../lib/sqlite';
 import type { RuntimePaths } from '../../runtime-home';
@@ -120,6 +118,38 @@ function jsonRows<T>(
     .all(workId, sourceLimit + 1)
     .map((row) => parseRecord(row, schema));
 }
+// Bound retained JSON before invoking canonical pure decoders. Only failures inside
+// this validation boundary are translated; unrelated database/server errors propagate.
+function canonicalRecord<T>(
+  row: Record<string, unknown>,
+  decode: (row: unknown) => { record: T },
+) {
+  try {
+    v.parse(v.pipe(v.string(), v.maxLength(2_000_000)), row.record_json);
+    return decode(row).record;
+  } catch {
+    throw new DiagnosticsError(
+      503,
+      'Retained diagnostic records are unavailable or invalid. Check the local database and refresh.',
+    );
+  }
+}
+function codingCandidates(db: DatabaseSync, workId: string) {
+  return db
+    .prepare(
+      'SELECT * FROM coding_runs WHERE work_item_id=? ORDER BY sequence DESC LIMIT ?',
+    )
+    .all(workId, sourceLimit + 1)
+    .map((row) => canonicalRecord(row, decodeCodingRunRow));
+}
+function readDeliveryCandidates(db: DatabaseSync, workId: string) {
+  return db
+    .prepare(
+      'SELECT * FROM factory_delivery_pipelines WHERE work_item_id=? ORDER BY sequence DESC LIMIT ?',
+    )
+    .all(workId, sourceLimit + 1)
+    .map((row) => canonicalRecord(row, decodeDeliveryPipelineRow));
+}
 export function readTaskRecords(db: DatabaseSync, workId: string) {
   const row = db
     .prepare('SELECT record FROM factory_work_items WHERE id=?')
@@ -146,18 +176,8 @@ export function readTaskRecords(db: DatabaseSync, workId: string) {
     releaseSchema,
     workId,
   );
-  const runs = jsonRows(
-    db,
-    'SELECT run_id AS runId,record_json AS record FROM coding_runs WHERE work_item_id=? ORDER BY sequence DESC LIMIT ?',
-    codingRunRecordSchema,
-    workId,
-  );
-  const deliveries = jsonRows(
-    db,
-    'SELECT pipeline_id AS pipelineId,record_json AS record FROM factory_delivery_pipelines WHERE work_item_id=? ORDER BY sequence DESC LIMIT ?',
-    deliveryPipelineSchema,
-    workId,
-  );
+  const runs = codingCandidates(db, workId);
+  const deliveries = readDeliveryCandidates(db, workId);
   const audit = db
     .prepare(
       'SELECT id,action,actor,created_at AS createdAt FROM factory_audit WHERE work_id=? ORDER BY id DESC LIMIT ?',
@@ -180,14 +200,35 @@ export function readTaskRecords(db: DatabaseSync, workId: string) {
     });
   const events = db
     .prepare(
-      `SELECT json_extract(r.record_json,'$.runId') AS parentRunId,json_extract(r.record_json,'$.snapshot.workItemId') AS parentWorkId,e.sequence,e.run_id AS runId,e.version,e.type,e.status,e.created_at AS createdAt FROM coding_run_events e JOIN coding_runs r ON e.run_id=r.run_id WHERE r.work_item_id=? ORDER BY e.sequence DESC LIMIT ?`,
+      `SELECT r.*,e.sequence AS eventSequence,e.run_id AS eventRunId,e.version AS eventVersion,e.type AS eventType,e.status AS eventStatus,e.created_at AS eventCreatedAt FROM coding_run_events e JOIN coding_runs r ON e.run_id=r.run_id WHERE r.work_item_id=? ORDER BY e.sequence DESC LIMIT ?`,
     )
     .all(workId, sourceLimit + 1)
-    .map(({ parentRunId, parentWorkId, ...r }) => {
-      if (parentRunId !== r.runId || parentWorkId !== workId)
-        throw new DiagnosticsError(503, 'Task record binding is inconsistent.');
-      return v.parse(codingRunEventSchema, r);
-    });
+    .map(
+      ({
+        eventSequence,
+        eventRunId,
+        eventVersion,
+        eventType,
+        eventStatus,
+        eventCreatedAt,
+        ...parent
+      }) => {
+        const run = canonicalRecord(parent, decodeCodingRunRow);
+        if (run.runId !== eventRunId || run.snapshot.workItemId !== workId)
+          throw new DiagnosticsError(
+            503,
+            'Task record binding is inconsistent.',
+          );
+        return v.parse(codingRunEventSchema, {
+          sequence: eventSequence,
+          runId: eventRunId,
+          version: eventVersion,
+          type: eventType,
+          status: eventStatus,
+          createdAt: eventCreatedAt,
+        });
+      },
+    );
   if (
     writeback.some((r) => r.workId !== workId) ||
     revisions.some((r) => r.workId !== workId) ||
@@ -247,12 +288,7 @@ export function readTaskHealthRecords(
       .all(workId)
       .map((r) => parseRecord(r, schema));
   }
-  const runCandidates = jsonRows(
-    db,
-    'SELECT run_id AS runId,record_json AS record FROM coding_runs WHERE work_item_id=? ORDER BY sequence DESC LIMIT ?',
-    codingRunRecordSchema,
-    workId,
-  );
+  const runCandidates = codingCandidates(db, workId);
   const runs = runCandidates.slice(0, sourceLimit);
   const releaseCandidates =
     work.lifecycle === 'queued' && runs.length
@@ -276,12 +312,7 @@ export function readTaskHealthRecords(
     : [];
   // Validate a bounded candidate window before deciding which outcomes are terminal.
   // Older candidates outside this window make health partial, never silently healthy.
-  const deliveryCandidates = jsonRows(
-    db,
-    'SELECT pipeline_id AS pipelineId,record_json AS record FROM factory_delivery_pipelines WHERE work_item_id=? ORDER BY sequence DESC LIMIT ?',
-    deliveryPipelineSchema,
-    workId,
-  );
+  const deliveryCandidates = readDeliveryCandidates(db, workId);
   const deliveries = deliveryCandidates
     .slice(0, sourceLimit)
     .filter((r) => r.outcome === null);
