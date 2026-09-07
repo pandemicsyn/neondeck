@@ -32,11 +32,11 @@ it('writes the exact reviewed bytes locally with private permissions and refuses
 });
 it('rejects unknown fields, duplicate-key hidden content, remote destinations and oversized previews', async () => {
   const f = await fixture();
-  await writeFile(f.input, f.bytes.replace('{', '{"rawLogs":"secret",'));
+  await writeFile(f.input, '{"rawLogs":"secret",' + f.bytes.slice(1));
   await expect(
     writeFactoryDiagnosticPreview(f.input, f.output),
   ).rejects.toThrow();
-  await writeFile(f.input, f.bytes.replace('{', '{"notice":"secret",'));
+  await writeFile(f.input, '{"notice":"secret",' + f.bytes.slice(1));
   await expect(
     writeFactoryDiagnosticPreview(f.input, f.output),
   ).rejects.toThrow('canonical');
