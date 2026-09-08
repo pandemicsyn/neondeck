@@ -312,7 +312,7 @@ describe('onboarding model defaults', () => {
     expect(defaultProviderModel('openrouter')).toBe('openrouter/gpt-5.5');
     expect(defaultProviderModel('opencode')).toBe('opencode/gpt-5.5');
     expect(defaultProviderModel('google-vertex')).toBe(
-      'google-vertex/gemini-3.6-flash',
+      'google-vertex/gemini-2.5-flash',
     );
     expect(providerFromModel('openrouter/anthropic/claude-sonnet-4.6')).toBe(
       'openrouter',
