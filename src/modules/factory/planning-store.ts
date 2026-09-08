@@ -531,6 +531,16 @@ export function proposeFactorySpec(
         409,
         'Proposal must use the revision bound to this request.',
       );
+    if (
+      data.spec.workflowId &&
+      !intent.context.repoWorkflows?.profiles.some(
+        (profile) => profile.id === data.spec.workflowId,
+      )
+    )
+      throw new FactoryError(
+        400,
+        'Select a saved workflow ID from the captured planning context.',
+      );
     const evidence = readPlanningEffects(db, intent.id).filter(
       (effect) => effect.kind === 'repo-read',
     );

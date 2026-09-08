@@ -57,3 +57,26 @@ it('evidence reader rejects arbitrary receipt paths', async () => {
     (await app.request('/deliveries/invalid/evidence/invalid')).status,
   ).toBe(404);
 });
+
+it('rejects malformed workflow selection before resolving a validation policy', async () => {
+  const app = createFactoryDeliveryRoutes(paths);
+  for (const query of [
+    'workflowId=../other',
+    'workflowId=',
+    'workflowId=web&unbounded=true',
+  ]) {
+    expect((await app.request(`/validation-policy/demo?${query}`)).status).toBe(
+      400,
+    );
+  }
+});
+
+it('validates explicit environment retry on the existing delivery route', async () => {
+  const app = createFactoryDeliveryRoutes(paths);
+  const response = await app.request('/deliveries/missing/environment/retry', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: '{}',
+  });
+  expect(response.status).toBe(400);
+});

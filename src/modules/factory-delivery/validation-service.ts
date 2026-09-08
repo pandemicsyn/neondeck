@@ -153,6 +153,9 @@ async function authorizeValidation(
         target: preview.target,
         configFingerprint: preview.configFingerprint,
         checkCommands: preview.checkCommands,
+        ...(preview.validationPolicy.workflow
+          ? { workflow: preview.validationPolicy.workflow }
+          : {}),
         maxRepairAttempts: preview.maxRepairAttempts,
         totalExecutionMs: preview.totalExecutionMs,
         initialExecutionMs: preview.initialExecutionMs,

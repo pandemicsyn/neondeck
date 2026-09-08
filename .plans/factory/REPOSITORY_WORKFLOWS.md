@@ -1,0 +1,117 @@
+# Repository setup and validation workflows
+
+Status: source implementation, two independent static reviews and manager
+product/architecture review complete. Full local verification is in progress;
+live acceptance remains pending. This operator-approved follow-up addresses
+validation commands being inferred without preparing their dependencies.
+
+## Product behavior
+
+Repository setup exposes a Factory workflow editor, both from the dashboard and
+the optional factory onboarding flow. A repository can have named profiles, such
+as a web application and a nested extension, with a visible default.
+
+Each profile declares setup commands, validation commands, each command's
+repository-relative working directory, separate setup/validation time budgets,
+runtime requirements and environment-variable references. Secret values and
+deployment addresses remain private runtime configuration. Existing explicit
+repository-required checks remain mandatory regardless of profile selection.
+
+Neon can inspect bounded repository evidence and propose editable configuration.
+The proposal cites its inputs and does not execute or save itself. Lockfiles,
+package scripts, documentation and CI can inform suggestions; npm is not the
+only supported package manager. Ambiguity should remain visible for human review.
+
+The operator can save and explicitly test a profile. Testing uses a disposable
+checkout of the current remote default branch, reports setup and validation
+progress, captures bounded redacted output and supports cancellation and cleanup.
+Testing does not approve factory work or publish anything.
+
+Planning receives the available profiles and can propose a profile for the task.
+The operator reviews the selected profile and its resolved commands at plan
+approval. Capture that exact workflow in release authority: later settings do
+not silently change existing runs. Keep unchanged historical records readable
+without introducing another execution path or upgrading their authority.
+
+Factory validation prepares its owned candidate checkout, runs setup, then runs
+validation and independent review. Setup failures are reported as environment
+setup failures with the failed command/output. They stop before judge or coding
+repair dispatch. A deliberate retry after the environment is corrected reuses
+the candidate and exact approved workflow; changed workflow settings require
+renewed plan approval. This work does not provision Node installations or build
+a new coding agent. Existing coding CLIs receive workflow context and retain
+their own repository-skill behavior.
+
+## Contracts and ownership
+
+- `shared/repo-workflows.ts`: bounded Valibot profile and configuration schemas.
+  Named profiles contain per-command cwd, setup/validation arrays, timeouts,
+  Node/package-manager requirements and environment variable names.
+- `repo-workflows`: repository configuration, concurrency checking, resolution
+  and model-assisted proposals. Reuse repository registry and guardrail policy.
+- `repo-workflow-runs`: explicit disposable trials with inspectable state,
+  bounded execution, cancellation and cleanup. Reuse execution primitives.
+- `repo-workflow-runtime`: dependency-light runtime, environment and directory
+  checks shared with the detached verification worker. This worker must not load
+  the model runtime or dashboard trial controller through a module import.
+- Factory planning/release: selected workflow and frozen approval context.
+- Factory delivery: setup-before-validation, receipts and failure/retry routing.
+- Dashboard and CLI: shared typed services, clear progress, durable drafts,
+  comfortably sized command fields, usable narrow layouts and visible next actions.
+  Commands are ordered entries using the existing executable/argument contract;
+  complex shell logic can live in a repository script. Do not invent an implicit
+  shell interpreter for pasted multiline text.
+
+Reference-only settings are safe to inspect; resolved secret values never enter
+public snapshots or logs. Validate commands, paths, profiles, API/model replies,
+persisted state and process results at their boundaries. Preserve ownership,
+current-candidate, no-writer, execution-policy and total-budget checks. Setup may
+prepare ignored dependencies; it must not silently certify altered tracked
+candidate content. Only explicit environment references are provided, never the
+operator's complete environment, credentials, home or runtime config pointers.
+
+## Delivery and verification
+
+The manager owns this plan, integration review and PR operations. Astra-low
+implementers own foundation, execution, setup UI/CLI and planning integration.
+Two independent static reviewers must return no findings before any PR creation.
+The manager then reviews product adherence, module boundaries and authority.
+
+Use the official stacked-PR workflow. Split only at coherent runnable boundaries;
+do not publish a settings UI without its backend. Include synthetic screenshots
+for desktop and narrow layouts. Never bypass the pre-commit secrets scan.
+
+Required regressions include named/default profile resolution, mandatory checks,
+non-npm suggestions, configuration races, runtime/env/cwd validation, proposal
+non-mutation, setup ordering and failure classification, cancellation/cleanup,
+exact approval capture, stale settings, bounded redacted logs and UI draft
+preservation. Exercise a fixture whose validation requires a dependency created
+by setup, with no real provider calls or network dependency installation.
+
+Run focused checks followed by repository checks and full verification for this
+multi-surface integration. Record incomplete checks rather than treating them as
+passes. Live acceptance remains separate: the operator must configure, test and
+approve the workflow for the real repository after upgrade.
+
+## Source review record
+
+Two independent Astra-low reviewers cleared all 100 feature files against base
+`25789095591e1e92249d83b2f90a77c4b1acc8ba` before PR creation. Corrections cover
+large-lockfile evidence, cross-process trial ownership and cleanup, terminal
+cleanup progress, executable discovery and Node identity, authenticated CLI
+proposal requests, and the detached worker dependency graph. The manager checked
+workflow selection, exact approval capture, required checks, environment retry,
+Valibot boundaries, module ownership and synthetic desktop/narrow screenshots.
+
+The layer checker recognizes exactly two additional public worker entrypoints:
+`execution/worker.ts` and `coding-runs/worker.ts`. Existing implementations are
+moved/re-exported; private import and layer-direction rules remain enforced. A
+Vite build-graph regression restricts the detached verifier to its audited
+deterministic dependencies.
+
+## Related open issue
+
+The live progress judge also reported omitted candidate-diff evidence. That
+independent review-context issue is not repaired by environment setup. It remains
+an explicit follow-up before declaring the entire live candidate lifecycle
+accepted. This implementation must not weaken review requirements to bypass it.

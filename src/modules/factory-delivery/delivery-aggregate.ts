@@ -191,6 +191,7 @@ export function deliveryValidationContractDigest(r: DeliveryPipeline) {
       JSON.stringify([
         r.authorization.configFingerprint,
         r.authorization.checkCommands,
+        ...(r.authorization.workflow ? [r.authorization.workflow] : []),
         r.initialRevision.specVersion,
         r.initialRevision.specHash,
       ]),

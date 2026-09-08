@@ -732,3 +732,145 @@ it('keeps historical releases readable but rejects coding without validation aut
     retained.releases,
   );
 });
+
+it('captures the chosen workflow exactly with mandatory checks and keeps the brief unchanged', async () => {
+  const registry = JSON.parse(readFileSync(paths.repos, 'utf8'));
+  const profile = {
+    id: 'web',
+    name: 'Web application',
+    setupCommands: [{ command: 'npm ci', cwd: 'web' }],
+    validationCommands: [{ command: 'npm test', cwd: 'web' }],
+    setupTimeoutMs: 60000,
+    validationTimeoutMs: 120000,
+    runtime: { node: '>=26', packageManager: { name: 'npm', version: '>=11' } },
+    environmentRefs: ['TEST_SERVICE_TOKEN'],
+  };
+  const alternate = {
+    ...profile,
+    id: 'extension',
+    name: 'Extension',
+    setupCommands: [
+      { command: 'pnpm install --frozen-lockfile', cwd: 'extension' },
+    ],
+  };
+  registry.repos[0].factoryWorkflows = {
+    defaultProfileId: 'web',
+    profiles: [profile, alternate],
+  };
+  writeFileSync(paths.repos, JSON.stringify(registry));
+  const work = readyWork();
+  expect(
+    captureContext(work, paths).repoWorkflows?.profiles.map((item) => item.id),
+  ).toEqual(['web', 'extension']);
+  const selected = factoryValidationPolicy('demo', paths, 'extension');
+  const input = {
+    ...releaseInput(work),
+    workflowId: 'extension',
+    validationPolicy: selected,
+  };
+  const released = releaseFactoryWork(work.work.id, input, actor, paths);
+  expect(released.revisions).toEqual(work.revisions);
+  expect(released.releases[0].validationPolicy?.workflow).toEqual({
+    ...alternate,
+    validationCommands: [
+      ...alternate.validationCommands,
+      { command: 'npm test', cwd: '.' },
+    ],
+  });
+  const frozen = JSON.parse(
+    await freezeCodingContext(
+      released,
+      execFileSync('git', ['rev-parse', 'HEAD'], {
+        cwd: registry.repos[0].path,
+        encoding: 'utf8',
+      }).trim(),
+      paths,
+    ),
+  );
+  expect(frozen.workflow).toEqual(selected.workflow);
+  registry.repos[0].factoryWorkflows.profiles[1].setupCommands[0].command =
+    'changed';
+  writeFileSync(paths.repos, JSON.stringify(registry));
+  expect(
+    getFactoryWork(work.work.id, paths).releases[0].validationPolicy,
+  ).toEqual(selected);
+});
+
+it('resolves an unselected existing brief to the configured default and rejects an unreviewed selection', () => {
+  const registry = JSON.parse(readFileSync(paths.repos, 'utf8'));
+  const profile = {
+    id: 'web',
+    name: 'Web',
+    setupCommands: [],
+    validationCommands: [{ command: 'npm test', cwd: '.' }],
+    setupTimeoutMs: 1000,
+    validationTimeoutMs: 1000,
+    runtime: {},
+    environmentRefs: [],
+  };
+  registry.repos[0].factoryWorkflows = {
+    defaultProfileId: 'web',
+    profiles: [profile, { ...profile, id: 'docs', name: 'Docs' }],
+  };
+  writeFileSync(paths.repos, JSON.stringify(registry));
+  const work = readyWork();
+  expect(() =>
+    releaseFactoryWork(
+      work.work.id,
+      { ...releaseInput(work), workflowId: 'docs' },
+      actor,
+      paths,
+    ),
+  ).toThrow('Validation settings changed');
+  const result = releaseFactoryWork(
+    work.work.id,
+    releaseInput(work),
+    actor,
+    paths,
+  );
+  expect(result.releases[0].validationPolicy?.workflow?.id).toBe('web');
+});
+it('misconfigured stored environment references remain readable but cannot admit trials or releases', async () => {
+  const { readRepoWorkflows } = await import('../repo-workflows');
+  const { startRepoWorkflowRun } = await import('../repo-workflow-runs');
+  const work = readyWork();
+  const input = releaseInput(work);
+  const registry = JSON.parse(readFileSync(paths.repos, 'utf8'));
+  registry.repos[0].factoryWorkflows = {
+    defaultProfileId: 'test',
+    profiles: [
+      {
+        id: 'test',
+        name: 'Test',
+        setupCommands: [],
+        validationCommands: [{ command: 'npm test', cwd: '.' }],
+        setupTimeoutMs: 1000,
+        validationTimeoutMs: 1000,
+        runtime: {},
+        environmentRefs: ['SSH_AUTH_SOCK'],
+      },
+    ],
+  };
+  writeFileSync(paths.repos, JSON.stringify(registry));
+  const snapshot = readRepoWorkflows('demo', paths);
+  expect(snapshot.workflows?.profiles[0].environmentRefs).toEqual([
+    'SSH_AUTH_SOCK',
+  ]);
+  await expect(
+    startRepoWorkflowRun(
+      'demo',
+      { profileId: 'test', expectedFingerprint: snapshot.fingerprint },
+      paths,
+    ),
+  ).rejects.toThrow('Environment reference');
+  const current = getFactoryWork(work.work.id, paths);
+  expect(() =>
+    releaseFactoryWork(
+      work.work.id,
+      { ...input, repoFingerprint: current.repoFingerprint },
+      actor,
+      paths,
+    ),
+  ).toThrow('Environment reference');
+  expect(getFactoryWork(work.work.id, paths).releases).toHaveLength(0);
+});

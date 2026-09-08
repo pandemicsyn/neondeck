@@ -1,3 +1,5 @@
+import { resolveRepoWorkflow } from '../repo-workflows';
+import { readRuntimeJsonSync, parseAppConfig } from '../../runtime-home';
 import { isDeepStrictEqual } from 'node:util';
 import type { DeliveryPipeline } from '../../../shared/factory-delivery';
 import type { RuntimePaths } from '../../runtime-home';
@@ -26,6 +28,21 @@ export function localValidationContext(runId: string, paths: RuntimePaths) {
     throw new FactoryError(
       409,
       'A fresh release with the current validation policy is required. Retained work remains available.',
+    );
+  if (
+    validationPolicy.workflow &&
+    !isDeepStrictEqual(
+      validationPolicy.workflow,
+      resolveRepoWorkflow(
+        authority.repo,
+        readRuntimeJsonSync(paths.config, parseAppConfig),
+        validationPolicy.workflow.id,
+      ),
+    )
+  )
+    throw new FactoryError(
+      409,
+      'Approved repository workflow settings changed. Review and release the plan again.',
     );
   return {
     run,
@@ -68,6 +85,11 @@ export function assertDeliveryAuthority(
   const grant = pipeline.authorization;
   if (
     context.configFingerprint !== grant.configFingerprint ||
+    !isDeepStrictEqual(context.validationPolicy.workflow, grant.workflow) ||
+    !isDeepStrictEqual(
+      context.validationPolicy.checkCommands,
+      grant.checkCommands,
+    ) ||
     context.run.snapshot.releaseId !== grant.revision.releaseId ||
     context.run.snapshot.specHash !== grant.revision.specHash ||
     context.run.snapshot.specVersion !== grant.revision.specVersion ||

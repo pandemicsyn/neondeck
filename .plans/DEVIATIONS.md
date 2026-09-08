@@ -1,5 +1,24 @@
 # Deviations Log
 
+## 2026-09-07 - Explicit repository setup and validation workflows
+
+- Roadmap item: Factory repository onboarding and candidate validation.
+- Decision: Add operator-reviewed named setup/validation profiles, model-assisted
+  suggestions and disposable test runs. Capture the chosen resolved workflow at
+  plan approval and run setup before independent validation.
+- Reason: Live validation inferred `npm run check` but its owned checkout lacked
+  a required tool. Generic code-repair routing obscured an environment failure.
+- Scope: Setup failure stops before code repair; runtime requirements are checked
+  rather than provisioning toolchain installations. No new coding-agent runtime.
+- Architecture: Two explicit public worker entrypoints expose existing pure
+  execution/artifact functions without loading action or model runtimes. The
+  import-layer rule allows only these exact paths; a worker build-graph test
+  checks the boundary. Both independent static reviews and manager review are
+  complete before publishing this feature.
+- Follow-up: `factory/REPOSITORY_WORKFLOWS.md` tracks implementation, verification
+  and live acceptance. The separately observed missing judge-diff context remains
+  open; this work does not bypass independent review to accommodate it.
+
 ## 2026-09-07 - Reuse unchanged Git objects during factory validation
 
 - Roadmap item: Factory candidate validation and live acceptance.

@@ -1,3 +1,5 @@
+import { createRepoWorkflowsRoutes } from './routes/repo-workflows';
+import { createRepoWorkflowRunsRoutes } from './routes/repo-workflow-runs';
 import { createFactoryDiagnosticsRoutes } from './routes/factory-diagnostics';
 import { createFactoryCodingRoutes } from './routes/factory-coding';
 import { createFactoryDeliveryRoutes } from './routes/factory-delivery';
@@ -172,6 +174,8 @@ export async function createApp(options: CreateAppOptions = {}) {
     }),
   );
   app.route('/api/repos', createReposRoutes(paths));
+  app.route('/api', createRepoWorkflowsRoutes(paths));
+  app.route('/api', createRepoWorkflowRunsRoutes(paths));
   app.route('/api', createRepoEditRoutes(paths));
   app.route('/api', createWorktreeRoutes(paths));
   app.route('/api/kilo', createKiloRoutes(paths));

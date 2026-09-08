@@ -1,3 +1,4 @@
+import { repoWorkflowProfileSchema } from '../../../shared/repo-workflows';
 import { captureFactoryRepoBaseline } from './repo-baseline';
 import { CodingAuthorityChangedError } from './coding-authority-error';
 import { createHash } from 'node:crypto';
@@ -117,6 +118,7 @@ const skillSchema = v.strictObject({
   ),
 });
 const frozenBodySchema = v.strictObject({
+  workflow: v.optional(repoWorkflowProfileSchema),
   policy: v.literal('frozen-selected-context-v1'),
   repoBaseline: v.optional(factoryRepoBaselineSchema),
   repoInstructions: v.nullable(
@@ -174,6 +176,8 @@ export async function freezeCodingContext(
     baseSha,
   );
   const snapshot = {
+    workflow: current.releases.find((release) => !release.withdrawnAt)
+      ?.validationPolicy?.workflow,
     policy: 'frozen-selected-context-v1',
     ...(baseline?.repoBaseline ? { repoBaseline: baseline.repoBaseline } : {}),
     repoInstructions,
@@ -397,6 +401,11 @@ export async function assertCodingSnapshot(
   )
     throw new Error('Frozen context integrity check failed.');
   if (
+    JSON.stringify(body.workflow) !==
+      JSON.stringify(
+        current.releases.find((release) => !release.withdrawnAt)
+          ?.validationPolicy?.workflow,
+      ) ||
     JSON.stringify(body.references) !==
       JSON.stringify(
         v.parse(specSchema, JSON.parse(snapshot.specSnapshot)).references,

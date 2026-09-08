@@ -54,6 +54,7 @@ export const deliveryDetailSchema = v.strictObject({
     'human-scope',
     'human-budget',
     'human-authority',
+    'human-environment',
     'reconcile',
     'complete',
   ]),

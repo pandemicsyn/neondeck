@@ -1,4 +1,9 @@
-import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
+import {
+  createHash,
+  createHmac,
+  randomBytes,
+  timingSafeEqual,
+} from 'node:crypto';
 import { constants } from 'node:fs';
 import { lstat, open, realpath, rename } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -89,4 +94,8 @@ export function message(error: unknown) {
 
 export async function readBounded(path: string, limit = 2 * 1024 * 1024) {
   return (await readBytesBounded(path, limit)).toString('utf8');
+}
+
+export function artifactHash(value: string | Buffer) {
+  return createHash('sha256').update(value).digest('hex');
 }

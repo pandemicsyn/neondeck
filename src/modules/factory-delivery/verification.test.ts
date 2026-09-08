@@ -182,3 +182,195 @@ it('does not certify a legacy signed terminal without private environment attest
     }),
   ).toMatchObject({ passed: false, noWriter: true });
 });
+
+const workflow = {
+  id: 'default',
+  name: 'Default',
+  setupCommands: [{ command: 'npm ci', cwd: '.' }],
+  validationCommands: [{ command: '/usr/bin/true', cwd: '.' }],
+  setupTimeoutMs: 60000,
+  validationTimeoutMs: 60000,
+  runtime: { node: '>=26' },
+  environmentRefs: [],
+};
+it('runs approved setup before validation in the isolated checkout and retains both receipts', async () => {
+  const { input } = await setup();
+  const calls: string[] = [];
+  const result = await verifyCandidateEvidence(
+    { ...input, workflow },
+    undefined,
+    {
+      checkPolicy,
+      runCheck: async (request) => {
+        calls.push(request.command);
+        expect(request.cwd).toBe(input.verificationRoot);
+        expect(request.workflow?.runtime).toEqual({ node: '>=26' });
+        return good();
+      },
+    },
+  );
+  expect(calls).toEqual(['npm ci', '/usr/bin/true']);
+  expect(result.passed).toBe(true);
+  expect(result.setup).toMatchObject({
+    passed: true,
+    checks: [{ command: 'npm ci', passed: true }],
+  });
+  expect(result.durationMs).toBe(2);
+});
+it('retains setup failure output, charges usage, and never starts validation', async () => {
+  const { input } = await setup();
+  const calls: string[] = [];
+  const result = await verifyCandidateEvidence(
+    { ...input, workflow },
+    undefined,
+    {
+      checkPolicy,
+      runCheck: async (request) => {
+        calls.push(request.command);
+        return {
+          ...(await good()),
+          exitCode: 1,
+          durationMs: 123,
+          stderr: 'dependency unavailable',
+        };
+      },
+    },
+  );
+  expect(calls).toEqual(['npm ci']);
+  expect(result).toMatchObject({
+    passed: false,
+    durationMs: 123,
+    setup: { passed: false },
+    checks: [],
+  });
+  const log = JSON.parse(
+    await readFile(result.setup!.checks[0].evidenceRef!, 'utf8'),
+  );
+  expect(log.stderr).toBe('dependency unavailable');
+});
+it('known missing command directories are setup blockers without invoking a process', async () => {
+  const { input } = await setup();
+  let calls = 0;
+  const result = await verifyCandidateEvidence(
+    {
+      ...input,
+      workflow: {
+        ...workflow,
+        setupCommands: [{ command: 'npm ci', cwd: 'missing' }],
+      },
+    },
+    undefined,
+    {
+      checkPolicy,
+      runCheck: async () => {
+        calls++;
+        return good();
+      },
+    },
+  );
+  expect(calls).toBe(0);
+  expect(result.setup?.passed).toBe(false);
+  expect(
+    JSON.parse(await readFile(result.setup!.checks[0].evidenceRef!, 'utf8'))
+      .stderr,
+  ).toContain('command directory');
+});
+it('setup tracked-tree mutation blocks certification without weakening candidate ownership', async () => {
+  const { input } = await setup();
+  let calls = 0;
+  const result = await verifyCandidateEvidence(
+    { ...input, workflow },
+    undefined,
+    {
+      checkPolicy,
+      runCheck: async () => {
+        calls++;
+        await writeFile(join(input.verificationRoot, 'a.txt'), 'setup drift');
+        return good();
+      },
+    },
+  );
+  expect(calls).toBe(1);
+  expect(result.setup?.passed).toBe(false);
+  expect(result.passed).toBe(false);
+  expect(await readFile(join(input.evidence.root, 'a.txt'), 'utf8')).toBe(
+    'candidate\n',
+  );
+  expect(
+    JSON.parse(await readFile(result.setup!.checks[0].evidenceRef!, 'utf8'))
+      .mutation,
+  ).toMatchObject({ reason: 'Check changed certified checkout contents' });
+});
+it('runtime preflight failure with empty setup is still an environment blocker', async () => {
+  const { input } = await setup();
+  const result = await verifyCandidateEvidence(
+    { ...input, workflow: { ...workflow, setupCommands: [] } },
+    undefined,
+    {
+      checkPolicy,
+      runCheck: async () => ({
+        ...(await good()),
+        setupBlocked: true,
+        exitCode: null,
+        stderr: 'required runtime unavailable',
+      }),
+    },
+  );
+  expect(result).toMatchObject({
+    passed: false,
+    setup: { passed: false, checks: [] },
+  });
+});
+it('preflights all permissions before setup and names a denied validation command', async () => {
+  const { input } = await setup();
+  let calls = 0;
+  const result = await verifyCandidateEvidence(
+    { ...input, workflow },
+    undefined,
+    {
+      checkPolicy: async (raw) => ({
+        ...(await checkPolicy(raw)),
+        decision:
+          (raw as { command: string }).command === '/usr/bin/true'
+            ? 'deny'
+            : 'allow',
+      }),
+      runCheck: async () => {
+        calls++;
+        return good();
+      },
+    },
+  );
+  expect(calls).toBe(0);
+  expect(result.setup).toMatchObject({
+    passed: false,
+    failure: {
+      command: '/usr/bin/true',
+      output: expect.stringContaining('permission'),
+    },
+  });
+});
+it('recovers a known setup preflight blocker from its bound signed report without launching commands', async () => {
+  const { input } = await setup();
+  const denied: typeof checkPolicy = async (raw) => ({
+    ...(await checkPolicy(raw)),
+    decision: 'deny',
+  });
+  const initial = await verifyCandidateEvidence(
+    { ...input, workflow },
+    undefined,
+    { checkPolicy: denied, runCheck: good },
+  );
+  const recovered = await verifyCandidateEvidence(
+    { ...input, workflow, recoverOnly: true },
+    undefined,
+    {
+      checkPolicy,
+      runCheck: async () => {
+        throw new Error('must not execute');
+      },
+    },
+  );
+  expect(recovered).toEqual(initial);
+  expect(recovered.setup?.passed).toBe(false);
+});

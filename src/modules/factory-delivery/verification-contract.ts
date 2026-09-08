@@ -1,3 +1,4 @@
+import { repoWorkflowCwdSchema } from '../../../shared/repo-workflows';
 import { deliveryMaxCheckCommands } from '../../../shared/factory-delivery';
 import * as v from 'valibot';
 import { candidateCheckEnvironmentSchema } from './verification-process';
@@ -14,10 +15,39 @@ export const candidateVerificationSchema = v.strictObject({
   passed: v.boolean(),
   noWriter: v.literal(true),
   durationMs: natural,
+  setup: v.optional(
+    v.strictObject({
+      passed: v.boolean(),
+      failure: v.optional(
+        v.strictObject({
+          command,
+          cwd: v.string(),
+          output: v.pipe(v.string(), v.maxLength(4000)),
+        }),
+      ),
+      checks: v.pipe(
+        v.array(
+          v.strictObject({
+            command,
+            cwd: v.optional(repoWorkflowCwdSchema),
+            passed: v.boolean(),
+            exitCode,
+            truncated: v.boolean(),
+            durationMs: natural,
+            evidenceRef: v.nullable(v.string()),
+            outputHash: v.nullable(hash),
+            environment: v.optional(candidateCheckEnvironmentSchema),
+          }),
+        ),
+        v.maxLength(deliveryMaxCheckCommands),
+      ),
+    }),
+  ),
   checks: v.pipe(
     v.array(
       v.strictObject({
         command,
+        cwd: v.optional(repoWorkflowCwdSchema),
         passed: v.boolean(),
         exitCode,
         truncated: v.boolean(),
@@ -32,6 +62,7 @@ export const candidateVerificationSchema = v.strictObject({
 });
 export const candidateCheckLogSchema = v.strictObject({
   command,
+  cwd: v.optional(repoWorkflowCwdSchema),
   evidenceDigest: hash,
   treeSha: sha,
   exitCode,
