@@ -1,3 +1,5 @@
+import { readFileSync, writeFileSync } from 'node:fs';
+import { factoryValidationPolicy } from './validation-policy';
 import { codingConfig, codingDigest } from './coding-context';
 import { githubDigest, putComment } from './github-store';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
@@ -29,6 +31,15 @@ let setup: ReturnType<typeof fixture>;
 let io: GitHubReconcileIO;
 beforeEach(() => {
   setup = fixture(true);
+  const config = JSON.parse(readFileSync(setup.paths.config, 'utf8'));
+  writeFileSync(
+    setup.paths.config,
+    JSON.stringify({
+      ...config,
+      models: { ...config.models, prReview: 'faux/faux-1' },
+      guardrails: { requiredChecks: ['npm test'] },
+    }),
+  );
   io = {
     repository: vi.fn(async () => ({
       id: 42,
@@ -87,6 +98,7 @@ function release() {
       sourceVersion: d.source.version,
       repoFingerprint: d.repoFingerprint,
       policyVersion: 'isolated-local-v1',
+      validationPolicy: factoryValidationPolicy('fixture', setup.paths),
       expectedCodingConfigFingerprint: codingDigest(
         codingConfig(setup.paths).coding,
       ),

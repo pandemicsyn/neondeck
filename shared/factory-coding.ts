@@ -84,7 +84,16 @@ export const factoryCodingReadinessSchema = v.strictObject({
     ]),
   ),
 });
+export const validationAdmissionAttentionSchema = v.strictObject({
+  blocker: v.picklist(['policy-changed', 'candidate-unavailable']),
+  message: label,
+  observedAt: v.pipe(v.string(), v.isoTimestamp()),
+  nextAction: v.picklist(['review-plan', 'retry-validation']),
+});
 export const factoryCodingRunSchema = v.strictObject({
+  validationAdmission: v.optional(
+    v.nullable(validationAdmissionAttentionSchema),
+  ),
   record: v.strictObject({
     runId: label,
     attemptId: label,

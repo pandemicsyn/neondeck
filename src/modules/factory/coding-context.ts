@@ -67,6 +67,7 @@ export function codingAuthority(workId: string, paths: RuntimePaths) {
     !coding.enabled ||
     !current.eligible ||
     !release ||
+    !release.validationPolicy ||
     !revision ||
     !repo ||
     release.repoId !== repo.id ||

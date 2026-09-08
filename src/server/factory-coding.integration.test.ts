@@ -1,3 +1,4 @@
+import { factoryValidationPolicy } from '../modules/factory/validation-policy';
 import { execFileSync } from 'node:child_process';
 import {
   existsSync,
@@ -127,6 +128,8 @@ else {
         paths.config,
         JSON.stringify({
           version: 1,
+          models: { prReview: 'faux/faux-1' },
+          guardrails: { requiredChecks: ['npm test'] },
           factory: {
             enabled: true,
             coding: {
@@ -200,6 +203,7 @@ else {
           sourceVersion: detail.source.version,
           repoFingerprint: detail.repoFingerprint,
           policyVersion: 'isolated-local-v1',
+          validationPolicy: factoryValidationPolicy('demo', paths),
           expectedCodingConfigFingerprint: codingDigest(
             codingConfig(paths).coding,
           ),

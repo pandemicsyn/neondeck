@@ -25,6 +25,16 @@ export const githubConnectionSchema = v.strictObject({
   }),
 });
 export type GitHubConnection = v.InferOutput<typeof githubConnectionSchema>;
+/** Publication transport has no intake or webhook authority. */
+export const githubRepositoryIdentitySchema = v.object({
+  owner: githubConnectionSchema.entries.owner,
+  name: githubConnectionSchema.entries.name,
+  repositoryId: githubConnectionSchema.entries.repositoryId,
+  tokenEnv: githubConnectionSchema.entries.tokenEnv,
+});
+export type GitHubRepositoryIdentity = v.InferOutput<
+  typeof githubRepositoryIdentitySchema
+>;
 export const githubCommentSchema = v.object({
   id: v.pipe(v.number(), v.integer(), v.minValue(1)),
   body: v.pipe(v.string(), v.maxLength(65536)),

@@ -23,17 +23,22 @@ it('returns typed empty state and does not authorize any candidate on reads', as
 it('rejects incomplete grant and malformed JSON before touching execution', async () => {
   const app = createFactoryDeliveryRoutes(paths);
   for (const body of ['{', '{}', '{"confirm":false}']) {
-    const response = await app.request('/grants', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body,
-    });
+    const response = await app.request(
+      '/deliveries/missing/publication-grants',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body,
+      },
+    );
     expect(response.status).toBe(400);
   }
 });
 it('has no arbitrary effect, merge or budget reset endpoint', async () => {
   const app = createFactoryDeliveryRoutes(paths);
   for (const path of [
+    '/grants',
+    '/validation-grants',
     '/deliveries/x/merge',
     '/deliveries/x/effects',
     '/deliveries/x/reset-budget',

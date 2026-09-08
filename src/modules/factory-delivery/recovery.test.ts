@@ -1,3 +1,4 @@
+import { approveTestPublication } from './publication.test-helper';
 import { database, save } from './delivery-persistence';
 import { advanceFactoryDelivery } from './service';
 import { deliveryIO } from './delivery-io';
@@ -87,10 +88,28 @@ beforeEach(() => {
       },
     }),
   );
+  writeFileSync(
+    paths.repos,
+    JSON.stringify({
+      version: 1,
+      repos: [
+        {
+          id: 'repo',
+          github: { owner: 'test', name: 'repo' },
+          defaultBranch: 'main',
+          path: '/private/tmp/synthetic-repo',
+        },
+      ],
+    }),
+  );
+  vi.stubEnv('UNUSED_TEST', 'synthetic-only');
   io.lookup.mockReset();
   io.watches.mockReturnValue([]);
 });
-afterEach(() => rmSync(home, { recursive: true, force: true }));
+afterEach(() => {
+  vi.unstubAllEnvs();
+  rmSync(home, { recursive: true, force: true });
+});
 function uncertainPr() {
   const p = reserveDeliveryPipeline(
     {
@@ -98,6 +117,7 @@ function uncertainPr() {
       repoId: 'repo',
       initialRevision: rev,
       authorization: {
+        mode: 'local-validation',
         id: 'grant',
         authorizedBy: 'human',
         authorizedAt: '2026-09-06T00:00:00.000Z',
@@ -142,6 +162,7 @@ function uncertainPr() {
       executionMs: 1,
     });
   }
+  approveTestPublication(requireDelivery(p.pipelineId, paths), paths);
   change({ type: 'plan-effect', id: 'commit', kind: 'commit' });
   change({ type: 'start-effect', id: 'commit' });
   change({
@@ -189,7 +210,12 @@ it('reconciles known PR after release/config revocation using readonly target co
   await recoverDeliveryEffect(p, p.effects.at(-1)!, paths);
   expect(requireDelivery(p.pipelineId, paths).pr?.number).toBe(7);
   expect(io.lookup).toHaveBeenCalledWith(
-    expect.objectContaining({ enabled: false }),
+    expect.objectContaining({
+      owner: 'test',
+      name: 'repo',
+      repositoryId: '1',
+      tokenEnv: 'UNUSED_TEST',
+    }),
     expect.objectContaining({ head: p.branch, base: 'main' }),
     { fresh: true },
   );
@@ -281,7 +307,12 @@ it.each(['authority', 'scope', 'budget'] as const)(
       ended.interventions.some((i) => i.kind === kind && !i.resolution),
     ).toBe(true);
     expect(io.observe).toHaveBeenCalledWith(
-      expect.objectContaining({ enabled: false }),
+      expect.objectContaining({
+        owner: 'test',
+        name: 'repo',
+        repositoryId: '1',
+        tokenEnv: 'UNUSED_TEST',
+      }),
       7,
       expect.anything(),
       { fresh: true },

@@ -1,3 +1,4 @@
+import { readValidationAttention } from './validation-attention';
 import { withFactorySpan, codingCorrelation } from '../factory-observability';
 import {
   codingAdmissionFingerprint,
@@ -121,6 +122,7 @@ export function publicCodingRun(input: CodingRunRecord, paths: RuntimePaths) {
     : null;
   return v.parse(factoryCodingRunSchema, {
     record,
+    validationAdmission: readValidationAttention(run.runId, paths),
     displayStatus:
       run.cancelRequestedAt &&
       !terminalCodingRun(run) &&

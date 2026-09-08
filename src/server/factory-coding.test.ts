@@ -1,3 +1,4 @@
+import { factoryValidationPolicy } from '../modules/factory/validation-policy';
 import { upsertMemory } from '../modules/memory';
 import { execFileSync } from 'node:child_process';
 import {
@@ -154,6 +155,8 @@ beforeEach(async () => {
     paths.config,
     JSON.stringify({
       version: 1,
+      models: { prReview: 'faux/faux-1' },
+      guardrails: { requiredChecks: ['npm test'] },
       factory: {
         enabled: true,
         coding: {
@@ -261,6 +264,7 @@ function release(key = 'one', initial?: FactoryDetail) {
       sourceVersion: d.source.version,
       repoFingerprint: d.repoFingerprint,
       policyVersion: 'isolated-local-v1',
+      validationPolicy: factoryValidationPolicy('demo', paths),
       expectedCodingConfigFingerprint: codingDigest(codingConfig(paths).coding),
     },
     actor,
@@ -851,6 +855,8 @@ describe('factory coding bridge', () => {
       paths.config,
       JSON.stringify({
         version: 1,
+        models: { prReview: 'faux/faux-1' },
+        guardrails: { requiredChecks: ['npm test'] },
         factory: { enabled: true, coding: { enabled: false } },
       }),
     );

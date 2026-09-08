@@ -1,14 +1,21 @@
+import type { FactoryCodingRun } from '../../../../shared/factory-coding';
+import { FactoryCodingCandidate } from './FactoryCodingCandidate';
 import { useFactoryRefresh } from './useFactoryRefresh';
 import { useQuery } from '@tanstack/react-query';
 import { getFactoryDeliveryState } from '../../api/factory-delivery';
-import { FactoryDeliveryGrant } from './FactoryDeliveryGrant';
 import { FactoryDeliveryDetail } from './FactoryDeliveryDetail';
 export function FactoryDelivery({
+  automaticValidation = false,
+  admissionBlocked = false,
+  candidateDiff,
   runId,
   workId,
   onDiscuss,
   releaseId,
 }: {
+  automaticValidation?: boolean;
+  admissionBlocked?: boolean;
+  candidateDiff?: NonNullable<FactoryCodingRun['diff']>;
   runId: string;
   workId: string;
   releaseId?: string;
@@ -31,9 +38,14 @@ export function FactoryDelivery({
           pipeline.repairs.some((repair) => repair.runId === runId)),
     ) ?? [];
   return (
-    <section className="factory-delivery" aria-label="Candidate delivery">
+    <section
+      className="factory-delivery"
+      aria-label="Review result"
+      id="factory-review-result"
+      tabIndex={-1}
+    >
       <div className="factory-toolbar">
-        <h3>Candidate delivery</h3>
+        <h3>Review result</h3>
         <button
           disabled={state.isPending || refreshing}
           onClick={() => void refresh(() => state.refetch())}
@@ -48,13 +60,43 @@ export function FactoryDelivery({
           stale; grant controls are disabled.
         </p>
       )}
-      {state.data && matches.length === 0 && (
-        <FactoryDeliveryGrant
-          runId={runId}
-          workId={workId}
-          disabled={!!state.error || state.isPending || refreshing}
-          onGranted={() => state.refetch()}
-        />
+      {matches.length === 0 && candidateDiff && (
+        <FactoryCodingCandidate diff={candidateDiff} />
+      )}
+      {state.data &&
+        matches.length === 0 &&
+        automaticValidation &&
+        !admissionBlocked && (
+          <p>
+            Preparing checks and independent review. This release already
+            authorizes local validation and bounded repairs; waiting for the
+            worker to record admission.
+          </p>
+        )}
+      {state.data && matches.length === 0 && !automaticValidation && (
+        <section aria-label="Historical workflow recovery">
+          <h4>Release this plan again to use the updated workflow</h4>
+          <p>
+            Your plan, candidate and history are retained. Open the plan,
+            withdraw the historical release, then approve the same plan with the
+            automatic validation policy.
+          </p>
+          {onDiscuss ? (
+            <button
+              onClick={() =>
+                onDiscuss(
+                  'This historical release has no current validation policy. Review and release the existing plan again to use automatic checks and independent review. Retained work and history remain available.',
+                )
+              }
+            >
+              Review plan for updated workflow
+            </button>
+          ) : (
+            <a href={`/factory?task=${encodeURIComponent(workId)}`}>
+              Open retained plan
+            </a>
+          )}
+        </section>
       )}
       {matches.length > 0 &&
         matches[0].pipeline.initialRevision.runId !== runId && (
@@ -70,6 +112,7 @@ export function FactoryDelivery({
         )}
       {matches.map(({ pipeline }) => (
         <FactoryDeliveryDetail
+          candidateDiff={candidateDiff}
           key={pipeline.pipelineId}
           id={pipeline.pipelineId}
           workId={workId}

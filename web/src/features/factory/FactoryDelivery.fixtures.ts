@@ -2,11 +2,12 @@ import type {
   DeliveryEvidenceContent,
   DeliveryFeedbackContent,
 } from '../../../../shared/factory-delivery-evidence';
-import type {
-  DeliveryDetail,
-  DeliveryGrantPreview,
-} from '../../api/factory-delivery';
-export function deliveryPreview(): DeliveryGrantPreview {
+import type { DeliveryDetail } from '../../api/factory-delivery';
+import type { InferOutput } from 'valibot';
+import type { validationGrantPreviewSchema } from '../../../../shared/factory-delivery-api';
+export function deliveryPreview(): InferOutput<
+  typeof validationGrantPreviewSchema
+> {
   return {
     workItemId: 'work-demo',
     repoId: 'repo-demo',
@@ -28,7 +29,16 @@ export function deliveryPreview(): DeliveryGrantPreview {
     totalExecutionMs: 10800000,
     initialExecutionMs: 1200000,
     maxAttemptMs: 2700000,
-    publish: 'draft-pr-only',
+    publish: false,
+    validationPolicy: {
+      version: 'local-validation-v1',
+      configFingerprint: 'f'.repeat(64),
+      checkCommands: ['npm run typecheck:app', 'npm run test:unit'],
+      reviewerModel: 'synthetic-reviewer',
+      reviewerThinkingLevel: null,
+      maxRepairAttempts: 2,
+      totalExecutionMs: 10800000,
+    },
     merge: false,
     deploy: false,
   };
@@ -299,4 +309,8 @@ export function deliveryFeedbackContent(
       classification: { result: 'scope-change', bound: true },
     },
   };
+}
+
+export function validationPreview() {
+  return deliveryPreview();
 }

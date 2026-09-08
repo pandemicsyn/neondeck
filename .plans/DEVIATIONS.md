@@ -1,5 +1,32 @@
 # Deviations Log
 
+## 2026-09-07 - Separate local validation from factory publication
+
+- Roadmap item: Factory Slice 3 candidate-to-PR and operator UX.
+- Decision: Operator-approved replacement of the combined pre-validation delivery
+  grant for new work. New plan approval explicitly includes local validation and
+  bounded repairs; draft-PR publication requires a separate exact human grant.
+  Reuse the existing controller and shared budget. The operator subsequently
+  confirmed that all existing use is testing: remove the old combined execution
+  path and any separate legacy admission UI. Old test releases can require fresh
+  approval; preserve their readable history and retained work without silently
+  upgrading authority or modifying the live runtime during implementation.
+- Reason: Manual intake reached coding completion but could not validate without
+  a GitHub intake connection; generic errors and reused findings UI hid the next
+  action and implied a review had occurred.
+- Implementation: Source and both independent static reviews are complete. Keep
+  backend/contracts and UI in one lifecycle PR above the refresh prerequisite,
+  since splitting the removed grant contract would require obsolete compatibility.
+- Verification: Full verification passed (3,335 tests passed, 16 Linux-only cases
+  skipped on macOS), with builds, package smoke, formatting and staged secret
+  scanning. Both independent static reviews cleared the frozen implementation.
+- Publication: PR #430 above #429, official stack #431; synthetic screenshots
+  attached. Final manager architecture review confirmed the published code
+  matches the frozen reviewed implementation, with no new findings.
+- Follow-up: See `factory/VALIDATION_AND_PUBLICATION_UX.md` for pending
+  live acceptance. The existing 1 MiB evidence preview bound remains; per-file
+  review beyond it and diff navigation for older review revisions are deferred.
+
 Track meaningful implementation deviations and deferrals from `.plans/ROADMAP.md`.
 
 This file is important for progress tracking and reviews. Update it whenever an implementation changes scope, ordering, technical approach, or defers planned work.

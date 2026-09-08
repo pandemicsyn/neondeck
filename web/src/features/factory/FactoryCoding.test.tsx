@@ -163,7 +163,7 @@ it.each([
   ['needs-reconcile', 'Ownership needs reconciliation'],
   ['failed', 'Coding attempt failed'],
   ['cancelled', 'Coding stopped'],
-  ['candidate-awaiting-review', 'Candidate awaiting review'],
+  ['candidate-awaiting-review', 'Coding candidate retained'],
 ] satisfies [ReturnType<typeof codingRun>['displayStatus'], string][])(
   'renders %s clearly',
   async (status, text) => {
@@ -226,7 +226,7 @@ it('uses the real returned prepared diff identity in read-only review', async ()
     container.querySelector('[data-testid="prepared-review"]')?.textContent,
   ).toBe('candidate-demo read-only');
   expect(container.textContent).toContain(
-    'Checks and human review are still pending',
+    'Current checks, independent review and publication status',
   );
 });
 it('does not fabricate a diff when collection has no prepared review surface', async () => {
@@ -1026,3 +1026,36 @@ it.each(['attempts', 'events'] as const)(
     expect(signal?.aborted).toBe(false);
   },
 );
+it('shows fresh-release waiting state and explicit access to a single historical coding attempt', async () => {
+  current = codingRun('candidate-awaiting-review');
+  await render(
+    <FactoryCoding
+      workId="work-demo"
+      eligible
+      currentReleaseId="fresh-release"
+    />,
+  );
+  expect(container.textContent).toContain('awaiting automatic dispatch');
+  expect(container.querySelector('.factory-coding-run')).toBeNull();
+  const picker = container.querySelector<HTMLSelectElement>(
+    '.factory-coding-attempt-picker select',
+  )!;
+  expect(picker.value).toBe('');
+  await act(async () => {
+    picker.value = current!.record.runId;
+    picker.dispatchEvent(new Event('change', { bubbles: true }));
+  });
+  await flush();
+  await flush();
+  expect(container.querySelector('.factory-coding-run')).not.toBeNull();
+  await render(
+    <FactoryCoding
+      workId="work-demo"
+      eligible
+      currentReleaseId="fresh-release"
+      currentNavigation={1}
+    />,
+  );
+  expect(container.querySelector('.factory-coding-run')).toBeNull();
+  expect(container.textContent).toContain('awaiting automatic dispatch');
+});

@@ -40,3 +40,11 @@ export {
 
 // Public decoder for bounded read projections of retained planning receipts.
 export { decodePlanningEffect } from './effect-store';
+
+export { factoryValidationPolicy } from './validation-policy';
+export {
+  readValidationAttention,
+  saveValidationAttention,
+  clearValidationAttention,
+} from './validation-attention';
+export { publicCodingRun } from './coding-service';

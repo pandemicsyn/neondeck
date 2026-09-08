@@ -3,7 +3,7 @@ import {
   deliveryPipelineSchema,
   type DeliveryPipeline,
 } from '../../../shared/factory-delivery';
-import { githubConnectionSchema } from '../../../shared/factory-github';
+import { githubRepositoryIdentitySchema } from '../../../shared/factory-github';
 import type { RuntimePaths } from '../../runtime-home';
 import { readFactoryGitHubPull } from '../github';
 import { assertDeliveryAuthority } from './authority';
@@ -37,11 +37,12 @@ export async function assertPublicationPrPushAllowed(
 
   const { connection: configuredConnection, authority } =
     assertDeliveryAuthority(pipeline, paths);
-  const connection = v.parse(githubConnectionSchema, configuredConnection);
+  const connection = v.parse(
+    githubRepositoryIdentitySchema,
+    configuredConnection,
+  );
   const target = pipeline.authorization.target;
   if (
-    !connection.enabled ||
-    connection.repoId !== pipeline.repoId ||
     pipeline.authorization.repoId !== pipeline.repoId ||
     authority.repo.id !== pipeline.repoId ||
     connection.owner !== target.owner ||
