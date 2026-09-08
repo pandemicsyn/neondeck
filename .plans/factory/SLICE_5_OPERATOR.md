@@ -102,6 +102,17 @@ An update remains pending until its organization preflight succeeds and the fina
 authority guard permits dispatch. Transient preflight failures retry after backoff;
 only a dispatched request can have an uncertain outcome requiring read-only recovery.
 
+When a target or its authority changes, an unsent update becomes `superseded`.
+This records retirement, not a successful provider write. Restoring or changing a
+target creates a fresh intent when needed, including A→B→A transitions; an unchanged
+target does not repeatedly send a completed update. Dispatched uncertain updates
+remain subject to reconciliation.
+
+Intake capacity applies to 5,000 pending deliveries. Completed and attention
+deliveries share a bounded 10,000-entry history. Removed, disabled and stale
+connection bindings move to that review history locally, allowing unrelated intake
+to recover even during a credential outage.
+
 Use **Sync Linear source** to recheck retained uncertain effects without resending
 the mutation. An exact match can establish the receipt; a mismatch remains visible
 for operator review. Configuration changes and new briefs do not retroactively

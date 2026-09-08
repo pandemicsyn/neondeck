@@ -44,7 +44,7 @@ export function factoryLinearState(paths = runtimePaths()) {
         readiness: linearReadiness(c, paths),
       })),
       sync: [
-        ...linearRecords(db, 'sync'),
+        ...linearRecords(db, 'sync', { limit: 100 }),
         ...linearRecords(db, 'read-failure', { limit: 100 }).map((row) => ({
           ...row,
           cursor: null,
@@ -69,9 +69,10 @@ export function requestFactoryLinearSync(
   );
   return dbRun(paths, (db) => {
     clearLinearReadFailure(db, current.source.id);
-    for (const effect of linearRecords(db, 'writeback', { workId }).filter(
-      (e) => e.workId === workId && e.state === 'attention',
-    ))
+    for (const effect of linearRecords(db, 'writeback', {
+      workId,
+      state: 'attention',
+    }))
       putLinearRecord(db, { ...effect, state: 'uncertain', retryAt: 0 });
     putLinearRecord(
       db,
@@ -138,16 +139,16 @@ export async function runFactoryLinearSync(
       if (requestSignal.aborted || linearCoolingDown(c.id, paths))
         continue connections;
       if (phase === 'delivery') {
-        const pending = dbRun(paths, (db) =>
-          linearRecords(db, 'delivery').filter(
-            (r) =>
-              r.connectionId === c.id &&
-              r.action !== 'remove' &&
-              r.state === 'pending' &&
-              r.retryAt <= Date.now(),
-          ),
+        const deliveries = dbRun(paths, (db) =>
+          linearRecords(db, 'delivery', {
+            connectionId: c.id,
+            excludeAction: 'remove',
+            state: 'pending',
+            retryAtLte: Date.now(),
+            limit: 25,
+            oldestFirst: true,
+          }),
         );
-        const deliveries = pending.slice(0, 25);
         for (const delivery of deliveries) {
           if (requestSignal.aborted) continue connections;
           if (linearCoolingDown(c.id, paths)) continue;
@@ -210,8 +211,9 @@ export async function runFactoryLinearSync(
       }
       if (requestSignal.aborted || linearCoolingDown(c.id, paths))
         continue connections;
-      let sync = dbRun(paths, (db) =>
-        linearRecords(db, 'sync').find((r) => r.id === `sync:${c.id}`),
+      let sync = dbRun(
+        paths,
+        (db) => linearRecords(db, 'sync', { id: `sync:${c.id}` })[0],
       );
       if (!sync || sync.connectionFingerprint !== fingerprint)
         sync = v.parse(linearSyncSchema, {
@@ -266,17 +268,24 @@ export async function runFactoryLinearSync(
         continue;
       }
       // Re-read retained sources independently of admission-filtered discovery.
-      const retained = dbRun(paths, (db) =>
-        db
+      const { batch, offset, count } = dbRun(paths, (db) => {
+        const count = Number(
+          db
+            .prepare(
+              "SELECT COUNT(*) AS count FROM factory_sources WHERE json_extract(record,'$.linear.connectionId')=?",
+            )
+            .get(c.id)!.count,
+        );
+        const offset = count ? record.offset % count : 0;
+        const batch = db
           .prepare(
-            "SELECT record FROM factory_sources WHERE json_extract(record,'$.linear.connectionId')=? ORDER BY id",
+            "SELECT record FROM factory_sources WHERE json_extract(record,'$.linear.connectionId')=? ORDER BY id LIMIT 25 OFFSET ?",
           )
-          .all(c.id)
-          .map((r) => v.parse(sourceSchema, JSON.parse(String(r.record)))),
-      );
+          .all(c.id, offset)
+          .map((r) => v.parse(sourceSchema, JSON.parse(String(r.record))));
+        return { batch, offset, count };
+      });
       // Cursor is persisted separately so a large retained set cannot starve later issues.
-      const offset = record.offset;
-      const batch = retained.slice(offset, offset + 25);
       for (const [index, source] of batch.entries()) {
         if (requestSignal.aborted) continue connections;
         dbRun(paths, (db) => {
@@ -284,8 +293,7 @@ export async function runFactoryLinearSync(
             linearRecords(db, 'sync', { id: record.id })[0] ?? record;
           putLinearRecord(db, {
             ...latest,
-            offset:
-              offset + index + 1 >= retained.length ? 0 : offset + index + 1,
+            offset: offset + index + 1 >= count ? 0 : offset + index + 1,
           });
         });
         if (requestSignal.aborted || linearCoolingDown(c.id, paths))

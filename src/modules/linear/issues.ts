@@ -81,7 +81,7 @@ export async function readLinearIssuesPage(
         pageInfo: v.object({
           hasNextPage: v.boolean(),
           endCursor: v.nullable(
-            v.pipe(v.string(), v.minLength(1), v.maxLength(2048)),
+            v.pipe(v.string(), v.minLength(1), v.maxLength(2000)),
           ),
         }),
       }),

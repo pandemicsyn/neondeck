@@ -51,6 +51,98 @@ afterEach(() => {
   vi.useRealTimers();
   delete process.env.LINEAR_TEST_TOKEN;
 });
+it.each([100, 101])(
+  'validates the %s-label boundary even when provider claims the page is complete',
+  async (count) => {
+    const labels = Array.from({ length: count }, (_, index) => ({
+      id: `label-${index}`,
+    }));
+    const data = {
+      organization: { id: 'org' },
+      issues: {
+        nodes: [
+          {
+            ...issue,
+            trashed: null,
+            labels: { nodes: labels, pageInfo: { hasNextPage: false } },
+          },
+        ],
+        pageInfo: { hasNextPage: false, endCursor: null },
+      },
+    };
+    respond(data);
+    if (count === 100) {
+      expect(
+        (await readLinearIssue(connection, issue.id))?.labels,
+      ).toHaveLength(100);
+      respond(data);
+      expect(
+        (await readLinearIssuesPage(connection, null)).items[0].labels,
+      ).toHaveLength(100);
+    } else {
+      await expect(readLinearIssue(connection, issue.id)).rejects.toThrow(
+        'invalid result',
+      );
+      respond(data);
+      await expect(readLinearIssuesPage(connection, null)).rejects.toThrow(
+        'invalid result',
+      );
+    }
+  },
+);
+
+it('recognizes Linear HTTP400 rate limits without accepting other HTTP400 data', async () => {
+  vi.stubGlobal(
+    'fetch',
+    vi.fn().mockResolvedValue(
+      Response.json(
+        {
+          errors: [{ extensions: { code: 'RATELIMITED' } }],
+        },
+        { status: 400, headers: { 'retry-after': '120' } },
+      ),
+    ),
+  );
+  await expect(linearGraphql('token', 'query {}', {})).rejects.toMatchObject({
+    status: 429,
+    rateLimited: true,
+  });
+  vi.stubGlobal(
+    'fetch',
+    vi
+      .fn()
+      .mockResolvedValue(
+        Response.json({ data: { ok: true } }, { status: 400 }),
+      ),
+  );
+  await expect(linearGraphql('token', 'query {}', {})).rejects.toMatchObject({
+    status: 400,
+    rateLimited: false,
+  });
+});
+
+it.each([2000, 2001])(
+  'validates provider cursor length %s against durable storage bounds',
+  async (length) => {
+    const cursor = 'x'.repeat(length);
+    respond({
+      organization: { id: 'org' },
+      issues: {
+        nodes: [],
+        pageInfo: { hasNextPage: true, endCursor: cursor },
+      },
+    });
+    if (length === 2000)
+      await expect(readLinearIssuesPage(connection, null)).resolves.toEqual({
+        items: [],
+        cursor,
+      });
+    else
+      await expect(readLinearIssuesPage(connection, null)).rejects.toThrow(
+        'invalid result',
+      );
+  },
+);
 it('uses fixed endpoint, credential and raw GraphQL variables and normalizes issue labels', async () => {
   const mock = respondIssue(issue);
   expect(await readLinearIssue(connection, 'issue')).toEqual({

@@ -1,7 +1,8 @@
 import type { DatabaseSync } from 'node:sqlite';
+import * as v from 'valibot';
 import type { LinearConnection } from '../../../shared/factory-linear';
 import { linearFingerprint } from './linear-config';
-import { linearRecords, putLinearRecord } from './linear-store';
+import { linearRecordSchema, putLinearRecord } from './linear-store';
 
 /** Source identity/admission authority is independent of outbound writeback consent. */
 export function linearSourceProjection(connection: LinearConnection) {
@@ -35,9 +36,17 @@ export function bindLegacyLinearSourceRecords(
   beforeConnections: LinearConnection[],
 ) {
   for (const kind of ['delivery', 'writeback'] as const) {
-    for (const record of linearRecords(db, kind)) {
-      if (record.sourceFingerprint !== undefined) continue;
-      if (record.kind === 'delivery' && record.state === 'complete') continue;
+    const rows = db
+      .prepare(
+        "SELECT record FROM factory_linear_records WHERE kind=? AND json_extract(record,'$.sourceFingerprint') IS NULL AND (kind!='delivery' OR json_extract(record,'$.state')!='complete')",
+      )
+      .all(kind);
+    for (const row of rows) {
+      const record = v.parse(
+        linearRecordSchema,
+        JSON.parse(String(row.record)),
+      );
+      if (record.kind !== 'delivery' && record.kind !== 'writeback') continue;
       const before = beforeConnections.find(
         (connection) => connection.id === record.connectionId,
       );

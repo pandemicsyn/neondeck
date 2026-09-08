@@ -22,7 +22,9 @@ Use this format:
   real Linear authentication, public webhook exposure and workflow-state mutation
   acceptance remain NOT RUN. Provider content is bounded (100 complete labels,
   4 MiB response); oversized facts fail visibly. Completed state-effect history
-  retains 20 records per task, while unresolved effects and removal watermarks
+  retains 20 completed records per task plus a separate 20 retired-unsent records;
+  delivery history retains 10,000 completed/attention records with 5,000 active
+  pending slots. Unresolved effects and removal watermarks
   remain durable. This is bounded operational evidence, not unlimited history.
 - Reason: No scoped live Linear test workspace or public ingress target was
   supplied for this implementation. Reusing bounded local factory operations

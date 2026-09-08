@@ -63,6 +63,26 @@ function setup(connections = [connection]) {
   );
   return f;
 }
+it('retains the full composed source identity for maximum-length valid provider IDs', () => {
+  const organizationId = 'o'.repeat(240);
+  const issueId = 'i'.repeat(240);
+  const mapped = { ...connection, organizationId };
+  const { paths } = setup([mapped]);
+  const remote = { ...issue, id: issueId };
+  const admitted = dbRun(paths, (db) =>
+    reconcileLinearSource(db, mapped, remote, issueId, paths),
+  )!;
+  const requestKey = `linear:${organizationId}:${issueId}`;
+  expect(requestKey).toHaveLength(488);
+  expect(admitted.source.requestKey).toBe(requestKey);
+  const replay = dbRun(paths, (db) =>
+    reconcileLinearSource(db, mapped, remote, issueId, paths),
+  )!;
+  expect(replay.work.id).toBe(admitted.work.id);
+  expect(getFactoryWork(admitted.work.id, paths).source.requestKey).toBe(
+    requestKey,
+  );
+});
 it('durably deduplicates delivery IDs and rejects conflicting reuse', () => {
   const { paths } = setup();
   const input = {

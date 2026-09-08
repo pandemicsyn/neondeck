@@ -75,7 +75,7 @@ export async function linearGraphql(
     const retry = response.headers.get('retry-after');
     const seconds = retry && /^\d+$/.test(retry) ? Number(retry) : 60;
     const retryAt = Date.now() + Math.min(Math.max(seconds, 1), 86400) * 1000;
-    if (!response.ok)
+    if (!response.ok && response.status !== 400)
       throw new LinearApiError(
         'Linear API request failed.',
         response.status,
@@ -95,6 +95,17 @@ export async function linearGraphql(
     } catch {
       throw new LinearApiError('Linear returned an invalid response.');
     }
+    // Linear can report rate/complexity limits as HTTP 400 with this code.
+    // https://linear.app/developers/rate-limiting
+    if (
+      !response.ok &&
+      !parsed.errors?.some((error) => error.extensions?.code === 'RATELIMITED')
+    )
+      throw new LinearApiError(
+        'Linear API request failed.',
+        response.status,
+        retryAt,
+      );
     if (parsed.errors?.length) {
       const limited = parsed.errors.some(
         (error) => error.extensions?.code === 'RATELIMITED',

@@ -241,4 +241,6 @@ it('projects pending and uncertain Linear status effects without claiming succes
   expect(diagnoseTask(records, Date.now()).status).toBe('needs-reconciliation');
   records.linearWriteback[0].state = 'complete';
   expect(diagnoseTask(records, Date.now()).unresolvedEffects).toEqual([]);
+  records.linearWriteback[0].state = 'superseded';
+  expect(diagnoseTask(records, Date.now()).unresolvedEffects).toEqual([]);
 });

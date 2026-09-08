@@ -42,7 +42,7 @@ export function diagnoseTask(
     })),
   );
   const linearWriteback = r.linearWriteback.filter(
-    (e) => e.state !== 'complete',
+    (e) => e.state !== 'complete' && e.state !== 'superseded',
   );
   effects.push(
     ...linearWriteback.map((e) => ({

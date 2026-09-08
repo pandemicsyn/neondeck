@@ -64,9 +64,7 @@ export function reconcileLinearSource(
   )
     return null;
   const tombstoneId = `removal:${c.organizationId}:${issueId}`;
-  const tombstone = linearRecords(db, 'removal').find(
-    (r) => r.id === tombstoneId,
-  );
+  const tombstone = linearRecords(db, 'removal', { id: tombstoneId })[0];
   if (
     !issue &&
     removedAt &&

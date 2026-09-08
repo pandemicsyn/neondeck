@@ -100,7 +100,9 @@ export const manualIntakeSchema = v.strictObject({
 export const sourceSchema = v.strictObject({
   id: label,
   provider: v.picklist(['manual', 'github', 'linear']),
-  requestKey: label,
+  // Internal provider keys compose independently bounded external identities.
+  // Human intake inputs retain their separate, shorter request-key constraint.
+  requestKey: v.pipe(v.string(), v.minLength(1), v.maxLength(2000)),
   requestHash: hash,
   title: label,
   body: text(65536),

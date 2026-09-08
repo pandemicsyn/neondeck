@@ -1,4 +1,7 @@
 import { linearCoolingDown, retainLinearRateLimit } from './linear-cooldown';
+import { randomUUID } from 'node:crypto';
+import { linearWritebackTarget } from './linear-writeback-target';
+import { retireLinearPendingEffects } from './linear-effect-retirement';
 import {
   linearSourceFingerprint,
   matchesLinearSourceBinding,
@@ -35,6 +38,7 @@ export async function runFactoryLinearWriteback(
   io = defaultIO,
 ) {
   if (signal?.aborted) return;
+  retireLinearPendingEffects(paths);
   connections: for (const c of scheduledLinearConnections(
     linearConnections(paths),
     paths,
@@ -48,24 +52,30 @@ export async function runFactoryLinearWriteback(
       AbortSignal.timeout(10000),
     ]);
     const fingerprint = linearFingerprint(c);
-    const cursor = dbRun(paths, (db) =>
-      linearRecords(db, 'sync').find(
-        (r) => r.id === `writeback-cursor:${c.id}`,
-      ),
+    const cursor = dbRun(
+      paths,
+      (db) => linearRecords(db, 'sync', { id: `writeback-cursor:${c.id}` })[0],
     );
-    const items = dbRun(paths, (db) =>
-      db
+    const { batch, count, offset } = dbRun(paths, (db) => {
+      const count = Number(
+        db
+          .prepare(
+            "SELECT count(*) AS count FROM factory_sources s JOIN factory_work_items w ON w.source_id=s.id WHERE json_extract(s.record,'$.linear.connectionId')=?",
+          )
+          .get(c.id)?.count,
+      );
+      const offset = (cursor?.offset ?? 0) % Math.max(count, 1);
+      const batch = db
         .prepare(
-          "SELECT w.id,s.record FROM factory_sources s JOIN factory_work_items w ON w.source_id=s.id WHERE json_extract(s.record,'$.linear.connectionId')=? ORDER BY w.id",
+          "SELECT w.id,s.record FROM factory_sources s JOIN factory_work_items w ON w.source_id=s.id WHERE json_extract(s.record,'$.linear.connectionId')=? ORDER BY w.id LIMIT 25 OFFSET ?",
         )
-        .all(c.id)
+        .all(c.id, offset)
         .map((r) => ({
           id: String(r.id),
           source: v.parse(sourceSchema, JSON.parse(String(r.record))),
-        })),
-    );
-    const offset = (cursor?.offset ?? 0) % Math.max(items.length, 1);
-    const batch = items.slice(offset, offset + 25);
+        }));
+      return { batch, count, offset };
+    });
     for (const [index, item] of batch.entries()) {
       if (signal?.aborted) return;
       if (requestSignal.aborted || linearCoolingDown(c.id, paths))
@@ -78,7 +88,7 @@ export async function runFactoryLinearWriteback(
             kind: 'sync',
             connectionId: c.id,
             connectionFingerprint: fingerprint,
-            offset: offset + index + 1 >= items.length ? 0 : offset + index + 1,
+            offset: offset + index + 1 >= count ? 0 : offset + index + 1,
             state: 'pending',
             error: null,
             retryAt: 0,
@@ -94,7 +104,28 @@ export async function runFactoryLinearWriteback(
         current.source.status === 'closed'
       )
         continue;
-      const id = `writeback:${item.id}:${current.work.version}:${stateId}`;
+      const id = dbRun(paths, (db) => {
+        const configured = linearConnections(paths).find(
+          (candidate) => candidate.id === c.id,
+        );
+        if (
+          !configured ||
+          linearFingerprint(configured) !== fingerprint ||
+          linearReadiness(configured, paths, 'writeback').length
+        )
+          return null;
+        // Configuration and desired-target mutation share this synchronous
+        // authority boundary; a stale worker cannot retire a newer desire.
+        const target = linearWritebackTarget(
+          db,
+          item.id,
+          current.work.version,
+          current.source.version,
+          stateId,
+        );
+        return target ? `writeback:${target}` : null;
+      });
+      if (!id) continue;
       let effect = dbRun(paths, (db) =>
         linearRecords(db, 'writeback', { id }).find((r) => r.id === id),
       );
@@ -138,7 +169,11 @@ export async function runFactoryLinearWriteback(
           Date.parse(latestSource.linear!.updatedAt)
         )
           continue;
-        if (effect && effect.state !== 'pending') {
+        if (
+          effect &&
+          effect.state !== 'pending' &&
+          effect.state !== 'superseded'
+        ) {
           dbRun(paths, (db) =>
             reconcileLinearSource(db, c, issue, issue.id, paths),
           );
@@ -156,6 +191,7 @@ export async function runFactoryLinearWriteback(
           continue;
         if (
           effect &&
+          effect.state !== 'superseded' &&
           (!matchesLinearSourceBinding(effect, c) ||
             effect.sourceVersion !== current.source.version ||
             effect.baseline !== linearContentFingerprint(issue))
@@ -167,41 +203,53 @@ export async function runFactoryLinearWriteback(
         )
           continue;
         const priorFingerprint = effect?.connectionFingerprint;
-        effect = effect
-          ? {
-              ...effect,
-              connectionFingerprint: fingerprint,
-              sourceFingerprint: linearSourceFingerprint(c),
-            }
-          : v.parse(linearEffectSchema, {
-              id,
-              kind: 'writeback',
-              connectionId: c.id,
-              connectionFingerprint: fingerprint,
-              sourceFingerprint: linearSourceFingerprint(c),
-              issueId: issue.id,
-              workId: item.id,
-              stateId,
-              sourceVersion: current.source.version,
-              baseline: linearContentFingerprint(issue),
-              createdAt: new Date().toISOString(),
-              state: 'pending',
-              error: null,
-              retryAt: 0,
-              attempts: 0,
-            });
+        const priorIntentId = effect?.intentId;
+        const priorState = effect?.state;
+        effect =
+          effect && effect.state !== 'superseded'
+            ? {
+                ...effect,
+                intentId: effect.intentId ?? randomUUID(),
+                connectionFingerprint: fingerprint,
+                sourceFingerprint: linearSourceFingerprint(c),
+              }
+            : v.parse(linearEffectSchema, {
+                id,
+                kind: 'writeback',
+                intentId: randomUUID(),
+                workVersion: current.work.version,
+                connectionId: c.id,
+                connectionFingerprint: fingerprint,
+                sourceFingerprint: linearSourceFingerprint(c),
+                issueId: issue.id,
+                workId: item.id,
+                stateId,
+                sourceVersion: current.source.version,
+                baseline: linearContentFingerprint(issue),
+                createdAt: new Date().toISOString(),
+                state: 'pending',
+                error: null,
+                retryAt: 0,
+                attempts: 0,
+              });
         const reserved = dbRun(paths, (db) => {
           const existing = linearRecords(db, 'writeback', { id })[0];
           if (existing) {
             if (
-              existing.state !== 'pending' ||
+              (existing.state !== 'pending' &&
+                existing.state !== 'superseded') ||
+              existing.state !== priorState ||
+              existing.intentId !== priorIntentId ||
               existing.connectionFingerprint !== priorFingerprint ||
-              existing.sourceVersion !== current.source.version ||
-              existing.baseline !== effect!.baseline
+              (existing.state === 'pending' &&
+                (existing.sourceVersion !== current.source.version ||
+                  existing.baseline !== effect!.baseline))
             )
               return false;
-            putLinearRecord(db, effect!);
-            return true;
+            if (existing.state === 'pending') {
+              putLinearRecord(db, effect!);
+              return true;
+            }
           }
           const unresolved = db
             .prepare(
@@ -216,8 +264,7 @@ export async function runFactoryLinearWriteback(
                 kind: 'sync',
                 connectionId: c.id,
                 connectionFingerprint: fingerprint,
-                offset:
-                  offset + index + 1 >= items.length ? 0 : offset + index + 1,
+                offset: offset + index + 1 >= count ? 0 : offset + index + 1,
                 state: 'attention',
                 error:
                   'Linear writeback is paused at the 1000 unresolved-effect limit. Sync affected sources and review uncertain updates.',
@@ -261,6 +308,7 @@ export async function runFactoryLinearWriteback(
               if (
                 !retained ||
                 retained.state !== 'pending' ||
+                retained.intentId !== effect!.intentId ||
                 retained.connectionFingerprint !== fingerprint ||
                 retained.connectionId !== c.id ||
                 retained.workId !== item.id ||
@@ -300,7 +348,12 @@ export async function runFactoryLinearWriteback(
             const retained = linearRecords(db, 'writeback', { id })[0];
             // A concurrent preflight loser cannot overwrite another sender or
             // a receipt already reconciled by the source worker.
-            if (!retained || retained.state === 'complete') return;
+            if (
+              !retained ||
+              retained.state === 'complete' ||
+              retained.intentId !== effect!.intentId
+            )
+              return;
             if (dispatched && retained.state === 'sending')
               putLinearRecord(db, {
                 ...retained,

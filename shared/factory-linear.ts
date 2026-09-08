@@ -59,7 +59,7 @@ export const linearIssueSchema = v.object({
   team: v.object({ id }),
   project: v.nullable(v.object({ id })),
   state: v.object({ id, type: id }),
-  labels: v.array(v.object({ id })),
+  labels: v.pipe(v.array(v.object({ id })), v.maxLength(100)),
 });
 export type LinearIssue = v.InferOutput<typeof linearIssueSchema>;
 export const factoryLinearStateSchema = v.object({

@@ -188,6 +188,60 @@ and [GraphQL schema](https://raw.githubusercontent.com/linear/linear/master/pack
 define the ID comparator, archive inclusion and trashed field. No synthetic
 deletion timestamp is introduced.
 
+## Broad review after `c847d6a0`
+
+The operator requested fixes plus a wider review to reduce repeated PR feedback.
+The three reported findings were [superseded pending effects](https://github.com/pandemicsyn/neondeck/pull/423#discussion_r3953007885),
+[delivery selection before parsing](https://github.com/pandemicsyn/neondeck/pull/423#discussion_r3953007888)
+and [the 100-label bound](https://github.com/pandemicsyn/neondeck/pull/423#discussion_r3953007892).
+Developers, two independent reviewers and the manager examined the surrounding
+source/delivery/effect lifecycle, outages, configuration transitions, replay,
+capacity, retention and schema boundaries rather than only those lines.
+
+The review additionally found and corrected HTTP 400 rate-limit classification,
+provider/storage cursor limits, composite canonical source keys, unbounded history
+decoding, permanently occupied intake capacity, orphaned delivery backlogs,
+superseded-intent capacity accounting, restored targets, completed A→B→A target
+cycles, and a stale worker's ability to replace newer desired-target metadata.
+
+Unsent effects have an explicit terminal `superseded` state. A fresh intent can
+serve a restored target without lifecycle churn; unique intent tokens fence old
+preflights. One private desired-target record per work item supplies generations
+for renewed targets while preserving completed receipts and legacy evidence.
+Only pending effects retire; sending/uncertain evidence remains conservative.
+Retirement runs locally before provider readiness/cooldown checks. Diagnostics
+exclude retired effects from unresolved work without claiming a successful send.
+
+Only pending deliveries consume the 5,000 active slots, including manual sync.
+Completed/attention deliveries share bounded history and retain their real status.
+Removed, disabled or stale source bindings are quarantined locally in bounded
+batches, allowing unrelated intake to recover without provider credentials.
+SQL narrows connection, state, due time and batch before decoding; retained-source
+pagination and exact tombstone lookup avoid repeatedly decoding unrelated history.
+
+Both independent broad static reviews are **CLEAN** on the frozen correction.
+The manager architecture/behavior review is **CLEAN** after also addressing stale
+work/source snapshots at desired-target mutation and the writeback-side SQL batch.
+Provider IO, source authority, desired-target generation, effect retirement and
+persistence each retain distinct modules. Existing packages, model ownership and
+the Neondeck SQLite/Flue state separation are unchanged; private record variants
+use the existing table without a migration.
+
+Protected focused verification passed **155 tests across 16 files**. Regressions
+exercise maximum-capacity recovery, oldest-first batch progress, stale/removed
+bindings without credentials, repeated completed target cycles, fresh-intent ABA
+fencing, transactional work/source guards, retirement health projection and
+provider/schema limits. The earlier focused checkpoint passed 154 tests before
+the final transactional guard regression; these results are not cumulative.
+
+Final protected broad verification passed **3,172 tests across 294 files**, plus
+lint, import layers, migration consistency, app/docs typechecking and repository
+formatting. Dashboard/server builds and package validation (1,276 files) passed.
+The five unchanged host-process repair cases described above remain excluded
+because the protective sandbox blocks their process inspection; this is not a
+full `npm run verify` claim. Temporary runtime/config roots and the OS denial of
+access to the operator's existing Neondeck home remained in place throughout.
+
 ## Delivered scope and boundaries
 
 - `src/modules/linear`: fixed-origin GraphQL reads/mutations, complete-response
@@ -235,8 +289,11 @@ Provider rate limits persist a per-connection cooldown shared by both controller
 remaining requests stop until the retained retry time, with a visible sync reason.
 Authenticated removal deliveries still withdraw authority during cooldown because
 they require no provider request; pending updates cannot starve their batch.
-Completed deliveries retain the latest 10,000 entries; admission stops at 5,000
-non-complete deliveries. Removal watermarks are retained independently of task
+Completed and attention deliveries share the latest 10,000 history entries;
+admission stops at 5,000 pending deliveries. Manual sync shares that capacity gate;
+refreshing an already-pending retry consumes no new slot. Removed, disabled and
+stale bindings are quarantined in local batches of 25 before provider work.
+Removal watermarks are retained independently of task
 admission and delivery pruning.
 
 Failed retained reads use separate per-source retry records with a one-minute
@@ -244,8 +301,10 @@ backoff and preserve task/release/coding authority. The state API shows the late
 100 failures; retry records remain durable until a successful authoritative read
 or explicit task sync clears them. Canceled reads do not increment failure attempts.
 
-Completed writeback evidence retains the latest 20 records per task; pending, sending,
-uncertain and attention records are not pruned. New sends pause at 1,000 unresolved
+Completed writeback evidence retains the latest 20 records per task; a separate
+20-record history retains superseded unsent intents without evicting receipts.
+Pending, sending, uncertain and attention records are not pruned. New or reactivated
+intents pause at 1,000 unresolved
 effects globally, with a visible sync attention reason. Effect reads are scoped
 to task/issue/identity; the setup/source API returns the latest 100 effects and
 deliveries. Task diagnostics retain their existing bounded coverage semantics.

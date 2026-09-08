@@ -48,7 +48,17 @@ export const linearSyncSchema = v.object({
 });
 export const linearEffectSchema = v.object({
   ...common,
+  state: v.picklist([
+    'pending',
+    'complete',
+    'attention',
+    'sending',
+    'uncertain',
+    'superseded',
+  ]),
   kind: v.literal('writeback'),
+  intentId: v.optional(key),
+  workVersion: v.optional(v.pipe(v.number(), v.integer(), v.minValue(1))),
   sourceFingerprint: v.optional(key),
   issueId: key,
   workId: key,
@@ -86,6 +96,17 @@ export const linearRecordSchema = v.variant('kind', [
   removalSchema,
   linearScheduleSchema,
   linearReadFailureSchema,
+  v.object({
+    id: linearRecordIdSchema,
+    kind: v.literal('writeback-target'),
+    signature: key,
+    generation: v.pipe(
+      v.number(),
+      v.integer(),
+      v.minValue(1),
+      v.maxValue(Number.MAX_SAFE_INTEGER),
+    ),
+  }),
 ]);
 export type LinearRecord = v.InferOutput<typeof linearRecordSchema>;
 export function linearRecords<K extends LinearRecord['kind']>(
@@ -97,6 +118,22 @@ export function linearRecords<K extends LinearRecord['kind']>(
     connectionId?: string;
     workId?: string;
     limit?: number;
+    state?:
+      | 'pending'
+      | 'complete'
+      | 'attention'
+      | 'sending'
+      | 'uncertain'
+      | 'superseded';
+    action?: 'create' | 'update' | 'remove' | 'retry';
+    excludeAction?: 'remove';
+    retryAtLte?: number;
+    excludeConnectionIds?: string[];
+    oldestFirst?: boolean;
+    sourceBindingMismatch?: {
+      sourceFingerprint: string;
+      connectionFingerprint: string;
+    };
   } = {},
 ): Extract<LinearRecord, { kind: K }>[] {
   const clauses = ['kind=?'];
@@ -109,19 +146,69 @@ export function linearRecords<K extends LinearRecord['kind']>(
       values.push(filter[field]!);
     }
   }
+  if (filter.state !== undefined) {
+    clauses.push("json_extract(record,'$.state')=?");
+    values.push(filter.state);
+  }
+  if (filter.action !== undefined) {
+    clauses.push("COALESCE(json_extract(record,'$.action'),'retry')=?");
+    values.push(filter.action);
+  }
+  if (filter.excludeAction !== undefined) {
+    clauses.push("COALESCE(json_extract(record,'$.action'),'retry')<>?");
+    values.push(filter.excludeAction);
+  }
+  if (filter.retryAtLte !== undefined) {
+    clauses.push("json_extract(record,'$.retryAt')<=?");
+    values.push(filter.retryAtLte);
+  }
+  if (filter.excludeConnectionIds?.length) {
+    clauses.push(
+      `json_extract(record,'$.connectionId') NOT IN (${filter.excludeConnectionIds.map(() => '?').join(',')})`,
+    );
+    values.push(...filter.excludeConnectionIds);
+  }
+  if (filter.sourceBindingMismatch) {
+    clauses.push(
+      "CASE WHEN json_extract(record,'$.sourceFingerprint') IS NULL THEN json_extract(record,'$.connectionFingerprint')<>? ELSE json_extract(record,'$.sourceFingerprint')<>? END",
+    );
+    values.push(
+      filter.sourceBindingMismatch.connectionFingerprint,
+      filter.sourceBindingMismatch.sourceFingerprint,
+    );
+  }
   const limit = filter.limit ?? -1;
   values.push(limit);
-  return db
+  const rows = db
     .prepare(
-      `SELECT record FROM factory_linear_records WHERE ${clauses.join(' AND ')} ORDER BY rowid DESC LIMIT ?`,
+      `SELECT record FROM factory_linear_records WHERE ${clauses.join(' AND ')} ORDER BY rowid ${filter.oldestFirst ? 'ASC' : 'DESC'} LIMIT ?`,
     )
-    .all(...values)
-    .reverse()
+    .all(...values);
+  return (filter.oldestFirst ? rows : rows.reverse())
     .map((r) => v.parse(linearRecordSchema, JSON.parse(String(r.record))))
     .filter((r): r is Extract<LinearRecord, { kind: K }> => r.kind === kind);
 }
 export function putLinearRecord(db: DatabaseSync, row: LinearRecord) {
   const value = v.parse(linearRecordSchema, row);
+  if (value.kind === 'delivery' && value.state === 'pending') {
+    const existing = db
+      .prepare(
+        "SELECT json_extract(record,'$.state') AS state FROM factory_linear_records WHERE id=? AND kind='delivery'",
+      )
+      .get(value.id);
+    // Replacing an already pending retry consumes no additional queue capacity.
+    if (
+      existing?.state !== 'pending' &&
+      Number(
+        db
+          .prepare(
+            "SELECT COUNT(*) AS count FROM factory_linear_records WHERE kind='delivery' AND json_extract(record,'$.state')='pending'",
+          )
+          .get()!.count,
+      ) >= 5000
+    )
+      throw new FactoryError(409, 'Linear delivery queue is full.');
+  }
   // A provider await may retain an older legacy object while a config mutation
   // upgrades its binding. Do not erase that proven binding on retry/receipt.
   if (
@@ -139,11 +226,21 @@ export function putLinearRecord(db: DatabaseSync, row: LinearRecord) {
   db.prepare(
     'INSERT INTO factory_linear_records(id,kind,record) VALUES(?,?,?) ON CONFLICT(id) DO UPDATE SET record=excluded.record',
   ).run(value.id, value.kind, JSON.stringify(value));
+  // Attention is review history, not active work. Retain its real outcome along
+  // with recent completed deliveries without allowing either to fill admission.
+  if (value.kind === 'delivery')
+    db.prepare(
+      "DELETE FROM factory_linear_records WHERE kind='delivery' AND id IN (SELECT id FROM factory_linear_records WHERE kind='delivery' AND json_extract(record,'$.state') IN ('complete','attention') ORDER BY rowid DESC LIMIT -1 OFFSET 10000)",
+    ).run();
   // Keep recent terminal evidence per task; unresolved intents are never pruned.
-  if (value.kind === 'writeback')
+  if (value.kind === 'writeback') {
     db.prepare(
       "DELETE FROM factory_linear_records WHERE id IN (SELECT id FROM factory_linear_records WHERE kind='writeback' AND json_extract(record,'$.workId')=? AND json_extract(record,'$.state') ='complete' ORDER BY rowid DESC LIMIT -1 OFFSET 20)",
     ).run(value.workId);
+    db.prepare(
+      "DELETE FROM factory_linear_records WHERE id IN (SELECT id FROM factory_linear_records WHERE kind='writeback' AND json_extract(record,'$.workId')=? AND json_extract(record,'$.state')='superseded' ORDER BY rowid DESC LIMIT -1 OFFSET 20)",
+    ).run(value.workId);
+  }
 }
 export function acceptLinearDelivery(
   input: {
@@ -169,11 +266,6 @@ export function acceptLinearDelivery(
         throw new FactoryError(409, 'Linear delivery identity conflict.');
       return { accepted: true, duplicate: true };
     }
-    if (
-      linearRecords(db, 'delivery').filter((r) => r.state !== 'complete')
-        .length >= 5000
-    )
-      throw new FactoryError(409, 'Linear delivery queue is full.');
     putLinearRecord(
       db,
       v.parse(linearRecordSchema, {
@@ -186,9 +278,6 @@ export function acceptLinearDelivery(
         attempts: 0,
       }),
     );
-    db.prepare(
-      "DELETE FROM factory_linear_records WHERE kind='delivery' AND id IN (SELECT id FROM factory_linear_records WHERE kind='delivery' AND json_extract(record,'$.state')='complete' ORDER BY rowid DESC LIMIT -1 OFFSET 10000)",
-    ).run();
     return { accepted: true, duplicate: false };
   });
 }
