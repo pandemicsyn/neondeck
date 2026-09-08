@@ -1,3 +1,4 @@
+import { FactoryLinearSource } from './FactoryLinearSource';
 import { useQueryClient } from '@tanstack/react-query';
 import {
   FactoryLifecycle,
@@ -154,7 +155,9 @@ export function FactoryTaskDetail({
           <p>
             {detail.source.provider === 'github'
               ? 'GitHub source'
-              : 'Manual source'}{' '}
+              : detail.source.provider === 'linear'
+                ? 'Linear source'
+                : 'Manual source'}{' '}
             · {detail.work.repoId ?? 'Repository unresolved'}
           </p>
           <h2>{detail.work.title}</h2>
@@ -645,6 +648,8 @@ export function FactoryTaskDetail({
         </p>
         {detail.source.provider === 'github' ? (
           <FactoryGitHubSource detail={detail} />
+        ) : detail.source.provider === 'linear' ? (
+          <FactoryLinearSource key={detail.work.id} detail={detail} />
         ) : (
           <SourceEditor
             detail={detail}

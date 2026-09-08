@@ -31,6 +31,7 @@ const backendLayers = new Map([
   ['src/repo-edit', 2],
   ['src/sandboxes', 2],
   ['src/modules/github', 2],
+  ['src/modules/linear', 2],
   ['src/modules/worktrees', 2],
   ['src/modules/sessions', 2],
   ['src/modules/repos', 2],

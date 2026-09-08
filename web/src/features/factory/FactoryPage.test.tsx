@@ -65,6 +65,7 @@ it('explains disabled mode, then enables real typed intake config', async () => 
         return response({
           enabled,
           github: [],
+          linear: [],
           publication: [],
           codingPolicy: 'isolated-local-v1',
           coding: v.parse(factoryCodingConfigSchema, {}),

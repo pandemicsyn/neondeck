@@ -1672,3 +1672,9 @@ export const factoryWorkerHealth = sqliteTable('factory_worker_health', {
   worker: text('worker').primaryKey(),
   recordJson: text('record_json').notNull(),
 });
+
+export const factoryLinearRecords = sqliteTable('factory_linear_records', {
+  id: text('id').primaryKey(),
+  kind: text('kind').notNull(),
+  record: text('record').notNull(),
+});

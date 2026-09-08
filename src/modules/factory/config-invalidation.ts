@@ -3,8 +3,12 @@ import * as v from 'valibot';
 import { sourceSchema } from '../../../shared/factory';
 import type { GitHubConnection } from '../../../shared/factory-github';
 import type { AppConfig, RuntimePaths } from '../../runtime-home';
-import { dbRun, markGitHubAttention } from './service';
+import { dbRun, markGitHubAttention, markSourceAttention } from './service';
 import { invalidateWriteback } from './writeback-store';
+import {
+  bindLegacyLinearSourceRecords,
+  linearSourceProjection,
+} from './linear-authority';
 
 const effectiveMappings = (
   connections: GitHubConnection[],
@@ -73,6 +77,58 @@ export function invalidateFactoryConfig(
             'GitHub connection changed. Review and save a new draft before release.',
             paths,
           );
+      }
+    });
+  }
+  if (
+    JSON.stringify(before.factory?.linear ?? []) !==
+    JSON.stringify(after.factory?.linear ?? [])
+  ) {
+    dbRun(paths, (db) => {
+      // Legacy records can inherit only the binding authenticated by the old
+      // configuration, never the replacement being installed.
+      bindLegacyLinearSourceRecords(db, before.factory?.linear ?? []);
+      for (const row of db
+        .prepare(
+          "SELECT w.id,s.record FROM factory_sources s JOIN factory_work_items w ON w.source_id=s.id WHERE json_extract(s.record,'$.provider')='linear'",
+        )
+        .all()) {
+        const source = v.parse(sourceSchema, JSON.parse(String(row.record)));
+        const relevant = (config: AppConfig) =>
+          (config.factory?.linear ?? [])
+            .filter(
+              (c) =>
+                c.id === source.linear?.connectionId ||
+                (c.enabled &&
+                  c.organizationId === source.linear?.organizationId &&
+                  c.teamId === source.linear?.teamId &&
+                  (c.projectId === null ||
+                    c.projectId === source.linear?.projectId)),
+            )
+            .sort((a, b) => a.id.localeCompare(b.id))
+            .map(linearSourceProjection);
+        if (
+          JSON.stringify(relevant(before)) === JSON.stringify(relevant(after))
+        )
+          continue;
+        markSourceAttention(
+          db,
+          v.parse(v.string(), row.id),
+          'Linear connection changed. Sync the source to confirm current admission before release.',
+          paths,
+        );
+        const updatedRow = db
+          .prepare('SELECT record FROM factory_sources WHERE id=?')
+          .get(source.id)!;
+        const updated = v.parse(
+          sourceSchema,
+          JSON.parse(String(updatedRow.record)),
+        );
+        updated.linear!.sourceConfirmationRequired = true;
+        db.prepare('UPDATE factory_sources SET record=? WHERE id=?').run(
+          JSON.stringify(updated),
+          updated.id,
+        );
       }
     });
   }

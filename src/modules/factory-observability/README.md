@@ -9,7 +9,7 @@ network exporter or environment switch.
 
 `listFactoryDiagnostics(paths, {workItemId?, limit?, before?})` is a read-only,
 newest-first sequence cursor. Default 100, maximum 500 records per page.
-`getFactoryWorkerHealth(paths)` reads three durable worker records. Both validate
+`getFactoryWorkerHealth(paths)` reads four durable worker records. Both validate
 persisted JSON. Invalid/missing storage throws to the diagnostic caller rather
 than returning a healthy empty result. Instrumentation catches its own write
 failures, preserving the original business result/error. A later successful
@@ -40,7 +40,7 @@ health measures controller ticks, not task outcomes: a handled task failure can
 coexist with a successful recovery tick. Domain diagnoses and failed external
 spans remain the source for task-level failure details.
 
-Coverage: GitHub source sync and writeback ticks, per-source reconciliation and
+Coverage: Linear source sync and native status writeback ticks; GitHub source sync and writeback ticks, per-source reconciliation and
 per-effect writeback/publication; planning dispatch/read/abort with durable
 intent/submission IDs; coding host prepare/launch/inspect/reconcile/cancel/collect;
 delivery advancement, verification, model review, progress checkpoint, repair,

@@ -42,6 +42,29 @@ Use this format:
 - Follow-up: What remains, who/what should handle it, or `None`.
 ```
 
+## 2026-09-07 - Slice 5 Linear acceptance and bounded evidence
+
+- Roadmap item: Software Factory Slice 5 / Linear as the second intake source.
+- Decision: Deliver the connector with deterministic local/browser verification;
+  real Linear authentication, public webhook exposure and workflow-state mutation
+  acceptance remain NOT RUN. Provider content is bounded (100 complete labels,
+  4 MiB response); oversized facts fail visibly. Completed state-effect history
+  retains 20 completed records per task plus a separate 20 retired-unsent records;
+  delivery history retains 10,000 completed/attention records with 5,000 active
+  non-removal pending slots. Authenticated removals bypass admission capacity to
+  preserve local revocation during provider outages; their pending records have
+  no separate hard cap and process in batches of 25 per connection. Unresolved effects and removal watermarks
+  remain durable. This is bounded operational evidence, not unlimited history.
+- Reason: No scoped live Linear test workspace or public ingress target was
+  supplied for this implementation. Reusing bounded local factory operations
+  avoids treating fixtures as proof of real provider access or model quality.
+- Follow-up: An operator should exercise authenticated admission, update/removal,
+  restart and configured state writeback against an explicitly selected test
+  workspace, recording sanitized evidence in the
+  [Slice 5 handoff](factory/SLICE_5_HANDOFF.md). Earlier live obligations remain
+  unchanged. Increase content/history bounds only with corresponding pagination,
+  load and recovery evidence if real operator use requires it.
+
 ## 2026-09-07 - Factory replies and latest default-branch baselines
 
 - Roadmap item: Factory shaping and coding usability follow-up.

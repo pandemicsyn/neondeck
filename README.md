@@ -90,10 +90,19 @@ all nine CI checks passing on each final head. Real model/Codex/GitHub acceptanc
 unevaluated. See the [progress review guide](.plans/factory/SLICE_3_1_OPERATOR.md)
 and [verification record](.plans/factory/SLICE_3_1_HANDOFF.md).
 
-Slice 4 is planned to add OpenCode and Kilo Code through a pluggable coding CLI
+Slice 4 adds OpenCode and Kilo Code through a pluggable coding CLI
 contract alongside Codex. CLI adapters own invocation and event normalization;
 Neon retains workspace/process ownership, budgets, recovery, review and publication.
 See the [Slice 4 plan](.plans/factory/SLICE_4_IMPLEMENTATION_PLAN.md).
+
+Linear connections in **Factory setup** map a workspace/team and optional project
+to a registered repository. Select label/state admission or all mapped issues;
+signed webhooks and periodic reconciliation feed the existing inbox. Source
+changes and removal invalidate stale authority. Optional workflow-state
+writeback defaults off and uses explicit state mappings. Linear remains the task
+source, and the existing GitHub connection and human delivery grant govern PRs.
+See the [Linear operator guide](.plans/factory/SLICE_5_OPERATOR.md) and
+[Slice 5 verification record](.plans/factory/SLICE_5_HANDOFF.md).
 
 Slice 1 is merged and operator-accepted with remaining live checks deferred.
 Slice 2 is merged with real Codex acceptance pending. Slice 3 is merged;

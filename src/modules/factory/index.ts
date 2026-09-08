@@ -41,6 +41,7 @@ export {
 // Public decoder for bounded read projections of retained planning receipts.
 export { decodePlanningEffect } from './effect-store';
 
+export { linearRecordSchema, linearEffectSchema } from './linear-store';
 export { factoryValidationPolicy } from './validation-policy';
 export {
   readValidationAttention,

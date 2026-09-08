@@ -1,4 +1,5 @@
 import { privateServerUrl } from '../lib/server-address';
+import { createLinearIngress } from './linear-ingress';
 import { createGitHubIngress } from './github-ingress';
 import { listenerConfig, startNeondeckListeners } from './listeners';
 import { startManagedServices } from './managed-services';
@@ -14,7 +15,7 @@ const application = await loadFlueNodeApplication();
 let stopSources = () => getMcpRegistry(paths).stop();
 const lifecycle = await startNeondeckListeners(
   application,
-  createGitHubIngress(paths),
+  createGitHubIngress(paths).route('/', createLinearIngress(paths)),
   config,
   () => stopSources(),
 );

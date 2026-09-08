@@ -8,9 +8,11 @@ const effects = vi.hoisted(() => ({
   codingStop: vi.fn<() => Promise<void>>(async () => {}),
   deliveryStop: vi.fn<() => Promise<void>>(async () => {}),
   githubStop: vi.fn<() => Promise<void>>(async () => {}),
+  linearStop: vi.fn<() => Promise<void>>(async () => {}),
   coding: vi.fn<(...args: unknown[]) => void>(),
   delivery: vi.fn<(...args: unknown[]) => void>(),
   github: vi.fn<(...args: unknown[]) => void>(),
+  linear: vi.fn<(...args: unknown[]) => void>(),
   recover: vi.fn<() => Promise<void>>(),
   mcpStart: vi.fn<() => Promise<void>>(async () => {}),
   updateStop: vi.fn<() => void>(),
@@ -33,6 +35,12 @@ vi.mock('./factory-github-loop', () => ({
   startFactoryGitHubLoop: (...args: unknown[]) => {
     effects.github(...args);
     return effects.githubStop;
+  },
+}));
+vi.mock('./factory-linear-loop', () => ({
+  startFactoryLinearLoop: (...args: unknown[]) => {
+    effects.linear(...args);
+    return effects.linearStop;
   },
 }));
 vi.mock('./create-app', () => ({
@@ -73,7 +81,12 @@ it('starts all factory loops once across recovery retries, and drains them on st
   });
   await vi.advanceTimersByTimeAsync(30000);
   expect(effects.recover).toHaveBeenCalledTimes(2);
-  for (const start of [effects.coding, effects.delivery, effects.github])
+  for (const start of [
+    effects.coding,
+    effects.delivery,
+    effects.github,
+    effects.linear,
+  ])
     expect(start).toHaveBeenCalledExactlyOnceWith(paths);
   await stop();
   await vi.advanceTimersByTimeAsync(60000);
@@ -82,9 +95,43 @@ it('starts all factory loops once across recovery retries, and drains them on st
     effects.codingStop,
     effects.deliveryStop,
     effects.githubStop,
+    effects.linearStop,
     effects.mcpStop,
   ])
     expect(drain).toHaveBeenCalledOnce();
+});
+
+it('rolls back all earlier workers if Linear startup fails', async () => {
+  const paths = runtimePaths('/tmp/mocked-dev-linear-startup-rollback');
+  effects.linear.mockImplementationOnce(() => {
+    throw new Error('Linear startup failed');
+  });
+  const owned = vi.fn<(stop: () => Promise<void>) => void>();
+  await expect(
+    startManagedServices(
+      paths,
+      {
+        fetch: async () => new Response(),
+      },
+      owned,
+    ),
+  ).rejects.toThrow('Linear startup failed');
+  expect(owned).toHaveBeenCalledOnce();
+  for (const drain of [
+    effects.codingStop,
+    effects.deliveryStop,
+    effects.githubStop,
+    effects.updateStop,
+    effects.schedulerStop,
+    effects.mcpStop,
+  ])
+    expect(drain).toHaveBeenCalledOnce();
+  expect(effects.linearStop).not.toHaveBeenCalled();
+  const stop = await startManagedServices(paths, {
+    fetch: async () => new Response(),
+  });
+  await stop();
+  expect(effects.linearStop).toHaveBeenCalledOnce();
 });
 
 it('rolls back earlier services and MCP when a later starter throws before retrying', async () => {

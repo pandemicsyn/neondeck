@@ -41,6 +41,18 @@ export function diagnoseTask(
       state: e.state,
     })),
   );
+  const linearWriteback = r.linearWriteback.filter(
+    (e) => e.state !== 'complete' && e.state !== 'superseded',
+  );
+  effects.push(
+    ...linearWriteback.map((e) => ({
+      deliveryId: null,
+      connectionId: e.connectionId,
+      effectId: e.id,
+      kind: 'linear-state',
+      state: e.state,
+    })),
+  );
   // Recovery belongs to the retained operation, even after its authority is withdrawn.
   const recoveryRun = r.runs.find((run) => run.status === 'needs-reconcile');
   const activeRun = r.runs.find((run) =>
@@ -83,7 +95,7 @@ export function diagnoseTask(
   let pendingSince: string | null = r.work.updatedAt;
   let nextStep =
     'Inspect the draft and resolve decisions before releasing an exact specification.';
-  const nextRetry = writeback
+  const nextRetry = [...writeback, ...linearWriteback]
     .filter((e) => e.retryAt > 0 && ['pending', 'failed'].includes(e.state))
     .map((e) => e.retryAt)
     .sort((a, b) => a - b)[0];
@@ -103,7 +115,9 @@ export function diagnoseTask(
   const failedWriteback = writeback.filter(
     (effect) => effect.state === 'failed',
   );
-  if (effects.some((e) => ['uncertain', 'repair'].includes(e.state))) {
+  if (
+    effects.some((e) => ['uncertain', 'repair', 'attention'].includes(e.state))
+  ) {
     status = 'needs-reconciliation';
     pendingSince = null;
     nextStep =
@@ -169,6 +183,11 @@ export function diagnoseTask(
     pendingSince = null;
     nextStep =
       'Review the current specification and repository context, then issue a new exact release through the existing release controls. Durable release authority is missing, withdrawn or inconsistent; coding readiness remains a separate check.';
+  } else if (linearWriteback.length) {
+    status = 'writeback-pending';
+    pendingSince = linearWriteback.find((e) => e.createdAt)?.createdAt || null;
+    nextStep =
+      'Inspect Linear status writeback receipts and source reconciliation before retrying an uncertain update.';
   } else if (writeback.length) {
     status = 'writeback-pending';
     pendingSince = writeback.reduce(

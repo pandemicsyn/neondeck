@@ -89,6 +89,16 @@ it('serves a bounded private read and a task-scoped safe export without any sour
   }
   expect((await request('/health', 'example.invalid')).status).toBe(404);
 });
+it('includes the Linear worker in health and safe diagnostic exports', async () => {
+  const health = await (await request('/health')).json();
+  const preview = await (await request('/tasks/work-test/preview')).json();
+  expect(
+    health.workers.map((worker: { worker: string }) => worker.worker),
+  ).toEqual(['github', 'coding', 'delivery', 'linear']);
+  expect(
+    preview.health.workers.map((worker: { worker: string }) => worker.worker),
+  ).toEqual(['github', 'coding', 'delivery', 'linear']);
+});
 it('rejects missing tasks, invalid pagination and changed snapshots', async () => {
   expect((await request('/tasks/missing/timeline')).status).toBe(404);
   expect((await request('/tasks/work-test/timeline?limit=0')).status).toBe(400);

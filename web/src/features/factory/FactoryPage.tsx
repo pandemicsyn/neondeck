@@ -1,3 +1,4 @@
+import { FactoryLinearSetup } from './FactoryLinearSetup';
 import { getFactoryDeliveryState } from '../../api/factory-delivery';
 import { factoryInboxPhase } from './FactoryLifecycle';
 import { FactoryOperations } from './FactoryOperations';
@@ -309,6 +310,7 @@ export function FactoryPage() {
         <details id="factory-setup" className="factory-setup">
           <summary>Factory setup</summary>
           <FactoryGitHubSetup repos={state.data.repos} />
+          <FactoryLinearSetup repos={state.data.repos} />
           {state.data.enabled && <FactoryCodingSetup />}
         </details>
       )}

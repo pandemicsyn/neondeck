@@ -39,6 +39,7 @@ export function taskFixture(): TaskRecords {
     runs: [],
     deliveries: [],
     writeback: [],
+    linearWriteback: [],
     audit: [
       {
         id: 1,

@@ -23,6 +23,9 @@ export const factoryCorrelationSchema = v.strictObject({
   intentId: v.optional(id),
 });
 export const factoryDiagnosticOperationSchema = v.picklist([
+  'linear.tick',
+  'linear.sync',
+  'linear.writeback-controller',
   'github.tick',
   'github.sync',
   'github.writeback',
@@ -118,7 +121,12 @@ export const factoryDiagnosticPageSchema = v.object({
   records: v.array(factoryDiagnosticSchema),
   nextBefore: v.nullable(count),
 });
-export const factoryWorkerSchema = v.picklist(['github', 'coding', 'delivery']);
+export const factoryWorkerSchema = v.picklist([
+  'github',
+  'linear',
+  'coding',
+  'delivery',
+]);
 export const factoryWorkerHealthSchema = v.object({
   worker: factoryWorkerSchema,
   status: v.picklist(['running', 'waiting', 'stopped', 'stale', 'not-running']),

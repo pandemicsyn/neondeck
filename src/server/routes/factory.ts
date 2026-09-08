@@ -1,3 +1,12 @@
+import { linearConnectionSchema } from '../../../shared/factory-linear';
+import {
+  linearConnections,
+  linearFingerprint,
+} from '../../modules/factory/linear-config';
+import {
+  factoryLinearState,
+  requestFactoryLinearSync,
+} from '../../modules/factory/linear-reconcile';
 import { FactoryMutationLockError } from '../../modules/config/factory-mutation-lock';
 import {
   getWritebackState,
@@ -72,6 +81,32 @@ export function createFactoryRoutes(
   routes.post('/config', async (c) =>
     c.json(updateFactoryConfig(await c.req.json(), paths)),
   );
+  routes.get('/linear', (c) => c.json(factoryLinearState(paths)));
+  routes.post('/work/:id/linear/sync', (c) =>
+    c.json(requestFactoryLinearSync(c.req.param('id'), paths)),
+  );
+  routes.post('/linear/config', async (c) => {
+    const input = v.parse(
+      v.strictObject({
+        expectedFingerprint: v.string(),
+        connections: v.array(linearConnectionSchema),
+      }),
+      await c.req.json(),
+    );
+    const result = updateFactoryConfig({ linear: input.connections }, paths, {
+      precondition() {
+        if (
+          linearFingerprint(linearConnections(paths)) !==
+          input.expectedFingerprint
+        )
+          throw new FactoryError(
+            409,
+            'Connection configuration changed. Reload before saving; your draft is retained.',
+          );
+      },
+    });
+    return c.json(result);
+  });
   routes.post('/github/config', async (c) => {
     const input = v.parse(
       v.strictObject({

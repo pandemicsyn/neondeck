@@ -1,5 +1,14 @@
 # Software factory implementation
 
+## Slice 5 — Linear intake
+
+Implementation is source complete on September 7, 2026, after the merged Slice 4 and
+onboarding/observability work. See the [Slice 5 implementation plan](SLICE_5_IMPLEMENTATION_PLAN.md),
+[operator guide](SLICE_5_OPERATOR.md) and [handoff](SLICE_5_HANDOFF.md). Independent
+static reviews and manager architecture review are clean; integrated verification
+passed. Ready publication is tracked in the handoff; merge is separate.
+Earlier live acceptance obligations remain unchanged.
+
 ## Current acceptance decision (2026-09-06)
 
 Slice 1 is **merged**, through `13049498d457257626af80483d68e0aa8110ad68`

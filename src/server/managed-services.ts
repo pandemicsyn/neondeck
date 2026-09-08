@@ -11,6 +11,7 @@ import {
 import type { RuntimePaths } from '../runtime-home';
 import { recoverFlueRuntimeServices } from './create-app';
 import { startSchedulerLoop, stopSchedulerLoop } from './scheduler-loop';
+import { startFactoryLinearLoop } from './factory-linear-loop';
 import { startFactoryGitHubLoop } from './factory-github-loop';
 type Stop = () => Promise<void>;
 
@@ -78,6 +79,7 @@ export async function startManagedServices(
     cleanup.add(startFactoryCodingLoop(paths));
     cleanup.add(startFactoryDeliveryLoop(paths));
     cleanup.add(startFactoryGitHubLoop(paths));
+    cleanup.add(startFactoryLinearLoop(paths));
     recover();
     return stop;
   } catch (error) {
