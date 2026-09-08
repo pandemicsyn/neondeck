@@ -32,6 +32,7 @@ const actionLabels: Record<DeliveryDetail['nextAction'], string> = {
   'fresh-release-required':
     'Release this plan again to use the updated workflow',
   'awaiting-publication': 'Ready for your publication decision',
+  'human-environment': 'Environment setup failed',
   'human-scope': 'Scope decision needed',
   'human-budget': 'Execution budget exhausted',
   'human-authority': 'Delivery authority needs attention',

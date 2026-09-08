@@ -9,7 +9,7 @@ import { DocumentRevisionDiff } from '../diff-viewer/DocumentRevisionDiff';
 import { MarkdownMessage } from '../../components/MarkdownMessage';
 type Editor = NonNullable<WorkbenchDraft['editor']>;
 type TextField = {
-  [K in keyof FactorySpec]: FactorySpec[K] extends string ? K : never;
+  [K in keyof FactorySpec]-?: FactorySpec[K] extends string ? K : never;
 }[keyof FactorySpec];
 export function FactorySpecEditor({
   editor,
