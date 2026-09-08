@@ -1,5 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
+import * as v from 'valibot';
+import { saveRepoWorkflowsInputSchema } from '../../../../shared/repo-workflows';
 import {
   readWorkflowDraft,
   writeWorkflowDraft,
@@ -37,6 +39,49 @@ it('validates incomplete edits and binds stored data to its repository', () => {
   });
   expect(writeWorkflowDraft('other', draft())).toBe(false);
   expect(readWorkflowDraft('other')).toEqual({ status: 'missing' });
+});
+it('restores reserved references in the base, proposal and draft for repair while save admission remains strict', () => {
+  const workflows = {
+    defaultProfileId: 'web',
+    profiles: [
+      {
+        ...draft().draft!.profiles[0],
+        id: 'web',
+        name: 'Web',
+        setupCommands: [],
+        setupTimeoutMs: 1000,
+        validationTimeoutMs: 1000,
+        runtime: {},
+        environmentRefs: ['NODE_OPTIONS'],
+      },
+    ],
+  };
+  const stored: WorkflowDraft = {
+    ...draft(),
+    base: { ...draft().base, workflows },
+    draft: workflows,
+    profileIndex: 0,
+    proposal: {
+      workflows,
+      rationale: 'Stored suggestion requiring repair',
+      evidencePaths: ['package.json'],
+      evidenceRevision: 'a'.repeat(40),
+    },
+  };
+  expect(writeWorkflowDraft('repo', stored)).toBe(true);
+  const restored = readWorkflowDraft('repo');
+  expect(restored).toEqual({ status: 'loaded', value: stored });
+  if (restored.status !== 'loaded') throw new Error('Draft did not restore');
+  const input = {
+    expectedFingerprint: restored.value.base.fingerprint,
+    workflows: restored.value.draft,
+  };
+  expect(v.safeParse(saveRepoWorkflowsInputSchema, input).success).toBe(false);
+  const repaired = structuredClone(input);
+  repaired.workflows!.profiles[0].environmentRefs = ['TEST_TOKEN'];
+  expect(v.safeParse(saveRepoWorkflowsInputSchema, repaired).success).toBe(
+    true,
+  );
 });
 it.each([
   '{',

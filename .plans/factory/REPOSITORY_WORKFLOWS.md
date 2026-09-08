@@ -179,6 +179,10 @@ lint and formatting pass.
 
 ## Verification record
 
+- Final restacked source passed `npm run check`: 321 files and 3,549 unit
+  tests, including the unchanged SQLite-access boundary check. Both independent
+  reviewers cleared the combined corrections and the stored-proposal integration.
+  The latter also passed 34 focused dashboard/API tests and web typechecking.
 - PR feedback corrections passed `npm run check`: 320 test files and 3,503
   unit tests. The independent UI review subsequently identified two related
   ownership/progress recovery cases; the final 44 focused UI/API tests and both

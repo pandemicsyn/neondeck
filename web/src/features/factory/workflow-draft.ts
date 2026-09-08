@@ -1,6 +1,6 @@
 import * as v from 'valibot';
 import {
-  repoWorkflowProposalSchema,
+  storedRepoWorkflowProposalSchema,
   repoWorkflowsSnapshotSchema,
 } from '../../../../shared/repo-workflows';
 
@@ -40,7 +40,7 @@ export const workflowDraftSchema = v.strictObject({
   base: repoWorkflowsSnapshotSchema,
   draft: v.nullable(workflows),
   profileIndex: v.pipe(v.number(), v.integer(), v.minValue(0), v.maxValue(7)),
-  proposal: v.nullable(repoWorkflowProposalSchema),
+  proposal: v.nullable(storedRepoWorkflowProposalSchema),
 });
 export type WorkflowDraft = v.InferOutput<typeof workflowDraftSchema>;
 const key = (repoId: string) => `factory-workflow-draft:${repoId}`;
