@@ -27,6 +27,7 @@ import {
 import * as v from 'valibot';
 import {
   prepareSchema,
+  getCodingRun,
   listCodingRuns,
   reserveCodingRun,
 } from '../coding-runs';
@@ -114,7 +115,7 @@ afterEach(() => {
   vi.unstubAllEnvs();
   rmSync(root, { recursive: true, force: true });
 });
-function readyWork() {
+function readyWork(workflowId?: string) {
   const work = submitFactoryWork(
     {
       requestKey: 'intake',
@@ -133,6 +134,7 @@ function readyWork() {
       expectedRepoFingerprint: work.repoFingerprint,
       spec: {
         ...emptyFactorySpec(),
+        workflowId,
         outcome: 'Update file',
         scope: 'file.txt',
         approach: 'Edit file',
@@ -734,6 +736,7 @@ it('keeps historical releases readable but rejects coding without validation aut
 });
 
 it('captures the chosen workflow exactly with mandatory checks and keeps the brief unchanged', async () => {
+  configure({ enabled: true });
   const registry = JSON.parse(readFileSync(paths.repos, 'utf8'));
   const profile = {
     id: 'web',
@@ -758,7 +761,7 @@ it('captures the chosen workflow exactly with mandatory checks and keeps the bri
     profiles: [profile, alternate],
   };
   writeFileSync(paths.repos, JSON.stringify(registry));
-  const work = readyWork();
+  const work = readyWork('web');
   expect(
     captureContext(work, paths).repoWorkflows?.profiles.map((item) => item.id),
   ).toEqual(['web', 'extension']);
@@ -788,15 +791,32 @@ it('captures the chosen workflow exactly with mandatory checks and keeps the bri
     ),
   );
   expect(frozen.workflow).toEqual(selected.workflow);
+  const snapshot = await codingSnapshot(work.work.id, 'synthetic', paths);
+  const originalSnapshot = JSON.stringify(snapshot);
+  const prompt = codingPrompt(snapshot);
+  expect(prompt).toContain('## Approved repository workflow\nextension\n');
+  expect(prompt).not.toContain('## Repository workflow\nweb');
+  expect(prompt).toContain('pnpm install --frozen-lockfile');
+  expect(JSON.parse(snapshot.specSnapshot).workflowId).toBe('web');
+  expect(snapshot.specHash).toBe(work.revisions.at(-1)!.hash);
+  const reserved = reserveCodingRun(snapshot, paths);
   registry.repos[0].factoryWorkflows.profiles[1].setupCommands[0].command =
     'changed';
+  registry.repos[0].factoryWorkflows.defaultProfileId = 'extension';
   writeFileSync(paths.repos, JSON.stringify(registry));
   expect(
     getFactoryWork(work.work.id, paths).releases[0].validationPolicy,
   ).toEqual(selected);
+  expect(getFactoryWork(work.work.id, paths).revisions).toEqual(work.revisions);
+  // Repair and replay render the durable parent snapshot, not today's profiles.
+  const retained = getCodingRun(reserved.runId, paths)!;
+  expect(codingPrompt(retained.snapshot)).toBe(prompt);
+  expect(JSON.stringify(snapshot)).toBe(originalSnapshot);
+  expect(retained.snapshot).toEqual(snapshot);
 });
 
-it('resolves an unselected existing brief to the configured default and rejects an unreviewed selection', () => {
+it('resolves an unselected existing brief to the configured default and rejects an unreviewed selection', async () => {
+  configure({ enabled: true });
   const registry = JSON.parse(readFileSync(paths.repos, 'utf8'));
   const profile = {
     id: 'web',
@@ -829,6 +849,17 @@ it('resolves an unselected existing brief to the configured default and rejects 
     paths,
   );
   expect(result.releases[0].validationPolicy?.workflow?.id).toBe('web');
+  const snapshot = await codingSnapshot(work.work.id, 'synthetic', paths);
+  expect(JSON.parse(snapshot.specSnapshot).workflowId).toBeUndefined();
+  const prompt = codingPrompt(snapshot);
+  expect(prompt).toContain('## Approved repository workflow\nweb\n');
+  registry.repos[0].factoryWorkflows.defaultProfileId = 'docs';
+  registry.repos[0].factoryWorkflows.profiles[0].validationCommands = [
+    { command: 'changed', cwd: '.' },
+  ];
+  writeFileSync(paths.repos, JSON.stringify(registry));
+  expect(codingPrompt(snapshot)).toBe(prompt);
+  expect(getFactoryWork(work.work.id, paths).revisions).toEqual(work.revisions);
 });
 it('misconfigured stored environment references remain readable but cannot admit trials or releases', async () => {
   const { readRepoWorkflows } = await import('../repo-workflows');

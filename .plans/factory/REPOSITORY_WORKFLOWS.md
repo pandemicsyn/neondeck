@@ -193,6 +193,11 @@ correction with 68 focused tests covering same-PID recovery and invalid proof.
 
 ## Verification record
 
+- Upper-layer coding handoff now renders the frozen approved workflow instead
+  of the brief's proposed selection. Stored brief bytes and hashes remain
+  unchanged; coding and repair replay read no latest configuration. Both
+  reviewers cleared the correction, with 27 focused release tests passing.
+  The combined `npm run check` also passed all 3,565 tests across 321 files.
 - The final response-retention/controller corrections passed `npm run check`:
   321 test files and 3,565 tests. Both independent reviewers confirmed the
   restacked source blobs and their integration with no open findings.

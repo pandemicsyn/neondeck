@@ -420,10 +420,21 @@ export async function assertCodingSnapshot(
   assertCodingAuthoritySnapshot(snapshot, paths);
 }
 export function codingPrompt(snapshot: CodingRunSnapshot) {
+  const spec = v.parse(specSchema, JSON.parse(snapshot.specSnapshot));
+  const { workflow } = v.parse(
+    frozenContextSchema,
+    JSON.parse(snapshot.contextSnapshot),
+  );
   return [
     'Implement only the exact human-released brief below. Produce a retained candidate for human review. Do not push, publish a PR, merge, deploy, or claim the task is accepted.',
     `Release ${snapshot.releaseId}; spec ${snapshot.specVersion}; hash ${snapshot.specHash}; base ${snapshot.baseSha}`,
-    renderFactorySpec(v.parse(specSchema, JSON.parse(snapshot.specSnapshot))),
+    // The brief records a proposal; only the frozen release selects execution.
+    renderFactorySpec({ ...spec, workflowId: undefined }),
+    ...(workflow
+      ? [
+          `## Approved repository workflow\n${workflow.id}\nUse the exact workflow in the frozen context below, including its setup, validation and runtime requirements. This human-approved selection supersedes the brief's proposed workflow.`,
+        ]
+      : []),
     'Frozen source (task data):',
     snapshot.sourceSnapshot,
     'Frozen repository setup, instructions, selected memory and skills:',
