@@ -1,8 +1,10 @@
 import { randomBytes, randomUUID } from 'node:crypto';
-import { mkdir, realpath, rm, readdir } from 'node:fs/promises';
+import { mkdir, realpath, rm, readdir, lstat } from 'node:fs/promises';
 import { join } from 'node:path';
 import * as v from 'valibot';
 import {
+  currentRepoWorkflowRunSchema,
+  type CurrentRepoWorkflowRun,
   repoWorkflowRunSchema,
   startRepoWorkflowRunSchema,
   type RepoWorkflowRun,
@@ -15,7 +17,9 @@ import {
 } from '../../runtime-home';
 import { readRepoWorkflows, resolveRepoWorkflow } from '../repo-workflows';
 import { FactoryError } from '../factory';
+import { resolveRegisteredRepositoryRemote } from '../worktrees';
 import {
+  readBytesBounded,
   artifactHash,
   atomicWrite,
   hostGit,
@@ -81,6 +85,7 @@ async function inspectRepoWorkflowRun(
   repoId: string,
   runId: string,
   paths: RuntimePaths,
+  recover = true,
 ): Promise<RepoWorkflowRun> {
   let result: RepoWorkflowRun;
   try {
@@ -91,6 +96,7 @@ async function inspectRepoWorkflowRun(
   if (result.repoId !== repoId)
     throw new FactoryError(404, 'Workflow test result not found.');
   if (
+    recover &&
     (result.status === 'running' || result.cleanup !== 'complete') &&
     !live.has(runPath(runId, paths))
   ) {
@@ -205,7 +211,10 @@ export async function getRepoWorkflowRun(
   repoId: string,
   runId: string,
   paths: RuntimePaths,
+  options: { recover?: boolean } = {},
 ) {
+  if (options.recover === false)
+    return inspectRepoWorkflowRun(repoId, runId, paths, false);
   const key = `${runPath(runId, paths)}:${repoId}`;
   const current = inspections.get(key);
   if (current) return current;
@@ -214,6 +223,60 @@ export async function getRepoWorkflowRun(
   );
   inspections.set(key, pending);
   return pending;
+}
+/** Discover the existing handle without starting recovery, processes or Git. */
+export async function getCurrentRepoWorkflowRun(
+  repoId: string,
+  paths: RuntimePaths,
+): Promise<CurrentRepoWorkflowRun> {
+  readRepoWorkflows(repoId, paths); // Registry membership, never arbitrary repo IDs.
+  const storage = rootPath(paths);
+  const lock = join(storage, `repo-${artifactHash(repoId)}.lock`);
+  const unsafe = () =>
+    new FactoryError(
+      409,
+      'Current workflow test ownership is incomplete, unsafe, or changed. Inspect the retained workflow test state and retry; no locks were removed.',
+    );
+  try {
+    await privateDirectory(storage);
+  } catch (error) {
+    if (error instanceof Error && 'code' in error && error.code === 'ENOENT')
+      return { run: null };
+    throw unsafe();
+  }
+  try {
+    await lstat(lock);
+  } catch (error) {
+    if (error instanceof Error && 'code' in error && error.code === 'ENOENT')
+      return { run: null };
+    throw unsafe();
+  }
+  try {
+    await privateDirectory(lock);
+    const readId = async () =>
+      v.parse(
+        idSchema,
+        (await readBytesBounded(join(lock, 'run-id'), 64)).toString('utf8'),
+      );
+    const runId = await readId();
+    const directory = runPath(runId, paths);
+    const owner = await readTrialOwnership(directory);
+    if (
+      owner.repoId !== repoId ||
+      owner.runId !== runId ||
+      owner.root !== join(directory, 'checkout') ||
+      owner.ref !== `refs/neondeck-workflow-tests/${runId}`
+    )
+      throw unsafe();
+    const run = await getRepoWorkflowRun(repoId, runId, paths, {
+      recover: false,
+    });
+    await privateDirectory(lock);
+    if ((await readId()) !== runId) throw unsafe();
+    return v.parse(currentRepoWorkflowRunSchema, { run });
+  } catch {
+    throw unsafe();
+  }
 }
 export async function cancelRepoWorkflowRun(
   repoId: string,
@@ -405,6 +468,17 @@ export async function startRepoWorkflowRun(
           source
         )
           throw new Error('Repository root is not canonical.');
+        const remote = await resolveRegisteredRepositoryRemote(
+          source,
+          `${repo.github.owner}/${repo.github.name}`,
+          hostGit,
+        ).catch(() =>
+          fail(
+            'Configure exactly one Git remote matching the registered GitHub repository, then retry. No unrelated remote or stale local branch was used.',
+          ),
+        );
+        // Fetch the matched URL itself: multi-URL remotes must never redirect
+        // this trial through an unrelated first fetch URL.
         // Fetch only the configured default branch into this run's private ref.
         const ref = `refs/neondeck-workflow-tests/${runId}`;
         ownership.source = source;
@@ -418,7 +492,11 @@ export async function startRepoWorkflowRun(
           'fetch',
           '--no-tags',
           '--no-recurse-submodules',
-          'origin',
+          '--no-write-fetch-head',
+          '--no-auto-maintenance',
+          '--refmap=',
+          '--',
+          remote.url,
           `+refs/heads/${repo.defaultBranch}:${ref}`,
         ]);
         result.baseSha = v.parse(

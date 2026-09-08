@@ -14,6 +14,11 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { runtimePaths, type RuntimePaths } from '../../runtime-home';
 const mocks = vi.hoisted(() => ({
+  remotes: { origin: 'https://github.com/fixture/sample.git' } as Record<
+    string,
+    string
+  >,
+  fetches: [] as string[][],
   fingerprint: 'a'.repeat(64),
   commands: [] as string[],
   fail: '',
@@ -100,6 +105,11 @@ vi.mock('../coding-runs', async () => {
     ...io,
     artifactHash: (s: string) => createHash('sha256').update(s).digest('hex'),
     hostGit: async (cwd: string, args: string[]) => {
+      if (args[0] === 'remote')
+        return args.length === 1
+          ? Object.keys(mocks.remotes).join('\n')
+          : (mocks.remotes[args.at(-1)!] ?? '');
+      if (args[0] === 'fetch') mocks.fetches.push(args);
       if (args[0] === 'worktree' && args[1] === 'add') {
         await mkdir(args[4]);
         await writeFile(join(args[4], '.git'), 'gitdir: fixture');
@@ -180,6 +190,7 @@ vi.mock('../factory-delivery', async () => {
 import {
   startRepoWorkflowRun,
   getRepoWorkflowRun,
+  getCurrentRepoWorkflowRun,
   cancelRepoWorkflowRun,
 } from './service';
 let root: string, paths: RuntimePaths, runId: string;
@@ -203,6 +214,8 @@ beforeEach(async () => {
     }),
   );
   Object.assign(mocks, {
+    remotes: { origin: 'https://github.com/fixture/sample.git' },
+    fetches: [],
     fingerprint: 'a'.repeat(64),
     commands: [],
     fail: '',
@@ -712,3 +725,175 @@ it.each(['complete', 'interrupted'])(
     }
   },
 );
+
+it.each<Record<string, string>>([
+  { upstream: 'git@github.com:fixture/sample.git' },
+  {
+    origin: 'https://github.com/unrelated/fork.git',
+    upstream: 'https://github.com/fixture/sample.git',
+  },
+  {
+    origin:
+      'https://github.com/unrelated/fork.git\nhttps://github.com/fixture/sample.git',
+  },
+])(
+  'fetches the registered repository instead of assuming origin: %j',
+  async (remotes) => {
+    mocks.remotes = remotes;
+    await start();
+    expect(await settled()).toMatchObject({ status: 'passed' });
+    expect(mocks.fetches).toHaveLength(1);
+    expect(mocks.fetches[0].at(-2)).toMatch(
+      /(?:github.com[:/])fixture\/sample.git$/,
+    );
+    expect(mocks.fetches[0].at(-1)).toBe(
+      `+refs/heads/main:refs/neondeck-workflow-tests/${runId}`,
+    );
+    expect(mocks.fetches[0].join(' ')).not.toContain('unrelated');
+  },
+);
+it.each<Record<string, string>>([
+  { origin: 'https://github.com/unrelated/fork.git' },
+  {
+    origin: 'https://github.com/fixture/sample.git',
+    upstream: 'git@github.com:fixture/sample.git',
+  },
+])(
+  'blocks missing/ambiguous registered remote without fetch: %j',
+  async (remotes) => {
+    mocks.remotes = remotes;
+    await start();
+    const result = await settled();
+    expect(result).toMatchObject({
+      status: 'setup-blocked',
+      cleanup: 'complete',
+    });
+    expect(result.guidance).toContain('exactly one Git remote');
+    expect(mocks.fetches).toEqual([]);
+    expect(mocks.commands).toEqual([]);
+  },
+);
+it('current returns null without a lock and performs no commands', async () => {
+  expect(await getCurrentRepoWorkflowRun('sample', paths)).toEqual({
+    run: null,
+  });
+  expect(mocks.commands).toEqual([]);
+  expect(mocks.fetches).toEqual([]);
+});
+it('current discovers a live signed run without cancelling it', async () => {
+  mocks.wait = true;
+  await start();
+  while (!mocks.commands.length) await new Promise((r) => setTimeout(r, 5));
+  try {
+    vi.resetModules();
+    const other = await import('./service');
+    expect(
+      await other.getCurrentRepoWorkflowRun('sample', paths),
+    ).toMatchObject({ run: { runId, repoId: 'sample', status: 'running' } });
+    expect(mocks.cancelled).toBe(false);
+  } finally {
+    await cancelRepoWorkflowRun('sample', runId, paths);
+    await settled();
+  }
+});
+it.each(['partial', 'symlink'])(
+  'current rejects unsafe %s lock without deleting it',
+  async (kind) => {
+    const { artifactHash } = await import('../coding-runs');
+    const storage = join(root, 'repo-workflow-runs');
+    await mkdir(storage, { mode: 0o700 });
+    const lock = join(storage, `repo-${artifactHash('sample')}.lock`);
+    if (kind === 'partial') await mkdir(lock, { mode: 0o700 });
+    else await symlink(join(root, 'repo'), lock);
+    await expect(
+      getCurrentRepoWorkflowRun('sample', paths),
+    ).rejects.toMatchObject({ status: 409 });
+    expect(
+      (await import('node:fs/promises')).lstat(lock),
+    ).resolves.toBeDefined();
+    expect(mocks.commands).toEqual([]);
+  },
+);
+it.each(['owner', 'result', 'signature'])(
+  'current rejects mismatched %s and leaves the lock intact',
+  async (kind) => {
+    await start();
+    await settled();
+    const directory = join(root, 'repo-workflow-runs', runId);
+    const { trialHandle, readTrialOwnership, saveTrialOwnership } =
+      await import('./trial-store');
+    const { artifactHash, writeSigned, readSigned } =
+      await import('../coding-runs');
+    const lock = join(
+      root,
+      'repo-workflow-runs',
+      `repo-${artifactHash('sample')}.lock`,
+    );
+    await mkdir(lock, { mode: 0o700 });
+    await writeFile(join(lock, 'run-id'), runId);
+    const handle = await trialHandle(directory);
+    if (kind === 'owner') {
+      const owner = await readTrialOwnership(directory);
+      owner.repoId = 'unrelated';
+      await saveTrialOwnership(directory, owner);
+    }
+    if (kind === 'result') {
+      const result = (await readSigned(
+        join(directory, 'result.json'),
+        handle.attemptToken,
+      )) as object;
+      await writeSigned(join(directory, 'result.json'), handle.attemptToken, {
+        ...result,
+        repoId: 'unrelated',
+      });
+    }
+    if (kind === 'signature')
+      await writeFile(join(directory, 'result.json'), '{}');
+    await expect(
+      getCurrentRepoWorkflowRun('sample', paths),
+    ).rejects.toMatchObject({ status: 409 });
+    expect(await readFile(join(lock, 'run-id'), 'utf8')).toBe(runId);
+  },
+);
+
+it('current API returns null, discovers signed state, and rejects mismatched ownership', async () => {
+  const { createRepoWorkflowRunsRoutes } =
+    await import('../../server/routes/repo-workflow-runs');
+  const { currentRepoWorkflowRunSchema } =
+    await import('../../../shared/repo-workflow-runs');
+  const v = await import('valibot');
+  const app = createRepoWorkflowRunsRoutes(paths, {
+    startRepoWorkflowRun,
+    getRepoWorkflowRun,
+    getCurrentRepoWorkflowRun,
+    cancelRepoWorkflowRun,
+  });
+  const url = '/repos/sample/factory-workflow-runs/current';
+  expect(await (await app.request(url)).json()).toEqual({ run: null });
+  await start();
+  await settled();
+  const directory = join(root, 'repo-workflow-runs', runId);
+  const { artifactHash } = await import('../coding-runs');
+  const { readTrialOwnership, saveTrialOwnership } =
+    await import('./trial-store');
+  const lock = join(
+    root,
+    'repo-workflow-runs',
+    `repo-${artifactHash('sample')}.lock`,
+  );
+  await mkdir(lock, { mode: 0o700 });
+  await writeFile(join(lock, 'run-id'), runId);
+  const response = await app.request(url);
+  expect(response.status).toBe(200);
+  expect(
+    v.parse(currentRepoWorkflowRunSchema, await response.json()).run?.runId,
+  ).toBe(runId);
+  const owner = await readTrialOwnership(directory);
+  owner.repoId = 'unrelated';
+  await saveTrialOwnership(directory, owner);
+  const denied = await app.request(url);
+  expect(denied.status).toBe(409);
+  expect(await denied.json()).toMatchObject({
+    error: expect.stringContaining('ownership'),
+  });
+});

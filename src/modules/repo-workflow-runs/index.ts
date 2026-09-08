@@ -9,5 +9,6 @@ export { runWorkflowPhase, type WorkflowCommandResult } from './runner';
 export {
   startRepoWorkflowRun,
   getRepoWorkflowRun,
+  getCurrentRepoWorkflowRun,
   cancelRepoWorkflowRun,
 } from './service';

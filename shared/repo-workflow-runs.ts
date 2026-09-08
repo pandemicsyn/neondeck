@@ -38,3 +38,10 @@ export const repoWorkflowRunSchema = v.strictObject({
 });
 export type RepoWorkflowRun = v.InferOutput<typeof repoWorkflowRunSchema>;
 export type RepoWorkflowRunLog = v.InferOutput<typeof repoWorkflowRunLogSchema>;
+
+export const currentRepoWorkflowRunSchema = v.strictObject({
+  run: v.nullable(repoWorkflowRunSchema),
+});
+export type CurrentRepoWorkflowRun = v.InferOutput<
+  typeof currentRepoWorkflowRunSchema
+>;

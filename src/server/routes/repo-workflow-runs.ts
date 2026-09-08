@@ -8,11 +8,13 @@ import { RepoWorkflowError } from '../../modules/repo-workflows';
 import {
   startRepoWorkflowRun,
   getRepoWorkflowRun,
+  getCurrentRepoWorkflowRun,
   cancelRepoWorkflowRun,
 } from '../../modules/repo-workflow-runs';
 const services = {
   startRepoWorkflowRun,
   getRepoWorkflowRun,
+  getCurrentRepoWorkflowRun,
   cancelRepoWorkflowRun,
 };
 export function createRepoWorkflowRunsRoutes(
@@ -44,6 +46,9 @@ export function createRepoWorkflowRunsRoutes(
       ),
       202,
     ),
+  );
+  app.get('/repos/:repoId/factory-workflow-runs/current', async (c) =>
+    c.json(await io.getCurrentRepoWorkflowRun(c.req.param('repoId'), paths)),
   );
   app.get('/repos/:repoId/factory-workflow-runs/:runId', async (c) =>
     c.json(
