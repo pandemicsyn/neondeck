@@ -1,5 +1,7 @@
 # neondeck
 
+Last updated: August 22, 2026.
+
 A note from me, the human:
 
 - Is this vibe coded? 100% barely looked at the code. Its fine'ish.
