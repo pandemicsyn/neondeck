@@ -14,6 +14,7 @@ research-repos
 .flue-vite
 src/runtime-home/app-db/migrations/**/snapshot.json
 package-lock.json
+workers/github-webhook-relay/worker-configuration.d.ts
 
 .env
 .env.*
