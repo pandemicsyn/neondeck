@@ -1,6 +1,6 @@
 /* oxlint-disable jsx-a11y/no-noninteractive-tabindex -- Bounded logs must be keyboard-scrollable. */
 import { useEffect, useRef, useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import type { RepoWorkflowRun } from '../../../../shared/repo-workflow-runs';
 import { cancelRepoWorkflowRun, getRepoWorkflowRun } from './workflow-api';
 const statusLabels = {
@@ -26,6 +26,7 @@ export function WorkflowRunProgress({
   onObserved: (run: RepoWorkflowRun) => void;
   allowStatusRefresh?: boolean;
 }) {
+  const client = useQueryClient();
   const [cancelError, setCancelError] = useState('');
   const [cancelling, setCancelling] = useState(false);
   const lifetime = useRef<object | null>(null);
@@ -85,7 +86,7 @@ export function WorkflowRunProgress({
       )}
       {query.error && (
         <p role="alert">
-          Test progress could not refresh. The test may still be running.{' '}
+          Test progress could not refresh. Showing the last confirmed status.{' '}
           <button type="button" onClick={() => void query.refetch()}>
             Refresh test progress
           </button>
@@ -97,18 +98,34 @@ export function WorkflowRunProgress({
           type="button"
           disabled={cancelling}
           onClick={async () => {
+            const currentLifetime = lifetime.current;
+            const isCurrent = () =>
+              !!currentLifetime && lifetime.current === currentLifetime;
             setCancelling(true);
             setCancelError('');
+            let receipt: RepoWorkflowRun;
             try {
-              await cancelRepoWorkflowRun(run.repoId, run.runId);
-              await query.refetch();
+              receipt = await cancelRepoWorkflowRun(run.repoId, run.runId);
             } catch {
-              setCancelError(
-                'Could not cancel the test. Refresh progress and retry.',
-              );
-            } finally {
-              setCancelling(false);
+              if (isCurrent()) {
+                setCancelError(
+                  'Could not cancel the test. Refresh progress and retry.',
+                );
+                setCancelling(false);
+              }
+              return;
             }
+            if (!isCurrent()) return;
+            const key = ['repo-workflow-run', run.repoId, run.runId];
+            // An older status request must not overwrite the mutation receipt.
+            await client.cancelQueries({ queryKey: key, exact: true });
+            if (!isCurrent()) return;
+            client.setQueryData(key, receipt);
+            onObserved(receipt);
+            // A follow-up read failure is reported by the progress query; it
+            // does not undo the confirmed receipt or imply cancel POST failed.
+            await query.refetch();
+            if (isCurrent()) setCancelling(false);
           }}
         >
           {cancelling ? 'Cancelling test…' : 'Cancel test'}

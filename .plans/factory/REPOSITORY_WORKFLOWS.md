@@ -177,9 +177,16 @@ progress panel cannot overwrite a newer run or invalidate its ownership. Both
 reviewers cleared the final UI correction; 27 focused tests and web typechecking,
 lint and formatting pass.
 
+Cancellation and environment-retry responses are now retained before follow-up
+reads. Failed refreshes do not discard confirmed mutation results, and stale
+responses cannot replace a newly selected run or delivery. Both independent
+reviewers cleared the four-file response-retention correction; 69 focused tests,
+web typechecking and formatting pass, with no new lint warnings.
+
 ## Verification record
 
-- Final restacked source passed `npm run check`: 321 files and 3,549 unit
+- Restacked source before the response-retention/controller follow-up passed
+  `npm run check`: 321 files and 3,549 unit
   tests, including the unchanged SQLite-access boundary check. Both independent
   reviewers cleared the combined corrections and the stored-proposal integration.
   The latter also passed 34 focused dashboard/API tests and web typechecking.

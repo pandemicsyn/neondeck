@@ -201,6 +201,111 @@ it('starts only on click, shows setup failures and cancellation', async () => {
   expect(container.textContent).toContain('Test cancelled');
   expect(button('Test setup and validation').disabled).toBe(false);
 });
+it.each(['cancelled', 'running'] as const)(
+  'retains a %s cancel receipt when the following status read fails',
+  async (status) => {
+    vi.mocked(getCurrentRepoWorkflowRun).mockResolvedValue({ run: run() });
+    await render();
+    const receipt: RepoWorkflowRun = {
+      ...run(),
+      status,
+      guidance: 'Confirmed cancel receipt',
+      phase: status === 'cancelled' ? 'complete' : 'setup',
+      cleanup: status === 'cancelled' ? 'complete' : 'pending',
+    };
+    vi.mocked(cancelRepoWorkflowRun).mockResolvedValue(receipt);
+    vi.mocked(getRepoWorkflowRun).mockRejectedValue(
+      new Error('Read unavailable'),
+    );
+    await click('Cancel test');
+    expect(client.getQueryData(['repo-workflow-run', 'demo', 'trial'])).toEqual(
+      receipt,
+    );
+    expect(container.textContent).toContain('Confirmed cancel receipt');
+    expect(container.textContent).toContain('Test progress could not refresh');
+    expect(container.textContent).not.toContain('Could not cancel the test');
+    expect(container.textContent?.includes('Test cancelled')).toBe(
+      status === 'cancelled',
+    );
+    expect(container.textContent?.includes('Test in progress')).toBe(
+      status === 'running',
+    );
+  },
+);
+it('reports cancel POST failure without changing confirmed progress', async () => {
+  vi.mocked(getCurrentRepoWorkflowRun).mockResolvedValue({ run: run() });
+  await render();
+  const reads = vi.mocked(getRepoWorkflowRun).mock.calls.length;
+  vi.mocked(cancelRepoWorkflowRun).mockRejectedValue(
+    new Error('Cancel unavailable'),
+  );
+  await click('Cancel test');
+  expect(container.textContent).toContain('Could not cancel the test');
+  expect(container.textContent).toContain('Test in progress');
+  expect(container.textContent).not.toContain(
+    'Test progress could not refresh',
+  );
+  expect(getRepoWorkflowRun).toHaveBeenCalledTimes(reads);
+  expect(client.getQueryData(['repo-workflow-run', 'demo', 'trial'])).toEqual(
+    run(),
+  );
+});
+it('ignores a delayed cancel receipt after a new run replaces its mounted instance', async () => {
+  vi.useFakeTimers();
+  try {
+    vi.mocked(getCurrentRepoWorkflowRun).mockResolvedValue({ run: run() });
+    await render();
+    let finishCancel!: (value: RepoWorkflowRun) => void;
+    vi.mocked(cancelRepoWorkflowRun).mockReturnValue(
+      new Promise((resolve) => {
+        finishCancel = resolve;
+      }),
+    );
+    await click('Cancel test');
+    const completeA: RepoWorkflowRun = {
+      ...run(),
+      status: 'passed',
+      phase: 'complete',
+      cleanup: 'complete',
+    };
+    vi.mocked(getRepoWorkflowRun).mockResolvedValue(completeA);
+    vi.mocked(getCurrentRepoWorkflowRun).mockResolvedValue({ run: null });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1100);
+    });
+    const activeB = { ...run(), runId: 'trial-b', guidance: 'Running B' };
+    vi.mocked(startRepoWorkflowRun).mockResolvedValue(activeB);
+    vi.mocked(getRepoWorkflowRun).mockResolvedValue(activeB);
+    await click('Test setup and validation');
+    const ownershipReads = vi.mocked(getCurrentRepoWorkflowRun).mock.calls
+      .length;
+    const statusReads = vi.mocked(getRepoWorkflowRun).mock.calls.length;
+    await act(async () =>
+      finishCancel({
+        ...completeA,
+        status: 'cancelled',
+        guidance: 'Old receipt A',
+      }),
+    );
+    await flushDiscovery();
+    expect(getCurrentRepoWorkflowRun).toHaveBeenCalledTimes(ownershipReads);
+    expect(getRepoWorkflowRun).toHaveBeenCalledTimes(statusReads);
+    expect(client.getQueryData(['repo-workflow-run', 'demo', 'trial'])).toEqual(
+      completeA,
+    );
+    await act(async () => {
+      await client.invalidateQueries({
+        queryKey: ['repo-workflow-current', 'demo'],
+      });
+    });
+    await flushDiscovery();
+    expect(container.textContent).toContain('Running B');
+    expect(container.textContent).not.toContain('Old receipt A');
+    expect(button('Test setup and validation').disabled).toBe(true);
+  } finally {
+    vi.useRealTimers();
+  }
+});
 it('keeps polling terminal status until cleanup completes before enabling another test', async () => {
   vi.useFakeTimers();
   try {

@@ -17,8 +17,8 @@ import {
   FactoryDeliveryBudget,
   FactoryDeliveryEvidence,
 } from './FactoryDeliveryEvidence';
-import { useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useEffect, useRef, useState } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { ApiError } from '../../api/http';
 import {
   controlFactoryDelivery,
@@ -52,6 +52,14 @@ export function FactoryDeliveryDetail({
   workId: string;
   onDiscuss?: (evidence: string) => void;
 }) {
+  const client = useQueryClient();
+  const lifetime = useRef<object | null>(null);
+  useEffect(() => {
+    lifetime.current = {};
+    return () => {
+      lifetime.current = null;
+    };
+  }, [id, workId]);
   const { refreshing, refresh } = useFactoryRefresh();
   const detail = useQuery({
     queryKey: ['factory-delivery', id],
@@ -104,11 +112,27 @@ export function FactoryDeliveryDetail({
   async function control(action: 'revoke' | 'reconcile' | 'environment') {
     if (!detail.data || detail.error || detail.isPending || refreshing || busy)
       return;
+    const currentLifetime = lifetime.current;
+    const isCurrent = () =>
+      !!currentLifetime && lifetime.current === currentLifetime;
     setBusy(true);
     setError('');
     try {
       if (action === 'environment') {
-        await retryFactoryEnvironmentSetup(id, detail.data.pipeline.version);
+        const receipt = await retryFactoryEnvironmentSetup(
+          id,
+          detail.data.pipeline.version,
+        );
+        if (!isCurrent()) return;
+        if (
+          receipt.pipeline.workItemId !== workId ||
+          receipt.planningWorkId !== workId
+        )
+          throw new Error('Delivery belongs to another task.');
+        const key = ['factory-delivery', id];
+        await client.cancelQueries({ queryKey: key, exact: true });
+        if (!isCurrent()) return;
+        client.setQueryData(key, receipt);
       } else
         await controlFactoryDelivery(
           id,
@@ -118,17 +142,22 @@ export function FactoryDeliveryDetail({
             ? reason.trim()
             : 'Human requested observation of uncertain delivery effects',
         );
-      setRevoking(false);
-      setReason('');
+      if (isCurrent()) {
+        setRevoking(false);
+        setReason('');
+      }
     } catch (cause) {
-      setError(
-        cause instanceof ApiError && cause.status === 409
-          ? 'Version conflict. Review the refreshed delivery before acting again.'
-          : 'Control receipt is unconfirmed. Refresh and inspect the recorded outcome before retrying.',
-      );
+      if (isCurrent())
+        setError(
+          cause instanceof ApiError && cause.status === 409
+            ? 'Version conflict. Review the refreshed delivery before acting again.'
+            : 'Control receipt is unconfirmed. Refresh and inspect the recorded outcome before retrying.',
+        );
     } finally {
-      await detail.refetch();
-      setBusy(false);
+      if (isCurrent()) {
+        await detail.refetch();
+        if (isCurrent()) setBusy(false);
+      }
     }
   }
   if (detail.isPending) return <output>Loading delivery evidence…</output>;
