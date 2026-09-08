@@ -183,8 +183,19 @@ responses cannot replace a newly selected run or delivery. Both independent
 reviewers cleared the four-file response-retention correction; 69 focused tests,
 web typechecking and formatting pass, with no new lint warnings.
 
+Known-finished controller tasks now have exact-identity settlement evidence, so
+a transient failure in terminal persistence or unlock can recover while the
+server remains running. A missing in-memory handle alone does not prove death.
+Recovery claims release under SQLite exclusion when matching cleanup proof
+exists, including failures removing worker artifacts after proof was saved;
+unproven cleanup remains retained. Both independent reviewers cleared this
+correction with 68 focused tests covering same-PID recovery and invalid proof.
+
 ## Verification record
 
+- The final response-retention/controller corrections passed `npm run check`:
+  321 test files and 3,565 tests. Both independent reviewers confirmed the
+  restacked source blobs and their integration with no open findings.
 - Restacked source before the response-retention/controller follow-up passed
   `npm run check`: 321 files and 3,549 unit
   tests, including the unchanged SQLite-access boundary check. Both independent
