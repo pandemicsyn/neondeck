@@ -1189,3 +1189,97 @@ it('allows feedback classification to settle after the selected observation was 
   expect(container.querySelector('[role="alert"]')).toBeNull();
   expect(container.textContent).toContain(content.summary);
 });
+it('keeps health stable during delayed polling and marks only explicit refresh busy', async () => {
+  vi.useFakeTimers();
+  let resolve!: (value: Response) => void;
+  const fetch = vi.spyOn(globalThis, 'fetch').mockImplementation(
+    () =>
+      new Promise((yes) => {
+        resolve = yes;
+      }),
+  );
+  client.setQueryData(['factory-operations-health'], health);
+  client.setDefaultOptions({ queries: { retry: false, staleTime: Infinity } });
+  try {
+    await act(async () =>
+      root.render(
+        <QueryClientProvider client={client}>
+          <FactoryOperations />
+        </QueryClientProvider>,
+      ),
+    );
+    const refresh = container.querySelector('button')!;
+    const before = container.textContent;
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(15000);
+    });
+    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(container.textContent).toBe(before);
+    expect(refresh.disabled).toBe(false);
+    await act(async () => {
+      resolve(response(health));
+      await vi.advanceTimersByTimeAsync(1);
+    });
+    expect(container.textContent).toBe(before);
+    await act(async () => refresh.click());
+    expect(refresh.disabled).toBe(true);
+    expect(refresh.textContent).toBe('Checking health…');
+    const changed = { ...health, summary: 'Worker recovered.' };
+    await act(async () => {
+      resolve(response(changed));
+      await vi.advanceTimersByTimeAsync(1);
+    });
+    expect(refresh.disabled).toBe(false);
+    expect(container.textContent).toContain(changed.summary);
+  } finally {
+    vi.useRealTimers();
+  }
+});
+it('does not reuse timeline cursors or enable paging while another task is loading', async () => {
+  const fetch = vi
+    .spyOn(globalThis, 'fetch')
+    .mockImplementation(async (input) => {
+      const url = String(input);
+      if (url.includes('/health')) return response(health);
+      if (url.includes('/second/')) return new Promise<Response>(() => {});
+      return response({
+        workId: 'first',
+        entries: [],
+        nextCursor: 'next',
+        coverage: {
+          bounded: true,
+          limit: 25,
+          truncated: false,
+          note: 'Retained records only.',
+        },
+      });
+    });
+  const open = async () => {
+    await act(async () => {
+      const details = container.querySelector('details')!;
+      details.open = true;
+      details.dispatchEvent(new Event('toggle'));
+    });
+    await settle();
+  };
+  await render(<FactoryTimeline workId="first" />);
+  await open();
+  await click('Next page');
+  expect(container.textContent).toContain('Page 2');
+  await render(<FactoryTimeline workId="second" />);
+  await open();
+  expect(container.textContent).toContain('Page 1');
+  expect(container.textContent).toContain('Loading timeline');
+  const buttons = [...container.querySelectorAll('button')];
+  expect(buttons.find((b) => b.textContent === 'Next page')!.disabled).toBe(
+    true,
+  );
+  expect(buttons.find((b) => b.textContent === 'Previous page')!.disabled).toBe(
+    true,
+  );
+  expect(
+    fetch.mock.calls
+      .filter(([url]) => String(url).includes('/second/'))
+      .every(([url]) => !String(url).includes('cursor=')),
+  ).toBe(true);
+});

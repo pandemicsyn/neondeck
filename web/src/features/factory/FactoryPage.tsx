@@ -129,7 +129,10 @@ export function FactoryPage() {
         </a>
         <button
           disabled={
-            busy || refreshing || state.isFetching || selected.isFetching
+            busy ||
+            refreshing ||
+            state.isPending ||
+            (!!id && selected.isPending)
           }
           onClick={async () => {
             setRefreshing(true);

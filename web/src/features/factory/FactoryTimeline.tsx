@@ -1,3 +1,4 @@
+import { useFactoryRefresh } from './useFactoryRefresh';
 import { FactoryTimelineEvidence } from './FactoryTimelineEvidence';
 /* Bounded regions intentionally support keyboard scrolling. */
 /* oxlint-disable jsx-a11y/no-noninteractive-tabindex */
@@ -97,6 +98,10 @@ function TimelineEntry({ entry }: { entry: FactoryTimelineEntry }) {
   );
 }
 export function FactoryTimeline({ workId }: { workId: string }) {
+  return <TaskTimeline key={workId} workId={workId} />;
+}
+function TaskTimeline({ workId }: { workId: string }) {
+  const { refreshing, refresh } = useFactoryRefresh();
   const [open, setOpen] = useState(false);
   const [cursors, setCursors] = useState<string[]>([]);
   const [generation, setGeneration] = useState(0);
@@ -133,8 +138,8 @@ export function FactoryTimeline({ workId }: { workId: string }) {
               {health.data &&
                 ' Showing the last loaded snapshot; it may be stale.'}{' '}
               <button
-                disabled={health.isFetching}
-                onClick={() => void health.refetch()}
+                disabled={health.isPending || refreshing}
+                onClick={() => void refresh(() => health.refetch())}
               >
                 Retry diagnosis
               </button>
@@ -143,7 +148,7 @@ export function FactoryTimeline({ workId }: { workId: string }) {
           <div className="factory-toolbar">
             <h3>Recorded timeline</h3>
             <button
-              disabled={timeline.isFetching}
+              disabled={timeline.isPending}
               onClick={() => {
                 setCursors([]);
                 setGeneration((value) => value + 1);
@@ -152,7 +157,7 @@ export function FactoryTimeline({ workId }: { workId: string }) {
               Refresh timeline
             </button>
           </div>
-          {timeline.isFetching && <output>Loading timeline…</output>}
+          {timeline.isPending && <output>Loading timeline…</output>}
           {timeline.error && (
             <p role="alert">
               {timeline.error.message}. Refresh timeline to start from the
@@ -186,7 +191,7 @@ export function FactoryTimeline({ workId }: { workId: string }) {
           )}
           <nav className="factory-toolbar" aria-label="Timeline pagination">
             <button
-              disabled={!cursors.length || timeline.isFetching}
+              disabled={!cursors.length || timeline.isPending}
               onClick={() => setCursors((values) => values.slice(0, -1))}
             >
               Previous page
@@ -195,7 +200,7 @@ export function FactoryTimeline({ workId }: { workId: string }) {
             <button
               disabled={
                 !timeline.data?.nextCursor ||
-                timeline.isFetching ||
+                timeline.isPending ||
                 !!timeline.error
               }
               onClick={() => {

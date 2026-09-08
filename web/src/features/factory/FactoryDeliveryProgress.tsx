@@ -1,3 +1,4 @@
+import { useFactoryRefresh } from './useFactoryRefresh';
 import { useQuery } from '@tanstack/react-query';
 import type { DeliveryProgressAssessment } from '../../../../shared/factory-progress';
 import type { DeliveryDetail } from '../../api/factory-delivery';
@@ -74,6 +75,7 @@ function Assessment({
   disabled: boolean;
   onDiscuss?: () => void;
 }) {
+  const { refreshing, refresh } = useFactoryRefresh();
   const p = detail.pipeline;
   const query = useQuery({
     queryKey: [
@@ -162,7 +164,10 @@ function Assessment({
         <p role="alert" className="factory-error">
           Progress evidence unavailable or changed. Refresh before using this
           assessment.{' '}
-          <button onClick={() => void query.refetch()}>
+          <button
+            disabled={refreshing}
+            onClick={() => void refresh(() => query.refetch())}
+          >
             Reload progress evidence
           </button>
         </p>
@@ -198,7 +203,11 @@ function Assessment({
           {onDiscuss ? (
             <button
               disabled={
-                disabled || query.isFetching || !!query.error || !content
+                disabled ||
+                query.isPending ||
+                refreshing ||
+                !!query.error ||
+                !content
               }
               onClick={onDiscuss}
             >
