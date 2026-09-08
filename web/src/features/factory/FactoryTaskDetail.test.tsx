@@ -610,3 +610,77 @@ it('explains an unresolved mutation beside Release until it settles', async () =
   });
   expect(button('Approve plan and start').disabled).toBe(false);
 });
+
+it('keeps the withdrawn plan open and blocks reapproval until reviewer configuration recovers', async () => {
+  const { getFactoryValidationPolicy } =
+    await import('../../api/factory-delivery');
+  current = {
+    ...current,
+    blockers: [],
+    eligible: true,
+    work: { ...current.work, lifecycle: 'queued' },
+  };
+  await render();
+  expect(button('Approve plan and start').disabled).toBe(true);
+  const withdrawn = {
+    ...current,
+    eligible: false,
+    work: {
+      ...current.work,
+      lifecycle: 'shaping' as const,
+      version: current.work.version + 1,
+    },
+  };
+  api.mutateFactory.mockResolvedValue(withdrawn);
+  await click('Withdraw release');
+  expect(api.mutateFactory).toHaveBeenCalledWith('task', 'transition', {
+    expectedVersion: current.work.version,
+    action: 'withdraw',
+  });
+  current = withdrawn;
+  // A remount after withdrawal reproduces the live no-data validation read.
+  await act(async () => root.render(null));
+  client.removeQueries({ queryKey: ['factory-validation-policy'] });
+  vi.mocked(getFactoryValidationPolicy).mockRejectedValue(
+    new Error('Independent reviewer model is missing'),
+  );
+  try {
+    await render();
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    });
+    const approve = button('Approve plan and start');
+    expect(approve.disabled).toBe(true);
+    expect(container.textContent).toContain('Find tasks');
+    expect(
+      document.getElementById(approve.getAttribute('aria-describedby')!)
+        ?.textContent,
+    ).toContain('Independent reviewer model is missing');
+    api.mutateFactory.mockClear();
+    await click('Approve plan and start');
+    expect(api.mutateFactory).not.toHaveBeenCalled();
+    vi.mocked(getFactoryValidationPolicy).mockResolvedValue(
+      validationPreview().validationPolicy,
+    );
+    await click('Reload validation policy');
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    });
+    expect(approve.disabled).toBe(false);
+    expect(api.mutateFactory).not.toHaveBeenCalled();
+    await click('Approve plan and start');
+    expect(api.mutateFactory).toHaveBeenCalledWith(
+      'task',
+      'release',
+      expect.objectContaining({
+        expectedVersion: withdrawn.work.version,
+        specVersion: withdrawn.work.specVersion,
+        validationPolicy: validationPreview().validationPolicy,
+      }),
+    );
+  } finally {
+    vi.mocked(getFactoryValidationPolicy).mockResolvedValue(
+      validationPreview().validationPolicy,
+    );
+  }
+});

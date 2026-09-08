@@ -2,6 +2,30 @@
 
 Status: implemented; independent static reviews clean, September 7, 2026.
 
+## Acceptance follow-up: approval recovery
+
+Live rehearsal after the lifecycle merge found that withdrawing approval correctly
+returns the task to Plan, but a missing independent reviewer blocks the new
+release. The setup explanation is separated from the disabled approval button.
+Repeated failed policy reads may also replace that explanation during polling.
+
+The follow-up must keep the actionable blocker visible beside approval, preserve
+it through background retries until a successful response, and retain explicit
+review of changed policy. It must not select a model, change configuration or
+approve the operator's task automatically. Verify failure-to-failure and
+failure-to-success polling, focus/scroll stability and blocked authorization with
+synthetic fixtures. The scoped fix is implemented and both independent static
+reviews are clean. `npm run check` passed 3,152 tests; all 366 factory regressions,
+dashboard build, formatting and whitespace checks passed.
+
+Synthetic browser QA reproduced the no-data error-to-pending transition and
+verified the fix with actual 15-second polling and delayed failures. Desktop and
+narrow runs each covered four failed requests: the warning stayed mounted,
+approval stayed disabled and stationary, and the adjacent synthetic draft kept
+its node, content, focus and selection. Success cleared the warning; changed
+policy required explicit review. This isolated component harness does not prove
+the full live chat lifecycle. Live provider acceptance remains incomplete.
+
 Operator rehearsal found flashing labels and enabled/disabled buttons while idle
 on the factory task page. Polling and event-driven invalidation set React Query's
 `isFetching`, and several controls treated every fetch as a user operation.
