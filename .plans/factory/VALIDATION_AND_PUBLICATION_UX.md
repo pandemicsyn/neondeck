@@ -83,6 +83,11 @@ each publication candidate before new PR creation.
 2. Single-lifecycle backend/contracts and phase-oriented UI, setup/recovery,
    evidence, tests and synthetic screenshots.
 
+Published as [PR #429](https://github.com/pandemicsyn/neondeck/pull/429) →
+[PR #430](https://github.com/pandemicsyn/neondeck/pull/430), grouped by the official
+stack tool as [stack #431](https://github.com/pandemicsyn/neondeck/pull/431).
+PR #430 includes three GitHub-hosted synthetic desktop/narrow screenshots.
+
 The lifecycle layer includes backend and UI together: removing the old grant
 endpoints changes their shared contract. Keeping an obsolete endpoint solely to
 split these into two PRs would contradict the requested simplification. The
@@ -165,6 +170,12 @@ passed. Earlier `npm run check` fixture failures were corrected; its checks and
 complete unit suite passed in the cumulative verification run. The staged secrets
 scan passed, and the required pre-commit hook remains enabled. Existing lint and
 bundle-size warnings are not treated as proof of a warning-free repository.
+
+The final manager architecture pass after publication confirmed that the published
+implementation commit `fb8452e5` matches the frozen reviewed source, the stack base
+is correct, and there are no new product/architecture findings. All nine PR #430
+CI checks passed on that implementation head. Later documentation status updates
+do not change the tested implementation or establish live acceptance.
 
 ### Live acceptance still required after upgrade
 

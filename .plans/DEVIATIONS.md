@@ -20,8 +20,10 @@
 - Verification: Full verification passed (3,335 tests passed, 16 Linux-only cases
   skipped on macOS), with builds, package smoke, formatting and staged secret
   scanning. Both independent static reviews cleared the frozen implementation.
-- Follow-up: Publish the reviewed stack; see
-  `factory/VALIDATION_AND_PUBLICATION_UX.md` for synthetic evidence and pending
+- Publication: PR #430 above #429, official stack #431; synthetic screenshots
+  attached. Final manager architecture review confirmed the published code
+  matches the frozen reviewed implementation, with no new findings.
+- Follow-up: See `factory/VALIDATION_AND_PUBLICATION_UX.md` for pending
   live acceptance. The existing 1 MiB evidence preview bound remains; per-file
   review beyond it and diff navigation for older review revisions are deferred.
 
