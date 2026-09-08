@@ -1,3 +1,5 @@
+import { useFactoryRefresh } from './useFactoryRefresh';
+import { useFactoryQueryError } from './useFactoryQueryError';
 import { useState } from 'react';
 import { FactoryCodingConfigForm } from './FactoryCodingConfigForm';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -18,11 +20,13 @@ const readinessLabels = {
 export const factoryCodingStateKey = ['factory-coding-state'];
 export function FactoryCodingSetup() {
   const client = useQueryClient();
+  const { refreshing, refresh } = useFactoryRefresh();
   const state = useQuery({
     queryKey: factoryCodingStateKey,
     queryFn: ({ signal }) => getFactoryCodingState({ signal }),
     refetchInterval: 15000,
   });
+  const readinessError = useFactoryQueryError(state, 'factory-coding-state');
   const [editing, setEditing] = useState(false);
   const [opened, setOpened] = useState(false);
   return (
@@ -52,11 +56,16 @@ export function FactoryCodingSetup() {
           {editing ? 'Close setup' : 'Configure coding'}
         </button>
       </div>
-      {state.isPending && <output>Loading coding readiness…</output>}
-      {state.error && (
+      {state.isPending && !readinessError && (
+        <output>Loading coding readiness…</output>
+      )}
+      {readinessError && (
         <p role="alert" className="factory-error">
           Coding readiness unavailable.{' '}
-          <button onClick={() => void state.refetch()}>
+          <button
+            disabled={refreshing}
+            onClick={() => void refresh(() => state.refetch())}
+          >
             Refresh readiness
           </button>
         </p>
@@ -132,7 +141,7 @@ export function FactoryCodingSetup() {
             <div id="factory-coding-config" hidden={!editing}>
               <FactoryCodingConfigForm
                 state={state.data}
-                unavailable={!!state.error}
+                unavailable={!!readinessError}
                 onSaved={async () => {
                   setEditing(false);
                   setOpened(false);

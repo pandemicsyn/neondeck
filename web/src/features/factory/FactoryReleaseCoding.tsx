@@ -1,3 +1,4 @@
+import { useFactoryQueryError } from './useFactoryQueryError';
 import * as v from 'valibot';
 import type { validationPolicySchema } from '../../../../shared/factory-delivery';
 import { getFactoryValidationPolicy } from '../../api/factory-delivery';
@@ -21,6 +22,7 @@ interface ReleaseCodingProps {
 /** Owns the visible execution snapshot and the authority submitted with it. */
 export function FactoryReleaseCoding(props: ReleaseCodingProps) {
   const { refreshing, refresh } = useFactoryRefresh();
+  const validationRefresh = useFactoryRefresh();
   const validation = useQuery({
     queryKey: ['factory-validation-policy', props.repoId],
     queryFn: ({ signal }) =>
@@ -34,12 +36,49 @@ export function FactoryReleaseCoding(props: ReleaseCodingProps) {
     queryFn: ({ signal }) => getFactoryCodingState({ signal }),
     refetchInterval: 15000,
   });
+  const validationError = useFactoryQueryError(validation, props.repoId);
+  const codingError = useFactoryQueryError(query, 'factory-coding-state');
+  const validationNotice =
+    props.repoId && validationError ? (
+      <div role="alert" className="factory-error">
+        <p>Approval blocked: {validationError.message}</p>
+        <a
+          href="/?panel=runtime-overview#runtime-model-config"
+          target="_blank"
+          rel="noreferrer"
+        >
+          Configure PR review model
+        </a>
+        {' · '}
+        <a
+          href="/?panel=runtime-overview#runtime-repositories"
+          target="_blank"
+          rel="noreferrer"
+        >
+          Open registered repositories
+        </a>
+        <p>
+          Dashboard → NEON → RUNTIME → CONFIG → MODELS → PR review. Set the
+          model, then click Save in MODELS and reload validation here. For check
+          commands, use the repository conversation. Your task and draft stay
+          open here.
+        </p>
+        <button
+          disabled={validationRefresh.refreshing}
+          onClick={() =>
+            void validationRefresh.refresh(() => validation.refetch())
+          }
+        >
+          Reload validation policy
+        </button>
+      </div>
+    ) : null;
   return (
     <section aria-label="Review release execution settings">
       <div className="factory-toolbar">
         <h3>Execution settings for this release</h3>
         <button
-          disabled={query.isPending || refreshing}
+          disabled={(query.isPending && !codingError) || refreshing}
           onClick={() =>
             void refresh(() =>
               Promise.all([
@@ -49,59 +88,35 @@ export function FactoryReleaseCoding(props: ReleaseCodingProps) {
             )
           }
         >
-          {query.isPending || refreshing
+          {(query.isPending && !codingError) || refreshing
             ? 'Refreshing execution settings…'
             : 'Refresh execution settings'}
         </button>
       </div>
-      {query.isPending && <output>Loading release execution settings…</output>}
-      {query.error && (
+      {query.isPending && !codingError && (
+        <output>Loading release execution settings…</output>
+      )}
+      {codingError && (
         <p role="alert" className="factory-error">
           Coding selection is unavailable. Retained settings cannot be released
           until a successful refresh.
         </p>
       )}
-      {props.repoId && validation.error && (
-        <div role="alert" className="factory-error">
-          {validation.error.message}
-          <p>
-            Configure the independent PR review model and repository check
-            commands before approving this plan. Your task and draft stay open
-            here.
-          </p>
-          <a
-            href="/?panel=runtime-overview#runtime-model-config"
-            target="_blank"
-            rel="noreferrer"
-          >
-            Open model configuration
-          </a>
-          {' · '}
-          <a
-            href="/?panel=runtime-overview#runtime-repositories"
-            target="_blank"
-            rel="noreferrer"
-          >
-            Open registered repositories
-          </a>
-          <p>
-            Use the repository conversation to configure its check commands,
-            then refresh these execution settings.
-          </p>
-          <button onClick={() => void validation.refetch()}>
-            Reload validation policy
-          </button>
-        </div>
-      )}
+      {!query.data && validationNotice}
       {query.data && (
         <ReleaseSnapshot
           {...props}
+          key={props.repoId}
+          validationNotice={validationNotice}
           current={query.data}
           validationPolicy={validation.data}
           validationUnavailable={
-            !!props.repoId && (validation.isPending || !!validation.error)
+            !!props.repoId &&
+            (validation.isPending ||
+              !!validationError ||
+              validationRefresh.refreshing)
           }
-          unavailable={!!query.error || query.isPending || refreshing}
+          unavailable={!!codingError || query.isPending || refreshing}
         />
       )}
     </section>
@@ -112,6 +127,7 @@ function ReleaseSnapshot({
   current,
   validationPolicy,
   validationUnavailable,
+  validationNotice,
   unavailable,
   label,
   disabled,
@@ -120,6 +136,7 @@ function ReleaseSnapshot({
 }: ReleaseCodingProps & {
   validationPolicy?: v.InferOutput<typeof validationPolicySchema>;
   validationUnavailable: boolean;
+  validationNotice: ReactNode;
   current: FactoryCodingState;
   unavailable: boolean;
 }) {
@@ -266,6 +283,16 @@ function ReleaseSnapshot({
       </p>
       <div id={noticeId}>
         {releaseNotice}
+        {validationNotice}
+        {!validationNotice &&
+          (validationUnavailable || !reviewedValidation) && (
+            <p>
+              Approval is blocked until validation policy loads successfully.
+            </p>
+          )}
+        {validationStale && (
+          <p>Review the changed validation policy above before approving.</p>
+        )}
         {unavailable && (
           <p>
             <output>

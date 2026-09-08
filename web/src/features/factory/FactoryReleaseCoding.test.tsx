@@ -325,3 +325,214 @@ it('binds new plan approval to the displayed validation policy and blocks change
   await act(async () => button('Review validation policy').click());
   expect(button('Approve plan and start').disabled).toBe(false);
 });
+
+it('retains the actionable validation failure beside approval through repeated no-data polls until recovery', async () => {
+  vi.useFakeTimers();
+  client.removeQueries({ queryKey: ['factory-validation-policy'] });
+  const { getFactoryValidationPolicy } =
+    await import('../../api/factory-delivery');
+  const missing = 'Configure an independent reviewer model before release.';
+  let resolve!: (
+    value: ReturnType<typeof validationPreview>['validationPolicy'],
+  ) => void;
+  let reject!: (error: Error) => void;
+  vi.mocked(getFactoryValidationPolicy).mockImplementation(
+    () =>
+      new Promise((yes, no) => {
+        resolve = yes;
+        reject = no;
+      }),
+  );
+  try {
+    await render();
+    const action = button('Release v2');
+    expect(action.disabled).toBe(true);
+    await act(async () => {
+      reject(new Error(missing));
+      await vi.advanceTimersByTimeAsync(1);
+    });
+    const panel = container.querySelector('[role="alert"]');
+    const reload = button('Reload validation policy');
+    const refreshSettings = button('Refresh execution settings');
+    const failedMarkup = container.innerHTML;
+    expect(panel?.textContent).toContain(missing);
+    for (let attempt = 0; attempt < 2; attempt++) {
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(15000);
+      });
+      expect(
+        client.getQueryState(['factory-validation-policy', 'demo'])?.status,
+      ).toBe('pending');
+      expect(container.querySelector('[role="alert"]')).toBe(panel);
+      expect(panel?.isConnected).toBe(true);
+      expect(reload.disabled).toBe(false);
+      expect(refreshSettings.disabled).toBe(false);
+      expect(container.innerHTML).toBe(failedMarkup);
+      expect(action.disabled).toBe(true);
+      await act(async () => action.click());
+      expect(release).not.toHaveBeenCalled();
+      await act(async () => {
+        reject(new Error(missing));
+        await vi.advanceTimersByTimeAsync(1);
+      });
+    }
+    const notice = document.getElementById(
+      action.getAttribute('aria-describedby')!,
+    );
+    expect(notice?.textContent).toContain(missing);
+    expect(notice?.querySelector('a')?.textContent).toBe(
+      'Configure PR review model',
+    );
+    expect(notice?.nextElementSibling).toBe(action);
+    expect(notice?.textContent).toContain(
+      'Dashboard → NEON → RUNTIME → CONFIG → MODELS → PR review',
+    );
+    await act(async () => button('Reload validation policy').click());
+    expect(reload.disabled).toBe(true);
+    expect(container.querySelector('[role="alert"]')).toBe(panel);
+    await act(async () => {
+      resolve(validationPreview().validationPolicy);
+      await vi.advanceTimersByTimeAsync(1);
+    });
+    expect(container.querySelector('[role="alert"]')).toBeNull();
+    expect(action.disabled).toBe(false);
+    expect(container.textContent).toContain(
+      validationPreview().validationPolicy.reviewerModel,
+    );
+    await act(async () => action.click());
+    expect(release).toHaveBeenCalledExactlyOnceWith(
+      codingState().configFingerprint,
+      validationPreview().validationPolicy,
+    );
+  } finally {
+    vi.useRealTimers();
+    vi.mocked(getFactoryValidationPolicy).mockResolvedValue(
+      validationPreview().validationPolicy,
+    );
+  }
+});
+
+it('retains a reviewed policy after failures and requires review of changed recovery data', async () => {
+  const { getFactoryValidationPolicy } =
+    await import('../../api/factory-delivery');
+  const original = validationPreview().validationPolicy;
+  const changed = {
+    ...original,
+    reviewerModel: 'replacement-reviewer',
+    configFingerprint: 'f'.repeat(64),
+  };
+  await render();
+  vi.mocked(getFactoryValidationPolicy).mockRejectedValue(
+    new Error('Missing reviewer'),
+  );
+  await act(async () => {
+    await client.refetchQueries({ queryKey: ['factory-validation-policy'] });
+  });
+  await flush();
+  expect(button('Release v2').disabled).toBe(true);
+  expect(container.textContent).toContain(original.reviewerModel);
+  vi.mocked(getFactoryValidationPolicy).mockResolvedValue(changed);
+  await act(async () => button('Reload validation policy').click());
+  await flush();
+  const action = button('Release v2');
+  expect(action.disabled).toBe(true);
+  expect(container.textContent).toContain(original.reviewerModel);
+  expect(
+    document.getElementById(action.getAttribute('aria-describedby')!)
+      ?.textContent,
+  ).toContain('Review the changed validation policy');
+  await act(async () => action.click());
+  expect(release).not.toHaveBeenCalled();
+  await act(async () => button('Review validation policy').click());
+  await act(async () => action.click());
+  expect(release).toHaveBeenCalledExactlyOnceWith(
+    codingState().configFingerprint,
+    changed,
+  );
+  vi.mocked(getFactoryValidationPolicy).mockResolvedValue(original);
+});
+
+it('does not carry a missing-reviewer error or reviewed policy into another repository', async () => {
+  const { getFactoryValidationPolicy } =
+    await import('../../api/factory-delivery');
+  client.removeQueries({ queryKey: ['factory-validation-policy'] });
+  vi.mocked(getFactoryValidationPolicy).mockRejectedValue(
+    new Error('Demo reviewer missing'),
+  );
+  await render();
+  await flush();
+  expect(container.textContent).toContain('Demo reviewer missing');
+  vi.mocked(getFactoryValidationPolicy).mockImplementation(
+    () => new Promise(() => {}),
+  );
+  await act(async () =>
+    root.render(
+      <QueryClientProvider client={client}>
+        <FactoryReleaseCoding
+          label="Release v2"
+          repoId="another-repo"
+          disabled={false}
+          onRelease={release}
+        />
+      </QueryClientProvider>,
+    ),
+  );
+  expect(container.textContent).not.toContain('Demo reviewer missing');
+  const action = button('Release v2');
+  expect(action.disabled).toBe(true);
+  expect(
+    document.getElementById(action.getAttribute('aria-describedby')!)
+      ?.textContent,
+  ).toContain('validation policy loads successfully');
+  expect(release).not.toHaveBeenCalled();
+  vi.mocked(getFactoryValidationPolicy).mockResolvedValue(
+    validationPreview().validationPolicy,
+  );
+});
+
+it('keeps the outer refresh label and enabled state stable during no-data coding retries', async () => {
+  vi.useFakeTimers();
+  client.removeQueries({ queryKey: key });
+  let resolve!: (value: ReturnType<typeof codingState>) => void;
+  let reject!: (error: Error) => void;
+  vi.mocked(getFactoryCodingState).mockImplementation(
+    () =>
+      new Promise((yes, no) => {
+        resolve = yes;
+        reject = no;
+      }),
+  );
+  try {
+    await render();
+    expect(button('Refreshing execution settings…').disabled).toBe(true);
+    await act(async () => {
+      reject(new Error('Coding unavailable'));
+      await vi.advanceTimersByTimeAsync(1);
+    });
+    const refreshSettings = button('Refresh execution settings');
+    const markup = container.innerHTML;
+    for (let attempt = 0; attempt < 2; attempt++) {
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(15000);
+      });
+      expect(button('Refresh execution settings')).toBe(refreshSettings);
+      expect(refreshSettings.disabled).toBe(false);
+      expect(container.innerHTML).toBe(markup);
+      expect(release).not.toHaveBeenCalled();
+      await act(async () => {
+        reject(new Error('Coding unavailable'));
+        await vi.advanceTimersByTimeAsync(1);
+      });
+    }
+    await act(async () => refreshSettings.click());
+    expect(button('Refreshing execution settings…').disabled).toBe(true);
+    await act(async () => {
+      resolve(codingState());
+      await vi.advanceTimersByTimeAsync(1);
+    });
+    expect(button('Release v2').disabled).toBe(false);
+    expect(button('Refresh execution settings').disabled).toBe(false);
+  } finally {
+    vi.useRealTimers();
+  }
+});
