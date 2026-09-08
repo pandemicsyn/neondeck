@@ -85,106 +85,121 @@ export function FactoryOperations() {
   });
   return (
     <section className="factory-operations" aria-label="Factory health">
-      <div className="factory-toolbar">
-        <strong>
-          Factory health{health.data ? ` · ${health.data.status}` : ''}
-        </strong>
-        <button
-          disabled={health.isPending || refreshing}
-          onClick={() => void refresh(() => health.refetch())}
-        >
-          {health.isPending || refreshing
-            ? 'Checking health…'
-            : 'Refresh health'}
-        </button>
-      </div>
-      {health.isPending && <output>Loading worker health…</output>}
-      {health.error && (
-        <output>
-          Health unavailable.{' '}
-          {health.data
-            ? 'Showing the last loaded snapshot; it may be stale.'
-            : 'Retry with Refresh health.'}
-        </output>
-      )}
-      {health.data && (
-        <>
-          <p>{health.data.summary}</p>
-          <details>
-            <summary>Worker progress and waiting tasks</summary>
-            <p className="factory-operations-meta">
-              Snapshot {operationsTime(health.data.generatedAt)}
-            </p>
-            <section
-              className="factory-operations-scroll"
-              tabIndex={0}
-              aria-label="Worker progress and waiting tasks"
-            >
-              {!health.data.workers.length && (
-                <p>No worker observations recorded yet.</p>
-              )}
-              {health.data.workers.map((worker) => (
-                <article className="factory-operations-row" key={worker.worker}>
-                  <strong>
-                    {worker.worker} · {worker.status}
-                  </strong>
-                  <dl className="factory-operations-facts">
-                    <div>
-                      <dt>Last tick</dt>
-                      <dd>{operationsTime(worker.lastTickAt)}</dd>
-                    </div>
-                    <div>
-                      <dt>Last success</dt>
-                      <dd>{operationsTime(worker.lastSuccessAt)}</dd>
-                    </div>
-                    <div>
-                      <dt>Next tick</dt>
-                      <dd>
-                        {worker.nextTickAt
-                          ? operationsTime(worker.nextTickAt)
-                          : 'Not scheduled / unknown'}
-                      </dd>
-                    </div>
-                    <div>
-                      <dt>Consecutive failures</dt>
-                      <dd>{worker.consecutiveFailures}</dd>
-                    </div>
-                  </dl>
-                  {worker.diagnosticsDegraded && (
-                    <p>
-                      Diagnostic persistence is degraded; observations may be
-                      incomplete.
-                    </p>
-                  )}
-                  {worker.lastError && (
-                    <p>
-                      Last error: {worker.lastError.class} ·{' '}
-                      {worker.lastError.code}
-                    </p>
-                  )}
-                </article>
-              ))}
-              {!health.data.tasks.length && (
-                <p>No task diagnoses in this snapshot.</p>
-              )}
-              {health.data.tasks.map((task) => (
-                <div key={task.workId}>
-                  <a href={`/factory?task=${encodeURIComponent(task.workId)}`}>
-                    Open task {task.workId}
-                  </a>
-                  <FactoryOperationsTask task={task} />
-                </div>
-              ))}
-              {health.data.truncated && (
-                <p>
-                  Task diagnoses are limited. Open a task for its own
-                  diagnostics.
-                </p>
-              )}
-            </section>
-          </details>
-        </>
-      )}
+      <details open={health.data?.status !== 'healthy' || !!health.error}>
+        <summary>
+          Factory health
+          {health.error
+            ? ' · unavailable'
+            : health.data
+              ? ` · ${health.data.status}`
+              : ' · checking'}
+        </summary>
+        <div className="factory-toolbar">
+          <strong>
+            Factory health{health.data ? ` · ${health.data.status}` : ''}
+          </strong>
+          <button
+            disabled={health.isPending || refreshing}
+            onClick={() => void refresh(() => health.refetch())}
+          >
+            {health.isPending || refreshing
+              ? 'Checking health…'
+              : 'Refresh health'}
+          </button>
+        </div>
+        {health.isPending && <output>Loading worker health…</output>}
+        {health.error && (
+          <output>
+            Health unavailable.{' '}
+            {health.data
+              ? 'Showing the last loaded snapshot; it may be stale.'
+              : 'Retry with Refresh health.'}
+          </output>
+        )}
+        {health.data && (
+          <>
+            <p>{health.data.summary}</p>
+            <details>
+              <summary>Worker progress and waiting tasks</summary>
+              <p className="factory-operations-meta">
+                Snapshot {operationsTime(health.data.generatedAt)}
+              </p>
+              <section
+                className="factory-operations-scroll"
+                tabIndex={0}
+                aria-label="Worker progress and waiting tasks"
+              >
+                {!health.data.workers.length && (
+                  <p>No worker observations recorded yet.</p>
+                )}
+                {health.data.workers.map((worker) => (
+                  <article
+                    className="factory-operations-row"
+                    key={worker.worker}
+                  >
+                    <strong>
+                      {worker.worker} · {worker.status}
+                    </strong>
+                    <dl className="factory-operations-facts">
+                      <div>
+                        <dt>Last tick</dt>
+                        <dd>{operationsTime(worker.lastTickAt)}</dd>
+                      </div>
+                      <div>
+                        <dt>Last success</dt>
+                        <dd>{operationsTime(worker.lastSuccessAt)}</dd>
+                      </div>
+                      <div>
+                        <dt>Next tick</dt>
+                        <dd>
+                          {worker.nextTickAt
+                            ? operationsTime(worker.nextTickAt)
+                            : 'Not scheduled / unknown'}
+                        </dd>
+                      </div>
+                      <div>
+                        <dt>Consecutive failures</dt>
+                        <dd>{worker.consecutiveFailures}</dd>
+                      </div>
+                    </dl>
+                    {worker.diagnosticsDegraded && (
+                      <p>
+                        Diagnostic persistence is degraded; observations may be
+                        incomplete.
+                      </p>
+                    )}
+                    {worker.lastError && (
+                      <p>
+                        Last error: {worker.lastError.class} ·{' '}
+                        {worker.lastError.code}
+                      </p>
+                    )}
+                  </article>
+                ))}
+                {!health.data.tasks.length && (
+                  <p>No task diagnoses in this snapshot.</p>
+                )}
+                {health.data.tasks.map((task) => (
+                  <div key={task.workId}>
+                    <a
+                      href={`/factory?task=${encodeURIComponent(task.workId)}`}
+                    >
+                      Open task {task.workId}
+                    </a>
+                    <FactoryOperationsTask task={task} />
+                  </div>
+                ))}
+                {health.data.truncated && (
+                  <p>
+                    Task diagnoses are limited. Open a task for its own
+                    diagnostics.
+                  </p>
+                )}
+              </section>
+            </details>
+          </>
+        )}
+      </details>
     </section>
   );
 }

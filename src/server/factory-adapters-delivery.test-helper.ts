@@ -13,6 +13,7 @@ import {
 import { deliveryDetailSchema } from '../../shared/factory-delivery-api';
 import { execFileSync } from 'node:child_process';
 import {
+  existsSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
@@ -46,11 +47,19 @@ import {
   submitFactoryWork,
 } from '../modules/factory';
 import {
-  authorizeFactoryDelivery,
   factoryDeliveryDetail,
-  factoryDeliveryPreview,
   revokeFactoryDelivery,
 } from '../modules/factory-delivery/service-operator';
+import {
+  admitReleasedValidation,
+  factoryValidationPolicy,
+} from '../modules/factory-delivery/validation-service';
+import {
+  authorizeFactoryPublication,
+  factoryPublicationReadiness,
+  setupFactoryPublication,
+} from '../modules/factory-delivery/publication-service';
+import { listDeliveryPipelines } from '../modules/factory-delivery/store';
 import { advanceFactoryDelivery } from '../modules/factory-delivery/service';
 import { deliveryIO } from '../modules/factory-delivery/delivery-io';
 import {
@@ -103,6 +112,7 @@ afterEach(() => {
 });
 
 export const deliveryModes = [
+  'validation-publication-repair',
   'complete',
   'repair',
   'uncertain-create',
@@ -119,6 +129,7 @@ export async function runDeliveryIntegration(
   mode: DeliveryMode,
   provider?: CodingAdapterId,
 ) {
+  const publishValidation = mode === 'validation-publication-repair';
   const selected = provider ? adapterFixtures[provider] : undefined;
   if (provider) enableAdapterFixtureHost();
   const candidateFile = selected?.file ?? 'mockdex-result.txt';
@@ -138,6 +149,7 @@ export async function runDeliveryIntegration(
   let handle: LocalAttemptHandle | undefined;
   let pipelineId = '';
   let postCount = 0;
+  let githubRequests = 0;
   let readsAfterPost = 0;
   const observedPullHeads: string[] = [];
   let pull: Record<string, unknown> | undefined;
@@ -151,6 +163,14 @@ export async function runDeliveryIntegration(
       return json(
         factoryDeliveryDetail(requireDelivery(pipelineId, paths), paths),
       );
+    githubRequests++;
+    if (url === 'https://api.github.com/repos/fixture/fixture')
+      return json({
+        id: 123,
+        name: 'fixture',
+        full_name: 'fixture/fixture',
+        owner: { login: 'fixture' },
+      });
     if (!url.startsWith('https://api.github.com/repos/fixture/fixture/pulls'))
       throw new Error(`Unexpected external request: ${url}`);
     if (init?.method === 'POST') {
@@ -292,8 +312,10 @@ const child=spawn(process.execPath,[${JSON.stringify(resolve('scripts/mockdex.mj
 `,
         { mode: 0o700 },
       );
+    vi.stubEnv('GITHUB_TOKEN', undefined);
+    vi.stubEnv('GH_TOKEN', undefined);
     vi.stubEnv('FACTORY_DELIVERY_AUTH', 'synthetic-only');
-    vi.stubEnv('FACTORY_DELIVERY_GITHUB', 'synthetic-github');
+    vi.stubEnv('FACTORY_DELIVERY_GITHUB', undefined);
     const config = {
       version: 1,
       models: { prReview: 'faux/faux-1' },
@@ -307,19 +329,7 @@ const child=spawn(process.execPath,[${JSON.stringify(resolve('scripts/mockdex.mj
       },
       factory: {
         enabled: true,
-        github: [
-          {
-            id: 'fixture',
-            enabled: true,
-            repoId: 'demo',
-            repositoryId: '123',
-            owner: 'fixture',
-            name: 'fixture',
-            webhookSecretEnv: 'FACTORY_DELIVERY_WEBHOOK',
-            tokenEnv: 'FACTORY_DELIVERY_GITHUB',
-            admission: { mode: 'all' },
-          },
-        ],
+        github: [],
         coding: {
           enabled: true,
           executable,
@@ -397,6 +407,7 @@ const child=spawn(process.execPath,[${JSON.stringify(resolve('scripts/mockdex.mj
         sourceVersion: work.source.version,
         repoFingerprint: work.repoFingerprint,
         policyVersion: 'isolated-local-v1',
+        validationPolicy: factoryValidationPolicy('demo', paths),
         expectedCodingConfigFingerprint: codingDigest(
           codingConfig(paths).coding,
         ),
@@ -428,37 +439,25 @@ const child=spawn(process.execPath,[${JSON.stringify(resolve('scripts/mockdex.mj
       git(retained, 'rev-parse', '--git-path', 'index'),
     );
     const originalStatus = git(retained, 'status', '--porcelain');
-    const preview = await factoryDeliveryPreview(run.runId, paths);
-    expect(preview.checkCommands).toEqual([checkCommand]);
-    expect(preview.revision.treeSha).not.toBe(
+    await admitReleasedValidation(paths);
+    const admitted = listDeliveryPipelines({}, paths);
+    expect(admitted).toHaveLength(1);
+    const granted = factoryDeliveryDetail(admitted[0]!.record, paths);
+    expect(granted.pipeline.authorization.id).toBe(
+      `release-validation:${run.snapshot.releaseId}`,
+    );
+    expect(granted.pipeline.authorization.checkCommands).toEqual([
+      checkCommand,
+    ]);
+    expect(granted.pipeline.revision.treeSha).not.toBe(
       git(repo, 'rev-parse', 'HEAD^{tree}'),
     );
-    await expect(
-      authorizeFactoryDelivery(
-        {
-          requestId: 'stale-grant',
-          confirm: true,
-          preview: {
-            ...preview,
-            revision: { ...preview.revision, treeSha: '0'.repeat(40) },
-          },
-        },
-        paths,
-      ),
-    ).rejects.toThrow();
-    writeFileSync(
-      paths.config,
-      JSON.stringify({ ...config, guardrails: { requiredChecks: [] } }),
-    );
-    await expect(factoryDeliveryPreview(run.runId, paths)).rejects.toThrow(
-      /check commands/i,
-    );
-    writeFileSync(paths.config, JSON.stringify(config));
-    const granted = await authorizeFactoryDelivery(
-      { requestId: 'grant-e2e', confirm: true, preview },
-      paths,
-    );
+    await admitReleasedValidation(paths);
+    expect(listDeliveryPipelines({}, paths)).toHaveLength(1);
     pipelineId = granted.pipeline.pipelineId;
+    expect(granted.pipeline.authorization.mode).toBe('local-validation');
+    expect(listCodingRuns({}, paths)).toHaveLength(1);
+    expect(githubRequests).toBe(0);
     if (provider) {
       const changed = {
         ...config,
@@ -494,21 +493,17 @@ const child=spawn(process.execPath,[${JSON.stringify(resolve('scripts/mockdex.mj
         factoryDeliveryDetail(requireDelivery(pipelineId, paths), paths),
       ),
     ).toEqual(granted);
-    expect(
-      (
-        await authorizeFactoryDelivery(
-          { requestId: 'grant-e2e', confirm: true, preview },
-          paths,
-        )
-      ).pipeline.pipelineId,
-    ).toBe(pipelineId);
     // Retain all production Git validation and hook behavior; translate ONLY
     // the explicit GitHub push/ls-remote transport destination to a local bare repo.
     const realGit = publicationGit.git;
     vi.spyOn(publicationGit, 'git').mockImplementation((cwd, args) => {
       if (args.includes('push') || args.includes('ls-remote')) {
         expect(args).toContain('https://github.com/fixture/fixture.git');
-        if (args.includes('push') && mode === 'repair' && postCount === 1) {
+        if (
+          args.includes('push') &&
+          (mode === 'repair' || publishValidation) &&
+          postCount === 1
+        ) {
           const p = requireDelivery(pipelineId, paths);
           const priorHead = git(
             repo,
@@ -773,8 +768,99 @@ const child=spawn(process.execPath,[${JSON.stringify(resolve('scripts/mockdex.mj
       expect(listCodingRuns({}, paths)).toHaveLength(1);
       return;
     }
+    await drive(
+      (p) =>
+        factoryDeliveryDetail(p, paths).nextAction === 'awaiting-publication',
+    );
+    const validationSnapshot = requireDelivery(pipelineId, paths);
+    expect(
+      ['verification', 'review'].map((kind) => [
+        kind,
+        validationSnapshot.evidence.findLast((e) => e.kind === kind)?.result,
+      ]),
+    ).toEqual([
+      ['verification', 'passed'],
+      ['review', 'passed'],
+    ]);
+    for (let tick = 0; tick < 3; tick++)
+      await advanceFactoryDelivery(pipelineId, paths, deliveryIO);
+    expect(requireDelivery(pipelineId, paths)).toEqual(validationSnapshot);
+    expect(observations.commit).not.toHaveBeenCalled();
+    expect(observations.push).not.toHaveBeenCalled();
+    expect(validationSnapshot.commits).toEqual([]);
+    expect(postCount).toBe(0);
+    expect(githubRequests).toBe(0);
+    expect(existsSync(hookLog)).toBe(false);
+    expect(
+      git(
+        repo,
+        '--git-dir',
+        bare,
+        'for-each-ref',
+        '--format=%(refname)',
+        'refs/heads',
+      ),
+    ).toBe('refs/heads/main');
+    expect(requireCodingRun(run.runId, paths)).toEqual(run);
+    expect(listCodingRuns({}, paths)).toHaveLength(
+      validationSnapshot.repairs.length + 1,
+    );
+    expect(git(retained, 'status', '--porcelain')).toBe(originalStatus);
+    expect(
+      readFileSync(git(retained, 'rev-parse', '--git-path', 'index')),
+    ).toEqual(originalIndex);
+    expect(await factoryPublicationReadiness(pipelineId, paths)).toMatchObject({
+      ready: false,
+      blocker: 'publication-setup',
+    });
+    expect(githubRequests).toBe(0);
+    vi.stubEnv('FACTORY_DELIVERY_GITHUB', 'synthetic-github');
+    await setupFactoryPublication(
+      'demo',
+      { tokenEnv: 'FACTORY_DELIVERY_GITHUB' },
+      paths,
+    );
+    expect(
+      JSON.parse(readFileSync(paths.config, 'utf8')).factory.github,
+    ).toEqual([]);
+    const readiness = await factoryPublicationReadiness(pipelineId, paths);
+    expect(readiness.ready).toBe(true);
+    expect(readiness.preview).not.toBeNull();
+    const input = {
+      requestId: 'publication-e2e',
+      confirm: true,
+      preview: readiness.preview!,
+    };
+    await expect(
+      authorizeFactoryPublication(
+        pipelineId,
+        {
+          ...input,
+          preview: {
+            ...input.preview,
+            revision: { ...input.preview.revision, treeSha: '0'.repeat(40) },
+          },
+        },
+        paths,
+      ),
+    ).rejects.toThrow(/Publication evidence changed/);
+    const published = await authorizeFactoryPublication(
+      pipelineId,
+      input,
+      paths,
+    );
+    expect(
+      (await authorizeFactoryPublication(pipelineId, input, paths)).pipeline,
+    ).toEqual(published.pipeline);
+    expect(published.pipeline.authorization).toEqual(
+      validationSnapshot.authorization,
+    );
+    expect(deliveryBudget(requireDelivery(pipelineId, paths))).toEqual(
+      deliveryBudget(validationSnapshot),
+    );
+    expect(postCount).toBe(0);
     await drive((p) => p.pr !== null);
-    if (mode === 'repair' || mode === 'two-repairs') {
+    if (mode === 'repair' || mode === 'two-repairs' || publishValidation) {
       const first = requireDelivery(pipelineId, paths);
       // Model the external current-head CI observation, then enter the real
       // durable feedback command and coordinator repair admission.
@@ -788,7 +874,15 @@ const child=spawn(process.execPath,[${JSON.stringify(resolve('scripts/mockdex.mj
           },
         ],
         statuses: [],
-        reviews: [],
+        reviews: publishValidation
+          ? [
+              {
+                id: 91,
+                state: 'CHANGES_REQUESTED',
+                body: 'Set state.txt to fixed-v2 within the released scope.',
+              },
+            ]
+          : [],
         inlineComments: [],
         issueComments: [],
       };
@@ -799,14 +893,14 @@ const child=spawn(process.execPath,[${JSON.stringify(resolve('scripts/mockdex.mj
         revision: first.revision,
         publishedHeadSha: normalized.headSha,
         ciFailed: true,
-        hasReviewFeedback: false,
+        hasReviewFeedback: publishValidation,
         evidenceRef: deliveryReceipt(
           pipelineId,
           {
             ...normalized,
             fingerprint,
             ciFailed: true,
-            hasReviewFeedback: false,
+            hasReviewFeedback: publishValidation,
             feedbackBody: JSON.stringify({
               reviews: normalized.reviews,
               inlineComments: normalized.inlineComments,
@@ -830,8 +924,36 @@ const child=spawn(process.execPath,[${JSON.stringify(resolve('scripts/mockdex.mj
           ),
       );
       expect(requireDelivery(pipelineId, paths).pr).toEqual(first.pr);
+      if (publishValidation)
+        expect(requireDelivery(pipelineId, paths).publication).toEqual(
+          first.publication,
+        );
     }
     const delivered = requireDelivery(pipelineId, paths);
+    if (publishValidation) {
+      expect(delivered.authorization).toEqual(validationSnapshot.authorization);
+      expect(delivered.publication?.requestId).toBe('publication-e2e');
+      expect(delivered.publication?.revision).toEqual(
+        validationSnapshot.revision,
+      );
+      const before = deliveryBudget(validationSnapshot);
+      const after = deliveryBudget(delivered);
+      expect(after.repairsUsed).toBe(before.repairsUsed + 1);
+      expect(after.repairsRemaining).toBe(1);
+      expect(after.consumedExecutionMs).toBeGreaterThan(
+        before.consumedExecutionMs,
+      );
+      expect(after.remainingExecutionMs).toBeLessThan(
+        before.remainingExecutionMs,
+      );
+      expect(
+        delivered.evidence
+          .filter((e) => e.kind === 'review')
+          .map((e) => e.result),
+      ).toEqual(['passed', 'passed']);
+      expect(observations.commit).toHaveBeenCalledTimes(2);
+      expect(observations.push).toHaveBeenCalledTimes(2);
+    }
     const exposed = v.parse(
       deliveryDetailSchema,
       factoryDeliveryDetail(requireDelivery(pipelineId, paths), paths),
@@ -947,7 +1069,9 @@ const child=spawn(process.execPath,[${JSON.stringify(resolve('scripts/mockdex.mj
       expect(
         delivered.evidence.filter((e) => e.kind === 'verification'),
       ).toHaveLength(expectedRepairs + 1);
-      expect(delivered.authorization.id).toBe('grant-e2e');
+      expect(delivered.authorization.id).toBe(
+        granted.pipeline.authorization.id,
+      );
     }
     if (mode === 'reviewer-findings') {
       const reviews = delivered.evidence.filter((e) => e.kind === 'review');
@@ -968,7 +1092,9 @@ const child=spawn(process.execPath,[${JSON.stringify(resolve('scripts/mockdex.mj
         'fixed-v2',
       );
       expect(delivered.repairs[0].reason).toContain('fixed-v2');
-      expect(delivered.authorization.id).toBe('grant-e2e');
+      expect(delivered.authorization.id).toBe(
+        granted.pipeline.authorization.id,
+      );
     }
     if (mode === 'uncertain-create')
       expect(readsAfterPost).toBeGreaterThanOrEqual(2);

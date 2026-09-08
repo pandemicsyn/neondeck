@@ -1,3 +1,7 @@
+import { FactoryReviewedDiff } from './FactoryReviewedDiff';
+import { FactoryPublication } from './FactoryPublication';
+import type { FactoryCodingRun } from '../../../../shared/factory-coding';
+import { FactoryCodingCandidate } from './FactoryCodingCandidate';
 import { useFactoryRefresh } from './useFactoryRefresh';
 import { FactoryDeliveryProgress } from './FactoryDeliveryProgress';
 import { getFactoryDeliveryProgressEvidence } from '../../api/factory-progress';
@@ -24,7 +28,10 @@ import {
 import { FactoryDeliveryRevision } from './FactoryDeliveryRevision';
 
 const actionLabels: Record<DeliveryDetail['nextAction'], string> = {
-  running: 'Delivery in progress',
+  running: 'Validation and delivery activity',
+  'fresh-release-required':
+    'Release this plan again to use the updated workflow',
+  'awaiting-publication': 'Ready for your publication decision',
   'human-scope': 'Scope decision needed',
   'human-budget': 'Execution budget exhausted',
   'human-authority': 'Delivery authority needs attention',
@@ -32,10 +39,12 @@ const actionLabels: Record<DeliveryDetail['nextAction'], string> = {
   complete: 'Delivery complete',
 };
 export function FactoryDeliveryDetail({
+  candidateDiff,
   id,
   workId,
   onDiscuss,
 }: {
+  candidateDiff?: NonNullable<FactoryCodingRun['diff']>;
   id: string;
   workId: string;
   onDiscuss?: (evidence: string) => void;
@@ -140,6 +149,28 @@ export function FactoryDeliveryDetail({
           {p.outcome ?? (p.pr ? 'Draft PR recorded' : 'Draft only')}
         </span>
       </div>
+      {nextAction === 'fresh-release-required' && (
+        <p>
+          Retained work and evidence remain available. Open the plan, withdraw
+          the historical release, then approve the same plan with its current
+          validation policy.{' '}
+          {onDiscuss ? (
+            <button
+              onClick={() =>
+                onDiscuss(
+                  'This historical workflow is read-only. Withdraw the previous release, then approve the retained plan with the updated validation policy. No history or candidate changes are required.',
+                )
+              }
+            >
+              Review plan for updated workflow
+            </button>
+          ) : (
+            <a href={`/factory?task=${encodeURIComponent(workId)}`}>
+              Open retained plan
+            </a>
+          )}
+        </p>
+      )}
       {busy && (
         <output>Preparing the delivery action; waiting for its result…</output>
       )}
@@ -156,61 +187,64 @@ export function FactoryDeliveryDetail({
           {error}
         </p>
       )}
-      {nextAction !== 'running' && nextAction !== 'complete' && (
-        <section
-          className="factory-delivery-intervention"
-          aria-label="Delivery intervention"
-        >
-          <h4>Continue planning with Neon</h4>
-          {p.interventions
-            .filter((i) => !i.resolution)
-            .map((i) => (
-              <div key={i.id}>
-                <strong>
-                  {i.kind}: {i.reason}
-                </strong>
-                <details>
-                  <summary>Intervention reference</summary>
-                  Intervention {i.id} · candidate {i.revision.runId} · spec v
-                  {i.revision.specVersion}
-                  <br />
-                  Tree: <code>{i.revision.treeSha}</code>
-                </details>
-              </div>
-            ))}
-          <p>
-            Clarify the next step with Neon. A scope change needs a reviewed
-            release; conversation alone grants no execution or publication.
-          </p>
-          {onDiscuss && (
-            <button disabled={disabled} onClick={() => void discuss()}>
-              Discuss delivery evidence with Neon
-            </button>
-          )}
-          {triggeringFeedback && (
-            <FactoryDeliveryEvidenceContent
-              deliveryId={id}
-              evidence={triggeringFeedback}
-              version={p.version}
-              label="Triggering external scope feedback"
-              initiallyOpen
-            />
-          )}
-          {!onDiscuss && (
-            <a
-              href={`/factory?task=${encodeURIComponent(detail.data.planningWorkId)}`}
-            >
-              Open task planning conversation
-            </a>
-          )}
-          {detail.data.plannerSessionId && (
-            <details>
-              <summary>Planning session reference</summary>
-              <code>{detail.data.plannerSessionId}</code>
-            </details>
-          )}
-        </section>
-      )}
+      {nextAction !== 'running' &&
+        nextAction !== 'complete' &&
+        nextAction !== 'awaiting-publication' &&
+        nextAction !== 'fresh-release-required' && (
+          <section
+            className="factory-delivery-intervention"
+            aria-label="Delivery intervention"
+          >
+            <h4>Continue planning with Neon</h4>
+            {p.interventions
+              .filter((i) => !i.resolution)
+              .map((i) => (
+                <div key={i.id}>
+                  <strong>
+                    {i.kind}: {i.reason}
+                  </strong>
+                  <details>
+                    <summary>Intervention reference</summary>
+                    Intervention {i.id} · candidate {i.revision.runId} · spec v
+                    {i.revision.specVersion}
+                    <br />
+                    Tree: <code>{i.revision.treeSha}</code>
+                  </details>
+                </div>
+              ))}
+            <p>
+              Clarify the next step with Neon. A scope change needs a reviewed
+              release; conversation alone grants no execution or publication.
+            </p>
+            {onDiscuss && (
+              <button disabled={disabled} onClick={() => void discuss()}>
+                Discuss delivery evidence with Neon
+              </button>
+            )}
+            {triggeringFeedback && (
+              <FactoryDeliveryEvidenceContent
+                deliveryId={id}
+                evidence={triggeringFeedback}
+                version={p.version}
+                label="Triggering external scope feedback"
+                initiallyOpen
+              />
+            )}
+            {!onDiscuss && (
+              <a
+                href={`/factory?task=${encodeURIComponent(detail.data.planningWorkId)}`}
+              >
+                Open task planning conversation
+              </a>
+            )}
+            {detail.data.plannerSessionId && (
+              <details>
+                <summary>Planning session reference</summary>
+                <code>{detail.data.plannerSessionId}</code>
+              </details>
+            )}
+          </section>
+        )}
       <FactoryDeliveryProgress
         detail={detail.data}
         disabled={disabled}
@@ -230,6 +264,21 @@ export function FactoryDeliveryDetail({
       </p>
       <FactoryDeliveryBudget detail={detail.data} />
       <FactoryDeliveryEvidence detail={detail.data} />
+      <FactoryReviewedDiff detail={detail.data} />
+      {candidateDiff && (
+        <details>
+          <summary>Inspect live worktree separately</summary>
+          <p>Live worktree changes do not certify the publication decision.</p>
+          <FactoryCodingCandidate diff={candidateDiff} />
+        </details>
+      )}
+      {nextAction === 'awaiting-publication' && (
+        <FactoryPublication
+          detail={detail.data}
+          disabled={disabled}
+          onGranted={() => detail.refetch()}
+        />
+      )}
       {p.pr && (
         <nav className="factory-toolbar" aria-label="Delivered pull request">
           <a href={safeWebUrl(p.pr.url)} target="_blank" rel="noreferrer">
@@ -258,7 +307,7 @@ export function FactoryDeliveryDetail({
           </p>
         )
       )}
-      {!p.outcome && (
+      {!p.outcome && nextAction !== 'fresh-release-required' && (
         <div className="factory-delivery-controls">
           {nextAction === 'reconcile' && (
             <button

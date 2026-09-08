@@ -8,7 +8,10 @@ import type { DeliveryPipeline } from '../../../shared/factory-delivery';
 import type { DeliveryProgressAssessment } from '../../../shared/factory-progress';
 import type { RuntimePaths } from '../../runtime-home';
 import { codingDigest } from '../factory';
-import { assertDeliveryAuthority, deliveryContext } from './authority';
+import {
+  assertDeliveryAuthority,
+  pipelineValidationContext,
+} from './authority';
 import { captureCandidateEvidence } from './evidence';
 import { codingHandle, requireCodingRun } from '../factory';
 import {
@@ -38,7 +41,7 @@ import {
 export const progressIO = {
   packet: gatherDeliveryProgressPacket,
   model: (p: DeliveryPipeline, paths: RuntimePaths) => {
-    const context = deliveryContext(p.revision.runId, paths);
+    const context = pipelineValidationContext(p, paths);
     return {
       model: context.reviewerModel,
       thinkingLevel: context.reviewerThinkingLevel,

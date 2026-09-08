@@ -1,3 +1,4 @@
+import { validationPreview } from './FactoryDelivery.fixtures';
 // @vitest-environment jsdom
 import { act, useState } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -12,6 +13,12 @@ import {
   type FactoryDetail,
 } from '../../../../shared/factory';
 // Coding query behavior is covered separately in FactoryCoding.test.tsx.
+vi.mock('../../api/factory-delivery', () => ({
+  getFactoryValidationPolicy: vi.fn(
+    async () => validationPreview().validationPolicy,
+  ),
+  getFactoryDeliveryState: vi.fn(async () => ({ deliveries: [] })),
+}));
 vi.mock('./FactoryCoding', () => ({ FactoryCoding: () => null }));
 vi.mock('../../api/factory-coding', () => ({
   getFactoryCodingState: vi.fn<typeof getFactoryCodingState>(),
@@ -155,6 +162,10 @@ beforeEach(() => {
   client = new QueryClient({
     defaultOptions: { queries: { retry: false, staleTime: Infinity } },
   });
+  client.setQueryData(
+    ['factory-validation-policy', 'demo'],
+    validationPreview().validationPolicy,
+  );
   client.setQueryData(factoryCodingStateKey, {
     ...codingState(),
     configFingerprint: 'c'.repeat(64),
@@ -220,8 +231,8 @@ it('compares any retained versions, including same-version, and never releases a
   await input('[aria-label="Compare from"]', '2');
   expect(container.textContent).toContain('No document changes');
   await input('[aria-label="Retained version"]', '1');
-  expect(button('Release v1').disabled).toBe(true);
-  await click('Release v1');
+  expect(button('Approve plan and start').disabled).toBe(true);
+  await click('Approve plan and start');
   expect(api.mutateFactory).not.toHaveBeenCalled();
   current = {
     ...current,
@@ -233,9 +244,9 @@ it('compares any retained versions, including same-version, and never releases a
     work: { ...current.work, version: 3, specVersion: 3 },
   };
   await render();
-  expect(button('Release v1').disabled).toBe(true);
+  expect(button('Approve plan and start').disabled).toBe(true);
   await click('View current v3');
-  await click('Release v3');
+  await click('Approve plan and start');
   expect(api.mutateFactory).toHaveBeenCalledWith(
     'task',
     'release',
@@ -427,13 +438,13 @@ it('does not overwrite an unreadable draft and retries storage recovery explicit
 it('disables release without a current repository fingerprint and releases with a valid fingerprint', async () => {
   current = { ...current, blockers: [], repoFingerprint: null };
   await render();
-  expect(button('Release v2').disabled).toBe(true);
-  await click('Release v2');
+  expect(button('Approve plan and start').disabled).toBe(true);
+  await click('Approve plan and start');
   expect(api.mutateFactory).not.toHaveBeenCalled();
   current = { ...current, repoFingerprint: hash };
   await render();
-  expect(button('Release v2').disabled).toBe(false);
-  await click('Release v2');
+  expect(button('Approve plan and start').disabled).toBe(false);
+  await click('Approve plan and start');
   expect(api.mutateFactory).toHaveBeenCalledWith(
     'task',
     'release',
@@ -450,7 +461,7 @@ it('disables release without a current repository fingerprint and releases with 
 it('blocks release after a coding selection refresh failure and retains the displayed selection', async () => {
   current = { ...current, blockers: [] };
   await render();
-  expect(button('Release v2').disabled).toBe(false);
+  expect(button('Approve plan and start').disabled).toBe(false);
   vi.mocked(getFactoryCodingState).mockRejectedValue(
     new Error('Synthetic unavailable'),
   );
@@ -460,9 +471,9 @@ it('blocks release after a coding selection refresh failure and retains the disp
   await act(async () => {
     await new Promise((resolve) => setTimeout(resolve, 35));
   });
-  expect(button('Release v2').disabled).toBe(true);
+  expect(button('Approve plan and start').disabled).toBe(true);
   expect(container.textContent).toContain('Coding selection is unavailable');
-  await click('Release v2');
+  await click('Approve plan and start');
   expect(api.mutateFactory).not.toHaveBeenCalled();
 });
 
@@ -478,7 +489,7 @@ it.each([
     api.mutateFactory.mockResolvedValue(current);
     await render();
     expect(button(label).disabled).toBe(false);
-    expect(button('Release v2').disabled).toBe(true);
+    expect(button('Approve plan and start').disabled).toBe(true);
     await click(label);
     expect(api.mutateFactory).toHaveBeenCalledWith('task', 'transition', {
       expectedVersion: current.work.version,
@@ -529,7 +540,7 @@ it.each([false, true])(
       '.factory-editor-fields textarea',
     )!;
     expect(field.closest('[hidden]')).not.toBeNull();
-    const release = button('Release v4');
+    const release = button('Approve plan and start');
     expect(release.disabled).toBe(true);
     expect(button('Pause').disabled).toBe(true);
     const notice = document.getElementById(
@@ -537,7 +548,7 @@ it.each([false, true])(
     )!;
     expect(notice.textContent).toContain('local draft of v1 is open');
     expect(notice.textContent).toContain('latest saved brief is v4');
-    await click('Release v4');
+    await click('Approve plan and start');
     expect(api.mutateFactory).not.toHaveBeenCalled();
     await click('Review local draft');
     await act(async () => {
@@ -554,10 +565,10 @@ it.each([false, true])(
       JSON.parse(sessionStorage.getItem('factory-workbench:task')!).editor,
     ).toEqual(savedEditor);
     expect(field.value).toBe(savedEditor.spec.outcome);
-    expect(button('Release v4').disabled).toBe(true);
+    expect(button('Approve plan and start').disabled).toBe(true);
     expect(api.mutateFactory).not.toHaveBeenCalled();
     await click('Cancel edits');
-    expect(button('Release v4').disabled).toBe(false);
+    expect(button('Approve plan and start').disabled).toBe(false);
     expect(api.mutateFactory).not.toHaveBeenCalled();
   },
 );
@@ -567,7 +578,7 @@ it('explains draft recovery beside Release without deleting retained data', asyn
   sessionStorage.setItem('factory-workbench:task', raw);
   current = { ...current, blockers: [] };
   await render();
-  const release = button('Release v2');
+  const release = button('Approve plan and start');
   expect(release.disabled).toBe(true);
   expect(
     document.getElementById(release.getAttribute('aria-describedby')!)!
@@ -587,8 +598,8 @@ it('explains an unresolved mutation beside Release until it settles', async () =
       }),
   );
   await render();
-  await click('Release v2');
-  const release = button('Release v2');
+  await click('Approve plan and start');
+  const release = button('Approve plan and start');
   expect(release.disabled).toBe(true);
   expect(
     document.getElementById(release.getAttribute('aria-describedby')!)!
@@ -597,5 +608,5 @@ it('explains an unresolved mutation beside Release until it settles', async () =
   await act(async () => {
     resolve(current);
   });
-  expect(button('Release v2').disabled).toBe(false);
+  expect(button('Approve plan and start').disabled).toBe(false);
 });

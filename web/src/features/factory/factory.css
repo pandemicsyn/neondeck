@@ -711,3 +711,61 @@
   padding: 12px;
   background: var(--field);
 }
+
+.factory-lifecycle {
+  padding-block: 20px;
+  border-block: 1px solid var(--line);
+  margin-block: 20px;
+}
+.factory-lifecycle ol {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 20px;
+  padding: 0;
+  list-style: none;
+  margin: 20px 0 0;
+}
+.factory-lifecycle li {
+  display: grid;
+  align-content: start;
+  gap: 4px;
+  padding-block: 8px;
+  border-bottom: 1px solid var(--line);
+}
+.factory-lifecycle li[aria-current='step'] {
+  color: var(--primary-strong);
+  border-color: var(--primary);
+  font-weight: 600;
+}
+.factory-lifecycle small {
+  font-size: 12px;
+}
+.factory-stage-section {
+  min-width: 0;
+  margin-block: 16px;
+}
+.factory-page .factory-stage-toggle {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  width: 100%;
+  text-align: left;
+  padding: 12px 0;
+  border-width: 0 0 1px;
+  background: transparent;
+  font-weight: 600;
+}
+.factory-stage-toggle span {
+  font-weight: 400;
+  font-size: 13px;
+}
+
+.factory-coding-diff pre[aria-label='Complete reviewed diff'] {
+  max-height: min(65dvh, 40rem);
+  overflow: auto;
+  white-space: pre;
+  padding: 12px;
+  background: var(--field);
+  font-size: 13px;
+  scrollbar-gutter: stable;
+}

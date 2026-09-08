@@ -10,7 +10,10 @@ import type { RuntimePaths } from '../../runtime-home';
 import { codingHandle, requireCodingRun, reconcileCodingRun } from '../factory';
 import { renderFactorySpec } from '../../../shared/factory';
 import { reviewerChecksSchema } from './reviewer-contract';
-import { assertDeliveryAuthority, deliveryContext } from './authority';
+import {
+  assertDeliveryAuthority,
+  pipelineValidationContext,
+} from './authority';
 import { captureCandidateEvidence, type CandidateEvidence } from './evidence';
 import { verifyCandidateEvidence } from './verification';
 import { reviewCandidateEvidence, cancelCandidateReview } from './reviewer';
@@ -205,7 +208,7 @@ export const deliveryIO: DeliveryIO = {
     };
   },
   async review(pipeline, evidence, effect, paths) {
-    const context = deliveryContext(pipeline.revision.runId, paths);
+    const context = pipelineValidationContext(pipeline, paths);
     const started = Date.now();
     const checked = pipeline.evidence.findLast(
       (e) =>
@@ -354,7 +357,7 @@ export const deliveryIO: DeliveryIO = {
         progressEvidenceDigest: approval.evidenceDigest,
         maxWallTimeMs: Math.min(
           2700000,
-          deliveryContext(pipeline.revision.runId, paths).authority.coding
+          pipelineValidationContext(pipeline, paths).authority.coding
             .wallTimeMs,
         ),
       },

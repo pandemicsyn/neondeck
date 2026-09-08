@@ -89,8 +89,30 @@ export const deliveryOutcomeSchema = v.picklist([
   'cancelled',
   'failed',
 ]);
+export const validationPolicySchema = v.strictObject({
+  version: v.literal('local-validation-v1'),
+  configFingerprint: hash,
+  checkCommands: deliveryCheckCommandsSchema,
+  reviewerModel: label,
+  reviewerThinkingLevel: v.nullable(
+    v.picklist(['off', 'minimal', 'low', 'medium', 'high', 'xhigh']),
+  ),
+  maxRepairAttempts: v.literal(2),
+  totalExecutionMs: v.literal(10800000),
+});
+export const publicationGrantSchema = v.strictObject({
+  requestId: label,
+  requestFingerprint: hash,
+  authorizedBy: label,
+  authorizedAt: time,
+  revision: deliveryRevisionSchema,
+  evidenceFingerprint: hash,
+  configFingerprint: hash,
+  target: v.strictObject({ owner: label, name: label, baseBranch: label }),
+});
 export const deliveryAuthorizationSchema = v.pipe(
   v.strictObject({
+    mode: v.optional(v.literal('local-validation')),
     id: label,
     authorizedBy: label,
     authorizedAt: time,
@@ -154,6 +176,7 @@ export const deliveryPipelineSchema = v.strictObject({
   prIdentity: label,
   pr: v.nullable(deliveryPrSchema),
   authorization: deliveryAuthorizationSchema,
+  publication: v.optional(v.nullable(publicationGrantSchema)),
   repairs: v.array(deliveryRepairSchema),
   progress: v.optional(deliveryProgressStateSchema, () => ({
     limits: {
@@ -178,6 +201,10 @@ export const deliveryCommandSchema = v.strictObject({
   pipelineId: label,
   expectedVersion: version,
   action: v.variant('type', [
+    v.strictObject({
+      type: v.literal('authorize-publication'),
+      grant: publicationGrantSchema,
+    }),
     v.strictObject({
       type: v.literal('bind-effect-receipt'),
       id: label,

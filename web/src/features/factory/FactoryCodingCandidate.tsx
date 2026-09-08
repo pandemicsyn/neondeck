@@ -22,10 +22,14 @@ export function FactoryCodingCandidate({
         These are current worktree changes. They may differ from the changes
         captured when coding finished.
       </p>
+      <p className="factory-note">
+        Independent review evidence is shown with the review result. Your notes
+        and questions stay in the planning conversation.
+      </p>
       <button aria-expanded={open} onClick={() => setOpen(!open)}>
         {open ? 'Hide worktree changes' : 'Review retained worktree'}
       </button>
-      {open && (
+      <div hidden={!open}>
         <section
           className="factory-coding-diff"
           tabIndex={0}
@@ -41,10 +45,14 @@ export function FactoryCodingCandidate({
             </p>
           )}
           {summary.data && !summary.error && (
-            <PreparedDiffReview diff={summary.data} readOnly />
+            <PreparedDiffReview
+              diff={summary.data}
+              readOnly
+              context="factory"
+            />
           )}
         </section>
-      )}
+      </div>
     </div>
   );
 }

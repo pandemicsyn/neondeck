@@ -147,3 +147,23 @@ export async function getFactoryCandidateDiff(
     revisionRun: null,
   };
 }
+
+export async function retryFactoryValidation(
+  id: string,
+  expectedVersion: number,
+) {
+  const run = v.parse(
+    factoryCodingRunSchema,
+    await postJson<unknown>(
+      `/api/factory-delivery/candidates/${encodeURIComponent(id)}/validation/retry`,
+      {
+        expectedVersion,
+        reason:
+          'Human requested retry of the existing released validation policy',
+      },
+    ),
+  );
+  if (run.record.runId !== id)
+    throw new Error('Validation retry receipt belongs to another run.');
+  return run;
+}

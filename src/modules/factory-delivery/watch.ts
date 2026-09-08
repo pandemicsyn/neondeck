@@ -85,6 +85,7 @@ export async function watchFactoryDelivery(
     return;
   }
   const { connection } = assertDeliveryAuthority(p, paths);
+  if (!connection) throw new Error('Publication authority is required.');
   const facts = await observeFactoryGitHubPull(
     connection,
     p.pr.number,

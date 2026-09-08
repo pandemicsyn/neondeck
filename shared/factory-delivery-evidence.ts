@@ -1,3 +1,4 @@
+export const deliveryEvidenceDisplayMaxBytes = 1024 * 1024;
 import * as v from 'valibot';
 import {
   deliveryRevisionSchema,

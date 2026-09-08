@@ -1,3 +1,4 @@
+import { factoryValidationPolicy } from './validation-policy';
 import {
   listFactoryDiagnostics,
   withFactorySpan,
@@ -66,6 +67,15 @@ let setup: ReturnType<typeof fixture>,
 const human = { kind: 'human' as const, id: 'local-operator' };
 beforeEach(() => {
   setup = fixture();
+  const config = JSON.parse(readFileSync(setup.paths.config, 'utf8'));
+  writeFileSync(
+    setup.paths.config,
+    JSON.stringify({
+      ...config,
+      models: { ...config.models, prReview: 'faux/faux-1' },
+      guardrails: { requiredChecks: ['npm test'] },
+    }),
+  );
   remote = [];
   id = dbRun(setup.paths, (db) =>
     reconcileGitHubSource(
@@ -339,6 +349,7 @@ it('writeback failure never blocks valid human release and queue wording is trut
       sourceVersion: d.source.version,
       repoFingerprint: d.repoFingerprint,
       policyVersion: 'isolated-local-v1',
+      validationPolicy: factoryValidationPolicy('fixture', setup.paths),
       expectedCodingConfigFingerprint: codingDigest(
         codingConfig(setup.paths).coding,
       ),
@@ -666,6 +677,7 @@ it('inbound before receipt is held then confirmed without invalidating released 
       sourceVersion: d.source.version,
       repoFingerprint: d.repoFingerprint,
       policyVersion: 'isolated-local-v1',
+      validationPolicy: factoryValidationPolicy('fixture', setup.paths),
       expectedCodingConfigFingerprint: codingDigest(
         codingConfig(setup.paths).coding,
       ),
@@ -957,6 +969,7 @@ it('repo context invalidates public released wording and the previously approved
       sourceVersion: d.source.version,
       repoFingerprint: d.repoFingerprint,
       policyVersion: 'isolated-local-v1',
+      validationPolicy: factoryValidationPolicy('fixture', setup.paths),
       expectedCodingConfigFingerprint: codingDigest(
         codingConfig(setup.paths).coding,
       ),
@@ -1110,6 +1123,7 @@ it.each(['manual', 'github'] as const)(
       sourceVersion: d.source.version,
       repoFingerprint: d.repoFingerprint,
       policyVersion: 'isolated-local-v1',
+      validationPolicy: factoryValidationPolicy('fixture', setup.paths),
       expectedCodingConfigFingerprint: codingDigest(
         codingConfig(setup.paths).coding,
       ),
@@ -1233,6 +1247,7 @@ it.each(['manual', 'github'] as const)(
         sourceVersion: d.source.version,
         repoFingerprint: d.repoFingerprint,
         policyVersion: 'isolated-local-v1',
+        validationPolicy: factoryValidationPolicy('fixture', setup.paths),
         expectedCodingConfigFingerprint: codingDigest(
           codingConfig(setup.paths).coding,
         ),
@@ -1354,6 +1369,7 @@ it('revocation is durable before registry replacement and survives a failed writ
       sourceVersion: d.source.version,
       repoFingerprint: d.repoFingerprint,
       policyVersion: 'isolated-local-v1',
+      validationPolicy: factoryValidationPolicy('fixture', setup.paths),
       expectedCodingConfigFingerprint: codingDigest(
         codingConfig(setup.paths).coding,
       ),
@@ -1450,6 +1466,7 @@ function prepareCodingRelease(requestKey = 'coding-release') {
       sourceVersion: d.source.version,
       repoFingerprint: d.repoFingerprint,
       policyVersion: 'isolated-local-v1',
+      validationPolicy: factoryValidationPolicy('fixture', setup.paths),
       expectedCodingConfigFingerprint: codingDigest(
         codingConfig(setup.paths).coding,
       ),

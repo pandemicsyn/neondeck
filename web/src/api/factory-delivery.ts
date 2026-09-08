@@ -1,12 +1,15 @@
+import { validationPolicySchema } from '../../../shared/factory-delivery';
 import { deliveryEvidenceContentSchema } from '../../../shared/factory-delivery-evidence';
 import * as v from 'valibot';
 import {
+  publicationSetupInputSchema,
+  publicationSetupResultSchema,
+  reviewedDiffSchema,
+  publicationReadinessSchema,
+  publicationGrantInputSchema,
   deliveryDetailSchema,
   deliveryStateSchema,
-  deliveryGrantPreviewSchema,
-  deliveryGrantInputSchema,
   deliveryControlInputSchema,
-  type DeliveryGrantPreview,
 } from '../../../shared/factory-delivery-api';
 import type {
   DeliveryRevision,
@@ -16,12 +19,8 @@ import type {
 import { getJson, postJson, type ApiRequestOptions } from './http';
 
 // Validate each HTTP boundary with the canonical contract, avoiding schema drift.
-export {
-  deliveryDetailSchema,
-  deliveryGrantInputSchema,
-  deliveryGrantPreviewSchema,
-};
-export type { DeliveryGrantPreview, DeliveryRevision };
+export { deliveryDetailSchema };
+export type { DeliveryRevision };
 export type DeliveryDetail = v.InferOutput<typeof deliveryDetailSchema>;
 const prefix = '/api/factory-delivery';
 export async function getFactoryDeliveryState(options: ApiRequestOptions = {}) {
@@ -29,21 +28,6 @@ export async function getFactoryDeliveryState(options: ApiRequestOptions = {}) {
     deliveryStateSchema,
     await getJson<unknown>(`${prefix}/state`, options),
   );
-}
-export async function getFactoryDeliveryPreview(
-  runId: string,
-  options: ApiRequestOptions = {},
-) {
-  const result = v.parse(
-    deliveryGrantPreviewSchema,
-    await getJson<unknown>(
-      `${prefix}/candidates/${encodeURIComponent(runId)}`,
-      options,
-    ),
-  );
-  if (result.revision.runId !== runId)
-    throw new Error('Candidate identity does not match this request.');
-  return result;
 }
 export async function getFactoryDelivery(
   id: string,
@@ -59,35 +43,6 @@ export async function getFactoryDelivery(
     ),
     id,
   );
-}
-export async function grantFactoryDelivery(
-  request: v.InferOutput<typeof deliveryGrantInputSchema>,
-) {
-  const body = v.parse(deliveryGrantInputSchema, request);
-  const result = v.parse(
-    deliveryDetailSchema,
-    await postJson<unknown>(`${prefix}/grants`, body),
-  );
-  const authorization = result.pipeline.authorization;
-  const preview = body.preview;
-  if (
-    result.pipeline.repoId !== preview.repoId ||
-    authorization.repoId !== preview.repoId ||
-    JSON.stringify(authorization.revision) !==
-      JSON.stringify(preview.revision) ||
-    JSON.stringify(authorization.target) !== JSON.stringify(preview.target) ||
-    JSON.stringify(authorization.checkCommands) !==
-      JSON.stringify(preview.checkCommands) ||
-    authorization.configFingerprint !== preview.configFingerprint ||
-    authorization.initialExecutionMs !== preview.initialExecutionMs ||
-    authorization.totalExecutionMs !== preview.totalExecutionMs ||
-    authorization.maxRepairAttempts !== preview.maxRepairAttempts ||
-    result.pipeline.workItemId !== body.preview.workItemId ||
-    JSON.stringify(result.pipeline.initialRevision) !==
-      JSON.stringify(body.preview.revision)
-  )
-    throw new Error('Delivery grant receipt does not match the candidate.');
-  return result;
 }
 export async function controlFactoryDelivery(
   id: string,
@@ -143,5 +98,98 @@ export async function getFactoryDeliveryEvidence(
         result.feedback.hasReviewFeedback === expected.hasReviewFeedback;
   if (!sameRevision || !matches)
     throw new Error('Evidence content does not match the selected record.');
+  return result;
+}
+
+export async function getFactoryPublication(
+  id: string,
+  options: ApiRequestOptions = {},
+) {
+  const result = v.parse(
+    publicationReadinessSchema,
+    await getJson<unknown>(
+      `${prefix}/deliveries/${encodeURIComponent(id)}/publication`,
+      options,
+    ),
+  );
+  if (result.preview && result.preview.pipelineId !== id)
+    throw new Error('Publication preview belongs to another task.');
+  return result;
+}
+export async function grantFactoryPublication(
+  input: v.InferOutput<typeof publicationGrantInputSchema>,
+) {
+  const body = v.parse(publicationGrantInputSchema, input);
+  const result = matchDelivery(
+    v.parse(
+      deliveryDetailSchema,
+      await postJson<unknown>(
+        `${prefix}/deliveries/${encodeURIComponent(body.preview.pipelineId)}/publication-grants`,
+        body,
+      ),
+    ),
+    body.preview.pipelineId,
+  );
+  const receipt = result.pipeline.publication;
+  if (
+    !receipt ||
+    receipt.requestId !== body.requestId ||
+    receipt.evidenceFingerprint !== body.preview.evidenceFingerprint ||
+    receipt.configFingerprint !== body.preview.configFingerprint ||
+    JSON.stringify(receipt.revision) !==
+      JSON.stringify(body.preview.revision) ||
+    JSON.stringify(receipt.target) !== JSON.stringify(body.preview.target)
+  )
+    throw new Error('Publication receipt does not match this approval.');
+  return result;
+}
+
+export async function getFactoryValidationPolicy(
+  repoId: string,
+  options: ApiRequestOptions = {},
+) {
+  return v.parse(
+    validationPolicySchema,
+    await getJson<unknown>(
+      `${prefix}/validation-policy/${encodeURIComponent(repoId)}`,
+      options,
+    ),
+  );
+}
+
+export async function setupFactoryPublication(
+  repoId: string,
+  tokenEnv: string,
+) {
+  const result = v.parse(
+    publicationSetupResultSchema,
+    await postJson<unknown>(
+      `${prefix}/publication-setup/${encodeURIComponent(repoId)}`,
+      v.parse(publicationSetupInputSchema, { tokenEnv }),
+    ),
+  );
+  if (
+    result.publication[0].repoId !== repoId ||
+    result.publication[0].tokenEnv !== tokenEnv
+  )
+    throw new Error(
+      'Publication setup receipt does not match this repository and credential reference.',
+    );
+  return result;
+}
+
+export async function getFactoryReviewedDiff(
+  id: string,
+  options: ApiRequestOptions = {},
+) {
+  const result = v.parse(
+    reviewedDiffSchema,
+    await getJson<unknown>(
+      `${prefix}/deliveries/${encodeURIComponent(id)}/reviewed-diff`,
+      options,
+    ),
+  );
+  if (result.pipelineId !== id)
+    throw new Error('Reviewed diff belongs to another delivery.');
   return result;
 }

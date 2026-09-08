@@ -62,13 +62,19 @@ question. Ambiguous sends and remote edits have visible recovery paths. Released
 tasks can use the opt-in local Codex executor in a managed worktree, with retained
 candidate evidence and explicit cancellation/reconciliation.
 
-A retained candidate can receive a separate human grant for independent checks,
-a read-only model review, at most two scoped Codex repairs and one draft PR.
-The grant binds the released brief, candidate, repository and finite execution
-budget. Inspect evidence or return to the existing Neon planning conversation
-when scope, authority or budget needs a human decision. PR merge and deployment
-remain human actions. Local check homes and environments are separate; this
-initial local version is not a filesystem security sandbox.
+The task follows **Plan → Code → Validate → Approve PR → Watch PR → Done**.
+Plan release explicitly includes automatic independent checks, a read-only model
+review and bounded repairs. Local validation and its reviewed diff work without
+GitHub intake or publication setup. When validation passes, inspect the exact
+reviewed changes and separately approve **Create draft PR**. Publication uses the
+registered repository and a private credential reference; no webhook is required.
+Subsequent PR feedback and CI failures can trigger scoped repair, fresh checks and
+review, and updates to the same PR. The two-repair, three-hour cumulative budget
+is shared across the whole lifecycle and does not reset at publication. Return
+to Neon when scope, authority or budget needs a human decision. Merge and
+deployment remain human actions. Old test releases need fresh approval for this
+workflow. Local check homes and environments are separate; this initial local
+version is not a filesystem security sandbox.
 
 Slice 3.1 adds a read-only progress checkpoint before another repair. It can
 continue, change the approach within the same allowance, or pause for explicit

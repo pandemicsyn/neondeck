@@ -1,3 +1,4 @@
+import { validationPreview } from './FactoryDelivery.fixtures';
 // @vitest-environment jsdom
 import { act } from 'react';
 import { createRoot } from 'react-dom/client';
@@ -6,6 +7,11 @@ import { beforeEach, afterEach, expect, it, vi } from 'vitest';
 import { FactoryReleaseCoding } from './FactoryReleaseCoding';
 import { codingState } from './FactoryCoding.fixtures';
 import { getFactoryCodingState } from '../../api/factory-coding';
+vi.mock('../../api/factory-delivery', () => ({
+  getFactoryValidationPolicy: vi.fn(
+    async () => validationPreview().validationPolicy,
+  ),
+}));
 vi.mock('../../api/factory-coding', () => ({
   getFactoryCodingState: vi.fn<typeof getFactoryCodingState>(),
 }));
@@ -24,6 +30,10 @@ beforeEach(() => {
     defaultOptions: { queries: { retry: false, staleTime: Infinity } },
   });
   client.setQueryData(key, codingState());
+  client.setQueryData(
+    ['factory-validation-policy', 'demo'],
+    validationPreview().validationPolicy,
+  );
   vi.mocked(getFactoryCodingState).mockResolvedValue(codingState());
 });
 afterEach(() => {
@@ -38,6 +48,7 @@ async function render() {
       <QueryClientProvider client={client}>
         <FactoryReleaseCoding
           label="Release v2"
+          repoId="demo"
           disabled={false}
           onRelease={release}
         />
@@ -101,7 +112,10 @@ it('shows every normalized fingerprinted field and submits that exact snapshot',
     'Repository skills': 'Native CLI discovery',
   });
   await act(async () => button('Release v2').click());
-  expect(release).toHaveBeenCalledExactlyOnceWith(state.configFingerprint);
+  expect(release).toHaveBeenCalledExactlyOnceWith(
+    state.configFingerprint,
+    validationPreview().validationPolicy,
+  );
 });
 it('requires explicit review after refresh changes previously hidden settings and never silently switches the fingerprint', async () => {
   await render();
@@ -133,7 +147,10 @@ it('requires explicit review after refresh changes previously hidden settings an
   expect(fact('Attempt time limit')).toContain('1000 ms');
   expect(fact('Output limit')).toBe('1024 bytes');
   await act(async () => button('Release v2').click());
-  expect(release).toHaveBeenCalledExactlyOnceWith(next.configFingerprint);
+  expect(release).toHaveBeenCalledExactlyOnceWith(
+    next.configFingerprint,
+    validationPreview().validationPolicy,
+  );
 });
 it('keeps default Codex settings explicit and submits a nonnull fingerprint while disabled coding is visible', async () => {
   client.setQueryData(key, codingState(false));
@@ -144,6 +161,7 @@ it('keeps default Codex settings explicit and submits a nonnull fingerprint whil
   await act(async () => button('Release v2').click());
   expect(release).toHaveBeenCalledExactlyOnceWith(
     codingState(false).configFingerprint,
+    validationPreview().validationPolicy,
   );
 });
 it('blocks release during refresh and after failed refresh while retaining the reviewed configuration', async () => {
@@ -193,7 +211,10 @@ it('shows the local auth path in the exact release snapshot without an environme
   expect(fact('Credential file reference')).toBe('/synthetic/.codex/auth.json');
   expect(fact('Credential environment reference')).toBeUndefined();
   await act(async () => button('Release v2').click());
-  expect(release).toHaveBeenCalledWith(state.configFingerprint);
+  expect(release).toHaveBeenCalledWith(
+    state.configFingerprint,
+    validationPreview().validationPolicy,
+  );
 });
 it('keeps reviewed release controls stable through polling, but blocks changed settings and failed retries', async () => {
   vi.useFakeTimers();
@@ -216,7 +237,10 @@ it('keeps reviewed release controls stable through polling, but blocks changed s
     expect(button('Refresh execution settings').disabled).toBe(false);
     expect(action.disabled).toBe(false);
     await act(async () => action.click());
-    expect(release).toHaveBeenCalledWith(codingState().configFingerprint);
+    expect(release).toHaveBeenCalledWith(
+      codingState().configFingerprint,
+      validationPreview().validationPolicy,
+    );
     await act(async () => {
       resolve(codingState());
       await vi.advanceTimersByTimeAsync(1);
@@ -257,4 +281,47 @@ it('keeps reviewed release controls stable through polling, but blocks changed s
   } finally {
     vi.useRealTimers();
   }
+});
+
+it('binds new plan approval to the displayed validation policy and blocks changed policy', async () => {
+  const policy = {
+    version: 'local-validation-v1',
+    configFingerprint: 'e'.repeat(64),
+    checkCommands: ['npm test'],
+    reviewerModel: 'synthetic-reviewer',
+    reviewerThinkingLevel: null,
+    maxRepairAttempts: 2,
+    totalExecutionMs: 10800000,
+  };
+  client.setQueryData(['factory-validation-policy', 'demo'], policy);
+  await act(async () =>
+    root.render(
+      <QueryClientProvider client={client}>
+        <FactoryReleaseCoding
+          label="Approve plan and start"
+          repoId="demo"
+          disabled={false}
+          onRelease={release}
+        />
+      </QueryClientProvider>,
+    ),
+  );
+  expect(container.textContent).toContain(
+    'automatic local checks and independent review',
+  );
+  await act(async () => button('Approve plan and start').click());
+  expect(release).toHaveBeenLastCalledWith(
+    codingState().configFingerprint,
+    policy,
+  );
+  await act(async () =>
+    client.setQueryData(['factory-validation-policy', 'demo'], {
+      ...policy,
+      reviewerModel: 'changed-reviewer',
+    }),
+  );
+  await flush();
+  expect(button('Approve plan and start').disabled).toBe(true);
+  await act(async () => button('Review validation policy').click());
+  expect(button('Approve plan and start').disabled).toBe(false);
 });

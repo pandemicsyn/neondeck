@@ -1,3 +1,4 @@
+import { factoryValidationPolicy } from './validation-policy';
 import { codingConfig, codingDigest } from './coding-context';
 import { applyAppDbMigrations } from '../../runtime-home/app-db/migrate';
 import {
@@ -56,6 +57,7 @@ const releaseInput = (d: FactoryDetail, key = 'release-1') => ({
   sourceVersion: d.source.version,
   repoFingerprint: d.repoFingerprint,
   policyVersion: 'isolated-local-v1',
+  validationPolicy: factoryValidationPolicy('demo', paths),
   expectedCodingConfigFingerprint: codingDigest(codingConfig(paths).coding),
 });
 function createReady() {
@@ -75,7 +77,12 @@ function createReady() {
 function configure(enabled = true) {
   writeFileSync(
     paths.config,
-    JSON.stringify({ version: 1, factory: { enabled } }),
+    JSON.stringify({
+      version: 1,
+      models: { prReview: 'faux/faux-1' },
+      guardrails: { requiredChecks: ['npm test'] },
+      factory: { enabled },
+    }),
   );
 }
 function registry(path = '/private/tmp/synthetic-repo') {
@@ -182,6 +189,8 @@ describe('manual factory domain', () => {
       paths.config,
       JSON.stringify({
         version: 1,
+        models: { prReview: 'faux/faux-1' },
+        guardrails: { requiredChecks: ['npm test'] },
         factory: {
           enabled: true,
           coding: {
@@ -266,7 +275,12 @@ describe('manual factory domain', () => {
     };
     writeFileSync(
       paths.config,
-      JSON.stringify({ version: 1, factory: { enabled: true, coding } }),
+      JSON.stringify({
+        version: 1,
+        models: { prReview: 'faux/faux-1' },
+        guardrails: { requiredChecks: ['npm test'] },
+        factory: { enabled: true, coding },
+      }),
     );
     expect(() =>
       releaseFactoryWork(
@@ -762,4 +776,128 @@ it('rejects old reviewed repo context and accepts an explicitly reviewed replace
   );
   expect(reviewed.revisions.at(-1)?.spec.scope).toBe('Retained local edits');
   expect(reviewed.blockers).toEqual([]);
+});
+
+it('new validation release binds checks/reviewer/budget without GitHub and rejects altered policy replay', async () => {
+  writeFileSync(
+    paths.config,
+    JSON.stringify({
+      version: 1,
+      factory: { enabled: true },
+      models: { prReview: 'faux/faux-1', prReviewThinkingLevel: 'off' },
+      guardrails: { requiredChecks: ['npm test'] },
+    }),
+  );
+  const ready = createReady();
+  const validationPolicy = factoryValidationPolicy('demo', paths);
+  expect(validationPolicy).toMatchObject({
+    checkCommands: ['npm test'],
+    reviewerThinkingLevel: 'off',
+    maxRepairAttempts: 2,
+    totalExecutionMs: 10800000,
+  });
+  const input = { ...releaseInput(ready), validationPolicy };
+  const released = releaseFactoryWork(ready.work.id, input, actor, paths);
+  expect(released.releases[0].validationPolicy).toEqual(validationPolicy);
+  expect(releaseFactoryWork(ready.work.id, input, actor, paths)).toEqual(
+    released,
+  );
+  expect(() =>
+    releaseFactoryWork(
+      ready.work.id,
+      {
+        ...input,
+        validationPolicy: {
+          ...validationPolicy,
+          reviewerModel: 'different/model',
+        },
+      },
+      actor,
+      paths,
+    ),
+  ).toThrow('another decision');
+  expect(() =>
+    releaseFactoryWork(
+      ready.work.id,
+      {
+        ...input,
+        requestKey: 'other',
+        expectedVersion: released.work.version,
+        validationPolicy: undefined,
+      },
+      actor,
+      paths,
+    ),
+  ).toThrow(/validationPolicy/);
+});
+it('historical release remains validation-free and stale reviewed validation settings reject', async () => {
+  const legacy = createReady();
+  const released = releaseFactoryWork(
+    legacy.work.id,
+    releaseInput(legacy),
+    actor,
+    paths,
+  );
+  const { validationPolicy: _validationPolicy, ...historical } =
+    released.releases[0];
+  const db = openDb(paths.neondeckDatabase);
+  try {
+    db.prepare('UPDATE factory_releases SET record=? WHERE id=?').run(
+      JSON.stringify(historical),
+      historical.id,
+    );
+  } finally {
+    db.close();
+  }
+  expect(
+    getFactoryWork(legacy.work.id, paths).releases[0].validationPolicy,
+  ).toBeUndefined();
+  expect(() =>
+    releaseFactoryWork(
+      legacy.work.id,
+      { ...releaseInput(released), requestKey: 'upgrade-history' },
+      actor,
+      paths,
+    ),
+  ).toThrow(/active release/);
+  expect(
+    getFactoryWork(legacy.work.id, paths).releases[0].validationPolicy,
+  ).toBeUndefined();
+  writeFileSync(
+    paths.config,
+    JSON.stringify({
+      version: 1,
+      factory: { enabled: true },
+      models: { prReview: 'faux/faux-1' },
+      guardrails: { requiredChecks: ['npm test'] },
+    }),
+  );
+  const policy = factoryValidationPolicy('demo', paths);
+  const next = submitFactoryWork(
+    { ...intake, requestKey: 'another' },
+    actor,
+    paths,
+  );
+  const ready = saveFactorySpec(
+    next.work.id,
+    {
+      expectedVersion: next.work.version,
+      expectedSpecVersion: 1,
+      expectedRepoFingerprint: next.repoFingerprint,
+      spec,
+    },
+    actor,
+    paths,
+  );
+  expect(() =>
+    releaseFactoryWork(
+      ready.work.id,
+      {
+        ...releaseInput(ready, 'second'),
+        validationPolicy: { ...policy, checkCommands: ['echo changed'] },
+      },
+      actor,
+      paths,
+    ),
+  ).toThrow('Validation settings changed');
 });

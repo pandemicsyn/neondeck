@@ -45,6 +45,7 @@ export async function createDeliveryPr(
   paths: RuntimePaths,
 ) {
   const { connection, authority } = assertDeliveryAuthority(p, paths);
+  if (!connection) throw new Error('Publication authority is required.');
   if (
     !p.effects.some(
       (e) =>

@@ -8,7 +8,7 @@ import { renderFactorySpec } from '../../../shared/factory';
 import type { RuntimePaths } from '../../runtime-home';
 import { hostGit, loadLocalManifest } from '../coding-runs';
 import { codingHandle } from '../factory';
-import { deliveryContext } from './authority';
+import { pipelineValidationContext } from './authority';
 import { deliveryBudget, sameDeliveryRevision } from './delivery-aggregate';
 import { readDeliveryEvidence } from './evidence-read';
 import {
@@ -36,7 +36,7 @@ export async function buildProgressEvidencePacket(
   paths: RuntimePaths,
 ): Promise<ProgressEvidencePacket> {
   const p = v.parse(deliveryPipelineSchema, raw);
-  const context = deliveryContext(p.revision.runId, paths);
+  const context = pipelineValidationContext(p, paths);
   const { manifest } = await loadLocalManifest(
     codingHandle(context.run, paths),
   );
