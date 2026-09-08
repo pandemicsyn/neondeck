@@ -38,9 +38,12 @@ export function isReservedRepoWorkflowEnvironmentRef(value: string) {
     value,
   );
 }
-export const repoWorkflowEnvironmentRefSchema = v.pipe(
+const storedEnvironmentRefSchema = v.pipe(
   text(128),
   v.regex(/^[A-Z_][A-Z0-9_]*$/),
+);
+export const repoWorkflowEnvironmentRefSchema = v.pipe(
+  storedEnvironmentRefSchema,
   v.check(
     (value) => !isReservedRepoWorkflowEnvironmentRef(value),
     'Environment reference cannot override runtime or process controls.',
@@ -52,7 +55,14 @@ const timeout = v.pipe(
   v.minValue(1000),
   v.maxValue(3_600_000),
 );
-export const repoWorkflowProfileSchema = v.strictObject({
+const environmentRefsSchema = (item: v.GenericSchema<unknown, string>) =>
+  v.pipe(
+    v.array(item),
+    v.maxLength(32),
+    v.check((values) => new Set(values).size === values.length),
+  );
+/** Bounded editable data; reading a stored profile never authorizes execution. */
+export const storedRepoWorkflowProfileSchema = v.strictObject({
   id,
   name: text(120),
   setupCommands: v.pipe(v.array(repoWorkflowCommandSchema), v.maxLength(16)),
@@ -71,33 +81,42 @@ export const repoWorkflowProfileSchema = v.strictObject({
       }),
     ),
   }),
-  environmentRefs: v.pipe(
-    v.array(repoWorkflowEnvironmentRefSchema),
-    v.maxLength(32),
-    v.check((values) => new Set(values).size === values.length),
-  ),
+  environmentRefs: environmentRefsSchema(storedEnvironmentRefSchema),
 });
-export const repoFactoryWorkflowsSchema = v.pipe(
-  v.strictObject({
-    defaultProfileId: v.nullable(id),
-    profiles: v.pipe(
-      v.array(repoWorkflowProfileSchema),
-      v.minLength(1),
-      v.maxLength(8),
+/** Strict admission is reused by saves, proposals, release and execution. */
+export const repoWorkflowProfileSchema = v.strictObject({
+  ...storedRepoWorkflowProfileSchema.entries,
+  environmentRefs: environmentRefsSchema(repoWorkflowEnvironmentRefSchema),
+});
+const factoryWorkflowsSchema = (
+  profile: v.GenericSchema<
+    unknown,
+    v.InferOutput<typeof storedRepoWorkflowProfileSchema>
+  >,
+) =>
+  v.pipe(
+    v.strictObject({
+      defaultProfileId: v.nullable(id),
+      profiles: v.pipe(v.array(profile), v.minLength(1), v.maxLength(8)),
+    }),
+    v.check(
+      (value) =>
+        new Set(value.profiles.map((profile) => profile.id)).size ===
+        value.profiles.length,
+      'Profile IDs must be unique.',
     ),
-  }),
-  v.check(
-    (value) =>
-      new Set(value.profiles.map((profile) => profile.id)).size ===
-      value.profiles.length,
-    'Profile IDs must be unique.',
-  ),
-  v.check(
-    (value) =>
-      value.defaultProfileId === null ||
-      value.profiles.some((profile) => profile.id === value.defaultProfileId),
-    'Default must identify a saved profile.',
-  ),
+    v.check(
+      (value) =>
+        value.defaultProfileId === null ||
+        value.profiles.some((profile) => profile.id === value.defaultProfileId),
+      'Default must identify a saved profile.',
+    ),
+  );
+export const storedRepoFactoryWorkflowsSchema = factoryWorkflowsSchema(
+  storedRepoWorkflowProfileSchema,
+);
+export const repoFactoryWorkflowsSchema = factoryWorkflowsSchema(
+  repoWorkflowProfileSchema,
 );
 const fingerprint = v.pipe(v.string(), v.regex(/^[a-f0-9]{64}$/));
 export const saveRepoWorkflowsInputSchema = v.strictObject({
@@ -115,6 +134,11 @@ export const repoWorkflowProposalDraftSchema = v.strictObject({
 export const repoWorkflowProposalSchema = v.strictObject({
   ...repoWorkflowProposalDraftSchema.entries,
   evidenceRevision: v.pipe(v.string(), v.regex(/^[a-f0-9]{40,64}$/)),
+});
+/** Stored proposals are editable evidence; model output still uses the strict schema above. */
+export const storedRepoWorkflowProposalSchema = v.strictObject({
+  ...repoWorkflowProposalSchema.entries,
+  workflows: storedRepoFactoryWorkflowsSchema,
 });
 export type RepoWorkflowCommand = v.InferOutput<
   typeof repoWorkflowCommandSchema
@@ -137,7 +161,7 @@ export type ProposeRepoWorkflowsInput = v.InferOutput<
 export const repoWorkflowsSnapshotSchema = v.strictObject({
   repoId: text(256),
   fingerprint,
-  workflows: v.nullable(repoFactoryWorkflowsSchema),
+  workflows: v.nullable(storedRepoFactoryWorkflowsSchema),
 });
 export const repoWorkflowsProposalResultSchema = v.strictObject({
   ...repoWorkflowsSnapshotSchema.entries,

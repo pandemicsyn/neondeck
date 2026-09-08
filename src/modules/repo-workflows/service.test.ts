@@ -364,3 +364,96 @@ it('retains a large pnpm lockfile prefix and presence for proposal without packa
   expect(result.proposal.evidenceRevision).toBe(revision);
   expect(result.proposal.evidencePaths).toEqual(['pnpm-lock.yaml']);
 });
+it('reads a structurally valid misconfigured stored profile and permits explicit valid repair', async () => {
+  const { parseRepoRegistry, readRuntimeJsonSync } =
+    await import('../../runtime-home');
+  const {
+    repoWorkflowsSnapshotSchema,
+    storedRepoWorkflowProposalSchema,
+    repoWorkflowProposalSchema,
+    repoWorkflowProposalDraftSchema,
+  } = await import('../../../shared/repo-workflows');
+  const broken = structuredClone(workflows);
+  broken.profiles[0].environmentRefs = ['SSH_AUTH_SOCK'];
+  writeFileSync(
+    paths.repos,
+    JSON.stringify({
+      repos: [
+        { ...repo, factoryWorkflows: broken },
+        { ...repo, id: 'other', factoryWorkflows: undefined },
+      ],
+    }),
+  );
+  const registry = readRuntimeJsonSync(paths.repos, parseRepoRegistry);
+  expect(registry.repos).toHaveLength(2);
+  const snapshot = v.parse(
+    repoWorkflowsSnapshotSchema,
+    readRepoWorkflows(repo.id, paths),
+  );
+  expect(snapshot.workflows?.profiles[0].environmentRefs).toEqual([
+    'SSH_AUTH_SOCK',
+  ]);
+  expect(() =>
+    resolveRepoWorkflow(
+      registry.repos[0],
+      parseAppConfig({ version: 1 }, paths.config),
+      'test',
+    ),
+  ).toThrow('Environment reference');
+  const proposal = {
+    workflows: broken,
+    rationale: 'Editable stored evidence',
+    evidencePaths: [],
+    evidenceRevision: 'a'.repeat(40),
+  };
+  expect(v.safeParse(storedRepoWorkflowProposalSchema, proposal).success).toBe(
+    true,
+  );
+  expect(v.safeParse(repoWorkflowProposalSchema, proposal).success).toBe(false);
+  expect(
+    v.safeParse(repoWorkflowProposalDraftSchema, {
+      workflows: broken,
+      rationale: 'New model suggestion',
+      evidencePaths: [],
+    }).success,
+  ).toBe(false);
+  const before = readFileSync(paths.repos, 'utf8');
+  expect(() =>
+    saveRepoWorkflows(
+      repo.id,
+      { expectedFingerprint: snapshot.fingerprint, workflows: broken },
+      paths,
+    ),
+  ).toThrow('Environment reference');
+  expect(readFileSync(paths.repos, 'utf8')).toBe(before);
+  const repaired = saveRepoWorkflows(
+    repo.id,
+    { expectedFingerprint: snapshot.fingerprint, workflows },
+    paths,
+  );
+  expect(repaired.workflows?.profiles[0].environmentRefs).toEqual([
+    'TEST_TOKEN',
+  ]);
+  expect(readRuntimeJsonSync(paths.repos, parseRepoRegistry).repos[1].id).toBe(
+    'other',
+  );
+  expect(
+    v.safeParse(repoFactoryWorkflowsSchema, repaired.workflows).success,
+  ).toBe(true);
+});
+it('stored profile representation stays bounded and structurally validated', async () => {
+  const { storedRepoFactoryWorkflowsSchema } =
+    await import('../../../shared/repo-workflows');
+  for (const names of [
+    ['SSH_AUTH_SOCK'],
+    Array(33).fill('TEST_KEY'),
+    ['invalid name'],
+    ['X'.repeat(129)],
+  ]) {
+    const stored = structuredClone(workflows);
+    stored.profiles[0].environmentRefs = names;
+    expect(v.safeParse(storedRepoFactoryWorkflowsSchema, stored).success).toBe(
+      names[0] === 'SSH_AUTH_SOCK',
+    );
+  }
+});

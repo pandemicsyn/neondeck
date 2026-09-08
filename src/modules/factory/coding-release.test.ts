@@ -830,3 +830,47 @@ it('resolves an unselected existing brief to the configured default and rejects 
   );
   expect(result.releases[0].validationPolicy?.workflow?.id).toBe('web');
 });
+it('misconfigured stored environment references remain readable but cannot admit trials or releases', async () => {
+  const { readRepoWorkflows } = await import('../repo-workflows');
+  const { startRepoWorkflowRun } = await import('../repo-workflow-runs');
+  const work = readyWork();
+  const input = releaseInput(work);
+  const registry = JSON.parse(readFileSync(paths.repos, 'utf8'));
+  registry.repos[0].factoryWorkflows = {
+    defaultProfileId: 'test',
+    profiles: [
+      {
+        id: 'test',
+        name: 'Test',
+        setupCommands: [],
+        validationCommands: [{ command: 'npm test', cwd: '.' }],
+        setupTimeoutMs: 1000,
+        validationTimeoutMs: 1000,
+        runtime: {},
+        environmentRefs: ['SSH_AUTH_SOCK'],
+      },
+    ],
+  };
+  writeFileSync(paths.repos, JSON.stringify(registry));
+  const snapshot = readRepoWorkflows('demo', paths);
+  expect(snapshot.workflows?.profiles[0].environmentRefs).toEqual([
+    'SSH_AUTH_SOCK',
+  ]);
+  await expect(
+    startRepoWorkflowRun(
+      'demo',
+      { profileId: 'test', expectedFingerprint: snapshot.fingerprint },
+      paths,
+    ),
+  ).rejects.toThrow('Environment reference');
+  const current = getFactoryWork(work.work.id, paths);
+  expect(() =>
+    releaseFactoryWork(
+      work.work.id,
+      { ...input, repoFingerprint: current.repoFingerprint },
+      actor,
+      paths,
+    ),
+  ).toThrow('Environment reference');
+  expect(getFactoryWork(work.work.id, paths).releases).toHaveLength(0);
+});

@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { mkdir, rm, open, lstat, realpath } from 'node:fs/promises';
 import { constants } from 'node:fs';
-import { DatabaseSync } from 'node:sqlite';
+import { openDb, isSqliteBusy } from '../../lib/sqlite';
 import { execFile } from 'node:child_process';
 import { hostname } from 'node:os';
 import { promisify } from 'node:util';
@@ -176,14 +176,13 @@ async function recoveryGuard(directory: string) {
     (await realpath(path)) !== path
   )
     throw new Error('Unsafe recovery guard');
-  const db = new DatabaseSync(path, { timeout: 0 });
+  const db = openDb(path, { timeout: 0 });
   try {
     db.exec('BEGIN IMMEDIATE');
     return () => db.close();
   } catch (error) {
     db.close();
-    if (error instanceof Error && 'errcode' in error && error.errcode === 5)
-      return null;
+    if (isSqliteBusy(error)) return null;
     throw error;
   }
 }

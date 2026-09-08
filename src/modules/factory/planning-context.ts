@@ -1,4 +1,4 @@
-import { repoFactoryWorkflowsSchema } from '../../../shared/repo-workflows';
+import { storedRepoFactoryWorkflowsSchema } from '../../../shared/repo-workflows';
 import { readRepoWorkflows } from '../repo-workflows';
 import { readFileSync } from 'node:fs';
 import * as v from 'valibot';
@@ -16,7 +16,7 @@ import {
 const str = v.string();
 const nullable = v.nullable(str);
 export const contextSchema = v.object({
-  repoWorkflows: v.optional(v.nullable(repoFactoryWorkflowsSchema)),
+  repoWorkflows: v.optional(v.nullable(storedRepoFactoryWorkflowsSchema)),
   capturedAt: str,
   model: str,
   utilityModel: str,
