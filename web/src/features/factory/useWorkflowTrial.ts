@@ -6,6 +6,16 @@ import {
   startRepoWorkflowRun,
 } from './workflow-api';
 
+function completed(run: RepoWorkflowRun | null | undefined) {
+  return (
+    !!run &&
+    run.status !== 'running' &&
+    run.status !== 'uncertain' &&
+    run.phase === 'complete' &&
+    run.cleanup === 'complete'
+  );
+}
+
 export function useWorkflowTrial(repoId: string, active: boolean) {
   const client = useQueryClient();
   const key = ['repo-workflow-current', repoId];
@@ -20,6 +30,15 @@ export function useWorkflowTrial(repoId: string, active: boolean) {
     staleTime: 0,
     refetchOnMount: 'always',
     refetchOnWindowFocus: false,
+    refetchInterval: (query) => {
+      const owned = query.state.data?.run;
+      const latest = owned?.runId === lastRun?.runId ? lastRun : owned;
+      // Completion can be persisted before the lock is released. Only poll
+      // that gap; stop on a lookup error and leave explicit retry available.
+      return query.state.status !== 'error' && owned && completed(latest)
+        ? 1000
+        : false;
+    },
   });
   const owned = discovery.data?.run;
   useEffect(() => {
@@ -81,8 +100,10 @@ export function useWorkflowTrial(repoId: string, active: boolean) {
         client.setQueryData(key, { run: next });
       } catch (error) {
         // The server may have accepted a request whose response was lost.
-        await discovery.refetch();
-        throw error;
+        const recovered = await discovery.refetch();
+        // An owned run may also belong to a concurrent request. Show its
+        // progress without claiming this particular start succeeded.
+        if (!recovered.isSuccess || !recovered.data.run) throw error;
       }
     } finally {
       starting.current = false;
@@ -94,6 +115,7 @@ export function useWorkflowTrial(repoId: string, active: boolean) {
     observed,
     start,
     discovery,
+    waitingForRelease: !!owned && completed(run),
     blocked:
       !active ||
       observedBlocked ||

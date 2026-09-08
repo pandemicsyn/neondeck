@@ -236,6 +236,197 @@ it('keeps polling terminal status until cleanup completes before enabling anothe
     vi.useRealTimers();
   }
 });
+it('observes terminal ownership until the server unlocks and enables another test without remounting', async () => {
+  vi.useFakeTimers();
+  try {
+    vi.mocked(getCurrentRepoWorkflowRun).mockResolvedValue({ run: run() });
+    await render();
+    const initialReads = vi.mocked(getCurrentRepoWorkflowRun).mock.calls.length;
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2100);
+    });
+    expect(getCurrentRepoWorkflowRun).toHaveBeenCalledTimes(initialReads);
+    const complete: RepoWorkflowRun = {
+      ...run(),
+      status: 'passed',
+      phase: 'complete',
+      cleanup: 'complete',
+    };
+    vi.mocked(getRepoWorkflowRun).mockResolvedValue(complete);
+    vi.mocked(getCurrentRepoWorkflowRun).mockResolvedValue({ run: complete });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1100);
+    });
+    expect(container.textContent).toContain('Setup and checks passed');
+    expect(button('Test setup and validation').disabled).toBe(true);
+    expect(button('Refresh test ownership')).toBeTruthy();
+    const terminalReads = vi.mocked(getCurrentRepoWorkflowRun).mock.calls
+      .length;
+    vi.mocked(getCurrentRepoWorkflowRun).mockResolvedValue({ run: null });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1100);
+    });
+    expect(
+      vi.mocked(getCurrentRepoWorkflowRun).mock.calls.length,
+    ).toBeGreaterThan(terminalReads);
+    expect(button('Test setup and validation').disabled).toBe(false);
+    expect(container.textContent).toContain('Setup and checks passed');
+    expect(container.textContent).not.toContain('Waiting for the server');
+    const unlockedReads = vi.mocked(getCurrentRepoWorkflowRun).mock.calls
+      .length;
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(3100);
+    });
+    expect(getCurrentRepoWorkflowRun).toHaveBeenCalledTimes(unlockedReads);
+    expect(startRepoWorkflowRun).not.toHaveBeenCalled();
+  } finally {
+    vi.useRealTimers();
+  }
+});
+it('stops ownership polling on error and retains the final result until explicit retry succeeds', async () => {
+  vi.useFakeTimers();
+  try {
+    const complete: RepoWorkflowRun = {
+      ...run(),
+      status: 'passed',
+      phase: 'complete',
+      cleanup: 'complete',
+    };
+    vi.mocked(getCurrentRepoWorkflowRun).mockResolvedValue({ run: complete });
+    vi.mocked(getRepoWorkflowRun).mockResolvedValue(complete);
+    await render();
+    await flushDiscovery();
+    vi.mocked(getCurrentRepoWorkflowRun).mockRejectedValue(
+      new Error('Server unavailable'),
+    );
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1100);
+    });
+    expect(container.textContent).toContain(
+      'Could not check for an existing test',
+    );
+    expect(container.textContent).toContain('Setup and checks passed');
+    expect(button('Test setup and validation').disabled).toBe(true);
+    const failedReads = vi.mocked(getCurrentRepoWorkflowRun).mock.calls.length;
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(10000);
+    });
+    expect(getCurrentRepoWorkflowRun).toHaveBeenCalledTimes(failedReads);
+    vi.mocked(getCurrentRepoWorkflowRun).mockResolvedValue({ run: null });
+    await click('Retry test discovery');
+    expect(button('Test setup and validation').disabled).toBe(false);
+    expect(container.textContent).toContain('Setup and checks passed');
+  } finally {
+    vi.useRealTimers();
+  }
+});
+it('refreshes terminal run status to recover a dead controller lock even when terminal data stays unchanged', async () => {
+  const complete: RepoWorkflowRun = {
+    ...run(),
+    status: 'passed',
+    phase: 'complete',
+    cleanup: 'complete',
+  };
+  vi.mocked(getCurrentRepoWorkflowRun).mockResolvedValue({ run: complete });
+  vi.mocked(getRepoWorkflowRun).mockResolvedValue(complete);
+  await render();
+  await flushDiscovery();
+  expect(button('Test setup and validation').disabled).toBe(true);
+  // A read-only ownership refresh cannot release the dead controller's lock.
+  await click('Refresh test ownership');
+  expect(button('Test setup and validation').disabled).toBe(true);
+  vi.mocked(getCurrentRepoWorkflowRun).mockRejectedValue(
+    new Error('Server unavailable'),
+  );
+  await click('Refresh test ownership');
+  expect(container.textContent).toContain(
+    'Could not check for an existing test',
+  );
+  const reads = vi.mocked(getRepoWorkflowRun).mock.calls.length;
+  vi.mocked(getRepoWorkflowRun).mockImplementation(async () => {
+    // getRun recovery releases ownership but returns identical terminal data.
+    vi.mocked(getCurrentRepoWorkflowRun).mockResolvedValue({ run: null });
+    return complete;
+  });
+  await click('Refresh test status');
+  expect(getRepoWorkflowRun).toHaveBeenCalledTimes(reads + 1);
+  expect(getRepoWorkflowRun).toHaveBeenLastCalledWith(
+    'demo',
+    'trial',
+    expect.objectContaining({ signal: expect.any(AbortSignal) }),
+  );
+  expect(button('Test setup and validation').disabled).toBe(false);
+  expect(container.textContent).toContain('Setup and checks passed');
+  expect(startRepoWorkflowRun).not.toHaveBeenCalled();
+});
+it('ignores a delayed prior-run status refresh and retains the new run through unlock until its final result', async () => {
+  vi.useFakeTimers();
+  try {
+    const completeA: RepoWorkflowRun = {
+      ...run(),
+      status: 'passed',
+      phase: 'complete',
+      cleanup: 'complete',
+      guidance: 'Result A',
+    };
+    vi.mocked(getCurrentRepoWorkflowRun).mockResolvedValue({ run: completeA });
+    vi.mocked(getRepoWorkflowRun).mockResolvedValue(completeA);
+    await render();
+    await flushDiscovery();
+    let finishA!: (value: RepoWorkflowRun) => void;
+    vi.mocked(getRepoWorkflowRun).mockReturnValueOnce(
+      new Promise((resolve) => {
+        finishA = resolve;
+      }),
+    );
+    await click('Refresh test status');
+    vi.mocked(getCurrentRepoWorkflowRun).mockResolvedValue({ run: null });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1100);
+    });
+    expect(button('Test setup and validation').disabled).toBe(false);
+    const activeB = { ...run(), runId: 'trial-b', guidance: 'Running B' };
+    vi.mocked(startRepoWorkflowRun).mockResolvedValue(activeB);
+    let finishB!: (value: RepoWorkflowRun) => void;
+    vi.mocked(getRepoWorkflowRun).mockReturnValue(
+      new Promise((resolve) => {
+        finishB = resolve;
+      }),
+    );
+    await click('Test setup and validation');
+    expect(container.textContent).toContain('Running B');
+    const ownershipReads = vi.mocked(getCurrentRepoWorkflowRun).mock.calls
+      .length;
+    await act(async () => finishA(completeA));
+    await flushDiscovery();
+    expect(getCurrentRepoWorkflowRun).toHaveBeenCalledTimes(ownershipReads);
+    // B's lock disappears before its final status response is collected.
+    await act(async () => {
+      await client.invalidateQueries({
+        queryKey: ['repo-workflow-current', 'demo'],
+      });
+    });
+    await flushDiscovery();
+    expect(container.textContent).toContain('Running B');
+    expect(container.textContent).not.toContain('Result A');
+    expect(button('Test setup and validation').disabled).toBe(true);
+    await act(async () =>
+      finishB({
+        ...activeB,
+        status: 'passed',
+        phase: 'complete',
+        cleanup: 'complete',
+        guidance: 'Final result B',
+      }),
+    );
+    await flushDiscovery();
+    expect(container.textContent).toContain('Final result B');
+    expect(button('Test setup and validation').disabled).toBe(false);
+    expect(startRepoWorkflowRun).toHaveBeenCalledOnce();
+  } finally {
+    vi.useRealTimers();
+  }
+});
 it('restores a running test after remount with progress and cancellation', async () => {
   vi.mocked(getCurrentRepoWorkflowRun).mockResolvedValue({ run: run() });
   await render();
@@ -283,18 +474,39 @@ it('blocks discovery pending, failure and retained uncertain runs without losing
   expect(button('Test setup and validation').disabled).toBe(true);
   expect(startRepoWorkflowRun).not.toHaveBeenCalled();
 });
-it('discovers an accepted test after a lost start response and prevents a duplicate', async () => {
+it('discovers an owned test after a lost start response without showing a request failure or allowing a duplicate', async () => {
   await render();
   vi.mocked(startRepoWorkflowRun).mockImplementation(async () => {
     vi.mocked(getCurrentRepoWorkflowRun).mockResolvedValue({ run: run() });
-    throw new Error('Response lost');
+    throw new Error('Request failed');
   });
   await click('Test setup and validation');
   expect(container.textContent).toContain('Setting up repository');
+  expect(container.textContent).not.toContain('Request failed');
   expect(button('Test setup and validation').disabled).toBe(true);
   await click('Test setup and validation');
   expect(startRepoWorkflowRun).toHaveBeenCalledOnce();
 });
+it.each(['absent', 'failed'] as const)(
+  'preserves the start error when recovery discovery is %s',
+  async (recovery) => {
+    await render();
+    vi.mocked(startRepoWorkflowRun).mockImplementation(async () => {
+      if (recovery === 'failed')
+        vi.mocked(getCurrentRepoWorkflowRun).mockRejectedValue(
+          new Error('Discovery unavailable'),
+        );
+      throw new Error('Request failed');
+    });
+    await click('Test setup and validation');
+    expect(container.textContent).toContain('Request failed');
+    expect(container.textContent).not.toContain('Setting up repository');
+    expect(startRepoWorkflowRun).toHaveBeenCalledOnce();
+    expect(button('Test setup and validation').disabled).toBe(
+      recovery === 'failed',
+    );
+  },
+);
 it('rechecks ownership on click and restores a concurrently started run instead of starting another', async () => {
   await render();
   vi.mocked(getCurrentRepoWorkflowRun).mockResolvedValue({ run: run() });

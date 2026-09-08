@@ -154,6 +154,29 @@ explicit retry button submits the current pipeline version and operator reason
 to the typed retry endpoint. A regression confirms rendering does not retry and
 an explicit click submits that exact request.
 
+The remaining #435 corrections unify reserved environment-name validation at
+configuration and execution, and retain signed cleanup evidence before terminal
+persistence and repository-lock release. Receipt hashes normalize through the
+ownership schema. Recovery continuation requires authenticated cleanup proof,
+proven claimant death and an exclusive SQLite guard that releases on process
+exit. Partial or unproven claims remain retained; a later run's lock is protected.
+Both independent reviewers cleared the final backend correction. Its 91 focused
+tests include real-schema persistence and a recovery process exiting while
+holding its claim; root typechecking, lint and formatting pass.
+
+Joint review added configuration repair and UI completion-race coverage. Bounded
+stored settings remain inspectable and repairable, while new saves, proposals,
+approval and execution use strict environment-reference validation. The SQLite
+guard now opens through the existing shared gateway; its boundary check remains
+unchanged. Both reviewers cleared these backend changes with 127 focused tests.
+
+The dashboard polls ownership until a completed test releases its lock and
+offers explicit status recovery after interruption. It does not show a transport
+failure when discovery recovers an owned test. Delayed responses from a replaced
+progress panel cannot overwrite a newer run or invalidate its ownership. Both
+reviewers cleared the final UI correction; 27 focused tests and web typechecking,
+lint and formatting pass.
+
 ## Verification record
 
 - PR feedback corrections passed `npm run check`: 320 test files and 3,503

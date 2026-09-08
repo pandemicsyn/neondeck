@@ -411,8 +411,22 @@ export function RepoWorkflowEditor({
         {(dirty || stale) && (
           <p>Save your changes or load saved settings before testing.</p>
         )}
-        {trial.discovery.isFetching && (
+        {trial.discovery.isPending && trial.discovery.isFetching && (
           <output>Checking for an existing workflow test…</output>
+        )}
+        {trial.waitingForRelease && !trial.discovery.isError && (
+          <p>
+            Test finished. Waiting for the server to allow another test. If this
+            persists after a server restart, refresh test status below to
+            recover it.{' '}
+            <button
+              type="button"
+              disabled={trial.discovery.isFetching}
+              onClick={() => void trial.discovery.refetch()}
+            >
+              Refresh test ownership
+            </button>
+          </p>
         )}
         {trial.discovery.isError && (
           <p role="alert">
@@ -462,6 +476,7 @@ export function RepoWorkflowEditor({
             key={run.runId}
             initial={run}
             onObserved={trial.observed}
+            allowStatusRefresh={trial.waitingForRelease}
           />
         )}
       </section>

@@ -1,5 +1,5 @@
 /* oxlint-disable jsx-a11y/no-noninteractive-tabindex -- Bounded logs must be keyboard-scrollable. */
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import type { RepoWorkflowRun } from '../../../../shared/repo-workflow-runs';
 import { cancelRepoWorkflowRun, getRepoWorkflowRun } from './workflow-api';
@@ -20,12 +20,21 @@ const phaseLabels = {
 export function WorkflowRunProgress({
   initial,
   onObserved,
+  allowStatusRefresh = false,
 }: {
   initial: RepoWorkflowRun;
   onObserved: (run: RepoWorkflowRun) => void;
+  allowStatusRefresh?: boolean;
 }) {
   const [cancelError, setCancelError] = useState('');
   const [cancelling, setCancelling] = useState(false);
+  const lifetime = useRef<object | null>(null);
+  useEffect(() => {
+    lifetime.current = {};
+    return () => {
+      lifetime.current = null;
+    };
+  }, [initial.repoId, initial.runId]);
   const query = useQuery({
     queryKey: ['repo-workflow-run', initial.repoId, initial.runId],
     queryFn: ({ signal }) =>
@@ -51,11 +60,25 @@ export function WorkflowRunProgress({
         {phaseLabels[run.phase]} · Profile {run.profileId}
       </output>
       {run.guidance && <p>{run.guidance}</p>}
-      {(run.status === 'uncertain' || run.cleanup === 'retained') && (
+      {(allowStatusRefresh ||
+        run.status === 'uncertain' ||
+        run.cleanup === 'retained') && (
         <button
           type="button"
           disabled={query.isFetching}
-          onClick={() => void query.refetch()}
+          onClick={async () => {
+            const currentLifetime = lifetime.current;
+            const result = await query.refetch();
+            // Recovery may release ownership without changing terminal data.
+            // A delayed response must not replace a subsequent run or refresh
+            // its ownership after this instance has unmounted/changed runs.
+            if (
+              currentLifetime &&
+              lifetime.current === currentLifetime &&
+              result.isSuccess
+            )
+              onObserved(result.data);
+          }}
         >
           {query.isFetching ? 'Refreshing test status…' : 'Refresh test status'}
         </button>
