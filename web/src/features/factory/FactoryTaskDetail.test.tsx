@@ -13,6 +13,13 @@ import {
   type FactoryDetail,
 } from '../../../../shared/factory';
 // Coding query behavior is covered separately in FactoryCoding.test.tsx.
+vi.mock('./workflow-api', () => ({
+  getRepoWorkflows: vi.fn(async () => ({
+    repoId: 'demo',
+    fingerprint: 'a'.repeat(64),
+    workflows: null,
+  })),
+}));
 vi.mock('../../api/factory-delivery', () => ({
   getFactoryValidationPolicy: vi.fn(
     async () => validationPreview().validationPolicy,
@@ -161,6 +168,11 @@ beforeEach(() => {
   current = fixture();
   client = new QueryClient({
     defaultOptions: { queries: { retry: false, staleTime: Infinity } },
+  });
+  client.setQueryData(['repo-factory-workflows', 'demo'], {
+    repoId: 'demo',
+    fingerprint: 'a'.repeat(64),
+    workflows: null,
   });
   client.setQueryData(
     ['factory-validation-policy', 'demo'],

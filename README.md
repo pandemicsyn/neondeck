@@ -31,6 +31,13 @@ mutable state stored in SQLite under a runtime home you control.
 
 ## Factory intake, coding and delivery
 
+Repository workflows define the setup and validation commands a factory task
+needs, including commands in nested packages. Configure named profiles in
+Factory setup or optional CLI onboarding, then explicitly test a saved profile
+in a disposable checkout. Review the selected workflow when approving a plan.
+See the [repository workflow guide](.plans/factory/REPOSITORY_WORKFLOWS_OPERATOR.md)
+for runtime requirements, environment references, setup failures and retries.
+
 Run `neondeck factory setup` to detect an installed Codex, OpenCode or Kilo CLI.
 Setup derives the executable search PATH, including Node for npm wrappers;
 manual path editing remains available. Search Codex models or the Kilo catalog

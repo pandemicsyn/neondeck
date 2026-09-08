@@ -1,3 +1,4 @@
+import { configureFactoryWorkflows } from './onboarding-factory-workflows';
 import { log, note } from '@clack/prompts';
 import * as v from 'valibot';
 import { githubConnectionSchema } from '../../shared/factory-github';
@@ -26,6 +27,7 @@ import {
 } from './onboarding-factory-coding';
 
 export async function configureFactory(paths: RuntimePaths) {
+  await configureFactoryWorkflows(paths);
   if (
     !(await promptConfirm({
       message: 'Set up optional factory intake now?',

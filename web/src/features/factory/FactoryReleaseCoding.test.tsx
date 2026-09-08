@@ -7,6 +7,13 @@ import { beforeEach, afterEach, expect, it, vi } from 'vitest';
 import { FactoryReleaseCoding } from './FactoryReleaseCoding';
 import { codingState } from './FactoryCoding.fixtures';
 import { getFactoryCodingState } from '../../api/factory-coding';
+vi.mock('./workflow-api', () => ({
+  getRepoWorkflows: vi.fn(async () => ({
+    repoId: 'demo',
+    fingerprint: 'a'.repeat(64),
+    workflows: null,
+  })),
+}));
 vi.mock('../../api/factory-delivery', () => ({
   getFactoryValidationPolicy: vi.fn(
     async () => validationPreview().validationPolicy,
@@ -30,6 +37,11 @@ beforeEach(() => {
     defaultOptions: { queries: { retry: false, staleTime: Infinity } },
   });
   client.setQueryData(key, codingState());
+  client.setQueryData(['repo-factory-workflows', 'demo'], {
+    repoId: 'demo',
+    fingerprint: 'a'.repeat(64),
+    workflows: null,
+  });
   client.setQueryData(
     ['factory-validation-policy', 'demo'],
     validationPreview().validationPolicy,
@@ -115,6 +127,7 @@ it('shows every normalized fingerprinted field and submits that exact snapshot',
   expect(release).toHaveBeenCalledExactlyOnceWith(
     state.configFingerprint,
     validationPreview().validationPolicy,
+    null,
   );
 });
 it('requires explicit review after refresh changes previously hidden settings and never silently switches the fingerprint', async () => {
@@ -150,6 +163,7 @@ it('requires explicit review after refresh changes previously hidden settings an
   expect(release).toHaveBeenCalledExactlyOnceWith(
     next.configFingerprint,
     validationPreview().validationPolicy,
+    null,
   );
 });
 it('keeps default Codex settings explicit and submits a nonnull fingerprint while disabled coding is visible', async () => {
@@ -162,6 +176,7 @@ it('keeps default Codex settings explicit and submits a nonnull fingerprint whil
   expect(release).toHaveBeenCalledExactlyOnceWith(
     codingState(false).configFingerprint,
     validationPreview().validationPolicy,
+    null,
   );
 });
 it('blocks release during refresh and after failed refresh while retaining the reviewed configuration', async () => {
@@ -214,6 +229,7 @@ it('shows the local auth path in the exact release snapshot without an environme
   expect(release).toHaveBeenCalledWith(
     state.configFingerprint,
     validationPreview().validationPolicy,
+    null,
   );
 });
 it('keeps reviewed release controls stable through polling, but blocks changed settings and failed retries', async () => {
@@ -240,6 +256,7 @@ it('keeps reviewed release controls stable through polling, but blocks changed s
     expect(release).toHaveBeenCalledWith(
       codingState().configFingerprint,
       validationPreview().validationPolicy,
+      null,
     );
     await act(async () => {
       resolve(codingState());
@@ -313,6 +330,7 @@ it('binds new plan approval to the displayed validation policy and blocks change
   expect(release).toHaveBeenLastCalledWith(
     codingState().configFingerprint,
     policy,
+    null,
   );
   await act(async () =>
     client.setQueryData(['factory-validation-policy', 'demo'], {
@@ -331,7 +349,8 @@ it('retains the actionable validation failure beside approval through repeated n
   client.removeQueries({ queryKey: ['factory-validation-policy'] });
   const { getFactoryValidationPolicy } =
     await import('../../api/factory-delivery');
-  const missing = 'Configure an independent reviewer model before release.';
+  const missing =
+    'Configure an independent reviewer model before authorizing validation.';
   let resolve!: (
     value: ReturnType<typeof validationPreview>['validationPolicy'],
   ) => void;
@@ -403,6 +422,7 @@ it('retains the actionable validation failure beside approval through repeated n
     expect(release).toHaveBeenCalledExactlyOnceWith(
       codingState().configFingerprint,
       validationPreview().validationPolicy,
+      null,
     );
   } finally {
     vi.useRealTimers();
@@ -448,6 +468,7 @@ it('retains a reviewed policy after failures and requires review of changed reco
   expect(release).toHaveBeenCalledExactlyOnceWith(
     codingState().configFingerprint,
     changed,
+    null,
   );
   vi.mocked(getFactoryValidationPolicy).mockResolvedValue(original);
 });
@@ -535,4 +556,157 @@ it('keeps the outer refresh label and enabled state stable during no-data coding
   } finally {
     vi.useRealTimers();
   }
+});
+
+it('lets a human select a saved workflow without editing the brief and shows its complete approval snapshot', async () => {
+  const { getFactoryValidationPolicy } =
+    await import('../../api/factory-delivery');
+  const profile = {
+    id: 'web',
+    name: 'Web app',
+    setupCommands: [{ command: 'npm ci', cwd: 'web' }],
+    validationCommands: [{ command: 'npm test', cwd: '.' }],
+    setupTimeoutMs: 60000,
+    validationTimeoutMs: 120000,
+    runtime: {
+      node: '>=26',
+      packageManager: { name: 'npm' as const, version: '>=11' },
+    },
+    environmentRefs: ['TEST_TOKEN'],
+  };
+  const other = {
+    ...profile,
+    id: 'docs',
+    name: 'Documentation',
+    setupCommands: [{ command: 'pnpm install', cwd: 'docs' }],
+  };
+  client.setQueryData(['repo-factory-workflows', 'demo'], {
+    repoId: 'demo',
+    fingerprint: 'a'.repeat(64),
+    workflows: { defaultProfileId: 'web', profiles: [profile, other] },
+  });
+  client.setQueryData(['factory-validation-policy', 'demo'], {
+    ...validationPreview().validationPolicy,
+    workflow: profile,
+  });
+  vi.mocked(getFactoryValidationPolicy).mockImplementation(
+    async (_repo, _options, workflowId) => ({
+      ...validationPreview().validationPolicy,
+      workflow: workflowId === 'docs' ? other : profile,
+    }),
+  );
+  await render();
+  expect(container.textContent).toContain('Configured default: Web app');
+  expect(container.textContent).toContain('npm ci');
+  expect(container.textContent).toContain('TEST_TOKEN');
+  expect(container.textContent).toContain('>=26');
+  const select = container.querySelector('select')!;
+  await act(async () => {
+    select.value = 'docs';
+    select.dispatchEvent(new Event('change', { bubbles: true }));
+  });
+  await flush();
+  expect(container.textContent).toContain('pnpm install');
+  expect(container.textContent).not.toContain('npm ci');
+  await act(async () => button('Release v2').click());
+  expect(release).toHaveBeenLastCalledWith(
+    codingState().configFingerprint,
+    expect.objectContaining({ workflow: other }),
+    'docs',
+  );
+  await act(async () => {
+    client.setQueryData(key, {
+      ...codingState(),
+      configFingerprint: 'f'.repeat(64),
+    });
+  });
+  await flush();
+  await act(async () => {
+    select.value = '';
+    select.dispatchEvent(new Event('change', { bubbles: true }));
+  });
+  await flush();
+  expect(button('Release v2').disabled).toBe(true);
+  expect(container.textContent).toContain('Review updated execution settings');
+});
+
+it('shows workflow guidance for a missing default and links to the selected repository setup', async () => {
+  const { getFactoryValidationPolicy } =
+    await import('../../api/factory-delivery');
+  client.removeQueries({ queryKey: ['factory-validation-policy'] });
+  vi.mocked(getFactoryValidationPolicy).mockRejectedValue(
+    new Error('Select a workflow explicitly or configure a default.'),
+  );
+  await render();
+  await flush();
+  expect(container.textContent).toContain(
+    'Select a workflow explicitly or configure a default.',
+  );
+  expect(container.textContent).not.toContain('Configure PR review model');
+  const link = [...container.querySelectorAll('a')].find(
+    (item) => item.textContent === 'Configure repository workflow',
+  )!;
+  expect(link.getAttribute('href')).toBe(
+    '/factory?setup=workflows&repoId=demo#factory-repo-workflows',
+  );
+  expect(link.target).toBe('_blank');
+  expect(button('Release v2').disabled).toBe(true);
+  vi.mocked(getFactoryValidationPolicy).mockResolvedValue(
+    validationPreview().validationPolicy,
+  );
+});
+it('initializes approval from the viewed nondefault workflow and requests its policy', async () => {
+  const { getFactoryValidationPolicy } =
+    await import('../../api/factory-delivery');
+  const profile = {
+    id: 'web',
+    name: 'Web',
+    setupCommands: [],
+    validationCommands: [{ command: 'npm test', cwd: '.' }],
+    setupTimeoutMs: 60000,
+    validationTimeoutMs: 60000,
+    runtime: {},
+    environmentRefs: [],
+  };
+  const selected = {
+    ...profile,
+    id: 'docs',
+    name: 'Documentation',
+    validationCommands: [{ command: 'pnpm test', cwd: 'docs' }],
+  };
+  client.setQueryData(['repo-factory-workflows', 'demo'], {
+    repoId: 'demo',
+    fingerprint: 'a'.repeat(64),
+    workflows: { defaultProfileId: 'web', profiles: [profile, selected] },
+  });
+  vi.mocked(getFactoryValidationPolicy).mockResolvedValue({
+    ...validationPreview().validationPolicy,
+    workflow: selected,
+  });
+  await act(async () =>
+    root.render(
+      <QueryClientProvider client={client}>
+        <FactoryReleaseCoding
+          label="Approve viewed plan"
+          repoId="demo"
+          workflowId="docs"
+          disabled={false}
+          onRelease={release}
+        />
+      </QueryClientProvider>,
+    ),
+  );
+  await flush();
+  expect(container.querySelector('select')?.value).toBe('docs');
+  expect(getFactoryValidationPolicy).toHaveBeenCalledWith(
+    'demo',
+    expect.objectContaining({ signal: expect.any(AbortSignal) }),
+    'docs',
+  );
+  await act(async () => button('Approve viewed plan').click());
+  expect(release).toHaveBeenLastCalledWith(
+    codingState().configFingerprint,
+    expect.objectContaining({ workflow: selected }),
+    'docs',
+  );
 });

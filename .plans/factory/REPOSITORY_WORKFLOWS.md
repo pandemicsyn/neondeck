@@ -1,9 +1,14 @@
 # Repository setup and validation workflows
 
 Status: source implementation, two independent static reviews and manager
-product/architecture review complete. Full local verification is in progress;
-live acceptance remains pending. This operator-approved follow-up addresses
+product/architecture review and full local verification complete. Live acceptance
+remains pending. This operator-approved follow-up addresses
 validation commands being inferred without preparing their dependencies.
+
+Published as [backend PR #435](https://github.com/pandemicsyn/neondeck/pull/435)
+and [dashboard/CLI PR #436](https://github.com/pandemicsyn/neondeck/pull/436)
+in stack #437. Publication occurred only after both static reviewers were clean.
+Live acceptance remains an operator follow-up, separate from PR review/merge.
 
 ## Product behavior
 
@@ -108,6 +113,122 @@ The layer checker recognizes exactly two additional public worker entrypoints:
 moved/re-exported; private import and layer-direction rules remain enforced. A
 Vite build-graph regression restricts the detached verifier to its audited
 deterministic dependencies.
+
+### PR feedback follow-up
+
+PR #435's trial-remote finding is corrected: test checkouts fetch from the
+unambiguous remote matching the registered GitHub repository, including an
+`upstream` remote or a matching URL after an unrelated URL. Missing or ambiguous
+matches report a setup blocker without falling back to stale local content.
+
+The backend also exposes read-only discovery of the repository's owned workflow
+test so the dashboard can recover its progress and cancellation handle after a
+refresh. Discovery validates the lock, signed ownership and bounded result; it
+does not start recovery, execute commands or remove locks. Both independent
+reviewers cleared this backend correction, with 44 focused tests, typechecking,
+lint and formatting passing.
+
+PR #436 now restores the owned test after refresh or repository switching,
+preserves unsaved workflow edits and retains final output after lock removal.
+Ownership discovery cannot overwrite a newer status observation. An uncertain
+outcome has an explicit status-refresh action; duplicate starts remain blocked
+until ownership and progress settle. Both independent reviewers cleared the
+final UI correction after two recovery edge cases were fixed. All 44 focused
+UI/API tests, root/web typechecks, lint, formatting and import checks pass.
+
+The selected-workflow comment on #435 concerns its dependent UI integration in
+#436: the viewed brief's workflow feeds the execution preview and approval
+payload. An initial nondefault-profile regression verifies this behavior; the
+manager's final review covers the combined stack and exact approval capture.
+
+Further automated review found that workflow edits did not survive page reload.
+The editor now retains a bounded, versioned per-repository session draft,
+including its original base fingerprint, incomplete edits and selected profile.
+Successful save or explicit discard clears it. Storage failures are visible and
+stale restored settings still require reconciliation. Both independent reviewers
+cleared this correction; 98 tests across seven focused dashboard/API suites,
+root/web typechecks, lint and formatting pass.
+
+The environment-retry UI comment on #435 is covered by dependent #436: an
+explicit retry button submits the current pipeline version and operator reason
+to the typed retry endpoint. A regression confirms rendering does not retry and
+an explicit click submits that exact request.
+
+The remaining #435 corrections unify reserved environment-name validation at
+configuration and execution, and retain signed cleanup evidence before terminal
+persistence and repository-lock release. Receipt hashes normalize through the
+ownership schema. Recovery continuation requires authenticated cleanup proof,
+proven claimant death and an exclusive SQLite guard that releases on process
+exit. Partial or unproven claims remain retained; a later run's lock is protected.
+Both independent reviewers cleared the final backend correction. Its 91 focused
+tests include real-schema persistence and a recovery process exiting while
+holding its claim; root typechecking, lint and formatting pass.
+
+Joint review added configuration repair and UI completion-race coverage. Bounded
+stored settings remain inspectable and repairable, while new saves, proposals,
+approval and execution use strict environment-reference validation. The SQLite
+guard now opens through the existing shared gateway; its boundary check remains
+unchanged. Both reviewers cleared these backend changes with 127 focused tests.
+
+The dashboard polls ownership until a completed test releases its lock and
+offers explicit status recovery after interruption. It does not show a transport
+failure when discovery recovers an owned test. Delayed responses from a replaced
+progress panel cannot overwrite a newer run or invalidate its ownership. Both
+reviewers cleared the final UI correction; 27 focused tests and web typechecking,
+lint and formatting pass.
+
+Cancellation and environment-retry responses are now retained before follow-up
+reads. Failed refreshes do not discard confirmed mutation results, and stale
+responses cannot replace a newly selected run or delivery. Both independent
+reviewers cleared the four-file response-retention correction; 69 focused tests,
+web typechecking and formatting pass, with no new lint warnings.
+
+Known-finished controller tasks now have exact-identity settlement evidence, so
+a transient failure in terminal persistence or unlock can recover while the
+server remains running. A missing in-memory handle alone does not prove death.
+Recovery claims release under SQLite exclusion when matching cleanup proof
+exists, including failures removing worker artifacts after proof was saved;
+unproven cleanup remains retained. Both independent reviewers cleared this
+correction with 68 focused tests covering same-PID recovery and invalid proof.
+
+## Verification record
+
+- Upper-layer coding handoff now renders the frozen approved workflow instead
+  of the brief's proposed selection. Stored brief bytes and hashes remain
+  unchanged; coding and repair replay read no latest configuration. Both
+  reviewers cleared the correction, with 27 focused release tests passing.
+  The combined `npm run check` also passed all 3,565 tests across 321 files.
+- The final response-retention/controller corrections passed `npm run check`:
+  321 test files and 3,565 tests. Both independent reviewers confirmed the
+  restacked source blobs and their integration with no open findings.
+- Restacked source before the response-retention/controller follow-up passed
+  `npm run check`: 321 files and 3,549 unit
+  tests, including the unchanged SQLite-access boundary check. Both independent
+  reviewers cleared the combined corrections and the stored-proposal integration.
+  The latter also passed 34 focused dashboard/API tests and web typechecking.
+- PR feedback corrections passed `npm run check`: 320 test files and 3,503
+  unit tests. The independent UI review subsequently identified two related
+  ownership/progress recovery cases; the final 44 focused UI/API tests and both
+  reviewers' clean re-reviews cover those corrections before publication.
+- Repository `npm run check` passed before the final review corrections.
+- The subsequent full verification run passed lint, import layers, migration
+  consistency, application/docs typechecks, 3,480 unit tests, 47 Git tests and
+  154 integration tests (16 skipped). Integration completed in 944.87 seconds;
+  the earlier apparent stall was a slow run, not a reported failure. The full
+  `npm run verify` command finished with exit code 0, including builds, package
+  contents, isolated packed-CLI smoke and formatting.
+- The final worker-boundary change additionally passed its real Vite build-graph
+  regression, 19 process/supervision tests, typecheck, lint and import checks.
+- Dashboard/server/docs builds, npm package contents, isolated packed CLI smoke
+  and repository formatting passed separately on the final combined source.
+- The backend stack layer passed root/web typechecks and dashboard/server build
+  in its own isolated checkout. Two existing UI compatibility hunks were moved
+  into that layer; the final combined implementation was unchanged.
+- Synthetic desktop and narrow screenshots cover configuration, approval and a
+  setup failure. No live task, provider run, dependency installation or private
+  runtime configuration was used for screenshot QA.
+- Both pre-PR independent static reviews are clean. Live acceptance and the
+  separate omitted judge-diff evidence issue remain open.
 
 ## Related open issue
 

@@ -1,3 +1,4 @@
+import { FactoryWorkflowSummary } from './FactoryWorkflowSummary';
 import { FactoryReviewedDiff } from './FactoryReviewedDiff';
 import { FactoryPublication } from './FactoryPublication';
 import type { FactoryCodingRun } from '../../../../shared/factory-coding';
@@ -16,11 +17,12 @@ import {
   FactoryDeliveryBudget,
   FactoryDeliveryEvidence,
 } from './FactoryDeliveryEvidence';
-import { useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useEffect, useRef, useState } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { ApiError } from '../../api/http';
 import {
   controlFactoryDelivery,
+  retryFactoryEnvironmentSetup,
   getFactoryDelivery,
   getFactoryDeliveryEvidence,
   type DeliveryDetail,
@@ -50,6 +52,14 @@ export function FactoryDeliveryDetail({
   workId: string;
   onDiscuss?: (evidence: string) => void;
 }) {
+  const client = useQueryClient();
+  const lifetime = useRef<object | null>(null);
+  useEffect(() => {
+    lifetime.current = {};
+    return () => {
+      lifetime.current = null;
+    };
+  }, [id, workId]);
   const { refreshing, refresh } = useFactoryRefresh();
   const detail = useQuery({
     queryKey: ['factory-delivery', id],
@@ -99,31 +109,55 @@ export function FactoryDeliveryDetail({
       setBusy(false);
     }
   }
-  async function control(action: 'revoke' | 'reconcile') {
+  async function control(action: 'revoke' | 'reconcile' | 'environment') {
     if (!detail.data || detail.error || detail.isPending || refreshing || busy)
       return;
+    const currentLifetime = lifetime.current;
+    const isCurrent = () =>
+      !!currentLifetime && lifetime.current === currentLifetime;
     setBusy(true);
     setError('');
     try {
-      await controlFactoryDelivery(
-        id,
-        action,
-        detail.data.pipeline.version,
-        action === 'revoke'
-          ? reason.trim()
-          : 'Human requested observation of uncertain delivery effects',
-      );
-      setRevoking(false);
-      setReason('');
+      if (action === 'environment') {
+        const receipt = await retryFactoryEnvironmentSetup(
+          id,
+          detail.data.pipeline.version,
+        );
+        if (!isCurrent()) return;
+        if (
+          receipt.pipeline.workItemId !== workId ||
+          receipt.planningWorkId !== workId
+        )
+          throw new Error('Delivery belongs to another task.');
+        const key = ['factory-delivery', id];
+        await client.cancelQueries({ queryKey: key, exact: true });
+        if (!isCurrent()) return;
+        client.setQueryData(key, receipt);
+      } else
+        await controlFactoryDelivery(
+          id,
+          action,
+          detail.data.pipeline.version,
+          action === 'revoke'
+            ? reason.trim()
+            : 'Human requested observation of uncertain delivery effects',
+        );
+      if (isCurrent()) {
+        setRevoking(false);
+        setReason('');
+      }
     } catch (cause) {
-      setError(
-        cause instanceof ApiError && cause.status === 409
-          ? 'Version conflict. Review the refreshed delivery before acting again.'
-          : 'Control receipt is unconfirmed. Refresh and inspect the recorded outcome before retrying.',
-      );
+      if (isCurrent())
+        setError(
+          cause instanceof ApiError && cause.status === 409
+            ? 'Version conflict. Review the refreshed delivery before acting again.'
+            : 'Control receipt is unconfirmed. Refresh and inspect the recorded outcome before retrying.',
+        );
     } finally {
-      await detail.refetch();
-      setBusy(false);
+      if (isCurrent()) {
+        await detail.refetch();
+        if (isCurrent()) setBusy(false);
+      }
     }
   }
   if (detail.isPending) return <output>Loading delivery evidence…</output>;
@@ -150,6 +184,34 @@ export function FactoryDeliveryDetail({
           {p.outcome ?? (p.pr ? 'Draft PR recorded' : 'Draft only')}
         </span>
       </div>
+      {nextAction === 'human-environment' && (
+        <section
+          aria-label="Environment setup recovery"
+          className="factory-error"
+        >
+          <p>
+            Setup stopped before validation and independent review. Inspect the
+            setup evidence below and correct the missing runtime, dependency, or
+            environment reference.
+          </p>
+          <p>
+            Retry uses this candidate and the exact approved workflow. Changing
+            workflow settings requires renewed plan approval.
+          </p>
+          <button
+            disabled={disabled}
+            onClick={() => void control('environment')}
+          >
+            Retry environment setup
+          </button>
+        </section>
+      )}
+      {p.authorization.workflow && (
+        <details>
+          <summary>Approved repository workflow</summary>
+          <FactoryWorkflowSummary workflow={p.authorization.workflow} />
+        </details>
+      )}
       {nextAction === 'fresh-release-required' && (
         <p>
           Retained work and evidence remain available. Open the plan, withdraw

@@ -147,11 +147,12 @@ export async function grantFactoryPublication(
 export async function getFactoryValidationPolicy(
   repoId: string,
   options: ApiRequestOptions = {},
+  workflowId?: string | null,
 ) {
   return v.parse(
     validationPolicySchema,
     await getJson<unknown>(
-      `${prefix}/validation-policy/${encodeURIComponent(repoId)}`,
+      `${prefix}/validation-policy/${encodeURIComponent(repoId)}${workflowId ? `?workflowId=${encodeURIComponent(workflowId)}` : ''}`,
       options,
     ),
   );
@@ -192,4 +193,24 @@ export async function getFactoryReviewedDiff(
   if (result.pipelineId !== id)
     throw new Error('Reviewed diff belongs to another delivery.');
   return result;
+}
+
+export async function retryFactoryEnvironmentSetup(
+  id: string,
+  expectedVersion: number,
+) {
+  return matchDelivery(
+    v.parse(
+      deliveryDetailSchema,
+      await postJson<unknown>(
+        `${prefix}/deliveries/${encodeURIComponent(id)}/environment/retry`,
+        v.parse(deliveryControlInputSchema, {
+          expectedVersion,
+          reason:
+            'Operator corrected the environment and requested retry of the approved workflow',
+        }),
+      ),
+    ),
+    id,
+  );
 }

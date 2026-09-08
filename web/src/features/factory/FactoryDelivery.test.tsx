@@ -5,6 +5,7 @@ import { createRoot } from 'react-dom/client';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import * as v from 'valibot';
 import { FactoryDelivery } from './FactoryDelivery';
+import { FactoryDeliveryDetail } from './FactoryDeliveryDetail';
 import {
   publicationGrantInputSchema,
   validationGrantPreviewSchema,
@@ -763,4 +764,120 @@ it('keeps every quoted filename change inspectable through a lossless raw diff f
   );
   await consent();
   expect(button('Create draft PR').disabled).toBe(false);
+});
+
+it('explains environment failure and retries only after an explicit operator click', async () => {
+  current = deliveryDetail();
+  current.pipeline.pr = null;
+  current.nextAction = 'human-environment';
+  await render();
+  expect(container.textContent).toContain('Environment setup failed');
+  expect(container.textContent).toContain(
+    'Setup stopped before validation and independent review',
+  );
+  expect(calls).toEqual([]);
+  await click('Retry environment setup');
+  expect(calls).toEqual([
+    {
+      url: '/api/factory-delivery/deliveries/delivery-demo/environment/retry',
+      body: {
+        expectedVersion: deliveryDetail().pipeline.version,
+        reason:
+          'Operator corrected the environment and requested retry of the approved workflow',
+      },
+    },
+  ]);
+});
+it('retains a confirmed environment retry receipt when the next GET fails and an older GET completes late', async () => {
+  current = deliveryDetail();
+  current.pipeline.pr = null;
+  current.nextAction = 'human-environment';
+  await render();
+  const old = structuredClone(current);
+  const receipt = deliveryDetail();
+  receipt.pipeline.pr = null;
+  receipt.pipeline.version = old.pipeline.version + 1;
+  const url = '/api/factory-delivery/deliveries/delivery-demo';
+  const original = vi.mocked(fetch).getMockImplementation()!;
+  let resolveOld!: (value: Response) => void;
+  let retried = false;
+  vi.mocked(fetch).mockImplementation(async (input, init) => {
+    if (String(input) === `${url}/environment/retry`) {
+      retried = true;
+      return response(receipt);
+    }
+    if (String(input) === url)
+      return retried
+        ? response({ error: 'Read unavailable' }, 503)
+        : new Promise((resolve) => {
+            resolveOld = resolve;
+          });
+    return original(input, init);
+  });
+  await act(async () => {
+    void client.refetchQueries({
+      queryKey: ['factory-delivery', 'delivery-demo'],
+      exact: true,
+    });
+  });
+  await click('Retry environment setup');
+  expect(client.getQueryData(['factory-delivery', 'delivery-demo'])).toEqual(
+    receipt,
+  );
+  expect(container.textContent).toContain('Validation and delivery activity');
+  expect(container.textContent).toContain(
+    'Refresh failed. Evidence may be stale',
+  );
+  expect(container.textContent).not.toContain('Control receipt is unconfirmed');
+  expect(container.textContent).not.toContain('Environment setup failed');
+  await act(async () => resolveOld(response(old)));
+  await flush();
+  expect(client.getQueryData(['factory-delivery', 'delivery-demo'])).toEqual(
+    receipt,
+  );
+});
+it('ignores an environment retry receipt after another delivery replaces the selected instance', async () => {
+  const old = deliveryDetail();
+  old.pipeline.pr = null;
+  old.nextAction = 'human-environment';
+  const other = structuredClone(old);
+  other.pipeline.pipelineId = 'delivery-other';
+  const receipt = structuredClone(old);
+  receipt.pipeline.version++;
+  receipt.nextAction = 'running';
+  let resolvePost!: (value: Response) => void;
+  vi.mocked(fetch).mockImplementation(async (input, init) => {
+    if (init?.method === 'POST')
+      return new Promise((resolve) => {
+        resolvePost = resolve;
+      });
+    return response(String(input).endsWith('/delivery-other') ? other : old);
+  });
+  const select = async (id: string) => {
+    await act(async () =>
+      root.render(
+        <QueryClientProvider client={client}>
+          <FactoryDeliveryDetail key={id} id={id} workId="work-demo" />
+        </QueryClientProvider>,
+      ),
+    );
+    await flush();
+  };
+  await select('delivery-demo');
+  await click('Retry environment setup');
+  await select('delivery-other');
+  const requests = vi.mocked(fetch).mock.calls.length;
+  await act(async () => resolvePost(response(receipt)));
+  await flush();
+  expect(fetch).toHaveBeenCalledTimes(requests);
+  expect(client.getQueryData(['factory-delivery', 'delivery-demo'])).toEqual(
+    old,
+  );
+  expect(client.getQueryData(['factory-delivery', 'delivery-other'])).toEqual(
+    other,
+  );
+  expect(
+    container.querySelector('#factory-delivery-delivery-other'),
+  ).toBeTruthy();
+  expect(button('Retry environment setup').disabled).toBe(false);
 });

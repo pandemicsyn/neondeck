@@ -164,3 +164,17 @@ it('does not select a historical run after releasing the same spec again before 
     old,
   );
 });
+
+it('shows terminal environment setup failure even with retained in-flight verification', () => {
+  const detail = deliveryDetail();
+  detail.nextAction = 'human-environment';
+  detail.pipeline.pr = null;
+  detail.pipeline.effects[0].state = 'in-flight';
+  expect(deliveryLifecycle(detail)).toMatchObject({
+    stage: 'Validate',
+    title: 'Environment setup failed',
+  });
+  expect(deliveryLifecycle(detail).nextAction).toContain(
+    'retry the same approved workflow',
+  );
+});

@@ -1,3 +1,4 @@
+import { FactoryRepoWorkflows } from './FactoryRepoWorkflows';
 import { FactoryLinearSetup } from './FactoryLinearSetup';
 import { getFactoryDeliveryState } from '../../api/factory-delivery';
 import { factoryInboxPhase } from './FactoryLifecycle';
@@ -53,6 +54,21 @@ export function FactoryPage() {
     queryFn: getFactoryState,
     refetchInterval: 15000,
   });
+  const workflowSetupRevealed = useRef(false);
+  useEffect(() => {
+    if (!state.data || workflowSetupRevealed.current) return;
+    if (
+      new URLSearchParams(location.search).get('setup') !== 'workflows' &&
+      location.hash !== '#factory-repo-workflows'
+    )
+      return;
+    workflowSetupRevealed.current = true;
+    const setup = document.getElementById('factory-setup');
+    if (setup instanceof HTMLDetailsElement) setup.open = true;
+    document
+      .getElementById('factory-repo-workflows')
+      ?.scrollIntoView?.({ block: 'start' });
+  }, [state.data]);
   useEffect(
     () =>
       dashboardEventHub.subscribe('factory-change', () => {
@@ -307,8 +323,23 @@ export function FactoryPage() {
         </div>
       ) : null}
       {state.data && (
-        <details id="factory-setup" className="factory-setup">
+        <details
+          id="factory-setup"
+          className="factory-setup"
+          open={
+            new URLSearchParams(location.search).get('setup') === 'workflows' ||
+            location.hash === '#factory-repo-workflows'
+              ? true
+              : undefined
+          }
+        >
           <summary>Factory setup</summary>
+          <FactoryRepoWorkflows
+            repos={state.data.repos}
+            initialRepoId={
+              new URLSearchParams(location.search).get('repoId') ?? undefined
+            }
+          />
           <FactoryGitHubSetup repos={state.data.repos} />
           <FactoryLinearSetup repos={state.data.repos} />
           {state.data.enabled && <FactoryCodingSetup />}
