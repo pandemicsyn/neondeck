@@ -20,6 +20,9 @@ verification is complete; the operator flow still requires live acceptance.
 7. Select **Test setup and validation**. This explicitly runs the saved profile
    in a disposable checkout. Inspect phase, command output and cleanup status.
    Cancellation stops the owned test, not other factory work.
+   Refreshing the page restores an owned test's progress and cancellation
+   controls. If its outcome is uncertain, use **Refresh test status** to retry
+   inspection and recovery; do not start another test while it is retained.
 
 For example, an npm project with a committed lockfile might use `npm ci` for
 setup and `npm run check` for validation. That is an example, not a default for

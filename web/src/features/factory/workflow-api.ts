@@ -7,6 +7,7 @@ import {
   type SaveRepoWorkflowsInput,
 } from '../../../../shared/repo-workflows';
 import {
+  currentRepoWorkflowRunSchema,
   repoWorkflowRunSchema,
   startRepoWorkflowRunSchema,
 } from '../../../../shared/repo-workflow-runs';
@@ -114,5 +115,17 @@ export async function cancelRepoWorkflowRun(repoId: string, runId: string) {
   );
   if (result.runId !== runId)
     throw new Error('Test response belongs to another run.');
+  return result;
+}
+
+export async function getCurrentRepoWorkflowRun(
+  repoId: string,
+  options: ApiRequestOptions = {},
+) {
+  const result = v.parse(
+    currentRepoWorkflowRunSchema,
+    await getJson(`${runUrl(repoId)}/current`, options),
+  );
+  if (result.run) matchRepo(result.run, repoId);
   return result;
 }

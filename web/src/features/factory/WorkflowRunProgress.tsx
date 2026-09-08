@@ -19,10 +19,10 @@ const phaseLabels = {
 };
 export function WorkflowRunProgress({
   initial,
-  onSettled,
+  onObserved,
 }: {
   initial: RepoWorkflowRun;
-  onSettled: (run: RepoWorkflowRun) => void;
+  onObserved: (run: RepoWorkflowRun) => void;
 }) {
   const [cancelError, setCancelError] = useState('');
   const [cancelling, setCancelling] = useState(false);
@@ -42,12 +42,8 @@ export function WorkflowRunProgress({
   });
   const run = query.data;
   useEffect(() => {
-    if (
-      run.status !== 'running' &&
-      (run.phase === 'complete' || run.cleanup === 'retained')
-    )
-      onSettled(run);
-  }, [run, onSettled]);
+    onObserved(run);
+  }, [run, onObserved]);
   return (
     <section className="workflow-run" aria-label="Workflow test progress">
       <h3>{statusLabels[run.status]}</h3>
@@ -55,6 +51,15 @@ export function WorkflowRunProgress({
         {phaseLabels[run.phase]} · Profile {run.profileId}
       </output>
       {run.guidance && <p>{run.guidance}</p>}
+      {(run.status === 'uncertain' || run.cleanup === 'retained') && (
+        <button
+          type="button"
+          disabled={query.isFetching}
+          onClick={() => void query.refetch()}
+        >
+          {query.isFetching ? 'Refreshing test status…' : 'Refresh test status'}
+        </button>
+      )}
       {query.error && (
         <p role="alert">
           Test progress could not refresh. The test may still be running.{' '}

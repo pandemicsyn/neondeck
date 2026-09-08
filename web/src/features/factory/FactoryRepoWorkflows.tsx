@@ -1,3 +1,4 @@
+import { useWorkflowTrial } from './useWorkflowTrial';
 import { useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import * as v from 'valibot';
@@ -7,12 +8,10 @@ import {
   type RepoWorkflowsSnapshot,
   type RepoWorkflowProposal,
 } from '../../../../shared/repo-workflows';
-import type { RepoWorkflowRun } from '../../../../shared/repo-workflow-runs';
 import {
   getRepoWorkflows,
   saveRepoWorkflows,
   proposeRepoWorkflows,
-  startRepoWorkflowRun,
 } from './workflow-api';
 import { WorkflowProfileEditor } from './WorkflowProfileEditor';
 import { WorkflowRunProgress } from './WorkflowRunProgress';
@@ -75,7 +74,7 @@ export function FactoryRepoWorkflows({
             .filter((id) => repos.some((repo) => repo.id === id))
             .map((id) => (
               <div key={id} hidden={id !== selected}>
-                <RepoWorkflowSetup repoId={id} />
+                <RepoWorkflowSetup repoId={id} active={id === selected} />
               </div>
             ))}
         </>
@@ -83,7 +82,13 @@ export function FactoryRepoWorkflows({
     </section>
   );
 }
-function RepoWorkflowSetup({ repoId }: { repoId: string }) {
+function RepoWorkflowSetup({
+  repoId,
+  active,
+}: {
+  repoId: string;
+  active: boolean;
+}) {
   const query = useQuery({
     queryKey: ['repo-workflows', repoId],
     queryFn: ({ signal }) => getRepoWorkflows(repoId, { signal }),
@@ -100,14 +105,22 @@ function RepoWorkflowSetup({ repoId }: { repoId: string }) {
           </button>
         </p>
       )}
-      {query.data && <RepoWorkflowEditor snapshot={query.data} />}
+      {query.data && (
+        <RepoWorkflowEditor
+          key={repoId}
+          snapshot={query.data}
+          active={active}
+        />
+      )}
     </>
   );
 }
 export function RepoWorkflowEditor({
   snapshot,
+  active = true,
 }: {
   snapshot: RepoWorkflowsSnapshot;
+  active?: boolean;
 }) {
   const client = useQueryClient();
   const [base, setBase] = useState(snapshot);
@@ -120,7 +133,8 @@ export function RepoWorkflowEditor({
   const lock = useRef(false);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
-  const [run, setRun] = useState<RepoWorkflowRun | null>(null);
+  const trial = useWorkflowTrial(snapshot.repoId, active);
+  const run = trial.run;
   const dirty = JSON.stringify(draft) !== JSON.stringify(base.workflows);
   const stale = snapshot.fingerprint !== base.fingerprint;
   const profile = draft?.profiles[profileIndex];
@@ -389,6 +403,33 @@ export function RepoWorkflowEditor({
         {(dirty || stale) && (
           <p>Save your changes or load saved settings before testing.</p>
         )}
+        {trial.discovery.isFetching && (
+          <output>Checking for an existing workflow test…</output>
+        )}
+        {trial.discovery.isError && (
+          <p role="alert">
+            Could not check for an existing test. Starting another test is
+            blocked.{' '}
+            <button
+              type="button"
+              onClick={() => void trial.discovery.refetch()}
+            >
+              Retry test discovery
+            </button>
+          </p>
+        )}
+        {run?.cleanup === 'retained' && (
+          <p role="alert">
+            This test has a retained checkout. Review its guidance before
+            starting another test.{' '}
+            <button
+              type="button"
+              onClick={() => void trial.discovery.refetch()}
+            >
+              Refresh test ownership
+            </button>
+          </p>
+        )}
         <button
           type="button"
           disabled={
@@ -397,18 +438,12 @@ export function RepoWorkflowEditor({
             stale ||
             !profile ||
             !base.workflows ||
-            (!!run &&
-              (run.status === 'running' ||
-                (run.phase !== 'complete' && run.cleanup !== 'retained')))
+            trial.blocked
           }
           onClick={() =>
             void action('test', async () => {
               if (!profile) return;
-              const result = await startRepoWorkflowRun(base.repoId, {
-                profileId: profile.id,
-                expectedFingerprint: base.fingerprint,
-              });
-              setRun(result);
+              await trial.start(profile.id, base.fingerprint);
             })
           }
         >
@@ -418,7 +453,7 @@ export function RepoWorkflowEditor({
           <WorkflowRunProgress
             key={run.runId}
             initial={run}
-            onSettled={setRun}
+            onObserved={trial.observed}
           />
         )}
       </section>

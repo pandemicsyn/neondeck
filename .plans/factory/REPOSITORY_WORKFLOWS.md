@@ -114,8 +114,39 @@ moved/re-exported; private import and layer-direction rules remain enforced. A
 Vite build-graph regression restricts the detached verifier to its audited
 deterministic dependencies.
 
+### PR feedback follow-up
+
+PR #435's trial-remote finding is corrected: test checkouts fetch from the
+unambiguous remote matching the registered GitHub repository, including an
+`upstream` remote or a matching URL after an unrelated URL. Missing or ambiguous
+matches report a setup blocker without falling back to stale local content.
+
+The backend also exposes read-only discovery of the repository's owned workflow
+test so the dashboard can recover its progress and cancellation handle after a
+refresh. Discovery validates the lock, signed ownership and bounded result; it
+does not start recovery, execute commands or remove locks. Both independent
+reviewers cleared this backend correction, with 44 focused tests, typechecking,
+lint and formatting passing.
+
+PR #436 now restores the owned test after refresh or repository switching,
+preserves unsaved workflow edits and retains final output after lock removal.
+Ownership discovery cannot overwrite a newer status observation. An uncertain
+outcome has an explicit status-refresh action; duplicate starts remain blocked
+until ownership and progress settle. Both independent reviewers cleared the
+final UI correction after two recovery edge cases were fixed. All 44 focused
+UI/API tests, root/web typechecks, lint, formatting and import checks pass.
+
+The selected-workflow comment on #435 concerns its dependent UI integration in
+#436: the viewed brief's workflow feeds the execution preview and approval
+payload. An initial nondefault-profile regression verifies this behavior; the
+manager's final review covers the combined stack and exact approval capture.
+
 ## Verification record
 
+- PR feedback corrections passed `npm run check`: 320 test files and 3,503
+  unit tests. The independent UI review subsequently identified two related
+  ownership/progress recovery cases; the final 44 focused UI/API tests and both
+  reviewers' clean re-reviews cover those corrections before publication.
 - Repository `npm run check` passed before the final review corrections.
 - The subsequent full verification run passed lint, import layers, migration
   consistency, application/docs typechecks, 3,480 unit tests, 47 Git tests and

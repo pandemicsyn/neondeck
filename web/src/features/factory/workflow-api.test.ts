@@ -1,6 +1,7 @@
 import { afterEach, expect, it, vi } from 'vitest';
 import { getJson, putJson, postJson } from '../../api/http';
 import {
+  getCurrentRepoWorkflowRun,
   getRepoWorkflows,
   saveRepoWorkflows,
   proposeRepoWorkflows,
@@ -57,4 +58,36 @@ it('rejects invalid saves before network mutation', async () => {
     }),
   ).rejects.toThrow();
   expect(putJson).not.toHaveBeenCalled();
+});
+it('validates current-run discovery and preserves request cancellation', async () => {
+  const controller = new AbortController();
+  vi.mocked(getJson).mockResolvedValue({ run: null });
+  await expect(
+    getCurrentRepoWorkflowRun('a/b', { signal: controller.signal }),
+  ).resolves.toEqual({ run: null });
+  expect(getJson).toHaveBeenCalledWith(
+    '/api/repos/a%2Fb/factory-workflow-runs/current',
+    { signal: controller.signal },
+  );
+  vi.mocked(getJson).mockResolvedValue({});
+  await expect(getCurrentRepoWorkflowRun('repo')).rejects.toThrow();
+  vi.mocked(getJson).mockResolvedValue({
+    run: {
+      runId: 'trial',
+      repoId: 'other',
+      profileId: 'web',
+      workflowFingerprint: 'a'.repeat(64),
+      status: 'running',
+      phase: 'setup',
+      baseSha: null,
+      logs: [],
+      cleanup: 'pending',
+      guidance: '',
+      startedAt: '2026-09-07T00:00:00.000Z',
+      finishedAt: null,
+    },
+  });
+  await expect(getCurrentRepoWorkflowRun('repo')).rejects.toThrow(
+    'another repository',
+  );
 });

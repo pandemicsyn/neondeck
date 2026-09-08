@@ -3,8 +3,13 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { act } from 'react';
 import { createRoot } from 'react-dom/client';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
-import { RepoWorkflowEditor } from './FactoryRepoWorkflows';
 import {
+  FactoryRepoWorkflows,
+  RepoWorkflowEditor,
+} from './FactoryRepoWorkflows';
+import {
+  getRepoWorkflows,
+  getCurrentRepoWorkflowRun,
   getRepoWorkflowRun,
   proposeRepoWorkflows,
   saveRepoWorkflows,
@@ -14,6 +19,7 @@ import {
 import type { RepoWorkflowsSnapshot } from '../../../../shared/repo-workflows';
 import type { RepoWorkflowRun } from '../../../../shared/repo-workflow-runs';
 vi.mock('./workflow-api', () => ({
+  getCurrentRepoWorkflowRun: vi.fn(),
   getRepoWorkflows: vi.fn(),
   saveRepoWorkflows: vi.fn(),
   proposeRepoWorkflows: vi.fn(),
@@ -65,6 +71,7 @@ beforeEach(() => {
   document.body.append(container);
   root = createRoot(container);
   client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  vi.mocked(getCurrentRepoWorkflowRun).mockResolvedValue({ run: null });
   vi.mocked(getRepoWorkflowRun).mockResolvedValue(run());
 });
 afterEach(() => {
@@ -74,6 +81,12 @@ afterEach(() => {
   vi.resetAllMocks();
   vi.unstubAllGlobals();
 });
+async function flushDiscovery() {
+  await act(async () => {
+    if (vi.isFakeTimers()) await vi.advanceTimersByTimeAsync(1);
+    else await new Promise((resolve) => setTimeout(resolve, 5));
+  });
+}
 async function render(value = snapshot()) {
   await act(async () =>
     root.render(
@@ -82,6 +95,7 @@ async function render(value = snapshot()) {
       </QueryClientProvider>,
     ),
   );
+  await flushDiscovery();
 }
 async function click(text: string) {
   await act(async () => {
@@ -90,7 +104,9 @@ async function click(text: string) {
     );
     expect(button).toBeTruthy();
     button!.click();
+    await Promise.resolve();
   });
+  await flushDiscovery();
 }
 function button(text: string) {
   return Array.from(container.querySelectorAll('button')).find((item) =>
@@ -216,4 +232,253 @@ it('keeps polling terminal status until cleanup completes before enabling anothe
   } finally {
     vi.useRealTimers();
   }
+});
+it('restores a running test after remount with progress and cancellation', async () => {
+  vi.mocked(getCurrentRepoWorkflowRun).mockResolvedValue({ run: run() });
+  await render();
+  expect(container.textContent).toContain('Setting up repository');
+  expect(button('Test setup and validation').disabled).toBe(true);
+  await act(async () => root.render(null));
+  await render();
+  expect(button('Cancel test')).toBeTruthy();
+  expect(startRepoWorkflowRun).not.toHaveBeenCalled();
+  vi.mocked(cancelRepoWorkflowRun).mockResolvedValue({
+    ...run(),
+    status: 'cancelled',
+  });
+  await click('Cancel test');
+  expect(cancelRepoWorkflowRun).toHaveBeenCalledWith('demo', 'trial');
+});
+it('blocks discovery pending, failure and retained uncertain runs without losing drafts', async () => {
+  let reject!: (error: Error) => void;
+  vi.mocked(getCurrentRepoWorkflowRun).mockReturnValue(
+    new Promise((_resolve, fail) => {
+      reject = fail;
+    }),
+  );
+  await render();
+  expect(button('Test setup and validation').disabled).toBe(true);
+  await click('Add profile');
+  await act(async () => reject(new Error('Unsafe lock')));
+  await flushDiscovery();
+  expect(container.textContent).toContain(
+    'Could not check for an existing test',
+  );
+  expect(container.textContent).toContain('Profile 2');
+  const uncertain: RepoWorkflowRun = {
+    ...run(),
+    status: 'uncertain',
+    phase: 'complete',
+    cleanup: 'retained',
+    guidance: 'Inspect retained checkout',
+  };
+  vi.mocked(getCurrentRepoWorkflowRun).mockResolvedValue({ run: uncertain });
+  vi.mocked(getRepoWorkflowRun).mockResolvedValue(uncertain);
+  await click('Retry test discovery');
+  expect(container.textContent).toContain('Inspect retained checkout');
+  expect(container.textContent).toContain('Profile 2');
+  expect(button('Test setup and validation').disabled).toBe(true);
+  expect(startRepoWorkflowRun).not.toHaveBeenCalled();
+});
+it('discovers an accepted test after a lost start response and prevents a duplicate', async () => {
+  await render();
+  vi.mocked(startRepoWorkflowRun).mockImplementation(async () => {
+    vi.mocked(getCurrentRepoWorkflowRun).mockResolvedValue({ run: run() });
+    throw new Error('Response lost');
+  });
+  await click('Test setup and validation');
+  expect(container.textContent).toContain('Setting up repository');
+  expect(button('Test setup and validation').disabled).toBe(true);
+  await click('Test setup and validation');
+  expect(startRepoWorkflowRun).toHaveBeenCalledOnce();
+});
+it('rechecks ownership on click and restores a concurrently started run instead of starting another', async () => {
+  await render();
+  vi.mocked(getCurrentRepoWorkflowRun).mockResolvedValue({ run: run() });
+  await click('Test setup and validation');
+  expect(container.textContent).toContain('Setting up repository');
+  expect(startRepoWorkflowRun).not.toHaveBeenCalled();
+});
+it('keeps late repository discovery scoped and preserves drafts when switching back', async () => {
+  let resolveFirst!: (result: { run: RepoWorkflowRun | null }) => void;
+  vi.mocked(getRepoWorkflows).mockImplementation(async (repoId) => ({
+    ...snapshot(),
+    repoId,
+  }));
+  vi.mocked(getCurrentRepoWorkflowRun).mockImplementation(async (repoId) =>
+    repoId === 'demo'
+      ? new Promise((resolve) => {
+          resolveFirst = resolve;
+        })
+      : { run: null },
+  );
+  await act(async () =>
+    root.render(
+      <QueryClientProvider client={client}>
+        <FactoryRepoWorkflows
+          repos={[
+            { id: 'demo', name: 'Demo' },
+            { id: 'other', name: 'Other' },
+          ]}
+        />
+      </QueryClientProvider>,
+    ),
+  );
+  await flushDiscovery();
+  await click('Add profile');
+  const selector = container.querySelector('select')!;
+  await act(async () => {
+    selector.value = 'other';
+    selector.dispatchEvent(new Event('change', { bubbles: true }));
+  });
+  await flushDiscovery();
+  await act(async () => resolveFirst({ run: run() }));
+  await flushDiscovery();
+  const visible = container.querySelector(
+    '#factory-repo-workflows > div:not([hidden])',
+  );
+  expect(visible?.textContent).not.toContain('Setting up repository');
+  vi.mocked(getCurrentRepoWorkflowRun).mockResolvedValue({ run: run() });
+  await act(async () => {
+    selector.value = 'demo';
+    selector.dispatchEvent(new Event('change', { bubbles: true }));
+  });
+  await flushDiscovery();
+  expect(
+    container.querySelector('#factory-repo-workflows > div:not([hidden])')
+      ?.textContent,
+  ).toContain('Profile 2');
+  expect(startRepoWorkflowRun).not.toHaveBeenCalled();
+});
+it('does not let an older discovery response erase a newly accepted test', async () => {
+  await render();
+  let accept!: (value: RepoWorkflowRun) => void;
+  vi.mocked(startRepoWorkflowRun).mockReturnValue(
+    new Promise((resolve) => {
+      accept = resolve;
+    }),
+  );
+  await click('Test setup and validation');
+  let resolveOld!: (value: { run: RepoWorkflowRun | null }) => void;
+  vi.mocked(getCurrentRepoWorkflowRun).mockReturnValue(
+    new Promise((resolve) => {
+      resolveOld = resolve;
+    }),
+  );
+  let refresh!: Promise<unknown>;
+  await act(async () => {
+    refresh = client.refetchQueries({
+      queryKey: ['repo-workflow-current', 'demo'],
+    });
+  });
+  await act(async () => accept(run()));
+  await flushDiscovery();
+  await act(async () => {
+    resolveOld({ run: null });
+    await refresh;
+  });
+  await flushDiscovery();
+  expect(container.textContent).toContain('Setting up repository');
+  expect(button('Test setup and validation').disabled).toBe(true);
+  expect(startRepoWorkflowRun).toHaveBeenCalledOnce();
+});
+it('retains transient uncertain status over persisted running discovery and explicitly refreshes recovery', async () => {
+  vi.mocked(getCurrentRepoWorkflowRun).mockResolvedValue({ run: run() });
+  const uncertain: RepoWorkflowRun = {
+    ...run(),
+    status: 'uncertain',
+    cleanup: 'retained',
+    guidance: 'Controller liveness is unknown.',
+  };
+  vi.mocked(getRepoWorkflowRun).mockResolvedValue(uncertain);
+  await render();
+  await flushDiscovery();
+  expect(container.textContent).toContain('Controller liveness is unknown.');
+  expect(button('Refresh test ownership')).toBeTruthy();
+  expect(button('Refresh test status')).toBeTruthy();
+  await click('Refresh test ownership');
+  expect(container.textContent).toContain('This test has a retained checkout');
+  expect(button('Test setup and validation').disabled).toBe(true);
+  const reads = vi.mocked(getRepoWorkflowRun).mock.calls.length;
+  vi.mocked(getRepoWorkflowRun).mockResolvedValue({
+    ...run(),
+    status: 'cancelled',
+    phase: 'complete',
+    cleanup: 'complete',
+  });
+  vi.mocked(getCurrentRepoWorkflowRun).mockResolvedValue({ run: null });
+  await click('Refresh test status');
+  await flushDiscovery();
+  expect(vi.mocked(getRepoWorkflowRun).mock.calls.length).toBeGreaterThan(
+    reads,
+  );
+  expect(container.textContent).toContain('cleaned up');
+  expect(container.textContent).not.toContain(
+    'This test has a retained checkout',
+  );
+  expect(button('Test setup and validation').disabled).toBe(false);
+  expect(startRepoWorkflowRun).not.toHaveBeenCalled();
+});
+it('retains a discovered run across repo switching when ownership disappears before final status arrives', async () => {
+  vi.mocked(getRepoWorkflows).mockImplementation(async (repoId) => ({
+    ...snapshot(),
+    repoId,
+  }));
+  vi.mocked(getCurrentRepoWorkflowRun).mockImplementation(async (repoId) => ({
+    run: repoId === 'demo' ? run() : null,
+  }));
+  let finish!: (value: RepoWorkflowRun) => void;
+  vi.mocked(getRepoWorkflowRun).mockReturnValue(
+    new Promise((resolve) => {
+      finish = resolve;
+    }),
+  );
+  await act(async () =>
+    root.render(
+      <QueryClientProvider client={client}>
+        <FactoryRepoWorkflows
+          repos={[
+            { id: 'demo', name: 'Demo' },
+            { id: 'other', name: 'Other' },
+          ]}
+        />
+      </QueryClientProvider>,
+    ),
+  );
+  await flushDiscovery();
+  const selector = container.querySelector('select')!;
+  await act(async () => {
+    selector.value = 'other';
+    selector.dispatchEvent(new Event('change', { bubbles: true }));
+  });
+  await flushDiscovery();
+  vi.mocked(getCurrentRepoWorkflowRun).mockResolvedValue({ run: null });
+  await act(async () => {
+    selector.value = 'demo';
+    selector.dispatchEvent(new Event('change', { bubbles: true }));
+  });
+  await flushDiscovery();
+  const visible = () =>
+    container.querySelector('#factory-repo-workflows > div:not([hidden])')!;
+  expect(visible().textContent).toContain('Setting up repository');
+  expect(
+    Array.from(visible().querySelectorAll('button')).find(
+      (item) => item.textContent === 'Test setup and validation',
+    )?.disabled,
+  ).toBe(true);
+  await act(async () =>
+    finish({
+      ...run(),
+      status: 'passed',
+      phase: 'complete',
+      cleanup: 'complete',
+      guidance: 'Final result from discovered trial A.',
+    }),
+  );
+  await flushDiscovery();
+  expect(visible().textContent).toContain(
+    'Final result from discovered trial A.',
+  );
+  expect(visible().textContent).toContain('cleaned up');
+  expect(startRepoWorkflowRun).not.toHaveBeenCalled();
 });

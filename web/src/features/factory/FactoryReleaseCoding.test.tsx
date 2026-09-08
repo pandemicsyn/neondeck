@@ -655,3 +655,58 @@ it('shows workflow guidance for a missing default and links to the selected repo
     validationPreview().validationPolicy,
   );
 });
+it('initializes approval from the viewed nondefault workflow and requests its policy', async () => {
+  const { getFactoryValidationPolicy } =
+    await import('../../api/factory-delivery');
+  const profile = {
+    id: 'web',
+    name: 'Web',
+    setupCommands: [],
+    validationCommands: [{ command: 'npm test', cwd: '.' }],
+    setupTimeoutMs: 60000,
+    validationTimeoutMs: 60000,
+    runtime: {},
+    environmentRefs: [],
+  };
+  const selected = {
+    ...profile,
+    id: 'docs',
+    name: 'Documentation',
+    validationCommands: [{ command: 'pnpm test', cwd: 'docs' }],
+  };
+  client.setQueryData(['repo-factory-workflows', 'demo'], {
+    repoId: 'demo',
+    fingerprint: 'a'.repeat(64),
+    workflows: { defaultProfileId: 'web', profiles: [profile, selected] },
+  });
+  vi.mocked(getFactoryValidationPolicy).mockResolvedValue({
+    ...validationPreview().validationPolicy,
+    workflow: selected,
+  });
+  await act(async () =>
+    root.render(
+      <QueryClientProvider client={client}>
+        <FactoryReleaseCoding
+          label="Approve viewed plan"
+          repoId="demo"
+          workflowId="docs"
+          disabled={false}
+          onRelease={release}
+        />
+      </QueryClientProvider>,
+    ),
+  );
+  await flush();
+  expect(container.querySelector('select')?.value).toBe('docs');
+  expect(getFactoryValidationPolicy).toHaveBeenCalledWith(
+    'demo',
+    expect.objectContaining({ signal: expect.any(AbortSignal) }),
+    'docs',
+  );
+  await act(async () => button('Approve viewed plan').click());
+  expect(release).toHaveBeenLastCalledWith(
+    codingState().configFingerprint,
+    expect.objectContaining({ workflow: selected }),
+    'docs',
+  );
+});
