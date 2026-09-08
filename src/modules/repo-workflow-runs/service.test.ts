@@ -52,6 +52,7 @@ vi.mock('./trial-store', async (importOriginal) => {
   };
 });
 vi.mock('../factory', () => ({
+  reconcileCodingRun: vi.fn(),
   FactoryError: class extends Error {
     constructor(
       readonly status: number,
@@ -149,9 +150,11 @@ vi.mock('../coding-runs', async () => {
   };
 });
 vi.mock('../factory-delivery', async () => {
-  const v = await import('valibot');
+  const actual = await vi.importActual<typeof import('../factory-delivery')>(
+    '../factory-delivery',
+  );
   return {
-    candidateCheckInputSchema: v.any(),
+    candidateCheckInputSchema: actual.candidateCheckInputSchema,
     recoverExistingCandidateCheck: vi.fn(),
     cancelCandidateVerification: async () => {
       mocks.cancelled = true;
@@ -250,7 +253,29 @@ async function start() {
 async function settled() {
   for (let i = 0; i < 300; i++) {
     const r = await getRepoWorkflowRun('sample', runId, paths);
-    if (r.phase === 'complete') return r;
+    if (r.phase === 'complete') {
+      if (r.cleanup !== 'complete') return r;
+      const { artifactHash } = await import('../coding-runs');
+      try {
+        await (
+          await import('node:fs/promises')
+        ).lstat(
+          join(
+            root,
+            'repo-workflow-runs',
+            `repo-${artifactHash('sample')}.lock`,
+          ),
+        );
+      } catch (error) {
+        if (
+          error instanceof Error &&
+          'code' in error &&
+          error.code === 'ENOENT'
+        )
+          return r;
+        throw error;
+      }
+    }
     await new Promise((r) => setTimeout(r, 5));
   }
   throw new Error('Trial stuck');
@@ -299,6 +324,9 @@ it.each(['running', 'passed', 'failed'] as const)(
   async (status) => {
     await start();
     const completed = await settled();
+    await rm(join(root, 'repo-workflow-runs', runId, 'cleanup-receipt.json'), {
+      force: true,
+    });
     const directory = join(root, 'repo-workflow-runs', runId);
     const { trialHandle, readTrialOwnership, saveTrialOwnership } =
       await import('./trial-store');
@@ -344,6 +372,9 @@ it.each(['running', 'passed', 'failed'] as const)(
 it('retains interrupted git creation even when no command was started', async () => {
   await start();
   const completed = await settled();
+  await rm(join(root, 'repo-workflow-runs', runId, 'cleanup-receipt.json'), {
+    force: true,
+  });
   const directory = join(root, 'repo-workflow-runs', runId);
   const { trialHandle, readTrialOwnership, saveTrialOwnership } =
     await import('./trial-store');
@@ -468,6 +499,9 @@ it('another controller status reader leaves a live trial untouched and explicit 
 it('an unobservable controller never authorizes recovery cancellation or cleanup', async () => {
   await start();
   const completed = await settled();
+  await rm(join(root, 'repo-workflow-runs', runId, 'cleanup-receipt.json'), {
+    force: true,
+  });
   const directory = join(root, 'repo-workflow-runs', runId);
   const { trialHandle, readTrialOwnership, saveTrialOwnership } =
     await import('./trial-store');
@@ -578,6 +612,9 @@ it.each(['job', 'git', 'controller'])(
   async (change) => {
     await start();
     const completed = await settled();
+    await rm(join(root, 'repo-workflow-runs', runId, 'cleanup-receipt.json'), {
+      force: true,
+    });
     const directory = join(root, 'repo-workflow-runs', runId);
     const {
       readTrialOwnership,
@@ -643,6 +680,9 @@ it.each(['complete', 'interrupted'])(
   async (outcome) => {
     await start();
     const completed = await settled();
+    await rm(join(root, 'repo-workflow-runs', runId, 'cleanup-receipt.json'), {
+      force: true,
+    });
     const directory = join(root, 'repo-workflow-runs', runId);
     const { readTrialOwnership, saveTrialOwnership, trialHandle } =
       await import('./trial-store');
@@ -897,3 +937,246 @@ it('current API returns null, discovers signed state, and rejects mismatched own
     error: expect.stringContaining('ownership'),
   });
 });
+
+it.each(['after-cleanup', 'after-terminal'])(
+  'recovers a crash %s before unlock without repeating cleanup or requiring removed worker receipts',
+  async (point) => {
+    await start();
+    const terminal = await settled();
+    const directory = join(root, 'repo-workflow-runs', runId);
+    const { trialHandle, readTrialOwnership, saveTrialOwnership } =
+      await import('./trial-store');
+    const { artifactHash, writeSigned } = await import('../coding-runs');
+    const { recoverExistingCandidateCheck } =
+      await import('../factory-delivery');
+    const owner = await readTrialOwnership(directory);
+    owner.controller = await exitedController();
+    await saveTrialOwnership(directory, owner);
+    const lock = join(
+      root,
+      'repo-workflow-runs',
+      `repo-${artifactHash('sample')}.lock`,
+    );
+    await mkdir(lock, { mode: 0o700 });
+    await writeFile(join(lock, 'run-id'), runId);
+    if (point === 'after-cleanup') {
+      const handle = await trialHandle(directory);
+      await writeSigned(join(directory, 'result.json'), handle.attemptToken, {
+        ...terminal,
+        status: 'running',
+        phase: 'cleanup',
+        cleanup: 'pending',
+        finishedAt: null,
+      });
+    }
+    const mutations = mocks.cleanupMutations.length;
+    vi.mocked(recoverExistingCandidateCheck).mockClear();
+    expect((await getCurrentRepoWorkflowRun('sample', paths)).run?.runId).toBe(
+      runId,
+    );
+    const recovered = await getRepoWorkflowRun('sample', runId, paths);
+    expect(recovered).toMatchObject({ cleanup: 'complete', phase: 'complete' });
+    expect(recovered.status).toBe(
+      point === 'after-terminal' ? 'passed' : 'cancelled',
+    );
+    expect(recoverExistingCandidateCheck).not.toHaveBeenCalled();
+    expect(mocks.cleanupMutations).toHaveLength(mutations);
+    expect(await getCurrentRepoWorkflowRun('sample', paths)).toEqual({
+      run: null,
+    });
+    // An old run must never release a later run's admission or recreate its own.
+    await mkdir(lock, { mode: 0o700 });
+    await writeFile(join(lock, 'run-id'), 'later-run');
+    const { releaseTrialLock } = await import('./trial-checkout');
+    await releaseTrialLock(directory, owner);
+    expect(await getRepoWorkflowRun('sample', runId, paths)).toMatchObject({
+      cleanup: 'complete',
+    });
+    expect(await readFile(join(lock, 'run-id'), 'utf8')).toBe('later-run');
+  },
+);
+it('refuses lock release before signed terminal persistence and rejects altered cleanup ownership', async () => {
+  await start();
+  const terminal = await settled();
+  const directory = join(root, 'repo-workflow-runs', runId);
+  const { trialHandle, readTrialOwnership } = await import('./trial-store');
+  const { releaseTrialLock } = await import('./trial-checkout');
+  const { artifactHash, writeSigned } = await import('../coding-runs');
+  const owner = await readTrialOwnership(directory);
+  const handle = await trialHandle(directory);
+  const lock = join(
+    root,
+    'repo-workflow-runs',
+    `repo-${artifactHash('sample')}.lock`,
+  );
+  await mkdir(lock, { mode: 0o700 });
+  await writeFile(join(lock, 'run-id'), runId);
+  await writeSigned(join(directory, 'result.json'), handle.attemptToken, {
+    ...terminal,
+    phase: 'cleanup',
+    cleanup: 'pending',
+  });
+  await expect(releaseTrialLock(directory, owner)).rejects.toThrow(
+    'Terminal cleanup',
+  );
+  await writeSigned(
+    join(directory, 'result.json'),
+    handle.attemptToken,
+    terminal,
+  );
+  await expect(
+    releaseTrialLock(directory, { ...owner, source: join(root, 'different') }),
+  ).rejects.toThrow('ownership mismatch');
+  expect(await readFile(join(lock, 'run-id'), 'utf8')).toBe(runId);
+});
+it('canonical cleanup hashing survives real candidate schema property ordering', async () => {
+  await start();
+  await settled();
+  const directory = join(root, 'repo-workflow-runs', runId);
+  const { readTrialOwnership, recordTrialCleanup, trialCleanupRecorded } =
+    await import('./trial-store');
+  const { candidateCheckInputSchema } = await import('../factory-delivery');
+  const v = await import('valibot');
+  const owner = await readTrialOwnership(directory);
+  const job = owner.jobs[0];
+  const request = job.request;
+  const constructed = {
+    command: request.command,
+    cwd: request.cwd,
+    timeoutMs: request.timeoutMs,
+    maxOutputBytes: request.maxOutputBytes,
+    workflow: request.workflow,
+  };
+  expect(JSON.stringify(constructed)).not.toBe(
+    JSON.stringify(v.parse(candidateCheckInputSchema, constructed)),
+  );
+  await recordTrialCleanup(directory, {
+    ...owner,
+    jobs: owner.jobs.map((entry, index) =>
+      index === 0 ? { ...entry, request: constructed } : entry,
+    ),
+  });
+  expect(
+    await trialCleanupRecorded(directory, await readTrialOwnership(directory)),
+  ).toBe(true);
+});
+it('continues receipt settlement after a recovery process dies while holding its existing claim and OS guard', async () => {
+  await start();
+  const terminal = await settled();
+  const directory = join(root, 'repo-workflow-runs', runId);
+  const {
+    trialHandle,
+    readTrialOwnership,
+    saveTrialOwnership,
+    captureTrialController,
+  } = await import('./trial-store');
+  const { artifactHash, writeSigned } = await import('../coding-runs');
+  const handle = await trialHandle(directory);
+  const owner = await readTrialOwnership(directory);
+  owner.controller = await exitedController();
+  await saveTrialOwnership(directory, owner);
+  const lock = join(
+    root,
+    'repo-workflow-runs',
+    `repo-${artifactHash('sample')}.lock`,
+  );
+  await mkdir(lock, { mode: 0o700 });
+  await writeFile(join(lock, 'run-id'), runId);
+  await writeSigned(join(directory, 'result.json'), handle.attemptToken, {
+    ...terminal,
+    status: 'running',
+    phase: 'cleanup',
+    cleanup: 'pending',
+    finishedAt: null,
+  });
+  const guard = join(directory, 'recovery-guard.sqlite');
+  await writeFile(guard, '', { mode: 0o600 });
+  const child = spawn(
+    process.execPath,
+    [
+      '-e',
+      "const {DatabaseSync}=require('node:sqlite'); const db=new DatabaseSync(process.argv[1]);db.exec('BEGIN IMMEDIATE');process.on('message',()=>process.exit(0));process.send('locked');",
+      guard,
+    ],
+    { stdio: ['ignore', 'ignore', 'ignore', 'ipc'] },
+  );
+  await once(child, 'message');
+  const claimant = await captureTrialController(child.pid!);
+  const claim = join(directory, 'recovery.lock');
+  await mkdir(claim, { mode: 0o700 });
+  await writeSigned(join(claim, 'owner.json'), handle.attemptToken, {
+    nonce: '11111111-1111-4111-8111-111111111111',
+    controller: claimant,
+  });
+  const before = mocks.cleanupMutations.length;
+  try {
+    expect(await getRepoWorkflowRun('sample', runId, paths)).toMatchObject({
+      cleanup: 'retained',
+      guidance: expect.stringContaining('already claimed'),
+    });
+    expect(await readFile(join(lock, 'run-id'), 'utf8')).toBe(runId);
+  } finally {
+    const exit = once(child, 'exit');
+    child.send('exit');
+    await exit;
+  }
+  expect(await getRepoWorkflowRun('sample', runId, paths)).toMatchObject({
+    cleanup: 'complete',
+    phase: 'complete',
+  });
+  expect(mocks.cleanupMutations).toHaveLength(before);
+  expect(await getCurrentRepoWorkflowRun('sample', paths)).toEqual({
+    run: null,
+  });
+  await mkdir(lock, { mode: 0o700 });
+  await writeFile(join(lock, 'run-id'), 'later-run');
+  expect(await getRepoWorkflowRun('sample', runId, paths)).toMatchObject({
+    cleanup: 'complete',
+  });
+  expect(await readFile(join(lock, 'run-id'), 'utf8')).toBe('later-run');
+});
+it.each(['live', 'partial'])(
+  'does not continue a %s recovery claimant merely because a cleanup receipt exists',
+  async (kind) => {
+    await start();
+    const terminal = await settled();
+    const directory = join(root, 'repo-workflow-runs', runId);
+    const {
+      trialHandle,
+      readTrialOwnership,
+      saveTrialOwnership,
+      captureTrialController,
+    } = await import('./trial-store');
+    const { artifactHash, writeSigned } = await import('../coding-runs');
+    const handle = await trialHandle(directory);
+    const owner = await readTrialOwnership(directory);
+    owner.controller = await exitedController();
+    await saveTrialOwnership(directory, owner);
+    const lock = join(
+      root,
+      'repo-workflow-runs',
+      `repo-${artifactHash('sample')}.lock`,
+    );
+    await mkdir(lock, { mode: 0o700 });
+    await writeFile(join(lock, 'run-id'), runId);
+    await writeSigned(join(directory, 'result.json'), handle.attemptToken, {
+      ...terminal,
+      status: 'running',
+      phase: 'cleanup',
+      cleanup: 'pending',
+      finishedAt: null,
+    });
+    const claim = join(directory, 'recovery.lock');
+    await mkdir(claim, { mode: 0o700 });
+    if (kind === 'live')
+      await writeSigned(join(claim, 'owner.json'), handle.attemptToken, {
+        nonce: '11111111-1111-4111-8111-111111111111',
+        controller: await captureTrialController(),
+      });
+    expect(await getRepoWorkflowRun('sample', runId, paths)).toMatchObject({
+      cleanup: 'retained',
+      guidance: expect.stringContaining('already claimed'),
+    });
+    expect(await readFile(join(lock, 'run-id'), 'utf8')).toBe(runId);
+  },
+);

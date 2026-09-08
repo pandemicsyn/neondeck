@@ -1,11 +1,14 @@
 import { randomUUID } from 'node:crypto';
-import { mkdir, rm } from 'node:fs/promises';
+import { mkdir, rm, open, lstat, realpath } from 'node:fs/promises';
+import { constants } from 'node:fs';
+import { DatabaseSync } from 'node:sqlite';
 import { execFile } from 'node:child_process';
 import { hostname } from 'node:os';
 import { promisify } from 'node:util';
 import { join } from 'node:path';
 import * as v from 'valibot';
 import {
+  artifactHash,
   privateDirectory,
   readBytesBounded,
   readSigned,
@@ -144,30 +147,172 @@ export async function saveTrialOwnership(
   );
 }
 
-/** Exclusive across CLI/server processes. Existing claims are never stolen,
- * including partial admissions and claims whose holder may have died. */
-export async function claimTrialRecovery(directory: string) {
-  const handle = await trialHandle(directory);
-  const claim = join(directory, 'recovery.lock');
+const recoveryClaimSchema = v.strictObject({
+  nonce: v.pipe(v.string(), v.uuid()),
+  controller: controllerSchema,
+});
+/** SQLite supplies the cross-process exclusion that mkdir alone cannot safely
+ * reclaim after death. Its OS lock disappears when the holder exits; the
+ * stable private database file is never deleted/replaced during run lifetime. */
+async function recoveryGuard(directory: string) {
+  const path = join(directory, 'recovery-guard.sqlite');
   try {
-    await mkdir(claim, { mode: 0o700 });
+    const file = await open(
+      path,
+      constants.O_CREAT | constants.O_EXCL | constants.O_WRONLY,
+      0o600,
+    );
+    await file.close();
   } catch (error) {
-    if (error instanceof Error && 'code' in error && error.code === 'EEXIST')
+    if (!(error instanceof Error && 'code' in error && error.code === 'EEXIST'))
+      throw error;
+  }
+  const info = await lstat(path);
+  if (
+    !info.isFile() ||
+    info.isSymbolicLink() ||
+    info.uid !== process.getuid?.() ||
+    (info.mode & 0o077) !== 0 ||
+    (await realpath(path)) !== path
+  )
+    throw new Error('Unsafe recovery guard');
+  const db = new DatabaseSync(path, { timeout: 0 });
+  try {
+    db.exec('BEGIN IMMEDIATE');
+    return () => db.close();
+  } catch (error) {
+    db.close();
+    if (error instanceof Error && 'errcode' in error && error.errcode === 5)
       return null;
     throw error;
   }
-  const nonce = randomUUID();
-  await writeSigned(join(claim, 'owner.json'), handle.attemptToken, { nonce });
-  return {
-    release: async () => {
-      await privateDirectory(claim);
-      const proof = v.parse(
-        v.strictObject({ nonce: v.pipe(v.string(), v.uuid()) }),
+}
+/** A dead claimant can be continued only with authenticated completed cleanup
+ * and exclusive OS-backed exclusion. Missing/partial/unproven claims remain. */
+export async function claimTrialRecovery(directory: string) {
+  const handle = await trialHandle(directory);
+  const close = await recoveryGuard(directory);
+  if (!close) return null;
+  const claim = join(directory, 'recovery.lock');
+  try {
+    let created = false;
+    try {
+      await mkdir(claim, { mode: 0o700 });
+      created = true;
+    } catch (error) {
+      if (!(
+        error instanceof Error &&
+        'code' in error &&
+        error.code === 'EEXIST'
+      ))
+        throw error;
+    }
+    await privateDirectory(claim);
+    const readClaim = async () =>
+      v.parse(
+        recoveryClaimSchema,
         await readSigned(join(claim, 'owner.json'), handle.attemptToken),
       );
-      if (proof.nonce !== nonce)
-        throw new Error('Recovery claim ownership changed');
-      await rm(claim, { recursive: true });
+    if (!created) {
+      try {
+        const prior = await readClaim();
+        if ((await trialControllerState(prior.controller)) !== 'dead') {
+          close();
+          return null;
+        }
+        if (JSON.stringify(await readClaim()) !== JSON.stringify(prior)) {
+          close();
+          return null;
+        }
+        const owner = await readTrialOwnership(directory);
+        if (!(await trialCleanupRecorded(directory, owner))) {
+          close();
+          return null;
+        }
+      } catch {
+        close();
+        return null;
+      }
+    }
+    const proof = {
+      nonce: randomUUID(),
+      controller: await captureTrialController(),
+    };
+    await writeSigned(join(claim, 'owner.json'), handle.attemptToken, proof);
+    return {
+      close,
+      release: async () => {
+        try {
+          await privateDirectory(claim);
+          if (JSON.stringify(await readClaim()) !== JSON.stringify(proof))
+            throw new Error('Recovery claim ownership changed');
+          await rm(claim, { recursive: true });
+        } finally {
+          close();
+        }
+      },
+    };
+  } catch (error) {
+    close();
+    throw error;
+  }
+}
+
+const cleanupReceiptSchema = v.strictObject({
+  runId: v.pipe(v.string(), v.uuid()),
+  repoId: v.string(),
+  ownershipHash: v.pipe(v.string(), v.regex(/^[a-f0-9]{64}$/)),
+});
+function cleanupOwnershipHash(owner: TrialOwnership) {
+  // Controller identity can change only in explicit recovery observations;
+  // resource identity and the complete set of settled jobs remain bound.
+  const { controller: _controller, ...resources } = v.parse(
+    trialOwnershipSchema,
+    owner,
+  );
+  return artifactHash(JSON.stringify(resources));
+}
+export async function recordTrialCleanup(
+  directory: string,
+  owner: TrialOwnership,
+) {
+  if (!owner.gitSettled) throw new Error('Cleanup settlement unproven');
+  const handle = await trialHandle(directory);
+  await writeSigned(
+    join(directory, 'cleanup-receipt.json'),
+    handle.attemptToken,
+    {
+      runId: owner.runId,
+      repoId: owner.repoId,
+      ownershipHash: cleanupOwnershipHash(owner),
     },
-  };
+  );
+}
+export async function trialCleanupRecorded(
+  directory: string,
+  owner: TrialOwnership,
+) {
+  const handle = await trialHandle(directory);
+  let receipt: v.InferOutput<typeof cleanupReceiptSchema>;
+  try {
+    receipt = v.parse(
+      cleanupReceiptSchema,
+      await readSigned(
+        join(directory, 'cleanup-receipt.json'),
+        handle.attemptToken,
+      ),
+    );
+  } catch (error) {
+    if (error instanceof Error && 'code' in error && error.code === 'ENOENT')
+      return false;
+    throw error;
+  }
+  if (
+    !owner.gitSettled ||
+    receipt.runId !== owner.runId ||
+    receipt.repoId !== owner.repoId ||
+    receipt.ownershipHash !== cleanupOwnershipHash(owner)
+  )
+    throw new Error('Cleanup receipt ownership mismatch');
+  return true;
 }

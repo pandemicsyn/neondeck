@@ -43,12 +43,18 @@ import {
   trialControllerState,
   requestTrialCancellation,
   trialCancellationRequested,
+  trialCleanupRecorded,
   trialHandle,
   readTrialOwnership,
   saveTrialOwnership,
   type TrialOwnership,
 } from './trial-store';
-import { assertTrialCheckout, cleanupTrial } from './trial-checkout';
+import {
+  assertTrialCheckout,
+  cleanupTrial,
+  releaseTrialLock,
+  trialLockBelongsTo,
+} from './trial-checkout';
 import { recoverExistingCandidateCheck } from '../factory-delivery';
 import { readSigned, writeSigned } from '../coding-runs';
 
@@ -97,7 +103,9 @@ async function inspectRepoWorkflowRun(
     throw new FactoryError(404, 'Workflow test result not found.');
   if (
     recover &&
-    (result.status === 'running' || result.cleanup !== 'complete') &&
+    (result.status === 'running' ||
+      result.cleanup !== 'complete' ||
+      (await trialLockBelongsTo(runPath(runId, paths), repoId, runId))) &&
     !live.has(runPath(runId, paths))
   ) {
     // A different CLI/server process has its own map. Only durable identity
@@ -141,8 +149,7 @@ async function inspectRepoWorkflowRun(
       // acquiring this claim. Never repeat its completed cleanup.
       result = await read(runId, paths);
       if (result.repoId !== repoId) throw new Error('Run identity changed');
-      if (result.cleanup === 'complete' && result.status !== 'running')
-        return result;
+
       // The controller may have admitted a job or started Git while we awaited
       // its death observation. Discard the earlier resource/settlement snapshot.
       try {
@@ -163,6 +170,22 @@ async function inspectRepoWorkflowRun(
           guidance:
             'Controller ownership changed or cannot be verified after observation; resources retained.',
         };
+      }
+      if (await trialCleanupRecorded(directory, owner)) {
+        if (result.cleanup !== 'complete' || result.status === 'running') {
+          result = {
+            ...result,
+            status: 'cancelled',
+            cleanup: 'complete',
+            phase: 'complete',
+            finishedAt: new Date().toISOString(),
+            guidance:
+              'Interrupted workflow cleanup was already proven complete. Start a new explicit test.',
+          };
+          await save(result, paths);
+        }
+        await releaseTrialLock(directory, owner);
+        return result;
       }
       result = {
         ...result,
@@ -199,9 +222,13 @@ async function inspectRepoWorkflowRun(
         /* Missing receipts never authorize PID signals or deletion. */
       }
       await save(result, paths);
-      if (result.cleanup === 'complete') releaseClaim = true;
+      if (result.cleanup === 'complete') {
+        await releaseTrialLock(directory, owner);
+        releaseClaim = true;
+      }
     } finally {
       if (releaseClaim) await claim.release();
+      else claim.close();
     }
   }
   return result;
@@ -642,6 +669,8 @@ export async function startRepoWorkflowRun(
         result.phase = 'complete';
         result.finishedAt = new Date().toISOString();
         await save(result, paths);
+        if (result.cleanup === 'complete')
+          await releaseTrialLock(directory, ownership);
         // Bounded retained terminal results; never prune uncertain resource owners.
         const completed: { id: string; date: string }[] = [];
         for (const entry of await readdir(storage)) {

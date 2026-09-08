@@ -133,14 +133,6 @@ export function workflowEnvironmentValues(
   v.parse(repoWorkflowProfileSchema.entries.environmentRefs, refs);
   const values: Record<string, string> = {};
   for (const name of refs) {
-    if (
-      /^(?:HOME|PATH|USER|LOGNAME|SHELL|ENV|BASH_ENV|NODE_OPTIONS|NODE_PATH|NEONDECK.*|XDG_.*|TMP.*|TEMP|GIT_.*|SSH_.*|GCM_.*|NPM_CONFIG_.*|npm_config_.*|LD_.*|DYLD_.*|PNPM_.*|COREPACK_.*)$/i.test(
-        name,
-      )
-    )
-      throw new WorkflowRuntimeUnavailableError(
-        `ENVIRONMENT SETUP: reference ${name} is reserved for process controls.`,
-      );
     const value = source[name];
     if (!value || value.length > 65536 || value.includes('\0'))
       throw new WorkflowRuntimeUnavailableError(

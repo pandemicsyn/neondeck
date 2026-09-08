@@ -90,3 +90,82 @@ it('discovers a selected installed manager without inheriting PATH and fences ex
   await writeFile(join(path, 'bun'), '#!/bin/sh\nexit 1\nchanged\n');
   await expect(assertWorkflowToolchain(toolchain)).rejects.toThrow('changed');
 });
+
+it.each([
+  'SSH_AUTH_SOCK',
+  'GCM_TOKEN',
+  'TMP_WORK',
+  'TMPDIR',
+  'NEONDECKHOME',
+  'CDPATH',
+  'PYTHONPATH',
+  'RUBYOPT',
+  'PERL5OPT',
+  'BUN_CONFIG',
+  'YARN_CACHE_FOLDER',
+  'NPM_CONFIG_USERCONFIG',
+])(
+  'shared save/proposal admission and runtime consistently reject %s',
+  async (name) => {
+    const v = await import('valibot');
+    const {
+      repoWorkflowEnvironmentRefSchema,
+      saveRepoWorkflowsInputSchema,
+      repoWorkflowProposalDraftSchema,
+      isReservedRepoWorkflowEnvironmentRef,
+    } = await import('../../../shared/repo-workflows');
+    expect(isReservedRepoWorkflowEnvironmentRef(name)).toBe(true);
+    expect(v.safeParse(repoWorkflowEnvironmentRefSchema, name).success).toBe(
+      false,
+    );
+    expect(() =>
+      workflowEnvironmentValues([name], { [name]: 'fixture-value' }),
+    ).toThrow();
+    const workflows = {
+      defaultProfileId: 'test',
+      profiles: [
+        {
+          id: 'test',
+          name: 'Test',
+          setupCommands: [],
+          validationCommands: [{ command: 'node --version', cwd: '.' }],
+          setupTimeoutMs: 1000,
+          validationTimeoutMs: 1000,
+          runtime: {},
+          environmentRefs: [name],
+        },
+      ],
+    };
+    expect(
+      v.safeParse(saveRepoWorkflowsInputSchema, {
+        expectedFingerprint: 'a'.repeat(64),
+        workflows,
+      }).success,
+    ).toBe(false);
+    expect(
+      v.safeParse(repoWorkflowProposalDraftSchema, {
+        workflows,
+        rationale: 'Fixture',
+        evidencePaths: [],
+      }).success,
+    ).toBe(false);
+  },
+);
+it.each([
+  'TEST_KEY',
+  'GITHUB_TOKEN',
+  'APP_TMP_WORK',
+  'SSHKEY_LABEL',
+  'DATABASE_URL',
+])('shared and runtime admission consistently allow %s', async (name) => {
+  const v = await import('valibot');
+  const {
+    repoWorkflowEnvironmentRefSchema,
+    isReservedRepoWorkflowEnvironmentRef,
+  } = await import('../../../shared/repo-workflows');
+  expect(isReservedRepoWorkflowEnvironmentRef(name)).toBe(false);
+  expect(v.parse(repoWorkflowEnvironmentRefSchema, name)).toBe(name);
+  expect(
+    workflowEnvironmentValues([name], { [name]: 'fixture-value' }),
+  ).toEqual({ [name]: 'fixture-value' });
+});

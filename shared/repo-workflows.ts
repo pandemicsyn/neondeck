@@ -32,14 +32,17 @@ const version = v.pipe(
     'Use a valid semantic version requirement.',
   ),
 );
+/** Shared admission/runtime rule: references cannot override process controls. */
+export function isReservedRepoWorkflowEnvironmentRef(value: string) {
+  return /^(?:HOME|PATH|SHELL|USER|LOGNAME|TMP.*|TEMP|ENV|BASH_ENV|CDPATH|NODE_OPTIONS|NODE_PATH|XDG_.*|NPM_CONFIG_.*|GIT_.*|SSH_.*|GCM_.*|NEONDECK.*|LD_.*|DYLD_.*|PYTHON.*|RUBY.*|PERL.*|BUN_.*|COREPACK_.*|YARN_.*|PNPM_.*)$/i.test(
+    value,
+  );
+}
 export const repoWorkflowEnvironmentRefSchema = v.pipe(
   text(128),
   v.regex(/^[A-Z_][A-Z0-9_]*$/),
   v.check(
-    (value) =>
-      !/^(?:HOME|PATH|SHELL|USER|LOGNAME|TMPDIR|TMP|TEMP|ENV|BASH_ENV|CDPATH|NODE_OPTIONS|NODE_PATH|XDG_.*|NPM_CONFIG_.*|npm_config_.*|GIT_.*|NEONDECK_.*|LD_.*|DYLD_.*|PYTHON.*|RUBY.*|PERL.*|BUN_.*|COREPACK_.*|YARN_.*|PNPM_.*)$/.test(
-        value,
-      ),
+    (value) => !isReservedRepoWorkflowEnvironmentRef(value),
     'Environment reference cannot override runtime or process controls.',
   ),
 );
