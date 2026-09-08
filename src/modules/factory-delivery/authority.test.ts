@@ -7,7 +7,13 @@ import { runtimePaths } from '../../runtime-home';
 import { initializeAppDatabase } from '../../runtime-home/app-db';
 import { validationPolicySchema } from '../../../shared/factory-delivery';
 import { assertDeliveryAuthority, localValidationContext } from './authority';
-import { admitReleasedValidation } from './validation-service';
+import type { ValidationAdmissionAttention } from '../../../shared/factory-coding';
+import { CodingAuthorityChangedError } from '../factory/index';
+import { CandidateEvidenceError } from './evidence-errors';
+import {
+  admitReleasedValidation,
+  retryReleasedValidation,
+} from './validation-service';
 import { listDeliveryPipelines } from './store';
 import {
   deliveryBudget,
@@ -29,11 +35,16 @@ const state = vi.hoisted(() => {
     historical: false,
     revoked: false,
     currentPolicy: vi.fn(() => policy),
+    attentionValue: null as ValidationAdmissionAttention | null,
+    captureFailure: null as Error | null,
+    authorityFailure: null as Error | null,
+    usage: 1234 as number | null,
     attention: vi.fn(),
     publicationFingerprint: 'f'.repeat(64),
   };
 });
 const run = vi.hoisted(() => ({
+  version: 1,
   runId: 'run',
   attemptId: 'attempt',
   status: 'candidate',
@@ -59,6 +70,7 @@ vi.mock('../factory/validation-policy', () => ({
 vi.mock('../factory', async (original) => ({
   ...(await original<typeof import('../factory')>()),
   assertCodingAuthoritySnapshot: () => {
+    if (state.authorityFailure) throw state.authorityFailure;
     if (state.revoked) throw new Error('Frozen coding authority changed.');
     return {
       repo: {
@@ -84,18 +96,25 @@ vi.mock('../factory', async (original) => ({
       },
     ],
   }),
+  publicCodingRun: (record: unknown) => ({ record }),
   codingHandle: () => ({}),
-  readCodingExecutionUsage: async () => 1234,
-  readValidationAttention: () => undefined,
+  readCodingExecutionUsage: async () => state.usage,
+  readValidationAttention: () => state.attentionValue,
+  clearValidationAttention: () => {
+    state.attentionValue = null;
+  },
   saveValidationAttention: state.attention,
 }));
 vi.mock('./evidence', () => ({
-  captureCandidateEvidence: async () => ({
-    evidenceDigest: 'c'.repeat(64),
-    treeSha: 'd'.repeat(40),
-    baseSha: 'e'.repeat(40),
-    headSha: 'e'.repeat(40),
-  }),
+  captureCandidateEvidence: async () => {
+    if (state.captureFailure) throw state.captureFailure;
+    return {
+      evidenceDigest: 'c'.repeat(64),
+      treeSha: 'd'.repeat(40),
+      baseSha: 'e'.repeat(40),
+      headSha: 'e'.repeat(40),
+    };
+  },
 }));
 vi.mock('./service-operator', () => ({
   factoryDeliveryDetail: (p: unknown) => p,
@@ -116,7 +135,13 @@ beforeEach(() => {
   state.revoked = false;
   state.publicationFingerprint = 'f'.repeat(64);
   state.currentPolicy.mockReset().mockReturnValue(state.policy);
-  state.attention.mockClear();
+  state.attentionValue = null;
+  state.captureFailure = null;
+  state.authorityFailure = null;
+  state.usage = 1234;
+  state.attention.mockReset().mockImplementation((_runId, attention) => {
+    state.attentionValue = attention;
+  });
 });
 afterEach(() => rmSync(paths.home, { recursive: true, force: true }));
 
@@ -247,4 +272,147 @@ it('preserves revoked release and frozen identity fences', async () => {
   expect(() => assertDeliveryAuthority(pipeline, paths)).toThrow(
     /Validation authority changed/,
   );
+});
+
+it('retains a safe catch diagnostic and does not automatically retry blocked admission', async () => {
+  state.captureFailure = new Error('secret credentials /private/source');
+  await admitReleasedValidation(paths);
+  const attention = state.attentionValue;
+  expect(attention).toMatchObject({
+    reasonCode: 'unexpected-admission-failure',
+    stage: 'preview',
+    nextAction: 'retry-validation',
+  });
+  expect(JSON.stringify(attention)).not.toContain('secret');
+  await admitReleasedValidation(paths);
+  expect(state.attention).toHaveBeenCalledTimes(1);
+  expect(state.attentionValue).toBe(attention);
+  expect(listDeliveryPipelines({}, paths)).toEqual([]);
+});
+it('deliberate recheck preserves unchanged limits and admits only after corrected capture', async () => {
+  state.captureFailure = new CandidateEvidenceError('file-too-large', {
+    path: 'assets/large.png',
+    observedBytes: 3000000,
+    limitBytes: 2097152,
+  });
+  await admitReleasedValidation(paths);
+  const attention = state.attentionValue;
+  expect(attention).toMatchObject({
+    reasonCode: 'file-too-large',
+    nextAction: 'inspect-diagnostics',
+  });
+  expect(attention?.message).toContain('3000000');
+  await retryReleasedValidation(
+    'run',
+    { expectedVersion: 1, reason: 'recheck after resolution' },
+    paths,
+  );
+  expect(state.attentionValue).toMatchObject({
+    reasonCode: 'file-too-large',
+    nextAction: 'inspect-diagnostics',
+  });
+  expect(listDeliveryPipelines({}, paths)).toEqual([]);
+  const retainedFailure = state.attentionValue;
+  await admitReleasedValidation(paths);
+  expect(state.attentionValue).toBe(retainedFailure);
+  state.captureFailure = null;
+  await retryReleasedValidation(
+    'run',
+    { expectedVersion: 1, reason: 'recheck after resolution' },
+    paths,
+  );
+  expect(state.attentionValue).toBeNull();
+  const pipelines = listDeliveryPipelines({}, paths);
+  expect(pipelines).toHaveLength(1);
+  expect(pipelines[0]!.record.initialRevision).toMatchObject({
+    runId: 'run',
+    releaseId: 'release',
+  });
+  expect(pipelines[0]!.record.publication).toBeUndefined();
+  expect(pipelines[0]!.record.effects).toEqual([]);
+});
+it('rejects stale run-version retry without clearing the saved failure', async () => {
+  state.captureFailure = new CandidateEvidenceError('capture-failed');
+  await admitReleasedValidation(paths);
+  const attention = state.attentionValue;
+  await expect(
+    retryReleasedValidation(
+      'run',
+      { expectedVersion: 99, reason: 'retry' },
+      paths,
+    ),
+  ).rejects.toThrow(/Candidate changed/);
+  expect(state.attentionValue).toBe(attention);
+});
+it.each([
+  [null, 'usage-unavailable'],
+  [10800000, 'budget-exhausted'],
+] as const)(
+  'reports unavailable/exhausted usage without blind retry: %s',
+  async (usage, code) => {
+    state.usage = usage;
+    await admitReleasedValidation(paths);
+    expect(state.attentionValue?.reasonCode).toBe(code);
+    expect(state.attentionValue?.nextAction).not.toBe('retry-validation');
+    expect(listDeliveryPipelines({}, paths)).toEqual([]);
+  },
+);
+it('rechecks the current saved generic failure through the same admission path', async () => {
+  state.attentionValue = {
+    blocker: 'candidate-unavailable',
+    message: 'Reconcile its evidence and retry validation.',
+    observedAt: '2026-09-01T00:00:00.000Z',
+    nextAction: 'retry-validation',
+  };
+  state.captureFailure = new CandidateEvidenceError('file-too-large', {
+    path: 'assets/image.png',
+    observedBytes: 4000000,
+    limitBytes: 2097152,
+  });
+  await retryReleasedValidation(
+    'run',
+    { expectedVersion: 1, reason: 'retry' },
+    paths,
+  );
+  expect(state.attentionValue).toMatchObject({
+    reasonCode: 'file-too-large',
+    nextAction: 'inspect-diagnostics',
+    stage: 'preview',
+  });
+  expect(state.attentionValue?.message).toContain('assets/image.png');
+  expect(listDeliveryPipelines({}, paths)).toEqual([]);
+});
+
+it.each([true, false])(
+  'distinguishes typed authority rejection from internal authority failure: %s',
+  async (known) => {
+    state.authorityFailure = known
+      ? new CodingAuthorityChangedError('Frozen coding authority changed.')
+      : new Error('private storage failure');
+    await admitReleasedValidation(paths);
+    expect(state.attentionValue).toMatchObject({
+      stage: 'authority',
+      reasonCode: known ? 'policy-changed' : 'unexpected-admission-failure',
+      nextAction: known ? 'review-plan' : 'retry-validation',
+    });
+    expect(JSON.stringify(state.attentionValue)).not.toContain(
+      'private storage',
+    );
+    expect(listDeliveryPipelines({}, paths)).toEqual([]);
+  },
+);
+
+it('never clears plan-review attention through the recheck endpoint', async () => {
+  state.usage = 10800000;
+  await admitReleasedValidation(paths);
+  const retained = state.attentionValue;
+  await expect(
+    retryReleasedValidation(
+      'run',
+      { expectedVersion: 1, reason: 'recheck' },
+      paths,
+    ),
+  ).rejects.toThrow(/plan review/);
+  expect(state.attentionValue).toBe(retained);
+  expect(listDeliveryPipelines({}, paths)).toEqual([]);
 });

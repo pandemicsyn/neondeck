@@ -88,8 +88,19 @@ export const validationAdmissionAttentionSchema = v.strictObject({
   blocker: v.picklist(['policy-changed', 'candidate-unavailable']),
   message: label,
   observedAt: v.pipe(v.string(), v.isoTimestamp()),
-  nextAction: v.picklist(['review-plan', 'retry-validation']),
+  nextAction: v.picklist([
+    'review-plan',
+    'retry-validation',
+    'inspect-diagnostics',
+  ]),
+  reasonCode: v.optional(v.pipe(v.string(), v.regex(/^[a-z][a-z0-9-]{0,79}$/))),
+  recovery: v.optional(label),
+  diagnosticReference: v.optional(v.pipe(v.string(), v.uuid())),
+  stage: v.optional(v.picklist(['authority', 'preview', 'authorization'])),
 });
+export type ValidationAdmissionAttention = v.InferOutput<
+  typeof validationAdmissionAttentionSchema
+>;
 export const factoryCodingRunSchema = v.strictObject({
   validationAdmission: v.optional(
     v.nullable(validationAdmissionAttentionSchema),

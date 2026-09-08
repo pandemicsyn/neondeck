@@ -2,6 +2,7 @@ import {
   readValidationAttention,
   saveValidationAttention,
   clearValidationAttention,
+  CodingAuthorityChangedError,
 } from '../factory';
 import { publicCodingRun } from '../factory';
 import { deliveryControlInputSchema } from '../../../shared/factory-delivery-api';
@@ -32,6 +33,10 @@ import {
   requireDelivery,
 } from './service-records';
 import { factoryDeliveryDetail } from './service-operator';
+import {
+  ValidationAdmissionError,
+  validationAdmissionAttention,
+} from './validation-admission';
 export { factoryValidationPolicy } from '../factory';
 
 function existingRelease(
@@ -61,11 +66,10 @@ async function factoryValidationPreview(
   const { run, target, validationPolicy } = context;
   const evidence = await capture(codingHandle(run, paths));
   const initialExecutionMs = await readCodingExecutionUsage(run, paths);
-  if (initialExecutionMs === null || initialExecutionMs >= 10800000)
-    throw new FactoryError(
-      409,
-      'Reconcile authenticated coding usage before authorizing the shared validation budget.',
-    );
+  if (initialExecutionMs === null)
+    throw new ValidationAdmissionError('usage-unavailable');
+  if (initialExecutionMs >= 10800000)
+    throw new ValidationAdmissionError('budget-exhausted');
   // Capture can await filesystem work; fence settings/release again before returning authority.
   if (
     !isDeepStrictEqual(
@@ -73,7 +77,7 @@ async function factoryValidationPreview(
       localValidationContext(runId, paths).validationPolicy,
     )
   )
-    throw new FactoryError(409, 'Validation settings changed during preview.');
+    throw new ValidationAdmissionError('policy-changed');
   return v.parse(validationGrantPreviewSchema, {
     workItemId: run.snapshot.workItemId,
     repoId: run.snapshot.repoId,
@@ -202,20 +206,21 @@ async function admitReleasedRun(runId: string, paths: RuntimePaths) {
     (r) => r.id === run.snapshot.releaseId,
   );
   if (!release?.validationPolicy || release.withdrawnAt) return;
-  let blocker: 'policy-changed' | 'candidate-unavailable' = 'policy-changed';
+  let stage: 'authority' | 'preview' | 'authorization' = 'authority';
   try {
     const context = localValidationContext(run.runId, paths);
     if (!isDeepStrictEqual(release.validationPolicy, context.validationPolicy))
-      throw new Error('Policy changed');
-    blocker = 'candidate-unavailable';
+      throw new ValidationAdmissionError('policy-changed');
+    stage = 'preview';
     const preview = await factoryValidationPreview(run.runId, paths);
+    stage = 'authorization';
     await authorizeValidation(
       { requestId: `release-validation:${release.id}`, confirm: true, preview },
       paths,
       captureCandidateEvidence,
       release.actor,
     );
-  } catch {
+  } catch (error) {
     const current = getCodingRun(runId, paths);
     if (
       !current ||
@@ -225,16 +230,12 @@ async function admitReleasedRun(runId: string, paths: RuntimePaths) {
       return;
     saveValidationAttention(
       runId,
-      {
-        blocker,
-        message:
-          blocker === 'policy-changed'
-            ? 'Approved validation settings or release authority changed. Review the plan and its validation policy.'
-            : 'The retained candidate could not be admitted for validation. Reconcile its evidence and retry validation.',
-        observedAt: new Date().toISOString(),
-        nextAction:
-          blocker === 'policy-changed' ? 'review-plan' : 'retry-validation',
-      },
+      validationAdmissionAttention(
+        error instanceof CodingAuthorityChangedError
+          ? new ValidationAdmissionError('policy-changed')
+          : error,
+        stage,
+      ),
       paths,
     );
   }
@@ -272,6 +273,17 @@ export async function retryReleasedValidation(
     throw new FactoryError(
       409,
       'This release does not authorize automatic validation.',
+    );
+  // Revalidate the current exact release before clearing its retained blocker.
+  localValidationContext(runId, paths);
+  const attention = readValidationAttention(runId, paths);
+  if (
+    attention?.nextAction !== 'retry-validation' &&
+    attention?.nextAction !== 'inspect-diagnostics'
+  )
+    throw new FactoryError(
+      409,
+      'This validation blocker requires plan review before retry.',
     );
   clearValidationAttention(runId, paths);
   await admitReleasedRun(runId, paths);

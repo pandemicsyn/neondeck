@@ -1,4 +1,5 @@
 import { captureFactoryRepoBaseline } from './repo-baseline';
+import { CodingAuthorityChangedError } from './coding-authority-error';
 import { createHash } from 'node:crypto';
 import * as v from 'valibot';
 import type { CodingExecutableIdentity } from '../../../shared/coding-adapters';
@@ -76,7 +77,7 @@ export function codingAuthority(workId: string, paths: RuntimePaths) {
     release.repoFingerprint !== codingDigest(repo) ||
     JSON.stringify(release.policy) !== JSON.stringify(factoryPolicy)
   )
-    throw new Error(
+    throw new CodingAuthorityChangedError(
       'Coding release is disabled, stale, withdrawn or ineligible.',
     );
   return { current, release, revision, repo, coding };
@@ -333,7 +334,7 @@ export function assertCodingAuthoritySnapshot(
     codingDigest({ release: release.policy, coding }) !==
       codingDigest(frozenCodingPolicy(snapshot))
   )
-    throw new Error('Frozen coding authority changed.');
+    throw new CodingAuthorityChangedError('Frozen coding authority changed.');
   return { ...authority, coding };
 }
 const frozenCodingPolicySchema = v.strictObject({
@@ -351,7 +352,9 @@ export function frozenCodingConfig(snapshot: CodingRunSnapshot) {
     coding.model !== snapshot.harness.model ||
     (coding.adapter && coding.adapter.cliVersion !== snapshot.harness.version)
   )
-    throw new Error('Frozen coding adapter identity is inconsistent.');
+    throw new CodingAuthorityChangedError(
+      'Frozen coding adapter identity is inconsistent.',
+    );
   return coding;
 }
 /** Never execute a retained path until it matches the original admission. */
