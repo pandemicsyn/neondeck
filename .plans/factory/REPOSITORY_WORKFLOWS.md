@@ -1,8 +1,8 @@
 # Repository setup and validation workflows
 
 Status: source implementation, two independent static reviews and manager
-product/architecture review complete. Full local verification is in progress;
-live acceptance remains pending. This operator-approved follow-up addresses
+product/architecture review and full local verification complete. Live acceptance
+remains pending. This operator-approved follow-up addresses
 validation commands being inferred without preparing their dependencies.
 
 ## Product behavior
@@ -113,9 +113,11 @@ deterministic dependencies.
 
 - Repository `npm run check` passed before the final review corrections.
 - The subsequent full verification run passed lint, import layers, migration
-  consistency, application/docs typechecks, 3,480 unit tests and 47 Git tests.
-  Its integration stage has not yet produced a completion result; do not treat
-  full verification as passing.
+  consistency, application/docs typechecks, 3,480 unit tests, 47 Git tests and
+  154 integration tests (16 skipped). Integration completed in 944.87 seconds;
+  the earlier apparent stall was a slow run, not a reported failure. The full
+  `npm run verify` command finished with exit code 0, including builds, package
+  contents, isolated packed-CLI smoke and formatting.
 - The final worker-boundary change additionally passed its real Vite build-graph
   regression, 19 process/supervision tests, typecheck, lint and import checks.
 - Dashboard/server/docs builds, npm package contents, isolated packed CLI smoke

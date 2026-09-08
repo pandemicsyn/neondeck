@@ -251,9 +251,10 @@ runtime requirements and environment references at plan approval. Dashboard and
 CLI share proposal, configuration and explicit disposable-test services. Setup
 failures stop before coding repair and offer a deliberate environment retry.
 Implementation, two independent static reviews, manager architecture review and
-synthetic UI checks are complete. Unit/Git checks, builds and package smoke pass;
-the full integration run is still unverified. Live operator acceptance and the
-separate missing judge-diff issue remain open.
+synthetic UI checks are complete. Full local verification passed, including
+3,480 unit tests, 47 Git tests, 154 integration tests (16 skipped), builds and
+package smoke. Live operator acceptance and the separate missing judge-diff
+issue remain open.
 
 Active operator-approved correction: [validation and publication lifecycle](factory/VALIDATION_AND_PUBLICATION_UX.md).
 New plan approval includes automatic local validation and bounded repairs; draft-PR
