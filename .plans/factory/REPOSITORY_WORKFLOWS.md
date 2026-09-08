@@ -5,6 +5,11 @@ product/architecture review and full local verification complete. Live acceptanc
 remains pending. This operator-approved follow-up addresses
 validation commands being inferred without preparing their dependencies.
 
+Published as [backend PR #435](https://github.com/pandemicsyn/neondeck/pull/435)
+and [dashboard/CLI PR #436](https://github.com/pandemicsyn/neondeck/pull/436)
+in stack #437. Publication occurred only after both static reviewers were clean.
+Live acceptance remains an operator follow-up, separate from PR review/merge.
+
 ## Product behavior
 
 Repository setup exposes a Factory workflow editor, both from the dashboard and
