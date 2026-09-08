@@ -1,3 +1,4 @@
+import { FactoryWorkflowSummary } from './FactoryWorkflowSummary';
 import { FactoryReviewedDiff } from './FactoryReviewedDiff';
 import { FactoryPublication } from './FactoryPublication';
 import type { FactoryCodingRun } from '../../../../shared/factory-coding';
@@ -21,6 +22,7 @@ import { useQuery } from '@tanstack/react-query';
 import { ApiError } from '../../api/http';
 import {
   controlFactoryDelivery,
+  retryFactoryEnvironmentSetup,
   getFactoryDelivery,
   getFactoryDeliveryEvidence,
   type DeliveryDetail,
@@ -99,20 +101,23 @@ export function FactoryDeliveryDetail({
       setBusy(false);
     }
   }
-  async function control(action: 'revoke' | 'reconcile') {
+  async function control(action: 'revoke' | 'reconcile' | 'environment') {
     if (!detail.data || detail.error || detail.isPending || refreshing || busy)
       return;
     setBusy(true);
     setError('');
     try {
-      await controlFactoryDelivery(
-        id,
-        action,
-        detail.data.pipeline.version,
-        action === 'revoke'
-          ? reason.trim()
-          : 'Human requested observation of uncertain delivery effects',
-      );
+      if (action === 'environment') {
+        await retryFactoryEnvironmentSetup(id, detail.data.pipeline.version);
+      } else
+        await controlFactoryDelivery(
+          id,
+          action,
+          detail.data.pipeline.version,
+          action === 'revoke'
+            ? reason.trim()
+            : 'Human requested observation of uncertain delivery effects',
+        );
       setRevoking(false);
       setReason('');
     } catch (cause) {
@@ -150,6 +155,34 @@ export function FactoryDeliveryDetail({
           {p.outcome ?? (p.pr ? 'Draft PR recorded' : 'Draft only')}
         </span>
       </div>
+      {nextAction === 'human-environment' && (
+        <section
+          aria-label="Environment setup recovery"
+          className="factory-error"
+        >
+          <p>
+            Setup stopped before validation and independent review. Inspect the
+            setup evidence below and correct the missing runtime, dependency, or
+            environment reference.
+          </p>
+          <p>
+            Retry uses this candidate and the exact approved workflow. Changing
+            workflow settings requires renewed plan approval.
+          </p>
+          <button
+            disabled={disabled}
+            onClick={() => void control('environment')}
+          >
+            Retry environment setup
+          </button>
+        </section>
+      )}
+      {p.authorization.workflow && (
+        <details>
+          <summary>Approved repository workflow</summary>
+          <FactoryWorkflowSummary workflow={p.authorization.workflow} />
+        </details>
+      )}
       {nextAction === 'fresh-release-required' && (
         <p>
           Retained work and evidence remain available. Open the plan, withdraw

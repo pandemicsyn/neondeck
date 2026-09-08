@@ -1,3 +1,6 @@
+vi.mock('./onboarding-factory-workflows', () => ({
+  configureFactoryWorkflows: vi.fn().mockResolvedValue(undefined),
+}));
 import { log, note } from '@clack/prompts';
 import { MAX_FACTORY_GITHUB_CONNECTIONS } from '../../shared/factory';
 import { writeFileSync } from 'node:fs';

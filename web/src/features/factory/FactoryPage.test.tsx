@@ -647,3 +647,50 @@ it('keeps refresh and draft DOM stable during detail invalidation and applies ne
   );
   expect(editor.value).toBe('Held local edit');
 });
+it('opens workflow setup, selects the linked repository and scrolls after loading without repeating on polling', async () => {
+  history.replaceState(
+    null,
+    '',
+    '/factory?setup=workflows&repoId=second#factory-repo-workflows',
+  );
+  const scroll = vi.fn();
+  const original = HTMLElement.prototype.scrollIntoView;
+  HTMLElement.prototype.scrollIntoView = scroll;
+  vi.spyOn(globalThis, 'fetch').mockImplementation(async (url) => {
+    if (url === '/api/factory/state')
+      return response({
+        enabled: false,
+        policy: 'isolated-local-v1',
+        repos: [
+          { id: 'first', name: 'First repo' },
+          { id: 'second', name: 'Second repo' },
+        ],
+        items: [],
+      });
+    if (url === '/api/repos/second/factory-workflows')
+      return response({
+        repoId: 'second',
+        fingerprint: 'a'.repeat(64),
+        workflows: null,
+      });
+    return response({ error: 'Unrelated synthetic endpoint' }, 503);
+  });
+  try {
+    await render();
+    expect(
+      container.querySelector<HTMLDetailsElement>('#factory-setup')?.open,
+    ).toBe(true);
+    expect(
+      container.querySelector<HTMLSelectElement>(
+        '#factory-repo-workflows select',
+      )?.value,
+    ).toBe('second');
+    expect(scroll).toHaveBeenCalledOnce();
+    await act(async () => {
+      await client.refetchQueries({ queryKey: ['factory-state'] });
+    });
+    expect(scroll).toHaveBeenCalledOnce();
+  } finally {
+    HTMLElement.prototype.scrollIntoView = original;
+  }
+});

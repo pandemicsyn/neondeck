@@ -1,3 +1,5 @@
+import { getRepoWorkflows } from './workflow-api';
+import { FactoryWorkflowSummary } from './FactoryWorkflowSummary';
 import { useFactoryQueryError } from './useFactoryQueryError';
 import * as v from 'valibot';
 import type { validationPolicySchema } from '../../../../shared/factory-delivery';
@@ -9,6 +11,7 @@ import type { FactoryCodingState } from '../../../../shared/factory-coding';
 import { getFactoryCodingState } from '../../api/factory-coding';
 
 interface ReleaseCodingProps {
+  workflowId?: string | null;
   label: string;
   repoId?: string;
   disabled: boolean;
@@ -16,17 +19,29 @@ interface ReleaseCodingProps {
   onRelease: (
     fingerprint: string,
     validationPolicy: v.InferOutput<typeof validationPolicySchema>,
+    workflowId?: string | null,
   ) => void;
 }
 
 /** Owns the visible execution snapshot and the authority submitted with it. */
 export function FactoryReleaseCoding(props: ReleaseCodingProps) {
+  const [workflowId, setWorkflowId] = useState(props.workflowId ?? null);
+  const workflowSelectId = useId();
+  const workflows = useQuery({
+    queryKey: ['repo-factory-workflows', props.repoId],
+    queryFn: ({ signal }) => getRepoWorkflows(props.repoId!, { signal }),
+    enabled: !!props.repoId,
+    refetchInterval: 15000,
+    retry: false,
+  });
   const { refreshing, refresh } = useFactoryRefresh();
   const validationRefresh = useFactoryRefresh();
   const validation = useQuery({
-    queryKey: ['factory-validation-policy', props.repoId],
+    queryKey: workflowId
+      ? ['factory-validation-policy', props.repoId, workflowId]
+      : ['factory-validation-policy', props.repoId],
     queryFn: ({ signal }) =>
-      getFactoryValidationPolicy(props.repoId!, { signal }),
+      getFactoryValidationPolicy(props.repoId!, { signal }, workflowId),
     enabled: !!props.repoId,
     refetchInterval: 15000,
     retry: false,
@@ -36,33 +51,52 @@ export function FactoryReleaseCoding(props: ReleaseCodingProps) {
     queryFn: ({ signal }) => getFactoryCodingState({ signal }),
     refetchInterval: 15000,
   });
-  const validationError = useFactoryQueryError(validation, props.repoId);
+  const validationError = useFactoryQueryError(
+    validation,
+    `${props.repoId}:${workflowId ?? 'default'}`,
+  );
   const codingError = useFactoryQueryError(query, 'factory-coding-state');
   const validationNotice =
     props.repoId && validationError ? (
       <div role="alert" className="factory-error">
         <p>Approval blocked: {validationError.message}</p>
-        <a
-          href="/?panel=runtime-overview#runtime-model-config"
-          target="_blank"
-          rel="noreferrer"
-        >
-          Configure PR review model
-        </a>
-        {' · '}
-        <a
-          href="/?panel=runtime-overview#runtime-repositories"
-          target="_blank"
-          rel="noreferrer"
-        >
-          Open registered repositories
-        </a>
-        <p>
-          Dashboard → NEON → RUNTIME → CONFIG → MODELS → PR review. Set the
-          model, then click Save in MODELS and reload validation here. For check
-          commands, use the repository conversation. Your task and draft stay
-          open here.
-        </p>
+        {validationError.message ===
+        'Configure an independent reviewer model before authorizing validation.' ? (
+          <>
+            <a
+              href="/?panel=runtime-overview#runtime-model-config"
+              target="_blank"
+              rel="noreferrer"
+            >
+              Configure PR review model
+            </a>
+            <p>
+              Dashboard → NEON → RUNTIME → CONFIG → MODELS → PR review. Set the
+              model, then click Save in MODELS and reload validation here. Your
+              task and draft stay open here.
+            </p>
+          </>
+        ) : isWorkflowConfigurationError(validationError.message) ? (
+          <>
+            <p>
+              Review the repository workflow selection above. If the saved
+              workflow needs changes, open its setup, then refresh these
+              execution settings. Your task and draft stay open here.
+            </p>
+            <a
+              href={workflowSetupUrl(props.repoId!)}
+              target="_blank"
+              rel="noreferrer"
+            >
+              Configure repository workflow
+            </a>
+          </>
+        ) : (
+          <p>
+            Correct the recorded blocker, then reload the validation policy.
+            Your task and draft stay open here.
+          </p>
+        )}
         <button
           disabled={validationRefresh.refreshing}
           onClick={() =>
@@ -83,6 +117,7 @@ export function FactoryReleaseCoding(props: ReleaseCodingProps) {
             void refresh(() =>
               Promise.all([
                 query.refetch(),
+                props.repoId ? workflows.refetch() : Promise.resolve(),
                 props.repoId ? validation.refetch() : Promise.resolve(),
               ]),
             )
@@ -102,11 +137,63 @@ export function FactoryReleaseCoding(props: ReleaseCodingProps) {
           until a successful refresh.
         </p>
       )}
+      {props.repoId && (
+        <div className="factory-field">
+          <label htmlFor={workflowSelectId}>Repository workflow</label>
+          <select
+            id={workflowSelectId}
+            value={workflowId ?? ''}
+            disabled={
+              props.disabled || workflows.isPending || workflows.isError
+            }
+            onChange={(event) => setWorkflowId(event.target.value || null)}
+          >
+            <option value="">
+              {workflows.data?.workflows?.defaultProfileId
+                ? `Configured default: ${workflows.data.workflows.profiles.find((profile) => profile.id === workflows.data?.workflows?.defaultProfileId)?.name}`
+                : workflows.data?.workflows
+                  ? 'Choose a saved workflow (no default)'
+                  : 'Repository commands (no saved workflow)'}
+            </option>
+            {workflowId &&
+              !workflows.data?.workflows?.profiles.some(
+                (profile) => profile.id === workflowId,
+              ) && (
+                <option value={workflowId}>
+                  Unavailable workflow: {workflowId}
+                </option>
+              )}
+            {workflows.data?.workflows?.profiles.map((profile) => (
+              <option key={profile.id} value={profile.id}>
+                {profile.name}
+              </option>
+            ))}
+          </select>
+          <p>
+            Change this selection for approval without rewriting the plan.
+            Required repository checks always apply.
+          </p>
+          {workflows.isError && (
+            <p role="alert">
+              Saved workflows could not load. Refresh execution settings before
+              approving.
+            </p>
+          )}
+          <a
+            href={workflowSetupUrl(props.repoId)}
+            target="_blank"
+            rel="noreferrer"
+          >
+            Configure repository workflows
+          </a>
+        </div>
+      )}
       {!query.data && validationNotice}
       {query.data && (
         <ReleaseSnapshot
           {...props}
           key={props.repoId}
+          workflowId={workflowId}
           validationNotice={validationNotice}
           current={query.data}
           validationPolicy={validation.data}
@@ -116,7 +203,12 @@ export function FactoryReleaseCoding(props: ReleaseCodingProps) {
               !!validationError ||
               validationRefresh.refreshing)
           }
-          unavailable={!!codingError || query.isPending || refreshing}
+          unavailable={
+            !!codingError ||
+            query.isPending ||
+            refreshing ||
+            (!!props.repoId && (workflows.isPending || workflows.isError))
+          }
         />
       )}
     </section>
@@ -133,6 +225,7 @@ function ReleaseSnapshot({
   disabled,
   releaseNotice,
   onRelease,
+  workflowId,
 }: ReleaseCodingProps & {
   validationPolicy?: v.InferOutput<typeof validationPolicySchema>;
   validationUnavailable: boolean;
@@ -143,13 +236,21 @@ function ReleaseSnapshot({
   const noticeId = useId();
   const [reviewed, setReviewed] = useState(current);
   const stale = reviewed.configFingerprint !== current.configFingerprint;
-  const [retainedValidation, setReviewedValidation] =
-    useState(validationPolicy);
-  const reviewedValidation = retainedValidation ?? validationPolicy;
+  const [retainedValidation, setReviewedValidation] = useState({
+    workflowId,
+    policy: validationPolicy,
+  });
+  const reviewedValidation =
+    retainedValidation.workflowId === workflowId
+      ? (retainedValidation.policy ?? validationPolicy)
+      : validationPolicy;
   useEffect(() => {
-    if (!retainedValidation && validationPolicy)
-      setReviewedValidation(validationPolicy);
-  }, [retainedValidation, validationPolicy]);
+    if (
+      retainedValidation.workflowId !== workflowId ||
+      (!retainedValidation.policy && validationPolicy)
+    )
+      setReviewedValidation({ workflowId, policy: validationPolicy });
+  }, [retainedValidation, validationPolicy, workflowId]);
   const validationStale =
     !!validationPolicy &&
     JSON.stringify(reviewedValidation) !== JSON.stringify(validationPolicy);
@@ -220,7 +321,9 @@ function ReleaseSnapshot({
           Validation policy changed or became available.{' '}
           <button
             disabled={validationUnavailable || disabled}
-            onClick={() => setReviewedValidation(validationPolicy)}
+            onClick={() =>
+              setReviewedValidation({ workflowId, policy: validationPolicy })
+            }
           >
             Review validation policy
           </button>
@@ -235,6 +338,9 @@ function ReleaseSnapshot({
             {Math.ceil(reviewedValidation.totalExecutionMs / 3600000)} hours
             cumulative execution. Creating a draft PR needs a separate approval.
           </p>
+          {reviewedValidation.workflow && (
+            <FactoryWorkflowSummary workflow={reviewedValidation.workflow} />
+          )}
           <p>Independent reviewer: {reviewedValidation.reviewerModel}</p>
           <details>
             <summary>Approved validation commands</summary>
@@ -314,11 +420,29 @@ function ReleaseSnapshot({
         disabled={disabled || blocked || stale}
         onClick={() => {
           if (!disabled && !blocked && !stale && reviewedValidation)
-            onRelease(reviewed.configFingerprint, reviewedValidation);
+            onRelease(
+              reviewed.configFingerprint,
+              reviewedValidation,
+              workflowId,
+            );
         }}
       >
         {label}
       </button>
     </>
   );
+}
+
+function workflowSetupUrl(repoId: string) {
+  return `/factory?${new URLSearchParams({ setup: 'workflows', repoId })}#factory-repo-workflows`;
+}
+
+function isWorkflowConfigurationError(message: string) {
+  return new Set([
+    'Select a workflow explicitly or configure a default.',
+    'Selected workflow is no longer configured.',
+    'Configure at least one validation command or mandatory repository check.',
+    'Workflow and mandatory checks exceed the 16 validation command limit.',
+    'Configure between 1 and 16 bounded repository check commands before authorizing validation.',
+  ]).has(message);
 }

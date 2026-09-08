@@ -109,6 +109,26 @@ moved/re-exported; private import and layer-direction rules remain enforced. A
 Vite build-graph regression restricts the detached verifier to its audited
 deterministic dependencies.
 
+## Verification record
+
+- Repository `npm run check` passed before the final review corrections.
+- The subsequent full verification run passed lint, import layers, migration
+  consistency, application/docs typechecks, 3,480 unit tests and 47 Git tests.
+  Its integration stage has not yet produced a completion result; do not treat
+  full verification as passing.
+- The final worker-boundary change additionally passed its real Vite build-graph
+  regression, 19 process/supervision tests, typecheck, lint and import checks.
+- Dashboard/server/docs builds, npm package contents, isolated packed CLI smoke
+  and repository formatting passed separately on the final combined source.
+- The backend stack layer passed root/web typechecks and dashboard/server build
+  in its own isolated checkout. Two existing UI compatibility hunks were moved
+  into that layer; the final combined implementation was unchanged.
+- Synthetic desktop and narrow screenshots cover configuration, approval and a
+  setup failure. No live task, provider run, dependency installation or private
+  runtime configuration was used for screenshot QA.
+- Both pre-PR independent static reviews are clean. Live acceptance and the
+  separate omitted judge-diff evidence issue remain open.
+
 ## Related open issue
 
 The live progress judge also reported omitted candidate-diff evidence. That

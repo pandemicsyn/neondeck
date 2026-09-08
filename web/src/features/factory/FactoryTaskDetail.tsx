@@ -502,6 +502,7 @@ export function FactoryTaskDetail({
             <FactoryReleaseCoding
               key={`${detail.work.id}:${viewed.version}`}
               label="Approve plan and start"
+              workflowId={viewed.spec.workflowId}
               repoId={detail.work.repoId ?? undefined}
               releaseNotice={
                 <>
@@ -582,7 +583,7 @@ export function FactoryTaskDetail({
                 !detail.repoFingerprint ||
                 detail.eligible
               }
-              onRelease={(fingerprint, validationPolicy) => {
+              onRelease={(fingerprint, validationPolicy, workflowId) => {
                 if (!detail.repoFingerprint) return;
                 void mutate('release', {
                   requestKey: crypto.randomUUID(),
@@ -594,6 +595,7 @@ export function FactoryTaskDetail({
                   policyVersion: factoryPolicy.version,
                   expectedCodingConfigFingerprint: fingerprint,
                   validationPolicy,
+                  workflowId,
                 });
               }}
             />

@@ -75,6 +75,13 @@ export function deliveryLifecycle(
       nextAction: 'Inspect the retained result and evidence.',
     };
   const stage = p.pr ? 'Watch PR' : 'Validate';
+  if (detail.nextAction === 'human-environment')
+    return {
+      stage,
+      title: 'Environment setup failed',
+      nextAction:
+        'Inspect the failed setup command and output, correct the environment, then retry the same approved workflow. Workflow changes require renewed plan approval.',
+    };
   if (detail.nextAction === 'human-budget')
     return {
       stage,
@@ -131,6 +138,13 @@ export function deliveryLifecycle(
       title: 'Checks and review passed for this candidate',
       nextAction:
         'Inspect the review evidence and recorded publication authority.',
+    };
+  const unresolved = p.interventions.find((item) => !item.resolution);
+  if (unresolved)
+    return {
+      stage,
+      title: 'Validation is blocked',
+      nextAction: unresolved.reason,
     };
   const active = p.effects.filter((e) => e.state === 'in-flight').at(-1);
   return {

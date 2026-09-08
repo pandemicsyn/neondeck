@@ -764,3 +764,26 @@ it('keeps every quoted filename change inspectable through a lossless raw diff f
   await consent();
   expect(button('Create draft PR').disabled).toBe(false);
 });
+
+it('explains environment failure and retries only after an explicit operator click', async () => {
+  current = deliveryDetail();
+  current.pipeline.pr = null;
+  current.nextAction = 'human-environment';
+  await render();
+  expect(container.textContent).toContain('Environment setup failed');
+  expect(container.textContent).toContain(
+    'Setup stopped before validation and independent review',
+  );
+  expect(calls).toEqual([]);
+  await click('Retry environment setup');
+  expect(calls).toEqual([
+    {
+      url: '/api/factory-delivery/deliveries/delivery-demo/environment/retry',
+      body: {
+        expectedVersion: deliveryDetail().pipeline.version,
+        reason:
+          'Operator corrected the environment and requested retry of the approved workflow',
+      },
+    },
+  ]);
+});

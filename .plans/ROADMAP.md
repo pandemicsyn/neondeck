@@ -245,6 +245,16 @@ acceptance or start Linear intake/remote execution.
 
 ## Software Factory Onboarding And Observability — Source Complete
 
+Operator-approved follow-up: [repository setup and validation workflows](factory/REPOSITORY_WORKFLOWS.md).
+Named per-repository profiles capture setup, validation, working directories,
+runtime requirements and environment references at plan approval. Dashboard and
+CLI share proposal, configuration and explicit disposable-test services. Setup
+failures stop before coding repair and offer a deliberate environment retry.
+Implementation, two independent static reviews, manager architecture review and
+synthetic UI checks are complete. Unit/Git checks, builds and package smoke pass;
+the full integration run is still unverified. Live operator acceptance and the
+separate missing judge-diff issue remain open.
+
 Active operator-approved correction: [validation and publication lifecycle](factory/VALIDATION_AND_PUBLICATION_UX.md).
 New plan approval includes automatic local validation and bounded repairs; draft-PR
 publication becomes a separate explicit decision. Maintain one lifecycle; existing

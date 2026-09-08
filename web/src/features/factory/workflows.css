@@ -1,0 +1,104 @@
+.factory-workflows {
+  padding: 24px 0;
+  border-bottom: 1px solid var(--line);
+  min-width: 0;
+}
+.factory-workflows label {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: 15px;
+}
+.factory-workflows input,
+.factory-workflows select,
+.factory-workflows textarea {
+  width: 100%;
+  min-width: 0;
+  padding: 10px 12px;
+  background: var(--field);
+  color: var(--ink);
+  border: 1px solid var(--line);
+  font: inherit;
+}
+.factory-workflows input,
+.factory-workflows select,
+.factory-workflows button {
+  min-height: 44px;
+}
+.factory-workflows textarea {
+  min-height: 88px;
+  resize: vertical;
+  line-height: 1.6;
+}
+.factory-workflows textarea::placeholder,
+.factory-workflows input::placeholder {
+  color: var(--muted);
+  opacity: 1;
+}
+.workflow-editor {
+  margin-top: 24px;
+  max-width: 1040px;
+  min-width: 0;
+}
+.workflow-profile,
+.workflow-editor form > fieldset {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  min-width: 0;
+}
+.workflow-fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr));
+  gap: 20px;
+}
+.workflow-commands {
+  border-top: 1px solid var(--line);
+  padding: 20px 0;
+  min-width: 0;
+}
+.workflow-commands legend {
+  font-size: 17px;
+  font-weight: 600;
+}
+.workflow-command {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(160px, 0.4fr);
+  gap: 16px;
+  padding-bottom: 24px;
+  align-items: start;
+}
+.workflow-command button {
+  justify-self: start;
+}
+.workflow-test {
+  margin-top: 28px;
+  padding-top: 24px;
+  border-top: 1px solid var(--line);
+}
+.workflow-run {
+  margin-top: 20px;
+}
+.workflow-run pre {
+  max-height: 320px;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  padding: 16px;
+  background: var(--field);
+}
+.workflow-run details {
+  border-top: 1px solid var(--line);
+  padding: 12px 0;
+}
+@media (max-width: 600px) {
+  .workflow-command {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .factory-workflows .factory-toolbar {
+    align-items: stretch;
+  }
+  .factory-workflows .factory-toolbar button {
+    flex: 1 1 180px;
+  }
+}
