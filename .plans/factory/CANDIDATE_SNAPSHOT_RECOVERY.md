@@ -49,6 +49,9 @@ the existing candidate. Live acceptance remains pending until that succeeds.
   Git repositories, including a 4 MiB unchanged baseline file and staged/new
   oversized content. These files also passed in the consolidated unit suite.
 - Dashboard/server build and formatting of all changed files passed.
+- Additional `factory-delivery.integration.test.ts` run on macOS was stopped
+  after roughly nine minutes without a result. This ten-mode run is incomplete,
+  not a pass; completing the delivery integration run remains follow-up work.
 - Two independent Astra-low static reviewers reported no actionable findings
   on the frozen implementation. Manager review confirmed module ownership,
   validated diagnostic boundaries, retained authority and explicit recovery.

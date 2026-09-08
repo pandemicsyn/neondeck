@@ -15,6 +15,8 @@
   with 3,198 unit tests. Dashboard/server build, changed-file formatting and
   synthetic desktop/narrow recovery controls passed. Explicit recheck retains
   the original run, release and admission guards.
+- Limitation: The additional ten-mode macOS delivery integration run was stopped
+  after roughly nine minutes without a result; it remains incomplete.
 - Follow-up: `factory/CANDIDATE_SNAPSHOT_RECOVERY.md` tracks isolated regression
   verification, independent review and pending live retry of retained work.
 
