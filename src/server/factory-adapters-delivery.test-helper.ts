@@ -1,3 +1,4 @@
+import * as gitTransport from '../lib/git';
 import type { CodingAdapterId } from '../../shared/coding-adapters';
 import {
   adapterFixtures,
@@ -131,6 +132,7 @@ export async function runDeliveryIntegration(
     mkdtempSync(join(tmpdir(), 'factory-delivery-e2e-')),
   );
   const paths = runtimePaths(join(root, 'runtime'));
+  vi.stubEnv('NEONDECK_HOME', paths.home);
   const repo = join(root, 'repo');
   const bare = join(root, 'remote.git');
   let handle: LocalAttemptHandle | undefined;
@@ -246,6 +248,25 @@ export async function runDeliveryIntegration(
     git(repo, 'add', '.');
     git(repo, 'commit', '-m', 'synthetic base');
     const base = git(repo, 'rev-parse', 'HEAD');
+    git(repo, 'push', bare, 'main');
+    // Initial coding now fetches origin before reserving a run. Keep the
+    // synthetic GitHub identity for publication checks, but route this exact
+    // transport to the seeded local bare remote, with real fetch/ref handling.
+    const realTransport = gitTransport.runUnattendedGit;
+    vi.spyOn(gitTransport, 'runUnattendedGit').mockImplementation(
+      (cwd, args, options) => {
+        if (args.includes('fetch')) {
+          expect(cwd).toBe(repo);
+          expect(args).toContain('origin');
+          return realTransport(
+            cwd,
+            args.map((arg) => (arg === 'origin' ? bare : arg)),
+            options,
+          );
+        }
+        return realTransport(cwd, args, options);
+      },
+    );
     // A real ordinary pre-commit hook must run in the publication checkout.
     const hookLog = join(root, 'hook-observed');
     writeFileSync(
@@ -385,6 +406,15 @@ const child=spawn(process.execPath,[${JSON.stringify(resolve('scripts/mockdex.mj
     );
     const dispatched = await dispatchCodingWork(work.work.id, paths);
     expect(dispatched).not.toBeNull();
+    expect(dispatched!.snapshot.baseSha).toBe(base);
+    expect(
+      git(
+        repo,
+        'for-each-ref',
+        '--format=%(refname)',
+        'refs/neondeck/factory/fetch',
+      ),
+    ).toBe('');
     handle = codingHandle(dispatched!, paths);
     handles.push(handle);
     await until(async () => {

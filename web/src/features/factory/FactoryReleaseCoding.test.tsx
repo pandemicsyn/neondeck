@@ -73,6 +73,7 @@ it('shows every normalized fingerprinted field and submits that exact snapshot',
     path: '/synthetic/bin:/usr/bin',
     wallTimeMs: 90000,
     maxOutputBytes: 12345,
+    repositorySkills: 'native-v1',
   };
   client.setQueryData(key, state);
   await render();
@@ -97,12 +98,14 @@ it('shows every normalized fingerprinted field and submits that exact snapshot',
     'Attempt time limit': '90000 ms (1.5 minutes)',
     'Output limit': '12345 bytes',
     'Maximum writers': '1',
+    'Repository skills': 'Native CLI discovery',
   });
   await act(async () => button('Release v2').click());
   expect(release).toHaveBeenCalledExactlyOnceWith(state.configFingerprint);
 });
 it('requires explicit review after refresh changes previously hidden settings and never silently switches the fingerprint', async () => {
   await render();
+  expect(fact('Repository skills')).toBe('Legacy discovery policy');
   const next = codingState();
   next.configFingerprint = 'd'.repeat(64);
   next.config = {
@@ -112,6 +115,7 @@ it('requires explicit review after refresh changes previously hidden settings an
     path: '/synthetic/path',
     wallTimeMs: 1000,
     maxOutputBytes: 1024,
+    repositorySkills: 'native-v1',
   };
   await act(async () => {
     client.setQueryData(key, next);

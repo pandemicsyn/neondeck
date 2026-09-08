@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import * as v from 'valibot';
 import {
   factoryCodingConfigInputSchema,
-  factoryCodingConfigSchema,
+  effectiveFactoryCodingConfig,
   factoryCodingStateSchema,
   factoryCodingPageSchema,
   factoryCodingEventsSchema,
@@ -53,10 +53,7 @@ export async function saveFactoryCodingConfig(
   const data = v.parse(factoryCodingConfigInputSchema, input);
   updateFactoryConfig({ coding: data.config }, paths, {
     precondition(before) {
-      const coding = v.parse(
-        factoryCodingConfigSchema,
-        before.factory?.coding ?? {},
-      );
+      const coding = effectiveFactoryCodingConfig(before.factory?.coding ?? {});
       if (codingDigest(coding) !== data.expectedFingerprint)
         throw new FactoryError(
           409,

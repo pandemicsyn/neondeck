@@ -20,7 +20,7 @@ import { requireLocalApiAccess } from '../middleware';
 let paths: RuntimePaths;
 let app: Hono;
 let sessionId: string;
-beforeEach(() => {
+beforeEach(async () => {
   paths = runtimePaths(mkdtempSync(join(tmpdir(), 'factory-route-')));
   ensureRuntimeHomeSync(paths);
   writeFileSync(
@@ -37,10 +37,12 @@ beforeEach(() => {
     { kind: 'human', id: 'local-operator' },
     paths,
   );
-  sessionId = prepareFactoryPlanning(
-    task.work.id,
-    { requestKey: 'm1', expectedVersion: 1, message: 'Plan' },
-    paths,
+  sessionId = (
+    await prepareFactoryPlanning(
+      task.work.id,
+      { requestKey: 'm1', expectedVersion: 1, message: 'Plan' },
+      paths,
+    )
   ).sessionId;
   app = new Hono();
   app.use('/api/*', requireLocalApiAccess());

@@ -2,6 +2,8 @@ import * as v from 'valibot';
 import { join } from 'node:path';
 import type { LocalManifest } from './host-contract.ts';
 
+// --ignore-user-config skips CODEX_HOME/config.toml; --ignore-rules skips
+// execpolicy .rules, not repository SKILL.md discovery (0.150.1 exec --help).
 // Installed codex-cli 0.150.1, `exec --help`, verified 2026-09-06. No live model smoke.
 export function codexArguments(manifest: LocalManifest) {
   return [

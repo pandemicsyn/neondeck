@@ -67,6 +67,15 @@ const finish = (reason = 'stop', id = 'prt_finish', messageID = 'msg_one') =>
 describe('OpenCode adapter contract', () => {
   it.each([
     { field: 'plugin', value: ['unapproved-plugin'] },
+    { field: 'skills', value: { paths: ['/outside/skills'] } },
+    { field: 'skills', value: { paths: ['../skills'] } },
+    {
+      field: 'skills',
+      value: {
+        paths: ['.opencode/skills'],
+        urls: ['https://example.invalid/'],
+      },
+    },
     { field: 'enabled_providers', value: ['openai', 'anthropic'] },
     { field: 'enabled_providers', value: ['openai', 'openai'] },
   ])('rejects extra entries in $field configuration', ({ field, value }) => {
@@ -201,6 +210,7 @@ describe('OpenCode adapter contract', () => {
     const raw: unknown = JSON.parse(launch.env.OPENCODE_PERMISSION ?? 'null');
     const permission = v.parse(v.record(v.string(), v.string()), raw);
     expect(permission['*']).toBe('deny');
+    expect(permission.skill).toBeUndefined();
     expect(permission.bash).toBeUndefined();
     expect(permission.edit).toBeUndefined();
     expect(opencodeAdapter.capabilities.osSandbox.status).toBe('unsupported');
@@ -407,4 +417,93 @@ describe('OpenCode bounded run JSONL', () => {
       expect(() => events.accept(start())).toThrow('Invalid or contradictory');
     },
   );
+});
+
+it.each(['read-only', 'workspace-write'] as const)(
+  'preserves unmarked historical OpenCode %s manifests and repair descriptors',
+  (sandbox) => {
+    const historical = fixture();
+    historical.config.sandbox = sandbox;
+    const saved = v.parse(
+      manifestSchema,
+      JSON.parse(JSON.stringify(historical)),
+    );
+    expect(saved.config).not.toHaveProperty('repositorySkills');
+    const repair = v.parse(manifestSchema, {
+      ...saved,
+      directory: `${saved.directory}-repair`,
+    });
+    const permission = {
+      '*': 'deny',
+      read: 'allow',
+      glob: 'allow',
+      grep: 'allow',
+      ...(sandbox === 'workspace-write'
+        ? { edit: 'allow', bash: 'allow' }
+        : {}),
+      external_directory: 'deny',
+      task: 'deny',
+      question: 'deny',
+    };
+    const expected = {
+      enabled_providers: ['openai'],
+      share: 'disabled',
+      autoupdate: false,
+      plugin: [],
+      mcp: {},
+      lsp: false,
+      formatter: false,
+      permission,
+      agent: { build: { permission } },
+    };
+    for (const input of [saved, repair]) {
+      const launch = opencodeAdapter.launch(input);
+      expect(launch.env.OPENCODE_CONFIG_CONTENT).toBe(JSON.stringify(expected));
+      expect(launch.env.OPENCODE_PERMISSION).toBe(JSON.stringify(permission));
+    }
+  },
+);
+
+it.each(['read-only', 'workspace-write'] as const)(
+  'enables native OpenCode skills only for explicit %s policy opt-in',
+  (sandbox) => {
+    const input = fixture();
+    input.config.repositorySkills = 'native-v1';
+    input.config.sandbox = sandbox;
+    const saved = v.parse(manifestSchema, JSON.parse(JSON.stringify(input)));
+    const launch = opencodeAdapter.launch(saved);
+    const config = JSON.parse(launch.env.OPENCODE_CONFIG_CONTENT);
+    expect(config.skills.paths).toEqual([
+      '.opencode/skills',
+      '.opencode/skill',
+      '.agents/skills',
+      '.claude/skills',
+    ]);
+    expect(config.permission.skill).toBe('allow');
+    expect(config.agent.build.permission.skill).toBe('allow');
+    expect(JSON.parse(launch.env.OPENCODE_PERMISSION).skill).toBe('allow');
+    expect(launch.env.OPENCODE_DISABLE_PROJECT_CONFIG).toBe('true');
+    expect(launch.env.OPENCODE_DISABLE_EXTERNAL_SKILLS).toBe('true');
+    expect(launch.env.OPENCODE_DISABLE_CLAUDE_CODE).toBe('true');
+    expect(launch.env.OPENCODE_DISABLE_DEFAULT_PLUGINS).toBe('true');
+    expect(launch.args).toContain('--pure');
+    const rule = opencodeAdapter.environmentRules?.find(
+      (entry) => entry.key === 'OPENCODE_CONFIG_CONTENT',
+    );
+    if (!rule || rule.kind !== 'json') throw new Error('Missing config rule');
+    expect(v.safeParse(rule.schema, config).success).toBe(true);
+  },
+);
+
+it('does not default or accept unknown repository skill policy in saved manifests', () => {
+  const input = fixture();
+  expect(
+    v.parse(manifestSchema, input).config.repositorySkills,
+  ).toBeUndefined();
+  expect(
+    v.safeParse(manifestSchema, {
+      ...input,
+      config: { ...input.config, repositorySkills: 'native-v2' },
+    }).success,
+  ).toBe(false);
 });

@@ -1,3 +1,9 @@
+import type { FactoryRepoBaseline } from './repo-baseline-schema';
+import {
+  capturePlanningGuard,
+  planningContextChanged,
+} from './planning-preflight';
+import { captureFactoryRepoBaseline } from './repo-baseline';
 import { createHash, randomUUID } from 'node:crypto';
 import * as v from 'valibot';
 import type { DatabaseSync } from 'node:sqlite';
@@ -112,21 +118,82 @@ function latestIntent(db: DatabaseSync, workId: string) {
     workId,
   );
 }
-function contextChanged(
-  binding: PlanningBinding,
-  current: ReturnType<typeof detail>,
-  paths: RuntimePaths,
-) {
-  const fresh = captureContext(current, paths);
-  const { capturedAt: _freshTime, ...next } = fresh;
-  const { capturedAt: _oldTime, ...old } = binding.context;
-  return hashPlanning(next) !== hashPlanning(old);
+function assertPlanningIdle(db: DatabaseSync, workId: string) {
+  const previous = latestIntent(db, workId);
+  if (previous && ['triage', 'planner'].includes(previous.stage))
+    throw new FactoryError(
+      409,
+      'A planning request is pending. Wait or stop it before sending another.',
+    );
 }
-export function prepareFactoryPlanning(
+function planningGuard(db: DatabaseSync, workId: string, paths: RuntimePaths) {
+  return capturePlanningGuard(
+    detail(db, workId, paths),
+    readBinding(db, workId),
+    latestIntent(db, workId),
+    paths,
+  );
+}
+
+export async function prepareFactoryPlanning(
+  workId: string,
+  input: unknown,
+  paths = runtimePaths(),
+) {
+  const data = v.parse(planningInputSchema, input);
+  const preflight = dbRun(paths, (db) => {
+    requireEnabled(paths);
+    const prior = read(
+      db,
+      'SELECT record FROM factory_planning_intents WHERE work_id=? AND request_key=?',
+      intentSchema,
+      workId,
+      data.requestKey,
+    );
+    if (prior) {
+      if (prior.requestHash !== hashPlanning(data))
+        throw new FactoryError(409, 'Request key belongs to another message.');
+      return { prior };
+    }
+    const current = detail(db, workId, paths);
+    expectVersion(current, data.expectedVersion);
+    if (['paused', 'closed', 'queued'].includes(current.work.lifecycle))
+      throw new FactoryError(
+        409,
+        'Reopen or withdraw release before planning.',
+      );
+    assertPlanningIdle(db, workId);
+    // Old records have no baseline metadata. Actual human planner intents, not
+    // bindings or classifier submissions, establish whether their pin is frozen.
+    const started = !!db
+      .prepare(
+        "SELECT id FROM factory_planning_intents WHERE work_id=? AND COALESCE(json_extract(record, '$.triageOnly'), 0)=0 AND COALESCE(json_extract(record, '$.externalContext'), 0)=0 LIMIT 1",
+      )
+      .get(workId);
+    return {
+      current,
+      capture: !started,
+      guard: planningGuard(db, workId, paths),
+    };
+  });
+  if (preflight.prior) return preflight.prior;
+  const captured = preflight.capture
+    ? {
+        baseline: await captureFactoryRepoBaseline(
+          preflight.current!.repoContext,
+        ),
+        guard: preflight.guard!,
+      }
+    : undefined;
+  return preparePlanningCaptured(workId, data, paths, false, captured);
+}
+
+function preparePlanningCaptured(
   workId: string,
   input: unknown,
   paths = runtimePaths(),
   triageOnly = false,
+  captured?: { baseline: FactoryRepoBaseline; guard: string },
 ) {
   const data = v.parse(planningInputSchema, input);
   return dbRun(paths, (db) => {
@@ -145,6 +212,11 @@ export function prepareFactoryPlanning(
     }
     const current = detail(db, workId, paths);
     expectVersion(current, data.expectedVersion);
+    if (captured && planningGuard(db, workId, paths) !== captured.guard)
+      throw new FactoryError(
+        409,
+        'Planning inputs changed during repository fetch. Retry the request.',
+      );
     let message = data.message;
     if (data.discussion) {
       const ref = data.discussion;
@@ -177,7 +249,7 @@ export function prepareFactoryPlanning(
       binding = {
         workId,
         sessionId: `factory-${randomUUID()}`,
-        context: captureContext(current, paths),
+        context: captureContext(current, paths, captured?.baseline),
       };
       registerFactoryPlannerSession(db, {
         ...binding,
@@ -190,7 +262,13 @@ export function prepareFactoryPlanning(
         'INSERT INTO factory_planning_bindings (work_id,session_id,record) VALUES (?,?,?)',
       ).run(workId, binding.sessionId, JSON.stringify(binding));
     }
-    if (!triageOnly && contextChanged(binding, current, paths))
+    if (captured) {
+      binding.context = captureContext(current, paths, captured.baseline);
+      db.prepare(
+        'UPDATE factory_planning_bindings SET record=? WHERE work_id=?',
+      ).run(JSON.stringify(binding), workId);
+    }
+    if (!triageOnly && planningContextChanged(binding.context, current, paths))
       throw new FactoryError(
         409,
         'Planning context changed. Refresh it explicitly before sending.',
@@ -247,15 +325,32 @@ export function prepareFactoryPlanning(
     return intent;
   });
 }
-export function refreshFactoryPlanningContext(
+export async function refreshFactoryPlanningContext(
   workId: string,
   expectedVersion: number,
   paths = runtimePaths(),
 ) {
+  const preflight = dbRun(paths, (db) => {
+    requireEnabled(paths);
+    const current = detail(db, workId, paths);
+    expectVersion(current, expectedVersion);
+    assertPlanningIdle(db, workId);
+    if (!readBinding(db, workId))
+      throw new FactoryError(409, 'Start planning first.');
+    return { current, guard: planningGuard(db, workId, paths) };
+  });
+  const baseline = await captureFactoryRepoBaseline(
+    preflight.current.repoContext,
+  );
   return dbRun(paths, (db) => {
     requireEnabled(paths);
     const current = detail(db, workId, paths);
     expectVersion(current, expectedVersion);
+    if (planningGuard(db, workId, paths) !== preflight.guard)
+      throw new FactoryError(
+        409,
+        'Planning inputs changed during repository fetch. Retry refresh.',
+      );
     const latest = latestIntent(db, workId);
     if (latest && ['triage', 'planner'].includes(latest.stage))
       throw new FactoryError(
@@ -264,7 +359,7 @@ export function refreshFactoryPlanningContext(
       );
     const binding = readBinding(db, workId);
     if (!binding) throw new FactoryError(409, 'Start planning first.');
-    binding.context = captureContext(current, paths);
+    binding.context = captureContext(current, paths, baseline);
     db.prepare(
       'UPDATE factory_planning_bindings SET record=? WHERE work_id=?',
     ).run(JSON.stringify(binding), workId);
@@ -279,6 +374,7 @@ export function refreshFactoryPlanningContext(
     return binding;
   });
 }
+
 export function getPlanningState(
   workId: string,
   paths = runtimePaths(),
@@ -296,7 +392,8 @@ export function getPlanningState(
         .get(workId),
       contextCapturedAt: binding?.context.capturedAt ?? null,
       model: binding?.context.model ?? null,
-      contextStale: !!binding && contextChanged(binding, current, paths),
+      contextStale:
+        !!binding && planningContextChanged(binding.context, current, paths),
       triage: intent?.triage ?? null,
       triageModel: intent?.triageModel ?? intent?.context.utilityModel ?? null,
       triageSubmissionId: intent?.triageSubmissionId ?? null,
@@ -530,7 +627,7 @@ export function prepareFactoryTriage(
   if (retained) return retained;
   const pending = dbRun(paths, (db) => latestIntent(db, workId));
   if (pending && ['triage', 'planner'].includes(pending.stage)) return pending;
-  return prepareFactoryPlanning(
+  return preparePlanningCaptured(
     workId,
     {
       requestKey,

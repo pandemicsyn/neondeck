@@ -245,6 +245,22 @@ acceptance or start Linear intake/remote execution.
 
 ## Software Factory Onboarding And Observability — Source Complete
 
+Operator correction: [coding repository skills](factory/CODING_REPO_SKILLS.md)
+removes automatic global runtime skill injection from new coding contexts and
+relies on native CLI discovery. Source, independent reviews and full verification
+are complete; live operator acceptance remains pending.
+
+Additional operator rehearsal work: [planning replies and session baselines](factory/PLANNING_SESSION_USABILITY.md)
+enlarges the factory reply editor and captures the latest fetched default branch
+for new planning sessions and initial coding attempts. Existing sessions retain
+their pinned revisions. Implementation and two independent static reviews are
+complete; synthetic browser checks pass. Live operator acceptance remains open.
+
+The [development worker follow-up](factory/DEV_RUNTIME_WORKERS.md) starts factory
+workers under `npm run dev` with explicit reload/shutdown ownership. Implementation,
+two independent static reviews and isolated Vite lifecycle checks are complete.
+The separate frozen-context budget finding remains open in that record.
+
 Operator rehearsal follow-up: [guided setup](factory/SETUP_USABILITY_PLAN.md) adds
 CLI detection, searchable models, local Codex login reuse, multiple intake
 repositories and explicit coding enablement. Implementation and independent static

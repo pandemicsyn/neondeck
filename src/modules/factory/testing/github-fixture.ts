@@ -1,3 +1,4 @@
+import { execFileSync } from 'node:child_process';
 import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -27,11 +28,26 @@ export const issue: GitHubIssue = {
   user: { login: 'fixture-author' },
   labels: [{ name: 'factory' }],
 };
-export function fixture() {
+export function fixture(withRepo = false) {
   const paths = runtimePaths(
     mkdtempSync(join(tmpdir(), 'factory-github-test-')),
   );
   ensureRuntimeHomeSync(paths);
+  if (withRepo) {
+    const git = (args: string[]) =>
+      execFileSync('git', ['-C', paths.home, ...args], { stdio: 'pipe' });
+    git(['init', '-b', 'main']);
+    git([
+      '-c',
+      'user.name=Fixture',
+      '-c',
+      'user.email=fixture@example.test',
+      'commit',
+      '--allow-empty',
+      '-m',
+      'Fixture',
+    ]);
+  }
   process.env.FACTORY_TEST_WEBHOOK = 'synthetic-webhook-fixture-only';
   process.env.FACTORY_TEST_TOKEN = 'synthetic-read-fixture-only';
   const config = (connections = [connection]) =>

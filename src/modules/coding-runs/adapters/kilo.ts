@@ -10,6 +10,15 @@ import {
   kiloCredentialSecrets,
 } from './kilo-auth.ts';
 
+// Fixed native scanner roots; project configuration remains disabled.
+const skillPaths = [
+  '.kilo/skills',
+  '.kilo/skill',
+  '.kilocode/skills',
+  '.kilocode/skill',
+  '.agents/skills',
+  '.claude/skills',
+] as const;
 const kiloFlags = {
   KILO_NO_DAEMON: '1',
   KILO_DISABLE_PROJECT_CONFIG: '1',
@@ -22,6 +31,11 @@ const kiloFlags = {
   KILO_TELEMETRY_LEVEL: 'off',
 } as const;
 const configContentSchema = v.strictObject({
+  skills: v.optional(
+    v.strictObject({
+      paths: v.strictTuple(skillPaths.map((path) => v.literal(path))),
+    }),
+  ),
   model: modelSchema,
   enabled_providers: v.strictTuple([v.literal('kilo')]),
   share: v.literal('disabled'),
@@ -38,6 +52,7 @@ const configContentSchema = v.strictObject({
       glob: v.literal('allow'),
       grep: v.literal('allow'),
       list: v.literal('allow'),
+      skill: v.optional(v.literal('allow')),
     }),
     v.strictObject({
       '*': v.literal('allow'),
@@ -154,6 +169,9 @@ export const kiloAdapter: CodingAdapter = {
             glob: 'allow',
             grep: 'allow',
             list: 'allow',
+            ...(manifest.config.repositorySkills === 'native-v1'
+              ? { skill: 'allow' }
+              : {}),
           }
         : {
             '*': 'allow',
@@ -190,6 +208,9 @@ export const kiloAdapter: CodingAdapter = {
         ...kiloFlags,
         KILO_TEST_MANAGED_CONFIG_DIR: join(home, '.config', 'factory-managed'),
         KILO_CONFIG_CONTENT: JSON.stringify({
+          ...(manifest.config.repositorySkills === 'native-v1'
+            ? { skills: { paths: skillPaths } }
+            : {}),
           model: manifest.config.model,
           enabled_providers: ['kilo'],
           share: 'disabled',

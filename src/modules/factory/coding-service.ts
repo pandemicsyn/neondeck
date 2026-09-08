@@ -155,6 +155,13 @@ export async function dispatchCodingWork(
   host: CodingHost = localHost,
   readiness = codingReadiness,
 ) {
+  // Admission policy defaults apply only to new runs. Existing attempts validate
+  // and launch/reconcile against their original frozen policy instead.
+  const existing = getCodingRunForRelease(
+    codingAuthority(workId, paths).release.id,
+    paths,
+  );
+  if (existing) return launchReservedCodingRun(existing, paths, host);
   const fingerprint = codingAdmissionFingerprint(workId, paths);
   if (readCodingAttention(workId, paths)?.inputFingerprint === fingerprint)
     return null;
@@ -200,11 +207,13 @@ export async function dispatchCodingWork(
     return null;
   }
   clearCodingAttention(workId, paths);
-  return launchReservedCodingRun(
-    reserveCodingRun(snapshot, paths),
-    paths,
-    host,
-  );
+  // Keep reservation conflicts outside the preflight catch: an occupied writer
+  // is an admission conflict, not stale context. Concurrent admissions reuse the
+  // durable snapshot and the ordinary launch/recovery guards without refetching.
+  const reserved =
+    getCodingRunForRelease(snapshot.releaseId, paths) ??
+    reserveCodingRun(snapshot, paths);
+  return launchReservedCodingRun(reserved, paths, host);
 }
 
 /** Shared resource lifecycle; callers must reserve authority atomically first. */

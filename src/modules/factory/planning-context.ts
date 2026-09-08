@@ -7,7 +7,10 @@ import {
   readAgentModelSelectionSync,
   runtimeSkillSessionSnapshotsSync,
 } from '../runtime';
-import { captureRepoCommit } from './repo-reader';
+import {
+  factoryRepoBaselineSchema,
+  type FactoryRepoBaseline,
+} from './repo-baseline-schema';
 const str = v.string();
 const nullable = v.nullable(str);
 export const contextSchema = v.object({
@@ -35,11 +38,16 @@ export const contextSchema = v.object({
   memoryIds: v.array(str),
   skills: v.array(v.object({ name: str, instructions: str })),
   repoCommit: nullable,
+  repoBaseline: v.optional(factoryRepoBaselineSchema),
   repoPath: nullable,
   repoFingerprint: nullable,
   sourceVersion: v.number(),
 });
-export function captureContext(current: FactoryDetail, paths: RuntimePaths) {
+export function captureContext(
+  current: FactoryDetail,
+  paths: RuntimePaths,
+  baseline: FactoryRepoBaseline = { repoCommit: null },
+) {
   const models = readAgentModelSelectionSync(paths);
   const memory = buildMemoryPromptSnapshotSync(paths, {
     repoId: current.work.repoId,
@@ -65,7 +73,8 @@ export function captureContext(current: FactoryDetail, paths: RuntimePaths) {
         name: s.name,
         instructions: s.instructions.slice(0, 6000),
       })),
-    repoCommit: captureRepoCommit(current.repoContext?.path ?? null),
+    repoCommit: baseline.repoCommit,
+    repoBaseline: baseline.repoBaseline,
     repoPath: current.repoContext?.path ?? null,
     repoFingerprint: current.repoFingerprint,
     sourceVersion: current.source.version,

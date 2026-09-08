@@ -242,6 +242,18 @@ because the protective sandbox blocks their process inspection; this is not a
 full `npm run verify` claim. Temporary runtime/config roots and the OS denial of
 access to the operator's existing Neondeck home remained in place throughout.
 
+Main advanced to `815eb21e` during publication of correction `22db330b`. The
+integration preserves upstream fresh repository baselines, planning usability,
+native coding skills and development worker ownership. Linear joins the shared
+cleanup set so startup rollback, replacement startup and shutdown retain the
+same owner. The deviations ledger preserves both branches' entries. A dedicated
+mocked regression covers a Linear startup failure after earlier workers start.
+Both independent integration reviews and the manager architecture review are
+**CLEAN**. The protected merged-branch run passed **3,243 tests across 298 files**,
+lint, layers, migration checks, app/docs types, dashboard/server builds, package
+validation (1,281 files) and formatting. The same five host-process cases remain
+excluded; no live acceptance or full final-head verify pass is claimed.
+
 ## Delivered scope and boundaries
 
 - `src/modules/linear`: fixed-origin GraphQL reads/mutations, complete-response

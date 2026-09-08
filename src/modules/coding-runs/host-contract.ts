@@ -23,6 +23,8 @@ export const workspaceSchema = v.strictObject({
   baseSha: v.pipe(v.string(), v.regex(/^[a-f0-9]{40}$/)),
 });
 export const configSchema = v.strictObject({
+  // Absent on historical manifests: preserve their original discovery policy.
+  repositorySkills: v.optional(v.literal('native-v1')),
   adapter: v.optional(codingAdapterIdentitySchema),
   executable: absolute,
   model: text,

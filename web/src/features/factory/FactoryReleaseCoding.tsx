@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useId, useState, type ReactNode } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import type { FactoryCodingState } from '../../../../shared/factory-coding';
 import { getFactoryCodingState } from '../../api/factory-coding';
@@ -6,6 +6,7 @@ import { getFactoryCodingState } from '../../api/factory-coding';
 interface ReleaseCodingProps {
   label: string;
   disabled: boolean;
+  releaseNotice?: ReactNode;
   onRelease: (fingerprint: string) => void;
 }
 
@@ -52,11 +53,13 @@ function ReleaseSnapshot({
   unavailable,
   label,
   disabled,
+  releaseNotice,
   onRelease,
 }: ReleaseCodingProps & {
   current: FactoryCodingState;
   unavailable: boolean;
 }) {
+  const noticeId = useId();
   const [reviewed, setReviewed] = useState(current);
   const stale = reviewed.configFingerprint !== current.configFingerprint;
   const config = reviewed.config;
@@ -100,6 +103,14 @@ function ReleaseSnapshot({
     ],
     maxOutputBytes: [['Output limit', `${config.maxOutputBytes} bytes`]],
     maxWriters: [['Maximum writers', String(config.maxWriters)]],
+    repositorySkills: [
+      [
+        'Repository skills',
+        config.repositorySkills === 'native-v1'
+          ? 'Native CLI discovery'
+          : 'Legacy discovery policy',
+      ],
+    ],
   } satisfies Record<keyof FactoryCodingState['config'], [string, string][]>;
   return (
     <>
@@ -138,7 +149,28 @@ function ReleaseSnapshot({
         Later configuration changes require another release. Existing runs and
         grants keep their admitted settings and budgets.
       </p>
+      <div id={noticeId}>
+        {releaseNotice}
+        {unavailable && (
+          <p>
+            <output>
+              Release is unavailable until execution settings finish refreshing
+              successfully.
+            </output>
+          </p>
+        )}
+        {stale && (
+          <p>
+            <output>
+              Review updated execution settings above before releasing.
+            </output>
+          </p>
+        )}
+      </div>
       <button
+        aria-describedby={
+          disabled || unavailable || stale ? noticeId : undefined
+        }
         disabled={disabled || unavailable || stale}
         onClick={() => {
           if (!disabled && !unavailable && !stale)

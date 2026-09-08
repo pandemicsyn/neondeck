@@ -1,9 +1,12 @@
+/// <reference types="vite/client" />
 import { createApp } from './create-app';
 
 export { createApp, resolveStaticRoot } from './create-app';
 
 const app = await createApp({
-  runtimeServices: process.env.NEONDECK_MANAGED_HOST !== '1',
+  // Dev's loader and production's listener host own their service lifecycles.
+  runtimeServices:
+    !import.meta.env?.DEV && process.env.NEONDECK_MANAGED_HOST !== '1',
   requestLogging: true,
 });
 
