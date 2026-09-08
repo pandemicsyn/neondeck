@@ -3,7 +3,6 @@ import type { DeliveryPipeline } from '../../../shared/factory-delivery';
 import type { RuntimePaths } from '../../runtime-home';
 import { getCodingRun } from '../coding-runs';
 import { assertCodingAuthoritySnapshot, FactoryError } from '../factory';
-import { factoryValidationPolicy } from '../factory';
 import { resolvePublicationContext } from './publication-context';
 import { assertPublicationAuthorized } from './delivery-aggregate';
 
@@ -21,11 +20,9 @@ export function localValidationContext(runId: string, paths: RuntimePaths) {
       'A settled candidate with verified writer death is required.',
     );
   const authority = assertCodingAuthoritySnapshot(run.snapshot, paths);
-  const validationPolicy = factoryValidationPolicy(run.snapshot.repoId, paths);
-  if (
-    !authority.release.validationPolicy ||
-    !isDeepStrictEqual(authority.release.validationPolicy, validationPolicy)
-  )
+  // Current settings govern new releases; this run retains its approved contract.
+  const validationPolicy = authority.release.validationPolicy;
+  if (!validationPolicy)
     throw new FactoryError(
       409,
       'A fresh release with the current validation policy is required. Retained work remains available.',

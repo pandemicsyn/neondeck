@@ -29,6 +29,10 @@ publication and subsequent PR feedback. Publication approval does not reset them
 
 - New releases explicitly bind validation policy, checks, reviewer and budgets;
   explain these before approval.
+- Later configuration edits apply to new releases. Existing runs retain their
+  admitted validation policy through candidate admission, validation and PR
+  watching; actual release revocation and task/candidate identity checks remain
+  effective.
 - Maintain one execution lifecycle. The operator confirmed that existing use is
   testing only; do not retain the old combined validation/publication workflow or
   add a separate legacy candidate admission flow.
@@ -178,6 +182,13 @@ CI checks passed on that implementation head. Later documentation status updates
 do not change the tested implementation or establish live acceptance.
 
 ### Live acceptance still required after upgrade
+
+PR feedback follow-up: guarded destructive writeback relinquishment while a
+background read is in flight, and retained the released validation policy across
+later settings changes. Both deltas passed two independent static reviews.
+Focused regression checks passed (36 writeback tests and 11 validation-authority
+tests), alongside typechecking, focused formatting and lint/import-layer checks.
+This follow-up does not replace the pending live acceptance below.
 
 - Start a small manual task with a registered repository and working coding CLI,
   but no GitHub intake connection. Shape and approve its plan once. Confirm coding
